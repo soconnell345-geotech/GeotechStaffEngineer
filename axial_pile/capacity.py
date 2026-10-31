@@ -235,7 +235,8 @@ class AxialPileAnalysis:
     beta_coefficients : str, optional
         The beta method's beta and Nt where a layer gives none (Steps 2b,
         5b): "table_7_9" (default and only value: Table 7-9 by the layer's
-        soil type, linear in phi' across the type's phi' range). A clay toe
+        soil type, a straight line in phi' between the type's range ends,
+        this module's reading; Table 7-9 prints only the ranges). A clay toe
         takes ``cohesive_Nt``. "from_phi" (beta = (1 - sin phi') tan phi')
         was removed in GM-282: GEC-12 does not print it; give a layer's
         ``beta`` and ``Nt`` from local experience instead (Steps 2a, 5a).
@@ -1473,33 +1474,68 @@ class AxialPileAnalysis:
         nt = toe_details.get("N_t_source")
         if sources <= {"given"} and nt in ("given", "cohesive_Nt"):
             return None
-        soils = []
-        for s in list(sources) + [nt]:
-            if s and s.startswith("Table 7-9 ("):
-                soil = s[len("Table 7-9 ("):-1]
-                if soil not in soils:
-                    soils.append(soil)
-        soils.sort(key=list(TABLE_7_9).index)
-        chosen = ("Table 7-9 by soil type, linear in phi' across the "
-                  "type's phi' range: " + "; ".join(
-                      f"{s} beta {TABLE_7_9[s][1][0]:g}-"
-                      f"{TABLE_7_9[s][1][1]:g}, Nt {TABLE_7_9[s][2][0]:g}-"
-                      f"{TABLE_7_9[s][2][1]:g} over phi' "
-                      f"{TABLE_7_9[s][0][0]:g}-{TABLE_7_9[s][0][1]:g} deg"
-                      for s in soils))
+        table = "Table 7-9 ("
+        # beta by the soil types of the layers that took it from the table;
+        # Nt for the toe's soil only, and only when the table gave it
+        beta_soils = sorted({s[len(table):-1] for s in sources
+                             if s and s.startswith(table)},
+                            key=list(TABLE_7_9).index)
+        toe_soil = (nt[len(table):-1] if nt and nt.startswith(table)
+                    else None)
+        if not beta_soils and toe_soil is None:
+            return None
+        pairs = "; ".join(
+            f"{s} beta {TABLE_7_9[s][1][0]:.2f} at {TABLE_7_9[s][0][0]:g} "
+            f"deg, {TABLE_7_9[s][1][1]:.2f} at {TABLE_7_9[s][0][1]:g} deg"
+            for s in beta_soils)
+        parts = [f"the {s} layers' beta {TABLE_7_9[s][1][0]:g}-"
+                 f"{TABLE_7_9[s][1][1]:g} over phi' {TABLE_7_9[s][0][0]:g}-"
+                 f"{TABLE_7_9[s][0][1]:g} deg" for s in beta_soils]
+        if toe_soil is not None:
+            t = TABLE_7_9[toe_soil]
+            parts.append(f"the toe in {toe_soil}, Nt {t[2][0]:g}-"
+                         f"{t[2][1]:g} over phi' {t[0][0]:g}-{t[0][1]:g} deg")
+        chosen = ("Table 7-9 by soil type, by this module's reading of it "
+                  "(a straight line in phi' between the type's printed "
+                  "range ends, not printed): " + "; ".join(parts))
+        ends = ((0, "low", "the least resistance"),
+                (1, "high", "the most resistance"))
+        alternatives = [
+            f"the {s} range's {end} end in Table 7-9, beta "
+            f"{TABLE_7_9[s][1][i]:.2f} (phi' {TABLE_7_9[s][0][i]:g} deg), "
+            f"{use}: give the {s} layers beta {TABLE_7_9[s][1][i]:.2f}"
+            for s in beta_soils for i, end, use in ends]
+        if toe_soil is not None:
+            t = TABLE_7_9[toe_soil]
+            alternatives += [
+                f"the {toe_soil} range's {end} end in Table 7-9 at the toe, "
+                f"Nt {t[2][i]:g} (phi' {t[0][i]:g} deg), {use}: give the "
+                f"toe layer Nt {t[2][i]:g}" for i, end, use in ends]
+        own, steps = (("beta and Nt", "Steps 2a, 5a")
+                      if beta_soils and toe_soil is not None else
+                      ("beta", "Step 2a") if beta_soils else
+                      ("Nt", "Step 5a"))
+        alternatives.append(
+            f"a layer's own {own} from local experience ({steps})")
         return choice(
             "beta and Nt (beta method)", chosen,
             how_given(self.beta_coefficients, "table_7_9",
                       name="beta_coefficients"),
             "GEC-12 Steps 2b and 5b (pp. 257-258): in the absence of local "
             "experience, use Table 7-9 (after Fellenius 2014) to estimate "
-            "beta and Nt from phi'; the table gives ranges by soil type "
-            "(clay, silt, sand, gravel), read here linearly in phi' across "
-            "the type's phi' range (a layer's soil_class, else clay or "
-            "sand); a clay toe takes cohesive_Nt (p. 256); GEC-12 prints no "
-            "formula for beta or Nt from phi' alone",
-            ["a layer's own beta and Nt from local experience (Steps 2a, "
-             "5a)"])
+            "beta and Nt from phi'. Table 7-9 (p. 256) prints only each "
+            "soil type's range of phi', beta and Nt (clay, silt, sand, "
+            "gravel); UFC 3-220-20 Table 6-15 (p. 414) pairs beta's ends "
+            "with phi' for driven piles" + (f" ({pairs})" if pairs else "")
+            + ". The straight line in phi' between the ends, and a phi' "
+            "outside the range held at its end, is this module's reading, "
+            "not printed; GEC-12 prints no formula for beta or Nt from "
+            "phi'. The soil type is a layer's soil_class, else clay or "
+            "sand; a clay toe takes cohesive_Nt (p. 256). UFC 3-220-20 "
+            "§6-7.4 step 2 (p. 476): lower alpha and beta are conservative "
+            "for resistance, higher alpha and beta for negative skin "
+            "friction",
+            alternatives)
 
     def _layer_skin_friction(self, layer: AxialSoilLayer, layer_bottom: float,
                              z_top: float, z_bottom: float, perimeter: float,

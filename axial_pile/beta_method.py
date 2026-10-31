@@ -12,8 +12,8 @@ Applicable to any soil type (sand, clay, silt).
 All units are SI: kPa, meters, kN.
 
 References:
-    Fellenius, B.H. (1991) — "Pile foundations"
-    FHWA GEC-12 (FHWA-NHI-16-009), Chapter 7, Section 7.2.1.3.4
+    FHWA GEC-12 (FHWA-NHI-16-009), Chapter 7, Section 7.2.1.3.4, and its
+    Table 7-9 (after Fellenius 2014)
 """
 
 from axial_pile.nordlund import _note
@@ -57,9 +57,9 @@ def end_bearing_beta(sigma_v_tip: float, Nt: float,
     sigma_v_tip : float
         Effective vertical stress at pile tip (kPa).
     Nt : float
-        Bearing capacity factor. Typical values:
-        Sand: Nt = 30-150 (function of phi)
-        Clay: Nt = 3-9
+        Toe resistance coefficient. GEC-12 Table 7-9 (p. 256) gives its
+        range by soil type: clay 3-30, silt 20-40, sand 30-150, gravel
+        60-300.
     tip_area : float
         Pile tip area (m²).
 
@@ -84,10 +84,12 @@ TABLE_7_9 = {
 
 def table_7_9(soil: str, phi_deg: float, notes=None) -> tuple:
     """(beta, Nt) from GEC-12 Table 7-9 for ``soil`` ("clay", "silt",
-    "sand" or "gravel") at phi' (degrees), as Steps 2b and 5b read it ("use
-    Table 7-9 to estimate beta coefficient from phi' angle"): linear in
-    phi' across the soil type's phi' range, low beta and Nt at its low
-    phi'. A phi' outside the range takes the range's end, with a note."""
+    "sand" or "gravel") at phi' (degrees), for Steps 2b and 5b ("use Table
+    7-9 to estimate beta coefficient from phi' angle"): a straight line in
+    phi' between the soil type's range ends, low beta and Nt at its low
+    phi'. The table prints only the ranges; the line is this module's
+    reading. A phi' outside the range takes the range's end, with a
+    note."""
     if soil not in TABLE_7_9:
         raise ValueError(f"Table 7-9 soil type must be one of "
                          f"{list(TABLE_7_9)}, got '{soil}'")

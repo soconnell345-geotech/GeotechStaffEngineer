@@ -15,6 +15,7 @@
       "q_ultimate_kPa": 1460.8,
       "q_allowable_kPa": 486.93,
       "q_net_kPa": 1433.8,
+      "q_allowable_net_kPa": 459.93,
       "factor_of_safety": 3.0,
       "Nc": 30.14,
       "Nq": 18.401,
@@ -43,7 +44,75 @@
       "term_selfweight_kPa": 370.99,
       "ngamma_method": "vesic",
       "factor_method": "vesic",
-      "is_two_layer": false
+      "is_two_layer": false,
+      "allowable_load": {
+        "structural_load_kN": 9198.7,
+        "gross_load_kN": 9738.7,
+        "area_m2": 20.0,
+        "basis": "structural load Q_DL+LL = q_all,net x A' = (q_ult/FS - q) x A', A' = B'L' the effective area, the foundation and the soil over it taken at the soil's unit weight (UFC 3-220-20 Sec. 5-2.2 Eq. 5-3, p. 276; Sec. 5-2.4 Eq. 5-14, p. 279); under an eccentric load, q_all x A' - q x A, the load on A' (Eq. 5-10, p. 277) and the foundation's and the soil's weight on the whole footing A. gross load = q_all x A' = Q_DL+LL + W_F + W_S, the total load on the bearing surface with the foundation's and the overlying soil's weight in it (Eq. 5-1, p. 275), so it is not the structural load. GEC-6 Sec. 5.2.2 (p. 53) recommends the allowable bearing capacity on the gross pressure, the self-weight of the footing and the backfill over it counted in the applied load; a footing heavier than the soil it replaces leaves less for the column (GEC-6 Sec. 6.3.1, p. 113)"
+      },
+      "choices": [
+        {
+          "what": "bearing capacity method",
+          "chosen": "Vesic (1973) factors (factor_method 'vesic')",
+          "how": "default",
+          "basis": "GEC-6 Sec. 5.2.2 (p. 53): Eq. 5-7, N-gamma Eq. 5-8, Table 5-1 (p. 54); shape factors Sec. 5.2.3.1, Table 5-2 (p. 56)",
+          "alternatives": [
+            "Meyerhof (1963) (factor_method 'meyerhof'): UFC 3-220-20 Sec. 5-3.3.2, Table 5-6 (p. 294): Meyerhof (1963) bearing, shape, depth and inclination factors; Table 5-3 (p. 291): any conditions except a tilted base, shear strength dominated by friction; no base-tilt or ground-slope factors (p. 294), so it is not for a tilted base or sloping ground",
+            "Terzaghi (1943) (factor_method 'terzaghi'): UFC 3-220-20 Table 5-2 (p. 289) and Table 5-5 (p. 294): Terzaghi (1943); Table 5-3 (p. 291): undrained soils, Df/B <= 1, no inclined load, slope or tilted base"
+          ]
+        },
+        {
+          "what": "N-gamma",
+          "chosen": "22.40 = 2 (Nq + 1) tan phi (ngamma_method 'vesic')",
+          "how": "default",
+          "basis": "2 (Nq + 1) tan phi, Caquot and Kerisel (1948), GEC-6 Eq. 5-8 (p. 53): 'currently used by FHWA and AASHTO', Table 5-1 (p. 54), the method's own",
+          "alternatives": [
+            "15.67 = (Nq - 1) tan(1.4 phi), UFC 3-220-20 Table 5-6 (p. 294), Table 5-2 (p. 289) (ngamma_method 'meyerhof')",
+            "15.07 = 1.5 (Nq - 1) tan phi, Brinch Hansen (1970), UFC 3-220-20 Table 5-2 (p. 289) (ngamma_method 'hansen')"
+          ]
+        },
+        {
+          "what": "shear mode",
+          "chosen": "general shear (failure_mode 'general')",
+          "how": "module",
+          "basis": "UFC 3-220-20 Sec. 5-3.1.3 (p. 291): the bearing capacity theories assume general shear, appropriate only for dense and/or stiff soils; for local or punching shear settlement almost always controls; Table 5-4 (p. 291)",
+          "alternatives": [
+            "local shear, Terzaghi's c* = 0.67 c', phi* = atan(0.67 tan phi'), UFC 3-220-20 Table 5-4 (factor_method 'terzaghi', failure_mode 'local')"
+          ]
+        },
+        {
+          "what": "allowable bearing pressure",
+          "chosen": "gross: q_all = q_ult / FS = 486.9 kPa (q_allowable); the net beside it, q_all,net = 459.9 kPa (q_allowable_net)",
+          "how": "module",
+          "basis": "UFC 3-220-20 Sec. 5-2.4 Eq. 5-13 and 5-14 (p. 279); GEC-6 Sec. 5.2.2 (p. 53) recommends the gross, with the footing and backfill weight in the applied load; the allowable structural load is on the net (allowable_load)",
+          "alternatives": [
+            "net: q_all,net = q_ult / FS - q (UFC 3-220-20 Eq. 5-14), set against the structural load over the area (Eq. 5-3)"
+          ]
+        },
+        {
+          "what": "depth factors",
+          "chosen": "k = Df/B = 0.750 at Df/B = 0.75: d_c, d_q, d_gamma = 1.229, 1.217, 1.000 (depth_factor_method 'hansen')",
+          "how": "default",
+          "basis": "Brinch Hansen (1970): k = Df/B for Df/B < 1, k = arctan(Df/B) for Df/B >= 1, UFC 3-220-20 Tables 5-7 and 5-8 note B (pp. 295-296); d_q = 1 + 2 k tan phi (1 - sin phi)^2, Table 5-8; d_c = d_q - (1 - d_q)/(N_c tan phi), the correspondence formula of its note C (Brinch Hansen 1961, de Beer 1970), = 1 + 2 k (1 - sin phi)^2 N_q/N_c; d_gamma = 1. Table 5-8 prints d_c = 1 + k (1 - sin phi)^2 N_q/N_c, half of that, while its printed s_c and i_c follow the note C formula term for term; the formula's d_c tends to 1 + 0.39 k as phi goes to 0, against 1 + 0.4 k from Table 5-7's d_c = 0.4 k (p. 295, added in Eq. 5-21), the printed one to 1 + 0.19 k",
+          "alternatives": [
+            "d_c, d_q, d_gamma = 1.000, 1.000, 1.000 (depth_factor_method 'gec6'): FHWA GEC-6 Eq. 5-14 (p. 63): the depth factor on the surcharge term alone (d_c = d_gamma = 1); d_q of Table 5-4 (Brinch Hansen 1970, p. 57) for Df/B from 1, which k = arctan(Df/B) reproduces; d_q = 1.0 for Df/B < 1, as the worked example on p. B-67 takes it",
+            "d_c, d_q, d_gamma = 1.000, 1.000, 1.000 (depth_factor_method 'none'): no depth factors: GEC-6 Sec. 5.2.3.3 (p. 57) omits them unless the cover over the footing is high-quality compacted granular material sure to stay in place, and Table 5-4's note takes d_q = 1.0 unless the soil above the bearing level is as competent as the soil below",
+            "d_c = 1.114, as UFC 3-220-20 Table 5-8 (p. 296) prints it, 1 + k (1 - sin phi)^2 N_q/N_c: half of what the correspondence formula its note C names gives (not an option of this tool)"
+          ]
+        }
+      ],
+      "defaults_used": {
+        "layer2_unit_weight": "one soil layer: the first layer's strength and unit weight throughout the zone below the base",
+        "factor_method": "vesic",
+        "ngamma_method": "vesic",
+        "base_tilt": 0.0,
+        "eccentricity_B": 0.0,
+        "eccentricity_L": 0.0,
+        "load_inclination": 0.0,
+        "ground_slope": 0.0,
+        "depth_factor_method": "hansen"
+      }
     }
   },
   "settlement.consolidation_settlement": {
@@ -96,15 +165,129 @@
       "factor_of_safety": 2.5
     },
     "result": {
-      "Q_ultimate_kN": 2227.3,
-      "Q_skin_kN": 1322.4,
+      "Q_ultimate_kN": 2255.6,
+      "Q_skin_kN": 1350.7,
       "Q_tip_kN": 904.9,
-      "Q_allowable_kN": 890.9,
+      "Q_allowable_kN": 902.2,
       "factor_of_safety": 2.5,
       "pile_length_m": 15.0,
       "pile_name": "16in Pipe (0.47in wall)",
       "method": "auto",
-      "sigma_v_tip_kPa": 178.9
+      "sigma_v_tip_kPa": 178.9,
+      "Q_factored_kN": 1015.0,
+      "resistance_factors": {
+        "basis": "GEC-12 Table 7-1 (p. 224), Eq. 7-3; Eq. 7-38",
+        "compression": {
+          "shaft": {
+            "nordlund": {
+              "phi": 0.45,
+              "R_s_kN": 1350.7
+            }
+          },
+          "toe": {
+            "method": "Nordlund (Eq. 7-9)",
+            "phi": 0.45,
+            "R_p_kN": 904.9
+          },
+          "R_r_kN": 1015.0
+        }
+      },
+      "toe_details": {
+        "toe_phi_deg": 36.0,
+        "alpha_t": 0.688,
+        "N_q_prime": 75.5,
+        "D_over_b": 37.5,
+        "sigma_v_tip_kPa": 178.9,
+        "sigma_p_kPa": 143.6408,
+        "q_L_kPa": 7201.152,
+        "q_p_kPa": 7201.152,
+        "governs": "q_L (Fig. 7-15)",
+        "toe_area_m2": 0.1257
+      },
+      "choices": [
+        {
+          "what": "side resistance method",
+          "chosen": "Nordlund 0-15 m",
+          "how": "module",
+          "basis": "'auto' by soil type: the Nordlund method in cohesionless soil (GEC-12 Sec. 7.2.1.3.1, Eq. 7-8: K_delta from Tables 7-6/7-7, C_F from Fig. 7-14, no limit on sigma'd or the unit side resistance)",
+          "alternatives": [
+            "the beta method in every layer, GEC-12 Sec. 7.2.1.3.4 (method 'beta')"
+          ]
+        },
+        {
+          "what": "toe resistance method",
+          "chosen": "alpha_t N'q sigma'p, at most q_L",
+          "how": "module",
+          "basis": "cohesionless toe layer: GEC-12 Eq. 7-9 (Steps 7-9), alpha_t from Fig. 7-16(a) by phi and D/b (D/b below 20 or above 45 takes the nearest curve), N'q from Fig. 7-16(b), q_L from Fig. 7-15",
+          "alternatives": [
+            "Nt sigma'p (method 'beta')"
+          ]
+        },
+        {
+          "what": "sigma'p at the toe (Nordlund, Step 8)",
+          "chosen": "143.6 kPa (limit 143.6 kPa; sigma'v at the toe 178.9 kPa)",
+          "how": "default",
+          "basis": "Nordlund method, Step 8 (GEC-12 Sec. 7.2.1.3.1, p. 244): 'The limiting value of sigma'p is 3 ksf' (144 kPa), as Nordlund recommended (p. 234); GEC-12's worked example (Vol 3, Table D-6) did not apply it",
+          "alternatives": [
+            "no limit (toe_stress_limit None)"
+          ]
+        },
+        {
+          "what": "toe friction angle (Nordlund)",
+          "chosen": "36 deg, the toe layer's friction_angle",
+          "how": "default",
+          "basis": "GEC-12 Steps 7a, 7b and 9 (pp. 244-245) enter Figs. 7-16 and 7-15 with the 'phi angle near the pile toe'; Step 7c: where phi is estimated from SPT data, average (N1)60 'over the zone from the pile toe to 3 diameters below the pile toe' and estimate phi from that; the module takes phi, so 'average_3b' averages the cohesionless layers' toe phi over that zone (the same where phi is linear in N); GEC-12's worked examples (Vol 3, Tables D-6 and D-51, DrivenPiles) took the toe layer's phi",
+          "alternatives": [
+            "the toe layer's phi (toe_phi_zone 'toe_layer')",
+            "averaged from the toe to 3b below (toe_phi_zone 'average_3b')"
+          ]
+        },
+        {
+          "what": "displaced volume V (Nordlund)",
+          "chosen": "1.35 ft3/ft (gross area of the pile)",
+          "how": "module",
+          "basis": "GEC-12 Step 2a: the volume of soil displaced per unit length of pile; it enters delta/phi (Fig. 7-9) and K_delta (Tables 7-6/7-7, log-linear in V, Step 3)"
+        },
+        {
+          "what": "Nordlund delta/phi",
+          "chosen": "0.73 (Fig. 7-9 curve a, pipe piles)",
+          "how": "module",
+          "basis": "GEC-12 Step 2b: Fig. 7-9 with V for the pile type; a layer's delta_phi_ratio wins",
+          "alternatives": [
+            "delta/phi given for a layer (delta_phi_ratio)"
+          ]
+        },
+        {
+          "what": "resistance factors, compression (LRFD)",
+          "chosen": "phi_stat 0.45 Nordlund shaft, 0.45 toe, Nordlund (Eq. 7-9): R_r = 1,015.0 kN",
+          "how": "module",
+          "basis": "GEC-12 Table 7-1 (p. 224, modified from AASHTO 2014) and Eq. 7-3: the shaft resistance times the factor of its method plus the toe resistance times the factor of its method: Nordlund (sand) 0.45, alpha method (clay and mixed soils) 0.35; AASHTO gives none for the beta method by Fellenius (p. 258), the API method (p. 255) or Tomlinson's Eq. 7-90; the soil plug weight of Eq. 7-89 is subtracted unfactored; in a layered profile each layer takes its method's factor, as GEC-12's worked example does (Vol 3 p. 111: 0.45 on the Nordlund layers, 0.35 on the alpha-method layers; p. 115 in tension: 0.35 and 0.25); for a small group (fewer than 3 piles per substructure unit) AASHTO reduces the factors by 20 % (p. 225); the AASHTO calibration considered few large diameter pipe piles (p. 223)",
+          "alternatives": [
+            "the field verification method's phi_dyn (Table 7-2), which AASHTO C10.5.5.2.3 uses to set the number of piles (p. 225)"
+          ]
+        },
+        {
+          "what": "factor of safety (allowable capacity)",
+          "chosen": "2.5",
+          "how": "given",
+          "basis": "GEC-12 (2016) designs by resistance factors (Sec. 7.1.5, Table 7-1) and gives no factor of safety; for allowable stress design FHWA NHI-06-089 (2006, p. 9-25, Table 9-5) bases the factor of safety of a static analysis on the construction control method; 2.5 is its row for indicator piles with wave equation analysis",
+          "alternatives": [
+            "2.00: static load test with wave equation analysis",
+            "2.25: dynamic testing with wave equation analysis",
+            "2.75: wave equation analysis",
+            "3.50: Gates dynamic formula"
+          ]
+        }
+      ],
+      "defaults_used": {
+        "head_depth": 0.0,
+        "method": "auto",
+        "include_uplift": false,
+        "toe_stress_limit": 143.640777,
+        "displaced_volume": "the steel area of an H-pile, the gross area of other piles: Nordlund's displaced volume per unit length for the section (an open pipe as a closed pipe)",
+        "shrink_swell_depth": "no shrink-swell zone: shaft resistance in cohesive soil counted from the ground surface",
+        "toe_phi_zone": "toe_layer"
+      }
     }
   },
   "drilled_shaft.drilled_shaft_capacity": {
@@ -197,10 +380,24 @@
       "base_steps": {
         "soil_type": "cohesionless",
         "base_diameter_m": 1.0,
-        "N60_capped": 30,
+        "N60_capped": 30.0,
         "qb_unreduced": 1725.0,
         "reduction": null,
-        "qb": 1725.0
+        "qb": 1725.0,
+        "N60_mean": 30.0,
+        "N60_tip": 30,
+        "N60_zone_m": [
+          15.0,
+          17.0
+        ],
+        "N60_layers": [
+          {
+            "top_m": 15.0,
+            "bottom_m": 17.0,
+            "soil_type": "cohesionless",
+            "N60": 30
+          }
+        ]
       },
       "choices": [
         {
@@ -250,6 +447,12 @@
             "su_test_type 'uc', UC, transformed to su(CIUC) by Eq. 10-16: Q_s in cohesive soil 872 kN, Q_ult 3,779 kN",
             "su_test_type 'uu', UU, transformed to su(CIUC) by Eq. 10-17: Q_s in cohesive soil 861 kN, Q_ult 3,769 kN"
           ]
+        },
+        {
+          "what": "base resistance in cohesionless soil",
+          "chosen": "GEC-10 (2018) Eq. 10-14, q_BN = 57.5 N60 kPa (0.60 N60 tsf), N60 = 30.0 (the mean over 2B = 2 m below the base (15-17 m), all at the tip layer's 30): Q_b 1,355 kN, Q_ult 3,719 kN",
+          "how": "module",
+          "basis": "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, pp. 10-14, 10-15: q_BN (tsf) = 0.60 N60 < 30 tsf (Eq. 10-14, Reese and O'Neill 1989, 'recommended for routine design'), taken as 57.5 kPa a blow (0.60 tsf = 57.46 kPa), 'N60 is the average value between the base and two diameters beneath the base'; 'the N-value to be used in Equation 10-14 is the field value, with no correction for overburden stress, although it is recommended that N-values correspond to 60 percent hammer efficiency' (so q_BN does not depend on sigma'v); 'limited to cohesionless soils with SPT N-values of 50 blows per foot or less. In cohesionless soils with N-values exceeding 50, load testing is recommended; otherwise unit base resistance is limited to the upper-bound value' of 30 tsf. It is the base resistance 'at settlements equal to five percent of the base diameter'; bearing capacity theory is an alternative GEC-10 does not recommend for routine design. Resistance factor 0.50 (p. 10-15; Table 8-4, p. 8-14). N60 is taken as the mean, by thickness, of the cohesionless layers' N60 between the base and 2B below it, B the base's diameter, and limited to 50; a layer within 2B with no N60, or of cohesive soil or rock, is left out of the mean; where the profile ends less than 2B below the base, the mean is over what it gives"
         }
       ],
       "defaults_used": {
@@ -260,10 +463,8 @@
         "alpha_method": "rational",
         "su_test_type": "ciuc",
         "pa": 101.325,
-        "rock_side_C": 1.0,
         "socket_diameter": 1.0,
-        "casing_depth": 0.0,
-        "fractured_rock_thickness": 0.0
+        "casing_depth": 0.0
       }
     }
   },
@@ -910,7 +1111,38 @@
       "max_moment_depth_m": 3.15,
       "max_deflection_m": 0.004563158222106678,
       "iterations": 16,
-      "converged": true
+      "converged": true,
+      "choices": [
+        {
+          "what": "p-y curves 0-15 m",
+          "chosen": "SandReese",
+          "how": "given",
+          "basis": "Reese, Cox & Koop (1974), OTC 2080, sand; default construction simplified",
+          "alternatives": [
+            "SandAPI"
+          ]
+        },
+        {
+          "what": "loading",
+          "chosen": "static, every layer",
+          "how": "default",
+          "basis": "each model's static or cyclic p-y curve (COM624P, FHWA-SA-91-048)",
+          "alternatives": [
+            "cyclic"
+          ]
+        }
+      ],
+      "defaults_used": {
+        "pile_E": 200000000.0,
+        "pile_thickness": "a solid section: no wall thickness given",
+        "moment_of_inertia": "from the diameter and wall thickness: I of the section given; give moment_of_inertia to set it",
+        "Mt": 0.0,
+        "Q": 0.0,
+        "stickup": 0.0,
+        "n_elements": 100,
+        "tolerance": 1e-05,
+        "max_iterations": 500
+      }
     }
   },
   "pile_group.pile_group_6dof": {
@@ -1001,7 +1233,12 @@
           "axial_kN": 555.6,
           "utilization": 0.0
         }
-      ]
+      ],
+      "defaults_used": {
+        "Vy": 0.0,
+        "My": 0.0,
+        "Mz": 0.0
+      }
     }
   },
   "downdrag.downdrag_analysis": {
@@ -1032,14 +1269,15 @@
       "gwt_depth": 3.0
     },
     "result": {
-      "neutral_plane_depth_m": 5.9940060940869015,
-      "neutral_plane_method": "settlement_compatibility",
-      "headline_method": "Mobilized toe resistance compatible with the toe penetration",
-      "neutral_plane_basis": "UFC 3-220-20 \u00a76-7.4 procedure: the load and resistance curves do not intersect with the toe at 100% of its resistance, so the neutral plane is where the pile and the soil settle equally, with the toe force the pile delivers there compatible with the toe penetration it causes (UFC 3-220-20 \u00a76-5.8.4.3, Fig 6-19; Fellenius 2021). For an end-bearing pile in a stratum stiffer than the compressible soil this is near the top of the bearing layer (\u00a76-7.4 step 5). Unit skin friction (beta layers) and the toe in sand use the final effective stress, sigma'v0 plus the fill / drawdown change (UFC 3-220-20 \u00a76-7.4 step 2). The pile's own weight is left out of the load curve, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 \u00a77.3.6.1 do (include_pile_weight=False).",
-      "methods_range": "The methods give neutral planes from 5.99 m to 18.00 m and drag forces from 226 kN to 969 kN (5 of 7 methods apply).",
+      "neutral_plane_depth_m": 17.655192999255796,
+      "neutral_plane_method": "force_equilibrium",
+      "headline_method": "Neutral plane at 100% toe mobilization",
+      "neutral_plane_basis": "UFC 3-220-20 \u00a76-7.4 procedure: the neutral plane is where the load curve (Q_dead + negative skin friction) meets the resistance curve (toe resistance + positive skin friction), with side and base resistance fully mobilized (UFC 3-220-20 \u00a76-7.4 steps 3-5, Fig 6-26). Unit skin friction (beta layers) and the toe in sand use the final effective stress, sigma'v0 plus the fill / drawdown change (UFC 3-220-20 \u00a76-7.4 step 2). The pile's own weight is left out of the load curve, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 \u00a77.3.6.1 do (include_pile_weight=False).",
+      "methods_range": "The methods give neutral planes from 5.99 m to 17.66 m and drag forces from 226 kN to 1308 kN (5 of 7 methods apply).",
       "warnings": [
-        "The load and resistance curves do not intersect: the toe resistance (2386.7 kN, ultimate unless Nt was given as a mobilized value) exceeds everything the pile can carry to its toe (1369.2 kN with the whole shaft in negative skin friction), so full base mobilization is impossible. The neutral plane is placed where the pile and the soil settle equally, with the toe force compatible with the toe penetration (UFC 3-220-20 \u00a76-5.8.4.3, Fig 6-19): 5.99 m, toe force 0.0 kN. Upper bound if the soil settled relative to the pile down to the toe: neutral plane at the toe, drag load 969.2 kN. To intersect the curves instead, give toe_mobilization or Nt for the MOBILIZED toe resistance (UFC 3-220-20 \u00a76-5.8.4.2: try 0%, 50%, 100%).",
-        "The soil below the pile toe has no compressibility in this model (18.00-20.00 m (cohesionless)), so its settlement counts as zero (here 0.0 mm below the toe in all). The fill / drawdown stress increase does not decay with depth: give the profile down to the base of the compressible soil. Give Cc and e0 (or C_ec) for clay, or E_s for sand, to include it, and mark a layer settling if the fill / drawdown compresses it (UFC 3-220-20 Eqs 6-49 to 6-54, the equivalent footing at the toe)."
+        "The neutral plane where the load and resistance curves intersect (17.66 m) lies below 5.99 m, where the computed soil settlement falls to the pile's; the friction between them is counted as negative although that soil settles less than the pile. With full mobilization that is UFC 3-220-20 \u00a76-7.4's conservative assumption for the drag force. For settlement, full base mobilization is not conservative (\u00a76-5.8.4.2): see the 50% and 0% toe mobilization rows (toe_mobilization).",
+        "The soil below the pile toe has no compressibility in this model (18.00-20.00 m (cohesionless)), so its settlement counts as zero (here 0.0 mm below the toe in all). The toe load counts down to 18.86 m, where its stress increase falls below 10% of the bearing stress of the equivalent footing (UFC 3-220-20 \u00a76-5.8.4.3, p. 449): extend the profile at least that deep. The fill / drawdown stress increase does not decay with depth: give the profile down to the base of the compressible soil. Give Cc and e0 (or C_ec) for clay, or E_s for sand, to include it, and mark a layer settling if the fill / drawdown compresses it (UFC 3-220-20 Eqs 6-49 to 6-54, the equivalent footing at the toe).",
+        "FHWA GEC-12 Vol I \u00a77.3.5.6 step 1c (p. 332) takes the settlement below the toe to 25.70 m, below the bottom of the soil profile (20.00 m), so the UFC 3-220-20 and FHWA GEC-12 depths were compared only to the bottom of the profile: pile head settlement 0.7 mm by UFC 3-220-20's and at least 0.7 mm by FHWA GEC-12's. Give the soil profile down to 25.70 m to compare them."
       ],
       "neutral_plane_comparison": [
         {
@@ -1048,18 +1286,18 @@
           "toe_mobilization": 1.0,
           "source": "UFC 3-220-20 \u00a76-7.4 steps 3-5, Fig 6-26 (pp. 476-478); FHWA GEC-12 \u00a77.3.6.1 step 5, Fig 7-60 point A (p. 346)",
           "assumptions": "Intersection of the load and resistance curves with side and base resistance fully mobilized: UFC \u00a76-7.4 step 3 calls it 'a conservative approach for evaluating the drag force'; not conservative for settlement (\u00a76-5.8.4.2).",
-          "applies": false,
-          "used": false,
-          "reason": "the curves do not intersect: 100% of the toe resistance (2387 kN) exceeds all the pile can deliver to its toe (1369 kN with the whole shaft in negative skin friction).",
-          "neutral_plane_depth_m": null,
-          "max_pile_load_kN": null,
-          "dragload_kN": null,
-          "drag_force_kN": null,
-          "toe_force_kN": null,
-          "soil_settlement_at_np_mm": null,
-          "pile_settlement_at_np_mm": null,
-          "elastic_compression_above_np_mm": null,
-          "pile_settlement_mm": null
+          "applies": true,
+          "used": true,
+          "reason": "",
+          "neutral_plane_depth_m": 17.655,
+          "max_pile_load_kN": 1707.9,
+          "dragload_kN": 1307.9,
+          "drag_force_kN": 1307.9,
+          "toe_force_kN": 1665.2,
+          "soil_settlement_at_np_mm": 0.0,
+          "pile_settlement_at_np_mm": 0.02,
+          "elastic_compression_above_np_mm": 0.64,
+          "pile_settlement_mm": 0.66
         },
         {
           "name": "Neutral plane at 50% toe mobilization",
@@ -1070,15 +1308,15 @@
           "applies": true,
           "used": false,
           "reason": "",
-          "neutral_plane_depth_m": 16.91,
-          "max_pile_load_kN": 1281.3,
-          "dragload_kN": 881.3,
-          "drag_force_kN": 881.3,
-          "toe_force_kN": 1193.4,
+          "neutral_plane_depth_m": 13.99,
+          "max_pile_load_kN": 1291.6,
+          "dragload_kN": 891.6,
+          "drag_force_kN": 891.6,
+          "toe_force_kN": 832.6,
           "soil_settlement_at_np_mm": 0.0,
-          "pile_settlement_at_np_mm": 0.05,
-          "elastic_compression_above_np_mm": 0.52,
-          "pile_settlement_mm": 0.58
+          "pile_settlement_at_np_mm": 0.17,
+          "elastic_compression_above_np_mm": 0.42,
+          "pile_settlement_mm": 0.59
         },
         {
           "name": "Neutral plane at 0% toe mobilization",
@@ -1089,15 +1327,15 @@
           "applies": true,
           "used": false,
           "reason": "",
-          "neutral_plane_depth_m": 7.339,
-          "max_pile_load_kN": 684.6,
-          "dragload_kN": 284.6,
-          "drag_force_kN": 284.6,
+          "neutral_plane_depth_m": 9.481,
+          "max_pile_load_kN": 875.3,
+          "dragload_kN": 475.3,
+          "drag_force_kN": 475.3,
           "toe_force_kN": 0.0,
           "soil_settlement_at_np_mm": 0.0,
           "pile_settlement_at_np_mm": 0.16,
-          "elastic_compression_above_np_mm": 0.16,
-          "pile_settlement_mm": 0.32
+          "elastic_compression_above_np_mm": 0.23,
+          "pile_settlement_mm": 0.38
         },
         {
           "name": "Mobilized toe resistance compatible with the toe penetration",
@@ -1106,7 +1344,7 @@
           "source": "UFC 3-220-20 \u00a76-5.8.4.3, Fig 6-19 (pp. 449-450); Fellenius (2021)",
           "assumptions": "Pile and soil settle equally at the neutral plane (Fig 6-19). The toe force follows the toe penetration: bearing-stratum compression under the toe force (UFC Eqs 6-51 to 6-54) standing in for a q-z curve, capped at the toe resistance; side fully mobilized.",
           "applies": true,
-          "used": true,
+          "used": false,
           "reason": "",
           "neutral_plane_depth_m": 5.994,
           "max_pile_load_kN": 626.0,
@@ -1143,18 +1381,18 @@
           "toe_mobilization": null,
           "source": "FHWA GEC-12 \u00a77.3.5.7 (p. 336; Goudreault and Fellenius 1994); CGPR #56 Table 3.1 'end bearing'",
           "assumptions": "The whole shaft in negative skin friction: the upper bound on the drag force for a single pile. GEC-12 \u00a77.3.5.7 uses the plane at the toe for group settlement.",
-          "applies": true,
+          "applies": false,
           "used": false,
-          "reason": "",
-          "neutral_plane_depth_m": 18.0,
-          "max_pile_load_kN": 1369.2,
-          "dragload_kN": 969.2,
-          "drag_force_kN": 969.2,
-          "toe_force_kN": 1369.2,
-          "soil_settlement_at_np_mm": 0.0,
-          "pile_settlement_at_np_mm": 0.0,
-          "elastic_compression_above_np_mm": 0.58,
-          "pile_settlement_mm": 0.58
+          "reason": "with the neutral plane at the toe (18.00 m) the toe would have to carry 1751 kN, more than its resistance (1665 kN): the load and resistance curves put the plane higher.",
+          "neutral_plane_depth_m": null,
+          "max_pile_load_kN": null,
+          "dragload_kN": null,
+          "drag_force_kN": null,
+          "toe_force_kN": null,
+          "soil_settlement_at_np_mm": null,
+          "pile_settlement_at_np_mm": null,
+          "elastic_compression_above_np_mm": null,
+          "pile_settlement_mm": null
         },
         {
           "name": "Endo et al. (1969)",
@@ -1181,28 +1419,28 @@
         "influence_depth_criterion": "bearing_stress",
         "criterion": "10% of the bearing stress of the equivalent footing (UFC 3-220-20 \u00a76-5.8.4.3, p. 449)",
         "equivalent_footing_width_m": 0.4,
-        "toe_force_kN": 0.0,
-        "bearing_stress_kPa": 0.0,
-        "toe_load_depth_below_toe_m": 0.0,
-        "toe_load_counted_to_m": 18.0,
-        "toe_load_stopped_by": "no_toe_load",
+        "toe_force_kN": 1665.17,
+        "bearing_stress_kPa": 10407.31,
+        "toe_load_depth_below_toe_m": 0.865,
+        "toe_load_counted_to_m": 18.865,
+        "toe_load_stopped_by": "criterion",
         "fill_counted_to_m": 20.0,
         "fill_settlement_mm": 0.0,
         "toe_load_compression_mm": 0.0,
         "settlement_below_toe_mm": 0.0,
         "depth_m": 20.0,
-        "basis": "Below the toe (18.00 m) the toe carries no load, so only the fill / drawdown can compress the soil there. The fill / drawdown stress increase does not decay with depth, but no layer between the toe and the bottom of the soil profile (20.00 m) is marked settling, so it adds no settlement there.",
+        "basis": "Below the toe (18.00 m) the toe force (1665.2 kN) is spread 2V:1H from an equivalent footing 0.40 m square at the toe (UFC 3-220-20 Eqs 6-49 to 6-52) and counted 0.86 m below the toe, to 18.86 m, where its stress increase falls below 10% of the bearing stress of the equivalent footing (UFC 3-220-20 \u00a76-5.8.4.3, p. 449). The fill / drawdown stress increase does not decay with depth, but no layer between the toe and the bottom of the soil profile (20.00 m) is marked settling, so it adds no settlement there. With 10% of the existing vertical effective stress instead (FHWA GEC-12 \u00a77.3.5.6 step 1c, p. 332; influence_depth_criterion='effective_stress') the toe force is counted to the bottom of the soil profile, 20.00 m, short of 25.70 m, where its stress increase would fall below that: the same settlement below the toe, 0.0 mm.",
         "other_criterion": {
           "influence_depth_criterion": "effective_stress",
           "criterion": "10% of the existing vertical effective stress (FHWA GEC-12 \u00a77.3.5.6 step 1c, p. 332)",
-          "toe_force_kN": 0.0,
-          "toe_load_depth_below_toe_m": 0.0,
-          "toe_load_counted_to_m": 18.0,
-          "toe_load_stopped_by": "no_toe_load",
+          "toe_force_kN": 1665.17,
+          "toe_load_depth_below_toe_m": 7.703,
+          "toe_load_counted_to_m": 20.0,
+          "toe_load_stopped_by": "profile_end",
           "settlement_below_toe_mm": 0.0,
-          "neutral_plane_depth_m": 5.994,
-          "pile_settlement_mm": 0.29,
-          "drag_force_kN": 225.97
+          "neutral_plane_depth_m": 17.655,
+          "pile_settlement_mm": 0.66,
+          "drag_force_kN": 1307.92
         },
         "rules_disagree": false
       },
@@ -1211,7 +1449,7 @@
           "what": "depth to which the settlement below the toe is computed",
           "chosen": "10% of the bearing stress of the equivalent footing (UFC 3-220-20 \u00a76-5.8.4.3, p. 449)",
           "how": "default",
-          "basis": "The module's default: its headline procedure is UFC 3-220-20's. The other rule's results are reported beside it (below_toe, other_criterion).",
+          "basis": "The module's default, as the module follows UFC 3-220-20's procedure by default. The other rule's results are reported beside it (below_toe, other_criterion).",
           "alternatives": [
             "10% of the existing vertical effective stress (FHWA GEC-12 \u00a77.3.5.6 step 1c, p. 332)"
           ]
@@ -1223,28 +1461,62 @@
           "basis": "The engineer's call, not a reference's figure: neither UFC 3-220-20 nor FHWA GEC-12 says how far two settlement estimates may differ before it matters (the default, 25 %, is a round figure). A check that passes with one rule and fails with the other is always warned about; the rule used is not changed."
         },
         {
-          "what": "skin friction method in the cohesive soil, 0-6 m",
-          "chosen": "Alpha method, fs = alpha x cu (UFC 3-220-20 Eq 6-8), alpha 1.0",
+          "what": "toe bearing capacity factor Nt",
+          "chosen": "Nt 60.0 (UFC 3-220-20 Table 6-17, p. 421, Fellenius (2021) column = GEC-12 Table 7-9; sand, phi' 34 deg)",
           "how": "default",
-          "basis": "The module's default for cohesive soil: undrained, short-term conditions (UFC 3-220-20 \u00a76-5.4.2, p. 414, and p. 410), as in UFC's drag force example (App. B-5.4, p. 636); FHWA recommends the \u03b1-method in cohesive soils (GEC-12 \u00a77.2.1.2, p. 229). Alpha 1.0 where none is given. Either serves the drag procedures: 'an appropriate static analysis method' (GEC-12 \u00a77.3.6.1 Step 2, p. 342); higher alpha and beta are conservative for negative skin friction (UFC 3-220-20 \u00a76-7.4 step 2, p. 476).",
+          "basis": "The module's default. The ultimate toe resistance, qb = Nq sigma'zD (UFC 3-220-20 Eq 6-20; GEC-12 Eq. 7-20 with Table 7-9 for its beta method, p. 258), sigma'v final (skin_friction_stress); the drag procedures leave the method to the engineer (UFC \u00a76-7.4 step 2; GEC-12 \u00a77.3.6.1 Step 2). Table 6-17's Fellenius (2021) column, like GEC-12 Table 7-9 (p. 256), prints only each soil type's Nt range beside its phi' range (sand: Nt 30 to 150 over phi' 32 to 40 deg); the straight line in phi' between the ends, and a phi' outside the range held at its end, is this module's reading, not printed. UFC \u00a76-7.4 step 2's advice on lower and higher values is for side friction (alpha and beta); for the toe, neutral_plane_comparison gives the neutral plane at 0 %, 50 % and 100 % of the toe resistance.",
+          "alternatives": [
+            "Nt 39.0 (UFC 3-220-20 Table 6-17, p. 421, Cheng (2004) equation; phi' 34 deg, Z/b 45.0): Nt_method 'cheng'",
+            "Nt 30, the sand range's low end in Table 6-17 (phi' 32 deg): give Nt 30",
+            "Nt 150, the sand range's high end in Table 6-17 (phi' 40 deg): give Nt 150",
+            "Nt given: local experience (GEC-12 Step 5a) or a mobilized value"
+          ]
+        },
+        {
+          "what": "skin friction method in the cohesive soil, 0-6 m",
+          "chosen": "Alpha method, fs = alpha x cu (UFC 3-220-20 Eq 6-8)",
+          "how": "default",
+          "basis": "The module's default for cohesive soil: undrained, short-term conditions (UFC 3-220-20 \u00a76-5.4.2, p. 414, and p. 410), as in UFC's drag force example (App. B-5.4, p. 636); FHWA recommends the \u03b1-method in cohesive soils (GEC-12 \u00a77.2.1.2, p. 229). Either serves the drag procedures: 'an appropriate static analysis method' (GEC-12 \u00a77.3.6.1 Step 2, p. 342); higher alpha and beta are conservative for negative skin friction (UFC 3-220-20 \u00a76-7.4 step 2, p. 476).",
           "alternatives": [
             "Beta method, fs = beta x sigma'v (UFC 3-220-20 Eq 6-7), for long-term, drained conditions (UFC 3-220-20 \u00a76-5.4.1, p. 411; FHWA GEC-12 \u00a77.2.1.3.4, p. 255): skin_friction_method 'beta' with beta (GEC-12 Table 7-9, p. 256: clay 0.15-0.35)"
           ]
+        },
+        {
+          "what": "beta in the cohesionless soil, 6-18 m",
+          "chosen": "beta 0.450 at 6-18 m (sand, phi' 34 deg)",
+          "how": "default",
+          "basis": "The module's default, by soil_class (sand unless given). GEC-12 Table 7-9 (p. 256; Step 2b, p. 257) prints only each soil type's range of phi', beta and Nt; UFC 3-220-20 Table 6-15 (p. 414) pairs beta's ends with phi' for driven piles (sand: beta 0.30 at phi' 32 deg, 0.90 at 40 deg). The straight line in phi' between the ends, and a phi' outside the range held at its end, is this module's reading; neither manual prints it. UFC 3-220-20 \u00a76-7.4 step 2 (p. 476): lower alpha and beta are conservative for resistance, higher alpha and beta for negative skin friction.",
+          "alternatives": [
+            "beta 0.30, the sand range's low end in Table 6-15 (phi' 32 deg), conservative for resistance: give the layer beta 0.30",
+            "beta 0.90, the sand range's high end in Table 6-15 (phi' 40 deg), conservative for negative skin friction: give the layer beta 0.90",
+            "beta given: local experience (GEC-12 Step 2a), or UFC 3-220-20 Eq 6-6, K tan delta (Fig 6-13, Table 6-14)",
+            "soil_class 'silt' or 'gravel'"
+          ]
+        },
+        {
+          "what": "alpha in the cohesive soil, 0-6 m",
+          "chosen": "alpha 1.00 at 0-6 m (Table 6-16, soft clay)",
+          "how": "default",
+          "basis": "The module's default, as the module follows UFC 3-220-20's procedure by default. UFC 3-220-20 \u00a76-5.4.2 (pp. 415-417): alpha 1 in soft clay (su below 800 psf, Table 6-16); in firm to very stiff clay Fig 6-14, curve A for Z of 40b or more and curve B for Z = 10b, Z from the ground surface to the clay's base or the pile toe and b the pile width. UFC's drag example reads it so (App. B-5.4, pp. 636-637: alpha 1.0 in soft clay, 0.5 in stiff clay, Eq 6-9 in the transition zone).",
+          "alternatives": [
+            "FHWA GEC-12 Fig. 7-17 (Tomlinson 1979): alpha_chart 'gec12_fig_7_17' with fig_7_17_curve; Ca by su, D/b and pile type, as drawn (GEC-12 \u00a77.2.1.3.2 Step 1, p. 250)",
+            "alpha given on the layer; a higher alpha is conservative for negative skin friction, a lower one for resistance (UFC 3-220-20 \u00a76-7.4 step 2, p. 476)"
+          ]
         }
       ],
-      "dragload_kN": 225.96870612907026,
-      "drag_force_kN": 225.96870612907026,
-      "max_pile_load_kN": 625.9687061290703,
+      "dragload_kN": 1307.923004700073,
+      "drag_force_kN": 1307.923004700073,
+      "max_pile_load_kN": 1707.923004700073,
       "Q_dead_kN": 400.0,
       "pile_weight_to_np_kN": 0.0,
-      "positive_skin_friction_kN": 743.2037741555736,
-      "toe_resistance_kN": 2386.743337155852,
-      "toe_force_mobilized_kN": 0.0,
-      "total_resistance_kN": 3129.9471113114255,
-      "pile_settlement_m": 0.00028844954700107316,
-      "elastic_shortening_m": 0.00012234365167165063,
+      "positive_skin_friction_kN": 42.753234591339606,
+      "toe_resistance_kN": 1665.1697701087342,
+      "toe_force_mobilized_kN": 1665.1697701087342,
+      "total_resistance_kN": 1707.9230047000738,
+      "pile_settlement_m": 0.000659580525584961,
+      "elastic_shortening_m": 0.0006364416401780372,
       "toe_settlement_m": 0.0,
-      "soil_settlement_at_np_m": 0.00016610415266574488,
+      "soil_settlement_at_np_m": 0.0,
       "pile_length_m": 18.0,
       "pile_diameter_m": 0.4,
       "z_m": [
@@ -1348,56 +1620,56 @@
         597.9203371761569,
         607.3451151369263,
         616.7698930976957,
-        625.7783855475519,
-        625.7783855475519,
-        616.9890373123835,
-        608.0189358234385,
-        598.8680810807175,
-        589.5364730842207,
-        580.0241118339475,
-        570.3309973298983,
-        560.457129572073,
-        550.4025085604717,
-        540.167134295094,
-        529.7510067759401,
-        519.1541260030103,
-        508.3764919763042,
-        497.4181046958222,
-        486.2789641615642,
-        474.9590703735299,
-        463.4584233317198,
-        451.7770230361333,
-        439.91486948677056,
-        427.87196268363186,
-        415.64830262671694,
-        403.243889316026,
-        390.6587227515588,
-        377.8928029333157,
-        364.9461298612963,
-        351.818703535501,
-        338.5105239559294,
-        325.0215911225818,
-        311.351905035458,
-        297.50146569455825,
-        283.4702730998822,
-        269.2583272514302,
-        254.865628149202,
-        240.29217579319783,
-        225.53797018341731,
-        210.6030113198609,
-        195.48729920252828,
-        180.19083383141964,
-        164.7136152065347,
-        149.0556433278739,
-        133.2169181954368,
-        117.1974398092238,
-        100.99720816923445,
-        84.61622327546877,
-        68.05448512792725,
-        51.311993726609444,
-        34.38874907151569,
-        17.28475116264599,
-        0.0
+        626.194671058465,
+        626.194671058465,
+        641.9885372505356,
+        658.1072048530791,
+        674.5506738660957,
+        691.3189442895853,
+        708.4120161235479,
+        725.8298893679835,
+        743.5725640228922,
+        761.6400400882737,
+        780.0323175641284,
+        798.7493964504561,
+        817.7912767472568,
+        837.1579584545304,
+        856.8494415722772,
+        876.8657261004969,
+        897.2068120391897,
+        917.8726993883555,
+        938.8633881479943,
+        960.1788783181062,
+        981.819169898691,
+        1003.7842628897489,
+        1026.0741572912798,
+        1048.6888531032837,
+        1071.6283503257605,
+        1094.8926489587107,
+        1118.4817490021335,
+        1142.3956504560294,
+        1166.6343533203985,
+        1191.1978575952403,
+        1216.0861632805554,
+        1241.2992703763434,
+        1266.8371788826043,
+        1292.6998887993386,
+        1318.8874001265456,
+        1345.3997128642256,
+        1372.2368270123789,
+        1399.3987425710047,
+        1426.885459540104,
+        1454.696977919676,
+        1482.8332977097211,
+        1511.2944189102393,
+        1540.0803415212304,
+        1569.1910655426946,
+        1598.6265909746317,
+        1628.3869178170419,
+        1658.472046069925,
+        1688.8819757332813,
+        1696.2293025930362,
+        1665.169770108734
       ],
       "soil_settlement_mm": [
         321.4988322865093,
@@ -1501,55 +1773,55 @@
         30.0,
         30.0,
         30.0,
-        32.87557253860125,
-        33.558683942304214,
-        34.24179534600717,
-        34.92490674971013,
-        35.60801815341309,
-        36.29112955711606,
-        36.97424096081901,
-        37.65735236452198,
-        38.340463768224936,
-        39.023575171927895,
-        39.706686575630854,
-        40.38979797933382,
-        41.07290938303677,
-        41.75602078673974,
-        42.439132190442706,
-        43.122243594145665,
-        43.80535499784862,
-        44.488466401551584,
-        45.17157780525455,
-        45.8546892089575,
-        46.53780061266046,
-        47.22091201636343,
-        47.90402342006639,
-        48.58713482376935,
-        49.270246227472306,
-        49.953357631175265,
-        50.63646903487823,
-        51.31958043858119,
-        52.00269184228414,
-        52.68580324598711,
-        53.368914649690076,
-        54.052026053393035,
-        54.73513745709599,
-        55.418248860798954,
-        56.10136026450192,
-        56.78447166820487,
-        57.46758307190784,
-        58.1506944756108,
-        58.83380587931376,
-        59.516917283016724,
-        60.20002868671968,
-        60.883140090422636,
-        61.5662514941256,
-        62.24936289782856,
-        62.93247430153153,
-        63.61558570523448,
-        64.29869710893745,
-        64.9818085126404,
-        65.66491991634337
+        49.756499999999996,
+        50.790375000000004,
+        51.82425,
+        52.858125,
+        53.891999999999996,
+        54.925875000000005,
+        55.95975,
+        56.993625,
+        58.027499999999996,
+        59.061375000000005,
+        60.09524999999999,
+        61.129125,
+        62.163,
+        63.196875,
+        64.23075000000001,
+        65.264625,
+        66.29849999999999,
+        67.332375,
+        68.36625000000001,
+        69.400125,
+        70.434,
+        71.467875,
+        72.50175,
+        73.535625,
+        74.56949999999999,
+        75.603375,
+        76.63725000000001,
+        77.671125,
+        78.705,
+        79.738875,
+        80.77275,
+        81.806625,
+        82.84049999999999,
+        83.874375,
+        84.90825000000001,
+        85.94212499999999,
+        86.976,
+        88.009875,
+        89.04375,
+        90.07762500000001,
+        91.1115,
+        92.145375,
+        93.17925,
+        94.21312499999999,
+        95.247,
+        96.280875,
+        97.31475,
+        98.348625,
+        99.3825
       ],
       "geotechnical_ok": true,
       "neutral_plane_requested": "auto",
@@ -1563,7 +1835,8 @@
         "pile_E": 200000000.0,
         "pile_perimeter": "pi D, from pile_diameter: the perimeter of a circular section",
         "pile_area": "pi D^2 / 4, from pile_diameter: the solid circle; give the steel area for an H or pipe pile",
-        "Nt": "the ultimate value from the toe layer: Nt from the toe layer's friction angle (Fellenius 1991; GEC-12 Table 7-9), 9 in clay: the ultimate, not the mobilized, toe resistance",
+        "Nt": "the ultimate value from the toe layer: 9 in clay, else UFC 3-220-20 Table 6-17 (Nt_method): the ultimate, not the mobilized, toe resistance",
+        "Nt_method": "fellenius",
         "include_pile_weight": false,
         "n_sublayers": 10,
         "neutral_plane_method": "auto",
@@ -1571,6 +1844,7 @@
         "skin_friction_stress": "final",
         "influence_depth_criterion": "bearing_stress",
         "influence_depth_warning_percent": 25.0,
+        "alpha_chart": "ufc_fig_6_14",
         "ground_elevation": "no elevation: the figures plot depth below the ground and say no elevation was given; results are in depth either way"
       }
     }
@@ -1626,7 +1900,23 @@
         0.0,
         0.0,
         0.0
-      ]
+      ],
+      "defaults_used": {
+        "skin_fraction": 0.5,
+        "damping_model": "smith",
+        "quake_side": 0.0025,
+        "quake_toe": 0.0025,
+        "damping_side": 0.16,
+        "damping_toe": 0.5,
+        "hammer_custom_name": "Custom",
+        "hammer_type": "single_acting",
+        "segment_length": 1.0,
+        "cushion_stiffness": 500000.0,
+        "cushion_cor": 0.8,
+        "pile_E": 200000000.0,
+        "pile_unit_weight": 78.5,
+        "helmet_weight": 5.0
+      }
     }
   },
   "sheet_pile.cantilever_wall": {
@@ -1652,7 +1942,12 @@
       "max_moment_kNm_per_m": 299.8,
       "max_moment_depth_m": 9.9,
       "FOS_passive": 1.5,
-      "excavation_depth_m": 4.0
+      "excavation_depth_m": 4.0,
+      "defaults_used": {
+        "gwt_depth_active": "no water table: no water pressure on either side of the wall; total unit weight throughout",
+        "gwt_depth_passive": "no water table: no water pressure on either side of the wall; total unit weight throughout",
+        "pressure_method": "rankine"
+      }
     }
   },
   "soe.braced_excavation": {
@@ -1721,7 +2016,25 @@
         "Pressure above the excavation: sand apparent envelope (max 31.20 kPa) + surcharge 4.00 kPa (GEC-4 5.2.4 adds surcharge and water explicitly).",
         "The bottom span's load is assigned wholly to the lowest support; free earth support gives that support 72.7 kN/m from the wall below it.",
         "Embedment: free earth support about the lowest support, MR = FS x MD with FS = 1.5 (Caltrans T&S 8-4 uses 1.3)."
-      ]
+      ],
+      "choices": [
+        {
+          "what": "passive pressure below the excavation (passive_theory)",
+          "chosen": "rankine: layer 1: Kp 3; embedment 2.99 m",
+          "how": "default",
+          "basis": "The Caltrans Trenching and Shoring Manual, which these solvers follow (Secs. 7-5.02 and 8-4.02), takes Rankine's where its examples have no wall friction: 'since the wall friction (delta) is zero, use Rankine earth pressure theory to calculate the active and passive earth pressure coefficients' (pp. 7-18, 7-27 and 9-12), each time with the note 'Rankine theory tends to underestimate the passive earth pressure. It is recommended to use the Log-Spiral model to compute the passive earth force' (p. 7-27; 'Log-Spiral-Rankine Model', pp. 7-18 and 9-13); Example 8-1 takes the log-spiral Kp at delta 15 deg on phi 30 deg (p. 8-12); and Sec. 4-6 (p. 4-28) says Rankine's theory 'should not be used to calculate the passive earth pressure forces for a shoring system because it does not account for wall friction'. The module keeps Rankine's, the smaller Kp, as its default; passive_theory 'log_spiral' takes the log-spiral Kp with wall friction. At delta = 0 the two are the same Kp",
+          "alternatives": [
+            "log_spiral (passive_theory 'log_spiral'), UFC 3-220-20 Eq. 4-12, with passive_wall_friction_deg left out: delta/phi' 0.66, none with cohesion: layer 1: Kp 3; embedment 2.99 m"
+          ]
+        }
+      ],
+      "defaults_used": {
+        "gwt_depth_excavation": 10.0,
+        "FOS_passive": 1.5,
+        "embedment_increase": 1.0,
+        "passive_theory": "rankine",
+        "Fy": 345.0
+      }
     }
   },
   "retaining_walls.cantilever_wall": {
@@ -1733,30 +2046,104 @@
       "q_allowable": 250.0
     },
     "result": {
-      "FOS_sliding": 1.268,
-      "FOS_overturning": 2.942,
+      "verdict": "FAILS: sliding (FOS 1.17 < 1.50 required). Passes: overturning (FOS 2.67 >= 2.00 required); bearing (q_max 200.1 kPa <= q_allowable 250.0 kPa, FOS 1.25); eccentricity (resultant within the middle third: e = 0.580 m <= B/6 = 0.600 m).",
+      "checks_failed": [
+        "sliding"
+      ],
+      "checks_not_run": [],
+      "all_checks_pass": false,
+      "FOS_sliding": 1.169,
+      "FOS_overturning": 2.674,
       "FOS_bearing": 1.25,
+      "FOS_sliding_required": 1.5,
+      "FOS_overturning_required": 2.0,
       "passes_sliding": false,
       "passes_overturning": true,
       "passes_bearing": true,
+      "bearing_checked": true,
+      "q_allowable_kPa": 250.0,
       "q_toe_kPa": 200.1,
       "q_heel_kPa": 19.3,
-      "eccentricity_m": 0.494,
+      "eccentricity_m": 0.58,
       "in_middle_third": true,
       "wall_height_m": 6.0,
       "base_width_m": 3.6,
+      "eccentricity_bearing_m": 0.494,
+      "choices": [
+        {
+          "what": "base friction delta_b (sliding)",
+          "chosen": "21.3 deg = 2/3 phi_f, phi_f = 32 deg, the foundation soil's friction angle (phi_foundation)",
+          "how": "default",
+          "basis": "a base not cast against the ground: EN 1997-1 Sec. 6.5.3(10) (p. 64) takes 2/3 phi'cv;d for smooth precast foundations; UFC 3-220-20 Fig. 4-27 (p. 220) takes tan delta, the friction factor between soil and base, from Table 4-1 (p. 184), e.g. mass concrete on clean fine to medium sand 24-29 deg",
+          "alternatives": [
+            "phi_f = 32 deg (delta_base = 32): concrete cast against the ground: GEC-6 Sec. 5.4 (p. 99): 'For concrete cast against cohesionless or granular material, the coefficient of friction, tan delta, will be equal to the tangent of the friction angle (tan phi) for the soil supporting the footing'; EN 1997-1 Sec. 6.5.3(10) (p. 64): phi'cv;d for cast-in-situ concrete foundations"
+          ]
+        },
+        {
+          "what": "live-load surcharge over the heel, in sliding, overturning and the eccentricity check",
+          "chosen": "not a resisting force (live_load_resists=False)",
+          "how": "default",
+          "basis": "FHWA NHI-06-089 Sec. 10.5.5 (p. 10-43): 'the live load surcharge is not considered as a stabilizing force over the heel of the wall when sliding resistance is being checked'; Sec. 10.5.3 (p. 10-41): for CIP semi-gravity walls the surcharge loads are 'conservatively neglected within the width of the base slab since they contribute to overturning and sliding resistance'; UFC 3-220-20 App. B-1.2 (p. 597): 'For overturning and sliding checks, it is assumed that the traffic pressure does not act over the wall heel'; GEC-11 Vol I p. 4-22 (AASHTO): external loads that increase sliding resistance are included 'only if those loads are permanent', so the vertical component of the live load's thrust is left out too",
+          "alternatives": [
+            "counted as a resisting force (live_load_resists=True): counted: the free body with the live load over the heel whenever it acts behind the wall (the module's reading before GM-157); none of the references above counts a live load so"
+          ]
+        },
+        {
+          "what": "pavement or slab over the backfill",
+          "chosen": "modelled as retained soil up to the ground surface; a surcharge is transient live load (its thrust counts in every check, its weight over the heel does not resist sliding or overturning)",
+          "how": "module",
+          "basis": "the usual practice for pavements and slabs; dead_load_resists=true counts a dead-load surcharge over the heel as resisting weight in sliding and overturning"
+        },
+        {
+          "what": "surcharge over the heel, in the bearing pressures",
+          "chosen": "counted (surcharge_in_bearing=True)",
+          "how": "default",
+          "basis": "UFC 3-220-20 App. B-1.6 (p. 602): 'Unlike the checks of overturning and sliding, it is conservative to include the surcharge over the heel of the wall, if this is possible to occur, in the bearing capacity check'; GEC-11 Vol I p. 4-26: 'the bearing check applies live load above both the reinforced zone and the retained backfill'",
+          "alternatives": [
+            "left out (surcharge_in_bearing=False): left out of the base pressures, the surcharge taken as located behind the heel (FHWA NHI-06-089 Sec. 10.5.3, p. 10-41)"
+          ]
+        }
+      ],
       "geometry": {
         "wall_height_m": 6.0,
-        "base_width_m": 3.6
+        "wall_height_basis": "underside of the base slab to the top of the stem",
+        "stem_height_m": 5.4,
+        "base_thickness_m": 0.6,
+        "base_width_m": 3.6,
+        "toe_length_m": 0.36,
+        "heel_length_m": 2.56,
+        "stem_thickness_top_m": 0.3,
+        "stem_thickness_base_m": 0.68
       },
       "sliding_basis": {
+        "sliding_cohesion": "drained",
         "delta_base_deg": 21.33,
         "base_adhesion_kPa": 0.0,
+        "adhesion_width_m": null,
         "driving_force_kN_per_m": 121.7,
-        "resisting_force_kN_per_m": 154.2,
+        "resisting_force_kN_per_m": 142.2,
         "Pa_kN_per_m": 121.7,
         "Pa_vertical_kN_per_m": 0.0,
         "thrust_inclination_deg": 0.0
+      },
+      "defaults_used": {
+        "base_width": "B = 0.6 H, sized by the module: a trial proportion; give it for the wall as designed",
+        "toe_length": "0.1 B, sized by the module: a trial proportion; give it for the wall as designed",
+        "stem_thickness_top": 0.3,
+        "stem_thickness_base": "the larger of 0.08 H + 0.2 m and the stem thickness at the top, sized by the module: a trial proportion; give it for the wall as designed",
+        "base_thickness": 0.6,
+        "dead_load_surcharge": 0.0,
+        "live_load_resists": false,
+        "surcharge_in_bearing": true,
+        "backfill_slope": 0.0,
+        "c_backfill": 0.0,
+        "phi_foundation": 32.0,
+        "delta_base": "2/3 of the foundation soil friction angle: the sliding check's base friction delta_b = (2/3) phi_foundation; give delta_base to set it directly",
+        "include_passive": false,
+        "gamma_concrete": 24.0,
+        "FOS_sliding_required": 1.5,
+        "FOS_overturning_required": 2.0,
+        "pressure_method": "rankine"
       }
     }
   },
@@ -1780,7 +2167,49 @@
       "settlement_unreinforced_mm": 100.0,
       "column_diameter_m": 0.76,
       "column_spacing_m": 1.5,
-      "pattern": "triangular"
+      "pattern": "triangular",
+      "choices": [
+        {
+          "what": "settlement method",
+          "chosen": "stress ratio, SRF = 1 / [1 + a_s (n - 1)]",
+          "how": "default",
+          "basis": "unit cell under equal strain, the stress split by the given n (GEC-13 Eq. 5-4, the stress reduction method); S = SRF x the unreinforced settlement",
+          "alternatives": [
+            "settlement_method 'weighted_modulus' with E_column: GEC-13 Fig. 5-21 curve (2), n' = 1 + a_s (E_c/E_s - 1)",
+            "settlement_method 'balaam_rigid' (E_c/E_s 5 to 10) or 'balaam_flexible' (E_c/E_s = 10) with E_column: GEC-13 Fig. 5-21 Balaam curves (5); p. 5-37: the FHWA (1983) Equilibrium Method, 'roughly equivalent to the Balaam relationships', 'represents an average or lower bound estimate suitable for preliminary analyses'",
+            "the settlement ratio off GEC-13's printed Priebe curve, Fig. 5-21 curve (4), phi = 37.5 deg (priebe_improvement_factor); GEC-13 p. 5-37: the Priebe curve 'may be used to evaluate the upper bound effectiveness'"
+          ]
+        },
+        {
+          "what": "stress concentration ratio n",
+          "chosen": "5",
+          "how": "default",
+          "basis": "n = sigma_c / sigma_s, taken as given and not worked out from the moduli; GEC-13 (FHWA-NHI-16-027): for stone columns n is 'between 2.0 and 5.0' (Sec. 4.1.2.4); for rammed aggregate piers '4 to 45 for rigid footings' and 5 to 10 under embankments (p. 5-45). It sets the settlement reduction factor 1 / [1 + a_s (n - 1)], the improved bearing and the composite modulus",
+          "alternatives": [
+            "n from the moduli, n = E_c / E_s (equal-strain modular ratio; settlement_method 'weighted_modulus')",
+            "the settlement ratio off GEC-13's printed Priebe curve, Fig. 5-21 curve (4) (priebe_improvement_factor)"
+          ]
+        },
+        {
+          "what": "soil modulus E_s",
+          "chosen": "8000 kPa",
+          "how": "given",
+          "basis": "used only for the composite modulus E_comp = E_s [1 + a_s (n - 1)]"
+        },
+        {
+          "what": "column pattern",
+          "chosen": "triangular",
+          "how": "given",
+          "basis": "unit cell of equal area: d_e = 1.05 S (triangular) or 1.13 S (square), a_s = (d / d_e)^2",
+          "alternatives": [
+            "square (pattern 'square')"
+          ]
+        }
+      ],
+      "defaults_used": {
+        "n": 5.0,
+        "settlement_method": "stress_ratio"
+      }
     }
   },
   "slope_stability.search_critical_surface": {
@@ -1829,32 +2258,166 @@
       "n_slices": 25
     },
     "result": {
-      "n_surfaces_evaluated": 1658,
+      "n_surfaces_evaluated": 2300,
+      "n_rejected": {
+        "geometry": 0,
+        "nonconverged": 0,
+        "jagged": 0,
+        "ground_crossings": 70,
+        "m_alpha": 0
+      },
       "critical": {
-        "FOS": 1.5816,
+        "FOS": 1.5831,
         "is_stable": true,
         "method": "Bishop",
         "method_solved": true,
         "method_used": "Bishop",
         "surface_type": "circular",
-        "xc_m": 10.38,
-        "yc_m": 19.56,
-        "radius_m": 19.56,
+        "xc_m": 10.4,
+        "yc_m": 19.38,
+        "radius_m": 19.38,
         "x_entry_m": 10.0,
-        "x_exit_m": 27.45,
+        "x_exit_m": 27.36,
         "n_slices": 25,
         "has_seismic": false,
         "kh": 0.0
       },
       "governing_surface": "toe_circle",
       "candidates": {
-        "circular": 1.5868,
-        "toe_circle": 1.5816
+        "circular": 1.587,
+        "toe_circle": 1.5831,
+        "circle_above_toe": 1.584
       },
+      "search_ranges": {
+        "x_entry_range": [
+          10,
+          20
+        ],
+        "x_exit_range": [
+          25,
+          40
+        ],
+        "automatic": [],
+        "faces_covered": [
+          {
+            "toe": [
+              10,
+              0
+            ],
+            "crest": [
+              25,
+              10
+            ],
+            "lower_end_heights_above_toe": [
+              0.0,
+              0.1,
+              0.2,
+              0.3,
+              0.4,
+              0.5,
+              0.6,
+              0.7,
+              0.8,
+              0.9
+            ],
+            "height_refined": true
+          }
+        ]
+      },
+      "governing_location": {
+        "x_entry": 10.0,
+        "x_exit": 27.361,
+        "z_lowest": -0.004,
+        "depth": 4.181,
+        "layers": [
+          "clayey sand"
+        ],
+        "slope": {
+          "toe": [
+            10,
+            0
+          ],
+          "crest": [
+            25,
+            10
+          ],
+          "height": 10,
+          "toe_side_end_beyond_toe_H": -0.0,
+          "crest_side_end_behind_crest_H": 0.236,
+          "lowest_below_toe_H": 0.0
+        }
+      },
+      "choices": [
+        {
+          "what": "search",
+          "chosen": "circular, entry and exit windows ('entry_exit')",
+          "how": "given",
+          "alternatives": [
+            "circular, centre grid ('circular')",
+            "noncircular, random polylines ('noncircular')",
+            "noncircular, differential evolution ('noncircular_de')",
+            "noncircular, particle swarm ('pso')",
+            "noncircular, drawn toward the weakest layers ('weak_layer')"
+          ]
+        },
+        {
+          "what": "FOS method of the search",
+          "chosen": "bishop",
+          "how": "given"
+        },
+        {
+          "what": "surface families scored",
+          "chosen": "circular, toe circle, circle passing above the toe",
+          "how": "module",
+          "basis": "the lowest FOS of each is reported (candidates), and the one that governs (governing_surface); circles through each face's toe and passing above it, their lower end on the face from the toe up (search_ranges, faces_covered); the circles passing above the toe leave out any with reverse curvature; infinite slope: none scored, no face of c' = 0 soil",
+          "alternatives": [
+            "not tried: noncircular, by a noncircular search (surface_type 'noncircular_de')"
+          ]
+        },
+        {
+          "what": "search ranges",
+          "chosen": "given",
+          "how": "given",
+          "basis": "the result says where the reported surface lies (governing_location)"
+        },
+        {
+          "what": "slip surfaces left out for m_alpha",
+          "chosen": "none (m_alpha < 0.2 on a slice with phi' > 0 leaves a surface out)",
+          "how": "default",
+          "basis": "m_alpha = cos(a) (1 + tan(a) tan(phi) / F), at the method's own F, is the denominator of the normal force on a slice base; below 0.2 the factor of safety may be incorrect or misleading (Whitman & Bailey 1967), and Slide2 reports such a surface as invalid with its 'Check malpha < 0.2' setting on (its error -112), circular or not; slices with phi' = 0 are not checked: there m_alpha = cos(a) does not depend on F and the shear strength is c l whatever the normal force, so leaving such a surface out would only raise the minimum; on 25 slices the governing surface's FOS is 1.583 and its least m_alpha 0.80; on 50 slices, 1.583 and 0.79",
+          "alternatives": [
+            "the FOS of one such surface, with a warning: analyze_slope on that surface",
+            "every slice, phi' = 0 ones included, as Slide2 checks (m_alpha_rule='every_slice')"
+          ]
+        },
+        {
+          "what": "time budget of the search",
+          "chosen": "180 s",
+          "how": "default",
+          "basis": "the search finished inside it",
+          "alternatives": [
+            "another budget (time_budget_s)"
+          ]
+        }
+      ],
       "warnings": [
-        "A toe circle governs: the circle through the toe at (x = 10.00, z = 0.00) and the ground at x = 27.45 gives FOS 1.582, below the circular (search) minimum (1.587). The main search's entry/exit windows, centre grid or grid spacing kept it from this circle; the toe circle is reported.",
+        "A toe circle governs: the circle through the toe at (x = 10.00, z = 0.00) and the ground at x = 27.36 gives FOS 1.583, below the circular (search) minimum (1.587). The main search's entry/exit windows or the spacing of its entry/exit pairs kept it from this circle; the toe circle is reported.",
         "The critical surface's entry point (x = 10.00) lies on the edge of the given x_entry_range (10.00 to 20.00); a lower factor of safety may lie outside it. Widen the range to check."
-      ]
+      ],
+      "defaults_used": {
+        "gwt_points": "no water table: no pore water pressure: effective stress equals total stress",
+        "kh": 0.0,
+        "surcharge": 0.0,
+        "surcharges": "no surcharge zones: only the single surcharge, if any",
+        "tension_crack_depth": 0.0,
+        "reverse_curvature": "tension_crack",
+        "reinforcement_force": 0.0,
+        "x_range": "set from the slope's geometry: the circle-centre grid over the windows, from the slope's height and depth to the base",
+        "y_range": "set from the slope's geometry: the circle-centre grid over the windows, from the slope's height and depth to the base",
+        "time_budget_s": 180.0,
+        "m_alpha_rule": "frictional",
+        "tol": 0.0001
+      }
     }
   },
   "fem2d.fem2d_slope_srm": {
@@ -1923,6 +2486,23 @@
           3.6511,
           3.7202
         ]
+      },
+      "defaults_used": {
+        "depth": "the larger of 2 H and 10 m: the model's depth below the lowest ground surface",
+        "x_extend": "0.3 max(0.5 H, depth, 5 m) each side: the model's margin beyond the slope; wider over deep undrained soil, to reach Taylor's deep circle",
+        "mesh_check": false,
+        "gwt": "no water table: no pore water pressure",
+        "srm_field": "c_phi",
+        "blowup_factor": 15.0,
+        "srf_range": [
+          0.5,
+          3.0
+        ],
+        "n_gp": "the 3-point Gauss rule: for T6 elements",
+        "max_iter": 1000,
+        "n_load_steps": 2,
+        "t": 1.0,
+        "tol": 1e-05
       }
     }
   },
@@ -1942,7 +2522,10 @@
       "Ss_g": 1.2,
       "S1_g": 0.5,
       "SDS_g": 1.224,
-      "SD1_g": 0.75
+      "SD1_g": 0.75,
+      "defaults_used": {
+        "pga": "no site-adjusted PGA: Fpga and the site-adjusted PGA need the mapped PGA"
+      }
     }
   },
   "seismic_geotech.seismic_earth_pressure": {
@@ -1966,7 +2549,56 @@
       "phi_deg": 30.0,
       "delta_deg": 20.0,
       "kh": 0.2,
-      "kv": 0.0
+      "kv": 0.0,
+      "choices": [
+        {
+          "what": "KAE",
+          "chosen": "Mononobe-Okabe",
+          "how": "module",
+          "basis": "pseudo-static wedge, inertia toward the wall (UFC 3-220-20 Eq. 4-15; GEC-11 Vol I Eq. 7-6)"
+        },
+        {
+          "what": "kh",
+          "chosen": 0.2,
+          "how": "given",
+          "basis": "as input; not worked out from the PGA here"
+        },
+        {
+          "what": "kv",
+          "chosen": 0.0,
+          "how": "given",
+          "basis": "PAE = (gamma H^2 / 2)(1 - kv) KAE (UFC 3-220-20 Eq. 4-16, p. 215), kv positive upward; kv = 0 leaves the vertical inertia out"
+        },
+        {
+          "what": "wall friction delta",
+          "chosen": "20 deg",
+          "how": "given"
+        },
+        {
+          "what": "static KA",
+          "chosen": "Rankine, 0.3333",
+          "how": "module",
+          "basis": "vertical wall, level backfill, no wall friction; with a sloping backfill or a batter UFC 3-220-20 Sec. 4-4.4.1 takes KA from the same slope and batter. The other reading: Coulomb KA = 0.2973 with the same delta, i and beta as KAE (KAE at kh = 0); delta-PAE = PAE - PA takes the KA chosen",
+          "alternatives": [
+            "Coulomb, 0.2973 (delta 20.0 deg, i 0 deg, beta 0 deg: KAE at kh = 0)",
+            "KA given (KA)"
+          ]
+        },
+        {
+          "what": "height of delta-PAE",
+          "chosen": "0.6 H above the base",
+          "how": "module",
+          "basis": "Seed & Whitman (1970); UFC 3-220-20 Sec. 4-4.4.1 (level backfill, walls under 20 ft)",
+          "alternatives": [
+            "PAE at h/2 (GEC-11 Vol I Sec. 7.1.1, MSE walls)"
+          ]
+        }
+      ],
+      "defaults_used": {
+        "beta": 0.0,
+        "i": 0.0,
+        "KA": "Rankine Ka from phi: a vertical wall, level backfill and no wall friction; give KA for another case"
+      }
     }
   },
   "liquefaction.liquefaction_analysis": {
@@ -2016,6 +2648,9 @@
           "FC_pct": 10.0,
           "sigma_v_kPa": 54.0,
           "sigma_v_eff_kPa": 44.2,
+          "rd": 0.9743,
+          "MSF": 1.047,
+          "K_sigma": 1.086,
           "CSR": 0.2322,
           "CRR": 0.1604,
           "FOS_liq": 0.691,
@@ -2028,6 +2663,9 @@
           "FC_pct": 15.0,
           "sigma_v_kPa": 108.0,
           "sigma_v_eff_kPa": 68.8,
+          "rd": 0.931,
+          "MSF": 1.075,
+          "K_sigma": 1.048,
           "CSR": 0.2852,
           "CRR": 0.21,
           "FOS_liq": 0.736,
@@ -2040,6 +2678,9 @@
           "FC_pct": 8.0,
           "sigma_v_kPa": 171.0,
           "sigma_v_eff_kPa": 102.3,
+          "rd": 0.8804,
+          "MSF": 1.035,
+          "K_sigma": 0.999,
           "CSR": 0.2869,
           "CRR": 0.1247,
           "FOS_liq": 0.435,
@@ -2052,12 +2693,42 @@
           "FC_pct": 20.0,
           "sigma_v_kPa": 228.0,
           "sigma_v_eff_kPa": 129.9,
+          "rd": 0.8261,
+          "MSF": 1.106,
+          "K_sigma": 0.963,
           "CSR": 0.2827,
           "CRR": 0.2562,
           "FOS_liq": 0.906,
           "liquefiable": true
         }
-      ]
+      ],
+      "choices": [
+        {
+          "what": "triggering procedure",
+          "chosen": "Boulanger & Idriss (2014) SPT",
+          "how": "default",
+          "basis": "rd Eq. 2.14a, MSF Eqs. 2.20/2.21, K_sigma Eq. 2.16a, fines Eq. 2.23; rd, MSF and K_sigma are listed for each layer (layer_results)",
+          "alternatives": [
+            "NCEER / Youd et al. 2001 (method 'nceer2001')"
+          ]
+        },
+        {
+          "what": "CRR curve C0",
+          "chosen": "2.8",
+          "how": "default",
+          "basis": "2.8: B&I (2014)'s deterministic curve; a smaller C0 gives a higher CRR"
+        },
+        {
+          "what": "total vertical stress",
+          "chosen": "gamma x depth, each depth's own gamma",
+          "how": "module",
+          "basis": "the unit weight given at a depth applies over the whole depth above it; layers above with another unit weight are not summed"
+        }
+      ],
+      "defaults_used": {
+        "method": "bi2014",
+        "c_0": 2.8
+      }
     }
   },
   "reliability.monte_carlo": {
@@ -2216,7 +2887,12 @@
         3,
         1,
         2
-      ]
+      ],
+      "defaults_used": {
+        "correlation": "independent variables: no correlation between the random variables",
+        "sampling": "random",
+        "n_bins": 30
+      }
     }
   }
 }

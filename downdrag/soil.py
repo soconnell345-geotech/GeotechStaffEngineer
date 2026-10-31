@@ -14,7 +14,6 @@ References
 - UFC 3-220-20, Chapter 6.
 """
 
-import math
 import warnings
 from dataclasses import dataclass, field
 from typing import Optional, List
@@ -35,6 +34,38 @@ BETA_IN_CLAY_VALUES = (
     "from local experience, else from phi' by GEC-12 Table 7-9, p. 256 "
     "(after Fellenius 2014): clay 0.15-0.35 for phi' 25-30 deg; UFC "
     "3-220-20 Table 6-15, p. 414, the same for driven piles in clay")
+
+#: FHWA GEC-12 Table 7-9 (p. 256, after Fellenius 2014): the approximate
+#: range of beta and Nt by soil type, with the phi' range each goes with.
+#: UFC 3-220-20 prints the same values: Table 6-15 (p. 414, beta for driven
+#: piles, as pairs: "beta = 0.30 for phi' = 32 deg, beta = 0.90 for phi' =
+#: 40 deg" in sand) and Table 6-17 (p. 421, Nq, the Fellenius (2021)
+#: column). soil type -> ((phi' low, high) deg, (beta low, high), (Nt low,
+#: high)). axial_pile holds the same table (GM-282).
+FELLENIUS_TABLE = {
+    "clay": ((25.0, 30.0), (0.15, 0.35), (3.0, 30.0)),
+    "silt": ((28.0, 34.0), (0.25, 0.50), (20.0, 40.0)),
+    "sand": ((32.0, 40.0), (0.30, 0.90), (30.0, 150.0)),
+    "gravel": ((35.0, 45.0), (0.35, 0.80), (60.0, 300.0)),
+}
+
+#: A cohesionless layer's soil type in that table (``soil_class``); a
+#: cohesive layer's beta is given (GM-249) and its toe is Nt x cu.
+SOIL_CLASSES = ("silt", "sand", "gravel")
+
+
+def fellenius_table(soil: str, phi_deg: float) -> tuple:
+    """(beta, Nt, phi') from :data:`FELLENIUS_TABLE` for ``soil`` at phi'
+    (degrees), for GEC-12 Steps 2b and 5b ("use Table 7-9 to estimate beta
+    coefficient from phi' angle", p. 257): a straight line in phi' between
+    the soil type's range ends, the low beta and Nt at its low phi' (UFC
+    Table 6-15 pairs beta's ends with phi' that way). The line is this
+    module's reading; neither manual prints it. A phi' outside the range
+    takes the range's end; the phi' used is returned third."""
+    (p0, p1), (b0, b1), (n0, n1) = FELLENIUS_TABLE[soil]
+    phi = min(max(phi_deg, p0), p1)
+    w = (phi - p0) / (p1 - p0)
+    return b0 + w * (b1 - b0), n0 + w * (n1 - n0), phi
 
 
 @dataclass
@@ -61,8 +92,10 @@ class DowndragSoilLayer:
         (toe resistance Nt x cu, 9 cu unless Nt is given).
     beta : float, optional
         Beta coefficient for skin friction (fs = beta sigma'v). Cohesionless:
-        if None, computed from phi using Fellenius (1991): beta =
-        (1-sin(phi))*tan(phi). Cohesive: only with
+        if None, from phi' by GEC-12 Table 7-9 (UFC 3-220-20 Table 6-15, the
+        same values for driven piles) for the layer's ``soil_class``, linear
+        in phi' across the class's phi' range and held at its ends (sand
+        0.30-0.90 over 32-40 deg; GM-283). Cohesive: only with
         ``skin_friction_method="beta"``, which requires it.
     alpha : float, optional
         Alpha coefficient for cohesive skin friction (fs = alpha cu), Alpha
@@ -110,6 +143,11 @@ class DowndragSoilLayer:
         §6-5.4.1; FHWA GEC-12 §7.2.1.3.4) and needs ``beta`` (GEC-12
         Table 7-9: clay 0.15-0.35). A cohesionless layer takes the Beta
         method only. :attr:`fs_method` is the method used.
+    soil_class : str, optional
+        A cohesionless layer's soil type in GEC-12 Table 7-9 (UFC 3-220-20
+        Tables 6-15 and 6-17): ``"silt"``, ``"sand"`` or ``"gravel"``, for
+        its beta and, at the toe, Nt where they are not given. None
+        (default) = sand. A cohesive layer does not take it.
     """
     thickness: float
     soil_type: str
@@ -129,6 +167,13 @@ class DowndragSoilLayer:
     settling: bool = False
     description: str = ""
     skin_friction_method: Optional[str] = None
+    soil_class: Optional[str] = None
+
+    @property
+    def table_soil(self) -> str:
+        """The layer's soil type in GEC-12 Table 7-9: ``soil_class``, else
+        sand (a cohesionless layer)."""
+        return self.soil_class or "sand"
 
     @property
     def fs_method(self) -> str:
@@ -218,6 +263,19 @@ class DowndragSoilLayer:
             raise ValueError(
                 f"Cohesionless layer must have phi > 0, got {self.phi}"
             )
+        if self.soil_class is not None:
+            if self.soil_type == "cohesive":
+                raise ValueError(
+                    "A cohesive layer does not take soil_class: its beta is "
+                    f"given with skin_friction_method 'beta' "
+                    f"({BETA_IN_CLAY_VALUES}) and a toe in it takes Nt x cu. "
+                    "Leave soil_class out.")
+            self.soil_class = self.soil_class.lower()
+            if self.soil_class not in SOIL_CLASSES:
+                raise ValueError(
+                    f"soil_class of a cohesionless layer must be one of "
+                    f"{list(SOIL_CLASSES)} (GEC-12 Table 7-9's soil types), "
+                    f"got '{self.soil_class}'")
         self._check_skin_friction_inputs()
         if self.soil_type == "cohesive":
             # The modified indices whenever Cc and e0 are given, settling or
@@ -261,11 +319,15 @@ class DowndragSoilLayer:
                         "Cohesionless settling layer must have E_s > 0"
                     )
 
-        # Compute beta from phi if not provided (cohesionless; a cohesive
-        # layer has no phi, and the Beta method there needs beta given)
-        if self.beta is None and self.phi > 0:
-            phi_rad = math.radians(self.phi)
-            self.beta = (1.0 - math.sin(phi_rad)) * math.tan(phi_rad)
+        # beta from phi' by GEC-12 Table 7-9 where it is not given
+        # (cohesionless; a cohesive layer has no phi, and the Beta method
+        # there needs beta given). beta_from_table keeps (soil type, phi'
+        # used) for the result's choices; None when beta was given.
+        self.beta_from_table = None
+        if self.beta is None and self.soil_type == "cohesionless":
+            self.beta, _, phi_used = fellenius_table(self.table_soil,
+                                                     self.phi)
+            self.beta_from_table = (self.table_soil, phi_used)
         # alpha left out stays None: the analysis reads it off its chart,
         # which needs the pile's width and length (GM-255)
 

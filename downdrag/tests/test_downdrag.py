@@ -20,7 +20,7 @@ import pytest
 
 from downdrag.soil import DowndragSoilLayer, DowndragSoilProfile
 from downdrag.analysis import (
-    DowndragAnalysis, _consolidation_settlement, _Nt_from_phi,
+    DowndragAnalysis, _consolidation_settlement,
     _settlement_clay, _settlement_sand_elastic,
 )
 from downdrag.results import DowndragResult
@@ -34,14 +34,14 @@ class TestDowndragSoilLayer:
     """Verify DowndragSoilLayer validation and defaults."""
 
     def test_cohesionless_layer(self):
-        """Cohesionless layer with phi should compute beta automatically."""
+        """A cohesionless layer works beta out from phi' by GEC-12 Table
+        7-9 (GM-283): sand 0.30-0.90 over 32-40 deg, linear in phi'."""
         layer = DowndragSoilLayer(
             thickness=5.0, soil_type="cohesionless",
-            unit_weight=19.0, phi=30.0,
+            unit_weight=19.0, phi=36.0,
         )
-        phi_rad = math.radians(30.0)
-        expected_beta = (1.0 - math.sin(phi_rad)) * math.tan(phi_rad)
-        assert abs(layer.beta - expected_beta) < 1e-10
+        assert layer.beta == pytest.approx(0.30 + 0.5 * 0.60, abs=1e-12)
+        assert layer.beta_from_table == ("sand", 36.0)
 
     def test_cohesive_layer(self):
         """A cohesive layer leaves alpha out for the analysis to read off
@@ -150,13 +150,16 @@ class TestSkinFriction:
     """Verify beta and alpha skin friction calculations."""
 
     def test_beta_from_phi_30(self):
-        """Beta for phi=30 should be (1-sin30)*tan30 = 0.5*0.5774 = 0.2887."""
+        """Beta for a sand at phi' 30 deg: GEC-12 Table 7-9's sand row
+        starts at 32 deg, so beta is held at the row's end, 0.30 (GM-283;
+        before, (1 - sin 30)(tan 30) = 0.2887, a formula neither GEC-12
+        nor UFC 3-220-20 prints for driven piles)."""
         layer = DowndragSoilLayer(
             thickness=5.0, soil_type="cohesionless",
             unit_weight=19.0, phi=30.0,
         )
-        expected = (1.0 - math.sin(math.radians(30))) * math.tan(math.radians(30))
-        assert abs(layer.beta - expected) < 1e-6
+        assert layer.beta == pytest.approx(0.30, abs=1e-12)
+        assert layer.beta_from_table == ("sand", 32.0)
 
     def test_beta_override(self):
         """Explicit beta should override computed value."""
@@ -353,7 +356,9 @@ class TestNeutralPlane:
         plane". Never the pile toe with the whole shaft counted as drag.
         """
         analysis = self._make_standard_case()
-        analysis.Q_dead = 1000.0   # toe + full shaft = 644 kN
+        # toe + full shaft = 1,056 kN (644 kN before GM-283: beta and Nt
+        # from GEC-12 Table 7-9 in place of an unprinted formula and curve)
+        analysis.Q_dead = 1200.0
         result = analysis.compute()
         assert result.neutral_plane_method == "none"
         assert result.dragload == 0.0
@@ -652,12 +657,16 @@ class TestFullAnalysis:
         assert 'axial_load_kN' in d
         assert isinstance(d['axial_load_kN'], list)
 
-    def test_Nt_from_phi(self):
-        """Nt factor should increase with friction angle."""
-        Nt_25 = _Nt_from_phi(25.0)
-        Nt_30 = _Nt_from_phi(30.0)
-        Nt_35 = _Nt_from_phi(35.0)
-        assert Nt_25 < Nt_30 < Nt_35
+    def test_Nt_rises_with_phi(self):
+        """The toe's Nt from GEC-12 Table 7-9 rises with phi' across the
+        sand row (GM-283)."""
+        def nt(phi):
+            soil = DowndragSoilProfile(layers=[DowndragSoilLayer(
+                thickness=20.0, soil_type="cohesionless", unit_weight=19.0,
+                phi=phi)], gwt_depth=1.0)
+            return DowndragAnalysis(soil=soil, pile_length=15.0,
+                                    pile_diameter=0.3).toe_reading()["Nt"]
+        assert nt(33.0) < nt(36.0) < nt(39.0)
 
 
 # =============================================================================
@@ -1005,17 +1014,18 @@ class TestGeotechnicalULS:
         assert result.geotechnical_ok is False
 
 
-def test_Nt_from_phi_consistent_with_gec12_table_7_9():
-    """Provenance pin (audit): _Nt_from_phi is a piecewise Nt(phi) interpolation
-    duplicated from axial_pile, NOT a literal copy of GEC-12 Table 7-9 (Nt RANGES
-    by soil type). Verified 2026-07-12 against the in-house GEC-12 reference
-    (geotech_references/gec_12/tables.py _TABLE_7_9: clay 3-30, silt 20-40,
-    sand 30-150, gravel 60-300). Pins the transcription against drift."""
-    from downdrag.analysis import _Nt_from_phi
-    assert 20 <= _Nt_from_phi(28) <= 40     # silt band
-    assert 30 <= _Nt_from_phi(33) <= 150    # sand band
-    assert 30 <= _Nt_from_phi(38) <= 150    # sand upper band
-    assert _Nt_from_phi(25) <= 30           # within clay range top
+def test_table_7_9_transcription():
+    """Provenance pin: the module's table is GEC-12 Table 7-9 (p. 256) as
+    printed, the same values as UFC 3-220-20 Table 6-15 (p. 414) and Table
+    6-17's Fellenius (2021) column (p. 421). It replaced (GM-283) a
+    piecewise Nt(phi) curve neither manual prints."""
+    from downdrag.soil import FELLENIUS_TABLE
+    assert FELLENIUS_TABLE == {
+        "clay": ((25.0, 30.0), (0.15, 0.35), (3.0, 30.0)),
+        "silt": ((28.0, 34.0), (0.25, 0.50), (20.0, 40.0)),
+        "sand": ((32.0, 40.0), (0.30, 0.90), (30.0, 150.0)),
+        "gravel": ((35.0, 45.0), (0.35, 0.80), (60.0, 300.0)),
+    }
 
 
 class TestNeutralPlaneWhenCurvesDoNotCross:
@@ -2250,7 +2260,8 @@ class TestWhenTheTwoRulesDisagree:
         assert r.below_toe["other_criterion"]["pile_settlement_mm"] == \
             pytest.approx(17.60, abs=0.01)
         # deep clay under a wide fill: the pile head settles with the soil
-        # at the neutral plane (3.30 m, force equilibrium), 885.0 mm by
+        # at the neutral plane (3.26 m, force equilibrium; 3.30 m before
+        # GM-283's sand beta 0.30 in place of 0.289), 885.0 mm by
         # either rule. The rules differ only below the toe, where the toe
         # load (9 c_u A = 28.3 kN) is taken 0.86 m (UFC) or 1.12 m (GEC-12)
         # down, both stopped by their own criterion far above the bottom of
@@ -2258,7 +2269,10 @@ class TestWhenTheTwoRulesDisagree:
         # does not reach the head.
         r = self._deep_clay().compute()
         bt, o = r.below_toe, r.below_toe["other_criterion"]
-        assert r.neutral_plane_depth == pytest.approx(3.30, abs=0.01)
+        # by hand (GM-283): 300 + D = 28.27 + 345.58 + (131.14 - D), D =
+        # beta P [69.5 + 79 x + 4.595 x^2] with beta 0.30, P = 0.4 pi, x =
+        # z - 1: x = 2.2638
+        assert r.neutral_plane_depth == pytest.approx(3.2638, abs=1e-3)
         assert bt["toe_load_stopped_by"] == o["toe_load_stopped_by"] == \
             "criterion"
         assert bt["toe_load_counted_to_m"] == pytest.approx(15.865, abs=1e-3)
@@ -2396,8 +2410,13 @@ class TestWhenTheTwoRulesDisagree:
 
     def test_choices_dict_and_summary(self):
         r = self._sand_below().compute()
-        # then the clay's skin friction method (GM-249) and alpha (GM-255)
-        rule, limit, clay, alpha = r.choices
+        # then the toe's Nt and the sand's beta (GM-283), the clay's skin
+        # friction method (GM-249) and alpha (GM-255)
+        rule, limit, nt, clay, beta, alpha = r.choices
+        assert nt["what"] == "toe bearing capacity factor Nt"
+        assert (nt["chosen"], nt["how"]) == ("Nt 40", "given")
+        assert beta["what"] == "beta in the cohesionless soil, 10-12 m"
+        assert beta["chosen"] == "beta 0.600 at 10-12 m (sand, phi' 36 deg)"
         assert clay["what"].startswith("skin friction method in the "
                                        "cohesive soil")
         assert alpha["what"] == "alpha in the cohesive soil, 0-10 m"
@@ -2582,7 +2601,7 @@ class TestBetaInClay:
     def test_the_alpha_method_stays_the_default(self):
         r = _f67().compute()
         assert np.allclose(r.unit_skin_friction[self._in_clay(r)], 25.0)
-        assert r.drag_force == pytest.approx(543.7, abs=0.1)
+        assert r.drag_force == pytest.approx(545.1, abs=0.1)
         (c,) = _friction_choices(r)
         assert c["what"] == ("skin friction method in the cohesive soil, "
                              "2-14 m")
@@ -2615,10 +2634,12 @@ class TestBetaInClay:
 
     def test_the_numbers_move_with_beta(self):
         """F67 re-pinned: the plane stays at the bearing sand (14.0 m);
-        the drag force is 543.7 kN by alpha (1.0 x 25 kPa), 654.6 kN by
-        beta 0.25 and 772.6 kN by beta 0.30 (the helpers' hand-built
-        inputs gave 684 and 790 kN)."""
-        for beta, drag in ((0.25, 654.6), (0.30, 772.6)):
+        the drag force is 545.1 kN by alpha (1.0 x 25 kPa), 656.0 kN by
+        beta 0.25 and 774.2 kN by beta 0.30 (the helpers' hand-built
+        inputs gave 684 and 790 kN). Before GM-283 543.7, 654.6 and 772.6
+        kN: the 2 m of sand on top took beta 0.294, (1 - sin 32)(tan 32),
+        not Table 7-9's 0.30 (+0.0063 x 1.6 m x 136 kPa m = +1.36 kN)."""
+        for beta, drag in ((0.25, 656.0), (0.30, 774.2)):
             r = _f67(dict(skin_friction_method="beta", beta=beta)).compute()
             assert r.neutral_plane_depth == pytest.approx(13.99, abs=0.01)
             assert r.drag_force == pytest.approx(drag, abs=0.1), beta
@@ -2692,7 +2713,7 @@ class TestBetaInClay:
     def test_a_beta_clay_needs_cu_only_at_the_toe(self):
         r = _f67(dict(skin_friction_method="beta", beta=0.25,
                       cu=0.0)).compute()
-        assert r.drag_force == pytest.approx(654.6, abs=0.1)
+        assert r.drag_force == pytest.approx(656.0, abs=0.1)
         soil = DowndragSoilProfile(layers=[
             DowndragSoilLayer(thickness=20.0, soil_type="cohesive",
                               unit_weight=17.0, skin_friction_method="beta",

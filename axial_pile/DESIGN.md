@@ -14,7 +14,8 @@ open-end pipe plugging; uplift.
 - GEC-12 Vol 3 (FHWA-NHI-16-064), Appendix D: the worked example used for
   validation (V-001 Table D-6, V-002 Table D-100).
 - Nordlund (1963, 1979); Tomlinson (1979, 1994); API RP 2A (1993);
-  Paikowsky and Whitman (1990); Fellenius (1991) for beta from phi'.
+  Paikowsky and Whitman (1990); Fellenius (2014), through GEC-12 Table
+  7-9, for the beta method's ranges of beta and Nt.
 
 ## Files
 - `nordlund.py` — the Nordlund charts and equations: `displaced_volume`,
@@ -99,8 +100,10 @@ factored resistance (`Q_factored`, `Q_uplift_factored`,
 beta and Nt from local experience first (a layer's `beta`, `Nt`, Steps 2a
 and 5a), else Table 7-9 (Steps 2b and 5b: "use Table 7-9 to estimate beta
 coefficient from phi' angle"), by the layer's soil type (`soil_class`; clay
-for a cohesive layer and sand for a cohesionless one by default), linear in
-phi' across the type's phi' range and held at its ends with a note: clay
+for a cohesive layer and sand for a cohesionless one by default), a
+straight line in phi' between the type's range ends (this module's
+reading: Table 7-9 prints only the ranges) and held at its ends with a
+note: clay
 25-30 deg, beta 0.15-0.35, Nt 3-30; silt 28-34, 0.25-0.50, 20-40; sand
 32-40, 0.30-0.90, 30-150; gravel 35-45, 0.35-0.80, 60-300 (p. 256). A clay
 toe takes `cohesive_Nt` (default 3: "the use of a relatively low Nt

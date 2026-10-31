@@ -273,11 +273,61 @@ def test_beta_from_table_7_9_by_soil_type():
     assert r.toe_details["N_t"] == pytest.approx(180.0)
     c = _by_what(r)["beta and Nt (beta method)"]
     assert "Steps 2b and 5b" in c["basis"]
-    assert "gravel beta 0.35-0.8" in c["chosen"]
+    assert "the gravel layers' beta 0.35-0.8" in c["chosen"]
+    assert "module's reading" in c["chosen"]
+    # the line between Table 7-9's ends is the module's reading; the
+    # printed ends are the alternatives (GM-283 review)
+    assert "this module's reading, not printed" in c["basis"]
+    assert "gravel beta 0.35 at 35 deg, 0.80 at 45 deg" in c["basis"]
+    assert ("the gravel range's low end in Table 7-9, beta 0.35 (phi' 35 "
+            "deg), the least resistance: give the gravel layers beta 0.35"
+            ) in c["alternatives"]
+    assert ("the gravel range's low end in Table 7-9 at the toe, Nt 60 "
+            "(phi' 35 deg), the least resistance: give the toe layer Nt 60"
+            ) in c["alternatives"]
     # GM-282: Table 7-9 is the default; the unprinted 'from_phi' is gone
     assert c["how"] == "default"
     assert (base.Q_skin, base.Q_tip) == (r.Q_skin, r.Q_tip)
     assert base.layer_breakdown[1]["beta_source"] == "Table 7-9 (sand)"
+
+
+def test_nt_only_for_the_soil_the_toe_sits_in():
+    """A clay-sand-gravel run with the toe in gravel: beta per soil type,
+    Nt only for gravel (it said 'the toe layer Nt 3/30/150' for every
+    soil); a toe Nt given, or a clay toe's cohesive_Nt, offers no Nt
+    alternative (GM-283 re-check). Made-up profile."""
+    pile = make_pipe_pile(0.5, 0.010, closed_end=True)
+
+    def run(toe_nt=None):
+        soil = AxialSoilProfile(layers=[
+            AxialSoilLayer(6, "cohesive", 17.5, cohesion=45,
+                           friction_angle=27),
+            AxialSoilLayer(7, "cohesionless", 18.5, friction_angle=34),
+            AxialSoilLayer(9, "cohesionless", 20.5, friction_angle=41,
+                           soil_class="gravel", Nt=toe_nt)], gwt_depth=1.5)
+        return AxialPileAnalysis(pile=pile, soil=soil, pile_length=18,
+                                 method="beta",
+                                 beta_coefficients="table_7_9").compute()
+
+    c = _by_what(run())["beta and Nt (beta method)"]
+    for soil, lo, hi in (("clay", 0.15, 0.35), ("sand", 0.3, 0.9),
+                         ("gravel", 0.35, 0.8)):
+        assert f"the {soil} layers' beta {lo:g}-{hi:g}" in c["chosen"]
+    assert "the toe in gravel, Nt 60-300" in c["chosen"]
+    nt_alts = [a for a in c["alternatives"] if "Nt" in a]
+    assert nt_alts == [
+        "the gravel range's low end in Table 7-9 at the toe, Nt 60 (phi' 35 "
+        "deg), the least resistance: give the toe layer Nt 60",
+        "the gravel range's high end in Table 7-9 at the toe, Nt 300 (phi' "
+        "45 deg), the most resistance: give the toe layer Nt 300",
+        "a layer's own beta and Nt from local experience (Steps 2a, 5a)"]
+    assert "Nt 3" not in c["chosen"] and "Nt 30-" not in c["chosen"]
+    # the toe's Nt given: beta alternatives only
+    c = _by_what(run(toe_nt=95.0))["beta and Nt (beta method)"]
+    assert "Nt" not in c["chosen"]
+    assert [a for a in c["alternatives"] if "Nt" in a] == []
+    assert c["alternatives"][-1] == (
+        "a layer's own beta from local experience (Step 2a)")
 
 
 def test_a_clay_toe_keeps_cohesive_nt_and_a_silt_toe_takes_the_table():
