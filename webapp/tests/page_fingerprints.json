@@ -109,7 +109,7 @@
          }
         ],
         "name": "references",
-        "system_prompt": "5e1eeec88131afa2",
+        "system_prompt": "cafd8f2dc17535a2",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -496,8 +496,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "d789f5fe6df6d73f",
-      "system_prompt_chars": 26207,
+      "system_prompt": "b86c983eeedc785d",
+      "system_prompt_chars": 26215,
       "tool_order": [
        "list_agents",
        "list_methods",
