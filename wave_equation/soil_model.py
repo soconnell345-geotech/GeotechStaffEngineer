@@ -33,6 +33,20 @@ Two Smith damping variants are provided (``damping_model``), as UFC
 Typical quakes and damping factors: GEC-12 Vol 2 Sec. 12.6.7, pp.
 211-212, and UFC 3-220-20 p. 487 (see SmithSoilModel).
 
+The shaft resistance acts over the pile's embedded length, the toe
+resistance at the pile toe (GM-301). ``SoilSetup.embedded_length`` is the
+penetration below grade (GEC-12 Vol 2 p. 224: "Penetration refers to the
+analyzed pile toe penetration below grade"; Example 6, p. 182, a 66 ft pile
+with "an embedded length of 52.5 feet"); left out, the whole pile. Over it
+the shaft resistance is spread by ``shaft_distribution``, as GEC-12's
+examples print it: "uniform" (Example 5, p. 179: "92% uniform shaft
+resistance") or "triangular", rising linearly from none at grade to its
+largest at the toe (Example 1, p. 162, Fig. 12-3; Example 6, p. 182: "The
+shaft resistance will be distributed triangularly along the embedded
+portion of the pile shaft"; Vol 2 p. 33, "linearly increasing soil
+resistance distribution (triangular)"). Each segment takes the share of
+the distribution over its length.
+
 All units are SI: kN, m, seconds.
 
 References:
@@ -47,6 +61,10 @@ from typing import Optional
 import numpy as np
 
 _DAMPING_MODELS = ("smith", "smith_viscous")
+
+#: How the shaft resistance is spread over the embedded length (GM-301),
+#: as GEC-12 Vol 2's examples print it (pp. 162, 179, 182).
+SHAFT_DISTRIBUTIONS = ("uniform", "triangular")
 
 
 @dataclass
@@ -252,6 +270,15 @@ class SoilSetup:
     damping_model : str
         "smith" (default, damping ~ mobilized R_static) or
         "smith_viscous" (damping ~ R_ultimate). See SmithSoilModel.
+    shaft_distribution : str
+        How the shaft resistance is spread over the embedded length
+        (GM-301): "uniform" (default; GEC-12 Vol 2 Example 5, p. 179) or
+        "triangular", from none at grade to its largest at the toe
+        (Examples 1 and 6, pp. 162, 182). See the module docstring.
+    embedded_length : float, optional
+        The pile's penetration below grade (m); the shaft resistance acts
+        only below grade. None (default): the whole pile. No more than the
+        pile length (GEC-12 Vol 2 p. 227).
     """
     R_ultimate: float
     skin_fraction: float = 0.5
@@ -260,6 +287,8 @@ class SoilSetup:
     damping_side: float = 0.16
     damping_toe: float = 0.49
     damping_model: str = "smith"
+    shaft_distribution: str = "uniform"
+    embedded_length: Optional[float] = None
 
     def __post_init__(self):
         if not 0 <= self.skin_fraction <= 1:
@@ -271,6 +300,14 @@ class SoilSetup:
                 f"damping_model must be one of {_DAMPING_MODELS}, "
                 f"got {self.damping_model!r}"
             )
+        if self.shaft_distribution not in SHAFT_DISTRIBUTIONS:
+            raise ValueError(
+                f"shaft_distribution must be one of {SHAFT_DISTRIBUTIONS}, "
+                f"got {self.shaft_distribution!r}")
+        if self.embedded_length is not None and not self.embedded_length > 0:
+            raise ValueError(
+                f"embedded_length must be more than 0 m, got "
+                f"{self.embedded_length}")
 
     @property
     def R_skin(self) -> float:
@@ -293,13 +330,47 @@ class SoilSetup:
         f = self.skin_fraction
         return f * self.quake_side + (1.0 - f) * self.quake_toe
 
+    def shaft_shares(self, segment_lengths) -> list:
+        """Each segment's share of the shaft resistance (GM-301), from the
+        pile head down: the distribution's integral over the part of the
+        segment below grade, over its integral over the embedded length.
+        Grade is ``embedded_length`` above the pile toe (the pile head when
+        None). "uniform": the segment's length below grade over the
+        embedded length L_e; "triangular", the resistance per metre rising
+        linearly from none at grade: ((b - t)^2 - (max(a, t) - t)^2) / L_e^2
+        for a segment from a to b below the pile head, grade at t."""
+        lengths = [float(x) for x in segment_lengths]
+        L = sum(lengths)
+        Le = L if self.embedded_length is None else self.embedded_length
+        if Le > L * (1.0 + 1e-9):
+            raise ValueError(
+                f"embedded_length {Le:g} m is more than the pile length "
+                f"{L:g} m (GEC-12 Vol 2 p. 227: the penetration 'cannot be "
+                f"greater than the pile length')")
+        Le = min(Le, L)
+        t = L - Le
+        shares, a = [], 0.0
+        for seg in lengths:
+            b = a + seg
+            top = max(a, t)
+            if b <= t:
+                shares.append(0.0)
+            elif self.shaft_distribution == "uniform":
+                shares.append((b - top) / Le)
+            else:
+                shares.append(((b - t) ** 2 - (top - t) ** 2) / Le ** 2)
+            a = b
+        return shares
+
     def create_segment_models(
-        self, n_segments: int
+        self, n_segments: int, segment_lengths=None
     ) -> tuple:
         """Create soil spring models for each pile segment.
 
-        Distributes skin friction uniformly along the pile.
-        Toe resistance is applied to the last segment only.
+        Spreads the skin friction over the embedded length by
+        ``shaft_distribution`` (``shaft_shares``; GM-301); uniformly along
+        the whole pile when neither is set, as before. Toe resistance is
+        applied to the last segment only.
         The returned models are freshly constructed (zero plastic
         offset) — one set per blow.
 
@@ -307,6 +378,9 @@ class SoilSetup:
         ----------
         n_segments : int
             Number of pile segments.
+        segment_lengths : sequence of float, optional
+            Each segment's length (m), from the pile head; needed with an
+            ``embedded_length`` or a "triangular" distribution.
 
         Returns
         -------
@@ -316,13 +390,31 @@ class SoilSetup:
             End bearing spring at pile toe (no-tension: it gaps on
             rebound rather than pulling the pile back).
         """
-        # Uniform skin friction distribution
-        R_per_segment = self.R_skin / n_segments if n_segments > 0 else 0
+        whole = self.embedded_length is None
+        if not whole and segment_lengths is not None:
+            # an embedded length given as the pile's own: the whole pile
+            L = float(sum(segment_lengths))
+            if self.embedded_length > L * (1.0 + 1e-9):
+                self.shaft_shares(segment_lengths)        # refuses it
+            whole = abs(self.embedded_length - L) <= 1e-9 * L
+        if whole and self.shaft_distribution == "uniform":
+            # Uniform skin friction over the whole pile
+            R_per_segment = (self.R_skin / n_segments if n_segments > 0
+                             else 0)
+            R_segments = [R_per_segment] * n_segments
+        else:
+            if segment_lengths is None or \
+                    len(segment_lengths) != n_segments:
+                raise ValueError(
+                    "create_segment_models needs the segments' lengths with "
+                    "an embedded_length or a triangular shaft distribution")
+            R_segments = [self.R_skin * s
+                          for s in self.shaft_shares(segment_lengths)]
 
         side_models = [
-            SmithSoilModel(R_per_segment, self.quake_side, self.damping_side,
+            SmithSoilModel(R_seg, self.quake_side, self.damping_side,
                            damping_model=self.damping_model)
-            for _ in range(n_segments)
+            for R_seg in R_segments
         ]
 
         toe_model = SmithSoilModel(

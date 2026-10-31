@@ -1,6 +1,7 @@
 """Wave equation adapter — Smith 1-D (bearing graph, drivability)."""
 
 from funhouse_agent.adapters import (declare_applies_when,
+                                     declare_when_absent,
                                      reject_unknown_params, require_params)
 from wave_equation import (
     Hammer, get_hammer, list_hammers, Cushion, make_cushion_from_properties,
@@ -14,6 +15,10 @@ from wave_equation.soil_model import quake_weighting_choice
 _STEEL_UNIT_WEIGHT = 77.3
 #: Toe Smith damping, 0.15 s/ft (GEC-12 Vol 2 p. 211).
 _DAMPING_TOE = 0.49
+
+# The embedded length and the shaft resistance's distribution over it
+# (GM-301), single blow and bearing graph.
+_EMBEDMENT_PARAMS = ("embedded_length", "shaft_distribution")
 
 # Hammer + cushion params shared by every method's valid set.
 _HAMMER_PARAMS = ("hammer_name", "hammer_custom_name", "ram_weight", "stroke",
@@ -58,7 +63,7 @@ def run_bearing_graph(params, *, method="bearing_graph"):
             "pile_length", "pile_area", "pile_E", "segment_length",
             "pile_unit_weight", "skin_fraction", "quake_side", "quake_toe",
             "damping_side", "damping_toe", "R_min", "R_max", "R_step",
-            "helmet_weight", "damping_model"),
+            "helmet_weight", "damping_model") + _EMBEDMENT_PARAMS,
         method=method)
     require_params(params, ["pile_length", "pile_area"], method=method)
     hammer = _build_hammer(params)
@@ -84,6 +89,9 @@ def run_bearing_graph(params, *, method="bearing_graph"):
         "R_step": params.get("R_step", 200.0),
         "helmet_weight": params.get("helmet_weight", 5.0),
         "damping_model": params.get("damping_model", "smith"),
+        # GM-301: the shaft resistance over the embedded length
+        "embedded_length": params.get("embedded_length"),
+        "shaft_distribution": params.get("shaft_distribution", "uniform"),
     }
     bg = generate_bearing_graph(
         hammer, cushion, pile, skin_fraction=used["skin_fraction"],
@@ -92,6 +100,8 @@ def run_bearing_graph(params, *, method="bearing_graph"):
         R_min=used["R_min"], R_max=used["R_max"], R_step=used["R_step"],
         helmet_weight=used["helmet_weight"],
         damping_model=used["damping_model"],
+        shaft_distribution=used["shaft_distribution"],
+        embedded_length=used["embedded_length"],
     )
     return bg, used
 
@@ -106,7 +116,9 @@ def _run_drivability(params):
         _HAMMER_PARAMS + _CUSHION_PARAMS + (
             "pile_area", "pile_E", "pile_unit_weight", "depths", "R_at_depth",
             "skin_fractions", "segment_length", "helmet_weight",
-            "refusal_blow_count", "damping_model"),
+            "refusal_blow_count", "damping_model", "quake_side",
+            "quake_toe", "damping_side", "damping_toe", "pile_length",
+            "shaft_distribution"),
         method="drivability")
     require_params(params, ["pile_area", "depths", "R_at_depth"],
                    method="drivability")
@@ -121,6 +133,15 @@ def _run_drivability(params):
         refusal_blow_count=params.get("refusal_blow_count",
                                       REFUSAL_BLOWS_PER_M),
         damping_model=params.get("damping_model", "smith"),
+        # GM-300: the quakes and damping factors, as the other tools take
+        quake_side=params.get("quake_side", 0.0025),
+        quake_toe=params.get("quake_toe", 0.0025),
+        damping_side=params.get("damping_side", 0.16),
+        damping_toe=params.get("damping_toe", _DAMPING_TOE),
+        # GM-301: the pile in the leads at every depth, and the shaft
+        # resistance's distribution over the embedded length
+        pile_length=params.get("pile_length"),
+        shaft_distribution=params.get("shaft_distribution", "uniform"),
     )
     return result.to_dict()
 
@@ -141,7 +162,7 @@ def _run_single_blow(params):
             "pile_length", "pile_area", "pile_E", "segment_length",
             "pile_unit_weight", "R_total", "R_ultimate", "skin_fraction",
             "quake_side", "quake_toe", "damping_side", "damping_toe",
-            "damping_model", "helmet_weight"),
+            "damping_model", "helmet_weight") + _EMBEDMENT_PARAMS,
         method="single_blow")
     require_params(params, ["pile_length", "pile_area"], method="single_blow")
     hammer = _build_hammer(params)
@@ -165,6 +186,8 @@ def _run_single_blow(params):
         damping_side=params.get("damping_side", 0.16),
         damping_toe=params.get("damping_toe", _DAMPING_TOE),
         damping_model=params.get("damping_model", "smith"),
+        shaft_distribution=params.get("shaft_distribution", "uniform"),
+        embedded_length=params.get("embedded_length"),
     )
     result = simulate_blow(
         hammer, cushion, pile, soil,
@@ -235,6 +258,13 @@ _SOIL_DOC = {
     "damping_toe": {"type": "float", "required": False, "default": 0.49, "description": "Toe Smith damping (s/m): about 0.15 s/ft (0.49 s/m) for most soils (GEC-12 Vol 2 p. 211); lower on hard rock, e.g. 0.05 s/ft (0.16 s/m) (p. 212)."},
 }
 
+# The embedded length and the shaft resistance's distribution (GM-301).
+_SHAFT_DISTRIBUTION_DOC = {"type": "str", "required": False, "default": "uniform", "allowed_values": ["uniform", "triangular"], "description": "How the shaft resistance (skin_fraction of R_ult) is spread over the embedded length, as GEC-12 Vol 2's examples print it: 'uniform' (default), the same per metre (Example 5, p. 179: '92% uniform shaft resistance'); 'triangular', rising linearly from none at grade to its largest at the pile toe (Example 1, p. 162, Fig. 12-3; Example 6, p. 182: 'distributed triangularly along the embedded portion of the pile shaft'). A distribution from a static analysis layer by layer (Example 4, Fig. 12-9) is not offered. GEC-12 Vol 2 p. 212: the stresses, tension above all, are sensitive to the distribution."}
+_EMBEDMENT_DOC = {
+    "embedded_length": {"type": "float", "required": False, "description": "The pile's embedded length, its penetration below grade (m), at most pile_length: the shaft resistance acts only below grade, the pile above it standing free (GEC-12 Vol 2 p. 224: 'Penetration refers to the analyzed pile toe penetration below grade'; Example 1, p. 162, a 65 ft pile driven 62 ft; Example 6, p. 182, 66 ft with 'an embedded length of 52.5 feet'). Left out: pile_length, the pile embedded over its full length."},
+    "shaft_distribution": _SHAFT_DISTRIBUTION_DOC,
+}
+
 METHOD_INFO = {
     "single_blow": {
         "category": "Wave Equation",
@@ -247,6 +277,7 @@ METHOD_INFO = {
             "skin_fraction": {"type": "float", "required": False, "default": 0.5, "description": "Skin friction fraction."},
             "damping_model": {"type": "str", "required": False, "default": "smith", "allowed_values": ["smith", "smith_viscous"], "description": _DAMPING_MODEL_DOC},
             **_SOIL_DOC,
+            **_EMBEDMENT_DOC,
             **_HAMMER_CUSHION_DOC,
         },
         "parameter_aliases": {"R_ultimate": "R_total"},
@@ -272,6 +303,7 @@ METHOD_INFO = {
             "skin_fraction": {"type": "float", "required": False, "default": 0.5, "description": "Skin friction fraction."},
             "damping_model": {"type": "str", "required": False, "default": "smith", "allowed_values": ["smith", "smith_viscous"], "description": _DAMPING_MODEL_DOC},
             **_SOIL_DOC,
+            **_EMBEDMENT_DOC,
             **_HAMMER_CUSHION_DOC,
         },
         "returns": {"R_values_kN": "Ultimate resistances analysed.", "blow_counts_per_m": "Blow count per R_ult (1/set; 1,000,000 = refusal).", "permanent_sets_m": "Set per blow: maximum pile toe displacement less an average of the shaft and toe quakes (GEC-12 Vol 2 p. 158), weighted by the shares of R_ult on the shaft and at the toe: the module's assumption, since the page names no weights (choices gives the blow counts of a plain average and of the toe quake alone).", "max_comp_stresses_kPa": "Maximum compression stress in the pile per R_ult.", "max_tens_stresses_kPa": "Maximum tension stress per R_ult.", "choices": "The quake weights (when the quakes differ).", "warnings": "A diesel hammer's (it is run at its rated energy)."},
@@ -287,9 +319,12 @@ METHOD_INFO = {
             "skin_fractions": {"type": "array", "required": False, "description": "Skin friction fraction per depth station."},
             "refusal_blow_count": {"type": "float", "required": False, "default": 393.7, "description": "Blow count (blows/m) above which the pile has refused. Default 393.7 (120 blows/ft): GEC-12 Vol 2 Sec. 12.4 (p. 161) chooses hammer and cushion so the maximum expected penetration resistance is under 120 blows/ft, and the drivability study of Vol 3 (p. 43) calls it practical refusal. Piles through soft soils seated on hard rock: 787.4 (240 blows/ft, p. 161), the refusal of Vol 2's Examples 3, 4 and 7."},
             "damping_model": {"type": "str", "required": False, "default": "smith", "allowed_values": ["smith", "smith_viscous"], "description": _DAMPING_MODEL_DOC},
+            "pile_length": {"type": "float", "required": False, "description": "The pile's total length in the leads (m), the same at every depth: at each depth the pile is this long, embedded to the depth, the shaft resistance only below grade (GEC-12 Vol 2 p. 224: 'Length is the total pile length in the leads'; 'Penetration refers to ... final penetration for Drivability Analyses'; p. 236, the depths to be analyzed). No depth may be deeper (p. 227). Left out: the pile at each depth as long as the depth, embedded over its full length."},
+            "shaft_distribution": _SHAFT_DISTRIBUTION_DOC,
+            **_SOIL_DOC,
             **_HAMMER_CUSHION_DOC,
         },
-        "returns": {"can_drive": "Whether pile can be driven.", "refusal_depth_m": "First depth whose blow count passed the refusal blow count (0: none).", "refusal_blow_count_per_m": "The refusal blow count used.", "points": "Per-depth drivability data.", "warnings": "A diesel hammer's (it is run at its rated energy)."},
+        "returns": {"can_drive": "Whether pile can be driven.", "refusal_depth_m": "First depth whose blow count passed the refusal blow count (0: none).", "refusal_blow_count_per_m": "The refusal blow count used.", "points": "Per-depth drivability data.", "pile_length_m": "With pile_length: the pile's length at every depth.", "shaft_distribution": "With 'triangular': the shaft distribution used.", "choices": "The quake weights (when the quakes differ).", "warnings": "A diesel hammer's (it is run at its rated energy)."},
     },
     "list_available_hammers": {
         "category": "Wave Equation",
@@ -305,6 +340,18 @@ declare_applies_when(METHOD_INFO, {
     m: {name: {"hammer_name": "unset"}
         for name in ("efficiency", "hammer_type")}
     for m in ("bearing_graph", "drivability", "single_blow")})
+
+# What a left-out embedded length or drivability pile length means (GM-301).
+declare_when_absent(METHOD_INFO, {
+    "single_blow": {"embedded_length": "pile_length"},
+    "bearing_graph": {"embedded_length": "pile_length"},
+    "drivability": {"pile_length": (
+        "as long as each depth",
+        "the module's reading: at each depth a pile as long as the depth, "
+        "embedded over its full length, with no stick-up; GEC-12 Vol 2 "
+        "p. 224 analyses the total pile length in the leads (give "
+        "pile_length)")},
+})
 
 # The default cushion, when no cushion is described (GM-165).
 for _m in ("single_blow", "bearing_graph", "drivability"):

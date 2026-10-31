@@ -16,8 +16,15 @@ refusal". The one exception p. 161 prints, piles through soft soils
 seated on hard rock at 5 blows per 1/4 inch, is 240 blows/ft (787.4
 blows/m), the refusal of the Vol 2 examples (pp. 171, 177, 188).
 
-The pile analysed at each depth is as long as the depth (no stick-up),
-with the skin resistance spread evenly over it.
+The pile analysed at each depth: with ``pile_length`` given, that pile at
+every depth, embedded to the depth, the shaft resistance only below grade
+(GM-301): GEC-12 Vol 2 p. 224, "Length is the total pile length in the
+leads", "Penetration refers to ... final penetration for Drivability
+Analyses", and p. 236, the depths to be analyzed with the pile's length.
+Left out, the pile is as long as each depth (no stick-up), as before. The
+shaft resistance is spread over the embedded length by
+``shaft_distribution`` ("uniform" by default, or "triangular"; see
+wave_equation.soil_model).
 
 References:
     FHWA GEC-12 Vol 2, Sec. 12.4 (p. 161) and 12.5.3 (pp. 167-172)
@@ -87,6 +94,11 @@ class DrivabilityResult:
         equal quakes).
     warnings : list of str
         A diesel hammer's (``diesel_warning``).
+    pile_length : float, optional
+        The pile's length in the leads at every depth (m), when given
+        (GM-301); None, the pile as long as each depth.
+    shaft_distribution : str
+        How the shaft resistance was spread over the embedded length.
     """
     points: List[DrivabilityPoint] = field(default_factory=list)
     can_drive: bool = True
@@ -94,6 +106,8 @@ class DrivabilityResult:
     refusal_blow_count: float = REFUSAL_BLOWS_PER_M
     choices: list = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    pile_length: Optional[float] = None
+    shaft_distribution: str = "uniform"
 
     def summary(self) -> str:
         """Text summary of drivability study."""
@@ -114,6 +128,9 @@ class DrivabilityResult:
                 f"{pt.max_tens_stress:>12,.0f}"
             )
         lines.append("")
+        if self.pile_length is not None:
+            lines.append(f"  Pile length {self.pile_length:.2f} m at every "
+                         "depth, embedded to the depth")
         lines.append(f"  Refusal: more than {self.refusal_blow_count:.1f} "
                      "blows/m")
         if self.can_drive:
@@ -143,6 +160,10 @@ class DrivabilityResult:
                 for p in self.points
             ],
         }
+        if self.pile_length is not None:
+            out["pile_length_m"] = self.pile_length
+        if self.shaft_distribution != "uniform":
+            out["shaft_distribution"] = self.shaft_distribution
         if self.choices:
             out["choices"] = list(self.choices)
         if self.warnings:
@@ -167,6 +188,8 @@ def drivability_study(
     helmet_weight: float = 5.0,
     refusal_blow_count: float = REFUSAL_BLOWS_PER_M,
     damping_model: str = "smith",
+    pile_length: Optional[float] = None,
+    shaft_distribution: str = "uniform",
 ) -> DrivabilityResult:
     """Run drivability analysis at multiple depths.
 
@@ -205,6 +228,14 @@ def drivability_study(
         resistance, R_d = J*R_static*v. "smith_viscous": damping
         proportional to R_ultimate (UFC 3-220-20 pp. 487-488). See
         wave_equation.soil_model.
+    pile_length : float, optional
+        The pile's total length in the leads (m), the same at every depth,
+        embedded to the depth (GM-301; GEC-12 Vol 2 pp. 224, 236). No depth
+        may pass it (p. 227). None (default): the pile as long as each
+        depth.
+    shaft_distribution : str
+        "uniform" (default) or "triangular" over the embedded length
+        (GM-301; GEC-12 Vol 2 pp. 162, 179, 182). See SoilSetup.
 
     Returns
     -------
@@ -212,6 +243,13 @@ def drivability_study(
     """
     if len(depths) != len(R_at_depth):
         raise ValueError("depths and R_at_depth must have same length")
+    if pile_length is not None:
+        deeper = [d for d in depths if d > pile_length * (1.0 + 1e-9)]
+        if deeper:
+            raise ValueError(
+                f"depths {deeper} are deeper than the pile_length "
+                f"{pile_length:g} m (GEC-12 Vol 2 p. 227: the penetration "
+                f"'cannot be greater than the pile length')")
 
     if skin_fractions is None:
         skin_fractions = [0.5] * len(depths)
@@ -223,7 +261,8 @@ def drivability_study(
 
     for i, (depth, R_ult) in enumerate(zip(depths, R_at_depth)):
         pile = discretize_pile(
-            depth, pile_area, pile_E, segment_length, pile_unit_weight
+            depth if pile_length is None else pile_length,
+            pile_area, pile_E, segment_length, pile_unit_weight
         )
 
         soil = SoilSetup(
@@ -234,6 +273,8 @@ def drivability_study(
             damping_side=damping_side,
             damping_toe=damping_toe,
             damping_model=damping_model,
+            shaft_distribution=shaft_distribution,
+            embedded_length=None if pile_length is None else depth,
         )
 
         result = simulate_blow(
@@ -273,4 +314,6 @@ def drivability_study(
         refusal_blow_count=refusal_blow_count,
         choices=[quakes] if quakes else [],
         warnings=[warning] if warning else [],
+        pile_length=pile_length,
+        shaft_distribution=shaft_distribution,
     )
