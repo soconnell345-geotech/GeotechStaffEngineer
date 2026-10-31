@@ -229,8 +229,19 @@ def group_efficiency_factor(soil_type: str, s_over_b: float,
     }
 
 
+#: Resistance factor phi_bl for block failure, by pile type, as printed:
+#: GEC-12 Table 7-1 (p. 224), "Block Failure, phi_bl | Cohesive | 0.60"
+#: (driven piles); UFC 3-220-20 Table 6-27 (p. 433, AASHTO 2020): driven
+#: piles 0.60, drilled shafts 0.55, micropiles 0.60, each "fine-grained
+#: (cohesive) soil below group" (micropiles: "reduced by 20% ... in marginal
+#: ground conditions"). No held page prints one for CFA or drilled
+#: displacement piles.
+BLOCK_FAILURE_PHI = {"driven": 0.60, "drilled_shaft": 0.55, "micropile": 0.60}
+
+
 def block_failure_resistance(B: float, Z: float, D: float,
-                             su1: float, su2: float) -> dict:
+                             su1: float, su2: float,
+                             pile_type: Optional[str] = None) -> dict:
     """Nominal resistance of a pile group to block failure.
 
     GEC-12 Eq. 7-36 (p. 286):  R_ng = 2 D (B + Z) su1 + B Z su2 Nc
@@ -261,14 +272,23 @@ def block_failure_resistance(B: float, Z: float, D: float,
         2B (kPa; GEC-12 p. 286; UFC p. 433: 2B to 3B, whichever gives the
         lower), that of the weak layer for a group in cohesionless soil
         over it.
+    pile_type : str, optional
+        One of :data:`PILE_TYPES`: adds the factored resistance R_r = phi_bl
+        R_ng with phi_bl from :data:`BLOCK_FAILURE_PHI` (GEC-12 Table 7-1;
+        UFC 3-220-20 Table 6-27), or ``None`` for CFA and drilled
+        displacement piles, for which no held page prints one.
 
     Returns
     -------
     dict
         ``R_ng_kN``, ``Nc`` (as used), ``Nc_eq_7_37`` (the equation before
         the limit of 9), ``side_kN``, ``base_kN``, ``B_m``, ``Z_m``,
-        ``D_m``, ``su1_kPa``, ``su2_kPa``.
+        ``D_m``, ``su1_kPa``, ``su2_kPa``; with ``pile_type``, ``phi_bl``
+        and ``R_r_kN`` (both ``None`` where no factor is printed).
     """
+    if pile_type is not None and pile_type not in PILE_TYPES:
+        raise ValueError(f"pile_type must be one of {list(PILE_TYPES)}, "
+                         f"got {pile_type!r}")
     for name, v in (("B", B), ("Z", Z), ("D", D), ("su1", su1),
                     ("su2", su2)):
         if not (v > 0 and math.isfinite(v)):
@@ -278,7 +298,7 @@ def block_failure_resistance(B: float, Z: float, D: float,
     Nc = min(nc_eq, 9.0)
     side = 2.0 * D * (B + Z) * su1
     base = B * Z * su2 * Nc
-    return {
+    out = {
         "R_ng_kN": side + base,
         "Nc": Nc,
         "Nc_eq_7_37": nc_eq,
@@ -287,6 +307,11 @@ def block_failure_resistance(B: float, Z: float, D: float,
         "B_m": B, "Z_m": Z, "D_m": D,
         "su1_kPa": su1, "su2_kPa": su2,
     }
+    if pile_type is not None:
+        phi = BLOCK_FAILURE_PHI.get(pile_type)
+        out["phi_bl"] = phi
+        out["R_r_kN"] = None if phi is None else phi * (side + base)
+    return out
 
 
 def group_plan_dimensions(n_rows: int, n_cols: int, spacing_x: float,

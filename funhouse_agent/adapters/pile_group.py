@@ -285,8 +285,34 @@ def _run_group_efficiency(params):
                 f"(GEC-12 Eq. 7-36, p. 286), or one cu for both.")
         B, Z = group_plan_dimensions(params["n_rows"], params["n_cols"],
                                      sx, sy, params["pile_diameter"])
-        r = block_failure_resistance(B, Z, params["pile_length"], su1, su2)
+        pile_type = params.get("pile_type", "driven")
+        r = block_failure_resistance(B, Z, params["pile_length"], su1, su2,
+                                     pile_type=pile_type)
         results["block_failure_kN"] = round(r["R_ng_kN"], 1)
+        results["block_failure_phi"] = r["phi_bl"]
+        results["block_failure_factored_kN"] = (
+            None if r["R_r_kN"] is None else round(r["R_r_kN"], 1))
+        if r["phi_bl"] is None:
+            results["block_failure_factored_note"] = (
+                f"No held page prints a resistance factor for block failure "
+                f"of {_PILE_TYPE_TEXT[pile_type]}: GEC-12 Table 7-1 (p. 224) "
+                f"gives 0.60 (driven piles, cohesive soil) and UFC 3-220-20 "
+                f"Table 6-27 (p. 433) 0.60 for driven piles, 0.55 for "
+                f"drilled shafts and 0.60 for micropiles, with fine-grained "
+                f"soil below the group; the nominal resistance is given.")
+        else:
+            choices.append(choice(
+                "resistance factor for block failure",
+                f"phi_bl = {r['phi_bl']:.2f} ({_PILE_TYPE_TEXT[pile_type]})",
+                how_given(params.get("pile_type"), "driven", "pile_type"),
+                basis=("GEC-12 Table 7-1 (p. 224): 'Block Failure, phi_bl, "
+                       "Cohesive, 0.60'; UFC 3-220-20 Table 6-27 (p. 433, "
+                       "AASHTO 2020): driven piles 0.60, drilled shafts 0.55, "
+                       "micropiles 0.60, fine-grained (cohesive) soil below "
+                       "the group"
+                       + ("; AASHTO: reduced by 20 % for micropiles in "
+                          "marginal ground conditions, not applied here"
+                          if pile_type == "micropile" else ""))))
         results["block_failure_Nc"] = round(r["Nc"], 3)
         results["block_width_m"] = round(B, 3)
         results["block_length_m"] = round(Z, 3)
@@ -469,15 +495,15 @@ METHOD_INFO = {
             "soil_type": {"type": "str", "required": False, "allowed_values": list(SOIL_TYPES), "description": "Gives the group efficiency factor eta_g: 'cohesionless' (UFC's coarse-grained) or 'cohesive' (fine-grained), the stratum giving most of the resistance (GEC-12 p. 281). Driven piles, GEC-12 Secs. 7.2.2.1-7.2.2.2 (pp. 282, 284): cohesionless not underlain by a weak deposit, 1.0; clay with su < 2 ksf and the cap not in firm contact with the ground, 0.65 at s = 2.5b to 1.0 at 6b, linear between; else 1.0. Other pile types: UFC 3-220-20 Table 6-26 (see pile_type). Below the table's minimum spacing (2.5b driven piles and drilled shafts, 3b the others) the call is refused. The group resistance is the lesser of n*eta_g*R_n and block failure."},
             "cap_in_contact": {"type": "bool", "required": False, "description": "Whether the pile cap is in firm contact with the ground (sets eta_g's row). Left out where the row depends on it, the lower eta_g (not in contact) is taken and the result's choices give the other."},
             "cu": {"type": "float", "required": False, "description": "Undrained shear strength of the clay (kPa): sets eta_g's row against 2 ksf (95.76 kPa) for soil_type 'cohesive' (left out where it matters, su < 2 ksf is taken, said in the choices); and, for block failure, su1 and su2 where those are not given."},
-            "pile_type": {"type": "str", "required": False, "default": "driven", "allowed_values": list(PILE_TYPES), "description": "The column of UFC 3-220-20 Table 6-26 for eta_g: 'driven' (GEC-12), 'drilled_shaft', 'cfa', 'ddp' (drilled displacement) or 'micropile'."},
-            "pile_length": {"type": "float", "required": False, "description": "Pile embedded length D (m). With su1 and su2 (or cu), n_rows, n_cols, spacing and pile_diameter, gives the resistance to block failure: GEC-12 Eq. 7-36, R = 2D(B+Z)su1 + B*Z*su2*Nc, Nc = 5[1 + D/(5B)][1 + B/(5Z)] <= 9 (Eq. 7-37), B and Z the group's width and length to the outer pile faces (Fig. 7-31). Nominal; AASHTO's resistance factor for block failure in clay is 0.60 for driven piles (UFC 3-220-20 Table 6-27)."},
+            "pile_type": {"type": "str", "required": False, "default": "driven", "allowed_values": list(PILE_TYPES), "description": "The column of UFC 3-220-20 Table 6-26 for eta_g: 'driven' (GEC-12), 'drilled_shaft', 'cfa', 'ddp' (drilled displacement) or 'micropile'; and the resistance factor for block failure: 0.60 driven (GEC-12 Table 7-1, p. 224), 0.55 drilled shafts, 0.60 micropiles (UFC 3-220-20 Table 6-27, p. 433); none printed for 'cfa' or 'ddp' (nominal only)."},
+            "pile_length": {"type": "float", "required": False, "description": "Pile embedded length D (m). With su1 and su2 (or cu), n_rows, n_cols, spacing and pile_diameter, gives the resistance to block failure: GEC-12 Eq. 7-36, R = 2D(B+Z)su1 + B*Z*su2*Nc, Nc = 5[1 + D/(5B)][1 + B/(5Z)] <= 9 (Eq. 7-37), B and Z the group's width and length to the outer pile faces (Fig. 7-31). Nominal, and factored by pile_type's printed resistance factor (block_failure_factored_kN)."},
             "su1": {"type": "float", "required": False, "description": "Block failure: weighted average undrained shear strength along the group's perimeter over the embedded length (kPa); for cohesionless soils along the sides, their weighted average unit shaft resistance (GEC-12 p. 287)."},
             "su2": {"type": "float", "required": False, "description": "Block failure: average undrained shear strength below the toes to a depth of 2B (kPa; UFC 3-220-20 p. 433: 2B to 3B, whichever lower), that of the weak layer for a group in sand over it."},
             "row_position": {"type": "int", "required": False, "description": "Row number, 1 = the lead row (UFC 3-220-20 Fig. 6-25): gives the row's lateral p-multiplier p_m."},
             "spacing_diameter_ratio": {"type": "float", "required": False, "description": "s/b for the p-multiplier, s the spacing of the rows in the direction of the load (from spacing/pile_diameter if omitted). Below 3 the call is refused (p_m is printed from 3b)."},
             "p_multiplier_method": {"type": "str", "required": False, "default": "aashto", "allowed_values": list(P_MULTIPLIER_METHODS), "description": "'aashto' (default): AASHTO's p_m as GEC-12 prints it (pp. 367, 370): rows 1, 2, 3+ = 0.8, 0.4, 0.3 at 3b and 1.0, 0.85, 0.7 at 5b, interpolated (0.90, 0.625, 0.5 at 4b, as GEC-12 Vol. III takes them), to 1.0 at 6b and beyond (UFC 3-220-20 Table 6-38). 'mokwa': Mokwa (1999), UFC 3-220-20 Table 6-38: p_m = 0.06(s/b)+0.64, 0.11(s/b)+0.34, 0.14(s/b)+0.16, 0.16(s/b)+0.04 for rows 1, 2, 3, 4+, each <= 1."},
         },
-        "returns": {"group_efficiency": "eta_g (with soil_type).", "s_over_b": "The s/b eta_g was read at.", "group_efficiency_row": "The printed row read.", "block_failure_kN": "Nominal resistance to block failure (with pile_length).", "block_failure_Nc": "Nc used.", "block_width_m": "Group width B.", "block_length_m": "Group length Z.", "p_multiplier": "The row's p-multiplier (with row_position).", "choices": "Each value's basis and alternatives; report them."},
+        "returns": {"group_efficiency": "eta_g (with soil_type).", "s_over_b": "The s/b eta_g was read at.", "group_efficiency_row": "The printed row read.", "block_failure_kN": "Nominal resistance to block failure (with pile_length).", "block_failure_phi": "The printed resistance factor for block failure (null for CFA or DDP, none printed).", "block_failure_factored_kN": "phi x the nominal resistance (null where no factor is printed).", "block_failure_Nc": "Nc used.", "block_width_m": "Group width B.", "block_length_m": "Group length Z.", "p_multiplier": "The row's p-multiplier (with row_position).", "choices": "Each value's basis and alternatives; report them."},
     },
     "meyerhof_group_settlement": {
         "category": "Pile Group",
@@ -537,7 +563,7 @@ declare_applies_when(METHOD_INFO, {
     "group_efficiency": {
         "spacing_diameter_ratio": {"row_position": "set"},
         "cap_in_contact": {"soil_type": "set"},
-        "cu": {"soil_type": ["cohesive"]},
-        "pile_type": {"soil_type": "set"},
+        "cu": [{"soil_type": ["cohesive"]}, {"pile_length": "set"}],
+        "pile_type": [{"soil_type": "set"}, {"pile_length": "set"}],
         "p_multiplier_method": {"row_position": "set"}},
 })

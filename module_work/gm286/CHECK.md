@@ -48,15 +48,21 @@ block failure in clay; the lateral p-multiplier; group settlement by Meyerhof
   resistance in place of su1 (p. 287). UFC Eq. 6-38 the same with fs1, su2
   over 2B to 3B, whichever is lower (p. 433); Eq. 6-39 the same Nc. Fig.
   6-15: Z the embedded depth, B <= L the plan dimensions (the p. 431 text
-  says "B <= Z", a slip). Table 6-27: block phi 0.60 driven, 0.55 shafts,
-  0.60 micropiles.
+  says "B <= Z", a slip). Resistance factor: GEC-12 Table 7-1 (p. 224),
+  "Block Failure, phi_bl | Cohesive | 0.60"; UFC Table 6-27 (p. 433, AASHTO
+  2020): driven piles 0.60, drilled shafts 0.55, micropiles 0.60 (reduced
+  by 20 % in marginal ground), each with fine-grained soil below the group.
+  No held page prints one for CFA or drilled displacement piles.
 - **Module before.** One cu for both su1 and su2, Nc fixed at 9.
 - **Module now.** `block_failure_resistance(B, Z, D, su1, su2)` by Eqs.
   7-36 and 7-37 (B taken as the smaller plan dimension), returning the side
   and base terms and Nc both as printed and as limited;
   `block_failure_capacity` takes the layout to the outer faces. The tool
-  takes su1 and su2, or one cu for both, said in `choices`. The factored
-  resistance (Table 6-27) is not applied; the module gives the nominal.
+  takes su1 and su2, or one cu for both, said in `choices`. With
+  `pile_type` the factored resistance phi_bl R_ng is given by the printed
+  factor (`block_failure_factored_kN`); for CFA and DDP groups it is null
+  and the result says no held page prints one. The micropile 20 %
+  reduction for marginal ground is stated, not applied.
 - **Verdict.** Fixed to the print. UFC Appendix B-5.4 pinned (V-060).
 
 ## Lateral p-multiplier (GEC-12 Sec. 7.3.7.6; UFC Table 6-38)
@@ -129,9 +135,8 @@ block failure in clay; the lateral p-multiplier; group settlement by Meyerhof
 ## Not offered
 
 - Group uplift (GEC-12 Sec. 7.2.3.2, Eqs. 7-39 to 7-41, Fig. 7-33, the
-  1H:4V soil block, pp. 290-292).
-- The factored block resistance (UFC Table 6-27) and the CPT group
-  settlement (Eq. 7-53).
+  1H:4V soil block, pp. 290-292; phi_ug 0.50 in Table 7-1).
+- The CPT group settlement (Eq. 7-53).
 
 ## Before and after
 

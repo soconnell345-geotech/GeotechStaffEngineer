@@ -183,11 +183,13 @@ def test_ufc_b_5_4_block_failure():
     """UFC 3-220-20 Appendix B-5.4: 2(60)(18 + 18)(1.33) + (18)(18)(3)(9)
     = 14,494 kips; 0.6 x 14,494 = 8,696 kips."""
     r = block_failure_resistance(18.0 * FT, 18.0 * FT, 60.0 * FT,
-                                 1.33 * KSF, 3.0 * KSF)
+                                 1.33 * KSF, 3.0 * KSF, pile_type="driven")
     assert r["Nc_eq_7_37"] == pytest.approx(10.0)
     assert r["Nc"] == 9.0
     assert r["R_ng_kN"] / KIP == pytest.approx(14494.0, abs=1.0)
-    assert 0.6 * r["R_ng_kN"] / KIP == pytest.approx(8696.0, abs=1.0)
+    # phi 0.6: UFC 3-220-20 Table 6-27, driven piles (GEC-12 Table 7-1)
+    assert r["phi_bl"] == 0.60
+    assert r["R_r_kN"] / KIP == pytest.approx(8696.0, abs=1.0)
 
 
 def test_ufc_table_b_32_mokwa():

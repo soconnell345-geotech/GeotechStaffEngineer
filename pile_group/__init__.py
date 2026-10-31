@@ -23,7 +23,7 @@ References:
 
 from pile_group.pile_layout import GroupPile, create_rectangular_layout
 from pile_group.group_efficiency import (
-    group_efficiency_factor, block_failure_resistance,
+    group_efficiency_factor, block_failure_resistance, BLOCK_FAILURE_PHI,
     block_failure_capacity, group_plan_dimensions, p_multiplier,
     group_settlement_equivalent_raft, meyerhof_group_settlement,
 )
@@ -35,6 +35,7 @@ from pile_group.rigid_cap import (
 __all__ = [
     'GroupPile', 'create_rectangular_layout',
     'group_efficiency_factor', 'block_failure_resistance',
+    'BLOCK_FAILURE_PHI',
     'block_failure_capacity', 'group_plan_dimensions', 'p_multiplier',
     'group_settlement_equivalent_raft', 'meyerhof_group_settlement',
     'GroupLoad', 'PileGroupResult',

@@ -120,6 +120,7 @@
 "pavement_design|rigid_pavement_design_ufc": {"params": {"flexural_strength_psi": 650, "k_pci": 150, "passes_18kip": 100000.0}},
 "pdf_import|calibrate_scale": {"params": {"distance_m": 15.0, "p1": [100.0, 200.0], "p2": [400.0, 200.0]}},
 "pile_group|group_efficiency": {"params": {"n_cols": 2, "n_rows": 2, "pile_diameter": 0.3, "spacing": 1.0, "soil_type": "cohesionless"}},
+"pile_group|group_efficiency#block": {"params": {"cu": 50.0, "n_cols": 3, "n_rows": 3, "pile_diameter": 0.3, "pile_length": 15.0, "spacing": 0.9}},
 "pile_group|meyerhof_group_settlement": {"params": {"N160": 20, "group_length": 4, "group_width": 3, "load_kN": 2000}},
 "pile_group|pile_group_6dof": {"params": {"axial_stiffness": 200000.0, "n_cols": 2, "n_rows": 2, "spacing": 1.5}},
 "pile_group|pile_group_simple": {"params": {"Vz": 1000, "piles": [{"label": "P1", "x": -1, "y": 0}, {"batter_x": 5, "label": "P2", "x": 1, "y": 0}]}},

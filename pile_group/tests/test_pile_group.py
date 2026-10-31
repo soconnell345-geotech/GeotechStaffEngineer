@@ -201,6 +201,26 @@ class TestBlockFailure:
         r = block_failure_resistance(10.0, 10.0, 5.0, 30.0, 30.0)
         assert r["Nc"] == pytest.approx(6.6)
 
+    def test_resistance_factor_as_printed(self):
+        """GEC-12 Table 7-1 (p. 224): phi_bl 0.60, cohesive; UFC 3-220-20
+        Table 6-27 (p. 433): driven 0.60, drilled shafts 0.55, micropiles
+        0.60; none printed for CFA or DDP."""
+        nominal = block_failure_resistance(3.3, 4.8, 15.0, 40.0, 60.0)
+        assert "phi_bl" not in nominal
+        for pile_type, phi in (("driven", 0.60), ("drilled_shaft", 0.55),
+                               ("micropile", 0.60)):
+            r = block_failure_resistance(3.3, 4.8, 15.0, 40.0, 60.0,
+                                         pile_type=pile_type)
+            assert r["phi_bl"] == phi
+            assert r["R_r_kN"] == pytest.approx(phi * nominal["R_ng_kN"])
+        for pile_type in ("cfa", "ddp"):
+            r = block_failure_resistance(3.3, 4.8, 15.0, 40.0, 60.0,
+                                         pile_type=pile_type)
+            assert r["phi_bl"] is None and r["R_r_kN"] is None
+        with pytest.raises(ValueError, match="pile_type"):
+            block_failure_resistance(3.3, 4.8, 15.0, 40.0, 60.0,
+                                     pile_type="auger")
+
     def test_b_is_the_smaller_dimension(self):
         a = block_failure_resistance(6.0, 3.0, 4.0, 30.0, 30.0)
         b = block_failure_resistance(3.0, 6.0, 4.0, 30.0, 30.0)
