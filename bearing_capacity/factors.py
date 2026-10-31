@@ -321,7 +321,9 @@ def depth_factors(phi_deg: float, Df: float, B: float,
         dq = 1 + 2*tan(phi)*(1-sin(phi))² * k
         dc = dq - (1-dq)/(Nc*tan(phi))   for phi > 0 (Table 5-8 note C)
         dc = 1 + 0.4*k                    for phi = 0 (Table 5-7's 0.4 k,
-                                          added in Eq. 5-21)
+                                          added in Eq. 5-21; the analysis
+                                          adds dc - 1 to the cohesion
+                                          term's other factors, GM-281)
         dgamma = 1.0
     Table 5-8's printed d_c is half of its note C formula's
     (:func:`ufc_table_5_8_printed_dc`); the note C form is used (GM-214).

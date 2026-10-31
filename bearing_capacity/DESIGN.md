@@ -2,9 +2,11 @@
 
 ## Purpose
 Computes ultimate and allowable bearing capacity for shallow footings using
-the general bearing capacity equation with Vesic (1973), Meyerhof (1963), or
-Hansen (1970) factor sets, matching CBEAR program output; or Terzaghi (1943)
-with his own factors (`factor_method="terzaghi"`, below).
+the general bearing capacity equation with the Vesic (GEC-6) or Meyerhof
+(1963) factor sets, matching CBEAR program output; or Terzaghi (1943) with
+his own factors (`factor_method="terzaghi"`, below). Brinch Hansen (1970)
+is not offered as a set: the module takes his N-gamma (an option), depth
+parameter k and depth factors, and GEC-6's base factors after him.
 
 ## References
 - Vesic (1973) — general bearing capacity factors Nc, Nq, Ngamma
@@ -81,7 +83,8 @@ wraps it).
   use `geotech_common.water.effective_unit_weight` or
   `gamma_below_footing()` instead
 - calc_steps displays the factor equations actually used, including the
-  φ = 0 forms (sc = 1+0.2·B/L, dc = 1+0.4k) and the Vesic d_c formula (BC-9)
+  φ = 0 forms (sc = 1+0.2·B/L, dc = 1+0.4k, the 0.4k added to the c term,
+  below) and the Vesic d_c formula (BC-9)
 - Tests in `tests/test_bearing_capacity.py` and `tests/test_terzaghi.py`
 
 ## Terzaghi (1943) — `factor_method="terzaghi"` (2026-10-14, BACKLOG GM-30)
@@ -273,3 +276,56 @@ or more from vertical is refused (it gave a capacity that rose again with
 the angle); so are a negative or 90-degree load inclination, a ground slope
 outside 0-45 deg and a base tilt past alpha tan phi = 1. No other result
 changes.
+
+## How the factors combine (2026-10-30, BACKLOG GM-281)
+
+Checked against the print (`module_work/bearing_factors/CHECK.md`, every
+method and case). UFC 3-220-20 Eq. 5-18 to 5-20 (p. 293) multiply the
+correction factors, "in most cases"; the exception is Brinch Hansen's
+phi = 0 set, Table 5-7 (p. 295), added in Eq. 5-21:
+1 + s_c + d_c - i_c - b_c - g_c, with d_c = 0.4 k. GEC-6 Eq. 5-14 (p. 63)
+and EN 1997-1 D.1 (p. 158) multiply the phi = 0 factors and print no d_c.
+
+The Vesic set's phi = 0 d_c is Table 5-7's, and the module multiplied it:
+c N_c (1 + 0.2 B/L)(1 + 0.4 k). It now adds it, as Eq. 5-21 does:
+
+    phi = 0, factor_method "vesic":  c N_c (s_c i_c b_c g_c + d_c - 1)
+
+The other factors keep the product GEC-6 and EN 1997-1 print, so with no
+depth factor (a surface footing, `depth_factor_method` "gec6" or "none")
+nothing changes, and with the shape factor alone it is Eq. 5-21 exactly.
+UFC 3-220-20 Example B-3, Footing 1 (pp. 618-623) works it: B = 6 ft,
+Df = 3 ft, s_u = 1000 psf, psi_c = (1 + 0.2 B/L) + 0.4 Df/B, L >= 9.97 ft;
+the module now gives 9.97 ft (9.75 ft multiplied). Its Meyerhof check
+(Table B-16, psi_c = (1 + 0.2 B/L)(1 + 0.2 Df/B), L >= 10.84 ft) the module
+already met; both are pinned in `tests/test_factor_combination.py`. With a
+base tilt, ground slope or load inclination as well, no source prints the
+whole combination: the module adds 0.4 k to their product (Eq. 5-21 in
+full would add their decrements instead). Meyerhof's factors, Terzaghi's
+and every phi > 0 term stay multiplied, as printed.
+
+`result.c_term_adds_dc` says when the cohesion term adds d_c; the factor
+table's note, the calc package's general equation and the depth choice's
+basis show the form used.
+
+**Release note:** with `factor_method="vesic"` (the default), phi = 0 and
+an embedded footing, q_ult changes by c N_c (d_c - 1)(s_c i_c b_c g_c - 1):
+with no load inclination, base tilt or ground slope it falls by
+c N_c (s_c - 1)(d_c - 1) for a square, rectangle or circle. A 3 m square 1.5 m deep in clay with
+s_u = 75 kPa: 582.1 -> 566.7 kPa (-2.6 %); a 2 m square 2 m deep with
+s_u = 50 kPa: 441.3 -> 425.1 kPa. A strip changes only with a load
+inclination, base tilt or ground slope; phi > 0, Meyerhof and Terzaghi do
+not change.
+
+**Meyerhof with a tilted base or sloping ground is refused.** It used to
+multiply in GEC-6 Table 5-5's base-tilt factors and Vesic's (1975) ground
+factors. UFC 3-220-20 Table 5-3 (p. 291) excludes Meyerhof for a tilted
+base; p. 294: "Meyerhof (1963) did not provide base or inclination factors
+in this form. Meyerhof developed a separate solution for sloping ground"
+(the N_cq and N_gamma-q charts, Sec. 5-3.4; GEC-6 Fig. 5-7); p. 292: "the
+correction factors cannot usually be applied across methods". The message
+names `factor_method="vesic"`, which has both, as Terzaghi's refusal does.
+
+**Release note:** `factor_method="meyerhof"` with `base_tilt` or
+`ground_slope` now raises instead of returning a capacity with another
+method's factors.

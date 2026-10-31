@@ -326,11 +326,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     # ── Section: General Bearing Capacity Equation ──────────────
     gbc_items = []
 
-    # The general equation
+    # The general equation; at phi = 0 Vesic's c term adds d_c (GM-281)
+    c_term = ("c \u00d7 N_c \u00d7 (s_c \u00d7 i_c \u00d7 b_c \u00d7 g_c + d_c - 1)"
+              if r.c_term_adds_dc else
+              "c \u00d7 N_c \u00d7 s_c \u00d7 d_c \u00d7 i_c \u00d7 b_c \u00d7 g_c")
     gbc_items.append(CalcStep(
         title="General Bearing Capacity Equation",
         equation=(
-            "q_ult = c \u00d7 N_c \u00d7 s_c \u00d7 d_c \u00d7 i_c \u00d7 b_c \u00d7 g_c\n"
+            f"q_ult = {c_term}\n"
             "      + q \u00d7 N_q \u00d7 s_q \u00d7 d_q \u00d7 i_q \u00d7 b_q \u00d7 g_q\n"
             "      + 0.5 \u00d7 \u03b3' \u00d7 B' \u00d7 N_\u03b3 \u00d7 s_\u03b3 \u00d7 d_\u03b3 \u00d7 i_\u03b3 \u00d7 b_\u03b3 \u00d7 g_\u03b3"
         ),
@@ -338,7 +341,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_name="q_ult",
         result_value=f"{r.q_ultimate:,.1f}",
         result_unit="kPa",
-        reference="Vesic (1975); cf. FHWA GEC-6 Eq. 5-14",
+        reference=("cf. FHWA GEC-6 Eq. 5-14; d_c added as UFC 3-220-20 Eq. "
+                   "5-21 adds Table 5-7's d_c = 0.4 k (\u03c6 = 0)"
+                   if r.c_term_adds_dc else
+                   "Vesic (1975); cf. FHWA GEC-6 Eq. 5-14"),
     ))
 
     # Term breakdown
@@ -668,8 +674,8 @@ def _depth_factor_reference(analysis) -> str:
         return ("Meyerhof; UFC 3-220-20 Table 5-6; k beyond D_f/B = 1, "
                 "Brinch Hansen (1970), Table 5-8 note B")
     if analysis.soil.layer1.friction_angle == 0:
-        return ("Brinch Hansen (1970); UFC 3-220-20 Tables 5-7, 5-8; "
-                "FHWA GEC-6 Table 5-4")
+        return ("Brinch Hansen (1970); UFC 3-220-20 Table 5-7, d_c added "
+                "as in Eq. 5-21; k by Table 5-8 note B")
     # GM-214: Table 5-8's printed d_c is half its note C formula's
     return ("Brinch Hansen (1970); UFC 3-220-20 Tables 5-7, 5-8 (d_c by "
             "its note C; the table prints half); FHWA GEC-6 Table 5-4")
@@ -712,7 +718,8 @@ def _depth_factor_equation(method: str, phi_deg: float,
     if method.lower() == "vesic":
         if phi_deg == 0:
             return (
-                "d_c = 1 + 0.4\u00d7k  [\u03c6 = 0],  "
+                "d_c = 1 + 0.4\u00d7k  [\u03c6 = 0; 0.4\u00d7k added to the "
+                "c term],  "
                 "d_q = 1.0,  d_\u03b3 = 1.0,  "
                 "k = D_f/B if D_f/B < 1 else arctan(D_f/B)"
             )

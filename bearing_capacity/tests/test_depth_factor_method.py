@@ -118,12 +118,15 @@ def _choice(result, what):
 def test_df_b_one_before_and_after():
     # GM-197: square 2 m, Df 2 m, phi 32: d_q 1.276 -> 1.217, q_ult
     # 2,170.70 -> 2,085.89 kPa (-3.9 %); clay c 50 kPa: d_c 1.400 -> 1.314,
-    # q_ult 467.76 -> 441.29 kPa
+    # q_ult 467.76 -> 441.29 kPa; GM-281 adds d_c as UFC 3-220-20 Eq. 5-21
+    # does: 50 x 5.14 x (1.2 + 0.4 pi/4) + 36 = 425.14 kPa
     assert _analysis().compute().q_ultimate == pytest.approx(2085.89, abs=0.01)
     clay = _analysis(layer=dict(cohesion=50.0, friction_angle=0.0,
                                 unit_weight=18.0)).compute()
     assert clay.dc == pytest.approx(1 + 0.4 * math.pi / 4)
-    assert clay.q_ultimate == pytest.approx(441.29, abs=0.01)
+    assert clay.q_ultimate == pytest.approx(
+        50.0 * 5.14 * (1.2 + 0.4 * math.pi / 4) + 18.0 * 2.0)
+    assert clay.q_ultimate == pytest.approx(425.14, abs=0.01)
 
 
 def test_the_result_states_the_depth_factors_and_the_others():

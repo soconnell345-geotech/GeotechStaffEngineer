@@ -64,7 +64,9 @@ METHOD_BASIS = {
     "meyerhof": ("UFC 3-220-20 Sec. 5-3.3.2, Table 5-6 (p. 294): Meyerhof "
                  "(1963) bearing, shape, depth and inclination factors; "
                  "Table 5-3 (p. 291): any conditions except a tilted base, "
-                 "shear strength dominated by friction"),
+                 "shear strength dominated by friction; no base-tilt or "
+                 "ground-slope factors (p. 294), so it is not for a tilted "
+                 "base or sloping ground"),
     "terzaghi": ("UFC 3-220-20 Table 5-2 (p. 289) and Table 5-5 (p. 294): "
                  "Terzaghi (1943); Table 5-3 (p. 291): undrained soils, "
                  "Df/B <= 1, no inclined load, slope or tilted base"),
@@ -111,7 +113,9 @@ class BearingCapacityAnalysis:
         say so.
     factor_method : str, optional
         Method for shape/depth/inclination factors: "vesic" (default) or
-        "meyerhof"; or "terzaghi" for Terzaghi (1943): his own Nc, Nq,
+        "meyerhof" (no base-tilt or ground-slope factors, UFC 3-220-20 p.
+        294 and Table 5-3: it raises on them); or "terzaghi" for Terzaghi
+        (1943): his own Nc, Nq,
         Ngamma and shape coefficients (1.3 c Nc, 0.4 / 0.3 gamma B Ngamma),
         no depth or inclination factors. Terzaghi is not for inclined loads,
         sloping ground or tilted bases (UFC 3-220-20 Table 5-3) and raises
@@ -209,6 +213,30 @@ class BearingCapacityAnalysis:
                     "(UFC 3-220-20 Table 5-3: do not use it for inclined "
                     "loads, slopes or tilted bases); use factor_method="
                     "'vesic' or 'meyerhof'.")
+        if self.factor_method == "meyerhof":
+            # Meyerhof's set has no base-tilt or ground-slope factors (UFC
+            # 3-220-20 p. 294; Table 5-3, p. 291), and factors are not
+            # carried across methods (p. 292). GM-281: it multiplied in
+            # GEC-6's b factors and Vesic's g factors.
+            bad = []
+            if self.footing.base_tilt:
+                bad.append(
+                    "base_tilt: Meyerhof (1963) gives no base-tilt factor "
+                    "and UFC 3-220-20 Table 5-3 (p. 291) excludes his method "
+                    "for a tilted base. factor_method='vesic' has them (GEC-6 "
+                    "Table 5-5, after Brinch Hansen 1970).")
+            if self.ground_slope:
+                bad.append(
+                    "ground_slope: Meyerhof (1963) gives no ground-slope "
+                    "factor; his sloping-ground solution is a separate one, "
+                    "the N_cq and N_gamma-q charts (Meyerhof 1957; UFC "
+                    "3-220-20 Sec. 5-3.4, GEC-6 Fig. 5-7). factor_method="
+                    "'vesic' has ground-slope factors (Vesic 1975).")
+            if bad:
+                raise ValueError(
+                    "factor_method='meyerhof' has no factors for "
+                    + " ".join(bad) + " UFC 3-220-20 p. 292: correction "
+                    "factors are not carried from one method to another.")
 
     def compute(self) -> BearingCapacityResult:
         """Run the bearing capacity analysis.
@@ -368,13 +396,18 @@ class BearingCapacityAnalysis:
                      "Df/B = 1 and Brinch Hansen's k = arctan(Df/B) beyond "
                      "it (Tables 5-7 and 5-8 note B), the smaller factors")
         elif dm == "hansen" and phi == 0:
-            # Table 5-7's d_c at phi = 0; the note C formula and the
-            # printed Table 5-8 d_c do not bear (GM-230)
+            # Table 5-7's d_c at phi = 0, added as Eq. 5-21 adds it
+            # (GM-281); the note C formula and the printed Table 5-8 d_c do
+            # not bear (GM-230)
             basis = (DEPTH_K_BASIS + "; at phi = 0 Table 5-7 (p. 295) "
                      "prints d_c = 0.4 k, added in Eq. 5-21's 1 + s_c + "
-                     "d_c - i_c - b_c - g_c; the module multiplies by 1 + "
-                     "0.4 k. d_q = 1, as Table 5-7 puts no correction on "
-                     "the q term, and d_gamma = 1")
+                     "d_c - i_c - b_c - g_c. The cohesion term adds it the "
+                     "same way, c N_c (s_c i_c b_c g_c + 0.4 k), the other "
+                     "factors multiplied as GEC-6 Eq. 5-14 (p. 63) and EN "
+                     "1997-1 D.1 (p. 158) print them; with the shape factor "
+                     "alone that is Eq. 5-21, as UFC 3-220-20 Example B-3 "
+                     "works it (Table B-17, p. 622). d_q = 1, as Table 5-7 "
+                     "puts no correction on the q term, and d_gamma = 1")
         elif dm == "hansen" and self._no_cohesion():
             basis = (DEPTH_K_BASIS + "; d_q = 1 + 2 k tan phi (1 - sin "
                      "phi)^2, Table 5-8; d_gamma = 1; d_c does not enter "
@@ -483,6 +516,11 @@ class BearingCapacityAnalysis:
             qult = c*Nc*sc*dc*ic*bc*gc
                  + q*Nq*sq*dq*iq*bq*gq
                  + 0.5*gamma*B'*Ng*sg*dg*ig*bg*gg
+        except that at phi = 0 Vesic's cohesion term adds Brinch Hansen's
+        d_c, as UFC 3-220-20 Eq. 5-21 (p. 295) adds its Table 5-7 d_c = 0.4 k:
+            c*Nc*(sc*ic*bc*gc + dc - 1)
+        the other factors multiplied as GEC-6 Eq. 5-14 (p. 63) and EN 1997-1
+        D.1 (p. 158) print them (GM-281).
         """
         if self.factor_method == "terzaghi":
             return self._compute_terzaghi()
@@ -528,8 +566,14 @@ class BearingCapacityAnalysis:
         gamma = self.soil.gamma_below_footing(Df, B)
 
         # General bearing capacity equation
-        # Term 1: cohesion term
-        term_c = c * Nc * sc * dc * ic * bc * gc
+        # Term 1: cohesion term. At phi = 0 Vesic's d_c is Brinch Hansen's
+        # 0.4 k, which Eq. 5-21 adds (UFC 3-220-20 p. 295; GM-281: it was
+        # multiplied). Meyerhof's d_c multiplies (Table 5-6, Eq. 5-18)
+        dc_added = phi == 0 and self.factor_method == "vesic"
+        if dc_added:
+            term_c = c * Nc * (sc * ic * bc * gc + dc - 1.0)
+        else:
+            term_c = c * Nc * sc * dc * ic * bc * gc
         # Term 2: overburden term
         term_q = q * Nq * sq * dq * iq * bq * gq
         # Term 3: self-weight term
@@ -561,6 +605,7 @@ class BearingCapacityAnalysis:
             term_selfweight=term_g,
             ngamma_method=self.ngamma_method,
             factor_method=self.factor_method,
+            c_term_adds_dc=dc_added,
         )
 
     def _compute_terzaghi(self) -> BearingCapacityResult:
