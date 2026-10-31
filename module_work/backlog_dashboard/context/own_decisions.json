@@ -2493,5 +2493,34 @@
       "BACKLOG.md OWN-107",
       "module_work/gm285/CHECK.md"
     ]
+  },
+  "OWN-108": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "What should the aggregate-pier tool's stress ratio n default to: 5.0 as now, GEC-13's 2.5 for preliminary stone-column design, or a value by column type?",
+    "why": "The default sets the settlement reduction. At an area ratio of 0.2, n = 5.0 gives a settlement reduction factor of 0.56 and n = 2.5 gives 0.77, so 2.5 predicts more settlement. The tool covers both stone columns and rammed aggregate piers, and GEC-13 prints different values for each.",
+    "background": "GEC-13 (FHWA-NHI-16-027): stone columns measured n 'between 2.0 and 5.0' (p. 5-31), and 'For preliminary design, a ratio of 2.5 is often conservatively used' (p. 5-32); rammed aggregate piers 5 to 10 (p. 5-43), and Example 1 uses 6 (p. 5-47). No single page settles one default for both. Detail: module_work/gm291/CHECK.md.",
+    "options": [
+      {
+        "label": "Keep 5.0",
+        "effect": "Results unchanged; the top of the stone-column range and the bottom of the rammed-pier range."
+      },
+      {
+        "label": "2.5 by default",
+        "effect": "GEC-13's conservative preliminary value for stone columns; more predicted settlement for every run that leaves n out."
+      },
+      {
+        "label": "Ask for the column type",
+        "effect": "2.5 for stone columns and a printed rammed-pier value (for example 6, as Example 1 uses) by a new column-type input; the result says which."
+      }
+    ],
+    "recommendation": "Ask for the column type, so each kind takes the value GEC-13 prints for it.",
+    "if_no_answer": "5.0 stays, and the result says it is the module's default with both printed alternatives.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-108",
+      "module_work/gm291/CHECK.md"
+    ]
   }
 }
