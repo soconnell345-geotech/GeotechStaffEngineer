@@ -290,11 +290,11 @@ def test_references_subagent_tools_truncate():
 def test_references_subagent_prompt_has_concision_instruction():
     """The references sub-agent prompt appends a concision instruction so it
     returns only the value(s) + citation, not long chapter text."""
-    from funhouse_agent.reviewer import CONSULTANT_FRAMING
+    from funhouse_agent.reviewer import CONSULTANT_ROLE
 
     spec = build_references_subagent()
     prompt = spec["system_prompt"]
-    assert prompt.startswith(CONSULTANT_FRAMING)
+    assert prompt.startswith(CONSULTANT_ROLE)
     assert "concise" in prompt.lower()
     assert "citation" in prompt.lower()
     # It must not paste long chapter text — that phrasing is the guard.

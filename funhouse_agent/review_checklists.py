@@ -62,7 +62,7 @@ specific check, the governing reference, and the corrective action.
    overburden, and fines correction applied to (N1)60 → (N1)60cs consistently.
 
 4. **Mononobe-Okabe earth pressure (`seismic_geotech`).** Sign conventions
-   (DESIGN SG-3): wall batter `beta` is POSITIVE when the back face leans toward
+   (the module's own): wall batter `beta` is POSITIVE when the back face leans toward
    the backfill (Coulomb α = 90° + β). At `kh = kv = 0`, `KAE → Coulomb Ka` and
    `KPE → Coulomb Kp` exactly (a computed KAE/KPE that does not collapse to the
    static Coulomb value at zero acceleration is wrong). Active case uses inertia
@@ -299,8 +299,9 @@ specific check, the governing reference, and the corrective action.
 5. **Driven-pile method matches the layer (`axial_pile`).** Nordlund
    (cohesionless), Tomlinson / α (cohesive), or β / effective-stress — the method
    must match each layer's soil type; skin + toe are summed; the effective-
-   overburden integration is split at the GWT; a critical-depth limit applies in
-   sand. Uplift/tension uses SKIN only (no toe) with the tension factor. A per-
+   overburden integration is split at the GWT; a Nordlund toe in sand takes
+   sigma'p at most 3 ksf (GEC-12 Sec. 7.2.1.3.1, Step 8, p. 244) unless the
+   run says otherwise, and the side resistance has no limit. Uplift/tension uses SKIN only (no toe) with the tension factor. A per-
    layer `toe_friction_angle` should reflect the actual bearing stratum.
 
 6. **Drilled shaft (`drilled_shaft`, GEC-10).** α (cohesive side), β
@@ -336,17 +337,15 @@ specific check, the governing reference, and the corrective action.
    or rock unless `top_exclusion` is given) carries no side resistance.
 
 7. **Pile group (`pile_group`).** ONE right-hand sign convention end-to-end —
-   the module's +Mx sense is a DOCUMENTED convention (an intentional change vs
-   the 5.0 line); confirm the applied-moment sense matches it before flagging a
-   sign. A group efficiency (Converse-Labarre or the chosen rule) is applied to
+   the module's +Mx sense is its DOCUMENTED convention; confirm the
+   applied-moment sense matches it before flagging a sign. A group efficiency (Converse-Labarre or the chosen rule) is applied to
    the group capacity; block failure is checked for closely-spaced groups in
    clay; group settlement (Meyerhof / equivalent-raft) exceeds the single-pile
    value.
 
 8. **Wave equation / drivability (`wave_equation`).** Smith elasto-plastic
    springs (quake, damping); the damping model (`smith` vs `smith_viscous`) is a
-   documented choice whose DEFAULT changed vs the 5.0 line — confirm it matches
-   the intent. The bearing graph relates blow count to ULTIMATE capacity (apply
+   documented choice — confirm the one the run used matches the intent. The bearing graph relates blow count to ULTIMATE capacity (apply
    the FS / resistance factor separately); check driving stresses vs allowable.
 
 9. **Downdrag (`downdrag`).** Fellenius neutral-plane method: negative skin
@@ -423,7 +422,7 @@ specific check, the governing reference, and the corrective action.
    backfill slope β and the wall batter, and that δ ≤ ~⅔φ' unless justified.
 
 3. **Sheet-pile walls (`sheet_pile`).** The module reports embedment on a SINGLE
-   factor-of-safety basis (a documented convention vs the 5.0 line) — confirm the
+   factor-of-safety basis (its documented convention) — confirm the
    FOS basis (e.g. net passive, or FS on passive resistance) matches the standard
    being cited (CP2 / USS / simplified methods differ in where the FS is applied)
    before comparing the required embedment. Cantilever (embedment only) vs
@@ -440,8 +439,9 @@ specific check, the governing reference, and the corrective action.
 
 5. **Excavation stability (`soe`).** Check basal heave (Terzaghi / Bjerrum FS),
    base/sidewall shear, and bottom stability against piping/uplift where the GWT
-   is high. Passive resistance may use the log-spiral (Caquot-Kerisel) Kp with
-   wall friction δ; the δ = 0 case must anchor to the Rankine Kp (a v5.3 fix).
+   is high. Passive resistance may use the log-spiral Kp with wall friction δ
+   (UFC 3-220-20 Eq. 4-12 by default, the Caquot-Kerisel chart as an option);
+   at δ = 0 it must equal the Rankine Kp.
    For temporary shoring, Cal/OSHA protective-system limits
    (`california_trenching`) govern the geometry.
 
@@ -464,10 +464,10 @@ specific check, the governing reference, and the corrective action.
 8. **Seismic earth pressure — Mononobe-Okabe ONLY (`seismic_geotech`).** At
    `kh = kv = 0`, `KAE → Coulomb Ka` and `KPE → Coulomb Kp` EXACTLY — a KAE/KPE
    that does not collapse to the static Coulomb value at zero acceleration is
-   wrong. Battered walls use the correct Coulomb α = 90° + β (the battered-wall
-   KPE is a documented correction vs the 5.0 line). The seismic thrust INCREMENT
-   ΔKAE acts near 0.6H while the M-O TOTAL thrust acts near H/3 — do not conflate
-   them. NOTE: only M-O seismic earth pressure is in this reviewer's scope;
+   wrong. Battered walls use Coulomb α = 90° + the wall batter (seismic_geotech's
+   `beta`, from vertical; its backfill slope, item 2's β, is `i`). The seismic thrust INCREMENT
+   ΔPAE acts at 0.6H above the base (Seed & Whitman 1970) and the static PA at
+   H/3 — do not conflate them. NOTE: only M-O seismic earth pressure is in this reviewer's scope;
    liquefaction, site classification and Newmark slope displacement belong to the
    SEISMIC reviewer — defer those rather than reviewing them here.
 """
@@ -488,8 +488,9 @@ EARTH_RETENTION_REVIEWER_PREAMBLE = _reviewer_preamble(
         "reference_db / figure_db)."),
     checklist=EARTH_RETENTION_CHECKLIST,
     anchors="""\
-- **`dm7`** — NAVFAC DM7: earth pressures (Ch 2), retaining structures (Ch 6),
-  Rankine/Coulomb coefficients and the log-spiral passive chart (Fig 4-12).
+- **`dm7`** — NAVFAC DM7.2: excavations and retained cuts (Ch 2), rigid
+  retaining structures and their earth pressures (Ch 4), Rankine/Coulomb
+  coefficients and the log-spiral passive charts (Figs 4-12, 4-13).
 - **`gec4`** — ground anchors (bond stress, load transfer, corrosion, testing).
 - **`gec7`** — soil nail walls (bond, pullout, facing, global stability).
 - **`gec11`** — MSE walls & reinforced soil slopes (Kr/Ka, F*, LRFD stability).
@@ -552,11 +553,11 @@ specific check, the governing reference, and the corrective action.
    modeled matches the design scenario.
 
 6. **FEM strength reduction — SRM vs LE (`fem2d`).** The SRM FOS is the strength-
-   reduction factor at which the FE model fails (non-convergence). Since the
-   2026-10-14 fixes it no longer depends much on the mesh (coarse to fine
-   agree within about 2 % on the validation problems) and sits close to the
-   LE FOS; on a new kind of problem still check a mesh-refinement sequence
-   (`srm_mesh_refinement_study`) before trusting a single mesh. Use **T6**
+   reduction factor at which the FE model fails (non-convergence). In this
+   module it depends little on the mesh (coarse to fine agree within about
+   2 % on its validation problems) and sits close to the LE FOS; on a new
+   kind of problem still check a mesh-refinement sequence
+   (`fem2d_srm_mesh_refinement_study`) before trusting a single mesh. Use **T6**
    elements: **CST LOCKS** on collapse / FOS problems (overpredicts, never
    collapses) — do not use CST for FOS or bearing-capacity limit loads.
 
@@ -602,7 +603,7 @@ SLOPE_FEM_REVIEWER_PREAMBLE = _reviewer_preamble(
         "reference_db / figure_db)."),
     checklist=SLOPE_FEM_CHECKLIST,
     anchors="""\
-- **`dm7`** — NAVFAC DM7: slope stability (Ch 7), shear strength, seepage and the
+- **`dm7`** — NAVFAC DM7: slope stability (DM7.1 Ch 7), shear strength, seepage and the
   general soil mechanics behind the FEM constitutive inputs.
 - **`gec7`** — soil nail walls: the library's soil-nail reference (bond / pullout
   for nailed slopes). (There is no standalone slope-stability GEC; gec5 is site
@@ -625,8 +626,8 @@ DESIGN pavements and answer pavement/roadbed questions; you are not a
 general geotechnical agent.
 
 Your direct tools are scoped to the pavement domain: the pavement_design
-ANALYSIS module (flexible SN + Figure 3.2 layer split, rigid slab D with
-direct/MR-19.4/composite-k, design_traffic_esals, effective_subgrade_modulus,
+ANALYSIS module (flexible SN + Figure 3.2 layer split, rigid slab D with k
+from a direct value, MR/19.4 or the composite-k worksheet, design_traffic_esals, effective_subgrade_modulus,
 performance_period) and calc_package (pavement_design_package for the
 Mathcad-style report, html_to_pdf for custom reports), plus the pavement
 REFERENCE modules (aashto_1993; ufc_pavement = UFC 3-250-01 roads/parking —
@@ -723,7 +724,7 @@ CONVENTIONS AND HONESTY.
 - Out of scope, say so plainly: full code-compliance checking (ACI 318 /
   AISC load-combination and phi-factor application is the engineer's job,
   not this specialist's), seismic detailing provisions, and any structural
-  reference content not yet onboarded (see WORKFLOW note above).
+  reference content not in the reference modules above.
 """
 
 
@@ -740,8 +741,8 @@ SPECIALIST_DELIVERABLES = """\
 
 Beside your domain's modules you have the full agent's report and drawing
 modules: calc_package (a module's *_package calculation package,
-render_figures for a package's own figures, html_to_pdf for a report of your
-own) and profile_figure (subsurface_profile for a layered profile, plot_data
+render_figures for a package's own figures, render_tables for its
+calculation, html_to_pdf for a report of your own) and profile_figure (subsurface_profile for a layered profile, plot_data
 for data plots). Use them when the user asks for a calculation package, a
 figure or a PDF. They report and draw; they do not widen your domain.
 calc_package lists a package for every discipline, and each one re-runs the

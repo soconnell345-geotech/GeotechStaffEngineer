@@ -60,7 +60,7 @@ specific check, the governing reference, and the corrective action.
    backfill slope β and the wall batter, and that δ ≤ ~⅔φ' unless justified.
 
 3. **Sheet-pile walls (`sheet_pile`).** The module reports embedment on a SINGLE
-   factor-of-safety basis (a documented convention vs the 5.0 line) — confirm the
+   factor-of-safety basis (its documented convention) — confirm the
    FOS basis (e.g. net passive, or FS on passive resistance) matches the standard
    being cited (CP2 / USS / simplified methods differ in where the FS is applied)
    before comparing the required embedment. Cantilever (embedment only) vs
@@ -77,8 +77,9 @@ specific check, the governing reference, and the corrective action.
 
 5. **Excavation stability (`soe`).** Check basal heave (Terzaghi / Bjerrum FS),
    base/sidewall shear, and bottom stability against piping/uplift where the GWT
-   is high. Passive resistance may use the log-spiral (Caquot-Kerisel) Kp with
-   wall friction δ; the δ = 0 case must anchor to the Rankine Kp (a v5.3 fix).
+   is high. Passive resistance may use the log-spiral Kp with wall friction δ
+   (UFC 3-220-20 Eq. 4-12 by default, the Caquot-Kerisel chart as an option);
+   at δ = 0 it must equal the Rankine Kp.
    For temporary shoring, Cal/OSHA protective-system limits
    (`california_trenching`) govern the geometry.
 
@@ -101,17 +102,18 @@ specific check, the governing reference, and the corrective action.
 8. **Seismic earth pressure — Mononobe-Okabe ONLY (`seismic_geotech`).** At
    `kh = kv = 0`, `KAE → Coulomb Ka` and `KPE → Coulomb Kp` EXACTLY — a KAE/KPE
    that does not collapse to the static Coulomb value at zero acceleration is
-   wrong. Battered walls use the correct Coulomb α = 90° + β (the battered-wall
-   KPE is a documented correction vs the 5.0 line). The seismic thrust INCREMENT
-   ΔKAE acts near 0.6H while the M-O TOTAL thrust acts near H/3 — do not conflate
-   them. NOTE: only M-O seismic earth pressure is in this reviewer's scope;
+   wrong. Battered walls use Coulomb α = 90° + the wall batter (seismic_geotech's
+   `beta`, from vertical; its backfill slope, item 2's β, is `i`). The seismic thrust INCREMENT
+   ΔPAE acts at 0.6H above the base (Seed & Whitman 1970) and the static PA at
+   H/3 — do not conflate them. NOTE: only M-O seismic earth pressure is in this reviewer's scope;
    liquefaction, site classification and Newmark slope displacement belong to the
    SEISMIC reviewer — defer those rather than reviewing them here.
 
 ## Reference anchors
 
-- **`dm7`** — NAVFAC DM7: earth pressures (Ch 2), retaining structures (Ch 6),
-  Rankine/Coulomb coefficients and the log-spiral passive chart (Fig 4-12).
+- **`dm7`** — NAVFAC DM7.2: excavations and retained cuts (Ch 2), rigid
+  retaining structures and their earth pressures (Ch 4), Rankine/Coulomb
+  coefficients and the log-spiral passive charts (Figs 4-12, 4-13).
 - **`gec4`** — ground anchors (bond stress, load transfer, corrosion, testing).
 - **`gec7`** — soil nail walls (bond, pullout, facing, global stability).
 - **`gec11`** — MSE walls & reinforced soil slopes (Kr/Ka, F*, LRFD external stability).

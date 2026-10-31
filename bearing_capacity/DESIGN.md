@@ -228,7 +228,8 @@ the table prints. The module keeps the note C form (no number changes),
 for three printed reasons: the table's own s_c = 1 + (B/L)(N_q/N_c) cos phi'
 and i_c = (i_q N_q - 1)/(N_q - 1) are that formula term for term; note C names it
 as the source of the c factors; and as phi' goes to 0 it tends to
-1 + 2k/5.14 = 1 + 0.39 k, Table 5-7's 1 + 0.4 k, where the printed form
+1 + 2k/5.14 = 1 + 0.39 k, against 1 + 0.4 k from Table 5-7's d_c = 0.4 k
+(p. 295, added in Eq. 5-21), where the printed form
 tends to 1 + 0.19 k. The depth choice's basis says so, and its
 alternatives give the printed value for the footing
 (`factors.ufc_table_5_8_printed_dc`; not an option of the tool). The calc

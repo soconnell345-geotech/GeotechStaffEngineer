@@ -475,10 +475,11 @@ def test_subagents_configured():
     # the v1 text-tag protocol ("<tool_call> tags", "You have 4 tools", an
     # 11-module list) is not given to a model that calls tools natively.
     from funhouse_agent.reviewer import (
-        CONSULTANT_FRAMING, REVIEWER_DEEP_PROMPT, REVIEWER_SYSTEM_PROMPT,
+        CONSULTANT_ROLE, REVIEWER_DEEP_PROMPT, REVIEWER_SYSTEM_PROMPT,
     )
     from funhouse_agent.dispatch import REFERENCE_MODULES
-    assert refs["system_prompt"].startswith(CONSULTANT_FRAMING)
+    assert refs["system_prompt"].startswith(CONSULTANT_ROLE)
+    assert "Question:" not in refs["system_prompt"]
     assert "concise" in refs["system_prompt"].lower()
     assert rev["system_prompt"] == REVIEWER_DEEP_PROMPT
     assert "<tool_call>" not in rev["system_prompt"]

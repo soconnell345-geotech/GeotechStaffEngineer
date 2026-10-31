@@ -2564,8 +2564,9 @@ class DowndragAnalysis:
                    f"{what} ({src})",
                    how_given(crit, "bearing_stress",
                              name="influence_depth_criterion"),
-                   ("The module's default: its headline procedure is UFC "
-                    "3-220-20's. " if crit == "bearing_stress" else "")
+                   ("The module's default, as the module follows UFC "
+                    "3-220-20's procedure by default. "
+                    if crit == "bearing_stress" else "")
                    + "The other rule's results are reported beside it "
                    "(below_toe, other_criterion).",
                    [f"{o_what} ({o_src})"]),
@@ -2696,10 +2697,10 @@ class DowndragAnalysis:
                          "their end")
         if ufc_chart:
             basis = (
-                "The module's default; its headline procedure is UFC "
-                "3-220-20's. UFC 3-220-20 §6-5.4.2 (pp. 415-417): alpha 1 "
-                "in soft clay (su below 800 psf, Table 6-16); in firm to "
-                "very stiff clay Fig 6-14, curve A for Z of 40b or more and "
+                "The module's default, as the module follows UFC 3-220-20's "
+                "procedure by default. UFC 3-220-20 §6-5.4.2 (pp. 415-417): "
+                "alpha 1 in soft clay (su below 800 psf, Table 6-16); in "
+                "firm to very stiff clay Fig 6-14, curve A for Z of 40b or more and "
                 "curve B for Z = 10b, Z from the ground surface to the "
                 "clay's base or the pile toe and b the pile width"
                 + zone_text + ". UFC's drag example reads it so (App. B-5.4, "

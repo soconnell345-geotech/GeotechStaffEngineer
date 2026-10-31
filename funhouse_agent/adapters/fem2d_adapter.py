@@ -834,7 +834,7 @@ METHOD_INFO = {
             "degree_of_consolidation": "Degree of consolidation U (0-1) at the final time.",
             "time_s": "The reported times (s since loading): 0 first, then each requested time_points value.",
             "degree_of_consolidation_by_time": "U (0-1) at each time in time_s, same order.",
-            "surface_settlement_m_by_time": "Surface settlement (m, negative = down) at each time in time_s, measured from displacement_reference (default: the load stage alone). Since 2026-10-09 the staggered scheme follows the reference too (it used to include self-weight).",
+            "surface_settlement_m_by_time": "Surface settlement (m, negative = down) at each time in time_s, measured from displacement_reference (default: the load stage alone), in both schemes.",
             "max_excess_pore_pressure_kPa_by_time": "Peak |excess pore pressure| (kPa) at each time in time_s.",
             "final_drained_settlement_m": "Monolithic: the drained end-state settlement of the LOAD stage (m), the U = 1 reference.",
             "displacement_reference": "{reset_after_stage, measured_from, chosen_by ('default' or 'user')}: the stage the reported settlements start from.",

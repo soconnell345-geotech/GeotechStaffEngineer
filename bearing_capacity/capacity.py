@@ -27,7 +27,7 @@ from bearing_capacity.factors import (
     depth_parameter_k,
     ufc_table_5_8_printed_dc,
     DEPTH_FACTOR_METHODS,
-    DEPTH_FACTOR_BASIS,
+    DEPTH_FACTOR_BASIS, DEPTH_K_BASIS,
     inclination_factors,
     vesic_inclination_needs_V,
     _meyerhof_inclination_factors,
@@ -263,6 +263,13 @@ class BearingCapacityAnalysis:
                 "prints Coduto et al.'s (2016)",
                 [f"{v:.2f}, {TERZAGHI_NGAMMA_SOURCES[k]} (ngamma_method "
                  f"'{k}')" for k, v in r.Ngamma_alternatives.items()]))
+        elif self.soil.layer1.friction_angle == 0:
+            # every N-gamma formula is 0 at phi = 0: nothing to choose
+            # (GM-230)
+            out.append(choice(
+                "N-gamma", f"0 at phi = 0 (ngamma_method '{ng}')", how,
+                "every N-gamma formula gives 0 at phi = 0, so the unit "
+                "weight term drops out and which formula does not matter"))
         else:
             phi = self.soil.layer1.friction_angle
             out.append(choice(
@@ -322,6 +329,13 @@ class BearingCapacityAnalysis:
                 "'Do not combine factors for shape and inclined load'"))
         return out
 
+    def _no_cohesion(self) -> bool:
+        """Whether no layer below the base has cohesion, so the c N_c term
+        and its factors drop out."""
+        layers = [self.soil.layer1] + ([self.soil.layer2]
+                                       if self.soil.is_two_layer else [])
+        return all(not l.cohesion for l in layers)
+
     def _depth_choice(self, r: BearingCapacityResult) -> dict:
         """The depth factors, how they were worked out and what the other
         depth_factor_method values give (GM-197)."""
@@ -353,6 +367,18 @@ class BearingCapacityAnalysis:
                      "294), with k = Df/B as that table prints it up to "
                      "Df/B = 1 and Brinch Hansen's k = arctan(Df/B) beyond "
                      "it (Tables 5-7 and 5-8 note B), the smaller factors")
+        elif dm == "hansen" and phi == 0:
+            # Table 5-7's d_c at phi = 0; the note C formula and the
+            # printed Table 5-8 d_c do not bear (GM-230)
+            basis = (DEPTH_K_BASIS + "; at phi = 0 Table 5-7 (p. 295) "
+                     "prints d_c = 0.4 k, added in Eq. 5-21's 1 + s_c + "
+                     "d_c - i_c - b_c - g_c; the module multiplies by 1 + "
+                     "0.4 k. d_q = 1, as Table 5-7 puts no correction on "
+                     "the q term, and d_gamma = 1")
+        elif dm == "hansen" and self._no_cohesion():
+            basis = (DEPTH_K_BASIS + "; d_q = 1 + 2 k tan phi (1 - sin "
+                     "phi)^2, Table 5-8; d_gamma = 1; d_c does not enter "
+                     "with c = 0")
         else:
             basis = DEPTH_FACTOR_BASIS[dm]
         alternatives = []
@@ -368,7 +394,8 @@ class BearingCapacityAnalysis:
                 f"k = Df/B = {df_b:.2f}, as UFC 3-220-20 Table 5-6 (p. 294) "
                 "prints for Meyerhof at any depth (larger depth factors; "
                 "not an option of this tool)")
-        if fm == "vesic" and dm == "hansen" and phi > 0:
+        if (fm == "vesic" and dm == "hansen" and phi > 0
+                and not self._no_cohesion()):
             # GM-214: the table's printed d_c is half its note C formula's
             alternatives.append(
                 f"d_c = {ufc_table_5_8_printed_dc(phi, Df, B):.3f}, as UFC "

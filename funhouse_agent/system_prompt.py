@@ -31,22 +31,20 @@ In text responses, always provide a comment about your confidence in the \
 results and whether the results are heavily influenced by uncertain \
 assumptions. Say how much an assumption moves a result only with a number \
 from a tool run or a reference looked up in this conversation; without \
-one, say which way it moves the result, not by how much. Before running \
-calculations, verify that input parameters are \
-physically reasonable (e.g., friction angles within expected ranges for the \
-soil type, unit weights between 14–24 kN/m³, SPT N-values consistent with \
-described soil behavior). Flag any values that seem unusual. After obtaining \
-results, sanity-check output magnitudes against rules of thumb and expected \
-ranges — flag results that seem unreasonable and investigate before presenting \
-them as final.
+one, say which way it moves the result, not by how much. Check that the \
+inputs agree with each other and with the described soils (e.g., SPT N-values \
+with the stated density) and flag any that seem unusual; check results \
+against the inputs and each other, and investigate any that seem unreasonable \
+before presenting them. A typical range you state comes from a reference \
+looked up and cited; otherwise leave it out.
 
 If your work is based on provided subsurface data, graphically represent those \
 in your calculation package (if generated), provide analyses of the variability \
 of parameters (e.g. intralayer trendline and COV, assuming enough data is \
 available), and clearly show correlations used to come up with design \
 parameters. Always cite the source reference for correlations and analysis \
-methods taken from literature (e.g., "Meyerhof (1963)", "Schmertmann (1978)", \
-"DM7.1 Figure 5", "GEC-10 Section 13.3").
+methods taken from literature: author and year (e.g., "Meyerhof (1963)"), or \
+the manual and the section, table or figure a tool returned.
 
 ## DIGGS File Workflow
 
@@ -80,8 +78,10 @@ about. You WILL make errors. Your computation modules are validated against \
 textbook solutions with thousands of tests; you are not. For ANY \
 quantitative result (bearing capacity, settlement, FOS, lateral capacity, \
 earth pressure, etc.), use call_agent to run the module method that \
-computes it, including a reference module's own equation, table or chart \
-function, and report the numbers it returns. Do NOT compute bearing \
+computes it (a reference's equation, table or chart function too, through \
+the `references` helper if you lack reference modules) and report the \
+numbers it \
+returns. Do NOT compute bearing \
 capacity factors or estimate results. Where NO method computes the value — \
 a published correlation or equation you found, a unit conversion, a ratio \
 of tool outputs — evaluate the stated formula with the `calculate` tool \
@@ -210,6 +210,16 @@ def _build_module_catalog(allowed_agents=None) -> str:
     )
     return "\n".join(lines)
 
+
+#: The clause that sends a reference's function to the deep agent's
+#: `references` helper. With that helper off (a specialist reviewer holds
+#: its reference modules itself) the deep agent puts the second in its
+#: place.
+REFERENCES_HELPER_CLAUSE = (
+    " (a reference's equation, table or chart function too, through the "
+    "`references` helper if you lack reference modules)")
+REFERENCE_MODULES_CLAUSE = (
+    " (a reference module's equation, table or chart function too)")
 
 # Default full-catalog prompt (kept for backward compatibility / direct import).
 SYSTEM_PROMPT = REACT_PREFIX + _build_module_catalog()

@@ -8,7 +8,7 @@ Wires the v1 tool surface and sub-agent design onto
   delegating to the ``references`` sub-agent via the deepagents-native
   ``task`` tool — that is the v5 replacement for v1's ``consult_references``.
 * **references sub-agent** — the reference librarian. Scoped to
-  ``REFERENCE_MODULES``, prompted with ``reviewer.CONSULTANT_FRAMING``, and
+  ``REFERENCE_MODULES``, prompted with ``reviewer.CONSULTANT_ROLE``, and
   given the ``read_reference_figure`` vision tool so it can read values off
   design charts (DM7/GEC/UFC/micropile/FEMA).
 * **reviewer sub-agent** — checks the primary's work against the references.
@@ -46,7 +46,9 @@ except ImportError:                                       # deepagents >= 0.7.2
         _TodoMiddleware = None
 
 from funhouse_agent.dispatch import ANALYSIS_MODULES, REFERENCE_MODULES
-from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_DEEP_PROMPT
+from funhouse_agent.reviewer import CONSULTANT_ROLE, REVIEWER_DEEP_PROMPT
+from funhouse_agent.system_prompt import (REFERENCE_MODULES_CLAUSE,
+                                          REFERENCES_HELPER_CLAUSE)
 
 from funhouse_agent.deep.limits import (
     DEFAULT_REFERENCES_MAX_MODEL_CALLS,
@@ -408,7 +410,7 @@ def build_references_subagent(
     ) + [make_calculate_tool()]
     if extra_tools:
         tools = list(tools) + list(extra_tools)
-    system_prompt = CONSULTANT_FRAMING + _REFERENCES_CONCISION
+    system_prompt = CONSULTANT_ROLE + _REFERENCES_CONCISION
     from funhouse_agent import review_flags as _flags
     warn = None
     if _flags.judgment_calls():
@@ -494,7 +496,7 @@ _CALC_PREAMBLE = (
     "You are the CALCULATION ENGINE of a geotechnical agent. You have the "
     "analysis modules (call_agent / list_methods / describe_method), the "
     "`calc_package` module (canned *_package reports, render_figures, "
-    "html_to_pdf), the `profile_figure` module (subsurface_profile schematic, "
+    "render_tables, html_to_pdf), the `profile_figure` module (subsurface_profile schematic, "
     "plot_data data plots), the reference modules' equation, table and chart "
     "functions (DM7, GEC, UFC, micropile...), the `calculate` tool for a "
     "stated formula no method computes, save_file, and read access to the "
@@ -770,8 +772,6 @@ def build_calc_subagent(
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     ) + [make_calculate_tool()]
-    # NOT CONSULTANT_FRAMING: that is the references sub-agent's librarian
-    # preamble ("Do NOT perform engineering calculations"). See _CALC_PREAMBLE.
     system_prompt = _CALC_PREAMBLE + _CALC_FRAMING
     if max_model_calls:     # the budget, stated (GM-101; unswitched)
         system_prompt = system_prompt + _CALC_BUDGET.format(
@@ -1456,6 +1456,10 @@ def build_deep_agent(
     if system_prompt is None:
         system_prompt = build_domain_prompt(allowed_agents,
                                             memory_enabled=enable_memory)
+        if reference_mode == "off":
+            # no references helper to run a reference's function through
+            system_prompt = system_prompt.replace(
+                REFERENCES_HELPER_CLAUSE, REFERENCE_MODULES_CLAUSE)
         from funhouse_agent import review_flags as _flags
         if _flags.judgment_calls() and not review_page:
             # The judgment calls put in front of the user (GM-116), behind

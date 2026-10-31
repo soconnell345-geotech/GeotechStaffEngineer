@@ -26,8 +26,10 @@ from funhouse_agent.deep.limits import (  # noqa: E402
 from funhouse_agent.deep.prompt import (  # noqa: E402
     build_domain_prompt, judgment_calls_section)
 from funhouse_agent.dispatch import ANALYSIS_MODULES  # noqa: E402
+from funhouse_agent.system_prompt import (  # noqa: E402
+    REFERENCE_MODULES_CLAUSE, REFERENCES_HELPER_CLAUSE)
 from funhouse_agent.reviewer import (  # noqa: E402
-    CONSULTANT_FRAMING, REVIEWER_DEEP_PROMPT)
+    CONSULTANT_ROLE, REVIEWER_DEEP_PROMPT)
 
 
 class _Quiet(BaseChatModel):
@@ -77,7 +79,7 @@ def _spec(captured, name):
 
 
 def _references_prompt(options: bool, consult: bool = False) -> str:
-    return (CONSULTANT_FRAMING + agent_mod._REFERENCES_CONCISION
+    return (CONSULTANT_ROLE + agent_mod._REFERENCES_CONCISION
             + (agent_mod._REFERENCES_OPTIONS if options else "")
             + (agent_mod._REFERENCES_JUDGMENT_CALLS if consult else "")
             + agent_mod._REFERENCES_BUDGET.format(
@@ -229,6 +231,9 @@ def test_switch_off_leaves_every_prompt_as_it_was(monkeypatch, calc,
                              enable_calc_subagent=calc)
     assert agent.geotech_judgment_consult is False      # GM-174 never acts
     want = build_domain_prompt(ANALYSIS_MODULES, memory_enabled=False)
+    if reference_mode == "off":     # no helper to name (GM-230)
+        want = want.replace(REFERENCES_HELPER_CLAUSE,
+                            REFERENCE_MODULES_CLAUSE)
     if calc:
         want += "\n\n" + agent_mod._CALC_DELEGATION_NUDGE
     assert captured["system_prompt"] == want

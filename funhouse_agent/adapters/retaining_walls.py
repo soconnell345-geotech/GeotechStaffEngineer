@@ -963,8 +963,7 @@ _NO_K0_FORM = {
     "reason": (
         "the at-rest K0 behind ground rising from the wall is always EN "
         "1997-1:2004 Eq. 9.2 (p. 104), K0;beta = K0 (1 + sin beta); the "
-        "Caltrans Trenching and Shoring Manual Eq. 4-3-14 form was removed "
-        "(GM-243). Leave k0_sloping_ground out"),
+        "tool has no other form. Leave k0_sloping_ground out"),
     "accepts": ["en_1997_1_eq_9_2"]}
 
 

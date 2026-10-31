@@ -344,7 +344,7 @@ METHOD_INFO = {
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth below ground surface (m)."},
             "head_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the pile head below the ground surface (m), e.g. the bottom of a footing 1.5 m down. Layers above the head contribute no skin friction; overburden above the head still raises effective stress at the tip. Default 0 = head at the ground surface."},
             "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
-            "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "auto = Nordlund (sand) / Tomlinson (clay); beta = effective-stress method for all layers."},
+            "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "auto = by soil type: the Nordlund method in cohesionless soil (GEC-12 Sec. 7.2.1.3.1), the alpha method with Tomlinson's adhesion in cohesive soil (Sec. 7.2.1.3.2); beta = the beta (effective stress) method in every layer (Sec. 7.2.1.3.4)."},
             "include_uplift": {"type": "bool", "required": False, "default": False, "description": "Also report uplift (tension) capacity."},
             "cohesive_phi": {"type": "float", "required": False, "default": 25.0, "description": "FALLBACK drained phi' (deg) for cohesive layers under method='beta' (skin AND tip); a per-layer friction_angle on a cohesive layer wins over this global."},
             "uplift_skin_fraction": {"type": "float", "required": False, "default": UPLIFT_SKIN_FRACTION, "description": "Fraction of the outside side resistance taken in uplift (with include_uplift). Default 1.0: GEC-12 Eq. 7-38 takes the whole shaft resistance and puts the uplift reduction in the resistance factor; 0.7 is the customary share in free-draining soils GEC-12 cites."},
@@ -433,6 +433,8 @@ _APPLIES_WHEN = {
 declare_applies_when(METHOD_INFO, {
     "axial_pile_capacity": {
         **_APPLIES_WHEN,
+        # Nordlund's V, listed where a sand layer's choices report it
+        "displaced_volume": False,
         "uplift_skin_fraction": {"include_uplift": [True]}},
     "capacity_vs_depth": _APPLIES_WHEN,
 })

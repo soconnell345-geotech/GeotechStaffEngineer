@@ -450,16 +450,20 @@ def aggregate_pier_choices(n: float, E_soil: float, pattern: str,
                 "the settlement ratio off GEC-13's printed Priebe curve, "
                 "Fig. 5-21 curve (4) (priebe_improvement_factor)"]),
     ] if not by_moduli or q_unreinforced > 0 else []
+    e_how = how_given(E_soil, 5000.0, name="E_soil")
     return [
         _settlement_method_choice(settlement_method, as_ratio,
                                   modular_ratio, n_prime),
         *n_choice,
-        choice("soil modulus E_s", f"{E_soil:g} kPa",
-               how_given(E_soil, 5000.0, name="E_soil"),
+        choice("soil modulus E_s", f"{E_soil:g} kPa", e_how,
                (f"with E_column it sets E_c/E_s = {modular_ratio:g} and "
                 "the composite modulus E_comp = E_s n'" if by_moduli else
                 "used only for the composite modulus E_comp = "
-                "E_s [1 + a_s (n - 1)]")),
+                "E_s [1 + a_s (n - 1)]")
+               # the unsourced default says so (GM-230)
+               + ("; 5000 kPa is the tool's default, not a value from a "
+                  "reference: give E_soil for the soil"
+                  if E_soil == 5000.0 else "")),
         choice("column pattern", pattern,
                how_given(pattern, "triangular", name="pattern"),
                "unit cell of equal area: d_e = 1.05 S (triangular) or "

@@ -3,7 +3,8 @@
 1. UFC 3-220-20 Table 5-8 (p. 296) prints d_c = 1 + k (1 - sin phi')^2
    N_q/N_c, half of what its note C correspondence formula gives from its
    own d_q. The module keeps the note C form (its printed s_c and i_c follow
-   that formula term for term, and at phi -> 0 it meets Table 5-7's 1 + 0.4 k)
+   that formula term for term, and at phi -> 0 it meets the 1 + 0.4 k of
+   Table 5-7's d_c = 0.4 k)
    and lists the printed value as an alternative.
 2. Meyerhof's i_gamma = (1 - theta/phi')^2 (Table 5-6, p. 294) was clamped
    at 0, which does nothing: past phi it grows again, to 1 at 2 phi. The
@@ -73,8 +74,9 @@ def test_table_5_8_printed_sc_and_ic_follow_note_c(phi):
 
 
 def test_at_phi_near_zero_note_c_meets_table_5_7():
-    """Table 5-7 (phi = 0): d_c = 1 + 0.4 k. Note C's d_c tends to
-    1 + 2 k/5.14 = 1 + 0.39 k; the printed Table 5-8 form to 1 + 0.19 k."""
+    """Table 5-7 (phi = 0): d_c = 0.4 k, added in Eq. 5-21 (1 + 0.4 k here).
+    Note C's d_c tends to 1 + 2 k/5.14 = 1 + 0.39 k; the printed Table 5-8
+    form to 1 + 0.19 k."""
     B, Df = 2.0, 1.0
     k = depth_parameter_k(Df, B)
     dc = depth_factors(1e-4, Df, B, "vesic")[0]
@@ -100,7 +102,8 @@ def test_the_depth_choice_states_both_forms():
     d = [c for c in r.choices if c["what"] == "depth factors"][0]
     assert "correspondence formula of its note C" in d["basis"]
     assert "half of that" in d["basis"]
-    assert "Table 5-7's 1 + 0.4 k" in d["basis"]
+    assert "Table 5-7's d_c = 0.4 k (p. 295, added in Eq. 5-21)" in \
+        d["basis"]
     printed = ufc_table_5_8_printed_dc(32.0, 1.0, 2.0)
     alt = [a for a in d["alternatives"] if "Table 5-8 (p. 296)" in a]
     assert alt == [

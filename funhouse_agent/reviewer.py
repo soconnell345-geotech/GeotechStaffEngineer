@@ -85,8 +85,8 @@ _REVIEW_RULES = """\
 ### Rules
 1. Always call describe_method before using a method you haven't used before.
 2. Be concise — focus on what matters, not exhaustive lookups.
-3. Cite specific reference sections (e.g., "DM7.1 Table 3", "GEC-10 Section \
-13.3") — only ones a tool returned in this review.
+3. Cite the specific reference section, table or figure — only ones a tool \
+returned in this review.
 4. Do NOT repeat the full analysis — only comment on what needs checking.
 5. Limit yourself to 3-4 reference lookups maximum. Focus on the most \
 critical checks.
@@ -257,11 +257,16 @@ def needs_revision(review_text: str) -> bool:
     return "REVIEW_STATUS: REVISE" in review_text
 
 
-CONSULTANT_FRAMING = (
+#: The librarian's role, with no question label: the deep references
+#: helper's system prompt, whose question arrives as its task (GM-230: the
+#: label had dangled there, followed by the concision rule).
+CONSULTANT_ROLE = (
     "You are acting as a geotechnical REFERENCE LIBRARIAN. Using ONLY the "
     "reference lookup tools available to you (NAVFAC DM7, the FHWA GEC series, "
-    "UFC, micropile, FEMA, NOAA — via chapter-text search, table/equation "
-    "lookups, and figure search), answer the question below. CITE the specific "
+    "UFC, Eurocode 7, micropile, FEMA and the others that list_agents names — "
+    "via "
+    "chapter-text search, table/equation lookups, and figure search), answer "
+    "the question you are asked. CITE the specific "
     "reference and section/table/figure number for every value or statement — "
     "only references your tools returned in this consult; if the lookups find "
     "nothing, say so rather than citing from memory. If "
@@ -271,8 +276,11 @@ CONSULTANT_FRAMING = (
     "gives the inputs and the reference gives the equation or table, return "
     "the value the reference's own function computes, or evaluate the "
     "equation with the `calculate` tool if you have it; never do arithmetic "
-    "in your head.\n\nQuestion: "
+    "in your head."
 )
+
+#: The v1 consult's prompt: the role, then the question it appends.
+CONSULTANT_FRAMING = CONSULTANT_ROLE + "\n\nQuestion: "
 
 
 def consult_references(
