@@ -55,7 +55,8 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   'subsurface_profile', ...)`: strata, water table, any fill/surcharge, the
   foundation, and callouts such as the neutral plane. A canned `*_package`
   already carries the analysis figures; a bespoke `html_to_pdf` report gets
-  them from `render_figures` and its data plots from `plot_data`. Paste each
+  them from `render_figures`, the package's calculation from `render_tables`
+  and its data plots from `plot_data`. Paste each
   returned `html_img_tag` straight into the report HTML — `html_to_pdf` embeds
   a real local PNG path for you. Never ship "[image]", an inline `<svg>`, or a
   coloured table standing in for a figure; `html_to_pdf` rejects those and
