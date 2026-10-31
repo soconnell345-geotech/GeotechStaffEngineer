@@ -589,11 +589,18 @@ def _auto_method_notes(result, analysis=None) -> str:
     chart = getattr(analysis, "adhesion_chart", "fig_7_17")
     if (result.toe_details or {}).get("governs") == "Eq. 7-90":
         chart = "fig_7_17"  # Eq. 7-90 takes Ca from Fig. 7-17 (p. 407)
-    text = ("K_\u03b4 from Tables 7-6/7-7 (log-linear in the displaced volume "
-            "V), \u03b4/\u03c6 from Fig. 7-9, C_F from Fig. 7-14; "
-            f"{_ADHESION_CHART_TEXT.get(chart, _ADHESION_CHART_TEXT['fig_7_17'])}"
-            ".")
-    return text + (" " + "; ".join(parts) + "." if parts else "")
+    # name only the charts of the methods the profile ran (GM-230)
+    ran = {lb["method"] for lb in result.layer_breakdown or []}
+    charts = []
+    if "nordlund" in ran:
+        charts.append("K_\u03b4 from Tables 7-6/7-7 (log-linear in the "
+                      "displaced volume V), \u03b4/\u03c6 from Fig. 7-9, C_F "
+                      "from Fig. 7-14")
+    if "tomlinson" in ran:
+        charts.append(_ADHESION_CHART_TEXT.get(
+            chart, _ADHESION_CHART_TEXT['fig_7_17']))
+    text = "; ".join(charts) + "." if charts else ""
+    return (text + (" " + "; ".join(parts) + "." if parts else "")).strip()
 
 
 def _beta_notes(result, analysis=None) -> str:

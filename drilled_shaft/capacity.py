@@ -102,7 +102,7 @@ def side_n60_choice(spans) -> dict:
 TOP_EXCLUSION = 1.5
 
 #: GEC-10 (FHWA-NHI-18-024) on the top of the shaft, as printed.
-TOP_EXCLUSION_BASIS = (
+_TOP_COHESIVE = (
     "GEC-10 (FHWA-NHI-18-024) p. 10-17, in Sec. 10.3.5.2, Cohesive Soils: "
     "'It is common design practice to neglect side resistance over the top "
     "5 ft of a drilled shaft, or to the depth of seasonal moisture "
@@ -110,16 +110,28 @@ TOP_EXCLUSION_BASIS = (
     "caused by cyclic lateral loading, or any process near the ground "
     "surface that softens the soil or ends its contact with the shaft; "
     "'This recommendation is subject to modification based on local "
-    "experience and judgment of the designer.' Sec. 10.3.5.1, "
-    "Cohesionless Soils, prints no such zone, and Examples 10-1 and 10-5 "
-    "(pp. 10-12 to 10-14, 10-29) take the sand's side resistance from the "
-    "ground surface. Sec. 10.3.5.3, Rock (pp. 10-20 to 10-26), prints none "
-    "at the top of a socket, and Example 10-4 (pp. 10-27, 10-28) takes the "
-    "socket's side resistance over its whole 10 ft below the casing. With "
-    "top_exclusion left out, the top 1.5 m carries none in cohesive soil, "
-    "and cohesionless soil and rock carry side resistance from the top; a "
-    "top_exclusion given applies in every layer. The permanent casing, "
-    "where deeper, takes its place")
+    "experience and judgment of the designer.' ")
+_TOP_SAND = (
+    "Sec. 10.3.5.1, Cohesionless Soils, prints no such zone, and Examples "
+    "10-1 and 10-5 (pp. 10-12 to 10-14, 10-29) take the sand's side "
+    "resistance from the ground surface. ")
+_TOP_ROCK = (
+    "Sec. 10.3.5.3, Rock (pp. 10-20 to 10-26), prints none at the top of a "
+    "socket, and Example 10-4 (pp. 10-27, 10-28) takes the socket's side "
+    "resistance over its whole 10 ft below the casing. ")
+_TOP_RULE = (
+    "With top_exclusion left out, the top 1.5 m carries none in cohesive "
+    "soil, and cohesionless soil and rock carry side resistance from the "
+    "top; a top_exclusion given applies in every layer. The permanent "
+    "casing, where deeper, takes its place")
+
+
+def top_exclusion_basis(soil_types) -> str:
+    """The top zone's basis, citing GEC-10 on the kinds of ground the
+    profile has (``soil_types``), not on the others (GM-230)."""
+    return (_TOP_COHESIVE
+            + (_TOP_SAND if "cohesionless" in soil_types else "")
+            + (_TOP_ROCK if "rock" in soil_types else "") + _TOP_RULE)
 
 #: The depth (m) at whose sigma'v GEC-10 limits beta near the surface:
 #: 'the value corresponding to a depth of 7.5 ft' (pp. 10-11, 10-12).
@@ -354,7 +366,7 @@ ONEILL_REESE_CLAY_BASE_BASIS = (
     "gives Eqs. 10-19, 10-20 with Table 10-2 instead")
 
 #: GEC-10 (FHWA-NHI-18-024) pp. 10-22 to 10-24 on base resistance in rock.
-ROCK_BASE_BASIS = (
+_EQ_10_23_CONDITIONS = (
     "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.3, p. 10-22: q_BN = N*cr qu "
     "(Eq. 10-23); 'a value of Ncr* = 2.5 is recommended for design when qu "
     "is the sole parameter used for establishing qBN and the following "
@@ -366,11 +378,17 @@ ROCK_BASE_BASIS = (
     "clean-out equipment'. Example 10-4 (pp. 10-27, 10-28) takes it with "
     "RQD 37 to 100 in the zone of the socket because 'Rock coring and local "
     "experience indicate the rock mass below the socket tip is competent': "
-    "2.5 x 360 ksf = 900 ksf. For a fractured rock mass, the Hoek-Brown "
+    "2.5 x 360 ksf = 900 ksf. ")
+_CONDITIONS_JUDGED = ("Whether the three conditions hold is the engineer's "
+                      "judgment (rock_base_conditions_met)")
+ROCK_BASE_BASIS = (
+    _EQ_10_23_CONDITIONS + "For a fractured rock mass, the Hoek-Brown "
     "base (Eqs. 10-24 to 10-29, pp. 10-23, 10-24), for which 2.5 'can be "
     "used as an upper-bound limit'. Resistance factor 0.50 (Table 8-4, p. "
-    "8-14; p. 10-22). Whether the three conditions hold is the engineer's "
-    "judgment (rock_base_conditions_met)")
+    "8-14; p. 10-22). " + _CONDITIONS_JUDGED)
+#: The conditions choice's basis: the conditions alone, not the base's
+#: method and resistance factor, which the base choice gives (GM-230).
+ROCK_CONDITIONS_BASIS = _EQ_10_23_CONDITIONS + _CONDITIONS_JUDGED
 
 #: GEC-10 (FHWA-NHI-18-024) pp. 10-23 to 10-25 on the base of a fractured
 #: rock mass, as printed (GM-251).
@@ -1300,7 +1318,7 @@ class DrillShaftAnalysis:
         return choice(
             "rock below the base (the conditions of Eq. 10-23)", chosen,
             how_given(met, None, name="rock_base_conditions_met"),
-            basis=ROCK_BASE_BASIS, alternatives=alternatives)
+            basis=ROCK_CONDITIONS_BASIS, alternatives=alternatives)
 
     def _hoek_brown_alternative(self) -> str:
         """The Hoek-Brown base as an alternative, in words: its values on
@@ -1526,7 +1544,9 @@ class DrillShaftAnalysis:
         return choice(
             "side resistance near the ground surface", chosen,
             how_given(self.top_exclusion, None, name="top_exclusion"),
-            basis=TOP_EXCLUSION_BASIS, alternatives=alternatives)
+            basis=top_exclusion_basis(
+                {lb["soil_type"] for lb in layer_results}),
+            alternatives=alternatives)
 
     def _side_choices(self, layer_results, Qs_sand: float,
                       Q_ultimate: float) -> List[dict]:

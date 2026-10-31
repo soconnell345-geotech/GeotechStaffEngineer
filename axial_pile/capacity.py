@@ -761,14 +761,24 @@ class AxialPileAnalysis:
                 else:
                     runs.append([name, lb["depth_top_m"],
                                  lb["depth_bottom_m"]])
+            # the basis names only the methods this profile ran (GM-230)
+            ran = {lb["method"] for lb in layer_results}
+            parts = []
+            if "nordlund" in ran:
+                parts.append(
+                    "the Nordlund method in cohesionless soil (GEC-12 Sec. "
+                    "7.2.1.3.1, Eq. 7-8: K_delta from Tables 7-6/7-7, C_F "
+                    "from Fig. 7-14, no limit on sigma'd or the unit side "
+                    "resistance)")
+            if "tomlinson" in ran:
+                parts.append(
+                    "the alpha method in cohesive soil (GEC-12 Sec. "
+                    "7.2.1.3.2: fs = Ca, Eq. 7-10, Ca from the chart in "
+                    "'adhesion chart (alpha-method)')")
             out.append(choice(
                 "side resistance method",
                 "; ".join(f"{n} {a:g}-{b:g} m" for n, a, b in runs), MODULE,
-                "'auto' by soil type: Nordlund in cohesionless soil (GEC-12 "
-                "Sec. 7.2.1.3.1, Eq. 7-8: K_delta from Tables 7-6/7-7, C_F "
-                "from Fig. 7-14, no limit on sigma'd or the unit side "
-                "resistance), the alpha-method with Tomlinson's adhesion "
-                "(Fig. 7-17) in cohesive soil (Sec. 7.2.1.3.2)",
+                "'auto' by soil type: " + "; ".join(parts),
                 [beta_text]))
         if beta:
             toe, basis, how = ("Nt sigma'p (beta method)",
@@ -785,11 +795,11 @@ class AxialPileAnalysis:
                 "from Fig. 7-16(a) by phi and D/b (D/b below 20 or above 45 "
                 "takes the nearest curve), N'q from Fig. 7-16(b), q_L from "
                 "Fig. 7-15", MODULE)
-            alts = ["Nt sigma'v (method 'beta')"]
+            alts = ["Nt sigma'p (method 'beta')"]
         else:
             toe, basis, how = ("9 su", "cohesive toe layer: GEC-12 Eq. 7-11 "
                                "(Nc = 9)", MODULE)
-            alts = ["Nt sigma'v (method 'beta')"]
+            alts = ["Nt sigma'p (method 'beta')"]
         out.append(choice("toe resistance method", toe, how, basis, alts))
 
         if (not beta and tip_layer.soil_type == "cohesionless"
@@ -856,12 +866,14 @@ class AxialPileAnalysis:
                 basis += ("; GEC-12 does not give V for an open pipe, and "
                           "its Nordlund database had no open end pipes "
                           "(p. 232)")
+            # how_given also records a left-out V as used, so
+            # defaults_used lists it only where Nordlund ran (GM-230)
+            how = how_given(self.displaced_volume, None,
+                            name="displaced_volume")
             out.append(choice(
                 "displaced volume V (Nordlund)",
                 f"{V:.3g} ft3/ft ({what})",
-                how_given(self.displaced_volume, None,
-                          name="displaced_volume")
-                if self.displaced_volume is not None else MODULE,
+                how if self.displaced_volume is not None else MODULE,
                 basis, alts))
             given = sorted({l.delta_phi_ratio for l in sand
                             if l.delta_phi_ratio is not None})

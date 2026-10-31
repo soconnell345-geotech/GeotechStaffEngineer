@@ -475,7 +475,8 @@ def passive_choices(geometry: ExcavationGeometry, passive: dict,
     if theory == "rankine":
         other = _with_passive("log_spiral", None, None)
         other_name = ("log_spiral (passive_theory 'log_spiral'), UFC "
-                      "3-220-20 Eq. 4-12, wall friction left out")
+                      "3-220-20 Eq. 4-12, with passive_wall_friction_deg "
+                      "left out: delta/phi' 0.66, none with cohesion")
     else:
         other = _with_passive("rankine", None, None)
         other_name = "rankine (passive_theory 'rankine'), no wall friction"

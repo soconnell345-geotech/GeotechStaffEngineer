@@ -228,10 +228,13 @@ def shape_factors(phi_deg: float, B: float, L: float,
 DEPTH_FACTOR_METHODS = ("hansen", "gec6", "none")
 
 #: Where each depth-factor method is printed.
+#: Brinch Hansen's depth parameter k as UFC 3-220-20 prints it.
+DEPTH_K_BASIS = ("Brinch Hansen (1970): k = Df/B for Df/B < 1, k = "
+                 "arctan(Df/B) for Df/B >= 1, UFC 3-220-20 Tables 5-7 and "
+                 "5-8 note B (pp. 295-296)")
+
 DEPTH_FACTOR_BASIS = {
-    "hansen": ("Brinch Hansen (1970): k = Df/B for Df/B < 1, k = "
-               "arctan(Df/B) for Df/B >= 1, UFC 3-220-20 Tables 5-7 and "
-               "5-8 note B (pp. 295-296); d_q = 1 + 2 k tan phi (1 - sin "
+    "hansen": (DEPTH_K_BASIS + "; d_q = 1 + 2 k tan phi (1 - sin "
                "phi)^2, Table 5-8; d_c = d_q - (1 - d_q)/(N_c tan phi), "
                "the correspondence formula of its note C (Brinch Hansen "
                "1961, de Beer 1970), = 1 + 2 k (1 - sin phi)^2 N_q/N_c; "
