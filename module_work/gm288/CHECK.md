@@ -174,7 +174,10 @@ says the backfill is taken as drained.
 | Owner wall, Coulomb, delta_b 22 | FOS_sliding 1.339 -> 0.945 (delta = beta = 0 on the plane, concrete 23.6, tension zone) |
 | Owner wall, Rankine, delta_b 22 | FOS_sliding 0.978 -> 0.945 (concrete 23.6, tension zone) |
 | Owner wall, phi_foundation 22, Coulomb | FOS_sliding 0.566 -> 0.392 (delta = beta = 0, concrete 23.6) |
+| Owner wall, Coulomb | FOT 3.03 -> 1.996, now fails the 2.0 required (no vertical thrust component with delta = beta = 0, concrete 23.6) |
 
+Over nine checked walls the switch to q_eq alone raised FOS_bearing 15 to
+33 %; with the module's other changes the total moves were +8 to +43 %.
 On soil, q_eq raises FOS_bearing over the old q_toe for the same loads by
 (1 + 6e/B)(1 - 2e/B) - 1: nothing at e = 0, a third at e = B/6 and beyond.
 q_allowable is now the allowable pressure for B' = B - 2e (GEC-6 Sec.
