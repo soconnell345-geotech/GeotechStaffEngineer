@@ -2203,6 +2203,7 @@
         "FOS_sliding_required": 1.5,
         "FOS_overturning_required": 2.0,
         "founded_on_rock": false,
+        "water_table_depth": "no water table: the backfill drained: no water pressure on the wall and no uplift (FHWA NHI-06-089 Sec. 10.5.3, p. 10-41: with adequate drainage the hydrostatic pressure 'generally need not be considered'); give water_table_depth for water behind the wall",
         "bearing_pressure": "uniform"
       }
     }
