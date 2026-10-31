@@ -183,9 +183,9 @@ _PHI_FDN = ("sliding takes the lesser of the backfill and foundation phi; "
             "the probe's backfill phi is the lesser")
 _LIMITS = "the probe's run stops well before the limit"
 _GEF = "'auto' already reads the probe's .gef file with the gef engine"
-_VIBRO = ("acts in the printed calc steps (spacing and improvement "
-          "ratio); the vibro package writes no table and returns no "
-          "number")
+_VIBRO = ("acts in the printed calc steps (the probe spacing off "
+          "GEC-13 Fig. 4-34); the vibro package writes no table and "
+          "returns no number")
 _DRAINED = ("the probe's soil is elastic and the reported movements are "
             "the load stage's alone, so the initial hydrostatic state "
             "does not show")
@@ -306,7 +306,8 @@ NOT_REACHED = {
     ("ground_improvement|feasibility", "depth_to_top_m"):
         "the probe's treatment reaches 0.5 m, well short of GEC-13's depth "
         "limits (10.7 m, 30.5 m, 50 m) that it is held against",
-    ("calc_package|ground_improvement_package", "target_N_spt"): _VIBRO,
+    ("calc_package|ground_improvement_package",
+     "target_relative_density"): _VIBRO,
     ("calc_package|ground_improvement_package", "pattern"): _VIBRO,
     **{(f"lateral_pile|get_py_curve#{m}", "loading"):
        "at the probe's depth (z / b about 8) the cyclic curve is the "

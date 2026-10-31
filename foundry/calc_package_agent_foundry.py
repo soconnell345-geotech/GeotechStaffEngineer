@@ -543,10 +543,10 @@ def _generate_ground_improvement_package(params: dict) -> dict:
             cv=params["cv"],
             Hdr=params["Hdr"],
             time=params["time"],
-            dw=params.get("dw", 0.066),
+            dw=params.get("dw", 0.0635),
             pattern=params.get("pattern", "triangular"),
-            smear_ratio=params.get("smear_ratio", 2.0),
-            kh_ks_ratio=params.get("kh_ks_ratio", 2.0),
+            smear_ratio=params.get("smear_ratio", 1.0),
+            kh_ks_ratio=params.get("kh_ks_ratio", 1.0),
         )
     elif method == "aggregate_piers":
         result = analyze_aggregate_piers(
@@ -568,18 +568,17 @@ def _generate_ground_improvement_package(params: dict) -> dict:
             target_U=params.get("target_U", 90.0),
             ch=params.get("ch"),
             drain_spacing=params.get("drain_spacing"),
-            dw=params.get("dw", 0.066),
+            dw=params.get("dw", 0.0635),
             pattern=params.get("pattern", "triangular"),
-            smear_ratio=params.get("smear_ratio", 2.0),
-            kh_ks_ratio=params.get("kh_ks_ratio", 2.0),
+            smear_ratio=params.get("smear_ratio", 1.0),
+            kh_ks_ratio=params.get("kh_ks_ratio", 1.0),
             sigma_v0=params.get("sigma_v0", 0.0),
         )
     elif method == "vibro":
         result = analyze_vibro_compaction(
             fines_content=params["fines_content"],
             initial_N_spt=params["initial_N_spt"],
-            target_N_spt=params.get("target_N_spt", 25.0),
-            D50=params.get("D50"),
+            target_relative_density=params.get("target_relative_density"),
             pattern=params.get("pattern", "triangular"),
         )
     else:
@@ -1037,7 +1036,7 @@ METHOD_INFO = {
             "drain_spacing": "Wick drain spacing (m), optional — surcharge",
             "fines_content": "Fines content (%) — vibro",
             "initial_N_spt": "Pre-improvement SPT N — vibro",
-            "target_N_spt": "Target SPT N, default 25 — vibro",
+            "target_relative_density": "Target relative density (%), 55-90, for the probe spacing off GEC-13 Fig. 4-34 — vibro",
             "project_name": "Project name for header",
             "output_path": "File path to save HTML, optional",
         },

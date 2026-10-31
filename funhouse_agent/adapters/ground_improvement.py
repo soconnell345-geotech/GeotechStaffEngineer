@@ -55,9 +55,11 @@ _NO_E_COLUMN = (
     "the stress-ratio settlement method (settlement_method "
     "'stress_ratio', the default) does not use the column's modulus: the "
     "stress split is the stress concentration ratio n, taken as given, "
-    "not worked out from the moduli. Give n (GEC-13: 'between 2.0 and "
-    "5.0' for stone columns, Sec. 4.1.2.4; for rammed aggregate piers '4 "
-    "to 45 for rigid footings' and 5 to 10 under embankments, p. 5-45), "
+    "not worked out from the moduli. Give n (GEC-13 for stone columns: "
+    "measured 'between 2.0 and 5.0', p. 5-31, and 2.5 'often "
+    "conservatively used' for preliminary design, p. 5-32; for rammed "
+    "aggregate piers 5 to 10 under embankments and 10 under rigid "
+    "footings, p. 5-43), "
     "or a settlement_method that takes E_c / E_s off GEC-13 Fig. 5-21: "
     "'weighted_modulus', 'balaam_rigid' or 'balaam_flexible'")
 # GM-179: no screen reads the water table.
@@ -74,8 +76,26 @@ _DESIGN_ALIASES = {"time_years": "target_time", "time": "target_time",
 _SURCHARGE_ALIASES = {"surcharge_pressure": "surcharge_kPa",
                       "surcharge": "surcharge_kPa",
                       "S_ult": "S_ultimate", "settlement_m": "S_ultimate"}
-_VIBRO_ALIASES = {"D50_mm": "D50", "initial_N": "initial_N_spt",
-                  "target_N": "target_N_spt"}
+_VIBRO_ALIASES = {"initial_N": "initial_N_spt",
+                  "target_Dr": "target_relative_density"}
+# GM-291: GEC-13 screens the soil in place by fines, not by D50 (its D50 is
+# in Eq. 4-3's backfill suitability number), and prints no probe spacing by
+# SPT N; the spacing is read off its Fig. 4-34 by the target relative density.
+_NO_D50 = (
+    "GEC-13 uses D50 for vibro-compaction only in Eq. 4-3's backfill "
+    "suitability number (p. 4-73, rated by Table 4-7), which rates the "
+    "backfill, not the soil in place. It screens the soil in place by Fig. "
+    "4-27's zones and the fines content (p. 4-65: 'more than 12 to 15 "
+    "percent silt OR more than 2 percent clay'; Table 4-5 by soil type), "
+    "and the tool screens the fines_content")
+_NO_TARGET_N = (
+    "GEC-13 prints the probe spacing by the target relative density, not "
+    "by a target SPT N: give target_relative_density (%), 55 to 90, read "
+    "off Fig. 4-34 (p. 4-77). GEC-13 p. 4-77: 60 percent for floor slabs, "
+    "flat bottom tanks, embankments; 70 to 75 percent for column and "
+    "bridge footings; 80 percent for machinery and mat foundations")
+_VIBRO_REFUSED = {"D50": _NO_D50, "D50_mm": _NO_D50,
+                  "target_N_spt": _NO_TARGET_N, "target_N": _NO_TARGET_N}
 _FEAS_ALIASES = {"treatment_depth": "thickness_m", "thickness": "thickness_m",
                  "N_spt_avg": "N_spt"}
 
@@ -122,6 +142,15 @@ def run_surcharge_preloading(p, *, method="surcharge_preloading"):
 
 
 def run_vibro_compaction(p, *, method="vibro_compaction"):
+    hits = sorted(set(p) & set(_VIBRO_REFUSED))
+    if hits:
+        why = {}
+        for k in hits:
+            why.setdefault(_VIBRO_REFUSED[k], []).append(k)
+        raise ValueError(
+            f"{method} does not take {hits}: "
+            + "; ".join(f"{', '.join(names)}: {reason}"
+                        for reason, names in why.items()) + ".")
     return _run(analyze_vibro_compaction, p, method=method,
                 aliases=_VIBRO_ALIASES,
                 required=["fines_content", "initial_N_spt"])
@@ -223,13 +252,13 @@ METHOD_INFO = {
             "area_replacement_ratio": {"type": "float", "required": False, "description": "Area replacement ratio As/A (0.1-0.35 typical). Used to compute spacing when spacing is not given."},
             "pattern": _PATTERN,
             "E_soil": {"type": "float", "required": False, "default": 5000.0, "description": "Surrounding soil modulus (kPa). With settlement_method 'stress_ratio', used only for the composite modulus E_comp = E_soil*[1 + as*(n-1)]; the GEC-13 Fig. 5-21 methods need it given, for E_c/E_s."},
-            "n": {"type": "float", "required": False, "default": 5.0, "description": "Stress concentration ratio sigma_c/sigma_s; sets the improved bearing and, with settlement_method 'stress_ratio', the settlement reduction factor. GEC-13: 'between 2.0 and 5.0' for stone columns (Sec. 4.1.2.4); for rammed aggregate piers '4 to 45 for rigid footings' and 5 to 10 under embankments (p. 5-45)."},
-            "settlement_method": {"type": "str", "required": False, "default": "stress_ratio", "allowed_values": ["stress_ratio", *_BY_MODULI], "description": "How the settlement over the columns is worked out. 'stress_ratio' (default): SRF = 1/[1 + as*(n-1)] from n. The others give the settlement ratio n' (settlement without columns / with them) by E_c/E_s off GEC-13 Fig. 5-21 (p. 5-36), and need E_column and E_soil: 'weighted_modulus' (curve 2, n' = 1 + as*(E_c/E_s - 1), any E_c/E_s); 'balaam_rigid' (curves 5b, 5c: E_c/E_s 5 to 10, A/A_c 1.75 to 9); 'balaam_flexible' (curve 5a: E_c/E_s = 10, A/A_c 1.5 to 8.5). GEC-13 p. 5-37: the FHWA (1983) Equilibrium Method, 'roughly equivalent to the Balaam relationships', 'represents an average or lower bound estimate suitable for preliminary analyses'; the Priebe curve (priebe_improvement_factor) 'the upper bound effectiveness'."},
+            "n": {"type": "float", "required": False, "default": 5.0, "description": "Stress concentration ratio sigma_c/sigma_s; sets the improved bearing and, with settlement_method 'stress_ratio', the settlement reduction factor. GEC-13 for stone columns: measured 'between 2.0 and 5.0' (p. 5-31), and 'For preliminary design, a ratio of 2.5 is often conservatively used for stability and bearing resistance calculations' (p. 5-32); for rammed aggregate piers 5 to 10 under flexible embankment loading and 10 under rigid footings (p. 5-43); 'stress concentration ratios range from 4 to 45 for rigid footings' (p. 5-45)."},
+            "settlement_method": {"type": "str", "required": False, "default": "stress_ratio", "allowed_values": ["stress_ratio", *_BY_MODULI], "description": "How the settlement over the columns is worked out. 'stress_ratio' (default): SRF = 1/[1 + as*(n-1)] from n. The others give the settlement ratio (settlement without columns / with them; GEC-13 p. 5-36 prints it as 'n', which is not the stress ratio n) by E_c/E_s off GEC-13 Fig. 5-21, and need E_column and E_soil: 'weighted_modulus' (curve 2, settlement ratio = 1 + as*(E_c/E_s - 1), any E_c/E_s); 'balaam_rigid' (curves 5b, 5c: E_c/E_s 5 to 10, A/A_c 1.75 to 9); 'balaam_flexible' (curve 5a: E_c/E_s = 10, A/A_c 1.5 to 8.5). GEC-13 p. 5-37: the FHWA (1983) Equilibrium Method, 'roughly equivalent to the Balaam relationships', 'represents an average or lower bound estimate suitable for preliminary analyses'; the Priebe curve (priebe_improvement_factor) 'the upper bound effectiveness'."},
             "E_column": {"type": "float", "required": False, "description": "Aggregate column modulus E_c (kPa), with E_soil, for the settlement_method 'weighted_modulus', 'balaam_rigid' or 'balaam_flexible' (E_c/E_s, GEC-13 Fig. 5-21). Refused with 'stress_ratio', which takes n instead. Alias: column_modulus."},
             "q_unreinforced": {"type": "float", "required": False, "default": 0.0, "description": "Unreinforced bearing capacity (kPa). 0 = not computed."},
             "S_unreinforced": {"type": "float", "required": False, "default": 0.0, "description": "Unreinforced settlement (mm). 0 = not computed."},
         },
-        "returns": {"area_replacement_ratio": "As/A achieved.", "settlement_reduction_factor": "SRF: settlement with columns / without (1/n' with the Fig. 5-21 methods).", "settlement_ratio": "Fig. 5-21 methods only: n' = settlement without columns / with them.", "modular_ratio": "Fig. 5-21 methods only: E_c/E_s."},
+        "returns": {"area_replacement_ratio": "As/A achieved.", "settlement_reduction_factor": "SRF: settlement with columns / without (1 / the settlement ratio with the Fig. 5-21 methods).", "settlement_ratio": "Fig. 5-21 methods only: the settlement ratio, settlement without columns / with them.", "modular_ratio": "Fig. 5-21 methods only: E_c/E_s."},
     },
     "priebe_improvement_factor": {
         "category": "Aggregate Piers",
@@ -241,34 +270,34 @@ METHOD_INFO = {
     },
     "wick_drains": {
         "category": "Wick Drains",
-        "brief": "Prefabricated vertical drain (PVD) consolidation analysis.",
+        "brief": "Prefabricated vertical drain (PVD) consolidation: radial by GEC-13 Eq. 2-1 with F(n) = ln(n) - 0.75 (Eq. 2-2), well resistance not modelled (GEC-13 p. 2-36: 'rarely significant'), combined with vertical drainage by Carrillo (UFC 3-220-10 Eq. 5-27).",
         "parameters": {
             "spacing": {"type": "float", "required": True, "description": "Center-to-center drain spacing (m)."},
             "ch": {"type": "float", "required": True, "description": "Horizontal coefficient of consolidation (m2/yr)."},
             "cv": {"type": "float", "required": True, "description": "Vertical coefficient of consolidation (m2/yr)."},
             "Hdr": {"type": "float", "required": True, "description": "Vertical drainage path (m)."},
             "time": {"type": "float", "required": True, "description": "Analysis time (years)."},
-            "dw": {"type": "float", "required": False, "default": 0.066, "description": "Equivalent drain diameter (m)."},
+            "dw": {"type": "float", "required": False, "default": 0.0635, "description": "Equivalent drain diameter (m). Default 2.5 in (0.0635 m), GEC-13 p. 2-35: 'Various diameters ranging from 1.5 inch to 5.5 inch have been used, but the most common is to use 2.5 inch.' A band drain's is 2(a + b)/pi (Eq. 2-3)."},
             "pattern": _PATTERN,
-            "smear_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Smear zone ratio ds/dw."},
-            "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Permeability ratio kh/ks."},
+            "smear_ratio": {"type": "float", "required": False, "description": "Smear zone ratio s = ds/dw. Not given: smear ignored (F_s = 0), GEC-13 p. 2-35, 'The effects of both soil disturbance and well resistance are often ignored for typical projects.' Above 1, F_s = (kh/ks) ln(s) is added to F(n), as UFC 3-220-10 (2026) Eq. 5-25 prints it; GEC-13 prints no F_s formula, only 'a sample disturbance factor Fs ≈ 2 may be considered' in highly plastic, sensitive soils whose ch is accurately determined."},
+            "kh_ks_ratio": {"type": "float", "required": False, "default": 1.0, "description": "Permeability ratio kh/ks, used only with smear_ratio above 1 (UFC 3-220-10 Eq. 5-25)."},
             "n_time_points": {"type": "int", "required": False, "default": 50, "description": "Points in the time-settlement curve."},
         },
-        "returns": {"U_total_percent": "Total degree of consolidation (%)."},
+        "returns": {"U_total_percent": "Combined degree of consolidation (%), vertical and radial.", "Ur_percent": "Radial degree of consolidation (%), GEC-13 Eq. 2-1 alone: GEC-13 p. 2-34, 'for a conservative approach, no beneficial effects may be considered for vertical drainage in preliminary feasibility evaluations'.", "F_n": "F(n) + F_s, the drain function of Eq. 2-1 (F_r = 0)."},
     },
     "design_drain_spacing": {
         "category": "Wick Drains",
-        "brief": "Find required drain spacing for target consolidation in target time.",
+        "brief": "Find required drain spacing for a target combined (vertical and radial) consolidation in a target time, by GEC-13 Eq. 2-1 and Carrillo (UFC 3-220-10 Eq. 5-27). GEC-13 p. 2-33 gives typical spacings of 3 to 5 ft in homogeneous clays, 4 to 6 ft in silty clays, 5 to 6.5 ft in coarser soils for about 90 percent consolidation in 3 to 4 months.",
         "parameters": {
             "target_U": {"type": "float", "required": True, "description": "Target combined degree of consolidation (percent, e.g. 90)."},
             "target_time": {"type": "float", "required": True, "description": "Time available to reach target_U (years)."},
             "ch": {"type": "float", "required": True, "description": "Horizontal coefficient of consolidation (m2/yr)."},
             "cv": {"type": "float", "required": True, "description": "Vertical coefficient of consolidation (m2/yr)."},
             "Hdr": {"type": "float", "required": True, "description": "Vertical drainage path (m)."},
-            "dw": {"type": "float", "required": False, "default": 0.066, "description": "Equivalent drain diameter (m)."},
+            "dw": {"type": "float", "required": False, "default": 0.0635, "description": "Equivalent drain diameter (m). Default 2.5 in (0.0635 m), GEC-13 p. 2-35: 'Various diameters ranging from 1.5 inch to 5.5 inch have been used, but the most common is to use 2.5 inch.' A band drain's is 2(a + b)/pi (Eq. 2-3)."},
             "pattern": _PATTERN,
-            "smear_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Smear zone ratio ds/dw."},
-            "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Permeability ratio kh/ks."},
+            "smear_ratio": {"type": "float", "required": False, "description": "Smear zone ratio s = ds/dw. Not given: smear ignored (F_s = 0), GEC-13 p. 2-35, 'The effects of both soil disturbance and well resistance are often ignored for typical projects.' Above 1, F_s = (kh/ks) ln(s) is added to F(n), as UFC 3-220-10 (2026) Eq. 5-25 prints it; GEC-13 prints no F_s formula, only 'a sample disturbance factor Fs ≈ 2 may be considered' in highly plastic, sensitive soils whose ch is accurately determined."},
+            "kh_ks_ratio": {"type": "float", "required": False, "default": 1.0, "description": "Permeability ratio kh/ks, used only with smear_ratio above 1 (UFC 3-220-10 Eq. 5-25)."},
             "spacing_range": {"type": "array", "required": False, "default": [1.0, 3.5], "description": "Spacing search range [min, max] (m)."},
         },
         "returns": {"spacing_m": "Designed drain spacing.", "U_total_percent": "Consolidation achieved at target time."},
@@ -285,9 +314,9 @@ METHOD_INFO = {
             "ch": {"type": "float", "required": False, "description": "Horizontal coefficient of consolidation (m2/yr). Give with drain_spacing to include wick drains."},
             "drain_spacing": {"type": "float", "required": False, "description": "Wick drain spacing (m), if drains are used."},
             "pattern": _PATTERN,
-            "dw": {"type": "float", "required": False, "default": 0.066, "description": "Equivalent drain diameter (m), with drains."},
-            "smear_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Smear zone ratio ds/dw, with drains."},
-            "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Permeability ratio kh/ks, with drains."},
+            "dw": {"type": "float", "required": False, "default": 0.0635, "description": "Equivalent drain diameter (m). Default 2.5 in (0.0635 m), GEC-13 p. 2-35: 'Various diameters ranging from 1.5 inch to 5.5 inch have been used, but the most common is to use 2.5 inch.' A band drain's is 2(a + b)/pi (Eq. 2-3). With drains."},
+            "smear_ratio": {"type": "float", "required": False, "description": "Smear zone ratio s = ds/dw, with drains. Not given: smear ignored (F_s = 0), GEC-13 p. 2-35, 'The effects of both soil disturbance and well resistance are often ignored for typical projects.' Above 1, F_s = (kh/ks) ln(s) is added to F(n), as UFC 3-220-10 (2026) Eq. 5-25 prints it; GEC-13 prints no F_s formula, only 'a sample disturbance factor Fs ≈ 2 may be considered' in highly plastic, sensitive soils whose ch is accurately determined."},
+            "kh_ks_ratio": {"type": "float", "required": False, "default": 1.0, "description": "Permeability ratio kh/ks, with drains, used only with smear_ratio above 1 (UFC 3-220-10 Eq. 5-25)."},
             "sigma_v0": {"type": "float", "required": False, "default": 0.0, "description": "Current effective stress at layer center (kPa)."},
             "n_time_points": {"type": "int", "required": False, "default": 50, "description": "Points in the time-settlement curve."},
         },
@@ -295,15 +324,14 @@ METHOD_INFO = {
     },
     "vibro_compaction": {
         "category": "Vibro Compaction",
-        "brief": "Vibro compaction (vibroflotation) feasibility and densification.",
+        "brief": "Vibro compaction (vibroflotation) feasibility by GEC-13 Ch. 4 (fines content, SPT N by Table 4-8), and the probe spacing for a target relative density off GEC-13 Fig. 4-34.",
         "parameters": {
-            "fines_content": {"type": "float", "required": True, "description": "Percent passing #200 sieve (0-100)."},
-            "initial_N_spt": {"type": "float", "required": True, "description": "Current SPT blow count."},
-            "target_N_spt": {"type": "float", "required": False, "default": 25.0, "description": "Desired SPT blow count."},
-            "D50": {"type": "float", "required": False, "description": "Median grain size (mm)."},
-            "pattern": _PATTERN,
+            "fines_content": {"type": "float", "required": True, "description": "Percent passing #200 sieve (0-100). GEC-13 p. 4-65: 'proper densification generally cannot be achieved when the granular soil contains more than 12 to 15 percent silt OR more than 2 percent clay'; p. 4-67: fines below 10 percent ideally suited. Above 15 not feasible, 12 to 15 marginal."},
+            "initial_N_spt": {"type": "float", "required": True, "description": "Current SPT blow count (blows/ft), read as a density by GEC-13 Table 4-8 (normally consolidated sand). Very dense (N above 50, relative density 85 to 100 percent) is not feasible: p. 4-75, 'It is unlikely, even for heavy loading, that it will be necessary to achieve a relative density above 85 percent.'"},
+            "target_relative_density": {"type": "float", "required": False, "description": "Target relative density (%), 55 to 90: the probe spacing is read off GEC-13 Fig. 4-34 (p. 4-77), relative density versus probe spacing for silty sands, the lower bound gradation (p. 4-76); refused outside 55 to 90, where the curve is not printed. GEC-13 p. 4-77: 60 percent for floor slabs, flat bottom tanks, embankments; 70 to 75 percent for column and bridge footings; 80 percent for machinery and mat foundations. Not given: no spacing. Alias: target_Dr."},
+            "pattern": dict(_PATTERN, description="Probe pattern. GEC-13 p. 4-77: a square pattern 'requires 5 to 8 percent more points to achieve the same minimum densities in large areas'."),
         },
-        "returns": {"is_feasible": "Whether vibro compaction is suitable."},
+        "returns": {"is_feasible": "Whether vibro compaction is suitable.", "recommended_spacing_m": "Probe spacing (m) off GEC-13 Fig. 4-34 for target_relative_density; 0 when not feasible or no target given.", "reasons": "The screen's reasons, each with GEC-13's page."},
     },
     "feasibility": {
         "category": "General",
@@ -338,11 +366,16 @@ declare_aliases(METHOD_INFO, {
 })
 
 # When each default applies (GM-119): the drain inputs of a preload to a
-# preload with drains.
+# preload with drains; kh/ks to a smear ratio given (GM-291: smear is
+# ignored by default, and kh/ks enters only through F_s).
+_KH_KS = {"smear_ratio": "set"}
 declare_applies_when(METHOD_INFO, {
     "surcharge_preloading": {
-        name: {"drain_spacing": "set"}
-        for name in ("pattern", "dw", "smear_ratio", "kh_ks_ratio")},
+        **{name: {"drain_spacing": "set"}
+           for name in ("pattern", "dw", "smear_ratio")},
+        "kh_ks_ratio": {"drain_spacing": "set", **_KH_KS}},
+    "wick_drains": {"kh_ks_ratio": _KH_KS},
+    "design_drain_spacing": {"kh_ks_ratio": _KH_KS},
     "aggregate_piers": {
         "E_column": {"settlement_method": list(_BY_MODULI)},
         # with a Fig. 5-21 method n sets only the improved bearing
@@ -355,8 +388,18 @@ from funhouse_agent.adapters import declare_when_absent  # noqa: E402
 _NO_TIME = ("consolidation time not estimated",
             "the time to 90 % consolidation without drains needs both cv "
             "and Hdr; the result asks for them")
+_NO_SMEAR = ("smear ignored (F_s = 0)",
+             "GEC-13 p. 2-35: 'The effects of both soil disturbance and "
+             "well resistance are often ignored for typical projects'")
 declare_when_absent(METHOD_INFO, {
-    "feasibility": {"cv_m2_per_year": _NO_TIME, "Hdr_m": _NO_TIME}})
+    "feasibility": {"cv_m2_per_year": _NO_TIME, "Hdr_m": _NO_TIME},
+    # GM-291: smear ignored unless a smear ratio is given (GEC-13 p. 2-35)
+    **{m: {"smear_ratio": _NO_SMEAR} for m in (
+        "wick_drains", "design_drain_spacing", "surcharge_preloading")},
+    "vibro_compaction": {"target_relative_density": (
+        "no probe spacing",
+        "the spacing is read off GEC-13 Fig. 4-34 (p. 4-77) by the target "
+        "relative density; with none given the result says to give one")}})
 for _name in ("cv_m2_per_year", "Hdr_m"):
     METHOD_INFO["feasibility"]["parameters"][_name]["applies_when"] = {
         "time_constraint_months": "set"}
@@ -368,3 +411,5 @@ METHOD_INFO["feasibility"]["refused_parameters"] = {"gwt_depth_m": _NO_GWT}
 # GM-276: the Priebe formula's inputs, and the method that chose it.
 METHOD_INFO["priebe_improvement_factor"]["refused_parameters"] = dict(
     _PRIEBE_REFUSED)
+# GM-291: the D50 screen and the target SPT N, neither printed in GEC-13.
+METHOD_INFO["vibro_compaction"]["refused_parameters"] = dict(_VIBRO_REFUSED)

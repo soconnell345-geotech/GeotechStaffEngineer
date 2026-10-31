@@ -137,10 +137,12 @@ specific check, the governing reference, and the corrective action.
    structural load is added.
 
 10. **Ground improvement (`ground_improvement`, GEC-13).** Aggregate piers
-    (area replacement ratio; the settlement ratio n' off GEC-13 Fig. 5-21,
-    including the Priebe curve (4) as printed, phi = 37.5 deg), wick drains
-    (radial consolidation with smear / well resistance), surcharge / preload
-    timing.
+    (area replacement ratio; the settlement ratio off GEC-13 Fig. 5-21,
+    which p. 5-36 prints as "n" and is not the stress ratio n, including the
+    Priebe curve (4) as printed, phi = 37.5 deg), wick drains (radial
+    consolidation by GEC-13 Eq. 2-1, smear optional and ignored by default,
+    well resistance not modelled), surcharge / preload timing,
+    vibro-compaction (fines and SPT N screen, probe spacing off Fig. 4-34).
     Confirm the IMPROVED composite parameters — not the native soil — feed the
     downstream bearing / settlement check.
 

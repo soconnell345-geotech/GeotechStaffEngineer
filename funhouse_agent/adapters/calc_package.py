@@ -670,9 +670,14 @@ _PACKAGE_TOOLS = {
         # E_pier: the aggregate pier column modulus, which the tool takes
         # for GEC-13 Fig. 5-21's settlement methods only (GM-220)
         "older": {"surcharge": {"target_consolidation": "target_U"},
-                  "vibro": {"N1_before": "initial_N_spt",
-                            "N1_target": "target_N_spt"},
+                  "vibro": {"N1_before": "initial_N_spt"},
                   "aggregate_piers": {"E_pier": "E_column"}},
+        # GM-291: the vibro tool reads its probe spacing off GEC-13 Fig.
+        # 4-34 by the target relative density; the target SPT N is refused
+        "dropped": {"N1_target": (
+            "GEC-13 prints the probe spacing by the target relative "
+            "density, not by a target SPT N: give target_relative_density "
+            "(%), 55 to 90, read off Fig. 4-34 (p. 4-77)")},
     },
     "wave_equation_package": {
         "adapter": "wave_equation",
@@ -3254,7 +3259,7 @@ METHOD_INFO = {
     "ground_improvement_package": {
         "category": "Calculation Package",
         "brief": "Run ground improvement analysis and generate calc package.",
-        "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used.", "(method numbers)": "The numbers the PDF shows, at the top level, units in the key names. vibro: is_feasible, fines_content_percent, initial_N_spt, target_N_spt, recommended_spacing_m, probe_pattern, reasons. aggregate_piers: area_replacement_ratio, stress_concentration_ratio, composite_modulus_kPa, improved_bearing_kPa, unreinforced_bearing_kPa, settlement_improved_mm, settlement_unreinforced_mm, column_diameter_m, column_spacing_m. wick_drains: drain_spacing_m, influence_diameter_m, Ur_percent, Uv_percent, U_total_percent, time_years, ch/cv_m2_per_year. surcharge: surcharge_kPa, target_U_percent, time_to_target_years, settlement_at_target_mm, settlement_ultimate_mm. Report them to the user."},
+        "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used.", "(method numbers)": "The numbers the PDF shows, at the top level, units in the key names. vibro: is_feasible, fines_content_percent, initial_N_spt, target_relative_density_percent, recommended_spacing_m, probe_pattern, reasons. aggregate_piers: area_replacement_ratio, stress_concentration_ratio, composite_modulus_kPa, improved_bearing_kPa, unreinforced_bearing_kPa, settlement_improved_mm, settlement_unreinforced_mm, column_diameter_m, column_spacing_m. wick_drains: drain_spacing_m, influence_diameter_m, Ur_percent, Uv_percent, U_total_percent, time_years, ch/cv_m2_per_year. surcharge: surcharge_kPa, target_U_percent, time_to_target_years, settlement_at_target_mm, settlement_ultimate_mm. Report them to the user."},
     },
     "wave_equation_package": {
         "category": "Calculation Package",

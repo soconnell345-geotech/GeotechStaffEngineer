@@ -612,7 +612,7 @@
  },
  {
   "id": "WE-GI-1",
-  "title": "PVD / wick-drain design (Barron-Hansbo radial consolidation) — FHWA GEC-13 Ch. 2 example",
+  "title": "PVD / wick-drain design (GEC-13 Eq. 2-1 radial consolidation) — FHWA GEC-13 Ch. 2 example",
   "domain": "ground_improvement",
   "keywords": [
    "wick drains",
@@ -661,7 +661,7 @@
     }
    }
   ],
-  "published_result": "t90 approximately 300 days at s = 8 ft and approximately 500 days at s = 10 ft ('on the order of'), by radial-only ideal Barron-Hansbo consolidation. Module reproduces t90 = 299 days (8 ft) and 503 days (10 ft) — essentially exact.",
+  "published_result": "t90 approximately 300 days at s = 8 ft and approximately 500 days at s = 10 ft ('on the order of'), by radial-only consolidation, GEC-13 Eq. 2-1 with no smear or well resistance. Module reproduces t90 = 299 days (8 ft) and 503 days (10 ft) — essentially exact.",
   "computed_result": {
    "s8ft_Ur_percent_at_300d": 90.1,
    "s8ft_n": 40.3,
@@ -669,7 +669,7 @@
    "s10ft_Ur_percent_at_503d": 90.0,
    "s10ft_n": 50.4,
    "s10ft_Fn": 3.17,
-   "note": "Ur (radial) hits 90% at exactly the published times, confirming radial-only Barron-Hansbo with F(n) = ln(n) - 0.75, de = 1.05*s. The published example is RADIAL-ONLY: the module's combined U_total = 1-(1-Uv)(1-Ur) adds ~31-40% vertical consolidation (20-ft clay over rock, single drainage) and exceeds 90% at those times — quote Ur_percent against the published t90, not U_total_percent."
+   "note": "Ur (radial) hits 90% at exactly the published times, confirming radial-only GEC-13 Eq. 2-1 with F(n) = ln(n) - 0.75 (Eq. 2-2), de = 1.05*s. The published example is RADIAL-ONLY: the module's combined U_total = 1-(1-Uv)(1-Ur) adds ~31-40% vertical consolidation (20-ft clay over rock, single drainage) and exceeds 90% at those times — quote Ur_percent against the published t90, not U_total_percent."
   },
   "report_notes": "The report should show the unit cell explicitly (de = 1.05*s triangular, n = de/dw, F(n) = ln(n) - 0.75 for ideal drains) and the Barron equation t = (de^2/(8*ch))*F(n)*ln(1/(1-U)), then present t90 vs spacing as a small table or curve so the owner can trade spacing against schedule. State the drainage convention used (radial-only here, matching the source) and whether vertical consolidation, smear (ds/dw), and well resistance were included — these are the assumptions reviewers check first. Carry units carefully: ch in m2/yr with time in years.",
   "provenance": "validation_examples/test_published_v018_v020.py::test_v020_radial_only_t90_pass, test_v020_de_unit_cell_and_dw_plumbing, test_v020_combined_vertical_radial_overpredicts"

@@ -131,7 +131,7 @@ CASES = [
                                     "initial_N_spt": 12}),
     ("ground_improvement_package", {"method": "vibro", "fines_content": 8,
                                     "initial_N_spt": 12,
-                                    "target_N_spt": 25}),
+                                    "target_relative_density": 70}),
     ("wave_equation_package", {"hammer_name": "Delmag D30-32",
                                "pile_length": 15.0, "pile_area": 0.01}),
     ("wave_equation_package", {"hammer_name": "Delmag D30-32",

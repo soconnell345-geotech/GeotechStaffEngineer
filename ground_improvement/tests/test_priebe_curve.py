@@ -16,7 +16,7 @@ Example 2 (pp. 5-48, 5-49): columns 3.0 ft at 5.7 ft, A/A_sc = (5.7)^2 /
 "The settlement ratio is 2.7. Therefore, the settlement of the embankment
 using stone columns as ground improvement is 10 inches", from 27 in.
 without columns (p. 5-48). Fig. 5-27's arrows are drawn at A/A_sc 3.53
-and n' 2.63, on the curve, and labelled "3.6" and "2.7". At (5.7 / 3)^2
+and settlement ratio 2.63, on the curve, and labelled "3.6" and "2.7". At (5.7 / 3)^2
 = 3.61 the curve reads 2.55 on both printed copies (Fig. 5-21, p. 5-36;
 Fig. 5-27, p. 5-49), so the module gives 27 / 2.55 = 10.6 in. where the
 example prints 10 in.
@@ -56,7 +56,7 @@ def test_the_curve_as_read_off_the_figure(area_ratio):
 
 
 def test_example_2_reads_the_curve_where_its_arrows_are_drawn():
-    # the arrows of Fig. 5-27 as drawn (p. 5-49): A/A_sc 3.53, n' 2.63
+    # the arrows of Fig. 5-27 as drawn (p. 5-49): A/A_sc 3.53, settlement ratio 2.63
     assert _curve(3.53) == pytest.approx(2.63, abs=TOL)
 
 

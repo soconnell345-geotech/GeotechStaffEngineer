@@ -351,7 +351,7 @@ VIBRO_COMPACTION = {
     "params": {
         "fines_content": 8.0,
         "initial_N_spt": 8,
-        "target_N_spt": 20,
+        "target_relative_density": 70,
     },
 }
 

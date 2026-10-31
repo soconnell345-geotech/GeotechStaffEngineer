@@ -618,14 +618,17 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "settlement reduction, capacity increase, and time to consolidate.",
         "methods": [
             "Aggregate piers / stone columns: area-replacement ratio, equal-strain settlement-reduction "
-            "factor, composite modulus, and the settlement ratio n&prime; off GEC-13 Fig. 5-21 (weighted "
+            "factor, composite modulus, and the settlement ratio off GEC-13 Fig. 5-21 (weighted "
             "modulus, Balaam, and the **Priebe curve as GEC-13 prints it**, &phi; = 37.5&deg;; no Priebe "
             "formula).",
-            "**Barron&ndash;Hansbo** radial consolidation for PVDs (with smear and well resistance) and "
-            "combined vertical+radial time-rate; drain-spacing design.",
-            "Surcharge preloading and vibro-compaction feasibility.",
-            "References: FHWA GEC-13 (ground-modification manual); Barron (1948) / Hansbo "
-            "(1981); validated V-018/V-019/V-020.",
+            "Radial consolidation for PVDs by GEC-13 Eq. 2-1, F(n) = ln(n) &minus; 0.75, a 2.5 in drain "
+            "and smear ignored by default (GEC-13 p. 2-35; smear optional by UFC 3-220-10 Eq. 5-25; "
+            "well resistance not modelled, GEC-13 p. 2-36), combined with vertical drainage by "
+            "Carrillo (UFC 3-220-10 Eq. 5-27); drain-spacing design.",
+            "Surcharge preloading; vibro-compaction feasibility by GEC-13's fines limits (p. 4-65) and "
+            "SPT N (Table 4-8), with the probe spacing for a target relative density off GEC-13 Fig. 4-34.",
+            "References: FHWA GEC-13 (ground-modification manual); UFC 3-220-10 (2026); "
+            "validated V-018/V-019/V-020.",
         ],
         "limits": [
             "Aggregate-pier settlement uses the equal-strain settlement-reduction model, not the GEC-13 "
@@ -1094,7 +1097,7 @@ VALIDATION_ROWS = [
     ("V-017", "lateral_pile", "Laterally loaded micropile (LPILE benchmark)", "FHWA Micropile Ex 2", "PASS"),
     ("V-018", "ground_improvement", "Rammed aggregate pier settlement + baseline consolidation", "GEC-13 Ex 1", "PASS / N/A"),
     ("V-019", "ground_improvement", "Stone-column settlement (Priebe curve)", "GEC-13 Ex 2", "PASS"),
-    ("V-020", "ground_improvement", "PVD time to 90% consolidation (Barron&ndash;Hansbo)", "GEC-13 Ch 2", "PASS"),
+    ("V-020", "ground_improvement", "PVD time to 90% consolidation (GEC-13 Eq. 2-1)", "GEC-13 Ch 2", "PASS"),
     ("V-021", "bearing_capacity", "Spread-footing ultimate bearing (Vesic factors, GW)", "GEC-6 Ex B-1", "PASS / CONVENTION"),
     ("V-022", "settlement", "Hough granular settlement table", "GEC-6 Ex B-1", "PASS"),
     ("V-023", "fem2d", "1-D Terzaghi/Biot consolidation (monolithic u-p)", "Itasca FLAC verification", "PASS"),

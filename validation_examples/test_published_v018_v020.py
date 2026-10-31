@@ -55,7 +55,7 @@ KEY FINDINGS (details in each test docstring and RESULTS.md):
   and its 42.5 deg default, printed nowhere in GEC-13, are gone. At the source's
   A/A_sc = (5.7/3.0)^2 = 3.61 (as = 0.277) the curve reads 2.55 on both printed
   copies (Fig. 5-21 p. 5-36, Fig. 5-27 p. 5-49): S = 27/2.55 = 10.6 in. GEC-13
-  prints 2.7 and 10 in; Fig. 5-27's arrows are drawn at A/A_sc 3.53 and n' 2.63
+  prints 2.7 and 10 in; Fig. 5-27's arrows are drawn at A/A_sc 3.53 and settlement ratio 2.63
   on the curve and labelled 3.6 and 2.7, so the printed read is 0.15 (6 %) above
   the curve at 3.61. With the module's geometric triangular as = 0.251 (A/A_c
   3.98) the curve gives 2.31: the example takes A/A_sc = (s/d)^2.

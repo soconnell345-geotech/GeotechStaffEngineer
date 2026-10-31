@@ -624,7 +624,8 @@ class TestAxialUpliftParams:
 
 class TestPriebeImprovementFactor:
     def test_the_printed_curve(self):
-        """GM-276: GEC-13 Fig. 5-21 curve (4) as printed, n' 1.96 at A/A_c
+        """GM-276: GEC-13 Fig. 5-21 curve (4) as printed, settlement ratio
+        1.96 at A/A_c
         5 (p. 5-36), no formula."""
         from funhouse_agent.adapters.ground_improvement import METHOD_REGISTRY as R
         r = R["priebe_improvement_factor"]({"as_ratio": 0.2})
