@@ -1,7 +1,7 @@
 """GEC-13 Fig. 5-21's settlement ratio by E_c / E_s (GM-220).
 
 GEC-13 (FHWA-NHI-16-027) Vol. I, Fig. 5-21, p. 5-36: the settlement ratio
-n' (settlement without stone columns over settlement with them) against
+(settlement without stone columns over settlement with them) against
 A/A_c. The weighted-modulus curves (2a) E_c/E_s = 10 and (2b) 5 and
 Balaam's (5a) 10 flexible, (5b) 10 rigid and (5c) 5 rigid, pinned to the
 points read off the printed figure (each curve traced on the scanned page,
@@ -20,7 +20,7 @@ from ground_improvement.settlement_ratio import (
     balaam_settlement_ratio, settlement_ratio,
     weighted_modulus_settlement_ratio)
 
-#: Curve (2a), E_c/E_s = 10, and (2b), 5, as traced: A/A_c -> n'.
+#: Curve (2a), E_c/E_s = 10, and (2b), 5, as traced: A/A_c -> settlement ratio.
 PRINTED_2A = {2.0: 5.495, 3.0: 4.039, 4.0: 3.253, 5.0: 2.776,
               6.0: 2.457, 7.0: 2.237, 8.0: 2.082}
 PRINTED_2B = {1.5: 3.654, 2.0: 3.019, 2.5: 2.608, 3.0: 2.338, 3.5: 2.138}
@@ -166,7 +166,8 @@ def test_the_methods_by_the_moduli(method, n_prime):
                                      q_unreinforced=100.0)
     assert "stress concentration ratio n" in {
         c["what"] for c in with_q.choices}
-    assert "Settlement ratio n'" in r.summary()
+    # GM-279: the settlement ratio in words, not n'
+    assert "Settlement ratio:" in r.summary()
 
 
 def test_the_methods_by_the_moduli_need_the_column_modulus():
@@ -188,4 +189,4 @@ def test_the_calc_steps_print_the_settlement_ratio():
     assert "between (5c) and (5b)" in n_p.notes
     srf = [s.equation for s in steps if getattr(s, "result_name", "")
            == "SRF"]
-    assert srf == ["SRF = 1 / n'"]
+    assert srf == ["SRF = 1 / settlement ratio"]

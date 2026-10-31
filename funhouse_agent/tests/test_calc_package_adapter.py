@@ -643,7 +643,8 @@ class TestGroundImprovementPackage:
         outfile = str(tmp_path / "gi_vb.html")
         result = _generate_ground_improvement_package({
             "method": "vibro",
-            "fines_content": 8, "N1_before": 12, "target_N_spt": 25,
+            "fines_content": 8, "N1_before": 12,
+            "target_relative_density": 70,
             "output_path": outfile,
         })
         assert result["status"] == "success"
@@ -670,7 +671,8 @@ class TestGroundImprovementPackage:
             assert len(json.dumps(r)) < 8000
         # the choices the agent states travel with every method's numbers
         vb = gen({"method": "vibro", "fines_content": 8, "N1_before": 12,
-                  "target_N_spt": 25, "output_path": str(tmp_path / "v.html")})
+                  "target_relative_density": 70,
+                  "output_path": str(tmp_path / "v.html")})
         for r in (wick, ap, su, vb):
             assert len(json.dumps(r)) < 8000
         assert ap.get("choices"), "aggregate piers' choices were dropped"

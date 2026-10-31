@@ -1,21 +1,38 @@
 """
 Prefabricated vertical drain (wick drain / PVD) analysis.
 
-Implements Barron (1948) / Hansbo (1981) radial consolidation theory
-combined with Terzaghi vertical consolidation from the settlement module.
+Radial consolidation as GEC-13 (FHWA-NHI-16-027) Vol. I, Ch. 2, Sec. 4.2
+prints it (Rixner et al. 1986a, after Barron 1948), combined with Terzaghi
+vertical consolidation from the settlement module (GM-291):
 
-Key equations:
-- Influence diameter:  de = 1.05*s (triangular) or 1.13*s (square)
-- Drain function:      F(n) = ln(n/s) + (kh/ks)*ln(s) - 0.75
-- Radial consolidation: Ur = 1 - exp(-8*Tr/F(n))
-- Combined:            U_total = 1 - (1 - Uv)*(1 - Ur)
+- Cylinder of influence:  d_c = 1.05 s (triangular) or 1.13 s (square)
+  (p. 2-33)
+- Eq. 2-1:  t = (d_c^2 / 8 c_h) [F(n) + F_s + F_r] ln[1 / (1 - U_h)], so
+  U_h = 1 - exp(-8 T_r / F) with T_r = c_h t / d_c^2 and F the bracket
+- Eq. 2-2:  F(n) = ln(d_c / d_w) - 0.75 ("simplified")
+- Eq. 2-3:  d_w = 2 (a + b) / pi, a band drain's equivalent diameter
+- Smear: GEC-13 prints no formula for F_s, only that smear is "often
+  ignored for typical projects" and that "a sample disturbance factor
+  F_s ~ 2 may be considered" in highly plastic, sensitive soils whose c_h
+  is accurately determined (p. 2-35). The tool takes UFC 3-220-10 (2026)
+  Eq. 5-25 as printed, F_s ~ (k_h / k_s) ln(s) (p. 267), and ignores smear
+  by default (F_s = 0), as both manuals do.
+- Well resistance: not modelled (F_r = 0). GEC-13 p. 2-36: "Well
+  resistance is rarely significant, and, therefore, ignored except for
+  extremely deep drains or where a combination of high loads and very
+  permeable soils is present."
+- Combined vertical and radial: U = 1 - (1 - U_v)(1 - U_r), Carrillo
+  (1942) as UFC 3-220-10 Eq. 5-27 prints it (p. 268). GEC-13's Eq. 2-1 is
+  radial only; p. 2-34: "for a conservative approach, no beneficial
+  effects may be considered for vertical drainage in preliminary
+  feasibility evaluations". Each result gives U_r beside the combined U.
 
 All units SI: meters, years, m²/year.
 
 References:
-    Barron, R.A. (1948) — Consolidation of fine-grained soils by drain wells
-    Hansbo, S. (1981) — Consolidation of fine-grained soils by PVDs
-    FHWA NHI-06-019: Ground Improvement Methods, Vol. I
+    FHWA GEC-13 (FHWA-NHI-16-027), Ground Modification Methods Reference
+    Manual, Vol. I, Ch. 2, pp. 2-30 to 2-38
+    UFC 3-220-10, Soil Mechanics (2026), Sec. 5-7.4, pp. 266 to 268
 """
 
 import math
@@ -24,14 +41,20 @@ from typing import List, Optional, Tuple
 from settlement.time_rate import time_factor, degree_of_consolidation
 from ground_improvement.results import WickDrainResult
 
+#: Equivalent drain diameter by default: 2.5 in (0.0635 m). GEC-13 p. 2-35:
+#: "Various diameters ranging from 1.5 inch to 5.5 inch have been used, but
+#: the most common is to use 2.5 inch. In fact, there is little difference
+#: in design if 2.0 inch to 4.0 inch is used."
+DW_DEFAULT_M = 2.5 * 0.0254
+
 
 def equivalent_drain_diameter(width: float, thickness: float) -> float:
     """Compute equivalent circular diameter for a band-shaped PVD.
 
-    Perimeter-equivalent diameter (Hansbo, 1979/1981):
+    GEC-13 Eq. 2-3 (p. 2-35, after Hansbo 1979): a cylinder of the same
+    circumference as the band drain,
         dw = 2 * (a + b) / pi
-    so the equivalent circle has the same perimeter as the band drain. For a
-    standard 100 mm x 4 mm PVD this gives dw ~= 0.066 m.
+    with a the PVD's thickness and b its width.
 
     Parameters
     ----------
@@ -51,7 +74,9 @@ def equivalent_drain_diameter(width: float, thickness: float) -> float:
 
 
 def influence_diameter(spacing: float, pattern: str = "triangular") -> float:
-    """Compute influence zone diameter de.
+    """Compute influence zone diameter de: GEC-13 p. 2-33, d_c is 1.05
+    times the spacing in an equilateral triangular pattern and 1.13 times
+    it in a square pattern.
 
     Parameters
     ----------
@@ -78,40 +103,50 @@ def influence_diameter(spacing: float, pattern: str = "triangular") -> float:
 
 def drain_function_F(n_ratio: float, smear_ratio: float = 1.0,
                      kh_ks_ratio: float = 1.0) -> float:
-    """Compute Barron/Hansbo drain function F(n).
+    """The bracket of GEC-13 Eq. 2-1 without well resistance: F(n) + F_s.
 
-    Without smear (smear_ratio=1, kh_ks_ratio=1):
-        F(n) = ln(n) - 0.75
-
-    With smear zone:
-        F(n) = ln(n/s) + (kh/ks)*ln(s) - 0.75
-
-    where s = smear_ratio = ds/dw, kh/ks = permeability ratio.
+    F(n) = ln(n) - 0.75, GEC-13 Eq. 2-2 ("simplified", p. 2-32), n = d_c /
+    d_w. F_s = (k_h / k_s) ln(s), UFC 3-220-10 (2026) Eq. 5-25 as printed
+    (p. 267; GEC-13 prints no formula for F_s), with s the ratio of the
+    disturbed zone's diameter to the drain's. smear_ratio 1 is no smear,
+    F_s = 0 (GM-291; until then the smear term was Hansbo's ln(n/s) +
+    (k_h/k_s) ln(s) - 0.75, printed in neither manual).
 
     Parameters
     ----------
     n_ratio : float
         Spacing ratio n = de/dw.
     smear_ratio : float
-        Smear zone ratio ds/dw (typically 2-3). Default 1.0 (no smear).
+        Smear zone ratio s = ds/dw. Default 1.0 (no smear).
     kh_ks_ratio : float
-        Horizontal permeability ratio kh/ks (typically 2-5). Default 1.0.
+        Horizontal permeability ratio kh/ks. Default 1.0. Used only with
+        smear_ratio above 1.
 
     Returns
     -------
     float
-        Drain function F(n).
+        F(n) + F_s.
     """
     if n_ratio <= 1.0:
         raise ValueError(f"Spacing ratio n must be > 1, got {n_ratio}")
     if smear_ratio < 1.0:
         raise ValueError(f"Smear ratio must be >= 1, got {smear_ratio}")
+    if kh_ks_ratio <= 0.0:
+        raise ValueError(f"kh/ks must be positive, got {kh_ks_ratio}")
 
+    return math.log(n_ratio) - 0.75 + smear_factor(smear_ratio, kh_ks_ratio)
+
+
+def smear_factor(smear_ratio: float, kh_ks_ratio: float) -> float:
+    """F_s = (k_h / k_s) ln(s), UFC 3-220-10 (2026) Eq. 5-25 as printed
+    (p. 267): "In order to account for smear, the soil disturbance factor
+    (F_s) can be calculated as" F_s ~ (k_h / k_s) ln(s); 0 with no smear
+    (s = 1). GEC-13 p. 2-35 prints no formula: "a sample disturbance factor
+    F_s ~ 2 may be considered" in highly plastic, sensitive soils whose c_h
+    is accurately determined."""
     if smear_ratio <= 1.0:
-        return math.log(n_ratio) - 0.75
-    else:
-        return (math.log(n_ratio / smear_ratio)
-                + kh_ks_ratio * math.log(smear_ratio) - 0.75)
+        return 0.0
+    return kh_ks_ratio * math.log(smear_ratio)
 
 
 def radial_time_factor(ch: float, t: float, de: float) -> float:
@@ -227,10 +262,10 @@ def design_drain_spacing(
     ch: float,
     cv: float,
     Hdr: float,
-    dw: float = 0.066,
+    dw: float = DW_DEFAULT_M,
     pattern: str = "triangular",
-    smear_ratio: float = 2.0,
-    kh_ks_ratio: float = 2.0,
+    smear_ratio: float = 1.0,
+    kh_ks_ratio: float = 1.0,
     spacing_range: Tuple[float, float] = (1.0, 3.5),
 ) -> WickDrainResult:
     """Find drain spacing to achieve target consolidation in target time.
@@ -250,13 +285,15 @@ def design_drain_spacing(
     Hdr : float
         Vertical drainage path (m).
     dw : float
-        Equivalent drain diameter (m). Default 0.066.
+        Equivalent drain diameter (m). Default 0.0635 (2.5 in, "the most
+        common", GEC-13 p. 2-35).
     pattern : str
         'triangular' or 'square'. Default 'triangular'.
     smear_ratio : float
-        Smear zone ratio ds/dw. Default 2.0.
+        Smear zone ratio ds/dw. Default 1.0: smear ignored, as GEC-13 p.
+        2-35 says it often is for typical projects.
     kh_ks_ratio : float
-        Permeability ratio kh/ks. Default 2.0.
+        Permeability ratio kh/ks, with smear_ratio above 1. Default 1.0.
     spacing_range : tuple of (float, float)
         Search range for spacing (m). Default (1.0, 3.5).
 
@@ -333,10 +370,10 @@ def analyze_wick_drains(
     cv: float,
     Hdr: float,
     time: float,
-    dw: float = 0.066,
+    dw: float = DW_DEFAULT_M,
     pattern: str = "triangular",
-    smear_ratio: float = 2.0,
-    kh_ks_ratio: float = 2.0,
+    smear_ratio: float = 1.0,
+    kh_ks_ratio: float = 1.0,
     n_time_points: int = 50,
 ) -> WickDrainResult:
     """Analyze a specific wick drain layout.
@@ -357,13 +394,15 @@ def analyze_wick_drains(
     time : float
         Analysis time (years).
     dw : float
-        Equivalent drain diameter (m). Default 0.066.
+        Equivalent drain diameter (m). Default 0.0635 (2.5 in, "the most
+        common", GEC-13 p. 2-35).
     pattern : str
         'triangular' or 'square'. Default 'triangular'.
     smear_ratio : float
-        Smear zone ratio ds/dw. Default 2.0.
+        Smear zone ratio ds/dw. Default 1.0: smear ignored, as GEC-13 p.
+        2-35 says it often is for typical projects.
     kh_ks_ratio : float
-        Permeability ratio kh/ks. Default 2.0.
+        Permeability ratio kh/ks, with smear_ratio above 1. Default 1.0.
     n_time_points : int
         Number of points in time-settlement curve. Default 50.
 

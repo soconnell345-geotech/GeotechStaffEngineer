@@ -45,7 +45,9 @@ class AggregatePierResult:
         off GEC-13 Fig. 5-21: 'weighted_modulus', 'balaam_rigid',
         'balaam_flexible' (GM-220).
     settlement_ratio : float
-        n' = settlement without columns / settlement with them = 1 / SRF.
+        Settlement without columns / settlement with them = 1 / SRF. GEC-13
+        p. 5-36 prints it as "n" in quotes; it is not Eq. 5-2's stress
+        ratio n (GM-279).
     modular_ratio : float or None
         E_c / E_s, with the Fig. 5-21 methods.
     choices : list of dict
@@ -88,7 +90,7 @@ class AggregatePierResult:
                 f"  Settlement method:        {self.settlement_method} "
                 "(GEC-13 Fig. 5-21)",
                 f"  E_c / E_s:                {self.modular_ratio:g}",
-                f"  Settlement ratio n':      {self.settlement_ratio:.2f}",
+                f"  Settlement ratio:         {self.settlement_ratio:.2f}",
             ]
         if self.unreinforced_bearing_kPa > 0:
             lines.append(f"  Bearing capacity:")
@@ -146,7 +148,9 @@ class WickDrainResult:
     spacing_ratio_n : float
         n = de / dw.
     F_n : float
-        Barron/Hansbo drain function F(n).
+        F(n) + F_s, the bracket of GEC-13 Eq. 2-1 without well resistance:
+        F(n) = ln(n) - 0.75 (Eq. 2-2), F_s = (kh/ks) ln(s) (UFC 3-220-10
+        Eq. 5-25), 0 with smear ignored.
     Ur_percent : float
         Radial degree of consolidation at analysis time.
     Uv_percent : float
@@ -265,9 +269,10 @@ class WickDrainResult:
             columns=[("Time t", "years"),
                      ("Combined degree of consolidation U", "%", ".1f")],
             rows=[[t, u] for t, u in self.time_settlement_curve],
-            note=(f"Radial (Barron/Hansbo, F(n) = {self.F_n:.3f}, n = "
+            note=(f"Radial (GEC-13 Eq. 2-1, F = {self.F_n:.3f}, n = "
                   f"{self.spacing_ratio_n:.1f}) with vertical drainage "
-                  "combined as 1 - U = (1 - Ur)(1 - Uv); drains at "
+                  "combined as 1 - U = (1 - Ur)(1 - Uv), UFC 3-220-10 Eq. "
+                  "5-27 (Carrillo 1942); drains at "
                   f"{self.drain_spacing_m:g} m, {self.pattern}; ch = "
                   f"{self.ch_m2_per_year:g}, cv = {self.cv_m2_per_year:g} "
                   "m²/year"),
@@ -416,10 +421,11 @@ class VibroResult:
         Fines content of the target soil.
     initial_N_spt : float
         Current SPT N value.
-    target_N_spt : float
-        Desired SPT N value after treatment.
+    target_relative_density_percent : float or None
+        Target relative density (%), the spacing's input (GM-291).
     recommended_spacing_m : float
-        Estimated probe spacing (0 if infeasible).
+        Probe spacing off GEC-13 Fig. 4-34 for the target relative density
+        (0 if infeasible or no target given).
     probe_pattern : str
         'triangular' or 'square'.
     reasons : list of str
@@ -428,7 +434,7 @@ class VibroResult:
     is_feasible: bool = False
     fines_content_percent: float = 0.0
     initial_N_spt: float = 0.0
-    target_N_spt: float = 0.0
+    target_relative_density_percent: Optional[float] = None
     recommended_spacing_m: float = 0.0
     probe_pattern: str = ""
     reasons: List[str] = field(default_factory=list)
@@ -443,8 +449,10 @@ class VibroResult:
             f"  Assessment:               {status}",
             f"  Fines content:            {self.fines_content_percent:.1f}%",
             f"  Initial N_spt:            {self.initial_N_spt:.0f}",
-            f"  Target N_spt:             {self.target_N_spt:.0f}",
         ]
+        if self.target_relative_density_percent is not None:
+            lines.append(f"  Target relative density:  "
+                         f"{self.target_relative_density_percent:g}%")
         if self.is_feasible and self.recommended_spacing_m > 0:
             lines.append(f"  Recommended spacing:      {self.recommended_spacing_m:.2f} m ({self.probe_pattern})")
         lines.append("")
@@ -461,7 +469,8 @@ class VibroResult:
             "is_feasible": self.is_feasible,
             "fines_content_percent": round(self.fines_content_percent, 1),
             "initial_N_spt": round(self.initial_N_spt, 0),
-            "target_N_spt": round(self.target_N_spt, 0),
+            "target_relative_density_percent":
+                self.target_relative_density_percent,
             "recommended_spacing_m": round(self.recommended_spacing_m, 2),
             "probe_pattern": self.probe_pattern,
             "reasons": self.reasons,

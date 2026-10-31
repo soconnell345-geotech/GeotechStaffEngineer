@@ -8,13 +8,17 @@ This module takes plain floats/strings (NOT SoilProfile objects) to
 avoid circular imports.
 
 References:
-    FHWA GEC-13: Ground Modification Methods Reference Manual
-    FHWA NHI-06-019/020: Ground Improvement Methods
+    FHWA GEC-13 (FHWA-NHI-16-027): Ground Modification Methods Reference
+    Manual, Vols. I and II (screens and typical sizes checked against the
+    print, GM-291)
 """
 
 from typing import Any, Dict, List, Optional
 
 from ground_improvement.results import FeasibilityResult
+from ground_improvement.vibro import (
+    FIG_4_34, FINES_LIMIT_PERCENT, TARGETS_GEC13, density_from_N,
+)
 
 _FT = 0.3048
 #: GEC-13 (FHWA-NHI-16-027) p. 5-9, item 7: "Typically, the maximum
@@ -27,6 +31,16 @@ RAMMED_PIER_MAX_DEPTH_M = 35 * _FT
 #: about 100 feet."
 VIBRO_MAX_DEPTH_M = 165 * _FT
 VIBRO_RECOMMENDED_DEPTH_M = 100 * _FT
+_PSF = 0.04788026  # kPa
+#: GEC-13 p. 5-9, item 2: "The most significant improvement is likely to be
+#: obtained in compressible silts and clays ranging in shear strength from
+#: 300 to 1000 psf."
+AGG_COLUMN_SU_BEST_KPA = (300 * _PSF, 1000 * _PSF)
+#: GEC-13 p. 5-9, item 5: "a practical upper limit is in the range of an
+#: undrained strength of 1000 to 2000 psf for stone columns. If stone
+#: columns are used in these stiff soils or through stiff lenses, the column
+#: hole is commonly pre-bored".
+AGG_COLUMN_SU_UPPER_KPA = (1000 * _PSF, 2000 * _PSF)
 
 
 def evaluate_feasibility(
@@ -192,15 +206,7 @@ def _eval_aggregate_piers(
     """Evaluate aggregate pier feasibility."""
     method = "Aggregate Piers"
 
-    # Exclusions
-    if is_organic and cu_kPa is not None and cu_kPa < 10:
-        not_applicable.append({
-            "method": method,
-            "reason": f"Very soft organic soil (cu={cu_kPa:.0f} kPa) — "
-                      "too weak to support pier installation"
-        })
-        return
-
+    su_lo, su_hi = AGG_COLUMN_SU_UPPER_KPA
     bottom, reaches = _treatment_depth(depth_to_top_m, thickness_m)
     if bottom > STONE_COLUMN_MAX_DEPTH_M:
         not_applicable.append({
@@ -215,9 +221,12 @@ def _eval_aggregate_piers(
         })
         return
 
-    # Applicable conditions
+    # Applicable conditions (GM-291: the undrained strength screen as GEC-13
+    # p. 5-9 prints it; until then 10 to 100 kPa, an organic soil under 10
+    # kPa refused, printed nowhere). The N_spt < 15 screen of a granular
+    # soil is not printed in GEC-13 Ch. 5 either; kept, said in CHECK.md.
     pier_ok = False
-    if is_clay and cu_kPa is not None and 10 <= cu_kPa <= 100:
+    if is_clay and cu_kPa is not None and cu_kPa <= su_hi:
         pier_ok = True
     elif N_spt is not None and N_spt < 15:
         pier_ok = True
@@ -225,19 +234,52 @@ def _eval_aggregate_piers(
         pier_ok = True  # assume soft enough if clay with no cu data
 
     if not pier_ok:
-        not_applicable.append({
-            "method": method,
-            "reason": "Soil is too stiff/dense for significant improvement"
-        })
+        reason = "Soil is too stiff/dense for significant improvement"
+        if is_clay and cu_kPa is not None:
+            reason = (f"cu={cu_kPa:.0f} kPa is above GEC-13's practical "
+                      "upper limit for stone columns, 'in the range of an "
+                      "undrained strength of 1000 to 2000 psf' (48 to 96 "
+                      "kPa), beyond which 'the column hole is commonly "
+                      "pre-bored' (p. 5-9)")
+        not_applicable.append({"method": method, "reason": reason})
         return
 
     applicable.append(method)
+    if is_clay and cu_kPa is not None:
+        best_lo, best_hi = AGG_COLUMN_SU_BEST_KPA
+        if cu_kPa > su_lo:
+            recommendations.append(
+                f"Aggregate piers: cu={cu_kPa:.0f} kPa is within GEC-13's "
+                "practical upper limit for stone columns, 1000 to 2000 psf "
+                "(48 to 96 kPa); in such stiff soils 'the column hole is "
+                "commonly pre-bored' (p. 5-9)")
+        elif cu_kPa < best_lo:
+            recommendations.append(
+                f"Aggregate piers: cu={cu_kPa:.0f} kPa is below the 300 to "
+                "1000 psf (14 to 48 kPa) in which GEC-13 finds 'the most "
+                "significant improvement' (p. 5-9)"
+                + ("; 'Special care must be taken when using aggregate "
+                   "columns in soils containing organics and peat lenses or "
+                   "layers with undrained shear strength of less than 300 "
+                   "psf' (p. 5-9)" if is_organic else ""))
+        if is_organic:
+            recommendations.append(
+                "Aggregate piers: GEC-13 p. 5-9, 'When the thickness of the "
+                "organic layer is greater than one to two aggregate column "
+                "diameters, the ability to develop consistent column "
+                "diameters becomes questionable'")
 
-    # Preliminary sizing
+    # Preliminary sizing: GEC-13 as printed (GM-291)
     pier_sizing = {
-        "typical_column_diameter": "0.45 - 0.9 m",
-        "typical_spacing": "1.5 - 3.0 m (triangular)",
-        "typical_n": "3-8 (stress concentration ratio)",
+        "typical_column_diameter": (
+            "1.5 to 4 ft (0.46 to 1.22 m), typically 3.0 to 3.6 ft for the "
+            "dry method (GEC-13 p. 5-31)"),
+        "typical_spacing": "5 to 12 ft (1.5 to 3.7 m) (GEC-13 p. 5-31)",
+        "typical_n": (
+            "stress concentration ratio 2.0 to 5.0 as measured, 2.5 often "
+            "used for preliminary design (GEC-13 pp. 5-31, 5-32); rammed "
+            "aggregate piers 5 to 10 under embankments, 10 under rigid "
+            "footings (p. 5-43)"),
     }
     if bottom > RAMMED_PIER_MAX_DEPTH_M:
         pier_sizing["column_type"] = "stone columns"
@@ -301,9 +343,14 @@ def _eval_wick_drains(
     applicable.append(method)
 
     drain_sizing = {
-        "typical_spacing": "1.0 - 2.5 m",
+        "typical_spacing": (
+            "3 to 5 ft (0.9 to 1.5 m) in homogeneous clays, 4 to 6 ft in "
+            "silty clays, 5 to 6.5 ft in coarser soils, for about 90 "
+            "percent consolidation in 3 to 4 months (GEC-13 p. 2-33)"),
         "typical_pattern": "triangular",
-        "typical_dw": "0.05 - 0.07 m",
+        "typical_dw": (
+            "1.5 to 5.5 in (0.04 to 0.14 m), most commonly 2.5 in "
+            "(0.064 m) (GEC-13 p. 2-35)"),
     }
 
     if cv_m2_per_year is not None and Hdr_m is not None and has_time_constraint:
@@ -361,9 +408,14 @@ def _eval_surcharge(
 
     applicable.append(method)
 
+    # GM-291: GEC-13 prints no typical surcharge height or fill unit
+    # weight (until then "1 - 5 m of fill", "18 - 20 kN/m³")
     surcharge_sizing = {
-        "typical_surcharge_height": "1 - 5 m of fill",
-        "typical_fill_unit_weight": "18 - 20 kN/m³",
+        "basis": (
+            "GEC-13 prints no typical surcharge height: 'There are three "
+            "basic variables that can be manipulated ... time, PVD "
+            "spacing, and surcharge' (p. 2-36); the surcharge_preloading "
+            "tool works the time for a given surcharge"),
     }
 
     if tight_schedule:
@@ -395,17 +447,26 @@ def _eval_vibro(
         })
         return
 
-    if fines_content is not None and fines_content > 20:
+    fines_lo, fines_hi = FINES_LIMIT_PERCENT
+    if fines_content is not None and fines_content > fines_hi:
         not_applicable.append({
             "method": method,
-            "reason": f"Fines content ({fines_content:.0f}%) too high (> 20%)"
+            "reason": f"Fines content ({fines_content:.0f}%) is above "
+                      "GEC-13's 12 to 15 percent: 'proper densification "
+                      "generally cannot be achieved when the granular soil "
+                      "contains more than 12 to 15 percent silt OR more "
+                      "than 2 percent clay' (p. 4-65)"
         })
         return
 
-    if N_spt is not None and N_spt > 25:
+    if N_spt is not None and density_from_N(N_spt)[1][0] >= 85.0:
         not_applicable.append({
             "method": method,
-            "reason": f"N_spt ({N_spt:.0f}) indicates soil is already dense"
+            "reason": f"N_spt ({N_spt:.0f}) is very dense by GEC-13 Table "
+                      "4-8 (relative density 85 to 100 percent); p. 4-75: "
+                      "'It is unlikely, even for heavy loading, that it "
+                      "will be necessary to achieve a relative density "
+                      "above 85 percent'"
         })
         return
 
@@ -427,21 +488,26 @@ def _eval_vibro(
         })
         return
 
-    # Marginal check
+    # Marginal check: within GEC-13's 12 to 15 percent (p. 4-65)
     marginal = False
-    if fines_content is not None and fines_content > 15:
+    if fines_content is not None and fines_content > fines_lo:
         marginal = True
 
     applicable.append(method)
 
     vibro_sizing = {
-        "typical_spacing": "1.5 - 3.5 m (triangular)",
-        "target_N_spt": "20 - 30",
+        "typical_spacing": (
+            f"{FIG_4_34[max(FIG_4_34)]:.2f} to {FIG_4_34[min(FIG_4_34)]:.2f} "
+            f"m for a target relative density of {max(FIG_4_34):.0f} to "
+            f"{min(FIG_4_34):.0f} percent, silty sands (GEC-13 Fig. 4-34, "
+            "p. 4-77)"),
+        "target_relative_density": TARGETS_GEC13,
     }
 
     if marginal:
         recommendations.append(
-            f"Vibro-compaction feasible but marginal (fines={fines_content:.0f}%) — "
+            f"Vibro-compaction feasible but marginal (fines={fines_content:.0f}%, "
+            "within GEC-13's 12 to 15 percent, p. 4-65) — "
             "field trial recommended"
         )
     else:

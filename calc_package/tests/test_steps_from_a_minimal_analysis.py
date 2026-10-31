@@ -134,7 +134,10 @@ def test_wick_drains_inputs_left_out_are_the_modules_defaults():
     from ground_improvement.calc_steps import get_input_summary
     module, result, analysis = CASES["wick_drains"]()
     items = {i.name: i.value for i in get_input_summary(result, analysis)}
-    assert items["s_r"] == 2.0            # analyze_wick_drains' smear_ratio
+    # analyze_wick_drains' defaults (GM-291): smear ignored, so no smear
+    # ratio is listed, and a 2.5 in drain (GEC-13 p. 2-35)
+    assert "s_r" not in items
+    assert items["d_w"] == pytest.approx(0.0635)
 
 
 def test_a_required_input_left_out_is_named():

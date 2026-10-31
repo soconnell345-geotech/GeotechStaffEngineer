@@ -1,16 +1,17 @@
 """
 Tests for the ground_improvement module.
 
-Covers aggregate piers, wick drains (Barron radial consolidation),
+Covers aggregate piers, wick drains (GEC-13 Eq. 2-1 radial consolidation),
 surcharge preloading, vibro-compaction feasibility, and the
 feasibility decision-support engine.
 
 40 tests across 8 test classes.
 
 References:
-    Barron (1948), Hansbo (1981) — radial consolidation
+    FHWA GEC-13 (FHWA-NHI-16-027) — radial consolidation (Eqs. 2-1 to 2-3),
+    vibro-compaction (Ch. 4), aggregate columns (Ch. 5)
+    UFC 3-220-10 (2026) — smear factor (Eq. 5-25)
     Barksdale & Bachus (1983) — aggregate piers
-    FHWA GEC-13, FHWA NHI-06-019/020
 """
 
 import math
@@ -34,7 +35,7 @@ from ground_improvement.surcharge import (
     time_to_target_consolidation, analyze_surcharge_preloading,
 )
 from ground_improvement.vibro import (
-    vibro_feasibility, estimate_probe_spacing, analyze_vibro_compaction,
+    vibro_feasibility, probe_spacing_fig_4_34, analyze_vibro_compaction,
 )
 from ground_improvement.feasibility import evaluate_feasibility
 from ground_improvement.results import (
@@ -156,7 +157,7 @@ class TestAggregatePiers:
 # WICK DRAIN THEORY
 # ================================================================
 class TestWickDrainTheory:
-    """Test Barron/Hansbo radial consolidation theory.
+    """Test GEC-13's radial consolidation (Eqs. 2-1, 2-2; made-up inputs).
 
     Hand-calculated verification:
     s=1.5m triangular, dw=0.066m:
@@ -169,7 +170,7 @@ class TestWickDrainTheory:
     """
 
     def test_equivalent_drain_diameter(self):
-        """dw = 2(a+b)/pi (Hansbo) for a standard 100mm x 4mm PVD ~= 0.066 m."""
+        """dw = 2(a+b)/pi, GEC-13 Eq. 2-3, for a 100 mm x 4 mm band."""
         dw = equivalent_drain_diameter(0.1, 0.004)
         assert dw == pytest.approx(2.0 * (0.1 + 0.004) / math.pi, rel=1e-6)
         assert dw == pytest.approx(0.0662, abs=1e-3)
@@ -192,14 +193,14 @@ class TestWickDrainTheory:
         assert F == pytest.approx(expected, rel=1e-4)
 
     def test_drain_function_with_smear(self):
-        """F(n) with smear correction > F(n) without smear."""
+        """F(n) + F_s, F_s = (kh/ks) ln(s) as UFC 3-220-10 Eq. 5-25
+        prints it (GM-291; until then Hansbo's ln(n/s) form)."""
         n = 23.864
         F_no_smear = drain_function_F(n)
         F_smear = drain_function_F(n, smear_ratio=2.5, kh_ks_ratio=3.0)
         # Smear increases F(n), which slows consolidation
         assert F_smear > F_no_smear
-        # Verify formula: ln(n/s) + (kh/ks)*ln(s) - 0.75
-        expected = math.log(n / 2.5) + 3.0 * math.log(2.5) - 0.75
+        expected = math.log(n) - 0.75 + 3.0 * math.log(2.5)
         assert F_smear == pytest.approx(expected, rel=1e-4)
 
     def test_radial_consolidation_basic(self):
@@ -343,34 +344,33 @@ class TestVibroCompaction:
     """Test vibro-compaction feasibility assessment."""
 
     def test_feasible_clean_sand(self):
-        """Clean loose sand should be feasible."""
-        feasible, reasons = vibro_feasibility(5.0, D50=0.5, initial_N_spt=8)
+        """Fines below 10 percent: GEC-13 p. 4-67's zone B."""
+        feasible, reasons = vibro_feasibility(5.0, initial_N_spt=8)
         assert feasible is True
-        assert any("favorable" in r.lower() for r in reasons)
+        assert any("below 10 percent" in r for r in reasons)
 
     def test_infeasible_high_fines(self):
-        """High fines content -> not feasible."""
+        """Above GEC-13's 12 to 15 percent (p. 4-65): not feasible."""
         feasible, reasons = vibro_feasibility(25.0, initial_N_spt=10)
         assert feasible is False
-        assert any("exceeds 20%" in r for r in reasons)
+        assert any("12 to 15 percent" in r for r in reasons)
 
     def test_marginal_fines(self):
-        """10-20% fines -> feasible but with notes."""
-        feasible, reasons = vibro_feasibility(12.0, initial_N_spt=10)
+        """Within the printed 12 to 15 percent: feasible, marginal."""
+        feasible, reasons = vibro_feasibility(13.0, initial_N_spt=10)
         assert feasible is True
-        assert any("10-15%" in r for r in reasons)
+        assert any("marginal" in r for r in reasons)
 
     def test_probe_spacing(self):
-        """Looser soil (higher improvement ratio) -> tighter spacing."""
-        s_loose = estimate_probe_spacing(5.0, 25.0)   # ratio 5.0
-        s_medium = estimate_probe_spacing(15.0, 25.0)  # ratio 1.67
-        assert s_loose < s_medium
+        """A higher target relative density -> a tighter spacing (Fig.
+        4-34)."""
+        assert probe_spacing_fig_4_34(80.0) < probe_spacing_fig_4_34(60.0)
 
     def test_full_vibro_analysis(self):
         """Full vibro analysis end-to-end."""
         result = analyze_vibro_compaction(
             fines_content=5.0, initial_N_spt=8,
-            target_N_spt=25, D50=0.3,
+            target_relative_density=70.0,
         )
         assert result.is_feasible is True
         assert result.recommended_spacing_m > 0
@@ -417,8 +417,10 @@ class TestFeasibility:
         assert "Wick Drains (PVD)" in excluded_methods
         assert "Surcharge Preloading" in excluded_methods
 
-    def test_organic_excludes_piers(self):
-        """Very soft organic soil -> no aggregate piers."""
+    def test_organic_takes_special_care(self):
+        """Very soft organic soil: GEC-13 p. 5-9 asks for special care
+        under 300 psf, it does not exclude aggregate columns (GM-291;
+        until then excluded under 10 kPa, a limit printed nowhere)."""
         result = evaluate_feasibility(
             soil_type="organic",
             cu_kPa=8.0,
@@ -426,8 +428,19 @@ class TestFeasibility:
             predicted_settlement_mm=200.0,
             allowable_settlement_mm=50.0,
         )
-        excluded_methods = [d["method"] for d in result.not_applicable]
-        assert "Aggregate Piers" in excluded_methods
+        assert "Aggregate Piers" in result.applicable_methods
+        assert any("Special care must be taken" in r
+                   for r in result.recommendations)
+
+    def test_stiff_clay_excludes_piers(self):
+        """Above GEC-13's practical upper limit for stone columns, 1000 to
+        2000 psf (p. 5-9): not applicable."""
+        result = evaluate_feasibility(
+            soil_type="soft_clay", cu_kPa=100.0, thickness_m=5.0,
+            predicted_settlement_mm=200.0, allowable_settlement_mm=50.0,
+        )
+        excluded = {d["method"]: d["reason"] for d in result.not_applicable}
+        assert "1000 to 2000 psf" in excluded["Aggregate Piers"]
 
     def test_time_constraint_favors_drains(self):
         """Tight time constraint -> recommendations mention drains."""

@@ -74,7 +74,8 @@ def settlement_reduction_factor(as_ratio: float, n: float) -> float:
     as_ratio : float
         Area replacement ratio.
     n : float
-        Stress concentration ratio (typically 3-8).
+        Stress concentration ratio (GEC-13 p. 5-31: measured "between 2.0
+        and 5.0" for stone columns).
 
     Returns
     -------
@@ -109,7 +110,8 @@ def composite_modulus(as_ratio: float, E_soil: float,
     E_soil : float
         Modulus of surrounding soil (kPa).
     n : float
-        Stress concentration ratio (typically 3-8).
+        Stress concentration ratio (GEC-13 p. 5-31: measured "between 2.0
+        and 5.0" for stone columns).
 
     Returns
     -------
@@ -239,8 +241,10 @@ def improved_settlement(S_unreinforced: float, as_ratio: float,
 
 
 #: How the settlement over the columns is worked out: the stress ratio n
-#: (the default), or the settlement ratio n' by E_c / E_s off GEC-13 Fig.
-#: 5-21 (``ground_improvement.settlement_ratio``, GM-220).
+#: (the default), or the settlement ratio by E_c / E_s off GEC-13 Fig. 5-21
+#: (``ground_improvement.settlement_ratio``, GM-220). GEC-13 p. 5-36 prints
+#: the settlement ratio as "n" in quotes; it is not the stress ratio n of
+#: Eq. 5-2, so the module calls it the settlement ratio (GM-279).
 SETTLEMENT_METHODS = ("stress_ratio", "weighted_modulus", "balaam_rigid",
                       "balaam_flexible")
 
@@ -277,10 +281,13 @@ def analyze_aggregate_piers(
         'stress_ratio' used only for the composite modulus; with the
         Fig. 5-21 methods it also sets E_c / E_s.
     n : float
-        Stress concentration ratio sigma_c / sigma_s. Default 5.0 (GEC-13:
-        "between 2.0 and 5.0" for stone columns, Sec. 4.1.2.4; for rammed
-        aggregate piers "4 to 45 for rigid footings" and 5 to 10 under
-        embankments, p. 5-45).
+        Stress concentration ratio sigma_c / sigma_s. Default 5.0. GEC-13
+        for stone columns: measured "between 2.0 and 5.0" (p. 5-31), "For
+        preliminary design, a ratio of 2.5 is often conservatively used for
+        stability and bearing resistance calculations" (p. 5-32); for
+        rammed aggregate piers 5 to 10 under flexible embankment loading,
+        10 under rigid footings (p. 5-43); "stress concentration ratios
+        range from 4 to 45 for rigid footings" (p. 5-45).
     q_unreinforced : float
         Unreinforced bearing capacity (kPa). Default 0 (not computed).
     S_unreinforced : float
@@ -289,9 +296,10 @@ def analyze_aggregate_piers(
         How the settlement over the columns is worked out (GM-220):
         'stress_ratio' (default): SRF = 1 / [1 + a_s (n - 1)] from n.
         'weighted_modulus', 'balaam_rigid', 'balaam_flexible': the
-        settlement ratio n' (settlement without columns over settlement
-        with them) by E_c / E_s off GEC-13 Fig. 5-21, p. 5-36; SRF = 1 /
-        n' and the composite modulus E_s n'. Balaam's curves are drawn
+        settlement ratio (settlement without columns over settlement with
+        them) by E_c / E_s off GEC-13 Fig. 5-21, p. 5-36; SRF = 1 / the
+        settlement ratio and the composite modulus E_s times it. Balaam's
+        curves are drawn
         for E_c / E_s = 5 and 10 (rigid) and 10 (flexible) only. ``n``
         still sets the improved bearing.
 
@@ -368,7 +376,8 @@ def analyze_aggregate_piers(
 
 #: The settlement methods besides the stress ratio, for the choices.
 _WEIGHTED = ("settlement_method 'weighted_modulus' with E_column: GEC-13 "
-             "Fig. 5-21 curve (2), n' = 1 + a_s (E_c/E_s - 1)")
+             "Fig. 5-21 curve (2), settlement ratio = 1 + a_s (E_c/E_s - "
+             "1)")
 _BALAAM = ("settlement_method 'balaam_rigid' (E_c/E_s 5 to 10) or "
            "'balaam_flexible' (E_c/E_s = 10) with E_column: GEC-13 Fig. "
            "5-21 Balaam curves (5); p. 5-37: the FHWA (1983) Equilibrium "
@@ -411,13 +420,14 @@ def _settlement_method_choice(method, as_ratio, modular_ratio, n_prime):
                       "(5b), E_c/E_s = 10, rigid")
     return choice(
         "settlement method",
-        f"{_NAMES[method]}: n' = {n_prime:.2f} at A/A_c = "
+        f"{_NAMES[method]}: settlement ratio {n_prime:.2f} at A/A_c = "
         f"{1.0 / as_ratio:.2f}, E_c/E_s = {modular_ratio:g}", how,
         BASIS[method]
         + ("; interpolated linearly in E_c/E_s between (5c) and (5b)"
            if between else "")
-        + ". n' is the settlement without columns over that with them: "
-        "S = the unreinforced settlement / n'",
+        + ". The settlement ratio is the settlement without columns over "
+        "that with them: S = the unreinforced settlement / the settlement "
+        "ratio",
         [_STRESS_RATIO, *others, _PRIEBE])
 
 
@@ -441,10 +451,16 @@ def aggregate_pier_choices(n: float, E_soil: float, pattern: str,
         choice("stress concentration ratio n", f"{n:g}",
                how_given(n, 5.0, name="n"),
                "n = sigma_c / sigma_s, taken as given and not worked out "
-               "from the moduli; GEC-13 (FHWA-NHI-16-027): for stone "
-               "columns n is 'between 2.0 and 5.0' (Sec. 4.1.2.4); for "
-               "rammed aggregate piers '4 to 45 for rigid footings' and "
-               "5 to 10 under embankments (p. 5-45). It sets " + sets,
+               "from the moduli; GEC-13 (FHWA-NHI-16-027) for stone "
+               "columns: measured 'between 2.0 and 5.0' (p. 5-31), and "
+               "'For preliminary design, a ratio of 2.5 is often "
+               "conservatively used for stability and bearing resistance "
+               "calculations' (p. 5-32); for rammed aggregate piers 'a "
+               "stress ratio of 5 to 10 for area ground improvement "
+               "applications under flexible embankment loading', 'a "
+               "somewhat higher stress ratio (10)' under rigid footings "
+               "(p. 5-43); 'stress concentration ratios range from 4 to 45 "
+               "for rigid footings' (p. 5-45). It sets " + sets,
                ["n from the moduli, n = E_c / E_s (equal-strain modular "
                 "ratio; settlement_method 'weighted_modulus')",
                 "the settlement ratio off GEC-13's printed Priebe curve, "
@@ -457,7 +473,8 @@ def aggregate_pier_choices(n: float, E_soil: float, pattern: str,
         *n_choice,
         choice("soil modulus E_s", f"{E_soil:g} kPa", e_how,
                (f"with E_column it sets E_c/E_s = {modular_ratio:g} and "
-                "the composite modulus E_comp = E_s n'" if by_moduli else
+                "the composite modulus E_comp = E_s x the settlement "
+                "ratio" if by_moduli else
                 "used only for the composite modulus E_comp = "
                 "E_s [1 + a_s (n - 1)]")
                # the unsourced default says so (GM-230)

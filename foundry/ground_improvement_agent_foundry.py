@@ -145,14 +145,16 @@ METHOD_INFO = {
     },
     "wick_drains": {
         "category": "Drainage",
-        "brief": "Wick drain consolidation analysis (Barron/Hansbo).",
+        "brief": "Wick drain consolidation analysis (GEC-13 Eq. 2-1).",
         "description": (
             "Computes radial and vertical consolidation with prefabricated "
-            "vertical drains (PVDs/wick drains) using the Barron/Hansbo "
-            "solution. Includes smear zone and well resistance effects. "
-            "Returns degree of consolidation at the specified time."
+            "vertical drains (PVDs/wick drains): radial by GEC-13 Eq. 2-1 "
+            "with F(n) = ln(n) - 0.75 (Eq. 2-2), smear optional by UFC "
+            "3-220-10 Eq. 5-25 and ignored by default, well resistance not "
+            "modelled (GEC-13 p. 2-36). Returns degree of consolidation at "
+            "the specified time."
         ),
-        "reference": "FHWA GEC-13; Hansbo (1979); Barron (1948)",
+        "reference": "FHWA GEC-13, Ch. 2, Eqs. 2-1 to 2-3; UFC 3-220-10 (2026)",
         "parameters": {
             "spacing": {"type": "float", "required": True, "range": "> 0",
                         "description": "Center-to-center drain spacing (m). Typical 1.0-3.0m."},
@@ -164,15 +166,15 @@ METHOD_INFO = {
                     "description": "Maximum vertical drainage path length (m). Half the layer thickness for two-way drainage, full thickness for one-way."},
             "time": {"type": "float", "required": True, "range": "> 0",
                      "description": "Time for consolidation analysis (years)."},
-            "dw": {"type": "float", "required": False, "default": 0.066, "range": "> 0",
-                   "description": "Equivalent drain diameter (m). 0.066m is standard for 100x4mm wick drains."},
+            "dw": {"type": "float", "required": False, "default": 0.0635, "range": "> 0",
+                   "description": "Equivalent drain diameter (m). Default 2.5 in, 'the most common' (GEC-13 p. 2-35)."},
             "pattern": {"type": "str", "required": False, "default": "triangular",
                         "choices": ["triangular", "square"],
                         "description": "Drain layout pattern."},
-            "smear_ratio": {"type": "float", "required": False, "default": 2.0, "range": "> 1",
-                            "description": "Smear zone diameter / drain diameter. Typical 2-5. Higher = more disturbance."},
-            "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0, "range": "> 1",
-                            "description": "Undisturbed / smear zone permeability ratio. Typical 2-5."},
+            "smear_ratio": {"type": "float", "required": False, "default": 1.0, "range": ">= 1",
+                            "description": "Smear zone diameter / drain diameter. Default 1.0, smear ignored (GEC-13 p. 2-35)."},
+            "kh_ks_ratio": {"type": "float", "required": False, "default": 1.0, "range": "> 0",
+                            "description": "Undisturbed / smear zone permeability ratio, with smear_ratio above 1 (UFC 3-220-10 Eq. 5-25)."},
             "n_time_points": {"type": "int", "required": False, "default": 50, "range": "> 0",
                               "description": "Number of points in time-settlement output curve."},
         },
@@ -181,7 +183,7 @@ METHOD_INFO = {
             "Uv_percent": "Vertical consolidation (%).",
             "U_total_percent": "Combined total consolidation (%). = 1 - (1-Ur)(1-Uv).",
             "spacing_ratio_n": "n = de/dw (equivalent diameter of drain zone / drain diameter).",
-            "F_n": "Drain spacing function F(n) used in Barron/Hansbo equation.",
+            "F_n": "F(n) + F_s, the drain function of GEC-13 Eq. 2-1.",
         },
         "related": {
             "settlement_agent.consolidation_settlement": "Compute how much settlement to accelerate.",
@@ -220,14 +222,14 @@ METHOD_INFO = {
                    "description": "Vertical coefficient of consolidation (m2/year)."},
             "Hdr": {"type": "float", "required": True, "range": "> 0",
                     "description": "Maximum vertical drainage path (m)."},
-            "dw": {"type": "float", "required": False, "default": 0.066,
+            "dw": {"type": "float", "required": False, "default": 0.0635,
                    "description": "Equivalent drain diameter (m)."},
             "pattern": {"type": "str", "required": False, "default": "triangular",
                         "choices": ["triangular", "square"],
                         "description": "Drain layout pattern."},
-            "smear_ratio": {"type": "float", "required": False, "default": 2.0,
+            "smear_ratio": {"type": "float", "required": False, "default": 1.0,
                             "description": "Smear zone diameter / drain diameter."},
-            "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0,
+            "kh_ks_ratio": {"type": "float", "required": False, "default": 1.0,
                             "description": "Undisturbed / smear permeability ratio."},
             "spacing_range": {"type": "list[float]", "required": False, "default": [1.0, 3.5],
                               "description": "Bisection search range [min_spacing, max_spacing] in meters. Widen if solution not found."},
@@ -262,14 +264,14 @@ METHOD_INFO = {
                    "description": "Horizontal cv (m2/year). Required if drain_spacing is provided."},
             "drain_spacing": {"type": "float", "required": False, "range": "> 0",
                               "description": "Wick drain spacing (m). Omit for surcharge-only (no drains). Requires ch."},
-            "dw": {"type": "float", "required": False, "default": 0.066,
+            "dw": {"type": "float", "required": False, "default": 0.0635,
                    "description": "Equivalent drain diameter (m)."},
             "pattern": {"type": "str", "required": False, "default": "triangular",
                         "choices": ["triangular", "square"],
                         "description": "Drain layout pattern."},
-            "smear_ratio": {"type": "float", "required": False, "default": 2.0,
+            "smear_ratio": {"type": "float", "required": False, "default": 1.0,
                             "description": "Smear zone diameter / drain diameter."},
-            "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0,
+            "kh_ks_ratio": {"type": "float", "required": False, "default": 1.0,
                             "description": "Undisturbed / smear permeability ratio."},
             "sigma_v0": {"type": "float", "required": False, "default": 0.0,
                          "description": "Initial effective vertical stress at the center of the compressible layer (kPa). 0 if unknown."},
@@ -287,30 +289,28 @@ METHOD_INFO = {
         "category": "Densification",
         "brief": "Vibro-compaction feasibility assessment.",
         "description": (
-            "Evaluates feasibility of vibro-compaction based on fines content "
-            "and grain size. Recommends probe spacing to achieve target SPT "
-            "N-value. Vibro-compaction is generally feasible only for granular "
-            "soils with fines content < 15-20%."
+            "Evaluates feasibility of vibro-compaction by the fines content "
+            "(GEC-13 p. 4-65: 'more than 12 to 15 percent silt OR more than "
+            "2 percent clay') and SPT N (Table 4-8), and reads the probe "
+            "spacing for a target relative density off GEC-13 Fig. 4-34."
         ),
-        "reference": "FHWA GEC-13; Slocombe (1993)",
+        "reference": "FHWA GEC-13, Ch. 4, pp. 4-65 to 4-77",
         "parameters": {
             "fines_content": {"type": "float", "required": True, "range": "0 to 100",
-                              "description": "Fines content (% passing #200 sieve). >20% generally not feasible."},
+                              "description": "Fines content (% passing #200 sieve). Above 15% not feasible, 12-15% marginal (GEC-13 p. 4-65)."},
             "initial_N_spt": {"type": "float", "required": True, "range": "> 0",
                               "description": "Initial (pre-treatment) SPT blow count (N-value)."},
-            "target_N_spt": {"type": "float", "required": False, "default": 25.0, "range": "> initial_N_spt",
-                             "description": "Target (post-treatment) SPT blow count. Typical 20-30."},
-            "D50": {"type": "float", "required": False, "range": "> 0",
-                    "description": "Mean grain size D50 (mm). Improves feasibility assessment if provided."},
+            "target_relative_density": {"type": "float", "required": False, "range": "55 to 90",
+                                        "description": "Target relative density (%): the probe spacing off GEC-13 Fig. 4-34. Not given: no spacing."},
             "pattern": {"type": "str", "required": False, "default": "triangular",
                         "choices": ["triangular", "square"],
                         "description": "Vibro-probe layout pattern."},
         },
         "returns": {
-            "is_feasible": "Feasibility assessment: true, false, or 'marginal'. Based on fines content and D50.",
-            "recommended_spacing_m": "Recommended probe spacing (m). Based on empirical Slocombe (1993) chart.",
+            "is_feasible": "Feasibility assessment: true or false, by the fines content and SPT N.",
+            "recommended_spacing_m": "Probe spacing (m) off GEC-13 Fig. 4-34; 0 without a target.",
             "initial_N_spt": "Input initial SPT blow count.",
-            "target_N_spt": "Target SPT blow count.",
+            "target_relative_density_percent": "Target relative density (%).",
         },
     },
     "feasibility": {

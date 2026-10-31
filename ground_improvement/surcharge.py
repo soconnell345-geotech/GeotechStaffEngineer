@@ -6,10 +6,19 @@ both with and without prefabricated vertical drains (PVDs).
 
 All units SI: kPa, meters, years.
 
+With drains, the radial consolidation is GEC-13's Eq. 2-1 as
+``ground_improvement.wick_drains`` works it (smear ignored and a 2.5 in
+drain by default, GEC-13 p. 2-35), combined with the vertical by Carrillo
+(1942) as UFC 3-220-10 Eq. 5-27 prints it. GEC-13 prints no surcharge
+equation: surcharge is "the extra load or the added fill above final
+elevations that is used to accelerate settlement and/or minimize secondary
+consolidation" (p. 2-2).
+
 References:
     Terzaghi (1925) — 1-D consolidation theory
-    FHWA NHI-06-019: Ground Improvement Methods, Vol. I
-    FHWA GEC-13: Ground Modification Methods Reference Manual
+    FHWA GEC-13 (FHWA-NHI-16-027): Ground Modification Methods Reference
+    Manual, Vol. I, Ch. 2
+    UFC 3-220-10, Soil Mechanics (2026), Sec. 5-7.3 and 5-7.4
 """
 
 import math
@@ -20,7 +29,7 @@ from settlement.time_rate import (
     time_for_consolidation,
 )
 from ground_improvement.wick_drains import (
-    influence_diameter, drain_function_F,
+    DW_DEFAULT_M, influence_diameter, drain_function_F,
     radial_time_factor, radial_degree_of_consolidation,
     combined_degree_of_consolidation,
 )
@@ -63,8 +72,8 @@ def surcharge_with_drains_settlement_at_time(
     dw: float,
     t: float,
     pattern: str = "triangular",
-    smear_ratio: float = 2.0,
-    kh_ks_ratio: float = 2.0,
+    smear_ratio: float = 1.0,
+    kh_ks_ratio: float = 1.0,
 ) -> float:
     """Settlement at time t under surcharge with wick drains.
 
@@ -150,10 +159,10 @@ def _combined_U_at_time(
     Hdr: float,
     ch: float = None,
     drain_spacing: float = None,
-    dw: float = 0.066,
+    dw: float = DW_DEFAULT_M,
     pattern: str = "triangular",
-    smear_ratio: float = 2.0,
-    kh_ks_ratio: float = 2.0,
+    smear_ratio: float = 1.0,
+    kh_ks_ratio: float = 1.0,
 ) -> float:
     """Compute combined degree of consolidation at time t.
 
@@ -185,10 +194,10 @@ def time_to_target_consolidation(
     Hdr: float,
     ch: float = None,
     drain_spacing: float = None,
-    dw: float = 0.066,
+    dw: float = DW_DEFAULT_M,
     pattern: str = "triangular",
-    smear_ratio: float = 2.0,
-    kh_ks_ratio: float = 2.0,
+    smear_ratio: float = 1.0,
+    kh_ks_ratio: float = 1.0,
 ) -> float:
     """Compute time to reach target degree of consolidation.
 
@@ -210,7 +219,8 @@ def time_to_target_consolidation(
     drain_spacing : float, optional
         Center-to-center drain spacing (m).
     dw : float
-        Equivalent drain diameter (m). Default 0.066.
+        Equivalent drain diameter (m). Default 0.0635 (2.5 in, GEC-13 p.
+        2-35).
     pattern : str
         'triangular' or 'square'.
     smear_ratio : float
@@ -265,10 +275,10 @@ def analyze_surcharge_preloading(
     target_U: float = 90.0,
     ch: float = None,
     drain_spacing: float = None,
-    dw: float = 0.066,
+    dw: float = DW_DEFAULT_M,
     pattern: str = "triangular",
-    smear_ratio: float = 2.0,
-    kh_ks_ratio: float = 2.0,
+    smear_ratio: float = 1.0,
+    kh_ks_ratio: float = 1.0,
     sigma_v0: float = 0.0,
     n_time_points: int = 50,
 ) -> SurchargeResult:
@@ -291,13 +301,15 @@ def analyze_surcharge_preloading(
     drain_spacing : float, optional
         Center-to-center drain spacing (m).
     dw : float
-        Equivalent drain diameter (m). Default 0.066.
+        Equivalent drain diameter (m). Default 0.0635 (2.5 in, GEC-13 p.
+        2-35).
     pattern : str
         'triangular' or 'square'. Default 'triangular'.
     smear_ratio : float
-        Smear zone ratio ds/dw. Default 2.0.
+        Smear zone ratio ds/dw. Default 1.0 (smear ignored, GEC-13 p.
+        2-35).
     kh_ks_ratio : float
-        Permeability ratio kh/ks. Default 2.0.
+        Permeability ratio kh/ks, with smear_ratio above 1. Default 1.0.
     sigma_v0 : float
         Current effective stress at layer center (kPa). Default 0.
     n_time_points : int

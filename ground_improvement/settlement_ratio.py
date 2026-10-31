@@ -2,18 +2,20 @@
 
 GEC-13 (FHWA-NHI-16-027) Vol. I, Fig. 5-21, p. 5-36, "Comparison of elastic
 theories and field observations" (Greenwood and Kirsch 1984; Wallays et al.
-1983), for infinite grid patterns: the settlement ratio n' -- "the ratio of
-settlement without stone columns to that with stone columns" (p. 5-36) --
-against the area ratio A/A_c = 1 / a_s. Two of its methods work n' out
-from the ratio of the column modulus to the soil modulus, E_c / E_s:
+1983), for infinite grid patterns: the settlement ratio, which p. 5-36
+prints as "n" in quotes, "defined as the ratio of settlement without stone
+columns to that with stone columns", against the area ratio A/A_c = 1 /
+a_s. It is not the stress ratio n of Eq. 5-2, so the module calls it the
+settlement ratio (GM-279). Two of the figure's methods work it out from the
+ratio of the column modulus to the soil modulus, E_c / E_s:
 
 ``weighted_modulus``
     Curve (2), "'Weighted modulus' method", drawn for E_c/E_s = 10 (2a) and
-    5 (2b). The curves are n' = 1 + a_s (E_c/E_s - 1): the composite
-    modulus a_s E_c + (1 - a_s) E_s over E_s, which is the stress-ratio
-    method with n = E_c/E_s. Traced off the figure, this form is within
-    1 % of curve (2a) up to A/A_c = 5 and 2.2 % beyond, and within 0.6 % of
-    curve (2b) over A/A_c 1.5 to 3.5.
+    5 (2b). The curves are settlement ratio = 1 + a_s (E_c/E_s - 1): the
+    composite modulus a_s E_c + (1 - a_s) E_s over E_s, which is the
+    stress-ratio method with n = E_c/E_s. Traced off the figure, this form
+    is within 1 % of curve (2a) up to A/A_c = 5 and 2.2 % beyond, and
+    within 0.6 % of curve (2b) over A/A_c 1.5 to 3.5.
 ``balaam_rigid`` / ``balaam_flexible``
     Curves (5), "Balaam": (5b) E_c/E_s = 10 rigid, (5c) E_c/E_s = 5 rigid
     and (5a) E_c/E_s = 10 flexible. p. 5-37: the Equilibrium Method of
@@ -23,11 +25,11 @@ from the ratio of the column modulus to the soil modulus, E_c / E_s:
     values here were read off the rendered page (2026-10-19): each curve
     traced pixel by pixel on the scanned figure, calibrated on its printed
     grid lines, and the reads drawn back over the figure to check they sit
-    on the curves. Between the tabulated A/A_c, n' is interpolated linearly
-    in a_s (within 0.5 % of the traced curves). A rigid E_c/E_s between 5
-    and 10 is interpolated linearly in E_c/E_s between (5c) and (5b); the
-    flexible curve is drawn for E_c/E_s = 10 only. Off the drawn range the
-    curves are not extended.
+    on the curves. Between the tabulated A/A_c, the settlement ratio is
+    interpolated linearly in a_s (within 0.5 % of the traced curves). A
+    rigid E_c/E_s between 5 and 10 is interpolated linearly in E_c/E_s
+    between (5c) and (5b); the flexible curve is drawn for E_c/E_s = 10
+    only. Off the drawn range the curves are not extended.
 
 Curve (4), "PRIEBE phi = 37.5°", is the Priebe curve GEC-13 reads in its
 Example 2 (Sec. 4.3.2, Fig. 5-27, p. 5-49) and of which p. 5-37 says "for
@@ -48,7 +50,8 @@ import math
 
 METHODS = ("weighted_modulus", "balaam_rigid", "balaam_flexible")
 
-#: GEC-13 Fig. 5-21 curve (5b): Balaam, E_c/E_s = 10, rigid. A/A_c -> n'.
+#: GEC-13 Fig. 5-21 curve (5b): Balaam, E_c/E_s = 10, rigid. A/A_c ->
+#: settlement ratio.
 BALAAM_RIGID_10 = {
     1.75: 4.89, 2.0: 4.35, 2.25: 3.93, 2.5: 3.60, 2.75: 3.35, 3.0: 3.15,
     3.5: 2.84, 4.0: 2.59, 4.5: 2.40, 5.0: 2.24, 5.5: 2.11, 6.0: 2.02,
@@ -68,9 +71,10 @@ BALAAM_FLEXIBLE_10 = {
 }
 
 #: GEC-13 Fig. 5-21 curve (4): Priebe, phi = 37.5 deg (GM-221), p. 5-36.
-#: A/A_c -> n'. Traced and drawn back as the Balaam curves; the table is
-#: within 1 % of the trace between its nodes, and a read is good to about
-#: one line width, +/- 0.03 in n'. Checked again on both printed copies
+#: A/A_c -> settlement ratio. Traced and drawn back as the Balaam curves;
+#: the table is within 1 % of the trace between its nodes, and a read is
+#: good to about one line width, +/- 0.03 in the settlement ratio. Checked
+#: again on both printed copies
 #: (GM-276): on p. 5-36 the table sits on the line within 0.015 (95 % of
 #: reads) from A/A_c 2.25 to 8.0 and within 0.04 below A/A_c 2.25, where
 #: the curve is steep; Fig. 5-27 (p. 5-49), the same chart printed again
@@ -89,7 +93,8 @@ BASIS = {
     "weighted_modulus": (
         "GEC-13 (FHWA-NHI-16-027) Fig. 5-21, p. 5-36, curve (2), the "
         "'weighted modulus' method, drawn for E_c/E_s = 10 (2a) and 5 (2b): "
-        "n' = 1 + a_s (E_c/E_s - 1), the composite modulus over E_s; the "
+        "settlement ratio = 1 + a_s (E_c/E_s - 1), the composite modulus "
+        "over E_s; the "
         "stress-ratio method with n = E_c/E_s"),
     "balaam_rigid": (
         "GEC-13 (FHWA-NHI-16-027) Fig. 5-21, p. 5-36, Balaam curves (5b) "
@@ -111,7 +116,8 @@ BASIS = {
 def _on_curve(table: dict, as_ratio: float, name: str,
               instead: str = "settlement_method 'weighted_modulus' or "
                              "'stress_ratio'") -> float:
-    """n' off one tabulated curve at a_s, linear in a_s between nodes."""
+    """The settlement ratio off one tabulated curve at a_s, linear in a_s
+    between nodes."""
     xs = sorted(table)
     x = 1.0 / as_ratio
     if not xs[0] - 1e-9 <= x <= xs[-1] + 1e-9:
@@ -142,14 +148,15 @@ def _check(as_ratio: float, modular_ratio: float) -> None:
 
 def weighted_modulus_settlement_ratio(as_ratio: float,
                                       modular_ratio: float) -> float:
-    """n' = 1 + a_s (E_c/E_s - 1), GEC-13 Fig. 5-21 curve (2)."""
+    """Settlement ratio = 1 + a_s (E_c/E_s - 1), GEC-13 Fig. 5-21 curve
+    (2)."""
     _check(as_ratio, modular_ratio)
     return 1.0 + as_ratio * (modular_ratio - 1.0)
 
 
 def balaam_settlement_ratio(as_ratio: float, modular_ratio: float,
                             footing: str = "rigid") -> float:
-    """n' off GEC-13 Fig. 5-21's Balaam curves (5).
+    """The settlement ratio off GEC-13 Fig. 5-21's Balaam curves (5).
 
     ``footing`` 'rigid' takes E_c/E_s from 5 to 10, on curves (5c) and
     (5b) and linear in E_c/E_s between them; 'flexible' takes E_c/E_s =
@@ -183,8 +190,9 @@ def balaam_settlement_ratio(as_ratio: float, modular_ratio: float,
 
 
 def priebe_curve_settlement_ratio(as_ratio: float) -> float:
-    """n' off GEC-13 Fig. 5-21 curve (4), 'PRIEBE phi = 37.5 deg' (GM-221),
-    read at A/A_c 1.6 to 8.0; refused outside that, never extended."""
+    """The settlement ratio off GEC-13 Fig. 5-21 curve (4), 'PRIEBE phi =
+    37.5 deg' (GM-221), read at A/A_c 1.6 to 8.0; refused outside that,
+    never extended."""
     if not 0.0 < as_ratio < 1.0:
         raise ValueError(
             f"Area replacement ratio must be in (0, 1), got {as_ratio}")
@@ -204,7 +212,7 @@ def priebe_curve_settlement_ratio(as_ratio: float) -> float:
 
 def settlement_ratio(method: str, as_ratio: float,
                      modular_ratio: float) -> float:
-    """n' by one of :data:`METHODS` (GEC-13 Fig. 5-21)."""
+    """The settlement ratio by one of :data:`METHODS` (GEC-13 Fig. 5-21)."""
     if method == "weighted_modulus":
         return weighted_modulus_settlement_ratio(as_ratio, modular_ratio)
     if method == "balaam_rigid":

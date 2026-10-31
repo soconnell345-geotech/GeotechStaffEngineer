@@ -7,7 +7,7 @@ ground improvement methods plus the feasibility screening:
 
 - Aggregate piers (Barksdale & Bachus; GEC-13's stress reduction method and
   Fig. 5-21 settlement ratios)
-- Wick drains / PVD (Barron/Hansbo radial consolidation)
+- Wick drains / PVD (GEC-13 Eq. 2-1 radial consolidation)
 - Surcharge preloading (with/without drains)
 - Vibro-compaction feasibility (GEC-13)
 - Feasibility evaluation (decision support)
@@ -18,7 +18,7 @@ in the calc package.
 
 References:
     FHWA GEC-13: Ground Modification Methods Reference Manual
-    Barron (1948) / Hansbo (1981) — radial consolidation
+    UFC 3-220-10 (2026) — smear factor, combined consolidation
     Barksdale & Bachus (1983) — aggregate pier / stone column design
 """
 
@@ -35,13 +35,9 @@ DISPLAY_NAME = "Ground Improvement Analysis"
 REFERENCES = [
     "FHWA GEC-13 (FHWA-NHI-16-027): Ground Modification Methods "
     "Reference Manual, 2017.",
-    "FHWA NHI-06-019/020: Ground Improvement Methods, Vols. I & II.",
+    "UFC 3-220-10: Soil Mechanics, 2026.",
     'Barksdale, R.D. & Bachus, R.C. (1983). "Design and Construction of '
     'Stone Columns." FHWA/RD-83/026.',
-    'Barron, R.A. (1948). "Consolidation of Fine-Grained Soils by Drain '
-    'Wells." Trans. ASCE, Vol. 113, pp. 718-742.',
-    'Hansbo, S. (1981). "Consolidation of Fine-Grained Soils by '
-    'Prefabricated Drains." Proc. 10th ICSMFE, Stockholm, Vol. 3.',
 ]
 
 
@@ -283,7 +279,8 @@ _FIG_5_21_NAMES = {
 
 
 def _fig_5_21_steps(r, E_c, E_s):
-    """The settlement ratio n' by E_c / E_s off GEC-13 Fig. 5-21."""
+    """The settlement ratio by E_c / E_s off GEC-13 Fig. 5-21 (p. 5-36
+    prints it as "n" in quotes; not Eq. 5-2's stress ratio n, GM-279)."""
     from ground_improvement.settlement_ratio import BASIS
     a_s = r.area_replacement_ratio
     ratio = r.modular_ratio
@@ -307,9 +304,10 @@ def _fig_5_21_steps(r, E_c, E_s):
     if r.settlement_method == "weighted_modulus":
         items.append(CalcStep(
             title="Settlement Ratio, Weighted Modulus",
-            equation="n' = 1 + a_s \u00d7 (E_c / E_s - 1)",
-            substitution=f"n' = 1 + {a_s:.4f} \u00d7 ({ratio:.3g} - 1)",
-            result_name="n'",
+            equation="settlement ratio = 1 + a_s \u00d7 (E_c / E_s - 1)",
+            substitution=(f"settlement ratio = 1 + {a_s:.4f} \u00d7 "
+                          f"({ratio:.3g} - 1)"),
+            result_name="settlement ratio",
             result_value=f"{n_p:.3f}",
             reference=BASIS["weighted_modulus"],
         ))
@@ -319,10 +317,11 @@ def _fig_5_21_steps(r, E_c, E_s):
                  else "(5b) E_c/E_s = 10 and (5c) E_c/E_s = 5, rigid")
         items.append(CalcStep(
             title="Settlement Ratio, Balaam",
-            equation=f"n' read off GEC-13 Fig. 5-21, curve {curve}",
+            equation=(f"settlement ratio read off GEC-13 Fig. 5-21, "
+                      f"curve {curve}"),
             substitution=(f"A / A_c = {1.0 / a_s:.2f}, "
                           f"E_c / E_s = {ratio:.3g}"),
-            result_name="n'",
+            result_name="settlement ratio",
             result_value=f"{n_p:.3f}",
             reference=BASIS[r.settlement_method],
             notes=("Linear in a_s between the tabulated reads of the "
@@ -334,16 +333,17 @@ def _fig_5_21_steps(r, E_c, E_s):
         ))
     items.append(CalcStep(
         title="Settlement Reduction Factor (SRF)",
-        equation="SRF = 1 / n'",
+        equation="SRF = 1 / settlement ratio",
         substitution=f"SRF = 1 / {n_p:.3f}",
         result_name="SRF",
         result_value=f"{r.settlement_reduction_factor:.4f}",
-        notes="n' is the settlement without columns over that with "
-              "them (GEC-13 p. 5-36).",
+        notes="The settlement ratio is the settlement without columns "
+              "over that with them; GEC-13 p. 5-36 prints it as \"n\", "
+              "which is not the stress ratio n of Eq. 5-2.",
     ))
     items.append(CalcStep(
         title="Composite Modulus of Improved Ground",
-        equation="E_comp = E_s \u00d7 n'",
+        equation="E_comp = E_s \u00d7 settlement ratio",
         substitution=f"E_comp = {E_s:.0f} \u00d7 {n_p:.3f}",
         result_name="E_comp",
         result_value=f"{r.composite_modulus_kPa:.0f}",
@@ -441,7 +441,8 @@ def _bearing_and_settlement_steps(r, sections, n, a_s):
                        "p. 5-36: the stress reduction method, the soil "
                        "stress by Eq. 5-4 (p. 5-32)"
                        if r.settlement_method == "stress_ratio" else
-                       "GEC-13 Fig. 5-21: S = S_unreinforced / n'"),
+                       "GEC-13 Fig. 5-21: S = S_unreinforced / the "
+                       "settlement ratio"),
         ))
 
         settle_items.append(TableData(
@@ -483,12 +484,12 @@ def _figures_aggregate_piers(result, analysis) -> List[FigureData]:
                 title="Settlement Ratio vs Area Ratio (GEC-13 Fig. 5-21)",
                 image_base64=b64_1,
                 caption=(
-                    f"Figure 1: settlement ratio n' (settlement without "
+                    f"Figure 1: settlement ratio (settlement without "
                     f"columns / with them) vs A/A_c, "
                     f"{_FIG_5_21_NAMES[r.settlement_method]}, E_c/E_s = "
                     f"{r.modular_ratio:.3g}. Design point: A/A_c = "
-                    f"{1.0 / r.area_replacement_ratio:.2f}, n' = "
-                    f"{r.settlement_ratio:.2f}."
+                    f"{1.0 / r.area_replacement_ratio:.2f}, settlement "
+                    f"ratio {r.settlement_ratio:.2f}."
                 ),
                 width_percent=70,
             ))
@@ -581,7 +582,7 @@ def _steps_wick_drains(result, analysis) -> List[CalcSection]:
         result_name="d_e",
         result_value=f"{r.influence_diameter_m:.3f}",
         result_unit="m",
-        reference="Barron (1948); Hansbo (1981)",
+        reference="FHWA GEC-13 (2017), Ch. 2, p. 2-33 (d_c)",
     ))
 
     geo_items.append(CalcStep(
@@ -602,26 +603,42 @@ def _steps_wick_drains(result, analysis) -> List[CalcSection]:
     smear = _wicks(analysis, "smear_ratio")
     kh_ks = _wicks(analysis, "kh_ks_ratio")
 
+    well = ("Well resistance not modelled (F_r = 0): GEC-13 p. 2-36, "
+            "'Well resistance is rarely significant, and, therefore, "
+            "ignored except for extremely deep drains or where a "
+            "combination of high loads and very permeable soils is "
+            "present.'")
     if smear <= 1.0:
-        fn_eq = "F(n) = ln(n) - 0.75"
-        fn_sub = f"F(n) = ln({r.spacing_ratio_n:.1f}) - 0.75"
+        fn_eq = "F = F(n) = ln(n) - 0.75"
+        fn_sub = f"F = ln({r.spacing_ratio_n:.1f}) - 0.75"
+        fn_ref = "FHWA GEC-13 (2017), Ch. 2, Eqs. 2-1 and 2-2, p. 2-32"
+        fn_notes = ("Smear ignored (F_s = 0): GEC-13 p. 2-35, 'The effects "
+                    "of both soil disturbance and well resistance are often "
+                    "ignored for typical projects.' " + well)
     else:
-        fn_eq = "F(n) = ln(n/s_r) + (k_h/k_s) \u00d7 ln(s_r) - 0.75"
-        fn_sub = (f"F(n) = ln({r.spacing_ratio_n:.1f}/{smear:.1f}) + "
-                  f"{kh_ks:.1f} \u00d7 ln({smear:.1f}) - 0.75")
+        fn_eq = ("F = F(n) + F_s = ln(n) - 0.75 + "
+                 "(k_h/k_s) \u00d7 ln(s_r)")
+        fn_sub = (f"F = ln({r.spacing_ratio_n:.1f}) - 0.75 + "
+                  f"{kh_ks:.1f} \u00d7 ln({smear:.1f})")
+        fn_ref = ("FHWA GEC-13 (2017), Ch. 2, Eqs. 2-1 and 2-2, p. 2-32; "
+                  "F_s by UFC 3-220-10 (2026) Eq. 5-25, p. 267")
+        fn_notes = ("GEC-13 prints no formula for F_s; p. 2-35: 'a sample "
+                    "disturbance factor F_s \u2248 2 may be considered' in "
+                    "highly plastic, sensitive soils whose c_h is "
+                    "accurately determined. " + well)
 
     fn_items.append(CalcStep(
-        title="Barron/Hansbo Drain Function",
+        title="Drain Function",
         equation=fn_eq,
         substitution=fn_sub,
-        result_name="F(n)",
+        result_name="F",
         result_value=f"{r.F_n:.3f}",
-        reference="Hansbo (1981)",
-        notes="Includes smear zone correction." if smear > 1.0 else "",
+        reference=fn_ref,
+        notes=fn_notes,
     ))
 
     sections.append(CalcSection(
-        title="Drain Function F(n)", items=fn_items
+        title="Drain Function", items=fn_items
     ))
 
     # -- Section 3: Degree of Consolidation ---------------------------
@@ -644,12 +661,13 @@ def _steps_wick_drains(result, analysis) -> List[CalcSection]:
     # Radial consolidation
     consol_items.append(CalcStep(
         title="Radial Degree of Consolidation",
-        equation="U_r = 1 - exp(-8 \u00d7 T_r / F(n))",
+        equation="U_r = 1 - exp(-8 \u00d7 T_r / F)",
         substitution=f"U_r = 1 - exp(-8 \u00d7 {Tr_val:.4f} / {r.F_n:.3f})",
         result_name="U_r",
         result_value=f"{r.Ur_percent:.1f}",
         result_unit="%",
-        reference="Barron (1948); Hansbo (1981)",
+        reference=("FHWA GEC-13 (2017), Ch. 2, Eq. 2-1 (Rixner et al. "
+                   "1986a), p. 2-32, solved for U_h"),
     ))
 
     # Vertical consolidation
@@ -682,7 +700,13 @@ def _steps_wick_drains(result, analysis) -> List[CalcSection]:
         result_name="U_total",
         result_value=f"{r.U_total_percent:.1f}",
         result_unit="%",
-        reference="Carrillo (1942) combined consolidation",
+        reference=("UFC 3-220-10 (2026) Eq. 5-27 (Carrillo 1942), p. 268"),
+        notes=("GEC-13's Eq. 2-1 is radial only. p. 2-33: 'the contribution "
+               "of vertical consolidation may be significant and should be "
+               "considered for major/complex projects'; p. 2-34: 'for a "
+               "conservative approach, no beneficial effects may be "
+               "considered for vertical drainage in preliminary feasibility "
+               "evaluations' (U_r above)."),
     ))
 
     sections.append(CalcSection(
@@ -697,7 +721,7 @@ def _steps_wick_drains(result, analysis) -> List[CalcSection]:
         rows=[
             ["Drain spacing", f"{r.drain_spacing_m:.2f} m ({r.pattern})"],
             ["Spacing ratio n", f"{r.spacing_ratio_n:.1f}"],
-            ["F(n)", f"{r.F_n:.3f}"],
+            ["Drain function F", f"{r.F_n:.3f}"],
             ["Radial consolidation U_r", f"{r.Ur_percent:.1f}%"],
             ["Vertical consolidation U_v", f"{r.Uv_percent:.1f}%"],
             ["Combined consolidation U_total", f"{r.U_total_percent:.1f}%"],
@@ -821,13 +845,14 @@ def _steps_surcharge(result, analysis) -> List[CalcSection]:
             title="Time to Target Consolidation (with wick drains)",
             equation=(
                 "Bisection on U_total(t) = 1 - (1-U_v)(1-U_r)\n"
-                "where U_v = Terzaghi, U_r = Barron/Hansbo"
+                "where U_v = Terzaghi, U_r = GEC-13 Eq. 2-1"
             ),
             substitution=f"Find t such that U_total = {r.target_U_percent:.0f}%",
             result_name="t_target",
             result_value=f"{r.time_to_target_years:.3f}",
             result_unit="years",
-            reference="Carrillo (1942) combined consolidation",
+            reference=("UFC 3-220-10 (2026) Eq. 5-27 (Carrillo 1942), p. "
+                       "268; U_r by GEC-13 (2017) Ch. 2, Eq. 2-1"),
         ))
     else:
         time_items.append(CalcStep(
@@ -869,7 +894,7 @@ def _steps_surcharge(result, analysis) -> List[CalcSection]:
                 ["Drain diameter d_w", f"{wd.equivalent_drain_diameter_m:.4f} m"],
                 ["Influence diameter d_e", f"{wd.influence_diameter_m:.3f} m"],
                 ["Spacing ratio n", f"{wd.spacing_ratio_n:.1f}"],
-                ["F(n)", f"{wd.F_n:.3f}"],
+                ["Drain function F", f"{wd.F_n:.3f}"],
                 ["Radial U_r", f"{wd.Ur_percent:.1f}%"],
                 ["Vertical U_v", f"{wd.Uv_percent:.1f}%"],
                 ["Combined U_total", f"{wd.U_total_percent:.1f}%"],
@@ -953,11 +978,10 @@ def _inputs_vibro(result, analysis) -> List[InputItem]:
                   "Vibro-Compaction Feasibility", ""),
         InputItem("FC", "Fines content", r.fines_content_percent, "%"),
         InputItem("N_initial", "Initial SPT N", r.initial_N_spt, ""),
-        InputItem("N_target", "Target SPT N", r.target_N_spt, ""),
     ]
-    D50 = analysis.get("D50")
-    if D50 is not None:
-        items.append(InputItem("D_50", "Median grain size", D50, "mm"))
+    if r.target_relative_density_percent is not None:
+        items.append(InputItem("D_r,target", "Target relative density",
+                               r.target_relative_density_percent, "%"))
     if r.is_feasible and r.recommended_spacing_m > 0:
         items.append(InputItem("Pattern", "Probe pattern",
                                r.probe_pattern.capitalize(), ""))
@@ -965,72 +989,65 @@ def _inputs_vibro(result, analysis) -> List[InputItem]:
 
 
 def _steps_vibro(result, analysis) -> List[CalcSection]:
+    """The screen and the spacing as ``ground_improvement.vibro`` works
+    them from GEC-13 Ch. 4 (GM-291)."""
+    from ground_improvement.vibro import (
+        FIG_4_34, FINES_IDEAL_PERCENT, FINES_LIMIT_PERCENT, density_from_N)
     r = result
     sections = []
+    lo, hi = FINES_LIMIT_PERCENT
 
     # -- Section 1: Feasibility Screening -----------------------------
     screen_items = []
 
-    # Fines content check
-    if r.fines_content_percent <= 10:
-        fc_status = "Favorable (< 10%)"
-    elif r.fines_content_percent <= 15:
-        fc_status = "Acceptable (10-15%)"
-    elif r.fines_content_percent <= 20:
-        fc_status = "Marginal (15-20%)"
+    fc = r.fines_content_percent
+    if fc <= FINES_IDEAL_PERCENT:
+        fc_status = "Ideally suited (zone B, below 10%)"
+    elif fc <= lo:
+        fc_status = "Feasible (above zone B's 10%, below 12%)"
+    elif fc <= hi:
+        fc_status = "Marginal (within 12 to 15%)"
     else:
-        fc_status = "Not feasible (> 20%)"
+        fc_status = "Not feasible (above 15%)"
 
     screen_items.append(CalcStep(
         title="Fines Content Screening",
-        equation="FC < 10%: favorable; 10-15%: acceptable; "
-                 "15-20%: marginal; > 20%: not feasible",
-        substitution=f"FC = {r.fines_content_percent:.1f}%",
+        equation="FC below 10%: ideally suited (Fig. 4-27 zone B); "
+                 "above 12 to 15%: densification generally cannot be "
+                 "achieved",
+        substitution=f"FC = {fc:.1f}%",
         result_name="FC status",
         result_value=fc_status,
         reference="FHWA GEC-13 (2017), Ch. 4, Sec. 3.1.3.1, Table 4-5 "
                   "and Figure 4-27, pp. 4-65 to 4-67",
-        notes="GEC-13: densification generally cannot be achieved "
-              "above 12 to 15 % silt or 2 % clay (p. 4-65); fines below "
-              "10 % are ideally suited (Figure 4-27); silty sand is "
-              "inhibited above 8 % silt (Table 4-5). The 10/15/20 % bands "
-              "are this module's screening limits.",
+        notes="GEC-13 p. 4-65: 'proper densification generally cannot be "
+              "achieved when the granular soil contains more than 12 to 15 "
+              "percent silt OR more than 2 percent clay'; p. 4-67: zone B "
+              "is 'ideally suited for vibro-compaction with fines content "
+              "below 10 percent'. The module reads the printed 12 to 15 % "
+              "as marginal and above 15 % as not feasible. The clay "
+              "fraction is not screened (the tool takes the fines content); "
+              "Table 4-5 inhibits a silty sand (SM) above 8 % silt and a "
+              "clayey sand (SC) above 2 % clay.",
     ))
 
-    # D50 check
-    D50 = analysis.get("D50")
-    if D50 is not None:
-        if D50 >= 0.2:
-            d50_status = "Suitable"
-        elif D50 >= 0.1:
-            d50_status = "Marginal"
-        else:
-            d50_status = "Too fine"
-
-        screen_items.append(CalcStep(
-            title="Grain Size Screening",
-            equation="D_50 > 0.2 mm: suitable; 0.1-0.2 mm: marginal; "
-                     "< 0.1 mm: not feasible",
-            substitution=f"D_50 = {D50:.2f} mm",
-            result_name="D_50 status",
-            result_value=d50_status,
-        ))
-
-    # SPT density check
+    # SPT density: GEC-13 Table 4-8
     if r.initial_N_spt > 0:
-        if r.initial_N_spt <= 20:
-            spt_status = "Good improvement potential"
-        elif r.initial_N_spt <= 25:
-            spt_status = "Moderate improvement potential"
-        else:
-            spt_status = "Already dense (limited potential)"
-
+        name, (dr_lo, dr_hi) = density_from_N(r.initial_N_spt)
         screen_items.append(CalcStep(
-            title="Density Screening (SPT N)",
-            equation="N < 20: good potential; 20-25: moderate; > 25: limited",
+            title="Density from SPT N",
+            equation="GEC-13 Table 4-8: N < 4 very loose (D_r < 15%); "
+                     "4-10 loose (15-35%); 10-30 medium dense (35-65%); "
+                     "30-50 dense (65-85%); > 50 very dense (85-100%)",
             substitution=f"N_initial = {r.initial_N_spt:.0f}",
-            result_name="SPT status",
-            result_value=spt_status,
+            result_name="Density",
+            result_value=f"{name}, D_r {dr_lo:.0f} to {dr_hi:.0f}%",
+            reference="FHWA GEC-13 (2017), Ch. 4, Table 4-8, p. 4-74 "
+                      "(normally consolidated sand)",
+            notes=("GEC-13 p. 4-75: 'It is unlikely, even for heavy "
+                   "loading, that it will be necessary to achieve a "
+                   "relative density above 85 percent.'"
+                   if dr_lo >= 85.0 else ""),
         ))
 
     # Overall feasibility
@@ -1040,7 +1057,7 @@ def _steps_vibro(result, analysis) -> List[CalcSection]:
         substitution="",
         result_name="Feasible",
         result_value="YES" if r.is_feasible else "NO",
-        reference="FHWA GEC-13",
+        reference="FHWA GEC-13 (2017), Ch. 4, pp. 4-65 to 4-75",
     ))
 
     sections.append(CalcSection(
@@ -1049,34 +1066,26 @@ def _steps_vibro(result, analysis) -> List[CalcSection]:
 
     # -- Section 2: Probe Spacing (if feasible) -----------------------
     if r.is_feasible and r.recommended_spacing_m > 0:
-        spacing_items = []
-
-        improvement_ratio = r.target_N_spt / r.initial_N_spt if r.initial_N_spt > 0 else 0
-        spacing_items.append(CalcStep(
-            title="Improvement Ratio",
-            equation="IR = N_target / N_initial",
-            substitution=f"IR = {r.target_N_spt:.0f} / {r.initial_N_spt:.0f}",
-            result_name="IR",
-            result_value=f"{improvement_ratio:.2f}",
-            reference="GEC-13, empirical correlation",
-        ))
-
-        spacing_items.append(CalcStep(
-            title="Recommended Probe Spacing",
-            equation="Based on empirical correlation from GEC-13\n"
-                     "IR 1.5 \u2192 3.0 m;  IR 4.0 \u2192 1.5 m "
-                     "(linear interpolation, adjusted for fines)",
-            substitution=f"IR = {improvement_ratio:.2f}, "
-                         f"FC = {r.fines_content_percent:.1f}%",
+        dr = r.target_relative_density_percent
+        nodes = "; ".join(f"{k:g}% \u2192 {v:.2f} m"
+                          for k, v in sorted(FIG_4_34.items()))
+        sections.append(CalcSection(title="Probe Spacing", items=[CalcStep(
+            title="Probe Spacing for the Target Relative Density",
+            equation=("s read off GEC-13 Fig. 4-34, relative density "
+                      "versus probe spacing for silty sands"),
+            substitution=f"D_r,target = {dr:g}%",
             result_name="s_probe",
             result_value=f"{r.recommended_spacing_m:.2f}",
             result_unit="m",
-            reference="FHWA GEC-13 (2017), Ch. 4, Sec. 3.3.2.1",
-        ))
-
-        sections.append(CalcSection(
-            title="Probe Spacing Estimate", items=spacing_items
-        ))
+            reference="FHWA GEC-13 (2017), Ch. 4, Fig. 4-34, p. 4-77",
+            notes=("Read off the printed figure at " + nodes + ", linear "
+                   "between them. The chart 'is based on the lower bound "
+                   "soil gradation (silty sand) indicated in Figure 4-33' "
+                   "(p. 4-76). GEC-13's criteria (p. 4-77): 60% for floor "
+                   "slabs, flat bottom tanks, embankments; 70 to 75% for "
+                   "column and bridge footings; 80% for machinery and mat "
+                   "foundations."),
+        )]))
 
     # -- Section 3: Notes & Reasons -----------------------------------
     if r.reasons:
@@ -1239,7 +1248,8 @@ def _plot_srf_vs_n(result):
 
 
 def _plot_settlement_ratio(result):
-    """n' against A/A_c on the GEC-13 Fig. 5-21 curve the run read, over
+    """The settlement ratio against A/A_c on the GEC-13 Fig. 5-21 curve
+    the run read, over
     the curve's drawn range, with the design point (GM-220)."""
     import matplotlib
     matplotlib.use('Agg')
@@ -1264,11 +1274,12 @@ def _plot_settlement_ratio(result):
                 xytext=(10, 4), textcoords="offset points", fontsize=9,
                 color='#2563eb')
     ax.plot(x_d, y_d, 'o', color='#dc2626', markersize=8, zorder=5)
-    ax.annotate(f"A/A_c = {x_d:.2f}, n' = {y_d:.2f}", (x_d, y_d),
+    ax.annotate(f"A/A_c = {x_d:.2f}, settlement ratio {y_d:.2f}",
+                (x_d, y_d),
                 xytext=(8, 8), textcoords="offset points", fontsize=9,
                 color='#dc2626')
     ax.set_xlabel("Area ratio, A / A_c", fontsize=10)
-    ax.set_ylabel("Settlement ratio, n'", fontsize=10)
+    ax.set_ylabel("Settlement ratio", fontsize=10)
     ax.set_title(_FIG_5_21_NAMES[r.settlement_method], fontsize=11,
                  fontweight='bold')
     ax.set_xlim(1, 10)

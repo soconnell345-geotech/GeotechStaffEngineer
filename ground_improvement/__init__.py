@@ -9,9 +9,9 @@ methods as alternatives to deep foundations:
 - Vibro-compaction
 
 References:
-    FHWA NHI-06-019/020: Ground Improvement Methods
-    FHWA GEC-13: Ground Modification Methods Reference Manual
-    Barron (1948), Hansbo (1981) — radial consolidation
+    FHWA GEC-13 (FHWA-NHI-16-027): Ground Modification Methods Reference
+    Manual (checked against the print, GM-291)
+    UFC 3-220-10, Soil Mechanics (2026) — smear factor, combined consolidation
     Barksdale & Bachus (1983) — aggregate piers
 """
 
