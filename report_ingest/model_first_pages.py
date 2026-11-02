@@ -863,6 +863,9 @@ def carries_on(record: Optional[Mapping[str, Any]]) -> bool:
 #: A kind that says the page is a divider ("appendix divider page"), not a
 #: drawing's divider lines.
 _DIVIDER = re.compile(r"\bdivider\b(?!\s+lines?\b)", re.I)
+#: Where a description's kind stops naming the page and starts saying more
+#: about it: a bracket, a comma, a semicolon, a colon or a spaced dash.
+_KIND_HEAD_END = re.compile(r"[(\[,;:]|\s[-–—]\s")
 
 
 def is_divider(record: Optional[Mapping[str, Any]]) -> bool:
@@ -870,8 +873,15 @@ def is_divider(record: Optional[Mapping[str, Any]]) -> bool:
     that opens an appendix or a part of the report and names it
     (BACKLOG RI-177). The labels give a divider its section's label
     (``range_labels``' conventions), so a reader would be sent it with the
-    section's pages, or alone, and it holds nothing to read."""
-    return bool(_DIVIDER.search(str(_described(record).get("kind") or "")))
+    section's pages, or alone, and it holds nothing to read.
+
+    The word must name the page, in the kind's head before any bracket,
+    comma, semicolon, colon or spaced dash (RI-197): "appendix divider page
+    (...)" is one; "photograph page of a test pit (a divider standing in
+    for its log)" is a photograph, and is read."""
+    head = _KIND_HEAD_END.split(str(_described(record).get("kind") or ""),
+                                maxsplit=1)[0]
+    return bool(_DIVIDER.search(head))
 
 
 def divider_pages(descriptions: Mapping[int, Mapping[str, Any]]

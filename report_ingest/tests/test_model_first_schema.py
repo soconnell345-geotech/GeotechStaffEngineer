@@ -62,6 +62,9 @@ MODEL_FIRST_ASKS = {
     # the documents bound inside it, after the instruction (RI-188), so a
     # narrative saved under mf-4 is read again.
     "mf-5": "f5c30a2096d7cde1837168e1d8195cebfc85a3ee1f9cc99cf1a2feea22511549",
+    # mf-6 (RI-197): a log answer lists the pages that hold another
+    # exploration's log (other_log_pages), each read on its own.
+    "mf-6": "beb0eb227b920d06d77c1de144c9fd1cabb357ddf82dc80f666a2b33f103326d",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,

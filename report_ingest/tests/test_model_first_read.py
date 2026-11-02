@@ -521,6 +521,69 @@ def test_a_log_no_answer_came_back_for_has_no_record(doc):
 
 
 # ---------------------------------------------------------------------------
+# pages a log answer hands back (RI-197)
+# ---------------------------------------------------------------------------
+
+def _header_only(hole, **extra):
+    """A log answer that read no row: only its header."""
+    return mf.LogReading.model_validate({
+        "investigation_id": hole, "kind": "test_pit", "depth_unit": "m",
+        **extra})
+
+
+def test_pages_another_log_holds_go_back_and_the_log_does_not_claim_them(doc):
+    unsettled = [{"what": "page 4", "page": 4,
+                  "why": "made-up: a separate pit's log"}]
+    engine = _engine([{"final": _log([3], hole="QX-7", other_log_pages=[4],
+                                     pages_left=[5], unsettled=unsettled)}])
+    blob = mfr.read_logs(doc, [PageGroup("logs", [3, 4, 5], key="log-3")],
+                         engine, report_id=REPORT)[0]
+    assert engine.n_calls == 1 and blob["error"] == ""
+    assert blob["investigation"]["investigation_id"] == "QX-7"
+    assert blob["investigation"]["pages"] == [3]
+    assert blob["returned"] == [
+        {"page": 4, "why": "page 4: made-up: a separate pit's log"},
+        {"page": 5, "why": "the reader listed it as not read (pages_left)"}]
+    # Neither page is listed as unread for want of a call, nor kept as the
+    # reader's own row: each is read on its own.
+    rows = blob["unresolved"]
+    assert not any("model-call budget" in r["why"] for r in rows)
+    assert not any(r.get("page") in (4, 5) for r in rows)
+    assert not any("could not be read" in r["why"] for r in rows)
+
+
+def test_a_page_its_own_one_page_call_hands_back_is_an_unread_item(doc):
+    engine = _engine([{"final": _header_only("QX-8", other_log_pages=[6])}])
+    blob = mfr.read_logs(doc, [PageGroup("logs", [6], key="log-6")],
+                         engine, report_id=REPORT)[0]
+    assert blob["investigation"] is None and blob["error"]
+    assert "returned" not in blob
+    (row,) = blob["unresolved"]
+    assert row["refused_by"] == "budget" and row["pages"] == [6]
+    assert "could not be read" in row["why"]
+    assert "another exploration's log" in row["why"]
+
+
+def test_a_call_that_hands_back_every_page_is_no_log_and_no_failure(doc):
+    engine = _engine([{"final": _header_only("QX-9",
+                                             other_log_pages=[8, 9])}])
+    blob = mfr.read_logs(doc, [PageGroup("logs", [8, 9], key="log-8")],
+                         engine, report_id=REPORT)[0]
+    assert blob["investigation"] is None and blob["error"] == ""
+    assert [r["page"] for r in blob["returned"]] == [8, 9]
+    assert blob["unresolved"] == []
+
+
+def test_a_page_a_row_was_read_off_is_never_handed_back(doc):
+    engine = _engine([{"final": _log([3], hole="QX-7", pages_left=[3, 4])}])
+    blob = mfr.read_logs(doc, [PageGroup("logs", [3, 4], key="log-3")],
+                         engine, report_id=REPORT)[0]
+    assert blob["returned"] == [
+        {"page": 4, "why": "the reader listed it as not read (pages_left)"}]
+    assert blob["investigation"]["pages"] == [3]
+
+
+# ---------------------------------------------------------------------------
 # the review's cases (piece 7 review, 2026-10-26)
 # ---------------------------------------------------------------------------
 

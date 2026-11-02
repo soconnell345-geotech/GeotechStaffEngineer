@@ -754,6 +754,24 @@ def test_a_divider_is_in_no_group_and_no_group_runs_across_it():
     assert not every & {4, 6, 11}
 
 
+@pytest.mark.parametrize("kind, divider", [
+    ("appendix divider page", True),
+    ("section divider page (a heading on an otherwise blank sheet)", True),
+    ("divider page (title-only sheet) for made-up photographs", True),
+    ("Divider: made-up appendix", True),
+    ("photograph page of a test pit (divider page standing in for its log)",
+     False),
+    ("made-up test pit log, divider tab behind it", False),
+    ("made-up sheet - a divider between two sets", False),
+    ("section drawn with divider lines", False),
+])
+def test_divider_must_name_the_page_in_the_kind_s_head(kind, divider):
+    """RI-197: the word must name the page, before any bracket, comma,
+    semicolon, colon or spaced dash; a photograph of a pit the describer
+    says stands in for a divider is a photograph, and is read."""
+    assert mfp.is_divider(_d(kind=kind)) is divider
+
+
 LABELS = {0: "cover", 3: "narrative", 60: "narrative", 61: "figure",
           62: "plan", 63: "boring_log", 70: "profile", 90: "lab_test",
           95: "appendix_unknown"}

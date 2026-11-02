@@ -701,7 +701,9 @@ def _pages(pages: Sequence[int]) -> str:
 
 
 def missing_holes_qa(doc: Any, items: Sequence[Any], record: Any,
-                     prefix: str = "") -> list:
+                     prefix: str = "",
+                     descriptions: Optional[Mapping[int, Any]] = None
+                     ) -> list:
     """A ``partial`` QA entry for each log item whose page headers print,
     in a field or a title, hole names no log in the record carries: the
     reader may have read them under other names, or not read them. One
@@ -716,6 +718,13 @@ def missing_holes_qa(doc: Any, items: Sequence[Any], record: Any,
 
     A name that stands alone in a header (no field or title gives it) is
     not listed: it is as often a sample's or a plate's number as a hole's.
+
+    ``descriptions`` (model first's page descriptions, RI-197): on a page
+    whose text names no hole under a label -- a scan has no text to read
+    one from -- the exploration the page describer names
+    (``model_first_pages.page_identifiers``) stands in, so a scanned log the
+    reader never read is listed too. A description saved before the
+    describer gave the field is not used.
     """
     from report_ingest.model import QAEntry
 
@@ -734,6 +743,11 @@ def missing_holes_qa(doc: Any, items: Sequence[Any], record: Any,
             printed.setdefault(hole.key, (hole.text, []))[1].append(page)
         lacking = [(text, where) for key, (text, where) in printed.items()
                    if not any(names_match(text, name) for name in recorded)]
+        if descriptions:
+            lacking += _described_lacking(
+                [p for p in pages if not any(p in at for _t, at in
+                                             printed.values())],
+                descriptions, recorded)
         if not lacking:
             continue
         where = sorted({p for _text, at in lacking for p in at})
@@ -752,6 +766,33 @@ def missing_holes_qa(doc: Any, items: Sequence[Any], record: Any,
             values=[f"{text}: {_pages(at)}" for text, at in lacking],
             pages=where))
     return out
+
+
+def _described_lacking(pages: Sequence[int],
+                       descriptions: Mapping[int, Any],
+                       recorded: Sequence[str]
+                       ) -> List[Tuple[str, List[int]]]:
+    """``(name, pages)`` for each exploration the page describer names on
+    ``pages`` that no recorded log carries (:func:`missing_holes_qa`); the
+    name as the describer wrote it on its first page, before any note or
+    bracket, said to be the describer's."""
+    from report_ingest.model_first_pages import (_described, _pieces,
+                                                 exploration_id,
+                                                 page_identifiers)
+
+    fielded = [p for p in pages
+               if "exploration" in _described(descriptions.get(p))]
+    named: Dict[str, Tuple[str, List[int]]] = {}
+    for page, key in page_identifiers(fielded, descriptions).items():
+        if key:
+            raw = str(_described(descriptions.get(page))["exploration"])
+            shown = re.split(r"\s*[(\[]", _pieces(raw)[0],
+                             maxsplit=1)[0] or key
+            named.setdefault(key, (shown, []))[1].append(page)
+    return [(f"{shown} (the page describer's reading)", at)
+            for key, (shown, at) in named.items()
+            if not any(names_match(key, name) or exploration_id(name) == key
+                       for name in recorded)]
 
 
 # ---------------------------------------------------------------------------
