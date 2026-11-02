@@ -480,7 +480,7 @@ def _sections(rows):
         exceptions=[])}
 
 
-def _log(hole, kind, page, layers):
+def _log(hole, kind, page, layers, **extra):
     from report_ingest.model_first import LogReading
 
     return {"final": LogReading.model_validate({
@@ -488,7 +488,7 @@ def _log(hole, kind, page, layers):
         "units_known": True, "total_depth": 31.5,
         "layers": [{"top": top, "bottom": bottom, "description": words,
                     "prov": {"page": page}}
-                   for top, bottom, words in layers]})}
+                   for top, bottom, words in layers], **extra})}
 
 
 def _calc():
@@ -1136,6 +1136,155 @@ class TestSavedResults:
         assert {k: v for k, v in _n_calls(engines).items() if v} == {
             "lab": 1}
         assert (tmp_path / "out" / "items" / "mf-lab-12.json").exists()
+
+
+def _b1_top(**extra):
+    """B-1's first page read, page 8 handed back."""
+    return _log("B-1", "boring", 7, [
+        (0.0, 3.0, "Brown sandy lean CLAY, stiff, moist")], **extra)
+
+
+def _b1_rest():
+    return _log("B-1", "boring", 8, [(3.0, 31.5, "Made-up grey GRAVEL")])
+
+
+def _tp1():
+    return _log("TP-1", "test_pit", 9, [(0.0, 2.0, "Made-up FILL")])
+
+
+def _bh1():
+    return _log("BH-1", "boring", 18, [(0.0, 9.0, "Made-up SILT")])
+
+
+class TestPagesHandedBack:
+    """RI-197: a page a log group's reader hands back unread is read as a
+    log of its own, once, and joined to its hole's log."""
+
+    def test_a_page_handed_back_is_read_alone_and_joined(
+            self, synthetic_pdf, tmp_path):
+        pytest.importorskip("report_ingest.locate")
+        engines = _engines()
+        engines[3]["logs"].turns = [_b1_top(pages_left=[8]), _tp1(),
+                                    _b1_rest(), _bh1()]
+        out = tmp_path / "out"
+        record = _run_on(synthetic_pdf, out, engines)
+        assert engines[3]["logs"].n_calls == 4
+        saved = json.loads((out / "items" / "mf-log-8.json")
+                           .read_text("utf-8"))
+        assert saved["pages"] == [8]
+        first = json.loads((out / "items" / "mf-log-7.json")
+                           .read_text("utf-8"))
+        assert [r["page"] for r in first["returned"]] == [8]
+        assert [(i.investigation_id, i.pages)
+                for i in record.investigations] == [("B-1", [7, 8]),
+                                                    ("TP-1", [9])]
+        (note,) = [q for q in record.qa
+                   if q.where == "items.boring_log.mf-log-7.returned"]
+        assert note.kind == "note" and note.pages == [8]
+        assert not any("model-call budget" in (q.detail or "")
+                       for q in record.qa)
+
+        # Resumed, both results are taken off disk: no log is asked again.
+        engines = _silent(_engines())
+        engines[3]["lab"].turns = [{"text": "Still no answer."}] * 2
+        again = _run_on(synthetic_pdf, out, engines)
+        assert {k: v for k, v in _n_calls(engines).items() if v} == {
+            "lab": 2}
+        assert [(i.investigation_id, i.pages)
+                for i in again.investigations] == [("B-1", [7, 8]),
+                                                   ("TP-1", [9])]
+
+    def test_a_page_handed_back_twice_is_an_unread_item(
+            self, synthetic_pdf, tmp_path):
+        pytest.importorskip("report_ingest.locate")
+        from report_ingest.model_first import LogReading
+
+        alone = {"final": LogReading.model_validate({
+            "investigation_id": "B-1", "kind": "boring", "depth_unit": "m",
+            "other_log_pages": [8]})}
+        engines = _engines()
+        engines[3]["logs"].turns = [_b1_top(other_log_pages=[8]), _tp1(),
+                                    alone, _bh1()]
+        out = tmp_path / "out"
+        record = _run_on(synthetic_pdf, out, engines)
+        assert engines[3]["logs"].n_calls == 4
+        assert not (out / "items" / "mf-log-8.json").exists()
+        skipped = [q for q in record.qa if q.kind == "skipped"
+                   and q.where == "logs page 8"]
+        assert [q.pages for q in skipped] == [[8]]
+        assert [(i.investigation_id, i.pages)
+                for i in record.investigations] == [("B-1", [7]),
+                                                    ("TP-1", [9])]
+
+        # Resumed, only the page that was not read is asked again.
+        engines = _silent(_engines())
+        engines[3]["logs"].turns = [_b1_rest()]
+        engines[3]["lab"].turns = [{"text": "Still no answer."}] * 2
+        again = _run_on(synthetic_pdf, out, engines)
+        assert {k: v for k, v in _n_calls(engines).items() if v} == {
+            "logs": 1, "lab": 2}
+        assert [(i.investigation_id, i.pages)
+                for i in again.investigations] == [("B-1", [7, 8]),
+                                                   ("TP-1", [9])]
+
+    def test_a_group_s_first_page_handed_back_keeps_its_own_file(
+            self, synthetic_pdf, tmp_path):
+        """The group is keyed by its first page; that page read alone is
+        saved under a key of its own, so neither result overwrites the
+        other and a resume asks for neither again."""
+        pytest.importorskip("report_ingest.locate")
+        engines = _engines()
+        engines[3]["logs"].turns = [
+            _log("B-1", "boring", 8, [(3.0, 31.5, "Made-up grey GRAVEL")],
+                 pages_left=[7]),
+            _tp1(), _b1_top(), _bh1()]
+        out = tmp_path / "out"
+        record = _run_on(synthetic_pdf, out, engines)
+        assert engines[3]["logs"].n_calls == 4
+        group = json.loads((out / "items" / "mf-log-7.json")
+                           .read_text("utf-8"))
+        assert group["pages"] == [7, 8]
+        alone = json.loads((out / "items" / "mf-log-7-alone.json")
+                           .read_text("utf-8"))
+        assert alone["pages"] == [7]
+        assert [(i.investigation_id, i.pages)
+                for i in record.investigations] == [("B-1", [7, 8]),
+                                                    ("TP-1", [9])]
+
+        engines = _silent(_engines())
+        engines[3]["lab"].turns = [{"text": "Still no answer."}] * 2
+        again = _run_on(synthetic_pdf, out, engines)
+        assert {k: v for k, v in _n_calls(engines).items() if v} == {
+            "lab": 2}
+        assert [(i.investigation_id, i.pages)
+                for i in again.investigations] == [("B-1", [7, 8]),
+                                                   ("TP-1", [9])]
+
+
+def test_a_divider_inside_a_stage_s_pages_is_one_note():
+    """RI-197: a page set aside as a divider between two pages of the same
+    reader stage may hold results nothing read; one note per stage names
+    such pages. A divider between two sections is not named. Made-up
+    pages."""
+    from report_ingest.graph import _inside_dividers, _ModelFirst
+
+    divider = {"kind": "section divider page"}
+    page = {"kind": "made-up printout page"}
+    labels = {1: "narrative", 2: "calculation", 3: "calculation",
+              4: "calculation", 5: "calculation", 6: "calculation",
+              7: "lab_test", 8: "lab_test", 9: None}
+    described = {p: page for p in labels}
+    described.update({3: divider, 5: divider, 7: divider})
+    model_first = _ModelFirst(engines={}, routes={}, descriptions=described)
+    (note,) = _inside_dividers(labels, model_first)
+    assert note.kind == "note" and note.pages == [3, 5]
+    assert note.where == "labels.dividers.calc"
+    assert note.values == ["page 3: section divider page",
+                           "page 5: section divider page"]
+    assert _inside_dividers(labels, None) == []
+    # A stage read by today's reader is not model first's to name.
+    model_first.stages = ("logs", "lab", "narrative")
+    assert _inside_dividers(labels, model_first) == []
 
 
 def test_a_bound_range_the_labels_call_narrative_is_not_listed_as_skipped(

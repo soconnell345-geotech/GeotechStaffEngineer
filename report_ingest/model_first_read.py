@@ -721,6 +721,51 @@ def _join_logs(built: Sequence[Any]) -> Tuple[Any, List[Dict[str, Any]]]:
     return out, rows
 
 
+def _handed_back(reading: Any, pages: Sequence[int]
+                 ) -> Tuple[List[int], List[int]]:
+    """``(the pages one answer hands back unread, those it says hold
+    another log)`` (RI-197): its ``pages_left`` and ``other_log_pages``,
+    read the way the whole answer's pages are
+    (:func:`~report_ingest.checks.pdf_local`), each one of the call's
+    ``pages`` (a page of no call of this group is dropped)."""
+    from report_ingest.log_reader import _cited_pages
+
+    other = list(getattr(reading, "other_log_pages", None) or [])
+    numbers = pdf_local(_cited_pages(reading) + other, pages)
+
+    def on_call(cited: Sequence[int]) -> set:
+        return {page for page in (numbers.page(p)[0] for p in cited)
+                if page in pages}
+
+    other_pages = on_call(other)
+    return (sorted(other_pages | on_call(reading.pages_left)),
+            sorted(other_pages))
+
+
+def _read_off(investigation: Any) -> set:
+    """The pages a built log's rows say they were read off."""
+    from report_ingest.log_holes import ROW_LISTS, _row_page
+
+    rows = [row for name in ROW_LISTS for row in getattr(investigation, name)]
+    pit = getattr(investigation, "pit", None)
+    return {page for page in (_row_page(row) for row in
+                              rows + ([pit] if pit is not None else []))
+            if page is not None}
+
+
+def _why_back(page: int, other: Sequence[int],
+              rows: Sequence[Dict[str, Any]]) -> str:
+    """Why a page was handed back, in the reader's words where it wrote
+    some on that page (an ``unsettled`` row), else by the list it gave."""
+    said = next((r for r in rows if r.get("refused_by") == "reader"
+                 and r.get("page") == page), None)
+    if said is not None:
+        return f"{said.get('what', '')}: {said.get('why', '')}".strip(": ")
+    if page in other:
+        return "the reader said it holds another exploration's log"
+    return "the reader listed it as not read (pages_left)"
+
+
 def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
               report_id: str = "", route: Optional[str] = None,
               pdf: Source = None, place: Optional[Place] = None,
@@ -736,7 +781,19 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     bytes; None: ``doc.tobytes()``, taken once); ``place`` and
     ``max_request_tokens_in`` (a group whose request is estimated over it is
     cut by its pages before it is sent) as the module says. A log no answer
-    came back for has ``investigation`` None and an ``error``."""
+    came back for has ``investigation`` None and an ``error``.
+
+    PAGES HANDED BACK (RI-197). A page of a call that its answer lists in
+    ``other_log_pages`` (another exploration's log) or ``pages_left`` (not
+    read), and that none of its rows was read off, was not read. From a
+    call of several pages it goes back: the result's ``returned`` lists it
+    with the reader's reason (its ``unsettled`` row on that page, which
+    leaves the log's own list), the log does not claim it, and the graph
+    reads it as a log of its own. From a call of one page it is a
+    ``skipped`` entry that says it could not be read (an item error, asked
+    again on resume), never "did not get to this page within its model-call
+    budget": model first makes one call a group. So a page goes back once,
+    and a call that hands back every page it was sent gives no log."""
     from report_ingest.log_reader import (LogReadResult, _Builder,
                                           _depth_slack, _depth_window)
     from report_ingest.visual_scales import log_grid_for
@@ -760,7 +817,15 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         changes: List[Dict[str, Any]] = []
         grid_warnings: List[str] = []
         placement: List[Any] = []
+        returned: List[Dict[str, Any]] = []
         for call_pages, reading in sorted(answers, key=lambda a: a[0][0]):
+            back, other = _handed_back(reading, call_pages)
+            if back:
+                # The builder would list pages_left as unread for want of a
+                # call; here they are read on their own, or skipped below.
+                reading = reading.model_copy(update={
+                    name: [] for name in ("pages_left", "other_log_pages")
+                    if name in type(reading).model_fields})
             # Planlens' grid, no call (visual scales are given no engine):
             # each call's depth window and its slack.
             grid, _info = log_grid_for(doc, call_pages)
@@ -771,6 +836,24 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
             investigation, extra = apply_log_additions(reading,
                                                        builder.build())
             extra = _entries_on_pages(extra, builder)
+            read_off = _read_off(investigation)
+            back = [p for p in back if p not in read_off]
+            why = {p: _why_back(p, other, builder.unresolved) for p in back}
+            if back:
+                builder.unresolved = [
+                    row for row in builder.unresolved
+                    if not (row.get("refused_by") == "reader"
+                            and row.get("page") in back)]
+            if back and len(call_pages) == 1:
+                skipped.append(_skipped("logs", back, (
+                    f"the reader read nothing on it ({why[back[0]]})")))
+            elif back:
+                returned.extend({"page": p, "why": why[p]} for p in back)
+            if set(back) >= set(call_pages):
+                continue                        # nothing of its pages read
+            if back:
+                investigation.pages = [p for p in investigation.pages
+                                       if p not in back]
             if place is not None:
                 placement.append(place("logs", investigation, call_pages, doc,
                                        rulers=getattr(grid, "rulers", None)))
@@ -779,11 +862,17 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
             changes.extend(builder.changes)
             grid_warnings.extend(getattr(grid, "warnings", None) or [])
         if not built:
+            # Every page handed back to be read on its own is not a group
+            # that failed: no error, and the graph reads each page.
+            failed = skipped or not returned
             blob = _result("logs", key, caller, spent, pages, skipped,
-                           placement, notes, _nothing_read(skipped))
+                           placement, notes,
+                           _nothing_read(skipped) if failed else "")
             blob.update(investigation=None, model_investigation=None,
                         floor=None, changes=[], reconciled=0,
                         follow_up=False, template=None)
+            if returned:
+                blob["returned"] = returned
             out.append(blob)
             continue
         investigation = built[0]
@@ -810,6 +899,8 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         blob.update(_result("logs", key, caller, spent, pages,
                             unresolved + skipped, placement,
                             notes + grid_warnings))
+        if returned:
+            blob["returned"] = returned
         out.append(blob)
     return out
 

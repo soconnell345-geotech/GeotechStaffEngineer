@@ -1330,7 +1330,9 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     # one hole per item, and model first one per log group, whose groups
     # are drawn from the page descriptions, not cut by the headers (RI-144).
     qa.extend(missing_holes_qa(doc, items, record,
-                               prefix=_log_prefix(model_first)))
+                               prefix=_log_prefix(model_first),
+                               descriptions=_log_descriptions(model_first)))
+    qa.extend(_inside_dividers(own, model_first))           # RI-197
     qa.extend(completeness_qa(page_texts(doc), labels))     # RI-184
     _counts_from_logs(record, qa, counts_from_logs, every, read)
     record.project = _project_from(record)
@@ -2342,7 +2344,9 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
               di_pages=[p for p in di_pages if p in at],
               reader_unresolved=unresolved, doc=doc, outline=outline)
     qa.extend(missing_holes_qa(                         # RI-117, RI-144
-        doc, items, child, prefix=_log_prefix(model_first)))
+        doc, items, child, prefix=_log_prefix(model_first),
+        descriptions=_log_descriptions(model_first)))   # RI-197
+    qa.extend(_inside_dividers(labels, model_first))
     _counts_from_logs(child, qa, counts_from_logs, every, done)
     child.project = _project_from(child)
     child.qa.extend(qa)
@@ -3213,6 +3217,16 @@ def _log_prefix(model_first: Optional[_ModelFirst]) -> str:
     return ""
 
 
+def _log_descriptions(model_first: Optional[_ModelFirst]
+                      ) -> Optional[Dict[int, Dict[str, Any]]]:
+    """The page descriptions the missing-holes check reads a scanned log's
+    name from (RI-197) when the logs are read model first; None otherwise,
+    and today's check reads the text layer alone."""
+    if model_first is not None and "logs" in model_first.stages:
+        return model_first.descriptions
+    return None
+
+
 def _without_dividers(labels: Dict[int, str],
                       model_first: Optional[_ModelFirst]) -> Dict[int, str]:
     """``labels`` less the pages the descriptions call dividers, for the
@@ -3227,6 +3241,100 @@ def _without_dividers(labels: Dict[int, str],
     aside = set(divider_pages(model_first.descriptions))
     return {page: label for page, label in labels.items()
             if int(page) not in aside}
+
+
+def _inside_dividers(labels: Dict[int, str],
+                     model_first: Optional[_ModelFirst]) -> List[QAEntry]:
+    """One QA note per reader stage naming the divider pages model first
+    set aside inside that stage's pages (RI-197): the page's label and the
+    nearest labelled page on each side that is not a divider all belong to
+    the stage (``model_first_pages.STAGE_LABELS``). A divider between two
+    sections is not named; one in the middle of a run of calculation
+    sheets may be a sheet that holds results, and nothing read it."""
+    if model_first is None or not model_first.descriptions:
+        return []
+    from report_ingest.model_first_pages import (STAGE_LABELS, _described,
+                                                 divider_pages)
+    from report_ingest.model_first_read import _span
+
+    stage_of = {label: stage for stage, kinds in STAGE_LABELS.items()
+                for label in kinds if stage in model_first.stages}
+    aside = set(divider_pages(model_first.descriptions))
+    order = sorted(int(p) for p in labels)
+    kept = [p for p in order if p not in aside]
+    inside: Dict[str, List[int]] = {}
+    for page in order:
+        stage = stage_of.get(labels[page])
+        if page not in aside or stage is None:
+            continue
+        before = [p for p in kept if p < page]
+        after = [p for p in kept if p > page]
+        if before and after and stage_of.get(labels[before[-1]]) == stage \
+                == stage_of.get(labels[after[0]]):
+            inside.setdefault(stage, []).append(page)
+    out: List[QAEntry] = []
+    for stage, pages in inside.items():
+        many = len(pages) > 1
+        out.append(QAEntry(
+            kind="note", where=f"labels.dividers.{stage}",
+            detail=(f"{_span(pages)} {'were' if many else 'was'} set aside "
+                    f"as {'dividers' if many else 'a divider'} inside the "
+                    f"{stage} pages (the pages on both sides are {stage} "
+                    f"pages), so no reader was sent "
+                    f"{'them' if many else 'it'}: if one holds results, "
+                    f"they are not in the record"),
+            values=[f"page {p}: "
+                    f"{_described(model_first.descriptions.get(p)).get('kind')}"
+                    for p in pages],
+            pages=pages))
+    return out
+
+
+def _handed_back(unit: _Unit, blob: Dict[str, Any], labels: Dict[int, str],
+                 given: set, where: str, qa: List[QAEntry]
+                 ) -> List[Tuple[_Unit, List[Any]]]:
+    """The pages a log result handed back unread (``returned``, RI-197),
+    each as a unit of its own to read: one page, keyed ``log-<page>``
+    (``log-<page>-alone`` for the group's own first page, whose key the
+    group holds), kind its label (a test pit's or a boring's log), else
+    the group's. A page
+    already queued (``given``, updated here) is not queued again. One QA
+    note names the pages and the reader's reasons."""
+    from report_ingest.log_holes import LOG_ITEM_KINDS
+    from report_ingest.model_first_pages import PageGroup
+    from report_ingest.model_first_read import _span
+
+    rows = [row for row in blob.get("returned") or []
+            if row.get("page") is not None and int(row["page"]) not in given]
+    if not rows:
+        return []
+    pages = [int(row["page"]) for row in rows]
+    given.update(pages)
+    many = len(pages) > 1
+    qa.append(QAEntry(
+        kind="note", where=f"{where}.returned",
+        detail=(f"{_span(pages)} {'were' if many else 'was'} left out of "
+                f"this group's answer as not read, so "
+                f"{'each was' if many else 'it was'} read as a log of its "
+                f"own"),
+        values=[f"page {row['page']}: {row.get('why') or ''}"
+                for row in rows],
+        pages=pages))
+    out: List[Tuple[_Unit, List[Any]]] = []
+    for row, page in zip(rows, pages):
+        kind = labels.get(page) if labels.get(page) in LOG_ITEM_KINDS \
+            else unit.kind
+        why = f"handed back by the reader of {unit.id}"
+        # The group is keyed by its first page: that page read alone takes
+        # a key of its own, or each result would overwrite the other's file.
+        key = f"log-{page}"
+        if key == unit.id:
+            key += "-alone"
+        out.append((_Unit(kind, key, [page],
+                          evidence={"handed_back_by": unit.id,
+                                    "why": row.get("why") or ""}),
+                    [PageGroup("logs", [page], why=why, key=key)]))
+    return out
 
 
 def _part_skipped(blob: Dict[str, Any]) -> bool:
@@ -3267,6 +3375,13 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
     (:func:`report_ingest.log_holes.sort_rows_by_hole`, RI-145). On an
     ``appendix_only`` file the narrative is not read, as today.
 
+    A page a log group's reader handed back unread (another exploration's
+    log, or ``pages_left``; the result's ``returned``, RI-197) is read as a
+    log of its own, one page a group (:func:`_handed_back`), once: a page
+    handed back again by its own one-page call is a ``skipped`` entry the
+    reader writes, an item error. Should it fail, the group that handed it
+    back is not counted as read to the end.
+
     Returns the units read to the end.
     """
     inside = None if window is None else {int(p) for p in window}
@@ -3281,7 +3396,20 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
     except OSError:
         pass
     first_log = len(record.investigations)
-    for unit, parts in units:
+    queue = list(units)
+    given: set = set()             # pages handed back and queued (RI-197)
+    origin: Dict[int, _Unit] = {}  # a queued page's unit -> who handed it back
+
+    def unread(unit: _Unit) -> None:
+        """A handed-back page that failed: its group was not read whole."""
+        whose = origin.get(id(unit))
+        if whose is not None and whose in done:
+            done.remove(whose)
+
+    at = 0
+    while at < len(queue):
+        unit, parts = queue[at]
+        at += 1
         stage = _MODEL_FIRST_STAGES[ITEM_READERS[unit.kind]]
         if stage == "narrative" and workflow == "appendix_only":
             prose = [p for p in unit.pages if labels.get(p) == "narrative"]
@@ -3314,6 +3442,14 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
             # The skipped entries first: a result with nothing read has no
             # record to validate, and its pages must still be listed.
             unresolved.extend(blob.get("unresolved") or [])
+            if stage == "logs":
+                back = _handed_back(unit, blob, labels, given, where, qa)
+                for again in back:
+                    origin[id(again[0])] = unit
+                queue.extend(back)
+            if blob.get("error") or (stage == "logs" and id(unit) in origin
+                                     and _part_skipped(blob)):
+                unread(unit)
             if blob.get("error"):
                 continue
             if cached is None and not _part_skipped(blob):
@@ -3324,6 +3460,7 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
             spend.reading(cached is not None and blob is cached)
             done.append(unit)
         except Exception as exc:                 # one item must not stop the run
+            unread(unit)
             qa.append(QAEntry(
                 kind="skipped", where=f"items.{unit.kind}",
                 detail=f"{key} could not be read: "

@@ -520,6 +520,13 @@ def exploration_id(text: Any, strict: bool = False) -> Optional[str]:
     numbers ("QX-19-001", "QX1-23"), which is folded (:func:`_folded`).
     Letters written apart ("Q. X", "Q-X") are one word.
 
+    A name with a note after a comma or a semicolon ("Pit 8, depth 3,10 m,
+    dry", "QX-4; water at 1.2 m") is read by the name before it
+    (:func:`_before_a_note`, RI-196): the describer's field gave a run of
+    scanned test pits so, and read as no name each page joined the log
+    before it. What follows must be a note: "QX-1, QX-2" and "Hole 7, 8"
+    still name two, and so none.
+
     This only NORMALISES: what names an exploration is the describer's
     ``exploration`` field. ``strict`` is for text that may name anything --
     an identifier from a page's list, a title -- and refuses what is not
@@ -541,12 +548,75 @@ def exploration_id(text: Any, strict: bool = False) -> Optional[str]:
     # The describer's field names one exploration: a name with two numbers
     # ("QX-19-001", "QX1-23") is still one name, folded.
     read = outside if outside and re.search(r"\d", outside) else raw
-    return _folded(read) if len(read) <= _MAX_ID_CHARS else None
+    key = _folded(read) if len(read) <= _MAX_ID_CHARS else None
+    return key or _before_a_note(raw)
 
 
 #: What joins two names in one text ("QX-1 & QX-2", "QX-1, QX-2", "QX-1
 #: and QX-2").
 _TWO_NAMES = re.compile(r"[&,+]|\band\b", re.I)
+
+
+def _pieces(text: str) -> List[str]:
+    """``text`` cut at each comma or semicolon outside brackets; a comma
+    between two digits is a decimal one ("3,10 m") and cuts nothing."""
+    out: List[str] = []
+    depth = start = 0
+    for n, char in enumerate(text):
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth = max(0, depth - 1)
+        elif char in ",;" and not depth and not (
+                char == "," and 0 < n < len(text) - 1
+                and text[n - 1].isdigit() and text[n + 1].isdigit()):
+            out.append(text[start:n])
+            start = n + 1
+    out.append(text[start:])
+    return [piece.strip() for piece in out]
+
+
+def _series(key: str) -> str:
+    """The word or the letters a key starts with: ``HOLE`` of "HOLE 7",
+    ``QX`` of "QX4"; empty for a bare number."""
+    if " " in key:
+        return key.split(" ")[0]
+    found = re.match(r"[^\W\d_]*", key)
+    return found.group(0) if found else ""
+
+
+def _names_one(piece: str, name: str) -> bool:
+    """Whether ``piece``, after the name ``name`` (a key) and a comma, names
+    an exploration of its own rather than adding a note: a code alone
+    ("QX-2", "8"), a code with letters of its own ("Pit QX-2"), or the
+    same word as the name with another code ("Hole 8" after "Hole 7"); so
+    does a piece joining such names ("QX-2 and QX-3", "8 and 9"), which
+    alone names none. A depth, an elevation, a water level or a place
+    ("depth 3,50 m", "elevation 9.36 m", "dry") names none."""
+    joined = re.split(r"[&+]|\band\b", re.sub(r"\([^()]*\)", " ", piece),
+                      flags=re.I)
+    if len(joined) > 1:
+        return any(_names_one(part.strip(), name) for part in joined)
+    key = exploration_id(piece) if piece else None
+    if key is None:
+        return False
+    if len(_tokens(piece)) == 1 or (" " not in key and key[0].isalpha()):
+        return True
+    return bool(_series(key)) and _series(key) == _series(name)
+
+
+def _before_a_note(text: str) -> Optional[str]:
+    """The key of the name before the first comma or semicolon outside
+    brackets (:func:`_pieces`), when every piece after it is a note
+    (:func:`_names_one`); None when there is no such name, or when a piece
+    after it names another exploration."""
+    pieces = _pieces(text)
+    if len(pieces) < 2 or not pieces[0]:
+        return None
+    name = exploration_id(pieces[0])
+    if name is None or any(_names_one(piece, name) for piece in pieces[1:]):
+        return None
+    return name
 
 
 def _folded(text: str) -> Optional[str]:
@@ -798,6 +868,9 @@ def carries_on(record: Optional[Mapping[str, Any]]) -> bool:
 #: A kind that says the page is a divider ("appendix divider page"), not a
 #: drawing's divider lines.
 _DIVIDER = re.compile(r"\bdivider\b(?!\s+lines?\b)", re.I)
+#: Where a description's kind stops naming the page and starts saying more
+#: about it: a bracket, a comma, a semicolon, a colon or a spaced dash.
+_KIND_HEAD_END = re.compile(r"[(\[,;:]|\s[-–—]\s")
 
 
 def is_divider(record: Optional[Mapping[str, Any]]) -> bool:
@@ -805,8 +878,15 @@ def is_divider(record: Optional[Mapping[str, Any]]) -> bool:
     that opens an appendix or a part of the report and names it
     (BACKLOG RI-177). The labels give a divider its section's label
     (``range_labels``' conventions), so a reader would be sent it with the
-    section's pages, or alone, and it holds nothing to read."""
-    return bool(_DIVIDER.search(str(_described(record).get("kind") or "")))
+    section's pages, or alone, and it holds nothing to read.
+
+    The word must name the page, in the kind's head before any bracket,
+    comma, semicolon, colon or spaced dash (RI-197): "appendix divider page
+    (...)" is one; "photograph page of a test pit (a divider standing in
+    for its log)" is a photograph, and is read."""
+    head = _KIND_HEAD_END.split(str(_described(record).get("kind") or ""),
+                                maxsplit=1)[0]
+    return bool(_DIVIDER.search(head))
 
 
 def divider_pages(descriptions: Mapping[int, Mapping[str, Any]]
