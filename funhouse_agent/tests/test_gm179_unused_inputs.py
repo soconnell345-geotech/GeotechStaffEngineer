@@ -110,8 +110,13 @@ def test_lrfd_mse_works_the_bearing_resistance_out():
     assert "bearing (Strength I)" not in after["checks_not_run"]
     assert "phi_bearing" in after["defaults_used"]
     assert "bearing_resistance_strength" not in after["defaults_used"]
-    (choice,) = after["choices"]
+    # GM-302: then the strengths qn took (local_shear_possible), and a
+    # left-out phi_retained's 30 deg (GM-302 review)
+    choice, strengths, retained = after["choices"]
+    assert retained["what"] == "retained fill friction angle (phi_retained)"
     assert choice["how"] == "default" and "Table 4-5" in choice["basis"]
+    assert strengths["how"] == "default"
+    assert "local_shear_possible" in after["defaults_used"]
     both = _call("retaining_walls", "mse_lrfd_external_stability",
                  {**base, "gamma_foundation": 18.0, "phi_foundation": 30.0,
                   "bearing_resistance_strength": 500.0})

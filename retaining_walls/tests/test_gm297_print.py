@@ -209,7 +209,9 @@ STRIP = Reinforcement(name="made-up strip", type="metallic_strip",
 
 
 def _sheet(phi_f=28.0, c=0.0, slope=0.0, reinforcement=GEOGRID, **kw):
-    """The 6 m wall, L 4.2 m, levels every 0.6 m, the lowest at z = 5.7 m."""
+    """The 6 m wall, L 4.2 m, levels every 0.6 m, the lowest at z = 5.7 m;
+    phi_retained left out, so GEC-11 p. 4-10's 30 deg, Ka 1/3 (GM-302
+    review; it was phi_backfill, 34 deg, before)."""
     g = MSEWallGeometry(wall_height=6.0, reinforcement_length=4.2,
                         reinforcement_spacing=0.6, backfill_slope=slope)
     return mse.analyze_mse_wall(g, 19.0, 34.0, reinforcement,
@@ -219,27 +221,29 @@ def _sheet(phi_f=28.0, c=0.0, slope=0.0, reinforcement=GEOGRID, **kw):
 def test_sheet_sliding_worked_by_hand():
     """The block above the lowest sheet, 5.7 m high: V = 19 x 5.7 x 4.2 =
     454.86 kN/m on tan rho = 2/3 tan 34 = 0.4497 against Pa = 0.5 Ka 19
-    5.7^2 = 87.26 kN/m: 2.344, under the base's 2.633 (phi_f 28)."""
+    5.7^2 = 102.885 kN/m (Ka 1/3, the retained fill at 30 deg): 1.988,
+    under the base's 478.8 tan 28 / 114.0 = 2.233 (phi_f 28)."""
     r = _sheet()
     s = r.external_terms["sheet"]
     assert s["depth"] == pytest.approx(5.7)
     assert s["V"] == pytest.approx(19.0 * 5.7 * 4.2)
     assert s["tan_rho"] == pytest.approx(2 / 3 * math.tan(math.radians(34)))
-    Ka = math.tan(math.radians(45 - 34 / 2)) ** 2
+    Ka = math.tan(math.radians(45 - 30 / 2)) ** 2
     assert s["Pa"] == pytest.approx(0.5 * Ka * 19.0 * 5.7 ** 2)
-    assert r.FOS_sliding == pytest.approx(2.344, abs=0.0005)
+    assert r.FOS_sliding == pytest.approx(1.988, abs=0.0005)
     assert r.sliding_surfaces == {
-        "governing": "lowest sheet", "FOS_base": 2.633,
-        "FOS_lowest_sheet": 2.344, "lowest_sheet_depth_m": 5.7,
+        "governing": "lowest sheet", "FOS_base": 2.233,
+        "FOS_lowest_sheet": 1.988, "lowest_sheet_depth_m": 5.7,
         "tan_rho": 0.4497}
     d = r.to_dict()
     assert d["sliding_surfaces"]["governing"] == "lowest sheet"
 
 
 @pytest.mark.parametrize("kw, base, sheet, governs", [
-    ({"phi_f": 34.0}, 3.340, 2.344, "lowest sheet"),
-    ({"slope": 15.0}, 2.066, 1.812, "lowest sheet"),
-    ({"phi_f": 0.0, "c": 40.0}, 1.738, 2.344, "base"),
+    # 478.8 tan 34 / 114.0; cu L = 168.0 / 114.0
+    ({"phi_f": 34.0}, 2.833, 1.988, "lowest sheet"),
+    ({"slope": 15.0}, 1.745, 1.530, "lowest sheet"),
+    ({"phi_f": 0.0, "c": 40.0}, 1.474, 1.988, "base"),
 ])
 def test_the_lesser_surface_governs(kw, base, sheet, governs):
     r = _sheet(**kw)
@@ -251,15 +255,16 @@ def test_the_lesser_surface_governs(kw, base, sheet, governs):
 
 
 def test_lrfd_sheet_sliding_critical_combination():
-    """The same wall on the LRFD path: the base's governing CDR 1.755,
-    the sheet's 1.563, both at EV 1.0, EH 1.5."""
+    """The same wall on the LRFD path, both at EV 1.0, EH 1.5: the base's
+    governing CDR 254.58 / (1.5 x 114.0) = 1.489, the sheet's 204.53 /
+    (1.5 x 102.885) = 1.325."""
     r = _sheet(lrfd_external=True).external_lrfd["sliding"]
     assert r["surface"] == "lowest sheet"
-    assert r["CDR_base_governing"] == pytest.approx(1.755, abs=0.0005)
-    assert r["CDR_lowest_sheet_governing"] == pytest.approx(1.563,
+    assert r["CDR_base_governing"] == pytest.approx(1.489, abs=0.0005)
+    assert r["CDR_lowest_sheet_governing"] == pytest.approx(1.325,
                                                             abs=0.0005)
     assert r["CDR_governing"] == r["CDR_critical"] == pytest.approx(
-        1.563, abs=0.0005)
+        1.325, abs=0.0005)
     g = MSEWallGeometry(wall_height=6.0, reinforcement_length=4.2)
     assert "surface" not in mse.check_external_stability_lrfd(
         g, 19.0, 34.0, 28.0)["sliding"]
@@ -314,10 +319,10 @@ def test_calc_steps_print_the_sheet():
     titles = [getattr(i, "title", "") for i in ext]
     sheet = ext[titles.index("Sliding Along the Lowest Sheet")]
     assert "2/3 × tan 34.0°" in sheet.substitution
-    assert sheet.result_value == "2.344"
+    assert sheet.result_value == "1.988"
     fos = ext[titles.index("Factor of Safety Against Sliding")]
     assert "the lowest sheet governs" in fos.substitution
-    assert fos.result_value == "2.344"
+    assert fos.result_value == "1.988"
 
 
 # ---------------------------------------------------------------------------
@@ -325,37 +330,38 @@ def test_calc_steps_print_the_sheet():
 # ---------------------------------------------------------------------------
 
 def test_undrained_gap_holds_the_foundation_to_0_4_V():
-    """cu 120 on a steel-reinforced wall: cu L = 504 > V tan phi_r, so the
-    fill governs at 3.340; with interface_gap_possible the foundation's
-    resistance is 0.4 V = 191.52 kN/m against Pa 96.69: 1.981. LRFD, the
-    critical combination: 191.52 / (1.5 x 96.69) = 1.3205, 2.227
-    without."""
+    """cu 120 on a steel-reinforced wall: cu L = 504 > V tan phi_r =
+    322.95, so the fill governs at 322.95 / 114.0 = 2.833 (the retained
+    fill at 30 deg, GM-302 review); with interface_gap_possible the
+    foundation's resistance is 0.4 V = 191.52 kN/m against Pa 114.0:
+    1.680. LRFD, the critical combination: 191.52 / (1.5 x 114.0) = 1.120,
+    1.889 without."""
     plain = _sheet(phi_f=0.0, c=120.0, reinforcement=STRIP)
     gap = _sheet(phi_f=0.0, c=120.0, reinforcement=STRIP,
                  interface_gap_possible=True)
-    assert plain.FOS_sliding == pytest.approx(3.340, abs=0.0005)
+    assert plain.FOS_sliding == pytest.approx(2.833, abs=0.0005)
     V = 19.0 * 6.0 * 4.2
     t = gap.external_terms
     assert t["gap_limited"] and t["R_foundation"] == pytest.approx(0.4 * V)
     assert gap.FOS_sliding == pytest.approx(0.4 * V / t["Pa"], abs=0.0005)
-    assert gap.FOS_sliding == pytest.approx(1.981, abs=0.0005)
+    assert gap.FOS_sliding == pytest.approx(1.680, abs=0.0005)
     [c] = [c for c in gap.choices if "interface_gap_possible" in c["what"]]
     assert c["how"] == "given" and "EN 1997-1" in c["basis"]
-    assert "FOS_sliding 3.340" in c["alternatives"][0]
+    assert "FOS_sliding 2.833" in c["alternatives"][0]
     [c] = [c for c in plain.choices if "interface_gap_possible" in c["what"]]
-    assert c["how"] == "default" and "1.981" in c["alternatives"][0]
+    assert c["how"] == "default" and "1.680" in c["alternatives"][0]
     g = MSEWallGeometry(wall_height=6.0, reinforcement_length=4.2)
     lrfd = mse.check_external_stability_lrfd(g, 19.0, 34.0, 0.0,
                                              c_foundation=120.0)
     held = mse.check_external_stability_lrfd(g, 19.0, 34.0, 0.0,
                                              c_foundation=120.0,
                                              interface_gap_possible=True)
-    assert lrfd["sliding"]["CDR_governing"] == pytest.approx(2.227,
+    assert lrfd["sliding"]["CDR_governing"] == pytest.approx(1.889,
                                                              abs=0.0005)
     F1 = held["unfactored_kN_m"]["F1"]
     assert held["sliding"]["CDR_critical"] == pytest.approx(
         0.4 * V / (1.5 * F1), abs=0.0005)
-    assert held["sliding"]["CDR_governing"] == pytest.approx(1.3205,
+    assert held["sliding"]["CDR_governing"] == pytest.approx(1.120,
                                                              abs=0.0006)
     with pytest.raises(ValueError):
         mse.check_external_stability(g, 19.0, 34.0, 18.0, 28.0,

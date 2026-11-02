@@ -388,6 +388,13 @@ def _input_summary_mse(result, analysis) -> List[InputItem]:
     if phi_f is not None:
         items.append(InputItem("\u03c6_foundation", "Foundation friction angle",
                                f"{phi_f:.1f}", "deg"))
+    else:
+        # GM-302 review: GEC-11 Vol I p. 4-10's 30 deg for no data
+        from retaining_walls import mse as _mse
+        items.append(InputItem(
+            "\u03c6_foundation", "Foundation friction angle, not given: "
+            "assumed for preliminary sizing (GEC-11 Vol I p. 4-10)",
+            f"{_mse.PHI_ASSUMED:.1f}", "deg"))
     if c_f > 0:
         items.append(InputItem("c_foundation", "Foundation cohesion", f"{c_f:.1f}", "kPa"))
     if q_all is not None:
@@ -1487,6 +1494,32 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             "above is reported; compare it with the foundation's allowable "
             "bearing pressure.")
 
+    # GM-302: GEC-11 Eq. 4-24 on a cohesive foundation
+    ls = result.local_shear
+    if ls is not None:
+        ext_items.append(CalcStep(
+            title="Local Shear on a Cohesive Foundation",
+            equation="γ_r H ≤ 3 c_u",
+            substitution=(f"γ_r H = {ls['gamma_r_H_kPa'] / H:.1f} × "
+                          f"{H:.2f} = {ls['gamma_r_H_kPa']:.1f} kPa;  3 c_u = "
+                          f"3 × {ls['three_cu_kPa'] / 3:.1f} = "
+                          f"{ls['three_cu_kPa']:.1f} kPa"),
+            result_name="γ_r H ≤ 3 c_u",
+            result_value="yes" if ls["passes"] else "NO",
+            reference="GEC-11 Vol I Eq. 4-24 (p. 4-30)",
+            notes=("'To prevent local shear of structures bearing on weak "
+                   "cohesive soils'; c_u = c_foundation, the undrained "
+                   "sliding rule."),
+        ))
+        ext_items.append(CheckItem(
+            description="Local shear (GEC-11 Eq. 4-24)",
+            demand=ls["gamma_r_H_kPa"],
+            demand_label="γ_r H (kPa)",
+            capacity=ls["three_cu_kPa"],
+            capacity_label="3 c_u (kPa)",
+            passes=ls["passes"],
+        ))
+
     # External stability summary: only the checks that were run
     fos_s_req = result.FOS_sliding_required
     fos_o_req = result.FOS_overturning_required
@@ -1772,6 +1805,19 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         passes=result.all_pass_internal,
     ))
 
+    # GM-302: a steel grid's transverse-bar spacing (GEC-11 p. 3-21)
+    gs = result.grid_spacing
+    if gs is not None:
+        int_items.append(CheckItem(
+            description="Steel grid transverse-bar spacing St "
+                        "(GEC-11 Vol I p. 3-21: at most 24 in.)",
+            demand=gs["St_max_m"] * 1000,
+            demand_label="St (mm)",
+            capacity=gs["St_limit_m"] * 1000,
+            capacity_label="Maximum (mm)",
+            passes=gs["passes"],
+        ))
+
     sections.append(CalcSection(title="Internal Stability (GEC-11)", items=int_items))
 
     # ── Section 4: Overall Summary ─────────────────────────────
@@ -1782,7 +1828,9 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             return "NOT ALL CHECKED (bearing not checked)"
         return "OK" if passes else "FAIL"
 
-    if result.passes_external is False or not result.all_pass_internal:
+    grid_ok = gs is None or gs["passes"]
+    if (result.passes_external is False or not result.all_pass_internal
+            or not grid_ok):
         overall_pass = False
     elif result.passes_external is None:
         overall_pass = None
@@ -1794,10 +1842,19 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         rows=[
             ["External Stability", _status(result.passes_external)],
             ["Internal Stability", _status(result.all_pass_internal)],
+        ] + ([["Grid Spacing St", _status(gs["passes"])]]
+             if gs is not None else []) + [
             ["Overall", _status(overall_pass)],
         ],
     ))
     summary_items.append(f"Result: {result.verdict}")
+    # GM-302: GEC-11's advice the wall goes against
+    if result.warnings:
+        summary_items.append(TableData(
+            title="Warnings (GEC-11 advice, not a check)",
+            headers=["Warning"],
+            rows=[[w] for w in result.warnings],
+        ))
 
     sections.append(CalcSection(title="Overall Assessment", items=summary_items))
 
@@ -2029,7 +2086,8 @@ def _mse_terms(result, analysis):
     geom = _get(analysis, "geom")
     return mse._external_terms(
         geom, _mse_used(analysis, "gamma_backfill"), phi,
-        phi if phi_f is None else phi_f,
+        # GM-302 review: GEC-11 Vol I p. 4-10's 30 deg for no data
+        mse.PHI_ASSUMED if phi_f is None else phi_f,
         _mse_used(analysis, "c_foundation"),
         phi_retained=_mse_used(analysis, "phi_retained"),
         gamma_retained=_mse_used(analysis, "gamma_retained"),

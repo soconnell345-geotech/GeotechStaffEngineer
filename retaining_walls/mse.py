@@ -1334,6 +1334,26 @@ def _check_backslope(geom: MSEWallGeometry, phi_retained: Optional[float],
             "Example E1).")
 
 
+def _check_assumed_retained_slope(geom: MSEWallGeometry,
+                                  phi_retained: Optional[float]) -> None:
+    """Refuse a backfill slope steeper than the 30 deg a left-out
+    ``phi_retained`` takes (GEC-11 Vol I p. 4-10), saying the 30 deg was
+    the default and asking for the retained fill's own angle (GM-302
+    review); with ``phi_retained`` given, :func:`_check_backslope`'s
+    wording stands."""
+    beta = geom.backfill_slope
+    if phi_retained is None and beta > PHI_ASSUMED:
+        raise ValueError(
+            f"backfill_slope {beta:g} deg is steeper than the friction angle "
+            f"of the fill behind the reinforced zone, {PHI_ASSUMED:g} deg, "
+            "taken because phi_retained was not given (GEC-11 Vol I p. 4-10: "
+            "'An assumed friction angle, φ'b of 30° is often used "
+            "for the retained (i.e., behind the reinforced zone) backfill', "
+            "for preliminary sizing). Give phi_retained, the retained "
+            "fill's own friction angle: GEC-11 Eq. 4-3 has no real Kab for "
+            "a slope steeper than it (sin(phi - beta) < 0 under the root).")
+
+
 def backslope_loads(geom: MSEWallGeometry, gamma_backfill: float,
                     phi_retained: float, gamma_retained: float,
                     q: float = 0.0) -> Dict[str, Any]:
@@ -2340,7 +2360,8 @@ def check_external_stability(
         Required overturning FOS. Default 2.0, the module's ASD value, as
         FOS_sliding_req.
     phi_retained : float, optional
-        Retained soil friction angle (degrees). If None, uses phi_backfill.
+        Retained soil friction angle (degrees). If None, 30 deg (GEC-11
+        Vol I p. 4-10's assumed value; GM-302 review, phi_backfill before).
     gamma_retained : float, optional
         Retained soil unit weight (kN/m³). If None, uses gamma_backfill.
     traffic_vertical_resists : bool, optional
@@ -2460,7 +2481,8 @@ def _external_terms(
     _check_sheet_depth(geom, lowest_sheet_depth)
 
     # Use retained fill properties for external active pressure if provided
-    phi_ext = phi_retained if phi_retained is not None else phi_backfill
+    _check_assumed_retained_slope(geom, phi_retained)
+    phi_ext = phi_retained if phi_retained is not None else PHI_ASSUMED
     gamma_ext = gamma_retained if gamma_retained is not None else gamma_backfill
 
     def weight(component, W, x, kind="weight", resists=True, bearing=True):
@@ -2845,11 +2867,204 @@ def bearing_resistance_choices(phi_bearing: float) -> list:
          "p. 4-28)"])]
 
 
+# ── Checks GEC-11 prints beside the stability checks (GM-302) ─────────────
+
+#: GEC-11 Vol II's worked examples check the Service I resultant against
+#: L/6 beside the strength limit states' L/4. Vol I does not print it, and
+#: every example's wall is on soil.
+ECC_LIMIT_RATIO_SERVICE = 1.0 / 6.0
+SERVICE_ECCENTRICITY_BASIS = (
+    "GEC-11 Vol II Examples E3, E4 and E5 (Tables E3-6.3, p. E3-11; E4-6.3, "
+    "p. E4-9; E5-7.1, p. E5-17): 'Limiting eccentricity, e = L/4 for "
+    "strength limit states and e = L/6 for service limit state' and 'Is the "
+    "resultant within limiting value of eL?', Service I with every load "
+    "factor 1.0 and the live load over the reinforced zone counted (Table "
+    "E4-6.3: sum V = V1 + VS). Each example's wall is on soil; no page held "
+    "prints the service limit on rock")
+
+#: GEC-11 Vol I p. 4-30, read on the rendered page.
+LOCAL_SHEAR_BASIS = (
+    "GEC-11 Vol I p. 4-30, Eq. 4-24: 'To prevent local shear of structures "
+    "bearing on weak cohesive soils it is required that' gamma_r H <= 3 cu, "
+    "gamma_r the nominal unit weight of the reinforced fill, H the height "
+    "of the wall and cu the nominal total stress cohesion of the foundation "
+    "soil; checked where c_foundation is cu (the undrained sliding rule)")
+LOCAL_SHEAR_STRENGTH_BASIS = (
+    "GEC-11 Vol I p. 4-30: 'If local shear or punching shear failure is "
+    "possible, Section 10.6.3.1.2b of AASHTO (2007) requires the use of "
+    "reduced shear strength parameters for calculating the nominal bearing "
+    "resistance', c* = 0.67 c' and phi* = tan^-1(0.67 tan phi'f); local "
+    "shear 'can occur in loose or compressible soils, in weak soils under "
+    "slow (drained) loading'")
+
+#: GEC-11 Vol I p. 4-10 (AASHTO 11.10.6.2): advice on the reinforced fill's
+#: friction angle, given as warnings, never a verdict.
+PHI_FILL_UNTESTED_MAX = 34.0
+PHI_FILL_MAX = 40.0
+
+#: GEC-11 Vol I p. 4-10: the foundation's and the retained fill's friction
+#: angle where none is given (GM-302 review; before, the reinforced fill's).
+PHI_ASSUMED = 30.0
+PHI_ASSUMED_BASIS = {
+    "phi_foundation": (
+        "GEC-11 Vol I p. 4-10 (AASHTO 11.10.5.3): 'For the foundation soil, "
+        "... in absence of specific data, a maximum friction angle, φ'f "
+        "of 30° may be used. The use of an assumed, non-specific "
+        "parameter is recommended only for preliminary sizing.'"),
+    "phi_retained": (
+        "GEC-11 Vol I p. 4-10: 'An assumed friction angle, φ'b of "
+        "30° is often used for the retained (i.e., behind the "
+        "reinforced zone) backfill. The use of an assumed, non-specific "
+        "parameter is recommended only for preliminary sizing.'"),
+}
+
+#: GEC-11 Vol I pp. 3-20, 3-21 (steel grids) and p. 4-38 (every
+#: reinforcement), read on the rendered pages.
+GRID_ST_MIN_M = 6 * 0.0254      # 0.152 m
+GRID_ST_MAX_M = 24 * 0.0254     # 0.610 m
+GRID_SPACING_BASIS = (
+    "GEC-11 Vol I p. 3-21, with the empirical F* of Eqs. 3-6 and 3-7 (used "
+    "here, no F* from pullout tests): 'St must be uniform throughout the "
+    "length of the reinforcement rather than having transverse grid members "
+    "concentrated only in the resistant zone. The maximum St distance is "
+    "24 in. (610 mm).'")
+SV_MAX_M = 32 * 0.0254          # 0.813 m
+
+
+def local_shear_check(gamma_backfill: float, wall_height: float, rule: str,
+                      c_foundation: float) -> Optional[Dict[str, Any]]:
+    """GEC-11 Vol I Eq. 4-24 (p. 4-30), gamma_r H <= 3 cu, a verdict, on a
+    foundation whose c_foundation is the undrained strength cu (the
+    undrained sliding rule, :func:`mse_sliding_rule`); None on a drained
+    foundation, where the equation does not apply (GM-302)."""
+    if rule != "undrained":
+        return None
+    demand = gamma_backfill * wall_height
+    capacity = 3.0 * c_foundation
+    return {"gamma_r_H_kPa": round(demand, 2),
+            "three_cu_kPa": round(capacity, 2),
+            "passes": demand <= capacity,
+            "basis": LOCAL_SHEAR_BASIS}
+
+
+def local_shear_strengths(phi_foundation: float, c_foundation: float):
+    """(c*, phi*) for the nominal bearing resistance where local or punching
+    shear is possible: c* = 0.67 c', phi* = tan^-1(0.67 tan phi'f) (GEC-11
+    Vol I p. 4-30, AASHTO 10.6.3.1.2b; GM-302)."""
+    phi_star = math.degrees(math.atan(
+        0.67 * math.tan(math.radians(phi_foundation))))
+    return 0.67 * c_foundation, phi_star
+
+
+def assumed_friction_choices(phi_foundation: Optional[float],
+                             phi_retained: Optional[float]) -> list:
+    """The foundation's and the retained fill's friction angle where none
+    was given (None): 30 deg as GEC-11 Vol I p. 4-10 prints for no data,
+    each a result's ``choices`` entry (GM-302 review)."""
+    from geotech_common.choices import choice, how_given
+    out = []
+    for name, value, what in (
+            ("phi_foundation", phi_foundation,
+             "foundation soil friction angle (phi_foundation)"),
+            ("phi_retained", phi_retained,
+             "retained fill friction angle (phi_retained)")):
+        if value is None:
+            out.append(choice(
+                what, f"{PHI_ASSUMED:g} deg, assumed for preliminary sizing",
+                how_given(None, None, name=name), PHI_ASSUMED_BASIS[name],
+                [f"the soil's own friction angle from site-specific data "
+                 f"({name})"]))
+    return out
+
+
+def fill_strength_warnings(phi_backfill: float) -> List[str]:
+    """GEC-11 Vol I p. 4-10's advice on the reinforced fill's friction
+    angle, as warnings (GM-302): above 34 deg it needs tests on the
+    project's fill, and above 40 deg it is not used."""
+    out = []
+    if phi_backfill > PHI_FILL_MAX:
+        out.append(
+            f"phi_backfill {phi_backfill:g} deg is above 40 deg. GEC-11 Vol "
+            "I p. 4-10: 'A design friction angle greater than 40° "
+            "should not used, even if the measured friction angle is greater "
+            "than 40°.'")
+    elif phi_backfill > PHI_FILL_UNTESTED_MAX:
+        out.append(
+            f"phi_backfill {phi_backfill:g} deg is above 34 deg. GEC-11 Vol "
+            "I p. 4-10 (AASHTO 11.10.6.2): 'the maximum friction angle of "
+            "the select granular reinforced fill should be assumed to be "
+            "34°, unless the project specific fill is tested for "
+            "frictional strength by triaxial or direct shear testing "
+            "methods' (also p. 3-21). Use it only from such tests.")
+    return out
+
+
+def grid_spacing_check(rs, F_star_tested=None):
+    """(check, warnings) for the steel grids among the levels'
+    reinforcements ``rs`` (GM-302). Both St bounds sit in GEC-11 Vol I
+    pp. 3-20, 3-21's paragraphs on the empirical F* (Eqs. 3-6, 3-7). With
+    it, the check, a verdict, is the largest transverse-bar spacing St
+    against p. 3-21's 24 in. (610 mm), and St under 6 in. warns (p. 3-20:
+    'St > 6 inches'; Example E4 takes it at 6 in.). With F* from pullout
+    tests (``F_star_tested``) St over 24 in. warns instead (GM-302
+    review). None when no grid's St is given (allowed only with F* from
+    tests, GM-297)."""
+    known = [r for r in rs if r.is_grid and r.transverse_spacing > 0]
+    if not known:
+        return None, []
+    warns = []
+    St = max(r.transverse_spacing for r in known)
+    if F_star_tested is not None:
+        if St > GRID_ST_MAX_M + 1e-6:
+            warns.append(
+                f"St {St * 1000:.0f} mm is over 24 in. (610 mm). GEC-11 Vol "
+                "I p. 3-21, with the empirical F* of Eqs. 3-6 and 3-7: 'The "
+                "maximum St distance is 24 in. (610 mm).' F* here is from "
+                "pullout tests (F_star_tested), so it is not a check; the "
+                "tests should be on the grid at this spacing.")
+        return None, warns
+    for name, St_r in dict((r.name, r.transverse_spacing) for r in known
+                           if r.transverse_spacing
+                           < GRID_ST_MIN_M - 1e-6).items():
+        warns.append(
+            f"{name}: St {St_r * 1000:.0f} mm is under 6 in. (152 mm). "
+            "GEC-11 Vol I p. 3-20 gives the empirical F* of Eqs. 3-6 and "
+            "3-7 'For steel grid reinforcements with transverse spacing "
+            "of St > 6 inches (150 mm)'; give F* from pullout tests on "
+            "the grid (F_star_tested).")
+    return {"St_max_m": round(St, 4),
+            "St_limit_m": round(GRID_ST_MAX_M, 4),
+            "passes": St <= GRID_ST_MAX_M + 1e-6,
+            "basis": GRID_SPACING_BASIS}, warns
+
+
+def vertical_spacing_warnings(geom: MSEWallGeometry) -> List[str]:
+    """GEC-11 Vol I p. 4-38's advice, as a warning (GM-302): the largest
+    vertical spacing between levels (Sv, or the gaps between the level
+    depths given) over 32 in. (800 mm)."""
+    if geom.level_depths is None:
+        sv, where = geom.reinforcement_spacing, "reinforcement_spacing"
+    else:
+        z = list(geom.level_depths)
+        if len(z) < 2:
+            return []
+        gaps = [b - a for a, b in zip(z, z[1:])]
+        sv = max(gaps)
+        i = gaps.index(sv)
+        where = f"between the levels at z = {z[i]:g} and {z[i + 1]:g} m"
+    if sv <= SV_MAX_M + 1e-6:
+        return []
+    return [f"The vertical spacing of the reinforcement, {sv:.3g} m "
+            f"({where}), is over 32 in. (0.81 m). GEC-11 Vol I p. 4-38: 'to "
+            "provide a coherent reinforced soil zone, vertical spacing of "
+            "reinforcement should not exceed 32 in. (800 mm).'"]
+
+
 def check_external_stability_lrfd(
     geom: MSEWallGeometry,
     gamma_backfill: float,
     phi_backfill: float,
-    phi_foundation: float,
+    phi_foundation: Optional[float] = None,
     *,
     phi_retained: float = None,
     gamma_retained: float = None,
@@ -2864,9 +3079,11 @@ def check_external_stability_lrfd(
     gamma_LL: float = 1.75,
     phi_sliding: float = 1.0,
     ecc_limit_ratio: float = 0.25,
+    ecc_limit_ratio_service: float = ECC_LIMIT_RATIO_SERVICE,
     traffic_vertical_resists: bool = False,
     gamma_foundation: float = None,
     phi_bearing: float = 0.65,
+    local_shear_possible: bool = False,
     sliding_cohesion: Optional[str] = None,
     interface_gap_possible: bool = False,
     lowest_sheet_depth: Optional[float] = None,
@@ -2903,12 +3120,17 @@ def check_external_stability_lrfd(
         ``live_load`` overrides it.
     gamma_backfill, phi_backfill : float
         Reinforced fill unit weight (kN/m3) and friction angle (deg).
-    phi_foundation : float
+    phi_foundation : float, optional
         Foundation friction angle (deg); the sliding interface uses
-        min(phi_backfill, phi_foundation).
+        min(phi_backfill, phi_foundation). Default None: 30 deg, as GEC-11
+        Vol I p. 4-10 prints 'in absence of specific data', a choice
+        (:func:`assumed_friction_choices`; GM-302 review, phi_backfill
+        before).
     phi_retained, gamma_retained : float, optional
         Retained (behind-the-mass) fill properties for the external active
-        thrust. Default to the reinforced-fill values.
+        thrust. phi_retained defaults to 30 deg, the assumed value p. 4-10
+        prints, a choice (GM-302 review); gamma_retained to
+        ``gamma_backfill``.
     live_load : float, optional
         Live-load surcharge q (kPa). Default: ``geom.surcharge``.
     bearing_resistance_strength : float, optional
@@ -2926,6 +3148,13 @@ def check_external_stability_lrfd(
     phi_bearing : float, optional
         Bearing resistance factor phi_b for a qn worked out from
         ``gamma_foundation``. Default 0.65 (GEC-11 Table 4-5).
+    local_shear_possible : bool, optional
+        With ``gamma_foundation``: local or punching shear is possible, so
+        qn takes c* = 0.67 c_foundation and phi* = tan^-1(0.67 tan
+        phi_foundation) (GEC-11 Vol I p. 4-30, AASHTO 10.6.3.1.2b;
+        :data:`LOCAL_SHEAR_STRENGTH_BASIS`); sliding keeps the strengths
+        given. Default False (general shear, the strengths given). Refused
+        without ``gamma_foundation`` (GM-302).
     bearing_resistance_service : float, optional
         Service bearing resistance (kPa). If given, the Service I bearing CDR is
         reported.
@@ -2965,6 +3194,12 @@ def check_external_stability_lrfd(
         for soil foundations (i.e., emax = L / 4) and middle three-fourths
         of the base width for rock foundations (i.e., emax = 3/8 L)', so
         0.375 on rock (GM-297: 'use 1/6 for rock' before).
+    ecc_limit_ratio_service : float, optional
+        Limiting-eccentricity ratio for the Service I resultant. Default
+        1/6 (L/6), as GEC-11 Vol II Examples E3, E4 and E5 print it for the
+        service limit state (:data:`SERVICE_ECCENTRICITY_BASIS`, GM-302);
+        each is on soil, so a rock foundation (``ecc_limit_ratio`` above
+        0.25) left at it carries a warning.
     traffic_vertical_resists : bool, optional
         Broken backslope with traffic behind the crest only: count the
         traffic thrust's vertical component F2 sin(I) as sliding and
@@ -2988,6 +3223,16 @@ def check_external_stability_lrfd(
         None when none failed but one was not run. With a sloping backfill
         also ``backslope`` (the GEC-11 basis: Kab, h, F_T, V2).
 
+        GM-302 adds checks GEC-11 prints: ``eccentricity`` also gives the
+        Service I resultant against L/6 (``eL_service_m``,
+        ``e_limit_service_m``, ``passes_service``; ``passes`` is both
+        limit states', ``checks`` "eccentricity (Service I)"); on a
+        cohesive foundation (the undrained sliding rule) ``local_shear``,
+        GEC-11 Eq. 4-24 (:func:`local_shear_check`, ``checks`` "local
+        shear"); and ``warnings``, p. 4-10's advice on the reinforced
+        fill's friction angle (:func:`fill_strength_warnings`), only when
+        there is one.
+
     Notes
     -----
     A sloping backfill (``geom.backfill_slope`` > 0) follows GEC-11 Vol I
@@ -3004,7 +3249,36 @@ def check_external_stability_lrfd(
     """
     H = geom.wall_height
     L = geom.reinforcement_length
-    phi_ext = phi_retained if phi_retained is not None else phi_backfill
+    warnings = fill_strength_warnings(phi_backfill)
+    if phi_foundation is None and gamma_foundation is not None:
+        raise ValueError(NEEDS_PHI_FOUNDATION)
+    # GM-302 review: 30 deg where none is given, GEC-11 Vol I p. 4-10
+    assumed = assumed_friction_choices(phi_foundation, phi_retained)
+    if phi_foundation is None:
+        phi_foundation = PHI_ASSUMED
+    _check_assumed_retained_slope(geom, phi_retained)
+    if phi_retained is None:
+        phi_retained = PHI_ASSUMED
+    if not 0 < ecc_limit_ratio_service <= 0.5:
+        raise ValueError(f"ecc_limit_ratio_service must be in (0, 0.5], got "
+                         f"{ecc_limit_ratio_service}")
+    if (ecc_limit_ratio > 0.25
+            and ecc_limit_ratio_service == ECC_LIMIT_RATIO_SERVICE):
+        warnings.append(
+            f"ecc_limit_ratio {ecc_limit_ratio:g} is a rock foundation's, but "
+            "the Service I resultant is checked against L/6, which GEC-11 "
+            "Vol II Examples E3, E4 and E5 print for walls on soil; no page "
+            "held prints the service limit on rock (ecc_limit_ratio_service "
+            "sets it).")
+    if local_shear_possible and gamma_foundation is None:
+        raise ValueError(
+            "local_shear_possible reduces the foundation strengths in the "
+            "nominal bearing resistance qn worked out by GEC-11 Eq. 4-22 "
+            "(c* = 0.67 c_f, phi* = tan^-1(0.67 tan phi_f), p. 4-30); it "
+            "needs gamma_foundation. A bearing_resistance_strength given is "
+            "used as given, so work it out with c* and phi* where local or "
+            "punching shear is possible.")
+    phi_ext = phi_retained
     gamma_ext = gamma_retained if gamma_retained is not None else gamma_backfill
     q = geom.surcharge if live_load is None else live_load
     if gamma_foundation is not None:
@@ -3019,10 +3293,22 @@ def check_external_stability_lrfd(
         if not 0 < phi_bearing <= 1:
             raise ValueError(f"phi_bearing must be in (0, 1], got "
                              f"{phi_bearing}")
-    soil = (None if gamma_foundation is None else
-            (gamma_foundation, phi_foundation, c_foundation, phi_bearing, L))
+    soil = None
+    if gamma_foundation is not None:
+        # the strengths qn takes, and the other reading's for its choice
+        reduced = local_shear_strengths(phi_foundation, c_foundation)
+        full = (c_foundation, phi_foundation)
+        (c_q, phi_q), (c_o, phi_o) = ((reduced, full) if local_shear_possible
+                                      else (full, reduced))
+        soil = (gamma_foundation, phi_q, c_q, phi_bearing, L,
+                bool(local_shear_possible), phi_o, c_o)
     rule = mse_sliding_rule(sliding_cohesion, phi_foundation, c_foundation,
                             interface_gap_possible)
+    extra = {"ratio_svc": ecc_limit_ratio_service,
+             "e_limit_svc": ecc_limit_ratio_service * L,
+             "local": local_shear_check(gamma_backfill, H, rule,
+                                        c_foundation),
+             "warnings": warnings, "assumed": assumed}
     _check_sheet_depth(geom, lowest_sheet_depth)
     sliding = _lrfd_sliding(
         geom, gamma_backfill, phi_backfill, phi_foundation, phi_ext,
@@ -3036,7 +3322,7 @@ def check_external_stability_lrfd(
             gamma_ext, q, bearing_resistance_strength,
             bearing_resistance_service, c_foundation, gamma_EV_max,
             gamma_EV_min, gamma_EH_max, gamma_EH_min, gamma_LL, phi_sliding,
-            ecc_limit_ratio, traffic_vertical_resists, soil, sliding)
+            ecc_limit_ratio, traffic_vertical_resists, soil, sliding, extra)
     Ka = rankine_Ka(phi_ext)
 
     # Unfactored load components about the toe (Point A). Vertical loads V*
@@ -3098,8 +3384,9 @@ def check_external_stability_lrfd(
         {"EV_max": gamma_EV_max, "EV_min": gamma_EV_min,
          "EH_max": gamma_EH_max, "EH_min": gamma_EH_min,
          "LL": gamma_LL, "phi_sliding": phi_sliding,
-         "ecc_limit_ratio": ecc_limit_ratio},
-        soil, Bp_crit, sliding)
+         "ecc_limit_ratio": ecc_limit_ratio,
+         "ecc_limit_ratio_service": ecc_limit_ratio_service},
+        soil, Bp_crit, sliding, dict(extra, eL_svc=eL_s))
 
 
 def _lrfd_sliding_loads(geom, gamma_backfill, phi_ext, gamma_ext, q,
@@ -3220,12 +3507,13 @@ def _external_lrfd_sloping(
     q, bearing_resistance_strength, bearing_resistance_service, c_foundation,
     gamma_EV_max, gamma_EV_min, gamma_EH_max, gamma_EH_min, gamma_LL,
     phi_sliding, ecc_limit_ratio, traffic_vertical_resists=False, soil=None,
-    sliding=None,
+    sliding=None, extra=None,
 ) -> Dict[str, Any]:
     """``check_external_stability_lrfd`` with a sloping backfill (GEC-11 Vol
     I §4.4.6; Vol II Examples E3 and E1). Same combinations and result as the
     level case: Strength I max (EV max, EH max), Strength I min (EV min, EH
-    min), the critical min-vertical one (EV min, EH max) and Service I."""
+    min), the critical min-vertical one (EV min, EH max) and Service I.
+    ``extra``: the Service I limit, Eq. 4-24 and the warnings (GM-302)."""
     L = geom.reinforcement_length
     ld = backslope_loads(geom, gamma_backfill, phi_ext, gamma_ext, q)
     V12 = ld["V1"] + ld["V2"]                       # EV
@@ -3259,7 +3547,7 @@ def _external_lrfd_sloping(
                                      gamma_LL, gamma_LL)
     sig_crit, _, Bp_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL,
                                  gamma_LL, gamma_EV_min)
-    sig_svc = _base(1.0, 1.0, 1.0, 1.0, 1.0)[0]
+    sig_svc, eL_svc, _ = _base(1.0, 1.0, 1.0, 1.0, 1.0)
 
     unfactored = {
         "V1": round(ld["V1"], 3), "V2": round(ld["V2"], 3),
@@ -3277,10 +3565,32 @@ def _external_lrfd_sloping(
         {"EV_max": gamma_EV_max, "EV_min": gamma_EV_min,
          "EH_max": gamma_EH_max, "EH_min": gamma_EH_min,
          "LL": gamma_LL, "phi_sliding": phi_sliding,
-         "ecc_limit_ratio": ecc_limit_ratio},
-        soil, Bp_crit, sliding)
+         "ecc_limit_ratio": ecc_limit_ratio,
+         "ecc_limit_ratio_service": extra["ratio_svc"]},
+        soil, Bp_crit, sliding, dict(extra, eL_svc=eL_svc))
     out["backslope"] = _backslope_summary(ld, traffic_vertical_resists)
     return out
+
+
+def local_shear_choice(local_shear_possible: bool,
+                       other_cdr: Optional[float] = None) -> list:
+    """The foundation strengths a qn worked out by GEC-11 Eq. 4-22 took
+    (GM-302), as a result's ``choices``; the other reading with the
+    governing Strength I bearing CDR it gives (``other_cdr``, GM-302
+    review: general shear, the default, is the unsafe side)."""
+    from geotech_common.choices import choice, how_given
+    reduced = ("c* = 0.67 c_f and phi* = tan^-1(0.67 tan phi_f): local or "
+               "punching shear possible (local_shear_possible)")
+    full = "c_f and phi_f as given: general shear"
+    chosen, other = ((reduced, full) if local_shear_possible
+                     else (full, reduced))
+    if other_cdr is not None:
+        other = f"{other} (bearing CDR_governing {other_cdr:.3f})"
+    return [choice(
+        "foundation strengths in qn (Eq. 4-22)", chosen,
+        how_given(bool(local_shear_possible), False,
+                  name="local_shear_possible"),
+        LOCAL_SHEAR_STRENGTH_BASIS, [other])]
 
 
 def _lrfd_result(
@@ -3288,16 +3598,23 @@ def _lrfd_result(
     sig_str, eL_bear, Bp_str, sig_crit, sig_svc,
     bearing_resistance_strength, bearing_resistance_service,
     unfactored, load_factors, soil=None, Bp_crit=None, sliding=None,
+    extra=None,
 ) -> Dict[str, Any]:
     """The LRFD external-stability result from its CDRs, eccentricities and
     bearing stresses (shared by the level and sloping-backfill cases).
-    ``soil`` = (gamma_f, phi_f, c_f, phi_b, L) works the strength bearing
-    resistance out by GEC-11 Eq. 4-22 over each combination's L'
-    (``Bp_str``, ``Bp_crit``; L' = L when eB < 0, p. 4-28) instead of
-    taking it given (GM-179). ``sliding``: :func:`_lrfd_sliding`'s result,
-    its rule, surface and choices (GM-297)."""
+    ``soil`` = (gamma_f, phi_f, c_f, phi_b, L, local shear possible, the
+    other reading's phi_f and c_f) works the strength bearing resistance
+    out by GEC-11 Eq. 4-22 over each combination's L' (``Bp_str``,
+    ``Bp_crit``; L' = L when eB < 0, p. 4-28) instead of taking it given
+    (GM-179), phi_f and c_f reduced where local shear is possible (GM-302).
+    ``sliding``: :func:`_lrfd_sliding`'s result, its rule, surface and
+    choices (GM-297). ``extra``: the Service I eL and its limit, Eq. 4-24
+    (None when it does not apply), the warnings and the assumed friction
+    angles' choices (GM-302)."""
     cdr_slide_gov = min(cdr_slide_max, cdr_slide_min, cdr_slide_crit)
     eL_gov = max(eL_max, eL_crit)
+    eL_svc, e_limit_svc = extra["eL_svc"], extra["e_limit_svc"]
+    local = extra["local"]
 
     def _cdr(resistance, demand):
         if resistance is None or demand <= 0:
@@ -3306,13 +3623,20 @@ def _lrfd_result(
 
     qR_str = qR_crit = bearing_resistance_strength
     worked_out = None
+    other_cdr = None
     if soil is not None:
-        gamma_f, phi_f, c_f, phi_b, L = soil
+        gamma_f, phi_f, c_f, phi_b, L, reduced, phi_o, c_o = soil
         Lq_str = min(max(Bp_str, 0.0), L)
         Lq_crit = min(max(Bp_crit, 0.0), L)
         qn_str = nominal_bearing_resistance(Lq_str, gamma_f, phi_f, c_f)
         qn_crit = nominal_bearing_resistance(Lq_crit, gamma_f, phi_f, c_f)
         qR_str, qR_crit = phi_b * qn_str, phi_b * qn_crit
+        # the other strengths' governing CDR, for the choice (GM-302 review)
+        others = [_cdr(phi_b * nominal_bearing_resistance(Lq, gamma_f, phi_o,
+                                                          c_o), sig)
+                  for Lq, sig in ((Lq_str, sig_str), (Lq_crit, sig_crit))]
+        others = [c for c in others if c is not None]
+        other_cdr = min(others) if others else None
         f = bearing_factors(phi_f)
         worked_out = {
             "qn_strength_max_kPa": round(qn_str, 2),
@@ -3324,6 +3648,11 @@ def _lrfd_result(
             "phi_bearing": phi_b,
             "resistance_basis": NOMINAL_BEARING_BASIS,
         }
+        if reduced:
+            # GM-302: c* and phi* where local or punching shear is possible
+            worked_out.update(local_shear_possible=True,
+                              c_star_kPa=round(c_f, 2),
+                              phi_star_deg=round(phi_f, 2))
 
     cdr_bear_str = _cdr(qR_str, sig_str)
     cdr_bear_crit = _cdr(qR_crit, sig_crit)
@@ -3334,14 +3663,19 @@ def _lrfd_result(
     # Each check is run, or not run for want of its resistance (GM-100); a
     # check not run is never counted as a pass. Service I bearing counts
     # when its resistance is given (every load combination must pass).
+    # GM-302: the Service I resultant against L/6 (GEC-11 Vol II Tables
+    # E3-6.3, E4-6.3, E5-7.1) and Eq. 4-24 on a cohesive foundation
     checks = {
         "sliding": cdr_slide_gov >= 1.0,
         "eccentricity": eL_gov <= e_limit,
+        "eccentricity (Service I)": eL_svc <= e_limit_svc,
         "bearing (Strength I)": (None if cdr_bear_gov is None
                                  else cdr_bear_gov >= 1.0),
         "bearing (Service I)": (None if cdr_bear_svc is None
                                 else cdr_bear_svc >= 1.0),
     }
+    if local is not None:
+        checks["local shear"] = local["passes"]
     checks_failed = [k for k, v in checks.items() if v is False]
     checks_not_run = [k for k, v in checks.items() if v is None]
     if checks_failed:
@@ -3384,7 +3718,12 @@ def _lrfd_result(
             "eL_critical_m": round(eL_crit, 4),
             "eL_governing_m": round(eL_gov, 4),
             "e_limit_m": round(e_limit, 4),
-            "passes": eL_gov <= e_limit,
+            "passes_strength": eL_gov <= e_limit,
+            "eL_service_m": round(eL_svc, 4),
+            "e_limit_service_m": round(e_limit_svc, 4),
+            "passes_service": eL_svc <= e_limit_svc,
+            "service_limit_basis": SERVICE_ECCENTRICITY_BASIS,
+            "passes": eL_gov <= e_limit and eL_svc <= e_limit_svc,
         },
         "bearing": bearing,
         "passes": passes,
@@ -3393,6 +3732,10 @@ def _lrfd_result(
         "unfactored_kN_m": unfactored,
         "load_factors": load_factors,
     }
+    if local is not None:
+        out["local_shear"] = local
+    if extra["warnings"]:
+        out["warnings"] = list(extra["warnings"])
     if sliding and sliding["sheet"] is not None:
         # both surfaces (GM-297 review: GEC-11 p. 4-21 Step 3(iii))
         out["sliding"].update(
@@ -3403,7 +3746,10 @@ def _lrfd_result(
             lowest_sheet_depth_m=sliding["sheet"]["depth"],
             tan_rho=round(sliding["sheet"]["tan_rho"], 4))
     choices = (list(sliding["choices"] if sliding else [])
-               + (bearing_resistance_choices(soil[3]) if worked_out else []))
+               + (bearing_resistance_choices(soil[3])
+                  + local_shear_choice(soil[5], other_cdr) if worked_out
+                  else [])
+               + list(extra.get("assumed", [])))
     if choices:
         out["choices"] = choices
     return out
@@ -3434,6 +3780,7 @@ def analyze_mse_wall(
     sliding_cohesion: Optional[str] = None,
     interface_gap_possible: bool = False,
     rho_tested: Optional[float] = None,
+    local_shear_possible: bool = False,
 ) -> MSEWallResult:
     """Run complete MSE wall analysis.
 
@@ -3457,7 +3804,10 @@ def analyze_mse_wall(
         check compares the bearing pressure with ``q_allowable`` and counts
         no passive resistance, so it does not use it (GM-179).
     phi_foundation : float, optional
-        Foundation friction angle. If None, uses phi_backfill.
+        Foundation friction angle. If None, 30 deg, as GEC-11 Vol I p.
+        4-10 prints 'in absence of specific data', a choice
+        (:func:`assumed_friction_choices`; GM-302 review, phi_backfill
+        before).
     c_foundation : float, optional
         Foundation cohesion (kPa). Default 0. Counted in sliding only by
         the undrained rule, as cu (``sliding_cohesion``).
@@ -3480,7 +3830,9 @@ def analyze_mse_wall(
         Allowable bearing pressure (kPa). Default None: the bearing check is
         NOT RUN and the result says so (``checks_not_run``), never a pass.
     phi_retained : float, optional
-        Retained soil friction angle (degrees). If None, uses phi_backfill.
+        Retained soil friction angle (degrees). If None, 30 deg, the
+        assumed value GEC-11 Vol I p. 4-10 prints, a choice (GM-302
+        review; phi_backfill before).
     gamma_retained : float, optional
         Retained soil unit weight (kN/m³). If None, uses gamma_backfill.
     lrfd_external : bool, optional
@@ -3518,6 +3870,10 @@ def analyze_mse_wall(
         sigma_H is averaged over each level's contributory height (GEC-11
         Vol I p. 4-47); see :func:`check_internal_stability`. Default None:
         'trapezoidal'. Refused without level depths (GM-273).
+    local_shear_possible : bool, optional
+        LRFD path with ``gamma_foundation``: qn takes the reduced strengths
+        of GEC-11 Vol I p. 4-30 (see ``check_external_stability_lrfd``).
+        Default False.
 
     Returns
     -------
@@ -3542,6 +3898,12 @@ def analyze_mse_wall(
         coverage ratio and no horizontal spacing is refused
         (:func:`coverage_ratio`, GM-256), and so is a geosynthetic of no
         stated kind given no tested alpha (:func:`pullout_alpha`).
+        GM-302 adds checks GEC-11 prints: ``local_shear``, Eq. 4-24 on a
+        cohesive foundation (:func:`local_shear_check`, counted in
+        ``passes_external``); ``grid_spacing``, a steel grid's St against
+        24 in. (:func:`grid_spacing_check`); and ``warnings``, GEC-11's
+        advice on the friction angles (:func:`fill_strength_warnings`) and
+        the vertical spacing (:func:`vertical_spacing_warnings`).
     """
     # refuse before any work (GM-256; per level, GM-261 and GM-266; the
     # levels' depths, GM-273)
@@ -3558,8 +3920,24 @@ def analyze_mse_wall(
     if (lrfd_external and gamma_foundation is not None
             and bearing_resistance_strength is None and phi_foundation is None):
         raise ValueError(NEEDS_PHI_FOUNDATION)
+    if local_shear_possible and not lrfd_external:
+        raise ValueError(
+            "local_shear_possible reduces the foundation strengths in the "
+            "LRFD path's nominal bearing resistance (lrfd_external with "
+            "gamma_foundation, GEC-11 Vol I p. 4-30); the ASD bearing check "
+            "compares sigma_v with q_allowable.")
+    # GM-302: GEC-11's advice, as warnings
+    warnings = (fill_strength_warnings(phi_backfill)
+                + vertical_spacing_warnings(geom))
+    grid_spacing, grid_warnings = grid_spacing_check(rs, F_star_tested)
+    warnings += grid_warnings
+    # GM-302 review: 30 deg where none is given, GEC-11 Vol I p. 4-10
+    assumed = assumed_friction_choices(phi_foundation, phi_retained)
     if phi_foundation is None:
-        phi_foundation = phi_backfill
+        phi_foundation = PHI_ASSUMED
+    _check_assumed_retained_slope(geom, phi_retained)
+    if phi_retained is None:
+        phi_retained = PHI_ASSUMED
     # sheet reinforcement at the lowest level: sliding also along it
     # (GM-297 review, GEC-11 p. 4-21 Step 3(iii))
     sheet_depth = lowest_sheet_depth(geom, reinforcement)
@@ -3649,13 +4027,24 @@ def analyze_mse_wall(
             sliding_cohesion=sliding_cohesion,
             interface_gap_possible=interface_gap_possible,
             lowest_sheet_depth=sheet_depth, rho_tested=rho_tested,
+            local_shear_possible=local_shear_possible,
         )
+        # one list of warnings (GM-302)
+        warnings += [w for w in external_lrfd.pop("warnings", [])
+                     if w not in warnings]
+
+    # GM-302: GEC-11 Eq. 4-24 on a cohesive foundation, an external check
+    local_shear = local_shear_check(gamma_backfill, geom.wall_height, rule,
+                                    c_foundation)
+    passes_external = external["passes"]
+    if local_shear is not None and not local_shear["passes"]:
+        passes_external = False
 
     return MSEWallResult(
         FOS_sliding=external["FOS_sliding"],
         FOS_overturning=external["FOS_overturning"],
         FOS_bearing=external["FOS_bearing"],
-        passes_external=external["passes"],
+        passes_external=passes_external,
         passes_sliding=external["passes_sliding"],
         passes_overturning=external["passes_overturning"],
         passes_bearing=external["passes_bearing"],
@@ -3675,5 +4064,9 @@ def analyze_mse_wall(
         + pullout_factor_choices(geom, gamma_backfill, phi_backfill,
                                  reinforcement, Cu_backfill, internal,
                                  F_star_tested, alpha_tested)
-        + level_depths_choices(geom, sigma_H_average),
+        + level_depths_choices(geom, sigma_H_average)
+        + assumed,
+        local_shear=local_shear,
+        grid_spacing=grid_spacing,
+        warnings=warnings,
     )

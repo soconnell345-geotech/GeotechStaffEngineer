@@ -463,6 +463,20 @@ class MSEWallResult:
         How a live-load surcharge over the reinforced zone was counted on
         the ASD path, when the wall carries one (GM-164,
         ``geotech_common.choices``; ``mse.live_load_choices``).
+    local_shear : dict or None
+        GEC-11 Vol I Eq. 4-24 (p. 4-30), gamma_r H <= 3 cu, on a foundation
+        whose c_foundation is cu (the undrained sliding rule): gamma_r_H_kPa,
+        three_cu_kPa, passes, basis. Counted in ``passes_external``. None
+        where it does not apply (GM-302, ``mse.local_shear_check``).
+    grid_spacing : dict or None
+        A steel grid's largest transverse-bar spacing St against GEC-11 Vol
+        I p. 3-21's 24 in. (610 mm): St_max_m, St_limit_m, passes, basis.
+        None with no grid whose St is given (GM-302,
+        ``mse.grid_spacing_check``).
+    warnings : list of str
+        GEC-11's advice the wall goes against, never a verdict (GM-302): the
+        friction angles of p. 4-10, the vertical spacing of p. 4-38, a
+        grid's St under 6 in. with the empirical F* or not given.
     """
     FOS_sliding: float = 0.0
     FOS_overturning: float = 0.0
@@ -486,6 +500,9 @@ class MSEWallResult:
     backslope: Optional[Dict[str, Any]] = None
     external_terms: Optional[Dict[str, Any]] = None
     choices: List[Dict[str, Any]] = field(default_factory=list)
+    local_shear: Optional[Dict[str, Any]] = None
+    grid_spacing: Optional[Dict[str, Any]] = None
+    warnings: List[str] = field(default_factory=list)
 
     @property
     def n_levels(self) -> int:
@@ -505,8 +522,9 @@ class MSEWallResult:
     @property
     def checks_failed(self) -> List[str]:
         """The checks that were run and FAILED: 'sliding', 'overturning',
-        'bearing', 'internal' (pullout, rupture or Le under 3 ft at some
-        level)."""
+        'bearing', 'local shear' (GEC-11 Eq. 4-24), 'internal' (pullout,
+        rupture or Le under 3 ft at some level), 'grid spacing' (St over
+        24 in.)."""
         failed = []
         if self.passes_sliding is False:
             failed.append("sliding")
@@ -514,12 +532,17 @@ class MSEWallResult:
             failed.append("overturning")
         if self.bearing_checked and self.passes_bearing is False:
             failed.append("bearing")
+        local = self.local_shear is not None and not self.local_shear["passes"]
+        if local:
+            failed.append("local shear")
         if (self.passes_external is False
                 and self.passes_sliding is None
-                and self.passes_overturning is None):
+                and self.passes_overturning is None and not local):
             failed.append("external")   # per-check verdicts not recorded
         if self.failed_levels:
             failed.append("internal")
+        if self.grid_spacing is not None and not self.grid_spacing["passes"]:
+            failed.append("grid spacing")
         return failed
 
     @property
@@ -575,6 +598,16 @@ class MSEWallResult:
                          + ", ".join(f"{z:.2f}" for z in self.failed_levels)
                          + " m)"),
         }
+        if self.local_shear is not None:
+            ls = self.local_shear
+            words["local shear"] = (
+                f"local shear (gamma_r H {ls['gamma_r_H_kPa']:.1f} kPa > "
+                f"3 cu {ls['three_cu_kPa']:.1f} kPa, GEC-11 Eq. 4-24)")
+        if self.grid_spacing is not None:
+            gs = self.grid_spacing
+            words["grid spacing"] = (
+                f"grid spacing (St {gs['St_max_m'] * 1000:.0f} mm > "
+                f"{gs['St_limit_m'] * 1000:.0f} mm, GEC-11 p. 3-21)")
         failed = self.checks_failed
         parts = [("FAILS: " + "; ".join(words[n] for n in failed) + ".")
                  if failed else "No check failed."]
@@ -628,6 +661,12 @@ class MSEWallResult:
         ])
         if self.sigma_v is not None:
             lines.append(f"    sigma_v:     {self.sigma_v:.1f} kPa")
+        if self.local_shear is not None:
+            ls = self.local_shear
+            lines.append(
+                f"    Local shear: gamma_r H = {ls['gamma_r_H_kPa']:.1f} kPa vs "
+                f"3 cu = {ls['three_cu_kPa']:.1f} kPa (GEC-11 Eq. 4-24)"
+                f"{_check(ls['passes'])}")
         lines.extend([
             f"    External:    [{_status(self.passes_external)}]",
             "",
@@ -647,8 +686,14 @@ class MSEWallResult:
             )
 
         failed = self.checks_failed
+        lines.append(f"    Internal:    [{_status(self.all_pass_internal)}]")
+        if self.grid_spacing is not None:
+            gs = self.grid_spacing
+            lines.append(
+                f"    Grid St:     {gs['St_max_m'] * 1000:.0f} mm vs "
+                f"{gs['St_limit_m'] * 1000:.0f} mm max (GEC-11 p. 3-21)"
+                f"{_check(gs['passes'])}")
         lines.extend([
-            f"    Internal:    [{_status(self.all_pass_internal)}]",
             "",
             "  Failed checks: " + (", ".join(failed) if failed else "none"),
         ])
@@ -657,6 +702,9 @@ class MSEWallResult:
         if self.choices:
             from geotech_common.choices import choices_lines
             lines.extend(choices_lines(self.choices))
+        if self.warnings:
+            lines.extend(["", "  Warnings:"])
+            lines.extend(f"    - {w}" for w in self.warnings)
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -688,6 +736,12 @@ class MSEWallResult:
             d["external_lrfd"] = self.external_lrfd
         if self.backslope is not None:
             d["backslope"] = self.backslope
+        if self.local_shear is not None:
+            d["local_shear"] = dict(self.local_shear)
+        if self.grid_spacing is not None:
+            d["grid_spacing"] = dict(self.grid_spacing)
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
         return d

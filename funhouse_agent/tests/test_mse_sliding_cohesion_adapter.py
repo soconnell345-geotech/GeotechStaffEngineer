@@ -73,14 +73,15 @@ def _choice(r, name):
 
 
 def test_mse_wall_geogrid_slides_along_its_lowest_sheet():
+    # phi_retained left out: GEC-11 p. 4-10's 30 deg (GM-302 review)
     r = D.call_agent("retaining_walls", "mse_wall",
                      {**_WALL, "phi_foundation": 28.0})
     assert "error" not in r, r.get("error")
     s = r["sliding_surfaces"]
     assert s["governing"] == "lowest sheet"
-    assert s["FOS_base"] == pytest.approx(2.633, abs=0.0005)
+    assert s["FOS_base"] == pytest.approx(2.233, abs=0.0005)
     assert r["FOS_sliding"] == s["FOS_lowest_sheet"] == pytest.approx(
-        2.344, abs=0.0005)
+        1.988, abs=0.0005)
     assert r["defaults_used"]["rho_tested"].startswith(
         "2/3 tan phi_backfill")
     (c,) = _choice(r, "rho_tested")
@@ -112,8 +113,8 @@ def test_lrfd_lowest_sheet_depth():
                       "lowest_sheet_depth": 5.7})
     assert "error" not in r, r.get("error")
     assert r["sliding"]["surface"] == "lowest sheet"
-    assert r["sliding"]["CDR_governing"] == pytest.approx(1.563, abs=0.0005)
-    assert r["sliding"]["CDR_base_governing"] == pytest.approx(1.755,
+    assert r["sliding"]["CDR_governing"] == pytest.approx(1.325, abs=0.0005)
+    assert r["sliding"]["CDR_base_governing"] == pytest.approx(1.489,
                                                                abs=0.0005)
     assert r["defaults_used"]["rho_tested"].startswith(
         "2/3 tan phi_backfill")
@@ -136,8 +137,8 @@ def test_interface_gap_possible_with_the_undrained_rule():
     gap = D.call_agent("retaining_walls", "mse_wall",
                        {**steel, "interface_gap_possible": True})
     assert "error" not in gap, gap.get("error")
-    assert plain["FOS_sliding"] == pytest.approx(3.340, abs=0.0005)
-    assert gap["FOS_sliding"] == pytest.approx(1.981, abs=0.0005)
+    assert plain["FOS_sliding"] == pytest.approx(2.833, abs=0.0005)
+    assert gap["FOS_sliding"] == pytest.approx(1.680, abs=0.0005)
     assert plain["defaults_used"]["interface_gap_possible"] is False
     (c,) = _choice(gap, "interface_gap_possible")
     assert c["how"] == "given"
@@ -145,7 +146,7 @@ def test_interface_gap_possible_with_the_undrained_rule():
                         {**_LRFD, "phi_foundation": 0.0,
                          "c_foundation": 120.0,
                          "interface_gap_possible": True})
-    assert lrfd["sliding"]["CDR_governing"] == pytest.approx(1.3205,
+    assert lrfd["sliding"]["CDR_governing"] == pytest.approx(1.120,
                                                              abs=0.0006)
     drained = D.call_agent("retaining_walls", "mse_wall",
                            {**_WALL, "phi_foundation": 28.0,

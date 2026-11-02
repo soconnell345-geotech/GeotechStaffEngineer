@@ -176,7 +176,9 @@ External loads (`backslope_loads`):
   L/2; V2 = γr L (h − H) / 2 at 2L/3 from the face (L/6 behind the centre);
   FT at h/3. The module takes V2 as the reinforced-fill weight of the slope
   fill over the zone (γr, as the figures do); FT uses the retained fill
-  (`phi_retained`, `gamma_retained`, defaulting to the reinforced fill).
+  (`phi_retained`, `gamma_retained`; left out, phi_retained is GEC-11 Vol I
+  p. 4-10's 30 deg since the GM-302 review and gamma_retained the
+  reinforced fill's).
 
 Checks:
 
@@ -1748,3 +1750,66 @@ checks `tests/test_gm292_water_table.py` and
 - Not modelled: water in front of the wall (tailwater) and seepage under
   the wall (UFC Fig. 4-16(c)); water in a tension crack (NHI p. 10-15);
   the MSE wall's external checks.
+
+## Checks GEC-11 prints beside the MSE stability checks (GM-302, 2026-10-31)
+
+The record, with the pages quoted, is `module_work/gm302/CHECK.md`; the
+checks `tests/test_gm302_checks.py` and
+`funhouse_agent/tests/test_gm302_mse_checks_adapter.py`. A check with a
+verdict where the page states a requirement; a warning where it advises.
+
+- **Service I eccentricity, L/6** (LRFD path, a verdict). GEC-11 Vol II
+  Tables E3-6.3, E4-6.3 and E5-7.1 print "Limiting eccentricity, e = L/4
+  for strength limit states and e = L/6 for service limit state" and "Is
+  the resultant within limiting value of eL?"; Vol I does not print it.
+  `check_external_stability_lrfd` reports `eL_service_m` (every factor
+  1.0, the live load over the zone counted, as Table E4-6.3 sums V1 + VS)
+  against `e_limit_service_m`, `passes_service`; `checks` "eccentricity
+  (Service I)"; `eccentricity.passes` is both limit states'.
+  `ecc_limit_ratio_service` (default 1/6) sets it; every example is on
+  soil, so a rock `ecc_limit_ratio` with L/6 left warns. E4's 2.32 ft
+  against 3.00 ft and E3's 2.61 ft against 4.00 ft reproduced. On a level
+  backfill with the default factors it cannot fail unless the critical
+  Strength I check does (eL_crit = (1.5 MF1 + 1.75 MF2) / V1 against L/4,
+  eL_s = (MF1 + MF2) / (V1 + Vs) against L/6). The ASD path, from AASHTO
+  2002 / NHI-00-043, which are not held, has none.
+- **Local shear, Eq. 4-24** (both paths, a verdict). Vol I p. 4-30: "To
+  prevent local shear of structures bearing on weak cohesive soils it is
+  required that" gamma_r H <= 3 cu. Checked where c_foundation is cu (the
+  undrained sliding rule): `local_shear` (gamma_r_H_kPa, three_cu_kPa,
+  passes), `checks` / `checks_failed` "local shear", and on the ASD path
+  counted in `passes_external`.
+- **Reduced strengths where local or punching shear is possible** (LRFD
+  qn by Eq. 4-22). p. 4-30: c* = 0.67 c', phi* = tan^-1(0.67 tan phi'f),
+  AASHTO 10.6.3.1.2b. `local_shear_possible` (default False) gives them to
+  qn only; sliding keeps the strengths given. Refused without
+  `gamma_foundation`. A choice states which strengths qn took, and gives
+  the governing Strength I bearing CDR the other strengths give (the
+  default, general shear, is the unsafe side).
+- **A steel grid's St** (ASD path, a verdict with the empirical F*). Vol I
+  p. 3-21: "The maximum St distance is 24 in. (610 mm)": `grid_spacing`
+  (St_max_m, St_limit_m, passes), `checks_failed` "grid spacing", where a
+  grid's `transverse_spacing` is given. p. 3-20 gives the grid F* "For
+  steel grid reinforcements with transverse spacing of St > 6 inches (150
+  mm)": under 6 in. with the empirical F* warns (Example E4 takes it at 6
+  in.). Both bounds sit in the empirical F*'s paragraphs, so with F* from
+  pullout tests (`F_star_tested`) an St over 24 in. warns and is not a
+  check (GM-302 review); a grid with no St (allowed only then) is not
+  checked.
+- **Vertical spacing** (ASD path, a warning). Vol I p. 4-38: "vertical
+  spacing of reinforcement should not exceed 32 in. (800 mm)": Sv, or the
+  largest gap between the level depths given, over 32 in.
+- **Friction angles** (both paths). Vol I p. 4-10: the reinforced fill's
+  "should be assumed to be 34°, unless the project specific fill is
+  tested"; "A design friction angle greater than 40° should not used":
+  phi_backfill above 34 or 40 deg warns. The foundation's 30° "in absence
+  of specific data" and the retained fill's 30° "often used", each "only
+  for preliminary sizing": since the GM-302 review a left-out
+  phi_foundation or phi_retained is 30 deg (`PHI_ASSUMED`), stated as a
+  choice (`assumed_friction_choices`) and in the tools' `defaults_used`;
+  before, both took phi_backfill. A phi_foundation is still required
+  where qn is worked out (`gamma_foundation`).
+- `MSEWallResult` gains `local_shear`, `grid_spacing` and `warnings`
+  (summary and `to_dict`, each only when present); the LRFD dict gains
+  `local_shear` and `warnings`. The calc package prints Eq. 4-24, the St
+  check and a warnings table.
