@@ -59,6 +59,7 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 __all__ = [
     "Engine", "Reply", "ToolCall", "Usage", "CostMeter", "ClaudeEngine",
+    "ask_again", "refusal", "ASK_AGAIN",
     "RequestPacer", "shared_pacer", "pace_engines", "estimate_request",
     "LARGE_REQUEST_FRACTION", "PACER_WINDOW_SECONDS",
     "engine_for", "ChatModelEngine", "ANSWER_TOOL", "CUT_REASONS",
@@ -614,6 +615,62 @@ class Reply:
         return _reason(self.stop_reason) in CUT_REASONS
 
 
+# -- asking once more for an answer that was not taken (BACKLOG RI-195) -----
+
+#: The turn that asks again for a structured answer a call did not give.
+#: ``{why}`` is the engine's reason, where it gave one (:func:`refusal`).
+#: Every engine knows a request that ends with it (:func:`_asks_again`)
+#: and marks its cost row ``asked_again``.
+ASK_AGAIN = ("Your answer could not be taken{why}. Give the whole answer "
+             "again, with every field in its own place, as the answer schema "
+             "asks.")
+
+#: What :func:`_answer_notes` writes before the reason an answer was not
+#: taken.
+_NOT_TAKEN = "an answer was not taken: "
+
+
+def refusal(reply: Any) -> str:
+    """Why the engine took no answer from ``reply``, as its notes say
+    ("it does not match the schema (pit: ...)"), each reason once; ``""``
+    when they say none (a reply in prose, or an engine that keeps no
+    notes)."""
+    whys = [str(n)[len(_NOT_TAKEN):] for n in (
+        getattr(reply, "notes", None) or []) if str(n).startswith(_NOT_TAKEN)]
+    return "; ".join(dict.fromkeys(whys))
+
+
+def ask_again(messages: Sequence[Dict[str, Any]],
+              reply: Any) -> List[Dict[str, Any]]:
+    """``messages`` with ``reply``'s own turn after them and one user turn
+    asking for the answer again (:data:`ASK_AGAIN`), with why it was not
+    taken where the engine said: today's calc reader's re-ask, for every
+    reader that asks once more. A new list; ``messages`` is unchanged.
+
+    On :class:`ChatModelEngine` the answer call's own result says why as
+    well (:func:`_answer_every_call`); the turn says it for an answer
+    written out as text, and on every other engine."""
+    why = refusal(reply)
+    said = ASK_AGAIN.format(why=f": {why}" if why else "")
+    return list(messages) + [
+        {"role": "assistant",
+         "content": list(getattr(reply, "content", None) or [])
+         or [text_block("")]},
+        user(text_block(said))]
+
+
+def _asks_again(messages: Sequence[Dict[str, Any]]) -> bool:
+    """Whether a request ends with :func:`ask_again`'s turn."""
+    if not messages or messages[-1].get("role") != "user":
+        return False
+    head = ASK_AGAIN.split("{why}", 1)[0]
+    content = messages[-1].get("content")
+    blocks = [content] if isinstance(content, str) else list(content or [])
+    return any((b if isinstance(b, str) else
+                b.get("text", "") if isinstance(b, dict) else "")
+               .startswith(head) for b in blocks)
+
+
 #: How a request that came back with an error is filed (BACKLOG RI-21):
 #: the provider's "too many requests"; a parameter the deployment refused;
 #: a request too large for the gateway or the model's context; no answer
@@ -896,6 +953,12 @@ class CostMeter:
     later attempt, so the attempt is filed under its own call even when
     another call's rows were recorded in between.
 
+    A CALL THAT ASKS AGAIN for an answer the call before it did not give
+    (:func:`ask_again`, BACKLOG RI-195) is a call like any other, in
+    ``calls`` and the tokens; its row says ``asked_again`` and
+    :attr:`asked_again` counts them (in :meth:`to_dict` only when there
+    were any).
+
     Recording never stands in the way of the call it records: an error
     whose text or body will not read is recorded with what can be read, and
     anything else that goes wrong while recording is logged and dropped, so
@@ -926,6 +989,7 @@ class CostMeter:
         self.failed_by_kind: Dict[str, int] = {}
         self.waited_seconds = 0.0
         self.paced_seconds = 0.0
+        self.asked_again = 0
         self.adaptations: List[str] = []
         self.per_call: List[Dict[str, Any]] = []
         self._call_no = 0
@@ -1000,16 +1064,19 @@ class CostMeter:
             started: Optional[float] = None,
             duration: Optional[float] = None,
             paced: float = 0.0,
-            call_no: Optional[int] = None) -> Dict[str, Any]:
+            call_no: Optional[int] = None,
+            asked_again: bool = False) -> Dict[str, Any]:
         """A reply. Returns its :attr:`per_call` row, for a note the engine
         has only after reading the reply. Safe from several threads at once
         (:data:`_METER_LOCK`). ``started``, ``duration``, ``paced``,
-        ``call_no``: see :meth:`_entry`."""
+        ``call_no``: see :meth:`_entry`; ``asked_again``: the request asked
+        again for an answer (:func:`ask_again`)."""
         with _METER_LOCK:
             return self._add(model, usage, seconds, served_by,
                              attempt=attempt, stop=stop, adapted=adapted,
                              started=started, duration=duration,
-                             paced=paced, call_no=call_no)
+                             paced=paced, call_no=call_no,
+                             asked_again=asked_again)
 
     def _add(self, model: str, usage: Usage, seconds: float,
              served_by: Optional[str] = None, *, attempt: int = 1,
@@ -1017,8 +1084,10 @@ class CostMeter:
              started: Optional[float] = None,
              duration: Optional[float] = None,
              paced: float = 0.0,
-             call_no: Optional[int] = None) -> Dict[str, Any]:
+             call_no: Optional[int] = None,
+             asked_again: bool = False) -> Dict[str, Any]:
         self.calls += 1
+        self.asked_again += 1 if asked_again else 0
         self.seconds += float(seconds)
         priced_as = served_by if price_for(served_by or "") else model
         cost = usage.dollars(priced_as)
@@ -1042,6 +1111,8 @@ class CostMeter:
             entry["outcome"] = "reply"
             if stop:
                 entry["stop"] = _reason(stop)
+            if asked_again:
+                entry["asked_again"] = True
             return entry
         except Exception:                   # noqa: BLE001 - see the class
             logging.getLogger(__name__).warning(
@@ -1199,10 +1270,14 @@ class CostMeter:
         # pacer writes the cost block it always wrote.
         paced = ({"paced_seconds": round(self.paced_seconds, 1)}
                  if self.paced_seconds else {})
+        # Likewise only when a call asked again for an answer (RI-195).
+        again = ({"asked_again": self.asked_again} if self.asked_again
+                 else {})
         return {
             "calls": self.calls,
             "failed": self.failed,
             "retried": self.retried,
+            **again,
             "failed_by_kind": dict(self.failed_by_kind),
             "tokens_in": self.tokens_in,
             "input_tokens": self.input_tokens,
@@ -1748,7 +1823,8 @@ class ClaudeEngine:
         )
         self.meter.add(self.model, usage, seconds,
                        stop=str(getattr(response, "stop_reason", "") or ""),
-                       started=call.sent, duration=took, paced=call.paced)
+                       started=call.sent, duration=took, paced=call.paced,
+                       asked_again=_asks_again(msgs))
         blocks = self._from_provider(response.content)
         return Reply(
             text="".join(b["text"] for b in blocks if b["type"] == "text"),
@@ -2353,9 +2429,10 @@ class PrompterEngine:
         seconds = self._clock() - call.began
         took = call.took()
         call.came_back()
+        again = {"asked_again": True} if _asks_again(msgs) else {}
         return self._reply(raw, output_format, seconds,
                            timing={"started": call.sent, "duration": took,
-                                   "paced": call.take_paced()},
+                                   "paced": call.take_paced(), **again},
                            call=call)
 
     def _reply(self, raw: Any, output_format: Any, seconds: float,
@@ -2576,7 +2653,9 @@ class ChatModelEngine:
     is no answer. An answer sent as the only key, one the schema does not
     have, is unwrapped and the wrapper named (:func:`_validate`); a list or
     an object sent as JSON text is read as the JSON it holds, and named
-    (BACKLOG RI-192). An unknown
+    (BACKLOG RI-192); the model's own parameter markup inside a value is
+    taken out and the fields it hid put back where that is whole and
+    validates, and named (:func:`_mend_markup`, BACKLOG RI-195). An unknown
     key BESIDE fields of the answer is a stray, however much it looks like
     the answer: dropped, never merged in, and named when it held an object
     naming fields of the answer. When the engine changed an answer, did not
@@ -2896,11 +2975,12 @@ class ChatModelEngine:
         seconds = self._clock() - call.began
         took = call.took()
         call.came_back()
+        again = {"asked_again": True} if _asks_again(msgs) else {}
         return self._reply(message, output_format, seconds,
                            adapted=lessons,
                            timing={"started": call.sent, "duration": took,
                                    "paced": call.take_paced(),
-                                   **self._again(call)})
+                                   **self._again(call), **again})
 
     @staticmethod
     def _again(call: _Request) -> Dict[str, Any]:
@@ -2959,15 +3039,16 @@ class ChatModelEngine:
             for call_id, args in offered:
                 strays: List[Tuple[str, List[str]]] = []
                 if cut:
-                    answer, dropped, why, wrappers, decoded = (
-                        None, [], _CUT_ANSWER, [], [])
+                    answer, dropped, why, wrappers, decoded, markup = (
+                        None, [], _CUT_ANSWER, [], [], [])
                 else:
-                    answer, dropped, why, wrappers, decoded = _validate(
-                        output_format, args)
-                    strays = _stray_objects(output_format, args)
+                    answer, dropped, why, wrappers, decoded, markup = \
+                        _validate(output_format, args)
+                    strays = _stray_objects(output_format, _mended(args))
                 notes.extend(_answer_notes(answer, dropped, why, wrappers,
-                                           strays, decoded))
-                if wrappers or dropped or strays or decoded or answer is None:
+                                           strays, decoded, markup))
+                if (wrappers or dropped or strays or decoded or markup
+                        or answer is None):
                     raw.append(_raw_args(args))
                 if answer is not None and parsed is None:
                     parsed = answer
@@ -2975,7 +3056,7 @@ class ChatModelEngine:
                     verdicts[call_id] = "" if answer is not None else why
             if parsed is None and text and not cut:
                 found = _json_in(text)
-                answer, dropped, why, wrappers, decoded = _validate(
+                answer, dropped, why, wrappers, decoded, markup = _validate(
                     output_format, found)
                 # Text that is no answer at all is a reply, not a refusal;
                 # an answer written out as text is noted like a call's. JSON
@@ -2984,10 +3065,11 @@ class ChatModelEngine:
                 named = _names_a_field(output_format, found)
                 tried = answer is not None or dropped or wrappers or named
                 if tried and (answer is not None or not wanted or named):
-                    strays = _stray_objects(output_format, found)
+                    strays = _stray_objects(output_format, _mended(found))
                     notes.extend(_answer_notes(answer, dropped, why,
-                                               wrappers, strays, decoded))
-                    if (wrappers or dropped or strays or decoded
+                                               wrappers, strays, decoded,
+                                               markup))
+                    if (wrappers or dropped or strays or decoded or markup
                             or answer is None):
                         raw.append(_raw_args(found))
                     parsed = answer
@@ -3224,10 +3306,11 @@ def _without_nulls(value: Any) -> Any:
 
 
 def _validate(output_format: Any, args: Any
-              ) -> Tuple[Any, List[str], str, List[str], List[str]]:
+              ) -> Tuple[Any, List[str], str, List[str], List[str],
+                         List[str]]:
     """``args`` as an ``output_format``: ``(answer, keys dropped, why not,
-    wrappers taken off, fields read from JSON text)``, the answer None when
-    there is none.
+    wrappers taken off, fields read from JSON text, notes on the model's
+    parameter markup)``, the answer None when there is none.
 
     * Empty arguments are no answer. Foundry's classes hand back ``{}`` for
       a call cut mid-arguments, and many reading schemas accept ``{}``.
@@ -3251,6 +3334,15 @@ def _validate(output_format: Any, args: Any
       model-first calc calls sent ``"inputs": "[{...}]"``) is read as the
       JSON it holds (:func:`_json_text`), named, and the answer validated
       again. Any other error stands.
+    * The model's own tool-call markup inside a value (BACKLOG RI-195: on
+      Claude through Foundry, ``"pit": "null</pit>\\n<parameter
+      name=\\"remarks\\">..."`` and ``"inputs": "<parameter name=\\"0\\">
+      {...}"`` with the list's later items as keys "1", "2", ...) is taken
+      out and the fields put back (:func:`_mend_markup`), and that answer
+      is tried first, whether or not the answer as it came would validate:
+      one that does can hold one field's words in another. Where the
+      mended answer does not validate, or cannot be mended whole, the
+      answer as it came is tried, and the notes say so.
     * What is left once unknown keys are dropped -- or passed over, on a
       schema that ignores them -- must still say something. Left empty, or
       with every field at its default, it is no answer: the keys dropped
@@ -3268,50 +3360,61 @@ def _validate(output_format: Any, args: Any
         try:
             args = json.loads(args)
         except (json.JSONDecodeError, ValueError):
-            return None, [], "its arguments are not JSON", [], []
+            return None, [], "its arguments are not JSON", [], [], []
     if not isinstance(args, dict):
-        return None, [], "it is not a JSON object", [], []
+        return None, [], "it is not a JSON object", [], [], []
     if not args:
-        return None, [], "it arrived empty", [], []
+        return None, [], "it arrived empty", [], [], []
     args, wrappers = _unwrapped(output_format, args)
+    mended, fixes, faults = _mend_markup(args)
+    # The mended answer first, then the answer as it came.
+    tries = ([(mended, True)] if fixes and not faults else []) \
+        + [(args, False)]
     why = ""
-    for candidate in (args, _without_nulls(args)):
-        dropped: List[str] = []
-        decoded: List[str] = []
-        for _ in range(6):
-            try:
-                answer = output_format.model_validate(candidate)
-            except Exception as exc:                     # noqa: BLE001
-                errors = _errors_of(exc)
-                why = ("it does not match the schema ("
-                       + _error_text(exc, errors) + ")")
-                extra = [tuple(e.get("loc") or ()) for e in errors
-                         if e.get("type") == "extra_forbidden"]
-                texts = [tuple(e.get("loc") or ()) for e in errors
-                         if e.get("type") in _JSON_TEXT_ERRORS
-                         and isinstance(e.get("input"), str)]
-                if extra:
-                    candidate, removed = _drop_keys(candidate, extra)
-                    if removed:
-                        dropped.extend(removed)
-                        if not candidate:
-                            return (None, dropped, _emptied(dropped),
-                                    wrappers, decoded)
-                        continue
-                if texts:
-                    candidate, read = _read_json_text(candidate, texts)
-                    if read:
-                        decoded.extend(read)
-                        continue
-                break
-            else:
-                passed = _passed_over(output_format, candidate)
-                if (dropped or passed) and _says_nothing(output_format,
-                                                         candidate, answer):
-                    return (None, dropped, _emptied(dropped, passed),
-                            wrappers, decoded)
-                return answer, dropped, "", wrappers, decoded
-    return None, [], why, wrappers, []
+    for base, is_mended in tries:
+        for candidate in (base, _without_nulls(base)):
+            dropped: List[str] = []
+            decoded: List[str] = []
+            for _ in range(6):
+                try:
+                    answer = output_format.model_validate(candidate)
+                except Exception as exc:                 # noqa: BLE001
+                    errors = _errors_of(exc)
+                    why = ("it does not match the schema ("
+                           + _error_text(exc, errors) + ")")
+                    extra = [tuple(e.get("loc") or ()) for e in errors
+                             if e.get("type") == "extra_forbidden"]
+                    texts = [tuple(e.get("loc") or ()) for e in errors
+                             if e.get("type") in _JSON_TEXT_ERRORS
+                             and isinstance(e.get("input"), str)]
+                    if extra:
+                        candidate, removed = _drop_keys(candidate, extra)
+                        if removed:
+                            dropped.extend(removed)
+                            if not candidate:
+                                return (None, dropped, _emptied(dropped),
+                                        wrappers, decoded, _markup_notes(
+                                            fixes, faults, is_mended, False))
+                            continue
+                    if texts:
+                        candidate, read = _read_json_text(candidate, texts)
+                        if read:
+                            decoded.extend(read)
+                            continue
+                    break
+                else:
+                    passed = _passed_over(output_format, candidate)
+                    if (dropped or passed) and _says_nothing(
+                            output_format, candidate, answer):
+                        return (None, dropped, _emptied(dropped, passed),
+                                wrappers, decoded, _markup_notes(
+                                    fixes, faults, is_mended, False))
+                    markup = _markup_notes(fixes, faults, is_mended, True)
+                    if is_mended or not (fixes or faults):
+                        markup += _markup_left(answer)
+                    return answer, dropped, "", wrappers, decoded, markup
+    return None, [], why, wrappers, [], _markup_notes(fixes, faults, False,
+                                                      False)
 
 
 #: The validation errors of a field that wants a list or an object, which a
@@ -3385,6 +3488,242 @@ def _read_json_text(value: Dict[str, Any],
     return out, read
 
 
+# -- the model's own parameter markup inside an answer (BACKLOG RI-195) -----
+
+#: Where the model's own tool-call markup opens a parameter inside a value:
+#: ``<parameter name="remarks">``, ``<parameter name="0">``.
+_MARKUP_OPEN = re.compile(r'<parameter name="([^"<>\n]{1,80})">')
+#: A closing tag of that markup at the end of a piece: ``</pit>``,
+#: ``</parameter>``.
+_MARKUP_CLOSE = re.compile(r"</([A-Za-z_][\w.:-]{0,79})>\s*$")
+
+
+def _at(path: str, key: Any) -> str:
+    """A dotted path one step further, as the notes name a field."""
+    return f"{path}.{key}" if path else str(key)
+
+
+def _markup_parts(text: str, own: str
+                  ) -> Optional[Tuple[str, List[Tuple[str, str]]]]:
+    """``(the words before the markup, [(parameter name, its words), ...])``
+    for a value that carries the model's own parameter markup; None for one
+    that carries none.
+
+    Each piece loses the whitespace round it and the closing tag that ended
+    it: any closing tag right before an opening one, and at the end of the
+    value only one named for its own parameter or ``parameter``, so a value
+    whose own words end in a tag keeps it. A value with no opening tag but
+    its own closing tag at its end (``"B-1</exploration>"``) is the words
+    before the tag, with no pieces."""
+    found = list(_MARKUP_OPEN.finditer(text))
+
+    def piece(words: str, name: str, last: bool) -> str:
+        words = words.strip()
+        close = _MARKUP_CLOSE.search(words)
+        if close and (not last or close.group(1) in (name, "parameter")):
+            words = words[:close.start()].rstrip()
+        return words
+
+    if not found:
+        close = _MARKUP_CLOSE.search(text)
+        if close and close.group(1) in (own, "parameter"):
+            return piece(text, own, last=True), []
+        return None
+    head = piece(text[:found[0].start()], own, last=False)
+    parts = []
+    for n, match in enumerate(found):
+        last = n + 1 == len(found)
+        end = len(text) if last else found[n + 1].start()
+        parts.append((match.group(1),
+                      piece(text[match.end():end], match.group(1), last)))
+    return head, parts
+
+
+def _markup_value(words: str) -> Any:
+    """One piece of markup as the value it stands for: ``null`` as None, a
+    list or an object as the JSON it holds (:func:`_json_text`), anything
+    else as its words, which the schema reads as it reads any text (a
+    number field takes ``"4.5"``)."""
+    if words == "null":
+        return None
+    held, _braces = _json_text(words)
+    return words if held is None else held
+
+
+def _blank(value: Any) -> bool:
+    """Whether a field holds nothing a mended field could take the place
+    of."""
+    return value is None or value == "" or value == [] or value == {}
+
+
+def _numbers(numbers: Sequence[int]) -> str:
+    shown = ", ".join(str(n) for n in numbers[:10])
+    return shown + (", ..." if len(numbers) > 10 else "")
+
+
+def _mend_markup(value: Any, path: str = ""
+                 ) -> Tuple[Any, List[str], List[str]]:
+    """``(value with the model's own parameter markup taken out, what was
+    put back, why it could not be)``, in every object at any depth; a copy,
+    ``value`` itself unchanged (BACKLOG RI-195).
+
+    On Claude through Foundry a model sometimes writes its own tool-call
+    markup inside a value, and the provider files what follows under the
+    field it was writing (MF-3: about 7 calls in 2,832). Two shapes:
+
+    * **A field swallowed into the one before it**: ``"pit": "null</pit>
+      \\n<parameter name=\\"remarks\\">Made-up words"`` is ``pit`` None and
+      ``remarks`` the words. Each piece is read as :func:`_markup_value`
+      reads it. A field the markup names that the object already holds,
+      not blank, is a fault: which of the two is the answer cannot be
+      told.
+    * **A list spilled into numbered keys**: ``"inputs": "<parameter
+      name=\\"0\\">{...}"`` with the list's later items as the object's
+      keys "1", "2", ... is the list, its items in order. A numbered key
+      belongs to the list whose markup came last before it; one before any
+      list's markup is a fault. The items must
+      be numbered 0, 1, 2, ... without a gap. Where two lists spilled, the
+      provider kept one value under each number, so the earlier list's
+      keys may hold the later list's items: unless only the last list has
+      numbered keys, that is a fault.
+
+    A list spilled inside a value's own words (``"<parameter
+    name=\\"0\\">a</parameter><parameter name=\\"1\\">b"``) is read the
+    same way. Any fault, and the caller takes nothing from the mending:
+    an answer half put back is not the answer the model gave."""
+    fixes: List[str] = []
+    faults: List[str] = []
+    return _mend_node(value, path, fixes, faults), fixes, faults
+
+
+def _mend_node(node: Any, path: str, fixes: List[str],
+               faults: List[str]) -> Any:
+    if isinstance(node, list):
+        return [_mend_node(v, _at(path, n), fixes, faults)
+                for n, v in enumerate(node)]
+    if not isinstance(node, dict):
+        return node
+    out = {key: _mend_node(v, _at(path, key), fixes, faults)
+           for key, v in node.items()}
+    split = {key: _markup_parts(v, str(key)) for key, v in out.items()
+             if isinstance(v, str)}
+    split = {key: parts for key, parts in split.items() if parts is not None}
+    if not split:
+        return out
+    # The lists: a value that opens with item 0. Each numbered key goes to
+    # the list whose markup came last before it.
+    carriers = [key for key, (head, parts) in split.items()
+                if not head and parts and parts[0][0] == "0"]
+    runs: Dict[Any, List[Any]] = {key: [] for key in carriers}
+    current = None
+    before: List[Any] = []
+    for key in out:
+        if key in runs:
+            current = key
+        elif str(key).isdigit() and key not in split:
+            (before if current is None else runs[current]).append(key)
+    if carriers and before:
+        faults.append(f"the numbered keys "
+                      f"{', '.join(_at(path, k) for k in before)} came "
+                      f"before any list's markup")
+    shared = [key for key in carriers[:-1] if runs[key]]
+    if shared:
+        faults.append(
+            f"{', '.join(_at(path, k) for k in carriers)} each spilled their "
+            f"items into the numbered keys, which the lists share, so one "
+            f"list's items may stand in the other's place")
+    for key, (head, parts) in split.items():
+        where = _at(path, key)
+        items = [(n, words) for n, words in parts if n.isdigit()]
+        named = [(n, words) for n, words in parts if not n.isdigit()]
+        if key in runs:
+            run = runs[key]
+            numbers = [int(n) for n, _ in items] + [int(k) for k in run]
+            if numbers != list(range(len(numbers))):
+                faults.append(f"{where}: its items are numbered "
+                              f"{_numbers(numbers)}, with a gap")
+                continue
+            out[key] = ([_markup_value(words) for _, words in items]
+                        + [out[k] for k in run])
+            for k in run:
+                del out[k]
+            fixes.append(f"{where} read as a list of {len(numbers)} item(s)"
+                         + (f", {len(run)} of them from the keys {run[0]} "
+                            f"to {run[-1]}" if run else ""))
+        elif items:
+            faults.append(f"{where}: numbered markup after its value")
+            continue
+        else:
+            out[key] = _markup_value(head)
+            if not named:
+                fixes.append(f"{where}: its closing tag taken off")
+        for name, words in named:
+            if name in out and not _blank(out[name]):
+                faults.append(f"{_at(path, name)} came both as its own key "
+                              f"and inside {where}")
+                continue
+            out[name] = _markup_value(words)
+        if named:
+            fixes.append(f"{where} split at the markup into {where} and "
+                         + ", ".join(_at(path, n) for n, _ in named))
+    return out
+
+
+def _mended(args: Any) -> Any:
+    """``args`` with the model's own parameter markup taken out where that
+    can be done whole (:func:`_mend_markup`); else ``args`` as they came."""
+    mended, fixes, faults = _mend_markup(args)
+    return mended if fixes and not faults else args
+
+
+def _markup_notes(fixes: Sequence[str], faults: Sequence[str],
+                  mended: bool, taken: bool) -> List[str]:
+    """The note on the model's parameter markup in one answer: put back
+    (``mended``: the answer validated is the mended one), not put back and
+    why, or put back but not matching the schema; ``taken``: the answer as
+    it came was taken all the same. None for an answer with no markup."""
+    if not (fixes or faults):
+        return []
+    if mended:
+        return ["the model's own parameter markup was taken out of the "
+                "answer and its fields put back: " + "; ".join(fixes)]
+    if faults:
+        said = ("the answer carries the model's own parameter markup, not "
+                "put back: " + "; ".join(faults))
+    else:
+        said = ("the answer carries the model's own parameter markup; put "
+                "back (" + "; ".join(fixes) + "), it does not match the "
+                "schema")
+    return [said + ("; the answer was taken as it came" if taken else "")]
+
+
+def _markup_left(answer: Any) -> List[str]:
+    """A note naming each value of a taken answer that still holds the
+    model's parameter markup (one inside a list of words, which
+    :func:`_mend_markup` leaves); none when no value does."""
+    try:
+        data = answer.model_dump(mode="json")
+    except Exception:                                    # noqa: BLE001
+        return []
+    found: List[str] = []
+
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for key, held in node.items():
+                walk(held, _at(path, key))
+        elif isinstance(node, list):
+            for n, held in enumerate(node):
+                walk(held, _at(path, n))
+        elif isinstance(node, str) and _MARKUP_OPEN.search(node):
+            found.append(path or "the answer")
+
+    walk(data, "")
+    if not found:
+        return []
+    return ["the model's own parameter markup is still in "
+            + ", ".join(found[:10]) + (", ..." if len(found) > 10 else "")]
+
+
 def _emptied(dropped: Sequence[str], passed: Sequence[str] = ()) -> str:
     """Why an answer that lost everything to its unknown keys is not
     taken: the keys dropped (a schema that forbids them) and the keys passed
@@ -3400,13 +3739,15 @@ def _emptied(dropped: Sequence[str], passed: Sequence[str] = ()) -> str:
 def _answer_notes(answer: Any, dropped: Sequence[str], why: str,
                   wrappers: Sequence[str],
                   strays: Sequence[Tuple[str, Sequence[str]]] = (),
-                  decoded: Sequence[str] = ()) -> List[str]:
-    """What the engine did with one answer, for :attr:`Reply.notes`: one
-    note for its wrappers however deep, one for each stray key that held an
-    object naming fields of the answer, one for the fields read from JSON
-    text (BACKLOG RI-192), one for the keys dropped, one if it was not
-    taken."""
-    notes = []
+                  decoded: Sequence[str] = (),
+                  markup: Sequence[str] = ()) -> List[str]:
+    """What the engine did with one answer, for :attr:`Reply.notes`: the
+    notes on the model's parameter markup (BACKLOG RI-195, from
+    :func:`_validate`), one note for its wrappers however deep, one for
+    each stray key that held an object naming fields of the answer, one for
+    the fields read from JSON text (BACKLOG RI-192), one for the keys
+    dropped, one if it was not taken."""
+    notes = list(markup)
     if decoded:
         notes.append("fields sent as JSON text were read as the JSON they "
                      "hold: " + ", ".join(decoded))
@@ -3423,7 +3764,7 @@ def _answer_notes(answer: Any, dropped: Sequence[str], why: str,
         notes.append("unknown keys dropped from the answer: "
                      + ", ".join(dropped))
     if answer is None:
-        notes.append(f"an answer was not taken: {why}")
+        notes.append(_NOT_TAKEN + why)
     return notes
 
 

@@ -1553,37 +1553,81 @@ def _checked(question: Question, answer: Answer, n_pages: int) -> Answer:
     return answer
 
 
-def _ask(engine: Any, call: str, asked: Sequence[Question], text: str,
-         record: Any, run: QuestionRun) -> Dict[str, Answer]:
-    """One call: the text, the answer schema of ``asked``. Its answers by
-    key; none when no structured answer came back (said in a warning)."""
-    from report_ingest.engine import text_block, user
+#: How much of a reply's prose a call's row keeps when it gave no answer
+#: and the engine kept no arguments.
+KEPT_TEXT_CHARS = 4000
 
-    if not asked:
-        return {}
-    schema = answer_schema(asked, "ScreeningAnswers" if call == "screening"
-                           else "QuestionAnswers")
-    reply = engine.complete([user(text_block(text))], output_format=schema)
+
+def _taken(engine: Any, reply: Any, schema: type, call: str,
+           n_questions: int, chars_sent: int, run: QuestionRun,
+           asked_again: bool = False) -> Optional[Any]:
+    """The answer one reply gave, as ``schema``, or None; its row goes on
+    ``run.calls`` (BACKLOG RI-195: with the engine's notes, and the
+    arguments as they came where the engine kept them, else the prose of a
+    reply that gave no answer)."""
     usage = getattr(reply, "usage", None)
-    run.calls.append({
+    row: Dict[str, Any] = {
         "call": call, "model": getattr(reply, "model", "")
         or str(getattr(engine, "name", "")),
-        "questions": len(asked), "stop_reason": getattr(reply, "stop_reason",
-                                                        ""),
+        "questions": n_questions,
+        "stop_reason": getattr(reply, "stop_reason", ""),
         "input_tokens": getattr(usage, "input_tokens", 0),
         "output_tokens": getattr(usage, "output_tokens", 0),
-        "chars_sent": len(text)})
+        "chars_sent": chars_sent}
+    if asked_again:
+        row["asked_again"] = True
+    run.calls.append(row)
     try:
         parsed = _from_reply(reply, schema)
     except ValidationError as exc:
         parsed = None
         run.warnings.append(f"the {call} call's answer did not fit the "
                             f"schema: {str(exc)[:300]}")
-    run.calls[-1]["answered"] = parsed is not None
+    row["answered"] = parsed is not None
+    notes = list(getattr(reply, "notes", None) or [])
+    if notes:
+        row["notes"] = notes
+    raw = list(getattr(reply, "raw_answers", None) or [])
+    if raw:
+        row["raw_answer"] = raw
+    elif parsed is None and str(getattr(reply, "text", "") or "").strip():
+        row["text"] = str(reply.text)[:KEPT_TEXT_CHARS]
+    return parsed
+
+
+def _ask(engine: Any, call: str, asked: Sequence[Question], text: str,
+         record: Any, run: QuestionRun) -> Dict[str, Answer]:
+    """One call: the text, the answer schema of ``asked``. Its answers by
+    key; none when no structured answer came back (said in a warning).
+
+    A reply with no answer that was not cut off is asked once more, told
+    why the engine did not take it (:func:`~report_ingest.engine.
+    ask_again`, BACKLOG RI-195: MF-3's main call on one report came back
+    refused whole and its rows lost every model answer). Each call's row in
+    ``run.calls`` keeps the engine's notes and, where the engine changed or
+    refused the answer, the arguments as they came (``raw_answer``), so the
+    shape of a refusal can be read off the run file."""
+    from report_ingest.engine import ask_again, text_block, user
+
+    if not asked:
+        return {}
+    schema = answer_schema(asked, "ScreeningAnswers" if call == "screening"
+                           else "QuestionAnswers")
+    messages = [user(text_block(text))]
+    reply = engine.complete(messages, output_format=schema)
+    parsed = _taken(engine, reply, schema, call, len(asked),
+                    len(text), run)
+    again = parsed is None and not getattr(reply, "cut_off", False)
+    if again:
+        reply = engine.complete(ask_again(messages, reply),
+                                output_format=schema)
+        parsed = _taken(engine, reply, schema, call, len(asked),
+                        len(text), run, asked_again=True)
     if parsed is None:
         run.warnings.append(
-            f"the {call} call gave no structured answer (stop_reason "
-            f"{getattr(reply, 'stop_reason', '')!r})")
+            f"the {call} call gave no structured answer"
+            + (", and none when asked again" if again else "")
+            + f" (stop_reason {getattr(reply, 'stop_reason', '')!r})")
         return {}
     n_pages = int(record.document.n_pages or 0)
     out = {}

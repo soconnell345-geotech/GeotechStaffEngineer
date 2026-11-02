@@ -42,8 +42,9 @@ a new sheet begins, if one does in the middle half of the pages; else at
 the middle page), and a half that still does not fit is halved again, down
 to one page (BACKLOG RI-191: halved only once, a cut-off laboratory group
 left 17 pages unread). A single page that still does not fit, and a call
-that gives no structured answer, each become a ``skipped`` entry naming
-the pages (``refused_by: "budget"``, which the reconciler files as
+that gives no structured answer even when asked once more with why it was
+not taken (BACKLOG RI-195), each become a ``skipped`` entry naming the
+pages (``refused_by: "budget"``, which the reconciler files as
 ``skipped``).
 
 A REQUEST OVER THE LIMIT (BACKLOG RI-121). Each reader takes
@@ -152,7 +153,7 @@ from pydantic import BaseModel
 from report_ingest.checks import (IMPOSSIBLE, LISTED, SURFACE_TOL_M, _noted,
                                   _on_call_pages, _span, as_read,
                                   ground_investigation, pdf_local)
-from report_ingest.engine import (estimate_tokens, pdf_block,
+from report_ingest.engine import (ask_again, estimate_tokens, pdf_block,
                                   picture_tokens_est, schema_tokens_est,
                                   text_block, user)
 from report_ingest.model_first import (READ_PROMPT_VERSION, _put_field,
@@ -202,7 +203,8 @@ _KEPT_TEXT = 2000
 class _Spent:
     """What one result's calls cost, in today's readers' ``cost`` shape, and
     how each call ended: a call that gave no answer keeps the engine's notes
-    and what came back (BACKLOG RI-192)."""
+    and what came back (BACKLOG RI-192), and a call that asked for it again
+    says so (BACKLOG RI-195)."""
 
     cost: Dict[str, Any] = field(default_factory=lambda: {
         "calls": 0, "input_tokens": 0, "output_tokens": 0,
@@ -216,7 +218,8 @@ class _Spent:
     over_limit: List[Dict[str, Any]] = field(default_factory=list)
 
     def charge(self, reply: Any, pages: Sequence[int],
-               estimated: Optional[int] = None) -> None:
+               estimated: Optional[int] = None,
+               asked_again: bool = False) -> None:
         self.cost["calls"] += 1
         self.cost["input_tokens"] += reply.usage.input_tokens
         self.cost["output_tokens"] += reply.usage.output_tokens
@@ -227,6 +230,10 @@ class _Spent:
         row = {"pages": list(pages), "stop_reason": reply.stop_reason,
                "cut_off": bool(reply.cut_off),
                "answered": reply.parsed is not None and not reply.cut_off}
+        if asked_again:
+            # The call that asked once more for the answer the call before
+            # it did not give (BACKLOG RI-195).
+            row["asked_again"] = True
         # What the engine did with the answer, and, where it took none,
         # what came back, so the run file says why (BACKLOG RI-192).
         notes = list(getattr(reply, "notes", None) or [])
@@ -454,8 +461,11 @@ class _Caller:
         too large to send, are asked again as two halves (:func:`_halves`
         at ``starts``), and each half that still does not fit is halved
         again, down to one page (BACKLOG RI-191); a single page that still
-        does not fit, and a call with no structured answer, are skipped
-        entries. ``split`` False asks the pages once, halving nothing.
+        does not fit is a skipped entry. A reply with no structured answer
+        that was not cut off is asked once more, told why the engine did not
+        take it (:func:`~report_ingest.engine.ask_again`, BACKLOG RI-195),
+        and is a skipped entry only if the second gives none either.
+        ``split`` False asks the pages once, halving nothing.
 
         Under a request limit (:attr:`limit`, RI-121) a request estimated
         over it is cut in two before it is sent, each half read as
@@ -497,13 +507,28 @@ class _Caller:
             reply = self.engine.complete([user(*blocks)],
                                          output_format=self.schema)
             spent.charge(reply, pages, size)
+            again = False
+            if not reply.cut_off and reply.parsed is None:
+                # Asked once more, told why the answer was not taken, as
+                # today's calc reader asks (BACKLOG RI-195): MF-3 lost two
+                # groups to an answer the model's own markup spoiled, which
+                # a second call would very likely have given whole.
+                again = True
+                messages = ask_again([user(*blocks)], reply)
+                reply = self.engine.complete(messages,
+                                             output_format=self.schema)
+                spent.charge(reply, pages, None if size is None else
+                             size + estimate_tokens(
+                                 messages[1:], picture=picture_tokens_est),
+                             asked_again=True)
             if not reply.cut_off and reply.parsed is not None:
                 return [(pages, _without_boxes(reply.parsed))], []
             if not reply.cut_off:
                 notes = "; ".join(getattr(reply, "notes", None) or [])
                 return [], [_skipped(self.stage, pages, (
-                    f"the call gave no structured answer (stop_reason "
-                    f"{reply.stop_reason!r}"
+                    f"the call gave no structured answer"
+                    + (", and none when asked again" if again else "")
+                    + f" (stop_reason {reply.stop_reason!r}"
                     + (f"; {notes[:300]}" if notes else "") + ")"))]
             why = (f"the reply stopped at its output cap (stop_reason "
                    f"{reply.stop_reason!r})")

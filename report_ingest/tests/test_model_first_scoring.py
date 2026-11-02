@@ -96,12 +96,14 @@ def test_a_call_that_raised_is_an_error_with_no_calls_in_the_arm(doc):
 
 
 def test_an_answer_in_prose_is_scored_as_an_error_with_its_call(doc):
-    engine = _engine([{"text": "Made-up words and no answer."}])
+    # Asked once more (RI-195), in prose again.
+    engine = _engine([{"text": "Made-up words and no answer."}] * 2)
     truth = {"id": "R00_p7", "pages": [7], "depth_unit": "m", "fields": {},
              "layers": [{"top": 0.0}], "samples": [], "water": []}
     _before, after, arm = mfs.first_log(truth, doc, engine, report_id="R00")
     assert after.error
-    assert [c["answered"] for c in arm["calls"]] == [False]
+    assert [c["answered"] for c in arm["calls"]] == [False, False]
+    assert arm["calls"][1]["asked_again"]
 
 
 def test_a_route_the_engine_cannot_send_is_refused(doc):
