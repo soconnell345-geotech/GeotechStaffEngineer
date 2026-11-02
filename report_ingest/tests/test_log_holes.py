@@ -538,6 +538,39 @@ class TestMissingHoles:
         assert entry.where == "items.boring_log.mf-log-4"
         assert entry.values == ["QX-2: page 5"] and entry.rank == "open"
 
+    def test_a_scanned_page_is_named_by_the_page_describer(self):
+        """RI-197: a scan has no text to read a hole name from; model first
+        hands in its page descriptions, and the exploration the describer
+        names stands in, its note after the name left out (RI-196)."""
+        doc = _Doc({4: _header("QX-1"), 5: [], 6: []})
+        described = {5: {"exploration": "Pit QX-2, made-up depth 1,20 m"},
+                     6: {"exploration": "QX-1"}}
+        (entry,) = missing_holes_qa(
+            doc, [_Item("log-4", "test_pit_log", [4, 5, 6])],
+            self._record("QX-1"), prefix="mf-", descriptions=described)
+        assert entry.values == [
+            "Pit QX-2 (the page describer's reading): page 5"]
+        assert entry.pages == [5]
+        assert missing_holes_qa(
+            doc, [_Item("log-4", "test_pit_log", [4, 5, 6])],
+            self._record("QX-1", "QX-02"), descriptions=described) == []
+
+    def test_the_text_layer_s_name_is_not_overruled_by_the_describer(self):
+        doc = _Doc({4: _header("QX-1")})
+        assert missing_holes_qa(
+            doc, [_Item("log-4", "boring_log", [4])], self._record("QX-1"),
+            descriptions={4: {"exploration": "QX-9"}}) == []
+
+    def test_without_descriptions_a_scan_is_not_listed_as_today(self):
+        doc = _Doc({5: []})
+        assert missing_holes_qa(
+            doc, [_Item("log-5", "test_pit_log", [5])],
+            self._record("QX-1")) == []
+        # A description saved before the describer gave the field.
+        assert missing_holes_qa(
+            doc, [_Item("log-5", "test_pit_log", [5])], self._record("QX-1"),
+            descriptions={5: {"identifiers": ["QX-2"]}}) == []
+
 
 # ---------------------------------------------------------------------------
 # another hole's rows (RI-145)

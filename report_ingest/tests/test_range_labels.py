@@ -773,7 +773,11 @@ def test_the_describer_names_the_exploration_a_page_logs():
     """RI-87: the hole a log page belongs to is the describer's to name, so
     grouping needs no list of ways reports print one."""
     assert "exploration:" in rl.DESCRIBE_SYSTEM
-    assert rl.DESCRIBE_PROMPT_VERSION == "ri73-3"
+    assert rl.DESCRIBE_PROMPT_VERSION == "ri73-4"
+    # RI-196: the field is the name alone; a note after it is the summary's.
+    assert "name alone" in rl.DESCRIBE_SYSTEM
+    assert "name alone" in rl.PageDescription.model_fields[
+        "exploration"].description
     assert _description(exploration="QX-7").exploration == "QX-7"
     answer = {"title": "", "kind": "made-up page", "summary": "made up"}
     assert rl.PageDescription(**answer).exploration == ""
