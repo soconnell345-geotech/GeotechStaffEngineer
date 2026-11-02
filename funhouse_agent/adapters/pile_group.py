@@ -455,7 +455,7 @@ TENSION_PILES = "piles in tension"
 
 def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
                        uplift_load=None, method="group_uplift",
-                       group_piles=None, cap_share=None):
+                       group_piles=None, cap_share=None, over=None):
     """The group's uplift resistance (``group_uplift_resistance``) on a
     block B x Z at the toes (m, to the outer pile faces) from ``params``'
     :data:`UPLIFT_BLOCK_PARAMS`, as (results, choices): the block, its
@@ -467,7 +467,8 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
     of a larger group, ``group_piles`` piles under the cap (the small-group
     rule counts them), and takes that share of ``cap_weight``, the whole
     cap's, as GEC-12 Vol. III p. 207 takes the cap over the back row in
-    tension."""
+    tension. ``over`` names those piles in the block's choice (GM-289
+    review 2: the outer row of them), else 'the n piles in tension'."""
     from geotech_common.choices import MODULE, choice, how_given
     from pile_group.group_efficiency import (
         group_uplift_resistance, small_group_reduction, GROUP_UPLIFT_PHI,
@@ -594,7 +595,7 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
                  "material and the soil may be neglected by treating all "
                  "materials as having the unit weight of soil'")
     if part:
-        block = f"over the {n_piles} piles in tension: " + block
+        block = f"over {over or f'the {n_piles} piles in tension'}: " + block
     choices.append(choice(
         "group uplift block", block,
         how_given(soil_type, None, "soil_type"),

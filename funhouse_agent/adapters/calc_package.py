@@ -2191,7 +2191,11 @@ def _package_group_uplift(run, used, result, analysis, extra, d) -> None:
     GEC-12 Sec. 7.2.3.2), as the group_uplift tool checks it, on the piles
     the run took: over the piles in tension, as GEC-12 Vol. III checks the
     back row in tension of a group in compression (pp. 51, 203), their
-    summed tension the load; and over the whole group in net tension
+    summed tension the load; over the outer row of them, the outer two
+    rows and so on from the most-tensioned edge inward (review 2: the
+    block over the outer row can fail where the block over two rows
+    passes), each its own summed tension; and over the whole group in net
+    tension
     (Vz < 0), the net uplift the load (Ch. 7). The block at the toes to the
     outer faces of the outer piles (their plan extent plus the diameter),
     the piles' sum from their axial_capacity_tension (each pile's factored
@@ -2237,19 +2241,54 @@ def _package_group_uplift(run, used, result, analysis, extra, d) -> None:
         sub = [piles[i] for i in idx]
         xs, ys = [p.x for p in sub], [p.y for p in sub]
         caps = [p.axial_capacity_tension for p in sub]
+        part = len(sub) < n
         out, choices = group_uplift_check(
             max(xs) - min(xs) + d, max(ys) - min(ys) + d, len(sub), inputs,
             piles_resistance=sum(caps) if all(caps) else None,
             uplift_load=load, method="pile_group_package", group_piles=n,
-            cap_share=None if len(sub) == n else len(sub) / n)
+            cap_share=len(sub) / n if part else None,
+            over=over if part else None)
         out["over"] = over
         return out, choices
 
-    checks, notes, choices = [], [], []
+    tol = 1e-6
+    tension = analysis["group_uplift_tension"]["tension_kN"]
+
+    def outer_rows():
+        """The rows of piles in tension from an edge inward (GM-289 review
+        2): every pile beyond a line parallel to a side of the group, while
+        each carries tension, and more on average than all the piles in
+        tension carry, so a block over the most-tensioned rows is checked
+        as well as the block over all of them."""
+        found = {}
+        for axis in ("x", "y"):
+            for sign in (1.0, -1.0):
+                lines = sorted({round(sign * getattr(p, axis), 6)
+                                for p in piles}, reverse=True)
+                for j in range(1, len(lines)):
+                    idx = [i for i, p in enumerate(piles)
+                           if sign * getattr(p, axis) >= lines[j - 1] - tol]
+                    if any(forces[i] >= 0 for i in idx):
+                        break
+                    load = -sum(forces[i] for i in idx)
+                    key = tuple(idx)
+                    if len(idx) < 2 or len(idx) == k or key in found \
+                            or load / len(idx) <= (tension / k) * (1 + tol):
+                        continue
+                    found[key] = (load, (
+                        f"the outer row of {len(idx)} piles in tension"
+                        if j == 1 else f"the outer {j} rows, {len(idx)} "
+                        f"piles in tension"))
+        # the most-tensioned rows first
+        return sorted(found.items(), key=lambda kv: -kv[1][0] / len(kv[0]))
+
+    checks, notes, choices, part_checks = [], [], [], []
+    if k >= 2:
+        for idx, (load, over) in outer_rows():
+            part_checks.append(check(list(idx), load, over))
     if 0 < k < n:
         sub = [piles[i] for i in tens]
         xs, ys = [p.x for p in sub], [p.y for p in sub]
-        tol = 1e-6
         inside = [i for i, p in enumerate(piles)
                   if min(xs) - tol <= p.x <= max(xs) + tol
                   and min(ys) - tol <= p.y <= max(ys) + tol]
@@ -2265,13 +2304,18 @@ def _package_group_uplift(run, used, result, analysis, extra, d) -> None:
                 f"would count soil those piles hold down). Check a rectangle "
                 f"of piles in tension with group_uplift.")
         else:
-            out, ch = check(tens, analysis["group_uplift_tension"][
-                "tension_kN"], f"the {k} piles in tension")
-            checks.append(out)
-            choices += ch
+            part_checks.append(check(tens, tension,
+                                     f"the {k} piles in tension"))
+    checks += [out for out, _ in part_checks]
+    if part_checks:
+        # the Method Choices of the block over part of the group that
+        # governs, the highest utilization, else the first
+        ranked = [pc for pc in part_checks
+                  if pc[0].get("group_uplift_utilization") is not None]
+        choices += (max(ranked, key=lambda pc: pc[0][
+            "group_uplift_utilization"]) if ranked else part_checks[0])[1]
     if Vz < 0 or k == n:
-        out, ch = check(list(range(n)), -Vz if Vz < 0 else
-                        analysis["group_uplift_tension"]["tension_kN"],
+        out, ch = check(list(range(n)), -Vz if Vz < 0 else tension,
                         "the whole group")
         checks.append(out)
         choices += ch
@@ -2279,7 +2323,7 @@ def _package_group_uplift(run, used, result, analysis, extra, d) -> None:
     if notes:
         analysis["group_uplift_notes"] = notes
     if checks:
-        # the check with the higher utilization, else the first
+        # the check with the highest utilization, else the first
         ranked = [c for c in checks
                   if c.get("group_uplift_utilization") is not None]
         top = (max(ranked, key=lambda c: c["group_uplift_utilization"])
@@ -3420,7 +3464,7 @@ METHOD_INFO = {
     "pile_group_package": {
         "category": "Calculation Package",
         "brief": "Run rigid-cap pile group analysis (CPGA stiffness method) and generate calc package; with method_6dof, tables (CSV + printed) of the force and displacement at every pile head.",
-        "returns": {**_COMMON_RETURNS, "n_piles": "Number of piles.", "group_efficiency": "The group efficiency factor eta_g (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26; with n_rows, n_cols, spacing, pile_diameter and soil_type), else null.", "group_efficiency_row": "The printed row eta_g was read from.", "group_uplift_resistance_kN": "Only when a pile carries tension: the factored uplift resistance, the lesser of the piles' sum and the block (GEC-12 Sec. 7.2.3.2), as the group_uplift tool returns it, of the piles in tension (as GEC-12 Vol. III checks the back row in tension of a group in compression; their summed tension the load) or of the whole group in net tension (Vz < 0; the net uplift the load), with group_uplift_block_kN, group_uplift_phi, group_uplift_block_factored_kN, piles_tension_resistance_kN, group_uplift_governs, uplift_load_kN, group_uplift_utilization and group_uplift_adequate; group_uplift_over says which (the higher utilization), group_uplift_checks gives both when there are two.", "group_uplift_note": "Piles in tension: what the check needs or could not do; report it."},
+        "returns": {**_COMMON_RETURNS, "n_piles": "Number of piles.", "group_efficiency": "The group efficiency factor eta_g (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26; with n_rows, n_cols, spacing, pile_diameter and soil_type), else null.", "group_efficiency_row": "The printed row eta_g was read from.", "group_uplift_resistance_kN": "Only when a pile carries tension: the factored uplift resistance, the lesser of the piles' sum and the block (GEC-12 Sec. 7.2.3.2), as the group_uplift tool returns it, of the piles in tension (as GEC-12 Vol. III checks the back row in tension of a group in compression; their summed tension the load), of the outer row of them, the outer two rows and so on from the most-tensioned edge inward (each its own summed tension), or of the whole group in net tension (Vz < 0; the net uplift the load), with group_uplift_block_kN, group_uplift_phi, group_uplift_block_factored_kN, piles_tension_resistance_kN, group_uplift_governs, uplift_load_kN, group_uplift_utilization and group_uplift_adequate; group_uplift_over says which governs (the highest utilization), group_uplift_checks gives each check when there is more than one.", "group_uplift_note": "Piles in tension: what the check needs or could not do; report it."},
     },
     "sheet_pile_package": {
         "category": "Calculation Package",

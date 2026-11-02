@@ -247,7 +247,38 @@ Review fix, the piles in tension of a group in compression (made-up):
   keys, each with piles in tension (74 rigid-cap calls and 2 packages at Vz
   0, My 400). No group without a pile in tension moved.
 
+## Review fix round 2 (gm285-review): the outer rows
+
+- **Finding.** Where two or more rows carry tension, the package checked
+  one block over all of them, never the outer row alone, so a bigger
+  moment could pass where a smaller one failed. The review's made-up 4 × 9
+  group (spacing 1.5 m along the rows, 1.2 m across, 0.3 m piles, 8 m in
+  sand at 9 kN/m³, Vz 3,600 kN, 250 kN a pile in tension): at Mx 10,700
+  kN·m only the outer row carries tension, its block fails at 1.44; at Mx
+  10,900 kN·m the second row goes to −0.9 kN a pile, the check widened to
+  both rows and passed at 0.99.
+- **Now.** The package also checks the outer row of the piles in tension,
+  the outer two rows and so on from the most-tensioned edge inward: every
+  pile beyond a line parallel to a side of the group, while each carries
+  tension and more on average than all the piles in tension, each set its
+  own summed tension, capacities and cap share k/n. The highest
+  utilization governs (`group_uplift_over` names the set, and
+  `group_uplift_checks` lists each). The Method Choices give the governing
+  partial block's choices.
+- **After the fix**, the same group: Mx 10,700 kN·m, the outer row (the 9
+  piles in tension), 1,775 kN against 1,232.0 kN, 1.441 (unchanged); Mx
+  10,900 kN·m, the outer row 1,825 kN against 1,232.0 kN, **1.481,
+  governs**, the 18 piles in tension 1,833 kN against 1,849.8 kN, 0.991.
+  The earlier net-uplift case (3 × 3, Vz −300 kN, My 1,200 kN·m) now
+  checks the outer row of three as well (600 kN against the piles' 600
+  kN, 1.0, governs over the six's 0.583). A group with one row in tension
+  is unchanged (the outer row is the piles in tension).
+
 ## Noted, not fixed
+
+- gm285-review's point on the cap's share where three or more rows carry
+  tension: the share stays k/n by the count of piles (the tributary area
+  of evenly spaced piles).
 
 - A pile in tension by a fraction of a kN (a moment on an unloaded group)
   gets the note and the section like any other.

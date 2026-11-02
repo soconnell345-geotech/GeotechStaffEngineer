@@ -220,18 +220,59 @@ def test_package_north_abutment_back_row(tmp_path, monkeypatch):
 def test_package_net_uplift_with_a_row_in_tension_checks_both(
         tmp_path, monkeypatch):
     """Vz -300 kN, My 1,200 kN-m: six piles in tension (700 kN), the group
-    in net uplift (300 kN). The six, B = 1.6 m, Z = 2.8 m, their 1,200 kN
-    governing: 0.583; the whole group: 300 / 1,800 = 0.167."""
+    in net uplift (300 kN). The outer row of three at x = -1.2 m (200 kN a
+    pile), their 600 kN governing: 1.0 (review 2); the six, B = 1.6 m, Z =
+    2.8 m, their 1,200 kN governing: 0.583; the whole group: 300 / 1,800 =
+    0.167."""
     r, html = _package(tmp_path, monkeypatch, Vz=-300.0, My=1200.0,
                        cap_weight=900.0, **SAND)
     over = {c["over"]: c for c in r["group_uplift_checks"]}
-    assert set(over) == {"the 6 piles in tension", "the whole group"}
+    assert list(over) == ["the outer row of 3 piles in tension",
+                          "the 6 piles in tension", "the whole group"]
+    assert over["the outer row of 3 piles in tension"][
+        "group_uplift_utilization"] == pytest.approx(1.0, abs=0.001)
     assert over["the 6 piles in tension"]["group_uplift_utilization"] == \
         pytest.approx(0.583, abs=0.001)
     assert over["the whole group"]["group_uplift_utilization"] == \
         pytest.approx(0.167, abs=0.001)
-    assert r["group_uplift_over"] == "the 6 piles in tension"
-    assert "600.0 kN, 6/9 of the cap&#39;s 900 kN" in html         or "600.0 kN, 6/9 of the cap's 900 kN" in html
+    assert r["group_uplift_over"] == "the outer row of 3 piles in tension"
+    assert r["group_uplift_governs"] == "individual piles"
+    assert "300.0 kN, 3/9 of the cap&#39;s 900 kN" in html \
+        or "300.0 kN, 3/9 of the cap's 900 kN" in html
+
+
+def test_package_the_outer_row_where_two_rows_carry_tension(tmp_path,
+                                                            monkeypatch):
+    """GM-289 review 2, the review's made-up group: 4 x 9 piles, Vz 3,600
+    kN, 8 m in sand at 9 kN/m3. At Mx 10,700 kN-m only the outer row
+    carries tension, its block (B = 0.3 m, Z = 12.3 m) 1,232.0 kN against
+    1,775 kN: 1.44. At Mx 10,900 kN-m the second row carries 0.9 kN a pile:
+    the block over both rows, B = 1.5 m, Z = 12.3 m, V = 147.60 + 220.80 +
+    42.67 = 411.07 m3, 0.50 x 3,699.6 = 1,849.8 kN against 1,833 kN, passes
+    (0.99), while the outer row's block still fails (1.48) and governs."""
+    group = dict(n_rows=4, n_cols=9, spacing_x=1.5, spacing_y=1.2,
+                 spacing=None, pile_diameter=0.3, Vz=3600.0,
+                 axial_capacity_tension=250.0, pile_length=8.0,
+                 soil_type="cohesionless", unit_weight=9.0)
+    r, _ = _package(tmp_path, monkeypatch, Mx=10700.0, **group)
+    assert r["group_uplift_over"] == "the 9 piles in tension"
+    assert r["group_uplift_utilization"] == pytest.approx(1.441, abs=0.001)
+    r, html = _package(tmp_path, monkeypatch, Mx=10900.0, **group)
+    over = {c["over"]: c for c in r["group_uplift_checks"]}
+    assert list(over) == ["the outer row of 9 piles in tension",
+                          "the 18 piles in tension"]
+    both = over["the 18 piles in tension"]
+    assert both["group_uplift_block_factored_kN"] == pytest.approx(1849.8,
+                                                                   abs=0.1)
+    assert both["group_uplift_utilization"] == pytest.approx(0.991,
+                                                             abs=0.001)
+    assert r["group_uplift_over"] == "the outer row of 9 piles in tension"
+    assert r["group_uplift_block_factored_kN"] == pytest.approx(1232.0,
+                                                                abs=0.1)
+    assert r["group_uplift_utilization"] == pytest.approx(1.481, abs=0.001)
+    assert r["group_uplift_adequate"] is False
+    assert "Over the outer row of 9 piles in tension:" in html
+    assert "over the outer row of 9 piles in tension: the soil" in html
 
 
 @pytest.mark.parametrize("moments, says", [

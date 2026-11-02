@@ -562,8 +562,9 @@ def _group_uplift_section(analysis, tension) -> list:
     """The group uplift checks as the run worked them (the group_uplift
     tool's ``group_uplift_check``, in ``analysis['group_uplift_checks']``:
     over the piles in tension, as GEC-12 Vol. III checks the back row in
-    tension of a group in compression, and over the whole group in net
-    tension), or what they need."""
+    tension of a group in compression, over the outer rows of them from the
+    most-tensioned edge inward, and over the whole group in net tension),
+    or what they need."""
     k, n = tension['n_tension'], tension['n_piles']
     Vz = tension['Vz']
     if k == n:

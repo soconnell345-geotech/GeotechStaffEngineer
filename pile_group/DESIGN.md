@@ -96,8 +96,12 @@ stiffness assembly, and pile-force back-calc):
   in tension; the calc package checks the block over the piles in tension
   (their extent plus the diameter, their summed tension, their own
   capacities, the cap's weight in their share k/n, as Vol. III p. 207 takes
-  the tributary area over them) and over the whole group in net tension
-  (Vz < 0), given pile_length, soil_type and the unit weight. Piles in
+  the tributary area over them), over the outer row of them, the outer two
+  rows and so on from the most-tensioned edge inward (review 2: the outer
+  row's block can fail where the block over two rows passes; each set its
+  own tension, capacities and share), and over the whole group in net
+  tension (Vz < 0), given pile_length, soil_type and the unit weight; the
+  highest utilization governs. Piles in
   tension that do not fill a rectangle are not checked as a block (said
   so). The small-group rule counts all the piles under the cap ("per
   substructure unit", p. 225; `group_piles`, the tool's `piles_under_cap`).
