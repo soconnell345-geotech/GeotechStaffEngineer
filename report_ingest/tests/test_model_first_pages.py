@@ -55,7 +55,7 @@ def _d(**fields):
 
 
 def _e(exploration, **fields):
-    """The same with the describer's ``exploration`` field (``ri73-3``)."""
+    """The same with the describer's ``exploration`` field (``ri73-3`` on)."""
     record = _d(**fields)
     record["description"]["exploration"] = exploration
     return record
@@ -375,6 +375,54 @@ def test_text_that_may_name_anything_is_read_strictly(text):
     letters or a word before it, or nothing."""
     assert mfp.exploration_id(text, strict=True) is None
     assert mfp.exploration_id("Pit QX-K", strict=True) == "QX-K"
+
+
+@pytest.mark.parametrize("text, key", [
+    # RI-196: a name, then a note after a comma or a semicolon.
+    ("Fosso Nr 2 (pit 2), depth 4.15 m, surface elevation 71.42 m",
+     "FOSSO 2"),
+    ("Fosso 8 (pit 8), 2,85 m deep, surface elevation 63.07 m", "FOSSO 8"),
+    ("QX-18 (pit 18), completion depth 4.40 m, groundwater depth 2.25 m",
+     "QX18"),
+    ("Fosso Nr 3 (pit 3), depth 2,65 m, groundwater dry (made-up word)",
+     "FOSSO 3"),
+    ("Fosso 21, depth 4,05 m, groundwater 0,7 m (near surface), location "
+     "made-up field", "FOSSO 21"),
+    ("QX-4; water at 1.2 m", "QX4"), ("QX-19-001; dry", "QX19-1"),
+    ("QX-1, depth 3 m", "QX1"), ("QX-1, elevation 12", "QX1"),
+    ("Pit 7, 8 m", "PIT7"), ("QX-1, sheet 2", "QX1"),
+    # A comma inside brackets cuts nothing.
+    ("QX-5 (pit 5, also printed as pit 5)", "QX5"),
+    # What follows names another exploration: two names, so none.
+    ("QX-1, QX-2", None), ("QX-1; QX-2", None), ("Hole 7, Hole 8", None),
+    ("Hole 7, 8", None), ("QX-1, ZW-1", None),
+    ("QX-1, depth 3 m, QX-2", None),
+])
+def test_a_note_after_the_name_leaves_the_name(text, key):
+    assert mfp.exploration_id(text) == key
+
+
+def test_a_note_after_a_name_is_still_refused_in_a_list_or_title():
+    """Text that may name anything (an identifier, a title) is read strictly,
+    as before: only the describer's field reads the name before a note."""
+    assert mfp.exploration_id("QX-4; water at 1.2 m", strict=True) is None
+    assert mfp.exploration_id("QX-1, depth 3 m", strict=True) is None
+
+
+def test_a_run_of_one_page_pits_with_notes_is_one_log_a_page():
+    """RI-196: the describer named each pit with a note after the name, and
+    each page read as no name joined the log before it."""
+    descriptions = {
+        60: _e("Fosso Nr 1 (pit 1)"),
+        61: _e("Fosso Nr 2 (pit 2), depth 4.15 m, surface elevation 71.42 m"),
+        62: _e("Fosso Nr 3 (pit 3), depth 2.65 m, groundwater dry"),
+        63: _e("Fosso 5 (pit 5)"),
+        64: _e("Fosso 6; depth 2,85 m"),
+    }
+    groups = mfp.log_groups(sorted(descriptions), descriptions)
+    assert [g.pages for g in groups] == [[60], [61], [62], [63], [64]]
+    assert [g.ident for g in groups] == ["FOSSO 1", "FOSSO 2", "FOSSO 3",
+                                         "FOSSO 5", "FOSSO 6"]
 
 
 def test_the_describer_s_field_names_the_page_and_nothing_else_does():
