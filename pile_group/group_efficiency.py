@@ -11,6 +11,10 @@ ch. 6) print them (checked against the print in GM-286,
 - :func:`block_failure_resistance`: the group's nominal resistance to
   block failure, GEC-12 Eqs. 7-36 and 7-37 (p. 286); UFC 3-220-20 Eqs.
   6-38 and 6-39 print the same.
+- :func:`group_uplift_resistance`: the group's uplift resistance as a
+  block and the lesser of it and the piles' sum, GEC-12 Sec. 7.2.3.2
+  (Eqs. 7-39 to 7-41, Figs. 7-33 and 7-34, pp. 290-293); UFC 3-220-20
+  Eqs. 6-40 to 6-43 (pp. 435-436).
 - :func:`p_multiplier`: the lateral p-multiplier of a row, as AASHTO
   prints it (GEC-12 pp. 367 and 370; UFC 3-220-20 Table 6-38, p. 466),
   or by Mokwa's (1999) equations (UFC 3-220-20 Table 6-38).
@@ -348,6 +352,217 @@ def block_failure_capacity(n_rows: int, n_cols: int,
                                  pile_diameter)
     return block_failure_resistance(B, Z, pile_length, cu,
                                     cu if su2 is None else su2)["R_ng_kN"]
+
+
+#: GEC-12 Table 7-1 (p. 224), "Group Uplift Resistance, phi_ug | Sand and
+#: Clay | 0.50" (driven piles); UFC 3-220-20 Table 6-28 (p. 434, AASHTO
+#: 2020), "group block uplift, all soils": driven piles 0.50, drilled
+#: shafts 0.45, micropiles 0.50. No held page prints one for CFA or
+#: drilled displacement piles.
+GROUP_UPLIFT_PHI = {"driven": 0.50, "drilled_shaft": 0.45, "micropile": 0.50}
+#: A group of fewer piles than this is a small group, whose resistance
+#: factors are reduced by 20 %: GEC-12 p. 225 for driven piles (AASHTO
+#: 2014, "less than 3 piles per substructure unit in this manual"), UFC
+#: 3-220-20 Table 6-28 note A for the others (AASHTO 2020, "small pile
+#: groups (<5 piles)").
+SMALL_GROUP_PILES = {"gec12": 3, "ufc": 5}
+#: 1H:4V, the slope of the block's sides in cohesionless soil (GEC-12 p.
+#: 291, Fig. 7-33; UFC 3-220-20 Fig. 6-16a): each side spreads 1/4 of the
+#: height above the toes.
+_UPLIFT_SPREAD = 0.25
+
+
+def small_group_reduction(n_piles: int, pile_type: str,
+                          rule: Optional[str] = None) -> float:
+    """1.0, or 0.8 for a small group: fewer than 3 piles for driven piles
+    (GEC-12 p. 225), fewer than 5 for the others (UFC 3-220-20 Table 6-28
+    note A); ``rule`` 'gec12' or 'ufc' takes that threshold instead."""
+    rule = rule or ("gec12" if pile_type == "driven" else "ufc")
+    return 0.8 if n_piles < SMALL_GROUP_PILES[rule] else 1.0
+
+
+def _uplift_slices(D: float, layers) -> list:
+    """(top, bottom, unit weight) down to the toes at D from ``layers``,
+    (thickness, effective unit weight) pairs from the top; a layer below
+    D is cut off. Layers that stop short of D are refused."""
+    out, top = [], 0.0
+    for thickness, gamma in layers:
+        if not (thickness > 0 and math.isfinite(thickness)):
+            raise ValueError(f"a layer's thickness must be positive, got "
+                             f"{thickness}")
+        if not (gamma >= 0 and math.isfinite(gamma)):
+            raise ValueError(f"a layer's unit weight must be zero or "
+                             f"more, got {gamma}")
+        if top >= D:
+            break
+        bottom = min(top + thickness, D)
+        out.append((top, bottom, gamma))
+        top = bottom
+    if top < D - 1e-9:
+        raise ValueError(
+            f"the layers reach {top:g} m; the block goes down to the pile "
+            f"toes at {D:g} m (the embedded length), so give the layers to "
+            f"there")
+    return out
+
+
+def group_uplift_resistance(B: float, Z: float, D: float, n_piles: int,
+                            soil_type: str, layers, su: Optional[float] = None,
+                            cap_weight: float = 0.0,
+                            pile_type: Optional[str] = None,
+                            piles_resistance: Optional[float] = None,
+                            group_piles: Optional[int] = None) -> dict:
+    """Uplift resistance of a pile group: the group as a block, and the
+    lesser of the block and the sum of the piles (GEC-12 Sec. 7.2.3.2,
+    pp. 290-293; UFC 3-220-20 Eqs. 6-40 to 6-43, pp. 435-436).
+
+    The block (AASHTO 2014 Art. 10.7.3.11 as GEC-12 prints it, after
+    Tomlinson 1994):
+
+    - cohesionless soil (GEC-12 p. 291, Fig. 7-33): the effective weight
+      of the soil "extending upward from the pile toe level at a slope of
+      1H:4V", the piles' weight taken as the soil's; by layers, each
+      layer's volume between its bottom and top plan dimensions (UFC p.
+      436; GEC-12 Vol. III Eq. D-1 and Table D-18). For one layer it is
+      UFC 3-220-20 Eq. 6-41, V = B L D + D^2 (B + L)/4 + D^3/12.
+    - cohesive soil (GEC-12 Eq. 7-41, p. 292, Fig. 7-34): R_ug = 2 D (B +
+      Z) su + W_g, W_g the effective weight of the pile/soil block of plan
+      B x Z and depth D; UFC 3-220-20 Eqs. 6-42 and 6-43 the same.
+
+    The pile cap's effective weight is part of the block: GEC-12's W_g
+    includes it (Eq. 7-41); UFC p. 435 includes it in the block's weight,
+    in either soil.
+
+    The block may be part of a group: GEC-12 Vol. III checks the back row
+    in tension of an abutment group in compression so, "only a single row
+    of piles is providing the tension resistance rather than the entire
+    pile group" (pp. 51, 203). ``group_piles`` is then the group's count,
+    for the small-group rule.
+
+    Factored (Eq. 7-39): R_r = phi_ug R_ug, phi_ug from
+    :data:`GROUP_UPLIFT_PHI`, times 0.8 for a small group
+    (:func:`small_group_reduction`). The group's factored uplift
+    resistance is the lesser of that and the sum of the piles' factored
+    tension resistances, phi_up R_s n (Eq. 7-40; "AASHTO specifications
+    (2014) limit uplift resistance of a pile group to the lesser of: 1. The
+    sum of individual pile resistance in axial tension. 2. The resistance
+    in axial tension of the pile group considered as a block", p. 291).
+
+    Parameters
+    ----------
+    B, Z : float
+        Width and length of the group at the toes (m), to the outer faces
+        of the outer piles: GEC-12 Vol. III takes the group length "from
+        exterior pile edge to exterior pile edge" and, for one row, the
+        width as the pile's (pp. 52-53, 205). Given the other way round,
+        they are swapped.
+    D : float
+        Pile embedded length (m), the block's height.
+    n_piles : int
+        Piles in the block, two or more.
+    soil_type : str
+        'cohesionless' or 'cohesive'.
+    layers : list of (thickness, unit_weight)
+        The soil from the top of the block down, each layer's thickness (m)
+        and effective unit weight (kN/m^3; below the water table the
+        buoyant), to the toes at least.
+    su : float, optional
+        Cohesive soil: the weighted average undrained shear strength over
+        the embedded length along the group's perimeter (kPa).
+    cap_weight : float
+        The pile cap's effective weight (kN), 0 to leave it out.
+    pile_type : str, optional
+        One of :data:`PILE_TYPES`, for phi_ug; ``None`` gives the nominal
+        resistance only.
+    piles_resistance : float, optional
+        The sum of the piles' factored tension resistances (kN), phi_up R_s
+        n; with it, the governing resistance.
+    group_piles : int, optional
+        The piles under the cap, for the small-group rule (GEC-12 p. 225:
+        "per substructure unit"); default ``n_piles``.
+
+    Returns
+    -------
+    dict
+        ``R_ug_kN``, ``soil_weight_kN``, ``cap_weight_kN``, ``shear_kN``,
+        ``volume_m3``, ``slices`` (per layer: ``top_m``, ``bottom_m``,
+        ``unit_weight``, plan dimensions at its bottom and top,
+        ``volume_m3``, ``weight_kN``), ``B_m``, ``Z_m``, ``D_m``,
+        ``top_width_m``, ``top_length_m``, ``group_piles``; with
+        ``pile_type``: ``phi_ug``
+        (``None`` where none is printed), ``reduction`` and ``R_r_kN``;
+        with ``piles_resistance`` as well: ``piles_kN``, ``governing_kN``
+        and ``governs`` ('block' or 'piles'; None where the block has no
+        factor).
+    """
+    if soil_type not in SOIL_TYPES:
+        raise ValueError(f"soil_type must be one of {list(SOIL_TYPES)}, "
+                         f"got {soil_type!r}")
+    if pile_type is not None and pile_type not in PILE_TYPES:
+        raise ValueError(f"pile_type must be one of {list(PILE_TYPES)}, "
+                         f"got {pile_type!r}")
+    for name, v in (("B", B), ("Z", Z), ("D", D)):
+        if not (v > 0 and math.isfinite(v)):
+            raise ValueError(f"{name} must be positive, got {v}")
+    if n_piles < 2:
+        raise ValueError(f"a group uplift check needs two or more piles, "
+                         f"got {n_piles}")
+    group_piles = n_piles if group_piles is None else group_piles
+    if group_piles < n_piles:
+        raise ValueError(f"group_piles ({group_piles}) is fewer than the "
+                         f"piles in the block ({n_piles})")
+    if not (cap_weight >= 0 and math.isfinite(cap_weight)):
+        raise ValueError(f"cap_weight must be zero or more, got {cap_weight}")
+    if soil_type == "cohesive" and not (su is not None and su > 0
+                                        and math.isfinite(su)):
+        raise ValueError(f"cohesive soil needs su, the undrained shear "
+                         f"strength along the group's perimeter (kPa), "
+                         f"positive; got {su}")
+    B, Z = min(B, Z), max(B, Z)
+    spread = 2.0 * _UPLIFT_SPREAD if soil_type == "cohesionless" else 0.0
+    slices = []
+    for top, bottom, gamma in _uplift_slices(D, layers):
+        h = bottom - top
+        bb, zb = B + spread * (D - bottom), Z + spread * (D - bottom)
+        bt, zt = B + spread * (D - top), Z + spread * (D - top)
+        # plan dimensions linear in depth: the prismoidal rule is exact
+        # (GEC-12 Vol. III Eq. D-1)
+        volume = h / 6.0 * (zb * bt + zt * bb + 2.0 * (zt * bt + zb * bb))
+        slices.append({"top_m": top, "bottom_m": bottom,
+                       "unit_weight": gamma, "width_bottom_m": bb,
+                       "length_bottom_m": zb, "width_top_m": bt,
+                       "length_top_m": zt, "volume_m3": volume,
+                       "weight_kN": volume * gamma})
+    soil = sum(s["weight_kN"] for s in slices)
+    shear = 2.0 * D * (B + Z) * su if soil_type == "cohesive" else 0.0
+    out = {
+        "R_ug_kN": soil + cap_weight + shear,
+        "soil_weight_kN": soil, "cap_weight_kN": cap_weight,
+        "shear_kN": shear,
+        "volume_m3": sum(s["volume_m3"] for s in slices),
+        "slices": slices,
+        "B_m": B, "Z_m": Z, "D_m": D, "n_piles": n_piles,
+        "group_piles": group_piles,
+        "top_width_m": B + spread * D, "top_length_m": Z + spread * D,
+        "su_kPa": su if soil_type == "cohesive" else None,
+    }
+    if pile_type is None:
+        return out
+    phi = GROUP_UPLIFT_PHI.get(pile_type)
+    reduction = small_group_reduction(group_piles, pile_type)
+    out["phi_ug"] = None if phi is None else phi * reduction
+    out["phi_ug_table"] = phi
+    out["reduction"] = reduction
+    out["R_r_kN"] = None if phi is None else out["phi_ug"] * out["R_ug_kN"]
+    if piles_resistance is not None:
+        out["piles_kN"] = piles_resistance
+        if out["R_r_kN"] is None:
+            out["governing_kN"], out["governs"] = None, None
+        elif piles_resistance <= out["R_r_kN"]:
+            out["governing_kN"], out["governs"] = piles_resistance, "piles"
+        else:
+            out["governing_kN"], out["governs"] = out["R_r_kN"], "block"
+    return out
 
 
 # The AASHTO p-multipliers by row (rows 1, 2, 3 and 4+), at s/b = 3 and 5

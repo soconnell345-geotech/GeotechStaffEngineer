@@ -19,13 +19,17 @@ assumption. Includes group efficiency and p-multiplier corrections.
   Neither is held, and no held document prints a 6-DOF (battered) group
   benchmark: the 6-DOF method is pinned only on GEC-12 Vol. III's
   vertical-pile case with equal springs (V-060).
-- Not offered: a group uplift method (GEC-12 Sec. 7.2.3.2, Eqs. 7-39 to
-  7-41). Removed in GM-286: Converse-Labarre, printed in no held document.
+- Group uplift (GM-289): GEC-12 Sec. 7.2.3.2 (Eqs. 7-39 to 7-41, Figs.
+  7-33 and 7-34, Table 7-1's phi_ug 0.50, p. 225's small group); UFC
+  3-220-20 Eqs. 6-40 to 6-43 and Table 6-28. Vol. III Block 13 (North and
+  South Abutments) reproduced (`module_work/gm289/CHECK.md`). Removed in
+  GM-286: Converse-Labarre, printed in no held document.
 
 ## Files
 - `pile_layout.py` — GroupPile dataclass, rectangular_layout() generator
 - `group_efficiency.py` — group_efficiency_factor() (the printed eta_g
   rows), block_failure_resistance() / block_failure_capacity(),
+  group_uplift_resistance(),
   p_multiplier() (AASHTO, Mokwa), group_settlement_equivalent_raft(),
   meyerhof_group_settlement()
 - `rigid_cap.py` — simplified elastic + 6-DOF stiffness matrix
@@ -68,6 +72,41 @@ stiffness assembly, and pile-force back-calc):
 - GEC-12 Sec. 7.2.2.1 prints no eta_g for jetted or predrilled piles in
   cohesionless soil, and over a weak deposit takes the lesser of the sum
   and block failure; the module adds no number of its own for either.
+
+## Group uplift (GM-289)
+- The lesser of the piles' sum (GEC-12 Eq. 7-40, phi_up R_s n: each pile's
+  factored tension resistance as given) and the block, phi_ug R_ug (Eq.
+  7-39). The block: in cohesionless soil the effective weight of the soil
+  within sides at 1H:4V from the toes (Fig. 7-33), by layers with the plan
+  dimensions at each layer's bottom (UFC p. 436); in cohesive soil the
+  vertical block's weight plus 2D(B+Z)su (Eq. 7-41). B and Z at the toes to
+  the outer pile faces (Vol. III); the piles taken as soil (GEC-12 p. 291,
+  UFC p. 435); the cap's effective weight added when given (0 otherwise).
+- phi_ug: 0.50 driven (GEC-12 Table 7-1), 0.45 drilled shafts and 0.50
+  micropiles (UFC Table 6-28), none printed for CFA or DDP (nominal only);
+  times 0.8 below 3 driven piles (GEC-12 p. 225) or 5 of the others (UFC
+  Table 6-28 note A). For 3 or 4 driven piles the choices give UFC's 0.40.
+- UFC Eq. 6-40 adds each pile's and the cap's effective weight (x 0.9) to
+  the piles' sum; offered in the choices, not taken.
+- Where it applies (GM-289 review): wherever a pile carries tension. GEC-12
+  Vol. III checks the back row in tension of an abutment group in
+  compression as a block ("only a single row of piles is providing the
+  tension resistance rather than the entire pile group", pp. 51, 203), and
+  Ch. 7 the whole group in net tension. The rigid-cap tools note any pile
+  in tension; the calc package checks the block over the piles in tension
+  (their extent plus the diameter, their summed tension, their own
+  capacities, the cap's weight in their share k/n, as Vol. III p. 207 takes
+  the tributary area over them), over the outer row of them, the outer two
+  rows and so on from the most-tensioned edge inward (review 2: the outer
+  row's block can fail where the block over two rows passes; each set its
+  own tension, capacities and share), and over the whole group in net
+  tension (Vz < 0), given pile_length, soil_type and the unit weight; the
+  highest utilization governs. Piles in
+  tension that do not fill a rectangle are not checked as a block (said
+  so). The small-group rule counts all the piles under the cap ("per
+  substructure unit", p. 225; `group_piles`, the tool's `piles_under_cap`).
+  The `group_uplift` tool runs it on a rectangular layout (n_rows 1 for a
+  row in tension). A group with no pile in tension is unchanged.
 
 ## Readings where the print reads two ways (GM-286 review)
 - Block failure: B and Z to the outer pile faces (GEC-12 Fig. 7-31). UFC

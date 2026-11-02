@@ -9,7 +9,8 @@ Methods:
 - Simplified elastic: Pi = V/n +/- M*xi/SUM(xi^2)
 - General 6-DOF: stiffness matrix assembly for battered piles
 - Group resistance: the group efficiency factor eta_g (GEC-12 Sec. 7.2.2;
-  UFC 3-220-20 Table 6-26), block failure (GEC-12 Eqs. 7-36, 7-37)
+  UFC 3-220-20 Table 6-26), block failure (GEC-12 Eqs. 7-36, 7-37),
+  group uplift (GEC-12 Sec. 7.2.3.2; UFC 3-220-20 Eqs. 6-40 to 6-43)
 - Lateral group effects: p-multipliers (AASHTO, as GEC-12 and UFC
   3-220-20 Table 6-38 print them; Mokwa 1999)
 - Group settlement: Meyerhof (1976), the equivalent footing
@@ -26,6 +27,7 @@ from pile_group.group_efficiency import (
     group_efficiency_factor, block_failure_resistance, BLOCK_FAILURE_PHI,
     block_failure_capacity, group_plan_dimensions, p_multiplier,
     group_settlement_equivalent_raft, meyerhof_group_settlement,
+    group_uplift_resistance, GROUP_UPLIFT_PHI,
 )
 from pile_group.rigid_cap import (
     GroupLoad, PileGroupResult,
@@ -38,6 +40,7 @@ __all__ = [
     'BLOCK_FAILURE_PHI',
     'block_failure_capacity', 'group_plan_dimensions', 'p_multiplier',
     'group_settlement_equivalent_raft', 'meyerhof_group_settlement',
+    'group_uplift_resistance', 'GROUP_UPLIFT_PHI',
     'GroupLoad', 'PileGroupResult',
     'analyze_vertical_group_simple', 'analyze_group_6dof',
 ]
