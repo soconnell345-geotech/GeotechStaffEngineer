@@ -61,8 +61,9 @@ from report_ingest.checks import (
     pdf_local, snapped_words, surface,
 )
 from report_ingest.engine import (  # noqa: F401 -- the sizing, re-exported
-    CHARS_PER_TOKEN_EST, IMAGE_TOKENS_EST, Engine, _blocks_of,
-    estimate_tokens, image_block, schema_tokens_est, text_block, user,
+    CHARS_PER_TOKEN_EST, IMAGE_TOKENS_EST, Engine, _blocks_of, ask_again,
+    estimate_tokens, image_block, refusal, schema_tokens_est, text_block,
+    user,
 )
 from report_ingest.floor import MergeLog
 from report_ingest.lab_reader import MAX_DEPTH_M
@@ -1892,12 +1893,32 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     reply = engine.complete(messages, system=system,
                             output_format=LogReading)
     charge(reply)
-    reading = reply.parsed
     model_calls = 1
+    asked_again = False
+    if reply.parsed is None and not reply.cut_off and model_calls < budget:
+        # Asked once more, told why the answer was not taken, as the calc
+        # reader asks (BACKLOG RI-195): MF-3 lost a log to an answer the
+        # model's own markup spoiled, with five calls of its budget unspent.
+        asked_again = True
+        why = refusal(reply)
+        size_notes.append("the first answer was not taken"
+                          + (f" ({why[:300]})" if why else "")
+                          + "; the reader was asked for it again")
+        messages = ask_again(messages, reply)
+        if limit is not None:
+            messages, note = fit_conversation(messages, limit)
+            if note and note not in size_notes:
+                size_notes.append(note)
+        reply = engine.complete(messages, system=system,
+                                output_format=LogReading)
+        charge(reply)
+        model_calls += 1
+    reading = reply.parsed
     if reading is None:
         raise RuntimeError(
             f"the log reader returned no structured reading for pages "
-            f"{pages} (stop_reason {reply.stop_reason!r})")
+            f"{pages}" + (", even when asked again" if asked_again else "")
+            + f" (stop_reason {reply.stop_reason!r})")
 
     # Continuation sheets: only when the reader itself says it has pages
     # left, and only within the budget. Each round re-reads the whole log, so

@@ -165,7 +165,8 @@ def test_the_labels_off_group_today_s_work_items(synthetic_pdf, tmp_path):
             tgm._log("TP-1", "test_pit", 9, [(0.0, 2.0, "Made-up FILL")]),
             tgm._log("BH-1", "boring", 18, [(0.0, 9.0, "Made-up SILT")])],
             "made-up-logs"),
-        "lab": _stage([{"text": "Made-up words and no answer."}] * 2,
+        # Two groups, each asked once more (RI-195).
+        "lab": _stage([{"text": "Made-up words and no answer."}] * 4,
                       "made-up-lab"),
         "calc": _stage([tgm._calc()], "made-up-calc"),
     }
@@ -175,7 +176,7 @@ def test_the_labels_off_group_today_s_work_items(synthetic_pdf, tmp_path):
     assert describer.n_calls == 0 and labeller.n_calls == 0
     assert main.n_calls == len(main.turns)
     assert {s: e.n_calls for s, e in stages.items()} == {
-        "narrative": 2, "logs": 3, "lab": 2, "calc": 1}
+        "narrative": 2, "logs": 3, "lab": 4, "calc": 1}
     names = _items(out)
     assert "mf-log-7.json" in names and "mf-log-9.json" in names
     assert "mf-calc-20.json" in names
@@ -301,7 +302,7 @@ def test_left_unset_every_stage_is_read_model_first(synthetic_pdf, tmp_path,
     assert main.n_calls == 2
     assert describer.n_calls == 22 and labeller.n_calls == 2
     assert {stage: e.n_calls for stage, e in stages.items()} == {
-        "narrative": 2, "logs": 3, "lab": 1, "calc": 1}
+        "narrative": 2, "logs": 3, "lab": 2, "calc": 1}
     assert _items(out) == ["mf-calc-20.json", "mf-log-7.json",
                            "mf-log-9.json", "mf-narrative.json"]
     assert not (out / "vision.json").exists()

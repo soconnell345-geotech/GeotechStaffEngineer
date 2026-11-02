@@ -505,7 +505,7 @@ def _engines(sections=None):
     """``(main, describer, labeller, stage engines)``: the scripts of one
     model-first run of the synthetic report (``sections``: the report's,
     default :data:`SECTIONS`). The laboratory window gets no structured
-    answer."""
+    answer, and none when asked again (RI-195)."""
     from report_ingest.tests import test_graph as tg
     from report_ingest.tests.fake_engine import FakeEngine
 
@@ -524,7 +524,8 @@ def _engines(sections=None):
             _log("TP-1", "test_pit", 9, [(0.0, 2.0, "Made-up FILL")]),
             _log("BH-1", "boring", 18, [(0.0, 9.0, "Made-up SILT")])],
             "fake-logs"),
-        "lab": engine([{"text": "Made-up words and no answer."}],
+        "lab": engine([{"text": "Made-up words and no answer."},
+                       {"text": "Made-up words and no answer."}],
                       "fake-lab"),
         "calc": engine([_calc()], "fake-calc"),
     }
@@ -584,7 +585,7 @@ class TestOn:
         assert describer.n_calls == 22
         assert labeller.n_calls == 2
         assert {stage: e.n_calls for stage, e in stages.items()} == {
-            "narrative": 2, "logs": 3, "lab": 1, "calc": 1}
+            "narrative": 2, "logs": 3, "lab": 2, "calc": 1}
         # A reading call carries its pages as one PDF, then the
         # instruction, and no system prompt.
         call = stages["logs"].calls[0]
@@ -665,12 +666,12 @@ class TestOn:
         main, describer, labeller, stages = _engines()
         for engine in (main, describer, labeller, *stages.values()):
             engine.turns = []
-        stages["lab"].turns = [{"text": "Still no answer."}]
+        stages["lab"].turns = [{"text": "Still no answer."}] * 2
         record = _run_on(synthetic_pdf, again,
                          (main, describer, labeller, stages))
-        assert stages["lab"].n_calls == 1
+        assert stages["lab"].n_calls == 2              # asked once more
         assert sum(e.n_calls for e in (main, describer, labeller,
-                                       *stages.values())) == 1
+                                       *stages.values())) == 2
         assert [i.investigation_id for i in record.investigations] == [
             "B-1", "TP-1"]
 
@@ -886,10 +887,10 @@ class TestAGroupOfTwoHoles:
         again = tmp_path / "again"
         shutil.copytree(two_holes[1], again)
         engines = _silent(_engines())
-        engines[3]["lab"].turns = [{"text": "Still no answer."}]
+        engines[3]["lab"].turns = [{"text": "Still no answer."}] * 2
         record = _run_on(synthetic_pdf, again, engines)
         assert {k: v for k, v in _n_calls(engines).items() if v} == {
-            "lab": 1}
+            "lab": 2}
         (log,) = record.investigations
         assert [layer.description for layer in log.layers] == [
             "Brown sandy lean CLAY, stiff, moist"]
@@ -1091,10 +1092,10 @@ class TestSavedResults:
         engines = _silent(_engines())
         engines[3]["logs"].turns = [_log("B-1", "boring", 7, [
             (0.0, 3.0, "Brown sandy lean CLAY, stiff, moist")])]
-        engines[3]["lab"].turns = [{"text": "Still no answer."}]
+        engines[3]["lab"].turns = [{"text": "Still no answer."}] * 2
         record = _run_on(synthetic_pdf, again, engines)
         assert {k: v for k, v in _n_calls(engines).items() if v} == {
-            "logs": 1, "lab": 1}
+            "logs": 1, "lab": 2}
         saved = json.loads((again / "items" / "mf-log-7.json")
                            .read_text("utf-8"))
         assert saved["pages"] == [7, 8, 9]
@@ -1120,9 +1121,10 @@ class TestSavedResults:
         engines = _engines()
         engines[3]["lab"].turns = [
             {"text": "", "stop_reason": "max_tokens"}, sheet(12),
+            {"text": "Made-up words and no answer."},
             {"text": "Made-up words and no answer."}]
         record = _run_on(synthetic_pdf, tmp_path / "out", engines)
-        assert engines[3]["lab"].n_calls == 3
+        assert engines[3]["lab"].n_calls == 4
         assert [t.kind for t in record.lab_tests] == ["atterberg"]
         assert [q.pages for q in record.qa if q.kind == "skipped"
                 and q.where == "lab page 13"] == [[13]]
@@ -1184,10 +1186,10 @@ class TestPagesHandedBack:
 
         # Resumed, both results are taken off disk: no log is asked again.
         engines = _silent(_engines())
-        engines[3]["lab"].turns = [{"text": "Still no answer."}]
+        engines[3]["lab"].turns = [{"text": "Still no answer."}] * 2
         again = _run_on(synthetic_pdf, out, engines)
         assert {k: v for k, v in _n_calls(engines).items() if v} == {
-            "lab": 1}
+            "lab": 2}
         assert [(i.investigation_id, i.pages)
                 for i in again.investigations] == [("B-1", [7, 8]),
                                                    ("TP-1", [9])]
@@ -1217,10 +1219,10 @@ class TestPagesHandedBack:
         # Resumed, only the page that was not read is asked again.
         engines = _silent(_engines())
         engines[3]["logs"].turns = [_b1_rest()]
-        engines[3]["lab"].turns = [{"text": "Still no answer."}]
+        engines[3]["lab"].turns = [{"text": "Still no answer."}] * 2
         again = _run_on(synthetic_pdf, out, engines)
         assert {k: v for k, v in _n_calls(engines).items() if v} == {
-            "logs": 1, "lab": 1}
+            "logs": 1, "lab": 2}
         assert [(i.investigation_id, i.pages)
                 for i in again.investigations] == [("B-1", [7, 8]),
                                                    ("TP-1", [9])]
@@ -1250,10 +1252,10 @@ class TestPagesHandedBack:
                                                     ("TP-1", [9])]
 
         engines = _silent(_engines())
-        engines[3]["lab"].turns = [{"text": "Still no answer."}]
+        engines[3]["lab"].turns = [{"text": "Still no answer."}] * 2
         again = _run_on(synthetic_pdf, out, engines)
         assert {k: v for k, v in _n_calls(engines).items() if v} == {
-            "lab": 1}
+            "lab": 2}
         assert [(i.investigation_id, i.pages)
                 for i in again.investigations] == [("B-1", [7, 8]),
                                                    ("TP-1", [9])]
@@ -1434,7 +1436,7 @@ def test_the_request_limit_reaches_every_reader(synthetic_pdf, tmp_path):
     record = _run_on(synthetic_pdf, tmp_path / "out", engines,
                      budgets=Budgets(max_request_tokens_in=10 ** 7))
     assert {stage: e.n_calls for stage, e in engines[3].items()} == {
-        "narrative": 2, "logs": 3, "lab": 1, "calc": 1}
+        "narrative": 2, "logs": 3, "lab": 2, "calc": 1}
     calls = _item_calls(tmp_path / "out")
     assert len(calls) == 6
     for path, rows in calls.items():
@@ -1478,7 +1480,7 @@ def test_a_request_over_the_limit_is_a_qa_note(synthetic_pdf, tmp_path,
     record = _run_on(synthetic_pdf, out, engines,
                      budgets=Budgets(max_request_tokens_in=limit))
     assert {stage: e.n_calls for stage, e in engines[3].items()} == {
-        "narrative": 2, "logs": 4, "lab": 1, "calc": 1}
+        "narrative": 2, "logs": 4, "lab": 2, "calc": 1}
 
     notes = [q for q in record.qa if q.where.endswith(".request_limit")]
     assert [q.pages for q in notes] == [[7, 8], [7], [8], [9]]

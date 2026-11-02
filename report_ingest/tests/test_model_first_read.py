@@ -323,14 +323,17 @@ def test_a_lab_window_is_halved_where_a_new_sheet_begins(doc):
 def test_one_page_cut_off_and_an_answer_in_prose_are_skipped(doc):
     from report_ingest.reconciler import _carry_unresolved
 
-    engine = _engine([_cut_off(), {"text": "no tool call"}])
+    # The answer in prose is asked for once more (RI-195), in prose again.
+    engine = _engine([_cut_off(), {"text": "no tool call"},
+                      {"text": "no tool call"}])
     got = mfr.read_calcs(doc, [PageGroup("calc", [20], key="calc-20"),
                                PageGroup("calc", [22], key="calc-22")],
                          engine, report_id=REPORT)
-    assert engine.n_calls == 2
+    assert engine.n_calls == 3
     assert [b["calculation"] for b in got] == [None, None]
     assert "one page cannot be split" in got[0]["error"]
-    assert "no structured answer" in got[1]["error"]
+    assert "no structured answer, and none when asked again" in got[1][
+        "error"]
     qa = []
     _carry_unresolved(qa, got[0]["unresolved"])
     assert [e.kind for e in qa] == ["skipped"] and qa[0].pages == [20]
@@ -512,7 +515,7 @@ def test_the_model_s_boxes_are_cleared_before_the_build(doc):
 
 
 def test_a_log_no_answer_came_back_for_has_no_record(doc):
-    engine = _engine([{"text": "no tool call"}])
+    engine = _engine([{"text": "no tool call"}, {"text": "no tool call"}])
     blob = mfr.read_logs(doc, [PageGroup("logs", [3, 4], key="log-3")],
                          engine, report_id=REPORT)[0]
     assert blob["investigation"] is None and blob["error"]

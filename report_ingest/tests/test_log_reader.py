@@ -517,9 +517,13 @@ class TestBudget:
 
     def test_no_structured_answer_is_an_error_not_an_empty_log(self, imperial):
         doc, _gt = imperial
-        engine = FakeEngine([{"text": "I could not read this page."}])
-        with pytest.raises(RuntimeError, match="no structured reading"):
+        # Asked once more (RI-195), in prose again.
+        engine = FakeEngine([{"text": "I could not read this page."},
+                             {"text": "I could not read this page."}])
+        with pytest.raises(RuntimeError,
+                           match="no structured reading .* asked again"):
             read_log(doc, [0], engine)
+        assert engine.n_calls == 2
 
     def test_no_pages_is_refused_before_a_call_is_spent(self, imperial):
         doc, _gt = imperial

@@ -100,14 +100,16 @@ class TestTheEngine:
                    for n in reply.notes)
 
     def test_text_that_holds_no_list_is_still_refused_and_kept(self):
-        args = _answer('\n<parameter name="0">' + json.dumps(ITEMS[0]))
+        # (A list spilled through the model's own parameter markup is put
+        # back since RI-195: tests/test_ri195.py.)
+        args = _answer("made-up words, not a list")
         engine = _engine(answer_call(args))
         reply = engine.complete([{"role": "user", "content": "go"}],
                                 output_format=mf.answer_schema("calc"))
         assert reply.parsed is None
         assert any("valid list" in n for n in reply.notes)
         assert len(reply.raw_answers) == 1
-        assert "parameter name" in reply.raw_answers[0]
+        assert "made-up words, not a list" in reply.raw_answers[0]
 
 
 class TestTheReader:
@@ -122,15 +124,18 @@ class TestTheReader:
         assert any("JSON text" in n for n in call["notes"])
 
     def test_a_refused_answer_keeps_why_and_what_came(self, doc):
-        args = _answer('\n<parameter name="0">' + json.dumps(ITEMS[0]))
-        engine = _engine(answer_call(args))
+        args = _answer("made-up words, not a list")
+        # Refused, asked once more (RI-195), refused again.
+        engine = _engine(answer_call(args), answer_call(args, "call_again"))
         (blob,) = mfr.read_calcs(doc, [PageGroup("calc", [2], key="calc-2")],
                                  engine, report_id=REPORT)
         assert blob["calculation"] is None
-        (call,) = blob["calls"]
-        assert not call["answered"]
-        assert any("valid list" in n for n in call["notes"])
-        assert "parameter name" in call["raw_answer"][0]
+        first, again = blob["calls"]
+        assert again.get("asked_again") and "asked_again" not in first
+        for call in (first, again):
+            assert not call["answered"]
+            assert any("valid list" in n for n in call["notes"])
+            assert "made-up words" in call["raw_answer"][0]
         (skipped,) = [r for r in blob["unresolved"]
                       if r.get("refused_by") == "budget"]
         assert "no structured answer" in skipped["why"]
@@ -141,9 +146,9 @@ class TestTheReader:
         said = AIMessage(content="Made-up words instead of an answer.",
                          response_metadata={"finish_reason": "stop"})
         (blob,) = mfr.read_calcs(doc, [PageGroup("calc", [2], key="calc-2")],
-                                 _engine(said), report_id=REPORT)
-        (call,) = blob["calls"]
-        assert call["text"] == "Made-up words instead of an answer."
+                                 _engine(said, said), report_id=REPORT)
+        first, _again = blob["calls"]
+        assert first["text"] == "Made-up words instead of an answer."
 
 
 def test_the_scorer_s_run_file_keeps_each_refusal_s_reason():

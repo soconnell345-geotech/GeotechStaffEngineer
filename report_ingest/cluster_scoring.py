@@ -611,12 +611,13 @@ def _tokens_of(cost: Dict[str, Any]) -> int:
 #: row per request (``per_call``) and the per-model split are not carried.
 #: A key the block does not hold is left out, so ``paced_seconds`` (BACKLOG
 #: RI-127, RI-139; only in a block a pacer held a request in) is carried
-#: only where there was a hold.
+#: only where there was a hold, and ``asked_again`` (BACKLOG RI-195) only
+#: where a call asked again for an answer.
 _ATTEMPT_COST_KEYS: Tuple[str, ...] = (
     "calls", "failed", "retried", "failed_by_kind", "input_tokens",
     "output_tokens", "reasoning_tokens", "reasoning_reported",
     "cache_read_tokens", "cache_write_tokens", "seconds", "waited_seconds",
-    "paced_seconds", "dollars", "unpriced_calls")
+    "paced_seconds", "asked_again", "dollars", "unpriced_calls")
 
 #: The counts an ``all_attempts`` block adds up over a report's attempts.
 _ATTEMPT_SUMS: Tuple[str, ...] = (
@@ -716,6 +717,10 @@ def _attempts_fields(earlier: Sequence[Dict[str, Any]],
     paced = round(sum(_float(c.get("paced_seconds")) for c in costs), 1)
     if paced:
         total["paced_seconds"] = paced
+    # Likewise only when a call asked again for an answer (BACKLOG RI-195).
+    again = sum(_n(c.get("asked_again")) for c in costs)
+    if again:
+        total["asked_again"] = again
     total["seconds"] = round(sum(_float(row.get("seconds"))
                                  for row in earlier) + _float(seconds), 1)
     return {"earlier_attempts": [dict(row) for row in earlier],
@@ -6610,6 +6615,9 @@ def _sum_costs(parts: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         if _float(part.get("paced_seconds")):
             every["paced_seconds"] = (_float(every.get("paced_seconds"))
                                       + _float(part.get("paced_seconds")))
+        if _n(part.get("asked_again")):
+            every["asked_again"] = (_n(every.get("asked_again"))
+                                    + _n(part.get("asked_again")))
         for kind, n in (part.get("failed_by_kind") or {}).items():
             every["failed_by_kind"][kind] = (
                 every["failed_by_kind"].get(kind, 0) + _n(n))
@@ -7120,6 +7128,11 @@ def _add_cost(total: Dict[str, Any], cost: Optional[Dict[str, Any]]) -> None:
     if paced:
         total["paced_seconds"] = round(
             _float(total.get("paced_seconds")) + paced, 1)
+    # Only once a run file says a call asked again for an answer the call
+    # before it did not give (BACKLOG RI-195).
+    if _n(cost.get("asked_again")):
+        total["asked_again"] = (_n(total.get("asked_again"))
+                                + _n(cost.get("asked_again")))
     total["files"] = total.get("files", 0) + 1
     if "failed" in cost:
         total["files_counting_failures"] = (
@@ -7180,6 +7193,12 @@ def _failure_line(cost: Dict[str, Any]) -> str:
     paced = _float(cost.get("paced_seconds"))
     if paced:
         line += f", {paced:.0f} s held back by the pacer (tokens_per_minute)"
+    # A call that asked again for an answer the call before it did not
+    # give is among the calls above; only when there was one (RI-195).
+    again = _n(cost.get("asked_again"))
+    if again:
+        line += (f"; {again} of the calls above asked again for an answer "
+                 f"not taken")
     calls = int(cost.get("calls") or 0)
     reported = int(cost.get("reasoning_reported") or 0)
     if not reported:
