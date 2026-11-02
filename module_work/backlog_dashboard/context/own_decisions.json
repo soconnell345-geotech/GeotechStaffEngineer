@@ -2738,5 +2738,30 @@
       "BACKLOG.md OWN-117",
       "module_work/gm292/CHECK.md"
     ]
+  },
+  "OWN-118": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Pile groups in uplift: for driven piles, should the 20 % cut to the group uplift resistance factor apply below 3 piles (GEC-12, as now) or below 5 (UFC 3-220-20)?",
+    "why": "It changes the group uplift check only for groups of 3 or 4 driven piles: the resistance factor is 0.50 by GEC-12 and 0.40 by UFC, so UFC's reading gives a 20 % smaller factored group uplift resistance.",
+    "background": "GEC-12 prints the 20 % cut for groups of fewer than 3 driven piles (p. 225). UFC 3-220-20's note A applies it to groups of fewer than 5 piles. The package follows GEC-12 and states UFC's reading beside the result.",
+    "options": [
+      {
+        "label": "Below 3 driven piles (GEC-12, as now)",
+        "effect": "Results unchanged; 3- and 4-pile driven groups use 0.50."
+      },
+      {
+        "label": "Below 5 piles (UFC)",
+        "effect": "3- and 4-pile driven groups use 0.40, a 20 % smaller factored group uplift resistance; other groups unchanged."
+      }
+    ],
+    "recommendation": "Keep GEC-12's 3 piles as the default and state UFC's reading beside it: GEC-12 is the manual the pile-group checks follow, and the other reading is already shown.",
+    "if_no_answer": "The cut stays below 3 driven piles, with UFC's reading stated.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-118",
+      "module_work/gm289/CHECK.md"
+    ]
   }
 }
