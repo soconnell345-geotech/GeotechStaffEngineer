@@ -2763,5 +2763,157 @@
       "BACKLOG.md OWN-118",
       "module_work/gm289/CHECK.md"
     ]
+  },
+  "OWN-119": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Soil corrosion: when the main soil layers test non-corrosive but one fill sample tests corrosive, should the answer be \"no\" or \"mixed\"?",
+    "why": "It becomes the rule for both readers. On R30 (p. 35) model first says \"no\" and today's reader \"mixed\"; build f's R36 question is the same pattern.",
+    "background": "Your v3 question list added \"mixed\" to the pick list in the 2026-10-29 rulings.",
+    "options": [
+      {
+        "label": "\"mixed\"",
+        "effect": "Today's reader is right on R30; model first learns the rule."
+      },
+      {
+        "label": "\"no\"",
+        "effect": "Model first is right on R30; a single corrosive fill sample does not count."
+      }
+    ],
+    "recommendation": "\"mixed\": it is the value your v3 question list added for this case.",
+    "if_no_answer": "Scored as \"mixed\".",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-119",
+      "module_work/field_feedback/2026-11-02_foundry_build_g/TRACE_REVIEW.md §10"
+    ]
+  },
+  "OWN-120": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Earth hazards: when a report analyses slope stability as a concern for the site, should landslide be listed?",
+    "why": "On R30 (pp. 4, 32-34) model first adds landslide and today's reader does not; the answer sheet decides which is right.",
+    "background": "The report discusses slope stability as a site concern, not only a cut-slope design check.",
+    "options": [
+      {
+        "label": "Yes, when the report calls it a site concern",
+        "effect": "Model first is right on R30; a routine cut-slope check still does not count."
+      },
+      {
+        "label": "No, only an actual landslide or landslide hazard",
+        "effect": "Today's reader is right on R30."
+      }
+    ],
+    "recommendation": "Yes, when the report calls slope stability a concern for the site; not for a routine design check of a cut slope.",
+    "if_no_answer": "Scored as yes for a site concern.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-120",
+      "module_work/field_feedback/2026-11-02_foundry_build_g/TRACE_REVIEW.md §10"
+    ]
+  },
+  "OWN-121": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "ASCE 7 edition: when the report body names no edition but an appendix calculation uses one, should that edition be the answer?",
+    "why": "On R30 the edition is printed only on an appendix calculation page (p. 555). Today's reader found it; model first left it blank. Yes means model first needs today's whole-report search (RI-200).",
+    "background": "The report's own seismic calculation used that edition.",
+    "options": [
+      {
+        "label": "Yes, cite the calculation page",
+        "effect": "Today's reader is right; RI-200 gives model first the same search."
+      },
+      {
+        "label": "No, only the body counts",
+        "effect": "Model first's blank is right; RI-200 is not needed."
+      }
+    ],
+    "recommendation": "Yes: it is the edition the report's own seismic calculation used. Cite the calculation page.",
+    "if_no_answer": "Scored as yes; RI-200 goes ahead.",
+    "message_to_send": null,
+    "unblocks": [
+      "RI-200"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-121",
+      "module_work/field_feedback/2026-11-02_foundry_build_g/TRACE_REVIEW.md §10"
+    ]
+  },
+  "OWN-122": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Page labels: should photos of lab specimens inside the lab appendix be labelled lab test (the section's label) or photos?",
+    "why": "On R30 (pp. 418-419, 471-473) model first labels them lab test by your conventions B and the hand labels say photos; it is 5 of model first's 6 mislabelled pages there. No value is lost either way.",
+    "background": "Conventions B rule 1: photos inside a section take the section's label.",
+    "options": [
+      {
+        "label": "Lab test",
+        "effect": "The hand labels are corrected; model first's R30 mislabels go from 6 to 1."
+      },
+      {
+        "label": "Photos",
+        "effect": "The range labeller needs an exception to rule 1."
+      }
+    ],
+    "recommendation": "Lab test: it follows your conventions B as written.",
+    "if_no_answer": "Scored as lab test.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-122",
+      "module_work/field_feedback/2026-11-02_foundry_build_g/TRACE_REVIEW.md §10"
+    ]
+  },
+  "OWN-123": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Two hand labels look like slips: R21 pp. 714-728 (labelled calculation, but a lab chemistry report) and R15 p. 67 (labelled test-pit log, but the last sheet of a boring log). Correct them?",
+    "why": "On R21 correcting it takes model first's mislabelled pages from 15 to 0 and today's from 24 to 9; on R15 both arms gain the page.",
+    "background": "Both arms read pp. 714-728 as lab tests and p. 67 as a boring log.",
+    "options": [
+      {
+        "label": "Correct both",
+        "effect": "The truth labels change; the scores above move."
+      },
+      {
+        "label": "Keep the hand labels",
+        "effect": "Both arms keep the pages as misses."
+      }
+    ],
+    "recommendation": "Correct both, and add them to RI-104's list of hand-label corrections.",
+    "if_no_answer": "Both corrected.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-123",
+      "module_work/field_feedback/2026-11-02_foundry_build_g/TRACE_REVIEW.md §10"
+    ]
+  },
+  "OWN-124": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "R15's answer sheet lists two recommended-foundation items, one naming two foundation types. Split it into one item per type, as your RI-181 ruling says?",
+    "why": "Split: both arms score 31/31 on R15's narrative. Keep: both stay 30/31 and the sheet disagrees with your ruling.",
+    "background": "The answer sheet predates the RI-181 ruling and is a Claude transcription, not yours (RI-72).",
+    "options": [
+      {
+        "label": "Split, one item per type",
+        "effect": "The answer sheet follows RI-181; both arms 31/31."
+      },
+      {
+        "label": "Keep as is",
+        "effect": "Both arms 30/31."
+      }
+    ],
+    "recommendation": "Split: it is what your RI-181 ruling says.",
+    "if_no_answer": "Split.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-124",
+      "module_work/field_feedback/2026-11-02_foundry_build_g/TRACE_REVIEW.md §10"
+    ]
   }
 }
