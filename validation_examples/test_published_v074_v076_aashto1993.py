@@ -48,8 +48,8 @@ import pytest
 from pavement_design import (compute_design_esals, design_flexible_pavement,
                              design_rigid_pavement,
                              estimate_performance_period, growth_factor)
-from pavement_design.composite_k import (composite_k_inf, effective_k,
-                                       k_on_rigid_foundation)
+from geotech_references.aashto_1993.composite_k import     k_rigid_foundation_correction
+from pavement_design.composite_k import composite_k_inf, effective_k
 
 # --------------------------------------------------------------------------
 # V-074: Table 3.3 and Figure 3.3
@@ -71,8 +71,8 @@ def test_v074_figure_3_3_example():
 def test_v074_figure_3_4_reads():
     # Figure 3.4 alone, from the printed composite k: within 4 % (GM-303).
     for (k, k_rigid, _), (mr, _esb) in zip(_ROWS.values(), _ROWS):
-        assert k_on_rigid_foundation(mr, 5, k)["k_pci"] == pytest.approx(
-            k_rigid, rel=0.04)
+        r = k_rigid_foundation_correction(mr, 5, k)
+        assert r["k_pci"] == pytest.approx(k_rigid, rel=0.04)
 
 
 def test_v074_table_3_3_rows():

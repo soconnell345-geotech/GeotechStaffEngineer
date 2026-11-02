@@ -162,9 +162,6 @@ def estimate_performance_period(
             f"'{pavement_type}'"
         )
 
-    # Step 7 (printed II-35): "If the difference is less than 1 year,
-    # convergence is reached and the average is said to be the predicted
-    # performance period"; Table H.2 converges after one iteration.
     r = _env_mod.performance_period_iteration(
         delta_psi_design,
         w18_fn,
@@ -173,28 +170,13 @@ def estimate_performance_period(
         max_performance_period_yr=max_performance_period_yr,
         swelling=swelling,
         frost=frost,
-        tol=1.0,
     )
     out = dict(r)
-    last = r["rows"][-1]
-    if r["converged"]:
-        out["performance_period_yr"] = round(
-            0.5 * (last["trial_period_yr"]
-                   + last["corresponding_period_yr"]), 2)
-        notes = [
-            f"Step 7 (II-35): the trial period {last['trial_period_yr']} yr "
-            f"and the period from traffic {last['corresponding_period_yr']}"
-            " yr agree within 1 year; the predicted performance period is "
-            "their average."]
-    else:
-        notes = [
-            f"Not converged in {r['n_iterations']} iterations (Step 7 asks "
-            "the trial and calculated periods to agree within 1 year); the "
-            "last calculated period is reported."]
     out.update({
         "pavement_type": pavement_type,
         "base_year_w18": base_year_w18,
         "growth_rate_pct": growth_rate_pct,
-        "notes": notes,
     })
+    if "note" in out:
+        out["notes"] = [out.pop("note")]
     return out

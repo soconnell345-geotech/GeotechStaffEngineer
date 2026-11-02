@@ -1112,7 +1112,8 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   (Figure 3.6, printed II-42) and k = MR/19.4 (printed II-44), read from
   `geotech-references/docs/aashto1993.pdf`.
 - Target: `pavement_design.composite_k.composite_k_inf` /
-  `k_on_rigid_foundation` (Figure 3.4, GM-303) / `effective_k` and
+  `geotech_references.aashto_1993.composite_k.k_rigid_foundation_correction`
+  (Figure 3.4, GM-303) / `effective_k` and
   `design_rigid_pavement(composite_k=...)` (GM-298).
 - Inputs: Figure 3.3 example Dsb 6 in, Esb 20,000 psi, MR 7,000 psi;
   Table 3.3: twelve months of roadbed MR (20,000 / 2,500 / 4,000 /

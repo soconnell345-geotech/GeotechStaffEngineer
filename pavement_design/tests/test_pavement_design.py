@@ -513,8 +513,9 @@ class TestEnvironmentalLoss:
 
 
 class TestUfcAlternative:
-    """UFC 3-250-01 alt method (Figures E-1, F-1 and the vehicle curves
-    E-2 to E-31 read off the print in ufc_e1, ufc_f1 and ufc_vehicles)."""
+    """UFC 3-250-01 alt method (Figures E-1 and F-1 read off the print in
+    ufc_e1 and ufc_f1; the vehicle curves E-2 to E-31 in the reference
+    layer's ufc_pavement)."""
 
     def test_figure_e1_appendix_g_reads(self):
         from pavement_design.ufc_e1 import figure_e1_thickness as e1
@@ -935,10 +936,12 @@ class TestFigure33:
 
 
 class TestFigure34:
-    """k on a rigid foundation within 10 ft, read off the printed chart."""
+    """k on a rigid foundation within 10 ft, read off the printed chart
+    (the reference layer's k_rigid_foundation_correction, GM-303)."""
 
     def test_printed_anchors(self):
-        from pavement_design.composite_k import k_on_rigid_foundation as kf
+        from geotech_references.aashto_1993.composite_k import (
+            k_rigid_foundation_correction as kf)
         # The figure's example and the four Table 3.3 rows, all Dsg 5 ft.
         assert kf(4000, 5, 230)["k_pci"] == pytest.approx(300, rel=0.02)
         for mr, k_inf, printed in ((20000, 1100, 1350), (2500, 160, 230),
@@ -947,7 +950,8 @@ class TestFigure34:
                                                               rel=0.04)
 
     def test_shallower_rock_raises_k(self):
-        from pavement_design.composite_k import k_on_rigid_foundation as kf
+        from geotech_references.aashto_1993.composite_k import (
+            k_rigid_foundation_correction as kf)
         ks = [kf(3500, d, 180)["k_pci"] for d in (2, 4, 6, 9)]
         assert ks == sorted(ks, reverse=True)
         assert ks[-1] > 180
@@ -955,14 +959,16 @@ class TestFigure34:
         assert "II-37" in kf(3500, 10, 180)["note"]
 
     def test_k_depends_on_k_inf_not_one_multiplier(self):
-        from pavement_design.composite_k import k_on_rigid_foundation as kf
+        from geotech_references.aashto_1993.composite_k import (
+            k_rigid_foundation_correction as kf)
         # The chart's lines fan out: the correction grows with k_inf.
         low = kf(3500, 3, 150)["k_pci"] / 150
         high = kf(3500, 3, 450)["k_pci"] / 450
         assert high > low + 0.3
 
     def test_outside_the_drawn_curves(self):
-        from pavement_design.composite_k import k_on_rigid_foundation as kf
+        from geotech_references.aashto_1993.composite_k import (
+            k_rigid_foundation_correction as kf)
         r = kf(3500, 1.5, 180)
         assert r["k_pci"] == kf(3500, 2, 180)["k_pci"]
         assert "understates" in r["note"]

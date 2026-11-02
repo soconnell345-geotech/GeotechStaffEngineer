@@ -6,9 +6,9 @@ single-axle, dual-tire load (controlling-vehicle procedure, Guide Ch 4 /
 Appendix G) and designs flexible sections by the Corps CBR method (Figure
 E-1 cover curves) and rigid slabs by the Westergaard-based Figure F-1
 family (+ Eq 13-1 on stabilized foundations). Figures E-1 and F-1 are
-read off the print in ``ufc_e1`` and ``ufc_f1`` (GM-298), the vehicle
-curves E-2 to E-31 in ``ufc_vehicles`` (GM-303); the tables come from
-``geotech_references.ufc_pavement``.
+read off the print in ``ufc_e1`` and ``ufc_f1`` (GM-298); the vehicle
+curves E-2 to E-31 (every printed curve traced, GM-303) and the tables
+come from ``geotech_references.ufc_pavement``.
 
 COMPARISON BASIS (``compare_flexible_pavement_methods``): both guides
 accept "passes of an 18-kip single axle" as the traffic number — AASHTO's
@@ -30,8 +30,6 @@ from .common import add_ref, round_up
 from .ufc_e1 import figure_e1_thickness as _e1
 from .ufc_f1 import (PARA_13_3_REF, TABLE_10_1_NOTE_REF,
                      figure_f1_thickness as _f1)
-from .ufc_vehicles import (figure_e_vehicle_allowable_passes as _veh_passes,
-                           figure_e_vehicle_thickness as _veh_thickness)
 
 # UFC 3-250-01 p. 20 (pdf_page 39): the drainage criteria require "a
 # minimum of 4 in (100 mm) of drainage layer and 4 in (100 mm) of subbase
@@ -375,8 +373,7 @@ def ufc_mixed_traffic(
     """Automated UFC mixed-traffic reduction (Ch 4 / Table G-1 procedure).
 
     Takes the raw vehicle mix and does the whole controlling-vehicle
-    procedure on the Appendix E curves as printed (``ufc_e1``,
-    ``ufc_vehicles``): per-vehicle required
+    procedure on the Appendix E curves as printed: per-vehicle required
     thickness at the representative subgrade CBR (Table 4-1 category
     value), controlling vehicle = largest thickness, allowable passes of
     each other vehicle at the controlling thickness by curve inversion,
@@ -410,8 +407,9 @@ def ufc_mixed_traffic(
                                             "18_kip_esal"):
             r = _e1(cbr=representative_cbr, passes=passes)
         else:
-            r = _veh_thickness(vehicle, cbr=representative_cbr,
-                               passes=passes)
+            r = _utb.figure_e_vehicle_thickness(vehicle,
+                                                cbr=representative_cbr,
+                                                passes=passes)
             if r.get("note"):
                 notes.append(f"{vehicle}: {r['note']}")
         add_ref(references, r["reference"])
@@ -436,10 +434,10 @@ def ufc_mixed_traffic(
                 else:
                     hi = mid
             return 10 ** (0.5 * (lo + hi))
-        r = _veh_passes(vehicle, cbr=representative_cbr,
-                        thickness_in=thickness_in)
+        r = _utb.figure_e_vehicle_allowable_passes(
+            vehicle, cbr=representative_cbr, thickness_in=thickness_in)
         clamped = r.get("clamped")
-        if clamped == "above_highest_curve":
+        if clamped and "above_max_passes" in str(clamped):
             # The controlling thickness exceeds this vehicle's entire curve
             # family — its allowable passes are effectively UNLIMITED, so
             # it contributes ~nothing to the equivalent total (the guide's
