@@ -369,12 +369,19 @@ def example_section_ids(ref_package_name: str, n: int = 3) -> list[str]:
     except Exception:  # noqa: BLE001 — an example is never worth a failure
         return []
     by_depth: dict[int, str] = {}
+    lettered: dict[int, str] = {}
     for chapter in chapters:
         for sec in chapter.get("sections") or []:
             sid = str(sec.get("section_id") or "")
             # a combined section ('5.15-5.16') is not an example of a number
             if sid and not re.search(r"\.\d+-", sid):
-                by_depth.setdefault(len(re.findall(r"[.-]", sid)), sid)
+                # an annex keyed by its letter ('D.1') only where no
+                # numbered section sits at that level (EN 1997-2 lists its
+                # annexes first)
+                target = by_depth if re.match(r"\d|P-", sid) else lettered
+                target.setdefault(len(re.findall(r"[.-]", sid)), sid)
+    for depth, sid in lettered.items():
+        by_depth.setdefault(depth, sid)
     depths = sorted(by_depth)
     if len(depths) > n:
         # the top level, the deepest, and evenly between
