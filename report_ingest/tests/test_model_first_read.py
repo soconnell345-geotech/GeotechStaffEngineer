@@ -574,6 +574,22 @@ def test_a_call_that_hands_back_every_page_is_no_log_and_no_failure(doc):
     assert blob["unresolved"] == []
 
 
+def test_a_pit_s_bucket_width_reaches_the_record(doc):
+    """RI-198: the width the instruction asks for (the bucket's) goes into
+    today's pit slot, in its own unit."""
+    from report_ingest.model import Investigation
+
+    answer = _header_only("QX-6", pit={
+        "width": 60.0, "unit": "cm",
+        "prov": {"page": 3, "note": "the bucket's width"}})
+    engine = _engine([{"final": answer}])
+    blob = mfr.read_logs(doc, [PageGroup("logs", [3], key="log-3")],
+                         engine, report_id=REPORT)[0]
+    pit = Investigation.model_validate(blob["investigation"]).pit
+    assert (pit.width.value, pit.width.unit) == (60.0, "cm")
+    assert pit.length is None and pit.depth is None
+
+
 def test_a_page_a_row_was_read_off_is_never_handed_back(doc):
     engine = _engine([{"final": _log([3], hole="QX-7", pages_left=[3, 4])}])
     blob = mfr.read_logs(doc, [PageGroup("logs", [3, 4], key="log-3")],

@@ -299,7 +299,9 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: ranges, as today's narrative is (RI-188); the instruction is mf-4's.
 #: mf-6 (RI-197): a log answer lists the pages that hold another
 #: exploration's log (``other_log_pages``), which are read on their own.
-READ_PROMPT_VERSION = "mf-6"
+#: mf-7 (RI-198): the log instruction carries today's rule for a test pit's
+#: size, the bucket as its width (``LOG_PIT_SIZE``).
+READ_PROMPT_VERSION = "mf-7"
 
 
 def _described(cls: Any, name: str) -> Optional[str]:
@@ -479,8 +481,9 @@ PLAIN_INSTRUCTIONS: Dict[str, str] = {
 
 #: What each stage's model-first call is asked: the plain instruction, with
 #: the logs' header and sample lists naming what the log schema adds (the
-#: project name and number, the client, any other header field, recovery)
-#: and the pages of another exploration's log listed apart (RI-197).
+#: project name and number, the client, any other header field, recovery),
+#: a test pit's size with the bucket as its width (RI-198), and the pages of
+#: another exploration's log listed apart (RI-197).
 #: Calc is asked as the plain baseline was, and lab too but for one
 #: sentence (RI-175): two tests on one sample are two entries, Atterberg
 #: limits on a grading sheet among them, as today's lab reader asks. The
@@ -510,6 +513,23 @@ LOG_OTHER_PAGES = (
     "Read one exploration's log: if a page holds another exploration's log, "
     "leave it out of this answer and list it under other_log_pages, and it "
     "is read on its own.")
+
+#: The paragraph the model-first log instruction adds on a test pit's size
+#: (RI-198): today's log reader's (``LOG_READER_SYSTEM``, "A TEST PIT IS NOT
+#: A HOLE" and "THE BUCKET IS THE WIDTH"), which MF-3's log reading lacked
+#: and recorded no pit width where today's reader records the bucket's.
+LOG_PIT_SIZE = (
+    "A test pit's size is part of its record. On a pit, also fill pit: its "
+    "length, its width and, where the header prints a pit depth of its own, "
+    "its depth, with the unit those are printed in, which is not always the "
+    "depth unit. The bucket is the width, and on most pit logs it is the "
+    "only size printed: an equipment field naming the machine and its "
+    "bucket (\"backhoe with a 60 cm bucket\") tells you how wide the pit "
+    "is, so give that as the pit's width in the bucket's unit and say in "
+    "the note that it is the bucket's width. A bucket named only in a "
+    "remark says nothing about the width. Where the header prints no size "
+    "and names no bucket, leave pit empty, and never fill pit on a "
+    "borehole.")
 
 #: The paragraph the model-first narrative instruction adds after the house
 #: conventions (RI-189): today's reader's rule 4 (``NARRATIVE_SYSTEM``),
@@ -544,8 +564,8 @@ INSTRUCTIONS: Dict[str, str] = {
         "one is printed, every sample with its depths, its recovery and any "
         "laboratory values printed beside it, every SPT or other blow-count "
         "record, and the water levels. Give depths in the log's own unit and "
-        "say which unit. " + LOG_OTHER_PAGES + " {pages_note} Return it with "
-        "the answer tool."),
+        "say which unit. " + LOG_PIT_SIZE + " " + LOG_OTHER_PAGES +
+        " {pages_note} Return it with the answer tool."),
 }
 
 

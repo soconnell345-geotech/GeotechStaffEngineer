@@ -65,6 +65,9 @@ MODEL_FIRST_ASKS = {
     # mf-6 (RI-197): a log answer lists the pages that hold another
     # exploration's log (other_log_pages), each read on its own.
     "mf-6": "beb0eb227b920d06d77c1de144c9fd1cabb357ddf82dc80f666a2b33f103326d",
+    # mf-7 (RI-198): the log instruction carries today's rule for a test
+    # pit's size, the bucket as its width.
+    "mf-7": "b6270704a991c17bb2cca5a557aea299e37c0bcc52bf5caa91b5fe20178a772b",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,
@@ -226,8 +229,25 @@ def test_the_model_first_instructions_add_to_the_plain_ones():
     for asked in ("the project name and number", "the client",
                   "any other field the header prints", "its recovery"):
         assert asked in logs
+    assert logs.count(mf.LOG_PIT_SIZE) == 1                      # RI-198
+    assert logs.count(mf.LOG_OTHER_PAGES) == 1                   # RI-197
     assert not any("exact" in text.lower()
                    for text in mf.INSTRUCTIONS.values())
+
+
+def test_a_log_is_asked_today_s_rule_for_a_pit_s_size():
+    """RI-198: the bucket is the pit's width, as today's log reader is told
+    (``LOG_READER_SYSTEM``); never a pit on a borehole, nor a size the
+    header does not print."""
+    from report_ingest.log_reader import LOG_READER_SYSTEM
+
+    assert "THE BUCKET IS THE WIDTH" in LOG_READER_SYSTEM
+    said = mf.instruction("logs", "R00", [3], route="pdf")
+    for rule in ("On a pit, also fill pit", "The bucket is the width",
+                 "as the pit's width in the bucket's unit",
+                 "A bucket named only in a remark says nothing about the "
+                 "width", "never fill pit on a borehole"):
+        assert rule in said
 
 
 def test_the_narrative_carries_today_s_conventions_and_lab_its_rule():
