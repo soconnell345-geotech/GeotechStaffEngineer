@@ -8,8 +8,9 @@ traffic-available dPSI accordingly (Step 4 of the Table 3.1 procedure).
 for a DESIGNED section: at a trial period the environmental loss shrinks
 the traffic budget, Figure 3.1/3.7 in reverse gives the allowable
 cumulative ESALs at the section's fixed structural capacity, and the
-traffic-growth curve converts that back to a calendar period, iterated to
-convergence.
+traffic-growth curve converts that back to a calendar period, iterated
+until the trial and calculated periods agree within 1 year, whose average
+is the predicted period (Step 7, printed II-35).
 
 All physics from ``geotech_references.aashto_1993.environmental``.
 UNITS: US customary; swelling spec {vr_in, ps_pct, theta}, frost spec
@@ -176,4 +177,6 @@ def estimate_performance_period(
         "base_year_w18": base_year_w18,
         "growth_rate_pct": growth_rate_pct,
     })
+    if "note" in out:
+        out["notes"] = [out.pop("note")]
     return out

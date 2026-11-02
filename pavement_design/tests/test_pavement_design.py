@@ -513,8 +513,9 @@ class TestEnvironmentalLoss:
 
 
 class TestUfcAlternative:
-    """UFC 3-250-01 alt method (Figure E-1 read off the print in ufc_e1;
-    the other charts from the refs digitization, Appendix-G-anchored)."""
+    """UFC 3-250-01 alt method (Figures E-1 and F-1 read off the print in
+    ufc_e1 and ufc_f1; the vehicle curves E-2 to E-31 in the reference
+    layer's ufc_pavement)."""
 
     def test_figure_e1_appendix_g_reads(self):
         from pavement_design.ufc_e1 import figure_e1_thickness as e1
@@ -680,14 +681,13 @@ class TestUfcAlternative:
         assert "deterministic" in joined      # reliability asymmetry stated
 
     def test_ufc_mixed_traffic_table_g1(self):
-        """The automated mixed-traffic procedure reproduces the guide's
-        printed Table G-1 example structure: E-1 controls at 16.4 in,
-        light vehicles drop out as unlimited, total equivalent passes
-        within the inversion tolerance of the printed 1,395,400."""
-        pytest.importorskip("geotech_references.ufc_pavement")
-        from geotech_references.ufc_pavement import tables as utb
-        if not hasattr(utb, "figure_e_vehicle_thickness"):
-            pytest.skip("E-family vehicle curves not in this refs install")
+        """The automated mixed-traffic procedure on the printed charts
+        follows Table G-1 (printed 257): E-1 controls at 16.4 in, the car
+        and the 3-axle truck drop out as unlimited. The charts read the
+        5-axle truck at 15.6 in where G-1 prints 15.8 (p. 256: PCASE
+        solutions "differ slightly" from the charts), so its allowable
+        passes at 16.4 in are about 338,000 against the printed 252,915
+        and the total about 1,296,000 against 1,395,400."""
         from pavement_design import ufc_mixed_traffic
         r = ufc_mixed_traffic(vehicles=[
             {"vehicle": "E-1", "name": "18-kip ESAL",
@@ -705,10 +705,19 @@ class TestUfcAlternative:
         assert ctrl["required_thickness_in"] == pytest.approx(16.4, abs=0.2)
         # Light vehicles drop out (controlling thickness above their family).
         assert sum("unlimited" in n for n in r["notes"]) == 2
-        # Printed total 1,395,400; inversion of the near-flat 5-axle curve
-        # dominates the residual — assert within 10%.
+        rows = {w["name"]: w for w in r["worksheet"]}
+        for name, printed in (("Truck 5-axle", 15.8), ("Truck 3-axle", 12.8),
+                              ("Passenger car", 6.1)):
+            assert rows[name]["required_thickness_in"] == pytest.approx(
+                printed, abs=0.25)
+        # The car's 20,000,000 passes lie past its 10,000,000 curve.
+        assert any("extrapolated" in n for n in r["notes"])
+        assert rows["Truck 5-axle"]["allowable_passes_at_controlling"] == \
+            pytest.approx(337788, rel=0.02)
         assert r["total_equivalent_esal_passes"] == pytest.approx(
-            1395400, rel=0.10)
+            1296044, rel=0.01)
+        assert r["total_equivalent_esal_passes"] == pytest.approx(
+            1395400, rel=0.08)
 
     def test_compare_requires_one_subgrade_basis(self):
         from pavement_design import compare_flexible_pavement_methods
@@ -924,6 +933,53 @@ class TestFigure33:
         res = design_rigid_pavement(composite_k=spec, **params)
         assert any("Esb/MR exceeds 4" in w for w in res.warnings)
         assert any("Figure 3.3" in r for r in res.references)
+
+
+class TestFigure34:
+    """k on a rigid foundation within 10 ft, read off the printed chart
+    (the reference layer's k_rigid_foundation_correction, GM-303)."""
+
+    def test_printed_anchors(self):
+        from geotech_references.aashto_1993.composite_k import (
+            k_rigid_foundation_correction as kf)
+        # The figure's example and the four Table 3.3 rows, all Dsg 5 ft.
+        assert kf(4000, 5, 230)["k_pci"] == pytest.approx(300, rel=0.02)
+        for mr, k_inf, printed in ((20000, 1100, 1350), (2500, 160, 230),
+                                   (4000, 230, 300), (7000, 410, 540)):
+            assert kf(mr, 5, k_inf)["k_pci"] == pytest.approx(printed,
+                                                              rel=0.04)
+
+    def test_shallower_rock_raises_k(self):
+        from geotech_references.aashto_1993.composite_k import (
+            k_rigid_foundation_correction as kf)
+        ks = [kf(3500, d, 180)["k_pci"] for d in (2, 4, 6, 9)]
+        assert ks == sorted(ks, reverse=True)
+        assert ks[-1] > 180
+        assert kf(3500, 10, 180)["k_pci"] == 180
+        assert "II-37" in kf(3500, 10, 180)["note"]
+
+    def test_k_depends_on_k_inf_not_one_multiplier(self):
+        from geotech_references.aashto_1993.composite_k import (
+            k_rigid_foundation_correction as kf)
+        # The chart's lines fan out: the correction grows with k_inf.
+        low = kf(3500, 3, 150)["k_pci"] / 150
+        high = kf(3500, 3, 450)["k_pci"] / 450
+        assert high > low + 0.3
+
+    def test_outside_the_drawn_curves(self):
+        from geotech_references.aashto_1993.composite_k import (
+            k_rigid_foundation_correction as kf)
+        r = kf(3500, 1.5, 180)
+        assert r["k_pci"] == kf(3500, 2, 180)["k_pci"]
+        assert "understates" in r["note"]
+        r = kf(3500, 5, 1600)
+        assert r["k_pci"] == 1600 and "no correction" in r["note"]
+        r = kf(24000, 5, 900)
+        assert r["k_pci"] == kf(20000, 5, 900)["k_pci"]
+        assert "understates" in r["note"]
+        assert kf(20000, 2, 1400)["k_pci"] == 2000
+        with pytest.raises(ValueError):
+            kf(3500, 0, 180)
 
 
 class TestCbrScales:

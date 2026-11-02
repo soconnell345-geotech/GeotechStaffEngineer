@@ -1835,7 +1835,9 @@ cover cascade + Table 7-2 minimums + Ch 19 reduced-subgrade-strength frost),
 foundation), `compare_flexible_pavement_methods` (AASHTO vs UFC side by side,
 FHWA Mr=2555·CBR^0.64 bridge, caveats echoed), `ufc_mixed_traffic` (Table G-1
 controlling-vehicle equivalent-18-kip passes; light vehicles below controlling
-thickness → unlimited passes; reproduces printed G-1 within 6%). Plots module
+thickness → unlimited passes; vehicle curves E-2 to E-31 read off the print in
+the reference layer, GM-303; 7% under G-1's printed total, whose PCASE figures read
+the 5-axle truck 0.2 in thicker than its chart). Plots module
 (nomograph-overlay design charts, layer sections, UFC charts, method
 comparison); calc-package design_type flexible_ufc/rigid_ufc/compare; pavement
 specialist agent (app picker + reviewer + Claude Code twin). F-1 stands at

@@ -29,9 +29,9 @@ at Dsb = 6 in: the figure's own example (Esb 20,000, MR 7,000 -> 400; read
 guide's own two reads of one point (400 and 410).
 
 The worksheet (Table 3.2, pdf_page 127, printed II-38) then follows the
-reference layer step by step, with Figure 3.4 (rigid foundation), Figure
-3.5 (relative damage) and Figure 3.6 (loss of support) from
-``geotech_references.aashto_1993.composite_k``.
+reference layer step by step, with Figure 3.4 (rigid foundation; read off
+the chart, GM-303), Figure 3.5 (relative damage) and Figure 3.6 (loss of
+support) from ``geotech_references.aashto_1993.composite_k``.
 
 UNITS: US customary (psi, pci, inches, feet).
 """
@@ -231,6 +231,12 @@ def effective_k(seasonal, slab_d_in, dsb_in=None, esb_psi=None, dsg_ft=None,
             rf = _ck.k_rigid_foundation_correction(mr, dsg_ft, k_composite)
             k_for_ur = rf["k_pci"]
             row["k_rigid_foundation_pci"] = k_for_ur
+            fig34_ref = rf["reference"]
+            if "note" in rf:
+                row["note"] = (row["note"] + " " + rf["note"]
+                               if "note" in row else rf["note"])
+                if rf["note"] not in notes:
+                    notes.append(rf["note"])
         else:
             k_for_ur = k_composite
 
@@ -263,13 +269,16 @@ def effective_k(seasonal, slab_d_in, dsb_in=None, esb_psi=None, dsg_ft=None,
         "dsg_ft": dsg_ft,
         "equation": ("Table 3.2 worksheet: per-period composite k (Fig. 3.3 "
                      "read off the printed chart, or MR/19.4 with no subbase) "
-                     "-> rigid-foundation correction (Fig. 3.4, if dsg_ft<10) "
+                     "-> rigid-foundation correction (Fig. 3.4 read off the "
+                     "printed chart, if dsg_ft<10) "
                      "-> relative damage u_r (Fig. 3.5) -> average u_r -> "
                      "back-solved effective k -> loss-of-support correction "
                      "(Fig. 3.6)"),
         "reference": "AASHTO 1993 Guide, Table 3.2 (pdf_page 127, printed II-38)",
         "figure_3_3_reference": FIG33_REF,
     }
+    if dsg_ft is not None and dsg_ft < 10:
+        out["figure_3_4_reference"] = fig34_ref
     if notes:
         out["notes"] = notes
     return out

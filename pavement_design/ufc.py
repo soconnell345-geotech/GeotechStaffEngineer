@@ -5,10 +5,10 @@ The UFC method characterizes traffic as equivalent passes of an 18-kip
 single-axle, dual-tire load (controlling-vehicle procedure, Guide Ch 4 /
 Appendix G) and designs flexible sections by the Corps CBR method (Figure
 E-1 cover curves) and rigid slabs by the Westergaard-based Figure F-1
-family (+ Eq 13-1 on stabilized foundations). Figure E-1 is read off the
-print in ``ufc_e1`` (GM-298); the other charts and tables come from
-``geotech_references.ufc_pavement`` (Appendix-G-anchored digitization),
-whose chart-read tolerances propagate to the results.
+family (+ Eq 13-1 on stabilized foundations). Figures E-1 and F-1 are
+read off the print in ``ufc_e1`` and ``ufc_f1`` (GM-298); the vehicle
+curves E-2 to E-31 (every printed curve traced, GM-303) and the tables
+come from ``geotech_references.ufc_pavement``.
 
 COMPARISON BASIS (``compare_flexible_pavement_methods``): both guides
 accept "passes of an 18-kip single axle" as the traffic number — AASHTO's
@@ -376,7 +376,7 @@ def ufc_mixed_traffic(
     """Automated UFC mixed-traffic reduction (Ch 4 / Table G-1 procedure).
 
     Takes the raw vehicle mix and does the whole controlling-vehicle
-    procedure from the digitized Appendix E curves: per-vehicle required
+    procedure on the Appendix E curves as printed: per-vehicle required
     thickness at the representative subgrade CBR (Table 4-1 category
     value), controlling vehicle = largest thickness, allowable passes of
     each other vehicle at the controlling thickness by curve inversion,
@@ -413,6 +413,8 @@ def ufc_mixed_traffic(
             r = _utb.figure_e_vehicle_thickness(vehicle,
                                                 cbr=representative_cbr,
                                                 passes=passes)
+            if r.get("note"):
+                notes.append(f"{vehicle}: {r['note']}")
         add_ref(references, r["reference"])
         return r["thickness_in"]
 

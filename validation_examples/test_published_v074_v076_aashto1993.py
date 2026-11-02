@@ -48,6 +48,7 @@ import pytest
 from pavement_design import (compute_design_esals, design_flexible_pavement,
                              design_rigid_pavement,
                              estimate_performance_period, growth_factor)
+from geotech_references.aashto_1993.composite_k import     k_rigid_foundation_correction
 from pavement_design.composite_k import composite_k_inf, effective_k
 
 # --------------------------------------------------------------------------
@@ -67,21 +68,30 @@ def test_v074_figure_3_3_example():
         400, rel=0.03)
 
 
+def test_v074_figure_3_4_reads():
+    # Figure 3.4 alone, from the printed composite k: within 4 % (GM-303).
+    for (k, k_rigid, _), (mr, _esb) in zip(_ROWS.values(), _ROWS):
+        r = k_rigid_foundation_correction(mr, 5, k)
+        assert r["k_pci"] == pytest.approx(k_rigid, rel=0.04)
+
+
 def test_v074_table_3_3_rows():
     res = effective_k(_SEASONS, 9, dsb_in=6, dsg_ft=5, ls=1.0)
     for row in res["rows"]:
         k, k_rigid, ur = _ROWS[(row["mr_psi"], row["esb_psi"])]
         assert row["composite_k_pci"] == pytest.approx(k, rel=0.05)
+        # Two chart reads in a row: the composite k read 154 and 391 where
+        # the table prints 160 and 410 (March 210 for 230, June 504 for 540).
         assert row["k_rigid_foundation_pci"] == pytest.approx(k_rigid,
-                                                              rel=0.05)
-        assert row["u_r"] == pytest.approx(ur, abs=0.02)
+                                                              rel=0.10)
+        assert row["u_r"] == pytest.approx(ur, abs=0.03)
 
 
 def test_v074_table_3_3_effective_k():
     res = effective_k(_SEASONS, 9, dsb_in=6, dsg_ft=5, ls=1.0)
     assert res["ur_sum"] == pytest.approx(7.25, rel=0.02)
-    assert res["ur_avg"] == pytest.approx(0.60, abs=0.015)
-    assert res["effective_k_pci"] == pytest.approx(540, rel=0.04)
+    assert res["ur_avg"] == pytest.approx(0.60, abs=0.02)
+    assert res["effective_k_pci"] == pytest.approx(540, rel=0.05)
     assert res["k_corrected_for_loss_of_support_pci"] == pytest.approx(
         170, rel=0.04)
 
@@ -187,8 +197,11 @@ def test_v076_performance_period_table_h2():
     assert first["delta_psi_env"] == pytest.approx(0.21, abs=0.005)
     assert first["delta_psi_traffic"] == pytest.approx(1.89, abs=0.005)
     assert first["w18_cumulative"] == pytest.approx(16.0e6, rel=0.01)
-    assert res["converged"]
-    assert res["performance_period_yr"] == pytest.approx(13.2, abs=0.1)
+    assert first["corresponding_period_yr"] == pytest.approx(13.2, abs=0.1)
+    # "Convergence achieved after only one iteration" (Table H.2); Step 7
+    # (II-35) takes the average of 13 and 13.2: "about 13 years" (H-7).
+    assert res["converged"] and len(res["rows"]) == 1
+    assert res["performance_period_yr"] == pytest.approx(13.1, abs=0.05)
 
 
 def test_v076_layer_thicknesses():
