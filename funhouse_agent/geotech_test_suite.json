@@ -1227,11 +1227,14 @@
       "values": [
         {
           "name": "sliding_CDR",
-          "value": 1.84,
-          "rtol": 0.1
+          "value": 1.335,
+          "rtol": 0.1,
+          "alt": [
+            1.84
+          ]
         }
       ],
-      "source": "v5.3/v5.4 worktree ground truth, 2026-07-07 (recomputed by the E10 offline test)"
+      "source": "v5.3/v5.4 worktree ground truth, 2026-07-07 (recomputed by the E10 offline test); 1.335 since GM-302 (2026-11-02): the question gives no retained or foundation friction angle, so both take GEC-11 p. 4-10's 30 deg; the alt 1.84 is the answer with both at the reinforced fill's 34 deg"
     }
   },
   {
