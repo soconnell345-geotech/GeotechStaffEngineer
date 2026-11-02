@@ -62,24 +62,27 @@ def test_mse_wall_reports_the_slope_and_pullout_depth():
 def test_mse_wall_takes_the_retained_fill():
     """With a slope Kab follows the fill behind the zone (E3: 30 deg behind
     a 34 deg reinforced fill); mse_wall passes phi_retained through."""
-    same = _call("mse_wall", {**MSE, "backfill_slope": 20})
+    same = _call("mse_wall", {**MSE, "backfill_slope": 20,
+                              "phi_retained": 34})
     weaker = _call("mse_wall", {**MSE, "backfill_slope": 20,
                                 "phi_retained": 30, "gamma_retained": 18})
     assert "error" not in weaker, weaker
     assert weaker["backslope"]["Kab"] > same["backslope"]["Kab"]
     assert weaker["FOS_sliding"] < same["FOS_sliding"]
     level = _call("mse_wall", MSE)
-    given = _call("mse_wall", {**MSE, "phi_retained": 34,
+    given = _call("mse_wall", {**MSE, "phi_retained": 30,
                                "gamma_retained": 19})
-    # left out, the two are listed as taken from the backfill (GM-165)
+    # left out, phi_retained takes GEC-11 Vol I p. 4-10's 30 deg (GM-302
+    # review; phi_backfill before), gamma_retained the backfill's (GM-165)
     used = level.pop("defaults_used")
-    assert (used["phi_retained"], used["gamma_retained"]) == (34, 19)
+    assert used["phi_retained"].startswith(
+        "30 deg, assumed for preliminary sizing: GEC-11 Vol I p. 4-10")
+    assert used["gamma_retained"] == 19
     given.pop("defaults_used")
-    # GM-302: left out, a phi_retained taken above GEC-11 p. 4-10's 30 deg
-    # is warned of
-    given_warnings = given.pop("warnings")
-    left_out = [w for w in level.pop("warnings") if w not in given_warnings]
-    assert len(left_out) == 1 and left_out[0].startswith("phi_retained")
+    given_choices = given.pop("choices")
+    assumed = [c for c in level.pop("choices") if c not in given_choices]
+    assert [c["what"] for c in assumed] == [
+        "retained fill friction angle (phi_retained)"]
     assert given == level
 
 
@@ -105,10 +108,16 @@ def test_surcharge_on_a_slope_that_continues_refused(method, extra):
 
 
 def test_slope_steeper_than_phi_refused():
-    err = _call("mse_wall", {**MSE, "backfill_slope": 35})["error"]
+    # the fill behind the zone's angle: left out, GEC-11 p. 4-10's 30 deg
+    # (GM-302 review; phi_backfill before)
+    err = _call("mse_wall", {**MSE, "backfill_slope": 31})["error"]
     assert "steeper than the friction angle" in err
-    at_phi = _call("mse_wall", {**MSE, "backfill_slope": 34})
+    at_phi = _call("mse_wall", {**MSE, "backfill_slope": 30})
     assert "error" not in at_phi, at_phi            # Eq. 4-3: Gamma = 1
+    given = {**MSE, "phi_retained": 34}
+    assert "error" not in _call("mse_wall", {**given, "backfill_slope": 34})
+    err = _call("mse_wall", {**given, "backfill_slope": 35})["error"]
+    assert "steeper than the friction angle" in err
 
 
 def test_traffic_vertical_resists_is_offered_and_named():

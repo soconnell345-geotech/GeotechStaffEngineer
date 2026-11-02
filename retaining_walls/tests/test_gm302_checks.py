@@ -6,13 +6,16 @@ Each read on the rendered page:
   "Limiting eccentricity, e = L/4 for strength limit states and e = L/6
   for service limit state", "Is the resultant within limiting value of
   eL?" - a verdict on the LRFD path, Service I with the live load counted.
-* Vol I p. 3-21: "The maximum St distance is 24 in. (610 mm)" - a verdict;
-  p. 3-20 gives the grid F* "For ... St > 6 inches (150 mm)" - a warning.
+* Vol I p. 3-21: "The maximum St distance is 24 in. (610 mm)" - a verdict
+  with the empirical F*; p. 3-20 gives that F* "For ... St > 6 inches (150
+  mm)" - a warning. Both sit in the empirical F*'s paragraphs, so with F*
+  from pullout tests an St over 24 in. is a warning (GM-302 review).
 * Vol I p. 4-38: "vertical spacing of reinforcement should not exceed
   32 in. (800 mm)" - advice, a warning.
 * Vol I p. 4-10: reinforced fill phi 34 deg unless tested, never above
-  40 deg; foundation 30 deg "in absence of specific data"; retained 30 deg
-  "often used" - advice, warnings.
+  40 deg - advice, warnings; foundation 30 deg "in absence of specific
+  data", retained 30 deg "often used" - the values left-out angles take, a
+  choice (GM-302 review; phi_backfill before).
 * Vol I p. 4-30: Eq. 4-24, gamma_r H <= 3 cu, "required" - a verdict on
   both paths; c* = 0.67 c', phi* = tan^-1(0.67 tan phi'f) where local or
   punching shear is possible - an option on the LRFD qn.
@@ -188,6 +191,16 @@ def test_local_shear_strengths_in_qn():
                     if c["what"] == "foundation strengths in qn (Eq. 4-22)"]
     assert strengths["chosen"].startswith("c* = 0.67 c_f")
     assert strengths["how"] == "given" and "10.6.3.1.2b" in strengths["basis"]
+    # each reading gives the other's governing bearing CDR (GM-302 review)
+    assert strengths["alternatives"] == [
+        "c_f and phi_f as given: general shear (bearing CDR_governing "
+        f"{full['bearing']['CDR_governing']:.3f})"]
+    (general,) = [c for c in full["choices"]
+                  if c["what"] == "foundation strengths in qn (Eq. 4-22)"]
+    assert general["how"] == "default"
+    assert general["alternatives"][0].endswith(
+        f"(bearing CDR_governing {b['CDR_governing']:.3f})")
+    assert b["CDR_governing"] < full["bearing"]["CDR_governing"]
 
 
 def test_local_shear_strengths_refused_where_they_do_nothing():
@@ -235,12 +248,26 @@ def test_grid_st_under_6_in_with_the_empirical_f_star_warns():
     assert not any("under 6 in." in w for w in tested.warnings)
 
 
-def test_a_grid_with_no_st_is_not_checked_but_warned():
+def test_with_f_star_from_tests_st_over_24_in_warns():
+    """The 24 in. sits in p. 3-21's paragraph on the empirical F*: with F*
+    from pullout tests it is a warning, never a failed check (GM-302
+    review); no St given (allowed only then) is not checked."""
     g = _wall()
+    over = mse.analyze_mse_wall(g, 19.0, 34.0, _grid(0.70),
+                                phi_foundation=30.0, phi_retained=30.0,
+                                F_star_tested=1.0)
+    assert over.grid_spacing is None and "grid_spacing" not in over.to_dict()
+    assert "grid spacing" not in over.checks_failed
+    (w,) = [w for w in over.warnings if "24 in." in w]
+    assert w.startswith("St 700 mm is over 24 in. (610 mm)")
+    assert "not a check" in w
+    at24 = mse.analyze_mse_wall(g, 19.0, 34.0, _grid(0.6096),
+                                phi_foundation=30.0, phi_retained=30.0,
+                                F_star_tested=1.0)
+    assert at24.warnings == []
     r = mse.analyze_mse_wall(g, 19.0, 34.0, _grid(0.0), phi_foundation=30.0,
                              phi_retained=30.0, F_star_tested=1.0)
-    assert r.grid_spacing is None
-    assert any("St is not checked" in w for w in r.warnings)
+    assert r.grid_spacing is None and r.warnings == []
     assert r.checks_not_run == ["bearing"]
     geo = mse.analyze_mse_wall(g, 19.0, 34.0, GEOGRID, phi_foundation=30.0,
                                phi_retained=30.0)
@@ -266,26 +293,67 @@ def test_vertical_spacing_over_32_in_warns():
 # ---------------------------------------------------------------------------
 
 def test_fill_strength_warnings():
-    assert mse.fill_strength_warnings(34.0, 30.0, 30.0) == []
-    (w,) = mse.fill_strength_warnings(36.0, 30.0, 30.0)
+    assert mse.fill_strength_warnings(34.0) == []
+    (w,) = mse.fill_strength_warnings(36.0)
     assert "above 34 deg" in w and "triaxial or direct shear" in w
-    (w,) = mse.fill_strength_warnings(42.0, 30.0, 30.0)
+    (w,) = mse.fill_strength_warnings(42.0)
     assert "above 40 deg" in w and "should not used" in w
-    found, retained = mse.fill_strength_warnings(34.0)
-    assert found.startswith("phi_foundation was not given")
-    assert retained.startswith("phi_retained was not given")
-    assert mse.fill_strength_warnings(30.0) == []
+
+
+def test_left_out_foundation_and_retained_angles_take_30_deg():
+    """p. 4-10: 30 deg for the foundation 'in absence of specific data' and
+    for the retained fill, 'recommended only for preliminary sizing': the
+    value a left-out angle takes, stated as a choice (GM-302 review)."""
+    g = _wall()
+    left = mse.analyze_mse_wall(g, 19.0, 34.0, GEOGRID)
+    given = mse.analyze_mse_wall(g, 19.0, 34.0, GEOGRID, phi_foundation=30.0,
+                                 phi_retained=30.0)
+    assert left.FOS_sliding == given.FOS_sliding
+    assert left.FOS_overturning == given.FOS_overturning
+    assert left.external_terms["phi_foundation"] == 30.0
+    assert left.external_terms["phi_retained"] == 30.0
+    assumed = {c["what"]: c for c in left.choices
+               if c["what"].endswith(("(phi_foundation)", "(phi_retained)"))}
+    assert sorted(assumed) == [
+        "foundation soil friction angle (phi_foundation)",
+        "retained fill friction angle (phi_retained)"]
+    for c in assumed.values():
+        assert c["chosen"] == "30 deg, assumed for preliminary sizing"
+        assert c["how"] == "default"
+        assert "p. 4-10" in c["basis"]
+        assert "recommended only for preliminary sizing" in c["basis"]
+    assert not any(c["what"].endswith(("(phi_foundation)", "(phi_retained)"))
+                   for c in given.choices)
+    # the LRFD path and the ASD external check alike
+    lrfd = mse.check_external_stability_lrfd(g, 19.0, 34.0)
+    lrfd_given = mse.check_external_stability_lrfd(g, 19.0, 34.0, 30.0,
+                                                   phi_retained=30.0)
+    assert lrfd["sliding"] == lrfd_given["sliding"]
+    assert lrfd["eccentricity"] == lrfd_given["eccentricity"]
+    assert len([c for c in lrfd["choices"]
+                if "preliminary sizing" in c["chosen"]]) == 2
+    assert "choices" not in lrfd_given
+    asd = mse.check_external_stability(g, 19.0, 34.0, 18.0, 30.0,
+                                       q_allowable=500.0)
+    asd_given = mse.check_external_stability(g, 19.0, 34.0, 18.0, 30.0,
+                                             q_allowable=500.0,
+                                             phi_retained=30.0)
+    assert asd == asd_given
+    # a foundation angle is still asked for where qn is worked out
+    with pytest.raises(ValueError):
+        mse.check_external_stability_lrfd(g, 19.0, 34.0,
+                                          gamma_foundation=18.0)
 
 
 def test_warnings_reach_the_results():
     r = mse.analyze_mse_wall(_wall(), 19.0, 36.0, GEOGRID)
-    assert len(r.warnings) == 3
+    (w,) = r.warnings
+    assert "above 34 deg" in w
     d = r.to_dict()
     assert d["warnings"] == r.warnings
     assert "  Warnings:" in r.summary()
-    # given, nothing to warn of
-    quiet = mse.analyze_mse_wall(_wall(), 19.0, 34.0, GEOGRID,
-                                 phi_foundation=30.0, phi_retained=30.0)
+    # nothing to warn of
+    quiet = mse.analyze_mse_wall(_wall(), 19.0, 34.0, GEOGRID)
     assert quiet.warnings == [] and "warnings" not in quiet.to_dict()
     # the LRFD path's warnings join the result's once
     both = mse.analyze_mse_wall(_wall(), 19.0, 36.0, GEOGRID,

@@ -577,8 +577,10 @@ class TestMSESlidingFriction:
     def test_uses_min_phi(self):
         """MSE sliding should use min(phi_backfill, phi_foundation)."""
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0)
-        # phi_backfill=34, phi_foundation=28 -> uses 28 (no 2/3 reduction)
-        r = check_external_stability(geom, 18.0, 34.0, 19.0, 28.0)
+        # phi_backfill=34, phi_foundation=28 -> uses 28 (no 2/3 reduction);
+        # the retained fill given as the reinforced fill (GM-302 review)
+        r = check_external_stability(geom, 18.0, 34.0, 19.0, 28.0,
+                                     phi_retained=34.0)
 
         # Manually compute expected FOS
         Ka = rankine_Ka(34.0)
@@ -621,13 +623,15 @@ class TestMSERetainedFill:
         assert r_weak["FOS_sliding"] < r_same["FOS_sliding"]
         assert r_weak["FOS_overturning"] < r_same["FOS_overturning"]
 
-    def test_default_uses_backfill(self):
-        """When phi_retained=None, should use phi_backfill."""
+    def test_default_is_30_deg(self):
+        """When phi_retained=None: GEC-11 Vol I p. 4-10's assumed 30 deg
+        (GM-302 review; phi_backfill before); gamma_retained=None takes
+        gamma_backfill."""
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0)
         r_default = check_external_stability(geom, 18.0, 34.0, 19.0, 30.0)
         r_explicit = check_external_stability(
             geom, 18.0, 34.0, 19.0, 30.0,
-            phi_retained=34.0, gamma_retained=18.0,
+            phi_retained=30.0, gamma_retained=18.0,
         )
         assert abs(r_default["FOS_sliding"] - r_explicit["FOS_sliding"]) < 0.001
 
@@ -1615,9 +1619,11 @@ class TestMSELRFDBearingNotChecked:
         from retaining_walls.mse import check_external_stability_lrfd
         r = check_external_stability_lrfd(self._geom(), 19.0, 34.0, 30.0,
                                           gamma_foundation=18.0)
-        # GM-302: then the strengths qn took (local_shear_possible)
-        c, strengths = r["choices"]
+        # GM-302: then the strengths qn took (local_shear_possible), and
+        # the retained fill's 30 deg, left out (GM-302 review)
+        c, strengths, retained = r["choices"]
         assert strengths["what"] == "foundation strengths in qn (Eq. 4-22)"
+        assert retained["what"] == "retained fill friction angle (phi_retained)"
         assert c["how"] == "default" and "0.65" in c["chosen"]
         assert "Table 4-5" in c["basis"] and "Eq. 4-22" in c["basis"]
         assert "bearing_resistance_strength" in c["alternatives"][0]

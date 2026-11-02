@@ -57,18 +57,30 @@ def test_lrfd_local_shear_possible():
     (c,) = [c for c in r["choices"]
             if c["what"] == "foundation strengths in qn (Eq. 4-22)"]
     assert c["how"] == "given"
+    # the general-shear reading's governing bearing CDR (GM-302 review)
+    general = _call("mse_lrfd_external_stability",
+                    {**_LRFD, "gamma_foundation": 18.0})
+    assert c["alternatives"] == [
+        "c_f and phi_f as given: general shear (bearing CDR_governing "
+        f"{general['bearing']['CDR_governing']:.3f})"]
     refused = _call("mse_lrfd_external_stability",
                     {**_LRFD, "local_shear_possible": True,
                      "bearing_resistance_strength": 400.0})
     assert "needs gamma_foundation" in refused.get("error", "")
 
 
-def test_lrfd_warns_of_a_foundation_angle_left_out():
+def test_lrfd_takes_30_deg_for_a_foundation_angle_left_out():
+    """GEC-11 Vol I p. 4-10's 30 deg 'in absence of specific data', a
+    choice and a default listed (GM-302 review; phi_backfill before)."""
     lrfd = {k: v for k, v in _LRFD.items() if k != "phi_foundation"}
     r = _call("mse_lrfd_external_stability", lrfd)
-    assert any(w.startswith("phi_foundation was not given")
-               for w in r["warnings"])
-    assert "warnings" not in _call("mse_lrfd_external_stability", _LRFD)
+    given = _call("mse_lrfd_external_stability", _LRFD)
+    assert r["sliding"] == given["sliding"]
+    (c,) = [c for c in r["choices"]
+            if c["what"] == "foundation soil friction angle (phi_foundation)"]
+    assert c["chosen"] == "30 deg, assumed for preliminary sizing"
+    assert r["defaults_used"]["phi_foundation"].startswith("30 deg")
+    assert "warnings" not in r and "warnings" not in given
 
 
 def test_mse_wall_reports_the_new_checks_and_warnings():

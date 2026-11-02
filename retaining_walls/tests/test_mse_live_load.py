@@ -41,8 +41,11 @@ def _geom(q=Q, **kw):
 
 
 def _ext(q=Q, **kw):
+    # the retained fill as the reinforced fill, given: the hand checks take
+    # one Ka (GM-302 review: left out, it is GEC-11 p. 4-10's 30 deg)
     return check_external_stability(_geom(q), G, PHI, G_F, PHI_F,
-                                    q_allowable=Q_ALL, **kw)
+                                    q_allowable=Q_ALL, phi_retained=PHI,
+                                    **kw)
 
 
 def _hand(q, resists, in_bearing):
@@ -176,11 +179,14 @@ class TestResult:
         # requires (GM-262 review), GEC-11 Table 3-6's alpha 0.8 for a
         # geogrid (GM-256), and each equally spaced level's contributory
         # height (GM-277), after tan rho of the lowest sheet, sliding along
-        # it (GM-297 review)
+        # it (GM-297 review); then the foundation's and the retained fill's
+        # friction angle left out, GEC-11 p. 4-10's 30 deg (GM-302 review)
         assert [c["what"].split()[0] for c in r.choices] == [
-            "interface", "Coverage", "Long-term", "Scale", "Tmax"]
+            "interface", "Coverage", "Long-term", "Scale", "Tmax",
+            "foundation", "retained"]
         assert [c["how"] for c in r.choices] == ["default", "default",
                                                  "module", "default",
+                                                 "default", "default",
                                                  "default"]
 
 
@@ -199,7 +205,7 @@ class TestCalcSteps:
     def test_steps_print_the_terms_the_analysis_used(self):
         r = analyze_mse_wall(_geom(), G, PHI, _STRIP,
                              gamma_foundation=G_F, phi_foundation=PHI_F,
-                             q_allowable=Q_ALL)
+                             q_allowable=Q_ALL, phi_retained=PHI)
         ext = self._items(self._steps(r), "External Stability")
         table = ext[0]
         assert table.headers[-1] == "Counted in"

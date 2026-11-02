@@ -388,6 +388,13 @@ def _input_summary_mse(result, analysis) -> List[InputItem]:
     if phi_f is not None:
         items.append(InputItem("\u03c6_foundation", "Foundation friction angle",
                                f"{phi_f:.1f}", "deg"))
+    else:
+        # GM-302 review: GEC-11 Vol I p. 4-10's 30 deg for no data
+        from retaining_walls import mse as _mse
+        items.append(InputItem(
+            "\u03c6_foundation", "Foundation friction angle, not given: "
+            "assumed for preliminary sizing (GEC-11 Vol I p. 4-10)",
+            f"{_mse.PHI_ASSUMED:.1f}", "deg"))
     if c_f > 0:
         items.append(InputItem("c_foundation", "Foundation cohesion", f"{c_f:.1f}", "kPa"))
     if q_all is not None:
@@ -2079,7 +2086,8 @@ def _mse_terms(result, analysis):
     geom = _get(analysis, "geom")
     return mse._external_terms(
         geom, _mse_used(analysis, "gamma_backfill"), phi,
-        phi if phi_f is None else phi_f,
+        # GM-302 review: GEC-11 Vol I p. 4-10's 30 deg for no data
+        mse.PHI_ASSUMED if phi_f is None else phi_f,
         _mse_used(analysis, "c_foundation"),
         phi_retained=_mse_used(analysis, "phi_retained"),
         gamma_retained=_mse_used(analysis, "gamma_retained"),

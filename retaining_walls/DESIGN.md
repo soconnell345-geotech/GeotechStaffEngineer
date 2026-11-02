@@ -176,7 +176,9 @@ External loads (`backslope_loads`):
   L/2; V2 = γr L (h − H) / 2 at 2L/3 from the face (L/6 behind the centre);
   FT at h/3. The module takes V2 as the reinforced-fill weight of the slope
   fill over the zone (γr, as the figures do); FT uses the retained fill
-  (`phi_retained`, `gamma_retained`, defaulting to the reinforced fill).
+  (`phi_retained`, `gamma_retained`; left out, phi_retained is GEC-11 Vol I
+  p. 4-10's 30 deg since the GM-302 review and gamma_retained the
+  reinforced fill's).
 
 Checks:
 
@@ -1781,24 +1783,32 @@ verdict where the page states a requirement; a warning where it advises.
   qn by Eq. 4-22). p. 4-30: c* = 0.67 c', phi* = tan^-1(0.67 tan phi'f),
   AASHTO 10.6.3.1.2b. `local_shear_possible` (default False) gives them to
   qn only; sliding keeps the strengths given. Refused without
-  `gamma_foundation`. A choice states which strengths qn took.
-- **A steel grid's St** (ASD path, a verdict). Vol I p. 3-21: "The maximum
-  St distance is 24 in. (610 mm)": `grid_spacing` (St_max_m, St_limit_m,
-  passes), `checks_failed` "grid spacing", where a grid's
-  `transverse_spacing` is given; a grid with none (F* from tests) warns
-  that St was not checked. p. 3-20 gives the grid F* "For steel grid
-  reinforcements with transverse spacing of St > 6 inches (150 mm)":
-  under 6 in. with the empirical F* warns (Example E4 takes it at 6 in.).
+  `gamma_foundation`. A choice states which strengths qn took, and gives
+  the governing Strength I bearing CDR the other strengths give (the
+  default, general shear, is the unsafe side).
+- **A steel grid's St** (ASD path, a verdict with the empirical F*). Vol I
+  p. 3-21: "The maximum St distance is 24 in. (610 mm)": `grid_spacing`
+  (St_max_m, St_limit_m, passes), `checks_failed` "grid spacing", where a
+  grid's `transverse_spacing` is given. p. 3-20 gives the grid F* "For
+  steel grid reinforcements with transverse spacing of St > 6 inches (150
+  mm)": under 6 in. with the empirical F* warns (Example E4 takes it at 6
+  in.). Both bounds sit in the empirical F*'s paragraphs, so with F* from
+  pullout tests (`F_star_tested`) an St over 24 in. warns and is not a
+  check (GM-302 review); a grid with no St (allowed only then) is not
+  checked.
 - **Vertical spacing** (ASD path, a warning). Vol I p. 4-38: "vertical
   spacing of reinforcement should not exceed 32 in. (800 mm)": Sv, or the
   largest gap between the level depths given, over 32 in.
-- **Friction angles** (both paths, warnings). Vol I p. 4-10: the reinforced
-  fill's "should be assumed to be 34°, unless the project specific fill is
-  tested"; "A design friction angle greater than 40° should not used";
-  the foundation's 30° "in absence of specific data", the retained fill's
-  30° "often used", each "only for preliminary sizing". phi_backfill
-  above 34 or 40 deg warns; phi_foundation or phi_retained left out, so
-  taken as a phi_backfill above 30 deg, warns.
+- **Friction angles** (both paths). Vol I p. 4-10: the reinforced fill's
+  "should be assumed to be 34°, unless the project specific fill is
+  tested"; "A design friction angle greater than 40° should not used":
+  phi_backfill above 34 or 40 deg warns. The foundation's 30° "in absence
+  of specific data" and the retained fill's 30° "often used", each "only
+  for preliminary sizing": since the GM-302 review a left-out
+  phi_foundation or phi_retained is 30 deg (`PHI_ASSUMED`), stated as a
+  choice (`assumed_friction_choices`) and in the tools' `defaults_used`;
+  before, both took phi_backfill. A phi_foundation is still required
+  where qn is worked out (`gamma_foundation`).
 - `MSEWallResult` gains `local_shear`, `grid_spacing` and `warnings`
   (summary and `to_dict`, each only when present); the LRFD dict gains
   `local_shear` and `warnings`. The calc package prints Eq. 4-24, the St
