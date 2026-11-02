@@ -397,6 +397,13 @@ def test_text_that_may_name_anything_is_read_strictly(text):
     ("QX-1, QX-2", None), ("QX-1; QX-2", None), ("Hole 7, Hole 8", None),
     ("Hole 7, 8", None), ("QX-1, ZW-1", None),
     ("QX-1, depth 3 m, QX-2", None),
+    # ... or names two of them at once.
+    ("Hole 7, 8 and 9", None), ("QX-1, QX-2 and QX-3", None),
+    ("QX-1; QX-2 & ZW-3", None),
+    ("Made-up pits QX-1, QX-2 and QX-3 (2, 4 and 6 m)", None),
+    # A note with "and" in it is still a note.
+    ("QX-1, depth 2 and 3 m", "QX1"),
+    ("QX-1, depth 3 m (made-up notes 2 and 3)", "QX1"),
 ])
 def test_a_note_after_the_name_leaves_the_name(text, key):
     assert mfp.exploration_id(text) == key

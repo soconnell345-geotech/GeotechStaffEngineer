@@ -1225,6 +1225,39 @@ class TestPagesHandedBack:
                 for i in again.investigations] == [("B-1", [7, 8]),
                                                    ("TP-1", [9])]
 
+    def test_a_group_s_first_page_handed_back_keeps_its_own_file(
+            self, synthetic_pdf, tmp_path):
+        """The group is keyed by its first page; that page read alone is
+        saved under a key of its own, so neither result overwrites the
+        other and a resume asks for neither again."""
+        pytest.importorskip("report_ingest.locate")
+        engines = _engines()
+        engines[3]["logs"].turns = [
+            _log("B-1", "boring", 8, [(3.0, 31.5, "Made-up grey GRAVEL")],
+                 pages_left=[7]),
+            _tp1(), _b1_top(), _bh1()]
+        out = tmp_path / "out"
+        record = _run_on(synthetic_pdf, out, engines)
+        assert engines[3]["logs"].n_calls == 4
+        group = json.loads((out / "items" / "mf-log-7.json")
+                           .read_text("utf-8"))
+        assert group["pages"] == [7, 8]
+        alone = json.loads((out / "items" / "mf-log-7-alone.json")
+                           .read_text("utf-8"))
+        assert alone["pages"] == [7]
+        assert [(i.investigation_id, i.pages)
+                for i in record.investigations] == [("B-1", [7, 8]),
+                                                    ("TP-1", [9])]
+
+        engines = _silent(_engines())
+        engines[3]["lab"].turns = [{"text": "Still no answer."}]
+        again = _run_on(synthetic_pdf, out, engines)
+        assert {k: v for k, v in _n_calls(engines).items() if v} == {
+            "lab": 1}
+        assert [(i.investigation_id, i.pages)
+                for i in again.investigations] == [("B-1", [7, 8]),
+                                                   ("TP-1", [9])]
+
 
 def test_a_divider_inside_a_stage_s_pages_is_one_note():
     """RI-197: a page set aside as a divider between two pages of the same

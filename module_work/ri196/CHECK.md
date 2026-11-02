@@ -70,6 +70,27 @@ model-first path, and the graph's off-path snapshot test passes.
   described under ri73-3 refuses the saved descriptions, so the range voter
   does not run there. Start the next run in a fresh folder.
 
+## Review fixes (independent review, 2026-11-02)
+
+The review re-ran the grouping over every saved page description in the
+field-feedback hand-backs (builds e, f and g, plus the local describer runs:
+38 description sets, 9,731 descriptions). Log groups change only on R21's
+bound report (42 -> 54) and R21's parent (+1, the photographed pit page),
+as above. `is_divider` changes on 17 descriptions, and none of them becomes
+a log or lab group except R21's pit page. Across 320 saved model-first log
+results, no one-page call hands its page back, so (b) adds no item error to
+any saved run. Two fixes:
+
+- `graph._handed_back`: when the group's own first page is handed back, its
+  one-page re-read is keyed `log-<page>-alone`. Under `log-<page>` it took
+  the group's key, so each result overwrote the other's item file and
+  placement, and a resume re-read both. Test:
+  `test_a_group_s_first_page_handed_back_keeps_its_own_file`.
+- `model_first_pages._names_one`: a piece joining names ("QX-2 and QX-3",
+  "8 and 9") names explorations, as the docstring says. Before this, such a
+  field named only its first exploration: 6 of the saved descriptions did,
+  none on a log page.
+
 ## Noted, not fixed
 
 - A describer field listing two lettered pits after one word ("Pit K, M")
@@ -83,6 +104,13 @@ model-first path, and the graph's off-path snapshot test passes.
 - A page a saved MF-3 answer named as another log only in prose is not
   re-read from that answer: mf-6 asks for the list, and the missing-holes
   check names the page meanwhile.
+- A short word before a whole number in a note ("water at 2 m") reads as a
+  code ("AT2"), so the field names none, as it did before RI-196. Saved
+  notes print decimals, which read as no code.
+- A field that says the page does not log the exploration ("TP-1 is
+  mentioned in the text only; ...") now names it: the old reading refused
+  it only by its length. None was on a log page in the saved runs, and the
+  ri73-4 describer is asked for the name alone.
 - The missing-holes replay had no text layer, so a text page's own label
   name was not exercised against the describer's; a page with a label name
   is never given the describer's.

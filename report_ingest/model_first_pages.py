@@ -589,9 +589,14 @@ def _names_one(piece: str, name: str) -> bool:
     """Whether ``piece``, after the name ``name`` (a key) and a comma, names
     an exploration of its own rather than adding a note: a code alone
     ("QX-2", "8"), a code with letters of its own ("Pit QX-2"), or the
-    same word as the name with another code ("Hole 8" after "Hole 7"). A
-    depth, an elevation, a water level or a place ("depth 3,50 m",
-    "elevation 9.36 m", "dry") names none."""
+    same word as the name with another code ("Hole 8" after "Hole 7"); so
+    does a piece joining such names ("QX-2 and QX-3", "8 and 9"), which
+    alone names none. A depth, an elevation, a water level or a place
+    ("depth 3,50 m", "elevation 9.36 m", "dry") names none."""
+    joined = re.split(r"[&+]|\band\b", re.sub(r"\([^()]*\)", " ", piece),
+                      flags=re.I)
+    if len(joined) > 1:
+        return any(_names_one(part.strip(), name) for part in joined)
     key = exploration_id(piece) if piece else None
     if key is None:
         return False

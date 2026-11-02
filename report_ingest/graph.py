@@ -3294,8 +3294,10 @@ def _handed_back(unit: _Unit, blob: Dict[str, Any], labels: Dict[int, str],
                  given: set, where: str, qa: List[QAEntry]
                  ) -> List[Tuple[_Unit, List[Any]]]:
     """The pages a log result handed back unread (``returned``, RI-197),
-    each as a unit of its own to read: one page, keyed ``log-<page>``, kind
-    its label (a test pit's or a boring's log), else the group's. A page
+    each as a unit of its own to read: one page, keyed ``log-<page>``
+    (``log-<page>-alone`` for the group's own first page, whose key the
+    group holds), kind its label (a test pit's or a boring's log), else
+    the group's. A page
     already queued (``given``, updated here) is not queued again. One QA
     note names the pages and the reader's reasons."""
     from report_ingest.log_holes import LOG_ITEM_KINDS
@@ -3323,11 +3325,15 @@ def _handed_back(unit: _Unit, blob: Dict[str, Any], labels: Dict[int, str],
         kind = labels.get(page) if labels.get(page) in LOG_ITEM_KINDS \
             else unit.kind
         why = f"handed back by the reader of {unit.id}"
-        out.append((_Unit(kind, f"log-{page}", [page],
+        # The group is keyed by its first page: that page read alone takes
+        # a key of its own, or each result would overwrite the other's file.
+        key = f"log-{page}"
+        if key == unit.id:
+            key += "-alone"
+        out.append((_Unit(kind, key, [page],
                           evidence={"handed_back_by": unit.id,
                                     "why": row.get("why") or ""}),
-                    [PageGroup("logs", [page], why=why,
-                               key=f"log-{page}")]))
+                    [PageGroup("logs", [page], why=why, key=key)]))
     return out
 
 
