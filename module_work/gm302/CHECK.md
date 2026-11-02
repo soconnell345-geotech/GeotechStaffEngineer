@@ -139,7 +139,10 @@ assumed for preliminary sizing", how "default", the p. 4-10 sentence as
 its basis) and the tools' `defaults_used` gives the same text. The first
 build's two warnings for them are gone. `gamma_foundation` without
 `phi_foundation` is still refused: qn takes the foundation soil's own
-angle.
+angle. A backfill slope steeper than a left-out `phi_retained`'s 30° is
+refused with the reason (GEC-11 Eq. 4-3 has no real Kab), saying the 30°
+was p. 4-10's default and asking for `phi_retained`; with `phi_retained`
+given the refusal keeps its wording (second review).
 
 ## C5. Local shear: Eq. 4-24. A verdict; both paths
 
@@ -231,8 +234,9 @@ Verdicts, 21 calls:
   the broken backslope), sliding (2 slope walls, FOS 1.504 to 1.193).
 - 2 calls are now refused: a 34° backslope over a 34° fill with
   `phi_retained` left out is steeper than the retained fill's 30° (GEC-11
-  Eq. 4-3); before, FOS_sliding 1.239. One refusal's text now names
-  30 deg.
+  Eq. 4-3); before, FOS_sliding 1.239. One refusal (a 35° slope, the
+  angle left out) now names the 30° as p. 4-10's default and asks for
+  `phi_retained`.
 
 GM-297's cases 3 to 8 (its CHECK.md, "What moved"), now with the retained
 fill at 30°, at the base:

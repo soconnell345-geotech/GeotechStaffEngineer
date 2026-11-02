@@ -720,7 +720,8 @@ def _run_mse_lrfd_external_stability(params):
     result = check_external_stability_lrfd(
         geom, gamma_backfill=params["gamma_backfill"],
         phi_backfill=params["phi_backfill"],
-        # None: phi_backfill, with GEC-11 p. 4-10's warning (GM-302)
+        # None: 30 deg, GEC-11 Vol I p. 4-10's value for no data, stated as
+        # a choice (GM-302 review); phi_retained likewise
         phi_foundation=params.get("phi_foundation"),
         phi_retained=params.get("phi_retained"),
         gamma_retained=params.get("gamma_retained"),

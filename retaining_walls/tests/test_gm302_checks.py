@@ -345,6 +345,47 @@ def test_left_out_foundation_and_retained_angles_take_30_deg():
                                           gamma_foundation=18.0)
 
 
+_DEFAULTED = "taken because phi_retained was not given (GEC-11 Vol I p. 4-10"
+
+
+def test_a_slope_steeper_than_the_assumed_30_deg_says_it_was_the_default():
+    """phi_retained left out: the refusal names the 30 deg as p. 4-10's
+    default and asks for phi_retained, on every path (GM-302 review)."""
+    g = _wall(backfill_slope=31.0)
+    calls = (
+        lambda **kw: mse.analyze_mse_wall(g, 19.0, 34.0, GEOGRID,
+                                          phi_foundation=30.0, **kw),
+        lambda **kw: mse.check_external_stability_lrfd(g, 19.0, 34.0, 30.0,
+                                                       **kw),
+        lambda **kw: mse.check_external_stability(g, 19.0, 34.0, 18.0, 30.0,
+                                                  **kw),
+    )
+    for call in calls:
+        with pytest.raises(ValueError) as left_out:
+            call()
+        msg = str(left_out.value)
+        assert msg.startswith(
+            "backfill_slope 31 deg is steeper than the friction angle of the "
+            "fill behind the reinforced zone, 30 deg, " + _DEFAULTED)
+        assert "Give phi_retained" in msg
+        call(phi_retained=34.0)             # given and steep enough: runs
+    # at 30 deg the slope stands (Eq. 4-3: Gamma = 1)
+    mse.analyze_mse_wall(_wall(backfill_slope=30.0), 19.0, 34.0, GEOGRID,
+                         phi_foundation=30.0)
+
+
+def test_a_slope_steeper_than_a_given_phi_retained_keeps_its_wording():
+    g = _wall(backfill_slope=31.0)
+    with pytest.raises(ValueError) as given:
+        mse.analyze_mse_wall(g, 19.0, 34.0, GEOGRID, phi_foundation=30.0,
+                             phi_retained=30.0)
+    msg = str(given.value)
+    assert msg.startswith(
+        "backfill_slope 31 deg is steeper than the friction angle of the "
+        "fill behind the reinforced zone, 30 deg: sin(phi - beta) < 0")
+    assert _DEFAULTED not in msg and "Give phi_retained" not in msg
+
+
 def test_warnings_reach_the_results():
     r = mse.analyze_mse_wall(_wall(), 19.0, 36.0, GEOGRID)
     (w,) = r.warnings

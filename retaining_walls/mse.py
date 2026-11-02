@@ -1334,6 +1334,26 @@ def _check_backslope(geom: MSEWallGeometry, phi_retained: Optional[float],
             "Example E1).")
 
 
+def _check_assumed_retained_slope(geom: MSEWallGeometry,
+                                  phi_retained: Optional[float]) -> None:
+    """Refuse a backfill slope steeper than the 30 deg a left-out
+    ``phi_retained`` takes (GEC-11 Vol I p. 4-10), saying the 30 deg was
+    the default and asking for the retained fill's own angle (GM-302
+    review); with ``phi_retained`` given, :func:`_check_backslope`'s
+    wording stands."""
+    beta = geom.backfill_slope
+    if phi_retained is None and beta > PHI_ASSUMED:
+        raise ValueError(
+            f"backfill_slope {beta:g} deg is steeper than the friction angle "
+            f"of the fill behind the reinforced zone, {PHI_ASSUMED:g} deg, "
+            "taken because phi_retained was not given (GEC-11 Vol I p. 4-10: "
+            "'An assumed friction angle, φ'b of 30° is often used "
+            "for the retained (i.e., behind the reinforced zone) backfill', "
+            "for preliminary sizing). Give phi_retained, the retained "
+            "fill's own friction angle: GEC-11 Eq. 4-3 has no real Kab for "
+            "a slope steeper than it (sin(phi - beta) < 0 under the root).")
+
+
 def backslope_loads(geom: MSEWallGeometry, gamma_backfill: float,
                     phi_retained: float, gamma_retained: float,
                     q: float = 0.0) -> Dict[str, Any]:
@@ -2461,6 +2481,7 @@ def _external_terms(
     _check_sheet_depth(geom, lowest_sheet_depth)
 
     # Use retained fill properties for external active pressure if provided
+    _check_assumed_retained_slope(geom, phi_retained)
     phi_ext = phi_retained if phi_retained is not None else PHI_ASSUMED
     gamma_ext = gamma_retained if gamma_retained is not None else gamma_backfill
 
@@ -3235,6 +3256,7 @@ def check_external_stability_lrfd(
     assumed = assumed_friction_choices(phi_foundation, phi_retained)
     if phi_foundation is None:
         phi_foundation = PHI_ASSUMED
+    _check_assumed_retained_slope(geom, phi_retained)
     if phi_retained is None:
         phi_retained = PHI_ASSUMED
     if not 0 < ecc_limit_ratio_service <= 0.5:
@@ -3913,6 +3935,7 @@ def analyze_mse_wall(
     assumed = assumed_friction_choices(phi_foundation, phi_retained)
     if phi_foundation is None:
         phi_foundation = PHI_ASSUMED
+    _check_assumed_retained_slope(geom, phi_retained)
     if phi_retained is None:
         phi_retained = PHI_ASSUMED
     # sheet reinforcement at the lowest level: sliding also along it

@@ -112,12 +112,24 @@ def test_slope_steeper_than_phi_refused():
     # (GM-302 review; phi_backfill before)
     err = _call("mse_wall", {**MSE, "backfill_slope": 31})["error"]
     assert "steeper than the friction angle" in err
+    # left out, the refusal says the 30 deg was the default and asks for it
+    assert "30 deg, taken because phi_retained was not given" in err
+    assert "GEC-11 Vol I p. 4-10" in err and "Give phi_retained" in err
     at_phi = _call("mse_wall", {**MSE, "backfill_slope": 30})
     assert "error" not in at_phi, at_phi            # Eq. 4-3: Gamma = 1
     given = {**MSE, "phi_retained": 34}
     assert "error" not in _call("mse_wall", {**given, "backfill_slope": 34})
     err = _call("mse_wall", {**given, "backfill_slope": 35})["error"]
     assert "steeper than the friction angle" in err
+    # given, the wording names its angle only
+    assert "34 deg: sin(phi - beta) < 0" in err
+    assert "not given" not in err and "Give phi_retained" not in err
+    lrfd = {k: v for k, v in MSE.items()
+            if k not in ("reinforcement_name",
+                         "reinforcement_horizontal_spacing")}
+    err = _call("mse_lrfd_external_stability",
+                {**lrfd, "backfill_slope": 31})["error"]
+    assert "taken because phi_retained was not given" in err
 
 
 def test_traffic_vertical_resists_is_offered_and_named():
