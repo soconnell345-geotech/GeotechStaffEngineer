@@ -40,9 +40,21 @@ only. The replay ran on the private hand-back in the gitignored raw folder.
   the calc reader's pattern: the reply's own turn, then a user turn
   `ASK_AGAIN` that gives the engine's reason. `refusal(reply)` reads that
   reason from the notes.
+- Where the refused answer held the model's parameter markup, the turn
+  adds `ASK_AGAIN_MARKUP`: write each list and object as JSON inside its
+  own field, each field once. The refused calc window (call 889) wrote its
+  list items as parameters of their own, and a bare "give it again" lets
+  the model write them the same way.
 - Each engine marks a request that ends with this turn: the cost row says
   `"asked_again": true`, and `CostMeter.to_dict()` gives `asked_again` (a
-  count) only when there was one.
+  count) only when there was one. A model-first result's `cost` counts them
+  too.
+- `cluster_scoring` carries `asked_again` into the earlier attempts, the
+  stage totals and `results.json` (only when there was one), and the
+  failures line in RESULTS ends "N of the calls above asked again for an
+  answer not taken". A re-ask is an answer refused once. Without the
+  count, a run that needed many re-asks reads the same as one that needed
+  none.
 - Three callers ask once more, only when the reply was not cut off:
   - Model first's `_Caller.read` (`model_first_read.py`). The re-ask row
     in `calls` says `asked_again`. A group is skipped only if the second
@@ -54,8 +66,14 @@ only. The replay ran on the private hand-back in the gitignored raw folder.
     engine's `notes`, `raw_answer` (the arguments where the engine kept
     them), or `text` (the prose of a reply with no answer). The re-ask is
     its own row with `asked_again`.
-- No prompt version was bumped. The main instruction text is unchanged; the
-  re-ask turn goes only on the second call, and its row is marked.
+- No prompt version was bumped. The versions key the reuse of saved
+  answers by the first call's instruction and schema (`READ_PROMPT_VERSION`
+  in `graph.py`'s resume check, the digests in `test_model_first_schema.py`),
+  and neither changes. The re-ask turn goes only on the second call, and
+  that call's row is marked. A bump would make a resume read every saved
+  group again for nothing.
+- A repair that fails in the code leaves the answer as it came, noted. A
+  key or parameter name counts as an item number only in ASCII digits.
 
 ## Replay on the record ($0, no model calls)
 
@@ -103,7 +121,33 @@ has a second no-answer turn, and the call counts went up by one:
 ## Noted, not fixed
 - A JSON-encoded empty string, `"\"\""`, was seen in one log answer's
   `coordinate_system`. It changes no saved value that matters.
-- `cluster_scoring` totals do not sum `asked_again`. The per-call rows and
-  the meter's own count have it.
 - The describer (`range_labels.describe_pages`) does not ask again. Its one
   refusal in the replay (call 257) is now repaired by the engine.
+- Today's calc reader keeps its own re-ask (`_FINAL_INSTRUCTION`), which is
+  not marked `asked_again`.
+- An answer whose markup was put back but does not then match the schema is
+  still taken as it came where that validates, as before RI-195, with a
+  note.
+- A question-list re-ask that raises (an error the engine does not retry)
+  ends the step, where no answer only warned before.
+
+## Review (2026-11-02)
+- Made-up adversarial cases: a field held twice, two lists sharing the
+  numbered keys, a gap, keys before the list, a nested object written as
+  markup, the question list's answers written as markup or as bare values.
+  None was put back wrongly; each was taken whole or refused. Two digit
+  characters `int` cannot read crashed the repair; fixed (ASCII digits only,
+  and a guard).
+- The question list's answer refused on R15 was bare values or markup. Bare
+  values cannot be repaired without guessing each answer's status and pages,
+  and markup there loses them (each later answer's status overwrites the
+  one before). The re-ask covers both, and the markup case now gets the
+  markup hint.
+- The replay is unchanged after the fixes: 6 of 7.
+- Tests after the fixes: `test_ri195.py` with 5 more tests (made-up
+  values), `test_engine.py`, `test_model_first_read.py`,
+  `test_cluster_scoring.py`, `test_ri139.py`, `test_ri192.py`,
+  `test_ri186.py`, `test_question_list.py`, `test_log_reader.py`,
+  `test_model_first_scoring.py`, `test_prompter_engine.py`,
+  `test_graph_model_first.py`, `test_graph.py`, `test_range_labels.py`,
+  `test_calc_reader.py`: exit 0.

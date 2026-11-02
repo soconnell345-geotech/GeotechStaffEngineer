@@ -232,8 +232,10 @@ class _Spent:
                "answered": reply.parsed is not None and not reply.cut_off}
         if asked_again:
             # The call that asked once more for the answer the call before
-            # it did not give (BACKLOG RI-195).
+            # it did not give (BACKLOG RI-195), counted as the engine's
+            # meter counts it, only once there is one.
             row["asked_again"] = True
+            self.cost["asked_again"] = self.cost.get("asked_again", 0) + 1
         # What the engine did with the answer, and, where it took none,
         # what came back, so the run file says why (BACKLOG RI-192).
         notes = list(getattr(reply, "notes", None) or [])

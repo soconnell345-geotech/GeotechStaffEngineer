@@ -59,7 +59,7 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 __all__ = [
     "Engine", "Reply", "ToolCall", "Usage", "CostMeter", "ClaudeEngine",
-    "ask_again", "refusal", "ASK_AGAIN",
+    "ask_again", "refusal", "ASK_AGAIN", "ASK_AGAIN_MARKUP",
     "RequestPacer", "shared_pacer", "pace_engines", "estimate_request",
     "LARGE_REQUEST_FRACTION", "PACER_WINDOW_SECONDS",
     "engine_for", "ChatModelEngine", "ANSWER_TOOL", "CUT_REASONS",
@@ -625,9 +625,23 @@ ASK_AGAIN = ("Your answer could not be taken{why}. Give the whole answer "
              "again, with every field in its own place, as the answer schema "
              "asks.")
 
+#: What the turn adds when the answer was not taken and carried the model's
+#: own parameter markup (:data:`_MARKUP_HELD`): MF-3's refused calc window
+#: wrote each list item as a parameter of its own, which the provider reads
+#: as fields of the answer, and asked only for "the whole answer again" a
+#: model can write it the same way.
+ASK_AGAIN_MARKUP = (" Your answer wrote parameter tags (<parameter "
+                    "name=...>) inside its values, where they are not read: "
+                    "give each list and each object as JSON inside its own "
+                    "field, and each field once.")
+
 #: What :func:`_answer_notes` writes before the reason an answer was not
 #: taken.
 _NOT_TAKEN = "an answer was not taken: "
+
+#: How :func:`_markup_notes` begins a note on an answer whose parameter
+#: markup was not put back, or did not match the schema once it was.
+_MARKUP_HELD = "the answer carries the model's own parameter markup"
 
 
 def refusal(reply: Any) -> str:
@@ -649,9 +663,14 @@ def ask_again(messages: Sequence[Dict[str, Any]],
 
     On :class:`ChatModelEngine` the answer call's own result says why as
     well (:func:`_answer_every_call`); the turn says it for an answer
-    written out as text, and on every other engine."""
+    written out as text, and on every other engine. Where the answer held
+    the model's own parameter markup, the turn says how to write it
+    (:data:`ASK_AGAIN_MARKUP`)."""
     why = refusal(reply)
     said = ASK_AGAIN.format(why=f": {why}" if why else "")
+    if why and any(str(n).startswith(_MARKUP_HELD) for n in (
+            getattr(reply, "notes", None) or [])):
+        said += ASK_AGAIN_MARKUP
     return list(messages) + [
         {"role": "assistant",
          "content": list(getattr(reply, "content", None) or [])
@@ -3593,7 +3612,22 @@ def _mend_markup(value: Any, path: str = ""
     an answer half put back is not the answer the model gave."""
     fixes: List[str] = []
     faults: List[str] = []
-    return _mend_node(value, path, fixes, faults), fixes, faults
+    try:
+        return _mend_node(value, path, fixes, faults), fixes, faults
+    except Exception as exc:                             # noqa: BLE001
+        # The repair never stands in the way of the answer: one it cannot
+        # read is tried as it came.
+        logging.getLogger(__name__).warning(
+            "the parameter markup in an answer could not be read: %s", exc)
+        return value, fixes, faults + [
+            f"the markup could not be read ({type(exc).__name__})"]
+
+
+def _numbered(name: Any) -> bool:
+    """Whether a key or a parameter name numbers a list item: ASCII digits
+    only, so ``int`` reads every one (``"\\u00b2".isdigit()`` is true)."""
+    text = str(name)
+    return text.isascii() and text.isdigit()
 
 
 def _mend_node(node: Any, path: str, fixes: List[str],
@@ -3620,7 +3654,7 @@ def _mend_node(node: Any, path: str, fixes: List[str],
     for key in out:
         if key in runs:
             current = key
-        elif str(key).isdigit() and key not in split:
+        elif _numbered(key) and key not in split:
             (before if current is None else runs[current]).append(key)
     if carriers and before:
         faults.append(f"the numbered keys "
@@ -3634,8 +3668,8 @@ def _mend_node(node: Any, path: str, fixes: List[str],
             f"list's items may stand in the other's place")
     for key, (head, parts) in split.items():
         where = _at(path, key)
-        items = [(n, words) for n, words in parts if n.isdigit()]
-        named = [(n, words) for n, words in parts if not n.isdigit()]
+        items = [(n, words) for n, words in parts if _numbered(n)]
+        named = [(n, words) for n, words in parts if not _numbered(n)]
         if key in runs:
             run = runs[key]
             numbers = [int(n) for n, _ in items] + [int(k) for k in run]
@@ -3688,12 +3722,10 @@ def _markup_notes(fixes: Sequence[str], faults: Sequence[str],
         return ["the model's own parameter markup was taken out of the "
                 "answer and its fields put back: " + "; ".join(fixes)]
     if faults:
-        said = ("the answer carries the model's own parameter markup, not "
-                "put back: " + "; ".join(faults))
+        said = _MARKUP_HELD + ", not put back: " + "; ".join(faults)
     else:
-        said = ("the answer carries the model's own parameter markup; put "
-                "back (" + "; ".join(fixes) + "), it does not match the "
-                "schema")
+        said = (_MARKUP_HELD + "; put back (" + "; ".join(fixes)
+                + "), it does not match the schema")
     return [said + ("; the answer was taken as it came" if taken else "")]
 
 

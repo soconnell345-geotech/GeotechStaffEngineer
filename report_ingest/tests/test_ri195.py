@@ -23,8 +23,8 @@ pymupdf = pytest.importorskip("pymupdf")
 from report_ingest import model_first as mf                    # noqa: E402
 from report_ingest import model_first_read as mfr              # noqa: E402
 from report_ingest.engine import (                              # noqa: E402
-    ASK_AGAIN, ChatModelEngine, _mend_markup, _validate, ask_again, refusal,
-    text_block, user,
+    ASK_AGAIN, ASK_AGAIN_MARKUP, ChatModelEngine, _mend_markup, _validate,
+    ask_again, refusal, text_block, user,
 )
 from report_ingest.log_reader import LogReading, read_log     # noqa: E402
 from report_ingest.model_first_pages import PageGroup          # noqa: E402
@@ -209,6 +209,31 @@ class TestAListSpilled:
         _mended, _fixes, faults = _mend_markup(args)
         assert faults == ["the numbered keys 1 came before any list's markup"]
 
+    def test_a_digit_that_is_no_number_numbers_no_item(self):
+        """A superscript two is a digit to ``str.isdigit`` and not to
+        ``int``: never an item, and never an error."""
+        args = _calc(inputs='<parameter name="0">' + json.dumps(INPUTS[0])
+                     + '</parameter><parameter name="²">'
+                     + json.dumps(INPUTS[1]), **{"²": INPUTS[2]})
+        _mended, _fixes, _faults = _mend_markup(args)
+        answer, _d, _why, _w, _j, _markup = _validate(CALC, args)
+        assert answer is None
+
+    def test_a_repair_that_fails_leaves_the_answer_as_it_came(
+            self, monkeypatch):
+        import report_ingest.engine as eng
+
+        def broken(*_args, **_kwargs):
+            raise KeyError("made up")
+
+        monkeypatch.setattr(eng, "_mend_node", broken)
+        args = {"investigation_id": "X-1",
+                "remarks": 'r</remarks>\n<parameter name="pit">null'}
+        answer, _d, why, _w, _j, markup = _validate(LogReading, args)
+        assert why == "" and answer.remarks == args["remarks"]
+        assert "the markup could not be read (KeyError)" in markup[0]
+        assert "taken as it came" in markup[0]
+
 
 # ---------------------------------------------------------------------------
 # the engine and the re-ask
@@ -239,6 +264,7 @@ class TestTheEngine:
         assert [m["role"] for m in again] == ["user", "assistant", "user"]
         said = again[-1]["content"][0]["text"]
         assert said.startswith(HEAD + ": it does not match the schema")
+        assert ASK_AGAIN_MARKUP not in said           # no markup in it
         second = engine.complete(again, output_format=CALC)
         assert second.parsed is not None
         cost = engine.meter.to_dict()
@@ -274,8 +300,11 @@ class TestModelFirst:
         assert again["asked_again"] and "asked_again" not in first
         assert any("not put back" in n for n in first["notes"])
         assert blob["cost"]["calls"] == 2
+        assert blob["cost"]["asked_again"] == 1
         last = model.requests[1]["messages"][-1]
         assert HEAD in str(last.content)
+        # The markup was why: the turn says how to write the lists.
+        assert ASK_AGAIN_MARKUP.strip() in str(last.content)
 
 
 class TestTodaysLogReader:
@@ -354,3 +383,48 @@ class TestTheQuestionList:
         assert run.calls[1]["text"] == "Made-up words."
         assert any("main call gave no structured answer, and none when "
                    "asked again" in w for w in run.warnings)
+
+
+# ---------------------------------------------------------------------------
+# the totals
+# ---------------------------------------------------------------------------
+
+class TestTheTotals:
+    """A call that asked again is among the calls; RESULTS says how many
+    there were, only when there was one."""
+
+    def test_a_stage_total_counts_them_and_the_line_names_them(self):
+        from report_ingest import cluster_scoring as cs
+
+        total = cs._cost_totals()
+        cs._add_cost(total, {"calls": 4, "failed": 0, "retried": 0,
+                             "asked_again": 1})
+        cs._add_cost(total, {"calls": 3, "failed": 0, "retried": 0,
+                             "asked_again": 2})
+        assert total["asked_again"] == 3
+        assert "; 3 of the calls above asked again for an answer not " \
+               "taken" in cs._failure_line(total)
+        every = cs._sum_costs((total, {"calls": 1, "asked_again": 1}))
+        assert every["asked_again"] == 4
+
+    def test_none_and_the_total_is_as_it_was(self):
+        from report_ingest import cluster_scoring as cs
+
+        total = cs._cost_totals()
+        cs._add_cost(total, {"calls": 4, "failed": 0, "retried": 0})
+        assert "asked_again" not in total
+        assert "asked again" not in cs._failure_line(total)
+        assert "asked_again" not in cs._sum_costs((total,))
+
+    def test_every_attempt_keeps_them(self):
+        from report_ingest import cluster_scoring as cs
+
+        earlier = [cs._attempt_entry({"cost": {"calls": 2,
+                                                "asked_again": 1}})]
+        assert earlier[0]["cost"]["asked_again"] == 1
+        fields = cs._attempts_fields(earlier, {"calls": 3, "asked_again": 1},
+                                     1.0)
+        assert fields["all_attempts"]["asked_again"] == 2
+        fields = cs._attempts_fields(
+            [cs._attempt_entry({"cost": {"calls": 2}})], {"calls": 3}, 1.0)
+        assert "asked_again" not in fields["all_attempts"]
