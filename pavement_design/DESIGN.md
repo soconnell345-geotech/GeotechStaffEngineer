@@ -124,9 +124,10 @@ subbase). Top layer must be `asphalt`; a subbase requires a base above it.
      `effective_modulus_subgrade_reaction`): seasonal composite k from
      subbase properties (Fig 3.3, read off the printed chart in this
      module, Dsb 6–18 in, Esb 15,000–1,000,000 psi, MR 1,000–20,000 psi),
-     rigid-foundation correction (Fig 3.4), relative damage u_r (Fig 3.5),
-     loss-of-support (Fig 3.6 / Table 2.7), Figures 3.4–3.6 from the
-     reference layer. Warns when Esb/MR > 4 (the guide's limit for an
+     rigid-foundation correction (Fig 3.4, also read off the printed chart,
+     Dsg 2–10 ft, MR 1,169–20,000 psi, k_inf 50–1,400 pci), relative damage
+     u_r (Fig 3.5), loss-of-support (Fig 3.6 / Table 2.7), Figures 3.5–3.6
+     from the reference layer. Warns when Esb/MR > 4 (the guide's limit for an
      unbound subbase, printed II-37/44). Because u_r depends on the slab
      thickness, k and D are **fixed-point iterated** (converges when the
      rounded D changes < 0.25 in; `iterations` reported).
@@ -139,12 +140,15 @@ subbase). Top layer must be `asphalt`; a subbase requires a base above it.
 ## UFC 3-250-01 alternative method (`ufc.py`)
 
 The DoD roads/parking procedure as a first-class alternative to AASHTO.
-Figures E-1 and F-1 are read off the print in this module (GM-298); the
-tables, Eq 13-1, the frost tables and the other Appendix E vehicle curves
-come from `geotech_references.ufc_pavement` (Appendix-G-anchored). The
-reference layer's E-1 and F-1 are exact at their Appendix G anchors and
-wrong between them (E-1 up to 1.7 in under the curves at CBR 5–20; F-1
-barely moves with flexural strength): REF candidates.
+Figures E-1 and F-1 are read off the print in this module (GM-298), the
+thirty vehicle curves E-2 to E-31 in `ufc_vehicles` (GM-303); the
+tables, Eq 13-1 and the frost tables come from
+`geotech_references.ufc_pavement`. The reference layer's E-1 and F-1 are
+exact at their Appendix G anchors and wrong between them (E-1 up to 1.7 in
+under the curves at CBR 5–20; F-1 barely moves with flexural strength);
+its E-2 to E-31 grids read up to 2–6 in where a curve has reached the
+axis, up to 9.5 in thin near CBR 1, miss E-15's top (15 in, not 14) and
+are off throughout on E-16 and E-30 (up to 7 and 11 in thin): REF-58.
 
 - `design_flexible_pavement_ufc` — Corps CBR method: Figure E-1 cover
   curves (`ufc_e1`, every Appendix G read within 0.1 in) applied at each
@@ -180,32 +184,40 @@ barely moves with flexural strength): REF candidates.
 |--------|--------|--------|
 | Flexible SN | Guide Figure 3.1 printed example (W18=5e6, R=95%, So=0.35, MR=5000, ΔPSI=1.9 → SN=5.0) | orchestrator returns SN 4.95–5.0 ✔ |
 | Rigid D | Guide Figure 3.7 printed example (W18=5.1e6, k=72, Ec=5e6, Sc'=650, J=3.2, Cd=1.0, So=0.29, ΔPSI=1.7 → D=10.0) | orchestrator returns D 9.7–10.0 ✔ |
-| Effective MR | Guide Figure 2.4 12-month example → 5000 psi | reproduced through `monthly_mr_psi` ✔ |
+| Effective MR | Guide Figure 2.4 12-month example → Σuf 3.72, average 0.31, 5,000 psi; the figure prints uf = 1.18 × 10⁸ × MR^-2.32 | 3.85, 0.320, 4,923 psi through `monthly_mr_psi` (−1.5 %): the printed equation gives uf 0.142 at 7,000 psi where the example reads 0.13 off the scale, 1.54 at 2,500 for 1.51 (GM-303) |
 | Layer coefficients | printed checks a2(30000)=0.14, a3(15000)=0.11; a1(400k)=0.42 chart | reproduced ✔ |
 | Growth factor | Table D.20 (D-24): nine printed cells, 0–10 %, 5–35 yr (4 %/20 yr → 29.78) | every cell within 0.006 (V-075) |
 | Truck-factor traffic | Table D.21 (D-25) worksheet, 13 vehicle classes, 2 %/20 yr | per-row ESALs exact; column sums 43,797,514 where the total line prints 43,772,314 (a 25,200 slip in the print; text D-22 says 43.8 million) (V-075) |
-| Appendix H flexible example | H-1…H-7: traffic 18.6 million, Fig H.3 effective MR 5,700, Table H.2 performance period 13.2 yr, SN 3.2/4.5/5.6, D 7.6/6.8/11.04 | 18,598,900; MR 5,695; 13.21 yr; SN 3.18/4.53/5.60; D 8/7/12 (the guide rounds 11.04 to 11; the module rounds up) (V-076) |
+| Appendix H flexible example | H-1…H-7: traffic 18.6 million, Fig H.3 effective MR 5,700, Table H.2 performance period 13.2 yr, SN 3.2/4.5/5.6, D 7.6/6.8/11.04 | 18,598,900; MR 5,695; 13.23 yr in one iteration, period 13.12 (Step 7's average; H-7 "about 13 years"); SN 3.18/4.53/5.60; D 8/7/12 (the guide rounds 11.04 to 11; the module rounds up) (V-076) |
 | Base / subbase from CBR (comparison) | Figures 2.6 / 2.7 straight across; Road Test pairs base CBR 100 ↔ 30,000 psi, subbase CBR 30 ↔ 15,000 psi (II-20) | 29,800 / 14,800 psi (GM-298) |
 | LEF identity | 18-kip single axle → LEF 1.000 at any SN/pt (definition) | reproduced (table and closed-form paths) ✔ |
-| Composite-k worksheet | Guide §3.2 Table 3.3 printed example (avg u_r 0.60, eff. k 540 pci, LS-corrected 170 pci) | module worksheet with its own Fig 3.3 read: avg u_r 0.613, k 522 (−3.3%), LS-corrected 165 (−2.7%) (V-074) |
+| Composite-k worksheet | Guide §3.2 Table 3.3 printed example (avg u_r 0.60, eff. k 540 pci, LS-corrected 170 pci) | module worksheet with its own Fig 3.3 and 3.4 reads: avg u_r 0.615, k 519 (−3.9%), LS-corrected 164.5 (−3.2%) (V-074; before GM-303, with the reference layer's Fig 3.4: 0.613, 522, 165) |
+| Fig 3.4 read | printed example (MR 4,000, Dsg 5, k_inf 230 → 300) and Table 3.3 rows (k_inf 1,100 / 160 / 230 / 410 → 1,350 / 230 / 300 / 540) | 303; 1,378 / 222 / 303 / 539, within −3.5…+2.1% (GM-303) |
 | Fig 3.3 read | printed example (Esb 20,000, MR 7,000, Dsb 6 → 400) and Table 3.3 rows (1,100 / 160 / 230 / 410) | 391 / 1,085 / 154 / 230 / 391, within −4.7…+0.2% (V-074) |
 | Fig 2.8 / 2.9 | the printed scales: a2 0.22 at UCS 800 psi (the dashed line); 0.25 at 1,000 psi; Marshall 1,600 lb → 0.30 | read at every labelled tick (GM-298) |
 | UFC Fig E-1 | Appendix G-1 (CBR 3, 1,000,000 → 16.4 in; CBR 4, 1,395,400 → 14 in) and G-3 (5,000,000: CBR 10 / 7 / 4 / 25 → 7.8 / 9.8 / 14.5 / 3.4 in) | 16.4, 13.9; 7.8, 9.8, 14.5, 3.4 (GM-298). G-8.10's 16 in at CBR 3.5, 1,200,000 is 15.1 on the curves |
+| UFC Figs E-2 to E-31 | Table G-1 at CBR 3: 5-axle truck 100,000 → 15.8 in, allowable 252,915 at 16.4 in; 3-axle 500,000 → 12.8; car 20,000,000 → 6.1; total 1,395,400 (p. 256: PCASE solutions "differ slightly" from the charts) | 15.6, 337,788; 12.7; 6.1 (extrapolated past the 10,000,000 curve); total 1,296,044. Against the ink column by column: median 0.12-0.19 px, 95 % within 0.74 px on every chart (GM-303) |
 | UFC G-3 section | 5,000,000 passes, base CBR 80, subbase 25, subgrade 10 → 3.5 in AC, 4 in base, 4 in subbase | reproduced (GM-298) |
 | UFC Fig F-1 | G-7 (650 psi, k 100, 20,000,000 → 8.1 in), G-8.11 (k 325, 1,200,000 → 6.3), G-8.12 (k 50, 1,200,000 → 8 in slab) | 8.1, 6.3, 7.8 → 8.0 (GM-298) |
 | Appendix D LEF tables | FULL Tables D.1–D.18 transcribed (~5,850 cells; the derivation equations live in the 1986 edition's separate Volume 2 App. MM — the 1993 Guide is a single volume and only carries the citation); lead visual QC of 4 tables (~130 cells) zero discrepancies; exact match to the 4 pre-existing independent curves | 143 tests in `geotech-references/tests/test_aashto_1993_lef.py` |
 | Swelling loss (Fig G.4) | printed example t=15, θ=0.10, Ps=60%, VR=2 in → 0.3 | 0.312 through the design function ✔ (printed equation, lead page-verified) |
 | Frost heave loss (Fig G.8) | printed example t=15, φ=5, PF=30%, ΔPSI_MAX=2.0 → 0.47 | 0.466 ✔ (printed equation incl. the 0.02 constant, lead page-verified) |
-| Table 3.1 iteration | printed 3-row example (po=4.4, ΔPSI=1.9, trial 13.0 → 9.7 → 8.5 yr) | rows reproduced within the guide's rounding (63 tests in `geotech-references/tests/test_aashto_1993_environmental.py`) |
+| Table 3.1 iteration | printed 3-row example (po=4.4, ΔPSI=1.9, trial 13.0 → 9.7 → 8.5 yr); Step 7 (II-35): stop when the trial and calculated periods differ by less than 1 year and report their average | rows reproduced within the guide's rounding (63 tests in `geotech-references/tests/test_aashto_1993_environmental.py`); the 1 year rule and the average in `performance.py` (GM-303; before, 0.1 yr and the last calculated period) |
 
 Composite-k chart-read confidence: Fig 3.3 is read off the printed chart
 in `composite_k.py` (every curve at every Dsb gridline; within 5 % of the
 five printed anchors, all at Dsb 6 in). The reference layer's Fig 3.3 fit
 departs from the chart away from the Table 3.3 rows (at Dsb 6, Esb
 400,000, MR 5,000 it gives 3,026 pci, the chart about 490; its Dsb
-scaling is too flat): REF candidate. Fig 3.4 (reference layer) is exact
-at Dsg = 5 ft (4 printed Table 3.3 triples) with chart-read depth scaling
-(±15–20 %, not re-read in GM-298). Fig 3.5's closed form matches a pixel
+scaling is too flat): REF candidate. Fig 3.4 is read off the printed
+chart in `composite_k.py` too (GM-303: the three Dsg curves traced to
+within 0.5 px at the 95th percentile, the twelve k_inf lines fitted to
+within about 2 px). The reference layer's Fig 3.4 is exact at the four
+Table 3.3 triples (all Dsg 5 ft) but scales one multiplier per MR by a
+three-point depth guess; the chart's k also depends on k_inf, and away
+from those rows the reference gave 12–36 % below the chart at Dsg 2–3 ft
+or at twice the MR/19.4 k_inf, up to 26 % above it at Dsg 7–9 ft: REF
+candidate. Fig 3.5's closed form matches a pixel
 read within about ±2 % for D 6–14 in, k 15–1,950 pci; Fig 3.6's slopes
 within about ±8 % for k ≥ 30 pci (GM-298).
 

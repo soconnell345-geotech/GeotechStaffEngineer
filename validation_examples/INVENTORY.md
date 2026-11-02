@@ -1111,14 +1111,16 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   worksheet (pdf_page 132, printed II-43), the loss-of-support correction
   (Figure 3.6, printed II-42) and k = MR/19.4 (printed II-44), read from
   `geotech-references/docs/aashto1993.pdf`.
-- Target: `pavement_design.composite_k.composite_k_inf` / `effective_k`
-  and `design_rigid_pavement(composite_k=...)` (GM-298).
+- Target: `pavement_design.composite_k.composite_k_inf` /
+  `k_on_rigid_foundation` (Figure 3.4, GM-303) / `effective_k` and
+  `design_rigid_pavement(composite_k=...)` (GM-298).
 - Inputs: Figure 3.3 example Dsb 6 in, Esb 20,000 psi, MR 7,000 psi;
   Table 3.3: twelve months of roadbed MR (20,000 / 2,500 / 4,000 /
   7,000 psi) and subbase Esb (50,000 / 15,000 / 20,000 psi), Dsb 6 in,
   depth to rigid foundation 5 ft, projected slab 9 in, LS 1.0.
 - Published answer: Figure 3.3 example k_inf 400 pci; Table 3.3 composite
-  k 1,100 / 160 / 230 / 410 pci by row type, sum of u_r 7.25, average
+  k 1,100 / 160 / 230 / 410 pci by row type, on the rigid foundation
+  (Figure 3.4) 1,350 / 230 / 300 / 540, sum of u_r 7.25, average
   0.60, effective k 540 pci, corrected for LS 1.0 to 170 pci.
 - Verdict: **PASS** (RESULTS.md). The guide's own example gives 400 pci
   for the case Table 3.3 lists as 410. Tests:
@@ -1153,7 +1155,8 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   Ps 84 %, theta 0.075 (Table H.2); EAC 400,000, EBS 30,000, ESB 11,000
   psi with a 0.42 / 0.14 / 0.08 and drainage m 1.20.
 - Published answer: 18.6 million ESALs; sum of uf 5.446, effective MR
-  5,700 psi; performance period 13.2 years; SN1 3.2, SN2 4.5, SN3 5.6;
+  5,700 psi; 13.2 years in one iteration ("about 13 years", H-7);
+  SN1 3.2, SN2 4.5, SN3 5.6;
   D1 7.6, D2 6.8, D3 11.04 in (taken as 11).
 - Verdict: **PASS** (RESULTS.md). The module rounds each layer up to the
   increment (Figure 3.2 note 2), so D3 11.10 becomes 12 where the
