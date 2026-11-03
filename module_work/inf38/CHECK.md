@@ -29,10 +29,13 @@ the dataset's workspace alias:
 - The sidebar's **Permanent storage** block says "Foundry storage: saving
   the latest turn…" while a save runs, then "Foundry storage: N uploaded,
   M up-to-date · Xs". **Sync now** saves at once, with a spinner, and
-  reads the past-conversations list again.
+  drops the cached past-conversations list.
 - **Find a past conversation (permanent storage)** lists the dataset's
   conversation folders and restores one (record and files), downloading
-  six files at a time.
+  six files at a time. **The list is read when asked for**: **Show past
+  conversations**, a search or **Refresh**, then cached for the browser
+  session. No page's first draw waits on `files()`. This holds on every
+  host, SharePoint too, since a listing there also takes seconds.
 - **Connection diagnostics**, line *conversation storage*: PASS with the
   alias and how many files are the app's (one listing, no write); FAIL with
   a plain reason; SKIP when the variable is not set.
@@ -106,9 +109,9 @@ The rules the app keeps:
   store records none of the save's files, so the next save sends them all.
 - **One listing per save, per restore, per list.** `files()` has no prefix
   filter. A save or a restore reads it once (the batch) and keeps the file
-  objects for its downloads. The sidebar's list is cached per browser
-  session until **Refresh** or **Sync now**. An index file would not help:
-  no draw needs the listing more than once.
+  objects for its downloads. The sidebar's list is read only when asked
+  for, then cached per browser session until **Refresh** or **Sync now**.
+  An index file would not help: no draw needs the listing more than once.
 - **Restore through the path guard.** Every local path is checked before
   any download (`_local_path_inside`: no absolute path, no `..` segment, no
   path that resolves outside the conversation's folder). Then up to six
@@ -125,7 +128,8 @@ The rules the app keeps:
 | Save after a turn | 1 `upload_directory` | about 5-7 s, in the background |
 | First save of a conversation with a title | also 1 `files()` (the folder-name check); 1 download more if a folder of that name exists | about 9-11 s, in the background |
 | Save while the outputs folder holds something else | 1 `upload_file` per changed file | about 5-6 s each |
-| Past-conversations list | 1 `files()` per browser session | about 3-4 s |
+| Opening the app (first draw) | none (one `Dataset.get` per process) | 0 |
+| Past-conversations list, when asked for | 1 `files()` per browser session | about 3-4 s |
 | Restore of N files | 1 `files()`, 1 download (`meta.json`), then N downloads six at a time | about 3-4 s + 3-4 s + N/6 × 3-4 s |
 | Diagnostics line | 1 `files()` | about 3-4 s |
 
@@ -156,7 +160,8 @@ at once (`save_soon`).
 The test `test_a_turn_saves_and_a_fresh_container_restores_it` holds the
 dataset write open. It checks that the turn ended and the page drew,
 showing "saving the latest turn…", before the save went through. Then a
-fresh container lists the conversation and restores it.
+fresh container draws with no `files()` call, lists the conversation once
+when asked, and restores it.
 
 ## What changed
 
@@ -165,11 +170,12 @@ fresh container lists the conversation and restores it.
 | `webapp/foundry_dataset_store.py` | Rewritten over `foundry.transforms.Dataset`: the alias setting, the resource-ID and missing-library reasons, `AliasNotDefined` said plainly, staging under the outputs folder, `upload_directory` under a process-wide lock, the foreign-file fallback with a one-time note, the busy retry with `StorageBusy`, one listing per batch, `download_files` (parallel), `not_kept_reason` (the one line diagnostics and the sidebar show when nothing keeps the conversations; an unknown alias learned by one `Dataset.get`, `check_alias`). The platform-SDK code is removed. |
 | `webapp/sharepoint_store.py` | The batch now spans the whole save, so the folder-name check reuses its listing. The save's note goes into the summary. A restore downloads through the file manager's `download_files` when it has one, after the path guard. `_pin_folder` reads `meta.json` again just before writing, so a background save cannot undo a title the next turn set. New: `background`, `not_kept_reason()`, `save_soon`, `save_state`, `flush` and `save_after_change`. `sync_for_conversation` prefers the store's own record for the conversation, because a background save reaches no session. |
 | `webapp/turn_jobs.py` | The end-of-turn mirror goes through `save_after_change`. |
-| `webapp/app.py` | The save-state line, the one-time note, on Foundry a "Conversations are NOT kept across restarts" block with the diagnostics line's reason and fix whenever no dataset keeps them (drawn even when the store is not configured), and spinners on Sync now and Restore. Sync now drops the cached list. The feedback box saves through `save_after_change`. The storage warning names the import and the alias, not token scopes. |
+| `webapp/app.py` | The save-state line, the one-time note, on Foundry a "Conversations are NOT kept across restarts" block with the diagnostics line's reason and fix whenever no dataset keeps them (drawn even when the store is not configured), and spinners on Sync now and Restore. Sync now drops the cached list. The past-conversations list is read when asked for (Show past conversations, a search or Refresh), never on the first draw, on every host. The feedback box saves through `save_after_change`. The storage warning names the import and the alias, not token scopes. |
 | `webapp/diagnostics.py` | The *conversation storage* line reads the alias, and its SKIP and FAIL texts come from `not_kept_reason`. |
 | `docs/FOUNDRY.md` §4c | Rewritten: import the dataset (Data panel, read and write), push, set the alias, nothing to install; a push republishes the apps, which the store makes harmless; how a save works; the NOT-kept block; one user (per-viewer folders wait on the app knowing the viewer). |
 | `webapp/README.md` | The module row. |
 | `webapp/tests/test_foundry_dataset_store.py` | Rewritten: 40 tests over a fake `foundry.transforms`, made-up values only. |
+| `webapp/tests/test_past_conversations_pages.py`, `test_app_smoke.py` | Press **Show past conversations** before a restore; a page's first draw lists nothing; a search reads the list (one new test). |
 
 ## Tests (exit codes)
 
@@ -190,6 +196,15 @@ Second round (one user; the NOT-kept block), same pieces:
 | `test_foundry_dataset_store.py` (40 tests) | 40 passed | 0 |
 | the first piece above without the new file | 203 passed | 0 |
 | the second piece above | 140 passed | 0 |
+| `test_public_text.py`, `test_docs_currency.py`, `test_page_fingerprints.py` (staged) | 25 passed | 0 |
+
+Third round (the list read when asked for):
+
+| Run | Result | Exit |
+|---|---|---|
+| `test_past_conversations_pages.py`, `test_foundry_dataset_store.py` | 45 passed | 0 |
+| `test_app_smoke.py`, `test_wave2c_fixes.py`, `test_sharepoint_store.py` | 57 passed | 0 |
+| every other app test that drives the page (`test_working_files_note.py`, `test_ws_upload.py`, `test_record_ev06.py`, `test_orientation_overview.py`, `test_foundry_mode.py`, `test_foundry_model_family.py`, `test_feedback.py`, `test_download_mime.py`, `test_custom_model_rid.py`, `test_app_profiles.py`), with `test_turn_jobs.py` | 155 passed | 0 |
 | `test_public_text.py`, `test_docs_currency.py`, `test_page_fingerprints.py` (staged) | 25 passed | 0 |
 
 The fake library models what the FDE measured:
@@ -238,7 +253,8 @@ The new tests cover:
   library missing, alias not defined), with exactly the diagnostics
   line's text; no such block when the alias works, nor off Foundry.
 - **End to end (AppTest).** A turn saves after the page has drawn, and a
-  fresh container lists the conversation and restores it.
+  fresh container draws with no `files()` call, lists the conversation
+  once when asked (not again on the next rerun), and restores it.
 - **Also.** The diagnostics line (SKIP, PASS, resource ID, unknown alias,
   library missing) and report ingest's mirror (one `upload_file` per
   file).
@@ -259,8 +275,9 @@ The new tests cover:
    dataset should hold `GeotechStaffEngineer/conversations/<title>_<date>/`
    with `meta.json`, the transcript, `activity.jsonl` and `files/`. Its
    history should show one transaction per turn.
-3. **List.** **Find a past conversation (permanent storage)** lists that
-   folder.
+3. **List.** Opening the app should not wait on the dataset. In **Find a
+   past conversation (permanent storage)**, **Show past conversations**
+   lists that folder after about 3-4 s.
 4. **Restore after a republish.** Push any change (the apps republish) and
    open the app: the conversation list is empty. Search **Find a past
    conversation**, press **Restore**, and check that it opens with its
@@ -276,12 +293,11 @@ The new tests cover:
 
 ## Noted, not fixed
 
-- **First page draw.** The past-conversations list reads the whole
-  dataset (about 3-4 s) on the first page draw of each browser session.
-  The expander's content runs even while it is closed, so on that first
-  draw the chat input appears after the listing. Deferring the listing
-  until it is asked for would change the sidebar on every host; left for
-  the lead.
+- **One more press to restore.** The list now waits for **Show past
+  conversations** (or a search), because an expander's content runs even
+  while it is closed, and an expander that tells the app when it opens
+  (`on_change`) exists only in recent Streamlit, while the app allows 1.39
+  and up. After **Sync now** the list is read again only when next shown.
 - **The save line is not live.** It updates on the next rerun (any click),
   not when the save ends.
 - **Waiting behind a save.** **Sync now** waits behind a background save

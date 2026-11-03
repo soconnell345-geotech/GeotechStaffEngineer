@@ -1195,7 +1195,7 @@ with st.sidebar:
         if st.button("Sync now", key=f"spsync_{ss.thread_id}"):
             with st.spinner(f"Saving to {_sp_label}…"):
                 ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
-            # the list of past conversations is read again too
+            # the list of past conversations is read again when next shown
             ss.pop(sharepoint_store.listing_cache_key(**_sp_where), None)
             st.rerun()
         if _sp_auth_problem(_sync, foundry=_sp_foundry) and not _not_kept:
@@ -1227,12 +1227,22 @@ with st.sidebar:
                                      placeholder="Part of the title or date…",
                                      label_visibility="collapsed") or "")
             with _rc2:
-                if st.button("Refresh", key="sp_restore_refresh",
-                             use_container_width=True):
-                    ss.pop(_sp_list_key, None)
-            if _sp_list_key not in ss:
-                ss[_sp_list_key] = _sp.list_remote_conversations(**_sp_where)
-            _remote = ss[_sp_list_key] or []
+                _sp_refresh = st.button("Refresh", key="sp_restore_refresh",
+                                        use_container_width=True)
+            # Read on demand (INF-38): a listing takes seconds (Foundry's
+            # files() reads the whole dataset, 3-4 s), and an expander's
+            # body runs even while it is closed, so listing here held up
+            # every new session's first draw. Refresh, a search or the
+            # button below reads it; it is then cached for the session.
+            if _sp_refresh or (_sp_list_key not in ss and (
+                    _rq.strip() or st.button(
+                        "Show past conversations", key="sp_restore_load",
+                        use_container_width=True))):
+                with st.spinner(f"Reading {_sp_label}…"):
+                    ss[_sp_list_key] = _sp.list_remote_conversations(
+                        **_sp_where)
+            _sp_listed = _sp_list_key in ss
+            _remote = ss.get(_sp_list_key) or []
             _local_folders = set()
             try:
                 # conversation_folder(), not _sp.folder_name(): that reloads
@@ -1248,10 +1258,10 @@ with st.sidebar:
             _q = _rq.strip().lower()
             _hits = [r for r in _remote
                      if not _q or _q in r["name"].lower()]
-            if not _remote:
+            if _sp_listed and not _remote:
                 st.caption(f"Nothing mirrored yet (or {_sp_label} could not "
                            "be listed — check the token).")
-            else:
+            elif _remote:
                 st.caption(f"{len(_hits)} of {len(_remote)} mirrored "
                            "conversations" + (" match" if _q else ""))
             for _r in _hits[:25]:

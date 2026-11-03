@@ -485,9 +485,9 @@ the transcript, the activity log `activity.jsonl`, the turn traces
 (the Document Review page's under `conversations/document_review/`). The
 dataset is where those records can be read from outside the app's
 container. To check a restore, open
-**Find a past conversation (permanent storage)**, search for it and press
-**Restore** (or open the app after a push: the list is read from the
-dataset).
+**Find a past conversation (permanent storage)**, press **Show past
+conversations** (or type part of its title), and press **Restore** (or
+open the app after a push: the list is read from the dataset).
 
 How it saves: once the turn's record is complete, the files the turn
 changed are copied under the outputs folder (`/foundry/outputs`), at their
@@ -502,10 +502,12 @@ nothing but the app's own `GeotechStaffEngineer/` folder; if anything else
 is there, the app saves file by file (one transaction each, slower) and
 says so once, so **keep `/foundry/outputs` for the app**. A dataset has no
 link per folder, so the sidebar shows the folder name but no "Open session
-folder" link. Reading the dataset's file list takes about 3-4 s: once per
-browser session for **Find a past conversation** (**Refresh** or **Sync
-now** reads it again), once per restore, which then downloads up to six
-files at a time.
+folder" link. Reading the dataset's file list takes about 3-4 s, so the
+page never waits for it on opening: **Find a past conversation** reads it
+when asked (**Show past conversations**, a search or **Refresh**), then
+keeps it for the browser session (after **Sync now** it is read again when
+next shown); a restore reads it once and then downloads up to six files at
+a time.
 
 **One user.** On Foundry the store is built for a single user: the app's
 owner. Every conversation goes in one folder, `conversations/`, and

@@ -841,6 +841,9 @@ def test_the_sidebar_names_foundry_storage(monkeypatch, tmp_path):
     """The permanent-storage block over the dataset says Foundry storage,
     never SharePoint."""
     at = _sidebar(monkeypatch, tmp_path, _SidebarStore())
+    next(b for b in at.sidebar.button
+         if str(b.key) == "sp_restore_load").click().run()
+    assert not at.exception, at.exception
     captions = [str(c.value) for c in at.sidebar.caption]
     assert any(c.startswith("Foundry storage is on") for c in captions), \
         captions
@@ -1044,9 +1047,20 @@ def test_a_turn_saves_and_a_fresh_container_restores_it(lib, monkeypatch,
     # a fresh container: an empty disk, a new store, the same dataset
     monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "rebuilt"))
     monkeypatch.setattr(sp, "_STORE", None)
+    listed = lib.ds.count("files")
     at2 = AppTest.from_file(app, default_timeout=30).run()
     assert not at2.exception, at2.exception
     assert not [b for b in at2.sidebar.button if str(b.key) == f"open_{tid}"]
+    # the first draw does not wait on a listing: it is read when asked for
+    assert lib.ds.count("files") == listed
+    assert not [b for b in at2.sidebar.button
+                if str(b.key) == f"sp_restore_{folder}"]
+    next(b for b in at2.sidebar.button
+         if str(b.key) == "sp_restore_load").click().run()
+    assert not at2.exception, at2.exception
+    assert lib.ds.count("files") == listed + 1
+    at2.run()                                  # cached for the session
+    assert lib.ds.count("files") == listed + 1
     restore = next(b for b in at2.sidebar.button
                    if str(b.key) == f"sp_restore_{folder}")
     restore.click().run()

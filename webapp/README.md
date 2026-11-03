@@ -235,7 +235,9 @@ button. Mirroring is best-effort: a SharePoint failure never affects the turn.
 only shows what is on the driver's disk, so after a cluster restart (or the
 30-minute idle termination) it starts empty while every mirrored conversation
 is still in SharePoint. Open **Find a past conversation** under Permanent
-storage, type part of the title or date, and click **Restore**: the record
+storage, type part of the title or date (or press **Show past
+conversations**; the list is read only when asked for), and click
+**Restore**: the record
 and its files (uploads, calc packages, figures) download back into the app
 and the conversation opens. Above the list, a filter box searches every
 saved conversation by title once there are more than a few. One caveat: the

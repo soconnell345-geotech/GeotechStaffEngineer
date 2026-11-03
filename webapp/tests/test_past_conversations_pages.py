@@ -14,6 +14,9 @@ These tests drive the real shell (AppTest) over a fake store that answers per
 page, open the review page first, switch to the geotech page in the SAME
 session, and check that each page asked for and shows its own list -- and
 that a Restore on the geotech page restores from the geotech folder.
+
+Since INF-38 the list is read when asked for (Show past conversations,
+Refresh or a search), never on a page's first draw: a listing takes seconds.
 """
 
 import os
@@ -104,6 +107,13 @@ def _listed(at):
     return shown
 
 
+def _show(at):
+    """Click Show past conversations, as the person does to read the list."""
+    next(b for b in at.sidebar.button
+         if b.key == "sp_restore_load").click().run()
+    assert not at.exception
+
+
 def test_cache_key_is_per_page_and_per_person():
     key = sharepoint_store.listing_cache_key
     # the geotech page is the same page however it is named
@@ -118,15 +128,19 @@ def test_each_page_lists_its_own_conversations_in_one_session(two_pages):
     at, store = two_pages
     at.run()
     assert not at.exception
+    assert store.list_calls == [] and _listed(at) == set()   # not read yet
+    _show(at)
     assert _listed(at) == {"Plan_review_2026-10-03"}
-    assert store.list_calls[-1] == (None, "document_review")
+    assert store.list_calls == [(None, "document_review")]
 
     # Same browser session, now the geotech page (what the page link does).
     at.session_state[profiles.SESSION_KEY] = "geotech"
     at.run()
     assert not at.exception
     assert at.title[0].value.endswith("GeotechStaffEngineer")
-    assert (None, "geotech") in store.list_calls
+    assert _listed(at) == set()          # never the review page's cached list
+    _show(at)
+    assert store.list_calls[-1] == (None, "geotech")
     assert _listed(at) == {"Slope_question_2026-10-02"}
 
     # ...and back: the review page still shows its own, without re-listing.
@@ -138,11 +152,23 @@ def test_each_page_lists_its_own_conversations_in_one_session(two_pages):
     assert len(store.list_calls) == n_calls          # cached per page
 
 
+def test_a_search_reads_the_list(two_pages):
+    at, store = two_pages
+    at.run()
+    box = next(t for t in at.sidebar.text_input
+               if t.key == "sp_restore_query_document_review")
+    box.set_value("plan").run()
+    assert not at.exception
+    assert store.list_calls == [(None, "document_review")]
+    assert _listed(at) == {"Plan_review_2026-10-03"}
+
+
 def test_restore_on_the_geotech_page_uses_the_geotech_folder(two_pages):
     at, store = two_pages
     at.run()
     at.session_state[profiles.SESSION_KEY] = "geotech"
     at.run()
+    _show(at)
     button = next(b for b in at.sidebar.button
                   if b.key == "sp_restore_Slope_question_2026-10-02")
     button.click().run()
