@@ -221,6 +221,31 @@ def _tls_check() -> dict:
     return _check(name, PASS, detail)
 
 
+def _conversation_storage_check() -> dict:
+    """Foundry: where conversations are kept (INF-38). The conversation
+    dataset when set, read once (the first listing page; nothing is
+    written, the first turn's save shows that); otherwise why it is off,
+    plainly."""
+    from webapp import foundry_dataset_store as fds
+    name = "conversation storage"
+    if not fds.dataset_rid():
+        return _check(name, SKIP, f"{fds.unconfigured_reason()}. To keep "
+                      "them, see docs/FOUNDRY.md, 'Conversations that "
+                      "survive a rebuild'; meanwhile 'Download this "
+                      "conversation' in the sidebar keeps one.")
+    reason = fds.unconfigured_reason()
+    if reason:
+        return _check(name, FAIL, f"{fds.ENV_DATASET} is set, but {reason}.")
+    try:
+        fm = fds.DatasetFileManager()
+        state = fm.probe()
+    except Exception as exc:                         # noqa: BLE001
+        return _check(name, FAIL, f"the conversation dataset could not be "
+                      f"read: {type(exc).__name__}: {exc}")
+    return _check(name, PASS, f"Foundry storage: {fm.describe()}; {state}. "
+                  "Conversations are saved there after each turn.")
+
+
 def _prompter_key_check(identity: Any = None) -> dict:
     """Tiny Apps: which Prompter key SOURCE serves this caller — per-tester
     secret, the PROMPTER-KEYS mapping or the shared key — and the per-tester
@@ -617,6 +642,7 @@ def run_diagnostics(model_id: Optional[str] = None,
         checks.append(_prompter_key_check(identity))
     if engine_config.is_foundry_deployment():
         checks.append(_tls_check())
+        checks.append(_conversation_storage_check())
     resolved = _resolution_check(model_id, identity)
     checks.append(resolved)
     agents, helpers = _helper_models(model_id, identity, helper_models)

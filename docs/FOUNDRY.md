@@ -439,6 +439,61 @@ wheel arrives before the two files are deleted: the forwarder sets
 package's own download buttons and preview no longer call what the UI file
 replaces.
 
+## 4c. Conversations that survive a rebuild
+
+A published app keeps its conversations inside its own container, so they
+are lost when the container is rebuilt. Since the release after 5.33.0 the
+app can save each conversation to a Foundry dataset after every turn, the
+way it saves to SharePoint on Databricks, and bring past ones back from the
+sidebar (BACKLOG INF-38). Not yet tried from a published app; the first
+run is the AI FDE's round trip.
+
+1. **Create a dataset of raw files** (no schema) in the app's project, e.g.
+   `gse_conversations`. Copy its RID (`ri.foundry.main.dataset.…`).
+2. **Install the Foundry platform SDK** in the workspace Libraries panel:
+   `foundry-platform-sdk` (imported as `foundry_sdk`). It is not one of the
+   app's own requirements.
+3. **Set the dataset in the app file**, before `main()`:
+   ```python
+   os.environ["GEOTECH_FOUNDRY_CONVERSATION_DATASET"] = "ri.foundry.main.dataset.<id>"
+   # optional, default master:
+   # os.environ["GEOTECH_FOUNDRY_CONVERSATION_BRANCH"] = "master"
+   ```
+4. **The token** is the one the app already uses (`FOUNDRY_TOKEN`, which
+   Foundry provides); it needs the **datasets read and write scopes**
+   (`api:datasets-read`, `api:datasets-write`), and its account needs edit
+   access to the dataset. The host is found as for the models (§3c):
+   `GEOTECH_FOUNDRY_HOST` when set, else the SDK's own service discovery in
+   the container, else `FOUNDRY_HOSTNAME`.
+5. **Republish**, then open **Connection diagnostics**: the line
+   *conversation storage* should PASS and name the dataset and where the
+   host came from. When it fails it says why (the SDK missing, no token, the
+   dataset unreadable).
+
+**After the first turn**, the sidebar shows **Permanent storage** with
+"Foundry storage: N uploaded, …", and the dataset holds
+`GeotechStaffEngineer/conversations/<title>_<date>/` with `meta.json`,
+`activity.jsonl`, the transcript and `files/`. To check a restore, open
+**Find a past conversation (permanent storage)**, search for it and press
+**Restore** (or open the app after a rebuild: the list is read from the
+dataset).
+
+How it saves: all the files one turn changed go up in **one** `UPDATE`
+transaction. A dataset branch takes one open transaction at a time, so a
+save that meets another one open waits and tries again (five tries over
+about 8 s); if it still cannot, the sidebar shows one warning, the turn is
+unaffected, and the files go up with the next save. A dataset has no link
+per folder, so the sidebar shows the folder name but no "Open session
+folder" link.
+
+**Who sees what.** A Foundry app does not tell the app who is viewing, so
+every viewer's conversations go in one folder, `conversations/`, and the
+past-conversations list shows all of them to every viewer, as the app's own
+conversation list in the container already does. Whoever can open the
+dataset can read them all. When an app does pass the viewer (as Tiny Apps
+does), each person's conversations go in a folder of their own and the list
+shows only theirs.
+
 ## 5. Preview, then publish
 
 1. In JupyterLab, use the Streamlit **preview** on `app.py` to try it in the
@@ -527,7 +582,8 @@ Field notes from the first real publish (a sandbox project on `<your-enclave>.pa
 - Conversations persist under `GEOTECH_WEBAPP_DATA` (default
   `~/.geotech_webapp`). In a published app that is inside the app's own
   container: not visible from the workspace, and lost when the container is
-  rebuilt (BACKLOG INF-38). To keep one, use **Download this conversation**
+  rebuilt, unless a conversation dataset is set (§4c, BACKLOG INF-38). To
+  keep one without it, use **Download this conversation**
   in the sidebar: **Prepare download** zips its record (`meta.json`,
   `activity.jsonl`, transcript), files and figures, leaving out caches and
   anything that may hold a key; over the 20 MB download limit (§4a) it
