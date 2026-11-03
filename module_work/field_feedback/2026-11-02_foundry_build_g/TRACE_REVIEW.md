@@ -239,6 +239,13 @@ The FDE's glue (`code/`) was read, never run. Everything was re-scored with toda
   - Build f kept no raw answer, so RI-192 assumed JSON text. `_json_text` (engine.py 3325) reads only text that starts with `[` or `{`.
   - Build g's kept answers show the markup instead, which RI-192 does not read.
 - **The FDE's stop was right** (§5 point 4: the same error failed items in two jobs). A resume would very likely recover both items: A in 2 Sonnet calls (about 98k in), B in 1 (about 12k). But a wave of about 2,800 calls should expect about 7 leaks and about 2 failed items, so RI-195 belongs before the next wave.
+- **After the hand-back, the FDE ran the resume-once (2026-11-02, reported in a note; not yet in a hand-back):**
+  - **Both items recovered:** item_errors 0 and failures "ingest none" on both jobs; 0 refusals, retries or give-ups.
+  - A_R21: 2 Sonnet calls, 98k in and 3k out, as estimated. B_R21: 2 Sonnet calls, 38k in and 5k out.
+  - This confirms the cause and RI-187's resume.
+  - **The glue, not the package:**
+    - The first resume attempt made no model call: the glue read the old run file before loading build g's package. The FDE fixed its glue.
+    - A_R21's job read to the end, then timed out writing its folder back. Its job output kept the old state. The store's last snapshot, taken after the read, held the finished folder, and a no-model step unpacked it. This is RI-203's case.
 
 ---
 
@@ -259,6 +266,7 @@ The FDE's glue (`code/`) was read, never run. Everything was re-scored with toda
   - each key holding the model's parameter markup, as in section 4.
 - **The run cannot tell them apart.** The engine keeps the raw answer on its cost row (`answer_args`), but `question_list._ask` copies only the stop reason and token counts into `run.calls`, and that is all the run file keeps.
 - **One thing that would settle it:** the engine's warning line in the question-list build log. It names any keys it dropped, and dropped `status` and `pdf_pages` keys would mean markup spill.
+- **Settled after the hand-back (the FDE sent the build log's lines):** the engine's only line in that window is the "not taken" warning above, with no dropped-key line. So the main answer held **bare values**, not markup. RI-195 sends that shape to the re-ask; it cannot be repaired without guessing each answer's status and pages.
 
 **What it cost:** the R15 sheet lost all 64 model answers. The rows answered by both keep code's reading only. `_ask` makes one call, and nothing re-asks.
 
