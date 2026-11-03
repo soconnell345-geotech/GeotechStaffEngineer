@@ -68,6 +68,10 @@ MODEL_FIRST_ASKS = {
     # mf-7 (RI-198): the log instruction carries today's rule for a test
     # pit's size, the bucket as its width.
     "mf-7": "b6270704a991c17bb2cca5a557aea299e37c0bcc52bf5caa91b5fe20178a772b",
+    # mf-8 (RI-204): the narrative's house conventions carry the owner's
+    # rulings of 2026-11-03 (soilCorrosion's worst sample governs; landslide
+    # only for an actual landslide or a named landslide hazard).
+    "mf-8": "2884686fda458bba6f938aa659bdbd8cc458cadfdee85624f7c375fa30cc45f7",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,

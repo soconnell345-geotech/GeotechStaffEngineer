@@ -301,7 +301,10 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: exploration's log (``other_log_pages``), which are read on their own.
 #: mf-7 (RI-198): the log instruction carries today's rule for a test pit's
 #: size, the bucket as its width (``LOG_PIT_SIZE``).
-READ_PROMPT_VERSION = "mf-7"
+#: mf-8 (RI-204): the narrative carries the owner's rulings of 2026-11-03
+#: in the house conventions: soilCorrosion's worst sample governs, and
+#: landslide only for an actual landslide or a named landslide hazard.
+READ_PROMPT_VERSION = "mf-8"
 
 
 def _described(cls: Any, name: str) -> Optional[str]:

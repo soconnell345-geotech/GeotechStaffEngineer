@@ -220,6 +220,35 @@ class TestTheGlossaryReachesThePrompt:
             assert any("one item per" in row.rule
                        for row in conventions_for(name))
 
+    def test_the_owners_rulings_of_2026_11_03_reach_both_readers(self, doc):
+        # RI-204 (OWN-119, OWN-120): each ruling is a CONFIRMED rule on its
+        # field, and today's brief and model first's narrative instruction
+        # both carry it.
+        from report_ingest import model_first as mf
+        from report_ingest.narrative_glossary import CONVENTIONS
+
+        ruled = {name: row for row in CONVENTIONS
+                 if "of 2026-11-03 (OWN-1" in row.why
+                 for name in row.fields}
+        assert set(ruled) == {"soilCorrosion", "earthHazardsExposed"}
+        assert all(row.status == "CONFIRMED" for row in ruled.values())
+        corrosion = ruled["soilCorrosion"].rule
+        assert "the WORST governs" in corrosion
+        assert "answers yes, not no and not mixed" in corrosion
+        assert ("mixed stays only for soil corrosive to some materials and "
+                "not to others") in corrosion
+        landslide = ruled["earthHazardsExposed"].rule
+        assert "landslide only for an actual landslide" in landslide
+        assert "A slope-stability analysis" in landslide
+
+        engine = FakeEngine([{"final": a_reading()}])
+        read(doc, engine, front_pages=0, roles=[])
+        today = brief_of(engine)
+        first = mf.instruction("narrative", "R00", [0, 1])
+        for row in ruled.values():
+            assert row.line() in today
+            assert row.line() in first
+
     def test_the_hazard_list_is_offered_as_the_only_phrases(self):
         from report_ingest.narrative_reader import _vocabulary_block
 
