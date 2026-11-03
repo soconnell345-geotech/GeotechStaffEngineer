@@ -64,6 +64,11 @@ DEFAULT_ROOT = "GeotechStaffEngineer"
 #: is left to find the host itself.
 SERVICE_DISCOVERY_ENV = "FOUNDRY_SERVICE_DISCOVERY_V2"
 
+#: The host setting the SDK reads itself. With service discovery it is the
+#: fallback the SDK's clients ask for when built; without it the client
+#: cannot be built (``foundry_sdk`` 1.111.0, ``ServiceDiscoveryHostnameSupplier``).
+SDK_HOSTNAME_ENV = "FOUNDRY_HOSTNAME"
+
 #: The pip package, for the messages.
 SDK_PACKAGE = "foundry-platform-sdk"
 
@@ -106,7 +111,8 @@ def sdk_target() -> Tuple[Optional[str], str]:
     The host is ``None`` when the SDK finds it itself. First that is set:
     ``GEOTECH_FOUNDRY_HOST`` (named on purpose, as for the model route);
     the SDK's service-discovery file (``FOUNDRY_SERVICE_DISCOVERY_V2``, set
-    in Foundry containers); ``FOUNDRY_HOSTNAME`` / ``FOUNDRY_URL``, read by
+    in Foundry containers) with ``FOUNDRY_HOSTNAME``, which the SDK needs
+    beside it; ``FOUNDRY_HOSTNAME`` / ``FOUNDRY_URL``, read by
     :func:`webapp.engine_config.foundry_base_url`. ``(None, "")`` when none
     is.
     """
@@ -114,7 +120,7 @@ def sdk_target() -> Tuple[Optional[str], str]:
     explicit = engine_config.FOUNDRY_HOST_ENVS[0]
     if _env(explicit):
         return engine_config.foundry_base_url(), explicit
-    if _env(SERVICE_DISCOVERY_ENV):
+    if _env(SERVICE_DISCOVERY_ENV) and _env(SDK_HOSTNAME_ENV):
         return None, SERVICE_DISCOVERY_ENV
     source = next((e for e in engine_config.FOUNDRY_HOST_ENVS if _env(e)), "")
     return (engine_config.foundry_base_url(), source) if source else (None, "")

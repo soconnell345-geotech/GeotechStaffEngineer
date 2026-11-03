@@ -464,7 +464,8 @@ run is the AI FDE's round trip.
    (`api:datasets-read`, `api:datasets-write`), and its account needs edit
    access to the dataset. The host is found as for the models (§3c):
    `GEOTECH_FOUNDRY_HOST` when set, else the SDK's own service discovery in
-   the container, else `FOUNDRY_HOSTNAME`.
+   the container (it needs `FOUNDRY_HOSTNAME` set beside it), else
+   `FOUNDRY_HOSTNAME` or `FOUNDRY_URL`.
 5. **Republish**, then open **Connection diagnostics**: the line
    *conversation storage* should PASS and name the dataset and where the
    host came from. When it fails it says why (the SDK missing, no token, the

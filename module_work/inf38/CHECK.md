@@ -128,12 +128,23 @@ saved and restored, the diagnostics line, and report ingest's mirror.
 
 ## SDK calls for the FDE to confirm (paste into the round-trip test)
 
-Package `foundry-platform-sdk` (read at 1.111.0), `import foundry_sdk`:
+Package `foundry-platform-sdk` (read at 1.111.0), `import foundry_sdk`.
+Review, 2026-11-03: every name, argument order, keyword and return type
+below matches 1.111.0's source, and the app's class ran each call through
+the real 1.111.0 package (not installed in the venv) against a local fake
+of the datasets REST API (made-up values): the client with an `http://`
+host, listing with `path_prefix` over three pages (`nextPageToken`), one
+`UPDATE` transaction per batch, upload as bytes, overwrite, `content` as
+bytes, the conflict (`OpenTransactionAlreadyExists`, five tries) and a
+refused commit. Service discovery needs `FOUNDRY_HOSTNAME` set beside
+`FOUNDRY_SERVICE_DISCOVERY_V2` (the SDK will not build its client without
+it), so the app uses discovery only then.
 
 ```
 client = foundry_sdk.FoundryClient(
     auth=foundry_sdk.UserTokenAuth(token=TOKEN),
     hostname=HOST,                      # omitted when the SDK's service discovery is used
+                                        # (FOUNDRY_SERVICE_DISCOVERY_V2 and FOUNDRY_HOSTNAME both set)
     config=foundry_sdk.Config(timeout=120, verify=CA_FILE))   # verify only when a CA file is set;
                                                               # scheme="http" only for an http:// host
 F = client.datasets.Dataset.File
@@ -241,3 +252,18 @@ each file is its own transaction (create, upload, commit).
   viewer's list at the top level would show the owners' folders as entries
   that cannot be restored; Foundry identifies no one, so this does not
   arise there. Same on SharePoint today.
+
+From the review (2026-11-03):
+
+- A transaction left open for good (question 5) also costs each later
+  save the five tries, about 8 s, before its warning.
+- A host that takes connections but never answers costs one 120 s timeout
+  per save (the SDK retries only 429 and 503; the batch's other files then
+  fail at once).
+- A refused transaction shows one line per changed file under "Sync
+  errors", all the same cause.
+- A dataset path with a `..` segment would be restored outside the
+  conversation's folder (the restore joins the listed path); only someone
+  who can write to the dataset could put one there.
+- A `KeyboardInterrupt` or `SystemExit` inside a commit would leave that
+  transaction open (`end_batch` aborts on `Exception`).

@@ -558,6 +558,15 @@ def test_the_host_follows_the_apps_settings(monkeypatch):
     monkeypatch.setenv(fds.SERVICE_DISCOVERY_ENV, "/made/up/discovery.yml")
     fds.DatasetFileManager()._client()
     assert "hostname" not in fake.built[-1]
+    # ... but only beside FOUNDRY_HOSTNAME: the SDK cannot build its client
+    # from the discovery file alone, so the app names the host it has
+    monkeypatch.delenv("FOUNDRY_HOSTNAME")
+    monkeypatch.setenv("FOUNDRY_URL", "url.example.test")
+    assert fds.sdk_target() == ("https://url.example.test", "FOUNDRY_URL")
+    monkeypatch.delenv("FOUNDRY_URL")
+    assert fds.sdk_target() == (None, "")
+    assert "no Foundry host" in fds.unconfigured_reason()
+    monkeypatch.setenv("FOUNDRY_HOSTNAME", "stack.example.test")
     # an explicit GEOTECH_FOUNDRY_HOST wins, its http:// scheme kept
     monkeypatch.setenv("GEOTECH_FOUNDRY_HOST", "http://localhost:9999")
     fds.DatasetFileManager()._client()
