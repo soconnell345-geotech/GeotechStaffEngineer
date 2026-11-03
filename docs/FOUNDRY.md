@@ -449,7 +449,8 @@ sidebar (BACKLOG INF-38). Not yet tried from a published app; the first
 run is the AI FDE's round trip.
 
 1. **Create a dataset of raw files** (no schema) in the app's project, e.g.
-   `gse_conversations`. Copy its RID (`ri.foundry.main.dataset.…`).
+   `gse_conversations`, used for nothing else (below, "How it saves").
+   Copy its RID (`ri.foundry.main.dataset.…`).
 2. **Install the Foundry platform SDK** in the workspace Libraries panel:
    `foundry-platform-sdk` (imported as `foundry_sdk`). It is not one of the
    app's own requirements.
@@ -487,9 +488,14 @@ How it saves: all the files one turn changed go up in **one** `UPDATE`
 transaction. A dataset branch takes one open transaction at a time, so a
 save that meets another one open waits and tries again (five tries over
 about 8 s); if it still cannot, the sidebar shows one warning, the turn is
-unaffected, and the files go up with the next save. A dataset has no link
-per folder, so the sidebar shows the folder name but no "Open session
-folder" link.
+unaffected, and the files go up with the next save. A transaction a save
+left open (the app or its container stopped mid-save) would block every
+later save, so a save that meets one aborts it when it is the app's own: one
+the app recorded opening before a restart on the same disk, or any open
+for more than 10 minutes (a save takes seconds). So **keep the dataset for
+the app's conversations only**: anyone else's transaction left open on its
+branch for 10 minutes is aborted too. A dataset has no link per folder, so
+the sidebar shows the folder name but no "Open session folder" link.
 
 **Who sees what.** A Foundry app does not tell the app who is viewing, so
 every viewer's conversations go in one folder, `conversations/`, and the

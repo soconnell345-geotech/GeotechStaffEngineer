@@ -157,7 +157,27 @@ F.upload(RID, "GeotechStaffEngineer/conversations/<folder>/meta.json", b"...", t
 T.commit(RID, txn.rid)
 T.abort(RID, txn.rid)                   # on any error, and to test the abort path
 F.content(RID, "GeotechStaffEngineer/conversations/<folder>/meta.json", branch_name="master")   # -> bytes
+
+# only when a create is refused because a transaction is open (a leftover):
+head = client.datasets.Dataset.Branch.get(RID, "master").transaction_rid   # newest open or committed
+info = T.get(RID, head)                 # .status == "OPEN", .created_time (aware datetime)
 ```
+
+A transaction a save left open would block every later save (one open per
+branch), so at the first refusal the store aborts the app's own leftover
+and tries again at once: first one named in its marker file
+(`<data folder>/.foundry_open_transactions.json`, the transactions this
+app opened and has not closed, with the process id; a restart on the same
+disk), with no request; else the branch's open transaction when
+`created_time` is more than 10 minutes old (`STALE_AFTER_S`). The SDK shows
+a transaction's age but not who opened it (no creator field on
+`Transaction`), so on a dedicated dataset age is the test; a transaction
+a save in this process holds, or one another running process on the disk
+named, is never aborted. Tests:
+`test_a_leftover_named_in_the_marker_is_aborted_at_once`,
+`test_a_stale_open_transaction_is_aborted_and_a_young_one_kept`,
+`test_a_transaction_held_here_or_by_a_live_process_is_kept`; the smoke
+through the real SDK ran both `get` calls and the stale abort.
 
 The same round trip through the app's own class (exercises exactly these
 calls; run in the published app's environment):
@@ -191,7 +211,10 @@ Questions for the FDE with it:
    Today the app cannot tell viewers apart on Foundry (below).
 5. When a container is rebuilt in the middle of a save, does Foundry close
    the open transaction, or does it stay open and block every later save on
-   that branch until someone aborts it?
+   that branch until someone aborts it? (The app now aborts its own
+   leftover, above; the answer says whether that path is ever needed. Can
+   the app's token read `Branch.get` and `Transaction.get` and abort a
+   transaction the app opened before a rebuild?)
 
 ## Unknown viewer: whose folder
 
@@ -243,9 +266,8 @@ each file is its own transaction (create, upload, commit).
   past-conversations list and the first save of a conversation slower;
   results are the same.
 - A transaction left open by a crash would block saves on the branch
-  (question 5); each sync then shows one warning and the turn goes on. If
-  the FDE says Foundry does not close it, the fix is a step to abort it
-  (or a docs line on aborting it in the dataset's history).
+  (question 5): handled since the review, the store aborts the app's own
+  leftover (above, under the SDK calls).
 - The dataset has no link per folder, so the sidebar shows the folder name
   but no "Open session folder" link.
 - On a mixed host (some viewers identified, some not), an unidentified
@@ -255,8 +277,9 @@ each file is its own transaction (create, upload, commit).
 
 From the review (2026-11-03):
 
-- A transaction left open for good (question 5) also costs each later
-  save the five tries, about 8 s, before its warning.
+- After a rebuilt container (no marker), saves in the first 10 minutes
+  after the leftover was opened each cost the five tries, about 8 s, and a
+  warning; the first save after that aborts it and goes through.
 - A host that takes connections but never answers costs one 120 s timeout
   per save (the SDK retries only 429 and 503; the batch's other files then
   fail at once).

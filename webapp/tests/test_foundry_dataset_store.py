@@ -12,7 +12,7 @@ import os
 import sys
 import time
 import types
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -33,10 +33,14 @@ _ENVS = (fds.ENV_DATASET, fds.ENV_BRANCH, fds.SERVICE_DISCOVERY_ENV,
 
 
 @pytest.fixture(autouse=True)
-def _clean_env(monkeypatch):
+def _clean_env(monkeypatch, tmp_path):
     for e in _ENVS:
         monkeypatch.delenv(e, raising=False)
     monkeypatch.setattr(sp, "_graph_configured", lambda: False)
+    # the marker file of a built (not injected) client lands here, and no
+    # transaction is held over from another test
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "data"))
+    monkeypatch.setattr(fds.DatasetFileManager, "_OPEN_HERE", set())
     yield
 
 
@@ -63,6 +67,7 @@ class FakeDataset:
         self.calls = []              # ("create"|"upload"|..., detail)
         self.n = 0
         self.fail_commit = False
+        self.created = {}            # rid -> when it was opened
 
     # Dataset.Transaction -------------------------------------------------
     def create(self, dataset_rid, *, transaction_type, branch_name=None):
@@ -71,10 +76,28 @@ class FakeDataset:
             if self.conflicts:
                 self.conflicts -= 1
             raise OpenTransactionAlreadyExists("a transaction is open")
+        return types.SimpleNamespace(rid=self.leave_open(0), status="OPEN")
+
+    def leave_open(self, age_s):
+        """Open a transaction ``age_s`` seconds ago (and leave it open)."""
         self.n += 1
         self.open = f"ri.foundry.main.transaction.fake-{self.n}"
         self.staged[self.open] = {}
-        return types.SimpleNamespace(rid=self.open, status="OPEN")
+        self.created[self.open] = datetime.now(timezone.utc) - timedelta(
+            seconds=age_s)
+        return self.open
+
+    def get(self, dataset_rid, transaction_rid):
+        self.calls.append(("get", transaction_rid))
+        return types.SimpleNamespace(
+            rid=transaction_rid,
+            status="OPEN" if transaction_rid == self.open else "COMMITTED",
+            created_time=self.created.get(transaction_rid))
+
+    def branch_get(self, dataset_rid, branch_name):
+        self.calls.append(("branch", branch_name))
+        return types.SimpleNamespace(name=branch_name,
+                                     transaction_rid=self.open)
 
     def commit(self, dataset_rid, transaction_rid):
         self.calls.append(("commit", transaction_rid))
@@ -86,9 +109,10 @@ class FakeDataset:
 
     def abort(self, dataset_rid, transaction_rid):
         self.calls.append(("abort", transaction_rid))
-        if transaction_rid == self.open:
-            self.staged.pop(transaction_rid, None)
-            self.open = None
+        if transaction_rid != self.open:
+            raise RuntimeError("TransactionNotOpen")
+        self.staged.pop(transaction_rid, None)
+        self.open = None
 
     # Dataset.File -------------------------------------------------------
     def upload(self, dataset_rid, file_path, body, *, transaction_rid=None):
@@ -128,11 +152,13 @@ class _Files:
 class _Transactions:
     def __init__(self, ds):
         self.create, self.commit, self.abort = ds.create, ds.commit, ds.abort
+        self.get = ds.get
 
 
 def fake_client(ds):
-    dataset = types.SimpleNamespace(File=_Files(ds),
-                                    Transaction=_Transactions(ds))
+    dataset = types.SimpleNamespace(
+        File=_Files(ds), Transaction=_Transactions(ds),
+        Branch=types.SimpleNamespace(get=ds.branch_get))
     return types.SimpleNamespace(datasets=types.SimpleNamespace(
         Dataset=dataset))
 
@@ -318,6 +344,73 @@ def test_a_conflict_that_lasts_gives_up_after_the_last_try(tmp_path):
         fm.upload_file(str(f), "GSE/a.txt", overwrite=True)
     assert len(pauses) == fds.OPEN_TRIES - 1
     assert ds.count("create") == fds.OPEN_TRIES
+
+
+# a transaction a save left open (FDE question 5) must not block every save
+
+
+def test_a_leftover_named_in_the_marker_is_aborted_at_once(tmp_path):
+    ds = FakeDataset()
+    marker = str(tmp_path / "marker.json")
+    f = tmp_path / "a.txt"
+    f.write_bytes(b"a")
+    before = _fm(ds, marker=marker)
+    before.begin_batch()
+    before.upload_file(str(f), "GSE/a.txt", overwrite=True)  # stops mid-save
+    left = ds.open
+    with open(marker, encoding="utf-8") as fh:
+        assert json.load(fh)[RID][0]["rid"] == left
+    fds.DatasetFileManager._OPEN_HERE.clear()      # restarted, same disk
+    pauses = []
+    after = _fm(ds, marker=marker, sleep=pauses.append)
+    assert after.upload_file(str(f), "GSE/a.txt", overwrite=True)
+    assert ("abort", left) in ds.calls and pauses == []
+    assert ds.count("branch") == 0                 # the marker was enough
+    assert ds.files == {"GSE/a.txt": b"a"} and ds.open is None
+    with open(marker, encoding="utf-8") as fh:
+        assert json.load(fh) == {}                 # nothing left named
+
+
+def test_a_stale_open_transaction_is_aborted_and_a_young_one_kept(tmp_path):
+    ds = FakeDataset()
+    pauses = []
+    fm = _fm(ds, sleep=pauses.append)
+    f = tmp_path / "a.txt"
+    f.write_bytes(b"a")
+    young = ds.leave_open(60)                      # another save, a minute in
+    with pytest.raises(OpenTransactionAlreadyExists):
+        fm.upload_file(str(f), "GSE/a.txt", overwrite=True)
+    assert ds.open == young and ds.count("abort") == 0
+    assert ds.count("branch") == 1                 # once per save, not per try
+    ds.created[young] -= timedelta(seconds=fds.STALE_AFTER_S)  # left behind
+    pauses.clear()
+    assert fm.upload_file(str(f), "GSE/a.txt", overwrite=True)
+    assert ("abort", young) in ds.calls and pauses == []
+    assert ds.files == {"GSE/a.txt": b"a"} and ds.open is None
+
+
+def test_a_transaction_held_here_or_by_a_live_process_is_kept(tmp_path):
+    ds = FakeDataset()
+    marker = str(tmp_path / "marker.json")
+    f = tmp_path / "a.txt"
+    f.write_bytes(b"a")
+    holder = _fm(ds, marker=marker)
+    holder.begin_batch()
+    holder.upload_file(str(f), "GSE/a.txt", overwrite=True)
+    held = ds.open
+    ds.created[held] -= timedelta(hours=1)         # old, but a save here holds it
+    other = _fm(ds, marker=marker, open_tries=2)
+    with pytest.raises(OpenTransactionAlreadyExists):
+        other.upload_file(str(f), "GSE/b.txt", overwrite=True)
+    assert ds.count("abort") == 0 and ds.open == held
+    assert holder.end_batch() == 1
+    # a young one another running process named in the marker
+    theirs = ds.leave_open(5)
+    with open(marker, "w", encoding="utf-8") as fh:
+        json.dump({RID: [{"rid": theirs, "pid": os.getppid()}]}, fh)
+    with pytest.raises(OpenTransactionAlreadyExists):
+        other.upload_file(str(f), "GSE/b.txt", overwrite=True)
+    assert ds.count("abort") == 0 and ds.open == theirs
 
 
 # ---------------------------------------------------------------------------
@@ -534,6 +627,7 @@ def test_on_foundry_the_dataset_is_the_permanent_storage(monkeypatch,
     fm = store.file_manager()
     assert isinstance(fm, fds.DatasetFileManager)
     assert fm.dataset == RID and fm.branch == "master"
+    assert fm._marker == os.path.join(core.data_root(), fds.MARKER_NAME)
     root = str(tmp_path)
     _conversation(root, "T-E2E", "Lateral pile", _CREATED)
     assert not store.mirror_conversation("T-E2E", root=root)["errors"]

@@ -22,7 +22,10 @@ How a dataset differs from a SharePoint library (the AI FDE's answer,
   ONE ``UPDATE`` transaction (:meth:`DatasetFileManager.begin_batch` /
   :meth:`DatasetFileManager.end_batch`, which the store calls when a file
   manager offers them), and opening one is retried with a growing pause
-  while another is open.
+  while another is open. A transaction a save left open (a process or
+  container that stopped mid-save) would block every later save, so the
+  first refusal aborts it when it is the app's own leftover
+  (:meth:`DatasetFileManager._reclaim`).
 * There is no per-file web address, so :meth:`get_web_url` gives none.
 
 Configuration (on a Foundry deployment, ``GEOTECH_DEPLOYMENT=foundry``):
@@ -45,10 +48,11 @@ below it, so a name the AI FDE's test corrects changes in one place.
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 ENV_DATASET = "GEOTECH_FOUNDRY_CONVERSATION_DATASET"
@@ -79,6 +83,18 @@ TIMEOUT_S = 120
 #: first pause (doubled each time: 0.5, 1, 2, 4 s, about 8 s in all).
 OPEN_TRIES = 5
 OPEN_BACKOFF_S = 0.5
+
+#: An open transaction on the branch older than this is taken as one a save
+#: left behind and is aborted. A save's transaction lives seconds, and the
+#: dataset holds only the app's conversations; the SDK shows a
+#: transaction's age but not who opened it.
+STALE_AFTER_S = 600
+
+#: The transactions this app's saves have opened and not yet closed, by
+#: dataset, in a file in the app's data folder: after a restart on the same
+#: disk a leftover named there is aborted at once, without waiting for it to
+#: age. A rebuilt container starts without it; the age test covers that.
+MARKER_NAME = ".foundry_open_transactions.json"
 
 #: Files per listing page.
 PAGE_SIZE = 1000
@@ -182,6 +198,32 @@ def _iso(value: Any) -> str:
     return str(value or "")
 
 
+def _default_marker() -> Optional[str]:
+    """The marker file in the app's data folder (:data:`MARKER_NAME`)."""
+    try:
+        from webapp import core
+        return os.path.join(core.data_root(), MARKER_NAME)
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    """True unless process ``pid`` is known to be gone. On Windows nothing
+    is probed (``os.kill`` there would stop the process), so any other
+    process counts as alive and its transactions are left to the age test."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True                  # alive, another user's
+    return True
+
+
 class _Batch:
     """One mirror's or restore's state: its listings, and the transaction
     its uploads share, opened at the first upload."""
@@ -201,17 +243,24 @@ class DatasetFileManager:
     ``client`` may be injected (tests, or a caller holding a live
     ``foundry_sdk.FoundryClient``); otherwise it is built from the app's
     Foundry token and host, and rebuilt when the token changes.
+    ``marker`` is the marker file (:data:`MARKER_NAME`); by default the one
+    in the app's data folder, none for an injected client.
     """
 
     BACKEND = "foundry"
     DEFAULT_ROOT = DEFAULT_ROOT
+
+    #: Transactions a save in this process holds open now (every instance).
+    _OPEN_HERE: set = set()
+    _MARKER_LOCK = threading.Lock()
 
     def __init__(self, dataset: Optional[str] = None,
                  branch: Optional[str] = None, *, client: Any = None,
                  open_tries: int = OPEN_TRIES,
                  open_backoff_s: float = OPEN_BACKOFF_S,
                  sleep: Callable[[float], None] = time.sleep,
-                 page_size: int = PAGE_SIZE):
+                 page_size: int = PAGE_SIZE,
+                 marker: Optional[str] = None):
         self.dataset = (dataset or dataset_rid()).strip()
         if not self.dataset:
             raise RuntimeError(f"{ENV_DATASET} is not set")
@@ -224,6 +273,8 @@ class DatasetFileManager:
         self._sleep = sleep
         self._page_size = page_size
         self._prefix_ok = True
+        self._marker = marker if (marker or self._injected) \
+            else _default_marker()
         # The batch, per thread: one process serves every viewer, and a
         # restore in one session must not end another session's save.
         self._local = threading.local()
@@ -319,20 +370,46 @@ class DatasetFileManager:
                                      branch_name=self.branch)
         return data if isinstance(data, (bytes, bytearray)) else bytes(data)
 
+    def _sdk_branch_head(self) -> Optional[str]:
+        """The branch's newest open or committed transaction (its rid)."""
+        branch = self._client().datasets.Dataset.Branch.get(self.dataset,
+                                                            self.branch)
+        rid = getattr(branch, "transaction_rid", None)
+        return str(rid) if rid else None
+
+    def _sdk_transaction(self, txn: str) -> Any:
+        """The transaction: ``.status`` and ``.created_time``."""
+        return self._transactions().get(self.dataset, txn)
+
     # ---------------------------------------------------------- transactions
     def _open_transaction(self) -> str:
-        """An open ``UPDATE`` transaction, retried while another is open."""
+        """An open ``UPDATE`` transaction, retried while another is open; at
+        the first refusal the app's own leftover is aborted
+        (:meth:`_reclaim`) and the open tried again at once."""
         pause = self._open_backoff_s
+        reclaimed = False
         for attempt in range(1, self._open_tries + 1):
             try:
-                return self._sdk_open()
+                txn = self._sdk_open()
             except Exception as exc:                   # noqa: BLE001
                 if not _is_open_transaction_conflict(exc) \
                         or attempt == self._open_tries:
                     raise
+            else:
+                self._OPEN_HERE.add(txn)
+                self._mark(txn, add=True)
+                return txn
+            if not reclaimed:
+                reclaimed = True
+                if self._reclaim():
+                    continue
             self._sleep(pause)
             pause *= 2
         raise RuntimeError("unreachable")              # pragma: no cover
+
+    def _commit(self, txn: str) -> None:
+        self._sdk_commit(txn)
+        self._forget(txn)
 
     def _abort_quietly(self, txn: Optional[str]) -> None:
         if not txn:
@@ -340,7 +417,105 @@ class DatasetFileManager:
         try:
             self._sdk_abort(txn)
         except Exception:                              # noqa: BLE001
-            pass
+            # Not held here any more; the marker keeps it for a later save
+            # to abort.
+            self._OPEN_HERE.discard(txn)
+            return
+        self._forget(txn)
+
+    def _forget(self, txn: str) -> None:
+        self._OPEN_HERE.discard(txn)
+        self._mark(txn, add=False)
+
+    def _reclaim(self) -> bool:
+        """After a refusal because a transaction is open on the branch: abort
+        it when it is the app's own leftover (a process or container that
+        stopped mid-save), so saves go on. True when one was aborted. Never
+        raises; never touches a transaction a save in this process holds.
+
+        First the marker file, which costs no request: a transaction it
+        names, opened by this process before a restart or by one that is
+        gone, is aborted outright. Else the branch's open transaction when it
+        is older than :data:`STALE_AFTER_S`: the dataset holds only the app's
+        conversations and a save's transaction lives seconds. The SDK shows
+        a transaction's age but not who opened it, so age is the test."""
+        aborted = False
+        for txn, pid in self._marked():
+            if txn in self._OPEN_HERE or (pid != os.getpid()
+                                          and _pid_alive(pid)):
+                continue
+            try:
+                self._sdk_abort(txn)
+                aborted = True
+            except Exception:                          # noqa: BLE001
+                pass                     # closed already
+            self._mark(txn, add=False)
+        if aborted:
+            return True
+        try:
+            txn = self._sdk_branch_head()
+            if not txn or txn in self._OPEN_HERE:
+                return False
+            info = self._sdk_transaction(txn)
+            created = getattr(info, "created_time", None)
+            if str(getattr(info, "status", "")) != "OPEN" \
+                    or not isinstance(created, datetime):
+                return False
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - created).total_seconds()
+            if age < STALE_AFTER_S:
+                return False
+            self._sdk_abort(txn)
+        except Exception:                              # noqa: BLE001
+            return False
+        self._mark(txn, add=False)
+        return True
+
+    # ------------------------------------------------------- the marker file
+    def _read_marker(self) -> Dict[str, Any]:
+        try:
+            with open(self._marker, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError, TypeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _marked(self) -> List[Tuple[str, int]]:
+        """``(transaction, pid)`` the marker names for this dataset."""
+        if not self._marker:
+            return []
+        out = []
+        for entry in self._read_marker().get(self.dataset) or []:
+            try:
+                out.append((str(entry["rid"]), int(entry["pid"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return out
+
+    def _mark(self, txn: str, add: bool) -> None:
+        """Name ``txn`` in the marker file (with this process's id), or drop
+        it. Best-effort: a marker that cannot be written leaves the age
+        test."""
+        if not self._marker:
+            return
+        with self._MARKER_LOCK:
+            try:
+                data = self._read_marker()
+                entries = [e for e in (data.get(self.dataset) or [])
+                           if isinstance(e, dict) and e.get("rid") != txn]
+                if add:
+                    entries.append({"rid": txn, "pid": os.getpid()})
+                if entries:
+                    data[self.dataset] = entries
+                else:
+                    data.pop(self.dataset, None)
+                os.makedirs(os.path.dirname(os.path.abspath(self._marker)),
+                            exist_ok=True)
+                with open(self._marker, "w", encoding="utf-8") as fh:
+                    json.dump(data, fh)
+            except Exception:                          # noqa: BLE001
+                pass
 
     # ------------------------------------------------------- the batch hook
     def begin_batch(self) -> None:
@@ -364,7 +539,7 @@ class DatasetFileManager:
             self._abort_quietly(txn)
             return 0
         try:
-            self._sdk_commit(txn)
+            self._commit(txn)
         except Exception:
             self._abort_quietly(txn)
             raise
@@ -464,7 +639,7 @@ class DatasetFileManager:
             txn = self._open_transaction()
             try:
                 self._sdk_upload(target, data, txn)
-                self._sdk_commit(txn)
+                self._commit(txn)
             except Exception:
                 self._abort_quietly(txn)
                 raise
