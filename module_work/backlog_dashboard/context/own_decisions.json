@@ -2941,5 +2941,29 @@
       "BACKLOG_DONE.md RI-204",
       "module_work/ri204/CHECK.md"
     ]
+  },
+  "OWN-126": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "In Foundry, could you close the AI FDE's open proposal \"Restore MF-3 A/R21 snapshot output\" without merging it?",
+    "why": "It was opened during the MF-3 resume and is no longer needed; the FDE's notes say only the owner can close it, and it must never be merged.",
+    "background": "The FDE's handoff of 2026-11-03 lists it as still open on its working branch in the transforms repo. Closing it changes nothing in the app or the runs.",
+    "options": [
+      {
+        "label": "Closed, unmerged",
+        "effect": "Nothing else to do."
+      },
+      {
+        "label": "Leave it open",
+        "effect": "Harmless while it stays unmerged."
+      }
+    ],
+    "recommendation": "Close it unmerged in the Foundry UI when convenient.",
+    "if_no_answer": "It stays open and unmerged.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-126"
+    ]
   }
 }
