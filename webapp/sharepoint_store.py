@@ -876,6 +876,7 @@ class SharePointStore:
             return
 
         stamps: Dict[str, List] = {}
+        refused: List[str] = []
         for rel, remote_path in files:
             if rel == MANIFEST_NAME:
                 continue                     # never restore a stale manifest
@@ -883,7 +884,10 @@ class SharePointStore:
                 # a turn checkpoint mirrored mid-turn would come back as a
                 # fake "interrupted" turn (live smoke wave 2a, B2)
                 continue
-            local = os.path.join(conv_dir, *rel.split("/"))
+            local = _local_path_inside(conv_dir, rel)
+            if local is None:
+                refused.append(rel)
+                continue
             os.makedirs(os.path.dirname(local), exist_ok=True)
             try:
                 fm.download_file(remote_path, local_path=local,
@@ -893,6 +897,12 @@ class SharePointStore:
             except Exception as exc:
                 summary["errors"].append(
                     f"{rel}: {type(exc).__name__}: {exc}")
+        if refused:
+            summary["errors"].append(
+                f"{len(refused)} file(s) not restored, their paths lead "
+                f"outside the conversation's folder: "
+                + ", ".join(repr(r) for r in refused[:5])
+                + (" …" if len(refused) > 5 else ""))
         _save_manifest(conv_dir, stamps, remote_base)
         summary["status"] = "restored" if summary["downloaded"] else "error"
         if summary["downloaded"]:
@@ -1016,6 +1026,26 @@ def _trailing_date(name: str) -> str:
     """``YYYY-MM-DD`` suffix of a mirrored folder name, else ``""``."""
     m = re.search(r"(\d{4}-\d{2}-\d{2})$", name or "")
     return m.group(1) if m else ""
+
+
+def _local_path_inside(conv_dir: str, rel: str) -> Optional[str]:
+    """Where remote file ``rel`` goes under ``conv_dir``, or ``None`` when
+    its path is absolute, holds a ``..`` segment, or resolves outside the
+    folder. A SharePoint library cannot hold such a name; a Foundry
+    dataset's file paths are free text (INF-38), so a restore checks."""
+    text = str(rel or "").replace("\\", "/")
+    parts = text.split("/")
+    if not text or text.startswith("/") or ".." in parts \
+            or os.path.isabs(text) or re.match(r"^[A-Za-z]:", text):
+        return None
+    local = os.path.join(conv_dir, *parts)
+    root = os.path.realpath(conv_dir)
+    try:
+        if os.path.commonpath([root, os.path.realpath(local)]) != root:
+            return None
+    except ValueError:                                 # another drive
+        return None
+    return local
 
 
 def _walk_remote(fm, base: str, _depth: int = 0) -> List[tuple]:

@@ -285,8 +285,10 @@ From the review (2026-11-03):
   fail at once).
 - A refused transaction shows one line per changed file under "Sync
   errors", all the same cause.
-- A dataset path with a `..` segment would be restored outside the
-  conversation's folder (the restore joins the listed path); only someone
-  who can write to the dataset could put one there.
+- A dataset path with a `..` segment would have been restored outside the
+  conversation's folder: fixed, a restore skips any path that is absolute,
+  holds a `..` segment (either slash) or resolves outside the folder, with
+  one warning line (`_local_path_inside`,
+  `test_a_restore_never_writes_outside_the_conversation_folder`).
 - A `KeyboardInterrupt` or `SystemExit` inside a commit would leave that
   transaction open (`end_batch` aborts on `Exception`).

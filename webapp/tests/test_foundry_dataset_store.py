@@ -488,6 +488,31 @@ def test_the_restore_round_trip(tmp_path):
     assert again["uploaded"] == 0 and not again["errors"], again
 
 
+def test_a_restore_never_writes_outside_the_conversation_folder(tmp_path):
+    """A dataset's file paths are free text: one with a ``..`` segment
+    (either slash) is skipped with one warning, the rest restored."""
+    ds = FakeDataset()
+    store = _store(ds)
+    before = str(tmp_path / "before_rebuild")
+    after = str(tmp_path / "after_rebuild")
+    _conversation(before, "T-PATH", "Wall design", _CREATED)
+    assert not store.mirror_conversation("T-PATH", root=before)["errors"]
+    base = "GeotechStaffEngineer/conversations/Wall_design_2026-01-02"
+    ds.files[f"{base}/../../made_up_escape.txt"] = b"x"
+    ds.files[f"{base}/files/..\\..\\..\\made_up_escape2.txt"] = b"y"
+    res = store.restore_conversation("Wall_design_2026-01-02", root=after)
+    assert res["status"] == "restored" and res["downloaded"] == 4, res
+    assert len(res["errors"]) == 1, res
+    assert res["errors"][0].startswith("2 file(s) not restored")
+    found = [n for _d, _s, names in os.walk(tmp_path) for n in names
+             if "made_up_escape" in n]
+    assert found == []
+    assert sp._local_path_inside(after, "/etc/made_up") is None
+    assert sp._local_path_inside(after, "C:/made_up") is None
+    assert sp._local_path_inside(after, "files/a.pdf") == os.path.join(
+        after, "files", "a.pdf")
+
+
 def test_the_record_files_the_trace_reviews_read_are_carried(tmp_path,
                                                             monkeypatch):
     """Foundry wiring audit row 8: activity.jsonl, FEEDBACK.md (with
