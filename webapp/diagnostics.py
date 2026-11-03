@@ -225,21 +225,20 @@ def _conversation_storage_check() -> dict:
     """Foundry: where conversations are kept (INF-38). The conversation
     dataset when set, read once (one listing, about 3-4 s; nothing is
     written, the first turn's save shows that); otherwise why it is off,
-    plainly (a resource ID where the workspace alias belongs says how to
-    import the dataset)."""
+    plainly, with the fix (``fds.not_kept_reason``: the sidebar's
+    "Conversations are NOT kept" block shows the same text)."""
     from webapp import foundry_dataset_store as fds
     name = "conversation storage"
     if not fds.dataset_alias():
-        return _check(name, SKIP, f"{fds.unconfigured_reason()}. To keep "
-                      "them, see docs/FOUNDRY.md, 'Conversations that "
-                      "survive a rebuild'; meanwhile 'Download this "
-                      "conversation' in the sidebar keeps one.")
-    reason = fds.unconfigured_reason()
-    if reason:
-        return _check(name, FAIL, f"{fds.ENV_DATASET} is set, but {reason}.")
+        return _check(name, SKIP, fds.not_kept_reason())
+    if fds.unconfigured_reason():
+        return _check(name, FAIL, fds.not_kept_reason())
+    fm = None
     try:
         fm = fds.DatasetFileManager()
         state = fm.probe()
+    except fds.AliasNotDefined:
+        return _check(name, FAIL, fds.not_kept_reason(fm))
     except Exception as exc:                         # noqa: BLE001
         return _check(name, FAIL, f"the conversation dataset could not be "
                       f"read: {type(exc).__name__}: {exc}")

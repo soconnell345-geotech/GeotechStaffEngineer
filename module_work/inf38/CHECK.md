@@ -36,12 +36,24 @@ the dataset's workspace alias:
 - **Connection diagnostics**, line *conversation storage*: PASS with the
   alias and how many files are the app's (one listing, no write); FAIL with
   a plain reason; SKIP when the variable is not set.
-- A resource ID (`ri.…`) in the variable, or an alias the workspace does
-  not define (`AliasNotDefined`), says: import the dataset into the
-  workspace (Data panel, read and write), push, and set the variable to its
-  alias. A resource ID says it in diagnostics and in a sidebar warning
-  ("Foundry storage is off: …"), and nothing is saved. An unknown alias
-  says it in diagnostics and under the failed save.
+- **When nothing keeps the conversations, the sidebar says so.** On master
+  a Foundry app with no usable dataset drew no storage block at all; only
+  Connection diagnostics said why, so the owner could take conversations
+  for kept. Now, on Foundry only, the **Permanent storage** block says
+  **"Conversations are NOT kept across restarts."** with the diagnostics
+  line's own reason and fix (`foundry_dataset_store.not_kept_reason`, one
+  text for both). The four cases:
+  - no alias set: the reason, the docs section, and "Download this
+    conversation" in the meantime;
+  - a resource ID (`ri.…`) where the alias belongs;
+  - the library missing;
+  - an alias the workspace does not define (`AliasNotDefined`).
+  The first three say to import the dataset into the workspace (Data
+  panel, read and write), push, and set the variable to its alias; the
+  library case says to publish from a Code Workspace. An unknown alias is
+  found by one `Dataset.get` per process (`check_alias`), so the block is
+  right from the first draw if that call resolves the alias; else the
+  first listing or save finds it. A call that works clears it.
 - A save that meets another transaction open retries for about 30 s, then
   says another save holds the dataset; the turn is unaffected, and the
   files go up with the next save.
@@ -49,6 +61,11 @@ the dataset's workspace alias:
 Funhouse and Tiny Apps are unchanged: SharePoint still saves at the end of
 the turn, and the dataset setting is read only when
 `GEOTECH_DEPLOYMENT=foundry`.
+
+**One user** (the owner's decision, 2026-11-03: the owner alone uses the
+app on Foundry for about the next year). Every conversation goes in one folder,
+`GeotechStaffEngineer/conversations/`, as before. No per-viewer folders
+and no identity work; they wait on the app knowing who is viewing.
 
 ## The library calls the app makes
 
@@ -145,14 +162,14 @@ fresh container lists the conversation and restores it.
 
 | File | Change |
 |---|---|
-| `webapp/foundry_dataset_store.py` | Rewritten over `foundry.transforms.Dataset`: the alias setting, the resource-ID and missing-library reasons, `AliasNotDefined` said plainly, staging under the outputs folder, `upload_directory` under a process-wide lock, the foreign-file fallback with a one-time note, the busy retry with `StorageBusy`, one listing per batch, `download_files` (parallel). The platform-SDK code is removed. |
-| `webapp/sharepoint_store.py` | The batch now spans the whole save, so the folder-name check reuses its listing. The save's note goes into the summary. A restore downloads through the file manager's `download_files` when it has one, after the path guard. `_pin_folder` reads `meta.json` again just before writing, so a background save cannot undo a title the next turn set. New: `background`, `unavailable_reason`, `save_soon`, `save_state`, `flush` and `save_after_change`. `sync_for_conversation` prefers the store's own record for the conversation, because a background save reaches no session. |
+| `webapp/foundry_dataset_store.py` | Rewritten over `foundry.transforms.Dataset`: the alias setting, the resource-ID and missing-library reasons, `AliasNotDefined` said plainly, staging under the outputs folder, `upload_directory` under a process-wide lock, the foreign-file fallback with a one-time note, the busy retry with `StorageBusy`, one listing per batch, `download_files` (parallel), `not_kept_reason` (the one line diagnostics and the sidebar show when nothing keeps the conversations; an unknown alias learned by one `Dataset.get`, `check_alias`). The platform-SDK code is removed. |
+| `webapp/sharepoint_store.py` | The batch now spans the whole save, so the folder-name check reuses its listing. The save's note goes into the summary. A restore downloads through the file manager's `download_files` when it has one, after the path guard. `_pin_folder` reads `meta.json` again just before writing, so a background save cannot undo a title the next turn set. New: `background`, `not_kept_reason()`, `save_soon`, `save_state`, `flush` and `save_after_change`. `sync_for_conversation` prefers the store's own record for the conversation, because a background save reaches no session. |
 | `webapp/turn_jobs.py` | The end-of-turn mirror goes through `save_after_change`. |
-| `webapp/app.py` | The save-state line, the one-time note, a "Foundry storage is off: …" warning when the setting is unusable, and spinners on Sync now and Restore. Sync now drops the cached list. The feedback box saves through `save_after_change`. The storage warning names the import and the alias, not token scopes. |
-| `webapp/diagnostics.py` | The *conversation storage* line reads the alias. |
-| `docs/FOUNDRY.md` §4c | Rewritten: import the dataset (Data panel, read and write), push, set the alias, nothing to install; a push republishes the apps, which the store makes harmless; how a save works; who sees what. |
+| `webapp/app.py` | The save-state line, the one-time note, on Foundry a "Conversations are NOT kept across restarts" block with the diagnostics line's reason and fix whenever no dataset keeps them (drawn even when the store is not configured), and spinners on Sync now and Restore. Sync now drops the cached list. The feedback box saves through `save_after_change`. The storage warning names the import and the alias, not token scopes. |
+| `webapp/diagnostics.py` | The *conversation storage* line reads the alias, and its SKIP and FAIL texts come from `not_kept_reason`. |
+| `docs/FOUNDRY.md` §4c | Rewritten: import the dataset (Data panel, read and write), push, set the alias, nothing to install; a push republishes the apps, which the store makes harmless; how a save works; the NOT-kept block; one user (per-viewer folders wait on the app knowing the viewer). |
 | `webapp/README.md` | The module row. |
-| `webapp/tests/test_foundry_dataset_store.py` | Rewritten: 35 tests over a fake `foundry.transforms`, made-up values only. |
+| `webapp/tests/test_foundry_dataset_store.py` | Rewritten: 40 tests over a fake `foundry.transforms`, made-up values only. |
 
 ## Tests (exit codes)
 
@@ -165,6 +182,15 @@ least 3 GB free checked before each run:
 | `test_app_smoke.py`, `test_sharepoint_tools.py`, `test_past_conversations_pages.py`, `test_wave2a_bookkeeping.py`, `test_wave2c_fixes.py`, `test_tinyapps_wiring.py`, `test_record_ev06.py`, `test_titles_cards_scratch.py`, `test_output_capture.py` | 140 passed | 0 |
 | `test_foundry_dataset_store.py`, `test_public_text.py`, `test_docs_currency.py`, `test_page_fingerprints.py` (files staged) | 60 passed | 0 |
 | After the last edits: `test_foundry_dataset_store.py`, `test_sharepoint_store.py`, `test_conversation_restore.py`, `test_public_text.py`, `test_docs_currency.py` (staged) | 107 passed | 0 |
+
+Second round (one user; the NOT-kept block), same pieces:
+
+| Run | Result | Exit |
+|---|---|---|
+| `test_foundry_dataset_store.py` (40 tests) | 40 passed | 0 |
+| the first piece above without the new file | 203 passed | 0 |
+| the second piece above | 140 passed | 0 |
+| `test_public_text.py`, `test_docs_currency.py`, `test_page_fingerprints.py` (staged) | 25 passed | 0 |
 
 The fake library models what the FDE measured:
 
@@ -202,11 +228,15 @@ The new tests cover:
   duplicate waits; a queued save outlives the turn's thread; the store's
   record wins over an older session record.
 - **Configuration.** Foundry selects the dataset; a resource ID is
-  refused; a missing library turns storage off; Funhouse and Tiny Apps are
-  unchanged.
+  refused; a missing library turns storage off; an unknown alias is
+  learned with one `Dataset.get` and cleared by a call that works;
+  Funhouse and Tiny Apps are unchanged.
 - **Sidebar (AppTest).** The Foundry storage wording, the save-state line,
-  the "off" warning, the import warning on an unknown alias, and the
-  filter's no-match line.
+  the import warning on an unknown alias, and the filter's no-match line.
+  Over the real store on Foundry, the "Conversations are NOT kept across
+  restarts" block for each of the four cases (no alias, resource ID,
+  library missing, alias not defined), with exactly the diagnostics
+  line's text; no such block when the alias works, nor off Foundry.
 - **End to end (AppTest).** A turn saves after the page has drawn, and a
   fresh container lists the conversation and restores it.
 - **Also.** The diagnostics line (SKIP, PASS, resource ID, unknown alias,
@@ -215,7 +245,10 @@ The new tests cover:
 
 ## What the FDE must confirm in the real GSE app
 
-1. **Alias import.** Import the production conversation dataset (not the
+1. **Alias import.** Before anything is set, the sidebar's **Permanent
+   storage** block should say "Conversations are NOT kept across
+   restarts", with the same reason as diagnostics. Then import the
+   production conversation dataset (not the
    scratch one) into the GSE workspace: Data panel, read and write. Push,
    set `GEOTECH_FOUNDRY_CONVERSATION_DATASET` to its alias, and push again.
    Connection diagnostics, line *conversation storage*: PASS, with the
@@ -275,14 +308,14 @@ The new tests cover:
   the files are.
 - **No folder links.** A dataset has no link per folder, so the sidebar
   shows the folder name but no "Open session folder" link.
-- **Whose folder.** Writes run as the publisher's account, as far as the
-  FDE's test could tell; a second viewer would settle it (audit U4). The
-  app reads no viewer identity on Foundry, so every viewer's conversations
-  share one folder, `GeotechStaffEngineer/conversations/`, and **Find a
-  past conversation** lists all of them to every viewer. Whoever can open
-  the dataset reads them all, so keep it in a project only the right
-  people can see (docs §4c). Once a viewer identity is read the way Tiny
-  Apps' header is, each person's folders follow with no store change.
+- **One user, by decision.** The store is built for the owner alone
+  (2026-11-03): one folder, `GeotechStaffEngineer/conversations/`, and
+  **Find a past conversation** lists every conversation in it. Writes run
+  as the publisher's account, as far as the FDE's test could tell. Whoever
+  can open the dataset reads them all, so it belongs in a project only the
+  right people can see (docs §4c). Per-viewer folders wait on the app
+  knowing who is viewing; once it does (as with Tiny Apps' header), they
+  follow with no store change.
 - **Mixed hosts.** On a host where some viewers are identified and some
   are not, an unidentified viewer's list shows the owners' folders as
   entries that cannot be restored. Foundry identifies no one, so this

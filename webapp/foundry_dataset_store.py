@@ -150,6 +150,28 @@ def configured() -> bool:
     return selected() and unconfigured_reason() is None
 
 
+def not_kept_reason(fm: Any = None) -> Optional[str]:
+    """On a Foundry deployment, why conversations are NOT kept across
+    restarts, with the fix, in one line: Connection diagnostics' line and
+    the sidebar show this same text. ``None`` when they are kept, as far as
+    is known, and off Foundry. ``fm`` (the store's file manager, when the
+    dataset is set up) adds an alias the workspace turned out not to define
+    (:meth:`DatasetFileManager.check_alias`, one ``Dataset.get`` at most)."""
+    from webapp import engine_config
+    if not engine_config.is_foundry_deployment():
+        return None
+    if not dataset_alias():
+        return (f"{unconfigured_reason()}. To keep them, see "
+                "docs/FOUNDRY.md, 'Conversations that survive a rebuild'; "
+                "meanwhile 'Download this conversation' in the sidebar "
+                "keeps one.")
+    reason = unconfigured_reason()
+    if not reason:
+        check = getattr(fm, "check_alias", None)
+        reason = check() if callable(check) else None
+    return f"{ENV_DATASET} is set, but {reason}." if reason else None
+
+
 def _named(exc: BaseException, marker: str) -> bool:
     return (marker in type(exc).__name__
             or marker in str(getattr(exc, "name", "") or "")
@@ -245,6 +267,11 @@ class DatasetFileManager:
         self._workers = max(1, int(workers))
         self._ds: Any = None
         self._note: Optional[str] = None
+        #: The workspace does not define the alias (the last call said so;
+        #: a call that works clears it), and whether the sidebar's one
+        #: check has run (:meth:`check_alias`).
+        self.alias_error: Optional[str] = None
+        self._alias_checked = False
         # The batch, per thread: one process serves every viewer, and a
         # restore in one session must not end another session's save.
         self._local = threading.local()
@@ -286,15 +313,31 @@ class DatasetFileManager:
 
     def _call(self, fn: Callable[[], Any]) -> Any:
         """``fn()``, with an alias the workspace does not define said
-        plainly."""
+        plainly (and kept in :attr:`alias_error`)."""
         try:
-            return fn()
+            out = fn()
         except Exception as exc:
             if _is_alias_missing(exc):
-                raise AliasNotDefined(
-                    f"the workspace has no dataset alias {self.alias!r}: "
-                    f"{ALIAS_HELP}") from exc
+                self.alias_error = (
+                    f"the workspace has no dataset alias {self.alias!r} "
+                    f"(AliasNotDefined): {ALIAS_HELP}")
+                raise AliasNotDefined(self.alias_error) from exc
             raise
+        self.alias_error = None
+        return out
+
+    def check_alias(self) -> Optional[str]:
+        """:attr:`alias_error`, after one ``Dataset.get`` per instance when
+        nothing has reached the dataset yet, so the sidebar can say from
+        its first draw that conversations are not kept. Never raises."""
+        if self._ds is None and not self._alias_checked \
+                and self.alias_error is None:
+            self._alias_checked = True
+            try:
+                self._dataset()
+            except Exception:                          # noqa: BLE001
+                pass
+        return self.alias_error
 
     def _write(self, fn: Callable[[], Any]) -> Any:
         """One write, tried again while another transaction holds the
@@ -592,5 +635,5 @@ class DatasetFileManager:
 
 __all__ = ["DatasetFileManager", "ENV_DATASET", "DEFAULT_ROOT",
            "AliasNotDefined", "StorageBusy", "configured", "dataset_alias",
-           "library_installed", "looks_like_resource_id", "selected",
-           "unconfigured_reason"]
+           "library_installed", "looks_like_resource_id", "not_kept_reason",
+           "selected", "unconfigured_reason"]

@@ -457,7 +457,7 @@ nothing to install. The platform's datasets API (and with it
 
 1. **Create a dataset of raw files** (no schema), e.g. `gse_conversations`,
    used for nothing else, in a project only the right people can see
-   (below, "Who sees what").
+   (below, "One user").
 2. **Import it into the workspace**: in the workspace's **Data** panel,
    import the dataset with **read and write** access. That names it in
    `.foundry/aliases.yml`; the name there is its alias. Commit and push.
@@ -472,7 +472,9 @@ nothing to install. The platform's datasets API (and with it
    fails it says why: a resource ID instead of the alias, an alias the
    workspace does not define (`AliasNotDefined`: import the dataset and
    push), or the library missing (the app was not published from a Code
-   Workspace).
+   Workspace). Until it works, the sidebar's **Permanent storage** block
+   says **Conversations are NOT kept across restarts**, with the same
+   reason and fix.
 
 **After the first turn**, the sidebar shows **Permanent storage** with
 "Foundry storage: saving the latest turn…", then (on the next click)
@@ -505,16 +507,15 @@ browser session for **Find a past conversation** (**Refresh** or **Sync
 now** reads it again), once per restore, which then downloads up to six
 files at a time.
 
-**Who sees what.** The app writes as the publisher's account (as far as
-the AI FDE's test could tell), so every viewer's conversations are kept
-under one identity in one dataset, and whoever can open the dataset can
-read them all: keep it in a project only the right people can see. A
-Foundry app does not tell the app who is viewing, so every viewer's
-conversations go in one folder, `conversations/`, and the
-past-conversations list shows all of them to every viewer, as the app's
-own conversation list in the container already does. When an app does pass
-the viewer (as Tiny Apps does), each person's conversations go in a folder
-of their own and the list shows only theirs.
+**One user.** On Foundry the store is built for a single user: the app's
+owner. Every conversation goes in one folder, `conversations/`, and
+**Find a past conversation** lists all of them. The app writes as the
+publisher's account (as far as the AI FDE's test could tell), and whoever
+can open the dataset can read every conversation in it, so keep it in a
+project only the right people can see. Folders per viewer wait on the app
+knowing who is viewing, which a Foundry app does not tell it today. (Where
+a host does pass the viewer, as Tiny Apps does, each person's
+conversations already go in a folder of their own.)
 
 ## 5. Preview, then publish
 

@@ -714,7 +714,7 @@ def test_on_foundry_the_dataset_is_the_permanent_storage(lib, monkeypatch,
     store = sp.SharePointStore()
     assert store.configured and store.backend == "foundry"
     assert store.label == "Foundry storage" and store.background
-    assert store.unavailable_reason is None
+    assert store.not_kept_reason() is None          # the alias works
     # the agent's SharePoint tools never run on the dataset
     assert sp.configured() is False
     fm = store.file_manager()
@@ -732,7 +732,8 @@ def test_a_resource_id_is_not_an_alias(lib, monkeypatch, tmp_path):
     assert "resource ID" in reason and "import the dataset into the " \
         "workspace (Data panel, read and write), push" in reason
     store = sp.SharePointStore()
-    assert not store.configured and store.unavailable_reason == reason
+    assert not store.configured
+    assert store.not_kept_reason() == f"{fds.ENV_DATASET} is set, but {reason}."
     root = str(tmp_path)
     _conversation(root, "T-RI", "Pavement", _CREATED)
     up = store.mirror_conversation("T-RI", root=root)    # never raises
@@ -751,7 +752,7 @@ def test_the_library_missing_turns_storage_off_with_a_plain_reason(
     assert store.backend == "foundry" and store.label == "Foundry storage"
     reason = fds.unconfigured_reason()
     assert "foundry.transforms" in reason and "Code Workspace" in reason
-    assert store.unavailable_reason == reason
+    assert store.not_kept_reason() == f"{fds.ENV_DATASET} is set, but {reason}."
     assert store.list_remote_conversations() == []
     res = store.restore_conversation("anything_2026-01-02", root=str(tmp_path))
     assert res["status"] == "error" and "not configured" in res["errors"][0]
@@ -767,7 +768,7 @@ def test_funhouse_and_tiny_apps_are_unchanged(monkeypatch, tmp_path):
         store = sp.SharePointStore()
         assert not store.configured and not sp.configured()
         assert store.backend == "sharepoint" and store.label == "SharePoint"
-        assert store.background is False and store.unavailable_reason is None
+        assert store.background is False and store.not_kept_reason() is None
         assert store.root() == sp.DEFAULT_ROOT
         monkeypatch.setenv(sp.ENV_SITE, "https://example.sharepoint.test/x")
         monkeypatch.setenv(sp.ENV_TOKEN, "made-up")
@@ -794,7 +795,6 @@ class _SidebarStore:
     backend = "foundry"
     label = "Foundry storage"
     last_sync = None
-    unavailable_reason = None
 
     def __init__(self, configured=True):
         self.configured = configured
@@ -859,15 +859,92 @@ def test_the_sidebar_shows_a_save_in_the_background(monkeypatch, tmp_path):
     assert not any(c.startswith("Foundry storage is on") for c in captions)
 
 
-def test_the_sidebar_says_why_foundry_storage_is_off(monkeypatch, tmp_path):
-    class _Off(_SidebarStore):
-        unavailable_reason = ("made-up reason: import the dataset into the "
-                              "workspace")
+def _foundry_app(monkeypatch, tmp_path):
+    """The real shell on a Foundry deployment, over the real store built
+    from the settings (the geotech page); run once."""
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+    import webapp.engine_config as engine_config
+    from webapp import profiles
+    from webapp.engine_config import EngineResolution
 
-    at = _sidebar(monkeypatch, tmp_path, _Off(configured=False))
+    monkeypatch.setenv("GEOTECH_DEPLOYMENT", "foundry")
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "app"))
+    for e in ("GEOTECH_APP_PROFILE", "DEV_IDENTITY", "GEOTECH_USER_EMAIL"):
+        monkeypatch.delenv(e, raising=False)
+    monkeypatch.setenv(profiles.PROFILE_ENV, "geotech")
+    monkeypatch.setattr(engine_config, "resolve_engine",
+                        lambda *a, **k: EngineResolution(
+                            model=object(), source="foundry",
+                            model_name="fake-model", message=""))
+    monkeypatch.setattr(core, "build_agent", lambda *a, **k: object())
+    monkeypatch.setattr(sp, "_STORE", None)
+    app = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "app.py")
+    at = AppTest.from_file(app, default_timeout=30).run()
+    assert not at.exception, at.exception
+    return at
+
+
+@pytest.mark.parametrize("case", ["no alias", "resource ID",
+                                  "library missing", "alias not defined"])
+def test_on_foundry_the_sidebar_says_when_conversations_are_not_kept(
+        lib, monkeypatch, tmp_path, case):
+    """On master the sidebar drew no storage block when the dataset was not
+    usable, and only Connection diagnostics said why: the owner would take
+    conversations for kept. Now a short block says they are NOT kept, with
+    the diagnostics line's own reason and fix."""
+    from webapp import diagnostics as diag
+    if case == "resource ID":
+        monkeypatch.setenv(fds.ENV_DATASET, "ri.foundry.main.dataset.made-up-0")
+    elif case == "library missing":
+        monkeypatch.setenv(fds.ENV_DATASET, ALIAS)
+        monkeypatch.setitem(sys.modules, "foundry.transforms", None)
+    elif case == "alias not defined":
+        monkeypatch.setenv(fds.ENV_DATASET, "made_up_missing")
+    at = _foundry_app(monkeypatch, tmp_path)
+    detail = diag._conversation_storage_check()["detail"]
     warnings = [str(w.value) for w in at.sidebar.warning]
-    assert ("Foundry storage is off: made-up reason: import the dataset "
-            "into the workspace.") in warnings, warnings
+    assert ("**Conversations are NOT kept across restarts.** " + detail) \
+        in warnings, (warnings, detail)
+    assert not any(str(c.value).startswith("Foundry storage is on")
+                   for c in at.sidebar.caption)
+    if case == "no alias":
+        assert fds.ENV_DATASET in detail and "Download this conversation" \
+            in detail
+    else:
+        assert "Data panel, read and write" in detail or \
+            "Code Workspace" in detail, detail
+
+
+def test_the_not_kept_block_is_foundry_only_and_absent_when_kept(
+        lib, monkeypatch, tmp_path):
+    monkeypatch.setenv(fds.ENV_DATASET, ALIAS)              # the alias works
+    at = _foundry_app(monkeypatch, tmp_path / "kept")
+    assert not any("NOT kept" in str(w.value) for w in at.sidebar.warning)
+    assert any(str(c.value).startswith("Foundry storage is on")
+               for c in at.sidebar.caption)
+    # Funhouse with nothing configured: no storage block at all, as before
+    monkeypatch.delenv("GEOTECH_DEPLOYMENT")
+    monkeypatch.delenv(fds.ENV_DATASET)
+    assert sp.SharePointStore().not_kept_reason() is None
+    assert fds.not_kept_reason() is None
+
+
+def test_an_alias_not_defined_is_learned_once_and_cleared_by_success(
+        lib, monkeypatch):
+    _foundry(monkeypatch, "made_up_missing")
+    store = sp.SharePointStore()
+    assert store.configured                     # nothing tells until a call
+    first = store.not_kept_reason()
+    assert "made_up_missing" in first and "(AliasNotDefined)" in first
+    assert store.not_kept_reason() == first
+    assert lib.ds.count("get") == 1             # checked once, not per draw
+    # the dataset imported under that name: the next call works and clears it
+    fm = store.file_manager()
+    fm.alias = ALIAS
+    fm.ls(TOP)
+    assert fm.alias_error is None and store.not_kept_reason() is None
 
 
 def test_a_refused_save_shows_the_foundry_storage_warning(monkeypatch,

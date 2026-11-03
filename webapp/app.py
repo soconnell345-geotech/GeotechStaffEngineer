@@ -525,6 +525,10 @@ _FOUNDRY_STORAGE_AUTH = (
     "edit access to it (docs/FOUNDRY.md, 'Conversations that survive a "
     "rebuild'). Then Sync now.")
 
+#: The head of the sidebar's warning on Foundry when no dataset keeps the
+#: conversations; the store's ``not_kept_reason`` follows it.
+_NOT_KEPT_HEAD = "**Conversations are NOT kept across restarts.** "
+
 
 def _row_action(icon: str, *, key: str, help: str) -> bool:
     """A one-glyph conversation-row button (rename / delete)."""
@@ -1117,12 +1121,23 @@ with st.sidebar:
     # storage"). The mirror runs after each turn (on Foundry in the
     # background); this block shows the result and offers a manual sync.
     _sp = sharepoint_store.get_store()
+    # On Foundry, why conversations are NOT kept across restarts, when they
+    # are not (no alias set, a resource ID in its place, the library
+    # missing, an alias the workspace does not define): the same line as
+    # Connection diagnostics, so no one takes them for kept.
+    try:
+        _not_kept_of = getattr(_sp, "not_kept_reason", None)
+        _not_kept = _not_kept_of() if callable(_not_kept_of) else None
+    except Exception:                                  # noqa: BLE001
+        _not_kept = None
     if _sp.configured:
         # getattr: a stand-in store (tests, the live smoke) may predate them
         _sp_foundry = getattr(_sp, "backend", "sharepoint") == "foundry"
         _sp_label = getattr(_sp, "label", "SharePoint")
         st.divider()
         st.subheader("Permanent storage")
+        if _not_kept:
+            st.warning(_NOT_KEPT_HEAD + _not_kept)
         # This page's own folder of mirrors — the same owner/page segments
         # the turn records with core.tag_conversation (below), so the
         # geotech page never lists the review page's folder as a
@@ -1171,7 +1186,7 @@ with st.sidebar:
                 st.markdown(f"[Open session folder]({_sync['web_url']})")
             if _sync.get("note"):
                 st.info(_sync["note"])
-        elif not _sp_state:
+        elif not _sp_state and not _not_kept:
             st.caption("Foundry storage is on — this conversation's files "
                        "are saved to the Foundry dataset after each turn."
                        if _sp_foundry else
@@ -1183,7 +1198,7 @@ with st.sidebar:
             # the list of past conversations is read again too
             ss.pop(sharepoint_store.listing_cache_key(**_sp_where), None)
             st.rerun()
-        if _sp_auth_problem(_sync, foundry=_sp_foundry):
+        if _sp_auth_problem(_sync, foundry=_sp_foundry) and not _not_kept:
             st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
                        "SharePoint rejected the app's token — it has probably "
                        "expired (the refresher lives in the launching "
@@ -1279,18 +1294,12 @@ with st.sidebar:
                     st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
                                "Looks like an expired token — re-run "
                                "`stage_sharepoint(...)` in the notebook.")
-    else:
-        # The Foundry dataset is set but cannot be used (a resource ID where
-        # the alias belongs, the library missing): say why, rather than draw
-        # nothing while every conversation stays in the container.
-        try:
-            _sp_off = getattr(_sp, "unavailable_reason", None)
-        except Exception:                              # noqa: BLE001
-            _sp_off = None
-        if isinstance(_sp_off, str) and _sp_off:
-            st.divider()
-            st.subheader("Permanent storage")
-            st.warning(f"Foundry storage is off: {_sp_off}.")
+    elif _not_kept:
+        # Foundry with no usable dataset: a short block rather than none,
+        # while every conversation stays in the container.
+        st.divider()
+        st.subheader("Permanent storage")
+        st.warning(_NOT_KEPT_HEAD + _not_kept)
 
     # Restore a downloaded conversation (INF-45): the zip from "Download
     # this conversation" back into this person's conversations, under its

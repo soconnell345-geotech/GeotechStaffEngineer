@@ -473,16 +473,22 @@ class SharePointStore:
         for it. SharePoint saves as before, at the end of the turn."""
         return self.backend == "foundry"
 
-    @property
-    def unavailable_reason(self) -> Optional[str]:
-        """Why the selected permanent storage cannot be used, or ``None``.
-        Only the Foundry dataset says: its setting can be there and still
-        unusable (a resource ID where the alias belongs, the library
-        missing), and the sidebar shows why instead of nothing."""
-        if self._fm is not None or not _foundry_selected():
+    def not_kept_reason(self) -> Optional[str]:
+        """On a Foundry deployment, why conversations are NOT kept across
+        restarts, with the fix, in one line (the text of Connection
+        diagnostics' line): no alias set, a resource ID in its place, the
+        library missing, or an alias the workspace does not define. ``None``
+        when they are kept, as far as is known, and on every other host.
+        Never raises."""
+        if self._fm is not None and self.backend != "foundry":
             return None
-        from webapp import foundry_dataset_store
-        return foundry_dataset_store.unconfigured_reason()
+        try:
+            from webapp import foundry_dataset_store
+            fm = self.file_manager() if self.backend == "foundry" \
+                and self.configured else None
+            return foundry_dataset_store.not_kept_reason(fm)
+        except Exception:                              # noqa: BLE001
+            return None
 
     def _file_manager(self):
         if self._fm is None:
