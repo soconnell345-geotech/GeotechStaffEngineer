@@ -213,6 +213,27 @@ CONVENTIONS: Tuple[Convention, ...] = (
             "corrosive to metal and not to concrete is mixed; the draft "
             "rule stands"),
     Convention(
+        rule="soilCorrosion across samples and strata: the WORST governs. "
+             "One sample or stratum that tests corrosive makes the soil "
+             "corrosive, even when the others test not corrosive, and a "
+             "corrosive FILL sample above all, because fill touches the "
+             "basements, footings, slabs, pavements and utilities. So one "
+             "corrosive sample among non-corrosive ones answers yes, not no "
+             "and not mixed. mixed stays only for soil corrosive to some "
+             "materials and not to others, each material judged by its "
+             "worst sample (corrosive to buried metal but not to concrete "
+             "is mixed).",
+        fields=("soilCorrosion",),
+        status="CONFIRMED",
+        why="owner's ruling of 2026-11-03 (OWN-119, desk): 'If any samples "
+            "come back corrosive, it should be yes'; the fill matters more "
+            "than deeper layers. MF-3 (build g TRACE_REVIEW section 10, "
+            "question 1): on R30 one fill sample tests corrosive and the "
+            "main strata do not, and both arms were wrong (no, mixed). "
+            "mixed for the material split is RI-182's ruling of 2026-10-29; "
+            "whether yes replaces it too is the owner's open question "
+            "(OWN-119, BACKLOG RI-204)"),
+    Convention(
         rule="postName is the CITY of the diplomatic post, in the city's "
              "own name and nothing else: not the country, not the compound, "
              "not the project. It stays null whenever outsideProject is "
@@ -249,6 +270,19 @@ CONVENTIONS: Tuple[Convention, ...] = (
         status="DRAFT",
         why="run 7: 3 wrong and 5 invented, almost all of them seismic "
             "shaking added to a list the hand left without it"),
+    Convention(
+        rule="earthHazardsExposed lists landslide only for an actual "
+             "landslide or a landslide hazard the report names. A "
+             "slope-stability analysis, a factor of safety, or a concern "
+             "about the stability of a slope is not one and does not put "
+             "landslide on the list.",
+        fields=("earthHazardsExposed",),
+        status="CONFIRMED",
+        why="owner's ruling of 2026-11-03 (OWN-120, desk): only an actual "
+            "landslide or a landslide hazard; a slope-stability concern is "
+            "not. MF-3 (build g TRACE_REVIEW section 10, question 2): on "
+            "R30 model first listed landslide for a slope-stability concern "
+            "the report analyses, and today's reader did not"),
     Convention(
         rule="recommendedFoundations has one item per foundation TYPE, "
              "naming the structures it is for: the options of one type "
