@@ -692,6 +692,27 @@ def test_the_sidebar_names_foundry_storage(monkeypatch, tmp_path):
     assert not any("SharePoint" in c for c in captions), captions
 
 
+def test_a_refused_save_shows_the_foundry_storage_warning(monkeypatch,
+                                                         tmp_path):
+    """The SDK's permission refusal names no token or 401/403; the sidebar
+    still gives the scopes-and-access warning (made-up error text in the
+    SDK's shape)."""
+    refused = ('meta.json: CreateTransactionPermissionDenied: {"errorCode": '
+               '"PERMISSION_DENIED", "errorName": '
+               '"CreateTransactionPermissionDenied"}')
+
+    class _Refused(_SidebarStore):
+        def last_sync_for(self, thread_id):
+            return {"uploaded": 0, "skipped": 0, "errors": [refused],
+                    "duration_s": 0.1, "thread_id": thread_id}
+
+    at = _sidebar(monkeypatch, tmp_path, _Refused())
+    warnings = [str(w.value) for w in at.sidebar.warning]
+    assert any(w.startswith("Foundry storage refused the app's token")
+               for w in warnings), warnings
+    assert not any("stage_sharepoint" in w for w in warnings), warnings
+
+
 @pytest.mark.parametrize("configured, expected", [
     (True, "**Find a past conversation** under Permanent storage below"),
     (False, "**Restore a downloaded conversation** below"),

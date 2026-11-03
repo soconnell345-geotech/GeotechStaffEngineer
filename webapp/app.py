@@ -466,16 +466,21 @@ _HAS_BUTTON_ICON = "icon" in __import__("inspect").signature(
     st.button).parameters
 
 
-def _sp_auth_problem(summary) -> bool:
+def _sp_auth_problem(summary, foundry: bool = False) -> bool:
     """True when a sync/restore summary's errors smell like an expired or
-    rejected token (401/403/unauthorized/token/auth)."""
+    rejected token (401/403/unauthorized/token/auth). On Foundry storage
+    also the platform SDK's refusals, which carry none of those words
+    (``CreateTransactionPermissionDenied``, ``"errorCode":
+    "PERMISSION_DENIED"``)."""
     try:
         text = " ".join(str(e) for e in (summary or {}).get("errors") or [])
     except Exception:                                  # noqa: BLE001
         return False
     low = text.lower()
-    return any(k in low for k in ("401", "403", "unauthor", "token",
-                                  "authenticat", "forbidden"))
+    keys = ("401", "403", "unauthor", "token", "authenticat", "forbidden")
+    if foundry:
+        keys += ("permissiondenied", "permission_denied")
+    return any(k in low for k in keys)
 
 
 def _sp_configured() -> bool:
@@ -1146,7 +1151,7 @@ with st.sidebar:
         if st.button("Sync now", key=f"spsync_{ss.thread_id}"):
             ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
             st.rerun()
-        if _sp_auth_problem(_sync):
+        if _sp_auth_problem(_sync, foundry=_sp_foundry):
             st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
                        "SharePoint rejected the app's token — it has probably "
                        "expired (the refresher lives in the launching "
@@ -1244,7 +1249,7 @@ with st.sidebar:
                 else:
                     st.error("Restore failed: "
                              + "; ".join(_rr.get("errors") or ["unknown"]))
-                if _sp_auth_problem(_rr):
+                if _sp_auth_problem(_rr, foundry=_sp_foundry):
                     st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
                                "Looks like an expired token — re-run "
                                "`stage_sharepoint(...)` in the notebook.")
