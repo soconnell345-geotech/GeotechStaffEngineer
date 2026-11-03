@@ -1,18 +1,30 @@
 """Offline tests for the Foundry dataset store (BACKLOG INF-38).
 
-A fake ``foundry_sdk`` client stands in for the platform SDK: no network,
-and every RID, host, token and name below is made up. The fake keeps the
-rules the AI FDE described (2026-11-03): files are written inside a
-transaction, a branch has one open transaction at a time, a listing returns
-files only, and a path is written once per transaction.
+A fake ``foundry.transforms`` module stands in for the workspace dataset
+library: no network, and every alias, path and name below is made up. The
+fake keeps what the AI FDE measured from a published app (2026-11-03):
+
+* ``Dataset.get`` of an alias the workspace does not define fails with
+  ``404 FoundryContainerSidecar:AliasNotDefined``;
+* ``upload_directory`` refuses a folder outside the outputs folder
+  (``IllegalArgumentError``), uploads EVERYTHING under it in one
+  transaction, and returns ``{local path: dataset path}``, the dataset path
+  being the path relative to the outputs folder;
+* ``upload_file`` is a transaction of its own;
+* a write while another transaction is open fails with
+  ``400 Catalog:SimultaneousOpenTransactionsNotAllowed``;
+* ``files()`` lists the whole dataset (no prefix filter, hidden files only
+  when asked), and ``File.download()`` returns a local path;
+* a later write overwrites a path and keeps every other file.
 """
 
 import json
 import os
 import sys
+import threading
 import time
 import types
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 
@@ -20,14 +32,12 @@ import webapp.core as core
 import webapp.foundry_dataset_store as fds
 import webapp.sharepoint_store as sp
 
-RID = "ri.foundry.main.dataset.00000000-made-up-0000-000000000000"
-OTHER_RID = "ri.foundry.main.dataset.11111111-made-up-1111-111111111111"
+ALIAS = "made_up_conversations"
+TOP = fds.DEFAULT_ROOT
 
-_ENVS = (fds.ENV_DATASET, fds.ENV_BRANCH, fds.SERVICE_DISCOVERY_ENV,
-         "GEOTECH_DEPLOYMENT", "GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN",
-         "GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
-         "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "MAESTRO_CERT_PEM_PATH",
-         "FOUNDRY_CLI_CERT_PEM_PATH",
+_ENVS = (fds.ENV_DATASET, "GEOTECH_DEPLOYMENT", "GEOTECH_FOUNDRY_TOKEN",
+         "FOUNDRY_TOKEN", "GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME",
+         "FOUNDRY_URL",
          sp.ENV_SITE, sp.ENV_CLIENT_ID, sp.ENV_CLIENT_SECRET, sp.ENV_TOKEN,
          sp.ENV_TOKEN_FILE, sp.ENV_DRIVE, sp.ENV_ROOT)
 
@@ -37,138 +47,181 @@ def _clean_env(monkeypatch, tmp_path):
     for e in _ENVS:
         monkeypatch.delenv(e, raising=False)
     monkeypatch.setattr(sp, "_graph_configured", lambda: False)
-    # the marker file of a built (not injected) client lands here, and no
-    # transaction is held over from another test
     monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "data"))
-    monkeypatch.setattr(fds.DatasetFileManager, "_OPEN_HERE", set())
+    monkeypatch.setattr(fds.DatasetFileManager, "_warned_foreign", False)
     yield
 
 
 # ---------------------------------------------------------------------------
-# the fake SDK client
+# the fake workspace dataset library
 # ---------------------------------------------------------------------------
 
-class OpenTransactionAlreadyExists(Exception):
-    """Named like the SDK's error, which is how the store recognises it."""
-
-
-class FileAlreadyExists(Exception):
+class IllegalArgumentError(Exception):
     pass
 
 
+class SidecarError(Exception):
+    """The library's refusals carry the status and the error name."""
+
+
+class FakeFile:
+    def __init__(self, ds, path, data):
+        self.path = path
+        self.size_bytes = len(data)
+        self.updated_time = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        self._ds = ds
+
+    def download(self):
+        return self._ds.download(self.path)
+
+
 class FakeDataset:
-    """One dataset's committed files and its open transaction."""
+    """One dataset's files, with the one-open-transaction rule."""
 
-    def __init__(self, conflicts=0):
-        self.files = {}              # path -> bytes (committed)
-        self.open = None             # rid of the open transaction
-        self.staged = {}             # rid -> {path: bytes}
-        self.conflicts = conflicts   # creates refused before one succeeds
-        self.calls = []              # ("create"|"upload"|..., detail)
+    def __init__(self, lib):
+        self.lib = lib
+        self.files_ = {}             # dataset path -> bytes
+        self.calls = []
+        self.busy = 0                # writes refused before one goes through
+        self.open = False
+        self.download_delay = 0.0
+        self.gate = None             # an Event a write waits on
+        self.active = 0
+        self.peak = 0
         self.n = 0
-        self.fail_commit = False
-        self.created = {}            # rid -> when it was opened
+        self._lock = threading.Lock()
 
-    # Dataset.Transaction -------------------------------------------------
-    def create(self, dataset_rid, *, transaction_type, branch_name=None):
-        self.calls.append(("create", transaction_type, branch_name))
-        if self.conflicts or self.open is not None:
-            if self.conflicts:
-                self.conflicts -= 1
-            raise OpenTransactionAlreadyExists("a transaction is open")
-        return types.SimpleNamespace(rid=self.leave_open(0), status="OPEN")
+    def _begin(self, what):
+        self.calls.append((what,))
+        if self.busy:
+            self.busy -= 1
+            raise SidecarError("400 Catalog:SimultaneousOpenTransactionsNotAllowed"
+                               " {'openTransactionRid': 'ri.made-up.1'}")
+        if self.open:
+            raise SidecarError("400 Catalog:SimultaneousOpenTransactionsNotAllowed")
+        self.open = True
+        if self.gate is not None:
+            self.gate.wait(5)
 
-    def leave_open(self, age_s):
-        """Open a transaction ``age_s`` seconds ago (and leave it open)."""
-        self.n += 1
-        self.open = f"ri.foundry.main.transaction.fake-{self.n}"
-        self.staged[self.open] = {}
-        self.created[self.open] = datetime.now(timezone.utc) - timedelta(
-            seconds=age_s)
-        return self.open
+    def upload_file(self, path, logical_path=None):
+        self._begin("upload_file")
+        try:
+            logical = (logical_path or os.path.basename(path)).lstrip("/")
+            with open(path, "rb") as fh:
+                self.files_[logical] = fh.read()
+            self.calls[-1] = ("upload_file", logical)
+            return logical
+        finally:
+            self.open = False
 
-    def get(self, dataset_rid, transaction_rid):
-        self.calls.append(("get", transaction_rid))
-        return types.SimpleNamespace(
-            rid=transaction_rid,
-            status="OPEN" if transaction_rid == self.open else "COMMITTED",
-            created_time=self.created.get(transaction_rid))
+    def upload_directory(self, local_dir_path):
+        out = os.path.normpath(self.lib.outputs)
+        given = os.path.normpath(os.path.abspath(local_dir_path))
+        if given != out and not given.startswith(out + os.sep):
+            raise IllegalArgumentError(
+                f"Provided path {local_dir_path} should be in {out}")
+        self._begin("upload_directory")
+        try:
+            result = {}
+            for dirpath, _dirs, names in os.walk(given):
+                for name in names:
+                    local = os.path.join(dirpath, name)
+                    logical = os.path.relpath(local, out).replace(os.sep, "/")
+                    with open(local, "rb") as fh:
+                        self.files_[logical] = fh.read()
+                    result[local] = logical
+            self.calls[-1] = ("upload_directory", sorted(result.values()))
+            return result
+        finally:
+            self.open = False
 
-    def branch_get(self, dataset_rid, branch_name):
-        self.calls.append(("branch", branch_name))
-        return types.SimpleNamespace(name=branch_name,
-                                     transaction_rid=self.open)
+    def files(self, mode="current", show_hidden_files=False):
+        self.calls.append(("files",))
+        return iter([FakeFile(self, p, b)
+                     for p, b in sorted(self.files_.items())
+                     if show_hidden_files or not any(
+                         s.startswith(("_", ".")) for s in p.split("/"))])
 
-    def commit(self, dataset_rid, transaction_rid):
-        self.calls.append(("commit", transaction_rid))
-        assert transaction_rid == self.open
-        if self.fail_commit:
-            raise RuntimeError("commit refused")
-        self.files.update(self.staged.pop(transaction_rid))
-        self.open = None
-
-    def abort(self, dataset_rid, transaction_rid):
-        self.calls.append(("abort", transaction_rid))
-        if transaction_rid != self.open:
-            raise RuntimeError("TransactionNotOpen")
-        self.staged.pop(transaction_rid, None)
-        self.open = None
-
-    # Dataset.File -------------------------------------------------------
-    def upload(self, dataset_rid, file_path, body, *, transaction_rid=None):
-        self.calls.append(("upload", file_path, transaction_rid))
-        assert not file_path.startswith("/")
-        if transaction_rid != self.open:
-            raise RuntimeError("TransactionNotOpen")
-        if file_path in self.staged[transaction_rid]:
-            raise FileAlreadyExists(file_path)
-        self.staged[transaction_rid][file_path] = bytes(body)
-
-    def list(self, dataset_rid, *, branch_name=None, page_size=None,
-             path_prefix=None):
-        self.calls.append(("list", path_prefix))
-        stamp = datetime(2026, 1, 2, tzinfo=timezone.utc)
-        return iter([types.SimpleNamespace(
-            path=p, size_bytes=len(b), updated_time=stamp,
-            transaction_rid="ri.foundry.main.transaction.fake")
-            for p, b in sorted(self.files.items())
-            if not path_prefix or p.startswith(path_prefix)])
-
-    def content(self, dataset_rid, file_path, *, branch_name=None):
-        self.calls.append(("content", file_path))
-        if file_path not in self.files:
-            raise RuntimeError(f"FileNotFound: {file_path}")
-        return self.files[file_path]
+    def download(self, path):
+        with self._lock:
+            self.calls.append(("download", path))
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            self.n += 1
+            n = self.n
+        try:
+            if self.download_delay:
+                time.sleep(self.download_delay)
+            if path not in self.files_:
+                raise SidecarError(f"404 FileNotFound {path}")
+            dst = os.path.join(self.lib.cache, f"{n}_{path.rsplit('/', 1)[-1]}")
+            with open(dst, "wb") as fh:
+                fh.write(self.files_[path])
+            return dst
+        finally:
+            with self._lock:
+                self.active -= 1
 
     def count(self, kind):
         return sum(1 for c in self.calls if c[0] == kind)
 
-
-class _Files:
-    def __init__(self, ds):
-        self.list, self.upload, self.content = ds.list, ds.upload, ds.content
-
-
-class _Transactions:
-    def __init__(self, ds):
-        self.create, self.commit, self.abort = ds.create, ds.commit, ds.abort
-        self.get = ds.get
+    def uploads(self):
+        return [c for c in self.calls
+                if c[0] in ("upload_file", "upload_directory") and len(c) > 1]
 
 
-def fake_client(ds):
-    dataset = types.SimpleNamespace(
-        File=_Files(ds), Transaction=_Transactions(ds),
-        Branch=types.SimpleNamespace(get=ds.branch_get))
-    return types.SimpleNamespace(datasets=types.SimpleNamespace(
-        Dataset=dataset))
+class FakeLibrary:
+    """``foundry.transforms`` with one dataset under :data:`ALIAS`."""
+
+    def __init__(self, tmp_path):
+        self.outputs = str(tmp_path / "foundry" / "outputs")
+        self.cache = str(tmp_path / "library_cache")
+        os.makedirs(self.cache, exist_ok=True)
+        self.ds = FakeDataset(self)
+        lib = self
+
+        class Dataset:
+            @staticmethod
+            def get(alias):
+                lib.ds.calls.append(("get", alias))
+                if alias != ALIAS:
+                    raise SidecarError("404 FoundryContainerSidecar:"
+                                       f"AliasNotDefined {{'alias': '{alias}'}}")
+                return lib.ds
+
+        pkg = types.ModuleType("foundry")
+        pkg.__path__ = []
+        mod = types.ModuleType("foundry.transforms")
+        mod.Dataset = Dataset
+        pkg.transforms = mod
+        self.modules = {"foundry": pkg, "foundry.transforms": mod}
+
+    def install(self, monkeypatch):
+        for name, module in self.modules.items():
+            monkeypatch.setitem(sys.modules, name, module)
+        monkeypatch.setattr(fds, "OUTPUTS_DIR", self.outputs)
+        return self
+
+    def leftovers(self):
+        """Every file left in the outputs folder."""
+        return sorted(os.path.relpath(os.path.join(d, n), self.outputs)
+                      .replace(os.sep, "/")
+                      for d, _s, names in os.walk(self.outputs)
+                      for n in names)
 
 
-def _fm(ds, **kw):
-    kw.setdefault("sleep", lambda s: None)
-    return fds.DatasetFileManager(RID, client=fake_client(ds), **kw)
+@pytest.fixture
+def lib(monkeypatch, tmp_path):
+    return FakeLibrary(tmp_path).install(monkeypatch)
 
 
-def _conversation(root, tid, title, created):
+def _fm(lib, pauses=None, **kw):
+    sleep = pauses.append if pauses is not None else (lambda s: None)
+    return fds.DatasetFileManager(ALIAS, outputs_dir=lib.outputs,
+                                  sleep=sleep, **kw)
+
+
+def _conversation(root, tid, title, created, extra=0):
     core.ensure_conversation(tid, title=title, root=root)
     meta = core.load_meta(tid, root)
     meta["created"] = created
@@ -183,302 +236,288 @@ def _conversation(root, tid, title, created):
         fh.write(b"%PDF " + b"x" * 3000)
     with open(os.path.join(files, "figure.png"), "wb") as fh:
         fh.write(b"\x89PNG" + b"p" * 200)
+    for i in range(extra):
+        with open(os.path.join(files, f"extra_{i}.txt"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(f"made-up note {i}")
     return conv
 
 
 _CREATED = time.mktime((2026, 1, 2, 12, 0, 0, 0, 0, -1))
 
 
+def _write(path, data=b"x"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(data)
+    return path
+
+
 # ---------------------------------------------------------------------------
 # the file manager alone
 # ---------------------------------------------------------------------------
 
-def test_ls_makes_folders_from_file_paths():
-    ds = FakeDataset()
-    ds.files = {"GSE/conversations/Alpha_2026-01-02/meta.json": b"{}",
-                "GSE/conversations/Alpha_2026-01-02/files/a.pdf": b"%PDF",
-                "GSE/conversations/Beta_2026-01-01/meta.json": b"{}",
-                "GSE/conversations/stray.txt": b"x",
-                "GSE/other/z.txt": b"z"}
-    fm = _fm(ds)
-    top = {(e["name"], e["type"]) for e in fm.ls("GSE/conversations")}
+def test_ls_filters_the_whole_listing_and_makes_folders(lib):
+    lib.ds.files_ = {f"{TOP}/conversations/Alpha_2026-01-02/meta.json": b"{}",
+                     f"{TOP}/conversations/Alpha_2026-01-02/files/a.pdf": b"%",
+                     f"{TOP}/conversations/Beta_2026-01-01/meta.json": b"{}",
+                     f"{TOP}/conversations/stray.txt": b"x",
+                     f"{TOP}/other/z.txt": b"z",
+                     "someone_else/file.txt": b"y"}
+    fm = _fm(lib)
+    top = {(e["name"], e["type"]) for e in fm.ls(f"{TOP}/conversations")}
     assert top == {("Alpha_2026-01-02", "folder"),
                    ("Beta_2026-01-01", "folder"), ("stray.txt", "file")}
-    alpha = {(e["name"], e["type"], e["path"])
-             for e in fm.ls("/GSE/conversations/Alpha_2026-01-02/")}
+    alpha = {(e["name"], e["type"], e["path"]) for e in
+             fm.ls(f"/{TOP}/conversations/Alpha_2026-01-02/")}
     assert alpha == {
-        ("meta.json", "file", "GSE/conversations/Alpha_2026-01-02/meta.json"),
-        ("files", "folder", "GSE/conversations/Alpha_2026-01-02/files")}
-    assert fm.ls("GSE/conversations/Nope") == []
-    # each listing asked for the folder's own prefix, never the whole dataset
-    assert [c[1] for c in ds.calls if c[0] == "list"] == [
-        "GSE/conversations", "GSE/conversations/Alpha_2026-01-02",
-        "GSE/conversations/Nope"]
-    deep = [e["path"] for e in fm.ls("GSE/conversations", recursive=True,
+        ("meta.json", "file", f"{TOP}/conversations/Alpha_2026-01-02/meta.json"),
+        ("files", "folder", f"{TOP}/conversations/Alpha_2026-01-02/files")}
+    assert fm.ls(f"{TOP}/conversations/Nope") == []
+    # outside a batch each listing reads the whole dataset once
+    assert lib.ds.count("files") == 3 and lib.ds.count("get") == 1
+    deep = [e["path"] for e in fm.ls(f"{TOP}/conversations", recursive=True,
                                      type="files")]
-    assert len(deep) == 4 and "GSE/other/z.txt" not in deep
-    assert fm.create_folder("GSE/x/y")["path"] == "GSE/x/y"   # a no-op
-    assert ds.count("create") == 0
-    assert fm.get_web_url("GSE/conversations") == ""
+    assert len(deep) == 4 and f"{TOP}/other/z.txt" not in deep
+    assert fm.create_folder(f"{TOP}/x/y")["path"] == f"{TOP}/x/y"   # no-op
+    assert fm.get_web_url(f"{TOP}/conversations") == ""
+    assert not lib.ds.uploads()
 
 
-def test_an_sdk_without_path_prefix_lists_all_and_filters(tmp_path):
-    ds = FakeDataset()
-    ds.files = {"GSE/a/1.txt": b"1", "GSE/b/2.txt": b"2"}
-    plain = ds.list
-
-    def list_without_prefix(dataset_rid, *, branch_name=None, page_size=None,
-                            **kw):
-        if kw:
-            raise TypeError("unexpected keyword argument 'path_prefix'")
-        return plain(dataset_rid, branch_name=branch_name,
-                     page_size=page_size)
-    client = fake_client(ds)
-    client.datasets.Dataset.File.list = list_without_prefix
-    fm = fds.DatasetFileManager(RID, client=client)
-    assert [e["name"] for e in fm.ls("GSE/a")] == ["1.txt"]
-    assert [e["name"] for e in fm.ls("GSE/b")] == ["2.txt"]
+def test_hidden_files_are_listed_too(lib):
+    """A name starting ``_`` or ``.`` is hidden by default in a listing; the
+    app asks for hidden files, so a restore misses none."""
+    lib.ds.files_ = {f"{TOP}/c/T/files/_made_up.txt": b"h",
+                     f"{TOP}/c/T/meta.json": b"{}"}
+    names = {e["name"] for e in _fm(lib).ls(f"{TOP}/c/T", recursive=True,
+                                            type="files")}
+    assert names == {"_made_up.txt", "meta.json"}
 
 
-def test_single_upload_overwrite_and_download(tmp_path):
-    ds = FakeDataset()
-    fm = _fm(ds)
-    local = tmp_path / "note.txt"
-    local.write_bytes(b"first")
-    assert fm.upload_file(str(local), "GSE/n/note.txt", overwrite=True)
-    local.write_bytes(b"second")
-    assert fm.upload_file(str(local), "GSE/n/note.txt", overwrite=True)
-    assert ds.files == {"GSE/n/note.txt": b"second"}          # newest wins
-    assert ds.count("create") == ds.count("commit") == 2
-    assert fm.download_file("GSE/n/note.txt") == b"second"
+def test_a_single_upload_is_one_transaction_and_keeps_other_files(lib,
+                                                                  tmp_path):
+    fm = _fm(lib)
+    note = _write(str(tmp_path / "note.txt"), b"first")
+    other = _write(str(tmp_path / "other.txt"), b"other")
+    assert fm.upload_file(note, f"{TOP}/n/note.txt", overwrite=True)
+    assert fm.upload_file(other, f"{TOP}/n/other.txt", overwrite=True)
+    _write(note, b"second")
+    assert fm.upload_file(note, f"{TOP}/n/note.txt", overwrite=True)
+    assert lib.ds.files_ == {f"{TOP}/n/note.txt": b"second",
+                             f"{TOP}/n/other.txt": b"other"}
+    assert lib.ds.count("upload_file") == 3
+    assert lib.ds.count("upload_directory") == 0
+    assert fm.download_file(f"{TOP}/n/note.txt") == b"second"
     out = tmp_path / "back" / "note.txt"
-    assert fm.download_file("GSE/n/note.txt", local_path=str(out),
+    assert fm.download_file(f"{TOP}/n/note.txt", local_path=str(out),
                             return_bytes=False, overwrite=True) is True
     assert out.read_bytes() == b"second"
+    with pytest.raises(ValueError):
+        fm.upload_file(note, f"{TOP}/../escape.txt")
 
 
-def test_a_batch_is_one_transaction_and_opens_none_when_empty(tmp_path):
-    ds = FakeDataset()
-    fm = _fm(ds)
+def test_a_batch_is_one_upload_directory_and_clears_what_it_staged(lib,
+                                                                   tmp_path):
+    fm = _fm(lib)
     fm.begin_batch()
     assert fm.end_batch() == 0
-    assert ds.calls == []                       # nothing changed, no save
+    assert lib.ds.calls == []                  # nothing changed, no save
+    fm.begin_batch()
     paths = []
     for i in range(3):
-        f = tmp_path / f"f{i}.txt"
-        f.write_bytes(b"x" * i)
-        paths.append(f"GSE/c/f{i}.txt")
-        if i == 0:
-            fm.begin_batch()
-        fm.upload_file(str(f), paths[-1], overwrite=True)
-    assert ds.files == {}                       # nothing visible yet
-    assert fm.end_batch() == 3
-    assert sorted(ds.files) == paths
-    assert ds.count("create") == ds.count("commit") == 1
-    assert len({c[2] for c in ds.calls if c[0] == "upload"}) == 1
+        f = _write(str(tmp_path / f"f{i}.txt"), b"x" * (i + 1))
+        paths.append(f"{TOP}/c/T/f{i}.txt")
+        fm.upload_file(f, paths[-1], overwrite=True)
+    # a temporary file gone before the save still goes (it was copied)
+    gone = _write(str(tmp_path / "MOVED.txt"), b"moved")
+    fm.upload_file(gone, f"{TOP}/c/Old/MOVED.txt", overwrite=True)
+    os.remove(gone)
+    assert lib.ds.files_ == {}                 # nothing written yet
+    assert fm.end_batch() == 4
+    assert lib.ds.uploads() == [("upload_directory",
+                                 sorted(paths + [f"{TOP}/c/Old/MOVED.txt"]))]
+    assert lib.ds.files_[f"{TOP}/c/Old/MOVED.txt"] == b"moved"
+    assert lib.leftovers() == []
+    assert os.listdir(lib.outputs) == []       # the folders it made, too
 
 
-def test_a_listing_is_fetched_once_per_batch():
-    ds = FakeDataset()
-    ds.files = {"GSE/c/T/meta.json": b"{}", "GSE/c/T/files/a.pdf": b"%",
-                "GSE/c/T/files/sub/b.png": b"p"}
-    fm = _fm(ds)
+def test_upload_directory_refuses_a_folder_outside_the_outputs_folder(
+        lib, tmp_path):
+    """The library takes only the outputs folder; staged elsewhere, the
+    save fails (and is cleared) rather than writing anything."""
+    elsewhere = str(tmp_path / "not_outputs")
+    fm = fds.DatasetFileManager(ALIAS, outputs_dir=elsewhere,
+                                sleep=lambda s: None)
     fm.begin_batch()
-    assert sp._walk_remote(fm, "GSE/c/T") and ds.count("list") == 1
-    fm.end_batch()
-    sp._walk_remote(fm, "GSE/c/T")                 # outside a batch: fresh
-    assert ds.count("list") > 2
+    fm.upload_file(_write(str(tmp_path / "a.txt")), f"{TOP}/a.txt")
+    with pytest.raises(IllegalArgumentError):
+        fm.end_batch()
+    assert lib.ds.files_ == {}
+    assert [os.path.join(d, n) for d, _s, ns in os.walk(elsewhere)
+            for n in ns] == []
 
 
-def test_a_batch_belongs_to_its_thread(tmp_path):
-    """One process serves every viewer: a restore beginning and ending its
-    batch in another session's thread leaves this session's save open."""
-    import threading
-    ds = FakeDataset()
-    fm = _fm(ds)
-    f = tmp_path / "a.txt"
-    f.write_bytes(b"a")
-    fm.begin_batch()
-    fm.upload_file(str(f), "GSE/a.txt", overwrite=True)
-
-    def other_session():
+def test_a_foreign_file_in_outputs_is_never_uploaded_or_deleted(lib,
+                                                                tmp_path):
+    foreign = _write(os.path.join(lib.outputs, "made_up_other_job",
+                                  "result.csv"), b"theirs")
+    fm = _fm(lib)
+    for round_ in range(2):
         fm.begin_batch()
-        fm.ls("GSE")
-        fm.end_batch(commit=False)
-    t = threading.Thread(target=other_session)
-    t.start()
-    t.join()
-    g = tmp_path / "b.txt"
-    g.write_bytes(b"b")
-    fm.upload_file(str(g), "GSE/b.txt", overwrite=True)
-    assert fm.end_batch() == 2
-    assert ds.files == {"GSE/a.txt": b"a", "GSE/b.txt": b"b"}
-    assert ds.count("create") == 1 and ds.count("abort") == 0
+        fm.upload_file(_write(str(tmp_path / "a.txt"), b"a"), f"{TOP}/c/a.txt")
+        fm.upload_file(_write(str(tmp_path / "b.txt"), b"b"), f"{TOP}/c/b.txt")
+        assert fm.end_batch() == 2
+        note = fm.take_note()
+        if round_ == 0:
+            assert note and "file by file" in note
+        else:
+            assert note is None                # said once per process
+    assert lib.ds.count("upload_directory") == 0
+    assert lib.ds.count("upload_file") == 4    # one transaction per file
+    assert set(lib.ds.files_) == {f"{TOP}/c/a.txt", f"{TOP}/c/b.txt"}
+    assert os.path.isfile(foreign)
+    assert lib.leftovers() == ["made_up_other_job/result.csv"]
 
 
-def test_a_conflict_is_retried_with_a_growing_pause(tmp_path):
-    ds = FakeDataset(conflicts=2)
+def test_the_apps_own_leftover_in_outputs_is_cleared_not_sent(lib, tmp_path):
+    """Anything under the app's own folder in the outputs folder is left
+    from a save that stopped: cleared, never uploaded."""
+    _write(os.path.join(lib.outputs, TOP, "conversations", "Old_2026-01-01",
+                        "stale.json"), b"old")
+    fm = _fm(lib)
+    fm.begin_batch()
+    fm.upload_file(_write(str(tmp_path / "a.txt")), f"{TOP}/c/a.txt")
+    fm.end_batch()
+    assert lib.ds.uploads() == [("upload_directory", [f"{TOP}/c/a.txt"])]
+    assert lib.leftovers() == []
+
+
+def test_a_busy_dataset_is_tried_again_with_a_growing_pause(lib, tmp_path):
+    lib.ds.busy = 2
     pauses = []
-    fm = _fm(ds, sleep=pauses.append)
-    f = tmp_path / "a.txt"
-    f.write_bytes(b"a")
-    assert fm.upload_file(str(f), "GSE/a.txt", overwrite=True)
-    assert pauses == [0.5, 1.0] and ds.count("create") == 3
-    assert ds.files == {"GSE/a.txt": b"a"}
+    fm = _fm(lib, pauses)
+    fm.begin_batch()
+    fm.upload_file(_write(str(tmp_path / "a.txt")), f"{TOP}/a.txt")
+    assert fm.end_batch() == 1
+    assert pauses == [1.0, 2.0] and lib.ds.count("upload_directory") == 3
+    assert lib.ds.files_ == {f"{TOP}/a.txt": b"x"}
+    assert lib.leftovers() == []
 
 
-def test_the_sdks_generic_conflict_counts_by_its_name(tmp_path):
-    class ConflictError(Exception):
-        name = "OpenTransactionAlreadyExists"
-    assert fds._is_open_transaction_conflict(ConflictError("409"))
-    assert not fds._is_open_transaction_conflict(RuntimeError("403"))
-
-
-def test_a_conflict_that_lasts_gives_up_after_the_last_try(tmp_path):
-    ds = FakeDataset(conflicts=99)
+def test_a_dataset_busy_for_the_whole_wait_gives_up_plainly(lib, tmp_path):
+    lib.ds.busy = 99
     pauses = []
-    fm = _fm(ds, sleep=pauses.append)
-    f = tmp_path / "a.txt"
-    f.write_bytes(b"a")
-    with pytest.raises(OpenTransactionAlreadyExists):
-        fm.upload_file(str(f), "GSE/a.txt", overwrite=True)
-    assert len(pauses) == fds.OPEN_TRIES - 1
-    assert ds.count("create") == fds.OPEN_TRIES
+    fm = _fm(lib, pauses)
+    fm.begin_batch()
+    fm.upload_file(_write(str(tmp_path / "a.txt")), f"{TOP}/a.txt")
+    with pytest.raises(fds.StorageBusy) as err:
+        fm.end_batch()
+    assert "another save holds the conversation dataset" in str(err.value)
+    assert sum(pauses) == pytest.approx(30.0)
+    assert lib.ds.files_ == {} and lib.leftovers() == []
 
 
-# a transaction a save left open (FDE question 5) must not block every save
+def test_an_alias_the_workspace_does_not_define_says_how_to_import(lib):
+    fm = fds.DatasetFileManager("made_up_missing", outputs_dir=lib.outputs)
+    with pytest.raises(fds.AliasNotDefined) as err:
+        fm.ls(TOP)
+    text = str(err.value)
+    assert "made_up_missing" in text and "import the dataset into the " \
+        "workspace (Data panel, read and write), push" in text
 
 
-def test_a_leftover_named_in_the_marker_is_aborted_at_once(tmp_path):
-    ds = FakeDataset()
-    marker = str(tmp_path / "marker.json")
-    f = tmp_path / "a.txt"
-    f.write_bytes(b"a")
-    before = _fm(ds, marker=marker)
-    before.begin_batch()
-    before.upload_file(str(f), "GSE/a.txt", overwrite=True)  # stops mid-save
-    left = ds.open
-    with open(marker, encoding="utf-8") as fh:
-        assert json.load(fh)[RID][0]["rid"] == left
-    fds.DatasetFileManager._OPEN_HERE.clear()      # restarted, same disk
-    pauses = []
-    after = _fm(ds, marker=marker, sleep=pauses.append)
-    assert after.upload_file(str(f), "GSE/a.txt", overwrite=True)
-    assert ("abort", left) in ds.calls and pauses == []
-    assert ds.count("branch") == 0                 # the marker was enough
-    assert ds.files == {"GSE/a.txt": b"a"} and ds.open is None
-    with open(marker, encoding="utf-8") as fh:
-        assert json.load(fh) == {}                 # nothing left named
-
-
-def test_a_stale_open_transaction_is_aborted_and_a_young_one_kept(tmp_path):
-    ds = FakeDataset()
-    pauses = []
-    fm = _fm(ds, sleep=pauses.append)
-    f = tmp_path / "a.txt"
-    f.write_bytes(b"a")
-    young = ds.leave_open(60)                      # another save, a minute in
-    with pytest.raises(OpenTransactionAlreadyExists):
-        fm.upload_file(str(f), "GSE/a.txt", overwrite=True)
-    assert ds.open == young and ds.count("abort") == 0
-    assert ds.count("branch") == 1                 # once per save, not per try
-    ds.created[young] -= timedelta(seconds=fds.STALE_AFTER_S)  # left behind
-    pauses.clear()
-    assert fm.upload_file(str(f), "GSE/a.txt", overwrite=True)
-    assert ("abort", young) in ds.calls and pauses == []
-    assert ds.files == {"GSE/a.txt": b"a"} and ds.open is None
-
-
-def test_a_transaction_held_here_or_by_a_live_process_is_kept(tmp_path):
-    ds = FakeDataset()
-    marker = str(tmp_path / "marker.json")
-    f = tmp_path / "a.txt"
-    f.write_bytes(b"a")
-    holder = _fm(ds, marker=marker)
-    holder.begin_batch()
-    holder.upload_file(str(f), "GSE/a.txt", overwrite=True)
-    held = ds.open
-    ds.created[held] -= timedelta(hours=1)         # old, but a save here holds it
-    other = _fm(ds, marker=marker, open_tries=2)
-    with pytest.raises(OpenTransactionAlreadyExists):
-        other.upload_file(str(f), "GSE/b.txt", overwrite=True)
-    assert ds.count("abort") == 0 and ds.open == held
-    assert holder.end_batch() == 1
-    # a young one another running process named in the marker
-    theirs = ds.leave_open(5)
-    with open(marker, "w", encoding="utf-8") as fh:
-        json.dump({RID: [{"rid": theirs, "pid": os.getppid()}]}, fh)
-    with pytest.raises(OpenTransactionAlreadyExists):
-        other.upload_file(str(f), "GSE/b.txt", overwrite=True)
-    assert ds.count("abort") == 0 and ds.open == theirs
+def test_a_restore_downloads_in_parallel_through_one_listing(lib, tmp_path):
+    lib.ds.download_delay = 0.05
+    for i in range(14):
+        lib.ds.files_[f"{TOP}/c/T/files/f{i:02d}.txt"] = f"n{i}".encode()
+    fm = _fm(lib)
+    fm.begin_batch()
+    pairs = [(f"{TOP}/c/T/files/f{i:02d}.txt",
+              str(tmp_path / "back" / f"f{i:02d}.txt")) for i in range(14)]
+    errors = fm.download_files(pairs + [(f"{TOP}/c/T/missing.txt",
+                                         str(tmp_path / "back" / "m.txt"))])
+    fm.end_batch(commit=False)
+    assert errors[:14] == [None] * 14
+    assert isinstance(errors[14], FileNotFoundError)
+    assert 1 < lib.ds.peak <= fds.PARALLEL_DOWNLOADS
+    assert lib.ds.count("files") == 1
+    for i in range(14):
+        assert (tmp_path / "back" / f"f{i:02d}.txt").read_bytes() == \
+            f"n{i}".encode()
 
 
 # ---------------------------------------------------------------------------
 # through the store: mirror, list, restore
 # ---------------------------------------------------------------------------
 
-def _store(ds, **kw):
-    return sp.SharePointStore(file_manager=_fm(ds, **kw))
+def _store(lib, pauses=None, **kw):
+    return sp.SharePointStore(file_manager=_fm(lib, pauses, **kw))
 
 
-def test_the_store_names_foundry_storage_and_its_own_root():
-    store = _store(FakeDataset())
+def test_the_store_names_foundry_storage_and_its_own_root(lib):
+    store = _store(lib)
     assert store.backend == "foundry" and store.label == "Foundry storage"
-    assert store.root() == fds.DEFAULT_ROOT
-    assert store.conversations_base() == "GeotechStaffEngineer/conversations"
+    assert store.background is True
+    assert store.root() == TOP
+    assert store.conversations_base() == f"{TOP}/conversations"
     assert store.conversations_base("Jane Doe") == \
-        "GeotechStaffEngineer/conversations/Jane_Doe"
+        f"{TOP}/conversations/Jane_Doe"
 
 
-def test_a_mirror_sends_its_files_in_one_transaction(tmp_path):
-    ds = FakeDataset()
-    store = _store(ds)
+def test_a_mirror_is_one_save_and_overwrites_only_what_changed(lib,
+                                                               tmp_path):
+    store = _store(lib)
     root = str(tmp_path / "container")
     conv = _conversation(root, "T-ONE", "Footing check", _CREATED)
     up = store.mirror_conversation("T-ONE", root=root)
     assert not up["errors"], up
     assert up["uploaded"] == 4 and up["web_url"] == ""
-    assert up["folder"] == ("GeotechStaffEngineer/conversations/"
-                            "Footing_check_2026-01-02")
-    assert ds.count("create") == ds.count("commit") == 1
-    assert sorted(p.rsplit("/", 1)[-1] for p in ds.files) == [
+    assert up["folder"] == f"{TOP}/conversations/Footing_check_2026-01-02"
+    assert lib.ds.count("upload_directory") == 1
+    assert lib.ds.count("files") == 1          # the folder-name check, once
+    assert sorted(p.rsplit("/", 1)[-1] for p in lib.ds.files_) == [
         "calc.pdf", "figure.png", "meta.json", "transcript.jsonl"]
-    assert not any(sp.MANIFEST_NAME in p for p in ds.files)
+    assert not any(sp.MANIFEST_NAME in p for p in lib.ds.files_)
+    assert lib.leftovers() == []
 
-    # nothing changed: no transaction at all
+    # nothing changed: no call at all
+    calls = len(lib.ds.calls)
     again = store.mirror_conversation("T-ONE", root=root)
     assert again["uploaded"] == 0 and again["skipped"] == 4
-    assert ds.count("create") == 1
+    assert len(lib.ds.calls) == calls
 
-    # one file changed: it alone, overwritten, in one more transaction
+    # one file changed: it alone, overwritten; the others kept
     pdf = os.path.join(conv, "files", "calc.pdf")
-    with open(pdf, "wb") as fh:
-        fh.write(b"%PDF revised")
+    _write(pdf, b"%PDF revised")
     os.utime(pdf, (time.time() + 5, time.time() + 5))
     third = store.mirror_conversation("T-ONE", root=root)
     assert third["uploaded"] == 1 and not third["errors"], third
-    assert ds.count("create") == 2
-    assert ds.files[f"{up['folder']}/files/calc.pdf"] == b"%PDF revised"
+    assert lib.ds.uploads()[-1] == ("upload_directory",
+                                    [f"{up['folder']}/files/calc.pdf"])
+    assert lib.ds.files_[f"{up['folder']}/files/calc.pdf"] == b"%PDF revised"
+    assert len(lib.ds.files_) == 4
 
 
-def test_the_restore_round_trip(tmp_path):
-    ds = FakeDataset()
-    store = _store(ds)
+def test_the_restore_round_trip(lib, tmp_path):
+    store = _store(lib)
     before = str(tmp_path / "before_rebuild")
     after = str(tmp_path / "after_rebuild")
-    conv_a = _conversation(before, "T-RT", "Wall design", _CREATED)
+    conv_a = _conversation(before, "T-RT", "Wall design", _CREATED, extra=9)
     assert not store.mirror_conversation("T-RT", root=before)["errors"]
 
     listing = store.list_remote_conversations()
     assert [r["name"] for r in listing] == ["Wall_design_2026-01-02"]
-    lists_before = ds.count("list")
+    lib.ds.download_delay = 0.03
+    lists_before = lib.ds.count("files")
     res = store.restore_conversation("Wall_design_2026-01-02", root=after)
     assert res["status"] == "restored" and res["thread_id"] == "T-RT", res
-    assert res["downloaded"] == 4 and not res["errors"]
-    assert ds.count("list") - lists_before == 1        # listed once
+    assert res["downloaded"] == 13 and not res["errors"]
+    assert lib.ds.count("files") - lists_before == 1     # listed once
+    assert 1 < lib.ds.peak <= fds.PARALLEL_DOWNLOADS      # in parallel
     conv_b = core.conversation_dir("T-RT", after)
-    for rel in ("meta.json", "transcript.jsonl", "files/calc.pdf",
-                "files/figure.png"):
+    for rel in ["meta.json", "transcript.jsonl", "files/calc.pdf",
+                "files/figure.png"] + [f"files/extra_{i}.txt"
+                                       for i in range(9)]:
         with open(os.path.join(conv_a, *rel.split("/")), "rb") as a, \
                 open(os.path.join(conv_b, *rel.split("/")), "rb") as b:
             assert a.read() == b.read(), rel
@@ -488,18 +527,18 @@ def test_the_restore_round_trip(tmp_path):
     assert again["uploaded"] == 0 and not again["errors"], again
 
 
-def test_a_restore_never_writes_outside_the_conversation_folder(tmp_path):
+def test_a_restore_never_writes_outside_the_conversation_folder(lib,
+                                                                tmp_path):
     """A dataset's file paths are free text: one with a ``..`` segment
     (either slash) is skipped with one warning, the rest restored."""
-    ds = FakeDataset()
-    store = _store(ds)
+    store = _store(lib)
     before = str(tmp_path / "before_rebuild")
     after = str(tmp_path / "after_rebuild")
     _conversation(before, "T-PATH", "Wall design", _CREATED)
     assert not store.mirror_conversation("T-PATH", root=before)["errors"]
-    base = "GeotechStaffEngineer/conversations/Wall_design_2026-01-02"
-    ds.files[f"{base}/../../made_up_escape.txt"] = b"x"
-    ds.files[f"{base}/files/..\\..\\..\\made_up_escape2.txt"] = b"y"
+    base = f"{TOP}/conversations/Wall_design_2026-01-02"
+    lib.ds.files_[f"{base}/../../made_up_escape.txt"] = b"x"
+    lib.ds.files_[f"{base}/files/..\\..\\..\\made_up_escape2.txt"] = b"y"
     res = store.restore_conversation("Wall_design_2026-01-02", root=after)
     assert res["status"] == "restored" and res["downloaded"] == 4, res
     assert len(res["errors"]) == 1, res
@@ -513,15 +552,14 @@ def test_a_restore_never_writes_outside_the_conversation_folder(tmp_path):
         after, "files", "a.pdf")
 
 
-def test_the_record_files_the_trace_reviews_read_are_carried(tmp_path,
+def test_the_record_files_the_trace_reviews_read_are_carried(lib, tmp_path,
                                                             monkeypatch):
     """Foundry wiring audit row 8: activity.jsonl, FEEDBACK.md (with
     feedback.jsonl) and trace.jsonl, written by the app's own writers, go
     to the dataset with the turn and come back with a restore."""
     from webapp import activity_log, feedback
     monkeypatch.delenv("GEOTECH_TRACE", raising=False)
-    ds = FakeDataset()
-    store = _store(ds)
+    store = _store(lib)
     root = str(tmp_path / "before")
     conv = _conversation(root, "T-REC", "Record check", _CREATED)
     assert activity_log.append_event(conv, "page_error", turn=1,
@@ -531,12 +569,12 @@ def test_the_record_files_the_trace_reviews_read_are_carried(tmp_path,
     core.write_turn_trace("T-REC", {"turn_tokens": 1, "tools": []}, root)
     up = store.mirror_conversation("T-REC", root=root)
     assert not up["errors"], up
-    names = {p[len(up["folder"]) + 1:] for p in ds.files}
+    names = {p[len(up["folder"]) + 1:] for p in lib.ds.files_}
     for rel in ("activity.jsonl", "FEEDBACK.md", "feedback.jsonl",
                 "trace.jsonl"):
         assert rel in names, (rel, names)
         with open(os.path.join(conv, rel), "rb") as fh:
-            assert ds.files[f"{up['folder']}/{rel}"] == fh.read(), rel
+            assert lib.ds.files_[f"{up['folder']}/{rel}"] == fh.read(), rel
     res = store.restore_conversation(up["folder"].rsplit("/", 1)[-1],
                                      root=str(tmp_path / "after"))
     assert res["status"] == "restored", res
@@ -545,9 +583,8 @@ def test_the_record_files_the_trace_reviews_read_are_carried(tmp_path,
         assert os.path.isfile(os.path.join(back, rel)), rel
 
 
-def test_each_owner_lists_and_restores_only_their_folder(tmp_path):
-    ds = FakeDataset()
-    store = _store(ds)
+def test_each_owner_lists_and_restores_only_their_folder(lib, tmp_path):
+    store = _store(lib)
     root = str(tmp_path / "users")
     _conversation(root, "T-A", "Pile cap", _CREATED)
     core.tag_conversation("T-A", root=root, owner="corp__ann")
@@ -565,175 +602,164 @@ def test_each_owner_lists_and_restores_only_their_folder(tmp_path):
     assert bad["status"] == "error"
 
 
-def test_a_conflict_during_a_mirror_is_retried(tmp_path):
-    ds = FakeDataset(conflicts=1)
+def test_a_busy_save_never_breaks_the_turn_and_goes_next_time(lib, tmp_path):
+    lib.ds.busy = 99
     pauses = []
-    store = _store(ds, sleep=pauses.append)
-    root = str(tmp_path)
-    _conversation(root, "T-C", "Retaining wall", _CREATED)
-    up = store.mirror_conversation("T-C", root=root)
-    assert not up["errors"] and up["uploaded"] == 4, up
-    assert pauses == [0.5] and ds.count("commit") == 1
-
-
-def test_a_failed_save_never_breaks_the_turn_and_is_sent_next_time(tmp_path):
-    ds = FakeDataset(conflicts=99)
-    pauses = []
-    store = _store(ds, sleep=pauses.append)
+    store = _store(lib, pauses)
     root = str(tmp_path)
     _conversation(root, "T-F", "Bearing", _CREATED)
     up = store.mirror_conversation("T-F", root=root)    # never raises
-    assert up["uploaded"] == 0 and up["errors"]
-    assert "OpenTransactionAlreadyExists" in up["errors"][0]
-    assert len(pauses) == fds.OPEN_TRIES - 1             # once, not per file
-    assert ds.files == {}
-    ds.conflicts = 0                                     # the other save ends
+    assert up["uploaded"] == 0 and len(up["errors"]) == 1, up
+    assert "4 file(s) not saved: StorageBusy: another save holds" in \
+        up["errors"][0]
+    assert lib.ds.files_ == {} and lib.leftovers() == []
+    lib.ds.busy = 0                                      # the other save ends
     up2 = store.mirror_conversation("T-F", root=root)
     assert up2["uploaded"] == 4 and not up2["errors"], up2
 
 
-def test_a_failed_commit_records_nothing_as_saved(tmp_path):
-    ds = FakeDataset()
-    ds.fail_commit = True
-    store = _store(ds)
+def test_the_foreign_file_note_reaches_the_sync_summary_once(lib, tmp_path):
+    _write(os.path.join(lib.outputs, "made_up_other_job.csv"), b"theirs")
+    store = _store(lib)
     root = str(tmp_path)
-    _conversation(root, "T-X", "Settlement", _CREATED)
-    up = store.mirror_conversation("T-X", root=root)
-    assert up["uploaded"] == 0
-    assert any("not saved" in e for e in up["errors"]), up
-    assert ds.count("abort") == 1 and ds.files == {} and ds.open is None
-    ds.fail_commit = False
-    up2 = store.mirror_conversation("T-X", root=root)
-    assert up2["uploaded"] == 4 and not up2["errors"], up2
+    conv = _conversation(root, "T-N", "Footing", _CREATED)
+    up = store.mirror_conversation("T-N", root=root)
+    assert not up["errors"] and "file by file" in up["note"], up
+    _write(os.path.join(conv, "files", "new.txt"), b"n")
+    assert "note" not in store.mirror_conversation("T-N", root=root)
+
+
+# ---------------------------------------------------------------------------
+# saving after a turn, in the background
+# ---------------------------------------------------------------------------
+
+def test_saves_after_a_turn_run_in_the_background_in_order(lib):
+    store = _store(lib)
+    gate = threading.Event()
+    order = []
+
+    def mirror(thread_id, root=None):
+        order.append(thread_id)
+        if len(order) == 1:
+            gate.wait(5)
+        return {"uploaded": 0, "skipped": 0, "errors": [], "thread_id":
+                thread_id, "duration_s": 0.0}
+    store.mirror_conversation = mirror
+    assert sp.save_after_change(store, "T-A") is None     # queued
+    for _ in range(100):
+        if store.save_state("T-A") == "saving":
+            break
+        time.sleep(0.01)
+    assert store.save_state("T-A") == "saving"
+    sp.save_after_change(store, "T-B")
+    sp.save_after_change(store, "T-B")         # already waiting: once
+    sp.save_after_change(store, "T-A")         # saving now: again after
+    assert store.save_state("T-B") == "waiting"
+    assert store.save_state("T-C") is None
+    gate.set()
+    assert store.flush(5)
+    assert order == ["T-A", "T-B", "T-A"]
+    assert store.save_state("T-A") is None and store.save_state("T-B") is None
+
+
+def test_a_queued_save_outlives_the_turn_that_asked(lib, tmp_path):
+    """The turn's worker queues the save and ends; the save still runs, and
+    the sidebar reads its record from the store."""
+    store = _store(lib)
+    root = str(tmp_path)
+    _conversation(root, "T-BG", "Pile cap", _CREATED)
+    core.register_thread_root("T-BG", root)        # as the app does
+    try:
+        lib.ds.gate = threading.Event()
+        results = []
+        turn = threading.Thread(target=lambda: results.append(
+            sp.save_after_change(store, "T-BG")))
+        turn.start()
+        turn.join()
+        assert results == [None] and not turn.is_alive()
+        assert lib.ds.files_ == {}
+        lib.ds.gate.set()
+        assert store.flush(10)
+    finally:
+        core.register_thread_root("T-BG", None)
+    shown = sp.sync_for_conversation(store, "T-BG", None)
+    assert shown and shown["uploaded"] == 4 and not shown["errors"], shown
+    assert any(p.endswith("/transcript.jsonl") for p in lib.ds.files_)
+
+
+def test_the_stores_newer_record_wins_over_an_older_session_record(lib):
+    store = _store(lib)
+    old = {"uploaded": 1, "skipped": 0, "errors": [], "thread_id": "T-S"}
+    new = {"uploaded": 2, "skipped": 1, "errors": [], "thread_id": "T-S"}
+    store._syncs["T-S"] = new
+    assert sp.sync_for_conversation(store, "T-S", old) is new
+    assert sp.sync_for_conversation(store, "T-OTHER", old) is None
+    assert sp.sync_for_conversation(object(), "T-S", old) is old
 
 
 # ---------------------------------------------------------------------------
 # configuration: Foundry selects the dataset; everywhere else is unchanged
 # ---------------------------------------------------------------------------
 
-class _FakeSDK:
-    """A stand-in ``foundry_sdk`` module recording how the client is built."""
-
-    def __init__(self, ds):
-        self.built = []
-        sdk = types.ModuleType("foundry_sdk")
-        sdk.UserTokenAuth = lambda token: ("auth", token)
-        sdk.Config = lambda **kw: ("config", kw)
-
-        def client(**kw):
-            self.built.append(kw)
-            return fake_client(ds)
-        sdk.FoundryClient = client
-        self.module = sdk
-
-
-def _foundry(monkeypatch, ds=None, token="made-up-token"):
+def _foundry(monkeypatch, alias=ALIAS):
     monkeypatch.setenv("GEOTECH_DEPLOYMENT", "foundry")
-    monkeypatch.setenv(fds.ENV_DATASET, RID)
-    if token:
-        monkeypatch.setenv("FOUNDRY_TOKEN", token)
-    monkeypatch.setenv("FOUNDRY_HOSTNAME", "stack.example.test")
-    fake = _FakeSDK(ds or FakeDataset())
-    monkeypatch.setitem(sys.modules, "foundry_sdk", fake.module)
-    return fake
+    monkeypatch.setenv(fds.ENV_DATASET, alias)
 
 
-def test_on_foundry_the_dataset_is_the_permanent_storage(monkeypatch,
+def test_on_foundry_the_dataset_is_the_permanent_storage(lib, monkeypatch,
                                                          tmp_path):
-    ds = FakeDataset()
-    fake = _foundry(monkeypatch, ds)
+    _foundry(monkeypatch)
     monkeypatch.setenv(sp.ENV_SITE, "https://example.sharepoint.test/x")
     monkeypatch.setenv(sp.ENV_TOKEN, "made-up")
     store = sp.SharePointStore()
     assert store.configured and store.backend == "foundry"
-    assert store.label == "Foundry storage"
+    assert store.label == "Foundry storage" and store.background
+    assert store.unavailable_reason is None
     # the agent's SharePoint tools never run on the dataset
     assert sp.configured() is False
     fm = store.file_manager()
     assert isinstance(fm, fds.DatasetFileManager)
-    assert fm.dataset == RID and fm.branch == "master"
-    assert fm._marker == os.path.join(core.data_root(), fds.MARKER_NAME)
+    assert fm.alias == ALIAS and fm.outputs_dir == lib.outputs
     root = str(tmp_path)
     _conversation(root, "T-E2E", "Lateral pile", _CREATED)
     assert not store.mirror_conversation("T-E2E", root=root)["errors"]
-    assert fake.built[0]["auth"] == ("auth", "made-up-token")
-    assert fake.built[0]["hostname"] == "https://stack.example.test"
-    assert any(p.startswith("GeotechStaffEngineer/conversations/")
-               for p in ds.files)
+    assert any(p.startswith(f"{TOP}/conversations/") for p in lib.ds.files_)
 
 
-def test_the_branch_setting(monkeypatch):
+def test_a_resource_id_is_not_an_alias(lib, monkeypatch, tmp_path):
+    _foundry(monkeypatch, "ri.foundry.main.dataset.made-up-0000")
+    reason = fds.unconfigured_reason()
+    assert "resource ID" in reason and "import the dataset into the " \
+        "workspace (Data panel, read and write), push" in reason
+    store = sp.SharePointStore()
+    assert not store.configured and store.unavailable_reason == reason
+    root = str(tmp_path)
+    _conversation(root, "T-RI", "Pavement", _CREATED)
+    up = store.mirror_conversation("T-RI", root=root)    # never raises
+    assert up["errors"][0].startswith("Foundry storage client:")
+    assert lib.ds.calls == []
+
+
+def test_the_library_missing_turns_storage_off_with_a_plain_reason(
+        monkeypatch, tmp_path):
     _foundry(monkeypatch)
-    monkeypatch.setenv(fds.ENV_BRANCH, "made-up-branch")
-    assert fds.DatasetFileManager().branch == "made-up-branch"
-
-
-def test_the_host_follows_the_apps_settings(monkeypatch):
-    fake = _foundry(monkeypatch)
-    fds.DatasetFileManager()._client()
-    assert fake.built[-1]["hostname"] == "https://stack.example.test"
-    assert fds.sdk_target()[1] == "FOUNDRY_HOSTNAME"
-    # in a container the SDK finds the host itself
-    monkeypatch.setenv(fds.SERVICE_DISCOVERY_ENV, "/made/up/discovery.yml")
-    fds.DatasetFileManager()._client()
-    assert "hostname" not in fake.built[-1]
-    # ... but only beside FOUNDRY_HOSTNAME: the SDK cannot build its client
-    # from the discovery file alone, so the app names the host it has
-    monkeypatch.delenv("FOUNDRY_HOSTNAME")
-    monkeypatch.setenv("FOUNDRY_URL", "url.example.test")
-    assert fds.sdk_target() == ("https://url.example.test", "FOUNDRY_URL")
-    monkeypatch.delenv("FOUNDRY_URL")
-    assert fds.sdk_target() == (None, "")
-    assert "no Foundry host" in fds.unconfigured_reason()
-    monkeypatch.setenv("FOUNDRY_HOSTNAME", "stack.example.test")
-    # an explicit GEOTECH_FOUNDRY_HOST wins, its http:// scheme kept
-    monkeypatch.setenv("GEOTECH_FOUNDRY_HOST", "http://localhost:9999")
-    fds.DatasetFileManager()._client()
-    assert fake.built[-1]["hostname"] == "http://localhost:9999"
-    assert fake.built[-1]["config"][1]["scheme"] == "http"
-
-
-def test_a_rotated_token_rebuilds_the_client(monkeypatch):
-    fake = _foundry(monkeypatch)
-    fm = fds.DatasetFileManager()
-    fm._client()
-    fm._client()
-    assert len(fake.built) == 1
-    monkeypatch.setenv("FOUNDRY_TOKEN", "made-up-token-2")
-    fm._client()
-    assert len(fake.built) == 2
-    assert fake.built[-1]["auth"] == ("auth", "made-up-token-2")
-
-
-def test_sdk_missing_turns_storage_off_with_a_plain_reason(monkeypatch,
-                                                         tmp_path):
-    _foundry(monkeypatch)
-    monkeypatch.setitem(sys.modules, "foundry_sdk", None)   # import fails
-    assert not fds.sdk_installed()
+    monkeypatch.setitem(sys.modules, "foundry", None)       # import fails
+    monkeypatch.setitem(sys.modules, "foundry.transforms", None)
+    assert not fds.library_installed()
     store = sp.SharePointStore()
     assert not store.configured
     assert store.backend == "foundry" and store.label == "Foundry storage"
     reason = fds.unconfigured_reason()
-    assert "foundry-platform-sdk" in reason and "not installed" in reason
-    root = str(tmp_path)
-    _conversation(root, "T-NOSDK", "Pavement", _CREATED)
-    up = store.mirror_conversation("T-NOSDK", root=root)    # never raises
-    assert up["errors"] and up["errors"][0].startswith(
-        "Foundry storage client:")
+    assert "foundry.transforms" in reason and "Code Workspace" in reason
+    assert store.unavailable_reason == reason
     assert store.list_remote_conversations() == []
-    res = store.restore_conversation("anything_2026-01-02", root=root)
+    res = store.restore_conversation("anything_2026-01-02", root=str(tmp_path))
     assert res["status"] == "error" and "not configured" in res["errors"][0]
 
 
-def test_no_token_is_a_plain_reason_too(monkeypatch):
-    _foundry(monkeypatch, token=None)
-    assert "no Foundry token" in fds.unconfigured_reason()
-    assert not sp.SharePointStore().configured
-
-
-def test_funhouse_and_tiny_apps_are_unchanged(monkeypatch):
+def test_funhouse_and_tiny_apps_are_unchanged(monkeypatch, tmp_path):
     # the dataset setting alone, off Foundry, changes nothing
-    monkeypatch.setenv(fds.ENV_DATASET, RID)
+    monkeypatch.setenv(fds.ENV_DATASET, ALIAS)
     for deployment in (None, "tinyapps"):
         if deployment:
             monkeypatch.setenv("GEOTECH_DEPLOYMENT", deployment)
@@ -741,6 +767,7 @@ def test_funhouse_and_tiny_apps_are_unchanged(monkeypatch):
         store = sp.SharePointStore()
         assert not store.configured and not sp.configured()
         assert store.backend == "sharepoint" and store.label == "SharePoint"
+        assert store.background is False and store.unavailable_reason is None
         assert store.root() == sp.DEFAULT_ROOT
         monkeypatch.setenv(sp.ENV_SITE, "https://example.sharepoint.test/x")
         monkeypatch.setenv(sp.ENV_TOKEN, "made-up")
@@ -748,8 +775,17 @@ def test_funhouse_and_tiny_apps_are_unchanged(monkeypatch):
         assert sp.SharePointStore().backend == "sharepoint"
         monkeypatch.delenv(sp.ENV_SITE)
         monkeypatch.delenv(sp.ENV_TOKEN)
-    # a SharePoint file manager has no batch hook and is driven as before
+    # a SharePoint file manager has no batch hook and is driven as before,
+    # and a save after a turn is made at once, its summary returned
     assert sp._begin_batch(object()) is False
+
+    class _PlainStore:
+        background = False
+
+        def mirror_conversation(self, thread_id):
+            return {"thread_id": thread_id, "uploaded": 1}
+    assert sp.save_after_change(_PlainStore(), "T-P") == {
+        "thread_id": "T-P", "uploaded": 1}
 
 
 class _SidebarStore:
@@ -758,6 +794,7 @@ class _SidebarStore:
     backend = "foundry"
     label = "Foundry storage"
     last_sync = None
+    unavailable_reason = None
 
     def __init__(self, configured=True):
         self.configured = configured
@@ -811,14 +848,35 @@ def test_the_sidebar_names_foundry_storage(monkeypatch, tmp_path):
     assert not any("SharePoint" in c for c in captions), captions
 
 
+def test_the_sidebar_shows_a_save_in_the_background(monkeypatch, tmp_path):
+    class _Saving(_SidebarStore):
+        def save_state(self, thread_id):
+            return "saving"
+
+    at = _sidebar(monkeypatch, tmp_path, _Saving())
+    captions = [str(c.value) for c in at.sidebar.caption]
+    assert "Foundry storage: saving the latest turn…" in captions, captions
+    assert not any(c.startswith("Foundry storage is on") for c in captions)
+
+
+def test_the_sidebar_says_why_foundry_storage_is_off(monkeypatch, tmp_path):
+    class _Off(_SidebarStore):
+        unavailable_reason = ("made-up reason: import the dataset into the "
+                              "workspace")
+
+    at = _sidebar(monkeypatch, tmp_path, _Off(configured=False))
+    warnings = [str(w.value) for w in at.sidebar.warning]
+    assert ("Foundry storage is off: made-up reason: import the dataset "
+            "into the workspace.") in warnings, warnings
+
+
 def test_a_refused_save_shows_the_foundry_storage_warning(monkeypatch,
                                                          tmp_path):
-    """The SDK's permission refusal names no token or 401/403; the sidebar
-    still gives the scopes-and-access warning (made-up error text in the
-    SDK's shape)."""
-    refused = ('meta.json: CreateTransactionPermissionDenied: {"errorCode": '
-               '"PERMISSION_DENIED", "errorName": '
-               '"CreateTransactionPermissionDenied"}')
+    """An alias the workspace does not define names no token or 401/403;
+    the sidebar still gives the import-the-dataset warning (made-up error
+    text in the library's shape)."""
+    refused = ("4 file(s) not saved: AliasNotDefined: the workspace has no "
+               "dataset alias 'made_up_missing': import the dataset ...")
 
     class _Refused(_SidebarStore):
         def last_sync_for(self, thread_id):
@@ -827,8 +885,8 @@ def test_a_refused_save_shows_the_foundry_storage_warning(monkeypatch,
 
     at = _sidebar(monkeypatch, tmp_path, _Refused())
     warnings = [str(w.value) for w in at.sidebar.warning]
-    assert any(w.startswith("Foundry storage refused the app's token")
-               for w in warnings), warnings
+    assert any(w.startswith("Foundry storage could not reach the "
+                            "conversation dataset") for w in warnings), warnings
     assert not any("stage_sharepoint" in w for w in warnings), warnings
 
 
@@ -855,38 +913,114 @@ def test_the_filters_no_match_line_points_at_a_block_drawn(
 
 
 # ---------------------------------------------------------------------------
+# the app end to end: a turn saves; a fresh container lists and restores it
+# ---------------------------------------------------------------------------
+
+def test_a_turn_saves_and_a_fresh_container_restores_it(lib, monkeypatch,
+                                                        tmp_path):
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+    import webapp.engine_config as engine_config
+    from webapp import profiles
+    from webapp.engine_config import EngineResolution
+    from webapp.tests.test_app_smoke import _stream_ok
+
+    _foundry(monkeypatch)
+    for e in ("GEOTECH_APP_PROFILE", "DEV_IDENTITY", "GEOTECH_USER_EMAIL"):
+        monkeypatch.delenv(e, raising=False)
+    monkeypatch.setenv(profiles.PROFILE_ENV, "geotech")
+    monkeypatch.setattr(engine_config, "resolve_engine",
+                        lambda *a, **k: EngineResolution(
+                            model=object(), source="foundry",
+                            model_name="fake-model", message=""))
+    monkeypatch.setattr(core, "build_agent", lambda *a, **k: object())
+    monkeypatch.setattr(core, "stream_turn", _stream_ok)
+    app = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "app.py")
+
+    # the first container: one turn, saved after it in the background
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "first"))
+    monkeypatch.setattr(sp, "_STORE", None)
+    at = AppTest.from_file(app, default_timeout=30).run()
+    assert not at.exception, at.exception
+    lib.ds.gate = threading.Event()            # the dataset write hangs
+    at.chat_input[0].set_value("What is the made-up bearing capacity?").run()
+    assert not at.exception, at.exception
+    tid = at.session_state["thread_id"]
+    # the turn ended, and the page drew, while the save was still open
+    assert [e["role"] for e in at.session_state["transcript"]] == [
+        "user", "assistant"]
+    assert lib.ds.files_ == {}
+    captions = [str(c.value) for c in at.sidebar.caption]
+    assert any(c.startswith("Foundry storage: ") and "saved" in c
+               or c == "Foundry storage: saving the latest turn…"
+               for c in captions), captions
+    lib.ds.gate.set()
+    first_store = sp.get_store()
+    assert first_store.background and first_store.flush(10)
+    assert first_store.last_sync_for(tid)["errors"] == []
+    saved = {p for p in lib.ds.files_ if p.startswith(f"{TOP}/conversations/")}
+    folder = next(p for p in saved if p.endswith("/transcript.jsonl")) \
+        .split("/")[2]
+    assert lib.ds.count("upload_directory") == 1 and lib.leftovers() == []
+
+    # a fresh container: an empty disk, a new store, the same dataset
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "rebuilt"))
+    monkeypatch.setattr(sp, "_STORE", None)
+    at2 = AppTest.from_file(app, default_timeout=30).run()
+    assert not at2.exception, at2.exception
+    assert not [b for b in at2.sidebar.button if str(b.key) == f"open_{tid}"]
+    restore = next(b for b in at2.sidebar.button
+                   if str(b.key) == f"sp_restore_{folder}")
+    restore.click().run()
+    assert not at2.exception, at2.exception
+    assert at2.session_state["thread_id"] == tid
+    back = core.load_transcript(tid)
+    assert [e["role"] for e in back] == ["user", "assistant"]
+    assert back[1]["text"] == "Hello world."
+
+
+# ---------------------------------------------------------------------------
 # Connection diagnostics
 # ---------------------------------------------------------------------------
 
-def test_the_diagnostics_line(monkeypatch):
+def test_the_diagnostics_line(lib, monkeypatch):
     from webapp import diagnostics as diag
     monkeypatch.setenv("GEOTECH_DEPLOYMENT", "foundry")
     c = diag._conversation_storage_check()
     assert c["status"] == diag.SKIP and fds.ENV_DATASET in c["detail"]
     assert "lost when it is rebuilt" in c["detail"]
 
-    ds = FakeDataset()
-    ds.files = {"GeotechStaffEngineer/conversations/A/meta.json": b"{}"}
-    _foundry(monkeypatch, ds)
+    lib.ds.files_ = {f"{TOP}/conversations/A/meta.json": b"{}"}
+    _foundry(monkeypatch)
     c = diag._conversation_storage_check()
     assert c["status"] == diag.PASS, c
-    assert RID in c["detail"] and "FOUNDRY_HOSTNAME" in c["detail"]
-    assert "made-up-token" not in c["detail"]
-    assert ds.count("create") == 0                  # reads, never writes
+    assert ALIAS in c["detail"] and "1 of them the app's" in c["detail"]
+    assert not lib.ds.uploads()                     # reads, never writes
 
-    monkeypatch.setitem(sys.modules, "foundry_sdk", None)
+    _foundry(monkeypatch, "ri.foundry.main.dataset.made-up-0000")
     c = diag._conversation_storage_check()
-    assert c["status"] == diag.FAIL and "foundry-platform-sdk" in c["detail"]
+    assert c["status"] == diag.FAIL and "resource ID" in c["detail"]
+    assert "Data panel, read and write" in c["detail"]
+
+    _foundry(monkeypatch, "made_up_missing")
+    c = diag._conversation_storage_check()
+    assert c["status"] == diag.FAIL and "AliasNotDefined" in c["detail"]
+    assert "Data panel, read and write" in c["detail"]
+
+    _foundry(monkeypatch)
+    monkeypatch.setitem(sys.modules, "foundry.transforms", None)
+    c = diag._conversation_storage_check()
+    assert c["status"] == diag.FAIL and "foundry.transforms" in c["detail"]
 
 
 # ---------------------------------------------------------------------------
 # report ingest's durable mirror (RI-203) takes the same file manager
 # ---------------------------------------------------------------------------
 
-def test_report_ingests_mirror_fits_unchanged(tmp_path):
+def test_report_ingests_mirror_fits_unchanged(lib, tmp_path):
     from funhouse_agent.run_mirror import Mirror, file_manager_of
-    ds = FakeDataset()
-    fm = _fm(ds)
+    fm = _fm(lib)
     out = tmp_path / "run_out"
     (out / "runs").mkdir(parents=True)
     (out / "summary.json").write_text('{"n": 2}', encoding="utf-8")
@@ -894,7 +1028,8 @@ def test_report_ingests_mirror_fits_unchanged(tmp_path):
     mirror = Mirror(sharepoint=fm)
     up = mirror.mirror_dir(out, mirror.remote_for(out.name))
     assert up["uploaded"] == 2 and not up["errors"], up
-    assert "GeotechStaffEngineer/report_ingest/run_out/runs/R01.json" in ds.files
+    assert f"{TOP}/report_ingest/run_out/runs/R01.json" in lib.ds.files_
+    assert lib.ds.count("upload_file") == 2          # no batch: one each
     back = tmp_path / "wiped"
     res = mirror.restore_dir(mirror.remote_for(out.name), back)
     assert res["downloaded"] == 2 and not res["errors"], res

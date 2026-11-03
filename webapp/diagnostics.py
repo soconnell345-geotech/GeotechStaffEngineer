@@ -223,12 +223,13 @@ def _tls_check() -> dict:
 
 def _conversation_storage_check() -> dict:
     """Foundry: where conversations are kept (INF-38). The conversation
-    dataset when set, read once (the first listing page; nothing is
+    dataset when set, read once (one listing, about 3-4 s; nothing is
     written, the first turn's save shows that); otherwise why it is off,
-    plainly."""
+    plainly (a resource ID where the workspace alias belongs says how to
+    import the dataset)."""
     from webapp import foundry_dataset_store as fds
     name = "conversation storage"
-    if not fds.dataset_rid():
+    if not fds.dataset_alias():
         return _check(name, SKIP, f"{fds.unconfigured_reason()}. To keep "
                       "them, see docs/FOUNDRY.md, 'Conversations that "
                       "survive a rebuild'; meanwhile 'Download this "
