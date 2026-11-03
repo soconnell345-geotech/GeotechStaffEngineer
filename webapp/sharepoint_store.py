@@ -54,6 +54,21 @@ Configuration (env vars; the launcher subprocess inherits the notebook env):
         precedence over every path below — a deployment that has them needs
         neither the Funhouse SDK nor GEOTECH_SHAREPOINT_SITE_URL.
 
+    GEOTECH_FOUNDRY_CONVERSATION_DATASET (+ optional ..._BRANCH)
+        Foundry (INF-38): on a Foundry deployment with this set, the
+        conversations go to that Foundry dataset of raw files instead, through
+        :class:`webapp.foundry_dataset_store.DatasetFileManager`; the sidebar
+        names it "Foundry storage". The module-level :func:`configured`, the
+        gate of the agent's SharePoint tools, is then False: those tools never
+        run on the dataset.
+
+A file manager may offer a batch hook, ``begin_batch()`` and
+``end_batch(commit=True)``: the mirror then sends all of one sync's files
+between the two (the dataset's one transaction per save), and records them
+as mirrored only once ``end_batch`` succeeds; a restore runs between them
+too, so its listings are fetched once. SharePoint's file managers have no
+such hook and are driven exactly as before.
+
 Auth notes (from the Funhouse SDK source, researched 2026-07-30): the
 ``office365`` backend authenticates with plain ``client_id``/``client_secret``
 strings (ACS app-only) — the SharePoint analog of the Prompter NTLM strings,
@@ -230,8 +245,23 @@ def _graph_configured() -> bool:
         return False
 
 
+def _foundry_selected() -> bool:
+    """Foundry with the conversation dataset set (INF-38)."""
+    try:
+        from webapp import foundry_dataset_store
+        return foundry_dataset_store.selected()
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
 def configured() -> bool:
-    """True when the env carries enough to build a SharePoint client."""
+    """True when the env carries enough to build a SharePoint client.
+
+    False whenever the store's file manager is the Foundry dataset
+    (:func:`_foundry_selected`): this is the gate of the agent's SharePoint
+    tools and the reference-PDF fetch, which must not run on it."""
+    if _foundry_selected():
+        return False
     if _graph_configured():
         return True
     if not os.environ.get(ENV_SITE, "").strip():
@@ -253,7 +283,17 @@ def _build_file_manager():
     The Tiny Apps app-registration settings (``GRAPH_*`` +
     ``SHAREPOINT_SITE_URL``) win over all of these: they build the SDK-free
     :class:`webapp.graph_sharepoint.GraphFileManager`.
+
+    On Foundry with the conversation dataset set, the Foundry dataset's file
+    manager is built instead (INF-38); it raises with the plain reason when
+    something it needs is missing.
     """
+    if _foundry_selected():
+        from webapp import foundry_dataset_store
+        reason = foundry_dataset_store.unconfigured_reason()
+        if reason:
+            raise RuntimeError(reason)
+        return foundry_dataset_store.DatasetFileManager()
     if _graph_configured():
         from webapp.graph_sharepoint import GraphFileManager
         return GraphFileManager()
@@ -393,7 +433,26 @@ class SharePointStore:
 
     @property
     def configured(self) -> bool:
-        return self._fm is not None or configured()
+        if self._fm is not None:
+            return True
+        if _foundry_selected():
+            from webapp import foundry_dataset_store
+            return foundry_dataset_store.configured()
+        return configured()
+
+    @property
+    def backend(self) -> str:
+        """``"foundry"`` when the conversations go to a Foundry dataset
+        (INF-38), else ``"sharepoint"``."""
+        if self._fm is not None:
+            return ("foundry" if getattr(self._fm, "BACKEND", "") == "foundry"
+                    else "sharepoint")
+        return "foundry" if _foundry_selected() else "sharepoint"
+
+    @property
+    def label(self) -> str:
+        """What the sidebar calls the permanent storage."""
+        return "Foundry storage" if self.backend == "foundry" else "SharePoint"
 
     def _file_manager(self):
         if self._fm is None:
@@ -406,7 +465,13 @@ class SharePointStore:
         return self._file_manager()
 
     def root(self) -> str:
-        return (os.environ.get(ENV_ROOT, "").strip() or DEFAULT_ROOT).strip("/")
+        """The base folder: ``GEOTECH_SHAREPOINT_ROOT``, else the backend's
+        own default (the Foundry dataset's has no document library)."""
+        default = DEFAULT_ROOT
+        if self.backend == "foundry":
+            from webapp import foundry_dataset_store
+            default = foundry_dataset_store.DEFAULT_ROOT
+        return (os.environ.get(ENV_ROOT, "").strip() or default).strip("/")
 
     def folder_name(self, thread_id: str, root: Optional[str] = None) -> str:
         """This conversation's folder NAME (see :func:`conversation_folder`).
@@ -562,7 +627,7 @@ class SharePointStore:
             fm = self._file_manager()
         except Exception as exc:
             summary["errors"].append(
-                f"SharePoint client: {type(exc).__name__}: {exc}")
+                f"{self.label} client: {type(exc).__name__}: {exc}")
             return
         conv_dir = core.conversation_dir(thread_id, root)
         if not os.path.isdir(conv_dir):
@@ -600,6 +665,43 @@ class SharePointStore:
                 except Exception:                      # noqa: BLE001
                     pass
 
+        # A file manager with the batch hook (the Foundry dataset) gets this
+        # sync's files in ONE save; they count as mirrored only once it is
+        # committed, so a failed commit leaves them to be sent next time.
+        batched = _begin_batch(fm)
+        sent = {} if batched else files
+        try:
+            self._upload_changed(fm, conv_dir, remote_base, files, sent,
+                                 summary)
+        except BaseException:
+            if batched:
+                _end_batch(fm, commit=False)
+            raise
+        if batched:
+            try:
+                fm.end_batch(commit=True)
+                files.update(sent)
+            except Exception as exc:
+                summary["uploaded"] -= len(sent)
+                summary["errors"].append(
+                    f"{len(sent)} file(s) not saved: "
+                    f"{type(exc).__name__}: {exc}")
+
+        _save_manifest(conv_dir, files, remote_base)
+        if thread_id not in self._folder_urls:
+            try:
+                self._folder_urls[thread_id] = fix_web_url(
+                    fm.get_web_url(remote_base))
+            except Exception:
+                pass
+        summary["web_url"] = self._folder_urls.get(thread_id)
+
+    def _upload_changed(self, fm, conv_dir: str, remote_base: str,
+                        files: Dict[str, List], sent: Dict[str, List],
+                        summary: dict) -> None:
+        """Upload each file whose stamp differs from ``files`` (the
+        manifest), recording what went up in ``sent`` (the manifest itself
+        unless the sync is batched)."""
         for dirpath, _dirnames, filenames in os.walk(conv_dir):
             rel_dir = os.path.relpath(dirpath, conv_dir).replace(os.sep, "/")
             # The working folder's tool scratch (files/.scratch, any dot-
@@ -629,20 +731,11 @@ class SharePointStore:
                     self._ensure_folder(fm, remote_dir)
                     fm.upload_file(local, f"{remote_dir}/{name}",
                                    overwrite=True)
-                    files[rel] = stamp
+                    sent[rel] = stamp
                     summary["uploaded"] += 1
                 except Exception as exc:
                     summary["errors"].append(
                         f"{rel}: {type(exc).__name__}: {exc}")
-
-        _save_manifest(conv_dir, files, remote_base)
-        if thread_id not in self._folder_urls:
-            try:
-                self._folder_urls[thread_id] = fix_web_url(
-                    fm.get_web_url(remote_base))
-            except Exception:
-                pass
-        summary["web_url"] = self._folder_urls.get(thread_id)
 
     # -- the mirror, backwards: list + restore ------------------------------
 
@@ -718,9 +811,22 @@ class SharePointStore:
         from webapp import core
 
         if not self.configured:
-            summary["errors"].append("SharePoint is not configured")
+            summary["errors"].append(f"{self.label} is not configured")
             return
         fm = self.file_manager()
+        # In a batch the Foundry dataset lists the folder once for the walk
+        # and the downloads, not once per subfolder (INF-38).
+        batched = _begin_batch(fm)
+        try:
+            self._restore_from(fm, folder_name, root, overwrite, summary,
+                               owner, page)
+        finally:
+            if batched:
+                _end_batch(fm, commit=False)
+
+    def _restore_from(self, fm, folder_name: str, root, overwrite: bool,
+                      summary: dict, owner: Optional[str] = None,
+                      page: Optional[str] = None) -> None:
         name = str(folder_name or "").strip().strip("/")
         if not name or "/" in name or name in (".", ".."):
             summary["errors"].append(f"not a conversation folder: {name!r}")
@@ -770,6 +876,7 @@ class SharePointStore:
             return
 
         stamps: Dict[str, List] = {}
+        refused: List[str] = []
         for rel, remote_path in files:
             if rel == MANIFEST_NAME:
                 continue                     # never restore a stale manifest
@@ -777,7 +884,10 @@ class SharePointStore:
                 # a turn checkpoint mirrored mid-turn would come back as a
                 # fake "interrupted" turn (live smoke wave 2a, B2)
                 continue
-            local = os.path.join(conv_dir, *rel.split("/"))
+            local = _local_path_inside(conv_dir, rel)
+            if local is None:
+                refused.append(rel)
+                continue
             os.makedirs(os.path.dirname(local), exist_ok=True)
             try:
                 fm.download_file(remote_path, local_path=local,
@@ -787,6 +897,12 @@ class SharePointStore:
             except Exception as exc:
                 summary["errors"].append(
                     f"{rel}: {type(exc).__name__}: {exc}")
+        if refused:
+            summary["errors"].append(
+                f"{len(refused)} file(s) not restored, their paths lead "
+                f"outside the conversation's folder: "
+                + ", ".join(repr(r) for r in refused[:5])
+                + (" …" if len(refused) > 5 else ""))
         _save_manifest(conv_dir, stamps, remote_base)
         summary["status"] = "restored" if summary["downloaded"] else "error"
         if summary["downloaded"]:
@@ -843,6 +959,27 @@ class SharePointStore:
 _STORE: Optional[SharePointStore] = None
 
 
+def _begin_batch(fm: Any) -> bool:
+    """Start the file manager's batch when it offers the hook
+    (``begin_batch`` and ``end_batch``); True when one was started."""
+    begin = getattr(fm, "begin_batch", None)
+    if not (callable(begin) and callable(getattr(fm, "end_batch", None))):
+        return False
+    try:
+        begin()
+    except Exception:                                  # noqa: BLE001
+        return False
+    return True
+
+
+def _end_batch(fm: Any, commit: bool) -> None:
+    """End a batch without letting its failure out (the abort paths)."""
+    try:
+        fm.end_batch(commit=commit)
+    except Exception:                                  # noqa: BLE001
+        pass
+
+
 def _is_folder(entry: dict) -> bool:
     """Best-effort folder test over the Funhouse file-manager entry shape."""
     if not isinstance(entry, dict):
@@ -889,6 +1026,26 @@ def _trailing_date(name: str) -> str:
     """``YYYY-MM-DD`` suffix of a mirrored folder name, else ``""``."""
     m = re.search(r"(\d{4}-\d{2}-\d{2})$", name or "")
     return m.group(1) if m else ""
+
+
+def _local_path_inside(conv_dir: str, rel: str) -> Optional[str]:
+    """Where remote file ``rel`` goes under ``conv_dir``, or ``None`` when
+    its path is absolute, holds a ``..`` segment, or resolves outside the
+    folder. A SharePoint library cannot hold such a name; a Foundry
+    dataset's file paths are free text (INF-38), so a restore checks."""
+    text = str(rel or "").replace("\\", "/")
+    parts = text.split("/")
+    if not text or text.startswith("/") or ".." in parts \
+            or os.path.isabs(text) or re.match(r"^[A-Za-z]:", text):
+        return None
+    local = os.path.join(conv_dir, *parts)
+    root = os.path.realpath(conv_dir)
+    try:
+        if os.path.commonpath([root, os.path.realpath(local)]) != root:
+            return None
+    except ValueError:                                 # another drive
+        return None
+    return local
 
 
 def _walk_remote(fm, base: str, _depth: int = 0) -> List[tuple]:

@@ -466,25 +466,62 @@ _HAS_BUTTON_ICON = "icon" in __import__("inspect").signature(
     st.button).parameters
 
 
-def _sp_auth_problem(summary) -> bool:
+def _sp_auth_problem(summary, foundry: bool = False) -> bool:
     """True when a sync/restore summary's errors smell like an expired or
-    rejected token (401/403/unauthorized/token/auth)."""
+    rejected token (401/403/unauthorized/token/auth). On Foundry storage
+    also the platform SDK's refusals, which carry none of those words
+    (``CreateTransactionPermissionDenied``, ``"errorCode":
+    "PERMISSION_DENIED"``)."""
     try:
         text = " ".join(str(e) for e in (summary or {}).get("errors") or [])
     except Exception:                                  # noqa: BLE001
         return False
     low = text.lower()
-    return any(k in low for k in ("401", "403", "unauthor", "token",
-                                  "authenticat", "forbidden"))
+    keys = ("401", "403", "unauthor", "token", "authenticat", "forbidden")
+    if foundry:
+        keys += ("permissiondenied", "permission_denied")
+    return any(k in low for k in keys)
 
 
 def _sp_configured() -> bool:
-    """True when the SharePoint mirror/tools are configured (best-effort)."""
+    """True when the SharePoint mirror/tools are configured (best-effort);
+    False when the permanent storage is the Foundry dataset (INF-38), which
+    the agent cannot fetch files from."""
     try:
         from webapp import sharepoint_store
-        return bool(sharepoint_store.get_store().configured)
+        store = sharepoint_store.get_store()
+        return bool(store.configured) and \
+            getattr(store, "backend", "sharepoint") == "sharepoint"
     except Exception:                                  # noqa: BLE001
         return False
+
+
+def _no_match_hint() -> str:
+    """The conversation filter's line when nothing here matches: it points
+    at the block below that can bring an older one back -- Permanent
+    storage (SharePoint, or Foundry storage, INF-38) when it is drawn, else
+    the zip restore (INF-45), else nothing (Foundry wiring audit,
+    2026-11-03: the old line pointed at a block Foundry did not draw)."""
+    head = "No saved conversation matches"
+    try:
+        stored = bool(sharepoint_store.get_store().configured)
+    except Exception:                                  # noqa: BLE001
+        stored = False
+    if stored:
+        return (f"{head} — search **Find a past conversation** under "
+                "Permanent storage below to restore an older one.")
+    if _PROFILE.conversation_download:
+        return (f"{head} — **Restore a downloaded conversation** below "
+                "brings one back from its zip.")
+    return f"{head}."
+
+
+#: The sidebar's warning when Foundry storage refuses the app's token.
+_FOUNDRY_STORAGE_AUTH = (
+    "Foundry storage refused the app's token. The token needs the datasets "
+    "read and write scopes, and the app's account needs edit access to the "
+    "conversation dataset (docs/FOUNDRY.md, 'Conversations that survive a "
+    "rebuild'). Then Sync now.")
 
 
 def _row_action(icon: str, *, key: str, help: str) -> bool:
@@ -534,8 +571,7 @@ with st.sidebar:
         _shown = [m for m in _all_convs
                   if _filter in str(m.get("title") or "").lower()]
         if not _shown:
-            st.caption("No saved conversation matches — try Permanent "
-                       "storage below to restore an older one.")
+            st.caption(_no_match_hint())
     else:
         _shown = _all_convs[:50]
     for _m in _shown:
@@ -1070,10 +1106,15 @@ with st.sidebar:
                        "It travels with the conversation record.")
 
     # Permanent storage (SharePoint mirror) — rendered only when configured
-    # via the GEOTECH_SHAREPOINT_* env vars. The mirror runs after each turn;
-    # this block shows the result and offers a manual sync.
+    # via the GEOTECH_SHAREPOINT_* env vars, or on Foundry the conversation
+    # dataset (GEOTECH_FOUNDRY_CONVERSATION_DATASET, INF-38: "Foundry
+    # storage"). The mirror runs after each turn; this block shows the
+    # result and offers a manual sync.
     _sp = sharepoint_store.get_store()
     if _sp.configured:
+        # getattr: a stand-in store (tests, the live smoke) may predate them
+        _sp_foundry = getattr(_sp, "backend", "sharepoint") == "foundry"
+        _sp_label = getattr(_sp, "label", "SharePoint")
         st.divider()
         st.subheader("Permanent storage")
         # This conversation's own mirror record only -- never the store-wide
@@ -1083,7 +1124,7 @@ with st.sidebar:
             _sp, ss.thread_id, ss.get("sp_sync"))
         if _sync:
             _n_err = len(_sync.get("errors") or [])
-            _line = (f"SharePoint: {_sync['uploaded']} uploaded, "
+            _line = (f"{_sp_label}: {_sync['uploaded']} uploaded, "
                      f"{_sync['skipped']} up-to-date"
                      + (f", {_n_err} failed" if _n_err else "")
                      + f" · {_sync['duration_s']}s")
@@ -1101,14 +1142,18 @@ with st.sidebar:
                            "copy and a MOVED.txt pointing here.")
             if _sync.get("web_url"):
                 st.markdown(f"[Open session folder]({_sync['web_url']})")
+        elif _sp_foundry:
+            st.caption("Foundry storage is on — this conversation's files "
+                       "are saved to the Foundry dataset after each turn.")
         else:
             st.caption("SharePoint mirroring is on — this conversation's "
                        "files sync after each turn.")
         if st.button("Sync now", key=f"spsync_{ss.thread_id}"):
             ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
             st.rerun()
-        if _sp_auth_problem(_sync):
-            st.warning("SharePoint rejected the app's token — it has probably "
+        if _sp_auth_problem(_sync, foundry=_sp_foundry):
+            st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
+                       "SharePoint rejected the app's token — it has probably "
                        "expired (the refresher lives in the launching "
                        "notebook and stops when that notebook clears). "
                        "Re-run `stage_sharepoint(...)` in the notebook, "
@@ -1164,7 +1209,7 @@ with st.sidebar:
             _hits = [r for r in _remote
                      if not _q or _q in r["name"].lower()]
             if not _remote:
-                st.caption("Nothing mirrored yet (or SharePoint could not "
+                st.caption(f"Nothing mirrored yet (or {_sp_label} could not "
                            "be listed — check the token).")
             else:
                 st.caption(f"{len(_hits)} of {len(_remote)} mirrored "
@@ -1204,8 +1249,9 @@ with st.sidebar:
                 else:
                     st.error("Restore failed: "
                              + "; ".join(_rr.get("errors") or ["unknown"]))
-                if _sp_auth_problem(_rr):
-                    st.warning("Looks like an expired token — re-run "
+                if _sp_auth_problem(_rr, foundry=_sp_foundry):
+                    st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
+                               "Looks like an expired token — re-run "
                                "`stage_sharepoint(...)` in the notebook.")
 
     # Restore a downloaded conversation (INF-45): the zip from "Download
