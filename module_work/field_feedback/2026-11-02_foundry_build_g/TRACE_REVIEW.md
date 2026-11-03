@@ -208,10 +208,10 @@ The FDE's glue (`code/`) was read, never run. Everything was re-scored with toda
 - **Labels:** A 0.978 with 15 harmful, against B 0.967 with 24.
   - The 15 in both arms are pp714-728, which the hand labels call calculation and both arms read as a laboratory chemistry report (owner question 5).
   - B split 496 pages, mostly bound pages (rules `appended_report` against vision), and leaves 492 `label_disagreement` entries in the parent's QA. A split 12.
-- **Calc** (no truth): A cut the parent's printouts at printout boundaries (14 items, RI-176); B split long printouts into page runs (20). In the bound report A has 30 items plus the failed window, B 23.
+- **Calc** (no truth): A cut the parent's printouts at printout boundaries (14 items, RI-176); B split long printouts into page runs (20). In the bound report A has 30 items, B 23. A's failed window was read on resume (section 4).
 - **Spend:**
-  - A: 908 calls, 9.63 M in, 6,954 s.
-  - B: 522 calls, 8.56 M in, 9,382 s.
+  - A: 908 calls, 9.63 M in, 6,954 s; with the resume, 910 calls and 9.72 M in.
+  - B: 522 calls, 8.56 M in, 9,382 s; with the resume, 524 calls and 8.60 M in.
   - A's readers took 3.9 M against B's 7.7 M.
   - 13 describer answers arrived empty and were recovered by the engine's text fallback; all 729 pages are described.
 
@@ -239,13 +239,48 @@ The FDE's glue (`code/`) was read, never run. Everything was re-scored with toda
   - Build f kept no raw answer, so RI-192 assumed JSON text. `_json_text` (engine.py 3325) reads only text that starts with `[` or `{`.
   - Build g's kept answers show the markup instead, which RI-192 does not read.
 - **The FDE's stop was right** (§5 point 4: the same error failed items in two jobs). A resume would very likely recover both items: A in 2 Sonnet calls (about 98k in), B in 1 (about 12k). But a wave of about 2,800 calls should expect about 7 leaks and about 2 failed items, so RI-195 belongs before the next wave.
-- **After the hand-back, the FDE ran the resume-once (2026-11-02, reported in a note; not yet in a hand-back):**
-  - **Both items recovered:** item_errors 0 and failures "ingest none" on both jobs; 0 refusals, retries or give-ups.
-  - A_R21: 2 Sonnet calls, 98k in and 3k out, as estimated. B_R21: 2 Sonnet calls, 38k in and 5k out.
+- **After the hand-back, the FDE ran the resume-once (2026-11-02). Its hand-back, read in full on 2026-11-03:**
+  - **Both items recovered, and nothing else was read again.**
+    - item_errors 0 and failures "ingest none" on both jobs; 0 refusals, retries or give-ups.
+    - Triage, the labels, the bound identity and every saved item came from the folder: A 159 of 160 items, B 227 of 228. B's bound record took 145 of 145 items from the folder, with no call.
+  - **A_R21: 2 Sonnet calls, 98,131 in and 3,012 out, as estimated.**
+    - The calls were the printout's two windows again, the same requests as calls 888 and 889 (63,088 and 35,043 in). The printout had no item file, so window 1 was read again too. Both answered.
+    - The record's calculation now has 12 inputs and 11 results, against 10 and 6 from window 1 alone. There is no calc truth, so each value was checked against the page.
+    - Every value matches the page. Two results cite the page before the one that prints them, and placement keeps them at confidence 0.6.
+    - Window 1's second answer differs a little from its first: two mid-table results fewer, by chance.
+  - **B_R21: 2 Sonnet calls, 38,241 in and 4,905 out, not the 1 estimated.**
+    - The first call is the read, the same request as call 222 (12,006 in). The second is the follow-up call today's log reader makes on every log (118 calls for 59 logs).
+    - The pit is now in the record, matching the page: its header, 2 layers, 1 sample and no water. A read the page with the same counts.
+    - The narrative count check no longer names a pit with no log, so `count_mismatch` entries go from 4 to 3. DIGGS stays valid and equal.
+    - B's parent now has 59 investigations (45 test pits). A has 58: it still lacks p45's photo-only page (RI-197 (d), merged since).
+  - **No score moves.** Re-scored with today's scorers and truth:
+    - A: logs 20/22, test pit 11/11, narrative 32/32.
+    - B: logs 16/22, test pit 10/11, narrative 31/32.
+    - Labels are as before. B's test-pit miss is on the truth pit (p43), not on p81. Sections 3.3 and 8 stand.
+  - **The totals agree** across run.json (`cost`, `earlier_attempts`, `all_attempts`), results.json, RESULTS.md, the meter CSV and the build log.
+    - A: 910 calls, 9.72 M in, 1.14 M out over both attempts.
+    - B: 524 calls, 8.60 M in, 1.46 M out.
+    - RESULTS.md now shows R21. Before, it left the failed report out (section 9).
+  - **A's restored folder is consistent with B's normal save.**
+    - Its ingest folder equals its durable copy, file for file (909 files).
+    - Against the first hand-back, the only new files are the recovered item and the outputs it changes.
+    - Its mirror manifest lists every file except the last build's two log files, and two glue logs were rewritten after the last mirror. B's folder has the same two gaps.
+    - The one difference: its build log lacks the three store fields, because the snapshot was taken before the glue wrote them.
+  - **One wrong record line (candidate fix; it changes a saved summary).**
+    - After a resume, the record's `document.resumed` and the summary's "the whole report came to" line leave cache writes out of the saved steps' input. A reader's saved cost has no `cache_write_tokens`, and `graph._Spend.reuse` adds up only what the saved cost holds.
+    - A_R21's summary says 908 calls and 2.31 M in, where the run paid for 910 calls and 9.72 M. B_R21's says 3.75 M against 8.60 M.
+    - The fix: save each step's cache writes, or take the whole report's figure from `all_attempts`.
   - This confirms the cause and RI-187's resume.
   - **The glue, not the package:**
-    - The first resume attempt made no model call: the glue read the old run file before loading build g's package. The FDE fixed its glue.
+    - The first resume attempt made no model call: the glue read the old run file before loading build g's package. It stopped with a setup error before `attempts.json` was written, so it did not use up the resume. The FDE fixed its glue.
     - A_R21's job read to the end, then timed out writing its folder back. Its job output kept the old state. The store's last snapshot, taken after the read, held the finished folder, and a no-model step unpacked it. This is RI-203's case.
+    - The FDE's note adds one constraint for RI-203: one transform cannot read and write the same store. A restore at job start therefore runs as its own step first, or each job gets a second store.
+  - **Noted, not fixed:**
+    - Window 1's own partial entry, that it was not given the pages only window 2 carries, stays in A's record. The two-window fold keeps each window's unread list, as the first attempt did.
+    - The resumed run.json's top-level `served_by` is null: that attempt made no Opus call.
+    - A resume rewrites run.json with its own per-call rows only, and `earlier_attempts` keeps totals. The refused calls' raw answers (`answer_args`) now survive only in the first hand-back.
+    - The mirror manifest keeps a dead entry for each earlier build's temporary folder.
+    - B's notes on the pit's depths say "the number is the one printed on the sheet" for depths read off the drawn scale (today's reader, off by default).
 
 ---
 
@@ -318,7 +353,7 @@ Each changes a saved report's output or what a live run returns.
 - labels 0.983 with 21 harmful (all of them hand-label questions) against 0.962 with 40;
 - calc level (32/37 against 33/37, where B's edge is the scorer).
 
-**Failures:** one in each arm, from the same cause, which hits both arms.
+**Failures:** one in each arm, from the same cause, which hits both arms. The resume-once recovered both with 2 Sonnet calls each, and no score moved (section 4).
 
 **Cost:**
 - A's readers use 45% fewer tokens in than today's, on Opus and Sonnet.
