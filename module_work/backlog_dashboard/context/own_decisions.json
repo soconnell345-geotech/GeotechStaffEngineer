@@ -2915,5 +2915,31 @@
       "BACKLOG.md OWN-124",
       "module_work/field_feedback/2026-11-02_foundry_build_g/TRACE_REVIEW.md §10"
     ]
+  },
+  "OWN-125": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Soil corrosion: when the soil is corrosive to buried metal but not to concrete, should the answer be \"yes\" or stay \"mixed\"?",
+    "why": "It settles the last part of the soil-corrosion rule in both readers. Your answer of 2026-11-03 (\"if any samples come back corrosive, it should be yes\") is now the rule across samples and layers; the 2026-10-29 ruling kept \"mixed\" for a material split.",
+    "background": "Both readers now answer \"yes\" when any sample or layer tests corrosive (RI-204). \"mixed\" is left only for soil corrosive to some materials and not others, for example high chloride (attacks steel) with low sulfate (concrete fine).",
+    "options": [
+      {
+        "label": "Keep \"mixed\" for a material split",
+        "effect": "Metal-only or concrete-only corrosivity answers \"mixed - <basis>\"; one corrosive sample of any kind among clean ones answers \"yes\"."
+      },
+      {
+        "label": "\"yes\" whenever anything is attacked",
+        "effect": "\"mixed\" drops out of the answers; any corrosivity to any material answers \"yes - <basis>\"."
+      }
+    ],
+    "recommendation": "Keep \"mixed\" for the material split: it tells the reader which materials need protection, and it is your 2026-10-29 ruling; your 2026-11-03 answer was about samples and layers.",
+    "if_no_answer": "\"mixed\" stays for a material split; the readers answer as now.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-125",
+      "BACKLOG_DONE.md RI-204",
+      "module_work/ri204/CHECK.md"
+    ]
   }
 }
