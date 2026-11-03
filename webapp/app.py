@@ -469,9 +469,9 @@ _HAS_BUTTON_ICON = "icon" in __import__("inspect").signature(
 def _sp_auth_problem(summary, foundry: bool = False) -> bool:
     """True when a sync/restore summary's errors smell like an expired or
     rejected token (401/403/unauthorized/token/auth). On Foundry storage
-    also the platform SDK's refusals, which carry none of those words
-    (``CreateTransactionPermissionDenied``, ``"errorCode":
-    "PERMISSION_DENIED"``)."""
+    also a refusal that carries none of those words (``PermissionDenied``,
+    ``"errorCode": "PERMISSION_DENIED"``) and an alias the workspace does
+    not define (``AliasNotDefined``)."""
     try:
         text = " ".join(str(e) for e in (summary or {}).get("errors") or [])
     except Exception:                                  # noqa: BLE001
@@ -479,7 +479,7 @@ def _sp_auth_problem(summary, foundry: bool = False) -> bool:
     low = text.lower()
     keys = ("401", "403", "unauthor", "token", "authenticat", "forbidden")
     if foundry:
-        keys += ("permissiondenied", "permission_denied")
+        keys += ("permissiondenied", "permission_denied", "aliasnotdefined")
     return any(k in low for k in keys)
 
 
@@ -516,12 +516,18 @@ def _no_match_hint() -> str:
     return f"{head}."
 
 
-#: The sidebar's warning when Foundry storage refuses the app's token.
+#: The sidebar's warning when Foundry storage refuses the app or does not
+#: know the dataset's alias.
 _FOUNDRY_STORAGE_AUTH = (
-    "Foundry storage refused the app's token. The token needs the datasets "
-    "read and write scopes, and the app's account needs edit access to the "
-    "conversation dataset (docs/FOUNDRY.md, 'Conversations that survive a "
+    "Foundry storage could not reach the conversation dataset. Import it "
+    "into the workspace (Data panel, read and write), push, and set "
+    "GEOTECH_FOUNDRY_CONVERSATION_DATASET to its alias; the publisher needs "
+    "edit access to it (docs/FOUNDRY.md, 'Conversations that survive a "
     "rebuild'). Then Sync now.")
+
+#: The head of the sidebar's warning on Foundry when no dataset keeps the
+#: conversations; the store's ``not_kept_reason`` follows it.
+_NOT_KEPT_HEAD = "**Conversations are NOT kept across restarts.** "
 
 
 def _row_action(icon: str, *, key: str, help: str) -> bool:
@@ -1091,11 +1097,15 @@ with st.sidebar:
                                  "model": ss.get("model")})
                     ss.feedback_saved = _entry["iso"]
                     # Mirror now (incremental) so the note reaches permanent
-                    # storage even if this is the last thing done today.
+                    # storage even if this is the last thing done today (on
+                    # Foundry in the background, as after a turn).
                     try:
                         _sp0 = sharepoint_store.get_store()
                         if _sp0.configured:
-                            ss.sp_sync = _sp0.mirror_conversation(ss.thread_id)
+                            _fb_sync = sharepoint_store.save_after_change(
+                                _sp0, ss.thread_id)
+                            if _fb_sync is not None:
+                                ss.sp_sync = _fb_sync
                     except Exception:                  # noqa: BLE001
                         pass
                 except Exception as exc:               # noqa: BLE001
@@ -1108,20 +1118,52 @@ with st.sidebar:
     # Permanent storage (SharePoint mirror) — rendered only when configured
     # via the GEOTECH_SHAREPOINT_* env vars, or on Foundry the conversation
     # dataset (GEOTECH_FOUNDRY_CONVERSATION_DATASET, INF-38: "Foundry
-    # storage"). The mirror runs after each turn; this block shows the
-    # result and offers a manual sync.
+    # storage"). The mirror runs after each turn (on Foundry in the
+    # background); this block shows the result and offers a manual sync.
     _sp = sharepoint_store.get_store()
+    # On Foundry, why conversations are NOT kept across restarts, when they
+    # are not (no alias set, a resource ID in its place, the library
+    # missing, an alias the workspace does not define): the same line as
+    # Connection diagnostics, so no one takes them for kept.
+    try:
+        _not_kept_of = getattr(_sp, "not_kept_reason", None)
+        _not_kept = _not_kept_of() if callable(_not_kept_of) else None
+    except Exception:                                  # noqa: BLE001
+        _not_kept = None
     if _sp.configured:
         # getattr: a stand-in store (tests, the live smoke) may predate them
         _sp_foundry = getattr(_sp, "backend", "sharepoint") == "foundry"
         _sp_label = getattr(_sp, "label", "SharePoint")
         st.divider()
         st.subheader("Permanent storage")
+        if _not_kept:
+            st.warning(_NOT_KEPT_HEAD + _not_kept)
+        # This page's own folder of mirrors — the same owner/page segments
+        # the turn records with core.tag_conversation (below), so the
+        # geotech page never lists the review page's folder as a
+        # conversation, and the review page lists its own.
+        _sp_where = {"owner": (_IDENT.key if _IDENT.multi_user
+                               else None),
+                     "page": _PROFILE.name}
         # This conversation's own mirror record only -- never the store-wide
         # last sync, which on a shared host is another person's folder and
         # link (live smoke wave 2c, D3).
         _sync = sharepoint_store.sync_for_conversation(
             _sp, ss.thread_id, ss.get("sp_sync"))
+        # A save running in the background (Foundry): shown until it ends;
+        # its result shows on the next rerun.
+        _sp_state = None
+        try:
+            _state_of = getattr(_sp, "save_state", None)
+            _sp_state = _state_of(ss.thread_id) if callable(_state_of) \
+                else None
+        except Exception:                              # noqa: BLE001
+            _sp_state = None
+        if _sp_state:
+            st.caption(f"{_sp_label}: saving the latest turn…"
+                       if _sp_state == "saving" else
+                       f"{_sp_label}: the latest turn is waiting to be "
+                       "saved…")
         if _sync:
             _n_err = len(_sync.get("errors") or [])
             _line = (f"{_sp_label}: {_sync['uploaded']} uploaded, "
@@ -1142,16 +1184,21 @@ with st.sidebar:
                            "copy and a MOVED.txt pointing here.")
             if _sync.get("web_url"):
                 st.markdown(f"[Open session folder]({_sync['web_url']})")
-        elif _sp_foundry:
+            if _sync.get("note"):
+                st.info(_sync["note"])
+        elif not _sp_state and not _not_kept:
             st.caption("Foundry storage is on — this conversation's files "
-                       "are saved to the Foundry dataset after each turn.")
-        else:
-            st.caption("SharePoint mirroring is on — this conversation's "
+                       "are saved to the Foundry dataset after each turn."
+                       if _sp_foundry else
+                       "SharePoint mirroring is on — this conversation's "
                        "files sync after each turn.")
         if st.button("Sync now", key=f"spsync_{ss.thread_id}"):
-            ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
+            with st.spinner(f"Saving to {_sp_label}…"):
+                ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
+            # the list of past conversations is read again when next shown
+            ss.pop(sharepoint_store.listing_cache_key(**_sp_where), None)
             st.rerun()
-        if _sp_auth_problem(_sync, foundry=_sp_foundry):
+        if _sp_auth_problem(_sync, foundry=_sp_foundry) and not _not_kept:
             st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
                        "SharePoint rejected the app's token — it has probably "
                        "expired (the refresher lives in the launching "
@@ -1166,13 +1213,6 @@ with st.sidebar:
         # its files back and opens it.
         with st.expander("Find a past conversation (permanent storage)",
                          expanded=False):
-            # This page's own folder of mirrors — the same owner/page segments
-            # the turn records with core.tag_conversation (below), so the
-            # geotech page never lists the review page's folder as a
-            # conversation, and the review page lists its own.
-            _sp_where = {"owner": (_IDENT.key if _IDENT.multi_user
-                                   else None),
-                         "page": _PROFILE.name}
             # Cached PER PAGE (and person): the pages share one session_state
             # (Streamlit's multipage design), so a single cache key served
             # whichever page was opened first to both — the review page, the
@@ -1187,12 +1227,22 @@ with st.sidebar:
                                      placeholder="Part of the title or date…",
                                      label_visibility="collapsed") or "")
             with _rc2:
-                if st.button("Refresh", key="sp_restore_refresh",
-                             use_container_width=True):
-                    ss.pop(_sp_list_key, None)
-            if _sp_list_key not in ss:
-                ss[_sp_list_key] = _sp.list_remote_conversations(**_sp_where)
-            _remote = ss[_sp_list_key] or []
+                _sp_refresh = st.button("Refresh", key="sp_restore_refresh",
+                                        use_container_width=True)
+            # Read on demand (INF-38): a listing takes seconds (Foundry's
+            # files() reads the whole dataset, 3-4 s), and an expander's
+            # body runs even while it is closed, so listing here held up
+            # every new session's first draw. Refresh, a search or the
+            # button below reads it; it is then cached for the session.
+            if _sp_refresh or (_sp_list_key not in ss and (
+                    _rq.strip() or st.button(
+                        "Show past conversations", key="sp_restore_load",
+                        use_container_width=True))):
+                with st.spinner(f"Reading {_sp_label}…"):
+                    ss[_sp_list_key] = _sp.list_remote_conversations(
+                        **_sp_where)
+            _sp_listed = _sp_list_key in ss
+            _remote = ss.get(_sp_list_key) or []
             _local_folders = set()
             try:
                 # conversation_folder(), not _sp.folder_name(): that reloads
@@ -1208,10 +1258,10 @@ with st.sidebar:
             _q = _rq.strip().lower()
             _hits = [r for r in _remote
                      if not _q or _q in r["name"].lower()]
-            if not _remote:
+            if _sp_listed and not _remote:
                 st.caption(f"Nothing mirrored yet (or {_sp_label} could not "
                            "be listed — check the token).")
-            else:
+            elif _remote:
                 st.caption(f"{len(_hits)} of {len(_remote)} mirrored "
                            "conversations" + (" match" if _q else ""))
             for _r in _hits[:25]:
@@ -1226,8 +1276,9 @@ with st.sidebar:
                                  help=("Already on this machine" if _here
                                        else "Download the record and its "
                                             "files back into the app")):
-                        _res = _sp.restore_conversation(
-                            _r["name"], root=_ROOT, **_sp_where)
+                        with st.spinner(f"Restoring from {_sp_label}…"):
+                            _res = _sp.restore_conversation(
+                                _r["name"], root=_ROOT, **_sp_where)
                         ss[_sp_result_key] = _res
                         if _res.get("thread_id") and _res.get("status") in (
                                 "restored", "exists"):
@@ -1253,6 +1304,12 @@ with st.sidebar:
                     st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
                                "Looks like an expired token — re-run "
                                "`stage_sharepoint(...)` in the notebook.")
+    elif _not_kept:
+        # Foundry with no usable dataset: a short block rather than none,
+        # while every conversation stays in the container.
+        st.divider()
+        st.subheader("Permanent storage")
+        st.warning(_NOT_KEPT_HEAD + _not_kept)
 
     # Restore a downloaded conversation (INF-45): the zip from "Download
     # this conversation" back into this person's conversations, under its

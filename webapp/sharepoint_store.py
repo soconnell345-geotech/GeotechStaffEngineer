@@ -54,20 +54,23 @@ Configuration (env vars; the launcher subprocess inherits the notebook env):
         precedence over every path below — a deployment that has them needs
         neither the Funhouse SDK nor GEOTECH_SHAREPOINT_SITE_URL.
 
-    GEOTECH_FOUNDRY_CONVERSATION_DATASET (+ optional ..._BRANCH)
-        Foundry (INF-38): on a Foundry deployment with this set, the
-        conversations go to that Foundry dataset of raw files instead, through
+    GEOTECH_FOUNDRY_CONVERSATION_DATASET
+        Foundry (INF-38): on a Foundry deployment with this set (the
+        dataset's workspace alias), the conversations go to that Foundry
+        dataset of raw files instead, through
         :class:`webapp.foundry_dataset_store.DatasetFileManager`; the sidebar
         names it "Foundry storage". The module-level :func:`configured`, the
         gate of the agent's SharePoint tools, is then False: those tools never
-        run on the dataset.
+        run on the dataset. A save there takes seconds, so the turn's save
+        runs after the turn, in the background (:func:`save_after_change`).
 
 A file manager may offer a batch hook, ``begin_batch()`` and
 ``end_batch(commit=True)``: the mirror then sends all of one sync's files
 between the two (the dataset's one transaction per save), and records them
 as mirrored only once ``end_batch`` succeeds; a restore runs between them
-too, so its listings are fetched once. SharePoint's file managers have no
-such hook and are driven exactly as before.
+too, so the dataset is listed once. One that offers ``download_files``
+gets a restore's files in one call (in parallel). SharePoint's file
+managers have neither and are driven exactly as before.
 
 Auth notes (from the Funhouse SDK source, researched 2026-07-30): the
 ``office365`` backend authenticates with plain ``client_id``/``client_secret``
@@ -80,6 +83,8 @@ dbutils/Py4J, and ``FunhouseConfig`` degrades gracefully off-notebook.
 
 from __future__ import annotations
 
+import atexit
+import collections
 import json
 import os
 import re
@@ -420,6 +425,13 @@ class SharePointStore:
         #: :meth:`last_sync_for` instead.
         self.last_sync: Optional[dict] = None
         self._syncs: Dict[str, dict] = {}
+        # Saves after a turn, in the background (save_soon): one worker,
+        # in order.
+        self._bg_cv = threading.Condition()
+        self._bg_queue: collections.deque = collections.deque()
+        self._bg_waiting: set = set()
+        self._bg_saving: Optional[str] = None
+        self._bg_worker: Optional[threading.Thread] = None
 
     def last_sync_for(self, thread_id: Optional[str]) -> Optional[dict]:
         """This conversation's own latest mirror summary in this process,
@@ -453,6 +465,30 @@ class SharePointStore:
     def label(self) -> str:
         """What the sidebar calls the permanent storage."""
         return "Foundry storage" if self.backend == "foundry" else "SharePoint"
+
+    @property
+    def background(self) -> bool:
+        """True when the saves after a turn run in the background: on the
+        Foundry dataset, where one takes 5-7 s and the chat must not wait
+        for it. SharePoint saves as before, at the end of the turn."""
+        return self.backend == "foundry"
+
+    def not_kept_reason(self) -> Optional[str]:
+        """On a Foundry deployment, why conversations are NOT kept across
+        restarts, with the fix, in one line (the text of Connection
+        diagnostics' line): no alias set, a resource ID in its place, the
+        library missing, or an alias the workspace does not define. ``None``
+        when they are kept, as far as is known, and on every other host.
+        Never raises."""
+        if self._fm is not None and self.backend != "foundry":
+            return None
+        try:
+            from webapp import foundry_dataset_store
+            fm = self.file_manager() if self.backend == "foundry" \
+                and self.configured else None
+            return foundry_dataset_store.not_kept_reason(fm)
+        except Exception:                              # noqa: BLE001
+            return None
 
     def _file_manager(self):
         if self._fm is None:
@@ -514,6 +550,12 @@ class SharePointStore:
                 if name == str(thread_id):
                     return
                 name = self._unclaimed_remotely(fm, thread_id, meta, name)
+            # Read again: the remote check takes seconds, and a save in the
+            # background may run while the next turn retitles the
+            # conversation; only the folder field is set here.
+            meta = core.load_meta(thread_id, root) or meta
+            if str(meta.get(MIRROR_FOLDER_KEY) or "").strip():
+                return
             meta[MIRROR_FOLDER_KEY] = name
             core.save_meta(thread_id, meta, root)
         except Exception:                              # noqa: BLE001
@@ -621,6 +663,68 @@ class SharePointStore:
         self._syncs[str(thread_id)] = summary
         return summary
 
+    # -- saving in the background ------------------------------------------
+
+    def save_soon(self, thread_id: str, root: Optional[str] = None) -> None:
+        """Queue a mirror of this conversation, run by one background
+        worker, in order. A conversation already waiting is not queued
+        again: that save will send this change too. The worker outlives the
+        turn that asked, and at exit the queue is finished (up to a minute).
+        Never raises."""
+        tid = str(thread_id)
+        with self._bg_cv:
+            if tid in self._bg_waiting:
+                return
+            self._bg_waiting.add(tid)
+            self._bg_queue.append((tid, root))
+            if self._bg_worker is None or not self._bg_worker.is_alive():
+                if self._bg_worker is None:
+                    atexit.register(self.flush, 60.0)
+                self._bg_worker = threading.Thread(
+                    target=self._bg_run, name="permanent-storage-save",
+                    daemon=True)
+                self._bg_worker.start()
+            self._bg_cv.notify_all()
+
+    def _bg_run(self) -> None:
+        while True:
+            with self._bg_cv:
+                while not self._bg_queue:
+                    self._bg_cv.wait()
+                tid, root = self._bg_queue.popleft()
+                self._bg_waiting.discard(tid)
+                self._bg_saving = tid
+            try:
+                self.mirror_conversation(tid, root=root)
+            except Exception:                          # noqa: BLE001
+                pass                                   # it never raises
+            finally:
+                with self._bg_cv:
+                    self._bg_saving = None
+                    self._bg_cv.notify_all()
+
+    def save_state(self, thread_id: Optional[str]) -> Optional[str]:
+        """``"saving"`` or ``"waiting"`` while this conversation has a save
+        in the background, else ``None``."""
+        tid = str(thread_id or "")
+        with self._bg_cv:
+            if tid and tid == self._bg_saving:
+                return "saving"
+            if tid in self._bg_waiting:
+                return "waiting"
+        return None
+
+    def flush(self, timeout: Optional[float] = None) -> bool:
+        """Wait until the background saves are done; True when they are."""
+        end = None if timeout is None else time.time() + timeout
+        with self._bg_cv:
+            while self._bg_queue or self._bg_saving is not None:
+                left = None if end is None else end - time.time()
+                if left is not None and left <= 0:
+                    return False
+                self._bg_cv.wait(left)
+        return True
+
     def _mirror_locked(self, thread_id: str, root: Optional[str],
                        summary: dict) -> None:
         try:
@@ -632,6 +736,21 @@ class SharePointStore:
         conv_dir = core.conversation_dir(thread_id, root)
         if not os.path.isdir(conv_dir):
             return
+        # A file manager with the batch hook (the Foundry dataset) lists
+        # once for the whole sync (the folder-name check included) and gets
+        # this sync's files in ONE save; they count as mirrored only once it
+        # is committed, so a failed commit leaves them to be sent next time.
+        batched = _begin_batch(fm)
+        try:
+            self._mirror_files(fm, thread_id, root, conv_dir, summary,
+                               batched)
+        except BaseException:
+            if batched:
+                _end_batch(fm, commit=False)
+            raise
+
+    def _mirror_files(self, fm, thread_id: str, root: Optional[str],
+                      conv_dir: str, summary: dict, batched: bool) -> None:
         manifest = _load_manifest(conv_dir)
         files = _manifest_files(manifest)
         self._pin_folder(thread_id, root, manifest, fm)
@@ -665,18 +784,8 @@ class SharePointStore:
                 except Exception:                      # noqa: BLE001
                     pass
 
-        # A file manager with the batch hook (the Foundry dataset) gets this
-        # sync's files in ONE save; they count as mirrored only once it is
-        # committed, so a failed commit leaves them to be sent next time.
-        batched = _begin_batch(fm)
         sent = {} if batched else files
-        try:
-            self._upload_changed(fm, conv_dir, remote_base, files, sent,
-                                 summary)
-        except BaseException:
-            if batched:
-                _end_batch(fm, commit=False)
-            raise
+        self._upload_changed(fm, conv_dir, remote_base, files, sent, summary)
         if batched:
             try:
                 fm.end_batch(commit=True)
@@ -686,6 +795,10 @@ class SharePointStore:
                 summary["errors"].append(
                     f"{len(sent)} file(s) not saved: "
                     f"{type(exc).__name__}: {exc}")
+            take_note = getattr(fm, "take_note", None)
+            note = take_note() if callable(take_note) else None
+            if note:
+                summary["note"] = note           # said once per process
 
         _save_manifest(conv_dir, files, remote_base)
         if thread_id not in self._folder_urls:
@@ -877,6 +990,7 @@ class SharePointStore:
 
         stamps: Dict[str, List] = {}
         refused: List[str] = []
+        wanted: List[Tuple[str, str, str]] = []      # rel, remote, local
         for rel, remote_path in files:
             if rel == MANIFEST_NAME:
                 continue                     # never restore a stale manifest
@@ -889,14 +1003,17 @@ class SharePointStore:
                 refused.append(rel)
                 continue
             os.makedirs(os.path.dirname(local), exist_ok=True)
-            try:
-                fm.download_file(remote_path, local_path=local,
-                                 return_bytes=False, overwrite=True)
-                stamps[rel] = _stamp(local)
-                summary["downloaded"] += 1
-            except Exception as exc:
-                summary["errors"].append(
-                    f"{rel}: {type(exc).__name__}: {exc}")
+            wanted.append((rel, remote_path, local))
+        for (rel, _remote, local), exc in zip(wanted,
+                                               _download_all(fm, wanted)):
+            if exc is None:
+                try:
+                    stamps[rel] = _stamp(local)
+                    summary["downloaded"] += 1
+                    continue
+                except OSError as missing:
+                    exc = missing
+            summary["errors"].append(f"{rel}: {type(exc).__name__}: {exc}")
         if refused:
             summary["errors"].append(
                 f"{len(refused)} file(s) not restored, their paths lead "
@@ -978,6 +1095,30 @@ def _end_batch(fm: Any, commit: bool) -> None:
         fm.end_batch(commit=commit)
     except Exception:                                  # noqa: BLE001
         pass
+
+
+def _download_all(fm: Any, wanted: List[Tuple[str, str, str]]
+                  ) -> List[Optional[BaseException]]:
+    """Download each ``(rel, remote, local)``; one entry per file, ``None``
+    or what went wrong. Through the file manager's ``download_files`` when
+    it has one (the Foundry dataset: several at once, each about 3-4 s),
+    else one ``download_file`` after another."""
+    bulk = getattr(fm, "download_files", None)
+    if callable(bulk):
+        try:
+            out = list(bulk([(remote, local) for _r, remote, local in wanted]))
+        except Exception as exc:                       # noqa: BLE001
+            out = [exc] * len(wanted)
+        return (out + [None] * len(wanted))[:len(wanted)]
+    out: List[Optional[BaseException]] = []
+    for _rel, remote, local in wanted:
+        try:
+            fm.download_file(remote, local_path=local, return_bytes=False,
+                             overwrite=True)
+            out.append(None)
+        except Exception as exc:                       # noqa: BLE001
+            out.append(exc)
+    return out
 
 
 def _is_folder(entry: dict) -> bool:
@@ -1091,12 +1232,29 @@ def get_store(refresh: bool = False) -> SharePointStore:
     return _STORE
 
 
+def save_after_change(store: Any, thread_id: str) -> Optional[dict]:
+    """Save conversation ``thread_id`` to permanent storage after a turn or
+    a feedback note: in the background where the store says so (the Foundry
+    dataset, :attr:`SharePointStore.background`), else at once. Returns the
+    summary of a save made at once, ``None`` for one queued (the sidebar
+    reads its state from the store). Never raises."""
+    try:
+        if getattr(store, "background", False) is True \
+                and callable(getattr(store, "save_soon", None)):
+            store.save_soon(thread_id)
+            return None
+        return store.mirror_conversation(thread_id)
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
 def sync_for_conversation(store: Any, thread_id: Optional[str],
                           session_sync: Optional[dict] = None
                           ) -> Optional[dict]:
     """The mirror summary the sidebar shows for conversation ``thread_id``:
-    the session's own record when it is this conversation's, else the
-    store's record for this conversation -- never another conversation's.
+    the store's own record of this conversation's latest save when it has
+    one (a save in the background reaches no session), else the session's
+    record when it is this conversation's -- never another conversation's.
 
     Live smoke wave 2c (D3): the sidebar fell back to the store-wide
     ``last_sync``, which on a shared host is whoever mirrored last, so a
@@ -1108,20 +1266,23 @@ def sync_for_conversation(store: Any, thread_id: Optional[str],
     tid = str(thread_id or "")
     if not tid:
         return None
+    getter = getattr(store, "last_sync_for", None)
+    found = None
+    if callable(getter):
+        try:
+            found = getter(tid)
+        except Exception:                              # noqa: BLE001
+            found = None
+    if isinstance(found, dict):
+        return found
     if isinstance(session_sync, dict):
         owner = str(session_sync.get("thread_id") or "")
         if not owner or owner == tid:
             return session_sync
-    getter = getattr(store, "last_sync_for", None)
-    if not callable(getter):
-        return None
-    try:
-        found = getter(tid)
-    except Exception:                                  # noqa: BLE001
-        return None
-    return found if isinstance(found, dict) else None
+    return None
 
 
 __all__ = ["SharePointStore", "get_store", "configured", "DEFAULT_ROOT",
            "MANIFEST_NAME", "MOVED_NAME", "conversation_folder",
-           "sanitize_folder_name", "folder_date", "sync_for_conversation"]
+           "sanitize_folder_name", "folder_date", "save_after_change",
+           "sync_for_conversation"]

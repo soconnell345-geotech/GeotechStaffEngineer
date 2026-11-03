@@ -444,10 +444,14 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                 pass
 
         try:                                       # permanent storage mirror
+            # The record is complete here. On the Foundry dataset the save
+            # (5-7 s) is queued and runs after the turn, so the chat does
+            # not wait for it (sp_sync stays None; the sidebar reads the
+            # save's state from the store). SharePoint saves here, as before.
             from webapp import sharepoint_store
             _sp = sharepoint_store.get_store()
             if _sp.configured:
-                sp_sync = _sp.mirror_conversation(thread_id)
+                sp_sync = sharepoint_store.save_after_change(_sp, thread_id)
         except Exception:
             pass
     except Exception as exc:                       # noqa: BLE001

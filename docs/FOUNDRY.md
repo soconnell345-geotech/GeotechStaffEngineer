@@ -442,37 +442,42 @@ replaces.
 ## 4c. Conversations that survive a rebuild
 
 A published app keeps its conversations inside its own container, so they
-are lost when the container is rebuilt. Since the release after 5.33.0 the
-app can save each conversation to a Foundry dataset after every turn, the
-way it saves to SharePoint on Databricks, and bring past ones back from the
-sidebar (BACKLOG INF-38). Not yet tried from a published app; the first
-run is the AI FDE's round trip.
+are lost when the container is rebuilt, and every push to the workspace's
+master branch republishes the apps (a restart). Since the release after
+5.33.0 the app saves each conversation to a Foundry dataset after every
+turn, the way it saves to SharePoint on Databricks, and brings past ones
+back from the sidebar (BACKLOG INF-38). With it in place a restart is
+harmless: the conversation list starts empty, and **Find a past
+conversation** brings any one back.
 
-1. **Create a dataset of raw files** (no schema) in the app's project, e.g.
-   `gse_conversations`, used for nothing else (below, "How it saves").
-   Copy its RID (`ri.foundry.main.dataset.…`).
-2. **Install the Foundry platform SDK** in the workspace Libraries panel:
-   `foundry-platform-sdk` (imported as `foundry_sdk`). It is not one of the
-   app's own requirements.
-3. **Set the dataset in the app file**, before `main()`:
+The app reaches the dataset through the workspace dataset library
+(`foundry.transforms`) that comes with the Code Workspace, so there is
+nothing to install. The platform's datasets API (and with it
+`foundry-platform-sdk`) is turned off inside app containers.
+
+1. **Create a dataset of raw files** (no schema), e.g. `gse_conversations`,
+   used for nothing else, in a project only the right people can see
+   (below, "One user").
+2. **Import it into the workspace**: in the workspace's **Data** panel,
+   import the dataset with **read and write** access. That names it in
+   `.foundry/aliases.yml`; the name there is its alias. Commit and push.
+3. **Set the alias in the app file**, before `main()`:
    ```python
-   os.environ["GEOTECH_FOUNDRY_CONVERSATION_DATASET"] = "ri.foundry.main.dataset.<id>"
-   # optional, default master:
-   # os.environ["GEOTECH_FOUNDRY_CONVERSATION_BRANCH"] = "master"
+   os.environ["GEOTECH_FOUNDRY_CONVERSATION_DATASET"] = "gse_conversations"  # the alias, not the ri. ID
    ```
-4. **The token** is the one the app already uses (`FOUNDRY_TOKEN`, which
-   Foundry provides); it needs the **datasets read and write scopes**
-   (`api:datasets-read`, `api:datasets-write`), and its account needs edit
-   access to the dataset. The host is found as for the models (§3c):
-   `GEOTECH_FOUNDRY_HOST` when set, else the SDK's own service discovery in
-   the container (it needs `FOUNDRY_HOSTNAME` set beside it), else
-   `FOUNDRY_HOSTNAME` or `FOUNDRY_URL`.
-5. **Republish**, then open **Connection diagnostics**: the line
-   *conversation storage* should PASS and name the dataset and where the
-   host came from. When it fails it says why (the SDK missing, no token, the
-   dataset unreadable).
+   A resource ID (`ri.…`) does not work here; Connection diagnostics and
+   the sidebar say so.
+4. **Push** (which republishes), then open **Connection diagnostics**: the
+   line *conversation storage* should PASS and name the alias. When it
+   fails it says why: a resource ID instead of the alias, an alias the
+   workspace does not define (`AliasNotDefined`: import the dataset and
+   push), or the library missing (the app was not published from a Code
+   Workspace). Until it works, the sidebar's **Permanent storage** block
+   says **Conversations are NOT kept across restarts**, with the same
+   reason and fix.
 
 **After the first turn**, the sidebar shows **Permanent storage** with
+"Foundry storage: saving the latest turn…", then (on the next click)
 "Foundry storage: N uploaded, …", and the dataset holds
 `GeotechStaffEngineer/conversations/<title>_<date>/` with `meta.json`,
 the transcript, the activity log `activity.jsonl`, the turn traces
@@ -480,30 +485,39 @@ the transcript, the activity log `activity.jsonl`, the turn traces
 (the Document Review page's under `conversations/document_review/`). The
 dataset is where those records can be read from outside the app's
 container. To check a restore, open
-**Find a past conversation (permanent storage)**, search for it and press
-**Restore** (or open the app after a rebuild: the list is read from the
-dataset).
+**Find a past conversation (permanent storage)**, press **Show past
+conversations** (or type part of its title), and press **Restore** (or
+open the app after a push: the list is read from the dataset).
 
-How it saves: all the files one turn changed go up in **one** `UPDATE`
-transaction. A dataset branch takes one open transaction at a time, so a
-save that meets another one open waits and tries again (five tries over
-about 8 s); if it still cannot, the sidebar shows one warning, the turn is
-unaffected, and the files go up with the next save. A transaction a save
-left open (the app or its container stopped mid-save) would block every
-later save, so a save that meets one aborts it when it is the app's own: one
-the app recorded opening before a restart on the same disk, or any open
-for more than 10 minutes (a save takes seconds). So **keep the dataset for
-the app's conversations only**: anyone else's transaction left open on its
-branch for 10 minutes is aborted too. A dataset has no link per folder, so
-the sidebar shows the folder name but no "Open session folder" link.
+How it saves: once the turn's record is complete, the files the turn
+changed are copied under the outputs folder (`/foundry/outputs`), at their
+paths in the dataset, and uploaded in **one** transaction. This runs in
+the background, so the chat does not wait for it (a save takes about 5-7
+s); saves run one at a time, in order. A dataset takes one open
+transaction at a time, so a save that meets another one open waits and
+tries again for about 30 s; if it still cannot, the sidebar says another
+save holds the dataset, the turn is unaffected, and the files go up with
+the next save. The app uploads the outputs folder only while it holds
+nothing but the app's own `GeotechStaffEngineer/` folder; if anything else
+is there, the app saves file by file (one transaction each, slower) and
+says so once, so **keep `/foundry/outputs` for the app**. A dataset has no
+link per folder, so the sidebar shows the folder name but no "Open session
+folder" link. Reading the dataset's file list takes about 3-4 s, so the
+page never waits for it on opening: **Find a past conversation** reads it
+when asked (**Show past conversations**, a search or **Refresh**), then
+keeps it for the browser session (after **Sync now** it is read again when
+next shown); a restore reads it once and then downloads up to six files at
+a time.
 
-**Who sees what.** A Foundry app does not tell the app who is viewing, so
-every viewer's conversations go in one folder, `conversations/`, and the
-past-conversations list shows all of them to every viewer, as the app's own
-conversation list in the container already does. Whoever can open the
-dataset can read them all. When an app does pass the viewer (as Tiny Apps
-does), each person's conversations go in a folder of their own and the list
-shows only theirs.
+**One user.** On Foundry the store is built for a single user: the app's
+owner. Every conversation goes in one folder, `conversations/`, and
+**Find a past conversation** lists all of them. The app writes as the
+publisher's account (as far as the AI FDE's test could tell), and whoever
+can open the dataset can read every conversation in it, so keep it in a
+project only the right people can see. Folders per viewer wait on the app
+knowing who is viewing, which a Foundry app does not tell it today. (Where
+a host does pass the viewer, as Tiny Apps does, each person's
+conversations already go in a folder of their own.)
 
 ## 5. Preview, then publish
 

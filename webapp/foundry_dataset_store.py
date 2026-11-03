@@ -11,140 +11,116 @@ over a Foundry dataset of raw files (no schema), with the methods
 ``get_web_url``), so the store, the sidebar's permanent storage, "Sync now",
 the past-conversations list and restore work unchanged on top of it.
 
-How a dataset differs from a SharePoint library (the AI FDE's answer,
-2026-11-03):
+How it reaches the dataset (the AI FDE's test from a published app,
+2026-11-03): the platform's datasets API is turned off inside app
+containers, so the app uses the workspace dataset library a Code Workspace
+provides, ``foundry.transforms.Dataset``. It finds the dataset by its
+workspace ALIAS: the dataset is imported into the workspace (Data panel,
+read and write), which names it in ``.foundry/aliases.yml``, and pushed.
+Writes run as the publisher's account, as far as that test could tell.
+
+How a dataset differs from a SharePoint library:
 
 * Paths with slashes act as folders, so creating a folder does nothing.
-* A listing returns files only, never folders; :meth:`DatasetFileManager.ls`
-  makes the folder entries from the paths.
-* Files are written inside a transaction, and a branch has one open
-  transaction at a time. Every file one mirror changes therefore goes up in
-  ONE ``UPDATE`` transaction (:meth:`DatasetFileManager.begin_batch` /
-  :meth:`DatasetFileManager.end_batch`, which the store calls when a file
-  manager offers them), and opening one is retried with a growing pause
-  while another is open. A transaction a save left open (a process or
-  container that stopped mid-save) would block every later save, so the
-  first refusal aborts it when it is the app's own leftover
-  (:meth:`DatasetFileManager._reclaim`).
+* A listing returns every file in the dataset (no prefix filter), never
+  folders; :meth:`DatasetFileManager.ls` filters on the path and makes the
+  folder entries. A mirror or a restore lists once
+  (:meth:`DatasetFileManager.begin_batch`).
+* Every write is a transaction, and a dataset takes one open transaction at
+  a time. One save therefore stages the files it changed under the outputs
+  folder (``/foundry/outputs``), at their dataset paths, and uploads that
+  folder in ONE transaction (``upload_directory``), under a process-wide
+  lock. A save that meets another transaction open retries for about 30 s,
+  then gives up until the next save.
+* ``upload_directory`` uploads everything under the outputs folder, so the
+  app never uses it while anything it did not stage is there; it then saves
+  file by file (``upload_file``, one transaction each) and says so once.
 * There is no per-file web address, so :meth:`get_web_url` gives none.
 
 Configuration (on a Foundry deployment, ``GEOTECH_DEPLOYMENT=foundry``):
 
-    GEOTECH_FOUNDRY_CONVERSATION_DATASET   the dataset's RID (required)
-    GEOTECH_FOUNDRY_CONVERSATION_BRANCH    its branch, default ``master``
+    GEOTECH_FOUNDRY_CONVERSATION_DATASET   the dataset's workspace alias (required)
 
-The token and the host are the ones the app already uses for the language
-model (:func:`webapp.engine_config.foundry_token`,
-:func:`webapp.engine_config.foundry_base_url`); the token needs the datasets
-read and write scopes. The Foundry platform SDK (pip
-``foundry-platform-sdk``, import ``foundry_sdk``) is imported only when
-storage is used and is not one of the package's requirements: without it,
-permanent storage stays off and Connection diagnostics says why.
-
-**None of the SDK calls has been run from a published app yet.** Every one
-is in :meth:`DatasetFileManager._build_client` and the ``_sdk_*`` methods
-below it, so a name the AI FDE's test corrects changes in one place.
+Nothing to install: the library comes with a Code Workspace. It is imported
+only when storage is used; without it permanent storage stays off and
+Connection diagnostics says why. Every library call is in a ``_lib_*``
+method, :meth:`DatasetFileManager._dataset` (``Dataset.get``) or
+:meth:`DatasetFileManager._fetch` (``File.download``).
 """
 
 from __future__ import annotations
 
-import json
 import os
+import shutil
+import tempfile
 import threading
 import time
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, \
+    Tuple
 
 ENV_DATASET = "GEOTECH_FOUNDRY_CONVERSATION_DATASET"
-ENV_BRANCH = "GEOTECH_FOUNDRY_CONVERSATION_BRANCH"
-DEFAULT_BRANCH = "master"
 
 #: The base folder inside the dataset (``GEOTECH_SHAREPOINT_ROOT`` still
 #: overrides it, as it does on SharePoint).
 DEFAULT_ROOT = "GeotechStaffEngineer"
 
-#: The file the SDK reads to find the platform's services in a Foundry
-#: container; when it is set and the app names no host of its own, the SDK
-#: is left to find the host itself.
-SERVICE_DISCOVERY_ENV = "FOUNDRY_SERVICE_DISCOVERY_V2"
+#: The workspace dataset library, for the messages.
+LIBRARY = "foundry.transforms"
 
-#: The host setting the SDK reads itself. With service discovery it is the
-#: fallback the SDK's clients ask for when built; without it the client
-#: cannot be built (``foundry_sdk`` 1.111.0, ``ServiceDiscoveryHostnameSupplier``).
-SDK_HOSTNAME_ENV = "FOUNDRY_HOSTNAME"
+#: The only folder ``upload_directory`` takes; a file's dataset path is its
+#: path relative to it.
+OUTPUTS_DIR = "/foundry/outputs"
 
-#: The pip package, for the messages.
-SDK_PACKAGE = "foundry-platform-sdk"
+#: Pauses between tries while another transaction holds the dataset (about
+#: 30 s in all), then :class:`StorageBusy`.
+BUSY_PAUSES_S = (1.0, 2.0, 4.0, 8.0, 15.0)
 
-#: Seconds before one SDK request gives up.
-TIMEOUT_S = 120
+#: Downloads at once in a restore (each takes about 3-4 s).
+PARALLEL_DOWNLOADS = 6
 
-#: Opening a transaction while another is open on the branch: tries, and the
-#: first pause (doubled each time: 0.5, 1, 2, 4 s, about 8 s in all).
-OPEN_TRIES = 5
-OPEN_BACKOFF_S = 0.5
+#: What to do when the alias does not work, for every message that says so.
+ALIAS_HELP = ("import the dataset into the workspace (Data panel, read and "
+              f"write), push, and set {ENV_DATASET} to its alias")
 
-#: An open transaction on the branch older than this is taken as one a save
-#: left behind and is aborted. A save's transaction lives seconds, and the
-#: dataset holds only the app's conversations; the SDK shows a
-#: transaction's age but not who opened it.
-STALE_AFTER_S = 600
+#: Process-wide: one save at a time touches the outputs folder and the
+#: dataset (every instance; the store and report ingest's mirror alike).
+_SAVE_LOCK = threading.Lock()
 
-#: The transactions this app's saves have opened and not yet closed, by
-#: dataset, in a file in the app's data folder: after a restart on the same
-#: disk a leftover named there is aborted at once, without waiting for it to
-#: age. A rebuilt container starts without it; the age test covers that.
-MARKER_NAME = ".foundry_open_transactions.json"
 
-#: Files per listing page.
-PAGE_SIZE = 1000
+class StorageBusy(RuntimeError):
+    """Another transaction held the dataset for the whole wait."""
+
+
+class AliasNotDefined(RuntimeError):
+    """The workspace has no dataset under the configured alias."""
 
 
 def _env(name: str) -> str:
     return str(os.environ.get(name) or "").strip()
 
 
-def dataset_rid() -> str:
-    """The conversation dataset's RID, or ``""``."""
+def dataset_alias() -> str:
+    """The conversation dataset's workspace alias, or ``""``."""
     return _env(ENV_DATASET)
 
 
-def branch_name() -> str:
-    """The branch conversations are written to (default ``master``)."""
-    return _env(ENV_BRANCH) or DEFAULT_BRANCH
+def looks_like_resource_id(value: str) -> bool:
+    """A resource ID (``ri.…``) where the alias belongs."""
+    return str(value or "").strip().lower().startswith("ri.")
 
 
 def selected() -> bool:
     """True on a Foundry deployment with the conversation dataset set: then
     the permanent storage is this dataset, whether or not it works."""
     from webapp import engine_config
-    return engine_config.is_foundry_deployment() and bool(dataset_rid())
+    return engine_config.is_foundry_deployment() and bool(dataset_alias())
 
 
-def sdk_target() -> Tuple[Optional[str], str]:
-    """Where the SDK's requests go: ``(host, the setting it came from)``.
-
-    The host is ``None`` when the SDK finds it itself. First that is set:
-    ``GEOTECH_FOUNDRY_HOST`` (named on purpose, as for the model route);
-    the SDK's service-discovery file (``FOUNDRY_SERVICE_DISCOVERY_V2``, set
-    in Foundry containers) with ``FOUNDRY_HOSTNAME``, which the SDK needs
-    beside it; ``FOUNDRY_HOSTNAME`` / ``FOUNDRY_URL``, read by
-    :func:`webapp.engine_config.foundry_base_url`. ``(None, "")`` when none
-    is.
-    """
-    from webapp import engine_config
-    explicit = engine_config.FOUNDRY_HOST_ENVS[0]
-    if _env(explicit):
-        return engine_config.foundry_base_url(), explicit
-    if _env(SERVICE_DISCOVERY_ENV) and _env(SDK_HOSTNAME_ENV):
-        return None, SERVICE_DISCOVERY_ENV
-    source = next((e for e in engine_config.FOUNDRY_HOST_ENVS if _env(e)), "")
-    return (engine_config.foundry_base_url(), source) if source else (None, "")
-
-
-def sdk_installed() -> bool:
+def library_installed() -> bool:
     try:
-        import foundry_sdk  # noqa: F401
+        from foundry.transforms import Dataset  # noqa: F401
     except Exception:                                  # noqa: BLE001
         return False
     return True
@@ -155,20 +131,17 @@ def unconfigured_reason() -> Optional[str]:
     from webapp import engine_config
     if not engine_config.is_foundry_deployment():
         return "this is not a Foundry deployment"
-    if not dataset_rid():
+    alias = dataset_alias()
+    if not alias:
         return (f"{ENV_DATASET} is not set, so conversations stay in the "
                 "app's container and are lost when it is rebuilt")
-    if not sdk_installed():
-        return (f"the Foundry platform SDK (pip package {SDK_PACKAGE}, "
-                "import foundry_sdk) is not installed in the app's "
-                "environment; add it in the workspace Libraries panel and "
-                "republish")
-    if not engine_config.foundry_token():
-        return ("no Foundry token (GEOTECH_FOUNDRY_TOKEN or FOUNDRY_TOKEN; "
-                "Foundry normally provides FOUNDRY_TOKEN)")
-    if not sdk_target()[1]:
-        return ("no Foundry host (GEOTECH_FOUNDRY_HOST, "
-                f"{SERVICE_DISCOVERY_ENV}, FOUNDRY_HOSTNAME or FOUNDRY_URL)")
+    if looks_like_resource_id(alias):
+        return (f"{ENV_DATASET} holds a resource ID, not the dataset's "
+                f"workspace alias: {ALIAS_HELP}")
+    if not library_installed():
+        return (f"the workspace dataset library ({LIBRARY}) is not in the "
+                "app's environment; it comes with a Foundry Code Workspace, "
+                "so publish the app from one")
     return None
 
 
@@ -177,19 +150,59 @@ def configured() -> bool:
     return selected() and unconfigured_reason() is None
 
 
-def _is_open_transaction_conflict(exc: BaseException) -> bool:
-    """The branch already has an open transaction (another save is running).
-    Matched by the error's name, which is what the SDK's error classes and
-    its generic 409 both carry."""
-    marker = "OpenTransactionAlreadyExists"
-    return (type(exc).__name__ == marker
-            or str(getattr(exc, "name", "") or "") == marker
+def not_kept_reason(fm: Any = None) -> Optional[str]:
+    """On a Foundry deployment, why conversations are NOT kept across
+    restarts, with the fix, in one line: Connection diagnostics' line and
+    the sidebar show this same text. ``None`` when they are kept, as far as
+    is known, and off Foundry. ``fm`` (the store's file manager, when the
+    dataset is set up) adds an alias the workspace turned out not to define
+    (:meth:`DatasetFileManager.check_alias`, one ``Dataset.get`` at most)."""
+    from webapp import engine_config
+    if not engine_config.is_foundry_deployment():
+        return None
+    if not dataset_alias():
+        return (f"{unconfigured_reason()}. To keep them, see "
+                "docs/FOUNDRY.md, 'Conversations that survive a rebuild'; "
+                "meanwhile 'Download this conversation' in the sidebar "
+                "keeps one.")
+    reason = unconfigured_reason()
+    if not reason:
+        check = getattr(fm, "check_alias", None)
+        reason = check() if callable(check) else None
+    return f"{ENV_DATASET} is set, but {reason}." if reason else None
+
+
+def _named(exc: BaseException, marker: str) -> bool:
+    return (marker in type(exc).__name__
+            or marker in str(getattr(exc, "name", "") or "")
             or marker in str(exc))
+
+
+def _is_busy(exc: BaseException) -> bool:
+    """Another transaction is open on the dataset (400
+    ``Catalog:SimultaneousOpenTransactionsNotAllowed``)."""
+    return _named(exc, "SimultaneousOpenTransactionsNotAllowed")
+
+
+def _is_alias_missing(exc: BaseException) -> bool:
+    """404 ``FoundryContainerSidecar:AliasNotDefined``."""
+    return _named(exc, "AliasNotDefined")
 
 
 def _clean(path: Optional[str]) -> str:
     """A dataset file path: forward slashes, no leading or trailing slash."""
     return str(path or "").replace("\\", "/").strip().strip("/")
+
+
+def _parts(path: str) -> List[str]:
+    """The segments of a dataset path the app may write, or ValueError: one
+    with an empty or ``..`` segment, or a drive, would stage outside the
+    outputs folder."""
+    parts = path.split("/")
+    if not path or any(p in ("", ".", "..") for p in parts) \
+            or ":" in parts[0]:
+        raise ValueError(f"not a dataset path the app writes: {path!r}")
+    return parts
 
 
 def _iso(value: Any) -> str:
@@ -198,380 +211,280 @@ def _iso(value: Any) -> str:
     return str(value or "")
 
 
-def _default_marker() -> Optional[str]:
-    """The marker file in the app's data folder (:data:`MARKER_NAME`)."""
-    try:
-        from webapp import core
-        return os.path.join(core.data_root(), MARKER_NAME)
-    except Exception:                                  # noqa: BLE001
-        return None
-
-
-def _pid_alive(pid: int) -> bool:
-    """True unless process ``pid`` is known to be gone. On Windows nothing
-    is probed (``os.kill`` there would stop the process), so any other
-    process counts as alive and its transactions are left to the age test."""
-    if pid <= 0:
-        return False
-    if os.name == "nt":
-        return True
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return True                  # alive, another user's
-    return True
+def _app_top() -> str:
+    """The first segment of the store's base folder: the one folder in the
+    outputs folder that is the app's own."""
+    from webapp.sharepoint_store import ENV_ROOT
+    root = _clean(os.environ.get(ENV_ROOT) or DEFAULT_ROOT)
+    return root.split("/")[0] or DEFAULT_ROOT
 
 
 class _Batch:
-    """One mirror's or restore's state: its listings, and the transaction
-    its uploads share, opened at the first upload."""
+    """One mirror's or restore's state: the listing, read once, and the
+    files the save will send, each copied when the store handed it over."""
 
     def __init__(self, active: bool = False):
         self.active = active
-        self.listings: Dict[str, List[dict]] = {}
-        self.txn: Optional[str] = None
-        self.error: Optional[BaseException] = None
-        self.paths: set = set()
+        self.files: Optional[List[dict]] = None
+        self.index: Dict[str, Any] = {}
+        self.staged: Dict[str, str] = {}      # dataset path -> local copy
+        self.copies: Optional[str] = None     # the folder holding the copies
+
+    def discard(self) -> None:
+        if self.copies:
+            shutil.rmtree(self.copies, ignore_errors=True)
+            self.copies = None
 
 
 class DatasetFileManager:
     """Files in one Foundry dataset of raw files, as the app's mirror uses
-    them. Nothing is contacted until the first call.
+    them, through the workspace dataset library. Nothing is contacted until
+    the first call.
 
-    ``client`` may be injected (tests, or a caller holding a live
-    ``foundry_sdk.FoundryClient``); otherwise it is built from the app's
-    Foundry token and host, and rebuilt when the token changes.
-    ``marker`` is the marker file (:data:`MARKER_NAME`); by default the one
-    in the app's data folder, none for an injected client.
+    ``outputs_dir`` replaces :data:`OUTPUTS_DIR` (tests); ``busy_pauses``
+    and ``sleep`` the wait while another transaction is open; ``workers``
+    the downloads at once in a restore.
     """
 
     BACKEND = "foundry"
     DEFAULT_ROOT = DEFAULT_ROOT
 
-    #: Transactions a save in this process holds open now (every instance).
-    _OPEN_HERE: set = set()
-    _MARKER_LOCK = threading.Lock()
+    #: The outputs folder held something the app did not stage: said once
+    #: per process.
+    _warned_foreign = False
 
-    def __init__(self, dataset: Optional[str] = None,
-                 branch: Optional[str] = None, *, client: Any = None,
-                 open_tries: int = OPEN_TRIES,
-                 open_backoff_s: float = OPEN_BACKOFF_S,
+    def __init__(self, alias: Optional[str] = None, *,
+                 outputs_dir: Optional[str] = None,
+                 busy_pauses: Sequence[float] = BUSY_PAUSES_S,
                  sleep: Callable[[float], None] = time.sleep,
-                 page_size: int = PAGE_SIZE,
-                 marker: Optional[str] = None):
-        self.dataset = (dataset or dataset_rid()).strip()
-        if not self.dataset:
+                 workers: int = PARALLEL_DOWNLOADS):
+        self.alias = (alias or dataset_alias()).strip()
+        if not self.alias:
             raise RuntimeError(f"{ENV_DATASET} is not set")
-        self.branch = (branch or branch_name()).strip()
-        self._client_obj = client
-        self._client_token: Optional[str] = None
-        self._injected = client is not None
-        self._open_tries = max(1, int(open_tries))
-        self._open_backoff_s = float(open_backoff_s)
+        self.outputs_dir = outputs_dir or OUTPUTS_DIR
+        self._busy_pauses = tuple(float(p) for p in busy_pauses)
         self._sleep = sleep
-        self._page_size = page_size
-        self._prefix_ok = True
-        self._marker = marker if (marker or self._injected) \
-            else _default_marker()
+        self._workers = max(1, int(workers))
+        self._ds: Any = None
+        self._note: Optional[str] = None
+        #: The workspace does not define the alias (the last call said so;
+        #: a call that works clears it), and whether the sidebar's one
+        #: check has run (:meth:`check_alias`).
+        self.alias_error: Optional[str] = None
+        self._alias_checked = False
         # The batch, per thread: one process serves every viewer, and a
         # restore in one session must not end another session's save.
         self._local = threading.local()
 
-    def _batch(self) -> "_Batch":
+    def _batch(self) -> _Batch:
         batch = getattr(self._local, "batch", None)
         if batch is None:
             batch = self._local.batch = _Batch()
         return batch
 
-    # ------------------------------------------------------------ the client
-    def _client(self) -> Any:
-        if self._injected:
-            return self._client_obj
-        from webapp import engine_config
-        token = engine_config.foundry_token()
-        if not token:
-            raise RuntimeError(unconfigured_reason() or "no Foundry token")
-        if self._client_obj is None or token != self._client_token:
-            self._client_obj = self._build_client(token)
-            self._client_token = token
-        return self._client_obj
-
-    @staticmethod
-    def _build_client(token: str) -> Any:
-        """``foundry_sdk.FoundryClient`` with the app's token and host. The
-        CA file is the one the model route uses (``foundry_ca_bundle``)."""
-        try:
-            import foundry_sdk
-        except ImportError as exc:
-            raise RuntimeError(
-                f"the Foundry platform SDK (pip package {SDK_PACKAGE}) is "
-                "not installed") from exc
-        from webapp import engine_config
-        host, source = sdk_target()
-        if not source:
-            raise RuntimeError(unconfigured_reason() or "no Foundry host")
-        config: Dict[str, Any] = {"timeout": TIMEOUT_S}
-        ca = engine_config.foundry_ca_bundle()
-        if ca:
-            config["verify"] = ca
-        kwargs: Dict[str, Any] = {
-            "auth": foundry_sdk.UserTokenAuth(token=token)}
-        if host:
-            kwargs["hostname"] = host
-            if host.lower().startswith("http://"):
-                config["scheme"] = "http"   # the SDK drops a given scheme
-        kwargs["config"] = foundry_sdk.Config(**config)
-        return foundry_sdk.FoundryClient(**kwargs)
-
-    # ----------------------------------------- the SDK calls, all of them
-    def _files(self) -> Any:
-        return self._client().datasets.Dataset.File
-
-    def _transactions(self) -> Any:
-        return self._client().datasets.Dataset.Transaction
-
-    def _sdk_list(self, prefix: str, page_size: Optional[int] = None):
-        """The files whose path starts with ``prefix`` (all pages)."""
-        kwargs: Dict[str, Any] = {"branch_name": self.branch,
-                                  "page_size": page_size or self._page_size}
-        if prefix and self._prefix_ok:
+    # ------------------------------------------------- the library calls
+    def _dataset(self) -> Any:
+        """``Dataset.get(alias)``, once per instance."""
+        if self._ds is None:
             try:
-                return self._files().list(self.dataset, path_prefix=prefix,
-                                          **kwargs)
-            except Exception as exc:                   # noqa: BLE001
-                # An SDK without path_prefix refuses the argument (a
-                # TypeError, or pydantic's ValidationError): list
-                # everything and filter here.
-                if not (isinstance(exc, TypeError)
-                        or type(exc).__name__ == "ValidationError"):
-                    raise
-                self._prefix_ok = False
-        return self._files().list(self.dataset, **kwargs)
+                from foundry.transforms import Dataset
+            except ImportError as exc:
+                raise RuntimeError(
+                    f"the workspace dataset library ({LIBRARY}) is not "
+                    "installed") from exc
+            self._ds = self._call(lambda: Dataset.get(self.alias))
+        return self._ds
 
-    def _sdk_open(self) -> str:
-        txn = self._transactions().create(self.dataset,
-                                          transaction_type="UPDATE",
-                                          branch_name=self.branch)
-        return str(getattr(txn, "rid", None) or txn)
-
-    def _sdk_upload(self, path: str, data: bytes, txn: str) -> None:
-        self._files().upload(self.dataset, path, data, transaction_rid=txn)
-
-    def _sdk_commit(self, txn: str) -> None:
-        self._transactions().commit(self.dataset, txn)
-
-    def _sdk_abort(self, txn: str) -> None:
-        self._transactions().abort(self.dataset, txn)
-
-    def _sdk_content(self, path: str) -> bytes:
-        data = self._files().content(self.dataset, path,
-                                     branch_name=self.branch)
-        return data if isinstance(data, (bytes, bytearray)) else bytes(data)
-
-    def _sdk_branch_head(self) -> Optional[str]:
-        """The branch's newest open or committed transaction (its rid)."""
-        branch = self._client().datasets.Dataset.Branch.get(self.dataset,
-                                                            self.branch)
-        rid = getattr(branch, "transaction_rid", None)
-        return str(rid) if rid else None
-
-    def _sdk_transaction(self, txn: str) -> Any:
-        """The transaction: ``.status`` and ``.created_time``."""
-        return self._transactions().get(self.dataset, txn)
-
-    # ---------------------------------------------------------- transactions
-    def _open_transaction(self) -> str:
-        """An open ``UPDATE`` transaction, retried while another is open; at
-        the first refusal the app's own leftover is aborted
-        (:meth:`_reclaim`) and the open tried again at once."""
-        pause = self._open_backoff_s
-        reclaimed = False
-        for attempt in range(1, self._open_tries + 1):
-            try:
-                txn = self._sdk_open()
-            except Exception as exc:                   # noqa: BLE001
-                if not _is_open_transaction_conflict(exc) \
-                        or attempt == self._open_tries:
-                    raise
-            else:
-                self._OPEN_HERE.add(txn)
-                self._mark(txn, add=True)
-                return txn
-            if not reclaimed:
-                reclaimed = True
-                if self._reclaim():
-                    continue
-            self._sleep(pause)
-            pause *= 2
-        raise RuntimeError("unreachable")              # pragma: no cover
-
-    def _commit(self, txn: str) -> None:
-        self._sdk_commit(txn)
-        self._forget(txn)
-
-    def _abort_quietly(self, txn: Optional[str]) -> None:
-        if not txn:
-            return
+    def _lib_files(self) -> List[Any]:
+        """Every file in the dataset: items with ``.path``, ``.size_bytes``,
+        ``.updated_time`` and ``.download()``. Hidden ones too (a name
+        starting ``_`` or ``.``), so a restore misses none."""
+        ds = self._dataset()
         try:
-            self._sdk_abort(txn)
-        except Exception:                              # noqa: BLE001
-            # Not held here any more; the marker keeps it for a later save
-            # to abort.
-            self._OPEN_HERE.discard(txn)
-            return
-        self._forget(txn)
+            return list(ds.files(show_hidden_files=True))
+        except TypeError:
+            return list(ds.files())
 
-    def _forget(self, txn: str) -> None:
-        self._OPEN_HERE.discard(txn)
-        self._mark(txn, add=False)
+    def _lib_upload_file(self, local: str, path: str) -> Any:
+        return self._dataset().upload_file(local, path)
 
-    def _reclaim(self) -> bool:
-        """After a refusal because a transaction is open on the branch: abort
-        it when it is the app's own leftover (a process or container that
-        stopped mid-save), so saves go on. True when one was aborted. Never
-        raises; never touches a transaction a save in this process holds.
+    def _lib_upload_directory(self) -> Any:
+        return self._dataset().upload_directory(self.outputs_dir)
 
-        First the marker file, which costs no request: a transaction it
-        names, opened by this process before a restart or by one that is
-        gone, is aborted outright. Else the branch's open transaction when it
-        is older than :data:`STALE_AFTER_S`: the dataset holds only the app's
-        conversations and a save's transaction lives seconds. The SDK shows
-        a transaction's age but not who opened it, so age is the test."""
-        aborted = False
-        for txn, pid in self._marked():
-            if txn in self._OPEN_HERE or (pid != os.getpid()
-                                          and _pid_alive(pid)):
-                continue
-            try:
-                self._sdk_abort(txn)
-                aborted = True
-            except Exception:                          # noqa: BLE001
-                pass                     # closed already
-            self._mark(txn, add=False)
-        if aborted:
-            return True
+    def _call(self, fn: Callable[[], Any]) -> Any:
+        """``fn()``, with an alias the workspace does not define said
+        plainly (and kept in :attr:`alias_error`)."""
         try:
-            txn = self._sdk_branch_head()
-            if not txn or txn in self._OPEN_HERE:
-                return False
-            info = self._sdk_transaction(txn)
-            created = getattr(info, "created_time", None)
-            if str(getattr(info, "status", "")) != "OPEN" \
-                    or not isinstance(created, datetime):
-                return False
-            if created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
-            age = (datetime.now(timezone.utc) - created).total_seconds()
-            if age < STALE_AFTER_S:
-                return False
-            self._sdk_abort(txn)
-        except Exception:                              # noqa: BLE001
-            return False
-        self._mark(txn, add=False)
-        return True
-
-    # ------------------------------------------------------- the marker file
-    def _read_marker(self) -> Dict[str, Any]:
-        try:
-            with open(self._marker, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (OSError, ValueError, TypeError):
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    def _marked(self) -> List[Tuple[str, int]]:
-        """``(transaction, pid)`` the marker names for this dataset."""
-        if not self._marker:
-            return []
-        out = []
-        for entry in self._read_marker().get(self.dataset) or []:
-            try:
-                out.append((str(entry["rid"]), int(entry["pid"])))
-            except (KeyError, TypeError, ValueError):
-                continue
+            out = fn()
+        except Exception as exc:
+            if _is_alias_missing(exc):
+                self.alias_error = (
+                    f"the workspace has no dataset alias {self.alias!r} "
+                    f"(AliasNotDefined): {ALIAS_HELP}")
+                raise AliasNotDefined(self.alias_error) from exc
+            raise
+        self.alias_error = None
         return out
 
-    def _mark(self, txn: str, add: bool) -> None:
-        """Name ``txn`` in the marker file (with this process's id), or drop
-        it. Best-effort: a marker that cannot be written leaves the age
-        test."""
-        if not self._marker:
-            return
-        with self._MARKER_LOCK:
+    def check_alias(self) -> Optional[str]:
+        """:attr:`alias_error`, after one ``Dataset.get`` per instance when
+        nothing has reached the dataset yet, so the sidebar can say from
+        its first draw that conversations are not kept. Never raises."""
+        if self._ds is None and not self._alias_checked \
+                and self.alias_error is None:
+            self._alias_checked = True
             try:
-                data = self._read_marker()
-                entries = [e for e in (data.get(self.dataset) or [])
-                           if isinstance(e, dict) and e.get("rid") != txn]
-                if add:
-                    entries.append({"rid": txn, "pid": os.getpid()})
-                if entries:
-                    data[self.dataset] = entries
-                else:
-                    data.pop(self.dataset, None)
-                os.makedirs(os.path.dirname(os.path.abspath(self._marker)),
-                            exist_ok=True)
-                with open(self._marker, "w", encoding="utf-8") as fh:
-                    json.dump(data, fh)
+                self._dataset()
             except Exception:                          # noqa: BLE001
                 pass
+        return self.alias_error
+
+    def _write(self, fn: Callable[[], Any]) -> Any:
+        """One write, tried again while another transaction holds the
+        dataset (:data:`BUSY_PAUSES_S`); then :class:`StorageBusy`."""
+        pauses = list(self._busy_pauses)
+        while True:
+            try:
+                return self._call(fn)
+            except Exception as exc:
+                if not _is_busy(exc):
+                    raise
+                if not pauses:
+                    raise StorageBusy(
+                        "another save holds the conversation dataset "
+                        "(Foundry takes one open save at a time); waited "
+                        f"about {round(sum(self._busy_pauses))} s; these "
+                        "files go up with the next save") from exc
+                self._sleep(pauses.pop(0))
 
     # ------------------------------------------------------- the batch hook
     def begin_batch(self) -> None:
-        """Start one mirror or restore: listings are fetched once and kept,
-        and every upload until :meth:`end_batch` goes into ONE transaction,
-        opened at the first upload (a mirror with nothing new opens none).
-        The batch belongs to the calling thread."""
+        """Start one mirror or restore: the dataset is listed once, and
+        every upload until :meth:`end_batch` goes up in ONE save (none when
+        nothing changed). The batch belongs to the calling thread."""
+        self._batch().discard()
         self._local.batch = _Batch(active=True)
 
     def end_batch(self, commit: bool = True) -> int:
-        """Commit (or, with ``commit=False``, abort) the batch's transaction,
-        if one was opened, and drop its listings. Returns the number of
-        files committed. A commit that fails is aborted and re-raised, so
-        the caller records none of the batch's files as saved."""
+        """Save the batch's files (with ``commit=False``, drop them) and its
+        listing. Returns the number of files saved; raises when the save
+        failed, so the caller records none of them as saved."""
         batch = self._batch()
         self._local.batch = _Batch()
-        txn, paths = batch.txn, len(batch.paths)
-        if not txn:
-            return 0
-        if not commit:
-            self._abort_quietly(txn)
-            return 0
         try:
-            self._commit(txn)
-        except Exception:
-            self._abort_quietly(txn)
-            raise
-        return paths
+            if not commit or not batch.staged:
+                return 0
+            with _SAVE_LOCK:
+                self._save(batch.staged)
+            return len(batch.staged)
+        finally:
+            batch.discard()
 
-    # -------------------------------------------------------- the file calls
-    def _listing(self, prefix: str) -> List[dict]:
-        """``[{"path", "size", "updated"}]`` for the files at or under
-        ``prefix``; in a batch a listing already fetched for a folder above
-        is reused."""
+    def take_note(self) -> Optional[str]:
+        """A one-time line for the sidebar (the outputs folder held files
+        the app did not put there), or ``None``."""
+        note, self._note = self._note, None
+        return note
+
+    # ---------------------------------------------------------------- a save
+    def _save(self, staged: Dict[str, str]) -> None:
+        """``staged`` ({dataset path: local copy}) in ONE transaction, when
+        the outputs folder holds nothing but the app's own folder; else one
+        transaction per file. Called under :data:`_SAVE_LOCK`."""
+        top = _app_top()
+        foreign = self._others_in_outputs(top)
+        if foreign is None or foreign \
+                or any(_parts(p)[0] != top for p in staged):
+            if foreign:
+                self._warn_foreign(foreign)
+            for path, local in staged.items():
+                self._write(lambda l=local, p=path: self._lib_upload_file(l, p))
+            return
+        placed: List[str] = []
+        try:
+            for path, local in staged.items():
+                dst = os.path.join(self.outputs_dir, *_parts(path))
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copyfile(local, dst)
+                placed.append(dst)
+            self._write(self._lib_upload_directory)
+        finally:
+            self._clear(placed)
+
+    def _others_in_outputs(self, top: str) -> Optional[List[str]]:
+        """What the outputs folder holds besides the app's own folder, after
+        clearing that folder (anything there is left from a save that
+        stopped). ``None`` when the folder cannot be used, or the app's own
+        folder could not be cleared: then nothing may be staged there."""
+        try:
+            os.makedirs(self.outputs_dir, exist_ok=True)
+            names = os.listdir(self.outputs_dir)
+            if top in names:
+                own = os.path.join(self.outputs_dir, top)
+                if os.path.isdir(own) and not os.path.islink(own):
+                    shutil.rmtree(own, ignore_errors=True)
+                else:
+                    os.remove(own)
+                if os.path.lexists(own):
+                    return None
+        except OSError:
+            return None
+        return sorted(n for n in names if n != top)
+
+    def _clear(self, placed: Iterable[str]) -> None:
+        """Remove the files this save staged and the folders that held only
+        them; nothing else in the outputs folder."""
+        stop = os.path.normpath(self.outputs_dir)
+        folders = set()
+        for dst in placed:
+            try:
+                os.remove(dst)
+            except OSError:
+                pass
+            folders.add(os.path.dirname(dst))
+        for folder in sorted(folders, key=len, reverse=True):
+            while os.path.normpath(folder) != stop \
+                    and os.path.normpath(folder).startswith(stop):
+                try:
+                    os.rmdir(folder)
+                except OSError:
+                    break
+                folder = os.path.dirname(folder)
+
+    def _warn_foreign(self, foreign: List[str]) -> None:
+        if DatasetFileManager._warned_foreign:
+            return
+        DatasetFileManager._warned_foreign = True
+        self._note = (f"The outputs folder ({self.outputs_dir}) holds "
+                      f"{len(foreign)} item(s) the app did not put there, so "
+                      "saves go file by file (one transaction each, "
+                      "slower). Move them out to save each turn in one step.")
+
+    # ------------------------------------------------------------ listing
+    def _listing(self) -> Tuple[List[dict], Dict[str, Any]]:
+        """``([{"path", "size", "updated"}], {path: library file})`` for the
+        whole dataset; in a batch, read once."""
         batch = self._batch()
-        if batch.active:
-            for cached, files in batch.listings.items():
-                if not cached or prefix == cached \
-                        or prefix.startswith(cached + "/"):
-                    return [f for f in files
-                            if not prefix or f["path"] == prefix
-                            or f["path"].startswith(prefix + "/")]
-        files = []
-        for item in self._sdk_list(prefix):
-            path = _clean(getattr(item, "path", None)
-                          or (item.get("path") if isinstance(item, dict)
-                              else ""))
-            if prefix and path != prefix \
-                    and not path.startswith(prefix + "/"):
+        if batch.active and batch.files is not None:
+            return batch.files, batch.index
+        files: List[dict] = []
+        index: Dict[str, Any] = {}
+        for item in self._call(self._lib_files):
+            path = _clean(getattr(item, "path", None))
+            if not path:
                 continue
             files.append({"path": path,
                           "size": getattr(item, "size_bytes", None) or 0,
                           "updated": _iso(getattr(item, "updated_time", ""))})
+            index[path] = item
         if batch.active:
-            batch.listings[prefix] = files
-        return files
+            batch.files, batch.index = files, index
+        return files, index
+
+    def _under(self, prefix: str) -> List[dict]:
+        files, _ = self._listing()
+        return [f for f in files if not prefix or f["path"] == prefix
+                or f["path"].startswith(prefix + "/")]
 
     def ls(self, path: Optional[str] = None, recursive: bool = False,
            type: str = "both", **_ignored) -> List[Dict[str, Any]]:
@@ -581,7 +494,7 @@ class DatasetFileManager:
         ``recursive`` lists everything below; ``type`` is ``files`` /
         ``folders`` / ``both``."""
         base = _clean(path)
-        files = self._listing(base)
+        files = self._under(base)
         if len(files) == 1 and files[0]["path"] == base and base:
             return [self._entry(files[0]["path"], files[0])]
         out: List[Dict[str, Any]] = []
@@ -615,6 +528,7 @@ class DatasetFileManager:
                 "lastModifiedDateTime": "" if is_folder
                 else info.get("updated", "")}
 
+    # -------------------------------------------------------- the file calls
     def create_folder(self, folder_path: str) -> Dict[str, Any]:
         """Nothing to do: a path with slashes is its own folder."""
         return {"name": _clean(folder_path).rsplit("/", 1)[-1],
@@ -624,40 +538,36 @@ class DatasetFileManager:
     def upload_file(self, local_path: str, path: str, overwrite: bool = False,
                     **_ignored) -> bool:
         """Write ``local_path`` to ``path``, replacing a file already there
-        (a dataset keeps the newest version of a path; the store always
-        passes ``overwrite=True``). In a batch it joins the batch's
-        transaction; otherwise it is a transaction of its own. Raises on
+        (a dataset keeps the newest version of a path, and the files it
+        does not name). In a batch the file is copied now and goes up with
+        the batch; otherwise it is a transaction of its own. Raises on
         failure, so the store records the file as not saved."""
         target = _clean(path)
-        if not target:
-            raise ValueError("an empty dataset path")
-        with open(local_path, "rb") as fh:
-            data = fh.read()
+        parts = _parts(target)
         batch = self._batch()
-        batch.listings = {}          # a listing from before this is stale
         if not batch.active:
-            txn = self._open_transaction()
-            try:
-                self._sdk_upload(target, data, txn)
-                self._commit(txn)
-            except Exception:
-                self._abort_quietly(txn)
-                raise
+            with _SAVE_LOCK:
+                self._write(lambda: self._lib_upload_file(local_path, target))
             return True
-        if batch.error is not None:
-            raise RuntimeError(f"no transaction for this save: "
-                               f"{type(batch.error).__name__}: {batch.error}")
-        if batch.txn is None:
-            try:
-                batch.txn = self._open_transaction()
-            except Exception as exc:
-                batch.error = exc            # the other files fail fast
-                raise
-        if target in batch.paths:
-            return True                      # one transaction, one write
-        self._sdk_upload(target, data, batch.txn)
-        batch.paths.add(target)
+        # A copy now: the file may change before the save, or be a
+        # temporary one gone by then (the MOVED.txt pointer).
+        if batch.copies is None:
+            batch.copies = tempfile.mkdtemp(prefix="gse_save_")
+        copy = os.path.join(batch.copies, *parts)
+        os.makedirs(os.path.dirname(copy), exist_ok=True)
+        shutil.copyfile(local_path, copy)
+        batch.staged[target] = copy
         return True
+
+    def _fetch(self, path: str, index: Optional[Dict[str, Any]] = None
+               ) -> str:
+        """The local copy the library downloads of ``path``."""
+        if index is None:
+            _, index = self._listing()
+        item = index.get(_clean(path))
+        if item is None:
+            raise FileNotFoundError(f"not in the conversation dataset: {path}")
+        return self._call(item.download)
 
     def download_file(self, path: str, local_path: Optional[str] = None,
                       return_bytes: bool = True, overwrite: bool = False,
@@ -670,15 +580,39 @@ class DatasetFileManager:
                 return True
             with open(local_path, "rb") as fh:
                 return fh.read()
-        content = self._sdk_content(_clean(path))
+        src = self._fetch(path)
         if local_path:
             os.makedirs(os.path.dirname(os.path.abspath(local_path)),
                         exist_ok=True)
-            with open(local_path, "wb") as fh:
-                fh.write(content)
+            shutil.copyfile(src, local_path)
             if not return_bytes:
                 return True
-        return content
+        with open(src, "rb") as fh:
+            return fh.read()
+
+    def download_files(self, pairs: Iterable[Tuple[str, str]]
+                       ) -> List[Optional[BaseException]]:
+        """Each ``(dataset path, local path)`` downloaded and copied to its
+        local path, up to :data:`PARALLEL_DOWNLOADS` at once; the dataset is
+        listed once, in the caller's thread. One entry per pair: ``None``,
+        or what went wrong. The caller has checked the local paths."""
+        pairs = list(pairs)
+        if not pairs:
+            return []
+        _, index = self._listing()
+
+        def one(pair: Tuple[str, str]) -> None:
+            remote, local = pair
+            src = self._fetch(remote, index)
+            os.makedirs(os.path.dirname(os.path.abspath(local)),
+                        exist_ok=True)
+            shutil.copyfile(src, local)
+
+        workers = min(self._workers, len(pairs))
+        with ThreadPoolExecutor(max_workers=workers,
+                                thread_name_prefix="gse-restore") as pool:
+            futures = [pool.submit(one, p) for p in pairs]
+        return [f.exception() for f in futures]
 
     def get_web_url(self, path: str) -> str:
         """None to give: a dataset has no address per file or folder."""
@@ -686,19 +620,20 @@ class DatasetFileManager:
 
     # ------------------------------------------------------------ diagnostics
     def probe(self) -> str:
-        """One small read (the first listing page under the base folder),
-        for Connection diagnostics. Raises what the SDK raises."""
-        first = next(iter(self._sdk_list("", page_size=1)), None)
-        return "readable, " + ("not empty" if first is not None else "empty")
+        """One listing, for Connection diagnostics. Raises what the library
+        raises."""
+        files, _ = self._listing()
+        top = _app_top()
+        mine = sum(1 for f in files if f["path"].startswith(top + "/"))
+        return f"readable, {len(files)} file(s), {mine} of them the app's"
 
     def describe(self) -> str:
         """Where the files go, for Connection diagnostics."""
-        source = "an injected client" if self._injected else sdk_target()[1]
-        return (f"dataset {self.dataset}, branch {self.branch}, host from "
-                f"{source or 'nowhere'}")
+        return (f"workspace dataset alias {self.alias}, saves staged in "
+                f"{self.outputs_dir}")
 
 
-__all__ = ["DatasetFileManager", "ENV_DATASET", "ENV_BRANCH",
-           "DEFAULT_BRANCH", "DEFAULT_ROOT", "configured",
-           "dataset_rid", "branch_name", "sdk_target", "sdk_installed",
+__all__ = ["DatasetFileManager", "ENV_DATASET", "DEFAULT_ROOT",
+           "AliasNotDefined", "StorageBusy", "configured", "dataset_alias",
+           "library_installed", "looks_like_resource_id", "not_kept_reason",
            "selected", "unconfigured_reason"]

@@ -277,6 +277,10 @@ def test_restore_from_permanent_storage_opens_the_conversation(monkeypatch,
     at = _mk_at(monkeypatch, tmp_path / "after", _stream_ok).run()
     assert not at.exception
     assert not [b for b in at.sidebar.button if str(b.key) == "open_T-OLD"]
+    # past conversations are read when asked for, not on the first draw
+    next(b for b in at.sidebar.button
+         if str(b.key) == "sp_restore_load").click().run()
+    assert not at.exception
     restore = next(b for b in at.sidebar.button
                    if str(b.key) == f"sp_restore_{folder}")
     assert "Restore" in str(restore.label)

@@ -235,7 +235,9 @@ button. Mirroring is best-effort: a SharePoint failure never affects the turn.
 only shows what is on the driver's disk, so after a cluster restart (or the
 30-minute idle termination) it starts empty while every mirrored conversation
 is still in SharePoint. Open **Find a past conversation** under Permanent
-storage, type part of the title or date, and click **Restore**: the record
+storage, type part of the title or date (or press **Show past
+conversations**; the list is read only when asked for), and click
+**Restore**: the record
 and its files (uploads, calc packages, figures) download back into the app
 and the conversation opens. Above the list, a filter box searches every
 saved conversation by title once there are more than a few. One caveat: the
@@ -466,7 +468,7 @@ CfA are in `tinyapps/TINYAPPS.md`, the plan of record; open work is in
 | `activity_log.py` | Always-on per-turn archive `activity.jsonl` — every tool call (full args), tool result (capped 32 KB), model call (usage), primary AND sub-agents, attributed by `task` nesting. A LangChain callback handler on the run config. |
 | `feedback.py` | Feedback writer (`FEEDBACK.md` + `feedback.jsonl` in the conversation dir) behind the sidebar box and the agent's `record_feedback` tool. |
 | `sharepoint_store.py` | Permanent storage: mirror a conversation dir to SharePoint after each turn (incremental manifest), list mirrored conversations, restore one back. |
-| `foundry_dataset_store.py` | Permanent storage on Foundry (INF-38): the same mirror into a Foundry dataset of raw files through the platform SDK (imported only when used); one transaction per save, retried while another is open. `docs/FOUNDRY.md` §4c. |
+| `foundry_dataset_store.py` | Permanent storage on Foundry (INF-38): the same mirror into a Foundry dataset of raw files through the workspace dataset library (`foundry.transforms`, found by the dataset's workspace alias; imported only when used); one transaction per save (staged under `/foundry/outputs`, then `upload_directory`), run after the turn in the background, retried while another is open; a restore downloads in parallel. `docs/FOUNDRY.md` §4c. |
 | `sharepoint_tools.py` | Agent-facing SharePoint tools (list / search / download-to-working-folder / upload), injected only when configured. |
 | `ws_upload.py` + `ws_upload_component/` | Websocket file uploader used on Databricks (the driver proxy 403s the native uploader's PUT); 25 MB per file. |
 | `diagnostics.py` | Sidebar "Connection diagnostics" battery (resolve / plain / stream / tool-call / upload probe); terminal-callable. |
