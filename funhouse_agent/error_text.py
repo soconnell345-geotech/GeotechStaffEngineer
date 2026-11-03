@@ -17,6 +17,10 @@ the same text would show ``/home/data/geotech_webapp/users/<domain>__<user>/``.
   apart from a model that is merely busy (live smoke wave 2c, D2): asking
   again in a minute fixes a rate limit, never a spent budget, so the two
   are said differently and only the first is retried.
+* :func:`rate_limit_named` reads a rate limit the error NAMES, as Foundry's
+  model service sends one: a 400 whose ``errorName`` is
+  ``RateLimitsExceeded`` or a QoS exception (BACKLOG RI-169, INF-62). Every
+  route's busy rule asks it, so there is one copy of the names.
 
 Pure Python, no third-party import: the document tools, the agent's tool
 middleware and the web app all use it.
@@ -307,6 +311,113 @@ def budget_message(stop: Optional[BudgetStop] = None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# A rate limit the error NAMES (Foundry; BACKLOG RI-169, INF-62)
+# ---------------------------------------------------------------------------
+# Foundry's model service sends a rate limit as an HTTP 400 that names it --
+# ``errorName: 'LanguageModelService:RateLimitsExceeded'``, or a QoS
+# exception -- never as a 429 (the AI FDE's table of wave 2's 221 rate
+# limits, 2026-10-27), and the AI FDE says its Anthropic proxy does the
+# same. Read off the NAME only: a 400 that names neither is a refused
+# request like any other, and no other words in it count.
+
+#: The error names that mean a rate limit (lower case), matched inside the
+#: full name ("LanguageModelService:RateLimitsExceeded",
+#: "AzurePortalQosException", "HubQosException").
+RATE_LIMIT_NAMES = ("ratelimitsexceeded", "qosexception")
+
+#: Where an error body names its error: Foundry's own key, and the
+#: ``code`` / ``type`` an OpenAI- or Anthropic-style body uses.
+_NAME_KEYS = ("errorName", "error_name", "code", "type")
+
+#: An error's name written out in text: the Foundry SDK's "ErrorName:
+#: 'X'", an SDK message carrying the body ("'errorName': 'X'"), a body as
+#: JSON text ('"errorName":"X"', escaped or not). Group 1 is the name.
+_NAMED_IN_TEXT = re.compile(
+    r"error_?name\\?['\"]?\s*[:=]\s*\\?['\"]?([\w:.\-]+)", re.IGNORECASE)
+
+
+def _is_rate_name(value: Any) -> bool:
+    return isinstance(value, str) and any(
+        n in value.lower() for n in RATE_LIMIT_NAMES)
+
+
+def _text_names_rate(text: Any) -> bool:
+    return isinstance(text, str) and any(
+        _is_rate_name(m.group(1)) for m in _NAMED_IN_TEXT.finditer(text))
+
+
+def _body_names_rate(body: Any) -> bool:
+    """Whether an error body names a rate limit: :data:`_NAME_KEYS` at the
+    top or under ``error`` (one level down again for a proxy that wraps
+    one), ``error`` itself where it is the name, a ``message`` that writes
+    the name out, or a body that is text."""
+    if isinstance(body, str):
+        return _text_names_rate(body)
+    holders = [body]
+    for _ in range(2):
+        inner = holders[-1].get("error") if isinstance(holders[-1], dict) \
+            else None
+        if isinstance(inner, str) and _is_rate_name(inner):
+            return True
+        if not isinstance(inner, dict):
+            break
+        holders.append(inner)
+    for holder in holders:
+        if not isinstance(holder, dict):
+            continue
+        if any(_is_rate_name(holder.get(k)) for k in _NAME_KEYS):
+            return True
+        if _text_names_rate(holder.get("message")):
+            return True
+    return False
+
+
+def _response_body(response: Any) -> Any:
+    """A response's parsed JSON, else its text, else ``None`` (an unread
+    stream, a fake response): reading it never raises."""
+    try:
+        parse = getattr(response, "json", None)
+        if callable(parse):
+            body = parse()
+            if isinstance(body, (dict, str)):
+                return body
+    except Exception:  # noqa: BLE001 - not JSON, or not read
+        pass
+    try:
+        text = getattr(response, "text", None)
+        return text if isinstance(text, str) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def rate_limit_named(exc) -> bool:
+    """Whether ``exc`` (or an error it was raised from) NAMES a rate limit
+    (:data:`RATE_LIMIT_NAMES`), whatever its HTTP status -- on Foundry a
+    400. Read off the error's ``error_name`` (the Foundry SDK's errors),
+    its body (an Anthropic SDK error's whole body; an OpenAI SDK error's
+    ``error`` object), its response's JSON, and its message where the name
+    is written out there ("ErrorName: '...RateLimitsExceeded'"). A spent
+    budget is told apart by :func:`budget_exhausted`, which callers ask
+    first. Never raises."""
+    try:
+        for e in _chain(exc):
+            if any(_is_rate_name(getattr(e, attr, None))
+                   for attr in ("error_name", "_error_name")):
+                return True
+            if _body_names_rate(getattr(e, "body", None)):
+                return True
+            response = getattr(e, "response", None)
+            if response is not None and _body_names_rate(
+                    _response_body(response)):
+                return True
+            if _text_names_rate(str(e)):
+                return True
+    except Exception:  # noqa: BLE001 - classifying never fails the caller
+        return False
+    return False
+
+
+# ---------------------------------------------------------------------------
 # A model call refused at sign-in (HTTP 401; BACKLOG TA-01)
 # ---------------------------------------------------------------------------
 #
@@ -402,4 +513,5 @@ __all__ = ["scrub_paths", "error_line", "tool_error", "tool_error_json",
            "BudgetStop", "budget_signal", "budget_exhausted",
            "budget_message", "budget_tool_note", "BUDGET_HINT",
            "BUDGET_CODES", "BUDGET_PHRASES", "auth_refused", "auth_message",
-           "html_gist", "mask_secrets"]
+           "html_gist", "mask_secrets", "rate_limit_named",
+           "RATE_LIMIT_NAMES"]

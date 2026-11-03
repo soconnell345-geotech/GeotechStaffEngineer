@@ -136,6 +136,7 @@ from funhouse_agent.deep.databricks_bridge import (
     _to_usage_metadata,
     _usage_to_dict,
 )
+from funhouse_agent.error_text import rate_limit_named
 
 
 def _sdk():
@@ -192,8 +193,6 @@ def responses_available() -> bool:
 # Retries: infrastructure failures only
 # ---------------------------------------------------------------------------
 
-_RATE_LIMIT_ERRORS = ("RateLimitsExceeded", "AzurePortalQosException",
-                      "HubQosException")
 _CONNECTION_TYPES = ("ConnectionError", "RemoteDisconnected", "ProtocolError",
                      "ConnectionResetError", "ConnectionAbortedError",
                      "ChunkedEncodingError", "IncompleteRead")
@@ -203,14 +202,16 @@ _TIMEOUT_TYPES = ("Timeout", "ReadTimeout", "ReadTimeoutError",
 
 def transient_kind(exc: BaseException) -> Optional[str]:
     """``rate_limit`` / ``timeout`` / ``connection`` / ``http_503`` for a
-    failure worth retrying, else ``None`` (raise it)."""
+    failure worth retrying, else ``None`` (raise it). A rate limit the
+    error names (``RateLimitsExceeded``, a QoS exception) is read as every
+    route reads it (:func:`funhouse_agent.error_text.rate_limit_named`)."""
     for e in (exc, getattr(exc, "__cause__", None)):
         if e is None:
             continue
+        if rate_limit_named(e):
+            return "rate_limit"
         error_name = str(getattr(e, "error_name", None)
                          or getattr(e, "_error_name", None) or "")
-        if any(n in error_name for n in _RATE_LIMIT_ERRORS):
-            return "rate_limit"
         if "LlmSocketTimeout" in error_name:
             return "timeout"
         response = (getattr(e, "response", None)

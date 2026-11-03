@@ -111,7 +111,7 @@ set environment variables for the workspace/app:
 | `FOUNDRY_TOKEN` / `GEOTECH_FOUNDRY_TOKEN` | your Foundry token (Code Workspaces usually provides `FOUNDRY_TOKEN` already — check `env \| grep -i foundry` in the terminal) | Auth to the LLM proxy |
 | `FOUNDRY_PROXY_URL` | preset by Foundry in Code Workspaces and published apps (a `<proxy host>/…/foundry-proxy` address); nothing to set | Where the proxy lives (§3c) |
 | `GEOTECH_FOUNDRY_HOST` | only to override the route on purpose, e.g. the stack host `yourstack.palantirfoundry.com` an admin names | Where the proxy lives (§3c) |
-| `GEOTECH_WEBAPP_DATA` | a durable writable folder, e.g. a path under the workspace files | Saved conversations survive restarts |
+| `GEOTECH_WEBAPP_DATA` | a writable folder, e.g. a path under the workspace files | Where saved conversations are kept. In a published app that folder is inside the app's own container, so they are lost when it is rebuilt (Notes below; BACKLOG INF-38) |
 | `GEOTECH_REFERENCES_DOCS` | folder of reference PDFs (optional; §3d) | Enables figure read-off and worked-example pages, same as Databricks |
 | `GEOTECH_HELPER_MODELS` | optional, e.g. `references=Sonnet 5.5,calc=main` | A helper's own model (§3a); on Foundry the references helper defaults to `Sonnet 5.5` |
 
@@ -519,8 +519,10 @@ Field notes from the first real publish (a sandbox project on `<your-enclave>.pa
 - Tool calling, streaming, and sub-agents ride the provider-compatible proxy
   unchanged. From the release after 5.33.0 each model request on the proxy
   route gives up after 600 s (before, langchain set no limit), and the
-  agent's own busy ladder retries a timeout, a 429 or a 5xx on every route
-  (the provider's retry-after, else 15/30/60/120 s, 5 tries); the SDK
+  agent's own busy ladder retries a timeout, a 429, a 5xx, or a 400 that
+  names a rate limit (`errorName` `RateLimitsExceeded` or a QoS exception,
+  which is how Foundry's model service sends one) on every route (the
+  provider's retry-after, else 15/30/60/120 s, 5 tries); the SDK
   route (§3b) keeps its own retries as well. Vision (attachment analysis, figure read-off) depends on the
   enrollment's model supporting images through the proxy — try it, and prefer
   a multimodal RID for the default model.

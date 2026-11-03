@@ -733,7 +733,10 @@ def _count(value: Any) -> Optional[int]:
 #: ("ErrorName: 'LanguageModelService:RateLimitsExceeded'", or a QoS
 #: exception), which the app's Foundry layer retries for five minutes and
 #: then raises as it came (the AI FDE's table of wave 2's 221 rate limits,
-#: 2026-10-27: every one a 400 by that name, none a 429).
+#: 2026-10-27: every one a 400 by that name, none a 429). The name in an
+#: error's ``error_name``, body or response is read by
+#: :func:`_rate_limit_named` (BACKLOG INF-62); these words catch it in a
+#: message that only says it.
 RATE_LIMIT_WORDS: Tuple[str, ...] = ("too many requests", "rate limit",
                                      "rate_limit", "throttl",
                                      "ratelimitsexceeded", "qosexception")
@@ -801,21 +804,31 @@ def _own_words(error: Any) -> str:
         return ""
 
 
+def _rate_limit_named(error: Any) -> bool:
+    """Whether an error NAMES a rate limit the way Foundry's model service
+    does, in its ``error_name``, its body (``errorName``, the Anthropic
+    proxy's 400 included), its response or its message: the app's one
+    reading of those names (:func:`funhouse_agent.error_text.
+    rate_limit_named`; BACKLOG INF-62). Never raises."""
+    try:
+        from funhouse_agent.error_text import rate_limit_named
+        return rate_limit_named(error)
+    except Exception:                       # noqa: BLE001 - never raise here
+        return False
+
+
 def is_rate_limit(error: Any) -> bool:
     """Whether an error is the provider saying 'too many requests': its
     class name (``RateLimitError``, a host's ``RateLimitGaveUp``), a 429
-    status (``status_code``, or "Error code: 429" in its message), or
+    status (``status_code``, or "Error code: 429" in its message), a
+    rate limit it names (:func:`_rate_limit_named`: Foundry's 400), or
     :data:`RATE_LIMIT_WORDS` in its own words (:func:`_own_words`), whatever
     the status. Never raises."""
     name = type(error).__name__.lower() if isinstance(error, BaseException) \
         else ""
     if "ratelimit" in name or _status_of(error) == 429:
         return True
-    try:
-        named = str(getattr(error, "error_name", None) or "").lower()
-    except Exception:                       # noqa: BLE001 - never raise here
-        named = ""
-    if "ratelimitsexceeded" in named or "qosexception" in named:
+    if _rate_limit_named(error):
         return True
     said = _own_words(error)
     if "error code: 429" in said:

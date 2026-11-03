@@ -657,6 +657,16 @@ def test_transient_kinds():
     limited = Exception("slow down")
     limited.error_name = "LanguageModelService:RateLimitsExceeded"
     assert transient_kind(limited) == "rate_limit"
+    # Any QoS exception, and the name written in the message (INF-62).
+    qos = Exception("slow down")
+    qos.error_name = "MadeUp:SomeOtherQosException"
+    assert transient_kind(qos) == "rate_limit"
+    said = Exception("400 Client Error (made up). "
+                     "ErrorName: 'LanguageModelService:RateLimitsExceeded'.")
+    assert transient_kind(said) == "rate_limit"
+    refused = Exception("400 Client Error (made up)")
+    refused.error_name = "Default:InvalidArgument"
+    assert transient_kind(refused) is None
     busy = Exception("busy")
     busy.response = SimpleNamespace(status_code=503)
     assert transient_kind(busy) == "http_503"
