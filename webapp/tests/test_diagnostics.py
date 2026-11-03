@@ -229,6 +229,27 @@ def test_reference_docs_unset_on_an_install_warns(monkeypatch, tmp_path):
     assert "GEOTECH_REFERENCES_DOCS" in c["detail"]
 
 
+@pytest.mark.parametrize("deployment", ["foundry", ""])
+def test_reference_docs_unset_advice_fits_the_host(monkeypatch, tmp_path,
+                                                   deployment):
+    """Foundry has no SharePoint (BACKLOG INF-62): the advice names the
+    references/ folder and the variable; Funhouse's wording stays."""
+    from geotech_references import _figures_db
+    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.delenv("GEOTECH_REFERENCES_DOCS", raising=False)
+    monkeypatch.setattr(_figures_db, "_REPO_ROOT", tmp_path)
+    monkeypatch.setenv("GEOTECH_DEPLOYMENT", deployment)
+    detail = diag._reference_docs_check()["detail"]
+    if deployment == "foundry":
+        assert "references/" in detail and "GEOTECH_REFERENCES_DOCS" in detail
+        for databricks_only in ("SharePoint", "stage_sharepoint",
+                                "run_on_databricks"):
+            assert databricks_only not in detail
+    else:
+        assert detail == diag._UNSET_MESSAGE
+        assert "stage_sharepoint" in detail
+
+
 def test_reference_pdf_names_reads_the_real_catalogs():
     pytest.importorskip("geotech_references")
     names = diag.reference_pdf_names()

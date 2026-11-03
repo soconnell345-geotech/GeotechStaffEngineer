@@ -440,6 +440,18 @@ _UNSET_MESSAGE = (
     "run_on_databricks and relaunch. webapp/README.md section 3, 'Reference "
     "PDFs'.")
 
+#: The same on Foundry, which has no SharePoint (Funhouse-wiring audit,
+#: 2026-11-03; BACKLOG INF-62): the PDFs sit in the workspace repo's
+#: ``references/`` folder (OWN-80).
+_UNSET_MESSAGE_FOUNDRY = (
+    f"{REFERENCE_DOCS_ENV} is not set, so the agent cannot open any "
+    "reference PDF: reading a value off a design chart and viewing a worked "
+    "example's source page will both fail. Commit the PDFs to a references/ "
+    "folder beside the app file, under the file names this check lists once "
+    f"the folder is found, and point {REFERENCE_DOCS_ENV} at it in the app "
+    "file, then restart the app. docs/FOUNDRY.md section 3d, 'Reference PDFs "
+    "on Foundry'.")
+
 
 def _reference_docs_check() -> dict:
     """Can the agent open the reference PDFs it reads charts off?
@@ -510,7 +522,11 @@ def _reference_docs_check() -> dict:
         if local_problem:
             return _check(name, FAIL, local_problem)
         if not folder:
-            return _check(name, WARN, _UNSET_MESSAGE)
+            from webapp import engine_config
+            return _check(name, WARN,
+                          _UNSET_MESSAGE_FOUNDRY
+                          if engine_config.is_foundry_deployment()
+                          else _UNSET_MESSAGE)
 
     sources = [s for s in (where,
                            sp_label and f"{sp_label} (fetched on first use)")

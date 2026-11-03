@@ -324,6 +324,12 @@ def busy_kind(exc) -> Optional[str]:
     ``'details': None``, which a substring test took for a refused
     ``detail``).
 
+    A rate limit the error NAMES is one whatever its status: Foundry's
+    model service sends it as a 400 whose ``errorName`` is
+    ``RateLimitsExceeded`` or a QoS exception (:func:`funhouse_agent.
+    error_text.rate_limit_named`; BACKLOG INF-62). Any other 400 is not
+    busy.
+
     An AI budget or quota that is USED UP is not busy, whatever its status
     (an ``insufficient_quota`` 429 included): asking again cannot fix it,
     so it is never retried (:func:`funhouse_agent.error_text.
@@ -332,6 +338,8 @@ def busy_kind(exc) -> Optional[str]:
         return None                       # its own retry (TIMEOUT_RETRIES)
     if _budget_spent(exc):
         return None
+    if _rate_limit_named(exc):
+        return "rate limit"
     for e in _chain(exc):
         status = _status_of(e)
         body = _body_error_type(e)
@@ -363,6 +371,16 @@ def _budget_spent(exc):
         return budget_exhausted(exc)
     except Exception:  # noqa: BLE001 - classifying must never fail a call
         return None
+
+
+def _rate_limit_named(exc) -> bool:
+    """Whether an error NAMES a rate limit, as Foundry's 400s do
+    (:func:`funhouse_agent.error_text.rate_limit_named`)."""
+    try:
+        from funhouse_agent.error_text import rate_limit_named
+        return rate_limit_named(exc)
+    except Exception:  # noqa: BLE001 - classifying must never fail a call
+        return False
 
 
 def _retry_after_s(exc) -> Optional[float]:

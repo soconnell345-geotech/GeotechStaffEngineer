@@ -2196,7 +2196,8 @@ def _busy_kind(exc: BaseException) -> Optional[str]:
     """``rate limit`` / ``overloaded`` / ``server error …`` / ``connection``
     / ``timeout`` for an error that asking again later would fix, else
     ``None``. Read off the error's type, HTTP status and body
-    (``vision_engine.busy_kind``), with the error's name and text as a
+    (``vision_engine.busy_kind``, which reads Foundry's 400 that names a
+    rate limit: BACKLOG INF-62), with the error's name and text as a
     fallback for hosts whose errors carry neither."""
     name = type(exc).__name__.lower()
     if budget_exhausted(exc) is not None:
@@ -2212,7 +2213,7 @@ def _busy_kind(exc: BaseException) -> Optional[str]:
     low = str(exc).lower()
     if kind is None:
         if "ratelimit" in name or "rate_limit_exceeded" in low \
-                or "too many requests" in low:
+                or "too many requests" in low or _rate_limit_named(exc):
             kind = "rate limit"
         elif "overloaded" in name or "overloaded_error" in low:
             kind = "overloaded"
@@ -2228,6 +2229,16 @@ def budget_exhausted(exc: BaseException):
         return _spent(exc)
     except Exception:  # noqa: BLE001 - advice must never mask the error
         return None
+
+
+def _rate_limit_named(exc: BaseException) -> bool:
+    """Whether an error NAMES a rate limit, as Foundry's 400s do
+    (:func:`funhouse_agent.error_text.rate_limit_named`). Never raises."""
+    try:
+        from funhouse_agent.error_text import rate_limit_named
+        return rate_limit_named(exc)
+    except Exception:  # noqa: BLE001 - advice must never mask the error
+        return False
 
 
 def is_step_cap(exc: BaseException) -> bool:

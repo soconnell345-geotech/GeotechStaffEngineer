@@ -624,6 +624,19 @@ class TestARateLimitByItsWords:
         assert not is_rate_limit(other)
         assert error_kind(other) == "other"
 
+    def test_the_proxy_s_400_with_the_name_in_its_body_is_one(self):
+        """The Claude proxy route on Foundry (BACKLOG INF-62): an SDK error
+        whose body names the rate limit in ``errorName``, which the words
+        missed (the message is read only up to the body). Made-up ids."""
+        body = {"errorCode": "CUSTOM_CLIENT",
+                "errorName": "LanguageModelService:RateLimitsExceeded",
+                "errorInstanceId": "made-up-0000", "parameters": {}}
+        error = _StatusError(f"Error code: 400 - {body}", body=body)
+        assert is_rate_limit(error) and error_kind(error) == "rate_limit"
+        other = dict(body, errorName="LanguageModelService:InvalidArgument")
+        error = _StatusError(f"Error code: 400 - {other}", body=other)
+        assert not is_rate_limit(error) and error_kind(error) == "other"
+
     def test_an_sdk_message_with_the_body_in_it_reads_the_body_s_fields(
             self):
         body = {"error": {"message": "Rate limit reached (made up)",
