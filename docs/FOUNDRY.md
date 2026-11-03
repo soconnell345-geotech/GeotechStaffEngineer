@@ -473,7 +473,11 @@ run is the AI FDE's round trip.
 **After the first turn**, the sidebar shows **Permanent storage** with
 "Foundry storage: N uploaded, …", and the dataset holds
 `GeotechStaffEngineer/conversations/<title>_<date>/` with `meta.json`,
-`activity.jsonl`, the transcript and `files/`. To check a restore, open
+the transcript, the activity log `activity.jsonl`, the turn traces
+`trace.jsonl`, any feedback (`FEEDBACK.md`, `feedback.jsonl`) and `files/`
+(the Document Review page's under `conversations/document_review/`). The
+dataset is where those records can be read from outside the app's
+container. To check a restore, open
 **Find a past conversation (permanent storage)**, search for it and press
 **Restore** (or open the app after a rebuild: the list is read from the
 dataset).

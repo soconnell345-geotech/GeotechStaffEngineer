@@ -395,6 +395,38 @@ def test_the_restore_round_trip(tmp_path):
     assert again["uploaded"] == 0 and not again["errors"], again
 
 
+def test_the_record_files_the_trace_reviews_read_are_carried(tmp_path,
+                                                            monkeypatch):
+    """Foundry wiring audit row 8: activity.jsonl, FEEDBACK.md (with
+    feedback.jsonl) and trace.jsonl, written by the app's own writers, go
+    to the dataset with the turn and come back with a restore."""
+    from webapp import activity_log, feedback
+    monkeypatch.delenv("GEOTECH_TRACE", raising=False)
+    ds = FakeDataset()
+    store = _store(ds)
+    root = str(tmp_path / "before")
+    conv = _conversation(root, "T-REC", "Record check", _CREATED)
+    assert activity_log.append_event(conv, "page_error", turn=1,
+                                     detail="made-up event")
+    feedback.record(conv, source="user", kind="user_feedback",
+                    summary="made-up note")
+    core.write_turn_trace("T-REC", {"turn_tokens": 1, "tools": []}, root)
+    up = store.mirror_conversation("T-REC", root=root)
+    assert not up["errors"], up
+    names = {p[len(up["folder"]) + 1:] for p in ds.files}
+    for rel in ("activity.jsonl", "FEEDBACK.md", "feedback.jsonl",
+                "trace.jsonl"):
+        assert rel in names, (rel, names)
+        with open(os.path.join(conv, rel), "rb") as fh:
+            assert ds.files[f"{up['folder']}/{rel}"] == fh.read(), rel
+    res = store.restore_conversation(up["folder"].rsplit("/", 1)[-1],
+                                     root=str(tmp_path / "after"))
+    assert res["status"] == "restored", res
+    back = core.conversation_dir("T-REC", str(tmp_path / "after"))
+    for rel in ("activity.jsonl", "FEEDBACK.md", "trace.jsonl"):
+        assert os.path.isfile(os.path.join(back, rel)), rel
+
+
 def test_each_owner_lists_and_restores_only_their_folder(tmp_path):
     ds = FakeDataset()
     store = _store(ds)
@@ -592,27 +624,31 @@ def test_funhouse_and_tiny_apps_are_unchanged(monkeypatch):
     assert sp._begin_batch(object()) is False
 
 
-def test_the_sidebar_names_foundry_storage(monkeypatch, tmp_path):
-    """The real shell over a stand-in store whose backend is the dataset:
-    the permanent-storage block says Foundry storage, never SharePoint."""
+class _SidebarStore:
+    """The parts of the store the sidebar uses, as the dataset's."""
+
+    backend = "foundry"
+    label = "Foundry storage"
+    last_sync = None
+
+    def __init__(self, configured=True):
+        self.configured = configured
+
+    def list_remote_conversations(self, owner=None, page=None):
+        return []
+
+    def mirror_conversation(self, thread_id, root=None):
+        return {"uploaded": 0, "skipped": 0, "errors": [], "duration_s": 0.0}
+
+
+def _sidebar(monkeypatch, tmp_path, store, conversations=0):
+    """The real shell (AppTest) over ``store``, the geotech page, with
+    ``conversations`` saved ones already in its folder; run once."""
     pytest.importorskip("streamlit")
     from streamlit.testing.v1 import AppTest
     import webapp.engine_config as engine_config
     from webapp import profiles
     from webapp.engine_config import EngineResolution
-
-    class FoundryStore:
-        configured = True
-        backend = "foundry"
-        label = "Foundry storage"
-        last_sync = None
-
-        def list_remote_conversations(self, owner=None, page=None):
-            return []
-
-        def mirror_conversation(self, thread_id, root=None):
-            return {"uploaded": 0, "skipped": 0, "errors": [],
-                    "duration_s": 0.0}
 
     monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path))
     for e in ("GEOTECH_APP_PROFILE", "DEV_IDENTITY", "GEOTECH_USER_EMAIL"):
@@ -623,19 +659,50 @@ def test_the_sidebar_names_foundry_storage(monkeypatch, tmp_path):
                             model=object(), source="prompter",
                             model_name="fake-model", message=""))
     monkeypatch.setattr(core, "build_agent", lambda *a, **k: object())
-    store = FoundryStore()
     monkeypatch.setattr(sp, "get_store", lambda *a, **k: store)
     monkeypatch.setenv(profiles.PROFILE_ENV, "geotech")
+    for i in range(conversations):
+        core.ensure_conversation(f"T-OLD{i}", title=f"Old question {i}",
+                                 root=str(tmp_path))
     app = os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), "app.py")
     at = AppTest.from_file(app, default_timeout=30)
     at.run()
     assert not at.exception, at.exception
+    return at
+
+
+def test_the_sidebar_names_foundry_storage(monkeypatch, tmp_path):
+    """The permanent-storage block over the dataset says Foundry storage,
+    never SharePoint."""
+    at = _sidebar(monkeypatch, tmp_path, _SidebarStore())
     captions = [str(c.value) for c in at.sidebar.caption]
     assert any(c.startswith("Foundry storage is on") for c in captions), \
         captions
     assert any("Foundry storage could not be listed" in c for c in captions)
     assert not any("SharePoint" in c for c in captions), captions
+
+
+@pytest.mark.parametrize("configured, expected", [
+    (True, "**Find a past conversation** under Permanent storage below"),
+    (False, "**Restore a downloaded conversation** below"),
+])
+def test_the_filters_no_match_line_points_at_a_block_drawn(
+        monkeypatch, tmp_path, configured, expected):
+    """Foundry wiring audit: the conversation filter's "no match" line
+    pointed at Permanent storage, which Foundry did not draw. It now names
+    the block that is there: the store's search, else the zip restore."""
+    at = _sidebar(monkeypatch, tmp_path, _SidebarStore(configured),
+                  conversations=9)
+    at.sidebar.text_input(key="conv_filter").input("no such title").run()
+    assert not at.exception, at.exception
+    lines = [str(c.value) for c in at.sidebar.caption
+             if str(c.value).startswith("No saved conversation matches")]
+    assert len(lines) == 1 and expected in lines[0], lines
+    if configured:
+        assert at.sidebar.expander and any(
+            "Find a past conversation" in str(e.label)
+            for e in at.sidebar.expander)
 
 
 # ---------------------------------------------------------------------------

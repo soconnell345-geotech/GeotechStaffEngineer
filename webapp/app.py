@@ -491,6 +491,26 @@ def _sp_configured() -> bool:
         return False
 
 
+def _no_match_hint() -> str:
+    """The conversation filter's line when nothing here matches: it points
+    at the block below that can bring an older one back -- Permanent
+    storage (SharePoint, or Foundry storage, INF-38) when it is drawn, else
+    the zip restore (INF-45), else nothing (Foundry wiring audit,
+    2026-11-03: the old line pointed at a block Foundry did not draw)."""
+    head = "No saved conversation matches"
+    try:
+        stored = bool(sharepoint_store.get_store().configured)
+    except Exception:                                  # noqa: BLE001
+        stored = False
+    if stored:
+        return (f"{head} — search **Find a past conversation** under "
+                "Permanent storage below to restore an older one.")
+    if _PROFILE.conversation_download:
+        return (f"{head} — **Restore a downloaded conversation** below "
+                "brings one back from its zip.")
+    return f"{head}."
+
+
 #: The sidebar's warning when Foundry storage refuses the app's token.
 _FOUNDRY_STORAGE_AUTH = (
     "Foundry storage refused the app's token. The token needs the datasets "
@@ -546,8 +566,7 @@ with st.sidebar:
         _shown = [m for m in _all_convs
                   if _filter in str(m.get("title") or "").lower()]
         if not _shown:
-            st.caption("No saved conversation matches — try Permanent "
-                       "storage below to restore an older one.")
+            st.caption(_no_match_hint())
     else:
         _shown = _all_convs[:50]
     for _m in _shown:

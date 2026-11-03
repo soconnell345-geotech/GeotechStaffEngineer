@@ -13,10 +13,17 @@ change.
 On a Foundry deployment with `GEOTECH_FOUNDRY_CONVERSATION_DATASET` set
 (and the SDK installed):
 
-- After every turn the conversation folder (`meta.json`, `activity.jsonl`,
-  transcript, `files/`) goes to the dataset under
+- After every turn the conversation folder (`meta.json`, the transcript,
+  `activity.jsonl`, `trace.jsonl`, `FEEDBACK.md` / `feedback.jsonl`,
+  `files/`) goes to the dataset under
   `GeotechStaffEngineer/conversations/<title>_<date>/`, as it goes to
-  SharePoint on Funhouse.
+  SharePoint on Funhouse. The owner's full-trace reviews can read the
+  records there (Foundry wiring audit row 8; below).
+- When the conversation filter finds nothing, its line points at the block
+  that is drawn: **Find a past conversation** under Permanent storage with
+  the store configured, else **Restore a downloaded conversation** (the zip,
+  INF-45) on the geotech page (audit, the `app.py` "try Permanent storage
+  below" line).
 - The sidebar shows **Permanent storage** with "Foundry storage: N
   uploaded, M up-to-date", **Sync now**, and **Find a past conversation
   (permanent storage)**, which lists the dataset's folders and restores one
@@ -38,11 +45,29 @@ Funhouse and Tiny Apps are unchanged: the dataset setting is read only when
 |---|---|
 | `webapp/foundry_dataset_store.py` (new) | `DatasetFileManager`: `ls` (folders made from the file paths), `create_folder` (no-op), `upload_file`, `download_file`, `get_web_url` (none), `probe`; the batch hook `begin_batch` / `end_batch`; settings, host and token from `engine_config`; `foundry_sdk` imported lazily |
 | `webapp/sharepoint_store.py` | the store builds the dataset file manager on Foundry with the dataset set; `backend` and `label` ("Foundry storage"); `root()` defaults to `GeotechStaffEngineer` there; the mirror sends one sync's files in one batch and records them only after the commit; a restore runs in a batch (one listing); module-level `configured()` (the gate of the agent's SharePoint tools and the reference-PDF fetch) is False when the dataset is the storage |
-| `webapp/app.py` | sidebar wording names Foundry storage; the token warning gives the datasets scopes, not `stage_sharepoint`; `_sp_configured()` (the attach hint) is SharePoint only |
-| `webapp/diagnostics.py` | the *conversation storage* line, on Foundry only |
-| `docs/FOUNDRY.md` | §4c, setting it up; the Notes bullet points to it |
+| `webapp/app.py` | sidebar wording names Foundry storage; the token warning gives the datasets scopes, not `stage_sharepoint`; `_sp_configured()` (the attach hint) is SharePoint only; the filter's no-match line (`_no_match_hint`) names the block drawn |
+| `webapp/diagnostics.py` | the *conversation storage* line, on Foundry only (commit 1; not touched since, INF-62 works there) |
+| `docs/FOUNDRY.md` | §4c only (setting it up, the files carried, who sees what); the Notes bullet points to it |
 | `webapp/README.md` | the module row |
-| `webapp/tests/test_foundry_dataset_store.py` (new) | 26 tests over a fake SDK client (made-up RIDs, hosts and tokens) |
+| `webapp/tests/test_foundry_dataset_store.py` (new) | 29 tests over a fake SDK client (made-up RIDs, hosts and tokens) |
+
+## The record files the trace reviews read (audit row 8)
+
+Confirmed carried. `activity.jsonl` (`activity_log.FILE_NAME`),
+`trace.jsonl` (`core.trace_path`), `FEEDBACK.md` and `feedback.jsonl`
+(`feedback.MD_NAME`, `JSONL_NAME`) are all top-level files of the
+conversation folder; the mirror walks the whole folder and leaves out only
+the in-flight files (`partial.json`, `partial_messages.json`, `*.part`,
+`*.tmp`), the scratch and cache folders under `files/` and its own
+manifest (`core.is_in_flight_file`, `core.mirror_skips_dir`). The turn
+writes `trace.jsonl` before its end-of-turn save (`turn_jobs.py`), so a
+turn's trace goes with that turn; the agent's `record_feedback` notes go
+at the end of the turn; the sidebar's Feedback box saves at once. The
+restore brings all of them back. `trace.jsonl` exists only while
+`GEOTECH_TRACE` is on (it is on unless set to 0/false/no/off).
+Test: `test_the_record_files_the_trace_reviews_read_are_carried` writes
+each through the app's own writer, saves, checks the bytes in the dataset,
+and restores.
 
 How a save works: the store calls `begin_batch()`, uploads each changed
 file (the first upload opens ONE `UPDATE` transaction; a sync with nothing
@@ -74,6 +99,19 @@ checked first (3.0 to 4.1 GB):
 | `test_page_fingerprints.py` | 15 passed | 0 |
 | `test_docs_currency.py` | 6 passed | 0 |
 
+Second round (the audit's additions: the filter line, the record files),
+same pieces again:
+
+| Run | Result | Exit |
+|---|---|---|
+| piece A above (now 29 tests in the new file) | 199 passed | 0 |
+| piece B above | 140 passed | 0 |
+| `test_public_text.py`, `test_page_fingerprints.py`, `test_docs_currency.py` (staged) | 25 passed | 0 |
+
+Piece A of this round started with 2.4 GB free, under the 3 GB rule (the
+check and the run were in one command); it passed, and the later runs
+were checked first (3.1 to 3.8 GB).
+
 The new tests cover: listing (folders from paths, the prefix asked for,
 an SDK without `path_prefix`), a single upload, overwrite, download, one
 transaction per batch and none when nothing changed, one listing per batch,
@@ -84,7 +122,9 @@ through the store (byte-identical; the next sync sends nothing), per-owner
 folders, the client built from the app's token and host (service discovery,
 an explicit `http://` host, a rotated token), the SDK missing, no token,
 Funhouse and Tiny Apps unchanged, the sidebar wording (AppTest), the
-diagnostics line, and report ingest's mirror.
+filter's no-match line with and without the store (AppTest), the record
+files (`activity.jsonl`, `FEEDBACK.md`, `feedback.jsonl`, `trace.jsonl`)
+saved and restored, the diagnostics line, and report ingest's mirror.
 
 ## SDK calls for the FDE to confirm (paste into the round-trip test)
 
@@ -142,21 +182,37 @@ Questions for the FDE with it:
    the open transaction, or does it stay open and block every later save on
    that branch until someone aborts it?
 
-## Unknown viewer
+## Unknown viewer: whose folder
 
-The app knows who is viewing only from the Tiny Apps proxy header; on
-Foundry it knows no one (`identity.current_identity()` is anonymous unless
-`DEV_IDENTITY` or `GEOTECH_USER_EMAIL` is set, which name one person and
-change no folders). So on Foundry every viewer's conversations go into ONE
-folder, `GeotechStaffEngineer/conversations/`, and **Find a past
-conversation** lists all of them to every viewer, and any viewer can
-restore any of them. That matches what the app already does in the
-container: its own conversation list shows every viewer's conversations.
-Whoever can open the dataset in Foundry can read them all. When the app
-does know the viewer (a multi-user host), each person's conversations go to
-`conversations/<their key>/`, and the list and restore look only there
-(covered by `test_each_owner_lists_and_restores_only_their_folder` and the
-existing SharePoint tests).
+Foundry gives the app no viewer identity today (audit row 4). The app
+keeps people apart only when a HOST names the viewer (the Tiny Apps proxy
+header: `Identity.multi_user`). On Foundry `identity.current_identity()`
+returns the anonymous identity; `DEV_IDENTITY` or `GEOTECH_USER_EMAIL`, if
+someone set one in the app file, name one person for display and change no
+folder.
+
+So an unknown viewer's conversations go into **no one's folder: the one
+shared folder of the app**, with no owner segment:
+
+- geotech page: `GeotechStaffEngineer/conversations/<title>_<date>/`
+  (the conversation's `meta.json` carries no `owner`; the app tags an
+  owner only when `multi_user` is true, `app.py`, `core.tag_conversation`);
+- Document Review page: `GeotechStaffEngineer/conversations/document_review/<title>_<date>/`.
+
+It is not the publisher's folder, and not keyed by the token's account:
+every viewer's conversations land side by side in that folder, and **Find a
+past conversation** lists, and lets any viewer restore, all of them, as the
+app's own conversation list in the container already shows every viewer's
+conversations. Whoever can open the dataset in Foundry can read them all.
+Two viewers on one day asking under the same title get two folders (the
+second gets a six-character id suffix), never one shared folder.
+
+When a host does name the viewer, each person's conversations go to
+`conversations/<their key>/[document_review/]`, and the list and restore
+look only there (`test_each_owner_lists_and_restores_only_their_folder`
+and the SharePoint tests). Reading a viewer identity on Foundry is the
+audit's U4 / FDE question 4; once read the way the IIS header is, the
+dataset folders follow with no store change.
 
 ## Report ingest's durable mirror (RI-203)
 
