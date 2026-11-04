@@ -455,7 +455,7 @@ The app reaches the dataset through the workspace dataset library
 nothing to install. The platform's datasets API (and with it
 `foundry-platform-sdk`) is turned off inside app containers.
 
-1. **Create a dataset of raw files** (no schema), e.g. `gse_conversations`,
+1. **Create a dataset of raw files** (no schema), e.g. `app_conversations`,
    used for nothing else, in a project only the right people can see
    (below, "One user"). Leave it empty: it needs **no placeholder file**.
    A new dataset with nothing committed yet reads as an empty store, and
@@ -467,7 +467,7 @@ nothing to install. The platform's datasets API (and with it
    `.foundry/aliases.yml`; the name there is its alias. Commit and push.
 3. **Set the alias in the app file**, before `main()`:
    ```python
-   os.environ["GEOTECH_FOUNDRY_CONVERSATION_DATASET"] = "gse_conversations"  # the alias, not the ri. ID
+   os.environ["GEOTECH_FOUNDRY_CONVERSATION_DATASET"] = "app_conversations"  # the alias, not the ri. ID
    ```
    A resource ID (`ri.…`) does not work here; Connection diagnostics and
    the sidebar say so.
