@@ -1,0 +1,4 @@
+# App Service starts the app with `bash /home/site/wwwroot/run.sh`; CRLF line
+# endings break it ("$'\r': command not found"). Keep run.sh LF whatever the
+# checkout platform, so a copy taken from a Windows checkout stays LF too.
+*.sh text eol=lf

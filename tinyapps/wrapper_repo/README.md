@@ -17,6 +17,7 @@ packages.txt                 route C: our package pin + the third-party pins
 requirements-thirdparty.txt  CfA fleet pins + Key Vault libraries (every route)
 run.sh                       CfA's Streamlit startup template; picks the route
 .env.example                 the settings the engineers provide, for local runs
+.gitattributes               keeps run.sh LF (bash on App Service fails on CRLF)
 app_src/                     route A only: our source
 wheels/                      route B only: our wheels
 ```

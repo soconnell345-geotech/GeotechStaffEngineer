@@ -142,6 +142,12 @@ def test_app_py_finds_the_source_folder_without_run_sh(tmp_path):
     assert "made-up entry from app_src" in r.stdout
 
 
+def test_template_keeps_run_sh_lf():
+    """App Service runs ``bash run.sh``; a CRLF copy fails at the first line."""
+    attrs = (WRAPPER / ".gitattributes").read_text(encoding="utf-8")
+    assert "*.sh text eol=lf" in attrs.splitlines()
+
+
 def test_template_keeps_our_package_apart_from_the_third_party_pins():
     def reqs(name):
         return [ln.strip() for ln in
