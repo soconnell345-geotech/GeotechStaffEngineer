@@ -28,7 +28,8 @@ the dataset's workspace alias:
   in the background. The chat does not wait for it.
 - The sidebar's **Permanent storage** block says "Foundry storage: saving
   the latest turn…" while a save runs, then "Foundry storage: N uploaded,
-  M up-to-date · Xs". **Sync now** saves at once, with a spinner, and
+  M up-to-date · Xs" (since INF-65 "saved N file(s) just now, …", shown
+  without a click). **Sync now** saves at once, with a spinner, and
   drops the cached past-conversations list.
 - **Find a past conversation (permanent storage)** lists the dataset's
   conversation folders and restores one (record and files), downloading
@@ -38,7 +39,8 @@ the dataset's workspace alias:
   host, SharePoint too, since a listing there also takes seconds.
 - **Connection diagnostics**, line *conversation storage*: PASS with the
   alias and how many files are the app's (one listing, no write); FAIL with
-  a plain reason; SKIP when the variable is not set.
+  a plain reason; SKIP when the variable is not set. A new dataset with
+  nothing committed passes as "readable, 0 files" (INF-65, below).
 - **When nothing keeps the conversations, the sidebar says so.** On master
   a Foundry app with no usable dataset drew no storage block at all; only
   Connection diagnostics said why, so the owner could take conversations
@@ -53,10 +55,11 @@ the dataset's workspace alias:
   - an alias the workspace does not define (`AliasNotDefined`).
   The first three say to import the dataset into the workspace (Data
   panel, read and write), push, and set the variable to its alias; the
-  library case says to publish from a Code Workspace. An unknown alias is
-  found by one `Dataset.get` per process (`check_alias`), so the block is
-  right from the first draw if that call resolves the alias; else the
-  first listing or save finds it. A call that works clears it.
+  library case says to publish from a Code Workspace. Since INF-65 a
+  fifth: any other refusal of a read (for example `FailedToResolveDataset`
+  for an alias pointing at the wrong dataset), in Foundry's own words. An
+  unknown alias or a refused read is found by one listing per process,
+  started by the sidebar's first draw, in the background (INF-65, below).
 - A save that meets another transaction open retries for about 30 s, then
   says another save holds the dataset; the turn is unaffected, and the
   files go up with the next save.
@@ -128,7 +131,7 @@ The rules the app keeps:
 | Save after a turn | 1 `upload_directory` | about 5-7 s, in the background |
 | First save of a conversation with a title | also 1 `files()` (the folder-name check); 1 download more if a folder of that name exists | about 9-11 s, in the background |
 | Save while the outputs folder holds something else | 1 `upload_file` per changed file | about 5-6 s each |
-| Opening the app (first draw) | none (one `Dataset.get` per process) | 0 |
+| Opening the app (first draw) | none; the first draw in a process starts 1 `files()` in the background (INF-65) | 0 (the check about 3-4 s, not waited for) |
 | Past-conversations list, when asked for | 1 `files()` per browser session | about 3-4 s |
 | Restore of N files | 1 `files()`, 1 download (`meta.json`), then N downloads six at a time | about 3-4 s + 3-4 s + N/6 × 3-4 s |
 | Diagnostics line | 1 `files()` | about 3-4 s |
@@ -270,8 +273,9 @@ The new tests cover:
    Connection diagnostics, line *conversation storage*: PASS, with the
    alias. Send the line and how long the check took.
 2. **Save.** Run one turn. The sidebar shows "saving the latest turn…",
-   then, after the next click, "Foundry storage: N uploaded, … · Xs". **Xs
-   is the save time**: send it for the first turn and for a later one. The
+   then, by itself since INF-65, "Foundry storage: saved N file(s) just
+   now, … · Xs". **Xs is the save time**: send it for the first turn and
+   for a later one. The
    dataset should hold `GeotechStaffEngineer/conversations/<title>_<date>/`
    with `meta.json`, the transcript, `activity.jsonl` and `files/`. Its
    history should show one transaction per turn.
@@ -298,8 +302,8 @@ The new tests cover:
   while it is closed, and an expander that tells the app when it opens
   (`on_change`) exists only in recent Streamlit, while the app allows 1.39
   and up. After **Sync now** the list is read again only when next shown.
-- **The save line is not live.** It updates on the next rerun (any click),
-  not when the save ends.
+- ~~**The save line is not live.**~~ Fixed by INF-65 (below): the
+  sidebar looks again every 2 s while a save runs.
 - **Waiting behind a save.** **Sync now** waits behind a background save
   of any conversation (the store's lock), up to about 30 s more when the
   dataset is busy. A busy dataset holds the process-wide lock for that
@@ -336,3 +340,109 @@ The new tests cover:
   are not, an unidentified viewer's list shows the owners' folders as
   entries that cannot be restored. Foundry identifies no one, so this
   does not arise there; SharePoint behaves the same today.
+
+## INF-65: a new, empty dataset; the sidebar and diagnostics agree; a live save line
+
+Built 2026-11-03 on branch `wip/inf65`, from the FDE's build i hand-back
+(report items 4 and 5, kept locally, never committed):
+
+- A brand-new raw-files dataset with no committed transaction refused the
+  first read with `400 FoundryContainerService:FailedToResolveDataset`,
+  "The dataset does not have any committed transaction on the requested
+  branch or across fallback branches". Connection diagnostics FAILED and
+  the owner had to upload a placeholder file (Foundry then guessed a CSV
+  schema for it, removed by hand).
+- Meanwhile the sidebar already said "Foundry storage is on".
+- After the turn the sidebar showed no save line; the save landed about
+  7 s later, in one transaction.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `webapp/foundry_dataset_store.py` | `_is_no_commit`: the error name `FailedToResolveDataset` AND the wording "no / not have any committed transaction", in the error or the errors it wraps. A listing that meets it is an empty store (`uncommitted`), so `ls` gives `[]`, the probe says "readable, 0 files: a new dataset with nothing committed yet; the first save makes its first commit", the folder-name check adds no shard, and the save path is unchanged (the first `upload_directory` makes the first commit). Any other `FailedToResolveDataset` still raises. Every listing records what it found in one record per alias, shared by every file manager in the process (`_READS`). `known_problem` (replacing `check_alias`) gives the sidebar the alias error or the recorded read failure; when nothing has read the alias yet it starts ONE listing in the background and the page does not wait (`checking`). |
+| `webapp/diagnostics.py` | Every probe failure is shown as `not_kept_reason`, the sidebar's text; the probe records into the shared record, so a failed diagnostics read turns the sidebar to NOT kept, and a read that works clears it. |
+| `webapp/sharepoint_store.py` | `check_state()` ("checking" while that first read runs). A save's summary carries `at`, when it ended. |
+| `webapp/app.py` | The status lines of **Permanent storage** move into `_storage_status`. While the dataset's first check, or a save of this conversation, runs in the background (`_storage_busy`, Foundry only in practice), `_storage_panel` draws them as an `st.fragment(run_every=2 s)`. When that ends the fragment reruns the page once, which shows the result and defines no fragment, so the polling stops. A timed fragment run never interrupts a running turn: Streamlit queues it behind the full run. New lines: "Foundry storage: checking the conversation dataset…"; "Foundry storage: saved N file(s) just now, M up-to-date · Xs" (SharePoint keeps "N uploaded, …"). "Foundry storage is on" shows only after a read has worked. |
+| `docs/FOUNDRY.md` §4c | A new dataset needs no placeholder file. Diagnostics passes on it as "readable, 0 files". The sidebar checks, then agrees with diagnostics. The save line updates without a click. |
+| `webapp/tests/test_foundry_dataset_store.py` | The fake models the no-commit refusal (`files()` or `Dataset.get`), another `FailedToResolveDataset` cause, and a listing that hangs. 8 new tests, 48 in all. |
+
+### What a fresh dataset now shows
+
+- **Connection diagnostics:** PASS, "Foundry storage: workspace dataset
+  alias …, saves staged in /foundry/outputs; readable, 0 files: a new
+  dataset with nothing committed yet; the first save makes its first
+  commit."
+- **The sidebar:** "Foundry storage: checking the conversation dataset…"
+  for the first 3-4 s after the container starts, then "Foundry storage is
+  on — …".
+- **After the first turn:** "saving the latest turn…", then, by itself
+  within about 2 s of the save ending, "Foundry storage: saved 5 file(s)
+  just now, 0 up-to-date · 6.8s".
+
+### Tests (exit codes)
+
+Run from the worktree with the main checkout's venv, in pieces, with at
+least 3 GB free checked before each run:
+
+| Run | Result | Exit |
+|---|---|---|
+| `test_foundry_dataset_store.py` | 48 passed | 0 |
+| `test_sharepoint_store.py`, `test_sharepoint_links_and_failures.py`, `test_sharepoint_privacy.py`, `test_conversation_restore.py`, `test_past_conversations_pages.py`, `test_diagnostics.py`, `test_foundry_mode.py` | 158 passed | 0 |
+| `test_app_smoke.py` | 11 passed | 0 |
+| `test_public_text.py`, `test_docs_currency.py`, `test_page_fingerprints.py`, `test_foundry_dataset_store.py` (files staged) | 73 passed | 0 |
+
+The new tests:
+
+- **Matching.** The no-commit error is matched by its name and its
+  wording, and also when wrapped. The same name with other wording, or the
+  wording under another name, is not.
+- **A new dataset.** It lists as empty, the probe and diagnostics PASS
+  with "readable, 0 files", and the past-conversations list is empty. The
+  first save makes the first commit under the plain folder name, and the
+  next probe counts its files.
+- **`Dataset.get` refusing.** When `Dataset.get` itself refuses a new
+  dataset, the listing is still empty, and a save fails plainly with
+  Foundry's error (the save path is unchanged).
+- **One record.** A failed diagnostics read after a good check turns the
+  sidebar's reason to the diagnostics line's text. A good read clears it.
+  One check, two probes, three listings.
+- **The sidebar (AppTest).** It says "checking…", and not "on", while the
+  first listing hangs, then "on" once it has worked: one listing per
+  process. It shows NOT kept, in the diagnostics line's words, for a
+  `FailedToResolveDataset` with another cause. It shows "on" with
+  diagnostics PASS for a new dataset.
+- **The live save line (AppTest).** A save that ends while the page
+  draws: the status lines were a fragment with `run_every=2.0`. The page
+  reran once by itself, shows "saved 5 file(s) just now", and defined no
+  fragment on that run.
+
+### What the FDE must confirm
+
+7. **A new, empty dataset.** Create a fresh raw-files dataset with no
+   file in it, import it, set the alias and push. Connection diagnostics
+   should PASS with "readable, 0 files: a new dataset…". The sidebar should
+   say "checking…", then "Foundry storage is on". Then run one turn. Does
+   the first save make the first commit? The dataset should hold the
+   conversation folder, its history one transaction, and the sidebar
+   "saved N file(s)". If instead the save fails with
+   `FailedToResolveDataset`, `Dataset.get` or `upload_directory` refuses a
+   dataset with no commit. Send that error; the app then needs another way
+   to make the first commit. (The app's own class has run this only
+   against the fake.)
+8. **The save line updates by itself.** After a turn, without clicking,
+   the sidebar should go from "saving the latest turn…" to "saved N
+   file(s) just now" within a few seconds of the save landing.
+
+### Noted, not fixed
+
+- **A transient read failure.** It turns the sidebar to NOT kept until a
+  later read works: diagnostics, **Show past conversations**, **Refresh**,
+  or a save's folder check.
+- **Saves do not update the record.** A failed save shows in the save
+  line, not in the NOT-kept block, and a save that works does not clear a
+  read failure.
+- **"just now" goes stale.** The time on the save line goes stale between
+  reruns, as the conversation list's times do.
+- **One extra rerun per save.** The rerun at the end of a background save
+  redraws the whole page once, like a click.

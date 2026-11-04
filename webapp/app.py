@@ -551,6 +551,118 @@ def _relative_time(updated: float) -> str:
     return f"{ago // 86400}d ago"
 
 
+#: Seconds between looks at the storage status while the Foundry dataset's
+#: first check, or a save in the background, runs (INF-65); none after.
+_STORAGE_POLL_S = 2.0
+
+
+def _storage_busy(store, thread_id) -> bool:
+    """True while the Foundry dataset's first check, or a save of this
+    conversation, runs in the background. Never on SharePoint, which saves
+    within the turn."""
+    try:
+        check = getattr(store, "check_state", None)
+        state = getattr(store, "save_state", None)
+        return bool((callable(check) and check())
+                    or (callable(state) and state(thread_id)))
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
+def _storage_status(store, thread_id, polling: bool = False) -> None:
+    """The Permanent storage block's status lines: why conversations are
+    NOT kept (the Connection diagnostics line's text), the dataset's first
+    check, a save in the background, this conversation's latest save. With
+    ``polling`` it runs as a timed fragment (``_storage_panel``) while
+    something runs in the background; when that ends it reruns the page once,
+    which shows the result and stops the timer, so the result shows without
+    a click (the FDE, build i: no save line after the turn)."""
+    ss = st.session_state
+    foundry = getattr(store, "backend", "sharepoint") == "foundry"
+    label = getattr(store, "label", "SharePoint")
+    try:
+        not_kept_of = getattr(store, "not_kept_reason", None)
+        not_kept = not_kept_of() if callable(not_kept_of) else None
+    except Exception:                                  # noqa: BLE001
+        not_kept = None
+    if not_kept:
+        st.warning(_NOT_KEPT_HEAD + not_kept)
+    # This conversation's own mirror record only -- never the store-wide
+    # last sync, which on a shared host is another person's folder and
+    # link (live smoke wave 2c, D3).
+    sync = sharepoint_store.sync_for_conversation(
+        store, thread_id, ss.get("sp_sync"))
+    try:
+        check_of = getattr(store, "check_state", None)
+        checking = bool(callable(check_of) and check_of()) and not not_kept
+        state_of = getattr(store, "save_state", None)
+        state = state_of(thread_id) if callable(state_of) else None
+    except Exception:                                  # noqa: BLE001
+        checking, state = False, None
+    if checking:
+        st.caption(f"{label}: checking the conversation dataset…")
+    if state:
+        st.caption(f"{label}: saving the latest turn…" if state == "saving"
+                   else f"{label}: the latest turn is waiting to be saved…")
+    if sync:
+        n_err = len(sync.get("errors") or [])
+        failed = f", {n_err} failed" if n_err else ""
+        if foundry and sync.get("at"):
+            line = (f"{label}: saved {sync['uploaded']} file(s) "
+                    f"{_relative_time(sync['at'])}, {sync['skipped']} "
+                    f"up-to-date{failed} · {sync['duration_s']}s")
+        else:
+            line = (f"{label}: {sync['uploaded']} uploaded, "
+                    f"{sync['skipped']} up-to-date{failed}"
+                    f" · {sync['duration_s']}s")
+        if n_err:
+            st.warning(line)
+            with st.expander("Sync errors", expanded=False):
+                for e in sync["errors"]:
+                    st.caption(e)
+        else:
+            st.caption(line)
+        if sync.get("folder"):
+            st.caption(f"Folder: {os.path.basename(sync['folder'])}")
+        if sync.get("renamed_from"):
+            st.caption("Renamed — the folder before the rename keeps a "
+                       "copy and a MOVED.txt pointing here.")
+        if sync.get("web_url"):
+            st.markdown(f"[Open session folder]({sync['web_url']})")
+        if sync.get("note"):
+            st.info(sync["note"])
+    elif not state and not not_kept and not checking:
+        st.caption("Foundry storage is on — this conversation's files "
+                   "are saved to the Foundry dataset after each turn."
+                   if foundry else
+                   "SharePoint mirroring is on — this conversation's "
+                   "files sync after each turn.")
+    if _sp_auth_problem(sync, foundry=foundry) and not not_kept:
+        st.warning(_FOUNDRY_STORAGE_AUTH if foundry else
+                   "SharePoint rejected the app's token — it has probably "
+                   "expired (the refresher lives in the launching "
+                   "notebook and stops when that notebook clears). "
+                   "Re-run `stage_sharepoint(...)` in the notebook, "
+                   "then Sync now.")
+    if polling and not _storage_busy(store, thread_id):
+        st.rerun()
+
+
+def _storage_panel(store, thread_id) -> None:
+    """:func:`_storage_status`, as a fragment that looks again every
+    :data:`_STORAGE_POLL_S` while something runs in the background (Foundry
+    only, in practice); drawn once otherwise."""
+    try:
+        store.not_kept_reason()      # starts the dataset's first check
+    except Exception:                                  # noqa: BLE001
+        pass
+    if _storage_busy(store, thread_id) and hasattr(st, "fragment"):
+        st.fragment(_storage_status, run_every=_STORAGE_POLL_S)(
+            store, thread_id, True)
+    else:
+        _storage_status(store, thread_id)
+
+
 with st.sidebar:
     if _IDENT.authenticated:
         # Who the host says is here — the IIS header on Tiny Apps (never typed
@@ -1136,8 +1248,6 @@ with st.sidebar:
         _sp_label = getattr(_sp, "label", "SharePoint")
         st.divider()
         st.subheader("Permanent storage")
-        if _not_kept:
-            st.warning(_NOT_KEPT_HEAD + _not_kept)
         # This page's own folder of mirrors — the same owner/page segments
         # the turn records with core.tag_conversation (below), so the
         # geotech page never lists the review page's folder as a
@@ -1145,66 +1255,15 @@ with st.sidebar:
         _sp_where = {"owner": (_IDENT.key if _IDENT.multi_user
                                else None),
                      "page": _PROFILE.name}
-        # This conversation's own mirror record only -- never the store-wide
-        # last sync, which on a shared host is another person's folder and
-        # link (live smoke wave 2c, D3).
-        _sync = sharepoint_store.sync_for_conversation(
-            _sp, ss.thread_id, ss.get("sp_sync"))
-        # A save running in the background (Foundry): shown until it ends;
-        # its result shows on the next rerun.
-        _sp_state = None
-        try:
-            _state_of = getattr(_sp, "save_state", None)
-            _sp_state = _state_of(ss.thread_id) if callable(_state_of) \
-                else None
-        except Exception:                              # noqa: BLE001
-            _sp_state = None
-        if _sp_state:
-            st.caption(f"{_sp_label}: saving the latest turn…"
-                       if _sp_state == "saving" else
-                       f"{_sp_label}: the latest turn is waiting to be "
-                       "saved…")
-        if _sync:
-            _n_err = len(_sync.get("errors") or [])
-            _line = (f"{_sp_label}: {_sync['uploaded']} uploaded, "
-                     f"{_sync['skipped']} up-to-date"
-                     + (f", {_n_err} failed" if _n_err else "")
-                     + f" · {_sync['duration_s']}s")
-            if _n_err:
-                st.warning(_line)
-                with st.expander("Sync errors", expanded=False):
-                    for e in _sync["errors"]:
-                        st.caption(e)
-            else:
-                st.caption(_line)
-            if _sync.get("folder"):
-                st.caption(f"Folder: {os.path.basename(_sync['folder'])}")
-            if _sync.get("renamed_from"):
-                st.caption("Renamed — the folder before the rename keeps a "
-                           "copy and a MOVED.txt pointing here.")
-            if _sync.get("web_url"):
-                st.markdown(f"[Open session folder]({_sync['web_url']})")
-            if _sync.get("note"):
-                st.info(_sync["note"])
-        elif not _sp_state and not _not_kept:
-            st.caption("Foundry storage is on — this conversation's files "
-                       "are saved to the Foundry dataset after each turn."
-                       if _sp_foundry else
-                       "SharePoint mirroring is on — this conversation's "
-                       "files sync after each turn.")
+        # The status lines; on Foundry they look again by themselves while
+        # the first check or a save runs in the background (INF-65).
+        _storage_panel(_sp, ss.thread_id)
         if st.button("Sync now", key=f"spsync_{ss.thread_id}"):
             with st.spinner(f"Saving to {_sp_label}…"):
                 ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
             # the list of past conversations is read again when next shown
             ss.pop(sharepoint_store.listing_cache_key(**_sp_where), None)
             st.rerun()
-        if _sp_auth_problem(_sync, foundry=_sp_foundry) and not _not_kept:
-            st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
-                       "SharePoint rejected the app's token — it has probably "
-                       "expired (the refresher lives in the launching "
-                       "notebook and stops when that notebook clears). "
-                       "Re-run `stage_sharepoint(...)` in the notebook, "
-                       "then Sync now.")
 
         # Restore (owner feedback 2026-09-11): the driver disk is wiped on
         # a cluster restart, so old conversations vanish from the list

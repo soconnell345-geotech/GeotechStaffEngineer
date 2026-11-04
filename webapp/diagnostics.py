@@ -226,7 +226,9 @@ def _conversation_storage_check() -> dict:
     dataset when set, read once (one listing, about 3-4 s; nothing is
     written, the first turn's save shows that); otherwise why it is off,
     plainly, with the fix (``fds.not_kept_reason``: the sidebar's
-    "Conversations are NOT kept" block shows the same text)."""
+    "Conversations are NOT kept" block shows the same text, and a failed
+    read here reaches it through the store's shared record, INF-65). A new
+    dataset with nothing committed yet passes as empty."""
     from webapp import foundry_dataset_store as fds
     name = "conversation storage"
     if not fds.dataset_alias():
@@ -237,11 +239,11 @@ def _conversation_storage_check() -> dict:
     try:
         fm = fds.DatasetFileManager()
         state = fm.probe()
-    except fds.AliasNotDefined:
-        return _check(name, FAIL, fds.not_kept_reason(fm))
     except Exception as exc:                         # noqa: BLE001
-        return _check(name, FAIL, f"the conversation dataset could not be "
-                      f"read: {type(exc).__name__}: {exc}")
+        reason = fds.not_kept_reason(fm) if fm is not None else None
+        return _check(name, FAIL, reason or (
+            f"the conversation dataset could not be read: "
+            f"{type(exc).__name__}: {exc}"))
     return _check(name, PASS, f"Foundry storage: {fm.describe()}; {state}. "
                   "Conversations are saved there after each turn.")
 

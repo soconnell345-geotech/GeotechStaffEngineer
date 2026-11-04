@@ -477,9 +477,10 @@ class SharePointStore:
         """On a Foundry deployment, why conversations are NOT kept across
         restarts, with the fix, in one line (the text of Connection
         diagnostics' line): no alias set, a resource ID in its place, the
-        library missing, or an alias the workspace does not define. ``None``
-        when they are kept, as far as is known, and on every other host.
-        Never raises."""
+        library missing, an alias the workspace does not define, or a
+        dataset its latest read could not read. ``None`` when they are
+        kept, as far as is known (see :meth:`check_state`), and on every
+        other host. Never raises."""
         if self._fm is not None and self.backend != "foundry":
             return None
         try:
@@ -487,6 +488,18 @@ class SharePointStore:
             fm = self.file_manager() if self.backend == "foundry" \
                 and self.configured else None
             return foundry_dataset_store.not_kept_reason(fm)
+        except Exception:                              # noqa: BLE001
+            return None
+
+    def check_state(self) -> Optional[str]:
+        """``"checking"`` while the Foundry dataset's first read in this
+        process runs in the background (started by :meth:`not_kept_reason`;
+        INF-65), else ``None``. Never raises."""
+        if self.backend != "foundry" or not self.configured:
+            return None
+        try:
+            checking = getattr(self.file_manager(), "checking", None)
+            return "checking" if callable(checking) and checking() else None
         except Exception:                              # noqa: BLE001
             return None
 
@@ -644,7 +657,8 @@ class SharePointStore:
         """Upload this conversation's new/changed files. Never raises.
 
         Returns a summary dict: ``{"uploaded", "skipped", "errors", "web_url",
-        "duration_s", "folder", "thread_id"}`` — plus ``"renamed_from"`` on
+        "duration_s", "folder", "thread_id", "at"}`` (``at``: when it ended,
+        epoch seconds) — plus ``"renamed_from"`` on
         the first sync after a rename — also kept as this conversation's own
         record (:meth:`last_sync_for`) and as ``self.last_sync``.
         """
@@ -658,7 +672,8 @@ class SharePointStore:
                 self._mirror_locked(thread_id, root, summary)
             except Exception as exc:  # backstop — a sync must never crash a turn
                 summary["errors"].append(f"{type(exc).__name__}: {exc}")
-        summary["duration_s"] = round(time.time() - t0, 3)
+        summary["at"] = time.time()
+        summary["duration_s"] = round(summary["at"] - t0, 3)
         self.last_sync = summary
         self._syncs[str(thread_id)] = summary
         return summary
