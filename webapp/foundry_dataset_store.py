@@ -36,6 +36,14 @@ How a dataset differs from a SharePoint library:
   app never uses it while anything it did not stage is there; it then saves
   file by file (``upload_file``, one transaction each) and says so once.
 * There is no per-file web address, so :meth:`get_web_url` gives none.
+* A new dataset with no committed transaction yet answers every read with
+  ``400 FoundryContainerService:FailedToResolveDataset`` ("does not have
+  any committed transaction"); the app reads it as an empty store, and the
+  first save makes the first commit (INF-65). The error's other causes (an
+  alias pointing at the wrong dataset, no access) still fail plainly.
+* What the latest read of the dataset found is kept for the process, so the
+  sidebar and Connection diagnostics say the same (:meth:`known_problem`);
+  the sidebar's first look starts one listing in the background.
 
 Configuration (on a Foundry deployment, ``GEOTECH_DEPLOYMENT=foundry``):
 
@@ -51,6 +59,7 @@ method, :meth:`DatasetFileManager._dataset` (``Dataset.get``) or
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -87,6 +96,28 @@ ALIAS_HELP = ("import the dataset into the workspace (Data panel, read and "
 #: Process-wide: one save at a time touches the outputs folder and the
 #: dataset (every instance; the store and report ingest's mirror alike).
 _SAVE_LOCK = threading.Lock()
+
+
+class _Reads:
+    """What the latest read of each alias found, for every file manager in
+    the process (the store's and Connection diagnostics' alike), and the
+    sidebar's one background check per alias (INF-65)."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.found: Dict[str, Tuple[bool, str]] = {}   # alias -> (ok, text)
+        self.checks: Dict[str, threading.Thread] = {}
+
+
+_READS = _Reads()
+
+
+def wait_checks(timeout: float = 10.0) -> bool:
+    """Wait for the background checks to end; True when they have."""
+    end = time.time() + timeout
+    for thread in list(_READS.checks.values()):
+        thread.join(max(0.0, end - time.time()))
+    return not any(t.is_alive() for t in _READS.checks.values())
 
 
 class StorageBusy(RuntimeError):
@@ -155,8 +186,9 @@ def not_kept_reason(fm: Any = None) -> Optional[str]:
     restarts, with the fix, in one line: Connection diagnostics' line and
     the sidebar show this same text. ``None`` when they are kept, as far as
     is known, and off Foundry. ``fm`` (the store's file manager, when the
-    dataset is set up) adds an alias the workspace turned out not to define
-    (:meth:`DatasetFileManager.check_alias`, one ``Dataset.get`` at most)."""
+    dataset is set up) adds why the dataset could not be read, as its latest
+    read found (:meth:`DatasetFileManager.known_problem`: an alias the
+    workspace does not define, or any other refusal)."""
     from webapp import engine_config
     if not engine_config.is_foundry_deployment():
         return None
@@ -167,8 +199,8 @@ def not_kept_reason(fm: Any = None) -> Optional[str]:
                 "keeps one.")
     reason = unconfigured_reason()
     if not reason:
-        check = getattr(fm, "check_alias", None)
-        reason = check() if callable(check) else None
+        known = getattr(fm, "known_problem", None)
+        reason = known() if callable(known) else None
     return f"{ENV_DATASET} is set, but {reason}." if reason else None
 
 
@@ -187,6 +219,36 @@ def _is_busy(exc: BaseException) -> bool:
 def _is_alias_missing(exc: BaseException) -> bool:
     """404 ``FoundryContainerSidecar:AliasNotDefined``."""
     return _named(exc, "AliasNotDefined")
+
+
+_NO_COMMIT = re.compile(r"\b(?:no|not have any) committed transaction", re.I)
+
+
+def _is_no_commit(exc: BaseException) -> bool:
+    """A new dataset with no committed transaction yet (the FDE's build i,
+    2026-11-03): ``400 FoundryContainerService:FailedToResolveDataset``,
+    "The dataset does not have any committed transaction on the requested
+    branch or across fallback branches". The error name AND that wording,
+    so its other causes (an alias pointing at the wrong dataset, no access)
+    still fail plainly. Looked for in the error and the errors it wraps."""
+    texts: List[str] = []
+    seen = 0
+    while exc is not None and seen < 4:
+        texts += [type(exc).__name__, str(getattr(exc, "name", "") or ""),
+                  str(exc), str(getattr(exc, "message", "") or ""),
+                  str(getattr(exc, "parameters", "") or "")]
+        exc = exc.__cause__ or exc.__context__
+        seen += 1
+    return any("FailedToResolveDataset" in t for t in texts) \
+        and any(_NO_COMMIT.search(t) for t in texts)
+
+
+def _read_reason(exc: BaseException) -> str:
+    """Why a read failed, in the words the sidebar and diagnostics show."""
+    if isinstance(exc, AliasNotDefined):
+        return str(exc)
+    return (f"the conversation dataset could not be read: "
+            f"{type(exc).__name__}: {exc}")
 
 
 def _clean(path: Optional[str]) -> str:
@@ -268,10 +330,13 @@ class DatasetFileManager:
         self._ds: Any = None
         self._note: Optional[str] = None
         #: The workspace does not define the alias (the last call said so;
-        #: a call that works clears it), and whether the sidebar's one
-        #: check has run (:meth:`check_alias`).
+        #: a call that works clears it).
         self.alias_error: Optional[str] = None
-        self._alias_checked = False
+        #: The latest listing found a new dataset with nothing committed.
+        self.uncommitted = False
+        #: Shared by every instance: what the latest read found
+        #: (:meth:`known_problem`).
+        self._reads = _READS
         # The batch, per thread: one process serves every viewer, and a
         # restore in one session must not end another session's save.
         self._local = threading.local()
@@ -326,18 +391,45 @@ class DatasetFileManager:
         self.alias_error = None
         return out
 
-    def check_alias(self) -> Optional[str]:
-        """:attr:`alias_error`, after one ``Dataset.get`` per instance when
-        nothing has reached the dataset yet, so the sidebar can say from
-        its first draw that conversations are not kept. Never raises."""
-        if self._ds is None and not self._alias_checked \
-                and self.alias_error is None:
-            self._alias_checked = True
-            try:
-                self._dataset()
-            except Exception:                          # noqa: BLE001
-                pass
-        return self.alias_error
+    def known_problem(self) -> Optional[str]:
+        """Why the dataset cannot be read, as far as this process knows: an
+        alias the workspace does not define, or what the latest listing of
+        this alias raised (Connection diagnostics' probe included), in the
+        words its line shows. ``None`` when the latest read worked, and
+        while nothing has read the alias yet: the first call then starts one
+        listing in the background (about 3-4 s; :meth:`checking` is True
+        until it ends), so the sidebar never says storage is on before a
+        read has worked, and its first draw does not wait. Never raises."""
+        if self.alias_error:
+            return self.alias_error
+        reads = self._reads
+        with reads.lock:
+            found = reads.found.get(self.alias)
+            if found is None and self.alias not in reads.checks:
+                check = threading.Thread(target=self._check, daemon=True,
+                                         name="permanent-storage-check")
+                reads.checks[self.alias] = check
+                check.start()
+        return found[1] if found is not None and not found[0] else None
+
+    def _check(self) -> None:
+        try:
+            self._listing()                    # records what it found
+        except Exception:                              # noqa: BLE001
+            pass
+
+    def checking(self) -> bool:
+        """True while the background check of :meth:`known_problem` runs
+        and nothing else has read the alias."""
+        reads = self._reads
+        with reads.lock:
+            check = reads.checks.get(self.alias)
+            return (check is not None and check.is_alive()
+                    and self.alias not in reads.found)
+
+    def _record_read(self, ok: bool, text: str) -> None:
+        with self._reads.lock:
+            self._reads.found[self.alias] = (ok, text)
 
     def _write(self, fn: Callable[[], Any]) -> Any:
         """One write, tried again while another transaction holds the
@@ -463,13 +555,24 @@ class DatasetFileManager:
     # ------------------------------------------------------------ listing
     def _listing(self) -> Tuple[List[dict], Dict[str, Any]]:
         """``([{"path", "size", "updated"}], {path: library file})`` for the
-        whole dataset; in a batch, read once."""
+        whole dataset; in a batch, read once. A new dataset with nothing
+        committed reads as empty. What it found is recorded for the process
+        (:meth:`known_problem`)."""
         batch = self._batch()
         if batch.active and batch.files is not None:
             return batch.files, batch.index
         files: List[dict] = []
         index: Dict[str, Any] = {}
-        for item in self._call(self._lib_files):
+        try:
+            items = self._call(self._lib_files)
+            self.uncommitted = False
+        except Exception as exc:
+            if not _is_no_commit(exc):
+                self._record_read(False, _read_reason(exc))
+                raise
+            items = []                 # the first save makes the first commit
+            self.uncommitted = True
+        for item in items:
             path = _clean(getattr(item, "path", None))
             if not path:
                 continue
@@ -477,6 +580,7 @@ class DatasetFileManager:
                           "size": getattr(item, "size_bytes", None) or 0,
                           "updated": _iso(getattr(item, "updated_time", ""))})
             index[path] = item
+        self._record_read(True, self._state(files))
         if batch.active:
             batch.files, batch.index = files, index
         return files, index
@@ -621,8 +725,14 @@ class DatasetFileManager:
     # ------------------------------------------------------------ diagnostics
     def probe(self) -> str:
         """One listing, for Connection diagnostics. Raises what the library
-        raises."""
+        raises, after recording it for the sidebar."""
         files, _ = self._listing()
+        return self._state(files)
+
+    def _state(self, files: List[dict]) -> str:
+        if not files and self.uncommitted:
+            return ("readable, 0 files: a new dataset with nothing "
+                    "committed yet; the first save makes its first commit")
         top = _app_top()
         mine = sum(1 for f in files if f["path"].startswith(top + "/"))
         return f"readable, {len(files)} file(s), {mine} of them the app's"
@@ -636,4 +746,4 @@ class DatasetFileManager:
 __all__ = ["DatasetFileManager", "ENV_DATASET", "DEFAULT_ROOT",
            "AliasNotDefined", "StorageBusy", "configured", "dataset_alias",
            "library_installed", "looks_like_resource_id", "not_kept_reason",
-           "selected", "unconfigured_reason"]
+           "selected", "unconfigured_reason", "wait_checks"]

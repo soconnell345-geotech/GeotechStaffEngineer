@@ -15,7 +15,11 @@ fake keeps what the AI FDE measured from a published app (2026-11-03):
   ``400 Catalog:SimultaneousOpenTransactionsNotAllowed``;
 * ``files()`` lists the whole dataset (no prefix filter, hidden files only
   when asked), and ``File.download()`` returns a local path;
-* a later write overwrites a path and keeps every other file.
+* a later write overwrites a path and keeps every other file;
+* a new dataset with no committed transaction answers a read with
+  ``400 FoundryContainerService:FailedToResolveDataset`` ("does not have
+  any committed transaction", the FDE's build i), and its first write
+  makes the first commit.
 """
 
 import json
@@ -49,7 +53,9 @@ def _clean_env(monkeypatch, tmp_path):
     monkeypatch.setattr(sp, "_graph_configured", lambda: False)
     monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "data"))
     monkeypatch.setattr(fds.DatasetFileManager, "_warned_foreign", False)
+    monkeypatch.setattr(fds, "_READS", fds._Reads())   # what reads found
     yield
+    fds.wait_checks(5)
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +68,16 @@ class IllegalArgumentError(Exception):
 
 class SidecarError(Exception):
     """The library's refusals carry the status and the error name."""
+
+
+#: A new dataset's answer to a read, in the library's shape.
+NO_COMMIT = ("400 FoundryContainerService:FailedToResolveDataset {'message': "
+             "'The dataset does not have any committed transaction on the "
+             "requested branch or across fallback branches'}")
+#: The same error name for another cause (made-up wording).
+NOT_RESOLVED = ("400 FoundryContainerService:FailedToResolveDataset "
+                "{'message': 'made-up: the alias resolves to a dataset this "
+                "app cannot read'}")
 
 
 class FakeFile:
@@ -86,6 +102,10 @@ class FakeDataset:
         self.open = False
         self.download_delay = 0.0
         self.gate = None             # an Event a write waits on
+        self.uncommitted = False     # new: reads refused until a write
+        self.get_error = None        # what Dataset.get raises
+        self.files_error = None      # what files() raises
+        self.files_gate = None       # an Event a listing waits on
         self.active = 0
         self.peak = 0
         self.n = 0
@@ -110,6 +130,7 @@ class FakeDataset:
             with open(path, "rb") as fh:
                 self.files_[logical] = fh.read()
             self.calls[-1] = ("upload_file", logical)
+            self.uncommitted = False             # the first commit
             return logical
         finally:
             self.open = False
@@ -131,12 +152,19 @@ class FakeDataset:
                         self.files_[logical] = fh.read()
                     result[local] = logical
             self.calls[-1] = ("upload_directory", sorted(result.values()))
+            self.uncommitted = False             # the first commit
             return result
         finally:
             self.open = False
 
     def files(self, mode="current", show_hidden_files=False):
         self.calls.append(("files",))
+        if self.files_gate is not None:
+            self.files_gate.wait(5)
+        if self.files_error:
+            raise SidecarError(self.files_error)
+        if self.uncommitted:
+            raise SidecarError(NO_COMMIT)
         return iter([FakeFile(self, p, b)
                      for p, b in sorted(self.files_.items())
                      if show_hidden_files or not any(
@@ -187,6 +215,8 @@ class FakeLibrary:
                 if alias != ALIAS:
                     raise SidecarError("404 FoundryContainerSidecar:"
                                        f"AliasNotDefined {{'alias': '{alias}'}}")
+                if lib.ds.get_error:
+                    raise SidecarError(lib.ds.get_error)
                 return lib.ds
 
         pkg = types.ModuleType("foundry")
@@ -890,13 +920,16 @@ def _foundry_app(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("case", ["no alias", "resource ID",
-                                  "library missing", "alias not defined"])
+                                  "library missing", "alias not defined",
+                                  "dataset not resolved"])
 def test_on_foundry_the_sidebar_says_when_conversations_are_not_kept(
         lib, monkeypatch, tmp_path, case):
     """On master the sidebar drew no storage block when the dataset was not
     usable, and only Connection diagnostics said why: the owner would take
     conversations for kept. Now a short block says they are NOT kept, with
-    the diagnostics line's own reason and fix."""
+    the diagnostics line's own reason and fix. "dataset not resolved" is
+    ``FailedToResolveDataset`` for a cause other than a new, empty dataset
+    (INF-65): it still fails, and the sidebar never says storage is on."""
     from webapp import diagnostics as diag
     if case == "resource ID":
         monkeypatch.setenv(fds.ENV_DATASET, "ri.foundry.main.dataset.made-up-0")
@@ -905,7 +938,13 @@ def test_on_foundry_the_sidebar_says_when_conversations_are_not_kept(
         monkeypatch.setitem(sys.modules, "foundry.transforms", None)
     elif case == "alias not defined":
         monkeypatch.setenv(fds.ENV_DATASET, "made_up_missing")
+    elif case == "dataset not resolved":
+        monkeypatch.setenv(fds.ENV_DATASET, ALIAS)
+        lib.ds.files_error = NOT_RESOLVED
     at = _foundry_app(monkeypatch, tmp_path)
+    fds.wait_checks(5)                         # the sidebar's one check
+    at.run()
+    assert not at.exception, at.exception
     detail = diag._conversation_storage_check()["detail"]
     warnings = [str(w.value) for w in at.sidebar.warning]
     assert ("**Conversations are NOT kept across restarts.** " + detail) \
@@ -915,18 +954,32 @@ def test_on_foundry_the_sidebar_says_when_conversations_are_not_kept(
     if case == "no alias":
         assert fds.ENV_DATASET in detail and "Download this conversation" \
             in detail
+    elif case == "dataset not resolved":
+        assert "could not be read" in detail and \
+            "FailedToResolveDataset" in detail, detail
     else:
         assert "Data panel, read and write" in detail or \
             "Code Workspace" in detail, detail
 
 
+@pytest.mark.parametrize("new_dataset", [False, True])
 def test_the_not_kept_block_is_foundry_only_and_absent_when_kept(
-        lib, monkeypatch, tmp_path):
+        lib, monkeypatch, tmp_path, new_dataset):
+    """``new_dataset``: a dataset with nothing committed yet is kept too
+    (INF-65): the first save makes its first commit."""
+    from webapp import diagnostics as diag
+    lib.ds.uncommitted = new_dataset
     monkeypatch.setenv(fds.ENV_DATASET, ALIAS)              # the alias works
     at = _foundry_app(monkeypatch, tmp_path / "kept")
+    fds.wait_checks(5)
+    at.run()
+    assert not at.exception, at.exception
     assert not any("NOT kept" in str(w.value) for w in at.sidebar.warning)
     assert any(str(c.value).startswith("Foundry storage is on")
                for c in at.sidebar.caption)
+    c = diag._conversation_storage_check()
+    assert c["status"] == diag.PASS, c
+    assert ("readable, 0 files: a new dataset" in c["detail"]) == new_dataset
     # Funhouse with nothing configured: no storage block at all, as before
     monkeypatch.delenv("GEOTECH_DEPLOYMENT")
     monkeypatch.delenv(fds.ENV_DATASET)
@@ -939,6 +992,8 @@ def test_an_alias_not_defined_is_learned_once_and_cleared_by_success(
     _foundry(monkeypatch, "made_up_missing")
     store = sp.SharePointStore()
     assert store.configured                     # nothing tells until a call
+    store.not_kept_reason()                     # starts the one check
+    assert fds.wait_checks(5)
     first = store.not_kept_reason()
     assert "made_up_missing" in first and "(AliasNotDefined)" in first
     assert store.not_kept_reason() == first
@@ -1044,9 +1099,12 @@ def test_a_turn_saves_and_a_fresh_container_restores_it(lib, monkeypatch,
         .split("/")[2]
     assert lib.ds.count("upload_directory") == 1 and lib.leftovers() == []
 
-    # a fresh container: an empty disk, a new store, the same dataset
+    # a fresh container: an empty disk, a new store, the same dataset (the
+    # same process here, so the first container's check stands; a real
+    # one makes one listing in the background, INF-65)
     monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "rebuilt"))
     monkeypatch.setattr(sp, "_STORE", None)
+    assert fds.wait_checks(5)
     listed = lib.ds.count("files")
     at2 = AppTest.from_file(app, default_timeout=30).run()
     assert not at2.exception, at2.exception
@@ -1069,6 +1127,207 @@ def test_a_turn_saves_and_a_fresh_container_restores_it(lib, monkeypatch,
     back = core.load_transcript(tid)
     assert [e["role"] for e in back] == ["user", "assistant"]
     assert back[1]["text"] == "Hello world."
+
+
+# ---------------------------------------------------------------------------
+# a new dataset with nothing committed; the sidebar and diagnostics agree;
+# the save line updates by itself (INF-65)
+# ---------------------------------------------------------------------------
+
+def test_the_no_commit_error_is_matched_by_name_and_wording():
+    assert fds._is_no_commit(SidecarError(NO_COMMIT))
+    assert not fds._is_no_commit(SidecarError(NOT_RESOLVED))   # another cause
+    assert not fds._is_no_commit(SidecarError(              # another error name
+        "400 Catalog:MadeUpError {'message': 'The dataset does not have any "
+        "committed transaction'}"))
+    try:
+        try:
+            raise SidecarError(NO_COMMIT)
+        except SidecarError as inner:
+            raise RuntimeError("made-up wrapper") from inner
+    except RuntimeError as outer:
+        assert fds._is_no_commit(outer)                        # wrapped
+
+
+def test_a_new_dataset_reads_as_empty_and_its_first_save_commits(
+        lib, monkeypatch, tmp_path):
+    """Build i: a new raw-files dataset refused every read with
+    ``FailedToResolveDataset`` until the owner uploaded a placeholder file.
+    Now it is an empty store: nothing listed, diagnostics PASS, and the
+    first save makes the first commit, under the plain folder name (an
+    empty listing is not a failed one, so no shard is added)."""
+    from webapp import diagnostics as diag
+    lib.ds.uncommitted = True
+    fm = _fm(lib)
+    assert fm.ls(f"{TOP}/conversations") == []
+    assert fm.probe().startswith("readable, 0 files: a new dataset")
+    _foundry(monkeypatch)
+    c = diag._conversation_storage_check()
+    assert c["status"] == diag.PASS and "readable, 0 files" in c["detail"], c
+    store = _store(lib)
+    assert store.list_remote_conversations() == []
+    root = str(tmp_path)
+    _conversation(root, "T-NEW", "Footing check", _CREATED)
+    up = store.mirror_conversation("T-NEW", root=root)
+    assert not up["errors"] and up["uploaded"] == 4, up
+    assert up["folder"] == f"{TOP}/conversations/Footing_check_2026-01-02"
+    assert lib.ds.count("upload_directory") == 1 and not lib.ds.uncommitted
+    assert fm.probe() == "readable, 4 file(s), 4 of them the app's"
+    assert [r["name"] for r in store.list_remote_conversations()] == [
+        "Footing_check_2026-01-02"]
+
+
+def test_when_dataset_get_itself_refuses_a_new_dataset(lib, tmp_path):
+    """Which call refuses a new dataset (``Dataset.get`` or ``files()``) is
+    unconfirmed: either way the listing is empty. A save then fails
+    plainly, as before; the app tries no other way to make the first
+    commit (module_work/inf38/CHECK.md, a check for the FDE)."""
+    lib.ds.get_error = NO_COMMIT
+    store = _store(lib)
+    fm = store.file_manager()
+    assert fm.ls(TOP) == [] and fm.probe().startswith("readable, 0 files")
+    root = str(tmp_path)
+    _conversation(root, "T-GET", "Pile cap", _CREATED)
+    up = store.mirror_conversation("T-GET", root=root)
+    assert up["uploaded"] == 0 and len(up["errors"]) == 1, up
+    assert "FailedToResolveDataset" in up["errors"][0]
+    assert lib.leftovers() == []
+
+
+def test_a_failed_read_reaches_the_sidebar_and_a_good_one_clears_it(
+        lib, monkeypatch):
+    """The sidebar and Connection diagnostics read one record: a probe
+    that fails after the sidebar's check passed turns the sidebar to NOT
+    kept, in the diagnostics line's own words; a read that works clears
+    it."""
+    from webapp import diagnostics as diag
+    _foundry(monkeypatch)
+    store = sp.SharePointStore()
+    assert store.not_kept_reason() is None          # starts the one check
+    assert fds.wait_checks(5)
+    assert store.check_state() is None and store.not_kept_reason() is None
+    lib.ds.files_error = NOT_RESOLVED
+    c = diag._conversation_storage_check()
+    assert c["status"] == diag.FAIL, c
+    assert store.not_kept_reason() == c["detail"]
+    lib.ds.files_error = None
+    assert diag._conversation_storage_check()["status"] == diag.PASS
+    assert store.not_kept_reason() is None
+    assert lib.ds.count("files") == 3               # the check, two probes
+
+
+def test_the_sidebar_says_checking_until_the_first_read_ends(
+        lib, monkeypatch, tmp_path):
+    """The sidebar's first look starts one listing in the background, and
+    the page does not wait for it: it says it is checking, never that
+    storage is on, until a read has worked."""
+    lib.ds.files_gate = threading.Event()           # the listing hangs
+    monkeypatch.setenv(fds.ENV_DATASET, ALIAS)
+    at = _foundry_app(monkeypatch, tmp_path)
+    captions = [str(c.value) for c in at.sidebar.caption]
+    assert "Foundry storage: checking the conversation dataset…" in \
+        captions, captions
+    assert not any(c.startswith("Foundry storage is on") for c in captions)
+    lib.ds.files_gate.set()
+    assert fds.wait_checks(5)
+    at.run()
+    assert not at.exception, at.exception
+    captions = [str(c.value) for c in at.sidebar.caption]
+    assert any(c.startswith("Foundry storage is on") for c in captions), \
+        captions
+    assert not any("checking" in c for c in captions)
+    assert lib.ds.count("files") == 1               # once per process
+
+
+def test_the_save_line_updates_by_itself_when_a_background_save_ends(
+        monkeypatch, tmp_path):
+    """Build i: after the turn the FDE saw no save line; the result showed
+    only on the next click. While a save runs the status lines are a
+    fragment that looks again every few seconds; when the save ends it
+    reruns the page once, which shows "saved N file(s)" and stops looking
+    (no fragment on that run)."""
+    st = pytest.importorskip("streamlit")
+    fragments = []
+    real = st.fragment
+
+    def recording(func=None, *, run_every=None, **kw):
+        fragments.append((getattr(func, "__name__", ""), run_every))
+        return real(func, run_every=run_every, **kw)
+    monkeypatch.setattr(st, "fragment", recording)
+
+    class _Ending(_SidebarStore):
+        """A save that ends while the fragment looks: saving on two looks,
+        the second a timed run's (a poll or more after the page drew the
+        fragment; AppTest runs no timer, so the look waits that long)."""
+
+        looks = 0
+
+        def save_state(self, thread_id):
+            self.looks += 1
+            if self.looks == 2:
+                time.sleep(2.0 / 2 + 0.05)
+            return "saving" if self.looks <= 2 else None
+
+        def last_sync_for(self, thread_id):
+            if self.looks <= 2:
+                return None
+            return {"uploaded": 5, "skipped": 0, "errors": [],
+                    "duration_s": 6.8, "at": time.time(),
+                    "thread_id": thread_id}
+
+    store = _Ending()
+    at = _sidebar(monkeypatch, tmp_path, store)
+    captions = [str(c.value) for c in at.sidebar.caption]
+    assert "Foundry storage: saved 5 file(s) just now, 0 up-to-date · 6.8s" \
+        in captions, captions
+    assert not any("saving the latest turn" in c for c in captions)
+    polled = [f for f in fragments if f[0] == "_storage_status"]
+    assert polled == [("_storage_status", 2.0)], fragments
+    assert store.looks == 5                     # the rerun looked once more
+
+
+def test_a_click_or_a_message_in_the_run_where_a_save_ends_is_kept(
+        monkeypatch, tmp_path):
+    """The fragment's first draw is part of the page's own run. A rerun
+    there would end that run before the chat box and the buttons below,
+    and Streamlit drops a message sent or a click made in it; so only a
+    timed run reruns the page."""
+
+    class _Switch(_SidebarStore):
+        """No save until ``armed``; then saving on two looks (the page's
+        busy check and the fragment's first draw), then done."""
+
+        armed = False
+        looks = 0
+        synced = 0
+
+        def save_state(self, thread_id):
+            if not self.armed:
+                return None
+            self.looks += 1
+            return "saving" if self.looks <= 2 else None
+
+        def mirror_conversation(self, thread_id, root=None):
+            self.synced += 1
+            return super().mirror_conversation(thread_id, root)
+
+    def answer(_agent, _messages, _thread_id, **_kw):
+        yield {"kind": "turn_done", "answer": "Made-up answer.",
+               "turn_tokens": 1}
+
+    monkeypatch.setattr(core, "stream_turn", answer)
+    store = _Switch()
+    at = _sidebar(monkeypatch, tmp_path, store)
+    store.armed = True
+    next(b for b in at.sidebar.button
+         if str(b.key).startswith("spsync_")).click().run()
+    assert not at.exception, at.exception
+    assert store.synced == 1                    # Sync now ran
+    store.looks = 0
+    at.chat_input[0].set_value("made-up question").run()
+    assert not at.exception, at.exception
+    assert [e["text"] for e in at.session_state["transcript"]
+            if e["role"] == "user"] == ["made-up question"]
 
 
 # ---------------------------------------------------------------------------

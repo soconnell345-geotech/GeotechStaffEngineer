@@ -457,7 +457,11 @@ nothing to install. The platform's datasets API (and with it
 
 1. **Create a dataset of raw files** (no schema), e.g. `gse_conversations`,
    used for nothing else, in a project only the right people can see
-   (below, "One user").
+   (below, "One user"). Leave it empty: it needs **no placeholder file**.
+   A new dataset with nothing committed yet reads as an empty store, and
+   the app's first save makes its first commit. (Before INF-65 it answered
+   `FailedToResolveDataset`, "does not have any committed transaction", and
+   a placeholder upload also made Foundry guess a table schema for it.)
 2. **Import it into the workspace**: in the workspace's **Data** panel,
    import the dataset with **read and write** access. That names it in
    `.foundry/aliases.yml`; the name there is its alias. Commit and push.
@@ -468,17 +472,24 @@ nothing to install. The platform's datasets API (and with it
    A resource ID (`ri.…`) does not work here; Connection diagnostics and
    the sidebar say so.
 4. **Push** (which republishes), then open **Connection diagnostics**: the
-   line *conversation storage* should PASS and name the alias. When it
-   fails it says why: a resource ID instead of the alias, an alias the
-   workspace does not define (`AliasNotDefined`: import the dataset and
-   push), or the library missing (the app was not published from a Code
-   Workspace). Until it works, the sidebar's **Permanent storage** block
-   says **Conversations are NOT kept across restarts**, with the same
-   reason and fix.
+   line *conversation storage* should PASS and name the alias (on a new
+   dataset, "readable, 0 files: a new dataset with nothing committed
+   yet"). When it fails it says why: a resource ID instead of the alias,
+   an alias the workspace does not define (`AliasNotDefined`: import the
+   dataset and push), the library missing (the app was not published from
+   a Code Workspace), or the dataset refusing the read (the error as
+   Foundry gave it). Until it works, the sidebar's **Permanent storage**
+   block says **Conversations are NOT kept across restarts**, with the
+   same reason and fix. The sidebar and the diagnostics line share one
+   record of the dataset's latest read, so they agree: on opening, the
+   sidebar says "Foundry storage: checking the conversation dataset…"
+   while it reads the file list once in the background (about 3-4 s), and
+   says storage is on only once that read has worked.
 
 **After the first turn**, the sidebar shows **Permanent storage** with
-"Foundry storage: saving the latest turn…", then (on the next click)
-"Foundry storage: N uploaded, …", and the dataset holds
+"Foundry storage: saving the latest turn…", then, without a click, "Foundry
+storage: saved N file(s) just now, …" (the sidebar looks again every 2 s
+while a save runs, and stops when it ends), and the dataset holds
 `GeotechStaffEngineer/conversations/<title>_<date>/` with `meta.json`,
 the transcript, the activity log `activity.jsonl`, the turn traces
 `trace.jsonl`, any feedback (`FEEDBACK.md`, `feedback.jsonl`) and `files/`
