@@ -1,0 +1,29 @@
+# Third-party pins for the Tiny Apps wrapper, installed from the Data.State
+# Nexus mirror (--index-url $PIP_INDEX_URL) by every route run.sh can take:
+# packages.txt includes this file (route C, "nexus"); routes A and B
+# ("source", "wheel") install it beside their own code. Nothing of ours goes
+# in this file.
+
+# CfA fleet pins (exampleCode packages.txt, 2026-09-17): the versions cleared
+# through the Nexus firewall. streamlit and pandas sit inside the toolkit's own
+# ranges; PyJWT and msal arrive transitively through azure-identity and are
+# pinned because an unpinned resolve picks whatever the firewall has or has
+# not cleared that week.
+streamlit==1.62.0
+# pandas==3.0.2 is the fleet pin, but it CANNOT install beside
+# geotech-staff-engineer 5.33.0 or earlier: their python-ags4 dependency caps
+# pandas below 3, so pip finds no solution at all (found 2026-10-12, BACKLOG
+# TA-02). The release after 5.33.0 makes python-ags4 optional and installs on
+# pandas 3.0.2 (tested: Python 3.12, Streamlit 1.62.0, the web-app and agent
+# test suites). Until the wrapper runs that release or later (the pin in
+# packages.txt, or the source or wheel of routes A and B), leave pandas
+# unpinned: pip takes the newest pandas 2.x the mirror has, as on dosdev
+# 2026-09-23.
+# pandas==3.0.2
+PyJWT[crypto]==2.13.0
+msal==1.37.0
+
+# Key Vault reads on the App Service (webapp.tinyapps_settings imports these
+# lazily; a local .env run never needs them).
+azure-identity==1.21.0
+azure-keyvault-secrets==4.9.0

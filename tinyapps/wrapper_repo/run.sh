@@ -4,12 +4,76 @@
 # fills in the published origin below at deployment.
 APP_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-echo "Installing Python packages from packages.txt..."
-if [ -n "$PIP_INDEX_URL" ]; then
-    python -m pip install -r "$APP_DIR/packages.txt" --index-url "$PIP_INDEX_URL"
-else
-    echo "WARNING: PIP_INDEX_URL not set; using default package source"
-    python -m pip install -r "$APP_DIR/packages.txt"
+# How our code arrives (README, "Choosing how the code arrives"). The app
+# setting APP_SOURCE names the route; unset, the first one present wins:
+#   source  app_src/ holds our importable packages and goes first on
+#           PYTHONPATH; requirements-thirdparty.txt (and app_src/
+#           requirements.txt, if present) installs from the feed
+#   wheel   wheels/*.whl install with requirements-thirdparty.txt; their
+#           own dependencies resolve from the feed
+#   nexus   packages.txt (our package + requirements-thirdparty.txt) from
+#           the feed
+# APP_DRY_RUN=1 prints the route and the commands, then exits before
+# installing or starting anything.
+SRC_DIR="$APP_DIR/app_src"
+shopt -s nullglob
+WHEELS=("$APP_DIR"/wheels/*.whl)
+shopt -u nullglob
+
+fail() { echo "ERROR: $*" >&2; exit 1; }
+
+HOW="set by APP_SOURCE"
+case "${APP_SOURCE:-}" in
+    source) [ -d "$SRC_DIR" ] || fail "APP_SOURCE=source but $SRC_DIR/ is missing" ;;
+    wheel)  [ ${#WHEELS[@]} -gt 0 ] || fail "APP_SOURCE=wheel but $APP_DIR/wheels/ holds no .whl file" ;;
+    nexus)  [ -f "$APP_DIR/packages.txt" ] || fail "APP_SOURCE=nexus but $APP_DIR/packages.txt is missing" ;;
+    "")
+        HOW="chosen by what the repo holds"
+        if [ -d "$SRC_DIR" ]; then APP_SOURCE=source
+        elif [ ${#WHEELS[@]} -gt 0 ]; then APP_SOURCE=wheel
+        else APP_SOURCE=nexus
+        fi ;;
+    *) fail "APP_SOURCE=$APP_SOURCE is not one of: source, wheel, nexus" ;;
+esac
+export APP_SOURCE   # app.py reads it
+
+pip_install() {
+    if [ -n "$PIP_INDEX_URL" ]; then
+        set -- "$@" --index-url "$PIP_INDEX_URL"
+    else
+        echo "WARNING: PIP_INDEX_URL not set; using default package source"
+    fi
+    if [ "${APP_DRY_RUN:-}" = "1" ]; then
+        echo "DRY RUN: python -m pip install $*"
+    else
+        python -m pip install "$@"
+    fi
+}
+
+case "$APP_SOURCE" in
+    source)
+        echo "Code route: source ($SRC_DIR first on PYTHONPATH; $HOW)"
+        REQS=(-r "$APP_DIR/requirements-thirdparty.txt")
+        [ -f "$SRC_DIR/requirements.txt" ] && REQS+=(-r "$SRC_DIR/requirements.txt")
+        echo "Installing Python packages: third-party pins (+ app_src/requirements.txt)..."
+        pip_install "${REQS[@]}"
+        export PYTHONPATH="$SRC_DIR${PYTHONPATH:+:$PYTHONPATH}"
+        ;;
+    wheel)
+        echo "Code route: wheel (${WHEELS[*]##*/}; $HOW)"
+        echo "Installing Python packages: our wheels + third-party pins..."
+        pip_install "${WHEELS[@]}" -r "$APP_DIR/requirements-thirdparty.txt"
+        ;;
+    nexus)
+        echo "Code route: nexus (packages.txt from the feed; $HOW)"
+        echo "Installing Python packages from packages.txt..."
+        pip_install -r "$APP_DIR/packages.txt"
+        ;;
+esac
+
+if [ "${APP_DRY_RUN:-}" = "1" ]; then
+    echo "DRY RUN: PYTHONPATH=${PYTHONPATH:-} python -m streamlit run $APP_DIR/app.py --server.port ${PORT:-8000} ..."
+    exit 0
 fi
 
 echo "Starting Streamlit..."

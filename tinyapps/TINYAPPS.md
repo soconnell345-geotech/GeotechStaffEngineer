@@ -109,8 +109,11 @@ system_prompt=build_document_review_prompt())`) and `webapp/tinyapps_entry.py`
 ```
 app.py           sets GEOTECH_DOTENV (local .env) + GEOTECH_WEBAPP_DATA, runs
                  webapp.tinyapps_entry.main()
-packages.txt     geotech-staff-engineer pin + CfA fleet pins + Key Vault libs
-run.sh           CfA's Streamlit template (PORT, corsAllowedOrigins CHANGE-ME)
+packages.txt     geotech-staff-engineer pin + -r requirements-thirdparty.txt
+requirements-thirdparty.txt
+                 CfA fleet pins + Key Vault libs (every route)
+run.sh           CfA's Streamlit template (PORT, corsAllowedOrigins CHANGE-ME);
+                 picks the code route (below)
 .env.example     the eight settings the engineers provide + DEV_IDENTITY
 README.md
 ```
@@ -120,6 +123,29 @@ bump the pin + ask App Services to sync. The engineers fill in
 `corsAllowedOrigins` and provision Key Vault; **nothing in our code changes
 between dosdev and production** — the same names are read from `.env` there
 and Key Vault here.
+
+### Choosing how the code arrives (CfA's answer)
+
+CfA has not yet said how the GHE wrapper repo may get our code (BACKLOG
+OWN-72, questions 6a-6c; INF-34). `run.sh` takes any of three routes, so
+the answer is a choice made on dosdev, not a code change. The app setting
+`APP_SOURCE` names the route; unset, `run.sh` takes the first route whose
+files the repo holds, in this order. It prints one line naming the route
+and stops with an error if `APP_SOURCE` names a route whose files are
+missing. `APP_DRY_RUN=1 bash run.sh` prints the route and its commands
+without installing or starting anything.
+
+| Route | Put in the repo | Setting |
+| --- | --- | --- |
+| **A. Source folder** (6a) | `app_src/` with our importable packages, plus `app_src/requirements.txt` for their own dependencies (optional). It goes first on `PYTHONPATH` (`app.py` also adds it for a plain `streamlit run app.py`); `requirements-thirdparty.txt` and that file install from Nexus. | `APP_SOURCE=source` |
+| **B. Wheels** (6b) | Our wheel(s) in `wheels/*.whl`, installed with `requirements-thirdparty.txt`; their dependencies resolve from Nexus. | `APP_SOURCE=wheel` |
+| **C. Nexus** (today's; 6c for a private package) | Only the template: `packages.txt` names our package and includes the third-party pins. | `APP_SOURCE=nexus` |
+
+Today's single package (the GSE app with both pages) works under all three:
+its packages in `app_src/` with its dependencies in `app_src/requirements.txt`,
+its wheel in `wheels/`, or its pin in `packages.txt`. After the app split,
+route A carries Document Review's source (`module_work/APP_SPLIT_PLAN.md`
+§1.4, step 14). Tests: `webapp/tests/test_tinyapps_wrapper.py`.
 
 ## Per-tester Prompter keys (built 2026-10-09, released in 5.33.0)
 

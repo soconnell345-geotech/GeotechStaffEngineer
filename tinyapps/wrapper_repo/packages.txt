@@ -1,5 +1,7 @@
 # Tiny Apps package manifest — installed by run.sh from the Data.State Nexus
-# mirror (--index-url $PIP_INDEX_URL). The whole toolkit is ONE released
+# mirror (--index-url $PIP_INDEX_URL) on route C ("nexus"), the route run.sh
+# takes when the repo holds no app_src/ folder and no wheels/ (README,
+# "Choosing how the code arrives"). The whole toolkit is ONE released
 # package; an app update is a one-line pin bump plus an App Services sync.
 #
 # Pin the exact release that was tested on dosdev before asking for a sync.
@@ -7,24 +9,6 @@
 # (webapp.tinyapps_entry with the document-review and geotech pages).
 geotech-staff-engineer>=5.26
 
-# CfA fleet pins (exampleCode packages.txt, 2026-09-17): the versions cleared
-# through the Nexus firewall. streamlit and pandas sit inside the toolkit's own
-# ranges; PyJWT and msal arrive transitively through azure-identity and are
-# pinned because an unpinned resolve picks whatever the firewall has or has
-# not cleared that week.
-streamlit==1.62.0
-# pandas==3.0.2 is the fleet pin, but it CANNOT install beside
-# geotech-staff-engineer 5.33.0 or earlier: their python-ags4 dependency caps
-# pandas below 3, so pip finds no solution at all (found 2026-10-12, BACKLOG
-# TA-02). The release after 5.33.0 makes python-ags4 optional and installs on
-# pandas 3.0.2 (tested: Python 3.12, Streamlit 1.62.0, the web-app and agent
-# test suites). Until that release is pinned above, leave pandas unpinned:
-# pip takes the newest pandas 2.x the mirror has, as on dosdev 2026-09-23.
-# pandas==3.0.2
-PyJWT[crypto]==2.13.0
-msal==1.37.0
-
-# Key Vault reads on the App Service (webapp.tinyapps_settings imports these
-# lazily; a local .env run never needs them).
-azure-identity==1.21.0
-azure-keyvault-secrets==4.9.0
+# The third-party pins (CfA's fleet pins and the Key Vault libraries) live in
+# their own file, so routes A and B install them without the line above.
+-r requirements-thirdparty.txt
