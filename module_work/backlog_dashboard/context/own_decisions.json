@@ -1336,38 +1336,30 @@
     ]
   },
   "OWN-72": {
-    "kind": "decision",
-    "ask_who": null,
-    "question": "The core is shared with GSE: keep the name docreview-core?",
-    "why": "Your note asked whether the core goes in GHE because it isn't shared with GSE. It is shared: GSE on Foundry uses the same model connections, vision calls and figure helper, which is why the core is its own public package (like planlens) and not part of Document Review. Document Review itself, which only Tiny Apps runs, goes in the GHE repo as source, as you chose. So the only thing to check is the core's name, since GSE will install it too.",
-    "background": "Your answers of 2026-10-21: the name docreview-core; Document Review from its source folder in the GHE wrapper repo. The route stands. The name is only a label (Python install name with hyphens, import name with underscores); it can say Document Review even though GSE uses it. CfA's yes to the source folder is still needed: the questions below are yours to send when you're ready.",
-    "parts": [
+    "kind": "action",
+    "ask_who": "CfA",
+    "question": "When you're ready, send CfA the four questions on how our Document Review code may reach the Tiny Apps repo (6a-6d).",
+    "why": "The core's name is decided (aec-agent-core, 2026-11-04). The only open half is CfA's answer, and it no longer needs code: the wrapper takes a source folder, wheels in the repo, or Nexus, so their answer becomes a file drop on dosdev.",
+    "background": "Wrapper routes merged 2026-11-04 (a894ce6, INF-34). Their answer is needed before split step 14 (INF-34); nothing earlier waits on it.",
+    "options": [
       {
-        "label": "The core's name",
-        "options": [
-          {
-            "label": "Keep docreview-core",
-            "effect": "Imported as docreview_core; GSE installs it under that name too."
-          },
-          {
-            "label": "Other (see notes)",
-            "effect": "Write a name that doesn't say Document Review in the notes."
-          }
-        ]
+        "label": "Sent",
+        "effect": "Tell me their answer and I'll set the route."
+      },
+      {
+        "label": "Not yet",
+        "effect": "Nothing waits on it before step 14."
       }
     ],
-    "recommendation": "Either is fine; keep docreview-core unless you'd rather the name not point at Document Review.",
-    "if_no_answer": "The plan keeps docreview-core; nothing needs the name before the core is built (after the release point).",
+    "recommendation": "Send it when the Tiny Apps work picks up; no rush.",
+    "if_no_answer": "The split pauses at step 14 until CfA answers.",
     "message_to_send": "Questions on installing our Document Review app (replaces our earlier question 6):\n6a. May our app's source folder live in the GHE wrapper repo and run from there, with every installed package coming from Nexus (our shared package is public on PyPI, like planlens)?\n6b. If you would rather install a file than run a folder, may the repo carry one small pure-Python wheel of ours, installed by path from packages.txt?\n6c. Does your Nexus have a hosted repository where a team publishes its own package?\n6d. Are the fleet pins our tree must accept still streamlit 1.62.0, pandas 3.0.2, PyJWT 2.13.0, msal 1.37.0, azure-identity 1.21.0 and azure-keyvault-secrets 4.9.0?",
-    "steps": [],
     "unblocks": [
-      "INF-32",
       "INF-34"
     ],
     "sources": [
-      "BACKLOG.md OWN-72, INF-26",
-      "module_work/APP_SPLIT_PLAN.md sections 1.3 and 7 (D1, D3)",
-      "tinyapps/TINYAPPS.md (Nexus only; CfA question 6)"
+      "BACKLOG.md OWN-72, INF-34",
+      "tinyapps/TINYAPPS.md (Choosing how the code arrives)"
     ]
   },
   "OWN-73": {

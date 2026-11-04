@@ -33,6 +33,8 @@ The owner's words:
   name `docreview-core` and Document Review from its source folder in the
   GHE repo (OWN-72), the name asked again because the owner's note assumed
   the core is not shared with GSE, and it is.
+- 2026-11-04 (owner, chat): the core is named `aec-agent-core` (import
+  `aec_agent_core`), a name that says neither app; free on PyPI that day.
 
 ## In one page (for the owner)
 
@@ -113,7 +115,7 @@ the chat page.
 |---|---|---|---|---|---|
 | `planlens` / `planlens` | The document layer as today: reading PDFs and DXFs, page maps, markups, render budgets. From step 9 it also holds the document tools that only wrap it (2.6). It still calls no model: when a tool needs a look, the host hands it a look function. | Both apps | numpy, PyMuPDF, ezdxf, opencv-headless, rapidfuzz (unchanged) | PyPI (Nexus mirrors it) | yes |
 | `geotech-references` / `geotech_references` | The cited reference library and chart catalogs | GSE only | numpy | PyPI | yes |
-| **The core** (working name `docreview-core` / `docreview_core`, OWN-72; NEW) | What both agents run below the chat page: the model connections, the vision calls and the file tools beside them, the figure helper with its plotting box, chart stack and the nine geotech worked examples for now (OWN-77 (b)), the agent's guards, limits and kept work, Word and Excel, the run record and its checks, the switches, the suite's framework (2.3). It has no Streamlit page and nothing that encodes a Department deployment. | Both apps, every host | planlens, deepagents/langchain/langgraph (today's caps), openai <3, langchain-openai, matplotlib, plotly, python-docx, markdown-it-py, openpyxl, numpy, scipy (the plotting box lets code import it); an `[anthropic]` extra for langchain-anthropic | PyPI → Nexus; each app pins an exact version | yes |
+| **The core** (`aec-agent-core` / `aec_agent_core`, owner 2026-11-04, OWN-72; NEW) | What both agents run below the chat page: the model connections, the vision calls and the file tools beside them, the figure helper with its plotting box, chart stack and the nine geotech worked examples for now (OWN-77 (b)), the agent's guards, limits and kept work, Word and Excel, the run record and its checks, the switches, the suite's framework (2.3). It has no Streamlit page and nothing that encodes a Department deployment. | Both apps, every host | planlens, deepagents/langchain/langgraph (today's caps), openai <3, langchain-openai, matplotlib, plotly, python-docx, markdown-it-py, openpyxl, numpy, scipy (the plotting box lets code import it); an `[anthropic]` extra for langchain-anthropic | PyPI → Nexus; each app pins an exact version | yes |
 | `geotech-staff-engineer` / `funhouse_agent`, `webapp`, the module packages | The geotech app: 33 modules, dispatch, the geotech agent and its helpers (calc, references, setup, reviewers), the chart lines it hands the figure helper, report_ingest, its own chat page, the Foundry and Funhouse entries | The owner on Foundry (Funhouse as backup) | the core with `[anthropic]` (exact), planlens, geotech-references, the analysis back ends as today | PyPI (Foundry's Libraries panel) or uploaded wheels | yes |
 | **Document Review** (a source folder in the GHE wrapper repo, for example `docreview/`; NEW) | The Document Review app: its own chat page, its agent builds (today's agent, `lean` and `minimal` behind their switches), its prompt and orientation, the review-only tools (findings, geometry, sweep, digest), the Tiny Apps host files (settings, sign-in header, Graph SharePoint), its 38 suite tasks and its tests (2.2) | Testers on Tiny Apps; suite runs on Foundry | the core (exact), planlens (exact), streamlit and the fleet pins | Runs from the repo folder (needs CfA's yes, 1.4) | **no**: private from the copy (step 13) |
 
@@ -1198,11 +1200,10 @@ packages.
 The earlier plan's D1-D9 and where they stand. Each open one is a desk
 card.
 
-- **D1, the names → OWN-72 (open).** Only the core needs a name now;
-  Document Review is a folder. Working name `docreview-core` /
-  `docreview_core`. The core is public, like planlens, so the name carries
-  no "DE". GSE uses it as much as Document Review does, so a neutral name
-  may read better. Needed before step 10.
+- **D1, the names → OWN-72, DECIDED 2026-11-04:** only the core needs a
+  name; Document Review is a folder. The core is `aec-agent-core` /
+  `aec_agent_core` (the owner, in chat): public like planlens, no "DE",
+  and naming neither app, since GSE uses it as much as Document Review.
 - **D2, where the shared code lives → OWN-74, DECIDED 2026-10-21:** option
   (d), made smaller. The document tools that only wrap planlens go into
   planlens. A thin public core holds the model connections, the vision
