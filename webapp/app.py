@@ -569,14 +569,18 @@ def _storage_busy(store, thread_id) -> bool:
         return False
 
 
-def _storage_status(store, thread_id, polling: bool = False) -> None:
+def _storage_status(store, thread_id, drawn: Optional[float] = None) -> None:
     """The Permanent storage block's status lines: why conversations are
     NOT kept (the Connection diagnostics line's text), the dataset's first
     check, a save in the background, this conversation's latest save. With
-    ``polling`` it runs as a timed fragment (``_storage_panel``) while
-    something runs in the background; when that ends it reruns the page once,
-    which shows the result and stops the timer, so the result shows without
-    a click (the FDE, build i: no save line after the turn)."""
+    ``drawn`` (when the page drew it) it runs as a timed fragment
+    (``_storage_panel``) while something runs in the background; when that
+    ends a timed run reruns the page once, which shows the result and stops
+    the timer, so the result shows without a click (the FDE, build i: no
+    save line after the turn). The first draw, inside the page's own run,
+    never reruns: ``st.rerun()`` would end that run before the chat box and
+    the buttons below, and Streamlit drops a message sent or a click made
+    in it."""
     ss = st.session_state
     foundry = getattr(store, "backend", "sharepoint") == "foundry"
     label = getattr(store, "label", "SharePoint")
@@ -644,7 +648,9 @@ def _storage_status(store, thread_id, polling: bool = False) -> None:
                    "notebook and stops when that notebook clears). "
                    "Re-run `stage_sharepoint(...)` in the notebook, "
                    "then Sync now.")
-    if polling and not _storage_busy(store, thread_id):
+    # A timed run comes a poll or more after the page drew the fragment.
+    if drawn is not None and time.time() - drawn >= _STORAGE_POLL_S / 2 \
+            and not _storage_busy(store, thread_id):
         st.rerun()
 
 
@@ -658,7 +664,7 @@ def _storage_panel(store, thread_id) -> None:
         pass
     if _storage_busy(store, thread_id) and hasattr(st, "fragment"):
         st.fragment(_storage_status, run_every=_STORAGE_POLL_S)(
-            store, thread_id, True)
+            store, thread_id, time.time())
     else:
         _storage_status(store, thread_id)
 

@@ -1256,12 +1256,16 @@ def test_the_save_line_updates_by_itself_when_a_background_save_ends(
     monkeypatch.setattr(st, "fragment", recording)
 
     class _Ending(_SidebarStore):
-        """A save that ends while the page draws: saving on two looks."""
+        """A save that ends while the fragment looks: saving on two looks,
+        the second a timed run's (a poll or more after the page drew the
+        fragment; AppTest runs no timer, so the look waits that long)."""
 
         looks = 0
 
         def save_state(self, thread_id):
             self.looks += 1
+            if self.looks == 2:
+                time.sleep(2.0 / 2 + 0.05)
             return "saving" if self.looks <= 2 else None
 
         def last_sync_for(self, thread_id):
@@ -1280,6 +1284,50 @@ def test_the_save_line_updates_by_itself_when_a_background_save_ends(
     polled = [f for f in fragments if f[0] == "_storage_status"]
     assert polled == [("_storage_status", 2.0)], fragments
     assert store.looks == 5                     # the rerun looked once more
+
+
+def test_a_click_or_a_message_in_the_run_where_a_save_ends_is_kept(
+        monkeypatch, tmp_path):
+    """The fragment's first draw is part of the page's own run. A rerun
+    there would end that run before the chat box and the buttons below,
+    and Streamlit drops a message sent or a click made in it; so only a
+    timed run reruns the page."""
+
+    class _Switch(_SidebarStore):
+        """No save until ``armed``; then saving on two looks (the page's
+        busy check and the fragment's first draw), then done."""
+
+        armed = False
+        looks = 0
+        synced = 0
+
+        def save_state(self, thread_id):
+            if not self.armed:
+                return None
+            self.looks += 1
+            return "saving" if self.looks <= 2 else None
+
+        def mirror_conversation(self, thread_id, root=None):
+            self.synced += 1
+            return super().mirror_conversation(thread_id, root)
+
+    def answer(_agent, _messages, _thread_id, **_kw):
+        yield {"kind": "turn_done", "answer": "Made-up answer.",
+               "turn_tokens": 1}
+
+    monkeypatch.setattr(core, "stream_turn", answer)
+    store = _Switch()
+    at = _sidebar(monkeypatch, tmp_path, store)
+    store.armed = True
+    next(b for b in at.sidebar.button
+         if str(b.key).startswith("spsync_")).click().run()
+    assert not at.exception, at.exception
+    assert store.synced == 1                    # Sync now ran
+    store.looks = 0
+    at.chat_input[0].set_value("made-up question").run()
+    assert not at.exception, at.exception
+    assert [e["text"] for e in at.session_state["transcript"]
+            if e["role"] == "user"] == ["made-up question"]
 
 
 # ---------------------------------------------------------------------------

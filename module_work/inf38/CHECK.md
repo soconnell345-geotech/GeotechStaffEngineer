@@ -363,9 +363,9 @@ Built 2026-11-03 on branch `wip/inf65`, from the FDE's build i hand-back
 | `webapp/foundry_dataset_store.py` | `_is_no_commit`: the error name `FailedToResolveDataset` AND the wording "no / not have any committed transaction", in the error or the errors it wraps. A listing that meets it is an empty store (`uncommitted`), so `ls` gives `[]`, the probe says "readable, 0 files: a new dataset with nothing committed yet; the first save makes its first commit", the folder-name check adds no shard, and the save path is unchanged (the first `upload_directory` makes the first commit). Any other `FailedToResolveDataset` still raises. Every listing records what it found in one record per alias, shared by every file manager in the process (`_READS`). `known_problem` (replacing `check_alias`) gives the sidebar the alias error or the recorded read failure; when nothing has read the alias yet it starts ONE listing in the background and the page does not wait (`checking`). |
 | `webapp/diagnostics.py` | Every probe failure is shown as `not_kept_reason`, the sidebar's text; the probe records into the shared record, so a failed diagnostics read turns the sidebar to NOT kept, and a read that works clears it. |
 | `webapp/sharepoint_store.py` | `check_state()` ("checking" while that first read runs). A save's summary carries `at`, when it ended. |
-| `webapp/app.py` | The status lines of **Permanent storage** move into `_storage_status`. While the dataset's first check, or a save of this conversation, runs in the background (`_storage_busy`, Foundry only in practice), `_storage_panel` draws them as an `st.fragment(run_every=2 s)`. When that ends the fragment reruns the page once, which shows the result and defines no fragment, so the polling stops. A timed fragment run never interrupts a running turn: Streamlit queues it behind the full run. New lines: "Foundry storage: checking the conversation dataset…"; "Foundry storage: saved N file(s) just now, M up-to-date · Xs" (SharePoint keeps "N uploaded, …"). "Foundry storage is on" shows only after a read has worked. |
+| `webapp/app.py` | The status lines of **Permanent storage** move into `_storage_status`. While the dataset's first check, or a save of this conversation, runs in the background (`_storage_busy`, Foundry only in practice), `_storage_panel` draws them as an `st.fragment(run_every=2 s)`. When that ends a timed run of the fragment reruns the page once, which shows the result and defines no fragment, so the polling stops. The fragment's first draw never reruns: it is part of the page's own run, and a rerun there would drop a message sent or a click made in that run (review fix). A timed fragment run never interrupts a running turn: Streamlit queues it behind the full run. New lines: "Foundry storage: checking the conversation dataset…"; "Foundry storage: saved N file(s) just now, M up-to-date · Xs" (SharePoint keeps "N uploaded, …"). "Foundry storage is on" shows only after a read has worked. |
 | `docs/FOUNDRY.md` §4c | A new dataset needs no placeholder file. Diagnostics passes on it as "readable, 0 files". The sidebar checks, then agrees with diagnostics. The save line updates without a click. |
-| `webapp/tests/test_foundry_dataset_store.py` | The fake models the no-commit refusal (`files()` or `Dataset.get`), another `FailedToResolveDataset` cause, and a listing that hangs. 8 new tests, 48 in all. |
+| `webapp/tests/test_foundry_dataset_store.py` | The fake models the no-commit refusal (`files()` or `Dataset.get`), another `FailedToResolveDataset` cause, and a listing that hangs. 9 new tests (one from the review), 49 in all. |
 
 ### What a fresh dataset now shows
 
@@ -387,7 +387,7 @@ least 3 GB free checked before each run:
 
 | Run | Result | Exit |
 |---|---|---|
-| `test_foundry_dataset_store.py` | 48 passed | 0 |
+| `test_foundry_dataset_store.py` | 48 passed (49 after the review fix) | 0 |
 | `test_sharepoint_store.py`, `test_sharepoint_links_and_failures.py`, `test_sharepoint_privacy.py`, `test_conversation_restore.py`, `test_past_conversations_pages.py`, `test_diagnostics.py`, `test_foundry_mode.py` | 158 passed | 0 |
 | `test_app_smoke.py` | 11 passed | 0 |
 | `test_public_text.py`, `test_docs_currency.py`, `test_page_fingerprints.py`, `test_foundry_dataset_store.py` (files staged) | 73 passed | 0 |
@@ -412,10 +412,14 @@ The new tests:
   process. It shows NOT kept, in the diagnostics line's words, for a
   `FailedToResolveDataset` with another cause. It shows "on" with
   diagnostics PASS for a new dataset.
-- **The live save line (AppTest).** A save that ends while the page
-  draws: the status lines were a fragment with `run_every=2.0`. The page
-  reran once by itself, shows "saved 5 file(s) just now", and defined no
-  fragment on that run.
+- **The live save line (AppTest).** A save that ends while the fragment
+  looks again (a timed run; AppTest runs no timer, so the fake's look
+  waits half a poll): the status lines were a fragment with
+  `run_every=2.0`. The page reran once by itself, shows "saved 5 file(s)
+  just now", and defined no fragment on that run.
+- **A click or a message is kept (AppTest).** A save that ends during the
+  page's own run: **Sync now** clicked, or a message sent, in that run
+  still runs.
 
 ### What the FDE must confirm
 
