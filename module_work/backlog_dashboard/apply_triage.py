@@ -15,7 +15,9 @@ A triage file is a list of ``{id, action, target, reason, evidence}`` rows
   reason and the evidence.
 - ``DROP?``: applied only when the ID is named in ``--drop`` (the owner's
   call); the line leaves and a Done entry says the owner dropped it.
-- ``KEEP``: untouched.
+- ``RETIER``: the item stays open; its ``[Tier]`` becomes ``new_tier`` and
+  "Re-tiered DATE (old to new): reason" is added to its end.
+- ``KEEP`` and ``ASK``: untouched (an ASK's question goes on the desk).
 
 Every Done entry starts ``- **ID**``, so the ID stays defined for whatever
 still cites it and is never reused (``webapp/tests/test_backlog.py``). A row
@@ -40,6 +42,8 @@ ROOT = HERE.parents[1]
 BACKLOG = ROOT / "BACKLOG.md"
 DONE_HEADING = "## Done since the last sweep"
 _ITEM = re.compile(r"^- \*\*([A-Z]{2,3}-\d{2,3})\*\* \[[A-Za-z]+\]")
+_TIER = re.compile(r"^(- \*\*[A-Z]{2,3}-\d{2,3}\*\* )\[([A-Za-z]+)\]")
+TIERS = ("Now", "Next", "Later", "Parked")
 _DONE_ID = re.compile(r"^- \*\*([A-Z]{2,3}-\d{2,3})\*\*", re.M)
 
 
@@ -123,6 +127,14 @@ def apply(backlog: pathlib.Path, rows: list, day: str, drop=(),
             elif r["target"] in leaving:
                 errors.append(f"{r['id']}: merge target {r['target']} is "
                               "itself leaving")
+    retier = [r for r in rows if r["action"] == "RETIER"
+              and r["id"] not in leaving]
+    for r in retier:
+        if r["id"] not in where:
+            errors.append(f"{r['id']}: not an open item in {backlog.name}")
+        elif r.get("new_tier") not in TIERS:
+            errors.append(f"{r['id']}: new_tier {r.get('new_tier')!r} is not "
+                          f"one of {TIERS}")
     if errors:
         print("nothing changed:\n  " + "\n  ".join(errors))
         return 1
@@ -132,6 +144,8 @@ def apply(backlog: pathlib.Path, rows: list, day: str, drop=(),
         if r["action"] == "MERGE" and r.get("merge_text", "").strip():
             appends.setdefault(r["target"], []).append(
                 f"Also (was {r['id']}, merged {day}): {r['merge_text'].strip()}")
+    tiers = {r["id"]: r for r in retier}
+    retiered = 0
     gone = {where[r["id"]] for r in chosen}
     out = []
     for i, ln in enumerate(lines):
@@ -141,6 +155,16 @@ def apply(backlog: pathlib.Path, rows: list, day: str, drop=(),
         if m and m.group(1) in appends:
             ln = (_body(ln) + " " + " ".join(appends[m.group(1)])
                   + ln[len(_body(ln)):])
+        if m and m.group(1) in tiers:
+            r = tiers[m.group(1)]
+            old = _TIER.match(ln).group(2)
+            if old != r["new_tier"]:
+                note = (f" Re-tiered {day} ({old} to {r['new_tier']}): "
+                        f"{r.get('reason', '').strip()}")
+                ln = (_TIER.sub(lambda t: f"{t.group(1)}[{r['new_tier']}]",
+                                _body(ln), count=1).rstrip() + note
+                      + ln[len(_body(ln)):])
+                retiered += 1
         out.append(ln)
 
     # The Done entries go on top of the Done list (newest first); with an
@@ -168,7 +192,8 @@ def apply(backlog: pathlib.Path, rows: list, day: str, drop=(),
     for r in chosen:
         counts[r["action"]] = counts.get(r["action"], 0) + 1
     print(f"{len(chosen)} rows applied {counts}; {len(appends)} targets "
-          f"extended; {backlog.name}: {len(text.encode('utf-8')):,} -> "
+          f"extended; {retiered} re-tiered; {backlog.name}: "
+          f"{len(text.encode('utf-8')):,} -> "
           f"{len(new_text.encode('utf-8')):,} bytes")
     cite = re.compile(r"\b(" + "|".join(map(re.escape, sorted(leaving)))
                       + r")\b") if leaving else None

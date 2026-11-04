@@ -193,6 +193,19 @@ def test_apply_triage_moves_merged_and_closed_items_to_done(tmp_path):
            "reason": "", "evidence": "", "merge_text": "x"}
     assert apply_triage.apply(backlog, [bad], "2000-01-03") == 1
     assert backlog.read_text(encoding="utf-8") == before
+    # a re-tier changes the tag in place and says why; a bad tier refuses
+    up = {"id": "GM-06", "action": "RETIER", "new_tier": "Next",
+          "reason": "first in line", "target": "", "evidence": ""}
+    assert apply_triage.apply(backlog, [dict(up, new_tier="Soon")],
+                              "2000-01-04") == 1
+    assert backlog.read_text(encoding="utf-8") == before
+    assert apply_triage.apply(backlog, [up, {"id": "GM-03", "action": "ASK",
+                                             "question": "?"}],
+                              "2000-01-04") == 0
+    text = backlog.read_text(encoding="utf-8")
+    assert re.search(r"^- \*\*GM-06\*\* \[Next\] .*Re-tiered 2000-01-04 "
+                     r"\(Later to Next\): first in line$", text, re.M)
+    assert "- **GM-03** [Later] see" in text
 
 
 def test_handoff_slice_cites_only_existing_ids():
