@@ -124,8 +124,9 @@ Key conventions:
   Report ingest prompts are mf-9 (the next live run re-reads every saved
   model-first answer); groundwater "not measured" and combined lab samples
   are kept; refs pinned at 9a198ff. Answers move in fem2d footing capacity
-  (a surcharge is a real load) and sheet_pile (water standing in the
-  excavation).
+  (a surcharge is a real load; the soil's weight first; sand q_ult with
+  no surcharge is set by the mesh and warned of) and sheet_pile (water
+  standing in the excavation).
 
 - **5.34.0 (2026-11-04; tag `v5.34.0` on branch `release/5.34.0`) with
   planlens 0.14.0 (tag `v0.14.0`) and geotech-references 1.5.0 (tag
