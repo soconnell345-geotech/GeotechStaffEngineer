@@ -151,3 +151,99 @@ class TestWeightFirstStage:
         # gamma = 0, no surcharge keeps the one-ramp path: master's value.
         r = analyze_footing_capacity(B=2.0, c=50.0)
         assert r.q_ult_kPa == 255.9370565342475
+
+
+class TestRigidFootingInputs:
+    """GM-305: footing='rigid' pushes the footing down as one body; the
+    inputs of one footing model are refused for the other."""
+
+    def test_bad_footing(self):
+        with pytest.raises(ValueError, match="footing must be"):
+            analyze_footing_capacity(B=2.0, c=50.0, footing="stiff")
+
+    def test_bad_base(self):
+        with pytest.raises(ValueError, match="base must be"):
+            analyze_footing_capacity(B=2.0, c=50.0, footing="rigid",
+                                     base="sticky")
+
+    def test_rigid_refuses_q_max(self):
+        with pytest.raises(ValueError, match="q_max"):
+            analyze_footing_capacity(B=2.0, c=50.0, footing="rigid",
+                                     q_max=400.0)
+
+    @pytest.mark.parametrize("kw", [dict(base="smooth"),
+                                    dict(settlement_max=0.05)])
+    def test_flexible_refuses_rigid_inputs(self, kw):
+        with pytest.raises(ValueError, match="footing='rigid'"):
+            analyze_footing_capacity(B=2.0, c=50.0, **kw)
+
+    def test_settlement_max_positive(self):
+        with pytest.raises(ValueError, match="settlement_max"):
+            analyze_footing_capacity(B=2.0, c=50.0, footing="rigid",
+                                     settlement_max=0.0)
+
+    def test_weightless_cohesionless_needs_settlement_max(self):
+        with pytest.raises(ValueError, match="settlement_max"):
+            analyze_footing_capacity(B=2.0, c=0.0, phi=30.0,
+                                     footing="rigid")
+
+    def test_choices(self):
+        from fem2d.analysis import _footing_choices
+        flex = _footing_choices("flexible", "rough")
+        assert [c["what"] for c in flex] == ["footing model"]
+        assert flex[0]["chosen"] == "flexible"
+        rig = _footing_choices("rigid", "rough")
+        assert [c["chosen"] for c in rig] == ["rigid", "rough"]
+        assert "p. 55" in rig[0]["basis"]
+        assert "p. 99" in rig[1]["basis"]
+
+
+@pytest.mark.slow
+class TestRigidFooting:
+    """GM-305: the rigid footing on the coarse T6 20 x 10 mesh, B = 2 m.
+    Made-up values. The mesh study (fem2d VALIDATION.md section 3) is why
+    the default stays flexible: these values fall as the mesh is refined
+    (Prandtl rough 347.9 -> 305.9 kPa from 20 x 10 to 40 x 20)."""
+
+    def test_prandtl_rough(self):
+        r = analyze_footing_capacity(B=2.0, c=50.0, footing="rigid",
+                                     nx=20, ny=10)
+        assert r.footing == "rigid" and r.base == "rough"
+        assert r.collapse_bracketed                 # q levelled off
+        assert r.q_ult_kPa == pytest.approx(347.94, rel=1e-3)
+        # above the flexible footing on the same mesh (274.2) and above
+        # (2 + pi) c = 257.1: the rigid footing reads high on this mesh
+        assert r.q_ult_kPa > (2.0 + math.pi) * 50.0
+        s = [p[0] for p in r.pressure_settlement]
+        assert s == sorted(s) and s[-1] == pytest.approx(r.settlement_max_m)
+        assert r.q_max_kPa is None
+        assert r.Nc_backfigured == pytest.approx(r.q_ult_kPa / 50.0)
+        assert [c["chosen"] for c in r.choices] == ["rigid", "rough"]
+        assert any("falls as the mesh is refined" in w for w in r.warnings)
+
+    def test_prandtl_smooth_below_rough(self):
+        r = analyze_footing_capacity(B=2.0, c=50.0, footing="rigid",
+                                     base="smooth", nx=20, ny=10)
+        assert r.collapse_bracketed
+        assert r.q_ult_kPa == pytest.approx(322.69, rel=1e-3)
+        assert r.base == "smooth"
+
+    def test_surcharge_starts_q_at_the_surcharge(self):
+        # stage 1 brings weight and q into equilibrium; the strip's q is
+        # carried by the footing's reactions, so q starts near 36 kPa
+        r = analyze_footing_capacity(B=2.0, c=50.0, surcharge=36.0,
+                                     footing="rigid", nx=20, ny=10)
+        assert r.collapse_bracketed
+        assert r.surcharge_kPa == 36.0
+        assert r.q_ult_kPa > 36.0 + (2.0 + math.pi) * 50.0
+        assert r.pressure_settlement[0][1] > 36.0
+
+    def test_cohesionless_without_plateau_is_a_lower_bound(self):
+        # c = 0, phi = 30, gamma = 18: the run stops before q levels off
+        r = analyze_footing_capacity(B=2.0, c=0.0, phi=30.0, gamma=18.0,
+                                     footing="rigid", nx=20, ny=10)
+        assert not r.collapse_bracketed
+        assert r.collapse_load_fraction < 1.0
+        assert any("did not level off" in w for w in r.warnings)
+        # the flexible footing's mesh warning is not the rigid one's
+        assert not any("depends on the mesh" in w for w in r.warnings)

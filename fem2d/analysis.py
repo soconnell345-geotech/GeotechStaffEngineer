@@ -133,17 +133,37 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
                              surcharge=0.0, q_max=None, n_load_steps=45,
                              domain_depth=None, domain_half_width=None,
                              nx=40, ny=20, element_type='t6',
-                             max_iter=1000, tol=1e-4, q_applied=None):
-    """Ultimate bearing capacity of a rigid strip footing by FEM load control.
+                             max_iter=1000, tol=1e-4, q_applied=None,
+                             footing='flexible', base='rough',
+                             settlement_max=None):
+    """Ultimate bearing capacity of a strip footing by FEM.
 
     The FE analogue of a bearing-capacity calculation, analogous to how
-    ``analyze_slope_srm`` wraps the slope workflow: it builds a half-space mesh,
-    applies a uniform pressure over the footing width B, and ramps that pressure
-    over ``n_load_steps`` increments until the mesh can no longer carry it. The
-    last converged load level is the ultimate bearing pressure ``q_ult`` (the
-    Griffiths-style "collapse = non-convergence" criterion). Validated against
-    the Prandtl closed form q_ult = (2 + pi) c, Nc = 5.14 (VALIDATION.md §3;
-    ~2% band with T6). **Use element_type='t6'** — CST locks and never collapses
+    ``analyze_slope_srm`` wraps the slope workflow: it builds a half-space
+    mesh and loads the footing width B to collapse in one of two ways
+    (``footing``):
+
+    * ``'flexible'`` (default): a uniform pressure over B, ramped over
+      ``n_load_steps`` increments until the mesh can no longer carry it. The
+      last converged load level is the ultimate bearing pressure ``q_ult``
+      (the Griffiths-style "collapse = non-convergence" criterion). Validated
+      against the Prandtl closed form q_ult = (2 + pi) c, Nc = 5.14
+      (VALIDATION.md §3; ~2% band with T6).
+    * ``'rigid'`` (GM-305): the footing's surface nodes pushed down together
+      in ``n_load_steps`` equal settlement steps to ``settlement_max``
+      (prescribed displacements), the footing pressure q read as the sum of
+      their vertical reactions over B. GEC-6 (FHWA-SA-02-054) p. 55: Eq. 5-7
+      assumes a rigid strip footing. ``q_ult`` is the largest q reached;
+      ``collapse_bracketed`` says whether q levelled off (rose by less than
+      1 % over the last tenth of the settlement run). ``base`` says whether
+      the footing's nodes are also held horizontally ('rough', the default)
+      or slide freely ('smooth').
+
+    The default stays 'flexible' on the evidence of the mesh study in
+    VALIDATION.md §3 (GM-305): on the module's uniform meshes the rigid
+    footing converges slowly from above (Prandtl 347.9, 305.9 kPa on 20x10
+    and 40x20 against 257.1), and on a cohesionless soil it gives no
+    plateau. **Use element_type='t6'** — CST locks and never collapses
     for this isochoric mechanism (VALIDATION.md §3).
 
     Parameters
@@ -177,31 +197,76 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     element_type : 't6' (default) or 'cst'.
     q_applied : float, optional — a working/design pressure (kPa). If given, the
         bearing factor of safety q_ult / q_applied is reported.
+    footing : 'flexible' (default) or 'rigid' — a uniform pressure ramped to
+        collapse, or the footing pushed down as one body (GM-305).
+    base : 'rough' (default) or 'smooth' — rigid footing only: its nodes
+        held horizontally (no slip; GEC-6 pp. 49-50: the wedge under the
+        footing moves down with it; p. 99: concrete cast against the
+        ground takes the soil's own friction, tan delta = tan phi, or on
+        clay adhesion c_a = c_u), or free to slide.
+    settlement_max : float, optional — rigid footing only: the settlement
+        the footing is pushed to (m). Default 10 x the elastic settlement
+        at the closed-form estimate, q_est B (1 - nu^2) / E; raise it when
+        ``collapse_bracketed`` is False.
 
     Returns
     -------
     FEMResult with additional attributes:
-        q_ult_kPa — ultimate bearing pressure (last converged level).
+        q_ult_kPa — ultimate bearing pressure (flexible: the last converged
+            level; rigid: the largest footing pressure reached).
+        footing, base — the footing model used (base None when flexible).
+        pressure_settlement — rigid: [[settlement_m, q_kPa], ...] after each
+            converged step; None when flexible.
+        settlement_max_m — rigid: the settlement pushed to; else None.
         Nc_backfigured — q_ult/c when this is a pure-cohesion (surcharge=gamma=0)
             case, else None (compare to Prandtl Nc = 5.14).
         bearing_capacity_factors — {'Nc','Nq','Ngamma'} closed-form reference.
         q_ult_estimate_kPa — the closed-form estimate used to size the ramp.
         bearing_FOS — q_ult/q_applied when q_applied is given, else None.
-        collapse_bracketed — False if the footing carried the full q_max (then
-            q_ult is a lower bound; raise q_max).
-        q_max_kPa, n_steps_converged, collapse_load_fraction (the fraction
-            of the ramp from the surcharge to q_max carried).
+        collapse_bracketed — flexible: False if the footing carried the full
+            q_max (then q_ult is a lower bound; raise q_max). Rigid: True
+            when q levelled off over the last tenth of the settlement run.
+        q_max_kPa (None when rigid), n_steps_converged,
+            collapse_load_fraction (flexible: the fraction of the ramp from
+            the surcharge to q_max carried; rigid: the fraction of
+            settlement_max reached).
+        choices — the footing model and, rigid, its base, each with how it
+            was set and its basis.
         surcharge_kPa — the surcharge applied beside the footing.
-        warnings — says so when q_ult is set by the mesh (c = 0 with
-            gamma > 0 and no surcharge).
+        warnings — says so when q_ult is set by the mesh (flexible, c = 0
+            with gamma > 0 and no surcharge) or, rigid, when q did not level
+            off.
     """
     if B <= 0:
         raise ValueError(f"footing width B must be positive, got {B}")
     if element_type not in ('t6', 'cst'):
         raise ValueError(f"element_type must be 't6' or 'cst', got {element_type!r}")
+    if footing not in ('flexible', 'rigid'):
+        raise ValueError(
+            f"footing must be 'flexible' or 'rigid', got {footing!r}")
+    if base not in ('rough', 'smooth'):
+        raise ValueError(f"base must be 'rough' or 'smooth', got {base!r}")
+    if settlement_max is not None and settlement_max <= 0:
+        raise ValueError(
+            f"settlement_max must be positive, got {settlement_max}")
+    if footing == 'rigid' and q_max is not None:
+        raise ValueError(
+            "q_max is the flexible footing's load ramp; a rigid footing is "
+            "pushed to settlement_max instead.")
+    if footing == 'flexible' and (settlement_max is not None
+                                  or base != 'rough'):
+        raise ValueError(
+            "base and settlement_max are for footing='rigid'; the flexible "
+            "footing is a uniform pressure ramped to q_max.")
 
     Nc, Nq, Ngamma = bearing_capacity_factors(phi)
     q_ult_est = c * Nc + surcharge * Nq + 0.5 * gamma * B * Ngamma
+    if footing == 'rigid':
+        return _footing_capacity_rigid(
+            B, c, phi, gamma, E, nu, psi, surcharge, n_load_steps,
+            domain_depth, domain_half_width, nx, ny, element_type, max_iter,
+            tol, q_applied, base, settlement_max, (Nc, Nq, Ngamma),
+            q_ult_est)
     if q_max is None:
         if q_ult_est <= 0:
             raise ValueError(
@@ -321,6 +386,11 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
                              else None)
     result.bearing_FOS = (float(q_ult / q_applied)
                           if (q_applied and q_applied > 0) else None)
+    result.footing = 'flexible'
+    result.base = None
+    result.pressure_settlement = None
+    result.settlement_max_m = None
+    result.choices = _footing_choices('flexible', base)
     if c <= 0 and phi > 0 and gamma > 0 and surcharge == 0:
         # GM-304 review: c = 0, phi = 30, gamma = 18 gave 102.5, 52.5, 35.0
         # and 27.5 kPa on 20x10 to 80x40 (fem2d/VALIDATION.md section 3).
@@ -329,7 +399,209 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             "footing is a flexible uniform pressure, the ground beside its "
             "edges has no strength, and the edge fails at a pressure set by "
             "the element width there (about halved when the elements are "
-            "halved). It is not a bearing capacity to design from.")
+            "halved). It is not a bearing capacity to design from. A "
+            "rigid footing (footing='rigid') is pushed down as one body; "
+            "see its own limits in the tool description.")
+    return result
+
+
+# GM-305: the rigid footing's pressure has levelled off when it rose by less
+# than this fraction over the last tenth of the settlement run.
+_RIGID_PLATEAU_RISE = 0.01
+_RIGID_PLATEAU_SPAN = 0.1
+# Default settlement run: this many times the elastic settlement at the
+# closed-form estimate, q_est B (1 - nu^2) / E.
+_RIGID_SETTLEMENT_FACTOR = 10.0
+
+
+def _footing_choices(footing, base):
+    """The ``choices`` of ``analyze_footing_capacity`` (GM-305)."""
+    from geotech_common.choices import choice, how_given
+    basis = {
+        'flexible': "a uniform pressure over B ramped until the mesh cannot "
+                    "carry it; validated against Prandtl's Nc = 5.14 "
+                    "(fem2d VALIDATION.md section 3); the default on the "
+                    "mesh study there (GM-305)",
+        'rigid': "the footing pushed down as one body, q from the "
+                 "reactions; GEC-6 (FHWA-SA-02-054) p. 55: Eq. 5-7 assumes "
+                 "a rigid strip footing",
+    }[footing]
+    alt = {'flexible': ["'rigid' (the footing pushed down as one body)"],
+           'rigid': ["'flexible' (a uniform pressure)"]}[footing]
+    out = [choice("footing model", footing,
+                  how_given(footing, 'flexible', name='footing'), basis,
+                  alt)]
+    if footing == 'rigid':
+        b_basis = {
+            'rough': "no slip between footing and soil: GEC-6 pp. 49-50, "
+                     "the wedge under the footing moves down with it "
+                     "(general shear, after Terzaghi and Peck 1948); p. 99, "
+                     "concrete cast against the ground takes tan delta = "
+                     "tan phi of the soil, or on clay c_a = c_u",
+            'smooth': "the footing's nodes free to slide horizontally (no "
+                      "base friction)",
+        }[base]
+        out.append(choice("rigid footing base", base,
+                          how_given(base, 'rough', name='base'), b_basis,
+                          ["'smooth'" if base == 'rough' else "'rough'"]))
+    return out
+
+
+def _footing_capacity_rigid(B, c, phi, gamma, E, nu, psi, surcharge,
+                            n_load_steps, domain_depth, domain_half_width,
+                            nx, ny, element_type, max_iter, tol, q_applied,
+                            base, settlement_max, factors, q_ult_est):
+    """``analyze_footing_capacity(footing='rigid')`` (GM-305): the
+    footing's surface nodes pushed down together (prescribed
+    displacements), q from their vertical reactions."""
+    from fem2d.solver import add_prescribed_dofs
+    Nc, Nq, Ngamma = factors
+    if settlement_max is None:
+        if q_ult_est <= 0:
+            raise ValueError(
+                "Cannot size the settlement run for a weightless "
+                "cohesionless footing (c=0, gamma=0, surcharge=0); pass "
+                "settlement_max explicitly.")
+        settlement_max = (_RIGID_SETTLEMENT_FACTOR * q_ult_est * B
+                          * (1.0 - nu ** 2) / E)
+    if surcharge < 0:
+        raise ValueError(f"surcharge must be zero or positive, got {surcharge}")
+
+    half_w = domain_half_width if domain_half_width is not None else 5.0 * B
+    dep = domain_depth if domain_depth is not None else 5.0 * B
+    nodes, elements = generate_rect_mesh(-half_w, half_w, -dep, 0.0, nx, ny)
+    n_corner = len(nodes)
+    if element_type == 't6':
+        nodes, elements = convert_to_t6(nodes, elements)
+    bc_nodes = detect_boundary_nodes(nodes)
+
+    x_tol = 1e-6 + B * 1e-6
+    surf_c = np.where(np.abs(nodes[:n_corner, 1]) < 1e-9)[0]
+    loaded_c = surf_c[(nodes[surf_c, 0] >= -B / 2 - x_tol) &
+                      (nodes[surf_c, 0] <= B / 2 + x_tol)]
+    if len(loaded_c) < 2:
+        raise ValueError(
+            "Footing spans fewer than 2 surface nodes; increase nx or B.")
+    # every surface node under the footing (T6 mid-side nodes included)
+    surf = np.where(np.abs(nodes[:, 1]) < 1e-9)[0]
+    foot = surf[(nodes[surf, 0] >= -B / 2 - x_tol) &
+                (nodes[surf, 0] <= B / 2 + x_tol)]
+    foot = foot[np.argsort(nodes[foot, 0])]
+
+    props = [{'E': E, 'nu': nu, 'c': c, 'phi': phi, 'psi': psi,
+              'gamma': gamma}]
+    side_edges = []
+    full_edges = []
+    if surcharge > 0:
+        # the surcharge beside the footing (UFC 3-220-20 Sec. 5-3.1.2,
+        # Fig. 5-4(a); GEC-6 Eq. 5-1), as in the flexible path
+        loaded_c = loaded_c[np.argsort(nodes[loaded_c, 0])]
+        full_edges = [(loaded_c[i], loaded_c[i + 1])
+                      for i in range(len(loaded_c) - 1)]
+        side = surf_c[(nodes[surf_c, 0] < -B / 2 - x_tol) |
+                      (nodes[surf_c, 0] > B / 2 + x_tol)]
+        side_pts = np.concatenate([side, loaded_c[[0, -1]]])
+        for grp in (side_pts[nodes[side_pts, 0] <= -B / 2 + x_tol],
+                    side_pts[nodes[side_pts, 0] >= B / 2 - x_tol]):
+            grp = np.unique(grp)
+            grp = grp[np.argsort(nodes[grp, 0])]
+            side_edges += [(grp[i], grp[i + 1]) for i in range(len(grp) - 1)]
+        if element_type == 't6':
+            side_edges = t6_boundary_edges(elements, side_edges)
+            full_edges = t6_boundary_edges(elements, full_edges)
+
+    u0 = s0 = e0 = h0 = None
+    F0 = None
+    if surcharge > 0 or gamma > 0:
+        # Stage 1, as the flexible path (GM-11, GM-304): the soil's weight
+        # and the surcharge over the whole surface, footing strip included.
+        loads0 = ([(full_edges, 0.0, -surcharge),
+                   (side_edges, 0.0, -surcharge)] if surcharge > 0 else None)
+        ctx0 = build_nl_context(nodes, elements, props, gamma, bc_nodes,
+                                surface_loads=loads0)
+        res0 = run_nl(ctx0, n_steps=max(1, n_load_steps // 5),
+                      max_iter=max_iter, tol=tol, method='elastic')
+        if not res0['converged']:
+            raise RuntimeError(
+                "The soil did not reach equilibrium under its own weight "
+                "and the surcharge before the footing was loaded.")
+        u0, s0, e0, h0 = (res0['u'], res0['sigma_gp'], res0['eps_gp'],
+                          res0['hs_state'])
+
+    # Stage 2: the strip's surcharge is taken off and the footing's nodes
+    # carry it as reactions (q starts at the surcharge); the weight and the
+    # surcharge beside the footing stay as they were.
+    ctx = build_nl_context(
+        nodes, elements, props, gamma, bc_nodes,
+        surface_loads=([(side_edges, 0.0, -surcharge)] if surcharge > 0
+                       else None))
+    F0 = ctx['F_ext'].copy()
+    ydofs = 2 * foot + 1
+    dofs = ydofs if base == 'smooth' else np.concatenate([ydofs, 2 * foot])
+    delta = np.zeros(len(dofs))
+    delta[:len(ydofs)] = -settlement_max
+    ctx = add_prescribed_dofs(ctx, dofs)
+    # Steps whose displacements stand still are accepted, as the strength
+    # reduction does (Griffiths & Lane 1999; settled_ratio 0.1): the
+    # residual stalls at Gauss points near the yield-surface apex.
+    res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_iter, tol=tol,
+                 method='elastic', u_init=u0, sigma_gp_init=s0,
+                 strain_gp_init=e0, hs_state_init=h0, F_start=F0,
+                 prescribed=(dofs, delta), settled_ratio=0.1)
+
+    t = float(ctx.get('t', 1.0))
+    q_hist = [float(-np.sum(r[:len(ydofs)]) / (B * t))
+              for r in res['reactions']]
+    s_hist = [float(lam * settlement_max) for lam in res['reaction_lams']]
+    n_ok = len(q_hist)
+    frac = n_ok / n_load_steps
+    q_ult = max(q_hist) if q_hist else float(surcharge)
+    plateau = False
+    if res['converged'] and n_ok >= 2:
+        s_end = s_hist[-1]
+        q_back = float(np.interp((1.0 - _RIGID_PLATEAU_SPAN) * s_end,
+                                 [0.0] + s_hist, [float(surcharge)] + q_hist))
+        plateau = (q_hist[-1] - q_back) <= _RIGID_PLATEAU_RISE * abs(
+            q_hist[-1])
+
+    sig = res['sigma_gp'][:, :, [0, 1, 3]].mean(axis=1)
+    result = _build_result(nodes, elements, res['u'], sig, None,
+                           analysis_type="footing_capacity")
+    result.converged = bool(plateau)
+    result.q_ult_kPa = float(q_ult)
+    result.q_max_kPa = None
+    result.n_steps_converged = int(n_ok)
+    result.collapse_load_fraction = float(frac)
+    result.collapse_bracketed = bool(plateau)
+    result.bearing_capacity_factors = {'Nc': Nc, 'Nq': Nq, 'Ngamma': Ngamma}
+    result.q_ult_estimate_kPa = float(q_ult_est)
+    result.surcharge_kPa = float(surcharge)
+    result.Nc_backfigured = (float(q_ult / c)
+                             if (c > 0 and surcharge == 0 and gamma == 0)
+                             else None)
+    result.bearing_FOS = (float(q_ult / q_applied)
+                          if (q_applied and q_applied > 0) else None)
+    result.footing = 'rigid'
+    result.base = base
+    result.pressure_settlement = [[s, q] for s, q in zip(s_hist, q_hist)]
+    result.settlement_max_m = float(settlement_max)
+    result.choices = _footing_choices('rigid', base)
+    if not plateau:
+        reached = s_hist[-1] if s_hist else 0.0
+        why = ("the run stopped at a step that did not converge"
+               if not res['converged'] else
+               "q was still rising over the last tenth of the run")
+        result.warnings.append(
+            f"The rigid footing's pressure did not level off: {why} "
+            f"(settlement {reached:.4f} of {settlement_max:.4f} m), so "
+            f"q_ult = {q_ult:.1f} kPa is a lower bound of this mesh's "
+            "answer. Raise settlement_max or n_load_steps.")
+    result.warnings.append(
+        "Rigid footing: on the module's uniform meshes q_ult falls as the "
+        "mesh is refined (Prandtl c = 50 kPa, B = 2 m: 347.9 and 305.9 kPa "
+        "on 20x10 and 40x20 against (2 + pi) c = 257.1; fem2d "
+        "VALIDATION.md section 3), so it is an upper estimate that depends "
+        "on the element size at the footing's edges.")
     return result
 
 

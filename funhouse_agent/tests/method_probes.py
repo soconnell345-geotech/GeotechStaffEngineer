@@ -359,7 +359,8 @@ NOT_REACHED = {
         "the probe's phases give no water table",
     **{(k, "max_iter"): _ITERATIONS for k in (
         "fem2d|fem2d_excavation", "fem2d|fem2d_excavation#interface",
-        "fem2d|fem2d_footing_capacity", "fem2d|fem2d_local_fos",
+        "fem2d|fem2d_footing_capacity",
+        "fem2d|fem2d_footing_capacity#rigid", "fem2d|fem2d_local_fos",
         "fem2d|fem2d_slope_srm", "fem2d|fem2d_staged")},
     ("fem2d|fem2d_local_fos", "blowup_factor"): _BLOWUP,
     ("fem2d|fem2d_slope_srm", "blowup_factor"): _BLOWUP,

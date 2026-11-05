@@ -47,3 +47,30 @@ def test_method_info_allowed_values():
     p = METHOD_INFO["fem2d_footing_capacity"]["parameters"]
     assert p["element_type"]["allowed_values"] == ["t6", "cst"]
     assert p["B"]["required"] is True and p["c"]["required"] is True
+
+
+def test_flexible_reports_its_choice():
+    out = R["fem2d_footing_capacity"]({
+        "B": 2.0, "c": 100.0, "nx": 20, "ny": 10, "n_load_steps": 10})
+    assert out["footing"] == "flexible" and out["base"] is None
+    assert [c["chosen"] for c in out["choices"]] == ["flexible"]
+    assert "pressure_settlement" not in out
+
+
+def test_rigid_via_adapter_coarse():
+    """GM-305: the rigid footing through the adapter, coarse mesh."""
+    out = R["fem2d_footing_capacity"]({
+        "B": 2.0, "c": 100.0, "footing": "rigid", "nx": 20, "ny": 10,
+        "n_load_steps": 12})
+    assert out["footing"] == "rigid" and out["base"] == "rough"
+    assert [c["chosen"] for c in out["choices"]] == ["rigid", "rough"]
+    assert out["q_ult_kPa"] > (2.0 + 3.14159) * 100.0
+    assert len(out["pressure_settlement"]) == out["n_steps_converged"]
+    assert out["settlement_max_m"] > 0
+    assert any("falls as the mesh is refined" in w for w in out["warnings"])
+
+
+def test_bad_footing_raises():
+    with pytest.raises(ValueError, match="footing must be one of"):
+        R["fem2d_footing_capacity"]({"B": 2.0, "c": 100.0,
+                                     "footing": "stiff"})
