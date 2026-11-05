@@ -131,13 +131,14 @@ def test_fig_7_18_takes_the_case_and_the_penetration_from_the_profile():
 
 def test_clay_from_the_ground_surface_takes_the_bottom_graph():
     soil = AxialSoilProfile(layers=[
-        AxialSoilLayer(10, "cohesive", 18.0, cohesion=60),
+        AxialSoilLayer(10, "cohesive", 18.0, cohesion=160),
         AxialSoilLayer(20, "cohesive", 19.0, cohesion=150)], gwt_depth=1.0)
     pile = make_pipe_pile(0.4, 0.0127, closed_end=True)
     r = AxialPileAnalysis(pile=pile, soil=soil, pile_length=20,
                           adhesion_chart="fig_7_18").compute()
     upper, lower = r.layer_breakdown
-    # one clay stratum from the ground surface: D runs from there
+    # one clay stratum from the ground surface: D runs from there (a clay
+    # under a softer clay asks for its case since GM-237)
     assert upper["fig_7_18_case"] == lower["fig_7_18_case"] == STIFF_CLAY
     assert upper["D_over_b_fig_7_18"] == pytest.approx(10 / 0.4)
     assert lower["D_over_b_fig_7_18"] == pytest.approx(20 / 0.4)

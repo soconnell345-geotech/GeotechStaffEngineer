@@ -568,6 +568,16 @@ def _auto_method_notes(result, analysis=None) -> str:
             parts.append(f"{where}: \u03b4/\u03c6 = {lb['delta_phi_ratio']:.2f}, "
                          f"K_\u03b4 = {lb['K_delta']:.2f}, C_F = "
                          f"{lb['C_F']:.2f}")
+        elif lb["method"] == "tomlinson" \
+                and lb.get("adhesion_source") == "given":
+            # GM-237: the layer's site-specific alpha or Ca, no chart
+            parts.append(f"{where}: \u03b1 = {lb['alpha']:.2f} given "
+                         f"({lb['adhesion_basis']})"
+                         + (", \u00d7 0.8 (Eq. 7-90)"
+                            if "eq_7_90_factor" in lb else "")
+                         + (f", none in the shrink-swell zone "
+                            f"({lb['shrink_swell_m']:.2f} m)"
+                            if lb.get("shrink_swell_m") else ""))
         elif lb["method"] == "tomlinson":
             reading = (f"D/b = {lb['D_over_b']:.0f}"
                        if lb.get("adhesion_chart", "Fig. 7-17") == "Fig. 7-17"
@@ -582,7 +592,15 @@ def _auto_method_notes(result, analysis=None) -> str:
                             + (" \u2265 " if lb["highly_overconsolidated"]
                                else " < ") + f"{line:g}"
                             if "highly_overconsolidated" in lb
+                            and lb.get("highly_overconsolidated_by",
+                                       "line") == "line"
                             and line is not None else "")
+                         # a layer's own call (GM-237)
+                         + ((", highly overconsolidated (given)"
+                             if lb["highly_overconsolidated"] else
+                             ", not highly overconsolidated (given)")
+                            if lb.get("highly_overconsolidated_by")
+                            == "layer" else "")
                          + (", \u00d7 0.8 (Eq. 7-90)"
                             if "eq_7_90_factor" in lb else "")
                          + (f", none in the shrink-swell zone "
@@ -592,7 +610,8 @@ def _auto_method_notes(result, analysis=None) -> str:
     if (result.toe_details or {}).get("governs") == "Eq. 7-90":
         chart = "fig_7_17"  # Eq. 7-90 takes Ca from Fig. 7-17 (p. 407)
     # name only the charts of the methods the profile ran (GM-230)
-    ran = {lb["method"] for lb in result.layer_breakdown or []}
+    ran = {lb["method"] for lb in result.layer_breakdown or []
+           if lb.get("adhesion_source") != "given"}
     charts = []
     if "nordlund" in ran:
         charts.append("K_\u03b4 from Tables 7-6/7-7 (log-linear in the "

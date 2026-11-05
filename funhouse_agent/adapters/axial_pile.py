@@ -210,6 +210,9 @@ def _build_soil_profile(params, *, method):
             beta=l.get("beta"), Nt=l.get("Nt"),
             fig_7_18_case=l.get("fig_7_18_case"),
             soil_class=l.get("soil_class"),
+            alpha=l.get("alpha"), adhesion=l.get("adhesion"),
+            adhesion_basis=l.get("adhesion_basis"),
+            highly_overconsolidated=l.get("highly_overconsolidated"),
         ))
     return AxialSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth"))
 
@@ -329,7 +332,7 @@ _GM144_INFO = {
 
 _LAYERS_DOC = ("Array of soil-layer dicts (measured from the GROUND SURFACE): {thickness (m), soil_type, unit_weight (kN/m3), friction_angle (deg, for cohesionless), cohesion (kPa, for cohesive), toe_friction_angle (deg, OPTIONAL: separate end-bearing phi if the pile tip is in this layer; defaults to friction_angle), delta_phi_ratio (OPTIONAL Nordlund delta/phi; default from GEC-12 Fig. 7-9 by pile type and displaced volume), beta and Nt (OPTIONAL, beta method: the layer's beta and toe Nt from local experience, GEC-12 Steps 2a/5a), fig_7_18_case (OPTIONAL, a cohesive layer: "
                + ", ".join(f"'{c}'" for c in FIG_7_18_LAYER_CASES)
-               + "; GEC-12 Fig. 7-18's case, which starts a clay stratum at the layer's top), soil_class (OPTIONAL: 'clay', 'silt', 'sand' or 'gravel', GEC-12 Table 7-9's soil type for beta_coefficients 'table_7_9'; default clay or sand)}. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay').")
+               + "; GEC-12 Fig. 7-18's case, which starts a clay stratum at the layer's top), soil_class (OPTIONAL: 'clay', 'silt', 'sand' or 'gravel', GEC-12 Table 7-9's soil type for beta_coefficients 'table_7_9'; default clay or sand), alpha or adhesion (OPTIONAL, a cohesive layer: a site-specific adhesion factor, or Ca in kPa, used in place of the chart's, e.g. adhesion = cohesion from site tests as in NHI-06-089 Example 9-3; give adhesion_basis, where it came from, with it), highly_overconsolidated (OPTIONAL, a cohesive layer: true or false, the engineer's call; where su is past the alpha method's chart, true takes API RP 2A's alpha and false holds Ca at the curve's end, winning over highly_overconsolidated_su_ratio for that layer)}. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay').")
 
 METHOD_INFO = {
     "axial_pile_capacity": {
