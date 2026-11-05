@@ -1382,7 +1382,12 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                                descriptions=_log_descriptions(model_first)))
     qa.extend(_inside_dividers(own, model_first))           # RI-197
     qa.extend(completeness_qa(page_texts(doc), labels))     # RI-184
-    _counts_from_logs(record, qa, counts_from_logs, every, read)
+    # A volume or data report of THIS investigation bound in (RI-94) holds
+    # this report's own holes, read into its own record below: the counts
+    # wait for it. Without one, nothing moves.
+    current = _current_bound_ids(told)
+    if not current:
+        _counts_from_logs(record, qa, counts_from_logs, every, read)
     record.project = _project_from(record)
 
     # -- 4. each bound document, round this same loop, into its own record --
@@ -1393,6 +1398,12 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                             di_pages, counts_from_logs, model_first,
                             readers)
         _handed_over(every, handed, ranges, reads, qa)
+    if current:
+        also = _current_volume_investigations(children, current)
+        if also:            # a data report with no logs changes no count
+            _recheck_counts(record, also, current)
+        _counts_from_logs(record, qa, counts_from_logs, every, read,
+                          also=also)
     record.field_work = field_work(record)                  # RI-102
     return record
 
@@ -2725,8 +2736,64 @@ _FIELD_ITEMS: Dict[str, str] = {
 }
 
 
+def _current_bound_ids(told: Sequence[Dict[str, Any]]) -> List[str]:
+    """The bound documents that are THIS investigation's own volumes or data
+    reports (:func:`report_ingest.bound.is_current_volume`, RI-94), by
+    ``bound_id``, in page order."""
+    from report_ingest.bound import is_current_volume
+
+    return [str(row.get("bound_id") or "") for row in told or ()
+            if row.get("pages") and is_current_volume(row)]
+
+
+def _current_volume_investigations(
+        children: Sequence[Tuple[ReportRecord, str]],
+        current: Sequence[str]) -> List[Any]:
+    """The holes read into the records of the bound documents that are this
+    investigation's own volumes (RI-94): this report's holes too, though
+    each stays in its own record."""
+    wanted = set(current)
+    return [inv for child, _folder in children
+            if child.parent is not None and child.parent.bound_id in wanted
+            for inv in child.investigations]
+
+
+def _recheck_counts(record: ReportRecord, also: Sequence[Any],
+                    current: Sequence[str]) -> None:
+    """The reconciler's count and identifier checks again, with the holes of
+    this investigation's bound volumes counted as this report's (RI-94).
+
+    The reconciler ran before the bound documents were read, over this
+    record's own logs: a narrative that counts a Volume 1's borings with
+    the report's (as it is told to) would read as a mismatch. Its
+    ``count_mismatch`` entries on the general counts are replaced by the
+    same checks over both, and one note says whose holes were counted."""
+    from report_ingest.reconciler import _check_counts, _check_dictionaries
+
+    fields = {"boringCount", "testPitCount", "cptCount",
+              "boringDictionary", "testPitDictionary"}
+    record.qa = [entry for entry in record.qa
+                 if not (entry.kind == "count_mismatch"
+                         and entry.where.split(".", 1)[-1] in fields
+                         and entry.where.startswith("general."))]
+    view = record.model_copy(
+        update={"investigations": list(record.investigations) + list(also)})
+    redone: List[QAEntry] = []
+    _check_counts(view, redone)
+    _check_dictionaries(view, redone)
+    record.qa.extend(redone)
+    record.qa.append(QAEntry(
+        kind="note", where="bound.current_volume",
+        detail=(f"{len(also)} exploration log(s) read into the record(s) of "
+                f"{', '.join(current)}, bound in as a volume or data report "
+                f"of this investigation, are counted with this report's in "
+                f"the count and identifier checks; each stays in its own "
+                f"record")))
+
+
 def _counts_from_logs(record: ReportRecord, qa: List[QAEntry], mode: str,
-                      items: Sequence[Any], read: Sequence[Any]) -> None:
+                      items: Sequence[Any], read: Sequence[Any],
+                      also: Sequence[Any] = ()) -> None:
     """The five exploration answers, against the logs this record read.
 
     The narrative reader's own rule
@@ -2756,8 +2823,9 @@ def _counts_from_logs(record: ReportRecord, qa: List[QAEntry], mode: str,
         return
     stated = {name: getattr(record.general, name, None)
               for name in DETERMINISTIC_FIELDS}
+    # ``also``: the holes of this investigation's bound volumes (RI-94).
     changed = settled_explorations(
-        stated, explorations_found(record.investigations),
+        stated, explorations_found(list(record.investigations) + list(also)),
         overrule=mode == "settle")
     if mode == "zeros":
         changed = {name: value for name, value in changed.items()
@@ -3495,7 +3563,7 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
         try:
             blob = cached or _read_unit(doc, model_first, stage, parts,
                                         report_id, outline, body, told,
-                                        questions)
+                                        questions, window)
             spend.hand_in("items", blob, cached)
             # Each request found over the request limit (RI-121; none
             # without one), before anything else, so a cut is listed even
@@ -3703,10 +3771,12 @@ def _read_unit(doc: Any, model_first: _ModelFirst, stage: str,
                groups: Sequence[Any], report_id: str, outline: Any,
                body: Sequence[int],
                told: Sequence[Dict[str, Any]] = (),
-               questions: Sequence[str] = ()) -> Dict[str, Any]:
+               questions: Sequence[str] = (),
+               window: Optional[Sequence[int]] = None) -> Dict[str, Any]:
     """One model-first result: a log (its parts), a laboratory window, a
-    printout or the narrative (its parts, told the bound documents and
-    asked the caller's questions)."""
+    printout or the narrative (its parts, told the bound documents, asked
+    the caller's questions and given the passages today's reader searches
+    the whole report for, inside ``window`` when there is one: RI-200)."""
     from report_ingest import model_first_read as readers
 
     engine = model_first.engines[stage]
@@ -3728,7 +3798,8 @@ def _read_unit(doc: Any, model_first: _ModelFirst, stage: str,
     return readers.read_narrative(doc, groups, engine, outline=outline,
                                   body_pages=list(body) or None,
                                   bound_documents=list(told),
-                                  questions=list(questions), **common)
+                                  questions=list(questions),
+                                  window=window, **common)
 
 
 def _into_record(stage: str, blob: Dict[str, Any],

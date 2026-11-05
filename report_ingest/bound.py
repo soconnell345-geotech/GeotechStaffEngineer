@@ -70,6 +70,7 @@ __all__ = [
     "bound_ranges", "label_runs", "triage_runs", "parse_range",
     "compact_pages", "BoundIdentity", "BoundIdentityResult",
     "identify_bound", "identity_prompt", "narrative_block",
+    "CURRENT_KINDS", "PREVIOUS_KIND", "bound_kind", "is_current_volume",
     "BOUND_IDENTITY_SYSTEM",
 ]
 
@@ -499,17 +500,48 @@ def _cost(reply: Any) -> Dict[str, Any]:
             "dollars": round(reply.usage.dollars(reply.model), 4)}
 
 
+#: The bound kinds that are THIS investigation's own volumes: a Volume 1 data
+#: report bound behind its Volume 2, or the data report a report draws on.
+#: Their holes are this report's holes (BACKLOG RI-94). Only
+#: ``appended_prior_report`` is a previous investigation; ``other`` is
+#: neither.
+CURRENT_KINDS: Tuple[str, ...] = ("volume", "data_report")
+#: The one bound kind that is a previous investigation of the site.
+PREVIOUS_KIND = "appended_prior_report"
+
+
+def bound_kind(row: Dict[str, Any]) -> str:
+    """A told row's bound kind, one of :data:`BOUND_KINDS`. A row that names
+    none is what triage answers by default, an appended prior report."""
+    kind = str((row or {}).get("kind") or "").strip()
+    return kind if kind in BOUND_KINDS else (PREVIOUS_KIND if not kind
+                                             else "other")
+
+
+def is_current_volume(row: Dict[str, Any]) -> bool:
+    """True for a bound document that is part of THIS investigation (a
+    volume or a data report, :data:`CURRENT_KINDS`)."""
+    return bound_kind(row) in CURRENT_KINDS
+
+
 def narrative_block(rows: Sequence[Dict[str, Any]]) -> str:
     """What the PARENT's narrative reader is told about its bound documents.
 
     Short and factual, and it says what to do with the knowledge rather than
-    only stating it: the counts and the identifier lists this reader answers
-    are about the report in front of it, and an earlier investigation bound
-    in behind a tab is a PREVIOUS investigation, which is its own question.
+    only stating it, BY KIND (BACKLOG RI-94). An earlier investigation bound
+    in behind a tab (``appended_prior_report``) is a PREVIOUS investigation,
+    which is its own question, and its explorations are not this report's.
+    A volume or a data report of THIS investigation (:data:`CURRENT_KINDS`)
+    is the opposite: a Volume 1 data report bound behind its Volume 2 holds
+    this report's own borings, so they are counted with this report's and it
+    is no previous investigation. Anything else bound in is neither.
     """
     kept = [row for row in rows or () if row.get("pages")]
     if not kept:
         return ""
+    tags = {"volume": "a volume of THIS investigation",
+            "data_report": "a data report of THIS investigation",
+            "other": "another document, not a previous investigation"}
     out = ["REPORTS BOUND INSIDE THIS ONE. These page ranges are other "
            "reports reproduced whole inside this file. They are being read "
            "SEPARATELY, into their own records."]
@@ -518,16 +550,51 @@ def narrative_block(rows: Sequence[Dict[str, Any]]) -> str:
         firm = str(row.get("firm") or "").strip()
         date = str(row.get("date") or "").strip()
         said = " - ".join(x for x in (title, firm, date) if x)
-        out.append(f"  pages {row['pages']}: "
+        tag = tags.get(bound_kind(row))
+        out.append(f"  pages {row['pages']}"
+                   + (f" ({tag})" if tag else "") + ": "
                    + (said or "a report bound in, title not printed"))
-    out.append(
-        "So: do NOT count their borings, test pits or laboratory tests as "
+    outside = ("If the narrative says this report was written for a client "
+               "other than the project owner, that is still outsideProject; "
+               "a report bound in as an appendix does not by itself make "
+               "this one an outside report.")
+    previous_rule = (
+        "do NOT count their borings, test pits or laboratory tests as "
         "this report's, and do not put their identifiers in this report's "
         "boringDictionary or testPitDictionary. Each of them IS a previous "
         "investigation of this site and counts towards "
         "previousInvestigationCount, together with any others the prose "
-        "names. If the narrative says this report was written for a client "
-        "other than the project owner, that is still outsideProject; a "
-        "report bound in as an appendix does not by itself make this one an "
-        "outside report.")
+        "names.")
+    if all(bound_kind(row) == PREVIOUS_KIND for row in kept):
+        # Every one an earlier investigation: the words are the ones the
+        # readers were always sent, so their saved readings stand.
+        out.append(f"So: {previous_rule} {outside}")
+        return "\n".join(out)
+
+    def spans(kinds: Sequence[str]) -> str:
+        return ", ".join(str(row["pages"]) for row in kept
+                         if bound_kind(row) in kinds)
+
+    previous = spans((PREVIOUS_KIND,))
+    current = spans(CURRENT_KINDS)
+    other = spans(("other",))
+    if previous:
+        out.append(f"So, for the previous investigations (pages {previous}): "
+                   f"{previous_rule}")
+    if current:
+        out.append(
+            f"For the volumes and data reports of THIS investigation (pages "
+            f"{current}): their borings, test pits and cone soundings ARE "
+            f"this report's. Count them in boringCount, testPitCount and "
+            f"cptCount and put their identifiers in boringDictionary and "
+            f"testPitDictionary, with this report's own. They are NOT "
+            f"previous investigations and do not count towards "
+            f"previousInvestigationCount.")
+    if other:
+        out.append(
+            f"For the other documents bound in (pages {other}): do not count "
+            f"their explorations as this report's, and do not count them "
+            f"towards previousInvestigationCount unless this report's prose "
+            f"calls them a previous investigation.")
+    out.append(outside)
     return "\n".join(out)
