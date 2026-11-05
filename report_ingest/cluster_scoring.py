@@ -7449,6 +7449,19 @@ def _ingest_steps(folder: Path,
                 n = calls(load(where / f"{step}.json"))
                 if n:
                     row[step] = n
+            if name == "report":
+                # Model first's page describer and range labeller keep no
+                # step file of their own: their calls are in labels.json's
+                # cost (RI-202). They run once over the whole file, so a
+                # bound document's labels.json, which carries the same
+                # cost, is not read for them.
+                spent = load(where / "labels.json").get("cost")
+                spent = spent if isinstance(spent, dict) else {}
+                for step in ("describe", "ranges"):
+                    part = spent.get(step)
+                    n = _n(part.get("calls")) if isinstance(part, dict) else 0
+                    if n:
+                        row[step] = n
             paths = sorted((where / "items").glob("*.json"))
             # The narrative is read once per document, but a re-read under
             # another switch or item range keeps the earlier file beside
@@ -7565,10 +7578,12 @@ def _ingest_steps(folder: Path,
 
 
 #: The steps of an ingest run, in the order they run: the page labels
-#: (triage, the vision pass, the review), a bound document's identity call,
-#: and the readers.
-_STEPS: Tuple[str, ...] = ("triage", "vision", "review", "identity", "log",
-                           "sounding", "lab", "calc", "narrative")
+#: (triage, the vision pass, model first's page describer and range
+#: labeller (RI-202), the review), a bound document's identity call, and the
+#: readers.
+_STEPS: Tuple[str, ...] = ("triage", "vision", "describe", "ranges",
+                           "review", "identity", "log", "sounding", "lab",
+                           "calc", "narrative")
 
 
 def _step_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:

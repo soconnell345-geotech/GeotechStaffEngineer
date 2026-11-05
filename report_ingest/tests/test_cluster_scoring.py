@@ -2859,10 +2859,55 @@ class TestCallsByStep:
         report_line = next(line for line in lines
                            if line.startswith("R36     report"))
         assert report_line.split()[2:] == ["1", "4", "-", "-", "-", "-",
-                                           "-", "3/2", "1/1", "9", "+2"]
+                                           "-", "-", "-", "3/2", "1/1", "9",
+                                           "+2"]
         bound_line = next(line for line in lines
                           if line.startswith("R36     bound1"))
         assert bound_line.split()[-1] == "5", "no unattributed cell"
+
+    def test_model_first_s_describer_and_labeller_are_steps(self, tmp_path):
+        """RI-202: model first's page describer and range labeller keep no
+        step file; their calls are in labels.json's cost. They get their
+        own cells, the report's row adds up to its cost, and a bound
+        document's labels.json, which carries the same whole-file cost, is
+        not counted again. Every count here is made up."""
+        folder = tmp_path / "R77"
+        labels_cost = {"vision": {}, "review": {"calls": 2},
+                       "vision_paid": False, "review_paid": True,
+                       "describe": {"calls": 180, "input_tokens": 900},
+                       "ranges": {"calls": 23}, "ranges_paid": True}
+        self._write(folder / "labels.json", {"cost": labels_cost})
+        self._write(folder / "review.json", {"cost": {"calls": 2}})
+        self._write(folder / "items" / "a.json",
+                    {"investigation": {}, "cost": {"calls": 20}})
+        self._write(folder / "items" / "b.json",
+                    {"general": {}, "cost": {"calls": 5}})
+        self._write(folder / "bound" / "bound1" / "labels.json",
+                    {"cost": labels_cost})
+        self._write(folder / "bound" / "bound1" / "items" / "c.json",
+                    {"tests": [], "cost": {"calls": 3}})
+        got = cs._ingest_steps(folder)
+        steps = got["calls_by_step"]
+        assert steps["report"] == {"describe": 180, "ranges": 23,
+                                   "review": 2, "log": 20, "log items": 1,
+                                   "narrative": 5, "narrative items": 1}
+        assert steps["bound1"] == {"lab": 3, "lab items": 1}
+
+        cost = {"calls": 233}
+        row = {"id": "R77", "cost": dict(cost), **got}
+        lines = "\n".join(cs._step_lines([row])).splitlines()
+        header = next(line for line in lines if line.startswith("report"))
+        assert header.split()[:6] == ["report", "document", "triage",
+                                      "vision", "describe", "ranges"]
+        report_line = next(line for line in lines
+                           if line.startswith("R77     report"))
+        assert report_line.split()[2:] == ["-", "-", "180", "23", "2", "-",
+                                           "20/1", "-", "-", "-", "5/1",
+                                           "230", "+0"]
+        bound_line = next(line for line in lines
+                          if line.startswith("R77     bound1"))
+        assert bound_line.split()[-1] == "3"
+        assert row["cost"] == cost, "the run's total is not touched"
 
     def _two_narratives(self, tmp_path, newer_is_plain):
         import os
