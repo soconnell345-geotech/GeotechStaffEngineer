@@ -788,12 +788,16 @@ METHOD_INFO = {
             "k": {"type": "float|array", "required": True, "description": "Hydraulic conductivity (m/s). Scalar or per-element."},
             "head_bcs": {"type": "array", "required": True, "description": "Dirichlet BCs [[node_id, head_value],...]."},
             "gamma_w": {"type": "float", "required": False, "default": 9.81, "description": "Unit weight of water (kN/m3)."},
-            "t": {"type": "float", "required": False, "default": 1.0, "description": "Out-of-plane thickness of the plane-strain slice (m). The heads and pore pressures do not depend on it; total_flow_m3_per_s_per_m sums |v| x element area x t, so it grows with t. Leave it at 1."},
+            "t": {"type": "float", "required": False, "default": 1.0, "description": "Out-of-plane thickness of the plane-strain slice (m). No result depends on it: the heads and pore pressures do not, and the flow is reported per metre run. Leave it at 1."},
         },
         "returns": {
             "max_head_m": "Maximum total head.",
             "min_head_m": "Minimum total head.",
-            "total_flow_m3_per_s_per_m": "Total seepage flow rate.",
+            "flow_m3_per_s_per_m": "The flow through the section per metre run (m3/s/m): the inflow across the fixed-head boundaries, summed from the nodal reactions at the nodes where water enters. Boundaries with no head given are impervious.",
+            "outflow_m3_per_s_per_m": "The flow leaving across the fixed-head boundaries (m3/s/m).",
+            "flow_balance": "Inflow against outflow: the mismatch |in - out| / in, its tolerance (1e-6) and whether the check passed.",
+            "flow_boundaries": "Per prescribed head value: the head (m), its node count and the net flow entering there (m3/s/m; negative = leaving).",
+            "flow_measured_on": "Which boundary set the flow is measured on.",
         },
     },
     "fem2d_consolidation": {

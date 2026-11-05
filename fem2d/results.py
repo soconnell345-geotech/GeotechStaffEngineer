@@ -132,7 +132,21 @@ class SeepageResult:
     min_head_m : float — minimum total head.
     max_pore_pressure_kPa : float
     max_velocity_m_per_s : float — maximum Darcy velocity magnitude.
-    total_flow_m3_per_s_per_m : float — total flow through domain.
+    flow_m3_per_s_per_m : float — the flow through the section per metre
+        run: the inflow across the fixed-head boundaries, from the nodal
+        reactions at the constrained-head nodes (GM-222). Independent of
+        the slice thickness t.
+    outflow_m3_per_s_per_m : float — the flow leaving across the
+        fixed-head boundaries (equal to the inflow within flow_balance).
+    flow_balance : dict — inflow against outflow, the mismatch fraction,
+        its tolerance and whether the check passed.
+    flow_boundaries : list — per prescribed head value, its node count and
+        the net flow entering there (negative = leaving).
+    flow_measured_on : str — which boundary set the flow is measured on.
+
+    Before GM-222 the result carried ``total_flow_m3_per_s_per_m``, the sum
+    of |v| x element area x t, which grows with t and is not the flow
+    through any section; that key is gone.
     """
     n_nodes: int = 0
     n_elements: int = 0
@@ -140,7 +154,11 @@ class SeepageResult:
     min_head_m: float = 0.0
     max_pore_pressure_kPa: float = 0.0
     max_velocity_m_per_s: float = 0.0
-    total_flow_m3_per_s_per_m: float = 0.0
+    flow_m3_per_s_per_m: float = 0.0
+    outflow_m3_per_s_per_m: float = 0.0
+    flow_balance: Dict[str, Any] = field(default_factory=dict)
+    flow_boundaries: List[Dict[str, Any]] = field(default_factory=list)
+    flow_measured_on: str = ""
 
     # Raw arrays (not serialized to dict)
     head: Optional[np.ndarray] = field(default=None, repr=False)
@@ -160,7 +178,18 @@ class SeepageResult:
             f"  Head range: {self.min_head_m:.3f} to {self.max_head_m:.3f} m",
             f"  Max pore pressure: {self.max_pore_pressure_kPa:.2f} kPa",
             f"  Max velocity: {self.max_velocity_m_per_s:.2e} m/s",
-            f"  Total flow: {self.total_flow_m3_per_s_per_m:.2e} m³/s/m",
+            f"  Flow (inflow at fixed heads): "
+            f"{self.flow_m3_per_s_per_m:.3e} m³/s/m",
+            f"  Outflow at fixed heads: "
+            f"{self.outflow_m3_per_s_per_m:.3e} m³/s/m",
+        ]
+        if self.flow_balance:
+            fb = self.flow_balance
+            lines.append(
+                f"  Flow balance: mismatch {fb.get('mismatch', 0):.1e} "
+                f"(tolerance {fb.get('tolerance', 0):.0e}) "
+                f"{'OK' if fb.get('passed') else 'FAILED'}")
+        lines += [
             "",
             "=" * 60,
         ]
@@ -174,8 +203,16 @@ class SeepageResult:
             "min_head_m": round(self.min_head_m, 4),
             "max_pore_pressure_kPa": round(self.max_pore_pressure_kPa, 2),
             "max_velocity_m_per_s": float(f"{self.max_velocity_m_per_s:.4e}"),
-            "total_flow_m3_per_s_per_m": float(
-                f"{self.total_flow_m3_per_s_per_m:.4e}"),
+            "flow_m3_per_s_per_m": float(f"{self.flow_m3_per_s_per_m:.4e}"),
+            "outflow_m3_per_s_per_m": float(
+                f"{self.outflow_m3_per_s_per_m:.4e}"),
+            "flow_balance": {
+                k: (float(f"{v:.4e}") if isinstance(v, float) else v)
+                for k, v in self.flow_balance.items()},
+            "flow_boundaries": [
+                {k: (float(f"{v:.4e}") if isinstance(v, float) else v)
+                 for k, v in b.items()} for b in self.flow_boundaries],
+            "flow_measured_on": self.flow_measured_on,
         }
 
 

@@ -361,7 +361,7 @@ class TestSeepageResult:
             max_head_m=10.0, min_head_m=0.0,
             max_pore_pressure_kPa=98.1,
             max_velocity_m_per_s=1e-5,
-            total_flow_m3_per_s_per_m=1e-4,
+            flow_m3_per_s_per_m=1e-4,
         )
         s = r.summary()
         assert "SEEPAGE" in s
