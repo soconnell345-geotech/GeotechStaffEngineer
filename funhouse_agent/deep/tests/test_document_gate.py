@@ -24,8 +24,9 @@ from funhouse_agent.deep.document_gate import (DOCUMENT_TOOLS,
                                                DocumentToolsGate)
 
 #: Kept on the list without a document: the prompt has the agent read back
-#: a PDF it built itself.
-ALWAYS = {"read_pdf_text", "analyze_pdf_page"}
+#: a PDF it built itself, and plot_data asks for an analyze_image look at
+#: each figure it draws.
+ALWAYS = {"read_pdf_text", "analyze_pdf_page", "analyze_image"}
 
 
 @pytest.fixture(autouse=True)
@@ -33,6 +34,9 @@ def _clean(monkeypatch):
     for env in review_flags.ALL_ENVS + review_flags.SETTINGS_ENVS:
         monkeypatch.delenv(env, raising=False)
     monkeypatch.delenv("GEOTECH_DEFAULT_OUTPUT_DIR", raising=False)
+    # folders the read tools open beyond the conversation open the gate
+    monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
+    monkeypatch.delenv("GEOTECH_EXTRA_READ_ROOTS", raising=False)
     monkeypatch.setenv("GEOTECH_VISION_PROBE", "0")
 
 
@@ -211,3 +215,51 @@ def test_web_app_signal_counts_a_folder_the_user_chose(tmp_path):
     with working_dir_bound(str(files)):
         assert holds() is False
     assert os.path.isdir(chosen)
+
+
+@pytest.mark.parametrize("env", ["DATABRICKS_RUNTIME_VERSION",
+                                 "GEOTECH_EXTRA_READ_ROOTS"])
+def test_web_app_signal_opens_where_the_read_tools_reach_further(
+        tmp_path, monkeypatch, env):
+    """On Databricks (``/Volumes``, ``/Workspace``) or with extra read roots,
+    a report named by its path is a document: the gate opens."""
+    from webapp.geotech_page import document_signal
+    files = tmp_path / "conv" / "files"
+    files.mkdir(parents=True)
+    holds = document_signal(str(files))
+    with working_dir_bound(str(files)):
+        assert holds() is False
+        monkeypatch.setenv(env, "15.4" if env.startswith("DATABRICKS")
+                           else str(tmp_path / "made_up_share"))
+        assert holds() is True
+
+
+@pytest.mark.parametrize("case,offered", [("earlier_download", True),
+                                          ("chosen_folder", True),
+                                          ("nothing", False)])
+def test_a_specialist_gets_the_pages_signal(tmp_path, case, offered):
+    """The Agent picker's specialists (webapp.geotech_page
+    .build_reviewer_agent) carry the gate too, so they need the page's
+    signal: the app replays only the user's messages and final answers, so
+    an earlier turn's download is on the ledger, not in the messages."""
+    from webapp import core
+    from webapp.geotech_page import build_reviewer_agent
+    conv = tmp_path / "conv"
+    files = conv / "files"
+    files.mkdir(parents=True)
+    folder = files
+    if case == "earlier_download":
+        local = files / "made_up.pdf"
+        local.write_bytes(b"%PDF-1.4 x")
+        core.record_download(str(conv), "Shared/made_up.pdf", str(local), 10)
+    elif case == "chosen_folder":
+        folder = tmp_path / "their_project"
+        folder.mkdir()
+        (folder / "made_up.pdf").write_bytes(b"%PDF-1.4 x")
+    menus = []
+    agent = build_reviewer_agent("foundations",
+                                 _scripted([("Reviewed.", [])], menus),
+                                 {}, str(files), [])
+    _run(agent, folder)
+    assert ("open_document" in menus[0]) is offered
+    assert "analyze_image" in menus[0]

@@ -13,9 +13,11 @@ arrives mid-turn, because the check runs again on each call. The tools stay
 REGISTERED (as :class:`~funhouse_agent.deep.limits.HideTools` does for
 ``delete`` and ``execute``): a call to one by name still runs.
 
-``read_pdf_text`` and ``analyze_pdf_page`` are NOT hidden: the prompt tells
-the agent to read back and look at a PDF it built itself before handing it
-over, which happens on turns with no document of the user's.
+``read_pdf_text``, ``analyze_pdf_page`` and ``analyze_image`` are NOT
+hidden: the prompt tells the agent to read back and look at a PDF it built
+itself before handing it over, and ``plot_data`` asks for an
+``analyze_image`` look at each figure it draws. Both happen on turns with no
+document of the user's.
 
 A document is held when any of these is true (checked on each model call):
 
@@ -38,12 +40,12 @@ from typing import Callable, Mapping, Optional
 from funhouse_agent.deep.limits import HideTools
 
 #: The tools kept off the list until a document is held: the planlens
-#: document tools, the app's look tools that need a document or image, and
-#: the DXF markup tool.
+#: document tools, the app's look tools that need a document, and the DXF
+#: markup tool.
 DOCUMENT_TOOLS = frozenset({
     "open_document", "read_document", "search_document",
     "document_structure", "document_page_map", "document_markups",
-    "render_page_thumbnails", "render_region", "analyze_image",
+    "render_page_thumbnails", "render_region",
     "find_like", "find_quantities", "log_grid", "measure",
     "kept_readings", "annotate_document", "annotate_dxf",
 })
