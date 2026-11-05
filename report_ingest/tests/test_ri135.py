@@ -453,11 +453,13 @@ class TestOneHoleReadAsSeveralLogs:
             probe([50], [0.3, 0.6, 0.9, 1.2, 1.5]),
             probe([51], [1.8, 2.1, 2.4])])
         reconcile(record)
-        assert [i.qualifier for i in record.investigations] == ["", ""]
-        (entry,) = _entries(record, "investigations.DP-2")
-        assert "its readings (1.80-2.40 m) carry on" in entry.detail
-        first, later = record.investigations
-        assert hole_identity(first) == hole_identity(later)
+        # Since RI-157 the continuation fold joins the two pages into one
+        # record (before RI-157 they stayed two parts of one hole).
+        (joined,) = record.investigations
+        assert joined.pages == [50, 51] and joined.qualifier == ""
+        assert [p.depth.value for p in joined.dcp.points] == [
+            0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4]
+        assert not _entries(record, "investigations.DP-2")
 
     def test_two_soundings_both_from_the_ground_are_two(self):
         def probe(pages, depths):

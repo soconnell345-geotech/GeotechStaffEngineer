@@ -590,7 +590,7 @@ def _settle_water(record: ReportRecord, qa: List[QAEntry]) -> None:
 # one short, and the DIGGS file holds two features with one name.
 
 #: Kinds whose log is layers, samples and driven records, which can be joined
-#: sheet to sheet. A sounding is a series and is not folded here.
+#: sheet to sheet. A sounding is a series, joined by :func:`_sounding_continues`.
 _FOLDED_KINDS = ("boring", "test_pit", "hand_auger", "well", "other")
 
 #: A later sheet repeats the bottom of the one before it -- the sample it
@@ -651,8 +651,134 @@ def _same_hole(first: Investigation, later: Investigation,
         long_[:-len(short)].isalpha()
 
 
+#: Kinds whose record is a depth SERIES (BACKLOG RI-157): a cone sounding
+#: or a dynamic probe printed over two pages, the second starting where the
+#: first stops, is joined into one by :func:`_sounding_continues`.
+_SOUNDING_KINDS = ("cpt", "dcp")
+
+#: How far, in metres, the top of a sounding's next page may sit from the
+#: bottom of the page before for the two to be one record, at the least
+#: (BACKLOG RI-157). A series whose readings stand further apart than this
+#: is allowed one and a half of its own spacing instead, because the next
+#: page's first reading is one step below the last page's last.
+SOUNDING_JOIN_TOL_M = 0.10
+
+#: A name or title that adds only "continued" to the hole's own name:
+#: "DP-3 (continued)", "DP-3 cont'd", "DP-3 - CONT.".
+_CONTINUED = re.compile(
+    r"[\s(\[,;:\-–]*\b(?:continued|contd|cont['’]?d|cont)\b\.?[\s)\]]*$",
+    re.I)
+
+
+def _without_continued(name: Any) -> str:
+    return _CONTINUED.sub("", str(name or "")).strip()
+
+
+def _series(inv: Investigation) -> Optional[Any]:
+    return inv.cpt if inv.kind == "cpt" else inv.dcp
+
+
+def _series_m(inv: Investigation) -> Optional[Tuple[float, float, float]]:
+    """(top, bottom, spacing) of a sounding's series in metres, as depth
+    downward: an elevation axis is turned over. ``top`` is the first
+    point's printed interval top where it prints one. None when the series
+    has fewer than one point that converts."""
+    data = _series(inv)
+    if data is None or not data.points:
+        return None
+    sign = -1.0 if getattr(data, "vertical_axis", "depth") == "elevation" \
+        else 1.0
+    depths = [depth_m(p.depth) for p in data.points]
+    depths = [sign * d for d in depths if d is not None]
+    if not depths:
+        return None
+    top = depths[0]
+    head = getattr(data.points[0], "depth_top", None)
+    if head is not None and depth_m(head) is not None:
+        top = sign * depth_m(head)
+    gaps = sorted(b - a for a, b in zip(depths, depths[1:]) if b > a)
+    spacing = gaps[len(gaps) // 2] if gaps else 0.0
+    return top, depths[-1], spacing
+
+
+def _sounding_continues(first: Investigation, later: Investigation) -> str:
+    """Why ``later`` is the next page of the sounding ``first``, or ``""``
+    (BACKLOG RI-157).
+
+    One name (leading zeros folded, a "continued" after it dropped), the
+    next page, the same unit and axis, and the later page's series starting
+    where the first's stops: its top within :data:`SOUNDING_JOIN_TOL_M`, or
+    one and a half of the first page's own spacing, of the first's bottom.
+    Two soundings of one name whose depths overlap, or leave a larger gap,
+    stay two (as twins do), and so does a later page that prints sheet 1 or
+    a sheet of another set."""
+    a = hole_key(_without_continued(first.investigation_id))
+    b = hole_key(_without_continued(later.investigation_id))
+    if not a or a != b:
+        return ""
+    one, two = _series(first), _series(later)
+    if one is None or two is None or \
+            getattr(one, "vertical_axis", "depth") != \
+            getattr(two, "vertical_axis", "depth"):
+        return ""
+    sa, sb = _sheet_number(first.sheet), _sheet_number(later.sheet)
+    if sb is not None and (sb[0] == 1 or (sa is not None and (
+            sb[1] != sa[1] or sb[0] <= sa[0]))):
+        return ""
+    here, there = _series_m(first), _series_m(later)
+    if here is None or there is None:
+        return ""
+    tol = max(SOUNDING_JOIN_TOL_M, 1.5 * here[2])
+    gap = there[0] - here[1]
+    if abs(gap) > tol or there[1] <= here[1]:
+        return ""
+    return (f"its series starts at {there[0]:.2f} m, where the first's "
+            f"stops ({here[1]:.2f} m; within {tol:.2f} m)")
+
+
+def _fold_series(first: Investigation, later: Investigation) -> int:
+    """``later``'s series onto ``first``'s, a reading printed on both pages
+    at one depth kept once; returns how many were kept once."""
+    one, two = _series(first), _series(later)
+    again = 0
+    for point in two.points:
+        if one.points and _same_reading(one.points[-1].depth, point.depth):
+            again += 1
+            continue
+        one.points.append(point)
+    one.prov = list(one.prov) + list(two.prov)
+    for name in type(one).model_fields:
+        if name in ("points", "prov"):
+            continue
+        if _unset(one, name) and not _unset(two, name):
+            setattr(one, name, getattr(two, name))
+    if getattr(two, "refusal_depth", None) is not None:
+        one.refusal_depth = two.refusal_depth
+    return again
+
+
+#: Two readings of a series printed at depths this close, in metres, are
+#: one reading printed on both pages. Far tighter than ``DEPTH_TOL_M``: a
+#: dynamic probe's next increment is 0.10 m below the last.
+_SAME_READING_M = 0.005
+
+
+def _same_reading(a: Optional[Quantity], b: Optional[Quantity]) -> bool:
+    left, right = depth_m(a), depth_m(b)
+    return left is not None and right is not None and \
+        abs(left - right) <= _SAME_READING_M
+
+
 def _continues(first: Investigation, later: Investigation) -> str:
     """Why ``later`` is a continuation sheet of ``first``, or ``""``."""
+    if later.kind == first.kind and first.kind in _SOUNDING_KINDS:
+        if not first.pages or not later.pages or \
+                min(later.pages) != max(first.pages) + 1:
+            return ""
+        if later.depth_unit != first.depth_unit or \
+                later.units_known != first.units_known:
+            return ""
+        return _sounding_continues(first, later)
     if later.kind != first.kind or first.kind not in _FOLDED_KINDS:
         return ""
     if not first.pages or not later.pages or \
@@ -779,6 +905,9 @@ def _fold_into(first: Investigation, later: Investigation) -> Dict[str, Any]:
         first.remarks = "\n".join(x for x in (first.remarks, later.remarks)
                                   if x)
     first.fields = {**later.fields, **first.fields}
+    if first.kind in _SOUNDING_KINDS and _series(first) is not None and \
+            _series(later) is not None:
+        said["restated"] += _fold_series(first, later)
     first.pages = sorted(set(first.pages) | set(later.pages))
     first.prov = list(first.prov) + list(later.prov)
     return said
@@ -823,7 +952,9 @@ def _fold_continuations(record: ReportRecord, qa: List[QAEntry]) -> None:
             parts.append(("the next page" if n == 1 else
                           f"the next {n} pages") + f"{spelt}: {why}")
             if said["restated"]:
-                values.append(f"{said['restated']} sample or driven record"
+                what = ("reading" if first.kind in _SOUNDING_KINDS
+                        else "sample or driven record")
+                values.append(f"{said['restated']} {what}"
                               f"(s) printed again on the later sheet, kept "
                               f"once")
             if said["total_depth"] is not None:
