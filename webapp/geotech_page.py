@@ -87,11 +87,35 @@ def add_report_library(kw: dict, temp_dir: str) -> None:
     kw["library_root"] = root
 
 
+def document_signal(temp_dir: str):
+    """Whether this conversation holds a document its attachments and
+    messages do not show, for the geotech page's document gate (BACKLOG
+    INF-67): a SharePoint download on the conversation's ledger (it is
+    written as the download finishes, so a fetch counts from the next model
+    call of the same turn, and it survives a summarised history), or a
+    working folder the user chose in place of the conversation's own
+    ``files`` folder (it may already hold their documents)."""
+    files_dir = os.path.normcase(os.path.abspath(temp_dir))
+    conv_dir = os.path.dirname(files_dir)
+
+    def _holds() -> bool:
+        from funhouse_agent._fileio import host_output_dir
+        from webapp import core
+        if core.load_downloads(conv_dir):
+            return True
+        bound = host_output_dir()
+        return bool(bound) and \
+            os.path.normcase(os.path.abspath(bound)) != files_dir
+
+    return _holds
+
+
 def build_page_agent(model, *, attachments, save_fn, temp_dir, **kw):
     """The geotech page's agent, after the shell's shared wiring
     (:func:`webapp.core.build_agent`): the report library where there is
     one, then the geotech builder."""
     add_report_library(kw, temp_dir)
+    kw.setdefault("document_signal", document_signal(temp_dir))
     from funhouse_agent.deep.agent import build_deep_agent
     return build_deep_agent(model, attachments=attachments, save_fn=save_fn,
                             **kw)
