@@ -106,7 +106,8 @@ def test_model_end_usage_and_tool_call_count(tmp_path):
     assert recs[0]["event"] == "model_start" and recs[0]["model"] == "gpt-x"
     assert recs[1]["event"] == "model_end"
     assert recs[1]["usage"] == {"input_tokens": 120, "output_tokens": 30,
-                                "total_tokens": 150}
+                                "total_tokens": 150, "cache_read": 0,
+                                "cache_creation": 0}
     assert recs[1]["n_tool_calls"] == 1
     assert recs[1]["duration_s"] is not None
     assert "text" not in recs[1]                # nothing said: no field
