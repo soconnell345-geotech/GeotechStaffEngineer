@@ -109,3 +109,41 @@ class TestSurchargeResists:
         r = analyze_footing_capacity(B=2.0, c=50.0)
         assert r.surcharge_kPa == 0.0
         assert r.q_ult_kPa == pytest.approx(411.3 * 28 / 45, rel=1e-3)
+
+
+@pytest.mark.slow
+class TestWeightFirstStage:
+    """GM-304: the soil's weight is a first stage whenever gamma > 0, with
+    or without a surcharge. Ramped with the footing load, a frictional
+    soil could not collapse (c = 0, phi = 30, gamma = 18 gave q_ult = 0).
+    Coarse T6 20 x 10 mesh; made-up values."""
+
+    def test_frictional_heavy_soil_carries_load(self):
+        # Before GM-304: 0.0 kPa (collapse at the first step).
+        r = analyze_footing_capacity(B=2.0, c=0.0, phi=30.0, psi=30.0,
+                                     gamma=18.0, nx=20, ny=10)
+        assert r.collapse_bracketed
+        assert r.q_ult_kPa > 0.0
+        assert r.q_ult_kPa == pytest.approx(86.03, rel=1e-3)
+
+    @pytest.mark.parametrize("c, phi", [(0.0, 30.0), (20.0, 25.0)])
+    def test_no_surcharge_agrees_with_tiny_surcharge(self, c, phi):
+        kw = dict(B=2.0, c=c, phi=phi, psi=phi if c == 0 else 0.0,
+                  gamma=18.0, nx=20, ny=10)
+        r0 = analyze_footing_capacity(**kw)
+        r1 = analyze_footing_capacity(surcharge=0.01, **kw)
+        # Within one load step, (q_max - q) / n_load_steps.
+        assert abs(r0.q_ult_kPa - r1.q_ult_kPa) <= r0.q_max_kPa / 45
+        assert r0.n_steps_converged == r1.n_steps_converged
+
+    def test_c_phi_heavy_soil(self):
+        # c = 20, phi = 25, gamma = 18: 499.0 kPa on 20 x 10 (before
+        # GM-304 the one-ramp path gave less; see module_work/gm304).
+        r = analyze_footing_capacity(B=2.0, c=20.0, phi=25.0, gamma=18.0,
+                                     nx=20, ny=10)
+        assert r.q_ult_kPa == pytest.approx(498.99, rel=1e-3)
+
+    def test_weightless_undrained_unchanged_to_last_digit(self):
+        # gamma = 0, no surcharge keeps the one-ramp path: master's value.
+        r = analyze_footing_capacity(B=2.0, c=50.0)
+        assert r.q_ult_kPa == 255.9370565342475

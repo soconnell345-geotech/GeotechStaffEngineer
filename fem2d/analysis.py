@@ -151,9 +151,9 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     B : float — footing width (m).
     c : float — cohesion / undrained shear strength (kPa).
     phi : float — friction angle (deg). Default 0 (Prandtl / undrained).
-    gamma : float — soil unit weight (kN/m^3). With ``surcharge=0`` it is a
-        body force ramped with the footing load; with a surcharge it is
-        applied in full, with the surcharge, before the footing is loaded.
+    gamma : float — soil unit weight (kN/m^3). Applied in full (with any
+        surcharge) in a first stage, before the footing is loaded, so the
+        footing acts on soil already stressed by its own weight (GM-304).
         For the classical weightless bearing mechanism use the default 0
         (the validated basis). Default 0.
     E, nu, psi : float — elastic moduli (kPa / -) and dilation angle (deg).
@@ -164,8 +164,8 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         surface: first over the whole surface with the soil's weight, then
         held beside the footing while the footing pressure rises from q.
         q_ult is the GROSS footing pressure at collapse (GEC-6 Eq. 5-1),
-        resisted by q through the Nq mechanism. Default 0 (unchanged: one
-        ramp from zero).
+        resisted by q through the Nq mechanism. Default 0 (with gamma = 0
+        too: one ramp from zero).
     q_max : float, optional — top of the load ramp (kPa). Default:
         1.6 x the closed-form estimate c*Nc + surcharge*Nq + 0.5*gamma*B*Ngamma,
         chosen so collapse falls inside the ramp. Pass explicitly for c=phi=0.
@@ -239,7 +239,13 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
 
     props = [{'E': E, 'nu': nu, 'c': c, 'phi': phi, 'psi': psi, 'gamma': gamma}]
 
-    if surcharge > 0:
+    if surcharge > 0 or gamma > 0:
+        # GM-304: the soil's weight is a first stage whenever gamma > 0,
+        # with or without a surcharge. Ramped with the footing load (as
+        # before GM-304 with surcharge = 0), every load scales together and
+        # a frictional soil, whose yield condition does not change with
+        # scale, cannot collapse; surcharge = 0 and a tiny surcharge then
+        # gave different answers.
         # The soil above the bearing level stands in as a surcharge
         # q = gamma Df on the ground surface (UFC 3-220-20 Sec. 5-3.1.2,
         # Fig. 5-4(a); GEC-6 Eq. 5-1, q = gamma Df at the footing base).
@@ -281,7 +287,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
                      hs_state_init=res0['hs_state'], F_start=ctx0['F_ext'])
         q_start = float(surcharge)
     else:
-        # No surcharge: one ramp, the footing pressure (and any body force)
+        # Weightless soil, no surcharge: one ramp, the footing pressure
         # from zero, as before GM-11.
         ctx = build_nl_context(nodes, elements, props, gamma, bc_nodes,
                                surface_loads=[(edges, 0.0, -q_max)])
