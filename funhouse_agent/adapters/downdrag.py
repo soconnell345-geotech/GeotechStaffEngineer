@@ -996,3 +996,10 @@ declare_when_absent(METHOD_INFO, {
                                    "eq_footing_length": "eq_footing_width",
                                    "eq_footing_load": "Q_static"},
 })
+
+# The keys each item of a list parameter carries, so a key given at the
+# top level is refused with a hint naming its list (BACKLOG GM-113).
+from funhouse_agent.adapters import item_keys_for, merge_item_keys  # noqa: E402,F401
+ITEM_KEYS = merge_item_keys(
+    item_keys_for(METHOD_INFO, "layers", _LAYER_KEYS),
+    item_keys_for(METHOD_INFO, "liquefied_layers", LIQUEFIED_LAYER_KEYS))

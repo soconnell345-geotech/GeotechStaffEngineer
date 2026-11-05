@@ -183,6 +183,26 @@ def without_unused(params: dict, refused: dict) -> dict:
     return {k: v for k, v in params.items() if k not in drop}
 
 
+def refuse_given(params: dict, refused: dict, *, method: str) -> None:
+    """Raise a ValueError naming each of ``refused`` (name -> reason, or
+    ``{"reason", "accepts"}``) that ``params`` gives with a value its entry
+    does not accept as "not used", with the reason, as dispatch does for a
+    method's ``refused_parameters`` (GM-110), for a handler called
+    directly (a calc package, a test). Names refused for the same reason
+    share one sentence."""
+    hits = sorted(k for k, v in params.items() if k in refused
+                  and not accepted_as_unused(refused[k], v))
+    if not hits:
+        return
+    why: dict = {}
+    for k in hits:
+        why.setdefault(refused_reason(refused[k]), []).append(k)
+    raise ValueError(
+        f"{method} does not take {hits}: "
+        + "; ".join(f"{', '.join(names)}: {reason}"
+                    for reason, names in why.items()) + ".")
+
+
 def declare_aliases(method_info: dict, aliases: dict) -> dict:
     """Record, per method, the other spellings of its parameters the
     adapter reads (``{method: {alias: parameter}}``) as the method's
@@ -198,6 +218,30 @@ def declare_aliases(method_info: dict, aliases: dict) -> dict:
         own.update({a: c for a, c in table.items()
                     if a != c and a not in params and c in params})
     return method_info
+
+
+def item_keys_for(method_info: dict, param: str, keys, methods=None) -> dict:
+    """``{method: {param: keys}}`` for every method of ``method_info`` (or
+    of ``methods``) that declares ``param``: the keys each item of that
+    list parameter (a soil layer, a support) may carry. An adapter's
+    ``ITEM_KEYS`` merges these tables; dispatch reads it so a key given
+    at the top level that belongs in an item is refused with a hint that
+    names the list (BACKLOG GM-113). Nothing is moved into the list."""
+    keys = tuple(dict.fromkeys(keys))
+    return {m: {param: keys} for m, info in method_info.items()
+            if (methods is None or m in methods)
+            and param in ((info or {}).get("parameters") or {})}
+
+
+def merge_item_keys(*tables) -> dict:
+    """One ``ITEM_KEYS`` from several :func:`item_keys_for` tables."""
+    out: dict = {}
+    for table in tables:
+        for method, params in table.items():
+            for param, keys in params.items():
+                had = out.setdefault(method, {}).get(param, ())
+                out[method][param] = tuple(dict.fromkeys(had + tuple(keys)))
+    return out
 
 
 def declare_applies_when(method_info: dict, table: dict) -> dict:

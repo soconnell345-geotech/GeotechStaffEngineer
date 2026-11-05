@@ -56,7 +56,9 @@ def suggest_params(unknown: str, valid, n: int = 2) -> list:
     """Valid parameter names closest to an unknown one ('x_label' -> 'xlabel',
     'fc_mpa' -> 'fc', 'water_table_depth' -> 'gwt_depth'), with or without
     the unit the valid name carries ('phi' -> 'phi_deg', 'B' -> 'b_m';
-    GM-177). Suggestions only: nothing is renamed."""
+    GM-177), or as the leading words of a longer one ('parameter' ->
+    'parameter_for_color'; GM-113). Suggestions only: nothing is
+    renamed."""
     import difflib
     valid = list(valid)
     raw = str(unknown).lower()
@@ -95,6 +97,16 @@ def suggest_params(unknown: str, valid, n: int = 2) -> list:
         for hit in difflib.get_close_matches(k, list(by_key), n=n, cutoff=0.85):
             if by_key[hit] not in near:
                 near.append(by_key[hit])
+    if near:
+        return near[:n]
+    # The leading word(s) of a longer name ('parameter' for
+    # 'parameter_for_color', GM-113): only whole words, and only a guess
+    # of four letters or more, so 'E' is never offered 'E_s'.
+    head = raw.strip("_")
+    if len(head) >= 4:
+        near = sorted((v for v in valid
+                       if str(v).lower().startswith(head + "_")),
+                      key=lambda v: (len(str(v)), str(v)))
     return near[:n]
 
 
