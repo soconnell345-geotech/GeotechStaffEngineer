@@ -3,7 +3,7 @@
 A browser-based chat over the GeotechStaffEngineer deep agent. It's the same
 agent you drive from the Databricks notebook (`funhouse_agent.deep`), wrapped in
 a web UI so you (or a reviewer) can use it from a plain URL — locally today, and
-in the State Dept **TinyApp** environment for hosting.
+in the **Tiny Apps** environment for hosting.
 
 The app lives in `webapp/`. It runs standalone with one command and needs no
 analysis code of its own — it's UI and glue over the shipped modules.

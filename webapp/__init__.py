@@ -1,7 +1,7 @@
 """Streamlit web chat app over the GeotechStaffEngineer deep agent.
 
 Runs standalone locally (``streamlit run webapp/app.py``) and is the submission
-target for the State Dept "TinyApp" hosting environment (Streamlit / Python).
+target for the "Tiny Apps" hosting environment (Streamlit / Python).
 
 All logic lives in :mod:`webapp.core` and :mod:`webapp.engine_config` (both
 import-testable without streamlit); ``webapp/app.py`` is a thin view over them.

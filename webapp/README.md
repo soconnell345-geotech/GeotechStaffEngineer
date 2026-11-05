@@ -7,7 +7,7 @@ back, with file upload (PDF/DXF/CSV/images), artifact downloads (calc packages,
 DXFs, plots), and live token counts.
 
 It runs **standalone** (one command, on your machine) and is the submission
-target for the State Dept **TinyApp** hosting environment (Streamlit / Python).
+target for the **Tiny Apps** hosting environment (Streamlit / Python).
 
 > **Analysis/research aid — not a design deliverable.** Every result must be
 > independently reviewed by a licensed professional engineer familiar with the
