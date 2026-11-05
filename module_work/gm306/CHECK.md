@@ -153,7 +153,7 @@ GM-305 found a tangent iteration too slow for the rigid footing.
 - `funhouse_agent/tests/test_defaults_used.py -k fem2d`: 46 passed.
 - `webapp/tests/test_page_fingerprints.py`, `webapp/tests/test_public_text.py`:
   passed.
-- `fem2d` whole module (`-n 4`): FEM2D_RESULT.
+- `fem2d` whole module (`-n 4`): 630 passed, 0 failed.
 
 ## 6. Release note
 
