@@ -228,6 +228,15 @@ class Doc:
 # Rendering helpers
 # ---------------------------------------------------------------------------
 
+def _default_text(value, limit: int = 80) -> str:
+    """A parameter's registered default as the agent would pass it (JSON)."""
+    try:
+        s = json.dumps(value, default=str)
+    except (TypeError, ValueError):
+        s = str(value)
+    return s if len(s) <= limit else s[: limit - 3] + "..."
+
+
 def method_param_table(params: dict) -> str:
     if not params:
         return '<p class="muted">No parameters.</p>'
@@ -239,6 +248,9 @@ def method_param_table(params: dict) -> str:
         av = pi.get("allowed_values") or []
         if av:
             desc += ' <span class="allowed">allowed: ' + ", ".join(f"<code>{esc(v)}</code>" for v in av) + "</span>"
+        dv = pi.get("default")
+        if dv not in (None, "") and not pi.get("required"):
+            desc += ' <span class="allowed">default: <code>' + esc(_default_text(dv)) + "</code></span>"
         rows.append(
             f"<tr><td class='pname'><code>{esc(pn)}</code></td>"
             f"<td class='ptype'>{typ}</td><td class='preq'>{req}</td>"

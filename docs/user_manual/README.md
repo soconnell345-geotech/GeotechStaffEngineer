@@ -1,8 +1,9 @@
 # User Manual — source & build
 
-The distributed PDF is `../GeotechStaffEngineer_User_Manual_v5.3.pdf`. It is
-regenerable from source each release with three steps (run from this folder,
-using the project venv):
+The distributed PDF is `../GeotechStaffEngineer_User_Manual_v<version>.pdf`,
+named for the `pyproject.toml` version it was built from (the copy in the repo
+is still `..._v5.3.pdf`). It is regenerable from source each release with three
+steps (run from this folder, using the project venv):
 
 ```bash
 # 1. Capture real worked-example output from the live dispatch layer
@@ -13,7 +14,7 @@ python gen_worked_examples.py      # -> worked_examples.json
 python build_manual.py             # -> manual.html + toc.json
 
 # 3. Render to PDF with headless Chrome and attach a navigable outline
-python render_pdf.py               # -> ../GeotechStaffEngineer_User_Manual_v5.3.pdf
+python render_pdf.py               # -> ../GeotechStaffEngineer_User_Manual_v<version>.pdf
 ```
 
 ## Files
@@ -32,5 +33,10 @@ python render_pdf.py               # -> ../GeotechStaffEngineer_User_Manual_v5.3
 - The method/parameter reference is generated from the shipped code, so it cannot
   drift from the installed package. When modules change, re-run all three steps.
 - The disclaimer chapter mirrors the language in the repo-root `DISCLAIMER.md`.
-- Rendering needs Google Chrome or Microsoft Edge (see `CHROME_CANDIDATES` in
-  `render_pdf.py`) and PyMuPDF (`pip install PyMuPDF`, already in `[full]`/`[pdf]`).
+- Every optional parameter with a registered default shows it (`default: ...`)
+  in the parameter tables, taken from the adapter's `METHOD_INFO`.
+- Rendering needs Google Chrome, Chromium or Microsoft Edge (see
+  `CHROME_CANDIDATES` in `render_pdf.py`; on Linux it also looks on `PATH`) and
+  PyMuPDF (a core dependency). The stylesheet asks for Georgia, Segoe UI and
+  Consolas: build the distributed copy on Windows. On Linux Chrome substitutes
+  other fonts, and the 5.34.0 build came out at 249 pages and about 15 MB.
