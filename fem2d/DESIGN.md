@@ -498,14 +498,14 @@ Stage 2 is one of:
   non-convergence).
 - `footing='rigid'`: the footing's surface nodes (T6 mid-side nodes
   included) pushed down together in `n_load_steps` equal steps to
-  `settlement_max` (default 10 q_est B (1 - nu^2) / E). The strip's
+  `settlement_max` (default 10 q_est B (1 - nu^2) / E, this module's choice). The strip's
   surcharge is taken off the load and carried by the reactions, so q starts
   at the surcharge. q = -(sum of the footing nodes' vertical reactions) / B;
   q_ult = the largest q reached; `collapse_bracketed` when q rose by less
   than 1 % over the last tenth of the settlement run. `base='rough'`
   (default) also holds the footing nodes' horizontal displacement at its
   stage-1 value (no slip: GEC-6 pp. 49-50, the wedge under the footing
-  moves down with it; p. 99, concrete cast against the ground takes
+  moves down with it; pp. 99-100, concrete cast against the ground takes
   tan delta = tan phi or c_a = c_u); `'smooth'` leaves it free. Steps whose
   displacements stand still are accepted (`settled_ratio = 0.1`, as the
   SRM).

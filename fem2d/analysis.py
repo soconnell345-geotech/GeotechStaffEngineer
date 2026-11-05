@@ -201,13 +201,14 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         collapse, or the footing pushed down as one body (GM-305).
     base : 'rough' (default) or 'smooth' — rigid footing only: its nodes
         held horizontally (no slip; GEC-6 pp. 49-50: the wedge under the
-        footing moves down with it; p. 99: concrete cast against the
+        footing moves down with it; pp. 99-100: concrete cast against the
         ground takes the soil's own friction, tan delta = tan phi, or on
         clay adhesion c_a = c_u), or free to slide.
     settlement_max : float, optional — rigid footing only: the settlement
-        the footing is pushed to (m). Default 10 x the elastic settlement
-        at the closed-form estimate, q_est B (1 - nu^2) / E; raise it when
-        ``collapse_bracketed`` is False.
+        the footing is pushed to (m). Default 10 q_est B (1 - nu^2) / E, a
+        settlement scale times 10 (this module's choice, not printed in a
+        reference), sized so q levelled off on the mesh study's cohesive
+        cases; raise it when ``collapse_bracketed`` is False.
 
     Returns
     -------
@@ -409,8 +410,9 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
 # than this fraction over the last tenth of the settlement run.
 _RIGID_PLATEAU_RISE = 0.01
 _RIGID_PLATEAU_SPAN = 0.1
-# Default settlement run: this many times the elastic settlement at the
-# closed-form estimate, q_est B (1 - nu^2) / E.
+# Default settlement run: this many times q_est B (1 - nu^2) / E, a
+# settlement scale at the closed-form estimate (this module's choice, not
+# printed in a reference).
 _RIGID_SETTLEMENT_FACTOR = 10.0
 
 
@@ -435,7 +437,7 @@ def _footing_choices(footing, base):
         b_basis = {
             'rough': "no slip between footing and soil: GEC-6 pp. 49-50, "
                      "the wedge under the footing moves down with it "
-                     "(general shear, after Terzaghi and Peck 1948); p. 99, "
+                     "(general shear, after Terzaghi and Peck 1948); pp. 99-100, "
                      "concrete cast against the ground takes tan delta = "
                      "tan phi of the soil, or on clay c_a = c_u",
             'smooth': "the footing's nodes free to slide horizontally (no "
@@ -588,20 +590,25 @@ def _footing_capacity_rigid(B, c, phi, gamma, E, nu, psi, surcharge,
     result.choices = _footing_choices('rigid', base)
     if not plateau:
         reached = s_hist[-1] if s_hist else 0.0
-        why = ("the run stopped at a step that did not converge"
-               if not res['converged'] else
-               "q was still rising over the last tenth of the run")
+        if not res['converged']:
+            why = "the run stopped at a step that did not converge"
+            advice = "Raise n_load_steps (smaller settlement steps) or max_iter."
+        else:
+            why = "q was still rising over the last tenth of the run"
+            advice = "Raise settlement_max."
         result.warnings.append(
             f"The rigid footing's pressure did not level off: {why} "
             f"(settlement {reached:.4f} of {settlement_max:.4f} m), so "
             f"q_ult = {q_ult:.1f} kPa is a lower bound of this mesh's "
-            "answer. Raise settlement_max or n_load_steps.")
+            f"answer. {advice}")
     result.warnings.append(
-        "Rigid footing: on the module's uniform meshes q_ult falls as the "
-        "mesh is refined (Prandtl c = 50 kPa, B = 2 m: 347.9 and 306.0 kPa "
-        "on 20x10 and 40x20 against (2 + pi) c = 257.1; fem2d "
-        "VALIDATION.md section 3), so it is an upper estimate that depends "
-        "on the element size at the footing's edges.")
+        "Rigid footing: on the module's uniform meshes, on the clay "
+        "(phi = 0) check q_ult read high and fell towards (2 + pi) c as "
+        "the mesh was refined (Prandtl c = 50 kPa, B = 2 m: 347.9 and "
+        "306.0 kPa on 20x10 and 40x20 against (2 + pi) c = 257.1; fem2d "
+        "VALIDATION.md section 3); for c-phi and cohesionless soils no "
+        "mesh-converged value was found, and q_ult depends on the element "
+        "size at the footing's edges.")
     return result
 
 

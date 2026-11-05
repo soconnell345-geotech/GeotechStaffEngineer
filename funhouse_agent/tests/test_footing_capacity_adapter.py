@@ -67,7 +67,7 @@ def test_rigid_via_adapter_coarse():
     assert out["q_ult_kPa"] > (2.0 + 3.14159) * 100.0
     assert len(out["pressure_settlement"]) == out["n_steps_converged"]
     assert out["settlement_max_m"] > 0
-    assert any("falls as the mesh is refined" in w for w in out["warnings"])
+    assert any("fell towards (2 + pi) c as the mesh was refined" in w for w in out["warnings"])
 
 
 def test_bad_footing_raises():
