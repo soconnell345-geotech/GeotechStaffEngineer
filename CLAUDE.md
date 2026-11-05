@@ -129,7 +129,9 @@ Key conventions:
   runs inside the ingest when `GSE_REPORT_QUESTIONS` names it, posts matched
   from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split; the
   geotech page keeps 15 document tools off the list until a document is
-  present (about a quarter of each call's prefix). Answers move in fem2d footing capacity
+  present (about a quarter of each call's prefix); `recompute_report_calcs`
+  re-runs a report's claimed bearing and settlement calcs (DR-11, first
+  slice, with report ingest). Answers move in fem2d footing capacity
   (a surcharge is a real load; the soil's weight first; sand q_ult with
   no surcharge is set by the mesh and warned of; a rigid footing is a
   choice, flexible stays the default) and sheet_pile (water standing in
