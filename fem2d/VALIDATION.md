@@ -292,6 +292,68 @@ q_ult falls as the mesh is refined. A mesh graded towards the footing's
 edges is the likely way to a rigid answer that converges; not built here.
 Details: `module_work/gm305/CHECK.md`.
 
+**Fine meshes and a graded mesh (GM-306, 2026-11-05).** The flexible
+c-phi footing's drop on 80x40 (173.6 kPa above) was the iteration ceiling,
+not collapse: the load step it stopped at reached `max_iter = 1000` with
+its residual still falling (2.2e-2 to 1.8e-4 against tol 1e-4) and its
+displacements standing still (second half of the iterations 0.095 of the
+first). Such a step is now accepted as the strength reduction does
+(Griffiths & Lane 1999; `settled_ratio = 0.1`), judged at the ceiling only,
+so a step that meets tol on its own ends as before: nine 40x20 default-mesh
+cases are identical to the last digit, q_ult and the displacement field.
+That lifts 80x40 to 217.0; the rest is the same ceiling, with the stopping
+steps' displacement ratios just above 0.1. On a frictional soil q_ult moves
+with `max_iter`, on the default mesh too; on phi = 0 it does not:
+
+| Case, flexible, B = 2 m | Mesh | max_iter 1000 | max_iter 4000 |
+|---|---|---|---|
+| c = 50, phi = 0, gamma = 0 | uniform 40x20 | 255.9 | 255.9 |
+| c = 20, phi = 25, gamma = 18 | uniform 40x20 | 455.6 | 477.3 |
+| c = 0, phi = 30, gamma = 18 (q_max 200, 80 steps) | uniform 40x20 | 52.5 | 67.5 |
+| c = 20, phi = 25, gamma = 18 | uniform 80x40 | 217.0 | 455.6 |
+| c = 20, phi = 25, gamma = 18 | graded 40x20 | 151.9 | 238.6 |
+| same, rigid rough | graded 40x20 | >= 151.2 lb | >= 441.2 lb |
+
+So on a frictional soil the flexible result now warns when its last step
+stopped at `max_iter`, and the default answers are unchanged (raising the
+default would move them: 455.6 to 477.3 above).
+
+`mesh='graded'` (an option; the default stays uniform) keeps the nx x ny
+elements and grades them towards x = +-B/2 and the surface, the elements
+there 1/4 the uniform size, growing by one ratio away from them (this
+module's choice; no reference prints a grading). The study, defaults as
+GM-305 (rigid rough at the default settlement_max, 45 steps; the uniform
+rigid rows are GM-305's; rigid smooth on graded meshes not run):
+
+| Case (closed form, GEC-6) | Footing, mesh | 20x10 | 40x20 | 60x30 | 80x40 |
+|---|---|---|---|---|---|
+| c = 50, phi = 0, gamma = 0 (257.1) | flexible uniform | 274.2 | 255.9 | 255.9 | 255.9 |
+| | flexible graded | 255.9 | 255.9 | 255.9 | 255.9 |
+| | rigid rough uniform | 347.9 | 306.0 | 291.0 | 283.1 |
+| | rigid rough graded | 287.8 | 273.1 | 267.9 | 265.3 |
+| c = 20, phi = 25, gamma = 18 (610.2; 512.3 to 806.0) | flexible uniform | 499.0 | 455.6 | 433.9 | 217.0 |
+| | flexible graded | 433.9 | 151.9 | 130.2 | 130.2 |
+| | rigid rough uniform | 817.7 | >= 674.2 lb | >= 607.7 lb | >= 253.7 lb |
+| | rigid rough graded | >= 380.6 lb | >= 151.2 lb | >= 150.8 lb | >= 149.7 lb |
+| c = 0, phi = 30, gamma = 18 (403.2; 201.6 to 806.4) | flexible uniform | 102.5 | 52.5 | 35.0 | 27.5 |
+| | flexible graded | 32.5 | 17.5 | 12.5 | 12.5 |
+| | rigid rough uniform | >= 286.8 lb | >= 97.6 lb | >= 43.2 lb | >= 42.5 lb |
+| | rigid rough graded | >= 42.5 lb | >= 41.3 lb | >= 40.2 lb | >= 39.8 lb |
+
+- **Prandtl:** graded helps both footings. The flexible one is at 255.9
+  from 20x10 on; the rigid one converges from above, +12, +6.2, +4.2,
+  +3.2 % (uniform +35, +19, +13, +10 %).
+- **c-phi and c = 0:** graded does not converge where uniform does not.
+  The flexible footing reads lower (smaller edge elements; for c = 0 the
+  edge failure GM-304 describes), and both footings stop early at the
+  iteration ceiling (rigid after one or two steps).
+
+So **the default stays `mesh='uniform'`**: graded is better only on the
+case uniform already gets right with the flexible footing. What would give
+a mesh-converged frictional answer is an iteration that converges faster
+than the constant-stiffness one; it would change saved frictional answers.
+Details: `module_work/gm306/CHECK.md`.
+
 ## 4. Elastic closed-form checks
 
 | Check | Closed form | fem2d | Error |
