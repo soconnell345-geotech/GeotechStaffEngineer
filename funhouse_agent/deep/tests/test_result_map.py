@@ -64,7 +64,10 @@ def test_the_middleware_maps_a_tool_message():
 def test_every_agent_carries_it():
     """The primary and every helper (inside deepagents' own filesystem
     middleware, so it maps a result before it is moved)."""
-    from funhouse_agent.deep import agent as agent_mod
+    # the guards both builds put on are the shared assembly's (INF-31
+    # step 8): every helper, the general-purpose helper, the primary
+    from funhouse_agent.deep import assembly
     import inspect
-    src = inspect.getsource(agent_mod.build_deep_agent)
+    src = (inspect.getsource(assembly.guard_helpers)
+           + inspect.getsource(assembly.create_kwargs_for))
     assert src.count("LargeResultKeyMap()") >= 3

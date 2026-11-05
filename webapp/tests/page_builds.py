@@ -12,8 +12,8 @@ the parent process has already imported cannot change the answer:
   shared and review code into GeotechStaffEngineer's own modules (and the
   reverse); or, blocking those modules, sees whether the page still works.
 
-Each build goes through ``webapp.core.build_agent`` with the page's own
-keyword arguments, as ``webapp/app.py`` puts them together, on a fake chat
+Each build goes through ``webapp.core.build_agent`` with the page's profile
+and its own keyword arguments, as ``webapp/app.py`` puts them together, on a fake chat
 model, with every ``GEOTECH_*`` setting unset (the page as shipped) except
 the one that picks the review page's build. Nothing calls a model or the
 network.
@@ -112,13 +112,18 @@ def fake_model(first_step=None):
                  steps=[first_step] if first_step else [])
 
 
+def page_profile(page: str):
+    """The page's profile (:mod:`webapp.profiles`)."""
+    from webapp import profiles
+    return profiles.DOCUMENT_REVIEW if page == "review" \
+        else profiles.GEOTECH
+
+
 def page_kwargs(page: str) -> dict:
     """The page's build arguments, as ``webapp/app.py`` puts them together
     for a new conversation (default Behavior, then the page's own)."""
-    from webapp import core, profiles
-    profile = profiles.DOCUMENT_REVIEW if page == "review" \
-        else profiles.GEOTECH
-    kw = core.behavior_build_kwargs(None)
+    profile = page_profile(page)
+    kw = profile.behavior_build_kwargs(None)
     kw.update(profile.build_kwargs())
     kw.setdefault("markup_author", "Fingerprint via GeotechStaffEngineer")
     return kw
@@ -151,6 +156,8 @@ def build(name: str, model=None, files_dir=None, capture: bool = False,
     if capture:
         import langchain.agents as lc_agents
         from funhouse_agent.deep import agent as deep_agent
+        # the review page compiles through the shared assembly (step 8)
+        from funhouse_agent.deep import assembly as deep_assembly
         depth = [0]
 
         def _wrap(kind, real):
@@ -170,6 +177,8 @@ def build(name: str, model=None, files_dir=None, capture: bool = False,
         patches = [
             (deep_agent, "create_deep_agent",
              _wrap("create_deep_agent", deep_agent.create_deep_agent)),
+            (deep_assembly, "create_deep_agent",
+             _wrap("create_deep_agent", deep_assembly.create_deep_agent)),
             (lc_agents, "create_agent",
              _wrap("create_agent", lc_agents.create_agent)),
         ]
@@ -180,7 +189,8 @@ def build(name: str, model=None, files_dir=None, capture: bool = False,
         try:
             from webapp import core
             agent = core.build_agent(model or fake_model(), {}, files_dir,
-                                     [], **page_kwargs(page))
+                                     [], profile=page_profile(page),
+                                     **page_kwargs(page))
             if capture:
                 for call in [c for c in calls if c["kind"] == "create_agent"]:
                     for tool in _call_tools(call):
@@ -564,6 +574,8 @@ GSE_MODULES = frozenset({
     "funhouse_agent.deep.selfcheck", "funhouse_agent.deep.rc_wheel_check",
     "funhouse_agent.deep.run_live", "funhouse_agent.deep.notebook",
     "webapp.foundry_entry", "webapp.reference_fetch",
+    # The geotech page's own parts (INF-31 step 7).
+    "webapp.geotech_page",
 })
 
 #: The review page's own files (plan §2.2), which GSE's code must not
@@ -573,7 +585,10 @@ REVIEW_MODULES = frozenset({
     "funhouse_agent.deep.sweep", "funhouse_agent.deep.findings_tools",
     "funhouse_agent.review_findings", "funhouse_agent.deep.geometry_tools",
     "funhouse_agent.deep.digest_tools", "funhouse_agent.review_digest",
-    "funhouse_agent.review_prompt", "webapp.tinyapps_entry",
+    "funhouse_agent.review_prompt", "funhouse_agent.review_build",
+    "webapp.tinyapps_entry",
+    # The review page's own parts (INF-31 step 7).
+    "webapp.review_page",
 })
 
 

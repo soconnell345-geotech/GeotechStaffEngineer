@@ -55,7 +55,7 @@ def harness(monkeypatch, tmp_path):
         built.append(kw)
         return object()
     monkeypatch.setattr(core, "build_agent", _build)
-    monkeypatch.setattr(core, "build_reviewer_agent",
+    monkeypatch.setattr("webapp.geotech_page.build_reviewer_agent",
                         lambda kind, *_a, **_k: f"reviewer:{kind}")
     monkeypatch.setattr(core, "stream_turn", _stream_ok)
 

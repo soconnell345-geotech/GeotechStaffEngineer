@@ -5,7 +5,8 @@
 # of it from this module keep working.
 from funhouse_agent.adapters import (
     check_nested_keys, declare_applies_when, declare_when_absent, field_keys,
-    reject_unknown_params, require_keys, require_params,
+    refuse_given, reject_unknown_params, require_keys, require_params,
+    without_unused,
 )
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.analysis import (
@@ -549,10 +550,12 @@ def _run_search_rapid_drawdown(params: dict) -> dict:
 
 def _run_yield_acceleration(params: dict) -> dict:
     from slope_stability.newmark import yield_acceleration
+    params = without_unused(params, YIELD_REFUSED)
+    refuse_given(params, YIELD_REFUSED, method="yield_acceleration")
     reject_unknown_params(
         params,
-        _GEOM_PARAMS + _SURFACE_PARAMS + ("method", "n_slices", "tol",
-                                          "kh_max"),
+        tuple(k for k in _GEOM_PARAMS if k not in YIELD_REFUSED)
+        + _SURFACE_PARAMS + ("method", "n_slices", "tol", "kh_max"),
         method="yield_acceleration")
     geom = _build_geometry(params, method="yield_acceleration")
     method = _check_choice(params.get("method", "spencer"), _METHODS,
@@ -868,6 +871,19 @@ def _crack_and(extra):
     return out
 
 
+#: yield_acceleration finds kh itself (BACKLOG GM-113): a kh given beside
+#: the geometry was read into it and then overwritten at every trial, so
+#: it changed nothing. 0, no seismic coefficient, passes.
+YIELD_REFUSED = {"kh": {
+    "reason": ("yield_acceleration finds kh itself: it is the coefficient "
+               "at which the factor of safety is 1.0 (ky), found by "
+               "bisection between 0 and kh_max, so a given kh is not used. "
+               "Leave kh out; for the factor of safety at a given kh, call "
+               "analyze_slope with that kh"),
+    "accepts": [0, 0.0]}}
+METHOD_INFO["yield_acceleration"]["parameters"].pop("kh")
+METHOD_INFO["yield_acceleration"]["refused_parameters"] = YIELD_REFUSED
+
 declare_applies_when(METHOD_INFO, {
     "analyze_slope": _crack_and({
         "reverse_curvature": _CIRCLE_GIVEN,
@@ -885,8 +901,7 @@ declare_applies_when(METHOD_INFO, {
         "n_points": {"surface_type": ["noncircular", "noncircular_de"]},
         "stage3_effective_normal": {"method": ["duncan_3stage"]}}),
     "yield_acceleration": _crack_and({
-        "reverse_curvature": _CIRCLE_GIVEN,
-        "kh": False}),           # the method finds kh; the given one is unused
+        "reverse_curvature": _CIRCLE_GIVEN}),
     "search_critical_surface": _crack_and({
         "reverse_curvature": _SEARCH_CIRCLES,
         "nx": {"surface_type": ["circular", "entry_exit", "pso"]},
@@ -975,3 +990,8 @@ for _m, _seeded in (
     for _name in ("x_range", "y_range"):
         _p[_name]["applies_when"] = {
             "surface_type": ["circular", "entry_exit", "pso"]}
+
+# The keys each item of a list parameter carries, so a key given at the
+# top level is refused with a hint naming its list (BACKLOG GM-113).
+from funhouse_agent.adapters import item_keys_for, merge_item_keys  # noqa: E402,F401
+ITEM_KEYS = item_keys_for(METHOD_INFO, "soil_layers", _LAYER_KEYS)

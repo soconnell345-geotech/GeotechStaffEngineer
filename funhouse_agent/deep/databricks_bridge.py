@@ -747,6 +747,11 @@ def _to_usage_metadata(usage) -> Optional[dict]:
           ``output_tokens = 0``, ``total_tokens = total`` — this way any
           aggregator that sums ``input + output`` still yields the correct
           TOTAL (the in/out split is best-effort, the total is authoritative).
+        * A cache read the provider reports (``prompt_tokens_details.
+          cached_tokens``, which Azure sends on the Prompter route) is added
+          as ``input_token_details = {"cache_read": n}``, as langchain-openai
+          adds it. It is PART of ``input_tokens``, not added to it, so the
+          activity log and report ingest see the read (BACKLOG INF-66).
     """
     if usage is None:
         return None
@@ -760,7 +765,13 @@ def _to_usage_metadata(usage) -> Optional[dict]:
         inp = int(prompt or 0)
         out = int(completion or 0)
         tot = int(total) if total is not None else inp + out
-        return {"input_tokens": inp, "output_tokens": out, "total_tokens": tot}
+        meta = {"input_tokens": inp, "output_tokens": out, "total_tokens": tot}
+        details = _usage_field(usage, "prompt_tokens_details")
+        cached = (_usage_field(details, "cached_tokens")
+                  if details is not None else None)
+        if isinstance(cached, int):
+            meta["input_token_details"] = {"cache_read": cached}
+        return meta
 
     if total is not None:
         # Combined-total-only (the Funhouse proxy case): preserve the TOTAL while

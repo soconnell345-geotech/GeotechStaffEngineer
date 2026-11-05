@@ -17,7 +17,7 @@ So the helper has:
   kN, units and the coordinate system named; the owner's conventions of
   2026-10-15, BACKLOG GM-97);
 - worked EXAMPLES it can fetch and adapt (``figure_examples``, from
-  :mod:`profile_figure.figure_examples`): ``plot_data`` calls, and when it
+  :mod:`funhouse_agent.charts.figure_examples`): ``plot_data`` calls, and when it
   has ``plot_code``, matplotlib scripts for that box too;
 - ``plot_data`` to draw and ``analyze_image`` to LOOK at the PNG, which is
   the same figure the chat shows (both are drawn from one spec), with a
@@ -199,7 +199,7 @@ _KINDS = {"plot_data": "plot_data call", "plot_code": "plot_code script"}
 def _example_names(with_code: bool = False) -> list:
     """The examples offered: the plot_data calls, then the plot_code
     scripts when the helper has plot_code."""
-    from profile_figure.figure_examples import (code_example_names,
+    from funhouse_agent.charts.figure_examples import (code_example_names,
                                                 example_names)
     return example_names() + (code_example_names() if with_code else [])
 
@@ -210,7 +210,7 @@ def _closest_example(want: str, with_code: bool = False) -> Optional[str]:
     spelling."""
     import difflib
     import re
-    from profile_figure.figure_examples import CODE_EXAMPLES, EXAMPLES
+    from funhouse_agent.charts.figure_examples import CODE_EXAMPLES, EXAMPLES
     names = _example_names(with_code)
     shows = {n: (EXAMPLES.get(n) or CODE_EXAMPLES[n])["shows"]
              for n in names}
@@ -238,7 +238,7 @@ def make_figure_examples_tool(plot_code: bool = False) -> StructuredTool:
 
     def figure_examples(name: str = "") -> str:
         """List the worked figure examples, or return one in full."""
-        from profile_figure.figure_examples import example
+        from funhouse_agent.charts.figure_examples import example
         names = _example_names(plot_code)
         if not name:
             listing = []
@@ -422,7 +422,7 @@ def nearest_example(brief: str, with_code: bool = False) -> Optional[str]:
     candidate sharing the most telling words wins, a word of its name or
     what it shows counting twice one of its reasons. ``None`` when there is
     no candidate: a figure no example is like gets none."""
-    from profile_figure.figure_examples import CODE_EXAMPLES, EXAMPLES
+    from funhouse_agent.charts.figure_examples import CODE_EXAMPLES, EXAMPLES
     want = _words(brief)
     best, best_score = None, 0
     for name in _example_names(with_code):
@@ -453,7 +453,7 @@ def brief_with_example(brief: str, with_code: bool = False) -> str:
     name = nearest_example(brief, with_code)
     if name is None:
         return brief
-    from profile_figure.figure_examples import example
+    from funhouse_agent.charts.figure_examples import example
     ex = example(name)
     lines = [brief.rstrip(), "",
              f"{EXAMPLE_HEADING} (the nearest to this brief, picked in "

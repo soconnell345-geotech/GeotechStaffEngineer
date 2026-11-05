@@ -328,12 +328,23 @@ def _run_analyze_local_fos(params: dict) -> dict:
     element_type = params.get("element_type", "t6")
     _require_choice(element_type, ("t6", "cst"),
                     name="element_type", method="fem2d_local_fos")
+    # t, gamma_w, max_iter, tol and n_gp reach the analysis as they do for
+    # fem2d_slope_srm, with the same defaults (BACKLOG GM-113)
+    n_gp = params.get("n_gp")
+    if n_gp is not None:
+        _require_choice(int(n_gp), (3, 6),
+                        name="n_gp", method="fem2d_local_fos")
     kwargs = dict(
         surface_points=[tuple(pt) for pt in params["surface_points"]],
         soil_layers=params["soil_layers"],
         nx=params.get("nx", 30), ny=params.get("ny", 15),
         srf_tol=params.get("srf_tol", 0.02),
         n_load_steps=params.get("n_load_steps", 2),
+        t=params.get("t", 1.0),
+        gamma_w=params.get("gamma_w", 9.81),
+        max_iter=params.get("max_iter", 1000),
+        tol=params.get("tol", 1e-5),
+        n_gp=int(n_gp) if n_gp is not None else None,
         element_type=element_type,
         srm_field=params.get("srm_field", "c_phi"),
         blowup_factor=params.get("blowup_factor", 15.0),
@@ -757,6 +768,8 @@ METHOD_INFO = {
             "srf_tol": {"type": "float", "required": False, "default": 0.02, "description": "SRF bisection tolerance."},
             "element_type": {"type": "str", "required": False, "default": "t6", "allowed_values": ["t6", "cst"], "description": "Soil element. t6 recommended (cst locks)."},
             "srm_field": {"type": "str", "required": False, "default": "c_phi", "allowed_values": ["c_phi", "c", "phi"], "description": "Strengths reduced by the SRF."},
+            "n_gp": {"type": "int", "required": False, "allowed_values": [3, 6], "description": "T6 Gauss rule override (default 3)."},
+            "max_iter": {"type": "int", "required": False, "default": 1000, "description": "Iteration ceiling per load step (Griffiths-Lane non-convergence criterion)."},
             "local_fos_cap": {"type": "float", "required": False, "default": 10.0, "description": "Upper cap on local FOS where the mobilized shear is ~0 (deep isotropic stress)."},
         },
         "returns": {
@@ -959,7 +972,7 @@ _FEM_PARAM_BACKFILL = {
     "fem2d_slope_srm": ["gamma_w", "n_load_steps", "t", "tol"],
     "fem2d_srm_mesh_refinement_study": ["gamma_w", "n_load_steps", "t", "tol"],
     "fem2d_local_fos": ["blowup_factor", "gamma_w", "gwt", "layer_polylines",
-                        "max_iter", "n_gp", "n_load_steps", "srf_range", "t", "tol"],
+                        "n_load_steps", "srf_range", "t", "tol"],
     "fem2d_excavation": ["gamma_w", "max_iter", "nx", "ny", "t", "tol"],
     "fem2d_seepage": ["t"],
     "fem2d_staged": ["gamma_w", "max_iter", "t", "tol"],
@@ -1055,3 +1068,14 @@ declare_when_absent(METHOD_INFO, {
                   "the excavation sequence the module takes; give lifts for "
                   "the sequence planned")},
 })
+
+# The keys each item of a list parameter carries, so a key given at the
+# top level is refused with a hint naming its list (BACKLOG GM-113).
+from funhouse_agent.adapters import item_keys_for, merge_item_keys  # noqa: E402,F401
+ITEM_KEYS = merge_item_keys(
+    item_keys_for(METHOD_INFO, "soil_layers", _LAYER_KEYS),
+    item_keys_for(METHOD_INFO, "soil_layers", _EXCAVATION_LAYER_KEYS,
+                  ("fem2d_excavation",)),
+    item_keys_for(METHOD_INFO, "soil_layers", _CONSOLIDATION_LAYER_KEYS,
+                  ("fem2d_consolidation",)),
+    item_keys_for(METHOD_INFO, "material_props", _MATERIAL_KEYS))

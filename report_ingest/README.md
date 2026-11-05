@@ -41,6 +41,7 @@ imported. See "Model-first reading" under the graph.
 | Reports bound inside reports | `bound.py` | where a bound document begins and ends, and the one call that says what it IS |
 | 4. Reconciler | `reconciler.py` | pure Python; records disagreements, never settles them |
 | The review checklist | `checklist.py` + `report_review_checklist.json` | pure Python over the record; DRAFT; the judgement items go to the agent |
+| The owner's question list | `question_list.py` | the owner's private list as a schema, code's answers off the record, two calls, an answer sheet; in the ingest run only with `GSE_REPORT_QUESTIONS` set |
 | 5. Writers | `writers.py` | the record, the summary, the library page, DIGGS, the index |
 | The DIGGS writer | `diggs_writer.py` | deterministic, with two gates |
 | The whole ingest | `graph.py` | a deterministic loop, resumable per item |
@@ -1250,6 +1251,57 @@ so it cannot drift from the record. Pass an `engine` and ONE call is spent
 asking for a sentence about each conflict — which value looks like the
 misreading, what would settle it. The comment is appended; the values and the
 verdict are untouched.
+
+## The owner's question list (`question_list.py`)
+
+The owner keeps a private workbook of questions asked of every report (the
+list) and a small JSON code map beside it (`<list name>.code.json`): which of
+code's readings answers each "Code" or "Both" row, which screening answers
+close other rows, and which row names the post. Neither is in the repo; the
+module docstring describes both. `run_questions` asks the list of one record
+(a screening call, then one call for the rest), `code_answers` fills the
+rows code answers, and `answer_sheet` writes the owner's layout with empty
+"Right?" and "Correct answer" columns. On saved records it is run by
+`module_work/report_ingest_harness/run_question_list.py` (BACKLOG RI-90).
+
+**In the ingest run (BACKLOG RI-101 part 1).** Two settings, both unset by
+default:
+
+| Setting | What it gives | Unset |
+|---|---|---|
+| `GSE_REPORT_QUESTIONS` | the path to the list; its code map is read from beside it | the run is as it always was: no call, no file, no QA entry, and `question_list` is not imported |
+| `GSE_REPORT_POSTS` | the path to a list of posts (BACKLOG RI-170): JSON (a list of objects, or an object whose `posts` is that list) or CSV with a heading row. Read by two columns, `name` (required) and `full_name` (headings matched without regard to case; a space or a dash reads as `_`); every other column is ignored | the post-name row is answered as the report prints it |
+
+With `GSE_REPORT_QUESTIONS` set, `ingest_report` asks the list of each
+report once its record is read, on the run's engine, over the pages and
+printed page numbers the harness reads (`pages_to_read`, `page_texts`,
+`doc.page_map()`), with the bound reports' records, and writes
+`report.questions.xlsx` beside `report.record.json`. The list's calls count
+in the record's cost; each structured reply is kept in
+`items/question_list.calls.json` with its cost, so a resumed run that sends
+the same request pays nothing for it, and the record's
+`document.resumed` counts that saved cost in the whole report's (step
+`question_list`). The narrative's own answers are left as they
+are. A list (or posts file) that cannot be read, or a run that fails, is a
+`not_run` QA entry on the record, never a failed run; each of the run's
+warnings is a QA note.
+
+**The post-name row (RI-170).** The code map names it with
+`"post_name": "<Key>"` (a String row the report text answers). With a list
+of posts, its answer is matched to one post: the name exactly, then the full
+name exactly (both compared lower-cased, punctuation and spaces folded),
+then a close spelling: difflib's `SequenceMatcher.ratio` of the folded
+printed name and a post's folded name at least `POST_SIMILARITY` (0.85),
+for one post only. A full name matches exactly or not at all: full names
+share their wording, which makes two different names look close. Matched,
+the answer is the post's name, its note
+says `as printed: '<printed>'; matched to the post <name> (<full name>) by
+<exact name | full name | close spelling (similarity 0.91)>`, and the
+`Answer` keeps `printed` and `matched_by`; the sheet's Run tab names the
+posts file. No post close enough, two posts at the same step, or two posts
+whose names are that close: the printed name stays, the note says why, and
+the record gets an
+open QA note (`where="question_list.<Key>"`). Never a guess.
 
 ## The review checklist (`checklist.py`)
 

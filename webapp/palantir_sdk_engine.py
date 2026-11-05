@@ -886,6 +886,12 @@ class PalantirSdkChatModel(BaseChatModel):
                      "completion_tokens": getattr(u, "output_tokens", None),
                      "total_tokens": getattr(u, "total_tokens", None)}
             usage = {k: v for k, v in usage.items() if v is not None}
+            # A cache read, if the SDK reports one, in the chat shape the
+            # bridge's converter reads into input_token_details (INF-66).
+            cached = getattr(getattr(u, "input_tokens_details", None),
+                             "cached_tokens", None)
+            if isinstance(cached, int):
+                usage["prompt_tokens_details"] = {"cached_tokens": cached}
             generation_info["usage"] = _usage_to_dict(usage)
             ai_message.usage_metadata = _to_usage_metadata(usage)
         return ChatResult(generations=[

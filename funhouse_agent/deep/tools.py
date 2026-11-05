@@ -653,12 +653,28 @@ def make_vision_tools(*args, **kwargs) -> list:
     ``added_tools`` defaults here to those readers. The Document Review
     page builds the kit's own."""
     kwargs.setdefault("added_tools", GEOTECH_VISION_TOOLS)
+    register_reference_charts()
     return _kit.make_vision_tools(*args, **kwargs)
+
+
+def register_reference_charts() -> bool:
+    """Hand the reference library's standard chart lines to the chart stack
+    (``plot_data``'s ``reference_chart`` and the plotting box's
+    ``chart_lines``; INF-31 step 6), where the installed library has them.
+    The geotech page's builds call it; the chart stack looks for no
+    reference library itself."""
+    try:
+        from funhouse_agent.adapters.profile_figure_adapter import (
+            register_reference_charts as _register)
+        return _register()
+    except Exception:                                  # noqa: BLE001
+        return False
 
 
 __all__ = [
     "make_core_tools",
     "make_vision_tools",
+    "register_reference_charts",
     "make_report_ingest_tool",
     "make_report_library_tool",
     "REPORT_INGEST_DESCRIPTION",

@@ -634,3 +634,33 @@ __all__ = [
     "find_in_working_folder", "workspace_write_hint",
     "workspace_api_upload", "save_verified",
 ]
+
+
+# Moved here from funhouse_agent.adapters with the chart stack (INF-31 step 6):
+# plot_data writes its chart through it without loading the adapters.
+def write_plotly_sidecar(output_path, figure_json):
+    """Write ``figure_json`` as ``<name>.plotly.json`` beside ``output_path``.
+
+    One Plotly figure serialized with ``figure.to_json()``, saved next to the
+    file it belongs to (the same stem, whatever that file's extension) so a
+    front-end can render it natively with ``st.plotly_chart`` instead of an
+    HTML iframe or a static image. Returns ``{"plotly_json_path": ...}`` on a
+    verified write and ``None`` otherwise — the sidecar is always additive and
+    best-effort, so a caller merges the dict and never fails on it.
+
+    The naming rule and the :func:`funhouse_agent._fileio.save_verified` call
+    live HERE only, so ``/Workspace`` durability and read-back verification
+    come free for every producer of a sidecar.
+    """
+    if not output_path or not figure_json:
+        return None
+    import os as _os
+    try:
+        from funhouse_agent._fileio import save_verified
+        sidecar = _os.path.splitext(str(output_path))[0] + ".plotly.json"
+        saved = save_verified(sidecar, figure_json)
+    except Exception:                                      # noqa: BLE001
+        return None
+    if saved.get("file_exists"):
+        return {"plotly_json_path": saved.get("saved", sidecar)}
+    return None

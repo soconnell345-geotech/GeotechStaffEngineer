@@ -5,9 +5,10 @@ as LangChain :class:`~langchain_core.tools.StructuredTool` objects (each
 wrapping :func:`funhouse_agent.vision_tools.dispatch_extended_tool` or a
 planlens document tool), with the tool-result caps. It moved out of
 :mod:`funhouse_agent.deep.tools` (INF-30 step 4) so the Document Review
-page builds its tools without loading the geotechnical dispatch module:
-nothing here imports it at load (``plot_data`` reaches it when it draws,
-until the chart stack moves in step 6). :mod:`funhouse_agent.deep.tools`
+page builds its tools without loading the geotechnical dispatch module;
+since the chart stack moved (INF-31 step 6) ``plot_data`` draws through
+:mod:`funhouse_agent.charts.plot_tool`, so nothing here reaches it at all.
+:mod:`funhouse_agent.deep.tools`
 re-exports these names; its ``make_vision_tools`` adds the geotech page's
 two reference readers.
 
@@ -167,7 +168,7 @@ def _plot_available() -> bool:
     """Whether the data-plot module can be imported (matplotlib is a core
     app dependency, so this is a guard for a stripped library install)."""
     try:
-        import profile_figure  # noqa: F401
+        from funhouse_agent.charts import data_plot  # noqa: F401
     except Exception:                                  # noqa: BLE001
         return False
     return True
@@ -275,13 +276,13 @@ _PLOT_APP_NOTE = (
 
 
 def _plot_description(reference_chart: bool = True) -> str:
-    """``plot_data``'s model-facing description, in the module's own words
-    (``profile_figure`` METHOD_INFO), with the app's note.
-    ``reference_chart=False`` leaves that argument out (the Document Review
-    page, which draws no soil-classification chart: BACKLOG RI-34)."""
+    """``plot_data``'s model-facing description, in the method's own words
+    (:func:`funhouse_agent.charts.plot_tool.method_info`), with the app's
+    note. ``reference_chart=False`` leaves that argument out (the Document
+    Review page, which draws no soil-classification chart: BACKLOG RI-34)."""
     try:
-        from funhouse_agent.adapters.profile_figure_adapter import METHOD_INFO
-        info = METHOD_INFO["plot_data"]
+        from funhouse_agent.charts.plot_tool import method_info
+        info = method_info()
         params = info.get("parameters") or {}
         lines = [str(info.get("brief") or "").strip()]
         for key in ("series", "annotations",
@@ -1305,7 +1306,7 @@ def make_vision_tools(
                   scale_units: str = "m", x_on_top: bool = False,
                   annotations: Optional[list] = None,
                   reference_chart: str = "") -> str:
-        """Plot x/y data (the ``profile_figure`` module's ``plot_data``)."""
+        """Plot x/y data (the chart stack's ``plot_data``)."""
         params: Dict[str, Any] = {
             "series": series, "title": title, "xlabel": xlabel,
             "ylabel": ylabel, "depth_axis": depth_axis, "logx": logx,
@@ -1327,14 +1328,12 @@ def make_vision_tools(
             folder = host_output_dir()
         except Exception:                              # noqa: BLE001
             folder = None
-        # Through GSE's dispatch until the chart stack moves (INF-30 step
-        # 6): it adds defaults_used and the output note, and puts the file
-        # in the working folder. Imported here, never at load.
-        from funhouse_agent.dispatch import call_agent as _call_agent
+        # The chart stack's own call (INF-31 step 6): as call_agent's, it
+        # adds defaults_used and the output note, and puts the file in the
+        # working folder.
+        from funhouse_agent.charts.plot_tool import call_plot_data
         with drawing(folder):
-            result = _call_agent(agent_name="profile_figure",
-                                 method="plot_data", parameters=params,
-                                 attachments=attachments, allowed_agents=None)
+            result = call_plot_data(params, attachments)
         # one figure's versions share a name: plan.png, plan2.png, plan_v3
         import re as _re
         key = os.path.splitext(os.path.basename(
@@ -1565,14 +1564,12 @@ def make_vision_tools(
 
 
 def _plot_takes_chart() -> bool:
-    """Whether plot_data takes ``reference_chart`` here: the adapter
-    accepts it only where the reference library has chart_lines."""
-    try:
-        from funhouse_agent.adapters.profile_figure_adapter import (
-            _VALID_PLOT)
-    except Exception:                                  # noqa: BLE001
-        return False
-    return "reference_chart" in _VALID_PLOT
+    """Whether plot_data takes ``reference_chart`` here: only where an app
+    registered reference charts (the geotechnical app, from a reference
+    library with chart_lines; :func:`funhouse_agent.charts.
+    register_reference_charts`)."""
+    from funhouse_agent.charts import reference_charts
+    return reference_charts() is not None
 
 
 def _without_argument(tool, arg: str):

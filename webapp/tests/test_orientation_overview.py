@@ -229,13 +229,17 @@ def test_the_suite_s_orientation_turn_is_the_app_s(arm, tmp_path, submittal):
 
 def _captured_build(monkeypatch, tmp_path, **build_kwargs):
     import funhouse_agent.deep.agent as deep_agent
+    import funhouse_agent.review_build as review_build
     got = {}
 
     def fake(model, **kw):
         got.update(kw)
         return object()
 
+    # the geotech page builds with build_deep_agent, the review page with
+    # its own build (INF-31 step 8)
     monkeypatch.setattr(deep_agent, "build_deep_agent", fake)
+    monkeypatch.setattr(review_build, "build_review_page_agent", fake)
     monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "data"))
     files = os.path.join(core.conversation_dir("t_wd"), "files")
     os.makedirs(files, exist_ok=True)

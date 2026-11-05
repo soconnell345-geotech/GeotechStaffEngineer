@@ -58,6 +58,9 @@ def _build(monkeypatch, model, files, **kw):
         return original(**kwargs)
 
     monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    # the review page compiles through the shared assembly (INF-31 step 8)
+    from funhouse_agent.deep import assembly
+    monkeypatch.setattr(assembly, "create_deep_agent", spy)
     agent = core.build_agent(model, {}, files, [], **kw)
     return set(agent.nodes["tools"].bound.tools_by_name), \
         captured["system_prompt"]
@@ -175,8 +178,9 @@ def test_the_review_page_never_gets_it_even_with_the_setting(
     assert "report_library" not in tools
     assert REPORT_LIBRARY_NUDGE not in prompt
     seen = {}
-    import funhouse_agent.deep.agent as deep_agent
-    monkeypatch.setattr(deep_agent, "build_deep_agent",
+    # the review page builds with its own build (INF-31 step 8)
+    import funhouse_agent.review_build as review_build
+    monkeypatch.setattr(review_build, "build_review_page_agent",
                         lambda model=None, **kw: seen.update(kw) or object())
     core.build_agent(model, {}, files, [], review_page=True)
     assert "enable_report_library" not in seen
