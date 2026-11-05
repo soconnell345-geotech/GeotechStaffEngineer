@@ -1492,7 +1492,7 @@ def _named_samples(inv: Investigation, test: Any, holes: Iterable[str] = ()
 #: (RI-107): "S-3 & S-4", "S3+S4", "S-3 and S-4", "composite of", "comp.",
 #: "combined", "mixed", "blend".
 _COMBINE_WORD = re.compile(
-    r"&|\+|\band\b|\bcompos\w*|\bcomp\b\.?|\bcombined\b|\bcomb\.|"
+    r"&|\+|/|\band\b|\bcompos\w*|\bcomp\b\.?|\bcombined\b|\bcomb\.|"
     r"\bmix(?:ed|ture)?\b|\bblend(?:ed)?\b", re.I)
 
 
@@ -1544,6 +1544,9 @@ def _combined_samples(inv: Investigation, test: Any,
             return []
         return sorted(picks, key=lambda s: (depth_m(s.top) is None,
                                             depth_m(s.top) or 0.0))
+    if str(test.sample_id or "").strip() and not _COMBINE_WORD.search(
+            str(test.sample_id)):
+        return []
     top = depth_m(test.depth_top)
     bottom = depth_m(getattr(test, "depth_bottom", None))
     if top is None or bottom is None or bottom - top <= DEPTH_TOL_M:
@@ -1557,7 +1560,8 @@ def _combined_samples(inv: Investigation, test: Any,
             else s_bottom
         if s_top <= top + DEPTH_TOL_M and s_bottom >= bottom - DEPTH_TOL_M:
             return []                       # one sample spans the interval
-        if s_top >= top - DEPTH_TOL_M and s_bottom <= bottom + DEPTH_TOL_M:
+        if top - DEPTH_TOL_M <= s_top < bottom - DEPTH_TOL_M \
+                and s_bottom <= bottom + DEPTH_TOL_M:
             inside.append(sample)
     if len(inside) < 2:
         return []

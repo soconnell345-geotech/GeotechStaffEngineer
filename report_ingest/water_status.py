@@ -184,7 +184,12 @@ def fluid_method(text: Any) -> bool:
 
 #: Kinds a fluid method can leave with no reading. A pit is dug in the open
 #: and a sounding is not drilled.
-_DRILLED_KINDS = ("boring", "well", "other")
+_DRILLED_KINDS = ("boring", "other")
+
+#: A well or piezometer put in the hole: its level is read in the pipe.
+_WELL = re.compile(
+    r"\b(?:piezometer|standpipe|(?:monitoring|observation)\s+well|"
+    r"well\s+(?:install\w*|screen\w*|construct\w*))\b", re.I)
 
 _WATER_KEY = re.compile(r"water|gwl|\bwl\b|nappe|fre[aá]tico", re.I)
 
@@ -242,7 +247,8 @@ def settle_water(inv: Any) -> List[str]:
                     f"water row added")
         return said
     method = getattr(getattr(inv, "drilling", None), "method", "") or ""
-    if not inv.water and inv.kind in _DRILLED_KINDS and fluid_method(method):
+    if not inv.water and inv.kind in _DRILLED_KINDS and fluid_method(method) \
+            and not any(_WELL.search(str(t or "")) for t in texts):
         inv.water.append(WaterLevel(
             when=NOT_MEASURED,
             note=(f"no water reading printed; drilled by {method.strip()!r}, "
