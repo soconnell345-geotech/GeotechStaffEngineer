@@ -526,8 +526,10 @@ _CALC_FIGURES = (
     "depth_axis}). Report skeleton for a bespoke report: Inputs -> Subsurface "
     "profile figure -> Method -> Results (with result figures and data plots) "
     "-> Checks. Every figure is a saved PNG whose html_img_tag html_to_pdf "
-    "embeds for you; never write '[image]', an inline <svg>, or a coloured "
-    "table standing in for a figure (html_to_pdf rejects those). If the "
+    "embeds for you; never write '[image]' or an inline <svg> (html_to_pdf "
+    "refuses those), nor a coloured table standing in for a figure "
+    "(html_to_pdf does not check for one, and it draws no backgrounds, so "
+    "the colours never reach the PDF). If the "
     "figure the task needs cannot be made with these tools, say so in the "
     "reply and record it with record_feedback when that tool is available."
 )
