@@ -994,8 +994,9 @@ class _Builder:
         self.reading = reading
         self.window = window
         #: Each sheet's own window, a sheet with no ruler included
-        #: (:func:`_sheet_windows`, RI-199). Empty: every depth is judged
-        #: against ``window``, as it always was.
+        #: (:func:`_sheet_windows`, RI-199); a sheet with no ruler is judged
+        #: on their union (:meth:`_window_for`). Empty: every depth is
+        #: judged against ``window``, as it always was.
         self.sheets: Dict[int, Tuple[float, float]] = dict(sheets or {})
         #: The sheets in :attr:`sheets` whose window is their own ruler's.
         self._ruled = {int(p) for p in ruled_pages}
@@ -1096,17 +1097,23 @@ class _Builder:
     def _window_for(self, page: Optional[int]
                     ) -> Tuple[Tuple[float, float], bool]:
         """The window a depth on ``page`` is judged against, and whether it
-        is that sheet's own ruler's. With :attr:`sheets`: the sheet's own
-        (a sheet with no ruler: what the hole's other sheets leave for it,
-        RI-199), else, for a page that is not one of the hole's, the whole
-        hole's. Without: :attr:`window`. Only asked when :meth:`_no_window`
-        is False."""
+        is a ruler's. A sheet with a ruler, and a page that is not one of
+        the hole's, are judged as they always were, on :attr:`window`, the
+        union of this answer's ruled sheets. A sheet with no ruler (RI-199)
+        is judged on the whole hole: the union of :attr:`sheets`, from the
+        ground when the first sheet has no ruler to the printed total depth
+        when the last has none. So is a depth of an answer whose own pages
+        have no ruler. Only asked when :meth:`_no_window` is False."""
+        whole = None
         if self.sheets:
-            if page is not None and int(page) in self.sheets:
-                return self.sheets[int(page)], int(page) in self._ruled
-            return ((min(lo for lo, _hi in self.sheets.values()),
-                     max(hi for _lo, hi in self.sheets.values())), True)
-        return self.window, True
+            whole = (min(lo for lo, _hi in self.sheets.values()),
+                     max(hi for _lo, hi in self.sheets.values()))
+            if (page is not None and int(page) in self.sheets
+                    and int(page) not in self._ruled):
+                return whole, False
+        if self.window is not None:
+            return self.window, True
+        return whole, True
 
     def _outside_words(self, value: float, page: Optional[int],
                        window: Tuple[float, float], own: bool) -> str:

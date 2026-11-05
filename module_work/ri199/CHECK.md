@@ -36,9 +36,14 @@ That kept every depth with no check at all.
     path is unchanged.
 - `log_reader.py:932` `_hole_total`: the hole's printed total depth.
 - `_Builder` takes two new keywords, `sheets=` and `ruled_pages=`:
-  - `_window_for(page)` (`log_reader.py:1096`) judges a depth on its own
-    sheet's window. A page that is not one of the hole's, or no page, is
-    judged on the whole hole's window.
+  - `_window_for(page)` (`log_reader.py:1096`) judges a depth on a sheet
+    WITH a ruler, or on a page that is not one of the hole's, exactly as on
+    master: on the union of the ruled sheets. A depth on a sheet with no
+    ruler is judged on the whole hole, the union of every sheet's window:
+    from the ground (first sheet ruler-less) to the printed total depth
+    (last sheet ruler-less). A depth is attached to one page, so a layer
+    whose base is on the next sheet, or a row cited one page off, must not
+    be judged on its own sheet alone (review Finding 1).
   - `_no_window()` (`log_reader.py:1091`) is True only when neither this
     answer's pages nor the hole's other sheets have a ruler.
   - The refusal and `out_of_range` wording names which window was used: "the
@@ -60,7 +65,9 @@ sheet 2 (10-20 ft) and sheet 3 (20-30 ft); the total depth is 38 ft.
 |---|---|---|---|
 | Sheet 1 at 2 ft | dropped ("outside 9.5 to 30.5") | kept at 0.5 with `out_of_range` | kept, no entry |
 | Sheet 4 at 36.5 ft | dropped | kept at 0.5 with `out_of_range` | kept, no entry |
-| Sheet 1 at 26 ft | — | — | still refused / flagged: "outside what this log's other sheets leave for page 10 ... (-0.5 to 20.5)" |
+| Sheet 4 at 41 ft (past the total depth) | dropped | kept at 0.5 with `out_of_range` | still refused / flagged: "outside what this log's other sheets leave for page 13 ... (-0.5 to 38.5)" |
+
+A hole with a ruler on every sheet is judged exactly as on master.
 
 **Tests:** `report_ingest/tests/test_ri199.py`, 13 tests.
 - Unit tests of the windows (first sheet, last sheet with and without a
@@ -68,9 +75,15 @@ sheet 2 (10-20 ft) and sheet 3 (20-30 ft); the total depth is 38 ft.
 - The builder in both modes:
   - the ruler-less ends are kept as good;
   - the old one-window gate on the same reading loses them;
-  - values truly outside their sheet still refuse or flag.
+  - a value outside the whole hole (past the total depth) still refuses or
+    flags; 25 ft on a ruled sheet, inside the ruled union, is kept as on
+    master;
+  - a hole ruled on every sheet: a layer, water and sample cited on sheet 1
+    that run into sheet 2's depths are kept at 0.9, as on master (fails on
+    the branch before the review fix).
 - A model-first `read_logs` run of two calls. The ruler-less last sheet is
-  read alone: its 33 ft sample is kept good, and its 12 ft sample is flagged.
+  read alone: its 33 ft sample is kept good, and its 41 ft sample (past the
+  total depth) is flagged.
 
 On master the file does not import (`_sheet_windows` and `_ruled_windows`
 do not exist), so every test fails.
@@ -182,7 +195,9 @@ Saved records change in three ways:
   sheets (or the ground, or the printed total depth). Today's readers no
   longer drop those samples, layers and SPT records. Model first no longer
   writes `out_of_range` entries for them or lowers them to confidence 0.5.
-  A depth truly outside its sheet is still refused or flagged. A model-first
+  A depth outside the whole hole (above the ground, past the printed total
+  depth) is still refused or flagged; a hole with a ruler on every sheet is
+  judged exactly as before. A model-first
   call whose own pages have no ruler is now checked against the hole's other
   sheets instead of not at all.
 - **The incomplete-copy note (RI-184)** no longer flags a photo appendix's

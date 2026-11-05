@@ -138,25 +138,63 @@ class TestTheBuilder:
         if checks == "refuse":
             assert [s.top.value for s in inv.samples] == [15.0]
 
-    def test_a_value_truly_outside_its_sheet_still_flags(self, checks):
-        # 26 ft cannot be on the first sheet: the next ruled sheet ends at
-        # 20.5 ft. 12 ft cannot be on the last: the last ruled sheet starts
-        # at 19.5 ft. 41 ft is past the hole's 38 ft total depth.
+    def test_a_value_outside_the_whole_hole_still_flags(self, checks):
+        # A sheet with no ruler is judged on the whole hole, the ground to
+        # the 38 ft total depth: 26 ft on the first sheet and 12 ft on the
+        # last are kept, and so is 25 ft on ruled sheet 11, which lies in
+        # the union of the ruled sheets as before RI-199. 41 ft is past the
+        # hole's total depth.
         builder, inv = _build(_reading([(10, 26.0), (13, 12.0), (13, 41.0),
                                         (11, 25.0)]), checks)
         outside = [r for r in builder.unresolved
                    if "outside" in r.get("why", "")
                    and r["what"].endswith(" top")]
-        assert sorted(r["value"] for r in outside) == [12.0, 25.0, 26.0,
-                                                       41.0]
-        own = [r for r in outside if r["value"] == 25.0][0]
-        assert "the scale on this log reads (9.5 to 20.5)" in own["why"]
-        other = [r for r in outside if r["value"] == 26.0][0]
-        assert "other sheets leave for page 10" in other["why"]
+        assert [r["value"] for r in outside] == [41.0]
+        assert "other sheets leave for page 13" in outside[0]["why"]
+        assert "(-0.5 to 38.5)" in outside[0]["why"]
+        good = {s.top.value: s.prov.confidence for s in inv.samples}
         if checks == "refuse":
-            assert inv.samples == []
+            assert sorted(good) == [12.0, 25.0, 26.0]
         else:
-            assert all(s.prov.confidence == 0.5 for s in inv.samples)
+            assert good[41.0] == 0.5
+            assert all(good[v] > 0.5 for v in (12.0, 25.0, 26.0))
+
+
+@pytest.mark.parametrize("checks", ["refuse", "flag"])
+def test_a_hole_ruled_on_every_sheet_is_judged_as_before(checks):
+    """Two sheets, both ruled (0-10 and 10-20 ft). A layer, water and a
+    sample cited on sheet 1 that run to sheet 2's depths are judged on the
+    union of the ruled sheets, as before RI-199: nothing is refused or
+    flagged."""
+    pages = [20, 21]
+    grid = _Grid({20: _Ruler(0.0), 21: _Ruler(10.0)})
+    ruled = _ruled_windows(_Doc(), grid, pages)
+    reading = LogReading.model_validate({
+        "investigation_id": "QX-7", "kind": "boring", "depth_unit": "ft",
+        "units_known": True, "total_depth": 20.0,
+        "layers": [{"top": 6.0, "bottom": 16.0,
+                    "description": "made-up brown sandy clay",
+                    "prov": {"page": 20, "bbox": [10, 20, 90, 30]}}],
+        "water": [{"depth": 17.0, "when": "while_drilling",
+                   "prov": {"page": 20, "bbox": [10, 40, 90, 50]}}],
+        "samples": [{"sample_id": "S-1", "top": 14.0, "bottom": 15.5,
+                     "kind": "spt",
+                     "prov": {"page": 20, "bbox": [10, 60, 90, 70]}}],
+        "pages_read": pages})
+    builder = _Builder(reading, _depth_window(_Doc(), grid, pages), pages,
+                       "R-made-up", slack=SLACK, checks=checks,
+                       sheets=_sheet_windows(ruled, pages, 20.0, SLACK),
+                       ruled_pages=list(ruled))
+    inv = builder.build()
+    assert not [r for r in builder.unresolved
+                if "outside" in r.get("why", "")]
+    assert [(l.top.value, l.bottom.value) for l in inv.layers] == [(6.0,
+                                                                    16.0)]
+    assert [s.top.value for s in inv.samples] == [14.0]
+    assert [w.depth.value for w in inv.water] == [17.0]
+    if checks == "flag":
+        assert inv.layers[0].prov.confidence == 0.9
+        assert inv.samples[0].prov.confidence == 0.9
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +205,7 @@ def test_model_first_judges_a_ruler_less_call_on_the_hole_s_other_sheets(
         monkeypatch):
     """Two calls of one hole: the first on the ruled sheets 11-12, the
     second on the ruler-less last sheet 13 alone. Its 33 ft sample is good;
-    its 12 ft sample cannot be on that sheet."""
+    its 41 ft sample is past the hole's 38 ft total depth."""
     import report_ingest.visual_scales as vs
     from report_ingest import model_first as mf
     from report_ingest import model_first_read as mfr
@@ -186,7 +224,7 @@ def test_model_first_judges_a_ruler_less_call_on_the_hole_s_other_sheets(
                          "prov": {"page": page}} for page, top in rows]})
 
     engine = FakeEngine([{"final": log([(11, 15.0), (12, 25.0)])},
-                         {"final": log([(13, 33.0), (13, 12.0)])}])
+                         {"final": log([(13, 33.0), (13, 41.0)])}])
     engine.accepts_pdf = False
 
     class Doc(_Doc):
@@ -199,9 +237,9 @@ def test_model_first_judges_a_ruler_less_call_on_the_hole_s_other_sheets(
     blob = mfr.read_logs(Doc(), groups, engine, report_id="R-made-up")[0]
     tops = {s["top"]["value"]: s["prov"]["confidence"]
             for s in blob["investigation"]["samples"]}
-    assert set(tops) == {15.0, 25.0, 33.0, 12.0}
+    assert set(tops) == {15.0, 25.0, 33.0, 41.0}
     outside = [r for r in blob["unresolved"]
                if "outside" in r.get("why", "")
                    and r["what"].endswith(" top")]
-    assert [r["value"] for r in outside] == [12.0]
-    assert tops[33.0] > 0.5 and tops[12.0] == 0.5
+    assert [r["value"] for r in outside] == [41.0]
+    assert tops[33.0] > 0.5 and tops[41.0] == 0.5
