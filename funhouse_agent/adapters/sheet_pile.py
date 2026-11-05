@@ -219,13 +219,17 @@ _GWT_PASSIVE = {
         "Groundwater depth on the passive (excavated) side, m below the top "
         "of the wall, the same datum as gwt_depth_active. A depth less than "
         "excavation_depth is water standing in front of the wall above the "
-        "dredge line: its pressure acts on the wall from that level down and "
-        "the soil below the dredge line is submerged (UFC 3-220-20 Fig. "
-        "4-41, p. 242: water levels can differ on the two sides; its "
-        "example Fig. 4-43, p. 245, has water 5 ft below the top on both "
-        "sides). The net water pressure is the retained side's less this "
-        "side's, so the same depth on both sides (balanced water) gives "
-        "none. Left out: the excavation level, or gwt_depth_active where "
+        "dredge line: its pressure, gamma_w times the depth below that "
+        "level, acts on the wall from there down (UFC 3-220-20 Sec. 4-4.1, "
+        "p. 199: 'Water applies a triangular pressure distribution "
+        "equivalent to a soil with a unit weight of 62.4 pcf and an earth "
+        "pressure coefficient of unity') and the soil below the dredge line "
+        "is submerged (Fig. 4-41, p. 242: water levels can differ on the two "
+        "sides; its example Fig. 4-43, p. 245, has water 5 ft below the top "
+        "on both sides). The net water pressure is the retained side's less "
+        "this side's (Figs. 4-5 and 4-6, p. 183: 'Net water pressure = u = "
+        "gamma_w z2'), so the same depth on both sides (balanced water) "
+        "gives none. Left out: the excavation level, or gwt_depth_active where "
         "that is deeper (no water on either side when gwt_depth_active is "
         "left out too), so no water stands in front of the wall."),
 }
@@ -245,7 +249,7 @@ METHOD_INFO = {
             "log_spiral_source": _LOG_SPIRAL_SOURCE,
             "embedment_increase": {"type": "float", "required": False, "default": 1.2, "description": "D / D0, the multiplier on the embedment from moment equilibrium: 1.2 (default), as the Caltrans Trenching and Shoring Manual (7-5.02 step 3, p. 7-11: 'The 20 percent increase is not a factor of safety'; its Example 7-3 takes it after FS 1.3 on the moments) and UFC 3-220-20 (Fig. 4-41 step 6, p. 242: 'Increase D by 20% to allow for dredging, scour, etc.'; its example Fig. 4-43 takes it after phi'allow = atan(tan 35 deg / 1.5) = 25 deg, Kp 3.6) both print it beside a factor of safety on the passive side. FOS_passive divides the passive pressure, UFC Fig. 4-41 step 2's alternative to phi'allow. Must be >= 1.0."},
         },
-        "returns": {"embedment_depth_m": "Design embedment D = embedment_increase x embedment_converged_m (D0, where moments balance about the pivot O, the Caltrans T&S Simplified Method 7-5.02).", "embedment_converged_m": "D0.", "max_moment_kNm_per_m": "Maximum bending moment, at zero shear on the factored diagram (passive / FOS_passive) to D0, as UFC 3-220-20 Fig. 4-41 step 5 takes it; the Caltrans Example 7-3 takes it at FS = 1.0 instead, a smaller moment (soe cantilever_excavation reports both).", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources; with 'coulomb' or 'log_spiral': each passive-side layer's wall friction, given or taken, with its Kp at delta = 0 and at the table's other rows. Tell the user."},
+        "returns": {"embedment_depth_m": "Design embedment D = embedment_increase x embedment_converged_m (D0, where moments balance about the pivot O, the Caltrans T&S Simplified Method 7-5.02).", "embedment_converged_m": "D0.", "max_moment_kNm_per_m": "Maximum bending moment, at zero shear on the factored diagram (passive / FOS_passive) to D0, as UFC 3-220-20 Fig. 4-41 step 5 takes it; the Caltrans Example 7-3 takes it at FS = 1.0 instead, a smaller moment (soe cantilever_excavation reports both).", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources; with 'coulomb' or 'log_spiral': each passive-side layer's wall friction, given or taken, with its Kp at delta = 0 and at the table's other rows; whenever either side has water: the excavated side's water depth taken (gwt_depth_passive), given or left out, with its basis. Tell the user."},
     },
     "anchored_wall": {
         "category": "Sheet Pile",
@@ -261,7 +265,7 @@ METHOD_INFO = {
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi). 'coulomb' and 'log_spiral' take each layer's wall friction (layers: wall_friction_deg or interface_soil; what a layer giving neither takes is in the layers description)."},
             "log_spiral_source": _LOG_SPIRAL_SOURCE,
         },
-        "returns": {"embedment_depth_m": "Required embedment.", "anchor_force_kN_per_m": "Anchor force.", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources, and UFC 3-220-20 p. 260 on tied-back walls; with 'coulomb' or 'log_spiral': each passive-side layer's wall friction, given or taken, with its Kp at delta = 0 and at the table's other rows. Tell the user."},
+        "returns": {"embedment_depth_m": "Required embedment.", "anchor_force_kN_per_m": "Anchor force.", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources, and UFC 3-220-20 p. 260 on tied-back walls; with 'coulomb' or 'log_spiral': each passive-side layer's wall friction, given or taken, with its Kp at delta = 0 and at the table's other rows; whenever either side has water: the excavated side's water depth taken (gwt_depth_passive), given or left out, with its basis. Tell the user."},
     },
 }
 

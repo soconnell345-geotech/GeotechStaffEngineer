@@ -179,8 +179,12 @@ dredge line gamma_w (H - h)). Now (`passive_water_level`,
 `passive_water_pressure` in `cantilever.py`) water standing in front of the
 wall presses on the excavated face from its level down, above and below the
 dredge line, and the passive soil below the dredge line takes gamma' from
-the dredge line (unchanged). The net water pressure is the retained side's
-less the excavated side's, so balanced water gives none. Left out,
+the dredge line (unchanged). Water pressure is gamma_w times the depth below
+the level (UFC 3-220-20 Sec. 4-4.1, p. 199: "a triangular pressure
+distribution equivalent to a soil with a unit weight of 62.4 pcf and an earth
+pressure coefficient of unity"). The net water pressure is the retained side's
+less the excavated side's (Figs. 4-5 and 4-6, p. 183: "Net water pressure =
+u = gamma_w z2"), so balanced water gives none. Left out,
 `gwt_depth_passive` is the excavation level, or `gwt_depth_active` where that
 is deeper (none when both are left out): exactly the answer before GM-296.
 A level at or below the dredge line also gives exactly the old answer (the

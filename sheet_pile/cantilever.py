@@ -174,14 +174,19 @@ PASSIVE_WATER_BASIS = (
     "the same on both sides of the sheet pile'. Water standing above the "
     "dredge line in front of the wall pushes on the wall from there down "
     "(gamma_w times the depth below that level, on the face above the "
-    "dredge line and on down below it); the soil below the dredge line is "
-    "submerged, so its effective stress grows by gamma' from the dredge "
-    "line. The net water pressure is the retained side's minus the "
-    "excavated side's, so the same level on both sides gives none. Left "
-    "out, the excavated side's water stands at the excavation level, or at "
-    "the retained side's level where that is deeper (no water on either "
-    "side when gwt_depth_active is left out too): the answer the tool gave "
-    "before GM-296, with no water standing in front of the wall")
+    "dredge line and on down below it: UFC 3-220-20 Sec. 4-4.1, p. 199, "
+    "'Water applies a triangular pressure distribution equivalent to a soil "
+    "with a unit weight of 62.4 pcf and an earth pressure coefficient of "
+    "unity'); the soil below the dredge line is submerged, so its effective "
+    "stress grows by gamma' from the dredge line. The net water pressure is "
+    "the retained side's minus the excavated side's (UFC 3-220-20 Sec. "
+    "4-4.1, p. 199, and Figs. 4-5 and 4-6, p. 183: 'Net water pressure = u "
+    "= gamma_w z2' where 'Inboard and outboard water levels may differ'), "
+    "so the same level on both sides gives none. Left out, the excavated "
+    "side's water stands at the excavation level, or at the retained side's "
+    "level where that is deeper (no water on either side when "
+    "gwt_depth_active is left out too), so no water stands in front of the "
+    "wall")
 
 
 def passive_water_level(gwt_depth_active: Optional[float],
@@ -204,8 +209,10 @@ def passive_water_pressure(z: float, excavation_depth: float,
                            gamma_w: float) -> float:
     """The water pressure on the excavated face of the wall at depth ``z``
     from its top (GM-296): gamma_w (z - level) below the level, on the
-    face above the dredge line where the water stands there, else zero.
-    For a level at or below the dredge line this is the expression the
+    face above the dredge line where the water stands there, else zero
+    (UFC 3-220-20 Sec. 4-4.1, p. 199; the walls take the net, Figs. 4-5
+    and 4-6, p. 183: 'Net water pressure = u = gamma_w z2'). For a level
+    at or below the dredge line this is the expression the
     walls used before GM-296, term for term."""
     if gwt_passive is None:
         return 0.0

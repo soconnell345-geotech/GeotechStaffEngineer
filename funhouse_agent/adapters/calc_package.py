@@ -1216,6 +1216,10 @@ def _assumed_inputs(params: dict, run: "_ToolRun" = None, result=None,
             continue
         spec = declared.get(name) or {}
         case, source = spec.get("when_absent"), spec.get("default_from")
+        from funhouse_agent.dispatch import absent_case
+        if source and value != absent_case(spec, declared) \
+                and value != value_of(source):
+            source = None   # the module took another value (``took``)
         if case:
             out.append({"input": _input_words(name, declared),
                         "value": case["case"],
