@@ -116,8 +116,40 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-10-15; last release 2026-10-09) — 5.33.0 RELEASED with planlens 0.13.0 (pin >=0.13) and geotech-references 1.4.1 (pin >=1.4.1): hardened for OTHER testers on Tiny Apps by live smoke waves (per-user isolation, per-tester Prompter keys, one final answer per turn, Word/Excel in and out, tool errors never end a turn, faster vision, rotated-sheet markups) plus the brief-5 fixes and engineering fixes (GEC-12 Fig 7-15, sheet-pile water table, fem2d consolidation, downdrag basis); all review switches still OFF; before it 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-11-04; release 5.34.0) — 5.34.0 with planlens 0.14.0 (pin >=0.14) and geotech-references 1.5.0 (pin >=1.5.0): the geotech calc modules checked against their printed references (many answers move; release notes by module in HANDOFF §0a-current item 0), report ingest model-first by default, GSE on Foundry (installs on numpy 1.26, conversations saved to a Foundry dataset); review switches still OFF; before it 5.33.0 RELEASED with planlens 0.13.0 (pin >=0.13) and geotech-references 1.4.1 (pin >=1.4.1): hardened for OTHER testers on Tiny Apps by live smoke waves (per-user isolation, per-tester Prompter keys, one final answer per turn, Word/Excel in and out, tool errors never end a turn, faster vision, rotated-sheet markups) plus the brief-5 fixes and engineering fixes (GEC-12 Fig 7-15, sheet-pile water table, fem2d consolidation, downdrag basis); all review switches still OFF; before it 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
+- **5.34.0 (2026-11-04; tag `v5.34.0` on branch `release/5.34.0`) with
+  planlens 0.14.0 (tag `v0.14.0`) and geotech-references 1.5.0 (tag
+  `v1.5.0`), both published first; pins `planlens>=0.14`,
+  `geotech-references>=1.5.0`.** It is everything on master since 5.33.0:
+  the "Master after 5.33.0" paragraph under 5.33.0 below is its content.
+  Release gate on the exact tree, the wheel checks and the release notes
+  (what changes a calculation's answer, by module): HANDOFF §0a-current
+  item 0.
+  - **What a user notices:**
+    - the geotech calc modules checked against their printed references
+      (GM-281 to GM-303 and the earlier GM fixes), so many answers move:
+      bearing capacity, settlement, driven piles, drilled shafts,
+      downdrag, lateral piles, pile groups, wave equation, retaining and
+      MSE walls, soe and sheet piles, ground improvement, seismic,
+      soil correlations, pavements; compare a 5.33.0 answer only with the
+      release notes in hand;
+    - report ingest is model-first by default for every stage, today's
+      readers one setting away per stage;
+    - GSE on Foundry: installs on numpy 1.26 (INF-53) and saves
+      conversations to a Foundry dataset (INF-38; the restore round trip
+      in the published app is still to confirm);
+    - `GEOTECH_FIGURE_HELPER`, `GEOTECH_PLOT_CODE` and
+      `GEOTECH_JUDGMENT_CALLS` are on by default (since 2026-10-20);
+      the review switches stay off.
+  - **Install changes:** numpy floor 1.26; the agent-stack caps at the
+    versions tested (deepagents <0.7.25, langchain <1.4.6, openai
+    <3.29.1); python-ags4 an extra (`[ags4]`) and openpyxl core, so the
+    app installs beside CfA's pandas 3.0.2; pyrotd dropped; PyMuPDF
+    `>=1.27.2,<2` (the cap stays until INF-18's host probe). No new
+    third-party package.
+  - **Held:** no slope_stability changes after 2026-10-18 (GM-140); the
+    Tiny Apps tester deploy waits on CfA (OWN-44).
 - **5.33.0 RELEASED 2026-10-09 (tag `v5.33.0`) with planlens 0.13.0 (tag
   `v0.13.0`) and geotech-references 1.4.1 (tag `v1.4.1`), both published
   first; pins `planlens>=0.13`, `geotech-references>=1.4.1`; no new
@@ -158,8 +190,8 @@ Key conventions:
     behind the IIS proxy. The first-hour check is in
     `module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md`.
 
-  - **Master after 5.33.0 (next train, unreleased; the owner holds the
-    release, 2026-10-14):** downdrag neutral-plane methods (a282d48) and
+  - **Master after 5.33.0 (the train released as 5.34.0; the owner held
+    the release from 2026-10-14 to 2026-11-04):** downdrag neutral-plane methods (a282d48) and
     fem2d per-stage movements (4bf710c). 2026-10-12 night: the default review
     page's zoom wording, reading helper and answering 40-call budget
     (ae50842); the markup check against the printed thing (da28a69); a
@@ -321,8 +353,8 @@ Key conventions:
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done" and `BACKLOG_DONE.md`.
     Open next: Foundry brief 6, which measures all of this, is drafted
-    (`../foundry_handoff/AI_FDE_BRIEF_6.md`); its rc wheels are not built
-    while the owner holds the release (EV-13, DR-05).
+    (`../foundry_handoff/AI_FDE_BRIEF_6.md`); it can now run on the
+    5.34.0 wheels (EV-13, DR-05).
 
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".
 - **5.32.1 RELEASED 2026-10-08 (tag `v5.32.1`, branch `release/5.32.1`,
@@ -2066,9 +2098,9 @@ Run: `pytest foundry_test_harness/ -v`
 
 Everything that reads a PDF, an image or a DXF lives in the separate,
 published package **planlens** (`C:/dev/planlens`,
-PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.13` since
-5.33.0, and main carries unreleased work past 0.13.0 (see its CHANGELOG;
-BACKLOG PL-22); earlier, `planlens>=0.7` since
+PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.14` since
+5.34.0 (see its CHANGELOG), `planlens>=0.13` since 5.33.0; earlier,
+`planlens>=0.7` since
 5.26.0 — 0.7.0 adds `annotate_document` / `document.markup_writer`, the
 WRITE side of the review markups, with the same dependencies as 0.6.0 — and
 `planlens>=0.6` since
