@@ -51,7 +51,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -862,6 +862,26 @@ def _brief(grid: Any, pages: Sequence[int], ledger: Sequence[str],
 # turning the reading into the record
 # ---------------------------------------------------------------------------
 
+def _ruled_windows(doc: Any, grid: Any, pages: Sequence[int]
+                   ) -> Dict[int, Tuple[float, float]]:
+    """``page -> (lo, hi)``: what depths each sheet of this log WITH a ruler
+    can carry (see :func:`_depth_window`); a sheet with no ruler is absent."""
+    out: Dict[int, Tuple[float, float]] = {}
+    rulers = getattr(grid, "rulers", None) or {}
+    for page in pages:
+        ruler = rulers.get(page)
+        if ruler is None:
+            continue
+        try:
+            height = float(doc.summary(page).height)
+        except Exception:                       # a page that will not measure
+            height = 792.0                      # falls back to a letter sheet
+        edges = [ruler.value_at(0.0), ruler.value_at(height)]
+        slack = DEPTH_SLACK * abs(ruler.step or 0.0)
+        out[int(page)] = (min(edges) - slack, max(edges) + slack)
+    return out
+
+
 def _depth_window(doc: Any, grid: Any, pages: Sequence[int]
                   ) -> Optional[Tuple[float, float]]:
     """What depths the paper of this log can carry, over all its sheets.
@@ -874,26 +894,73 @@ def _depth_window(doc: Any, grid: Any, pages: Sequence[int]
     not the range of the placed cells, which is narrower still.
 
     None when no page of this log has a ruler: there is then no depth on the
-    log at all, and every depth the reader returns is refused.
+    log at all, and every depth the reader returns is refused. This is the
+    union over the sheets WITH a ruler; :func:`_sheet_windows` gives each
+    sheet its own, a sheet with none included (RI-199).
     """
-    lo: Optional[float] = None
-    hi: Optional[float] = None
-    for page in pages:
-        ruler = grid.rulers.get(page)
-        if ruler is None:
-            continue
-        try:
-            height = float(doc.summary(page).height)
-        except Exception:                       # a page that will not measure
-            height = 792.0                      # falls back to a letter sheet
-        edges = [ruler.value_at(0.0), ruler.value_at(height)]
-        slack = DEPTH_SLACK * abs(ruler.step or 0.0)
-        low, high = min(edges) - slack, max(edges) + slack
-        lo = low if lo is None else min(lo, low)
-        hi = high if hi is None else max(hi, high)
-    if lo is None or hi is None:
+    ruled = _ruled_windows(doc, grid, pages)
+    if not ruled:
         return None
-    return (lo, hi)
+    return (min(lo for lo, _hi in ruled.values()),
+            max(hi for _lo, hi in ruled.values()))
+
+
+def _sheet_windows(ruled: Mapping[int, Tuple[float, float]],
+                   pages: Sequence[int],
+                   total_depth: Optional[float] = None,
+                   slack: float = 0.0) -> Dict[int, Tuple[float, float]]:
+    """``page -> (lo, hi)`` for EVERY sheet of one hole (RI-199).
+
+    A sheet with a ruler keeps its own window (``ruled``, from
+    :func:`_ruled_windows`). A sheet with none is a continuation of the
+    hole's other sheets, so its depths lie between what they leave for it:
+    from the top of the nearest earlier sheet with a ruler (the ground,
+    ``-slack``, when there is none) to the bottom of the nearest later one;
+    after the last sheet with a ruler, to the hole's printed total depth
+    plus ``slack``, or, with no total depth, as many sheet-lengths of that
+    last ruler as the sheet lies after it. Empty when no sheet has a ruler:
+    there is then nothing to continue, and the gate is what it was.
+    """
+    if not ruled:
+        return {}
+    order = sorted({int(p) for p in pages} | set(ruled))
+    marked = sorted(ruled)
+    total = (float(total_depth) if total_depth is not None
+             and float(total_depth) > 0.0 else None)
+    out: Dict[int, Tuple[float, float]] = {}
+    for page in order:
+        if page in ruled:
+            out[page] = ruled[page]
+            continue
+        before = [p for p in marked if p < page]
+        after = [p for p in marked if p > page]
+        lo = ruled[before[-1]][0] if before else -abs(slack)
+        if after:
+            hi = ruled[after[0]][1]
+        else:
+            last_lo, last_hi = ruled[before[-1]]
+            if total is not None:
+                hi = max(total + abs(slack), last_hi)
+            else:
+                sheets = sum(1 for p in order if before[-1] < p <= page)
+                hi = last_hi + (last_hi - last_lo) * sheets
+        out[page] = (lo, hi)
+    return out
+
+
+def _hole_total(*held: Any) -> Optional[float]:
+    """The hole's printed total depth, the first of ``held`` (readings or
+    investigations, a number or a Quantity) that gives one above 0; None
+    when none does (RI-199)."""
+    for item in held:
+        total = getattr(item, "total_depth", None)
+        total = getattr(total, "value", total)
+        try:
+            if total is not None and float(total) > 0.0:
+                return float(total)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def _depth_slack(grid: Any, pages: Sequence[int]) -> float:
@@ -940,9 +1007,18 @@ class _Builder:
                  pages: Sequence[int], report_id: str,
                  no_ruler: bool = False,
                  printed: Optional[PrintedDepths] = None, *,
-                 slack: float = 0.0, checks: str = "refuse") -> None:
+                 slack: float = 0.0, checks: str = "refuse",
+                 sheets: Optional[Mapping[int, Tuple[float, float]]] = None,
+                 ruled_pages: Sequence[int] = ()) -> None:
         self.reading = reading
         self.window = window
+        #: Each sheet's own window, a sheet with no ruler included
+        #: (:func:`_sheet_windows`, RI-199); a sheet with no ruler is judged
+        #: on their union (:meth:`_window_for`). Empty: every depth is
+        #: judged against ``window``, as it always was.
+        self.sheets: Dict[int, Tuple[float, float]] = dict(sheets or {})
+        #: The sheets in :attr:`sheets` whose window is their own ruler's.
+        self._ruled = {int(p) for p in ruled_pages}
         self.flag = check_mode(checks) == "flag"
         #: How far past the total depth a water, casing or caved depth may
         #: lie under ``flag``: the ruler window's own slack.
@@ -1032,11 +1108,47 @@ class _Builder:
             return None
         return depth
 
+    def _no_window(self) -> bool:
+        """No ruler on any sheet this depth can be judged against: not on
+        this answer's pages, nor (RI-199) on the hole's other sheets."""
+        return self.window is None and not self.sheets
+
+    def _window_for(self, page: Optional[int]
+                    ) -> Tuple[Tuple[float, float], bool]:
+        """The window a depth on ``page`` is judged against, and whether it
+        is a ruler's. A sheet with a ruler, and a page that is not one of
+        the hole's, are judged as they always were, on :attr:`window`, the
+        union of this answer's ruled sheets. A sheet with no ruler (RI-199)
+        is judged on the whole hole: the union of :attr:`sheets`, from the
+        ground when the first sheet has no ruler to the printed total depth
+        when the last has none. So is a depth of an answer whose own pages
+        have no ruler. Only asked when :meth:`_no_window` is False."""
+        whole = None
+        if self.sheets:
+            whole = (min(lo for lo, _hi in self.sheets.values()),
+                     max(hi for _lo, hi in self.sheets.values()))
+            if (page is not None and int(page) in self.sheets
+                    and int(page) not in self._ruled):
+                return whole, False
+        if self.window is not None:
+            return self.window, True
+        return whole, True
+
+    def _outside_words(self, value: float, page: Optional[int],
+                       window: Tuple[float, float], own: bool) -> str:
+        lo, hi = window
+        if own:
+            return (f"depth {value:g} is outside what the scale on this "
+                    f"log reads ({lo:g} to {hi:g})")
+        return (f"depth {value:g} is outside what this log's other sheets "
+                f"leave for page {page}, which has no depth scale of its "
+                f"own ({lo:g} to {hi:g})")
+
     def _ruled_depth(self, value: float, what: str, page: Optional[int],
                      kind: str) -> Optional[Quantity]:
         """:meth:`_depth` under ``refuse``, before the ground surface: the
         ruler's window, a page's printed depths, a pit with no scale."""
-        if self.window is None and self.no_scale_pit:
+        if self._no_window() and self.no_scale_pit:
             if value < 0.0 or not self.unit:
                 self.unresolved.append({
                     "what": what, "page": page, "value": value,
@@ -1052,7 +1164,7 @@ class _Builder:
                        "is the one printed on the sheet and nothing checked "
                        "it against a ruler"})
             return Quantity(value=value, unit=self.unit)
-        if self.window is None:
+        if self._no_window():
             accepted = self._printed(value, what, page, kind)
             if accepted is not None:
                 return accepted
@@ -1065,16 +1177,16 @@ class _Builder:
                                                   kind)),
                 "refused_by": "python"})
             return None
-        lo, hi = self.window
+        window, own = self._window_for(page)
+        lo, hi = window
         if not (lo <= value <= hi):
             accepted = self._printed(value, what, page, kind)
             if accepted is not None:
                 return accepted
             self.unresolved.append({
                 "what": what, "page": page, "value": value,
-                "why": f"depth {value:g} is outside what the scale on this "
-                       f"log reads ({lo:g} to {hi:g}); refused rather than "
-                       f"accepted",
+                "why": f"{self._outside_words(value, page, window, own)}; "
+                       f"refused rather than accepted",
                 "refused_by": "python"})
             return None
         return Quantity(value=value, unit=self.unit)
@@ -1171,14 +1283,14 @@ class _Builder:
                 self._doubt(what, page, value,
                             f"depth {value:g} is below the hole's total "
                             f"depth {bottom:g}")
-        elif self.window is None:
+        elif self._no_window():
             self._unchecked += 1
         else:
-            lo, hi = self.window
+            window, own = self._window_for(page)
+            lo, hi = window
             if not (lo <= value <= hi):
                 self._doubt(what, page, value,
-                            f"depth {value:g} is outside what the scale on "
-                            f"this log reads ({lo:g} to {hi:g})")
+                            self._outside_words(value, page, window, own))
         return Quantity(value=value, unit=self.unit)
 
     def _total_depth(self) -> Optional[float]:
@@ -2041,8 +2153,15 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     from report_ingest.log_holes import drop_other_hole_rows
 
     reading, other_rows = drop_other_hole_rows(reading, own_hole, foreign)
+    # Each sheet's window, a sheet with no ruler judged on what the hole's
+    # other sheets leave for it (RI-199).
+    ruled = _ruled_windows(doc, grid, pages)
     builder = _Builder(reading, _depth_window(doc, grid, pages), pages,
-                       report_id, no_ruler=no_ruler, printed=printed)
+                       report_id, no_ruler=no_ruler, printed=printed,
+                       sheets=_sheet_windows(
+                           ruled, pages, _hole_total(reading, floor),
+                           _depth_slack(grid, pages)),
+                       ruled_pages=list(ruled))
     model_investigation = builder.build()
     if other_rows:
         gone = {int(row["page"]) for row in other_rows}

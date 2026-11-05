@@ -796,7 +796,9 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     budget": model first makes one call a group. So a page goes back once,
     and a call that hands back every page it was sent gives no log."""
     from report_ingest.log_reader import (LogReadResult, _Builder,
-                                          _depth_slack, _depth_window)
+                                          _depth_slack, _depth_window,
+                                          _hole_total, _ruled_windows,
+                                          _sheet_windows)
     from report_ingest.visual_scales import log_grid_for
 
     caller = _Caller("logs", doc, engine, report_id, route, pdf,
@@ -819,6 +821,21 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         grid_warnings: List[str] = []
         placement: List[Any] = []
         returned: List[Dict[str, Any]] = []
+        # Planlens' grid, no call (visual scales are given no engine), for
+        # each call's pages; and every sheet's depth window over the WHOLE
+        # hole, so a sheet with no ruler is judged on what the hole's other
+        # sheets leave for it, in whichever call it was read (RI-199).
+        grids = {tuple(call_pages): log_grid_for(doc, call_pages)[0]
+                 for call_pages, _reading in answers}
+        ruled: Dict[int, Tuple[float, float]] = {}
+        for call_pages, grid in grids.items():
+            ruled.update(_ruled_windows(doc, grid, call_pages))
+        hole_slack = max([_depth_slack(grid, call_pages)
+                          for call_pages, grid in grids.items()] or [0.0])
+        hole_pages = sorted({p for call_pages in grids for p in call_pages})
+        sheets = _sheet_windows(
+            ruled, hole_pages,
+            _hole_total(*(reading for _p, reading in answers)), hole_slack)
         for call_pages, reading in sorted(answers, key=lambda a: a[0][0]):
             back, other = _handed_back(reading, call_pages)
             if back:
@@ -829,11 +846,12 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                     if name in type(reading).model_fields})
             # Planlens' grid, no call (visual scales are given no engine):
             # each call's depth window and its slack.
-            grid, _info = log_grid_for(doc, call_pages)
+            grid = grids[tuple(call_pages)]
             builder = _Builder(
                 reading, _depth_window(doc, grid, call_pages), call_pages,
                 report_id, no_ruler=not bool(getattr(grid, "rulers", None)),
-                slack=_depth_slack(grid, call_pages), checks="flag")
+                slack=_depth_slack(grid, call_pages), checks="flag",
+                sheets=sheets, ruled_pages=list(ruled))
             investigation, extra = apply_log_additions(reading,
                                                        builder.build())
             extra = _entries_on_pages(extra, builder)

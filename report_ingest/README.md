@@ -3174,7 +3174,9 @@ without `redo`, so compare two settings in two `out_dir`s.
 
 **`## Calls by step`** (BACKLOG RI-21) gives the model calls of each report and
 of each report bound inside it (`bound1`, ...) step by step: triage, the
-vision pass, the review, a bound report's identity call, and each reader as
+vision pass, model first's page describer and range labeller (`describe`,
+`ranges`, read off `labels.json`'s cost and a bound document's own ranges
+file), the review, a bound report's identity call, and each reader as
 calls/items. They are read off the step and item files, which `run.json`
 keeps under `calls_by_step`; which reader wrote an item is told by the
 item's shape, so a pit or cone sheet the log reader read counts as `log`.
