@@ -73,7 +73,8 @@ __all__ = [
     "LIST_ENV", "CODE_MAP_SUFFIX", "DATA_TYPES", "STATUSES", "READINGS",
     "QuestionListError", "Part", "Question", "Gate", "QuestionList", "Answer",
     "QuestionRun", "load_questions", "answer_schema", "screening_questions",
-    "main_questions", "closed_rows", "code_answers", "compare",
+    "main_questions", "closed_rows", "code_answers", "bound_records",
+    "compare",
     "pages_to_read", "page_texts", "page_list_text", "run_questions",
     "answer_sheet",
 ]
@@ -977,11 +978,145 @@ def _captions(kind: str) -> Callable[[_Source, Question], Answer]:
 
     def read(src: _Source, q: Question) -> Answer:
         counted = src.record.narrative.counted
-        if kind not in counted:
-            return _not_given(f"no caption count of {kind} on the record")
-        return _given(int(counted[kind]), (),
-                      f"{kind} captions counted in the main body")
+        if kind in counted:
+            return _given(int(counted[kind]), (),
+                          f"{kind} captions counted in the main body")
+        # A record that kept the labels and not the count (a model-first
+        # narrative, BACKLOG RI-102) is counted off its labels.
+        labels = src.record.narrative.caption_labels
+        if kind in labels:
+            return _given(len(labels[kind]), (),
+                          f"{kind} caption labels kept on the record")
+        return _not_given(f"no caption count of {kind} on the record")
     return read
+
+
+#: The caption kinds the record keeps labels of (BACKLOG RI-102).
+_CAPTION_KINDS = ("tables", "figures", "appendix_figures")
+
+
+def _shaped(q: Question, items: Sequence[Any]) -> Any:
+    """``items`` (text) in the shape of the row's Data Type: a list for a
+    list, a count for a whole number, else one line of text."""
+    if q.data_type in ("list of strings",):
+        return list(items)
+    if q.data_type in ("integer",):
+        return len(items)
+    return "; ".join(str(i) for i in items)
+
+
+def _caption_labels(kind: str) -> Callable[[_Source, Question], Answer]:
+    if kind not in _CAPTION_KINDS:
+        raise ValueError("give the caption kind, from: "
+                         + ", ".join(_CAPTION_KINDS))
+    words = kind.replace("_", " ")
+
+    def read(src: _Source, q: Question) -> Answer:
+        labels = list(src.record.narrative.caption_labels.get(kind) or ())
+        if not labels:
+            return _not_given(
+                f"no {words} caption label on the record; the caption count "
+                f"reads the pages the narrative was read from")
+        return _given(_shaped(q, labels), (),
+                      f"the {words} caption labels the caption count saw on "
+                      f"the pages the narrative was read from")
+    return read
+
+
+def _document_type(src: _Source, q: Question) -> Answer:
+    said = src.record.document.document_type
+    if not said:
+        return _not_given("triage's document type is not on the record")
+    note = "the document type triage gave the file"
+    value: Any = said
+    if q.options and said not in q.options:
+        value = _closest(q.options, said)
+        if value is None:
+            return _not_given(f"triage's {said!r} is not near one option of "
+                              f"the row's list")
+        note += f" ({said!r})"
+    if q.data_type == "list of strings":
+        value = [value]
+    return _given(value, (), note)
+
+
+def _appendix_list(src: _Source, q: Question) -> Answer:
+    rows = list(src.record.document.appendices)
+    if not rows:
+        return _not_given("no list of appendices on the record; the document "
+                          "may print none")
+    pages = [r.page + 1 for r in rows if r.page is not None]
+    if q.data_type in ("list of records", "dictionary"):
+        notes: List[str] = []
+        out = [_fill(q, {"number": r.number, "letter": r.number,
+                         "title": r.title, "name": r.title,
+                         "printed_page": r.printed_page,
+                         "pdf_page": None if r.page is None else r.page + 1,
+                         "pdf_pages": [] if r.page is None else [r.page + 1]},
+                     notes) for r in rows]
+        return _given(out, pages, "; ".join(
+            ["the appendices the document's own list names"] + notes[:3]))
+    said = [" ".join(w for w in (f"Appendix {r.number}" if r.number else "",
+                                 r.title) if w) for r in rows]
+    return _given(_shaped(q, said), pages,
+                  "the appendices the document's own list names")
+
+
+def _field_work(src: _Source) -> Tuple[Any, str]:
+    """The record's own field work (:class:`FieldWork`) with its bound
+    volumes', and where it came from."""
+    from report_ingest.record_facts import field_work
+
+    records, _missing = _bound_of(src, ("volume",))
+    logs = []
+    for rec in [src.record] + records:
+        work = rec.field_work
+        if work is None and rec.investigations:
+            # A record saved before the field: the same reading of its logs.
+            work = field_work(rec)
+        if work is not None:
+            logs.append(work)
+    if not logs:
+        return None, ""
+    from report_ingest.model import FieldWork
+
+    merged = FieldWork(
+        years=sorted({y for w in logs for y in w.years}),
+        dates=list(dict.fromkeys(d for w in logs for d in w.dates)),
+        firms=list(dict.fromkeys(f for w in logs for f in w.firms)),
+        holes=sum(w.holes for w in logs),
+        pages=sorted({p for w in logs for p in w.pages}))
+    return merged, (" (with its bound volumes)" if records else "")
+
+
+def _investigation_year(src: _Source, q: Question) -> Answer:
+    work, where = _field_work(src)
+    if work is None or not work.years:
+        return _not_given("no log of this investigation prints a date with a "
+                          "four-digit year")
+    note = (f"the years in the dates {work.holes} log(s) of this "
+            f"investigation{where} print")
+    if q.data_type == "integer":
+        if len(work.years) > 1:
+            note += f"; the earliest of {', '.join(map(str, work.years))}"
+        value: Any = work.years[0]
+    elif q.data_type == "integer or list of integers":
+        value = list(work.years)
+    else:
+        value = _shaped(q, [str(y) for y in work.years])
+    return _given(value, [p + 1 for p in work.pages], note)
+
+
+def _investigation_firm(src: _Source, q: Question) -> Answer:
+    work, where = _field_work(src)
+    if work is None or not work.firms:
+        return _not_given("no log of this investigation names a firm (a "
+                          "drilling contractor, or a firm, company or "
+                          "consultant field); the narrative may")
+    return _given(_shaped(q, work.firms),
+                  [p + 1 for p in work.pages],
+                  f"the firms the headers of the logs of this "
+                  f"investigation{where} name, as printed")
 
 
 def _logs(src: _Source) -> List[Any]:
@@ -1243,6 +1378,13 @@ def _no_argument(read: Callable[[_Source, Question], Answer]
 #: * ``calculation_list``: the printouts by kind, as text to check against.
 #: * ``printed_value:<name|name>``: what the printouts print under a name.
 #: * ``chemical_results``: the laboratory's chemical results, as text.
+#: * ``document_type``: the document type triage gave the file.
+#: * ``caption_labels:<tables, figures or appendix_figures>``: the caption
+#:   labels the caption count saw ("figure A-2" for an appendix figure).
+#: * ``appendix_list``: the appendices the document's own list names.
+#: * ``investigation_year``: the four-digit years in the dates the logs of
+#:   this investigation (and its bound volumes) print;
+#:   ``investigation_firm``: the firms their headers name.
 #:
 #: A yes-or-nothing reading never answers no: no log or no calculation on
 #: the record is not a no, because a report can describe what it does not
@@ -1263,12 +1405,39 @@ READINGS: Dict[str, Callable[[str], Callable[[_Source, Question], Answer]]] = {
     "calculation_list": _no_argument(_calc_list),
     "printed_value": _printed_value,
     "chemical_results": _no_argument(_chemical),
+    # BACKLOG RI-102: what the record keeps for these since.
+    "document_type": _no_argument(_document_type),
+    "caption_labels": _caption_labels,
+    "appendix_list": _no_argument(_appendix_list),
+    "investigation_year": _no_argument(_investigation_year),
+    "investigation_firm": _no_argument(_investigation_firm),
 }
+
+
+def bound_records(record: Any, record_dir: Union[str, Path, None]
+                  ) -> Dict[str, Any]:
+    """The records of the reports bound in ``record``, by bound_id, read
+    from where it says each was written (``BoundReport.record_path``,
+    relative to ``record_dir``, the folder of its own record). One that is
+    not there is left out, and the readings say so."""
+    if record_dir is None:
+        return {}
+    from report_ingest.model import ReportRecord
+
+    record = _as_record(record)
+    out: Dict[str, Any] = {}
+    for doc in record.bound_documents:
+        path = Path(record_dir) / doc.record_path if doc.record_path else None
+        if path is not None and path.is_file():
+            out[doc.bound_id] = ReportRecord.model_validate_json(
+                path.read_bytes())
+    return out
 
 
 def code_answers(record: Any, questions: Sequence[Question], *,
                  bound: Optional[Mapping[str, Any]] = None,
-                 printed_pages: Optional[Mapping[int, Any]] = None
+                 printed_pages: Optional[Mapping[int, Any]] = None,
+                 record_dir: Union[str, Path, None] = None
                  ) -> Dict[str, Answer]:
     """Code's answer to each row answered by "Code" or "Both, compared",
     from a finished report record (a ``ReportRecord`` or its JSON), by the
@@ -1276,13 +1445,20 @@ def code_answers(record: Any, questions: Sequence[Question], *,
 
     ``bound`` holds the records of the reports bound in it, by bound_id: a
     bound volume's logs count towards this investigation, a prior report's
-    towards the prior counts. ``printed_pages`` maps a 0-based page to its
-    printed page number, which the record does not keep.
+    towards the prior counts; ``record_dir`` (the folder of the record's own
+    file) finds the ones ``bound`` does not give (:func:`bound_records`).
+    ``printed_pages`` maps a 0-based page to its printed page number; when
+    it is not given (or empty), the record's own (``document.printed_pages``, kept
+    since BACKLOG RI-102) is read.
 
     Never a made-up value: a row code cannot answer is ``not said`` with
     the reason in its note ("not on the record" when the code map gives it
     no reading)."""
-    src = _Source(_as_record(record), dict(bound or {}),
+    record = _as_record(record)
+    if not printed_pages:
+        printed_pages = record.document.printed_pages
+    src = _Source(record, {**bound_records(record, record_dir),
+                           **dict(bound or {})},
                   {int(k): str(v) for k, v in (printed_pages or {}).items()
                    if v not in (None, "")})
     readings = getattr(questions, "readings", None) or {}
@@ -1682,7 +1858,8 @@ def run_questions(record: Any, pages: Mapping[int, str],
                   questions: Sequence[Question], engine: Any, *,
                   bound: Optional[Mapping[str, Any]] = None,
                   printed_pages: Optional[Mapping[int, Any]] = None,
-                  report_id: str = "") -> QuestionRun:
+                  report_id: str = "",
+                  record_dir: Union[str, Path, None] = None) -> QuestionRun:
     """The list asked of one report: a screening call, then one call for
     the rest.
 
@@ -1712,9 +1889,12 @@ def run_questions(record: Any, pages: Mapping[int, str],
     record = _as_record(record)
     rid = report_id or record.document.report_id
     rules = list(getattr(questions, "rules", None) or [])
+    if not printed_pages:                                   # RI-102
+        printed_pages = record.document.printed_pages
     printed = {int(k): str(v) for k, v in (printed_pages or {}).items()
                if v not in (None, "")}
-    code = code_answers(record, questions, bound=bound, printed_pages=printed)
+    code = code_answers(record, questions, bound=bound, printed_pages=printed,
+                        record_dir=record_dir)
     texts = {int(p): str(t) for p, t in pages.items()}
     kept, dropped = _within_budget(sorted(texts), texts, FRONT_PAGES,
                                    INPUT_TOKEN_BUDGET * CHARS_PER_TOKEN)
