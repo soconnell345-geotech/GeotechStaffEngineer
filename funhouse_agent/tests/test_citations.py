@@ -434,24 +434,6 @@ def scan():
 #: it is printed.
 REFERENCE_GAPS = {
     ("gec_4", "eq", "15-16"): "Equations 15 and 16, p. 62 (Sec. 5.2.9)",
-    ("gec_9", "eq", "A-9"): "Appendix A, p. 222",
-    ("gec_9", "eq", "A-20"): "Appendix A, p. 226",
-    ("gec_9", "eq", "A-21"): "Appendix A, p. 226",
-    ("gec_9", "eq", "A-27"): "Appendix A, p. 228 (GM-287)",
-    ("gec_9", "table", "A-1"): "Appendix A, p. 222",
-    ("gec_9", "table", "A-2"): "Appendix A, p. 222",
-    ("gec_9", "table", "A-3"): "Appendix A, p. 228 (GM-287)",
-    ("gec_10", "eq", "A-2"): "Appendix A, p. A-8 (phi' from (N1)60, "
-                             "GM-241)",
-    ("gec_11", "eq", "4-21"): "Vol I p. 4-28",
-    ("gec_11", "eq", "4-22"): "Vol I p. 4-28",
-    ("gec_11", "eq", "4-23"): "Vol I p. 4-30",
-    ("gec_11", "eq", "4-24"): "Vol I p. 4-30 (GM-302)",
-    ("gec_11", "table", "4-6"): "Vol I p. 4-29",
-    ("gec_12", "table", "D-6"): "Vol III p. 28",
-    ("gec_12", "table", "D-51"): "Vol III p. 100",
-    ("gec_12", "table", "D-100"): "Vol III p. 179",
-    ("dm7_2", "table", "B-17"): "Appendix B, Example B-3, p. 622 (GM-281)",
 }
 
 
