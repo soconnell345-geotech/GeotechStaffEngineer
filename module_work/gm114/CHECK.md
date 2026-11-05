@@ -155,6 +155,21 @@ install here (eqsig wheel build). The page fingerprints did not move.
    hand calculation ΣV_C, M_RA-C, eL 3.41 ft; the "source rounding" note is
    gone from the test, WE-MSE-1 and RESULTS.md.
 
+4. **`test_defaults_used` on the two-tool package.** With `mse_wall` in
+   the package, `_union_spec` drops a case the tools word differently
+   (`q_allowable`: cantilever "the bearing check is not run", MSE "the
+   external bearing check is not run", both true; `phi_foundation`:
+   cantilever takes `phi_backfill`, MSE "30 deg, assumed"), leaving it to
+   the run, which lists the case of the tool it ran (`_package_declared`).
+   The harness read cases from the union only, so it gave the case string
+   back as a value (TypeError) and flagged `q_allowable` as stating no
+   case. Fixed in the harness, no test weakened: a package's inputs are
+   read as the package reads them, its own and then those of the tool the
+   call selects (`_run_tool_parameters`, with `calc_package._selector_value`
+   taken out of `_run_tool` so both read the selector the same way). Two
+   MSE probes added (`retaining_wall_package#mse`, `#mse_bearing`), so the
+   harness runs the MSE package too.
+
 ## Release note for review fix 3 (a saved answer moves)
 
 `mse_lrfd_external_stability` (and `analyze_mse_wall(lrfd_external=True)`):
@@ -196,12 +211,9 @@ cases.
 - The package is ASD (`mse_wall`); there is no LRFD package. The
   `mse_lrfd_external_stability` result, Strength I min included, is not
   printed in any package.
-- Generated pages that print the E4 critical bearing CDR: the gallery's
-  Exhibit 9 bar chart (`docs/gallery/build_gallery.py`, figure
-  `ex09_mse_lrfd.png`) labels it from `CDR_critical`, 1.82 in the
-  committed figure and 1.79 after review fix 3; rebuild it with the next
-  gallery build. The user manual (`docs/user_manual/manual.html`) is
-  regenerated at merge.
+- The user manual (`docs/user_manual/manual.html`) is regenerated at
+  merge. (The gallery's Exhibit 9 figure, which labels the E4 critical
+  bearing CDR, is rebuilt: 1.82 before review fix 3, 1.79 now.)
 
 ## Release note (four lines)
 

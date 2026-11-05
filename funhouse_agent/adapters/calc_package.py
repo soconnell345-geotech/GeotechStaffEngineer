@@ -1261,6 +1261,17 @@ def _lower_first(text: str) -> str:
     return text
 
 
+def _selector_value(spec: dict, given):
+    """A package's selector value as its run reads ``given`` (``spec``: its
+    ``_PACKAGE_TOOLS`` entry): a string stripped and in lower case, an
+    older spelling (``selector_values``) put under the value it stands
+    for."""
+    if not isinstance(given, str):
+        return given
+    value = given.strip().lower()
+    return spec.get("selector_values", {}).get(value, value)
+
+
 def _run_tool(package: str, params: dict) -> _ToolRun:
     """Run ``package``'s analysis tool on the package's parameters.
 
@@ -1280,10 +1291,7 @@ def _run_tool(package: str, params: dict) -> _ToolRun:
     if "selector" in spec:
         name, default, _ = spec["selector"]
         given = p.pop(name, default)
-        value = given
-        if isinstance(given, str):
-            value = given.strip().lower()
-            value = spec.get("selector_values", {}).get(value, value)
+        value = _selector_value(spec, given)
         why = spec.get("not_packaged", {}).get(value)
         if why:
             raise ValueError(f"{package}: no package for {name}={given!r}: "
