@@ -520,7 +520,9 @@ def _cache_from_raw(raw: Any) -> Optional[dict]:
 def _raw_usages(response: Any, msg: Any = None, gen: Any = None) -> list:
     """Every provider usage dict a response carries, nearest first: the
     message's ``response_metadata``, the generation's ``generation_info``
-    (the Databricks bridge puts the Prompter's there) and ``llm_output``."""
+    and ``llm_output``. (The Databricks bridge and the Foundry GPT SDK model
+    put their cache read in ``input_token_details``, so this fallback is for
+    routes that do not.)"""
     out = []
     for meta in (getattr(msg, "response_metadata", None),
                  getattr(gen, "generation_info", None),
@@ -542,7 +544,8 @@ def _usage_from_response(response: Any) -> Optional[dict]:
     counts say how much of it was read from the provider's prompt cache and
     how much written to it (BACKLOG INF-66). They come from
     ``input_token_details`` (every LangChain route: Anthropic, OpenAI, the
-    Foundry Claude SDK model), else from the provider's own usage dict
+    Foundry Claude and GPT SDK models, the Prompter on Databricks), else
+    from the provider's own usage dict
     (Anthropic's ``cache_*_input_tokens``, OpenAI's
     ``prompt_tokens_details.cached_tokens``). A response that reports no
     cache fields records 0 for both, as report ingest's ``Usage`` does; a

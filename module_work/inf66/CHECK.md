@@ -24,9 +24,11 @@ Branch `claude/inf-66-cache-tokens`. Code part only; the live check is below.
      - langchain-openai (the Prompter route on Tiny Apps, Foundry OpenAI). It
        may put a service-tier prefix on the keys, e.g. `priority_cache_read`.
      - the Foundry Claude SDK model (`palantir_sdk_engine._claude_usage`).
+     - the Prompter on Databricks/Funhouse and Foundry GPT named by API
+       name (since the review fixes below).
   2. The provider's own usage dict, found in the message's
-     `response_metadata`, the generation's `generation_info` (where the
-     Databricks bridge puts the Prompter's usage) or `llm_output`:
+     `response_metadata`, the generation's `generation_info` or
+     `llm_output`:
      - Anthropic: `cache_read_input_tokens` and `cache_creation_input_tokens`;
      - OpenAI: `prompt_tokens_details.cached_tokens`. This is a read; OpenAI
        reports no write, so `cache_creation` is 0.
@@ -47,12 +49,13 @@ Branch `claude/inf-66-cache-tokens`. Code part only; the live check is below.
 
 ## Tests
 
-- `webapp/tests/test_activity_cache_tokens.py` (new, 12 tests, made-up usage):
+- `webapp/tests/test_activity_cache_tokens.py` (new, 14 tests, made-up usage):
   - one test per route: langchain-anthropic's own builder, its per-TTL writes,
     langchain-openai's own builder, a service-tier prefix, the Foundry Claude
-    SDK converter;
-  - the raw-usage fallbacks: OpenAI in `generation_info`, Anthropic in
-    `response_metadata`, both in `llm_output`;
+    SDK converter, the Prompter model (generate and stream) and the Foundry
+    GPT SDK model (chat and Responses routes);
+  - the raw-usage fallbacks: Anthropic in `response_metadata`, both in
+    `llm_output`;
   - a response with no cache fields records 0, and one with no usage records
     None;
   - **a turn summed over three calls**: one cache write, then two reads, the
@@ -70,6 +73,38 @@ Branch `claude/inf-66-cache-tokens`. Code part only; the live check is below.
     (page fingerprints, diagnostics' reference docs, card colours, the review
     boundary).
   - `test_public_text.py`: passed.
+
+## Review fixes
+
+The review found two OpenAI-style routes the app builds itself that dropped
+the provider's cached count, so they recorded `cache_read: 0` after a read.
+
+- **Prompter on Databricks/Funhouse** (`PrompterChatModel`, generate and
+  stream) and **Foundry GPT named by API name, chat route**
+  (`PalantirSdkChatModel`): the bridge's `_to_usage_metadata` now copies
+  `prompt_tokens_details.cached_tokens` into
+  `usage_metadata.input_token_details = {"cache_read": n}`, as
+  langchain-openai does. `model_end` records it as `cache_read`;
+  `cache_creation` stays 0 (OpenAI reports no write).
+- **Foundry GPT named by API name, Responses route**: a cached count in the
+  SDK's `usage.input_tokens_details.cached_tokens` is passed on the same
+  way. Whether the SDK reports one is not yet known; if it does not, the
+  record says 0.
+- `input_tokens` is unchanged on every route: the cached count is part of
+  it. Report ingest's `ChatModelEngine` on these routes now splits the read
+  out of its input, as `PrompterEngine` already does; the sum is the same.
+- Tests: the old test that claimed the bridge was covered (it fed the logger
+  a dict the bridge never makes) is replaced by three that drive the real
+  models with made-up usage: the Prompter's generate path with an openai
+  `ChatCompletion`, its stream path, and both Foundry GPT routes over the
+  stand-in SDK of `test_palantir_sdk_engine.py`.
+  - Run in the app venv: the two activity-log files, 27 passed;
+    `funhouse_agent/deep/tests/test_deep_token_tracking_offline.py` and
+    `webapp/tests/test_palantir_sdk_engine.py`, 40 passed.
+  - The three new tests fail on the code before these fixes
+    (`cache_read` 0).
+- The branch's BACKLOG.md edit is dropped; the item's state is written when
+  it merges.
 
 ## To measure live
 

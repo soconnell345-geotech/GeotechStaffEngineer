@@ -14,7 +14,7 @@ import pytest
 
 pytest.importorskip("langchain_core")
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
 from webapp import activity_log as al
@@ -98,17 +98,92 @@ def test_foundry_claude_sdk_model_usage(tmp_path):
     assert rec["usage"]["cache_creation"] == 50
 
 
-def test_raw_openai_usage_beside_plain_usage_metadata(tmp_path):
-    """A route that sets only the three LangChain counts (the Databricks
-    bridge) but leaves the provider's usage in ``generation_info``."""
-    um = {"input_tokens": 300, "output_tokens": 20, "total_tokens": 320}
-    rec = _end(al.ActivityLogger(str(tmp_path)),
-               AIMessage(content="", usage_metadata=um),
-               generation_info={"usage": {
-                   "prompt_tokens": 300, "completion_tokens": 20,
-                   "prompt_tokens_details": {"cached_tokens": 256}}})
-    assert rec["usage"]["cache_read"] == 256
-    assert rec["usage"]["cache_creation"] == 0
+def _model_ends(log):
+    return [r for r in al.load(log.conv_dir) if r["event"] == "model_end"]
+
+
+def _prompter_model(response, **kwargs):
+    """The real Prompter chat model (Databricks/Funhouse) over a stand-in
+    client whose ``create`` returns ``response``: no network."""
+    from types import SimpleNamespace
+    from funhouse_agent.deep.databricks_bridge import PrompterChatModel
+    create = lambda **request: response                 # noqa: E731
+    prompter = SimpleNamespace(chat_model="made-up-gpt", client=SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    return PrompterChatModel(prompter=prompter, **kwargs)
+
+
+def test_prompter_route_keeps_the_cached_count(tmp_path):
+    """An openai ``ChatCompletion`` whose usage reports a cache read, through
+    the real bridge conversion and the logger. The read is part of the
+    input, as OpenAI counts it."""
+    chat = pytest.importorskip("openai.types.chat")
+    resp = chat.ChatCompletion.model_validate({
+        "id": "c1", "object": "chat.completion", "created": 0,
+        "model": "made-up-gpt",
+        "choices": [{"index": 0, "finish_reason": "stop",
+                     "message": {"role": "assistant", "content": "ok"}}],
+        "usage": {"prompt_tokens": 2_000, "completion_tokens": 50,
+                  "total_tokens": 2_050,
+                  "prompt_tokens_details": {"cached_tokens": 1_536}}})
+    log = al.ActivityLogger(str(tmp_path))
+    _prompter_model(resp).invoke([HumanMessage(content="q")],
+                                 config={"callbacks": [log]})
+    assert _model_ends(log)[-1]["usage"] == {
+        "input_tokens": 2_000, "output_tokens": 50, "total_tokens": 2_050,
+        "cache_read": 1_536, "cache_creation": 0}
+
+
+def test_prompter_stream_keeps_the_cached_count(tmp_path):
+    """The same over the bridge's streaming path: the usage-only last chunk
+    carries the read."""
+    from types import SimpleNamespace as NS
+    usage = NS(prompt_tokens=900, completion_tokens=10, total_tokens=910,
+               prompt_tokens_details=NS(cached_tokens=512))
+    chunks = iter([
+        NS(model="made-up-gpt", usage=None, choices=[NS(
+            delta=NS(content="ok", tool_calls=None), finish_reason="stop")]),
+        NS(model="made-up-gpt", usage=usage, choices=[])])
+    log = al.ActivityLogger(str(tmp_path))
+    model = _prompter_model(chunks, streaming_enabled=True)
+    for _ in model.stream([HumanMessage(content="q")],
+                          config={"callbacks": [log]}):
+        pass
+    got = _model_ends(log)[-1]["usage"]
+    assert got["input_tokens"] == 900
+    assert got["cache_read"] == 512 and got["cache_creation"] == 0
+
+
+def test_foundry_gpt_sdk_routes_keep_the_cached_count(tmp_path, monkeypatch):
+    """Foundry GPT named by API name (``PalantirSdkChatModel``) over the
+    stand-in SDK of ``test_palantir_sdk_engine``: the chat route's usage
+    object, then the Responses route's ``input_tokens_details``."""
+    pytest.importorskip("webapp.palantir_sdk_engine")
+    from types import SimpleNamespace as NS
+    from webapp.tests import test_palantir_sdk_engine as fake
+    reply = fake._responses_reply("ok")
+    reply.open_ai_responses.usage = NS(
+        input_tokens=800, output_tokens=7, total_tokens=807,
+        input_tokens_details=NS(cached_tokens=768))
+    fake._install_fake_responses(monkeypatch, [reply])
+    from webapp.palantir_sdk_engine import PalantirSdkChatModel
+    fake._FakeSdkModel.next_response = NS(
+        choices=[NS(finish_reason="stop",
+                    message=NS(content="ok", tool_calls=None))],
+        usage=NS(prompt_tokens=700, completion_tokens=9, total_tokens=709,
+                 prompt_tokens_details=NS(cached_tokens=640)),
+        model="GPT_5_1")
+    log = al.ActivityLogger(str(tmp_path))
+    PalantirSdkChatModel(model_api_name="GPT_5_1", route="chat").invoke(
+        [HumanMessage(content="q")], config={"callbacks": [log]})
+    PalantirSdkChatModel.from_handles(
+        "GPT_5_4", vision_model=fake._Handle()).invoke(
+        [HumanMessage(content="q")], config={"callbacks": [log]})
+    chat_end, responses_end = _model_ends(log)
+    assert chat_end["usage"]["input_tokens"] == 700
+    assert chat_end["usage"]["cache_read"] == 640
+    assert responses_end["usage"]["input_tokens"] == 800
+    assert responses_end["usage"]["cache_read"] == 768
 
 
 def test_raw_anthropic_usage_in_response_metadata(tmp_path):
