@@ -47,6 +47,7 @@ __all__ = [
     "parse_diggs26_soundings", "SOUNDING_PROCEDURES",
     "SOUNDING_DEPTH_CLASS", "SOUNDING_EXTRA_MAP",
     "parse_diggs26_result_sets", "ResultSetRead", "NOT_ENCOUNTERED_REMARK",
+    "NOT_MEASURED_REMARK",
 ]
 
 _NS_GML = "http://www.opengis.net/gml/3.2"
@@ -817,6 +818,17 @@ def parse_diggs26_water(root, ns_map, investigations, gml_id_map, warnings, *,
                         break
             if inv.gwl_depth_m is None and none_found:
                 inv.gwl_not_encountered = True
+            if inv.gwl_depth_m is None and not none_found:
+                # RI-106: a level never read (a hole full of drilling
+                # fluid) is not "not encountered"; the writer says it in a
+                # remark on a borehole or a pit.
+                for content in findall(
+                        element, "diggs:remark/diggs:Remark/diggs:content",
+                        ns_map):
+                    said = (content.text or "").strip().lower()
+                    if said.startswith(NOT_MEASURED_REMARK.lower()):
+                        inv.gwl_not_measured = True
+                        break
 
 
 #: How a pit's "groundwater not encountered" is said in a DIGGS 2.6 file. A
@@ -824,3 +836,11 @@ def parse_diggs26_water(root, ns_map, investigations, gml_id_map, warnings, *,
 #: lives there), so ``report_ingest.diggs_writer`` writes it as a remark
 #: opening with these words, and :func:`parse_diggs26_water` reads it back.
 NOT_ENCOUNTERED_REMARK = "Groundwater not encountered"
+
+#: How "the groundwater level was not measured" is said in a DIGGS 2.6 file
+#: (BACKLOG RI-106): a hole drilled with water or mud and no well has no
+#: reading, which is not water below the hole, so it is never
+#: ``notEncountered``. 2.6 has no element for it, so the writer puts a
+#: remark opening with these words on a borehole or a pit, and
+#: :func:`parse_diggs26_water` sets ``gwl_not_measured``.
+NOT_MEASURED_REMARK = "Groundwater not measured"

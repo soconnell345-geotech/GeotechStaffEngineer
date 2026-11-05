@@ -44,6 +44,7 @@ from report_ingest.printed_depths import (
     PrintedDepth, PrintedDepths, PrintedRow, chained, on_line,
     printed_depths,
 )
+from report_ingest.water_status import says_not_measured
 
 __all__ = ["seed_from_grid", "serialise_seed", "merge_investigations",
            "GROUP_SPAN_M", "pit_dimensions", "bucket_width", "header_pairs",
@@ -3396,8 +3397,12 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
         lowered = raw.lower()
         number = (_first_number(raw) if header_depths is None
                   else header_depths.get("groundwater"))
-        if re.search(r"not encountered|none|dry|no water|n/e|n\.e\.",
-                     lowered) and number is None:
+        if says_not_measured(raw, water_field=True) and number is None:
+            # RI-106: a level never read is not water below the hole.
+            water.append(WaterLevel(depth=None, when="not_measured",
+                                    note=raw, prov=fprov("groundwater", 0.6)))
+        elif re.search(r"not encountered|none|dry|no water|n/e|n\.e\.",
+                       lowered) and number is None:
             water.append(WaterLevel(depth=None, when="not_encountered",
                                     note=raw, prov=fprov("groundwater", 0.6)))
         elif number is not None and unit:

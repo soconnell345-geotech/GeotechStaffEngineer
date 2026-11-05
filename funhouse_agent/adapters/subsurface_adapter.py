@@ -56,7 +56,7 @@ _SITE_KEYS = ("project_name", "investigations", "coordinate_system", "datum",
               "notes", "n_investigations", "available_parameters")
 _INVESTIGATION_KEYS = (
     "investigation_id", "investigation_type", "x", "y", "elevation_m",
-    "total_depth_m", "gwl_depth_m", "gwl_not_encountered",
+    "total_depth_m", "gwl_depth_m", "gwl_not_encountered", "gwl_not_measured",
     "coordinate_system", "date_started", "drilling_method", "lithology",
     "measurements", "notes", "n_lithology", "n_measurements",
     "available_parameters")
@@ -157,6 +157,8 @@ def _run_parse_diggs(params: dict) -> dict:
             "total_depth_m": inv.total_depth_m,
             "gwl_depth_m": inv.gwl_depth_m,
             "gwl_not_encountered": inv.gwl_not_encountered,
+            **({"gwl_not_measured": True}
+               if getattr(inv, "gwl_not_measured", False) else {}),
             "n_measurements": len(inv.measurements),
             "n_lithology": len(inv.lithology),
             "parameters": param_names,
@@ -1180,7 +1182,8 @@ METHOD_INFO = {
             "warnings": "Any parsing warnings.",
             "investigations": "Per-investigation summary with available parameters. x, y or elevation_m is null when "
                               "the file gives none (unknown, not 0); gwl_not_encountered is true when the file says "
-                              "groundwater was not encountered (gwl_depth_m is then null).",
+                              "groundwater was not encountered (gwl_depth_m is then null); gwl_not_measured is "
+                              "true (and only then present) when the file says the level was not measured.",
         },
     },
     "load_site": {
@@ -1425,8 +1428,9 @@ METHOD_INFO = {
                 "6 in when left out), n (ONLY if printed; "
                 "a printed refusal such as '>50', 'R' or '50/5\"' may be given as n and is recorded as refusal: true with its text kept), "
                 "refusal, sample_id}]; "
-                "water [{depth {value, unit}, when (while_drilling|at_completion|after_hours|not_encountered|unknown), hours}] "
-                "(not_encountered: leave depth out -- it is never written as a water level); "
+                "water [{depth {value, unit}, when (while_drilling|at_completion|after_hours|not_encountered|not_measured|"
+                "unknown), hours}] (not_encountered: leave depth out -- it is never written as a water level; "
+                "not_measured: no reading taken; leave depth out); "
                 "remarks; pages (0-based PDF pages the values were read from; none for a record no page gave, such as a "
                 "placeholder). Every depth or elevation is {value, unit}. Unknown keys are refused by name.")},
             "lab_tests": {"type": "array", "required": False, "description": (

@@ -415,10 +415,14 @@ class TestTheLabelBeforeTheDepth:
         record = reconcile(build_record(lab_tests=[sheet]))
 
         assert sheet.linked_investigation_id == "B-1"
-        assert sheet.linked_sample_id == ""
-        (entry,) = self._conflicts(record)
-        assert "puts S-2, S-3 within" in entry.detail
-        assert "to no sample" in entry.detail
+        # RI-107: a composite is linked to every sample it combined and
+        # flagged, where RI-71 linked it to no sample with a conflict.
+        assert sheet.combined is True
+        assert sheet.linked_sample_ids == ["S-2", "S-3"]
+        assert sheet.linked_sample_id == "S-2"
+        assert self._conflicts(record) == []
+        (note,) = [e for e in record.qa if e.where == "lab_tests.combined"]
+        assert "B-1 S-2 + S-3" in note.values[0]
 
     def test_the_numbers_of_a_depth_range_are_not_another_hole(self):
         # A record with a hole named by a bare number: "4.0-5.5" in the

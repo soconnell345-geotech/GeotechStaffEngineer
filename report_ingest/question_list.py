@@ -1016,11 +1016,13 @@ def _depth(quantity: Any) -> str:
 
 
 _WHEN = {"while_drilling": "while drilling", "at_completion": "at completion",
-         "not_encountered": "", "unknown": ""}
+         "not_encountered": "", "not_measured": "", "unknown": ""}
 
 
 def _reading(level: Any) -> str:
-    said = "not encountered" if level.depth is None else _depth(level.depth)
+    said = ("not measured" if level.when == "not_measured"
+            else "not encountered" if level.depth is None
+            else _depth(level.depth))
     when = (f"{level.hours:g} h after" if level.when == "after_hours"
             and level.hours is not None else _WHEN.get(level.when,
                                                        level.when))

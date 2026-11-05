@@ -942,7 +942,11 @@ class Library:
                     "depth": _show(test.depth_top),
                     "standard": test.standard,
                     "linked_exploration": test.linked_investigation_id,
-                    "linked_sample": test.linked_sample_id,
+                    "linked_sample": (" + ".join(test.linked_sample_ids)
+                                      if test.combined
+                                      and test.linked_sample_ids
+                                      else test.linked_sample_id),
+                    **({"combined": True} if test.combined else {}),
                     "values": _result_values(test.result),
                     "pages": list(test.pages)} for test in kept]}
 

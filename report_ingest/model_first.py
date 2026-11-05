@@ -307,6 +307,19 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 READ_PROMPT_VERSION = "mf-8"
 
 
+def prompt_version(stage: str) -> str:
+    """The version a ``stage`` answer is saved and resumed under:
+    :data:`READ_PROMPT_VERSION`, with ``+wnm`` on the logs while
+    GEOTECH_INGEST_WATER_NOT_MEASURED adds its sentence to the log
+    instruction (RI-106), so a resumed run never takes a log answer read
+    with the switch the other way as current."""
+    from report_ingest.water_status import water_not_measured_enabled
+
+    if stage == "logs" and water_not_measured_enabled():
+        return READ_PROMPT_VERSION + "+wnm"
+    return READ_PROMPT_VERSION
+
+
 def _described(cls: Any, name: str) -> Optional[str]:
     """The description today's class gives field ``name``."""
     return cls.model_fields[name].description
@@ -609,7 +622,18 @@ def instruction(stage: str, report: str, pages: Sequence[int], *,
         from report_ingest.narrative_glossary import glossary_block
         from report_ingest.narrative_reader import _vocabulary_block
         fill.update(vocabulary=_vocabulary_block(), glossary=glossary_block())
-    return texts[stage].format(**fill)
+    said = texts[stage].format(**fill)
+    if stage == "logs" and texts is INSTRUCTIONS:
+        # RI-106, behind GEOTECH_INGEST_WATER_NOT_MEASURED (off): off, the
+        # instruction is byte for byte what it was.
+        from report_ingest.water_status import (
+            MODEL_FIRST_SENTENCE, water_not_measured_enabled,
+        )
+        if water_not_measured_enabled():
+            said = said.replace("and the water levels. ",
+                                "and the water levels. "
+                                + MODEL_FIRST_SENTENCE + " ", 1)
+    return said
 
 
 # ---------------------------------------------------------------------------

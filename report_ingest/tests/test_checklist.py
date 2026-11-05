@@ -46,7 +46,8 @@ DRAFT_ITEMS = {
     "completeness.pages_read": ("code", "logs_and_lab_read"),
     "completeness.summary_and_sheets": ("code", "summary_and_sheets"),
     "completeness.campaigns": ("judge", None),
-    "completeness.groundwater": ("judge", None),
+    # a judgement, started off by what code read of each log (RI-106)
+    "completeness.groundwater": ("judge", "groundwater"),
     "completeness.locations": ("judge", None),
     "consistency.summary_vs_sheets": ("code", "cross_checks"),
     "consistency.lab_ids_on_logs": ("code", "lab_ids_vs_logs"),

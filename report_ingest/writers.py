@@ -837,7 +837,9 @@ def library_page(record: ReportRecord, key: str, source: str = "") -> str:
         [[hole_label(inv), inv.kind, inv.total_depth, inv.elevation,
           len(inv.layers), len(inv.samples),
           ", ".join(str(s.n) for s in inv.spt if s.n is not None) or "",
-          ", ".join(_show(w.depth) for w in inv.water if w.depth)]
+          ", ".join(_show(w.depth) if w.depth else "not measured"
+                    for w in inv.water
+                    if w.depth or w.when == "not_measured")]
          for inv in record.investigations])
     if rows:
         out += ["## Explorations", ""] + rows + [""]
@@ -845,7 +847,10 @@ def library_page(record: ReportRecord, key: str, source: str = "") -> str:
     rows = _table(
         ["Test", "Exploration", "Depth", "Standard", "Linked sample", "Pages"],
         [[test.kind, _lab_exploration(test), test.depth_top,
-          test.standard, test.linked_sample_id or "-",
+          test.standard,
+          (" + ".join(test.linked_sample_ids) + " (combined)"
+           if test.combined and test.linked_sample_ids
+           else test.linked_sample_id or "-"),
           ", ".join(str(p) for p in test.pages)]
          for test in record.lab_tests])
     if rows:
