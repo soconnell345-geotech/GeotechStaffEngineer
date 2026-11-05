@@ -159,7 +159,7 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         if shaft.concrete_fc is not None:
             items.append(InputItem(
                 "f'c", "Concrete strength (limits q_u in the rock side "
-                "resistance)", f"{shaft.concrete_fc:,.0f}", "kPa"))
+                "resistance; the concrete's bearing at a base in rock)", f"{shaft.concrete_fc:,.0f}", "kPa"))
 
     # Factor of safety
     items.append(InputItem("FS", "Factor of safety", analysis.factor_of_safety, ""))
@@ -954,6 +954,36 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_value=f"{r.Q_tip:,.1f}",
             result_unit="kN",
         ))
+        cb = (r.base_steps or {}).get("concrete_bearing")
+        if cb is not None:
+            governs = ("the concrete governs the factored base resistance"
+                       if cb["governs"] == "concrete" else
+                       "the geotechnical base resistance governs")
+            eb_items.append(CalcStep(
+                title="Base Against the Concrete in Bearing (factored)",
+                equation=("\u03c6P_n = 0.70 [0.85 f'c A1 m] (Eq. 12-7) vs "
+                          "\u03c6Q_tip = 0.50 Q_tip"),
+                substitution=(f"\u03c6P_n = 0.70 [0.85 \u00d7 "
+                              f"{cb['fc_kPa']:,.0f} \u00d7 {cb['A1_m2']:.4f}"
+                              f" \u00d7 {cb['m']:g}] = {cb['phi_Pn_kN']:,.1f};"
+                              f" 0.50 \u00d7 {r.Q_tip:,.1f} = "
+                              f"{cb['phi_Qt_geotechnical_kN']:,.1f}"),
+                result_name="\u03c6Q_base",
+                result_value=f"{min(cb['phi_Pn_kN'], cb['phi_Qt_geotechnical_kN']):,.1f}",
+                result_unit="kN",
+                reference=("GEC-10 (FHWA-NHI-18-024) p. 10-25; Eq. 12-7, p. "
+                           "12-8 (AASHTO 5.6.5-2); Example 10-4, p. 10-28"),
+                notes=(f"{governs}, the tip taken as plain concrete (with "
+                       "the cage to the tip p. 12-8 prints Eq. 12-6 at "
+                       "φ 0.70, not computed). A1 the socket's "
+                       "cross-sectional area; m "
+                       "= 2.0 for a socket on competent rock (p. 12-8)"
+                       + ("" if cb["competent_rock"] else
+                          "; this base is not taken as on competent rock, "
+                          "where p. 12-8 prints only m < 2.0")
+                       + ". Factored resistances: Q_tip and Q_ult above "
+                       "stay the geotechnical, unfactored values"),
+            ))
 
     # Effective stress at tip
     eb_items.append(CalcStep(
