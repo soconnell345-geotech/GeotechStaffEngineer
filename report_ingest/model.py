@@ -67,6 +67,7 @@ __all__ = [
     "CALC_KINDS", "CalcKind", "NamedQuantity", "Calculation",
     "DocumentFacts", "Workflow", "WORKFLOW_VALUES",
     "ResumedStep", "RESUMED_STEPS", "ResumedSteps",
+    "AppendixEntry", "FieldWork",
     "LabelVote", "PageLabel", "ParentReport", "BoundReport",
     "ReportRecord", "to_si", "si_numbers", "calc_si",
     "record_json_schema",
@@ -145,6 +146,15 @@ __all__ = [
 #: its meaning (one sample of the log; the first, for a combined test).
 #: ``WaterLevel.when`` gaining ``not_measured`` (RI-106) adds a value no
 #: older record holds.
+#:
+#: ``DocumentFacts.document_type``, ``DocumentFacts.printed_pages`` and
+#: ``DocumentFacts.appendices``, ``NarrativeFacts.caption_labels`` and
+#: ``ReportRecord.field_work`` (BACKLOG RI-102: what the owner's question
+#: list's code rows read) are NOT a bump: each is optional, taken from what
+#: the pipeline already read (triage, planlens' page map and outline, the
+#: caption count, the logs), and left out of the written record when empty,
+#: so a record with none of them is written as it always was and a record
+#: written before them loads as one that has none.
 SCHEMA_VERSION = "4.0"
 
 
@@ -857,6 +867,23 @@ class ResumedSteps(BaseModel):
         description="the whole report's dollars, likewise")
 
 
+class AppendixEntry(BaseModel):
+    """One line of the appendix list the document prints for itself (its
+    outline's list of appendices, read by planlens; BACKLOG RI-102)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    number: str = Field(
+        default="", description="the appendix's letter or number, as printed")
+    title: str = Field(default="", description="its title, as printed")
+    printed_page: str = Field(
+        default="", description="the page number the list prints for it")
+    page: Optional[int] = Field(
+        default=None, ge=0,
+        description="the 0-based PDF page planlens placed it on; None when "
+                    "it could not be placed")
+
+
 class DocumentFacts(BaseModel):
     """What the FILE is: filled deterministically, never by a model.
 
@@ -928,14 +955,34 @@ class DocumentFacts(BaseModel):
                     "steps, and the whole report's cost with them; unset, "
                     "the run read everything itself and the cost above is "
                     "the whole report's (BACKLOG RI-125)")
+    #: What the owner's question list reads off the file (BACKLOG RI-102),
+    #: each taken from what the run already read and written only when set.
+    document_type: str = Field(
+        default="",
+        description="what kind of document triage took the file to be, in "
+                    "the owner's documentType vocabulary (a bound report's: "
+                    "what its identity call said); empty when neither ran")
+    printed_pages: Dict[int, str] = Field(
+        default_factory=dict,
+        description="the page number printed on each page, by 0-based PDF "
+                    "page, as planlens read it off the page; a page with no "
+                    "printed number is not listed")
+    appendices: List[AppendixEntry] = Field(
+        default_factory=list,
+        description="the list of appendices the document prints for itself "
+                    "(its outline), in printed order; empty when it prints "
+                    "none")
 
     @model_serializer(mode="wrap")
     def _leave_out_unset_resume(self, handler):  # type: ignore[no-untyped-def]
-        """``resumed`` is written only when it is set: a record read from
-        scratch is written byte for byte as it was before the field."""
+        """``resumed`` and the RI-102 fields are written only when they are
+        set: a record read from scratch, with none of them, is written byte
+        for byte as it was before the fields."""
         out = handler(self)
         if self.resumed is None and isinstance(out, dict):
             out.pop("resumed", None)
+        for name in ("document_type", "printed_pages", "appendices"):
+            out = _without_empty(out, name)
         return out
 
 
@@ -2759,6 +2806,51 @@ class NarrativeFacts(BaseModel):
     unresolved: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="what the reader could not settle, and why")
+    caption_labels: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="the caption labels the caption count saw on the pages "
+                    "read (BACKLOG RI-102): 'tables' and 'figures' of the "
+                    "main body, 'appendix_figures' numbered like an "
+                    "appendix's ('figure A-2'); written only when one was "
+                    "seen")
+
+    @model_serializer(mode="wrap")
+    def _leave_out_unset_captions(self, handler):  # type: ignore[no-untyped-def]
+        """``caption_labels`` is written only when it is set: a record with
+        none is written byte for byte as before the field."""
+        return _without_empty(handler(self), "caption_labels")
+
+
+class FieldWork(BaseModel):
+    """When and by whom the report's OWN investigation was done, as its own
+    logs print it (BACKLOG RI-102).
+
+    Read by code off the record's logs, never asked of a model: the years
+    in the dates the logs print, and the firms their headers name (a firm,
+    company or consultant field; never the driller, a foreman or a value
+    that says nothing, like "NA"). A log on the pages of a bound report
+    that is not a volume of this one is that report's, and is left out.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    years: List[int] = Field(
+        default_factory=list,
+        description="the four-digit years in the logs' printed dates, in "
+                    "order")
+    dates: List[str] = Field(
+        default_factory=list,
+        description="the dates the logs print, as printed, each once")
+    firms: List[str] = Field(
+        default_factory=list,
+        description="the firms the logs' headers name in a firm, company or "
+                    "consultant field (not the driller's), as printed, each "
+                    "once")
+    holes: int = Field(
+        default=0, ge=0, description="how many logs these were read off")
+    pages: List[int] = Field(
+        default_factory=list,
+        description="0-based PDF pages of the logs a date or a firm came off")
 
 
 class CalcEntry(BaseModel):
@@ -3356,6 +3448,17 @@ class ReportRecord(BaseModel):
         description="set when THIS record is a report bound inside another "
                     "one: which report, and the pages of it this one "
                     "occupied")
+    field_work: Optional[FieldWork] = Field(
+        default=None,
+        description="when and by whom this report's own investigation was "
+                    "done, as its logs print it (BACKLOG RI-102); unset when "
+                    "no log prints a date or a firm")
+
+    @model_serializer(mode="wrap")
+    def _leave_out_unset_field_work(self, handler):  # type: ignore[no-untyped-def]
+        """``field_work`` is written only when it is set: a record without
+        it is written byte for byte as before the field."""
+        return _without_empty(handler(self), "field_work")
 
     def investigation(self, investigation_id: str) -> Optional[Investigation]:
         """The investigation with that id, or None."""

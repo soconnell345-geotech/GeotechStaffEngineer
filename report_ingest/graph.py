@@ -1182,6 +1182,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
         assign, build_items, document_outline, facts_from_document,
     )
     from report_ingest.reconciler import reconcile
+    from report_ingest.record_facts import (
+        appendices, field_work, printed_pages)
     from report_ingest.triage import (
         document_facts, settle_workflow, triage as run_triage)
 
@@ -1205,7 +1207,10 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
         scan_fraction=counted.scan_fraction,
         di_pages=len(di_pages),
         planlens_version=_planlens_version(),
-        workflow="standard")
+        workflow="standard",
+        # What the question list reads off the file (RI-102).
+        printed_pages=printed_pages(summaries),
+        appendices=appendices(outline))
 
     # -- 0b. triage ---------------------------------------------------------
     profile = None
@@ -1236,6 +1241,9 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
             record.document.workflow = profile.workflow
             workflow_note = profile.workflow_note
     workflow = record.document.workflow
+    if profile is not None:                                 # RI-102
+        record.document.document_type = str(
+            getattr(profile, "document_type", "") or "")
     if workflow_note:
         qa.append(QAEntry(kind="note", where="workflow",
                           detail=workflow_note))
@@ -1385,6 +1393,7 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                             di_pages, counts_from_logs, model_first,
                             readers)
         _handed_over(every, handed, ranges, reads, qa)
+    record.field_work = field_work(record)                  # RI-102
     return record
 
 
@@ -2189,6 +2198,8 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
     from planlens.document.roles import assign, build_items, outline_from
     from report_ingest.label_vote import Voter, combine
     from report_ingest.reconciler import reconcile
+    from report_ingest.record_facts import (
+        appendices, field_work, printed_pages)
 
     os.makedirs(os.path.join(folder, "items"), exist_ok=True)
     window = [int(p) for p in row.pages]
@@ -2289,7 +2300,12 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
         workflow=_bound_workflow(labels),
         label_policy=labelling.policy,
         label_split_pages=len(split),
-        review_mode="none")
+        review_mode="none",
+        # RI-102: what its identity call said it is, and its own pages'
+        # printed numbers and appendix list.
+        document_type=str(identity.get("document_type") or ""),
+        printed_pages=printed_pages(doc.page_map(), window),
+        appendices=appendices(outline))
     child.parent = ParentReport(
         report_id=parent.document.report_id,
         bound_id=row.bound_id,
@@ -2400,6 +2416,7 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
     child.document.dollars = round(inner_spend.dollars, 5)
     child.document.seconds = round(time.time() - started, 1)
     child.document.resumed = inner_spend.resumed()
+    child.field_work = field_work(child)                    # RI-102
     spend.absorb(inner_spend)
     return child, done
 

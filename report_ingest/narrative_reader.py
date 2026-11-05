@@ -67,6 +67,7 @@ from report_ingest.model import (
     OUTSIDE_PROJECT_VALUES, PROJECT_PHASE_VALUES, PROPERTY_TYPE_VALUES,
     Quantity, SUMMARY_FIELDS, SUMMARY_WORD_LIMITS, Stratum, YES_NO_UNCLEAR,
 )
+from report_ingest.record_facts import caption_labels
 
 __all__ = [
     "read_narrative", "NarrativeReadResult", "NarrativeReading", "ReadExtra",
@@ -1778,7 +1779,10 @@ class _Builder:
                       if isinstance(v, int)}),
             pages=[int(p) for p in pages],
             extra_answers=[dict(row) for row in self.extra],
-            unresolved=[dict(u) for u in self.unresolved])
+            unresolved=[dict(u) for u in self.unresolved],
+            # The labels the caption count saw (RI-102): a reading of the
+            # pages kept beside the answers, in either arm, never an answer.
+            caption_labels=caption_labels(counted))
         return general, hazards, facts
 
     def _mention(self, name: str,
