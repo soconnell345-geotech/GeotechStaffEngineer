@@ -127,8 +127,8 @@ THE RESULT. Each stage's result is a dict in the shape of today's reader's
 ``added`` are empty, and the floor's slots are None or empty. The model's
 record is also its ``model_*`` slot, so a scorecard's model column reads it.
 Added keys: ``key`` (the group's key, for the graph's ``items/mf-<key>.json``),
-``route``, ``prompt_version`` (:data:`~report_ingest.model_first.
-READ_PROMPT_VERSION`), ``calls`` (each call's pages and how it ended),
+``route``, ``prompt_version`` (:func:`~report_ingest.model_first.
+prompt_version`), ``calls`` (each call's pages and how it ended),
 ``placement`` (what ``place`` returned, one per answer) and ``error``
 (empty, or why nothing was read: the record slot is then None, or an empty
 list for lab tests, and the ``skipped`` entries say which pages).
@@ -156,9 +156,10 @@ from report_ingest.checks import (IMPOSSIBLE, LISTED, SURFACE_TOL_M, _noted,
 from report_ingest.engine import (ask_again, estimate_tokens, pdf_block,
                                   picture_tokens_est, schema_tokens_est,
                                   text_block, user)
-from report_ingest.model_first import (READ_PROMPT_VERSION, _put_field,
-                                       answer_schema, apply_lab_additions,
-                                       apply_log_additions, instruction)
+from report_ingest.model_first import (_put_field, answer_schema,
+                                       apply_lab_additions,
+                                       apply_log_additions, instruction,
+                                       prompt_version)
 from report_ingest.model_first_pages import (MAX_PICTURES_PER_CALL,
                                              PageGroup, calc_calls, cut_pdf,
                                              lab_starts, page_blocks,
@@ -579,7 +580,7 @@ def _result(stage: str, key: str, caller: _Caller, spent: _Spent,
     """The keys every stage's result adds to today's shape; under a request
     limit (RI-121) also ``over_limit``, each request estimated over it."""
     out = {"key": key, "route": caller.route,
-           "prompt_version": READ_PROMPT_VERSION,
+           "prompt_version": prompt_version(stage),
            "calls": list(spent.calls),
            "placement": [p for p in placement if p is not None],
            "error": error, "pages": [int(p) for p in pages],

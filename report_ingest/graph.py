@@ -3237,19 +3237,22 @@ def _model_first_plan(doc: Any, model_first: _ModelFirst,
 
 
 def _still_current(blob: Dict[str, Any], parts: Sequence[Any],
-                   route: str) -> bool:
+                   route: str, stage: str = "") -> bool:
     """Is a saved model-first result one this run would ask for: the same
-    pages, the same instruction and schema (``READ_PROMPT_VERSION``) and
-    the same route? Any other is read again, and is new spend on resume: a
-    result saved under mf-1, before a sheet scanned sideways was sent
-    upright (RI-149), and one whose pages are no longer one unit's (a lab
-    item cut by :func:`report_ingest.lab_reader.split_lab_items`, RI-150,
-    may change a unit's pages)."""
-    from report_ingest.model_first import READ_PROMPT_VERSION
+    pages, the same instruction and schema (``READ_PROMPT_VERSION``, as
+    :func:`report_ingest.model_first.prompt_version` gives it for
+    ``stage``) and the same route? Any other is read again, and is new
+    spend on resume: a result saved under mf-1, before a sheet scanned
+    sideways was sent upright (RI-149), one whose pages are no longer one
+    unit's (a lab item cut by
+    :func:`report_ingest.lab_reader.split_lab_items`, RI-150, may change a
+    unit's pages), and a log answer read with the water-not-measured switch
+    the other way (RI-106)."""
+    from report_ingest.model_first import prompt_version
 
     return (sorted(int(p) for p in blob.get("pages") or [])
             == _group_pages(parts)
-            and blob.get("prompt_version") == READ_PROMPT_VERSION
+            and blob.get("prompt_version") == prompt_version(stage)
             and blob.get("route") == route)
 
 
@@ -3468,7 +3471,7 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
         path = os.path.join(out, "items", f"{key}.json")
         cached = _cached(path, resume)
         if cached is not None and not _still_current(
-                cached, parts, model_first.routes[stage]):
+                cached, parts, model_first.routes[stage], stage):
             cached = None
         mark = spend.mark()
         where = f"items.{unit.kind}.{key}"

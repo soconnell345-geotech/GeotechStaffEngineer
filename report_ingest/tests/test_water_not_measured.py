@@ -298,7 +298,8 @@ class TestModelFirstLogReader:
                                  + MODEL_FIRST_SENTENCE + " ")
         assert MODEL_FIRST_SENTENCE not in plain     # the measured baseline
 
-    def test_not_measured_from_the_model_is_kept(self):
+    @staticmethod
+    def _read_one_log():
         from planlens.document import open_document
         from report_ingest import model_first as mf
         from report_ingest import model_first_read as mfr
@@ -319,12 +320,45 @@ class TestModelFirstLogReader:
         engine = FakeEngine([{"final": answer}])
         engine.accepts_pdf = True
         try:
-            got = mfr.read_logs(doc, [PageGroup("logs", [1], key="log-1")],
-                                engine, report_id="R00", route="auto")
+            return mfr.read_logs(doc, [PageGroup("logs", [1], key="log-1")],
+                                 engine, report_id="R00", route="auto")
         finally:
             doc.close()
+
+    def test_not_measured_from_the_model_is_kept(self):
+        got = self._read_one_log()
         record = Investigation.model_validate(got[0]["investigation"])
         assert [w.when for w in record.water] == ["not_measured"]
+
+    def test_a_log_answer_is_saved_under_the_switch_it_was_read_with(self):
+        from report_ingest import model_first as mf
+
+        assert self._read_one_log()[0]["prompt_version"] \
+            == mf.READ_PROMPT_VERSION
+        with use_water_not_measured():
+            on = self._read_one_log()
+        assert on[0]["prompt_version"] == mf.READ_PROMPT_VERSION + "+wnm"
+
+    @pytest.mark.parametrize("stage", ["logs", "lab", "calc", "narrative"])
+    def test_a_saved_answer_resumes_only_under_its_own_switch(self, stage):
+        """A log answer saved with the switch off is read again with it on,
+        and the other way; the other stages' answers are current either
+        way."""
+        from report_ingest import model_first as mf
+        from report_ingest.graph import _still_current
+        from report_ingest.model_first_pages import PageGroup
+
+        parts = [PageGroup(stage, [7])]
+        off = {"pages": [7], "route": "pdf",
+               "prompt_version": mf.prompt_version(stage)}
+        assert off["prompt_version"] == mf.READ_PROMPT_VERSION
+        assert _still_current(off, parts, "pdf", stage)
+        with use_water_not_measured():
+            on = {**off, "prompt_version": mf.prompt_version(stage)}
+            assert _still_current(on, parts, "pdf", stage)
+            assert _still_current(off, parts, "pdf", stage) is (
+                stage != "logs")
+        assert _still_current(on, parts, "pdf", stage) is (stage != "logs")
 
 
 # ---------------------------------------------------------------------------
