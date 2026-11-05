@@ -678,29 +678,31 @@ def _lettering(fig, fname: str, print_width_in: float,
 
 
 def _load_layout_ink():
-    """``geotech_common.layout_ink``, the layout check this box shares with
-    ``plot_data``: imported as usual where this file is a module of the
-    app; in the box (``python -I child.py``) loaded from its file, beside
-    this package, so the rest of ``geotech_common`` stays out of the box."""
+    """``funhouse_agent.charts.layout_ink``, the layout check this box
+    shares with ``plot_data``: imported as usual where this file is a
+    module of the app; in the box (``python -I child.py``) loaded from its
+    file in the chart folder beside this package, so nothing else of the
+    app comes into the box."""
     if __name__ != "__main__":
-        from geotech_common import layout_ink
+        from funhouse_agent.charts import layout_ink
         return layout_ink
+    return _load_chart_file("layout_ink")
+
+
+def _load_chart_file(name):
+    """A module of the chart folder (``funhouse_agent/charts/<name>.py``),
+    loaded from its file as ``_box_<name>``."""
     import importlib.util
     here = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(os.path.dirname(os.path.dirname(here)),
-                        "geotech_common", "layout_ink.py")
-    if not os.path.isfile(path):
-        spec = importlib.util.find_spec("geotech_common")
-        path = os.path.join(list(spec.submodule_search_locations)[0],
-                            "layout_ink.py")
-    fspec = importlib.util.spec_from_file_location("_box_layout_ink", path)
+    path = os.path.join(os.path.dirname(here), "charts", f"{name}.py")
+    fspec = importlib.util.spec_from_file_location(f"_box_{name}", path)
     mod = importlib.util.module_from_spec(fspec)
     fspec.loader.exec_module(mod)
     return mod
 
 
 #: The layout check judges lettering by the pixels drawn (GM-108; the
-#: measures and their reasons are in ``geotech_common/layout_ink.py``).
+#: measures and their reasons are in ``funhouse_agent/charts/layout_ink.py``).
 _layout_ink = _load_layout_ink()
 LINE_MIN_PX = _layout_ink.LINE_MIN_PX
 VISIBLE_DIFF = _layout_ink.VISIBLE_DIFF
@@ -956,38 +958,28 @@ def main() -> int:
     furniture = {}
     try:
         # The plan furniture the app's own plans use (scale bar, north
-        # arrow), loaded from its file so geotech_common's __init__ (and the
-        # rest of the package) stays out of the box.
-        import importlib.util
-        spec = importlib.util.find_spec("geotech_common")
-        if spec and spec.submodule_search_locations:
-            path = os.path.join(list(spec.submodule_search_locations)[0],
-                                "plan_furniture.py")
-            fspec = importlib.util.spec_from_file_location(
-                "_box_plan_furniture", path)
-            mod = importlib.util.module_from_spec(fspec)
-            fspec.loader.exec_module(mod)
-            furniture = {"scale_bar": mod.mpl_scale_bar,
-                         "north_arrow": mod.mpl_north_arrow,
-                         "nice_length": mod.nice_length}
+        # arrow), loaded from its file in the chart folder, so nothing else
+        # of the app comes into the box.
+        mod = _load_chart_file("plan_furniture")
+        furniture = {"scale_bar": mod.mpl_scale_bar,
+                     "north_arrow": mod.mpl_north_arrow,
+                     "nice_length": mod.nice_length}
     except Exception:                                      # noqa: BLE001
         furniture = {}
     try:
         # Standard chart lines as the references print them (the A-line,
-        # the U-line, the sieve sizes; BACKLOG GM-153), loaded from their
-        # file the same way, so the reference library stays out of the box.
-        import importlib.util
-        spec = importlib.util.find_spec("geotech_references")
-        if spec and spec.submodule_search_locations:
-            path = os.path.join(list(spec.submodule_search_locations)[0],
-                                "chart_lines.py")
-            if os.path.isfile(path):
-                fspec = importlib.util.spec_from_file_location(
-                    "_box_chart_lines", path)
-                mod = importlib.util.module_from_spec(fspec)
-                fspec.loader.exec_module(mod)
-                furniture.update(chart_lines=mod.chart_lines,
-                                 chart_line_value=mod.line_value)
+        # the U-line, the sieve sizes; BACKLOG GM-153), from the file the
+        # app registered (INF-31 step 6), loaded the same way, so the
+        # reference library stays out of the box.
+        path = payload.get("chart_lines_path") or ""
+        if isinstance(path, str) and path and os.path.isfile(path):
+            import importlib.util
+            fspec = importlib.util.spec_from_file_location(
+                "_box_chart_lines", path)
+            mod = importlib.util.module_from_spec(fspec)
+            fspec.loader.exec_module(mod)
+            furniture.update(chart_lines=mod.chart_lines,
+                             chart_line_value=mod.line_value)
     except Exception:                                      # noqa: BLE001
         pass
 

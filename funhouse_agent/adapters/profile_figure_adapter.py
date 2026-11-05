@@ -15,6 +15,7 @@ PNG path itself, so the agent never needs the base64; ``include_base64=true``
 is there for the rare caller that does.
 """
 
+import copy
 import os
 from datetime import datetime
 
@@ -24,6 +25,17 @@ from funhouse_agent.adapters import (apply_aliases, check_nested_keys,
                                      write_plotly_sidecar)
 from funhouse_agent._fileio import (default_output_dir, resolve_output_path,
                                     save_verified)
+# plot_data itself is the chart stack's (INF-31 step 6): its method, its
+# parameters and the nested-key lists it shares with subsurface_profile come
+# from there; this adapter adds reference_chart (the reference library's
+# chart lines) and keeps plot_data under profile_figure for call_agent.
+from funhouse_agent import charts as _charts
+from funhouse_agent.charts import plot_tool as _plot_tool
+from funhouse_agent.charts.plot_tool import (  # noqa: F401
+    _KEY_HINTS, _NOTE_KEYS, _PLOT_ALIASES, _REF_LINE_KEYS, _SERIES_KEYS,
+    SCALE_UNITS, _default_plot_path, _image_name, _own_places, _plot_words,
+    _scale_units,
+)
 
 _VALID = {
     "layers", "title", "ground_elevation", "water_elevation", "water_depth",
@@ -32,16 +44,6 @@ _VALID = {
 }
 
 
-def _image_name(path: str) -> str:
-    """``path`` as an image file name: one already ending .png, .jpg or
-    .jpeg is kept; a document extension (.html, .pdf, .svg) is replaced, not
-    stacked (``plot.html`` made ``plot.html.png``; REF-02)."""
-    if path.lower().endswith((".png", ".jpg", ".jpeg")):
-        return path
-    root, ext = os.path.splitext(path)
-    if ext.lower() in (".html", ".htm", ".pdf", ".svg", ".json"):
-        path = root
-    return path + ".png"
 
 
 def _default_output_path() -> str:
@@ -59,49 +61,6 @@ _FOUNDATION_KEYS = ("type", "head_elevation", "head_depth", "tip_elevation",
                     "tip_depth", "length", "embedded_length", "thickness",
                     "diameter", "width", "size", "label")
 _ANNOTATION_KEYS = ("elevation", "depth", "text", "label", "side")
-_SERIES_KEYS = ("x", "y", "label", "style", "color", "marker", "marker_size",
-                "marker_edge", "marker_open", "line_dash", "line_width",
-                "fill", "hatch", "fill_opacity", "labels", "hover",
-                "in_legend")
-_REF_LINE_KEYS = ("value", "label")
-#: A plot_data note's keys (profile_figure.data_plot.ANNOTATION_KEYS).
-_NOTE_KEYS = ("text", "x", "y", "coords", "point", "align", "box", "color",
-              "font_size", "halo")
-# Words the near-miss matcher cannot place. Suggestions only, never renamed.
-_KEY_HINTS = {
-    "name": ("label", "text"), "legend": ("label", "in_legend"),
-    "showlegend": ("in_legend",), "mode": ("style",), "kind": ("style",),
-    "dash": ("line_dash",), "linestyle": ("line_dash",),
-    "ls": ("line_dash",), "lw": ("line_width",), "width": ("line_width",),
-    "size": ("marker_size", "font_size"), "ms": ("marker_size",),
-    "opacity": ("fill_opacity",), "alpha": ("fill_opacity",),
-    "colour": ("color",), "text": ("labels", "label"),
-    "pointlabels": ("labels",), "hovertext": ("hover",),
-    "q": ("pressure",), "elev": ("elevation",), "z": ("elevation",),
-    "note": ("text",), "position": ("side", "align"), "y": ("value",),
-    # a plot_data note's own words, as matplotlib and Plotly spell them
-    "label": ("text",), "txt": ("text",), "string": ("text",),
-    "ha": ("align",), "va": ("align",), "anchor": ("align",),
-    "horizontalalignment": ("align",), "verticalalignment": ("align",),
-    "xanchor": ("align",), "yanchor": ("align",),
-    "textposition": ("align",), "alignment": ("align",),
-    "xy": ("point",), "arrow": ("point",), "arrowto": ("point",),
-    "leader": ("point",), "target": ("point",), "marks": ("point",),
-    "pointsto": ("point",), "xytext": ("x", "y"),
-    "bbox": ("box",), "background": ("box",), "bgcolor": ("box",),
-    "boxed": ("box",), "frame": ("box",),
-    "fontsize": ("font_size",), "textsize": ("font_size",),
-    "xycoords": ("coords",), "textcoords": ("coords",), "xref": ("coords",),
-    "yref": ("coords",), "coordinates": ("coords",), "units": ("coords",),
-    "x": ("value",), "diam": ("diameter",), "b": ("width",),
-    "tip": ("tip_elevation", "tip_depth"),
-    "head": ("head_elevation", "head_depth"),
-    # a foundation's top is its head, never its tip (the spelling is close)
-    "top": ("head_elevation", "head_depth"),
-    "topelevation": ("head_elevation",), "topelevationm": ("head_elevation",),
-    "topdepth": ("head_depth",), "topdepthm": ("head_depth",),
-    "elevation": ("head_elevation", "tip_elevation"),
-}
 
 
 def _run_subsurface_profile(params: dict) -> dict:
@@ -192,13 +151,8 @@ def _chart_lines():
         return None
 
 
-_VALID_PLOT = {
-    "series", "title", "xlabel", "ylabel", "depth_axis", "logx", "logy",
-    "hlines", "vlines", "grid", "legend", "output_path", "dpi", "width_in",
-    "height_in", "include_base64", "interactive", "equal_aspect", "xlim",
-    "ylim", "legend_position", "plan_view", "north_deg", "scale_units",
-    "x_on_top", "annotations",
-} | ({"reference_chart"} if _chart_lines() else set())
+_VALID_PLOT = set(_plot_tool.VALID_PLOT) | (
+    {"reference_chart"} if _chart_lines() else set())
 
 #: How a chart's lines are drawn: in grey, thinner than the data, named on
 #: the line (never in the legend), as a printed chart draws them.
@@ -514,7 +468,7 @@ def _reference_overlay(params: dict):
         notes.append(note)
     # The chart goes under the data: its series first, and each of the
     # caller's keeps the colour and name its own place gives it.
-    from profile_figure.data_plot import _PALETTE
+    from funhouse_agent.charts.data_plot import _PALETTE
     own = []
     for i, s in enumerate(params["series"]):
         s = dict(s)
@@ -562,188 +516,25 @@ def _reference_overlay(params: dict):
     return out, len(added), said
 
 
-def _default_plot_path() -> str:
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return os.path.join(default_output_dir(), f"data_plot_{ts}.png")
 
 
-#: The axis-label spellings with an underscore (matplotlib's own
-#: set_xlabel/xlabel have none; agents often write one).
-_PLOT_ALIASES = {"x_label": "xlabel", "y_label": "ylabel"}
 
 
-#: The length units the scale bar is written in (GM-205); the bar's
-#: length is in the data's own units, so the unit is only its label.
-SCALE_UNITS = ("m", "km", "cm", "mm", "ft", "in", "yd", "mi")
 
 
-def _scale_units(value) -> str:
-    """``scale_units`` as one of ``SCALE_UNITS``, else refused by name."""
-    if value is None or value == "":
-        return "m"
-    if isinstance(value, str) and value.strip().lower() in SCALE_UNITS:
-        return value.strip().lower()
-    raise ValueError(
-        f"plot_data: scale_units {value!r} is not a length unit the scale "
-        f"bar is written in; use one of {', '.join(SCALE_UNITS)}.")
 
 
 def _run_plot_data(params: dict) -> dict:
-    from profile_figure import render_data_plot
-
-    params = apply_aliases(params, _PLOT_ALIASES)
-    reject_unknown_params(params, _VALID_PLOT, method="plot_data")
-    require_params(params, ["series"], method="plot_data", valid=_VALID_PLOT)
-    check_nested_list(params["series"], _SERIES_KEYS, method="plot_data",
-                      label="series", hints=_KEY_HINTS)
-    check_nested_list(params.get("annotations"), _NOTE_KEYS,
-                      method="plot_data", label="annotations",
-                      hints=_KEY_HINTS)
-    for key in ("hlines", "vlines"):           # a bare number is a line too
-        lines = params.get(key)
-        for i, spec in enumerate(lines if isinstance(lines, list) else []):
-            if isinstance(spec, dict):
-                check_nested_keys(spec, _REF_LINE_KEYS, method="plot_data",
-                                  label=f"{key}[{i}]", hints=_KEY_HINTS)
-
-    _scale_units(params.get("scale_units"))
-    n_added, chart_said = 0, None
-    if params.get("reference_chart"):
-        params, n_added, chart_said = _reference_overlay(params)
-
-    # Every figure saved reaches the user: one that only holds a place is
-    # refused before anything is written (BACKLOG GM-190).
-    from funhouse_agent.plot_box.figures import STAND_IN_NOTE, stand_in
-    why = stand_in(**_plot_words(params))
-    if why:
-        raise ValueError(f"plot_data drew no figure: {why}. {STAND_IN_NOTE}")
-
-    output_path = params.get("output_path") or _default_plot_path()
-    output_path = resolve_output_path(str(output_path))
-    output_path = _image_name(output_path)
-
-    try:
-        result = render_data_plot(
-            params["series"],
-            title=params.get("title", ""),
-            xlabel=params.get("xlabel", ""),
-            ylabel=params.get("ylabel", ""),
-            depth_axis=bool(params.get("depth_axis", False)),
-            logx=bool(params.get("logx", False)),
-            logy=bool(params.get("logy", False)),
-            hlines=params.get("hlines"),
-            vlines=params.get("vlines"),
-            grid=bool(params.get("grid", True)),
-            legend=params.get("legend"),
-            dpi=params.get("dpi", 150),
-            width_in=params.get("width_in", 6.5),
-            height_in=params.get("height_in"),
-            interactive=bool(params.get("interactive", True)),
-            equal_aspect=bool(params.get("equal_aspect", False)),
-            xlim=params.get("xlim"),
-            ylim=params.get("ylim"),
-            legend_position=params.get("legend_position"),
-            plan_view=bool(params.get("plan_view", False)),
-            north_deg=params.get("north_deg"),
-            scale_units=_scale_units(params.get("scale_units")),
-            x_on_top=bool(params.get("x_on_top", False)),
-            annotations=params.get("annotations"),
-        )
-    except ValueError as exc:
-        if not n_added:
-            raise
-        raise ValueError(_own_places(str(exc), n_added)) from None
-    saved = save_verified(output_path, result.png_bytes)
-    abs_path = saved.get("saved", os.path.abspath(output_path))
-    alt = result.title or "data plot"
-    response = {
-        "status": "success" if saved.get("file_exists") else "error",
-        "analysis_type": "Data plot figure",
-        "output_path": abs_path,
-        "file_exists": bool(saved.get("file_exists")),
-        "file_size_bytes": saved.get("file_size_bytes", 0),
-        "width_px": result.width_px,
-        "height_px": result.height_px,
-        "series": result.series[n_added:],
-        "summary": result.summary(),
-        "html_img_tag": (
-            f'<img src="{abs_path}" alt="{alt}" '
-            f'style="width:100%;max-width:640px;">'),
-        "embed_note": (
-            "Saved as a PNG plus an INTERACTIVE chart (unless "
-            "interactive=false). The web app shows the interactive chart "
-            "under your reply -- zoom and hover, one card; the PNG is the "
-            "report copy (a file written outside the conversation folder is "
-            "copied in at the end of the turn). Paste html_img_tag into "
-            "report HTML and html_to_pdf embeds the real local PNG. Do not "
-            "put a markdown image link to a local path in the reply; it "
-            "cannot display. Never write '[image]' or an inline <svg>."),
-    }
-    if response["status"] == "success":
-        # a look at the figure, in a later step, before it is used: what
-        # plot_code asks (BACKLOG GM-152, live wave w12)
-        from funhouse_agent.plot_box import next_step
-        response["next"] = next_step(None, renamed_drafts=False,
-                                     checked_in="warnings")
-    if result.annotations:
-        response["annotations"] = list(result.annotations)
-    if chart_said:
-        response["reference_chart"] = chart_said
-    # The interactive twin, written beside the PNG as <name>.plotly.json —
-    # what the chat actually renders (webapp/core.classify_artifact -> the
-    # st.plotly_chart card). Additive and best-effort: the PNG response above
-    # stands whether or not this works.
-    if saved.get("file_exists") and getattr(result, "figure", None) is not None:
-        try:
-            figure_json = result.figure.to_json()
-        except Exception:                                  # noqa: BLE001
-            figure_json = None
-        side = write_plotly_sidecar(abs_path, figure_json)
-        if side:
-            response.update(side)
-    if result.warnings:
-        response["warnings"] = [_own_places(w, n_added)
-                                for w in result.warnings]
-    for key in ("error", "rescue_path", "workspace_api_note"):
-        if saved.get(key):
-            response[key] = saved[key]
-    if params.get("include_base64"):
-        response["image_base64"] = result.image_base64
-    return response
+    """plot_data, drawn by the chart stack's method
+    (:func:`funhouse_agent.charts.plot_tool.run_plot_data`), with this
+    adapter's ``reference_chart`` where the reference library has chart
+    lines."""
+    overlay = _reference_overlay if "reference_chart" in _VALID_PLOT else None
+    return _plot_tool.run_plot_data(params, overlay=overlay)
 
 
-def _plot_words(params: dict) -> dict:
-    """The words a ``plot_data`` figure carries, for the stand-in check
-    (:func:`funhouse_agent.plot_box.figures.stand_in`): its title, axis
-    names, series names, and the point names, notes and reference-line
-    names."""
-    series = [s for s in params.get("series") or [] if isinstance(s, dict)]
-    notes = []
-    for s in series:
-        if isinstance(s.get("labels"), (list, tuple)):
-            notes += list(s["labels"])
-    notes += [a.get("text") for a in params.get("annotations") or []
-              if isinstance(a, dict)]
-    for key in ("hlines", "vlines"):
-        lines = params.get(key)
-        notes += [spec.get("label") for spec in
-                  (lines if isinstance(lines, list) else [])
-                  if isinstance(spec, dict)]
-    return {"titles": [params.get("title")],
-            "axes": [params.get("xlabel"), params.get("ylabel")],
-            "series": [s.get("label") for s in series], "notes": notes}
 
 
-def _own_places(text: str, n_added: int) -> str:
-    """``text`` with each ``series[i]`` numbered as the caller numbered it:
-    a reference chart's series are drawn first, under the caller's."""
-    import re
-
-    def own(m):
-        i = int(m.group(1))
-        return (f"series[{i - n_added}]" if i >= n_added
-                else "the reference chart")
-    return re.sub(r"series\[(\d+)\]", own, text) if n_added else text
 
 
 METHOD_REGISTRY = {
@@ -862,217 +653,39 @@ METHOD_INFO = {
             "image_base64": "Only when include_base64=true.",
         },
     },
-    "plot_data": {
-        "category": "Figure",
-        "brief": ("Generic data plot: one or more x/y series — an SPT or "
-                  "CPT profile against elevation, settlement vs time, load "
-                  "vs displacement, a parameter sweep or method "
-                  "comparison, the cases of a "
-                  "sensitivity study, a plan view of borings and a "
-                  "footprint drawn to scale. Shows in chat as an "
-                  "INTERACTIVE chart (zoom/hover) and saves a PNG for "
-                  "reports, with an <img> tag ready to paste."),
-        "parameters": {
-            "series": {
-                "type": "array", "required": True,
-                "description": (
-                    "[{'x': [...], 'y': [...], 'label': str, optional "
-                    "'style': 'both'|'line'|'markers'|'step'|'polygon', "
-                    "'color'}]. x and y are equal-length lists. Optional per "
-                    "series: 'marker' (circle, square, triangle, "
-                    "triangle-down, diamond, x, cross, star, hexagon), "
-                    "'marker_size' (points), 'marker_edge' (outline colour), "
-                    "'marker_open' (hollow), 'line_dash' (solid, dash, dot, "
-                    "dashdot), 'line_width', 'labels' (one name per point, "
-                    "written beside it, '' to skip one), 'hover' (one text "
-                    "per point, shown on hover in the interactive chart; "
-                    "'<br>' breaks a line), 'in_legend' (false hides it). "
-                    "Style 'polygon' closes the outline (a footprint, a site "
-                    "boundary, a zone); 'fill': true or a colour, "
-                    "'fill_opacity' (default 0.2), 'hatch' ('/', '\\', "
-                    "'x', '-', '|', '+', '.') to mark a zone over what lies "
-                    "under it. x given as names (cases, "
-                    "scenarios, borings) puts them along the x axis in "
-                    "order: draw separate cases with style 'markers', since "
-                    "a line between unrelated cases shows a trend that is "
-                    "not there. Name points on the figure with 'labels' "
-                    "rather than a legend entry each."),
-            },
-            "annotations": {
-                "type": "array", "required": False,
-                "description": (
-                    "Text placed where you put it: a note, the name of a "
-                    "zone or a line, a reading at a point. It is never "
-                    "moved (point names keep clear of it). [{'text', 'x', "
-                    "'y'}] in data units (a case's name for x on a case "
-                    "axis), or with 'coords': 'axes' in fractions of the "
-                    "plot (0, 0 bottom left; 1, 1 top right). Optional: "
-                    "'point': [x, y] in data units, the point the note "
-                    "marks, drawn as a leader arrow from the text; 'align': "
-                    "the side of the text that stands at x, y (center, "
-                    "left, right, top, bottom, or e.g. 'top left'); 'box': "
-                    "true for a plain white box behind the text (or a "
-                    "colour); 'halo': true for a thin ring of the "
-                    "background round the letters, so hatching or a grid "
-                    "behind them stops short (the PNG); 'color'; "
-                    "'font_size' (pt). A new line or "
-                    "'<br>' breaks a line. The warnings say when a note "
-                    "overlaps other lettering, a line runs through it or it "
-                    "stands outside the plot."),
-            },
-            "equal_aspect": {
-                "type": "bool", "required": False, "default": False,
-                "description": (
-                    "Draw one unit across as long as one unit up: set it "
-                    "for every plan view, site map, footprint or section "
-                    "drawn to scale (x and y both lengths in the same unit). "
-                    "The figure takes the data's own proportions and the "
-                    "legend moves outside the map.")},
-            "plan_view": {
-                "type": "bool", "required": False, "default": False,
-                "description": (
-                    "Draw a site plan as a drawing, not a chart: to scale, "
-                    "no axes, axis numbers or grid, a scale bar with xlabel "
-                    "(name the coordinate system there) under it, and a "
-                    "north arrow from north_deg. Use it for a plan of a "
-                    "site, compound or property; draw the property line as "
-                    "a polygon with line_dash 'dashdot'.")},
-            "north_deg": {
-                "type": "float", "required": False,
-                "description": (
-                    "Direction of north on the page, degrees clockwise from "
-                    "straight up, as the plan the data came from (or the "
-                    "project's other plans) shows it. Not given: drawn "
-                    "straight up, and the result says so.")},
-            "scale_units": {"type": "str", "required": False, "default": "m",
-                            "description": "Length unit written on the scale bar: "
-                                           + ", ".join(SCALE_UNITS) + "."},
-            "xlim": {"type": "array", "required": False,
-                     "description": ("[start, end] of the x axis, kept in the "
-                                     "order given: [100, 0.001] runs it from "
-                                     "high to low (on a log axis too). Else "
-                                     "fitted.")},
-            "ylim": {"type": "array", "required": False,
-                     "description": ("[start, end] of the y axis, kept in the "
-                                     "order given (with depth_axis, y runs "
-                                     "downward whatever the order). Else "
-                                     "fitted.")},
-            "x_on_top": {"type": "bool", "required": False, "default": False,
-                         "description": ("Put the x axis along the top, as a "
-                                         "boring log reads, on a profile "
-                                         "against elevation (depth_axis does "
-                                         "this by itself).")},
-            "legend_position": {
-                "type": "str", "required": False, "default": "auto",
-                "allowed_values": ["auto", "inside", "outside", "below"],
-                "description": ("Where the legend goes; auto = outside a "
-                                "drawing to scale, inside otherwise.")},
-            "title": {"type": "str", "required": False, "default": "",
-                      "description": "Figure title."},
-            "xlabel": {"type": "str", "required": False, "default": "",
-                       "description": "X-axis label WITH units."},
-            "ylabel": {"type": "str", "required": False, "default": "",
-                       "description": "Y-axis label WITH units."},
-            "depth_axis": {"type": "bool", "required": False, "default": False,
-                           "description": (
-                               "A profile has elevation on y by default "
-                               "(leave this false, y = elevations): borings "
-                               "start at different ground levels. True when "
-                               "y is depth (only when no elevations are "
-                               "given; say so in ylabel) or settlement: y "
-                               "increases DOWNWARD and the x axis sits at "
-                               "the top (boring-log convention).")},
-            "logx": {"type": "bool", "required": False, "default": False,
-                     "description": "Log-scale x axis."},
-            "logy": {"type": "bool", "required": False, "default": False,
-                     "description": "Log-scale y axis."},
-            "hlines": {"type": "array", "required": False,
-                       "description": ("Horizontal reference lines: "
-                                       "[{'value': y, 'label': str}] — e.g. a "
-                                       "water table or an allowable value.")},
-            "vlines": {"type": "array", "required": False,
-                       "description": ("Vertical reference lines: "
-                                       "[{'value': x, 'label': str}].")},
-            "grid": {"type": "bool", "required": False, "default": True,
-                     "description": "Draw a light grid."},
-            "legend": {"type": "bool", "required": False,
-                       "description": ("Show the legend. Default: when more "
-                                       "than one series is in it (reference "
-                                       "lines are named on the line).")},
-            "output_path": {"type": "str", "required": False,
-                            "description": ("PNG path. A bare filename lands in "
-                                            "the working folder. "
-                                            "Auto-generated if omitted.")},
-            "interactive": {
-                "type": "bool", "required": False, "default": True,
-                "description": ("Also write the interactive chart beside the "
-                                "PNG (<name>.plotly.json) — that is what the "
-                                "chat displays. Set false only when a static "
-                                "image is all you want.")},
-            "dpi": {"type": "int", "required": False, "default": 150,
-                    "description": "Raster resolution."},
-            "width_in": {"type": "float", "required": False, "default": 6.5,
-                         "description": "Figure width (inches)."},
-            "height_in": {"type": "float", "required": False,
-                          "description": ("Figure height (inches). Default "
-                                          "4.5, or the data's proportions "
-                                          "with equal_aspect.")},
-            "include_base64": {
-                "type": "bool", "required": False, "default": False,
-                "description": ("Also return the PNG as base64 — VERY large; "
-                                "html_to_pdf embeds the saved path for you, "
-                                "so leave this off.")},
-        },
-        "returns": {
-            "status": "success or error.",
-            "output_path": ("The saved PNG: its name in the working folder (an "
-                            "absolute path only outside one)."),
-            "file_exists": "True if the file was verified on disk — trust it.",
-            "file_size_bytes": "Size of the saved PNG.",
-            "width_px": "Rendered width in pixels.",
-            "height_px": "Rendered height in pixels.",
-            "series": ("Each series as drawn: label, n points, x/y ranges "
-                       "(x_categories when x named cases), points_named."),
-            "annotations": ("Each note as drawn: text, at ([x, y] as "
-                            "given), coords, and point for a note with a "
-                            "leader. Absent when there are none."),
-            "summary": "Human-readable description of the figure.",
-            "html_img_tag": ("Ready-to-paste <img> tag referencing the saved "
-                             "PNG — drop it straight into report HTML for "
-                             "html_to_pdf."),
-            "plotly_json_path": ("Name of the interactive chart written beside "
-                                 "the PNG; this is what the chat shows. Absent "
-                                 "when interactive=false."),
-            "warnings": ("Non-fatal notes (e.g. non-finite points dropped, "
-                         "a note that overlaps other lettering)."),
-        },
-    },
+    "plot_data": copy.deepcopy(_plot_tool.PLOT_DATA_INFO),
 }
 
-if _chart_lines():
-    METHOD_INFO["plot_data"]["parameters"]["reference_chart"] = {
-        "type": "str", "required": False,
-        "description": (
-            "A standard chart's lines drawn under the data as the reference "
-            "prints them, not from memory: 'uscs_plasticity' (the plasticity "
-            "chart, UFS 3-220-10 Figure 1-2 as in ASTM D2487: the A-line, "
-            "level at PI = 4 up to LL = 25.5 and then PI = 0.73(LL - 20); "
-            "the U-line; LL = 50; PI = LL; the CL-ML zone, hatched as GEC 5 "
-            "Figure 4-11 prints it; the zone "
-            "names), 'aashto_plasticity' (GEC 5 Figure 4-12: LL = 40, "
-            "PI = 10, PI = LL - 30 and the group names) or "
-            "'uscs_particle_sizes' (the sieve sizes that bound fines, sand, "
-            "gravel, cobbles and boulders, on a log grain-size axis). The "
-            "lines are grey and named on the line; the chart's own axis "
-            "names and frame are used unless xlabel, ylabel, xlim or ylim "
-            "are given. The result's reference_chart gives the source, page "
-            "and each line's equation, for the caption.")}
-    METHOD_INFO["plot_data"]["returns"]["reference_chart"] = (
-        "With reference_chart: the chart drawn, its source (document, "
-        "figure, printed page), each line's equation, the zones named and "
-        "the extent drawn over.")
+#: reference_chart's entry in plot_data's parameters, and what the result
+#: says of it: here and in the reference charts this adapter registers.
+REFERENCE_CHART_PARAMETER = {
+    "type": "str", "required": False,
+    "description": (
+        "A standard chart's lines drawn under the data as the reference "
+        "prints them, not from memory: 'uscs_plasticity' (the plasticity "
+        "chart, UFS 3-220-10 Figure 1-2 as in ASTM D2487: the A-line, "
+        "level at PI = 4 up to LL = 25.5 and then PI = 0.73(LL - 20); "
+        "the U-line; LL = 50; PI = LL; the CL-ML zone, hatched as GEC 5 "
+        "Figure 4-11 prints it; the zone "
+        "names), 'aashto_plasticity' (GEC 5 Figure 4-12: LL = 40, "
+        "PI = 10, PI = LL - 30 and the group names) or "
+        "'uscs_particle_sizes' (the sieve sizes that bound fines, sand, "
+        "gravel, cobbles and boulders, on a log grain-size axis). The "
+        "lines are grey and named on the line; the chart's own axis "
+        "names and frame are used unless xlabel, ylabel, xlim or ylim "
+        "are given. The result's reference_chart gives the source, page "
+        "and each line's equation, for the caption.")}
+REFERENCE_CHART_RETURNS = (
+    "With reference_chart: the chart drawn, its source (document, "
+    "figure, printed page), each line's equation, the zones named and "
+    "the extent drawn over.")
 
-declare_aliases(METHOD_INFO, {"plot_data": _PLOT_ALIASES})
+if _chart_lines():
+    METHOD_INFO["plot_data"]["parameters"]["reference_chart"] = dict(
+        REFERENCE_CHART_PARAMETER)
+    METHOD_INFO["plot_data"]["returns"]["reference_chart"] = (
+        REFERENCE_CHART_RETURNS)
+
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):
@@ -1087,12 +700,39 @@ declare_when_absent(METHOD_INFO, {
         "ground_elevation": ("the first layer's top elevation, else 0",
                              "with thickness-only layers the axis reads as "
                              "depth below the ground")},
-    "plot_data": {
-        "north_deg": ("north straight up",
-                      "the source plan's north was not given; the result "
-                      "says so")},
 })
 METHOD_INFO["subsurface_profile"]["parameters"]["water_elevation"][
     "applies_when"] = {"water_depth": "unset"}
 METHOD_INFO["subsurface_profile"]["parameters"]["water_depth"][
     "applies_when"] = {"water_elevation": "unset"}
+
+
+class _ReferenceCharts:
+    """The reference library's standard charts, as the chart stack takes
+    them (:func:`funhouse_agent.charts.register_reference_charts`):
+    ``plot_data``'s ``reference_chart`` and the plotting box's
+    ``chart_lines``."""
+
+    parameter = REFERENCE_CHART_PARAMETER
+    returns = REFERENCE_CHART_RETURNS
+
+    def __init__(self, module):
+        self.chart_lines = module
+
+    @staticmethod
+    def overlay(params: dict):
+        return _reference_overlay(params)
+
+
+def register_reference_charts() -> bool:
+    """Hand the reference library's chart lines to the chart stack (INF-31
+    step 6; ``None`` where the installed library has none). The geotech
+    page's builds call it, and importing this adapter does; True when
+    there were lines to hand in."""
+    module = _chart_lines()
+    _charts.register_reference_charts(
+        _ReferenceCharts(module) if module is not None else None)
+    return module is not None
+
+
+register_reference_charts()

@@ -1378,6 +1378,11 @@ def build_deep_agent(
     # The first pyplot import, before tools run side by side (GM-172).
     from funhouse_agent.deep.warm_imports import warm_pyplot
     warm_pyplot()
+    # The reference library's chart lines, handed to the chart stack before
+    # any tool is described (plot_data's reference_chart, the box's
+    # chart_lines; INF-31 step 6). Both pages are built here until step 8.
+    from funhouse_agent.deep.tools import register_reference_charts
+    register_reference_charts()
     if review_page:
         from funhouse_agent import review_flags
         if review_flags.minimal_agent():

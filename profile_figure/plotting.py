@@ -299,15 +299,6 @@ def build_profile_figure(resolved: dict, *, title: str = "Subsurface Profile",
     return fig, ax
 
 
-def figure_to_png(fig, dpi: int = 150) -> bytes:
-    """Render a matplotlib figure to PNG bytes (white background, tight box)."""
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
-                facecolor="white", edgecolor="none")
-    buf.seek(0)
-    data = buf.read()
-    buf.close()
-    # the PNG carries its smallest lettering, so a PDF built from it can
-    # tell how large that prints (GM-168)
-    from geotech_common.layout_ink import png_with_lettering
-    return png_with_lettering(fig, data, dpi)
+# The PNG writer is in funhouse_agent.charts.plotting (INF-31 step 6), which
+# both pages' charts use; this name is the same function.
+from funhouse_agent.charts.plotting import figure_to_png  # noqa: E402,F401

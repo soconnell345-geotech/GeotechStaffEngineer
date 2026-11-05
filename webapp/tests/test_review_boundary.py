@@ -20,10 +20,10 @@ failing, is a failure.
 
 What neither the recorder nor the blocker sees: a module loaded from its
 file (``importlib.util.spec_from_file_location``), which the plotting box
-does with ``geotech_common/layout_ink.py`` (listed below only because the
-box's module is also imported in process) and ``plan_furniture.py`` (not
-listed; plan 2.7 names it); anything the plotting box's
-own child interpreter (``python -I``) imports; and data files read by path.
+does with ``layout_ink.py``, ``plan_furniture.py`` (both in
+``funhouse_agent/charts/`` since step 6) and the chart-lines file an app
+registered; anything the plotting box's own child interpreter
+(``python -I``) imports; and data files read by path.
 The docreview-only CI job of step 12, with no geotech package installed,
 is the check for those.
 """
@@ -52,28 +52,20 @@ KNOWN_COUPLINGS = {
     # 2. (The review tools' factory sat in GSE's tools module: gone at
     # step 4, now the vision kit.)
     # 3. The package door shows GSE's first-import disclaimer notice, inside
-    # a ``try`` (so soft); its other names load on first use since step 2
-    # (the disclaimer goes with the package, steps 10-15).
+    # a ``try`` (so soft); its other names load on first use since step 2.
+    # The disclaimer goes when the review files leave the package at step
+    # 13 (the earlier plan's "step 10"; INF-31 relabelled it).
     "funhouse_agent -> funhouse_agent._disclaimer":
-        "2.7 #3, soft, step 10",
-    # 4. The chart stack behind plot_data and the plotting box (step 6).
-    # The vision kit's plot_data still draws through GSE's dispatch (which
-    # adds defaults_used and the output note) and reads the adapter's
-    # description: there before step 4 too, hidden in GSE's tools module.
-    "funhouse_agent.deep.vision_kit -> funhouse_agent.dispatch":
-        "2.7 #4, step 6",
-    "funhouse_agent.deep.vision_kit -> "
-    "funhouse_agent.adapters.profile_figure_adapter": "2.7 #4, step 6",
-    "funhouse_agent.deep.vision_kit -> profile_figure": "2.7 #4, step 6",
-    "funhouse_agent.plot_box.child -> geotech_common": "2.7 figure, step 6",
-    "funhouse_agent.plot_box.child -> geotech_common.layout_ink":
-        "2.7 figure, step 6",
+        "2.7 #3, soft, step 13",
+    # 4. (The chart stack behind plot_data and the plotting box: gone at
+    # step 6, now funhouse_agent.charts; plot_data runs through
+    # funhouse_agent.method_call, not GSE's dispatch.)
     # 5. (The review prompt's module was GSE's: gone at step 3.)
     # (Further couplings: calculate's evaluator, the Word renderer and the
     # figure helper's result cap, gone at step 5.)
+    # (The plotting box's look for geotech_references.chart_lines: gone at
+    # step 6; GSE registers the chart lines with funhouse_agent.charts.)
     # Soft: inside ``try``, the page works without them (hooks, step 11).
-    "funhouse_agent.plot_box -> geotech_references.chart_lines":
-        "2.7 soft, step 12",
     "funhouse_agent.vision_tools -> funhouse_agent.reference_docs":
         "2.7 soft, step 11",
     "funhouse_agent.vision_tools -> geotech_references": "2.7 soft, step 11",
@@ -180,3 +172,69 @@ def test_the_blocker_reads_as_not_installed():
     assert proc.stdout.split() == ["True", "True", "True"], proc.stderr
     assert ("blocked for the boundary test: funhouse_agent.deep.agent"
             in proc.stderr), proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# The split's exits, read off the source (INF-31): what a step cut stays cut
+# even where the turn above does not reach it.
+# ---------------------------------------------------------------------------
+
+def _imports_of(path: str) -> set:
+    """Every module ``path`` imports, at any depth (inside functions too),
+    with relative imports resolved."""
+    import ast
+    import os
+    rel = os.path.relpath(path, page_builds.REPO).replace(os.sep, "/")
+    module = rel[:-3].replace("/", ".")
+    if module.endswith(".__init__"):
+        package = module[:-len(".__init__")]
+    else:
+        package = module.rpartition(".")[0]
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out |= {a.name for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module or ""
+            if node.level:
+                parts = package.split(".")
+                up = parts[:len(parts) - node.level + 1]
+                base = ".".join(up + ([base] if base else []))
+            out.add(base)
+            out |= {f"{base}.{a.name}" for a in node.names if a.name != "*"}
+    return out
+
+
+def _python_files(*where: str) -> list:
+    import os
+    files = []
+    for w in where:
+        path = os.path.join(page_builds.REPO, w)
+        if path.endswith(".py"):
+            files.append(path)
+            continue
+        for root, dirs, names in os.walk(path):
+            dirs[:] = [d for d in dirs if d not in ("tests", "__pycache__")]
+            files += [os.path.join(root, n) for n in names
+                      if n.endswith(".py")]
+    return sorted(files)
+
+
+#: Step 6's exit (plan §4): the chart stack, the plotting box and the call
+#: plot_data runs through import nothing of GeotechStaffEngineer; the
+#: reference charts are handed in (``funhouse_agent.charts.
+#: register_reference_charts``).
+CHART_STACK = ("funhouse_agent/charts", "funhouse_agent/plot_box",
+               "funhouse_agent/method_call.py",
+               "funhouse_agent/arg_checks.py")
+
+
+def test_the_chart_stack_imports_nothing_of_gse():
+    found = []
+    for path in _python_files(*CHART_STACK):
+        found += [f"{path} -> {m}" for m in sorted(_imports_of(path))
+                  if page_builds.is_geotech(m)]
+    assert not found, ("The chart stack imports GeotechStaffEngineer code "
+                       "(INF-31 step 6):\n  " + "\n  ".join(found))
