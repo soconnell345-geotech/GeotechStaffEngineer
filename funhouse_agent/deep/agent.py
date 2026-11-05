@@ -1195,6 +1195,12 @@ def build_deep_agent(
         if ingest_tools:
             tools = list(tools) + list(ingest_tools)
             system_prompt = system_prompt + "\n\n" + REPORT_INGEST_NUDGE
+            # DR-11: the calculations an ingested report claims, recomputed
+            # through the modules; it reads the record the ingest writes, so
+            # it comes and goes with the ingest tool.
+            from report_ingest.recompute import make_recompute_tool
+            cap = max(max_result_chars, 16000) if max_result_chars > 0 else 0
+            tools = list(tools) + [make_recompute_tool(cap)]
     # The report LIBRARY: the same shape, the other half of the job. Its
     # feature detection is the FOLDER rather than a package version — a
     # deployment either has reports read into it or does not, and a library
