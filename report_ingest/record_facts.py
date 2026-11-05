@@ -11,7 +11,8 @@ saved before the field, so that row answers the same either way.
   itself, off planlens' outline.
 * :func:`caption_labels`: the caption labels the narrative's caption count
   saw, which until RI-102 were counted and dropped.
-* :func:`field_work`: the years and the firms the report's own logs print.
+* :func:`field_work`: the years and the firms the report's own logs print
+  (a firm, company or consultant header field; not the driller).
 """
 
 from __future__ import annotations
@@ -36,7 +37,12 @@ _RE_YEAR = re.compile(r"(?<!\d)(19\d\d|20\d\d)(?!\d)")
 #: letters only). Narrower than the one that tells holes apart
 #: (:mod:`report_ingest.shared_names`): "engineer" and "drilled by" name a
 #: person as often as a firm.
-_RE_FIRM_KEY = re.compile(r"firm|company|consultant|contractor")
+_RE_FIRM_KEY = re.compile(r"firm|company|consultant")
+#: A header field that names who drilled or dug, or a person: not the firm
+#: that did the investigation ("Drilling Company", "Contractor Foreman").
+_RE_NOT_FIRM_KEY = re.compile(r"drill|excavat|foreman|operator|contractor")
+#: A header value that says nothing.
+_NO_VALUE = {"na", "n/a", "none", "-", "--", "unknown", "nil"}
 
 
 def _flat(text: Any) -> str:
@@ -103,11 +109,15 @@ def _own_logs(record: Any) -> List[Any]:
 
 
 def _firms(inv: Any) -> List[str]:
-    said = [_flat(getattr(inv.drilling, "contractor", ""))]
+    """The firms a log's header fields name: a firm, company or consultant
+    field, never the driller's (``drilling.contractor`` included) or a
+    person's, and never a value that says nothing ("NA")."""
+    said = []
     for key, value in (inv.fields or {}).items():
-        if _RE_FIRM_KEY.search(re.sub(r"[^a-z]", "", str(key).lower())):
+        key = re.sub(r"[^a-z]", "", str(key).lower())
+        if _RE_FIRM_KEY.search(key) and not _RE_NOT_FIRM_KEY.search(key):
             said.append(_flat(value))
-    return [s for s in said if s]
+    return [s for s in said if s and s.lower() not in _NO_VALUE]
 
 
 def field_work(record: Any, logs: Optional[Sequence[Any]] = None

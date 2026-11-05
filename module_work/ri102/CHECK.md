@@ -3,6 +3,38 @@
 Branch `claude/ri-102-record-fields`. Every value below is one the pipeline
 already reads or builds. No new question to a model, no prompt text changed.
 
+## Which rows answer now (after the review's fixes)
+
+The first version of this file said rows 2, 25, 27 and 29 answer once the
+lead maps them. That was written without the private list and was not true:
+the review ran the real rows and only row 25 answered. After the fixes, run
+locally on the real v2 and v3 rows with the test's made-up record (nothing
+from the list is in the repo):
+
+| v2 row (v3) | map it to | answers? |
+|---|---|---|
+| 2 (2), yes/no | `document_type:<types that mean yes>` | **yes**, when triage's type is one listed; else not said (code never answers no). With no types listed it is not said |
+| 25 (26), a count | `caption_count:appendix_figures` or `caption_labels:appendix_figures` | **yes** (2 on the made-up record) |
+| 27 (28), a list of records | `appendix_list` | **yes**, every part filled (two of its parts had names the reading did not know, so they stayed empty) |
+| 29 (30), a list of records, one per investigation | none | **no**: left for a follow-up (below) |
+
+Which document types mean yes on row 2 is the owner's call and goes in the
+code map, not the code. The review suggests `geotechnical report|recommendation
+letter|report addendum`; whether "report appendix or figure(s)" and "partial
+report" also mean yes is not settled.
+
+**Row 29 is left unanswered.** It asks for every investigation, current
+and prior, one record each. Code can list only the prior reports that are
+bound in, so on a report that describes an earlier investigation without
+binding it, code's list would be short and would read as a disagreement.
+Filling the parts also needs calls the record cannot settle: which firm when
+the logs name more than one; whether a prior report's year is its printed
+date or its logs' years; whether a kind with no log is 0 or not printed. `investigation_year` and
+`investigation_firm` still return one value each, which the row refuses. The
+record now holds what a reading would need (`field_work`, the bound reports'
+own records through `record_dir`), so an `investigations` reading is a
+follow-up, not part of this branch.
+
 ## What changed, and why
 
 The RI-90 code-only run could not answer rows 2, 25, 27 and 29 because the
@@ -16,7 +48,7 @@ own record to hold its logs. Each one now:
 | each page's printed page number | planlens' page map (`summary.printed_page`), already read by the graph | `DocumentFacts.printed_pages` (`{0-based page: "as printed"}`; a child keeps its own pages) | `report_ingest/graph.py:1211`, `:2304`; `report_ingest/record_facts.py` `printed_pages` |
 | the outline's appendix list | planlens' `document_outline` (the parent) / `outline_from` (a child), already built | `DocumentFacts.appendices` (`AppendixEntry`: number, title, printed page, PDF page) | same lines; `record_facts.appendices`; model `report_ingest/model.py:862` |
 | the appendix figure caption labels | `count_captions`, which returned them and `NarrativeBuilder.build` dropped | `NarrativeFacts.caption_labels` (`tables`, `figures`, `appendix_figures`) | `report_ingest/narrative_reader.py:1783`; model `report_ingest/model.py:2769` |
-| year and firm of the report's own investigation | the record's own logs: four-digit years in `date_started`/`date_finished`; the drilling contractor and header fields named firm/company/consultant/contractor | `ReportRecord.field_work` (`FieldWork`: years, dates, firms, holes, pages) | `report_ingest/graph.py:1396`, `:2419`; `record_facts.field_work`; model `report_ingest/model.py:2784`, `:3409` |
+| year and firm of the report's own investigation | the record's own logs: four-digit years in `date_started`/`date_finished`; header fields named firm, company or consultant, but not one named for the driller or a person (drill, excavat, foreman, operator, contractor), and not a value like "NA" | `ReportRecord.field_work` (`FieldWork`: years, dates, firms, holes, pages) | `report_ingest/graph.py:1396`, `:2419`; `record_facts.field_work`; model `report_ingest/model.py:2784`, `:3409` |
 
 A log on the pages of a bound report that is not a volume of this one does
 not count toward `field_work`. The question list places logs the same way.
@@ -38,11 +70,15 @@ them. That matters because model first is the default.
 readings for the private code map:
 
 - `document_type`: triage's type. On a closed list it takes the nearest
-  option, or is not given if no option is near.
+  option, or is not given if no option is near. On a yes/no row,
+  `document_type:<type|type>` names the triage types that mean yes: yes when
+  triage's type is one of them, else not given. A type outside triage's
+  vocabulary is refused when the map is read.
 - `caption_labels:<tables|figures|appendix_figures>`: the labels. The row
   gets a list, a count or text, depending on its Data Type.
 - `appendix_list`: the document's own list of appendices, as records
-  (number, title, pdf_page, printed_page) or as text.
+  (number or letter or label, title or name, pdf_page or first_pdf_page,
+  printed_page) or as text.
 - `investigation_year`, `investigation_firm`: from `field_work`, merged with
   the bound volumes' records. On a record saved before the field, the same
   reading is computed off its logs.
@@ -62,29 +98,31 @@ readings for the private code map:
   in its own record and not the parent's, and that `prior_hole_count`
   answers from it through `record_dir`.
 
-The rows themselves (2, 25, 27, 29) are named only in the private list. The
-lead maps each one in `<list>.code.json` to the reading that fits; the
-names above are the choices.
+The rows themselves are named only in the private list. The lead maps
+rows 2, 25 and 27 in `<list>.code.json` as the table at the top says; row 29
+stays unmapped.
 
 ## Made-up before/after
 
 The same made-up record, before (as saved before RI-102) and after (with the
-fields), run through seven made-up rows
+fields), run through nine made-up rows
 (`test_rows_the_record_could_not_answer_now_answer`):
 
 | row (made up) | reading | before | after |
 |---|---|---|---|
 | doc_kind | `document_type` | not said ("triage's document type is not on the record") | "geotechnical report" |
+| is_soils_report (yes/no) | `document_type:geotechnical report\|report addendum` | not said | true |
 | back_figures | `caption_labels:appendix_figures` | not said | ["figure A-1", "figure A-2"] |
 | back_figure_total | `caption_count:appendix_figures` | not said | 2 |
 | appendix_names | `appendix_list` | not said | [{A, Boring Logs, pdf 3}, {B, Laboratory Data, pdf null}] |
+| appendix_index (label, title, first_pdf_page) | `appendix_list` | not said | [{A, Boring Logs, 3}, {B, Laboratory Data, null}] |
 | field_year | `investigation_year` | not said | 2030 (note: the earliest of 2030, 2031) |
-| field_firm | `investigation_firm` | not said | "Made-Up Drilling" |
+| field_firm | `investigation_firm` | not said | "Invented Geo" |
 | page_kinds | `page_labels` | printed_page "" | printed_page "1" |
 
 ## Tests
 
-New: `report_ingest/tests/test_record_fields.py`, 12 tests. All 12 fail on
+New: `report_ingest/tests/test_record_fields.py`, 13 tests. All 13 fail on
 master: the file does not import there (`AppendixEntry`, `FieldWork` and
 `report_ingest.record_facts` do not exist). One part of
 `test_a_bound_prior_report_s_record_holds_its_logs` would pass on master
@@ -95,17 +133,21 @@ master: the file does not import there (`AppendixEntry`, `FieldWork` and
 - The summary, library page and DIGGS of an old record do not change when
   the fields are filled.
 - `printed_pages`, `caption_labels`, `field_work`: the logs' own years and
-  firms. A prior report's logs, an "Engineer" field and two-digit years are
-  left out.
+  firms. A prior report's logs, the drilling contractor, a "Drilling
+  Company" or "Contractor Foreman" field, an "Engineer" field, "NA" and
+  two-digit years are left out.
 - The graph (synthetic report, today's readers) keeps the document type,
   the printed pages (the child's within its own pages), the appendix list
   A to D, the caption labels, the child's identity type, and the parent's
-  field work. The child has none.
+  field work: its consultant header field (added to the form reader's
+  header fields by the test), not the driller the scripted reading names.
+  The child has none.
 - Rows 19 to 21: the bound prior report's own record holds BH-1, and
   `prior_hole_count` answers 1 with `record_dir` and "not said" without it.
 - The rows that now answer (table above). An old record answers the year
-  off its logs. A document type off the row's list is not given. The new
-  readings refuse arguments they cannot use.
+  off its logs. A document type off the row's list is not given. A yes/no
+  row is yes only for the types the map names, and not given with none.
+  The new readings refuse arguments they cannot use.
 
 Changed: `report_ingest/tests/test_model.py`, the record's top-level
 property set (adds `field_work`).
@@ -130,6 +172,14 @@ Runs (venv `/tmp/v`, Python 3.12, planlens 0.14.0):
   `module_work/report_ingest_harness/tests`: **373 passed, 34 skipped, 0
   failed**, exit 0.
 
+After the review's fixes (Windows, the app's venv, `-p no:cacheprovider`):
+
+- `test_record_fields.py`, `test_model.py`, `test_model_first_schema.py`,
+  `test_graph_model_first.py`: **285 passed, 0 skipped**, exit 0. The graph
+  snapshot did not move: the synthetic report's logs name no firm.
+- `test_question_list.py`, `webapp/tests/test_public_text.py`: **39 passed**,
+  exit 0.
+
 ## Prompt versions
 
 None moved. No model-facing template text changed. `run_questions` now takes
@@ -148,10 +198,9 @@ and optional, and a record with none of them is written as before. New runs'
 
 - Re-run `module_work/report_ingest_harness/run_question_list.py` (engine
   `none`) on records written by a build with this branch, after the lead maps
-  rows 2, 25, 27 and 29 in the private code map to `document_type`,
-  `caption_labels:appendix_figures` / `appendix_list`, `investigation_year`
-  and `investigation_firm` (whichever fits each row). Count how many of the
-  13 reports each row answers, and check each answer against the PDF.
+  rows 2, 25 and 27 in the private code map as the table at the top says.
+  Count how many of the 13 reports each row answers, and check each answer
+  against the PDF.
 - Rows 19 to 21 on R13 from a post-RI-14 run: check that the bound earlier
   report's record holds its logs (build f's review counts 13 holes there),
   and that `prior_hole_count` answers through `record_dir`.
@@ -164,11 +213,14 @@ and optional, and a record with none of them is written as before. New runs'
 - `printed_pages` is planlens' page-map reading. R09, R11 and R24 print none
   that it finds, so the row stays not said there. Improving that would be a
   planlens change.
-- `field_work.firms` takes the drilling contractor and firm-named header
-  fields only. The report's own geotechnical firm is the narrative's
-  `geotechnicalEngineerFirm`, a model answer already on the record, and is
-  not mixed in. Two-digit years ("3/8/31") are not read, since the century is
-  not printed.
+- `field_work.firms` takes firm, company and consultant header fields only,
+  never the driller (the review found drillers, foremen and "NA" saved as the
+  firm on real records under the first rule). A report whose logs name its
+  firm only in a drilling-contractor field now has no firm there, which is
+  "not said", not a wrong firm. The report's own geotechnical firm is the
+  narrative's `geotechnicalEngineerFirm`, a model answer already on the
+  record, and is not mixed in. Two-digit years ("3/8/31") are not read, since
+  the century is not printed.
 - With `ingest_bound` off there are no bound documents, so every log in the
   record counts toward `field_work`.
 - The harness `run_question_list.py` still collects bound records itself; it

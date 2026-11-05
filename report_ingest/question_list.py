@@ -1023,21 +1023,46 @@ def _caption_labels(kind: str) -> Callable[[_Source, Question], Answer]:
     return read
 
 
-def _document_type(src: _Source, q: Question) -> Answer:
-    said = src.record.document.document_type
-    if not said:
-        return _not_given("triage's document type is not on the record")
-    note = "the document type triage gave the file"
-    value: Any = said
-    if q.options and said not in q.options:
-        value = _closest(q.options, said)
-        if value is None:
-            return _not_given(f"triage's {said!r} is not near one option of "
-                              f"the row's list")
-        note += f" ({said!r})"
-    if q.data_type == "list of strings":
-        value = [value]
-    return _given(value, (), note)
+def _document_type(arg: str) -> Callable[[_Source, Question], Answer]:
+    """Triage's document type. On a yes/no row, ``arg`` names the types
+    that mean yes ("geotechnical report|report addendum"): which ones do is
+    the code map's call, not code's. Yes when triage's type is one of them,
+    else not given (yes-or-nothing). A text row takes the type itself."""
+    from report_ingest.model import DOCUMENT_TYPE_VALUES
+
+    yes = tuple(t.strip() for t in arg.split("|") if t.strip())
+    wrong = [t for t in yes if t not in DOCUMENT_TYPE_VALUES]
+    if wrong:
+        raise ValueError("give the document types that mean yes, from: "
+                         + "; ".join(DOCUMENT_TYPE_VALUES)
+                         + f" (not {'; '.join(wrong)})")
+
+    def read(src: _Source, q: Question) -> Answer:
+        said = src.record.document.document_type
+        if not said:
+            return _not_given("triage's document type is not on the record")
+        if q.data_type == "boolean":
+            if not yes:
+                return _not_given("a yes/no row needs the document types "
+                                  "that mean yes")
+            if said in yes:
+                return _given(True, (), f"triage took the file to be a "
+                                        f"{said!r}")
+            return _not_given(f"triage took the file to be a {said!r}, not "
+                              f"one of the types that mean yes; code cannot "
+                              f"show a no")
+        note = "the document type triage gave the file"
+        value: Any = said
+        if q.options and said not in q.options:
+            value = _closest(q.options, said)
+            if value is None:
+                return _not_given(f"triage's {said!r} is not near one option "
+                                  f"of the row's list")
+            note += f" ({said!r})"
+        if q.data_type == "list of strings":
+            value = [value]
+        return _given(value, (), note)
+    return read
 
 
 def _appendix_list(src: _Source, q: Question) -> Answer:
@@ -1049,9 +1074,12 @@ def _appendix_list(src: _Source, q: Question) -> Answer:
     if q.data_type in ("list of records", "dictionary"):
         notes: List[str] = []
         out = [_fill(q, {"number": r.number, "letter": r.number,
+                         "label": r.number,
                          "title": r.title, "name": r.title,
                          "printed_page": r.printed_page,
                          "pdf_page": None if r.page is None else r.page + 1,
+                         "first_pdf_page": (None if r.page is None
+                                            else r.page + 1),
                          "pdf_pages": [] if r.page is None else [r.page + 1]},
                      notes) for r in rows]
         return _given(out, pages, "; ".join(
@@ -1111,8 +1139,8 @@ def _investigation_firm(src: _Source, q: Question) -> Answer:
     work, where = _field_work(src)
     if work is None or not work.firms:
         return _not_given("no log of this investigation names a firm (a "
-                          "drilling contractor, or a firm, company or "
-                          "consultant field); the narrative may")
+                          "firm, company or consultant field; the driller "
+                          "is not counted); the narrative may")
     return _given(_shaped(q, work.firms),
                   [p + 1 for p in work.pages],
                   f"the firms the headers of the logs of this "
@@ -1378,7 +1406,8 @@ def _no_argument(read: Callable[[_Source, Question], Answer]
 #: * ``calculation_list``: the printouts by kind, as text to check against.
 #: * ``printed_value:<name|name>``: what the printouts print under a name.
 #: * ``chemical_results``: the laboratory's chemical results, as text.
-#: * ``document_type``: the document type triage gave the file.
+#: * ``document_type``: the document type triage gave the file; on a yes/no
+#:   row, ``document_type:<type|type>``: yes when it is one of those types.
 #: * ``caption_labels:<tables, figures or appendix_figures>``: the caption
 #:   labels the caption count saw ("figure A-2" for an appendix figure).
 #: * ``appendix_list``: the appendices the document's own list names.
@@ -1406,7 +1435,7 @@ READINGS: Dict[str, Callable[[str], Callable[[_Source, Question], Answer]]] = {
     "printed_value": _printed_value,
     "chemical_results": _no_argument(_chemical),
     # BACKLOG RI-102: what the record keeps for these since.
-    "document_type": _no_argument(_document_type),
+    "document_type": _document_type,
     "caption_labels": _caption_labels,
     "appendix_list": _no_argument(_appendix_list),
     "investigation_year": _no_argument(_investigation_year),

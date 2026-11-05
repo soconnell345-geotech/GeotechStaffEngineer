@@ -2786,10 +2786,10 @@ class FieldWork(BaseModel):
     logs print it (BACKLOG RI-102).
 
     Read by code off the record's logs, never asked of a model: the years
-    in the dates the logs print, and the firms their headers name (the
-    drilling contractor, a firm, company or consultant field). A log on the
-    pages of a bound report that is not a volume of this one is that
-    report's, and is left out.
+    in the dates the logs print, and the firms their headers name (a firm,
+    company or consultant field; never the driller, a foreman or a value
+    that says nothing, like "NA"). A log on the pages of a bound report
+    that is not a volume of this one is that report's, and is left out.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -2803,7 +2803,9 @@ class FieldWork(BaseModel):
         description="the dates the logs print, as printed, each once")
     firms: List[str] = Field(
         default_factory=list,
-        description="the firms the logs' headers name, as printed, each once")
+        description="the firms the logs' headers name in a firm, company or "
+                    "consultant field (not the driller's), as printed, each "
+                    "once")
     holes: int = Field(
         default=0, ge=0, description="how many logs these were read off")
     pages: List[int] = Field(

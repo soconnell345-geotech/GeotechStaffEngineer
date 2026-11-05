@@ -123,19 +123,24 @@ def _log(name, page, *, date="", contractor="", fields=None):
 def test_field_work_is_the_own_logs_years_and_firms():
     record = ReportRecord(
         investigations=[
-            _log("B-1", 4, date="12/30/2030", contractor="Made-Up Drilling"),
+            _log("B-1", 4, date="12/30/2030", contractor="Made-Up Drilling",
+                 fields={"Drilling Company": "Made-Up Drilling",
+                         "Contractor Foreman": "A. Sample", "Firm": "NA"}),
             _log("B-2", 5, date="Jan 3, 2031",
                  fields={"Consultant": "Invented Geo", "Engineer": "A. N."}),
             _log("B-3", 6),                         # prints neither
-            _log("P-1", 9, date="2/2/1999", contractor="Older Drillers")],
+            _log("P-1", 9, date="2/2/1999",
+                 fields={"Consultant": "Older Geo"})],
         bound_documents=[BoundReport(bound_id="bound1",
                                      kind="appended_prior_report",
                                      first_page=8, last_page=10)])
     work = record_facts.field_work(record)
     assert work.years == [2030, 2031]
     assert work.dates == ["12/30/2030", "Jan 3, 2031"]
-    # An "Engineer" field names a person as often as a firm: left out.
-    assert work.firms == ["Made-Up Drilling", "Invented Geo"]
+    # Only a firm, company or consultant field names the firm: never the
+    # driller (the contractor, a drilling company), a foreman, an "Engineer"
+    # (a person as often as a firm) or "NA".
+    assert work.firms == ["Invented Geo"]
     assert (work.holes, work.pages) == (2, [4, 5])
     # A two-digit year is not read; a log with nothing gives no field work.
     assert record_facts.field_work(ReportRecord(
@@ -154,7 +159,8 @@ pytest.importorskip("planlens.document.roles")
 @pytest.fixture()
 def run(tmp_path, monkeypatch):
     """One standard scripted run of the synthetic report (today's readers),
-    the parent's logs printing a made-up date and contractor."""
+    the parent's logs printing a made-up date, driller and consultant."""
+    from report_ingest import log_reader
     from report_ingest.graph import MODEL_FIRST_ENV, ingest_report
     from report_ingest.log_reader import ReadDrilling
     from report_ingest.tests import test_graph as tg
@@ -162,6 +168,16 @@ def run(tmp_path, monkeypatch):
     from report_ingest.tests.narrative_fixtures import build_narrative_report
 
     monkeypatch.setenv(MODEL_FIRST_ENV, "off")
+    seed = log_reader.seed_from_grid
+
+    def with_consultant(*args, **kwargs):
+        # The header field a form reader pulls off the parent's logs.
+        floor = seed(*args, **kwargs)
+        if floor.investigation_id in ("B-1", "TP-1"):
+            floor.fields = {**floor.fields, "Consultant": "Invented Geo"}
+        return floor
+
+    monkeypatch.setattr(log_reader, "seed_from_grid", with_consultant)
     pdf = tmp_path / "SYN.pdf"
     pdf.write_bytes(build_narrative_report().pdf)
     script = tg.full_script()
@@ -200,9 +216,10 @@ def test_the_graph_keeps_what_the_run_read(run):
         "figure 1", "figure 2"]
     # The bound report's type is what its identity call said.
     assert child.document.document_type == "geotechnical report"
-    # The years and firms of this report's own logs, not the prior's.
+    # The years and firms of this report's own logs, not the prior's; the
+    # consultant field, not the driller.
     assert record.field_work.years == [2031]
-    assert record.field_work.firms == ["Made-Up Drilling"]
+    assert record.field_work.firms == ["Invented Geo"]
     assert child.field_work is None
 
 
@@ -240,21 +257,30 @@ def _row(key, data_type, options=(), parts=()):
 ROWS = [
     _row("doc_kind", "string",
          options=("geotechnical report", "boring logs only")),
+    _row("is_soils_report", "boolean"),
     _row("back_figures", "list of strings"),
     _row("back_figure_total", "integer"),
     _row("appendix_names", "list of records",
          parts=(ql.Part("number"), ql.Part("title"), ql.Part("pdf_page"))),
+    _row("appendix_index", "list of records",
+         parts=(ql.Part("label"), ql.Part("title"),
+                ql.Part("first_pdf_page"))),
     _row("field_year", "integer"),
     _row("field_firm", "string"),
     _row("page_kinds", "dictionary",
          parts=(ql.Part("pdf_page"), ql.Part("sheet_class"),
                 ql.Part("printed_page"))),
 ]
+#: The document types a made-up yes/no row takes as yes: the code map's
+#: call, not code's.
+YES_TYPES = "geotechnical report|report addendum"
 READINGS = {
     "doc_kind": ("document_type", ""),
+    "is_soils_report": ("document_type", YES_TYPES),
     "back_figures": ("caption_labels", "appendix_figures"),
     "back_figure_total": ("caption_count", "appendix_figures"),
     "appendix_names": ("appendix_list", ""),
+    "appendix_index": ("appendix_list", ""),
     "field_year": ("investigation_year", ""),
     "field_firm": ("investigation_firm", ""),
     "page_kinds": ("page_labels", ""),
@@ -278,7 +304,7 @@ def _filled():
                                                             "figure A-2"]}
     record.field_work = FieldWork(years=[2030, 2031],
                                   dates=["12/30/2030", "1/2/2031"],
-                                  firms=["Made-Up Drilling"], holes=2,
+                                  firms=["Invented Geo"], holes=2,
                                   pages=[2])
     return record
 
@@ -294,14 +320,18 @@ def test_rows_the_record_could_not_answer_now_answer():
             assert before[key].status == "not said", key
         assert after[key].status == "answered", (key, after[key].note)
     assert after["doc_kind"].value == "geotechnical report"
+    assert after["is_soils_report"].value is True
     assert after["back_figures"].value == ["figure A-1", "figure A-2"]
     assert after["back_figure_total"].value == 2
     assert after["appendix_names"].value == [
         {"number": "A", "title": "Boring Logs", "pdf_page": 3},
         {"number": "B", "title": "Laboratory Data", "pdf_page": None}]
+    assert after["appendix_index"].value == [
+        {"label": "A", "title": "Boring Logs", "first_pdf_page": 3},
+        {"label": "B", "title": "Laboratory Data", "first_pdf_page": None}]
     assert after["field_year"].value == 2030
     assert "the earliest of 2030, 2031" in after["field_year"].note
-    assert after["field_firm"].value == "Made-Up Drilling"
+    assert after["field_firm"].value == "Invented Geo"
     # The page list's printed number comes off the record when the caller
     # gives none, and a caller's own still wins.
     assert before["page_kinds"].value[1]["printed_page"] == ""
@@ -327,8 +357,31 @@ def test_a_document_type_off_the_row_s_list_is_not_given():
     assert "not near one option" in code["doc_kind"].note
 
 
+def test_a_yes_no_row_is_yes_only_for_the_types_the_map_names():
+    """Yes-or-nothing: a type the code map does not name is not a no, and
+    a yes/no row mapped with no types is not answered."""
+    rows = ql.QuestionList(
+        questions=[_row("is_soils_report", "boolean"),
+                   _row("bare_yes_no", "boolean")],
+        readings={"is_soils_report": ("document_type", YES_TYPES),
+                  "bare_yes_no": ("document_type", "")},
+        map_name="made-up")
+    record = _filled()
+    code = ql.code_answers(record, rows)
+    assert code["bare_yes_no"].status == "not said"
+    assert "needs the document types" in code["bare_yes_no"].note
+    record.document.document_type = "partial report"
+    code = ql.code_answers(record, rows)
+    assert (code["is_soils_report"].status,
+            code["is_soils_report"].value) == ("not said", None)
+    assert "cannot show a no" in code["is_soils_report"].note
+
+
 def test_the_new_readings_refuse_an_argument_they_cannot_use():
     with pytest.raises(ValueError):
         ql.READINGS["caption_labels"]("plates")
     with pytest.raises(ValueError):
         ql.READINGS["appendix_list"]("anything")
+    # A yes type the triage vocabulary does not have.
+    with pytest.raises(ValueError):
+        ql.READINGS["document_type"]("geotechnical report|soils memo")
