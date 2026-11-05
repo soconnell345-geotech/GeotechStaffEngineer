@@ -249,8 +249,9 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             was set and its basis.
         surcharge_kPa — the surcharge applied beside the footing.
         warnings — says so when q_ult is set by the mesh (flexible, c = 0
-            with gamma > 0 and no surcharge) or, rigid, when q did not level
-            off.
+            with gamma > 0 and no surcharge), when a flexible run on a
+            frictional soil stopped at max_iter (q_ult can rise with
+            max_iter; GM-306) or, rigid, when q did not level off.
     """
     if B <= 0:
         raise ValueError(f"footing width B must be positive, got {B}")
@@ -418,6 +419,20 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     result.settlement_max_m = None
     result.mesh = mesh
     result.choices = _footing_choices('flexible', base, mesh)
+    if (phi > 0 and not res['converged'] and res['iterations']
+            and res['iterations'][-1] >= max_iter):
+        # GM-306: on a frictional soil the step the run stopped at reached
+        # max_iter with the constant-stiffness iteration still converging,
+        # and q_ult moved with max_iter (fem2d VALIDATION.md section 3).
+        result.warnings.append(
+            f"The load step after q_ult = {q_ult:.1f} kPa stopped at "
+            f"max_iter = {max_iter} iterations, not at a mechanism: on a "
+            "frictional soil this iteration converges slowly, more so on "
+            "finer or graded meshes, and q_ult can rise with max_iter (c = "
+            "20 kPa, phi = 25, B = 2 m: 455.6 kPa at 1000 and 477.3 at 4000 "
+            "on the default 40x20 mesh; 217.0 at 1000 and 455.6 at 4000 on "
+            "80x40). Rerun with a larger max_iter and compare before "
+            "quoting q_ult.")
     if c <= 0 and phi > 0 and gamma > 0 and surcharge == 0:
         # GM-304 review: c = 0, phi = 30, gamma = 18 gave 102.5, 52.5, 35.0
         # and 27.5 kPa on 20x10 to 80x40 (fem2d/VALIDATION.md section 3).
@@ -684,9 +699,9 @@ def _footing_capacity_rigid(B, c, phi, gamma, E, nu, psi, surcharge,
             f"q_ult = {q_ult:.1f} kPa is a lower bound of this mesh's "
             "answer. Raise settlement_max or n_load_steps.")
     result.warnings.append(
-        "Rigid footing: on the module's uniform meshes q_ult falls as the "
-        "mesh is refined (Prandtl c = 50 kPa, B = 2 m: 347.9 and 306.0 kPa "
-        "on 20x10 and 40x20 against (2 + pi) c = 257.1; fem2d "
+        "Rigid footing: q_ult falls as the mesh is refined (Prandtl c = 50 "
+        "kPa, B = 2 m, against (2 + pi) c = 257.1: 347.9 and 306.0 kPa on "
+        "uniform 20x10 and 40x20, 287.8 and 273.1 on graded ones; fem2d "
         "VALIDATION.md section 3), so it is an upper estimate that depends "
         "on the element size at the footing's edges.")
     return result

@@ -283,8 +283,21 @@ class TestRigidFooting:
         assert s == sorted(s) and s[-1] == pytest.approx(r.settlement_max_m)
         assert r.q_max_kPa is None
         assert r.Nc_backfigured == pytest.approx(r.q_ult_kPa / 50.0)
-        assert [c["chosen"] for c in r.choices] == ["rigid", "rough"]
+        assert [c["chosen"] for c in r.choices] == ["rigid", "rough",
+                                                    "uniform"]
         assert any("falls as the mesh is refined" in w for w in r.warnings)
+
+    def test_prandtl_rough_graded(self):
+        # GM-306: the graded mesh's smaller edge elements bring the rigid
+        # footing nearer (2 + pi) c = 257.1 on the same 20 x 10 elements
+        # (287.8 against 347.9 uniform; 273.1, 267.9, 265.3 on 40x20 to
+        # 80x40, VALIDATION.md section 3)
+        r = analyze_footing_capacity(B=2.0, c=50.0, footing="rigid",
+                                     mesh="graded", nx=20, ny=10)
+        assert r.collapse_bracketed
+        assert r.q_ult_kPa == pytest.approx(287.83, rel=1e-3)
+        assert r.mesh == "graded"
+        assert r.choices[-1]["chosen"] == "graded"
 
     def test_prandtl_smooth_below_rough(self):
         r = analyze_footing_capacity(B=2.0, c=50.0, footing="rigid",
@@ -336,6 +349,8 @@ class TestFlexibleCollapseCriterion:
         assert r_old.q_ult_kPa == pytest.approx(282.0, abs=0.5)
         assert r.q_ult_kPa == pytest.approx(368.8, abs=0.5)
         assert r.q_ult_kPa > r_old.q_ult_kPa
+        # the stop at max_iter on a frictional soil is said
+        assert any("stopped at max_iter = 100" in w for w in r.warnings)
 
     def test_step_that_converges_is_unchanged(self, monkeypatch):
         # settled_early=False: a step that meets tol on its own ends where
@@ -349,3 +364,6 @@ class TestFlexibleCollapseCriterion:
         assert r.n_steps_settled == 0
         assert r.q_ult_kPa == r_old.q_ult_kPa
         assert r.max_displacement_m == r_old.max_displacement_m
+        # phi = 0: q_ult did not move with max_iter (255.9 kPa at 1000 and
+        # 4000 on 40 x 20), so no max_iter warning
+        assert not any("max_iter" in w for w in r.warnings)
