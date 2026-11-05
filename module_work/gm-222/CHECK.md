@@ -115,7 +115,7 @@ both.
 
 ## Tests run (Python 3.12 venv, `pip install -e .`)
 
-- `pytest fem2d calc_package -n 8`: RESULT_FEM2D
+- `pytest fem2d calc_package -n 8`: 855 passed, 3 skipped (pdflatex not installed), 0 failed.
 - `pytest fem2d/tests/test_seepage_flow.py fem2d/tests/test_groundwater.py`:
   59 passed, 0 failed.
 - `pytest webapp/tests/test_public_text.py webapp/tests/test_page_fingerprints.py`:
