@@ -161,7 +161,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
 
     The default stays 'flexible' on the evidence of the mesh study in
     VALIDATION.md §3 (GM-305): on the module's uniform meshes the rigid
-    footing converges slowly from above (Prandtl 347.9, 305.9 kPa on 20x10
+    footing converges slowly from above (Prandtl 347.9, 306.0 kPa on 20x10
     and 40x20 against 257.1), and on a cohesionless soil it gives no
     plateau. **Use element_type='t6'** — CST locks and never collapses
     for this isochoric mechanism (VALIDATION.md §3).
@@ -598,7 +598,7 @@ def _footing_capacity_rigid(B, c, phi, gamma, E, nu, psi, surcharge,
             "answer. Raise settlement_max or n_load_steps.")
     result.warnings.append(
         "Rigid footing: on the module's uniform meshes q_ult falls as the "
-        "mesh is refined (Prandtl c = 50 kPa, B = 2 m: 347.9 and 305.9 kPa "
+        "mesh is refined (Prandtl c = 50 kPa, B = 2 m: 347.9 and 306.0 kPa "
         "on 20x10 and 40x20 against (2 + pi) c = 257.1; fem2d "
         "VALIDATION.md section 3), so it is an upper estimate that depends "
         "on the element size at the footing's edges.")

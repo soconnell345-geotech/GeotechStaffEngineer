@@ -203,7 +203,7 @@ class TestRigidFooting:
     """GM-305: the rigid footing on the coarse T6 20 x 10 mesh, B = 2 m.
     Made-up values. The mesh study (fem2d VALIDATION.md section 3) is why
     the default stays flexible: these values fall as the mesh is refined
-    (Prandtl rough 347.9 -> 305.9 kPa from 20 x 10 to 40 x 20)."""
+    (Prandtl rough 347.9 -> 306.0 kPa from 20 x 10 to 40 x 20)."""
 
     def test_prandtl_rough(self):
         r = analyze_footing_capacity(B=2.0, c=50.0, footing="rigid",
