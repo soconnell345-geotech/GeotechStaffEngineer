@@ -132,13 +132,14 @@ CASES = [
     ("ground_improvement_package", {"method": "vibro", "fines_content": 8,
                                     "initial_N_spt": 12,
                                     "target_relative_density": 70}),
-    ("wave_equation_package", {"hammer_name": "Delmag D30-32",
+    ("wave_equation_package", {"hammer_name": "Vulcan 014",
                                "pile_length": 15.0, "pile_area": 0.01}),
     ("wave_equation_package", {"hammer_name": "Delmag D30-32",
                                "pile_length": 15.0, "pile_area": 0.01,
                                "pile_E": 200e6, "cushion_area": 0.1,
                                "cushion_thickness": 0.1,
-                               "cushion_E": 3.5e6}),
+                               "cushion_E": 3.5e6, "cushion_cor": 0.80,
+                               "helmet_weight": 5.0}),
     ("pile_group_package", {"n_rows": 3, "n_cols": 3, "spacing": 1.5,
                             "Vz": 1800.0}),
     ("pile_group_package", {"n_rows": 2, "n_cols": 3, "spacing_x": 1.2,
@@ -511,12 +512,13 @@ def _ground(analyze, **inputs):
 
 
 def _bearing_graph():
-    from wave_equation import (Cushion, discretize_pile,
-                               generate_bearing_graph, get_hammer)
+    from wave_equation import (discretize_pile, generate_bearing_graph,
+                               get_driving_system, get_hammer)
+    system = get_driving_system("Vulcan 014")      # the tool's (GM-299)
     return generate_bearing_graph(
-        get_hammer("Delmag D30-32"),
-        Cushion(stiffness=500000, cor=0.80),       # the tool's cushion
-        discretize_pile(15.0, 0.01, 200e6))        # the tool's pile_E
+        get_hammer("Vulcan 014"), system.cushion(),
+        discretize_pile(15.0, 0.01, 200e6),        # the tool's pile_E
+        helmet_weight=system.helmet_weight)
 
 
 def _group(analyze, n, stiffness=None, **load):
@@ -621,7 +623,7 @@ MODULE_CASES = [
     ("ground_improvement_package", {"method": "vibro", "fines_content": 8,
                                     "initial_N_spt": 12},
      _ground("analyze_vibro_compaction", fines_content=8, initial_N_spt=12)),
-    ("wave_equation_package", {"hammer_name": "Delmag D30-32",
+    ("wave_equation_package", {"hammer_name": "Vulcan 014",
                                "pile_length": 15.0, "pile_area": 0.01},
      _bearing_graph),
     ("pile_group_package", {"n_rows": 3, "n_cols": 3, "spacing": 1.5,

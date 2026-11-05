@@ -537,7 +537,8 @@ class TestLateralPileStickup:
 
 class TestWaveEquationDampingModel:
     BASE = {"hammer_name": None, "pile_length": 20.0, "pile_area": 0.01,
-            "R_total": 1000.0}
+            "R_total": 1000.0, "cushion_stiffness": 500000.0,
+            "cushion_cor": 0.80, "helmet_weight": 5.0}  # given (GM-299)
 
     def _params(self, **kw):
         import wave_equation

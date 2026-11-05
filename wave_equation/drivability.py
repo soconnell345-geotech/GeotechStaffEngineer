@@ -194,7 +194,7 @@ def drivability_study(
     quake_toe: float = 0.0025,
     damping_side: float = 0.16,
     damping_toe: float = 0.49,
-    helmet_weight: float = 5.0,
+    helmet_weight: Optional[float] = None,
     refusal_blow_count: float = REFUSAL_BLOWS_PER_M,
     damping_model: str = "smith",
     pile_length: Optional[float] = None,
@@ -227,7 +227,7 @@ def drivability_study(
     damping_side, damping_toe : float
         Smith damping values (s/m); GEC-12 Vol 2 p. 211 (see SoilSetup).
     helmet_weight : float
-        Helmet weight (kN).
+        Helmet weight (kN). Required (GM-299; see simulate_blow).
     refusal_blow_count : float
         Blow count (blows/m) above which the pile has refused. Default
         393.7 (120 blows/ft, GEC-12 Vol 2 p. 161); 787.4 (240 blows/ft)

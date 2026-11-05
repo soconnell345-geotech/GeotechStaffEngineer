@@ -14,7 +14,7 @@ def test_bearing_graph_table_is_the_result_arrays():
     area = math.pi / 4 * (d ** 2 - (d - 2 * t) ** 2)
     pile = discretize_pile(15.0, area, 200e6, segment_length=1.0)
     bg = generate_bearing_graph(hammer, cushion, pile, R_min=200, R_max=800,
-                                R_step=200)
+                                R_step=200, helmet_weight=5.0)
     (table,) = bg.get_tables()
     assert table.n_rows == len(bg.R_values) == 4
     assert table.column("Ultimate resistance R_ult") == list(bg.R_values)

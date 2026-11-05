@@ -29,6 +29,7 @@ from wave_equation.hammer import Hammer
 from wave_equation.cushion import Cushion
 from wave_equation.pile_model import PileModel
 from wave_equation.soil_model import SoilSetup, SmithSoilModel
+from wave_equation.driving_systems import require_helmet_weight
 
 
 @dataclass
@@ -135,7 +136,7 @@ def simulate_blow(
     cushion: Cushion,
     pile: PileModel,
     soil: SoilSetup,
-    helmet_weight: float = 5.0,
+    helmet_weight: Optional[float] = None,
     max_time: float = 0.10,
     dt: Optional[float] = None,
     store_interval: int = 10,
@@ -158,9 +159,12 @@ def simulate_blow(
         Soil resistance model and parameters.
     helmet_weight : float
         Helmet (drive cap) weight (kN), lumped with the first pile
-        segment. Default 5 kN (not printed in a held reference; GEC-12
-        Vol 2's examples give 1.0 to 4.07 kips, 4.4 to 18.1 kN, pp. 163,
-        167, 174, 179, 183).
+        segment. Required (GM-299): no held reference prints a helmet
+        weight for every hammer; GEC-12 Vol 2's examples give 1.0 to 4.07
+        kips, 4.4 to 18.1 kN (pp. 163, 167, 174, 179, 183), and
+        ``wave_equation.driving_systems`` holds Table 12-2's (p. 183).
+        Until GM-299 the module defaulted to 5 kN, which no held
+        reference prints.
     max_time : float
         Maximum simulation time (s). Default 0.10 s.
     dt : float, optional
@@ -172,6 +176,7 @@ def simulate_blow(
     -------
     BlowResult
     """
+    require_helmet_weight(helmet_weight)
     n = pile.n_segments
 
     # Create soil models

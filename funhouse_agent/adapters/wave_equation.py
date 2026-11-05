@@ -8,6 +8,9 @@ from wave_equation import (
     discretize_pile, SoilSetup, simulate_blow, generate_bearing_graph, drivability_study,
 )
 from wave_equation.drivability import REFUSAL_BLOWS_PER_M
+from wave_equation.driving_systems import (
+    PRINTED_DRIVING_SYSTEMS, PRINTED_OPTIONS, driving_system_for_hammer,
+    get_driving_system, require_helmet_weight)
 from wave_equation.hammer import diesel_warning
 from wave_equation.soil_model import quake_weighting_choice
 
@@ -24,7 +27,7 @@ _EMBEDMENT_PARAMS = ("embedded_length", "shaft_distribution")
 _HAMMER_PARAMS = ("hammer_name", "hammer_custom_name", "ram_weight", "stroke",
                   "efficiency", "hammer_type")
 _CUSHION_PARAMS = ("cushion_stiffness", "cushion_area", "cushion_thickness",
-                   "cushion_E", "cushion_cor")
+                   "cushion_E", "cushion_cor", "driving_system")
 
 
 def _build_hammer(params):
@@ -38,17 +41,113 @@ def _build_hammer(params):
                    hammer_type=params.get("hammer_type", "single_acting"))
 
 
-def _build_cushion(params):
-    if "cushion_stiffness" in params:
-        return Cushion(stiffness=params["cushion_stiffness"], cor=params.get("cushion_cor", 0.80))
-    elif "cushion_area" in params:
-        require_params(params, ["cushion_area", "cushion_thickness", "cushion_E"],
-                       method="cushion from properties",
-                       valid=_CUSHION_PARAMS)
-        return make_cushion_from_properties(area=params["cushion_area"], thickness=params["cushion_thickness"],
-                                              elastic_modulus=params["cushion_E"], cor=params.get("cushion_cor", 0.80))
-    # No cushion given: 500,000 kN/m; cushion_cor still applies (GM-160).
-    return Cushion(stiffness=500000, cor=params.get("cushion_cor", 0.80))
+def _driving_system(params, hammer):
+    """The printed driving system in force and how it came: the one named
+    by ``driving_system`` ("given"), else the named hammer's where a held
+    reference prints one ("default"; GEC-12 Vol 2 Table 12-2, p. 183),
+    else (None, None)."""
+    if params.get("driving_system"):
+        return get_driving_system(params["driving_system"]), "given"
+    if "hammer_name" in params:
+        system = driving_system_for_hammer(hammer.name)
+        if system is not None:
+            return system, "default"
+    return None, None
+
+
+def _build_driving_system(params, hammer):
+    """(cushion, helmet weight in kN, choices) of a call (GM-299).
+
+    A cushion given by stiffness or by properties needs its COR, and the
+    helmet weight is then needed too. With no cushion given, the printed
+    driving system (:func:`_driving_system`) supplies the cushion, its COR
+    and the helmet weight, each unless given. No held reference prints a
+    cushion or helmet for any other hammer, so a call with neither is
+    refused, the printed options in the error (before GM-299: a 500,000
+    kN/m cushion, COR 0.80 and a 5 kN helmet, none printed). The result's
+    choices state the cushion and helmet the run took and how."""
+    from geotech_common.choices import DEFAULT, GIVEN, how_given
+    own = "cushion_stiffness" in params or "cushion_area" in params
+    system, came = _driving_system(params, hammer)
+    if own and params.get("driving_system"):
+        raise ValueError(
+            "Give either a cushion (cushion_stiffness, or cushion_area + "
+            "cushion_thickness + cushion_E) or driving_system, not both.")
+    if own:
+        if "cushion_stiffness" not in params:
+            require_params(params, ["cushion_area", "cushion_thickness",
+                                    "cushion_E"],
+                           method="cushion from properties",
+                           valid=_CUSHION_PARAMS)
+        if "cushion_cor" not in params:
+            raise ValueError(
+                "cushion_cor is required with a cushion given: no held "
+                "reference prints one coefficient of restitution for every "
+                "cushion. " + PRINTED_OPTIONS)
+        if "cushion_stiffness" in params:
+            cushion = Cushion(stiffness=params["cushion_stiffness"],
+                              cor=params["cushion_cor"])
+        else:
+            cushion = make_cushion_from_properties(
+                area=params["cushion_area"],
+                thickness=params["cushion_thickness"],
+                elastic_modulus=params["cushion_E"],
+                cor=params["cushion_cor"])
+        helmet = require_helmet_weight(params.get("helmet_weight"))
+        how = how_given(cushion.stiffness, None, name=(
+            "cushion_stiffness" if "cushion_stiffness" in params
+            else "cushion_area"))
+        return cushion, helmet, [_driving_system_choice(
+            cushion, helmet, how, hammer, None)]
+    if system is None:
+        raise ValueError(
+            "A cushion is required: give cushion_stiffness (kN/m) or "
+            "cushion_area + cushion_thickness + cushion_E, with cushion_cor "
+            "and helmet_weight, or driving_system. No held reference prints "
+            f"a cushion or helmet for the {hammer.name}. " + PRINTED_OPTIONS)
+    # The printed system, each of its values unless the call gave it; the
+    # cushion as its stiffness and COR, as a cushion given by them is
+    cor = params.get("cushion_cor", system.cor)
+    cushion = Cushion(stiffness=system.stiffness, cor=cor)
+    helmet = require_helmet_weight(params.get("helmet_weight",
+                                              system.helmet_weight))
+    if came == "default":
+        how = DEFAULT
+        for name, value in (("cushion_stiffness", system.stiffness),
+                            ("cushion_cor", cor),
+                            ("helmet_weight", helmet)):
+            if name not in params:
+                how_given(value, None, name=name, took=value)
+    else:
+        how = how_given(system.hammer, None, name="driving_system")
+    return cushion, helmet, [_driving_system_choice(
+        cushion, helmet, how, hammer, system if how == GIVEN else None)]
+
+
+def _driving_system_choice(cushion, helmet, how, hammer, named):
+    """The choices entry of the cushion and helmet a run took (GM-299):
+    the same words however they came, so a run given its own defaults
+    reads the same; ``named``, a driving system the call named, adds what
+    it was printed for when that is another hammer."""
+    from geotech_common.choices import choice
+    systems = "; ".join(s.describe() for s in PRINTED_DRIVING_SYSTEMS.values())
+    basis = ("The hammer cushion (the model's one cushion spring) and the "
+             "helmet lumped with the pile head. Ideally the contractor's "
+             "submittal for the actual hammer (GEC-12 Vol 2 p. 226). Left "
+             "out, the named hammer's driving system as a held reference "
+             f"prints it, which only these have: {systems}. Any other "
+             "hammer needs them given.")
+    if named is not None and named.hammer != hammer.name:
+        basis += (f" driving_system '{named.hammer}' is printed for the "
+                  f"{named.hammer}, here run with the {hammer.name}.")
+    return choice(
+        "hammer cushion and helmet",
+        f"k = {cushion.stiffness:,.0f} kN/m, COR {cushion.cor:g}, "
+        f"helmet {helmet:.2f} kN",
+        how, basis=basis,
+        alternatives=[f"driving_system '{k}'" for k in PRINTED_DRIVING_SYSTEMS]
+        + ["cushion_stiffness or cushion properties with cushion_cor and "
+           "helmet_weight"])
 
 
 def run_bearing_graph(params, *, method="bearing_graph"):
@@ -67,7 +166,7 @@ def run_bearing_graph(params, *, method="bearing_graph"):
         method=method)
     require_params(params, ["pile_length", "pile_area"], method=method)
     hammer = _build_hammer(params)
-    cushion = _build_cushion(params)
+    cushion, helmet, drive_choices = _build_driving_system(params, hammer)
     pile_E = params.get("pile_E", 200e6)
     segment_length = params.get("segment_length", 1.0)
     pile_unit_weight = params.get("pile_unit_weight", _STEEL_UNIT_WEIGHT)
@@ -87,7 +186,7 @@ def run_bearing_graph(params, *, method="bearing_graph"):
         "R_min": params.get("R_min", 200.0),
         "R_max": params.get("R_max", 2000.0),
         "R_step": params.get("R_step", 200.0),
-        "helmet_weight": params.get("helmet_weight", 5.0),
+        "helmet_weight": helmet,
         "damping_model": params.get("damping_model", "smith"),
         # GM-301: the shaft resistance over the embedded length
         "embedded_length": params.get("embedded_length"),
@@ -103,6 +202,7 @@ def run_bearing_graph(params, *, method="bearing_graph"):
         shaft_distribution=used["shaft_distribution"],
         embedded_length=used["embedded_length"],
     )
+    bg.choices = list(bg.choices) + drive_choices
     return bg, used
 
 
@@ -123,13 +223,13 @@ def _run_drivability(params):
     require_params(params, ["pile_area", "depths", "R_at_depth"],
                    method="drivability")
     hammer = _build_hammer(params)
-    cushion = _build_cushion(params)
+    cushion, helmet, drive_choices = _build_driving_system(params, hammer)
     result = drivability_study(
         hammer, cushion, pile_area=params["pile_area"], pile_E=params.get("pile_E", 200e6),
         pile_unit_weight=params.get("pile_unit_weight", _STEEL_UNIT_WEIGHT), depths=params["depths"],
         R_at_depth=params["R_at_depth"], skin_fractions=params.get("skin_fractions"),
         segment_length=params.get("segment_length", 1.0),
-        helmet_weight=params.get("helmet_weight", 5.0),
+        helmet_weight=helmet,
         refusal_blow_count=params.get("refusal_blow_count",
                                       REFUSAL_BLOWS_PER_M),
         damping_model=params.get("damping_model", "smith"),
@@ -143,6 +243,7 @@ def _run_drivability(params):
         pile_length=params.get("pile_length"),
         shaft_distribution=params.get("shaft_distribution", "uniform"),
     )
+    result.choices = list(result.choices) + drive_choices
     return result.to_dict()
 
 
@@ -166,7 +267,7 @@ def _run_single_blow(params):
         method="single_blow")
     require_params(params, ["pile_length", "pile_area"], method="single_blow")
     hammer = _build_hammer(params)
-    cushion = _build_cushion(params)
+    cushion, helmet, drive_choices = _build_driving_system(params, hammer)
     pile = discretize_pile(
         length=params["pile_length"], area=params["pile_area"],
         elastic_modulus=params.get("pile_E", 200e6),
@@ -191,7 +292,7 @@ def _run_single_blow(params):
     )
     result = simulate_blow(
         hammer, cushion, pile, soil,
-        helmet_weight=params.get("helmet_weight", 5.0),
+        helmet_weight=helmet,
     )
     perm_set = result.permanent_set
     blow_count = round(1.0 / perm_set, 1) if perm_set > 0 else float("inf")
@@ -207,8 +308,9 @@ def _run_single_blow(params):
     quakes = quake_weighting_choice(
         soil.quake_side, soil.quake_toe,
         [(soil.skin_fraction, result.max_toe_displacement)])
-    if quakes:
-        out["choices"] = [quakes]
+    choices = ([quakes] if quakes else []) + drive_choices
+    if choices:
+        out["choices"] = choices
     warning = diesel_warning(hammer)
     if warning:
         out["warnings"] = [warning]
@@ -231,14 +333,15 @@ _HAMMER_CUSHION_DOC = {
     "hammer_custom_name": {"type": "str", "required": False, "default": "Custom", "description": "Custom hammer label."},
     "hammer_type": {"type": "str", "required": False, "default": "single_acting", "allowed_values": ["single_acting", "diesel", "hydraulic"], "description": "Custom hammer type: a label in the result and calc package only. Every type is modelled as a rigid ram striking at v = sqrt(2 g stroke efficiency); a diesel hammer's combustion pressure is not modelled, and its result carries a warning (GEC-12 Vol 2 p. 206: its stroke rises with the resistance, and too high a stroke gives non-conservative nominal resistances). Give the type's losses through efficiency (GEC-12 Vol 2 (FHWA-NHI-16-009) Sec. 12.6.2, p. 205: relatively high, say 0.95, for a hydraulic hammer whose ram kinetic energy is measured and displayed)."},
     "segment_length": {"type": "float", "required": False, "default": 1.0, "description": "Pile segment length (m): about 1 m (GEC-12 Vol 2 Sec. 12.3, p. 155; GRLWEAP's 3.3 ft, p. 213). Shorter segments for stiff, uncushioned driving systems (p. 210)."},
-    "cushion_stiffness": {"type": "float", "required": False, "default": 500000.0, "description": "Cushion stiffness (kN/m). Or give cushion_area + cushion_thickness + cushion_E. The model has one cushion spring, between the ram and the helmet (whose weight is lumped with the pile head); GEC-12 Vol 2 Fig. 12-2 (p. 157) has a hammer cushion and a pile cushion with the helmet between. Two materials in series: 1/k = 1/k1 + 1/k2 (p. 209). Default 500,000 kN/m when neither is given (not printed in a held reference)."},
+    "cushion_stiffness": {"type": "float", "required": False, "description": "Hammer cushion stiffness (kN/m), with cushion_cor and helmet_weight. Or give cushion_area + cushion_thickness + cushion_E: stiffness = E A / t (GEC-12 Vol 2 p. 155); two materials in series 1/k = 1/k1 + 1/k2 (p. 209). The model has one cushion spring, between the ram and the helmet (whose weight is lumped with the pile head); GEC-12 Vol 2 Fig. 12-2 (p. 157) has a hammer cushion and a pile cushion with the helmet between. Left out with no cushion properties: the hammer's printed driving system where a held reference prints one (hammer_name 'Vulcan 014', GEC-12 Vol 2 Table 12-2, p. 183), or the one named by driving_system; for any other hammer the call is refused and the error lists the printed options (GEC-12 prints no cushion by hammer otherwise; ideally the contractor's submittal, p. 226)."},
     "cushion_area": {"type": "float", "required": False, "description": "Cushion area (m2) — with cushion_thickness and cushion_E."},
     "cushion_thickness": {"type": "float", "required": False, "description": "Cushion thickness (m)."},
     "cushion_E": {"type": "float", "required": False, "description": "Cushion elastic modulus (kPa), with the nominal (uncompressed) thickness. Plywood pile cushions 30 ksi (207,000 kPa) new and 75 ksi (517,000 kPa) used; oak boards 60 and 90 ksi (GEC-12 Vol 2 p. 209)."},
-    "cushion_cor": {"type": "float", "required": False, "default": 0.80, "description": "Cushion coefficient of restitution; applies to the cushion given by stiffness or by properties, and to the default cushion (500,000 kN/m) when neither is given. GEC-12 Vol 2: wood 0.50 by default, a badly worn softwood cushion 0.25 (p. 156); the hammer cushions of its examples 0.90 to 0.92 (pp. 174, 183). The default 0.80 is not printed in a held reference."},
+    "cushion_cor": {"type": "float", "required": False, "description": "Hammer cushion coefficient of restitution, required with a cushion given by stiffness or properties (no held reference prints one COR for every cushion). GEC-12 Vol 2: the hammer cushions of its examples 0.90 to 0.92 (pp. 174, 183); wood 0.50, a badly worn softwood cushion 0.25 (p. 156); a refined analysis adjusts it between 0.10 and 1.0 (p. 216). With a printed driving system and no cushion given: that system's COR unless given (Vulcan 014 0.91, ICE 42S 0.92, p. 183)."},
     "pile_E": {"type": "float", "required": False, "default": 200e6, "description": "Pile elastic modulus (kPa). Default steel, 29,000 ksi (GEC-12 Vol 1 p. 317). Concrete: on the order of 4,000 ksi, varying with its strength (Vol 1 p. 317); its dynamic modulus is usually higher than the static (Vol 2 p. 213)."},
     "pile_unit_weight": {"type": "float", "required": False, "default": 77.3, "description": "Pile material unit weight (kN/m3). Default steel, 492 lb/ft3 (GEC-12 Vol 2 p. 462)."},
-    "helmet_weight": {"type": "float", "required": False, "default": 5.0, "description": "Helmet weight (kN): helmet, hammer cushion, striker plate and inserts (GEC-12 Vol 2 p. 226), lumped with the pile head. GEC-12's examples give 1.0 to 4.07 kips (4.4 to 18.1 kN). Default 5.0 kN (not printed in a held reference)."},
+    "helmet_weight": {"type": "float", "required": False, "description": "Helmet weight (kN): helmet, hammer cushion, striker plate and inserts (GEC-12 Vol 2 p. 226), lumped with the pile head; 0 with no helmet mass. Required with a cushion given. With a printed driving system and no cushion given: that system's helmet unless given (Vulcan 014 1.67 kips, 7.43 kN; ICE 42S 2.05 kips, 9.12 kN; p. 183). GEC-12's examples give 1.0 to 4.07 kips (4.4 to 18.1 kN; pp. 163, 167, 174, 179, 183)."},
+    "driving_system": {"type": "str", "required": False, "allowed_values": sorted(PRINTED_DRIVING_SYSTEMS), "description": "A driving system (hammer cushion and helmet) as a held reference prints it, by its hammer: GEC-12 Vol 2 Example 6, Table 12-2 (p. 183), on a steel pipe pile. 'Vulcan 014': Nycast, 208 ksi, 234 in2, 6.0 in (1.42 million kN/m), COR 0.91, helmet 1.67 kips; 'ICE 42S': Blue Nylon, 175 ksi, 398 in2, 2.0 in (6.10 million kN/m), COR 0.92, helmet 2.05 kips. cushion_cor and helmet_weight, if given, replace the system's. Not with cushion_stiffness or cushion properties. Left out: the named hammer's own printed system, which only hammer_name 'Vulcan 014' has; any other hammer needs a cushion given. A run with another hammer says so in its choices."},
 }
 
 _DAMPING_MODEL_DOC = (
@@ -354,7 +457,23 @@ declare_when_absent(METHOD_INFO, {
         "longer pile)")},
 })
 
-# The default cushion, when no cushion is described (GM-165).
-for _m in ("single_blow", "bearing_graph", "drivability"):
-    METHOD_INFO[_m]["parameters"]["cushion_stiffness"]["applies_when"] = {
-        "cushion_area": "unset"}
+# A left-out cushion, COR or helmet: the printed driving system of the
+# named hammer (GM-299; GEC-12 Vol 2 Table 12-2, p. 183), else refused.
+_PRINTED_SYSTEM_CASE = (
+    "the named hammer's printed driving system (hammer_name 'Vulcan 014'); "
+    "any other hammer is refused",
+    "GEC-12 Vol 2 Example 6, Table 12-2 (p. 183), the only driving system "
+    "a held reference prints for a hammer the tool lists")
+declare_when_absent(METHOD_INFO, {
+    m: {name: _PRINTED_SYSTEM_CASE
+        for name in ("cushion_stiffness", "cushion_cor", "helmet_weight")}
+    for m in ("single_blow", "bearing_graph", "drivability")})
+declare_applies_when(METHOD_INFO, {
+    m: {"cushion_stiffness": {"cushion_area": "unset",
+                              "driving_system": "unset"},
+        "cushion_cor": {"cushion_stiffness": "unset", "cushion_area": "unset",
+                        "driving_system": "unset"},
+        "helmet_weight": {"cushion_stiffness": "unset",
+                          "cushion_area": "unset",
+                          "driving_system": "unset"}}
+    for m in ("single_blow", "bearing_graph", "drivability")})

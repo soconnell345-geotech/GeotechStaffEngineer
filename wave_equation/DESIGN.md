@@ -24,6 +24,7 @@ output table (p. 190), not these values.
 ## Files
 - `hammer.py` — 14 built-in hammers (diesel, air/steam), GEC-12 Appendix C
 - `cushion.py` — hammer cushion and pile cushion stiffness
+- `driving_systems.py` — the driving systems GEC-12 prints by hammer (Table 12-2)
 - `pile_model.py` — mass-spring discretization of pile
 - `soil_model.py` — Smith quake and damping parameters
 - `time_integration.py` — explicit central difference time stepping
@@ -56,8 +57,20 @@ analyze_drivability(hammer, pile, soil_profile, ...) -> DrivabilityResult
   since GM-294: the Vulcan 08 and 010 strokes were 0.914 m for 3.25 ft, the
   diesels' strokes and energies were lower, and the ICE I-30V2 and I-46V2
   were "hydraulic" at 1.22 m and 0.95 (they are open end diesels, p. 206).
-  `cushion_cor` applies to the default 500,000 kN/m cushion too (GM-160);
-  neither default is printed.
+- Hammer cushion and helmet (GM-299; module_work/gm299/CHECK.md). No held
+  reference prints them by hammer: Appendix C lists ram weight, stroke and
+  energy only, and GEC-12 Vol 2 p. 226 takes them from the contractor's
+  submittal or GRLWEAP's data file (not held). The only complete systems
+  printed for a named hammer are Example 6's, Table 12-2 (p. 183): Vulcan
+  014 (Nycast 208 ksi, 234 in2, 6.0 in, COR 0.91, helmet 1.67 kips) and
+  ICE 42S (Blue Nylon 175 ksi, 398 in2, 2.0 in, COR 0.92, helmet 2.05
+  kips), stiffness E A / t (p. 155); `driving_systems.py`. The tools take
+  the named hammer's printed system when no cushion is given (only the
+  Vulcan 014), or the one `driving_system` names; otherwise a cushion
+  (stiffness or properties), its COR and the helmet weight are required,
+  and the error lists the printed options. In the library `Cushion.cor`
+  and `helmet_weight` have no default. Before GM-299 a run that left them
+  out took 500,000 kN/m, COR 0.80 and a 5 kN helmet, none printed.
 - Time step: the Courant step (segment / wave speed, or the cushion's
   sqrt(m/k)) divided by 1.6, Smith's numerical safety factor as GRLWEAP
   normally takes it (GEC-12 Vol 2 p. 213). It was 0.8 x before GM-294.

@@ -28,17 +28,18 @@ class Cushion:
         Cushion stiffness (kN/m).
     cor : float
         Coefficient of restitution (0 to 1). 1.0 = perfectly elastic.
-        GEC-12 Vol 2: wood 0.50 by default, a badly worn softwood
-        cushion 0.25 (p. 156); the hammer cushions of its examples 0.90
-        to 0.92 (pp. 174, 183). The default 0.80 is not printed in a
-        held reference.
+        Required: no held reference prints one COR for every cushion
+        (GM-299). GEC-12 Vol 2: wood 0.50 by default, a badly worn
+        softwood cushion 0.25 (p. 156); the hammer cushions of its
+        examples 0.90 to 0.92 (pp. 174, 183). Until GM-299 the module
+        defaulted to 0.80, which no held reference prints.
     thickness : float, optional
         Cushion thickness (m). Informational only.
     material : str, optional
         Material description (e.g. 'plywood', 'micarta', 'aluminum').
     """
     stiffness: float
-    cor: float = 0.80
+    cor: float
     thickness: Optional[float] = None
     material: str = ""
 
@@ -53,7 +54,7 @@ def make_cushion_from_properties(
     area: float,
     thickness: float,
     elastic_modulus: float,
-    cor: float = 0.80,
+    cor: float,
     material: str = "",
 ) -> Cushion:
     """Create a cushion from material properties.
@@ -72,7 +73,7 @@ def make_cushion_from_properties(
     elastic_modulus : float
         Elastic modulus of cushion material (kPa).
     cor : float
-        Coefficient of restitution.
+        Coefficient of restitution (required; see Cushion).
     material : str
         Material description.
 

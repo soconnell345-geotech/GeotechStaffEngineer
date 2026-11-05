@@ -130,7 +130,7 @@ class TestCushion:
     def test_invalid_stiffness(self):
         """Negative stiffness should raise."""
         with pytest.raises(ValueError):
-            Cushion(stiffness=-100)
+            Cushion(stiffness=-100, cor=0.80)
 
     def test_invalid_cor(self):
         """COR > 1 should raise."""
@@ -433,7 +433,7 @@ class TestTimeIntegration:
     def test_positive_set(self):
         """Permanent set should be positive for driveable pile."""
         h, c, p, s = self._make_system(500)
-        result = simulate_blow(h, c, p, s)
+        result = simulate_blow(h, c, p, s, helmet_weight=5.0)
         assert result.permanent_set > 0
 
     def test_higher_resistance_less_set(self):
@@ -441,8 +441,8 @@ class TestTimeIntegration:
         h, c, p, _ = self._make_system()
         s_low = SoilSetup(R_ultimate=300, skin_fraction=0.5)
         s_high = SoilSetup(R_ultimate=800, skin_fraction=0.5)
-        r_low = simulate_blow(h, c, p, s_low)
-        r_high = simulate_blow(h, c, p, s_high)
+        r_low = simulate_blow(h, c, p, s_low, helmet_weight=5.0)
+        r_high = simulate_blow(h, c, p, s_high, helmet_weight=5.0)
         assert r_low.permanent_set > r_high.permanent_set
 
     def test_bigger_hammer_more_set(self):
@@ -455,20 +455,20 @@ class TestTimeIntegration:
 
         h_small = get_hammer("Vulcan 06")
         h_big = get_hammer("Vulcan 020")
-        r_small = simulate_blow(h_small, cushion, pile, soil)
-        r_big = simulate_blow(h_big, cushion, pile, soil)
+        r_small = simulate_blow(h_small, cushion, pile, soil, helmet_weight=5.0)
+        r_big = simulate_blow(h_big, cushion, pile, soil, helmet_weight=5.0)
         assert r_big.permanent_set > r_small.permanent_set
 
     def test_compression_stress_positive(self):
         """Max compression stress should be positive."""
         h, c, p, s = self._make_system(500)
-        result = simulate_blow(h, c, p, s)
+        result = simulate_blow(h, c, p, s, helmet_weight=5.0)
         assert result.max_compression_stress > 0
 
     def test_reasonable_stress_range(self):
         """Driving stress should be within steel yield range."""
         h, c, p, s = self._make_system(500)
-        result = simulate_blow(h, c, p, s)
+        result = simulate_blow(h, c, p, s, helmet_weight=5.0)
         # Compression stress in kPa, steel yield ~250 MPa = 250,000 kPa
         assert result.max_compression_stress < 400000  # <400 MPa
 
@@ -480,7 +480,7 @@ class TestTimeIntegration:
         dynamic effects add energy dissipation).
         """
         h, c, p, s = self._make_system(500)
-        result = simulate_blow(h, c, p, s)
+        result = simulate_blow(h, c, p, s, helmet_weight=5.0)
         E_delivered = h.energy * h.efficiency  # kN-m
         work_static = s.R_ultimate * result.permanent_set  # kN * m = kN-m
         # Delivered energy should exceed static work (rest dissipated by damping)
@@ -490,7 +490,7 @@ class TestTimeIntegration:
         """With no soil resistance, pile should penetrate freely."""
         h, c, p, _ = self._make_system()
         s_zero = SoilSetup(R_ultimate=10, skin_fraction=0.5)
-        result = simulate_blow(h, c, p, s_zero)
+        result = simulate_blow(h, c, p, s_zero, helmet_weight=5.0)
         assert result.permanent_set > 0.05  # > 50 mm
 
     def test_permanent_set_excludes_toe_quake(self):
@@ -499,7 +499,7 @@ class TestTimeIntegration:
         equal quakes, the peak toe penetration minus the toe quake."""
         import numpy as np
         h, c, p, s = self._make_system(800)  # hard driving: quake matters most
-        result = simulate_blow(h, c, p, s)
+        result = simulate_blow(h, c, p, s, helmet_weight=5.0)
         peak_toe = float(np.asarray(result.pile_toe_displacement).max())
         # Permanent set must be strictly below the peak penetration ...
         assert result.permanent_set < peak_toe
@@ -514,7 +514,7 @@ class TestTimeIntegration:
         reproduces result.permanent_set."""
         import numpy as np
         h, c, p, s = self._make_system(500)
-        result = simulate_blow(h, c, p, s, store_interval=1)
+        result = simulate_blow(h, c, p, s, store_interval=1, helmet_weight=5.0)
         replay = SmithSoilModel(s.R_toe, s.quake_toe, s.damping_toe,
                                 no_tension=True)
         for d in np.asarray(result.pile_toe_displacement):
@@ -532,7 +532,7 @@ class TestTimeIntegration:
         s = SoilSetup(R_ultimate=500, skin_fraction=0.5, quake_side=0.0025,
                       quake_toe=0.005)
         assert s.weighted_quake == pytest.approx(0.00375)
-        result = simulate_blow(h, c, p, s, store_interval=1)
+        result = simulate_blow(h, c, p, s, store_interval=1, helmet_weight=5.0)
         peak_toe = float(np.asarray(result.pile_toe_displacement).max())
         assert peak_toe - result.permanent_set == pytest.approx(0.00375,
                                                                 abs=5e-5)
@@ -543,7 +543,7 @@ class TestTimeIntegration:
         with no toe resistance, and the blow count read refusal."""
         h, c, p, _ = self._make_system()
         s = SoilSetup(R_ultimate=500, skin_fraction=1.0)
-        result = simulate_blow(h, c, p, s)
+        result = simulate_blow(h, c, p, s, helmet_weight=5.0)
         assert 0.0 < result.permanent_set < 0.1
 
     def test_time_step_divides_by_smiths_safety_factor(self):
@@ -579,14 +579,14 @@ class TestBearingGraph:
         """Correct number of Rult points."""
         h, c, p = self._make_system()
         bg = generate_bearing_graph(h, c, p,
-                                    R_min=200, R_max=1000, R_step=200)
+                                    R_min=200, R_max=1000, R_step=200, helmet_weight=5.0)
         assert len(bg.R_values) == 5
 
     def test_monotonic_blow_count(self):
         """Blow count should increase with resistance."""
         h, c, p = self._make_system()
         bg = generate_bearing_graph(h, c, p,
-                                    R_min=200, R_max=1000, R_step=200)
+                                    R_min=200, R_max=1000, R_step=200, helmet_weight=5.0)
         for i in range(len(bg.blow_counts) - 1):
             assert bg.blow_counts[i+1] >= bg.blow_counts[i]
 
@@ -594,7 +594,7 @@ class TestBearingGraph:
         """Set should decrease with resistance."""
         h, c, p = self._make_system()
         bg = generate_bearing_graph(h, c, p,
-                                    R_min=200, R_max=1000, R_step=200)
+                                    R_min=200, R_max=1000, R_step=200, helmet_weight=5.0)
         for i in range(len(bg.permanent_sets) - 1):
             assert bg.permanent_sets[i+1] <= bg.permanent_sets[i]
 
@@ -602,7 +602,7 @@ class TestBearingGraph:
         """summary() should produce readable text."""
         h, c, p = self._make_system()
         bg = generate_bearing_graph(h, c, p,
-                                    R_min=200, R_max=600, R_step=200)
+                                    R_min=200, R_max=600, R_step=200, helmet_weight=5.0)
         s = bg.summary()
         assert "BEARING GRAPH" in s
 
@@ -610,7 +610,7 @@ class TestBearingGraph:
         """to_dict() should return all keys."""
         h, c, p = self._make_system()
         bg = generate_bearing_graph(h, c, p,
-                                    R_min=200, R_max=600, R_step=200)
+                                    R_min=200, R_max=600, R_step=200, helmet_weight=5.0)
         d = bg.to_dict()
         assert "R_values_kN" in d
         assert "blow_counts_per_m" in d
@@ -624,7 +624,7 @@ class TestBearingGraph:
         (0.991 m) for 0.914 m (GEC-12 Vol 2 Appendix C, p. 522).
         """
         h, c, p = self._make_system()
-        bg = generate_bearing_graph(h, c, p, R_min=200, R_max=1000, R_step=200)
+        bg = generate_bearing_graph(h, c, p, R_min=200, R_max=1000, R_step=200, helmet_weight=5.0)
         expected = [13.6, 26.8, 40.1, 54.0, 69.2]  # blows/m at 200..1000 kN
         for bc, exp in zip(bg.blow_counts, expected):
             assert bc == pytest.approx(exp, rel=0.05)
@@ -635,7 +635,7 @@ class TestBearingGraph:
         damping on loading only: 59.9 blows/m at R_ult = 800 kN)."""
         h, c, p = self._make_system()
         bg = generate_bearing_graph(h, c, p, R_min=200, R_max=1000,
-                                    R_step=200, damping_model="smith_viscous")
+                                    R_step=200, damping_model="smith_viscous", helmet_weight=5.0)
         expected = [13.6, 27.1, 40.9, 55.3, 70.9]
         for bc, exp in zip(bg.blow_counts, expected):
             assert bc == pytest.approx(exp, rel=0.05)
@@ -646,9 +646,9 @@ class TestBearingGraph:
         >= the viscous variant's at every R_ult on this system."""
         h, c, p = self._make_system()
         bg_s = generate_bearing_graph(h, c, p, R_min=200, R_max=1000,
-                                      R_step=400)
+                                      R_step=400, helmet_weight=5.0)
         bg_v = generate_bearing_graph(h, c, p, R_min=200, R_max=1000,
-                                      R_step=400, damping_model="smith_viscous")
+                                      R_step=400, damping_model="smith_viscous", helmet_weight=5.0)
         assert np.all(bg_s.permanent_sets >= bg_v.permanent_sets - 1e-9)
 
 
@@ -672,7 +672,7 @@ class TestDrivability:
             pile_area=0.01, pile_E=200e6,
             pile_unit_weight=78.5,
             depths=depths,
-            R_at_depth=R_at_depth,
+            R_at_depth=R_at_depth,helmet_weight=5.0
         )
         assert len(result.points) == 3
         assert result.points[2].blow_count >= result.points[0].blow_count
@@ -687,7 +687,7 @@ class TestDrivability:
             pile_area=0.01, pile_E=200e6,
             pile_unit_weight=78.5,
             depths=[10.0],
-            R_at_depth=[500],
+            R_at_depth=[500],helmet_weight=5.0
         )
         s = result.summary()
         assert "DRIVABILITY" in s
@@ -702,7 +702,7 @@ class TestDrivability:
             pile_area=0.01, pile_E=200e6,
             pile_unit_weight=78.5,
             depths=[10.0],
-            R_at_depth=[500],
+            R_at_depth=[500],helmet_weight=5.0
         )
         d = result.to_dict()
         assert "can_drive" in d
@@ -723,13 +723,13 @@ class TestDrivability:
         cushion = Cushion(stiffness=500000, cor=0.80)
         kw = dict(pile_area=0.01, pile_E=200e6, pile_unit_weight=77.3,
                   depths=[15.0], R_at_depth=[2100])
-        bc = drivability_study(hammer, cushion, **kw).points[0].blow_count
+        bc = drivability_study(hammer, cushion, **kw, helmet_weight=5.0).points[0].blow_count
         assert 393.7 < bc < 787.4
-        assert not drivability_study(hammer, cushion, **kw).can_drive
+        assert not drivability_study(hammer, cushion, **kw, helmet_weight=5.0).can_drive
         rock = drivability_study(hammer, cushion, refusal_blow_count=787.4,
-                                 **kw)
+                                 **kw, helmet_weight=5.0)
         assert rock.can_drive
-        assert "393.7" in drivability_study(hammer, cushion, **kw).summary()
+        assert "393.7" in drivability_study(hammer, cushion, **kw, helmet_weight=5.0).summary()
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -827,7 +827,7 @@ class TestGM294Review:
         h, c, p = self._system()
         s = SoilSetup(900, skin_fraction=0.3, quake_side=0.0025,
                       quake_toe=0.005)
-        r = simulate_blow(h, c, p, s)
+        r = simulate_blow(h, c, p, s, helmet_weight=5.0)
         d = r.max_toe_displacement
         assert d - r.permanent_set == pytest.approx(0.00425)
         ch = quake_weighting_choice(0.0025, 0.005, [(0.3, d)])
@@ -843,19 +843,19 @@ class TestGM294Review:
         assert quake_weighting_choice(0.0025, 0.0025, [(0.5, 0.01)]) is None
         h, c, p = self._system()
         bg = generate_bearing_graph(h, c, p, R_min=300, R_max=600,
-                                    R_step=300)
+                                    R_step=300, helmet_weight=5.0)
         assert "choices" not in bg.to_dict()
 
     def test_bearing_graph_and_drivability_state_the_weights(self):
         h, c, p = self._system()
         bg = generate_bearing_graph(h, c, p, quake_toe=0.005, R_min=300,
-                                    R_max=900, R_step=300)
+                                    R_max=900, R_step=300, helmet_weight=5.0)
         ch = bg.to_dict()["choices"][0]
         assert ch["what"].startswith("weights of the shaft and toe quakes")
         assert "R_ult 300 / 600 / 900 kN" in ch["chosen"]
         assert all(a.count(" / ") >= 2 for a in ch["alternatives"])
         dr = drivability_study(h, c, p.segment_areas[0], 200e6, 77.3,
-                               [6.0, 12.0], [600.0, 900.0], quake_toe=0.005)
+                               [6.0, 12.0], [600.0, 900.0], quake_toe=0.005, helmet_weight=5.0)
         assert "depths 6 / 12 m" in dr.to_dict()["choices"][0]["chosen"]
 
     def test_example_6_three_weightings(self):
@@ -898,9 +898,9 @@ class TestGM294Review:
         h, c, p = self._system()
         assert diesel_warning(h) is None
         assert "warnings" not in generate_bearing_graph(
-            h, c, p, R_min=300, R_max=300).to_dict()
+            h, c, p, R_min=300, R_max=300, helmet_weight=5.0).to_dict()
         d = get_hammer("ICE I-30V2")
-        w = generate_bearing_graph(d, c, p, R_min=300, R_max=300).warnings
+        w = generate_bearing_graph(d, c, p, R_min=300, R_max=300, helmet_weight=5.0).warnings
         assert len(w) == 1 and "p. 206" in w[0]
         assert "non-conservative" in w[0]
         assert diesel_warning(_ice_42s()) is not None
@@ -915,10 +915,14 @@ class TestGM294Review:
 
     def test_tool_states_choice_and_warning(self):
         from funhouse_agent.adapters.wave_equation import METHOD_REGISTRY
-        base = {"pile_length": 18.0, "pile_area": 0.00974, "R_total": 900.0}
+        base = {"pile_length": 18.0, "pile_area": 0.00974, "R_total": 900.0,
+                "cushion_stiffness": 500000.0, "cushion_cor": 0.80,
+                "helmet_weight": 5.0}
         r = METHOD_REGISTRY["single_blow"]({**base,
                                             "hammer_name": "Vulcan 010"})
-        assert "choices" not in r and "warnings" not in r
+        assert "warnings" not in r
+        assert [c["what"] for c in r["choices"]] == [
+            "hammer cushion and helmet"]                      # GM-299
         r = METHOD_REGISTRY["single_blow"]({**base,
                                             "hammer_name": "ICE I-30V2",
                                             "quake_toe": 0.005,

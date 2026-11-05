@@ -727,6 +727,8 @@ class TestWaveEquationPackage:
             "cushion_area": 0.1,
             "cushion_thickness": 0.1,
             "cushion_E": 3.5e6,
+            "cushion_cor": 0.80,
+            "helmet_weight": 5.0,
             "pile_length": 15.0,
             "pile_area": 0.01,
             "pile_E": 200e6,
