@@ -987,3 +987,102 @@ def test_a_value_naming_no_block_stays_several(opened):
     got = place_calculation(words, calc)
     assert [p.status for p in got.items] == [SEVERAL, SEVERAL]
     assert [p.candidates for p in got.items] == [2, 2]
+
+
+#: blocks whose headings differ only by a number; each value is on its
+#: block's second line, so its block's last line is not beside a heading
+LOAD_CASES = [
+    (72, 60, "Shallow foundation analysis"),
+    (72, 90, "Load Case 1"),
+    (72, 104, "Footing width B"), (300, 104, "6.0 ft"),
+    (72, 118, "Net allowable bearing pressure"), (300, 118, "4.2 ksf"),
+    (72, 132, "Applied pressure"), (300, 132, "3.1 ksf"),
+    (72, 146, "Gross allowable bearing pressure"), (300, 146, "4.6 ksf"),
+    (72, 170, "Load Case 2"),
+    (72, 184, "Footing width B"), (300, 184, "6.0 ft"),
+    (72, 198, "Net allowable bearing pressure"), (300, 198, "4.2 ksf"),
+    (72, 212, "Applied pressure"), (300, 212, "3.9 ksf"),
+    (72, 226, "Gross allowable bearing pressure"), (300, 226, "4.6 ksf"),
+]
+
+
+def _last_lines(sheet, label: str, value: str):
+    """``sheet`` with each block's last line printing ``label`` and
+    ``value`` instead."""
+    out = []
+    for x, y, text in sheet:
+        if y in (146, 226):
+            text = label if x == 72 else value
+        out.append((x, y, text))
+    return out
+
+
+@pytest.mark.parametrize("sheet", [
+    LOAD_CASES,
+    _last_lines(LOAD_CASES, "Bearing check for this load case", "OK"),
+], ids=["a value on the line above", "no value in its column"])
+def test_headings_differing_only_by_a_number_give_no_block(opened, sheet):
+    # the search for headings would climb past "Load Case 1" and
+    # "Load Case 2" into the block above: no block is read
+    doc, words = opened([sheet])
+    calc = _calc([_value("Net allowable bearing pressure", 4.2),
+                  _value("Net allowable bearing pressure, Load Case 1", 4.2)])
+    got = place_calculation(words, calc)
+    assert [(p.status, p.candidates) for p in got.items] == \
+        [(SEVERAL, 2)] * 2
+
+
+#: one label line in two sections that are not one block printed again
+SECTIONS_SHEET = [
+    (72, 60, "Retaining wall stability"),
+    (72, 90, "Sliding check"),
+    (72, 104, "Resisting force"), (300, 104, "25.0 kips"),
+    (72, 118, "Driving force"), (300, 118, "12.5 kips"),
+    (72, 132, "Factor of safety"), (300, 132, "2.0"),
+    (72, 160, "Overturning check"),
+    (72, 174, "Resisting moment"), (300, 174, "120 kip-ft"),
+    (72, 188, "Overturning moment"), (300, 188, "60 kip-ft"),
+    (72, 202, "Factor of safety"), (300, 202, "2.0"),
+]
+
+
+def test_a_line_of_values_above_is_not_a_blocks_heading(opened):
+    doc, words = opened([SECTIONS_SHEET])
+    calc = _calc([_value("Factor of safety against sliding", 2.0),
+                  _value("Factor of safety against overturning", 2.0)])
+    got = place_calculation(words, calc)
+    assert [(p.status, p.anchor) for p in got.items] == \
+        [(PLACED, "label and number")] * 2
+    sliding, overturning = (p.bbox for p in got.items)
+    assert abs(_middle(sliding) - 129) < 5
+    assert abs(_middle(overturning) - 199) < 5
+
+
+def test_a_heading_echoing_the_values_own_words_does_not_pick_it(opened):
+    sheet = [(72, 90, "Bearing pressure check, Boring B-1")
+             if t == (72, 90, "Boring B-1") else t for t in BLOCKS_SHEET]
+    doc, words = opened([sheet])
+    calc = _calc([_value("Allowable bearing pressure B-2", 4.2),
+                  _value("Allowable bearing pressure", 4.2)])
+    got = place_calculation(words, calc)
+    named, unnamed = got.items
+    assert (named.status, named.anchor) == (PLACED, "number in its block")
+    assert abs(_middle(named.bbox) - 311) < 5
+    assert (unnamed.status, unnamed.candidates) == (SEVERAL, 2)
+
+
+def test_a_samples_column_ends_at_its_tables_foot(opened):
+    # below, a table printed one row per sample prints S-2's index (22)
+    # in S-2's column
+    doc, words = opened([ATTERBERG_ACROSS + [
+        (72, 200, "MOISTURE CONTENT"),
+        (72, 214, "Boring"), (140, 214, "Sample"), (260, 214, "Moisture (%)"),
+        (72, 228, "TB-4"), (140, 228, "S-4"), (262, 228, "22"),
+        (72, 242, "TB-4"), (140, 242, "S-5"), (262, 242, "18"),
+    ]])
+    got = place_lab_tests(words, [_lab("TB-4", 5.0, 41, 19, 22,
+                                       sample="S-2")])
+    placement, = got.items
+    assert (placement.status, placement.anchor) == (PLACED, "sample column")
+    box = placement.bbox
+    assert abs(box[1] - 110) < 5 and abs(box[3] - 147) < 5

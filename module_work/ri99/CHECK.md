@@ -11,8 +11,8 @@ header row, each property's values along its row), a test's first anchor,
 header. The reviewer clicked through to the header, not to the test's values.
 
 **Change.** There is a new first lab anchor, `sample column`
-(`report_ingest/locate.py:1441`), wired in `lab_targets`
-(`report_ingest/locate.py:1569`) and added to `WORD_ANCHORS`
+(`report_ingest/locate.py:1446`), wired in `lab_targets`
+(`report_ingest/locate.py:1574`) and added to `WORD_ANCHORS`
 (`report_ingest/locate.py:173`), so a test still moves to another page of
 its call by it.
 - **Orientation, read from the printed layout** (`sample_columns`,
@@ -23,8 +23,9 @@ its call by it.
   else (one row per sample, or unclear) returns None, and today's
   `sample label` anchor places the test exactly as before.
 - **The column** runs from midway to the neighbouring labels (as far again
-  past the outer ones), down to the row above the next row of such labels,
-  which is the next table's header (`_column_cells`, `:1425`). The box spans
+  past the outer ones), down to the row above the next row of such labels
+  (the next table's header) or the first row that prints nothing in the
+  column (the table's foot) (`_column_cells`, `:1430`). The box spans
   the column's cells that print the test's own results, from its first
   property's row to its last.
 - **The same label in several columns** (one `S-1` under each boring of the
@@ -56,21 +57,24 @@ own. The value either came out `several`, or a stray digit decided it.
 
 **Change.** `heading_rows` itself is unchanged, because other anchors use
 it. Instead there is a new first calc anchor, `number in its block`
-(`_number_in_block`, `report_ingest/locate.py:1827`; order in
-`value_targets`, `:1914`).
-- **Block detection** (`block_headings`, `:1789`). Take the rows where the
+(`_number_in_block`, `report_ingest/locate.py:1856`; order in
+`value_targets`, `:1945`).
+- **Block detection** (`block_headings`, `:1795`). Take the rows where the
   value prints with half its label or more. If they print the same words,
   numbers aside (one label printed once per block), they are read upwards
   in step, line by line, for as long as every block prints the same words.
   The first line where the blocks differ is each block's own heading
   (`Boring B-1` / `Boring B-2`). The search goes no further up than the
-  block above begins.
+  block above begins. A line that prints a number in the value's column
+  is not a heading, and lines alike but for a number elsewhere stop the
+  search (see Review fixes); both give no block.
 - **Choosing a block.** The anchor takes the block whose heading carries
-  the most of the value's label words (`_heading_score`, `:1819`, with
-  label numbers matched exactly).
+  the most of the value's label words that its own line does not print
+  (`_block_words`, `:1839`; `_heading_score`, `:1848`, with label numbers
+  matched exactly).
 - **No block named, or a tie:** the anchor returns every block's copy, so
   the value stays `several`, with the count of blocks.
-- `_label_and_number` (`:1761`) steps aside when its candidates are one
+- `_label_and_number` (`:1767`) steps aside when its candidates are one
   label's lines in repeated blocks, so its six-row context can no longer
   pick the wrong block. Everywhere else it is unchanged; its scoring is
   factored into `_labelled_cells` with the same arithmetic.
@@ -96,6 +100,15 @@ All pages are drawn with PyMuPDF, using made-up values only.
 | `test_a_table_of_unclear_orientation_keeps_todays_place` | 929 | passes (pins today) |
 | `test_a_value_in_a_repeated_block_lands_in_the_block_it_names` (two blocks) | 969 | **fails** (wrong block, wrong anchor) |
 | `test_a_value_naming_no_block_stays_several` | 983 | passes (pins today) |
+| `test_headings_differing_only_by_a_number_give_no_block` (two sheets) | 1024 | passes (pins today) |
+| `test_a_line_of_values_above_is_not_a_blocks_heading` | 1049 | passes (pins today) |
+| `test_a_heading_echoing_the_values_own_words_does_not_pick_it` | 1061 | **fails** (`label and number`, not the block) |
+| `test_a_samples_column_ends_at_its_tables_foot` | 1074 | **fails** (`sample label`, the header) |
+
+The last four rows come from the review (see Review fixes). Both columns
+for them were run here: master is the branch's base (25c2525), and the
+first build is this branch before the fixes (1973d0e). Every one of them
+fails on the first build.
 
 **Runs.**
 - `report_ingest/tests/test_locate.py`: 60 passed. On master's `locate.py`,
@@ -116,12 +129,17 @@ Placement under model-first ingest changes in two cases:
 - A laboratory test on a table printed one column per sample now gets the
   box of its own cells in that column, with anchor `sample column`. Before,
   it got the box of its sample label in the header row. Its page and
-  confidence do not change.
+  confidence do not change, with one exception. Suppose a test is not
+  found on its cited page, and on another page of its call its sample
+  label was printed in several places. Before, it stayed `not_found`. Now,
+  if that page has its sample column, the test moves there (`moved`).
 - A calculation value printed with its label in repeated blocks (per
   boring, per load case) now takes the block whose own heading names it,
   with anchor `number in its block`. Before, it was `several` (page only,
   no box), or, where a stray digit tipped the score, a box in the wrong
-  block. A value that names no block stays `several`.
+  block. A value that names no block stays `several`. So do values in
+  blocks whose headings differ only by a number (`Load Case 1` /
+  `Load Case 2`), as before.
 
 Saved records keep their placements until they are re-placed: a cached item
 reuses its saved `placement`. No value, page or confidence moves.
@@ -156,6 +174,56 @@ each report) and the PDFs (with DI, as the pipeline opens them).
 4. `measure_placement.py` re-run on the RI-86 sets gives the same view on
    in-sample and held-out answers. Its "Placed by anchor" line shows the
    two new anchors.
+
+## Review fixes
+
+An independent review of the first build (8a0dfa9, 1973d0e) found three
+defects. All three are fixed in `report_ingest/locate.py`, each with a test
+from the review's made-up probe pages.
+
+1. **Headings that differ only by a number.** `Load Case 1` / `Load Case 2`
+   read as one line once numbers are set aside, so the block search climbed
+   past them into the block above. It then took a line of values for a
+   heading, and could box a value in the wrong case, or box one that named
+   no case. Two checks were added to `block_headings`. A line found as the
+   heading that prints a number in the value's column is a line of values,
+   so there is no block. Lines alike but for numbers printed outside the
+   value's column stop the search, so there is no block either. With no
+   block, today's placement follows: `several` for the load cases.
+   - The first check also stops a page with no repeated blocks from losing
+     a right placement. Example: `Factor of safety 2.0` under "Sliding
+     check" and again under "Overturning check" is placed by `label and
+     number`, as on master.
+   - The second check goes beyond the review's patch. Without it, a block
+     whose last line prints no number in the value's column, and repeats a
+     word of the label, still put "…, Load Case 1" in Case 2. This is the
+     test's second sheet.
+2. **The block pick counted the value's own words.** A heading such as
+   `Bearing pressure check, Boring B-1` repeats "bearing pressure" from the
+   value's own line, so it won for any value. Now only the label's words
+   that its own line does not print are scored (`_block_words`). "Allowable
+   bearing pressure B-2" lands in B-2. "Allowable bearing pressure" names no
+   block and stays `several`.
+3. **The sample column ran to the foot of the page.** A table printed one
+   row per sample below a vertical table has one label to a row, so the
+   column did not end. A number below that equals one of the test's results
+   stretched the box over both tables. The column now also ends at the
+   first row that prints nothing in it.
+
+The release note above still holds. The fixes narrow where `number in its
+block` applies, and keep the sample column inside its table. The note now
+also names the one way a lab test's page can change, and says that blocks
+headed by a number alone stay as before. The live-measure expectation "no
+`placed` value becomes `several`" holds for every probe page.
+
+**Runs after the fixes.**
+- `report_ingest/tests/test_locate.py` and `test_model_first_schema.py`:
+  96 passed, exit 0.
+- `report_ingest/tests/test_graph_model_first.py`: 63 passed, exit 0.
+- `webapp/tests/test_public_text.py`: 4 passed, exit 0.
+- The review's probe script, on the fixed branch: S1 `several` for all
+  three values, S3 placed in both sections, S4 B-2 and `several`, S5 boxed
+  at y 108 to 149. S0, S6 and S7 are unchanged from the first build.
 
 ## Noted, not fixed
 
