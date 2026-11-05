@@ -28,8 +28,10 @@ UFC 3-220-20 (2025), GEC-10 (FHWA-NHI-18-024).
 - `choices` gains "site-specific adhesion (alpha method)" (how: given), naming
   each layer, its alpha and its basis, citing Eq. 7-10, p. 246 and Example 9-3.
   Where every clay layer gives its own value, the chart choices (the adhesion
-  chart, Fig. 7-17's curves, D for Fig. 7-17) are left out, because no chart
-  was read, and `defaults_used` no longer lists `adhesion_chart`.
+  chart, Fig. 7-17's curves, D for Fig. 7-17, the Fig. 7-18 stratigraphy
+  case) are left out, because no chart was read, and `defaults_used` no
+  longer lists `adhesion_chart`. Where only some do, the Fig. 7-18
+  stratigraphy case lists only the layers that read a chart.
 - A layer with its own value needs no highly overconsolidated line, even where
   its su is past the chart.
 - The calc package's method step says "alpha = 1.00 given (basis)" for such a
@@ -109,11 +111,26 @@ one below stiff, and GEC-12 prints no su that separates the two.
 of lower su and gives no `fig_7_18_case`, a run that reads Fig. 7-18 for it
 compares the profile's graph with the middle graph (D from the layer's own
 top). Where the two give different Ca, the run is refused (`JudgmentNeeded`),
-naming each such layer with both values and asking for its `fig_7_18_case`
-(or `adhesion_chart` "fig_7_17"). This follows the GM-229 rule: a judgment the
-manual leaves is asked for only where it changes the answer. A firmer clay
-over a softer one keeps the profile's case. A given case wins, as before.
-Under Eq. 7-90 the shaft is on Fig. 7-17, so nothing is asked.
+naming each such layer, the depth its clay stratum starts at, and both values
+with the chart each came from (under "smaller" either may be Fig. 7-17's).
+The message asks for the layer's `fig_7_18_case`: 'soft_clay_over_stiff_clay'
+(D from the layer's top) or 'none' (Fig. 7-17). Where the clay above is not a
+different stratum, it asks for the profile's case ('stiff_clay', or
+'sand_over_stiff_clay' under a sand) on the TOP clay layer of the stratum, so
+D runs from the stratum's top; a case given on the lower layer starts its
+stratum there (the GM-144 rule), so 'stiff_clay' there would read the bottom
+graph with D from that layer's top. The last option is `adhesion_chart`
+"fig_7_17". This follows the GM-229 rule: a judgment the manual leaves is
+asked for only where it changes the answer. A firmer clay over a softer one
+keeps the profile's case. A given case wins, as before. Under Eq. 7-90 the
+shaft is on Fig. 7-17, so nothing is asked.
+
+Example (made-up values: 0.4 m closed pipe, L = 20 m, clay su 30 kPa over
+su 90 kPa, `adhesion_chart` "fig_7_18"): refused with Ca 84.7 kPa by the
+bottom graph and 60.9 kPa by the middle graph. With 'stiff_clay' on the top
+clay layer, the lower clay reads the bottom graph at D = 50b, alpha 0.941,
+Q_ult 1674.5 kN, the same as before GM-237; with 'stiff_clay' on the lower
+layer it would read D = 30b, alpha 0.872, Q_ult 1580.0 kN.
 
 **Noted, not fixed (it would change saved answers):** p. 246 recommends
 Fig. 7-17 "generally ... unless one of the special soil stratigraphy cases
@@ -156,7 +173,7 @@ reconciliation and report notes are rewritten to match.
 
 - **Default runs** (`adhesion_chart` "fig_7_17", no new layer inputs): none.
 - **WE-SF-2:** shaft 761.9 -> 715.3 kN, Q_ultimate 806.0 -> 759.3 kN,
-  Q_allowable 403.0 -> 379.6 kN. The pile and the method are unchanged; the
+  Q_allowable 403.0 -> 379.7 kN. The pile and the method are unchanged; the
   example's own site-specific basis is now given.
 - **Runs with `adhesion_chart` "fig_7_18" or "smaller"** that have a clay
   directly under a clay of lower su and no `fig_7_18_case`: refused where the
@@ -171,12 +188,16 @@ reconciliation and report notes are rewritten to match.
   chart, choices and the method step, no line needed, the shrink-swell zone,
   the refusals, the layer flag (API alpha or the curve's end, and winning over
   the line), Fig. 7-17's D from the ground surface for soft over firm, the
-  Fig. 7-18 refusal and a given case.
+  Fig. 7-18 refusal and a given case. After review: the refusal names the
+  stratum's top and says to give the profile's case on its top clay layer
+  (which reproduces the profile's D), it names the chart each Ca came from
+  under "smaller", and a layer with its own alpha is not listed under a
+  Fig. 7-18 case (no such choice where every layer gives its own).
 - `funhouse_agent/tests/test_axial_pile_gm237.py` (new): the same through
   `axial_pile_capacity`.
-- Run: `pytest axial_pile`, the axial-pile adapter tests,
-  `funhouse_agent/tests/test_defaults_used.py -k driven`,
-  `funhouse_agent/tests/test_worked_examples.py`,
+- Run: `pytest axial_pile`, `funhouse_agent/tests/test_axial_pile_gm237.py`,
+  `funhouse_agent/tests/test_defaults_used.py -k axial`,
+  `funhouse_agent/tests/test_worked_examples.py` (WE-SF-2),
   `webapp/tests/test_page_fingerprints.py` and
   `webapp/tests/test_public_text.py`.
 
@@ -190,5 +211,7 @@ reconciliation and report notes are rewritten to match.
   past the chart for that layer, in place of the su / sigma'vo line. There is
   no OCR input: no manual in the library defines one for this rule.
 - With `adhesion_chart` "fig_7_18" or "smaller", a clay under a softer clay is
-  no longer read on the bottom graph: the run asks for its `fig_7_18_case`.
-  The default Fig. 7-17 answers are unchanged.
+  no longer read on the bottom graph unasked: where the middle graph would
+  give another Ca, the run asks for the case, either on that layer
+  ('soft_clay_over_stiff_clay' or 'none') or the profile's case on the
+  stratum's top clay layer. The default Fig. 7-17 answers are unchanged.

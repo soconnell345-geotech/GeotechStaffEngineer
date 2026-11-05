@@ -1391,9 +1391,11 @@ class AxialPileAnalysis:
                 "unconsolidated clays, where API alpha is taken"))
 
         read_18 = [lb for lb in clay if "fig_7_18_case" in lb]
-        if chart != "fig_7_17" and not eq_7_90:
+        if chart != "fig_7_17" and not eq_7_90 and read_any:
             strata = {}
             for lb in clay:
+                if lb.get("adhesion_source") == "given":
+                    continue  # its own alpha, no chart (GM-237)
                 case = lb.get("fig_7_18_case", "none")
                 text = (FIG_7_18_CASES[case] if case != "none"
                         else "none (Fig. 7-17)")
@@ -1830,14 +1832,16 @@ class AxialPileAnalysis:
                 and len(stratum) > 3 and counts:
             # GM-237: a clay under a softer clay; would the middle graph
             # (from this layer's top) give another Ca?
-            alt, _ = self._adhesion(
+            alt, alt_info = self._adhesion(
                 layer, layer_bottom, sigma_v,
                 (SOFT_OVER_STIFF_CLAY, stratum[3], "given"), [], chart,
                 sigma_v_layer, where, counts=False)
             if abs(alt - ca) > 1e-9:
                 info["case_needed"] = {
                     "where": where, "su": layer.cohesion, "case": case,
-                    "ca": ca, "ca_middle": alt}
+                    "top": stratum[1], "ca": ca, "ca_middle": alt,
+                    "chart": used,
+                    "chart_middle": alt_info["adhesion_chart"]}
         if past and "highly_overconsolidated" in reading:
             info.update(reading)
             own = own + [self._line_note(
@@ -1854,12 +1858,19 @@ class AxialPileAnalysis:
     @staticmethod
     def _case_needed(rows: List[dict]) -> str:
         """Why an analysis that reads Fig. 7-18 is refused for want of a
-        clay layer's ``fig_7_18_case`` (GM-237)."""
+        clay layer's ``fig_7_18_case`` (GM-237). Each Ca is named by the
+        chart it came from (under "smaller", either may be Fig. 7-17's)."""
+        def by(chart: str, graph: str) -> str:
+            return "Fig. 7-17" if chart == "Fig. 7-17" else f"the {graph}"
+
         layers = "; ".join(
             f"{r['where'][0]:.2f}-{r['where'][1]:.2f} m (su = "
-            f"{r['su']:.1f} kPa): Ca {r['ca']:.1f} kPa by the "
-            f"{FIG_7_18_CASES[r['case']]}, {r['ca_middle']:.1f} kPa by the "
-            f"soft clay over stiff clay graph" for r in rows)
+            f"{r['su']:.1f} kPa, clay stratum from {r['top']:.2f} m): Ca "
+            f"{r['ca']:.1f} kPa by "
+            f"{by(r['chart'], FIG_7_18_CASES[r['case']])}, "
+            f"{r['ca_middle']:.1f} kPa by "
+            f"{by(r['chart_middle'], 'soft clay over stiff clay graph')}"
+            for r in rows)
         return (
             f"alpha method, Fig. 7-18 (GEC-12 Vol I pp. 246-247): these clay "
             f"layers lie directly under a clay of lower su: {layers}. The "
@@ -1868,8 +1879,11 @@ class AxialPileAnalysis:
             f"through a soft clay into an underlying stiff clay; GEC-12 "
             f"gives no su that makes a clay soft or stiff, so which case "
             f"applies is the engineer's judgment. Give each such layer's "
-            f"fig_7_18_case ('soft_clay_over_stiff_clay', 'stiff_clay', "
-            f"'sand_over_stiff_clay', or 'none' for Fig. 7-17), or "
+            f"fig_7_18_case: 'soft_clay_over_stiff_clay' (D from the layer's "
+            f"top) or 'none' (Fig. 7-17); where the clay above is not a "
+            f"different stratum, give the profile's case ('stiff_clay', or "
+            f"'sand_over_stiff_clay' under a sand) on the TOP clay layer of "
+            f"the stratum, so D runs from the stratum's top; or "
             f"adhesion_chart 'fig_7_17'.")
 
     @staticmethod

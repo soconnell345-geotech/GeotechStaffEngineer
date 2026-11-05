@@ -63,17 +63,20 @@ def test_a_layers_site_adhesion_in_kpa():
     assert lower["alpha"] == pytest.approx(40.0 / 55.0)
 
 
-def test_no_chart_is_stated_where_every_clay_gives_its_own():
+@pytest.mark.parametrize("chart", ["fig_7_17", "fig_7_18", "smaller"])
+def test_no_chart_is_stated_where_every_clay_gives_its_own(chart):
     pile = make_concrete_pile(0.35)
     soil = AxialSoilProfile(layers=[
         AxialSoilLayer(4.0, "cohesive", 17.5, cohesion=25.0, alpha=1.0,
                        adhesion_basis=BASIS),
         AxialSoilLayer(12.0, "cohesive", 19.5, cohesion=55.0, alpha=1.0,
                        adhesion_basis=BASIS)])
-    r = AxialPileAnalysis(pile=pile, soil=soil, pile_length=13.0).compute()
+    r = AxialPileAnalysis(pile=pile, soil=soil, pile_length=13.0,
+                          adhesion_chart=chart).compute()
     whats = _by_what(r)
     assert "adhesion chart (alpha-method)" not in whats
     assert "adhesion (alpha-method)" not in whats
+    assert "Fig. 7-18 stratigraphy case" not in whats
     assert r.Q_skin == pytest.approx(
         (25.0 * 4.0 + 55.0 * 9.0) * pile.perimeter)
     notes = _auto_method_notes(r, None)
@@ -213,6 +216,66 @@ def test_fig_7_18_takes_the_case_given():
         pile=pile, soil=_two_clays(fig_7_18_case=STIFF_CLAY),
         pile_length=13.0, adhesion_chart="fig_7_18").compute()
     assert stiff.layer_breakdown[1]["alpha"] > lower["alpha"]
+
+
+def _soft_over_firm(upper=None, lower=None):
+    return AxialSoilProfile(layers=[
+        AxialSoilLayer(8.0, "cohesive", 17.0, cohesion=30.0, **(upper or {})),
+        AxialSoilLayer(20.0, "cohesive", 19.0, cohesion=90.0, **(lower or {}))],
+        gwt_depth=1.0)
+
+
+def test_the_ask_says_to_give_the_profiles_case_on_the_top_clay_layer():
+    # a case given on the lower layer starts its stratum there (GM-144), so
+    # the profile's bottom graph, D from the ground surface, is had only by
+    # giving 'stiff_clay' on the stratum's top clay layer
+    pile = make_pipe_pile(0.4, 0.0127, closed_end=True)
+    with pytest.raises(JudgmentNeeded) as ask:
+        AxialPileAnalysis(pile=pile, soil=_soft_over_firm(), pile_length=20.0,
+                          adhesion_chart="fig_7_18").compute()
+    msg = str(ask.value)
+    assert "clay stratum from 0.00 m" in msg
+    assert "on the TOP clay layer of the stratum" in msg
+    r = AxialPileAnalysis(
+        pile=pile, soil=_soft_over_firm(upper={"fig_7_18_case": STIFF_CLAY}),
+        pile_length=20.0, adhesion_chart="fig_7_18").compute()
+    lower = r.layer_breakdown[1]
+    assert lower["fig_7_18_case"] == STIFF_CLAY
+    assert lower["D_over_b_fig_7_18"] == pytest.approx(20.0 / 0.4)
+    assert lower["alpha"] == pytest.approx(0.941, abs=5e-4)
+    assert r.Q_ultimate == pytest.approx(1674.5, abs=0.1)
+
+
+def test_the_ask_names_the_chart_each_ca_came_from():
+    # under 'smaller' the run's Ca here is Fig. 7-17's, not the bottom graph's
+    pile = make_pipe_pile(0.4, 0.0127, closed_end=True)
+    fig_7_17 = AxialPileAnalysis(pile=pile, soil=_soft_over_firm(),
+                                 pile_length=20.0).compute()
+    ca_17 = fig_7_17.layer_breakdown[1]["alpha"] * 90.0
+    with pytest.raises(JudgmentNeeded) as ask:
+        AxialPileAnalysis(pile=pile, soil=_soft_over_firm(), pile_length=20.0,
+                          adhesion_chart="smaller").compute()
+    msg = str(ask.value)
+    assert f"Ca {ca_17:.1f} kPa by Fig. 7-17," in msg
+    assert "(bottom graph)" not in msg
+    assert "kPa by the soft clay over stiff clay graph" in msg
+    with pytest.raises(JudgmentNeeded) as ask:
+        AxialPileAnalysis(pile=pile, soil=_soft_over_firm(), pile_length=20.0,
+                          adhesion_chart="fig_7_18").compute()
+    assert "kPa by the stiff clay without any different overlying strata " \
+           "(bottom graph)" in str(ask.value)
+
+
+def test_a_layer_with_its_own_alpha_is_not_listed_under_a_fig_7_18_case():
+    pile = make_pipe_pile(0.4, 0.0127, closed_end=True)
+    r = AxialPileAnalysis(
+        pile=pile, soil=_soft_over_firm(
+            upper={"alpha": 1.0, "adhesion_basis": BASIS},
+            lower={"fig_7_18_case": SOFT_OVER_STIFF_CLAY}),
+        pile_length=20.0, adhesion_chart="smaller").compute()
+    chosen = _by_what(r)["Fig. 7-18 stratigraphy case"]["chosen"]
+    assert "0-8 m" not in chosen and "none (Fig. 7-17)" not in chosen
+    assert "8-20 m" in chosen
 
 
 def test_a_firmer_clay_over_a_softer_one_keeps_the_profiles_case():
