@@ -56,6 +56,7 @@ detailed Phase-E history; this file supersedes it.
 
 **Master after 5.34.0 (unreleased): release notes to carry.** Built overnight 2026-11-05 by one-time cloud sessions, each reviewed independently before the lead merged it.
 - fem2d seepage (63c7027; BACKLOG Done): the result now reports the flow through the section, `flow_m3_per_s_per_m`, from the fixed-head nodal reactions, with the outflow and a balance check. The old `total_flow_m3_per_s_per_m` summed |v| x area x t; it was about 29 times too high on the printed check and grew with t. Every saved seepage flow changes. UFS 3-220-10 Fig. 6-5 prints q = 34 ft3/day/ft; the module gives 32.4.
+- drilled_shaft rock socket (BACKLOG Done, 2026-11-05): with the base in rock and `concrete_fc` given, `lrfd_capacity`'s factored base is the smaller of 0.50 Q_tip and the concrete's bearing 0.70 [0.85 f'c A1 m] (GEC-10 Eq. 12-7, p. 12-8; p. 10-25), so `phi_Qt_kN` and `phi_Qn_kN` drop where f'c is low against the rock; the result says which governs. Nominal values and runs without `concrete_fc` are unchanged.
 
 **0. 5.34.0 (2026-11-04) with planlens 0.14.0 and geotech-references 1.5.0: everything on master since 5.33.0 (through d57f28d).** The owner held the release from 2026-10-14; it publishes on the owner's word, refs first, then planlens, then the app (each tag push publishes to PyPI).
 - **Branches** (each cut from the head of main or master, one commit on top):
