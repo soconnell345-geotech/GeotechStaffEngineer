@@ -114,8 +114,9 @@ class TestSurchargeResists:
 @pytest.mark.slow
 class TestWeightFirstStage:
     """GM-304: the soil's weight is a first stage whenever gamma > 0, with
-    or without a surcharge. Ramped with the footing load, a frictional
-    soil could not collapse (c = 0, phi = 30, gamma = 18 gave q_ult = 0).
+    or without a surcharge. Ramped with the footing load, a cohesionless
+    soil failed at the first load step (c = 0, phi = 30, gamma = 18 gave
+    q_ult = 0).
     Coarse T6 20 x 10 mesh; made-up values."""
 
     def test_frictional_heavy_soil_carries_load(self):
@@ -135,6 +136,9 @@ class TestWeightFirstStage:
         # Within one load step, (q_max - q) / n_load_steps.
         assert abs(r0.q_ult_kPa - r1.q_ult_kPa) <= r0.q_max_kPa / 45
         assert r0.n_steps_converged == r1.n_steps_converged
+        # q_ult set by the mesh is warned of: c = 0 with no surcharge only.
+        assert any("depends on the mesh" in w for w in r0.warnings) == (c == 0)
+        assert not any("depends on the mesh" in w for w in r1.warnings)
 
     def test_c_phi_heavy_soil(self):
         # c = 20, phi = 25, gamma = 18: 499.0 kPa on 20 x 10 (before

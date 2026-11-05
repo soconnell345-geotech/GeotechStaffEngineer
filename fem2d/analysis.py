@@ -192,6 +192,8 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         q_max_kPa, n_steps_converged, collapse_load_fraction (the fraction
             of the ramp from the surcharge to q_max carried).
         surcharge_kPa — the surcharge applied beside the footing.
+        warnings — says so when q_ult is set by the mesh (c = 0 with
+            gamma > 0 and no surcharge).
     """
     if B <= 0:
         raise ValueError(f"footing width B must be positive, got {B}")
@@ -242,10 +244,11 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     if surcharge > 0 or gamma > 0:
         # GM-304: the soil's weight is a first stage whenever gamma > 0,
         # with or without a surcharge. Ramped with the footing load (as
-        # before GM-304 with surcharge = 0), every load scales together and
-        # a frictional soil, whose yield condition does not change with
-        # scale, cannot collapse; surcharge = 0 and a tiny surcharge then
-        # gave different answers.
+        # before GM-304 with surcharge = 0), every load scales together: a
+        # cohesionless soil, whose yield condition does not change with
+        # scale, carries the ramp at every level or at none, and failed at
+        # the first step (q_ult = 0); surcharge = 0 and a tiny surcharge
+        # then gave different answers.
         # The soil above the bearing level stands in as a surcharge
         # q = gamma Df on the ground surface (UFC 3-220-20 Sec. 5-3.1.2,
         # Fig. 5-4(a); GEC-6 Eq. 5-1, q = gamma Df at the footing base).
@@ -318,6 +321,15 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
                              else None)
     result.bearing_FOS = (float(q_ult / q_applied)
                           if (q_applied and q_applied > 0) else None)
+    if c <= 0 and phi > 0 and gamma > 0 and surcharge == 0:
+        # GM-304 review: c = 0, phi = 30, gamma = 18 gave 102.5, 52.5, 35.0
+        # and 27.5 kPa on 20x10 to 80x40 (fem2d/VALIDATION.md section 3).
+        result.warnings.append(
+            "With c = 0 and no surcharge, q_ult depends on the mesh: the "
+            "footing is a flexible uniform pressure, the ground beside its "
+            "edges has no strength, and the edge fails at a pressure set by "
+            "the element width there (about halved when the elements are "
+            "halved). It is not a bearing capacity to design from.")
     return result
 
 

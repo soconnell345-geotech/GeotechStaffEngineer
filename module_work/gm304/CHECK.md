@@ -62,7 +62,13 @@ Before = master 855bf2f on the same inputs.
   general mechanism). GM-11's case d already showed the Ngamma term carried
   at about half Eq. 5-8 with q > 0; with q = 0 the edge has no confinement
   at all. Reported for information; no test pins it against the closed form.
-- (b): -25 % against Eq. 5-7, for the same reason in the Ngamma term.
+- (a) is set by the mesh, not by the footing: q_max 200 with 80 steps gave
+  102.5, 52.5, 35.0 and 27.5 kPa on 20 x 10, 40 x 20, 60 x 30 and 80 x 40,
+  about 105 kPa per metre of element width at the footing edge, falling
+  towards zero as the mesh is refined. It is not a bearing capacity.
+- (b): -25 % against Eq. 5-7, for the same reason in the Ngamma term. It
+  also falls with the mesh: 499.0, 455.6 and 433.9 kPa on 20 x 10, 40 x 20
+  and 60 x 30.
 
 ## Tests (venv /tmp/v, Python 3.12, `-n 8`)
 
@@ -87,15 +93,22 @@ ramp the soil's weight together with the footing load, so a frictional soil
 could not build its strength from its own weight: a c = 0 sand returned
 q_ult = 0. The soil's weight is now applied first whenever gamma > 0, as
 the surcharge path already did, and the footing is loaded onto it. Every
-saved no-surcharge answer with gamma > 0 and phi > 0 changes: c = 0,
-phi = 30, gamma = 18, B = 2 m goes from 0 to 43 kPa; c = 20, phi = 25 from
-433.9 to 455.6 kPa (+5 %). With phi = 0 the weight adds nothing and the
-answer does not move; a weightless soil, and any call with a surcharge,
-are unchanged.
+saved no-surcharge answer with gamma > 0 and phi > 0 changes: a c = 0
+soil with no surcharge now returns a non-zero q_ult (43 kPa for phi = 30,
+gamma = 18, B = 2 m on the default mesh), but that value is set by the mesh
+(about halved when the elements are halved) and is not a bearing capacity;
+c = 20, phi = 25 goes from 433.9 to 455.6 kPa (+5 %) on the default mesh,
+a change smaller than its spread with the mesh (499.0, 455.6 and 433.9 kPa
+on 20x10, 40x20 and 60x30). With phi = 0 the weight adds nothing and q_ult
+does not move, but max_displacement_m changes on every gamma > 0 call
+without a surcharge, as it now holds the whole self-weight settlement
+(c = 50, phi = 0, gamma = 18: 31.6 to 38.4 mm); a weightless soil, and any
+call with a surcharge, are unchanged.
 
 ## Noted, not fixed
 
-- The sand capacity stays far below 0.5 gamma B Ngamma (smooth flexible
-  pressure, edge yielding). A rigid, rough footing (prescribed uniform
-  settlement) would be the way to approach Eq. 5-7; that is a new feature,
+- The sand q_ult stays far below 0.5 gamma B Ngamma and is set by the mesh
+  (smooth flexible pressure, edge failure). A rigid, rough footing
+  (prescribed uniform settlement) would be the way to approach Eq. 5-7;
+  that is a new feature,
   not this item.

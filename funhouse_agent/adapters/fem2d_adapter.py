@@ -631,7 +631,7 @@ METHOD_INFO = {
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "c": {"type": "float", "required": True, "description": "Cohesion / undrained shear strength (kPa)."},
             "phi": {"type": "float", "required": False, "default": 0.0, "description": "Friction angle (deg). Default 0 (Prandtl / undrained)."},
-            "gamma": {"type": "float", "required": False, "default": 0.0, "description": "Soil unit weight (kN/m3). Applied in full (with any surcharge) before the footing is loaded, so the footing acts on soil already stressed by its own weight. Default 0 = classical weightless mechanism (the validated basis)."},
+            "gamma": {"type": "float", "required": False, "default": 0.0, "description": "Soil unit weight (kN/m3). Applied in full (with any surcharge) before the footing is loaded, so the footing acts on soil already stressed by its own weight. Default 0 = classical weightless mechanism (the validated basis). With c = 0 and no surcharge the uniform footing pressure fails at its edges at a load set by the mesh (halved when the elements are halved): not a bearing capacity."},
             "E": {"type": "float", "required": False, "default": 1e5, "description": "Young's modulus (kPa)."},
             "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio."},
             "psi": {"type": "float", "required": False, "default": 0.0, "description": "Dilation angle (deg)."},
