@@ -30,14 +30,19 @@ CALC_PAGE = 9
 CALC_LINE = "Seismic parameters computed per ASCE 7-16 for the made-up site."
 
 
-@pytest.fixture(scope="module")
-def report_pdf():
+#: A previous investigation bound in at pages 4-9; page 6 holds the only
+#: edition in the file, and it is the earlier report's (RI-94).
+PRIOR_PAGES = "4-9"
+PRIOR_LINE = "Seismic design per ASCE 7-05 for the earlier made-up building."
+#: A phrase printed on every page, more often before a window than the
+#: search's hit limit.
+COMMON_LINE = "Liquefaction potential is low at the made-up site."
+
+
+def _made_up_pdf(page_lines):
     doc = pymupdf.open()
-    for n in range(12):
+    for lines in page_lines:
         page = doc.new_page()
-        lines = ([f"MADE-UP PROSE {n}", PROSE, PROSE, PROSE] if n < 4
-                 else [f"MADE-UP APPENDIX CALCULATION {n}", CALC_LINE]
-                 if n == CALC_PAGE else [f"MADE-UP FIGURE {n}"])
         for k, line in enumerate(lines):
             page.insert_text((72, 72 + 18 * k), line, fontsize=9)
     data = doc.tobytes()
@@ -45,11 +50,43 @@ def report_pdf():
     return data
 
 
-@pytest.fixture()
-def doc(report_pdf):
+def _opened(data, name):
     from planlens.document import open_document
 
-    opened = open_document(report_pdf, name="made_up_retrieval")
+    return open_document(data, name=name)
+
+
+@pytest.fixture(scope="module")
+def report_pdf():
+    return _made_up_pdf(
+        [f"MADE-UP PROSE {n}", PROSE, PROSE, PROSE] if n < 4
+        else [f"MADE-UP APPENDIX CALCULATION {n}", CALC_LINE]
+        if n == CALC_PAGE else [f"MADE-UP FIGURE {n}"] for n in range(12))
+
+
+@pytest.fixture()
+def doc(report_pdf):
+    opened = _opened(report_pdf, "made_up_retrieval")
+    yield opened
+    opened.close()
+
+
+@pytest.fixture()
+def prior_doc():
+    opened = _opened(_made_up_pdf(
+        [f"MADE-UP PROSE {n}", PROSE, PROSE] if n < 4
+        else [f"MADE-UP EARLIER REPORT {n}", PRIOR_LINE] if n == 6
+        else [f"MADE-UP EARLIER REPORT {n}"] if n < 10
+        else [f"MADE-UP FIGURE {n}"] for n in range(12)), "made_up_prior")
+    yield opened
+    opened.close()
+
+
+@pytest.fixture()
+def common_doc():
+    opened = _opened(_made_up_pdf(
+        [f"MADE-UP PAGE {n}", COMMON_LINE] for n in range(12)),
+        "made_up_common")
     yield opened
     opened.close()
 
@@ -107,6 +144,81 @@ def test_the_search_stays_inside_its_window(doc):
     mfr.read_narrative(doc, [_group()], engine, report_id=REPORT,
                        window=list(range(CALC_PAGE)))
     assert "PASSAGES FOUND ELSEWHERE" not in _instruction(engine)
+
+
+def _prior_answer():
+    return {"final": NarrativeReading.model_validate({
+        "projectName": "Made-up Bridge",
+        "citations": [
+            {"field": "projectName", "page": 0, "quote": "MADE-UP PROSE 0"}]})}
+
+
+@pytest.mark.parametrize("kind", ["appended_prior_report", "other", None])
+def test_a_bound_previous_investigation_is_not_searched(prior_doc, kind):
+    """The parent's prose names no edition; the earlier report bound in at
+    pages 4-9 prints one on page 6. With no window (the default route), the
+    parent is not offered it (review of RI-94/RI-200, finding 1)."""
+    engine = FakeEngine([_prior_answer()])
+    row = {"bound_id": "bound1", "pages": PRIOR_PAGES,
+           "title": "Made-up Earlier Study"}
+    row.update({"kind": kind} if kind else {})
+    mfr.read_narrative(prior_doc, [_group()], engine, report_id=REPORT,
+                       bound_documents=[row])
+    said = str(engine.calls[0]["messages"])
+    assert "ASCE 7-05" not in said
+    assert "page 6: " not in said
+
+
+@pytest.mark.parametrize("kind", ["volume", "data_report"])
+def test_a_bound_volume_of_this_investigation_is_searched(prior_doc, kind):
+    """A volume or data report of THIS investigation stays searchable."""
+    engine = FakeEngine([_prior_answer()])
+    mfr.read_narrative(prior_doc, [_group()], engine, report_id=REPORT,
+                       bound_documents=[{"bound_id": "bound1",
+                                         "pages": PRIOR_PAGES, "kind": kind}])
+    said = _instruction(engine)
+    assert "page 6: " in said and "ASCE 7-05" in said
+
+
+def test_a_window_finds_a_common_phrase_inside_it(common_doc):
+    """Every page prints the phrase, so the first four hits of the file
+    are all before the window: the search runs over the window's pages,
+    and the hit limit applies there (finding 2)."""
+    from report_ingest.narrative_reader import retrieval_passages
+
+    passages = retrieval_passages(common_doc,
+                                  fields=["liquefactionPotential"],
+                                  window=[8, 9, 10, 11])
+    assert sorted(row["page"] for row in passages) == [8, 9, 10, 11]
+
+
+def test_a_bound_child_is_offered_its_own_hits(common_doc):
+    engine = FakeEngine([{"final": NarrativeReading.model_validate({
+        "liquefactionPotential": "low",
+        "citations": [{"field": "liquefactionPotential", "page": 8,
+                       "quote": "Liquefaction potential is low"}]})}])
+    child = PageGroup("narrative", [8, 9], key="narrative", ranked=[8, 9],
+                      n_front=1)
+    mfr.read_narrative(common_doc, [child], engine, report_id=REPORT,
+                       window=[8, 9, 10, 11])
+    said = _instruction(engine)
+    assert "PASSAGES FOUND ELSEWHERE IN THE REPORT" in said
+    assert "page 11: " in said and "page 3: " not in said
+
+
+def test_positions_map_against_the_call_s_own_pages():
+    """The call sent pages 20-29 and the search found pages 5 and 300. An
+    answer citing 0, 3 and 9 gave positions in the ten pages it was sent;
+    a cite of searched page 300 is the report's page (finding 3)."""
+    reading = NarrativeReading.model_validate({"citations": [
+        {"field": "projectName", "page": 0, "quote": "a"},
+        {"field": "siteClass", "page": 3, "quote": "b"},
+        {"field": "reportDate", "page": 9, "quote": "c"},
+        {"field": "asceSevenVersion", "page": 300, "quote": "d"}]})
+    out, _rows, said = mfr._narrative_on_report_pages(
+        reading, list(range(20, 30)), [5, 300])
+    assert [c.page for c in out.citations] == [20, 23, 29, 300]
+    assert "positions" in said
 
 
 def test_retrieve_off_sends_the_instruction_alone(doc):

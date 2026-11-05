@@ -1392,7 +1392,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
         _handed_over(every, handed, ranges, reads, qa)
     if current:
         also = _current_volume_investigations(children, current)
-        _recheck_counts(record, also, current)
+        if also:            # a data report with no logs changes no count
+            _recheck_counts(record, also, current)
         _counts_from_logs(record, qa, counts_from_logs, every, read,
                           also=also)
     return record

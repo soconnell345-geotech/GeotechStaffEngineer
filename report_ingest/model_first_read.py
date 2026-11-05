@@ -982,15 +982,21 @@ def _calc_on_report_pages(reading: Any, pages: Sequence[int]
     return out, rows, said
 
 
-def _narrative_on_report_pages(reading: Any, pages: Sequence[int]
+def _narrative_on_report_pages(reading: Any, pages: Sequence[int],
+                               searched: Sequence[int] = ()
                                ) -> Tuple[Any, List[Dict[str, Any]], str]:
     """A narrative answer with the pages its citations, unsettled rows and
     answers to the caller's questions cite read against the pages of its
     own call (:func:`_on_call_pages`): a copy, the entries and the
-    warning."""
+    warning. A cite of a ``searched`` page (RI-200) is the report's page
+    as given and is left out of the check, so the positions of the pages
+    the call was sent are not shifted by the passages' pages."""
     out = reading.model_copy(deep=True)
+    extra = {int(p) for p in searched} - {int(p) for p in pages}
     rows, said = _on_call_pages(
-        [*out.citations, *out.unsettled, *out.extra_answers], pages)
+        [h for h in (*out.citations, *out.unsettled, *out.extra_answers)
+         if getattr(h, "page", None) is None or int(h.page) not in extra],
+        pages)
     return out, rows, said
 
 
@@ -1115,7 +1121,11 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     today's words, after the bound documents and the questions. Their pages
     are citable, as in today's reader. ``window`` keeps the search inside
     one span of the file, as today's reader's does: a bound document's own
-    pages, or the parent's own under ``narrative_skips_bound``.
+    pages, or the parent's own under ``narrative_skips_bound``. With no
+    window, the search leaves out the pages of every bound document that is
+    not a volume or data report of this investigation
+    (:func:`report_ingest.bound.is_current_volume`): a previous
+    investigation's pages never answer this report's questions (RI-94).
 
     On the pictures route the call sends TEXT FIRST (RI-175): each page with
     a usable text layer as its text alone, the others as pictures, so a
@@ -1143,6 +1153,15 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     # Today's whole-report search for the appendix-answered questions
     # (RI-200): a site class or an ASCE 7 edition printed only on an
     # appendix calculation page is a page the narrative's groups never hold.
+    # A previous investigation's pages never answer this report's questions
+    # (RI-94): with no window, the search leaves out every bound document
+    # that is not a volume or data report of this investigation.
+    if window is None and bound_documents:
+        from report_ingest.bound import is_current_volume, parse_range
+        shut = {p for row in bound_documents if not is_current_volume(row)
+                for p in parse_range(row.get("pages"), doc.n_pages)}
+        if shut:
+            window = [p for p in range(doc.n_pages) if p not in shut]
     passages = retrieval_passages(doc, window=window) if retrieve else []
     searched = sorted({int(row["page"]) for row in passages})
     told = [narrative_block(bound_documents or ()), questions_block(questions),
@@ -1178,7 +1197,7 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         for call_pages, reading in got:
             answered += 1
             reading, mixed, said = _narrative_on_report_pages(
-                reading, sorted(set(call_pages) | set(searched)))
+                reading, call_pages, searched)
             builder.unresolved.extend(mixed)
             spent.warnings.extend([said] if said else [])
             builder.add(reading, answered)

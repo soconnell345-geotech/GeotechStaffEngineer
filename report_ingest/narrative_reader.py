@@ -1001,7 +1001,9 @@ def retrieval_passages(doc: Any, fields: Sequence[str] = (),
     ``window`` keeps only the hits inside one span of the file, for a report
     bound inside another one: "anywhere in the report" then means anywhere in
     THAT report, and a bearing pressure recommended by the report it is bound
-    into is not a passage of its.
+    into is not a passage of its. The search runs over the window's pages
+    alone, so a phrase printed often before the window still finds its hits
+    inside it.
     """
     span = None if window is None else {int(p) for p in window}
     table = dict(phrases or RETRIEVAL_PHRASES)
@@ -1012,10 +1014,12 @@ def retrieval_passages(doc: Any, fields: Sequence[str] = (),
     for name in wanted:
         for phrase in table.get(name, ()):
             try:
-                hits = doc.search(phrase, max_hits=MAX_HITS_PER_PHRASE)
+                within = {} if span is None else {"pages": sorted(span)}
+                hits = doc.search(phrase, max_hits=MAX_HITS_PER_PHRASE,
+                                  **within)
                 if not hits.get("n_hits"):
                     hits = doc.search(phrase, fuzzy=True, min_score=80,
-                                      max_hits=MAX_HITS_PER_PHRASE)
+                                      max_hits=MAX_HITS_PER_PHRASE, **within)
             except Exception:                    # search is an improvement
                 continue
             for hit in (hits.get("hits") or [])[:MAX_HITS_PER_PHRASE]:

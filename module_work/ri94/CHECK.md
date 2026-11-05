@@ -88,8 +88,8 @@ Kind `appended_prior_report` gives master's text and numbers on both.
   questions, before the last sentence.
 - A searched page is citable:
   - in the builder (`:1171`);
-  - in the call-page check (`:1180`), so no false "page numbers mix"
-    entry;
+  - in the call-page check (`:1180`): a cite of a searched page is left out
+    of it (after review, §4), so no false "page numbers mix" entry;
   - in placement (`:1210`).
 - New keyword arguments:
   - `window`: the search stays inside a bound document's pages, or the
@@ -131,6 +131,64 @@ bearingCapacity convention is `CONFIRMED`, with the owner's 2026-11-03
 answer in its `why`. That is the half of 9abd7ae that 46a5252 reverted
 for want of a bump. Nothing else from OWN-07 changed: the other conventions
 stay DRAFT.
+
+## 4. After review (`REVIEW_RI94.md`, findings 1-4)
+
+The review's verdict was merge after four fixes. All four are applied.
+
+1. **The parent's search no longer reaches a bound previous
+   investigation** (`model_first_read.py`, `read_narrative`). On the
+   default route (`narrative_skips_bound` off) the parent has no window,
+   so the search ran over the whole file. A prior report's page then
+   answered the parent's questions, citable at full confidence. Now, with
+   no window, the pages of every bound document that is not a volume or
+   data report of this investigation (`bound.is_current_volume`) are left
+   out of the search. A volume or data report stays searchable, as RI-94
+   counts it. Model first only: today's reader keeps its documented
+   whole-file search.
+   - Made-up probe: pp4-9 an earlier report, p6 printing "ASCE 7-05", the
+     parent's prose naming no edition. Before, the parent's instruction
+     carried `page 6: Seismic design per ASCE 7-05 ...`. Now it carries no
+     passage from pp4-9.
+2. **A windowed search finds the hits inside its window**
+   (`narrative_reader.retrieval_passages`). It searched the whole file,
+   stopped at 4 hits a phrase, and only then dropped the hits outside the
+   window. It now passes `pages=` to `doc.search` (planlens 0.14), so the
+   limit applies inside the window. This hits every model-first bound
+   child on the default route, the parent under `narrative_skips_bound`,
+   and fix 1's window. Today's reader's windowed calls change too.
+   - Made-up probe: 12 pages each print "liquefaction"; the window pp8-11
+     gave 0 passages, and now gives pp8, 9, 10 and 11.
+   - The off snapshot (`graph_off_snapshot.json`) passes unchanged.
+3. **Positions map against the call's own pages**
+   (`_narrative_on_report_pages`). The searched pages were merged into the
+   call's pages, so an answer giving positions in the pages it was sent was
+   mapped against the wrong list. Now the check runs on the call's pages,
+   and a cite of a searched page outside them is left out of it (it is the
+   report's page as given).
+   - Made-up probe: the call sent pp20-29, the search found pp5 and 300.
+     Positions 0, 3 and 9 were read as pp5, 22 and 28; now pp20, 23 and 29.
+     A cite of p300 stays p300.
+4. **No count note for a data report with no holes** (`graph._run`).
+   `_recheck_counts` now runs only when the current volumes' records hold
+   holes. R36's 6-page design-maps printout would otherwise have gained a
+   "0 exploration log(s) ... are counted" note.
+
+Fixes 1 and 2 change the passages added to the model-first narrative
+request, which is already mf-9 on this branch, so there is no further bump.
+The digests cover the instruction and schema, not the passages, and
+`test_model_first_schema.py` passes with `MODEL_FIRST_ASKS["mf-9"]`
+unchanged.
+
+New tests, all with made-up values:
+- `test_model_first_retrieval.py`, 8 more (14 in all): a prior report, a
+  row of kind `other` and a row with no kind are not searched (3); a
+  volume and a data report are (2); a window finds a phrase printed on
+  every page; a bound child is offered its own hits; positions 0/3/9 read
+  as 20/23/29, with searched p300 kept.
+- `test_graph_bound_kinds.py`, 1 more (6 in all): a bound data report with
+  no logs adds no `bound.current_volume` note, and the reconciler's own
+  count check stands (found 1).
 
 ## Prompt versions
 
@@ -176,7 +234,11 @@ stay DRAFT.
   - The holes stay in the child's record.
 - **Appendix-only answers:** model-first narratives can now answer the
   seven appendix-answered questions from passages anywhere in the report,
-  e.g. an ASCE 7 edition printed only on a calculation page.
+  e.g. an ASCE 7 edition printed only on a calculation page. A bound
+  previous investigation's pages are not searched for the parent.
+- **Bound records:** a re-read bound document's record may gain appendix
+  answers, in both readers: its search now finds a phrase inside its own
+  pages even when the phrase is printed often before them.
 - **Re-reads:** every saved model-first result is re-read on resume (mf-9).
 
 ## To measure live
@@ -188,12 +250,24 @@ stay DRAFT.
   - the parent's count_mismatch entries are gone or right.
   - Also re-check a report with a prior report bound in (R21's pp120-591)
     to confirm nothing moved.
+- **The kinds (from the review):** the kind is the identity call's answer,
+  which sees only the child's first 4 pages; the four kinds are not
+  defined to it. Saved identities: R16 `volume` (the report itself behind
+  a 3-page cover), R23 one `data_report` and one prior report, R36
+  `data_report` (a seismic design-maps printout with no holes).
+  - On R16, R23 and R36, check the parent's previousInvestigationCount and
+    boringCount against the pages. R36's truth is
+    previousInvestigationCount 1 and boringCount 11; both must hold.
+  - Watch for a previous investigation's data report classed
+    `data_report`: its holes would now be counted as this report's.
 - **RI-200:**
   - Re-run R30 model first: asceSevenVersion should be filled, citing p555.
   - Compare the other six fields against today's reader on R15, R30 and
     R21.
-  - Watch for passages pulling a bound or other report's values into the
-    parent, under `narrative_skips_bound` off (no window, as today).
+  - On R21, no parent value cites pp120-591 (the bound prior report, now
+    left out of the parent's search).
+  - `left_out` on the pictures route: the passages take room in `fit()`,
+    so a narrative near the limit may leave out a page MF-3 sent.
   - Record the narrative request's tokens in: up to 12,000 characters
     more.
 
@@ -205,6 +279,7 @@ stay DRAFT.
 - A current volume's holes from child items that failed to read are not
   counted as "held back" in `_counts_from_logs`; only the parent's own
   items are checked for unread logs.
-- `narrative_skips_bound` off: as in today's reader, the search window is
-  the whole file, so a passage on a bound document's page can reach the
-  parent's narrative.
+- `narrative_skips_bound` off, today's reader only: its search window is
+  the whole file, by documented design, so a passage on a bound prior
+  report's page can reach the parent's narrative. Model first leaves those
+  pages out (§4, fix 1).
