@@ -1207,6 +1207,11 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     return sections
 
 
+#: Where the MSE package's ASD requirements come from (GM-114).
+_MSE_ASD = ("the module's ASD value: GEC-11 (2009) designs by LRFD and "
+            "does not update the ASD procedure (Vol II App. F.1, p. F-2)")
+
+
 def _calc_steps_mse(result, analysis) -> List[CalcSection]:
     """Calculation steps for MSE wall. The external steps print the terms
     the ASD analysis used (GM-143, GM-164; :func:`_mse_terms`)."""
@@ -1261,7 +1266,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         result_name="P_a",
         result_value=f"{Pa_total:.1f}",
         result_unit="kN/m",
-        reference="GEC-11, Ch. 4",
+        reference="GEC-11 Vol I Eqs. 4-5, 4-6 (p. 4-20), Fig. 4-2",
         notes=("The live-load surcharge's thrust (K_a q H) drives every "
                "check." if q > 0 else ""),
     ))
@@ -1407,8 +1412,10 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                              else "the base governs")),
             result_name="FOS_sliding",
             result_value=f"{result.FOS_sliding:.3f}",
-            reference=(f"ASD, required {result.FOS_sliding_required:g} "
-                       f"(FOS_sliding_req)"),
+            reference=("GEC-11 Vol I p. 4-21 Step 3: the least of the "
+                       "surfaces; ASD, required "
+                       f"{result.FOS_sliding_required:g} (FOS_sliding_req), "
+                       f"{_MSE_ASD}"),
         ))
     else:
         ext_items.append(CalcStep(
@@ -1417,8 +1424,10 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             substitution=f"FOS_sliding = {R_slide:.1f} / {Pa_total:.1f}",
             result_name="FOS_sliding",
             result_value=f"{result.FOS_sliding:.3f}",
-            reference=(f"ASD, required {result.FOS_sliding_required:g} "
-                       f"(FOS_sliding_req)"),
+            reference=("GEC-11 Vol I Eq. 4-12 (p. 4-21) over Eqs. 4-5, 4-6 "
+                       f"(p. 4-20), unfactored; ASD, required "
+                       f"{result.FOS_sliding_required:g} (FOS_sliding_req), "
+                       f"{_MSE_ASD}"),
         ))
 
     # Overturning: the thrusts' moments as the analysis summed them
@@ -1431,6 +1440,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         result_name="M_ot",
         result_value=f"{M_over:.1f}",
         result_unit="kN·m/m",
+        reference=("GEC-11 Vol I Eqs. 4-5, 4-6 (p. 4-20), F1 at H/3 and F2 "
+                   "at H/2 as in Eq. 4-19 (p. 4-27), moments about the toe"),
     ))
 
     ext_items.append(CalcStep(
@@ -1442,6 +1453,9 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         result_name="M_stab",
         result_value=f"{M_stab:.1f}",
         result_unit="kN·m/m",
+        reference=("GEC-11 Vol I Fig. 4-7 (p. 4-24), moments about the "
+                   "toe; the live load over the reinforced zone left out "
+                   "(p. 4-22)"),
     ))
 
     ext_items.append(CalcStep(
@@ -1451,7 +1465,9 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         result_name="FOS_ot",
         result_value=f"{result.FOS_overturning:.3f}",
         reference=(f"ASD, required {result.FOS_overturning_required:g} "
-                   f"(FOS_overturning_req)"),
+                   f"(FOS_overturning_req), {_MSE_ASD}; GEC-11 Vol I p. "
+                   f"4-22 checks the limiting eccentricity '(formerly "
+                   f"overturning)'"),
     ))
 
     # Bearing — Meyerhof uniform pressure over effective width (RW-3), on
@@ -1470,7 +1486,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         result_name="σ_v",
         result_value=f"{sigma_v:.1f}",
         result_unit="kPa",
-        reference="AASHTO 11.10.5.4; GEC-11 Eqs. 4-19, 4-20",
+        reference=("GEC-11 Vol I Eq. 4-18 (p. 4-26), Eqs. 4-19, 4-20 (p. "
+                   "4-27), unfactored; AASHTO 11.10.5.4"),
         notes=("V_b and M_b count the live load over the reinforced zone "
                "(GEC-11 p. 4-26), so e_B is not the eccentricity of the "
                "sliding and overturning loads."
@@ -1485,6 +1502,9 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             substitution=f"FOS_bearing = {q_all:.1f} / {sigma_v:.1f}",
             result_name="FOS_bearing",
             result_value=f"{result.FOS_bearing:.3f}",
+            reference=("GEC-11 Vol I Eq. 4-17 (p. 4-26) with the given "
+                       "allowable bearing pressure in place of the factored "
+                       "resistance; ASD, required 1.0"),
         ))
     else:
         # GM-100: a bearing check not run is said, never counted as a pass.
@@ -1588,7 +1608,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         ),
         result_name="Kr/Ka",
         result_value="variable" if r_type == "Metallic" else "1.0",
-        reference="GEC-11, Figure 4-10",
+        reference="GEC-11 Vol I Fig. 4-10 (p. 4-37)",
     ))
 
     if geom.level_depths is None:

@@ -2882,6 +2882,20 @@ SERVICE_ECCENTRICITY_BASIS = (
     "E4-6.3: sum V = V1 + VS). Each example's wall is on soil; no page held "
     "prints the service limit on rock")
 
+#: The Strength I combination with both permanent load factors at their
+#: minimum (GM-114), reported beside Strength I max and the critical one.
+STRENGTH_MIN_BASIS = (
+    "Strength I with the minimum permanent load factors, gamma_EV_min on "
+    "every vertical earth load and gamma_EH_min on the retained thrust "
+    "(defaults 1.00 and 0.90, GEC-11 Vol I Table 4-2, p. 4-4), the live "
+    "load as in the critical combination: p. 4-23, 'Maximum permanent "
+    "loads, minimum permanent loads, and total extremes should be checked "
+    "for complex (geometry and/or loadings) walls', and 'for each strength "
+    "limit load group, e must be less than emax'. Counted in the governing "
+    "eccentricity and bearing CDR; on a level backfill it never governs, "
+    "its vertical loads being the critical combination's under a smaller "
+    "overturning moment")
+
 #: GEC-11 Vol I p. 4-30, read on the rendered page.
 LOCAL_SHEAR_BASIS = (
     "GEC-11 Vol I p. 4-30, Eq. 4-24: 'To prevent local shear of structures "
@@ -3349,14 +3363,17 @@ def check_external_stability_lrfd(
 
     eL_max = _eL(gamma_EV_max)     # Strength I max (EV=1.35)
     eL_crit = _eL(gamma_EV_min)    # min-vertical (EV=1.00): largest eccentricity
+    # Strength I min (GM-114): EV min and EH min, the live load as above
+    MOA_min = gamma_EH_min * MF1 + gamma_LL * MF2
+    eL_min = L / 2.0 - (gamma_EV_min * MV1 - MOA_min) / (gamma_EV_min * V1)
     e_limit = ecc_limit_ratio * L
 
     # --- Bearing (LL included; min-vertical combo uses gamma_EV_min on all
     #     vertical gravity loads) ---------------------------------------------
-    def _bearing(ev_soil, ev_ll):
+    def _bearing(ev_soil, ev_ll, mo=MOA):
         SV = ev_soil * V1 + ev_ll * Vs
         MR = ev_soil * MV1 + ev_ll * MVs
-        a = (MR - MOA) / SV
+        a = (MR - mo) / SV
         eL = L / 2.0 - a
         Bp = L - 2.0 * eL
         sigma = (SV / Bp) if Bp > 0 else 1.0e6
@@ -3364,6 +3381,8 @@ def check_external_stability_lrfd(
 
     sig_str, eL_bear, Bp_str = _bearing(gamma_EV_max, gamma_LL)   # Str I max
     sig_crit, _, Bp_crit = _bearing(gamma_EV_min, gamma_EV_min)   # min-vertical
+    sig_min, eL_bear_min, Bp_min = _bearing(gamma_EV_min, gamma_EV_min,
+                                            MOA_min)              # Str I min
 
     # Service I: all factors 1.0, LL included, overturning without EH/LL factors.
     SV_s = V1 + Vs
@@ -3386,7 +3405,9 @@ def check_external_stability_lrfd(
          "LL": gamma_LL, "phi_sliding": phi_sliding,
          "ecc_limit_ratio": ecc_limit_ratio,
          "ecc_limit_ratio_service": ecc_limit_ratio_service},
-        soil, Bp_crit, sliding, dict(extra, eL_svc=eL_s))
+        soil, Bp_crit, sliding, dict(extra, eL_svc=eL_s, strength_min={
+            "eL": eL_min, "sigma": sig_min, "eL_bearing": eL_bear_min,
+            "Bp": Bp_min}))
 
 
 def _lrfd_sliding_loads(geom, gamma_backfill, phi_ext, gamma_ext, q,
@@ -3548,6 +3569,11 @@ def _external_lrfd_sloping(
     sig_crit, _, Bp_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL,
                                  gamma_LL, gamma_EV_min)
     sig_svc, eL_svc, _ = _base(1.0, 1.0, 1.0, 1.0, 1.0)
+    # Strength I min (GM-114): EV min and EH min, the live load as in the
+    # critical combination
+    eL_min = _base(gamma_EV_min, gamma_EH_min, gamma_LL, ll_v, 0.0)[1]
+    sig_min, eL_bear_min, Bp_min = _base(gamma_EV_min, gamma_EH_min,
+                                         gamma_LL, gamma_LL, gamma_EV_min)
 
     unfactored = {
         "V1": round(ld["V1"], 3), "V2": round(ld["V2"], 3),
@@ -3567,7 +3593,9 @@ def _external_lrfd_sloping(
          "LL": gamma_LL, "phi_sliding": phi_sliding,
          "ecc_limit_ratio": ecc_limit_ratio,
          "ecc_limit_ratio_service": extra["ratio_svc"]},
-        soil, Bp_crit, sliding, dict(extra, eL_svc=eL_svc))
+        soil, Bp_crit, sliding, dict(extra, eL_svc=eL_svc, strength_min={
+            "eL": eL_min, "sigma": sig_min, "eL_bearing": eL_bear_min,
+            "Bp": Bp_min}))
     out["backslope"] = _backslope_summary(ld, traffic_vertical_resists)
     return out
 
@@ -3612,7 +3640,9 @@ def _lrfd_result(
     (None when it does not apply), the warnings and the assumed friction
     angles' choices (GM-302)."""
     cdr_slide_gov = min(cdr_slide_max, cdr_slide_min, cdr_slide_crit)
-    eL_gov = max(eL_max, eL_crit)
+    # Strength I min (GM-114; :data:`STRENGTH_MIN_BASIS`)
+    smin = extra.get("strength_min")
+    eL_gov = max(eL_max, eL_crit, *([smin["eL"]] if smin else []))
     eL_svc, e_limit_svc = extra["eL_svc"], extra["e_limit_svc"]
     local = extra["local"]
 
@@ -3621,7 +3651,7 @@ def _lrfd_result(
             return None
         return resistance / demand
 
-    qR_str = qR_crit = bearing_resistance_strength
+    qR_str = qR_crit = qR_min = bearing_resistance_strength
     worked_out = None
     other_cdr = None
     if soil is not None:
@@ -3631,6 +3661,10 @@ def _lrfd_result(
         qn_str = nominal_bearing_resistance(Lq_str, gamma_f, phi_f, c_f)
         qn_crit = nominal_bearing_resistance(Lq_crit, gamma_f, phi_f, c_f)
         qR_str, qR_crit = phi_b * qn_str, phi_b * qn_crit
+        if smin:
+            Lq_min = min(max(smin["Bp"], 0.0), L)
+            qn_min = nominal_bearing_resistance(Lq_min, gamma_f, phi_f, c_f)
+            qR_min = phi_b * qn_min
         # the other strengths' governing CDR, for the choice (GM-302 review)
         others = [_cdr(phi_b * nominal_bearing_resistance(Lq, gamma_f, phi_o,
                                                           c_o), sig)
@@ -3648,6 +3682,9 @@ def _lrfd_result(
             "phi_bearing": phi_b,
             "resistance_basis": NOMINAL_BEARING_BASIS,
         }
+        if smin:
+            worked_out.update(qn_strength_min_kPa=round(qn_min, 2),
+                              qR_strength_min_kPa=round(qR_min, 2))
         if reduced:
             # GM-302: c* and phi* where local or punching shear is possible
             worked_out.update(local_shear_possible=True,
@@ -3656,8 +3693,10 @@ def _lrfd_result(
 
     cdr_bear_str = _cdr(qR_str, sig_str)
     cdr_bear_crit = _cdr(qR_crit, sig_crit)
+    cdr_bear_min = _cdr(qR_min, smin["sigma"]) if smin else None
     cdr_bear_svc = _cdr(bearing_resistance_service, sig_svc)
-    bear_cdrs = [c for c in (cdr_bear_str, cdr_bear_crit) if c is not None]
+    bear_cdrs = [c for c in (cdr_bear_str, cdr_bear_crit, cdr_bear_min)
+                 if c is not None]
     cdr_bear_gov = min(bear_cdrs) if bear_cdrs else None
 
     # Each check is run, or not run for want of its resistance (GM-100); a
@@ -3701,6 +3740,14 @@ def _lrfd_result(
         "checked": bool(bearing_ran),
         "passes": bearing_passes,
     }
+    if smin:
+        bearing.update(
+            sigma_v_strength_min_kPa=round(smin["sigma"], 2),
+            eL_strength_min_m=round(smin["eL_bearing"], 4),
+            B_eff_strength_min_m=round(smin["Bp"], 4),
+            CDR_strength_min=(round(cdr_bear_min, 3) if cdr_bear_min
+                              else None),
+            strength_min_basis=STRENGTH_MIN_BASIS)
     if worked_out:
         bearing.update(worked_out)
 
@@ -3716,6 +3763,8 @@ def _lrfd_result(
         "eccentricity": {
             "eL_strength_max_m": round(eL_max, 4),
             "eL_critical_m": round(eL_crit, 4),
+            **({"eL_strength_min_m": round(smin["eL"], 4),
+                "strength_min_basis": STRENGTH_MIN_BASIS} if smin else {}),
             "eL_governing_m": round(eL_gov, 4),
             "e_limit_m": round(e_limit, 4),
             "passes_strength": eL_gov <= e_limit,
