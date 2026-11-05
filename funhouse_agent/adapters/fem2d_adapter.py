@@ -138,7 +138,7 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
     _valid = ("B", "c", "phi", "gamma", "E", "nu", "psi", "surcharge",
               "q_max", "n_load_steps", "domain_depth", "domain_half_width",
               "nx", "ny", "element_type", "max_iter", "tol", "q_applied",
-              "footing", "base", "settlement_max")
+              "footing", "base", "settlement_max", "mesh")
     reject_unknown_params(params, _valid, method="fem2d_footing_capacity")
     require_params(params, ["B", "c"], method="fem2d_footing_capacity",
                    valid=_valid)
@@ -151,6 +151,9 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
     base = params.get("base", "rough")
     _require_choice(base, ("rough", "smooth"),
                     name="base", method="fem2d_footing_capacity")
+    mesh = params.get("mesh", "uniform")
+    _require_choice(mesh, ("uniform", "graded"),
+                    name="mesh", method="fem2d_footing_capacity")
     result = analyze_footing_capacity(
         B=params["B"], c=params["c"],
         phi=params.get("phi", 0.0), gamma=params.get("gamma", 0.0),
@@ -164,12 +167,13 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
         max_iter=params.get("max_iter", 1000), tol=params.get("tol", 1e-4),
         q_applied=params.get("q_applied"),
         footing=footing, base=base,
-        settlement_max=params.get("settlement_max"),
+        settlement_max=params.get("settlement_max"), mesh=mesh,
     )
     out = {
         "q_ult_kPa": result.q_ult_kPa,
         "footing": result.footing,
         "base": result.base,
+        "mesh": result.mesh,
         "Nc_backfigured": result.Nc_backfigured,
         "bearing_FOS": result.bearing_FOS,
         "bearing_capacity_factors": result.bearing_capacity_factors,
@@ -182,6 +186,8 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
         "max_displacement_m": result.max_displacement_m,
         "choices": result.choices,
     }
+    if result.n_steps_settled:
+        out["n_steps_settled"] = result.n_steps_settled
     if result.footing == "rigid":
         out["settlement_max_m"] = result.settlement_max_m
         out["pressure_settlement"] = result.pressure_settlement
@@ -661,14 +667,17 @@ METHOD_INFO = {
             "q_applied": {"type": "float", "required": False, "description": "Working/design pressure (kPa). If given, bearing_FOS = q_ult/q_applied is reported."},
             "footing": {"type": "str", "required": False, "default": "flexible", "allowed_values": ["flexible", "rigid"], "description": "flexible (default): a uniform pressure ramped to collapse, the validated basis (Prandtl within ~2%). rigid: the footing's nodes pushed down together in n_load_steps settlement steps to settlement_max, q = their vertical reactions / B, q_ult the largest q reached. The default stays flexible on the mesh study (fem2d VALIDATION.md section 3): rigid reads high on these uniform meshes (Prandtl 348, 306 kPa on 20x10, 40x20 vs 257.1) and gives no plateau on a cohesionless soil."},
             "base": {"type": "str", "required": False, "default": "rough", "allowed_values": ["rough", "smooth"], "description": "Rigid footing only. rough (default): footing nodes held horizontally, no slip (GEC-6 pp. 49-50: the wedge under the footing moves down with it; p. 99: concrete cast on the ground takes tan delta = tan phi, on clay c_a = c_u). smooth: free to slide."},
+            "mesh": {"type": "str", "required": False, "default": "uniform", "allowed_values": ["uniform", "graded"], "description": "uniform (default): evenly spaced grid lines. graded: the same nx x ny elements graded towards the footing's edges and the ground surface (the elements there 1/4 the uniform size; this module's choice), nx even. See fem2d VALIDATION.md section 3 for the mesh study."},
             "settlement_max": {"type": "float", "required": False, "description": "Rigid footing only: the settlement the footing is pushed to (m). Default 10 x the elastic settlement at the closed-form estimate, q_est*B*(1-nu^2)/E; raise it when collapse_bracketed is False."},
         },
         "returns": {
             "q_ult_kPa": "Ultimate (gross) bearing pressure, including the surcharge: flexible, the last converged load level; rigid, the largest footing pressure reached.",
             "footing": "The footing model used ('flexible' or 'rigid').",
             "base": "Rigid: 'rough' or 'smooth'; null when flexible.",
+            "mesh": "The mesh used ('uniform' or 'graded').",
+            "n_steps_settled": "Flexible, when any: of the converged steps, those that reached max_iter with the displacements standing still (slow convergence, not collapse) and were accepted.",
             "pressure_settlement": "Rigid only: [[settlement_m, q_kPa], ...] after each converged step.",
-            "choices": "The footing model and, rigid, its base, each with how it was set and its basis.",
+            "choices": "The footing model, the mesh and, rigid, its base, each with how it was set and its basis.",
             "Nc_backfigured": "q_ult/c for a pure-cohesion footing (compare to Prandtl 5.14); null otherwise.",
             "bearing_FOS": "q_ult/q_applied when q_applied is given, else null.",
             "bearing_capacity_factors": "Closed-form {Nc, Nq, Ngamma} reference (Prandtl-Reissner + Vesic Ngamma).",

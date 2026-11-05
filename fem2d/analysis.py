@@ -17,6 +17,7 @@ from typing import Any, List, Optional
 from fem2d.mesh import (
     generate_rect_mesh, generate_slope_mesh, detect_boundary_nodes,
     assign_layers_by_elevation, convert_to_t6, t6_boundary_edges,
+    geometric_spacing,
 )
 from fem2d.materials import elastic_D
 from fem2d.solver import (
@@ -135,7 +136,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
                              nx=40, ny=20, element_type='t6',
                              max_iter=1000, tol=1e-4, q_applied=None,
                              footing='flexible', base='rough',
-                             settlement_max=None):
+                             settlement_max=None, mesh='uniform'):
     """Ultimate bearing capacity of a strip footing by FEM.
 
     The FE analogue of a bearing-capacity calculation, analogous to how
@@ -146,7 +147,12 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     * ``'flexible'`` (default): a uniform pressure over B, ramped over
       ``n_load_steps`` increments until the mesh can no longer carry it. The
       last converged load level is the ultimate bearing pressure ``q_ult``
-      (the Griffiths-style "collapse = non-convergence" criterion). Validated
+      (the Griffiths-style "collapse = non-convergence" criterion). A step
+      that reaches ``max_iter`` while its displacements stand still (the
+      second half of its iterations moved the nodes by less than 0.1 of
+      the first half) is slow convergence, not collapse, and is accepted
+      (GM-306; Griffiths & Lane 1999: failure is non-convergence with a
+      dramatic increase in displacements, as ``analyze_slope_srm``). Validated
       against the Prandtl closed form q_ult = (2 + pi) c, Nc = 5.14
       (VALIDATION.md §3; ~2% band with T6).
     * ``'rigid'`` (GM-305): the footing's surface nodes pushed down together
@@ -194,6 +200,12 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     domain_depth, domain_half_width : float, optional — mesh extent below and to
         each side of the footing (m). Defaults 5*B each (10B wide, Prandtl-grade).
     nx, ny : int — mesh density. Default 40 x 20.
+    mesh : 'uniform' (default) or 'graded' (GM-306) — evenly spaced grid
+        lines, or the same nx x ny elements graded towards the footing's
+        edges and the ground surface: the elements at x = +-B/2 next to the
+        surface are 1/4 the size of the uniform ones (this module's choice;
+        no reference prints a grading), growing by one constant ratio
+        towards the centre, the sides and the base. nx must be even.
     element_type : 't6' (default) or 'cst'.
     q_applied : float, optional — a working/design pressure (kPa). If given, the
         bearing factor of safety q_ult / q_applied is reported.
@@ -227,6 +239,9 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             q_max (then q_ult is a lower bound; raise q_max). Rigid: True
             when q levelled off over the last tenth of the settlement run.
         q_max_kPa (None when rigid), n_steps_converged,
+            n_steps_settled (flexible: of those, the steps that reached
+            max_iter with their displacements standing still and were
+            accepted, GM-306; None when rigid),
             collapse_load_fraction (flexible: the fraction of the ramp from
             the surcharge to q_max carried; rigid: the fraction of
             settlement_max reached).
@@ -246,6 +261,14 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             f"footing must be 'flexible' or 'rigid', got {footing!r}")
     if base not in ('rough', 'smooth'):
         raise ValueError(f"base must be 'rough' or 'smooth', got {base!r}")
+    if mesh not in ('uniform', 'graded'):
+        raise ValueError(
+            f"mesh must be 'uniform' or 'graded', got {mesh!r}")
+    if mesh == 'graded' and (nx % 2 or nx < 4 or ny < 2):
+        raise ValueError(
+            "mesh='graded' needs an even nx of at least 4 and ny of at "
+            f"least 2 (one grid line at each footing edge), got nx={nx}, "
+            f"ny={ny}")
     if settlement_max is not None and settlement_max <= 0:
         raise ValueError(
             f"settlement_max must be positive, got {settlement_max}")
@@ -266,7 +289,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             B, c, phi, gamma, E, nu, psi, surcharge, n_load_steps,
             domain_depth, domain_half_width, nx, ny, element_type, max_iter,
             tol, q_applied, base, settlement_max, (Nc, Nq, Ngamma),
-            q_ult_est)
+            q_ult_est, mesh)
     if q_max is None:
         if q_ult_est <= 0:
             raise ValueError(
@@ -285,7 +308,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     half_w = domain_half_width if domain_half_width is not None else 5.0 * B
     dep = domain_depth if domain_depth is not None else 5.0 * B
 
-    nodes, elements = generate_rect_mesh(-half_w, half_w, -dep, 0.0, nx, ny)
+    nodes, elements = _footing_mesh(B, half_w, dep, nx, ny, mesh)
     n_corner = len(nodes)
     if element_type == 't6':
         nodes, elements = convert_to_t6(nodes, elements)
@@ -352,7 +375,8 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
                      method='elastic', u_init=res0['u'],
                      sigma_gp_init=res0['sigma_gp'],
                      strain_gp_init=res0['eps_gp'],
-                     hs_state_init=res0['hs_state'], F_start=ctx0['F_ext'])
+                     hs_state_init=res0['hs_state'], F_start=ctx0['F_ext'],
+                     settled_ratio=_FLEX_SETTLED_RATIO, settled_early=False)
         q_start = float(surcharge)
     else:
         # Weightless soil, no surcharge: one ramp, the footing pressure
@@ -360,7 +384,8 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         ctx = build_nl_context(nodes, elements, props, gamma, bc_nodes,
                                surface_loads=[(edges, 0.0, -q_max)])
         res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_iter, tol=tol,
-                     method='elastic')
+                     method='elastic', settled_ratio=_FLEX_SETTLED_RATIO,
+                     settled_early=False)
         q_start = 0.0
 
     n_ok = len(res['iterations']) - (0 if res['converged'] else 1)
@@ -386,11 +411,13 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
                              else None)
     result.bearing_FOS = (float(q_ult / q_applied)
                           if (q_applied and q_applied > 0) else None)
+    result.n_steps_settled = len(res['settled'])
     result.footing = 'flexible'
     result.base = None
     result.pressure_settlement = None
     result.settlement_max_m = None
-    result.choices = _footing_choices('flexible', base)
+    result.mesh = mesh
+    result.choices = _footing_choices('flexible', base, mesh)
     if c <= 0 and phi > 0 and gamma > 0 and surcharge == 0:
         # GM-304 review: c = 0, phi = 30, gamma = 18 gave 102.5, 52.5, 35.0
         # and 27.5 kPa on 20x10 to 80x40 (fem2d/VALIDATION.md section 3).
@@ -405,6 +432,17 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     return result
 
 
+# GM-306: the flexible footing's collapse test. A load step that reaches
+# max_iter is collapse only if its displacements kept moving: when the
+# second half of its iterations moved the nodes by less than this fraction
+# of the first half (and its residual is small or still falling), it is a
+# slow-converging step and is accepted, as the strength reduction does
+# (Griffiths & Lane 1999: failure is non-convergence accompanied by a
+# dramatic increase in displacements). Judged at the ceiling only
+# (settled_early=False), so a step that meets tol ends as before.
+_FLEX_SETTLED_RATIO = 0.1
+
+
 # GM-305: the rigid footing's pressure has levelled off when it rose by less
 # than this fraction over the last tenth of the settlement run.
 _RIGID_PLATEAU_RISE = 0.01
@@ -414,8 +452,43 @@ _RIGID_PLATEAU_SPAN = 0.1
 _RIGID_SETTLEMENT_FACTOR = 10.0
 
 
-def _footing_choices(footing, base):
-    """The ``choices`` of ``analyze_footing_capacity`` (GM-305)."""
+# GM-306: in a graded footing mesh the elements at the footing's edges next
+# to the surface are this fraction of the uniform mesh's (this module's
+# choice; no reference prints a grading).
+_GRADED_EDGE_FRACTION = 0.25
+
+
+def _footing_mesh(B, half_w, dep, nx, ny, mesh):
+    """The footing's half-space mesh (corner nodes, 3-node elements):
+    uniform, or graded towards x = +-B/2 and the surface (GM-306)."""
+    if mesh == 'uniform':
+        return generate_rect_mesh(-half_w, half_w, -dep, 0.0, nx, ny)
+    m = nx // 2
+    h0 = _GRADED_EDGE_FRACTION * half_w / m
+    # Split the half's m elements between the footing (B/2) and beside it
+    # so that both grow from the edge at about the same ratio.
+    best = None
+    for n_in in range(1, m):
+        p_in = geometric_spacing(B / 2.0, n_in, h0)
+        p_out = geometric_spacing(half_w - B / 2.0, m - n_in, h0)
+        g_in = (np.diff(p_in)[-1] / np.diff(p_in)[0]) ** (
+            1.0 / max(n_in - 1, 1))
+        g_out = (np.diff(p_out)[-1] / np.diff(p_out)[0]) ** (
+            1.0 / max(m - n_in - 1, 1))
+        score = abs(math.log(g_in) - math.log(g_out))
+        if best is None or score < best[0]:
+            best = (score, p_in, p_out)
+    _, p_in, p_out = best
+    right = np.concatenate([B / 2.0 - p_in[::-1], B / 2.0 + p_out[1:]])
+    right[0] = 0.0
+    x = np.concatenate([-right[:0:-1], right])
+    y = -geometric_spacing(dep, ny, _GRADED_EDGE_FRACTION * dep / ny)[::-1]
+    return generate_rect_mesh(-half_w, half_w, -dep, 0.0, nx, ny,
+                              x_coords=x, y_coords=y)
+
+
+def _footing_choices(footing, base, mesh='uniform'):
+    """The ``choices`` of ``analyze_footing_capacity`` (GM-305, GM-306)."""
     from geotech_common.choices import choice, how_given
     basis = {
         'flexible': "a uniform pressure over B ramped until the mesh cannot "
@@ -444,13 +517,25 @@ def _footing_choices(footing, base):
         out.append(choice("rigid footing base", base,
                           how_given(base, 'rough', name='base'), b_basis,
                           ["'smooth'" if base == 'rough' else "'rough'"]))
+    m_basis = {
+        'uniform': "evenly spaced grid lines over 10B x 5B; the default "
+                   "on the mesh study in fem2d VALIDATION.md section 3",
+        'graded': "the same elements graded towards the footing's edges "
+                  "and the surface (edge elements 1/4 of the uniform "
+                  "size; this module's choice, no reference prints a "
+                  "grading); fem2d VALIDATION.md section 3 (GM-306)",
+    }[mesh]
+    out.append(choice("footing mesh", mesh,
+                      how_given(mesh, 'uniform', name='mesh'), m_basis,
+                      ["'graded'" if mesh == 'uniform' else "'uniform'"]))
     return out
 
 
 def _footing_capacity_rigid(B, c, phi, gamma, E, nu, psi, surcharge,
                             n_load_steps, domain_depth, domain_half_width,
                             nx, ny, element_type, max_iter, tol, q_applied,
-                            base, settlement_max, factors, q_ult_est):
+                            base, settlement_max, factors, q_ult_est,
+                            mesh='uniform'):
     """``analyze_footing_capacity(footing='rigid')`` (GM-305): the
     footing's surface nodes pushed down together (prescribed
     displacements), q from their vertical reactions."""
@@ -469,7 +554,7 @@ def _footing_capacity_rigid(B, c, phi, gamma, E, nu, psi, surcharge,
 
     half_w = domain_half_width if domain_half_width is not None else 5.0 * B
     dep = domain_depth if domain_depth is not None else 5.0 * B
-    nodes, elements = generate_rect_mesh(-half_w, half_w, -dep, 0.0, nx, ny)
+    nodes, elements = _footing_mesh(B, half_w, dep, nx, ny, mesh)
     n_corner = len(nodes)
     if element_type == 't6':
         nodes, elements = convert_to_t6(nodes, elements)
@@ -581,11 +666,13 @@ def _footing_capacity_rigid(B, c, phi, gamma, E, nu, psi, surcharge,
                              else None)
     result.bearing_FOS = (float(q_ult / q_applied)
                           if (q_applied and q_applied > 0) else None)
+    result.n_steps_settled = None
     result.footing = 'rigid'
     result.base = base
     result.pressure_settlement = [[s, q] for s, q in zip(s_hist, q_hist)]
     result.settlement_max_m = float(settlement_max)
-    result.choices = _footing_choices('rigid', base)
+    result.mesh = mesh
+    result.choices = _footing_choices('rigid', base, mesh)
     if not plateau:
         reached = s_hist[-1] if s_hist else 0.0
         why = ("the run stopped at a step that did not converge"

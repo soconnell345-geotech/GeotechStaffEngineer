@@ -57,7 +57,8 @@ def point_in_polygon(point, polygon):
 # Mesh generation
 # ---------------------------------------------------------------------------
 
-def generate_rect_mesh(x_min, x_max, y_min, y_max, nx, ny):
+def generate_rect_mesh(x_min, x_max, y_min, y_max, nx, ny, x_coords=None,
+                       y_coords=None):
     """Generate a structured triangular mesh for a rectangular domain.
 
     Splits each quad cell into 2 triangles (shortest diagonal).
@@ -66,6 +67,9 @@ def generate_rect_mesh(x_min, x_max, y_min, y_max, nx, ny):
     ----------
     x_min, x_max, y_min, y_max : float — domain bounds.
     nx, ny : int — number of elements in each direction.
+    x_coords, y_coords : array, optional — the grid lines (increasing,
+        nx + 1 / ny + 1 values from the bound to the bound), for a graded
+        mesh. Default: evenly spaced.
 
     Returns
     -------
@@ -74,6 +78,17 @@ def generate_rect_mesh(x_min, x_max, y_min, y_max, nx, ny):
     """
     x = np.linspace(x_min, x_max, nx + 1)
     y = np.linspace(y_min, y_max, ny + 1)
+    for name, given, even in (('x_coords', x_coords, x),
+                              ('y_coords', y_coords, y)):
+        if given is None:
+            continue
+        g = np.asarray(given, dtype=float)
+        if (g.shape != even.shape or np.any(np.diff(g) <= 0)
+                or not np.allclose(g[[0, -1]], even[[0, -1]])):
+            raise ValueError(
+                f"{name} must hold {len(even)} increasing values from "
+                f"{even[0]:g} to {even[-1]:g}")
+        even[:] = g
     xx, yy = np.meshgrid(x, y)
     nodes = np.column_stack([xx.ravel(), yy.ravel()])
 
@@ -95,6 +110,34 @@ def generate_rect_mesh(x_min, x_max, y_min, y_max, nx, ny):
                 elements.append([n1, n2, n3])
 
     return nodes, np.array(elements)
+
+
+def geometric_spacing(length, n, h_first):
+    """Positions 0 .. length of n elements whose sizes grow (or shrink) by
+    one constant ratio from ``h_first``: h_first * g**k, k = 0 .. n-1,
+    summing to ``length``. Returns n + 1 positions, the last exactly
+    ``length``."""
+    if length <= 0 or n < 1 or h_first <= 0:
+        raise ValueError("geometric_spacing needs length > 0, n >= 1 and "
+                         "h_first > 0")
+    if n == 1:
+        return np.array([0.0, float(length)])
+
+    def total(lg):
+        return h_first * np.sum(np.exp(lg * np.arange(n)))
+
+    lo, hi = -10.0, 10.0
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if total(mid) < length:
+            lo = mid
+        else:
+            hi = mid
+    sizes = h_first * np.exp(0.5 * (lo + hi) * np.arange(n))
+    pos = np.concatenate([[0.0], np.cumsum(sizes)])
+    pos *= length / pos[-1]
+    pos[-1] = float(length)
+    return pos
 
 
 def generate_slope_mesh(surface_points, depth, nx=30, ny=15,

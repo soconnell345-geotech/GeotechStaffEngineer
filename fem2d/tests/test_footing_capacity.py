@@ -190,12 +190,77 @@ class TestRigidFootingInputs:
     def test_choices(self):
         from fem2d.analysis import _footing_choices
         flex = _footing_choices("flexible", "rough")
-        assert [c["what"] for c in flex] == ["footing model"]
-        assert flex[0]["chosen"] == "flexible"
+        assert [c["what"] for c in flex] == ["footing model", "footing mesh"]
+        assert [c["chosen"] for c in flex] == ["flexible", "uniform"]
         rig = _footing_choices("rigid", "rough")
-        assert [c["chosen"] for c in rig] == ["rigid", "rough"]
+        assert [c["chosen"] for c in rig] == ["rigid", "rough", "uniform"]
         assert "p. 55" in rig[0]["basis"]
         assert "p. 99" in rig[1]["basis"]
+
+
+class TestGradedMeshInputs:
+    """GM-306: mesh='graded' grades the same nx x ny elements towards the
+    footing's edges and the surface; the default stays uniform."""
+
+    def test_bad_mesh(self):
+        with pytest.raises(ValueError, match="mesh must be"):
+            analyze_footing_capacity(B=2.0, c=50.0, mesh="fine")
+
+    @pytest.mark.parametrize("nx,ny", [(21, 10), (2, 10), (20, 1)])
+    def test_graded_needs_even_nx(self, nx, ny):
+        with pytest.raises(ValueError, match="even nx"):
+            analyze_footing_capacity(B=2.0, c=50.0, mesh="graded",
+                                     nx=nx, ny=ny)
+
+    @pytest.mark.parametrize("nx,ny", [(20, 10), (40, 20), (80, 40)])
+    def test_graded_grid(self, nx, ny):
+        import numpy as np
+        from fem2d.analysis import _footing_mesh, _GRADED_EDGE_FRACTION
+        nu, eu = _footing_mesh(2.0, 10.0, 10.0, nx, ny, "uniform")
+        ng, eg = _footing_mesh(2.0, 10.0, 10.0, nx, ny, "graded")
+        assert ng.shape == nu.shape and eg.shape == eu.shape
+        x = np.unique(ng[:, 0])
+        y = np.unique(ng[:, 1])
+        assert len(x) == nx + 1 and len(y) == ny + 1
+        for xe in (-1.0, 0.0, 1.0):          # the footing's edges and centre
+            assert np.isclose(x, xe, atol=1e-12).any()
+        assert x[0] == -10.0 and x[-1] == 10.0
+        assert y[0] == -10.0 and y[-1] == 0.0
+        dx = np.diff(x)
+        h_u = 20.0 / nx
+        i = int(np.argmin(np.abs(x - 1.0)))
+        # the elements either side of the edge are the smallest, 1/4 size
+        assert dx[i - 1] == pytest.approx(_GRADED_EDGE_FRACTION * h_u)
+        assert dx[i] == pytest.approx(_GRADED_EDGE_FRACTION * h_u)
+        assert dx.min() == pytest.approx(_GRADED_EDGE_FRACTION * h_u)
+        assert np.diff(y)[-1] == pytest.approx(
+            _GRADED_EDGE_FRACTION * 10.0 / ny)
+        np.testing.assert_allclose(x, -x[::-1], atol=1e-12)   # symmetric
+
+    def test_geometric_spacing(self):
+        from fem2d.mesh import geometric_spacing
+        p = geometric_spacing(10.0, 5, 0.5)
+        assert p[0] == 0.0 and p[-1] == 10.0 and len(p) == 6
+        d = p[1:] - p[:-1]
+        assert d[0] == pytest.approx(0.5)
+        assert d[1:] / d[:-1] == pytest.approx([d[1] / d[0]] * 4)
+        assert geometric_spacing(1.0, 4, 0.25) == pytest.approx(
+            [0.0, 0.25, 0.5, 0.75, 1.0])
+
+    def test_rect_mesh_coords_checked(self):
+        from fem2d.mesh import generate_rect_mesh
+        with pytest.raises(ValueError, match="x_coords"):
+            generate_rect_mesh(0, 1, 0, 1, 2, 2, x_coords=[0, 0.7, 0.5])
+        n, _ = generate_rect_mesh(0, 1, 0, 1, 2, 1,
+                                  x_coords=[0, 0.2, 1.0])
+        assert sorted(set(n[:, 0])) == [0.0, 0.2, 1.0]
+
+    def test_choices_mesh(self):
+        from fem2d.analysis import _footing_choices
+        g = _footing_choices("flexible", "rough", "graded")
+        assert g[-1]["what"] == "footing mesh"
+        assert g[-1]["chosen"] == "graded"
+        assert "module's choice" in g[-1]["basis"]
 
 
 @pytest.mark.slow
@@ -247,3 +312,40 @@ class TestRigidFooting:
         assert any("did not level off" in w for w in r.warnings)
         # the flexible footing's mesh warning is not the rigid one's
         assert not any("depends on the mesh" in w for w in r.warnings)
+
+
+class TestFlexibleCollapseCriterion:
+    """GM-306: a flexible-footing step that reaches max_iter with its
+    displacements standing still is slow convergence, not collapse. On the
+    80 x 40 mesh the c = 20, phi = 25 footing stopped at 173.6 kPa that way
+    (step 9 at 1000 iterations, residual 1.8e-4 and falling, growth ratio
+    0.095). Reproduced here, fast, with a low max_iter on 20 x 10."""
+
+    KW = dict(B=2.0, c=20.0, phi=25.0, gamma=18.0, nx=20, ny=10,
+              max_iter=100)
+
+    def test_settled_steps_are_not_collapse(self, monkeypatch):
+        import fem2d.analysis as A
+        r = analyze_footing_capacity(**self.KW)
+        assert r.n_steps_settled > 0
+        monkeypatch.setattr(A, "_FLEX_SETTLED_RATIO", None)
+        r_old = analyze_footing_capacity(**self.KW)
+        assert r_old.n_steps_settled == 0
+        # 282.0 kPa read as collapse before GM-306; 368.8 after; 499.0
+        # with the default 1000 iterations
+        assert r_old.q_ult_kPa == pytest.approx(282.0, abs=0.5)
+        assert r.q_ult_kPa == pytest.approx(368.8, abs=0.5)
+        assert r.q_ult_kPa > r_old.q_ult_kPa
+
+    def test_step_that_converges_is_unchanged(self, monkeypatch):
+        # settled_early=False: a step that meets tol on its own ends where
+        # it did with settled_ratio=None, to the last digit.
+        import numpy as np
+        import fem2d.analysis as A
+        kw = dict(B=2.0, c=50.0, nx=20, ny=10, n_load_steps=12)
+        r = analyze_footing_capacity(**kw)
+        monkeypatch.setattr(A, "_FLEX_SETTLED_RATIO", None)
+        r_old = analyze_footing_capacity(**kw)
+        assert r.n_steps_settled == 0
+        assert r.q_ult_kPa == r_old.q_ult_kPa
+        assert r.max_displacement_m == r_old.max_displacement_m
