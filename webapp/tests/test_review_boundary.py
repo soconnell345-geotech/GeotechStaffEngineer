@@ -45,8 +45,10 @@ pytestmark = pytest.mark.skipif(
 #: "importer -> imported": where the review page reaches into GSE today,
 #: with the plan's item (§2.7) and the step that cuts it.
 KNOWN_COUPLINGS = {
-    # 1. The review page is built by GSE's builder (step 8).
-    "webapp.core -> funhouse_agent.deep.agent": "2.7 #1, step 8",
+    # 1. The review page is built by GSE's builder (step 8). Since step 7
+    # the shell asks the page for its builder, which is in the review
+    # page's own file (webapp/review_page.py).
+    "webapp.review_page -> funhouse_agent.deep.agent": "2.7 #1, step 8",
     "funhouse_agent.deep.review_agent -> funhouse_agent.deep.agent":
         "2.7 #1, step 8",
     # 2. (The review tools' factory sat in GSE's tools module: gone at
@@ -71,7 +73,8 @@ KNOWN_COUPLINGS = {
     "funhouse_agent.vision_tools -> geotech_references": "2.7 soft, step 11",
     "funhouse_agent.vision_tools -> geotech_references._figures_db":
         "2.7 soft, step 11",
-    "webapp.core -> webapp.reference_fetch": "2.7 soft, step 7",
+    # (webapp.core -> webapp.reference_fetch: gone at step 7; the geotech
+    # page's on_build hook registers the fetcher.)
 }
 
 #: The couplings inside ``try``, which a page without GSE survives.
@@ -238,3 +241,24 @@ def test_the_chart_stack_imports_nothing_of_gse():
                   if page_builds.is_geotech(m)]
     assert not found, ("The chart stack imports GeotechStaffEngineer code "
                        "(INF-31 step 6):\n  " + "\n  ".join(found))
+
+
+#: Step 7's exit (plan §4): the shell asks the page, not geotech. These
+#: three files import nothing of these (the geotech page's own parts are in
+#: webapp/geotech_page.py, reached through the page's hooks).
+SHELL = ("webapp/app.py", "webapp/core.py", "webapp/diagnostics.py")
+NOT_IN_THE_SHELL = ("funhouse_agent.dispatch", "funhouse_agent.reviewers",
+                    "funhouse_agent._disclaimer", "funhouse_agent.disclaimer",
+                    "funhouse_agent.reference_docs",
+                    "funhouse_agent.worked_examples", "geotech_references",
+                    "webapp.reference_fetch", "webapp.geotech_page")
+
+
+def test_the_shell_imports_nothing_of_geotech():
+    found = []
+    for path in _python_files(*SHELL):
+        found += [f"{path} -> {m}" for m in sorted(_imports_of(path))
+                  if any(m == n or m.startswith(n + ".")
+                         for n in NOT_IN_THE_SHELL)]
+    assert not found, ("The shell imports the geotech page's own code "
+                       "(INF-31 step 7):\n  " + "\n  ".join(found))

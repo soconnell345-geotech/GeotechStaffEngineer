@@ -50,19 +50,20 @@ ACCEPTED_UPLOAD_TYPES = [
 # Disclaimer
 # ---------------------------------------------------------------------------
 
-def disclaimer_text() -> str:
-    """Return the package's full professional-use disclaimer as text.
+def disclaimer_text(profile=None) -> str:
+    """Return the page's full professional-use disclaimer as text.
 
-    ``funhouse_agent.disclaimer`` PRINTS to a stream, so capture it into a
-    buffer. Falls back to a short notice if the import is unavailable, so the
-    banner is never empty.
+    The page says what it is (its ``disclaimer`` hook, :mod:`webapp.
+    page_profile`; ``profile`` defaults to the page this run serves). Falls
+    back to a short notice when the page has none to give, so the banner is
+    never empty.
     """
-    import io
     try:
-        from funhouse_agent import disclaimer
-        buf = io.StringIO()
-        disclaimer(file=buf)
-        text = buf.getvalue().strip()
+        if profile is None:
+            from webapp import profiles
+            profile = profiles.current()
+        hook = profile.hook("disclaimer")
+        text = hook() if hook is not None else None
         if text:
             return text
     except Exception:
@@ -714,17 +715,6 @@ def new_artifacts(temp_dir: str, before: set, input_paths: Iterable[str]) -> Lis
 # Agent construction
 # ---------------------------------------------------------------------------
 
-def _register_reference_fetcher() -> None:
-    """Reference PDFs from SharePoint ``primary_references/``, fetched the
-    first time a chart needs one (owner decision 2026-09-15). Process-wide and
-    harmless to repeat; a no-op without SharePoint."""
-    try:
-        from webapp import reference_fetch
-        reference_fetch.register_if_configured()
-    except Exception:                                  # noqa: BLE001
-        pass
-
-
 def _add_feedback_tool(kw: dict, temp_dir: str) -> None:
     """Splice the ``record_feedback`` tool and its instructions into
     ``build_deep_agent`` kwargs (owner feedback 2026-09-11).
@@ -796,115 +786,84 @@ def _add_file_tools(kw: dict, temp_dir: str) -> None:
                 p for p in (kw.get("extra_system_prompt"), prompt) if p)
 
 
-def _add_report_library(kw: dict, temp_dir: str) -> None:
-    """Turn the report-library sub-agent on for the geotech page (RI-95).
-
-    The library is ``GEOTECH_REPORT_LIBRARY`` when the deployment sets one,
-    else the ``report_ingest`` folder in this conversation's working folder,
-    where the ingest writes without it. ``build_deep_agent`` advertises the
-    tool only when a record is under that folder, so with no library read
-    yet the agent carries neither the tool nor its prompt line. A caller's
-    own ``enable_report_library`` / ``library_root`` wins. Never for the
-    Document Review page (the caller skips it).
-    """
-    if "enable_report_library" in kw or "library_root" in kw:
-        return
-    try:
-        from funhouse_agent.deep.tools import shared_report_library
-        root = shared_report_library()
-        if not root:
-            thread_id = os.path.basename(
-                os.path.dirname(os.path.abspath(temp_dir)))
-            root = os.path.join(working_dir_for(thread_id),
-                                "report_ingest")
-    except Exception:
-        return
-    kw["enable_report_library"] = True
-    kw["library_root"] = root
+def _page_for(build_kwargs: dict, profile=None):
+    """The page a build is for: ``profile``, else (a caller from before the
+    hooks) the Document Review page for a ``review_page`` build, else the
+    page this run serves."""
+    if profile is not None:
+        return profile
+    from webapp import profiles
+    if build_kwargs.get("review_page"):
+        return profiles.DOCUMENT_REVIEW
+    return profiles.current()
 
 
 def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
-                checkpointer=None, **build_kwargs):
-    """Build the compiled deep agent wired to the SHARED attachments dict and a
-    session-dir save_fn. ``build_kwargs`` pass through to ``build_deep_agent``
-    (e.g. ``enable_memory``). Lazy-imports the deepagents builder.
+                checkpointer=None, profile=None, **build_kwargs):
+    """Build the compiled agent wired to the SHARED attachments dict and a
+    session-dir save_fn. ``build_kwargs`` pass through to the page's agent
+    builder (e.g. ``enable_memory``).
+
+    ``profile`` is the page (:mod:`webapp.page_profile`; default as
+    :func:`_page_for`): the shell adds what every page's agent gets (the
+    file and email tools, the feedback tool, the coverage folder), runs the
+    page's ``on_build`` hook, and hands the rest to its ``agent_builder``
+    (the geotech page adds its report library there, the review page its
+    working folder; INF-31 step 7).
 
     ``checkpointer`` (optional) is a LangGraph checkpointer forwarded to
-    ``build_deep_agent`` for durable/resumable thread state. The shipped webapp
+    the builder for durable/resumable thread state. The shipped webapp
     resumes conversations by REPLAYING the persisted agent-facing message history
     (see the Persistence section) rather than depending on a durable checkpointer,
     so this defaults to ``None`` (byte-identical to the pre-persistence build);
     it is exposed so a durable saver (e.g. a LangGraph SQLite saver, an optional
     dependency) can be dropped in without touching the builder wiring.
     """
-    from funhouse_agent.deep.agent import build_deep_agent
+    page = _page_for(build_kwargs, profile)
     kw = dict(build_kwargs)
     if checkpointer is not None:
         kw["checkpointer"] = checkpointer
     _add_file_tools(kw, temp_dir)
     _add_feedback_tool(kw, temp_dir)
-    _register_reference_fetcher()
+    on_build = page.hook("on_build")
+    if on_build is not None:
+        on_build()
     # The coverage ledger (GEOTECH_COVERAGE, off by default) lives in the
     # conversation's folder beside activity.jsonl, so it outlives a rebuild
     # of the agent and is mirrored with the conversation. Unused when off.
     kw.setdefault("coverage_dir", os.path.dirname(os.path.abspath(temp_dir)))
-    if not kw.get("review_page"):
-        _add_report_library(kw, temp_dir)
-    if kw.get("review_page"):
-        # The Document Review page's lean agent binds its findings and
-        # digests to THIS conversation's folder when it is built; the
-        # process-wide working folder can be re-pointed by another tab.
-        # (The legacy build accepts and ignores it.)
-        kw.setdefault("working_dir", temp_dir)
-    return build_deep_agent(
+    agent = page.hook("agent_builder")(
         model,
         attachments=attachments,
         save_fn=make_save_fn(temp_dir, artifacts),
+        temp_dir=temp_dir,
         **kw,
     )
+    # The page's check of the answer at each turn's end (stream_turn).
+    try:
+        agent.geotech_turn_checks = page.turn_checks
+    except Exception:                                  # noqa: BLE001
+        pass
+    return agent
 
 
-#: agent_type value -> deep reviewer builder name in funhouse_agent.reviewers.
-_REVIEWER_BUILDERS = {
-    "seismic": "make_seismic_reviewer_deep",
-    "foundations": "make_foundations_reviewer_deep",
-    "earth_retention": "make_earth_retention_reviewer_deep",
-    "slope_fem": "make_slope_fem_reviewer_deep",
-    "pavement": "make_pavement_specialist_deep",
-    "structural": "make_structural_specialist_deep",
+#: Names that moved to the geotech page's own file (INF-31 step 7), still
+#: answered here for the callers that import them from this module.
+_MOVED_TO_GEOTECH_PAGE = {
+    "build_reviewer_agent": "build_reviewer_agent",
+    "_REVIEWER_BUILDERS": "_REVIEWER_BUILDERS",
+    "_register_reference_fetcher": "register_reference_fetcher",
+    "_add_report_library": "add_report_library",
+    "_turn_judgment_check": "turn_checks",
 }
 
 
-def build_reviewer_agent(kind, model, attachments: dict, temp_dir: str,
-                         artifacts: List[str], **build_kwargs):
-    """Build a NARROW reviewer deep-agent (A5e) for ``kind``, wired to the SAME
-    shared attachments dict + session-dir save_fn as the full agent (the reviewer
-    ``make_*_reviewer_deep`` builders forward these to ``build_deep_agent``).
-
-    An unknown ``kind`` (including ``"full"``) falls back to the full agent build.
-    A reviewer manages its own scope + review-mode prompt + ``reference_mode``, so
-    the behavior reference/analysis-depth build-kwargs are deliberately NOT applied
-    to it (``specialist_build_kwargs`` passes the calc helper alone); the
-    recursion cap still applies at stream time.
-
-    It gets the full agent's deliverables (BACKLOG GM-40): the report and
-    drawing modules are in every specialist's scope
-    (``funhouse_agent.reviewers``), and the SharePoint and email tools and
-    the feedback tool are spliced in here as ``build_agent`` does.
-    """
-    name = _REVIEWER_BUILDERS.get(kind)
-    if name is None:
-        return build_agent(model, attachments, temp_dir, artifacts, **build_kwargs)
-    from funhouse_agent import reviewers as _reviewers
-    builder = getattr(_reviewers, name)
-    kw = dict(build_kwargs)
-    _add_file_tools(kw, temp_dir)
-    # Specialists never pass through build_agent, so they had no feedback
-    # tool at all before 2026-09-15.
-    _add_feedback_tool(kw, temp_dir)
-    _register_reference_fetcher()
-    return builder(model, attachments=attachments,
-                   save_fn=make_save_fn(temp_dir, artifacts), **kw)
+def __getattr__(name):
+    moved = _MOVED_TO_GEOTECH_PAGE.get(name)
+    if moved is not None:
+        import importlib
+        return getattr(importlib.import_module("webapp.geotech_page"), moved)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -1256,25 +1215,19 @@ def _turn_citation_check(callbacks, messages):
         return None
 
 
-def _turn_judgment_check(agent, callbacks):
-    """The turn-end check of the answer's "Judgment calls" list
-    (:mod:`funhouse_agent.judgment_check`, BACKLOG GM-174): with
-    ``GEOTECH_JUDGMENT_CALLS`` on and a build that asks for the list after a
-    consult, an answer whose calls name no source, with no ``references``
-    task in the turn, is sent back once. Its result is kept in the turn's
-    activity log. ``None`` where it cannot be had."""
+def _page_turn_check(agent, callbacks):
+    """The page's check of the answer at each turn's end (its
+    ``turn_checks`` hook: the judgment-call check, :mod:`funhouse_agent.
+    judgment_check`, BACKLOG GM-174), from the page the agent was built for,
+    else the page this run serves. ``None`` where it cannot be had."""
     try:
-        from funhouse_agent.judgment_check import (RECORD_EVENT,
-                                                   TurnJudgmentCheck,
-                                                   mode_for)
-        logger = next((cb for cb in callbacks or ()
-                       if hasattr(cb, "conv_dir")
-                       and hasattr(cb, "on_custom_event")), None)
-        log = None
-        if logger is not None:
-            def log(data, _logger=logger):
-                _logger.on_custom_event(RECORD_EVENT, data, run_id=None)
-        return TurnJudgmentCheck(mode=mode_for(agent), log=log)
+        hook = getattr(agent, "geotech_turn_checks", None)
+        if hook is None:
+            from webapp import profiles
+            hook = profiles.current().turn_checks
+        from webapp.page_profile import resolve
+        fn = resolve(hook)
+        return fn(agent, callbacks) if fn is not None else None
     except Exception:  # noqa: BLE001 - the turn runs without it
         return None
 
@@ -1414,7 +1367,7 @@ def stream_turn(agent, messages: list, thread_id: str,
     in one note. With ``GEOTECH_JUDGMENT_CALLS`` on, an answer whose
     "Judgment calls" list has calls that name no source, in a turn with no
     ``references`` task, is sent back once the same way, asking for one
-    consult (:func:`_turn_judgment_check`; BACKLOG GM-174).
+    consult (:func:`_page_turn_check`; BACKLOG GM-174).
 
     Reuses the PURE ``_format_update`` parser and ``_sum_callback_tokens`` from
     ``funhouse_agent.deep.notebook`` so the stream contract is shared with the
@@ -1458,7 +1411,7 @@ def stream_turn(agent, messages: list, thread_id: str,
         cb_ctx = None
     page_check = _turn_page_check(callbacks)
     citation_check = _turn_citation_check(callbacks, messages)
-    judgment_check = _turn_judgment_check(agent, callbacks)
+    judgment_check = _page_turn_check(agent, callbacks)
 
     def _run_passes(run_config):
         # One or more graph invocations: the extra passes are the bounded

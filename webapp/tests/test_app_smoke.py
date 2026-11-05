@@ -49,7 +49,7 @@ def _mk_at(monkeypatch, tmp_path, stream_fn):
     monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path))
     monkeypatch.setattr(engine_config, "resolve_engine", _fake_engine)
     monkeypatch.setattr(core, "build_agent", lambda *_a, **_k: object())
-    monkeypatch.setattr(core, "build_reviewer_agent",
+    monkeypatch.setattr("webapp.geotech_page.build_reviewer_agent",
                         lambda kind, *_a, **_k: f"reviewer:{kind}")
     monkeypatch.setattr(core, "stream_turn", stream_fn)
     return AppTest.from_file(_APP, default_timeout=30)
@@ -160,7 +160,7 @@ def test_picked_specialist_gets_the_calc_helper(monkeypatch, tmp_path):
     turns it off for the specialist too."""
     at = _mk_at(monkeypatch, tmp_path, _stream_ok)
     built = []
-    monkeypatch.setattr(core, "build_reviewer_agent",
+    monkeypatch.setattr("webapp.geotech_page.build_reviewer_agent",
                         lambda kind, *_a, **kw: built.append((kind, kw))
                         or f"reviewer:{kind}")
     at.run()
