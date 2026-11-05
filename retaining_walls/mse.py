@@ -2896,9 +2896,8 @@ STRENGTH_MIN_BASIS = (
     "group, e must be less than emax'; for bearing p. 4-28, 'a critical "
     "value must be determined by comparisons of applicable load "
     "combinations'. Counted in the governing eccentricity and bearing CDR; "
-    "on a level backfill its eccentricity is below the critical "
-    "combination's (EH min under the same EV) and its bearing stress below "
-    "Strength I max's")
+    "on a level backfill it never governs, its vertical loads being the "
+    "critical combination's under a smaller overturning moment")
 
 #: GEC-11 Vol I p. 4-30, read on the rendered page.
 LOCAL_SHEAR_BASIS = (
@@ -3122,14 +3121,17 @@ def check_external_stability_lrfd(
     * Each mode is checked for the governing load combination. The **critical**
       ("min-vertical") combination pairs the minimum vertical load factor
       (least resistance / largest eccentricity, ``gamma_EV_min`` on all vertical
-      gravity loads) with the maximum horizontal/driving factors
-      (``gamma_EH_max``, ``gamma_LL``).
+      earth loads) with the maximum horizontal/driving factors
+      (``gamma_EH_max``, ``gamma_LL``). In bearing the live load over the
+      zone keeps ``gamma_LL``: GEC-11 Vol II Table E4-6.3 (p. E4-9) takes
+      the critical values from Str I (min)'s sum V and M_RA (LL 1.75 on Vs)
+      with Str I (max)'s M_OA, as Table E5-7.3 (p. E5-20) does.
 
     This is the LRFD counterpart to the ASD ``check_external_stability``; it does
     NOT change that function. It reproduces the GEC-11 Example E4 (FHWA-NHI-10-025,
     Appendix E) external-stability results (sliding CDR 1.85/2.08/1.37,
     eccentricity eL 2.87/3.87 ft vs L/4, bearing sigma_v 6.70 ksf / CDR 1.57,
-    Service sigma_v 4.66 ksf).
+    critical 5.86 ksf / CDR 1.79, Service sigma_v 4.66 ksf).
 
     Parameters
     ----------
@@ -3372,8 +3374,10 @@ def check_external_stability_lrfd(
     eL_min = L / 2.0 - (gamma_EV_min * MV1 - MOA_min) / (gamma_EV_min * V1)
     e_limit = ecc_limit_ratio * L
 
-    # --- Bearing (LL included; min-vertical combo uses gamma_EV_min on all
-    #     vertical gravity loads) ---------------------------------------------
+    # --- Bearing (LL included, at gamma_LL over the zone in every strength
+    #     combination; the critical one takes Str I (min)'s vertical loads
+    #     with Str I (max)'s overturning moment, GEC-11 Vol II Table E4-6.3,
+    #     p. E4-9: sum V_C 65.57 = 57.69 + 1.75 x 4.50 k/ft) ---------------
     def _bearing(ev_soil, ev_ll, mo=MOA):
         SV = ev_soil * V1 + ev_ll * Vs
         MR = ev_soil * MV1 + ev_ll * MVs
@@ -3384,7 +3388,7 @@ def check_external_stability_lrfd(
         return sigma, eL, Bp
 
     sig_str, eL_bear, Bp_str = _bearing(gamma_EV_max, gamma_LL)   # Str I max
-    sig_crit, _, Bp_crit = _bearing(gamma_EV_min, gamma_EV_min)   # min-vertical
+    sig_crit, _, Bp_crit = _bearing(gamma_EV_min, gamma_LL)       # min-vertical
     sig_min, eL_bear_min, Bp_min = _bearing(gamma_EV_min, gamma_LL,
                                             MOA_min)              # Str I min
 
@@ -3570,8 +3574,10 @@ def _external_lrfd_sloping(
     eL_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL, ll_v, 0.0)[1]
     sig_str, eL_bear, Bp_str = _base(gamma_EV_max, gamma_EH_max, gamma_LL,
                                      gamma_LL, gamma_LL)
+    # the critical one: the live load over the zone at gamma_LL, as GEC-11
+    # Vol II Table E4-6.3 (p. E4-9) takes it
     sig_crit, _, Bp_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL,
-                                 gamma_LL, gamma_EV_min)
+                                 gamma_LL, gamma_LL)
     sig_svc, eL_svc, _ = _base(1.0, 1.0, 1.0, 1.0, 1.0)
     # Strength I min (GM-114): EV min and EH min, the live load at gamma_LL,
     # as GEC-11 Vol II Table E4-5.1 lists Strength I (minimum)

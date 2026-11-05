@@ -56,11 +56,12 @@ Branch `claude/gm-114-mse-calc-package`, from master `d45380a`.
      B' 19.31 ft, σv 6.83 ksf, CDR 1.54 (Table E3-6.3, p. E3-11); the
      module 2.344, 19.311, 6.826, 1.538.
    - It is counted in `eL_governing_m` and `CDR_governing`. On a level
-     backfill its eccentricity is below the critical combination's (EH min
-     under the same EV) and its bearing stress below Strength I max's; no
-     level answer moves by it. On a sloping backfill EH also scales the
-     thrust's vertical component, so it could govern; in the GEC-11
-     Example E1/E3 validation cases (V-056/057) it does not.
+     backfill it never governs: its vertical loads are the critical
+     combination's (review fix 3 below) under a smaller overturning moment,
+     so smaller e, wider L', lower σv and qR no lower; no level answer
+     moves by it. On a sloping backfill EH also scales the thrust's
+     vertical component, so it could govern; in the GEC-11 Example E1/E3
+     validation cases (V-056/057) it does not.
    - The ASD `mse_wall` path is untouched (it has no load factors).
 
 ## The steps and their pages (GEC-11, FHWA-NHI-10-024 Vol I unless said)
@@ -135,6 +136,53 @@ install here (eqsig wheel build). The page fingerprints did not move.
    eccentricity (formerly known as overturning)"; the FOS overturning step
    now cites p. 4-18 with that quote, "checked on pp. 4-22, 4-23" (the
    table above too).
+3. **The critical-combination bearing had the same slip (pre-existing).**
+   It put the live load over the zone at `gamma_EV_min` (1.00). The print
+   is unambiguous that it is 1.75:
+   - GEC-11 Vol II Table E4-6.3 (p. E4-9), critical values: ΣV_C 65.57*
+     and M_RA-C 590.09*, Str I (min)'s column (65.57 = 57.69 + 1.75 ×
+     4.50 k/ft; 590.09 = 519.21 + 1.75 × 40.5), with Str I (max)'s M_OA-C
+     223.30: eL 3.41 ft, B' 11.19 ft, σv-c 5.86 ksf, CDR 1.79.
+   - Table E5-7.3 (p. E5-20) does the same: V_Bb-C 133.35 is Str I
+     (min)'s "V = V4+V5+VS" (116.52 + 1.75 × 9.62, Table E5-4.3, p. E5-9),
+     with Str I (max)'s M_OB 571.95.
+   - E3 (Table E3-6.3) and E1 have no live load over the zone (E1 Vs = 0),
+     so they cannot tell the two apart.
+
+   Fixed: level `_bearing(gamma_EV_min, gamma_LL)`, sloping `vs=gamma_LL`;
+   the docstring, DESIGN.md and the comments say it. V-009 now pins the
+   critical σv 5.86 ksf (abs 0.01, was rel 2.5 %) and CDR 1.79, and the
+   hand calculation ΣV_C, M_RA-C, eL 3.41 ft; the "source rounding" note is
+   gone from the test, WE-MSE-1 and RESULTS.md.
+
+## Release note for review fix 3 (a saved answer moves)
+
+`mse_lrfd_external_stability` (and `analyze_mse_wall(lrfd_external=True)`):
+the critical (EV min, EH max) Strength I bearing now carries the live load
+over the reinforced zone at LL 1.75, as GEC-11 Vol II Table E4-6.3 does; it
+took 1.00 before. Only walls with a live load over the zone move (level
+backfill with a surcharge, or a broken backslope whose level ground reaches
+over the zone); sloping or broken backslopes with no traffic over the zone
+(E1, E3) do not move. What moves, re-run:
+
+| Case | Key | Before | After | Printed |
+|---|---|---|---|---|
+| GEC-11 E4 / WE-MSE-1 (qR given 10.50 ksf) | `sigma_v_critical_kPa` | 275.41 (5.75 ksf) | 280.75 (5.86 ksf), +1.9 % | 5.86 ksf |
+| | `CDR_critical` | 1.825 | 1.791 | 1.79 |
+| | `CDR_governing` | 1.566 (Str I max) | 1.566, unchanged | 1.57 |
+| E4 wall with `gamma_foundation` (qR by Eq. 4-22) | `sigma_v_critical_kPa` | 275.41 | 280.75 | n/a |
+| | `B_eff_critical_m`, `qR_critical_kPa` | 3.2954, 471.13 | 3.4082, 487.25 | n/a |
+| | `CDR_critical` | 1.711 | 1.736 | n/a |
+| | `CDR_governing` | 1.711 (critical) | 1.735 (Str I max now governs) | n/a |
+| E1 (both traffic settings, and with `gamma_foundation`), E3 / WE-MSE-2 | every key | — | unchanged | — |
+
+The bearing demand σv-c rises wherever a live load is over the zone. With
+a given qR the critical CDR falls by the same ratio. With qR worked out
+from L' (`gamma_foundation`) the wider L' raises qR more than σv rises, so
+that CDR rises; on E4 the governing bearing CDR goes from 1.711 to 1.735,
+and Strength I max governs in place of the critical combination. No
+sliding or eccentricity value moves, and no pass or fail changes in these
+cases.
 
 ## What is left
 
@@ -143,13 +191,21 @@ install here (eqsig wheel build). The page fingerprints did not move.
   backslope terms is the work.
 - A battered face (10 deg or more): Eq. 4-26 (p. 4-36) and the failure
   surface for a battered face (p. 4-33, AASHTO Fig. 11.10.6.3.1-1) are not
-  built in `mse_wall` at all.
+  built in `mse_wall` at all; nor is the external Ka for it, Eqs. 4-2 and
+  4-3 with θ (p. 4-15), which `_MSE_BATTER_REASON` does not name yet.
 - The package is ASD (`mse_wall`); there is no LRFD package. The
   `mse_lrfd_external_stability` result, Strength I min included, is not
   printed in any package.
+- Generated pages that print the E4 critical bearing CDR: the gallery's
+  Exhibit 9 bar chart (`docs/gallery/build_gallery.py`, figure
+  `ex09_mse_lrfd.png`) labels it from `CDR_critical`, 1.82 in the
+  committed figure and 1.79 after review fix 3; rebuild it with the next
+  gallery build. The user manual (`docs/user_manual/manual.html`) is
+  regenerated at merge.
 
-## Release note (three lines)
+## Release note (four lines)
 
 - New: the MSE wall calc package — `retaining_wall_package` with `wall_type="mse"` runs `mse_wall` and prints each step with its GEC-11 page; level backfill and vertical face only (a sloping backfill or a face batter is refused).
 - `mse_lrfd_external_stability` now reports Strength I min (EV 1.00, EH 0.90, LL 1.75; GEC-11 Vol I Table 4-2, Vol II Table E4-5.1) eccentricity and bearing, counted in the governing values; on a level backfill no answer changes.
 - The MSE calc steps now cite printed pages for the active force, the moments, the factors of safety, the bearing eccentricity and Kr/Ka.
+- Fix: `mse_lrfd_external_stability`'s critical-combination bearing now carries the live load over the reinforced zone at LL 1.75, as GEC-11 Vol II Table E4-6.3 does (it took 1.00). Where a live load is over the zone the critical bearing stress rises: GEC-11 Example E4 goes from 5.75 to 5.86 ksf (printed 5.86), CDR 1.825 to 1.79 (printed 1.79); with `gamma_foundation` its CDR rises (wider L'), 1.711 to 1.736, and Strength I max governs at 1.735. Walls with no live load over the zone do not change.
