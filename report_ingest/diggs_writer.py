@@ -364,6 +364,56 @@ _GEOGRAPHIC_WGS84 = re.compile(
     re.IGNORECASE)
 
 
+#: DIGGS' compound coordinate-system dictionary (BACKLOG RI-40): the names a
+#: point with a height takes when the record prints its vertical datum. From
+#: https://github.com/DIGGSml/def/blob/main/docs/crs/DIGGS/0.1/compoundCRS.xml
+#: (commit 7bd4c574d874, 2026-11-02), published at the URL below; DIGGS' own
+#: CRS check (``docs/validation/modules/crs-validation.xsl``) resolves an
+#: srsName as that URL with the entry's gml:id as the fragment. Only the
+#: entries over WGS 84 whose height is in metres, as the writer's heights
+#: are; each name is quoted from the dictionary. ``4326_5702`` (NGVD 29) is
+#: there too but its height is in US survey feet (EPSG 5702), so a record
+#: printing NGVD 29 keeps the two-dimensional form.
+DIGGS_COMPOUND_CRS_URL = "https://diggsml.org/def/crs/DIGGS/0.1/compoundCRS.xml"
+DIGGS_COMPOUNDS = {
+    # vertical EPSG code: (gml:id, the dictionary's name)
+    "5703": ("diggs-crs-4326_5703",
+             "WGS 84 + North American Vertical Datum of 1988"),
+    "5713": ("diggs-crs-4326_5713",
+             "WGS 84 + Canadian Vertical Datum of 1928"),
+    "5714": ("diggs-crs-4326_5714", "WGS 84 + mean sea level height"),
+}
+#: A printed vertical datum, by the EPSG code of its height.
+_NAMED_DATUMS = (
+    ("5703", re.compile(r"\bNAVD\s*-?\s*(?:19)?88\b|\bNorth\s+American\s+"
+                        r"Vertical\s+Datum\s+(?:of\s+)?1988\b", re.I)),
+    ("5713", re.compile(r"\bCGVD\s*-?\s*(?:19)?28\b|\bCanadian\s+(?:Geodetic"
+                        r"\s+)?Vertical\s+Datum\s+(?:of\s+)?1928\b", re.I)),
+    ("5702", re.compile(r"\bNGVD\s*-?\s*(?:19)?29\b|\bNational\s+Geodetic\s+"
+                        r"Vertical\s+Datum\s+(?:of\s+)?1929\b", re.I)),
+)
+_MEAN_SEA_LEVEL = re.compile(r"\bM\.?S\.?L\.?(?![\w.])|\bmean\s+sea\s+level\b",
+                             re.I)
+
+
+def _compound_crs(elevation_datum: str) -> Optional[Tuple[str, str]]:
+    """The srsName and dictionary name of DIGGS' compound over WGS 84 for
+    the printed ``elevation_datum``, or None: nothing printed, a datum the
+    dictionary has no metre-height compound for (NGVD 29, a local
+    benchmark), or two named datums at once (a conversion note). A named
+    datum wins over a mention of mean sea level beside it."""
+    named = {code for code, pattern in _NAMED_DATUMS
+             if pattern.search(elevation_datum or "")}
+    if len(named) > 1:
+        return None
+    code = next(iter(named)) if named else (
+        "5714" if _MEAN_SEA_LEVEL.search(elevation_datum or "") else None)
+    if code not in DIGGS_COMPOUNDS:
+        return None
+    gml_id, name = DIGGS_COMPOUNDS[code]
+    return f"{DIGGS_COMPOUND_CRS_URL}#{gml_id}", name
+
+
 def _srs_name(coordinate_system: str) -> str:
     """The srsName for ``coordinate_system`` as printed: CRS84 when it is
     plain geographic WGS 84 (see :data:`_CRS84`), else the text itself."""
@@ -1212,23 +1262,36 @@ class _Writer:
                 f"north is ({inv.coordinate_system.strip()!r}); DIGGS has no "
                 f"element for a grid rotation, so it is written as text in "
                 f"the reference point's description")
-        if (_srs_name(inv.coordinate_system) == _CRS84
-                and inv.coordinate_system.strip() != _CRS84):
-            said.append(f"coordinate system as printed: "
-                        f"{inv.coordinate_system.strip()}; positions are "
-                        f"longitude then latitude (CRS84)")
+        srs_name = _srs_name(inv.coordinate_system)
         datum = self.project.elevation_datum.strip()
-        if datum and z is not None:
-            said.append(f"elevation datum as printed: {datum}; the elevation "
-                        f"is in the centre line")
+        # A point with a height over WGS 84 whose record prints a vertical
+        # datum DIGGS' dictionary names is three-dimensional under that
+        # compound (RI-40). Otherwise no file in hand shows how to name a
+        # vertical datum the record may not have given, so a point under a
+        # name is two-dimensional and the height travels in the centre line
+        # (x y top, x y bottom; RI-30).
+        compound = (_compound_crs(datum)
+                    if z is not None and srs_name == _CRS84 else None)
+        if compound:
+            said.append(f"coordinate system as printed: "
+                        f"{inv.coordinate_system.strip()}; elevation datum "
+                        f"as printed: {datum}; positions are longitude, "
+                        f"latitude, then height in metres, under DIGGS' "
+                        f"compound {compound[1]!r}")
+        else:
+            if (srs_name == _CRS84
+                    and inv.coordinate_system.strip() != _CRS84):
+                said.append(f"coordinate system as printed: "
+                            f"{inv.coordinate_system.strip()}; positions are "
+                            f"longitude then latitude (CRS84)")
+            if datum and z is not None:
+                said.append(f"elevation datum as printed: {datum}; the "
+                            f"elevation is in the centre line")
         if said:
             self.text_element("gml:description", " ".join(said), 5)
-        srs_name = _srs_name(inv.coordinate_system)
-        # No file in hand shows how to name a vertical datum the record may
-        # not have given, so a point under a name is two-dimensional and the
-        # height travels in the centre line (x y top, x y bottom). The
-        # sample's compound name is read back, never written.
-        three_d = z is not None and not srs_name
+        if compound:
+            srs_name = compound[0]
+        three_d = z is not None and (not srs_name or bool(compound))
         srs = f' srsName={quoteattr(srs_name)}' if srs_name else ""
         coords = [x, y, z] if three_d else [x, y]
         point = " ".join(_coord_or_unknown(v) for v in coords)

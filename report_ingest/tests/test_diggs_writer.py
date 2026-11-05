@@ -964,20 +964,28 @@ class TestPointsWithAndWithoutAHeight:
     (RI-30)."""
 
     @pytest.mark.parametrize("cs", ["EPSG:4326", "CRS84", "WGS 84"])
+    @pytest.mark.parametrize("datum", [
+        "", "site benchmark, assumed elevation 100.00",
+        # NGVD 29's compound is in DIGGS' list, but its height is in US
+        # survey feet and the writer's heights are metres (RI-40).
+        "NGVD 29",
+        # two datums named at once: which one the height is in is unclear
+        "NGVD 29, converted to NAVD 88"])
     def test_geographic_with_a_height_is_2d_crs84_and_never_claims_a_datum(
-            self, cs):
+            self, cs, datum):
         hole = _hole(x=-77.0, y=38.9, coordinate_system=cs,
                      elevation=_m(150.5))
-        project = Project(elevation_datum="NAVD 88")
+        project = Project(elevation_datum=datum)
         xml = write_diggs([hole], project=project)
         _validation_checks(xml)
-        assert "5702" not in xml
+        assert "5702" not in xml and "compoundCRS" not in xml
         pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
         assert pos.get("srsName") == "urn:ogc:def:crs:OGC:1.3:CRS84"
         assert (pos.get("srsDimension"), pos.text) == ("2", "-77 38.9")
-        desc = _root(xml).find(
-            ".//diggs:referencePoint//gml:description", NS).text
-        assert "NAVD 88" in desc
+        if datum:
+            desc = _root(xml).find(
+                ".//diggs:referencePoint//gml:description", NS).text
+            assert datum in desc
         back = _read_back(xml)["B-1"]
         assert (back.x, back.y, back.elevation_m) == (-77.0, 38.9, 150.5)
         assert diggs_roundtrip_gate(xml, [hole])[0]
@@ -1028,6 +1036,83 @@ class TestPointsWithAndWithoutAHeight:
         assert first.y == pytest.approx(38.8003450145256)
         assert first.elevation_m == pytest.approx(658.4078)
         assert SAMPLE_3D in first.coordinate_system
+
+
+class TestAPrintedVerticalDatum:
+    """RI-40: a point with a height over WGS 84 whose record prints a
+    vertical datum DIGGS' compound dictionary names (in metres) is written
+    three-dimensional under that compound, longitude, latitude, height, and
+    reads back with its height."""
+
+    URL = "https://diggsml.org/def/crs/DIGGS/0.1/compoundCRS.xml"
+
+    @pytest.mark.parametrize("datum, gml_id, name", [
+        ("NAVD 88", "diggs-crs-4326_5703",
+         "WGS 84 + North American Vertical Datum of 1988"),
+        ("Elevations in metres, NAVD88 (approximately MSL)",
+         "diggs-crs-4326_5703",
+         "WGS 84 + North American Vertical Datum of 1988"),
+        ("North American Vertical Datum of 1988", "diggs-crs-4326_5703",
+         "WGS 84 + North American Vertical Datum of 1988"),
+        ("CGVD28", "diggs-crs-4326_5713",
+         "WGS 84 + Canadian Vertical Datum of 1928"),
+        ("MSL", "diggs-crs-4326_5714", "WGS 84 + mean sea level height"),
+        ("mean sea level", "diggs-crs-4326_5714",
+         "WGS 84 + mean sea level height"),
+    ])
+    def test_the_compound_is_named_and_the_point_is_3d(self, datum, gml_id,
+                                                       name):
+        hole = _hole(x=-77.0, y=38.9, coordinate_system="WGS 84",
+                     elevation=_m(150.5))
+        xml = write_diggs([hole], project=Project(elevation_datum=datum))
+        _validation_checks(xml)
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert pos.get("srsName") == f"{self.URL}#{gml_id}"
+        assert (pos.get("srsDimension"), pos.text) == ("3",
+                                                       "-77 38.9 150.5")
+        desc = _root(xml).find(
+            ".//diggs:referencePoint//gml:description", NS).text
+        assert datum in desc and name in desc
+        back = _read_back(xml)["B-1"]
+        assert (back.x, back.y, back.elevation_m) == (-77.0, 38.9, 150.5)
+        assert gml_id in back.coordinate_system
+        ok, diffs = diggs_roundtrip_gate(xml, [hole])
+        assert ok, diffs
+
+    def test_a_height_in_feet_is_written_in_metres_under_the_compound(self):
+        hole = _hole(x=-77.0, y=38.9, coordinate_system="CRS84",
+                     elevation=Quantity(value=100.0, unit="ft"))
+        xml = write_diggs([hole], project=Project(elevation_datum="NAVD 88"))
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert pos.get("srsDimension") == "3"
+        assert float(pos.text.split()[2]) == pytest.approx(30.48)
+
+    def test_no_height_stays_two_dimensional(self):
+        hole = _hole(x=-77.0, y=38.9, coordinate_system="WGS 84")
+        xml = write_diggs([hole], project=Project(elevation_datum="NAVD 88"))
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert pos.get("srsName") == "urn:ogc:def:crs:OGC:1.3:CRS84"
+        assert pos.get("srsDimension") == "2"
+
+    def test_a_projected_system_is_not_given_a_compound(self):
+        hole = _hole(x=500123.25, y=4100456.5, coordinate_system="EPSG:32611",
+                     elevation=_m(150.5))
+        xml = write_diggs([hole], project=Project(elevation_datum="NAVD 88"))
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert (pos.get("srsName"), pos.get("srsDimension")) == (
+            "EPSG:32611", "2")
+
+    def test_every_name_is_quoted_from_the_dictionary(self):
+        from report_ingest.diggs_writer import (DIGGS_COMPOUND_CRS_URL,
+                                                DIGGS_COMPOUNDS)
+        assert DIGGS_COMPOUND_CRS_URL == self.URL
+        for code, (gml_id, name) in DIGGS_COMPOUNDS.items():
+            assert gml_id == f"diggs-crs-4326_{code}"
+            assert name.startswith("WGS 84 + ")
+
+    def test_a_plan_reads_the_compound_as_geographic(self):
+        from subsurface_characterization.plots_plan import _GEOGRAPHIC
+        assert _GEOGRAPHIC.search(f"{self.URL}#diggs-crs-4326_5703")
 
 
 class TestAnUnknownPosition:
