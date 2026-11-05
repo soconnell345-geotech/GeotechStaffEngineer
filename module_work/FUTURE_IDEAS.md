@@ -467,6 +467,22 @@ vision result):
 - find_like's contact sheets are saved to the conversation folder (and
   mirrored to SharePoint) — storage, not tokens; fine unless it grows.
 
+**Measured by Foundry brief 4** (2026-10-07, 5.32.1rc3 with the app's 2,048 px
+image cap, GPT-5.6 Sol, 37 tasks; source
+`module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md`
+§3.2-3.3): against run 4 at full size, the 35 original tasks took 4.09 M input
+and 0.50 M output tokens (run 4: 4.53 M / 0.36 M) and 66.5 minutes (51.4 once
+one 903 s hung call is set aside; run 4: 45.5). Tiling fired on 90 of 100
+page looks (485 tiles; run 4: 1 of 120): 2 x 2 on every 792 x 612 pt
+Mecklenburg sheet, 3 x 3 on the 11 x 17 tag sheets. On this suite it bought no
+score and cost time and output tokens, and on the long rare-tag set it more
+than doubled the input (442 K to 997 K a run). Vision side calls: 584
+`analyze_pdf_page` calls (2.24 M in, 450 K out) against 229 (1.72 M, 235 K).
+The probe ran once a task there (140 calls, 281 K in, 5 % of input) but runs
+once a process in the app. Probe image tokens: GPT-5.4 `high` 2,664 and
+`original` 4,260; Sol 692 and 4,916. Still robust first by the owner's word:
+these are the numbers to weigh when the dial-back is asked for.
+
 ## MACHINE LEARNING FOR SCALES AND SCANS (owner asked 2026-10-08; candidates, none started)
 
 **Context:**

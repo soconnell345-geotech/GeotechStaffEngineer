@@ -106,7 +106,7 @@ Report: `wave7_em2906_pti_mo.md`.
 | Finding | Status |
 |---|---|
 | `drilled_shaft` depth-based beta unit-mixing — metric coefficient 0.245 applied to FEET-converted depth (decayed ~1.81x too fast, floored at 0.25 below ~8 m; Ex 9-5 Q_skin -64%; tests/DESIGN.md encoded the same expression) | **FIXED**: beta = 1.5 - 0.245*sqrt(z_m) = 1.5 - 0.135*sqrt(z_ft); tests corrected incl. the one that asserted the bugs consequence; GEC-10 rational path unaffected. Ex 9-5 is now curatable as a future worked example. |
-| `axial_pile` nordlund `_limiting_tip_resistance` low-phi qL suspicion (~10,000 kPa at phi=30 vs manual ~479 kPa; phi=40 end verified OK) | OPEN — verify vs printed GEC-12 Fig 7-15 before changing. |
+| `axial_pile` nordlund `_limiting_tip_resistance` low-phi qL suspicion (~10,000 kPa at phi=30 vs manual ~479 kPa; phi=40 end verified OK) | **CLOSED** — verified against printed GEC-12 Fig 7-15 and fixed (Defect #4 below; the figure was re-measured off the print in geotech-references d9dab7a, 2026-10-08). |
 | Ex 8-2 Schmertmann: manual uses the FHWA-interpolated variant (L/B-interpolated Iz + X-factor on Es); our module is classic 1978 binary square/strip | NOTED — possible future enhancement (fhwa variant flag), not a defect. |
 
 ## Defect #4 — Nordlund/Meyerhof qL (2026-07-19, CLOSED)

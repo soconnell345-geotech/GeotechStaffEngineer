@@ -11,14 +11,18 @@ strength estimation.
   (Vs30 / N-bar / su-bar boundaries and site factors). This is the standard the
   code implements (`calc_steps.py`, `__init__.py`); an earlier DESIGN.md note
   saying "ASCE 7" was inaccurate. **Source basis:** the Vs30/N/su class
-  boundaries are text values (not a chart read); site-factor tables (Fpga/Fa/Fv)
-  are transcribed — authoring-time in-hand status not recorded; **candidate for
-  wiki verification against AASHTO LRFD 9th Ed §3.10.3 Tables 3.10.3.1-1/2/3.**
+  boundaries are text values (not a chart read). The site classes follow GEC-12
+  Table 7-26 and the Fpga/Fa/Fv site-factor cells and their interpolation
+  GEC-12 Table 7-27 (75 cells checked against the print; Fpga is used only when
+  a PGA is given). That closes the earlier "candidate for wiki verification"
+  note: BACKLOG_DONE.md GM-293 (merge 0b36ef7, `module_work/gm293/CHECK.md`).
 - Mononobe-Okabe (1929) — seismic active/passive earth pressure. **Source basis:**
-  the M-O closed-form (AASHTO LRFD §11.6.5) is coded from the equation, and the
-  implementation is anchored to an INTERNAL numerical trial-wedge cross-check,
-  not to a published M-O coefficient table — noted honestly as a validation
-  gap (a published K_AE table would be a stronger anchor).
+  the M-O closed form is coded as UFC 3-220-20 Eq. 4-15 and GEC-4 Eq. 44 print
+  it, with the KPE wall friction at 0.4 phi by default (phi/3 per NHI-06-089
+  p. 10-19 is offered). It is anchored to a published worked example, GEC-11
+  Example E7 (V-062), as well as to the internal trial-wedge cross-check, so
+  the earlier "validation gap" is closed: BACKLOG_DONE.md GM-293. The static KA
+  inside M-O is Rankine, a choice the result states (BACKLOG_DONE.md GM-142).
 - **Youd et al. (2001) — SPT-based liquefaction triggering (NCEER/NSF workshop;
   the updated Seed-Idriss simplified procedure).** The triggering procedure in
   `liquefaction.py` is NCEER / Youd-2001 (NCEER CRR fit, NCEER MSF, Youd fines

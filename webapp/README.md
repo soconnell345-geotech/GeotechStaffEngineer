@@ -20,7 +20,7 @@ target for the State Dept **TinyApp** hosting environment (Streamlit / Python).
 From a published install:
 
 ```bash
-pip install "geotech-staff-engineer[deep,full,webapp]"
+pip install "geotech-staff-engineer"        # one install brings the whole stack; the old [deep,full,webapp] extras still work as empty aliases
 export ANTHROPIC_API_KEY=sk-...          # Windows PowerShell: $env:ANTHROPIC_API_KEY="sk-..."
 streamlit run webapp/app.py
 ```
@@ -32,7 +32,7 @@ your browser. That's the whole thing.
 add streamlit to the project venv and run:
 
 ```bash
-.venv/Scripts/pip install streamlit          # one-time; the [webapp] extra
+.venv/Scripts/pip install streamlit          # one-time (already installed by a plain pip install of the package)
 .venv/Scripts/streamlit run webapp/app.py
 ```
 
@@ -72,7 +72,7 @@ independent ways to see a turn's summary on screen:
 - **LangSmith (SaaS):** set `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY=…`
   before launching — the LangChain/LangGraph stack then auto-traces every run to
   your LangSmith project with no code change (the `langsmith` client ships with
-  the `[deep]` extra). Optionally set `LANGCHAIN_PROJECT=geotech-webapp`.
+  the plain install). Optionally set `LANGCHAIN_PROJECT=geotech-webapp`.
 
 Both are inert unless their env var is set.
 
@@ -288,7 +288,7 @@ This is the TinyApp dress rehearsal: same Prompter data connection, same app.
 
 ```python
 # In a Databricks notebook cell:
-%pip install "geotech-staff-engineer[deep,full,webapp]"
+%pip install "geotech-staff-engineer"
 dbutils.library.restartPython()
 ```
 

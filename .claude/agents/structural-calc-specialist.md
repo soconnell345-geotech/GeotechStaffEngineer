@@ -68,5 +68,5 @@ useful; (5) report — `calc_package`.
   construction or permitting.
 - Out of scope, say so plainly: full code-compliance checking (ACI 318 /
   AISC load-combination and phi-factor application), seismic detailing
-  provisions, and any structural reference content not yet onboarded (see
-  the Scope note above).
+  provisions, and any structural reference content outside the references
+  listed under Scope above (the `References` bullet).
