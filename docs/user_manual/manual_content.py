@@ -264,7 +264,7 @@ WORKED = {
     "retaining_walls": ("retaining_walls.cantilever_wall",
         "A 6&nbsp;m cantilever retaining wall on &phi;=32&deg; backfill with a 12&nbsp;kPa surcharge "
         "&mdash; check sliding, overturning, and bearing.",
-        "Here the auto-sized base fails sliding (FOS 1.27 &lt; 1.5) &mdash; exactly the kind of "
+        "Here the auto-sized base fails sliding (FOS 1.14 &lt; 1.5) &mdash; exactly the kind of "
         "check-and-revise loop the toolkit is built for."),
     "ground_improvement": ("ground_improvement.aggregate_piers",
         "0.76&nbsp;m aggregate piers on a 1.5&nbsp;m triangular grid under soft ground &mdash; what "
@@ -272,7 +272,7 @@ WORKED = {
     "slope_stability": ("slope_stability.search_critical_surface",
         "Find the critical circular slip surface and minimum factor of safety for a 10&nbsp;m "
         "c&ndash;&phi; slope (c&prime;=12&nbsp;kPa, &phi;&prime;=28&deg;) by Bishop&rsquo;s method.",
-        "1,418 trial surfaces were evaluated in the entry&ndash;exit search; the minimum governs."),
+        "2,300 trial surfaces were evaluated in the entry&ndash;exit search; the minimum governs."),
     "fem2d": ("fem2d.fem2d_slope_srm",
         "Run a finite-element strength-reduction analysis on the same slope (c=10&nbsp;kPa, "
         "&phi;=20&deg;) &mdash; what SRF causes collapse?",
@@ -492,21 +492,31 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "clay and sand, base resistance, rock-socket capacity, belled bases, and the LRFD factored "
             "resistance.",
         "methods": [
-            "**&alpha;-method** side resistance in clay (AASHTO 0.55 default, or the GEC-10 **Chen (2011)** "
-            "rational &alpha; with the UU/UC&rarr;CIUC s<sub>u</sub> transform).",
+            "**&alpha;-method** side resistance in clay (GEC-10 (2018) Eq. 10-18 rational &alpha; by "
+            "default, on s<sub>u</sub>(CIUC) with the UU/UC&rarr;CIUC transform of Eqs. 10-16/10-17; the "
+            "O&rsquo;Neill &amp; Reese (1999) AASHTO &alpha; by name).",
             "**&beta;-method** side resistance in sand (GEC-10 (2018) Eq. 10-13 by default: K<sub>o</sub> "
             "from the OCR, &sigma;&prime;<sub>p</sub> from each layer&rsquo;s N<sub>60</sub>; or the "
             "O&rsquo;Neill&ndash;Reese depth &beta; by name).",
-            "Base resistance in sand (0.60&middot;N<sub>60</sub> with the large-diameter reduction) and "
-            "clay (N<sub>c</sub>&middot;s<sub>u</sub> cap); rock-socket side + base; permanent-casing and "
-            "top/bottom exclusion zones.",
+            "Base resistance in sand (GEC-10 Eq. 10-14 on the mean N<sub>60</sub> over two diameters below "
+            "the base) and clay (N*<sub>c</sub>&middot;s<sub>u</sub>, Eq. 10-19, s<sub>u</sub> averaged over "
+            "two diameters); no large-base reduction unless asked for, as the 2018 edition prints none.",
+            "Rock sockets: side resistance by Eq. 10-21 with C = 1.0 by default (0.65 and 1.9 as named "
+            "options; Eq. 10-22 for caving sockets), q<sub>u</sub> held no higher than the concrete&rsquo;s "
+            "f&prime;<sub>c</sub> when it is given; base 2.5&nbsp;q<sub>u</sub> (Eq. 10-23) only where the "
+            "engineer states the conditions of p. 10-22 or the rock below the base is at RQD 100, else the "
+            "Hoek&ndash;Brown base or a refusal. Permanent casing, fractured rock at the top of the socket, "
+            "and a top exclusion zone in clay (1.5&nbsp;m by default; none in sand or rock unless given).",
             "LRFD resistance factors and capacity-vs-depth curves.",
             "References: FHWA GEC-10 (FHWA-NHI-18-024); O&rsquo;Neill &amp; Reese; Chen &amp; Kulhawy; "
             "validated against the GEC-10 Appendix A example (V-006/V-007/V-008).",
         ],
         "limits": [
-            "The large-diameter base reduction (GEC-10 &sect;13.3.4.3) is applied by default; an example "
-            "reporting the unreduced nominal base resistance will differ by that factor (V-008b).",
+            "The O&rsquo;Neill &amp; Reese large-base reduction is off by default "
+            "(<code>large_base_reduction</code>), because GEC-10 (2018) prints none; an example worked to "
+            "the 2010 edition or to NHI-06-089 with the reduction will differ by that factor.",
+            "Rock q<sub>u</sub> is not checked against the concrete&rsquo;s f&prime;<sub>c</sub> unless "
+            "<code>concrete_fc</code> is given, and the result says so.",
         ],
     },
 
@@ -898,7 +908,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "depth) that never change a value; groundwater not encountered is never written as a level, "
             "an unknown position is never written as 0, and a printed refusal is kept as one.",
             "Folded format adapters: **GEF/BRO-XML** CPT and borehole parsing (pygef), **AGS4** read/"
-            "validate (python-ags4; an optional extra from the release after 5.33.0), and **DIGGS** "
+            "validate (python-ags4; an optional extra (`[ags4]`) since 5.34.0), and **DIGGS** "
             "schema/dictionary validation (pydiggs).",
             "References: the DIGGS, GEF, and AGS4 standards; pygef / python-ags4 / pydiggs. Requires the "
             "<code>[subsurface]</code> extra for the format adapters.",
@@ -1122,6 +1132,11 @@ VALIDATION_ROWS = [
 
 # Version history (Appendix B)
 VERSION_HISTORY = [
+    ("5.4.0 &ndash; 5.34.0", "2026-07 &ndash; 2026-11",
+     "Not yet summarised in this appendix. Each release&rsquo;s notes, including the changes that "
+     "move a calculation&rsquo;s answer, are in the repository&rsquo;s <code>HANDOFF.md</code> and "
+     "<code>CLAUDE.md</code>; the method and parameter tables in this manual are generated from "
+     "the release it is built from."),
     ("5.3.0", "2026-07-06",
      "Batch-2 coverage (drilled-shaft rational GEC-10 chains; MSE LRFD external stability; "
      "soe basal-heave side shear + FHWA apparent-pressure anchored walls + log-spiral Caquot&ndash;"
@@ -1812,8 +1827,8 @@ def _appendix_history(ctx):
     ctx.chapter("Version history", appendix=True)
     ctx.para(
         "A summary of the 5.x line. The full running history and the intentional behavior changes "
-        "between minor versions are tracked in <code>CLAUDE.md</code> and "
-        "<code>docs/V5.1_SUMMARY.html</code>.", cls="lead")
+        "between minor versions are tracked in <code>CLAUDE.md</code> and <code>HANDOFF.md</code>; "
+        "<code>docs/V5.1_SUMMARY.html</code> covers 5.0 to 5.1 only.", cls="lead")
     rows = ["<table><thead><tr><th>Version</th><th>Date</th><th>Highlights</th></tr></thead><tbody>"]
     for ver, dt, note in VERSION_HISTORY:
         rows.append(f"<tr><td><strong>{ver}</strong></td><td class='small'>{dt}</td><td>{note}</td></tr>")
