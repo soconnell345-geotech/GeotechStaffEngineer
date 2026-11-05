@@ -42,6 +42,7 @@ from drilled_shaft.end_bearing import (
     unit_end_bearing_cohesive,
 )
 from drilled_shaft.results import DrillShaftResult
+from drilled_shaft.lrfd import RESISTANCE_FACTORS
 
 
 def require_tip_N60(tip_layer: ShaftSoilLayer, depth: float) -> float:
@@ -642,6 +643,54 @@ CONCRETE_FC_BASIS = (
     "and f'c 4,000 psi = 576 ksf. FHWA NHI-06-089 Eq. 9-47 (p. 9-140) "
     "limits Eq. 10-22's form the same way, by 0.65 pa (f'c / pa)^0.5. "
     "Taken in Eq. 10-22 as in Eq. 10-21")
+
+
+#: GEC-10 (FHWA-NHI-18-024) p. 10-25 and p. 12-8 on the base in rock and
+#: the concrete's own bearing strength, as printed (GM-233).
+CONCRETE_BEARING_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) p. 10-25: 'the resistance at the base of a "
+    "drilled shaft in rock could be governed by either (a) the geotechnical "
+    "strength of the rock mass beneath the tip ... or (b) the structural "
+    "strength of the concrete in bearing ... the resistance factor applied "
+    "to the structural strength for bearing (phi = 0.70) is greater than "
+    "the geotechnical resistance factor (phi = 0.50). A comparison of the "
+    "factored resistances must be carried out on a case-by-case basis to "
+    "determine whether the geotechnical or structural resistance governs "
+    "the design base resistance'. p. 12-8, Eq. 12-7 (AASHTO 5.6.5-2), the "
+    "plain concrete at the tip: P_r = phi P_n = 0.70 [0.85 f'c A1 m], A1 "
+    "the cross-sectional area of the rock socket, m < 2.0 for a uniformly "
+    "distributed bearing surface, 'For a socketed shaft bearing on "
+    "competent rock the factor m can be taken equal to 2.0'. Example 10-4 "
+    "(p. 10-28) makes this check: 0.70 [0.85 (576 ksf) pi/4 (6 ft)^2 x 2] "
+    "= 19,380 kips > 0.50 x 25,447 = 12,723 kips, so the geotechnical base "
+    "governs. The check is of factored resistances: the nominal Q_b, "
+    "Q_ult and Q_allowable stay the geotechnical ones, and lrfd_capacity "
+    "takes the factored base as the smaller of the two")
+
+#: m in Eq. 12-7: 'can be taken equal to 2.0' on competent rock (p. 12-8).
+CONCRETE_BEARING_M = 2.0
+#: phi for the concrete in bearing (GEC-10 pp. 10-25, 12-8).
+CONCRETE_BEARING_PHI = 0.70
+
+
+def concrete_bearing(fc: float, socket_area: float, Qt: float,
+                     equation: str) -> dict:
+    """The check of the base in rock against the concrete's bearing
+    strength (GEC-10 p. 10-25, Eq. 12-7 p. 12-8; GM-233): P_n = 0.85 f'c
+    A1 m, m = 2.0, A1 the socket's cross-sectional area (m2), f'c (kPa);
+    factored 0.70 P_n against the geotechnical phi R_BN (Table 8-4's 0.50
+    for the base in rock). ``equation`` the rock base's ("10-23",
+    "10-29" or None for rock_base_method 'rqd')."""
+    Pn = 0.85 * fc * socket_area * CONCRETE_BEARING_M
+    phi_geo = RESISTANCE_FACTORS["tip_rock"]
+    concrete = CONCRETE_BEARING_PHI * Pn
+    geo = phi_geo * Qt
+    return {"equation": "12-7", "fc_kPa": fc, "A1_m2": socket_area,
+            "m": CONCRETE_BEARING_M, "Pn_kN": Pn,
+            "phi_concrete": CONCRETE_BEARING_PHI, "phi_Pn_kN": concrete,
+            "phi_geotechnical": phi_geo, "phi_Qt_geotechnical_kN": geo,
+            "governs": "concrete" if concrete < geo else "geotechnical",
+            "competent_rock": equation == "10-23"}
 
 
 def rock_side_choice(C: float, values=None) -> dict:
@@ -1287,6 +1336,14 @@ class DrillShaftAnalysis:
         elif tip_layer.soil_type == "cohesionless":
             base_steps.update(_n60_zone_steps(n_zone))
         Qt = u["qb"] * base_area
+        if tip_in_rock and shaft.concrete_fc is not None:
+            # GEC-10 p. 10-25: the base may be governed by the concrete in
+            # bearing, Eq. 12-7 on the socket's area (GM-233)
+            d_soc = (shaft.socket_diameter if shaft.socket_diameter
+                     is not None else D)
+            base_steps["concrete_bearing"] = _rounded(concrete_bearing(
+                shaft.concrete_fc, math.pi * d_soc ** 2 / 4, Qt,
+                u.get("equation")))
 
         Q_ultimate = total_Qs + Qt
         Q_allowable = Q_ultimate / self.factor_of_safety
@@ -1550,6 +1607,44 @@ class DrillShaftAnalysis:
         return choice("qu in the rock side resistance, against the "
                       "concrete strength", chosen, how,
                       basis=CONCRETE_FC_BASIS, alternatives=alternatives)
+
+    def _concrete_bearing_choice(self, base_steps: dict) -> dict:
+        """The choice made for the base in rock against the concrete's
+        bearing strength (GEC-10 p. 10-25, Eq. 12-7 p. 12-8; GM-233)."""
+        from geotech_common.choices import choice, how_given
+        what = "base resistance in rock, against the concrete in bearing"
+        fc = self.shaft.concrete_fc
+        how = how_given(fc, None, name="concrete_fc")
+        cb = base_steps.get("concrete_bearing")
+        if cb is None:
+            return choice(
+                what, "not checked, as the call gives no concrete_fc",
+                how, basis=CONCRETE_BEARING_BASIS,
+                alternatives=["concrete_fc, the shaft concrete's f'c (kPa): "
+                              "the factored base the smaller of 0.50 R_BN "
+                              "and 0.70 [0.85 f'c A1 m] (Eq. 12-7)"])
+        geo, conc = cb["phi_Qt_geotechnical_kN"], cb["phi_Pn_kN"]
+        chosen = (f"Eq. 12-7, 0.70 [0.85 x {fc:,.0f} kPa x "
+                  f"{cb['A1_m2']:.4f} m2 x {cb['m']:g}] = {conc:,.0f} kN "
+                  f"against 0.50 R_BN = {geo:,.0f} kN: the "
+                  + ("concrete governs the factored base resistance"
+                     if cb["governs"] == "concrete" else
+                     "geotechnical base resistance governs"))
+        basis = CONCRETE_BEARING_BASIS
+        if not cb["competent_rock"]:
+            basis += (". m = 2.0 is printed for a socket on competent rock; "
+                      "this base is not taken as on competent rock (the "
+                      "Hoek-Brown base or rock_base_method 'rqd'), where "
+                      "p. 12-8 prints only m < 2.0, so the check here is "
+                      "the least restrictive the print allows: the "
+                      "engineer's judgment")
+        return choice(
+            what, chosen, how, basis=basis,
+            alternatives=[
+                "Eq. 12-6 with phi = 0.70 where the reinforcement extends "
+                "to the tip and cannot be cut short by deepening the socket "
+                "in the field (p. 12-8): P_n = beta [0.85 f'c (A_g - A_s) + "
+                "A_s f_y], not computed here (the tool takes no f_y)"])
 
     def _rock_conditions_choice(self, B: float, equation: str) -> dict:
         """The choice made for the conditions of Eq. 10-23 (GEC-10 p.
@@ -2363,6 +2458,7 @@ class DrillShaftAnalysis:
                               basis=basis, alternatives=alternatives))
             if conditions:
                 out.append(conditions)
+            out.append(self._concrete_bearing_choice(base_steps))
         elif kind == "cohesionless":
             out.append(self._sand_base_choice(base_steps, Qt, Q_ultimate,
                                               here))

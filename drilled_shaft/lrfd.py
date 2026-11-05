@@ -71,7 +71,11 @@ def apply_lrfd(result: DrillShaftResult,
     dict
         Factored resistances with keys:
         - phi_Qs_clay_kN, phi_Qs_sand_kN, phi_Qs_rock_kN
-        - phi_Qt_kN
+        - phi_Qt_kN (with the base in rock and the shaft's concrete_fc
+          given, the smaller of the geotechnical 0.50 Q_tip and the
+          concrete's bearing 0.70 [0.85 f'c A1 m], GEC-10 p. 10-25 and
+          Eq. 12-7; then also phi_Qt_geotechnical_kN,
+          phi_Pn_concrete_bearing_kN and phi_Qt_governed_by)
         - phi_Qn_kN (total factored resistance)
     """
     actual = (result.base_steps or {}).get("soil_type")
@@ -98,10 +102,24 @@ def apply_lrfd(result: DrillShaftResult,
             f"unknown tip_soil_type '{tip_soil_type}'. Allowed: "
             "['cohesive', 'cohesionless', 'rock']")
     phi_Qt = result.Q_tip * RESISTANCE_FACTORS[tip_key]
+    # GEC-10 p. 10-25: with the base in rock the factored base is the
+    # smaller of the geotechnical and the concrete's bearing (Eq. 12-7,
+    # phi 0.70), where concrete_fc was given (GM-233)
+    concrete = (result.base_steps or {}).get("concrete_bearing")
+    extra = {}
+    if concrete is not None and tip_key == "tip_rock":
+        extra = {"phi_Qt_geotechnical_kN": round(phi_Qt, 1),
+                 "phi_Pn_concrete_bearing_kN": round(concrete["phi_Pn_kN"], 1),
+                 "phi_concrete_bearing": concrete["phi_concrete"]}
+        if concrete["phi_Pn_kN"] < phi_Qt:
+            phi_Qt = concrete["phi_Pn_kN"]
+            extra["phi_Qt_governed_by"] = "concrete bearing (Eq. 12-7)"
+        else:
+            extra["phi_Qt_governed_by"] = "geotechnical"
 
     phi_Qn = phi_Qs_clay + phi_Qs_sand + phi_Qs_rock + phi_Qt
 
-    return {
+    return {**extra,
         "phi_Qs_clay_kN": round(phi_Qs_clay, 1),
         "phi_Qs_sand_kN": round(phi_Qs_sand, 1),
         "phi_Qs_rock_kN": round(phi_Qs_rock, 1),

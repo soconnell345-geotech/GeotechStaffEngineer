@@ -226,7 +226,7 @@ _INFO_SHAFT_GEOM = {
     "bell_diameter": {"type": "float", "required": False, "description": "Belled base diameter (m)."},
     "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m, no side resistance)."},
     "fractured_rock_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Decomposed or fractured rock (m) below the top of the first rock layer that is 'not considered part of the socket for design purposes' (GEC-10 p. 8-15): no rock side resistance over it, while the soil above keeps its own (casing_depth takes both). 0 = all rock is socket. Needs a rock layer."},
-    "concrete_fc": {"type": "float", "required": False, "description": "Compressive strength f'c of the shaft concrete (kPa; 28 MPa = 28000, at least 1000). The rock side resistance takes qu no higher than it: 'For design, the value of qu used in Equation 10-21 should not exceed the compressive strength of the drilled shaft concrete' (GEC-10 p. 10-21; Example 10-4 gives qu 360 ksf and f'c 576 ksf), in Eq. 10-22 alike. Left out, that limit is not checked and the result's choices say so. No structural check of the shaft is made. Needs a rock layer."},
+    "concrete_fc": {"type": "float", "required": False, "description": "Compressive strength f'c of the shaft concrete (kPa; 28 MPa = 28000, at least 1000). The rock side resistance takes qu no higher than it: 'For design, the value of qu used in Equation 10-21 should not exceed the compressive strength of the drilled shaft concrete' (GEC-10 p. 10-21; Example 10-4 gives qu 360 ksf and f'c 576 ksf), in Eq. 10-22 alike. With the base in rock it also checks the base against the concrete's own bearing (GEC-10 p. 10-25): Eq. 12-7 (p. 12-8), 0.70*[0.85*f'c*A1*m], A1 the socket's cross-sectional area, m = 2.0 (printed for a socket on competent rock), against the geotechnical 0.50*Q_tip (Example 10-4 p. 10-28 makes this check), in base_steps.concrete_bearing and the choices; lrfd_capacity takes the factored base as the smaller of the two. Q_tip, Q_ultimate and Q_allowable stay the geotechnical ones. Left out, neither limit is checked and the result's choices say so. No other structural check of the shaft is made. Needs a rock layer."},
 }
 
 METHOD_INFO = {
@@ -275,7 +275,7 @@ METHOD_INFO = {
             **_INFO_RATIONAL,
             **_INFO_SHAFT_GEOM,
         },
-        "returns": {"Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component (GEC-10 Table 8-4, p. 8-14: side 0.45 clay, 0.55 sand, 0.50 rock; base 0.40 clay, 0.50 sand and rock), the base factor by the soil the base is in."},
+        "returns": {"Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component (GEC-10 Table 8-4, p. 8-14: side 0.45 clay, 0.55 sand, 0.50 rock; base 0.40 clay, 0.50 sand and rock), the base factor by the soil the base is in. With the base in rock and concrete_fc given, phi_Qt_kN is the smaller of 0.50*Q_tip and the concrete's bearing 0.70*[0.85*f'c*A1*2.0] (GEC-10 p. 10-25, Eq. 12-7), phi_Qt_governed_by saying which."},
     },
     "get_resistance_factors": {
         "category": "Drilled Shaft",
