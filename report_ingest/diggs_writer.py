@@ -402,6 +402,9 @@ def _compound_crs(elevation_datum: str) -> Optional[Tuple[str, str]]:
     dictionary has no metre-height compound for (NGVD 29, a local
     benchmark), or two named datums at once (a conversion note). A named
     datum wins over a mention of mean sea level beside it."""
+    if re.search(r"\b(?:not|no|assumed|arbitrary)\b", elevation_datum or "",
+                 re.I):
+        return None   # a datum the report says it is NOT using
     named = {code for code, pattern in _NAMED_DATUMS
              if pattern.search(elevation_datum or "")}
     if len(named) > 1:
@@ -1275,8 +1278,8 @@ class _Writer:
         if compound:
             said.append(f"coordinate system as printed: "
                         f"{inv.coordinate_system.strip()}; elevation datum "
-                        f"as printed: {datum}; positions are longitude, "
-                        f"latitude, then height in metres, under DIGGS' "
+                        f"as printed: {datum}; positions are latitude, "
+                        f"longitude, then height in metres, under DIGGS' "
                         f"compound {compound[1]!r}")
         else:
             if (srs_name == _CRS84
@@ -1293,7 +1296,10 @@ class _Writer:
             srs_name = compound[0]
         three_d = z is not None and (not srs_name or bool(compound))
         srs = f' srsName={quoteattr(srs_name)}' if srs_name else ""
-        coords = [x, y, z] if three_d else [x, y]
+        if compound:
+            srs += ' axisLabels="latitude longitude height"'
+        coords = ([y, x, z] if compound else [x, y, z] if three_d
+                  else [x, y])
         point = " ".join(_coord_or_unknown(v) for v in coords)
         dim = 3 if three_d else 2
         self.out(f'<gml:pos srsDimension="{dim}"{srs}>{point}</gml:pos>', 5)

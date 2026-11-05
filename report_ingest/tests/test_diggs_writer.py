@@ -1041,7 +1041,7 @@ class TestPointsWithAndWithoutAHeight:
 class TestAPrintedVerticalDatum:
     """RI-40: a point with a height over WGS 84 whose record prints a
     vertical datum DIGGS' compound dictionary names (in metres) is written
-    three-dimensional under that compound, longitude, latitude, height, and
+    three-dimensional under that compound, latitude, longitude, height, and
     reads back with its height."""
 
     URL = "https://diggsml.org/def/crs/DIGGS/0.1/compoundCRS.xml"
@@ -1069,7 +1069,8 @@ class TestAPrintedVerticalDatum:
         pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
         assert pos.get("srsName") == f"{self.URL}#{gml_id}"
         assert (pos.get("srsDimension"), pos.text) == ("3",
-                                                       "-77 38.9 150.5")
+                                                       "38.9 -77 150.5")
+        assert pos.get("axisLabels") == "latitude longitude height"
         desc = _root(xml).find(
             ".//diggs:referencePoint//gml:description", NS).text
         assert datum in desc and name in desc
@@ -1078,6 +1079,19 @@ class TestAPrintedVerticalDatum:
         assert gml_id in back.coordinate_system
         ok, diffs = diggs_roundtrip_gate(xml, [hole])
         assert ok, diffs
+
+    @pytest.mark.parametrize("datum", [
+        "Local datum (not NAVD 88)",
+        "not referenced to mean sea level",
+        "Assumed datum, approximately MSL",
+    ])
+    def test_a_datum_the_report_says_it_is_not_using_stays_2d(self, datum):
+        hole = _hole(x=-77.0, y=38.9, coordinate_system="CRS84",
+                     elevation=_m(150.5))
+        xml = write_diggs([hole], project=Project(elevation_datum=datum))
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert pos.get("srsName") == "urn:ogc:def:crs:OGC:1.3:CRS84"
+        assert pos.get("srsDimension") == "2"
 
     def test_a_height_in_feet_is_written_in_metres_under_the_compound(self):
         hole = _hole(x=-77.0, y=38.9, coordinate_system="CRS84",

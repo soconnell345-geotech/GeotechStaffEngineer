@@ -67,11 +67,17 @@ fragment. The old `urn:diggs:def:crs:DIGGS:0.1:4326_5702` form in pydiggs'
 **What changed** (`report_ingest/diggs_writer.py`):
 - A point **with a height**, whose horizontal system is plain WGS 84 (the
   CRS84 case) and whose record prints **NAVD 88, CGVD 28 or mean sea level**,
-  is written `srsDimension="3"`, `longitude latitude height`, under that
+  is written `srsDimension="3"`, `latitude longitude height` with
+  `axisLabels="latitude longitude height"`, under that
   compound. The reference point's description quotes the printed datum and
   the dictionary's name.
-- Longitude first, as DIGGS' own example writes these names and as the reader
-  already read them since RI-30.
+- Latitude first: the compound is built on EPSG:4326, and DIGGS' 2.6
+  DocumentationExample writes this compound latitude first. The older ODOT
+  conversions write longitude first. The reader swaps back for the
+  `compoundCRS.xml#diggs-crs-4326_*` form only; the `urn:diggs:...` form is
+  read as RI-30 reads it.
+- A datum the report negates or calls assumed or arbitrary ("not NAVD 88",
+  "assumed") gets no compound; the point stays 2-D.
 - Only the three metre-height names are committed (`DIGGS_COMPOUNDS`), with
   the source URL and commit.
 - **The 2-D form is kept** (CRS84, the height in the centre line, the datum
@@ -125,5 +131,5 @@ Run here on Python 3.11 with pydiggs 1.4.1, and the DIGGS tests again with
 ## Release note (three lines)
 
 - DIGGS 2.5.a validation works with every pydiggs 1.x (they all ship its schema). A pydiggs build without the 2.5.a schema or the dictionary is now refused with a message saying what is missing.
-- Report ingest's DIGGS files: a boring with a height over WGS 84, from a report that prints NAVD 88, CGVD 28 or mean sea level, is written in 3-D. Its coordinate system is DIGGS' compound for that datum (from DIGGS' CRS dictionary), so **the reference point's srsName and dimension change** for those reports.
+- Report ingest's DIGGS files: a boring with a height over WGS 84, from a report that prints NAVD 88, CGVD 28 or mean sea level, is written in 3-D. Its coordinate system is DIGGS' compound for that datum (from DIGGS' CRS dictionary), so **the reference point's srsName and dimension change** for those reports. The point is written latitude, longitude, height (the compound is built on EPSG:4326), with its axes labelled. A datum the report negates or calls assumed ("not NAVD 88") stays 2-D.
 - Every other case (no datum, a local benchmark, NGVD 29 (in feet), a projected system) keeps the 2-D point with the height in the centre line.
