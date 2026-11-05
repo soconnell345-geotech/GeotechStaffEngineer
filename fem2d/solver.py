@@ -631,7 +631,7 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
            line_search=False, mats_override=None,
            stall_window=None, stall_ratio=0.98, f_int_offset=None,
            settled_ratio=None, settled_residual_cap=1e-2, F_start=None,
-           iface_slip_init=None):
+           iface_slip_init=None, prescribed=None):
     """Run the incremental-iterative nonlinear solution on a context.
 
     Parameters
@@ -687,6 +687,16 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
         ctx['F_ext'] over `n_steps` (F_start + lam (F_ext - F_start))
         instead of from zero. Staged construction passes the internal
         force of the previous stage's state.
+    prescribed : (dofs, delta), optional — displacement control (GM-305).
+        ``dofs`` (int array) must already be in the context's BC DOFs
+        (``add_prescribed_dofs``); each is driven from its value in
+        ``u_init`` by ``lam * delta`` over the run, instead of being held
+        at zero. The residual is normalised by the larger of the free
+        load and the reaction at those DOFs, so a weightless soil can be
+        driven. The reaction at those DOFs (F_int - F_ext, the force the
+        driver applies to the mesh, of the slice) after each converged
+        step is returned in ``reactions``, and the step's load factor
+        (the fraction of ``delta`` reached) in ``reaction_lams``.
 
     Returns
     -------
@@ -696,7 +706,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
         for steps accepted under `settled_ratio`), final_residual and
         final_growth_ratio (of the last step attempted; the growth ratio
         is None when the step converged or stopped before half its
-        iterations).
+        iterations), and reactions (one array per converged step, at the
+        ``prescribed`` DOFs; empty without them).
     """
     mats = mats_override if mats_override is not None else ctx['mats']
     n_dof = ctx['n_dof']
@@ -717,12 +728,24 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
     hs_state = list(hs_state_init) if hs_state_init is not None \
         else [None] * n_e
 
-    if F_norm < 1e-30:
+    p_dofs = None
+    if prescribed is not None:
+        p_dofs = np.asarray(prescribed[0], dtype=int)
+        p_delta = np.asarray(prescribed[1], dtype=float)
+        if not np.all(np.isin(p_dofs, bc)):
+            raise ValueError("prescribed DOFs must be BC DOFs of the "
+                             "context (add_prescribed_dofs)")
+        p_start = u[p_dofs].copy()
+    reactions = []
+    p_lams = []
+
+    if F_norm < 1e-30 and p_dofs is None:
         return {'converged': True, 'u': u, 'sigma_gp': sig_gp,
                 'eps_gp': eps_gp, 'hs_state': hs_state,
                 'iterations': [], 'n_iter_total': 0, 'r_history': [],
                 'settled': [], 'final_residual': 0.0,
-                'final_growth_ratio': None}
+                'final_growth_ratio': None, 'reactions': [],
+                'reaction_lams': []}
 
     iface_on = ctx.get('iface') is not None
     slip = None
@@ -753,6 +776,7 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
             F_ext = lam_t * F_full
         else:
             F_ext = F_start + lam_t * (F_full - F_start)
+        p_target = None if p_dofs is None else p_start + lam_t * p_delta
 
         # Snapshot committed state for possible cutback
         u_save = u.copy()
@@ -784,12 +808,21 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                 F_int += _iface_force(ctx, u, slip)[0]
 
             R = F_ext - F_int
+            if p_dofs is not None:
+                ref = max(F_norm, np.linalg.norm(R[p_dofs]))
             R[bc] = -penalty * u[bc]
-            R_norm = np.linalg.norm(np.where(free, R, 0.0))
-            r_ratio = R_norm / F_norm
+            if p_dofs is not None:
+                R[p_dofs] = penalty * (p_target - u[p_dofs])
+                R_norm = np.linalg.norm(np.where(free, R, 0.0))
+                r_ratio = R_norm / max(ref, 1e-30)
+            else:
+                R_norm = np.linalg.norm(np.where(free, R, 0.0))
+                r_ratio = R_norm / F_norm
             r_hist.append(r_ratio)
 
-            if r_ratio < tol:
+            if r_ratio < tol and (
+                    p_dofs is None or np.max(np.abs(p_target - u[p_dofs]))
+                    <= 1e-9 * max(np.max(np.abs(p_delta)), 1e-30)):
                 step_conv = True
                 break
             if not np.isfinite(R_norm) or R_norm > 1e12:
@@ -832,6 +865,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                         F_t += _iface_force(ctx, u_try, slip)[0]
                     R_t = F_ext - F_t
                     R_t[bc] = -penalty * u_try[bc]
+                    if p_dofs is not None:
+                        R_t[p_dofs] = penalty * (p_target - u_try[p_dofs])
                     R_t_norm = np.linalg.norm(np.where(free, R_t, 0.0))
                     if R_t_norm < R_norm:
                         u = u_try
@@ -896,8 +931,12 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                 if iface_on:
                     F_int += _iface_force(ctx, u, slip)[0]
                 R = F_ext - F_int
+                ref = (F_norm if p_dofs is None else
+                       max(F_norm, np.linalg.norm(R[p_dofs]), 1e-30))
                 R[bc] = -penalty * u[bc]
-                r_ratio = np.linalg.norm(np.where(free, R, 0.0)) / F_norm
+                if p_dofs is not None:
+                    R[p_dofs] = penalty * (p_target - u[p_dofs])
+                r_ratio = np.linalg.norm(np.where(free, R, 0.0)) / ref
                 # a small residual, or one still falling (slow convergence,
                 # not an iteration swinging about a large residual)
                 if r_ratio < settled_residual_cap or r_ratio < r_half:
@@ -919,6 +958,16 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                     hs_state[e] = hs_tent[e]
             if iface_on:
                 slip = _iface_force(ctx, u, slip)[1]
+            if p_dofs is not None:
+                F_c = _internal_force(ctx, sig_gp)
+                if ctx['K_lin'] is not None:
+                    F_c += ctx['K_lin'] @ u
+                if f_int_offset is not None:
+                    F_c = F_c - f_int_offset
+                if iface_on:
+                    F_c += _iface_force(ctx, u, slip)[0]
+                reactions.append((F_c - F_ext)[p_dofs])
+                p_lams.append(lam_t)
             lam_done = lam_t
             iters_per_step.append(n_it)
             continue
@@ -947,7 +996,26 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
             'r_history': r_hist, 'settled': settled,
             'final_residual': float(r_ratio),
             'final_growth_ratio': (None if growth is None
-                                   else float(growth))}
+                                   else float(growth)),
+            'reactions': reactions, 'reaction_lams': p_lams}
+
+
+def add_prescribed_dofs(ctx, dofs):
+    """A copy of a ``build_nl_context`` context with ``dofs`` added to
+    its BC DOFs (penalty), for displacement control through ``run_nl``'s
+    ``prescribed`` (GM-305). The elastic factorisation is rebuilt."""
+    bc = np.union1d(ctx['bc_dofs'], np.asarray(dofs, dtype=int))
+    n_dof = ctx['n_dof']
+    out = dict(ctx)
+    out['bc_dofs'] = bc
+    out['pen_diag'] = coo_matrix(
+        (np.full(len(bc), ctx['penalty']), (bc, bc)),
+        shape=(n_dof, n_dof)).tocsr()
+    free = np.ones(n_dof, dtype=bool)
+    free[bc] = False
+    out['free_mask'] = free
+    out['_K_el_factor'] = None
+    return out
 
 
 # Early acceptance of a settled step (run_nl): checked every this many
