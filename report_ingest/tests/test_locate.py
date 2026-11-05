@@ -862,3 +862,128 @@ def test_a_quote_search_cannot_box_is_on_its_page_with_no_box(opened,
     quote, = got.items
     assert (quote.status, quote.anchor, quote.bbox, quote.page_level) == (
         PLACED, "quote on its page", None, True)
+
+
+# ---------------------------------------------------------------------------
+# RI-99 (1): a vertical table, one column per sample
+# ---------------------------------------------------------------------------
+
+#: sample labels across the header row, each property's values read along
+#: its row, each sample's down its column
+ATTERBERG_ACROSS = [
+    (72, 60, "ATTERBERG LIMITS TEST RESULTS"),
+    (72, 90, "Sample"), (200, 90, "S-1"), (260, 90, "S-2"),
+    (320, 90, "S-3"),
+    (72, 104, "Depth (ft)"), (200, 104, "2.5"), (260, 104, "5.0"),
+    (320, 104, "7.5"),
+    (72, 118, "Liquid Limit"), (200, 118, "33"), (260, 118, "41"),
+    (320, 118, "28"),
+    (72, 132, "Plastic Limit"), (200, 132, "17"), (260, 132, "19"),
+    (320, 132, "15"),
+    (72, 146, "Plasticity Index"), (200, 146, "16"), (260, 146, "22"),
+    (320, 146, "13"),
+]
+#: the same tests, one row per sample
+ATTERBERG_DOWN = [
+    (72, 60, "ATTERBERG LIMITS TEST RESULTS"),
+    (72, 90, "Sample"), (140, 90, "Depth (ft)"), (200, 90, "LL"),
+    (260, 90, "PL"), (320, 90, "PI"),
+    (72, 104, "S-1"), (140, 104, "2.5"), (200, 104, "33"),
+    (260, 104, "17"), (320, 104, "16"),
+    (72, 118, "S-2"), (140, 118, "5.0"), (200, 118, "41"),
+    (260, 118, "19"), (320, 118, "22"),
+    (72, 132, "S-3"), (140, 132, "7.5"), (200, 132, "28"),
+    (260, 132, "15"), (320, 132, "13"),
+]
+ATTERBERG_TESTS = [("S-1", 2.5, 33, 17, 16), ("S-2", 5.0, 41, 19, 22),
+                   ("S-3", 7.5, 28, 15, 13)]
+
+
+def test_a_vertical_tables_test_lands_in_its_samples_column(opened):
+    doc, words = opened([ATTERBERG_ACROSS])
+    tests = [_lab("TB-4", top, ll, pl, pi, sample=s)
+             for s, top, ll, pl, pi in ATTERBERG_TESTS]
+    got = place_lab_tests(words, tests)
+    assert [(p.status, p.anchor) for p in got.items] == \
+        [(PLACED, "sample column")] * 3
+    for placement, x in zip(got.items, (200, 260, 320)):
+        box = placement.bbox
+        # the sample's column, from its liquid limit down to its index
+        assert x - 2 <= box[0] < x + 10 and box[2] < x + 30
+        assert abs(box[1] - 110) < 5 and abs(box[3] - 147) < 5
+    assert tests[1].prov[0].bbox == got.items[1].bbox
+
+
+def test_a_horizontal_tables_test_stays_on_its_samples_row(opened):
+    doc, words = opened([ATTERBERG_DOWN])
+    tests = [_lab("TB-4", top, ll, pl, pi, sample=s)
+             for s, top, ll, pl, pi in ATTERBERG_TESTS]
+    got = place_lab_tests(words, tests)
+    assert [(p.status, p.anchor) for p in got.items] == \
+        [(PLACED, "sample label")] * 3
+    for placement, row in zip(got.items, (101, 115, 129)):
+        assert abs(_middle(placement.bbox) - row) < 5
+        assert placement.bbox[2] < 100          # the label, as today
+
+
+def test_a_table_of_unclear_orientation_keeps_todays_place(opened):
+    # one other sample label across, one down: neither way is clear
+    doc, words = opened([[
+        (72, 60, "ATTERBERG LIMITS TEST RESULTS"),
+        (72, 90, "S-1"), (200, 90, "S-2"),
+        (72, 104, "S-3"), (200, 104, "33"),
+    ]])
+    got = place_lab_tests(words, [_lab("TB-4", 2.5, 33, 17, 16,
+                                       sample="S-1")])
+    assert (got.items[0].status, got.items[0].anchor) == (PLACED,
+                                                          "sample label")
+    assert got.items[0].bbox[2] < 100
+
+
+# ---------------------------------------------------------------------------
+# RI-99 (2): a calculation printout with repeated blocks
+# ---------------------------------------------------------------------------
+
+#: the same labels printed once per boring, under the boring's name
+BLOCKS_SHEET = [
+    (72, 60, "Shallow foundation bearing"),
+    (72, 90, "Boring B-1"),
+    (72, 104, "Footing width B"), (300, 104, "6.0 ft"),
+    (72, 118, "Embedment depth Df"), (300, 118, "3.0 ft"),
+    (72, 132, "Unit weight"), (300, 132, "120 pcf"),
+    (72, 146, "Friction angle"), (300, 146, "32 deg"),
+    (72, 160, "Groundwater depth"), (300, 160, "10.0 ft"),
+    (72, 174, "Bearing factor Nq"), (300, 174, "23.2"),
+    (72, 188, "Allowable bearing pressure"), (300, 188, "4.2 ksf"),
+    (72, 216, "Boring B-2"),
+    (72, 230, "Footing width B"), (300, 230, "6.0 ft"),
+    (72, 244, "Embedment depth Df"), (300, 244, "3.0 ft"),
+    (72, 258, "Unit weight"), (300, 258, "115 pcf"),
+    (72, 272, "Friction angle"), (300, 272, "30 deg"),
+    (72, 286, "Groundwater depth"), (300, 286, "10.0 ft"),
+    (72, 300, "Bearing factor Nq"), (300, 300, "18.4"),
+    (72, 314, "Allowable bearing pressure"), (300, 314, "4.2 ksf"),
+]
+
+
+def test_a_value_in_a_repeated_block_lands_in_the_block_it_names(opened):
+    doc, words = opened([BLOCKS_SHEET])
+    calc = _calc([_value("Footing width B (B-2)", 6.0),
+                  _value("Embedment depth Df, Boring B-1", 3.0)],
+                 [_value("Allowable bearing pressure B-2", 4.2)])
+    got = place_calculation(words, calc)
+    assert [(p.status, p.anchor) for p in got.items] == \
+        [(PLACED, "number in its block")] * 3
+    width, depth, bearing = (p.bbox for p in got.items)
+    assert abs(_middle(width) - 227) < 5
+    assert abs(_middle(depth) - 115) < 5
+    assert abs(_middle(bearing) - 311) < 5
+
+
+def test_a_value_naming_no_block_stays_several(opened):
+    doc, words = opened([BLOCKS_SHEET])
+    calc = _calc([_value("Footing width B", 6.0),
+                  _value("Embedment depth Df (Boring B-7)", 3.0)])
+    got = place_calculation(words, calc)
+    assert [p.status for p in got.items] == [SEVERAL, SEVERAL]
+    assert [p.candidates for p in got.items] == [2, 2]
