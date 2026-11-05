@@ -128,11 +128,14 @@ The page fingerprints were re-recorded in a commit of their own.
 
 ## Numbers unchanged
 
-Every dispatch call in `funhouse_agent/worked_examples.json` was run (28
-worked examples). Every numeric leaf of every result was compared between
-master (1d39240) and this branch: see "Comparison" below.
+Every dispatch call in `funhouse_agent/worked_examples.json` was run on
+master (1d39240) and on this branch (28 worked examples: axial pile,
+drilled shaft, MSE, sheet pile, SOE, ground improvement, slopes,
+pavements). **1,899 numeric leaves on each side; 0 keys differ, 0 values
+differ.**
 
-The calc_package tests pass in the same numbers as before: see "Tests".
+The calc_package tests: **264 passed / 3 skipped on master, and 264 passed
+/ 3 skipped on the branch** (the 3 skips: pdflatex not installed).
 
 ## Tests (pytest exit codes, Python 3.12 venv)
 
