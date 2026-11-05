@@ -106,7 +106,7 @@ class TestDarcy1D:
             pytest.approx(q, rel=1e-9)
         assert by_head[5.0]["net_inflow_m3_per_s_per_m"] == \
             pytest.approx(-q, rel=1e-9)
-        assert "fixed-head" in r.flow_measured_on
+        assert r.flow_measured_on.startswith("inflow")
 
     def test_does_not_grow_with_thickness(self):
         r1, _ = _darcy(t=1.0)

@@ -596,7 +596,7 @@ def seepage_boundary_flow(H, head, q_given, head_bcs, t=1.0,
         })
     n_in = int(np.sum(r > 0))
     n_out = int(np.sum(r < 0))
-    if inflow >= outflow:
+    if outflow <= inflow * (1.0 + tolerance):
         flow = inflow
         measured_on = (
             f"inflow across the fixed-head boundary nodes where water "

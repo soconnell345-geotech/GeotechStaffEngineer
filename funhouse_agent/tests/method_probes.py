@@ -150,6 +150,9 @@ LABEL_ONLY = {
        for m in ("fem2d_foundation", "fem2d_gravity", "fem2d_local_fos",
                  "fem2d_slope_srm", "fem2d_excavation", "fem2d_staged",
                  "fem2d_srm_mesh_refinement_study")},
+    ("fem2d|fem2d_seepage", "t"): (
+        "plane strain: the thickness scales the flow matrix and the nodal "
+        "reactions alike, and the flow is reported per metre run (GM-222)"),
 }
 
 #: Declared inputs that act, but not on their probe's inputs or not in
