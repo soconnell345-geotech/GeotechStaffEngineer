@@ -151,6 +151,10 @@ The other seven are guards and pass on master as well.
   with the parent's labelling (`dataclasses.replace(labelling, ...)`), so it
   carries the same whole-file describer and labeller cost, and reading it
   would count those calls twice.
+- A bound document's OWN range-labeller calls (`graph._bound_range_labels`
+  labels each bound document again) are read off its
+  `bound/<id>/ranges-<arm>.json`, the arm from its `labels.json`, into the
+  bound row's `ranges` (review Finding 2).
 - `_STEPS` (line 7584) gains `describe` and `ranges` after `vision`, so the
   `## Calls by step` table in RESULTS.md has two more columns.
 - The run's `cost` (the totals) is not read differently and does not change.
@@ -165,6 +169,8 @@ The other seven are guards and pass on master as well.
 **Tests:** in `report_ingest/tests/test_cluster_scoring.py::TestCallsByStep`:
 - new: `test_model_first_s_describer_and_labeller_are_steps` (fails on
   master);
+- new: `test_a_bound_document_s_own_range_labeller_is_counted` (a made-up
+  bound folder whose `ranges-plain.json` holds 2 calls);
 - updated: `test_the_report_and_each_bound_report_are_counted_apart`, for
   the two new empty columns (its column list fails on master by design).
 

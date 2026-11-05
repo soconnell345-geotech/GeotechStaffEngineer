@@ -2909,6 +2909,28 @@ class TestCallsByStep:
         assert bound_line.split()[-1] == "3"
         assert row["cost"] == cost, "the run's total is not touched"
 
+    def test_a_bound_document_s_own_range_labeller_is_counted(self, tmp_path):
+        """RI-202: graph._bound_range_labels labels each bound document
+        again and keeps that cost in the document's own ranges-<arm>.json,
+        not in its labels.json (which repeats the parent's whole-file
+        cost). Those calls go on the bound row. Every count here is made
+        up."""
+        folder = tmp_path / "R78"
+        labels_cost = {"describe": {"calls": 40}, "ranges": {"calls": 3},
+                       "ranges_paid": True}
+        self._write(folder / "labels.json",
+                    {"range_arm": "plain", "cost": labels_cost})
+        self._write(folder / "ranges-plain.json", {"cost": {"calls": 3}})
+        self._write(folder / "bound" / "bound1" / "labels.json",
+                    {"range_arm": "plain", "cost": labels_cost})
+        self._write(folder / "bound" / "bound1" / "ranges-plain.json",
+                    {"cost": {"calls": 2}})
+        self._write(folder / "bound" / "bound1" / "items" / "c.json",
+                    {"tests": [], "cost": {"calls": 3}})
+        steps = cs._ingest_steps(folder)["calls_by_step"]
+        assert steps["report"] == {"describe": 40, "ranges": 3}
+        assert steps["bound1"] == {"ranges": 2, "lab": 3, "lab items": 1}
+
     def _two_narratives(self, tmp_path, newer_is_plain):
         import os
         folder = tmp_path / "R90"

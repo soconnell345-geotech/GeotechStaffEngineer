@@ -7452,9 +7452,9 @@ def _ingest_steps(folder: Path,
             if name == "report":
                 # Model first's page describer and range labeller keep no
                 # step file of their own: their calls are in labels.json's
-                # cost (RI-202). They run once over the whole file, so a
-                # bound document's labels.json, which carries the same
-                # cost, is not read for them.
+                # cost (RI-202). The describer runs once over the whole
+                # file, so a bound document's labels.json, which carries
+                # the same cost, is not read for them.
                 spent = load(where / "labels.json").get("cost")
                 spent = spent if isinstance(spent, dict) else {}
                 for step in ("describe", "ranges"):
@@ -7462,6 +7462,16 @@ def _ingest_steps(folder: Path,
                     n = _n(part.get("calls")) if isinstance(part, dict) else 0
                     if n:
                         row[step] = n
+            else:
+                # A bound document's range labeller is its own call
+                # (graph._bound_range_labels); its cost is in its own
+                # ranges file, not in labels.json, which repeats the
+                # parent's whole-file cost.
+                arm = load(where / "labels.json").get("range_arm")
+                if arm:
+                    n = calls(load(where / f"ranges-{arm}.json"))
+                    if n:
+                        row["ranges"] = n
             paths = sorted((where / "items").glob("*.json"))
             # The narrative is read once per document, but a re-read under
             # another switch or item range keeps the earlier file beside
