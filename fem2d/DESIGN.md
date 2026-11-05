@@ -28,8 +28,7 @@ t = 1.5 the soil was 1.5 times stiffer and heavier than the wall, and on
 the excavation probe the wall moment went 11.40 -> 16.79 kN·m/m, a strut's
 force 4.35 -> 6.22 kN/m, with the displacements unchanged. At t = 1 nothing
 moved. `fem2d/tests/test_staged_thickness.py` pins t = 1 against t = 1.5.
-Left as it was: the seepage result's `total_flow_m3_per_s_per_m` sums
-|v|·A·t, so it still scales with `t`.
+The seepage flow no longer depends on `t` either (GM-222, below).
 
 Elasticity D-matrix (3×3 in-plane):
 
@@ -637,6 +636,27 @@ Boundary conditions:
 Post-processing:
 - Pore pressures from head: u = γ_w·(h − z), clipped ≥ 0
 - Darcy velocity via CST gradient operator
+- Flow through the section (GM-222, 2026-11-05): the nodal reactions of
+  the flow equations at the fixed-head nodes, R = H·h − q (H assembled
+  without the head constraints, q the prescribed nodal flows), divided by
+  the slice thickness t. R_i > 0 is water entering the mesh at node i.
+  `flow_m3_per_s_per_m` is the inflow, the sum of the positive R_i / t
+  (the outflow instead where a prescribed inflow makes it the larger);
+  `outflow_m3_per_s_per_m` the sum of the negative ones; `flow_balance`
+  checks |inflow + prescribed − outflow| / max(in, out) ≤ 1e-6
+  (`porewater.FLOW_BALANCE_TOLERANCE`; the interior rows are met to the
+  direct solver's round-off, about 1e-12); `flow_boundaries` gives the net
+  flow at each prescribed head value and `flow_measured_on` says which
+  boundary set is measured. This is Darcy's q = k i A (UFS 3-220-10, 2026,
+  Eq. 6-3, p. 286) summed across the boundary, and the quantity a flow net
+  gives as q = k h_L (N_f/N_d) W (Eq. 6-9, p. 290). Pinned to the printed
+  example of Figure 6-5 (p. 292; the flow net of Figure 6-3, p. 288) in
+  `fem2d/tests/test_seepage_flow.py`, and exactly to 1-D Darcy flow
+  (Eq. 6-4, p. 286). Before, the result reported
+  `total_flow_m3_per_s_per_m` = Σ |v|·A·t over the elements: it grew with
+  t and with the size of the mesh, and is not the flow through any
+  section (on the Figure 6-5 model it was about 29 times the printed q, see
+  `module_work/gm-222/CHECK.md`). The key is gone.
 
 `seepage_heads` (GM-73, 2026-10-15) solves the same equation on any element
 type (T3, T6, Q4, with the element's own shape functions: H_e = Σ_gp w k

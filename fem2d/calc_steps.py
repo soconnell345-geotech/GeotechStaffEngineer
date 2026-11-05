@@ -479,33 +479,63 @@ def _beam_section(result) -> CalcSection:
 
 
 def _seepage_section(result) -> CalcSection:
-    return CalcSection(title="Seepage Results", items=[
+    fb = getattr(result, "flow_balance", None) or {}
+    rows = [
+        ["Total head range",
+         f"{result.min_head_m:.3f} to "
+         f"{result.max_head_m:.3f} m"],
+        ["Max pore pressure",
+         f"{result.max_pore_pressure_kPa:.2f} kPa"],
+        ["Max Darcy velocity",
+         f"{result.max_velocity_m_per_s:.3e} m/s"],
+        ["Flow q (inflow at the fixed-head boundaries)",
+         f"{result.flow_m3_per_s_per_m:.3e} m³/s per m"],
+        ["Outflow at the fixed-head boundaries",
+         f"{result.outflow_m3_per_s_per_m:.3e} m³/s per m"],
+    ]
+    if fb:
+        rows.append(["Flow balance (|in - out| / in)",
+                     f"{fb.get('mismatch', 0.0):.1e} against "
+                     f"{fb.get('tolerance', 0.0):.0e}: "
+                     f"{'passed' if fb.get('passed') else 'FAILED'}"])
+    items = [
         CalcStep(
             title="Steady-State Flow Solution",
             equation="∇·(k ∇h) = 0 (Laplace) solved for total head "
                      "h on CST flow elements",
             substitution="",
-            result_name="Q",
-            result_value=f"{result.total_flow_m3_per_s_per_m:.3e}",
+            result_name="h",
+            result_value=f"{result.min_head_m:.3f} to "
+                         f"{result.max_head_m:.3f}",
+            result_unit="m",
+            reference="UFS 3-220-10 (2026) Eq. 6-7 p. 287",
+        ),
+        CalcStep(
+            title="Flow Through the Section",
+            equation="q = Σ R_i / t over the fixed-head nodes where water "
+                     "enters, R = H h − q_prescribed (nodal reactions)",
+            substitution=(result.flow_measured_on or ""),
+            result_name="q",
+            result_value=f"{result.flow_m3_per_s_per_m:.3e}",
             result_unit="m³/s per m",
-            reference="Smith & Griffiths (2004)",
+            reference="UFS 3-220-10 (2026) Eq. 6-3 p. 286; "
+                      "flow-net check Eq. 6-9 p. 290",
         ),
-        TableData(
-            title="Seepage Result Summary",
-            headers=["Item", "Value"],
-            rows=[
-                ["Total head range",
-                 f"{result.min_head_m:.3f} to "
-                 f"{result.max_head_m:.3f} m"],
-                ["Max pore pressure",
-                 f"{result.max_pore_pressure_kPa:.2f} kPa"],
-                ["Max Darcy velocity",
-                 f"{result.max_velocity_m_per_s:.3e} m/s"],
-                ["Total flow",
-                 f"{result.total_flow_m3_per_s_per_m:.3e} m³/s/m"],
-            ],
-        ),
-    ])
+    ]
+    if getattr(result, "flow_boundaries", None):
+        items.append(TableData(
+            title="Flow at Each Fixed-Head Boundary (+ in, − out)",
+            headers=["Head (m)", "Nodes", "Net inflow (m³/s per m)"],
+            rows=[[f"{b['head_m']:.3f}", str(b['n_nodes']),
+                   f"{b['net_inflow_m3_per_s_per_m']:.3e}"]
+                  for b in result.flow_boundaries],
+        ))
+    items.append(TableData(
+        title="Seepage Result Summary",
+        headers=["Item", "Value"],
+        rows=rows,
+    ))
+    return CalcSection(title="Seepage Results", items=items)
 
 
 def _mm(v):

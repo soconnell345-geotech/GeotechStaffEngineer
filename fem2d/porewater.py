@@ -474,7 +474,28 @@ def solve_seepage(nodes, elements, k, head_bcs, t=1.0,
         head : (n_nodes,) — total head at each node.
         pore_pressures : (n_nodes,) — u = gamma_w * (h - z), clipped >= 0.
         velocity : (n_elements, 2) — Darcy velocity per element.
-        flow_rate : float — total flow through domain.
+        nodal_flux : (n_nodes,) — flow entering the mesh at each node
+            (m^3/s per metre run; positive in, negative out); non-zero
+            only at the fixed-head (and prescribed-flow) nodes.
+        flow_rate : float — the flow through the section per metre run
+            (m^3/s/m): the inflow across the fixed-head boundaries, the
+            sum of the positive nodal fluxes (GM-222); where a prescribed
+            inflow makes the outflow the larger, the outflow.
+            ``flow_measured_on`` says which.
+        inflow, outflow : float — the flow entering and leaving across
+            the fixed-head nodes (m^3/s/m, both positive).
+        flow_balance : dict — inflow against outflow (and any prescribed
+            flows): ``mismatch`` = |inflow + prescribed - outflow|
+            / max(inflow, outflow), checked against ``tolerance``.
+        flow_boundaries : list of dict — per prescribed head value: the
+            head (m), its node count and the net flow entering there
+            (m^3/s/m).
+
+    The flow is the nodal reaction of the flow equations at the
+    constrained-head nodes, Q = H h - q (H assembled without the head
+    constraints), divided by the slice thickness t. Before GM-222 the
+    result summed |v| x A x t over the elements, which grows with t and
+    is not the flow through any section.
     """
     nodes = np.asarray(nodes)
     elements = np.asarray(elements)
@@ -485,6 +506,7 @@ def solve_seepage(nodes, elements, k, head_bcs, t=1.0,
     if flow_bcs:
         for node, flow_val in flow_bcs:
             q[node] += flow_val
+    q_given = q.copy()
 
     # Apply Dirichlet BCs
     H_bc, q_bc = apply_head_bcs(H, q, head_bcs)
@@ -499,19 +521,113 @@ def solve_seepage(nodes, elements, k, head_bcs, t=1.0,
     # Velocity
     vel = seepage_velocity(nodes, elements, head, k)
 
-    # Total flow rate: sum of |v| * A for all elements
-    flow_rate = 0.0
-    for e in range(len(elements)):
-        coords = nodes[elements[e]]
-        A = cst_area(coords)
-        v_mag = np.linalg.norm(vel[e])
-        flow_rate += v_mag * A * t
+    flow = seepage_boundary_flow(H, head, q_given, head_bcs, t)
 
     return {
         'head': head,
         'pore_pressures': pp,
         'velocity': vel,
-        'flow_rate': flow_rate,
+        'flow_rate': flow['flow'],
+        **flow,
+    }
+
+
+#: Largest |inflow + prescribed - outflow| / max(inflow, outflow) the
+#: flow-balance check accepts. The interior rows of H h = q are met to the
+#: direct solver's round-off (about 1e-12 relative); 1e-6 leaves room for
+#: ill-conditioned meshes (k contrasts of 1e6) and still catches a
+#: boundary that leaks.
+FLOW_BALANCE_TOLERANCE = 1e-6
+
+
+def seepage_boundary_flow(H, head, q_given, head_bcs, t=1.0,
+                          tolerance=FLOW_BALANCE_TOLERANCE):
+    """Flow across the fixed-head boundaries from the nodal reactions.
+
+    The Galerkin flow equations H h = q state, row by row, that the flow
+    entering a node from outside the mesh equals (H h)_i. At an interior
+    node that is the prescribed flow (zero for none); at a node whose
+    head is fixed it is the unknown reaction R_i = (H h)_i - q_i, the
+    flow that crosses the boundary there. With H assembled over a slice
+    t thick, R / t is per metre run. This is the discrete form of the
+    flow through a section (UFS 3-220-10, 2026, Eq. 6-3 p. 286; for a
+    flow net Eq. 6-9 p. 290).
+
+    Parameters
+    ----------
+    H : sparse (n, n) — permeability matrix WITHOUT the head constraints.
+    head : (n,) — solved total heads.
+    q_given : (n,) — prescribed nodal flows (m^3/s over the slice).
+    head_bcs : list of (node, head) or dict.
+    t : float — slice thickness (m).
+    tolerance : float — accepted mismatch fraction.
+
+    Returns
+    -------
+    dict: flow (the larger of inflow and outflow, normally the inflow),
+    nodal_flux, inflow, outflow, prescribed_flow, flow_balance,
+    flow_boundaries, flow_measured_on.
+    """
+    head = np.asarray(head, dtype=float)
+    n = len(head)
+    bcs = list(head_bcs.items()) if isinstance(head_bcs, dict) \
+        else [(int(i), float(h)) for i, h in head_bcs]
+    fixed = np.array(sorted({int(i) for i, _ in bcs}), dtype=int)
+    react = np.asarray(H @ head).ravel() - np.asarray(q_given).ravel()
+    nodal = np.zeros(n)
+    nodal[fixed] = react[fixed] / t
+    prescribed = float(np.sum(np.delete(np.asarray(q_given), fixed))) / t
+    r = nodal[fixed]
+    inflow = float(np.sum(r[r > 0]))
+    outflow = float(-np.sum(r[r < 0]))
+    scale = max(inflow, outflow, abs(prescribed))
+    mismatch = (abs(inflow + prescribed - outflow) / scale
+                if scale > 0 else 0.0)
+
+    groups = {}
+    for i, h in bcs:
+        groups.setdefault(round(float(h), 9), set()).add(int(i))
+    flow_boundaries = []
+    for h in sorted(groups, reverse=True):
+        ids = np.array(sorted(groups[h]), dtype=int)
+        flow_boundaries.append({
+            'head_m': float(h), 'n_nodes': int(len(ids)),
+            'net_inflow_m3_per_s_per_m': float(np.sum(nodal[ids])),
+        })
+    n_in = int(np.sum(r > 0))
+    n_out = int(np.sum(r < 0))
+    if inflow >= outflow:
+        flow = inflow
+        measured_on = (
+            f"inflow across the fixed-head boundary nodes where water "
+            f"enters the mesh ({n_in} of {len(fixed)} fixed-head nodes); "
+            f"it leaves at {n_out}")
+    else:       # a prescribed inflow (a recharge well) feeds the outflow
+        flow = outflow
+        measured_on = (
+            f"outflow across the fixed-head boundary nodes where water "
+            f"leaves the mesh ({n_out} of {len(fixed)} fixed-head nodes), "
+            f"which carry more than the {n_in} where it enters because "
+            f"of the prescribed inflow")
+    measured_on += (". Per metre run: the nodal reactions of the flow "
+                    "equations at those nodes divided by the slice "
+                    "thickness t.")
+    return {
+        'flow': flow,
+        'nodal_flux': nodal,
+        'inflow': inflow,
+        'outflow': outflow,
+        'prescribed_flow': prescribed,
+        'flow_balance': {
+            'inflow_m3_per_s_per_m': inflow,
+            'outflow_m3_per_s_per_m': outflow,
+            'prescribed_flow_m3_per_s_per_m': prescribed,
+            'mismatch': float(mismatch),
+            'tolerance': float(tolerance),
+            'passed': bool(mismatch <= tolerance),
+        },
+        'flow_boundaries': flow_boundaries,
+        'flow_measured_on': measured_on,
     }
 
 

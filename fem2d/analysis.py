@@ -2080,6 +2080,10 @@ def analyze_seepage(nodes, elements, k, head_bcs, t=1.0, gamma_w=9.81):
     """High-level steady-state seepage analysis.
 
     Solves the Laplace equation for hydraulic head using CST elements.
+    Boundaries with no prescribed head are impervious. The flow is the
+    inflow across the fixed-head boundaries per metre run, from the nodal
+    reactions at the constrained-head nodes, with inflow = outflow checked
+    (GM-222).
 
     Parameters
     ----------
@@ -2087,7 +2091,7 @@ def analyze_seepage(nodes, elements, k, head_bcs, t=1.0, gamma_w=9.81):
     elements : (n_elements, 3) array — CST connectivity.
     k : float or (n_elements,) array — hydraulic conductivity (m/s).
     head_bcs : list of (node_id, head_value) — Dirichlet BCs.
-    t : float — thickness.
+    t : float — slice thickness (m); no result depends on it.
     gamma_w : float — unit weight of water (kN/m^3).
 
     Returns
@@ -2109,7 +2113,11 @@ def analyze_seepage(nodes, elements, k, head_bcs, t=1.0, gamma_w=9.81):
         min_head_m=float(np.min(result_dict['head'])),
         max_pore_pressure_kPa=float(np.max(result_dict['pore_pressures'])),
         max_velocity_m_per_s=float(np.max(v_mag)),
-        total_flow_m3_per_s_per_m=result_dict['flow_rate'],
+        flow_m3_per_s_per_m=result_dict['flow'],
+        outflow_m3_per_s_per_m=result_dict['outflow'],
+        flow_balance=result_dict['flow_balance'],
+        flow_boundaries=result_dict['flow_boundaries'],
+        flow_measured_on=result_dict['flow_measured_on'],
         head=result_dict['head'],
         pore_pressures=result_dict['pore_pressures'],
         velocity=result_dict['velocity'],

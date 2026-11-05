@@ -616,8 +616,8 @@ def plot_seepage(seepage_result, n_levels=14, show_vectors=True,
     ax.text(0.02, 0.98,
             f"head: {seepage_result.min_head_m:.2f} to "
             f"{seepage_result.max_head_m:.2f} m\n"
-            f"Q = {seepage_result.total_flow_m3_per_s_per_m:.3e} "
-            f"m³/s per m\nv_max = "
+            f"q = {seepage_result.flow_m3_per_s_per_m:.3e} "
+            f"m³/s per m (inflow at fixed heads)\nv_max = "
             f"{seepage_result.max_velocity_m_per_s:.3e} m/s",
             transform=ax.transAxes, fontsize=8.5, va='top',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
