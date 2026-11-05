@@ -54,7 +54,6 @@
        {
         "class": "DocumentToolsGate",
         "hidden": [
-         "analyze_image",
          "annotate_document",
          "annotate_dxf",
          "document_markups",
