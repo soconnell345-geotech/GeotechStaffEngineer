@@ -384,8 +384,7 @@ _GM184_LISTS = [
     ("fem2d", "fem2d_excavation", {"gwt": 0},
      {"gamma_w", "excavation_water"}, set()),
     ("fem2d", "fem2d_slope_srm", {}, set(), {"gamma_w"}),
-    # fem2d_local_fos takes no gamma_w (GM-113): it is refused, not listed
-    ("fem2d", "fem2d_local_fos", {"gwt": -3}, set(), {"gamma_w"}),
+    ("fem2d", "fem2d_local_fos", {"gwt": -3}, {"gamma_w"}, set()),
     # a truck factor or a base-year total is ESALs already
     ("pavement_design", "design_traffic_esals", {"vehicles": []}, set(),
      {"pavement_type", "sn", "d_in", "pt"}),

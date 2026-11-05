@@ -1079,34 +1079,8 @@ class DrillShaftAnalysis:
             Complete results with side resistance, end bearing,
             and per-layer breakdown.
         """
-        self._check_depth_beta_layers()
         self._check_hoek_brown_layers([self.shaft.length], below=True)
         return self._compute()
-
-    def _check_depth_beta_layers(self) -> None:
-        """Refuse (N1)60 or OCR on a layer under beta_method 'depth'
-        (BACKLOG GM-113; as GM-179 and GM-249, an input the run would not
-        use is refused, not dropped). The O'Neill and Reese (1999) beta
-        takes the depth and N60 (FHWA NHI-06-089 Eqs. 9-41 to 9-43); (N1)60
-        (phi', GEC-10 Example 10-1) and OCR (Eq. 10-9) are inputs of the
-        GEC-10 beta only."""
-        if self.beta_method != "depth":
-            return
-        top = 0.0
-        for layer in self.soil.layers:
-            given = [n for n, v in (("N1_60", layer.N1_60),
-                                    ("OCR", layer.OCR)) if v > 0]
-            if given:
-                raise ValueError(
-                    f"beta_method 'depth' does not take {' or '.join(given)}"
-                    f" (the layer at {top:g}-{top + layer.thickness:g} m): "
-                    "the O'Neill and Reese (1999) beta takes the depth and "
-                    "N60 (FHWA NHI-06-089 Eqs. 9-41 to 9-43); (N1)60 and OCR "
-                    "are inputs of GEC-10's beta (beta_method 'rational', "
-                    "Eqs. 10-8 to 10-13). Leave them out (a cohesionless "
-                    "layer then gives its phi), or name beta_method "
-                    "'rational'.")
-            top += layer.thickness
 
     def _check_hoek_brown_layers(self, lengths, below: bool) -> None:
         """Refuse GSI or m_i on a rock layer no base at ``lengths`` takes
@@ -2581,7 +2555,6 @@ class DrillShaftAnalysis:
 
         depths = np.linspace(depth_min, depth_max, n_points)
         results = []
-        self._check_depth_beta_layers()
         self._check_hoek_brown_layers([float(d) for d in depths],
                                       below=False)
 

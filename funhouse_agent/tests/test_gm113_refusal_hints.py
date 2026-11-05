@@ -1,9 +1,9 @@
 """BACKLOG GM-113, the rest of the refusal hints after GM-110: a list
 item's key given at the top level names its list; a did-you-mean finds the
 leading words of a longer name; the inputs METHOD_INFO declared that no
-handler read are refused with the reason; yield_acceleration refuses kh,
-drilled_shaft refuses N1_60 and OCR under beta_method 'depth'. Made-up
-inputs."""
+handler read (fem2d_local_fos's) now reach the analysis; yield_acceleration
+refuses kh; drilled_shaft takes N1_60 and OCR under beta_method 'depth' for
+the result's rational alternative. Made-up inputs."""
 
 import pytest
 
@@ -71,31 +71,71 @@ def test_only_whole_words_of_four_letters_or_more(unknown, valid):
 
 # -- 3. declared but never read: fem2d_local_fos -----------------------------
 
-_FIXED = ("gamma_w", "max_iter", "tol", "t", "n_gp")
+_PASSED = ("t", "gamma_w", "max_iter", "tol", "n_gp")
+_LOCAL_SLOPE = {"surface_points": [[0, 10], [10, 10], [20, 0], [30, 0]],
+                "soil_layers": [{"name": "clay", "bottom_elevation": -5,
+                                 "E": 20000, "nu": 0.3, "c": 10, "phi": 25,
+                                 "psi": 0, "gamma": 19}]}
 
 
-def test_local_fos_no_longer_advertises_what_it_never_passed():
-    info = D._load_adapter("fem2d").METHOD_INFO["fem2d_local_fos"]
-    assert not set(_FIXED) & set(info["parameters"])
-    assert set(_FIXED) == set(info["refused_parameters"])
+@pytest.fixture
+def srm_kwargs(monkeypatch):
+    """Replace analyze_slope_srm and keep what the handler passes it."""
+    import fem2d
+    seen = {}
+
+    class _LocalFos:
+        def to_dict(self):
+            return {"min_local_fos": 1.2}
+
+    class _Result:
+        local_fos = _LocalFos()
+        FOS = 1.2
+        fos_basis = "nonconvergence"
+        converged = True
+        warnings = ()
+
+    def fake(**kwargs):
+        seen.update(kwargs)
+        return _Result()
+
+    monkeypatch.setattr(fem2d, "analyze_slope_srm", fake)
+    return seen
 
 
-@pytest.mark.parametrize("name, value", [
-    ("gamma_w", 10.0), ("max_iter", 50), ("tol", 1e-3), ("t", 2.0),
-    ("n_gp", 6)])
-def test_local_fos_refuses_them_with_the_reason(name, value):
-    out = D.call_agent("fem2d", "fem2d_local_fos",
-                       {"surface_points": [[0, 10], [10, 10], [20, 0],
-                                           [30, 0]],
-                        "soil_layers": [{"bottom_elevation": -5}],
-                        name: value})
-    assert f"fem2d_local_fos does not take ['{name}']" in out["error"]
-    assert "fem2d_slope_srm takes it" in out["error"]
-    # a direct handler call says the same
-    with pytest.raises(ValueError, match="does not take"):
-        D._load_adapter("fem2d").METHOD_REGISTRY["fem2d_local_fos"](
-            {"surface_points": [[0, 10], [30, 0]], "soil_layers": [],
-             name: value})
+def test_local_fos_passes_the_five_to_the_analysis(srm_kwargs):
+    given = {"t": 2.0, "gamma_w": 10.0, "max_iter": 50, "tol": 1e-3,
+             "n_gp": 6}
+    out = D.call_agent("fem2d", "fem2d_local_fos", {**_LOCAL_SLOPE, **given})
+    assert "error" not in out, out
+    assert {n: srm_kwargs[n] for n in _PASSED} == given
+    assert srm_kwargs["compute_local_fos"] is True
+
+
+def test_local_fos_without_them_passes_the_analysis_defaults(srm_kwargs):
+    import inspect
+
+    from fem2d.analysis import analyze_slope_srm
+    out = D.call_agent("fem2d", "fem2d_local_fos", dict(_LOCAL_SLOPE))
+    assert "error" not in out, out
+    own = inspect.signature(analyze_slope_srm).parameters
+    assert {n: srm_kwargs[n] for n in _PASSED} == {
+        n: own[n].default for n in _PASSED}
+
+
+def test_local_fos_refuses_a_gauss_rule_it_has_not(srm_kwargs):
+    out = D.call_agent("fem2d", "fem2d_local_fos", {**_LOCAL_SLOPE,
+                                                    "n_gp": 4})
+    assert "n_gp" in out["error"] and not srm_kwargs
+
+
+def test_local_fos_describes_the_five_as_fem2d_slope_srm_does():
+    info = D._load_adapter("fem2d").METHOD_INFO
+    local = info["fem2d_local_fos"]
+    assert "refused_parameters" not in local
+    for n in _PASSED:
+        assert local["parameters"][n] == info["fem2d_slope_srm"][
+            "parameters"][n], n
 
 
 # -- 4. yield_acceleration's kh ----------------------------------------------
@@ -129,13 +169,32 @@ _SHAFT = {"diameter": 1.0, "shaft_length": 12.0, "layers": [
      "phi": 34, "N60": 30}]}
 
 
-@pytest.mark.parametrize("key", ["N1_60", "N160", "OCR"])
-@pytest.mark.parametrize("method", ["drilled_shaft_capacity",
-                                    "capacity_vs_depth", "lrfd_capacity"])
-def test_depth_beta_refuses_n1_60_and_ocr(method, key):
+def _depth_run(**first):
     import copy
     p = copy.deepcopy(_SHAFT)
     p["beta_method"] = "depth"
-    p["layers"][0][key] = 2.0 if key == "OCR" else 18.0
-    out = D.call_agent("drilled_shaft", method, p)
-    assert "beta_method 'depth' does not take" in out.get("error", ""), out
+    p["layers"][0].update(first)
+    out = D.call_agent("drilled_shaft", "drilled_shaft_capacity", p)
+    assert "error" not in out, out
+    rational = [a for c in out["choices"] for a in c.get("alternatives", [])
+                if str(a).startswith("beta_method 'rational'")]
+    assert len(rational) == 1, rational
+    return out["Q_ultimate_kN"], rational[0]
+
+
+@pytest.mark.parametrize("first", [{"OCR": 2.0},
+                                   {"phi": 0, "N1_60": 18.0}])
+def test_depth_beta_takes_n1_60_and_ocr_for_the_rational_alternative(first):
+    q_plain, alt_plain = _depth_run()
+    q_given, alt_given = _depth_run(**first)
+    assert q_given == q_plain      # the depth beta uses neither
+    assert alt_given != alt_plain  # the rational alternative does
+
+
+def test_the_layers_text_says_where_n1_60_and_ocr_enter():
+    desc = D._load_adapter("drilled_shaft").METHOD_INFO[
+        "drilled_shaft_capacity"]["parameters"]["layers"]["description"]
+    assert ("under beta_method 'depth' the depth beta uses neither N1_60 "
+            "nor OCR: they enter only the result's beta_method 'rational' "
+            "alternative (choices)") in desc
+    assert "is refused: that beta does not use them" not in desc

@@ -4,8 +4,7 @@ import numpy as np
 
 from funhouse_agent.adapters import (
     check_nested_list, clean_result, declare_applies_when,
-    refuse_given, reject_unknown_params, require_keys, require_params,
-    without_unused,
+    reject_unknown_params, require_keys, require_params,
 )
 
 
@@ -294,35 +293,13 @@ def _run_srm_mesh_refinement_study(params: dict) -> dict:
     return clean_result(result.to_dict())
 
 
-#: The inputs fem2d_local_fos does not take (BACKLOG GM-113): METHOD_INFO
-#: listed them, but the handler never passed them to the analysis, so the
-#: run used the module's own values whatever was given. A value equal to
-#: the one in force passes.
-_LOCAL_FOS_FIXED = (
-    "fem2d_local_fos runs analyze_slope_srm with the module's own value of "
-    "this input and does not pass another; fem2d_slope_srm takes it")
-LOCAL_FOS_REFUSED = {
-    "gamma_w": {"reason": _LOCAL_FOS_FIXED + " (gamma_w = 9.81 kN/m3 here)",
-                "accepts": [9.81]},
-    "max_iter": {"reason": _LOCAL_FOS_FIXED + " (max_iter = 1000 here)",
-                 "accepts": [1000]},
-    "tol": {"reason": _LOCAL_FOS_FIXED + " (tol = 1e-5 here)",
-            "accepts": [1e-5]},
-    "t": {"reason": _LOCAL_FOS_FIXED + " (t = 1 m here: plane strain, per "
-                    "metre run)", "accepts": [1, 1.0]},
-    "n_gp": {"reason": _LOCAL_FOS_FIXED + " (the element's own Gauss rule, "
-                       "3 points for T6, here)", "accepts": [3]},
-}
-
-
 def _run_analyze_local_fos(params: dict) -> dict:
     from fem2d import analyze_slope_srm
     _valid = ("surface_points", "soil_layers", "nx", "ny", "srf_tol",
-              "n_load_steps", "element_type", "srm_field", "blowup_factor",
-              "srf_range", "depth", "x_extend", "gwt", "layer_polylines",
+              "n_load_steps", "t", "gamma_w", "max_iter", "tol",
+              "element_type", "srm_field", "blowup_factor", "srf_range",
+              "n_gp", "depth", "x_extend", "gwt", "layer_polylines",
               "local_fos_cap")
-    params = without_unused(params, LOCAL_FOS_REFUSED)
-    refuse_given(params, LOCAL_FOS_REFUSED, method="fem2d_local_fos")
     reject_unknown_params(params, _valid, method="fem2d_local_fos")
     require_params(params, ["surface_points", "soil_layers"],
                    method="fem2d_local_fos", valid=_valid)
@@ -333,12 +310,23 @@ def _run_analyze_local_fos(params: dict) -> dict:
     element_type = params.get("element_type", "t6")
     _require_choice(element_type, ("t6", "cst"),
                     name="element_type", method="fem2d_local_fos")
+    # t, gamma_w, max_iter, tol and n_gp reach the analysis as they do for
+    # fem2d_slope_srm, with the same defaults (BACKLOG GM-113)
+    n_gp = params.get("n_gp")
+    if n_gp is not None:
+        _require_choice(int(n_gp), (3, 6),
+                        name="n_gp", method="fem2d_local_fos")
     kwargs = dict(
         surface_points=[tuple(pt) for pt in params["surface_points"]],
         soil_layers=params["soil_layers"],
         nx=params.get("nx", 30), ny=params.get("ny", 15),
         srf_tol=params.get("srf_tol", 0.02),
         n_load_steps=params.get("n_load_steps", 2),
+        t=params.get("t", 1.0),
+        gamma_w=params.get("gamma_w", 9.81),
+        max_iter=params.get("max_iter", 1000),
+        tol=params.get("tol", 1e-5),
+        n_gp=int(n_gp) if n_gp is not None else None,
         element_type=element_type,
         srm_field=params.get("srm_field", "c_phi"),
         blowup_factor=params.get("blowup_factor", 15.0),
@@ -754,6 +742,8 @@ METHOD_INFO = {
             "srf_tol": {"type": "float", "required": False, "default": 0.02, "description": "SRF bisection tolerance."},
             "element_type": {"type": "str", "required": False, "default": "t6", "allowed_values": ["t6", "cst"], "description": "Soil element. t6 recommended (cst locks)."},
             "srm_field": {"type": "str", "required": False, "default": "c_phi", "allowed_values": ["c_phi", "c", "phi"], "description": "Strengths reduced by the SRF."},
+            "n_gp": {"type": "int", "required": False, "allowed_values": [3, 6], "description": "T6 Gauss rule override (default 3)."},
+            "max_iter": {"type": "int", "required": False, "default": 1000, "description": "Iteration ceiling per load step (Griffiths-Lane non-convergence criterion)."},
             "local_fos_cap": {"type": "float", "required": False, "default": 10.0, "description": "Upper cap on local FOS where the mobilized shear is ~0 (deep isotropic stress)."},
         },
         "returns": {
@@ -955,8 +945,8 @@ _FEM_PARAM_BACKFILL = {
     "fem2d_footing_capacity": ["domain_depth", "domain_half_width", "max_iter", "tol"],
     "fem2d_slope_srm": ["gamma_w", "n_load_steps", "t", "tol"],
     "fem2d_srm_mesh_refinement_study": ["gamma_w", "n_load_steps", "t", "tol"],
-    "fem2d_local_fos": ["blowup_factor", "gwt", "layer_polylines",
-                        "n_load_steps", "srf_range"],
+    "fem2d_local_fos": ["blowup_factor", "gamma_w", "gwt", "layer_polylines",
+                        "n_load_steps", "srf_range", "t", "tol"],
     "fem2d_excavation": ["gamma_w", "max_iter", "nx", "ny", "t", "tol"],
     "fem2d_seepage": ["t"],
     "fem2d_staged": ["gamma_w", "max_iter", "t", "tol"],
@@ -965,7 +955,6 @@ for _m, _names in _FEM_PARAM_BACKFILL.items():
     _pp = METHOD_INFO[_m]["parameters"]
     for _n in _names:
         _pp.setdefault(_n, dict(_FEM_PARAM_DECLS[_n]))
-METHOD_INFO["fem2d_local_fos"]["refused_parameters"] = LOCAL_FOS_REFUSED
 
 # When each default applies (GM-119): the Biot modulus and the time
 # integration parameter to the monolithic consolidation scheme.
@@ -982,6 +971,7 @@ declare_applies_when(METHOD_INFO, {
     "fem2d_excavation": {
         "interface_adhesion": {"wall_contact": ["interface"]},
         "gamma_w": _WATER, "excavation_water": _WATER},
+    "fem2d_local_fos": {"gamma_w": _WATER},
     "fem2d_slope_srm": {"gamma_w": _WATER},
     "fem2d_srm_mesh_refinement_study": {"gamma_w": _WATER}})
 
@@ -993,7 +983,8 @@ for _m, _defaults in {
         "fem2d_footing_capacity": {"max_iter": 1000, "tol": 1e-4},
         "fem2d_slope_srm": {"n_load_steps": 2, "tol": 1e-5},
         "fem2d_srm_mesh_refinement_study": {"n_load_steps": 2, "tol": 1e-5},
-        "fem2d_local_fos": {"n_load_steps": 2, "srf_range": [0.5, 3.0]},
+        "fem2d_local_fos": {"n_load_steps": 2, "srf_range": [0.5, 3.0],
+                            "max_iter": 1000, "tol": 1e-5},
         "fem2d_excavation": {"nx": 30, "ny": 15, "tol": 1e-5},
         "fem2d_staged": {"max_iter": 500, "tol": 1e-5}}.items():
     for _n, _v in _defaults.items():
@@ -1021,7 +1012,7 @@ declare_when_absent(METHOD_INFO, {
         "depth": _DEPTH, "x_extend": _X_EXTEND, "gwt": _NO_WATER,
         "n_gp": _GAUSS},
     "fem2d_local_fos": {"depth": _DEPTH, "x_extend": _X_EXTEND,
-                        "gwt": _NO_WATER},
+                        "gwt": _NO_WATER, "n_gp": _GAUSS},
     "fem2d_consolidation": {
         "reset_displacements_after": (
             "from the end of the initial stage",

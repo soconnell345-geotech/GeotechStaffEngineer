@@ -24,6 +24,7 @@ import tempfile
 import types
 
 os.environ.setdefault("GEOTECH_NO_DISCLAIMER", "1")
+sys.path.insert(0, os.getcwd())
 sys.path.insert(0, os.path.join(os.getcwd(), "funhouse_agent", "tests"))
 import method_probes as MP  # noqa: E402
 from funhouse_agent import dispatch as D  # noqa: E402

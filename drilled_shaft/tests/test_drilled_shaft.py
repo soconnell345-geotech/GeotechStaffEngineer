@@ -736,10 +736,7 @@ class TestRationalSideResistance:
         rational = DrillShaftAnalysis(shaft=shaft, soil=soil, beta_method="rational").compute()
         default = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()
         assert default.Q_ultimate == rational.Q_ultimate
-        # the depth beta takes no (N1)60 (GM-113: refused, not left unused)
-        from dataclasses import replace
-        soil_d = ShaftSoilProfile(layers=[replace(l, N1_60=0.0) for l in layers])
-        depth = DrillShaftAnalysis(shaft=shaft, soil=soil_d, beta_method="depth").compute()
+        depth = DrillShaftAnalysis(shaft=shaft, soil=soil, beta_method="depth").compute()
         sand_r = next(lb for lb in rational.layer_breakdown if lb.get("description") == "sand")
         sand_d = next(lb for lb in depth.layer_breakdown if lb.get("description") == "sand")
         assert "rational" in sand_r["method"]
