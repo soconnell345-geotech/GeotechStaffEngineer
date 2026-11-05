@@ -30,10 +30,23 @@ True
 from profile_figure.geometry import (AXIS_MODES, FOUNDATION_TYPES,
                                      resolve_profile)
 from profile_figure.plotting import (LAYER_COLORS, LAYER_HATCHES,
-                                     build_profile_figure, figure_to_png)
-from profile_figure.data_plot import DataPlotResult, render_data_plot
+                                     build_profile_figure)
 from profile_figure.profile import render_profile_figure
 from profile_figure.results import ProfileFigureResult
+
+
+def __getattr__(name):
+    """The names whose code is in funhouse_agent.charts (INF-31 step 6),
+    imported on first use, so importing this package loads nothing of
+    funhouse_agent (its first-import notice included). Each is the same
+    object as before."""
+    if name == "figure_to_png":
+        from funhouse_agent.charts.plotting import figure_to_png
+        return figure_to_png
+    if name in ("render_data_plot", "DataPlotResult"):
+        from funhouse_agent.charts import data_plot
+        return getattr(data_plot, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "render_profile_figure",

@@ -8,9 +8,27 @@ should be called only when matplotlib is available.
 from typing import Optional
 
 
-# get_pyplot is in funhouse_agent.charts.plotting (INF-31 step 6), which both
-# pages' charts use; this name is the same function.
-from funhouse_agent.charts.plotting import get_pyplot  # noqa: E402,F401
+def get_pyplot():
+    """Import and return matplotlib.pyplot, or raise ImportError.
+
+    Returns
+    -------
+    module
+        matplotlib.pyplot module.
+
+    Raises
+    ------
+    ImportError
+        If matplotlib is not installed.
+    """
+    try:
+        import matplotlib.pyplot as plt
+        return plt
+    except ImportError:
+        raise ImportError(
+            "matplotlib is required for plotting. "
+            "Install with: pip install matplotlib"
+        )
 
 
 def setup_engineering_plot(ax, title: str, xlabel: str, ylabel: str,

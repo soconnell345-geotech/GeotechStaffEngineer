@@ -288,15 +288,9 @@ of that commit with the same venv):
 
 ## Noted, not fixed
 
-- `geotech_common.plotting` now imports `funhouse_agent.charts`, which
-  loads `funhouse_agent`'s package door.
-  - So a library user who draws a module figure (for example
-    `axial_pile`'s plot) can see the one-time professional-use notice on
-    stderr. Today they would see it only on importing `funhouse_agent`.
-  - The notice is once per user, is suppressed by `GEOTECH_NO_DISCLAIMER`,
-    and never shows under pytest.
-  - Importing `geotech_common` or `calc_package` still loads nothing of
-    `funhouse_agent`: their chart imports run inside functions.
+- (Fixed after the review: `geotech_common.plotting` imported
+  `funhouse_agent.charts` at the top, so drawing any module figure loaded
+  `funhouse_agent`'s package door. See "Review fixes" below.)
 - The review page's build no longer registers the SharePoint reference-PDF
   fetcher. The fetcher is the geotech page's `on_build` hook, and only
   GSE's reference readers use it, so the review page sees no difference.
@@ -320,3 +314,45 @@ of that commit with the same venv):
 - The plan's docs (`APP_SPLIT_PLAN.md`, `funhouse_agent/DESIGN.md`, the
   module DESIGN notes) still name the old paths in places. They are not
   updated here, because BACKLOG, HANDOFF and CLAUDE.md are the lead's.
+
+## Review fixes
+
+From the independent review (2026-11-05, verdict "merge after fixes").
+Importing a library package must load nothing of `funhouse_agent`: its
+package door shows the one-time professional-use notice and writes a
+marker in the home folder (the line INF-30's review drew in 4dad2ee).
+
+1. **`import profile_figure` loaded `funhouse_agent`.** `figure_to_png`,
+   `render_data_plot` and `DataPlotResult` now load on first use, through
+   a module `__getattr__` in `profile_figure/__init__.py` (and one for
+   `figure_to_png` in `profile_figure/plotting.py`).
+   `render_profile_figure` imports `figure_to_png` inside the function.
+   Every name imports as before, and each is the same object as
+   `funhouse_agent.charts`' own.
+2. **Drawing any module figure loaded `funhouse_agent`.**
+   `geotech_common/plotting.py` has its own `get_pyplot()` again,
+   byte-identical to master's, in place of the re-export.
+
+New test: `webapp/tests/test_library_imports.py`. In a fresh interpreter it
+imports each of `profile_figure`, `geotech_common`,
+`geotech_common.plotting`, `calc_package` and `report_ingest`, and checks
+that `funhouse_agent` is not loaded. Before the fixes, 2 of the 5 failed
+(`profile_figure`, `geotech_common.plotting`); after, all 5 pass. It sits
+beside `test_review_boundary.py`, not in it, because that file skips when
+the agent stack is not installed.
+
+Tests after the fixes (`C:\dev\GeotechStaffEngineer\.venv`,
+`-q -p no:cacheprovider`):
+
+| Command | Result | Exit |
+|---|---|---|
+| `pytest webapp/tests/test_library_imports.py` | 5 passed | 0 |
+| `pytest webapp/tests/test_review_boundary.py webapp/tests/test_page_fingerprints.py` | 22 passed (no fingerprint moved) | 0 |
+| `pytest profile_figure/tests geotech_common/tests` | 677 passed | 0 |
+| `pytest funhouse_agent/tests/test_profile_figure_adapter.py funhouse_agent/tests/test_plot_output_path.py` | 50 passed | 0 |
+
+Noted, not fixed: a module figure drawn with the layout-ink code (for
+example `key_under_axes`, the calc package's PNGs, the profile PNG) still
+loads `funhouse_agent`, because that code now lives in
+`funhouse_agent.charts`. Taking the notice off the package door would
+remove it.

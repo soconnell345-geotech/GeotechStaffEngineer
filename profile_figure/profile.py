@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 from profile_figure.geometry import resolve_profile
-from profile_figure.plotting import build_profile_figure, figure_to_png
+from profile_figure.plotting import build_profile_figure
 from profile_figure.results import ProfileFigureResult
 
 
@@ -85,6 +85,9 @@ def render_profile_figure(layers, *, title="Subsurface Profile",
     fig, _ax = build_profile_figure(resolved, title=title, width_in=width_in,
                                     height_in=height_in)
     try:
+        # Here, not at the top: importing the package loads nothing of
+        # funhouse_agent (INF-31 review).
+        from funhouse_agent.charts.plotting import figure_to_png
         png = figure_to_png(fig, dpi=dpi)
         width_px, height_px = _png_size(png)
     finally:

@@ -300,5 +300,10 @@ def build_profile_figure(resolved: dict, *, title: str = "Subsurface Profile",
 
 
 # The PNG writer is in funhouse_agent.charts.plotting (INF-31 step 6), which
-# both pages' charts use; this name is the same function.
-from funhouse_agent.charts.plotting import figure_to_png  # noqa: E402,F401
+# both pages' charts use; this name is the same function, imported on first
+# use, so importing this module loads nothing of funhouse_agent.
+def __getattr__(name):
+    if name == "figure_to_png":
+        from funhouse_agent.charts.plotting import figure_to_png
+        return figure_to_png
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
