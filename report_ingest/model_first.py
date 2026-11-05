@@ -304,7 +304,13 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: mf-8 (RI-204): the narrative carries the owner's rulings of 2026-11-03
 #: in the house conventions: soilCorrosion's worst sample governs, and
 #: landslide only for an actual landslide or a named landslide hazard.
-READ_PROMPT_VERSION = "mf-8"
+#: mf-9 (RI-94, RI-200, OWN-124): the bound documents are told by kind (a
+#: volume or data report of this investigation is counted with this
+#: report's, only an appended prior report is a previous investigation);
+#: the narrative gets today's whole-report search for the seven
+#: appendix-answered questions; the recommendedFoundations convention
+#: loses its "(DRAFT)" mark, confirmed by the owner.
+READ_PROMPT_VERSION = "mf-9"
 
 
 def _described(cls: Any, name: str) -> Optional[str]:

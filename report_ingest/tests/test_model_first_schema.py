@@ -72,6 +72,11 @@ MODEL_FIRST_ASKS = {
     # rulings of 2026-11-03 (soilCorrosion's worst sample governs; landslide
     # only for an actual landslide or a named landslide hazard).
     "mf-8": "2884686fda458bba6f938aa659bdbd8cc458cadfdee85624f7c375fa30cc45f7",
+    # mf-9 (RI-94, RI-200, OWN-124): the recommendedFoundations convention
+    # is CONFIRMED, so its "(DRAFT)" mark is gone from the instruction; the
+    # narrative is told its bound documents by kind and given today's
+    # whole-report search, both after the instruction.
+    "mf-9": "d529da015c69b0f808e0bad5675b5590d43ae553d046fc3d7a6444dab59df714",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,

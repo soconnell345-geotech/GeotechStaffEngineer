@@ -1084,7 +1084,9 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                    place: Optional[Place] = None,
                    max_request_tokens_in: Optional[int] = None,
                    bound_documents: Optional[Sequence[Dict[str, Any]]] = None,
-                   questions: Optional[Sequence[str]] = None
+                   questions: Optional[Sequence[str]] = None,
+                   window: Optional[Sequence[int]] = None,
+                   retrieve: bool = True
                    ) -> Dict[str, Any]:
     """The narrative (``group_pages(...)["narrative"]``: its consecutive
     parts), one call per part: one result in
@@ -1105,6 +1107,16 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     (:func:`report_ingest.narrative_reader.questions_block`) and answered in
     ``facts["extra_answers"]``, the shape today's reader returns them in.
 
+    ``retrieve`` (on by default) gives each call today's whole-report search
+    (BACKLOG RI-200, :func:`report_ingest.narrative_reader.
+    retrieval_passages`): the passages found for the seven questions an
+    appendix often answers (siteClass, asceSevenVersion, seismicCodeUsed,
+    soilCorrosion, bearingCapacity, liquefactionPotential, reportDate), in
+    today's words, after the bound documents and the questions. Their pages
+    are citable, as in today's reader. ``window`` keeps the search inside
+    one span of the file, as today's reader's does: a bound document's own
+    pages, or the parent's own under ``narrative_skips_bound``.
+
     On the pictures route the call sends TEXT FIRST (RI-175): each page with
     a usable text layer as its text alone, the others as pictures, so a
     report's narrative is one call, held within the limit
@@ -1121,12 +1133,20 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     from report_ingest.narrative_checks import shorten_summaries
 
     from report_ingest.bound import narrative_block
-    from report_ingest.narrative_reader import questions_block
+    from report_ingest.narrative_reader import (_retrieval_block,
+                                                questions_block,
+                                                retrieval_passages)
 
     groups = [g for g in groups if g.pages]
     if not groups:
         raise ValueError("read_narrative needs at least one group of pages")
-    told = [narrative_block(bound_documents or ()), questions_block(questions)]
+    # Today's whole-report search for the appendix-answered questions
+    # (RI-200): a site class or an ASCE 7 edition printed only on an
+    # appendix calculation page is a page the narrative's groups never hold.
+    passages = retrieval_passages(doc, window=window) if retrieve else []
+    searched = sorted({int(row["page"]) for row in passages})
+    told = [narrative_block(bound_documents or ()), questions_block(questions),
+            _retrieval_block(passages)]
     caller = _Caller("narrative", doc, engine, report_id, route, pdf,
                      max_request_tokens_in,
                      addendum="\n\n".join(block for block in told if block))
@@ -1146,8 +1166,10 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
             f"estimated over {caller.limit or INPUT_TOKEN_BUDGET:,} input "
             f"tokens (or, for a page with no text, past "
             f"{MAX_PICTURES_PER_CALL} pictures)")
-    # A page left out was never shown, so the answer cannot cite it.
-    builder = _Builder(sent_pages, checks="flag")
+    # A page left out was never shown, so the answer cannot cite it; a page
+    # a searched passage is on was shown in the passage, so it can.
+    builder = _Builder(sorted(set(sent_pages) | set(searched)),
+                       checks="flag")
     skipped: List[Dict[str, Any]] = []
     answered = 0
     for sent, _left in fitted:
@@ -1155,8 +1177,8 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         skipped.extend(rows)
         for call_pages, reading in got:
             answered += 1
-            reading, mixed, said = _narrative_on_report_pages(reading,
-                                                              call_pages)
+            reading, mixed, said = _narrative_on_report_pages(
+                reading, sorted(set(call_pages) | set(searched)))
             builder.unresolved.extend(mixed)
             spent.warnings.extend([said] if said else [])
             builder.add(reading, answered)
@@ -1185,7 +1207,8 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     confidence = check_quotes(doc, builder.citations,
                               general.answered() + hazards.answered(),
                               builder)
-    placement = ([place("narrative", builder.citations, pages, doc)]
+    placement = ([place("narrative", builder.citations,
+                        sorted(set(pages) | set(searched)), doc)]
                  if place is not None else [])
     builder.unresolved.extend(skipped)
     facts.unresolved = [dict(u) for u in builder.unresolved]

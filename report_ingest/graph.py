@@ -3542,7 +3542,7 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
         try:
             blob = cached or _read_unit(doc, model_first, stage, parts,
                                         report_id, outline, body, told,
-                                        questions)
+                                        questions, window)
             spend.hand_in("items", blob, cached)
             # Each request found over the request limit (RI-121; none
             # without one), before anything else, so a cut is listed even
@@ -3750,10 +3750,12 @@ def _read_unit(doc: Any, model_first: _ModelFirst, stage: str,
                groups: Sequence[Any], report_id: str, outline: Any,
                body: Sequence[int],
                told: Sequence[Dict[str, Any]] = (),
-               questions: Sequence[str] = ()) -> Dict[str, Any]:
+               questions: Sequence[str] = (),
+               window: Optional[Sequence[int]] = None) -> Dict[str, Any]:
     """One model-first result: a log (its parts), a laboratory window, a
-    printout or the narrative (its parts, told the bound documents and
-    asked the caller's questions)."""
+    printout or the narrative (its parts, told the bound documents, asked
+    the caller's questions and given the passages today's reader searches
+    the whole report for, inside ``window`` when there is one: RI-200)."""
     from report_ingest import model_first_read as readers
 
     engine = model_first.engines[stage]
@@ -3775,7 +3777,8 @@ def _read_unit(doc: Any, model_first: _ModelFirst, stage: str,
     return readers.read_narrative(doc, groups, engine, outline=outline,
                                   body_pages=list(body) or None,
                                   bound_documents=list(told),
-                                  questions=list(questions), **common)
+                                  questions=list(questions),
+                                  window=window, **common)
 
 
 def _into_record(stage: str, blob: Dict[str, Any],
