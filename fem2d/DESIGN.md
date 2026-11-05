@@ -475,6 +475,47 @@ Standard geotechnical BCs:
 
 Applied via penalty method (penalty = 1e20) for sparse matrix compatibility.
 
+**Displacement control (GM-305).** `solver.add_prescribed_dofs(ctx, dofs)`
+puts more DOFs on the penalty diagonal, and `run_nl(..., prescribed=(dofs,
+delta))` drives them from their `u_init` values by `lam * delta` over the
+run instead of holding them at zero: their residual is
+`penalty * (target - u)`, a step converges only once they sit on their
+target, and the free residual is normalised by the larger of the free load
+and the reaction at those DOFs (so a weightless soil can be driven). The
+reaction (F_int - F_ext at those DOFs, of the slice) after each converged
+step is returned in `reactions`, with the step's `lam` in
+`reaction_lams`.
+
+### Footing capacity: flexible or rigid footing (GM-11, GM-304, GM-305)
+
+`analyze_footing_capacity` loads a strip of width B on a 10B x 5B
+half-space. Stage 1 (whenever gamma > 0 or a surcharge is given) brings the
+soil's weight and the surcharge over the whole surface into equilibrium.
+Stage 2 is one of:
+
+- `footing='flexible'` (default): a uniform pressure over B ramped from the
+  surcharge towards q_max; q_ult is the last converged level (collapse =
+  non-convergence).
+- `footing='rigid'`: the footing's surface nodes (T6 mid-side nodes
+  included) pushed down together in `n_load_steps` equal steps to
+  `settlement_max` (default 10 q_est B (1 - nu^2) / E, this module's choice). The strip's
+  surcharge is taken off the load and carried by the reactions, so q starts
+  at the surcharge. q = -(sum of the footing nodes' vertical reactions) / B;
+  q_ult = the largest q reached; `collapse_bracketed` when q rose by less
+  than 1 % over the last tenth of the settlement run. `base='rough'`
+  (default) also holds the footing nodes' horizontal displacement at its
+  stage-1 value (no slip: GEC-6 pp. 49-50, the wedge under the footing
+  moves down with it; pp. 99-100, concrete cast against the ground takes
+  tan delta = tan phi or c_a = c_u); `'smooth'` leaves it free. Steps whose
+  displacements stand still are accepted (`settled_ratio = 0.1`, as the
+  SRM).
+
+The default stays flexible on the mesh study in VALIDATION.md §3: on the
+uniform meshes the rigid footing reads high and converges slowly from above
+(the rigid edge is a stress singularity the elements have to resolve), and
+on a cohesionless soil with no surcharge the constant-stiffness iteration
+stops before q levels off.
+
 ### Newton-Raphson Solver
 
 For nonlinear problems (MC/HS materials):
