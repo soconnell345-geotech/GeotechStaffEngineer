@@ -1120,18 +1120,22 @@ def _question_list(record: ReportRecord, doc: Any, engine: Any, out: str,
     """The owner's question list asked of the finished record, its answer
     sheet written beside the record (BACKLOG RI-101 part 1); only with
     :data:`QUESTION_LIST_ENV` set. Its calls are counted in the run's
-    cost; what it could not do is a QA entry, never a failed run
+    cost, and the replies it took from the folder in the whole report's
+    (BACKLOG RI-125); what it could not do is a QA entry, never a failed run
     (:func:`report_ingest.question_list.ingest_sheet`)."""
     from report_ingest.question_list import ingest_sheet
 
     bound = {child.parent.bound_id: child for child, _ in children
              if child.parent is not None}
     mark = spend.mark()
+    reused: List[Dict[str, Any]] = []
     try:
         _path, notes = ingest_sheet(record, doc, engine, out, bound=bound,
-                                    resume=resume)
+                                    resume=resume, reused=reused)
     finally:
         spend.settle(mark)
+    for cost in reused:
+        spend.reuse("question_list", cost)
     qa.extend(notes)
 
 

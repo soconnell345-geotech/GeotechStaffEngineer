@@ -155,6 +155,9 @@ __all__ = [
 #: caption count, the logs), and left out of the written record when empty,
 #: so a record with none of them is written as it always was and a record
 #: written before them loads as one that has none.
+#:
+#: ``ResumedSteps.steps`` gaining ``question_list`` (BACKLOG RI-101's
+#: review) adds a value no older record holds, as ``not_measured`` did.
 SCHEMA_VERSION = "4.0"
 
 
@@ -804,10 +807,11 @@ WORKFLOW_VALUES: Tuple[str, ...] = tuple(v for v in get_args(Workflow) if v)
 #: asking a model again (BACKLOG RI-125), in the order a run takes them:
 #: the document triage, the vision voter, the range voter's page
 #: descriptions and its sections, the label review, a bound document's
-#: identity call, and the readers' items (logs, laboratory sheets,
-#: printouts, soundings, the narrative).
+#: identity call, the readers' items (logs, laboratory sheets, printouts,
+#: soundings, the narrative), and the owner's question list's calls (only
+#: with its setting set, BACKLOG RI-101).
 ResumedStep = Literal["triage", "vision", "descriptions", "ranges", "review",
-                      "identity", "items"]
+                      "identity", "items", "question_list"]
 RESUMED_STEPS: Tuple[str, ...] = get_args(ResumedStep)
 
 
@@ -831,7 +835,8 @@ class ResumedSteps(BaseModel):
         description="the steps taken from the folder, in the order a run "
                     "takes them: triage, vision, descriptions and ranges "
                     "(the range voter), review, identity (a bound "
-                    "document's), items (the readers')")
+                    "document's), items (the readers'), question_list (the "
+                    "owner's question list)")
     items: int = Field(
         default=0, ge=0,
         description="readers' items whose reading was taken from the folder")

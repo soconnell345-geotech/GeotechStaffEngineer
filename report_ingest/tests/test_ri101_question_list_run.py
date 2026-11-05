@@ -128,11 +128,14 @@ class TestMatchPost:
         found = ql.match_post("Ostravel", POSTS)
         assert found.post is None and "at least 0.85 alike" in found.why
 
-    def test_two_equally_close_match_none(self):
-        twins = [Post("Brenmoor"), Post("Brenmoar"), POSTS[0]]
+    @pytest.mark.parametrize("twin", ["Brenmoar", "Brenmoerl"])
+    def test_two_close_match_none(self, twin):
+        # Equally close (0.875 each), or not (0.875 and 0.94): both are
+        # over the bar, so neither is picked.
+        twins = [Post("Brenmoor"), Post(twin), POSTS[0]]
         found = ql.match_post("Brenmoer", twins)
         assert found.post is None and len(found.tied) == 2
-        assert "equally close" in found.why
+        assert "are close" in found.why
 
     def test_two_posts_of_one_name_match_none(self):
         found = ql.match_post("Quellbrook", POSTS + [Post("Quellbrook",
@@ -168,6 +171,18 @@ class TestApplyPosts:
         assert (got.value, got.printed, got.matched_by) == (
             "Ostravel", None, "")
         assert "unmatched" in got.note
+
+    def test_a_name_not_on_the_list_sharing_a_full_names_wording(self, qlist):
+        # A full name matches exactly or not at all: the two full names'
+        # shared wording makes them 0.89 alike, the names only 0.33.
+        answers = {"office_name": Answer(value="Tarmondel Liaison Office",
+                                         status="answered")}
+        posts = POSTS + [Post("Tarvel", "Tarvel Liaison Office")]
+        lines = ql.apply_posts(qlist, answers, posts)
+        assert len(lines) == 1 and "matches no one post" in lines[0]
+        assert "no post's name is at least 0.85 alike" in lines[0]
+        got = answers["office_name"]
+        assert (got.value, got.matched_by) == ("Tarmondel Liaison Office", "")
 
     def test_a_row_not_answered_is_left_alone(self, qlist):
         answers = {"office_name": Answer(status="not said")}
@@ -209,6 +224,9 @@ def test_a_kept_reply_is_given_back_for_the_same_request(tmp_path):
     reply = again.complete(messages, output_format=schema)
     assert reply.parsed.is_study.value is True
     assert reply.usage.tokens_in == 0
+    # What the kept reply cost when it was made, for the whole report's.
+    assert [(c["calls"], c["input_tokens"], c["output_tokens"])
+            for c in again.reused] == [(1, 1000, 100)]
     # Not resuming, or another request, calls the model.
     fresh = FakeEngine([{"final": {"is_study": _answer(False)}}])
     ql._ReplayEngine(fresh, path, resume=False).complete(
@@ -365,7 +383,7 @@ def test_a_resumed_run_reuses_the_kept_replies(tmp_path):
 
     listed = _workbook(tmp_path / "q.xlsx")
     env = {ql.LIST_ENV: str(listed)}
-    _graph_run(tmp_path, QL_TURNS, env)
+    first, _, _ = _graph_run(tmp_path, QL_TURNS, env)
     # The second run is given the graph's script again (whatever it reuses
     # from the folder) and nothing for the question list.
     record, out, engine = _graph_run(
@@ -374,6 +392,13 @@ def test_a_resumed_run_reuses_the_kept_replies(tmp_path):
     assert not engine.asked_with_list
     rows, _ = _sheet_rows(out / ql.SHEET_NAME)
     assert rows["office_name"]["Answer"] == "Varnholow"
+    # The whole report's cost still counts the list's two kept calls
+    # (RI-125), as the first run counted them.
+    took = record.document.resumed
+    assert took is not None and "question_list" in took.steps
+    assert took.report_calls == first.document.model_calls
+    assert took.report_input_tokens == first.document.input_tokens
+    assert took.report_output_tokens == first.document.output_tokens
 
 
 class _Lenient(FakeEngine):

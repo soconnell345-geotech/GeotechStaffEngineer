@@ -62,9 +62,10 @@ THE LIST OF POSTS (BACKLOG RI-170). With :data:`POSTS_ENV` naming a posts
 file (:func:`load_posts`) and the code map naming the post-name row
 (``"post_name": "<Key>"``), that row's answer is matched to one post
 (:func:`match_post`): the name exactly, then the full name exactly, then a
-close spelling (:data:`POST_SIMILARITY`). The printed name is kept beside
-the post and the answer says how it matched; no match, or two equally
-close, is an open note on the row and an open QA entry, never a guess.
+close spelling of the name (:data:`POST_SIMILARITY`). The printed name is
+kept beside the post and the answer says how it matched; no match, or two
+posts that close, is an open note on the row and an open QA entry, never a
+guess.
 """
 
 from __future__ import annotations
@@ -2145,8 +2146,8 @@ def answer_sheet(questions: Sequence[Question], answers: Mapping[str, Answer],
 POSTS_ENV = "GSE_REPORT_POSTS"
 
 #: A close spelling matches when difflib's ``SequenceMatcher.ratio`` of the
-#: printed name and a post's name or full name (each lower-cased, with
-#: punctuation and runs of spaces made one space) is at least this.
+#: printed name and a post's name (each lower-cased, with punctuation and
+#: runs of spaces made one space) is at least this, for one post only.
 POST_SIMILARITY = 0.85
 
 #: The columns a posts file is read by (a JSON object's keys or a CSV's
@@ -2237,9 +2238,9 @@ def _shown_post(post: Post) -> str:
 def match_post(printed: Any, posts: Sequence[Post]) -> PostMatch:
     """The one post ``printed`` names: a post whose name is the printed
     name (compared lower-cased, punctuation and spaces folded), else one
-    whose full name is, else the post whose name or full name is the
-    closest spelling at :data:`POST_SIMILARITY` or above. Two posts
-    found at the same step, or two equally close, match none."""
+    whose full name is, else the one post whose name is a close spelling,
+    at :data:`POST_SIMILARITY` or above. Two posts found at the same step,
+    or two whose names are that close, match none."""
     from difflib import SequenceMatcher
 
     said = _folded(printed)
@@ -2255,22 +2256,21 @@ def match_post(printed: Any, posts: Sequence[Post]) -> PostMatch:
         if len(found) > 1:
             return PostMatch(None, why=f"{len(found)} posts have that "
                              f"{how}", tied=tuple(found))
-    scored: List[Tuple[float, Post]] = []
-    for post in dict.fromkeys(posts):
-        best = max(SequenceMatcher(None, said, _folded(form)).ratio()
-                   for form in (post.name, post.full_name) if form)
-        scored.append((best, post))
-    scored.sort(key=lambda s: -s[0])
+    # The name only: full names share their wording ("... Liaison Office"),
+    # which lifts the ratio of two names that differ.
+    scored = sorted(((SequenceMatcher(None, said, _folded(post.name)).ratio(),
+                      post) for post in dict.fromkeys(posts)),
+                    key=lambda s: -s[0])
     if not scored or scored[0][0] < POST_SIMILARITY:
         near = (f"; the closest, {_shown_post(scored[0][1])}, is "
                 f"{scored[0][0]:.2f} alike" if scored else "")
-        return PostMatch(None, why=f"no post's name or full name is at "
-                         f"least {POST_SIMILARITY:.2f} alike{near}")
+        return PostMatch(None, why=f"no post's name is at least "
+                         f"{POST_SIMILARITY:.2f} alike{near}")
     top = scored[0][0]
-    tied = tuple(p for r, p in scored if abs(r - top) < 1e-9)
+    tied = tuple(p for r, p in scored if r >= POST_SIMILARITY)
     if len(tied) > 1:
-        return PostMatch(None, why=f"{len(tied)} posts are equally close "
-                         f"({top:.2f} alike)", tied=tied)
+        return PostMatch(None, why=f"{len(tied)} posts' names are close "
+                         f"(at least {POST_SIMILARITY:.2f} alike)", tied=tied)
     return PostMatch(scored[0][1],
                      how=f"close spelling (similarity {top:.2f})")
 
@@ -2322,7 +2322,9 @@ class _ReplayEngine:
     """``inner``, with each reply that gave a structured answer kept in
     ``path`` under a digest of its request (the messages and the schema),
     and given back for the same request on a resumed run: no call is made
-    and the reply's usage is zero. A reply with no answer is not kept."""
+    and the reply's usage is zero. Each kept reply keeps its cost, and
+    ``reused`` holds the costs of those given back, for the whole report's
+    (BACKLOG RI-125). A reply with no answer is not kept."""
 
     def __init__(self, inner: Any, path: Path, resume: bool) -> None:
         import json
@@ -2330,6 +2332,7 @@ class _ReplayEngine:
         self.inner = inner
         self.path = path
         self.saved: Dict[str, Any] = {}
+        self.reused: List[Dict[str, Any]] = []
         if resume and path.is_file():
             try:
                 self.saved = dict(json.loads(path.read_text("utf-8")))
@@ -2354,26 +2357,34 @@ class _ReplayEngine:
                  **kwargs: Any) -> Any:
         import json
 
-        from report_ingest.engine import Reply
+        from report_ingest.engine import TOKENS_IN_PARTS, Reply
 
         key = self._key(messages, output_format)
         kept = self.saved.get(key)
         if kept is not None and output_format is not None:
             try:
-                return Reply(parsed=output_format.model_validate(
+                given = Reply(parsed=output_format.model_validate(
                     kept["parsed"]), stop_reason=kept.get("stop_reason", ""),
                     model=kept.get("model", ""),
                     notes=list(kept.get("notes") or []) + [
                         "taken from the run's folder: no call was made"])
             except (ValidationError, KeyError, TypeError):
                 pass
+            else:
+                self.reused.append(kept.get("cost") or {})
+                return given
         reply = self.inner.complete(messages, output_format=output_format,
                                     **kwargs)
         parsed = getattr(reply, "parsed", None)
         if parsed is not None and not getattr(reply, "cut_off", False):
             data = parsed.model_dump() if isinstance(parsed, BaseModel) \
                 else parsed
-            self.saved[key] = {"parsed": data,
+            usage = getattr(reply, "usage", None)
+            cost = {part: int(getattr(usage, part, 0) or 0)
+                    for part in TOKENS_IN_PARTS + ("output_tokens",)}
+            cost.update(calls=1, dollars=float(usage.dollars(
+                getattr(reply, "model", "") or "")) if usage else 0.0)
+            self.saved[key] = {"parsed": data, "cost": cost,
                                "stop_reason": getattr(reply, "stop_reason",
                                                       ""),
                                "model": getattr(reply, "model", ""),
@@ -2397,7 +2408,8 @@ def ingest_sheet(record: Any, doc: Any, engine: Any, out_dir: Union[str, Path],
                  *, bound: Optional[Mapping[str, Any]] = None,
                  resume: bool = True,
                  list_path: Union[str, Path, None] = None,
-                 posts_path: Union[str, Path, None] = None
+                 posts_path: Union[str, Path, None] = None,
+                 reused: Optional[List[Dict[str, Any]]] = None
                  ) -> Tuple[Optional[Path], List[Any]]:
     """The owner's list asked of one ingested report, its answer sheet
     written to ``out_dir`` as :data:`SHEET_NAME` (BACKLOG RI-101 part 1).
@@ -2409,7 +2421,9 @@ def ingest_sheet(record: Any, doc: Any, engine: Any, out_dir: Union[str, Path],
     gives them off the open ``doc``, the printed page numbers from
     ``doc.page_map()``, ``bound`` (the bound reports' records by bound_id)
     and :func:`run_questions` on ``engine``, whose structured replies are
-    kept under ``out_dir/items/`` (:data:`CALLS_NAME`) for a resumed run.
+    kept under ``out_dir/items/`` (:data:`CALLS_NAME`) for a resumed run;
+    once the sheet is written, the saved cost of each reply given back from
+    there is added to ``reused``, when given (BACKLOG RI-125).
     With a list of posts, the post-name row is matched (:func:`apply_posts`).
 
     Returns the sheet's path (None when none was written) and the QA
@@ -2451,11 +2465,10 @@ def ingest_sheet(record: Any, doc: Any, engine: Any, out_dir: Union[str, Path],
         printed = {s.page: s.printed_page for s in doc.page_map()
                    if getattr(s, "printed_page", None) is not None}
         texts = page_texts(doc, pages_to_read(record))
-        run = run_questions(
-            record, texts, qlist,
-            _ReplayEngine(engine, out / "items" / CALLS_NAME, resume),
-            bound=bound, printed_pages=printed, report_id=rid,
-            record_dir=out)
+        replay = _ReplayEngine(engine, out / "items" / CALLS_NAME, resume)
+        run = run_questions(record, texts, qlist, replay, bound=bound,
+                            printed_pages=printed, report_id=rid,
+                            record_dir=out)
         if posts is not None:
             for line in apply_posts(qlist, run.answers, posts):
                 qa.append(_qa("note", line,
@@ -2467,6 +2480,8 @@ def ingest_sheet(record: Any, doc: Any, engine: Any, out_dir: Union[str, Path],
                             report_id=rid, calls=run.calls,
                             prompt_version=run.prompt_version,
                             posts_name=posts_name)
+        if reused is not None:
+            reused.extend(replay.reused)
     except Exception as exc:                            # noqa: BLE001
         qa.append(_qa("not_run", f"the question list was not run: "
                       f"{type(exc).__name__}: {exc}"))

@@ -61,9 +61,9 @@ code), the record's `document.model_calls` up by 2.
 - `match_post` (`:2237`): names folded (lower case, punctuation and runs of
   spaces to one space); the name exactly, then the full name exactly, then
   the best `difflib.SequenceMatcher.ratio` of the printed name against each
-  post's name or full name, matched when at least `POST_SIMILARITY = 0.85`
-  (`:2150`). Two posts found at one step, or two equally close (equal best
-  ratio), match none.
+  post's name, matched when at least `POST_SIMILARITY = 0.85` (`:2150`) for
+  one post only. Two posts found at one step, or two posts whose names are
+  both that close, match none.
 - `apply_posts` (`:2278`): matched, `Answer.value` is the post's name,
   `Answer.printed` the printed name, `Answer.matched_by` "exact name", "full
   name" or "close spelling (similarity 0.95)", and the note says
@@ -129,7 +129,9 @@ change.
    `not_run` entry. (RI-101 part 2's schema-acceptance and size checks ride
    on this run.)
 2. Rerun one report with resume on: the Run tab's calls show zero tokens and
-   the engine's notes say "taken from the run's folder".
+   the engine's notes say "taken from the run's folder"; the record's
+   `document.resumed.steps` names `question_list` and its `report_calls`
+   still counts the list's calls.
 3. Add `"post_name": "<the post row's Key>"` to the code map and set
    `GSE_REPORT_POSTS` to an export of the post list (columns `name`,
    `full_name`; the Ontology object's other columns are ignored). On every
@@ -146,5 +148,51 @@ change.
 - Bound reports do not get sheets of their own; the parent's sheet reads
   their records (as the harness does).
 - Matching folds case and punctuation but not accents; a printed name with an
-  accent the list lacks falls to the close-spelling step (still matched when
-  close).
+  accent the list lacks falls to the close-spelling step. One accent in a
+  name of 7 letters or more stays at 0.85 or above and matches; in a shorter
+  name it falls below (a made-up "Darvé" against "Darve" is 0.80) and is an
+  open note.
+
+## Review fixes
+
+From the independent review (2026-11-05).
+
+- **Close spelling scores the post's name only** (review finding 1).
+  `match_post` compared the printed name with each post's name AND full
+  name and kept the higher ratio. Full names share their wording, which
+  lifts the ratio: a made-up printed "Tarmondel Liaison Office" was matched
+  to a post Tarvel ("Tarvel Liaison Office") at 0.89, though only "tar" is
+  shared. Now a full name matches exactly or not at all, and the close
+  spelling is scored against the name only (Tarmondel: 0.35 at best, an open
+  note). And when more than one post's name reaches 0.85 the row gets an
+  open note, never the higher one: a made-up "Brenmoer" against "Brenmoor"
+  (0.875) and "Brenmoerl" (0.94) is left open, where before only an exact
+  tie was. "Varnholow" still matches Varnhollow at 0.95. The cost: a
+  misspelt FULL name (say "Varnhollow Survey Statoin") is now an open note
+  where it used to match, which RI-170 prefers to a guess. The
+  review's own example name was swapped for an invented one, since it is a
+  real town.
+- **A resumed run's whole-report cost counts the list** (review finding 2).
+  `question_list.calls.json` now keeps each reply's cost (calls, the three
+  input parts, output tokens, dollars). A reply given back from it hands
+  that cost to `_Spend.reuse("question_list", ...)`, once the sheet is
+  written, so `record.document.resumed.report_*` counts the list's calls as
+  the first run did. `ResumedStep` gains `question_list`; like
+  `WaterLevel.when` gaining `not_measured`, a new value no older record holds
+  is not a schema bump (noted beside `SCHEMA_VERSION`). A calls file written
+  before this fix has no cost, so its replies add nothing, as a kept file
+  with no cost always has (`cluster_scoring`'s note on lower
+  `report_calls`). Nothing sent to a model changed.
+- Tests: `test_ri101_question_list_run.py` now has 31. The tie test covers
+  an exact and a near tie; a new test is the Tarmondel case (open note, no
+  match); the replay test checks the kept reply's cost; the resumed graph
+  run checks `resumed.steps` names `question_list` and `report_calls`,
+  `report_input_tokens` and `report_output_tokens` equal the first run's.
+  With the graph's two `reuse` lines taken out, that last test fails
+  (`report_calls` 14 against 16).
+- Runs (the app's venv, each `pytest -q -p no:cacheprovider`, free RAM 3 GB
+  or more before each): `test_ri101_question_list_run.py` 31 passed;
+  `test_graph_model_first.py` 63 passed, none skipped;
+  `test_model_first_schema.py` 31 passed; `webapp/tests/test_public_text.py`
+  4 passed; `test_ri125.py`, `test_model.py`, `test_question_list.py` 229
+  passed. Every exit code 0.

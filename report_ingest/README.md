@@ -1278,8 +1278,10 @@ printed page numbers the harness reads (`pages_to_read`, `page_texts`,
 `doc.page_map()`), with the bound reports' records, and writes
 `report.questions.xlsx` beside `report.record.json`. The list's calls count
 in the record's cost; each structured reply is kept in
-`items/question_list.calls.json`, so a resumed run that sends the same
-request pays nothing for it. The narrative's own answers are left as they
+`items/question_list.calls.json` with its cost, so a resumed run that sends
+the same request pays nothing for it, and the record's
+`document.resumed` counts that saved cost in the whole report's (step
+`question_list`). The narrative's own answers are left as they
 are. A list (or posts file) that cannot be read, or a run that fails, is a
 `not_run` QA entry on the record, never a failed run; each of the run's
 warnings is a QA note.
@@ -1289,13 +1291,16 @@ warnings is a QA note.
 of posts, its answer is matched to one post: the name exactly, then the full
 name exactly (both compared lower-cased, punctuation and spaces folded),
 then a close spelling: difflib's `SequenceMatcher.ratio` of the folded
-printed name and a post's folded name or full name at least
-`POST_SIMILARITY` (0.85). Matched, the answer is the post's name, its note
+printed name and a post's folded name at least `POST_SIMILARITY` (0.85),
+for one post only. A full name matches exactly or not at all: full names
+share their wording, which makes two different names look close. Matched,
+the answer is the post's name, its note
 says `as printed: '<printed>'; matched to the post <name> (<full name>) by
 <exact name | full name | close spelling (similarity 0.91)>`, and the
 `Answer` keeps `printed` and `matched_by`; the sheet's Run tab names the
-posts file. No post close enough, two posts at the same step, or two equally
-close: the printed name stays, the note says why, and the record gets an
+posts file. No post close enough, two posts at the same step, or two posts
+whose names are that close: the printed name stays, the note says why, and
+the record gets an
 open QA note (`where="question_list.<Key>"`). Never a guess.
 
 ## The review checklist (`checklist.py`)
