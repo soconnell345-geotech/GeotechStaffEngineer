@@ -1624,7 +1624,9 @@ class DrillShaftAnalysis:
                               "the factored base the smaller of 0.50 R_BN "
                               "and 0.70 [0.85 f'c A1 m] (Eq. 12-7)"])
         geo, conc = cb["phi_Qt_geotechnical_kN"], cb["phi_Pn_kN"]
-        chosen = (f"Eq. 12-7, 0.70 [0.85 x {fc:,.0f} kPa x "
+        chosen = ("Eq. 12-7, the tip taken as plain concrete (the cage "
+                  "short of the tip or a socket that may be deepened, p. "
+                  f"12-8), 0.70 [0.85 x {fc:,.0f} kPa x "
                   f"{cb['A1_m2']:.4f} m2 x {cb['m']:g}] = {conc:,.0f} kN "
                   f"against 0.50 R_BN = {geo:,.0f} kN: the "
                   + ("concrete governs the factored base resistance"
@@ -1644,7 +1646,9 @@ class DrillShaftAnalysis:
                 "Eq. 12-6 with phi = 0.70 where the reinforcement extends "
                 "to the tip and cannot be cut short by deepening the socket "
                 "in the field (p. 12-8): P_n = beta [0.85 f'c (A_g - A_s) + "
-                "A_s f_y], not computed here (the tool takes no f_y)"])
+                "A_s f_y], not computed here (the tool takes no f_y); it can "
+                "give the lower resistance, so with the cage to the tip the "
+                "concrete can govern where Eq. 12-7 says it does not"])
 
     def _rock_conditions_choice(self, B: float, equation: str) -> dict:
         """The choice made for the conditions of Eq. 10-23 (GEC-10 p.

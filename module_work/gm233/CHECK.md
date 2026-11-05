@@ -110,3 +110,15 @@ the check was not made.
 - With a bell on rock the geotechnical base acts on the bell's area while
   A1 stays the socket's (p. 12-8 wording); bells in rock are not covered by
   the print.
+
+## Review fixes (2026-11-04)
+
+- `defaults_used` for a left-out `concrete_fc` now says the base in rock is
+  not checked against the concrete in bearing either (p. 10-25), not only
+  the side limit (p. 10-21).
+- The choice, the calc-package note and the tool text say Eq. 12-7 takes
+  the tip as plain concrete (p. 12-8). The Eq. 12-6 alternative (cage to
+  the tip) says it can give the lower resistance, so there the concrete can
+  govern where Eq. 12-7 says it does not.
+- Notes folder renamed `module_work/gm233`; user manual `concrete_fc` text
+  updated to the new tool text.

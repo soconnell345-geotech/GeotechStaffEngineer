@@ -973,7 +973,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 result_unit="kN",
                 reference=("GEC-10 (FHWA-NHI-18-024) p. 10-25; Eq. 12-7, p. "
                            "12-8 (AASHTO 5.6.5-2); Example 10-4, p. 10-28"),
-                notes=(f"{governs}. A1 the socket's cross-sectional area; m "
+                notes=(f"{governs}, the tip taken as plain concrete (with "
+                       "the cage to the tip p. 12-8 prints Eq. 12-6 at "
+                       "φ 0.70, not computed). A1 the socket's "
+                       "cross-sectional area; m "
                        "= 2.0 for a socket on competent rock (p. 12-8)"
                        + ("" if cb["competent_rock"] else
                           "; this base is not taken as on competent rock, "
