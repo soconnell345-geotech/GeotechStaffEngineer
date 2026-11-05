@@ -95,24 +95,21 @@ def test_v056_sliding_cdr():
 
 def test_v056_eccentricity():
     """Table E3-6.2: eL 2.90 ft (Str I max), 3.81 ft (critical); L/4 =
-    6.00 ft. Str I min (EV 1.00, EH 0.90) 2.35 ft, by giving those factors
-    as the maximum ones."""
+    6.00 ft. Str I min (EV 1.00, EH 0.90) 2.35 ft (GM-114)."""
     e = _e3_lrfd()["eccentricity"]
     assert e["eL_strength_max_m"] / FT == pytest.approx(2.90, abs=0.01)
     assert e["eL_critical_m"] / FT == pytest.approx(3.81, abs=0.01)
     assert e["e_limit_m"] / FT == pytest.approx(6.00, abs=1e-6)
     assert e["passes"] is True
-    e_min = check_external_stability_lrfd(
-        _e3_geom(), GAMMA, 34.0, 30.0, phi_retained=30.0,
-        gamma_EV_max=1.0, gamma_EH_max=0.9)["eccentricity"]
     # E3 prints 2.35; its own columns give 9.65 ft -> 12 - 9.65 = 2.35,
     # the module 2.344 (Kaf 0.5367 against 0.537).
-    assert e_min["eL_strength_max_m"] / FT == pytest.approx(2.35, abs=0.01)
+    assert e["eL_strength_min_m"] / FT == pytest.approx(2.35, abs=0.01)
 
 
 def test_v056_bearing():
     """Table E3-6.3: sigma_v 10.19 ksf, B' 18.20 ft, CDR 1.03 (Str I max);
-    Service I 7.16 ksf, CDR 1.05; critical values 9.02 ksf, CDR 1.16."""
+    Str I min 6.83 ksf, B' 19.31 ft, CDR 1.54; Service I 7.16 ksf, CDR
+    1.05; critical values 9.02 ksf, CDR 1.16."""
     b = _e3_lrfd()["bearing"]
     assert b["sigma_v_strength_max_kPa"] / KSF == pytest.approx(10.19, abs=0.01)
     assert b["B_eff_strength_max_m"] / FT == pytest.approx(18.20, abs=0.01)
@@ -121,15 +118,13 @@ def test_v056_bearing():
     assert b["CDR_service"] == pytest.approx(1.05, abs=0.005)
     assert b["sigma_v_critical_kPa"] / KSF == pytest.approx(9.02, abs=0.01)
     assert b["CDR_critical"] == pytest.approx(1.16, abs=0.005)
-    # Str I min (EV 1.00, EH 0.90), given as the maximum factors: 6.83 ksf,
-    # CDR 1.54
-    b_min = check_external_stability_lrfd(
-        _e3_geom(), GAMMA, 34.0, 30.0, phi_retained=30.0,
-        bearing_resistance_strength=10.5 * KSF,
-        gamma_EV_max=1.0, gamma_EH_max=0.9)["bearing"]
-    assert b_min["sigma_v_strength_max_kPa"] / KSF == pytest.approx(
-        6.83, abs=0.01)
-    assert b_min["CDR_strength"] == pytest.approx(1.54, abs=0.005)
+    # Str I min (EV 1.00, EH 0.90; GM-114): eL 2.35 ft, B' 19.31 ft,
+    # 6.83 ksf, CDR 1.54
+    assert b["eL_strength_min_m"] / FT == pytest.approx(2.35, abs=0.01)
+    assert b["B_eff_strength_min_m"] / FT == pytest.approx(19.31, abs=0.01)
+    assert b["sigma_v_strength_min_kPa"] / KSF == pytest.approx(6.83,
+                                                                abs=0.01)
+    assert b["CDR_strength_min"] == pytest.approx(1.54, abs=0.005)
 
 
 def test_v056_asd_path_is_the_service_column():

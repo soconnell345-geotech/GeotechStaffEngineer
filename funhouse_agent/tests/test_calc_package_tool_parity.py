@@ -111,6 +111,20 @@ CASES = [
     ("retaining_wall_package", {"wall_type": "cantilever",
                                 "wall_height": 5.0, "gamma_backfill": 19.0,
                                 "phi_backfill": 32.0, "surcharge": 10.0}),
+    # GM-114: the MSE package runs mse_wall
+    ("retaining_wall_package", {"wall_type": "mse", "wall_height": 5.0,
+                                "gamma_backfill": 18.0, "phi_backfill": 32.0,
+                                "reinforcement_length": 4.0,
+                                "reinforcement_name": "geogrid_gec11_e1_gg2"}),
+    ("retaining_wall_package", {"wall_type": "mse", "wall_height": 6.5,
+                                "gamma_backfill": 19.5, "phi_backfill": 34.0,
+                                "reinforcement_length": 5.0,
+                                "reinforcement_spacing": 0.75,
+                                "reinforcement_name":
+                                    "ribbed_steel_strip_50x4",
+                                "reinforcement_horizontal_spacing": 0.8,
+                                "surcharge": 12.0, "phi_foundation": 28.0,
+                                "q_allowable": 300.0}),
     ("ground_improvement_package", {"spacing": 1.5, "ch": 3.0, "cv": 1.0,
                                     "Hdr": 5.0, "time": 1.0}),
     ("ground_improvement_package", {"method": "wick_drains", "spacing": 1.2,
@@ -391,10 +405,11 @@ def test_the_axial_package_takes_a_custom_section_as_its_tool_does():
 
 
 def test_an_input_the_package_dropped_is_refused_with_its_reason():
+    # GM-114: the MSE package takes a vertical face only
     out = D.call_agent("calc_package", "retaining_wall_package", {
         "wall_type": "mse", "wall_height": 5.0, "gamma_backfill": 18.0,
-        "phi_backfill": 30.0})
-    assert "run the mse_wall tool" in out["error"]
+        "phi_backfill": 30.0, "face_batter": 12.0})
+    assert "Eq. 4-26" in out["error"] and "face_batter" in out["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -488,6 +503,18 @@ def _mononobe_okabe():
         delta_PAE=f["delta_PAE_kN_per_m"],
         height_of_application=f["height_of_application_m"],
         phi=phi, delta=delta, kh=kh, kv=kv, delta_passive=delta_p)
+
+
+def _mse_wall():
+    # GM-114: the module's own MSE analysis, the tool's defaults written out
+    # (Sv 0.60 m, no surcharge, phi_foundation None, c_foundation 0)
+    from retaining_walls import MSEWallGeometry, analyze_mse_wall
+    from retaining_walls.reinforcement import GEOGRID_GEC11_E1_GG2
+    return analyze_mse_wall(
+        MSEWallGeometry(wall_height=5.0, reinforcement_length=4.0,
+                        reinforcement_spacing=0.60),
+        gamma_backfill=18.0, phi_backfill=32.0,
+        reinforcement=GEOGRID_GEC11_E1_GG2)
 
 
 def _liquefaction():
@@ -608,6 +635,11 @@ MODULE_CASES = [
                          "amax_g": 0.3, "gwt_depth": 1.5}, _liquefaction),
     ("retaining_wall_package", {"wall_height": 4.0, "gamma_backfill": 18.0,
                                 "phi_backfill": 30.0}, _cantilever_wall),
+    ("retaining_wall_package", {"wall_type": "mse", "wall_height": 5.0,
+                                "gamma_backfill": 18.0, "phi_backfill": 32.0,
+                                "reinforcement_length": 4.0,
+                                "reinforcement_name": "geogrid_gec11_e1_gg2"},
+     _mse_wall),
     ("ground_improvement_package", {"spacing": 1.5, "ch": 3.0, "cv": 1.0,
                                     "Hdr": 5.0, "time": 1.0},
      _ground("analyze_wick_drains", spacing=1.5, ch=3.0, cv=1.0, Hdr=5.0,

@@ -48,9 +48,14 @@ Two external-stability paths are available; both are default-preserving.
     **bearing** INCLUDES it (it raises the bearing stress).
   - Load combinations: Strength I max (EV 1.35 / EH 1.50 / LL 1.75), Strength I
     min (EV 1.00 / EH 0.90 / LL 1.75), and Service I (all 1.0). The **critical**
-    ("min-vertical") combination pairs γEV,min on all vertical gravity loads
+    ("min-vertical") combination pairs γEV,min on all vertical earth loads
     (least resistance / largest eccentricity) with the max horizontal/driving
-    factors — this governs sliding (CDR 1.37) and eccentricity (eL) in E4.
+    factors — this governs sliding (CDR 1.37) and eccentricity (eL) in E4. In
+    bearing it keeps γLL on the live load over the zone: GEC-11 Vol II Table
+    E4-6.3 (p. E4-9) takes the critical values from Str I (min)'s ΣV 65.57 =
+    57.69 + 1.75 × 4.50 k/ft and M_RA 590.09 with Str I (max)'s M_OA 223.30,
+    σv 5.86 ksf, CDR 1.79 (Table E5-7.3, p. E5-20, the same way; GM-114
+    review: γEV,min on Vs before, 5.75 ksf).
   - Sliding CDR = φ_sl·(γEV·V1·tanδ + 2/3·c·L)/(γEH·F1 + γLL·F2), δ =
     min(φ_r, φ_fd), φ_sl = 1.0. Eccentricity check: eL = L/2 − (ΣMr − ΣMo)/ΣV
     vs e_max = L/4 (soil). Bearing: σ_v = ΣV/(L − 2eL) vs the factored bearing
@@ -59,7 +64,8 @@ Two external-stability paths are available; both are default-preserving.
     the GEC-11/AASHTO defaults above. Validated vs GEC-11 Example E4
     (FHWA-NHI-10-025) in `validation_examples/test_published_v009_v011.py`:
     sliding 1.85/2.08/1.37, eL 2.87/3.87 ft (< L/4 = 4.50), bearing σ_v 6.70 ksf
-    / CDR 1.57, Service σ_v 4.66 ksf — all reproduced through the high-level path.
+    / CDR 1.57, critical 5.86 ksf / CDR 1.79, Str I (min) 4.92 ksf / CDR 2.13,
+    Service σ_v 4.66 ksf — all reproduced through the high-level path.
   - **Bearing resistance worked out (GM-179, 2026-10-19).** Given
     `gamma_foundation` in place of `bearing_resistance_strength`, qR is worked
     out for each Strength I combination: qn = c_f·Nc + 0.5·L'·γ_f·Nγ (GEC-11

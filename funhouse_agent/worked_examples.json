@@ -324,7 +324,7 @@
     }
    }
   ],
-  "published_result": "Sliding CDRs: Strength I max = 1.85, Strength I min = 2.08, critical max/min = 1.37 (governs). Eccentricity: eL = 2.87 ft (Strength I max), 3.87 ft (critical) vs limit L/4 = 4.50 ft — OK. Bearing: Strength I max eL = 2.60 ft, B' = 12.79 ft, sigma_v = 6.70 ksf, CDR = 1.57; Service I sigma_v = 4.66 ksf; critical-combination sigma_v = 5.86 ksf (source 'consistent-values' rounding). All checks pass.",
+  "published_result": "Sliding CDRs: Strength I max = 1.85, Strength I min = 2.08, critical max/min = 1.37 (governs). Eccentricity: eL = 2.87 ft (Strength I max), 3.87 ft (critical) vs limit L/4 = 4.50 ft — OK. Bearing: Strength I max eL = 2.60 ft, B' = 12.79 ft, sigma_v = 6.70 ksf, CDR = 1.57; Service I sigma_v = 4.66 ksf; critical-combination sigma_v = 5.86 ksf, CDR = 1.79 (Strength I min's vertical loads, LL 1.75 on the surcharge over the zone, under Strength I max's overturning moment). All checks pass.",
   "computed_result": {
    "sliding_CDR_strength_max": 1.852,
    "sliding_CDR_strength_min": 2.073,
@@ -335,8 +335,10 @@
    "bearing_sigma_v_strength_max_kPa": 321.11,
    "bearing_CDR_strength": 1.566,
    "bearing_sigma_v_service_kPa": 222.97,
+   "bearing_sigma_v_critical_kPa": 280.75,
+   "bearing_CDR_critical": 1.791,
    "all_checks_pass": true,
-   "unit_check": "eL_strength_max 0.8748 m = 2.87 ft; eL_critical 1.1809 m = 3.87 ft; e_limit 1.3716 m = 4.50 ft; sigma_v 321.1 kPa = 6.71 ksf (pub 6.70); 222.97 kPa = 4.66 ksf; critical 275.41 kPa = 5.75 ksf vs pub 5.86 (within the source's own rounding note, ~2%)"
+   "unit_check": "eL_strength_max 0.8748 m = 2.87 ft; eL_critical 1.1809 m = 3.87 ft; e_limit 1.3716 m = 4.50 ft; sigma_v 321.1 kPa = 6.71 ksf (pub 6.70); 222.97 kPa = 4.66 ksf; critical 280.75 kPa = 5.86 ksf, CDR 1.791 (pub 5.86, 1.79)"
   },
   "report_notes": "A good report tabulates the unfactored loads (V1, Vs, F1, F2 and moment arms about the toe) first, then shows each AASHTO load-factor combination (Strength I max/min, Service I) explicitly, flagging that live load is excluded from the resisting side for sliding/eccentricity but included for bearing. Report CDRs (capacity:demand), not ASD factors of safety — the dispatch method mse_wall reports ASD FOS and is NOT the LRFD path. State the governing combination for each check (critical max/min governs sliding here) and compare eL against the L/4 limit for walls on soil.",
   "provenance": "validation_examples/test_published_v009_v011.py::test_v009_lrfd_external_stability_high_level_path, test_v009_sliding_CDR_lrfd, test_v009_eccentricity_lrfd, test_v009_bearing_lrfd",
