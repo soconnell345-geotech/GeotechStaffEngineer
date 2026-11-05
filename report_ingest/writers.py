@@ -837,7 +837,9 @@ def library_page(record: ReportRecord, key: str, source: str = "") -> str:
         [[hole_label(inv), inv.kind, inv.total_depth, inv.elevation,
           len(inv.layers), len(inv.samples),
           ", ".join(str(s.n) for s in inv.spt if s.n is not None) or "",
-          ", ".join(_show(w.depth) for w in inv.water if w.depth)]
+          ", ".join(_show(w.depth) if w.depth else "not measured"
+                    for w in inv.water
+                    if w.depth or w.when == "not_measured")]
          for inv in record.investigations])
     if rows:
         out += ["## Explorations", ""] + rows + [""]

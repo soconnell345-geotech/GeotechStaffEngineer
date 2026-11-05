@@ -818,6 +818,55 @@ def check_values_cite_pages(ctx: CheckContext, item: Dict[str, Any]
                       "narrative answer carries a citation"}
 
 
+#: Kinds of exploration whose log is expected to say something about water.
+_WATER_KINDS = ("boring", "test_pit", "hand_auger", "well", "other")
+
+
+def check_groundwater(ctx: CheckContext, item: Dict[str, Any]
+                      ) -> Dict[str, Any]:
+    """What each boring's record says of its groundwater (BACKLOG RI-106):
+    a reading, NOT ENCOUNTERED (no water down to the bottom of the hole),
+    NOT MEASURED (no reading at all: drilled with water or mud and no well),
+    or nothing. The two "not" answers are kept apart because they mean
+    opposite things to a designer: one says the water is below the hole,
+    the other says nothing of where it is. The item stays a judgement (the
+    text may state water the logs do not); this is what code read."""
+    rec = ctx.record
+    if rec is None:
+        return _no_record(item)
+    holes = [inv for inv in rec.investigations if inv.kind in _WATER_KINDS]
+    if not holes:
+        return {"status": "not_run",
+                "detail": "the record holds no boring, pit or well logs"}
+    groups: Dict[str, List[str]] = {"reading": [], "not encountered": [],
+                                    "not measured": [], "nothing": []}
+    for inv in holes:
+        name = inv.investigation_id or "?"
+        whens = {w.when for w in inv.water}
+        if any(w.depth is not None and w.when not in (
+                "not_encountered", "not_measured") for w in inv.water):
+            groups["reading"].append(name)
+        elif "not_encountered" in whens:
+            groups["not encountered"].append(name)
+        elif "not_measured" in whens:
+            groups["not measured"].append(name)
+        else:
+            groups["nothing"].append(name)
+    said = "; ".join(
+        f"{label} {len(names)} ({_listed(names)})"
+        for label, names in (
+            ("a water reading", groups["reading"]),
+            ("groundwater not encountered", groups["not encountered"]),
+            ("groundwater NOT MEASURED (no reading; not the same as not "
+             "encountered)", groups["not measured"]),
+            ("nothing recorded about water", groups["nothing"]))
+        if names)
+    detail = f"of {len(holes)} logs read: {said}"
+    if groups["nothing"]:
+        return {"status": "unsure", "detail": detail}
+    return {"status": "pass", "detail": detail}
+
+
 CHECKS: Dict[str, Callable[[CheckContext, Dict[str, Any]], Dict[str, Any]]] = {
     "logs_and_lab_read": check_logs_and_lab_read,
     "explorations_vs_logs": check_explorations_vs_logs,
@@ -825,6 +874,7 @@ CHECKS: Dict[str, Callable[[CheckContext, Dict[str, Any]], Dict[str, Any]]] = {
     "cross_checks": check_cross_checks,
     "summary_and_sheets": check_summary_and_sheets,
     "values_cite_pages": check_values_cite_pages,
+    "groundwater": check_groundwater,
 }
 
 
@@ -877,6 +927,10 @@ def run_checklist(record: Any = None, data: Optional[Dict[str, Any]] = None
         row = {"id": item["id"], "section": item.get("section", ""),
                "text": item["text"]}
         if item.get("mode") != "code":
+            if item.get("check") and rec is not None:
+                # A judge item may name a check whose finding starts the
+                # agent off (RI-106: groundwater, what each log said).
+                row["code_said"] = _run_one(ctx, item).get("detail")
             judge_rows.append(row)
             continue
         row.update(_run_one(ctx, item))

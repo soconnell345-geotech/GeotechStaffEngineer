@@ -609,7 +609,18 @@ def instruction(stage: str, report: str, pages: Sequence[int], *,
         from report_ingest.narrative_glossary import glossary_block
         from report_ingest.narrative_reader import _vocabulary_block
         fill.update(vocabulary=_vocabulary_block(), glossary=glossary_block())
-    return texts[stage].format(**fill)
+    said = texts[stage].format(**fill)
+    if stage == "logs" and texts is INSTRUCTIONS:
+        # RI-106, behind GEOTECH_INGEST_WATER_NOT_MEASURED (off): off, the
+        # instruction is byte for byte what it was.
+        from report_ingest.water_status import (
+            MODEL_FIRST_SENTENCE, water_not_measured_enabled,
+        )
+        if water_not_measured_enabled():
+            said = said.replace("and the water levels. ",
+                                "and the water levels. "
+                                + MODEL_FIRST_SENTENCE + " ", 1)
+    return said
 
 
 # ---------------------------------------------------------------------------

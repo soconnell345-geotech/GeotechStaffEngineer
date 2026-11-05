@@ -76,6 +76,9 @@ from report_ingest.model import (
     Quantity, Sample, SPT, WaterLevel, unit_printed,
 )
 from report_ingest.printed_depths import PrintedDepths, printed_depths
+from report_ingest.water_status import (
+    LOG_READER_PARAGRAPH, water_not_measured_enabled,
+)
 
 __all__ = [
     "read_log", "LogReadResult", "LogReading", "LOG_READER_SYSTEM",
@@ -628,6 +631,22 @@ _PRINTED_DEPTHS_RULE = (
     "UNLESS")
 LOG_READER_SYSTEM_PRINTED = LOG_READER_SYSTEM.replace(
     _NO_SCALE_RULE, _PRINTED_DEPTHS_RULE, 1)
+
+#: The end of the water bullet, after which the 'not measured' paragraph
+#: goes when its switch is on (RI-106).
+_WATER_BULLET_END = "  with when 'not_encountered' and a null depth, not an empty list.\n"
+
+
+def with_water_not_measured(system: str,
+                            on: Optional[bool] = None) -> str:
+    """``system`` with :data:`report_ingest.water_status.LOG_READER_PARAGRAPH`
+    after its water bullet when ``GEOTECH_INGEST_WATER_NOT_MEASURED`` is on
+    (or ``on`` says so); off, ``system`` unchanged, byte for byte (RI-106)."""
+    on = water_not_measured_enabled() if on is None else bool(on)
+    if not on or _WATER_BULLET_END not in system:
+        return system
+    at = system.index(_WATER_BULLET_END) + len(_WATER_BULLET_END)
+    return system[:at] + LOG_READER_PARAGRAPH + system[at:]
 
 _CONTINUE_INSTRUCTION = (
     "You have pages of this log left to read: {pages}. Here are their rows "
@@ -1369,7 +1388,7 @@ class _Builder:
             page = self._page(w.prov.page)
             when = w.when if w.when in {
                 "while_drilling", "at_completion", "after_hours",
-                "not_encountered", "unknown"} else "unknown"
+                "not_encountered", "not_measured", "unknown"} else "unknown"
             if when != w.when:
                 self._outside(w.when, "water observation", when,
                               what + " when", page)
@@ -1862,8 +1881,9 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
                            lines=header_lines, printed=printed, qa=floor_qa,
                            other_holes=other_holes)
     no_ruler = not bool(getattr(grid, "rulers", None))
-    system = (LOG_READER_SYSTEM_PRINTED if no_ruler and printed
-              else LOG_READER_SYSTEM)
+    system = with_water_not_measured(
+        LOG_READER_SYSTEM_PRINTED if no_ruler and printed
+        else LOG_READER_SYSTEM)
     if limit is not None:
         # What the conversation itself may take: the limit less the system
         # prompt and the answer schema, which go with every request.

@@ -251,6 +251,11 @@ class Investigation:
     gwl_not_encountered : bool
         True when the source says groundwater was NOT encountered (then
         ``gwl_depth_m`` is None). None alone means only "no reading".
+    gwl_not_measured : bool
+        True when the source says the groundwater level was NOT MEASURED
+        (a hole drilled with water or mud and no well; BACKLOG RI-106):
+        no reading, which is NOT water below the hole. ``gwl_depth_m`` is
+        None and ``gwl_not_encountered`` False.
     coordinate_system : str
         Coordinate reference system (e.g., 'EPSG:4326').
     date_started : str
@@ -278,6 +283,7 @@ class Investigation:
     total_depth_m: Optional[float] = None
     gwl_depth_m: Optional[float] = None
     gwl_not_encountered: bool = False
+    gwl_not_measured: bool = False
     coordinate_system: str = ""
     date_started: str = ""
     drilling_method: str = ""
@@ -402,6 +408,8 @@ class Investigation:
         else:
             base = max((l.bottom_depth for l in layers), default=0.0)
             why = ("groundwater was not encountered" if self.gwl_not_encountered
+                   else "the groundwater level was not measured"
+                   if self.gwl_not_measured
                    else "no groundwater level is given")
             gw = GroundwaterCondition(
                 depth=base,
@@ -439,6 +447,9 @@ class Investigation:
             "notes": self.notes,
             **({"refusals": [r.to_dict() for r in self.refusals]}
                if self.refusals else {}),
+            # Written only when set, so a file that says nothing of it
+            # reads as before (RI-106).
+            **({"gwl_not_measured": True} if self.gwl_not_measured else {}),
         }
 
     @classmethod
@@ -457,6 +468,7 @@ class Investigation:
             total_depth_m=optional_float(data.get("total_depth_m")),
             gwl_depth_m=float(data["gwl_depth_m"]) if data.get("gwl_depth_m") is not None else None,
             gwl_not_encountered=bool(data.get("gwl_not_encountered", False)),
+            gwl_not_measured=bool(data.get("gwl_not_measured", False)),
             coordinate_system=str(data.get("coordinate_system", "")),
             date_started=str(data.get("date_started", "")),
             drilling_method=str(data.get("drilling_method", "")),
@@ -471,6 +483,8 @@ class Investigation:
             gwl_str = f", GWL={self.gwl_depth_m:.1f}m"
         elif self.gwl_not_encountered:
             gwl_str = ", GWL not encountered"
+        elif self.gwl_not_measured:
+            gwl_str = ", GWL not measured"
         else:
             gwl_str = ""
         params = ", ".join(self.available_parameters()) or "none"

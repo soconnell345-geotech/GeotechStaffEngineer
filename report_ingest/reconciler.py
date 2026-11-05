@@ -528,6 +528,7 @@ def reconcile(record: ReportRecord, *,
     qa: List[QAEntry] = []
 
     _fold_continuations(record, qa)
+    _settle_water(record, qa)
     twins, said = tell_apart(record, doc=doc, outline=outline)
     qa.extend(said)
     _link_lab_tests(record, qa, twins)
@@ -548,6 +549,34 @@ def reconcile(record: ReportRecord, *,
     record.qa.extend(qa)
     _fill_found_counts(record)
     return record
+
+
+# -- groundwater not measured (RI-106) --------------------------------------
+
+def _settle_water(record: ReportRecord, qa: List[QAEntry]) -> None:
+    """Every hole's water rows made to say what its log printed about a
+    level that was NOT MEASURED (:func:`report_ingest.water_status.
+    settle_water`), whichever reader filled them, and one note for the
+    report naming each change: a hole drilled with water or mud and no well
+    has no reading, which is not water below the bottom of the hole."""
+    from report_ingest.water_status import settle_water
+
+    said: List[str] = []
+    pages: List[int] = []
+    for inv in record.investigations:
+        lines = settle_water(inv)
+        if lines:
+            said.extend(lines)
+            pages.extend(inv.pages[:1])
+    if said:
+        qa.append(QAEntry(
+            kind="note", where="investigations.water",
+            detail=(f"{len(said)} hole(s)' groundwater filed as NOT "
+                    f"MEASURED (no reading; not the same as not "
+                    f"encountered) from what their logs print"),
+            values=said[:12] + ([f"... {len(said) - 12} more"]
+                                if len(said) > 12 else []),
+            pages=sorted(set(pages))))
 
 
 # -- one hole read from two logs --------------------------------------------

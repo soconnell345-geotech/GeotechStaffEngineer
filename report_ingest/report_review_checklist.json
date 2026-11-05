@@ -4,7 +4,7 @@
   "status_note": "Second draft: the owner's markup of 2026-10-26 on the Report Questions Desk (BACKLOG OWN-31, RI-105) folded into the first draft (written by the lead from the 2026-10-06 field session, module_work/SCALES_COVERAGE_CROSSCHECKS.md W4 b). One item dropped, four reworded, the other 13 as they were. Still a draft: the owner may add, cut or reword items again, and say which [judge] items code should learn to check.",
   "version": "2026-10-26 draft 2",
   "how_it_is_used": "One file, used two ways. Items with mode 'code' are checked by code (report_ingest/checklist.py) from the record report ingest wrote of the report (report.record.json): what each page was labelled, the explorations and laboratory tests read, the narrative's answers, and the reconciler's QA entries. Items with mode 'judge' are handed to the agent on the GeotechStaffEngineer page by the report_checklist tool, to work through and report against. A 'code' item whose check cannot run on the record it is given (no record yet, no page labels) goes to the agent as a judgement item, so nothing on the list is silently dropped.",
-  "how_to_edit": "Edit the 'text' of an item freely. 'mode' is 'code' or 'judge'. A 'code' item names its 'check' (one of the checks in report_ingest/checklist.py: logs_and_lab_read, explorations_vs_logs, lab_ids_vs_logs, summary_and_sheets, cross_checks, values_cite_pages) and may narrow cross_checks with 'kinds' (the reconciler's: conflict, disagreement, partial, unconverted, count_mismatch) or 'where'. Keep the 'id' of an item that stays, so results can be compared between versions.",
+  "how_to_edit": "Edit the 'text' of an item freely. 'mode' is 'code' or 'judge'. A 'code' item names its 'check' (one of the checks in report_ingest/checklist.py: logs_and_lab_read, explorations_vs_logs, lab_ids_vs_logs, summary_and_sheets, cross_checks, values_cite_pages) and may narrow cross_checks with 'kinds' (the reconciler's: conflict, disagreement, partial, unconverted, count_mismatch) or 'where'. A 'judge' item may also name a 'check' (groundwater): what that check finds is handed to the agent as code_said, and the item stays a judgement. Keep the 'id' of an item that stays, so results can be compared between versions.",
   "items": [
     {"id": "completeness.explorations_have_logs", "section": "Completeness", "mode": "code",
      "check": "explorations_vs_logs",
@@ -18,6 +18,7 @@
     {"id": "completeness.campaigns", "section": "Completeness", "mode": "judge",
      "text": "Every campaign is identified and dated: earlier reports bound in, and the newest borings."},
     {"id": "completeness.groundwater", "section": "Completeness", "mode": "judge",
+     "check": "groundwater",
      "text": "Groundwater is recorded for every boring, or stated as not encountered or not measured: a boring drilled with water added and no well has no reading, which does not mean the water is below the bottom of the hole."},
     {"id": "completeness.locations", "section": "Completeness", "mode": "judge",
      "text": "Locations, elevations and their datum are stated."},

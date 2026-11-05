@@ -56,7 +56,7 @@ _SITE_KEYS = ("project_name", "investigations", "coordinate_system", "datum",
               "notes", "n_investigations", "available_parameters")
 _INVESTIGATION_KEYS = (
     "investigation_id", "investigation_type", "x", "y", "elevation_m",
-    "total_depth_m", "gwl_depth_m", "gwl_not_encountered",
+    "total_depth_m", "gwl_depth_m", "gwl_not_encountered", "gwl_not_measured",
     "coordinate_system", "date_started", "drilling_method", "lithology",
     "measurements", "notes", "n_lithology", "n_measurements",
     "available_parameters")
@@ -157,6 +157,8 @@ def _run_parse_diggs(params: dict) -> dict:
             "total_depth_m": inv.total_depth_m,
             "gwl_depth_m": inv.gwl_depth_m,
             "gwl_not_encountered": inv.gwl_not_encountered,
+            **({"gwl_not_measured": True}
+               if getattr(inv, "gwl_not_measured", False) else {}),
             "n_measurements": len(inv.measurements),
             "n_lithology": len(inv.lithology),
             "parameters": param_names,

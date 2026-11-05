@@ -1211,9 +1211,13 @@ class SPT(BaseModel):
 
 #: When a water level was read. ``while_drilling`` and ``at_completion`` are
 #: the two nearly every log prints; ``after_hours`` carries its own delay.
+#: ``not_encountered`` is a hole that found no water; ``not_measured``
+#: (BACKLOG RI-106) is a hole whose level was never read -- drilled with
+#: water or mud and no well, or a log that says "not measured" -- which is
+#: NOT water below the bottom of the hole. Both carry no depth.
 WaterWhen = Literal[
     "while_drilling", "at_completion", "after_hours", "not_encountered",
-    "unknown"]
+    "not_measured", "unknown"]
 
 
 class WaterLevel(BaseModel):
@@ -1224,7 +1228,7 @@ class WaterLevel(BaseModel):
     depth: Optional[Quantity] = Field(
         default=None,
         description="depth to water; None when the log says none was "
-                    "encountered")
+                    "encountered, or that the level was not measured")
     when: WaterWhen = Field(default="unknown")
     hours: Optional[float] = Field(
         default=None, ge=0.0,

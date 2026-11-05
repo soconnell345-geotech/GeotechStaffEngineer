@@ -177,13 +177,15 @@ from report_ingest.shared_names import pages_span
 # The remark a pit's "groundwater not encountered" is written as (a TrialPit
 # has no waterStrike in 2.6). ONE definition, the reader's, so the writer and
 # subsurface_characterization.diggs26 cannot drift apart.
-from subsurface_characterization.diggs26 import NOT_ENCOUNTERED_REMARK
+from subsurface_characterization.diggs26 import (
+    NOT_ENCOUNTERED_REMARK, NOT_MEASURED_REMARK,
+)
 
 __all__ = [
     "write_diggs", "diggs_schema_gate", "diggs_roundtrip_gate",
     "DiggsWriteNotes", "NS", "PROPERTY_CLASS", "TOLERANCE",
     "LAB_PROCEDURE", "DICTIONARY_CODESPACE", "APP_CODESPACE",
-    "UOM_IN_FILE", "NOT_ENCOUNTERED_REMARK", "QUALIFIER_PARAMETER",
+    "UOM_IN_FILE", "NOT_ENCOUNTERED_REMARK", "NOT_MEASURED_REMARK", "QUALIFIER_PARAMETER",
 ]
 
 #: The parameter a sampling feature carries where the report prints another
@@ -438,7 +440,19 @@ def _water_readings(inv: Investigation) -> List[WaterLevel]:
     the hole was explored, never where water stood. One rule for the writer
     and the round-trip gate."""
     return [w for w in inv.water
-            if w.when != "not_encountered" and _si(w.depth) is not None]
+            if w.when not in ("not_encountered", "not_measured")
+            and _si(w.depth) is not None]
+
+
+def _not_measured(inv: Investigation) -> bool:
+    """Did the log say the water level was NOT MEASURED (RI-106), and give
+    no reading and no "not encountered"? DIGGS 2.6 has no element for it --
+    ``WaterStrike`` is ``notEncountered`` or readings, and "not encountered"
+    would say the water is below the hole -- so it goes in a remark
+    (:data:`NOT_MEASURED_REMARK`), which the app's reader takes back."""
+    return (any(w.when == "not_measured" for w in inv.water)
+            and not _water_readings(inv)
+            and not any(w.when == "not_encountered" for w in inv.water))
 
 
 def _axes(names: Sequence[str]) -> str:
@@ -1135,6 +1149,20 @@ class _Writer:
             self.text_element("content", f"{NOT_ENCOUNTERED_REMARK}.", 5)
             self.out("</Remark>", 4)
             self.out("</remark>", 3)
+        if _not_measured(inv):
+            # RI-106: no reading was taken (a hole full of drilling fluid);
+            # never notEncountered, which says the water is below the hole.
+            self.out("<remark>", 3)
+            self.out("<Remark>", 4)
+            self.text_element("content", f"{NOT_MEASURED_REMARK}.", 5)
+            self.out("</Remark>", 4)
+            self.out("</remark>", 3)
+            self.notes.skipped.append(
+                f"{inv.investigation_id}: groundwater 'not measured' -- 2.6 "
+                f"has no element for it (notEncountered would say the water "
+                f"is below the hole); written as a remark "
+                f"({NOT_MEASURED_REMARK!r})")
+            self.notes.water += 1
         self.out("<investigationTarget>Natural Ground</investigationTarget>", 3)
         self.out(f'<projectRef xlink:href="#{self.project_id}"/>', 3)
         for key, value in sorted(inv.fields.items()):
@@ -1658,7 +1686,8 @@ class _Writer:
                 f"({NOT_ENCOUNTERED_REMARK!r})")
             self.notes.water += 1
         for n, water in enumerate(inv.water):
-            if water.when == "not_encountered" or water.depth is None:
+            if water.when in ("not_encountered", "not_measured") \
+                    or water.depth is None:
                 continue
             depth = _si(water.depth)
             if depth is None or depth[1] != "m":
@@ -3744,6 +3773,15 @@ def _compare_water(name: str, want: Investigation, got: Any,
     depths = [_si_value(w.depth) for w in _water_readings(want)]
     none_found = any(w.when == "not_encountered" for w in want.water)
     flag = bool(getattr(got, "gwl_not_encountered", False))
+    # RI-106: "not measured" must come back as such, and never as "not
+    # encountered" or a level.
+    unmeasured = _not_measured(want)
+    back_unmeasured = bool(getattr(got, "gwl_not_measured", False))
+    if unmeasured and not back_unmeasured:
+        diffs.append(f"{name}: 'groundwater not measured' did not come back")
+    if back_unmeasured and not unmeasured:
+        diffs.append(f"{name}: came back as 'groundwater not measured' "
+                     f"although the record does not say so")
     if depths:
         # parse_diggs keeps ONE water level per investigation. The first
         # reading is the one written as the initial strike, so that is the

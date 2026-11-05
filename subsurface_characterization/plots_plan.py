@@ -278,7 +278,9 @@ def _plot_by_type(fig, invs, label_field, go):
             f"ID: {inv.investigation_id}<br>"
             f"Type: {inv.investigation_type}<br>"
             f"Depth: {_depth(inv.total_depth_m)}<br>"
-            + ("GWL: not encountered<br>" if inv.gwl_not_encountered else "")
+            + ("GWL: not encountered<br>" if inv.gwl_not_encountered else
+               "GWL: not measured<br>"
+               if getattr(inv, "gwl_not_measured", False) else "")
             + f"Elev: {_metres(inv.elevation_m)}<br>"
             f"({inv.x:.1f}, {inv.y:.1f})"
             for inv in invs
@@ -340,7 +342,10 @@ def _get_label(inv, label_field):
     elif label_field == "gwl":
         if inv.gwl_depth_m is not None:
             return f"GWL={inv.gwl_depth_m:.1f}m"
-        return "GWL not encountered" if inv.gwl_not_encountered else ""
+        if inv.gwl_not_encountered:
+            return "GWL not encountered"
+        return ("GWL not measured" if getattr(inv, "gwl_not_measured", False)
+                else "")
     elif label_field == "fill_thickness":
         ft = inv.fill_thickness_m()
         return f"Fill={ft:.1f}m" if ft is not None else ""
