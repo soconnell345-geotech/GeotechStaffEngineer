@@ -126,7 +126,7 @@ def test_past_the_chart_the_line_is_the_engineers():
         AxialPileAnalysis(pile=pile, soil=_stiff(), pile_length=15).compute()
     msg = str(e.value)
     assert msg.startswith("alpha method (GEC-12 Sec. 7.2.1.3.2), Step 1 "
-                          "(p. 250)")
+                          "(Vol I p. 250)")
     for text in ("su = 4.00 ksf", "Fig. 7-17's curves end at 3.05 ksf",
                  "GEC-12 prints no su / sigma'vo", "engineer's judgment",
                  "highly_overconsolidated_su_ratio", "'chart_end'", "'api'",

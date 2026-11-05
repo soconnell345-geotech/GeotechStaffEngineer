@@ -24,7 +24,7 @@ resistance with Table 7-1's factors by method (Eq. 7-3, Eq. 7-38; none
 where AASHTO gives none). Where GEC-12 leaves a judgment (a range or
 "local experience"), it is an input with a cited default and the result's
 ``choices`` say what was used. Options beside the defaults (GM-144): Figure
-7-18's stratigraphy cases or the smaller of Figures 7-17 and 7-18 (p. 246),
+7-18's stratigraphy cases or the smaller of Figures 7-17 and 7-18 (Vol I p. 246),
 a shrink-swell zone (p. 247), and the toe phi averaged from the toe to 3b
 below (Step 7c).
 
@@ -167,33 +167,33 @@ class AxialPileAnalysis:
     inside_friction_ratio : float, optional
         Interior over exterior unit side resistance of an open-end pipe pile
         in the unplugged case. Default 1/3, the low end of GEC-12's
-        "typically on the order of 1/3 to 1/2" (Sec. 7.10.7, p. 407).
+        "typically on the order of 1/3 to 1/2" (Sec. 7.10.7, Vol I p. 407).
     open_pipe_toe_limit : float or None, optional
         Limiting unit toe resistance of an open-end pipe pile in
         cohesionless soil (kPa). Default 105 ksf (5,027 kPa), Tomlinson
-        (1994) per GEC-12 p. 407. None applies none.
+        (1994) per GEC-12 Vol I p. 407. None applies none.
     open_pipe_method : str, optional
         "auto" (default): Tomlinson's Eq. 7-90 for a pipe under 24 inches
-        in predominantly cohesive soil (GEC-12 p. 407; taken here as the toe
+        in predominantly cohesive soil (GEC-12 Vol I p. 407; taken here as the toe
         in clay and more than half the embedded length in clay layers),
         else the lesser of Eqs. 7-88 and 7-89 (Paikowsky and Whitman).
         "paikowsky_whitman" or "tomlinson" force one.
     cohesive_Nt : float, optional
         Nt for a cohesive toe layer in the beta method. Default 3 (GEC-12
-        p. 256: a relatively low Nt in clays unless local correlations
+        Vol I p. 256: a relatively low Nt in clays unless local correlations
         suggest higher). A layer's own ``Nt`` wins.
     h_pile_toe_area : str, optional
-        "box" (default; GEC-12 Sec. 7.10.7, p. 408) or "steel": the toe area
+        "box" (default; GEC-12 Sec. 7.10.7, Vol I p. 408) or "steel": the toe area
         of an H-pile. GEC-12 Step 9 leaves it to past experience and local
         correlations.
     adhesion_curve : str, optional
         Figure 7-17 curves for the alpha-method: "auto" (default; smooth
         steel for pipe piles, the concrete, timber and corrugated steel
-        curve for H-piles per GEC-12 p. 247, concrete and timber piles),
+        curve for H-piles per GEC-12 Vol I p. 247, concrete and timber piles),
         "concrete_timber_corrugated" or "smooth_steel".
     adhesion_beyond_chart : str, optional
         The alpha method where a clay layer's su is past the end of the
-        chart's curves (Figure 7-17, or 7-18 where it is read). GEC-12 p.
+        chart's curves (Figure 7-17, or 7-18 where it is read). GEC-12 Vol I p.
         247 and Step 1 (p. 250) recommend API RP 2A's alpha there for
         highly overconsolidated clays. "api_if_highly_overconsolidated"
         (default): API alpha where the layer's su / sigma'vo is at least
@@ -214,7 +214,7 @@ class AxialPileAnalysis:
         Default None: the steel area of an H-pile, the gross area of other
         piles (an open pipe included).
     adhesion_chart : str, optional
-        The alpha-method's chart (GEC-12 p. 246): "fig_7_17" (default;
+        The alpha-method's chart (GEC-12 Vol I p. 246): "fig_7_17" (default;
         "It is recommended that Figure 7-17 generally be used"),
         "fig_7_18" (Figure 7-18's alpha for each clay layer's stratigraphy
         case; a layer whose case is "none" keeps Figure 7-17) or "smaller"
@@ -229,7 +229,7 @@ class AxialPileAnalysis:
         the layer, or to the toe if less.
     shrink_swell_depth : float or None, optional
         Depth (m below the ground surface) of a shrink-swell zone in clay:
-        no shaft resistance in cohesive soil above it (GEC-12 p. 247, the
+        no shaft resistance in cohesive soil above it (GEC-12 Vol I p. 247, the
         alpha-method; also applied to the beta method in cohesive soil).
         Default None: no zone.
     beta_coefficients : str, optional
@@ -310,7 +310,7 @@ class AxialPileAnalysis:
             raise ValueError(
                 "beta_coefficients 'from_phi' (beta = (1 - sin phi') tan "
                 "phi') was removed: GEC-12 does not print it. Steps 2b and 5b "
-                "(pp. 257-258) take beta and Nt from Table 7-9 by phi' "
+                "(Vol I pp. 257-258) take beta and Nt from Table 7-9 by phi' "
                 "('table_7_9', the default); give a layer's beta and Nt from "
                 "local experience (Steps 2a, 5a) to use other values.")
         for name, allowed in (("open_pipe_method", _OPEN_PIPE_METHODS),
@@ -501,7 +501,7 @@ class AxialPileAnalysis:
                 plug_weight = W_p
             if pile.width >= _EQ_7_90_MAX_OD:
                 notes.append(
-                    "GEC-12 Sec. 7.10.7 (p. 407): for moderate (24 to 36 "
+                    "GEC-12 Sec. 7.10.7 (Vol I p. 407): for moderate (24 to 36 "
                     "inch O.D.) and large (36+ inch) diameter open ended pipe "
                     "piles, plugging is less certain under static conditions "
                     "and should be carefully analyzed.")
@@ -562,7 +562,7 @@ class AxialPileAnalysis:
     def _resistance_factors(self, layer_results, tip_layer, plug_case,
                             Qt: float, plug_weight: float, Qs_inside: float,
                             Qs_outside: float) -> dict:
-        """The factored resistance by GEC-12 Table 7-1 (p. 224): Eq. 7-3 in
+        """The factored resistance by GEC-12 Table 7-1 (Vol I p. 224): Eq. 7-3 in
         compression, each layer's side resistance times its method's
         phi_stat plus the toe resistance times the toe method's (GEC-12's
         worked example factors a layered profile so, Vol 3 p. 111), and Eq.
@@ -585,11 +585,11 @@ class AxialPileAnalysis:
         missing = []
         if plug_case == "eq_7_90":
             missing.append("Table 7-1 has no factor for Tomlinson's Eq. 7-90 "
-                           "(GEC-12 p. 407)")
+                           "(GEC-12 Vol I p. 407)")
         elif any(PHI_STAT[m] is None for m in by_method) or (
                 toe_method is not None and PHI_STAT[toe_method] is None):
             missing.append("AASHTO gives no factor for the beta method by "
-                           "Fellenius (GEC-12 p. 258; Table 7-1 'Differs in "
+                           "Fellenius (GEC-12 Vol I p. 258; Table 7-1 'Differs in "
                            "Manual')")
         shaft = {m: {"phi": PHI_STAT[m], "R_s_kN": r}
                  for m, r in by_method.items()}
@@ -616,7 +616,7 @@ class AxialPileAnalysis:
                 shaft_r *= 1.0 + Qs_inside / Qs_outside
             compression["R_r_kN"] = (shaft_r + PHI_STAT[toe_method] * Qt
                                      - plug_weight)
-        out = {"basis": "GEC-12 Table 7-1 (p. 224), Eq. 7-3; Eq. 7-38",
+        out = {"basis": "GEC-12 Table 7-1 (Vol I p. 224), Eq. 7-3; Eq. 7-38",
                "compression": compression}
         if self.include_uplift:
             uplift = {"shaft": {m: {"phi": PHI_UP[m], "R_s_kN": r}
@@ -625,7 +625,7 @@ class AxialPileAnalysis:
                 uplift["R_r_kN"] = None
                 uplift["not_factored"] = (
                     "Table 7-1 has no factor for Tomlinson's Eq. 7-90 (GEC-12 "
-                    "p. 407): use a field method's (p. 289: up to 0.60 from a "
+                    "Vol I p. 407): use a field method's (p. 289: up to 0.60 from a "
                     "tension static load test, 0.50 from a dynamic test with "
                     "signal matching)")
             else:
@@ -697,7 +697,7 @@ class AxialPileAnalysis:
                 notes: Optional[List[str]] = None) -> Tuple[float, str]:
         """(Nt, its source) of the toe layer for the beta method (GEC-12
         Step 5): the layer's own (local experience, Step 5a), else, in clay,
-        ``cohesive_Nt`` (p. 256), else Table 7-9 by soil type (Step 5b)."""
+        ``cohesive_Nt`` (Vol I p. 256), else Table 7-9 by soil type (Step 5b)."""
         if tip_layer.Nt is not None:
             return tip_layer.Nt, "given"
         soil = tip_layer.table_7_9_soil
@@ -722,7 +722,7 @@ class AxialPileAnalysis:
         clay stratum; a layer that gives a ``fig_7_18_case`` starts one at
         its top. A stratum's case, where no layer gives it, is the top
         graph's under a cohesionless layer and the bottom graph's from the
-        ground surface (GEC-12 p. 246-247); the middle graph (soft clay over
+        ground surface (GEC-12 Vol I p. 246-247); the middle graph (soft clay over
         stiff clay) only where a layer gives it."""
         out: List[Optional[Tuple[str, float, str]]] = []
         top, current, above = 0.0, None, None
@@ -816,20 +816,20 @@ class AxialPileAnalysis:
         return max(inner_area, 0.0) * stress
 
     def _width_notes(self, layer_results, notes: List[str]) -> None:
-        """GEC-12 p. 232 on piles wider than the methods' database."""
+        """GEC-12 Vol I p. 232 on piles wider than the methods' database."""
         if self.method == "beta":
             return
         width_in = self.pile.width / _INCH
         if self.pile.width > _DATABASE_MAX_WIDTH:
             notes.append(
                 f"The pile is {width_in:.0f} inches wide: GEC-12 Sec. "
-                "7.2.1.3 (p. 232) notes that piles larger than 18 inches were "
+                "7.2.1.3 (Vol I p. 232) notes that piles larger than 18 inches were "
                 "not in the correlation database for either the Nordlund "
                 "Method or the alpha-method.")
         if (self.pile.width > _NORDLUND_OVERPREDICT_WIDTH
                 and any(lb["method"] == "nordlund" for lb in layer_results)):
             notes.append(
-                "GEC-12 Sec. 7.2.1.3.1 (p. 232): the Nordlund Method tends to "
+                "GEC-12 Sec. 7.2.1.3.1 (Vol I p. 232): the Nordlund Method tends to "
                 "over predict the nominal resistance for pile widths larger "
                 "than 24 inches; alternative static analysis methods should "
                 "be evaluated.")
@@ -895,7 +895,7 @@ class AxialPileAnalysis:
                                "where a layer gives one (Step 5a), else as "
                                "'beta and Nt (beta method)' says, or "
                                "cohesive_Nt in clay; no limiting value "
-                               "(p. 256)", method_how)
+                               "(Vol I p. 256)", method_how)
             alts = [auto_text]
         elif tip_layer.soil_type == "cohesionless":
             toe, basis, how = (
@@ -923,7 +923,7 @@ class AxialPileAnalysis:
             out.append(choice(
                 "sigma'p at the toe (Nordlund, Step 8)", chosen,
                 how_given(limit, _TOE_STRESS_LIMIT, name="toe_stress_limit"),
-                "Nordlund method, Step 8 (GEC-12 Sec. 7.2.1.3.1, p. 244): "
+                "Nordlund method, Step 8 (GEC-12 Sec. 7.2.1.3.1, Vol I p. 244): "
                 "'The limiting value of sigma'p is 3 ksf' (144 kPa), as "
                 "Nordlund recommended (p. 234); GEC-12's worked example (Vol "
                 "3, Table D-6) did not apply it",
@@ -948,7 +948,7 @@ class AxialPileAnalysis:
                 "toe friction angle (Nordlund)", chosen,
                 how_given(self.toe_phi_zone, "toe_layer",
                           name="toe_phi_zone"),
-                "GEC-12 Steps 7a, 7b and 9 (pp. 244-245) enter Figs. 7-16 "
+                "GEC-12 Steps 7a, 7b and 9 (Vol I pp. 244-245) enter Figs. 7-16 "
                 "and 7-15 with the 'phi angle near the pile toe'; Step 7c: "
                 "where phi is estimated from SPT data, average (N1)60 'over "
                 "the zone from the pile toe to 3 diameters below the pile "
@@ -1013,7 +1013,7 @@ class AxialPileAnalysis:
                 f"cohesive soil left out)",
                 how_given(self.shrink_swell_depth, None,
                           name="shrink_swell_depth"),
-                "GEC-12 p. 247 (alpha-method): 'In clays with large "
+                "GEC-12 Vol I p. 247 (alpha-method): 'In clays with large "
                 "shrink-swell potential, static resistance calculations "
                 "should ignore the shaft resistance from the adhesion in the "
                 "shrink-swell zone'; the module leaves out the beta method's "
@@ -1028,7 +1028,7 @@ class AxialPileAnalysis:
                 "toe area (H-pile)", chosen,
                 how_given(self.h_pile_toe_area, "box",
                           name="h_pile_toe_area"),
-                "GEC-12 Step 9 (p. 245): for steel H piles the toe area "
+                "GEC-12 Step 9 (Vol I p. 245): for steel H piles the toe area "
                 "(steel only, or steel and enclosed soil) 'should be based on "
                 "past experience and local correlations with static load "
                 "test results'; Sec. 7.10.7 (p. 408) uses the box area in "
@@ -1047,7 +1047,7 @@ class AxialPileAnalysis:
                        f"{info['Q_unplugged']:.1f} kN")
             if plug_case == "eq_7_90":
                 basis = (
-                    "GEC-12 Sec. 7.10.7 (p. 407): for open end pipe piles "
+                    "GEC-12 Sec. 7.10.7 (Vol I p. 407): for open end pipe piles "
                     "less than 24 inches in diameter in predominantly "
                     "cohesive soils, Rn = 0.8 Ca As + 4.5 su Ap (Eq. 7-90) "
                     "should be used (taken here as the toe in clay and more "
@@ -1060,7 +1060,7 @@ class AxialPileAnalysis:
             else:
                 basis = ("the lesser of Eqs. 7-88 and 7-89 governs "
                          "(Paikowsky and Whitman 1990, GEC-12 Sec. 7.10.7, "
-                         f"p. 406): {numbers}")
+                         f"Vol I p. 406): {numbers}")
             out.append(choice(
                 "open-ended pipe", cases[plug_case],
                 MODULE if self.open_pipe_method == "auto" else how_given(
@@ -1082,7 +1082,7 @@ class AxialPileAnalysis:
                     f"{reading['clay_m']:.2f} of {reading['length_m']:.2f} m "
                     f"of embedded length in cohesive layers ({share:.0f} %)",
                     MODULE,
-                    "GEC-12 Sec. 7.10.7 (p. 407) takes Eq. 7-90 for open end "
+                    "GEC-12 Sec. 7.10.7 (Vol I p. 407) takes Eq. 7-90 for open end "
                     "pipe piles less than 24 inches in diameter 'in "
                     "predominantly cohesive soils' and gives no measure of "
                     "it; the module reads it as the toe in a cohesive layer "
@@ -1098,7 +1098,7 @@ class AxialPileAnalysis:
                 f"({info['Qs_inside']:.1f} kN in the unplugged case)",
                 how_given(self.inside_friction_ratio, INSIDE_FRICTION_RATIO,
                           name="inside_friction_ratio"),
-                "GEC-12 Sec. 7.10.7 (p. 407): 'typically on the order of 1/3 "
+                "GEC-12 Sec. 7.10.7 (Vol I p. 407): 'typically on the order of 1/3 "
                 "to 1/2 the exterior unit shaft resistance'; the module "
                 "takes the low end",
                 ["1/2 of the exterior (inside_friction_ratio 0.5)"]))
@@ -1119,7 +1119,7 @@ class AxialPileAnalysis:
                      + ("; it governed" if governed else "")),
                     how_given(limit, OPEN_PIPE_TOE_LIMIT,
                               name="open_pipe_toe_limit"),
-                    "Tomlinson (1994), GEC-12 Sec. 7.10.7 (p. 407): a "
+                    "Tomlinson (1994), GEC-12 Sec. 7.10.7 (Vol I p. 407): a "
                     "limiting unit toe resistance of 105 ksf for open end "
                     "pipe piles in cohesionless soils, regardless of pile "
                     "size or soil density, once q_L of Fig. 7-15 exceeds it",
@@ -1134,7 +1134,7 @@ class AxialPileAnalysis:
                 how_given(toe_details["N_t"], None, within="layers")
                 if given else how_given(self.cohesive_Nt, COHESIVE_NT,
                                         name="cohesive_Nt"),
-                "GEC-12 p. 256: an Nt of 3 in clay gives about the toe "
+                "GEC-12 Vol I p. 256: an Nt of 3 in clay gives about the toe "
                 "resistance of an undrained (su) analysis; 'the use of a "
                 "relatively low Nt coefficient in clays is recommended unless "
                 "local correlations suggest higher values' (Table 7-9: clay "
@@ -1156,7 +1156,7 @@ class AxialPileAnalysis:
                 + (" + pile weight" if self.pile_weight is not None else ""),
                 how_given(self.uplift_skin_fraction, UPLIFT_SKIN_FRACTION,
                           name="uplift_skin_fraction"),
-                "GEC-12 Sec. 7.2.3.1 (Eq. 7-38, pp. 288-289): the nominal "
+                "GEC-12 Sec. 7.2.3.1 (Eq. 7-38, Vol I pp. 288-289): the nominal "
                 "shaft resistance with an uplift resistance factor (AASHTO "
                 "C10.7.3.10 takes it as 80 % of the compression factor), so "
                 "'the shaft resistance does not need to be further reduced "
@@ -1219,7 +1219,7 @@ class AxialPileAnalysis:
             else f": R_r not computed ({comp['not_factored']})")
         out.append(choice(
             "resistance factors, compression (LRFD)", chosen, MODULE,
-            "GEC-12 Table 7-1 (p. 224, modified from AASHTO 2014) and Eq. "
+            "GEC-12 Table 7-1 (Vol I p. 224, modified from AASHTO 2014) and Eq. "
             "7-3: the shaft resistance times the factor of its method plus "
             "the toe resistance times the factor of its method: Nordlund "
             "(sand) 0.45, alpha method (clay and mixed soils) 0.35; AASHTO "
@@ -1238,7 +1238,7 @@ class AxialPileAnalysis:
                 else f": R_r not computed ({up['not_factored']})")
             out.append(choice(
                 "resistance factors, uplift (LRFD)", chosen, MODULE,
-                "GEC-12 Eq. 7-38 (pp. 288-289): the nominal shaft resistance "
+                "GEC-12 Eq. 7-38 (Vol I pp. 288-289): the nominal shaft resistance "
                 "times phi_up of Table 7-1: Nordlund 0.35, alpha method 0.25, "
                 "beta method (1991) 0.20 (AASHTO C10.7.3.10 takes it as 80 % "
                 "of the compression factor, so the shaft resistance is not "
@@ -1252,7 +1252,7 @@ class AxialPileAnalysis:
     def _adhesion_choices(self, clay: List[dict],
                           eq_7_90: bool = False) -> List[dict]:
         """The alpha-method's choices over the clay layers (``clay``, their
-        breakdown rows): the chart (GEC-12 p. 246), Figure 7-17's curves
+        breakdown rows): the chart (GEC-12 Vol I p. 246), Figure 7-17's curves
         and limit, each layer's Figure 7-18 case, and su past a chart.
         Under Eq. 7-90 (``eq_7_90``) the side resistance is on Figure 7-17
         whatever the chart, so no Figure 7-18 case is read."""
@@ -1273,7 +1273,7 @@ class AxialPileAnalysis:
         out.append(choice(
             "adhesion chart (alpha-method)", chosen,
             how_given(chart, "fig_7_17", name="adhesion_chart"),
-            "GEC-12 p. 246: 'It is recommended that Figure 7-17 generally be "
+            "GEC-12 Vol I p. 246: 'It is recommended that Figure 7-17 generally be "
             "used for adhesion calculations, unless one of the special soil "
             "stratigraphy cases identified in Figure 7-18 is present at a "
             "site. In cases where either Figures 7-17 or 7-18 could be "
@@ -1295,7 +1295,7 @@ class AxialPileAnalysis:
                 "adhesion (alpha-method)", chosen,
                 how_given(self.adhesion_curve, "auto",
                           name="adhesion_curve"),
-                "alpha method, Step 1 (GEC-12 p. 250): Ca from Fig. 7-17 "
+                "alpha method, Step 1 (GEC-12 Vol I p. 250): Ca from Fig. 7-17 "
                 "(p. 248) by su, pile type and D/b, linear between the D = "
                 "10b and 40b curves"
                 + ("; an H-pile takes the corrugated pile curve times the "
@@ -1354,7 +1354,7 @@ class AxialPileAnalysis:
                 "; ".join(f"{t}: {', '.join(w)}" for t, w in strata.items()),
                 how_given(given[0], None, within="layers") if given
                 else MODULE,
-                "GEC-12 pp. 246-247: the top graph for piles driven through "
+                "GEC-12 Vol I pp. 246-247: the top graph for piles driven through "
                 "a sand or sandy gravel layer into an underlying stiff clay, "
                 "the middle graph through a soft clay layer into an "
                 "underlying stiff clay, the bottom graph in stiff clays "
@@ -1377,7 +1377,7 @@ class AxialPileAnalysis:
                      for lb in clay if "Ca_fig_7_17_kPa" in lb]
             out.append(choice(
                 "Ca of the two charts (alpha-method)", "; ".join(parts),
-                MODULE, "GEC-12 p. 246: the smaller value governs"))
+                MODULE, "GEC-12 Vol I p. 246: the smaller value governs"))
 
         modes = {
             API_IF_HIGHLY_OC: "API RP 2A's alpha where the clay is highly "
@@ -1435,7 +1435,7 @@ class AxialPileAnalysis:
                 "which a clay becomes highly overconsolidated: the line is "
                 "the engineer's judgment; sigma'vo at the middle of each "
                 "layer's length along the pile. The 1.0 in Eqs. 7-13 and "
-                "7-14 (p. 251) chooses between API's two expressions for "
+                "7-14 (Vol I p. 251) chooses between API's two expressions for "
                 "alpha; it does not define a highly overconsolidated clay"))
         return out
 
@@ -1521,7 +1521,7 @@ class AxialPileAnalysis:
             "beta and Nt (beta method)", chosen,
             how_given(self.beta_coefficients, "table_7_9",
                       name="beta_coefficients"),
-            "GEC-12 Steps 2b and 5b (pp. 257-258): in the absence of local "
+            "GEC-12 Steps 2b and 5b (Vol I pp. 257-258): in the absence of local "
             "experience, use Table 7-9 (after Fellenius 2014) to estimate "
             "beta and Nt from phi'. Table 7-9 (p. 256) prints only each "
             "soil type's range of phi', beta and Nt (clay, silt, sand, "
@@ -1531,7 +1531,7 @@ class AxialPileAnalysis:
             "outside the range held at its end, is this module's reading, "
             "not printed; GEC-12 prints no formula for beta or Nt from "
             "phi'. The soil type is a layer's soil_class, else clay or "
-            "sand; a clay toe takes cohesive_Nt (p. 256). UFC 3-220-20 "
+            "sand; a clay toe takes cohesive_Nt (Vol I p. 256). UFC 3-220-20 "
             "§6-7.4 step 2 (p. 476): lower alpha and beta are conservative "
             "for resistance, higher alpha and beta for negative skin "
             "friction",
@@ -1551,7 +1551,7 @@ class AxialPileAnalysis:
         on each side of the kink is exact for the Nordlund and beta methods
         (unit side resistance linear in sigma_v'). The segment is also split
         at ``shrink_swell_depth``; cohesive soil above it gives no shaft
-        resistance (GEC-12 p. 247). ``stratum`` is the layer's Figure 7-18
+        resistance (GEC-12 Vol I p. 247). ``stratum`` is the layer's Figure 7-18
         case (:meth:`_fig_7_18_strata`); ``chart`` the alpha-method's chart
         (default ``adhesion_chart``).
 
@@ -1658,7 +1658,7 @@ class AxialPileAnalysis:
         """(Ca in kPa, its readings) of a clay layer by ``chart`` (default
         ``adhesion_chart``):
         Figure 7-17, Figure 7-18 for the layer's stratigraphy case, or the
-        smaller of the two (GEC-12 p. 246). ``sigma_v`` is the segment's
+        smaller of the two (GEC-12 Vol I p. 246). ``sigma_v`` is the segment's
         sigma'vo (API alpha's), ``sigma_v_layer`` the layer's at the middle
         of its length along the pile (``where``, m), which decides whether
         it is highly overconsolidated. Where the layer is past the chart's
@@ -1747,7 +1747,7 @@ class AxialPileAnalysis:
             f"{r['chart']}'s curves end at {r['end_ksf']:.2f} ksf; su / "
             f"sigma'vo = {r['ratio']:.2f}" for r in rows)
         return (
-            f"alpha method (GEC-12 Sec. 7.2.1.3.2), Step 1 (p. 250): these "
+            f"alpha method (GEC-12 Sec. 7.2.1.3.2), Step 1 (Vol I p. 250): these "
             f"clay layers have su past the end of the chart's curves: "
             f"{layers}. For highly overconsolidated "
             f"clays whose su exceeds the charts, Step 1 and p. 247 recommend "
@@ -1765,7 +1765,7 @@ class AxialPileAnalysis:
     def _line_note(self) -> str:
         """The judgment note of a run that took the line given."""
         return (
-            f"alpha method (GEC-12 p. 247; Step 1, p. 250): past the chart's "
+            f"alpha method (GEC-12 Vol I p. 247; Step 1, p. 250): past the chart's "
             f"curves, API RP 2A's alpha was taken in clay layers with su / "
             f"sigma'vo at or above {self.highly_overconsolidated_su_ratio:g} "
             f"(highly overconsolidated, by the line given) and Ca was held "

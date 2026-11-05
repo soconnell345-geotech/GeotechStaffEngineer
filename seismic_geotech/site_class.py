@@ -14,9 +14,9 @@ Checked against the print held (GM-293, module_work/gm293/CHECK.md): the
 classes are GEC-12 Vol I (FHWA-NHI-16-009) Table 7-26 (p. 379, after
 AASHTO 2014), printed in ft/s and ksf and converted exactly here
 (1 ft = 0.3048 m, 1 ksf = 47.88 kPa); the averages are taken over the upper
-100 ft (GEC-12 p. 379; GEC-7, FHWA-NHI-14-007, p. 92), 30 m here, as ASCE 7-22 Ch. 20
+100 ft (GEC-12 Vol I p. 379; GEC-7, FHWA-NHI-14-007, p. 92), 30 m here, as ASCE 7-22 Ch. 20
 writes "100 ft (30 m)"; the site factors are GEC-12 Tables 7-27 to 7-29
-(p. 380) and As = Fpga PGA its Eq. 7-78 (p. 381). Not checked by this
+(Vol I p. 380) and As = Fpga PGA its Eq. 7-78 (p. 381). Not checked by this
 tool: Site Class E by more than 10 ft of soft clay, and Site Class F
 (Table 7-26).
 
@@ -311,7 +311,7 @@ def site_coefficients(site_class: str, Ss: float, S1: float,
 def _interpolate_table(x_vals: List[float], y_vals: List[float],
                        x: float) -> float:
     """Linear interpolation within AASHTO coefficient tables (GEC-12
-    p. 379: "Straight line interpolation should be used for intermediate
+    Vol I p. 379: "Straight line interpolation should be used for intermediate
     values in any of the three tables"), the end values held beyond the
     first and last columns ("PGA < 0.1", "PGA > 0.5")."""
     if x <= x_vals[0]:

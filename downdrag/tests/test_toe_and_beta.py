@@ -191,7 +191,7 @@ class TestTheSandBeta:
         assert c["what"] == "beta in the cohesionless soil, 8-12 m"
         assert c["chosen"] == "beta 0.450 at 8-12 m (sand, phi' 34 deg)"
         assert c["how"] == "default"
-        for text in ("Table 7-9 (p. 256; Step 2b, p. 257)",
+        for text in ("Table 7-9 (Vol I p. 256; Step 2b, p. 257)",
                      "Table 6-15 (p. 414) pairs beta's ends with phi'",
                      "(sand: beta 0.30 at phi' 32 deg, 0.90 at 40 deg)",
                      "this module's reading; neither manual prints it",

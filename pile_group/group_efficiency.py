@@ -5,23 +5,23 @@ ch. 6) print them (checked against the print in GM-286,
 ``module_work/gm286/CHECK.md``).
 
 - :func:`group_efficiency_factor`: the group efficiency factor eta_g,
-  GEC-12 Secs. 7.2.2.1 and 7.2.2.2 (driven piles, pp. 282-284) and
+  GEC-12 Secs. 7.2.2.1 and 7.2.2.2 (driven piles, Vol I pp. 282-284) and
   UFC 3-220-20 Table 6-26 (p. 432; driven piles, drilled shafts, CFAs,
   DDPs, micropiles).
 - :func:`block_failure_resistance`: the group's nominal resistance to
-  block failure, GEC-12 Eqs. 7-36 and 7-37 (p. 286); UFC 3-220-20 Eqs.
+  block failure, GEC-12 Eqs. 7-36 and 7-37 (Vol I p. 286); UFC 3-220-20 Eqs.
   6-38 and 6-39 print the same.
 - :func:`group_uplift_resistance`: the group's uplift resistance as a
   block and the lesser of it and the piles' sum, GEC-12 Sec. 7.2.3.2
-  (Eqs. 7-39 to 7-41, Figs. 7-33 and 7-34, pp. 290-293); UFC 3-220-20
+  (Eqs. 7-39 to 7-41, Figs. 7-33 and 7-34, Vol I pp. 290-293); UFC 3-220-20
   Eqs. 6-40 to 6-43 (pp. 435-436).
 - :func:`p_multiplier`: the lateral p-multiplier of a row, as AASHTO
-  prints it (GEC-12 pp. 367 and 370; UFC 3-220-20 Table 6-38, p. 466),
+  prints it (GEC-12 Vol I pp. 367 and 370; UFC 3-220-20 Table 6-38, p. 466),
   or by Mokwa's (1999) equations (UFC 3-220-20 Table 6-38).
 - :func:`group_settlement_equivalent_raft`: the equivalent footing,
   GEC-12 Sec. 7.3.5.3 (Eq. 7-55, Fig. 7-44); UFC Sec. 6-5.8.4.
 - :func:`meyerhof_group_settlement`: Meyerhof (1976), GEC-12 Eqs. 7-50
-  to 7-52 (p. 319); UFC 3-220-20 Eqs. 6-46, 6-47.
+  to 7-52 (Vol I p. 319); UFC 3-220-20 Eqs. 6-46, 6-47.
 
 All units are SI: meters, kPa, kN.
 """
@@ -126,10 +126,10 @@ def group_efficiency_factor(soil_type: str, s_over_b: float,
 
     eta_g = R_ng / (n R_n) (GEC-12 Eq. 7-35); the group's resistance is
     the lesser of n eta_g R_n and its resistance to block failure (GEC-12
-    p. 284 step 4; UFC 3-220-20 Eq. 6-37), see
+    Vol I p. 284 step 4; UFC 3-220-20 Eq. 6-37), see
     :func:`block_failure_resistance`.
 
-    Driven piles, GEC-12 Secs. 7.2.2.1 and 7.2.2.2 (pp. 282, 284):
+    Driven piles, GEC-12 Secs. 7.2.2.1 and 7.2.2.2 (Vol I pp. 282, 284):
     cohesionless soil not underlain by a weak deposit, 1.0 (jetting or
     predrilling "can result in group efficiencies less than 1", no value
     printed); clay with su < 2 ksf and the cap not in firm contact with
@@ -143,7 +143,7 @@ def group_efficiency_factor(soil_type: str, s_over_b: float,
     soil_type : str
         'cohesionless' (UFC's coarse-grained) or 'cohesive'
         (fine-grained): the stratum providing most of the resistance, the
-        controlling stratum (GEC-12 p. 281).
+        controlling stratum (GEC-12 Vol I p. 281).
     s_over_b : float
         Centre-to-centre spacing over the pile diameter or width.
     cap_in_contact : bool, optional
@@ -251,7 +251,7 @@ def block_failure_resistance(B: float, Z: float, D: float,
                              pile_type: Optional[str] = None) -> dict:
     """Nominal resistance of a pile group to block failure.
 
-    GEC-12 Eq. 7-36 (p. 286):  R_ng = 2 D (B + Z) su1 + B Z su2 Nc
+    GEC-12 Eq. 7-36 (Vol I p. 286):  R_ng = 2 D (B + Z) su1 + B Z su2 Nc
 
     with Nc by GEC-12 Eq. 7-37:  Nc = 5 [1 + D/(5B)] [1 + B/(5Z)] <= 9
 
@@ -276,10 +276,10 @@ def block_failure_resistance(B: float, Z: float, D: float,
         Weighted average undrained shear strength over the embedded length
         along the group's perimeter (kPa); for cohesionless soils along
         the sides, their weighted average unit shaft resistance (GEC-12
-        p. 287; UFC's f_s,1).
+        Vol I p. 287; UFC's f_s,1).
     su2 : float
         Average undrained shear strength below the pile toes to a depth of
-        2B (kPa; GEC-12 p. 286; UFC p. 433: 2B to 3B, whichever gives the
+        2B (kPa; GEC-12 Vol I p. 286; UFC p. 433: 2B to 3B, whichever gives the
         lower), that of the weak layer for a group in cohesionless soil
         over it.
     pile_type : str, optional
@@ -375,7 +375,7 @@ _UPLIFT_SPREAD = 0.25
 def small_group_reduction(n_piles: int, pile_type: str,
                           rule: Optional[str] = None) -> float:
     """1.0, or 0.8 for a small group: fewer than 3 piles for driven piles
-    (GEC-12 p. 225), fewer than 5 for the others (UFC 3-220-20 Table 6-28
+    (GEC-12 Vol I p. 225), fewer than 5 for the others (UFC 3-220-20 Table 6-28
     note A); ``rule`` 'gec12' or 'ufc' takes that threshold instead."""
     rule = rule or ("gec12" if pile_type == "driven" else "ufc")
     return 0.8 if n_piles < SMALL_GROUP_PILES[rule] else 1.0
@@ -414,18 +414,18 @@ def group_uplift_resistance(B: float, Z: float, D: float, n_piles: int,
                             group_piles: Optional[int] = None) -> dict:
     """Uplift resistance of a pile group: the group as a block, and the
     lesser of the block and the sum of the piles (GEC-12 Sec. 7.2.3.2,
-    pp. 290-293; UFC 3-220-20 Eqs. 6-40 to 6-43, pp. 435-436).
+    Vol I pp. 290-293; UFC 3-220-20 Eqs. 6-40 to 6-43, pp. 435-436).
 
     The block (AASHTO 2014 Art. 10.7.3.11 as GEC-12 prints it, after
     Tomlinson 1994):
 
-    - cohesionless soil (GEC-12 p. 291, Fig. 7-33): the effective weight
+    - cohesionless soil (GEC-12 Vol I p. 291, Fig. 7-33): the effective weight
       of the soil "extending upward from the pile toe level at a slope of
       1H:4V", the piles' weight taken as the soil's; by layers, each
       layer's volume between its bottom and top plan dimensions (UFC p.
       436; GEC-12 Vol. III Eq. D-1 and Table D-18). For one layer it is
       UFC 3-220-20 Eq. 6-41, V = B L D + D^2 (B + L)/4 + D^3/12.
-    - cohesive soil (GEC-12 Eq. 7-41, p. 292, Fig. 7-34): R_ug = 2 D (B +
+    - cohesive soil (GEC-12 Eq. 7-41, Vol I p. 292, Fig. 7-34): R_ug = 2 D (B +
       Z) su + W_g, W_g the effective weight of the pile/soil block of plan
       B x Z and depth D; UFC 3-220-20 Eqs. 6-42 and 6-43 the same.
 
@@ -478,7 +478,7 @@ def group_uplift_resistance(B: float, Z: float, D: float, n_piles: int,
         The sum of the piles' factored tension resistances (kN), phi_up R_s
         n; with it, the governing resistance.
     group_piles : int, optional
-        The piles under the cap, for the small-group rule (GEC-12 p. 225:
+        The piles under the cap, for the small-group rule (GEC-12 Vol I p. 225:
         "per substructure unit"); default ``n_piles``.
 
     Returns
@@ -585,7 +585,7 @@ def p_multiplier(row_position: int, spacing_diameter_ratio: float,
                  method: str = "aashto") -> float:
     """Lateral p-multiplier p_m of a row of piles in a group.
 
-    'aashto' (default): AASHTO's p_m as GEC-12 prints it (pp. 367, 370)
+    'aashto' (default): AASHTO's p_m as GEC-12 prints it (Vol I pp. 367, 370)
     at s/b = 3 (0.80, 0.40, 0.30 for rows 1, 2, 3 and higher) and 5
     (1.00, 0.85, 0.70), interpolated linearly between; from 5 to 6
     interpolated to 1.00 at 6 and 1.00 beyond. That is the module's
@@ -619,7 +619,7 @@ def p_multiplier(row_position: int, spacing_diameter_ratio: float,
         raise ValueError(f"s/D must be positive, got {sd}")
     if sd < 3.0 - 1e-9:
         raise ValueError(
-            f"s/D = {sd:.2f} is below 3: GEC-12 (pp. 367, 370) and UFC "
+            f"s/D = {sd:.2f} is below 3: GEC-12 (Vol I pp. 367, 370) and UFC "
             f"3-220-20 Table 6-38 print p-multipliers from s/D = 3, and "
             f"UFC p. 465 says it is not advisable to install piles closer "
             f"than 3 diameters.")
@@ -655,10 +655,10 @@ def group_settlement_equivalent_raft(
     """Group settlement by the equivalent footing (GEC-12 Sec. 7.3.5.3).
 
     Terzaghi and Peck's (1967) equivalent footing at 1/3 D above the pile
-    toe, i.e. 2/3 D below the top of the embedded length (GEC-12 p. 320,
+    toe, i.e. 2/3 D below the top of the embedded length (GEC-12 Vol I p. 320,
     Fig. 7-44; UFC 3-220-20 Table 6-32's first row, "Sand or clay": z1 =
     2Zb/3, z2 = 0), with plan area B x Z the perimeter dimensions of the
-    group (GEC-12 p. 320, to the outer pile faces as in Fig. 7-31):
+    group (GEC-12 Vol I p. 320, to the outer pile faces as in Fig. 7-31):
 
         Bg = (n_cols - 1) * s + d,   Lg = (n_rows - 1) * s + d
 
@@ -679,7 +679,7 @@ def group_settlement_equivalent_raft(
     typically selected where the change in stress is less than 10% of the
     bearing stress of the equivalent footing"), or to
     ``influence_depth_m`` where given (the compressible layer's base, for
-    one). GEC-12's own step 1c (Sec. 7.3.5.3, p. 324) and UFC App. B-5.7
+    one). GEC-12's own step 1c (Sec. 7.3.5.3, Vol I p. 324) and UFC App. B-5.7
     (p. 641, "as recommended by FHWA (2016)") sum instead to where the
     stress increase is less than 10 % of the existing vertical effective
     stress; this function takes no effective-stress profile, so that depth
@@ -700,7 +700,7 @@ def group_settlement_equivalent_raft(
     pile_length : float
         Pile embedded length, D (m).
     load_kN : float
-        The unfactored permanent load on the group, Q (kN) (GEC-12 p. 320:
+        The unfactored permanent load on the group, Q (kN) (GEC-12 Vol I p. 320:
         AASHTO "states that the load used in calculating group settlement
         is the permanently applied load").
     soil_modulus_kPa : float
@@ -775,7 +775,7 @@ def group_settlement_equivalent_raft(
                 f"bearing stress (UFC 3-220-20 Sec. 6-5.8.4.3, p. 449)")
     gec_rule = ("where the stress increase falls below 10 % of the existing "
                 "vertical effective stress (FHWA GEC-12 Sec. 7.3.5.3 step "
-                "1c, p. 324; UFC 3-220-20 App. B-5.7, p. 641): work that "
+                "1c, Vol I p. 324; UFC 3-220-20 App. B-5.7, p. 641): work that "
                 "depth out from the effective-stress profile and give it as "
                 "influence_depth_m")
     given = influence_depth_m is not None
@@ -822,7 +822,7 @@ def meyerhof_group_settlement(
 ) -> dict:
     """Meyerhof (1976) SPT pile-group settlement, GEC-12 Eqs. 7-50 to 7-52.
 
-    GEC-12 Sec. 7.3.5.2.1 (p. 319), for "a pile group in a homogeneous
+    GEC-12 Sec. 7.3.5.2.1 (Vol I p. 319), for "a pile group in a homogeneous
     sand deposit not underlain by a more compressible soil at a greater
     depth" (conservative); in US customary units (settlement in INCHES):
 

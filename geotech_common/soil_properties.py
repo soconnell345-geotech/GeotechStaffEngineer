@@ -4,7 +4,7 @@ Common soil property correlations, as the manuals we hold print them.
 Field-test corrections (raw field N -> N60 -> (N1)60) and correlations
 between SPT blow counts and soil parameters. They are for preliminary
 design and should be checked against laboratory tests for final design
-(GEC-12 p. 129: correlating N with the undrained strength of clays "is
+(GEC-12 Vol I p. 129: correlating N with the undrained strength of clays "is
 crude and unreliable for final design").
 
 Checked against the print (GM-295, 2026-10-31):
@@ -90,7 +90,7 @@ def spt_to_phi(N: float, method: str = "peck",
           pa = 100 kPa. ``N`` is N60; needs ``sigma_v``. GEC-5: "somewhat
           conservative, especially for depths less than 6 ft".
         - "kulhawy_chen": Kulhawy & Chen (2007), sands and gravels,
-          GEC-12 Eq. 5-16 (p. 124): phi' = 27.5 + 9.2 log10 (N1)60
+          GEC-12 Eq. 5-16 (Vol I p. 124): phi' = 27.5 + 9.2 log10 (N1)60
           (r^2 = 0.356, n = 57). ``N`` is (N1)60, above 0.
         - "shioi_fukui_roads" / "shioi_fukui_buildings": Shioi & Fukui
           (1982), UFC 3-220-10 Eq 8-2, phi' = sqrt(15 N60) + 15 (roads and
@@ -102,8 +102,8 @@ def spt_to_phi(N: float, method: str = "peck",
           reading is this function's). The table gives only "< 30" below
           N = 4 and "> 45" above 50, so those are refused. UFC 3-220-10
           Table 8-3 (p. 396) takes N60; GEC-5 (p. 7-53) and GEC-12 Table
-          5-6 (p. 123) take the uncorrected N. UFC (p. 396) and GEC-12
-          (p. 123, citing GEC-5 2002) take 5 deg less for a clayey sand and
+          5-6 (Vol I p. 123) take the uncorrected N. UFC (p. 396) and GEC-12
+          (Vol I p. 123, citing GEC-5 2002) take 5 deg less for a clayey sand and
           5 more for a gravelly sand. For a saturated very fine or silty
           sand all three print N = 15 + (N' - 15)/2 for N' > 15, N' the
           measured count (UFC Eq 8-1 swaps the letters).
@@ -181,7 +181,7 @@ CU_METHODS = ("terzaghi_peck", "hara", "stroud_butler")
 def spt_to_cu(N60: float, method: str = "terzaghi_peck",
               PI: Optional[float] = None) -> float:
     """Undrained shear strength su (kPa) of a clay from an SPT blow count,
-    for preliminary estimates only (GEC-12 p. 129).
+    for preliminary estimates only (GEC-12 Vol I p. 129).
 
     Parameters
     ----------
@@ -200,7 +200,7 @@ def spt_to_cu(N60: float, method: str = "terzaghi_peck",
           clays, Carter & Bentley's (2016) fit, UFC 3-220-10 Eq 8-26
           (p. 428): su/N = 8910/PI^3 + 4.36 kPa. Needs ``PI``; Fig 8-31
           draws it for PI 15 to 62 and a warning says when PI is outside.
-          GEC-12 Eq. 5-19 (p. 128) prints Stroud's su = f1 N60 pa/100 with
+          GEC-12 Eq. 5-19 (Vol I p. 128) prints Stroud's su = f1 N60 pa/100 with
           f1 = 4.5 at PI 50 and 5.5 at PI 15.
     PI : float, optional
         Plasticity index (%), for "stroud_butler".
@@ -489,13 +489,13 @@ def spt_overburden_correction(
     method : str, optional
         - "liao_whitman" (default): C_N = (pa / sigma'v)^0.5 with
           pa = 100 kPa, Liao & Whitman (1986): GEC-5 Eq 5.10 (p. 5-31),
-          GEC-12 Eq. 5-4 with n = 0.5 for sands (p. 108). Capped at 1.7
+          GEC-12 Eq. 5-4 with n = 0.5 for sands (Vol I p. 108). Capped at 1.7
           per Youd et al. (2001), which the reference library does not
           hold; GEC-6 Figure 5-18 (p. 90) draws the same correction (pa
           1 tsf) to "2.0 max."
         - "peck": C_N = 0.77 log10(20 / p_o), p_o in tsf, at most 2.0,
           Peck et al. (1974): NHI-06-088 Eq 3-3 (p. 3-56) and GEC-12 Eq.
-          5-3 (p. 108, in ksf), which GEC-12 calls "the recommended
+          5-3 (Vol I p. 108, in ksf), which GEC-12 calls "the recommended
           correction in AASHTO specifications". It reaches zero at
           p_o = 20 tsf (1915 kPa), where it is refused.
         - "iso": C_N = sqrt(98 / sigma'v) per EN ISO 22476-3 guidance

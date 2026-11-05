@@ -160,7 +160,7 @@ _PILE_TYPE_TEXT = {
 def _eta_g_basis(pile_type: str, s_over_b: float) -> str:
     """Where eta_g comes from, in the print's words, for the choices."""
     if pile_type == "driven":
-        text = ("GEC-12 Sec. 7.2.2.1 (p. 282): driven piles in "
+        text = ("GEC-12 Sec. 7.2.2.1 (Vol I p. 282): driven piles in "
                 "cohesionless soil not underlain by a weak deposit, with no "
                 "jetting or predrilling, 1.0 (jetting or predrilling 'can "
                 "result in group efficiencies less than 1', no value "
@@ -174,12 +174,12 @@ def _eta_g_basis(pile_type: str, s_over_b: float) -> str:
                 f"{_PILE_TYPE_TEXT[pile_type]} column, interpolated between "
                 f"the printed spacings (p. 431)")
     text += (". The group resistance is the lesser of n eta_g R_n and the "
-             "resistance to block failure (GEC-12 p. 284 step 4; UFC 3-220-20 Eq. "
+             "resistance to block failure (GEC-12 Vol I p. 284 step 4; UFC 3-220-20 Eq. "
              "6-37); for a group in cohesionless soil over a weak deposit, "
-             "block failure is checked too (GEC-12 p. 282 item 2)")
+             "block failure is checked too (GEC-12 Vol I p. 282 item 2)")
     if s_over_b < 3.0:
         text += (". Below 3 diameters: GEC-12 recommends at least 3 "
-                 "(pp. 282, 284), UFC 3-220-20 the same (p. 431)")
+                 "(Vol I pp. 282, 284), UFC 3-220-20 the same (p. 431)")
     return text
 
 
@@ -219,7 +219,7 @@ def _run_group_efficiency(params):
             "3-220-20 Table 6-26); pile_length with su1 and su2 (or one cu "
             "for both) and the layout (n_rows, n_cols, spacing, "
             "pile_diameter) for block failure (GEC-12 Eqs. 7-36, 7-37); or "
-            "row_position for the lateral p-multiplier (GEC-12 p. 370; UFC "
+            "row_position for the lateral p-multiplier (GEC-12 Vol I p. 370; UFC "
             "3-220-20 Table 6-38).")
     results, choices = {}, []
     if wants_eta:
@@ -295,7 +295,7 @@ def _run_group_efficiency(params):
                 f"{' and '.join(missing)} (kPa): su1 the weighted average "
                 f"undrained strength along the group's perimeter over the "
                 f"embedded length, su2 the average to 2B below the toes "
-                f"(GEC-12 Eq. 7-36, p. 286), or one cu for both.")
+                f"(GEC-12 Eq. 7-36, Vol I p. 286), or one cu for both.")
         B, Z = group_plan_dimensions(params["n_rows"], params["n_cols"],
                                      sx, sy, params["pile_diameter"])
         pile_type = params.get("pile_type", "driven")
@@ -308,7 +308,7 @@ def _run_group_efficiency(params):
         if r["phi_bl"] is None:
             results["block_failure_factored_note"] = (
                 f"No held page prints a resistance factor for block failure "
-                f"of {_PILE_TYPE_TEXT[pile_type]}: GEC-12 Table 7-1 (p. 224) "
+                f"of {_PILE_TYPE_TEXT[pile_type]}: GEC-12 Table 7-1 (Vol I p. 224) "
                 f"gives 0.60 (driven piles, cohesive soil) and UFC 3-220-20 "
                 f"Table 6-27 (p. 433) 0.60 for driven piles, 0.55 for "
                 f"drilled shafts and 0.60 for micropiles, with fine-grained "
@@ -318,7 +318,7 @@ def _run_group_efficiency(params):
                 "resistance factor for block failure",
                 f"phi_bl = {r['phi_bl']:.2f} ({_PILE_TYPE_TEXT[pile_type]})",
                 how_given(params.get("pile_type"), "driven", "pile_type"),
-                basis=("GEC-12 Table 7-1 (p. 224): 'Block Failure, phi_bl, "
+                basis=("GEC-12 Table 7-1 (Vol I p. 224): 'Block Failure, phi_bl, "
                        "Cohesive, 0.60'; UFC 3-220-20 Table 6-27 (p. 433, "
                        "AASHTO 2020): driven piles 0.60, drilled shafts 0.55, "
                        "micropiles 0.60, fine-grained (cohesive) soil below "
@@ -332,7 +332,7 @@ def _run_group_efficiency(params):
         choices.append(choice(
             "bearing capacity factor Nc (block failure)", f"{r['Nc']:.2f}",
             MODULE,
-            basis=(f"GEC-12 Eq. 7-37 (p. 286; UFC 3-220-20 Eq. 6-39): Nc = "
+            basis=(f"GEC-12 Eq. 7-37 (Vol I p. 286; UFC 3-220-20 Eq. 6-39): Nc = "
                    f"5[1 + D/(5B)][1 + B/(5Z)] = {r['Nc_eq_7_37']:.2f}"
                    + (", limited to 9" if r["Nc_eq_7_37"] > 9 else
                       ", below 9 for this shallow or wide group (GEC-12: "
@@ -366,7 +366,7 @@ def _run_group_efficiency(params):
                 f"cu = {cu:g} kPa for "
                 + ("both" if len(one) == 2 else one[0]),
                 how_given(cu, None, "cu"),
-                basis="GEC-12 Eq. 7-36 (p. 286) takes su1, the weighted "
+                basis="GEC-12 Eq. 7-36 (Vol I p. 286) takes su1, the weighted "
                       "average along the group's perimeter over the "
                       "embedded length, and su2, the average to 2B below "
                       "the toes (UFC 3-220-20 p. 433: 2B to 3B, whichever "
@@ -378,7 +378,7 @@ def _run_group_efficiency(params):
         pm = p_multiplier(params["row_position"], sd, method)
         results["p_multiplier"] = round(pm, 3)
         basis = (
-            "AASHTO as GEC-12 prints it (pp. 367, 370): 0.8, 0.4 and 0.3 "
+            "AASHTO as GEC-12 prints it (Vol I pp. 367, 370): 0.8, 0.4 and 0.3 "
             "for the lead, second and third and later rows at 3b, 1.0, "
             "0.85 and 0.7 at 5b, interpolated between. From 5b, a straight "
             "line to 1.00 at 6b: the module's reading of UFC 3-220-20 p. "
@@ -386,7 +386,7 @@ def _run_group_efficiency(params):
             "of 6·b' (Table 6-38, p. 466, prints 1.00 for s/b > 6). The "
             "sentence could also mean AASHTO's 3b-5b line carried on to "
             "6b, which gives 0.9 for the third and later rows at 6b (rows "
-            "1 and 2 reach 1.0 by then). GEC-12 p. 365: consider whether "
+            "1 and 2 reach 1.0 by then). GEC-12 Vol I p. 365: consider whether "
             "lower values, as in its Table 7-23, apply"
             if method == "aashto" else
             "Mokwa (1999), UFC 3-220-20 Table 6-38: p_m = a (s/b) + c "
@@ -527,7 +527,7 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
     if r["phi_ug"] is None:
         notes.append(
             f"No held page prints a resistance factor for group uplift of "
-            f"{_PILE_TYPE_TEXT[pile_type]}: GEC-12 Table 7-1 (p. 224) gives "
+            f"{_PILE_TYPE_TEXT[pile_type]}: GEC-12 Table 7-1 (Vol I p. 224) gives "
             f"0.50 for driven piles and UFC 3-220-20 Table 6-28 (p. 434) "
             f"0.50 for driven piles, 0.45 for drilled shafts and 0.50 for "
             f"micropiles; the block's nominal resistance is given.")
@@ -536,7 +536,7 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
             "The piles' factored tension resistance was not given "
             "(axial_capacity_tension, phi_up R_s per pile, GEC-12 Eq. "
             "7-38): the block's factored resistance is given, and the "
-            "group's is the lesser of it and the piles' sum (GEC-12 p. 291), "
+            "group's is the lesser of it and the piles' sum (GEC-12 Vol I p. 291), "
             "so no more than it.")
     if uplift_load is not None:
         out["uplift_load_kN"] = round(uplift_load, 1)
@@ -559,7 +559,7 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
             f"{governing:.1f} kN, the lesser of the piles' sum "
             f"{piles_resistance:.1f} kN and the block's {r['R_r_kN']:.1f} "
             f"kN: {which}", MODULE,
-            basis=("GEC-12 p. 291 (AASHTO 2014): 'limit uplift resistance "
+            basis=("GEC-12 Vol I p. 291 (AASHTO 2014): 'limit uplift resistance "
                    "of a pile group to the lesser of: 1. The sum of "
                    "individual pile resistance in axial tension. 2. The "
                    "resistance in axial tension of the pile group "
@@ -576,7 +576,7 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
                  f"{r['B_m']:.2f} x {r['Z_m']:.2f} m at the toes to "
                  f"{r['top_width_m']:.2f} x {r['top_length_m']:.2f} m at "
                  f"the top, the piles taken as soil")
-        basis = ("GEC-12 p. 291, Fig. 7-33 (after Tomlinson 1994): 'the "
+        basis = ("GEC-12 Vol I p. 291, Fig. 7-33 (after Tomlinson 1994): 'the "
                  "effective weight of the block of soil extending upward "
                  "from the pile toe level at a slope of 1H:4V ... the "
                  "weights of the piles within the soil block are "
@@ -588,7 +588,7 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
                  f"by the embedded length, its effective weight and the "
                  f"undrained shear on its sides, 2D(B + Z)su, the piles "
                  f"taken as soil")
-        basis = ("GEC-12 Eq. 7-41 (p. 292), R_ug = 2D(B + Z)su + W_g, Fig. "
+        basis = ("GEC-12 Eq. 7-41 (Vol I p. 292), R_ug = 2D(B + Z)su + W_g, Fig. "
                  "7-34 (after Tomlinson 1994); UFC 3-220-20 Eqs. 6-42 and "
                  "6-43 (p. 436) the same; UFC p. 435: 'Usually, the "
                  "difference between the unit weight of the foundation "
@@ -617,11 +617,11 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
         elif part and small_group_reduction(n_piles, pile_type) < 1.0:
             chosen += (f" (the group's {group_piles} piles under the cap, "
                        f"not a small group)")
-        basis = ("GEC-12 Table 7-1 (p. 224): 'Group Uplift Resistance, "
+        basis = ("GEC-12 Table 7-1 (Vol I p. 224): 'Group Uplift Resistance, "
                  "phi_ug | Sand and Clay | 0.50'; UFC 3-220-20 Table 6-28 "
                  "(p. 434, AASHTO 2020), 'group block uplift, all soils': "
                  "driven piles 0.50, drilled shafts 0.45, micropiles 0.50")
-        basis += ("; GEC-12 p. 225: for a small group, 'less than 3 piles "
+        basis += ("; GEC-12 Vol I p. 225: for a small group, 'less than 3 piles "
                   "per substructure unit in this manual', AASHTO (2014) "
                   "reduces the factors of Tables 7-1 and 7-2 by 20 %"
                   if driven else
@@ -718,7 +718,7 @@ def tension_note(pile_forces, Vz: float):
     if not tension:
         return None
     n, k, total = len(pile_forces), len(tension), sum(tension)
-    rule = ("GEC-12 Sec. 7.2.3.2 (p. 291; UFC 3-220-20 Eq. 6-40) limits the "
+    rule = ("GEC-12 Sec. 7.2.3.2 (Vol I p. 291; UFC 3-220-20 Eq. 6-40) limits the "
             "uplift resistance of piles in tension to the lesser of the sum "
             "of their tension resistances and their resistance as a block; "
             "the pile-by-pile check does not cover the block")
@@ -794,7 +794,7 @@ def _run_meyerhof_group_settlement(params):
         choice("Meyerhof equation",
                "Eq. 7-51, silty sand (8)" if silty else "Eq. 7-50, sand (4)",
                how_given(silty, False, "silty_sand"),
-               basis=("GEC-12 p. 319, for a pile group in a homogeneous sand "
+               basis=("GEC-12 Vol I p. 319, for a pile group in a homogeneous sand "
                       "not underlain by a more compressible soil "
                       "(conservative); over cohesive deposits GEC-12 sends "
                       "to Sec. 7.3.5.3, the equivalent footing. Elastic "
@@ -871,16 +871,16 @@ METHOD_INFO = {
             "spacing": {"type": "float", "required": False, "description": "Centre-to-centre pile spacing (m), both directions."},
             "spacing_x": {"type": "float", "required": False, "description": "X spacing (m), if it differs from spacing. eta_g takes the smaller of x and y."},
             "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m), if it differs from spacing."},
-            "soil_type": {"type": "str", "required": False, "allowed_values": list(SOIL_TYPES), "description": "Gives the group efficiency factor eta_g: 'cohesionless' (UFC's coarse-grained) or 'cohesive' (fine-grained), the stratum giving most of the resistance (GEC-12 p. 281). Driven piles, GEC-12 Secs. 7.2.2.1-7.2.2.2 (pp. 282, 284): cohesionless not underlain by a weak deposit, 1.0; clay with su < 2 ksf and the cap not in firm contact with the ground, 0.65 at s = 2.5b to 1.0 at 6b, linear between; else 1.0. Other pile types: UFC 3-220-20 Table 6-26 (see pile_type). Below the table's minimum spacing (2.5b driven piles and drilled shafts, 3b the others) the call is refused. The group resistance is the lesser of n*eta_g*R_n and block failure."},
+            "soil_type": {"type": "str", "required": False, "allowed_values": list(SOIL_TYPES), "description": "Gives the group efficiency factor eta_g: 'cohesionless' (UFC's coarse-grained) or 'cohesive' (fine-grained), the stratum giving most of the resistance (GEC-12 Vol I p. 281). Driven piles, GEC-12 Secs. 7.2.2.1-7.2.2.2 (Vol I pp. 282, 284): cohesionless not underlain by a weak deposit, 1.0; clay with su < 2 ksf and the cap not in firm contact with the ground, 0.65 at s = 2.5b to 1.0 at 6b, linear between; else 1.0. Other pile types: UFC 3-220-20 Table 6-26 (see pile_type). Below the table's minimum spacing (2.5b driven piles and drilled shafts, 3b the others) the call is refused. The group resistance is the lesser of n*eta_g*R_n and block failure."},
             "cap_in_contact": {"type": "bool", "required": False, "description": "Whether the pile cap is in firm contact with the ground (sets eta_g's row). Left out where the row depends on it, the lower eta_g (not in contact) is taken and the result's choices give the other."},
             "cu": {"type": "float", "required": False, "description": "Undrained shear strength of the clay (kPa): sets eta_g's row against 2 ksf (95.76 kPa) for soil_type 'cohesive' (left out where it matters, su < 2 ksf is taken, said in the choices); and, for block failure, su1 and su2 where those are not given."},
-            "pile_type": {"type": "str", "required": False, "default": "driven", "allowed_values": list(PILE_TYPES), "description": "The column of UFC 3-220-20 Table 6-26 for eta_g: 'driven' (GEC-12), 'drilled_shaft', 'cfa', 'ddp' (drilled displacement) or 'micropile'; and the resistance factor for block failure: 0.60 driven (GEC-12 Table 7-1, p. 224), 0.55 drilled shafts, 0.60 micropiles (UFC 3-220-20 Table 6-27, p. 433); none printed for 'cfa' or 'ddp' (nominal only)."},
+            "pile_type": {"type": "str", "required": False, "default": "driven", "allowed_values": list(PILE_TYPES), "description": "The column of UFC 3-220-20 Table 6-26 for eta_g: 'driven' (GEC-12), 'drilled_shaft', 'cfa', 'ddp' (drilled displacement) or 'micropile'; and the resistance factor for block failure: 0.60 driven (GEC-12 Table 7-1, Vol I p. 224), 0.55 drilled shafts, 0.60 micropiles (UFC 3-220-20 Table 6-27, p. 433); none printed for 'cfa' or 'ddp' (nominal only)."},
             "pile_length": {"type": "float", "required": False, "description": "Pile embedded length D (m). With su1 and su2 (or cu), n_rows, n_cols, spacing and pile_diameter, gives the resistance to block failure: GEC-12 Eq. 7-36, R = 2D(B+Z)su1 + B*Z*su2*Nc, Nc = 5[1 + D/(5B)][1 + B/(5Z)] <= 9 (Eq. 7-37), B and Z the group's width and length to the outer pile faces (Fig. 7-31). Nominal, and factored by pile_type's printed resistance factor (block_failure_factored_kN)."},
-            "su1": {"type": "float", "required": False, "description": "Block failure: weighted average undrained shear strength along the group's perimeter over the embedded length (kPa); for cohesionless soils along the sides, their weighted average unit shaft resistance (GEC-12 p. 287)."},
+            "su1": {"type": "float", "required": False, "description": "Block failure: weighted average undrained shear strength along the group's perimeter over the embedded length (kPa); for cohesionless soils along the sides, their weighted average unit shaft resistance (GEC-12 Vol I p. 287)."},
             "su2": {"type": "float", "required": False, "description": "Block failure: average undrained shear strength below the toes to a depth of 2B (kPa; UFC 3-220-20 p. 433: 2B to 3B, whichever lower), that of the weak layer for a group in sand over it."},
             "row_position": {"type": "int", "required": False, "description": "Row number, 1 = the lead row (UFC 3-220-20 Fig. 6-25): gives the row's lateral p-multiplier p_m."},
             "spacing_diameter_ratio": {"type": "float", "required": False, "description": "s/b for the p-multiplier, s the spacing of the rows in the direction of the load (from spacing/pile_diameter if omitted). Below 3 the call is refused (p_m is printed from 3b)."},
-            "p_multiplier_method": {"type": "str", "required": False, "default": "aashto", "allowed_values": list(P_MULTIPLIER_METHODS), "description": "'aashto' (default): AASHTO's p_m as GEC-12 prints it (pp. 367, 370): rows 1, 2, 3+ = 0.8, 0.4, 0.3 at 3b and 1.0, 0.85, 0.7 at 5b, interpolated (0.90, 0.625, 0.5 at 4b, as GEC-12 Vol. III takes them), to 1.0 at 6b and beyond (UFC 3-220-20 Table 6-38). 'mokwa': Mokwa (1999), UFC 3-220-20 Table 6-38: p_m = 0.06(s/b)+0.64, 0.11(s/b)+0.34, 0.14(s/b)+0.16, 0.16(s/b)+0.04 for rows 1, 2, 3, 4+, each <= 1."},
+            "p_multiplier_method": {"type": "str", "required": False, "default": "aashto", "allowed_values": list(P_MULTIPLIER_METHODS), "description": "'aashto' (default): AASHTO's p_m as GEC-12 prints it (Vol I pp. 367, 370): rows 1, 2, 3+ = 0.8, 0.4, 0.3 at 3b and 1.0, 0.85, 0.7 at 5b, interpolated (0.90, 0.625, 0.5 at 4b, as GEC-12 Vol. III takes them), to 1.0 at 6b and beyond (UFC 3-220-20 Table 6-38). 'mokwa': Mokwa (1999), UFC 3-220-20 Table 6-38: p_m = 0.06(s/b)+0.64, 0.11(s/b)+0.34, 0.14(s/b)+0.16, 0.16(s/b)+0.04 for rows 1, 2, 3, 4+, each <= 1."},
         },
         "returns": {"group_efficiency": "eta_g (with soil_type).", "s_over_b": "The s/b eta_g was read at.", "group_efficiency_row": "The printed row read.", "block_failure_kN": "Nominal resistance to block failure (with pile_length).", "block_failure_phi": "The printed resistance factor for block failure (null for CFA or DDP, none printed).", "block_failure_factored_kN": "phi x the nominal resistance (null where no factor is printed).", "block_failure_Nc": "Nc used.", "block_width_m": "Group width B.", "block_length_m": "Group length Z.", "p_multiplier": "The row's p-multiplier (with row_position).", "choices": "Each value's basis and alternatives; report them."},
     },
@@ -900,10 +900,10 @@ METHOD_INFO = {
             "layers": {"type": "array", "required": False, "description": "The soil from the top of the block down, [{thickness (m), unit_weight (effective, kN/m3)}, ...], to the toes at least, in place of one unit_weight (e.g. the water table inside the block). In cohesionless soil each layer's volume is taken between its bottom and top plan dimensions (UFC 3-220-20 p. 436; GEC-12 Vol. III Eq. D-1)."},
             "cu": {"type": "float", "required": False, "description": "soil_type 'cohesive': the weighted average undrained shear strength over the embedded length along the group's perimeter (kPa), GEC-12 Eq. 7-41's su."},
             "cap_weight": {"type": "float", "required": False, "default": 0.0, "description": "The pile cap's effective weight over the block (kN), part of the block (GEC-12 Eq. 7-41's W_g 'including pile cap weight'; UFC 3-220-20 p. 435); for the piles in tension of a group, the cap over them (GEC-12 Vol. III p. 207 takes the tributary area over the back row in tension). Leave it out (0, the safe side) where the uplift load already carries it."},
-            "pile_type": {"type": "str", "required": False, "default": "driven", "allowed_values": list(PILE_TYPES), "description": "The block's resistance factor phi_ug: 0.50 driven (GEC-12 Table 7-1, p. 224), 0.45 drilled shafts, 0.50 micropiles (UFC 3-220-20 Table 6-28, p. 434); none printed for 'cfa' or 'ddp' (nominal only). Reduced by 20 % for a small group: fewer than 3 driven piles (GEC-12 p. 225), fewer than 5 of the others (UFC 3-220-20 Table 6-28 note A)."},
-            "axial_capacity_tension": {"type": "float", "required": False, "description": "One pile's factored tension resistance phi_up R_s (kN; GEC-12 Eq. 7-38, phi_up from Table 7-1 by the static method, 0.60 with a static load test or 0.50 dynamic testing with signal matching, Table 7-2; for a small group reduced by 20 %, GEC-12 p. 225). With it, the piles' sum n phi_up R_s (Eq. 7-40) and the governing resistance, the lesser."},
+            "pile_type": {"type": "str", "required": False, "default": "driven", "allowed_values": list(PILE_TYPES), "description": "The block's resistance factor phi_ug: 0.50 driven (GEC-12 Table 7-1, Vol I p. 224), 0.45 drilled shafts, 0.50 micropiles (UFC 3-220-20 Table 6-28, p. 434); none printed for 'cfa' or 'ddp' (nominal only). Reduced by 20 % for a small group: fewer than 3 driven piles (GEC-12 Vol I p. 225), fewer than 5 of the others (UFC 3-220-20 Table 6-28 note A)."},
+            "axial_capacity_tension": {"type": "float", "required": False, "description": "One pile's factored tension resistance phi_up R_s (kN; GEC-12 Eq. 7-38, phi_up from Table 7-1 by the static method, 0.60 with a static load test or 0.50 dynamic testing with signal matching, Table 7-2; for a small group reduced by 20 %, GEC-12 Vol I p. 225). With it, the piles' sum n phi_up R_s (Eq. 7-40) and the governing resistance, the lesser."},
             "uplift_load": {"type": "float", "required": False, "description": "The factored uplift on the piles in the block (kN, positive): the net uplift on a group in tension, or the summed tension of the piles in tension; for the utilization, the load over the governing resistance."},
-            "piles_under_cap": {"type": "int", "required": False, "description": "The piles under the cap when the block is part of the group (the piles in tension), for the small-group rule, which counts the piles per substructure unit (GEC-12 p. 225). At least n_rows x n_cols."},
+            "piles_under_cap": {"type": "int", "required": False, "description": "The piles under the cap when the block is part of the group (the piles in tension), for the small-group rule, which counts the piles per substructure unit (GEC-12 Vol I p. 225). At least n_rows x n_cols."},
         },
         "returns": {"block_width_m": "Block width B at the toes.", "block_length_m": "Block length Z at the toes.", "block_top_width_m": "Cohesionless: the block's width at the top.", "block_top_length_m": "Cohesionless: its length at the top.", "block_volume_m3": "The block's volume.", "block_soil_weight_kN": "The soil's effective weight in the block (piles taken as soil).", "block_cap_weight_kN": "The cap weight added.", "block_side_shear_kN": "Cohesive: 2D(B+Z)su.", "block_layers": "With layers: each layer's share.", "group_uplift_block_kN": "The block's nominal uplift resistance R_ug.", "group_uplift_phi": "phi_ug applied (null where none is printed).", "group_uplift_block_factored_kN": "phi_ug R_ug.", "piles_tension_resistance_kN": "n phi_up R_s (with axial_capacity_tension).", "group_uplift_resistance_kN": "The group's factored uplift resistance, the lesser of the two (null without axial_capacity_tension).", "group_uplift_governs": "'block' or 'individual piles'.", "group_uplift_utilization": "uplift_load over the governing resistance.", "group_uplift_adequate": "uplift_load <= the governing resistance.", "group_uplift_note": "What is missing or not printed; report it.", "choices": "Each value's basis and alternatives; report them."},
     },
@@ -976,11 +976,11 @@ declare_when_absent(METHOD_INFO, {
     "group_uplift": {
         "piles_under_cap": (
             "n_rows x n_cols, the piles in the block", "the small-group rule "
-            "counts the piles per substructure unit (GEC-12 p. 225); give "
+            "counts the piles per substructure unit (GEC-12 Vol I p. 225); give "
             "piles_under_cap when the block is part of the group"),
         "axial_capacity_tension": (
             "the block alone", "the group's uplift resistance is the lesser "
-            "of the piles' sum and the block (GEC-12 p. 291), so no more "
+            "of the piles' sum and the block (GEC-12 Vol I p. 291), so no more "
             "than the block's; give each pile's factored tension resistance "
             "for the lesser")},
 })

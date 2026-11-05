@@ -117,12 +117,12 @@ _SIDE = {
     },
     "residual_strength": {
         "name": "Post-liquefaction residual strength su,r",
-        "cite": ("FHWA GEC-10 §10.7, p. 10-51; FHWA GEC-12 §7.4.2.2, p. 383; "
+        "cite": ("FHWA GEC-10 §10.7, p. 10-51; FHWA GEC-12 §7.4.2.2, Vol I p. 383; "
                  "su,r by GEC-10 Eq 9-13 (p. 9-43)"),
         "source": ("FHWA GEC-10 §10.7, p. 10-51: 'A lower bound side "
                    "resistance should be taken as equal to the "
                    "post-liquefaction residual undrained strength of the "
-                   "layer, su,r'; FHWA GEC-12 §7.4.2.2, p. 383: 'assigning "
+                   "layer, su,r'; FHWA GEC-12 §7.4.2.2, Vol I p. 383: 'assigning "
                    "residual strength properties to the liquefiable "
                    "layers'; su,r given, or from (N1)60 by GEC-10 Eq 9-13 "
                    "(p. 9-43, Kramer and Wang 2015)"),
@@ -1192,7 +1192,7 @@ def post_liquefaction_downdrag(
         + ". The neutral plane, drag force and settlement are then found as "
         "for static downdrag (GEC-10 §10.6.2, which defers to GEC-12 "
         "§7.3.6.1), every method side by side, before and after. FHWA "
-        "GEC-12 §7.4.2.2 (pp. 384-385, Fellenius and Siegel 2008): "
+        "GEC-12 §7.4.2.2 (Vol I pp. 384-385, Fellenius and Siegel 2008): "
         "liquefaction above the neutral plane before liquefaction 'will "
         "have limited effect on the pile'; below it, it 'will increase the "
         "axial compression load in the pile as well as result in additional "
