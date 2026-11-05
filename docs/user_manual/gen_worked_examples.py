@@ -47,8 +47,10 @@ EXAMPLES = [
         layers=[dict(thickness=6.0, soil_type="cohesive", unit_weight=17.0, cu=30.0, Cc=0.3, e0=1.0, settling=True),
                 dict(thickness=14.0, soil_type="cohesionless", unit_weight=19.0, phi=34.0, settling=False)],
         Q_dead=400.0, fill_thickness=2.0, fill_unit_weight=19.0, gwt_depth=3.0)),
+    # The Vulcan 014 takes its printed driving system (GM-299); any other
+    # hammer needs the cushion, its COR and the helmet given
     ("wave_equation", "bearing_graph", dict(
-        pile_length=20.0, pile_area=0.012, ram_weight=45.0, stroke=1.5, efficiency=0.8,
+        pile_length=20.0, pile_area=0.012, hammer_name="Vulcan 014",
         R_min=500.0, R_max=3000.0, R_step=500.0)),
     ("sheet_pile", "cantilever_wall", dict(
         excavation_depth=4.0,

@@ -162,10 +162,14 @@ the library, `Cushion` and `make_cushion_from_properties` need `cor`, and
 
 ## Noted, not fixed
 
-- The retired `foundry/wave_equation_agent_foundry.py` and
-  `foundry/calc_package_agent_foundry.py` still default to 500,000 kN/m,
-  COR 0.80 and 5 kN. They are not on the app's path (CLAUDE.md: retired
-  route); left as they are.
+- The retired `foundry/wave_equation_agent_foundry.py` still defaults to
+  500,000 kN/m, COR 0.80 and 5 kN, passing them to the library itself.
+  The retired `foundry/calc_package_agent_foundry.py` calls
+  `generate_bearing_graph` with no `helmet_weight`, so its wave equation
+  package now raises "helmet_weight is required" where it used to take
+  5 kN. Neither is on the app's path (CLAUDE.md: retired route), and no
+  test calls the second; both are left as they are (their deletion is
+  BACKLOG INF-06).
 - `generate_all_pdfs.py` and `docs/gallery/build_gallery.py` now pass the
   old 5 kN helmet explicitly (their cushions were already given) so they
   run as before; their made-up cushions are not printed values either.
@@ -177,3 +181,36 @@ the library, `Cushion` and `make_cushion_from_properties` need `cor`, and
   named hammer (already so on master).
 - `simulate_blow`'s docstring calls its `cushion` the "pile cushion
   (between helmet and pile head)"; it is the hammer cushion. Wording only.
+
+## Review fixes (2026-11-04)
+
+An independent review checked the change against GEC-12 Vol 2: all 12
+values of Table 12-2 (p. 183), the examples' systems (pp. 163, 167, 174,
+179) and pp. 155-156, 209, 216, 225-226, 352 and 519 say what the code
+says. GEC-12 Vol 3 and NHI-06-089 print no other system by hammer. Fixed
+after it:
+
+- This folder was `module_work/gm-299/`; it is now `module_work/gm299/`,
+  the name `wave_equation/DESIGN.md` gives and the other GM folders use.
+- The user manual's wave-equation worked example ran a custom ram with
+  no cushion, which the tool now refuses. `gen_worked_examples.py` and
+  the ask in `manual_content.py` now name `hammer_name 'Vulcan 014'`
+  (its printed system), with a note on the other hammers. Without a full
+  rebuild (which moves the cover version), only that entry of
+  `worked_examples.json` was re-run through the live dispatch, and in
+  `manual.html` only the worked example block and the five
+  wave-equation parameter tables (single_blow, bearing_graph twice,
+  drivability, wave_equation_package) were re-rendered with
+  `build_manual`'s own helpers. Their rows differ only in
+  `cushion_stiffness`, `cushion_cor`, `helmet_weight` and the new
+  `driving_system`.
+- The note above on the retired foundry wrappers: the calc package one
+  now raises where it defaulted.
+
+Noted by the review, not fixed: `generate_all_pdfs.py`'s analysis dict
+carries no `helmet_weight`, so its sample PDF now leaves the helmet row
+out (it printed the old 5 kN default); with only `cushion_cor` or
+`helmet_weight` given for the Vulcan 014, the one choice entry says
+"default" while `defaults_used` leaves the given one out; a calc package
+that marks `driving_system` as assumed drops the "printed for another
+hammer" sentence; a custom hammer's refusal reads "for the Custom".
