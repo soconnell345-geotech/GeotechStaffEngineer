@@ -278,7 +278,7 @@
          }
         ],
         "name": "calc",
-        "system_prompt": "47dde8faedec917e",
+        "system_prompt": "75e3898ae03de99a",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -496,8 +496,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "9df47c22a40dc82d",
-      "system_prompt_chars": 26230,
+      "system_prompt": "fdca9679dea81810",
+      "system_prompt_chars": 26400,
       "tool_order": [
        "list_agents",
        "list_methods",
@@ -1497,7 +1497,7 @@
      }
     ]
    },
-   "planlens": "0.13.0 (source checkout)"
+   "planlens": "0.14.0"
   },
   "f440beafcd9dfd89": {
    "builds": {
