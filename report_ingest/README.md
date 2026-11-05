@@ -3,20 +3,41 @@
 Part of the report-ingest train (`module_work/REPORT_INGEST_PLAN.md`). planlens
 turns a PDF into pages with kinds, located text, an outline and a first draft of
 what each page **is**; this package adds the geotechnical judgement and the
-record. WP4 closed the loop: a PDF now goes in one end and a record, a summary,
-a library page and a DIGGS file come out the other, with the whole thing
-available to the app as one sub-agent. Calculation printouts are WP5.
+record. A PDF goes in one end and a record, a summary, a library page and a
+DIGGS file come out the other, with the whole thing available to the app as one
+sub-agent. The logs, the laboratory sheets, the calculation printouts, the
+narrative and the soundings are all read.
+
+**Model first is the default, stage by stage** (BACKLOG RI-87, RI-186). Each of
+five stages — the page labels, the logs, the laboratory sheets, the printouts
+and the narrative — is on or off under `GEOTECH_INGEST_MODEL_FIRST` (or
+`ingest_report(model_first=...)`); unset, every stage is on. A stage on sends
+each group of its pages to the model in ONE call and the model's answer is the
+record, with no floor and no zoom tool; each value is then placed on its page by
+the words printed there. A stage off is the reader described under its own name
+below (the "today's reader" rows of the table), on today's work items; `off` for
+every stage is that pipeline byte for byte, and no model-first module is
+imported. See "Model-first reading" under the graph.
 
 | Piece | Module | Shape |
 |---|---|---|
 | 0b. Document triage | `triage.py` | one structured call |
-| 0c. Label review | `label_review.py` | an agent loop with four tools |
+| Page labels, model first | `range_labels.py` | one vision call per page to DESCRIBE it, then one call per report (or window) that labels it in SECTIONS; replaces the vision voter and the label review when the labels stage is on |
+| Model-first pages | `model_first_pages.py` | which pages go in each call (one log per hole, laboratory sheets, printouts at their boundaries, the narrative) and how they are sent: a cut PDF, or pictures with their text |
+| Model-first schemas and instructions | `model_first.py` | today's answer schemas plus the header fields, recovery as a length and a row's bottom elevation; one instruction per stage, versioned by `READ_PROMPT_VERSION`; the PDF-route probe |
+| Model-first readers | `model_first_read.py` | ONE call per page group, the answer is the record; a group that does not fit is halved down to one page; the narrative in one call, text first |
+| Placement | `locate.py` | where on its cited page each model-first value is printed, found from the page's own words |
+| The checks | `checks.py` | each builder's `checks=`: `refuse` (today's readers) or `flag` (model first: doubtful values kept and flagged) |
+| 0c. Label review (labels stage off) | `label_review.py` | an agent loop with four tools, over the pages the voters split on |
+| The page-label vote (labels stage off) | `label_vote.py` | the rules, one vision pass and the printed form, combined under `label_policy` |
 | The vision experiment | `vision_labels.py` | the page as a picture: one call a page, one a sheet, or one a window of the whole report |
 | The record | `model.py` | pydantic; the product everything else exports |
-| 2. Log reader | `log_reader.py` | one structured call per log, image alongside |
-| 3. Lab reader | `lab_reader.py` | one call per sheet, `zoom_plot` when a curve is only plotted |
-| The floors | `floor.py`, `log_floor.py`, `lab_floor.py` | the grid's and the tables' own record before any call, and the merge: add, correct with evidence, never drop |
-| 3. Narrative reader | `narrative_reader.py` | one call for the owner's two schemas, cited |
+| 2. Log reader (today's) | `log_reader.py` | one structured call per log, image alongside |
+| 3. Lab reader (today's) | `lab_reader.py` | one call per sheet, `zoom_plot` when a curve is only plotted |
+| Calculation reader (today's) | `calc_reader.py` | a deterministic floor of labelled values, then one call (two at most) per printout |
+| Pits, soundings, probes | `sounding_reader.py` | a pit is read as a log (by the logs stage); a cone sounding or dynamic probe is a tabulated or plotted sounding, read by this reader whatever the model-first setting |
+| The floors (today's readers) | `floor.py`, `log_floor.py`, `lab_floor.py` | the grid's and the tables' own record before any call, and the merge: add, correct with evidence, never drop |
+| 3. Narrative reader (today's) | `narrative_reader.py` | the owner's two schemas, cited; one call when the narrative fits, page chunks merged in Python when it does not |
 | Reports bound inside reports | `bound.py` | where a bound document begins and ends, and the one call that says what it IS |
 | 4. Reconciler | `reconciler.py` | pure Python; records disagreements, never settles them |
 | The review checklist | `checklist.py` + `report_review_checklist.json` | pure Python over the record; DRAFT; the judgement items go to the agent |
@@ -28,6 +49,8 @@ available to the app as one sub-agent. Calculation printouts are WP5.
 | Scoring one log | `log_scoring.py` | the grid alone, then the reader |
 | Scoring one sheet | `lab_scoring.py` | the page's tables alone, then the reader |
 | Scoring the narrative | `narrative_scoring.py` | recall, precision and the flattering one |
+| Scoring a printout, a sounding | `calc_scoring.py`, `sounding_scoring.py` | the floor alone, then the reader |
+| The report library | `library.py`, `library_agent.py` | the reports already read, asked questions across them |
 
 ## The record (`model.py`)
 
@@ -89,7 +112,10 @@ BESIDE the strings rather than replacing them: `bearingCapacityValues` beside
 yes/no question, and the normalised site class, ASCE edition and ISO date
 beside the printed ones. `NarrativeFacts` is what sits around the answers —
 what the narrative STATED, what Python COUNTED, what the appendix turned out to
-hold, and the caller's own questions. `CalcEntry` is still WP5.
+hold, and the caller's own questions. A calculation printout is a
+`Calculation` on `ReportRecord.calculations`; the old `calcs` list of
+`CalcEntry` is kept only so a record written before the calculation reader
+still loads, and nothing writes it.
 `record_json_schema()` exports the whole thing.
 
 **`LabTest.result` is a typed result per kind** since WP3, discriminated on
@@ -1333,14 +1359,18 @@ a narrative that barely answered makes it `low`.
 ## The graph (`graph.py`) and the folder run (`run_folder.py`)
 
 `ingest_report(source, engine, out_dir=…, budgets=…, questions=…,
-di_result=…, label_policy=…, review_mode=…, vision_engine=…)` is the whole
-ingest: open (with DI when given) → roles, outline and ledger → triage → the
-page-label VOTE (the rules, one vision pass on a cheap tier, the printed form)
-→ the label review over the pages the voters split on → work items from the
-settled labels → the reports BOUND inside this one → one reader per item →
-reconcile → each bound document round the same loop → write.
+di_result=…, label_policy=…, review_mode=…, vision_engine=…, model_first=…)`
+is the whole ingest: open (with DI when given) → roles, outline and ledger →
+triage → the page labels → work items from the settled labels → the reports
+BOUND inside this one → the readers → reconcile → each bound document round the
+same loop → write.
 
-See "The page labels are a vote" below for `label_policy` and `review_mode`.
+With the labels stage model first (the default), every page is described and
+the report labelled by sections (`range_labels.py`), and the vote's vision pass
+and the label review do not run. With it off, the labels are the VOTE (the
+rules, one vision pass on a cheap tier, the printed form) and the label review
+over the pages the voters split on; see "The page labels are a vote" below for
+`label_policy` and `review_mode`.
 `vision_engine` should be an engine on a CHEAP tier, since that voter looks at
 every page; without one it runs on the same engine as everything else, which
 works and costs more than it needs to. `label_policy="rules"` calls no vision
@@ -1352,6 +1382,32 @@ offline (every reader takes an engine), restartable (each item writes
 `items/<id>.json` as it finishes and a second run picks up where the first
 stopped), and it cannot forget an appendix.
 
+**Model-first reading** (BACKLOG RI-87, RI-186; the default for every stage).
+`model_first_stages()` reads the setting: unset or `on` is every stage on,
+`off` every stage off, and `stage=word` pairs set one stage, so
+`logs=off,lab=off` reads the logs and the laboratory sheets with today's readers
+and `off,narrative=on` reads only the narrative model first. A reader stage on
+groups its pages (`model_first_pages.py`) from the labels and the page
+descriptions when the labels stage is on, or from today's work items when it is
+off: one log per hole, each run of laboratory pages in windows cut where a new
+sheet begins, printouts split where a new one begins with divider pages set
+aside, the narrative as one group. Each
+group goes to the model in ONE call (`model_first_read.py`) as a cut PDF where
+the engine can send one and as pictures with their text otherwise
+(`GEOTECH_INGEST_MODEL_FIRST_PAGES`, `auto` by default), with the stage's
+instruction and answer schema (`model_first.py`). A group too large for one
+request, or a reply cut off at its output cap, is asked again as two halves, and
+a half again, down to one page; a page that still does not fit, or a call with
+no structured answer even when asked once more, is a `skipped` entry naming the
+pages. The answer is built into the record by today's builders with
+`checks="flag"` (`checks.py`: a doubtful value kept and flagged, an impossible
+one listed as read, where today's readers refuse it), and each value is placed
+on its cited page by the words printed there (`locate.py`), the placements
+written to `placement.json` beside `items/`. Each
+result is saved as `items/mf-<key>.json`; a group no answer came back for is not
+saved, so a resumed run asks again. Cone soundings and dynamic probes keep the
+sounding reader.
+
 **The narrative is read once** (BACKLOG RI-14). planlens starts a new work item
 wherever a run of narrative pages is broken by a figure, a table page or a tab,
 so one report's prose is often several items. Until RI-14 each was read on its
@@ -1360,9 +1416,13 @@ record kept the LAST item's answer, paid for every one and carried every
 read's unsettled lines again. Now the readable narrative items are one read
 over all their pages, cached as `items/<first>-<last>.json` when there is more
 than one (`items/<id>.json` when there is one, as before), with an
-`items.narrative` note naming them. A narrative too long for one call is cut
-into parts by the reader and merged by its own rule: the first answer kept,
-lists unioned, every disagreement between two parts recorded.
+`items.narrative` note naming them. With today's reader, a narrative too long
+for one call is cut into parts and merged by its own rule: the first answer
+kept, lists unioned, every disagreement between two parts recorded. Model first
+(BACKLOG RI-175), the narrative is one call that sends TEXT FIRST — each page
+with a usable text layer as its text, only the others as pictures (up to 20) —
+and the pages that do not fit are named in the result's `left_out`; only a
+front whose words alone pass the request limit is split.
 
 **The exploration answers and the logs** (`counts_from_logs`, BACKLOG RI-14).
 Once everything is read and reconciled, the five exploration answers
@@ -1394,16 +1454,24 @@ or one the item ceiling cut are pits and cones that exist), and any other
 answer only where every item of its kind was read; a field held back is in the
 note as `held`, with why.
 
-**The workflow triage chose decides what runs.** `appendix_only` skips the
-narrative reader — a reader pointed at an appendix would answer the owner's
-questions off a boring log. `needs_person` stops after triage with a QA entry.
-A scanned narrative with no DI result is skipped with a QA entry rather than
-run against nothing, because the narrative reader reads TEXT; the log and
-laboratory readers look at the page image and work regardless. Calculation
-printouts are recorded as a QA entry saying they were not read, so a reviewer
-knows the pages exist and were skipped on purpose; a report bound inside this
-one is read as its OWN record (`ingest_bound=True`, the default) and listed on
-`bound_documents`.
+**The workflow triage chose decides what runs.**
+
+| Workflow | What runs |
+|---|---|
+| `standard` | everything |
+| `appendix_only` | everything but the narrative reader, model first or not: a reader pointed at an appendix would answer the owner's questions off a boring log; the narrative pages get a `skipped` entry |
+| `multi_document` | everything; the bound documents triage names (`bound_together`, under any workflow) are read as their OWN records (`ingest_bound=True`, the default) and listed on `bound_documents` |
+| `partial` | everything; triage's anomalies are `note` entries |
+| `scanned` | everything the pages support. Today's narrative reader reads TEXT, so narrative pages that are all scans with no reliable text and no DI result get an `unreadable` entry and are not read; the model-first narrative sends those pages as pictures. The log and laboratory readers look at the page image either way |
+| `needs_person` | nothing after triage: a `skipped` entry at `workflow` with triage's rationale |
+
+A bound document is not triaged: its workflow is `standard` when its own pages
+carry a narrative label and `appendix_only` otherwise. A triage answer off the
+list runs `standard`, with a note saying what triage answered (RI-20).
+Calculation printouts are read (today's `calc_reader.py`, or the model-first
+calc stage) onto `ReportRecord.calculations`. Still not read as items of their
+own: figures, photographs, plans, profiles and front matter, which the
+narrative reader is shown.
 
 `run_folder(folder, engine_factory, out_dir=…, vision_engine_factory=…,
 label_policy=…, review_mode=…)` drives the same graph headless
@@ -1847,8 +1915,11 @@ an earlier firm's B-1 and this report's B-1 in one list of investigations, a
 2009 water level beside a 2026 one, and a boring count that is the sum of two
 investigations and the truth about neither.
 
-**So a bound document becomes its own record.** The parent keeps those pages
-labelled `appended_report` and LISTS the child; the child is built from the
+**So a bound document becomes its own record.** The parent LISTS the child on
+`bound_documents` and keeps its own page labels for those pages (`appended_report`
+where its labels said so; a page it labelled a log, a sheet or a printout keeps
+that label, but the page is HANDED to the child to read, below); the child is
+built from the
 same pages by the same pipeline — its own identity, its own labels, its own
 work items, its own readers, its own reconcile, its own exports — and nothing
 is attributed across the boundary.
@@ -1882,7 +1953,11 @@ does not change when you stop calling it an appendix. The rules ARE re-run,
 over the child's pages rebased to zero — which is what makes its cover a cover
 and its boring log a boring log again instead of four pages of
 `appended_report`. The label review does not run over a bound document; a
-split the vote leaves is a `label_disagreement` entry in the child's QA.
+split the vote leaves is a `label_disagreement` entry in the child's QA. That is
+the labels stage off. With it model first (the default), the child labels its
+own pages by sections from their descriptions (`range_labels.py`) and its
+readers read them in its own window; the parent's narrative is given the bound
+pages or not as `narrative_skips_bound` says (RI-188).
 
 **What the parent and the child carry.**
 
@@ -1904,9 +1979,10 @@ into that same file, and the child's own extent is recorded once, on `parent`.
 document's title, firm and date, and told what to do with them: do not count
 their borings as this report's, do not put their identifiers in this report's
 `boringDictionary`, and each of them IS a previous investigation and counts
-towards `previousInvestigationCount`. The counts and dictionaries the logs
-settle (`counts_from_logs`, see the graph) are settled against the parent's
-OWN logs. The child's
+towards `previousInvestigationCount`. The parent's counts and dictionaries are
+what its narrative answered: `counts_from_logs` is `off` by default, and only
+when it is set (see the graph) are they settled against logs, the parent's OWN
+logs only. The child's
 narrative reader gets the mirror of that: a `window` that keeps every page it
 is shown and every passage it is searched inside the bound document, so it
 never answers off the cover, the letter or the recommendations of the report it
