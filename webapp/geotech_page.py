@@ -87,11 +87,41 @@ def add_report_library(kw: dict, temp_dir: str) -> None:
     kw["library_root"] = root
 
 
+def document_signal(temp_dir: str):
+    """Whether this conversation holds a document its attachments and
+    messages do not show, for the geotech page's document gate (BACKLOG
+    INF-67): a SharePoint download on the conversation's ledger (it is
+    written as the download finishes, so a fetch counts from the next model
+    call of the same turn, and it survives a summarised history), or a
+    working folder the user chose in place of the conversation's own
+    ``files`` folder (it may already hold their documents), or a deployment
+    whose read tools open folders beyond the conversation (Databricks'
+    ``/Volumes`` and ``/Workspace``, ``GEOTECH_EXTRA_READ_ROOTS``): a report
+    named there by its path is a document too."""
+    files_dir = os.path.normcase(os.path.abspath(temp_dir))
+    conv_dir = os.path.dirname(files_dir)
+
+    def _holds() -> bool:
+        from funhouse_agent._fileio import host_output_dir
+        from funhouse_agent.vision_tools import _extra_read_roots
+        from webapp import core
+        if _extra_read_roots():
+            return True
+        if core.load_downloads(conv_dir):
+            return True
+        bound = host_output_dir()
+        return bool(bound) and \
+            os.path.normcase(os.path.abspath(bound)) != files_dir
+
+    return _holds
+
+
 def build_page_agent(model, *, attachments, save_fn, temp_dir, **kw):
     """The geotech page's agent, after the shell's shared wiring
     (:func:`webapp.core.build_agent`): the report library where there is
     one, then the geotech builder."""
     add_report_library(kw, temp_dir)
+    kw.setdefault("document_signal", document_signal(temp_dir))
     from funhouse_agent.deep.agent import build_deep_agent
     return build_deep_agent(model, attachments=attachments, save_fn=save_fn,
                             **kw)
@@ -134,6 +164,9 @@ def build_reviewer_agent(kind, model, attachments: dict, temp_dir: str,
     from funhouse_agent import reviewers as _reviewers
     builder = getattr(_reviewers, name)
     kw = dict(build_kwargs)
+    # The page's document gate needs the page's signal: a specialist's
+    # replayed history no longer holds an earlier turn's download (INF-67).
+    kw.setdefault("document_signal", document_signal(temp_dir))
     core._add_file_tools(kw, temp_dir)
     # Specialists never pass through build_agent, so they had no feedback
     # tool at all before 2026-09-15.

@@ -58,6 +58,7 @@ from funhouse_agent.reviewer import CONSULTANT_ROLE, REVIEWER_DEEP_PROMPT
 from funhouse_agent.system_prompt import (REFERENCE_MODULES_CLAUSE,
                                           REFERENCES_HELPER_CLAUSE)
 
+from funhouse_agent.deep.document_gate import DocumentToolsGate
 from funhouse_agent.deep.limits import (
     DEFAULT_REFERENCES_MAX_MODEL_CALLS,
     DEFAULT_REVIEWER_MAX_MODEL_CALLS,
@@ -872,9 +873,16 @@ def build_deep_agent(
     working_dir: Optional[str] = None,
     coverage_dir: Optional[str] = None,
     subagent_models: Optional[dict] = None,
+    document_signal: Optional[Callable[[], bool]] = None,
     **kwargs,
 ):
     """Construct the deepagents port of the geotech agent.
+
+    ``document_signal`` (optional) tells the geotech page's document gate
+    that the conversation holds a document the attachments and messages do
+    not show (the web app: a SharePoint download on its ledger, a working
+    folder the user chose); see :mod:`funhouse_agent.deep.document_gate`
+    (BACKLOG INF-67).
 
     ``subagent_models`` gives a helper its own chat model, by the helper's
     name (``{"references": sonnet}``; BACKLOG INF-41). A helper not named,
@@ -1372,7 +1380,8 @@ def build_deep_agent(
         subagent_models=subagent_models, coverage=coverage)
 
     # The geotech page: deepagents' shell and delete cannot run on this
-    # backend (GM-176; wave w13b F55j called execute with no command).
+    # backend (GM-176; wave w13b F55j called execute with no command); the
+    # document tools wait for a document (INF-67).
     create_kwargs = _assembly.create_kwargs_for(
         kwargs, model=model, store=store, checkpointer=checkpointer,
         enable_memory=enable_memory,
@@ -1382,7 +1391,12 @@ def build_deep_agent(
         summarization_keep=summarization_keep,
         figure_tasks=figure_tasks, allowed_agents=allowed_agents,
         unknown_tool_hint=UnknownToolHint,
-        page_middleware=[HideTools(UNRUNNABLE_TOOLS)], coverage=coverage)
+        page_middleware=[HideTools(UNRUNNABLE_TOOLS),
+                         # INF-67: the document and drawing tools off the
+                         # list until the conversation holds a document.
+                         DocumentToolsGate(attachments,
+                                           signal=document_signal)],
+        coverage=coverage)
     # create_deep_agent is looked up here, so a test that patches this
     # module's name for it sees the call.
     agent = _assembly.compile_agent(
