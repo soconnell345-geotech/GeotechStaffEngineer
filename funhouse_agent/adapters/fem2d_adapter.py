@@ -170,6 +170,8 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
         "surcharge_kPa": result.surcharge_kPa,
         "max_displacement_m": result.max_displacement_m,
     }
+    if result.warnings:
+        out["warnings"] = list(result.warnings)
     return clean_result(out)
 
 
@@ -649,6 +651,7 @@ METHOD_INFO = {
             "bearing_FOS": "q_ult/q_applied when q_applied is given, else null.",
             "bearing_capacity_factors": "Closed-form {Nc, Nq, Ngamma} reference (Prandtl-Reissner + Vesic Ngamma).",
             "collapse_bracketed": "False if the footing carried the full q_max (q_ult is then a lower bound — raise q_max).",
+            "warnings": "Present only when there is one: on a cohesionless soil with no surcharge, q_ult is set by the mesh and is not a bearing capacity to design from. Quote it with q_ult.",
         },
     },
     "fem2d_slope_srm": {
