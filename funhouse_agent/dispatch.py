@@ -1125,6 +1125,28 @@ def _takes_catch_all(func) -> bool:
         return False
 
 
+def _item_key_hint(mod, method: str, parameters: dict, valid,
+                   aliases=()) -> str:
+    """For each unknown top-level name that is a key of an item of one of
+    the method's list parameters (``ru`` beside ``soil_layers``), a
+    sentence naming that list (BACKLOG GM-113), from the adapter's
+    ``ITEM_KEYS`` (``{method: {param: keys}}``); "" when none is.
+    Nothing is moved into the list: a top-level value would stand for
+    every item, which the caller has to say."""
+    table = (getattr(mod, "ITEM_KEYS", None) or {}).get(method) or {}
+    out = []
+    for k in sorted(parameters):
+        if k in valid or k in aliases:
+            continue
+        lists = [p for p, keys in table.items() if k in keys]
+        if lists:
+            out.append(f"'{k}' is a key of each item of "
+                       f"{' or '.join(lists)}, not a parameter of its own: "
+                       f"give it in each item "
+                       f"({lists[0]}[i].{k}).")
+    return " ".join(out)
+
+
 def _check_parameter_names(mod, method: str, parameters: dict) -> None:
     """Refuse a top-level parameter ``method`` does not take (BACKLOG
     GM-110): the ValueError names the unknown key(s), a did-you-mean and
@@ -1186,8 +1208,12 @@ def _check_parameter_names(mod, method: str, parameters: dict) -> None:
         reject_unknown_params(rest, valid, method=method,
                               aliases=tuple(aliases) + _DISPATCH_PARAMS)
     except ValueError as exc:
+        where = _item_key_hint(mod, method, rest, valid,
+                               tuple(aliases) + _DISPATCH_PARAMS)
+        if where:
+            exc = ValueError(f"{exc} {where}")
         if not hits:
-            raise
+            raise exc from None
         also = f" Also: {exc}"
     else:
         also = ""

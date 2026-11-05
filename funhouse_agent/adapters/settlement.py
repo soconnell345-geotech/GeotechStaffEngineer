@@ -473,3 +473,15 @@ declare_when_absent(METHOD_INFO, {
                "is not computed (0); give Es, or immediate_method "
                "'schmertmann' with its layers")},
 })
+
+# The keys each item of a list parameter carries, so a key given at the
+# top level is refused with a hint naming its list (BACKLOG GM-113).
+from funhouse_agent.adapters import item_keys_for, merge_item_keys  # noqa: E402,F401
+ITEM_KEYS = merge_item_keys(
+    item_keys_for(METHOD_INFO, "layers", _SCHMERTMANN_KEYS,
+                  ("schmertmann_settlement",)),
+    item_keys_for(METHOD_INFO, "layers", _CONSOLIDATION_KEYS,
+                  ("consolidation_settlement",)),
+    item_keys_for(METHOD_INFO, "layers", _HOUGH_KEYS, ("hough_settlement",)),
+    item_keys_for(METHOD_INFO, "consolidation_layers", _CONSOLIDATION_KEYS),
+    item_keys_for(METHOD_INFO, "schmertmann_layers", _SCHMERTMANN_KEYS))

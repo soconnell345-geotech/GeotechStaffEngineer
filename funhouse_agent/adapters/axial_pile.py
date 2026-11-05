@@ -480,3 +480,8 @@ _NO_E = ("the static capacity does not use the pile's elastic modulus: "
          "make_pile_section reports a section's modulus")
 for _m in ("axial_pile_capacity", "capacity_vs_depth"):
     METHOD_INFO[_m]["refused_parameters"] = {"E": _NO_E}
+
+# The keys each item of a list parameter carries, so a key given at the
+# top level is refused with a hint naming its list (BACKLOG GM-113).
+from funhouse_agent.adapters import item_keys_for, merge_item_keys  # noqa: E402,F401
+ITEM_KEYS = item_keys_for(METHOD_INFO, "layers", _LAYER_KEYS)

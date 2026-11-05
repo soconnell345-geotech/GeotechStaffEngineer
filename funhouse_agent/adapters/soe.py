@@ -475,3 +475,10 @@ declare_when_absent(METHOD_INFO, {
 for _name in ("L", "Nc"):
     METHOD_INFO["check_basal_heave"]["parameters"][_name][
         "applies_when"] = {"method": ["caltrans"]}
+
+# The keys each item of a list parameter carries, so a key given at the
+# top level is refused with a hint naming its list (BACKLOG GM-113).
+from funhouse_agent.adapters import item_keys_for, merge_item_keys  # noqa: E402,F401
+ITEM_KEYS = merge_item_keys(
+    item_keys_for(METHOD_INFO, "layers", _LAYER_KEYS),
+    item_keys_for(METHOD_INFO, "supports", _SUPPORT_KEYS))
