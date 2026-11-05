@@ -11,7 +11,7 @@ unloads along the same elastic slope R_ultimate/quake from the
 maximum displacement, leaving a permanent (plastic) offset (GEC-12
 Vol 2 Fig. 12-2, p. 157). The permanent set per blow is GEC-12's: the
 maximum pile toe displacement less a weighted average of the shaft and
-toe quakes (Sec. 12.3, p. 158). The page names no weights; the shares of
+toe quakes (Sec. 12.3, Vol II p. 158). The page names no weights; the shares of
 R_ult are this module's assumption (``SoilSetup.weighted_quake``), and
 ``quake_weighting_choice`` states it with the other weightings' blow
 counts.
@@ -39,7 +39,7 @@ penetration below grade (GEC-12 Vol 2 p. 224: "Penetration refers to the
 analyzed pile toe penetration below grade"; Example 6, p. 182, a 66 ft pile
 with "an embedded length of 52.5 feet"); left out, the whole pile. Over it
 the shaft resistance is spread by ``shaft_distribution``, as GEC-12's
-examples print it: "uniform" (Example 5, p. 179: "92% uniform shaft
+examples print it: "uniform" (Example 5, Vol II p. 179: "92% uniform shaft
 resistance") or "triangular", rising linearly from none at grade to its
 largest at the toe (Example 1, p. 162, Fig. 12-3; Example 6, p. 182: "The
 shaft resistance will be distributed triangularly along the embedded
@@ -434,7 +434,7 @@ def quake_weighting_choice(quake_side: float, quake_toe: float,
     R_ult (``SoilSetup.weighted_quake``) are this module's assumption. The
     alternatives, a plain average and the toe quake alone (the toe
     spring's plastic offset), carry the blow counts they give on the same
-    blows. On GEC-12 Example 6 (p. 182; 0.40 in toe quake, 30 % shaft) the
+    blows. On GEC-12 Example 6 (Vol II p. 182; 0.40 in toe quake, 30 % shaft) the
     three give 92.6, 63 and 303 blows/ft, GRLWEAP 94.
 
     Parameters

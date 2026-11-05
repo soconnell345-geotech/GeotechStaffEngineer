@@ -26,7 +26,7 @@ class DrillShaft:
     socket_diameter : float, optional
         Rock socket diameter if different from shaft diameter (m).
         If None, same as diameter. One diameter for every rock layer:
-        GEC-10 sizes a rock socket by one diameter B (Eq. 10-21, Example
+        GEC-10 sizes a rock socket by one diameter B (Eq. 10-3, p. 10-9; Example
         10-4, p. 10-27) and gives no socket diameter per rock layer. It
         is the diameter of the rock side resistance and, with the tip in
         rock, of the base: GEC-10 Example 10-4 (p. 10-28) takes R_BN =

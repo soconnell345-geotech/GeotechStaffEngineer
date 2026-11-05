@@ -83,7 +83,7 @@ get_resistance_factors(method, condition) -> dict
   fractured rock as its own layer for the base on it); the calc
   steps print the zone and the side-resistance figure hatches it.
   `socket_diameter` stays one value for every rock layer: GEC-10 sizes a
-  socket by one diameter B (Eq. 10-21; Example 10-4) and gives no socket
+  socket by one diameter B (Eq. 10-3, p. 10-9; Example 10-4) and gives no socket
   diameter per rock layer.
 - Rock socket base and side, GEC-10 Example 10-4 (GM-221, 2026-10-20):
   with the tip in rock the base is on `socket_diameter` (when given; a

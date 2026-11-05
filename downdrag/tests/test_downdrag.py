@@ -2651,8 +2651,8 @@ class TestBetaInClay:
                                "3-220-20 Eq 6-7), beta 0.25")
         assert c["how"] == "given"
         for text in ("UFC 3-220-20 §6-5.4.1, p. 411",
-                     "FHWA GEC-12 §7.2.1.3.4, p. 255", "p. 10-48",
-                     "Table 7-9, p. 256", "clay 0.15-0.35",
+                     "FHWA GEC-12 §7.2.1.3.4, Vol I p. 255", "p. 10-48",
+                     "Table 7-9, Vol I p. 256", "clay 0.15-0.35",
                      "sigma'v final (skin_friction_stress)"):
             assert text in c["basis"], text
         (alt,) = c["alternatives"]

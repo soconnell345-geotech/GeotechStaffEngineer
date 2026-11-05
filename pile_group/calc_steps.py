@@ -339,7 +339,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="η_g",
             result_value=f"{efficiency:.3f}",
             result_unit="",
-            reference=("FHWA GEC-12 Secs. 7.2.2.1-7.2.2.2 (pp. 282, 284), "
+            reference=("FHWA GEC-12 Secs. 7.2.2.1-7.2.2.2 (Vol I pp. 282, 284), "
                        "Eq. 7-35; UFC 3-220-20 Table 6-26" if driven else
                        "UFC 3-220-20 Table 6-26 (p. 432)"),
             notes=(spacing_note +
@@ -367,7 +367,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                     result_unit="kN",
                     reference="FHWA GEC-12 Eq. 7-35; UFC 3-220-20 Eq. 6-37",
                     notes=("The group resistance is the lesser of this and "
-                           "the resistance to block failure (GEC-12 p. 284, "
+                           "the resistance to block failure (GEC-12 Vol I p. 284, "
                            "Eq. 7-36), not worked here."),
                 ))
 
@@ -575,7 +575,7 @@ def _group_uplift_section(analysis, tension) -> list:
                  f"{tension['tension_kN']:,.1f} kN in all"
                  + (f"; the group carries a net uplift of {-Vz:,.1f} kN."
                     if Vz < 0 else "."))
-    intro += (" GEC-12 Sec. 7.2.3.2 (p. 291) limits the uplift resistance "
+    intro += (" GEC-12 Sec. 7.2.3.2 (Vol I p. 291) limits the uplift resistance "
               "of piles in tension to the lesser of the sum of their "
               "tension resistances and their resistance as a block"
               + (", and GEC-12 Vol. III checks the back row in tension of a "
@@ -630,7 +630,7 @@ def _group_uplift_items(analysis, u) -> list:
                 f" kN" for s in layers)
             eq = ("V = Σ h/6 [Z_b·B_t + Z_t·B_b + 2(Z_t·B_t + Z_b·B_b)] by "
                   "layer, sides at 1H:4V from the toes; W = Σ V·γ'")
-            ref = ("FHWA GEC-12 p. 291, Fig. 7-33; Vol. III Eq. D-1; UFC "
+            ref = ("FHWA GEC-12 Vol I p. 291, Fig. 7-33; Vol. III Eq. D-1; UFC "
                    "3-220-20 p. 436")
         else:
             gamma = _get(analysis, 'unit_weight', None)
@@ -639,7 +639,7 @@ def _group_uplift_items(analysis, u) -> list:
                    f"m³; W = {u['block_volume_m3']:,.2f} × {gamma:.2f}")
             eq = ("V = B·Z·D + D²(B + Z)/4 + D³/12 (sides at 1H:4V from "
                   "the toes); W = V·γ'")
-            ref = ("FHWA GEC-12 p. 291, Fig. 7-33; UFC 3-220-20 Eq. 6-41 "
+            ref = ("FHWA GEC-12 Vol I p. 291, Fig. 7-33; UFC 3-220-20 Eq. 6-41 "
                    "(its L the group length, Z the depth)")
         items.append(CalcStep(
             title="Weight of the Soil Block",
@@ -649,7 +649,7 @@ def _group_uplift_items(analysis, u) -> list:
             result_unit="kN", reference=ref,
             notes=(f"Top of the block {u['block_top_width_m']:.3f} × "
                    f"{u['block_top_length_m']:.3f} m. The piles are taken "
-                   "as soil (GEC-12 p. 291)."),
+                   "as soil (GEC-12 Vol I p. 291)."),
         ))
         items.append(CalcStep(
             title="Nominal Uplift Resistance of the Block",
@@ -659,7 +659,7 @@ def _group_uplift_items(analysis, u) -> list:
             result_name="R_ug",
             result_value=f"{u['group_uplift_block_kN']:,.1f}",
             result_unit="kN",
-            reference="FHWA GEC-12 p. 291, Fig. 7-33; UFC 3-220-20 p. 436",
+            reference="FHWA GEC-12 Vol I p. 291, Fig. 7-33; UFC 3-220-20 p. 436",
             notes=cap_note.strip(),
         ))
     else:
@@ -694,7 +694,7 @@ def _group_uplift_items(analysis, u) -> list:
             result_name="R_ug",
             result_value=f"{u['group_uplift_block_kN']:,.1f}",
             result_unit="kN",
-            reference="FHWA GEC-12 Eq. 7-41 (p. 292); UFC 3-220-20 Eq. "
+            reference="FHWA GEC-12 Eq. 7-41 (Vol I p. 292); UFC 3-220-20 Eq. "
                       "6-43",
         ))
     phi = u['group_uplift_phi']
@@ -737,7 +737,7 @@ def _group_uplift_items(analysis, u) -> list:
         result_name="R_r,group",
         result_value=f"{governing:,.1f}",
         result_unit="kN",
-        reference="FHWA GEC-12 p. 291 (AASHTO 2014); UFC 3-220-20 Eq. 6-40",
+        reference="FHWA GEC-12 Vol I p. 291 (AASHTO 2014); UFC 3-220-20 Eq. 6-40",
         notes=f"The {u['group_uplift_governs']} govern"
               + ("s." if u['group_uplift_governs'] == "block" else "."),
     ))

@@ -222,7 +222,7 @@ _INFO_RATIONAL = {
     "rock_joints": {"type": "str", "required": False, "default": "closed", "allowed_values": ["closed", "open"], "description": "For rock_side_method 'caving': the joint condition of GEC-10 Table 10-3, 'closed' (default) or 'open' (open or gouge-filled joints), from the cores."},
 }
 _INFO_SHAFT_GEOM = {
-    "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter. One diameter for every rock layer: GEC-10 sizes a socket by one diameter B (Eq. 10-21, Example 10-4) and gives none per rock layer. The rock side resistance and, with the tip in rock, the base (pi/4*B^2, GEC-10 Example 10-4, p. 10-28) take it."},
+    "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter. One diameter for every rock layer: GEC-10 sizes a socket by one diameter B (Eq. 10-3, p. 10-9; Example 10-4) and gives none per rock layer. The rock side resistance and, with the tip in rock, the base (pi/4*B^2, GEC-10 Example 10-4, p. 10-28) take it."},
     "bell_diameter": {"type": "float", "required": False, "description": "Belled base diameter (m)."},
     "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m, no side resistance)."},
     "fractured_rock_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Decomposed or fractured rock (m) below the top of the first rock layer that is 'not considered part of the socket for design purposes' (GEC-10 p. 8-15): no rock side resistance over it, while the soil above keeps its own (casing_depth takes both). 0 = all rock is socket. Needs a rock layer."},

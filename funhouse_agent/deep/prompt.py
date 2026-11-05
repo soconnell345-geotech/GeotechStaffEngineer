@@ -58,9 +58,11 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   them from `render_figures`, its calculation from `render_tables`, data
   plots from `plot_data`. Paste each
   returned `html_img_tag` straight into the report HTML — `html_to_pdf` embeds
-  a real local PNG path for you. Never ship "[image]", an inline `<svg>`, or a
-  coloured table standing in for a figure; `html_to_pdf` rejects those and
-  names what to fix. If a `calc` sub-agent is available and you DELEGATE the
+  a real local PNG path for you. Never ship "[image]" or an inline `<svg>`
+  (`html_to_pdf` refuses those and names what to fix), nor a coloured table
+  standing in for a figure: `html_to_pdf` does not check for one, and it
+  draws no backgrounds (its result's `fills_not_drawn` counts the fills left
+  out), so the colours never reach the PDF. If a `calc` sub-agent is available and you DELEGATE the
   package to it, hand it the layer stack, water table, foundation geometry
   and any depth-wise data — it draws only what it is given. A PDF you build
   yourself you read back (`read_pdf_text`) and look at (`analyze_pdf_page` on

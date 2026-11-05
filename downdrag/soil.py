@@ -29,9 +29,9 @@ SKIN_FRICTION_METHODS = ("alpha", "beta")
 
 #: Where the Beta method is printed for cohesive soil (long-term, drained
 #: conditions), and its values in clay.
-BETA_IN_CLAY_CITE = "UFC 3-220-20 §6-5.4.1, p. 411; FHWA GEC-12 §7.2.1.3.4, p. 255"
+BETA_IN_CLAY_CITE = "UFC 3-220-20 §6-5.4.1, p. 411; FHWA GEC-12 §7.2.1.3.4, Vol I p. 255"
 BETA_IN_CLAY_VALUES = (
-    "from local experience, else from phi' by GEC-12 Table 7-9, p. 256 "
+    "from local experience, else from phi' by GEC-12 Table 7-9, Vol I p. 256 "
     "(after Fellenius 2014): clay 0.15-0.35 for phi' 25-30 deg; UFC "
     "3-220-20 Table 6-15, p. 414, the same for driven piles in clay")
 
@@ -57,7 +57,7 @@ SOIL_CLASSES = ("silt", "sand", "gravel")
 def fellenius_table(soil: str, phi_deg: float) -> tuple:
     """(beta, Nt, phi') from :data:`FELLENIUS_TABLE` for ``soil`` at phi'
     (degrees), for GEC-12 Steps 2b and 5b ("use Table 7-9 to estimate beta
-    coefficient from phi' angle", p. 257): a straight line in phi' between
+    coefficient from phi' angle", Vol I p. 257): a straight line in phi' between
     the soil type's range ends, the low beta and Nt at its low phi' (UFC
     Table 6-15 pairs beta's ends with phi' that way). The line is this
     module's reading; neither manual prints it. A phi' outside the range
@@ -241,7 +241,7 @@ class DowndragSoilLayer:
             raise ValueError(
                 "A cohesive layer with skin_friction_method 'beta' needs "
                 f"beta > 0, {BETA_IN_CLAY_VALUES} (GEC-12 §7.2.1.3.4 Step "
-                "2, p. 257).")
+                "2, Vol I p. 257).")
         if self.cu < 0:
             raise ValueError(f"cu must be non-negative, got {self.cu}")
 

@@ -165,7 +165,7 @@ def diesel_warning(hammer: Hammer) -> Optional[str]:
     review). A diesel is run here as a rigid ram at its rated energy at
     every resistance; GEC-12 Vol 2 Sec. 12.6.3 (p. 206) says its stroke
     rises with the soil resistance and that an optimistic stroke gives
-    non-conservative nominal resistances. On GEC-12 Example 6 (p. 182)
+    non-conservative nominal resistances. On GEC-12 Example 6 (Vol II p. 182)
     this model gives the ICE 42-S 50 and 103 blows/ft where GEC-12's
     wave equation analysis gives 99 and 209."""
     if hammer.hammer_type != "diesel":
@@ -179,5 +179,5 @@ def diesel_warning(hammer: Hammer) -> Optional[str]:
             "\"could lead to high stroke predictions and, therefore, "
             "non-conservative predictions of nominal resistance\" (p. 206): "
             "the blow counts here are likely low. On GEC-12's Example 6 "
-            "(p. 182) this model gives the ICE 42-S 50 and 103 blows/ft "
+            "(Vol II p. 182) this model gives the ICE 42-S 50 and 103 blows/ft "
             "where GEC-12's wave equation analysis gives 99 and 209.")

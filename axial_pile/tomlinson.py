@@ -1,6 +1,6 @@
 """
 The alpha method for driven piles in cohesive soils (total stress), GEC-12
-Sec. 7.2.1.3.2 (printed pp. 245-250).
+Sec. 7.2.1.3.2 (printed Vol I pp. 245-250).
 
 Unit side resistance fs = Ca = alpha su (Eq. 7-10). Step 1 (p. 250) reads
 the pile adhesion Ca off Figure 7-17 (after Tomlinson 1979, p. 248) by the
@@ -24,7 +24,7 @@ for highly overconsolidated clays. :func:`adhesion` takes API alpha there
 (``"chart_end"``, as GEC-12's worked example, Vol 3 Table D-100, did);
 which clays count as highly overconsolidated is the engineer's call, made
 in :class:`~axial_pile.capacity.AxialPileAnalysis`. API alpha is taken at
-most 1.0, the value GEC-12 p. 252 recommends for unconsolidated clays
+most 1.0, the value GEC-12 Vol I p. 252 recommends for unconsolidated clays
 (Eq. 7-13 gives more where su / sigma'vo is below 0.25); the limit applies
 on that route only.
 
@@ -54,16 +54,16 @@ from geotech_common.alpha_method import (  # noqa: F401 (re-exported)
 
 def curve_for_pile(pile_type: str) -> str:
     """The Figure 7-17 curve family GEC-12 names for a pile type: smooth
-    steel for pipe piles, the corrugated curve for H-piles (p. 247), and
+    steel for pipe piles, the corrugated curve for H-piles (Vol I p. 247), and
     the concrete and timber curve for those piles."""
     return DASHED if pile_type.startswith("pipe") else SOLID
 
 
 def api_alpha(su: float, sigma_v: float) -> float:
     """Adhesion factor alpha of the API method (GEC-12 Sec. 7.2.1.3.3,
-    Eqs. 7-13 to 7-15, p. 251): 0.5 psi^-0.5 for psi <= 1.0 and
+    Eqs. 7-13 to 7-15, Vol I p. 251): 0.5 psi^-0.5 for psi <= 1.0 and
     0.5 psi^-0.25 for psi > 1.0, psi = su / sigma'vo. Taken at most 1.0
-    (GEC-12 p. 252: "An alpha value of 1.0 is recommended for
+    (GEC-12 Vol I p. 252: "An alpha value of 1.0 is recommended for
     unconsolidated clays"; Eq. 7-13 gives more below psi = 0.25)."""
     if sigma_v <= 0:
         return 1.0
@@ -80,7 +80,7 @@ def adhesion(su: float, D_over_b: float, curve: str = SOLID,
     Step 1: Figure 7-17 as drawn within its curves (Ca may exceed su).
     Past the curve's end, ``beyond_chart`` = "chart_end" (default) holds Ca
     at the curve's end value and "api" takes API alpha with ``sigma_v``
-    (GEC-12 p. 247 and Step 1 recommend it for highly overconsolidated
+    (GEC-12 Vol I p. 247 and Step 1 recommend it for highly overconsolidated
     clays)."""
     if beyond_chart not in ("api", "chart_end"):
         raise ValueError("beyond_chart must be 'api' or 'chart_end', got "
@@ -268,7 +268,7 @@ def alpha_fig_7_18(su: float, D_over_b: float, case: str,
             f"The penetration into the stiff clay, D = {D_over_b:.1f}b, is "
             f"less than the shallowest curve of GEC-12 Figure 7-18's "
             f"{FIG_7_18_CASES[case]} (D = {lowest:g}b); alpha was read off "
-            f"that curve. GEC-12 p. 247 says this alpha rises with "
+            f"that curve. GEC-12 Vol I p. 247 says this alpha rises with "
             f"penetration, so it is overstated for a shallower one."))
     return sum(w * float(np.interp(su_ksf, s, a))
                for w, s, a in _fig_7_18_curves(case, D_over_b))

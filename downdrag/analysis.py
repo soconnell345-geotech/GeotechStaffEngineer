@@ -65,14 +65,14 @@ COMPARISON_TOE_MOBILIZATIONS = (1.0, 0.5, 0.0)
 #: repo).
 _SOURCE = {
     "fe_full": ("UFC 3-220-20 §6-7.4 steps 3-5, Fig 6-26 (pp. 476-478); "
-                "FHWA GEC-12 §7.3.6.1 step 5, Fig 7-60 point A (p. 346)"),
+                "FHWA GEC-12 §7.3.6.1 step 5, Fig 7-60 point A (Vol I p. 346)"),
     "fe_partial": ("UFC 3-220-20 §6-5.8.4.2 (p. 447), App. B-5.5 Table "
                    "B-28 (p. 640); FHWA GEC-12 §7.3.6.1 steps 2-5, Figs "
-                   "7-59 and 7-60 (pp. 342-346); Siegel et al. (2013)"),
+                   "7-59 and 7-60 (Vol I pp. 342-346); Siegel et al. (2013)"),
     "sc": ("UFC 3-220-20 §6-5.8.4.3, Fig 6-19 (pp. 449-450); "
            "Fellenius (2021)"),
     "blt": "UFC 3-220-20 §6-7.4 step 5 (p. 477); §6-5.7 (p. 438)",
-    "toe": ("FHWA GEC-12 §7.3.5.7 (p. 336; Goudreault and Fellenius "
+    "toe": ("FHWA GEC-12 §7.3.5.7 (Vol I p. 336; Goudreault and Fellenius "
             "1994); CGPR #56 Table 3.1 'end bearing'"),
     "endo": "CGPR #56 §3.2.1, Table 3.1 (Endo et al. 1969)",
 }
@@ -237,7 +237,7 @@ def _alpha_text(spans: list, sources: bool = False) -> str:
 #: What both drag procedures say of the method.
 _EITHER_IN_DRAG = (
     "Either serves the drag procedures: 'an appropriate static analysis "
-    "method' (GEC-12 §7.3.6.1 Step 2, p. 342); higher alpha and beta are "
+    "method' (GEC-12 §7.3.6.1 Step 2, Vol I p. 342); higher alpha and beta are "
     "conservative for negative skin friction (UFC 3-220-20 §6-7.4 step 2, "
     "p. 476).")
 
@@ -432,12 +432,12 @@ class DowndragAnalysis:
           alpha at most 1.0. UFC's drag example reads it so (App. B-5.4,
           Fig. B-17: alpha 1.0 in its soft clay, 0.5 in its stiff clay).
         - ``"gec12_fig_7_17"``: FHWA GEC-12 §7.2.1.3.2, alpha method Step 1
-          (p. 250): Ca from Fig. 7-17 by su, D/b and ``fig_7_17_curve``, as
+          (Vol I p. 250): Ca from Fig. 7-17 by su, D/b and ``fig_7_17_curve``, as
           drawn (Ca may exceed su); past the curves' end Ca is held there.
     fig_7_17_curve : str, optional
         The Fig. 7-17 curves, ``alpha_chart="gec12_fig_7_17"`` only:
         ``"concrete_timber_corrugated"`` (an H-pile takes the corrugated
-        curve, GEC-12 p. 247) or ``"smooth_steel"``.
+        curve, GEC-12 Vol I p. 247) or ``"smooth_steel"``.
     alpha_transition_zone : bool, optional
         Whether the top 10b of a stiff or very stiff clay (Table 6-16, su
         1500 psf or more) under soft clay takes UFC 3-220-20 Eq 6-9, alpha =
@@ -620,14 +620,14 @@ class DowndragAnalysis:
             raise ValueError(
                 f"fig_7_17_curve must be one of {list(FIG_7_17_CURVES)} "
                 f"(FHWA GEC-12 Fig. 7-17: {FIG_7_17_CURVES}; an H-pile takes "
-                f"the corrugated curve, p. 247), got '{curve}'")
+                f"the corrugated curve, Vol I p. 247), got '{curve}'")
         if self.alpha_chart == "gec12_fig_7_17" and curve is None \
                 and self._chart_layers():
             raise ValueError(
                 "alpha_chart 'gec12_fig_7_17' needs fig_7_17_curve, the "
                 "curves Fig. 7-17 reads for the pile: "
                 "'concrete_timber_corrugated' (concrete, timber, corrugated "
-                "steel; an H-pile takes the corrugated curve, GEC-12 p. 247) "
+                "steel; an H-pile takes the corrugated curve, GEC-12 Vol I p. 247) "
                 "or 'smooth_steel'.")
         zone = self.alpha_transition_zone
         if zone is not None:
@@ -744,7 +744,7 @@ class DowndragAnalysis:
                         notes.append(
                             f"Alpha method, the clay at {top:g}-{bot:g} m: "
                             f"stiff clay under {over}, where FHWA GEC-12 "
-                            f"p. 246 recommends Figure 7-18 (and the smaller "
+                            f"Vol I p. 246 recommends Figure 7-18 (and the smaller "
                             f"of Figs. 7-17 and 7-18 for the inexperienced "
                             f"user); this tool reads Fig. 7-17 only. Give "
                             f"alpha off Fig. 7-18 to use it, or "
@@ -807,7 +807,7 @@ class DowndragAnalysis:
             f"Alpha method, {where}: su = {layer.cu / KSF:.2f} ksf is past "
             f"the end of FHWA GEC-12 Fig. 7-17's curves for "
             f"{FIG_7_17_CURVES[curve]} ({end / KSF:.2f} ksf); Ca was held at "
-            f"the curve's end. GEC-12 p. 247 and the alpha method's Step 1 "
+            f"the curve's end. GEC-12 Vol I p. 247 and the alpha method's Step 1 "
             f"recommend API RP 2A's alpha for highly overconsolidated clays "
             f"(§7.2.1.3.3): give alpha to use it.")
         return ca / layer.cu, "Fig. 7-17, held at the curve's end"
@@ -2147,7 +2147,7 @@ class DowndragAnalysis:
         """``(section, page)`` of the step that prints FHWA GEC-12's 10 %
         rule for the soil below the toe (``_GEC12_STEP``, GM-240): the soil
         from the toe down to where the rule stops counting ``toe_force``,
-        within the profile. All cohesive: §7.3.5.3 step 1c (p. 324); all
+        within the profile. All cohesive: §7.3.5.3 step 1c (Vol I p. 324); all
         cohesionless: §7.3.5.6 step 1c (p. 332); both: §7.3.5.5 step 1c
         (p. 327), the step GEC-12 writes for a layered profile. With no
         depth to count (no toe load) it is the soil just below the toe, and
@@ -2706,11 +2706,11 @@ class DowndragAnalysis:
             ("The module's default. " if r["how"] == "fellenius" else "")
             + "The ultimate toe resistance, qb = Nq sigma'zD (UFC 3-220-20 "
             "Eq 6-20; GEC-12 Eq. 7-20 with Table 7-9 for its beta method, "
-            f"p. 258), sigma'v {self.skin_friction_stress} "
+            f"Vol I p. 258), sigma'v {self.skin_friction_stress} "
             "(skin_friction_stress); the drag procedures leave the method "
             "to the engineer (UFC §6-7.4 step 2; GEC-12 §7.3.6.1 Step 2). "
             "Table 6-17's Fellenius (2021) column, like GEC-12 Table 7-9 "
-            "(p. 256), prints only each soil type's Nt range beside its "
+            "(Vol I p. 256), prints only each soil type's Nt range beside its "
             f"phi' range ({soil}: Nt {n0:g} to {n1:g} over phi' {p0:g} to "
             f"{p1:g} deg); the straight line in phi' between the ends, and "
             "a phi' outside the range held at its end, is this module's "
@@ -2797,7 +2797,7 @@ class DowndragAnalysis:
             out.append(choice(
                 f"{BETA_CHOICE}, {_depths(table)}", text, "default",
                 "The module's default, by soil_class (sand unless given). "
-                "GEC-12 Table 7-9 (p. 256; Step 2b, p. 257) prints only each "
+                "GEC-12 Table 7-9 (Vol I p. 256; Step 2b, p. 257) prints only each "
                 "soil type's range of phi', beta and Nt; UFC 3-220-20 Table "
                 "6-15 (p. 414) pairs beta's ends with phi' for driven piles "
                 f"({pairs}). The straight line in phi' between the ends, "
@@ -2860,7 +2860,7 @@ class DowndragAnalysis:
                     + "; GEC-10 p. 10-48 on drag: 'effective stress analysis "
                     "for long-term conditions in cohesive soils, where "
                     "appropriate'). Beta as given (GEC-12 §7.2.1.3.4 Step "
-                    "2, p. 257: "
+                    "2, Vol I p. 257: "
                     + BETA_IN_CLAY_VALUES + f"); sigma'v "
                     f"{self.skin_friction_stress} (skin_friction_stress). "
                     + _EITHER_IN_DRAG)
@@ -2875,11 +2875,11 @@ class DowndragAnalysis:
                     + "undrained, short-term conditions (UFC 3-220-20 "
                     "§6-5.4.2, p. 414, and p. 410), as in UFC's drag force "
                     "example (App. B-5.4, p. 636); FHWA recommends the "
-                    "α-method in cohesive soils (GEC-12 §7.2.1.2, p. 229). "
+                    "α-method in cohesive soils (GEC-12 §7.2.1.2, Vol I p. 229). "
                     + _EITHER_IN_DRAG)
                 other = (f"{_BETA_NAME}, for long-term, drained conditions "
                          f"({BETA_IN_CLAY_CITE}): skin_friction_method "
-                         f"'beta' with beta (GEC-12 Table 7-9, p. 256: clay "
+                         f"'beta' with beta (GEC-12 Table 7-9, Vol I p. 256: clay "
                          f"0.15-0.35)")
             chosen = f"{name}, {coef_text}" if method == "beta" else name
             out.append(choice(f"{SKIN_FRICTION_CHOICE}, {where}",
@@ -2948,10 +2948,10 @@ class DowndragAnalysis:
             alts = [f"{_ALPHA_CHART_NAME['gec12_fig_7_17']}: alpha_chart "
                     f"'gec12_fig_7_17' with fig_7_17_curve; Ca by su, D/b "
                     f"and pile type, as drawn (GEC-12 §7.2.1.3.2 Step 1, "
-                    f"p. 250)"]
+                    f"Vol I p. 250)"]
         else:
             basis = (
-                "FHWA GEC-12 §7.2.1.3.2 Step 1 (p. 250): Ca off Fig. 7-17 "
+                "FHWA GEC-12 §7.2.1.3.2 Step 1 (Vol I p. 250): Ca off Fig. 7-17 "
                 f"by su, D/b and the curves for "
                 f"{FIG_7_17_CURVES[self.fig_7_17_curve]}, as drawn (Ca may "
                 "exceed su), D from the ground surface to the clay's base "

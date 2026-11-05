@@ -152,10 +152,14 @@ def _package_of(match):
     return None
 
 
-def citations_in(text):
+def citations_in(text, default=None):
     """``(manual_label, package, kind, number)`` for each citation in one
     string, plus the item mentions that follow no manual (``package``
-    None): those are for :func:`unparsed`."""
+    None): those are for :func:`unparsed`.
+
+    ``default`` is the file's own manual (:data:`DEFAULT_MANUALS`): a bare
+    number at the start of the string or of a sentence belongs to it, until
+    another source is named (GM-223)."""
     events = []
     for m in _MANUAL_RE.finditer(text):
         events.append((m.start(), m.end(), "manual", m))
@@ -166,14 +170,16 @@ def citations_in(text):
     for m in _ITEM_RE.finditer(text):
         events.append((m.start(), m.end(), "item", m))
     for m in _BREAK_RE.finditer(text):
-        events.append((m.start(), m.end(), "other", m))
+        events.append((m.start(), m.end(), "break", m))
     events.sort(key=lambda e: e[0])
-    current = None
-    label = None
+    dlabel = DEFAULT_LABELS.get(default)
+    current, label = default, dlabel
     out = []
     for start, end, kind, m in events:
         if kind == "manual":
             current, label = _package_of(m), m.group(0)
+        elif kind == "break":
+            current, label = default, dlabel
         elif kind == "other":
             current, label = None, None
         else:
@@ -181,6 +187,34 @@ def citations_in(text):
             for n in _expand(m.group(0)):
                 out.append((label, current, k, _norm(n)))
     return out
+
+
+#: A file's own manual (GM-223): the bare "Eq. 7-90" or "Table 7-9" its
+#: strings print, with no manual named before it in the string or the
+#: sentence, is checked against this manual. Keyed by the path from the
+#: repo root; a key ending in "/" covers the folder. Only the files whose
+#: module follows one manual: a file that cites several (soe, sheet_pile,
+#: downdrag, bearing_capacity, the cantilever wall) keeps naming each.
+DEFAULT_MANUALS = {
+    "axial_pile/": "gec_12",
+    "drilled_shaft/": "gec_10",
+    "retaining_walls/mse.py": "gec_11",
+    "ground_improvement/": "gec_13",
+}
+
+#: The label a default manual's citations print under in the report.
+DEFAULT_LABELS = {"gec_12": "GEC-12 (file default)",
+                  "gec_10": "GEC-10 (file default)",
+                  "gec_11": "GEC-11 (file default)",
+                  "gec_13": "GEC-13 (file default)"}
+
+
+def default_manual(rel):
+    """The default manual of a file (path from the repo root), or None."""
+    for key, pkg in DEFAULT_MANUALS.items():
+        if rel == key or (key.endswith("/") and rel.startswith(key)):
+            return pkg
+    return None
 
 
 # --- the reference library --------------------------------------------
@@ -380,7 +414,8 @@ def scan():
         with open(path, encoding="utf-8") as fh:
             tree = ast.parse(fh.read())
         for line, text in _strings(tree):
-            for label, pkg, kind, num in citations_in(text):
+            for label, pkg, kind, num in citations_in(
+                    text, default_manual(rel)):
                 if pkg is None:
                     unparsed.append((rel, line, kind, num))
                     continue

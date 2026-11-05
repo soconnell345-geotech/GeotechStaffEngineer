@@ -281,7 +281,7 @@ class TestReviewFixes:
                              Q_dead=100.0, alpha_chart="gec12_fig_7_17",
                              fig_7_17_curve="smooth_steel").compute()
         text = " ".join(r.warnings)
-        assert "GEC-12 p. 246 recommends Figure 7-18" in text
+        assert "GEC-12 Vol I p. 246 recommends Figure 7-18" in text
         assert "D/b = 7.5 is less than the 10" in text
         (c,) = _alpha_choices(r)
         assert "D/b 7.5 (the D = 10b curve)" in c["chosen"]

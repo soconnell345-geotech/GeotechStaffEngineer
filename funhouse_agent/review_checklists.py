@@ -301,7 +301,7 @@ specific check, the governing reference, and the corrective action.
    (cohesionless), Tomlinson / α (cohesive), or β / effective-stress — the method
    must match each layer's soil type; skin + toe are summed; the effective-
    overburden integration is split at the GWT; a Nordlund toe in sand takes
-   sigma'p at most 3 ksf (GEC-12 Sec. 7.2.1.3.1, Step 8, p. 244) unless the
+   sigma'p at most 3 ksf (GEC-12 Sec. 7.2.1.3.1, Step 8, Vol I p. 244) unless the
    run says otherwise, and the side resistance has no limit. Uplift/tension uses SKIN only (no toe) with the tension factor. A per-
    layer `toe_friction_angle` should reflect the actual bearing stratum.
 

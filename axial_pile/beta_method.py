@@ -1,7 +1,7 @@
 """
 Beta (Effective Stress) Method for axial pile capacity.
 
-GEC-12 Sec. 7.2.1.3.4 (pp. 255-258): fs = beta sigma'vo (Eq. 7-19) and
+GEC-12 Sec. 7.2.1.3.4 (Vol I pp. 255-258): fs = beta sigma'vo (Eq. 7-19) and
 qp = Nt sigma'p (Eq. 7-20), beta and Nt from local experience (Steps 2a,
 5a) or, without it, from Table 7-9 by phi' (Steps 2b, 5b). GEC-12 prints
 no formula for beta or Nt from phi' alone, so the module has none (GM-282):
@@ -57,7 +57,7 @@ def end_bearing_beta(sigma_v_tip: float, Nt: float,
     sigma_v_tip : float
         Effective vertical stress at pile tip (kPa).
     Nt : float
-        Toe resistance coefficient. GEC-12 Table 7-9 (p. 256) gives its
+        Toe resistance coefficient. GEC-12 Table 7-9 (Vol I p. 256) gives its
         range by soil type: clay 3-30, silt 20-40, sand 30-150, gravel
         60-300.
     tip_area : float

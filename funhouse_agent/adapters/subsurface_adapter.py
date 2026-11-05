@@ -1087,7 +1087,7 @@ def _run_spt_correction(params: dict) -> dict:
                       "automatic hammers (NHI-06-088 p. 3-55)")),
         choice("overburden correction", _CN_TEXT.get(method, method),
                how_given(method, "liao_whitman", name="overburden_method"),
-               basis=("GEC-12 (p. 108) gives Peck et al. (1974), Eq. 5-3, as "
+               basis=("GEC-12 (Vol I p. 108) gives Peck et al. (1974), Eq. 5-3, as "
                       "the recommended correction in AASHTO specifications, "
                       "and Liao & Whitman, Eq. 5-4, as an alternate"),
                alternatives=[t for m, t in _CN_TEXT.items() if m != method]),
