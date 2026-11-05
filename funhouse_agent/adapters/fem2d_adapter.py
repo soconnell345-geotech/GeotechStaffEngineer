@@ -137,13 +137,20 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
     from fem2d import analyze_footing_capacity
     _valid = ("B", "c", "phi", "gamma", "E", "nu", "psi", "surcharge",
               "q_max", "n_load_steps", "domain_depth", "domain_half_width",
-              "nx", "ny", "element_type", "max_iter", "tol", "q_applied")
+              "nx", "ny", "element_type", "max_iter", "tol", "q_applied",
+              "footing", "base", "settlement_max")
     reject_unknown_params(params, _valid, method="fem2d_footing_capacity")
     require_params(params, ["B", "c"], method="fem2d_footing_capacity",
                    valid=_valid)
     element_type = params.get("element_type", "t6")
     _require_choice(element_type, ("t6", "cst"),
                     name="element_type", method="fem2d_footing_capacity")
+    footing = params.get("footing", "flexible")
+    _require_choice(footing, ("flexible", "rigid"),
+                    name="footing", method="fem2d_footing_capacity")
+    base = params.get("base", "rough")
+    _require_choice(base, ("rough", "smooth"),
+                    name="base", method="fem2d_footing_capacity")
     result = analyze_footing_capacity(
         B=params["B"], c=params["c"],
         phi=params.get("phi", 0.0), gamma=params.get("gamma", 0.0),
@@ -156,9 +163,13 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
         element_type=element_type,
         max_iter=params.get("max_iter", 1000), tol=params.get("tol", 1e-4),
         q_applied=params.get("q_applied"),
+        footing=footing, base=base,
+        settlement_max=params.get("settlement_max"),
     )
     out = {
         "q_ult_kPa": result.q_ult_kPa,
+        "footing": result.footing,
+        "base": result.base,
         "Nc_backfigured": result.Nc_backfigured,
         "bearing_FOS": result.bearing_FOS,
         "bearing_capacity_factors": result.bearing_capacity_factors,
@@ -169,7 +180,11 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
         "collapse_bracketed": result.collapse_bracketed,
         "surcharge_kPa": result.surcharge_kPa,
         "max_displacement_m": result.max_displacement_m,
+        "choices": result.choices,
     }
+    if result.footing == "rigid":
+        out["settlement_max_m"] = result.settlement_max_m
+        out["pressure_settlement"] = result.pressure_settlement
     if result.warnings:
         out["warnings"] = list(result.warnings)
     return clean_result(out)
@@ -639,7 +654,7 @@ METHOD_INFO = {
     },
     "fem2d_footing_capacity": {
         "category": "FEM 2D",
-        "brief": "Ultimate bearing capacity of a rigid strip footing by FEM load-control to collapse (plane-strain, the FE analogue of a bearing-capacity calc). Validated vs Prandtl Nc=5.14. Use element_type='t6' (CST locks and never collapses).",
+        "brief": "Ultimate bearing capacity of a strip footing by FEM (plane-strain, the FE analogue of a bearing-capacity calc): footing='flexible' (default) ramps a uniform pressure to collapse, validated vs Prandtl Nc=5.14; footing='rigid' pushes the footing down as one body (GEC-6 p. 55: Eq. 5-7 assumes a rigid footing) and reads q from the reactions, but on these uniform meshes the Prandtl clay check read high and fell as the mesh was refined (348, 306 kPa on 20x10, 40x20 vs 257), and for c-phi and c = 0 no mesh-converged value was found. Use element_type='t6' (CST locks and never collapses).",
         "parameters": {
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "c": {"type": "float", "required": True, "description": "Cohesion / undrained shear strength (kPa)."},
@@ -650,19 +665,27 @@ METHOD_INFO = {
             "psi": {"type": "float", "required": False, "default": 0.0, "description": "Dilation angle (deg)."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform surcharge q beside the footing (kPa), e.g. an embedded footing's overburden gamma*Df (GEC-6 Eq. 5-1). Applied on the ground surface: with the soil's weight over the whole surface first, then held beside the footing while the footing pressure rises from q, so it resists through the Nq mechanism. q_ult is the gross pressure."},
             "q_max": {"type": "float", "required": False, "description": "Top of the load ramp (kPa). Default 1.6x the closed-form estimate c*Nc+surcharge*Nq+0.5*gamma*B*Ngamma. Pass explicitly for a c=phi=0 footing."},
-            "n_load_steps": {"type": "int", "required": False, "default": 45, "description": "Load increments; collapse-load resolution = (q_max - surcharge)/n_load_steps."},
+            "n_load_steps": {"type": "int", "required": False, "default": 45, "description": "Load increments; collapse-load resolution = (q_max - surcharge)/n_load_steps. Rigid: the number of equal settlement steps to settlement_max."},
             "nx": {"type": "int", "required": False, "default": 40, "description": "Mesh divisions in x."},
             "ny": {"type": "int", "required": False, "default": 20, "description": "Mesh divisions in y."},
             "element_type": {"type": "str", "required": False, "default": "t6", "allowed_values": ["t6", "cst"], "description": "Soil element. t6 (recommended): collapse load within ~2% of Prandtl. cst LOCKS on the isochoric bearing mechanism and never collapses — do not use for capacity."},
             "q_applied": {"type": "float", "required": False, "description": "Working/design pressure (kPa). If given, bearing_FOS = q_ult/q_applied is reported."},
+            "footing": {"type": "str", "required": False, "default": "flexible", "allowed_values": ["flexible", "rigid"], "description": "flexible (default): a uniform pressure ramped to collapse, the validated basis (Prandtl within ~2%). rigid: the footing's nodes pushed down together in n_load_steps settlement steps to settlement_max, q = their vertical reactions / B, q_ult the largest q reached. The default stays flexible on the mesh study (fem2d VALIDATION.md section 3): rigid reads high on these uniform meshes (Prandtl 348, 306 kPa on 20x10, 40x20 vs 257.1) and gives no plateau on a cohesionless soil."},
+            "base": {"type": "str", "required": False, "default": "rough", "allowed_values": ["rough", "smooth"], "description": "Rigid footing only. rough (default): footing nodes held horizontally, no slip (GEC-6 pp. 49-50: the wedge under the footing moves down with it; pp. 99-100: concrete cast on the ground takes tan delta = tan phi, on clay c_a = c_u). smooth: free to slide."},
+            "settlement_max": {"type": "float", "required": False, "description": "Rigid footing only: the settlement the footing is pushed to (m). Default 10 q_est*B*(1-nu^2)/E, a settlement scale times 10, this module's choice (not printed in a reference), sized so q levelled off on the mesh study's cohesive cases; raise it when collapse_bracketed is False."},
         },
         "returns": {
-            "q_ult_kPa": "Ultimate (gross) bearing pressure (last converged load level), including the surcharge.",
+            "q_ult_kPa": "Ultimate (gross) bearing pressure, including the surcharge: flexible, the last converged load level; rigid, the largest footing pressure reached.",
+            "footing": "The footing model used ('flexible' or 'rigid').",
+            "base": "Rigid: 'rough' or 'smooth'; null when flexible.",
+            "pressure_settlement": "Rigid only: [[settlement_m, q_kPa], ...] after each converged step.",
+            "settlement_max_m": "Rigid only: the settlement the footing was pushed to (m).",
+            "choices": "The footing model and, rigid, its base, each with how it was set and its basis.",
             "Nc_backfigured": "q_ult/c for a pure-cohesion footing (compare to Prandtl 5.14); null otherwise.",
             "bearing_FOS": "q_ult/q_applied when q_applied is given, else null.",
             "bearing_capacity_factors": "Closed-form {Nc, Nq, Ngamma} reference (Prandtl-Reissner + Vesic Ngamma).",
-            "collapse_bracketed": "False if the footing carried the full q_max (q_ult is then a lower bound — raise q_max).",
-            "warnings": "Present only when there is one: on a cohesionless soil with no surcharge, q_ult is set by the mesh and is not a bearing capacity to design from. Quote it with q_ult.",
+            "collapse_bracketed": "Flexible: False if the footing carried the full q_max (q_ult is then a lower bound — raise q_max). Rigid: True when q levelled off (rose < 1% over the last tenth of the settlement run); False means q_ult is a lower bound of this mesh's answer.",
+            "warnings": "Flexible, on a cohesionless soil with no surcharge: q_ult is set by the mesh and is not a bearing capacity to design from. Rigid: always, that on the Prandtl clay check q_ult read high and fell as the mesh was refined and that c-phi and cohesionless soils have no mesh-converged value; and when q did not level off (raise n_load_steps or max_iter if a step failed to converge, settlement_max if q was still rising). Quote them with q_ult.",
         },
     },
     "fem2d_slope_srm": {
@@ -964,6 +987,12 @@ for _m, _names in _FEM_PARAM_BACKFILL.items():
 # integration parameter to the monolithic consolidation scheme.
 _WATER = [{"gwt": "set"}, {"gwt": [0]}]
 declare_applies_when(METHOD_INFO, {
+    # GM-305: the load ramp is the flexible footing's, the base and the
+    # settlement run the rigid footing's
+    "fem2d_footing_capacity": {
+        "q_max": {"footing": ["flexible"]},
+        "base": {"footing": ["rigid"]},
+        "settlement_max": {"footing": ["rigid"]}},
     "fem2d_consolidation": {
         name: {"consolidation_scheme": ["monolithic"]}
         for name in ("n_w", "theta")} | {
@@ -1009,7 +1038,12 @@ declare_when_absent(METHOD_INFO, {
         "domain_depth": ("5 B", "the mesh extends five footing widths "
                          "below the footing"),
         "domain_half_width": ("5 B", "the mesh extends five footing widths "
-                              "to the side")},
+                              "to the side"),
+        "settlement_max": ("10 q_est B (1 - nu^2) / E",
+                           "a settlement scale times 10, this module's "
+                           "choice (not printed), sized so q levelled off "
+                           "on the mesh study's cohesive cases; raise it "
+                           "when collapse_bracketed is False")},
     "fem2d_slope_srm": {"depth": _DEPTH, "x_extend": _X_EXTEND,
                         "gwt": _NO_WATER, "n_gp": _GAUSS},
     "fem2d_srm_mesh_refinement_study": {
