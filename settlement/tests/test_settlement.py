@@ -6,7 +6,7 @@ hand calculations to verify stress distribution, immediate settlement,
 consolidation settlement, and time-rate calculations.
 
 References:
-    [1] FHWA GEC-6 (FHWA-IF-02-054), Chapter 8
+    [1] FHWA GEC-6 (FHWA-SA-02-054), Chapter 8
     [2] Das, B.M., "Principles of Geotechnical Engineering"
     [3] Holtz, Kovacs & Sheahan, "An Introduction to Geotechnical Engineering"
     [4] Coduto, D.P., "Foundation Design", 2nd ed.

@@ -6,7 +6,7 @@ and hand calculations to verify the general bearing capacity equation
 implementation.
 
 References:
-    [1] FHWA GEC-6 (FHWA-IF-02-054), Chapter 6 — Example 6-1 and 6-2
+    [1] FHWA GEC-6 (FHWA-SA-02-054), Chapter 6 — Example 6-1 and 6-2
     [2] Das, B.M., "Principles of Foundation Engineering", 9th ed.
     [3] Bowles, J.E., "Foundation Analysis and Design", 5th ed.
     [4] Coduto, D.P., "Foundation Design", 2nd ed.

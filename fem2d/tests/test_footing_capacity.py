@@ -80,7 +80,7 @@ class TestSurchargeValidation:
 class TestSurchargeResists:
     """GM-11: the surcharge beside the footing is applied and resists through
     the Nq mechanism. Gross q_ult = c Nc + q Nq (+ 0.5 gamma B Ngamma), GEC-6
-    (FHWA-IF-02-054) Eqs. 5-1, 5-2, 5-4 and 5-7, pp. 51-53; for phi = 0,
+    (FHWA-SA-02-054) Eqs. 5-1, 5-2, 5-4 and 5-7, pp. 51-53; for phi = 0,
     UFC 3-220-20 Eq. 5-17 (q_ult = su Nc + sigma_zD). Made-up values."""
 
     def test_undrained_weightless_c_nc_plus_q(self):

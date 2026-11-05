@@ -6,7 +6,7 @@ Branch `claude/gm-11-156-fem2d`. All test values are made up.
 
 ### What the print says
 
-- **GEC-6** (FHWA-IF-02-054, *Shallow Foundations*, 2002), Sec. 5.2.2,
+- **GEC-6** (FHWA-SA-02-054, *Shallow Foundations*, 2002), Sec. 5.2.2,
   pp. 51-53:
   - Eq. 5-1: gross q_ult = c Nc + q Nq, with **q = gamma Df the surcharge at
     the base of the footing** (p. 51).

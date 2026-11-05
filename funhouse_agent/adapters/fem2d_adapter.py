@@ -637,7 +637,7 @@ METHOD_INFO = {
             "psi": {"type": "float", "required": False, "default": 0.0, "description": "Dilation angle (deg)."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform surcharge q beside the footing (kPa), e.g. an embedded footing's overburden gamma*Df (GEC-6 Eq. 5-1). Applied on the ground surface: with the soil's weight over the whole surface first, then held beside the footing while the footing pressure rises from q, so it resists through the Nq mechanism. q_ult is the gross pressure."},
             "q_max": {"type": "float", "required": False, "description": "Top of the load ramp (kPa). Default 1.6x the closed-form estimate c*Nc+surcharge*Nq+0.5*gamma*B*Ngamma. Pass explicitly for a c=phi=0 footing."},
-            "n_load_steps": {"type": "int", "required": False, "default": 45, "description": "Load increments; collapse-load resolution = q_max/n_load_steps."},
+            "n_load_steps": {"type": "int", "required": False, "default": 45, "description": "Load increments; collapse-load resolution = (q_max - surcharge)/n_load_steps."},
             "nx": {"type": "int", "required": False, "default": 40, "description": "Mesh divisions in x."},
             "ny": {"type": "int", "required": False, "default": 20, "description": "Mesh divisions in y."},
             "element_type": {"type": "str", "required": False, "default": "t6", "allowed_values": ["t6", "cst"], "description": "Soil element. t6 (recommended): collapse load within ~2% of Prandtl. cst LOCKS on the isochoric bearing mechanism and never collapses — do not use for capacity."},

@@ -200,7 +200,7 @@ resist. It is now a pressure on the ground surface (the soil above the
 bearing level replaced by a surcharge, UFC 3-220-20 Sec. 5-3.1.2, Fig.
 5-4(a)): stage 1 brings the soil's weight and q over the whole surface into
 equilibrium, stage 2 raises the footing pressure from q with q held beside
-it. q_ult is the gross pressure of GEC-6 (FHWA-IF-02-054) Eq. 5-1 / 5-7
+it. q_ult is the gross pressure of GEC-6 (FHWA-SA-02-054) Eq. 5-1 / 5-7
 (pp. 51-53). B = 2 m, T6 40x20, defaults otherwise; made-up values:
 
 | Case | Print | Closed form | FE before | FE now | Error now |
