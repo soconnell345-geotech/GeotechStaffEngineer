@@ -212,9 +212,32 @@ it. q_ult is the gross pressure of GEC-6 (FHWA-SA-02-054) Eq. 5-1 / 5-7
 
 The last row's gap is the Ngamma term: with c Nc + q Nq taken as printed the
 FE carries 0.5 gamma B Ngamma with Ngamma about 2.9 against Eq. 5-8's 5.39;
-no held reference prints an exact Ngamma to judge it by. `surcharge = 0`
-keeps the one-ramp path exactly (gamma ramped with the load). Details:
+no held reference prints an exact Ngamma to judge it by. Details:
 `module_work/gm11/CHECK.md`.
+
+**The soil's weight first, with no surcharge too (GM-304, 2026-11-05).**
+GM-11 left `surcharge = 0` on the one-ramp path, the soil's weight ramped
+with the footing load; a cohesionless soil then failed at the first load
+step (c = 0, phi = 30, gamma = 18 gave q_ult = 0). The weight is now
+stage 1 whenever gamma > 0, so `surcharge = 0` and a tiny surcharge agree
+(same step count).
+Only a weightless soil with no surcharge keeps the one ramp (255.9 kPa for
+c = 50, unchanged). B = 2 m, T6 40x20, defaults; GEC-6 Eq. 5-7, 5-8, p. 53:
+
+| Case | Closed form | FE before | FE now |
+|---|---|---|---|
+| c = 0, phi = 30, psi = 0 or 30, gamma = 18 | 0.5 x 18 x 2 x 22.40 = 403.2 | 0.0 | 43.0, set by the mesh (below) |
+| c = 20, phi = 25, gamma = 18 | 414.4 + 195.8 = 610.2 | 433.9 | 455.6 (q = 0.01: 455.7) |
+
+The sand row is not a bearing capacity. The footing is a smooth, flexible
+uniform pressure. With c = 0 and no surcharge the ground beside its edges
+has no strength, and the pressure at which the edge fails is set by the
+element width there: q_max 200 with 80 steps gave 102.5, 52.5, 35.0 and
+27.5 kPa on 20x10, 40x20, 60x30 and 80x40, about 105 kPa per metre of
+element width, falling towards zero as the mesh is refined (psi made no
+difference). The c-phi row also still falls with the mesh: 499.0, 455.6
+and 433.9 kPa on 20x10, 40x20 and 60x30. Reported, not tuned. Details:
+`module_work/gm304/CHECK.md`.
 
 ## 4. Elastic closed-form checks
 

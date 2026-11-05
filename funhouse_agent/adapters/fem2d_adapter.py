@@ -170,6 +170,8 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
         "surcharge_kPa": result.surcharge_kPa,
         "max_displacement_m": result.max_displacement_m,
     }
+    if result.warnings:
+        out["warnings"] = list(result.warnings)
     return clean_result(out)
 
 
@@ -631,7 +633,7 @@ METHOD_INFO = {
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "c": {"type": "float", "required": True, "description": "Cohesion / undrained shear strength (kPa)."},
             "phi": {"type": "float", "required": False, "default": 0.0, "description": "Friction angle (deg). Default 0 (Prandtl / undrained)."},
-            "gamma": {"type": "float", "required": False, "default": 0.0, "description": "Soil unit weight (kN/m3). With no surcharge, a body force ramped with the footing load; with a surcharge, applied in full with it before the footing is loaded. Default 0 = classical weightless mechanism (the validated basis)."},
+            "gamma": {"type": "float", "required": False, "default": 0.0, "description": "Soil unit weight (kN/m3). Applied in full (with any surcharge) before the footing is loaded, so the footing acts on soil already stressed by its own weight. Default 0 = classical weightless mechanism (the validated basis). With c = 0 and no surcharge the uniform footing pressure fails at its edges at a load set by the mesh (halved when the elements are halved): not a bearing capacity."},
             "E": {"type": "float", "required": False, "default": 1e5, "description": "Young's modulus (kPa)."},
             "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio."},
             "psi": {"type": "float", "required": False, "default": 0.0, "description": "Dilation angle (deg)."},
@@ -649,6 +651,7 @@ METHOD_INFO = {
             "bearing_FOS": "q_ult/q_applied when q_applied is given, else null.",
             "bearing_capacity_factors": "Closed-form {Nc, Nq, Ngamma} reference (Prandtl-Reissner + Vesic Ngamma).",
             "collapse_bracketed": "False if the footing carried the full q_max (q_ult is then a lower bound — raise q_max).",
+            "warnings": "Present only when there is one: on a cohesionless soil with no surcharge, q_ult is set by the mesh and is not a bearing capacity to design from. Quote it with q_ult.",
         },
     },
     "fem2d_slope_srm": {

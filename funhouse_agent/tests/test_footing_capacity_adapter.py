@@ -16,6 +16,16 @@ def test_prandtl_via_adapter_coarse():
     assert out["q_ult_kPa"] > 0
     assert out["bearing_FOS"] == pytest.approx(out["q_ult_kPa"] / 150.0, rel=1e-6)
     assert set(out["bearing_capacity_factors"]) == {"Nc", "Nq", "Ngamma"}
+    assert "warnings" not in out
+
+
+def test_mesh_set_q_ult_warning_reaches_the_agent():
+    """GM-304: on a cohesionless soil with no surcharge q_ult is set by the
+    mesh, and the warning is in the tool's output, not only on the result."""
+    out = R["fem2d_footing_capacity"]({
+        "B": 2.0, "c": 0.0, "phi": 30.0, "psi": 30.0, "gamma": 18.0,
+        "nx": 20, "ny": 10})
+    assert any("depends on the mesh" in w for w in out["warnings"])
 
 
 def test_missing_required_raises():
