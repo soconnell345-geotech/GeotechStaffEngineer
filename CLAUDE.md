@@ -132,7 +132,8 @@ Key conventions:
   present (about a quarter of each call's prefix); `recompute_report_calcs`
   re-runs a report's claimed bearing and settlement calcs (DR-11, first
   slice, with report ingest); DIGGS points with a printed vertical datum
-  are 3-D under DIGGS' compound CRS. Answers move in fem2d footing capacity
+  are 3-D under DIGGS' compound CRS; driven piles take a layer's own
+  adhesion and ask for Fig. 7-18's case under a softer clay. Answers move in fem2d footing capacity
   (a surcharge is a real load; the soil's weight first; sand q_ult with
   no surcharge is set by the mesh and warned of; a rigid footing is a
   choice, flexible stays the default) and sheet_pile (water standing in
