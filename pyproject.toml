@@ -107,7 +107,11 @@ dependencies = [
     # seismic_geotech.dynamic_properties, HS parameter estimation in
     # fem2d.hs_correlations.
     "openseespy>=3.6",
-    "pystrata>=0.5",
+    # pystrata 0.6.0 (2026-11-05, Python >= 3.13 only) renamed the site
+    # classes the site-response tools build on (DarendeliSoilType,
+    # MenqSoilType, NonlinearProperty); held below 0.6 until the tools
+    # move to its API (BACKLOG INF-68).
+    "pystrata>=0.5,<0.6",
     "eqsig>=1.2",
     "liquepy>=0.3",
     "pygef>=0.10",
