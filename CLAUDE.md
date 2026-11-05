@@ -123,7 +123,9 @@ Key conventions:
   changes an answer is in HANDOFF §0a-current, "Master after 5.34.0".
   Report ingest prompts are mf-9 (the next live run re-reads every saved
   model-first answer); groundwater "not measured" and combined lab samples
-  are kept; refs pinned at 32bbd77 (worked examples from five manuals). Answers move in fem2d footing capacity
+  are kept; refs pinned at 32bbd77 (worked examples from five manuals); the
+  app split's steps 6-8 are in (the Document Review page loads one geotech
+  package and four app modules; steps 9-11 next). Answers move in fem2d footing capacity
   (a surcharge is a real load; the soil's weight first; sand q_ult with
   no surcharge is set by the mesh and warned of) and sheet_pile (water
   standing in the excavation).
