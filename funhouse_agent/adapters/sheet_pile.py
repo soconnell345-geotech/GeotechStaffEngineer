@@ -212,6 +212,24 @@ _LAYERS = {
         "by default the embedment with none."),
 }
 
+# The water level on the excavated side (GM-296).
+_GWT_PASSIVE = {
+    "type": "float", "required": False,
+    "description": (
+        "Groundwater depth on the passive (excavated) side, m below the top "
+        "of the wall, the same datum as gwt_depth_active. A depth less than "
+        "excavation_depth is water standing in front of the wall above the "
+        "dredge line: its pressure acts on the wall from that level down and "
+        "the soil below the dredge line is submerged (UFC 3-220-20 Fig. "
+        "4-41, p. 242: water levels can differ on the two sides; its "
+        "example Fig. 4-43, p. 245, has water 5 ft below the top on both "
+        "sides). The net water pressure is the retained side's less this "
+        "side's, so the same depth on both sides (balanced water) gives "
+        "none. Left out: the excavation level, or gwt_depth_active where "
+        "that is deeper (no water on either side when gwt_depth_active is "
+        "left out too), so no water stands in front of the wall."),
+}
+
 METHOD_INFO = {
     "cantilever_wall": {
         "category": "Sheet Pile",
@@ -221,8 +239,8 @@ METHOD_INFO = {
             "layers": _LAYERS,
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
             "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS applied to passive resistance."},
-            "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on active (retained) side (m)."},
-            "gwt_depth_passive": {"type": "float", "required": False, "description": "Groundwater depth on passive (excavated) side (m)."},
+            "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on the active (retained) side, m below the top of the wall."},
+            "gwt_depth_passive": _GWT_PASSIVE,
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi). 'coulomb' and 'log_spiral' take each layer's wall friction (layers: wall_friction_deg or interface_soil; what a layer giving neither takes is in the layers description)."},
             "log_spiral_source": _LOG_SPIRAL_SOURCE,
             "embedment_increase": {"type": "float", "required": False, "default": 1.2, "description": "D / D0, the multiplier on the embedment from moment equilibrium: 1.2 (default), as the Caltrans Trenching and Shoring Manual (7-5.02 step 3, p. 7-11: 'The 20 percent increase is not a factor of safety'; its Example 7-3 takes it after FS 1.3 on the moments) and UFC 3-220-20 (Fig. 4-41 step 6, p. 242: 'Increase D by 20% to allow for dredging, scour, etc.'; its example Fig. 4-43 takes it after phi'allow = atan(tan 35 deg / 1.5) = 25 deg, Kp 3.6) both print it beside a factor of safety on the passive side. FOS_passive divides the passive pressure, UFC Fig. 4-41 step 2's alternative to phi'allow. Must be >= 1.0."},
@@ -237,8 +255,8 @@ METHOD_INFO = {
             "anchor_depth": {"type": "float", "required": True, "description": "Anchor depth below surface (m)."},
             "layers": _LAYERS,
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
-            "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on active side (m)."},
-            "gwt_depth_passive": {"type": "float", "required": False, "description": "Groundwater depth on passive side (m)."},
+            "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on the active (retained) side, m below the top of the wall."},
+            "gwt_depth_passive": _GWT_PASSIVE,
             "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS applied to passive resistance."},
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi). 'coulomb' and 'log_spiral' take each layer's wall friction (layers: wall_friction_deg or interface_soil; what a layer giving neither takes is in the layers description)."},
             "log_spiral_source": _LOG_SPIRAL_SOURCE,

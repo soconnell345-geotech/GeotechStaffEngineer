@@ -953,12 +953,16 @@ def _plot_wall_section(result, analysis):
             facecolor='#dbeafe', edgecolor='none', alpha=0.4,
         ))
 
-    # GWT on passive side
+    # GWT on passive side: a level above the excavation is water standing
+    # in front of the wall (GM-296), drawn as such
     if gwt_p is not None and gwt_p < L:
-        gwt_p_draw = max(gwt_p, H)
-        if gwt_p_draw < L:
-            ax.plot([wall_x + 0.1, right_extent], [gwt_p_draw, gwt_p_draw],
-                    color='#2563eb', linestyle='--', linewidth=1.5)
+        if gwt_p < H:
+            ax.add_patch(patches.Rectangle(
+                (wall_x, gwt_p), right_extent, H - gwt_p,
+                facecolor='#dbeafe', edgecolor='none', alpha=0.6,
+            ))
+        ax.plot([wall_x + 0.1, right_extent], [gwt_p, gwt_p],
+                color='#2563eb', linestyle='--', linewidth=1.5)
 
     # Anchor (if anchored)
     if wall_type == "anchored" and hasattr(result, "anchor_depth"):

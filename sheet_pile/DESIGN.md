@@ -165,3 +165,36 @@ What moved (D and T are unchanged everywhere; M_max in kN-m/m):
 `soe` was checked for the same pattern: `soe.free_earth._shear_moment`
 subtracts each support load at its own depth (`V - force * (z >= depth)`),
 so it never had this error.
+
+## Water on the excavated side (GM-296, 2026-11-05)
+Both water depths are measured down from the top of the wall (the retained
+ground surface). UFC 3-220-20 Fig. 4-41 (p. 242): "Water levels can be
+different on opposite sides due to pumping, tidal fluctuations and other
+reasons"; its example Fig. 4-43 (p. 245) has water 5 ft below the top on
+both sides of a 15 ft wall, read off the chart Fig. 4-42 (p. 243), which
+takes "the level is the same on both sides". Before GM-296 a
+`gwt_depth_passive` above the dredge line was taken AT the dredge line, so
+the water standing in front of the wall was left out (net water below the
+dredge line gamma_w (H - h)). Now (`passive_water_level`,
+`passive_water_pressure` in `cantilever.py`) water standing in front of the
+wall presses on the excavated face from its level down, above and below the
+dredge line, and the passive soil below the dredge line takes gamma' from
+the dredge line (unchanged). The net water pressure is the retained side's
+less the excavated side's, so balanced water gives none. Left out,
+`gwt_depth_passive` is the excavation level, or `gwt_depth_active` where that
+is deeper (none when both are left out): exactly the answer before GM-296.
+A level at or below the dredge line also gives exactly the old answer (the
+same expressions). The result's `choices` carry the level taken whenever
+either side has water, and `defaults_used` the level a left-out one took.
+
+As before, the cantilever's embedment equilibrium leaves out a net water
+pressure toward the retained side (front water higher than behind), while
+its moment diagram and the anchored wall take it with its sign.
+
+Fig. 4-43 on the chart's own basis (gamma = 124.8 pcf = 2 gamma', Kp/Ka =
+14.4, FOS_passive 1.0): module D0/H = 0.868, D = 15.6 ft, M/(gamma' Ka H^3)
+= 0.565; the print 0.95, 17 ft and 0.6 off the chart of UFC's full method
+(a hand Fig. 4-41 full-method solve gives D/H = 0.934). The module is the
+Simplified Method (GM-290 P4), hence the shorter D. Before GM-296: D0/H
+1.461, moment ratio 1.87. Tests: `tests/test_gm296_passive_water.py`;
+check: `module_work/gm296/CHECK.md`.
