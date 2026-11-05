@@ -3283,7 +3283,15 @@ def _model_first_units(doc: Any, model_first: _ModelFirst,
                 groups["logs"] += log_groups(pages, {})
                 kinds[pages[0]] = item.kind
             elif reader == "lab":
-                groups["lab"] += lab_groups(pages, {})
+                cut = lab_groups(pages, {})
+                # A part cut from a lab item carries the boring its first
+                # part prints where its own pages print none (RI-150), on
+                # this route too (RI-165).
+                carried = (getattr(item, "evidence", None) or {}
+                           ).get("carried_link")
+                for group in cut if carried else ():
+                    group.carried_link = dict(carried)
+                groups["lab"] += cut
             elif reader == "calc":
                 groups["calc"] += calc_groups(pages, doc, None)
     for stage in list(groups):

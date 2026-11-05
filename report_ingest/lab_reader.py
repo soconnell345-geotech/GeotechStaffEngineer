@@ -151,7 +151,7 @@ __all__ = [
     "lab_windows", "reader_system", "link_from_label_enabled",
     "use_link_from_label", "LINK_FROM_LABEL_ENV", "LINK_FROM_LABEL",
     "floor_per_page_enabled", "use_floor_per_page", "FLOOR_PER_PAGE_ENV",
-    "split_size", "split_key", "split_lab_items",
+    "split_size", "split_key", "split_lab_items", "carry_link",
 ]
 
 #: The ceiling in the brief: four model calls for one sheet, the last of them
@@ -1309,6 +1309,44 @@ def split_lab_items(doc: Any, items: Sequence[Any]) -> List[Any]:
                                           "sheet than the pages before it "
                                           "(RI-150)", **extra}))
     return out
+
+
+def carry_link(tests: Sequence[Any], carried: Optional[Dict[str, Any]]
+               ) -> int:
+    """Put a cut part's carried boring and sample (:func:`split_lab_items`'s
+    ``carried_link``) on each test of ``tests`` that names neither, and
+    return how many took it (BACKLOG RI-165).
+
+    This is the model-first lab route's form of what today's reader is told
+    (:func:`_carried_words`): a test on these pages that names no boring or
+    sample is the one the pages before print. It is applied by code, after
+    the answer, so the request is the same as before. A test that names a
+    boring or a sample of its own keeps it, and so does a summary table
+    whose rows name their own borings; the test's note says where the link
+    came from."""
+    if not carried:
+        return 0
+    hole = str(carried.get("investigation_id") or "")
+    sample = str(carried.get("sample_id") or "")
+    if not (hole or sample):
+        return 0
+    took = 0
+    for test in tests:
+        if test.investigation_id or test.sample_id:
+            continue
+        rows = getattr(getattr(test, "result", None), "rows", None) or []
+        if any(getattr(row, "investigation_id", "") for row in rows):
+            continue
+        test.investigation_id = hole
+        test.sample_id = sample
+        said = " and ".join(bit for bit in (
+            f"boring {hole!r}" if hole else "",
+            f"sample {sample!r}" if sample else "") if bit)
+        words = (f"{said} carried from page {carried.get('page')}: these "
+                 f"pages print no boring or sample of their own (RI-165)")
+        test.note = f"{test.note}; {words}" if test.note else words
+        took += 1
+    return took
 
 
 def _carried_words(carried: Optional[Dict[str, Any]]) -> str:

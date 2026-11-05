@@ -944,8 +944,16 @@ def read_lab(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     fit, or whose request is over ``max_request_tokens_in``, is cut in two;
     without them it is cut at its middle page. The rest as
     :func:`read_logs`. A window no answer came back for has no tests and an
-    ``error``."""
-    from report_ingest.lab_reader import LabReadResult, _Builder
+    ``error``.
+
+    A group whose own pages print no boring or sample carries the one its
+    run's earlier pages print nearest it, or its cut item's first part
+    prints (:func:`_carried`):
+    each test naming neither takes it, by code after the answer, so no
+    request changes (``carried_link`` in the result says so; BACKLOG
+    RI-165)."""
+    from report_ingest.lab_reader import (LabReadResult, _Builder,
+                                          _printed_link, carry_link)
 
     caller = _Caller("lab", doc, engine, report_id, route, pdf,
                      max_request_tokens_in)
@@ -969,6 +977,8 @@ def read_lab(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
             tests.extend(built)
             unresolved.extend(builder.unresolved + extra)
             changes.extend(builder.changes)
+        carried = _carried(doc, group, _printed_link)
+        took = carry_link(tests, carried) if tests else 0
         key = group.key or f"lab-{group.pages[0]}"
         if group.part:
             key = f"{key}-{group.part[0]}"
@@ -981,8 +991,30 @@ def read_lab(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         blob.update(_result("lab", key, caller, spent, group.pages,
                             unresolved + skipped, placement, group.notes,
                             "" if answers else _nothing_read(skipped)))
+        if took:
+            blob["carried_link"] = {**carried, "tests": took}
         out.append(blob)
     return out
+
+
+def _carried(doc: Any, group: PageGroup,
+             printed: Callable[[Any, Sequence[int]], Dict[str, Any]]
+             ) -> Dict[str, Any]:
+    """The boring and sample a laboratory group carries (BACKLOG RI-165):
+    a cut item's part's (:attr:`PageGroup.carried_link`), else the first
+    printed on the run's pages before it, nearest first
+    (:attr:`PageGroup.carried_from`); empty
+    when the group's own pages print a boring or sample, as
+    :func:`report_ingest.lab_reader.split_lab_items` carries none to a part
+    that prints its own."""
+    carried = dict(getattr(group, "carried_link", None) or {})
+    if not carried and getattr(group, "carried_from", None):
+        carried = printed(doc, group.carried_from)
+    if not (carried.get("investigation_id") or carried.get("sample_id")):
+        return {}
+    if printed(doc, group.pages):
+        return {}
+    return carried
 
 
 # ---------------------------------------------------------------------------
