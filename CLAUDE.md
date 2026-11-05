@@ -127,10 +127,13 @@ Key conventions:
   app split's steps 6-8 are in (the Document Review page loads one geotech
   package and four app modules; steps 9-11 next); the owner's question list
   runs inside the ingest when `GSE_REPORT_QUESTIONS` names it, posts matched
-  from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split. Answers move in fem2d footing capacity
+  from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split; the
+  geotech page keeps 15 document tools off the list until a document is
+  present (about a quarter of each call's prefix). Answers move in fem2d footing capacity
   (a surcharge is a real load; the soil's weight first; sand q_ult with
-  no surcharge is set by the mesh and warned of) and sheet_pile (water
-  standing in the excavation).
+  no surcharge is set by the mesh and warned of; a rigid footing is a
+  choice, flexible stays the default) and sheet_pile (water standing in
+  the excavation).
 
 - **5.34.0 (2026-11-04; tag `v5.34.0` on branch `release/5.34.0`) with
   planlens 0.14.0 (tag `v0.14.0`) and geotech-references 1.5.0 (tag

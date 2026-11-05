@@ -239,6 +239,59 @@ difference). The c-phi row also still falls with the mesh: 499.0, 455.6
 and 433.9 kPa on 20x10, 40x20 and 60x30. Reported, not tuned. Details:
 `module_work/gm304/CHECK.md`.
 
+**A rigid footing as a choice; the mesh study behind the default (GM-305,
+2026-11-05).** `footing='rigid'` pushes the footing's surface nodes down
+together (prescribed displacements) and reads q from their vertical
+reactions; `base='rough'` (default) also holds them horizontally. GEC-6
+(FHWA-SA-02-054) p. 55: Eq. 5-7 assumes a rigid strip footing. B = 2 m,
+T6, domain 10B x 5B, E = 1e5 kPa, nu = 0.3, psi = 0, defaults otherwise
+(flexible c = 0: q_max 200, 80 steps, as GM-304). kPa; "lb" = the run
+stopped before q levelled off (a lower bound of that mesh's answer).
+
+| Case (closed form, GEC-6) | Footing | 20x10 | 40x20 | 60x30 | 80x40 |
+|---|---|---|---|---|---|
+| c = 50, phi = 0, gamma = 0 (Eq. 5-4, p. 52: 257.1) | flexible | 274.2 | 255.9 | 255.9 | 255.9 |
+| | rigid rough | 347.9 | 306.0 | 291.0 | 283.1 |
+| | rigid smooth | 322.7 | 289.5 | 278.8 | 273.5 |
+| c = 20, phi = 25, gamma = 18 (Eqs. 5-7, 5-8, p. 53: 610.2; 512.3 to 806.0 with Ngamma halved or doubled) | flexible | 499.0 | 455.6 | 433.9 | 173.6 |
+| | rigid rough | 817.7 | >= 674.2 lb | >= 607.7 lb | >= 253.7 lb |
+| | rigid smooth | 627.5 | 584.2 | >= 557.8 lb | >= 543.6 lb |
+| c = 0, phi = 30, gamma = 18 (Eqs. 5-7, 5-8, p. 53: 403.2; 201.6 to 806.4) | flexible | 102.5 | 52.5 | 35.0 | 27.5 |
+| | rigid rough | >= 286.8 lb | >= 97.6 lb | >= 43.2 lb | >= 42.5 lb |
+| | rigid smooth | >= 146.1 lb | >= 44.1 lb | >= 42.8 lb | >= 42.1 lb |
+
+GEC-6 p. 53: published Ngamma values range from about one half to double
+Eq. 5-8's (Chen & McCarron 1991), so the closed forms with an Ngamma term
+are a band, not a target; nothing here is tuned to them.
+
+What it shows:
+
+- **Prandtl:** the flexible footing is at 255.9 from 40x20 on (the same
+  load step of the 45-step ramp, 9.1 kPa wide; -0.5 %). The rigid footing
+  reads high and falls with every refinement (rough +35 %, +19 %, +13 %, +10 %;
+  smooth +26 %, +13 %, +8 %, +6 % on 20x10 to 80x40): the rigid footing's edge is a stress
+  singularity the uniform elements have to resolve, so it converges slowly
+  from above.
+- **c-phi:** the flexible footing keeps falling (the 80x40 drop to 173.6
+  was not investigated; noted, not chased). The rigid footing falls too:
+  smooth levels off on 20x10 and 40x20 and stops before levelling off on
+  60x30; rough stops before levelling off from 40x20 on.
+- **c = 0, no surcharge:** neither gives a bearing capacity. The flexible
+  edge fails at a load set by the element width (GM-304). The rigid
+  footing's constant-stiffness iteration stops after one to twelve steps,
+  and earlier on finer meshes. A tangent (Newton) iteration with cutbacks
+  was tried outside the module: rough, 20x10, 463.6 kPa at the full
+  settlement and still rising (147 s); 40x20, 304.1 kPa at 26 mm of 73 mm
+  and still rising when it stopped (939 s). Not shipped.
+
+So the rigid footing does not converge with the mesh where the flexible one
+fails (c = 0), and it is worse than the flexible one on the validated
+Prandtl case: **the default stays `footing='flexible'`**, the GM-304
+warning stays on it, and the rigid footing's result always warns that its
+q_ult falls as the mesh is refined. A mesh graded towards the footing's
+edges is the likely way to a rigid answer that converges; not built here.
+Details: `module_work/gm305/CHECK.md`.
+
 ## 4. Elastic closed-form checks
 
 | Check | Closed form | fem2d | Error |
