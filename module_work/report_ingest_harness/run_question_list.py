@@ -10,12 +10,14 @@ venv::
     .venv/Scripts/python -m module_work.report_ingest_harness.run_question_list \\
         --list <the owner's question list> [--map <its code map>] \\
         [--only R13,R15] [--engine none|fake] [--no-text] \\
-        [--out-dir <a gitignored folder>]
+        [--posts <a list of posts>] [--out-dir <a gitignored folder>]
 
 ``--list`` defaults to the ``GSE_REPORT_QUESTIONS`` variable, ``--map`` to
 the code map beside the list (``<list name>.code.json``, as private as the
 list: it says which of code's readings answers each Code or Both row and
-which screening answers close rows). ``--records``
+which screening answers close rows). ``--posts`` (default: the
+``GSE_REPORT_POSTS`` variable) matches the code map's post-name row to a
+list of posts, as the ingest run does (BACKLOG RI-170). ``--records``
 defaults to the 2026-10-04 Foundry full records in the main checkout (the
 stage-b ingest folder: one ``<ID>/report.record.json`` a report, a bound
 report's own record under ``bound/``). ``--engine none`` (the default)
@@ -44,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from collections import Counter
@@ -150,8 +153,10 @@ def _answers(args: argparse.Namespace, qlist: Any, record: Any,
 
 
 def run(args: argparse.Namespace) -> int:
-    from report_ingest.question_list import (QuestionListError, answer_sheet,
-                                             code_answers, load_questions)
+    from report_ingest.question_list import (POSTS_ENV, QuestionListError,
+                                             answer_sheet, apply_posts,
+                                             code_answers, load_posts,
+                                             load_questions)
     from report_ingest.scoring import OOS_BLIND
 
     main = main_checkout()
@@ -168,6 +173,14 @@ def run(args: argparse.Namespace) -> int:
     except QuestionListError as exc:
         print(exc)
         return 2
+    posts_path = args.posts or os.environ.get(POSTS_ENV, "").strip()
+    posts = []
+    if posts_path:
+        try:
+            posts = load_posts(posts_path)
+        except QuestionListError as exc:
+            print(exc)
+            return 2
     wanted = [t.strip() for t in (args.only or "").split(",") if t.strip()]
     folders = sorted(p for p in records.iterdir()
                      if p.is_dir() and (not wanted or p.name in wanted))
@@ -196,8 +209,11 @@ def run(args: argparse.Namespace) -> int:
         text = ({"texts": {}, "printed": {}, "why": "--no-text"}
                 if corpus is None else _text_of(corpus, rid, record))
         result = _answers(args, qlist, record, bound, text)
+        if posts:
+            apply_posts(qlist, result.answers, posts)
         answer_sheet(qlist, result.answers, out / f"{rid}.xlsx",
-                     report_id=rid, calls=result.calls)
+                     report_id=rid, calls=result.calls,
+                     posts_name=Path(posts_path).name if posts else "")
         code = code_answers(record, qlist, bound=bound,
                             printed_pages=text["printed"])
         answered = 0
@@ -250,6 +266,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--only", default="")
     ap.add_argument("--engine", choices=("none", "fake"), default="none")
     ap.add_argument("--no-text", action="store_true")
+    ap.add_argument("--posts", default=None,
+                    help="a list of posts (default: GSE_REPORT_POSTS)")
     ap.add_argument("--out-dir", default=None)
     return ap
 
