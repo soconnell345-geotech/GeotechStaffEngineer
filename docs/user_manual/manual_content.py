@@ -483,7 +483,6 @@ MODULE_NARRATIVE: dict[str, dict] = {
         "limits": [
             "The cap is treated as rigid; pile&ndash;soil&ndash;pile interaction (p-multipliers) is not "
             "part of the 6-DOF stiffness distribution.",
-            "No group uplift method (GEC-12 Sec. 7.2.3.2) is offered.",
         ],
     },
 
@@ -493,7 +492,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "resistance.",
         "methods": [
             "**&alpha;-method** side resistance in clay (GEC-10 (2018) Eq. 10-18 rational &alpha; by "
-            "default, on s<sub>u</sub>(CIUC) with the UU/UC&rarr;CIUC transform of Eqs. 10-16/10-17; the "
+            "default, on s<sub>u</sub>(CIUC): c<sub>u</sub> is taken as s<sub>u</sub>(CIUC) unless "
+            "<code>su_test_type</code> says it came from a UU or UC test, when Eqs. 10-16/10-17 transform it; the "
             "O&rsquo;Neill &amp; Reese (1999) AASHTO &alpha; by name).",
             "**&beta;-method** side resistance in sand (GEC-10 (2018) Eq. 10-13 by default: K<sub>o</sub> "
             "from the OCR, &sigma;&prime;<sub>p</sub> from each layer&rsquo;s N<sub>60</sub>; or the "
@@ -501,10 +501,12 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "Base resistance in sand (GEC-10 Eq. 10-14 on the mean N<sub>60</sub> over two diameters below "
             "the base) and clay (N*<sub>c</sub>&middot;s<sub>u</sub>, Eq. 10-19, s<sub>u</sub> averaged over "
             "two diameters); no large-base reduction unless asked for, as the 2018 edition prints none.",
-            "Rock sockets: side resistance by Eq. 10-21 with C = 1.0 by default (0.65 and 1.9 as named "
-            "options; Eq. 10-22 for caving sockets), q<sub>u</sub> held no higher than the concrete&rsquo;s "
+            "Rock sockets: side resistance by Eq. 10-21 with C = 1.0 by default (<code>rock_side_C</code>; "
+            "GEC-10 gives 0.65, Eq. 10-22&rsquo;s value at &alpha;<sub>E</sub> = 1, and 1.9 for roughened "
+            "sockets, a C above 1.0 to be verified by load tests or local experience; Eq. 10-22 for caving sockets), q<sub>u</sub> held no higher than the concrete&rsquo;s "
             "f&prime;<sub>c</sub> when it is given; base 2.5&nbsp;q<sub>u</sub> (Eq. 10-23) only where the "
-            "engineer states the conditions of p. 10-22 or the rock below the base is at RQD 100, else the "
+            "engineer states the conditions of p. 10-22 or the rock below the base is at RQD 100 (a rock layer given no RQD is taken at 100, so a profile "
+            "without RQD gets 2.5&nbsp;q<sub>u</sub>, and the result&rsquo;s choices say so), else the "
             "Hoek&ndash;Brown base or a refusal. Permanent casing, fractured rock at the top of the socket, "
             "and a top exclusion zone in clay (1.5&nbsp;m by default; none in sand or rock unless given).",
             "LRFD resistance factors and capacity-vs-depth curves.",

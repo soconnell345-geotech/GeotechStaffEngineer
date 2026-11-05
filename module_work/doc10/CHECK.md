@@ -21,14 +21,14 @@ at 32bbd77), numpy 2.4.6.
   version is read from `pyproject.toml` by the build.
 - **Every tool in the catalog.** All 70 modules in `MODULE_REGISTRY` are named;
   every one of the 195 non-alias methods of the analysis modules has its table,
-  and every one of their 2,597 parameters is listed. Reference modules are listed
+  and every one of their 2,600 parameters (2,597 before the merge) is listed. Reference modules are listed
   by method count (as the build has always done; their 1,341 lookups are
   discoverable at run time). Checked by `module_work/doc10/check_manual.py`
   (exit 0; rerun it after any rebuild).
 - **Defaults.** New in the build (`build_manual.py`, `_default_text`): every
   optional parameter with a registered default now shows `default: <value>` in
-  its table, taken from the adapter's `METHOD_INFO` (1,085 such parameters on
-  the analysis modules; empty-string defaults are not shown). Before, a default
+  its table, taken from the adapter's `METHOD_INFO` (1,087 such parameters on
+  the analysis modules after the merge, 1,085 before; empty-string defaults are not shown). Before, a default
   appeared only where the description's prose happened to state it.
 - **Anchor inputs and the test load.** `soe.design_ground_anchor` (14
   parameters, including `test_load_factor` with its 0.80 SMTS rule) and
@@ -68,6 +68,33 @@ at 32bbd77), numpy 2.4.6.
     for 5.4.0-5.34.0 pointing to HANDOFF.md and CLAUDE.md for the release notes,
     and the lead line no longer says V5.1_SUMMARY tracks the whole 5.x line.
     No history was written for the 30 releases; that is left (below).
+
+## Review fixes and merge with master (2026-11-05)
+
+Review: `REVIEW_DOC-10.md` (verdict: merge after fixes). Each sentence was checked
+against the drilled_shaft adapter and `pile_group` before it was written; the code
+and the review agreed in all four cases.
+
+- Pile-group limits: the "No group uplift method" bullet is removed;
+  `pile_group.group_uplift` (GEC-12 Sec. 7.2.3.2, since GM-289) is offered.
+- Rock base: a rock layer given no RQD is taken at RQD 100, so a profile without
+  RQD gets 2.5 qu (Eq. 10-23); the result's choices say so.
+- Rock side: `rock_side_C` is a number (default 1.0). GEC-10 prints 0.65
+  (Eq. 10-22 at alpha_E = 1) and 1.9 (roughened sockets); a C above 1.0 is to be
+  verified by load tests or local experience (p. 10-22).
+- Clay side: by default (`su_test_type="ciuc"`) cu is taken as su(CIUC),
+  untransformed; the UU/UC to CIUC transform (Eqs. 10-16/10-17) applies only when
+  `su_test_type` says so.
+
+Master was merged into the branch (merge commit e8127dc). `manual.html` conflicted
+(master's hand re-render of GM-305); it was taken from one side and rebuilt, not
+hand-merged. The rebuild picked up GM-305 (rigid-footing rows: `footing`, `base`,
+`settlement_max`) and GM-237 (driven-pile layer keys `alpha`, `adhesion`,
+`adhesion_basis`, `highly_overconsolidated`). Parameters now documented: 2,600
+(1,087 registered defaults, 195 methods, 70 modules; `check_manual.py` exit 0).
+A second `build_manual.py` run leaves `manual.html` and `toc.json` unchanged.
+The strong release check is: rebuild, then `git diff --exit-code
+docs/user_manual/manual.html`.
 
 ## The SOE example
 
@@ -136,6 +163,9 @@ manual's Appendix B lead (now "covers 5.0 to 5.1 only"). Not deleted.
   Converse-Labarre removed from pile groups). Only the drilled-shaft entry
   (GM-244, named in DOC-10) and the stale lines above were fixed. The parameter
   tables are current by construction.
+- The axial_pile limits bullet on Tomlinson alpha (`manual_content.py` ~435, "alpha
+  0.42 vs DrivenPiles 0.76 at su 1.9 ksf") is unverified; it predates the
+  GM-121/GM-144/GM-282 adhesion-chart work.
 - The validation table (Chapter 8) is hand-written; V-008's title "Base
   resistance in sand (0.60 N60)" and `validation_examples/RESULTS.md` V-008b
   ("1.27/Db applied") describe the large-base reduction as applied, which has
