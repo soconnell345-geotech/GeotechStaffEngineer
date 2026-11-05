@@ -151,17 +151,17 @@ def finish_build_kwargs(kw: dict) -> dict:
 
 def build_page_agent(model, *, attachments, save_fn, temp_dir, **kw):
     """The Document Review page's agent, after the shell's shared wiring
-    (:func:`webapp.core.build_agent`). Today's build is still the shared
-    builder's ``review_page=True`` branch (the app split's step 8 gives the
-    page a build of its own)."""
+    (:func:`webapp.core.build_agent`): the page's own build
+    (:func:`funhouse_agent.review_build.build_review_page_agent`, INF-31
+    step 8)."""
     # The Document Review page's lean agent binds its findings and digests
     # to THIS conversation's folder when it is built; the process-wide
-    # working folder can be re-pointed by another tab. (The legacy build
+    # working folder can be re-pointed by another tab. (The default build
     # accepts and ignores it.)
     kw.setdefault("working_dir", temp_dir)
-    from funhouse_agent.deep.agent import build_deep_agent
-    return build_deep_agent(model, attachments=attachments, save_fn=save_fn,
-                            **kw)
+    from funhouse_agent.review_build import build_review_page_agent
+    return build_review_page_agent(model, attachments=attachments,
+                                   save_fn=save_fn, **kw)
 
 
 def disclaimer_text() -> Optional[str]:
@@ -225,9 +225,8 @@ DOCUMENT_REVIEW = AppProfile(
         "enable_calc_subagent": False,
         "extra_system_prompt": None,
         "_document_review_prompt": True,
-        # With GEOTECH_REVIEW_AGENT=lean, build_deep_agent hands this build
-        # to the page's own agent (funhouse_agent.deep.review_agent); off,
-        # it is ignored and the page is built as it has been since 5.26.
+        # Marks the page's build (funhouse_agent.review_build since step 8;
+        # build_deep_agent hands a review_page build there too).
         "review_page": True,
     },
     finish_build_kwargs=finish_build_kwargs,

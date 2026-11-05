@@ -11,12 +11,13 @@ turn does not call can still hide a coupling, which the docreview-only CI
 job of step 12 catches.
 
 The known couplings below may only SHRINK: a new one fails the test, and so
-does one that has gone and is still listed. From step 8 only the soft ones
-remain (inside ``try``: the page works without them), and the blocking test
-turns into a plain test the page must pass with every GSE module refused.
-Until then it is a strict xfail that expects the page's own failure (an
-``AssertionError``): an unexpected pass, or the child process itself
-failing, is a failure.
+does one that has gone and is still listed. Since step 8 only the soft ones
+remain (inside ``try``: the page works without them), so the blocking test
+is a plain test the page must pass with every GSE module refused (its
+strict-xfail mark lifts itself while only soft couplings are listed). The
+tests at the end read the split's exits off the source: the chart stack
+(step 6), the shell (step 7), and the review build and the assembly both
+builds share (step 8) import nothing of GSE outside the listed hook.
 
 What neither the recorder nor the blocker sees: a module loaded from its
 file (``importlib.util.spec_from_file_location``), which the plotting box
@@ -45,12 +46,9 @@ pytestmark = pytest.mark.skipif(
 #: "importer -> imported": where the review page reaches into GSE today,
 #: with the plan's item (§2.7) and the step that cuts it.
 KNOWN_COUPLINGS = {
-    # 1. The review page is built by GSE's builder (step 8). Since step 7
-    # the shell asks the page for its builder, which is in the review
-    # page's own file (webapp/review_page.py).
-    "webapp.review_page -> funhouse_agent.deep.agent": "2.7 #1, step 8",
-    "funhouse_agent.deep.review_agent -> funhouse_agent.deep.agent":
-        "2.7 #1, step 8",
+    # 1. (The review page was built by GSE's builder: gone at step 8; it
+    # builds itself, funhouse_agent.review_build, on the assembly both
+    # builds share, funhouse_agent.deep.assembly.)
     # 2. (The review tools' factory sat in GSE's tools module: gone at
     # step 4, now the vision kit.)
     # 3. The package door shows GSE's first-import disclaimer notice, inside
@@ -67,7 +65,13 @@ KNOWN_COUPLINGS = {
     # figure helper's result cap, gone at step 5.)
     # (The plotting box's look for geotech_references.chart_lines: gone at
     # step 6; GSE registers the chart lines with funhouse_agent.charts.)
-    # Soft: inside ``try``, the page works without them (hooks, step 11).
+    # Soft: inside ``try``, the page works without them.
+    # The review build hands the reference library's chart lines to the
+    # chart stack as the geotech page does (a hook GSE fills), so the figure
+    # helper reads as before; step 13 drops it from Document Review (the
+    # one deliberate fingerprint change; the earlier plan's "step 12").
+    "funhouse_agent.review_build -> "
+    "funhouse_agent.adapters.profile_figure_adapter": "2.7 soft, step 13",
     "funhouse_agent.vision_tools -> funhouse_agent.reference_docs":
         "2.7 soft, step 11",
     "funhouse_agent.vision_tools -> geotech_references": "2.7 soft, step 11",
@@ -84,12 +88,9 @@ SOFT_COUPLINGS = frozenset(k for k, v in KNOWN_COUPLINGS.items()
 #: "importer -> imported": where GSE's code reaches into the review page's
 #: own files (plan §2.7, "geotech code into review code"; steps 8 and 15).
 KNOWN_REVERSE_COUPLINGS = {
-    "funhouse_agent.deep.agent -> funhouse_agent.deep.review_agent":
-        "the review build inside GSE's builder, step 8",
-    "funhouse_agent.deep.agent -> funhouse_agent.deep.minimal_agent":
-        "the review build inside GSE's builder, step 8",
-    "funhouse_agent.deep.agent -> funhouse_agent.review_prompt":
-        "the review build inside GSE's builder, step 8",
+    # (The review build inside GSE's builder: gone at step 8;
+    # build_deep_agent(review_page=True) hands its callers to
+    # funhouse_agent.review_build until step 15.)
     # The old import path of the review prompt (step 3), re-exported.
     "funhouse_agent.deep.prompt -> funhouse_agent.review_prompt":
         "re-export for the old import path, step 15",
@@ -146,9 +147,10 @@ def test_gse_reaches_into_review_files_only_where_known(review_run,
 @pytest.mark.xfail(
     condition=bool(set(KNOWN_COUPLINGS) - SOFT_COUPLINGS), strict=True,
     raises=AssertionError,
-    reason="The review page still imports GSE modules outside a try "
-           "(KNOWN_COUPLINGS); from step 8 of the split it must build and "
-           "run without them, and this mark lifts itself.")
+    reason="The review page imports GSE modules outside a try "
+           "(KNOWN_COUPLINGS); since step 8 of the split it must build and "
+           "run without them, and this mark lifts itself while only soft "
+           "couplings are listed.")
 def test_review_page_works_with_gse_modules_blocked():
     run = page_builds.run_child(
         ["boundary", "block", ",".join(page_builds.REVIEW_BUILDS)])
@@ -262,3 +264,31 @@ def test_the_shell_imports_nothing_of_geotech():
                          for n in NOT_IN_THE_SHELL)]
     assert not found, ("The shell imports the geotech page's own code "
                        "(INF-31 step 7):\n  " + "\n  ".join(found))
+
+
+#: Step 8's exit (plan §4): the review page builds itself and the assembly
+#: both builds share imports nothing of GSE; the review build's one reach,
+#: the chart-lines hook inside a ``try``, is listed (it goes at step 13).
+REVIEW_BUILD = ("funhouse_agent/review_build.py",
+                "funhouse_agent/deep/assembly.py")
+REVIEW_BUILD_HOOKS = {
+    "funhouse_agent/review_build.py -> "
+    "funhouse_agent.adapters.profile_figure_adapter":
+        "the reference charts, soft, step 13",
+}
+
+
+def test_the_review_build_and_the_assembly_import_nothing_of_gse():
+    import os
+    found = set()
+    for path in _python_files(*REVIEW_BUILD):
+        rel = os.path.relpath(path, page_builds.REPO).replace(os.sep, "/")
+        mods = _imports_of(path)
+        # a module, not the names imported from it
+        gse = {m for m in mods if page_builds.is_geotech(m)}
+        found |= {f"{rel} -> {m}" for m in gse
+                  if not any(m.startswith(o + ".") for o in gse)}
+    assert found == set(REVIEW_BUILD_HOOKS), (
+        "The review build or the shared assembly imports GeotechStaffEngineer "
+        "code other than the listed hooks (INF-31 step 8):\n  "
+        + "\n  ".join(sorted(found ^ set(REVIEW_BUILD_HOOKS))))

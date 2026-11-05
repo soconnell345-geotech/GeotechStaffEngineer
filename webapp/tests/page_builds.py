@@ -156,6 +156,8 @@ def build(name: str, model=None, files_dir=None, capture: bool = False,
     if capture:
         import langchain.agents as lc_agents
         from funhouse_agent.deep import agent as deep_agent
+        # the review page compiles through the shared assembly (step 8)
+        from funhouse_agent.deep import assembly as deep_assembly
         depth = [0]
 
         def _wrap(kind, real):
@@ -175,6 +177,8 @@ def build(name: str, model=None, files_dir=None, capture: bool = False,
         patches = [
             (deep_agent, "create_deep_agent",
              _wrap("create_deep_agent", deep_agent.create_deep_agent)),
+            (deep_assembly, "create_deep_agent",
+             _wrap("create_deep_agent", deep_assembly.create_deep_agent)),
             (lc_agents, "create_agent",
              _wrap("create_agent", lc_agents.create_agent)),
         ]
@@ -581,7 +585,8 @@ REVIEW_MODULES = frozenset({
     "funhouse_agent.deep.sweep", "funhouse_agent.deep.findings_tools",
     "funhouse_agent.review_findings", "funhouse_agent.deep.geometry_tools",
     "funhouse_agent.deep.digest_tools", "funhouse_agent.review_digest",
-    "funhouse_agent.review_prompt", "webapp.tinyapps_entry",
+    "funhouse_agent.review_prompt", "funhouse_agent.review_build",
+    "webapp.tinyapps_entry",
     # The review page's own parts (INF-31 step 7).
     "webapp.review_page",
 })
