@@ -930,12 +930,26 @@ class PageGroup:
     #: size. Empty for every other group, whose pages all go.
     ranked: List[int] = field(default_factory=list)
     n_front: int = 0
+    #: A laboratory group's (BACKLOG RI-165): the boring and sample a cut
+    #: lab item's first part prints, carried to a later part whose own
+    #: pages print none (``evidence["carried_link"]`` of
+    #: :func:`report_ingest.lab_reader.split_lab_items`). Empty otherwise.
+    carried_link: Dict[str, Any] = field(default_factory=dict)
+    #: A laboratory window after the first of its run's (RI-165): the pages
+    #: of the run's first window, whose printed boring and sample this
+    #: window carries where its own pages print none. Empty otherwise.
+    carried_from: List[int] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"stage": self.stage, "pages": list(self.pages),
-                "why": self.why, "ident": self.ident,
-                "part": list(self.part) if self.part else None,
-                "key": self.key, "notes": list(self.notes)}
+        out = {"stage": self.stage, "pages": list(self.pages),
+               "why": self.why, "ident": self.ident,
+               "part": list(self.part) if self.part else None,
+               "key": self.key, "notes": list(self.notes)}
+        if self.carried_link:
+            out["carried_link"] = dict(self.carried_link)
+        if self.carried_from:
+            out["carried_from"] = list(self.carried_from)
+        return out
 
 
 def stage_pages(labels: Mapping[int, str], stage: str) -> List[int]:
@@ -1074,7 +1088,13 @@ def lab_groups(pages: Sequence[int],
     """Each run of laboratory pages in windows of at most ``size``
     (``lab_reader.MAX_LAB_PAGES``), the cuts moved to the pages where a new
     sheet begins (:func:`lab_starts`) as ``lab_reader.lab_windows`` moves
-    them."""
+    them.
+
+    A window after the first of its run names the first window's pages
+    (:attr:`PageGroup.carried_from`): a boring and sample printed once over
+    the run's first sheet are its later windows' too where theirs print
+    none, as :func:`report_ingest.lab_reader.split_lab_items` carries them
+    to a cut item's later parts (BACKLOG RI-165)."""
     from report_ingest.lab_reader import MAX_LAB_PAGES, lab_windows
 
     size = MAX_LAB_PAGES if size is None else int(size)
@@ -1089,7 +1109,9 @@ def lab_groups(pages: Sequence[int],
             out.append(PageGroup("lab", list(window), why=why,
                                  key=f"lab-{run[0]}",
                                  part=((n + 1, len(windows))
-                                       if len(windows) > 1 else None)))
+                                       if len(windows) > 1 else None),
+                                 carried_from=(list(windows[0]) if n
+                                               else [])))
     return out
 
 
