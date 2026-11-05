@@ -304,7 +304,7 @@ class TestTheRunFile:
         assert ("R36: triage, review seeded from a label run (4 calls), "
                 "not this ingest's") in text
         cells = _report_row(text)
-        assert cells[2] == "1" and cells[4] == "3"     # triage, review
+        assert cells[2] == "1" and cells[6] == "3"  # triage, review (RI-202)
         assert cells[-1] == "+0"                        # every call has a file
 
         # The run file moved aside: the next call reads the folder again,

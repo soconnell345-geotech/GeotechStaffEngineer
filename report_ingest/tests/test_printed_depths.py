@@ -806,7 +806,10 @@ class TestTheReader:
         assert [(s.top.value, s.bottom.value) for s in kept] == [(60.0, 61.5)]
         refused = _refused(result)
         assert [u["value"] for u in refused] == [65.0]
-        assert "outside what the scale on this log reads" in refused[0]["why"]
+        # RI-199: page 1 has no ruler; it is judged on what the log's other
+        # sheets leave for it, and the words say so.
+        assert ("outside what this log's other sheets leave for page 1"
+                in refused[0]["why"])
         assert [u["page"] for u in _flagged(result)] == [1]
 
 
