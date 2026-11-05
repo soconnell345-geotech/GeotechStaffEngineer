@@ -460,7 +460,8 @@ class PageDescriptions:
 
 def _cost_row() -> Dict[str, Any]:
     return {"calls": 0, "failed": 0, "input_tokens": 0, "output_tokens": 0,
-            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+            "cache_read_tokens": 0, "cache_write_tokens": 0, "dollars": 0.0,
+            "seconds": 0.0}
 
 
 def _charge(cost: Dict[str, Any], reply: Any) -> None:
@@ -469,6 +470,9 @@ def _charge(cost: Dict[str, Any], reply: Any) -> None:
     cost["input_tokens"] += int(usage.input_tokens or 0)
     cost["output_tokens"] += int(usage.output_tokens or 0)
     cost["cache_read_tokens"] += int(usage.cache_read_tokens or 0)
+    # Every part of tokens in (BACKLOG RI-171), so a description's file
+    # says what it paid and a resumed record counts it whole (RI-206).
+    cost["cache_write_tokens"] += int(usage.cache_write_tokens or 0)
     cost["dollars"] = round(cost["dollars"]
                             + float(usage.dollars(reply.model or "")), 6)
     cost["seconds"] = round(cost["seconds"] + float(reply.seconds or 0.0), 2)

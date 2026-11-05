@@ -96,3 +96,70 @@ No model prompt text changed; `READ_PROMPT_VERSION` is untouched.
 - The README's long cluster-run sections still carry old "WP5" headings. These
   quote the RESULTS.md headings `cluster_scoring.py` still prints
   (`# WP5 on the cluster: ...`), so they match the code and were left alone.
+
+## Review fixes (2026-11-04)
+
+The review found the fix right for every step but one. With model first on (the
+default), a resumed run counted the page descriptions twice.
+
+Made-up case: the synthetic report model first, 200 input, 3,000 cache write, 700
+cache read and 100 output tokens per call, priced as `claude-sonnet-5`. The first
+run paid 34 calls, 132,600 tokens in and $0.30728.
+
+- **The sections' saved cost** (`graph._range_labels`, `graph._keep`). The range
+  voter's mark is taken before the describer, so `_paid` saved the describer's
+  calls and the labeller's in `ranges-<arm>.json`. A resume adds that cost and
+  the descriptions' own `saved_cost`: the resumed record said 56 calls, 152,400
+  tokens in and $0.50624. `_keep` now takes `since=`, the mark `_paid` counts
+  from, and the range voter passes the mark taken just before the labeller.
+  `cut_short` and `settle` still use the step's own mark.
+- **The descriptions' cache writes** (`range_labels._cost_row`, `_charge`).
+  `describe_pages` writes each page description's file itself, not through
+  `_keep`, and its cost left out the cache writes. With the first fix alone, the
+  resumed record said 66,600 tokens in against 132,600 paid. Each row now counts
+  them.
+- **Test:** `report_ingest/tests/test_ri206_model_first.py` covers the default
+  path.
+  - A resumed run's `report_calls` and `report_input_tokens` equal the first
+    run's.
+  - The resumed `labels.json` ranges cost is the labeller's one call.
+  - Every description file carries its cache writes.
+  - Both tests fail without these fixes (`56 == 34`) and pass with them.
+
+With both fixes, the resumed record says 34 calls, 132,600 tokens in and
+$0.30736.
+
+**A run that is not resumed** (the same case, master against this branch):
+- The record and the summary are unchanged: 34 calls, 132,600 in, 3,400 out,
+  $0.30728.
+- Every saved step file's cost gains `cache_write_tokens` (3,000 a call). These
+  are the descriptions, the sections, the items, triage and the bound identity.
+- `labels.json` `cost.describe` and `cost.ranges` gain theirs (66,000 and 3,000).
+  Nothing sums these blocks.
+- `triage.json` and a bound document's `identity.json` say `cost.dollars`
+  0.00904 where they said 0.009. Their own cost rounds dollars to four places
+  (`triage.py`, `bound.py`); the tally does not. So the resumed `report_dollars`
+  is $0.00008 above the fresh record's here, and the resumed figure is the exact
+  one.
+- Only the cluster `range_labels` scoring stage changes in `results.json` and
+  RESULTS.md. Its `cost.describe`, the run's `totals` and RESULTS.md's cost line
+  now count the describer's cache writes, once: one `describe_cost` per report
+  (`cluster_scoring._score_ranges`), each page's row added once. Its calls and
+  dollars are unchanged.
+- No double counting anywhere else. run.json totals, the cost meter, the token
+  brakes (`max_report_tokens_in`, `max_total_tokens`) and `earlier_attempts` /
+  `all_attempts` read the engine's meter and the run files, not these rows, and
+  are unchanged.
+
+Tests (`.venv` Python 3.14, from the worktree):
+- `pytest -q report_ingest/tests/test_ri206.py test_ri206_model_first.py
+  test_graph_model_first.py test_model_first_schema.py test_range_labels.py
+  test_ri125.py test_graph.py webapp/tests/test_public_text.py`: 312 passed;
+  exit code 0.
+- `pytest -q report_ingest/tests/test_ri135.py test_ri187.py test_ri190.py
+  test_reconciler.py test_subagent.py test_lab_sheets_per_call.py
+  test_model_first_read.py test_package.py test_cluster_scoring.py`: 662 passed;
+  exit code 0.
+- `test_ri206_model_first.py` without the review fixes: 2 failed; exit code 1.
+
+No model prompt text changed; the model-first prompt digest test passes.

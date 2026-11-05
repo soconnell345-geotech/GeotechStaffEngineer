@@ -627,11 +627,18 @@ class _TalliedEngine:
 
 def _keep(path: str, blob: Dict[str, Any], spend: _Spend,
           mark: Tuple[int, Optional[Dict[str, Any]]], qa: List[QAEntry],
-          where: str, pages: Sequence[int] = ()) -> bool:
+          where: str, pages: Sequence[int] = (),
+          since: Optional[Tuple[int, Optional[Dict[str, Any]]]] = None
+          ) -> bool:
     """Save a step's fresh result so a resumed run does not pay for it again
     -- unless the ceiling cut the step short. Then what it read is used in
     THIS record and not saved, with a ``partial`` entry saying so: asking
     for the report again reads the step again. True when saved.
+
+    The saved cost is what was paid since ``since`` (``mark`` when not
+    given): a step whose calls before ``since`` are saved in files of their
+    own -- the range voter's page descriptions -- must not carry them too,
+    or a resumed run counts them twice (BACKLOG RI-206's review).
     """
     if spend.cut_short(mark):
         qa.append(QAEntry(
@@ -642,7 +649,7 @@ def _keep(path: str, blob: Dict[str, Any], spend: _Spend,
                    "reads it again",
             pages=list(pages)[:200]))
         return False
-    _save(path, _paid(blob, spend, mark))
+    _save(path, _paid(blob, spend, since or mark))
     return True
 
 
@@ -1532,6 +1539,9 @@ def _range_labels(doc: Any, engine: Any, out: str, resume: bool,
                            f"range voter did not label this run; asking "
                            f"for the report again describes the rest"))
                 return {}
+            # The sections' saved cost is the labeller's alone: each page
+            # description keeps its own in its file (``saved_cost``).
+            labelled = spend.mark()
             found = label_by_ranges(
                 described.pages, doc.n_pages, labeller,
                 outline=outline_text(outline) if outline is not None else "",
@@ -1558,7 +1568,8 @@ def _range_labels(doc: Any, engine: Any, out: str, resume: bool,
                        f"describes those pages and draws them again",
                 pages=missing[:200]))
         else:
-            _keep(path, blob, spend, mark, qa, "labels.ranges")
+            _keep(path, blob, spend, mark, qa, "labels.ranges",
+                  since=labelled)
         spend.settle(mark)
         labelling.range_paid = True
     labelling.describe_cost = dict(
