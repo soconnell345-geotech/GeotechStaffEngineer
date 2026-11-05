@@ -87,7 +87,7 @@ def two_pages(monkeypatch, tmp_path):
     monkeypatch.setenv("GEOTECH_UPLOAD_MODE", "http")
     monkeypatch.setattr(engine_config, "resolve_engine", _fake_engine)
     monkeypatch.setattr(core, "build_agent", lambda *a, **k: object())
-    monkeypatch.setattr(core, "build_reviewer_agent", lambda *a, **k: object())
+    monkeypatch.setattr("webapp.geotech_page.build_reviewer_agent", lambda *a, **k: object())
     store = FakeStore()
     monkeypatch.setattr(sharepoint_store, "get_store", lambda *a, **k: store)
     # Open on the review page, the app's root, as a real session does.

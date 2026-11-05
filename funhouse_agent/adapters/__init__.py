@@ -22,6 +22,19 @@ from funhouse_agent.arg_checks import (  # noqa: F401
     check_nested_list,
     suggest_params,
 )
+# The parameter helpers plot_data shares with the adapters, and the Plotly
+# sidecar writer, moved with the chart stack (INF-31 step 6): the same
+# functions, imported from their neutral modules.
+from funhouse_agent.arg_checks import (  # noqa: F401
+    accepted_as_unused,
+    apply_aliases,
+    declare_aliases,
+    declare_when_absent,
+    refused_reason,
+    reject_unknown_params,
+    require_params,
+)
+from funhouse_agent._fileio import write_plotly_sidecar  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -64,34 +77,8 @@ def clean_result(result: dict) -> dict:
 # Shared parameter-ergonomics helpers
 # ---------------------------------------------------------------------------
 
-def apply_aliases(params: dict, aliases: dict) -> dict:
-    """Return a copy of ``params`` with alias keys renamed to canonical keys.
-
-    ``aliases`` maps alias_name -> canonical_name. The canonical key wins if
-    both are present (the alias is silently dropped in that case).
-    """
-    if not any(a in params for a in aliases):
-        return params
-    out = dict(params)
-    for alias, canonical in aliases.items():
-        if alias in out:
-            val = out.pop(alias)
-            out.setdefault(canonical, val)
-    return out
 
 
-def require_params(params: dict, required, *, method: str, valid=None):
-    """Raise a clear ValueError if any of ``required`` keys is missing.
-
-    Replaces raw ``KeyError: 'x'`` tracebacks with an actionable message that
-    lists the missing and valid parameter names.
-    """
-    missing = [k for k in required if params.get(k) is None]
-    if missing:
-        msg = (f"{method}: missing required parameter(s) {missing}.")
-        if valid:
-            msg += f" Valid parameters: {sorted(valid)}."
-        raise ValueError(msg)
 
 
 def require_keys(item: dict, required, *, method: str, item_label: str = "layers[]"):
@@ -112,27 +99,6 @@ def field_keys(cls, *extra) -> tuple:
     return tuple(f.name for f in dataclasses.fields(cls) if f.init) + extra
 
 
-def reject_unknown_params(params: dict, valid, *, method: str, aliases=()):
-    """Raise a clear ValueError naming unknown keys and listing valid ones.
-
-    Use for adapters that pass ``**params`` straight into a module function,
-    where an invented parameter name would otherwise surface as a bare
-    ``TypeError: unexpected keyword argument``. Each unknown name that is a
-    near miss of a valid one gets a did-you-mean.
-    """
-    unknown = [k for k in params if k not in valid and k not in aliases]
-    if unknown:
-        hints = []
-        for k in sorted(unknown):
-            near = suggest_params(k, valid)
-            if near:
-                hints.append(f"{k} -> {' or '.join(near)}")
-        hint = f" Did you mean: {'; '.join(hints)}?" if hints else ""
-        raise ValueError(
-            f"{method}: unknown parameter(s) {sorted(unknown)}.{hint} "
-            f"Valid parameters: {sorted(valid)}. describe_method gives each "
-            f"one's meaning and units."
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -157,20 +123,8 @@ def mark_required(method_info: dict, required: dict) -> dict:
     return method_info
 
 
-def refused_reason(spec) -> str:
-    """The reason of a ``refused_parameters`` entry: a string, or
-    ``{"reason": ..., "accepts": [values]}``."""
-    return spec if isinstance(spec, str) else str(spec.get("reason", ""))
 
 
-def accepted_as_unused(spec, value) -> bool:
-    """Whether a refused name's value is one its entry ``accepts`` because
-    it means "not used" (a level backfill's slope of 0), so it passes
-    silently instead of costing a retry."""
-    if not isinstance(spec, dict) or isinstance(value, (list, dict)):
-        return False
-    return any(value == v and type(value) is not bool
-               for v in spec.get("accepts", ()))
 
 
 def without_unused(params: dict, refused: dict) -> dict:
@@ -201,23 +155,6 @@ def refuse_given(params: dict, refused: dict, *, method: str) -> None:
         f"{method} does not take {hits}: "
         + "; ".join(f"{', '.join(names)}: {reason}"
                     for reason, names in why.items()) + ".")
-
-
-def declare_aliases(method_info: dict, aliases: dict) -> dict:
-    """Record, per method, the other spellings of its parameters the
-    adapter reads (``{method: {alias: parameter}}``) as the method's
-    ``parameter_aliases``. Dispatch refuses a top-level key that is neither
-    a parameter nor one of these (BACKLOG GM-110), so an alias the adapter
-    maps must be declared here. An alias of something the method does not
-    take is left out (one alias table often serves several methods), so it
-    is refused by name. Returns ``method_info``."""
-    for method, table in aliases.items():
-        info = method_info[method]
-        params = info.get("parameters") or {}
-        own = info.setdefault("parameter_aliases", {})
-        own.update({a: c for a, c in table.items()
-                    if a != c and a not in params and c in params})
-    return method_info
 
 
 def item_keys_for(method_info: dict, param: str, keys, methods=None) -> dict:
@@ -269,41 +206,6 @@ def declare_applies_when(method_info: dict, table: dict) -> dict:
     return method_info
 
 
-def declare_when_absent(method_info: dict, table: dict) -> dict:
-    """Record what a call that leaves out an optional input with no default
-    is analysed with (``{method: {parameter: case}}``, BACKLOG GM-165), so
-    a result's ``defaults_used`` says so and a calc package prints it under
-    Assumed Inputs. ``case`` is either ``(what the run takes, its basis)``
-    -- the parameter's ``when_absent``, e.g. ("no water table", "...") --
-    or the name of another parameter whose value in force the method takes
-    in its place, the parameter's ``default_from`` (a foundation friction
-    angle that defaults to the backfill's). The spec is copied first. A
-    name the method does not declare, a parameter with a default, or an
-    empty case raises, so a slip in the table fails on import. Returns
-    ``method_info``."""
-    for method, cases in table.items():
-        params = method_info[method]["parameters"]
-        for name, case in cases.items():
-            if name not in params:
-                raise KeyError(f"{method}: no parameter {name!r}")
-            spec = params[name]
-            if spec.get("default") is not None \
-                    or spec.get("default_depends_on"):
-                raise ValueError(f"{method}.{name}: has a default; a case "
-                                 "is for an input with none")
-            if isinstance(case, str):
-                if case not in params or case == name:
-                    raise KeyError(f"{method}.{name}: default_from names "
-                                   f"no other parameter {case!r}")
-                params[name] = {**spec, "default_from": case}
-                continue
-            what, basis = case
-            if not (str(what).strip() and str(basis).strip()):
-                raise ValueError(f"{method}.{name}: a case needs what the "
-                                 "run takes and its basis")
-            params[name] = {**spec, "when_absent": {"case": what,
-                                                    "basis": basis}}
-    return method_info
 
 
 def figure_output_format(params: dict, default: str = "metadata") -> str:
@@ -319,32 +221,6 @@ def figure_output_format(params: dict, default: str = "metadata") -> str:
     return params.get("output_format", default)
 
 
-def write_plotly_sidecar(output_path, figure_json):
-    """Write ``figure_json`` as ``<name>.plotly.json`` beside ``output_path``.
-
-    One Plotly figure serialized with ``figure.to_json()``, saved next to the
-    file it belongs to (the same stem, whatever that file's extension) so a
-    front-end can render it natively with ``st.plotly_chart`` instead of an
-    HTML iframe or a static image. Returns ``{"plotly_json_path": ...}`` on a
-    verified write and ``None`` otherwise — the sidecar is always additive and
-    best-effort, so a caller merges the dict and never fails on it.
-
-    The naming rule and the :func:`funhouse_agent._fileio.save_verified` call
-    live HERE only, so ``/Workspace`` durability and read-back verification
-    come free for every producer of a sidecar.
-    """
-    if not output_path or not figure_json:
-        return None
-    import os as _os
-    try:
-        from funhouse_agent._fileio import save_verified
-        sidecar = _os.path.splitext(str(output_path))[0] + ".plotly.json"
-        saved = save_verified(sidecar, figure_json)
-    except Exception:                                      # noqa: BLE001
-        return None
-    if saved.get("file_exists"):
-        return {"plotly_json_path": saved.get("saved", sidecar)}
-    return None
 
 
 def save_html_output(result: dict, params: dict, *, html_key: str = "html",

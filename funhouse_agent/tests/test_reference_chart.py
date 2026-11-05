@@ -242,7 +242,10 @@ def test_without_the_library_module_it_says_so(tmp_path, monkeypatch):
         pfa._run_plot_data({"series": [LIMITS],
                             "reference_chart": "uscs_plasticity",
                             "output_path": str(tmp_path / "x.png")})
-    monkeypatch.setitem(sys.modules, "geotech_references.chart_lines", None)
+    # the box offers chart_lines only where an app registered them (INF-31
+    # step 6: the chart stack looks for no reference library itself)
+    from funhouse_agent import charts
+    monkeypatch.setattr(charts, "_REFERENCE_CHARTS", None)
     assert "chart_lines" not in plot_box.plot_code_description()
 
 

@@ -320,7 +320,7 @@ def test_the_sidebar_of_a_fresh_session_shows_no_one_elses_link(
                         EngineResolution(model=object(), source="prompter",
                                          model_name="fake", message=""))
     monkeypatch.setattr(core, "build_agent", lambda *a, **k: object())
-    monkeypatch.setattr(core, "build_reviewer_agent", lambda *a, **k: object())
+    monkeypatch.setattr("webapp.geotech_page.build_reviewer_agent", lambda *a, **k: object())
     store = Store()
     monkeypatch.setattr(sp, "get_store", lambda *a, **k: store)
     monkeypatch.setenv(profiles.PROFILE_ENV, "document_review")

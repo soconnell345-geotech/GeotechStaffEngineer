@@ -74,7 +74,7 @@ def key_under_axes(fig, axes, *, handles=None, labels=None, note=None,
     ``handles`` and ``labels`` default to the axes' labelled artists, one
     entry per label. Returns the key, or None when it has nothing to say.
     """
-    from geotech_common.layout_ink import _lay_out
+    from funhouse_agent.charts.layout_ink import _lay_out
     axes = list(axes) if isinstance(axes, (list, tuple)) else [axes]
     if handles is None:
         handles, labels = [], []

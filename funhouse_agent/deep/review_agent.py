@@ -309,7 +309,7 @@ def _summarizer(model):
     legacy agent), at the same trigger the rest of the app uses."""
     try:
         from langchain.agents.middleware import SummarizationMiddleware
-        from funhouse_agent.deep.agent import (
+        from funhouse_agent.deep.assembly import (
             _AUTO_SUMMARIZATION_TRIGGER, _resolve_summarization_trigger)
         return SummarizationMiddleware(
             model, trigger=_resolve_summarization_trigger(
