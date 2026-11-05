@@ -642,8 +642,40 @@ def _keep(path: str, blob: Dict[str, Any], spend: _Spend,
                    "reads it again",
             pages=list(pages)[:200]))
         return False
-    _save(path, blob)
+    _save(path, _paid(blob, spend, mark))
     return True
+
+
+def _paid(blob: Dict[str, Any], spend: _Spend,
+          mark: Tuple[int, Optional[Dict[str, Any]]]) -> Dict[str, Any]:
+    """``blob`` to save, its cost stating what the step PAID (BACKLOG
+    RI-206).
+
+    A step's own cost may leave a part out (a reader's leaves out the cache
+    writes); this run counts the step whole by topping it up from the tally
+    (:meth:`_Spend.settle`), but the file a resumed run reads back is the
+    step's own cost, so the record's whole-report count came out short.
+    A count is raised only where the tally saw more since ``mark``; a count
+    the step made outside the tally is kept, and a cost that left nothing
+    out is saved as it always was. ``blob`` itself is not changed.
+    """
+    tallied = mark[1] if len(mark) > 1 else None
+    cost = blob.get("cost") if isinstance(blob, dict) else None
+    if tallied is None or spend.tally is None or (
+            cost is not None and not isinstance(cost, dict)):
+        return blob
+    spent = spend.tally.since(tallied)
+    if not spent["calls"]:
+        return blob
+    paid = dict(cost or {})
+    for key in ("calls", *TOKENS_IN_PARTS, "output_tokens"):
+        if int(spent[key]) > int(paid.get(key) or 0):
+            paid[key] = int(spent[key])
+    if float(spent["dollars"]) > float(paid.get("dollars") or 0.0) + 1e-9:
+        paid["dollars"] = float(spent["dollars"])
+    if paid == (cost or {}):
+        return blob                  # nothing left out: the file as it was
+    return {**blob, "cost": paid}
 
 
 def _is_document(source: Any) -> bool:
@@ -1192,7 +1224,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                                  facts=counted)
             spend.add(profile.cost)
             spend.settle(mark)
-            _save(os.path.join(out, "triage.json"), profile.to_dict())
+            _save(os.path.join(out, "triage.json"),
+                  _paid(profile.to_dict(), spend, mark))
             record.document.workflow = profile.workflow
             workflow_note = profile.workflow_note
     workflow = record.document.workflow
