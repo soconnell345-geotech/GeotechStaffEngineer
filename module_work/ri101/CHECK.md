@@ -102,7 +102,7 @@ Runs (this session's venv, planlens 0.14.0):
   141 passed (the snapshot comparison ran, not skipped).
 - The brief's gate, `pytest -q -n 4 report_ingest
   webapp/tests/test_public_text.py webapp/tests/test_page_fingerprints.py`:
-  GATE_RESULT
+  4,564 passed, 8 skipped (pydiggs not installed), 0 failed; exit code 0.
 
 **Prompt versions.** No model-facing text changed: `run_questions`' calls
 are master's (`question_list.PROMPT_VERSION` stays `ql-1`), and no reader
