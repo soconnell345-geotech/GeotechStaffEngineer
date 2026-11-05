@@ -1031,7 +1031,7 @@ with st.sidebar:
         # file rides ONE websocket message through the driver proxy. Larger
         # files take the SharePoint route — no proxy crossing, no cap.
         # Owner feedback 2026-09-11; the "attach from SharePoint" sidebar
-        # widget (no LLM turn) is a recorded future item in HANDOFF §0a.
+        # widget (no LLM turn) is a recorded item: BACKLOG TA-07.
         _sp_hint = (" Put it in SharePoint (the GSE_app folder) and ask the "
                     "agent to fetch it by name — it lands in this "
                     "conversation's working folder."

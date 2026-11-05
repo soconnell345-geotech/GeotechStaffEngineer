@@ -236,24 +236,21 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 |--------|-------------|
 | `gstools` | Geostatistical kriging (with `regions`: the kriged surface's totals over plan polygons and Gaussian pointwise expectations; a large grid goes to a CSV), variogram fitting, random field generation, and, from the release after 5.33.0, `conditional_simulation`: realizations that honour the observations, each integrated over plan polygons and levels, for the probability of a TOTAL (volume or area above or below a level, any encounter), with an exceedance curve and a plan map of P(z > level). Its spread is what the chosen model implies; the model itself (covariance, variance, length scale) is an assumption that usually matters more, so run cases |
 
-#### Geotech-References (14)
+#### Geotech-References (32 modules + 2 search tools)
 
-| Module | Description |
-|--------|-------------|
-| `dm7` | NAVFAC DM7 equations (340+): soil classification, stresses, settlement, seepage, foundations |
-| `gec6` | GEC-6 shallow foundations reference (tables/figures/text retrieval) |
-| `gec7` | GEC-7 soil nail walls reference (tables/figures/text retrieval) |
-| `gec10` | GEC-10 drilled shafts reference (tables/figures/text retrieval) |
-| `gec11` | GEC-11 MSE walls & reinforced soil slopes (tables/figures/text retrieval) |
-| `gec12` | GEC-12 driven piles reference (tables/figures/text retrieval) |
-| `gec13` | GEC-13 ground modification reference (tables/figures/text retrieval) |
-| `micropile` | Micropile design reference (bond stress/tables/text retrieval) |
-| `fema_p2192` | FEMA P-2192 seismic design category, site class, Fa/Fv coefficients |
-| `noaa_frost` | NOAA frost depth equations (Stefan/Berggren) and soil thermal properties |
-| `ufc_backfill` | UFC 3-220-04N backfill design (compaction, filter criteria, drainage) |
-| `ufc_dewatering` | UFC 3-220-05 dewatering (Thiem, Dupuit, Sichardt, superposition) |
-| `ufc_expansive` | UFC 3-220-07 expansive soils (swell potential, heave, pier design) |
-| `ufc_pavement` | UFC 3-260-02 airfield pavement design (CBR, thickness, ESWL) |
+`dispatch.REFERENCE_MODULES` holds 34 names: the 32 reference modules below
+and the two search tools `reference_db` (text) and `figure_db` (figure
+catalogs). The live list is `list_agents()`.
+
+| Family | Modules |
+|--------|---------|
+| NAVFAC / FHWA geotechnical manuals | `dm7` (340+ equations), `gec4`, `gec5`, `gec6`, `gec7`, `gec8`, `gec9`, `gec10`, `gec11`, `gec12`, `gec13`, `gec14`, `micropile`, `fhwa_soils_foundations`, `fhwa_pavements` |
+| UFC and Corps of Engineers | `ufc_backfill`, `ufc_expansive`, `ufc_pavement` (UFC 3-250-01 roads and parking), `ufc_stabilization`, `ufc_flexible_practice`, `ufc_concrete_practice`, `ufc_structural`, `ufc_collapse`, `em_2104`, `em_2107` |
+| Other | `fema_p2082`, `gsa_collapse`, `california_trenching`, `eurocode_7_1`, `eurocode_7_2`, `aashto_1993`, `wood_handbook` |
+| Search | `reference_db`, `figure_db` |
+
+(`fema_p2192`, `noaa_frost` and `ufc_dewatering` were deleted from the
+library in 2026-06.)
 
 ### Extended Tools (files & vision)
 
@@ -528,8 +525,7 @@ print(rev.ask("Review this liquefaction calc: N1_60cs=12, CSR=0.22, M=7.5, "
 
 It is scoped to the seismic analysis modules it may re-run —
 `seismic_geotech`, `liquefaction`, `liquepy`, `slope_stability` (pseudo-static /
-Newmark), `opensees`, `pystrata`, `seismic_signals`, `hvsrpy`, `swprocess`
-(MASW → Vs30), `fem2d` — plus the seismic reference modules it cites from — `fema_p2082`, `dm7`, `gec5`,
+Newmark), `opensees`, `pystrata`, `seismic_signals`, `fem2d` — plus the seismic reference modules it cites from — `fema_p2082`, `dm7`, `gec5`,
 `gec7`, `gec11`, and `reference_db` / `figure_db` (which still search the whole
 library). The checklist covers units (g vs m/s²), total-vs-effective stress, the
 liquefaction CSR/CRR chain (NCEER/Youd-2001 vs Boulanger-Idriss-2014 are NOT
@@ -550,7 +546,7 @@ the `.md` playbook pastes it with a sync pointer. The scope sets live in
 `funhouse_agent/dispatch.py` (`SEISMIC_MODULES`, `SEISMIC_REFERENCES`).
 
 A **deepagents** variant is available too (planning + scratch filesystem +
-optional persistent memory; needs the `[deep]` extra):
+optional persistent memory; deepagents comes with the plain install):
 
 ```python
 from funhouse_agent import make_seismic_reviewer_deep
@@ -573,7 +569,7 @@ Funhouse factory (`make_*_reviewer` + a `_deep` variant), a
 
 | Reviewer | Factory | Analysis scope | Reference scope | Key checks |
 |----------|---------|----------------|-----------------|-----------|
-| **seismic** | `make_seismic_reviewer` | seismic_geotech, liquefaction, liquepy, slope_stability, opensees, pystrata, seismic_signals, hvsrpy, swprocess, fem2d | fema_p2082, dm7, gec5/7/11 | g vs m/s², total/effective stress, NCEER-vs-B&I chain, M-O KAE→Ka, Vs30 boundaries, Newmark polarity |
+| **seismic** | `make_seismic_reviewer` | seismic_geotech, liquefaction, liquepy, slope_stability, opensees, pystrata, seismic_signals, fem2d | fema_p2082, dm7, gec5/7/11 | g vs m/s², total/effective stress, NCEER-vs-B&I chain, M-O KAE→Ka, Vs30 boundaries, Newmark polarity |
 | **foundations** | `make_foundations_reviewer` | bearing_capacity, settlement, axial_pile, drilled_shaft, pile_group, lateral_pile, wave_equation, downdrag, ground_improvement | dm7, gec6/8/9/10/12/13, micropile, ufc_expansive | GWT-in-wedge bearing, method-per-soil settlement/pile, pile-group RH sign + printed group efficiency, drivability damping default, downdrag neutral plane |
 | **earth-retention** | `make_earth_retention_reviewer` | sheet_pile, soe, retaining_walls, seismic_geotech (M-O only) | dm7, gec4/7/11, california_trenching | Ka/K0/Kp state, single-FOS embedment basis, apparent-vs-triangular envelope, MSE LRFD CDRs, battered-wall M-O |
 | **slope / FEM** | `make_slope_fem_reviewer` | slope_stability, fem2d, reliability, dxf_import, pdf_import, drawing_ir | dm7, gec7/11 | LE method ordering + Bishop fixed point, noncircular rejection diagnostics, SRM-vs-LE + mesh convergence, T6-not-CST, reliability COV basis, ingest scale/provenance |
@@ -626,24 +622,17 @@ scripted transcript.
 
 ```python
 # from PyPI (released versions):
-%pip install "geotech-staff-engineer[deep]==5.0.0"
+%pip install "geotech-staff-engineer"   # or pin a release with ==<version>
 # or from a test wheel -- upload to /tmp or a UC Volume (NOT /Workspace,
 # which mangles the filename):
-%pip install "/tmp/geotech_staff_engineer-5.1.0rc5-py3-none-any.whl[deep]"
+%pip install "/tmp/geotech_staff_engineer-<version>-py3-none-any.whl"
 
 # No dbutils.library.restartPython() needed in the normal flow (see below).
 import funhouse_agent.deep   # auto-repairs the stale typing_extensions on import
 ```
 
-- The `[deep]` extra is required for the v2 deepagents loop (`funhouse_agent.deep`);
-  without it you get `ModuleNotFoundError: No module named 'deepagents'` the first
-  time a name is used (`from funhouse_agent.deep import build_deep_agent`); a bare
-  `import funhouse_agent.deep` loads its names on first use, so it succeeds.
-  Add `[interactive]` for the plotly single-file viewers, `[plot]` for matplotlib figures.
-- **Full eval coverage (100 questions as of v5.4) needs the optional-dependency extras:** install
-  `%pip install "/tmp/...whl[deep,full]"`. With `[deep]` alone, ~12 questions (the
-  gstools/pygef/ags4/pydiggs/ezdxf/SALib/pystrata/eqsig/liquepy/openseespy modules)
-  fail honestly with "not installed" errors. `run_suite` runs an optional-dependency
+- `funhouse_agent.deep` needs `deepagents`, which a plain install brings (since 2026-07-17 `[deep]`, `[full]`, `[plot]` and `[interactive]` are empty aliases kept so old pins resolve). A bare `import funhouse_agent.deep` loads its names on first use.
+- **Full eval coverage (100 questions as of v5.4):** a plain install brings every optional analysis library except `python-ags4` (`[ags4]`) and `pydiggs` (`[pydiggs]`); a missing one fails honestly with a "not installed" error. `run_suite` runs an optional-dependency
   preflight and prints a "Missing optional packages" banner at the top of the `.md`
   when any are absent.
 - **`dbutils.library.restartPython()` is no longer required in the normal flow.**
@@ -804,12 +793,12 @@ funhouse_agent/
     fem2d_adapter.py, subsurface_adapter.py  # FEM/viz (subsurface also holds the
                                              #   folded pygef/ags4/pydiggs format
                                              #   adapters as methods)
-    gstools_adapter.py, hvsrpy_adapter.py, swprocess_adapter.py  # additional
+    gstools_adapter.py                              # additional (hvsrpy / swprocess removed 2026-09)
     dm7_adapter.py                                  # DM7 (340+ methods, collision handling)
     gec6_adapter.py ... micropile_adapter.py        # 7 GEC/micropile adapters
-    fema_adapter.py, noaa_frost_adapter.py          # FEMA + NOAA
+    fema_p2082_adapter.py                           # FEMA P-2082 (noaa_frost / fema_p2192 deleted)
     ufc_backfill_adapter.py ... ufc_pavement_adapter.py  # 4 UFC adapters
-    (50 adapter modules total)
+    (54 adapter files in adapters/; 70 dispatch names, see funhouse_agent/DESIGN.md)
   tests/
     test_agent.py               # 35 agent tests
     test_engine.py              # 9 engine tests

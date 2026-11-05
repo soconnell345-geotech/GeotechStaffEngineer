@@ -66,7 +66,7 @@ print(call_agent('bearing_capacity', 'bearing_capacity_analysis',
 ```
 
 Tests: `pytest <module>/ -v` per module; `pytest webapp/tests -q` for the app;
-full gate `pytest -q` (about 15,400 tests in CI on 2026-10-15, long — run
+full gate `pytest -q` (24,760 tests collected on 2026-11-05 with `pytest --collect-only -q`; long — run
 per-module while iterating, and never two heavy suites at once on the laptop).
 
 ## Run (live webapp)

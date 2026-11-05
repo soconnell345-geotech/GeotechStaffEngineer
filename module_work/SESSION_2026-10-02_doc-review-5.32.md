@@ -21,7 +21,7 @@ still holds. Session "document-review-architecture" (Claude Code, Opus 5.5).
   feedback is in — for 5.31's switches AND for 5.32 itself. Release on the
   owner's word only. "Let's just get a big build for .32."
 - **Foundry is the test bed; Tiny Apps is production.** The owner's Funhouse
-  budget is small; Foundry (Palantir, State Dept enclave, cleared to SBU) has
+  budget is small; Foundry (Palantir, cleared to SBU) has
   ample model quota. Report TOKENS and TIME on Foundry, never dollars (no
   per-token rate there; the $2.50/M in brief 2 was Funhouse's and misled the
   FDE's estimates).

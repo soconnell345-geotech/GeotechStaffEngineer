@@ -66,7 +66,11 @@ results.summary()
   the scheme second-order; with stickup=0 behavior is byte-identical to the
   pre-stickup solver. Validated against the closed-form equivalence: for a
   free head with Q=0, stickup e == applying M = Mt + Vt*e at grade for the
-  embedded response (matches to machine precision at equal h).
+  embedded response. `lateral_pile/tests/test_stickup_and_banded.py` checks it to a
+  tolerance, not to machine precision: deflection, slope and moment at grade to
+  rel 1e-3, the maximum embedded moment and the embedded deflection profile to
+  rel 5e-3, and the grade-node shear only to rel 0.06, since it carries an O(h)
+  artifact from the soil-reaction kink at grade.
   No t-z/Q-z axial springs are modeled (out of scope); with Q != 0 the
   stickup mesh also captures the P-delta moment over the free length.
 - **No solution, or an iteration that stopped (GM-208, 2026-10-19)**: the

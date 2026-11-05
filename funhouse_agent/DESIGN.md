@@ -22,7 +22,7 @@ GeotechAgent
 ├── Two tool-calling modes (auto-detected from engine type):
 │   ├── Text-based ReAct  — <tool_call> XML parsing (ClaudeEngine, PrompterAPI.chat)
 │   └── Native tool calling — OpenAI `tools` parameter (NativeToolEngine)
-├── 69 adapter modules (36 analysis + 33 reference; `dispatch.ANALYSIS_MODULES` / `REFERENCE_MODULES`) bridging flat JSON → module APIs
+├── 70 adapter names (36 analysis + 34 reference, the last counting the two search tools; `dispatch.ANALYSIS_MODULES` / `REFERENCE_MODULES`) bridging flat JSON → module APIs
 ├── Real-FS discovery (list_files) + PDF text extraction (read_pdf_text) + vision tools
 ├── Attachments dict for image/PDF data — accepts an attachment key OR a real path
 ├── Verified saves (write-then-read-back + /tmp rescue; Databricks /Workspace API)
@@ -66,7 +66,7 @@ Key properties:
   effect immediately, no library update needed.
 - **Auto-detected** — `GeotechAgent` checks for `engine.native_tool_calling`
   and switches to the native loop automatically.
-- **Same adapters** — dispatches to the same 69 adapter modules; only the
+- **Same adapters** — dispatches to the same 70 adapter names; only the
   conversation format changes (OpenAI messages + `tool_calls` vs text XML).
 - **NotebookChat compatible** — `_on_tool_call` hook fires for each tool call.
 

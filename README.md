@@ -2,7 +2,7 @@
 
 **A Python toolkit that turns the geotechnical staff engineer's repertoire into composable, machine-callable methods — wraps them in a probabilistic variability engine — and drives them with an engine-agnostic LLM agent.**
 
-30 analysis modules · 21 digitized references · FOSM/PEM/Monte-Carlo/FORM reliability · validated against published benchmarks.
+30 analysis modules · 33 digitized references · FOSM/PEM/Monte-Carlo/FORM reliability · validated against published benchmarks.
 
 > 📊 **Rich visual overviews** (open in a browser): [Project overview](docs/overview.html) · [Agentic retrieval developer guide](docs/agentic_retrieval_devguide.html)
 
@@ -57,8 +57,8 @@ flowchart TB
 
     subgraph AGENT["Agent harness - engine-agnostic LLM driver"]
         FA["funhouse_agent: GeotechAgent, dispatch, vision"]
-        FD["foundry wrappers: 48 standalone tool agents"]
-        LIB["9 library agents"]
+        FD["foundry wrappers: 25 standalone tool agents"]
+        LIB["external-library agents: opensees, pystrata, liquepy, ..."]
         GP["geo_project: staged human-gated setup"]
     end
 
@@ -75,7 +75,7 @@ flowchart TB
     end
 
     SPINE["geotech_common: SoilProfile spine - one type every module speaks"]
-    REF["geotech-references: 21 digitized standards - DM7, GEC, UFC, FHWA"]
+    REF["geotech-references: 33 digitized standards - DM7, GEC, UFC, FHWA, EM, Eurocode 7"]
     GROUND["Subsurface reality: borings, CPT, lab tests"]
 
     ENG --> AGENT
