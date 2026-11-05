@@ -2957,5 +2957,36 @@
     "sources": [
       "BACKLOG.md OWN-126"
     ]
+  },
+  "OWN-127": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Question list row 2 (yes/no): which document types should count as yes?",
+    "why": "Code can now answer row 2 from the document type triage gave the file: yes when the type is one you list, otherwise not said (code never answers no). Which types mean yes is your call.",
+    "background": "Triage's types include geotechnical report, recommendation letter, report addendum, report appendix or figure(s) and partial report. Rows 25 and 27 need no decision; the lead maps all three in the private code map beside your list, which never goes in the repo.",
+    "options": [
+      {
+        "label": "Geotechnical report, recommendation letter, report addendum",
+        "effect": "A full report, a letter of recommendations or an addendum answers yes; an appendix or a partial report is not said."
+      },
+      {
+        "label": "Those three plus partial report",
+        "effect": "A partial report also answers yes."
+      },
+      {
+        "label": "Those plus report appendix or figure(s)",
+        "effect": "Every report-like file answers yes."
+      }
+    ],
+    "recommendation": "The first option: it answers yes only where the file is plainly the report itself.",
+    "if_no_answer": "The lead maps rows 25 and 27 now, and row 2 with the first option.",
+    "message_to_send": null,
+    "unblocks": [
+      "RI-102 rows mapped"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-127",
+      "module_work/ri102/CHECK.md"
+    ]
   }
 }
