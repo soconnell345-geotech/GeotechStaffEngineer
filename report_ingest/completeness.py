@@ -74,11 +74,16 @@ _ELSEWHERE_BEFORE, _ELSEWHERE_AFTER = 25, 30
 #: reproducing a textbook's pages cites the textbook's figures, and a
 #: laboratory's or a design tool's printout its own tables.
 CITING_LABELS: Tuple[str, ...] = ("narrative", "letter", "cover", "toc")
-#: The pages whose "Page X of Y" runs are not checked, by label: a
-#: calculation package reproduces a code's or a program's pages, and its
-#: numbering is often theirs (build f: pages 3 and 4 of 4 of an excerpt
-#: after two calculation sheets that print none).
-UNCHECKED_RUN_LABELS: Tuple[str, ...] = ("calculation",)
+#: The pages whose "Page X of Y" runs are not checked, by label: pages
+#: that reproduce ANOTHER document's pages, whose numbering is that
+#: document's and is excerpted on purpose. A calculation package reproduces
+#: a code's or a program's pages (build f: pages 3 and 4 of 4 of an excerpt
+#: after two calculation sheets that print none); a photo appendix
+#: reproduces selected pages of an earlier investigation's photo log (MF-3:
+#: six false notes on a complete report; RI-201). A laboratory's
+#: certificates and the report's own pages are its own documents and are
+#: checked (build f: a certificate printed as its pages 3-6 of 13 flags).
+UNCHECKED_RUN_LABELS: Tuple[str, ...] = ("calculation", "photos")
 #: Words beside a citation that make it another document's.
 _RE_ELSEWHERE = re.compile(
     r"ASCE|USGS|\bIBC\b|\bCBC\b|AASHTO|\bACI\b|\bUFC\b|ASTM|FEMA|NAVFAC|"
@@ -174,7 +179,8 @@ def short_runs(texts: Sequence[str],
     often prints no footer (a cover, a letter's first page). A run printed
     on the pages of a longer one, number for number, is that run's second
     numbering and is not counted, and neither is a run on pages
-    ``labels`` gives as calculations alone (:data:`UNCHECKED_RUN_LABELS`).
+    ``labels`` give as reproductions of another document's pages alone,
+    calculations or photos (:data:`UNCHECKED_RUN_LABELS`; RI-201).
     """
     labels = labels or {}
     hits: Dict[int, List[Tuple[int, int]]] = {}

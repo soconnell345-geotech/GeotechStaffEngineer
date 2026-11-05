@@ -76,6 +76,85 @@ class TestShortRuns:
         assert short_runs(texts, labels) == []
 
 
+class TestEveryAttachmentsRun:
+    """RI-201: every attachment's "Page X of Y" run read the same way.
+
+    A run on pages that reproduce another document's pages (calculations,
+    photos: an earlier investigation's photo log excerpted on purpose) is
+    that document's numbering and never flags. Every other run (the
+    report's own, a laboratory's certificates) flags when it is excerpted
+    or short, and never when every X of Y is present. Made-up pages."""
+
+    @staticmethod
+    def photo(x, y):
+        return footer(x, y, body="PHOTO LOG\nMade-up photo 1: made-up "
+                                 "view of a made-up test pit.")
+
+    @staticmethod
+    def certificate(x, y):
+        return footer(x, y, body="MADE-UP TESTING LAB\nCertificate of "
+                                 "made-up analysis.")
+
+    def run_through(self, texts, labels):
+        return [(r.of, r.missing) for r in short_runs(texts, labels)]
+
+    def test_an_excerpted_photo_log_does_not_flag(self):
+        # Selected pages 3, 4, 9 and 10 of an earlier 12-page photo log.
+        texts = [footer(1, 2), footer(2, 2)] + \
+            [self.photo(x, 12) for x in (3, 4, 9, 10)]
+        labels = {0: "narrative", 1: "narrative",
+                  **{p: "photos" for p in range(2, 6)}}
+        assert self.run_through(texts, None) == [(12, (1, 2, 5, 6, 7, 8,
+                                                       11, 12))]
+        assert self.run_through(texts, labels) == []
+        assert completeness_qa(texts, labels) == []
+
+    def test_a_complete_photo_log_does_not_flag(self):
+        texts = [self.photo(x, 4) for x in range(1, 5)]
+        labels = {p: "photos" for p in range(4)}
+        assert self.run_through(texts, labels) == []
+        assert self.run_through(texts, None) == []
+
+    def test_an_excerpted_laboratory_certificate_still_flags(self):
+        # A certificate printed as its pages 3-6 of 13 only.
+        texts = [footer(1, 2), footer(2, 2), "Made-up lab divider sheet "
+                 "for the made-up results that follow."] + \
+            [self.certificate(x, 13) for x in range(3, 7)]
+        labels = {0: "narrative", 1: "narrative", 2: "lab_test",
+                  **{p: "lab_test" for p in range(3, 7)}}
+        assert self.run_through(texts, labels) == [
+            (13, (1, 2, 7, 8, 9, 10, 11, 12, 13))]
+
+    def test_a_certificate_lacking_its_last_page_still_flags(self):
+        texts = [self.certificate(x, 10) for x in range(1, 10)]
+        labels = {p: "lab_test" for p in range(9)}
+        assert self.run_through(texts, labels) == [(10, (10,))]
+
+    def test_a_complete_certificate_does_not_flag(self):
+        texts = [self.certificate(x, 5) for x in range(1, 6)]
+        labels = {p: "lab_test" for p in range(5)}
+        assert self.run_through(texts, labels) == []
+
+    def test_the_report_s_own_run_lacking_its_last_page_still_flags(self):
+        texts = [footer(x, 16) for x in range(1, 16)]
+        labels = {p: "narrative" for p in range(15)}
+        assert self.run_through(texts, labels) == [(16, (16,))]
+
+    def test_a_calculation_excerpt_still_does_not_flag(self):
+        texts = ["Made-up calculation sheet one, for the made-up wall.",
+                 "Made-up calculation sheet two, for the made-up wall.",
+                 footer(3, 4), footer(4, 4)]
+        labels = {page: "calculation" for page in range(4)}
+        assert self.run_through(texts, labels) == []
+
+    def test_a_run_only_partly_on_photo_pages_is_checked(self):
+        # A report's own run whose last numbered page is a photo plate:
+        # still the report's numbering, still flagged when short.
+        texts = [footer(x, 6) for x in range(1, 5)] + [self.photo(5, 6)]
+        labels = {**{p: "narrative" for p in range(4)}, 4: "photos"}
+        assert self.run_through(texts, labels) == [(6, (6,))]
+
+
 # ---------------------------------------------------------------------------
 # what the text cites that the file does not hold
 # ---------------------------------------------------------------------------
