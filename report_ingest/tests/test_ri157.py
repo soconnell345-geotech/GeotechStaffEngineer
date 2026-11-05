@@ -78,6 +78,47 @@ def test_a_reading_printed_on_both_pages_is_kept_once():
     assert any("1 reading(s) printed again" in v for v in qa[0].values)
 
 
+def test_readings_printed_again_on_the_next_page_are_kept_once_in_order():
+    # Page 2 starts a step above where page 1 stops, repeating two readings.
+    first = _probe("DP-3", 4, _steps(0.0, 3.0))
+    later = _probe("DP-3", 5, [2.9, 3.0] + _steps(3.0, 4.0))
+    record = _record(first, later)
+    qa = []
+    _fold_continuations(record, qa)
+    (joined,) = record.investigations
+    depths = [p.depth.value for p in joined.dcp.points]
+    assert len(depths) == 40 and depths[-1] == 4.0
+    assert all(a < b for a, b in zip(depths, depths[1:]))
+    assert any("2 reading(s) printed again" in v for v in qa[0].values)
+
+
+def test_a_cone_repeating_readings_on_the_next_page_stays_in_order():
+    def cone(page, depths, axis="depth"):
+        return Investigation(
+            investigation_id="CPT-4", kind="cpt", depth_unit="m",
+            pages=[page],
+            cpt=CPTData(vertical_axis=axis, points=[
+                CPTPoint(depth=_m(d), qc=Quantity(value=2.5, unit="MPa"))
+                for d in depths]))
+    record = _record(cone(8, _steps(0.0, 10.0, 0.02)),
+                     cone(9, [9.96, 9.98, 10.0] + _steps(10.0, 12.0, 0.02)))
+    _fold_continuations(record, [])
+    (joined,) = record.investigations
+    depths = [p.depth.value for p in joined.cpt.points]
+    assert len(depths) == 600
+    assert all(a < b for a, b in zip(depths, depths[1:]))
+    # On an elevation axis the series runs down: a repeat is not lower.
+    record = _record(
+        cone(8, [100.0 - d for d in _steps(0.0, 5.0, 0.05)], "elevation"),
+        cone(9, [95.05, 95.0] + [100.0 - d for d in _steps(5.0, 10.0, 0.05)],
+             "elevation"))
+    _fold_continuations(record, [])
+    (joined,) = record.investigations
+    levels = [p.depth.value for p in joined.cpt.points]
+    assert len(levels) == 200 and levels[-1] == 90.0
+    assert all(a > b for a, b in zip(levels, levels[1:]))
+
+
 def test_a_gap_larger_than_the_tolerance_is_not_joined():
     first = _probe("DP-3", 4, _steps(0.0, 3.0))
     # Page 2 starts 0.5 m below where page 1 stops: more than the larger

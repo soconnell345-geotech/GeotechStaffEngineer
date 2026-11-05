@@ -935,9 +935,10 @@ class PageGroup:
     #: pages print none (``evidence["carried_link"]`` of
     #: :func:`report_ingest.lab_reader.split_lab_items`). Empty otherwise.
     carried_link: Dict[str, Any] = field(default_factory=dict)
-    #: A laboratory window after the first of its run's (RI-165): the pages
-    #: of the run's first window, whose printed boring and sample this
-    #: window carries where its own pages print none. Empty otherwise.
+    #: A laboratory window after the first of its run's (RI-165): the run's
+    #: pages before it, nearest first, the first boring and sample printed
+    #: on which this window carries where its own pages print none
+    #: (:func:`lab_groups` says where they stop). Empty otherwise.
     carried_from: List[int] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1090,28 +1091,40 @@ def lab_groups(pages: Sequence[int],
     sheet begins (:func:`lab_starts`) as ``lab_reader.lab_windows`` moves
     them.
 
-    A window after the first of its run names the first window's pages
-    (:attr:`PageGroup.carried_from`): a boring and sample printed once over
-    the run's first sheet are its later windows' too where theirs print
-    none, as :func:`report_ingest.lab_reader.split_lab_items` carries them
-    to a cut item's later parts (BACKLOG RI-165)."""
+    A window after the first of its run names the run's pages before it,
+    nearest first (:attr:`PageGroup.carried_from`): a boring and sample
+    printed once over an earlier sheet are this window's too where its own
+    print none, as :func:`report_ingest.lab_reader.split_lab_items` carries
+    them to a cut item's later parts (BACKLOG RI-165). The nearest is the
+    hole a continuation sheet belongs to. A wrong hole is worse than none,
+    so the descriptions bound it: a window one of whose pages the
+    descriptions say logs an exploration (:func:`page_identifiers`) names
+    no pages, and the pages named stop at the nearest earlier page that
+    logs one, which a sheet may print without the word "boring" beside it
+    (in another cell)."""
     from report_ingest.lab_reader import MAX_LAB_PAGES, lab_windows
 
     size = MAX_LAB_PAGES if size is None else int(size)
     out: List[PageGroup] = []
     for run in runs(pages):
         starts = lab_starts(run, descriptions)
+        named = page_identifiers(run, descriptions) if descriptions else {}
         windows = lab_windows(run, size, starts)
         for n, window in enumerate(windows):
             why = ("a run of laboratory pages" if n == 0 else
                    "a new sheet begins here" if window[0] in starts else
                    "an even cut of a long run")
+            carried: List[int] = []
+            if n and not any(named.get(p) for p in window):
+                for page in reversed(run[:run.index(window[0])]):
+                    carried.append(page)
+                    if named.get(page):
+                        break
             out.append(PageGroup("lab", list(window), why=why,
                                  key=f"lab-{run[0]}",
                                  part=((n + 1, len(windows))
                                        if len(windows) > 1 else None),
-                                 carried_from=(list(windows[0]) if n
-                                               else [])))
+                                 carried_from=carried))
     return out
 
 

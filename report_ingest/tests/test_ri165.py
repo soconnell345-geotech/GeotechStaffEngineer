@@ -124,11 +124,11 @@ def test_a_test_naming_only_its_sample_keeps_it_without_a_carried_hole(
     assert "carried_link" not in blob
 
 
-def test_a_later_window_of_a_run_carries_what_its_first_window_prints(
+def test_a_later_window_of_a_run_carries_what_its_earlier_pages_print(
         three_sheets):
     engine = _engine([{"final": _reading(2)}])
     (blob,) = mfr.read_lab(three_sheets, [PageGroup(
-        "lab", [2], key="lab-0", part=(2, 2), carried_from=[0, 1])], engine)
+        "lab", [2], key="lab-0", part=(2, 2), carried_from=[1, 0])], engine)
     assert blob["tests"][0]["investigation_id"] == "QX-7"
 
 
@@ -146,13 +146,100 @@ def test_a_group_printing_its_own_boring_carries_nothing(tmp_path):
         doc.close()
 
 
-def test_lab_groups_name_the_first_window_on_every_later_one():
+def test_lab_groups_name_the_pages_before_each_later_window_nearest_first():
     groups = lab_groups(list(range(10, 40)), {}, size=12)
     assert len(groups) > 1
     assert groups[0].carried_from == []
-    assert all(g.carried_from == groups[0].pages for g in groups[1:])
+    for group in groups[1:]:
+        assert group.carried_from == list(range(group.pages[0] - 1, 9, -1))
     assert "carried_from" not in groups[0].to_dict()
-    assert groups[1].to_dict()["carried_from"] == groups[0].pages
+    assert groups[1].to_dict()["carried_from"] == groups[0].pages[::-1]
+
+
+def _run(tmp_path, n, heads):
+    """A run of ``n`` made-up lab pages, ``heads`` the header line printed
+    on some of them."""
+    return _titled(tmp_path, ["LABORATORY TEST"] * n,
+                   heads=[heads.get(p, "") for p in range(n)])
+
+
+def _carries(doc, n, descriptions=None):
+    """Each window's first page and the boring it carries."""
+    from report_ingest.lab_reader import _printed_link
+    return [(g.pages[0],
+             mfr._carried(doc, g, _printed_link).get("investigation_id"))
+            for g in lab_groups(list(range(n)), descriptions or {}, size=12)]
+
+
+def test_a_window_carries_the_hole_printed_nearest_before_it(tmp_path):
+    """S1: QX-2 is printed after QX-1 and before the window; continuation
+    sheets belong to the nearer one."""
+    doc = _run(tmp_path, 24, {0: "Boring: QX-1", 6: "Boring: QX-2"})
+    try:
+        assert _carries(doc, 24) == [(0, None), (12, "QX-2")]
+        later = lab_groups(list(range(24)), {}, size=12)[1]
+        (blob,) = mfr.read_lab(doc, [later], _engine([{"final":
+                                                       _reading(12)}]))
+        assert blob["tests"][0]["investigation_id"] == "QX-2"
+        assert "carried from page 6" in blob["tests"][0]["note"]
+    finally:
+        doc.close()
+
+
+def test_a_window_carries_the_hole_of_the_window_before_it(tmp_path):
+    """S2: the second window prints QX-3; the third, printing none, carries
+    QX-3, not the first window's QX-1."""
+    doc = _run(tmp_path, 36, {0: "Boring: QX-1", 12: "Boring: QX-3"})
+    try:
+        assert _carries(doc, 36) == [(0, None), (12, None), (24, "QX-3")]
+    finally:
+        doc.close()
+
+
+def test_a_window_the_descriptions_say_logs_a_hole_carries_nothing(
+        tmp_path):
+    """S3: a new sheet begins on page 12, and the descriptions name QX-5
+    there; its text prints the code without the word beside it, so the
+    floor reads no boring. Nothing is carried, not QX-1."""
+    doc = _run(tmp_path, 24, {0: "Boring: QX-1", 12: "QX-5"})
+    descriptions = {p: {"title": "summary" if p == 0 else
+                        "particle size" if p < 12 else "corrosion series",
+                        "exploration": "QX-1" if p < 12 else "QX-5"}
+                    for p in range(24)}
+    try:
+        assert _carries(doc, 24, descriptions) == [(0, None), (12, None)]
+    finally:
+        doc.close()
+
+
+def test_the_pages_carried_from_stop_at_a_page_naming_another_hole(
+        tmp_path):
+    """The descriptions name QX-2 on page 6, printed without the word
+    beside it: QX-1 on page 0 is beyond it and is not carried."""
+    doc = _run(tmp_path, 24, {0: "Boring: QX-1", 6: "QX-2"})
+    descriptions = {p: {"title": "LABORATORY TEST",
+                        "exploration": {0: "QX-1", 6: "QX-2"}.get(p, "")}
+                    for p in range(24)}
+    try:
+        assert lab_groups(list(range(24)), descriptions,
+                          size=12)[1].carried_from == [11, 10, 9, 8, 7, 6]
+        assert _carries(doc, 24, descriptions) == [(0, None), (12, None)]
+    finally:
+        doc.close()
+
+
+def test_a_summary_then_sheets_printing_no_hole_still_carry_it(tmp_path):
+    """RI-150's shape over a long run: the summary prints QX-7, the sheets
+    after it none; with the descriptions or without."""
+    doc = _run(tmp_path, 24, {0: "Boring: QX-7"})
+    descriptions = {p: {"title": "summary" if p == 0 else "atterberg limits",
+                        "exploration": "QX-7" if p == 0 else ""}
+                    for p in range(24)}
+    try:
+        assert _carries(doc, 24) == [(0, None), (12, "QX-7")]
+        assert _carries(doc, 24, descriptions) == [(0, None), (12, "QX-7")]
+    finally:
+        doc.close()
 
 
 def test_todays_cut_items_give_their_carried_link_to_the_model_first_group(

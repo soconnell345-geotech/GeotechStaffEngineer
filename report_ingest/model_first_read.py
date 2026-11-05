@@ -947,7 +947,8 @@ def read_lab(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     ``error``.
 
     A group whose own pages print no boring or sample carries the one its
-    run's first window, or its cut item's first part, prints (:func:`_carried`):
+    run's earlier pages print nearest it, or its cut item's first part
+    prints (:func:`_carried`):
     each test naming neither takes it, by code after the answer, so no
     request changes (``carried_link`` in the result says so; BACKLOG
     RI-165)."""
@@ -1000,8 +1001,9 @@ def _carried(doc: Any, group: PageGroup,
              printed: Callable[[Any, Sequence[int]], Dict[str, Any]]
              ) -> Dict[str, Any]:
     """The boring and sample a laboratory group carries (BACKLOG RI-165):
-    a cut item's part's (:attr:`PageGroup.carried_link`), else what the
-    first window of its run prints (:attr:`PageGroup.carried_from`); empty
+    a cut item's part's (:attr:`PageGroup.carried_link`), else the first
+    printed on the run's pages before it, nearest first
+    (:attr:`PageGroup.carried_from`); empty
     when the group's own pages print a boring or sample, as
     :func:`report_ingest.lab_reader.split_lab_items` carries none to a part
     that prints its own."""

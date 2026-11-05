@@ -461,6 +461,24 @@ class TestOneHoleReadAsSeveralLogs:
             0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4]
         assert not _entries(record, "investigations.DP-2")
 
+    def test_a_soundings_readings_carried_on_past_a_page_between(self):
+        # A page between: the continuation fold (RI-157, the next page
+        # only) leaves them two, and they are two parts of one hole.
+        def probe(pages, depths):
+            return Investigation(
+                investigation_id="DP-2", kind="dcp", pages=pages,
+                depth_unit="m", dcp=DCPData(points=[
+                    DCPPoint(depth=_m(d), blows=4.0) for d in depths]))
+        record = ReportRecord(investigations=[
+            probe([50], [0.3, 0.6, 0.9, 1.2, 1.5]),
+            probe([52], [1.8, 2.1, 2.4])])
+        reconcile(record)
+        assert [i.qualifier for i in record.investigations] == ["", ""]
+        (entry,) = _entries(record, "investigations.DP-2")
+        assert "its readings (1.80-2.40 m) carry on" in entry.detail
+        first, later = record.investigations
+        assert hole_identity(first) == hole_identity(later)
+
     def test_two_soundings_both_from_the_ground_are_two(self):
         def probe(pages, depths):
             return Investigation(

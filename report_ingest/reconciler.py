@@ -738,11 +738,21 @@ def _sounding_continues(first: Investigation, later: Investigation) -> str:
 
 def _fold_series(first: Investigation, later: Investigation) -> int:
     """``later``'s series onto ``first``'s, a reading printed on both pages
-    at one depth kept once; returns how many were kept once."""
+    kept once; returns how many were kept once.
+
+    A later page may start a little above where the first stops
+    (:func:`_sounding_continues` allows it), printing again one reading or
+    more: any of its readings not deeper than the last one kept is dropped,
+    so the series stays in depth order with no reading twice."""
     one, two = _series(first), _series(later)
+    sign = -1.0 if getattr(one, "vertical_axis", "depth") == "elevation" \
+        else 1.0
     again = 0
     for point in two.points:
-        if one.points and _same_reading(one.points[-1].depth, point.depth):
+        last = depth_m(one.points[-1].depth) if one.points else None
+        here = depth_m(point.depth)
+        if last is not None and here is not None and \
+                sign * (here - last) <= _SAME_READING_M:
             again += 1
             continue
         one.points.append(point)
@@ -761,12 +771,6 @@ def _fold_series(first: Investigation, later: Investigation) -> int:
 #: one reading printed on both pages. Far tighter than ``DEPTH_TOL_M``: a
 #: dynamic probe's next increment is 0.10 m below the last.
 _SAME_READING_M = 0.005
-
-
-def _same_reading(a: Optional[Quantity], b: Optional[Quantity]) -> bool:
-    left, right = depth_m(a), depth_m(b)
-    return left is not None and right is not None and \
-        abs(left - right) <= _SAME_READING_M
 
 
 def _continues(first: Investigation, later: Investigation) -> str:
