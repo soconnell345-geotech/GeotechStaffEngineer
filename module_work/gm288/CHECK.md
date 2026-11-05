@@ -1,7 +1,7 @@
 # retaining_walls (cantilever wall) against GEC-6 and UFC 3-220-20, as printed
 
 BACKLOG GM-288, 2026-10-31; takes in GM-32 and GM-235. Read from the PDFs in
-`geotech-references/docs/`: GEC-6 (FHWA-IF-02-054, 2002) chapters 5-7; UFC
+`geotech-references/docs/`: GEC-6 (FHWA-SA-02-054, 2002) chapters 5-7; UFC
 3-220-20 (16 January 2025) Sec. 4-3 (earth pressures), Sec. 4-5.1 (rigid
 walls, Figs. 4-27 and 4-29) and App. B-1 (the cantilever cut wall); FHWA
 NHI-06-089 (2006) Vol II Sec. 10.5 and Example 10-3; EN 1997-1:2004 Sec.

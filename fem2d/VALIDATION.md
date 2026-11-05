@@ -193,6 +193,29 @@ Reissner + Vesic Nγ), and a bearing FOS vs a working pressure. Validated here:
 T6 40x20 gives Nc = **5.12** (−0.4% vs 5.14); CST locks (never brackets
 collapse, Nc > 8). Tests: `fem2d/tests/test_footing_capacity.py`.
 
+**Surcharge beside the footing (GM-11, 2026-11-05).** Before this date the
+`surcharge` input only sized the load ramp and the reported factors; it was
+never applied, so an embedded footing's overburden q = gamma Df did not
+resist. It is now a pressure on the ground surface (the soil above the
+bearing level replaced by a surcharge, UFC 3-220-20 Sec. 5-3.1.2, Fig.
+5-4(a)): stage 1 brings the soil's weight and q over the whole surface into
+equilibrium, stage 2 raises the footing pressure from q with q held beside
+it. q_ult is the gross pressure of GEC-6 (FHWA-SA-02-054) Eq. 5-1 / 5-7
+(pp. 51-53). B = 2 m, T6 40x20, defaults otherwise; made-up values:
+
+| Case | Print | Closed form | FE before | FE now | Error now |
+|---|---|---|---|---|---|
+| c = 50, phi = 0, gamma = 0, q = 36 | GEC-6 Eq. 5-1, 5-4 | 5.14 x 50 + 36 = 293.1 | 260.5 | 295.8 | +0.9 % |
+| c = 0, phi = psi = 20, gamma = 0, q = 20 | GEC-6 Eq. 5-1, 5-2 (Nq = 6.40) | 128.0 | 0.0 | 130.9 | +2.3 % |
+| c = 50, phi = 0, gamma = 18, nu = 0.49, q = 36 | UFC 3-220-20 Eq. 5-17 | 293.1 | 260.5 | 295.8 | +0.9 % |
+| c = 10, phi = psi = 20, gamma = 18, q = 18 | GEC-6 Eq. 5-7, 5-8 | 360.5 | 166.6 | 316.0 | -12 % (Eq. 5-8's Ngamma) |
+
+The last row's gap is the Ngamma term: with c Nc + q Nq taken as printed the
+FE carries 0.5 gamma B Ngamma with Ngamma about 2.9 against Eq. 5-8's 5.39;
+no held reference prints an exact Ngamma to judge it by. `surcharge = 0`
+keeps the one-ramp path exactly (gamma ramped with the load). Details:
+`module_work/gm11/CHECK.md`.
+
 ## 4. Elastic closed-form checks
 
 | Check | Closed form | fem2d | Error |

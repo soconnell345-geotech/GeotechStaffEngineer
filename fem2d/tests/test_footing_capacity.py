@@ -67,3 +67,45 @@ class TestPrandtlCollapse:
               f"bracketed={r.collapse_bracketed}")
         assert not r.collapse_bracketed            # never collapsed
         assert r.Nc_backfigured > 7.0              # locked well above 5.14
+
+
+class TestSurchargeValidation:
+    def test_qmax_must_exceed_surcharge(self):
+        with pytest.raises(ValueError, match="must exceed the surcharge"):
+            analyze_footing_capacity(B=2.0, c=50.0, surcharge=36.0,
+                                     q_max=30.0, nx=10, ny=5)
+
+
+@pytest.mark.slow
+class TestSurchargeResists:
+    """GM-11: the surcharge beside the footing is applied and resists through
+    the Nq mechanism. Gross q_ult = c Nc + q Nq (+ 0.5 gamma B Ngamma), GEC-6
+    (FHWA-SA-02-054) Eqs. 5-1, 5-2, 5-4 and 5-7, pp. 51-53; for phi = 0,
+    UFC 3-220-20 Eq. 5-17 (q_ult = su Nc + sigma_zD). Made-up values."""
+
+    def test_undrained_weightless_c_nc_plus_q(self):
+        # 5.14 x 50 + 36 = 293.1 kPa (Nq = 1)
+        r = analyze_footing_capacity(B=2.0, c=50.0, surcharge=36.0)
+        assert r.collapse_bracketed
+        assert r.q_ult_kPa == pytest.approx(293.1, rel=0.03)
+        assert r.surcharge_kPa == 36.0
+
+    def test_undrained_with_weight_unchanged_by_weight(self):
+        # phi = 0: Ngamma = 0, so the soil's weight adds nothing (Eq. 5-17)
+        r = analyze_footing_capacity(B=2.0, c=50.0, gamma=18.0,
+                                     surcharge=36.0, nu=0.49)
+        assert r.collapse_bracketed
+        assert r.q_ult_kPa == pytest.approx(293.1, rel=0.03)
+
+    def test_weightless_sand_q_nq(self):
+        # Associated flow (psi = phi), the Prandtl-Reissner basis of Eq. 5-2:
+        # Nq(20) = 6.40, q Nq = 20 x 6.40 = 128.0 kPa. Before GM-11: 0.
+        r = analyze_footing_capacity(B=2.0, c=0.0, phi=20.0, psi=20.0,
+                                     surcharge=20.0)
+        assert r.collapse_bracketed
+        assert r.q_ult_kPa == pytest.approx(128.0, rel=0.04)
+
+    def test_no_surcharge_path_unchanged(self):
+        r = analyze_footing_capacity(B=2.0, c=50.0)
+        assert r.surcharge_kPa == 0.0
+        assert r.q_ult_kPa == pytest.approx(411.3 * 28 / 45, rel=1e-3)

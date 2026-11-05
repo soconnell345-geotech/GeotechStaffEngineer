@@ -249,7 +249,7 @@ Ranked by how much a verified copy would de-risk the code:
 11. **FHWA GEC-10** — Fig 13-5 (α) and **§13.3.3** for the origin of the
     200 kPa `fs` cap and the RQD multiplier schedule (both currently uncited);
     note the two editions (NHI-10-016 simplified vs NHI-18-024 rational).
-12. **FHWA GEC-6 (FHWA-IF-02-054)** — Fig 5-19 / Table 6-1 (bearing/settlement).
+12. **FHWA GEC-6 (FHWA-SA-02-054)** — Fig 5-19 / Table 6-1 (bearing/settlement).
 13. **Vesic (1973), Meyerhof, Hansen** originals — bearing-capacity factors;
     **Schmertmann (1978)** — settlement Iz figure.
 14. **CPGA (ITL-89-4)** + **USACE EM 1110-2-2906** — pile_group 6-DOF engine

@@ -457,3 +457,10 @@ def test_the_envelope_says_where_the_peaks_are(propped):
     for row in propped.excavation_stages:
         assert row["max_beam_moment_depth_m"] is not None
     assert "m depth" in propped.summary()
+
+
+def test_choices_state_soil_model_and_k0(cantilever):
+    """GM-156: the soil model and K0 are in the result's choices."""
+    whats = [c['what'] for c in cantilever.to_dict()['choices']]
+    assert any(w.startswith("soil model") for w in whats)
+    assert any(w.startswith("K0 for the in-situ stresses") for w in whats)

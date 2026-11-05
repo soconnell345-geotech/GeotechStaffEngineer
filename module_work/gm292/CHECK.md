@@ -6,7 +6,7 @@ an optional water table. Read from the PDFs in `geotech-references/docs/`,
 each page rendered and read: UFC 3-220-20 (16 January 2025) Sec. 4-4.1,
 Figs. 4-5, 4-16 and 4-27, Sec. 5-3.2 and Fig. 5-40; FHWA NHI-06-089 (2006)
 Vol II Sec. 10.3, Fig. 10-12, Example 10-1, Sec. 10.5.3 and Fig. 10-17;
-GEC-6 (FHWA-IF-02-054) Sec. 5.2.3.2; at review, EM 1110-2-2104 (1 November
+GEC-6 (FHWA-SA-02-054) Sec. 5.2.3.2; at review, EM 1110-2-2104 (1 November
 2023) pp. 18 and 115-116 and EN 1997-1:2004 Sec. 6.5.2.1. Page numbers are
 the printed ones.
 gamma_w is `geotech_common.water.GAMMA_W`, 9.81 kN/m3.

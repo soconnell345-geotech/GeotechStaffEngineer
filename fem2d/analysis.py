@@ -151,17 +151,26 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     B : float — footing width (m).
     c : float — cohesion / undrained shear strength (kPa).
     phi : float — friction angle (deg). Default 0 (Prandtl / undrained).
-    gamma : float — soil unit weight (kN/m^3). Applied as a body force ramped
-        with the load; for the classical weightless bearing mechanism use the
-        default 0 (the validated basis). Default 0.
+    gamma : float — soil unit weight (kN/m^3). With ``surcharge=0`` it is a
+        body force ramped with the footing load; with a surcharge it is
+        applied in full, with the surcharge, before the footing is loaded.
+        For the classical weightless bearing mechanism use the default 0
+        (the validated basis). Default 0.
     E, nu, psi : float — elastic moduli (kPa / -) and dilation angle (deg).
-    surcharge : float — uniform surcharge q beside the footing (kPa), applied
-        as an initial (unramped) pressure on the surface outside B. Default 0.
+    surcharge : float — uniform surcharge q beside the footing (kPa), e.g.
+        the overburden q = gamma*Df of an embedded footing, the soil above
+        the bearing level replaced by a surcharge (UFC 3-220-20 Sec. 5-3.1.2,
+        Fig. 5-4(a); GEC-6 Eq. 5-1). Applied as a pressure on the ground
+        surface: first over the whole surface with the soil's weight, then
+        held beside the footing while the footing pressure rises from q.
+        q_ult is the GROSS footing pressure at collapse (GEC-6 Eq. 5-1),
+        resisted by q through the Nq mechanism. Default 0 (unchanged: one
+        ramp from zero).
     q_max : float, optional — top of the load ramp (kPa). Default:
         1.6 x the closed-form estimate c*Nc + surcharge*Nq + 0.5*gamma*B*Ngamma,
         chosen so collapse falls inside the ramp. Pass explicitly for c=phi=0.
     n_load_steps : int — load increments; collapse-load resolution is
-        q_max / n_load_steps. Default 45.
+        (q_max - surcharge) / n_load_steps. Default 45.
     domain_depth, domain_half_width : float, optional — mesh extent below and to
         each side of the footing (m). Defaults 5*B each (10B wide, Prandtl-grade).
     nx, ny : int — mesh density. Default 40 x 20.
@@ -180,7 +189,9 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         bearing_FOS — q_ult/q_applied when q_applied is given, else None.
         collapse_bracketed — False if the footing carried the full q_max (then
             q_ult is a lower bound; raise q_max).
-        q_max_kPa, n_steps_converged, collapse_load_fraction.
+        q_max_kPa, n_steps_converged, collapse_load_fraction (the fraction
+            of the ramp from the surcharge to q_max carried).
+        surcharge_kPa — the surcharge applied beside the footing.
     """
     if B <= 0:
         raise ValueError(f"footing width B must be positive, got {B}")
@@ -197,6 +208,12 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         q_max = 1.6 * q_ult_est
     if q_max <= 0:
         raise ValueError(f"q_max must be positive, got {q_max}")
+    if surcharge < 0:
+        raise ValueError(f"surcharge must be zero or positive, got {surcharge}")
+    if surcharge > 0 and q_max <= surcharge:
+        raise ValueError(
+            f"q_max ({q_max} kPa) must exceed the surcharge "
+            f"({surcharge} kPa): the footing pressure starts at q.")
 
     half_w = domain_half_width if domain_half_width is not None else 5.0 * B
     dep = domain_depth if domain_depth is not None else 5.0 * B
@@ -220,22 +237,62 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     if element_type == 't6':
         edges = t6_boundary_edges(elements, edges)
 
-    surface_loads = [(edges, 0.0, -q_max)]
-
-    # Optional surcharge beside the footing (unramped): applied via an initial
-    # equilibrium is out of scope; here surcharge only sizes the ramp and the
-    # reported factors. (The validated basis is the weightless Prandtl footing.)
-
     props = [{'E': E, 'nu': nu, 'c': c, 'phi': phi, 'psi': psi, 'gamma': gamma}]
-    ctx = build_nl_context(nodes, elements, props, gamma, bc_nodes,
-                           surface_loads=surface_loads)
-    res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_iter, tol=tol,
-                 method='elastic')
+
+    if surcharge > 0:
+        # The soil above the bearing level stands in as a surcharge
+        # q = gamma Df on the ground surface (UFC 3-220-20 Sec. 5-3.1.2,
+        # Fig. 5-4(a); GEC-6 Eq. 5-1, q = gamma Df at the footing base).
+        # Stage 1 brings the soil's weight and q over the WHOLE surface,
+        # footing included, into equilibrium: the stress at the bearing
+        # level before the footing is loaded. Stage 2 raises the pressure
+        # under the footing from q towards q_max with q kept beside it, so
+        # the footing pressure at collapse is the gross q_ult of GEC-6
+        # Eqs. 5-1 and 5-7.
+        side = surf[(nodes[surf, 0] < -B / 2 - x_tol) |
+                    (nodes[surf, 0] > B / 2 + x_tol)]
+        side_pts = np.concatenate([side, loaded[[0, -1]]])
+        side_edges = []
+        for grp in (side_pts[nodes[side_pts, 0] <= -B / 2 + x_tol],
+                    side_pts[nodes[side_pts, 0] >= B / 2 - x_tol]):
+            grp = np.unique(grp)
+            grp = grp[np.argsort(nodes[grp, 0])]
+            side_edges += [(grp[i], grp[i + 1]) for i in range(len(grp) - 1)]
+        if element_type == 't6':
+            side_edges = t6_boundary_edges(elements, side_edges)
+        ctx0 = build_nl_context(
+            nodes, elements, props, gamma, bc_nodes,
+            surface_loads=[(edges, 0.0, -surcharge),
+                           (side_edges, 0.0, -surcharge)])
+        res0 = run_nl(ctx0, n_steps=max(1, n_load_steps // 5),
+                      max_iter=max_iter, tol=tol, method='elastic')
+        if not res0['converged']:
+            raise RuntimeError(
+                "The soil did not reach equilibrium under its own weight "
+                "and the surcharge before the footing was loaded.")
+        ctx = build_nl_context(
+            nodes, elements, props, gamma, bc_nodes,
+            surface_loads=[(edges, 0.0, -q_max),
+                           (side_edges, 0.0, -surcharge)])
+        res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_iter, tol=tol,
+                     method='elastic', u_init=res0['u'],
+                     sigma_gp_init=res0['sigma_gp'],
+                     strain_gp_init=res0['eps_gp'],
+                     hs_state_init=res0['hs_state'], F_start=ctx0['F_ext'])
+        q_start = float(surcharge)
+    else:
+        # No surcharge: one ramp, the footing pressure (and any body force)
+        # from zero, as before GM-11.
+        ctx = build_nl_context(nodes, elements, props, gamma, bc_nodes,
+                               surface_loads=[(edges, 0.0, -q_max)])
+        res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_iter, tol=tol,
+                     method='elastic')
+        q_start = 0.0
 
     n_ok = len(res['iterations']) - (0 if res['converged'] else 1)
     n_ok = max(0, n_ok)
     frac = n_ok / n_load_steps
-    q_ult = q_max * frac
+    q_ult = q_start + (q_max - q_start) * frac
     collapse_bracketed = not res['converged']  # full-load convergence => no collapse
 
     sig = res['sigma_gp'][:, :, [0, 1, 3]].mean(axis=1)
@@ -249,6 +306,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     result.collapse_bracketed = bool(collapse_bracketed)
     result.bearing_capacity_factors = {'Nc': Nc, 'Nq': Nq, 'Ngamma': Ngamma}
     result.q_ult_estimate_kPa = float(q_ult_est)
+    result.surcharge_kPa = float(surcharge)
     result.Nc_backfigured = (float(q_ult / c)
                              if (c > 0 and surcharge == 0 and gamma == 0)
                              else None)
@@ -1114,6 +1172,77 @@ def _excavation_choices(wall_contact, delta, ratio, adhesion):
                                     name='interface_adhesion'),
                           "UFC 3-220-20 (2025) Table 4-1, p. 184, gives "
                           "adhesion for clayey soils by undrained strength"))
+    return out
+
+
+def _excavation_soil_choices(soil_layers):
+    """The soil model and the in-situ K0 of each layer of
+    ``analyze_excavation``, as ``choices`` entries (GM-156). Reports what
+    the code does: a layer with model 'hs' is Hardening Soil, else
+    Mohr-Coulomb where c or phi is above zero, else linear elastic
+    (``solver._material_arrays``); K0 from ``_layer_k0``."""
+    from geotech_common.choices import DEFAULT, choice, how_given
+    mc = "Mohr-Coulomb, elastic-perfectly plastic"
+    hs = "Hardening Soil (model 'hs')"
+    el = "linear elastic"
+    model_basis = {
+        mc: "the module's model for a layer that gives no 'model' and has "
+            "c or phi above zero: linear elastic to the Mohr-Coulomb "
+            "surface, plastic flow at dilation angle psi (fem2d DESIGN.md, "
+            "Mohr-Coulomb Elastoplastic)",
+        hs: "shear hardening with stress-dependent stiffness from E50_ref, "
+            "Eur_ref, m, p_ref, R_f; Schanz, Vermeer & Bonnier (1999) "
+            "(fem2d DESIGN.md, Hardening Soil)",
+        el: "a layer with c = phi = 0 and no 'model' never yields; linear "
+            "elastic theory needs only E and nu (UFS 3-220-10 (2026) "
+            "Sec. 4-6.2)",
+    }
+    model_alts = {
+        mc: [f"{hs}, with E50_ref, Eur_ref, m, p_ref, R_f in the layer"],
+        hs: [f"{mc} (leave out 'model')"],
+        el: [f"{mc} (give c or phi)",
+             f"{hs}, with E50_ref, Eur_ref, m, p_ref, R_f in the layer"],
+    }
+    out = []
+    for i, sl in enumerate(soil_layers):
+        name = sl.get('name', f'layer {i + 1}')
+        if sl.get('model') == 'hs':
+            model = hs
+        elif (float(sl.get('c', 0) or 0) > 0
+              or float(sl.get('phi', 0) or 0) > 0):
+            model = mc
+        else:
+            model = el
+        how = (how_given(True, None, within='soil_layers')
+               if sl.get('model') is not None else DEFAULT)
+        out.append(choice(f"soil model, {name}", model, how,
+                          model_basis[model], model_alts[model]))
+        k0, src = _layer_k0(sl)
+        if src == "given":
+            how = how_given(True, None, within='soil_layers')
+            basis = ("the layer's own 'K0'; Jaky's 1 - sin phi' is FHWA "
+                     "NHI-06-089 Eq. 10-2, p. 10-10 (near normally "
+                     "consolidated), Eq. 10-3, p. 10-11, for "
+                     "overconsolidated soil")
+            alts = ["leave out 'K0': Jaky 1 - sin phi' (phi > 0) or "
+                    "nu / (1 - nu) (phi = 0)"]
+            chosen = round(k0, 3)
+        elif src.startswith("Jaky"):
+            how = DEFAULT
+            basis = ("Jaky (1944), FHWA NHI-06-089 Eq. 10-2, p. 10-10, "
+                     "for near normally consolidated soil")
+            alts = ["the layer's own 'K0' (e.g. FHWA NHI-06-089 Eq. 10-3, "
+                    "p. 10-11, for overconsolidated soil)"]
+            chosen = f"{k0:.3f} (Jaky, 1 - sin phi')"
+        else:
+            how = DEFAULT
+            basis = ("phi = 0: the K0 a laterally constrained linear "
+                     "elastic mesh takes under gravity, nu / (1 - nu) "
+                     "(UFS 3-220-10 (2026) Sec. 4-6.4.1)")
+            alts = ["the layer's own 'K0'"]
+            chosen = f"{k0:.3f} (nu / (1 - nu))"
+        out.append(choice(f"K0 for the in-situ stresses, {name}", chosen,
+                          how, basis, alts))
     return out
 
 
@@ -2012,9 +2141,10 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
             "results are those of the last stage reached. Try more n_steps "
             "or a higher max_iter, or the excavation may not be stable.")
     result.excavation_water = excavation_water
-    result.choices = _excavation_choices(wall_contact, interface_delta,
-                                         interface_ratio,
-                                         float(interface_adhesion))
+    result.choices = (_excavation_choices(wall_contact, interface_delta,
+                                          interface_ratio,
+                                          float(interface_adhesion))
+                      + _excavation_soil_choices(soil_layers))
     if joints and last.interface_forces:
         result.wall_interface = _wall_interface_summary(
             last.interface_forces, lift_depths[n_lifts_done - 1])
