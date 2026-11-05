@@ -163,6 +163,101 @@ def _with_log_spiral_source(pressure_method: str, source: str) -> str:
     return f"log_spiral:{source}"
 
 
+#: Where the water stands on the excavated side, and what it does (GM-296).
+PASSIVE_WATER_BASIS = (
+    "Both water depths are measured down from the top of the wall (the "
+    "retained ground surface). UFC 3-220-20 Fig. 4-41 (p. 242): 'Water "
+    "levels can be different on opposite sides due to pumping, tidal "
+    "fluctuations and other reasons'; its example Fig. 4-43 (p. 245) has "
+    "water 5 ft below the top on both sides of a 15 ft wall, standing above "
+    "the dredge line, and its chart Fig. 4-42 (p. 243) takes 'the level ... "
+    "the same on both sides of the sheet pile'. Water standing above the "
+    "dredge line in front of the wall pushes on the wall from there down "
+    "(gamma_w times the depth below that level, on the face above the "
+    "dredge line and on down below it: UFC 3-220-20 Sec. 4-4.1, p. 199, "
+    "'Water applies a triangular pressure distribution equivalent to a soil "
+    "with a unit weight of 62.4 pcf and an earth pressure coefficient of "
+    "unity'); the soil below the dredge line is submerged, so its effective "
+    "stress grows by gamma' from the dredge line. The net water pressure is "
+    "the retained side's minus the excavated side's (UFC 3-220-20 Sec. "
+    "4-4.1, p. 199, and Figs. 4-5 and 4-6, p. 183: 'Net water pressure = u "
+    "= gamma_w z2' where 'Inboard and outboard water levels may differ'), "
+    "so the same level on both sides gives none. Left out, the excavated "
+    "side's water stands at the excavation level, or at the retained side's "
+    "level where that is deeper (no water on either side when "
+    "gwt_depth_active is left out too), so no water stands in front of the "
+    "wall")
+
+
+def passive_water_level(gwt_depth_active: Optional[float],
+                        gwt_depth_passive: Optional[float],
+                        excavation_depth: float) -> Optional[float]:
+    """The water depth on the excavated side the walls take, from the top
+    of the wall (GM-296): ``gwt_depth_passive`` when given, at any depth
+    (above the dredge line it stands in front of the wall); left out, the
+    excavation level, or ``gwt_depth_active`` where that is deeper; None
+    (no water) when both are left out. See :data:`PASSIVE_WATER_BASIS`."""
+    if gwt_depth_passive is not None:
+        return gwt_depth_passive
+    if gwt_depth_active is None:
+        return None
+    return max(gwt_depth_active, excavation_depth)
+
+
+def passive_water_pressure(z: float, excavation_depth: float,
+                           gwt_passive: Optional[float],
+                           gamma_w: float) -> float:
+    """The water pressure on the excavated face of the wall at depth ``z``
+    from its top (GM-296): gamma_w (z - level) below the level, on the
+    face above the dredge line where the water stands there, else zero
+    (UFC 3-220-20 Sec. 4-4.1, p. 199; the walls take the net, Figs. 4-5
+    and 4-6, p. 183: 'Net water pressure = u = gamma_w z2'). For a level
+    at or below the dredge line this is the expression the
+    walls used before GM-296, term for term."""
+    if gwt_passive is None:
+        return 0.0
+    H = excavation_depth
+    if z <= H:
+        return gamma_w * max(0.0, z - gwt_passive)
+    u = gamma_w * max(0, (z - H) - max(0, gwt_passive - H))
+    if gwt_passive < H:
+        u += gamma_w * (H - gwt_passive)
+    return u
+
+
+def passive_water_choice(gwt_depth_active, gwt_depth_passive,
+                         gwt_passive, excavation_depth) -> list:
+    """The result's ``choices`` entry for the excavated side's water level
+    (GM-296), when either side has water: what the wall took, given or
+    left out (then ``defaults_used`` gives the level it took)."""
+    if gwt_passive is None:
+        return []
+    from geotech_common.choices import choice, how_given
+    if gwt_depth_passive is None:
+        how = how_given(None, None, name="gwt_depth_passive",
+                        took=gwt_passive)
+    else:
+        how = how_given(gwt_depth_passive, None, name="gwt_depth_passive")
+    H = excavation_depth
+    where = ("above the dredge line, standing in front of the wall"
+             if gwt_passive < H else
+             "at the dredge line" if gwt_passive == H
+             else "below the dredge line")
+    alternatives = []
+    if gwt_depth_active is not None and gwt_passive != gwt_depth_active:
+        alternatives.append(
+            f"the retained side's level, {gwt_depth_active:g} m (balanced "
+            "water, no net water pressure)" if gwt_depth_active < H else
+            f"the retained side's level, {gwt_depth_active:g} m")
+    if gwt_passive != H:
+        alternatives.append(f"the excavation level, {H:g} m")
+    return [choice(
+        "Water depth on the excavated side (gwt_depth_passive), m from the "
+        "top of the wall", round(float(gwt_passive), 4), how,
+        f"{gwt_passive:g} m, {where}. " + PASSIVE_WATER_BASIS,
+        alternatives)]
+
+
 def _passive_layers(soil_layers, excavation_depth):
     """(number, layer) of each layer with friction below the excavation
     (the passive side)."""
@@ -597,8 +692,14 @@ def analyze_cantilever(
     gwt_depth_active : float, optional
         GWT depth on the active (retained) side (m from top of wall).
     gwt_depth_passive : float, optional
-        GWT depth on the passive (excavation) side (m from top of wall).
-        If None, same as active side.
+        GWT depth on the passive (excavation) side (m from top of wall,
+        the same datum as ``gwt_depth_active``). Less than
+        ``excavation_depth``: water standing in front of the wall, its
+        pressure on the wall from that level down, the soil below the
+        dredge line submerged (UFC 3-220-20 Figs. 4-41 and 4-43; GM-296).
+        The same level on both sides gives no net water pressure. If None,
+        the excavation level, or ``gwt_depth_active`` where that is deeper
+        (no water when that is None too): :func:`passive_water_level`.
     surcharge : float, optional
         Uniform surcharge on the retained side (kPa). Default 0.
     FOS_passive : float, optional
@@ -632,8 +733,9 @@ def analyze_cantilever(
         raise ValueError(
             f"embedment_increase must be >= 1.0, got {embedment_increase}")
 
-    if gwt_depth_passive is None:
-        gwt_depth_passive = gwt_depth_active
+    gwt_given = gwt_depth_passive
+    gwt_depth_passive = passive_water_level(
+        gwt_depth_active, gwt_depth_passive, excavation_depth)
     pressure_method = _with_log_spiral_source(pressure_method,
                                               log_spiral_source)
 
@@ -686,7 +788,9 @@ def analyze_cantilever(
         profile=profile,
         choices=_log_spiral_choices(pressure_method, soil_layers,
                                     excavation_depth,
-                                    smooth_embedment=smooth_D),
+                                    smooth_embedment=smooth_D)
+        + passive_water_choice(gwt_depth_active, gwt_given,
+                               gwt_depth_passive, excavation_depth),
     )
 
 
@@ -779,10 +883,17 @@ def _find_embedment(excavation_depth, soil_layers, gwt_active, gwt_passive,
                 pa = max(pa, 0)  # no tension
                 moment_active += pa * dz * arm
 
-                # Water pressure on active side
-                if gwt_active is not None and z > gwt_active:
-                    u_active = gamma_w * (z - gwt_active)
-                    moment_active += u_active * dz * arm
+                # Net water pressure: the retained side's less any water
+                # standing in front of the wall (GM-296); as below the
+                # dredge line, a net push toward the retained side is
+                # left out of the embedment equilibrium
+                u_active = (gamma_w * (z - gwt_active)
+                            if gwt_active is not None and z > gwt_active
+                            else 0.0)
+                net_water = u_active - passive_water_pressure(
+                    z, H, gwt_passive, gamma_w)
+                if net_water > 0:
+                    moment_active += net_water * dz * arm
             else:
                 # Below excavation: active + net passive
                 z_below = z - H  # depth below excavation
@@ -805,10 +916,8 @@ def _find_embedment(excavation_depth, soil_layers, gwt_active, gwt_passive,
                     u_active = gamma_w * (z - gwt_active)
                 else:
                     u_active = 0
-                if gwt_passive is not None and z > gwt_passive:
-                    u_passive = gamma_w * (z_below - max(0, gwt_passive - H))
-                else:
-                    u_passive = 0
+                u_passive = passive_water_pressure(z, H, gwt_passive,
+                                                   gamma_w)
                 net_water = u_active - u_passive
                 if net_water > 0:
                     moment_active += net_water * dz * arm
@@ -977,7 +1086,10 @@ def _compute_max_moment(excavation_depth, embedment, soil_layers,
             net_pressure = pa
             if gwt_active is not None and z > gwt_active:
                 water = gamma_w * (z - gwt_active)
-                net_pressure += water
+            # less any water standing in front of the wall (GM-296)
+            water = water - passive_water_pressure(z, H, gwt_passive,
+                                                   gamma_w)
+            net_pressure += water
         else:
             z_below = z - H
             sigma_v_a = surcharge + _cumulative_stress(z, soil_layers, gwt_active, gamma_w)
@@ -992,7 +1104,7 @@ def _compute_max_moment(excavation_depth, embedment, soil_layers,
 
             # Water
             u_active = gamma_w * max(0, z - (1e10 if gwt_active is None else gwt_active))
-            u_passive = gamma_w * max(0, z_below - max(0, (1e10 if gwt_passive is None else gwt_passive) - H))
+            u_passive = passive_water_pressure(z, H, gwt_passive, gamma_w)
             water = u_active - u_passive
             net_pressure += water
 

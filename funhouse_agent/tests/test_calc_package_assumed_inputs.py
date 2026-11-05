@@ -250,6 +250,38 @@ def test_a_left_out_water_table_prints_as_no_water_table(tmp_path):
     assert "no water table" not in text
 
 
+def _passive_water_row(text: str) -> str:
+    assumed = _section(text, "Assumed Inputs", _NEXT)
+    start = assumed.index("Groundwater depth on the passive")
+    return assumed[start:assumed.index("Earth pressure theory", start)]
+
+
+def test_a_left_out_input_that_took_another_value_is_not_its_source(
+        tmp_path):
+    """GM-296 review F1: a left-out gwt_depth_passive declared to take
+    gwt_depth_active is the excavation level when that is deeper. The row
+    gives the level the wall took as the analysis's default, never "taken
+    equal to" the active side's level it did not take."""
+    out = str(tmp_path / "sp.html")
+    layers = [{"thickness": 12.0, "unit_weight": 18.0,
+               "friction_angle": 32.0}]
+    r = call_agent("calc_package", "sheet_pile_package", dict(
+        excavation_depth=4.0, layers=layers, gwt_depth_active=3.0,
+        output_path=out))
+    assert r["status"] == "success", r
+    assert r["defaults_used"]["gwt_depth_passive"] == 4.0
+    row = _passive_water_row(_text(out))
+    assert " 4 the analysis's default" in row
+    assert "taken equal to" not in row
+    # the active side's level, where the wall took it, still says so
+    r = call_agent("calc_package", "sheet_pile_package", dict(
+        excavation_depth=4.0, layers=layers, gwt_depth_active=5.0,
+        output_path=out))
+    assert r["defaults_used"]["gwt_depth_passive"] == 5.0
+    assert " 5 not given: taken equal to the groundwater depth on the " \
+        "active" in _passive_water_row(_text(out))
+
+
 def test_only_the_inputs_named_as_given_print_as_given(tmp_path):
     """GM-167 (a), waves w13 / w13b: the helper's Vesic, c = 0 and a
     wall height read off a sheet printed as given. Only the inputs the call

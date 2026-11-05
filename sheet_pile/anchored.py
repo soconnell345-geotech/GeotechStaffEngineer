@@ -24,6 +24,7 @@ from sheet_pile.cantilever import (
     WallSoilLayer, _get_soil_at_depth, _cumulative_stress,
     _cumulative_stress_passive, _effective_gamma, _layer_Ka_Kp,
     _with_log_spiral_source, _log_spiral_choices, smooth_where_left_out,
+    passive_water_level, passive_water_pressure, passive_water_choice,
 )
 from geotech_common.water import GAMMA_W
 
@@ -165,7 +166,10 @@ def analyze_anchored(
     gwt_depth_active : float, optional
         GWT depth on active side (m from top).
     gwt_depth_passive : float, optional
-        GWT depth on passive side (m from top).
+        GWT depth on passive side (m from top). Above the excavation level
+        it is water standing in front of the wall; if None, the excavation
+        level or ``gwt_depth_active`` where deeper; see
+        ``analyze_cantilever`` (GM-296).
     surcharge : float, optional
         Uniform surcharge on retained side (kPa). Default 0.
     FOS_passive : float, optional
@@ -190,8 +194,9 @@ def analyze_anchored(
             f"Anchor depth ({anchor_depth}m) must be between 0 and "
             f"excavation depth ({excavation_depth}m)"
         )
-    if gwt_depth_passive is None:
-        gwt_depth_passive = gwt_depth_active
+    gwt_given = gwt_depth_passive
+    gwt_depth_passive = passive_water_level(
+        gwt_depth_active, gwt_depth_passive, excavation_depth)
     pressure_method = _with_log_spiral_source(pressure_method,
                                               log_spiral_source)
 
@@ -224,6 +229,9 @@ def analyze_anchored(
                 force = pa * dz
                 if gwt_depth_active is not None and z > gwt_depth_active:
                     force += gamma_w * (z - gwt_depth_active) * dz
+                # less any water standing in front of the wall (GM-296)
+                force -= passive_water_pressure(
+                    z, H, gwt_depth_passive, gamma_w) * dz
                 moment_driving += force * arm
             else:
                 z_below = z - H
@@ -240,7 +248,7 @@ def analyze_anchored(
 
                 # Water
                 u_active = gamma_w * max(0, z - (1e10 if gwt_depth_active is None else gwt_depth_active))
-                u_passive = gamma_w * max(0, z_below - max(0, (1e10 if gwt_depth_passive is None else gwt_depth_passive) - H))
+                u_passive = passive_water_pressure(z, H, gwt_depth_passive, gamma_w)
                 net_active += (u_active - u_passive) * dz
 
                 moment_driving += net_active * arm
@@ -291,6 +299,9 @@ def analyze_anchored(
             total_active_force += pa * dz
             if gwt_depth_active is not None and z > gwt_depth_active:
                 total_active_force += gamma_w * (z - gwt_depth_active) * dz
+            # less any water standing in front of the wall (GM-296)
+            total_active_force -= passive_water_pressure(
+                z, H, gwt_depth_passive, gamma_w) * dz
         else:
             z_below = z - H
             sigma_v_a = surcharge + _cumulative_stress(z, soil_layers, gwt_depth_active, gamma_w)
@@ -303,7 +314,7 @@ def analyze_anchored(
             total_passive_force += (pp / FOS_passive) * dz
 
             u_a = gamma_w * max(0, z - (1e10 if gwt_depth_active is None else gwt_depth_active))
-            u_p = gamma_w * max(0, z_below - max(0, (1e10 if gwt_depth_passive is None else gwt_depth_passive) - H))
+            u_p = passive_water_pressure(z, H, gwt_depth_passive, gamma_w)
             total_active_force += (u_a - u_p) * dz
 
     anchor_force = total_active_force - total_passive_force
@@ -336,6 +347,9 @@ def analyze_anchored(
             pa = max(pa, 0)
             if gwt_depth_active is not None and z > gwt_depth_active:
                 water = gamma_w * (z - gwt_depth_active)
+            # less any water standing in front of the wall (GM-296)
+            water = water - passive_water_pressure(
+                z, H, gwt_depth_passive, gamma_w)
         else:
             z_below = z - H
             sigma_v_a = surcharge + _cumulative_stress(z, soil_layers, gwt_depth_active, gamma_w)
@@ -345,7 +359,7 @@ def analyze_anchored(
             pp = Kp * sigma_v_p + 2 * layer.cohesion * math.sqrt(Kp)
             pp_reduced = pp / FOS_passive
             u_a = gamma_w * max(0, z - (1e10 if gwt_depth_active is None else gwt_depth_active))
-            u_p = gamma_w * max(0, z_below - max(0, (1e10 if gwt_depth_passive is None else gwt_depth_passive) - H))
+            u_p = passive_water_pressure(z, H, gwt_depth_passive, gamma_w)
             water = u_a - u_p
         net_p = pa - pp_reduced + water
 
@@ -380,5 +394,7 @@ def analyze_anchored(
         profile=profile,
         choices=_log_spiral_choices(pressure_method, soil_layers, H,
                                     tied_back=True,
-                                    smooth_embedment=smooth_D),
+                                    smooth_embedment=smooth_D)
+        + passive_water_choice(gwt_depth_active, gwt_given,
+                               gwt_depth_passive, H),
     )

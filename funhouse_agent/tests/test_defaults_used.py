@@ -1240,17 +1240,23 @@ def test_describe_method_leaves_the_cases_out():
 
 
 def test_a_passive_water_table_left_out_follows_the_active_side():
-    """Sheet pile: gwt_depth_passive defaults to gwt_depth_active; with
-    neither given both are the no-water-table case, with one given the
-    other takes its value."""
+    """Sheet pile: with neither water depth given both are the
+    no-water-table case; with gwt_depth_active given, gwt_depth_passive
+    left out is the level the wall took (GM-296): the excavation level, or
+    the active level where that is deeper."""
     walls = MP.PROBES["sheet_pile|cantilever_wall"]["params"]
     r = D.call_agent("sheet_pile", "cantilever_wall", copy.deepcopy(walls))
     case = r["defaults_used"]["gwt_depth_active"]
     assert case.startswith("no water table: ")
     assert r["defaults_used"]["gwt_depth_passive"] == case
+    H = walls["excavation_depth"]
     r = D.call_agent("sheet_pile", "cantilever_wall",
                      {**copy.deepcopy(walls), "gwt_depth_active": 3.0})
-    assert r["defaults_used"]["gwt_depth_passive"] == 3.0
+    assert r["defaults_used"]["gwt_depth_passive"] == max(3.0, H)
+    r = D.call_agent("sheet_pile", "anchored_wall",
+                     {**copy.deepcopy(walls), "anchor_depth": 1.0,
+                      "gwt_depth_active": H + 1.0})
+    assert r["defaults_used"]["gwt_depth_passive"] == H + 1.0
 
 
 #: Inputs whose absence is a case a reader must see: a water table, a
