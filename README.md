@@ -2,7 +2,7 @@
 
 **A Python toolkit that turns the geotechnical staff engineer's repertoire into composable, machine-callable methods — wraps them in a probabilistic variability engine — and drives them with an engine-agnostic LLM agent.**
 
-32 analysis modules · 33 digitized references · FOSM/PEM/Monte-Carlo/FORM reliability · validated against published benchmarks.
+30 analysis modules · 33 digitized references · FOSM/PEM/Monte-Carlo/FORM reliability · validated against published benchmarks.
 
 > 📊 **Rich visual overviews** (open in a browser): [Project overview](docs/overview.html) · [Agentic retrieval developer guide](docs/agentic_retrieval_devguide.html)
 
@@ -58,7 +58,7 @@ flowchart TB
     subgraph AGENT["Agent harness - engine-agnostic LLM driver"]
         FA["funhouse_agent: GeotechAgent, dispatch, vision"]
         FD["foundry wrappers: 25 standalone tool agents"]
-        LIB["20 reference-library agents"]
+        LIB["external-library agents: opensees, pystrata, liquepy, ..."]
         GP["geo_project: staged human-gated setup"]
     end
 
@@ -68,7 +68,7 @@ flowchart TB
         SENS["salib and pystra: Sobol/Morris, structural reliability"]
     end
 
-    subgraph DET["Deterministic analysis - 32 modules, dataclass I/O, no cross-imports"]
+    subgraph DET["Deterministic analysis - 30 modules, dataclass I/O, no cross-imports"]
         F["foundations, deep foundations, earth retention"]
         S["slope, FEM, CAD"]
         SE["seismic, characterization"]

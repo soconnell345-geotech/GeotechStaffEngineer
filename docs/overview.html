@@ -139,7 +139,7 @@
     <h1>Soil is uncertain.<br><span class="grad">So you don't calculate once — you calculate thousands of times.</span></h1>
     <p class="lede">Geotechnical engineering is the science of building on and out of the ground — foundations, walls, slopes, excavations. The ground is <b>variable and only partly known</b>, so a single number is never the answer; engineers must sweep the parameter space to understand a problem's <b>depth and variability</b>. This project packages decades of those methods as <b>composable, machine-callable Python</b> — then hands them to an LLM agent. It's the next turn of a very old wheel: using computers to do more engineering, faster, and to explore problems we couldn't afford to before.</p>
     <div class="pills">
-      <span class="pill"><b>32</b> analysis modules</span>
+      <span class="pill"><b>30</b> analysis modules</span>
       <span class="pill"><b>33</b> digitized references</span>
       <span class="pill"><b>FOSM·PEM·MC·FORM</b> reliability engines</span>
       <span class="pill">SI units · dataclass I/O</span>
@@ -264,7 +264,7 @@
           <rect x="322" y="124" width="230" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
           <text x="338" y="146" class="lbl">foundry/ wrappers</text><text x="338" y="163" class="s">25 standalone tool agents</text>
           <rect x="566" y="124" width="250" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
-          <text x="582" y="146" class="lbl">20 reference-library agents</text><text x="582" y="163" class="s">opensees · pystrata · liquepy …</text>
+          <text x="582" y="146" class="lbl">external-library agents</text><text x="582" y="163" class="s">opensees · pystrata · liquepy …</text>
           <rect x="830" y="124" width="252" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
           <text x="846" y="146" class="lbl">geo_project</text><text x="846" y="163" class="s">staged, human-gated model setup</text>
 
@@ -286,7 +286,7 @@
 
           <!-- deterministic analysis modules -->
           <rect x="40" y="328" width="1060" height="214" rx="12" fill="#0d1622" stroke="#27324a"/>
-          <text x="58" y="350" class="z" fill="#5cc8ff">DETERMINISTIC ANALYSIS MODULES — 32 modules, each analyze_*() → dataclass(.summary(), .to_dict()). No cross-imports.</text>
+          <text x="58" y="350" class="z" fill="#5cc8ff">DETERMINISTIC ANALYSIS MODULES — 30 modules, each analyze_*() → dataclass(.summary(), .to_dict()). No cross-imports.</text>
 
           <!-- group: foundations -->
           <text x="58" y="376" class="s" fill="#9aa7bd">foundations</text>
@@ -324,13 +324,11 @@
           <rect x="302" y="490" width="106" height="26" rx="6" fill="#0c1c24" stroke="#3a5a6a"/><text x="355" y="507" text-anchor="middle" class="chip">pystrata_agent</text>
           <rect x="416" y="490" width="98" height="26" rx="6" fill="#0c1c24" stroke="#3a5a6a"/><text x="465" y="507" text-anchor="middle" class="chip">liquepy_agent</text>
           <rect x="522" y="490" width="120" height="26" rx="6" fill="#0c1c24" stroke="#3a5a6a"/><text x="582" y="507" text-anchor="middle" class="chip">seismic_signals</text>
-          <rect x="650" y="490" width="100" height="26" rx="6" fill="#0c1c24" stroke="#3a5a6a"/><text x="700" y="507" text-anchor="middle" class="chip">hvsrpy_agent</text>
 
           <!-- group: characterization -->
           <text x="772" y="484" class="s" fill="#9aa7bd">characterization</text>
           <rect x="772" y="490" width="120" height="26" rx="6" fill="#101f1a" stroke="#3a6a55"/><text x="832" y="507" text-anchor="middle" class="chip">subsurface_char.</text>
           <rect x="900" y="490" width="98" height="26" rx="6" fill="#101f1a" stroke="#3a6a55"/><text x="949" y="507" text-anchor="middle" class="chip">gstools_agent</text>
-          <rect x="1000" y="490" width="82" height="26" rx="6" fill="#101f1a" stroke="#3a6a55"/><text x="1041" y="507" text-anchor="middle" class="chip">swprocess</text>
 
           <!-- spine -->
           <rect x="40" y="562" width="700" height="56" rx="12" fill="#0e1f16" stroke="#7df0c0"/>
@@ -340,7 +338,7 @@
           <!-- references -->
           <rect x="756" y="562" width="326" height="56" rx="12" fill="#130f1c" stroke="#c8a0ff"/>
           <text x="774" y="584" class="z" fill="#c8a0ff">REFERENCE LIBRARY</text>
-          <text x="774" y="604" class="lbl">geotech-references — 21 refs <tspan class="s">DM7·GEC·UFC·FHWA</tspan></text>
+          <text x="774" y="604" class="lbl">geotech-references — 33 refs <tspan class="s">DM7·GEC·UFC·FHWA</tspan></text>
 
           <!-- ground -->
           <rect x="40" y="638" width="1042" height="46" rx="12" fill="#0e1626" stroke="#27324a"/>
@@ -429,8 +427,8 @@ print(mc.beta, mc.pf)     <span class="c"># reliability index & probability of f
         <tr><td class="dom">deep foundations</td><td><code>axial_pile</code> · <code>lateral_pile</code> · <code>pile_group</code> · <code>drilled_shaft</code> · <code>wave_equation</code> · <code>downdrag</code></td><td>Driven &amp; bored pile capacity, p-y lateral analysis, rigid-cap groups, Smith wave-equation drivability, neutral-plane downdrag.</td></tr>
         <tr><td class="dom">earth retention</td><td><code>sheet_pile</code> · <code>soe</code> · <code>retaining_walls</code> · <code>ground_improvement</code></td><td>Cantilever/anchored walls, support-of-excavation, cantilever &amp; MSE walls, aggregate piers / wick drains / vibro.</td></tr>
         <tr><td class="dom">slope · FEM · CAD</td><td><code>slope_stability</code> · <code>fem2d</code> · <code>dxf_import</code> · <code>dxf_export</code> · <code>planlens</code></td><td>Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction; geometry I/O.</td></tr>
-        <tr><td class="dom">seismic</td><td><code>seismic_geotech</code> · <code>opensees_agent</code> · <code>pystrata_agent</code> · <code>liquepy_agent</code> · <code>seismic_signals_agent</code> · <code>hvsrpy_agent</code></td><td>Site class, M-O pressures, liquefaction triggering (B&amp;I-2014 / NCEER), 1D site response, ground-motion processing, HVSR.</td></tr>
-        <tr><td class="dom">characterization</td><td><code>subsurface_characterization</code> · <code>gstools_agent</code> · <code>swprocess_agent</code> · <code>groundhog_agent</code></td><td>DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields, MASW dispersion, 90+ groundhog correlations.</td></tr>
+        <tr><td class="dom">seismic</td><td><code>seismic_geotech</code> · <code>opensees_agent</code> · <code>pystrata_agent</code> · <code>liquepy_agent</code> · <code>seismic_signals_agent</code></td><td>Site class, M-O pressures, liquefaction triggering (B&amp;I-2014 / NCEER), 1D site response, ground-motion processing.</td></tr>
+        <tr><td class="dom">characterization</td><td><code>subsurface_characterization</code> · <code>gstools_agent</code></td><td>DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields.</td></tr>
         <tr><td class="dom">variability</td><td><code>reliability</code> · <code>salib_agent</code> · <code>pystra_agent</code></td><td>FOSM/PEM/MC/FORM + COV database + spatial averaging; Sobol/Morris sensitivity; structural FORM/SORM/MC.</td></tr>
         <tr><td class="dom">shared / setup</td><td><code>geotech_common</code> · <code>geo_project</code> · <code>calc_package</code></td><td>SoilProfile spine + checks + adapters + plots; staged human-gated model setup; calculation-package report generation.</td></tr>
         <tr><td class="dom">references</td><td><code>geotech-references</code> (21)</td><td>Digitized tables/figures/equations + searchable chapter text from DM7, FHWA GEC series, UFC, FHWA standards.</td></tr>

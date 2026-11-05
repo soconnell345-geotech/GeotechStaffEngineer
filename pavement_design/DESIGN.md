@@ -220,12 +220,12 @@ twice the MR/19.4 k_inf, up to 26 % above it at Dsg 7–9 ft. Fig 3.5's closed f
 read within about ±2 % for D 6–14 in, k 15–1,950 pci; Fig 3.6's slopes
 within about ±8 % for k ≥ 30 pci (GM-298).
 
-## Scope limits (not built; parked, not ruled out)
+## Scope limits (not computed)
 
-These are not computed today. CLAUDE.md calls the pavement scope calls
-"parked", and this section used to say "out of scope, by design"; the
-owner's call on which of them to build is open as BACKLOG OWN-21 (UFC 3-260-02
-airfield, rigid vehicle curves F-2 to F-31, AASHTO Part III overlays).
+Not computed today. Overlays (Part III), and for the UFC methods airfield
+pavements (UFC 3-260-02) and the rigid vehicle curves F-2 to F-31, are
+parked, not ruled out (CLAUDE.md); whether to build them is the owner's call,
+BACKLOG OWN-21.
 
 - **Overlays / rehabilitation (Part III)** — text-only in the reference
   layer; not computed.

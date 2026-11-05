@@ -245,8 +245,8 @@ catalogs). The live list is `list_agents()`.
 | Family | Modules |
 |--------|---------|
 | NAVFAC / FHWA geotechnical manuals | `dm7` (340+ equations), `gec4`, `gec5`, `gec6`, `gec7`, `gec8`, `gec9`, `gec10`, `gec11`, `gec12`, `gec13`, `gec14`, `micropile`, `fhwa_soils_foundations`, `fhwa_pavements` |
-| UFC and Corps of Engineers | `ufc_backfill`, `ufc_expansive`, `ufc_pavement` (UFC 3-250-01 roads and parking), `ufc_stabilization`, `ufc_flexible_practice`, `ufc_concrete_practice`, `ufc_structural`, `ufc_collapse`, `gsa_collapse`, `em_2104`, `em_2107` |
-| Other | `fema_p2082`, `california_trenching`, `eurocode_7_1`, `eurocode_7_2`, `aashto_1993`, `wood_handbook` |
+| UFC and Corps of Engineers | `ufc_backfill`, `ufc_expansive`, `ufc_pavement` (UFC 3-250-01 roads and parking), `ufc_stabilization`, `ufc_flexible_practice`, `ufc_concrete_practice`, `ufc_structural`, `ufc_collapse`, `em_2104`, `em_2107` |
+| Other | `fema_p2082`, `gsa_collapse`, `california_trenching`, `eurocode_7_1`, `eurocode_7_2`, `aashto_1993`, `wood_handbook` |
 | Search | `reference_db`, `figure_db` |
 
 (`fema_p2192`, `noaa_frost` and `ufc_dewatering` were deleted from the
@@ -546,7 +546,7 @@ the `.md` playbook pastes it with a sync pointer. The scope sets live in
 `funhouse_agent/dispatch.py` (`SEISMIC_MODULES`, `SEISMIC_REFERENCES`).
 
 A **deepagents** variant is available too (planning + scratch filesystem +
-optional persistent memory; needs the `[deep]` extra):
+optional persistent memory; deepagents comes with the plain install):
 
 ```python
 from funhouse_agent import make_seismic_reviewer_deep
@@ -625,21 +625,14 @@ scripted transcript.
 %pip install "geotech-staff-engineer"   # or pin a release with ==<version>
 # or from a test wheel -- upload to /tmp or a UC Volume (NOT /Workspace,
 # which mangles the filename):
-%pip install "/tmp/geotech_staff_engineer-5.1.0rc5-py3-none-any.whl[deep]"
+%pip install "/tmp/geotech_staff_engineer-<version>-py3-none-any.whl"
 
 # No dbutils.library.restartPython() needed in the normal flow (see below).
 import funhouse_agent.deep   # auto-repairs the stale typing_extensions on import
 ```
 
-- The `[deep]` extra is required for the v2 deepagents loop (`funhouse_agent.deep`);
-  without it you get `ModuleNotFoundError: No module named 'deepagents'` the first
-  time a name is used (`from funhouse_agent.deep import build_deep_agent`); a bare
-  `import funhouse_agent.deep` loads its names on first use, so it succeeds.
-  Add `[interactive]` for the plotly single-file viewers, `[plot]` for matplotlib figures.
-- **Full eval coverage (100 questions as of v5.4) needs the optional-dependency extras:** install
-  `%pip install "/tmp/...whl[deep,full]"`. With `[deep]` alone, ~12 questions (the
-  gstools/pygef/ags4/pydiggs/ezdxf/SALib/pystrata/eqsig/liquepy/openseespy modules)
-  fail honestly with "not installed" errors. `run_suite` runs an optional-dependency
+- `funhouse_agent.deep` needs `deepagents`, which a plain install brings (since 2026-07-17 `[deep]`, `[full]`, `[plot]` and `[interactive]` are empty aliases kept so old pins resolve). A bare `import funhouse_agent.deep` loads its names on first use.
+- **Full eval coverage (100 questions as of v5.4):** a plain install brings every optional analysis library except `python-ags4` (`[ags4]`) and `pydiggs` (`[pydiggs]`); a missing one fails honestly with a "not installed" error. `run_suite` runs an optional-dependency
   preflight and prints a "Missing optional packages" banner at the top of the `.md`
   when any are absent.
 - **`dbutils.library.restartPython()` is no longer required in the normal flow.**
