@@ -54,6 +54,9 @@ detailed Phase-E history; this file supersedes it.
 
 ### Where things stand (5.34.0 released 2026-11-04; 5.33.0 on 2026-10-09)
 
+**Master after 5.34.0 (unreleased): release notes to carry.** Built overnight 2026-11-05 by one-time cloud sessions, each reviewed independently before the lead merged it.
+- fem2d seepage (63c7027; BACKLOG Done): the result now reports the flow through the section, `flow_m3_per_s_per_m`, from the fixed-head nodal reactions, with the outflow and a balance check. The old `total_flow_m3_per_s_per_m` summed |v| x area x t; it was about 29 times too high on the printed check and grew with t. Every saved seepage flow changes. UFS 3-220-10 Fig. 6-5 prints q = 34 ft3/day/ft; the module gives 32.4.
+
 **0. 5.34.0 (2026-11-04) with planlens 0.14.0 and geotech-references 1.5.0: everything on master since 5.33.0 (through d57f28d).** The owner held the release from 2026-10-14; it publishes on the owner's word, refs first, then planlens, then the app (each tag push publishes to PyPI).
 - **Branches** (each cut from the head of main or master, one commit on top):
   - geotech-references `release/1.5.0` (25f7d7f, on d8183a1): the version only;
