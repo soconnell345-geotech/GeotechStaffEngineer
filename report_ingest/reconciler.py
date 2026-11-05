@@ -1116,8 +1116,12 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry],
         for hole in holes if len(hole) > 1 for log in hole}
     for original in record.lab_tests:
         original.linked_log_pages = ""
+        original.linked_sample_ids = []
+        original.combined = False
         for row in getattr(original.result, "rows", None) or ():
             row.linked_log_pages = ""
+            row.linked_sample_ids = []
+            row.combined = False
 
     def among_twins(inv: Investigation, original: Any, pages: List[int],
                     what: str, view: Any = None) -> Optional[Investigation]:
@@ -1256,11 +1260,13 @@ def _link_all(record: ReportRecord, qa: List[QAEntry],
     # (how, a summary row?, the pages) for one note.
     unit = depth_unit(record)
     read_depths: List[Tuple[str, bool, List[int]]] = []
+    # (what, the link, the pages) of each test on combined samples (RI-107)
+    combined: List[Tuple[str, str, List[int]]] = []
     for original in record.lab_tests:
         if original.kind == "summary_table":
             _link_summary_rows(original, by_id, sample_names, by_fold,
                                from_labels, clashes, qa, unit, read_depths,
-                               among_twins, log_pages)
+                               among_twins, log_pages, combined=combined)
             continue
         test, how = _depth_view(original, unit, need_hole=False)
         inv, through = _hole_for(test, by_id, sample_names, by_fold)
@@ -1293,6 +1299,11 @@ def _link_all(record: ReportRecord, qa: List[QAEntry],
         original.linked_log_pages = log_pages(inv) if log_pages else ""
         if how:
             read_depths.append((how, False, list(original.pages)))
+        combo = _combined_samples(inv, test, by_fold)
+        if combo:
+            _link_combined(original, test, combo, combined, test.kind,
+                           test.pages)
+            continue
         sample, delta, clash = _sample_for(inv, test, by_fold)
         if clash is not None:
             _gather(clashes, clash, test.kind, test.pages)
@@ -1315,6 +1326,20 @@ def _link_all(record: ReportRecord, qa: List[QAEntry],
         original.linked_depth_delta_m = (None if delta is None
                                          else round(delta, 3))
 
+    if combined:
+        # RI-107: one note for the report naming each test on combined
+        # samples and the samples it was linked to.
+        lines = list(dict.fromkeys(line for _what, line, _p in combined))
+        qa.append(QAEntry(
+            kind="note", where="lab_tests.combined",
+            detail=(f"{len(combined)} laboratory result(s) were run on two "
+                    f"or more samples combined (a label joining sample "
+                    f"names, or a printed depth range holding several "
+                    f"samples); each is linked to every sample it combined "
+                    f"and flagged as combined"),
+            values=_capped(lines),
+            pages=sorted({int(p) for _w, _l, pages in combined
+                          for p in pages})))
     if from_labels:
         # One note for the report, not one a test: a reviewer wants to know
         # that these links were read out of a longer label, and which.
@@ -1413,7 +1438,10 @@ def _sample_for(inv: Investigation, test: Any,
     comes back for a QA entry. A label that names several of the hole's
     samples (a composite, "S-2,S-3") is linked to no sample where none of
     them, or more than one, meets the printed interval, and to the one that
-    meets it where one does, which comes back to be said too (RI-71); a
+    meets it where one does, which comes back to be said too (RI-71) --
+    except that the linking asks :func:`_combined_samples` first, and a
+    label that says its samples were combined, or whose interval meets
+    every one of them, is linked to all of them (RI-107); a
     range of names ("U-21 to U-23") names every sample between its ends
     (:func:`_in_range`); a name several of the hole's samples carry is
     settled by the depth or not at all (:func:`_one_name`).
@@ -1424,19 +1452,7 @@ def _sample_for(inv: Investigation, test: Any,
         if whole:
             return _one_name(inv, test, whole)
     label = f"{test.investigation_id} {test.sample_id}"
-    words = {fold_id(w) for w in re.split(r"[^0-9A-Za-z-]+", label)
-             if fold_id(w)}
-    own = fold_id(inv.investigation_id)
-    others = {fold_id(h) for h in holes
-              if re.search(r"[A-Za-z]", fold_id(h))} - {own, ""}
-    numbered = {hole_key(h) for h in holes
-                if fold_id(h).isdigit()} - {hole_key(own), ""}
-    named = [] if words & others or _numbers_named(
-        test.investigation_id, test.sample_id) & numbered else [
-        s for s in inv.samples
-        if fold_id(s.sample_id) and fold_id(s.sample_id) in words
-        and fold_id(s.sample_id) != own
-        and not fold_id(s.sample_id).isdigit()]
+    named = _named_samples(inv, test, holes)
     if not named:
         sample, delta = _sample_at_depth(inv, test)
         return sample, delta, None
@@ -1449,6 +1465,127 @@ def _sample_for(inv: Investigation, test: Any,
     if len({fold_id(s.sample_id) for s in named}) > 1:
         return None, None, _clash(inv, test, named, None)
     return _one_name(inv, test, named)
+
+
+def _named_samples(inv: Investigation, test: Any, holes: Iterable[str] = ()
+                   ) -> List[Sample]:
+    """The samples of ``inv`` a word of the sheet's label names
+    (:func:`_sample_for`): none where the label names another hole."""
+    label = f"{test.investigation_id} {test.sample_id}"
+    words = {fold_id(w) for w in re.split(r"[^0-9A-Za-z-]+", label)
+             if fold_id(w)}
+    own = fold_id(inv.investigation_id)
+    others = {fold_id(h) for h in holes
+              if re.search(r"[A-Za-z]", fold_id(h))} - {own, ""}
+    numbered = {hole_key(h) for h in holes
+                if fold_id(h).isdigit()} - {hole_key(own), ""}
+    if words & others or _numbers_named(
+            test.investigation_id, test.sample_id) & numbered:
+        return []
+    return [s for s in inv.samples
+            if fold_id(s.sample_id) and fold_id(s.sample_id) in words
+            and fold_id(s.sample_id) != own
+            and not fold_id(s.sample_id).isdigit()]
+
+
+#: What a label prints to say its samples were COMBINED for one test
+#: (RI-107): "S-3 & S-4", "S3+S4", "S-3 and S-4", "composite of", "comp.",
+#: "combined", "mixed", "blend".
+_COMBINE_WORD = re.compile(
+    r"&|\+|\band\b|\bcompos\w*|\bcomp\b\.?|\bcombined\b|\bcomb\.|"
+    r"\bmix(?:ed|ture)?\b|\bblend(?:ed)?\b", re.I)
+
+
+def _combined_samples(inv: Investigation, test: Any,
+                      holes: Iterable[str] = ()) -> List[Sample]:
+    """The samples of ``inv`` a test on COMBINED samples was run on,
+    shallowest first; empty for a test on one sample (BACKLOG RI-107).
+
+    BY THE LABEL: a label naming two or more of the hole's samples (or a
+    range of them, :func:`_in_range`) is a combined test where it prints a
+    word for combining (:data:`_COMBINE_WORD`: "S-3 & S-4", "S3+S4",
+    "composite of S-3 and S-4"), or where the sheet's printed interval meets
+    every one of them. Where a name is several samples of the hole, the one
+    meeting the printed interval is taken, else the name is not settled and
+    the test is not called combined. A label naming one sample whole, or
+    naming two with nothing to say they were combined and a depth meeting
+    only one, is left to :func:`_sample_for` as before.
+
+    BY THE DEPTH: where the label names none of the hole's samples, a
+    printed interval (top AND bottom) that holds two or more of the log's
+    samples, with no one sample spanning it, is a combined test on those
+    samples. A depth and the samples are matched within
+    :data:`DEPTH_TOL_M`.
+    """
+    if test.sample_id:
+        wanted = fold_id(test.sample_id)
+        if any(fold_id(s.sample_id) == wanted for s in inv.samples):
+            return []
+    label = f"{test.investigation_id} {test.sample_id}"
+    named = _named_samples(inv, test, holes)
+    if named:
+        named = _in_range(inv, label, named)
+        by_name: Dict[str, List[Sample]] = {}
+        for sample in named:
+            by_name.setdefault(fold_id(sample.sample_id), []).append(sample)
+        if len(by_name) < 2:
+            return []
+        picks: List[Sample] = []
+        for same in by_name.values():
+            meets = [s for s in same if _interval_gap(s, test) is not None]
+            if meets:
+                picks.append(_nearest(meets, test))
+            elif len(same) == 1:
+                picks.append(same[0])
+            else:
+                return []
+        if not _COMBINE_WORD.search(label) and not all(
+                _interval_gap(s, test) is not None for s in picks):
+            return []
+        return sorted(picks, key=lambda s: (depth_m(s.top) is None,
+                                            depth_m(s.top) or 0.0))
+    top = depth_m(test.depth_top)
+    bottom = depth_m(getattr(test, "depth_bottom", None))
+    if top is None or bottom is None or bottom - top <= DEPTH_TOL_M:
+        return []
+    inside: List[Sample] = []
+    for sample in inv.samples:
+        s_top, s_bottom = depth_m(sample.top), depth_m(sample.bottom)
+        if s_top is None:
+            continue
+        s_bottom = s_top if s_bottom is None or s_bottom < s_top \
+            else s_bottom
+        if s_top <= top + DEPTH_TOL_M and s_bottom >= bottom - DEPTH_TOL_M:
+            return []                       # one sample spans the interval
+        if s_top >= top - DEPTH_TOL_M and s_bottom <= bottom + DEPTH_TOL_M:
+            inside.append(sample)
+    if len(inside) < 2:
+        return []
+    return sorted(inside, key=lambda s: depth_m(s.top) or 0.0)
+
+
+def _link_combined(original: Any, test: Any, combo: Sequence[Sample],
+                   notes: List[Tuple[str, str, List[int]]],
+                   what: str, pages: Sequence[int]) -> None:
+    """Link ``original`` (a sheet or a summary row) to every sample of a
+    combined test (:func:`_combined_samples`), and keep a line for the
+    report's note."""
+    original.linked_sample_id = combo[0].sample_id
+    original.linked_sample_ids = [s.sample_id for s in combo]
+    original.combined = True
+    if hasattr(original, "linked_depth_delta_m"):
+        gaps = [g for g in (_interval_gap(s, test) for s in combo)
+                if g is not None]
+        original.linked_depth_delta_m = round(min(gaps), 3) if gaps \
+            else None
+    printed = " ".join(str(x).strip() for x in (
+        test.sample_id, _show(test.depth_top) if test.depth_top else "",
+        _show(test.depth_bottom) if getattr(test, "depth_bottom", None)
+        else "") if str(x).strip())
+    notes.append((what, f"{printed or what!r} -> "
+                        f"{original.linked_investigation_id} "
+                        f"{' + '.join(original.linked_sample_ids)}",
+                  list(pages)))
 
 
 def _one_name(inv: Investigation, test: Any, same: Sequence[Sample]
@@ -1817,7 +1954,10 @@ def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
                        read_depths: Optional[List[Tuple[str, bool,
                                                         List[int]]]] = None,
                        among_twins: Any = None,
-                       log_pages: Any = None) -> None:
+                       log_pages: Any = None,
+                       combined: Optional[List[Tuple[str, str,
+                                                     List[int]]]] = None
+                       ) -> None:
     """Each row of a summary table linked as a sheet is, from its own columns.
 
     A row prints its own boring, sample and depth, and is linked by the
@@ -1934,6 +2074,12 @@ def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
         original.linked_log_pages = log_pages(inv) if log_pages else ""
         if how and read_depths is not None:
             read_depths.append((how, True, list(test.pages)))
+        combo = _combined_samples(inv, row, by_fold)
+        if combo:
+            _link_combined(original, row, combo,
+                           combined if combined is not None else [],
+                           "summary row", test.pages)
+            continue
         sample, _delta_m, clash = _sample_for(inv, row, by_fold)
         if clash is not None:
             _gather(clashes, clash, test.kind, test.pages)

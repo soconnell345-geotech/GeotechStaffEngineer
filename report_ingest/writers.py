@@ -847,7 +847,10 @@ def library_page(record: ReportRecord, key: str, source: str = "") -> str:
     rows = _table(
         ["Test", "Exploration", "Depth", "Standard", "Linked sample", "Pages"],
         [[test.kind, _lab_exploration(test), test.depth_top,
-          test.standard, test.linked_sample_id or "-",
+          test.standard,
+          (" + ".join(test.linked_sample_ids) + " (combined)"
+           if test.combined and test.linked_sample_ids
+           else test.linked_sample_id or "-"),
           ", ".join(str(p) for p in test.pages)]
          for test in record.lab_tests])
     if rows:

@@ -137,6 +137,14 @@ __all__ = [
 #: (the same item: which log of a hole read as several logs of its name a
 #: result was linked to) are optional the same way, set only on such a
 #: result and left out of the written record otherwise.
+#:
+#: ``LabTest.linked_sample_ids`` / ``combined`` and the same pair on
+#: ``SummaryRow`` (BACKLOG RI-107, a test on samples combined) are NOT a
+#: bump either, for the same reason: optional, set only on a combined test,
+#: and left out of the written record otherwise. ``linked_sample_id`` keeps
+#: its meaning (one sample of the log; the first, for a combined test).
+#: ``WaterLevel.when`` gaining ``not_measured`` (RI-106) adds a value no
+#: older record holds.
 SCHEMA_VERSION = "4.0"
 
 
@@ -1997,13 +2005,25 @@ class SummaryRow(BaseModel):
         default="",
         description="the pages of the log matched to, where the hole is read "
                     "as several logs; empty otherwise")
+    #: A test run on two or more samples COMBINED (RI-107), as for a sheet
+    #: (``LabTest.linked_sample_ids``); written only when set.
+    linked_sample_ids: List[str] = Field(
+        default_factory=list,
+        description="every sample a test on combined samples was matched "
+                    "to, shallowest first; empty otherwise")
+    combined: bool = Field(
+        default=False,
+        description="the row's test was run on two or more samples combined")
 
     @model_serializer(mode="wrap")
     def _leave_out_unset_qualifier(self, handler):  # type: ignore[no-untyped-def]
-        """``linked_qualifier`` and ``linked_log_pages`` are written only
-        when they are set: a record with no name printed on several logs is
-        written as before the fields."""
+        """``linked_qualifier``, ``linked_log_pages``, ``linked_sample_ids``
+        and ``combined`` are written only when they are set: a record with
+        no name printed on several logs and no combined sample is written as
+        before the fields."""
         out = _without_empty(handler(self), "linked_qualifier")
+        out = _without_empty(out, "linked_sample_ids")
+        out = _without_empty(out, "combined")
         return _without_empty(out, "linked_log_pages")
 
 
@@ -2143,14 +2163,30 @@ class LabTest(BaseModel):
         default="",
         description="the pages of the log matched to, where the hole is read "
                     "as several logs; empty otherwise")
+    #: A test run on two or more samples COMBINED to get enough material
+    #: (RI-107: printed "S-3 & S-4", "S3+S4", "composite of", or a depth
+    #: range spanning two samples) is linked to EVERY sample it combined:
+    #: ``linked_sample_ids`` names them shallowest first, ``combined`` is
+    #: True, and ``linked_sample_id`` holds the first so a reader of that
+    #: field alone still sees the test linked. Written only when set.
+    linked_sample_ids: List[str] = Field(
+        default_factory=list,
+        description="every sample a test on combined samples was matched "
+                    "to, shallowest first; empty otherwise")
+    combined: bool = Field(
+        default=False,
+        description="the test was run on two or more samples combined")
     prov: List[Provenance] = Field(default_factory=list)
 
     @model_serializer(mode="wrap")
     def _leave_out_unset_qualifier(self, handler):  # type: ignore[no-untyped-def]
-        """``linked_qualifier`` and ``linked_log_pages`` are written only
-        when they are set: a record with no name printed on several logs is
-        written as before the fields."""
+        """``linked_qualifier``, ``linked_log_pages``, ``linked_sample_ids``
+        and ``combined`` are written only when they are set: a record with
+        no name printed on several logs and no combined sample is written as
+        before the fields."""
         out = _without_empty(handler(self), "linked_qualifier")
+        out = _without_empty(out, "linked_sample_ids")
+        out = _without_empty(out, "combined")
         return _without_empty(out, "linked_log_pages")
 
     @model_validator(mode="after")
