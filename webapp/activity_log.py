@@ -60,6 +60,16 @@ reasoning summary the provider returned). Without them a review of a run
 could see every tool call and never the model's account of why (the owner,
 reviewing the first live checks of 5.32.0).
 
+Since 2026-11-05 (BACKLOG INF-66) each ``model_end``'s ``usage`` also keeps
+``cache_read`` and ``cache_creation``: how many of the call's
+``input_tokens`` were read from the provider's prompt cache and how many
+written to it (both PART of ``input_tokens``; 0 where the response reports
+no cache fields, as report ingest's ``Usage`` keeps them), and ``turn_end``
+carries ``usage``: ``input_tokens``, ``output_tokens``, ``cache_read`` and
+``cache_creation`` summed over every ``model_end`` of the turn, with
+``calls``. Records written before then have neither, and every reader treats
+a missing count as unknown.
+
 Since 2026-10-21 (BACKLOG EV-06, EV-19) the record also says:
 
 * on ``turn_end``: ``graph_steps``, the highest LangGraph step the
@@ -451,9 +461,95 @@ def _json_safe(obj: Any) -> Any:
         return str(obj)
 
 
+#: The two cache counts every ``model_end``'s ``usage`` carries, named as
+#: LangChain's ``input_token_details`` and report ingest's reader of it
+#: (``report_ingest.engine._usage_of``, BACKLOG RI-171) name them. Both are
+#: PART of ``input_tokens``, not in addition, as langchain-anthropic and
+#: langchain-openai count them (BACKLOG INF-66).
+CACHE_KEYS = ("cache_read", "cache_creation")
+
+
+def _count(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _cache_from_details(details: Any) -> Optional[dict]:
+    """The cache split in LangChain's ``input_token_details``, or None when
+    it has none. langchain-openai prefixes the keys with a service tier
+    (``priority_cache_read``); langchain-anthropic reports a cache write as
+    ``ephemeral_5m_input_tokens`` / ``ephemeral_1h_input_tokens`` and sets
+    ``cache_creation`` to 0 when it does, so the three are added."""
+    if not isinstance(details, dict):
+        return None
+    read = made = 0
+    seen = False
+    for key, value in details.items():
+        k = str(key)
+        if k.endswith("cache_read"):
+            read += _count(value)
+            seen = True
+        elif k.endswith("cache_creation") or k in (
+                "ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens"):
+            made += _count(value)
+            seen = True
+    return {"cache_read": read, "cache_creation": made} if seen else None
+
+
+def _cache_from_raw(raw: Any) -> Optional[dict]:
+    """The cache split in a provider's own usage dict, or None: Anthropic's
+    ``cache_read_input_tokens`` / ``cache_creation_input_tokens``, or an
+    OpenAI-style ``prompt_tokens_details.cached_tokens`` (a read; OpenAI
+    reports no write, so it is 0)."""
+    if not isinstance(raw, dict):
+        return None
+    if "cache_read_input_tokens" in raw or \
+            "cache_creation_input_tokens" in raw:
+        return {"cache_read": _count(raw.get("cache_read_input_tokens")),
+                "cache_creation": _count(
+                    raw.get("cache_creation_input_tokens"))}
+    details = raw.get("prompt_tokens_details")
+    if isinstance(details, dict) and "cached_tokens" in details:
+        return {"cache_read": _count(details.get("cached_tokens")),
+                "cache_creation": _count(details.get("cache_write_tokens"))}
+    return None
+
+
+def _raw_usages(response: Any, msg: Any = None, gen: Any = None) -> list:
+    """Every provider usage dict a response carries, nearest first: the
+    message's ``response_metadata``, the generation's ``generation_info``
+    and ``llm_output``. (The Databricks bridge and the Foundry GPT SDK model
+    put their cache read in ``input_token_details``, so this fallback is for
+    routes that do not.)"""
+    out = []
+    for meta in (getattr(msg, "response_metadata", None),
+                 getattr(gen, "generation_info", None),
+                 getattr(response, "llm_output", None)):
+        if isinstance(meta, dict):
+            for key in ("usage", "token_usage"):
+                if isinstance(meta.get(key), dict):
+                    out.append(meta[key])
+    return out
+
+
 def _usage_from_response(response: Any) -> Optional[dict]:
-    """Pull ``{input_tokens, output_tokens, total_tokens}`` off an LLMResult
-    (``usage_metadata`` on the generated message, else ``llm_output``)."""
+    """Pull ``{input_tokens, output_tokens, total_tokens, cache_read,
+    cache_creation}`` off an LLMResult (``usage_metadata`` on the generated
+    message, else ``llm_output``).
+
+    ``input_tokens`` is as LangChain counts it (cache reads and writes
+    INCLUDED), so a turn's totals read as they always have; the two cache
+    counts say how much of it was read from the provider's prompt cache and
+    how much written to it (BACKLOG INF-66). They come from
+    ``input_token_details`` (every LangChain route: Anthropic, OpenAI, the
+    Foundry Claude and GPT SDK models, the Prompter on Databricks), else
+    from the provider's own usage dict
+    (Anthropic's ``cache_*_input_tokens``, OpenAI's
+    ``prompt_tokens_details.cached_tokens``). A response that reports no
+    cache fields records 0 for both, as report ingest's ``Usage`` does; a
+    response with no usage at all stays None."""
     try:
         gens = getattr(response, "generations", None) or []
         for row in gens:
@@ -461,20 +557,36 @@ def _usage_from_response(response: Any) -> Optional[dict]:
                 msg = getattr(g, "message", None)
                 um = getattr(msg, "usage_metadata", None)
                 if um:
-                    return {k: um.get(k) for k in
-                            ("input_tokens", "output_tokens", "total_tokens")
-                            if k in um}
+                    out = {k: um.get(k) for k in
+                           ("input_tokens", "output_tokens", "total_tokens")
+                           if k in um}
+                    cache = _cache_from_details(um.get("input_token_details"))
+                    if cache is None:
+                        for raw in _raw_usages(response, msg, g):
+                            cache = _cache_from_raw(raw)
+                            if cache is not None:
+                                break
+                    out.update(cache or dict.fromkeys(CACHE_KEYS, 0))
+                    return out
         lo = getattr(response, "llm_output", None) or {}
         tu = lo.get("token_usage") or lo.get("usage")
         if isinstance(tu, dict):
-            return {"input_tokens": tu.get("prompt_tokens",
-                                           tu.get("input_tokens")),
-                    "output_tokens": tu.get("completion_tokens",
-                                            tu.get("output_tokens")),
-                    "total_tokens": tu.get("total_tokens")}
+            out = {"input_tokens": tu.get("prompt_tokens",
+                                          tu.get("input_tokens")),
+                   "output_tokens": tu.get("completion_tokens",
+                                           tu.get("output_tokens")),
+                   "total_tokens": tu.get("total_tokens")}
+            out.update(_cache_from_raw(tu) or dict.fromkeys(CACHE_KEYS, 0))
+            return out
     except Exception:                                  # noqa: BLE001
         pass
     return None
+
+
+#: The keys a ``turn_end``'s ``usage`` sums over every ``model_end`` of the
+#: turn (the primary's, its helpers' and any side call's, as ``turn_tokens``
+#: counts them).
+TURN_USAGE_KEYS = ("input_tokens", "output_tokens") + CACHE_KEYS
 
 
 #: Most characters of a model's own words kept per call (its text, and its
@@ -678,6 +790,9 @@ class ActivityLogger(BaseCallbackHandler):
         self._build_tools: Optional[list] = None
         self.step_cap: Optional[int] = None
         self.step_allowance: Optional[int] = None
+        self._usage_sum = dict.fromkeys(TURN_USAGE_KEYS, 0)
+        self._calls_metered = 0
+        self._calls_unmetered = 0
         self._lock = threading.Lock()
         self.records_written = 0
         self.last_error: Optional[str] = None
@@ -901,8 +1016,35 @@ class ActivityLogger(BaseCallbackHandler):
                 _TOOLS_NOTED[_log_key(self.conv_dir)] = \
                     rec.get("tools_offered_sha")
 
+    def _add_usage(self, usage: Optional[dict]) -> None:
+        with self._lock:
+            if not usage:
+                self._calls_unmetered += 1
+                return
+            self._calls_metered += 1
+            for key in TURN_USAGE_KEYS:
+                self._usage_sum[key] += _count(usage.get(key))
+
+    def turn_usage(self) -> Optional[dict]:
+        """The turn's ``input_tokens``, ``output_tokens``, ``cache_read``
+        and ``cache_creation`` summed over every ``model_end`` written so
+        far, with ``calls`` (those that reported usage) and, when any did
+        not, ``unmetered_calls``; None before the first model call
+        (BACKLOG INF-66)."""
+        with self._lock:
+            if not (self._calls_metered or self._calls_unmetered):
+                return None
+            out = dict(self._usage_sum)
+            out["calls"] = self._calls_metered
+            if self._calls_unmetered:
+                out["unmetered_calls"] = self._calls_unmetered
+            return out
+
     def _turn_facts(self) -> dict:
         out: dict = {}
+        usage = self.turn_usage()
+        if usage is not None:
+            out["usage"] = usage
         passes = [s for s in self._passes if s]
         if passes:
             out["graph_steps"] = max(passes)
@@ -1135,11 +1277,13 @@ class ActivityLogger(BaseCallbackHandler):
             rid = str(run_id)
             t_start = self._starts.pop(rid, None)
             parent = parent_run_id or self._parent.get(rid)
+            usage = _usage_from_response(response)
+            self._add_usage(usage)
             record = {"agent": self._agent_of(parent), "event": "model_end",
                       "run_id": rid,
                       "parent_run_id": (str(parent_run_id)
                                         if parent_run_id else None),
-                      "usage": _usage_from_response(response),
+                      "usage": usage,
                       "n_tool_calls": _n_tool_calls(response),
                       "duration_s": (round(self._clock() - t_start, 3)
                                      if t_start is not None else None)}

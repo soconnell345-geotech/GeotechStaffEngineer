@@ -10,6 +10,8 @@ Usage:  python render_pdf.py
 from __future__ import annotations
 
 import json
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -19,27 +21,46 @@ import pymupdf  # PyMuPDF
 HERE = Path(__file__).resolve().parent
 HTML = HERE / "manual.html"
 TOC = HERE / "toc.json"
-OUT = HERE.parent / "GeotechStaffEngineer_User_Manual_v5.3.pdf"
+
+
+def _version() -> str:
+    """The package version from pyproject.toml, as build_manual.py reads it."""
+    txt = (HERE.parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'^version\s*=\s*"([^"]+)"', txt, re.M)
+    return m.group(1) if m else "unknown"
+
+
+# The PDF is named for the release it was built from (the v5.3 file before it
+# was named by hand).
+OUT = HERE.parent / f"GeotechStaffEngineer_User_Manual_v{_version()}.pdf"
 
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/opt/pw-browsers/chromium",
 ]
 
 
 def find_chrome() -> str:
     for c in CHROME_CANDIDATES:
-        if Path(c).exists():
+        if Path(c).is_file():
             return c
+    for name in ("google-chrome", "chromium", "chromium-browser", "msedge"):
+        found = shutil.which(name)
+        if found:
+            return found
     raise SystemExit("No Chrome/Edge found for PDF rendering; edit CHROME_CANDIDATES.")
 
 
 def render():
     chrome = find_chrome()
     url = HTML.resolve().as_uri()
-    cmd = [chrome, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
+    cmd = [chrome, "--headless=new", "--disable-gpu", "--no-sandbox", "--no-pdf-header-footer",
            f"--print-to-pdf={OUT}", url]
     print("Rendering with:", Path(chrome).name)
     subprocess.run(cmd, check=True,

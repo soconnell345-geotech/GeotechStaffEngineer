@@ -590,6 +590,7 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
             "code": code, "data": json.loads(data_json),
             "name": name or "", "root": root, "tmp": tmp, "marker": marker,
             "print_width_in": extra.get("print_width_in"),
+            "chart_lines_path": _chart_lines_path(),
             "sys_path": [p for p in sys.path if p and os.path.isdir(p)],
             "limits": {"memory_mb": cfg["memory_mb"],
                        "cpu_s": int(limit) + 60, "fsize_mb": 200,
@@ -814,12 +815,33 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
     return res
 
 
+def _registered_chart_lines():
+    """The registered reference charts' ``chart_lines`` module, or None
+    (:func:`funhouse_agent.charts.register_reference_charts`)."""
+    from funhouse_agent.charts import reference_charts
+    provider = reference_charts()
+    return getattr(provider, "chart_lines", None) if provider else None
+
+
+def _chart_lines_path() -> str:
+    """The file the box loads ``chart_lines`` from ("" when none is
+    registered, or it is not a file the box can load)."""
+    try:
+        path = getattr(_registered_chart_lines(), "__file__", None)
+    except Exception:                                      # noqa: BLE001
+        return ""
+    return path if path and os.path.isfile(path) else ""
+
+
 def _chart_lines_note() -> str:
     """What the description says of ``chart_lines`` in the box: only where
-    the installed reference library has it (BACKLOG GM-153)."""
+    an app registered reference charts (the geotechnical app, from a
+    reference library that has them; BACKLOG GM-153, INF-31 step 6)."""
+    path = _chart_lines_path()
+    if not path:
+        return ""
     try:
-        from geotech_references.chart_lines import chart_names
-        names = ", ".join(chart_names())
+        names = ", ".join(_registered_chart_lines().chart_names())
     except Exception:                                      # noqa: BLE001
         return ""
     return (

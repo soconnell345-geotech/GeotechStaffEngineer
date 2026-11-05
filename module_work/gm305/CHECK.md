@@ -18,14 +18,14 @@ Foundations*, 2002), chapter 5 (`geotech_references/gec_6/text/chapter05.json`):
   friction angle (Chen & McCarron, 1991)".
 - pp. 49-50 (Sec. 5.2.1): in general shear "a triangular wedge beneath the
   footing, Zone I, remains elastic and moves down with the footing".
-- p. 99 (Sec. 5.5): "For concrete cast against cohesionless or granular
+- pp. 99-100 (Sec. 5.4): "For concrete cast against cohesionless or granular
   material, the coefficient of friction, tan delta, will be equal to the
   tangent of the friction angle (tan phi) for the soil supporting the
   footing"; on clay "c_a is typically taken as equal to the undrained
   shear strength".
 
 **Rough or smooth.** The wedge moving down with the footing (pp. 49-50)
-and a concrete base that takes the soil's own friction or adhesion (p. 99)
+and a concrete base that takes the soil's own friction or adhesion (pp. 99-100)
 are a footing whose base does not slip: `base='rough'` (the footing's
 nodes held horizontally) is the default, with that basis in `choices`.
 `'smooth'` (no base friction) is offered as the alternative; no held
@@ -57,7 +57,7 @@ reference prints it as the basis of Eq. 5-7, so it is not the default.
     plateau); otherwise q_ult is a lower bound of that mesh's answer and a
     warning says so. Steps whose displacements stand still are accepted
     (`settled_ratio = 0.1`, as the SRM, Griffiths & Lane 1999).
-  - Every rigid result warns that q_ult falls as the mesh is refined.
+  - Every rigid result warns that q_ult read high and fell as the mesh was refined on the clay check, with no mesh-converged value for c-phi or c = 0.
   - Results now carry `footing`, `base`, `choices` (footing model; rigid:
     base, each with how it was set and its basis), and for rigid
     `pressure_settlement` and `settlement_max_m`; `q_max_kPa` is None for

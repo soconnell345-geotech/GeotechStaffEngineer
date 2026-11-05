@@ -16,7 +16,11 @@ hand-typed "DIGGS" file that fails the schema at its root.
 
 **Dictionary check and DIGGS 2.5.a: still pydiggs**, an OPTIONAL dependency.
 Use ``has_pydiggs()`` to check availability; those functions raise a clear
-ImportError when it is missing.
+ImportError when it is missing. Both read files pydiggs ships
+(``schemas/diggs-schema-2.5.a/Complete.xsd``, ``dictionaries/properties.xml``);
+every release on PyPI from 0.1.x to 1.4.1 has both (checked 2026-11-05,
+BACKLOG RI-41), and a build without one is refused with a message naming
+what is missing.
 
 Public API
 ----------
@@ -191,9 +195,29 @@ def get_schema_path(version: str = "2.6") -> str:
         raise ValueError(f"Unsupported schema version: {version}. Use '2.6' or '2.5.a'")
 
     if not os.path.exists(schema_path):
-        raise FileNotFoundError(f"Schema file not found: {schema_path}")
+        # Every pydiggs release on PyPI to 1.4.1 ships this file (checked
+        # 2026-11-05, BACKLOG RI-41); 1.x dropped only the sample
+        # Example_2-DIGGS.XML that 0.1.x kept beside it. Say what is
+        # missing, from which pydiggs, and that 2.6 needs none of it.
+        raise FileNotFoundError(
+            f"DIGGS 2.5.a cannot be checked here: pydiggs "
+            f"{_pydiggs_version()} has no 2.5.a schema at {schema_path}. "
+            f"Install a pydiggs that ships schemas/diggs-schema-2.5.a/ "
+            f"(every release to 1.4.1 does), or check against DIGGS 2.6, "
+            f"which is bundled with this package and needs no pydiggs.")
 
     return schema_path
+
+
+def _pydiggs_version() -> str:
+    """The installed pydiggs' version, for messages; 'unknown' when it
+    does not say."""
+    try:
+        from importlib.metadata import version
+        return version("pydiggs")
+    except Exception:
+        import pydiggs
+        return str(getattr(pydiggs, "__version__", "unknown"))
 
 
 def get_dictionary_path() -> str:
@@ -216,7 +240,10 @@ def get_dictionary_path() -> str:
     dict_path = os.path.join(pydiggs_dir, "dictionaries", "properties.xml")
 
     if not os.path.exists(dict_path):
-        raise FileNotFoundError(f"Dictionary file not found: {dict_path}")
+        raise FileNotFoundError(
+            f"The DIGGS dictionary cannot be checked here: pydiggs "
+            f"{_pydiggs_version()} has no dictionaries/properties.xml at "
+            f"{dict_path}. Every pydiggs release to 1.4.1 ships it.")
 
     return dict_path
 

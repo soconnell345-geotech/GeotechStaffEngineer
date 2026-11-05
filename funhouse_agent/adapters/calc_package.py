@@ -555,6 +555,13 @@ def _save_tables(tables, names, out_dir) -> list:
 # items likewise; the package's own inputs beside the tool's; and the
 # older names it no longer takes, with the reason.
 
+#: Why the MSE package refuses a face batter (GM-114).
+_MSE_BATTER_REASON = (
+    "the MSE package and the mse_wall tool take a vertical face (Ka by "
+    "GEC-11 Vol I Eq. 4-1, p. 4-15); GEC-11 Vol I p. 4-36 takes a face "
+    "battered 10 deg or more by the simplified Coulomb Ka of Eq. 4-26, "
+    "which is not built. A cantilever wall's battered stem is stem_batter")
+
 _PACKAGE_TOOLS = {
     "bearing_capacity_package": {
         "adapter": "bearing_capacity",
@@ -604,10 +611,11 @@ _PACKAGE_TOOLS = {
         "adapter": "retaining_walls",
         "selector": ("wall_type", "cantilever",
                      "The wall to analyse and report: 'cantilever' (the "
-                     "cantilever_wall tool). An MSE wall has no package; "
-                     "run the mse_wall tool."),
-        "tools": {"cantilever": "cantilever_wall"},
-        "selector_values": {"cantilever_wall": "cantilever"},
+                     "cantilever_wall tool) or 'mse' (the mse_wall tool; "
+                     "level backfill only, GM-114)."),
+        "tools": {"cantilever": "cantilever_wall", "mse": "mse_wall"},
+        "selector_values": {"cantilever_wall": "cantilever",
+                            "mse_wall": "mse"},
         # Where the shear key is drawn (GM-216): the sliding check takes
         # its passive on the plane below the toe over the key's depth,
         # wherever the key is, so its place is the figure's only
@@ -646,14 +654,13 @@ _PACKAGE_TOOLS = {
                     "basis": "no key width given: the wall section draws "
                              "the key as wide as the stem, an "
                              "assumption with no printed basis"}}},
-        "not_packaged": {"mse": (
-            "the MSE steps work the earth pressure out again from "
-            "phi_backfill, level backfill only, where the mse_wall tool "
-            "takes the retained fill's own phi, a sloping backfill and "
-            "traffic; run the mse_wall tool")},
         "older": {"cantilever": {
             "FOS_sliding": "FOS_sliding_required",
             "FOS_overturning": "FOS_overturning_required"}},
+        # GM-114: an MSE face battered from vertical is not built
+        "dropped": {k: {"reason": _MSE_BATTER_REASON, "accepts": [0, 0.0]}
+                    for k in ("face_batter", "wall_batter", "batter",
+                              "batter_angle", "face_batter_deg")},
     },
     "ground_improvement_package": {
         "adapter": "ground_improvement",
@@ -1254,6 +1261,17 @@ def _lower_first(text: str) -> str:
     return text
 
 
+def _selector_value(spec: dict, given):
+    """A package's selector value as its run reads ``given`` (``spec``: its
+    ``_PACKAGE_TOOLS`` entry): a string stripped and in lower case, an
+    older spelling (``selector_values``) put under the value it stands
+    for."""
+    if not isinstance(given, str):
+        return given
+    value = given.strip().lower()
+    return spec.get("selector_values", {}).get(value, value)
+
+
 def _run_tool(package: str, params: dict) -> _ToolRun:
     """Run ``package``'s analysis tool on the package's parameters.
 
@@ -1273,10 +1291,7 @@ def _run_tool(package: str, params: dict) -> _ToolRun:
     if "selector" in spec:
         name, default, _ = spec["selector"]
         given = p.pop(name, default)
-        value = given
-        if isinstance(given, str):
-            value = given.strip().lower()
-            value = spec.get("selector_values", {}).get(value, value)
+        value = _selector_value(spec, given)
         why = spec.get("not_packaged", {}).get(value)
         if why:
             raise ValueError(f"{package}: no package for {name}={given!r}: "
@@ -1959,7 +1974,32 @@ def _generate_seismic_package(params: dict) -> dict:
 # 9. Retaining Wall
 # ---------------------------------------------------------------------------
 
+def _mse_package_scope(params: dict) -> None:
+    """GM-114: the MSE package prints a level backfill, as its calc steps
+    do; a sloping or broken backslope is refused here, before a run, with
+    what covers it. A battered face is refused by name (the package's
+    ``dropped`` names, :data:`_MSE_BATTER_REASON`)."""
+    wall = params.get("wall_type")
+    if not (isinstance(wall, str)
+            and wall.strip().lower() in ("mse", "mse_wall")):
+        return
+    slope = params.get("backfill_slope")
+    try:
+        sloping = slope is not None and float(slope) != 0.0
+    except (TypeError, ValueError):
+        sloping = False         # the tool refuses a value that is no angle
+    if sloping:
+        raise ValueError(
+            "retaining_wall_package: the MSE package covers a level backfill "
+            "only (backfill_slope 0; GEC-11 Vol I Eq. 4-1, p. 4-15, and "
+            f"Eqs. 4-5, 4-6, p. 4-20); got backfill_slope={slope!r}. "
+            "The mse_wall tool analyses a sloping or broken backslope "
+            "(Coulomb Kab, Eqs. 4-2, 4-3 and 4-7) and reports its basis in "
+            "'backslope': run it for that wall.")
+
+
 def _generate_retaining_wall_package(params: dict) -> dict:
+    _mse_package_scope(params)
     run = _run_tool("retaining_wall_package", params)
     result, used = run.out
     analysis = {**used, "wall_type": run.value}
@@ -1978,12 +2018,35 @@ def _generate_retaining_wall_package(params: dict) -> dict:
         "FOS_overturning": _r2(result.FOS_overturning),
         "FOS_bearing": _r2(result.FOS_bearing),
     }
+    if run.value == "mse":
+        # GM-114: the bearing pressure and the internal checks as well
+        extra.update(_mse_numbers(result))
     return _build_response(
         "retaining_walls", result, analysis, params,
         run=run,
-        analysis_type="Retaining Wall",
+        analysis_type="MSE Wall" if run.value == "mse" else "Retaining Wall",
         extra=extra,
     )
+
+
+def _mse_numbers(result) -> dict:
+    """The MSE package's numbers beside the verdict (GM-114): sigma_v, the
+    internal checks' least FOS and the levels that fail, as the module
+    worked them out (rounded as the tool prints them)."""
+    levels = result.internal_results or []
+
+    def least(key):
+        values = [lv[key] for lv in levels if lv.get(key) is not None]
+        return round(min(values), 2) if values else None
+    return {
+        "sigma_v_kPa": (None if result.sigma_v is None
+                        else round(result.sigma_v, 1)),
+        "n_levels": len(levels),
+        "FOS_pullout_min": least("FOS_pullout"),
+        "FOS_rupture_min": least("FOS_rupture"),
+        "passes_internal": bool(result.all_pass_internal),
+        "failed_level_depths_m": result.failed_levels,
+    }
 
 
 def _shear_key_place(own: dict, geom) -> dict:
@@ -3452,8 +3515,8 @@ METHOD_INFO = {
     },
     "retaining_wall_package": {
         "category": "Calculation Package",
-        "brief": "Run retaining wall analysis and generate calc package.",
-        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (sliding, overturning, bearing, eccentricity). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked)."},
+        "brief": "Run a cantilever retaining wall (cantilever_wall) or MSE wall (mse_wall, level backfill and vertical face only) analysis and generate its calc package.",
+        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user."},
     },
     "ground_improvement_package": {
         "category": "Calculation Package",

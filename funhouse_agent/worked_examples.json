@@ -324,7 +324,7 @@
     }
    }
   ],
-  "published_result": "Sliding CDRs: Strength I max = 1.85, Strength I min = 2.08, critical max/min = 1.37 (governs). Eccentricity: eL = 2.87 ft (Strength I max), 3.87 ft (critical) vs limit L/4 = 4.50 ft — OK. Bearing: Strength I max eL = 2.60 ft, B' = 12.79 ft, sigma_v = 6.70 ksf, CDR = 1.57; Service I sigma_v = 4.66 ksf; critical-combination sigma_v = 5.86 ksf (source 'consistent-values' rounding). All checks pass.",
+  "published_result": "Sliding CDRs: Strength I max = 1.85, Strength I min = 2.08, critical max/min = 1.37 (governs). Eccentricity: eL = 2.87 ft (Strength I max), 3.87 ft (critical) vs limit L/4 = 4.50 ft — OK. Bearing: Strength I max eL = 2.60 ft, B' = 12.79 ft, sigma_v = 6.70 ksf, CDR = 1.57; Service I sigma_v = 4.66 ksf; critical-combination sigma_v = 5.86 ksf, CDR = 1.79 (Strength I min's vertical loads, LL 1.75 on the surcharge over the zone, under Strength I max's overturning moment). All checks pass.",
   "computed_result": {
    "sliding_CDR_strength_max": 1.852,
    "sliding_CDR_strength_min": 2.073,
@@ -335,8 +335,10 @@
    "bearing_sigma_v_strength_max_kPa": 321.11,
    "bearing_CDR_strength": 1.566,
    "bearing_sigma_v_service_kPa": 222.97,
+   "bearing_sigma_v_critical_kPa": 280.75,
+   "bearing_CDR_critical": 1.791,
    "all_checks_pass": true,
-   "unit_check": "eL_strength_max 0.8748 m = 2.87 ft; eL_critical 1.1809 m = 3.87 ft; e_limit 1.3716 m = 4.50 ft; sigma_v 321.1 kPa = 6.71 ksf (pub 6.70); 222.97 kPa = 4.66 ksf; critical 275.41 kPa = 5.75 ksf vs pub 5.86 (within the source's own rounding note, ~2%)"
+   "unit_check": "eL_strength_max 0.8748 m = 2.87 ft; eL_critical 1.1809 m = 3.87 ft; e_limit 1.3716 m = 4.50 ft; sigma_v 321.1 kPa = 6.71 ksf (pub 6.70); 222.97 kPa = 4.66 ksf; critical 280.75 kPa = 5.86 ksf, CDR 1.791 (pub 5.86, 1.79)"
   },
   "report_notes": "A good report tabulates the unfactored loads (V1, Vs, F1, F2 and moment arms about the toe) first, then shows each AASHTO load-factor combination (Strength I max/min, Service I) explicitly, flagging that live load is excluded from the resisting side for sliding/eccentricity but included for bearing. Report CDRs (capacity:demand), not ASD factors of safety — the dispatch method mse_wall reports ASD FOS and is NOT the LRFD path. State the governing combination for each check (critical max/min governs sliding here) and compare eL against the L/4 limit for walls on soil.",
   "provenance": "validation_examples/test_published_v009_v011.py::test_v009_lrfd_external_stability_high_level_path, test_v009_sliding_CDR_lrfd, test_v009_eccentricity_lrfd, test_v009_bearing_lrfd",
@@ -2139,7 +2141,7 @@
    "FHWA Soils and Foundations"
   ],
   "source": "FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (Dec 2006), Chapter 9, Example 9-3, printed pp. 9-58 to 9-59",
-  "problem": "A 1 ft x 1 ft (0.3048 m) square precast concrete pile must carry an allowable load of 40 tons (355.9 kN) with FS = 2, i.e. required Qu = 80 tons (711.7 kN). Toe resistance is neglected. Profile: upper clay D1 = 10 ft (3.048 m), gamma = 120 pcf (18.85 kN/m3), c1 = 500 psf (23.94 kPa), phi = 0; below it a stiffer clay, gamma = 130 pcf (20.42 kN/m3), c2 = 1,100 psf (52.67 kPa), phi = 0. Site-specific tests indicate adhesion = cohesion (alpha = 1.0) in BOTH layers. The manual solves for the required penetration D2 into the lower clay (~32 ft) giving a total length of ~42 ft (12.80 m). Here we verify the 42-ft pile by computing its capacity. Conversions: 1 psf = 0.04788 kPa, 1 pcf = 0.15709 kN/m3, 1 ton = 8.896 kN.",
+  "problem": "A 1 ft x 1 ft (0.3048 m) square precast concrete pile must carry an allowable load of 40 tons (355.9 kN) with FS = 2, i.e. required Qu = 80 tons (711.7 kN). Toe resistance is neglected. Profile: upper clay D1 = 10 ft (3.048 m), gamma = 120 pcf (18.85 kN/m3), c1 = 500 psf (23.94 kPa), phi = 0; below it a stiffer clay, gamma = 130 pcf (20.42 kN/m3), c2 = 1,100 psf (52.67 kPa), phi = 0. Site-specific tests indicate adhesion = cohesion (alpha = 1.0) in BOTH layers. The manual solves for the required penetration D2 into the lower clay (~32 ft) giving a total length of ~42 ft (12.80 m). Here we verify the 42-ft pile by computing its capacity, giving each clay layer the example's site-specific alpha = 1.0 (the layer inputs alpha and adhesion_basis). Conversions: 1 psf = 0.04788 kPa, 1 pcf = 0.15709 kN/m3, 1 ton = 8.896 kN.",
   "dispatch_calls": [
    {
     "module": "axial_pile",
@@ -2163,14 +2165,18 @@
        "soil_type": "cohesive",
        "unit_weight": 18.851,
        "cohesion": 23.94,
-       "description": "upper clay c=500 psf"
+       "description": "upper clay c=500 psf",
+       "alpha": 1.0,
+       "adhesion_basis": "site-specific tests: adhesion = cohesion (NHI-06-089 Example 9-3, p. 9-58)"
       },
       {
        "thickness": 12.192,
        "soil_type": "cohesive",
        "unit_weight": 20.421,
        "cohesion": 52.67,
-       "description": "lower clay c=1,100 psf"
+       "description": "lower clay c=1,100 psf",
+       "alpha": 1.0,
+       "adhesion_basis": "site-specific tests: adhesion = cohesion (NHI-06-089 Example 9-3, p. 9-58)"
       }
      ]
     }
@@ -2180,14 +2186,14 @@
   "computed_result": {
    "perimeter_m": 1.2192,
    "tip_area_m2": 0.092903,
-   "Q_skin_kN": 761.9,
+   "Q_skin_kN": 715.3,
    "Q_tip_kN": 44.0,
-   "Q_ultimate_kN": 806.0,
-   "Q_allowable_kN": 403.0,
-   "vs_published": "Q_ultimate 806.0 vs 711.7 kN (+13.3 %); without the toe the manual neglects, 761.9 kN (+7.1 %). The two rest on different adhesion bases. The example reads no chart: its problem statement (p. 9-58) says site-specific tests indicated that the adhesion may be taken equal to the cohesion, so it uses alpha = 1.0 in both clays. The module follows the alpha method of GEC-12 (2016), Steps 1 and 2 (p. 250), reading Ca off Fig. 7-17 as drawn (GM-229): the concrete, timber and corrugated curves, with D from the ground surface (p. 246). That gives alpha 1.006 in the upper clay (su 0.5 ksf, D = 10b) and 1.074 in the lower clay (su 1.1 ksf, D = 42b, on the D = 40b curve), so 89.5 kN and 672.4 kN against the printed 10 tons (89.0 kN) and 70 tons (622.7 kN; 2.2 tons/ft x 32 ft = 70.4 tons). The module has no input for a site-specific alpha, so its run cannot take the example's basis. Before GM-229 the module held Ca at su (alpha at most 1.0), which happened to match the example's alpha: shaft 715.3 kN, total 759.3 kN (+6.7 %). Before GM-121 a simplified alpha curve gave 0.642 in the lower clay and the total was 535.1 kN (-24.8 %).",
-   "reconciliation": "The gap is the adhesion basis, not the arithmetic. At the example's alpha of 1.0, the module's perimeter and layer lengths give 89.0 + 626.3 = 715.3 kN with the toe left out as the manual does, within 0.6 % of the printed 711.7 kN (the manual rounds 70.4 tons to 70). Read off Fig. 7-17 as GEC-12's alpha method has it, alpha is 1.006 and 1.074 instead, and nearly all of the +7.1 % is the lower clay's 1.074. The toe the manual neglects (9 cu At) is reported separately as Q_tip, 44.0 kN, so it can be excluded. Perimeter (1.2192 m = 4 ft) and tip area (0.0929 m2 = 1 ft2) match the manual's Cd and At exactly."
+   "Q_ultimate_kN": 759.3,
+   "Q_allowable_kN": 379.7,
+   "vs_published": "Like for like since GM-237: each clay layer takes the example's site-specific alpha = 1.0 (the layer inputs alpha and adhesion_basis), so the module's shaft resistance is 89.0 kN (upper clay) + 626.3 kN (lower clay) = 715.3 kN against the printed 10 + 70 = 80 tons (711.7 kN, +0.5 %). The manual rounds D2 to 32 ft and 70.4 tons to 70: at the 42-ft pile it verifies, 10 + 2.2 x 32 = 80.4 tons = 715.2 kN, which the module matches to 0.1 kN. With the toe the manual neglects (9 cu At = 44.0 kN, reported separately as Q_tip), Q_ultimate is 759.3 kN. Left to the chart (no layer alpha), the module follows the alpha method of GEC-12 (2016), Steps 1 and 2 (p. 250), reading Ca off Fig. 7-17 as drawn: the concrete, timber and corrugated curves with D from the ground surface to the bottom of each clay layer or to the toe (p. 246 and the figure's legend, p. 248), alpha 1.006 in the upper clay (su 0.5 ksf, D = 10b) and 1.074 in the lower clay (su 1.1 ksf, D = 42b, on the D = 40b curve), shaft 761.9 kN (+7.1 %). Fig. 7-18's middle graph (soft clay over stiff clay, p. 246) would give the lower clay alpha 0.73 (D = 32b into it, on the D = 20b curve) and a shaft of 546.1 kN; with adhesion_chart 'fig_7_18' or 'smaller' the module asks for the lower clay's fig_7_18_case, since GEC-12 gives no su that makes a clay soft or stiff.",
+   "reconciliation": "The arithmetic matches: perimeter (1.2192 m = 4 ft) and tip area (0.0929 m2 = 1 ft2) are the manual's Cd and At, and at alpha = 1.0 the layer lengths 10 ft and 32 ft give the printed shaft resistance to within the manual's rounding. The differences in the chart runs are the adhesion basis only: the example reads no chart, because its problem statement says site-specific tests indicated the adhesion may be taken equal to the cohesion."
   },
-  "report_notes": "A capacity report should state the adhesion basis explicitly: the manual uses alpha = 1.0 from site-specific tests (adhesion equal to cohesion, stated in its problem), while the module reads Ca off GEC-12 Fig. 7-17 as drawn (alpha method, Sec. 7.2.1.3.2), whose D = 40b curve for concrete piles passes above Ca = su at low su (alpha 1.07 at su = 1.1 ksf). Name the curve, D/b and alpha per layer from the result's choices list ('Ca above su (alpha method)' says where Ca exceeds su), and whether toe resistance in clay is counted (the manual neglects it; the module reports it separately as Q_tip so it can be excluded). Where the engineer judges alpha above 1.0 unwarranted, the report says so and why: GEC-12's alpha-method steps set no such limit, and the API method's alpha <= 1.0 (Sec. 7.2.1.3.3) is API RP 2A's.",
+  "report_notes": "A capacity report should state the adhesion basis per clay layer: here alpha = 1.0 from site-specific tests (the manual's problem statement), which the module takes as each layer's alpha with its adhesion_basis and lists under 'site-specific adhesion (alpha method)' in the result's choices. Without site tests, the module reads Ca off GEC-12 Fig. 7-17 as drawn (alpha method, Sec. 7.2.1.3.2), whose D = 40b curve for concrete piles passes above Ca = su at low su (alpha 1.07 at su = 1.1 ksf); where a soft clay overlies a stiff one, GEC-12 p. 246 names Fig. 7-18's middle graph, and the inexperienced user takes the smaller of the two charts. Say whether toe resistance in clay is counted (the manual neglects it; the module reports it separately as Q_tip so it can be excluded).",
   "provenance": "NHI-06-089 Example 9-3, pdf pp.168-169",
   "source_doc": "FHWA NHI-06-089 Soils and Foundations Vol 2.pdf",
   "source_pdf_pages": [

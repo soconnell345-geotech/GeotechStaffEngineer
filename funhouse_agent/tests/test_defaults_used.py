@@ -711,24 +711,40 @@ def _same(echo, value) -> bool:
     return _diff(echo, value) is None
 
 
+def _run_tool_parameters(mod, method: str, params: dict = None) -> dict:
+    """The declared parameters of the tool a calc package call runs (the
+    selector's value in ``params``, else its default, read as the run
+    reads it), else {}. A package words its rows and its defaults_used
+    from that tool's declaration (``_package_declared``), so a case the
+    union of a multi-tool package leaves to the run, the tools' cases
+    differing (``_union_spec``), is that tool's."""
+    spec = getattr(mod, "_PACKAGE_TOOLS", {}).get(method)
+    if spec is None:
+        return {}
+    value = None
+    if "selector" in spec:
+        name, default, _ = spec["selector"]
+        value = mod._selector_value(spec, (params or {}).get(name, default))
+    tool = spec["tools"].get(value)
+    if tool is None:
+        return {}
+    return mod._tool_adapter(method).METHOD_INFO[tool].get("parameters") \
+        or {}
+
+
 def _specs(agent: str, method: str, params: dict = None) -> dict:
     """The declared inputs of a run: ``method``'s own and, for a calc
-    package, its tools' (a case is a tool's declaration); for a method
-    that takes a package's inputs (render_tables), that package's."""
+    package, the tool's the call runs on top, as the package itself takes
+    them (a case is a tool's declaration); for a method that takes a
+    package's inputs (render_tables), that package's."""
     mod = D._load_adapter(agent)
     out = {}
     of = (mod.METHOD_INFO.get(method) or {}).get("parameters_of")
     if of and (params or {}).get(of) in mod.METHOD_INFO:
         out.update(_specs(agent, params[of], params))
-    if agent == "calc_package" and method in getattr(mod, "_PACKAGE_TOOLS",
-                                                     {}):
-        tools = mod._PACKAGE_TOOLS[method]
-        adapter = mod._tool_adapter(method)
-        for tool in set(tools["tools"].values()):
-            for name, spec in adapter.METHOD_INFO[tool]["parameters"].items():
-                if isinstance(spec, dict) and spec.get("when_absent"):
-                    out[name] = spec
     out.update((mod.METHOD_INFO.get(method) or {}).get("parameters") or {})
+    if agent == "calc_package":
+        out.update(_run_tool_parameters(mod, method, params))
     return out
 
 
@@ -1375,16 +1391,22 @@ def test_a_left_out_input_that_moves_the_result_states_its_case(
         if key in MP.SLOW or MP.skip_reason(key):
             continue
         agent, method = key.split("#")[0].split("|")
-        info = D._load_adapter(agent).METHOD_INFO[method]
+        mod = D._load_adapter(agent)
+        info = mod.METHOD_INFO[method]
         declared = info.get("parameters") or {}
         aliases = info.get("parameter_aliases") or {}
         params = probe["params"]
+        # a calc package's input states a case where the tool the call
+        # runs does (the union leaves differing cases to the run)
+        tool = _run_tool_parameters(mod, method, params)
         drop = []
         for given in params:
             name = aliases.get(given, given)
             spec = declared.get(name)
             if isinstance(spec, dict) and not spec.get("required") \
-                    and not _states_absence(spec) and not _exempt(
+                    and not _states_absence(spec) \
+                    and not _states_absence(tool.get(name) or {}) \
+                    and not _exempt(
                         agent, method, name,
                         spec.get("description") or spec.get("brief") or ""):
                 drop.append((given, name))

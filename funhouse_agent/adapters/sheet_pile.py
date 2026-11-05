@@ -286,3 +286,8 @@ declare_when_absent(METHOD_INFO, {
 declare_applies_when(METHOD_INFO, {
     method: {"log_spiral_source": {"pressure_method": ["log_spiral"]}}
     for method in ("cantilever_wall", "anchored_wall")})
+
+# The keys each item of a list parameter carries, so a key given at the
+# top level is refused with a hint naming its list (BACKLOG GM-113).
+from funhouse_agent.adapters import item_keys_for, merge_item_keys  # noqa: E402,F401
+ITEM_KEYS = item_keys_for(METHOD_INFO, "layers", _LAYER_KEYS)

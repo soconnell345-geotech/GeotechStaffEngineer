@@ -29,7 +29,10 @@ words on a scan (``Document.page(p, words=True)``).
      came out of that drive, before its own printed depth;
    - a water reading by its printed depth on the line its note or a
      groundwater word names; one with no depth by the line its note names;
-   - a laboratory test by its sample's label line, then by the row that
+   - a laboratory test on a table printed one column per sample (its
+     sample labels across a header row, :func:`sample_columns`) by its
+     sample's column, boxed over the cells printing its results (RI-99);
+     else by its sample's label line, then by the row that
      prints its own results, then by its boring's label on a row that also
      prints its depth or one of its results (never a heading,
      :func:`boring_heading`); of several label lines, the one that names
@@ -37,9 +40,12 @@ words on a scan (``Document.page(p, words=True)``).
      sheet's title: a page-level box
      (:attr:`Placement.page_level`), but for the answer's only test on
      that page, whose place the sheet is;
-   - a calculation value by its number where the printout around it (its
-     line, its column's head, the headings above) carries its label; then
-     where one place carries clearly more of the label than any other; then
+   - a calculation value printed with its label in repeated blocks (per
+     boring, per load case) by the one block whose own heading names it
+     (:func:`block_headings`, RI-99), and in none when it names none; else
+     by its number where the printout around it (its line, its column's
+     head, the headings above) carries its label; then where one
+     place carries clearly more of the label than any other; then
      by its number where the page prints it once. A value that is words (a
      site class's letter) by those words on its label's line, or by the
      words themselves; never by its label alone;
@@ -164,7 +170,7 @@ STATUSES = (PLACED, MOVED, SEVERAL, NOT_FOUND, NO_TEXT, NO_PAGE)
 #: another page, a sheet's title, or a boring's label (which every test
 #: of that boring shares) says nothing about which object it is.
 WORD_ANCHORS = frozenset((
-    "label", "description", "sample label",
+    "label", "description", "sample label", "sample column",
     "label and number", "number by its label", "label and text",
     "printed text", "quote", "quote on its page"))
 #: The anchors that find an object's page, not its place on it: a sheet's
@@ -1319,11 +1325,164 @@ def _sample_line(sample: str, boring: str, top: Optional[float],
                  numbers: Sequence[float] = ()) -> Anchor:
     """A test's sample label; of several (one sample label in each boring
     of a summary), narrowed by what the test's row prints
-    (:func:`_row_tests`)."""
+    (:func:`_row_tests`). On a table printed one column per sample
+    (:func:`sample_columns`), its column instead (:func:`_sample_column`)."""
     def find(words: PageWords, page: int) -> List[Candidate]:
         return _narrowed(label_hits(words(page), sample),
                          _row_tests(boring, top, numbers))
     return "sample label", find
+
+
+#: A label's shape: its letters, then its number (``S-3`` folds to ``s3``,
+#: ``SS 4`` to ``ss4``, ``ST-2A`` to ``st2a``).
+_LABEL_SHAPE = re.compile(r"^([a-z]{1,4})(\d{1,4})([a-z]?)$")
+
+
+def _shaped_runs(row: Row, prefix: str,
+                 skip: Sequence[int] = ()) -> List[Tuple[int, int]]:
+    """``(first, last)`` word indexes of each run of up to three words in
+    ``row`` printing a label of ``prefix``'s shape (``S-1``, ``S-2``), left
+    to right, none overlapping, none using a word of ``skip``."""
+    out: List[Tuple[int, int]] = []
+    i = 0
+    while i < len(row.words):
+        joined, found = "", None
+        for j in range(i, min(i + 3, len(row.words))):
+            if j in skip:
+                break
+            joined += row.words[j].fold
+            shape = _LABEL_SHAPE.match(joined)
+            if shape and shape.group(1) == prefix:
+                found = (i, j)
+                break
+            if not prefix.startswith(joined) and not (
+                    joined.startswith(prefix) and joined[len(prefix):]
+                    .isdigit()):
+                break
+        if found:
+            out.append(found)
+            i = found[1] + 1
+        else:
+            i += 1
+    return out
+
+
+def _row_at(text: PageText, row: Row) -> Optional[int]:
+    return next((i for i, r in enumerate(text.rows) if r is row), None)
+
+
+def sample_columns(text: PageText, row: Row, cand: Candidate, label: str
+                   ) -> Optional[Tuple[float, float, int]]:
+    """Whether the sample label at ``cand`` on ``row`` heads a column of a
+    table printed one column per sample: ``(left, right, last row)`` of its
+    column when it does, else None (a table printed one row per sample, or
+    one whose orientation is not clear, which keeps today's placement).
+
+    The orientation is read from the printed layout: two or more other
+    labels of the label's shape (``S-1`` beside ``S-2`` and ``S-3``) on
+    its row, and fewer straight above or below it, say the samples run
+    across a header row. The column runs from midway to the label on its
+    left to midway to the one on its right (as far again past the outer
+    labels), down to the row above the next row of such labels (the next
+    table's header) or the first row that prints nothing in it (the
+    table's foot: a table printed one row per sample below it, one label
+    to a row, would otherwise run on)."""
+    shape = _LABEL_SHAPE.match(_fold_token(label))
+    at = _row_at(text, row)
+    if shape is None or at is None or cand.bbox is None:
+        return None
+    prefix = shape.group(1)
+    own = [i for i, w in enumerate(row.words)
+           if w.bbox[0] >= cand.bbox[0] - 0.5 and
+           w.bbox[2] <= cand.bbox[2] + 0.5]
+    across = [(row.words[i].bbox[0], row.words[j].bbox[2])
+              for i, j in _shaped_runs(row, prefix, own)]
+    if len(across) < 2:
+        return None
+    down = 0
+    for other in text.rows:
+        if other is row:
+            continue
+        for i, j in _shaped_runs(other, prefix):
+            x0, x2 = other.words[i].bbox[0], other.words[j].bbox[2]
+            if x0 <= cand.bbox[2] + 4.0 and x2 >= cand.bbox[0] - 4.0:
+                down += 1
+    if down >= len(across):
+        return None
+    middle = (cand.bbox[0] + cand.bbox[2]) / 2.0
+    centres = sorted([(a + b) / 2.0 for a, b in across] + [middle])
+    k = centres.index(middle)
+    step = min(b - a for a, b in zip(centres, centres[1:]))
+    left = (centres[k - 1] + middle) / 2.0 if k else middle - step / 2.0
+    right = ((centres[k + 1] + middle) / 2.0 if k + 1 < len(centres)
+             else middle + step / 2.0)
+    last = len(text.rows) - 1
+    for n in range(at + 1, len(text.rows)):
+        below = text.rows[n]
+        if len(_shaped_runs(below, prefix)) >= 2 or not any(
+                left <= (w.bbox[0] + w.bbox[2]) / 2.0 <= right
+                for w in below.words):
+            last = n - 1
+            break
+    return left, right, last
+
+
+def _column_cells(text: PageText, row: Row, column: Tuple[float, float, int],
+                  numbers: Sequence[float]) -> List[Word]:
+    """The words below ``row`` in ``column`` printing one of ``numbers``:
+    the sample's cells on its properties' rows."""
+    left, right, last = column
+    at = _row_at(text, row)
+    out: List[Word] = []
+    for below in text.rows[at + 1:last + 1]:
+        for w in below.words:
+            middle = (w.bbox[0] + w.bbox[2]) / 2.0
+            if left <= middle <= right and any(w.prints(n)
+                                               for n in numbers):
+                out.append(w)
+    return out
+
+
+def _sample_column(sample: str, boring: str, top: Optional[float],
+                   numbers: Sequence[float] = ()) -> Anchor:
+    """A test's sample label heading a column of a table printed one column
+    per sample (:func:`sample_columns`): the box of the column's cells that
+    print the test's own results, from its first property's row to its
+    last. Of several such labels (one sample label under each boring of the
+    header), the column printing most of the test's boring, depth and
+    results, where one prints more than the others. Nothing where the
+    label heads no column, or its column prints none of the test's results
+    (today's placement, by its label, then follows)."""
+    def find(words: PageWords, page: int) -> List[Candidate]:
+        text = words(page)
+        if not numbers:
+            return []
+        scored: List[Tuple[int, List[Word]]] = []
+        for row, cand in label_hits(text, sample):
+            column = sample_columns(text, row, cand, sample)
+            if column is None:
+                return []                # not every label heads a column
+            cells = _column_cells(text, row, column, numbers)
+            if not cells:
+                continue
+            left, right, last = column
+            inside = [w for r in text.rows[:last + 1] for w in r.words
+                      if left <= (w.bbox[0] + w.bbox[2]) / 2.0 <= right]
+            score = sum(1 for n in numbers
+                        if any(w.prints(n) for w in cells))
+            if top is not None and any(w.prints(top) for w in inside):
+                score += 1
+            if boring and any(_row_has_label(Row([w]), boring)
+                              for w in inside):
+                score += 1
+            scored.append((score, cells))
+        if not scored:
+            return []
+        scored.sort(key=lambda sc: -sc[0])
+        if len(scored) > 1 and scored[0][0] == scored[1][0]:
+            return []
+        return [Candidate(_union([w.bbox for w in scored[0][1]]))]
+    return "sample column", find
 
 
 def _boring_line(boring: str, top: Optional[float],
@@ -1414,14 +1573,16 @@ def _values_row(numbers: Sequence[float]) -> Anchor:
 
 def lab_targets(test: Any) -> List[Anchor]:
     """The anchors of one laboratory test (a ``LabTest``): its sample's
-    label; the row printing its own results; its boring's label; the
-    sheet's title."""
+    column, in a table printed one column per sample; its sample's label;
+    the row printing its own results; its boring's label; the sheet's
+    title."""
     sample = str(getattr(test, "sample_id", "") or "").strip()
     boring = str(getattr(test, "investigation_id", "") or "").strip()
     top = _value(getattr(test, "depth_top", None))
     numbers = result_numbers(getattr(test, "result", None))
     anchors: List[Anchor] = []
     if sample:
+        anchors.append(_sample_column(sample, boring, top, numbers))
         anchors.append(_sample_line(sample, boring, top, numbers))
     anchors.append(_values_row(numbers))
     if boring:
@@ -1590,23 +1751,131 @@ def _matched(name: str, number: float, words: PageWords, page: int
             for row, word in number_rows(text, number)]
 
 
+def _labelled_cells(name: str, number: float, text: PageText
+                    ) -> List[Tuple[float, Row, Word]]:
+    """``(score, row, word)`` for each place printing ``number`` where the
+    printout around it carries half its label or more
+    (:func:`cell_score`)."""
+    out = []
+    for row, word in number_rows(text, number):
+        score = cell_score(name, text, row, word)
+        if score >= LABEL_MIN_SCORE:
+            out.append((score, row, word))
+    return out
+
+
 def _label_and_number(name: str, number: float) -> Anchor:
     """The number where the printout around it carries half its label or
     more (:func:`cell_score`); of several, the best, where it leads the
-    next by :data:`LABEL_MARGIN`."""
+    next by :data:`LABEL_MARGIN`. Nothing where those places are one
+    label's lines in repeated blocks (:func:`block_headings`): there the
+    block's own heading decides (:func:`_number_in_block`), and the
+    headings this score reads, the nearest six, reach the block above as
+    readily as the value's own."""
     def find(words: PageWords, page: int) -> List[Candidate]:
-        scored = []
-        for matches, cand in _matched(name, number, words, page):
-            total = sum(weight for weight, _ in matches)
-            score = 100.0 * sum(w * d for w, d in matches) / total \
-                if total else 0.0
-            if score >= LABEL_MIN_SCORE:
-                scored.append((score, cand))
+        text = words(page)
+        scored = _labelled_cells(name, number, text)
         if not scored:
             return []
-        best = max(s for s, _ in scored)
-        return [c for s, c in scored if s > best - LABEL_MARGIN]
+        if len(scored) > 1 and block_headings(
+                text, [(row, w) for _, row, w in scored]) is not None:
+            return []
+        best = max(s for s, _, _ in scored)
+        return [Candidate(w.bbox) for s, _, w in scored
+                if s > best - LABEL_MARGIN]
     return "label and number", find
+
+
+def _row_words(row: Row) -> str:
+    """A row's printed words less its numbers: what a block printed again
+    prints the same, whatever its values."""
+    return " ".join(w.fold for w in row.words if not w.numbers)
+
+
+def block_headings(text: PageText, cells: Sequence[Tuple[Row, Word]]
+                   ) -> Optional[List[Row]]:
+    """The heading of each repeated block a value's ``cells`` (each
+    ``(row, word)``) sit in, one for each cell, in the order given; None
+    where the cells are not in repeated blocks.
+
+    A printout that repeats a block (once per boring, per load case)
+    prints the same labels on the same lines of every block, the values
+    apart. So from the rows of the value's label, one in each block, the
+    rows straight above are read in step, line by line, while every block
+    prints the same words on them; the first line where the blocks differ
+    is each block's own heading (``Boring B-1`` above one, ``Boring B-2``
+    above the next). It is looked for no further up than the block above
+    begins (the row of its label), and None when the label's rows print
+    different words (not one block printed again) or no line differs.
+
+    A heading prints no value in the value's column, so a line found that
+    prints a number there is a line of values, and gives None (two
+    sections that share a label line, but are not one block printed
+    again). Lines alike but for numbers printed outside the value's
+    column also give None: headings that differ only by a number
+    (``Load Case 1``, ``Load Case 2``) read as one line once their numbers
+    are set aside, and the search would climb past them into the lines of
+    the block above."""
+    rows = [row for row, _ in cells]
+    at = [_row_at(text, row) for row in rows]
+    if len(rows) < 2 or any(i is None for i in at) or \
+            len({_row_words(r) for r in rows}) != 1:
+        return None
+    tops = sorted(at)
+    if len(set(tops)) != len(tops):
+        return None                              # two on one line
+    reach = min([tops[0]] + [b - a - 1 for a, b in zip(tops, tops[1:])])
+    for up in range(1, reach + 1):
+        above = [text.rows[i - up] for i in at]
+        valued = any(w.numbers and _overlaps(w, word)
+                     for r, (_, word) in zip(above, cells) for w in r.words)
+        if len({_row_words(r) for r in above}) > 1:
+            return None if valued else above
+        if not valued and len({r.text for r in above}) > 1:
+            return None                          # differ only by a number
+    return None
+
+
+def _block_words(name: str, row: Row) -> List[Tuple[str, float]]:
+    """The label's words (:func:`_label_words`) its own line does not
+    print as words: the ones left to name its block. The words the line
+    prints ("allowable bearing pressure") are in every block alike."""
+    own = _fold(" ".join(w.text for w in row.words if not w.numbers)).split()
+    return [(want, weight) for want, weight in _label_words(name)
+            if not _found(want, own)]
+
+
+def _heading_score(wanted: Sequence[Tuple[str, float]], heading: Row
+                   ) -> float:
+    """How much of a value's block words (:func:`_block_words`) a block's
+    heading prints: the weight of those found on it."""
+    tokens = _fold(heading.text).split()
+    return sum(weight * _found(want, tokens) for want, weight in wanted)
+
+
+def _number_in_block(name: str, number: float) -> Anchor:
+    """Of a number printed with its label in several repeated blocks of a
+    printout (:func:`block_headings`), the one whose own heading carries
+    more of the value's label than any other block's, counting only the
+    label's words its own line does not print (:func:`_block_words`): a
+    value named for a boring or a case lands in that block. One that names
+    no block gives every block's place (and stays ``several``)."""
+    def find(words: PageWords, page: int) -> List[Candidate]:
+        text = words(page)
+        cells = _labelled_cells(name, number, text)
+        if len(cells) < 2:
+            return []
+        headings = block_headings(text, [(row, w) for _, row, w in cells])
+        if headings is None:
+            return []
+        wanted = _block_words(name, cells[0][1])
+        scored = sorted(((_heading_score(wanted, h), w)
+                         for h, (_, _, w) in zip(headings, cells)),
+                        key=lambda sw: -sw[0])
+        if scored[0][0] <= scored[1][0]:
+            return [Candidate(w.bbox) for _, _, w in cells]
+        return [Candidate(scored[0][1].bbox)]
+    return "number in its block", find
 
 
 def _number_by_label(name: str, number: float) -> Anchor:
@@ -1681,7 +1950,8 @@ def value_targets(value: Any) -> List[Anchor]:
     name = str(getattr(value, "name", "") or "")
     number = _value(getattr(value, "value", None))
     if number is not None:
-        return [_label_and_number(name, number),
+        return [_number_in_block(name, number),
+                _label_and_number(name, number),
                 _number_by_label(name, number), _number_alone(number)]
     anchors: List[Anchor] = []
     text = str(getattr(value, "text", "") or "").strip()

@@ -418,166 +418,40 @@ def _upload_probe_check() -> dict:
                       f"probe not possible here: {type(exc).__name__}: {exc}")
 
 
-REFERENCE_DOCS_ENV = "GEOTECH_REFERENCES_DOCS"
+#: Names that moved to the geotech page's own file with the reference-PDF
+#: check (INF-31 step 7), still answered here for the callers that import
+#: them from this module.
+_MOVED_TO_GEOTECH_PAGE = {
+    "REFERENCE_DOCS_ENV": "REFERENCE_DOCS_ENV",
+    "reference_pdf_names": "reference_pdf_names",
+    "_UNSET_MESSAGE": "_UNSET_MESSAGE",
+    "_UNSET_MESSAGE_FOUNDRY": "_UNSET_MESSAGE_FOUNDRY",
+    "_reference_docs_check": "reference_docs_check",
+}
 
 
-def reference_pdf_names() -> dict:
-    """``{pdf filename: [what needs it]}`` for every source PDF the agent can
-    open to look at a page — ``read_reference_figure`` (the installed figure
-    catalogs) and ``view_worked_example_source`` (the worked-example corpus).
-    Both resolve a PDF by its bare filename inside ``GEOTECH_REFERENCES_DOCS``.
-    """
-    import json
-    names: dict = {}
+def __getattr__(name):
+    moved = _MOVED_TO_GEOTECH_PAGE.get(name)
+    if moved is not None:
+        import importlib
+        return getattr(importlib.import_module("webapp.geotech_page"), moved)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _page_checks(page_checks) -> List[dict]:
+    """The page's own diagnostics lines (its ``diagnostics_checks`` hook;
+    ``page_checks`` a hook, or None for the page this run serves). Never
+    raises."""
     try:
-        import geotech_references
-        pkg = Path(geotech_references.__file__).parent
-        for cat in sorted(pkg.glob("*/figures_catalog.json")):
-            try:
-                data = json.loads(cat.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            figs = data if isinstance(data, list) else (data.get("figures") or [])
-            top = None if isinstance(data, list) else data.get("pdf_path")
-            for fig in figs:
-                pdf = fig.get("pdf_path") or top
-                if pdf:
-                    names.setdefault(Path(pdf).name, set()).add(cat.parent.name)
-    except Exception:                                   # noqa: BLE001
-        pass
-    try:
-        from funhouse_agent import worked_examples as _we
-        for e in _we.load_examples():
-            if e.get("source_doc") and e.get("source_pdf_pages"):
-                names.setdefault(Path(e["source_doc"]).name,
-                                 set()).add("worked examples")
-    except Exception:                                   # noqa: BLE001
-        pass
-    return {n: sorted(v) for n, v in sorted(names.items(),
-                                            key=lambda kv: kv[0].lower())}
-
-
-_UNSET_MESSAGE = (
-    f"{REFERENCE_DOCS_ENV} is not set and SharePoint is not connected, so the "
-    "agent cannot open any reference PDF: reading a value off a design chart "
-    "and viewing a worked example's source page will both fail. Keep the PDFs "
-    "in SharePoint GSE_app/primary_references and connect SharePoint "
-    "(stage_sharepoint) -- each PDF is then fetched the first time it is "
-    "needed -- or point GEOTECH_REFERENCES_DOCS at a local folder before "
-    "run_on_databricks and relaunch. webapp/README.md section 3, 'Reference "
-    "PDFs'.")
-
-#: The same on Foundry, which has no SharePoint (Funhouse-wiring audit,
-#: 2026-11-03; BACKLOG INF-62): the PDFs sit in the workspace repo's
-#: ``references/`` folder (OWN-80).
-_UNSET_MESSAGE_FOUNDRY = (
-    f"{REFERENCE_DOCS_ENV} is not set, so the agent cannot open any "
-    "reference PDF: reading a value off a design chart and viewing a worked "
-    "example's source page will both fail. Commit the PDFs to a references/ "
-    "folder beside the app file, under the file names this check lists once "
-    f"the folder is found, and point {REFERENCE_DOCS_ENV} at it in the app "
-    "file, then restart the app. docs/FOUNDRY.md section 3d, 'Reference PDFs "
-    "on Foundry'.")
-
-
-def _reference_docs_check() -> dict:
-    """Can the agent open the reference PDFs it reads charts off?
-
-    Looks in the local folder (``GEOTECH_REFERENCES_DOCS``, else a source
-    checkout's docs/), the cache of PDFs already fetched this session and --
-    when SharePoint is connected -- the SharePoint folder the app fetches from
-    on first use (``primary_references`` under the base folder). Every PDF
-    available nowhere is listed by name, so the report doubles as the upload
-    list. At most one SharePoint folder listing; no model call.
-    """
-    name = "reference PDFs (chart read-off)"
-    needed = reference_pdf_names()
-    if not needed:
-        return _check(name, SKIP, "no figure catalogs found "
-                                  "(geotech-references not installed?)")
-
-    # -- local folder -------------------------------------------------------
-    folder = (os.environ.get(REFERENCE_DOCS_ENV) or "").strip()
-    docs, where, local_problem = None, None, None
-    if folder:
-        where = f"{REFERENCE_DOCS_ENV}={folder}"
-        if Path(folder).is_dir():
-            docs = Path(folder)
-        else:
-            local_problem = (f"{where} — that folder does not exist or this "
-                             "app process cannot read it.")
-    else:
-        try:
-            from geotech_references import _figures_db
-            candidate = _figures_db._REPO_ROOT / "docs"
-            if candidate.is_dir():
-                docs = candidate
-                where = f"source checkout {docs} ({REFERENCE_DOCS_ENV} unset)"
-        except Exception:                               # noqa: BLE001
-            pass
-    present = set()
-    if docs is not None:
-        try:
-            present = set(os.listdir(docs))
-        except OSError as exc:
-            local_problem = f"{where} — cannot list the folder: {exc}"
-
-    # -- PDFs already fetched this session ---------------------------------
-    try:
-        from funhouse_agent import reference_docs
-        cache = reference_docs.cache_dir()
-        if os.path.isdir(cache):
-            present |= {n for n in os.listdir(cache) if not n.endswith(".part")}
-    except Exception:                                   # noqa: BLE001
-        pass
-
-    # -- SharePoint (fetched on first use) ---------------------------------
-    remote, sp_label, sp_problem = set(), None, None
-    try:
-        from webapp import reference_fetch, sharepoint_store
-        if sharepoint_store.configured():
-            sp_label = f"SharePoint {reference_fetch.folder()}/"
-            listed = reference_fetch.available_names()
-            if listed is None:
-                sp_problem = f"could not list {sp_label} (check the folder name)"
-            else:
-                remote = listed
+        from webapp.page_profile import resolve
+        if page_checks is None:
+            from webapp import profiles
+            page_checks = profiles.current().diagnostics_checks
+        fn = resolve(page_checks)
+        return list(fn()) if fn is not None else []
     except Exception as exc:                            # noqa: BLE001
-        sp_problem = f"SharePoint check failed: {type(exc).__name__}: {exc}"
-
-    if sp_label is None and not present:
-        if local_problem:
-            return _check(name, FAIL, local_problem)
-        if not folder:
-            from webapp import engine_config
-            return _check(name, WARN,
-                          _UNSET_MESSAGE_FOUNDRY
-                          if engine_config.is_foundry_deployment()
-                          else _UNSET_MESSAGE)
-
-    sources = [s for s in (where,
-                           sp_label and f"{sp_label} (fetched on first use)")
-               if s]
-    src = " + ".join(sources) or "the fetched-PDF cache"
-    missing = [n for n in needed if n not in present and n not in remote]
-    n_remote = sum(1 for n in needed if n not in present and n in remote)
-    extra = [p for p in (local_problem, sp_problem) if p]
-    if not missing:
-        detail = f"{src}: all {len(needed)} PDFs found"
-        if n_remote:
-            detail += (f" ({len(needed) - n_remote} local, {n_remote} from "
-                       f"{sp_label})")
-        return _check(name, PASS, "\n".join([detail] + extra))
-    lower = {p.lower(): p for p in present | remote}
-    lines = [f"{src}: {len(needed) - len(missing)} of {len(needed)} PDFs "
-             "found. Charts from a missing PDF cannot be read. Missing:"]
-    for n in missing:
-        hint = (f"  <- found {lower[n.lower()]!r}: names must match capital "
-                "letters exactly on the cluster"
-                if n.lower() in lower else "")
-        lines.append(f"- {n}  ({', '.join(needed[n])}){hint}")
-    return _check(name, FAIL if len(missing) == len(needed) else WARN,
-                  "\n".join(lines + extra))
+        return [_check("page checks", SKIP,
+                       f"not available: {type(exc).__name__}: {exc}")]
 
 
 def _vision_check(model: Any) -> dict:
@@ -643,7 +517,8 @@ def _helper_request_checks(helpers) -> List[dict]:
 
 def run_diagnostics(model_id: Optional[str] = None,
                     identity: Any = None,
-                    helper_models: Optional[dict] = None) -> List[dict]:
+                    helper_models: Optional[dict] = None,
+                    page_checks=None) -> List[dict]:
     """Run every stage against the CURRENTLY CONFIGURED engine and return the
     check list. Never raises. Live checks each make one tiny model call (a few
     tokens) — three calls when everything passes, plus the vision probe's four
@@ -652,10 +527,13 @@ def run_diagnostics(model_id: Optional[str] = None,
     says which key source that is (never the key). ``helper_models`` are the
     sidebar's picks for helpers on a model of their own; the report names
     the model each agent runs on and tries each helper model with two more
-    tiny requests (:mod:`webapp.helper_models`)."""
+    tiny requests (:mod:`webapp.helper_models`). ``page_checks`` is the
+    page's own lines (its ``diagnostics_checks`` hook, :mod:`webapp.
+    page_profile`; the geotech page's says whether the reference PDFs can
+    be opened); None takes the page this run serves."""
     from webapp import engine_config
     checks = [_versions_check(), _drift_check(), _optional_packages_check(),
-              _env_check(), _upload_probe_check(), _reference_docs_check()]
+              _env_check(), _upload_probe_check()] + _page_checks(page_checks)
     if engine_config.is_tinyapps_deployment():
         checks.append(_prompter_key_check(identity))
     if engine_config.is_foundry_deployment():

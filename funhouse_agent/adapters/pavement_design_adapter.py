@@ -804,3 +804,8 @@ declare_when_absent(METHOD_INFO, {
 # Cd's default is for a call that names no drainage quality.
 METHOD_INFO["rigid_pavement_design"]["parameters"]["cd"]["applies_when"] = {
     "drainage_quality": "unset"}
+
+# The keys each item of a list parameter carries, so a key given at the
+# top level is refused with a hint naming its list (BACKLOG GM-113).
+from funhouse_agent.adapters import item_keys_for, merge_item_keys  # noqa: E402,F401
+ITEM_KEYS = item_keys_for(METHOD_INFO, "layers", _LAYER_KEYS)

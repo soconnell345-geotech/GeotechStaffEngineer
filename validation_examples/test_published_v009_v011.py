@@ -170,8 +170,9 @@ def test_v009_bearing_lrfd():
     """PASS: bearing computation reproduces Table E4-6.3 (LL INCLUDED — it
     increases bearing stress). Str I max: eL=2.60 ft, B'=12.79 ft,
     sigma_v=6.70 ksf, CDR=1.57. Service I sigma_v=4.66 ksf. The critical
-    max/min combo (sigma_v=5.86 ksf, CDR=1.79) reproduces to ~+/-2% — within the
-    example's own 'consistent-values' rounding note."""
+    max/min combo (sigma_v=5.86 ksf, CDR=1.79) takes Str I (min)'s vertical
+    loads, LL 1.75 on Vs (sum V_C 65.57 = 57.69 + 1.75 x 4.50 k/ft, M_RA-C
+    590.09), with Str I (max)'s M_OA 223.30."""
     u = _unfactored_loads()
     qnf_str = 10.50 * KSF
     # Strength I (max)
@@ -194,13 +195,17 @@ def test_v009_bearing_lrfd():
     eLs = L / 2.0 - a_s
     sigma_vs = SVs / (L - 2.0 * eLs)
     assert sigma_vs / KSF == pytest.approx(4.66, rel=0.02)
-    # Critical max/min combo (slightly looser — see docstring)
-    MRA_C = 1.00 * (u["MV1"] + u["MVs"])
-    VC = 1.00 * (u["V1"] + u["Vs"])
+    # Critical max/min combo (Table E4-6.3's critical values)
+    MRA_C = 1.00 * u["MV1"] + 1.75 * u["MVs"]
+    VC = 1.00 * u["V1"] + 1.75 * u["Vs"]
+    assert MRA_C / KFTFT == pytest.approx(590.09, rel=0.005)
+    assert VC / KFT == pytest.approx(65.57, rel=0.005)
     a_C = (MRA_C - MOA) / VC
     eL_C = L / 2.0 - a_C
     sigma_vC = VC / (L - 2.0 * eL_C)
-    assert sigma_vC / KSF == pytest.approx(5.86, rel=0.025)
+    assert eL_C / FT == pytest.approx(3.41, abs=0.01)
+    assert sigma_vC / KSF == pytest.approx(5.86, abs=0.01)
+    assert qnf_str / sigma_vC == pytest.approx(1.79, abs=0.005)
 
 
 def test_v009_highlevel_api_reports_asd_fos_not_lrfd_cdr():
@@ -274,18 +279,29 @@ def test_v009_lrfd_external_stability_high_level_path():
     assert e["eL_critical_m"] / FT == pytest.approx(3.87, abs=0.05)
     assert e["e_limit_m"] / FT == pytest.approx(4.50, abs=0.02)   # L/4
     assert e["passes"]                                            # 3.87 < 4.50
+    # Str I (min), EV 1.00, EH 0.90 (Table E4-5.1, p. E4-6): eL 2.65 ft
+    # (Table E4-6.2, p. E4-8); GM-114
+    assert e["eL_strength_min_m"] / FT == pytest.approx(2.65, abs=0.01)
 
     # Bearing (Table E4-6.3): Str I max eL 2.60, B' 12.79, sigma_v 6.70 ksf,
-    # CDR 1.57; Service sigma_v 4.66 ksf; critical sigma_v 5.86 (source rounding).
+    # CDR 1.57; Service sigma_v 4.66 ksf; critical sigma_v 5.86 ksf, CDR 1.79.
     b = r["bearing"]
     assert b["eL_strength_max_m"] / FT == pytest.approx(2.60, abs=0.05)
     assert b["B_eff_strength_max_m"] / FT == pytest.approx(12.79, abs=0.05)
     assert b["sigma_v_strength_max_kPa"] / KSF == pytest.approx(6.70, rel=0.02)
     assert b["CDR_strength"] == pytest.approx(1.57, abs=0.05)
     assert b["sigma_v_service_kPa"] / KSF == pytest.approx(4.66, rel=0.02)
-    # critical bearing: 5.75 (module) vs 5.86 (published) — within the source's
-    # own "consistent-values" rounding note (+/-2.5%)
-    assert b["sigma_v_critical_kPa"] / KSF == pytest.approx(5.86, rel=0.025)
+    # critical bearing: Str I (min)'s vertical loads (LL 1.75 on Vs) under
+    # Str I (max)'s overturning moment
+    assert b["sigma_v_critical_kPa"] / KSF == pytest.approx(5.86, abs=0.01)
+    assert b["CDR_critical"] == pytest.approx(1.79, abs=0.005)
+    # Str I (min) column (Table E4-6.3, p. E4-9), LL 1.75 over the zone:
+    # eL 2.34 ft, B' 13.33 ft, sigma_v 4.92 ksf, CDR 2.13; GM-114
+    assert b["eL_strength_min_m"] / FT == pytest.approx(2.34, abs=0.01)
+    assert b["B_eff_strength_min_m"] / FT == pytest.approx(13.33, abs=0.01)
+    assert b["sigma_v_strength_min_kPa"] / KSF == pytest.approx(4.92,
+                                                                abs=0.01)
+    assert b["CDR_strength_min"] == pytest.approx(2.13, abs=0.005)
     assert b["passes"]
 
     assert r["passes"]

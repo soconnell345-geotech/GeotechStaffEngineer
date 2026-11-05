@@ -181,19 +181,22 @@ def test_foundry_disable_streaming_env(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# reference PDFs (chart read-off) — no model call
+# reference PDFs (chart read-off) — no model call. The check is the geotech
+# page's own diagnostics line (webapp/geotech_page.py, INF-31 step 7).
 # ---------------------------------------------------------------------------
+
+from webapp import geotech_page  # noqa: E402
 
 _NEEDED = {"A Doc.pdf": ["dm7_1"], "b.pdf": ["gec_6", "worked examples"],
            "C.pdf": ["gec_7"]}
 
 
 def test_reference_docs_partial_folder_names_the_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.setattr(geotech_page, "reference_pdf_names", lambda: _NEEDED)
     (tmp_path / "A Doc.pdf").write_bytes(b"%PDF")
     (tmp_path / "c.pdf").write_bytes(b"%PDF")          # wrong capitals
     monkeypatch.setenv("GEOTECH_REFERENCES_DOCS", str(tmp_path))
-    c = diag._reference_docs_check()
+    c = geotech_page.reference_docs_check()
     assert c["status"] == diag.WARN
     assert "1 of 3" in c["detail"]
     assert "- b.pdf  (gec_6, worked examples)" in c["detail"]
@@ -201,30 +204,30 @@ def test_reference_docs_partial_folder_names_the_missing(monkeypatch, tmp_path):
 
 
 def test_reference_docs_all_found_passes(monkeypatch, tmp_path):
-    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.setattr(geotech_page, "reference_pdf_names", lambda: _NEEDED)
     for n in _NEEDED:
         (tmp_path / n).write_bytes(b"%PDF")
     monkeypatch.setenv("GEOTECH_REFERENCES_DOCS", str(tmp_path))
-    c = diag._reference_docs_check()
+    c = geotech_page.reference_docs_check()
     assert c["status"] == diag.PASS and "all 3" in c["detail"]
 
 
 def test_reference_docs_empty_or_absent_folder_fails(monkeypatch, tmp_path):
-    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.setattr(geotech_page, "reference_pdf_names", lambda: _NEEDED)
     monkeypatch.setenv("GEOTECH_REFERENCES_DOCS", str(tmp_path))
-    assert diag._reference_docs_check()["status"] == diag.FAIL   # none found
+    assert geotech_page.reference_docs_check()["status"] == diag.FAIL   # none found
     monkeypatch.setenv("GEOTECH_REFERENCES_DOCS", str(tmp_path / "nope"))
-    c = diag._reference_docs_check()
+    c = geotech_page.reference_docs_check()
     assert c["status"] == diag.FAIL and "does not exist" in c["detail"]
 
 
 def test_reference_docs_unset_on_an_install_warns(monkeypatch, tmp_path):
     """A wheel install has no repo docs/ to fall back on."""
     from geotech_references import _figures_db
-    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.setattr(geotech_page, "reference_pdf_names", lambda: _NEEDED)
     monkeypatch.delenv("GEOTECH_REFERENCES_DOCS", raising=False)
     monkeypatch.setattr(_figures_db, "_REPO_ROOT", tmp_path)
-    c = diag._reference_docs_check()
+    c = geotech_page.reference_docs_check()
     assert c["status"] == diag.WARN
     assert "GEOTECH_REFERENCES_DOCS" in c["detail"]
 
@@ -235,11 +238,11 @@ def test_reference_docs_unset_advice_fits_the_host(monkeypatch, tmp_path,
     """Foundry has no SharePoint (BACKLOG INF-62): the advice names the
     references/ folder and the variable; Funhouse's wording stays."""
     from geotech_references import _figures_db
-    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.setattr(geotech_page, "reference_pdf_names", lambda: _NEEDED)
     monkeypatch.delenv("GEOTECH_REFERENCES_DOCS", raising=False)
     monkeypatch.setattr(_figures_db, "_REPO_ROOT", tmp_path)
     monkeypatch.setenv("GEOTECH_DEPLOYMENT", deployment)
-    detail = diag._reference_docs_check()["detail"]
+    detail = geotech_page.reference_docs_check()["detail"]
     if deployment == "foundry":
         assert "references/" in detail and "GEOTECH_REFERENCES_DOCS" in detail
         for databricks_only in ("SharePoint", "stage_sharepoint",
@@ -270,19 +273,19 @@ def test_reference_docs_counts_what_sharepoint_can_supply(monkeypatch, tmp_path)
     available nowhere."""
     from geotech_references import _figures_db
     from webapp import reference_fetch, sharepoint_store
-    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.setattr(geotech_page, "reference_pdf_names", lambda: _NEEDED)
     monkeypatch.delenv("GEOTECH_REFERENCES_DOCS", raising=False)
     monkeypatch.setattr(_figures_db, "_REPO_ROOT", tmp_path)
     monkeypatch.setattr(sharepoint_store, "configured", lambda: True)
     monkeypatch.setattr(reference_fetch, "available_names",
                         lambda: {"A Doc.pdf", "b.pdf"})
-    c = diag._reference_docs_check()
+    c = geotech_page.reference_docs_check()
     assert c["status"] == diag.WARN
     assert "SharePoint primary_references/" in c["detail"]
     assert "- C.pdf  (gec_7)" in c["detail"]
     assert "- b.pdf" not in c["detail"]
     monkeypatch.setattr(reference_fetch, "available_names", lambda: set(_NEEDED))
-    c = diag._reference_docs_check()
+    c = geotech_page.reference_docs_check()
     assert c["status"] == diag.PASS and "all 3" in c["detail"]
     assert "3 from SharePoint primary_references/" in c["detail"]
 
@@ -291,12 +294,12 @@ def test_reference_docs_unlistable_sharepoint_folder_is_reported(monkeypatch,
                                                                  tmp_path):
     from geotech_references import _figures_db
     from webapp import reference_fetch, sharepoint_store
-    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.setattr(geotech_page, "reference_pdf_names", lambda: _NEEDED)
     monkeypatch.delenv("GEOTECH_REFERENCES_DOCS", raising=False)
     monkeypatch.setattr(_figures_db, "_REPO_ROOT", tmp_path)
     monkeypatch.setattr(sharepoint_store, "configured", lambda: True)
     monkeypatch.setattr(reference_fetch, "available_names", lambda: None)
-    c = diag._reference_docs_check()
+    c = geotech_page.reference_docs_check()
     assert c["status"] == diag.FAIL and "could not list" in c["detail"]
 
 

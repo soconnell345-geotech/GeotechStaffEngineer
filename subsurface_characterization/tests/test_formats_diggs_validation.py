@@ -372,3 +372,73 @@ class TestResultIntegration:
             assert "Valid: False" in summary
             assert "Number of Errors:" in summary
             assert result.n_errors > 0
+
+
+# ============================================================================
+# DIGGS 2.5.a on pydiggs 1.x (BACKLOG RI-41)
+# ============================================================================
+
+VALID_DIGGS_25A_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<Diggs xmlns="http://diggsml.org/schemas/2.5.a"
+       xmlns:gml="http://www.opengis.net/gml/3.2"
+       gml:id="d1">
+  <documentInformation>
+    <DocumentInformation gml:id="di1">
+      <creationDate>2024-01-01</creationDate>
+    </DocumentInformation>
+  </documentInformation>
+</Diggs>"""
+
+
+@pytest.mark.skipif(not has_pydiggs(), reason="pydiggs not installed")
+class TestSchema25aOnPydiggs1x:
+    """pydiggs 1.x still ships the 2.5.a schema (only 0.1.x's sample
+    Example_2-DIGGS.XML went), so the option checks for real."""
+
+    def test_the_schema_and_dictionary_are_found(self):
+        from subsurface_characterization.formats.diggs_validation import (
+            get_dictionary_path, get_schema_path)
+        assert get_schema_path("2.5.a").endswith(
+            os.path.join("diggs-schema-2.5.a", "Complete.xsd"))
+        assert os.path.isfile(get_schema_path("2.5.a"))
+        assert os.path.isfile(get_dictionary_path())
+
+    def test_a_valid_25a_document_passes(self):
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
+        result = validate_diggs_schema(content=VALID_DIGGS_25A_XML,
+                                       schema_version="2.5.a")
+        assert result.schema_version == "2.5.a"
+        assert result.is_valid is True, result.errors
+        assert result.errors == []
+
+    def test_a_26_document_fails_the_25a_check(self):
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
+        result = validate_diggs_schema(content=VALID_DIGGS_26_XML,
+                                       schema_version="2.5.a")
+        assert result.is_valid is False
+        assert result.n_errors >= 1
+
+    def test_a_25a_document_fails_the_26_check(self):
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
+        result = validate_diggs_schema(content=VALID_DIGGS_25A_XML)
+        assert result.schema_version == "2.6"
+        assert result.is_valid is False
+
+    def test_a_build_without_the_25a_schema_is_refused_plainly(
+            self, tmp_path, monkeypatch):
+        import pydiggs
+        from subsurface_characterization.formats import diggs_validation as dv
+        fake = tmp_path / "pydiggs"
+        fake.mkdir()
+        monkeypatch.setattr(pydiggs, "__file__", str(fake / "__init__.py"))
+        with pytest.raises(FileNotFoundError) as info:
+            dv.validate_diggs_schema(content=VALID_DIGGS_25A_XML,
+                                     schema_version="2.5.a")
+        msg = str(info.value)
+        assert "2.5.a" in msg and "pydiggs" in msg
+        assert dv._pydiggs_version() in msg
+        assert "2.6" in msg and "bundled" in msg
+        with pytest.raises(FileNotFoundError, match="properties.xml"):
+            dv.get_dictionary_path()
+        # The bundled 2.6 check is untouched.
+        assert dv.validate_diggs_schema(content=VALID_DIGGS_26_XML).is_valid

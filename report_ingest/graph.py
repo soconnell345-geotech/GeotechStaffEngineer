@@ -218,6 +218,13 @@ OUTPUT_NAMES: Tuple[str, ...] = (
     "report.diggs.xml", "reports.db",
 )
 
+#: The owner's question list (BACKLOG RI-101 part 1): the variable that
+#: names its path, :data:`report_ingest.question_list.LIST_ENV`, spelt here
+#: so a run with it unset never imports that module. Set, each report's
+#: answer sheet is written beside its record
+#: (:data:`report_ingest.question_list.SHEET_NAME`).
+QUESTION_LIST_ENV = "GSE_REPORT_QUESTIONS"
+
 #: The model-first setting (BACKLOG RI-87, RI-186): each stage of
 #: :data:`MODEL_FIRST_SETTING_STAGES` on or off, every one on when unset.
 #: See :func:`model_first_stages`.
@@ -1058,6 +1065,9 @@ def ingest_report(source: Any, engine: Any, *,
                       report_id, spend, qa, unresolved, di_result, labelling,
                       children, ingest_bound, counts_from_logs,
                       narrative_skips_bound, first_run, readers)
+        if os.environ.get(QUESTION_LIST_ENV, "").strip():
+            _question_list(record, doc, engine, out, resume, spend, qa,
+                           children)
     finally:
         for real in paced:
             real.pacer = None
@@ -1102,6 +1112,31 @@ def ingest_report(source: Any, engine: Any, *,
                 row.counts = child.counts()
         write_outputs(record, out, source=key_source, db_path=db_path)
     return record
+
+
+def _question_list(record: ReportRecord, doc: Any, engine: Any, out: str,
+                   resume: bool, spend: _Spend, qa: List[QAEntry],
+                   children: Sequence[Tuple[ReportRecord, str]]) -> None:
+    """The owner's question list asked of the finished record, its answer
+    sheet written beside the record (BACKLOG RI-101 part 1); only with
+    :data:`QUESTION_LIST_ENV` set. Its calls are counted in the run's
+    cost, and the replies it took from the folder in the whole report's
+    (BACKLOG RI-125); what it could not do is a QA entry, never a failed run
+    (:func:`report_ingest.question_list.ingest_sheet`)."""
+    from report_ingest.question_list import ingest_sheet
+
+    bound = {child.parent.bound_id: child for child, _ in children
+             if child.parent is not None}
+    mark = spend.mark()
+    reused: List[Dict[str, Any]] = []
+    try:
+        _path, notes = ingest_sheet(record, doc, engine, out, bound=bound,
+                                    resume=resume, reused=reused)
+    finally:
+        spend.settle(mark)
+    for cost in reused:
+        spend.reuse("question_list", cost)
+    qa.extend(notes)
 
 
 def _pace(budgets: Budgets, engine: Any, labelling: "_Labelling",
@@ -3248,7 +3283,15 @@ def _model_first_units(doc: Any, model_first: _ModelFirst,
                 groups["logs"] += log_groups(pages, {})
                 kinds[pages[0]] = item.kind
             elif reader == "lab":
-                groups["lab"] += lab_groups(pages, {})
+                cut = lab_groups(pages, {})
+                # A part cut from a lab item carries the boring its first
+                # part prints where its own pages print none (RI-150), on
+                # this route too (RI-165).
+                carried = (getattr(item, "evidence", None) or {}
+                           ).get("carried_link")
+                for group in cut if carried else ():
+                    group.carried_link = dict(carried)
+                groups["lab"] += cut
             elif reader == "calc":
                 groups["calc"] += calc_groups(pages, doc, None)
     for stage in list(groups):

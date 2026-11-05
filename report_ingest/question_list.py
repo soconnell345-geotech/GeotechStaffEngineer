@@ -50,8 +50,22 @@ PAGES. Every page an answer gives is a PDF page numbered from 1 at the
 file's first page, as a PDF viewer shows it. The record keeps 0-based
 indexes, so code adds one.
 
-Nothing on today's path imports this module; the graph wiring is a later
-item (RI-90, after RI-87 piece 8).
+IN THE INGEST RUN (BACKLOG RI-101 part 1). With :data:`LIST_ENV` set,
+:func:`report_ingest.graph.ingest_report` calls :func:`ingest_sheet` once
+the report's record is read, and writes :data:`SHEET_NAME` beside
+``report.record.json``; the narrative's own answers are left as they are.
+Unset, the graph never imports this module. A list that cannot be read, or
+a run that fails, is a ``not_run`` QA entry on the record, never a failed
+run.
+
+THE LIST OF POSTS (BACKLOG RI-170). With :data:`POSTS_ENV` naming a posts
+file (:func:`load_posts`) and the code map naming the post-name row
+(``"post_name": "<Key>"``), that row's answer is matched to one post
+(:func:`match_post`): the name exactly, then the full name exactly, then a
+close spelling of the name (:data:`POST_SIMILARITY`). The printed name is
+kept beside the post and the answer says how it matched; no match, or two
+posts that close, is an open note on the row and an open QA entry, never a
+guess.
 """
 
 from __future__ import annotations
@@ -77,6 +91,9 @@ __all__ = [
     "compare",
     "pages_to_read", "page_texts", "page_list_text", "run_questions",
     "answer_sheet",
+    "POSTS_ENV", "POST_SIMILARITY", "POST_COLUMNS", "SHEET_NAME",
+    "CALLS_NAME", "Post", "PostMatch", "load_posts", "match_post",
+    "apply_posts", "ingest_sheet",
 ]
 
 #: The variable that names the list's path when no path is given.
@@ -197,6 +214,9 @@ class QuestionList:
     gates: Tuple[Gate, ...] = ()
     not_both_yes: Tuple[Tuple[str, str], ...] = ()
     map_name: str = ""
+    #: The row the list of posts matches (the code map's ``post_name``,
+    #: BACKLOG RI-170); "" when the code map names none.
+    post_key: str = ""
 
     def __iter__(self) -> Iterator[Question]:
         return iter(self.questions)
@@ -356,17 +376,18 @@ def _map_path(list_path: Path, code_map: Union[str, Path, None]
 
 def _read_map(path: Path, questions: Sequence[Question]
               ) -> Tuple[Dict[str, Tuple[str, str]], Tuple[Gate, ...],
-                         Tuple[Tuple[str, str], ...], List[str]]:
+                         Tuple[Tuple[str, str], ...], List[str], str]:
     """The code map at ``path``, checked against the list: its readings,
-    gates and pairs, and what is wrong with it, one line each."""
+    gates and pairs, what is wrong with it, one line each, and the
+    post-name row (BACKLOG RI-170; "" when it names none)."""
     import json
 
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        return {}, (), (), [f"the code map {path.name} is not JSON: {exc}"]
+        return {}, (), (), [f"the code map {path.name} is not JSON: {exc}"], ""
     if not isinstance(data, dict):
-        return {}, (), (), [f"the code map {path.name} is not an object"]
+        return {}, (), (), [f"the code map {path.name} is not an object"], ""
     by_key = {q.key: q for q in questions}
     categories = {q.category.lower() for q in questions}
     problems: List[str] = []
@@ -422,7 +443,18 @@ def _read_map(path: Path, questions: Sequence[Question]
                             f"answers screening asks")
         else:
             pairs.append((keys[0], keys[1]))
-    return readings, tuple(gates), tuple(pairs), problems
+    post_key = str(data.get("post_name") or "").strip()
+    if post_key:
+        q = by_key.get(post_key)
+        where = f"the code map's post_name {post_key!r}"
+        if q is None:
+            problems.append(f"{where}: the list has no such Key")
+            post_key = ""
+        elif q.data_type != "string" or q.answered_by == "code":
+            problems.append(f"{where}: the post-name row is a String row "
+                            f"the report text answers")
+            post_key = ""
+    return readings, tuple(gates), tuple(pairs), problems, post_key
 
 
 def load_questions(path: Union[str, Path, None] = None, *,
@@ -487,8 +519,10 @@ def load_questions(path: Union[str, Path, None] = None, *,
     readings: Dict[str, Tuple[str, str]] = {}
     gates: Tuple[Gate, ...] = ()
     pairs: Tuple[Tuple[str, str], ...] = ()
+    post_key = ""
     if mapped is not None:
-        readings, gates, pairs, wrong = _read_map(mapped, questions)
+        readings, gates, pairs, wrong, post_key = _read_map(mapped,
+                                                            questions)
         problems.extend(wrong)
     if problems:
         raise QuestionListError(
@@ -498,7 +532,8 @@ def load_questions(path: Union[str, Path, None] = None, *,
         questions=questions, rules=rules, name=path.name,
         modified=datetime.fromtimestamp(path.stat().st_mtime),
         readings=readings, gates=gates, not_both_yes=pairs,
-        map_name=mapped.name if mapped is not None else "")
+        map_name=mapped.name if mapped is not None else "",
+        post_key=post_key)
 
 
 def screening_questions(questions: Sequence[Question]) -> List[Question]:
@@ -654,6 +689,12 @@ class Answer:
     note: str = ""
     source: str = ""
     code_value: Any = None
+    #: On the post-name row with a list of posts (BACKLOG RI-170): the name
+    #: as the report printed it, and how it was matched to a post ("exact
+    #: name", "full name", "close spelling (similarity 0.91)"); "" when no
+    #: post was matched.
+    printed: Any = None
+    matched_by: str = ""
 
     def noted(self, said: str) -> "Answer":
         if said:
@@ -2013,14 +2054,16 @@ def _tab_name(text: str, taken: Sequence[str]) -> str:
 def answer_sheet(questions: Sequence[Question], answers: Mapping[str, Answer],
                  path: Union[str, Path], *, report_id: str = "",
                  calls: Sequence[Mapping[str, Any]] = (),
-                 prompt_version: str = PROMPT_VERSION) -> Path:
+                 prompt_version: str = PROMPT_VERSION,
+                 posts_name: str = "") -> Path:
     """The answers written to ``path`` as an xlsx in the owner's layout
     (:data:`SHEET_COLUMNS`), one row per question in the list's order, with
     empty "Right?" and "Correct answer" columns for the owner. Lists and
     records are written readably in one cell; a list of more than
     :data:`MAX_CELL_RECORDS` records goes on its own tab, named by its
     Output. A "Run" tab gives the report, the date, the list's file name and
-    modified time, its code map's file name, and the model of each call."""
+    modified time, its code map's file name, the list of posts' file name
+    when one was given (``posts_name``), and the model of each call."""
     import openpyxl
     from openpyxl.styles import Alignment, Font
 
@@ -2075,6 +2118,8 @@ def answer_sheet(questions: Sequence[Question], answers: Mapping[str, Answer],
     info.append(["Code map", getattr(questions, "map_name", "")
                  or "(none: code read no row)"])
     info.append(["Prompt version", prompt_version])
+    if posts_name:
+        info.append(["List of posts", posts_name])
     info.append([])
     info.append(["Call", "Model", "Questions", "Answered", "Stop reason",
                  "Input tokens", "Output tokens"])
@@ -2090,3 +2135,355 @@ def answer_sheet(questions: Sequence[Question], answers: Mapping[str, Answer],
     path.parent.mkdir(parents=True, exist_ok=True)
     book.save(path)
     return path
+
+
+# ---------------------------------------------------------------------------
+# the list of posts (BACKLOG RI-170)
+# ---------------------------------------------------------------------------
+
+#: The variable that names the list of posts the post-name row is matched
+#: against. Unset, the row is answered as the report prints it.
+POSTS_ENV = "GSE_REPORT_POSTS"
+
+#: A close spelling matches when difflib's ``SequenceMatcher.ratio`` of the
+#: printed name and a post's name (each lower-cased, with punctuation and
+#: runs of spaces made one space) is at least this, for one post only.
+POST_SIMILARITY = 0.85
+
+#: The columns a posts file is read by (a JSON object's keys or a CSV's
+#: headings, without regard to case, a space or a dash read as "_"): the
+#: post's ``name`` (required) and ``full_name``. Any other is ignored.
+POST_COLUMNS: Tuple[str, ...] = ("name", "full_name")
+
+
+@dataclass(frozen=True)
+class Post:
+    """One post on the list: its name and its full name."""
+
+    name: str
+    full_name: str = ""
+
+
+@dataclass(frozen=True)
+class PostMatch:
+    """What :func:`match_post` found: the post and how ("exact name",
+    "full name" or "close spelling (similarity 0.91)"), or no post and
+    why (``why``), with the posts that tied (``tied``)."""
+
+    post: Optional[Post]
+    how: str = ""
+    why: str = ""
+    tied: Tuple[Post, ...] = ()
+
+
+def _column(name: Any) -> str:
+    return re.sub(r"[\s\-]+", "_", str(name or "").strip().lower())
+
+
+def load_posts(path: Union[str, Path]) -> List[Post]:
+    """The posts in the file at ``path``: JSON (a list of objects, or an
+    object whose ``posts`` is that list) or CSV with a heading row. Each
+    post is read by :data:`POST_COLUMNS`; a row with no name is skipped.
+    A file that cannot be read, or holds no post, raises
+    :class:`QuestionListError`."""
+    import csv
+    import json
+
+    path = Path(path).expanduser()
+    if not path.is_file():
+        raise QuestionListError(f"the list of posts is not a file: {path}")
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError) as exc:
+        raise QuestionListError(
+            f"the list of posts {path.name} cannot be read: {exc}") from exc
+    rows: List[Mapping[str, Any]]
+    if path.suffix.lower() == ".json":
+        try:
+            data = json.loads(text)
+        except ValueError as exc:
+            raise QuestionListError(
+                f"the list of posts {path.name} is not JSON: {exc}") from exc
+        if isinstance(data, dict):
+            data = data.get("posts")
+        if not isinstance(data, list):
+            raise QuestionListError(
+                f"the list of posts {path.name} is not a list of objects "
+                f"(or an object with a 'posts' list)")
+        rows = [r for r in data if isinstance(r, dict)]
+    else:
+        rows = list(csv.DictReader(text.splitlines()))
+    posts: List[Post] = []
+    for row in rows:
+        cells = {_column(k): " ".join(str(v or "").split())
+                 for k, v in row.items() if k is not None}
+        if cells.get("name"):
+            posts.append(Post(cells["name"], cells.get("full_name", "")))
+    if not posts:
+        raise QuestionListError(
+            f"the list of posts {path.name} holds no post with a "
+            f"'name' column")
+    return posts
+
+
+def _folded(text: Any) -> str:
+    return " ".join(re.sub(r"[^\w]+", " ", str(text or "").lower()).split())
+
+
+def _shown_post(post: Post) -> str:
+    return post.name + (f" ({post.full_name})" if post.full_name
+                        and post.full_name != post.name else "")
+
+
+def match_post(printed: Any, posts: Sequence[Post]) -> PostMatch:
+    """The one post ``printed`` names: a post whose name is the printed
+    name (compared lower-cased, punctuation and spaces folded), else one
+    whose full name is, else the one post whose name is a close spelling,
+    at :data:`POST_SIMILARITY` or above. Two posts found at the same step,
+    or two whose names are that close, match none."""
+    from difflib import SequenceMatcher
+
+    said = _folded(printed)
+    if not said:
+        return PostMatch(None, why="no name was printed")
+    for how, field_of in (("exact name", lambda p: p.name),
+                          ("full name", lambda p: p.full_name)):
+        found = list(dict.fromkeys(p for p in posts
+                                   if field_of(p) and _folded(field_of(p))
+                                   == said))
+        if len(found) == 1:
+            return PostMatch(found[0], how=how)
+        if len(found) > 1:
+            return PostMatch(None, why=f"{len(found)} posts have that "
+                             f"{how}", tied=tuple(found))
+    # The name only: full names share their wording ("... Liaison Office"),
+    # which lifts the ratio of two names that differ.
+    scored = sorted(((SequenceMatcher(None, said, _folded(post.name)).ratio(),
+                      post) for post in dict.fromkeys(posts)),
+                    key=lambda s: -s[0])
+    if not scored or scored[0][0] < POST_SIMILARITY:
+        near = (f"; the closest, {_shown_post(scored[0][1])}, is "
+                f"{scored[0][0]:.2f} alike" if scored else "")
+        return PostMatch(None, why=f"no post's name is at least "
+                         f"{POST_SIMILARITY:.2f} alike{near}")
+    top = scored[0][0]
+    tied = tuple(p for r, p in scored if r >= POST_SIMILARITY)
+    if len(tied) > 1:
+        return PostMatch(None, why=f"{len(tied)} posts' names are close "
+                         f"(at least {POST_SIMILARITY:.2f} alike)", tied=tied)
+    return PostMatch(scored[0][1],
+                     how=f"close spelling (similarity {top:.2f})")
+
+
+def apply_posts(questions: Sequence[Question], answers: Mapping[str, Answer],
+                posts: Sequence[Post]) -> List[str]:
+    """The post-name row's answer (the code map's ``post_name``) matched to
+    one post of ``posts`` (:func:`match_post`), in place. Matched, the
+    answer's value is the post's name, ``printed`` the name as printed and
+    ``matched_by`` how, all said in its note. Not matched, the value stays
+    as printed and its note says why. Returns the open notes (none when it
+    matched, the row was not answered or no row is named), one line each."""
+    key = getattr(questions, "post_key", "") or ""
+    answer = answers.get(key) if key else None
+    if answer is None or answer.status != "answered" \
+            or not isinstance(answer.value, str):
+        return []
+    printed = answer.value
+    found = match_post(printed, posts)
+    if found.post is None:
+        tied = (": " + "; ".join(_shown_post(p) for p in found.tied)
+                if found.tied else "")
+        line = (f"the post name as printed, {printed!r}, matches no one post "
+                f"on the list of posts ({found.why}{tied}); it is kept as "
+                f"printed, unmatched")
+        answer.noted(line)
+        return [line]
+    answer.printed = printed
+    answer.matched_by = found.how
+    answer.value = found.post.name
+    answer.noted(f"as printed: {printed!r}; matched to the post "
+                 f"{_shown_post(found.post)} by {found.how}")
+    return []
+
+
+# ---------------------------------------------------------------------------
+# the list in the ingest run (BACKLOG RI-101 part 1)
+# ---------------------------------------------------------------------------
+
+#: The answer sheet's name, beside ``report.record.json``.
+SHEET_NAME = "report.questions.xlsx"
+
+#: The calls' replies, under the run's ``items/`` folder, so a resumed run
+#: that sends the same request does not pay for it again.
+CALLS_NAME = "question_list.calls.json"
+
+
+class _ReplayEngine:
+    """``inner``, with each reply that gave a structured answer kept in
+    ``path`` under a digest of its request (the messages and the schema),
+    and given back for the same request on a resumed run: no call is made
+    and the reply's usage is zero. Each kept reply keeps its cost, and
+    ``reused`` holds the costs of those given back, for the whole report's
+    (BACKLOG RI-125). A reply with no answer is not kept."""
+
+    def __init__(self, inner: Any, path: Path, resume: bool) -> None:
+        import json
+
+        self.inner = inner
+        self.path = path
+        self.saved: Dict[str, Any] = {}
+        self.reused: List[Dict[str, Any]] = []
+        if resume and path.is_file():
+            try:
+                self.saved = dict(json.loads(path.read_text("utf-8")))
+            except (OSError, ValueError):
+                self.saved = {}
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.inner, name)
+
+    @staticmethod
+    def _key(messages: Any, schema: Any) -> str:
+        import hashlib
+        import json
+
+        shape = schema.model_json_schema() if isinstance(schema, type) \
+            and issubclass(schema, BaseModel) else repr(schema)
+        blob = json.dumps([messages, shape, PROMPT_VERSION], sort_keys=True,
+                          default=repr)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+    def complete(self, messages: Any, *, output_format: Any = None,
+                 **kwargs: Any) -> Any:
+        import json
+
+        from report_ingest.engine import TOKENS_IN_PARTS, Reply
+
+        key = self._key(messages, output_format)
+        kept = self.saved.get(key)
+        if kept is not None and output_format is not None:
+            try:
+                given = Reply(parsed=output_format.model_validate(
+                    kept["parsed"]), stop_reason=kept.get("stop_reason", ""),
+                    model=kept.get("model", ""),
+                    notes=list(kept.get("notes") or []) + [
+                        "taken from the run's folder: no call was made"])
+            except (ValidationError, KeyError, TypeError):
+                pass
+            else:
+                self.reused.append(kept.get("cost") or {})
+                return given
+        reply = self.inner.complete(messages, output_format=output_format,
+                                    **kwargs)
+        parsed = getattr(reply, "parsed", None)
+        if parsed is not None and not getattr(reply, "cut_off", False):
+            data = parsed.model_dump() if isinstance(parsed, BaseModel) \
+                else parsed
+            usage = getattr(reply, "usage", None)
+            cost = {part: int(getattr(usage, part, 0) or 0)
+                    for part in TOKENS_IN_PARTS + ("output_tokens",)}
+            cost.update(calls=1, dollars=float(usage.dollars(
+                getattr(reply, "model", "") or "")) if usage else 0.0)
+            self.saved[key] = {"parsed": data, "cost": cost,
+                               "stop_reason": getattr(reply, "stop_reason",
+                                                      ""),
+                               "model": getattr(reply, "model", ""),
+                               "notes": list(getattr(reply, "notes", None)
+                                             or [])}
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self.saved, indent=1,
+                                            sort_keys=True, default=str),
+                                 encoding="utf-8")
+        return reply
+
+
+def _qa(kind: str, detail: str, where: str = "question_list",
+        rank: Optional[str] = None) -> Any:
+    from report_ingest.model import QAEntry
+
+    return QAEntry(kind=kind, where=where, detail=detail, rank=rank)
+
+
+def ingest_sheet(record: Any, doc: Any, engine: Any, out_dir: Union[str, Path],
+                 *, bound: Optional[Mapping[str, Any]] = None,
+                 resume: bool = True,
+                 list_path: Union[str, Path, None] = None,
+                 posts_path: Union[str, Path, None] = None,
+                 reused: Optional[List[Dict[str, Any]]] = None
+                 ) -> Tuple[Optional[Path], List[Any]]:
+    """The owner's list asked of one ingested report, its answer sheet
+    written to ``out_dir`` as :data:`SHEET_NAME` (BACKLOG RI-101 part 1).
+
+    ``list_path`` defaults to :data:`LIST_ENV` and ``posts_path`` to
+    :data:`POSTS_ENV`; with no list, nothing is done and nothing returned.
+    It reads as :mod:`module_work.report_ingest_harness.run_question_list`
+    does: the pages :func:`pages_to_read` names, as :func:`page_texts`
+    gives them off the open ``doc``, the printed page numbers from
+    ``doc.page_map()``, ``bound`` (the bound reports' records by bound_id)
+    and :func:`run_questions` on ``engine``, whose structured replies are
+    kept under ``out_dir/items/`` (:data:`CALLS_NAME`) for a resumed run;
+    once the sheet is written, the saved cost of each reply given back from
+    there is added to ``reused``, when given (BACKLOG RI-125).
+    With a list of posts, the post-name row is matched (:func:`apply_posts`).
+
+    Returns the sheet's path (None when none was written) and the QA
+    entries for the record: a list or a posts file that cannot be read, or
+    a run that fails, is a ``not_run`` entry and never an exception; each
+    of the run's warnings is a note; a post name matched to no one post is
+    an open note on that row."""
+    if list_path is None:
+        list_path = os.environ.get(LIST_ENV, "").strip() or None
+    if posts_path is None:
+        posts_path = os.environ.get(POSTS_ENV, "").strip() or None
+    if not list_path:
+        return None, []
+    qa: List[Any] = []
+    try:
+        qlist = load_questions(list_path)
+    except Exception as exc:                            # noqa: BLE001
+        qa.append(_qa("not_run", f"the question list was not run: it could "
+                      f"not be read ({type(exc).__name__}: {exc})"))
+        return None, qa
+    posts: Optional[List[Post]] = None
+    posts_name = ""
+    if posts_path:
+        try:
+            posts = load_posts(posts_path)
+            posts_name = Path(posts_path).name
+        except Exception as exc:                        # noqa: BLE001
+            qa.append(_qa("not_run", f"the list of posts was not read, so "
+                          f"the post-name row is answered as printed "
+                          f"({type(exc).__name__}: {exc})"))
+        if posts is not None and not qlist.post_key:
+            qa.append(_qa("not_run", "a list of posts was given but the "
+                          "question list's code map names no post_name "
+                          "row; no post was matched"))
+    try:
+        record = _as_record(record)
+        rid = record.document.report_id
+        out = Path(out_dir)
+        printed = {s.page: s.printed_page for s in doc.page_map()
+                   if getattr(s, "printed_page", None) is not None}
+        texts = page_texts(doc, pages_to_read(record))
+        replay = _ReplayEngine(engine, out / "items" / CALLS_NAME, resume)
+        run = run_questions(record, texts, qlist, replay, bound=bound,
+                            printed_pages=printed, report_id=rid,
+                            record_dir=out)
+        if posts is not None:
+            for line in apply_posts(qlist, run.answers, posts):
+                qa.append(_qa("note", line,
+                              where=f"question_list.{qlist.post_key}",
+                              rank="open"))
+        for warning in run.warnings:
+            qa.append(_qa("note", f"question list: {warning}"))
+        path = answer_sheet(qlist, run.answers, out / SHEET_NAME,
+                            report_id=rid, calls=run.calls,
+                            prompt_version=run.prompt_version,
+                            posts_name=posts_name)
+        if reused is not None:
+            reused.extend(replay.reused)
+    except Exception as exc:                            # noqa: BLE001
+        qa.append(_qa("not_run", f"the question list was not run: "
+                      f"{type(exc).__name__}: {exc}"))
+        return None, qa
+    return path, qa

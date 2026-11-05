@@ -91,10 +91,12 @@ def build_page_agent(model, attachments: Dict[str, bytes], files_dir: str,
     defaults, then the page profile's overrides): the Document Review page,
     or with ``page="geotech"`` the GeotechStaffEngineer page."""
     from webapp import core
-    kw = core.behavior_build_kwargs(None)
-    kw.update(_profile(page).build_kwargs())
+    profile = _profile(page)
+    kw = profile.behavior_build_kwargs(None)
+    kw.update(profile.build_kwargs())
     kw.setdefault("markup_author", SUITE_AUTHOR)
-    return core.build_agent(model, attachments, files_dir, artifacts, **kw)
+    return core.build_agent(model, attachments, files_dir, artifacts,
+                            profile=profile, **kw)
 
 
 def _activity_records(run_dir: str) -> List[Dict[str, Any]]:

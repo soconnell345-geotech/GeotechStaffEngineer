@@ -315,11 +315,16 @@ def _parse_borehole(element: ET.Element, ns_map: dict, warnings: list) -> Invest
             break
 
     # EPSG:4326 given as a URN or URL (GML 3.2) is latitude FIRST; the app
-    # holds x = longitude, y = latitude. CRS84 and DIGGS' own
-    # ``...DIGGS:0.1:4326_5702`` are longitude first and are read as written.
+    # holds x = longitude, y = latitude. CRS84 and the URN compounds
+    # (``...DIGGS:0.1:4326_5702``) are longitude first and are read as
+    # written. The URL form ``compoundCRS.xml#diggs-crs-4326_5703`` (what
+    # report_ingest writes since RI-40) is built on EPSG:4326 and is latitude
+    # first, so it is swapped like the EPSG form.
     if (x is not None and y is not None
-            and re.search(r"(?:urn:ogc:def:crs:EPSG:|opengis\.net/def/crs/EPSG/)"
-                          r"[\d.]*[:/]+4326\s*$", srs, re.I)):
+            and (re.search(r"(?:urn:ogc:def:crs:EPSG:|opengis\.net/def/crs/EPSG/)"
+                           r"[\d.]*[:/]+4326\s*$", srs, re.I)
+                 or re.search(r"compoundCRS\.xml#diggs-crs-4326_\d+\s*$",
+                              srs, re.I))):
         x, y = y, x
 
     # A total depth the file does not give is None, never 0.0.

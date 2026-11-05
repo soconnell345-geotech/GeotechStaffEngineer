@@ -158,17 +158,17 @@ def _build_agent_for_session() -> None:
                 # The behavior pickers first, then the PAGE's own overrides
                 # (the document-review page: no modules, no reference
                 # sub-agent, its own prompt) — the page wins.
-                _kw = core.behavior_build_kwargs(ss.get("behavior"))      # A5
+                _kw = _PROFILE.behavior_build_kwargs(ss.get("behavior"))  # A5
                 _kw.update(_helper_kw)
                 _kw.update(_PROFILE.build_kwargs())
                 _kw.setdefault("markup_author", _IDENT.markup_author)
                 ss.agent = core.build_agent(
                     ss.engine.model, ss.attachments, ss.temp_dir, ss.artifacts,
-                    **_kw)
+                    profile=_PROFILE, **_kw)
             else:                                                         # A5e
                 _kw = core.specialist_build_kwargs(ss.get("behavior"))
                 _kw.update(_helper_kw)
-                ss.agent = core.build_reviewer_agent(
+                ss.agent = _PROFILE.hook("specialist_builder")(
                     _kind, ss.engine.model, ss.attachments, ss.temp_dir,
                     ss.artifacts, **_kw)
         except Exception as exc:  # surface, don't crash the app
@@ -427,7 +427,7 @@ st.caption(_PROFILE.caption)
 # — so the page carried two banners both reading "Professional-use disclaimer"
 # and the solid one said nothing (owner feedback 2026-09-11). The expander
 # holds the full text; that is the disclaimer.
-_disc = core.disclaimer_text()
+_disc = core.disclaimer_text(_PROFILE)
 with st.expander("Professional-use disclaimer — read before relying on any result",
                  expanded=False):
     st.text(_disc or "Professional-use disclaimer: research/analysis aid, "
@@ -874,13 +874,15 @@ with st.sidebar:
                 ss.diag_report = _diag.format_report(
                     _diag.run_diagnostics(
                         ss.model, identity=_IDENT,
-                        helper_models=ss.get("helper_models")))
+                        helper_models=ss.get("helper_models"),
+                        page_checks=_PROFILE.diagnostics_checks))
         if ss.get("diag_report"):
             st.code(ss.diag_report, language=None)
     try:
         import importlib.metadata as _md
-        st.caption(f"geotech-staff-engineer {_md.version('geotech-staff-engineer')}"
-                   f" · engine: {eng.source or 'none'}")
+        st.caption(" · ".join(f"{_d} {_md.version(_d)}"
+                              for _d in _PROFILE.version_dists)
+                   + f" · engine: {eng.source or 'none'}")
     except Exception:
         pass
     # Runtime drift guard: warn when the agent stack is running versions the
@@ -893,26 +895,12 @@ with st.sidebar:
     except Exception:
         pass
 
-    # Agent picker (A5e) — the full geotech agent, or a narrow domain reviewer.
-    # Per conversation, persisted in meta, shown on the conversation list line.
-    # The document-review page has no specialists: one agent, no picker.
-    _atypes = list(core.AGENT_TYPES)
-    _cur_at = (ss.behavior or {}).get("agent_type", "full")
-    _cur_at = _cur_at if _cur_at in _atypes else "full"
-    _picked_at = st.selectbox(
-        "Agent", _atypes, index=_atypes.index(_cur_at),
-        format_func=lambda k: core.AGENT_TYPES[k], key=f"agent_{ss.thread_id}",
-        help="The full geotech agent, or a narrow domain agent scoped to one "
-             "discipline's methods + references (the reviewers check work in "
-             "review mode; the pavement specialist designs). Applies to this "
-             "conversation going forward; kept when you resume it.") \
-        if _PROFILE.specialists else _cur_at
-    if _picked_at != _cur_at:
-        ss.behavior = {**ss.behavior, "agent_type": _picked_at}
-        if core.load_meta(ss.thread_id) is not None:
-            core.set_behavior(ss.thread_id, ss.behavior)
-        _resolve_and_build(ss.model)          # rebuild as the selected variant
-        st.rerun()
+    # The page's own sidebar controls (the geotech page's Agent picker, A5e:
+    # the full geotech agent, or a narrow domain reviewer, per conversation;
+    # webapp/geotech_page.py). The document-review page has none.
+    _extras = _PROFILE.hook("sidebar_extras")
+    if _extras is not None:
+        _extras(ss, _resolve_and_build)
 
     # Working folder — where the agent's saves (calc packages, plots, files)
     # land. Default = this conversation's files/ dir (durable; shown as download
@@ -1627,9 +1615,7 @@ if _active_job is not None:
             "the work.")
     _follow_turn_job(_active_job)
 
-_placeholder = ("Ask a geotechnical question…" if _PROFILE.specialists else
-                "Ask about the document — or ask for a marked-up copy or a "
-                "Word summary…")
+_placeholder = _PROFILE.placeholder
 # Where the browser's own upload request reaches the server (not behind the
 # Databricks driver proxy, which refuses it — that host has the websocket
 # uploader and its paste target), the chat box takes files too: a dropped

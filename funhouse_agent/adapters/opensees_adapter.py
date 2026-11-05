@@ -288,3 +288,10 @@ declare_when_absent(METHOD_INFO, {
             "the column's first mode and a higher frequency, so damping "
             "stays near the target over the band that matters")},
 })
+
+# The keys each item of a list parameter carries, so a key given at the
+# top level is refused with a hint naming its list (BACKLOG GM-113).
+from funhouse_agent.adapters import item_keys_for, merge_item_keys  # noqa: E402,F401
+ITEM_KEYS = item_keys_for(
+    METHOD_INFO, "layers", _LAYER_COMMON_KEYS + tuple(
+        k for own in _MATERIAL_KEYS.values() for k in own))

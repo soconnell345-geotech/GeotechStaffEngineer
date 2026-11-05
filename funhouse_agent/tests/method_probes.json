@@ -37,6 +37,8 @@
 "calc_package|retaining_wall_package#surcharge": {"params": {"gamma_backfill": 18.0, "phi_backfill": 30.0, "surcharge": 10.0, "wall_height": 4.0}},
 "calc_package|retaining_wall_package#key": {"params": {"gamma_backfill": 18.0, "has_shear_key": true, "include_passive": true, "key_depth": 0.5, "phi_backfill": 30.0, "wall_height": 4.0}},
 "calc_package|retaining_wall_package#water": {"params": {"gamma_backfill": 18.0, "phi_backfill": 30.0, "q_allowable": 200.0, "wall_height": 4.0, "water_table_depth": 1.5}},
+"calc_package|retaining_wall_package#mse": {"params": {"gamma_backfill": 19.0, "phi_backfill": 34.0, "reinforcement_horizontal_spacing": 0.75, "reinforcement_name": "ribbed_steel_strip_50x4", "wall_height": 6.0, "wall_type": "mse"}},
+"calc_package|retaining_wall_package#mse_bearing": {"params": {"gamma_backfill": 19.0, "phi_backfill": 34.0, "q_allowable": 300.0, "reinforcement_horizontal_spacing": 0.75, "reinforcement_name": "ribbed_steel_strip_50x4", "wall_height": 6.0, "wall_type": "mse"}},
 "calc_package|seismic_package": {"params": {"vs30": 270.0}},
 "calc_package|settlement_package": {"params": {"B": 2.0, "q_applied": 150.0, "Es": 15000}},
 "calc_package|sheet_pile_package": {"params": {"excavation_depth": 3.0, "layers": [{"friction_angle": 32.0, "thickness": 12.0, "unit_weight": 18.0}]}},

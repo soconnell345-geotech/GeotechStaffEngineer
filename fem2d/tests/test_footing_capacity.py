@@ -195,7 +195,7 @@ class TestRigidFootingInputs:
         rig = _footing_choices("rigid", "rough")
         assert [c["chosen"] for c in rig] == ["rigid", "rough", "uniform"]
         assert "p. 55" in rig[0]["basis"]
-        assert "p. 99" in rig[1]["basis"]
+        assert "pp. 99-100" in rig[1]["basis"]
 
 
 class TestGradedMeshInputs:
@@ -285,7 +285,7 @@ class TestRigidFooting:
         assert r.Nc_backfigured == pytest.approx(r.q_ult_kPa / 50.0)
         assert [c["chosen"] for c in r.choices] == ["rigid", "rough",
                                                     "uniform"]
-        assert any("falls as the mesh is refined" in w for w in r.warnings)
+        assert any("fell towards (2 + pi) c as the mesh was refined" in w for w in r.warnings)
 
     def test_prandtl_rough_graded(self):
         # GM-306: the graded mesh's smaller edge elements bring the rigid
