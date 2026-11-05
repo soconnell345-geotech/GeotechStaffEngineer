@@ -167,6 +167,7 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
         "n_steps_converged": result.n_steps_converged,
         "collapse_load_fraction": result.collapse_load_fraction,
         "collapse_bracketed": result.collapse_bracketed,
+        "surcharge_kPa": result.surcharge_kPa,
         "max_displacement_m": result.max_displacement_m,
     }
     return clean_result(out)
@@ -630,11 +631,11 @@ METHOD_INFO = {
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "c": {"type": "float", "required": True, "description": "Cohesion / undrained shear strength (kPa)."},
             "phi": {"type": "float", "required": False, "default": 0.0, "description": "Friction angle (deg). Default 0 (Prandtl / undrained)."},
-            "gamma": {"type": "float", "required": False, "default": 0.0, "description": "Soil unit weight (kN/m3), applied as a body force ramped with the load. Default 0 = classical weightless mechanism (the validated basis)."},
+            "gamma": {"type": "float", "required": False, "default": 0.0, "description": "Soil unit weight (kN/m3). With no surcharge, a body force ramped with the footing load; with a surcharge, applied in full with it before the footing is loaded. Default 0 = classical weightless mechanism (the validated basis)."},
             "E": {"type": "float", "required": False, "default": 1e5, "description": "Young's modulus (kPa)."},
             "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio."},
             "psi": {"type": "float", "required": False, "default": 0.0, "description": "Dilation angle (deg)."},
-            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform surcharge q beside the footing (kPa) — used to size the load ramp and the reported factors."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform surcharge q beside the footing (kPa), e.g. an embedded footing's overburden gamma*Df (GEC-6 Eq. 5-1). Applied on the ground surface: with the soil's weight over the whole surface first, then held beside the footing while the footing pressure rises from q, so it resists through the Nq mechanism. q_ult is the gross pressure."},
             "q_max": {"type": "float", "required": False, "description": "Top of the load ramp (kPa). Default 1.6x the closed-form estimate c*Nc+surcharge*Nq+0.5*gamma*B*Ngamma. Pass explicitly for a c=phi=0 footing."},
             "n_load_steps": {"type": "int", "required": False, "default": 45, "description": "Load increments; collapse-load resolution = q_max/n_load_steps."},
             "nx": {"type": "int", "required": False, "default": 40, "description": "Mesh divisions in x."},
@@ -643,7 +644,7 @@ METHOD_INFO = {
             "q_applied": {"type": "float", "required": False, "description": "Working/design pressure (kPa). If given, bearing_FOS = q_ult/q_applied is reported."},
         },
         "returns": {
-            "q_ult_kPa": "Ultimate bearing pressure (last converged load level).",
+            "q_ult_kPa": "Ultimate (gross) bearing pressure (last converged load level), including the surcharge.",
             "Nc_backfigured": "q_ult/c for a pure-cohesion footing (compare to Prandtl 5.14); null otherwise.",
             "bearing_FOS": "q_ult/q_applied when q_applied is given, else null.",
             "bearing_capacity_factors": "Closed-form {Nc, Nq, Ngamma} reference (Prandtl-Reissner + Vesic Ngamma).",
@@ -776,7 +777,7 @@ METHOD_INFO = {
             "wall_water_pressures": "Pore pressure on each face of the wall and the net, per wall node, at the end of the last stage.",
             "notes": "Method, K0 per layer, sign conventions; the water condition with its basis and the net water pressure beside the no-seepage and GEC 4 values.",
             "wall_interface": "With wall_contact='interface': per face (retained side, excavation side) the effective normal thrust and the soil's shear on the wall (+ up) summed over the joints, the wall friction angle mobilized and how many joints slip.",
-            "choices": "The wall contact and, with 'interface', the wall friction and adhesion, each with how it was set and its basis.",
+            "choices": "The wall contact and, with 'interface', the wall friction and adhesion; then for each soil layer its soil model (Mohr-Coulomb, Hardening Soil or linear elastic) and the K0 of its in-situ stresses (the layer's own, Jaky 1 - sin phi', or nu/(1-nu) for phi = 0); each with how it was set and its basis.",
         },
     },
     "fem2d_seepage": {
