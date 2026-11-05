@@ -110,8 +110,11 @@ dependencies = [
     # pystrata 0.6.0 (2026-11-05, Python >= 3.13 only) renamed the site
     # classes the site-response tools build on (DarendeliSoilType,
     # MenqSoilType, NonlinearProperty); held below 0.6 until the tools
-    # move to its API (BACKLOG INF-68).
+    # move to its API (BACKLOG INF-68). pyrvt 0.9.0, out the same day, drops
+    # pyrvt.motions.SourceTheoryMotion, which pystrata 0.5.4 imports, so it
+    # is held too (the app does not import pyrvt itself).
     "pystrata>=0.5,<0.6",
+    "pyrvt<0.9",
     "eqsig>=1.2",
     "liquepy>=0.3",
     "pygef>=0.10",
