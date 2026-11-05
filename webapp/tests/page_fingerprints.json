@@ -52,6 +52,27 @@
         ]
        },
        {
+        "class": "DocumentToolsGate",
+        "hidden": [
+         "analyze_image",
+         "annotate_document",
+         "annotate_dxf",
+         "document_markups",
+         "document_page_map",
+         "document_structure",
+         "find_like",
+         "find_quantities",
+         "kept_readings",
+         "log_grid",
+         "measure",
+         "open_document",
+         "read_document",
+         "render_page_thumbnails",
+         "render_region",
+         "search_document"
+        ]
+       },
+       {
         "class": "OutputLimitGuard"
        }
       ],
