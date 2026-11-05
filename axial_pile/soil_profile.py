@@ -83,6 +83,30 @@ class AxialSoilLayer:
         ``beta_coefficients`` 'table_7_9': "clay", "silt", "sand" or
         "gravel". If None (default), "clay" for a cohesive layer and "sand"
         for a cohesionless one.
+    alpha : float, optional
+        A site-specific adhesion factor of a cohesive layer for the alpha
+        method: Ca = alpha su (GEC-12 Eq. 7-10) in place of the chart's
+        reading (Figure 7-17 or 7-18). GEC-12 Vol I p. 246 asks every user
+        to confirm a chart against local correlations with static load
+        tests; NHI-06-089 Example 9-3 (p. 9-58) takes the adhesion equal to
+        the cohesion from site-specific tests. Give ``adhesion_basis``
+        with it. Default None: the chart.
+    adhesion : float, optional
+        A site-specific adhesion Ca (kPa) of a cohesive layer, in place of
+        the chart's reading, as ``alpha`` (give one of the two) with
+        ``adhesion_basis``. Default None.
+    adhesion_basis : str, optional
+        Where the layer's ``alpha`` or ``adhesion`` came from (the site
+        tests or local correlation), stated in the result's choices.
+        Required with either; refused without one.
+    highly_overconsolidated : bool, optional
+        The engineer's call on whether this cohesive layer is highly
+        overconsolidated, for the alpha method where su is past the chart's
+        curves (GEC-12 Vol I p. 247 and Step 1, p. 250: API RP 2A's alpha
+        in highly overconsolidated clays). True takes API alpha there,
+        False holds Ca at the curve's end; it wins over the analysis's
+        ``highly_overconsolidated_su_ratio`` for this layer. GEC-12 prints
+        no test for "highly overconsolidated". Default None: the line.
     """
     thickness: float
     soil_type: str
@@ -96,6 +120,10 @@ class AxialSoilLayer:
     Nt: Optional[float] = None
     fig_7_18_case: Optional[str] = None
     soil_class: Optional[str] = None
+    alpha: Optional[float] = None
+    adhesion: Optional[float] = None
+    adhesion_basis: Optional[str] = None
+    highly_overconsolidated: Optional[bool] = None
 
     def __post_init__(self):
         self.soil_type = self.soil_type.lower()
@@ -152,6 +180,47 @@ class AxialSoilLayer:
                     f"soil_class of a {self.soil_type} layer must be one of "
                     f"{list(allowed)} (GEC-12 Table 7-9's soil types), got "
                     f"'{self.soil_class}'")
+
+        self._check_alpha_inputs()
+
+    def _check_alpha_inputs(self) -> None:
+        """The site-specific adhesion and the highly overconsolidated flag:
+        a cohesive layer's, one adhesion value at most, with its basis."""
+        given = [n for n in ("alpha", "adhesion")
+                 if getattr(self, n) is not None]
+        flagged = self.highly_overconsolidated is not None
+        if (given or flagged) and self.soil_type != "cohesive":
+            names = given + (["highly_overconsolidated"] if flagged else [])
+            raise ValueError(
+                f"{', '.join(names)} is for a cohesive layer (the alpha "
+                f"method, GEC-12 Sec. 7.2.1.3.2)")
+        if len(given) == 2:
+            raise ValueError("give a layer's alpha or its adhesion, not both "
+                             "(Ca = alpha su, GEC-12 Eq. 7-10)")
+        for name in given:
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be > 0 when set, got "
+                                 f"{getattr(self, name)}")
+        basis = (self.adhesion_basis or "").strip()
+        if given and not basis:
+            raise ValueError(
+                f"a layer's {given[0]} needs its adhesion_basis: where the "
+                f"site-specific value came from (the site tests or local "
+                f"correlation with static load tests, GEC-12 Vol I p. 246)")
+        if basis and not given:
+            raise ValueError("adhesion_basis is the source of a layer's "
+                             "alpha or adhesion; give the value with it")
+        if flagged and not isinstance(self.highly_overconsolidated, bool):
+            raise ValueError("highly_overconsolidated must be true or false, "
+                             f"got {self.highly_overconsolidated!r}")
+
+    @property
+    def site_adhesion(self) -> Optional[float]:
+        """The layer's site-specific Ca (kPa) from ``alpha`` or
+        ``adhesion``, or None for the chart's."""
+        if self.alpha is not None:
+            return self.alpha * self.cohesion
+        return self.adhesion
 
     @property
     def table_7_9_soil(self) -> str:

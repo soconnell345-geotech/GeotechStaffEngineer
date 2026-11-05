@@ -44,8 +44,8 @@ from axial_pile.pile_types import PileSection
 from axial_pile.soil_profile import AxialSoilProfile, AxialSoilLayer
 from axial_pile.tomlinson import (
     BEYOND_SOURCES, CHART_END_KSF, CURVES, FIG_7_18_CASES,
-    SAND_OVER_STIFF_CLAY, STIFF_CLAY, adhesion, adhesion_fig_7_18,
-    curve_for_pile, end_bearing_cohesive, fig_7_18_range_ksf,
+    SAND_OVER_STIFF_CLAY, SOFT_OVER_STIFF_CLAY, STIFF_CLAY, adhesion,
+    adhesion_fig_7_18, curve_for_pile, end_bearing_cohesive, fig_7_18_range_ksf,
 )
 from axial_pile.nordlund import (
     FIG_7_9_CURVE, KSF, SIGMA_P_LIMIT, delta_phi_ratio_fig_7_9,
@@ -334,6 +334,7 @@ class AxialPileAnalysis:
                 raise ValueError(f"{name} must be > 0 or None, got {value}")
         if self.cohesive_Nt <= 0:
             raise ValueError(f"cohesive_Nt must be > 0, got {self.cohesive_Nt}")
+        self._check_layer_alpha_inputs()
         if self.uplift_skin_fraction < 0:
             raise ValueError("uplift_skin_fraction must be >= 0, got "
                              f"{self.uplift_skin_fraction}")
@@ -343,6 +344,34 @@ class AxialPileAnalysis:
                 f"{self.pile_length}m) exceeds soil profile "
                 f"({self.soil.total_thickness}m); using full profile depth"
             )
+
+    def _check_layer_alpha_inputs(self) -> None:
+        """A layer's site-specific adhesion and highly overconsolidated flag
+        are alpha-method inputs: refused where the run would not use them
+        (GM-237)."""
+        layers = self.soil.layers
+        site = [i + 1 for i, l in enumerate(layers)
+                if l.site_adhesion is not None]
+        flagged = [i + 1 for i, l in enumerate(layers)
+                   if l.highly_overconsolidated is not None]
+        if site and self.method == "beta":
+            raise ValueError(
+                f"layer(s) {site} give a site-specific alpha or adhesion, an "
+                f"alpha-method input (GEC-12 Sec. 7.2.1.3.2); method 'beta' "
+                f"takes a cohesive layer's side resistance from beta "
+                f"sigma'vo and would not use it. Leave it out, or give the "
+                f"layer's beta from local experience (Step 2a).")
+        if flagged and (self.method == "beta"
+                        or self.adhesion_beyond_chart != API_IF_HIGHLY_OC):
+            raise ValueError(
+                f"layer(s) {flagged} give highly_overconsolidated, which "
+                f"decides API alpha or Ca at the curve's end where su is "
+                f"past the alpha method's chart under adhesion_beyond_chart "
+                f"'{API_IF_HIGHLY_OC}'; this run "
+                + ("uses the beta method" if self.method == "beta" else
+                   f"takes adhesion_beyond_chart "
+                   f"'{self.adhesion_beyond_chart}' in every such layer")
+                + " and would not use it. Leave it out.")
 
     @property
     def _tip_depth(self) -> float:
@@ -515,6 +544,12 @@ class AxialPileAnalysis:
                   if "line_needed" in lb]
         if wanted:
             raise JudgmentNeeded(self._line_needed(wanted))
+        # Fig. 7-18 for a clay under a softer clay, where the middle graph
+        # and the profile's case differ and no case is given (GM-237).
+        cases = [lb.pop("case_needed") for lb in layer_results
+                 if "case_needed" in lb]
+        if cases:
+            raise JudgmentNeeded(self._case_needed(cases))
 
         Q_ultimate = total_Qs + Qt - plug_weight
         Q_allowable = Q_ultimate / self.factor_of_safety
@@ -723,10 +758,20 @@ class AxialPileAnalysis:
         its top. A stratum's case, where no layer gives it, is the top
         graph's under a cohesionless layer and the bottom graph's from the
         ground surface (GEC-12 Vol I p. 246-247); the middle graph (soft clay over
-        stiff clay) only where a layer gives it."""
-        out: List[Optional[Tuple[str, float, str]]] = []
+        stiff clay) only where a layer gives it.
+
+        A clay layer of the profile's stratum lying directly under a clay
+        of lower su is not in "stiff clays without any different overlying
+        strata" (the bottom graph, p. 247), and it is in the middle graph's
+        case only if the clay above is soft and this one stiff, which
+        GEC-12 gives no su to decide (GM-237): its entry carries a fourth
+        item, the depth of its own top, from which the middle graph's D
+        would run, and :meth:`_adhesion` asks for the layer's case where
+        the two readings differ."""
+        out: List[Optional[tuple]] = []
         top, current, above = 0.0, None, None
         for layer in self.soil.layers:
+            entry = None
             if layer.soil_type != "cohesive":
                 current = None
             elif layer.fig_7_18_case is not None:
@@ -734,7 +779,11 @@ class AxialPileAnalysis:
             elif current is None:
                 current = (SAND_OVER_STIFF_CLAY if above is not None
                            else STIFF_CLAY, top, "profile")
-            out.append(current)
+            elif current[2] == "profile" and above is not None \
+                    and above.soil_type == "cohesive" \
+                    and above.cohesion < layer.cohesion:
+                entry = current[:3] + (top,)
+            out.append(entry or current)
             above = layer
             top += layer.thickness
         return out
@@ -1265,11 +1314,15 @@ class AxialPileAnalysis:
                              "layer"}
         chart = self.adhesion_chart
         chosen = charts[chart]
-        used = sorted({lb.get("adhesion_chart") for lb in clay} - {None})
-        if chart != "fig_7_17":
+        used = sorted({lb.get("adhesion_chart") for lb in clay}
+                      - {None, "given"})
+        if chart != "fig_7_17" and used:
             chosen += f" (used: {', '.join(used)}"
             chosen += (", Eq. 7-90 takes Ca from Fig. 7-17, p. 407)"
                        if eq_7_90 else ")")
+        # GM-237: no chart is read where every clay layer gives its own
+        # site-specific adhesion; that choice says so below.
+        read_any = any(lb.get("adhesion_source") != "given" for lb in clay)
         out.append(choice(
             "adhesion chart (alpha-method)", chosen,
             how_given(chart, "fig_7_17", name="adhesion_chart"),
@@ -1280,7 +1333,8 @@ class AxialPileAnalysis:
             "used, the inexperienced user should select and use the smaller "
             "value obtained from either figure'",
             [f"{text} (adhesion_chart '{key}')"
-             for key, text in charts.items() if key != chart]))
+             for key, text in charts.items() if key != chart])) \
+            if read_any else None
 
         read_17 = [lb for lb in clay if "fig_7_17_source" in lb]
         if read_17:
@@ -1421,14 +1475,18 @@ class AxialPileAnalysis:
                 [f"{t} (adhesion_beyond_chart '{key}')"
                  for key, t in modes.items() if key != mode]))
         sides = [lb for lb in clay if "highly_overconsolidated" in lb]
+        by_line = [lb for lb in sides
+                   if lb.get("highly_overconsolidated_by") != "layer"]
         if sides:
+            head = (f"su / sigma'vo at or above "
+                    f"{self.highly_overconsolidated_su_ratio:g}: "
+                    if by_line else "as each layer gives it: ")
             out.append(choice(
                 "highly overconsolidated clay (alpha method)",
-                f"su / sigma'vo at or above "
-                f"{self.highly_overconsolidated_su_ratio:g}: "
-                + "; ".join(self._sides(sides)),
+                head + "; ".join(self._sides(sides)),
                 how_given(self.highly_overconsolidated_su_ratio, None,
-                          name="highly_overconsolidated_su_ratio"),
+                          name="highly_overconsolidated_su_ratio")
+                if by_line else how_given(True, None, within="layers"),
                 "alpha method: p. 247 and Step 1 (p. 250) recommend API RP "
                 "2A's alpha for highly overconsolidated clays whose su "
                 "exceeds the charts, and GEC-12 gives no su / sigma'vo at "
@@ -1436,8 +1494,33 @@ class AxialPileAnalysis:
                 "the engineer's judgment; sigma'vo at the middle of each "
                 "layer's length along the pile. The 1.0 in Eqs. 7-13 and "
                 "7-14 (Vol I p. 251) chooses between API's two expressions for "
-                "alpha; it does not define a highly overconsolidated clay"))
-        return out
+                "alpha; it does not define a highly overconsolidated clay; a "
+                "layer's highly_overconsolidated (true or false) wins over "
+                "the line for that layer",
+                ["a layer's highly_overconsolidated: true (API alpha) or "
+                 "false (Ca held at the curve's end)"]
+                + ([] if by_line else
+                   ["highly_overconsolidated_su_ratio, a line in su / "
+                    "sigma'vo for the layers that give no flag"])))
+        site = [lb for lb in clay if lb.get("adhesion_source") == "given"]
+        if site:
+            parts = [f"{lb['depth_top_m']:g}-{lb['depth_bottom_m']:g} m: "
+                     f"alpha {lb['alpha']:.2f} ({lb['adhesion_basis']})"
+                     for lb in site]
+            out.append(choice(
+                "site-specific adhesion (alpha method)", "; ".join(parts),
+                how_given(True, None, within="layers"),
+                "Eq. 7-10 (GEC-12 Vol I p. 245), fs = Ca = alpha su, with the "
+                "layer's own alpha or Ca in place of the chart's (Fig. 7-17 "
+                "or 7-18, Step 1, p. 250): p. 246 asks every user to confirm "
+                "a chart in a given soil with local correlations between "
+                "static resistance calculations and static load tests; "
+                "NHI-06-089 Example 9-3 (p. 9-58) takes adhesion = cohesion "
+                "from site-specific tests. The value and its basis are the "
+                "engineer's",
+                ["the chart's Ca (leave the layer's alpha and adhesion "
+                 "out)"]))
+        return [c for c in out if c is not None]
 
     @staticmethod
     def _sides(rows: List[dict]) -> List[str]:
@@ -1447,22 +1530,26 @@ class AxialPileAnalysis:
         runs: List[list] = []
         for lb in rows:
             high = lb["highly_overconsolidated"]
+            by = lb.get("highly_overconsolidated_by", "line")
             ratio = lb["su_over_sigma_v"]
-            if runs and runs[-1][0] == high \
+            if runs and runs[-1][0] == (high, by) \
                     and abs(runs[-1][2] - lb["depth_top_m"]) < 1e-6:
                 runs[-1][2] = lb["depth_bottom_m"]
                 runs[-1][3].append(ratio)
             else:
-                runs.append([high, lb["depth_top_m"], lb["depth_bottom_m"],
-                             [ratio]])
+                runs.append([(high, by), lb["depth_top_m"],
+                             lb["depth_bottom_m"], [ratio]])
         out = []
-        for high, top, bottom, ratios in runs:
+        for (high, by), top, bottom, ratios in runs:
             lo, hi = min(ratios), max(ratios)
             span = f"{lo:.2f}" if f"{lo:.2f}" == f"{hi:.2f}" else \
                 f"{lo:.2f}-{hi:.2f}"
             out.append(f"{top:g}-{bottom:g} m, su / sigma'vo {span}: "
                        + ("highly overconsolidated, API alpha" if high else
-                          "below the line, Ca held at the curve's end"))
+                          "below the line, Ca held at the curve's end"
+                          if by == "line" else
+                          "not highly overconsolidated (given), Ca held at "
+                          "the curve's end"))
         return out
 
     def _beta_choice(self, layer_results, tip_layer,
@@ -1631,21 +1718,28 @@ class AxialPileAnalysis:
                              if counted > 0 else ca / layer.cohesion)
         return Qs, sigma_v_mid, method_used, info
 
-    def _beyond_chart(self, su: float, sigma_v: float
+    def _beyond_chart(self, su: float, sigma_v: float,
+                      flag: Optional[bool] = None
                       ) -> Tuple[Optional[str], dict]:
         """(how the alpha method takes Ca where this clay layer's su is past
         the chart's curves, "api" or "chart_end", or None where the
         default needs ``highly_overconsolidated_su_ratio`` and it is not
         given; the layer's su / sigma'vo and the side of that line it is
-        on, for the default)."""
+        on, for the default). ``flag`` is the layer's own
+        ``highly_overconsolidated``, which wins over the line (GM-237)."""
         if self.adhesion_beyond_chart != API_IF_HIGHLY_OC:
             return self.adhesion_beyond_chart, {}
         ratio = su / sigma_v if sigma_v > 0 else float("inf")
         reading = {"su_over_sigma_v": ratio}
+        if flag is not None:
+            reading.update({"highly_overconsolidated": flag,
+                            "highly_overconsolidated_by": "layer"})
+            return ("api" if flag else "chart_end"), reading
         line = self.highly_overconsolidated_su_ratio
         if line is None:
             return None, reading
-        reading["highly_overconsolidated"] = ratio >= line
+        reading.update({"highly_overconsolidated": ratio >= line,
+                        "highly_overconsolidated_by": "line"})
         return ("api" if ratio >= line else "chart_end"), reading
 
     def _adhesion(self, layer: AxialSoilLayer, layer_bottom: float,
@@ -1672,11 +1766,20 @@ class AxialPileAnalysis:
         # to the toe if less (GEC-12 p. 246).
         D_over_b = bottom / self.pile.width
         info: dict = {"D_over_b": D_over_b}
+        site = layer.site_adhesion
+        if site is not None:
+            # GM-237: the layer's site-specific alpha or Ca in place of the
+            # chart (GEC-12 p. 246, local correlations with load tests;
+            # NHI-06-089 Example 9-3, adhesion = cohesion from site tests).
+            info.update({"adhesion_source": "given",
+                         "adhesion_chart": "given",
+                         "adhesion_basis": layer.adhesion_basis.strip()})
+            return site, info
         case = stratum[0] if stratum else "none"
         chart = chart or self.adhesion_chart
         beyond, reading = self._beyond_chart(
             layer.cohesion, sigma_v if sigma_v_layer is None
-            else sigma_v_layer)
+            else sigma_v_layer, layer.highly_overconsolidated)
         # Fig. 7-18's D: the penetration into the clay stratum, from its
         # top (the ground surface in the bottom graph) to the bottom of
         # the layer, or to the toe if less.
@@ -1723,9 +1826,22 @@ class AxialPileAnalysis:
             info["Ca_fig_7_18_kPa"] = readings["Fig. 7-18"][0]
         used = min(readings, key=lambda k: (readings[k][0], k))
         ca, source, own = readings[used]
+        if "Fig. 7-18" in readings and stratum is not None \
+                and len(stratum) > 3 and counts:
+            # GM-237: a clay under a softer clay; would the middle graph
+            # (from this layer's top) give another Ca?
+            alt, _ = self._adhesion(
+                layer, layer_bottom, sigma_v,
+                (SOFT_OVER_STIFF_CLAY, stratum[3], "given"), [], chart,
+                sigma_v_layer, where, counts=False)
+            if abs(alt - ca) > 1e-9:
+                info["case_needed"] = {
+                    "where": where, "su": layer.cohesion, "case": case,
+                    "ca": ca, "ca_middle": alt}
         if past and "highly_overconsolidated" in reading:
             info.update(reading)
-            own = own + [self._line_note()]
+            own = own + [self._line_note(
+                reading["highly_overconsolidated_by"] == "layer")]
         if notes is not None:
             notes.extend(n for n in own if n not in notes)
         else:
@@ -1734,6 +1850,27 @@ class AxialPileAnalysis:
         info["adhesion_source"] = source
         info["adhesion_chart"] = used
         return ca, info
+
+    @staticmethod
+    def _case_needed(rows: List[dict]) -> str:
+        """Why an analysis that reads Fig. 7-18 is refused for want of a
+        clay layer's ``fig_7_18_case`` (GM-237)."""
+        layers = "; ".join(
+            f"{r['where'][0]:.2f}-{r['where'][1]:.2f} m (su = "
+            f"{r['su']:.1f} kPa): Ca {r['ca']:.1f} kPa by the "
+            f"{FIG_7_18_CASES[r['case']]}, {r['ca_middle']:.1f} kPa by the "
+            f"soft clay over stiff clay graph" for r in rows)
+        return (
+            f"alpha method, Fig. 7-18 (GEC-12 Vol I pp. 246-247): these clay "
+            f"layers lie directly under a clay of lower su: {layers}. The "
+            f"bottom graph is for stiff clays without any different "
+            f"overlying strata, and the middle graph for piles driven "
+            f"through a soft clay into an underlying stiff clay; GEC-12 "
+            f"gives no su that makes a clay soft or stiff, so which case "
+            f"applies is the engineer's judgment. Give each such layer's "
+            f"fig_7_18_case ('soft_clay_over_stiff_clay', 'stiff_clay', "
+            f"'sand_over_stiff_clay', or 'none' for Fig. 7-17), or "
+            f"adhesion_chart 'fig_7_17'.")
 
     @staticmethod
     def _line_needed(rows: List[dict]) -> str:
@@ -1762,8 +1899,17 @@ class AxialPileAnalysis:
             f"in every such layer) or 'api' (API alpha in every such "
             f"layer).")
 
-    def _line_note(self) -> str:
-        """The judgment note of a run that took the line given."""
+    def _line_note(self, by_layer: bool = False) -> str:
+        """The judgment note of a run that took the line given, or a
+        layer's own ``highly_overconsolidated`` (``by_layer``)."""
+        if by_layer:
+            return (
+                "alpha method (GEC-12 Vol I p. 247; Step 1, p. 250): past "
+                "the chart's curves, API RP 2A's alpha was taken in the clay "
+                "layers given as highly overconsolidated and Ca was held at "
+                "the curve's end in those given as not. Whether a clay is "
+                "highly overconsolidated is the engineer's judgment; GEC-12 "
+                "gives no test.")
         return (
             f"alpha method (GEC-12 Vol I p. 247; Step 1, p. 250): past the chart's "
             f"curves, API RP 2A's alpha was taken in clay layers with su / "
