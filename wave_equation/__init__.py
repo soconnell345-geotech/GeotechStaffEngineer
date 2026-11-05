@@ -19,6 +19,9 @@ References:
 
 from wave_equation.hammer import Hammer, get_hammer, list_hammers
 from wave_equation.cushion import Cushion, make_cushion_from_properties
+from wave_equation.driving_systems import (
+    DrivingSystem, PRINTED_DRIVING_SYSTEMS, get_driving_system,
+)
 from wave_equation.pile_model import PileSegment, PileModel, discretize_pile
 from wave_equation.soil_model import SmithSoilModel, SoilSetup
 from wave_equation.time_integration import BlowResult, simulate_blow
@@ -30,6 +33,7 @@ from wave_equation.drivability import (
 __all__ = [
     'Hammer', 'get_hammer', 'list_hammers',
     'Cushion', 'make_cushion_from_properties',
+    'DrivingSystem', 'PRINTED_DRIVING_SYSTEMS', 'get_driving_system',
     'PileSegment', 'PileModel', 'discretize_pile',
     'SmithSoilModel', 'SoilSetup',
     'BlowResult', 'simulate_blow',

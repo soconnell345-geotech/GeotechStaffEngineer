@@ -144,9 +144,12 @@ def get_input_summary(result, analysis) -> List[InputItem]:
                                    f"{cushion.thickness * 1000:.0f}", "mm"))
 
     # ── Helmet ──
+    # Required since GM-299 (no printed default); an analysis dict that
+    # does not carry it does not say what the run took
     helmet_wt = _used(analysis, "helmet_weight")
-    items.append(InputItem("W_helmet", "Helmet weight",
-                           f"{helmet_wt:.1f}", "kN"))
+    if helmet_wt is not None:
+        items.append(InputItem("W_helmet", "Helmet weight",
+                               f"{helmet_wt:.1f}", "kN"))
 
     # ── Pile ──
     pile = analysis.get("pile")

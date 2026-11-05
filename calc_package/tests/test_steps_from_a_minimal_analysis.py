@@ -60,8 +60,8 @@ def _wave(analysis):
                                get_hammer, make_cushion_from_properties)
     result = generate_bearing_graph(
         get_hammer("Delmag D30-32"),
-        make_cushion_from_properties(0.1, 0.1, 3.5e6),
-        discretize_pile(15.0, 0.01, 200e6))
+        make_cushion_from_properties(0.1, 0.1, 3.5e6, cor=0.80),
+        discretize_pile(15.0, 0.01, 200e6), helmet_weight=5.0)
     return "wave_equation", result, analysis
 
 

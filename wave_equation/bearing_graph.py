@@ -171,7 +171,7 @@ def generate_bearing_graph(
     R_min: float = 200.0,
     R_max: float = 2000.0,
     R_step: float = 200.0,
-    helmet_weight: float = 5.0,
+    helmet_weight: Optional[float] = None,
     max_time: float = 0.10,
     damping_model: str = "smith",
     shaft_distribution: str = "uniform",
@@ -196,7 +196,7 @@ def generate_bearing_graph(
     R_min, R_max, R_step : float
         Range of ultimate resistances to analyze (kN).
     helmet_weight : float
-        Helmet weight (kN).
+        Helmet weight (kN). Required (GM-299; see simulate_blow).
     max_time : float
         Maximum simulation time per blow (s).
     damping_model : str

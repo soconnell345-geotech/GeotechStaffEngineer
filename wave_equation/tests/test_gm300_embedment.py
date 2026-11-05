@@ -20,6 +20,11 @@ from wave_equation.calc_steps import get_calc_steps, get_input_summary
 
 AREA = math.pi / 4 * (0.32**2 - 0.30**2)
 
+#: A made-up cushion and helmet, given (GM-299: no printed default for the
+#: Vulcan 010); the values the tool defaulted to before GM-299.
+CUSHION = {"cushion_stiffness": 500000.0, "cushion_cor": 0.80,
+           "helmet_weight": 5.0}
+
 
 def _system(length=18.0):
     return (get_hammer("Vulcan 010"), Cushion(stiffness=500000, cor=0.80),
@@ -68,16 +73,16 @@ class TestShaftShares:
 class TestUnsetUnchanged:
     def test_whole_pile_given_is_the_unset_path(self):
         h, c, p = _system()
-        a = simulate_blow(h, c, p, SoilSetup(900.0))
-        b = simulate_blow(h, c, p, SoilSetup(900.0, embedded_length=18.0))
+        a = simulate_blow(h, c, p, SoilSetup(900.0), helmet_weight=5.0)
+        b = simulate_blow(h, c, p, SoilSetup(900.0, embedded_length=18.0), helmet_weight=5.0)
         assert a.permanent_set == b.permanent_set
         assert a.max_compression_stress == b.max_compression_stress
 
     def test_drivability_at_the_pile_length(self):
         h, c, _ = _system()
-        a = drivability_study(h, c, AREA, 200e6, 77.3, [12.0], [900.0])
+        a = drivability_study(h, c, AREA, 200e6, 77.3, [12.0], [900.0], helmet_weight=5.0)
         b = drivability_study(h, c, AREA, 200e6, 77.3, [12.0], [900.0],
-                              pile_length=12.0)
+                              pile_length=12.0, helmet_weight=5.0)
         assert a.points[0].blow_count == b.points[0].blow_count
         assert a.to_dict()["pile_length_m"] == 12.0
         assert b.to_dict()["pile_length_m"] == 12.0
@@ -97,9 +102,9 @@ class TestDrivabilityLeftOutPile:
         h, c, _ = _system()
         kw = dict(depths=[5.0, 11.0, 17.0], R_at_depth=[300.0, 700.0, 1200.0],
                   skin_fractions=[0.8, 0.6, 0.5])
-        out = drivability_study(h, c, AREA, 200e6, 77.3, **kw)
+        out = drivability_study(h, c, AREA, 200e6, 77.3, **kw, helmet_weight=5.0)
         full = drivability_study(h, c, AREA, 200e6, 77.3, pile_length=17.0,
-                                 **kw)
+                                 **kw, helmet_weight=5.0)
         assert [p.permanent_set for p in out.points] == \
             [p.permanent_set for p in full.points]
         assert out.pile_length == 17.0 and not out.pile_length_given
@@ -113,15 +118,15 @@ class TestDrivabilityLeftOutPile:
         pile the old default analysed."""
         h, c, _ = _system()
         out = drivability_study(h, c, AREA, 200e6, 77.3, [5.0, 17.0],
-                                [300.0, 1200.0], skin_fractions=[0.8, 0.5])
+                                [300.0, 1200.0], skin_fractions=[0.8, 0.5], helmet_weight=5.0)
         short = drivability_study(h, c, AREA, 200e6, 77.3, [5.0], [300.0],
-                                  skin_fractions=[0.8])
+                                  skin_fractions=[0.8], helmet_weight=5.0)
         assert out.points[0].max_tens_stress != short.points[0].max_tens_stress
         assert short.pile_length == 5.0
 
     def test_the_tool_states_it(self):
         r = D.call_agent("wave_equation", "drivability", {
-            "pile_area": AREA, "hammer_name": "Vulcan 010",
+            "pile_area": AREA, "hammer_name": "Vulcan 010", **CUSHION,
             "depths": [6.0, 12.0], "R_at_depth": [500.0, 900.0]})
         assert r["pile_length_m"] == 12.0
         assert r["defaults_used"]["pile_length"] == 12.0
@@ -132,10 +137,10 @@ class TestDrivabilityLeftOutPile:
 class TestEmbedment:
     def test_stick_up_moves_the_blow(self):
         h, c, p = _system(20.0)
-        whole = simulate_blow(h, c, p, SoilSetup(900.0))
-        part = simulate_blow(h, c, p, SoilSetup(900.0, embedded_length=14.0))
+        whole = simulate_blow(h, c, p, SoilSetup(900.0), helmet_weight=5.0)
+        part = simulate_blow(h, c, p, SoilSetup(900.0, embedded_length=14.0), helmet_weight=5.0)
         tri = simulate_blow(h, c, p, SoilSetup(
-            900.0, embedded_length=14.0, shaft_distribution="triangular"))
+            900.0, embedded_length=14.0, shaft_distribution="triangular"), helmet_weight=5.0)
         assert len({whole.permanent_set, part.permanent_set,
                     tri.permanent_set}) == 3
 
@@ -147,11 +152,11 @@ class TestEmbedment:
         dr = drivability_study(h, c, AREA, 200e6, 77.3, [6.0, 11.0],
                                [500.0, 900.0], skin_fractions=[0.6, 0.4],
                                pile_length=16.0,
-                               shaft_distribution="triangular")
+                               shaft_distribution="triangular", helmet_weight=5.0)
         for pt, f in zip(dr.points, (0.6, 0.4)):
             r = simulate_blow(h, c, p, SoilSetup(
                 pt.R_ultimate, skin_fraction=f, embedded_length=pt.depth,
-                shaft_distribution="triangular"))
+                shaft_distribution="triangular"), helmet_weight=5.0)
             assert pt.permanent_set == pytest.approx(r.permanent_set)
         assert dr.to_dict()["shaft_distribution"] == "triangular"
 
@@ -159,9 +164,9 @@ class TestEmbedment:
         h, c, p = _system(20.0)
         bg = generate_bearing_graph(h, c, p, R_min=600, R_max=600,
                                     embedded_length=15.0,
-                                    shaft_distribution="triangular")
+                                    shaft_distribution="triangular", helmet_weight=5.0)
         r = simulate_blow(h, c, p, SoilSetup(
-            600.0, embedded_length=15.0, shaft_distribution="triangular"))
+            600.0, embedded_length=15.0, shaft_distribution="triangular"), helmet_weight=5.0)
         assert bg.permanent_sets[0] == pytest.approx(r.permanent_set)
 
 
@@ -169,10 +174,10 @@ class TestRefusals:
     def test_deeper_than_the_pile(self):
         h, c, p = _system()
         with pytest.raises(ValueError, match="p. 227"):
-            simulate_blow(h, c, p, SoilSetup(900.0, embedded_length=19.0))
+            simulate_blow(h, c, p, SoilSetup(900.0, embedded_length=19.0), helmet_weight=5.0)
         with pytest.raises(ValueError, match="p. 227"):
             drivability_study(h, c, AREA, 200e6, 77.3, [10.0, 20.0],
-                              [500.0, 900.0], pile_length=18.0)
+                              [500.0, 900.0], pile_length=18.0, helmet_weight=5.0)
 
     def test_bad_inputs(self):
         with pytest.raises(ValueError, match="shaft_distribution"):
@@ -223,7 +228,7 @@ class TestGEC12Example6:
 
 
 class TestTools:
-    BASE = {"pile_area": AREA, "hammer_name": "Vulcan 010"}
+    BASE = {"pile_area": AREA, "hammer_name": "Vulcan 010", **CUSHION}
 
     def test_drivability_takes_the_quakes_and_damping(self):
         """GM-300: a closed-end pipe's D/60 toe quake (0.32 m: 5.3 mm)
@@ -277,7 +282,7 @@ class TestTools:
     def test_drivability_steps_say_the_pile(self):
         h, c, _ = _system()
         dr = drivability_study(h, c, AREA, 200e6, 77.3, [6.0], [500.0],
-                               pile_length=15.0)
+                               pile_length=15.0, helmet_weight=5.0)
         steps = [i for s in get_calc_steps(dr, {}) for i in s.items]
         first = [i for i in steps
                  if getattr(i, "title", "") == "Drivability Study"][0]

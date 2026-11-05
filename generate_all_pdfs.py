@@ -498,7 +498,7 @@ def generate_wave_equation():
         skin_fraction=0.5,
         quake_side=0.0025, quake_toe=0.0025,
         damping_side=0.16, damping_toe=0.5,
-        R_min=200.0, R_max=2000.0, R_step=200.0,
+        R_min=200.0, R_max=2000.0, R_step=200.0, helmet_weight=5.0,
     )
 
     analysis_dict = {"hammer": hammer, "cushion": cushion, "pile": pile}

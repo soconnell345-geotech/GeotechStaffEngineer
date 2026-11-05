@@ -250,8 +250,11 @@ WORKED = {
         "A 0.4&nbsp;m pile, 18&nbsp;m long, through settling fill and soft clay over sand, with a "
         "400&nbsp;kN dead load. Where is the neutral plane and how large is the drag load?", ""),
     "wave_equation": ("wave_equation.bearing_graph",
-        "For a 20&nbsp;m steel pile and a 45&nbsp;kN ram at 1.5&nbsp;m stroke, plot the bearing "
-        "graph &mdash; blows per metre against static resistance.", ""),
+        "For a 20&nbsp;m steel pile driven by a Vulcan 014 hammer, plot the bearing "
+        "graph &mdash; blows per metre against static resistance.",
+        "With no cushion given, the Vulcan 014 takes its hammer cushion and helmet as GEC-12 "
+        "Vol 2 Table 12-2 prints them (p. 183); any other hammer needs the cushion, its COR "
+        "and the helmet weight given, or <code>driving_system</code>."),
     "sheet_pile": ("sheet_pile.cantilever_wall",
         "A cantilever sheet pile retains a 4&nbsp;m excavation in sand (&phi;=32&deg;) with a "
         "10&nbsp;kPa surcharge. What embedment is needed and what is the maximum moment?", ""),

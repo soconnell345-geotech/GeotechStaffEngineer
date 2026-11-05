@@ -1201,7 +1201,7 @@ def ex_wave_equation() -> Exhibit:
 
     bg = generate_bearing_graph(hammer, cushion, pile,
                                 skin_fraction=0.5, R_min=200.0, R_max=2200.0,
-                                R_step=200.0)
+                                R_step=200.0, helmet_weight=5.0)
     R = np.asarray(bg.R_values)
     bc_m = np.asarray(bg.blow_counts)
     valid = (bc_m > 0) & (bc_m < 1e5)
