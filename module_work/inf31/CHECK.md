@@ -284,7 +284,7 @@ of that commit with the same venv):
 
 `webapp/tests/test_public_text.py` was run before each commit and passed.
 
-**Whole app suite:** FULL_SUITE_RESULT
+**Whole app suite** (`python -m pytest -q -n 4 -p no:cacheprovider` on step 8, testpaths from pyproject): **18,149 passed, 2 failed, 124 skipped, 1 xfailed** in 23 min 38 s. The 2 failures are the two above, which also fail on master. The skips are dependencies not installed in this venv (pydiggs, python-ags4, ipywidgets) and the suites' own skips.
 
 ## Noted, not fixed
 
