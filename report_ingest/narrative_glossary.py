@@ -292,9 +292,8 @@ CONVENTIONS: Tuple[Convention, ...] = (
              "it is for; an allowed increase (per foot of embedment or of "
              "width) stays in its value's item.",
         fields=("recommendedFoundations", "bearingCapacity"),
-        status="CONFIRMED",
-        why="owner 2026-11-03 (OWN-124, desk): one item per type, as RI-181 "
-            "rules; build e trace review section 11 (BACKLOG RI-181): nine misses "
+        status="DRAFT",
+        why="build e trace review section 11 (BACKLOG RI-181): nine misses "
             "on the grain of these two lists, the readers splitting one "
             "type's options and one value's increase into items of their "
             "own"),
