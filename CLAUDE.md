@@ -118,9 +118,14 @@ Key conventions:
 
 ## CURRENT WORKING STATE (2026-11-04; release 5.34.0) — 5.34.0 with planlens 0.14.0 (pin >=0.14) and geotech-references 1.5.0 (pin >=1.5.0): the geotech calc modules checked against their printed references (many answers move; release notes by module in HANDOFF §0a-current item 0), report ingest model-first by default, GSE on Foundry (installs on numpy 1.26, conversations saved to a Foundry dataset); review switches still OFF; before it 5.33.0 RELEASED with planlens 0.13.0 (pin >=0.13) and geotech-references 1.4.1 (pin >=1.4.1): hardened for OTHER testers on Tiny Apps by live smoke waves (per-user isolation, per-tester Prompter keys, one final answer per turn, Word/Excel in and out, tool errors never end a turn, faster vision, rotated-sheet markups) plus the brief-5 fixes and engineering fixes (GEC-12 Fig 7-15, sheet-pile water table, fem2d consolidation, downdrag basis); all review switches still OFF; before it 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
-- **Master after 5.34.0 (unreleased):** fixes merged since the release,
-  each built by a cloud session and reviewed before the merge; what changes
-  a calculation's answer is in HANDOFF §0a-current, "Master after 5.34.0".
+- **Master after 5.34.0 (unreleased; 2026-11-05):** fixes merged since the
+  release, each built by a cloud session and reviewed before the merge; what
+  changes an answer is in HANDOFF §0a-current, "Master after 5.34.0".
+  Report ingest prompts are mf-9 (the next live run re-reads every saved
+  model-first answer); groundwater "not measured" and combined lab samples
+  are kept; refs pinned at 9a198ff. Answers move in fem2d footing capacity
+  (a surcharge is a real load) and sheet_pile (water standing in the
+  excavation).
 
 - **5.34.0 (2026-11-04; tag `v5.34.0` on branch `release/5.34.0`) with
   planlens 0.14.0 (tag `v0.14.0`) and geotech-references 1.5.0 (tag
