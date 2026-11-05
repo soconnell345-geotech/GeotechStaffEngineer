@@ -274,6 +274,9 @@ def test_v009_lrfd_external_stability_high_level_path():
     assert e["eL_critical_m"] / FT == pytest.approx(3.87, abs=0.05)
     assert e["e_limit_m"] / FT == pytest.approx(4.50, abs=0.02)   # L/4
     assert e["passes"]                                            # 3.87 < 4.50
+    # Str I (min), EV 1.00, EH 0.90 (Table E4-5.1, p. E4-6): eL 2.65 ft
+    # (Table E4-6.2, p. E4-8); GM-114
+    assert e["eL_strength_min_m"] / FT == pytest.approx(2.65, abs=0.01)
 
     # Bearing (Table E4-6.3): Str I max eL 2.60, B' 12.79, sigma_v 6.70 ksf,
     # CDR 1.57; Service sigma_v 4.66 ksf; critical sigma_v 5.86 (source rounding).
@@ -286,6 +289,13 @@ def test_v009_lrfd_external_stability_high_level_path():
     # critical bearing: 5.75 (module) vs 5.86 (published) — within the source's
     # own "consistent-values" rounding note (+/-2.5%)
     assert b["sigma_v_critical_kPa"] / KSF == pytest.approx(5.86, rel=0.025)
+    # Str I (min) column (Table E4-6.3, p. E4-9), LL 1.75 over the zone:
+    # eL 2.34 ft, B' 13.33 ft, sigma_v 4.92 ksf, CDR 2.13; GM-114
+    assert b["eL_strength_min_m"] / FT == pytest.approx(2.34, abs=0.01)
+    assert b["B_eff_strength_min_m"] / FT == pytest.approx(13.33, abs=0.01)
+    assert b["sigma_v_strength_min_kPa"] / KSF == pytest.approx(4.92,
+                                                                abs=0.01)
+    assert b["CDR_strength_min"] == pytest.approx(2.13, abs=0.005)
     assert b["passes"]
 
     assert r["passes"]

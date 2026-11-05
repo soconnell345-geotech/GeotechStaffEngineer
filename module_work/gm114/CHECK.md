@@ -39,18 +39,28 @@ Branch `claude/gm-114-mse-calc-package`, from master `d45380a`.
      `bearing_resistance_strength`, or with `gamma_foundation` a qn by Eq.
      4-22 over its own L', `qn_strength_min_kPa`, `qR_strength_min_kPa`).
    - Factors: `gamma_EV_min` (1.00) and `gamma_EH_min` (0.90), GEC-11 Vol I
-     Table 4-2 (p. 4-4); the live load as in the module's critical
-     combination. Basis for checking it: p. 4-23, "Maximum permanent loads,
-     minimum permanent loads, and total extremes should be checked for
-     complex ... walls" and "for each strength limit load group, e must be
-     less than emax".
+     Table 4-2 (p. 4-4); the live load at `gamma_LL` (1.75) on its thrust
+     and, in bearing, over the reinforced zone, as GEC-11 Vol II Table
+     E4-5.1 (p. E4-6) lists Strength I (minimum) (EV 1.00, EH 0.90, LL
+     1.75) and Table E4-6.3 (p. E4-9) works it: ΣV 65.57 = 57.69 + 1.75 ×
+     4.50 k/ft, σv 4.92 ksf. Basis for checking it: p. 4-23, "Maximum
+     permanent loads, minimum permanent loads, and total extremes should be
+     checked for complex ... walls" and "for each strength limit load
+     group, e must be less than emax"; for bearing p. 4-28, "a critical
+     value must be determined by comparisons of applicable load
+     combinations".
+   - Pinned to the printed Str I (min) columns: E4 (V-009) eL 2.65 ft
+     (Table E4-6.2, p. E4-8); bearing eL 2.34 ft, B' 13.33 ft, σv 4.92 ksf,
+     CDR 2.13 (Table E4-6.3, p. E4-9); the module 2.657, 2.338, 13.324,
+     4.921, 2.134. E3 (V-056) eL 2.35 ft (Table E3-6.2, p. E3-9); bearing
+     B' 19.31 ft, σv 6.83 ksf, CDR 1.54 (Table E3-6.3, p. E3-11); the
+     module 2.344, 19.311, 6.826, 1.538.
    - It is counted in `eL_governing_m` and `CDR_governing`. On a level
-     backfill it never governs (the critical combination's vertical loads
-     under a smaller overturning moment: smaller e, wider L', lower
-     sigma_v, qR no lower), so no level answer moves. On a sloping backfill
-     EH also scales the thrust's vertical component, so it could govern; in
-     the GEC-11 Example E1/E3 validation cases (V-056/057) it does not, and
-     their pins pass unchanged.
+     backfill its eccentricity is below the critical combination's (EH min
+     under the same EV) and its bearing stress below Strength I max's; no
+     level answer moves by it. On a sloping backfill EH also scales the
+     thrust's vertical component, so it could govern; in the GEC-11
+     Example E1/E3 validation cases (V-056/057) it does not.
    - The ASD `mse_wall` path is untouched (it has no load factors).
 
 ## The steps and their pages (GEC-11, FHWA-NHI-10-024 Vol I unless said)
@@ -67,7 +77,7 @@ Pages read off the printed page footers in the library's `GEC 11 Vol 1.pdf`.
 | FOS sliding | R / Pa (or least surface) | Eq. 4-12 (p. 4-21) over Eqs. 4-5, 4-6 (p. 4-20); required 1.5, the module's ASD value (Vol II App. F.1, p. F-2) |
 | Overturning moment | Σ P z | Eqs. 4-5, 4-6 (p. 4-20), arms H/3, H/2 as in Eq. 4-19 (p. 4-27) |
 | Stabilizing moment | Σ W x | Fig. 4-7 (p. 4-24); live load over the zone left out, p. 4-22 |
-| FOS overturning | M_stab / M_ot | required 2.0, the module's ASD value (App. F.1, p. F-2); p. 4-22 "(formerly overturning)" |
+| FOS overturning | M_stab / M_ot | required 2.0, the module's ASD value (App. F.1, p. F-2); p. 4-18 "Limiting eccentricity (formerly known as overturning)", checked on pp. 4-22, 4-23 |
 | Bearing eccentricity, σv | eB, σv = Vb / (L - 2eB) | Eq. 4-18 (p. 4-26), Eqs. 4-19, 4-20 (p. 4-27), unfactored |
 | FOS bearing | q_allowable / σv | Eq. 4-17 (p. 4-26), allowable in place of qR |
 | Local shear | γr H ≤ 3 cu | Eq. 4-24, p. 4-30 |
@@ -109,6 +119,23 @@ matter, pile-group figure lettering; not touched here). Two
 `test_gm179_unused_inputs.py` liquepy cases fail because liquepy does not
 install here (eqsig wheel build). The page fingerprints did not move.
 
+## Review fixes (REVIEW_GM-114)
+
+1. **Strength I (min) bearing: the live load over the zone at 1.75.** It
+   took `gamma_EV_min` (1.00) on Vs; GEC-11 Vol II Table E4-5.1 (p. E4-6)
+   lists Strength I (minimum) at LL 1.75 and Table E4-6.3 (p. E4-9) works
+   it so. Level (`_bearing(gamma_EV_min, gamma_LL, MOA_min)`) and sloping
+   (`vs=gamma_LL`) fixed; `STRENGTH_MIN_BASIS` says it and cites p. 4-28
+   for the bearing comparison. E4 moves from σv 4.758 ksf, CDR 2.207 to
+   4.921 ksf, 2.134 (printed 4.92, 2.13); E3 has no live load and does not
+   move. The hand test takes SV = 1.00 V1 + 1.75 Vs; E4's and E3's Str I
+   (min) columns are pinned (section 3), replacing V-056's "given as the
+   maximum factors" workaround.
+2. **"Formerly overturning" page.** The words are on p. 4-18, "Limiting
+   eccentricity (formerly known as overturning)"; the FOS overturning step
+   now cites p. 4-18 with that quote, "checked on pp. 4-22, 4-23" (the
+   table above too).
+
 ## What is left
 
 - A sloping or broken backslope in the package: the module's calc steps
@@ -124,5 +151,5 @@ install here (eqsig wheel build). The page fingerprints did not move.
 ## Release note (three lines)
 
 - New: the MSE wall calc package — `retaining_wall_package` with `wall_type="mse"` runs `mse_wall` and prints each step with its GEC-11 page; level backfill and vertical face only (a sloping backfill or a face batter is refused).
-- `mse_lrfd_external_stability` now reports Strength I min (EV 1.00, EH 0.90; GEC-11 Table 4-2) eccentricity and bearing, counted in the governing values; on a level backfill no answer changes.
+- `mse_lrfd_external_stability` now reports Strength I min (EV 1.00, EH 0.90, LL 1.75; GEC-11 Vol I Table 4-2, Vol II Table E4-5.1) eccentricity and bearing, counted in the governing values; on a level backfill no answer changes.
 - The MSE calc steps now cite printed pages for the active force, the moments, the factors of safety, the bearing eccentricity and Kr/Ka.

@@ -1466,8 +1466,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         result_value=f"{result.FOS_overturning:.3f}",
         reference=(f"ASD, required {result.FOS_overturning_required:g} "
                    f"(FOS_overturning_req), {_MSE_ASD}; GEC-11 Vol I p. "
-                   f"4-22 checks the limiting eccentricity '(formerly "
-                   f"overturning)'"),
+                   f"4-18: 'Limiting eccentricity (formerly known as "
+                   f"overturning)', checked on pp. 4-22, 4-23"),
     ))
 
     # Bearing — Meyerhof uniform pressure over effective width (RW-3), on

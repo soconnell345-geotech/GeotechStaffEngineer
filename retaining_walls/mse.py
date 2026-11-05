@@ -2888,13 +2888,17 @@ STRENGTH_MIN_BASIS = (
     "Strength I with the minimum permanent load factors, gamma_EV_min on "
     "every vertical earth load and gamma_EH_min on the retained thrust "
     "(defaults 1.00 and 0.90, GEC-11 Vol I Table 4-2, p. 4-4), the live "
-    "load as in the critical combination: p. 4-23, 'Maximum permanent "
-    "loads, minimum permanent loads, and total extremes should be checked "
-    "for complex (geometry and/or loadings) walls', and 'for each strength "
-    "limit load group, e must be less than emax'. Counted in the governing "
-    "eccentricity and bearing CDR; on a level backfill it never governs, "
-    "its vertical loads being the critical combination's under a smaller "
-    "overturning moment")
+    "load at gamma_LL (1.75) on its thrust and, in bearing, over the "
+    "reinforced zone (GEC-11 Vol II Table E4-5.1, p. E4-6; Tables E4-6.2, "
+    "E4-6.3, pp. E4-8, E4-9): p. 4-23, 'Maximum permanent loads, minimum "
+    "permanent loads, and total extremes should be checked for complex "
+    "(geometry and/or loadings) walls', and 'for each strength limit load "
+    "group, e must be less than emax'; for bearing p. 4-28, 'a critical "
+    "value must be determined by comparisons of applicable load "
+    "combinations'. Counted in the governing eccentricity and bearing CDR; "
+    "on a level backfill its eccentricity is below the critical "
+    "combination's (EH min under the same EV) and its bearing stress below "
+    "Strength I max's")
 
 #: GEC-11 Vol I p. 4-30, read on the rendered page.
 LOCAL_SHEAR_BASIS = (
@@ -3381,7 +3385,7 @@ def check_external_stability_lrfd(
 
     sig_str, eL_bear, Bp_str = _bearing(gamma_EV_max, gamma_LL)   # Str I max
     sig_crit, _, Bp_crit = _bearing(gamma_EV_min, gamma_EV_min)   # min-vertical
-    sig_min, eL_bear_min, Bp_min = _bearing(gamma_EV_min, gamma_EV_min,
+    sig_min, eL_bear_min, Bp_min = _bearing(gamma_EV_min, gamma_LL,
                                             MOA_min)              # Str I min
 
     # Service I: all factors 1.0, LL included, overturning without EH/LL factors.
@@ -3569,11 +3573,11 @@ def _external_lrfd_sloping(
     sig_crit, _, Bp_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL,
                                  gamma_LL, gamma_EV_min)
     sig_svc, eL_svc, _ = _base(1.0, 1.0, 1.0, 1.0, 1.0)
-    # Strength I min (GM-114): EV min and EH min, the live load as in the
-    # critical combination
+    # Strength I min (GM-114): EV min and EH min, the live load at gamma_LL,
+    # as GEC-11 Vol II Table E4-5.1 lists Strength I (minimum)
     eL_min = _base(gamma_EV_min, gamma_EH_min, gamma_LL, ll_v, 0.0)[1]
     sig_min, eL_bear_min, Bp_min = _base(gamma_EV_min, gamma_EH_min,
-                                         gamma_LL, gamma_LL, gamma_EV_min)
+                                         gamma_LL, gamma_LL, gamma_LL)
 
     unfactored = {
         "V1": round(ld["V1"], 3), "V2": round(ld["V2"], 3),

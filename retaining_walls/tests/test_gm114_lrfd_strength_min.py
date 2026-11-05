@@ -47,7 +47,8 @@ def test_level_strength_min_bearing_by_hand():
     Ka = rankine_Ka(30.0)
     V1, Vs = GAMMA * H * L, Q * L
     F1, F2 = 0.5 * Ka * GAMMA * H ** 2, Ka * Q * H
-    SV = 1.00 * (V1 + Vs)
+    # LL 1.75 over the zone: GEC-11 Vol II Table E4-5.1 (p. E4-6)
+    SV = 1.00 * V1 + 1.75 * Vs
     MO = 0.90 * F1 * H / 3 + 1.75 * F2 * H / 2
     eB = L / 2 - (SV * L / 2 - MO) / SV
     sigma = SV / (L - 2 * eB)
