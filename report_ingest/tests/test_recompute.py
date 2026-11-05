@@ -11,8 +11,9 @@ import pytest
 
 from funhouse_agent.dispatch import call_agent
 from report_ingest.model import CALC_KINDS, ReportRecord
-from report_ingest.recompute import (NOT_RECOMPUTED, TOLERANCE, find_record,
-                                     make_recompute_tool,
+from report_ingest.recompute import (NOT_RECOMPUTED,
+                                     RECOMPUTE_TOOL_DESCRIPTION, TOLERANCE,
+                                     find_record, make_recompute_tool,
                                      recompute_calculation, recompute_record,
                                      table_markdown)
 
@@ -65,9 +66,11 @@ def test_a_matching_bearing_claim_agrees_and_names_the_module_default():
     assert row["method_used"] == "vesic"
     assert "names no method" in row["method_basis"]
     assert row["method_reference"]          # the module's own basis text
-    # the module's other cited options, run and listed with their values
-    assert {a["method"] for a in row["alternatives"]} == {"meyerhof",
-                                                          "terzaghi"}
+    # the module's other cited options, run and listed with their values,
+    # and with no depth factor printed, its depth factors off beside them
+    assert {a["option"] for a in row["alternatives"]} == {
+        "factor_method 'meyerhof'", "factor_method 'terzaghi'",
+        "factor_method 'vesic' with depth_factor_method 'none'"}
     meyer = module_bearing(factor_method="meyerhof")["q_ultimate_kPa"]
     alt = next(a for a in row["alternatives"] if a["method"] == "meyerhof")
     assert alt["recomputed_si"] == pytest.approx(meyer)
@@ -80,11 +83,31 @@ def test_a_matching_bearing_claim_agrees_and_names_the_module_default():
 def test_a_bearing_claim_that_differs_is_flagged():
     q_all = module_bearing()["q_allowable_kPa"]
     (row,) = recompute_calculation(bearing_calc(
-        [nq("Allowable bearing pressure", round(q_all * 0.7), "kPa")]))
+        [nq("Allowable bearing pressure", round(q_all * 1.3), "kPa")],
+        method="Vesic"))
     assert row["status"] == "recomputed"
     assert row["flag"] == "differs"
-    assert row["difference_pct"] > 100 * TOLERANCE
+    assert row["difference_pct"] < -100 * TOLERANCE
     assert "gross allowable" in row["note"]
+    # which options were run, and the range they span
+    assert "depth_factor_method 'none'" in row["flag_basis"]
+    assert "outside every option run" in row["flag_basis"]
+
+
+def test_an_allowable_below_q_ult_over_fs_is_below_not_differs():
+    # the print makes an allowable an upper bound: settlement may set it lower
+    none = module_bearing(factor_method="vesic",
+                          depth_factor_method="none")["q_allowable_kPa"]
+    (row,) = recompute_calculation(bearing_calc(
+        [nq("Allowable bearing pressure (settlement controls)",
+            round(none * 0.6), "kPa")], method="Vesic"))
+    assert row["flag"] == "below"
+    assert row["difference_pct"] > 100 * TOLERANCE
+    assert "UFC 3-220-20 Sec. 5-2.4" in row["note"]
+    assert "p. 278" in row["note"] and "settlement controls" in row["note"]
+    assert recompute_record({"calculations": [bearing_calc(
+        [nq("Net allowable bearing pressure", 10, "kPa")],
+        method="Vesic")]})["counts"]["below"] == 1
 
 
 def test_a_net_allowable_is_compared_with_the_net_value():
@@ -116,14 +139,15 @@ def test_us_customary_units_are_converted_by_the_record():
     assert "degrees" in row["inputs_used"]["friction_angle"]["note"]
 
 
-def test_a_printed_method_is_used_and_no_alternatives_are_run():
+def test_a_printed_method_is_used_and_no_other_method_is_run():
     meyer = module_bearing(factor_method="meyerhof")["q_ultimate_kPa"]
     (row,) = recompute_calculation(bearing_calc(
         [nq("Ultimate bearing capacity", round(meyer), "kPa")],
         method="Meyerhof (1963)"))
     assert row["method_used"] == "meyerhof"
     assert row["method_basis"].startswith("printed")
-    assert row["alternatives"] == []
+    assert [a["option"] for a in row["alternatives"]] == [
+        "factor_method 'meyerhof' with depth_factor_method 'none'"]
     assert row["flag"] == "agrees"
 
 
@@ -132,9 +156,92 @@ def test_an_unstated_method_shows_which_cited_option_a_claim_matches():
     (row,) = recompute_calculation(bearing_calc(
         [nq("Ultimate bearing capacity", round(terz), "kPa")]))
     assert row["method_used"] == "vesic"
-    assert row["flag"] == "differs"
+    assert abs(row["difference_pct"]) > 100 * TOLERANCE
+    # one of the module's own options: not a confident "differs"
+    assert row["flag"] == "within_options"
     alt = next(a for a in row["alternatives"] if a["method"] == "terzaghi")
     assert abs(alt["difference_pct"]) < 0.5
+
+
+DEEP_INPUTS = [nq("Footing width B", 2.0, "m"),
+               nq("Embedment depth Df", 2.0, "m"),
+               nq("Friction angle phi", 32, "deg"),
+               nq("Unit weight", 18.5, "kN/m3"),
+               nq("Factor of safety", 3.0)]
+
+
+def test_depth_factors_off_run_beside_the_module_default():
+    deep = {**BEARING_PARAMS, "depth": 2.0, "factor_method": "vesic"}
+    hansen = call_agent("bearing_capacity", "bearing_capacity_analysis",
+                        deep)["q_ultimate_kPa"]
+    none = call_agent("bearing_capacity", "bearing_capacity_analysis",
+                      {**deep, "depth_factor_method": "none"}
+                      )["q_ultimate_kPa"]
+    assert abs(hansen - none) / none > TOLERANCE      # Df/B = 1 matters
+    (row,) = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity", round(none), "kPa")],
+        inputs=DEEP_INPUTS, method="Vesic"))
+    assert row["recomputed_si"] == pytest.approx(hansen)
+    assert row["flag"] == "within_options"
+    (alt,) = row["alternatives"]
+    assert alt["depth_factor_method"] == "none"
+    assert abs(alt["difference_pct"]) < 0.5
+    assert "GEC-6" in alt["basis"]                   # the module's own basis
+    assert "depth_factor_method 'none'" in row["flag_basis"]
+    # a printed depth factor says the report used depth factors
+    (row,) = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity", round(none), "kPa"),
+         nq("Depth factor dq", 1.2)], inputs=DEEP_INPUTS, method="Vesic"))
+    assert row["alternatives"] == [] and row["flag"] == "differs"
+
+
+def test_an_undrained_and_a_drained_strength_are_not_run_together():
+    inputs = [nq("Footing width B", 1.5, "m"), nq("Embedment depth Df",
+                                                   1.0, "m"),
+              nq("Undrained shear strength su", 60, "kPa"),
+              nq("phi'", 26, "deg"), nq("Unit weight", 18.0, "kN/m3"),
+              nq("FS", 3.0)]
+    (row,) = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity", 400, "kPa")], inputs=inputs))
+    assert row["status"] == "not_recomputed"
+    assert "undrained and a drained strength" in row["reason"]
+    assert "recomputed_si" not in row
+
+
+def test_an_undrained_strength_alone_runs_as_phi_zero():
+    inputs = [nq("Footing width B", 1.5, "m"), nq("Embedment depth Df",
+                                                   1.0, "m"),
+              nq("Undrained shear strength su", 40, "kPa"),
+              nq("Unit weight", 18.0, "kN/m3"), nq("FS", 3.0)]
+    q_ult = call_agent("bearing_capacity", "bearing_capacity_analysis", {
+        "width": 1.5, "depth": 1.0, "cohesion": 40, "friction_angle": 0,
+        "unit_weight": 18.0, "factor_of_safety": 3.0, "shape": "square",
+        "factor_method": "vesic"})["q_ultimate_kPa"]
+    rows = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity", round(q_ult), "kPa"),
+         nq("Net ultimate bearing capacity", round(q_ult - 18.0), "kPa")],
+        inputs=inputs, method="Vesic"))
+    by_q = {r["quantity"]: r for r in rows}
+    gross = by_q["Ultimate bearing capacity"]
+    assert gross["flag"] == "agrees", gross
+    assert "phi = 0" in gross["inputs_used"]["su"]["note"]
+    assert "cohesion" not in gross["inputs_used"]
+    # a net ultimate is not set beside the module's gross q_ult
+    net = by_q["Net ultimate bearing capacity"]
+    assert net["status"] == "not_compared"
+    assert "net ultimate" in net["reason"] and "flag" not in net
+
+
+@pytest.mark.parametrize("label", ["γ′", "Unit weight γ'", "Buoyant unit "
+                                                          "weight"])
+def test_an_effective_unit_weight_is_not_the_total(label):
+    inputs = [i for i in BEARING_INPUTS if i["name"] != "Unit weight"]
+    (row,) = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity", 600, "kPa")],
+        inputs=inputs + [nq(label, 8.7, "kN/m3"),
+                         nq("Depth to groundwater", 1.0, "m")]))
+    assert row["status"] == "not_recomputed"
+    assert "unit_weight: not printed" in row["inputs_missing"]
 
 
 def test_a_missing_bearing_input_is_named_never_filled_in():
@@ -246,6 +353,38 @@ def test_a_strip_with_no_influence_factor_is_not_filled_in():
     assert any(m.startswith("Iw") for m in row["inputs_missing"])
 
 
+def test_an_unprinted_iw_runs_table_5_12_s_other_points_beside_the_default():
+    rigid = module_elastic(shape="square", rigidity="rigid")
+    average = module_elastic(shape="square", point="average")
+    (row,) = recompute_calculation(settlement_calc(
+        [nq("Immediate settlement", rigid["immediate_settlement_mm"], "mm")],
+        ELASTIC_INPUTS))
+    assert abs(row["difference_pct"]) > 100 * TOLERANCE
+    assert row["flag"] == "within_options"
+    by_opt = {a["option"]: a for a in row["alternatives"]}
+    assert set(by_opt) == {"rigidity 'rigid'", "point 'average'"}
+    assert by_opt["rigidity 'rigid'"]["Iw"] == rigid["Iw"]
+    assert by_opt["point 'average'"]["Iw"] == average["Iw"]
+    assert abs(by_opt["rigidity 'rigid'"]["difference_pct"]) < 0.5
+    assert "rigidity 'rigid'" in row["flag_basis"]
+    # outside every option: differs
+    (row,) = recompute_calculation(settlement_calc(
+        [nq("Immediate settlement",
+            round(average["immediate_settlement_mm"] * 0.5, 2), "mm")],
+        ELASTIC_INPUTS))
+    assert row["flag"] == "differs"
+
+
+def test_a_strain_influence_factor_is_not_taken_as_iw():
+    (row,) = recompute_calculation(settlement_calc(
+        [nq("Immediate settlement", 15, "mm")],
+        ELASTIC_INPUTS + [nq("Strain influence factor Iz", 0.6)]))
+    assert row["status"] == "not_recomputed"
+    assert "Strain influence factor Iz" in row["reason"]
+    assert "not GEC-6 Eq. 5-36's Iw" in row["reason"]
+    assert "recomputed_si" not in row
+
+
 CONSOLIDATION_INPUTS = [nq("Layer thickness", 3.0, "m"),
                         nq("Depth to center of layer", 4.5, "m"),
                         nq("Initial void ratio e0", 0.95),
@@ -296,6 +435,55 @@ def test_a_consolidation_claim_missing_cr_is_not_recomputed():
     assert "Cr: not printed" in row["inputs_missing"]
 
 
+def test_compression_ratios_and_c_alpha_are_not_taken_as_indices():
+    inputs = [i for i in CONSOLIDATION_INPUTS
+              if i["name"] != "Recompression index Cr"]
+    (row,) = recompute_calculation(settlement_calc(
+        [nq("Consolidation settlement", 120, "mm")],
+        inputs + [nq("Compression ratio CR", 0.16),
+                  nq("Recompression ratio RR", 0.02),
+                  nq("Secondary compression index Cα", 0.01)],
+        method="consolidation"))
+    assert row["status"] == "not_recomputed"
+    (cr,) = [m for m in row["inputs_missing"] if m.startswith("Cr")]
+    assert "not printed" in cr and "strain-based" in cr
+    assert "'Compression ratio CR'" in cr
+    assert row["inputs_used"]["Cc"]["value"] == 0.32     # not C-alpha
+
+
+def test_a_printed_ocr_sets_sigma_p_from_the_printed_stress():
+    sc = module_consolidation(sigma_p=2 * 65)["consolidation_settlement_mm"]
+    (row,) = recompute_calculation(settlement_calc(
+        [nq("Consolidation settlement", round(sc, 1), "mm")],
+        CONSOLIDATION_INPUTS + [nq("Overconsolidation ratio OCR", 2)],
+        method="consolidation"))
+    assert row["flag"] == "agrees", row
+    used = row["inputs_used"]["sigma_p"]
+    assert used["value"] == pytest.approx(130)
+    assert "OCR x sigma_v0" in used["note"] and "not printed" in used["note"]
+    assert "sigma_p" not in row["assumed"]
+
+
+def test_an_ocr_with_a_total_overburden_stress_is_refused():
+    inputs = [i for i in CONSOLIDATION_INPUTS
+              if i["name"] != "Initial effective stress"]
+    (row,) = recompute_calculation(settlement_calc(
+        [nq("Consolidation settlement", 30, "mm")],
+        inputs + [nq("Total overburden stress", 65, "kPa"),
+                  nq("OCR", 2)], method="consolidation"))
+    assert row["status"] == "not_recomputed"
+    assert any(m.startswith("sigma_p") and "total" in m
+               for m in row["inputs_missing"])
+
+
+def test_overconsolidated_with_no_sigma_p_is_not_run_normally_consolidated():
+    (row,) = recompute_calculation(settlement_calc(
+        [nq("Consolidation settlement", 30, "mm")], CONSOLIDATION_INPUTS,
+        method="consolidation", subject="Overconsolidated clay layer"))
+    assert row["status"] == "not_recomputed"
+    assert any("overconsolidated" in m for m in row["inputs_missing"])
+
+
 def test_an_unstated_method_whose_inputs_fit_both_is_not_recomputed():
     (row,) = recompute_calculation(settlement_calc(
         [nq("Settlement", 40, "mm")],
@@ -341,10 +529,12 @@ def test_slope_stability_is_held():
 # -- the record, the table and the tool ---------------------------------------
 
 def record_dict():
-    q_ult = module_bearing()["q_ultimate_kPa"]
+    out = module_bearing()
+    q_ult, q_all = out["q_ultimate_kPa"], out["q_allowable_kPa"]
     return {"document": {"report_id": "R-TEST-1"}, "calculations": [
         bearing_calc([nq("Ultimate bearing capacity", round(q_ult), "kPa"),
-                      nq("Allowable bearing pressure", 50, "kPa")]),
+                      nq("Allowable bearing pressure", round(3 * q_all),
+                         "kPa")]),
         {"kind": "slope_stability", "pages": [20],
          "results": [nq("FS", 1.3)]},
         settlement_calc([nq("Immediate settlement", 15, "mm")],
@@ -364,12 +554,23 @@ def test_a_record_gives_one_table_with_counts():
     md = table_markdown(table)
     assert "R-TEST-1" in md and md.count("\n| ") == 5   # header + 4 rows
     assert "held" in md
+    assert "assumed: " in md          # what the module took, in the table
+
+
+def test_the_tolerance_is_stated_as_this_table_s_own_threshold():
+    table = recompute_record(record_dict())
+    assert "not an engineering criterion" in table["tolerance_basis"]
+    assert table["tolerance_basis"] in table_markdown(table)
+    assert ("10 % (this table's own QC threshold, not an engineering "
+            "criterion)") in RECOMPUTE_TOOL_DESCRIPTION
+    assert "paths.record" in RECOMPUTE_TOOL_DESCRIPTION
 
 
 def test_the_tolerance_is_the_caller_s():
     q_ult = module_bearing()["q_ultimate_kPa"]
     rec = {"calculations": [bearing_calc(
-        [nq("Ultimate bearing capacity", round(q_ult * 1.05), "kPa")])]}
+        [nq("Ultimate bearing capacity", round(q_ult * 1.05), "kPa")],
+        method="Vesic")]}
     assert recompute_record(rec)["rows"][0]["flag"] == "agrees"
     assert recompute_record(rec, tolerance=0.02)["rows"][0]["flag"] == \
         "differs"
@@ -386,8 +587,10 @@ def test_a_record_file_and_its_folder_both_load(tmp_path):
         "counts"]["rows"] == 4
 
 
-def test_the_tool_finds_the_one_record_in_the_working_folder(tmp_path):
+def test_the_tool_finds_the_one_record_in_the_working_folder(tmp_path,
+                                                             monkeypatch):
     from funhouse_agent._fileio import working_dir_bound
+    monkeypatch.delenv("GEOTECH_REPORT_LIBRARY", raising=False)
     tool = make_recompute_tool()
     assert tool.name == "recompute_report_calcs"
     with working_dir_bound(str(tmp_path)):
@@ -408,13 +611,42 @@ def test_the_tool_finds_the_one_record_in_the_working_folder(tmp_path):
         assert "2 records" in json.loads(tool.invoke({}))["error"]
 
 
+def test_with_a_shared_library_an_empty_record_names_paths_record(
+        tmp_path, monkeypatch):
+    from funhouse_agent._fileio import working_dir_bound
+    monkeypatch.setenv("GEOTECH_REPORT_LIBRARY", str(tmp_path / "library"))
+    (tmp_path / "chat").mkdir()
+    with working_dir_bound(str(tmp_path / "chat")):
+        error = json.loads(make_recompute_tool().invoke({}))["error"]
+    assert "paths.record" in error
+    assert "report_ingest first" not in error
+
+
 def test_a_small_cap_keeps_the_flagged_rows_first():
     from report_ingest.recompute import _fit
-    text = _fit(recompute_record(record_dict()), 1500)
-    assert len(text) <= 1500
+    text = _fit(recompute_record(record_dict()), 3000)
+    assert len(text) <= 3000
     shown = json.loads(text)
     assert shown["rows"][0].get("flag") == "differs"
     assert "flagged first" in shown["cut"]
+
+
+def test_the_cap_drops_the_inputs_first_and_keeps_a_differing_row_s_assumptions():
+    from report_ingest.recompute import _fit
+    q_ult = module_bearing(factor_method="vesic")["q_ultimate_kPa"]
+    calcs = [bearing_calc([nq("Ultimate bearing capacity", round(2 * q_ult),
+                              "kPa"),
+                           nq("Allowable bearing pressure", 10, "kPa")],
+                          method="Vesic") for _ in range(10)]
+    table = recompute_record({"calculations": calcs})
+    assert table["counts"]["differs"] == 10 and table["counts"]["below"] == 10
+    text = _fit(table, 9000)
+    assert len(text) <= 9000
+    shown = json.loads(text)["rows"]
+    assert all("inputs_used" not in r for r in shown)
+    differs = [r for r in shown if r["flag"] == "differs"]
+    assert differs and all(r["assumed"] for r in differs)
+    assert all("assumed" not in r for r in shown if r["flag"] != "differs")
 
 
 def test_the_tool_comes_and_goes_with_report_ingest(monkeypatch):

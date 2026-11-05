@@ -23,6 +23,13 @@ Rules (``module_work/dr11/PLAN.md``):
   bearing capacity runs the module's default and lists the module's other
   cited options beside it with their values, and settlement takes the method
   its printed inputs fit, and says so.
+* **Never a confident wrong flag.** Where the printout does not settle a
+  module option (the method, the depth factors, the elastic Iw), the
+  module's own alternatives run beside the default, and a claim is flagged
+  ``differs`` only outside the range they span. Printed inputs the module
+  cannot take as printed (an undrained and a drained strength together, a
+  strain influence factor, a compression ratio) make the row
+  ``not_recomputed`` with the reason.
 
 First slice: ``shallow_foundation_bearing`` and ``settlement`` (elastic, and
 one-layer Cc/Cr consolidation). Every other kind is a row saying why it was
@@ -38,7 +45,8 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from report_ingest.model import Calculation, NamedQuantity, calc_si
 
-__all__ = ["TOLERANCE", "NOT_RECOMPUTED", "recompute_record",
+__all__ = ["TOLERANCE", "TOLERANCE_BASIS", "NOT_RECOMPUTED",
+           "recompute_record",
            "recompute_calculation", "table_markdown", "find_record",
            "make_recompute_tool", "RECOMPUTE_TOOL_DESCRIPTION"]
 
@@ -47,6 +55,11 @@ __all__ = ["TOLERANCE", "NOT_RECOMPUTED", "recompute_record",
 #: engineering value: printed factors are often read off charts and rounded,
 #: and a few per cent between two honest calculations is common.
 TOLERANCE = 0.10
+
+#: What the tolerance is, said in every table and in the tool's description.
+TOLERANCE_BASIS = ("this table's QC threshold, not an engineering "
+                   "criterion: printed factors are read off charts and "
+                   "rounded")
 
 #: Why each kind the first slice does not build is not recomputed.
 NOT_RECOMPUTED: Dict[str, str] = {
@@ -248,18 +261,63 @@ def _not_row(calc: Calculation, index: int, reason: str,
     return row
 
 
+#: The flags a claim can get past ``agrees``, in the order the tool shows
+#: them first when its result is cut.
+_FLAG_ORDER = ("differs", "below", "within_options")
+
+_FLAG_BASIS = {
+    "agrees": "the claim is within {tol} of the recomputed value",
+    "within_options": ("the claim is more than {tol} from the recomputed "
+                       "value but inside the range of the module's own "
+                       "options, so the printout does not settle a "
+                       "difference"),
+    "below": "the claim is more than {tol} below every option run",
+    "differs": "the claim is more than {tol} outside every option run",
+}
+
+
 def _compare(row: Dict[str, Any], nq: NamedQuantity, claimed: float,
-             recomputed: float, unit: str, tolerance: float) -> None:
+             recomputed: float, unit: str, tolerance: float,
+             options: Sequence[Dict[str, Any]] = (), default: str = "",
+             upper_bound: bool = False) -> None:
+    """Fill the comparison of one claim.
+
+    ``options``: the module's other options run beside its default (each
+    with its ``option`` label and ``recomputed_si``, or refused). A claim
+    is ``differs`` only outside the range the default and the options span,
+    past the tolerance; inside it but away from the default it is
+    ``within_options``, because the printout does not settle which option it
+    used. ``upper_bound``: an allowable pressure, which settlement may set
+    below q_ult / FS, so a claim below every option is ``below``."""
     diff = None if claimed == 0 else (recomputed - claimed) / abs(claimed)
+    ran = [o for o in options if o.get("recomputed_si") is not None]
+    values = [recomputed] + [o["recomputed_si"] for o in ran]
+    lo, hi = min(values), max(values)
+    if diff is None:
+        flag = "differs" if recomputed != 0 else "agrees"
+    elif abs(diff) <= tolerance:
+        flag = "agrees"
+    elif lo <= claimed <= hi or any(
+            abs(v - claimed) <= tolerance * abs(claimed) for v in values):
+        flag = "within_options"
+    elif upper_bound and claimed < lo:
+        flag = "below"
+    else:
+        flag = "differs"
     row.update(
         quantity=nq.name,
         claimed={"printed": _printed(nq), "page": _page(nq)},
         claimed_si=round(claimed, 6), recomputed_si=round(recomputed, 6),
         unit_si=unit,
         difference_pct=None if diff is None else round(100 * diff, 2),
-        flag=("differs" if diff is None and recomputed != 0
-              or diff is not None and abs(diff) > tolerance else "agrees"),
-        status="recomputed", reason="")
+        flag=flag, status="recomputed", reason="")
+    if ran:
+        row["options_range_si"] = [round(lo, 6), round(hi, 6)]
+        row["flag_basis"] = (
+            f"the module ran {default} (the recomputed value), and beside "
+            f"it " + "; ".join(o["option"] for o in ran)
+            + f": {lo:.4g} to {hi:.4g} {unit}; "
+            + _FLAG_BASIS[flag].format(tol=f"{100 * tolerance:g} %"))
 
 
 def _call(module: str, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -288,11 +346,16 @@ _BEARING_INPUTS = (
     _Spec("friction_angle", "angle",
           [r"friction angle", r"angle of (internal )?friction", r"^phi\b",
            r"\bphi'?\b"]),
-    _Spec("cohesion", "stress",
-          [r"cohesion", r"^c'?\b", r"undrained shear strength", r"\bsu\b",
-           r"\bcu\b"]),
+    # an undrained strength is its own input: run as the cohesion with
+    # phi = 0, never together with a drained c' or phi
+    _Spec("su", "stress",
+          [r"undrained (shear )?strength", r"undrained cohesion",
+           r"\bs_?u\b", r"\bc_?u\b"]),
+    _Spec("cohesion", "stress", [r"cohesion", r"^c'?\b"], [r"undrained"]),
+    # the total unit weight: gamma' is the effective one
     _Spec("unit_weight", "unit_weight", [r"unit weight", r"^gamma\b"],
-          [r"effective", r"buoyant", r"submerged", r"water"]),
+          [r"effective", r"buoyant", r"submerged", r"water", r"gamma ?'",
+           r"\bprime\b", r"\bgamma_?(sub|b)\b"]),
     _Spec("gwt_depth", "length",
           [r"water table", r"groundwater", r"\bgwt\b", r"\bd_?w\b"]),
     _Spec("factor_of_safety", "ratio",
@@ -309,6 +372,21 @@ _BEARING_RESULTS = (
 
 _BEARING_METHODS = ("vesic", "meyerhof", "terzaghi")
 
+#: A printed label naming a depth factor: the report used depth factors.
+_DEPTH_FACTOR_LABEL = re.compile(r"depth factor|\bd_?[cq]\b|\bd_?gamma\b")
+
+#: The key of a "net ultimate" claim, which is not compared.
+_NET_ULTIMATE = "net_ultimate"
+
+#: An allowable pressure below q_ult / FS is consistent with the print
+#: (checked in the reference library's UFC 3-220-20 text and print).
+_BELOW_NOTE = (
+    "lower than q_ult/FS: UFC 3-220-20 Sec. 5-2.4 defines the allowable "
+    "bearing pressure as the highest pressure that meets both the factored "
+    "bearing capacity and settlement (p. 278), prints Eq. 5-14 as an upper "
+    "bound, q_all,net <= q_ult/F_BC - sigma_zD, and lowers the allowable "
+    "where settlement controls (step 3b, p. 279); check the report's basis")
+
 
 def _bearing_claims(calc: Calculation):
     out = []
@@ -320,23 +398,35 @@ def _bearing_claims(calc: Calculation):
             if re.search(must, lab) and (also is None or re.search(also, lab)):
                 if key == "q_allowable_kPa" and re.search(r"\bnet\b", lab):
                     continue
+                if key == "q_ultimate_kPa" and re.search(r"\bnet\b", lab):
+                    key = _NET_ULTIMATE
                 out.append((key, nq))
                 break
     return out
 
 
-def _alternative(alt: Dict[str, Any], key: str, claimed: float
+def _alternative(alt: Dict[str, Any], key: str, claimed: Optional[float]
                  ) -> Dict[str, Any]:
-    """One of the module's other cited methods, and what it gives."""
+    """One of the module's other options, and what it gives."""
     res = alt["result"]
+    out = {k: v for k, v in alt.items() if k != "result"}
     if "error" in res:
-        return {"method": alt["method"], "refused": str(res["error"])[:300]}
+        out["refused"] = str(res["error"])[:300]
+        return out
     value = float(res[key])
-    out = {"method": alt["method"], "recomputed_si": round(value, 6)}
+    out["recomputed_si"] = round(value, 6)
     if claimed:
         out["difference_pct"] = round(100 * (value - claimed) / abs(claimed),
                                       2)
     return out
+
+
+def _net_ultimate_row(calc: Calculation, index: int, nq: NamedQuantity
+                      ) -> Dict[str, Any]:
+    return _not_row(calc, index, status="not_compared", quantity=nq.name,
+                    claimed={"printed": _printed(nq), "page": _page(nq)},
+                    reason=("a net ultimate pressure (q_ult - q): the "
+                            "module's q_ult is the gross one"))
 
 
 def _recompute_bearing(calc: Calculation, index: int, tolerance: float
@@ -346,18 +436,36 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float
         return [_not_row(calc, index, status="not_compared", reason=(
             "no ultimate or allowable bearing pressure among the printed "
             "results"))]
+    net_rows = [_net_ultimate_row(calc, index, nq) for key, nq in claims
+                if key == _NET_ULTIMATE]
+    claims = [c for c in claims if c[0] != _NET_ULTIMATE]
+    if not claims:
+        return net_rows
     words = _method_words(calc)
     if re.search(r"two.?layer|layered", words):
         return [_not_row(calc, index, "a two-layer bearing case: a later "
-                         "slice maps its second layer")]
+                         "slice maps its second layer")] + net_rows
     found, problems = _collect(calc.inputs, _BEARING_INPUTS)
+    su = found.get("su")
+    if su is not None:
+        drained = [found[p] for p in ("cohesion", "friction_angle")
+                   if p in found and (p == "cohesion"
+                                      or found[p]["value"] > 0)]
+        if drained:
+            return [_not_row(
+                calc, index, "an undrained and a drained strength are both "
+                "printed (" + "; ".join(f"'{e['label']}' {e['printed']}"
+                                        for e in [su] + drained)
+                + "): the short- and long-term cases are separate runs, not "
+                "recomputed together", inputs_used=found,
+                module="bearing_capacity",
+                module_method="bearing_capacity_analysis")] + net_rows
     missing = [f"{p}: {why}" for p, why in problems.items()]
     for need in ("width", "depth", "unit_weight"):
         if need not in found and need not in problems:
             missing.append(f"{need}: not printed")
-    if ("friction_angle" not in found and "cohesion" not in found
-            and not {"friction_angle", "cohesion"} & set(problems)):
-        missing.append("friction_angle or cohesion: neither printed")
+    if not {"friction_angle", "cohesion", "su"} & (set(found) | set(problems)):
+        missing.append("friction_angle or cohesion (c' or su): none printed")
     shape, shape_how = _shape(calc, found)
     if shape is None:
         missing.append(shape_how)
@@ -367,8 +475,12 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float
         return [_not_row(calc, index, "inputs not printed: "
                          + "; ".join(missing), inputs_missing=missing,
                          inputs_used=found, module="bearing_capacity",
-                         module_method="bearing_capacity_analysis")]
+                         module_method="bearing_capacity_analysis")
+                ] + net_rows
     params: Dict[str, Any] = {k: v["value"] for k, v in found.items()}
+    if su is not None:
+        params["cohesion"] = params.pop("su")
+        su["note"] = "run as the cohesion c with phi = 0 (the undrained case)"
     params["shape"] = shape
     if shape in ("strip", "square", "circular"):
         params.pop("length", None)
@@ -396,7 +508,8 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float
     if "error" in result:
         return [_not_row(calc, index, f"the module refused: {result['error']}",
                          inputs_used=found, module="bearing_capacity",
-                         module_method="bearing_capacity_analysis")]
+                         module_method="bearing_capacity_analysis")
+                ] + net_rows
     used = result.get("factor_method", method or "vesic")
     alternatives = []
     if method is None:
@@ -405,7 +518,29 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float
                 continue
             alt = _call("bearing_capacity", "bearing_capacity_analysis",
                         {**params, "factor_method": other})
-            alternatives.append({"method": other, "result": alt})
+            alternatives.append({"option": f"factor_method '{other}'",
+                                 "method": other, "result": alt})
+    # the module's default depth factors are Hansen's; a printout that names
+    # none may have used none (GEC-6 Sec. 5.2.3.3), so both run
+    labels = [_norm(n.name) for n in list(calc.inputs) + list(calc.results)]
+    depth_alt = (params.get("depth", 0) > 0 and used in ("vesic", "meyerhof")
+                 and not any(_DEPTH_FACTOR_LABEL.search(lab)
+                             for lab in labels))
+    if depth_alt:
+        alt = _call("bearing_capacity", "bearing_capacity_analysis",
+                    {**run, "factor_method": used,
+                     "depth_factor_method": "none"})
+        alternatives.append({
+            "option": f"factor_method '{used}' with depth_factor_method "
+                      "'none'",
+            "method": used, "depth_factor_method": "none",
+            "why": ("no depth factor is printed: the module's default "
+                    "(depth_factor_method 'hansen') and none both run"),
+            "basis": _basis(alt, "depth factors"), "result": alt})
+    default = (f"factor_method '{used}'"
+               + (", ngamma_method 'hansen'"
+                  if params.get("ngamma_method") else "")
+               + (", depth_factor_method 'hansen'" if depth_alt else ""))
     rows = []
     for key, nq in claims:
         row = _base_row(calc, index)
@@ -432,15 +567,22 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float
                            "guess)"))
             rows.append(row)
             continue
-        _compare(row, nq, claimed, float(result[key]), "kPa", tolerance)
-        if key == "q_allowable_kPa":
-            row["note"] = ("compared with the gross allowable q_ult / FS "
-                           "(UFC 3-220-20 Eq. 5-13); a net allowable label "
-                           "says 'net'")
         row["alternatives"] = [_alternative(a, key, claimed)
                                for a in alternatives]
+        _compare(row, nq, claimed, float(result[key]), "kPa", tolerance,
+                 options=row["alternatives"], default=default,
+                 upper_bound=key != "q_ultimate_kPa")
+        notes = []
+        if key == "q_allowable_kPa":
+            notes.append("compared with the gross allowable q_ult / FS "
+                         "(UFC 3-220-20 Eq. 5-13); a net allowable label "
+                         "says 'net'")
+        if row["flag"] == "below":
+            notes.append(_BELOW_NOTE)
+        if notes:
+            row["note"] = "; ".join(notes)
         rows.append(row)
-    return rows
+    return rows + net_rows
 
 
 # -- settlement --------------------------------------------------------------
@@ -457,10 +599,20 @@ _ELASTIC_INPUTS = (
           [r"modulus", r"^e_?s\b", r"^e\b", r"young"],
           [r"subgrade", r"reaction", r"shear modulus"]),
     _Spec("nu", "ratio", [r"poisson", r"^nu\b"]),
-    _Spec("Iw", "ratio", [r"influence factor", r"^i_?w\b"]),
+    # GEC-6 Eq. 5-36's Iw (Table 5-12's shape and rigidity factor) only:
+    # Schmertmann's Iz, Fox's depth factor and Bowles' Is are other factors
+    _Spec("Iw", "ratio",
+          [r"\bi_?w\b", r"^influence factor$", r"shape and rigidity factor"],
+          [r"strain", r"depth", r"embedment"]),
 )
 
+#: A printed factor elastic_settlement (Se = q B (1 - nu^2) Iw / Es) has no
+#: place for, when it is not the Iw above.
+_OTHER_FACTOR = re.compile(r"influence|\b(depth|embedment) (correction )?"
+                           r"factor\b|\bi_?zp?\b|\bi_[sf]\b")
+
 _CONSOLIDATION_INPUTS = (
+    _Spec("OCR", "ratio", [r"\bocr\b", r"over.?consolidation ratio"]),
     _Spec("sigma_p", "stress",
           [r"preconsolidation", r"maximum past", r"^sigma'?_?p\b", r"^p_?c\b"
            r"|^p'_?c\b"]),
@@ -478,9 +630,13 @@ _CONSOLIDATION_INPUTS = (
            r"(depth|of (the )?layer)"]),
     _Spec("e0", "ratio",
           [r"void ratio", r"^e_?0\b", r"^e_?o\b"]),
+    # the indices only: a compression or recompression RATIO (CR, RR) is
+    # strain-based, and the secondary compression index C-alpha is no Cc
     _Spec("Cr", "ratio",
-          [r"recompression", r"swelling", r"\bcr\b", r"\bcs\b"]),
-    _Spec("Cc", "ratio", [r"compression index", r"\bcc\b"]),
+          [r"recompression", r"swelling", r"\bcr\b", r"\bcs\b"],
+          [r"\bratio\b"]),
+    _Spec("Cc", "ratio", [r"compression index", r"\bcc\b"],
+          [r"secondary", r"\bratio\b"]),
 )
 
 _CONSOLIDATION_REQUIRED = ("thickness", "depth_to_center", "e0", "Cc", "Cr",
@@ -541,6 +697,45 @@ def _settlement_claim(calc: Calculation, method: str):
     return cands[0], ""
 
 
+def _stress_history(calc: Calculation, found: Dict[str, Dict[str, Any]],
+                    problems: Dict[str, str], missing: List[str]) -> None:
+    """sigma_p from a printed OCR, or the reason the row cannot be run.
+
+    sigma_p = OCR x sigma_v0 is OCR's definition, taken only with the
+    printed effective stress the module runs the layer at; a sigma_v0
+    labelled as a total stress refuses the row. A printout that calls the
+    soil overconsolidated and gives neither sigma_p nor OCR is not run as
+    normally consolidated."""
+    if "sigma_p" in found or "sigma_p" in problems:
+        if "OCR" in found:
+            found["OCR"]["note"] = "not used: sigma_p is printed"
+        return
+    ocr, sv0 = found.get("OCR"), found.get("sigma_v0")
+    if ocr is not None:
+        if sv0 is None:
+            return                  # sigma_v0 is already named as missing
+        if re.search(r"\btotal\b", _norm(sv0["label"])):
+            missing.append(
+                f"sigma_p: the printout gives OCR ('{ocr['label']}'), not "
+                f"sigma_p, and its sigma_v0 ('{sv0['label']}') is a total "
+                f"stress, not the effective stress sigma_p = OCR x sigma'_v0 "
+                f"takes")
+            return
+        found["sigma_p"] = {
+            "value": ocr["value"] * sv0["value"], "label": "OCR x sigma_v0",
+            "printed": f"{ocr['printed']} x {sv0['printed']}",
+            "page": ocr["page"],
+            "note": (f"not printed: sigma_p = OCR x sigma_v0 (the definition "
+                     f"of OCR), from '{ocr['label']}' and '{sv0['label']}', "
+                     f"the stress the module runs the layer at")}
+        return
+    if "OCR" not in problems and re.search(r"\bover.?consolidated\b",
+                                           _all_words(calc)):
+        missing.append("sigma_p: the printout calls the soil "
+                       "overconsolidated and prints neither sigma_p nor OCR "
+                       "(normally consolidated would be a guess)")
+
+
 def _recompute_settlement(calc: Calculation, index: int, tolerance: float
                           ) -> List[Dict[str, Any]]:
     method, how = _settlement_method(calc)
@@ -551,8 +746,21 @@ def _recompute_settlement(calc: Calculation, index: int, tolerance: float
         return [_not_row(calc, index, why, status="not_compared",
                          module="settlement", method_used=method,
                          method_basis=how)]
+    iw_options: List[Tuple[str, Dict[str, str]]] = []
     if method == "elastic":
         module_method = "elastic_settlement"
+        other = [n.name for n in calc.inputs
+                 if _OTHER_FACTOR.search(_norm(n.name))
+                 and not _ELASTIC_INPUTS[-1].matches(n.name)]
+        if other:
+            return [_not_row(
+                calc, index, "a factor that is not GEC-6 Eq. 5-36's Iw is "
+                "printed (" + "; ".join(f"'{n}'" for n in other) + "): the "
+                "report's method uses it, and the module's elastic_settlement "
+                "(Se = q B (1 - nu^2) Iw / Es) has no place for it, so the "
+                "two are not compared", module="settlement",
+                module_method=module_method, method_used=method,
+                method_basis=how)]
         found, problems = _collect(calc.inputs, _ELASTIC_INPUTS)
         missing = [f"{p}: {w}" for p, w in problems.items()]
         missing += [f"{p}: not printed" for p in ("q_net", "B", "Es")
@@ -576,6 +784,14 @@ def _recompute_settlement(calc: Calculation, index: int, tolerance: float
                 words = _all_words(calc)
                 if re.search(r"\brigid\b", words):
                     params["rigidity"] = "rigid"
+                else:
+                    # Table 5-12's other points beside the module's default
+                    # (the centre of a flexible footing)
+                    if not re.search(r"\bflexible\b", words):
+                        iw_options.append(("rigidity 'rigid'",
+                                           {"rigidity": "rigid"}))
+                    iw_options.append(("point 'average'",
+                                       {"point": "average"}))
         else:
             params.pop("L", None)
         key = "immediate_settlement_m"
@@ -583,10 +799,19 @@ def _recompute_settlement(calc: Calculation, index: int, tolerance: float
         module_method = "consolidation_settlement"
         found, problems = _collect(calc.inputs, _CONSOLIDATION_INPUTS)
         missing = [f"{p}: {w}" for p, w in problems.items()]
-        missing += [f"{p}: not printed" for p in _CONSOLIDATION_REQUIRED
-                    if p not in found and p not in problems]
+        strain = [n.name for n in calc.inputs
+                  if re.search(r"\bratio\b", _norm(n.name))
+                  and re.search(r"compression|\bcr\b|\brr\b", _norm(n.name))]
+        for p in _CONSOLIDATION_REQUIRED:
+            if p not in found and p not in problems:
+                missing.append(f"{p}: not printed" + (
+                    " (the printout gives "
+                    + ", ".join(f"'{n}'" for n in strain)
+                    + ", a strain-based ratio; the module takes the indices "
+                    "Cc and Cr)" if strain and p in ("Cc", "Cr") else ""))
+        _stress_history(calc, found, problems, missing)
         layer = {k: found[k]["value"] for k in found
-                 if k not in ("delta_sigma",)}
+                 if k not in ("delta_sigma", "OCR")}
         params = {"layers": [layer],
                   "delta_sigma": found.get("delta_sigma", {}).get("value")}
         shape_how = ""
@@ -617,7 +842,19 @@ def _recompute_settlement(calc: Calculation, index: int, tolerance: float
     if claimed is None:
         row.update(quantity=nq.name, status="not_compared", reason=why)
         return [row]
-    _compare(row, nq, claimed, float(result[key]), "m", tolerance)
+    default = ""
+    if iw_options:
+        row["alternatives"] = []
+        for label, extra in iw_options:
+            res = _call("settlement", module_method, {**params, **extra})
+            alt = _alternative({"option": label, "result": res}, key, claimed)
+            if "Iw" in res:
+                alt["Iw"] = res["Iw"]
+            row["alternatives"].append(alt)
+        default = (f"Iw {result.get('Iw', 0):.3g} (GEC-6 Table 5-12, the "
+                   f"centre of a flexible footing)")
+    _compare(row, nq, claimed, float(result[key]), "m", tolerance,
+             options=row.get("alternatives") or (), default=default)
     return [row]
 
 
@@ -655,8 +892,9 @@ def recompute_record(record: Any, tolerance: float = TOLERANCE
 
     ``record``: a :class:`~report_ingest.model.ReportRecord`, its dict, or
     the path of ``report.record.json`` or the folder report ingest wrote it
-    into. Returns ``{"report_id", "tolerance", "rows", "counts"}``: one row
-    per claimed result (or one per calculation that was not recomputed).
+    into. Returns ``{"report_id", "tolerance", "tolerance_basis", "rows",
+    "counts"}``: one row per claimed result (or one per calculation that was
+    not recomputed).
     """
     from report_ingest.checklist import load_record
     rec = load_record(record)
@@ -670,7 +908,8 @@ def recompute_record(record: Any, tolerance: float = TOLERANCE
         if row.get("flag"):
             counts[row["flag"]] = counts.get(row["flag"], 0) + 1
     return {"report_id": rec.document.report_id, "tolerance": tolerance,
-            "rows": rows, "counts": counts}
+            "tolerance_basis": TOLERANCE_BASIS, "rows": rows,
+            "counts": counts}
 
 
 def _fmt(value: Optional[float]) -> str:
@@ -680,7 +919,8 @@ def _fmt(value: Optional[float]) -> str:
 def table_markdown(table: Dict[str, Any]) -> str:
     """The table as Markdown, one line a row."""
     lines = [f"Recomputed calculations, report {table.get('report_id') or '?'}"
-             f" (flag past {100 * table['tolerance']:g} %)", "",
+             f" (flag past {100 * table['tolerance']:g} %: "
+             f"{table.get('tolerance_basis') or TOLERANCE_BASIS})", "",
              "| # | kind | quantity | claimed | recomputed (SI) | diff % | "
              "result | method | pages |",
              "|---|---|---|---|---|---|---|---|---|"]
@@ -693,6 +933,9 @@ def table_markdown(table: Dict[str, Any]) -> str:
         method = r.get("method_used") or ""
         if r.get("method_basis"):
             method = f"{method} ({r['method_basis']})".strip()
+        if r.get("assumed"):
+            method = f"{method}; assumed: {', '.join(r['assumed'])}".strip(
+                "; ")
         lines.append("| " + " | ".join(str(x).replace("|", "/") for x in (
             r["calc_index"] + 1, r["kind"], r.get("quantity", ""), claimed,
             rec.strip(), "" if diff is None else f"{diff:+.1f}", result,
@@ -706,18 +949,28 @@ def table_markdown(table: Dict[str, Any]) -> str:
 
 RECORD_NAME = "report.record.json"
 
+#: The shared report library's setting (``funhouse_agent.deep.tools.
+#: REPORT_LIBRARY_ENV``): with it set, the ingest writes outside the working
+#: folder.
+_LIBRARY_ENV = "GEOTECH_REPORT_LIBRARY"
+
 RECOMPUTE_TOOL_DESCRIPTION = (
     "Recompute the calculations a report claims, through this app's own "
-    "modules, from a report already read by report_ingest. Give `record`: "
-    "the path of its report.record.json or of the folder report_ingest "
-    "wrote it into (empty: the one record in the working folder). Returns "
+    "modules, from a report already read by report_ingest. `record`: the "
+    "record path the report_ingest tool returned (paths.record), or the "
+    "folder it wrote (empty: the one record in the working folder). Returns "
     "one row per claimed result: the claimed value as printed with its "
-    "page, the recomputed value in SI, the difference in per cent, flag "
-    "'differs' past the tolerance, the method used and why (printed, the "
-    "module's default with its other cited options beside it, or inferred "
-    "from the printed inputs), the inputs used with their pages, what the "
-    "module assumed, and for a calculation not recomputed, why (an input "
-    "not printed is named, never filled in). Bearing capacity and "
+    "page, the recomputed value in SI, the difference in per cent, and a "
+    f"flag: 'differs' past {100 * TOLERANCE:g} % (this table's own QC "
+    "threshold, not an engineering criterion) from every option the module "
+    "ran; 'within_options' where the claim misses the module's default but "
+    "falls inside the range of its own options run beside it (method, depth "
+    "factors, influence factor); 'below' for an allowable pressure under "
+    "q_ult/FS, which settlement may set. Each row gives the method used and "
+    "why (printed, the module's default with its other options beside it, "
+    "or inferred from the printed inputs), the inputs used with their pages, "
+    "what the module assumed, and for a calculation not recomputed, why (an "
+    "input not printed is named, never filled in). Bearing capacity and "
     "settlement are recomputed so far; slope stability is held. Show the "
     "user the table, the flagged rows first, with the reasons and "
     "assumptions as given.")
@@ -736,22 +989,30 @@ def find_record(where: str = "") -> str:
         if os.path.isdir(path):
             path = os.path.join(path, RECORD_NAME)
         if not os.path.isfile(path):
-            raise ValueError(f"no record at {where!r}: give the path of the "
-                             f"{RECORD_NAME} report_ingest wrote, or of its "
-                             f"folder")
+            raise ValueError(f"no record at {where!r}: give the record path "
+                             f"report_ingest returned (paths.record), or "
+                             f"the folder it wrote")
         return path
     if not folder or not os.path.isdir(folder):
-        raise ValueError("no working folder to look in: give the path of "
-                         f"the {RECORD_NAME} report_ingest wrote")
+        raise ValueError("no working folder to look in: give the record "
+                         "path report_ingest returned (paths.record)")
     hits = []
     for root, _dirs, files in os.walk(folder):
         if RECORD_NAME in files:
             hits.append(os.path.join(root, RECORD_NAME))
     if len(hits) == 1:
         return hits[0]
+    if not hits and (os.environ.get(_LIBRARY_ENV) or "").strip():
+        # the ingest wrote into the shared library, not the working folder
+        raise ValueError(f"no {RECORD_NAME} in the working folder (report "
+                         f"ingest writes to the shared report library): "
+                         f"give the record path report_ingest returned "
+                         f"(paths.record)")
     if not hits:
         raise ValueError(f"no {RECORD_NAME} in the working folder: read the "
-                         f"report with report_ingest first")
+                         f"report with report_ingest first, or give the "
+                         f"record path report_ingest returned "
+                         f"(paths.record)")
     rel = sorted(os.path.relpath(h, folder) for h in hits)
     raise ValueError(f"{len(hits)} records in the working folder; name one: "
                      + ", ".join(rel[:20]))
@@ -761,16 +1022,23 @@ def _fit(table: Dict[str, Any], cap: int) -> str:
     text = json.dumps(table, ensure_ascii=False, default=str)
     if cap <= 0 or len(text) <= cap:
         return text
-    for field in ("assumed", "alternatives", "inputs_used"):
+    # detail goes first: the inputs, then the alternatives and assumptions
+    # of the rows not flagged "differs", then those rows' alternatives; a
+    # "differs" row keeps what the module assumed
+    for field, differs_too in (("inputs_used", True),
+                               ("alternatives", False), ("assumed", False),
+                               ("alternatives", True)):
         for row in table["rows"]:
-            row.pop(field, None)
+            if differs_too or row.get("flag") != "differs":
+                row.pop(field, None)
         text = json.dumps(table, ensure_ascii=False, default=str)
         if len(text) <= cap:
             return text
-    flagged = [r for r in table["rows"] if r.get("flag") == "differs"]
-    rest = [r for r in table["rows"] if r.get("flag") != "differs"]
+    rank = {flag: i for i, flag in enumerate(_FLAG_ORDER)}
+    ordered = sorted(table["rows"],
+                     key=lambda r: rank.get(r.get("flag"), len(rank)))
     keep: List[Dict[str, Any]] = []
-    for row in flagged + rest:
+    for row in ordered:
         trial = {**table, "rows": keep + [row]}
         if len(json.dumps(trial, ensure_ascii=False, default=str)) > cap - 200:
             break
