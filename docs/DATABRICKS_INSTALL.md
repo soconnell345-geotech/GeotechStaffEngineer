@@ -11,15 +11,16 @@ Last install log triaged line by line: **5.14.0, 2026-09-11** (clean). Installed
 and used on the cluster since: 5.20.0 (2026-09-18, the first scoring run),
 5.32.0 (2026-10-07, live checks 1 and 4) and 5.33.0 (2026-10-14, the
 owner's geotech-page sessions, on streamlit 1.65.0); no log was pasted for
-triage. The current release is **5.33.0** (2026-10-09); the next one is on
-master and held by the owner.
+triage. The current release is **5.34.0** (2026-11-04, with planlens 0.14.0
+and geotech-references 1.5.0); its cluster install is not yet confirmed
+(§11).
 
 ---
 
 ## 1. The install
 
 ```python
-%pip install "geotech-staff-engineer==5.33.0"
+%pip install "geotech-staff-engineer==5.34.0"
 %restart_python
 ```
 
@@ -35,11 +36,12 @@ that the already-running Python process cannot see.
 
 Three lines decide it. Find them and you're done:
 
-1. **`Successfully installed ... geotech-staff-engineer-5.33.0 ...`** — with
-   `planlens-0.13.0` and `geotech-references-1.4.1` in the same list.
-   `planlens-0.13.0` declares exactly the dependencies `planlens-0.4.0` did
-   (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz), so nothing
-   new should appear beside it.
+1. **`Successfully installed ... geotech-staff-engineer-5.34.0 ...`** — with
+   `planlens-0.14.0` and `geotech-references-1.5.0` in the same list.
+   `planlens-0.14.0` declares the same packages `planlens-0.4.0` did
+   (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz; only the
+   floors moved: numpy 1.26, PyMuPDF 1.27.2), so nothing new should appear
+   beside it.
 2. **No `403` and no `quarantined` anywhere.**
 3. The final `ERROR: pip's dependency resolver ...` block lists **only** the
    conflicts in §3. That block is a *warning printed as ERROR* — pip says
@@ -122,17 +124,20 @@ for d in distributions():
 This is the resolver searching, not failing.
 
 Cause: `langsmith 0.12.4` (a **deepagents** dependency) pulls the `httpx2` /
-`httpcore2` fork stack. The `openai<3` pin in `pyproject.toml` was written
-specifically to keep that stack off the cluster and **no longer achieves it** —
-httpx2 now arrives by a different road. Nothing is broken (the Prompter's NTLM
-path still runs on the untouched httpx 0.28.1), but **the pin's rationale
-comment is wrong about what protects what.** Backlog item, not a blocker.
+`httpcore2` fork stack. The old `openai<3` pin was written to keep that stack
+off the cluster and did not: httpx2 arrives through langsmith (and anthropic
+1.x) whatever openai is. Nothing is broken (the Prompter's NTLM path still
+runs on the untouched httpx 0.28.1). From 5.34.0 the cap is `openai<3.29.1`,
+the highest version tested (INF-03, 2026-10-27), and the `pyproject.toml`
+comment says where httpx2 comes from. What openai 3.x changes is its own
+default client, built on httpx2; the NTLM handshake through it has not run
+offline.
 
 ---
 
 ## 6. Version drift: the gate runs the floor, the cluster runs the ceiling
 
-Our agent-stack pins are ranges (`deepagents>=0.6.8,<0.8`). The local gate
+Our agent-stack pins are ranges (`deepagents>=0.6.8,<0.7.25`). The local gate
 resolves to whatever is already installed — often the **floor**. The cluster
 resolves fresh against the proxy and gets the **ceiling**. On 5.14.0 that was
 deepagents **0.6.8** (gate) vs **0.7.13** (cluster).
@@ -153,10 +158,16 @@ pandas 3.0.6, numpy 2.5.4, scipy 1.18.1, plotly 7.1.0 and openai 2.54.0 —
 about 15,360 tests passed over every package folder. Its one failure,
 deepagents 0.7's new `delete` scratch tool reaching the Document Review
 page's menu (and its reading helper and the references consult), is fixed
-on master by hiding it with the other scratch tools; the fix reaches the
-cluster with the next release. The sidebar's
+by hiding it with the other scratch tools (in 5.34.0). The sidebar's
 drift warning (`webapp/version_guard.py`) now treats streamlit below 1.67 as
 tested.
+
+**The caps were raised to the versions tested on 2026-10-27** (BACKLOG
+INF-03, Python 3.12): with deepagents 0.7.24, langchain 1.4.5, langgraph
+1.2.15 and openai 3.29.0, `funhouse_agent/tests`, `webapp/tests` and
+`funhouse_agent/deep/tests` gave the same results as at the old caps. So
+5.34.0 caps deepagents `<0.7.25`, langchain `<1.4.6` and openai `<3.29.1`
+(langgraph keeps `<1.3`), and a fresh install lands on those versions.
 
 **Red flag:** the agent answering every question with a recursion error right
 after an install. That means a new deepagents changed something the compiled-
@@ -176,17 +187,18 @@ verified:
 | `rapidfuzz` (via `planlens`, new at 5.18.0) | `>=3.9` — **no ceiling** | **3.14.6** expected | **New at 5.18.0.** Arrives with planlens 0.4.0, which moved it into its core; it is not an app dependency. Cleared the Nexus probe 2026-09-16 at 3.14.6. MIT, and it pulls **no dependencies of its own** — a C++ extension with prebuilt wheels, so it cannot disturb the numpy or streamlit resolution. |
 | `numpy` | `>=1.26` (was `>=2.0` to 5.33.0; INF-53, for Foundry's numpy 1.26) | 2.4.6 | §4; still lands on 2.4.6 here, PyNiteFEA needs >=2.4 |
 | `streamlit` | `>=1.39` | 1.65.0 (2026-10-14) | fine; tested to 1.66.0, the drift warning's range is `<1.67` |
-| `openai` | `<3` | 2.54.0 | bounded |
-| agent stack | ranges `<0.8` / `<1.4` / `<1.3` | ceilings | §6 |
+| `openai` | `<3.29.1` (was `<3` to 5.33.0) | 2.54.0 on 5.33.0; 3.29.0 expected on 5.34.0 | bounded; 3.29.0 tested offline (§5, §6) |
+| agent stack | ranges `<0.7.25` / `<1.4.6` / `<1.3` (were `<0.8` / `<1.4` / `<1.3`) | ceilings | §6 |
+| `PyMuPDF` | `>=1.27.2,<2` (app; planlens 0.14 has no cap) | 1.27.x | the cap stays until INF-18's import probe on the hosts |
 
-**No planlens since 0.4.0 has added a third-party package** (0.13.0, the
-5.33.0 pin, included). Every one declares exactly what 0.4.0 declared —
+**No planlens since 0.4.0 has added a third-party package** (0.14.0, the
+5.34.0 pin, included). Every one declares exactly what 0.4.0 declared —
 numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz, with `ocr` and
 `mcp` as extras we do not install — so a log should read like 5.18.0's with
 the new planlens in place of `planlens-0.4.0` and nothing else moved. The
 app's own `report_ingest` package is pure Python over what is already
 installed: `anthropic` is optional and deliberately absent here. `openpyxl`
-arrives through `python-ags4` up to 5.33.0 and directly after it (§8).
+arrives through `python-ags4` up to 5.33.0 and directly from 5.34.0 (§8).
 
 **OpenCV 5 arrived unannounced and unbounded** — we only found out by reading
 an install log. It happens to be fine. Optional hardening: bound planlens'
@@ -210,7 +222,7 @@ cd <planlens> && ../scratch/Scripts/python -m pytest -q
 
 ## 8. What is deliberately NOT installed on the cluster
 
-**python-ags4 (from the release after 5.33.0).** Every python-ags4 release
+**python-ags4 (from 5.34.0).** Every python-ags4 release
 caps pandas below 3.0, and CfA's Tiny Apps fleet pins pandas 3.0.2, so it
 left the core dependencies for the `[ags4]` extra (master a229090, BACKLOG
 TA-02). From that release the log no longer lists `python-ags4`, and
@@ -293,6 +305,7 @@ Stop and investigate only for these:
 | 5.20.3 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.2 plus the strict-schema fix in `report_ingest/engine.py` (pydantic's `default`/`minItems`/`maxItems` stripped from every structured-output schema; OpenAI refused the readers' schemas before any token was spent). Expect the 5.20.0 log exactly. Superseded by 5.20.4. |
 | 5.20.4 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.3 plus tuple-to-array in `strict_schema` (the readers' four-number bbox). Expect the 5.20.0 log exactly. Superseded by 5.20.5. |
 | 5.20.5 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.4 plus a wait-and-retry on the provider's rate limit (429) in `report_ingest/engine.py`. Expect the 5.20.0 log exactly. Superseded by 5.21.0. |
+| 5.34.0 | — | Not yet installed. **Released with planlens 0.14.0 and geotech-references 1.5.0** (tags `v5.34.0`, `v0.14.0`, `v1.5.0`; the Nexus mirror delivers them a day or two after PyPI). Pins `planlens>=0.14`, `geotech-references>=1.5.0`. **Dependency changes, no new third-party package:** `python-ags4` leaves core for the `[ags4]` extra and `openpyxl` becomes direct (§8); `pyrotd` is dropped; numpy's floor is 1.26 (still lands on 2.4.6 here, §4); the agent-stack caps are deepagents `<0.7.25`, langchain `<1.4.6`, openai `<3.29.1` (§6), so expect openai 3.29.0 and langchain 1.4.5 in the log; PyMuPDF `>=1.27.2,<2`. planlens 0.14.0 declares the same packages as 0.4.0. Expect the 5.33.0 log without `python-ags4` and with those versions. Replace this row when the cluster install is confirmed. |
 | 5.33.0 | 2026-10-14 | **Installed and used on the cluster** (the owner's geotech-page sessions of 2026-10-14, on streamlit 1.65.0; the install log was not pasted for triage). **RELEASED to PyPI 2026-10-09 (tag `v5.33.0`) with planlens 0.13.0 and geotech-references 1.4.1 — THIS IS THE VERSION TO INSTALL**, once the Nexus mirror delivers all three a day or two later. **Pins raised to `planlens>=0.13` and `geotech-references>=1.4.1`; no new third-party package** (python-docx and openpyxl were already installed; planlens 0.13.0 declares exactly what 0.12.0 did). Expect the 5.32.1 log with `geotech_staff_engineer-5.33.0`, `planlens-0.13.0` and `geotech_references-1.4.1`; `anthropic` must NOT appear. What changed, briefly: per-user isolation and per-tester Prompter keys for Tiny Apps; one final answer per turn; Word/Excel in and out; tool errors never end a turn; faster page reads; markups right on rotated sheets; the GEC-12 Fig 7-15 and sheet-pile water-table fixes (HANDOFF §0a-current). As master stands (2026-10-15), the next release adds no third-party package; `python-ags4` leaves the core dependencies for the `[ags4]` extra and `openpyxl` becomes direct (§8). |
 | 5.32.1 | — | **RELEASED to PyPI 2026-10-08 (tag `v5.32.1`) with planlens 0.12.0**, superseded by 5.33.0 (install 5.33.0), once the Nexus mirror delivers both a day or two later. **Pin raised to `planlens>=0.12`; no new third-party package** (planlens 0.12.0 declares exactly what 0.11.0 did). Expect the 5.32.0 log with `geotech_staff_engineer-5.32.1` and `planlens-0.12.0`; `anthropic` must NOT appear. New at runtime: `find_like` runs on a numpy matcher where OpenCV cannot load (Funhouse and Foundry are FIPS hosts), and the vision probe makes a fifth small call. Replace this row when the cluster install is confirmed. |
 | 5.32.0 | — | **RELEASED to PyPI 2026-10-04 (tag `v5.32.0`) with planlens 0.11.0**, superseded by 5.32.1 (install 5.32.1), once the Nexus mirror delivers both a day or two later. **Pin raised to `planlens>=0.11`; no new third-party package** (planlens 0.11.0 declares exactly what 0.10.1 did: numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz). Expect the 5.31.0 log with `geotech_staff_engineer-5.32.0` and `planlens-0.11.0`; `anthropic` must NOT appear. New at runtime: the first `find_like` in a process test-loads OpenCV in a child Python process (a second or two). Release gate: see HANDOFF §0a-current. Replace this row when the cluster install is confirmed. |

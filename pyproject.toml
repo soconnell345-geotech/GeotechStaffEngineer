@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "5.33.0"
+version = "5.34.0"
 description = "Python toolkit for LLM-based geotechnical engineering agents - 33 analysis modules covering foundations, piles, slopes, structural section/RC/frame analysis, reliability, seismic site response, excavation support, pavement design (AASHTO 1993 / UFC 3-250-01), subsurface characterization (DIGGS/GEF/AGS4), FEM, drawing & profile rendering, and a cited public-domain reference layer."
 readme = "README.md"
 license = "MIT"
@@ -37,7 +37,7 @@ dependencies = [
     # numpy 1.26 install are in constraints/foundry-numpy126.txt.
     "numpy>=1.26",
     "scipy>=1.13",
-    "geotech-references>=1.4.1",
+    "geotech-references>=1.5.0",
     # -- agent stack (formerly the [deep] extra) --
     # Agent-stack UPPER BOUNDS (5.10.2): unpinned drift has broken deployed
     # clusters twice (Pygments via pydiggs; then deepagents 0.7.11 dropping the
@@ -190,7 +190,14 @@ dependencies = [
     # `planlens.opencv` (OpenCV test-loaded in a child process so a FIPS host
     # hides find_like instead of aborting), `tag_fixtures` for the suite's
     # new tasks. Dependencies again IDENTICAL: no new package.
-    "planlens>=0.13",
+    # RAISED TO `planlens>=0.14` (5.34.0, 2026-11-04): the tick-flanked depth
+    # scale read as depths at the root (RI-159, PL-35), a letterhead's
+    # telephone line never a hole name (RI-156), log_grid's sample boxes and
+    # whole long logs (PL-24), and planlens' numpy floor at 1.26 so the app
+    # installs on Foundry's numpy 1.26 from PyPI (INF-53). planlens 0.14 raises its PyMuPDF floor
+    # to 1.27.2 (the app's own floor already) and drops its cap; the app
+    # keeps `<2` above until INF-18's host probe. No new package.
+    "planlens>=0.14",
     # -- structural round 1 (owner, 2026-09-03): section/RC/frame analysis --
     # sectionproperties and concreteproperties were REMOVED in 5.13.0: both
     # require `cytriangle`, whose only manylinux wheel is quarantined by the
