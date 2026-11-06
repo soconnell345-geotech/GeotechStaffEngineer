@@ -248,6 +248,30 @@ def _conversation_storage_check() -> dict:
                   "Conversations are saved there after each turn.")
 
 
+def _sharepoint_started() -> bool:
+    try:
+        from webapp import graph_sharepoint
+        return graph_sharepoint.started()
+    except Exception:                                # noqa: BLE001
+        return False
+
+
+def _sharepoint_check() -> dict:
+    """The SharePoint app registration, tested step by step (TA-34): which
+    step failed and what the host's admin does about it. Run only when a
+    registration setting is filled in; makes a sign-in request, one Graph
+    request per site and library, and writes and deletes a small probe file
+    (so a read-only grant shows here, not at the first save)."""
+    from webapp import graph_sharepoint as gs
+    name = "SharePoint connection"
+    try:
+        results = gs.check_connection()
+    except Exception as exc:                         # noqa: BLE001
+        return _check(name, FAIL, f"{type(exc).__name__}: {exc}")
+    ok = bool(results) and all(r["ok"] for r in results)
+    return _check(name, PASS if ok else FAIL, gs.format_check(results))
+
+
 def _prompter_key_check(identity: Any = None) -> dict:
     """Tiny Apps: which Prompter key SOURCE serves this caller — per-tester
     secret, the PROMPTER-KEYS mapping or the shared key — and the per-tester
@@ -536,6 +560,8 @@ def run_diagnostics(model_id: Optional[str] = None,
               _env_check(), _upload_probe_check()] + _page_checks(page_checks)
     if engine_config.is_tinyapps_deployment():
         checks.append(_prompter_key_check(identity))
+    if _sharepoint_started():
+        checks.append(_sharepoint_check())
     if engine_config.is_foundry_deployment():
         checks.append(_tls_check())
         checks.append(_conversation_storage_check())

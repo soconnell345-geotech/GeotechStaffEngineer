@@ -101,6 +101,40 @@ def _configured_site() -> str:
                       or os.environ.get("SHAREPOINT_SITE_URL", ""))
 
 
+def _site_names() -> List[str]:
+    """The names of the sites the file manager serves, when it serves more
+    than one (TA-34: ``SHAREPOINT_SITE_URLS``); ``[]`` otherwise. Only the
+    app-registration client serves several; no other client is built."""
+    try:
+        if not sharepoint_store._graph_configured():
+            return []
+        sites = getattr(_fm(), "sites", None)
+    except Exception:                                  # noqa: BLE001
+        return []
+    if not isinstance(sites, list) or len(sites) < 2:
+        return []
+    return [str(getattr(x, "name", "")) for x in sites]
+
+
+def _site_prefixed(p: str) -> bool:
+    """True when ``p`` starts with a configured site's ``name:``."""
+    head, sep, _tail = p.partition(":")
+    if not sep or "/" in head:
+        return False
+    return head.strip().lower() in {n.lower() for n in _site_names()}
+
+
+def _sites_note() -> str:
+    """The line naming the sites (empty with one site, or none)."""
+    if not _site_names():
+        return ""
+    try:
+        from webapp import graph_sharepoint
+        return graph_sharepoint.site_note(_fm())
+    except Exception:                                  # noqa: BLE001
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # Links and paths
 # ---------------------------------------------------------------------------
@@ -204,6 +238,8 @@ def _resolve(path: Optional[str]) -> str:
         p = (browser_url_to_path(p) or p).rstrip("/")
     if not p or p == "/":
         return _root()
+    if ":" in p and _site_prefixed(p):
+        return p                  # another configured site, by its name
     low = p.lstrip("/").lower()
     if (low.startswith("http") or low.startswith("sites/")
             or low.startswith("teams/")
@@ -794,6 +830,10 @@ def _list(path: str, scope: Optional[_Scope] = None) -> str:
                  + (f", first {MAX_ENTRIES} shown" if len(entries) > MAX_ENTRIES
                     else "") + "):"]
         lines += [_fmt_entry(e) for e in entries[:MAX_ENTRIES]]
+        if not (path or "").strip().strip("/"):
+            note = _sites_note()
+            if note:
+                lines.insert(0, note)
         return "\n".join(lines)
     # Nothing came back: an empty folder, no folder, or a refused request
     # the SDK turned into [] -- three different answers.
@@ -814,15 +854,20 @@ def _list(path: str, scope: Optional[_Scope] = None) -> str:
     return msg
 
 
+def _with_note(doc: str, note: str) -> str:
+    return f"{doc.rstrip()}\n\n{note}\n" if note else doc
+
+
 def make_list_tool(record_dir: Optional[str] = None,
-                   thread_id: Optional[str] = None):
+                   thread_id: Optional[str] = None, note: str = ""):
     """``sharepoint_list_files`` bound to one conversation: on a multi-user
-    host other people's conversation folders are left out and refused."""
+    host other people's conversation folders are left out and refused.
+    ``note`` (the sites line, TA-34) is added to the description."""
 
     def sharepoint_list_files(path: str = "") -> str:
         return _list(path, _scope(record_dir, thread_id))
 
-    sharepoint_list_files.__doc__ = _LIST_DOC
+    sharepoint_list_files.__doc__ = _with_note(_LIST_DOC, note)
     return tool(sharepoint_list_files)
 
 
@@ -1077,7 +1122,7 @@ refresh: download again (into the same local file) even if already fetched.
 
 
 def make_download_tool(record_dir: Optional[str] = None,
-                       thread_id: Optional[str] = None):
+                       thread_id: Optional[str] = None, note: str = ""):
     """``sharepoint_download_file`` bound to one conversation's record folder,
     where it keeps the downloads ledger (``core.record_download``): which
     SharePoint file became which local file -- one copy per file, kept
@@ -1090,7 +1135,7 @@ def make_download_tool(record_dir: Optional[str] = None,
         return _download(path, save_as, refresh, record_dir,
                          _scope(record_dir, thread_id))
 
-    sharepoint_download_file.__doc__ = _DOWNLOAD_DOC
+    sharepoint_download_file.__doc__ = _with_note(_DOWNLOAD_DOC, note)
     return tool(sharepoint_download_file)
 
 
@@ -1503,7 +1548,7 @@ def _search_tool(query: str, path: str = "",
 
 
 def make_search_tool(record_dir: Optional[str] = None,
-                     thread_id: Optional[str] = None):
+                     thread_id: Optional[str] = None, note: str = ""):
     """``sharepoint_search_files`` bound to one conversation: on a
     multi-user host other people's conversation folders are never searched
     and their files never named (A1)."""
@@ -1511,7 +1556,7 @@ def make_search_tool(record_dir: Optional[str] = None,
     def sharepoint_search_files(query: str, path: str = "") -> str:
         return _search_tool(query, path, _scope(record_dir, thread_id))
 
-    sharepoint_search_files.__doc__ = _SEARCH_DOC
+    sharepoint_search_files.__doc__ = _with_note(_SEARCH_DOC, note)
     return tool(sharepoint_search_files)
 
 
@@ -1558,16 +1603,23 @@ def tools_if_configured(thread_id: Optional[str] = None,
     person's own conversation folders and the shared folders (A1)."""
     if not sharepoint_store.configured():
         return [], ""
+    # More than one site (TA-34): the tools and the prompt name them. With
+    # one site the note is empty and everything reads exactly as before.
+    note = _sites_note()
+    prompt = f"{SHAREPOINT_PROMPT} {note}" if note else SHAREPOINT_PROMPT
     if not thread_id and not record_dir:
-        return ([sharepoint_list_files, sharepoint_download_file,
-                 sharepoint_upload_file, sharepoint_search_files],
-                SHAREPOINT_PROMPT)
+        if not note:
+            return ([sharepoint_list_files, sharepoint_download_file,
+                     sharepoint_upload_file, sharepoint_search_files],
+                    SHAREPOINT_PROMPT)
+        return ([make_list_tool(note=note), make_download_tool(note=note),
+                 sharepoint_upload_file, make_search_tool(note=note)], prompt)
     if not thread_id:                     # the record folder is named by it
         thread_id = os.path.basename(os.path.abspath(record_dir))
     upload = make_conversation_upload_tool(thread_id, record_dir)
-    return ([make_list_tool(record_dir, thread_id),
-             make_download_tool(record_dir, thread_id), upload,
-             make_search_tool(record_dir, thread_id)], SHAREPOINT_PROMPT)
+    return ([make_list_tool(record_dir, thread_id, note),
+             make_download_tool(record_dir, thread_id, note), upload,
+             make_search_tool(record_dir, thread_id, note)], prompt)
 
 
 __all__ = ["tools_if_configured", "SHAREPOINT_PROMPT", "MAX_ENTRIES",
