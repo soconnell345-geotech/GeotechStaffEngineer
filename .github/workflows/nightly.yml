@@ -44,6 +44,10 @@ jobs:
       - name: Install core package
         run: |
           pip install --upgrade pip
+          # The core first (INF-32): the app pins aec-agent-core exactly and
+          # it is not on PyPI until step 12, so `pip install -e .` finds it
+          # already installed instead of looking for it.
+          pip install -e packages/aec-agent-core
           pip install -e .
           pip install -e geotech-references/
           pip install pytest pytest-xdist

@@ -15,7 +15,21 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install build
-      - run: python -m build
+      # Named directories only (the app split, INF-32 step 10): a `v*` tag
+      # builds the repository root, geotech-staff-engineer, and nothing
+      # else. The shared core in packages/aec-agent-core is NOT built or
+      # published here; its first release is step 12, on the owner's word,
+      # from its own `core-v*` tag and job, added then.
+      - run: python -m build --outdir dist/ .
+      - name: Only geotech-staff-engineer is in dist/
+        run: |
+          ls dist/
+          for f in dist/*; do
+            case "$(basename "$f")" in
+              geotech_staff_engineer-*) ;;
+              *) echo "unexpected file in dist/: $f"; exit 1 ;;
+            esac
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: dist
