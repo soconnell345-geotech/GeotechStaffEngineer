@@ -81,7 +81,8 @@ def _single_lef(pavement_type, axle_config, load_kips, sn, d_in, pt,
         )
         add_ref(references, r.get("reference"))
         return r["lef"], "appendix_d_tables"
-    # Fallback: digitized table curves (SN=5 / D=9 in, pt=2.5 only).
+    # Fallback for a geotech-references without lef.py: the esal_* lookups
+    # (SN=5 / D=9 in, pt=2.5 only before refs REF-12; they read lef.py since).
     table_fns = {
         ("flexible", "single"): lambda: _tb.esal_flexible_single_axle(
             load_kips, sn=sn, pt=pt),
