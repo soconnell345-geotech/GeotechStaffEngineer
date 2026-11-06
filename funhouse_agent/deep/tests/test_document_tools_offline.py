@@ -174,7 +174,11 @@ def test_structure_and_thumbnails_reach_the_agent(tmp_path):
 
 
 def test_without_the_tool_layer_the_tools_are_hidden(monkeypatch):
+    # The surface asks the binding; the dispatcher is planlens.review's
+    # (BACKLOG PL-29 (b)).
+    from planlens.review import conversation
     monkeypatch.setattr(document_tools, "available", lambda: False)
+    monkeypatch.setattr(conversation, "available", lambda: False)
     names = {t.name for t in make_vision_tools(engine=None)}
     assert not (NAMES & names)
     out = json.loads(document_tools.dispatch_document_tool(

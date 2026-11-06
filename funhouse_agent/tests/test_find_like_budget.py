@@ -9,10 +9,20 @@ short, how many candidates were read and which pages were not.
 
 Replayed offline on a fake clock: each sheet read "takes" 16.2 s, the
 brief-5 run's 795 s over 49 sheets.
+
+Since BACKLOG PL-29 (b) the search is planlens.review's and the budget an
+argument it is handed; planlens tests the search itself
+(``planlens/review/tests/test_find_like.py``: ``test_the_default_budget``,
+``test_a_loose_example_stops_at_the_budget_and_says_so``,
+``test_with_no_budget_every_sheet_is_read``,
+``test_a_search_inside_the_budget_is_unchanged``, ``test_page_ranges``,
+which were this file's). What stays here is the binding: the app's setting,
+read on every call, reaches the search through the agent build's host.
 """
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -21,6 +31,7 @@ pytest.importorskip("pymupdf")
 tf = pytest.importorskip("planlens.testing.tag_fixtures")
 pytest.importorskip("planlens.document.findlike")
 
+from funhouse_agent import document_tools  # noqa: E402
 from funhouse_agent import find_like as fl  # noqa: E402
 
 N_PAGES, PER_PAGE = 24, 41          # 984 candidates, as in the brief-5 run
@@ -77,61 +88,51 @@ def loose_example(monkeypatch):
     return clock
 
 
+EXAMPLE = [592.8, 364.3, 639.7, 382.7]
+
+
 def _run(clock):
+    """One find_like through the binding, as an agent build calls it."""
     engine = _Reader(clock)
     pdf = tf.build_synthetic_tag_set(n_pages=2).pdf
-    out = fl.find_like(pdf, 0, [592.8, 364.3, 639.7, 382.7], engine,
-                       text="GCE")
-    return out, engine
+    raw = document_tools.find_like(
+        {"attachment_key": "set.pdf", "page": 0, "bbox": EXAMPLE,
+         "text": "GCE"}, {"set.pdf": pdf},
+        host=document_tools.host_for(engine))
+    return json.loads(raw), engine
 
 
-def test_the_default_budget(monkeypatch):
-    monkeypatch.delenv(fl.BUDGET_ENV, raising=False)
-    assert fl.budget_s() == fl.DEFAULT_BUDGET_S < 795
-    monkeypatch.setenv(fl.BUDGET_ENV, "0")
-    assert fl.budget_s() is None
+def test_the_setting_is_read_on_every_call(monkeypatch):
+    host = document_tools.host_for(None)
+    monkeypatch.delenv(document_tools.FIND_LIKE_BUDGET_ENV, raising=False)
+    assert fl.budget_s(host.find_like_budget()) == fl.DEFAULT_BUDGET_S < 795
+    monkeypatch.setenv(document_tools.FIND_LIKE_BUDGET_ENV, "0")
+    assert fl.budget_s(host.find_like_budget()) is None
+    monkeypatch.setenv(document_tools.FIND_LIKE_BUDGET_ENV, "120")
+    assert fl.budget_s(host.find_like_budget()) == 120.0
 
 
-def test_a_loose_example_stops_at_the_budget_and_says_so(loose_example,
-                                                         monkeypatch):
-    monkeypatch.delenv(fl.BUDGET_ENV, raising=False)
+def test_unset_the_search_stops_at_the_default_budget(loose_example,
+                                                      monkeypatch):
+    monkeypatch.delenv(document_tools.FIND_LIKE_BUDGET_ENV, raising=False)
     out, engine = _run(loose_example)
     total = N_PAGES * PER_PAGE
-    n_sheets = -(-total // fl.PER_SHEET)
     # 300 s at 16.2 s a sheet: 19 sheets sent, not all 50
-    assert engine.calls == 19 < n_sheets
+    assert engine.calls == 19 < -(-total // fl.PER_SHEET)
     assert out["status"] == "cut_short"
-    assert out["candidates"] == total
-    assert out["candidates_read"] == 19 * fl.PER_SHEET
     assert out["candidates_read"] + out["not_read"] == total
-    assert "CUT SHORT" in out["note"] and "NOT read" in out["note"]
-    assert f'pages="{out["not_read_pages"]}"' in out["note"]
-    # The pages not read are named as a pages= string the tool takes back.
-    first_unread_page = (19 * fl.PER_SHEET) // PER_PAGE
-    assert out["not_read_pages"].startswith(str(first_unread_page))
-    assert out["not_read_pages"].endswith(str(N_PAGES - 1))
-    # Counts cover only what was read: one confirmed GCE per page read.
-    assert out["instances"] == len({(i - 1) // PER_PAGE
-                                    for i in range(1, 19 * 20 + 1)
-                                    if i % PER_PAGE == 1})
-    # No unread candidate is listed as "uncertain" (that list stays short).
-    assert len(out["uncertain"]) <= 20
 
 
-def test_with_no_budget_every_sheet_is_read(loose_example, monkeypatch):
-    monkeypatch.setenv(fl.BUDGET_ENV, "0")
+def test_zero_reads_every_sheet(loose_example, monkeypatch):
+    monkeypatch.setenv(document_tools.FIND_LIKE_BUDGET_ENV, "0")
     out, engine = _run(loose_example)
     assert engine.calls == -(-N_PAGES * PER_PAGE // fl.PER_SHEET)
     assert "status" not in out and "not_read" not in out
 
 
-def test_a_search_inside_the_budget_is_unchanged(loose_example, monkeypatch):
-    monkeypatch.setenv(fl.BUDGET_ENV, "100000")
+def test_a_large_setting_leaves_the_search_unchanged(loose_example,
+                                                     monkeypatch):
+    monkeypatch.setenv(document_tools.FIND_LIKE_BUDGET_ENV, "100000")
     out, engine = _run(loose_example)
     assert "status" not in out and "note" not in out
     assert out["instances"] == N_PAGES
-
-
-def test_page_ranges():
-    assert fl._page_ranges([5, 3, 4, 9, 11, 10]) == "3-5,9-11"
-    assert fl._page_ranges([7]) == "7"

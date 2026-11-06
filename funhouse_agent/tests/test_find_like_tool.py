@@ -87,10 +87,18 @@ class TruthReader:
         return "\n".join(self.lines)
 
 
+def _look(engine):
+    """The look an agent build hands planlens.review for ``engine``."""
+    from funhouse_agent import document_tools
+    return document_tools.host_for(engine).look
+
+
 def test_every_gce_callout_is_found_and_look_alikes_are_rejected(gt, tmp_path):
     cands = _candidates(gt, 0, gt.example_bbox)
     engine = TruthReader(gt, cands)
-    out = fl.find_like(gt.pdf, 0, gt.example_bbox, engine, text="GCE",
+    # planlens.review's find_like reads through the look the app hands it
+    # (BACKLOG PL-29 (b)): ask_vision with this engine.
+    out = fl.find_like(gt.pdf, 0, gt.example_bbox, _look(engine), text="GCE",
                        save_dir=str(tmp_path / "sheets"))
     on_plan = [t for t in gt.of("GCE") if t.kind != "legend"]
     callouts = gt.of("GCE", "callout")
@@ -115,7 +123,7 @@ def test_a_bracketed_read_is_uncertain_not_counted(gt):
     first_gce = next(i for i, h in enumerate(cands, start=1)
                      if (_truth_of(gt, h) or tf.TagTruth(0, "", (0,) * 4, 0, "")).text == "GCE")
     engine = TruthReader(gt, cands, override={first_gce: "[G/Q]CE"})
-    out = fl.find_like(gt.pdf, 0, gt.example_bbox, engine, text="GCE")
+    out = fl.find_like(gt.pdf, 0, gt.example_bbox, _look(engine), text="GCE")
     on_plan = [t for t in gt.of("GCE") if t.kind != "legend"]
     assert out["instances"] == len(on_plan) - 1
     assert [u["id"] for u in out["uncertain"]] == [first_gce]

@@ -178,12 +178,17 @@ def test_zoom_and_image_calls_have_their_caps():
 
 
 def test_the_markup_check_look_has_its_cap():
-    from funhouse_agent import markup_check
+    # The check is planlens.review's; the look the app hands it
+    # (document_tools.host_for) is ask_vision with the "check" cap.
+    from planlens import review
+    from funhouse_agent import document_tools, markup_check
     engine = CapReader()
-    out = markup_check._check_one(_pdf(), {
-        "index": 0, "row": {"kind": "box", "page": 0,
-                            "bbox": [60, 80, 200, 120]},
-        "spec": {"comment": "check", "target": "Sheet 1"}}, engine)
+    host = document_tools.host_for(engine)
+    with review.using(host):
+        out = markup_check._check_one(_pdf(), {
+            "index": 0, "row": {"kind": "box", "page": 0,
+                                "bbox": [60, 80, 200, 120]},
+            "spec": {"comment": "check", "target": "Sheet 1"}}, host.look)
     assert out["verdict"] in ("unsure", "not_checked", "confirmed",
                               "misplaced")
     assert engine.calls[-1][2] == vision_tools.VISION_OUTPUT_CAPS["check"]

@@ -385,7 +385,7 @@ def _checked_page(arguments, data):
     error, with "pages are 0-based here; PDF page 5 is page 4" when it is
     one past the end, never a raise (live smoke wave 2c: analyze_pdf_page
     RAISED IndexError on PDF page 5 of 5)."""
-    from funhouse_agent.page_numbers import page_error, resolve_page
+    from planlens.review.page_numbers import page_error, resolve_page
     given_pdf = arguments.get("pdf_page") not in (None, "")
     given_page = arguments.get("page") not in (None, "")
     page, problem = resolve_page(arguments.get("page"),
@@ -403,7 +403,7 @@ def _checked_page(arguments, data):
 def _render_error(exc) -> str:
     """A render that failed, as the tool's JSON error (with the 0-based
     hint when it was a page out of range)."""
-    from funhouse_agent.page_numbers import range_hint
+    from planlens.review.page_numbers import range_hint
     out = {"error": str(exc)}
     hint = range_hint(str(exc))
     if hint:
@@ -1149,7 +1149,7 @@ def _read_pdf_text_pages(arguments):
     given = arguments.get("pdf_pages")
     if given in (None, "", [], ()):
         return pages, False, None
-    from funhouse_agent.page_numbers import pdf_pages_to_pages
+    from planlens.review.page_numbers import pdf_pages_to_pages
     zero, problem = pdf_pages_to_pages(given)
     if problem is not None:
         return None, True, json.dumps(problem)
@@ -2008,7 +2008,7 @@ def _wanted_pdf_pages(spec):
     ``(None, error)``."""
     if spec in (None, "", [], ()):
         return None, None
-    from funhouse_agent.page_numbers import pdf_pages_to_pages
+    from planlens.review.page_numbers import pdf_pages_to_pages
     zero, problem = pdf_pages_to_pages(spec)
     if problem is not None:
         return None, problem
@@ -4278,89 +4278,18 @@ def _fit_tiles(out) -> None:
 
 
 def _dispatch_find_like(arguments, engine, attachments):
-    """Every copy of one mark across a drawing set, verified — see
-    :mod:`funhouse_agent.find_like`.
+    """Every copy of one mark across a drawing set, verified --
+    planlens.review's ``find_like`` (BACKLOG PL-29 (b)), each candidate read
+    by ``engine`` (:func:`funhouse_agent.document_tools.host_for`).
 
     Arguments: ``attachment_key`` (or a real path), ``page`` and ``bbox``
     (PDF points round ONE copy of the mark) — or ``view`` + ``image_box`` from
     an earlier vision result — ``text`` (what the mark reads, e.g. "GCE"),
     ``pages`` (default all), ``include_legend``, ``threshold``.
     """
-    from funhouse_agent import find_like as _fl
-    from funhouse_agent import vision_view
-    from funhouse_agent.page_numbers import pdf_pages_to_pages, range_hint
-    key = arguments.get("attachment_key", "")
-    bbox = arguments.get("bbox")
-    view, image_box = arguments.get("view"), arguments.get("image_box")
-    if view is not None or image_box is not None:
-        if bbox is not None:
-            return json.dumps({"error": "pass bbox OR view + image_box, not both"})
-        try:
-            bbox = list(vision_view.image_box_to_page(view or [], image_box or []))
-        except (TypeError, ValueError) as e:
-            return json.dumps({"error": f"view + image_box: {e}"})
-    if not bbox or len(bbox) != 4:
-        return json.dumps({
-            "error": "find_like needs the box round ONE copy of the mark",
-            "hint": "zoom (render_region) until one copy is legible, then pass "
-                    "its bbox in PDF points — or that result's view + the 0-999 "
-                    "image_box of the copy; a legend row is a fine example"})
-    try:
-        pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
-    except FileNotFoundError as e:
-        return json.dumps({"error": str(e)})
-    if _image_kind(bytes(pdf_bytes[:16])) is not None:
-        return _find_like_on_image(arguments, engine, pdf_bytes, key, bbox)
-    page, refused = _checked_page(arguments, pdf_bytes)
-    if refused is not None:
-        return refused
-    pages = arguments.get("pages")
-    one_based = arguments.get("pdf_pages") not in (None, "", [], ())
-    if one_based:
-        if pages not in (None, "", [], ()):
-            return json.dumps({"error": "give pages (0-based) or pdf_pages "
-                                        "(1-based), not both"})
-        pages, problem = pdf_pages_to_pages(arguments.get("pdf_pages"))
-        if problem is not None:
-            return json.dumps(problem)
-    try:
-        # The conversation's tool scratch folder (A9: working images, not
-        # download cards); with no working folder bound, the contact sheets
-        # are not written anywhere.
-        save_dir = scratch_dir()
-    except OSError:
-        save_dir = None
-    try:
-        out = _fl.find_like(
-            pdf_bytes, int(page), [float(v) for v in bbox], engine,
-            text=(arguments.get("text") or None),
-            pages=pages,
-            include_legend=bool(arguments.get("include_legend", False)),
-            threshold=arguments.get("threshold"),
-            save_dir=save_dir)
-    except ImportError as e:
-        return json.dumps({"error": f"find_like cannot run here: {e}"})
-    except (ValueError, IndexError) as e:
-        hint = range_hint(str(e), one_based)
-        return json.dumps({"error": str(e),
-                           "hint": hint or (
-                               "box the mark's lettering tightly, with no "
-                               "leader or table rule inside the box")})
-    return json.dumps(_named_contact_sheets(out))
-
-
-def _named_contact_sheets(out):
-    """``find_like``'s result with its contact sheets named by their place
-    in the conversation, which analyze_image resolves; the server path stays
-    internal (A6)."""
-    if isinstance(out, dict) and out.get("contact_sheets"):
-        out["contact_sheets"] = [display_path(p)
-                                 for p in out["contact_sheets"]]
-        out.setdefault("contact_sheets_note", (
-            "the contact sheets are working images in this conversation's "
-            "scratch folder: view one with analyze_image(attachment_key=<its "
-            "name>)"))
-    return out
+    from funhouse_agent import document_tools
+    return document_tools.find_like(arguments, attachments,
+                                    host=document_tools.host_for(engine))
 
 
 def off_image_note(box, width, height, unit: str = "px",
@@ -4379,102 +4308,6 @@ def off_image_note(box, width, height, unit: str = "px",
         return None
     return (f"centred at [{cx:.0f}, {cy:.0f}] {unit}, off the {width:.0f} x "
             f"{height:.0f} {unit} {what}")
-
-
-#: Said by find_like on an image about the frame of every box it returns.
-FIND_ON_IMAGE_FRAME = (
-    "every box here (example, found, uncertain) is in this {w} x {h} px "
-    "image's own pixels (top-left origin, y down), as its looks give them "
-    "and as render_region and annotate_document on it take them")
-
-
-def _find_like_on_image(arguments, engine, data, key, bbox):
-    """``find_like`` on an IMAGE file (BACKLOG VIS-26): the example box is in
-    the image's own pixels (EXIF orientation applied, as every look at it
-    is), the image is searched at its own resolution, and every box comes
-    back in those pixels. PyMuPDF would open the file as a page in points
-    at the resolution the file declares (0.75 pt a pixel with none), so a
-    box in pixels used to name another spot."""
-    from funhouse_agent import find_like as _fl
-    from funhouse_agent import image_view
-    picture, refusal = _open_image(data, key)
-    if refusal is not None:
-        return refusal
-    if picture is None:
-        return json.dumps({"error": "this image could not be decoded here "
-                                    "(Pillow is missing, or the file is "
-                                    "damaged), so it cannot be searched"})
-    W, H = picture.width, picture.height
-    try:
-        box = [float(v) for v in bbox]
-        x0, x1 = min(box[0], box[2]), max(box[0], box[2])
-        y0, y1 = min(box[1], box[3]), max(box[1], box[3])
-    except (TypeError, ValueError, IndexError):
-        return json.dumps({"error": "bbox must be [x0, y0, x1, y1] in the "
-                                    "image's own pixels"})
-    off = off_image_note((x0, y0, x1, y1), W, H)
-    if off:
-        return json.dumps({
-            "error": f"the example box is {off}",
-            "hint": ("on an image, bbox and view are in its own pixels "
-                     "(top-left origin, y down), as analyze_image and "
-                     "render_region on it give them")})
-    notes: Dict[str, Any] = {}
-    if any(arguments.get(k) not in (None, "", [], (), 0, "0")
-           for k in ("page", "pages")) or any(
-            arguments.get(k) not in (None, "", [], (), 1, "1")
-            for k in ("pdf_page", "pdf_pages")):
-        notes["page_note"] = ("an image has one page: page and pages were "
-                              "not used")
-    s = image_view.page_scale(picture)
-    try:
-        save_dir = scratch_dir()
-    except OSError:
-        save_dir = None
-    try:
-        out = _fl.find_like(
-            image_view.as_pdf(picture), 0, [x0 * s, y0 * s, x1 * s, y1 * s],
-            engine, text=(arguments.get("text") or None), pages=None,
-            include_legend=bool(arguments.get("include_legend", False)),
-            threshold=arguments.get("threshold"), save_dir=save_dir,
-            dpi=72.0 / s)
-    except ImportError as e:
-        return json.dumps({"error": f"find_like cannot run here: {e}"})
-    except (ValueError, IndexError) as e:
-        return json.dumps({"error": str(e),
-                           "hint": ("box the mark's lettering tightly, in "
-                                    "the image's own pixels, with no leader "
-                                    "or table rule inside the box")})
-    if isinstance(out, dict):
-        _image_find_boxes(out, s)
-        out["frame"] = FIND_ON_IMAGE_FRAME.format(w=W, h=H)
-        out.update(notes)
-    return json.dumps(_named_contact_sheets(out))
-
-
-def _image_find_boxes(out: Dict[str, Any], s: float) -> None:
-    """``find_like``'s boxes, searched on a page of ``s`` points a pixel,
-    as the image's own pixels (``s`` is 1 unless the image is longer than a
-    PDF page may be); the example's height is said in pixels."""
-    def px(values):
-        return [round(float(v) / s, 1) for v in values]
-
-    example = out.get("example")
-    if isinstance(example, dict):
-        if isinstance(example.get("bbox"), (list, tuple)):
-            example["bbox"] = px(example["bbox"])
-        if "height_pt" in example:
-            example["height_px"] = round(
-                float(example.pop("height_pt")) / s, 1)
-    if s == 1.0:
-        return
-    for key in ("found", "uncertain", "unverified"):
-        for row in out.get(key) or ():
-            if not isinstance(row, dict):
-                continue
-            for field in ("bbox", "points_to"):
-                if isinstance(row.get(field), (list, tuple)):
-                    row[field] = px(row[field])
 
 
 _READ_OFF_NOTE = (
