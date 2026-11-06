@@ -136,7 +136,9 @@ Key conventions:
   adhesion and ask for Fig. 7-18's case under a softer clay; the user
   manual's HTML is rebuilt from master; `retaining_wall_package` writes an
   MSE wall's calc package (`wall_type="mse"`) and MSE LRFD reports Strength I
-  (min) apart; pystrata is held below 0.6 (INF-68). Answers move in the MSE
+  (min) apart; pystrata is held below 0.6 (INF-68); SharePoint works on any
+  Microsoft cloud with a secret or a certificate and several sites, with a
+  connection test and `docs/SHAREPOINT_SETUP.md`. Answers move in the MSE
   critical bearing (live load over the zone at 1.75), fem2d footing capacity
   (a surcharge is a real load; the soil's weight first; the default
   iteration limit grows with the mesh, so fine meshes no longer stop short,
