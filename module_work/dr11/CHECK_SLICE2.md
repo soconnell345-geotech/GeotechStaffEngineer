@@ -190,16 +190,81 @@ Nothing calls a model. The measurement above is local and offline.
 * A label that names the same dimension twice ('scenario 1 vs scenario 2')
   keeps the first.
 * Case words outside the list (a static/seismic case, a footing mark F-1,
-  'end of construction') do not split a calculation.
+  'end of construction') split a calculation only as a name that a claim's
+  label and an input's label both print (review fix 3).
 * A dry unit weight is still taken as the unit weight, as in slice 1.
 * gamma' with the water printed between the ground and the footing base is
   refused even under `submerged` (no total unit weight above the water).
+
+## Review fixes
+
+An independent review measured the branch on the saved private records
+(offline, no model calls) and found two wrong results and two gaps; all
+four are fixed, one commit and test each, in
+`report_ingest/tests/test_recompute_slice2.py` (made-up labels and values).
+Line numbers above are at eb029b3.
+
+1. **A case that names no stratum took another stratum's input**
+   (`_cases`). With claims for 'scenario 1' and 'scenario 1, stratum 2',
+   the 'scenario 1' case ran on stratum 2's only printed value and was
+   flagged `differs`. Now an input naming a dimension that the cases with
+   a claim use reaches only the cases naming it with the same value; an
+   input naming a dimension no claim uses stays shared.
+2. **The eight-word rule dropped claims** (`_skip`). Result labels naming a
+   structure and a footing size were skipped, and a printout whose claims
+   all read that way was listed as having no ultimate or allowable
+   pressure. A claim is now skipped only when printed as words; in an
+   input's word count, units and words with a digit are left out.
+3. **A stratum printed by its soil did not split** (`_names_of`, `_cases`).
+   Most multi-case printouts name the stratum by its soil, in several word
+   orders ('phi (<soil>)', '<soil> phi', '..., scenario 1, <soil>'), so
+   their inputs collided as "printed more than once". A case is now also
+   printed by its NAME: what is left of a label without its case words,
+   the module's own input and claim words, units, numbers, one-letter
+   symbols and small words. A name counts only when a claim's label and an
+   input's label both print it, and it splits under fix 1's rule.
+4. **"Several shapes" refused before the case's printed L and B**
+   (`_shape`). When the words name several shapes and the case's labels
+   none, the case's own L against B now sets the shape (L = B square,
+   L > B rectangular) before the row is refused.
+
+The measurement (the same collected readings as `LABELS_SUMMARY.md`;
+bearing: 54 readings, 21 unique calculations; master is the merge base):
+
+| bearing | master | branch, default (`refuse`) | branch, `submerged` |
+|---|---|---|---|
+| unique calculations recomputed / reports | 0 / 0 | 1 / 1 | 6 / 5 |
+| claim rows recomputed | 0 | 1 | 183 |
+| agree within 10 % | 0 | 0 | 167 |
+| within options | 0 | 0 | 14 |
+| below (allowable under q_ult/FS) | 0 | 1 | 1 |
+| differ | 0 | 0 | 1 |
+| median abs difference | n/a | 87.5 % | 4.0 % |
+
+* **Before the fixes**, the branch with `submerged` recomputed 9 rows. Of
+  those, 4 agreed and 4 were wrong flags from fix 1's leak. The summary's
+  what-if (196 rows, 181 agree) was the target.
+* **Default rows.** No default row runs on gamma'. 150 case rows are
+  refused as "water level not printed": OWN-130 stays the owner's. The
+  one default row is an allowable `below` that is a real disagreement in
+  the report: its printed ultimate omits the self-weight term.
+* **The one `differs`** under `submerged` is a reading error: a value the
+  size of an ultimate sits under an "allowable" label.
+* **Settlement** (255 readings): still 0 rows recomputed. Schmertmann and
+  layer tables wait on RI-208. A refused printout now writes one refusal
+  row per case.
+
+Tests after the fixes: `pytest -q report_ingest/tests/test_recompute.py
+report_ingest/tests/test_recompute_slice2.py
+webapp/tests/test_page_fingerprints.py webapp/tests/test_public_text.py`,
+111 passed (slice 2: 36 tests, 6 of them new).
 
 ## Release note
 
 The bearing and settlement recompute (`recompute_report_calcs`) now reads
 printouts that put several cases in one calculation (scenario, stratum,
-load case, short or long term, footing shape): each case is recomputed with
+load case, short or long term, footing shape, or a stratum named by its
+soil): each case is recomputed with
 its own inputs and gets its own row, the case named. It reads more label
 spellings (qall/qa, q_ult, rho/Se/delta settlements, layer height, depth to
 water, Unit Wt., depth factors 'd q') and no longer takes ratios (B/L, L/B,
