@@ -3,7 +3,8 @@ Vol I as printed. Made-up walls; every number worked by hand from the print.
 
 * External Kab: Eqs. 4-2, 4-3 (p. 4-15) with theta = 90 + omega, delta =
   beta; F_T at delta to the normal of the back of the zone (Fig. 4-5,
-  p. 4-16), at h/3.
+  p. 4-16), at h/3; under a slope, h and V2 to where the inclined back
+  meets the slope, as Fig. 4-5 draws it (GM-307 review).
 * Internal Ka: Eq. 4-26 (p. 4-36), the Coulomb Ka with delta = beta = 0.
 * Extensible failure surface: Fig. 4-9(b) (p. 4-34) through the toe.
 * A face under 10 deg is near vertical (p. 4-15); a battered face under a
@@ -163,6 +164,80 @@ def test_a_battered_face_under_a_slope_lowers_the_surface():
     # Zp: the slope starts at the top of the face, z tan omega behind the
     # face of the level at depth z
     assert all(lv["Zp_m"] >= lv["depth_m"] for lv in r.internal_results)
+
+
+def test_a_battered_face_under_a_slope_by_hand_fig_4_5():
+    # GM-307 review. Fig. 4-5 (p. 4-16) carries the back of the zone,
+    # parallel to the face, up to the slope: omega 12, beta 18, L 4.5,
+    # H 6: h - H = 4.5 tan 18 / (1 - tan 12 tan 18) = 1.46214 / 0.93094 =
+    # 1.5706, h = 7.5706 m (Eq. 4-7's H + L tan 18 = 7.4621, for a
+    # vertical wall). Eqs. 4-2, 4-3, theta 102, delta = beta = 18, phi_b
+    # 30: Gamma = [1 + sqrt(sin 48 sin 12 / (sin 84 sin 120))]^2 = 2.02649,
+    # Kab = sin^2 132 / (2.02649 sin^2 102 sin 84) = 0.28640.
+    # F_T = 0.5 x 0.28640 x 18 x 7.5706^2 = 147.73 kN/m (Eq. 4-7 with this
+    # h); at delta - omega = 6 deg: F_H = 146.93 at h/3, F_V = 15.44 at
+    # 4.5 + (7.5706 / 3) tan 12 = 5.036 m.
+    # V1 = 19 x 6 x 4.5 = 513 at 2.25 + 3 tan 12 = 2.888 m; V2 = 19 x 4.5
+    # x 1.5706 / 2 = 67.14 (Fig. 4-3's gamma_r L (h - H) / 2) at (9 +
+    # 1.5706 tan 12) / 3 + 6 tan 12 = 4.387 m.
+    # V = 595.59; FOS_s = 595.59 tan 30 / 146.93 = 2.340; M_stab = 1853.7,
+    # M_ot = 146.93 x 2.5235 = 370.77, FOS_ot = 5.000; e < 0, sigma_v =
+    # 595.59 / 4.5 = 132.4 kPa
+    tw, t = math.tan(math.radians(12.0)), math.tan(math.radians(18.0))
+    dh = 4.5 * t / (1 - tw * t)
+    assert 6.0 + dh == pytest.approx(7.5706, abs=1e-4)
+    gamma = (1 + math.sqrt(_sin(48) * _sin(12) / (_sin(84) * _sin(120)))) ** 2
+    kab = _sin(132) ** 2 / (gamma * _sin(102) ** 2 * _sin(84))
+    assert kab == pytest.approx(0.28640, abs=1e-5)
+    FT = 0.5 * kab * 18.0 * (6.0 + dh) ** 2
+    assert FT == pytest.approx(147.73, abs=0.01)
+    FH, FV = FT * math.cos(math.radians(6.0)), FT * _sin(6.0)
+    x_FT = 4.5 + (6.0 + dh) / 3.0 * tw
+    V2, x_V2 = 19.0 * 4.5 * dh / 2.0, (9.0 + dh * tw) / 3.0 + 6.0 * tw
+    assert V2 == pytest.approx(67.14, abs=0.01)
+    V = 513.0 + V2 + FV
+    M_stab = 513.0 * (2.25 + 3.0 * tw) + V2 * x_V2 + FV * x_FT
+    M_ot = FH * (6.0 + dh) / 3.0
+    assert V * math.tan(math.radians(30.0)) / FH == pytest.approx(2.340,
+                                                                  abs=5e-4)
+    assert M_stab / M_ot == pytest.approx(5.000, abs=5e-4)
+    assert 2.25 - (M_stab - M_ot) / V < 0
+    r = _wall(_geom(face_batter=12.0, backfill_slope=18.0), STRIPS)
+    ld = r.external_terms["backslope_loads"]
+    assert ld["h"] == pytest.approx(6.0 + dh, rel=1e-12)
+    assert ld["FT"] == pytest.approx(FT, rel=1e-12)
+    assert ld["V2"] == pytest.approx(V2, rel=1e-12)
+    assert ld["x_V2"] == pytest.approx(x_V2, rel=1e-12)
+    assert ld["x_FT"] == pytest.approx(x_FT, rel=1e-12)
+    assert r.FOS_sliding == pytest.approx(2.340, abs=1e-3)
+    assert r.FOS_overturning == pytest.approx(5.000, abs=1e-3)
+    assert r.sigma_v == pytest.approx(V / 4.5, abs=0.05)
+    assert r.backslope["h_m"] == pytest.approx(7.571, abs=1e-3)
+    assert r.face_batter["FT_kN_per_m"] == pytest.approx(147.735, abs=1e-3)
+    # the choice: Fig. 4-5's h, Eq. 4-7's (a vertical wall's) beside it
+    ch = {c["what"]: c for c in r.choices}[
+        "height h of the thrust plane on a battered face under a slope"]
+    assert "7.571" in ch["chosen"] and "147.7" in ch["chosen"]
+    assert "Fig. 4-5" in ch["basis"]
+    assert "7.462" in ch["alternatives"][0]
+    assert "143.5" in ch["alternatives"][0]
+    assert "vertical wall" in ch["alternatives"][0]
+
+
+def test_fig_4_5_h_leaves_level_and_vertical_walls_as_they_were():
+    # h = H on a level battered face; Eq. 4-7 on a vertical one
+    level = mse.backslope_geometry(_geom(face_batter=12.0))
+    assert level["h"] == 6.0 and level["V2_area"] == 0.0
+    vert = mse.backslope_geometry(_geom(backfill_slope=18.0))
+    t = math.tan(math.radians(18.0))
+    assert vert["h"] == 6.0 + 4.5 * t and vert["h_rule"] == "Eq. 4-7"
+    assert vert["V2_area"] == pytest.approx(4.5 * 4.5 * t / 2, rel=1e-12)
+    assert vert["V2_arm"] == pytest.approx(3.0, rel=1e-12)
+    # a face under 10 deg is vertical: Eq. 4-7
+    near = mse.backslope_geometry(_geom(face_batter=6.0, backfill_slope=18.0))
+    assert near["h"] == vert["h"]
+    r = _wall(_geom(face_batter=12.0), STRIPS)
+    assert not any("thrust plane" in c["what"] for c in r.choices)
 
 
 def test_refused_cases():

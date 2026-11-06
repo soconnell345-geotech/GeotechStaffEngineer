@@ -1265,7 +1265,9 @@ def _mse_backslope_steps(t, ld, geom):
     (:func:`retaining_walls.mse.backslope_loads`): the slope's geometry,
     Kab by Eqs. 4-2 and 4-3, F_T by Eq. 4-7 and its components (Eqs.
     4-10, 4-13), the traffic thrust behind a broken backslope's crest, and
-    the slope fill over the reinforced zone, V2."""
+    the slope fill over the reinforced zone, V2. On a battered face, theta,
+    the components at delta - omega and, under a slope, h and V2 to where
+    the inclined back of the zone meets it (Fig. 4-5)."""
     H = geom.wall_height
     L = geom.reinforcement_length
     q = geom.surcharge
@@ -1294,6 +1296,26 @@ def _mse_backslope_steps(t, ld, geom):
         ))
     if beta <= 0:
         pass
+    elif bs.get("h_rule") == "Fig. 4-5":
+        # GM-307 review: on a battered face Fig. 4-5 carries the inclined
+        # back of the reinforced zone up to the slope
+        h7 = H + L * math.tan(math.radians(beta))
+        items.append(CalcStep(
+            title="Backslope Geometry (slope that continues)",
+            equation="h = H + L tan β / (1 - tan ω tan β);  δ = β",
+            substitution=(f"h = {H:.2f} + {L:.2f} × tan {beta:.1f}° / (1 - "
+                          f"tan {omega:g}° × tan {beta:.1f}°) = {h:.3f} m;  "
+                          f"δ = β = {beta:.1f}°"),
+            result_name="h",
+            result_value=f"{h:.3f}",
+            result_unit="m",
+            reference=("GEC-11 Vol I Fig. 4-5 (p. 4-16): h up to where the "
+                       "back of the reinforced zone, inclined at θ, meets "
+                       "the slope; Eq. 4-7 (p. 4-20); δ = β, p. 4-15"),
+            notes=(f"Eq. 4-7's h = H + L tan β = {h7:.3f} m is written for "
+                   "a vertical wall (Fig. 4-3) and gives a lower F_T (see "
+                   "Choices)."),
+        ))
     elif S is None:
         items.append(CalcStep(
             title="Backslope Geometry (slope that continues)",
@@ -1418,7 +1440,23 @@ def _mse_backslope_steps(t, ld, geom):
                        "Example E1, pp. E1-7 to E1-9"),
             notes=_TRAFFIC_NOTE[bool(t.get("traffic_vertical_resists"))],
         ))
-    if ld["V2"] > 0:
+    if ld["V2"] > 0 and bs.get("h_rule") == "Fig. 4-5":
+        # GM-307 review: the slope fill up to the inclined back (Fig. 4-5)
+        items.append(CalcStep(
+            title="Slope Fill over the Reinforced Zone",
+            equation=("V2 = γ_r L (h - H) / 2, the triangle up to the "
+                      "inclined back of the zone, at (2L + (h - H) tan ω) / "
+                      "3 from the top of the face"),
+            substitution=(f"V2 = {ld['V1'] / (H * L):.1f} × {L:.2f} × "
+                          f"({h:.3f} - {H:.2f}) / 2 = {ld['V2']:.1f}, at "
+                          f"{bs['V2_arm']:.3f} m from the top of the face"),
+            result_name="V2",
+            result_value=f"{ld['V2']:.1f}",
+            result_unit="kN/m",
+            reference=("GEC-11 Vol I Fig. 4-3 (p. 4-13) for V2 = γ_r L (h - "
+                       "H) / 2, with Fig. 4-5's h (p. 4-16)"),
+        ))
+    elif ld["V2"] > 0:
         items.append(CalcStep(
             title="Slope Fill over the Reinforced Zone",
             equation=("V2 = γ_r × (area of the slope fill over L); "
@@ -1440,7 +1478,12 @@ def _mse_backslope_steps(t, ld, geom):
         result_name="P_a",
         result_value=f"{t['Pa']:.1f}",
         result_unit="kN/m",
-        reference="GEC-11 Vol I Eq. 4-10 (p. 4-21), unfactored",
+        # GM-307 review: a battered face's thrust is at delta - omega
+        reference=(("GEC-11 Vol I Fig. 4-5 (p. 4-16): F_H = F_T cos(δ - ω)"
+                    + (", with F2 cos(δ - ω) added as Eq. 4-8 (p. 4-21) "
+                       "adds F2" if ld["F2"] > 0 else "")
+                    + ", unfactored") if omega > 0 else
+                   "GEC-11 Vol I Eq. 4-10 (p. 4-21), unfactored"),
     ))
     return items
 
@@ -1705,9 +1748,19 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         result_name="σ_v",
         result_value=f"{sigma_v:.1f}",
         result_unit="kPa",
-        reference=(("GEC-11 Vol I Eq. 4-18 (p. 4-26), Eq. 4-21 (p. 4-28) "
+        # GM-307 review: keyed on the slope and the batter, not on the
+        # backslope loads (a battered level wall has them too)
+        reference=(("GEC-11 Vol I Eq. 4-18 (p. 4-26), Eq. 4-21's terms (p. "
+                    "4-28) with F_T sin(δ - ω) in place of F_T sin β (Fig. "
+                    "4-5, p. 4-16), unfactored"
+                    if getattr(geom, "battered", False)
+                    and geom.backfill_slope > 0 else
+                    "GEC-11 Vol I Eq. 4-18 (p. 4-26) with Fig. 4-5's terms "
+                    "(p. 4-16), unfactored"
+                    if getattr(geom, "battered", False) else
+                    "GEC-11 Vol I Eq. 4-18 (p. 4-26), Eq. 4-21 (p. 4-28) "
                     "with Eq. 4-16's terms (p. 4-23), unfactored"
-                    if t.get("backslope_loads") is not None else
+                    if geom.backfill_slope > 0 else
                     "GEC-11 Vol I Eq. 4-18 (p. 4-26), Eqs. 4-19, 4-20 (p. "
                     "4-27), unfactored") + "; AASHTO 11.10.5.4"),
         notes=("V_b and M_b count the live load over the reinforced zone "
@@ -1907,9 +1960,12 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             result_name="σ_2",
             result_value=f"{gamma_r * bs['S_eq']:.2f}",
             result_unit="kPa",
+            # GM-307 review: a battered face takes Eq. 4-26's Ka
             reference=("GEC-11 Vol I Fig. 4-11 (p. 4-38), Eq. 4-29 (p. "
-                       "4-42), p. 4-36: Ka by Eq. 4-25 as for a level "
-                       "backfill"),
+                       "4-42), p. 4-36: Ka by Eq. "
+                       + ("4-26" if getattr(geom, "battered", False)
+                          else "4-25")
+                       + " as for a level backfill"),
         ))
         if rs and any(r.is_metallic for r in rs):
             int_items.append(CalcStep(
@@ -2319,7 +2375,8 @@ def _calc_steps_mse_lrfd(result, analysis) -> List[CalcSection]:
                 changed.append(what)
     if br.get("phi_bearing") is not None:
         rows.append(["φ_b, bearing resistance", f"{br['phi_bearing']:.2f}",
-                     "GEC-11 Vol I Table 4-5 (p. 4-19): 0.65; Eq. 4-23"])
+                     "GEC-11 Vol I Table 4-5 (p. 4-19): 0.65; Eq. 4-23 (p. "
+                     "4-30)"])
         if abs(br["phi_bearing"] - 0.65) > 1e-9:
             changed.append("φ_b")
     combo_rows = [[name] + ([f"{lf[ev]:.2f}", f"{lf[eh]:.2f}",
@@ -2348,24 +2405,37 @@ def _calc_steps_mse_lrfd(result, analysis) -> List[CalcSection]:
 
     # ── Unfactored loads ──────────────────────────────────────
     ld_items = []
+    bs = result.get("backslope") or {}
+    # GM-307 review: a broken backslope's thrust is inclined at I (p. 4-15,
+    # Fig. 4-4), as the ASD steps print it; I = beta for a slope that
+    # continues
+    broken = sloping and geom.broken_backslope_height is not None
+    a = "I" if broken else "β"
+    traffic = bool(uf.get("F2"))
+    f2_resists = traffic and bool(bs.get("traffic_vertical_resists"))
     if sloping:
-        bs = result.get("backslope", {})
         ld_items.append(CalcStep(
             title="Retained Fill Thrust (sloping backfill)",
-            equation="F_T = 0.5 K_ab γ_b h²;  F_H = F_T cos β, F_V = F_T sin β",
+            equation=(f"F_T = 0.5 K_ab γ_b h²;  F_H = F_T cos {a}, F_V = "
+                      f"F_T sin {a}"),
             substitution=(f"K_ab = {uf['Ka_retained']:.4f} (Eqs. 4-2, 4-3), "
-                          f"h = {_f(bs.get('h_m'))} m: F_T = {uf['FT']:.1f}, "
+                          f"h = {_f(bs.get('h_m'))} m"
+                          + (f", I = {_f(bs.get('interface_angle_deg'), '.2f')}°"
+                             if broken else "")
+                          + f": F_T = {uf['FT']:.1f}, "
                           f"F_H = {uf['FT_H']:.1f}, F_V = {uf['FT_V']:.1f}"),
             result_name="F_T",
             result_value=f"{uf['FT']:.1f}",
             result_unit="kN/m",
             reference=("GEC-11 Vol I Eqs. 4-2, 4-3 (p. 4-15), Eq. 4-7 (p. "
-                       "4-20), Eqs. 4-10, 4-11 (p. 4-21)"),
+                       "4-20), Eqs. 4-10, 4-11 (p. 4-21)"
+                       + ("; β = δ = I for a broken backslope, p. 4-15 and "
+                          "Fig. 4-4 (p. 4-14)" if broken else "")),
         ))
         rows = [["V1 (reinforced fill)", "EV", f"{uf['V1']:.1f}"],
                 ["V2 (slope fill over the zone)", "EV", f"{uf['V2']:.1f}"],
-                ["F_T cos β (driving)", "EH", f"{uf['FT_H']:.1f}"],
-                ["F_T sin β (resisting)", "EH", f"{uf['FT_V']:.1f}"]]
+                [f"F_T cos {a} (driving)", "EH", f"{uf['FT_H']:.1f}"],
+                [f"F_T sin {a} (resisting)", "EH", f"{uf['FT_V']:.1f}"]]
         if uf.get("F2"):
             rows += [["F2 cos I (traffic behind the crest)", "LL",
                       f"{uf['F2_H']:.1f}"],
@@ -2398,12 +2468,18 @@ def _calc_steps_mse_lrfd(result, analysis) -> List[CalcSection]:
     sections.append(CalcSection(title="Unfactored Loads", items=ld_items))
 
     # ── Sliding ───────────────────────────────────────────────
+    # GM-307 review: the terms the tool sums (_lrfd_sliding_loads), the
+    # traffic thrust behind a broken backslope's crest included
+    if sloping:
+        r_tau = (f"R_τ = [γ_EV (V1 + V2) + γ_EH F_T sin {a}"
+                 + (" + γ_LL F2 sin I" if f2_resists else "") + "] μ")
+        p_d = (f"P_d = γ_EH F_T cos {a}"
+               + (" + γ_LL F2 cos I" if traffic else ""))
+    else:
+        r_tau, p_d = "R_τ = γ_EV V μ", "P_d = γ_EH F1 + γ_LS F2"
     s_items = [CalcStep(
         title="Sliding CDR",
-        equation=("CDR = R_R / P_d;  R_R = φ_τ R_τ;  R_τ = γ_EV V μ"
-                  + (" + γ_EH F_T sin β" if sloping else "")
-                  + ";  P_d = γ_EH " + ("F_T cos β" if sloping else
-                                        "F1 + γ_LS F2")),
+        equation=f"CDR = R_R / P_d;  R_R = φ_τ R_τ;  {r_tau};  {p_d}",
         substitution=(f"Strength I (max) {_f(sl.get('CDR_strength_max'))}, "
                       f"(min) {_f(sl.get('CDR_strength_min'))}, critical "
                       f"{_f(sl.get('CDR_critical'))}; μ by the "
@@ -2411,7 +2487,10 @@ def _calc_steps_mse_lrfd(result, analysis) -> List[CalcSection]:
         result_name="CDR_sliding",
         result_value=_f(sl.get("CDR_governing")),
         reference=("GEC-11 Vol I Eq. 4-4 (p. 4-19), Eqs. 4-9, 4-11 to "
-                   "4-13 (p. 4-21), μ p. 4-22; required 1.0"),
+                   "4-13 (p. 4-21), μ p. 4-22"
+                   + ("; the traffic thrust F2 behind the crest, Vol II "
+                      "Example E1, pp. E1-7 to E1-9" if sloping and traffic
+                      else "") + "; required 1.0"),
     ), CheckItem(description="Sliding (governing combination)",
                  demand=1.0, demand_label="Required",
                  capacity=sl.get("CDR_governing"),
@@ -2500,8 +2579,8 @@ def _calc_steps_mse_lrfd(result, analysis) -> List[CalcSection]:
             result_name="q_R (Strength I max)",
             result_value=_f(br.get("qR_strength_max_kPa"), ".1f"),
             result_unit="kPa",
-            reference=("GEC-11 Vol I Eqs. 4-22, 4-23 (p. 4-28), Table 4-6 "
-                       "(p. 4-29)"),
+            reference=("GEC-11 Vol I Eq. 4-22 (p. 4-28), Eq. 4-23 (p. "
+                       "4-30), Table 4-6 (p. 4-29)"),
         ))
     b_items.append(TableData(
         title="Bearing by Combination",

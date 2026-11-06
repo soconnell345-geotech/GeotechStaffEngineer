@@ -212,6 +212,49 @@ def test_the_battered_package_and_the_tool_agree(extra, tmp_path):
                          step.reference or ""), (step.title, step.reference)
 
 
+def test_a_battered_face_under_a_slope_prints_fig_4_5s_h(tmp_path):
+    # GM-307 review: Fig. 4-5 (p. 4-16) carries the inclined back of the
+    # zone up to the slope. omega 12, beta 18: h = 6 + 4.5 tan 18 / (1 -
+    # tan 12 tan 18) = 7.571 m; F_T = 0.5 x 0.28640 x 18 x 7.5706^2 =
+    # 147.7 kN/m; V2 = 19 x 4.5 x 1.5706 / 2 = 67.1 kN/m; FOS_s 2.34,
+    # FOS_ot 5.00, sigma_v 132.4 kPa (worked in
+    # retaining_walls/tests/test_gm307_battered_face.py)
+    params = {**BATTER, "backfill_slope": 18.0}
+    steps = {s.title: s for s in _steps(params)}
+    geo = steps["Backslope Geometry (slope that continues)"]
+    assert geo.result_value == "7.571"
+    assert "tan ω tan β" in geo.equation and "Fig. 4-5 (p. 4-16)" in \
+        geo.reference
+    assert "7.462" in geo.notes
+    assert steps["Retained Backfill Thrust"].result_value == "147.7"
+    assert steps["Slope Fill over the Reinforced Zone"].result_value == "67.1"
+    assert "Fig. 4-5" in steps["Horizontal Driving Force"].reference
+    assert "Eq. 4-10" not in steps["Horizontal Driving Force"].reference
+    assert "Eq. 4-26" in steps["Sloping Backfill Surcharge on the "
+                               "Reinforcement"].reference
+    bearing = steps["Eccentricity & Bearing Pressure (Meyerhof effective "
+                    "width)"].reference
+    assert "F_T sin(δ - ω)" in bearing and "Fig. 4-5" in bearing
+    out, html = _package(params, tmp_path)
+    tool = _tool(params)
+    assert out["FOS_sliding"] == round(tool["FOS_sliding"], 2) == 2.34
+    assert out["FOS_overturning"] == round(tool["FOS_overturning"], 2) == 5.0
+    assert out["sigma_v_kPa"] == tool["sigma_v_kPa"] == 132.4
+    assert tool["backslope"]["h_m"] == 7.571
+    assert "7.571" in html and "147.7" in html
+
+
+def test_a_battered_level_wall_cites_fig_4_5_not_the_slope_equations():
+    # GM-307 review: a battered face on a level backfill
+    steps = {s.title: s for s in _steps(BATTER)}
+    drive = steps["Horizontal Driving Force"].reference
+    assert "Fig. 4-5 (p. 4-16)" in drive and "Eq. 4-10" not in drive
+    bearing = steps["Eccentricity & Bearing Pressure (Meyerhof effective "
+                    "width)"].reference
+    assert "Eq. 4-18 (p. 4-26) with Fig. 4-5's terms" in bearing
+    assert "Eq. 4-21" not in bearing and "Eq. 4-16" not in bearing
+
+
 def test_a_battered_face_under_a_broken_backslope_is_refused():
     out = D.call_agent("calc_package", "retaining_wall_package", {
         **BATTER, "backfill_slope": 20.0, "broken_backslope_height": 1.0})
@@ -267,7 +310,7 @@ def test_strength_i_min_by_hand(tmp_path):
     assert "Strength I (min)" in html
     for cite in ("Table 4-2 (p. 4-4)", "Table 4-1 (p. 4-4)",
                  "Table 4-5 (p. 4-19)", "Table E4-5.1 (p. E4-6)",
-                 "Eqs. 4-22, 4-23 (p. 4-28)"):
+                 "Eq. 4-22 (p. 4-28), Eq. 4-23 (p. 4-30)"):
         assert cite in html, cite
 
 
@@ -315,6 +358,28 @@ def test_every_lrfd_step_cites_a_printed_page():
     for step in steps:
         assert re.search(r"\bpp?\. (?:[A-Z]\d*|\d+)-\d+",
                          step.reference or ""), (step.title, step.reference)
+
+
+def test_the_lrfd_package_prints_the_traffic_thrust_in_sliding(tmp_path):
+    # GM-307 review: a broken backslope with traffic behind the crest. The
+    # tool's sliding demand is gamma_EH F_T cos I + gamma_LL F2 cos I
+    # (Example E1); the critical CDR (EV 1.00, EH 1.50) from the tool's
+    # own unfactored loads: [1.00 (V1 + V2) + 1.50 F_T sin I] tan 30 /
+    # (1.50 F_T cos I + 1.75 F2 cos I)
+    params = {**LRFD, "reinforcement_length": 5.0, "backfill_slope": 26.57,
+              "broken_backslope_height": 2.0, "phi_retained": 30.0}
+    out, html = _package(params, tmp_path)
+    tool = _lrfd_tool(params)
+    uf = tool["unfactored_kN_m"]
+    assert uf["F2"] > 0
+    crit = ((uf["V1"] + uf["V2"] + 1.5 * uf["FT_V"])
+            * math.tan(math.radians(30.0))
+            / (1.5 * uf["FT_H"] + 1.75 * uf["F2_H"]))
+    assert tool["sliding"]["CDR_critical"] == pytest.approx(crit, abs=1e-3)
+    assert "γ_EH F_T cos I + γ_LL F2 cos I" in html
+    assert "F_T cos I (driving)" in html and "F_T sin I (resisting)" in html
+    assert "F_T cos β" not in html
+    assert f"{tool['sliding']['CDR_critical']:.3f}" in html
 
 
 def test_the_lrfd_tools_name_selects_it(tmp_path):

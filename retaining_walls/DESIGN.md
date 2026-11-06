@@ -1848,6 +1848,14 @@ Check record: `module_work/gm307/CHECK.md`.
     Vs shifted by H tan ω, F_V at L + (h/3) tan ω. F_V < 0 (δ < ω, e.g. a
     level backfill) points up and lessens V in every check; a surcharge
     thrust's upward component is counted the same way;
+  - under a slope that continues, h = H + L tan β / (1 − tan ω tan β):
+    Fig. 4-5 draws h up to where the inclined back of the zone meets the
+    slope, the plane Eqs. 4-2, 4-3 are Coulomb's for; Eq. 4-7's H + L tan β
+    is written for a vertical wall and gives F_T 2 to 9 % low (GM-307
+    review; checked against a numerical Coulomb wedge). V2 = γ_r L (h − H)
+    / 2 (Fig. 4-3) with that h is the slope fill up to the inclined back,
+    at (2L + (h − H) tan ω) / 3 from the top of the face. A choice gives
+    Eq. 4-7's h and F_T beside it (`BATTER_SLOPE_H_BASIS`);
   - internal Ka by Eq. 4-26 (p. 4-36). **The print drops the square on the
     bracket**: as printed Eq. 4-26 gives 1 − sin φ at θ = 90, not Eq. 4-25,
     against the same page ("Coulomb ... no wall friction and a β angle

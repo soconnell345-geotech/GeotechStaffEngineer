@@ -1252,13 +1252,21 @@ def backslope_geometry(geom: MSEWallGeometry) -> Dict[str, Any]:
             to the ground surface 2H behind the face (p. 4-15, Fig. 4-4).
         h : height of the pressure plane at the back of the reinforced zone,
             H + L tan(beta) (Eq. 4-7), and not more than H + S for a broken
-            backslope (p. 4-20).
+            backslope (p. 4-20). On a battered face (10 deg or more) under a
+            slope that continues, the height at which the back of the zone,
+            inclined at theta (parallel to the face), meets the slope, as
+            Fig. 4-5 (p. 4-16) draws it: H + L tan(beta) / (1 - tan(omega)
+            tan(beta)) (GM-307 review, :data:`BATTER_SLOPE_H_BASIS`).
+        h_rule : the rule ``h`` was taken by: "level" (h = H), "Eq. 4-7"
+            or "Fig. 4-5".
         S : the broken backslope height, or None.
         crest_x : distance of the slope crest from the face (m), or None.
         V2_area, V2_arm : area (m2/m) of the slope fill over the reinforced
-            zone and the distance of its centroid from the face (the
-            triangle of Figs. 4-3/4-4, arm 2L/3; a crest inside L adds the
-            level part behind it).
+            zone and the distance of its centroid from the top of the face
+            (the triangle of Figs. 4-3/4-4, L (h - H) / 2 at 2L/3; a crest
+            inside L adds the level part behind it). On a battered face
+            under a slope, the triangle up to the inclined back, L (h - H)
+            / 2 with Fig. 4-5's h, at (2L + (h - H) tan(omega)) / 3.
         level_length : length of level ground over the reinforced zone (L
             for a level backfill; L - crest_x behind a crest inside L).
         S_eq : the equivalent uniform height of the sloping surcharge for
@@ -1273,9 +1281,10 @@ def backslope_geometry(geom: MSEWallGeometry) -> Dict[str, Any]:
     beta = geom.backfill_slope
     S = geom.broken_backslope_height
     if beta <= 0:
-        return {"beta_deg": 0.0, "I_deg": 0.0, "h": H, "S": None,
-                "crest_x": None, "V2_area": 0.0, "V2_arm": 2.0 * L / 3.0,
-                "level_length": L, "S_eq": 0.0, "H1": H}
+        return {"beta_deg": 0.0, "I_deg": 0.0, "h": H, "h_rule": "level",
+                "S": None, "crest_x": None, "V2_area": 0.0,
+                "V2_arm": 2.0 * L / 3.0, "level_length": L, "S_eq": 0.0,
+                "H1": H}
     t = math.tan(math.radians(beta))
 
     def rise(x):
@@ -1284,6 +1293,28 @@ def backslope_geometry(geom: MSEWallGeometry) -> Dict[str, Any]:
     I_deg = (beta if S is None
              else math.degrees(math.atan(rise(2.0 * H) / (2.0 * H))))
     area = _rise_integral(L, t, S)
+    dh, h_rule = rise(L), "Eq. 4-7"
+    V2_arm = _rise_first_moment(L, t, S) / area
+    if geom.battered and S is None:
+        # GM-307 review: Fig. 4-5 (p. 4-16) carries the back of the zone,
+        # parallel to the face, up to the slope. Its top corner is L behind
+        # the top of the face; above it the back rises dh while leaning back
+        # dh tan(omega), so dh = (L + dh tan(omega)) tan(beta)
+        tw = math.tan(math.radians(geom.face_batter))
+        if tw * t >= 1.0:
+            raise ValueError(
+                f"a face battered {geom.face_batter:g} deg under a slope of "
+                f"{beta:g} deg: the back of the reinforced zone, parallel to "
+                "the face, never meets the slope (face_batter + "
+                "backfill_slope must be under 90 deg; GEC-11 Vol I Fig. 4-5, "
+                "p. 4-16)")
+        dh, h_rule = L * t / (1.0 - tw * t), "Fig. 4-5"
+        # the slope fill over the zone up to that back: the triangle from
+        # the top of the face to the zone's top corner to where the back
+        # meets the slope, L dh / 2 (V2 = gamma_r L (h - H) / 2 of Fig. 4-3
+        # with this h), its centroid (2L + dh tan(omega)) / 3 from the face
+        area = 0.5 * L * dh
+        V2_arm = (2.0 * L + dh * tw) / 3.0
     crest_x = None if S is None else S / t
     level_length = 0.0 if crest_x is None else max(L - crest_x, 0.0)
     if level_length < 1e-9 * L:          # a crest at the back of the zone
@@ -1294,9 +1325,8 @@ def backslope_geometry(geom: MSEWallGeometry) -> Dict[str, Any]:
         S_eq = min(S_eq, S)
         dH = min(dH, S)
     return {
-        "beta_deg": beta, "I_deg": I_deg, "h": H + rise(L), "S": S,
-        "crest_x": crest_x, "V2_area": area,
-        "V2_arm": _rise_first_moment(L, t, S) / area,
+        "beta_deg": beta, "I_deg": I_deg, "h": H + dh, "h_rule": h_rule,
+        "S": S, "crest_x": crest_x, "V2_area": area, "V2_arm": V2_arm,
         "level_length": level_length, "S_eq": S_eq, "H1": H + dH,
     }
 
@@ -1377,6 +1407,11 @@ def backslope_loads(geom: MSEWallGeometry, gamma_backfill: float,
       V2 = gamma_r L (h - H) / 2).
     * q (broken backslope only): F2 = Kab q h at h/2, inclined at I
       (Example E1); Vs = q over any level ground on the reinforced zone.
+    * A face battered 10 deg or more (GM-307; Fig. 4-5, p. 4-16): theta =
+      90 + omega, the thrust at delta - omega to the horizontal, on the
+      back of the zone at L + y tan(omega) from the toe; under a slope, h
+      and V2 to where that inclined back meets the slope
+      (:func:`backslope_geometry`, :data:`BATTER_SLOPE_H_BASIS`).
 
     Raises ValueError for a slope steeper than ``phi_retained`` (at beta =
     phi Eq. 4-3 gives Gamma = 1) and for a surcharge on a slope that
@@ -1422,6 +1457,18 @@ def backslope_loads(geom: MSEWallGeometry, gamma_backfill: float,
         "MF2H": F2 * c * h / 2.0, "MF2V": F2 * s * x_F2,
     }
 
+
+#: The height h of the thrust plane on a battered face under a slope that
+#: continues (GM-307 review), a result's choice.
+BATTER_SLOPE_H_BASIS = (
+    "GEC-11 Vol I Fig. 4-5 (p. 4-16), the figure for a battered wall with a "
+    "backslope: h is drawn up to where the back of the reinforced zone, "
+    "inclined at theta (parallel to the face, p. 4-15), meets the slope, so "
+    "h = H + L tan(beta) / (1 - tan(omega) tan(beta)); Kab of Eqs. 4-2, 4-3 "
+    "is Coulomb's for that inclined plane. F_T = 1/2 Kab gamma_b h^2 (Eq. "
+    "4-7) at h/3, on the back at L + (h/3) tan(omega) from the toe, and V2 "
+    "= gamma_r L (h - H) / 2 (Fig. 4-3), the slope fill over the zone up to "
+    "the inclined back, at (2L + (h - H) tan(omega)) / 3 from the face")
 
 #: Why a battered face under a broken backslope is refused (GM-307): the
 #: print has no rule for the two together.
@@ -1615,7 +1662,12 @@ def _backslope_summary(ld: Dict[str, Any],
             "4-3) with delta = beta (= I, Fig. 4-4, for a broken backslope); "
             "F_T = 1/2 Kab gamma_b h^2 (Eq. 4-7) on h = H + L tan(beta) "
             "(not more than H + S), inclined at delta; the slope fill over "
-            "the reinforced zone, V2, added to the weight (Figs. 4-3, 4-8)"),
+            "the reinforced zone, V2, added to the weight (Figs. 4-3, 4-8)"
+            + ("; on a battered face h = H + L tan(beta) / (1 - tan(omega) "
+               "tan(beta)) and V2 to where the inclined back of the zone "
+               "meets the slope (Fig. 4-5, p. 4-16), the thrust at delta - "
+               "omega to the horizontal"
+               if bs.get("h_rule") == "Fig. 4-5" else "")),
     }
     if ld["F2"] > 0:
         out["F2_kN_per_m"] = round(ld["F2"], 3)
@@ -2989,7 +3041,9 @@ BATTER_EXTERNAL_BASIS = (
     "a face and reinforced zone battered 10 deg or more from vertical, Kab "
     "by Eqs. 4-2, 4-3 with theta the face inclination from horizontal (90 + "
     "omega) and delta = beta (Fig. 4-5, p. 4-16); F_T = 1/2 Kab gamma_b h^2 "
-    "(Eq. 4-7, h = H + L tan beta) at h/3 on the back of the reinforced "
+    "(Eq. 4-7; h = H on a level backfill, under a slope h = H + L tan beta "
+    "/ (1 - tan omega tan beta), where Fig. 4-5 carries the inclined back "
+    "of the zone to the slope) at h/3 on the back of the reinforced "
     "zone, at delta to its normal, so at delta - omega to the horizontal "
     "(Fig. 4-5: F_H at theta - 90 to the normal); a live-load surcharge's "
     "F2 = Kab q h (Eq. 4-6) at h/2, inclined the same. The zone a "
@@ -3169,11 +3223,14 @@ def local_shear_strengths(phi_foundation: float, c_foundation: float):
 
 
 def face_batter_choices(geom: MSEWallGeometry, phi_backfill: float,
-                        reinforcement=None) -> list:
+                        reinforcement=None,
+                        terms: Optional[Dict[str, Any]] = None) -> list:
     """How the face batter was taken (GM-307), a result's ``choices``: a
     face under 10 deg as vertical (GEC-11 Vol I p. 4-15); a battered one's
-    external Kab, internal Ka (with Eq. 4-26 as printed beside it) and
-    failure surface. Nothing for a vertical face."""
+    external Kab, under a slope the height h of its thrust plane (Fig. 4-5,
+    with Eq. 4-7's h and F_T beside it; from the run's external ``terms``),
+    internal Ka (with Eq. 4-26 as printed beside it) and failure surface.
+    Nothing for a vertical face."""
     from geotech_common.choices import MODULE, choice, how_given
     omega = geom.face_batter
     if omega <= 0:
@@ -3195,12 +3252,28 @@ def face_batter_choices(geom: MSEWallGeometry, phi_backfill: float,
         "external earth pressure on a battered face",
         f"Coulomb Kab with theta = 90 + {omega:g} = {theta:g} deg, delta = "
         f"beta",
-        how_given(omega, 0.0, name="face_batter"), BATTER_EXTERNAL_BASIS),
-        choice(
+        how_given(omega, 0.0, name="face_batter"), BATTER_EXTERNAL_BASIS)]
+    ld = None if terms is None else terms.get("backslope_loads")
+    if ld is not None and ld["geometry"].get("h_rule") == "Fig. 4-5":
+        # GM-307 review: Fig. 4-5's h, Eq. 4-7's (a vertical wall's) beside
+        h7 = geom.wall_height + geom.reinforcement_length * math.tan(
+            math.radians(geom.backfill_slope))
+        FT7 = 0.5 * ld["Kab"] * terms["gamma_retained"] * h7 ** 2
+        out.append(choice(
+            "height h of the thrust plane on a battered face under a slope",
+            f"h = H + L tan(beta) / (1 - tan(omega) tan(beta)) = "
+            f"{ld['h']:.3f} m, where the inclined back of the reinforced "
+            f"zone meets the slope (Fig. 4-5): F_T = {ld['FT']:.1f} kN/m",
+            MODULE, BATTER_SLOPE_H_BASIS,
+            [f"Eq. 4-7's h = H + L tan(beta) = {h7:.3f} m (p. 4-20), "
+             f"written for a vertical wall (Fig. 4-3): F_T = {FT7:.1f} "
+             f"kN/m, lower, and V2 only to the vertical over the zone's "
+             f"top corner"]))
+    out.append(choice(
         "internal Ka on a battered face",
         f"{Ka:.4f}, Eqs. 4-2, 4-3 with delta = beta = 0 at theta {theta:g} "
         f"deg", MODULE, BATTER_KA_BASIS,
-        [f"Eq. 4-26 as printed, the bracket unsquared: Ka = {printed:.4f}"])]
+        [f"Eq. 4-26 as printed, the bracket unsquared: Ka = {printed:.4f}"]))
     rs = ([] if reinforcement is None else
           level_reinforcements(reinforcement, geom.reinforcement_depths,
                                levels_source(geom)))
@@ -4385,7 +4458,7 @@ def analyze_mse_wall(
                                  reinforcement, Cu_backfill, internal,
                                  F_star_tested, alpha_tested)
         + level_depths_choices(geom, sigma_H_average)
-        + face_batter_choices(geom, phi_backfill, reinforcement)
+        + face_batter_choices(geom, phi_backfill, reinforcement, terms)
         + assumed,
         local_shear=local_shear,
         grid_spacing=grid_spacing,

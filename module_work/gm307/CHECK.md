@@ -209,6 +209,110 @@ venv per the brief (Python 3.12, `pip install -e packages/aec-agent-core
 - On a battered face the section figure's zone labels are placed as for a
   vertical face (cosmetic).
 
+## Review and fixes (2026-11-06)
+
+Review: an independent agent's, of branch `0369fad` (kept outside the
+repo with its scripts and logs). Its verdict: mergeable once finding 1 is fixed or stated as a
+choice; no existing answer changes. Both findings fixed here; GEC-11 pages
+re-read as rendered images (pp. 4-13, 4-15, 4-16, 4-20, 4-21, 4-23, 4-25 to
+4-28, 4-30, 4-36).
+
+**1. Medium (unconservative): F_T under a battered face with a slope.**
+`backslope_loads` took h from Eq. 4-7 (p. 4-20), H + L tan β, written for a
+vertical wall (Fig. 4-3). Fig. 4-5 (p. 4-16), the battered-wall figure,
+draws h up to where the back of the reinforced zone, inclined at θ and
+parallel to the face (p. 4-15), meets the slope. Its top corner is L behind
+the top of the face; above it the back rises Δ while leaning back Δ tan ω,
+so Δ = (L + Δ tan ω) tan β and h = H + L tan β / (1 − tan ω tan β). Eqs.
+4-2, 4-3 are Coulomb's for that plane: an independent numerical Coulomb
+wedge on it (a trial-plane search, outside the repo) gives the tool's new
+F_T to the printed digits in all three cases below.
+- What changed: `backslope_geometry` takes Fig. 4-5's h for a battered
+  face under a slope that continues (`h_rule` "Fig. 4-5"; "Eq. 4-7"
+  otherwise), and V2 = γ_r L (h − H) / 2 (Fig. 4-3's formula; with this h
+  it is exactly the slope fill up to the inclined back) at (2L + (h − H)
+  tan ω) / 3 from the top of the face. F_T's arms stay h/3 and L + (h/3)
+  tan ω. A face battered so far that the back never meets the slope (ω + β
+  ≥ 90°) is refused with the reason. The result's choices carry "height h
+  of the thrust plane on a battered face under a slope" (basis:
+  `BATTER_SLOPE_H_BASIS`, Fig. 4-5's geometry; alternative: Eq. 4-7's h
+  and its F_T, for a vertical wall). The backslope and face-batter bases
+  say it. The package's steps print Fig. 4-5's h, its equation and source,
+  Eq. 4-7's h in a note, and V2 with this h; the numbers are the tool's
+  (one code path). `DESIGN.md` says it.
+- Unchanged: a level backfill (h = H, battered or not), every vertical
+  face, a face under 10° (Eq. 4-7), a broken backslope.
+
+Before / after (made-up wall: H 6, L 4.5, Sv 0.6, γ_r 19, φ_r 34, φ_b 30,
+γ_b 18, φ_f 30, q_allowable 400, steel strips Sh 0.9; the mse_wall tool
+on `0369fad` and on this fix):
+
+| ω, β | h (m) | F_T (kN/m) | V2 (kN/m) | FOS_s | FOS_ot | σ_v (kPa) |
+|---|---|---|---|---|---|---|
+| 10°, 18° | 7.462 → 7.551 | 151.78 → 155.42 (+2.4 %) | 62.51 → 66.31 | 2.292 → 2.254 | 4.771 → 4.666 | 132.6 → 133.5 |
+| 12°, 18° | 7.462 → 7.571 | 143.53 → 147.73 (+2.9 %) | 62.51 → 67.14 | 2.388 → 2.340 | 5.137 → 5.000 | 131.2 → 132.4 |
+| 15°, 26.57° | 8.250 → 8.599 | 210.75 → 228.92 (+8.6 %) | 96.21 → 111.10 | 1.822 → 1.725 | 3.930 → 3.650 | 144.8 → 148.9 |
+
+By hand, ω 12°, β 18° (`test_a_battered_face_under_a_slope_by_hand_fig_4_5`):
+h − H = 4.5 tan 18 / (1 − tan 12 tan 18) = 1.5706, h = 7.5706 m; Kab
+(θ 102, δ = β = 18, φ_b 30) = 0.28640; F_T = 0.5 × 0.28640 × 18 × 7.5706²
+= 147.73 kN/m; at δ − ω = 6°, F_H = 146.93 at h/3, F_V = 15.44 at 5.036 m;
+V1 = 513 at 2.888 m, V2 = 19 × 4.5 × 1.5706 / 2 = 67.14 at 4.387 m; FOS_s =
+595.59 tan 30 / 146.93 = 2.340, FOS_ot = 1853.7 / 370.77 = 5.000, e < 0,
+σ_v = 132.4 kPa. The package prints h 7.571, F_T 147.7, V2 67.1 and FOS_s
+2.34, FOS_ot 5.00, σ_v 132.4, the tool's own
+(`test_a_battered_face_under_a_slope_prints_fig_4_5s_h`).
+
+**2. Low: citations (no number changes).**
+- a. The LRFD bearing-resistance step cited "Eqs. 4-22, 4-23 (p. 4-28)";
+  Eq. 4-23 is printed on p. 4-30. Now "Eq. 4-22 (p. 4-28), Eq. 4-23 (p.
+  4-30)"; the factors table's φ_b row gives p. 4-30 too.
+  `test_strength_i_min_by_hand` pins the corrected text.
+- b. A battered face on a level backfill: the bearing step cited Eq. 4-21
+  with Eq. 4-16's terms and the driving-force step Eq. 4-10, all
+  vertical-wall sloping-backfill equations. The citations are now keyed on
+  the slope and the batter: a battered level wall cites Eq. 4-18 (p. 4-26)
+  with Fig. 4-5's terms (p. 4-16; p. 4-26 says the equations "should be
+  extended ... for other cases"); a battered wall under a slope cites Eq.
+  4-18 and Eq. 4-21's terms with F_T sin(δ − ω) for F_T sin β (Fig. 4-5);
+  the driving force on any battered face cites Fig. 4-5, F_H = F_T cos(δ −
+  ω) (with F2 added as Eq. 4-8 adds it). Vertical walls keep their
+  citations.
+- c. The σ_2 step on a battered face under a slope said "Ka by Eq. 4-25";
+  the Ka used is Eq. 4-26 (p. 4-36). It now names Eq. 4-26 when the face is
+  battered.
+- d. The LRFD package, broken backslope with traffic: the sliding equation
+  now prints "P_d = γ_EH F_T cos I + γ_LL F2 cos I", the terms the tool
+  sums (`_lrfd_sliding_loads`), and "+ γ_LL F2 sin I" in R_τ when
+  `traffic_vertical_resists`; R_τ is printed with μ on the whole bracket,
+  as Eq. 4-13 has it. The thrust and its rows are labelled with I (and I's
+  value and source, p. 4-15, Fig. 4-4) for a broken backslope, β for a
+  slope that continues. `test_the_lrfd_package_prints_the_traffic_thrust_in_sliding`
+  works the critical CDR from the tool's unfactored loads with the γ_LL F2
+  cos I term (the made-up wall: H 6, L 5, β 26.57°, S 2 m, q 12; CDR
+  1.147).
+
+**Tests** (worktree; `retaining_walls.__file__` and
+`funhouse_agent.__file__` the worktree's; logs kept outside the repo,
+judged by exit code):
+
+| Run | Files | Exit | Result |
+|---|---|---|---|
+| run1_main.log | retaining_walls, test_gm307_mse_package, test_gm114_mse_calc_package, test_calc_package_tool_parity, webapp test_page_fingerprints, test_public_text | 0 | 768 passed (763 + 5 new) |
+| run2_defaults.log | test_defaults_used -k "mse or retaining" | 0 | 93 passed, 752 deselected |
+| run3_calcpkg_val.log | calc_package, V-009/011, V-021/022, V-056/057, figure layout and conventions, GM-179, render tables, top-level params | 0 | 523 passed, 3 skipped (pdflatex) |
+| run4_mse_adapters.log | the other 17 funhouse tests naming the MSE tools or the package | 0 | 566 passed |
+
+New: `test_a_battered_face_under_a_slope_by_hand_fig_4_5`,
+`test_fig_4_5_h_leaves_level_and_vertical_walls_as_they_were`
+(retaining_walls), `test_a_battered_face_under_a_slope_prints_fig_4_5s_h`,
+`test_a_battered_level_wall_cites_fig_4_5_not_the_slope_equations`,
+`test_the_lrfd_package_prints_the_traffic_thrust_in_sliding` (package).
+Changed: `test_strength_i_min_by_hand`'s citation (2a). Every other test,
+and E1 to E4, pass unchanged. No page fingerprint moved (no tool
+description changed). No saved answer moves: the battered face is new on
+this branch, so its numbers under a slope are new answers.
+
 ## Release note
 
 - New: the MSE calc package (`retaining_wall_package`, `wall_type="mse"`)
@@ -217,11 +321,15 @@ venv per the brief (Python 3.12, `pip install -e packages/aec-agent-core
   the mse_wall tool's numbers; no value changes.
 - New: `mse_wall` and the MSE package take `face_batter`. From 10° from
   vertical the wall is battered (GEC-11 Vol I p. 4-15, Fig. 4-5): Coulomb
-  Kab with θ = 90 + ω and the thrust at δ − ω, the internal Ka of Eq. 4-26
+  Kab with θ = 90 + ω and the thrust at δ − ω; under a slope, h = H + L tan
+  β / (1 − tan ω tan β) and V2 up to where the inclined back of the zone
+  meets the slope, as Fig. 4-5 draws it (a choice gives Eq. 4-7's h, a
+  vertical wall's, beside it); the internal Ka of Eq. 4-26
   (taken with its bracket squared; the print drops the square), and for
   geosynthetics the Coulomb failure plane of Fig. 4-9(b); under 10° the
   face is vertical. A battered face under a broken backslope, or with
-  `lrfd_external`, is refused. Vertical walls do not change.
+  `lrfd_external`, is refused. Vertical walls do not change; the battered
+  face is new, so no saved answer moves.
 - New: an LRFD MSE package, `retaining_wall_package` with
   `wall_type="mse_lrfd"`: `mse_lrfd_external_stability`'s CDRs for Strength
   I max and min, the critical combination and Service I, with the load and
