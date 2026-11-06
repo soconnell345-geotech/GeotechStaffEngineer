@@ -11,7 +11,8 @@ kw=dict(B=B,c=5.0,phi=phi,gamma=18.0,E=1e5,nu=0.3,psi=0.0,surcharge=q,
 from fem2d.analysis import bearing_capacity_factors
 Nc,Nq,Ng=bearing_capacity_factors(phi); est=5*Nc+q*Nq+0.5*18*B*Ng
 kw['q_max']=float(sys.argv[6])*est if len(sys.argv)>6 else 1.6*est
+if len(sys.argv)>7: kw['iteration']=sys.argv[7]  # GM-308 (a)
 r=f(**kw)
 it=None
-print(json.dumps(dict(phi=phi,hwB=hwB,nx=nx,max_iter=mi,q=q,N=N,qmax=round(kw["q_max"],1),bracketed=r.collapse_bracketed,q_ult=round(r.q_ult_kPa,1),nok=r.n_steps_converged,
+print(json.dumps(dict(iteration=kw.get('iteration'),phi=phi,hwB=hwB,nx=nx,max_iter=mi,q=q,N=N,qmax=round(kw["q_max"],1),bracketed=r.collapse_bracketed,q_ult=round(r.q_ult_kPa,1),nok=r.n_steps_converged,
   settled=r.n_steps_settled,maxit_warn=any('max_iter' in w for w in r.warnings),secs=round(time.time()-t,1))),flush=True)

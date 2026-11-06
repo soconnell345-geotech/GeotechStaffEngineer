@@ -17,6 +17,10 @@ Two solution methods:
   of every load step — iterations are back-substitutions only. Convergence
   on residual ratio OR displacement-increment ratio (dual criterion).
   Non-convergence within ``max_iter`` is the SRM failure indicator.
+- ``method='anderson'`` (GM-308): the same constant-stiffness iteration
+  with the one factorization, its steps combined by Anderson acceleration
+  (Anderson 1965; Walker & Ni 2011). An option of the footing capacity
+  (``iteration='accelerated'``); no caller uses it by default.
 - ``method='tangent'``: Newton-Raphson with the continuum elastoplastic
   tangent, reformed every ``reform_interval`` iterations, with divergence
   detection, step cutback, and optional line search.
@@ -624,6 +628,49 @@ def _iface_force(ctx, u, slip):
     return F, slip_new, shear, n_eff
 
 
+# GM-308: Anderson acceleration of the constant-stiffness iteration
+# (run_nl method='anderson'): the number of past iterates combined. This
+# module's choice: with m = 10 a cohesionless footing (c = 0, phi = 30,
+# q = 10 kPa) stalled at a residual near 1e-3 where m = 5 converged; m = 3
+# was no better than 5 on the other checks (module_work/gm308/CHECK_A.md).
+_ANDERSON_MEMORY = 5
+
+
+def _anderson_step(lu, u, R, hist, memory):
+    """One Anderson-accelerated constant-stiffness iteration (GM-308).
+
+    The constant-stiffness iteration is the fixed-point iteration
+    u_k+1 = g(u_k) = u_k + f_k, with f_k = K0^-1 R(u_k) its step (K0 the
+    factorized elastic stiffness). Anderson (1965) acceleration, in the
+    form of Walker & Ni (2011), Sec. 2, Anderson(m) with mixing 1: with
+    the columns dU_i = u_i+1 - u_i and dF_i = f_i+1 - f_i of the last m
+    iterates of this load step,
+
+        gamma = argmin || f_k - dF gamma ||  (least squares),
+        u_k+1 = u_k + f_k - (dU + dF) gamma.
+
+    With no history (the first iteration of a step) it is the
+    constant-stiffness step f_k. ``hist`` holds the history and is
+    updated in place. Returns the displacement increment u_k+1 - u_k.
+    """
+    f = lu.solve(R)
+    u_prev = hist.get('u')
+    if u_prev is not None:
+        hist.setdefault('dU', []).append(u - u_prev)
+        hist.setdefault('dF', []).append(f - hist['f'])
+        if len(hist['dU']) > memory:
+            hist['dU'].pop(0)
+            hist['dF'].pop(0)
+    hist['u'] = u.copy()
+    hist['f'] = f
+    if not hist.get('dU'):
+        return f
+    dF = np.column_stack(hist['dF'])
+    dU = np.column_stack(hist['dU'])
+    gamma = np.linalg.lstsq(dF, f, rcond=None)[0]
+    return f - (dU + dF) @ gamma
+
+
 def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
            u_init=None, sigma_gp_init=None, strain_gp_init=None,
            hs_state_init=None, method='elastic', reform_interval=1,
@@ -631,7 +678,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
            line_search=False, mats_override=None,
            stall_window=None, stall_ratio=0.98, f_int_offset=None,
            settled_ratio=None, settled_residual_cap=1e-2, F_start=None,
-           iface_slip_init=None, prescribed=None, settled_early=True):
+           iface_slip_init=None, prescribed=None, settled_early=True,
+           anderson_memory=None):
     """Run the incremental-iterative nonlinear solution on a context.
 
     Parameters
@@ -647,8 +695,13 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
         Ex. 1, but on meshes that still carried the soil-filled notch
         above the slope face — see mesh.generate_slope_mesh. The SRM now
         uses `settled_ratio`.)
-    method : 'elastic' (constant-stiffness, factorize once) or
+    method : 'elastic' (constant-stiffness, factorize once),
+        'anderson' (GM-308: the constant-stiffness iteration, factorized
+        once, with Anderson acceleration; see ``_anderson_step``) or
         'tangent' (NR with continuum tangent).
+    anderson_memory : int or None — 'anderson' only: the number of past
+        iterates combined (m); the history restarts at every load step.
+        None: ``_ANDERSON_MEMORY`` (5).
     reform_interval : int — tangent reform interval ('tangent' only;
         1 = full NR, k>1 = modified NR).
     max_cutbacks : int — load-step halvings on divergence ('tangent' only).
@@ -760,8 +813,10 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                 if iface_slip_init is not None
                 else np.zeros(len(ctx['iface']['a_t'])))
 
-    if method == 'elastic':
+    if method in ('elastic', 'anderson'):
         lu = _elastic_factor(ctx, mats)
+    if anderson_memory is None:
+        anderson_memory = _ANDERSON_MEMORY
 
     iters_per_step = []
     converged_overall = True
@@ -798,6 +853,7 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
         n_it = 0
         R_norm_prev = None
         r_hist = []
+        aa_hist = {}             # Anderson history, restarted every step
         for it in range(max_iter):
             n_it = it + 1
             want_tan = (method == 'tangent') and (it % reform_interval == 0)
@@ -847,14 +903,16 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                     except RuntimeError:
                         break
                 du = lu_t.solve(R)
+            elif method == 'anderson':
+                du = _anderson_step(lu, u, R, aa_hist, anderson_memory)
             else:
                 du = lu.solve(R)
 
             if not np.all(np.isfinite(du)) or np.max(np.abs(du)) > 1e6:
                 break
 
-            if line_search and R_norm_prev is not None \
-                    and R_norm > R_norm_prev:
+            if line_search and method != 'anderson' \
+                    and R_norm_prev is not None and R_norm > R_norm_prev:
                 # Backtrack on the previous (overshooting) update
                 s = 1.0
                 for _ in range(3):
@@ -945,8 +1003,11 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                     R[p_dofs] = penalty * (p_target - u[p_dofs])
                 r_ratio = np.linalg.norm(np.where(free, R, 0.0)) / ref
                 # a small residual, or one still falling (slow convergence,
-                # not an iteration swinging about a large residual)
-                if r_ratio < settled_residual_cap or r_ratio < r_half:
+                # not an iteration swinging about a large residual); the
+                # accelerated iteration's residual is not monotone, so
+                # with it only a small residual counts (GM-308)
+                if r_ratio < settled_residual_cap or (
+                        method != 'anderson' and r_ratio < r_half):
                     step_conv = True
                     settled.append({'step': len(iters_per_step),
                                     'n_iter': n_it,

@@ -136,7 +136,8 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
                              nx=40, ny=20, element_type='t6',
                              max_iter=None, tol=1e-4, q_applied=None,
                              footing='flexible', base='rough',
-                             settlement_max=None, mesh='uniform'):
+                             settlement_max=None, mesh='uniform',
+                             iteration=None):
     """Ultimate bearing capacity of a strip footing by FEM.
 
     The FE analogue of a bearing-capacity calculation, analogous to how
@@ -217,6 +218,19 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         (GM-306: 80 x 40 read 217.0 kPa at 1000 iterations and 455.6, the
         40 x 20 value, at 4000; VALIDATION.md §3). This module's choice. A
         given value is used as given.
+    iteration : 'constant_stiffness' (default; None means it) or
+        'accelerated' — the nonlinear iteration of the footing stage
+        (GM-308). 'constant_stiffness': one factorized elastic stiffness
+        reused for every iteration (Smith & Griffiths; Griffiths & Lane
+        1999), as before GM-308. 'accelerated': the same iteration with
+        Anderson acceleration (Anderson 1965, in the form of Walker & Ni
+        2011, Sec. 2; ``fem2d.solver._anderson_step``), an option: on the
+        c-phi check (c = 20 kPa, phi = 25, B = 2 m, 40 x 20) it reads 520.7
+        kPa at max_iter 1000, 4000 and 16000 where the default reads 455.6,
+        477.3 and 499.0, but on cohesionless and high-phi checks its q_ult
+        still moved with max_iter, in either direction (VALIDATION.md §3),
+        so it is not the default. The stage under the soil's weight always
+        uses the constant-stiffness iteration.
     q_applied : float, optional — a working/design pressure (kPa). If given, the
         bearing factor of safety q_ult / q_applied is reported.
     footing : 'flexible' (default) or 'rigid' — a uniform pressure ramped to
@@ -257,7 +271,8 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             the surcharge to q_max carried; rigid: the fraction of
             settlement_max reached).
         choices — the footing model, the mesh and, rigid, its base, each
-            with how it was set and its basis.
+            with how it was set and its basis; and the nonlinear iteration
+            when ``iteration`` was given (GM-308).
         surcharge_kPa — the surcharge applied beside the footing.
         warnings — says so when q_ult is set by the mesh (flexible, c = 0
             with gamma > 0 and no surcharge), when a flexible run on a
@@ -306,6 +321,15 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             "base and settlement_max are for footing='rigid'; the flexible "
             "footing is a uniform pressure ramped to q_max.")
 
+    if iteration not in (None, 'accelerated', 'constant_stiffness'):
+        raise ValueError(
+            "iteration must be 'accelerated' or 'constant_stiffness' (or "
+            f"None for the default), got {iteration!r}")
+    iteration_given = iteration is not None
+    if iteration is None:
+        iteration = 'constant_stiffness'
+    method = _FOOTING_METHOD[iteration]
+    iter_choice = (iteration, iteration_given, phi)
     if max_iter is None:
         max_iter = _footing_max_iter(nx, ny)
     Nc, Nq, Ngamma = bearing_capacity_factors(phi)
@@ -315,7 +339,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             B, c, phi, gamma, E, nu, psi, surcharge, n_load_steps,
             domain_depth, domain_half_width, nx, ny, element_type, max_iter,
             tol, q_applied, base, settlement_max, (Nc, Nq, Ngamma),
-            q_ult_est, mesh)
+            q_ult_est, mesh, iter_choice)
     if q_max is None:
         if q_ult_est <= 0:
             raise ValueError(
@@ -398,7 +422,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             surface_loads=[(edges, 0.0, -q_max),
                            (side_edges, 0.0, -surcharge)])
         res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_iter, tol=tol,
-                     method='elastic', u_init=res0['u'],
+                     method=method, u_init=res0['u'],
                      sigma_gp_init=res0['sigma_gp'],
                      strain_gp_init=res0['eps_gp'],
                      hs_state_init=res0['hs_state'], F_start=ctx0['F_ext'],
@@ -410,7 +434,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         ctx = build_nl_context(nodes, elements, props, gamma, bc_nodes,
                                surface_loads=[(edges, 0.0, -q_max)])
         res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_iter, tol=tol,
-                     method='elastic', settled_ratio=_FLEX_SETTLED_RATIO,
+                     method=method, settled_ratio=_FLEX_SETTLED_RATIO,
                      settled_early=False)
         q_start = 0.0
 
@@ -443,7 +467,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     result.pressure_settlement = None
     result.settlement_max_m = None
     result.mesh = mesh
-    result.choices = _footing_choices('flexible', base, mesh)
+    result.choices = _footing_choices('flexible', base, mesh, iter_choice)
     if (phi > 0 and not res['converged'] and res['iterations']
             and res['iterations'][-1] >= max_iter):
         # GM-306: on a frictional soil the step the run stopped at reached
@@ -460,7 +484,12 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             "read 455.6, 477.3 and 499.0 kPa at max_iter 1000, 4000 and "
             "16000 on the default 40x20 mesh, still rising, and 217.0 and "
             "455.6 at 1000 and 4000 on 80x40 (fem2d VALIDATION.md section "
-            "3). A larger max_iter can raise it.")
+            "3). A larger max_iter can raise it."
+            + (" With iteration='accelerated' (Anderson acceleration) the "
+               "c-phi case read 520.7 kPa at max_iter 1000, 4000 and "
+               "16000, but cohesionless and high-phi cases still moved "
+               "with max_iter, in either direction."
+               if method == 'anderson' else ""))
     if c <= 0 and phi > 0 and gamma > 0 and surcharge == 0:
         # GM-304 review: c = 0, phi = 30, gamma = 18 gave 102.5, 52.5, 35.0
         # and 27.5 kPa on 20x10 to 80x40 (fem2d/VALIDATION.md section 3).
@@ -550,8 +579,9 @@ def _footing_mesh(B, half_w, dep, nx, ny, mesh):
                               x_coords=x, y_coords=y)
 
 
-def _footing_choices(footing, base, mesh='uniform'):
-    """The ``choices`` of ``analyze_footing_capacity`` (GM-305, GM-306)."""
+def _footing_choices(footing, base, mesh='uniform', iter_choice=None):
+    """The ``choices`` of ``analyze_footing_capacity`` (GM-305, GM-306,
+    GM-308)."""
     from geotech_common.choices import choice, how_given
     basis = {
         'flexible': "a uniform pressure over B ramped until the mesh cannot "
@@ -592,19 +622,62 @@ def _footing_choices(footing, base, mesh='uniform'):
     out.append(choice("footing mesh", mesh,
                       how_given(mesh, 'uniform', name='mesh'), m_basis,
                       ["'graded'" if mesh == 'uniform' else "'uniform'"]))
+    # GM-308: the iteration is a library input only (not on the tool), so
+    # it is listed only when the call gave it; left out, the iteration is
+    # the constant-stiffness one, as before GM-308
+    if iter_choice is not None and iter_choice[1]:
+        out.append(_iteration_choice(*iter_choice))
     return out
+
+
+# GM-308: the footing stage's nonlinear iteration (run_nl's method).
+_FOOTING_METHOD = {'accelerated': 'anderson',
+                   'constant_stiffness': 'elastic'}
+
+
+def _iteration_choice(iteration, given, phi):
+    """The ``choices`` entry for the footing's nonlinear iteration
+    (GM-308)."""
+    from geotech_common.choices import choice
+    how = 'given' if given else 'module'
+    acc = ("'accelerated': the same iteration with Anderson acceleration "
+           "(Anderson 1965; Walker & Ni 2011, Sec. 2, Anderson(m), m = 5); "
+           "on the c-phi check (c = 20 kPa, phi = 25, B = 2 m, 40x20) it "
+           "reads 520.7 kPa at max_iter 1000, 4000 and 16000, but on "
+           "cohesionless and high-phi checks its q_ult still moved with "
+           "max_iter (fem2d VALIDATION.md section 3)")
+    if iteration == 'accelerated':
+        basis = ("the constant-stiffness iteration (one factorized elastic "
+                 "stiffness) with Anderson acceleration (Anderson 1965; "
+                 "Walker & Ni 2011, Sec. 2, Anderson(m), m = 5); an option, "
+                 "not the default: on cohesionless and high-phi checks its "
+                 "q_ult still moved with max_iter (fem2d VALIDATION.md "
+                 "section 3)")
+        alt = ["'constant_stiffness' (the default)"]
+    else:
+        basis = ("the constant-stiffness iteration: one factorized elastic "
+                 "stiffness reused for every iteration (Smith & Griffiths; "
+                 "Griffiths & Lane 1999); on a frictional soil q_ult rises "
+                 "with max_iter (c = 20 kPa, phi = 25, B = 2 m, 40x20: "
+                 "455.6, 477.3 and 499.0 kPa at 1000, 4000 and 16000; fem2d "
+                 "VALIDATION.md section 3)")
+        alt = [acc]
+    return choice("nonlinear iteration", iteration, how, basis, alt)
 
 
 def _footing_capacity_rigid(B, c, phi, gamma, E, nu, psi, surcharge,
                             n_load_steps, domain_depth, domain_half_width,
                             nx, ny, element_type, max_iter, tol, q_applied,
                             base, settlement_max, factors, q_ult_est,
-                            mesh='uniform'):
+                            mesh='uniform', iter_choice=None):
     """``analyze_footing_capacity(footing='rigid')`` (GM-305): the
     footing's surface nodes pushed down together (prescribed
     displacements), q from their vertical reactions."""
     from fem2d.solver import add_prescribed_dofs
     Nc, Nq, Ngamma = factors
+    if iter_choice is None:
+        iter_choice = ('constant_stiffness', False, phi)
+    method = _FOOTING_METHOD[iter_choice[0]]
     if settlement_max is None:
         if q_ult_est <= 0:
             raise ValueError(
@@ -694,7 +767,7 @@ def _footing_capacity_rigid(B, c, phi, gamma, E, nu, psi, surcharge,
     # reduction does (Griffiths & Lane 1999; settled_ratio 0.1): the
     # residual stalls at Gauss points near the yield-surface apex.
     res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_iter, tol=tol,
-                 method='elastic', u_init=u0, sigma_gp_init=s0,
+                 method=method, u_init=u0, sigma_gp_init=s0,
                  strain_gp_init=e0, hs_state_init=h0, F_start=F0,
                  prescribed=(dofs, delta), settled_ratio=0.1)
 
@@ -736,7 +809,7 @@ def _footing_capacity_rigid(B, c, phi, gamma, E, nu, psi, surcharge,
     result.pressure_settlement = [[s, q] for s, q in zip(s_hist, q_hist)]
     result.settlement_max_m = float(settlement_max)
     result.mesh = mesh
-    result.choices = _footing_choices('rigid', base, mesh)
+    result.choices = _footing_choices('rigid', base, mesh, iter_choice)
     if not plateau:
         reached = s_hist[-1] if s_hist else 0.0
         if not res['converged']:
@@ -958,7 +1031,7 @@ def _side_boundary_warnings(nodes, elements, surf, z_toe, material_props):
     clay below the toe) 0.645 with 19.5 m beyond the crest and the toe
     (0.8 times the depth), 0.660 with 1.5 times, 0.668 with 2 and 2.5 times
     (Taylor's circle 0.679); at D = 2, 1.2 times behind the crest reads
-    3.3 % low and 2 times not at all (VALIDATION.md section 11).
+    3.3 % low and 2 times not at all (VALIDATION.md section 3).
     """
     corners = nodes[np.asarray(elements)[:, :3]]
     cy = corners[:, :, 1].mean(axis=1)
@@ -1059,7 +1132,7 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         that soil yields at every trial and the iterations converge slowly;
         on a fine mesh a trial that would settle can then reach max_iter
         and count as failure (Duncan Ex 1, 100x30: 0.627 at nu = 0.35,
-        0.662 at 0.49; VALIDATION.md section 11).
+        0.662 at 0.49; VALIDATION.md section 3).
     depth : float, optional — depth below lowest surface. Default 2×H.
     nx, ny : int — mesh density.
     x_extend : float or (left, right), optional — extra flat margin. A

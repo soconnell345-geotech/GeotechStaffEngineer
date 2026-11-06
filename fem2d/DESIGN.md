@@ -486,7 +486,7 @@ reaction (F_int - F_ext at those DOFs, of the slice) after each converged
 step is returned in `reactions`, with the step's `lam` in
 `reaction_lams`.
 
-### Footing capacity: flexible or rigid footing (GM-11, GM-304, GM-305, GM-306)
+### Footing capacity: flexible or rigid footing (GM-11, GM-304, GM-305, GM-306, GM-308)
 
 `analyze_footing_capacity` loads a strip of width B on a 10B x 5B
 half-space. Stage 1 (whenever gamma > 0 or a surcharge is given) brings the
@@ -531,6 +531,57 @@ answers do not move, and scaled with the element count on finer ones (60 x
 30: 2250; 80 x 40: 4000), where the constant-stiffness iteration converges
 more slowly. 80 x 40 c-phi read 217.0 kPa at 1000 and 455.6, the 40 x 20
 value, at 4000. This module's choice; a given `max_iter` is used as given.
+
+**The footing stage's iteration (GM-308 (a)): an accelerated option.**
+`analyze_footing_capacity(iteration='accelerated')` (a library input; the
+tool and its parameters are unchanged) runs the footing stage (stage 2,
+both footings) with `run_nl(method='anderson')`: the constant-stiffness
+iteration with the one factorization of the elastic stiffness K0, its
+steps combined by Anderson acceleration. The constant-stiffness iteration
+is the fixed-point iteration u_k+1 = g(u_k) = u_k + f_k,
+f_k = K0^-1 R(u_k). Anderson (1965), in the form of Walker & Ni (2011),
+Sec. 2 (Anderson(m), mixing parameter 1), keeps the differences
+dU_i = u_i+1 - u_i and dF_i = f_i+1 - f_i of the last m iterates and takes
+
+    gamma = argmin || f_k - dF gamma ||   (least squares, m unknowns)
+    u_k+1 = u_k + f_k - (dU + dF) gamma
+
+(`solver._anderson_step`). The first iteration of each load step is the
+plain constant-stiffness step; the history restarts at every step. It
+needs no tangent and no second factorization: one back-substitution and a
+least-squares problem of m columns per iteration. m = 5
+(`_ANDERSON_MEMORY`, this module's choice; m = 3 and 10 were no better on
+the checks). Its residual is not monotone, so under it a step that reaches
+`max_iter` is accepted as settled only with a small residual
+(< `settled_residual_cap`, 1e-2), not on a residual "still falling" as
+with the plain iteration.
+
+**Why it is not the default.** The goal (BACKLOG GM-308 (a)) was every
+frictional answer on the default mesh at the default max_iter within 1 %
+of its answer at four times max_iter. The accelerated iteration meets it
+on the c-phi check (c = 20 kPa, phi = 25, B = 2 m: 520.7 kPa at max_iter
+1000 and 4000, where the default reads 455.6 and 477.3) but not on the
+cohesionless and high-phi checks, where a load step below collapse sits on
+a residual plateau near 1e-3 and whether GM-306's settled-step test
+accepts it depends on max_iter (one case read 1015.4 at 1000 and 465.6 at
+4000); VALIDATION.md §3 has the table. The default stays
+`iteration='constant_stiffness'` (None means it), so no answer moves. A
+call that gives `iteration` gets a "nonlinear iteration" entry in
+`choices` (basis, and the other scheme as the alternative); left out, no
+entry is added, so the tool's output is as before.
+
+BFGS updates of K0^-1 with a line search (Matthies & Strang 1979) were
+tried first and dropped: with psi < phi the plastic flow is
+non-associated, the residual is not the gradient of a potential, and the
+line search on d . R(u + s d) let the residual ratio swing from about
+1e-2 to above 1; it read 499.0 and 542.4 kPa (c-phi, 40x20) at max_iter
+1000 and 4000, the 4000 run accepting a step with a residual ratio of 0.66
+(`module_work/gm308/CHECK_A.md`).
+
+The stage under the soil's weight (stage 1) always uses the plain
+iteration, and every other caller of `run_nl` (strength reduction, staged
+construction and excavation, gravity) keeps its own method, unchanged to
+the digit (`fem2d/tests/test_gm308_iteration.py`).
 
 The default stays flexible on the mesh study in VALIDATION.md §3: on the
 uniform meshes the rigid footing reads high and converges slowly from above
@@ -1016,3 +1067,6 @@ fem2d/
 - Biot (1941), "General theory of three-dimensional consolidation", J Applied Physics
 - Verruijt (1969), "Elastic storage of aquifers", Flow Through Porous Media
 - Smith & Griffiths (2004), "Programming the Finite Element Method", 4th edition
+- Anderson, D. G. (1965), "Iterative procedures for nonlinear integral equations", J. ACM 12(4), 547-560 (GM-308)
+- Walker, H. F. & Ni, P. (2011), "Anderson acceleration for fixed-point iterations", SIAM J. Numer. Anal. 49(4), 1715-1735, Sec. 2 (GM-308)
+- Matthies, H. & Strang, G. (1979), "The solution of nonlinear finite element equations", Int. J. Numer. Methods Eng. 14, 1613-1626 (BFGS; tried for GM-308, not used)

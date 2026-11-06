@@ -379,6 +379,48 @@ a mesh-converged frictional answer is an iteration that converges faster
 than the constant-stiffness one; it would change saved frictional answers.
 Details: `module_work/gm306/CHECK.md`.
 
+**An accelerated iteration as an option, not the default (GM-308 (a),
+2026-11-06).** `iteration='accelerated'` (library input; the tool is
+unchanged) runs the footing stage with the constant-stiffness iteration and
+its one factorization, its steps combined by Anderson acceleration
+(Anderson 1965; Walker & Ni 2011, Sec. 2, Anderson(m) with m = 5;
+`solver._anderson_step`). The goal was that every frictional answer on the
+default mesh at the default max_iter (1000) lie within 1 % of its answer at
+4000 and no lower than the default iteration's at 16000. It is met on the
+c-phi case and not on the cohesionless and high-phi ones, so **the default
+stays the constant-stiffness iteration and no answer moves**. B = 2 m
+unless given, 40x20, defaults; kPa (run time, s, one thread):
+
+| Case | default, 1000 | accelerated, 1000 | accelerated, 4000 | within 1 % |
+|---|---|---|---|---|
+| c = 20, phi = 25, gamma = 18 | 455.6 (19.7) | 520.7 (13.5) | 520.7 (26.4) | yes (16000: 520.7; default at 16000: 499.0) |
+| same, q = 0.01 | 455.7 (20.5) | 520.8 (13.2) | 520.8 (25.2) | yes |
+| c = 0, phi = 30, gamma = 18 | 43.0 (5.9) | 71.7 (6.1) | 86.0 (27.0) | no (set by the mesh, GM-304) |
+| same, psi = 30 | 43.0 (6.6) | 86.0 (8.1) | 86.0 (19.7) | yes |
+| c = 0, phi = 30, gamma = 18, q = 10 | 216.6 (15.1) | 278.6 (13.4) | 299.2 (40.0) | no |
+| same, psi = 30 | 257.9 (17.2) | 340.5 (7.8) | 361.2 (28.6) | no |
+| c = 0, phi = psi = 20, q = 20 | 130.9 (26.3) | 130.9 (8.9) | 130.9 (22.4) | yes |
+| c = 5, phi = 35, gamma = 19, q = 19 | 897.0 (22.1) | 897.0 (20.2) | 897.0 (60.6) | yes (two steps accepted as settled) |
+| B = 1, c = 10, phi = 30, gamma = 18, E = 2e4 | 321.9 (22.5) | 321.9 (12.5) | 375.6 (44.1) | no |
+| B = 3, c = 0, phi = 32, gamma = 19, q = 38 | 954.3 (28.3) | 1015.4 (24.8) | 465.6 (25.9) | no (lower at 4000) |
+| c = 10, phi = psi = 20, gamma = 18, q = 18 (GM-11 row) | 316.0 (20.5) | 340.9 (8.9) | 353.3 (40.0) | no |
+
+On the failing cases a load step below collapse sits on a residual
+plateau near 1e-3 (tol 1e-4) for thousands of iterations, and whether the
+settled-step test (GM-306) accepts it depends on where `max_iter` cuts the
+plateau, so q_ult moves with `max_iter` in either direction. With the
+settled-step test off, q_ult no longer moves with max_iter but reads far
+below the default iteration (B = 1: 196.7; B = 3: 465.6; c = 5, phi = 35:
+395.3). On 20x10 the c-phi case read 542.4, 607.5 and 564.1 at 400, 1600
+and 6400. Variants tried (m = 3; m = 10; a fall-back to the plain iteration
+when the residual stalls; BFGS after Matthies & Strang 1979) and their
+numbers are in `module_work/gm308/CHECK_A.md`; none met the goal on every
+case. On undrained clay (phi = 0) the accelerated iteration converges one
+load step above the default on 40x20 (265.1 kPa against 255.9; Prandtl
+257.1): that mesh's own limit lies between 265.1 and 267.4 and the
+default's 255.9 is a stop of its iteration; 60x30 and 80x40 read 255.9
+with either (80x40 measured with m = 10).
+
 ## 4. Elastic closed-form checks
 
 | Check | Closed form | fem2d | Error |
