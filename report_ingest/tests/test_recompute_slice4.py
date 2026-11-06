@@ -357,3 +357,35 @@ def test_design_traffic_beside_a_printed_slab_is_no_capacity_claim():
     assert [(r["claim"], r["quantity"]) for r in rows] == [
         ("W18", "Allowable ESALs")]
     assert rows[0]["flag"] == "agrees"
+
+
+def test_a_total_thickness_is_not_the_slab():
+    d = D_REQ()
+    rows = recompute_calculation(pave([
+        nq("Slab thickness D", round(d, 2), "in"),
+        nq("Total pavement thickness", round(d, 2) + 6, "in")]))
+    assert [r["quantity"] for r in rows] == ["Slab thickness D"]
+    assert rows[0]["flag"] == "agrees"
+
+
+@pytest.mark.parametrize("label", ["First-year ESALs", "Annual 18-kip ESALs",
+                                   "ESALs/yr", "Daily ESALs"])
+def test_a_year_or_a_day_of_traffic_is_not_w18(label):
+    inputs = without("Design ESALs W18") + [nq(label, 1.7e5)]
+    row = one(pave([nq("Slab thickness D", 9, "in")], inputs))
+    assert row["status"] == "not_recomputed"
+    assert "design ESALs W18: not printed" in row["reason"]
+
+
+def test_a_dynamic_k_is_not_the_design_k():
+    dyn = nq("Dynamic k-value from FWD", 230, "pci")
+    row = one(pave([nq("Slab thickness D", 9, "in")],
+                   without("Effective modulus of subgrade reaction k")
+                   + [dyn]))
+    assert row["status"] == "not_recomputed"
+    assert "subgrade reaction k: not printed" in row["reason"]
+    d = D_REQ()
+    row = one(pave([nq("Slab thickness D", round(d, 2), "in")],
+                   INPUTS + [dyn]))
+    assert row["flag"] == "agrees"
+    assert row["params"]["k_pci"] == 110

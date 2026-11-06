@@ -1954,7 +1954,8 @@ def _pave_si(nq: NamedQuantity, kind: str) -> Tuple[Optional[float], str]:
 
 
 #: The slab thickness D, an input (a check) or a claim (a design). A base,
-#: subbase, asphalt or dowel dimension is not the slab.
+#: subbase, asphalt or dowel dimension is not the slab, nor is a total
+#: (the slab and the layers under it).
 _SLAB = _Spec(
     "slab", "inch",
     [r"slab thickness", r"(pcc|concrete|slab|pavement|rigid) (slab )?"
@@ -1964,14 +1965,17 @@ _SLAB = _Spec(
     [r"dowel", r"\bbase\b", r"subbase", r"sub-base", r"aggregate",
      r"asphalt", r"\bac\b", r"\bhma\b", r"joint", r"saw", r"diameter",
      r"spacing", r"\bbar\b", r"frost", r"depth to", r"\bd_?(10|15|50|60|"
-     r"85)\b", r"/"])
+     r"85)\b", r"/", r"\btotal\b"])
 
 _PAVE_INPUTS = (
     _Spec("log_w18", "ratio", [r"\blog\b.*\b(w_?18|esals?)\b"]),
+    # W18 is the design period's cumulative traffic: a year's or a day's
+    # ESALs is not it
     _Spec("w18", "esal",
           [r"\bw_?18\b", r"\besals?\b", r"18[- ]?kip",
            r"equivalent single axle", r"design traffic"],
-          [r"\blog\b", r"factor", r"\blef\b", r"growth", r"\bper\b"]),
+          [r"\blog\b", r"factor", r"\blef\b", r"growth", r"\bper\b",
+           r"annual|yearly|daily|first[- ]year|/ ?(yr|year|day)\b"]),
     _Spec("zr", "ratio", [r"\bz_?r\b", r"standard normal deviate"]),
     _Spec("reliability", "percent", [r"\breliability\b", r"^r\b"],
           [r"deviate"]),
@@ -1990,10 +1994,11 @@ _PAVE_INPUTS = (
           [r"\be_?c\b", r"(concrete|pcc) (elastic )?modulus",
            r"modulus of elasticity", r"elastic modulus"],
           [r"rupture", r"subgrade", r"resilient", r"subbase", r"\bbase\b"]),
+    # the static effective k: a dynamic (back-calculated) k is not it
     _Spec("k", "pci",
           [r"subgrade reaction", r"\bk[- ]?value\b", r"^k\b",
            r"\b(effective|composite|design|corrected) k\b"],
-          [r"loss of support"]),
+          [r"loss of support", r"dynamic|back-?calc|\bfwd\b"]),
     _Spec("j", "ratio", [r"load transfer", r"^j\b"]),
     _Spec("cd", "ratio", [r"drainage coeff", r"\bc_?d\b",
                           r"drainage factor"]),
