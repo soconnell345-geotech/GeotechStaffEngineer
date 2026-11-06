@@ -3016,5 +3016,32 @@
       "BACKLOG.md OWN-129, PL-29",
       "module_work/pl29/CHECK_B.md (branch claude/pl-29b-binding)"
     ]
+  },
+  "OWN-130": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "When a report's bearing calculation prints only an effective unit weight (gamma'), should the recompute check run it as the fully submerged case?",
+    "why": "The recompute QC (DR-11) re-runs a report's claimed bearing capacity through the app's modules. 7 of the saved reports' bearing calculations print gamma' and no total unit weight, so today it refuses them.",
+    "background": "Measured 2026-11-06 on the saved corpus with no model calls. With gamma' run as the submerged case (plus splitting each calculation by its printed cases), 181 of 196 claimed values agree within 10 % (median difference 3.7 %).",
+    "options": [
+      {
+        "label": "Run it as the submerged case",
+        "effect": "Water is taken at or above the footing base with gamma' throughout; the row says this was assumed."
+      },
+      {
+        "label": "Keep refusing",
+        "effect": "The calculation is listed as 'water level not printed' and not recomputed."
+      }
+    ],
+    "recommendation": "Run it as the submerged case and say so on the row: a report that prints only gamma' is almost always treating the soil as submerged, and the row makes the assumption visible.",
+    "if_no_answer": "The next DR-11 slice keeps refusing these and lists them.",
+    "message_to_send": null,
+    "unblocks": [
+      "DR-11 slice 2"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-130, DR-11",
+      "module_work/dr11/LABELS_SUMMARY.md"
+    ]
   }
 }
