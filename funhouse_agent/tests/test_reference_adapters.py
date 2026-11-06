@@ -494,11 +494,15 @@ class TestRef61Gec13Removed:
         assert name not in gec13_adapter.METHOD_REGISTRY
 
     def test_micropile_alias_reaches_table_5_3(self):
-        import json
-        out = call_agent("micropile", "micropile_grout_bond_strength",
-                         {"soil_type": "silt_clay_soft",
-                          "micropile_type": "A"})
-        res = json.loads(out) if isinstance(out, str) else out
-        flat = json.dumps(res)
-        # FHWA-NHI-05-039 Table 5-3, p. 5-21: 35-70 kPa
-        assert "35" in flat and "70" in flat, flat
+        params = {"soil_type": "silt_clay_soft", "micropile_type": "A"}
+        alias = call_agent("micropile", "micropile_grout_bond_strength",
+                           params)
+        canonical = call_agent("micropile", "table_5_3_alpha_bond", params)
+        assert "error" not in alias, alias
+        assert alias == canonical
+        assert alias["soil_type"] == "silt_clay_soft"
+        assert alias["micropile_type"] == "A"
+        # FHWA-NHI-05-039 Table 5-3, p. 5-21: soft silt and clay, Type A,
+        # 35-70 kPa
+        assert alias["alpha_bond_min_kpa"] == 35
+        assert alias["alpha_bond_max_kpa"] == 70

@@ -1,8 +1,10 @@
 # REF-61: three GEC-13 table functions that cited tables printing something else
 
-Branches: refs `claude/ref-61-gec13-tables` (d3760dc), app
-`claude/ref-61-gec13-tables`. No refs version bump, no change to the app's
-`geotech-references>=` pin.
+Branches: refs `claude/ref-61-gec13-tables` (head 23f1d7e), app
+`claude/ref-61-gec13-tables` (7ee139a). The review fixes are refs cef7d66
+and an app commit, both on `merge/ref61` (see "Review and fixes" below).
+This item makes no refs version bump and no change to the app's
+`geotech-references>=` pin; the release needs both (see below).
 
 ## What the print says
 
@@ -68,8 +70,14 @@ changed:
 - `soil_nail_bond_strength` is not re-pointed. GEC-7 splits bond across
   three tables (coarse, fine, rock), and sending a clay question to the
   coarse table would be wrong. GEC-7's `soil_nail_bond_strength_coarse` /
-  `_fine` / `_rock` aliases stay, and the dispatch layer's did-you-mean
-  offers them.
+  `_fine` / `_rock` aliases stay. The did-you-mean does not offer them for
+  a GEC-13 call: it scores only the called module's own methods. A gec13
+  `soil_nail_bond_strength` call gets "Unknown method", suggests
+  `table_7_2_deep_mixing_strength`, `table_8_2_jet_grouting_systems` and
+  `load_chapter`, and lists gec13's methods. gec13
+  `micropile_grout_bond_strength` / `grout_bond_strength` behave the same
+  way, with no pointer to `micropile`. GEC-7's tables are suggested only
+  on a `gec7` call.
 
 No tool description, prompt or page fingerprint changed: the reference
 methods are not on either page's tool list.
@@ -107,10 +115,29 @@ App: see the bottom of this file.
 
 GEC-13 no longer answers soil-nail bond strength, micropile grout bond
 strength or geosynthetic reduction factors: those values matched no printed
-table. Ask GEC-7 Tables 4.4/4.5, micropile Table 5-3 or GEC-11 Table 3-9
-instead. `micropile_grout_bond_strength` now returns the micropile manual's
-Table 5-3, so its answers move (for example, dense sand Type B goes from
-95-180 to 120-360 kPa).
+table. Old GEC-13 calls to the three removed lookups now get an
+unknown-method error, and the error does not point to another module. This
+covers `table_9_2_nail_bond_strength`, `table_10_1_micropile_bond_stress`,
+`table_11_1_geosynthetic_reduction_factors` and their aliases
+(`nail_bond_strength`, `soil_nail_bond_strength`, `micropile_bond_stress`,
+`micropile_grout_bond_strength`, `grout_bond_strength`,
+`geosynthetic_reduction_factors`). Each subject is answered instead by:
+- soil-nail bond strength: GEC-7 (`gec7`) Tables 4.4a (coarse-grained) and
+  4.4b (fine-grained), p. 84, and Table 4.5 (rock), p. 85;
+- micropile grout bond strength: the micropile manual (`micropile`)
+  Table 5-3, p. 5-21;
+- geosynthetic reduction factors: GEC-11 (`gec11`) Vol I Table 3-9 (RF_ID,
+  p. 3-32), Table 3-11 (RF_D for PET, p. 3-36), and the typical RF_CR
+  ranges by polymer on p. 3-33 (PET 2.5 to 1.6, PP 5 to 4.0, HDPE 5 to
+  2.6). That list is text only: `gec11` `search_sections` finds section
+  3.5.2.c, which carries it.
+
+`micropile_grout_bond_strength` on `micropile` now returns the micropile
+manual's Table 5-3, so its answers move (for example, dense sand Type B
+goes from 95-180 to 120-360 kPa). GEC-11 `table_3_11_pet_durability`
+asked for 'geotextile' now returns both printed rows (1.6 / 2.0 and
+1.15 / 1.3), because Table 3-11 lists geotextiles in both; before, it
+returned only 1.6 / 2.0.
 
 ## Noted, not fixed
 
@@ -139,9 +166,88 @@ by exit code:
 - New: `TestRef61Gec13Removed` in `test_reference_adapters.py`. It checks
   that the three names and `soil_nail_bond_strength` are gone from the
   gec13 registry, and that micropile `micropile_grout_bond_strength`
-  returns Table 5-3's 35-70 kPa (soft silt & clay, Type A).
+  returns the same dict as `table_5_3_alpha_bond`, with
+  `alpha_bond_min_kpa` 35 and `alpha_bond_max_kpa` 70 (Table 5-3, soft
+  silt & clay, Type A).
 
-**Merge order:** merge the refs branch first, then this app branch. If the
-app branch merges while the app still pins refs 1.5.0, nothing breaks:
-removing an alias only takes a name away, and the gec13 functions stay
-callable under their table names until the refs pin moves.
+**Merge order:** merge the refs branch first, then this app branch, and
+move the app's `geotech-references` submodule pointer to the refs merge
+commit in the same app merge. Without that move, CI fails: it checks out
+the submodule and installs it, and `TestRef61Gec13Removed` then finds the
+three names still in the gec13 registry (the review ran this: 3 failed,
+2 passed against refs f62a1d1).
+
+## Review and fixes (2026-11-06)
+
+An independent review checked the change against the PDFs and agreed that
+removing all three functions was right. Its findings, and what was done:
+
+1. **CI fails unless the submodule moves in the same merge** (high, merge).
+   Not a code change. The merge-order paragraph above is corrected. The
+   lead moves the app's submodule pointer to the refs merge commit in the
+   app merge.
+2. **PyPI users keep the old values until refs is released** (medium,
+   release). Not fixable in the branch; see note 2 below.
+3. **`equation_11_1_ltds` gave the removed table's unprinted ranges**
+   (refs cef7d66). The `rf_id`, `rf_cr` and `rf_cbd` descriptions now give
+   GEC-11 Vol I as printed, each checked on the page:
+   - RF_ID 1.10 to 3.00, Table 3-9, p. 3-32;
+   - RF_CR PET 2.5 to 1.6, PP 5 to 4.0, HDPE 5 to 2.6, p. 3-33;
+   - RF_D "can vary typically from 1.1 to 2.0", p. 3-33; for PET,
+     Table 3-11 1.15 to 2.0, and a default of 1.3 when the Table 3-12
+     index criteria are met, p. 3-36.
+4. **Three more GEC-13 table functions are mis-cited** (Tables 4-1, 7-2,
+   8-2). Not fixed here: the lead files it as its own backlog item.
+5. **The did-you-mean claim was wrong.** Corrected under "What changed and
+   why": a gec13 call gets suggestions from gec13's own methods only. No
+   cross-module redirect was added; the review marked it optional, with no
+   eval evidence of the miss.
+6. **README counted 18 GEC-13 functions** (refs cef7d66). Counted with
+   `inspect`: gec_13 15, the FHWA group 143, the package 1,230. Every other
+   README row matched the count.
+7. **The new app test's assertion was weak** (this app commit). The test
+   now checks that the alias returns the same dict as
+   `table_5_3_alpha_bond`, `soil_type` `silt_clay_soft`, `micropile_type`
+   `A`, `alpha_bond_min_kpa` 35 and `alpha_bond_max_kpa` 70.
+8. **CHECK details.** The refs commit is named correctly (23f1d7e; the
+   old name d3760dc does not exist in the refs repo). The release note now
+   names GEC-11 Table 3-11 and the p. 3-33 RF_CR list beside Table 3-9,
+   says the old gec13 calls now get an unknown-method error, and names the
+   module that answers each subject.
+9. **GEC-11 Table 3-11 labels** (refs cef7d66). Read on p. 3-36 (rendered
+   to PNG): the review's reading is right. Row 1 is "Geotextiles, Mn <
+   20,000, 40 < CEG < 50" (1.6 / 2.0); row 2 is "Coated geogrids,
+   Geotextiles, Mn > 25,000, CEG < 30" (1.15 / 1.3). The labels now match,
+   so `table_3_11_pet_durability("geotextile")` returns both rows; before
+   it returned only 1.6 / 2.0. The docstring says why, and
+   `tests/test_gec11_tables.py` pins both rows, labels and values, as
+   printed. The review's other label notes (micropile glacial till and
+   silt/clay wording, GEC-11 Table 3-9 "19 mm") are wording only and were
+   not changed.
+
+The refs CLAUDE.md now reads gec_11 136 tests and 6,541 collected (one
+test added; `pytest --collect-only -q tests/` collects 6,541).
+
+**Notes for the lead:**
+1. The app merge must move the `geotech-references` submodule pointer to
+   the refs merge commit (the lead does this). Otherwise CI fails (finding
+   1).
+2. The release needs a refs version bump and a raised
+   `geotech-references>=` pin in the app's `pyproject.toml`. Three public
+   functions are removed, so 1.6.0 or 2.0.0 is the owner's call at
+   release. Until then, a PyPI install keeps the old gec13 functions and
+   values.
+
+**Tests after the fixes** (Windows venv, `PYTHONPATH` set to the refs
+worktree, `geotech_references.__file__` confirmed; judged by exit code;
+logs in `C:/dev/tmp/ref61_fix/`):
+- Refs: `test_gec13_tables.py`, `test_gec13_figures.py`,
+  `test_gec11_figures.py`, `test_gec11_tables.py`, `test_gec11_text.py`,
+  `test_references_agent.py`, `test_cover_citations.py`: exit 0, 335
+  passed, 2 xfailed.
+- App (`funhouse_agent.__file__` in the app worktree):
+  `funhouse_agent/tests/test_reference_adapters.py`,
+  `test_method_name_aliases.py`, `test_method_aliases.py`,
+  `test_gm179_unused_inputs.py`, `webapp/tests/test_page_fingerprints.py`,
+  `webapp/tests/test_public_text.py`: exit 0, 400 passed. No fingerprint
+  moved.
