@@ -54,6 +54,17 @@ log-spiral Kp, Jaky), seismic KAE, KPE through
 ``seismic_geotech.seismic_earth_pressure`` (Mononobe-Okabe), with kh as
 printed or from a printed ground acceleration by a rule the printout
 states. A wall batter or a kv whose sense is not printed runs both ways.
+
+Fourth slice (``module_work/dr11/CHECK_SLICE4.md``): ``pavement``
+printouts that claim an AASHTO 1993 rigid slab thickness D are recomputed
+through ``pavement_design.rigid_pavement_design`` from the printed W18,
+reliability (ZR, or R through the module's Table 4.1), So, serviceability
+loss, S'c, Ec, k, J and Cd, in the module's US customary units (an SI
+value converted once, and said). So, J, Cd and k are never filled in by
+the module's defaults. A claimed D that is the required D rounded up to a
+construction increment agrees only where the printout says it rounds; a
+claimed traffic for a printed slab (allowable W18) runs the module's
+check, the inverse.
 """
 
 from __future__ import annotations
@@ -127,8 +138,9 @@ NOT_RECOMPUTED: Dict[str, str] = {
         "not recomputed yet: site class and site response come in a later "
         "slice"),
     "pavement": (
-        "not recomputed yet: pavement_design (AASHTO 1993, UFC 3-250-01) "
-        "comes in a later slice"),
+        "not recomputed yet: only the AASHTO 1993 rigid slab thickness D "
+        "(and the traffic a printed slab carries) is recomputed; flexible "
+        "pavements (SN) and UFC 3-250-01 come in a later slice"),
     "ground_improvement": (
         "not recomputed yet: ground_improvement comes in a later slice"),
     "seepage": (
@@ -257,6 +269,19 @@ _WALL_NAME_NOISE = re.compile(
     r"alpha|theta|ocr|rule)\b")
 
 
+#: A pavement printout's own words (slice 4), taken out of its labels'
+#: names: what is left of 'Slab thickness D (access road)' is 'access road'.
+_PAVE_NAME_NOISE = re.compile(
+    r"\b(slab|thickness|pcc|concrete|portland|cement|rigid|pavement|"
+    r"modulus|rupture|subgrade|reaction|reliability|standard|deviation|"
+    r"normal|deviate|overall|combined|error|serviceability|initial|"
+    r"terminal|loss|load transfer|transfer|drainage|coefficient|coeff|"
+    r"esals?|w_?18|18[- ]?kip|design|traffic|required|provided|"
+    r"allowable|capacity|predicted|log|elastic|resilient|effective|"
+    r"composite|flexural|strength|k[- ]?value|z_?r|s_?[o0]|e_?c|s'?_?c'?|"
+    r"p_?[o0it]|dpsi|delta|psi|pci|j|c_?d|k|d|r)\b")
+
+
 def _names_of(lab: str, kind: str = "") -> List[str]:
     """The names a label (without its case words) prints: each part between
     commas, colons or brackets, kept to its words once the module's own
@@ -264,6 +289,8 @@ def _names_of(lab: str, kind: str = "") -> List[str]:
     out = []
     if kind == "retaining_wall":
         lab = _WALL_NAME_NOISE.sub(" ", lab)
+    elif kind == "pavement":
+        lab = _PAVE_NAME_NOISE.sub(" ", lab)
     for part in re.split(r"[,;:()\[\]]", _NAME_NOISE.sub(" ", lab)):
         words = []
         for w in re.findall(r"[^\s/]+", part):
@@ -1850,10 +1877,530 @@ def _recompute_wall(calc: Calculation, index: int, tolerance: float,
     return rows
 
 
+# -- rigid pavement slab thickness D, AASHTO 1993 (slice 4) -------------------
+
+#: The module's units (AASHTO 1993 prints US customary): a printed SI value
+#: is converted once and the input says so.
+_PSI_PER_KPA = 1.0 / 6.894757293168361
+#: 1 pci = 0.271447 MN/m3 (1 lbf/in3 = 4.4482216 N / 1.6387064e-5 m3).
+_PCI_PER_MN_M3 = 1.0 / 0.27144710
+_KPA_PER_MM_UNITS = ("kpa/mm", "mpa/m", "mn/m3", "mn/m^3", "mn/m³")
+_ESAL_UNITS = ("", "-", "--", "esal", "esals", "esal's", "18-kipesal",
+               "18-kipesals", "18kipesals", "repetitions", "applications",
+               "axleloads", "18-kipesalapplications")
+_MILLION_UNITS = ("million", "millionesals", "millionesal", "mesal",
+                  "mesals", "x10^6", "×10^6", "x10⁶", "×10⁶", "x106", "e6",
+                  "x10^6esals", "×10^6esals")
+
+
+def _pave_si(nq: NamedQuantity, kind: str) -> Tuple[Optional[float], str]:
+    """``(value in the AASHTO 1993 module's unit, note)`` for a pavement
+    input: ESALs, per cent, psi, pci or inches. A value printed in another
+    unit is converted once and the note says from what; None with the
+    reason when the printed unit is not of that kind."""
+    q = nq.value
+    if q is None:
+        return None, f"'{nq.name}' is printed as words ({nq.text!r})"
+    unit = str(q.unit or "").strip()
+    u = unit.lower().replace(" ", "")
+    v = float(q.value)
+    if kind == "esal":
+        if u in _ESAL_UNITS:
+            return v, ""
+        if u in _MILLION_UNITS:
+            return v * 1e6, f"printed {v:g} {unit}: {v * 1e6:.6g} ESALs"
+        return None, f"'{nq.name}' is in {unit!r}, not a number of ESALs"
+    if kind == "percent":
+        if u == "%":
+            return v, ""
+        if u in ("", "-", "--"):
+            if 0 < v < 1:
+                return 100 * v, (f"printed {v:g} without a unit: read as a "
+                                 f"fraction, {100 * v:g} %")
+            return v, "printed without a unit: read as per cent"
+        return None, f"'{nq.name}' is in {unit!r}, not a percentage"
+    if kind == "pci":
+        if u in ("pci", "psi/in", "lb/in3", "lbs/in3", "lb/in^3"):
+            return v, ""
+        if u in _KPA_PER_MM_UNITS:
+            out = v * _PCI_PER_MN_M3
+            return out, f"printed {v:g} {unit}: {out:.4g} pci"
+        got = calc_si(q)
+        if got is None or got[1] != "kN/m3":
+            return None, (f"'{nq.name}' is in {unit!r}, not a modulus of "
+                          "subgrade reaction (pci, MPa/m)")
+        out = got[0] / 1000.0 * _PCI_PER_MN_M3
+        return out, f"printed {v:g} {unit}: {out:.4g} pci"
+    if kind == "psi" and u == "psi":
+        return v, ""
+    if kind == "inch" and u in ("in", "in.", "inch", "inches", '"'):
+        return v, ""
+    got = calc_si(q)
+    if kind == "psi":
+        if got is None or got[1] != "kPa":
+            return None, (f"'{nq.name}' is in {unit!r}, not a stress"
+                          if unit else f"'{nq.name}' is printed without a "
+                          "unit")
+        out = got[0] * _PSI_PER_KPA
+        return out, f"printed {v:g} {unit}: {out:.6g} psi"
+    if kind == "inch":
+        if got is None or got[1] != "m":
+            return None, (f"'{nq.name}' is in {unit!r}, not a thickness"
+                          if unit else f"'{nq.name}' is printed without a "
+                          "unit")
+        out = got[0] / 0.0254
+        return out, f"printed {v:g} {unit}: {out:.4g} in"
+    return _si(nq, kind)
+
+
+#: The slab thickness D, an input (a check) or a claim (a design). A base,
+#: subbase, asphalt or dowel dimension is not the slab.
+_SLAB = _Spec(
+    "slab", "inch",
+    [r"slab thickness", r"(pcc|concrete|slab|pavement|rigid) (slab )?"
+     r"thickness", r"thickness of (the )?(pcc|concrete|slab|pavement)",
+     r"^d\b", r"^d_?(req|required|design|provided|calc)",
+     r"\brequired (slab )?thickness", r"\bdesign (slab )?thickness"],
+    [r"dowel", r"\bbase\b", r"subbase", r"sub-base", r"aggregate",
+     r"asphalt", r"\bac\b", r"\bhma\b", r"joint", r"saw", r"diameter",
+     r"spacing", r"\bbar\b", r"frost", r"depth to", r"\bd_?(10|15|50|60|"
+     r"85)\b", r"/"])
+
+_PAVE_INPUTS = (
+    _Spec("log_w18", "ratio", [r"\blog\b.*\b(w_?18|esals?)\b"]),
+    _Spec("w18", "esal",
+          [r"\bw_?18\b", r"\besals?\b", r"18[- ]?kip",
+           r"equivalent single axle", r"design traffic"],
+          [r"\blog\b", r"factor", r"\blef\b", r"growth", r"\bper\b"]),
+    _Spec("zr", "ratio", [r"\bz_?r\b", r"standard normal deviate"]),
+    _Spec("reliability", "percent", [r"\breliability\b", r"^r\b"],
+          [r"deviate"]),
+    _Spec("so", "ratio",
+          [r"\bs_?[o0]\b", r"(overall|combined) standard (error|deviation)",
+           r"^standard (error|deviation)"]),
+    _Spec("delta_psi", "ratio",
+          [r"delta ?_?psi\b", r"serviceability loss",
+           r"loss (of|in) serviceability", r"\bdpsi\b",
+           r"change in serviceability"]),
+    _Spec("po", "ratio", [r"\bp_?[o0i]\b", r"\binitial serviceability"]),
+    _Spec("pt", "ratio", [r"\bp_?t\b", r"\bterminal serviceability"]),
+    _Spec("sc", "psi",
+          [r"modulus of rupture", r"\bs'?_?c'?\b", r"flexural strength"]),
+    _Spec("ec", "psi",
+          [r"\be_?c\b", r"(concrete|pcc) (elastic )?modulus",
+           r"modulus of elasticity", r"elastic modulus"],
+          [r"rupture", r"subgrade", r"resilient", r"subbase", r"\bbase\b"]),
+    _Spec("k", "pci",
+          [r"subgrade reaction", r"\bk[- ]?value\b", r"^k\b",
+           r"\b(effective|composite|design|corrected) k\b"],
+          [r"loss of support"]),
+    _Spec("j", "ratio", [r"load transfer", r"^j\b"]),
+    _Spec("cd", "ratio", [r"drainage coeff", r"\bc_?d\b",
+                          r"drainage factor"]),
+    _Spec("mr", "psi", [r"resilient modulus", r"\bm_?r\b"],
+          [r"rupture"]),
+    _SLAB,
+)
+
+#: A W18 result that is the traffic a printed slab CARRIES (the inverse),
+#: not the design traffic.
+_W18_CAPACITY = re.compile(r"allowable|capacity|predicted|carried|allowed|"
+                           r"permissible|can carry|supported|carry")
+
+_RIGID_WORDS = re.compile(r"\brigid\b|\bpcc\b|portland|concrete|\bjpcp\b|"
+                          r"\bjrcp\b|\bcrcp\b|\bslab\b|modulus of rupture")
+_FLEXIBLE_WORDS = re.compile(r"\bflexible\b|structural number|\bsn\b|"
+                             r"asphalt|\bhma\b|\bac\b")
+#: A method that is not AASHTO's rigid equation (UFC 3-250-01's Figure
+#: F-1, the PCA fatigue/erosion method, the Corps' airfield charts).
+_OTHER_PAVE_METHOD = re.compile(
+    r"\bufc\b|3-250|3-260|tm 5-822|\bpca\b|portland cement association|"
+    r"\bcorps\b|airfield|\bfaa\b|faarfield|westergaard")
+_ROUNDS = re.compile(r"\bround(ed|s|ing)?\b|\bincrement\b|\bnearest\b")
+#: Construction increments a designed slab is rounded up to, in the unit
+#: the claim is printed in.
+_INCREMENTS = {"in": (0.5, 1.0), "mm": (5.0, 10.0, 25.0, 50.0),
+               "cm": (0.5, 1.0, 2.5, 5.0)}
+
+
+def _pave_value(nq: NamedQuantity, spec: _Spec) -> Optional[float]:
+    return _pave_si(nq, spec.kind)[0]
+
+
+_W18_SPECS = tuple(s for s in _PAVE_INPUTS if s.param in ("w18", "log_w18"))
+
+
+def _pave_w18_spec(nq: NamedQuantity) -> Optional[_Spec]:
+    lab = _lab(nq.name)
+    if _SLAB.matches(nq.name) or re.search(r"\bd\b|thickness", lab) and \
+            not _W18_CAPACITY.search(lab):
+        return None
+    return next((s for s in _W18_SPECS if s.matches(nq.name)
+                 and _pave_value(nq, s) is not None), None)
+
+
+def _pave_claims(calc: Calculation) -> List[Tuple[str, NamedQuantity]]:
+    """The claims a pavement printout makes: the slab thickness D (``D``),
+    and the traffic a printed slab carries (``W18``, the inverse): a W18
+    result named as a capacity ('allowable ESALs'), or any W18 result where
+    the slab is printed among the inputs and no D is claimed."""
+    if _pave_kind(calc) != "rigid":
+        return []
+    d_claims = [("D", nq) for nq in calc.results
+                if not _skip(nq, claim=True) and _SLAB.matches(nq.name)
+                and _pave_value(nq, _SLAB) is not None]
+    slab_in = any(not _skip(n) and _SLAB.matches(n.name) for n in calc.inputs)
+    w18 = []
+    for nq in calc.results:
+        if _skip(nq, claim=True) or _pave_w18_spec(nq) is None:
+            continue
+        if _W18_CAPACITY.search(_lab(nq.name)) or (slab_in and not d_claims):
+            w18.append(("W18", nq))
+    return d_claims + w18
+
+
+def _pave_kind(calc: Calculation) -> str:
+    """'rigid', 'flexible' or '' from the printed words (a modulus of
+    rupture or a slab thickness is rigid)."""
+    words = _all_words(calc)
+    if _RIGID_WORDS.search(words) or any(
+            _SLAB.matches(n.name) or re.search(r"modulus of rupture|"
+                                               r"\bs'?_?c'?\b", _lab(n.name))
+            for n in list(calc.inputs) + list(calc.results)):
+        return "rigid"
+    if _FLEXIBLE_WORDS.search(words):
+        return "flexible"
+    return ""
+
+
+def _pave_prepare(calc: Calculation) -> Calculation:
+    """A pavement printout's worked-out values that are not a claim (the
+    design W18 from a traffic count, a composite k, ZR) are inputs of D:
+    they move to the inputs, so a case split carries them."""
+    claims = {id(nq) for _k, nq in _pave_claims(calc)}
+    move = [nq for nq in calc.results if id(nq) not in claims]
+    if not move or not claims:
+        return calc
+    return calc.model_copy(update={
+        "inputs": list(calc.inputs) + move,
+        "results": [nq for nq in calc.results if id(nq) in claims]})
+
+
+def _pave_collect(rows: Sequence[NamedQuantity]
+                  ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
+    """:func:`_collect` for the pavement inputs, in the module's units."""
+    found: Dict[str, Dict[str, Any]] = {}
+    problems: Dict[str, str] = {}
+    for nq in rows:
+        if _skip(nq):
+            continue
+        spec = next((s for s in _PAVE_INPUTS if s.matches(nq.name)), None)
+        if spec is None:
+            continue
+        value, note = _pave_si(nq, spec.kind)
+        if value is None:
+            if spec.param not in found:
+                problems.setdefault(spec.param, note)
+            continue
+        entry = {"value": value, "label": nq.name, "printed": _printed(nq),
+                 "page": _page(nq)}
+        if note:
+            entry["note"] = note
+        old = found.get(spec.param)
+        if old is not None:
+            if abs(old["value"] - value) > 1e-6 * max(1.0, abs(value)):
+                problems[spec.param] = (
+                    f"printed more than once with different values "
+                    f"('{old['label']}' {old['printed']}, '{nq.name}' "
+                    f"{_printed(nq)})")
+            continue
+        found[spec.param] = entry
+        problems.pop(spec.param, None)
+    for param in problems:
+        found.pop(param, None)
+    return found, problems
+
+
+_PAVE_NAMES = {"w18": "design ESALs W18", "so": "overall standard deviation "
+               "So", "sc": "modulus of rupture S'c", "ec": "concrete modulus "
+               "Ec", "k": "effective modulus of subgrade reaction k",
+               "j": "load transfer coefficient J",
+               "cd": "drainage coefficient Cd", "slab": "slab thickness D"}
+
+#: Why an input is never filled in by the module's default.
+_PAVE_NO_DEFAULT = {
+    "so": "the module's 0.35 would be a guess",
+    "j": "the module's Table 2.6 midpoint would be a guess",
+    "cd": "the module's 1.0 would be a guess",
+}
+
+
+def _pave_params(found: Dict[str, Dict[str, Any]],
+                 problems: Dict[str, str], need_w18: bool
+                 ) -> Tuple[Dict[str, Any], List[str], List[str]]:
+    """``(the module's parameters, inputs missing, notes)``."""
+    missing: List[str] = []
+    notes: List[str] = []
+    params: Dict[str, Any] = {}
+
+    def need(param: str, extra: str = "") -> Optional[float]:
+        if param in found:
+            return found[param]["value"]
+        why = problems.get(param) or "not printed"
+        if extra and param not in problems:
+            why = f"{why} ({extra})"
+        missing.append(f"{_PAVE_NAMES.get(param, param)}: {why}")
+        return None
+
+    if need_w18:
+        if "w18" not in found and "log_w18" in found:
+            found["w18"] = {**found["log_w18"],
+                            "value": 10 ** found["log_w18"]["value"],
+                            "note": (f"printed as log10(W18) "
+                                     f"{found['log_w18']['value']:g}: W18 "
+                                     f"{10 ** found['log_w18']['value']:.6g}")}
+        w18 = need("w18")
+        if w18 is not None:
+            params["w18"] = w18
+    # reliability: ZR as printed, else from R by the module's Table 4.1
+    if "zr" in found:
+        zr = found["zr"]["value"]
+        if zr > 0:
+            found["zr"]["note"] = (
+                f"printed {zr:g}: read as {-zr:g} (AASHTO's ZR is negative "
+                "for a reliability above 50 %)")
+            zr = -zr
+        params["zr"] = zr
+        if "reliability" in found:
+            notes.append("ZR and R both printed: the printed ZR is used")
+    elif "reliability" in found:
+        params["reliability_pct"] = found["reliability"]["value"]
+        notes.append("ZR from the printed reliability by the module's "
+                     "AASHTO 1993 Table 4.1")
+    else:
+        missing.append("reliability R or ZR: " + (
+            problems.get("zr") or problems.get("reliability")
+            or "not printed"))
+    for p in ("so", "sc", "ec", "j", "cd"):
+        v = need(p, _PAVE_NO_DEFAULT.get(p, ""))
+        if v is not None:
+            params[{"sc": "sc_psi", "ec": "ec_psi"}.get(p, p)] = v
+    if "k" in found:
+        params["k_pci"] = found["k"]["value"]
+    else:
+        why = problems.get("k") or "not printed"
+        if "mr" in found and "k" not in problems:
+            why += (f" (a resilient modulus is printed, "
+                    f"{found['mr']['printed']}: the module's k = MR/19.4 "
+                    "holds only for a slab directly on the roadbed, which "
+                    "the printout does not state)")
+        missing.append(f"{_PAVE_NAMES['k']}: {why}")
+    # serviceability: delta PSI, or po and pt
+    dpsi, po, pt = (found.get(p) for p in ("delta_psi", "po", "pt"))
+    if dpsi is not None:
+        params["delta_psi"] = dpsi["value"]
+        if pt is not None:
+            params["pt"] = pt["value"]
+        if po is not None and pt is not None and abs(
+                po["value"] - pt["value"] - dpsi["value"]) > 0.011:
+            notes.append(f"the printed delta PSI {dpsi['value']:g} is not "
+                         f"po - pt ({po['value']:g} - {pt['value']:g}): "
+                         "delta PSI is used")
+    elif po is not None and pt is not None:
+        params.update(po=po["value"], pt=pt["value"])
+    else:
+        printed = [n for n, e in (("po", po), ("pt", pt)) if e is not None]
+        why = "; ".join(problems[p] for p in ("delta_psi", "po", "pt")
+                        if p in problems)
+        missing.append(
+            "serviceability loss: " + (why or (
+                f"only {printed[0]} printed, neither delta PSI nor "
+                f"{'pt' if printed[0] == 'po' else 'po'}" if printed else
+                "neither delta PSI nor po and pt printed")))
+    return params, missing, notes
+
+
+def _pave_units_note(found: Dict[str, Dict[str, Any]]) -> str:
+    conv = [f"{e['label']}: {e['note']}" for e in found.values()
+            if str(e.get("note", "")).startswith("printed ")
+            and ":" in e.get("note", "")]
+    return ("converted once to the module's US customary units (AASHTO "
+            "1993 prints psi, pci, inches): " + "; ".join(conv)
+            if conv else "")
+
+
+def _round_up(x: float, inc: float) -> float:
+    import math
+    return round(math.ceil(x / inc - 1e-9) * inc, 6)
+
+
+def _rounding(nq: NamedQuantity, required_in: float
+              ) -> Optional[Tuple[float, str]]:
+    """``(increment, unit)`` when the claimed D is the required D rounded
+    UP to a construction increment in the unit it is printed in (the next
+    half inch or inch; 10, 25 or 50 mm), else None."""
+    q = nq.value
+    unit = str(q.unit or "").strip().lower().rstrip(".")
+    unit = {"inch": "in", "inches": "in", '"': "in"}.get(unit, unit)
+    scale = {"in": 1.0, "mm": 25.4, "cm": 2.54}.get(unit)
+    if scale is None:
+        return None
+    req = required_in * scale
+    for inc in _INCREMENTS[unit]:
+        if q.value > req and abs(_round_up(req, inc) - q.value) <= 1e-6 * max(
+                1.0, q.value):
+            return inc, unit
+    return None
+
+
+def _pave_row(calc: Calculation, index: int, key: str, nq: NamedQuantity,
+              found: Dict[str, Dict[str, Any]], problems: Dict[str, str],
+              tolerance: float, how: str) -> Dict[str, Any]:
+    row = _base_row(calc, index)
+    row.update(quantity=nq.name, claim=key, method_used="aashto_1993_rigid",
+               method_basis=how, module="pavement_design",
+               module_method="rigid_pavement_design")
+    claim_spec = _SLAB if key == "D" else _pave_w18_spec(nq)
+    claimed, claim_note = _pave_si(nq, claim_spec.kind)
+    if claim_spec.param == "log_w18":
+        claimed, claim_note = 10 ** claimed, (
+            f"printed as log10(W18) {claimed:g}: W18 {10 ** claimed:.6g}")
+    params, missing, notes = _pave_params(found, problems,
+                                          need_w18=(key == "D"))
+    if key == "W18":
+        slab = found.get("slab")
+        if slab is None and "slab" not in problems:
+            ds = [n for k, n in _pave_claims(calc) if k == "D"]
+            if len(ds) == 1:
+                slab = {"value": _pave_si(ds[0], "inch")[0],
+                        "label": ds[0].name, "printed": _printed(ds[0]),
+                        "page": _page(ds[0]),
+                        "note": "the slab the printout claims"}
+                found["slab"] = slab
+        if slab is None:
+            missing.append("slab thickness D: " + (
+                problems.get("slab") or "not printed (the traffic a slab "
+                "carries needs the slab)"))
+        else:
+            params["slab_thickness_in"] = slab["value"]
+            params["w18"] = claimed
+    if notes:
+        row["notes"] = notes
+    if claim_note:
+        row["claim_note"] = claim_note
+    if missing:
+        row.update(status="not_recomputed",
+                   reason="inputs not printed: " + "; ".join(missing),
+                   inputs_missing=missing, inputs_used=found,
+                   claimed={"printed": _printed(nq), "page": _page(nq)})
+        return row
+    units = _pave_units_note(found)
+    if units:
+        row["units_note"] = units
+    out_key = "d_required_in" if key == "D" else "w18_capacity"
+    unit = "in" if key == "D" else "ESALs"
+
+    def run(p: Dict[str, Any]) -> Tuple[Optional[float], Dict[str, Any]]:
+        res = _call("pavement_design", "rigid_pavement_design", p)
+        if "error" in res:
+            return None, res
+        return float(res[out_key]), res
+
+    value, result = run(params)
+    row.update(inputs_used=found, inputs_missing=[], params=params)
+    if value is None:
+        row.update(status="not_recomputed",
+                   claimed={"printed": _printed(nq), "page": _page(nq)},
+                   reason=f"the module refused: {result['error']}")
+        return row
+    row["assumed"] = {k: v for k, v in
+                      (result.get("defaults_used") or {}).items()
+                      if k == "pt" and "pt" not in params}
+    if result.get("warnings"):
+        row["module_warnings"] = list(result["warnings"])
+    alternatives: List[Dict[str, Any]] = []
+    if "delta_psi" in params and "pt" not in params:
+        # pt enters the equation's strength term as well as delta PSI
+        for pt_alt in (2.0, 3.0):
+            v, res = run({**params, "pt": pt_alt})
+            alt: Dict[str, Any] = {
+                "option": (f"pt {pt_alt:g} (pt is not printed; it enters "
+                           "the strength term beside delta PSI)"),
+                "params": {"pt": pt_alt}}
+            if v is None:
+                alt["refused"] = str(res["error"])[:300]
+            else:
+                alt["recomputed_si"] = round(v, 6)
+                alt["difference_pct"] = round(100 * (v - claimed)
+                                              / abs(claimed), 2)
+            alternatives.append(alt)
+        row["alternatives"] = alternatives
+    _compare(row, nq, claimed, value, unit, tolerance, options=alternatives,
+             default="pt 2.5 (the module's terminal serviceability)")
+    row["unit_note"] = ("in the module's own units, as AASHTO 1993 prints "
+                        "them (not SI)")
+    if key == "W18" and claimed > 0 and value > 0:
+        import math
+        row["log10_difference"] = round(math.log10(value / claimed), 4)
+    if key == "D":
+        rnd = _rounding(nq, value)
+        if rnd is not None:
+            inc, u = rnd
+            says = bool(_ROUNDS.search(_all_words(calc)))
+            text = (f"the claim is the recomputed D ({value:.4g} in) rounded "
+                    f"up to the next {inc:g} {u}; the printout "
+                    + ("says it rounds" if says else
+                       "does not say it rounds"))
+            row["rounding"] = text
+            if says and row["flag"] != "agrees":
+                row["flag"] = "agrees"
+                row["flag_basis"] = text
+    return row
+
+
+def _recompute_pavement(calc: Calculation, index: int, tolerance: float,
+                        gamma_prime: str = "refuse") -> List[Dict[str, Any]]:
+    kind = _pave_kind(calc)
+    if kind != "rigid":
+        return [_not_row(calc, index, (
+            "a flexible pavement (structural number SN): not recomputed yet; "
+            "this slice recomputes the AASHTO 1993 rigid slab thickness D"
+            if kind == "flexible" else NOT_RECOMPUTED["pavement"]))]
+    calc = _pave_prepare(calc)
+    claims = _pave_claims(calc)
+    if not claims:
+        return [_not_row(calc, index, status="not_compared", reason=(
+            "no slab thickness D, nor the traffic a printed slab carries "
+            "(allowable W18), among the printed results"))]
+    words = _method_words(calc)
+    other = _OTHER_PAVE_METHOD.search(words)
+    if other and "aashto" not in words:
+        return [_not_row(calc, index, (
+            f"the printout names '{other.group(0)}', not AASHTO 1993: the "
+            "UFC 3-250-01 and PCA rigid designs take other inputs (traffic "
+            "by vehicle, the Figure F-1 chart) and are not recomputed in "
+            "this slice"), module="pavement_design")]
+    if "aashto" in words:
+        how = "printed: AASHTO" + (" 1993" if "1993" in words else
+                                   " (the 1993 Guide's Figure 3.7 equation; "
+                                   "the 1986 Guide prints the same)")
+    else:
+        how = ("the printout names no method: its inputs (S'c, Ec, k, J, Cd) "
+               "are those of AASHTO 1993's rigid equation (Figure 3.7)")
+    found, problems = _pave_collect(calc.inputs)
+    rows = []
+    for key, nq in claims:
+        mine = {k: dict(v) for k, v in found.items()}
+        rows.append(_pave_row(calc, index, key, nq, mine, problems,
+                              tolerance, how))
+    return rows
+
+
 _RECIPES: Dict[str, Callable[..., List[Dict[str, Any]]]] = {
     "shallow_foundation_bearing": _recompute_bearing,
     "settlement": _recompute_settlement,
     "retaining_wall": _recompute_wall,
+    "pavement": _recompute_pavement,
 }
 
 #: Whether a calculation (or one case of it) prints a claim the recipe
@@ -1862,6 +2409,7 @@ _HAS_CLAIM: Dict[str, Callable[[Calculation], bool]] = {
     "shallow_foundation_bearing": lambda c: bool(_bearing_claims(c)),
     "settlement": lambda c: bool(_settlement_candidates(c)),
     "retaining_wall": lambda c: bool(_wall_claims(c)),
+    "pavement": lambda c: bool(_pave_claims(c)),
 }
 
 
@@ -1957,6 +2505,8 @@ def recompute_calculation(calc: Any, index: int = 0,
         calc = Calculation.model_validate(calc)
     if calc.kind == "retaining_wall":
         calc = _wall_prepare(calc)
+    elif calc.kind == "pavement":
+        calc = _pave_prepare(calc)
     recipe = _RECIPES.get(calc.kind)
     if recipe is None:
         return [_not_row(calc, index, NOT_RECOMPUTED.get(
@@ -2066,14 +2616,17 @@ RECOMPUTE_TOOL_DESCRIPTION = (
     "threshold, not an engineering criterion) from every option the module "
     "ran; 'within_options' where the claim misses the module's default but "
     "falls inside the range of its own options run beside it (method, depth "
-    "factors, influence factor, a wall batter's or kv's sense); 'below' for an allowable pressure under "
+    "factors, influence factor, a wall batter's or kv's sense, a pavement's "
+    "unprinted pt); 'below' for an allowable pressure under "
     "q_ult/FS, which settlement may set. Each row gives the method used and "
     "why (printed, the module's default with its other options beside it, "
     "or inferred from the printed inputs), the inputs used with their pages, "
     "what the module assumed, and for a calculation not recomputed, why (an "
     "input not printed is named, never filled in). Bearing capacity, "
     "settlement and retaining-wall earth-pressure coefficients (static Ka, "
-    "Kp, K0; Mononobe-Okabe KAE, KPE) are recomputed so far; slope "
+    "Kp, K0; Mononobe-Okabe KAE, KPE) and the AASHTO 1993 rigid pavement "
+    "slab thickness D (in inches, the module's units; and the allowable "
+    "W18 of a printed slab) are recomputed so far; slope "
     "stability is held. Show the "
     "user the table, the flagged rows first, with the reasons and "
     "assumptions as given.")
