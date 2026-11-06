@@ -2,8 +2,9 @@
 
 It is an option of the footing capacity (``iteration='accelerated'``);
 no default changes. Every other caller keeps the constant-stiffness
-iteration, pinned here to the values master gave before GM-308 (a strength reduction and a staged
-excavation, to 12 significant digits). Made-up values throughout.
+iteration, pinned here to the values master gave before GM-308 (a
+strength reduction to 12 significant digits, a staged excavation to 8).
+Made-up values throughout.
 """
 
 import numpy as np
@@ -38,19 +39,22 @@ def test_strength_reduction_unchanged():
 
 
 def test_staged_excavation_unchanged():
-    """Values from master 9ae6560, before GM-308."""
+    """Values from master 9ae6560, before GM-308. rel 1e-8: master itself
+    reads sum |u| 2.5e-11 and the moments about 5e-10 apart between
+    machines and numpy/scipy builds (GM-308 review), so a tighter pin
+    fails on master too."""
     e = analyze_excavation(
         width=10, depth=5, wall_depth=10, soil_layers=CLAY, wall_EI=50000,
         wall_EA=5e6, nx=20, ny=10, n_steps=5,
         struts=[{"depth": 1.5, "stiffness": 50000}])
     assert float(np.abs(e.displacements).sum()) == pytest.approx(
-        5.419050307962344, rel=1e-12)
+        5.419050307962344, rel=1e-8)
     assert float(e.max_displacement_m) == pytest.approx(
-        0.04056509255721257, rel=1e-12)
+        0.04056509255721257, rel=1e-8)
     moments = [float(b.moment_j) for b in e.beam_forces[:3]]
     assert moments == pytest.approx(
         [1.7096224744901747, 11.968060662234393, -20.787306443747184],
-        rel=1e-12)
+        rel=1e-8)
 
 
 # ---------------------------------------------------------------------------
@@ -104,18 +108,24 @@ def test_bad_iteration_refused():
 
 
 def test_accelerated_option_on_a_frictional_soil():
-    """20x10, c = 20 kPa, phi = 25: iteration='accelerated' at max_iter
-    400 reads 542.4 kPa (a regression value: at 1600 and 6400 it read
-    607.5 and 564.1, which is why it is not the default); the default
-    constant-stiffness iteration reads 455.6 at 400."""
+    """20x10, c = 20 kPa, phi = 25 at max_iter 400: the default
+    constant-stiffness iteration reads 455.6 kPa; iteration='accelerated'
+    reads above it. Its value is not pinned: near collapse the accelerated
+    answer varies by machine (542.4, 564.1 at 400 on the machines checked;
+    GM-308 review)."""
     kw = dict(B=2.0, c=20.0, phi=25.0, gamma=18.0, nx=20, ny=10)
     a = analyze_footing_capacity(max_iter=400, iteration='accelerated', **kw)
-    assert a.q_ult_kPa == pytest.approx(542.4, abs=0.1)
     ch = _iteration_choice(a)
     assert ch['chosen'] == 'accelerated' and ch['how'] == 'given'
     assert 'Anderson' in ch['basis']
     c = analyze_footing_capacity(max_iter=400, **kw)
     assert c.q_ult_kPa == pytest.approx(455.6, abs=0.1)
+    assert a.q_ult_kPa > c.q_ult_kPa
+    # the max_iter warning: a lower bound by default; with the option q_ult
+    # can move either way with max_iter, so it says it is not a bound
+    assert any('lower bound' in w for w in c.warnings)
+    assert all('not a bound' in w and 'lower bound' not in w
+               for w in a.warnings if 'max_iter' in w)
     # left out: not listed (the tool does not take it); output as before
     assert _iteration_choice(c) is None
     explicit = analyze_footing_capacity(max_iter=400,
@@ -136,10 +146,12 @@ def test_clay_default_unchanged():
 @pytest.mark.slow
 def test_default_mesh_frictional_answer_accelerated():
     """Default 40x20 mesh, c = 20 kPa, phi = 25: 520.7 kPa with the
-    accelerated iteration at max_iter 1000 (and 4000, 16000), where the
-    default reads 455.6, 477.3 and 499.0 at 1000, 4000 and 16000."""
+    accelerated iteration at max_iter 4000 (and 16000), where the default
+    reads 455.6, 477.3 and 499.0 at 1000, 4000 and 16000. At max_iter 1000
+    the accelerated value varies by machine (499.0 or 520.7; GM-308
+    review), so it is pinned at 4000."""
     r = analyze_footing_capacity(B=2.0, c=20.0, phi=25.0, gamma=18.0,
-                                 iteration='accelerated')
+                                 max_iter=4000, iteration='accelerated')
     assert r.q_ult_kPa == pytest.approx(520.7, abs=0.1)
 
 
