@@ -389,3 +389,32 @@ def test_a_dynamic_k_is_not_the_design_k():
                    INPUTS + [dyn]))
     assert row["flag"] == "agrees"
     assert row["params"]["k_pci"] == 110
+
+
+def test_an_asphalt_concrete_printout_is_flexible():
+    row = one({"kind": "pavement", "method": "AASHTO 1993",
+               "subject": "Access drive", "pages": [3],
+               "inputs": [nq("W18", 2e5),
+                          nq("Asphalt concrete wearing course layer "
+                             "coefficient", 0.41)],
+               "results": [nq("Required structural number SN", 2.6)]})
+    assert row["status"] == "not_recomputed"
+    assert "flexible pavement" in row["reason"]
+
+
+def test_the_flexible_design_beside_the_rigid_one_is_not_read():
+    d = D_REQ()
+    flexible = [nq("W18, flexible alternative", 1.2e6),
+                nq("Reliability, flexible alternative", 85, "%"),
+                nq("Standard deviation So, flexible alternative", 0.47),
+                nq("Initial serviceability, flexible alternative", 4.05),
+                nq("Drainage coefficient, granular base layer", 0.85),
+                nq("Asphalt concrete elastic modulus", 3.9e5, "psi")]
+    row = one(pave([nq("Required PCC thickness", round(d, 2), "in")],
+                   INPUTS + flexible))
+    assert row["flag"] == "agrees"
+    assert row["recomputed_si"] == pytest.approx(d)
+    assert {k: row["params"][k] for k in ("w18", "reliability_pct", "so",
+                                         "po", "cd", "ec_psi")} == {
+        "w18": 3.4e6, "reliability_pct": 90, "so": 0.34, "po": 4.5,
+        "cd": 1.05, "ec_psi": 4.1e6}

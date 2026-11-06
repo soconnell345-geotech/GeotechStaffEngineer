@@ -1967,41 +1967,54 @@ _SLAB = _Spec(
      r"spacing", r"\bbar\b", r"frost", r"depth to", r"\bd_?(10|15|50|60|"
      r"85)\b", r"/", r"\btotal\b"])
 
+#: A label naming the flexible design a printout prints beside the rigid
+#: one (its ESALs, reliability, So, serviceability, layer moduli): never a
+#: rigid input. Not for J, whose own labels name an asphalt shoulder.
+_FLEX_LABEL = (r"flexible", r"asphalt", r"bituminous", r"\bhma\b", r"\bac\b",
+               r"structural number")
+
 _PAVE_INPUTS = (
-    _Spec("log_w18", "ratio", [r"\blog\b.*\b(w_?18|esals?)\b"]),
+    _Spec("log_w18", "ratio", [r"\blog\b.*\b(w_?18|esals?)\b"], _FLEX_LABEL),
     # W18 is the design period's cumulative traffic: a year's or a day's
     # ESALs is not it
     _Spec("w18", "esal",
           [r"\bw_?18\b", r"\besals?\b", r"18[- ]?kip",
            r"equivalent single axle", r"design traffic"],
           [r"\blog\b", r"factor", r"\blef\b", r"growth", r"\bper\b",
-           r"annual|yearly|daily|first[- ]year|/ ?(yr|year|day)\b"]),
-    _Spec("zr", "ratio", [r"\bz_?r\b", r"standard normal deviate"]),
+           r"annual|yearly|daily|first[- ]year|/ ?(yr|year|day)\b",
+           *_FLEX_LABEL]),
+    _Spec("zr", "ratio", [r"\bz_?r\b", r"standard normal deviate"],
+          _FLEX_LABEL),
     _Spec("reliability", "percent", [r"\breliability\b", r"^r\b"],
-          [r"deviate"]),
+          [r"deviate", *_FLEX_LABEL]),
     _Spec("so", "ratio",
           [r"\bs_?[o0]\b", r"(overall|combined) standard (error|deviation)",
-           r"^standard (error|deviation)"]),
+           r"^standard (error|deviation)"], _FLEX_LABEL),
     _Spec("delta_psi", "ratio",
           [r"delta ?_?psi\b", r"serviceability loss",
            r"loss (of|in) serviceability", r"\bdpsi\b",
-           r"change in serviceability"]),
-    _Spec("po", "ratio", [r"\bp_?[o0i]\b", r"\binitial serviceability"]),
-    _Spec("pt", "ratio", [r"\bp_?t\b", r"\bterminal serviceability"]),
+           r"change in serviceability"], _FLEX_LABEL),
+    _Spec("po", "ratio", [r"\bp_?[o0i]\b", r"\binitial serviceability"],
+          _FLEX_LABEL),
+    _Spec("pt", "ratio", [r"\bp_?t\b", r"\bterminal serviceability"],
+          _FLEX_LABEL),
     _Spec("sc", "psi",
           [r"modulus of rupture", r"\bs'?_?c'?\b", r"flexural strength"]),
     _Spec("ec", "psi",
           [r"\be_?c\b", r"(concrete|pcc) (elastic )?modulus",
            r"modulus of elasticity", r"elastic modulus"],
-          [r"rupture", r"subgrade", r"resilient", r"subbase", r"\bbase\b"]),
+          [r"rupture", r"subgrade", r"resilient", r"subbase", r"\bbase\b",
+           *_FLEX_LABEL]),
     # the static effective k: a dynamic (back-calculated) k is not it
     _Spec("k", "pci",
           [r"subgrade reaction", r"\bk[- ]?value\b", r"^k\b",
            r"\b(effective|composite|design|corrected) k\b"],
           [r"loss of support", r"dynamic|back-?calc|\bfwd\b"]),
     _Spec("j", "ratio", [r"load transfer", r"^j\b"]),
+    # a flexible layer's drainage coefficient (m, by layer) is not Cd
     _Spec("cd", "ratio", [r"drainage coeff", r"\bc_?d\b",
-                          r"drainage factor"]),
+                          r"drainage factor"],
+          [r"\bbase\b", r"subbase", r"layer", *_FLEX_LABEL]),
     _Spec("mr", "psi", [r"resilient modulus", r"\bm_?r\b"],
           [r"rupture"]),
     _SLAB,
@@ -2016,6 +2029,9 @@ _RIGID_WORDS = re.compile(r"\brigid\b|\bpcc\b|portland|concrete|\bjpcp\b|"
                           r"\bjrcp\b|\bcrcp\b|\bslab\b|modulus of rupture")
 _FLEXIBLE_WORDS = re.compile(r"\bflexible\b|structural number|\bsn\b|"
                              r"asphalt|\bhma\b|\bac\b")
+#: An asphalt concrete layer (a flexible pavement's): no rigid word.
+_ASPHALT_CONCRETE = re.compile(r"\b(asphalt(ic)?|bituminous)( cement)? "
+                               r"concrete")
 #: A method that is not AASHTO's rigid equation (UFC 3-250-01's Figure
 #: F-1, the PCA fatigue/erosion method, the Corps' airfield charts).
 _OTHER_PAVE_METHOD = re.compile(
@@ -2063,9 +2079,10 @@ def _pave_claims(calc: Calculation) -> List[Tuple[str, NamedQuantity]]:
 
 def _pave_kind(calc: Calculation) -> str:
     """'rigid', 'flexible' or '' from the printed words (a modulus of
-    rupture or a slab thickness is rigid)."""
+    rupture or a slab thickness is rigid; the 'concrete' of an asphalt
+    concrete layer is not)."""
     words = _all_words(calc)
-    if _RIGID_WORDS.search(words) or any(
+    if _RIGID_WORDS.search(_ASPHALT_CONCRETE.sub(" ", words)) or any(
             _SLAB.matches(n.name) or re.search(r"modulus of rupture|"
                                                r"\bs'?_?c'?\b", _lab(n.name))
             for n in list(calc.inputs) + list(calc.results)):
