@@ -2041,21 +2041,18 @@ def _pave_w18_spec(nq: NamedQuantity) -> Optional[_Spec]:
 
 def _pave_claims(calc: Calculation) -> List[Tuple[str, NamedQuantity]]:
     """The claims a pavement printout makes: the slab thickness D (``D``),
-    and the traffic a printed slab carries (``W18``, the inverse): a W18
-    result named as a capacity ('allowable ESALs'), or any W18 result where
-    the slab is printed among the inputs and no D is claimed."""
+    and the traffic a printed slab carries (``W18``, the inverse): only a
+    W18 result named as a capacity ('allowable ESALs'). Any other W18 result
+    is the design traffic (worked out from a traffic count, beside a slab
+    printed as an input), never the slab's capacity."""
     if _pave_kind(calc) != "rigid":
         return []
     d_claims = [("D", nq) for nq in calc.results
                 if not _skip(nq, claim=True) and _SLAB.matches(nq.name)
                 and _pave_value(nq, _SLAB) is not None]
-    slab_in = any(not _skip(n) and _SLAB.matches(n.name) for n in calc.inputs)
-    w18 = []
-    for nq in calc.results:
-        if _skip(nq, claim=True) or _pave_w18_spec(nq) is None:
-            continue
-        if _W18_CAPACITY.search(_lab(nq.name)) or (slab_in and not d_claims):
-            w18.append(("W18", nq))
+    w18 = [("W18", nq) for nq in calc.results
+           if not _skip(nq, claim=True) and _pave_w18_spec(nq) is not None
+           and _W18_CAPACITY.search(_lab(nq.name))]
     return d_claims + w18
 
 

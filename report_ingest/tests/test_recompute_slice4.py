@@ -339,3 +339,21 @@ def test_table_and_tool_description():
     assert "pavement" in md and "agrees" in md
     assert "rigid pavement" in RECOMPUTE_TOOL_DESCRIPTION
     assert "unprinted pt" in RECOMPUTE_TOOL_DESCRIPTION
+
+
+# -- review fixes ------------------------------------------------------------------
+
+def test_design_traffic_beside_a_printed_slab_is_no_capacity_claim():
+    # a check printout: the slab is given, and the design traffic worked out
+    # from a traffic count is printed among the results; it is not what the
+    # slab carries, so it is no inverse claim (it is an input)
+    inputs = without("Design ESALs W18") + [nq("Slab thickness D", 10, "in")]
+    row = one(pave([nq("Design ESALs W18", 2.6e6, "ESALs")], inputs))
+    assert row["status"] == "not_compared"
+    cap = rigid(PARAMS, slab_thickness_in=10.0)["w18_capacity"]
+    rows = recompute_calculation(pave([
+        nq("Design ESALs W18", 2.6e6, "ESALs"),
+        nq("Allowable ESALs", round(cap, -3), "ESALs")], inputs))
+    assert [(r["claim"], r["quantity"]) for r in rows] == [
+        ("W18", "Allowable ESALs")]
+    assert rows[0]["flag"] == "agrees"
