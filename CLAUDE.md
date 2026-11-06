@@ -144,7 +144,7 @@ Key conventions:
   Microsoft cloud with a secret or a certificate and several sites, with a
   connection test and `docs/SHAREPOINT_SETUP.md`; the cloud is read off the
   site's address, a user can open any granted site by pasting its address,
-  and SharePoint errors are kept in a log in the app's SharePoint folder; GEC-13's lookups cite their printed equations and three it never printed are gone (refs c0ed2b9). Answers move in the MSE
+  and SharePoint errors are kept in a log in the app's SharePoint folder; GEC-13's lookups cite their printed equations and three it never printed are gone; GEC-10 and GEC-13 Vol II cited by their covers (refs 50e6af4). Answers move in the MSE
   critical bearing (live load over the zone at 1.75), fem2d footing capacity
   (a surcharge is a real load; the soil's weight first; the default
   iteration limit grows with the mesh, so fine meshes no longer stop short,
