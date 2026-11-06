@@ -51,6 +51,18 @@ on whatever tenant they have, with no code change from us:
   another, and so does its ``/sites/<site>/...`` server path.
 * :func:`check_connection` (``python -m webapp.graph_sharepoint --check``)
   runs each step in order and says which one failed and what the admin does.
+
+TA-35 (owner, 2026-11-05):
+
+* With ``GRAPH_CLOUD`` unset the cloud comes from the sites' addresses
+  (:func:`choose_cloud`); sites in two clouds are refused.
+* A site that is not in the settings, named by a user's address, server
+  path or sharing link, is opened directly (``GET /sites/{host}:/sites/
+  {name}``, ``GET /shares/{u!id}/driveItem``) and NEVER read on the
+  default site in its place; one the app was not granted raises
+  :class:`SiteNotOpened` with plain words.
+* SharePoint errors and connection-test reports go to the app's log file
+  in SharePoint (:mod:`webapp.sharepoint_log`).
 """
 
 from __future__ import annotations
@@ -124,6 +136,21 @@ class LibraryNotFound(GraphError):
     """The site has no document library by the name a path starts with."""
 
 
+class SiteNotOpened(GraphError):
+    """TA-35: a site (or a sharing link) a user pointed at that the app
+    cannot open: not granted to the app, not found, or in another cloud.
+
+    ``status`` is None on purpose, so no caller reads it as an empty folder
+    or a missing file and goes on to look on the default site;
+    ``http_status`` keeps Graph's own. ``user_message`` is the plain words
+    the tools hand back as they are."""
+
+    def __init__(self, message: str, http_status: Optional[int] = None):
+        super().__init__(message, status=None)
+        self.http_status = http_status
+        self.user_message = message
+
+
 def _setting(name: str) -> str:
     from webapp.tinyapps_settings import get_setting
     return (get_setting(name) or "").strip()
@@ -154,20 +181,93 @@ def missing_settings() -> List[str]:
 
 # ---------------------------------------------------------------- the cloud
 
-def cloud_urls(cloud: Optional[str] = None, login_url: Optional[str] = None,
-               api_url: Optional[str] = None) -> Tuple[str, str]:
-    """``(sign-in address, Graph address)`` for the configured cloud.
+#: TA-35: a SharePoint address's ending -> the cloud that serves it. Only
+#: the SharePoint tenant's cloud matters, not where the app is hosted.
+SHAREPOINT_CLOUDS: Tuple[Tuple[str, str], ...] = (
+    (".sharepoint-mil.us", "dod"),
+    (".sharepoint.us", "gcc_high"),
+    (".sharepoint.com", "commercial"),      # also Microsoft 365 GCC
+)
 
-    ``GRAPH_CLOUD`` names one of :data:`CLOUDS` (default ``commercial``;
-    spaces, hyphens and case are forgiven: ``GCC High`` works);
-    ``GRAPH_LOGIN_URL`` / ``GRAPH_API_URL`` replace either address."""
-    name = (cloud if cloud is not None else _setting(ENV_CLOUD)) or "commercial"
+_CLOUD_LABELS = {"commercial": "commercial (also Microsoft 365 GCC)",
+                 "gcc": "commercial (GCC)", "gcc_high": "GCC High",
+                 "dod": "DoD"}
+
+
+def _cloud_key(name: str) -> str:
     key = re.sub(r"[\s\-]+", "_", name.strip().lower())
     if key not in CLOUDS:
         raise ValueError(
             f"{ENV_CLOUD}={name!r} is not a cloud this app knows "
             f"({', '.join(sorted(CLOUDS))}); set {ENV_LOGIN_URL} and "
             f"{ENV_API_URL} for any other.")
+    return key
+
+
+def _host(url: str) -> str:
+    return (urllib.parse.urlparse(url if "://" in url else f"https://{url}")
+            .hostname or "").lower()
+
+
+def cloud_of_site(url: str) -> Optional[str]:
+    """The cloud a SharePoint site's address names (``None`` for an address
+    that names none, e.g. a custom host)."""
+    host = _host(url or "")
+    for ending, cloud in SHAREPOINT_CLOUDS:
+        if host.endswith(ending):
+            return cloud
+    return None
+
+
+def _same_cloud(a: str, b: str) -> bool:
+    family = {"gcc": "commercial"}
+    return family.get(a, a) == family.get(b, b)
+
+
+def choose_cloud(cloud: Optional[str] = None,
+                 sites: Optional[List["Site"]] = None) -> Tuple[str, str]:
+    """``(cloud, why)``: ``GRAPH_CLOUD`` when set, else the cloud the sites'
+    addresses name (``*.sharepoint.com`` commercial and GCC,
+    ``*.sharepoint.us`` GCC High, ``*.sharepoint-mil.us`` DoD), else
+    commercial. Sites in two clouds are refused: one app registration signs
+    in to one cloud."""
+    named: Dict[str, str] = {}
+    for s in sites or []:
+        c = cloud_of_site(s.url)
+        if c:
+            named.setdefault(c, s.url)
+    if len(named) > 1:
+        listed = "; ".join(f"{u} is {_CLOUD_LABELS.get(c, c)}"
+                           for c, u in named.items())
+        raise ValueError(
+            "The SharePoint sites are in more than one Microsoft cloud ("
+            f"{listed}). One app registration signs in to one cloud: keep "
+            f"only that cloud's sites in {ENV_SITE_URL} / {ENV_SITE_URLS}.")
+    explicit = cloud if cloud is not None else _setting(ENV_CLOUD)
+    if explicit:
+        return _cloud_key(explicit), f"{ENV_CLOUD} is set"
+    if named:
+        c, url = next(iter(named.items()))
+        ending = next(e for e, k in SHAREPOINT_CLOUDS if k == c)
+        return c, f"from the site address ({_host(url)}, *{ending})"
+    return "commercial", "the default: no site address names a cloud"
+
+
+def cloud_label(cloud: str) -> str:
+    return _CLOUD_LABELS.get(cloud, cloud)
+
+
+def cloud_urls(cloud: Optional[str] = None, login_url: Optional[str] = None,
+               api_url: Optional[str] = None,
+               sites: Optional[List["Site"]] = None) -> Tuple[str, str]:
+    """``(sign-in address, Graph address)`` for the configured cloud.
+
+    ``GRAPH_CLOUD`` names one of :data:`CLOUDS` (spaces, hyphens and case
+    are forgiven: ``GCC High`` works); when it is not set the cloud comes
+    from the sites' addresses (:func:`choose_cloud`, TA-35), else
+    ``commercial``. ``GRAPH_LOGIN_URL`` / ``GRAPH_API_URL`` replace either
+    address."""
+    key, _why = choose_cloud(cloud, sites)
     login, graph = CLOUDS[key]
     login = (login_url if login_url is not None
              else _setting(ENV_LOGIN_URL)) or login
@@ -185,6 +285,15 @@ class Site:
     url: str
     site_id: Optional[str] = None
     drive_ids: Dict[str, str] = field(default_factory=dict)
+    #: TA-35: a site a user pointed at that is not in the settings.
+    adhoc: bool = False
+
+    @property
+    def server_prefix(self) -> str:
+        """``/sites/<Site>`` as the address spells it (case kept)."""
+        return urllib.parse.unquote(urllib.parse.urlparse(
+            self.url if "://" in self.url else f"https://{self.url}"
+        ).path.rstrip("/"))
 
     @property
     def server_path(self) -> str:
@@ -229,6 +338,31 @@ def parse_sites(single: Optional[str] = None,
             continue
         out.append(Site(name=name, url=url))
     return out
+
+
+def share_id(url: str) -> str:
+    """A sharing link as Graph's ``/shares/{id}`` takes it: ``u!`` and the
+    unpadded base64url of the link (Microsoft's "Access shared items")."""
+    return "u!" + base64.urlsafe_b64encode(url.encode("utf-8")).decode(
+        "ascii").rstrip("=")
+
+
+def not_opened_message(where: str, status: Optional[int] = None,
+                       link: bool = False) -> str:
+    """Plain words for a site or link a user pointed at that the app cannot
+    open (TA-35)."""
+    what = "that link" if link else f"the site {where}"
+    why = ("it is not one of the sites the app has been granted, or the "
+           "address is wrong" if status == 404 else
+           "it is not one of the sites the app has been granted")
+    if link:
+        why += ", or the link has expired"
+    return (f"The app cannot open {what}: {why}. The app opens only the "
+            "SharePoint sites its administrator has granted to it. Ask the "
+            "administrator to grant this site to the app "
+            "(docs/SHAREPOINT_SETUP.md, step 3: grant the app the site), or "
+            "copy the file to a site the app already uses."
+            + (f" (Graph answered HTTP {status}.)" if status else ""))
 
 
 def configured_sites() -> List[Site]:
@@ -426,7 +560,18 @@ class GraphFileManager:
         self.sites: List[Site] = list(sites)
         self._tenant = tenant_id or get_setting(ENV_TENANT, required=True)
         self._client_id = client_id or get_setting(ENV_CLIENT_ID, required=True)
-        self.login_url, self.graph_url = cloud_urls(cloud, login_url, api_url)
+        self.cloud, self.cloud_reason = choose_cloud(cloud, self.sites)
+        overrides = [n for n, v in ((ENV_LOGIN_URL, login_url),
+                                    (ENV_API_URL, api_url))
+                     if v or (v is None and _setting(n))]
+        if overrides:
+            self.cloud_reason += f"; {' and '.join(overrides)} set"
+        self.login_url, self.graph_url = cloud_urls(self.cloud, login_url,
+                                                    api_url)
+        #: TA-35: sites users pointed at (by server path) and resolved
+        #: sharing links (link -> path), kept for this manager's life.
+        self._adhoc: Dict[str, Site] = {}
+        self._shares: Dict[str, str] = {}
         if certificate is None and client_secret is None:
             certificate = certificate_from_settings()
         self._certificate = certificate
@@ -519,23 +664,125 @@ class GraphFileManager:
         if site.site_id is None:
             parts = urllib.parse.urlparse(
                 site.url if "://" in site.url else f"https://{site.url}")
-            site.site_id = self._request(
-                "GET", f"sites/{parts.netloc}:{parts.path}")["id"]
+            try:
+                site.site_id = self._request(
+                    "GET", f"sites/{parts.netloc}:{parts.path}")["id"]
+            except GraphError as exc:
+                if site.adhoc and exc.status in (401, 403, 404):
+                    raise SiteNotOpened(not_opened_message(site.url,
+                                                           exc.status),
+                                        exc.status) from None
+                raise
         return site.site_id
 
     @property
     def site_id(self) -> str:
         return self._site_id_of(self.sites[0])
 
+    # ------------------------------------------- TA-35: any site a user names
+    def _site_at(self, server: str, host: Optional[str] = None) -> Site:
+        """The site at server path ``/sites/<name>`` (or ``/teams/...``): a
+        configured one, else one a user pointed at, opened directly by its
+        address (on ``host``, else the default site's host). Never the
+        default site in its place."""
+        low = server.rstrip("/").lower()
+        for s in self.sites:
+            if s.server_path == low and (host is None or _host(s.url) == host):
+                return s
+        known = self._adhoc.get(low)
+        if known is not None:
+            return known
+        url = f"https://{host or _host(self.sites[0].url)}{server.rstrip('/')}"
+        other = cloud_of_site(url)
+        if other and not _same_cloud(other, self.cloud):
+            raise SiteNotOpened(
+                f"The app cannot open {url}: that site is in the "
+                f"{cloud_label(other)} cloud and the app signs in to the "
+                f"{cloud_label(self.cloud)} cloud. It can open only sites in "
+                "its own cloud.")
+        site = Site(name=_default_site_name(url), url=url, adhoc=True)
+        self._adhoc[low] = site
+        return site
+
+    def _prefix_of(self, site: Site) -> str:
+        """What the paths handed back carry so they find ``site`` again."""
+        if site is self.sites[0]:
+            return ""
+        if site.adhoc:
+            return f"{site.server_prefix}/"
+        return f"{site.name}:"
+
+    def _from_address(self, url: str) -> str:
+        """A browser address or sharing link as a path this manager routes:
+        a plain address names its site and path; a token link
+        (``/:b:/s/...``, ``/:f:/g/...``) is read through Graph's sharing-link
+        call, ``GET /shares/{u!base64url}/driveItem``."""
+        if url in self._shares:
+            return self._shares[url]
+        parts = urllib.parse.urlsplit(url)
+        host = (parts.hostname or "").lower()
+        m = re.match(r"^/(sites|teams)/([^/]+)/?$",
+                     urllib.parse.unquote(parts.path), re.IGNORECASE)
+        if m:                                  # the site's own address
+            site = self._site_at(f"/{m.group(1)}/{m.group(2)}", host)
+            return self._prefix_of(site)
+        try:
+            from webapp.sharepoint_tools import browser_url_to_path
+            path = browser_url_to_path(url)
+        except Exception:                              # noqa: BLE001
+            path = None
+        if path:
+            if path.startswith("/"):           # another site: keep its host
+                segs = path.split("/")
+                site = self._site_at("/".join(segs[:3]), host)
+                rest = "/".join(segs[3:])
+                return f"{self._prefix_of(site)}{rest}"
+            return path
+        return self._from_share(url)
+
+    def _from_share(self, url: str) -> str:
+        try:
+            item = self._request("GET", f"shares/{share_id(url)}/driveItem")
+            ref = item.get("parentReference") or {}
+            drive = self._request("GET", f"drives/{ref['driveId']}")
+        except GraphError as exc:
+            if exc.status in (401, 403, 404):
+                raise SiteNotOpened(not_opened_message(url, exc.status,
+                                                       link=True),
+                                    exc.status) from None
+            raise
+        lib_url = str(drive.get("webUrl", "")).rstrip("/")
+        site_url, _, library = lib_url.rpartition("/")
+        library = urllib.parse.unquote(library)
+        inside = ""
+        if "root:" in str(ref.get("path", "")):
+            inside = urllib.parse.unquote(
+                ref["path"].split("root:", 1)[1]).strip("/")
+        name = item.get("name", "") if ref.get("path") else ""
+        site_parts = urllib.parse.urlparse(site_url)
+        site = self._site_at(urllib.parse.unquote(site_parts.path),
+                             (site_parts.hostname or "").lower())
+        site.drive_ids.setdefault(library.lower(), ref["driveId"])
+        rel = "/".join(x for x in (library, inside, name) if x)
+        path = f"{self._prefix_of(site)}{rel}"
+        self._shares[url] = path
+        return path
+
     def _route(self, path: Optional[str]) -> Tuple[Site, str, str]:
         """``(site, library path, prefix)`` for a caller's path.
 
         ``name:Shared Documents/x`` is on the site called ``name``; a
-        server-relative ``/sites/<site>/...`` is on the configured site at
-        that address; anything else is on the default site. ``prefix`` is
-        what the paths this manager hands back carry so they find the same
-        site again: ``""`` on the default site, ``"name:"`` on another."""
+        server-relative ``/sites/<site>/...`` is on the site at that
+        address -- a configured one, or (TA-35) one a user pointed at,
+        opened directly, never the default site in its place; a full
+        address or sharing link is read for the site and path it names;
+        anything else is on the default site. ``prefix`` is what the paths
+        this manager hands back carry so they find the same site again:
+        ``""`` on the default site, ``"name:"`` on another configured one,
+        ``"/sites/<site>/"`` on one a user pointed at."""
         p = (path or "").strip().replace("\\", "/")
+        if p.lower().startswith(("http://", "https://")):
+            p = self._from_address(p)
         site = self.sites[0]
         head, sep, tail = p.partition(":")
         if sep and "/" not in head:
@@ -543,19 +790,12 @@ class GraphFileManager:
                           if s.name.lower() == head.strip().lower()), None)
             if named is not None:
                 site, p = named, tail
-        # Callers sometimes hand a server-relative path: the site part names
-        # one of ours (else, as before, it is read on the default site).
         for marker in ("/sites/", "/teams/"):
             if p.lower().startswith(marker):
                 segs = p.split("/")
-                server = "/".join(segs[:3]).lower()
-                match = next((s for s in self.sites
-                              if s.server_path == server), None)
-                if match is not None:
-                    site = match
+                site = self._site_at("/".join(segs[:3]))
                 p = p.split("/", 3)[-1] if p.count("/") >= 3 else ""
-        prefix = "" if site is self.sites[0] else f"{site.name}:"
-        return site, p.strip("/"), prefix
+        return site, p.strip("/"), self._prefix_of(site)
 
     def _clean(self, path: Optional[str]) -> str:
         """The path as this manager's results spell it: the library path,
@@ -781,6 +1021,17 @@ class GraphFileManager:
                 out.append(self._entry(item, parent_path))
         return out
 
+    def get_file_details(self, path: str) -> Dict[str, Any]:
+        """A file's details, ``path`` in the form this manager routes (so
+        a sharing link comes back as the place it points at)."""
+        clean = self._clean(path)
+        item = self._item(clean)
+        parent = clean.rsplit("/", 1)[0] if "/" in clean else ""
+        details = self._entry(item, parent)
+        details["path"] = clean
+        details["parentReference"] = item.get("parentReference", {})
+        return details
+
     def get_web_url(self, path: str) -> str:
         """The browser URL of a file or folder: the site URL plus the UI path,
         ``?web=1`` so Office files open in the browser rather than download."""
@@ -954,7 +1205,24 @@ def _write_probe(manager: "GraphFileManager", root: str) -> Dict[str, Any]:
 
 def check_connection(manager: Optional["GraphFileManager"] = None,
                      library_root: Optional[str] = None,
-                     write: bool = True) -> List[Dict[str, Any]]:
+                     write: bool = True, log: bool = True
+                     ) -> List[Dict[str, Any]]:
+    """:func:`_check_connection`, whose report is then appended to the
+    app's SharePoint log (TA-35, :mod:`webapp.sharepoint_log`) unless
+    ``log`` is False. Never raises."""
+    results = _check_connection(manager, library_root, write)
+    if log:
+        try:
+            from webapp import sharepoint_log
+            sharepoint_log.record_check(results)
+        except Exception:                              # noqa: BLE001
+            pass
+    return results
+
+
+def _check_connection(manager: Optional["GraphFileManager"] = None,
+                      library_root: Optional[str] = None,
+                      write: bool = True) -> List[Dict[str, Any]]:
     """Run the setup's steps in order and return one record per step:
     ``{"step", "ok", "message", "detail"}``. Stops at the first failure.
 
@@ -987,8 +1255,10 @@ def check_connection(manager: Optional["GraphFileManager"] = None,
     out.append(_step(
         "settings", True,
         f"{len(manager.sites)} site(s); sign-in with a "
-        f"{manager.credential_kind}; sign-in address {manager.login_url}, "
-        f"Graph {manager.graph_url}"))
+        f"{manager.credential_kind}; cloud "
+        f"{cloud_label(getattr(manager, 'cloud', 'commercial'))} "
+        f"({getattr(manager, 'cloud_reason', '')}); sign-in address "
+        f"{manager.login_url}, Graph {manager.graph_url}"))
     try:
         manager._token = None
         manager._get_token()
@@ -1080,6 +1350,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         pass
     results = check_connection(write=not args.read_only)
     print(format_check(results))
+    try:
+        from webapp import sharepoint_log
+        sharepoint_log.flush(30.0)
+    except Exception:                                  # noqa: BLE001
+        pass
     return 0 if results and all(r["ok"] for r in results) else 1
 
 
@@ -1087,7 +1362,9 @@ __all__ = ["GraphFileManager", "GraphError", "LibraryNotFound", "configured",
            "missing_settings", "cloud_urls", "CLOUDS", "Site", "parse_sites",
            "configured_sites", "CertificateCredential",
            "certificate_from_settings", "check_connection", "format_check",
-           "site_note", "started", "PROBE_NAME",
+           "site_note", "started", "PROBE_NAME", "SiteNotOpened",
+           "choose_cloud", "cloud_of_site", "cloud_label", "share_id",
+           "not_opened_message", "SHAREPOINT_CLOUDS",
            "ENV_TENANT", "ENV_CLIENT_ID", "ENV_CLIENT_SECRET", "ENV_SITE_URL",
            "ENV_SITE_URLS", "ENV_CLOUD", "ENV_LOGIN_URL", "ENV_API_URL",
            "ENV_CLIENT_CERT", "ENV_CLIENT_KEY", "ENV_CLIENT_KEY_PASSWORD",

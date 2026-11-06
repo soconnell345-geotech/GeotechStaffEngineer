@@ -871,13 +871,24 @@ with st.sidebar:
         if st.button("Run connection tests", key=f"diag_{ss.thread_id}"):
             from webapp import diagnostics as _diag
             with st.spinner("Running connection tests…"):
-                ss.diag_report = _diag.format_report(
-                    _diag.run_diagnostics(
-                        ss.model, identity=_IDENT,
-                        helper_models=ss.get("helper_models"),
-                        page_checks=_PROFILE.diagnostics_checks))
+                _checks = _diag.run_diagnostics(
+                    ss.model, identity=_IDENT,
+                    helper_models=ss.get("helper_models"),
+                    page_checks=_PROFILE.diagnostics_checks)
+                ss.diag_report = _diag.format_report(_checks)
+                # TA-35: a SharePoint report that could not be kept in
+                # SharePoint is offered here instead.
+                ss.diag_sharepoint = _diag.sharepoint_download(_checks)
         if ss.get("diag_report"):
             st.code(ss.diag_report, language=None)
+        if ss.get("diag_sharepoint"):
+            st.download_button(
+                "Download the SharePoint report", ss.diag_sharepoint,
+                file_name="sharepoint-report.txt", mime="text/plain",
+                key=f"diag_sp_{ss.thread_id}",
+                help="For the host's administrator: the connection test and "
+                     "the SharePoint errors met, which could not be saved "
+                     "to SharePoint itself.")
     try:
         import importlib.metadata as _md
         st.caption(" · ".join(f"{_d} {_md.version(_d)}"

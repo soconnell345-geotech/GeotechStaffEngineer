@@ -580,8 +580,31 @@ def _probe(fm) -> Tuple[bool, str]:
         return False, f"{type(exc).__name__}: {str(exc)[:200]}"
 
 
+def _logged(step: str, message: str, path: str = "") -> str:
+    """``message``, after appending it to the app's SharePoint log (TA-35;
+    never raises, never blocks the turn)."""
+    try:
+        from webapp import sharepoint_log
+        sharepoint_log.record(step, message, path)
+    except Exception:                                      # noqa: BLE001
+        pass
+    return message
+
+
+def _plain_refusal(exc: BaseException) -> Optional[str]:
+    """The plain words of a site or link the app cannot open (TA-35,
+    ``graph_sharepoint.SiteNotOpened``): said as they are, never followed
+    by a look on the default site."""
+    msg = getattr(exc, "user_message", None)
+    return msg if isinstance(msg, str) and msg else None
+
+
 def _not_answering(what: str, detail: str = "") -> str:
     """The message for a negative answer the base folder cannot vouch for."""
+    return _logged(f"sharepoint {what}", _not_answering_text(what, detail))
+
+
+def _not_answering_text(what: str, detail: str = "") -> str:
     return (f"SharePoint is not answering: {what} came back empty, and the "
             f"app's base folder ({_root()}) could not be read either"
             + (f" ({detail})" if detail else "")
@@ -593,8 +616,16 @@ def _not_answering(what: str, detail: str = "") -> str:
             "now and try again in a few minutes.")
 
 
-def _failure(what: str, exc: BaseException) -> str:
-    """A download/list/search failure, said for what it is."""
+def _failure(what: str, exc: BaseException, path: str = "") -> str:
+    """A download/list/search failure, said for what it is (and kept in the
+    app's SharePoint log)."""
+    return _logged(f"sharepoint {what}", _failure_text(what, exc), path)
+
+
+def _failure_text(what: str, exc: BaseException) -> str:
+    plain = _plain_refusal(exc)
+    if plain:
+        return plain
     kind = _classify(exc)
     status = _status(exc)
     code = f"HTTP {status}: " if status else ""
@@ -818,8 +849,8 @@ def _list(path: str, scope: Optional[_Scope] = None) -> str:
             return scope.refusal(remote, "list")
         entries = fm.ls(remote) or []
     except Exception as exc:
-        return _failure("list", exc).replace("SharePoint list failed",
-                                             "SharePoint list error", 1)
+        return _failure("list", exc, path).replace("SharePoint list failed",
+                                                   "SharePoint list error", 1)
     if scope is not None and entries:
         kept = [e for e in entries if scope.keep(e, remote)]
         if not kept:
@@ -956,7 +987,9 @@ def _link_is_open(fm, url: str, scope: _Scope) -> bool:
         return False
     try:
         details = details_of(url) or {}
-    except Exception:                                      # noqa: BLE001
+    except Exception as exc:                               # noqa: BLE001
+        if _plain_refusal(exc):
+            raise                          # said plainly by the caller
         return False
     parent = (details.get("parentReference") or {}).get("path") \
         if isinstance(details.get("parentReference"), dict) else ""
@@ -994,7 +1027,7 @@ def _download(path: str, save_as: str, refresh: bool,
         fm = _fm()
         remote = _resolve(original)
     except Exception as exc:
-        return _failure("download", exc).replace(
+        return _failure("download", exc, original).replace(
             "SharePoint download failed", "SharePoint download error", 1)
     if scope is not None:
         for target in {remote, original}:
@@ -1055,13 +1088,13 @@ def _download(path: str, save_as: str, refresh: bool,
     if original.lower().startswith("http") and original != remote:
         attempts.append(original)       # the SDK's sharing-link route
     for target in attempts:
-        if scope is not None and target.lower().startswith("http") \
-                and not _link_is_open(fm, target, scope):
-            continue
         try:
+            if scope is not None and target.lower().startswith("http") \
+                    and not _link_is_open(fm, target, scope):
+                continue
             part = _fetch(fm, target, dest_dir)
         except Exception as exc:                           # noqa: BLE001
-            if _classify(exc) != "missing":
+            if _plain_refusal(exc) or _classify(exc) != "missing":
                 return _failure(f"download of {target}", exc)
             continue
         # A sharing link that resolved: file it under the path it was given
@@ -1230,7 +1263,9 @@ def _upload(local_path: str, dest_folder: str, default_folder=None,
             remote = f"{folder}/{stem}_{time.strftime('%Y%m%d_%H%M%S')}{ext}"
             ok = fm.upload_file(local, remote, overwrite=False)
         if not ok:
-            return f"SharePoint upload failed for {remote} (upload rejected)."
+            return _logged("sharepoint upload",
+                           f"SharePoint upload failed for {remote} "
+                           "(upload rejected).", remote)
         try:
             from webapp.sharepoint_store import fix_web_url
             url = fix_web_url(fm.get_web_url(remote))
@@ -1239,7 +1274,10 @@ def _upload(local_path: str, dest_folder: str, default_folder=None,
         return (f"Uploaded '{_shown(local)}' -> {remote}{label}."
                 + (f" Link: {url}" if url else ""))
     except Exception as exc:
-        return f"SharePoint upload error: {type(exc).__name__}: {exc}"
+        plain = _plain_refusal(exc)
+        return _logged("sharepoint upload", plain or (
+            f"SharePoint upload error: {type(exc).__name__}: {exc}"),
+            dest_folder)
 
 
 def _mirrored(conv_dir: str, rel: str, local: str) -> bool:
@@ -1495,7 +1533,7 @@ def _search_tool(query: str, path: str = "",
             return scope.refusal(remote, "search")
         hits = visible(_search(fm, query, remote))
     except Exception as exc:
-        return _failure("search", exc).replace("SharePoint search failed",
+        return _failure("search", exc, path).replace("SharePoint search failed",
                                                "SharePoint search error", 1)
     how = ""
     by_folder = 0

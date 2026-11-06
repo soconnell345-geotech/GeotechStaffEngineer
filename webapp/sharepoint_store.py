@@ -676,6 +676,16 @@ class SharePointStore:
         summary["duration_s"] = round(summary["at"] - t0, 3)
         self.last_sync = summary
         self._syncs[str(thread_id)] = summary
+        if summary["errors"] and self.backend == "sharepoint":
+            try:                   # TA-35: kept in the app's SharePoint log
+                from webapp import sharepoint_log
+                sharepoint_log.record(
+                    "conversation save",
+                    f"{len(summary['errors'])} error(s): "
+                    + "; ".join(str(e) for e in summary["errors"][:5]),
+                    summary.get("folder") or "")
+            except Exception:                          # noqa: BLE001
+                pass
         return summary
 
     # -- saving in the background ------------------------------------------
