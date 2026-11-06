@@ -471,3 +471,34 @@ class TestMicropile:
             all_methods.update(cat_methods)
         bond_methods = [m for m in all_methods if "bond" in m.lower()]
         assert len(bond_methods) > 0
+
+
+# ──────────────────────────────────────────────────────────────────────
+# REF-61: bond and reduction-factor lookups GEC-13 does not print
+# ──────────────────────────────────────────────────────────────────────
+
+class TestRef61Gec13Removed:
+    """GEC-13's soil nail bond, micropile bond and geosynthetic RF lookups
+    were removed from the reference library (REF-61): the GEC-13 tables
+    they cited print other things. The micropile alias now reaches the
+    micropile manual's own Table 5-3."""
+
+    @pytest.mark.parametrize("name", [
+        "table_9_2_nail_bond_strength",
+        "table_10_1_micropile_bond_stress",
+        "table_11_1_geosynthetic_reduction_factors",
+        "soil_nail_bond_strength",
+    ])
+    def test_not_in_gec13(self, name):
+        from funhouse_agent.adapters import gec13_adapter
+        assert name not in gec13_adapter.METHOD_REGISTRY
+
+    def test_micropile_alias_reaches_table_5_3(self):
+        import json
+        out = call_agent("micropile", "micropile_grout_bond_strength",
+                         {"soil_type": "silt_clay_soft",
+                          "micropile_type": "A"})
+        res = json.loads(out) if isinstance(out, str) else out
+        flat = json.dumps(res)
+        # FHWA-NHI-05-039 Table 5-3, p. 5-21: 35-70 kPa
+        assert "35" in flat and "70" in flat, flat
