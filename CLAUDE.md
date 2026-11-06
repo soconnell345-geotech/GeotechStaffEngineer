@@ -138,7 +138,8 @@ Key conventions:
   are 3-D under DIGGS' compound CRS; driven piles take a layer's own
   adhesion and ask for Fig. 7-18's case under a softer clay; the user
   manual's HTML is rebuilt from master; `retaining_wall_package` writes an
-  MSE wall's calc package (`wall_type="mse"`) and MSE LRFD reports Strength I
+  MSE wall's calc package (`wall_type="mse"`, with a sloping backslope or a
+  battered face; `mse_lrfd` for LRFD) and MSE LRFD reports Strength I
   (min) apart; the site-response tools run on pystrata 0.5 (Python 3.12) or 0.6 (Python 3.13); SharePoint works on any
   Microsoft cloud with a secret or a certificate and several sites, with a
   connection test and `docs/SHAREPOINT_SETUP.md`; the cloud is read off the
