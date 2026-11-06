@@ -19,7 +19,7 @@ index 257, and matching the library's text, section 4.2.3.3.1):
 
 p. 4-41: "Figure 4-21. Trend between apparent maximum depth of influence
 and energy per drop" (Mayne et al. 1984). No table of n by soil type is
-printed. The case history on p. 4-61 uses n = 0.4 for a landfill.
+printed. The case history on p. 4-60 uses n = 0.4 for a landfill.
 
 GEC-13 Figure 4-1 (p. 4-2) is "Schematic illustration of deep dynamic
 compaction", so the old function name cited a figure that is not the
@@ -40,8 +40,11 @@ geotech-references:
   al. 1984), p. 4-41") and `choices` (n, given or default, basis,
   alternatives). The four old soil types are refused with a message
   giving the printed n values.
-- `figure_4_1_ddc_depth` kept as an alias (same signature, returns exactly
-  what `equation_4_1_ddc_depth` returns; its docstring says so).
+- `figure_4_1_ddc_depth` kept as an alias (same signature as the new
+  function, returns exactly what `equation_4_1_ddc_depth` returns; its
+  docstring says so). Against the old function the positions are the same,
+  `soil_type` is renamed `deposit` and `n` is added, so a keyword
+  `soil_type=` call is refused as not a parameter.
 - `agents/gec13_agent.py`: both names carry the Eq. 4-1 source label in
   `_FUNCTION_REFS`.
 - `tests/test_gec13_tables.py`: the old `TestFigure41` (soil types)
@@ -107,3 +110,22 @@ dropped 20 m the default answer moves from 10.0 to 12.0 m to 10.0 m
   "Alias of equation_4_1_ddc_depth".
 - Figure 4-21's data points are not digitized; only its three printed
   lines (0.3, 0.5, 0.8) are used.
+
+## Review fixes
+
+geotech-references f6b9c58 (on 52a38c1):
+- `agents/gec13_agent.py`: the tool description's "DDC depth of influence
+  (Lukas 1995, Figure 4-1)" now reads "DDC depth of improvement (Eq. 4-1,
+  p. 4-40)".
+- `README.md`: `gec_13` 16 functions, the FHWA section 144, the total 1,231.
+- `CLAUDE.md`: GEC-13's Table Functions count is 10.
+
+This file: the landfill case history's n = 0.4 is on p. 4-60 (was p. 4-61),
+and the alias line says how the signature changed against the old function.
+
+The review ran the app's reference and defaults tests (`test_defaults_used.py`
+among eight files) on this branch merged with master, exit 0:
+`test_defaults_used[profile_figure|plot_data]` passed there.
+
+The app's submodule pointer stays at 52a38c1 on this branch; the lead sets
+it at the merge.
