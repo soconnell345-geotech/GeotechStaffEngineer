@@ -1308,7 +1308,9 @@ def _mean_rise(a: float, b: float, geom: MSEWallGeometry) -> float:
         return 0.0
     t = math.tan(math.radians(geom.backfill_slope))
     S = geom.broken_backslope_height
-    return (_rise_integral(b, t, S) - _rise_integral(a, t, S)) / (b - a)
+    # no rise in front of the top of the face (a battered face, GM-307)
+    return (_rise_integral(max(b, 0.0), t, S)
+            - _rise_integral(max(a, 0.0), t, S)) / (b - a)
 
 
 def _check_backslope(geom: MSEWallGeometry, phi_retained: Optional[float],
@@ -1324,7 +1326,7 @@ def _check_backslope(geom: MSEWallGeometry, phi_retained: Optional[float],
             "sin(phi - beta) < 0 under the root in GEC-11 Eq. 4-3, so the "
             "Coulomb Kab has no real value, and a fill slope steeper than "
             "its friction angle does not stand.")
-    if q > 0 and geom.broken_backslope_height is None:
+    if q > 0 and beta > 0 and geom.broken_backslope_height is None:
         raise ValueError(
             "a surcharge on a backfill slope that continues is not covered: "
             "GEC-11 gives the sloping-backfill case with no surcharge "
@@ -1381,27 +1383,157 @@ def backslope_loads(geom: MSEWallGeometry, gamma_backfill: float,
     continues.
     """
     _check_backslope(geom, phi_retained, q)
+    check_batter(geom)
     H = geom.wall_height
     L = geom.reinforcement_length
     bs = backslope_geometry(geom)
     I_deg, h = bs["I_deg"], bs["h"]
-    Kab = coulomb_Ka(phi_retained, I_deg, 90.0, I_deg)
-    c, s = math.cos(math.radians(I_deg)), math.sin(math.radians(I_deg))
+    # GM-307: a battered face, theta = 90 + omega (Fig. 4-5, p. 4-15)
+    theta = geom.theta_deg
+    omega = theta - 90.0
+    tw = math.tan(math.radians(omega))
+    Kab = coulomb_Ka(phi_retained, I_deg, theta, I_deg)
+    # F_T at delta to the normal of the back of the zone, which leans back
+    # at omega: at delta - omega above the horizontal (Fig. 4-5, F_H at
+    # theta - 90 to the normal); delta = I for a vertical wall
+    a = math.radians(I_deg - omega)
+    c, s = math.cos(a), math.sin(a)
     FT = 0.5 * Kab * gamma_retained * h ** 2
     F2 = Kab * q * h
     V1 = gamma_backfill * H * L
     V2 = gamma_backfill * bs["V2_area"]
     Vs = q * bs["level_length"]
+    # the back of the zone at a height y above the base is L + y tan omega
+    # from the toe; the zone's top starts H tan omega from it
+    x_FT, x_F2 = L + h / 3.0 * tw, L + h / 2.0 * tw
+    shift = H * tw
     return {
         "geometry": bs, "Kab": Kab, "I_deg": I_deg, "h": h,
-        "V1": V1, "MV1": V1 * L / 2.0,
-        "V2": V2, "MV2": V2 * bs["V2_arm"],
-        "Vs": Vs, "MVs": Vs * (L - bs["level_length"] / 2.0),
-        "FT": FT, "FTH": FT * c, "FTV": FT * s,
-        "MFTH": FT * c * h / 3.0, "MFTV": FT * s * L,
-        "F2": F2, "F2H": F2 * c, "F2V": F2 * s,
-        "MF2H": F2 * c * h / 2.0, "MF2V": F2 * s * L,
+        "theta_deg": theta, "omega_deg": omega,
+        "V1": V1, "x_V1": L / 2.0 + shift / 2.0,
+        "MV1": V1 * (L / 2.0 + shift / 2.0),
+        "V2": V2, "x_V2": bs["V2_arm"] + shift,
+        "MV2": V2 * (bs["V2_arm"] + shift),
+        "Vs": Vs, "x_Vs": L - bs["level_length"] / 2.0 + shift,
+        "MVs": Vs * (L - bs["level_length"] / 2.0 + shift),
+        "FT": FT, "FTH": FT * c, "FTV": FT * s, "x_FT": x_FT,
+        "MFTH": FT * c * h / 3.0, "MFTV": FT * s * x_FT,
+        "F2": F2, "F2H": F2 * c, "F2V": F2 * s, "x_F2": x_F2,
+        "MF2H": F2 * c * h / 2.0, "MF2V": F2 * s * x_F2,
     }
+
+
+#: Why a battered face under a broken backslope is refused (GM-307): the
+#: print has no rule for the two together.
+BATTER_BROKEN_BACKSLOPE_REASON = (
+    "a battered face (face_batter 10 deg or more) under a broken backslope "
+    "is not covered: GEC-11 Vol I p. 4-15 takes a broken backslope's Kab "
+    "with beta = delta = I for a vertical wall only, and Fig. 4-9(b) (p. "
+    "4-34) sets the extensible failure surface's delta to 'beta_cs' for a "
+    "broken backslope without defining it. A battered face is taken under "
+    "a level backfill or a slope that continues")
+
+
+def check_batter(geom: MSEWallGeometry) -> None:
+    """Refuse what the battered-face reading does not cover (GM-307):
+    a battered face under a broken backslope."""
+    if geom.battered and geom.broken_backslope_height is not None:
+        raise ValueError(BATTER_BROKEN_BACKSLOPE_REASON)
+
+
+def battered_internal_Ka(phi_backfill: float, theta_deg: float) -> float:
+    """Internal Ka for a face battered 10 deg or more (GM-307).
+
+    GEC-11 Vol I p. 4-36 takes it by "the following simplified form of the
+    Coulomb equation", Eq. 4-26, the Coulomb Ka "assuming no wall friction
+    and a beta angle equal to zero" which "for a vertical wall ... reduces
+    to the Rankine equation" (Eq. 4-25). That is Eqs. 4-2, 4-3 (p. 4-15)
+    with delta = beta = 0:
+
+        Ka = sin^2(theta + phi) / [sin^3(theta) (1 + sin(phi)/sin(theta))^2]
+
+    The print of Eq. 4-26 leaves out the square on the bracket; as printed
+    it gives 1 - sin(phi), not Eq. 4-25, at theta = 90, against the page's
+    own words, so the square is kept (:data:`BATTER_KA_BASIS`;
+    :func:`battered_internal_Ka_as_printed` gives the printed form)."""
+    return coulomb_Ka(phi_backfill, 0.0, theta_deg, 0.0)
+
+
+def battered_internal_Ka_as_printed(phi_backfill: float,
+                                    theta_deg: float) -> float:
+    """GEC-11 Vol I Eq. 4-26 (p. 4-36) as printed, the bracket unsquared;
+    reported beside :func:`battered_internal_Ka` in the result's choices,
+    never used."""
+    t, p = math.radians(theta_deg), math.radians(phi_backfill)
+    return math.sin(t + p) ** 2 / (math.sin(t) ** 3
+                                   * (1.0 + math.sin(p) / math.sin(t)))
+
+
+#: The internal Ka of a battered face (GM-307), a result's choice.
+BATTER_KA_BASIS = (
+    "GEC-11 Vol I p. 4-36: for face batters of 10 deg or more, Eq. 4-26, "
+    "'the following simplified form of the Coulomb equation', the Coulomb "
+    "Ka 'assuming no wall friction and a beta angle equal to zero', which "
+    "for a vertical wall 'reduces to the Rankine equation' (Eq. 4-25); "
+    "theta from Fig. 4-5. Taken as Eqs. 4-2, 4-3 (p. 4-15) with delta = "
+    "beta = 0, Ka = sin^2(theta + phi'r) / [sin^3 theta (1 + sin phi'r / "
+    "sin theta)^2]: the print of Eq. 4-26 has no square on the bracket, "
+    "which at theta = 90 deg gives 1 - sin phi'r, not Eq. 4-25")
+
+
+def extensible_failure_angle(phi_backfill: float, theta_deg: float,
+                             beta_deg: float) -> float:
+    """The extensible reinforcement's failure surface angle psi (deg from
+    horizontal) for a face battered 10 deg or more (GM-307).
+
+    GEC-11 Vol I p. 4-33: "the Coulomb earth pressure relationship shown on
+    Figure 4-5 should be used to define the failure surface ... where the
+    wall front batter from vertical is greater than 10 degrees"; Fig. 4-9(b)
+    (p. 4-34) prints it, with delta = beta:
+
+        tan(psi - phi) = [-tan(phi - beta) + sqrt(tan(phi - beta)
+            (tan(phi - beta) + cot(phi + theta - 90))
+            (1 + tan(delta + 90 - theta) cot(phi + theta - 90)))]
+            / [1 + tan(delta + 90 - theta) (tan(phi - beta)
+            + cot(phi + theta - 90))]
+
+    The figure's left side reads tan(psi - theta); at a vertical face
+    (theta 90, beta 0) the right side is tan(45 - phi/2), and only
+    tan(psi - phi) gives the figure's own "For vertical face psi = 45 +
+    phi/2", so psi - phi is read (:data:`BATTER_SURFACE_BASIS`). theta is
+    Fig. 4-5's, from the horizontal (90 + omega); the right side has no
+    value at the figure's "theta = wall batter angle" read from vertical
+    (tan 90 at a vertical face)."""
+    p = math.radians(phi_backfill)
+    b = math.radians(beta_deg)
+    d = b                                            # delta = beta
+    w = math.radians(theta_deg - 90.0)
+    A = math.tan(p - b)
+    C = 1.0 / math.tan(p + w)                         # cot(phi + theta - 90)
+    D = math.tan(d - w)                               # tan(delta + 90 - theta)
+    root = A * (A + C) * (1.0 + D * C)
+    if A < 0 or root < 0:
+        raise ValueError(
+            "GEC-11 Vol I Fig. 4-9(b) has no real failure surface for "
+            f"phi {phi_backfill:g}, theta {theta_deg:g}, beta {beta_deg:g} "
+            "deg")
+    return phi_backfill + math.degrees(
+        math.atan((-A + math.sqrt(root)) / (1.0 + D * (A + C))))
+
+
+#: The failure surface of a battered face (GM-307), a result's choice.
+BATTER_SURFACE_BASIS = (
+    "GEC-11 Vol I p. 4-33 and Fig. 4-9 (p. 4-34). Extensible reinforcement: "
+    "the Coulomb failure plane of Fig. 4-9(b), through the toe of the wall "
+    "(p. 4-33), with delta = beta and theta from the horizontal (Fig. 4-5), "
+    "La = (H - z)(cot psi - tan omega) from the face; the figure's left "
+    "side, tan(psi - theta), read as tan(psi - phi), the only reading that "
+    "gives its printed 'For vertical face psi = 45 + phi/2'. Inextensible "
+    "reinforcement: Fig. 4-9(a)'s note, 'If wall face is battered, an "
+    "offset of 0.3H1 is still required, and the upper portion of the zone "
+    "of maximum stress should be parallel to the wall face': La = 0.3 H1 "
+    "from the face over the upper H1/2, the lower part from the toe, as for "
+    "a vertical face")
 
 
 _TRAFFIC_VERTICAL_BASIS = {
@@ -1847,11 +1979,19 @@ def check_internal_stability(
     the pullout resistance: pullout sigma_v is taken "neglecting traffic
     loads" (GEC-11 p. 4-49; p. 4-51; AASHTO C11.10.6.2.1).
     """
-    Ka = rankine_Ka(phi_backfill)
+    check_batter(geom)
+    # GM-307: a face battered 10 deg or more takes Eq. 4-26's Coulomb Ka
+    # (p. 4-36), the Rankine Eq. 4-25 otherwise
+    Ka = (battered_internal_Ka(phi_backfill, geom.theta_deg)
+          if geom.battered else rankine_Ka(phi_backfill))
     H = geom.wall_height
     L = geom.reinforcement_length
     Sv = geom.reinforcement_spacing
     sloping = geom.backfill_slope > 0
+    tw = math.tan(math.radians(geom.theta_deg - 90.0))
+    psi = (extensible_failure_angle(phi_backfill, geom.theta_deg,
+                                    geom.backfill_slope)
+           if geom.battered else None)
     # the levels' depths given: each level's contributory height (GM-273)
     given = geom.level_depths is not None
     if not given and sigma_H_average is not None:
@@ -1946,6 +2086,10 @@ def check_internal_stability(
             La = 0.3 * H1 if (H - z) >= H1 / 2.0 else 0.6 * (H - z)
         elif r.is_metallic:
             La = 0.3 * H if z <= H / 2.0 else 0.6 * (H - z)
+        elif psi is not None:
+            # GM-307: Fig. 4-9(b)'s Coulomb plane through the toe, from the
+            # battered face (the face at (H - z) tan omega from the toe)
+            La = (H - z) * (1.0 / math.tan(math.radians(psi)) - tw)
         else:
             La = (H - z) * math.tan(math.radians(45 - phi_backfill / 2))
         # Le = L - La (Eq. 4-37), the reinforcement's own length beyond the
@@ -1977,7 +2121,9 @@ def check_internal_stability(
         if sloping:
             # sigma_v = gamma_r Zp, Zp below the slope surface averaged over
             # the resistant zone (GEC-11 Fig. 4-15, Fig. E3-5)
-            Zp = z + _mean_rise(max(L - Le, 0.0), L, geom)
+            # the slope rises from the top of the face, z tan omega behind
+            # this level's face on a battered wall (GM-307)
+            Zp = z + _mean_rise(max(L - Le, 0.0) - z * tw, L - z * tw, geom)
             Pr = pullout_resistance(
                 Zp, gamma_backfill, Le, F_star, alpha_pullout=alpha, Rc=Rc,
             )
@@ -2493,36 +2639,50 @@ def _external_terms(
         return {"component": component, "P": P, "z": z, "M": P * z}
 
     ld = None
-    if geom.backfill_slope > 0:
+    if geom.backfill_slope > 0 or geom.battered:
         ld = backslope_loads(geom, gamma_backfill, phi_ext, gamma_ext,
                              geom.surcharge)
         Ka = ld["Kab"]
-        bs = ld["geometry"]
+        sloping = geom.backfill_slope > 0
+        # GM-307: on a battered face the thrust is at delta - omega to the
+        # horizontal (Fig. 4-5); "I" otherwise
+        ang = "I" if not geom.battered else (
+            "δ - ω" if sloping else "-ω")
         # The weights on the base, the live load over any level ground on
         # the zone (Vs) as chosen (GM-164), and the thrust's vertical
         # component at the back. The traffic thrust's vertical component
         # resists only by choice (Example E1; not by p. 4-22); bearing
-        # takes it.
-        vertical = [weight("Reinforced fill (V1)", ld["V1"], L / 2.0)]
+        # takes it. On a battered face a component pointing up (less than
+        # 0) is counted wherever the thrust is: it only lessens the
+        # resistance.
+        vertical = [weight("Reinforced fill (V1)", ld["V1"], ld["x_V1"])]
         if ld["V2"] > 0:
             vertical.append(weight("Slope fill over the reinforced zone (V2)",
-                                   ld["V2"], bs["V2_arm"]))
+                                   ld["V2"], ld["x_V2"]))
         if ld["Vs"] > 0:
             vertical.append(weight(
-                "Live-load surcharge over the level ground on the reinforced "
-                "zone", ld["Vs"], L - bs["level_length"] / 2.0,
+                ("Live-load surcharge over the level ground on the "
+                 "reinforced zone" if sloping else
+                 "Live-load surcharge over the reinforced zone (q L)"),
+                ld["Vs"], ld["x_Vs"],
                 "surcharge", live_load_resists, surcharge_in_bearing))
-        vertical.append(weight("Vertical component of F_T (F_T sin I)",
-                               ld["FTV"], L, "thrust"))
-        if ld["F2V"] > 0:
+        vertical.append(weight(f"Vertical component of F_T (F_T sin {ang})",
+                               ld["FTV"], ld["x_FT"], "thrust"))
+        if abs(ld["F2V"]) > 0:
             vertical.append(weight(
-                "Vertical component of the traffic thrust (F2 sin I)",
-                ld["F2V"], L, "thrust", traffic_vertical_resists, True))
-        horizontal = [thrust("Retained fill thrust (F_T cos I)", ld["FTH"],
-                             ld["h"] / 3.0)]
+                (f"Vertical component of the traffic thrust (F2 sin {ang})"
+                 if sloping else
+                 f"Vertical component of the surcharge thrust (F2 sin "
+                 f"{ang})"),
+                ld["F2V"], ld["x_F2"], "thrust",
+                traffic_vertical_resists or ld["F2V"] < 0, True))
+        horizontal = [thrust(f"Retained fill thrust (F_T cos {ang})",
+                             ld["FTH"], ld["h"] / 3.0)]
         if ld["F2H"] > 0:
-            horizontal.append(thrust("Traffic thrust (F2 cos I)", ld["F2H"],
-                                     ld["h"] / 2.0))
+            horizontal.append(thrust(
+                (f"Traffic thrust (F2 cos {ang})" if sloping else
+                 f"Live-load surcharge thrust (F2 cos {ang})"),
+                ld["F2H"], ld["h"] / 2.0))
     else:
         Ka = rankine_Ka(phi_ext)
         # Weight of the reinforced block (reinforced fill properties) and
@@ -2753,9 +2913,11 @@ def _external_dict(t: Dict[str, Any], q_allowable: float = None,
     FOS_overturning = (t["M_stabilizing"] / M_over if M_over > 0 else 99.9)
 
     sigma_v, L_eff, e = t["sigma_v"], t["L_eff"], t["eccentricity"]
-    backslope = (None if t["backslope_loads"] is None
-                 else _backslope_summary(t["backslope_loads"],
-                                         t["traffic_vertical_resists"]))
+    ld = t["backslope_loads"]
+    backslope = (None if ld is None or ld["geometry"]["beta_deg"] <= 0
+                 else _backslope_summary(ld, t["traffic_vertical_resists"]))
+    batter = (None if ld is None or ld["omega_deg"] <= 0
+              else _batter_summary(ld))
 
     # Bearing check (GM-100): without q_allowable it is NOT RUN, never a
     # placeholder FOS reported as a pass.
@@ -2800,7 +2962,40 @@ def _external_dict(t: Dict[str, Any], q_allowable: float = None,
                    lowest_sheet_depth_m=t["sheet"]["depth"])
     if backslope is not None:
         out["backslope"] = backslope
+    if batter is not None:
+        out["face_batter"] = batter
     return out
+
+
+def _batter_summary(ld: Dict[str, Any]) -> Dict[str, Any]:
+    """The battered-face basis a result reports (GM-307; SI, rounded)."""
+    return {
+        "face_batter_deg": round(ld["omega_deg"], 3),
+        "theta_deg": round(ld["theta_deg"], 3),
+        "Ka": round(ld["Kab"], 4),
+        "thrust_angle_from_horizontal_deg": round(
+            ld["I_deg"] - ld["omega_deg"], 3),
+        "FT_kN_per_m": round(ld["FT"], 3),
+        "FT_horizontal_kN_per_m": round(ld["FTH"], 3),
+        "FT_vertical_kN_per_m": round(ld["FTV"], 3),
+        "FT_arm_from_toe_m": round(ld["x_FT"], 3),
+        "basis": BATTER_EXTERNAL_BASIS,
+    }
+
+
+#: The external earth pressure on a battered face (GM-307).
+BATTER_EXTERNAL_BASIS = (
+    "GEC-11 Vol I p. 4-15, 'Battered Wall with or without Backslope': for "
+    "a face and reinforced zone battered 10 deg or more from vertical, Kab "
+    "by Eqs. 4-2, 4-3 with theta the face inclination from horizontal (90 + "
+    "omega) and delta = beta (Fig. 4-5, p. 4-16); F_T = 1/2 Kab gamma_b h^2 "
+    "(Eq. 4-7, h = H + L tan beta) at h/3 on the back of the reinforced "
+    "zone, at delta to its normal, so at delta - omega to the horizontal "
+    "(Fig. 4-5: F_H at theta - 90 to the normal); a live-load surcharge's "
+    "F2 = Kab q h (Eq. 4-6) at h/2, inclined the same. The zone a "
+    "parallelogram of horizontal width L, its back at L + y tan omega from "
+    "the toe at height y; V1 = gamma_r H L at L/2 + (H/2) tan omega. A "
+    "thrust component pointing up (delta < omega) lessens V in every check")
 
 
 #: GEC-11 Vol I p. 4-28: the nominal bearing resistance of Eq. 4-22.
@@ -2973,6 +3168,58 @@ def local_shear_strengths(phi_foundation: float, c_foundation: float):
     return 0.67 * c_foundation, phi_star
 
 
+def face_batter_choices(geom: MSEWallGeometry, phi_backfill: float,
+                        reinforcement=None) -> list:
+    """How the face batter was taken (GM-307), a result's ``choices``: a
+    face under 10 deg as vertical (GEC-11 Vol I p. 4-15); a battered one's
+    external Kab, internal Ka (with Eq. 4-26 as printed beside it) and
+    failure surface. Nothing for a vertical face."""
+    from geotech_common.choices import MODULE, choice, how_given
+    omega = geom.face_batter
+    if omega <= 0:
+        return []
+    if not geom.battered:
+        return [choice(
+            "face batter", f"{omega:g} deg taken as vertical (theta 90 deg)",
+            MODULE,
+            "GEC-11 Vol I p. 4-15: Ka for 'near vertical walls (defined as "
+            "walls with a face batter of less than 10 degrees from "
+            "vertical)' with theta = 90 deg, 'for vertical, or near (< 10 "
+            "deg) vertical, wall'; Eq. 4-26 (p. 4-36) and Fig. 4-9(b) (p. "
+            "4-34) from 10 deg",
+            [f"face_batter {BATTER_MIN:g} deg or more: a battered wall"])]
+    theta = geom.theta_deg
+    Ka = battered_internal_Ka(phi_backfill, theta)
+    printed = battered_internal_Ka_as_printed(phi_backfill, theta)
+    out = [choice(
+        "external earth pressure on a battered face",
+        f"Coulomb Kab with theta = 90 + {omega:g} = {theta:g} deg, delta = "
+        f"beta",
+        how_given(omega, 0.0, name="face_batter"), BATTER_EXTERNAL_BASIS),
+        choice(
+        "internal Ka on a battered face",
+        f"{Ka:.4f}, Eqs. 4-2, 4-3 with delta = beta = 0 at theta {theta:g} "
+        f"deg", MODULE, BATTER_KA_BASIS,
+        [f"Eq. 4-26 as printed, the bracket unsquared: Ka = {printed:.4f}"])]
+    rs = ([] if reinforcement is None else
+          level_reinforcements(reinforcement, geom.reinforcement_depths,
+                               levels_source(geom)))
+    if any(not r.is_metallic for r in rs):
+        psi = extensible_failure_angle(phi_backfill, theta,
+                                       geom.backfill_slope)
+        chosen = (f"Coulomb plane at psi = {psi:.2f} deg from the "
+                  f"horizontal through the toe")
+    else:
+        chosen = "0.3 H1 from the face over the upper H1/2, as vertical"
+    out.append(choice("failure surface on a battered face", chosen, MODULE,
+                      BATTER_SURFACE_BASIS))
+    return out
+
+
+#: The batter from which a wall is battered (deg), GEC-11 Vol I p. 4-15.
+from retaining_walls.geometry import BATTER_MIN_DEG as BATTER_MIN  # noqa: E402
+
+
 def assumed_friction_choices(phi_foundation: Optional[float],
                              phi_retained: Optional[float]) -> list:
     """The foundation's and the retained fill's friction angle where none
@@ -3075,6 +3322,14 @@ def vertical_spacing_warnings(geom: MSEWallGeometry) -> List[str]:
             f"({where}), is over 32 in. (0.81 m). GEC-11 Vol I p. 4-38: 'to "
             "provide a coherent reinforced soil zone, vertical spacing of "
             "reinforcement should not exceed 32 in. (800 mm).'"]
+
+
+#: Why the LRFD path refuses a battered face (GM-307).
+LRFD_BATTER_REASON = (
+    "the LRFD external-stability path takes a vertical face (GEC-11 Vol I "
+    "Eqs. 4-15, 4-16 and 4-19 to 4-21 are written for it, F_T sin beta at "
+    "L); a face battered 10 deg or more (face_batter) is analysed by the "
+    "ASD path only (mse_wall without lrfd_external)")
 
 
 def check_external_stability_lrfd(
@@ -3267,6 +3522,8 @@ def check_external_stability_lrfd(
     resists sliding and eccentricity is ``traffic_vertical_resists``. A
     negative bearing eccentricity leaves L' = L (p. 4-28).
     """
+    if geom.battered:
+        raise ValueError(LRFD_BATTER_REASON)
     H = geom.wall_height
     L = geom.reinforcement_length
     warnings = fill_strength_warnings(phi_backfill)
@@ -3979,6 +4236,9 @@ def analyze_mse_wall(
     if (lrfd_external and gamma_foundation is not None
             and bearing_resistance_strength is None and phi_foundation is None):
         raise ValueError(NEEDS_PHI_FOUNDATION)
+    check_batter(geom)
+    if lrfd_external and geom.battered:
+        raise ValueError(LRFD_BATTER_REASON)
     if local_shear_possible and not lrfd_external:
         raise ValueError(
             "local_shear_possible reduces the foundation strengths in the "
@@ -4115,6 +4375,7 @@ def analyze_mse_wall(
         reinforcement_length=geom.reinforcement_length,
         external_lrfd=external_lrfd,
         backslope=backslope,
+        face_batter=external.get("face_batter"),
         external_terms=terms,
         choices=slide_choice
         + live_load_choices(geom, live_load_resists, surcharge_in_bearing)
@@ -4124,6 +4385,7 @@ def analyze_mse_wall(
                                  reinforcement, Cu_backfill, internal,
                                  F_star_tested, alpha_tested)
         + level_depths_choices(geom, sigma_H_average)
+        + face_batter_choices(geom, phi_backfill, reinforcement)
         + assumed,
         local_shear=local_shear,
         grid_spacing=grid_spacing,

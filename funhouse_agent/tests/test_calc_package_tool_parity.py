@@ -405,11 +405,11 @@ def test_the_axial_package_takes_a_custom_section_as_its_tool_does():
 
 
 def test_an_input_the_package_dropped_is_refused_with_its_reason():
-    # GM-114: the MSE package takes a vertical face only
-    out = D.call_agent("calc_package", "retaining_wall_package", {
-        "wall_type": "mse", "wall_height": 5.0, "gamma_backfill": 18.0,
-        "phi_backfill": 30.0, "face_batter": 12.0})
-    assert "Eq. 4-26" in out["error"] and "face_batter" in out["error"]
+    # GM-291: the vibro package refuses a target SPT N with its reason
+    # (GM-114's MSE face batter was the example until GM-307 built it)
+    out = D.call_agent("calc_package", "ground_improvement_package", {
+        "method": "vibro", "N1_target": 25})
+    assert "Fig. 4-34" in out["error"] and "N1_target" in out["error"]
 
 
 # ---------------------------------------------------------------------------

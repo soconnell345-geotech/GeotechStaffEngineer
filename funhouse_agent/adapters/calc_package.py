@@ -555,13 +555,6 @@ def _save_tables(tables, names, out_dir) -> list:
 # items likewise; the package's own inputs beside the tool's; and the
 # older names it no longer takes, with the reason.
 
-#: Why the MSE package refuses a face batter (GM-114).
-_MSE_BATTER_REASON = (
-    "the MSE package and the mse_wall tool take a vertical face (Ka by "
-    "GEC-11 Vol I Eq. 4-1, p. 4-15); GEC-11 Vol I p. 4-36 takes a face "
-    "battered 10 deg or more by the simplified Coulomb Ka of Eq. 4-26, "
-    "which is not built. A cantilever wall's battered stem is stem_batter")
-
 _PACKAGE_TOOLS = {
     "bearing_capacity_package": {
         "adapter": "bearing_capacity",
@@ -657,10 +650,6 @@ _PACKAGE_TOOLS = {
         "older": {"cantilever": {
             "FOS_sliding": "FOS_sliding_required",
             "FOS_overturning": "FOS_overturning_required"}},
-        # GM-114: an MSE face battered from vertical is not built
-        "dropped": {k: {"reason": _MSE_BATTER_REASON, "accepts": [0, 0.0]}
-                    for k in ("face_batter", "wall_batter", "batter",
-                              "batter_angle", "face_batter_deg")},
     },
     "ground_improvement_package": {
         "adapter": "ground_improvement",
@@ -3490,7 +3479,7 @@ METHOD_INFO = {
     },
     "retaining_wall_package": {
         "category": "Calculation Package",
-        "brief": "Run a cantilever retaining wall (cantilever_wall) or MSE wall (mse_wall; vertical face) analysis and generate its calc package.",
+        "brief": "Run a cantilever retaining wall (cantilever_wall) or MSE wall (mse_wall) analysis and generate its calc package.",
         "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user."},
     },
     "ground_improvement_package": {

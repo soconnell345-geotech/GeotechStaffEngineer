@@ -317,6 +317,9 @@ def _input_summary_mse(result, analysis) -> List[InputItem]:
 
     if geom.backfill_slope > 0:
         items.append(InputItem("\u03b2", "Backfill slope", f"{geom.backfill_slope:.1f}", "deg"))
+    if getattr(geom, "face_batter", 0.0) > 0:
+        items.append(InputItem("\u03c9", "Face batter from vertical",
+                               f"{geom.face_batter:g}", "deg"))
     if geom.surcharge > 0:
         items.append(InputItem("q_s", "Live-load surcharge", f"{geom.surcharge:.1f}", "kPa"))
 
@@ -1266,8 +1269,28 @@ def _mse_backslope_steps(t, ld, geom):
     beta, I, h, S = bs["beta_deg"], ld["I_deg"], ld["h"], bs["S"]
     phi_b, gamma_b = t["phi_retained"], t["gamma_retained"]
     theta = ld.get("theta_deg", 90.0)
+    omega = ld.get("omega_deg", 0.0)
     items = []
-    if S is None:
+    if omega > 0:
+        # GM-307: a face battered 10 deg or more (GEC-11 Vol I p. 4-15)
+        items.append(CalcStep(
+            title="Battered Face",
+            equation="θ = 90° + ω;  δ = β",
+            substitution=(f"ω = {omega:g}° (10° or more from vertical): θ = "
+                          f"90° + {omega:g}° = {theta:g}°;  δ = β = "
+                          f"{beta:g}°"),
+            result_name="θ",
+            result_value=f"{theta:g}",
+            result_unit="deg",
+            reference=("GEC-11 Vol I p. 4-15 ('Battered Wall with or "
+                       "without Backslope'), Fig. 4-5 (p. 4-16)"),
+            notes=("The reinforced zone is a parallelogram of horizontal "
+                   "width L, its back L + y tan ω from the toe at height y; "
+                   f"V1 at L/2 + (H/2) tan ω = {ld['x_V1']:.3f} m."),
+        ))
+    if beta <= 0:
+        pass
+    elif S is None:
         items.append(CalcStep(
             title="Backslope Geometry (slope that continues)",
             equation="h = H + L tan β;  δ = β",
@@ -1323,21 +1346,60 @@ def _mse_backslope_steps(t, ld, geom):
         result_name="F_T",
         result_value=f"{FT:.1f}",
         result_unit="kN/m",
-        reference="GEC-11 Vol I Eq. 4-7 (p. 4-20), Fig. 4-3",
+        reference=("GEC-11 Vol I Eq. 4-7 (p. 4-20), Fig. "
+                   + ("4-5 (p. 4-16)" if omega > 0 else "4-3")),
     ))
-    items.append(CalcStep(
-        title="Components of F_T (inclined at δ = β)",
-        equation="F_H = F_T cos β, at h/3;  F_V = F_T sin β, at L",
-        substitution=(f"F_H = {FT:.1f} × cos {I:.2f}° = {FTH:.1f};  F_V = "
-                      f"{FT:.1f} × sin {I:.2f}° = {FTV:.1f}"),
-        result_name="F_H",
-        result_value=f"{FTH:.1f}",
-        result_unit="kN/m",
-        reference=("GEC-11 Vol I Eq. 4-10 (p. 4-21), F_T sin β in Eq. "
-                   "4-13 (p. 4-21) and Eq. 4-16 (p. 4-23), arms h/3 and L "
-                   "(Fig. 4-8, p. 4-25)"),
-    ))
-    if ld["F2"] > 0:
+    if omega > 0:
+        a = I - omega
+        items.append(CalcStep(
+            title="Components of F_T (at δ to the normal of the back)",
+            equation=("F_H = F_T cos(δ - ω), at h/3;  F_V = F_T sin(δ - ω), "
+                      "at L + (h/3) tan ω"),
+            substitution=(f"δ - ω = {I:.2f}° - {omega:g}° = {a:.2f}°: F_H = "
+                          f"{FT:.1f} × cos({a:.2f}°) = {FTH:.1f};  F_V = "
+                          f"{FT:.1f} × sin({a:.2f}°) = {FTV:.1f}, at "
+                          f"{ld['x_FT']:.3f} m"),
+            result_name="F_H",
+            result_value=f"{FTH:.1f}",
+            result_unit="kN/m",
+            reference=("GEC-11 Vol I Fig. 4-5 (p. 4-16): F_T at δ to the "
+                       "normal of the back of the reinforced zone, F_H at "
+                       "θ - 90 to that normal, at h/3"),
+            notes=("F_V below 0 points up and lessens the vertical load in "
+                   "every check." if FTV < 0 else ""),
+        ))
+    else:
+        items.append(CalcStep(
+            title="Components of F_T (inclined at δ = β)",
+            equation="F_H = F_T cos β, at h/3;  F_V = F_T sin β, at L",
+            substitution=(f"F_H = {FT:.1f} × cos {I:.2f}° = {FTH:.1f};  "
+                          f"F_V = {FT:.1f} × sin {I:.2f}° = {FTV:.1f}"),
+            result_name="F_H",
+            result_value=f"{FTH:.1f}",
+            result_unit="kN/m",
+            reference=("GEC-11 Vol I Eq. 4-10 (p. 4-21), F_T sin β in Eq. "
+                       "4-13 (p. 4-21) and Eq. 4-16 (p. 4-23), arms h/3 "
+                       "and L (Fig. 4-8, p. 4-25)"),
+        ))
+    if ld["F2"] > 0 and beta <= 0:
+        items.append(CalcStep(
+            title="Live-Load Surcharge Thrust",
+            equation=("F2 = K_ab × q × H, at h/2 inclined as F_T: "
+                      "F2 cos(δ - ω), F2 sin(δ - ω)"),
+            substitution=(f"F2 = {Kab:.4f} × {q:.1f} × {h:.3f} = "
+                          f"{ld['F2']:.1f};  F2 cos = {ld['F2H']:.1f}, "
+                          f"F2 sin = {ld['F2V']:.1f}"),
+            result_name="F2",
+            result_value=f"{ld['F2']:.1f}",
+            result_unit="kN/m",
+            reference=("GEC-11 Vol I Eq. 4-6 (p. 4-20), Fig. 4-2 (p. "
+                       "4-12); inclined as F_T, Fig. 4-5 (p. 4-16)"),
+            notes=("The live-load surcharge's thrust drives every check; "
+                   "its vertical component, pointing up, lessens V in "
+                   "every check." if ld["F2V"] < 0 else
+                   "The live-load surcharge's thrust drives every check."),
+        ))
+    elif ld["F2"] > 0:
         items.append(CalcStep(
             title="Traffic Thrust behind the Crest",
             equation=("F2 = K_ab × q × h, inclined at I: F2 cos I at h/2, "
@@ -1584,7 +1646,11 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         result_name="M_ot",
         result_value=f"{M_over:.1f}",
         result_unit="kN·m/m",
-        reference=(("GEC-11 Vol I Eq. 4-16 (p. 4-23): F_T cos β at h/3"
+        reference=(("GEC-11 Vol I Fig. 4-5 (p. 4-16): F_H at h/3"
+                    + (", F2 at h/2" if len(thrusts) > 1 else "")
+                    + ", moments about the toe")
+                   if getattr(geom, "battered", False) else
+                   ("GEC-11 Vol I Eq. 4-16 (p. 4-23): F_T cos β at h/3"
                     + (", F2 cos I at h/2 (Vol II Example E1, pp. E1-7 to E1-9)"
                        if len(thrusts) > 1 else "")
                     + ", moments about the toe")
@@ -1764,6 +1830,54 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
     ))
 
     sloping = geom.backfill_slope > 0
+    psi = None
+    if getattr(geom, "battered", False):
+        # GM-307: Eq. 4-26 (p. 4-36) and Fig. 4-9(b) (p. 4-34)
+        from retaining_walls import mse as _mse
+        phi_r = _mse_used(analysis, "phi_backfill")
+        theta = geom.theta_deg
+        Ka_i = _mse.battered_internal_Ka(phi_r, theta)
+        printed = _mse.battered_internal_Ka_as_printed(phi_r, theta)
+        int_items.append(CalcStep(
+            title="Internal Ka for a Battered Face",
+            equation=("K_a = sin²(θ + φ_r) / [sin³θ (1 + sin φ_r / "
+                      "sin θ)²]"),
+            substitution=(f"θ = {theta:g}°, φ_r = {phi_r:.1f}°: K_a = "
+                          f"sin²({theta:g}° + {phi_r:.1f}°) / [sin³"
+                          f"{theta:g}° × (1 + sin {phi_r:.1f}° / sin "
+                          f"{theta:g}°)²]"),
+            result_name="K_a",
+            result_value=f"{Ka_i:.4f}",
+            reference=("GEC-11 Vol I Eq. 4-26 (p. 4-36), taken as Eqs. "
+                       "4-2, 4-3 (p. 4-15) with δ = β = 0"),
+            notes=("Eq. 4-26 is printed with no square on the bracket, "
+                   f"which gives K_a = {printed:.4f} here and 1 - sin φ_r, "
+                   "not Eq. 4-25, at θ = 90°; p. 4-36 calls it the Coulomb "
+                   "K_a with no wall friction and β = 0, which reduces to "
+                   "Eq. 4-25 for a vertical wall, so the square is kept "
+                   "(see Choices)."),
+        ))
+        if rs and any(not r.is_metallic for r in rs):
+            psi = _mse.extensible_failure_angle(phi_r, theta,
+                                                geom.backfill_slope)
+            int_items.append(CalcStep(
+                title="Failure Surface for a Battered Face (extensible)",
+                equation=("tan(ψ - φ) = [-tan(φ - β) + √(tan(φ - β)[tan(φ - "
+                          "β) + cot(φ + θ - 90)][1 + tan(δ + 90 - θ) cot(φ + "
+                          "θ - 90)])] / [1 + tan(δ + 90 - θ)[tan(φ - β) + "
+                          "cot(φ + θ - 90)]],  δ = β;  L_a = (H - z)(cot ψ "
+                          "- tan ω)"),
+                substitution=(f"φ = {phi_r:.1f}°, θ = {theta:g}°, β = δ = "
+                              f"{geom.backfill_slope:g}°"),
+                result_name="ψ",
+                result_value=f"{psi:.2f}",
+                result_unit="deg",
+                reference=("GEC-11 Vol I p. 4-33, Fig. 4-9(b) (p. 4-34), "
+                           "through the toe"),
+                notes=("The figure's left side reads tan(ψ - θ); only "
+                       "tan(ψ - φ) gives its 'For vertical face ψ = 45 + "
+                       "φ/2', so it is read so (see Choices)."),
+            ))
     q_text = "q"
     if sloping:
         # GM-307: the slope's surcharge on the reinforcement (Fig. 4-11)
@@ -1919,7 +2033,12 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
               "L_e = L - L_a; L_a per bilinear coherent-gravity surface "
               "(0.3H over upper H/2, tapering to toe) for inextensible "
               "(metallic) reinforcement")
+             + ("; on the battered face the upper part parallel to the "
+                "face at 0.3H1 from it (Fig. 4-9(a) note, p. 4-34)"
+                if getattr(geom, "battered", False) else "")
              if r_type == "Metallic" else
+             f"L_a = (H - z)(cot ψ - tan ω), ψ = {psi:.2f}° (Fig. 4-9(b), "
+             "p. 4-34)" if psi is not None else
              "L_e = L - L_a; L_a from Rankine 45+\u03c6/2 plane "
              "(extensible/geosynthetic reinforcement)")
             + f"; C = 2; \u03b1 = {alpha_text}"
@@ -2729,14 +2848,18 @@ def _plot_mse_section(result, analysis):
 
     fig, ax = plt.subplots(figsize=(9, 6))
 
+    # GM-307: a face battered 10 deg or more leans back at omega (GEC-11
+    # Vol I Fig. 4-5); the zone is a parallelogram of horizontal width L
+    tw = (math.tan(math.radians(geom.theta_deg - 90.0))
+          if getattr(geom, "battered", False) else 0.0)
     # Reinforced soil block
-    ax.add_patch(patches.Rectangle(
-        (0, 0), L, H,
+    ax.add_patch(patches.Polygon(
+        [(0, 0), (L, 0), (L + H * tw, H), (H * tw, H)],
         facecolor='#f5e6c8', edgecolor='#1a1a1a', linewidth=2,
     ))
 
     # Wall face (thicker line on the left)
-    ax.plot([0, 0], [0, H], 'k-', linewidth=3)
+    ax.plot([0, H * tw], [0, H], 'k-', linewidth=3)
 
     # Reinforcement layers
     rs, per_r = _level_reinforcements(reinforcement, geom)
@@ -2749,9 +2872,10 @@ def _plot_mse_section(result, analysis):
         y = H - z  # convert depth to elevation
         style = (styles[(ord(keys[_reinforcement_label(rs[i])])
                          - ord("A")) % len(styles)] if per_r else '-')
-        ax.plot([0, L], [y, y], color=r_color, linewidth=1.5, alpha=0.7,
-                linestyle=style)
-        ax.plot(L, y, '|', color=r_color, markersize=8, markeredgewidth=2)
+        ax.plot([y * tw, y * tw + L], [y, y], color=r_color, linewidth=1.5,
+                alpha=0.7, linestyle=style)
+        ax.plot(y * tw + L, y, '|', color=r_color, markersize=8,
+                markeredgewidth=2)
 
     # Failure surface: bilinear coherent-gravity surface for inextensible
     # (metallic) reinforcement, Rankine 45+phi/2 plane for extensible (RW-2)
@@ -2763,17 +2887,28 @@ def _plot_mse_section(result, analysis):
         S_b = geom.broken_backslope_height
         xs = [0.0, 1.4 * L] if S_b is None else sorted(
             {0.0, min(S_b / tb, 1.4 * L), 1.4 * L})
-        ax.plot(xs, [H + (x * tb if S_b is None else min(x * tb, S_b))
-                     for x in xs], 'k-', linewidth=1.5)
+        ax.plot([H * tw + x for x in xs],
+                [H + (x * tb if S_b is None else min(x * tb, S_b))
+                 for x in xs], 'k-', linewidth=1.5)
     if first is not None and first.is_metallic:
         H1 = (_mse.backslope_geometry(geom)["H1"]
               if geom.backfill_slope > 0 else H)
         x_fail_top = 0.3 * H1
-        ax.plot([0, 0.3 * H1, 0.3 * H1], [0, H1 / 2.0, H], 'r--',
+        ax.plot([0, 0.3 * H1 + H1 / 2.0 * tw, 0.3 * H1 + H * tw],
+                [0, H1 / 2.0, H], 'r--',
                 linewidth=2, alpha=0.7,
                 label=('Coherent-gravity surface (0.3H1, inextensible)'
                        if H1 != H else
                        'Coherent-gravity surface (0.3H, inextensible)'))
+    elif tw > 0:
+        # GM-307: GEC-11 Fig. 4-9(b)'s Coulomb plane through the toe
+        from retaining_walls import mse as _mse
+        psi = _mse.extensible_failure_angle(phi, geom.theta_deg,
+                                            geom.backfill_slope)
+        x_fail_top = H / math.tan(math.radians(psi))
+        ax.plot([0, x_fail_top], [0, H], 'r--', linewidth=2, alpha=0.7,
+                label=f'Failure plane (Coulomb, \u03c8 = {psi:.0f}\u00b0)')
+        x_fail_top -= H * tw          # from the face, as below
     else:
         failure_angle = math.radians(45 + phi / 2)
         # Line from toe going up at the failure angle
@@ -2782,8 +2917,9 @@ def _plot_mse_section(result, analysis):
                 label=f'Failure plane (45+\u03c6/2 = {45 + phi / 2:.0f}\u00b0)')
 
     # Retained soil behind reinforced zone
-    ax.add_patch(patches.Rectangle(
-        (L, 0), L * 0.4, H,
+    ax.add_patch(patches.Polygon(
+        [(L, 0), (L * 1.4 + H * tw, 0), (L * 1.4 + H * tw, H),
+         (L + H * tw, H)],
         facecolor='#e8dcc8', edgecolor='none', alpha=0.5,
     ))
 
@@ -2795,7 +2931,8 @@ def _plot_mse_section(result, analysis):
         z_arr = H - y_arr  # depth
         sigma = Ka * gamma * z_arr
         arrow_len = sigma / (Ka * gamma * H) * L * 0.3
-        ax.annotate('', xy=(L, y_arr), xytext=(L + arrow_len, y_arr),
+        ax.annotate('', xy=(L + y_arr * tw, y_arr),
+                    xytext=(L + y_arr * tw + arrow_len, y_arr),
                     arrowprops=dict(arrowstyle='->', color='#dc2626', lw=1.5))
 
     ax.text(L + L * 0.15, H * 0.1, 'P_a', fontsize=10, color='#dc2626', fontweight='bold')
@@ -2844,7 +2981,7 @@ def _plot_mse_section(result, analysis):
                   'Reinforced\nSoil Zone', ha='center', va='center',
                   fontsize=10, fontweight='bold', color='#6b6358')],
          colour='#f5e6c8')
-    ax.text(L * 1.2, H / 2, 'Retained\nSoil', ha='center', va='center',
+    ax.text(L * 1.2 + H * tw * 0.75, H / 2, 'Retained\nSoil', ha='center', va='center',
             fontsize=9, alpha=0.5)
 
     # Reinforcement legend
