@@ -134,7 +134,7 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
                              surcharge=0.0, q_max=None, n_load_steps=45,
                              domain_depth=None, domain_half_width=None,
                              nx=40, ny=20, element_type='t6',
-                             max_iter=1000, tol=1e-4, q_applied=None,
+                             max_iter=None, tol=1e-4, q_applied=None,
                              footing='flexible', base='rough',
                              settlement_max=None, mesh='uniform'):
     """Ultimate bearing capacity of a strip footing by FEM.
@@ -206,7 +206,17 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         surface are 1/4 the size of the uniform ones (this module's choice;
         no reference prints a grading), growing by one constant ratio
         towards the centre, the sides and the base. nx must be even.
+        'graded' is for undrained clay (phi = 0) only and is refused when
+        phi > 0: on frictional soils it read far below the uniform mesh
+        (VALIDATION.md §3).
     element_type : 't6' (default) or 'cst'.
+    max_iter : int, optional — iteration ceiling per load step. Default
+        1000 x max(1, nx ny / 800), rounded up: 1000 on the default 40 x 20
+        mesh and coarser ones, scaled with the element count on finer ones,
+        where the constant-stiffness iteration converges more slowly
+        (GM-306: 80 x 40 read 217.0 kPa at 1000 iterations and 455.6, the
+        40 x 20 value, at 4000; VALIDATION.md §3). This module's choice. A
+        given value is used as given.
     q_applied : float, optional — a working/design pressure (kPa). If given, the
         bearing factor of safety q_ult / q_applied is reported.
     footing : 'flexible' (default) or 'rigid' — a uniform pressure ramped to
@@ -246,13 +256,14 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             collapse_load_fraction (flexible: the fraction of the ramp from
             the surcharge to q_max carried; rigid: the fraction of
             settlement_max reached).
-        choices — the footing model and, rigid, its base, each with how it
-            was set and its basis.
+        choices — the footing model, the mesh and, rigid, its base, each
+            with how it was set and its basis.
         surcharge_kPa — the surcharge applied beside the footing.
         warnings — says so when q_ult is set by the mesh (flexible, c = 0
             with gamma > 0 and no surcharge), when a flexible run on a
-            frictional soil stopped at max_iter (q_ult can rise with
-            max_iter; GM-306) or, rigid, when q did not level off.
+            frictional soil stopped at max_iter (q_ult is then a lower bound
+            of this mesh's answer that a larger max_iter can raise; GM-306)
+            or, rigid, when q did not level off.
     """
     if B <= 0:
         raise ValueError(f"footing width B must be positive, got {B}")
@@ -271,6 +282,17 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             "mesh='graded' needs an even nx of at least 4 and ny of at "
             f"least 2 (one grid line at each footing edge), got nx={nx}, "
             f"ny={ny}")
+    if mesh == 'graded' and phi > 0:
+        # GM-306 review: on frictional soils the graded mesh read far below
+        # the uniform one (fem2d VALIDATION.md section 3)
+        raise ValueError(
+            "mesh='graded' is for undrained clay (phi = 0) only: on a "
+            "frictional soil it read far below the uniform mesh (c = 20 "
+            "kPa, phi = 25, B = 2 m on 40x20: flexible 151.9 kPa against "
+            "455.6; rigid at least 151.2 against at least 674.2), its "
+            "smaller edge elements failing sooner and its iteration "
+            "reaching max_iter sooner. Use mesh='uniform' (the default) "
+            f"when phi > 0; got phi = {phi}.")
     if settlement_max is not None and settlement_max <= 0:
         raise ValueError(
             f"settlement_max must be positive, got {settlement_max}")
@@ -284,6 +306,8 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
             "base and settlement_max are for footing='rigid'; the flexible "
             "footing is a uniform pressure ramped to q_max.")
 
+    if max_iter is None:
+        max_iter = _footing_max_iter(nx, ny)
     Nc, Nq, Ngamma = bearing_capacity_factors(phi)
     q_ult_est = c * Nc + surcharge * Nq + 0.5 * gamma * B * Ngamma
     if footing == 'rigid':
@@ -423,17 +447,20 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     if (phi > 0 and not res['converged'] and res['iterations']
             and res['iterations'][-1] >= max_iter):
         # GM-306: on a frictional soil the step the run stopped at reached
-        # max_iter with the constant-stiffness iteration still converging,
-        # and q_ult moved with max_iter (fem2d VALIDATION.md section 3).
+        # max_iter; such a stop cannot be told from collapse, and q_ult
+        # rose with max_iter without levelling off (fem2d VALIDATION.md
+        # section 3), so it is a lower bound (GM-306 review).
         result.warnings.append(
             f"The load step after q_ult = {q_ult:.1f} kPa stopped at "
-            f"max_iter = {max_iter} iterations, not at a mechanism: on a "
-            "frictional soil this iteration converges slowly, more so on "
-            "finer or graded meshes, and q_ult can rise with max_iter (c = "
-            "20 kPa, phi = 25, B = 2 m: 455.6 kPa at 1000 and 477.3 at 4000 "
-            "on the default 40x20 mesh; 217.0 at 1000 and 455.6 at 4000 on "
-            "80x40). Rerun with a larger max_iter and compare before "
-            "quoting q_ult.")
+            f"max_iter = {max_iter} iterations without converging. On a "
+            "frictional soil this iteration converges slowly near collapse, "
+            "more so on finer meshes, so such a stop cannot be told from "
+            "collapse and q_ult is a lower bound of this mesh's answer, "
+            "limited by the iteration count: c = 20 kPa, phi = 25, B = 2 m "
+            "read 455.6, 477.3 and 499.0 kPa at max_iter 1000, 4000 and "
+            "16000 on the default 40x20 mesh, still rising, and 217.0 and "
+            "455.6 at 1000 and 4000 on 80x40 (fem2d VALIDATION.md section "
+            "3). A larger max_iter can raise it.")
     if c <= 0 and phi > 0 and gamma > 0 and surcharge == 0:
         # GM-304 review: c = 0, phi = 30, gamma = 18 gave 102.5, 52.5, 35.0
         # and 27.5 kPa on 20x10 to 80x40 (fem2d/VALIDATION.md section 3).
@@ -457,6 +484,25 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
 # dramatic increase in displacements). Judged at the ceiling only
 # (settled_early=False), so a step that meets tol ends as before.
 _FLEX_SETTLED_RATIO = 0.1
+
+
+# GM-306 review: the footing's default iteration ceiling per load step,
+# 1000 on the default 40 x 20 mesh, scales with the element count above it
+# (never below 1000): the constant-stiffness iteration converges more slowly
+# on finer meshes, and 80 x 40 read 217.0 kPa at 1000 iterations against
+# 455.6, the 40 x 20 value, at 4000 (VALIDATION.md section 3). This
+# module's choice; meshes up to 40 x 20 keep 1000, so their answers do not
+# move.
+_FOOTING_MAX_ITER = 1000
+_FOOTING_MAX_ITER_ELEMENTS = 40 * 20
+
+
+def _footing_max_iter(nx, ny):
+    """The default ``max_iter`` of ``analyze_footing_capacity``:
+    1000 x max(1, nx ny / 800), rounded up (GM-306)."""
+    return max(_FOOTING_MAX_ITER,
+               math.ceil(_FOOTING_MAX_ITER * nx * ny
+                         / _FOOTING_MAX_ITER_ELEMENTS))
 
 
 # GM-305: the rigid footing's pressure has levelled off when it rose by less
@@ -535,12 +581,13 @@ def _footing_choices(footing, base, mesh='uniform'):
                           how_given(base, 'rough', name='base'), b_basis,
                           ["'smooth'" if base == 'rough' else "'rough'"]))
     m_basis = {
-        'uniform': "evenly spaced grid lines over 10B x 5B; the default "
+        'uniform': "evenly spaced grid lines over the domain; the default "
                    "on the mesh study in fem2d VALIDATION.md section 3",
         'graded': "the same elements graded towards the footing's edges "
                   "and the surface (edge elements 1/4 of the uniform "
                   "size; this module's choice, no reference prints a "
-                  "grading); fem2d VALIDATION.md section 3 (GM-306)",
+                  "grading), for undrained clay (phi = 0) only; fem2d "
+                  "VALIDATION.md section 3 (GM-306)",
     }[mesh]
     out.append(choice("footing mesh", mesh,
                       how_given(mesh, 'uniform', name='mesh'), m_basis,

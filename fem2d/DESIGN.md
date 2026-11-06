@@ -498,8 +498,9 @@ Stage 2 is one of:
   non-convergence). A step that reaches `max_iter` with its displacements
   standing still (`settled_ratio = 0.1`, judged at the ceiling only,
   `run_nl(settled_early=False)`) is accepted, as the SRM (GM-306); on a
-  frictional soil a step that stops at `max_iter` is warned of, since q_ult
-  moves with `max_iter` there (VALIDATION.md §3).
+  frictional soil a step that stops at `max_iter` is warned of: such a stop
+  cannot be told from collapse, and q_ult rises with `max_iter` there
+  without levelling off, so it is a lower bound (VALIDATION.md §3).
 - `footing='rigid'`: the footing's surface nodes (T6 mid-side nodes
   included) pushed down together in `n_load_steps` equal steps to
   `settlement_max` (default 10 q_est B (1 - nu^2) / E, this module's choice). The strip's
@@ -519,7 +520,17 @@ graded towards x = +-B/2 and the surface (`mesh.geometric_spacing`; edge
 elements `_GRADED_EDGE_FRACTION = 0.25` of the uniform size, this module's
 choice; the half's elements split between the footing and beside it so both
 grow from the edge at about the same ratio). `generate_rect_mesh` takes the
-grid lines as `x_coords` / `y_coords`.
+grid lines as `x_coords` / `y_coords`. It is refused when phi > 0 (GM-306
+review): on frictional soils it read far below the uniform mesh (c = 20,
+phi = 25, flexible 40x20: 151.9 kPa against 455.6).
+
+`max_iter` (both footings, stage 1 included) defaults to
+1000 x max(1, nx ny / 800), rounded up (`_footing_max_iter`; GM-306
+review): 1000 on the default 40 x 20 mesh and coarser ones, so their
+answers do not move, and scaled with the element count on finer ones (60 x
+30: 2250; 80 x 40: 4000), where the constant-stiffness iteration converges
+more slowly. 80 x 40 c-phi read 217.0 kPa at 1000 and 455.6, the 40 x 20
+value, at 4000. This module's choice; a given `max_iter` is used as given.
 
 The default stays flexible on the mesh study in VALIDATION.md §3: on the
 uniform meshes the rigid footing reads high and converges slowly from above

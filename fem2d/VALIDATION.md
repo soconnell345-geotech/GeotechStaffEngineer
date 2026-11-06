@@ -208,11 +208,13 @@ it. q_ult is the gross pressure of GEC-6 (FHWA-SA-02-054) Eq. 5-1 / 5-7
 | c = 50, phi = 0, gamma = 0, q = 36 | GEC-6 Eq. 5-1, 5-4 | 5.14 x 50 + 36 = 293.1 | 260.5 | 295.8 | +0.9 % |
 | c = 0, phi = psi = 20, gamma = 0, q = 20 | GEC-6 Eq. 5-1, 5-2 (Nq = 6.40) | 128.0 | 0.0 | 130.9 | +2.3 % |
 | c = 50, phi = 0, gamma = 18, nu = 0.49, q = 36 | UFC 3-220-20 Eq. 5-17 | 293.1 | 260.5 | 295.8 | +0.9 % |
-| c = 10, phi = psi = 20, gamma = 18, q = 18 | GEC-6 Eq. 5-7, 5-8 | 360.5 | 166.6 | 316.0 | -12 % (Eq. 5-8's Ngamma) |
+| c = 10, phi = psi = 20, gamma = 18, q = 18 | GEC-6 Eq. 5-7, 5-8 | 360.5 | 166.6 | 316.0 | -12 % (Ngamma and the iteration ceiling, below) |
 
-The last row's gap is the Ngamma term: with c Nc + q Nq taken as printed the
-FE carries 0.5 gamma B Ngamma with Ngamma about 2.9 against Eq. 5-8's 5.39;
-no held reference prints an exact Ngamma to judge it by. Details:
+The last row's gap is in part the Ngamma term: with c Nc + q Nq taken as
+printed the FE carries 0.5 gamma B Ngamma with Ngamma about 2.9 against Eq.
+5-8's 5.39; no held reference prints an exact Ngamma to judge it by. Part of
+the gap is the iteration ceiling (GM-306): the row reads 328.4 kPa at
+max_iter 4000 against 316.0 at the default 1000. Details:
 `module_work/gm11/CHECK.md`.
 
 **The soil's weight first, with no surcharge too (GM-304, 2026-11-05).**
@@ -253,7 +255,7 @@ stopped before q levelled off (a lower bound of that mesh's answer).
 | c = 50, phi = 0, gamma = 0 (Eq. 5-4, p. 52: 257.1) | flexible | 274.2 | 255.9 | 255.9 | 255.9 |
 | | rigid rough | 347.9 | 306.0 | 291.0 | 283.1 |
 | | rigid smooth | 322.7 | 289.5 | 278.8 | 273.5 |
-| c = 20, phi = 25, gamma = 18 (Eqs. 5-7, 5-8, p. 53: 610.2; 512.3 to 806.0 with Ngamma halved or doubled) | flexible | 499.0 | 455.6 | 433.9 | 173.6 |
+| c = 20, phi = 25, gamma = 18 (Eqs. 5-7, 5-8, p. 53: 610.2; 512.3 to 806.0 with Ngamma halved or doubled) | flexible | 499.0 | 455.6 | 433.9 (455.6 at GM-306's default max_iter 2250, below) | 173.6 (217.0 after GM-306's settled-step test; 455.6 at GM-306's default max_iter 4000, below) |
 | | rigid rough | 817.7 | >= 674.2 lb | >= 607.7 lb | >= 253.7 lb |
 | | rigid smooth | 627.5 | 584.2 | >= 557.8 lb | >= 543.6 lb |
 | c = 0, phi = 30, gamma = 18 (Eqs. 5-7, 5-8, p. 53: 403.2; 201.6 to 806.4) | flexible | 102.5 | 52.5 | 35.0 | 27.5 |
@@ -273,7 +275,8 @@ What it shows:
   singularity the uniform elements have to resolve, so it converges slowly
   from above.
 - **c-phi:** the flexible footing keeps falling (the 80x40 drop to 173.6
-  was not investigated; noted, not chased). The rigid footing falls too:
+  was not investigated here; GM-306 found it to be the iteration ceiling,
+  below). The rigid footing falls too:
   smooth levels off on 20x10 and 40x20 and stops before levelling off on
   60x30; rough stops before levelling off from 40x20 on.
 - **c = 0, no surcharge:** neither gives a bearing capacity. The flexible
@@ -305,18 +308,37 @@ That lifts 80x40 to 217.0; the rest is the same ceiling, with the stopping
 steps' displacement ratios just above 0.1. On a frictional soil q_ult moves
 with `max_iter`, on the default mesh too; on phi = 0 it does not:
 
-| Case, flexible, B = 2 m | Mesh | max_iter 1000 | max_iter 4000 |
-|---|---|---|---|
-| c = 50, phi = 0, gamma = 0 | uniform 40x20 | 255.9 | 255.9 |
-| c = 20, phi = 25, gamma = 18 | uniform 40x20 | 455.6 | 477.3 |
-| c = 0, phi = 30, gamma = 18 (q_max 200, 80 steps) | uniform 40x20 | 52.5 | 67.5 |
-| c = 20, phi = 25, gamma = 18 | uniform 80x40 | 217.0 | 455.6 |
-| c = 20, phi = 25, gamma = 18 | graded 40x20 | 151.9 | 238.6 |
-| same, rigid rough | graded 40x20 | >= 151.2 lb | >= 441.2 lb |
+| Case, flexible, B = 2 m | Mesh | max_iter 1000 | max_iter 4000 | max_iter 16000 |
+|---|---|---|---|---|
+| c = 50, phi = 0, gamma = 0 | uniform 40x20 | 255.9 | 255.9 | – |
+| c = 20, phi = 25, gamma = 18 | uniform 40x20 | 455.6 | 477.3 | 499.0 |
+| c = 0, phi = 30, gamma = 18 (q_max 200, 80 steps) | uniform 40x20 | 52.5 | 67.5 | – |
+| c = 10, phi = psi = 20, gamma = 18, q = 18 (GM-11 row above) | uniform 40x20 | 316.0 | 328.4 | – |
+| c = 20, phi = 25, gamma = 18 | uniform 80x40 | 217.0 | 455.6 | – |
+| c = 20, phi = 25, gamma = 18 | graded 40x20 | 151.9 | 238.6 | – |
+| same, rigid rough | graded 40x20 | >= 151.2 lb | >= 441.2 lb | – |
 
-So on a frictional soil the flexible result now warns when its last step
-stopped at `max_iter`, and the default answers are unchanged (raising the
-default would move them: 455.6 to 477.3 above).
+The 40x20 c-phi footing rises one load step (21.7 kPa) for every four
+times the iterations and has not levelled off at 16000: on a frictional
+soil such a stop cannot be told from collapse, and q_ult is a lower bound of
+the mesh's answer, limited by the iteration count. The flexible result
+warns so whenever its last step stopped at `max_iter` (every default-mesh
+frictional run checked).
+
+**The default `max_iter` scales with the mesh (GM-306 review).** It is
+1000 x max(1, nx ny / 800), rounded up (this module's choice): 1000 on the
+default 40x20 mesh and coarser ones, so no default-mesh answer moves, and
+more on finer meshes, where the iteration converges more slowly (60x30:
+2250; 80x40: 4000). The c-phi footing then reads 455.6, the 40x20 value,
+on 60x30 (433.9 at 1000) and on 80x40 (217.0 at 1000; 438 s). The three
+meshes agree because each one's budget grows with its elements, not because
+the answer has converged: 40x20 itself rises to 477.3 and 499.0 at 4000 and
+16000 (above). Fifteen default-mesh cases (eleven frictional, three with
+phi = 0, one rigid) are identical before and after to the last digit, q_ult
+and the displacement field. The 60x30 and 80x40 columns of
+the GM-305 table above and of the graded study below were run at
+max_iter 1000, before this change; their frictional entries are lower than
+the new default gives.
 
 `mesh='graded'` (an option; the default stays uniform) keeps the nx x ny
 elements and grades them towards x = +-B/2 and the surface, the elements
@@ -331,7 +353,7 @@ rigid rows are GM-305's; rigid smooth on graded meshes not run):
 | | flexible graded | 255.9 | 255.9 | 255.9 | 255.9 |
 | | rigid rough uniform | 347.9 | 306.0 | 291.0 | 283.1 |
 | | rigid rough graded | 287.8 | 273.1 | 267.9 | 265.3 |
-| c = 20, phi = 25, gamma = 18 (610.2; 512.3 to 806.0) | flexible uniform | 499.0 | 455.6 | 433.9 | 217.0 |
+| c = 20, phi = 25, gamma = 18 (610.2; 512.3 to 806.0) | flexible uniform | 499.0 | 455.6 | 433.9 (455.6 at the default max_iter 2250) | 217.0 (455.6 at the default max_iter 4000) |
 | | flexible graded | 433.9 | 151.9 | 130.2 | 130.2 |
 | | rigid rough uniform | 817.7 | >= 674.2 lb | >= 607.7 lb | >= 253.7 lb |
 | | rigid rough graded | >= 380.6 lb | >= 151.2 lb | >= 150.8 lb | >= 149.7 lb |
@@ -349,7 +371,10 @@ rigid rows are GM-305's; rigid smooth on graded meshes not run):
   iteration ceiling (rigid after one or two steps).
 
 So **the default stays `mesh='uniform'`**: graded is better only on the
-case uniform already gets right with the flexible footing. What would give
+case uniform already gets right with the flexible footing. On frictional
+soils it read about a third of the uniform value (151.9 against 455.6
+above), so `mesh='graded'` is refused when phi > 0 (GM-306 review), the
+error pointing to the uniform mesh. What would give
 a mesh-converged frictional answer is an iteration that converges faster
 than the constant-stiffness one; it would change saved frictional answers.
 Details: `module_work/gm306/CHECK.md`.

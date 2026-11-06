@@ -261,6 +261,47 @@ class TestGradedMeshInputs:
         assert g[-1]["what"] == "footing mesh"
         assert g[-1]["chosen"] == "graded"
         assert "module's choice" in g[-1]["basis"]
+        assert "phi = 0" in g[-1]["basis"]
+
+    @pytest.mark.parametrize("footing", ["flexible", "rigid"])
+    def test_graded_refused_on_a_frictional_soil(self, footing):
+        # GM-306 review: on c = 20, phi = 25 the graded 40x20 mesh read
+        # 151.9 kPa against 455.6 uniform (flexible), so it is refused
+        with pytest.raises(ValueError, match=r"undrained clay \(phi = 0\) "
+                                             r"only.*mesh='uniform'"):
+            analyze_footing_capacity(B=2.0, c=20.0, phi=25.0, gamma=18.0,
+                                     mesh="graded", footing=footing,
+                                     nx=20, ny=10)
+
+
+class TestDefaultMaxIter:
+    """GM-306 review: the default max_iter scales with the element count
+    relative to the default 40 x 20 mesh, never below 1000."""
+
+    @pytest.mark.parametrize("nx,ny,n", [(20, 10, 1000), (40, 20, 1000),
+                                         (30, 10, 1000), (60, 30, 2250),
+                                         (80, 40, 4000), (41, 20, 1025)])
+    def test_rule(self, nx, ny, n):
+        from fem2d.analysis import _footing_max_iter
+        assert _footing_max_iter(nx, ny) == n
+
+    @pytest.mark.parametrize("footing", ["flexible", "rigid"])
+    @pytest.mark.parametrize("given,nx,ny,n", [(None, 40, 20, 1000),
+                                               (None, 80, 40, 4000),
+                                               (300, 80, 40, 300)])
+    def test_reaches_the_solver(self, monkeypatch, footing, given, nx, ny,
+                                n):
+        import fem2d.analysis as A
+        seen = []
+
+        def stop(ctx, **kw):
+            seen.append(kw["max_iter"])
+            raise RuntimeError("stop")
+        monkeypatch.setattr(A, "run_nl", stop)
+        with pytest.raises(RuntimeError, match="stop"):
+            analyze_footing_capacity(B=2.0, c=50.0, footing=footing,
+                                     max_iter=given, nx=nx, ny=ny)
+        assert seen == [n]
 
 
 @pytest.mark.slow

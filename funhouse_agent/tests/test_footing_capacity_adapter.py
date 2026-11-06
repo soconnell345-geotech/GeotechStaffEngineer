@@ -99,3 +99,20 @@ def test_method_info_mesh():
     p = METHOD_INFO["fem2d_footing_capacity"]["parameters"]["mesh"]
     assert p["allowed_values"] == ["uniform", "graded"]
     assert p["default"] == "uniform"
+    assert "phi = 0" in p["description"]
+
+
+def test_graded_refused_on_a_frictional_soil():
+    """GM-306 review: graded read about a third of uniform on c-phi."""
+    with pytest.raises(ValueError, match=r"phi = 0\) only"):
+        R["fem2d_footing_capacity"]({"B": 2.0, "c": 20.0, "phi": 25.0,
+                                     "gamma": 18.0, "mesh": "graded",
+                                     "nx": 20, "ny": 10})
+
+
+def test_method_info_max_iter_scales_with_the_mesh():
+    """GM-306 review: no fixed default; the case left out says the rule."""
+    p = METHOD_INFO["fem2d_footing_capacity"]["parameters"]["max_iter"]
+    assert "default" not in p
+    assert "nx ny / 800" in p["when_absent"]["case"]
+    assert "nx*ny/800" in p["description"]
