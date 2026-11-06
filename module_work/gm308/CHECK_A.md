@@ -187,6 +187,8 @@ path is untouched and the SRM / staged excavation pins match master to the
 last digit printed by `repr`). Worked example with the option, c = 20 kPa,
 phi = 25, gamma = 18, B = 2 m, 40x20: default 455.6 kPa (19.7 s);
 `iteration='accelerated'` 520.7 kPa (13.5 s), the same at max_iter 4000.
+(Review: on another machine the accelerated 1000 read 499.0; 4000 and
+16000 read 520.7 on every machine checked; see "Review fixes".)
 
 ## 5. Part (b) re-run: the domain width at phi 40, q = 18
 
@@ -205,10 +207,11 @@ Against part (b)'s plain-iteration rows (8000: 1850.9, 1915.8, 1948.2,
 1526.5 at 5, 7.5, 10, 15 B; 16000: 1883.3 at 5 B, 1964.4 at 15 B).
 **There is no converged iteration to re-run part (b) on, and the
 accelerated one does not answer the width question.** On this case it
-reads below the plain iteration at every width at 8000 (5 B 1640.0 against
-1850.9; 10 B 1234.5 against 1948.2), it is not ordered by width (10 B
-lowest), and it moves with max_iter by up to five times (10 B: 245.1 and
-1234.5), with many steps accepted as settled. So part (b)'s finding stands
+reads below the plain iteration at 5 B and 10 B at 8000 (5 B 1640.0
+against 1850.9; 10 B 1234.5 against 1948.2; at 15 B 1558.9 against 1526.5,
+a plain run that stopped well before collapse), it is not ordered by width
+(10 B lowest), and it moves with max_iter by up to five times (10 B: 245.1
+and 1234.5), with many steps accepted as settled. So part (b)'s finding stands
 as it was (5 B 3.5-5 % below the wider domains, the safe side, on an
 iteration-limited answer), and the re-run waits for a footing answer that
 does not depend on max_iter (section 7).
@@ -259,8 +262,75 @@ iteration as an option (GM-308 (a)).** `analyze_footing_capacity` takes
 `iteration='accelerated'` (Python only; the tool is unchanged): Anderson
 acceleration of the constant-stiffness iteration (Anderson 1965; Walker &
 Ni 2011). It reads the c-phi check (c = 20 kPa, phi = 25, B = 2 m, 40x20)
-at 520.7 kPa from max_iter 1000 on, where the default reads 455.6, 477.3
-and 499.0 at 1000, 4000 and 16000, but on cohesionless and high-phi checks
-its answer still moved with max_iter, so the default stays the
-constant-stiffness iteration. A call that gives `iteration` gets a
-"nonlinear iteration" entry in `choices`; tool output is unchanged.
+at 520.7 kPa at max_iter 4000 and 16000, where the default reads 477.3 and
+499.0, but on cohesionless and high-phi checks its answer still moved with
+max_iter, either way, and near collapse its answers vary by machine, so
+the default stays the constant-stiffness iteration. A call that gives
+`iteration` gets a "nonlinear iteration" entry in `choices`; tool output
+is unchanged.
+
+## 9. Review fixes (independent review, 2026-11-06)
+
+The review found the default untouched: the master and branch default
+outputs were identical on one machine (six footing cases and a strength
+reduction: q_ult, warnings, choices, sum |u|, the rigid curve), before and
+after these fixes. It also found that near collapse the accelerated answers
+vary by machine. Three machines: A, the one this branch was built on
+(Linux, Python 3.12; sections 2-6); B, Windows, Python 3.14.5, numpy
+2.4.6, scipy 1.17.1; C, Linux (WSL), Python 3.12.15, numpy 2.5.4, scipy
+1.18.1. The default reads the same on all three, on every row of section
+2.2's table. The accelerated iteration, on the same rows:
+
+| Case | accelerated 1000, A / B / C | accelerated 4000, A / B / C |
+|---|---|---|
+| c = 20, phi = 25, gamma = 18 | 520.7 / 520.7 / 499.0 | 520.7 / 520.7 / 520.7 |
+| same, q = 0.01 | 520.8 / 520.8 / 542.5 | 520.8 / 520.8 / 520.8 |
+| c = 0, phi = 30, gamma = 18 | 71.7 / 71.7 / 71.7 | 86.0 / 86.0 / 71.7 |
+| same, psi = 30 | 86.0 / 86.0 / 86.0 | 86.0 / 86.0 / 86.0 |
+| c = 0, phi = 30, q = 10 | 278.6 / 299.2 / 154.6 | 299.2 / 278.6 / 299.2 |
+| same, psi = 30 | 340.5 / 340.5 / 340.5 | 361.2 / 361.2 / 361.2 |
+| c = 0, phi = psi = 20, q = 20 | 130.9 / 130.9 / 130.9 | 130.9 / 130.9 / 130.9 |
+| c = 5, phi = 35, q = 19 | 897.0 / 897.0 / 959.8 | 897.0 / 1085.2 / 395.3 |
+| B = 1 | 321.9 / 321.9 / 196.7 | 375.6 / 375.6 / 375.6 |
+| B = 3 | 1015.4 / 1137.6 / 465.6 | 465.6 / 1137.6 / 1015.4 |
+| GM-11 row | 340.9 / 340.9 / 340.9 | 353.3 / 340.9 / 340.9 |
+
+c-phi at 16000: 520.7 on A, B and C. 20x10 c-phi at 400 / 1600 / 6400:
+A 542.4 / 607.5 / 564.1, B 564.1 / 564.1 / 564.1, C 564.1 / 564.1 /
+585.8. Clay 40x20: 265.1 (the step converged to tol) on A, B and C; 60x30
+255.9 on A and C. The least-squares matrix is well conditioned (cond at
+most 8.5e3 on two runs on B), so the cause is rounding growing over the
+hundreds of non-smooth iterations near collapse, not a singular solve. No
+machine meets the goal on every row, so section 2's verdict stands, more
+strongly. On C the option read below the default on four rows.
+
+Fixes:
+
+1. `test_accelerated_option_on_a_frictional_soil`: the 542.4 pin (A only)
+   is dropped. It asserts the option reads above the default (455.6), and
+   that the max_iter warning says "lower bound" by default and "not a
+   bound" with the option.
+2. `test_default_mesh_frictional_answer_accelerated` (slow): 520.7 is now
+   pinned at max_iter 4000 (A, B, C) instead of 1000 (C read 499.0).
+3. `test_staged_excavation_unchanged`: rel 1e-12 became 1e-8. Master itself
+   reads sum |u| 5.419050308100497 on B and C, 2.5e-11 from the pin (the
+   moments about 5e-10). The strength-reduction pin holds to 3e-16 on B
+   and C and stays at 1e-12.
+4. `fem2d/analysis.py` (docstring, the choices entry), `DESIGN.md`,
+   `VALIDATION.md` §3 and section 8's release note state only numbers that
+   hold on every machine checked ("520.7 at 4000 and 16000"). They add the
+   sentence that the option's answers near collapse vary by machine.
+   VALIDATION's table now gives A / B / C where they differ, and drops the
+   run times.
+5. The max_iter warning with the option no longer says "q_ult is a lower
+   bound ... a larger max_iter can raise it". It says q_ult is not a bound
+   and can move either way with max_iter. The default's warning is
+   unchanged, byte for byte.
+6. Two docstrings (`_side_boundary_warnings`, `analyze_slope_srm`) are back
+   to "VALIDATION.md section 11", where the Duncan Ex 1 numbers are.
+7. Section 5: "below the plain iteration at every width" became "at 5 B and
+   10 B" (15 B: 1558.9 against a plain 1526.5 that stopped early). Part
+   (b)'s conclusion is unchanged; the accelerated width rows are from A
+   only and would vary by machine as well.
+
+Sections 2-6 above are left as measured on A.
