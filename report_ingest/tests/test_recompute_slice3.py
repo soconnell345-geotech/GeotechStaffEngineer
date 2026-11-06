@@ -1,0 +1,325 @@
+"""DR-11 slice 3: method names read with spelling tolerance, and
+retaining-wall earth-pressure coefficients (static Ka, Kp, K0; Mononobe-Okabe
+KAE, KPE) recomputed through the app's own module tools.
+
+Offline, no model calls. Every label is made up in the shape of the generic
+examples in ``module_work/dr11/LABELS_SUMMARY.md``; every number is
+invented, and each expected value comes from the module itself.
+"""
+
+import pytest
+
+from funhouse_agent.dispatch import call_agent
+from report_ingest import recompute
+from report_ingest.recompute import (NOT_RECOMPUTED,
+                                     RECOMPUTE_TOOL_DESCRIPTION,
+                                     recompute_calculation, table_markdown)
+
+
+def nq(name, value, unit="", page=4):
+    return {"name": name, "value": {"value": value, "unit": unit,
+                                    "prov": {"page": page, "method": "text",
+                                             "confidence": 1.0}}}
+
+
+def wall(results, inputs, method="", summary="", subject="Wall W-7"):
+    return {"kind": "retaining_wall", "method": method, "summary": summary,
+            "subject": subject, "pages": [6], "inputs": list(inputs),
+            "results": list(results)}
+
+
+def K(**params):
+    return call_agent("retaining_walls", "earth_pressure_coefficient",
+                      params)["K"]
+
+
+def MO(**params):
+    return call_agent("seismic_geotech", "seismic_earth_pressure", params)
+
+
+def one(calc):
+    (row,) = recompute_calculation(calc)
+    return row
+
+
+PHI = nq("Backfill friction angle phi", 32, "deg")
+
+
+# -- 1. method names read with spelling tolerance ------------------------------
+
+def bearing_calc(method):
+    return {"kind": "shallow_foundation_bearing", "method": method,
+            "subject": "Square footing F-3", "pages": [3],
+            "inputs": [nq("Footing width B", 2.0, "m"),
+                       nq("Embedment depth Df", 1.0, "m"),
+                       nq("Unit weight", 18.5, "kN/m3"),
+                       nq("Friction angle", 30, "deg")],
+            "results": [nq("Ultimate bearing capacity", 900, "kPa")]}
+
+
+@pytest.mark.parametrize("printed, method", [
+    ("Mayerhof (1963)", "meyerhof"),
+    ("Terzhagi", "terzaghi"),
+    ("Vesik", "vesic"),
+])
+def test_a_misspelled_bearing_method_is_read_as_that_method(printed, method):
+    row = one(bearing_calc(printed))
+    assert row["method_used"] == method
+    assert "read as" in row["method_basis"]
+    assert row["method_spelling"] and "off" in row["method_spelling"][0]
+    expected = call_agent("bearing_capacity", "bearing_capacity_analysis", {
+        "width": 2.0, "depth": 1.0, "unit_weight": 18.5,
+        "friction_angle": 30, "shape": "square",
+        "factor_method": method})["q_ultimate_kPa"]
+    assert row["recomputed_si"] == pytest.approx(expected, rel=1e-6)
+
+
+def test_a_correctly_spelled_method_says_nothing_about_spelling():
+    row = one(bearing_calc("Meyerhof"))
+    assert "method_spelling" not in row
+    assert "read as" not in row["method_basis"]
+
+
+def test_english_words_and_other_letters_are_never_read_as_a_method():
+    text, notes = recompute._read_methods("ranking by column, basic case")
+    assert text == "ranking by column, basic case" and notes == []
+
+
+def test_a_word_as_close_to_two_methods_is_not_read(monkeypatch):
+    monkeypatch.setattr(recompute, "_KNOWN_METHODS", ("hansen", "hanser"))
+    text, notes = recompute._read_methods("hansex")
+    assert text == "hansex" and notes == []
+
+
+def test_a_misspelled_wall_method_is_read_and_said():
+    delta = nq("Wall friction angle delta", 20, "deg")
+    expected = K(phi_deg=32, theory="coulomb", state="active",
+                 delta_deg=20)
+    row = one(wall([nq("Ka", round(expected, 3))], [PHI, delta],
+                   method="Coloumb"))
+    assert row["method_used"] == "coulomb" and row["flag"] == "agrees"
+    assert "'coloumb' read as Coulomb" in row["method_basis"]
+
+
+def test_a_misspelled_mononobe_okabe_is_read():
+    row = one(wall([nq("KAE", 0.5)],
+                   [PHI, nq("delta", 21, "deg"), nq("kh", 0.2)],
+                   method="Mononabe-Okabe"))
+    assert row["method_used"] == "mononobe_okabe"
+    assert "'mononabe' read as Mononobe" in row["method_basis"]
+
+
+# -- 2. static coefficients -----------------------------------------------------
+
+def test_rankine_ka_kp_and_k0_are_recomputed():
+    ka = K(phi_deg=32, theory="rankine", state="active")
+    kp = K(phi_deg=32, theory="rankine", state="passive")
+    k0 = K(phi_deg=32, state="at_rest")
+    rows = recompute_calculation(wall(
+        [nq("Active earth pressure coefficient Ka", round(ka, 3)),
+         nq("Kp", round(kp, 2)), nq("At-rest coefficient K0", 0.47)],
+        [PHI], method="Rankine"))
+    assert [r["coefficient"] for r in rows] == ["Ka", "Kp", "K0"]
+    assert all(r["status"] == "recomputed" and r["flag"] == "agrees"
+               for r in rows)
+    assert [r["recomputed_si"] for r in rows] == pytest.approx([ka, kp, k0],
+                                                               abs=1e-4)
+    assert rows[0]["module"] == "retaining_walls"
+    assert rows[0]["module_method"] == "earth_pressure_coefficient"
+    assert rows[2]["method_used"] == "jaky"
+
+
+def test_rankine_ka_on_a_sloping_backfill():
+    expected = K(phi_deg=32, theory="rankine", state="active", beta_deg=15)
+    row = one(wall([nq("Ka", round(expected, 3))],
+                   [PHI, nq("Backfill slope", 15, "deg")], method="Rankine"))
+    assert row["flag"] == "agrees"
+    assert row["recomputed_si"] == pytest.approx(expected, abs=1e-4)
+
+
+def test_coulomb_with_a_batter_runs_both_senses():
+    # the batter's sense is not printed: the default and the other run
+    other = K(phi_deg=32, theory="coulomb", state="active", delta_deg=20,
+              beta_deg=10, alpha_deg=100)
+    row = one(wall([nq("Ka", round(other, 3))],
+                   [PHI, nq("Wall friction", 20, "deg"),
+                    nq("Backfill slope", 10, "deg"),
+                    nq("Wall batter", 10, "deg")], method="Coulomb"))
+    assert row["recomputed_si"] == pytest.approx(
+        K(phi_deg=32, theory="coulomb", state="active", delta_deg=20,
+          beta_deg=10, alpha_deg=80), abs=1e-4)
+    assert row["flag"] == "within_options"
+    assert any("alpha 100" in a["option"] for a in row["alternatives"])
+
+
+def test_coulomb_without_a_wall_friction_is_refused():
+    row = one(wall([nq("Ka", 0.28)], [PHI], method="Coulomb"))
+    assert row["status"] == "not_recomputed"
+    assert "wall friction delta: not printed" in row["reason"]
+
+
+def test_no_method_with_a_wall_friction_runs_rankine_and_coulomb():
+    coulomb = K(phi_deg=32, theory="coulomb", state="active", delta_deg=21)
+    row = one(wall([nq("Ka", round(coulomb, 3))],
+                   [PHI, nq("Interface friction angle", 21, "deg")]))
+    assert row["method_used"] == "rankine"
+    assert "names no method" in row["method_basis"]
+    assert row["flag"] == "within_options"
+
+
+def test_no_method_and_no_wall_friction_is_refused():
+    row = one(wall([nq("Ka", 0.31)], [PHI]))
+    assert row["status"] == "not_recomputed"
+    assert "names no method" in row["reason"]
+
+
+def test_a_wall_friction_printed_as_a_ratio_of_phi():
+    expected = K(phi_deg=30, theory="coulomb", state="active",
+                 delta_deg=20.1)
+    row = one(wall([nq("Ka", round(expected, 3))],
+                   [nq("phi", 30, "deg"), nq("delta/phi", 0.67)],
+                   method="Coulomb"))
+    assert row["flag"] == "agrees"
+    assert "0.67 x phi" in row["inputs_used"]["delta"]["note"]
+
+
+def test_log_spiral_kp():
+    expected = K(phi_deg=32, theory="caquot_kerisel", state="passive",
+                 delta_deg=16)
+    row = one(wall([nq("Passive earth pressure coefficient Kp",
+                       round(expected, 2))],
+                   [PHI, nq("Wall friction angle", 16, "deg")],
+                   method="Log spiral"))
+    assert row["method_used"] == "log_spiral" and row["flag"] == "agrees"
+
+
+def test_k0_with_a_printed_ocr_runs_the_ocr_form_beside_jaky():
+    with_ocr = K(phi_deg=32, state="at_rest", OCR=2.0)
+    row = one(wall([nq("K0", round(with_ocr, 3))],
+                   [PHI, nq("OCR", 2.0)]))
+    assert row["recomputed_si"] == pytest.approx(
+        K(phi_deg=32, state="at_rest"), abs=1e-4)
+    assert row["flag"] == "within_options"
+
+
+def test_a_wrong_coefficient_differs():
+    row = one(wall([nq("Ka", 0.45)], [PHI], method="Rankine"))
+    assert row["flag"] == "differs"
+
+
+def test_a_pressure_in_kpa_is_not_a_coefficient():
+    row = one(wall([nq("Active earth pressure at base", 40, "kPa")], [PHI],
+                   method="Rankine"))
+    assert row["status"] == "not_recomputed"
+    assert row["reason"] == NOT_RECOMPUTED["retaining_wall"]
+
+
+# -- 3. seismic coefficients ------------------------------------------------------
+
+def test_mononobe_okabe_kae_with_kh_printed():
+    expected = MO(phi=32, delta=21, kh=0.2)["KAE"]
+    row = one(wall([nq("Seismic active coefficient KAE", round(expected, 3))],
+                   [PHI, nq("delta", 21, "deg"),
+                    nq("Horizontal seismic coefficient kh", 0.2)],
+                   method="Mononobe-Okabe"))
+    assert row["flag"] == "agrees"
+    assert row["module"] == "seismic_geotech"
+    assert row["module_method"] == "seismic_earth_pressure"
+
+
+def test_kv_runs_with_both_signs():
+    other = MO(phi=32, delta=21, kh=0.25, kv=-0.15)["KAE"]
+    row = one(wall([nq("KAE", round(other, 3))],
+                   [PHI, nq("delta", 21, "deg"), nq("kh", 0.25),
+                    nq("kv", 0.15)], method="M-O"))
+    assert row["recomputed_si"] == pytest.approx(
+        MO(phi=32, delta=21, kh=0.25, kv=0.15)["KAE"], abs=1e-4)
+    assert row["flag"] == "within_options"
+
+
+@pytest.mark.parametrize("rule_label", ["Rule: kh = 0.5 PGA",
+                                        "kh = PGA/2 rule"])
+def test_kh_from_the_pga_by_the_printed_rule(rule_label):
+    expected = MO(phi=32, delta=21, kh=0.15)["KAE"]
+    calc = wall([nq("KAE", round(expected, 3))],
+                [PHI, nq("delta", 21, "deg"), nq("PGA", 0.30, "g")],
+                method="Mononobe-Okabe", summary=rule_label)
+    row = one(calc)
+    assert row["flag"] == "agrees"
+    assert "by the rule the printout states" in row["inputs_used"]["kh"][
+        "note"]
+
+
+def test_a_pga_without_a_printed_rule_is_never_halved():
+    row = one(wall([nq("KAE", 0.4)],
+                   [PHI, nq("delta", 21, "deg"), nq("PGA", 0.30, "g")],
+                   method="Mononobe-Okabe"))
+    assert row["status"] == "not_recomputed"
+    assert "would be a guess" in row["reason"]
+
+
+def test_mononobe_okabe_kpe():
+    expected = MO(phi=32, delta=10, kh=0.2, include_passive=True,
+                  delta_passive=10)["KPE"]
+    row = one(wall([nq("KPE", round(expected, 2))],
+                   [PHI, nq("Wall friction", 10, "deg"), nq("kh", 0.2)],
+                   method="Mononobe-Okabe"))
+    assert row["coefficient"] == "KPE" and row["flag"] == "agrees"
+
+
+def test_a_seismic_increment_is_not_compared():
+    rows = recompute_calculation(wall(
+        [nq("delta KAE", 0.08)],
+        [PHI, nq("delta", 21, "deg"), nq("kh", 0.2)],
+        method="Mononobe-Okabe"))
+    assert rows[0]["status"] == "not_compared"
+
+
+# -- 4. refusals and cases ---------------------------------------------------------
+
+def test_phi_not_printed_is_refused():
+    row = one(wall([nq("Ka", 0.3)], [], method="Rankine"))
+    assert row["status"] == "not_recomputed"
+    assert "friction_angle (phi): not printed" in row["reason"]
+
+
+def test_phi_printed_twice_is_refused():
+    row = one(wall([nq("Ka", 0.3)],
+                   [nq("phi", 30, "deg"), nq("Friction angle", 34, "deg")],
+                   method="Rankine"))
+    assert row["status"] == "not_recomputed"
+    assert "printed more than once" in row["reason"]
+
+
+def test_several_strata_are_recomputed_case_by_case():
+    a = K(phi_deg=30, theory="rankine", state="active")
+    b = K(phi_deg=36, theory="rankine", state="active")
+    rows = recompute_calculation(wall(
+        [nq("Ka, stratum 1", round(a, 3)), nq("Ka (Stratum 2)", round(b, 3))],
+        [nq("phi, stratum 1", 30, "deg"), nq("Stratum 2 phi", 36, "deg")],
+        method="Rankine"))
+    assert [r["case"] for r in rows] == ["stratum 1", "stratum 2"]
+    assert all(r["flag"] == "agrees" for r in rows)
+    assert "Ka, stratum 1 [stratum 1]" in table_markdown(
+        {"report_id": "X", "tolerance": 0.1, "rows": rows})
+
+
+def test_soils_named_in_the_labels_split_the_cases():
+    a = K(phi_deg=30, theory="rankine", state="active")
+    b = K(phi_deg=34, theory="rankine", state="active")
+    rows = recompute_calculation(wall(
+        [nq("Ka (silty sand)", round(a, 3)), nq("Ka (gravel fill)", round(b, 3))],
+        [nq("phi (silty sand)", 30, "deg"), nq("gravel fill phi", 34, "deg")],
+        method="Rankine"))
+    assert sorted(r["case"] for r in rows) == ["gravel fill", "silty sand"]
+    assert all(r["flag"] == "agrees" for r in rows)
+
+
+def test_a_wall_with_no_coefficient_says_why():
+    row = one(wall([nq("Factor of safety against sliding", 1.6)], [PHI]))
+    assert row["status"] == "not_recomputed"
+    assert row["reason"] == NOT_RECOMPUTED["retaining_wall"]
+
+
+def test_the_tool_description_names_the_wall_coefficients():
+    assert "earth-pressure coefficients" in RECOMPUTE_TOOL_DESCRIPTION
