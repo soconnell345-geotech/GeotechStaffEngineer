@@ -1961,9 +1961,10 @@ _SLAB = _Spec(
     [r"slab thickness", r"(pcc|concrete|slab|pavement|rigid) (slab )?"
      r"thickness", r"thickness of (the )?(pcc|concrete|slab|pavement)",
      r"^d\b", r"^d_?(req|required|design|provided|calc)",
-     r"\brequired (slab )?thickness", r"\bdesign (slab )?thickness"],
+     r"\brequired (slab )?thickness", r"\bdesign (slab )?thickness",
+     r"(concrete|pcc) paving"],
     [r"dowel", r"\bbase\b", r"subbase", r"sub-base", r"aggregate",
-     r"asphalt", r"\bac\b", r"\bhma\b", r"joint", r"saw", r"diameter",
+     r"asphalt", r"\bac\b", r"\bhma\b", r"\bjoints?\b", r"saw", r"diameter",
      r"spacing", r"\bbar\b", r"frost", r"depth to", r"\bd_?(10|15|50|60|"
      r"85)\b", r"/", r"\btotal\b"])
 
@@ -1995,10 +1996,10 @@ _PAVE_INPUTS = (
           [r"delta ?_?psi\b", r"serviceability loss",
            r"loss (of|in) serviceability", r"\bdpsi\b",
            r"change in serviceability"], _FLEX_LABEL),
-    _Spec("po", "ratio", [r"\bp_?[o0i]\b", r"\binitial serviceability"],
-          _FLEX_LABEL),
-    _Spec("pt", "ratio", [r"\bp_?t\b", r"\bterminal serviceability"],
-          _FLEX_LABEL),
+    _Spec("po", "ratio", [r"\bp_?[o0i]\b", r"\binitial serviceability",
+                          r"\bpsi_?[i0o]\b"], _FLEX_LABEL),
+    _Spec("pt", "ratio", [r"\bp_?t\b", r"\bterminal serviceability",
+                          r"\bpsi_?[ft]\b"], _FLEX_LABEL),
     _Spec("sc", "psi",
           [r"modulus of rupture", r"\bs'?_?c'?\b", r"flexural strength"]),
     _Spec("ec", "psi",

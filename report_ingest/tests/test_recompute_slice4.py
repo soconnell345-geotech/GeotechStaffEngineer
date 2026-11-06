@@ -437,3 +437,28 @@ def test_overall_deviation_is_so():
     row = one(pave([nq("Slab thickness D", round(d, 2), "in")], inputs))
     assert row["flag"] == "agrees"
     assert row["params"]["so"] == 0.34
+
+
+@pytest.mark.parametrize("label", ["Jointed plain concrete pavement thickness",
+                                   "Concrete paving slab",
+                                   "PCC paving"])
+def test_slab_labels_jointed_and_paving(label):
+    d = D_REQ()
+    row = one(pave([nq(label, round(d, 2), "in")]))
+    assert row["claim"] == "D"
+    assert row["flag"] == "agrees"
+
+
+def test_a_joint_dimension_is_still_not_the_slab():
+    row = one(pave([nq("Joint spacing", 14, "in")]))
+    assert row["status"] == "not_compared"
+
+
+def test_serviceability_printed_as_psi_i_and_psi_t():
+    d = D_REQ(po=4.3, pt=2.2)
+    inputs = without("Initial serviceability po",
+                     "Terminal serviceability pt") + [
+        nq("PSI_i", 4.3), nq("PSI_t", 2.2)]
+    row = one(pave([nq("Slab thickness D", round(d, 2), "in")], inputs))
+    assert row["flag"] == "agrees"
+    assert (row["params"]["po"], row["params"]["pt"]) == (4.3, 2.2)
