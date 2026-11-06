@@ -91,7 +91,7 @@ where a setting that is not there is looked up again on every read.
 ## Tests
 
 `webapp/tests/test_graph_sharepoint_setup.py`: 29 tests. They run against a
-fake sign-in endpoint and a fake Graph, with made-up ids, `example.*` hosts,
+fake sign-in endpoint and a fake Graph, with made-up ids, the `contoso` placeholder tenant and `example.*` hosts,
 and a certificate generated in the test.
 
 - **Clouds:** each cloud's addresses and scope (commercial by default and by

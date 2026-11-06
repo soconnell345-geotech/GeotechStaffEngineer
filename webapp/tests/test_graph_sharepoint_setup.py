@@ -1,7 +1,7 @@
 """TA-34: SharePoint set up by the host team on any tenant.
 
 Every value here is made up: tenant and client ids, example.com /
-example.sharepoint.com sites, and a certificate generated in the test. No
+contoso.sharepoint.com sites, and a certificate generated in the test. No
 network: ``urllib.request.urlopen`` is replaced by a fake that answers as the
 sign-in endpoint and Graph would.
 """
@@ -23,8 +23,8 @@ from webapp import tinyapps_settings as ts
 
 TENANT = "00000000-1111-2222-3333-444444444444"
 CLIENT = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-SITE = "https://example.sharepoint.com/sites/Alpha"
-SITE_B = "https://example.sharepoint.com/sites/Beta"
+SITE = "https://contoso.sharepoint.com/sites/Alpha"
+SITE_B = "https://contoso.sharepoint.com/sites/Beta"
 
 _ENVS = (
     "APP_ENV", "IDENTITY_ENDPOINT", "KV_NAME", "GEOTECH_DOTENV",
@@ -102,7 +102,7 @@ class FakeCloud:
             name = {"SA": "Alpha", "SB": "Beta"}.get(sid, "X")
             return _resp({"value": [
                 {"id": f"D-{sid}-{i}", "name": lib,
-                 "webUrl": f"https://example.sharepoint.com/sites/{name}/"
+                 "webUrl": f"https://contoso.sharepoint.com/sites/{name}/"
                            + urllib.parse.quote(lib)}
                 for i, lib in enumerate(self.drives)]})
         if "/root:/" in url and method == "GET":
@@ -289,10 +289,10 @@ def test_key_with_only_a_thumbprint(tmp_path):
 
 def test_site_list_parsing():
     sites = gs.parse_sites(SITE, f"beta={SITE_B}\n{SITE}, "
-                                 "https://example.sharepoint.com/teams/Gamma/")
+                                 "https://contoso.sharepoint.com/teams/Gamma/")
     assert [(s.name, s.url) for s in sites] == [
         ("Alpha", SITE), ("beta", SITE_B),
-        ("Gamma", "https://example.sharepoint.com/teams/Gamma")]
+        ("Gamma", "https://contoso.sharepoint.com/teams/Gamma")]
     assert gs.parse_sites(None, f"{SITE_B}")[0].name == "Beta"
 
 
