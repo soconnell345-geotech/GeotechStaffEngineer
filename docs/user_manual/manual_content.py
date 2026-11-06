@@ -272,7 +272,9 @@ WORKED = {
     "slope_stability": ("slope_stability.search_critical_surface",
         "Find the critical circular slip surface and minimum factor of safety for a 10&nbsp;m "
         "c&ndash;&phi; slope (c&prime;=12&nbsp;kPa, &phi;&prime;=28&deg;) by Bishop&rsquo;s method.",
-        "2,300 trial surfaces were evaluated in the entry&ndash;exit search; the minimum governs."),
+        "2,300 trial surfaces were evaluated: the entry&ndash;exit arcs, then small circles through "
+        "the toe and circles a little above it. A toe circle governs (FOS 1.583); the "
+        "entry&ndash;exit arcs&rsquo; minimum is 1.587."),
     "fem2d": ("fem2d.fem2d_slope_srm",
         "Run a finite-element strength-reduction analysis on the same slope (c=10&nbsp;kPa, "
         "&phi;=20&deg;) &mdash; what SRF causes collapse?",
@@ -441,27 +443,41 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "ultimate bearing capacity, the allowable pressure at a chosen factor of safety, and the "
             "sensitivity of both to width, embedment, groundwater, eccentricity, and a layered profile.",
         "methods": [
-            "General bearing-capacity equation with N<sub>c</sub>, N<sub>q</sub>, N<sub>&gamma;</sub> "
-            "by **Vesic**, **Meyerhof**, or **Hansen** (selectable); Vesic is the default and the AASHTO/"
-            "GEC-6 factor set.",
+            "General bearing-capacity equation with one of two correction-factor sets: **Vesic** "
+            "(default; GEC-6 Eq. 5-7, shape factors Table 5-2) or **Meyerhof** (1963; UFC 3-220-20 "
+            "Table 5-6). N<sub>&gamma;</sub> is the set&rsquo;s own, 2(N<sub>q</sub>+1)tan&nbsp;&phi; (GEC-6 "
+            "Eq. 5-8) or (N<sub>q</sub>&minus;1)tan(1.4&phi;), or Brinch Hansen&rsquo;s "
+            "1.5(N<sub>q</sub>&minus;1)tan&nbsp;&phi; (UFC Table 5-2) when named.",
             "**Terzaghi** bearing capacity (general or local shear) with the UFC 3-220-20 Table 5-5 shape "
-            "factors and no depth or inclination factors (inclined loads and slopes are refused); "
+            "factors and no depth or inclination factors (inclined loads, slopes and tilted bases are "
+            "refused, UFC Table 5-3); "
             "N<sub>&gamma;</sub> after Kumbhojkar (1993) as tabulated in Das by default, or Coduto et al. "
             "(2016), the basis of UFC Table 5-2, each named in the result.",
-            "Shape, depth, load-inclination, base-tilt, and ground-slope correction factors (Vesic form).",
+            "Correction factors multiplied (UFC 3-220-20 Eqs. 5-18 to 5-20; GEC-6 Eq. 5-14): shape "
+            "(GEC-6 Table 5-2); depth by Brinch Hansen&rsquo;s k (UFC Table 5-8, the default), GEC-6&rsquo;s "
+            "d<sub>q</sub> (Table 5-4) or none (<code>depth_factor_method</code>); load inclination (Vesic, "
+            "EN 1997-1 Annex D.4); base tilt (GEC-6 Table 5-5); ground slope (Vesic 1975). At &phi; = 0 "
+            "the Vesic set adds d<sub>c</sub> = 0.4k, as UFC Eq. 5-21 does. The Meyerhof set refuses a "
+            "base tilt or ground slope (UFC Table 5-3; p. 292).",
             "Eccentric loading via the Meyerhof effective-area (B&prime;, L&prime;) reduction.",
-            "Two-layer (strong-over-weak / weak-over-strong) bearing with load spread.",
+            "Two-layer bearing: a stronger layer over a weaker one by 2V:1H load spread to the weak "
+            "layer (NAVFAC DM-7.01 ch. 4; Bowles Sec. 4-7); a weaker layer over a stronger one as a "
+            "bounded transition between the two single-layer capacities, an estimate, not a "
+            "closed-form solution.",
             "Groundwater in the failure wedge through an effective-unit-weight model.",
-            "References: Vesic (1973); Meyerhof (1963); Hansen (1970); FHWA GEC-6 (FHWA-SA-02-054); "
-            "AASHTO LRFD.",
+            "References: FHWA GEC-6 (FHWA-SA-02-054) ch. 5; UFC 3-220-20 ch. 5 (Tables 5-2 to 5-8); "
+            "EN 1997-1 Annex D; Terzaghi (1943); Meyerhof (1963); Brinch Hansen (1970); Vesic (1975).",
         ],
         "limits": [
-            "The high-level <code>compute()</code> applies Vesic depth factors and averages the "
-            "effective unit weight over the wedge; this runs higher than an example that sets the "
-            "depth factor to 1.0 (cohesive overburden) or uses an AASHTO C<sub>w</sub> groundwater "
-            "correction &mdash; both are defensible conventions (validation V-021).",
-            "General shear failure is assumed; punching/local shear in very loose or soft soils is not "
-            "modelled separately.",
+            "By default <code>compute()</code> applies Brinch Hansen&rsquo;s depth factors and averages the "
+            "effective unit weight over a depth B below the base. This runs higher than an example that "
+            "takes d<sub>q</sub> = 1.0 (GEC-6 Table 5-4 note) and GEC-6&rsquo;s C<sub>wq</sub>, "
+            "C<sub>w&gamma;</sub> groundwater factors (Eq. 5-14): +17.6&nbsp;% on GEC-6 Example B-1 (V-021). "
+            "<code>depth_factor_method</code> \"gec6\" or \"none\" gives the example&rsquo;s depth factor; "
+            "C<sub>w</sub> is not offered.",
+            "The Vesic and Meyerhof sets assume general shear. Local shear is offered with Terzaghi&rsquo;s "
+            "factors only (c* = 2/3&nbsp;c, tan&nbsp;&phi;* = 2/3&nbsp;tan&nbsp;&phi;; UFC 3-220-20 Table 5-4). "
+            "Punching shear (Meyerhof &amp; Hanna 1978) is not modelled.",
         ],
     },
 
@@ -470,12 +486,14 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "consolidation of clays, granular settlement of sands, and the settlement&ndash;time curve.",
         "methods": [
             "Elastic (immediate) settlement with shape/rigidity influence factors.",
-            "**Schmertmann (1978)** strain-influence-factor method for granular soils.",
+            "**Schmertmann (1978)** strain-influence-factor method for granular soils (NHI-06-089 Eqs. 8-16 "
+            "to 8-18): the diagram interpolated in L/B between the axisymmetric and plane-strain cases, the "
+            "peak at the effective stress there (<code>gamma_soil</code> required).",
             "One-dimensional **C<sub>c</sub>/C<sub>r</sub> e&ndash;log&nbsp;p consolidation** with "
             "layer summation and preconsolidation (NC/OC).",
             "**Hough (1959)** granular C&prime;-index settlement (bearing-capacity index from corrected "
             "SPT N&prime;; GEC-6 Fig 5-19).",
-            "Stress increase by the 2:1 method, Boussinesq, or Westergaard; secondary compression "
+            "Stress increase by the 2:1 method, Boussinesq, or Westergaard (read off UFS 3-220-10 Fig. 4-10); secondary compression "
             "(C<sub>&alpha;</sub>); Terzaghi time-rate for the settlement&ndash;time curve.",
             "References: Schmertmann et al. (1978); Hough (1959); Terzaghi 1-D consolidation; FHWA GEC-6.",
         ],
@@ -490,22 +508,43 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "toe resistance developed as the pile passes through a layered profile, and how capacity "
             "grows with embedment depth.",
         "methods": [
-            "**Nordlund (1963/1979)** method for shaft and toe in cohesionless soils (K&ndash;&delta; and "
-            "correction-factor charts, bearing-capacity-factor toe with the Meyerhof q<sub>L</sub> limit).",
-            "**Tomlinson / &alpha;-method** total-stress skin friction in cohesive soils; 9&middot;c<sub>u</sub> "
-            "end bearing.",
-            "**&beta;-method** effective-stress skin friction for all layers.",
+            "**Nordlund** method in cohesionless soils (GEC-12 Sec. 7.2.1.3.1, Eqs. 7-8, 7-9): &delta;/&phi; "
+            "from Fig. 7-9, K<sub>&delta;</sub> from Tables 7-6 and 7-7, C<sub>F</sub> from Fig. 7-14, "
+            "&alpha;<sub>t</sub> and N&prime;<sub>q</sub> from Fig. 7-16; &sigma;&prime;<sub>p</sub> at the toe "
+            "limited to 3&nbsp;ksf (Step 8) and the unit toe resistance to q<sub>L</sub> from Fig. 7-15 "
+            "(after Meyerhof 1976).",
+            "**&alpha;-method** in cohesive soils (GEC-12 Sec. 7.2.1.3.2, Eq. 7-10): the adhesion "
+            "C<sub>a</sub> read off Fig. 7-17 (Tomlinson) by s<sub>u</sub>, pile type and D/b; Fig. 7-18&rsquo;s "
+            "stratigraphy cases, or the smaller of the two, on request (p. 246). Past the chart&rsquo;s "
+            "curves, API &alpha; (Eqs. 7-13, 7-14) in a clay the engineer calls highly overconsolidated, "
+            "else C<sub>a</sub> held at the curve&rsquo;s end (p. 247). A layer&rsquo;s own &alpha; or "
+            "C<sub>a</sub>, with its basis, replaces the chart. Toe 9&middot;s<sub>u</sub> (Eq. 7-11).",
+            "**&beta;-method** (Fellenius 1991; GEC-12 Sec. 7.2.1.3.4, Eqs. 7-19, 7-20) in every layer "
+            "on request: &beta; and N<sub>t</sub> from Table 7-9 by soil type, where a layer gives none "
+            "(Steps 2b, 5b).",
+            "Factored resistance (<code>Q_factored</code>) by GEC-12 Eq. 7-3 with Table 7-1&rsquo;s "
+            "factors by method (Nordlund 0.45, &alpha;-method 0.35; none for the &beta;-method, p. 258), "
+            "and factored uplift by Eq. 7-38 (0.35 / 0.25 / 0.20). The allowable capacity uses FS 2.5 "
+            "(NHI-06-089 Table 9-5, indicator piles with wave-equation analysis).",
             "Groundwater-split effective-stress integration; optional per-layer separate shaft/toe "
             "friction angle; below-grade pile head (<code>head_depth</code>); uplift capacity.",
-            "Pile sections: closed/open pipe, square/circular concrete, and H-piles (with the box "
-            "perimeter/toe-area convention).",
-            "References: FHWA GEC-12 (FHWA-NHI-16-064); Nordlund; Tomlinson; validated against the GEC-12 "
-            "Nordlund/&alpha; worked examples (validation V-001/V-002).",
+            "Pile sections: closed and open pipe, square and circular concrete, timber, H-piles (box "
+            "perimeter and toe area, Vol. I pp. 247, 408) and a custom section. An open pipe is the lesser "
+            "of the plugged and unplugged cases (Eqs. 7-88, 7-89), or Tomlinson&rsquo;s Eq. 7-90 under "
+            "24&nbsp;in in mainly cohesive soil (Sec. 7.10.7).",
+            "References: FHWA GEC-12 Vol. I (FHWA-NHI-16-009) ch. 7; validated against GEC-12 Vol. III "
+            "(FHWA-NHI-16-064) Tables D-6, D-100 and D-51 (V-001, V-002, V-059).",
         ],
         "limits": [
-            "The Tomlinson &alpha;&ndash;c<sub>u</sub> curve runs conservative in the stiff-clay band "
-            "(&alpha;&asymp;0.42 vs DrivenPiles &asymp;0.76 at s<sub>u</sub>&asymp;1.9&nbsp;ksf) &mdash; a "
-            "defensible curve choice, documented, not tuned (V-002).",
+            "With the choices GEC-12&rsquo;s South Abutment example made (Vol. III Table D-100: "
+            "<code>adhesion_curve=\"smooth_steel\"</code>, <code>adhesion_beyond_chart=\"chart_end\"</code>) "
+            "the shaft is within 1&nbsp;% of the print (V-002). The defaults take Fig. 7-17&rsquo;s "
+            "corrugated curve for an H-pile (Vol. I p. 247) and read 13&ndash;14&nbsp;% higher.",
+            "Where a clay&rsquo;s s<sub>u</sub> is past Fig. 7-17&rsquo;s curves, GEC-12 takes API "
+            "&alpha; for highly overconsolidated clay but prints no s<sub>u</sub>/&sigma;&prime;<sub>vo</sub> "
+            "that marks one (p. 247; Step 1, p. 250). The run is refused until "
+            "<code>highly_overconsolidated_su_ratio</code> or the layer&rsquo;s "
+            "<code>highly_overconsolidated</code> is given.",
             "Datum matters: reference the profile to the pile head (e.g. a below-grade footing) so no "
             "spurious skin friction is added above the head.",
         ],
@@ -522,8 +561,9 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "Banded finite-difference beam-column solver with P-&Delta; (axial-load) effects.",
             "Free/fixed head conditions, above-ground stickup, and H-pile strong/weak-axis or "
             "concrete-filled-pipe sections.",
-            "References: Reese, Cox &amp; Koop (1974); Matlock (1970); COM624P; validated against a "
-            "COM624P oracle suite and the FHWA Micropile LPILE benchmark (V-017).",
+            "References: FHWA GEC 9 (FHWA-HIF-18-031) App. A; Reese, Cox &amp; Koop (1974); Matlock (1970); "
+            "COM624P; validated against GEC 9 Example B.1, a COM624P oracle suite and the FHWA Micropile "
+            "LPILE benchmark (V-017).",
         ],
         "limits": [
             "Section stiffness is a linear EI (an uncracked composite section by transformed "
@@ -545,9 +585,14 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "drilled shafts, CFA, displacement piles and micropiles); **block failure** by GEC-12 "
             "Eqs. 7-36 and 7-37; lateral **p-multipliers** by row (AASHTO as GEC-12 prints it, or "
             "Mokwa, UFC 3-220-20 Table 6-38).",
+            "**Group uplift** (GEC-12 Sec. 7.2.3.2; UFC 3-220-20 Eqs. 6-40 to 6-43): the lesser of the "
+            "piles&rsquo; factored tension resistances and the block&rsquo;s, checked wherever a pile carries "
+            "tension.",
             "**Meyerhof (1976)** SPT group settlement as GEC-12 Eqs. 7-50 to 7-52 print it, and an "
-            "elastic equivalent-footing settlement (GEC-12 Sec. 7.3.5.3, 2V:1H spread, to where the "
-            "stress falls to 10 % of the footing's).",
+            "elastic equivalent-footing settlement (GEC-12 Sec. 7.3.5.3, Eq. 7-55, 2V:1H spread) summed to "
+            "where the stress falls to 10&nbsp;% of the footing&rsquo;s bearing stress (UFC 3-220-20 p. 449; "
+            "GEC-12 step 1c&rsquo;s 10&nbsp;% of the existing effective stress as "
+            "<code>influence_depth_m</code>).",
             "References: FHWA GEC-12 Vol. I ch. 7; UFC 3-220-20 ch. 6; validated against GEC-12 "
             "Vol. III Tables D-13, D-14 and D-23 and UFC 3-220-20 Appendix B-5.4 (V-005, V-060).",
         ],
@@ -598,17 +643,26 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "vs blow count), driving stresses, and refusal, from a hammer&ndash;cushion&ndash;pile&ndash;soil "
             "model &mdash; the analysis behind a driven-pile field acceptance criterion.",
         "methods": [
-            "**Smith (1960)** one-dimensional wave-equation model: elasto-plastic soil springs (quake) "
-            "with **smith** or **smith-viscous** damping, hammer/cushion/helmet stack, and a "
-            "characteristic-line time integration.",
-            "Single-blow analysis, bearing graph, and drivability vs depth; a hammer database plus "
-            "custom ram/stroke/efficiency and cushion definitions.",
+            "**Smith (1960)** one-dimensional wave-equation model: the pile as lumped masses and springs "
+            "about 1&nbsp;m long (GEC-12 Vol. 2 p. 155), elasto-plastic soil springs (quake) with "
+            "**smith** or **smith-viscous** damping (UFC 3-220-20 p. 488), one cushion spring with the "
+            "helmet&rsquo;s mass lumped with the first pile segment, and explicit central-difference time "
+            "integration.",
+            "Single-blow analysis, bearing graph, and drivability vs depth: one pile in the leads, "
+            "embedded to each depth (<code>embedded_length</code>; GEC-12 Vol. 2 pp. 224, 227). The "
+            "permanent set is the maximum toe displacement less the quakes (p. 158). Refusal is at "
+            "120&nbsp;blows/ft by default (p. 161). Fourteen built-in hammers take the ram weights, "
+            "strokes and energies of Vol. 2 Appendix C; custom ram, stroke and efficiency are accepted. "
+            "With no cushion given, only the Vulcan 014 takes Table 12-2&rsquo;s cushion and helmet "
+            "(p. 183); any other hammer needs the cushion, its COR and the helmet weight.",
             "References: Smith (1960); GRLWEAP-style modelling; FHWA GEC-12.",
         ],
         "limits": [
-            "Diesel hammers are an energy&rarr;velocity approximation, not a GRLWEAP combustion + "
-            "ram-cycle model &mdash; treat a diesel bearing graph as a trend/limit check, not a tie-out "
-            "(V-003).",
+            "Every hammer is a rigid ram striking at v = &radic;(2gh&eta;) (GEC-12 Vol. 2 Eq. 15-1). A "
+            "diesel&rsquo;s combustion and changing stroke are not modelled, and the result warns that its "
+            "blow counts are likely low (p. 206). Treat a diesel bearing graph as a trend, not a tie-out "
+            "(V-003: 48 against the published 120&nbsp;blows/ft; GEC-12 Example 6, ICE 42-S: 50 and 103 "
+            "against 99 and 209).",
         ],
     },
 
@@ -623,13 +677,19 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "the neutral plane at the bearing layer or at the pile toe, and Endo et al. (1969). The headline "
             "is UFC 3-220-20&rsquo;s &sect;6-7.4 procedure; skin friction on the final effective stress.",
             "Fill-induced downdrag, groundwater drawdown, and a maximum-load structural check.",
+            "The toe&rsquo;s N<sub>t</sub> from GEC-12 Table 7-9 (UFC Table 6-17, Fellenius) by soil type, or "
+            "Cheng (2004) by name; 9&middot;s<sub>u</sub> in clay. The pile&rsquo;s weight is left out of the "
+            "load curve, as UFC Fig. 6-26 and GEC-12 &sect;7.3.6.1 do (<code>include_pile_weight</code>). "
+            "The toe load is counted below the toe to 10&nbsp;% of the equivalent footing&rsquo;s bearing "
+            "stress (UFC &sect;6-5.8.4.3), or GEC-12&rsquo;s 10&nbsp;% of the effective stress on request.",
             "References: UFC 3-220-20; FHWA GEC-12; Fellenius; CGPR #56; validated against GEC-12 (V-004, "
             "NP/Q<sub>max</sub>/DF within 0.2%) and UFC App. B-5.5.",
         ],
         "limits": [
-            "For an H-pile the box toe area must be passed as the pile area; the module&rsquo;s intrinsic "
-            "&beta;-shaft can differ from a Nordlund shaft, so feed the design distribution to isolate "
-            "the neutral-plane equilibrium.",
+            "For an H-pile pass the box toe area as <code>pile_area</code>; it is also the area used for "
+            "AE and the pile weight. The module&rsquo;s own shaft is the &alpha;-method in clay (UFC 3-220-20 "
+            "Table 6-16, Fig. 6-14) and &beta; from GEC-12 Table 7-9 in sand; it can differ from a Nordlund "
+            "shaft, so give each layer&rsquo;s &beta; or &alpha; to reproduce a design shaft (as V-004 does).",
         ],
     },
 
@@ -639,20 +699,33 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "groundwater.",
         "methods": [
             "**Rankine / Coulomb** active and passive coefficients (with wall friction), and a "
-            "**Caquot&ndash;Kerisel log-spiral** passive option that avoids Coulomb&rsquo;s over-prediction "
-            "at high &delta;.",
-            "The cantilever by the Caltrans T&amp;S Simplified Method (moments about the pivot O give "
-            "D<sub>0</sub>; D = 1.2&nbsp;D<sub>0</sub> (Caltrans 7-5.02, UFC 3-220-20 Fig.&nbsp;4-41) beside a "
-            "FOS on the passive pressure (Caltrans Ex 7-3; UFC Fig.&nbsp;4-41 step 2); the moment on that diagram to O); free earth "
-            "support for the anchored wall; layered active-pressure builder with hydrostatic water.",
-            "References: Rankine; Coulomb; Caquot&ndash;Kerisel; NAVFAC DM7.2; validated against Caltrans "
-            "T&amp;S Ex 7-2 / 8-1 (V-025/V-013) and, for the anchored wall&rsquo;s maximum moment, the USS "
+            "**log-spiral** passive option (Coulomb active with it), which avoids Coulomb&rsquo;s "
+            "over-prediction of K<sub>p</sub> at high &delta;: UFC 3-220-20 Eq.&nbsp;4-12 by default, or "
+            "Figs.&nbsp;4-12/4-13 or the Caquot&ndash;Kerisel (1948) chart (Caltrans T&amp;S "
+            "Fig.&nbsp;4-20); wall friction from UFC Table&nbsp;4-1 by the soil against the wall.",
+            "The cantilever by the Caltrans T&amp;S Simplified Method (Sec.&nbsp;7-5.02): moments about "
+            "the pivot O give D<sub>0</sub>, with the passive pressure divided by FOS_passive (UFC "
+            "3-220-20 Fig.&nbsp;4-41 step 2), then D = 1.2&nbsp;D<sub>0</sub> (Caltrans 7-5.02 step 3; "
+            "UFC Fig.&nbsp;4-41 step 6); the maximum moment at zero shear on that factored diagram, to O. "
+            "The anchored wall by free earth support about the anchor (UFC Fig.&nbsp;4-37). Layered "
+            "pressures with water on each side: water standing in the excavation above the dredge line "
+            "counts, and the net water pressure is the retained side&rsquo;s less the excavated "
+            "side&rsquo;s (UFC Sec.&nbsp;4-4.1, Figs.&nbsp;4-5/4-6).",
+            "References: Caltrans T&amp;S Manual; UFC 3-220-20 (DM&nbsp;7.2); USS Steel Sheet Piling "
+            "Design Manual; validated against Caltrans T&amp;S Ex 7-2&rsquo;s layered pressures (V-025), "
+            "Ex 8-1&rsquo;s K<sub>a</sub> and log-spiral K<sub>p</sub> (V-013; that example&rsquo;s "
+            "embedment uses the FHWA apparent diagram, which <code>soe</code> reproduces), UFC "
+            "Fig.&nbsp;4-43 with water on both sides and, for the anchored wall&rsquo;s maximum moment, the USS "
             "Steel Sheet Piling Design Manual&rsquo;s Design Example No. 2 (within 1&nbsp;%).",
         ],
         "limits": [
-            "<code>analyze_cantilever</code> is a continuous per-metre free-earth-support solver &mdash; "
-            "soldier-pile effective-width/arching and the simplified toe-moment cubic are not modelled "
-            "(V-012).",
+            "<code>analyze_cantilever</code> is the Caltrans Simplified Method for a continuous wall, per "
+            "metre run: soldier-pile effective widths and arching (Caltrans T&amp;S Ch.&nbsp;7) are not "
+            "modelled (V-012). It is not UFC 3-220-20 Fig.&nbsp;4-41&rsquo;s full method, which gives a "
+            "longer D: on UFC Fig.&nbsp;4-43, 15.6&nbsp;ft against the chart&rsquo;s 17&nbsp;ft. The "
+            "maximum moment is on the factored diagram (UFC Fig.&nbsp;4-41 step 5); "
+            "<code>soe</code>&rsquo;s cantilever takes it at FS 1.0 (Caltrans Ex 7-3), so the two tools "
+            "differ.",
         ],
     },
 
@@ -664,10 +737,18 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "**FHWA apparent-pressure** envelopes (Terzaghi&ndash;Peck / Peck) for braced cuts and "
             "anchored walls; braced-wall support loads by the Caltrans hinge method (or GEC-4's, or "
             "UFC 3-220-20's simple spans) and the GEC-4 tributary area method for anchored walls.",
-            "Cantilever and single-anchor free-earth solutions; ground-anchor design; wall-section "
-            "sizing.",
-            "Basal heave &mdash; **Bjerrum&ndash;Eide** bearing ratio and a **Caltrans** force balance with "
-            "sidewall shear; bottom blowout and piping (exit-gradient) checks.",
+            "The cantilever by the Caltrans T&amp;S Simplified Method (Sec.&nbsp;7-5.02; D = "
+            "1.2&nbsp;D<sub>0</sub>; moment and shear at FS 1.0, Ex 7-3); the embedment below the lowest "
+            "support of a braced or anchored wall, one support or several, by free earth support about it "
+            "(Sec.&nbsp;8-4.02); ground-anchor design by GEC-4 Sec.&nbsp;5.3; wall-section sizing at "
+            "0.60&nbsp;F<sub>y</sub> by default (the Caltrans examples).",
+            "Basal heave &mdash; **Terzaghi** (the default; GEC-4 Eq.&nbsp;35 with side shear, "
+            "Eq.&nbsp;37 for a wide cut, N<sub>c</sub> off GEC-4 Fig.&nbsp;51(c); UFC 3-220-20 "
+            "Fig.&nbsp;2-7(b) given beside it), **Bjerrum&ndash;Eide** (N<sub>c</sub> off Caltrans "
+            "Fig.&nbsp;10-15 with Eq.&nbsp;10-3-4) and the **Caltrans** force balance with sidewall shear "
+            "(Sec.&nbsp;10-3.01); bottom blowout (soil-plug weight against the excess head) and piping "
+            "(critical gradient against the average exit gradient), in the module&rsquo;s own forms, "
+            "since none of these references prints one.",
             "References: FHWA GEC-4 (FHWA-IF-99-015); Terzaghi &amp; Peck; Bjerrum &amp; Eide; Caltrans "
             "T&amp;S; validated V-014/V-016.",
         ],
@@ -682,22 +763,39 @@ MODULE_NARRATIVE: dict[str, dict] = {
     },
 
     "retaining_walls": {
-        "problems": "Gravity/cantilever concrete retaining walls and mechanically-stabilized-earth (MSE) "
+        "problems": "Cantilever (semi-gravity) concrete retaining walls and mechanically-stabilized-earth (MSE) "
             "walls: external stability (sliding, overturning, bearing, eccentricity) and MSE internal "
             "stability (reinforcement tension and pullout), by ASD and LRFD.",
         "methods": [
-            "Cantilever-wall stability with **Rankine/Coulomb** thrust decomposition and **Meyerhof** "
-            "bearing.",
-            "**MSE coherent-gravity** method: external stability and internal K<sub>r</sub>/K<sub>a</sub> "
-            "and F* pullout curves for ribbed strips and steel bar-mats/welded grids.",
+            "Cantilever-wall stability: the active thrust on the vertical plane through the back of the "
+            "heel, by **Rankine** or **Coulomb** with &delta; = &beta; on that plane (FHWA NHI-06-089 "
+            "p.&nbsp;10-20, Ex 10-3), no tension in a cohesive backfill (UFC 3-220-20 Fig.&nbsp;4-5 Note "
+            "A); sliding by GEC-6 Eqs.&nbsp;5-38 to 5-40 (FS 2.0 when passive is counted, UFC "
+            "Sec.&nbsp;4-5.1.3); e within B/6 on soil and B/4 on rock; bearing as the uniform "
+            "q<sub>eq</sub> = V/(B&nbsp;&minus;&nbsp;2e) against a given allowable pressure for B&prime; "
+            "(GEC-6 Eq.&nbsp;6-6, Sec.&nbsp;6.4.2), or the trapezoid&rsquo;s q<sub>max</sub> on rock; an "
+            "optional water table behind the wall with uplift on the base (UFC Sec.&nbsp;4-4.1; EM "
+            "1110-2-2104 para.&nbsp;E-12).",
+            "MSE walls by GEC-11&rsquo;s **Simplified Method**: external stability (sliding, also on the "
+            "lowest geosynthetic sheet; eccentricity; bearing on L&nbsp;&minus;&nbsp;2e) and internal "
+            "K<sub>r</sub>/K<sub>a</sub> (Fig.&nbsp;4-10) and F* pullout for steel strips, bar mats and "
+            "welded grids and for geogrids and geotextiles (F* = 2/3&nbsp;tan&nbsp;&phi;, Eq.&nbsp;3-8); "
+            "the bilinear surface for inextensible and the linear one for extensible reinforcement "
+            "(Fig.&nbsp;4-9); level, sloping or broken backslopes and a face battered 10&deg; or more "
+            "(Vol&nbsp;I p.&nbsp;4-15, Eq.&nbsp;4-26).",
             "**AASHTO/GEC-11 LRFD** external stability &mdash; Strength I max/min + Service I load-factor "
             "combinations, live-load exclusions, and per-mode capacity/demand ratios.",
-            "References: FHWA GEC-11 (FHWA-NHI-10-025); AASHTO LRFD; validated against GEC-11 Ex E4/E7 "
-            "(V-009/V-010/V-011).",
+            "References: FHWA GEC-11 (FHWA-NHI-10-024 Vol&nbsp;I, NHI-10-025 Vol&nbsp;II); AASHTO LRFD; "
+            "FHWA GEC-6; FHWA NHI-06-089; UFC 3-220-20; validated against GEC-11 Ex E4/E7 "
+            "(V-009/V-010/V-011) and, for the cantilever, UFC 3-220-20 App.&nbsp;B-1 and NHI-06-089 Ex "
+            "10-3 (V-061).",
         ],
         "limits": [
-            "MSE external stability is available both as an ASD factor-of-safety path (default, unchanged) "
-            "and the packaged LRFD CDR path via <code>lrfd_external=True</code>.",
+            "MSE external stability is an ASD factor-of-safety check (<code>mse_wall</code>) or an LRFD "
+            "capacity/demand check (<code>mse_lrfd_external_stability</code>; in the library "
+            "<code>analyze_mse_wall(lrfd_external=True)</code> runs both). The LRFD check and a broken "
+            "backslope take a vertical face only. The MSE checks have no water table (the cantilever wall "
+            "has one).",
         ],
     },
 
@@ -710,7 +808,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "factor, composite modulus, and the settlement ratio off GEC-13 Fig. 5-21 (weighted "
             "modulus, Balaam, and the **Priebe curve as GEC-13 prints it**, &phi; = 37.5&deg;; no Priebe "
             "formula).",
-            "Radial consolidation for PVDs by GEC-13 Eq. 2-1, F(n) = ln(n) &minus; 0.75, a 2.5 in drain "
+            "Radial consolidation for PVDs by GEC-13 Eq. 2-1 with F(n) = ln(n) &minus; 0.75 (Eq. 2-2), a 2.5 in drain "
             "and smear ignored by default (GEC-13 p. 2-35; smear optional by UFC 3-220-10 Eq. 5-25; "
             "well resistance not modelled, GEC-13 p. 2-36), combined with vertical drainage by "
             "Carrillo (UFC 3-220-10 Eq. 5-27); drain-spacing design.",
@@ -746,8 +844,9 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "Advanced per-layer strength models (the layer <code>strength_model</code> selector): "
             "Mohr&ndash;Coulomb (default), **SHANSEP** undrained-strength-ratio "
             "(s<sub>u</sub> = S&middot;OCR<sup>m</sup>&middot;&sigma;&prime;<sub>v</sub>, with a "
-            "s<sub>u,min</sub> floor), and **Generalized Hoek&ndash;Brown** for rock "
-            "(&sigma;<sub>ci</sub>, GSI, m<sub>i</sub>, D).",
+            "s<sub>u,min</sub> floor), **Generalized Hoek&ndash;Brown** for rock "
+            "(&sigma;<sub>ci</sub>, GSI, m<sub>i</sub>, D), and **anisotropic** undrained strength "
+            "(s<sub>u</sub> active / DSS / passive by the slice base&rsquo;s inclination, Casagrande&ndash;Carrillo).",
             "Reinforcement crossing the slip surface: **soil nails** (pullout + bar-tension capacity, "
             "FHWA GEC-7), **tieback anchors** (allowable tension when the bond zone crosses the "
             "surface), horizontal **geosynthetic** layers, and **Ito &amp; Matsui (1975)** stabilizing "
@@ -755,19 +854,25 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "the support reduces the driving force) or passive (the support is added to the resisting "
             "force and so divided by F); plus ponded water, tension cracks, and pseudo-static "
             "k<sub>h</sub>.",
-            "Seismic displacement (**Newmark** sliding block + **Jibson 2007** regression), **rapid "
-            "drawdown** (USACE 2-stage / Duncan&ndash;Wright&ndash;Wong 3-stage), infinite-slope FOS, and "
+            "Seismic displacement (the yield coefficient k<sub>y</sub>, **Newmark** sliding block on a record, "
+            "the **Jibson 2007** and **Bray &amp; Travasarou 2007** regressions), **rapid drawdown** (USACE "
+            "2-stage, Lowe&ndash;Karafiath 2-stage, Duncan&ndash;Wright&ndash;Wong 3-stage; on one surface or by "
+            "search), infinite-slope FOS, and "
             "**probabilistic FOS** (FOSM and Monte Carlo).",
             "References: Fredlund &amp; Krahn (1977); Bishop (1955); Spencer (1967); Janbu; Duncan, Wright "
             "&amp; Brandon (2014); Ito &amp; Matsui (1975); Jibson (2007); validated vs Fredlund&ndash;Krahn "
             "/ ACADS / Duncan / Slide2 (VALIDATION.md, V-015/V-026&hellip;V-040).",
         ],
         "limits": [
-            "Pore pressure is a piezometric surface or per-layer r<sub>u</sub>, not an arbitrary "
-            "interpolated flow-net grid (V-029).",
-            "The tension crack is entry-side and keeps the cracked wedge as zero-strength driving soil "
-            "with full hydrostatic thrust &mdash; a conservative convention vs mass-truncation codes "
-            "(V-026).",
+            "Pore pressure is a piezometric surface, per-layer r<sub>u</sub>, or scattered (x, z, u) "
+            "points (<code>pore_pressure_points</code>) interpolated linearly on their Delaunay "
+            "triangulation, with suction set to zero. The ACADS 5 / Slide2 #10 flow net could not be "
+            "pinned, because its grid values were not printed legibly (V-029).",
+            "A tension crack sits at the entry side (default) or the exit side "
+            "(<code>tension_crack_side</code>). By default the cracked wedge is kept as zero-strength "
+            "driving soil with the full hydrostatic thrust, which is conservative. "
+            "<code>tension_crack_model='truncation'</code> removes the wedge from the sliding mass, as "
+            "Slide2 does, and reproduces ACADS 1(b) within 0.5&nbsp;% (V-026).",
             "When a rigorous method finds no solution on a surface that supports cross, the result gives "
             "no FOS for that method and says so, rather than an unreinforced value.",
         ],
@@ -786,6 +891,14 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "**Strength-reduction method** for slope FOS (Griffiths &amp; Lane 1999), within 2&nbsp;% "
             "across meshes once four or more elements span the slope; staged construction, with movements reported per stage and counted "
             "from the end of the in-situ stage; initial-stress relaxation for tunnels/cavities.",
+            "**Footing capacity** (<code>fem2d_footing_capacity</code>): a strip footing loaded to "
+            "collapse, the soil&rsquo;s weight applied first and a surcharge beside the footing held "
+            "while the footing pressure rises. A flexible footing (the default) reads Prandtl&rsquo;s "
+            "(2&nbsp;+&nbsp;&pi;)c within about 2&nbsp;%; on a frictional soil its q<sub>ult</sub> is a "
+            "lower bound that more iterations raise, and with no surcharge on a cohesionless soil it is "
+            "set by the mesh (both warned). <code>footing='rigid'</code> is offered but reads high on the "
+            "clay check and gives no mesh-converged value on a frictional soil; "
+            "<code>mesh='graded'</code> is for &phi;&nbsp;=&nbsp;0 clay only.",
             "**Staged excavation** (<code>analyze_excavation</code>): half of a symmetric excavation, "
             "in-situ stresses by K<sub>0</sub>, then one stage per lift that removes the soil and "
             "releases the forces it carried; the wall is wished in place and each strut installed "
@@ -796,7 +909,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "pressure and the upward gradient in front of the wall. Benchmarked against the USS Steel "
             "Sheet Piling Design Manual&rsquo;s cantilever in granular soil (M<sub>max</sub> within "
             "3&nbsp;%).",
-            "Steady/transient **seepage** and **Biot consolidation** (staggered, and a monolithic "
+            "Steady **seepage** (Laplace equation, CST elements) and **Biot consolidation** (staggered, and a monolithic "
             "Taylor&ndash;Hood u&ndash;p scheme); PLAXIS-style calc-package plots.",
             "References: Griffiths &amp; Lane (1999); de Souza Neto et al. (2008); Clausen et al. (2006); "
             "Schanz et al. (1999); validated vs Griffiths&ndash;Lane, the Prandtl solution (~2%), and "
@@ -811,26 +924,39 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "&phi;&nbsp;=&nbsp;0 soil lies below the toe with level ground shorter than 1.5 times its "
             "depth (a deep circle cannot form). By default over such soil the model carries the level "
             "ground to twice that depth each side, so Taylor&rsquo;s deep circle can form (a slightly "
-            "higher FOS than before and about twice the run time for those runs); "
+            "higher FOS than the narrower model and about twice the run time); "
             "<code>x_extend</code> sets the margins, one number or a (left, right) pair. An undrained "
             "layer with Poisson&rsquo;s ratio below 0.45 is warned: use 0.49.",
         ],
     },
 
     "seismic_geotech": {
-        "problems": "Site seismic geotechnics: the ASCE-7 site class and design coefficients, "
-            "Mononobe&ndash;Okabe seismic earth pressures on walls, SPT liquefaction triggering, and "
-            "post-liquefaction residual strength.",
+        "problems": "Site seismic geotechnics: the AASHTO seismic site class and site factors as FHWA "
+            "GEC-12 reprints them, Mononobe&ndash;Okabe seismic earth pressures on walls, SPT "
+            "liquefaction triggering, post-liquefaction residual strength, and small-strain shear "
+            "modulus and modulus reduction.",
         "methods": [
-            "**ASCE 7** site classification from V<sub>s30</sub>, N-bar, or s<sub>u</sub>-bar, with "
-            "F<sub>pga</sub>/F<sub>a</sub>/F<sub>v</sub> and design spectral values.",
-            "**Mononobe&ndash;Okabe** active/passive seismic earth-pressure coefficients "
-            "(K<sub>AE</sub>/K<sub>PE</sub>), battered-wall correct, with the seismic thrust and point of "
-            "application.",
-            "SPT liquefaction triggering (**NCEER / Youd et al. 2001** simplified procedure) and residual "
-            "strength.",
-            "References: ASCE 7; Mononobe&ndash;Okabe; NCEER (1997) / Youd et al. (2001); validated vs "
-            "GEC-11 Ex E7 (V-011, K<sub>AE</sub> within 0.06%).",
+            "**AASHTO site class** (GEC-12 Vol I Table 7-26) from V<sub>s30</sub>, N-bar (field N, "
+            "at most 100 blows/ft) or s<sub>u</sub>-bar over the upper 30&nbsp;m; site factors "
+            "F<sub>a</sub>/F<sub>v</sub> (Tables 7-28, 7-29) and, when PGA is given, F<sub>pga</sub> "
+            "(Table 7-27) and A<sub>s</sub> = F<sub>pga</sub>&middot;PGA (Eq. 7-78); S<sub>DS</sub>, "
+            "S<sub>D1</sub> (Eq. 7-79). Site Class F and Class E by soft-clay thickness are not checked.",
+            "**Mononobe&ndash;Okabe** K<sub>AE</sub> (UFC 3-220-20 Eq. 4-15) with battered walls and "
+            "sloping backfill, the seismic thrust and its increment &Delta;P<sub>AE</sub> at 0.6&nbsp;H; "
+            "K<sub>PE</sub> (FHWA GEC-4 Eq. 44) on its own wall friction, 0.4&phi; unless given "
+            "(UFC Fig. 4-8&rsquo;s limit for a planar passive wedge).",
+            "SPT liquefaction triggering by the **NCEER / Youd et al. (2001)** simplified procedure, "
+            "CSR and r<sub>d</sub> as FHWA GEC-13 Eq. 5-9 prints them; residual strength by Seed "
+            "&amp; Harder (1990) (default) or Idriss &amp; Boulanger (2007) read off GEC-12 Fig. 7-78, "
+            "with void redistribution &ldquo;significant&rdquo; or &ldquo;negligible&rdquo;.",
+            "G<sub>max</sub> from V<sub>s</sub>, CPT (Rix &amp; Stokoe; Mayne &amp; Rix), Hardin (1978) "
+            "or Andersen (2015), and Ishibashi &amp; Zhang (1993) modulus reduction and damping "
+            "(FHWA GEC-5 Ch. 8 for the first three).",
+            "References: FHWA GEC-12 Vol I (FHWA-NHI-16-009) Sec. 7.4.2.1, after AASHTO (2014); UFC "
+            "3-220-20 Sec. 4-4.4.1; FHWA GEC-4 Eq. 44; FHWA GEC-13 Eq. 5-9; NCEER (1997) / Youd et al. "
+            "(2001); Idriss &amp; Boulanger (2007) as GEC-12 Fig. 7-78 prints it; FHWA GEC-5 Ch. 8. "
+            "Validated against GEC-11 Example E7 (V-011, K<sub>AE</sub> within 0.06%; V-062, site "
+            "factor and k<sub>max</sub>).",
         ],
         "limits": [
             "Its SPT procedure is the NCEER/Youd-2001 method (for code-compliance work); the default "
@@ -865,9 +991,10 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "B&amp;I-2014 **SPT** triggering composed from the module-level building blocks "
             "(CRR<sub>M7.5</sub>, r<sub>d</sub>, CSR, K<sub>&sigma;</sub>) plus the SPT fines correction "
             "and MSF.",
-            "Field correlations (V<sub>s</sub>, D<sub>r</sub>, G<sub>0</sub> from N).",
-            "References: Boulanger &amp; Idriss (2014); the liquepy library. Requires the "
-            "<code>[liquepy]</code> extra.",
+            "CPT field correlations: V<sub>s</sub> (McGann 2015, Robertson 2009 or Andrus 2007), "
+            "D<sub>r</sub>, s<sub>u</sub>/&sigma;&prime;<sub>v</sub>, permeability and I<sub>c</sub> "
+            "profiles.",
+            "References: Boulanger &amp; Idriss (2014); the liquepy library (installed with the app).",
         ],
         "limits": [
             "liquepy ships a packaged CPT triggering object but no packaged SPT object &mdash; the SPT "
@@ -886,7 +1013,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "References: PM4Sand (Boulanger &amp; Ziotopoulou); the OpenSeesPy library. Site response is "
             "checked against the OpenSees wiki&rsquo;s layered soil column (total stress, McGann &amp; "
             "Arduino) and the OpenSeesPy effective-stress example, Kramer (1996) &sect;7.2&rsquo;s uniform "
-            "damped layer on elastic rock, and pyStrata. Requires the <code>[opensees]</code> extra.",
+            "damped layer on elastic rock, and pyStrata. OpenSeesPy is installed with the app.",
         ],
         "limits": [
             "A wrapper around OpenSeesPy &mdash; model fidelity and convergence follow OpenSees; a heavy "
@@ -901,8 +1028,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
         "methods": [
             "Equivalent-linear and linear-elastic 1D response, wrapping **pyStrata**.",
             "Modulus-reduction/damping curves: **Darendeli (2001)**, **Menq (2003)**, or custom.",
-            "References: the pyStrata library; Darendeli (2001); Menq (2003). Requires the "
-            "<code>[pystrata]</code> extra.",
+            "References: the pyStrata library; Darendeli (2001); Menq (2003). pyStrata is installed "
+            "with the app (0.5 on Python 3.12, 0.6 on Python 3.13).",
         ],
         "limits": [
             "Equivalent-linear (not fully nonlinear); large-strain problems may warrant the OpenSees "
@@ -911,7 +1038,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
     },
 
     "section_props": {
-        "problems": "Structural cross-section properties for steel and generic shapes: area, moments "
+        "problems": "Structural cross-section properties for rectangles, circles, CHS, RHS and I-sections given by their dimensions, and any polygon: area, moments "
             "of inertia, elastic and plastic moduli, radii of gyration, torsion and warping constants "
             "&mdash; the inputs every member check starts from. Dimensions in mm.",
         "methods": [
@@ -949,7 +1076,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "out-of-plane; the continuous-beam method reports textbook sagging-positive conventions.",
         ],
         "limits": [
-            "Linear-static only &mdash; nonlinear/dynamic problems belong to the OpenSees module.",
+            "Linear-static only; the toolkit has no nonlinear or dynamic frame analysis. Where numpy is "
+            "held at 1.26 (Foundry) PyNiteFEA cannot install and the tool is left out.",
         ],
     },
 
@@ -958,11 +1086,11 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "components from an acceleration record &mdash; the quantities behind a seismic demand.",
         "methods": [
             "Response spectra by Nigam and Jennings (1969), in sub-steps at short periods (the OpenSees site "
-            "response's code); Fourier processing (**eqsig**); rotated-component spectra RotD0/RotD50/RotD100 "
+            "response's code); bandpass filtering and baseline correction, PGV and PGD (**eqsig**); rotated-component spectra RotD0/RotD50/RotD100 "
             "(Boore 2010) from the same time-domain oscillator responses; Arias intensity, significant "
             "duration, and other intensity measures.",
-            "References: Nigam and Jennings (1969); Boore (2010); the eqsig library. Requires the "
-            "<code>[seismic-signals]</code> extra.",
+            "References: Nigam and Jennings (1969); Boore (2010); the eqsig library (installed with "
+            "the app).",
         ],
         "limits": [],
     },
@@ -973,7 +1101,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "BRO-XML CPT, and AGS4 files, visualize parameters against depth, and compute trend "
             "statistics &mdash; the ingest side of characterization.",
         "methods": [
-            "**DIGGS** parser (20 test types) with Plotly parameter-vs-depth, Atterberg, plan-view and "
+            "**DIGGS** parser (18 test types) with Plotly parameter-vs-depth, Atterberg, plan-view and "
             "trend plots; the plan view labels its axes from the stated coordinate system.",
             "**DIGGS 2.6 writer** (<code>write_diggs</code>) for logs and lab results read off a report: "
             "records given inline or as saved JSON files, checked against the schema and read back, with "
@@ -981,10 +1109,11 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "depth) that never change a value; groundwater not encountered is never written as a level, "
             "an unknown position is never written as 0, and a printed refusal is kept as one.",
             "Folded format adapters: **GEF/BRO-XML** CPT and borehole parsing (pygef), **AGS4** read/"
-            "validate (python-ags4; an optional extra (`[ags4]`) since 5.34.0), and **DIGGS** "
+            "validate (python-ags4; an optional extra, <code>[ags4]</code>, since 5.34.0), and **DIGGS** "
             "schema/dictionary validation (pydiggs).",
-            "References: the DIGGS, GEF, and AGS4 standards; pygef / python-ags4 / pydiggs. Requires the "
-            "<code>[subsurface]</code> extra for the format adapters.",
+            "References: the DIGGS, GEF, and AGS4 standards; pygef / python-ags4 / pydiggs. GEF/BRO-XML "
+            "parsing is installed with the app; AGS4 read/validate needs the <code>[ags4]</code> extra "
+            "and DIGGS schema/dictionary validation the <code>[pydiggs]</code> extra.",
         ],
         "limits": [
             "Attach a file via the agent&rsquo;s attachment mechanism (<code>attachment_key</code>) to "
@@ -1010,7 +1139,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "a convergence table, CSV files, an exceedance curve and a plan map of P(z &gt; level). "
             "GSTools&rsquo; CondSRF is offered to reproduce a CondSRF notebook; it spreads totals too "
             "widely, so it is not the default.",
-            "References: the GSTools library (Müller et al.). Installed with the app (no extra needed).",
+            "References: the GSTools library (M&uuml;ller et al.). Installed with the app (no extra needed).",
         ],
         "limits": [
             "The spread is what the chosen model implies: a Gaussian, stationary field with the "
@@ -1034,14 +1163,15 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "design point).",
             "A published **COV knowledge base** (Duncan 2000; TC304; Phoon &amp; Kulhawy) queried by "
             "<code>cov_guidance</code>; **Vanmarcke** spatial-averaging variance reduction; combined COV.",
-            "Ready-made wrappers: <code>bearing_capacity_reliability</code>, "
+            "Ready-made library functions (not agent tools): <code>bearing_capacity_reliability</code>, "
             "<code>axial_pile_reliability</code>, <code>slope_reliability</code>.",
             "References: Duncan (2000); Phoon &amp; Kulhawy (1999); Baecher &amp; Christian; Vanmarcke "
             "(1977); validated vs Duncan (2000) reliability example.",
         ],
         "limits": [
-            "The performance function is a scalar g(values); correlated depth-varying strength laws with a "
-            "single gradient variable are a documented scope edge (V-030).",
+            "The performance function is a scalar g(values) of the named variables; a depth-varying "
+            "undrained strength is varied as one correlated (a, b) pair through slope_stability&rsquo;s "
+            "probabilistic FOS (<code>linear_su</code>, V-030), not through this engine.",
         ],
     },
 
@@ -1052,19 +1182,19 @@ MODULE_NARRATIVE: dict[str, dict] = {
         "methods": [
             "**Sobol** variance-based indices (first-order and total) and **Morris** elementary-effects "
             "screening, wrapping **SALib**; sample generation and index computation.",
-            "References: Sobol; Morris; the SALib library. Requires the <code>[salib]</code> extra.",
+            "References: Sobol; Morris; the SALib library (installed with the app).",
         ],
         "limits": [],
     },
 
     "pystra": {
         "problems": "Structural reliability for an explicit limit-state function: the reliability index and "
-            "probability of failure by FORM, SORM, or Monte Carlo, with a full distribution library and "
-            "correlation.",
+            "probability of failure by FORM, SORM, or Monte Carlo, with normal, lognormal, Gumbel, "
+            "uniform, Weibull, gamma, beta and constant variables and a correlation matrix.",
         "methods": [
-            "**FORM / SORM / Monte Carlo** on a user limit-state function, wrapping **pystra** (the Python "
-            "port of FERUM).",
-            "References: the pystra library. Requires the <code>[pystra]</code> extra.",
+            "**FORM / SORM / Monte Carlo** on a user limit-state function, wrapping **pystra** (built on PyRe "
+            "and FERUM).",
+            "References: the pystra library (installed with the app).",
         ],
         "limits": [
             "Complements the geotechnical <code>reliability</code> engine; use pystra for a general "
@@ -1078,8 +1208,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "build the slope-stability or FEM geometry the analysis modules consume.",
         "methods": [
             "Layer discovery; polyline parsing into ground surface, soil boundaries, water table, and "
-            "reinforcement; conversion to <code>SlopeGeometry</code> and FEM inputs.",
-            "References: the ezdxf library. Requires the <code>[dxf]</code> extra.",
+            "soil nails; conversion to <code>SlopeGeometry</code> and FEM inputs.",
+            "References: the ezdxf library (installed with the app).",
         ],
         "limits": [
             "Workflow is discover&nbsp;&rarr;&nbsp;parse&nbsp;&rarr;&nbsp;build; the layer&rarr;role "
@@ -1089,14 +1219,16 @@ MODULE_NARRATIVE: dict[str, dict] = {
 
     "pdf_import": {
         "problems": "Extract a cross-section from a PDF drawing when there is no CAD file: vector geometry "
-            "from the PDF&rsquo;s line work, or a vision read of the rendered page, cross-checked against "
-            "each other.",
+            "from the PDF&rsquo;s line work, which can be checked against a vision read made separately.",
         "methods": [
-            "**Vector extraction** (PyMuPDF <code>get_drawings()</code>) for exact line work; **vision "
-            "extraction** (an LLM reads the rendered page).",
-            "Scale calibration from a known dimension, label&rarr;region association, geometry cleanup, a "
-            "vision grid overlay, and a vision&harr;vector cross-check.",
-            "References: the PyMuPDF library. Requires the <code>[pdf]</code> extra.",
+            "**Vector extraction** (PyMuPDF <code>get_drawings()</code>, grouped by stroke colour) for "
+            "exact line work, from the separate <code>planlens</code> package (<code>planlens.pdf</code>).",
+            "Scale from two points and a known distance, or proposed from scale notes on the page; a "
+            "proposed colour&rarr;role mapping from the labels; geometry cleanup; a feature-by-feature "
+            "cross-check of the vector result against a vision extraction "
+            "(<code>planlens.pdf.extract_geometry_vision</code>, outside this tool); conversion to "
+            "<code>SlopeGeometry</code> and fem2d inputs.",
+            "References: the PyMuPDF library; planlens. Both are installed with the app.",
         ],
         "limits": [
             "Vision extraction depends on the engine&rsquo;s image quality; always confirm the extracted "
@@ -1106,10 +1238,10 @@ MODULE_NARRATIVE: dict[str, dict] = {
 
     "dxf_export": {
         "problems": "Send a cross-section built or checked in the toolkit back to CAD: write the surface, "
-            "soil boundaries, water table, reinforcement, and annotations to a DXF.",
+            "soil boundaries, water table, soil nails, and annotations to a DXF.",
         "methods": [
-            "Geometry-to-DXF export of surface, boundaries, GWT, nails/anchors, and text annotations.",
-            "References: the ezdxf library. Requires the <code>[dxf]</code> extra.",
+            "Geometry-to-DXF export of surface, boundaries, GWT, soil nails, and text annotations.",
+            "References: the ezdxf library (installed with the app).",
         ],
         "limits": [],
     },
@@ -1119,20 +1251,21 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "report with inputs, equations, figures, and results &mdash; the documentation a calc set "
             "needs.",
         "methods": [
-            "Jinja2-templated **HTML** and **LaTeX** calc packages for about a dozen analysis modules, "
-            "with matplotlib figures and (optionally) Plotly interactive viewers; PDF where "
-            "<code>pdflatex</code> is available.",
+            "Jinja2-templated **HTML** and **LaTeX** calc packages for 17 analysis modules "
+            "(<code>calc_package.list_supported_modules()</code>), with matplotlib figures and Plotly "
+            "interactive viewers; PDF by <code>pdflatex</code> where it is installed and otherwise by "
+            "PyMuPDF&rsquo;s HTML engine (simpler layout). <code>html_to_pdf</code> turns a report you "
+            "compose in HTML into a PDF the same way.",
             "**Calculation tables** in the style of Ensoft&rsquo;s output: a printed &ldquo;Calculation "
             "Tables&rdquo; section and one CSV per table, units in the headers, for lateral and axial "
             "piles, pile groups, drilled shafts, settlement, bearing capacity, sheet piles, slope "
-            "stability, downdrag, fem2d, liquefaction, the wave-equation bearing graph and ground "
-            "improvement.",
-            "References: uses the <code>[calc]</code> extra (Jinja2), plus <code>[plot]</code> and "
-            "<code>[interactive]</code> for figures.",
+            "stability, downdrag, fem2d, liquefaction, the wave-equation bearing graph, ground "
+            "improvement, support of excavation and reliability.",
+            "References: Jinja2, matplotlib and Plotly, all installed with the app.",
         ],
         "limits": [
-            "PDF output needs <code>pdflatex</code>; on Databricks (no LaTeX) emit self-contained HTML and "
-            "print it to PDF from the browser.",
+            "Without <code>pdflatex</code> (Databricks, Foundry) the PDF comes from PyMuPDF&rsquo;s HTML "
+            "engine, a simpler layout with a CSS subset; the result names the engine used.",
         ],
     },
 }
@@ -1143,9 +1276,9 @@ MODULE_NARRATIVE: dict[str, dict] = {
 # ===========================================================================
 
 VALIDATION_KPIS = [
-    ("42", "published problems checked"),
-    ("75", "individual module-vs-source comparisons"),
-    ("53", "PASS (within stated tolerance)"),
+    ("63", "published problems checked"),
+    ("107", "individual module-vs-source comparisons"),
+    ("79", "PASS (within stated tolerance)"),
     ("0", "unexplained discrepancies"),
 ]
 
@@ -1154,7 +1287,7 @@ VALIDATION_INTRO = (
     "the package carries a <em>published-example</em> validation layer: real worked examples "
     "from the design manuals and FE verification suites, with complete numeric inputs "
     "<em>and</em> published numeric answers, run through the analysis modules offline. The "
-    "problems (V-001&hellip;V-040) and their sources are in <code>validation_examples/INVENTORY.md</code>; "
+    "problems (V-001 onward) and their sources are in <code>validation_examples/INVENTORY.md</code>; "
     "the run-by-run verdicts are in <code>validation_examples/RESULTS.md</code>. Flagship "
     "modules additionally carry a <code>VALIDATION.md</code> (slope_stability vs Fredlund &amp; "
     "Krahn 1977 / ACADS / Duncan; fem2d vs Griffiths &amp; Lane and the Prandtl solution; "
@@ -1162,7 +1295,7 @@ VALIDATION_INTRO = (
     "(reproduces the published answer within tolerance), <strong>CONVENTION</strong> (a "
     "defensibly different but documented convention &mdash; the module is not tuned to the one "
     "example), and <strong>N/A&nbsp;(scope)</strong> (the module implements a different method "
-    "than the example &mdash; a documented coverage gap, not a failure). Across 75 comparisons "
+    "than the example &mdash; a documented coverage gap, not a failure). Across 107 comparisons "
     "there were <strong>zero unexplained discrepancies</strong>."
 )
 
@@ -1334,8 +1467,10 @@ def _ch2_install(ctx):
         "The core install already covers the native modules &mdash; bearing capacity, settlement, piles, "
         "walls, slope stability, the reliability engine, fem2d, and the reference library "
         "(<code>geotech-references</code> is a hard dependency, so DM7/GEC/UFC lookups work out of the "
-        "box). The optional <em>extras</em> pull in the third-party libraries that the wrapper modules "
-        "drive. Install only what you need, or take <code>[full]</code>.")
+        "box). Since 5.8.1 the plain install also brings the third-party libraries the wrapper modules "
+        "drive; the extra names below are kept as empty aliases so old install lines still work. Three "
+        "extras still add a package: <code>[ags4]</code> and <code>[subsurface]</code> (python-ags4) and "
+        "<code>[pydiggs]</code>.")
 
     ctx.section("The extras groups")
     rows = ["<table><thead><tr><th>Extra</th><th>Pulls in</th><th>Unlocks</th></tr></thead><tbody>"]
@@ -1343,7 +1478,7 @@ def _ch2_install(ctx):
         "plot": "matplotlib figures in calc packages and module plots",
         "calc": "Jinja2-templated HTML/LaTeX calc packages",
         "interactive": "Plotly single-file interactive viewers",
-        "pdf": "PDF cross-section import (vector + vision)",
+        "pdf": "PDF cross-section import (vector)",
         "dxf": "DXF CAD import and export",
         "opensees": "OpenSeesPy nonlinear FE (PM4Sand, 1D site response)",
         "pystrata": "equivalent-linear 1D site response",
@@ -1362,9 +1497,9 @@ def _ch2_install(ctx):
     rows.append("</tbody></table>")
     ctx.raw("".join(rows))
     ctx.callout("Honest failure when an extra is missing",
-        "<p>Without <code>[full]</code>, the roughly one-in-six methods that need an optional backend "
-        "fail cleanly with a &ldquo;not installed&rdquo; message rather than a confusing traceback. "
-        "Install the matching extra to enable them.</p>")
+        "<p>A method whose backend is not installed (python-ags4 or pydiggs without their extra, or a "
+        "library a host cannot install, such as PyNiteFEA on numpy 1.26) fails cleanly with a "
+        "&ldquo;not installed&rdquo; message rather than a confusing traceback.</p>")
 
     ctx.section("Local Python")
     ctx.para(
@@ -1648,22 +1783,22 @@ def _ch6_geometry(ctx):
         "<code>dxf_import</code> reads a DXF, discovers its layers, and converts polylines into the "
         "<code>SlopeGeometry</code> and FEM inputs the analysis modules consume. The workflow is "
         "discover&nbsp;&rarr;&nbsp;parse&nbsp;&rarr;&nbsp;build: list the layers, map them to surface / "
-        "soil boundaries / water table / reinforcement, then build the model. It needs the "
-        "<code>[dxf]</code> extra (ezdxf).")
+        "soil boundaries / water table / soil nails, then build the model. ezdxf is installed "
+        "with the app.")
 
     ctx.section("PDF cross-section import")
     ctx.para(
-        "<code>pdf_import</code> extracts geometry from a PDF drawing two ways: <strong>vector "
-        "extraction</strong> (PyMuPDF <code>get_drawings()</code> for exact line work) and "
-        "<strong>vision extraction</strong> (an LLM reads the rendered page). Round 2 added scale "
-        "calibration from a known dimension, label&ndash;to&ndash;region association, geometry cleanup, "
-        "a vision grid overlay, and a vision&harr;vector cross-check so the two methods can confirm each "
-        "other. Needs the <code>[pdf]</code> extra.")
+        "<code>pdf_import</code> extracts geometry from a PDF drawing by <strong>vector "
+        "extraction</strong> (PyMuPDF <code>get_drawings()</code> for exact line work, through the "
+        "<code>planlens</code> package). It calibrates the scale from two points and a known distance or "
+        "proposes it from the scale notes, proposes a colour&ndash;to&ndash;role mapping from the labels, "
+        "cleans up the geometry, and cross-checks the vector result against a vision extraction made "
+        "outside the tool, so the two methods can confirm each other.")
 
     ctx.section("DXF export")
     ctx.para(
         "<code>dxf_export</code> writes a cross-section back out to DXF &mdash; surface, soil boundaries, "
-        "water table, nails/anchors, and annotations &mdash; so a model built or checked in the toolkit "
+        "water table, soil nails, and annotations &mdash; so a model built or checked in the toolkit "
         "can return to CAD.")
 
     ctx.section("Staged, human-gated model setup (geo_project)")
@@ -1677,11 +1812,9 @@ def _ch6_geometry(ctx):
     ctx.section("Calc-package reporting")
     ctx.para(
         "<code>calc_package</code> turns a module result into a Mathcad-style calculation package &mdash; "
-        "HTML or LaTeX, with figures and equation traces &mdash; for about a dozen of the analysis "
-        "modules. On a system with <code>pdflatex</code> it can emit PDF; on Databricks (no LaTeX), emit "
-        "the self-contained HTML and print it to PDF from the browser. It needs the <code>[calc]</code> "
-        "extra (Jinja2), plus <code>[plot]</code> for figures and <code>[interactive]</code> for the "
-        "Plotly viewers.")
+        "HTML or LaTeX, with figures and equation traces &mdash; for 17 of the analysis modules. It "
+        "emits PDF by <code>pdflatex</code> where that is installed and otherwise by PyMuPDF&rsquo;s HTML "
+        "engine (Databricks, Foundry), a simpler layout.")
 
 
 # ---- Chapter 7: reliability ------------------------------------------------
@@ -1749,7 +1882,7 @@ def _ch8_validation(ctx):
     ctx.raw(f"<div class='kpi'>{st_boxes}</div>")
     ctx.para(VALIDATION_INTRO)
 
-    ctx.section("Published-example validation (V-001&hellip;V-040)")
+    ctx.section("Published-example validation")
     rows = ["<table><thead><tr><th>ID</th><th>Module</th><th>Problem</th><th>Source</th><th>Verdict</th></tr></thead><tbody>"]
     for vid, mod, prob, src, verd in VALIDATION_ROWS:
         rows.append(f"<tr><td>{vid}</td><td><code>{mod}</code></td><td>{prob}</td>"
@@ -1769,9 +1902,9 @@ def _ch8_validation(ctx):
     ctx.callout("CONVENTION",
         "<p>The module and the example use a defensibly different convention, and the delta is documented "
         "&mdash; the module is <em>not</em> tuned to the one example. Example: for the GEC-6 spread "
-        "footing, the packaged high-level call applies Vesic depth factors while the example deliberately "
-        "sets them to 1.0 for cohesive overburden; assembled the example&rsquo;s way, the module recovers "
-        "the published closed form exactly.</p>", kind="warn")
+        "footing, the packaged high-level call applies Brinch Hansen&rsquo;s depth factors while the "
+        "example takes d<sub>q</sub> = 1.0 and GEC-6&rsquo;s C<sub>w</sub> groundwater factors; assembled the "
+        "example&rsquo;s way, the module recovers the published closed form exactly.</p>", kind="warn")
     ctx.callout("N/A (scope)",
         "<p>The module implements a different method than the example &mdash; a documented coverage gap, "
         "not a failure. Example: a slope problem whose pore pressure is supplied as an interpolated "
@@ -1810,20 +1943,23 @@ def _ch9_limitations(ctx):
     ctx.section("Known method boundaries")
     ctx.para("A few honest scope notes drawn straight from the validation record:")
     ctx.bullets([
-        "Diesel-hammer drivability in <code>wave_equation</code> is an energy&ndash;velocity "
-        "approximation, not a GRLWEAP combustion + ram-cycle model; treat diesel bearing graphs as a "
-        "trend, not a tie-out.",
-        "<code>slope_stability</code> accepts a piezometric surface or per-layer r<sub>u</sub>, not an "
-        "arbitrary interpolated pore-pressure grid; its tension crack is entry-side and keeps the cracked "
-        "wedge as driving soil (a conservative convention).",
+        "<code>wave_equation</code> models every hammer as a rigid ram at its rated energy; a diesel&rsquo;s "
+        "combustion and changing stroke are not modelled and the result warns that its blow counts are "
+        "likely low (GEC-12 Vol. 2 p. 206); treat diesel bearing graphs as a trend, not a tie-out.",
+        "<code>slope_stability</code>&rsquo;s tension crack keeps the cracked wedge as zero-strength "
+        "driving soil by default (a conservative convention); <code>tension_crack_model='truncation'</code> "
+        "removes it from the sliding mass as Slide2 does.",
         "<code>ground_improvement</code> uses an equal-strain settlement-reduction model for aggregate "
         "piers, not the GEC-13 stiffness-modulus two-layer method; the Priebe curve is GEC-13's "
         "printed curve (&phi; = 37.5&deg;) and depends on the area-ratio convention you feed it.",
-        "The high-level <code>bearing_capacity</code> call applies Vesic depth factors and an "
-        "effective-unit-weight groundwater model &mdash; defensible, but different from an AASHTO "
-        "C<sub>w</sub> groundwater correction; know which convention your check needs.",
-        "Soldier-pile arching and the FHWA apparent-diagram single-anchor embedment solver are documented "
-        "gaps in <code>soe</code>/<code>sheet_pile</code>.",
+        "The high-level <code>bearing_capacity</code> call applies Brinch Hansen&rsquo;s depth factors "
+        "by default (<code>depth_factor_method</code>) and an effective-unit-weight groundwater model "
+        "&mdash; different from GEC-6&rsquo;s C<sub>w</sub> groundwater factors, which are not offered; "
+        "know which convention your check needs.",
+        "Soldier-pile effective widths and arching are not modelled in <code>soe</code> or "
+        "<code>sheet_pile</code> (continuous walls per metre run); <code>sheet_pile</code>&rsquo;s anchored "
+        "embedment is classical free earth support, while the FHWA apparent-diagram embedment is in "
+        "<code>soe</code>.",
     ])
 
     ctx.section("Treat agent output with particular care")
