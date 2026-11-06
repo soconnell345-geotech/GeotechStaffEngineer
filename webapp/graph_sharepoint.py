@@ -35,10 +35,15 @@ on whatever tenant they have, with no code change from us:
   follows the Graph address.
 * A CERTIFICATE as well as a client secret: ``GRAPH_CLIENT_CERT`` (a PEM
   file path, or the PEM text, holding the certificate and, unless
-  ``GRAPH_CLIENT_KEY`` names it apart, its private key), optionally
-  ``GRAPH_CLIENT_KEY_PASSWORD`` and ``GRAPH_CLIENT_CERT_THUMBPRINT``. When a
-  certificate is set it is used instead of the secret: a client assertion
-  signed with RS256 (needs the ``cryptography`` package, imported only then).
+  ``GRAPH_CLIENT_KEY`` names it apart, its private key; or a PKCS #12
+  ``.pfx``/``.p12``, as a file path or as the base64 text Key Vault returns
+  for a certificate's secret), optionally ``GRAPH_CLIENT_KEY_PASSWORD`` (the
+  key's or the PKCS #12's password) and ``GRAPH_CLIENT_CERT_THUMBPRINT``.
+  When a certificate is set it is used instead of the secret: a client
+  assertion signed with PS256, header ``x5t#S256``, as Microsoft's
+  certificate-credentials page gives it (RS256 with ``x5t`` when only a
+  thumbprint is known). Needs the ``cryptography`` package, imported only
+  then.
 * More than one site: ``SHAREPOINT_SITE_URLS`` (one per line or
   comma-separated, each optionally ``name=URL``) beside or instead of
   ``SHAREPOINT_SITE_URL``. The first site is the default, so every path
@@ -51,6 +56,7 @@ on whatever tenant they have, with no code change from us:
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import logging
@@ -238,23 +244,55 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def _pem_text(value: str) -> str:
-    """The PEM text itself, or the contents of the file it names."""
+#: What a certificate setting may hold, for the error when it holds none.
+_CERT_FORMS = (
+    "PEM text, the path of a PEM or PKCS #12 (.pfx/.p12) file, or the base64 "
+    "text of a PKCS #12 (what Key Vault returns for a certificate's secret)")
+
+
+def _cert_material(value: str) -> Tuple[str, Optional[bytes]]:
+    """``(PEM text, None)`` or ``("", PKCS #12 bytes)`` for a certificate or
+    key setting: PEM text, a PEM or PKCS #12 file's path, or the base64 text
+    of a PKCS #12."""
     v = (value or "").strip()
-    if "-----BEGIN" in v:
-        return v.replace("\\n", "\n")      # a setting may hold escaped newlines
-    if os.path.exists(v):
-        with open(v, encoding="utf-8") as fh:
-            return fh.read()
-    raise ValueError("the certificate setting is neither PEM text nor the "
-                     "path of a file that exists")
+    if "-----BEGIN" in v:                 # a setting may hold escaped newlines
+        return v.replace("\\n", "\n"), None
+    if os.path.isfile(v):
+        with open(v, "rb") as fh:
+            data = fh.read()
+        if b"-----BEGIN" in data:
+            return data.decode("utf-8", "replace"), None
+        return "", data
+    try:
+        data = base64.b64decode("".join(v.split()), validate=True)
+    except (binascii.Error, ValueError):
+        data = b""
+    if not data:
+        raise ValueError(f"the certificate setting is not {_CERT_FORMS}")
+    return "", data
+
+
+def _load_pkcs12(data: bytes, password: Optional[bytes]):
+    """``(key, certificate)`` from PKCS #12 bytes, or a plain error."""
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    try:
+        key, cert, _chain = pkcs12.load_key_and_certificates(data, password)
+    except (ValueError, TypeError):
+        raise ValueError(
+            "the certificate setting is not PEM, and it did not load as "
+            f"PKCS #12 (a wrong or missing {ENV_CLIENT_KEY_PASSWORD}, or not "
+            f"a certificate at all). Give {_CERT_FORMS}.") from None
+    return key, cert
 
 
 class CertificateCredential:
-    """A private key and its certificate's thumbprint, signing the client
+    """A private key and its certificate's thumbprints, signing the client
     assertion Entra takes in place of a secret.
 
-    The key never leaves this object: no ``repr`` of it, no log line."""
+    The certificate and key come as PEM (text or a file) or as PKCS #12 (a
+    ``.pfx``/``.p12`` file, or its base64 text); ``password`` opens an
+    encrypted key or PKCS #12. The key never leaves this object: no ``repr``
+    of it, no log line."""
 
     def __init__(self, cert_pem: Optional[str] = None,
                  key_pem: Optional[str] = None,
@@ -268,25 +306,39 @@ class CertificateCredential:
                 "A certificate credential needs the 'cryptography' package "
                 "(pip install cryptography), or use GRAPH_CLIENT_SECRET "
                 "instead.") from exc
-        cert_text = _pem_text(cert_pem) if cert_pem else ""
-        key_text = _pem_text(key_pem) if key_pem else cert_text
-        if "PRIVATE KEY" not in key_text:
-            raise ValueError(
-                f"no private key found: put it in the {ENV_CLIENT_CERT} PEM "
-                f"or name it in {ENV_CLIENT_KEY}")
-        start = key_text.index("-----BEGIN")
-        key_block = key_text[start:]
-        # Load only the key block(s); certificates in the same text are skipped.
-        m = re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?"
-                      r"-----END [A-Z ]*PRIVATE KEY-----", key_block, re.S)
-        self._key = serialization.load_pem_private_key(
-            m.group(0).encode(), password=(password.encode()
-                                           if password else None))
+        pw = password.encode() if password else None
+        cert_text, cert_pfx = (_cert_material(cert_pem) if cert_pem
+                               else ("", None))
+        key_text, key_pfx = (_cert_material(key_pem) if key_pem
+                             else (cert_text, cert_pfx))
+        key = cert = None
         if "BEGIN CERTIFICATE" in cert_text:
             cert = x509.load_pem_x509_certificate(cert_text[
                 cert_text.index("-----BEGIN CERTIFICATE"):].encode())
+        if cert_pfx is not None:
+            pfx_key, cert = _load_pkcs12(cert_pfx, pw)
+            if not key_pem:
+                key = pfx_key
+        if key is None and key_pfx is not None and key_pem:
+            key, pfx_cert = _load_pkcs12(key_pfx, pw)
+            cert = cert or pfx_cert
+        if key is None:
+            if "PRIVATE KEY" not in key_text:
+                raise ValueError(
+                    f"no private key found: put it in {ENV_CLIENT_CERT} (with "
+                    f"the certificate) or name it in {ENV_CLIENT_KEY}")
+            # Load only the key block; certificates in the same text are
+            # skipped.
+            m = re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?"
+                          r"-----END [A-Z ]*PRIVATE KEY-----", key_text, re.S)
+            key = serialization.load_pem_private_key(m.group(0).encode(),
+                                                     password=pw)
+        self._key = key
+        self.x5t_s256: Optional[str] = None
+        if cert is not None:
             der = cert.public_bytes(serialization.Encoding.DER)
             self.x5t = _b64url(hashlib.sha1(der).digest())
+            self.x5t_s256 = _b64url(hashlib.sha256(der).digest())
             self.not_after = getattr(cert, "not_valid_after_utc", None) \
                 or cert.not_valid_after
         elif thumbprint:
@@ -304,10 +356,19 @@ class CertificateCredential:
 
     def assertion(self, client_id: str, token_url: str,
                   lifetime: int = 600) -> str:
-        """The signed client assertion (RS256, header ``x5t``)."""
+        """The signed client assertion: PS256 with header ``x5t#S256`` (the
+        SHA-256 thumbprint), as Microsoft's certificate-credentials page
+        gives it; RS256 with ``x5t`` (SHA-1) when only a thumbprint is
+        known, since the portal shows the SHA-1 one."""
         from cryptography.hazmat.primitives.asymmetric import padding
         now = int(time.time())
-        header = {"alg": "RS256", "typ": "JWT", "x5t": self.x5t}
+        if self.x5t_s256:
+            header = {"alg": "PS256", "typ": "JWT", "x5t#S256": self.x5t_s256}
+            pad = padding.PSS(mgf=padding.MGF1(self._hashes.SHA256()),
+                              salt_length=32)
+        else:                      # only a SHA-1 thumbprint was given
+            header = {"alg": "RS256", "typ": "JWT", "x5t": self.x5t}
+            pad = padding.PKCS1v15()
         claims = {"aud": token_url, "iss": client_id, "sub": client_id,
                   "jti": str(uuid.uuid4()), "nbf": now, "iat": now,
                   "exp": now + lifetime}
@@ -315,8 +376,8 @@ class CertificateCredential:
                                  .encode()) + "." +
                          _b64url(json.dumps(claims, separators=(",", ":"))
                                  .encode()))
-        sig = self._key.sign(signing_input.encode("ascii"),
-                             padding.PKCS1v15(), self._hashes.SHA256())
+        sig = self._key.sign(signing_input.encode("ascii"), pad,
+                             self._hashes.SHA256())
         return signing_input + "." + _b64url(sig)
 
 
@@ -396,15 +457,17 @@ class GraphFileManager:
         """Client-credentials token for Graph (~1 h), renewed a minute early."""
         if self._token and time.time() < self._token_expires - 60:
             return self._token
+        # Field order: grant type, client id, the credential, scope. With a
+        # secret that is the same bytes as before TA-34.
         form = {"grant_type": "client_credentials",
-                "client_id": self._client_id,
-                "scope": f"{self.graph_url}/.default"}
+                "client_id": self._client_id}
         if self._certificate is not None:
             form["client_assertion_type"] = ASSERTION_TYPE
             form["client_assertion"] = self._certificate.assertion(
                 self._client_id, self.token_url)
         else:
             form["client_secret"] = self._secret
+        form["scope"] = f"{self.graph_url}/.default"
         body = urllib.parse.urlencode(form).encode()
         req = urllib.request.Request(self.token_url, data=body, method="POST")
         payload = self._send(req, timeout=30.0)
@@ -766,18 +829,34 @@ SIGN_IN_ADVICE: Dict[str, str] = {
               "the tenant's.",
     "7000218": "No credential was sent. Set GRAPH_CLIENT_SECRET or "
                "GRAPH_CLIENT_CERT.",
+    # "Confidential Client isn't supported in Cross Cloud request": a
+    # client-credentials sign-in sent to another cloud's sign-in address.
+    "900382": "Wrong cloud: the tenant is in a different Microsoft cloud "
+              "from the sign-in address. Set GRAPH_CLOUD to the tenant's "
+              "cloud: commercial (also GCC), gcc_high or dod.",
+    "900432": "Wrong cloud: the tenant is in a different Microsoft cloud "
+              "from the sign-in address. Set GRAPH_CLOUD to the tenant's "
+              "cloud: commercial (also GCC), gcc_high or dod.",
 }
 
 GRANT_ADVICE = (
     "The app has not been granted this site. Under Sites.Selected each site "
-    "is granted on its own: a SharePoint admin (or anyone allowed to call "
-    "Graph with Sites.FullControl.All) grants it, for example with "
-    "PnP PowerShell:\n"
+    "is granted on its own: a SharePoint administrator who is a member of "
+    "the site grants it, for example with PnP PowerShell:\n"
     "    Grant-PnPAzureADAppSitePermission -AppId <GRAPH_CLIENT_ID> "
     "-DisplayName <app name> -Site <site URL> -Permissions Write\n"
-    "or with the Graph call POST /sites/{site-id}/permissions (body: "
-    "roles [\"write\"] and grantedToIdentities with the app's id). See "
-    "docs/SHAREPOINT_SETUP.md.")
+    "or with Microsoft Graph PowerShell's New-MgSitePermission (the Graph "
+    "call POST /sites/{site-id}/permissions; body: roles [\"write\"] and "
+    "grantedToIdentities with the app's id). See docs/SHAREPOINT_SETUP.md "
+    "step 3.")
+
+WRITE_ADVICE = (
+    "The app can read this site but not write to it: the grant is "
+    "read-only ('read'). Grant 'write' (docs/SHAREPOINT_SETUP.md step 3), "
+    "or conversations will not be saved.")
+
+#: The probe file the connection test writes and deletes (TA-34 review 6).
+PROBE_NAME = "gse-connection-check.txt"
 
 CONSENT_ADVICE = (
     "Graph refused the app's sign-in token: the app has no Graph permission "
@@ -833,24 +912,61 @@ def site_message(exc: BaseException, site: Site) -> str:
     if status == 404 or code == "itemNotFound":
         return (f"The site {site.url} was not found. Check the address: it "
                 "is the site's own address, https://<tenant>.sharepoint.com/"
-                "sites/<site> (for a government cloud .sharepoint.us), "
-                "without a library or folder after it.")
+                "sites/<site> (GCC High: .sharepoint.us; DoD: "
+                ".sharepoint-mil.us), without a library or folder after it.")
     if status is None:
         return ("Graph could not be reached: check the host's network or "
                 "proxy, and GRAPH_CLOUD / GRAPH_API_URL.")
     return f"Graph refused the request (HTTP {status})."
 
 
+def _write_probe(manager: "GraphFileManager", root: str) -> Dict[str, Any]:
+    """Write a small probe file in ``root`` (created as the app's first
+    save would), then delete it: the "write" step."""
+    shown = f"{root.strip('/')}/{PROBE_NAME}"
+    try:
+        drive_id, rest = manager._split_path(root)
+        parent_id = manager._ensure_folder(drive_id, rest)
+        item = manager._request(
+            "PUT", f"drives/{drive_id}/items/{parent_id}:/{PROBE_NAME}:/"
+                   "content?@microsoft.graph.conflictBehavior=replace",
+            data=(b"Written by the GeotechStaffEngineer connection test "
+                  b"(python -m webapp.graph_sharepoint --check), which "
+                  b"deletes it straight away.\n"),
+            content_type="text/plain")
+    except Exception as exc:                           # noqa: BLE001
+        status = getattr(exc, "status", None)
+        _aad, code = _codes(str(exc))
+        message = (WRITE_ADVICE if status == 403 or code == "accessDenied"
+                   else site_message(exc, manager.sites[0]))
+        return _step("write", False, message, str(exc))
+    try:
+        manager._request("DELETE", f"drives/{drive_id}/items/{item['id']}")
+    except Exception as exc:                           # noqa: BLE001
+        return _step("write", True,
+                     f"Wrote a probe file, {shown}, so the app can save "
+                     "files; but it could not delete it: delete it by hand.",
+                     str(exc))
+    return _step("write", True,
+                 f"Wrote and deleted a probe file, {shown}: the app can "
+                 "save files.")
+
+
 def check_connection(manager: Optional["GraphFileManager"] = None,
-                     library_root: Optional[str] = None
-                     ) -> List[Dict[str, Any]]:
+                     library_root: Optional[str] = None,
+                     write: bool = True) -> List[Dict[str, Any]]:
     """Run the setup's steps in order and return one record per step:
     ``{"step", "ok", "message", "detail"}``. Stops at the first failure.
 
     Steps: the settings; the sign-in; each site; the document library the
     app writes to (the first folder of ``GEOTECH_SHAREPOINT_ROOT``, default
-    ``Shared Documents``) on the default site. Never raises; never puts a
-    secret or key in a message (the server's error text never carries one).
+    ``Shared Documents``) on the default site; and, unless ``write`` is
+    False, a write: a small probe file (:data:`PROBE_NAME`) put in
+    ``GEOTECH_SHAREPOINT_ROOT`` (else the library's root) and deleted, so a
+    read-only grant fails here and not at the first save. With no
+    ``manager`` given, each Graph call waits at most 30 s. Never raises;
+    never puts a secret or key in a message (the server's error text never
+    carries one).
     """
     out: List[Dict[str, Any]] = []
     if manager is None:
@@ -862,7 +978,7 @@ def check_connection(manager: Optional["GraphFileManager"] = None,
                              ".env) and run this again."))
             return out
         try:
-            manager = GraphFileManager()
+            manager = GraphFileManager(timeout=30.0)
         except Exception as exc:                       # noqa: BLE001
             out.append(_step("settings", False,
                              "A setting could not be used: "
@@ -902,6 +1018,14 @@ def check_connection(manager: Optional["GraphFileManager"] = None,
         return out
     out.append(_step(f"library {library}", True,
                      f"Found the library {library!r} on {site.url}."))
+    if not write:
+        skipped = _step("write", True, "Not tested (read-only check): a site "
+                        "granted only 'read' passes the steps above, but the "
+                        "app cannot save there.")
+        skipped["skipped"] = True
+        out.append(skipped)
+        return out
+    out.append(_write_probe(manager, library_root.strip("/") or library))
     return out
 
 
@@ -909,12 +1033,14 @@ def format_check(results: List[Dict[str, Any]]) -> str:
     """The connection test as plain text, one line a step."""
     lines = []
     for r in results:
-        lines.append(f"{'PASS' if r['ok'] else 'FAIL'}  {r['step']}: "
-                     f"{r['message']}")
+        label = "SKIP" if r.get("skipped") else ("PASS" if r["ok"] else "FAIL")
+        lines.append(f"{label}  {r['step']}: {r['message']}")
         if r.get("detail"):
             lines.append(f"      Server said: {r['detail']}")
     if results and all(r["ok"] for r in results):
-        lines.append("SharePoint is set up.")
+        lines.append("SharePoint is set up for reading; saving was not tested."
+                     if any(r.get("skipped") for r in results)
+                     else "SharePoint is set up.")
     return "\n".join(lines)
 
 
@@ -939,7 +1065,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         description="SharePoint over Microsoft Graph with an app "
                     "registration (docs/SHAREPOINT_SETUP.md).")
     ap.add_argument("--check", action="store_true",
-                    help="test the connection step by step")
+                    help="test the connection step by step (it writes and "
+                         "deletes a small probe file, %s)" % PROBE_NAME)
+    ap.add_argument("--read-only", action="store_true",
+                    help="with --check: skip the write probe")
     args = ap.parse_args(argv)
     if not args.check:
         ap.print_help()
@@ -949,7 +1078,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         export_dotenv()
     except Exception:                                  # noqa: BLE001
         pass
-    results = check_connection()
+    results = check_connection(write=not args.read_only)
     print(format_check(results))
     return 0 if results and all(r["ok"] for r in results) else 1
 
@@ -958,7 +1087,7 @@ __all__ = ["GraphFileManager", "GraphError", "LibraryNotFound", "configured",
            "missing_settings", "cloud_urls", "CLOUDS", "Site", "parse_sites",
            "configured_sites", "CertificateCredential",
            "certificate_from_settings", "check_connection", "format_check",
-           "site_note", "started",
+           "site_note", "started", "PROBE_NAME",
            "ENV_TENANT", "ENV_CLIENT_ID", "ENV_CLIENT_SECRET", "ENV_SITE_URL",
            "ENV_SITE_URLS", "ENV_CLOUD", "ENV_LOGIN_URL", "ENV_API_URL",
            "ENV_CLIENT_CERT", "ENV_CLIENT_KEY", "ENV_CLIENT_KEY_PASSWORD",

@@ -72,18 +72,27 @@ class FakeCloud:
     """A sign-in endpoint and Graph, on whatever hosts the test names."""
 
     def __init__(self, sites=None, token_error=None, site_errors=None,
-                 drives=("Shared Documents",)):
+                 drives=("Shared Documents",), write_error=None,
+                 delete_error=None):
         self.calls = []
         self.forms = []
+        self.bodies = []
+        self.timeouts = []
+        self.puts = []
+        self.made = []
         self.sites = sites or {"/sites/Alpha": "SA", "/sites/Beta": "SB"}
         self.token_error = token_error
         self.site_errors = site_errors or {}
         self.drives = drives
+        self.write_error = write_error
+        self.delete_error = delete_error
 
     def __call__(self, req, timeout=None):
         url, method = req.full_url, req.get_method()
         self.calls.append((method, url))
+        self.timeouts.append(timeout)
         if "/oauth2/v2.0/token" in url:
+            self.bodies.append(req.data)
             self.forms.append(dict(urllib.parse.parse_qsl(req.data.decode())))
             if self.token_error:
                 code, body = self.token_error
@@ -108,6 +117,24 @@ class FakeCloud:
         if "/root:/" in url and method == "GET":
             return _resp({"id": "F", "name": url.rsplit("/", 1)[-1],
                           "file": {}, "size": 1, "webUrl": "https://x"})
+        # the connection test's write probe
+        if method == "GET" and url.endswith("/root"):
+            return _resp({"id": "ROOT", "folder": {}})
+        if method == "GET" and url.endswith("/children"):
+            return _resp({"value": []})
+        if method == "POST" and url.endswith("/children"):
+            name = json.loads(req.data)["name"]
+            self.made.append(name)
+            return _resp({"id": f"FOLDER-{name}", "name": name, "folder": {}})
+        if method == "PUT" and url.split("?")[0].endswith(":/content"):
+            self.puts.append((url, req.data))
+            if self.write_error:
+                raise _err(url, *self.write_error)
+            return _resp({"id": "PROBE"})
+        if method == "DELETE":
+            if self.delete_error:
+                raise _err(url, *self.delete_error)
+            return _resp(b"")
         raise AssertionError(f"unexpected call {method} {url}")
 
 
@@ -183,6 +210,13 @@ def test_no_new_settings_is_todays_behaviour(monkeypatch, cloud):
     assert form == {"grant_type": "client_credentials", "client_id": CLIENT,
                     "client_secret": "made-up-secret",
                     "scope": "https://graph.microsoft.com/.default"}
+    # The same bytes as master's form (grant_type, client_id,
+    # client_secret, scope, in that order), not only the same fields.
+    assert cloud.bodies[0] == (
+        b"grant_type=client_credentials"
+        b"&client_id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        b"&client_secret=made-up-secret"
+        b"&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default")
     assert gs.site_note(mgr) == ""
 
 
@@ -217,7 +251,21 @@ def _b64d(part):
     return base64.urlsafe_b64decode(part + "=" * (-len(part) % 4))
 
 
-def _check_assertion(assertion, cert, token_url):
+def _make_pfx(key, cert, password=None):
+    """The certificate and key as PKCS #12 bytes (a .pfx), as Key Vault
+    keeps a certificate by default."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    enc = (serialization.BestAvailableEncryption(password.encode())
+           if password else serialization.NoEncryption())
+    return pkcs12.serialize_key_and_certificates(b"test-app", key, cert,
+                                                 None, enc)
+
+
+def _check_assertion(assertion, cert, token_url, alg="PS256"):
+    """The assertion as Microsoft's certificate-credentials page gives it:
+    PS256 with the SHA-256 thumbprint ``x5t#S256`` when the certificate is
+    known; RS256 with the SHA-1 ``x5t`` when only a thumbprint is."""
     import hashlib
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding
@@ -225,13 +273,20 @@ def _check_assertion(assertion, cert, token_url):
     header = json.loads(_b64d(head))
     claims = json.loads(_b64d(body))
     der = cert.public_bytes(serialization.Encoding.DER)
-    assert header["alg"] == "RS256" and header["typ"] == "JWT"
-    assert _b64d(header["x5t"]) == hashlib.sha1(der).digest()
+    assert header["alg"] == alg and header["typ"] == "JWT"
+    if alg == "PS256":
+        assert _b64d(header["x5t#S256"]) == hashlib.sha256(der).digest()
+        assert "x5t" not in header
+        pad = padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32)
+    else:
+        assert _b64d(header["x5t"]) == hashlib.sha1(der).digest()
+        pad = padding.PKCS1v15()
     assert claims["aud"] == token_url
     assert claims["iss"] == CLIENT and claims["sub"] == CLIENT
     assert claims["exp"] > claims["nbf"] and claims["jti"]
+    assert claims["exp"] - claims["nbf"] <= 600
     cert.public_key().verify(_b64d(sig), f"{head}.{body}".encode(),
-                             padding.PKCS1v15(), hashes.SHA256())
+                             pad, hashes.SHA256())
 
 
 def test_certificate_from_a_file_signs_a_valid_assertion(
@@ -280,9 +335,62 @@ def test_key_with_only_a_thumbprint(tmp_path):
     thumb = hashlib.sha1(der).hexdigest().upper()
     cred = gs.CertificateCredential(key_pem=key_pem, thumbprint=thumb)
     _check_assertion(cred.assertion(CLIENT, "https://login.example.com/t"),
-                     cert, "https://login.example.com/t")
+                     cert, "https://login.example.com/t", alg="RS256")
     with pytest.raises(ValueError, match="thumbprint"):
         gs.CertificateCredential(key_pem=key_pem)
+
+
+def test_pkcs12_as_key_vault_returns_it_base64(monkeypatch, cloud, tmp_path):
+    """A Key Vault certificate read by its secret name comes back as the
+    base64 text of a PKCS #12 with no password."""
+    key, cert, _key_pem, _cert_pem = _make_cert(tmp_path)
+    value = base64.b64encode(_make_pfx(key, cert)).decode()
+    _base_settings(monkeypatch, secret=False)
+    monkeypatch.setenv(gs.ENV_CLIENT_CERT, value)
+    ts.reset()
+    assert gs.configured()
+    mgr = gs.GraphFileManager()
+    assert mgr.credential_kind == "certificate"
+    mgr.site_id
+    form = cloud.forms[0]
+    assert form["client_assertion_type"] == gs.ASSERTION_TYPE
+    _check_assertion(form["client_assertion"], cert, mgr.token_url)
+    # field order: grant type, client id, the credential, scope
+    assert list(form) == ["grant_type", "client_id", "client_assertion_type",
+                          "client_assertion", "scope"]
+
+
+def test_pkcs12_file_with_a_password(tmp_path):
+    key, cert, _key_pem, _cert_pem = _make_cert(tmp_path)
+    pfx = tmp_path / "app.pfx"
+    pfx.write_bytes(_make_pfx(key, cert, password="made-up-pw"))
+    cred = gs.CertificateCredential(cert_pem=str(pfx), password="made-up-pw")
+    _check_assertion(cred.assertion(CLIENT, "https://login.example.com/t"),
+                     cert, "https://login.example.com/t")
+    # the wrong password, or none: a plain error, never a UnicodeDecodeError
+    for pw in ("wrong", None):
+        with pytest.raises(ValueError, match="PKCS #12") as info:
+            gs.CertificateCredential(cert_pem=str(pfx), password=pw)
+        assert gs.ENV_CLIENT_KEY_PASSWORD in str(info.value)
+        assert "made-up-pw" not in str(info.value)
+
+
+def test_a_certificate_setting_in_no_known_form_is_refused_plainly(
+        monkeypatch, tmp_path):
+    pytest.importorskip("cryptography")
+    junk = tmp_path / "app.bin"
+    junk.write_bytes(bytes(range(256)))         # a binary file, not PKCS #12
+    for value in (str(junk), "C:\\no\\such\\app.pfx", "not a certificate"):
+        with pytest.raises(ValueError, match="PEM text") as info:
+            gs.CertificateCredential(cert_pem=value)
+        assert not isinstance(info.value, UnicodeDecodeError)
+    # the connection test names the setting problem in its first step
+    _base_settings(monkeypatch, secret=False)
+    monkeypatch.setenv(gs.ENV_CLIENT_CERT, str(junk))
+    ts.reset()
+    results = gs.check_connection()
+    assert results[-1]["step"] == "settings" and not results[-1]["ok"]
+    assert "PKCS #12" in results[-1]["message"]
 
 
 # ------------------------------------------------------------------ sites
@@ -378,12 +486,75 @@ def test_check_names_the_missing_settings():
 
 def test_check_passes_every_step(monkeypatch):
     _base_settings(monkeypatch)
-    results, text = _run(monkeypatch, FakeCloud())
+    fake = FakeCloud()
+    results, text = _run(monkeypatch, fake)
     assert [r["step"] for r in results] == [
-        "settings", "sign-in", "site Alpha", "library Shared Documents"]
+        "settings", "sign-in", "site Alpha", "library Shared Documents",
+        "write"]
     assert all(r["ok"] for r in results)
     assert "SharePoint is set up." in text
     assert "made-up-secret" not in text
+    # the write probe: put in the library's root, then deleted, and said so
+    assert "Wrote and deleted a probe file, Shared Documents/" \
+        f"{gs.PROBE_NAME}" in text
+    assert len(fake.puts) == 1 and not fake.made
+    assert fake.puts[0][0].startswith(
+        f"https://graph.microsoft.com/v1.0/drives/D-SA-0/items/ROOT:/"
+        f"{gs.PROBE_NAME}:/content")
+    methods = [m for m, _u in fake.calls]
+    assert methods[-2:] == ["PUT", "DELETE"]
+    assert fake.calls[-1][1].endswith("/drives/D-SA-0/items/PROBE")
+    # every call of the check waits at most 30 s (sign-in and Graph alike)
+    assert fake.timeouts and all(t == 30.0 for t in fake.timeouts)
+
+
+def test_check_write_probe_goes_in_the_configured_root(monkeypatch):
+    _base_settings(monkeypatch)
+    monkeypatch.setenv("GEOTECH_SHAREPOINT_ROOT", "Shared Documents/Pilot")
+    fake = FakeCloud()
+    results, text = _run(monkeypatch, fake)
+    assert results[-1]["step"] == "write" and results[-1]["ok"]
+    assert fake.made == ["Pilot"]               # as the app's first save would
+    assert f"/items/FOLDER-Pilot:/{gs.PROBE_NAME}:/content" in fake.puts[0][0]
+    assert f"Shared Documents/Pilot/{gs.PROBE_NAME}" in text
+
+
+def test_check_read_only_grant_fails_the_write_step(monkeypatch):
+    _base_settings(monkeypatch)
+    fake = FakeCloud(write_error=(403, {"error": {
+        "code": "accessDenied", "message": "made-up access text"}}))
+    results, text = _run(monkeypatch, fake)
+    assert [r["ok"] for r in results] == [True, True, True, True, False]
+    assert results[-1]["step"] == "write"
+    assert "can read this site but not write" in results[-1]["message"]
+    assert "Grant 'write'" in results[-1]["message"]
+    assert "made-up access text" in text
+    assert "SharePoint is set up" not in text
+    assert "DELETE" not in [m for m, _u in fake.calls]
+
+
+def test_check_probe_left_behind_is_named(monkeypatch):
+    _base_settings(monkeypatch)
+    fake = FakeCloud(delete_error=(500, {"error": {"code": "generalException"}}))
+    results, text = _run(monkeypatch, fake)
+    assert results[-1]["ok"]                    # saving works
+    assert "delete it by hand" in results[-1]["message"]
+    assert gs.PROBE_NAME in results[-1]["message"]
+
+
+def test_check_read_only_skips_the_write_probe(monkeypatch, capsys):
+    _base_settings(monkeypatch)
+    fake = FakeCloud()
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    results = gs.check_connection(write=False)
+    text = gs.format_check(results)
+    assert results[-1]["step"] == "write" and results[-1].get("skipped")
+    assert "SKIP  write" in text
+    assert "saving was not tested" in text
+    assert not fake.puts
+    assert gs.main(["--check", "--read-only"]) == 0
+    assert "SKIP  write" in capsys.readouterr().out
+    assert not fake.puts
 
 
 @pytest.mark.parametrize("code,expect", [
@@ -392,6 +563,8 @@ def test_check_passes_every_step(monkeypatch):
     ("AADSTS7000215", "client secret is wrong"),
     ("AADSTS7000222", "client secret has expired"),
     ("AADSTS700027", "certificate was not accepted"),
+    ("AADSTS900382", "different Microsoft cloud"),
+    ("AADSTS900432", "different Microsoft cloud"),
 ])
 def test_check_sign_in_refusals_in_plain_words(monkeypatch, code, expect):
     _base_settings(monkeypatch)
@@ -409,6 +582,9 @@ def test_check_site_not_found(monkeypatch):
     results, _ = _run(monkeypatch, FakeCloud(sites={"/sites/Other": "SO"}))
     assert results[-1]["step"] == "site Alpha"
     assert "was not found" in results[-1]["message"]
+    # the government clouds' SharePoint addresses: GCC High, then DoD
+    assert "GCC High: .sharepoint.us; DoD: .sharepoint-mil.us" in \
+        results[-1]["message"]
 
 
 def test_check_site_not_granted(monkeypatch):
@@ -419,6 +595,8 @@ def test_check_site_not_granted(monkeypatch):
     msg = results[-1]["message"]
     assert "not been granted this site" in msg
     assert "Grant-PnPAzureADAppSitePermission" in msg
+    assert "New-MgSitePermission" in msg
+    assert "SharePoint administrator who is a member of the site" in msg
     assert "Access denied" in text
 
 

@@ -259,8 +259,9 @@ def _sharepoint_started() -> bool:
 def _sharepoint_check() -> dict:
     """The SharePoint app registration, tested step by step (TA-34): which
     step failed and what the host's admin does about it. Run only when a
-    registration setting is filled in; makes a sign-in request and one
-    Graph request per site and library."""
+    registration setting is filled in; makes a sign-in request, one Graph
+    request per site and library, and writes and deletes a small probe file
+    (so a read-only grant shows here, not at the first save)."""
     from webapp import graph_sharepoint as gs
     name = "SharePoint connection"
     try:
