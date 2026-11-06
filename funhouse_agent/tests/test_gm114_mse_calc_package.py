@@ -7,8 +7,8 @@ and vertical face only. These tests, with made-up values, hold:
 * the package builds, and its numbers are the module's own, called
   directly on the same inputs;
 * every calculation step of the package cites a printed page;
-* a sloping backfill and a battered face are refused with what covers
-  them; a level backfill given as 0 is taken.
+* a battered face is refused with what covers it (a sloping backfill is
+  taken since GM-307); a level backfill given as 0 is taken.
 """
 
 import re
@@ -145,12 +145,13 @@ def test_a_wall_without_an_allowable_bearing_pressure_builds(tmp_path):
     assert "NOT CHECKED" in html
 
 
-def test_a_sloping_backfill_is_refused_with_what_covers_it():
-    out = D.call_agent("calc_package", "retaining_wall_package", {
-        **WALL, "surcharge": 0.0, "backfill_slope": 18.0})
-    assert "level backfill only" in out["error"]
-    assert "mse_wall tool" in out["error"]
-    assert "backfill_slope=18.0" in out["error"]
+def test_a_sloping_backfill_is_taken_since_gm307(tmp_path):
+    # GM-114 refused it; GM-307 prints GEC-11 Sec. 4.4.4's terms
+    out = _package({**WALL, "surcharge": 0.0, "backfill_slope": 18.0},
+                   tmp_path, "slope.html")
+    assert out["status"] == "success"
+    assert "Eqs. 4-2, 4-3 (p. 4-15)" in (tmp_path / "slope.html").read_text(
+        encoding="utf-8")
 
 
 def test_a_battered_face_is_refused_with_what_covers_it():

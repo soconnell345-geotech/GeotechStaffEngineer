@@ -1212,33 +1212,11 @@ _MSE_ASD = ("the module's ASD value: GEC-11 (2009) designs by LRFD and "
             "does not update the ASD procedure (Vol II App. F.1, p. F-2)")
 
 
-def _calc_steps_mse(result, analysis) -> List[CalcSection]:
-    """Calculation steps for MSE wall. The external steps print the terms
-    the ASD analysis used (GM-143, GM-164; :func:`_mse_terms`)."""
-    geom = _get(analysis, "geom")
-    reinforcement = _get(analysis, "reinforcement")
-    q_all = _get(analysis, "q_allowable")
-
-    if geom.backfill_slope > 0:
-        # The steps below print a level backfill (Rankine Ka); printing
-        # them beside a sloping-backfill result would contradict it (GM-112).
-        raise ValueError(
-            "MSE calculation steps cover a level backfill only; the analysis "
-            "result itself (mse_wall / analyze_mse_wall) handles a sloping "
-            "backfill per GEC-11 Section 4.4.4 and reports its basis in "
-            "'backslope'.")
-
-    t = _mse_terms(result, analysis)
-    phi, phi_f = t["phi_backfill"], t["phi_foundation"]
-
-    sections = []
+def _mse_level_steps(t, geom):
+    """The earth pressure steps for a level backfill (GEC-11 Vol I Eqs.
+    4-1, 4-5, 4-6): the steps and P_a."""
     H = geom.wall_height
-    L = geom.reinforcement_length
     q = geom.surcharge
-    forces = t["vertical_forces"]
-    thrusts = t["horizontal_forces"]
-
-    # ── Section 1: Earth Pressure ──────────────────────────────
     ep_items = []
 
     Ka = t["Ka"]
@@ -1270,6 +1248,172 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         notes=("The live-load surcharge's thrust (K_a q H) drives every "
                "check." if q > 0 else ""),
     ))
+
+    return ep_items, Pa_total
+
+
+def _mse_backslope_steps(t, ld, geom):
+    """The earth pressure steps for a sloping or broken backslope (GM-307),
+    GEC-11 Vol I Sec. 4.4.4 as the analysis summed them
+    (:func:`retaining_walls.mse.backslope_loads`): the slope's geometry,
+    Kab by Eqs. 4-2 and 4-3, F_T by Eq. 4-7 and its components (Eqs.
+    4-10, 4-13), the traffic thrust behind a broken backslope's crest, and
+    the slope fill over the reinforced zone, V2."""
+    H = geom.wall_height
+    L = geom.reinforcement_length
+    q = geom.surcharge
+    bs = ld["geometry"]
+    beta, I, h, S = bs["beta_deg"], ld["I_deg"], ld["h"], bs["S"]
+    phi_b, gamma_b = t["phi_retained"], t["gamma_retained"]
+    theta = ld.get("theta_deg", 90.0)
+    items = []
+    if S is None:
+        items.append(CalcStep(
+            title="Backslope Geometry (slope that continues)",
+            equation="h = H + L tan β;  δ = β",
+            substitution=(f"h = {H:.2f} + {L:.2f} × tan {beta:.1f}° = "
+                          f"{h:.3f} m;  δ = β = {beta:.1f}°"),
+            result_name="h",
+            result_value=f"{h:.3f}",
+            result_unit="m",
+            reference=("GEC-11 Vol I Eq. 4-7 (p. 4-20), Fig. 4-3; δ = β, "
+                       "p. 4-15"),
+        ))
+    else:
+        rise_2H = min(2.0 * H * math.tan(math.radians(beta)), S)
+        items.append(CalcStep(
+            title="Backslope Geometry (broken backslope)",
+            equation=("I = atan(rise at 2H / 2H), the rise not more than S;"
+                      "  β = δ = I;  h = H + L tan β ≤ H + S"),
+            substitution=(
+                f"I = atan({rise_2H:.3f} / {2.0 * H:.2f}) = {I:.2f}°;  "
+                f"h = min({H:.2f} + {L:.2f} × tan {beta:.1f}°, {H:.2f} + "
+                f"{S:.2f}) = {h:.3f} m"
+                + (f"; crest {bs['crest_x']:.3f} m behind the face"
+                   if bs["crest_x"] is not None else "")),
+            result_name="h",
+            result_value=f"{h:.3f}",
+            result_unit="m",
+            reference=("GEC-11 Vol I p. 4-15 and Fig. 4-4 (p. 4-14) for I; "
+                       "Eq. 4-7 and its note (p. 4-20) for h"),
+        ))
+    # Kab, Eqs. 4-2 and 4-3, with delta and the slope both I
+    pr, dr, tr, br = (math.radians(phi_b), math.radians(I),
+                      math.radians(theta), math.radians(I))
+    Gamma = (1.0 + math.sqrt(math.sin(pr + dr) * math.sin(pr - br)
+                             / (math.sin(tr - dr) * math.sin(tr + br)))) ** 2
+    Kab = ld["Kab"]
+    items.append(CalcStep(
+        title="Coulomb Active Earth Pressure Coefficient (retained fill)",
+        equation=("K_ab = sin²(θ + φ_b) / [Γ sin²θ sin(θ - δ)];  Γ = [1 + "
+                  "√(sin(φ_b + δ) sin(φ_b - β) / (sin(θ - δ) sin(θ + β)))]²"),
+        substitution=(f"θ = {theta:.1f}°, φ_b = {phi_b:.1f}°, δ = β = "
+                      f"{I:.2f}°: Γ = {Gamma:.4f}; K_ab = sin²({theta:.1f}° + "
+                      f"{phi_b:.1f}°) / [{Gamma:.4f} × sin²{theta:.1f}° × "
+                      f"sin({theta:.1f}° - {I:.2f}°)]"),
+        result_name="K_ab",
+        result_value=f"{Kab:.4f}",
+        reference="GEC-11 Vol I Eqs. 4-2, 4-3 (p. 4-15)",
+    ))
+    FT, FTH, FTV = ld["FT"], ld["FTH"], ld["FTV"]
+    items.append(CalcStep(
+        title="Retained Backfill Thrust",
+        equation="F_T = 0.5 × K_ab × γ_b × h²",
+        substitution=f"F_T = 0.5 × {Kab:.4f} × {gamma_b:.1f} × {h:.3f}²",
+        result_name="F_T",
+        result_value=f"{FT:.1f}",
+        result_unit="kN/m",
+        reference="GEC-11 Vol I Eq. 4-7 (p. 4-20), Fig. 4-3",
+    ))
+    items.append(CalcStep(
+        title="Components of F_T (inclined at δ = β)",
+        equation="F_H = F_T cos β, at h/3;  F_V = F_T sin β, at L",
+        substitution=(f"F_H = {FT:.1f} × cos {I:.2f}° = {FTH:.1f};  F_V = "
+                      f"{FT:.1f} × sin {I:.2f}° = {FTV:.1f}"),
+        result_name="F_H",
+        result_value=f"{FTH:.1f}",
+        result_unit="kN/m",
+        reference=("GEC-11 Vol I Eq. 4-10 (p. 4-21), F_T sin β in Eq. "
+                   "4-13 (p. 4-21) and Eq. 4-16 (p. 4-23), arms h/3 and L "
+                   "(Fig. 4-8, p. 4-25)"),
+    ))
+    if ld["F2"] > 0:
+        items.append(CalcStep(
+            title="Traffic Thrust behind the Crest",
+            equation=("F2 = K_ab × q × h, inclined at I: F2 cos I at h/2, "
+                      "F2 sin I at L"),
+            substitution=(f"F2 = {Kab:.4f} × {q:.1f} × {h:.3f} = "
+                          f"{ld['F2']:.1f};  F2 cos I = {ld['F2H']:.1f}, "
+                          f"F2 sin I = {ld['F2V']:.1f}"),
+            result_name="F2",
+            result_value=f"{ld['F2']:.1f}",
+            result_unit="kN/m",
+            reference=("GEC-11 Vol I Eq. 4-6 (p. 4-20) on h; Vol II "
+                       "Example E1, pp. E1-7 to E1-9"),
+            notes=_TRAFFIC_NOTE[bool(t.get("traffic_vertical_resists"))],
+        ))
+    if ld["V2"] > 0:
+        items.append(CalcStep(
+            title="Slope Fill over the Reinforced Zone",
+            equation=("V2 = γ_r × (area of the slope fill over L); "
+                      "V2 = γ_r L (h - H) / 2 for the triangle"),
+            substitution=(f"V2 = {ld['V1'] / (H * L):.1f} × "
+                          f"{bs['V2_area']:.3f} m² = {ld['V2']:.1f}, at "
+                          f"{bs['V2_arm']:.3f} m from the face"),
+            result_name="V2",
+            result_value=f"{ld['V2']:.1f}",
+            result_unit="kN/m",
+            reference=("GEC-11 Vol I Figs. 4-3 (p. 4-13), 4-4 (p. 4-14) and "
+                       "4-8 (p. 4-25), Eq. 4-13 (p. 4-21)"),
+        ))
+    items.append(CalcStep(
+        title="Horizontal Driving Force",
+        equation="P_a = Σ horizontal components",
+        substitution="P_a = " + " + ".join(
+            f"{f['P']:.1f}" for f in t["horizontal_forces"]),
+        result_name="P_a",
+        result_value=f"{t['Pa']:.1f}",
+        result_unit="kN/m",
+        reference="GEC-11 Vol I Eq. 4-10 (p. 4-21), unfactored",
+    ))
+    return items
+
+
+#: The traffic thrust's vertical component, by traffic_vertical_resists
+_TRAFFIC_NOTE = {
+    False: ("F2 sin I is counted in bearing only (GEC-11 Vol I p. 4-22: "
+            "loads that increase sliding resistance only if permanent; p. "
+            "4-26)."),
+    True: ("F2 sin I is counted in sliding, overturning and bearing, as "
+           "GEC-11 Vol II Example E1 does (traffic_vertical_resists)."),
+}
+
+
+def _calc_steps_mse(result, analysis) -> List[CalcSection]:
+    """Calculation steps for MSE wall. The external steps print the terms
+    the ASD analysis used (GM-143, GM-164; :func:`_mse_terms`)."""
+    geom = _get(analysis, "geom")
+    reinforcement = _get(analysis, "reinforcement")
+    q_all = _get(analysis, "q_allowable")
+
+    t = _mse_terms(result, analysis)
+    phi, phi_f = t["phi_backfill"], t["phi_foundation"]
+
+    sections = []
+    H = geom.wall_height
+    L = geom.reinforcement_length
+    q = geom.surcharge
+    forces = t["vertical_forces"]
+    thrusts = t["horizontal_forces"]
+
+    # ── Section 1: Earth Pressure ──────────────────────────────
+    ld = t.get("backslope_loads")
+    if ld is not None:
+        # GM-307: a sloping or broken backslope, GEC-11 Vol I Sec. 4.4.4
+        ep_items = _mse_backslope_steps(t, ld, geom)
+        Pa_total = t["Pa"]
+    else:
+        ep_items, Pa_total = _mse_level_steps(t, geom)
 
     sections.append(CalcSection(title="Earth Pressure Computation", items=ep_items))
 
@@ -1440,7 +1584,12 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         result_name="M_ot",
         result_value=f"{M_over:.1f}",
         result_unit="kN·m/m",
-        reference=("GEC-11 Vol I Eqs. 4-5, 4-6 (p. 4-20), F1 at H/3 and F2 "
+        reference=(("GEC-11 Vol I Eq. 4-16 (p. 4-23): F_T cos β at h/3"
+                    + (", F2 cos I at h/2 (Vol II Example E1, pp. E1-7 to E1-9)"
+                       if len(thrusts) > 1 else "")
+                    + ", moments about the toe")
+                   if t.get("backslope_loads") is not None else
+                   "GEC-11 Vol I Eqs. 4-5, 4-6 (p. 4-20), F1 at H/3 and F2 "
                    "at H/2 as in Eq. 4-19 (p. 4-27), moments about the toe"),
     ))
 
@@ -1486,8 +1635,11 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         result_name="σ_v",
         result_value=f"{sigma_v:.1f}",
         result_unit="kPa",
-        reference=("GEC-11 Vol I Eq. 4-18 (p. 4-26), Eqs. 4-19, 4-20 (p. "
-                   "4-27), unfactored; AASHTO 11.10.5.4"),
+        reference=(("GEC-11 Vol I Eq. 4-18 (p. 4-26), Eq. 4-21 (p. 4-28) "
+                    "with Eq. 4-16's terms (p. 4-23), unfactored"
+                    if t.get("backslope_loads") is not None else
+                    "GEC-11 Vol I Eq. 4-18 (p. 4-26), Eqs. 4-19, 4-20 (p. "
+                    "4-27), unfactored") + "; AASHTO 11.10.5.4"),
         notes=("V_b and M_b count the live load over the reinforced zone "
                "(GEC-11 p. 4-26), so e_B is not the eccentricity of the "
                "sliding and overturning loads."
@@ -1611,16 +1763,62 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         reference="GEC-11 Vol I Fig. 4-10 (p. 4-37)",
     ))
 
+    sloping = geom.backfill_slope > 0
+    q_text = "q"
+    if sloping:
+        # GM-307: the slope's surcharge on the reinforcement (Fig. 4-11)
+        from retaining_walls import mse as _mse
+        bs = _mse.backslope_geometry(geom)
+        gamma_r = _mse_used(analysis, "gamma_backfill")
+        S = bs["S"]
+        q_int = q if bs["level_length"] > 0 else 0.0
+        q_text = ("σ_2 + q" if q_int > 0 else "σ_2")
+        int_items.append(CalcStep(
+            title="Sloping Backfill Surcharge on the Reinforcement",
+            equation=("S_eq = ½ (0.7H) tan β" + (" ≤ S" if S else "")
+                      + ";  σ_2 = γ_r S_eq"),
+            substitution=(
+                f"S_eq = 0.5 × 0.7 × {H:.2f} × tan {bs['beta_deg']:.1f}°"
+                + (f", not more than S = {S:.2f}" if S else "")
+                + f" = {bs['S_eq']:.3f} m;  σ_2 = {gamma_r:.1f} × "
+                f"{bs['S_eq']:.3f} = {gamma_r * bs['S_eq']:.2f} kPa"
+                + (f"; q = {q:.1f} kPa counted, level ground lying over "
+                   "the reinforced zone behind the crest" if q_int > 0 else
+                   (f"; q = {q:.1f} kPa not counted, no level ground over "
+                    "the reinforced zone" if q > 0 else ""))),
+            result_name="σ_2",
+            result_value=f"{gamma_r * bs['S_eq']:.2f}",
+            result_unit="kPa",
+            reference=("GEC-11 Vol I Fig. 4-11 (p. 4-38), Eq. 4-29 (p. "
+                       "4-42), p. 4-36: Ka by Eq. 4-25 as for a level "
+                       "backfill"),
+        ))
+        if rs and any(r.is_metallic for r in rs):
+            int_items.append(CalcStep(
+                title="Height of the Zone of Maximum Stress (inextensible)",
+                equation="H1 = H + tan β × 0.3H / (1 - 0.3 tan β)"
+                         + (", the rise not more than S" if S else ""),
+                substitution=(f"H1 = {H:.2f} + tan {bs['beta_deg']:.1f}° × "
+                              f"0.3 × {H:.2f} / (1 - 0.3 tan "
+                              f"{bs['beta_deg']:.1f}°)"),
+                result_name="H1",
+                result_value=f"{bs['H1']:.3f}",
+                result_unit="m",
+                reference="GEC-11 Vol I Fig. 4-9(a) (p. 4-34)",
+                notes=("L_a = 0.3 H1 over the upper H1/2, then tapering "
+                       "to the toe."),
+            ))
+
     if geom.level_depths is None:
         # GM-277: each level over its contributory height, the bottom
         # level's down to the base (GEC-11 Vol I p. 4-47, Fig. 4-14)
-        substitution = ("\u03c3_v = \u03b3\u00b7z + q; each level's "
+        substitution = ("\u03c3_v = \u03b3\u00b7z + " + q_text + "; each level's "
                         "contributory height S_v with the level at its "
                         "middle, the top level's from the top of the wall")
         a, b = geom.contributory_heights[-1]
         if geom.n_reinforcement_levels == 1:
             substitution = (
-                f"\u03c3_v = \u03b3\u00b7z + q; one level, its contributory "
+                f"\u03c3_v = \u03b3\u00b7z + {q_text}; one level, its contributory "
                 f"height the whole wall, S_vt = {b:.2f} m, with \u03c3_v "
                 f"and Kr/Ka at its middle, z = {b / 2:.2f} m")
         elif geom.whole_spacings:
@@ -1646,7 +1844,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             equation=("T_max = \u03c3_H \u00d7 S_vt, \u03c3_H = (Kr/Ka) "
                       "\u00d7 K_a \u00d7 \u03c3_v"),
             substitution=(
-                "\u03c3_v = \u03b3\u00b7z + q; S_vt from the midpoints "
+                "\u03c3_v = \u03b3\u00b7z + " + q_text + "; S_vt from the midpoints "
                 "between levels, the top level's from the top of the wall "
                 "and the bottom level's to its base; "
                 + _sigma_H_text(analysis)),
@@ -1714,9 +1912,13 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         equation=("P_r = F* \u00d7 \u03b1 \u00d7 \u03c3_v' \u00d7 L_e "
                   "\u00d7 C \u00d7 R_c"),
         substitution=(
-            ("L_e = L - L_a; L_a per bilinear coherent-gravity surface "
-             "(0.3H over upper H/2, tapering to toe) for inextensible "
-             "(metallic) reinforcement"
+            (("L_e = L - L_a; L_a per bilinear coherent-gravity surface "
+              "(0.3H1 over upper H1/2, tapering to toe; Fig. 4-9(a), p. "
+              "4-34) for inextensible (metallic) reinforcement"
+              if sloping else
+              "L_e = L - L_a; L_a per bilinear coherent-gravity surface "
+              "(0.3H over upper H/2, tapering to toe) for inextensible "
+              "(metallic) reinforcement")
              if r_type == "Metallic" else
              "L_e = L - L_a; L_a from Rankine 45+\u03c6/2 plane "
              "(extensible/geosynthetic reinforcement)")
@@ -1724,6 +1926,10 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             + (" (from pullout tests)" if alpha_t is not None
                else " (GEC-11 Table 3-6, p. 3-17)")
             + f"; R_c = {Rc_text}"
+            + ("; \u03c3_v' = \u03b3_r Z_p, Z_p the depth below the slope "
+               "surface averaged over L_e (GEC-11 Vol I Fig. 4-15, p. "
+               "4-50; Vol II Example E3), per level in the table"
+               if sloping else "")
         ),
         result_name="P_r",
         result_value="(per level)",
@@ -1781,7 +1987,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             int_rows.append([
                 f"{r['depth_m']:.2f}"] + (
                 [keys[_reinforcement_label(rs[i])]] if per_r else []) + (
-                [f"{r['Svt_m']:.2f}"] if svt else []) + [
+                [f"{r['Svt_m']:.2f}"] if svt else []) + (
+                [f"{r['Zp_m']:.2f}"] if sloping else []) + [
                 f"{r.get('Kr_Ka', 0):.3f}",
                 f"{r['Tmax_kN_per_m']:.2f}",
                 f"{r.get('Tal_Rc_kN_per_m', 0):.1f}",
@@ -1796,7 +2003,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         int_items.append(TableData(
             title="Internal Stability per Reinforcement Level",
             headers=["z (m)"] + (["Reinf."] if per_r else [])
-            + (["S_vt (m)"] if svt else []) + [
+            + (["S_vt (m)"] if svt else [])
+            + (["Z_p (m)"] if sloping else []) + [
                      "Kr/Ka", "T_max (kN/m)", "T_al R_c (kN/m)",
                      "L_e (m)", "F*", "P_r (kN/m)",
                      "FOS_po", "FOS_ru", "Status"],
@@ -2547,11 +2755,25 @@ def _plot_mse_section(result, analysis):
 
     # Failure surface: bilinear coherent-gravity surface for inextensible
     # (metallic) reinforcement, Rankine 45+phi/2 plane for extensible (RW-2)
+    if geom.backfill_slope > 0:
+        # GM-307: the backslope, rising at beta from the top of the face
+        # (GEC-11 Vol I Figs. 4-3, 4-4), level behind a broken one's crest
+        from retaining_walls import mse as _mse
+        tb = math.tan(math.radians(geom.backfill_slope))
+        S_b = geom.broken_backslope_height
+        xs = [0.0, 1.4 * L] if S_b is None else sorted(
+            {0.0, min(S_b / tb, 1.4 * L), 1.4 * L})
+        ax.plot(xs, [H + (x * tb if S_b is None else min(x * tb, S_b))
+                     for x in xs], 'k-', linewidth=1.5)
     if first is not None and first.is_metallic:
-        x_fail_top = 0.3 * H
-        ax.plot([0, 0.3 * H, 0.3 * H], [0, H / 2.0, H], 'r--',
+        H1 = (_mse.backslope_geometry(geom)["H1"]
+              if geom.backfill_slope > 0 else H)
+        x_fail_top = 0.3 * H1
+        ax.plot([0, 0.3 * H1, 0.3 * H1], [0, H1 / 2.0, H], 'r--',
                 linewidth=2, alpha=0.7,
-                label='Coherent-gravity surface (0.3H, inextensible)')
+                label=('Coherent-gravity surface (0.3H1, inextensible)'
+                       if H1 != H else
+                       'Coherent-gravity surface (0.3H, inextensible)'))
     else:
         failure_angle = math.radians(45 + phi / 2)
         # Line from toe going up at the failure angle

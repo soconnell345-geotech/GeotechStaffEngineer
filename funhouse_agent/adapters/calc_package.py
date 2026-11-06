@@ -611,8 +611,8 @@ _PACKAGE_TOOLS = {
         "adapter": "retaining_walls",
         "selector": ("wall_type", "cantilever",
                      "The wall to analyse and report: 'cantilever' (the "
-                     "cantilever_wall tool) or 'mse' (the mse_wall tool; "
-                     "level backfill only, GM-114)."),
+                     "cantilever_wall tool) or 'mse' (the mse_wall tool, "
+                     "a level, sloping or broken backslope; GM-307)."),
         "tools": {"cantilever": "cantilever_wall", "mse": "mse_wall"},
         "selector_values": {"cantilever_wall": "cantilever",
                             "mse_wall": "mse"},
@@ -1974,32 +1974,7 @@ def _generate_seismic_package(params: dict) -> dict:
 # 9. Retaining Wall
 # ---------------------------------------------------------------------------
 
-def _mse_package_scope(params: dict) -> None:
-    """GM-114: the MSE package prints a level backfill, as its calc steps
-    do; a sloping or broken backslope is refused here, before a run, with
-    what covers it. A battered face is refused by name (the package's
-    ``dropped`` names, :data:`_MSE_BATTER_REASON`)."""
-    wall = params.get("wall_type")
-    if not (isinstance(wall, str)
-            and wall.strip().lower() in ("mse", "mse_wall")):
-        return
-    slope = params.get("backfill_slope")
-    try:
-        sloping = slope is not None and float(slope) != 0.0
-    except (TypeError, ValueError):
-        sloping = False         # the tool refuses a value that is no angle
-    if sloping:
-        raise ValueError(
-            "retaining_wall_package: the MSE package covers a level backfill "
-            "only (backfill_slope 0; GEC-11 Vol I Eq. 4-1, p. 4-15, and "
-            f"Eqs. 4-5, 4-6, p. 4-20); got backfill_slope={slope!r}. "
-            "The mse_wall tool analyses a sloping or broken backslope "
-            "(Coulomb Kab, Eqs. 4-2, 4-3 and 4-7) and reports its basis in "
-            "'backslope': run it for that wall.")
-
-
 def _generate_retaining_wall_package(params: dict) -> dict:
-    _mse_package_scope(params)
     run = _run_tool("retaining_wall_package", params)
     result, used = run.out
     analysis = {**used, "wall_type": run.value}
@@ -3515,7 +3490,7 @@ METHOD_INFO = {
     },
     "retaining_wall_package": {
         "category": "Calculation Package",
-        "brief": "Run a cantilever retaining wall (cantilever_wall) or MSE wall (mse_wall, level backfill and vertical face only) analysis and generate its calc package.",
+        "brief": "Run a cantilever retaining wall (cantilever_wall) or MSE wall (mse_wall; vertical face) analysis and generate its calc package.",
         "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user."},
     },
     "ground_improvement_package": {
