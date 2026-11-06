@@ -487,7 +487,7 @@ MODULE_REGISTRY = {
     },
     "gec13": {
         "adapter": "funhouse_agent.adapters.gec13_adapter",
-        "brief": "Ground modification reference (FHWA-NHI-16-027)",
+        "brief": "Ground modification reference (FHWA-NHI-16-027/-028)",
     },
     "gec14": {
         "adapter": "funhouse_agent.adapters.gec14_adapter",

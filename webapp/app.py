@@ -885,13 +885,14 @@ with st.sidebar:
         if ss.get("diag_report"):
             st.code(ss.diag_report, language=None)
         if ss.get("diag_sharepoint"):
-            st.download_button(
+            st.caption("For the host's administrator: the connection test "
+                       "and the SharePoint errors met in your "
+                       "conversations, which could not be saved to "
+                       "SharePoint itself.")
+            file_widgets.download_button(
                 "Download the SharePoint report", ss.diag_sharepoint,
                 file_name="sharepoint-report.txt", mime="text/plain",
-                key=f"diag_sp_{ss.thread_id}",
-                help="For the host's administrator: the connection test and "
-                     "the SharePoint errors met in your conversations, "
-                     "which could not be saved to SharePoint itself.")
+                key=f"diag_sp_{ss.thread_id}")
     try:
         import importlib.metadata as _md
         st.caption(" · ".join(f"{_d} {_md.version(_d)}"

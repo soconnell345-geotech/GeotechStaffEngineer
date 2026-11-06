@@ -35,6 +35,13 @@ The owner's words:
   the core is not shared with GSE, and it is.
 - 2026-11-04 (owner, chat): the core is named `aec-agent-core` (import
   `aec_agent_core`), a name that says neither app; free on PyPI that day.
+- 2026-11-06 (owner, chat): asked whether the core could live inside
+  planlens instead; told planlens calls no model on five light dependencies
+  while the core carries the agent stack, whose caps move every few weeks;
+  "Ok keep them separate." Then asked whether a new package is needed at
+  all (the core adds no feature; it exists because Document Review must not
+  install GSE, no code may live in two places, and Tiny Apps installs only
+  from Nexus): "Ok keep the core."
 
 ## In one page (for the owner)
 

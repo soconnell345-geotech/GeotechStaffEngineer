@@ -197,14 +197,12 @@ _ALIAS_PREFIXES = ("plot_figure", "table", "figure", "equation")
 # still not what a model reaches for. canonical_name -> [extra aliases].
 _CURATED_ALIASES = {
     # micropile
-    "table_5_3_alpha_bond": ["grout_bond_strength"],
+    "table_5_3_alpha_bond": ["grout_bond_strength",
+                             "micropile_grout_bond_strength"],
     "table_5_9_soil_modulus_k_sand": ["py_soil_modulus_sand"],
     "table_5_10_soil_modulus_k_clay": ["py_soil_modulus_clay"],
     "table_5_4_group_efficiency": ["group_efficiency_factor"],
     # gec13 (ground modification)
-    "table_10_1_micropile_bond_stress": ["micropile_grout_bond_strength",
-                                         "grout_bond_strength"],
-    "table_9_2_nail_bond_strength": ["soil_nail_bond_strength"],
     "figure_5_5_settlement_improvement": ["settlement_improvement_factor"],
     # gec10 (drilled shafts)
     "figure_10_6_alpha_clay": ["alpha_adhesion_factor"],

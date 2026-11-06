@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+# The core both agents run below their chat pages (the app split, BACKLOG
+# INF-26 / INF-32; plan module_work/APP_SPLIT_PLAN.md sections 1.1 and 2.3).
+# Step 10 (this file): the package exists, EMPTY apart from the alias helper,
+# with its build, CI and a wheel test. Step 11 moves the code in. Step 12
+# publishes it, on the owner's word; until then nothing publishes it (the
+# publish workflow builds the repository root only).
+[project]
+name = "aec-agent-core"
+# Kept equal to geotech-staff-engineer's exact pin on it (its pyproject) and
+# to aec_agent_core.__version__; webapp/tests/test_wheels.py checks all three.
+version = "1.0.0.dev0"
+description = "The shared core of LLM agents that review and produce architecture, engineering and construction documents: model connections, vision calls, guards and records, Word and Excel, and a figure helper. No user interface of its own."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    {name = "Sean O'Connell", email = "soconnell345@gmail.com"},
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+]
+# The list of plan section 1.1, at the caps and floors geotech-staff-engineer
+# has today (its pyproject carries the reasons for each; keep the two in
+# step: webapp/tests/test_version_guard.py reads the agent-stack caps in both
+# files). Step 10 installs nothing new: every line here is already a core
+# requirement of geotech-staff-engineer.
+dependencies = [
+    # numpy 1.26, not 2.0 (INF-53): Foundry's transforms repos hold 1.26.4.
+    "numpy>=1.26",
+    # The plotting box lets the model's code import scipy.
+    "scipy>=1.13",
+    # The agent stack, capped at the versions the offline gate exercised
+    # (INF-03, 2026-10-27).
+    "deepagents>=0.6.8,<0.7.25",
+    "langchain>=1.3,<1.4.6",
+    "langgraph>=1.2,<1.3",
+    # langchain-protocol needs typing_extensions.TypedDict(extra_items=...)
+    # (PEP 728), 4.13 or later; some hosts ship an older one.
+    "typing_extensions>=4.13",
+    # openai 3.x builds its own client on httpx2; 3.29.0 is the highest tested.
+    "openai<3.29.1",
+    "langchain-openai>=1.3",
+    # The figure helper, the plotting box and the chart stack.
+    "matplotlib>=3.8",
+    "plotly>=5",
+    # Word out (and in), Excel out and in.
+    "python-docx>=1.1",
+    "markdown-it-py>=3",
+    "openpyxl>=3.1",
+    # The document layer; the core binds its review tools.
+    "planlens>=0.14",
+]
+
+[project.optional-dependencies]
+# Claude through LangChain. GSE asks for it; a GPT-only host need not.
+anthropic = ["langchain-anthropic>=1.4"]
+
+[project.urls]
+Homepage = "https://github.com/soconnell345-geotech/GeotechStaffEngineer"
+Repository = "https://github.com/soconnell345-geotech/GeotechStaffEngineer"
+
+[tool.setuptools.packages.find]
+include = ["aec_agent_core*"]
+exclude = ["*.tests", "*.tests.*", "tests*"]

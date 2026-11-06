@@ -47,17 +47,18 @@ class TestCurves:
         """The same constants as the pystrata implementation that
         pystrata_agent runs: G/Gmax and damping to machine precision."""
         import pystrata
+        from pystrata_agent import compat
         strains = np.logspace(-6, -1.5, 20)
-        d = pystrata.site.DarendeliSoilType(
-            18.0, plas_index=15, ocr=2, stress_mean=sigma_m,
+        d = compat.darendeli_soil_type(
+            pystrata, 18.0, plas_index=15, ocr=2, stress_mean=sigma_m,
             strains=strains)
         g, dm = C.modified_hyperbolic(
             strains, *C.darendeli_params(sigma_m, 15, 2))
         assert np.allclose(g, d.mod_reduc.values, rtol=1e-12)
         assert np.allclose(dm, d.damping.values, rtol=1e-12)
-        m = pystrata.site.MenqSoilType(
-            18.0, uniformity_coeff=3, diam_mean=0.5, stress_mean=sigma_m,
-            strains=strains)
+        m = compat.menq_soil_type(
+            pystrata, 18.0, uniformity_coeff=3, diam_mean=0.5,
+            stress_mean=sigma_m, strains=strains)
         g, dm = C.modified_hyperbolic(
             strains, *C.menq_params(sigma_m, 3, 0.5))
         assert np.allclose(g, m.mod_reduc.values, rtol=1e-12)

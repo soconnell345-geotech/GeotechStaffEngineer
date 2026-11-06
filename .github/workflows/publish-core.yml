@@ -1,0 +1,66 @@
+name: Publish aec-agent-core to PyPI
+
+# The shared core of the app split (BACKLOG INF-32), from
+# packages/aec-agent-core only, on a `core-v<version>` tag (for example
+# `core-v1.0.0.dev0`). The app's own publish (publish.yml, `v*` tags) never
+# builds the core, and this workflow never builds the app.
+#
+# PyPI takes this workflow through trusted publishing: the project's
+# publisher on pypi.org names this repository, this file
+# (publish-core.yml) and the `pypi` environment.
+
+on:
+  push:
+    tags:
+      - "core-v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build --outdir dist/ packages/aec-agent-core
+      - name: Only aec-agent-core is in dist/, at the tag's version
+        shell: python
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          import os
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          with open("packages/aec-agent-core/pyproject.toml", "rb") as f:
+              version = tomllib.load(f)["project"]["version"]
+          tag = os.environ["TAG"]
+          if tag != f"core-v{version}":
+              print(f"::error::The tag {tag} does not match the core's "
+                    f"version {version} (expected core-v{version}).")
+              sys.exit(1)
+          files = sorted(p.name for p in Path("dist").iterdir())
+          print("\n".join(files))
+          bad = [n for n in files if not n.startswith(f"aec_agent_core-{version}")]
+          if bad or not files:
+              print(f"::error::Unexpected files in dist/: {bad or 'none built'}")
+              sys.exit(1)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -43,14 +43,19 @@ def test_suffix_versions_parse():
 
 
 def test_guard_mirrors_pyproject_caps():
-    """The guard's ceilings must stay in lockstep with the pyproject caps."""
+    """The guard's ceilings must stay in lockstep with the pyproject caps,
+    in the app's pyproject and in the core's (packages/aec-agent-core,
+    INF-32 step 10), which carries the same agent-stack caps."""
     import pathlib, re
-    py = pathlib.Path(__file__).parents[2] / "pyproject.toml"
-    text = py.read_text(encoding="utf-8")
-    for pkg in ("deepagents", "langchain", "langgraph", "openai"):
-        cap = vg.TESTED_MAX_EXCLUSIVE[pkg][1]
-        assert re.search(rf'"{pkg}[^"]*<{re.escape(cap)}"', text), \
-            f"pyproject cap for {pkg} does not match guard ceiling <{cap}"
+    root = pathlib.Path(__file__).parents[2]
+    for py in (root / "pyproject.toml",
+               root / "packages" / "aec-agent-core" / "pyproject.toml"):
+        text = py.read_text(encoding="utf-8")
+        for pkg in ("deepagents", "langchain", "langgraph", "openai"):
+            cap = vg.TESTED_MAX_EXCLUSIVE[pkg][1]
+            assert re.search(rf'"{pkg}[^"]*<{re.escape(cap)}"', text), \
+                f"{py.relative_to(root)}: cap for {pkg} does not match " \
+                f"guard ceiling <{cap}"
 
 
 def test_diagnostics_includes_drift_row(monkeypatch):

@@ -1,0 +1,45 @@
+{"phi": 35.0, "hwB": 5.0, "nx": 40, "max_iter": 1000, "q": 0.0, "N": 200, "qmax": 1095.1, "bracketed": true, "q_ult": 355.9, "nok": 65, "settled": 0, "maxit_warn": true, "secs": 86.4}
+{"phi": 30.0, "hwB": 5.0, "nx": 40, "max_iter": 1000, "q": 0.0, "N": 200, "qmax": 553.9, "bracketed": true, "q_ult": 224.3, "nok": 81, "settled": 0, "maxit_warn": true, "secs": 94.8}
+{"phi": 30.0, "hwB": 7.5, "nx": 60, "max_iter": 1000, "q": 0.0, "N": 200, "qmax": 553.9, "bracketed": true, "q_ult": 221.6, "nok": 80, "settled": 0, "maxit_warn": true, "secs": 167.4}
+{"phi": 35.0, "hwB": 7.5, "nx": 60, "max_iter": 1000, "q": 0.0, "N": 200, "qmax": 1095.1, "bracketed": true, "q_ult": 345.0, "nok": 63, "settled": 0, "maxit_warn": true, "secs": 192.2}
+{"phi": 40.0, "hwB": 5.0, "nx": 40, "max_iter": 1000, "q": 0.0, "N": 200, "qmax": 2346.0, "bracketed": true, "q_ult": 574.8, "nok": 49, "settled": 0, "maxit_warn": true, "secs": 118.9}
+{"phi": 40.0, "hwB": 7.5, "nx": 60, "max_iter": 1000, "q": 0.0, "N": 200, "qmax": 2346.0, "bracketed": true, "q_ult": 527.8, "nok": 45, "settled": 0, "maxit_warn": true, "secs": 213.4}
+{"phi": 30.0, "hwB": 10.0, "nx": 80, "max_iter": 1000, "q": 0.0, "N": 200, "qmax": 553.9, "bracketed": true, "q_ult": 221.6, "nok": 80, "settled": 0, "maxit_warn": true, "secs": 880.6}
+{"phi": 35.0, "hwB": 10.0, "nx": 80, "max_iter": 1000, "q": 0.0, "N": 200, "qmax": 1095.1, "bracketed": true, "q_ult": 339.5, "nok": 62, "settled": 0, "maxit_warn": true, "secs": 828.1}
+{"phi": 40.0, "hwB": 10.0, "nx": 80, "max_iter": 1000, "q": 0.0, "N": 200, "qmax": 2346.0, "bracketed": true, "q_ult": 527.8, "nok": 45, "settled": 0, "maxit_warn": true, "secs": 644.1}
+{"phi": 35.0, "hwB": 5.0, "nx": 40, "max_iter": 8000, "q": 0.0, "N": 100, "qmax": 766.6, "bracketed": true, "q_ult": 414.0, "nok": 54, "settled": 0, "maxit_warn": true, "secs": 452.6}
+{"phi": 40.0, "hwB": 5.0, "nx": 40, "max_iter": 8000, "q": 0.0, "N": 100, "qmax": 1642.2, "bracketed": true, "q_ult": 739.0, "nok": 45, "settled": 0, "maxit_warn": true, "secs": 538.9}
+{"phi": 30.0, "hwB": 5.0, "nx": 40, "max_iter": 8000, "q": 0.0, "N": 100, "qmax": 387.8, "bracketed": true, "q_ult": 248.2, "nok": 64, "settled": 0, "maxit_warn": true, "secs": 148.1}
+{"phi": 30.0, "hwB": 10.0, "nx": 80, "max_iter": 8000, "q": 0.0, "N": 100, "qmax": 387.8, "bracketed": true, "q_ult": 248.2, "nok": 64, "settled": 0, "maxit_warn": true, "secs": 280.5}
+{"phi": 35.0, "hwB": 7.5, "nx": 60, "max_iter": 8000, "q": 0.0, "N": 100, "qmax": 766.6, "bracketed": true, "q_ult": 406.3, "nok": 53, "settled": 0, "maxit_warn": true, "secs": 247.7}
+{"phi": 40.0, "hwB": 7.5, "nx": 60, "max_iter": 8000, "q": 0.0, "N": 100, "qmax": 1642.2, "bracketed": true, "q_ult": 739.0, "nok": 45, "settled": 0, "maxit_warn": true, "secs": 326.3}
+{"phi": 35.0, "hwB": 10.0, "nx": 80, "max_iter": 8000, "q": 0.0, "N": 100, "qmax": 766.6, "bracketed": true, "q_ult": 406.3, "nok": 53, "settled": 0, "maxit_warn": true, "secs": 329.2}
+{"phi": 40.0, "hwB": 10.0, "nx": 80, "max_iter": 8000, "q": 0.0, "N": 100, "qmax": 1642.2, "bracketed": true, "q_ult": 739.0, "nok": 45, "settled": 0, "maxit_warn": true, "secs": 430.5}
+{"phi": 40.0, "hwB": 5.0, "nx": 40, "max_iter": 8000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1850.9, "nok": 113, "settled": 0, "maxit_warn": true, "secs": 322.4}
+{"phi": 35.0, "hwB": 5.0, "nx": 40, "max_iter": 8000, "q": 18.0, "N": 150, "qmax": 1186.1, "bracketed": true, "q_ult": 1038.2, "nok": 131, "settled": 0, "maxit_warn": true, "secs": 327.8}
+{"phi": 35.0, "hwB": 10.0, "nx": 80, "max_iter": 8000, "q": 18.0, "N": 150, "qmax": 1186.1, "bracketed": true, "q_ult": 1030.4, "nok": 130, "settled": 0, "maxit_warn": true, "secs": 620.6}
+{"phi": 35.0, "hwB": 5.0, "nx": 40, "max_iter": 8000, "q": 0.0, "N": 300, "qmax": 766.6, "bracketed": true, "q_ult": 431.8, "nok": 169, "settled": 0, "maxit_warn": true, "secs": 375.9}
+{"phi": 40.0, "hwB": 10.0, "nx": 80, "max_iter": 8000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1948.2, "nok": 119, "settled": 0, "maxit_warn": true, "secs": 808.4}
+{"phi": 35.0, "hwB": 10.0, "nx": 80, "max_iter": 8000, "q": 0.0, "N": 300, "qmax": 766.6, "bracketed": true, "q_ult": 434.4, "nok": 170, "settled": 0, "maxit_warn": true, "secs": 851.1}
+{"phi": 40.0, "hwB": 5.0, "max_iter": 8000, "q_ult": 1850.9, "max_heave_mm": 46.17, "heave_extent_B": 1.0, "side_uy_over_heave": -0.127, "secs": 321.0}
+{"phi": 40.0, "hwB": 15.0, "nx": 120, "max_iter": 8000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1526.5, "nok": 93, "settled": 0, "maxit_warn": true, "secs": 392.7}
+{"phi": 40.0, "hwB": 7.5, "nx": 60, "max_iter": 8000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1915.8, "nok": 117, "settled": 0, "maxit_warn": true, "secs": 606.7}
+{"phi": 40.0, "hwB": 10.0, "max_iter": 8000, "q_ult": 1948.2, "max_heave_mm": 100.46, "heave_extent_B": 1.0, "side_uy_over_heave": -0.064, "secs": 801.4}
+{"phi": 35.0, "hwB": 5.0, "nx": 40, "max_iter": 1000, "q": 0.0, "N": 100, "qmax": 766.6, "bracketed": true, "q_ult": 329.6, "nok": 43, "settled": 0, "maxit_warn": true, "secs": 37.7}
+{"phi": 30.0, "hwB": 5.0, "nx": 40, "max_iter": 1000, "q": 0.0, "N": 100, "qmax": 387.8, "bracketed": true, "q_ult": 213.3, "nok": 55, "settled": 0, "maxit_warn": true, "secs": 41.8}
+{"phi": 40.0, "hwB": 5.0, "nx": 40, "max_iter": 1000, "q": 0.0, "N": 100, "qmax": 1642.2, "bracketed": true, "q_ult": 509.1, "nok": 31, "settled": 0, "maxit_warn": true, "secs": 32.0}
+{"phi": 30.0, "hwB": 5.0, "nx": 40, "max_iter": 16000, "q": 0.0, "N": 100, "qmax": 387.8, "bracketed": true, "q_ult": 255.9, "nok": 66, "settled": 0, "maxit_warn": true, "secs": 243.6}
+{"phi": 35.0, "hwB": 5.0, "nx": 40, "max_iter": 16000, "q": 0.0, "N": 100, "qmax": 766.6, "bracketed": true, "q_ult": 429.3, "nok": 56, "settled": 0, "maxit_warn": true, "secs": 269.6}
+{"phi": 40.0, "hwB": 5.0, "nx": 40, "max_iter": 16000, "q": 0.0, "N": 100, "qmax": 1642.2, "bracketed": true, "q_ult": 788.2, "nok": 48, "settled": 0, "maxit_warn": true, "secs": 343.1}
+{"phi": 35.0, "hwB": 10.0, "nx": 80, "max_iter": 16000, "q": 0.0, "N": 100, "qmax": 766.6, "bracketed": true, "q_ult": 429.3, "nok": 56, "settled": 0, "maxit_warn": true, "secs": 571.1}
+{"phi": 40.0, "hwB": 10.0, "nx": 80, "max_iter": 16000, "q": 0.0, "N": 100, "qmax": 1642.2, "bracketed": true, "q_ult": 804.7, "nok": 49, "settled": 0, "maxit_warn": true, "secs": 757.5}
+{"phi": 40.0, "hwB": 15.0, "max_iter": 8000, "q_ult": 1526.5, "max_heave_mm": -6.76, "heave_extent_B": null, "side_uy_over_heave": 1.129, "secs": 402.9}
+{"phi": 40.0, "hwB": 5.0, "nx": 40, "max_iter": 16000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1883.3, "nok": 115, "settled": 0, "maxit_warn": true, "secs": 415.8}
+{"phi": 40.0, "hwB": 15.0, "nx": 120, "max_iter": 8000, "q": 0.0, "N": 100, "qmax": 1642.2, "bracketed": true, "q_ult": 739.0, "nok": 45, "settled": 0, "maxit_warn": true, "secs": 659.9}
+{"phi": 40.0, "hwB": 15.0, "nx": 120, "max_iter": 16000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1964.4, "nok": 120, "settled": 1, "maxit_warn": true, "secs": 1477.7}
+{"iteration": "accelerated", "phi": 40.0, "hwB": 10.0, "nx": 80, "max_iter": 2000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 245.1, "nok": 14, "settled": 0, "maxit_warn": true, "secs": 17.5}
+{"iteration": "accelerated", "phi": 40.0, "hwB": 5.0, "nx": 40, "max_iter": 2000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1137.2, "nok": 69, "settled": 2, "maxit_warn": true, "secs": 59.8}
+{"iteration": "accelerated", "phi": 40.0, "hwB": 5.0, "nx": 40, "max_iter": 8000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1640.0, "nok": 100, "settled": 6, "maxit_warn": true, "secs": 395.4}
+{"iteration": "accelerated", "phi": 40.0, "hwB": 15.0, "nx": 120, "max_iter": 2000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1526.5, "nok": 93, "settled": 9, "maxit_warn": true, "secs": 543.9}
+{"iteration": "accelerated", "phi": 40.0, "hwB": 10.0, "nx": 80, "max_iter": 8000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1234.5, "nok": 75, "settled": 11, "maxit_warn": true, "secs": 894.0}
+{"iteration": "accelerated", "phi": 40.0, "hwB": 15.0, "nx": 120, "max_iter": 8000, "q": 18.0, "N": 150, "qmax": 2451.0, "bracketed": true, "q_ult": 1558.9, "nok": 95, "settled": 15, "maxit_warn": true, "secs": 1712.9}

@@ -14,6 +14,9 @@ Usage (repo root):  python module_work/doc10/check_manual.py
 """
 from __future__ import annotations
 
+import argparse
+import difflib
+import json
 import re
 import sys
 from pathlib import Path
@@ -26,7 +29,40 @@ from funhouse_agent import dispatch  # noqa: E402
 from funhouse_agent.adapters import MODULE_REGISTRY  # noqa: E402
 import build_manual  # noqa: E402
 
-html = (ROOT / "docs" / "user_manual" / "manual.html").read_text(encoding="utf-8")
+ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+ap.add_argument("--rebuild", action="store_true",
+                help="rebuild the manual in memory and diff it against the committed files")
+ap.add_argument("--write", action="store_true",
+                help="with --rebuild, write the rebuilt manual.html and toc.json in place")
+args = ap.parse_args()
+
+MANUAL = ROOT / "docs" / "user_manual"
+rebuild_problems = []
+if args.rebuild:
+    new_html, toc_entries = build_manual.build()
+    new_toc = json.dumps(toc_entries, ensure_ascii=False, indent=2)
+    for name, new in (("manual.html", new_html), ("toc.json", new_toc)):
+        path = MANUAL / name
+        old = path.read_text(encoding="utf-8") if path.exists() else ""
+        if old == new:
+            print(f"rebuild: {name} unchanged")
+            continue
+        diff = list(difflib.unified_diff(old.splitlines(), new.splitlines(),
+                                         f"committed/{name}", f"rebuilt/{name}",
+                                         n=0, lineterm=""))
+        changed = sum(1 for d in diff if d[:1] in "+-" and d[:3] not in ("+++", "---"))
+        rebuild_problems.append(f"rebuilt {name} differs from the committed file "
+                                f"({changed} lines changed)")
+        print(f"rebuild: {name} differs ({changed} lines changed); first lines:")
+        for d in diff[:80]:
+            print("  " + (d if len(d) <= 300 else d[:300] + " ..."))
+        if args.write:
+            path.write_text(new, encoding="utf-8")
+            print(f"rebuild: wrote {path}")
+    if args.write:
+        rebuild_problems = []   # the files on disk now match the rebuild
+
+html = (MANUAL / "manual.html").read_text(encoding="utf-8")
 version = re.search(r'^version\s*=\s*"([^"]+)"',
                     (ROOT / "pyproject.toml").read_text(encoding="utf-8"), re.M).group(1)
 problems = []
@@ -58,6 +94,7 @@ for name in sorted(MODULE_REGISTRY):
                 if shown not in html:
                     problems.append(f"default of {name}.{meth}.{pn} not shown")
 
+problems = rebuild_problems + problems
 print(f"version {version}; {len(MODULE_REGISTRY)} modules; {n_meth} analysis methods; "
       f"{n_par} parameters; {n_def} registered defaults")
 for p in problems:

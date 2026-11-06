@@ -177,3 +177,22 @@ def test_core_dependencies_install_beside_cfa_s_pandas_pin():
     assert "openpyxl" in core
     assert any("python-ags4" in d
                for d in project["optional-dependencies"]["ags4"])
+
+
+def test_the_shared_core_installs_beside_cfa_s_pandas_pin_too():
+    """The core (packages/aec-agent-core, INF-32 step 10) is what Document
+    Review installs beside the fleet pins after the split, so it is held to
+    the same rule, and it keeps the spreadsheet reader."""
+    import pathlib
+    tomllib = pytest.importorskip("tomllib")          # Python 3.11+
+    root = pathlib.Path(__file__).parents[2]
+    project = tomllib.loads(
+        (root / "packages" / "aec-agent-core" / "pyproject.toml").read_text(
+            encoding="utf-8"))["project"]
+    names = [d.split(">")[0].split("=")[0].split("<")[0].split("[")[0]
+             .strip().lower() for d in project["dependencies"]]
+    for extra in project.get("optional-dependencies", {}).values():
+        names += [d.split(">")[0].split("=")[0].split("<")[0].strip().lower()
+                  for d in extra]
+    assert not set(names) & set(PANDAS_LT3)
+    assert "openpyxl" in names

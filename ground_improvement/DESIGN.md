@@ -5,8 +5,8 @@ Design tools for four ground improvement techniques: aggregate piers,
 wick drains, surcharge preloading, and vibro-compaction.
 
 ## References
-- FHWA GEC-13 (FHWA-NHI-16-027, Ground Modification Methods), Vols. I and
-  II: checked against the print in GM-291 (module_work/gm291/CHECK.md)
+- FHWA GEC-13 (Ground Modification Methods), Vol. I FHWA-NHI-16-027 and
+  Vol. II FHWA-NHI-16-028: checked against the print in GM-291 (module_work/gm291/CHECK.md)
 - UFC 3-220-10, Soil Mechanics (2026): the smear factor (Eq. 5-25) and the
   combined vertical and radial consolidation (Eq. 5-27, Carrillo 1942)
 - Priebe's curve as GEC-13 prints it (Fig. 5-21 curve (4), p. 5-36): the

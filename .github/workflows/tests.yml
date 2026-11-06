@@ -48,6 +48,10 @@ jobs:
       - name: Install core package
         run: |
           pip install --upgrade pip
+          # The core first (INF-32): the app pins aec-agent-core exactly and
+          # it is not on PyPI until step 12, so `pip install -e .` finds it
+          # already installed instead of looking for it.
+          pip install -e packages/aec-agent-core
           pip install -e .
           pip install -e geotech-references/
           pip install pytest pytest-xdist
@@ -59,7 +63,9 @@ jobs:
           pip install matplotlib plotly jinja2 || true
           # v5.0 deepagents stack ([deep] extra) so funhouse_agent/deep tests run in CI
           pip install deepagents langchain langgraph langchain-anthropic "typing_extensions>=4.13" || true
-          pip install "pystrata>=0.5,<0.6" "pyrvt<0.9" || true
+          # pystrata by Python version (INF-68): 0.5 with pyrvt < 0.9 below
+          # 3.13, 0.6 (which needs 3.13) from 3.13; mirrors pyproject.toml.
+          pip install "pystrata>=0.5,<0.6; python_version < '3.13'" "pystrata>=0.6,<0.7; python_version >= '3.13'" "pyrvt<0.9; python_version < '3.13'" || true
           pip install eqsig || true
           pip install liquepy || true
           pip install pygef || true
@@ -82,6 +88,40 @@ jobs:
         # leave the other workers idle at the end. The root conftest gives
         # each worker its own temp dir.
         run: pytest -n auto --dist worksteal -q --tb=short --durations=20
+
+  wheels:
+    # The app split's step 10 (INF-32): build the geotech-staff-engineer and
+    # aec-agent-core wheels the way a release does (sdist, then the wheel),
+    # install both into a fresh venv, import the entry points there and
+    # check the file lists (webapp/tests/test_wheels.py). The 5.19.0 lesson:
+    # a wheel can build and simply lack a package. The build half of that
+    # file is opt-in: it runs only with GEOTECH_REQUIRE_WHEEL_TEST=1, which
+    # this job sets (a missing 'build' is then a failure), so the main job
+    # and nightly skip it. Run alone, in one process: two builds of the
+    # root at once would share its source tree. A few minutes.
+    name: "Wheels"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install the core, then the app, and the build tools
+        run: |
+          pip install --upgrade pip
+          pip install -e packages/aec-agent-core
+          pip install -e . -e geotech-references/
+          pip install pytest build "setuptools>=68" wheel
+
+      - name: Build, install and check both wheels
+        env:
+          GEOTECH_REQUIRE_WHEEL_TEST: "1"
+        run: pytest -q --tb=short webapp/tests/test_wheels.py
 
   numpy126:
     # Foundry's transforms repos hold numpy at 1.26.4 (INF-53). Installs the
@@ -106,7 +146,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install "numpy==1.26.4"
-          pip install --no-deps -e . -e geotech-references/ "planlens>=0.14"
+          pip install --no-deps -e packages/aec-agent-core -e . -e geotech-references/ "planlens>=0.14"
           python constraints/foundry_requirements.py > foundry-requirements.txt
           pip install -r foundry-requirements.txt -c constraints/foundry-numpy126.txt
           pip install pytest pytest-xdist -c constraints/foundry-numpy126.txt

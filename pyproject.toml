@@ -38,6 +38,15 @@ dependencies = [
     "numpy>=1.26",
     "scipy>=1.13",
     "geotech-references>=1.5.0",
+    # The shared core of the app split (INF-26 / INF-32; built from
+    # packages/aec-agent-core in this repository), pinned EXACTLY: the two
+    # move together, and step 11 moves code from here into it. Until its
+    # first release (step 12, on the owner's word) it is not on PyPI, so
+    # install it first: `pip install -e packages/aec-agent-core` (CI does).
+    # It adds no package of its own: everything it requires is a core
+    # requirement here too. webapp/tests/test_wheels.py keeps this pin
+    # equal to the core's version.
+    "aec-agent-core==1.0.0.dev0",
     # -- agent stack (formerly the [deep] extra) --
     # Agent-stack UPPER BOUNDS (5.10.2): unpinned drift has broken deployed
     # clusters twice (Pygments via pydiggs; then deepagents 0.7.11 dropping the
@@ -107,14 +116,17 @@ dependencies = [
     # seismic_geotech.dynamic_properties, HS parameter estimation in
     # fem2d.hs_correlations.
     "openseespy>=3.6",
-    # pystrata 0.6.0 (2026-11-05, Python >= 3.13 only) renamed the site
-    # classes the site-response tools build on (DarendeliSoilType,
-    # MenqSoilType, NonlinearProperty); held below 0.6 until the tools
-    # move to its API (BACKLOG INF-68). pyrvt 0.9.0, out the same day, drops
-    # pyrvt.motions.SourceTheoryMotion, which pystrata 0.5.4 imports, so it
-    # is held too (the app does not import pyrvt itself).
-    "pystrata>=0.5,<0.6",
-    "pyrvt<0.9",
+    # pystrata by Python version (BACKLOG INF-68). pystrata 0.6.0 (2026-11-05)
+    # needs Python >= 3.13 and renamed the site classes the site-response
+    # tools build on; pystrata_agent/compat.py builds the same Darendeli,
+    # Menq, linear and custom soils on either API. Python 3.12 (every host
+    # today: Databricks, Foundry, Tiny Apps) stays on pystrata 0.5.x, which
+    # imports pyrvt.motions.SourceTheoryMotion, dropped in pyrvt 0.9.0, so
+    # pyrvt is held below 0.9 there. On 3.13+ pystrata 0.6 declares its own
+    # pyrvt (the app does not import pyrvt itself).
+    "pystrata>=0.5,<0.6; python_version < '3.13'",
+    "pystrata>=0.6,<0.7; python_version >= '3.13'",
+    "pyrvt<0.9; python_version < '3.13'",
     "eqsig>=1.2",
     "liquepy>=0.3",
     "pygef>=0.10",
@@ -390,6 +402,8 @@ testpaths = [
     "module_work/report_ingest_harness/tests",
     "foundry_test_harness",
     "webapp/tests",
+    # The shared core's own tests (the app split's step 10, INF-32).
+    "packages/aec-agent-core/tests",
     "geotech-references/tests",
     # In the gate since 2026-08-02: a stale V-006 pin of pre-5.9.1 buggy
     # beta behavior sat undetected here because this dir was NOT in testpaths.

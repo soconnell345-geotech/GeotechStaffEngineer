@@ -7,8 +7,8 @@ and vertical face only. These tests, with made-up values, hold:
 * the package builds, and its numbers are the module's own, called
   directly on the same inputs;
 * every calculation step of the package cites a printed page;
-* a sloping backfill and a battered face are refused with what covers
-  them; a level backfill given as 0 is taken.
+* a sloping backfill and a battered face are taken since GM-307; a level
+  backfill and a vertical face given as 0 are taken.
 """
 
 import re
@@ -145,19 +145,21 @@ def test_a_wall_without_an_allowable_bearing_pressure_builds(tmp_path):
     assert "NOT CHECKED" in html
 
 
-def test_a_sloping_backfill_is_refused_with_what_covers_it():
-    out = D.call_agent("calc_package", "retaining_wall_package", {
-        **WALL, "surcharge": 0.0, "backfill_slope": 18.0})
-    assert "level backfill only" in out["error"]
-    assert "mse_wall tool" in out["error"]
-    assert "backfill_slope=18.0" in out["error"]
+def test_a_sloping_backfill_is_taken_since_gm307(tmp_path):
+    # GM-114 refused it; GM-307 prints GEC-11 Sec. 4.4.4's terms
+    out = _package({**WALL, "surcharge": 0.0, "backfill_slope": 18.0},
+                   tmp_path, "slope.html")
+    assert out["status"] == "success"
+    assert "Eqs. 4-2, 4-3 (p. 4-15)" in (tmp_path / "slope.html").read_text(
+        encoding="utf-8")
 
 
-def test_a_battered_face_is_refused_with_what_covers_it():
-    out = D.call_agent("calc_package", "retaining_wall_package", {
-        **WALL, "face_batter": 11.0})
-    assert "vertical face" in out["error"]
-    assert "Eq. 4-26" in out["error"] and "p. 4-36" in out["error"]
+def test_a_battered_face_is_taken_since_gm307(tmp_path):
+    # GM-114 refused it; GM-307 builds GEC-11 Vol I p. 4-15 and Eq. 4-26
+    out = _package({**WALL, "face_batter": 11.0}, tmp_path, "batter.html")
+    assert out["status"] == "success"
+    assert "Eq. 4-26 (p. 4-36)" in (tmp_path / "batter.html").read_text(
+        encoding="utf-8")
 
 
 def test_a_level_backfill_and_a_vertical_face_given_as_zero_are_taken(

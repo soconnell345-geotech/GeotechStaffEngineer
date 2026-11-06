@@ -354,6 +354,15 @@ class TestTraffic:
         assert res.base_year_w18_two_way == pytest.approx(base, rel=1e-6)
         assert res.lef_basis == "truck_factors"
 
+    def test_load_off_the_printed_table_is_noted(self):
+        """A load above the table's last row is read at that row, and said."""
+        res = compute_design_esals(
+            axle_groups=[{"axle_config": "single", "load_kips": 57,
+                          "daily_count": 3}],
+            growth_rate_pct=0, design_period_yr=1,
+            num_lanes_per_direction=1, directional_factor=0.5)
+        assert any(n.startswith("single axle, 57 kips:") for n in res.notes)
+
     def test_axle_spectrum_at_digitized_point(self):
         """18-kip single axle on SN=5/pt=2.5 has LEF = 1.0 by definition."""
         res = compute_design_esals(

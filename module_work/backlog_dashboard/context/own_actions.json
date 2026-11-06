@@ -770,5 +770,29 @@
     "sources": [
       "BACKLOG.md (OWN-60, GM-59)"
     ]
+  },
+  "OWN-128": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Reserve the name aec-agent-core on PyPI: add a pending publisher on pypi.org (about two minutes).",
+    "why": "You said \"Reserve it.\" PyPI reserves a name only with a first upload, and this repo uploads by trusted publishing, so PyPI must first be told which GitHub workflow may create the new project. Until the name is taken by us, anyone could take it, and the public repo pins it.",
+    "background": "aec-agent-core is the shared core of the app split (INF-32 step 10): empty for now. The workflow .github/workflows/publish-core.yml publishes it alone from a core-v* tag. Nothing about the app or its releases changes.",
+    "options": [],
+    "recommendation": "Add the pending publisher with the values below, then say done here.",
+    "if_no_answer": "The name stays unregistered; installs keep using the local copy, and an app release stays blocked by its guard until the core is on PyPI.",
+    "message_to_send": null,
+    "steps": [
+      "Sign in at pypi.org, open Your account, then Publishing.",
+      "Under \"Add a new pending publisher\", GitHub tab, type: PyPI Project Name aec-agent-core; Owner: your GitHub user name (the part before /GeotechStaffEngineer in the repository's address); Repository name GeotechStaffEngineer; Workflow name publish-core.yml; Environment name pypi.",
+      "Press Add, then answer done on this card. The lead tags core-v1.0.0.dev0, which uploads the empty package and claims the name."
+    ],
+    "unblocks": [
+      "INF-32 step 12",
+      "INF-33"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-128",
+      "module_work/inf32/CHECK_STEP10.md section 7"
+    ]
   }
 }

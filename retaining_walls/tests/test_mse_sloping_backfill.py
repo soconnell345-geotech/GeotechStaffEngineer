@@ -351,12 +351,20 @@ class TestAnalyzeAndResult:
         assert "backslope" not in r.to_dict()
         assert "Backfill slope" not in r.summary()
 
-    def test_calc_steps_refuse_a_slope(self):
-        """The MSE calc steps re-derive a level backfill; they refuse a
-        sloping one rather than print numbers the result contradicts."""
+    def test_calc_steps_print_the_slopes_terms(self):
+        """GM-307: the MSE calc steps print the sloping backfill's Kab,
+        h and F_T as the result has them (GM-112 refused a slope)."""
         geom = _geom(backfill_slope=BETA)
         r = analyze_mse_wall(geom, G, PHI, GEOGRID_GEC11_E1_GG1)
-        with pytest.raises(ValueError, match="level backfill only"):
-            get_calc_steps(r, {"wall_type": "mse", "geom": geom,
-                               "gamma_backfill": G, "phi_backfill": PHI,
-                               "reinforcement": GEOGRID_GEC11_E1_GG1})
+        steps = {item.result_name: item.result_value
+                 for section in get_calc_steps(
+                     r, {"wall_type": "mse", "geom": geom,
+                         "gamma_backfill": G, "phi_backfill": PHI,
+                         "reinforcement": GEOGRID_GEC11_E1_GG1})
+                 for item in section.items
+                 if hasattr(item, "result_name")}
+        b = r.backslope
+        assert steps["K_ab"] == f"{b['Kab']:.4f}"
+        assert steps["h"] == f"{b['h_m']:.3f}"
+        assert steps["F_T"] == f"{b['FT_kN_per_m']:.1f}"
+        assert "K_a" not in steps

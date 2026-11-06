@@ -42,7 +42,7 @@ Never do any of these: open a PR, push to master or main, create a tag, or edit 
   The full suite is not needed.
 - **Consumers.** For any result key, parameter or function you add, rename or remove, grep the WHOLE repo for consumers (`webapp/`, `funhouse_agent/`, `calc_package/`, `report_ingest/`, `docs/`, `validation_examples/`, tests and JSON fixtures) and run their tests. A session missed a failing test outside its module before.
 - **User manual.** If the tool text changes, hand-edit only the matching rows of `docs/user_manual/manual.html` and the worked example inputs in `docs/user_manual/gen_worked_examples.py` / `manual_content.py` if the example would now be refused. Do not run a full manual rebuild (it moves the cover version).
-- **Setup (app repo):** `python3.12 -m venv /tmp/v && /tmp/v/bin/pip install -e . pytest pytest-xdist` (planlens 0.14 and geotech-references 1.5.0 come from PyPI); use that venv's python for everything.
+- **Setup (app repo):** `python3.12 -m venv /tmp/v && /tmp/v/bin/pip install -e packages/aec-agent-core -e . pytest pytest-xdist` (the app pins its core `aec-agent-core` exactly and the core is not on PyPI yet, so it is installed from this repository in the same command; planlens 0.14 and geotech-references 1.5.0 come from PyPI); use that venv's python for everything.
 
 ## Finish with
 
