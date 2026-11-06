@@ -564,8 +564,10 @@ def test_save_file_checks_reports_not_data(tmp_path, monkeypatch):
 def test_annotate_document_notes_are_checked(tmp_path, monkeypatch):
     monkeypatch.setenv(review_flags.CITED_DOCUMENTS_ENV, "note")
     from funhouse_agent import document_tools
+    from planlens.review import marked_copy
     conv = _w8b(tmp_path)
-    monkeypatch.setattr(document_tools, "_write_marked_copy",
+    # The writer planlens.review's write_marked_copy calls (PL-29 (b)).
+    monkeypatch.setattr(marked_copy, "_write_marked_copy",
                         lambda *a, **k: {"output_path": "plan_marked.pdf",
                                          "n_written": 1})
     from funhouse_agent._fileio import working_dir_bound

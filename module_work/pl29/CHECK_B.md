@@ -181,3 +181,25 @@ The document tools (marked copies, the markup check, find_like, page numbers,
 view frames) now run from planlens.review; the app hands planlens its look,
 signer and file rules per conversation. No change to what the model sees or
 what the tools return. Requires planlens 0.15 or later.
+
+## 7. Review and fixes (lead, 2026-11-06)
+
+An independent review (`C:/dev/tmp/pl29b_review/REVIEW.md`, local) found
+no behaviour drift (33 scenarios through the agent's own tools, old and new
+trees, identical after normalising markup ids), no leak between two
+conversations in two threads, no unresolved import, and a planlens test for
+every cut app test. Two changes:
+
+- `funhouse_agent/tests/test_cited_documents.py`: the written-copy case
+  stubbed `document_tools._write_marked_copy`, which nothing calls any more;
+  it now stubs `planlens.review.marked_copy._write_marked_copy` (99 passed).
+- `.github/workflows/tests.yml`: the numpy-1.26 job installs
+  `planlens>=0.15` with `--no-deps`, like the pin.
+
+Release order (from the review): both pages import `planlens.review` at the
+top, so the app needs planlens 0.15 installed; every `--no-deps` install
+(Foundry wheels, the FDE brief, the numpy-1.26 job) must ship planlens
+0.15.0 with the app. planlens 0.15.0 can go out ahead of the app: the
+released 5.34.0 does not import `planlens.review`, and its tool specs and
+fingerprint are unchanged; the one change a 5.34.0 user sees is PL-11
+(`Label (unit): value` read as a quantity), as intended.
