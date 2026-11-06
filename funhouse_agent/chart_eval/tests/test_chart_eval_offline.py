@@ -527,3 +527,138 @@ def test_page_runs_in_forked_children(tmp_path):
     assert set(runs) == {"t0", "t1"}
     assert all(r["error"] is None and r["correct"] is True
                for r in runs.values()), runs
+
+
+# ---------------------------------------------------------------------------
+# CharXiv
+# ---------------------------------------------------------------------------
+
+CHARXIV_CONSTANTS = '''
+import os
+os.system("never run")
+REASONING_GRADING_PREFIX = """PREFIX """
+REASONING_GRADING_INST = {
+    1: """T1 Q:<|question|> G:<|ground_truth|> R:<|response|>""",
+    2: """T2 Q:<|question|> G:<|ground_truth|> R:<|response|>""",
+    3: """T3 Q:<|question|> G:<|ground_truth|> R:<|response|>""",
+    4: """T4 Q:<|question|> G:<|ground_truth|> R:<|response|>""",
+}
+REASONING_RESP_INST = {
+    1: """{}
+    * text rule""",
+    2: """{}
+    * phrase rule""",
+    3: """{}
+    * number rule""",
+    4: """{}
+    {}""",
+}
+'''
+
+
+def charxiv_fetcher(tmp_path):
+    from funhouse_agent.chart_eval import charxiv
+    answers = [("Joint-CNN", 1), ("up then down", 2), ("12", 3), ("0.25", 4),
+               ("7", 4), ("B", 1)]
+    questions = {str(i): {"figure_id": i, "query": f"Q{i}?", "answer": a,
+                          "inst_category": c, "qa_source": 1}
+                 for i, (a, c) in enumerate(answers)}
+    meta = {str(i): {"category": "cs" if i % 2 else "physics",
+                     "paper_id": f"2004.{i:05d}"} for i in range(6)}
+    buf = io.BytesIO()
+    import zipfile
+    with zipfile.ZipFile(buf, "w") as z:
+        for i in list(range(6)) + [1500]:
+            img = io.BytesIO()
+            from PIL import Image
+            Image.new("RGB", (640, 480), "white").save(img, format="JPEG")
+            z.writestr(f"{i}.jpg", img.getvalue())
+    files = {
+        charxiv.GITHUB_RAW + "src/constants.py": CHARXIV_CONSTANTS.encode(),
+        charxiv.GITHUB_RAW + "data/reasoning_val.json":
+            json.dumps(questions).encode(),
+        charxiv.GITHUB_RAW + "data/image_metadata_val.json":
+            json.dumps(meta).encode(),
+        charxiv.IMAGES_URL: buf.getvalue(),
+    }
+    return files.__getitem__
+
+
+def test_charxiv_folder_holds_the_questions_as_charxiv_asks_them(tmp_path):
+    from funhouse_agent.chart_eval.charxiv import prepare_charxiv
+    out = tmp_path / "cx"
+    prov = prepare_charxiv(out, sample=3, fetcher=charxiv_fetcher(tmp_path))
+    assert prov["tasks"] == 6 and prov["by_answer_type"] == {
+        "1": 2, "2": 1, "3": 1, "4": 2}
+    rows = [json.loads(x) for x in
+            (out / "tasks.jsonl").read_text("utf-8").splitlines()]
+    assert rows[0]["prompt"].startswith("Q0?\n") and "text rule" in \
+        rows[0]["prompt"]
+    assert "2 decimal places" in rows[3]["prompt"]
+    assert "exact integer" in rows[4]["prompt"]
+    assert rows[3]["judge_question"] == "Q3?" and rows[3]["judge_key"] == "4"
+    assert rows[1]["source_url"] == "https://arxiv.org/abs/2004.00001"
+    assert sorted(os.listdir(out / "charts")) == [f"{i}.jpg"
+                                                  for i in range(6)]
+    prompts = json.loads((out / "judge_prompts.json").read_text("utf-8"))
+    assert set(prompts) == {"1", "2", "3", "4"}
+    assert prompts["3"].startswith("PREFIX T3")
+    ids = (out / "sample_3.txt").read_text().split()
+    assert len(ids) == 3
+    assert (out / "ATTRIBUTION.md").is_file()
+    tasks = load_chart_tasks(out, subset="sample_3.txt")
+    assert [t.id for t in tasks] == ids
+
+
+def test_charxiv_sample_keeps_the_answer_type_mix():
+    from funhouse_agent.chart_eval.charxiv import stratified_sample
+    rows = [{"task_id": str(i), "judge_key": str(1 + (i % 10 >= 4) +
+                                                 (i % 10 >= 6) +
+                                                 (i % 10 >= 8))}
+            for i in range(1000)]
+    ids = stratified_sample(rows, 100, seed=0)
+    assert len(ids) == 100 and ids == stratified_sample(rows, 100, seed=0)
+    kinds = [rows[int(i)]["judge_key"] for i in ids]
+    assert {k: kinds.count(k) for k in "1234"} == {"1": 40, "2": 20,
+                                                   "3": 20, "4": 20}
+
+
+def test_charxiv_verdicts_and_slots():
+    got = parse_verdict('{"extracted_answer": "12", "score": 1}')
+    assert got[0]["score"] == 1 and got[0]["extracted_answer"] == "12"
+    tpl = "Q:<|question|> G:<|ground_truth|> R:<|response|>"
+    text = build_prompt("q?", "7", "it says <|ground_truth|>", tpl)
+    assert text.startswith("Q:q? G:7 R:it says <|ground_truth|>")
+
+
+def test_suite_grades_each_charxiv_task_with_its_own_prompt(tmp_path):
+    from funhouse_agent.chart_eval.charxiv import prepare_charxiv
+    data = tmp_path / "cx"
+    prepare_charxiv(data, sample=3, fetcher=charxiv_fetcher(tmp_path))
+    model = scripted(lambda m, n: ai("My answer: 12"))
+    seen = []
+
+    def fn(messages, n):
+        text = messages[-1].content
+        seen.append(text)
+        golden = text.split(" G:", 1)[1].split(" R:", 1)[0]
+        return ai(json.dumps({"extracted_answer": "12",
+                              "score": int(golden == "12")}))
+
+    judge = scripted(fn, name="judge")
+    out = tmp_path / "out"
+    res = score_chart_suite(model, judge_model=judge, data_dir=data,
+                            out_dir=out, arms=("none",), verbose=False)
+    runs = res["results"]["none"]
+    assert len(runs) == 6
+    assert runs["2"]["correct"] is True and runs["0"]["correct"] is False
+    assert runs["2"]["judge"]["prompt"] == "data folder (3)"
+    assert any(t.startswith("PREFIX T3 Q:Q2? G:12 R:My answer: 12")
+               for t in seen)                      # the bare question
+    md = (out / "RESULTS.md").read_text("utf-8")
+    assert md.startswith("# CharXiv reasoning, validation split:")
+    assert "per task (judge_prompts.json)" in md
+    small = score_chart_suite(model, judge_model=judge, data_dir=data,
+                              out_dir=tmp_path / "out2", arms=("none",),
+                              subset="sample_3.txt", verbose=False)
+    assert len(small["results"]["none"]) == 3

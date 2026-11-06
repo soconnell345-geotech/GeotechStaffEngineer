@@ -20,10 +20,18 @@ A data folder holds, in order of preference:
 * a Surge task pack: ``manifest.yaml`` listing task YAML files with the same
   fields (the two dummy tasks in Surge's own repository are one).
 
-Optional: ``judge_prompt.txt``, the judge prompt of Surge's own harness
-(``src/chartography/scorer.py``), which ``prepare`` copies in so the run is
-graded as Surge grades it; without it the suite's own wording of the same
-rules is used (:mod:`funhouse_agent.chart_eval.judge`).
+Optional, for grading as the benchmark's own authors grade:
+
+* ``judge_prompts.json``: a grading prompt per kind of question, chosen by
+  each task's ``judge_key`` (CharXiv grades a number and a term differently;
+  :mod:`funhouse_agent.chart_eval.charxiv` writes it), with the task's
+  ``judge_question`` (the bare question) in place of its prompt;
+* ``judge_prompt.txt``: one prompt for every task (Surge's, for
+  Chartography; :mod:`funhouse_agent.chart_eval.prepare` writes it).
+
+Without either, the suite's own wording of the grading rules is used
+(:mod:`funhouse_agent.chart_eval.judge`). A ``subset`` file (one task id per
+line, e.g. CharXiv's ``sample_100.txt``) narrows a run to those tasks.
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 JUDGE_PROMPT_FILE = "judge_prompt.txt"
+JUDGE_PROMPTS_FILE = "judge_prompts.json"
 TASKS_FILE = "tasks.jsonl"
 
 
@@ -52,6 +61,10 @@ class ChartTask:
     domain: str = ""
     source_type: str = ""
     source_url: str = ""
+    #: which grading prompt in ``judge_prompts.json`` grades this task
+    judge_key: str = ""
+    #: the question the judge is shown (the bare question; default prompt)
+    judge_question: str = ""
 
     def public_record(self) -> Dict[str, Any]:
         """What may go into a results file: the id and the labels, never
@@ -155,12 +168,35 @@ def _image_from_row(root: Path, row: Dict[str, Any], task_id: str
     return None
 
 
+def read_subset(data_dir: Any, subset: Any) -> List[str]:
+    """Task ids from a subset file: a path, or a file name in
+    ``data_dir``; one id per line, ``#`` starts a comment."""
+    path = Path(os.fspath(subset)).expanduser()
+    if not path.is_file() and data_dir is not None:
+        path = Path(os.fspath(data_dir)).expanduser() / os.fspath(subset)
+    if not path.is_file():
+        raise ChartDataError(f"subset file {subset!r} not found")
+    ids = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            ids.append(line)
+    if not ids:
+        raise ChartDataError(f"subset file {path} lists no task ids")
+    return ids
+
+
 def load_chart_tasks(data_dir: Any, ids: Optional[Iterable[str]] = None,
-                     limit: Optional[int] = None) -> List[ChartTask]:
+                     limit: Optional[int] = None,
+                     subset: Any = None) -> List[ChartTask]:
     """The chart tasks in ``data_dir`` (see the module docstring), in file
-    order; ``ids`` keeps only those, ``limit`` the first so many. A task
-    whose chart cannot be found raises: a run must not quietly score 98 of
-    100."""
+    order; ``ids`` (or a ``subset`` file of ids) keeps only those, ``limit``
+    the first so many. A task whose chart cannot be found raises: a run
+    must not quietly score 98 of 100."""
+    if subset is not None:
+        listed = read_subset(data_dir, subset)
+        given = None if ids is None else {str(i) for i in ids}
+        ids = [i for i in listed if given is None or i in given]
     if data_dir is None:
         raise ChartDataError("pass data_dir: the folder holding tasks.jsonl "
                              "and the charts")
@@ -200,7 +236,9 @@ def load_chart_tasks(data_dir: Any, ids: Optional[Iterable[str]] = None,
             id=task_id, prompt=prompt, golden_answer=golden,
             image_path=str(image), domain=_clean(row.get("domain_combined")),
             source_type=_clean(row.get("source_type")),
-            source_url=_clean(row.get("source_url"))))
+            source_url=_clean(row.get("source_url")),
+            judge_key=_clean(row.get("judge_key")),
+            judge_question=_clean(row.get("judge_question"))))
     if missing:
         raise ChartDataError(f"{len(missing)} chart(s) not found under "
                              f"{root}: " + ", ".join(missing[:10]))
@@ -226,5 +264,22 @@ def judge_prompt_template(data_dir: Any) -> Optional[str]:
     return None
 
 
+def judge_prompt_templates(data_dir: Any) -> Dict[str, str]:
+    """The per-kind grading prompts (``judge_prompts.json``), or ``{}``."""
+    if data_dir is None:
+        return {}
+    path = Path(os.fspath(data_dir)).expanduser() / JUDGE_PROMPTS_FILE
+    if not path.is_file():
+        return {}
+    try:
+        got = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise ChartDataError(f"{path}: not JSON ({exc})")
+    if not isinstance(got, dict):
+        raise ChartDataError(f"{path}: not a JSON object of prompts")
+    return {str(k): str(v) for k, v in got.items() if str(v).strip()}
+
+
 __all__ = ["ChartTask", "ChartDataError", "load_chart_tasks",
-           "judge_prompt_template", "JUDGE_PROMPT_FILE", "TASKS_FILE"]
+           "judge_prompt_template", "judge_prompt_templates", "read_subset",
+           "JUDGE_PROMPT_FILE", "JUDGE_PROMPTS_FILE", "TASKS_FILE"]

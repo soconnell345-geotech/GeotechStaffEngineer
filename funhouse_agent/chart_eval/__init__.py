@@ -4,9 +4,11 @@ harness.
 Out of the owner's question (2026-11-06): does the setup Anthropic used for
 the Opus 5.5 system card's Chartography result (64 % without tools, 89 %
 with a container and an image-cropping tool) read charts better than this
-app's Document Review page? The suite answers it on Surge AI's Chartography
-(100 expert chart questions, graded against expert ranges) with one install,
-on whatever model the host offers:
+app's Document Review page? Chartography itself was not open to the owner
+(private on Hugging Face), so the suite runs on CharXiv's reasoning
+questions (1,000 real arXiv charts with hand-written answers;
+:mod:`.charxiv` makes the data folder), and on Chartography where access is
+granted (:mod:`.prepare`). One install, whatever model the host offers:
 
 * ``none``: the chart and the question, no tools (Surge's own harness);
 * ``zoom``: the Claude Cookbook's zoom tool (the published half of the
@@ -17,12 +19,13 @@ on whatever model the host offers:
 * ``page:baseline`` / ``page:minimal`` (any ``page:<review arm>``): the
   chart uploaded to the Document Review page, as a user would.
 
-Run on Foundry (``module_work/FOUNDRY_BRIEF_CHARTOGRAPHY.md``)::
+Run on Foundry (``module_work/FOUNDRY_BRIEF_CHART_SUITE.md``)::
 
     from funhouse_agent.chart_eval import score_chart_suite, foundry_model
     opus = foundry_model("Opus 5.5=anthropic:<Opus 5.5 RID>")
     res = score_chart_suite(opus, judge_model=foundry_model("<judge id>"),
-                            data_dir="<chartography folder>",
+                            data_dir="<charxiv_data folder>",
+                            subset="sample_100.txt",
                             out_dir="<output folder>")
 """
 

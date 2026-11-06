@@ -6,13 +6,20 @@ question, the golden answer and the response, never the chart. Surge's own
 harness does this with one judge call per answer (``src/chartography/
 scorer.py``, Gemini 3.5 Flash on their leaderboard).
 
-The prompt. Surge's repository carries no licence, so its prompt is not
-copied into this public package: :mod:`funhouse_agent.chart_eval.prepare`
-saves it into the private data folder as ``judge_prompt.txt``, and when it is
-there it is used word for word (only one line is added after it, asking for
-the JSON alone, because the Foundry routes do not all take a response
-schema). Without it, :data:`OWN_TEMPLATE` states the same grading rules in
-this package's own words. Every run records which prompt graded it.
+The prompt. A benchmark's own grading prompt, kept in the private data
+folder, is used word for word: CharXiv's per answer type
+(``judge_prompts.json``, written by :mod:`funhouse_agent.chart_eval.charxiv`;
+placeholders ``<|question|>``, ``<|ground_truth|>``, ``<|response|>``), or
+Surge's for Chartography (``judge_prompt.txt``; placeholders
+``{{ rubric.* }}``; their repository carries no licence, so it is never
+copied into this package). One line is added after it, asking for the JSON
+alone, because the Foundry routes do not all take a response schema.
+Without one, :data:`OWN_TEMPLATE` states the grading rules in this package's
+own words. Every run records which prompt graded it.
+
+A verdict is either Surge's shape (``{"scores": [{"score": 0|1, ...}]}``,
+every part must score 1) or CharXiv's (``{"extracted_answer": ...,
+"score": 0|1}``).
 """
 
 from __future__ import annotations
@@ -21,10 +28,12 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
-#: The placeholders, as Surge's template spells them.
+#: The placeholders, as Surge's template spells them...
 Q_SLOT = "{{ rubric.response_generation_prompt }}"
 R_SLOT = "{{ rubric.response_to_grade }}"
 G_SLOT = "{{ rubric.all_criteria }}"
+#: ...and as CharXiv's grading prompts spell them.
+CHARXIV_SLOTS = ("<|question|>", "<|response|>", "<|ground_truth|>")
 
 #: The grading rules of the dataset card, in this package's own words.
 OWN_TEMPLATE = f"""You are grading a response to a chart-reading question. Compare it with the expert's golden answer. You do not see the chart; grade only what the response says against the golden answer.
@@ -49,11 +58,10 @@ Return only a JSON object, with no other text:
 {{"scores": [{{"criterion_id": "criterion_1", "extracted_answer": "<the response's final answer>", "score": 1, "rationale": "<one or two sentences>"}}]}}
 One entry per part of the golden answer, in order ("criterion_1", "criterion_2", ...). "score" is 1 when that part matches and 0 when it does not; no other values."""
 
-#: Added after Surge's template, which expects a response schema the Foundry
-#: routes do not all take.
-JSON_ONLY = ("\n\nReply with the JSON object only (keys: scores -> "
-             "criterion_id, extracted_answer, score, rationale), no other "
-             "text.")
+#: Added after a benchmark's own template: Surge's expects a response
+#: schema and CharXiv's a JSON mode, which the Foundry routes do not all
+#: take.
+JSON_ONLY = "\n\nReply with the JSON object only, no other text."
 
 
 class VerdictError(ValueError):
@@ -62,11 +70,16 @@ class VerdictError(ValueError):
 
 def build_prompt(question: str, golden: str, response: str,
                  template: Optional[str] = None) -> str:
-    """The judge prompt: ``template`` (Surge's, from the data folder) with
-    :data:`JSON_ONLY` after it, else :data:`OWN_TEMPLATE`."""
+    """The judge prompt: ``template`` (the benchmark's own, from the data
+    folder) with :data:`JSON_ONLY` after it, else :data:`OWN_TEMPLATE`.
+    Each slot is filled once, so a response that happens to contain a
+    placeholder's text is not filled in again."""
     tpl = (template + JSON_ONLY) if template else OWN_TEMPLATE
-    return (tpl.replace(Q_SLOT, question).replace(R_SLOT, response)
-            .replace(G_SLOT, golden))
+    values = {Q_SLOT: question, R_SLOT: response, G_SLOT: golden,
+              CHARXIV_SLOTS[0]: question, CHARXIV_SLOTS[1]: response,
+              CHARXIV_SLOTS[2]: golden}
+    pattern = re.compile("|".join(re.escape(k) for k in values))
+    return pattern.sub(lambda m: values[m.group(0)], tpl)
 
 
 def _text_of(content: Any) -> str:
@@ -103,6 +116,13 @@ def parse_verdict(text: str) -> List[Dict[str, Any]]:
             raise VerdictError(f"invalid JSON: {exc}")
     if not isinstance(payload, dict):
         raise VerdictError("the verdict is not a JSON object")
+    if "scores" not in payload and "score" in payload:
+        # CharXiv's shape: one answer, one score
+        payload = {"scores": [{
+            "criterion_id": "answer",
+            "extracted_answer": payload.get("extracted_answer",
+                                            payload.get("extract_answer", "")),
+            "score": payload.get("score"), "rationale": ""}]}
     entries = payload.get("scores")
     if not isinstance(entries, list) or not entries:
         raise VerdictError("the verdict has no 'scores' list")
@@ -127,14 +147,15 @@ def parse_verdict(text: str) -> List[Dict[str, Any]]:
 
 
 def judge_answer(judge_model: Any, question: str, golden: str, response: str,
-                 template: Optional[str] = None,
-                 retries: int = 4) -> Dict[str, Any]:
+                 template: Optional[str] = None, retries: int = 4,
+                 label: Optional[str] = None) -> Dict[str, Any]:
     """Grade ``response``: ``{"passed": True/False/None, "scores": [...],
-    "prompt": "surge"|"own", "attempts": n, "raw": <last reply>}``.
+    "prompt": <label, else "data folder" or "own">, "attempts": n,
+    "raw": <last reply>}``.
     ``passed`` is ``None`` (unscored) when the judge never gave a usable
     verdict, or ``response`` is ``None``. An empty response is wrong
     without a judge call."""
-    which = "surge" if template else "own"
+    which = label or ("data folder" if template else "own")
     if response is None:
         return {"passed": None, "scores": [], "prompt": which, "attempts": 0,
                 "error": "no response to grade"}

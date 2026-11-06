@@ -40,6 +40,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 from funhouse_agent.chart_eval import imaging
 from funhouse_agent.chart_eval.arms import DIRECT_ARMS, run_direct
 from funhouse_agent.chart_eval.data import (ChartTask, judge_prompt_template,
+                                            judge_prompt_templates,
                                             load_chart_tasks)
 from funhouse_agent.chart_eval.judge import judge_answer
 
@@ -140,15 +141,31 @@ def _run_one(kind: str, arm: str, env: Dict[str, str], model: Any,
     return res
 
 
+def grading_prompt(task: ChartTask, templates: Dict[str, str],
+                   template: Optional[str]):
+    """``(template, label)`` that grades ``task``: its kind's prompt in
+    ``judge_prompts.json``, else ``judge_prompt.txt``, else the suite's
+    own (``None``)."""
+    if templates and task.judge_key in templates:
+        return templates[task.judge_key], f"data folder ({task.judge_key})"
+    if template:
+        return template, "data folder"
+    return None, "own"
+
+
 def _judge(res: Dict[str, Any], task: ChartTask, judge_model: Any,
-           template: Optional[str]) -> Dict[str, Any]:
+           templates: Dict[str, str], template: Optional[str]
+           ) -> Dict[str, Any]:
     if res.get("error"):
         res["judge"] = {"passed": None, "error": "the run failed; not "
                                                  "judged (retried next run)"}
     else:
-        res["judge"] = judge_answer(judge_model, task.prompt,
+        tpl, label = grading_prompt(task, templates, template)
+        res["judge"] = judge_answer(judge_model,
+                                    task.judge_question or task.prompt,
                                     task.golden_answer,
-                                    res.get("answer") or "", template)
+                                    res.get("answer") or "", tpl,
+                                    label=label)
     res["correct"] = res["judge"].get("passed")
     return res
 
@@ -255,7 +272,8 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]],
               arms: Sequence[str], tasks: Sequence[ChartTask],
               meta: Dict[str, Any]) -> str:
     """``RESULTS.md``: ids and labels only."""
-    lines = ["# Chartography: chart reading, arm by arm", ""]
+    lines = [f"# {meta.get('dataset') or 'Chart suite'}: chart reading, "
+             "arm by arm", ""]
     lines.append(
         f"Run {meta.get('updated', '')} · model `{meta.get('model')}` "
         f"({meta.get('family')}, image limits {meta.get('limits')}) · judge "
@@ -385,6 +403,7 @@ def score_chart_suite(model: Any = None, *, data_dir: Any,
                       arms: Sequence[str] = DEFAULT_ARMS,
                       judge_model: Any = None,
                       ids: Optional[Iterable[str]] = None,
+                      subset: Any = None,
                       limit: Optional[int] = None, repeats: int = 1,
                       workers: int = 4, page_workers: int = 1,
                       page_timeout_s: float = 1800.0,
@@ -403,9 +422,12 @@ def score_chart_suite(model: Any = None, *, data_dir: Any,
 
     ``model`` is a LangChain chat model (on Foundry:
     :func:`funhouse_agent.chart_eval.foundry_model`); ``judge_model`` grades
-    the answers (default: ``model``). ``data_dir`` is the Chartography folder
-    (:mod:`funhouse_agent.chart_eval.data`). ``arms``: see the module
-    docstring. ``ids`` / ``limit`` narrow the tasks; ``repeats`` asks each
+    the answers (default: ``model``). ``data_dir`` is the data folder
+    (:mod:`funhouse_agent.chart_eval.data`; CharXiv's from
+    :mod:`funhouse_agent.chart_eval.charxiv`). ``arms``: see the module
+    docstring. ``ids``, ``subset`` (a file of ids, e.g.
+    ``"sample_100.txt"`` in the data folder) and ``limit`` narrow the
+    tasks; ``repeats`` asks each
     task that many times per arm. ``redo`` runs everything again;
     ``rejudge`` grades saved answers again (no run is repeated: after the
     judge or its prompt changes). ``image_limits`` overrides the image size
@@ -414,8 +436,11 @@ def score_chart_suite(model: Any = None, *, data_dir: Any,
     charts and the runs to do without calling a model.
     """
     say = print if verbose else (lambda *a, **k: None)
-    tasks = load_chart_tasks(data_dir, ids=ids, limit=limit)
+    tasks = load_chart_tasks(data_dir, ids=ids, limit=limit, subset=subset)
     template = judge_prompt_template(data_dir)
+    templates = judge_prompt_templates(data_dir)
+    judge_source = ("per task (judge_prompts.json)" if templates else
+                    "judge_prompt.txt" if template else "own")
     specs = [resolve_arm(a) for a in arms]
     arm_names = [name for _, name, _ in specs]
     if len(set(arm_names)) != len(arm_names):
@@ -442,8 +467,7 @@ def score_chart_suite(model: Any = None, *, data_dir: Any,
                 f"{len(tasks)} tasks × {len(specs)} arms × {repeats} "
                 f"repeat(s); {todo} runs still to do\n\n"
                 f"arms: {', '.join(arm_names)}\n\n"
-                f"judge prompt: "
-                f"{'surge (judge_prompt.txt)' if template else 'own'}\n\n"
+                f"judge prompt: {judge_source}\n\n"
                 + (f"model family {imaging.family_of(model)}, image limits "
                    f"{lim.to_dict()}\n\n" if lim else "")
                 + "\n".join(rows) + "\n")
@@ -476,7 +500,7 @@ def score_chart_suite(model: Any = None, *, data_dir: Any,
         "family": imaging.family_of(model), "limits": lim.name,
         "limits_detail": lim.to_dict(),
         "judge": _label(judge_model, judge_label),
-        "judge_prompt": "surge" if template else "own",
+        "judge_prompt": judge_source,
         "arms": arm_names, "repeats": repeats, "max_steps": max_steps,
         "orientation": orientation,
         "started": datetime.now().isoformat(timespec="seconds")}
@@ -485,6 +509,8 @@ def score_chart_suite(model: Any = None, *, data_dir: Any,
     if prov.is_file():
         try:
             meta["data"] = json.loads(prov.read_text(encoding="utf-8"))
+            meta["dataset"] = (meta["data"].get("dataset")
+                               or meta["data"].get("repo"))
         except ValueError:
             pass
     opts = {"image_limits": image_limits, "max_steps": max_steps,
@@ -522,7 +548,7 @@ def score_chart_suite(model: Any = None, *, data_dir: Any,
     def record(arm: str, key: str, run_dir: str, res: Dict[str, Any],
                judge_now: bool = True) -> None:
         if judge_now:
-            _judge(res, task_of(res, key), judge_model, template)
+            _judge(res, task_of(res, key), judge_model, templates, template)
         res["key"] = key
         _save(run_dir, res)
         with lock:
@@ -564,11 +590,11 @@ def score_chart_suite(model: Any = None, *, data_dir: Any,
     def run_and_judge(j: Dict[str, Any]) -> Dict[str, Any]:
         res = _run_one(j["kind"], j["arm"], j["env"], model, j["task"],
                        j["run_dir"], opts)
-        return _judge(res, j["task"], judge_model, template)
+        return _judge(res, j["task"], judge_model, templates, template)
 
     def judge_saved(j: Dict[str, Any]) -> Dict[str, Any]:
         return _judge(j["res"], task_of(j["res"], j["key"]), judge_model,
-                      template)
+                      templates, template)
 
     # Grading saved answers and the direct runs share the thread pool; each
     # worker grades its own run, so the judge's time overlaps the runs'.
