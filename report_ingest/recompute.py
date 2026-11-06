@@ -1408,12 +1408,20 @@ _WALL_INPUTS = (
 )
 
 #: The printed rule a kh is taken from a ground acceleration by. Only a
-#: rule the printout states: kh = PGA/2 is never assumed.
-_ACC = r"(pga|a_?s|a_?max|peak ground acceleration)"
+#: rule the printout states, as 'kh = <factor> x PGA', 'kh = PGA/2', 'kh =
+#: PGA' or 'kh = one-half of the PGA': kh = PGA/2 is never assumed. A kh
+#: value printed with the PGA beside it ('kh = 0.11 (PGA 0.22 g)') is no
+#: rule, and 'as' is As only where no word follows it ('kh = 0.15 as
+#: recommended' is no rule).
+_ACC = r"(pga|a_s|as(?!\s*[a-z(])|a_?max|peak ground acceleration)"
 _KH_RULES = (
+    # 'kh = 0.5 PGA', 'kh = 0.5(PGA)', 'kh = 1/2 x As'; not 'kh = 0.11 (PGA
+    # 0.22 g)' or 'kh = 0.11, PGA 0.22': a number after the acceleration
+    # is its value, not the rule's (after a bracket even with '=')
     (re.compile(r"\bk_?h\s*=\s*(\d+(?:\.\d+)?|\.\d+|\d+\s*/\s*\d+)\s*"
-                r"[x*×·]?\s*\(?\s*" + _ACC + r"\b"),
-     lambda m: (m.group(1), m.group(2))),
+                r"[x*×·]?\s*(\()?\s*" + _ACC
+                + r"\b(?(2)(?!\s*[:=]?\s*\d)|(?!\s*:?\s*\d))"),
+     lambda m: (m.group(1), m.group(3))),
     (re.compile(r"\bk_?h\s*=\s*\(?\s*" + _ACC + r"\s*\)?\s*/\s*"
                 r"(\d+(?:\.\d+)?)"),
      lambda m: (f"1/{m.group(2)}", m.group(1))),
@@ -1423,6 +1431,11 @@ _KH_RULES = (
                 r"(?:of\s+)?(?:the\s+)?" + _ACC + r"\b"),
      lambda m: ("1/2", m.group(2))),
 )
+
+#: A kh rule that carries the site factor ('kh = 0.5 PGA x Fpga', 'kh =
+#: 0.5(PGA)(Fpga)'): refused, never read as the rule without the factor.
+_KH_SITE_FACTOR = re.compile(
+    r"\bk_?h\b\s*=?(?:[^.;=]|\.(?=\d)){0,60}?\bf_?pga\b")
 
 
 def _fraction(text: str) -> float:
@@ -1436,14 +1449,20 @@ def _fraction(text: str) -> float:
 def _kh_rule(calc: Calculation) -> Tuple[Optional[Tuple[float, str, str]],
                                          str]:
     """``((factor, 'pga' or 'As', the rule as printed), '')``, ``(None,
-    why)`` when the printout states two different rules, or ``(None, '')``
-    when it states none."""
+    why)`` when the printout states two different rules or a rule with the
+    site factor Fpga, or ``(None, '')`` when it states none."""
     texts = [calc.method, calc.program or "", calc.subject, calc.summary]
     for nq in list(calc.inputs) + list(calc.results):
         texts += [nq.name, nq.text]
     rules = {}
     for text in texts:
         t = _norm(text)
+        site = _KH_SITE_FACTOR.search(t)
+        if site:
+            return None, (
+                f"the printout takes kh with the site factor Fpga "
+                f"('{site.group(0).strip()}'); kh from Fpga x PGA is not "
+                f"read, and the rule without the factor would be a guess")
         for pat, read in _KH_RULES:
             for m in pat.finditer(t):
                 factor, var = read(m)

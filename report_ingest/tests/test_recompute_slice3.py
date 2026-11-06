@@ -287,6 +287,56 @@ def test_kh_from_the_pga_by_the_printed_rule(rule_label):
         "note"]
 
 
+def _rule(summary):
+    return recompute._kh_rule(recompute.Calculation.model_validate(wall(
+        [], [], method="Mononobe-Okabe", summary=summary)))
+
+
+@pytest.mark.parametrize("summary, factor, var", [
+    ("kh = 0.5 PGA", 0.5, "pga"), ("kh = PGA/2", 0.5, "pga"),
+    ("kh = 0.5 PGA = 0.15", 0.5, "pga"), ("kh = 0.5(As) = 0.2", 0.5, "As"),
+    ("kh = 0.5 PGA (0.30 g)", 0.5, "pga"), ("kh = As.", 1.0, "As"),
+])
+def test_a_kh_rule_stated_as_factor_times_acceleration_is_read(
+        summary, factor, var):
+    (f, v, _text), why = _rule(summary)
+    assert (f, v, why) == (factor, var, "")
+
+
+# Review fix F2: a kh value printed with the PGA beside it, 'as' in a
+# sentence, and a rule carrying the site factor are never read as a rule
+@pytest.mark.parametrize("summary", [
+    "seismic increments with kh=0.12 (PGA 0.24 g)",
+    "kh = 0.12 (PGA = 0.24 g)", "kh = 0.12, PGA 0.24",
+    "kh = 0.15 as recommended by the geotechnical engineer",
+])
+def test_a_kh_value_or_a_sentence_is_not_a_rule(summary):
+    assert _rule(summary) == (None, "")
+
+
+@pytest.mark.parametrize("summary", ["kh = 0.5(PGA)(Fpga)",
+                                     "kh = 0.5 PGA x Fpga",
+                                     "kh = 0.5 x Fpga x PGA"])
+def test_a_kh_rule_with_the_site_factor_is_refused(summary):
+    rule, why = _rule(summary)
+    assert rule is None and "site factor Fpga" in why
+    row = one(wall([nq("KAE", 0.45)],
+                   [PHI, nq("delta", 21, "deg"), nq("PGA", 0.40, "g"),
+                    nq("Fpga", 1.2)], method="Mononobe-Okabe",
+                   summary=summary))
+    assert row["status"] == "not_recomputed"
+    assert "site factor Fpga" in row["reason"]
+
+
+def test_a_kh_value_beside_the_pga_never_scales_the_pga():
+    row = one(wall([nq("KAE", 0.45)],
+                   [PHI, nq("delta", 21, "deg"), nq("PGA", 0.24, "g")],
+                   method="Mononobe-Okabe",
+                   summary="Seismic increments with kh=0.12 (PGA 0.24 g)."))
+    assert row["status"] == "not_recomputed"
+    assert "would be a guess" in row["reason"]
+
+
 def test_a_pga_without_a_printed_rule_is_never_halved():
     row = one(wall([nq("KAE", 0.4)],
                    [PHI, nq("delta", 21, "deg"), nq("PGA", 0.30, "g")],
