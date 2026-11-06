@@ -138,7 +138,9 @@ Key conventions:
   MSE wall's calc package (`wall_type="mse"`) and MSE LRFD reports Strength I
   (min) apart; pystrata is held below 0.6 (INF-68). Answers move in the MSE
   critical bearing (live load over the zone at 1.75), fem2d footing capacity
-  (a surcharge is a real load; the soil's weight first; sand q_ult with
+  (a surcharge is a real load; the soil's weight first; the default
+  iteration limit grows with the mesh, so fine meshes no longer stop short,
+  and a stopped run is called a lower bound; a graded mesh for clay; sand q_ult with
   no surcharge is set by the mesh and warned of; a rigid footing is a
   choice, flexible stays the default) and sheet_pile (water standing in
   the excavation).
