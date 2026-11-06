@@ -112,11 +112,20 @@ hyphens: `GRAPH-TENANT-ID`), or in `.env` for a local run.
 | `GRAPH_CLIENT_CERT_THUMBPRINT` | only if `GRAPH_CLIENT_CERT` holds no certificate: the thumbprint the portal shows |
 | `SHAREPOINT_SITE_URL` | the site's address, `https://<tenant>.sharepoint.com/sites/<site>` |
 | `SHAREPOINT_SITE_URLS` | optional, for more sites: one per line or comma-separated, each `name=address` or just the address |
-| `GRAPH_CLOUD` | `commercial` (the default), `gcc_high` or `dod` |
+| `GRAPH_CLOUD` | optional: `commercial`, `gcc_high` or `dod`; when not set, the app takes it from the site's address (below) |
 | `GRAPH_LOGIN_URL`, `GRAPH_API_URL` | only for a cloud not in that list: the sign-in and Graph addresses |
 | `GEOTECH_SHAREPOINT_ROOT` | optional: the folder the app works in on the first site (default `Shared Documents/GeotechStaffEngineer`) |
+| `GEOTECH_SHAREPOINT_LOG` | optional: `0` turns off the app's SharePoint log (step 7); on by default |
 
-The cloud settings choose these addresses:
+**Which cloud.** Only the cloud of your SharePoint tenant matters; where the
+app itself is hosted (an Azure Government subscription or not) does not. With
+`GRAPH_CLOUD` not set, the app reads it from the site's address:
+`.sharepoint.com` is commercial (also Microsoft 365 GCC), `.sharepoint.us`
+is GCC High and `.sharepoint-mil.us` is DoD. `GRAPH_CLOUD`, or
+`GRAPH_LOGIN_URL` / `GRAPH_API_URL`, overrides that. The sites listed must
+all be in one cloud; sites in two clouds are refused.
+
+The cloud chooses these addresses:
 
 | `GRAPH_CLOUD` | Sign-in | Graph |
 |---|---|---|
@@ -130,6 +139,13 @@ path with no site name is on it. A path on another site starts with that
 site's name and a colon, for example `projects:Shared Documents/Reports/a.pdf`.
 The name is the one given as `name=address`, or else the last part of the
 address (`/sites/Projects` → `Projects`). Grant each site to the app (step 3).
+
+**Sites not in the settings.** A user can paste the address of a file or
+folder on any other site of the tenant, or a sharing link to one, and the
+app opens it there directly. This works only for sites granted to the app
+(step 3); for any other site the user is told that the app cannot open it
+and to ask you to grant it. The app never reads the same path on the
+default site instead.
 
 ## 6. Test the connection
 
@@ -162,4 +178,24 @@ To test without writing anything, add `--read-only`; the write step is then
 skipped, and a read-only grant is not caught.
 
 Each failure says what to do, followed by Microsoft's own error text. When
-every step passes, it ends with "SharePoint is set up."
+every step passes, it ends with "SharePoint is set up." The settings line
+also says which cloud was used and why (`GRAPH_CLOUD` set, or from the site
+address).
+
+## 7. Where the app's SharePoint errors are kept
+
+The app appends every SharePoint error it meets (a tool that failed, a
+conversation that could not be saved, a site a user pointed at that it
+cannot open) and each connection test's report to a log file in its own
+SharePoint folder:
+
+```
+<GEOTECH_SHAREPOINT_ROOT, else the library's top folder>/_app_log/sharepoint-YYYY-MM.log
+```
+
+One file a month, one line an entry: the time in UTC, the step or tool, the
+message, and the path, separated by tabs. It never holds a secret, a token,
+a key or anything users wrote. When the app cannot reach SharePoint at all
+(for example, sign-in is refused), the sidebar's **Connection diagnostics**
+shows the report and offers it as a download instead. Set
+`GEOTECH_SHAREPOINT_LOG=0` to turn the log off.
