@@ -246,10 +246,10 @@ The released 5.34.0 is untouched by any of this. What changes is installing
     wanted wheels) still say three.
 - **Step 12:** bump the core from 1.0.0.dev0 to 1.0.0 in its pyproject,
   `__version__` and the app's exact pin together (the fast wheel test
-  fails until all three agree); add the `core-v*` tag trigger and a job that
-  builds `packages/aec-agent-core` by name, with the same "only this
-  package in dist/" check; publish the core before GSE; the doc changes of
-  §5.
+  fails until all three agree); tag `core-v1.0.0` (publish-core.yml, added
+  at merge, builds `packages/aec-agent-core` by name, checks the tag against
+  the version and that only the core is in dist/); publish the core before
+  GSE; the doc changes of §5.
 
 ## 7. Left open
 
@@ -257,10 +257,15 @@ The released 5.34.0 is untouched by any of this. What changes is installing
   `https://pypi.org/pypi/aec-agent-core/json` answering 404), while this
   PUBLIC repository pins `aec-agent-core==1.0.0.dev0`: anyone could take
   the name and upload that version. PyPI reserves a name only with an
-  upload, so registering it means publishing, which is the owner's
-  decision. Until then every documented install puts the local core
-  first (CI, nightly, the cloud briefs), so none resolves it from an
-  index, and the publish guard stops a GSE release that would.
+  upload. **Owner, 2026-11-06: "Reserve it."** The lead added
+  `.github/workflows/publish-core.yml` (a `core-v*` tag publishes the core
+  alone, by trusted publishing); the owner adds the pending publisher on
+  pypi.org (BACKLOG OWN item), then the lead tags `core-v1.0.0.dev0`, which
+  uploads this empty package and claims the name. Until then every
+  documented install puts the local core first (CI, nightly, the cloud
+  briefs), and the publish guard stops a GSE release that would resolve it
+  from an index. Once 1.0.0.dev0 is on PyPI the guard passes; an app
+  release then installs the empty core, which is harmless at this step.
 - PyMuPDF `<2` in the core or in Document Review's pins (§2).
 - The app's package-data line `calc_package = ["templates/*.html",
   "templates/*.tex"]` matches nothing (`calc_package/templates/` does not
