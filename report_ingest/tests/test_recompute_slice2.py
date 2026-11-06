@@ -237,6 +237,27 @@ def test_settings_and_sentences_are_skipped():
     assert row["inputs_used"]["B"]["value"] == 2.0
 
 
+def test_a_long_claim_label_is_still_a_claim_and_units_are_not_words():
+    # review fix 2: no length rule on a claim; units and words with a digit
+    # ('P3', '30 m', '120 kPa') are not counted
+    q = bearing(friction_angle=32)["q_ultimate_kPa"]
+    inputs = [i for i in SHARED if i["name"] != "Footing width B"] + [
+        nq("phi", 32, "deg"),
+        nq("Footing width B (m) — pump house pad, engineered fill, 120 kPa",
+           2.0, "m")]
+    (row,) = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity (kPa), pump house pad - P3 east, "
+            "footing length 30 m", round(q), "kPa")], inputs))
+    assert row["flag"] == "agrees", row
+    assert row["inputs_used"]["width"]["value"] == 2.0
+    se = elastic_mm()
+    (row,) = recompute_calculation(elastic_calc(
+        [nq("Total immediate settlement (mm), pump house pad - P3 east - "
+            "bearing on engineered fill, 120 kPa", round(se, 2), "mm")],
+        ELASTIC))
+    assert row["status"] == "recomputed" and row["flag"] == "agrees", row
+
+
 def test_an_unconfined_strength_is_never_su():
     q = bearing(cohesion=40, friction_angle=0)["q_ultimate_kPa"]
     inputs = SHARED + [nq("Undrained shear strength su", 40, "kPa"),

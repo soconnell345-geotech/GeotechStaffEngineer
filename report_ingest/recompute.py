@@ -209,19 +209,32 @@ _STOP_WORDS = frozenset(
     "the of at to in a an for from on and or below above under per by with "
     "is be".split())
 
+#: A unit printed as a word of a label ('ft', 'ksf', 'kN/m3').
+_UNIT_WORD = re.compile(
+    r"^(k?pa|mpa|[kpt]sf|ksi|psi|ft|feet|foot|m|meters?|metres?|in|inch|"
+    r"inches|mm|cm|deg|degrees?|°|[kp]cf|kn|kips?|k|lbs?|t)"
+    r"(/[a-z0-9^³²]+)*$")
 
-def _skip(nq: NamedQuantity) -> bool:
+
+def _skip(nq: NamedQuantity, claim: bool = False) -> bool:
     """A printed setting or a sentence, not a labelled value: printed as
     words, a yes/no choice, an enumerated item ('a) ...') or a label of more
-    than eight words (the case, units and small words left out)."""
+    than eight words (its case, the parentheses, units, small words and
+    words with a digit left out: 'P1', 'L=10', '200 ft' are not words).
+    A claim (``claim``) is skipped only when printed as words: a result
+    label naming its structure and size is still the claim."""
     if nq.value is None:
         return True
+    if claim:
+        return False
     raw = _norm(nq.name)
     if re.search(r"\byes\b.*\bno\b|\by/n\b", raw) or re.match(
             r"^\(?[a-z0-9]\)\s", raw):
         return True
-    words = [w for w in re.sub(r"\([^)]*\)", " ", _lab(nq.name)).split()
-             if w not in _STOP_WORDS and re.search(r"[a-z]", w)]
+    text = re.sub(r"\([^)]*\)", " ", _lab(nq.name))
+    words = [w for w in re.findall(r"[^\s,;:\[\]]+", text)
+             if w not in _STOP_WORDS and re.search(r"[a-z]", w)
+             and not re.search(r"\d", w) and not _UNIT_WORD.match(w)]
     return len(words) > 8
 
 
@@ -541,7 +554,7 @@ def _bearing_claims(calc: Calculation):
     out = []
     for nq in calc.results:
         lab = _lab(nq.name)
-        if _skip(nq) or "factor" in lab:
+        if _skip(nq, claim=True) or "factor" in lab:
             continue
         for key, must, also in _BEARING_RESULTS:
             if re.search(must, lab) and (also is None or re.search(also, lab)):
@@ -922,7 +935,8 @@ def _settlement_candidates(calc: Calculation) -> List[NamedQuantity]:
     length unit (a time, a ratio or a pressure named with the word is not
     one)."""
     return [nq for nq in calc.results
-            if not _skip(nq) and _SETTLEMENT_CLAIM.search(_lab(nq.name))
+            if not _skip(nq, claim=True)
+            and _SETTLEMENT_CLAIM.search(_lab(nq.name))
             and _si(nq, "length")[0] is not None]
 
 
