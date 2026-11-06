@@ -76,7 +76,11 @@ wraps it).
   Df/B = 1 as UFC Table 5-6 prints it, Hansen's arctan beyond. "gec6"
   (Vesic only) is GEC-6 Eq. 5-14 and Table 5-4: d_q alone, from the
   arctan for Df/B ≥ 1 (all 12 printed cells to their 0.05 rounding),
-  1.0 below (the worked example on p. B-67). "none" uses no depth factors
+  1.0 below (the worked example on p. B-67). "linear" (Meyerhof only,
+  GM-309) takes Meyerhof's factors with k = Df/B at every depth, as UFC
+  Table 5-6 (p. 294) prints them with no limit on Df/B: d_c = 1 + 0.2 k
+  √K_P, d_q = d_γ = 1 + 0.1 k √K_P for φ' > 10° (1 at φ = 0); the same as
+  "hansen" up to Df/B = 1 and larger beyond. "none" uses no depth factors
   (GEC-6 Sec. 5.2.3.3 and Table 5-4 note). The result's `choices` state
   the factors and what the other options give.
 - `BearingSoilProfile.effective_unit_weight()` was removed (BC-6, unused);
@@ -197,7 +201,8 @@ keeps no rule for its shape factors under an inclined load.
 **Not changed, stated in the choices:** the depth parameter k. Table 5-6
 prints k = Df/B for Meyerhof; the module keeps Hansen's (1970) bound,
 k = arctan(Df/B) beyond Df/B = 1, for both factor sets (the smaller depth
-factors).
+factors) by default. Since GM-309 `depth_factor_method="linear"` gives
+Meyerhof's factors with Table 5-6's k = Df/B at any depth as an option.
 
 **The result's `choices`** (`geotech_common.choices`, in `to_dict()`, the
 summary and the calc package): the bearing capacity method; its N-gamma,

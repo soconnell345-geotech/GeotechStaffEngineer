@@ -152,7 +152,9 @@ def test_meyerhof_states_the_depth_parameter():
     k = _choice(r, "depth factors")
     assert "arctan(Df/B)" in k["chosen"] and k["how"] == "default"
     assert "Table 5-6" in k["basis"]
-    assert "k = Df/B = 1.50" in k["alternatives"][-1]
+    # GM-309: Table 5-6's k = Df/B at any depth is now an option, listed
+    # with what it gives
+    assert any("depth_factor_method 'linear'" in a for a in k["alternatives"])
     # GEC-6's d_q goes with GEC-6's own (Vesic) factors only
     assert not [a for a in k["alternatives"] if "'gec6'" in a]
 
