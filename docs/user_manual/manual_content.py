@@ -333,7 +333,7 @@ REFERENCE_INFO = {
               "MSE walls and reinforced soil slopes &mdash; reinforcement, pullout, durability and "
               "LRFD load and resistance factor tables, the K<sub>r</sub>/K<sub>a</sub> curve "
               "(Fig. 4-10), chapter text and figures."),
-    "gec12": ("FHWA GEC-12", "FHWA-NHI-16-009 (Vols. I and II), July 2016",
+    "gec12": ("FHWA GEC-12", "FHWA-NHI-16-009 (Vol. I) and FHWA-NHI-16-010 (Vol. II; its cover prints 16-009), July 2016",
               "Driven-pile foundations &mdash; the Nordlund, alpha and beta charts and tables of "
               "chapter 7, resistance factors, setup, chapter text and figures. The axial-pile module "
               "is validated against the design examples of Vol. III (FHWA-NHI-16-064)."),
@@ -347,7 +347,7 @@ REFERENCE_INFO = {
     "micropile": ("FHWA Micropile Manual", "FHWA NHI-05-039, December 2005",
                   "Micropile design and construction &mdash; bond stress, structural capacity, the "
                   "LPILE benchmark the lateral-pile module checks against."),
-    "ufc_backfill": ("UFC 3-220-04FA", "UFC 3-220-04FA, Backfill for Subsurface Structures, 16 January 2004",
+    "ufc_backfill": ("UFC 3-220-04N", "UFC 3-220-04N, Backfill for Subsurface Structures (the copy held, UFC 3-220-04FA of 16 January 2004, lacks the compaction table and filter ratios the module uses)",
                      "Backfill design &mdash; compaction, filter criteria, drainage."),
     "ufc_expansive": ("UFC 3-220-07", "UFC 3-220-07, Foundations in Expansive Soils, 16 January 2004",
                       "Expansive soils &mdash; swell potential, heave, pier design."),
@@ -586,8 +586,9 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "Eqs. 7-36 and 7-37; lateral **p-multipliers** by row (AASHTO as GEC-12 prints it, or "
             "Mokwa, UFC 3-220-20 Table 6-38).",
             "**Group uplift** (GEC-12 Sec. 7.2.3.2; UFC 3-220-20 Eqs. 6-40 to 6-43): the lesser of the "
-            "piles&rsquo; factored tension resistances and the block&rsquo;s, checked wherever a pile carries "
-            "tension.",
+            "piles&rsquo; factored tension resistances and the block&rsquo;s (the <code>group_uplift</code> tool; the "
+            "rigid-cap tools flag every pile in tension and say to run it, and the pile-group calc package "
+            "checks the piles in tension when it has the block&rsquo;s inputs).",
             "**Meyerhof (1976)** SPT group settlement as GEC-12 Eqs. 7-50 to 7-52 print it, and an "
             "elastic equivalent-footing settlement (GEC-12 Sec. 7.3.5.3, Eq. 7-55, 2V:1H spread) summed to "
             "where the stress falls to 10&nbsp;% of the footing&rsquo;s bearing stress (UFC 3-220-20 p. 449; "
@@ -867,7 +868,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "Pore pressure is a piezometric surface, per-layer r<sub>u</sub>, or scattered (x, z, u) "
             "points (<code>pore_pressure_points</code>) interpolated linearly on their Delaunay "
             "triangulation, with suction set to zero. The ACADS 5 / Slide2 #10 flow net could not be "
-            "pinned, because its grid values were not printed legibly (V-029).",
+            "pinned: Fig. 10.2&rsquo;s grid values did not survive the text extraction, and they are not invented (V-029).",
             "A tension crack sits at the entry side (default) or the exit side "
             "(<code>tension_crack_side</code>). By default the cracked wedge is kept as zero-strength "
             "driving soil with the full hydrostatic thrust, which is conservative. "
@@ -1497,9 +1498,9 @@ def _ch2_install(ctx):
     rows.append("</tbody></table>")
     ctx.raw("".join(rows))
     ctx.callout("Honest failure when an extra is missing",
-        "<p>A method whose backend is not installed (python-ags4 or pydiggs without their extra, or a "
-        "library a host cannot install, such as PyNiteFEA on numpy 1.26) fails cleanly with a "
-        "&ldquo;not installed&rdquo; message rather than a confusing traceback.</p>")
+        "<p>A method whose backend is not installed (python-ags4 or pydiggs without their extra) fails "
+        "cleanly with a &ldquo;not installed&rdquo; message rather than a confusing traceback; a library a "
+        "host cannot install (PyNiteFEA on numpy 1.26) leaves its tool out.</p>")
 
     ctx.section("Local Python")
     ctx.para(
