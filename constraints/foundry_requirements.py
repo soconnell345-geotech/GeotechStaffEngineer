@@ -26,7 +26,15 @@ def requirements() -> list:
     """The core requirement lines of the four installed packages."""
     lines = []
     for dist in OWN:
-        for req in md.requires(dist) or ():
+        try:
+            reqs = md.requires(dist) or ()
+        except md.PackageNotFoundError:
+            # An app released before the core existed (5.34.0 and older)
+            # installs without it; any other missing package is an error.
+            if dist != "aec-agent-core":
+                raise
+            continue
+        for req in reqs:
             if "extra ==" in req:
                 continue
             name = re.split(r"[\s<>=!~;\[(]", req, maxsplit=1)[0]
