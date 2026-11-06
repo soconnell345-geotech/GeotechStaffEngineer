@@ -20,27 +20,67 @@ Paths are the UI paths the rest of the app uses — ``Shared Documents/
 General/GSE_app/...`` — where the first segment names the document library
 (Graph calls it a drive) and the rest is the path inside it.
 
-The login and Graph hosts are the PUBLIC cloud ones on purpose: the
+The login and Graph hosts default to the PUBLIC cloud ones: the
 organisation's SharePoint tenant is commercial-side even though the App Service
-runs in Azure Government (their note). Only the standard library is used;
-``urllib`` is what their connector uses and it keeps this file dependency-free.
+runs in Azure Government (their note). Only the standard library is used for
+the calls; ``urllib`` is what their connector uses and it keeps this file
+dependency-free.
+
+TA-34 (owner, 2026-11-05): the host team sets the registration up themselves,
+on whatever tenant they have, with no code change from us:
+
+* ``GRAPH_CLOUD`` picks Microsoft's national cloud (``commercial``, the
+  default, ``gcc_high`` or ``dod``), and ``GRAPH_LOGIN_URL`` /
+  ``GRAPH_API_URL`` override either address outright; the token scope
+  follows the Graph address.
+* A CERTIFICATE as well as a client secret: ``GRAPH_CLIENT_CERT`` (a PEM
+  file path, or the PEM text, holding the certificate and, unless
+  ``GRAPH_CLIENT_KEY`` names it apart, its private key), optionally
+  ``GRAPH_CLIENT_KEY_PASSWORD`` and ``GRAPH_CLIENT_CERT_THUMBPRINT``. When a
+  certificate is set it is used instead of the secret: a client assertion
+  signed with RS256 (needs the ``cryptography`` package, imported only then).
+* More than one site: ``SHAREPOINT_SITE_URLS`` (one per line or
+  comma-separated, each optionally ``name=URL``) beside or instead of
+  ``SHAREPOINT_SITE_URL``. The first site is the default, so every path
+  that worked before still does; ``name:Shared Documents/...`` names
+  another, and so does its ``/sites/<site>/...`` server path.
+* :func:`check_connection` (``python -m webapp.graph_sharepoint --check``)
+  runs each step in order and says which one failed and what the admin does.
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, List, Optional, Union
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 log = logging.getLogger(__name__)
 
+#: The commercial cloud's addresses, the default (and today's behaviour).
 LOGIN_URL = "https://login.microsoftonline.com"
 GRAPH_URL = "https://graph.microsoft.com"
+
+#: Microsoft's published sign-in and Graph addresses per national cloud
+#: ("National cloud deployments", Microsoft Graph docs). GCC (moderate) uses
+#: the commercial addresses.
+CLOUDS: Dict[str, Tuple[str, str]] = {
+    "commercial": (LOGIN_URL, GRAPH_URL),
+    "gcc": (LOGIN_URL, GRAPH_URL),
+    "gcc_high": ("https://login.microsoftonline.us",
+                 "https://graph.microsoft.us"),
+    "dod": ("https://login.microsoftonline.us",
+            "https://dod-graph.microsoft.us"),
+}
 
 #: Graph's simple-upload limit; larger files go through an upload session.
 SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024
@@ -52,6 +92,18 @@ ENV_TENANT = "GRAPH_TENANT_ID"
 ENV_CLIENT_ID = "GRAPH_CLIENT_ID"
 ENV_CLIENT_SECRET = "GRAPH_CLIENT_SECRET"
 ENV_SITE_URL = "SHAREPOINT_SITE_URL"
+#: TA-34: the optional settings for any tenant (none set = today's behaviour).
+ENV_SITE_URLS = "SHAREPOINT_SITE_URLS"
+ENV_CLOUD = "GRAPH_CLOUD"
+ENV_LOGIN_URL = "GRAPH_LOGIN_URL"
+ENV_API_URL = "GRAPH_API_URL"
+ENV_CLIENT_CERT = "GRAPH_CLIENT_CERT"
+ENV_CLIENT_KEY = "GRAPH_CLIENT_KEY"
+ENV_CLIENT_KEY_PASSWORD = "GRAPH_CLIENT_KEY_PASSWORD"
+ENV_CERT_THUMBPRINT = "GRAPH_CLIENT_CERT_THUMBPRINT"
+
+#: The JWT bearer assertion type of the client-credentials flow.
+ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
 
 class GraphError(RuntimeError):
@@ -62,56 +114,299 @@ class GraphError(RuntimeError):
         self.status = status
 
 
-def configured() -> bool:
-    """True when the four app-registration settings are all present."""
+class LibraryNotFound(GraphError):
+    """The site has no document library by the name a path starts with."""
+
+
+def _setting(name: str) -> str:
     from webapp.tinyapps_settings import get_setting
-    return all(bool((get_setting(n) or "").strip())
-               for n in (ENV_TENANT, ENV_CLIENT_ID, ENV_CLIENT_SECRET,
-                         ENV_SITE_URL))
+    return (get_setting(name) or "").strip()
+
+
+def configured() -> bool:
+    """True when the app registration is complete: tenant, client id, a
+    credential (the secret, or a certificate) and at least one site.
+
+    The settings are read in an order that stops at the first one present,
+    so a deployment with today's four settings reads exactly those four."""
+    return bool(_setting(ENV_TENANT) and _setting(ENV_CLIENT_ID)
+                and (_setting(ENV_CLIENT_SECRET) or _setting(ENV_CLIENT_CERT)
+                     or _setting(ENV_CLIENT_KEY))
+                and (_setting(ENV_SITE_URL) or _setting(ENV_SITE_URLS)))
+
+
+def missing_settings() -> List[str]:
+    """The settings still to fill in, by name (empty when :func:`configured`)."""
+    out = [n for n in (ENV_TENANT, ENV_CLIENT_ID) if not _setting(n)]
+    if not (_setting(ENV_CLIENT_SECRET) or _setting(ENV_CLIENT_CERT)
+            or _setting(ENV_CLIENT_KEY)):
+        out.append(f"{ENV_CLIENT_SECRET} (or {ENV_CLIENT_CERT})")
+    if not (_setting(ENV_SITE_URL) or _setting(ENV_SITE_URLS)):
+        out.append(f"{ENV_SITE_URL} (or {ENV_SITE_URLS})")
+    return out
+
+
+# ---------------------------------------------------------------- the cloud
+
+def cloud_urls(cloud: Optional[str] = None, login_url: Optional[str] = None,
+               api_url: Optional[str] = None) -> Tuple[str, str]:
+    """``(sign-in address, Graph address)`` for the configured cloud.
+
+    ``GRAPH_CLOUD`` names one of :data:`CLOUDS` (default ``commercial``;
+    spaces, hyphens and case are forgiven: ``GCC High`` works);
+    ``GRAPH_LOGIN_URL`` / ``GRAPH_API_URL`` replace either address."""
+    name = (cloud if cloud is not None else _setting(ENV_CLOUD)) or "commercial"
+    key = re.sub(r"[\s\-]+", "_", name.strip().lower())
+    if key not in CLOUDS:
+        raise ValueError(
+            f"{ENV_CLOUD}={name!r} is not a cloud this app knows "
+            f"({', '.join(sorted(CLOUDS))}); set {ENV_LOGIN_URL} and "
+            f"{ENV_API_URL} for any other.")
+    login, graph = CLOUDS[key]
+    login = (login_url if login_url is not None
+             else _setting(ENV_LOGIN_URL)) or login
+    graph = (api_url if api_url is not None else _setting(ENV_API_URL)) or graph
+    return login.rstrip("/"), graph.rstrip("/")
+
+
+# ------------------------------------------------------------------ sites
+
+@dataclass
+class Site:
+    """One SharePoint site the app may use; ``name`` is what a path's
+    ``name:`` prefix says."""
+    name: str
+    url: str
+    site_id: Optional[str] = None
+    drive_ids: Dict[str, str] = field(default_factory=dict)
+
+    @property
+    def server_path(self) -> str:
+        """``/sites/<site>`` (or ``/teams/...``), lower case, for matching."""
+        return urllib.parse.urlparse(
+            self.url if "://" in self.url else f"https://{self.url}"
+        ).path.rstrip("/").lower()
+
+
+def _default_site_name(url: str) -> str:
+    path = urllib.parse.urlparse(url if "://" in url else f"https://{url}").path
+    tail = urllib.parse.unquote(path.rstrip("/").rsplit("/", 1)[-1])
+    return tail or urllib.parse.urlparse(
+        url if "://" in url else f"https://{url}").netloc
+
+
+def parse_sites(single: Optional[str] = None,
+                many: Optional[str] = None) -> List[Site]:
+    """The configured sites, the default first.
+
+    ``single`` is ``SHAREPOINT_SITE_URL``; ``many`` is
+    ``SHAREPOINT_SITE_URLS``: entries one per line or comma-separated, each
+    ``URL`` or ``name=URL`` (the name defaults to the URL's last segment,
+    ``/sites/Geo`` -> ``Geo``). A URL named twice is kept once."""
+    entries: List[Tuple[str, str]] = []
+    if single and single.strip():
+        u = single.strip().rstrip("/")
+        entries.append((_default_site_name(u), u))
+    for raw in re.split(r"[\n,;]+", many or ""):
+        raw = raw.strip()
+        if not raw:
+            continue
+        name, url = "", raw
+        head, sep, tail = raw.partition("=")
+        if sep and "/" not in head and ":" not in head:
+            name, url = head.strip(), tail.strip()
+        url = url.rstrip("/")
+        entries.append((name or _default_site_name(url), url))
+    out: List[Site] = []
+    for name, url in entries:
+        if any(s.url.lower() == url.lower() for s in out):
+            continue
+        out.append(Site(name=name, url=url))
+    return out
+
+
+def configured_sites() -> List[Site]:
+    """:func:`parse_sites` over the settings."""
+    single = _setting(ENV_SITE_URL)
+    many = _setting(ENV_SITE_URLS)
+    return parse_sites(single, many)
+
+
+# ----------------------------------------------------------- certificates
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _pem_text(value: str) -> str:
+    """The PEM text itself, or the contents of the file it names."""
+    v = (value or "").strip()
+    if "-----BEGIN" in v:
+        return v.replace("\\n", "\n")      # a setting may hold escaped newlines
+    if os.path.exists(v):
+        with open(v, encoding="utf-8") as fh:
+            return fh.read()
+    raise ValueError("the certificate setting is neither PEM text nor the "
+                     "path of a file that exists")
+
+
+class CertificateCredential:
+    """A private key and its certificate's thumbprint, signing the client
+    assertion Entra takes in place of a secret.
+
+    The key never leaves this object: no ``repr`` of it, no log line."""
+
+    def __init__(self, cert_pem: Optional[str] = None,
+                 key_pem: Optional[str] = None,
+                 thumbprint: Optional[str] = None,
+                 password: Optional[str] = None):
+        try:
+            from cryptography import x509
+            from cryptography.hazmat.primitives import hashes, serialization
+        except ImportError as exc:             # pragma: no cover - env
+            raise RuntimeError(
+                "A certificate credential needs the 'cryptography' package "
+                "(pip install cryptography), or use GRAPH_CLIENT_SECRET "
+                "instead.") from exc
+        cert_text = _pem_text(cert_pem) if cert_pem else ""
+        key_text = _pem_text(key_pem) if key_pem else cert_text
+        if "PRIVATE KEY" not in key_text:
+            raise ValueError(
+                f"no private key found: put it in the {ENV_CLIENT_CERT} PEM "
+                f"or name it in {ENV_CLIENT_KEY}")
+        start = key_text.index("-----BEGIN")
+        key_block = key_text[start:]
+        # Load only the key block(s); certificates in the same text are skipped.
+        m = re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?"
+                      r"-----END [A-Z ]*PRIVATE KEY-----", key_block, re.S)
+        self._key = serialization.load_pem_private_key(
+            m.group(0).encode(), password=(password.encode()
+                                           if password else None))
+        if "BEGIN CERTIFICATE" in cert_text:
+            cert = x509.load_pem_x509_certificate(cert_text[
+                cert_text.index("-----BEGIN CERTIFICATE"):].encode())
+            der = cert.public_bytes(serialization.Encoding.DER)
+            self.x5t = _b64url(hashlib.sha1(der).digest())
+            self.not_after = getattr(cert, "not_valid_after_utc", None) \
+                or cert.not_valid_after
+        elif thumbprint:
+            hex_ = re.sub(r"[^0-9a-fA-F]", "", thumbprint)
+            self.x5t = _b64url(bytes.fromhex(hex_))
+            self.not_after = None
+        else:
+            raise ValueError(
+                f"no certificate found: put it in {ENV_CLIENT_CERT} or give "
+                f"its thumbprint in {ENV_CERT_THUMBPRINT}")
+        self._hashes = hashes
+
+    def __repr__(self) -> str:
+        return f"CertificateCredential(x5t={self.x5t!r})"
+
+    def assertion(self, client_id: str, token_url: str,
+                  lifetime: int = 600) -> str:
+        """The signed client assertion (RS256, header ``x5t``)."""
+        from cryptography.hazmat.primitives.asymmetric import padding
+        now = int(time.time())
+        header = {"alg": "RS256", "typ": "JWT", "x5t": self.x5t}
+        claims = {"aud": token_url, "iss": client_id, "sub": client_id,
+                  "jti": str(uuid.uuid4()), "nbf": now, "iat": now,
+                  "exp": now + lifetime}
+        signing_input = (_b64url(json.dumps(header, separators=(",", ":"))
+                                 .encode()) + "." +
+                         _b64url(json.dumps(claims, separators=(",", ":"))
+                                 .encode()))
+        sig = self._key.sign(signing_input.encode("ascii"),
+                             padding.PKCS1v15(), self._hashes.SHA256())
+        return signing_input + "." + _b64url(sig)
+
+
+def certificate_from_settings() -> Optional[CertificateCredential]:
+    """The certificate credential the settings describe, or None when no
+    certificate setting is present (the secret is used then)."""
+    cert = _setting(ENV_CLIENT_CERT)
+    key = _setting(ENV_CLIENT_KEY)
+    if not (cert or key):
+        return None
+    return CertificateCredential(
+        cert_pem=cert or None, key_pem=key or None,
+        thumbprint=_setting(ENV_CERT_THUMBPRINT) or None,
+        password=_setting(ENV_CLIENT_KEY_PASSWORD) or None)
 
 
 class GraphFileManager:
-    """Files on one SharePoint site, as the app registration.
+    """Files on one or more SharePoint sites, as the app registration.
 
-    Construct with explicit values or with none — then the four settings are
+    Construct with explicit values or with none — then the settings are
     read through :func:`webapp.tinyapps_settings.get_setting` (env var, then
     Key Vault on a deployment, then ``.env`` locally). Nothing is contacted
     until the first call; a bad secret therefore shows up as a request error
     in the log, not a process that will not start.
+
+    The first site is the default: a path with no ``name:`` prefix is on it,
+    exactly as when there was only one.
     """
 
     def __init__(self, site_url: Optional[str] = None,
                  tenant_id: Optional[str] = None,
                  client_id: Optional[str] = None,
                  client_secret: Optional[str] = None,
-                 *, timeout: float = 300.0):
+                 *, timeout: float = 300.0,
+                 sites: Optional[List[Site]] = None,
+                 certificate: Optional[CertificateCredential] = None,
+                 cloud: Optional[str] = None,
+                 login_url: Optional[str] = None,
+                 api_url: Optional[str] = None):
         from webapp.tinyapps_settings import get_setting
-        self.site_url = (site_url or get_setting(ENV_SITE_URL, required=True)
-                         ).strip().rstrip("/")
+        if sites is None:
+            sites = (parse_sites(site_url) if site_url
+                     else configured_sites())
+        if not sites:
+            get_setting(ENV_SITE_URL, required=True)       # the plain error
+        self.sites: List[Site] = list(sites)
         self._tenant = tenant_id or get_setting(ENV_TENANT, required=True)
         self._client_id = client_id or get_setting(ENV_CLIENT_ID, required=True)
-        self._secret = client_secret or get_setting(ENV_CLIENT_SECRET,
-                                                    required=True)
+        self.login_url, self.graph_url = cloud_urls(cloud, login_url, api_url)
+        if certificate is None and client_secret is None:
+            certificate = certificate_from_settings()
+        self._certificate = certificate
+        self._secret = None if certificate is not None else (
+            client_secret or get_setting(ENV_CLIENT_SECRET, required=True))
         self._timeout = timeout
         self._token: Optional[str] = None
         self._token_expires = 0.0
-        self._site_id: Optional[str] = None
-        self._drive_ids: Dict[str, str] = {}
+
+    @property
+    def site_url(self) -> str:
+        """The default site's URL (the only one before TA-34)."""
+        return self.sites[0].url
+
+    @property
+    def credential_kind(self) -> str:
+        return "certificate" if self._certificate is not None else "secret"
+
+    @property
+    def token_url(self) -> str:
+        return f"{self.login_url}/{self._tenant}/oauth2/v2.0/token"
+
+    def site_names(self) -> List[str]:
+        return [s.name for s in self.sites]
 
     # ------------------------------------------------------------------ auth
     def _get_token(self) -> str:
         """Client-credentials token for Graph (~1 h), renewed a minute early."""
         if self._token and time.time() < self._token_expires - 60:
             return self._token
-        body = urllib.parse.urlencode({
-            "grant_type": "client_credentials",
-            "client_id": self._client_id,
-            "client_secret": self._secret,
-            "scope": f"{GRAPH_URL}/.default",
-        }).encode()
-        req = urllib.request.Request(
-            f"{LOGIN_URL}/{self._tenant}/oauth2/v2.0/token", data=body,
-            method="POST")
+        form = {"grant_type": "client_credentials",
+                "client_id": self._client_id,
+                "scope": f"{self.graph_url}/.default"}
+        if self._certificate is not None:
+            form["client_assertion_type"] = ASSERTION_TYPE
+            form["client_assertion"] = self._certificate.assertion(
+                self._client_id, self.token_url)
+        else:
+            form["client_secret"] = self._secret
+        body = urllib.parse.urlencode(form).encode()
+        req = urllib.request.Request(self.token_url, data=body, method="POST")
         payload = self._send(req, timeout=30.0)
         data = json.loads(payload or b"{}")
         if "access_token" not in data:
@@ -145,7 +440,7 @@ class GraphFileManager:
                  raw: bool = False) -> Any:
         """One Graph call; parsed JSON, or bytes when ``raw``."""
         if not url.startswith("http"):
-            url = f"{GRAPH_URL}/v1.0/{url.lstrip('/')}"
+            url = f"{self.graph_url}/v1.0/{url.lstrip('/')}"
         headers = {"Authorization": f"Bearer {self._get_token()}"}
         if data is not None:
             headers["Content-Type"] = content_type
@@ -157,24 +452,53 @@ class GraphFileManager:
             return body
         return json.loads(body) if body else {}
 
+    def _site_id_of(self, site: Site) -> str:
+        if site.site_id is None:
+            parts = urllib.parse.urlparse(
+                site.url if "://" in site.url else f"https://{site.url}")
+            site.site_id = self._request(
+                "GET", f"sites/{parts.netloc}:{parts.path}")["id"]
+        return site.site_id
+
     @property
     def site_id(self) -> str:
-        if self._site_id is None:
-            parts = urllib.parse.urlparse(
-                self.site_url if "://" in self.site_url
-                else f"https://{self.site_url}")
-            self._site_id = self._request(
-                "GET", f"sites/{parts.netloc}:{parts.path}")["id"]
-        return self._site_id
+        return self._site_id_of(self.sites[0])
 
-    @staticmethod
-    def _clean(path: Optional[str]) -> str:
+    def _route(self, path: Optional[str]) -> Tuple[Site, str, str]:
+        """``(site, library path, prefix)`` for a caller's path.
+
+        ``name:Shared Documents/x`` is on the site called ``name``; a
+        server-relative ``/sites/<site>/...`` is on the configured site at
+        that address; anything else is on the default site. ``prefix`` is
+        what the paths this manager hands back carry so they find the same
+        site again: ``""`` on the default site, ``"name:"`` on another."""
         p = (path or "").strip().replace("\\", "/")
-        # Callers sometimes hand a server-relative path; the site part is ours.
+        site = self.sites[0]
+        head, sep, tail = p.partition(":")
+        if sep and "/" not in head:
+            named = next((s for s in self.sites
+                          if s.name.lower() == head.strip().lower()), None)
+            if named is not None:
+                site, p = named, tail
+        # Callers sometimes hand a server-relative path: the site part names
+        # one of ours (else, as before, it is read on the default site).
         for marker in ("/sites/", "/teams/"):
             if p.lower().startswith(marker):
+                segs = p.split("/")
+                server = "/".join(segs[:3]).lower()
+                match = next((s for s in self.sites
+                              if s.server_path == server), None)
+                if match is not None:
+                    site = match
                 p = p.split("/", 3)[-1] if p.count("/") >= 3 else ""
-        return p.strip("/")
+        prefix = "" if site is self.sites[0] else f"{site.name}:"
+        return site, p.strip("/"), prefix
+
+    def _clean(self, path: Optional[str]) -> str:
+        """The path as this manager's results spell it: the library path,
+        with the site's ``name:`` prefix when it is not the default site."""
+        _site, p, prefix = self._route(path)
+        return f"{prefix}{p}"
 
     def _split_path(self, path: str):
         """``Shared Documents/a/b.csv`` -> (drive id, ``a/b.csv``).
@@ -183,23 +507,24 @@ class GraphFileManager:
         Documents``) OR its Graph name (``Documents``) — the default library
         has both, and callers use the UI spelling.
         """
-        p = self._clean(path)
+        site, p, _prefix = self._route(path)
         library = p.split("/")[0] if p else "Shared Documents"
         rest = p[len(library):].strip("/") if p else ""
         key = library.lower()
-        if key not in self._drive_ids:
-            drives = self._request("GET", f"sites/{self.site_id}/drives")["value"]
+        if key not in site.drive_ids:
+            drives = self._request(
+                "GET", f"sites/{self._site_id_of(site)}/drives")["value"]
             for d in drives:
                 tail = urllib.parse.unquote(d["webUrl"].rstrip("/").split("/")[-1])
                 if key in (tail.lower(), str(d.get("name", "")).lower()):
-                    self._drive_ids[key] = d["id"]
+                    site.drive_ids[key] = d["id"]
                     break
             else:
                 names = sorted({urllib.parse.unquote(
                     d["webUrl"].rstrip("/").split("/")[-1]) for d in drives})
-                raise GraphError(f"No document library called {library!r} on "
-                                 f"{self.site_url}. Libraries here: {names}")
-        return self._drive_ids[key], rest
+                raise LibraryNotFound(f"No document library called {library!r} "
+                                      f"on {site.url}. Libraries here: {names}")
+        return site.drive_ids[key], rest
 
     def _item_url(self, drive_id: str, rest: str) -> str:
         return (f"drives/{drive_id}/root:/{urllib.parse.quote(rest)}"
@@ -368,9 +693,11 @@ class GraphFileManager:
         """Files whose names match ANY filter string, under ``folder_path``."""
         filters = ([filename_filter] if isinstance(filename_filter, str)
                    else list(filename_filter))
-        base = self._clean(folder_path)
-        drive_id, rest = self._split_path(base or "Shared Documents")
-        library = base.split("/")[0] if base else "Shared Documents"
+        _site, inner, prefix = self._route(folder_path)
+        drive_id, rest = self._split_path(
+            f"{prefix}{inner or 'Shared Documents'}")
+        library = prefix + (inner.split("/")[0] if inner
+                            else "Shared Documents")
         scope = rest.lower()
         out: List[Dict[str, Any]] = []
         seen = set()
@@ -394,11 +721,249 @@ class GraphFileManager:
     def get_web_url(self, path: str) -> str:
         """The browser URL of a file or folder: the site URL plus the UI path,
         ``?web=1`` so Office files open in the browser rather than download."""
-        p = self._clean(path)
-        return f"{self.site_url}/{urllib.parse.quote(p)}?web=1" if p \
-            else f"{self.site_url}?web=1"
+        site, p, _prefix = self._route(path)
+        return f"{site.url}/{urllib.parse.quote(p)}?web=1" if p \
+            else f"{site.url}?web=1"
 
 
-__all__ = ["GraphFileManager", "GraphError", "configured",
+# ------------------------------------------------------- connection test
+#
+# TA-34 (4): the host team's admin runs this after filling in the settings.
+# Each step runs in order; the first that fails stops the run, and says in
+# plain words what is wrong and what the admin does, with the server's own
+# error text after it.
+
+#: Entra sign-in error codes (AADSTS...) -> what the admin does.
+SIGN_IN_ADVICE: Dict[str, str] = {
+    "90002": "The tenant was not found. Check GRAPH_TENANT_ID (the "
+             "Directory (tenant) ID on the app registration's Overview page), "
+             "and GRAPH_CLOUD: a tenant in a government cloud is not found by "
+             "the commercial sign-in address, nor the other way round.",
+    "900023": "GRAPH_TENANT_ID is not a valid tenant ID or domain name. Copy "
+              "the Directory (tenant) ID from the app registration's "
+              "Overview page.",
+    "700016": "The app (client) ID was not found in this tenant. Check "
+              "GRAPH_CLIENT_ID (the Application (client) ID on the Overview "
+              "page), that GRAPH_TENANT_ID is the tenant it was registered "
+              "in, and GRAPH_CLOUD.",
+    "7000215": "The client secret is wrong. Put the secret's VALUE in "
+               "GRAPH_CLIENT_SECRET (shown once, when it is created), not its "
+               "Secret ID; if the value is lost, create a new secret.",
+    "7000222": "The client secret has expired. Create a new one under "
+               "Certificates & secrets and put its value in "
+               "GRAPH_CLIENT_SECRET.",
+    "700027": "The certificate was not accepted. Upload the certificate "
+              "(the public .cer/.pem, not the key) under Certificates & "
+              "secrets on this app registration, and check that "
+              "GRAPH_CLIENT_CERT holds the same certificate and its private "
+              "key.",
+    "700024": "The signed sign-in request was outside its valid time. Check "
+              "the host's clock.",
+    "7000112": "The app registration is disabled in this tenant. An admin "
+               "re-enables it under Enterprise applications.",
+    "500011": "The Graph address was not recognised by this tenant: "
+              "GRAPH_CLOUD (or GRAPH_API_URL) names a different cloud from "
+              "the tenant's.",
+    "7000218": "No credential was sent. Set GRAPH_CLIENT_SECRET or "
+               "GRAPH_CLIENT_CERT.",
+}
+
+GRANT_ADVICE = (
+    "The app has not been granted this site. Under Sites.Selected each site "
+    "is granted on its own: a SharePoint admin (or anyone allowed to call "
+    "Graph with Sites.FullControl.All) grants it, for example with "
+    "PnP PowerShell:\n"
+    "    Grant-PnPAzureADAppSitePermission -AppId <GRAPH_CLIENT_ID> "
+    "-DisplayName <app name> -Site <site URL> -Permissions Write\n"
+    "or with the Graph call POST /sites/{site-id}/permissions (body: "
+    "roles [\"write\"] and grantedToIdentities with the app's id). See "
+    "docs/SHAREPOINT_SETUP.md.")
+
+CONSENT_ADVICE = (
+    "Graph refused the app's sign-in token: the app has no Graph permission "
+    "with admin consent. Add the Microsoft Graph APPLICATION permission "
+    "Sites.Selected under API permissions and press \"Grant admin consent\".")
+
+
+def _codes(text: str) -> Tuple[Optional[str], Optional[str]]:
+    """``(AADSTS number, Graph error code)`` found in an error's text."""
+    m = re.search(r"AADSTS(\d+)", text or "")
+    g = re.search(r'"code"\s*:\s*"([^"]+)"', text or "")
+    return (m.group(1) if m else None), (g.group(1) if g else None)
+
+
+def _step(step: str, ok: bool, message: str, detail: str = "") -> Dict[str, Any]:
+    return {"step": step, "ok": ok, "message": message, "detail": detail}
+
+
+def started() -> bool:
+    """True when any app-registration setting is filled in (so a
+    diagnostics run should test the connection)."""
+    return any(_setting(n) for n in (
+        ENV_TENANT, ENV_CLIENT_ID, ENV_CLIENT_SECRET, ENV_CLIENT_CERT,
+        ENV_SITE_URL, ENV_SITE_URLS))
+
+
+def sign_in_message(exc: BaseException) -> str:
+    """Plain words for a failed sign-in, the server's own text after them."""
+    text = str(exc)
+    aad, _graph = _codes(text)
+    if aad and aad in SIGN_IN_ADVICE:
+        return SIGN_IN_ADVICE[aad]
+    if isinstance(exc, GraphError) and exc.status is None:
+        return ("The sign-in address could not be reached: check the host's "
+                "network or proxy, and GRAPH_CLOUD / GRAPH_LOGIN_URL.")
+    return ("Sign-in was refused. Check GRAPH_TENANT_ID, GRAPH_CLIENT_ID, the "
+            "secret or certificate, and GRAPH_CLOUD.")
+
+
+def site_message(exc: BaseException, site: Site) -> str:
+    """Plain words for a failed site or library request."""
+    text = str(exc)
+    status = getattr(exc, "status", None)
+    _aad, code = _codes(text)
+    if isinstance(exc, LibraryNotFound):
+        return (f"The document library was not found on {site.url}. Check "
+                "the first folder of GEOTECH_SHAREPOINT_ROOT (or of the path "
+                "used) against the libraries listed below.")
+    if status == 401:
+        return CONSENT_ADVICE
+    if status == 403 or code == "accessDenied":
+        return GRANT_ADVICE
+    if status == 404 or code == "itemNotFound":
+        return (f"The site {site.url} was not found. Check the address: it "
+                "is the site's own address, https://<tenant>.sharepoint.com/"
+                "sites/<site> (for a government cloud .sharepoint.us), "
+                "without a library or folder after it.")
+    if status is None:
+        return ("Graph could not be reached: check the host's network or "
+                "proxy, and GRAPH_CLOUD / GRAPH_API_URL.")
+    return f"Graph refused the request (HTTP {status})."
+
+
+def check_connection(manager: Optional["GraphFileManager"] = None,
+                     library_root: Optional[str] = None
+                     ) -> List[Dict[str, Any]]:
+    """Run the setup's steps in order and return one record per step:
+    ``{"step", "ok", "message", "detail"}``. Stops at the first failure.
+
+    Steps: the settings; the sign-in; each site; the document library the
+    app writes to (the first folder of ``GEOTECH_SHAREPOINT_ROOT``, default
+    ``Shared Documents``) on the default site. Never raises; never puts a
+    secret or key in a message (the server's error text never carries one).
+    """
+    out: List[Dict[str, Any]] = []
+    if manager is None:
+        missing = missing_settings()
+        if missing:
+            out.append(_step("settings", False,
+                             "Settings missing: " + ", ".join(missing)
+                             + ". Fill them in (environment, Key Vault or "
+                             ".env) and run this again."))
+            return out
+        try:
+            manager = GraphFileManager()
+        except Exception as exc:                       # noqa: BLE001
+            out.append(_step("settings", False,
+                             "A setting could not be used: "
+                             f"{type(exc).__name__}: {exc}"))
+            return out
+    out.append(_step(
+        "settings", True,
+        f"{len(manager.sites)} site(s); sign-in with a "
+        f"{manager.credential_kind}; sign-in address {manager.login_url}, "
+        f"Graph {manager.graph_url}"))
+    try:
+        manager._token = None
+        manager._get_token()
+    except Exception as exc:                           # noqa: BLE001
+        out.append(_step("sign-in", False, sign_in_message(exc), str(exc)))
+        return out
+    out.append(_step("sign-in", True, "Signed in as the app."))
+    for site in manager.sites:
+        try:
+            manager._site_id_of(site)
+        except Exception as exc:                       # noqa: BLE001
+            out.append(_step(f"site {site.name}", False,
+                             site_message(exc, site), str(exc)))
+            return out
+        out.append(_step(f"site {site.name}", True, f"Found {site.url}."))
+    if library_root is None:
+        library_root = (os.environ.get("GEOTECH_SHAREPOINT_ROOT", "").strip()
+                        or "Shared Documents")
+    library = library_root.strip("/").split("/")[0] or "Shared Documents"
+    site = manager.sites[0]
+    try:
+        manager._split_path(library)
+    except Exception as exc:                           # noqa: BLE001
+        detail = str(exc)
+        out.append(_step(f"library {library}", False,
+                         site_message(exc, site), detail))
+        return out
+    out.append(_step(f"library {library}", True,
+                     f"Found the library {library!r} on {site.url}."))
+    return out
+
+
+def format_check(results: List[Dict[str, Any]]) -> str:
+    """The connection test as plain text, one line a step."""
+    lines = []
+    for r in results:
+        lines.append(f"{'PASS' if r['ok'] else 'FAIL'}  {r['step']}: "
+                     f"{r['message']}")
+        if r.get("detail"):
+            lines.append(f"      Server said: {r['detail']}")
+    if results and all(r["ok"] for r in results):
+        lines.append("SharePoint is set up.")
+    return "\n".join(lines)
+
+
+def site_note(manager: Any) -> str:
+    """A line naming the sites, for the SharePoint tools, when there is more
+    than one (``""`` otherwise, so a one-site deployment reads as before)."""
+    sites = getattr(manager, "sites", None)
+    if not isinstance(sites, list) or len(sites) < 2:
+        return ""
+    others = ", ".join(f"{s.name!r} ({s.url})" for s in sites[1:])
+    return (f"SharePoint sites: the default is {sites[0].name!r} "
+            f"({sites[0].url}); also {others}. A path on another site starts "
+            f"with its name and a colon, e.g. '{sites[1].name}:Shared "
+            "Documents/folder/file.pdf'; a path with no name is on the "
+            "default site.")
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser(
+        prog="python -m webapp.graph_sharepoint",
+        description="SharePoint over Microsoft Graph with an app "
+                    "registration (docs/SHAREPOINT_SETUP.md).")
+    ap.add_argument("--check", action="store_true",
+                    help="test the connection step by step")
+    args = ap.parse_args(argv)
+    if not args.check:
+        ap.print_help()
+        return 2
+    try:
+        from webapp.tinyapps_settings import export_dotenv
+        export_dotenv()
+    except Exception:                                  # noqa: BLE001
+        pass
+    results = check_connection()
+    print(format_check(results))
+    return 0 if results and all(r["ok"] for r in results) else 1
+
+
+__all__ = ["GraphFileManager", "GraphError", "LibraryNotFound", "configured",
+           "missing_settings", "cloud_urls", "CLOUDS", "Site", "parse_sites",
+           "configured_sites", "CertificateCredential",
+           "certificate_from_settings", "check_connection", "format_check",
+           "site_note", "started",
            "ENV_TENANT", "ENV_CLIENT_ID", "ENV_CLIENT_SECRET", "ENV_SITE_URL",
-           "LOGIN_URL", "GRAPH_URL"]
+           "ENV_SITE_URLS", "ENV_CLOUD", "ENV_LOGIN_URL", "ENV_API_URL",
+           "ENV_CLIENT_CERT", "ENV_CLIENT_KEY", "ENV_CLIENT_KEY_PASSWORD",
+           "ENV_CERT_THUMBPRINT", "LOGIN_URL", "GRAPH_URL"]
+
+
+if __name__ == "__main__":                             # pragma: no cover
+    raise SystemExit(main())
