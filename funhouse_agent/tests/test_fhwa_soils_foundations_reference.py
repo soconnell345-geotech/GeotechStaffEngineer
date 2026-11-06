@@ -71,3 +71,89 @@ def test_figure_lookup_cited_figures():
     hits = out["result"]
     hits = hits["hits"] if isinstance(hits, dict) else hits
     assert {"6-16", "6-19"} & {h["figure_number"] for h in hits[:5]}
+
+
+# --- REF-38: every equation the app cites carries its printed formula ---
+
+_ROOT = __import__("pathlib").Path(__file__).resolve().parents[2]
+_SKIP_DIRS = {".git", "module_work", "geotech-references", "build", ".venv",
+              "node_modules", "__pycache__", "packages"}
+_CITE = __import__("re").compile(r"NHI[- ]06[- ]08[89]\b(?P<rest>.*)")
+#: Where another reference's name starts, the citation of this one ends.
+_OTHER = __import__("re").compile(
+    r"\b(?:UFS|UFC|GEC|AASHTO|EN \d|O'Neill|Das|DM ?7|EM \d|NAVFAC|Caltrans"
+    r"|FHWA-NHI-1|NHI-0[^6]|NHI-06-08[89])")
+_EQS = __import__("re").compile(
+    r"\bEqs?\.?\s*(\d{1,2}-\d{1,3}[a-z]?(?:/[a-z])?"
+    r"(?:\s*(?:,|and|to)\s*\d{1,2}-\d{1,3}[a-z]?)*)")
+
+
+def _cited_equations():
+    """Each NHI-06-088/089 equation number the app's code and data cite on
+    the line that names the manual ("NHI-06-089 Eqs. 9-41 to 9-43",
+    "Eqs. 9-37a/b"), with a file that cites it."""
+    import os
+    import re
+    out = {}
+    for dp, dn, fn in os.walk(_ROOT):
+        dn[:] = [d for d in dn if d not in _SKIP_DIRS]
+        for f in fn:
+            if not f.endswith((".py", ".json")) or f == os.path.basename(__file__):
+                continue
+            path = os.path.join(dp, f)
+            with open(path, encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    for m in _CITE.finditer(line):
+                        rest = m.group("rest")
+                        stop = _OTHER.search(rest)
+                        rest = rest[:stop.start()] if stop else rest
+                        for e in _EQS.finditer(rest):
+                            prev, span = None, False
+                            for ch, n, let, let2, to in re.findall(
+                                    r"(\d{1,2})-(\d{1,3})([a-z]?)(?:/([a-z]))?|(to)",
+                                    e.group(1)):
+                                if to:
+                                    span = True
+                                    continue
+                                nums = [f"{ch}-{n}{let}"] + ([f"{ch}-{n}{let2}"] if let2 else [])
+                                if span and prev:
+                                    nums += [f"{ch}-{k}" for k in range(int(prev) + 1, int(n))]
+                                for num in nums:
+                                    out.setdefault(num, os.path.relpath(path, _ROOT))
+                                prev, span = n, False
+    return out
+
+
+def _library_equations():
+    from geotech_references import _retrieval
+    out = {}
+    for ch in range(1, 13):
+        for sec in _retrieval.load_chapter(REF, ch)["sections"]:
+            for e in sec["equations"]:
+                out[e["id"][4:]] = e
+    return out
+
+
+def test_every_cited_equation_has_its_printed_formula():
+    cited = _cited_equations()
+    # drilled shafts, settlement, earth pressure, SPT, unit weights at least
+    assert {"9-42", "9-37a", "8-17", "10-10", "3-3", "2-7"} <= set(cited), cited
+    eqs = _library_equations()
+    missing = []
+    for num, where in sorted(cited.items()):
+        # "Eq. 9-37" for the pair 9-37a and 9-37b
+        group = [num] if num in eqs else [k for k in eqs if k[:-1] == num and k[-1].isalpha()]
+        if not group or not all(eqs[k].get("formula") for k in group):
+            missing.append(f"{num} ({where})")
+    assert not missing, ("NHI-06-088/089 equations cited without a formula in the "
+                         "library (add them to the refs manifest's printed_equations): "
+                         + ", ".join(missing))
+
+
+def test_section_fetch_shows_the_formula():
+    out = _call("reference_db", "reference_get",
+                {"reference": REF, "section_id": "9.12.3"})
+    sec = out["result"] if "result" in out else out
+    by_id = {e["id"]: e for e in sec["equations"]}
+    assert by_id["Eq. 9-42"]["formula"] == "βi = 1.5 – 0.135 √zi   with 1.2 > βi > 0.25"
+    assert by_id["Eq. 9-42"]["source"] == "Typed in from p. 9-132."
