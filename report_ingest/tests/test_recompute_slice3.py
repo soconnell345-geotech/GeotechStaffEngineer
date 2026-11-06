@@ -91,14 +91,51 @@ def test_a_word_as_close_to_two_methods_is_not_read(monkeypatch):
     assert text == "hansex" and notes == []
 
 
+# Review fix F1: one letter off for a name of seven letters or fewer; two
+# only for a long name, with its last letter and no English ending. Ordinary
+# words, names and places are never read as a method.
+@pytest.mark.parametrize("printed", [
+    "values ranging from", "raking struts", "the adjacent ravine", "Racine",
+    "Rankin County", "rankle", "ranting", "monopole", "monotone", "couloir",
+    "Kessel", "Vesica", "Hanse", "coulombic", "Coloumb", "Columbia",
+    "column", "ranking", "Hanson", "vessel",
+])
+def test_ordinary_words_names_and_places_are_never_read_as_a_method(printed):
+    text, notes = recompute._read_methods(recompute._norm(printed))
+    assert notes == []
+    assert text == recompute._norm(printed)
+
+
+@pytest.mark.parametrize("printed, name", [
+    ("Mayerhof", "meyerhof"), ("Meyerhoff", "meyerhof"),
+    ("Mayerhoff", "meyerhof"), ("Terzhagi", "terzaghi"),
+    ("Terzagi", "terzaghi"), ("Coulumb", "coulomb"), ("Colomb", "coulomb"),
+    ("Vesik", "vesic"), ("Mononabe", "mononobe"), ("Okabi", "okabe"),
+    ("Schmertman", "schmertmann"), ("Caquote", "caquot"),
+    ("Kerisal", "kerisel"), ("Rankines", "rankine"), ("Hansens", "hansen"),
+])
+def test_misspelled_method_names_are_still_read(printed, name):
+    text, notes = recompute._read_methods(recompute._norm(printed))
+    assert text == name and len(notes) == 1
+
+
+def test_an_ordinary_word_in_the_summary_never_names_a_wall_method():
+    row = one(wall([nq("Ka", 0.29)], [PHI], summary=(
+        "Backfill friction angles ranging from 30 to 34 degrees, near the "
+        "ravine, with raking struts.")))
+    assert row["status"] == "not_recomputed"
+    assert "names no method" in row["reason"]
+    assert "method_spelling" not in row
+
+
 def test_a_misspelled_wall_method_is_read_and_said():
     delta = nq("Wall friction angle delta", 20, "deg")
     expected = K(phi_deg=32, theory="coulomb", state="active",
                  delta_deg=20)
     row = one(wall([nq("Ka", round(expected, 3))], [PHI, delta],
-                   method="Coloumb"))
+                   method="Coulumb"))
     assert row["method_used"] == "coulomb" and row["flag"] == "agrees"
-    assert "'coloumb' read as Coulomb" in row["method_basis"]
+    assert "'coulumb' read as Coulomb" in row["method_basis"]
 
 
 def test_a_misspelled_mononobe_okabe_is_read():

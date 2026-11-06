@@ -429,18 +429,27 @@ def _method_words(calc: Calculation) -> str:
 # -- method names read with spelling tolerance (slice 3) -----------------------
 
 #: The method names the recipes look for, each word as it is spelled. A
-#: printed word one letter off one of them (two for a name of seven letters
-#: or more), with the same first letter, is read as that name, and the row
-#: says so; a word as close to two names is left as printed. Hough and Jaky
-#: are too short to read past an English word (rough, tough, jake).
+#: printed word one letter off one of them, with the same first letter, is
+#: read as that name, and the row says so; two letters off only for a name
+#: of eight letters or more (Meyerhof, Terzaghi, Mononobe, Schmertmann),
+#: and then only with the name's own last letter and no English ending
+#: (:data:`_ENGLISH_ENDINGS`). A word as close to two names is left as
+#: printed. Hough and Jaky are too short to read past an English word
+#: (rough, tough, jake).
 _KNOWN_METHODS = ("meyerhof", "terzaghi", "vesic", "hansen", "rankine",
                   "coulomb", "mononobe", "okabe", "schmertmann", "caquot",
                   "kerisel")
 
-#: English words within reach of a method name, never read as one.
+#: English words, names and places within one letter of a method name,
+#: never read as one.
 _NOT_METHODS = frozenset({"ranking", "rankings", "ranked", "kernel",
                           "kernels", "hanson", "column", "columns", "meyer",
-                          "hansel", "terrace"})
+                          "hansel", "terrace", "rankin", "rankins", "vesica",
+                          "hanse", "hanses"})
+
+#: Endings of English words (ranging, monopole, monotone, couloir) that a
+#: two-letter misspelling of a method name never has unless the name does.
+_ENGLISH_ENDINGS = ("ing", "ole", "one", "oir")
 
 _METHOD_DISPLAY = {"mononobe": "Mononobe", "okabe": "Okabe"}
 
@@ -463,10 +472,12 @@ def _edits(a: str, b: str) -> int:
 def _read_methods(text: str) -> Tuple[str, List[str]]:
     """``(text with method names read, notes)``. A word (four letters or
     more) that is not a known method name but is within one letter of
-    exactly one (two letters for a name of seven or more), with the same
-    first letter, becomes that name; each note says what was read as what:
-    "'meyerhoff' read as Meyerhof (one letter off)". A word as close to
-    two names is never read as either."""
+    exactly one, with the same first letter, becomes that name; two letters
+    only for a name of eight letters or more, with the name's last letter
+    and no English ending ('Terzhagi', 'Mayerhoff'; never 'monotone').
+    Each note says what was read as what: "'meyerhoff' read as Meyerhof
+    (one letter off)". A word as close to two names is never read as
+    either; an English word, name or place (``_NOT_METHODS``) never is."""
     import unicodedata
     plain = "".join(c for c in unicodedata.normalize("NFKD", text)
                     if not unicodedata.combining(c))
@@ -482,8 +493,13 @@ def _read_methods(text: str) -> Tuple[str, List[str]]:
             if name[0] != word[0] or abs(len(name) - len(word)) > 2:
                 continue
             d = _edits(word, name)
-            if d <= (2 if len(name) >= 7 else 1):
-                near.append((d, name))
+            if d > (2 if len(name) >= 8 else 1):
+                continue
+            if d == 2 and (word[-1] != name[-1] or any(
+                    word.endswith(e) and not name.endswith(e)
+                    for e in _ENGLISH_ENDINGS)):
+                continue
+            near.append((d, name))
         if len(near) != 1:
             return word
         d, name = near[0]
