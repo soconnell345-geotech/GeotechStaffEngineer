@@ -310,7 +310,8 @@ def analyze_eql_site_response(
         Convergence tolerance for strain-compatible iteration, as a
         FRACTION: the iteration stops once no layer's shear modulus or
         damping changes by more than ``tolerance`` (0.01 = 1 %) between
-        iterations. Default 0.01. (pystrata itself works in percent.)
+        iterations. Default 0.01. (pystrata 0.5 works in percent and 0.6
+        in decimal; ``compat`` passes each its own unit.)
     max_iterations : int
         Maximum number of EQL iterations. Default 15.
     max_freq_hz : float

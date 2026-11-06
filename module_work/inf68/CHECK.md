@@ -130,3 +130,25 @@ runs, and `opensees_agent`'s curve checks) now install and run on Python
 3.13 with pystrata 0.6, as well as on Python 3.12 with pystrata 0.5.
 No answer changes on Python 3.12; on 3.13 the Darendeli, Menq and custom
 runs give the 0.5.4 answers to round-off.
+
+## Review and fixes (lead, 2026-11-06)
+
+An independent review (`C:/dev/tmp/inf68_review/REVIEW.md`, local) ran
+master and this branch side by side on pystrata 0.5.4 (10
+equivalent-linear runs, 3 linear runs, every soil curve): all 326 output
+arrays bit-identical. It read pystrata 0.6.0's source: the Darendeli and
+Menq constants, units (kPa, PI in percent, 1 Hz, 10 cycles) and the renamed
+Menq argument map correctly, and 0.6's convergence check (decimal, sign
+ignored) is equivalent to the fraction passed. The `foundry_requirements.py`
+filter on a 3.12 host gives master's set (`pystrata>=0.5,<0.6`,
+`pyrvt<0.9`). A deliberately wrong tolerance unit fails the new tests on
+either version. Changes:
+
+- the tolerance docstring and `DESIGN.md` item 7 name both units;
+- `test_ci_313_job_imports_pystrata`: on CI's Python 3.13 job pystrata must
+  import, so the 0.6 tests cannot all skip with the job green.
+
+Noted, not fixed (Python 3.13 only, no host runs it): when strains pass
+pystrata's 5 % limit two iterations running, 0.6 raises "Strain limit
+exceeded" where 0.5.4 returns a not-converged result, so on 3.13 the agent
+gets a tool error.

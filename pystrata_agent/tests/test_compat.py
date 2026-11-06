@@ -7,6 +7,9 @@ the same to 1e-15. INF-68 asks for the same amplification and compatible
 Vs within 1 %, which is the tolerance pinned here.
 """
 
+import os
+import sys
+
 import numpy as np
 import pytest
 
@@ -14,6 +17,14 @@ from pystrata_agent.pystrata_utils import has_pystrata
 
 requires_pystrata = pytest.mark.skipif(
     not has_pystrata(), reason="pystrata not installed")
+
+
+@pytest.mark.skipif(not os.environ.get("CI") or sys.version_info < (3, 13),
+                    reason="only CI's Python 3.13 job must have pystrata 0.6")
+def test_ci_313_job_imports_pystrata():
+    """CI's 3.13 job installs pystrata 0.6; if it failed to import, every
+    0.6 test here would skip and the job would stay green."""
+    assert has_pystrata(), "pystrata did not import on CI's Python 3.13 job"
 
 KPA_TO_ATM = 1.0 / 101.325
 STRAINS = np.logspace(-6, -1.5, 20)

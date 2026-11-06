@@ -64,8 +64,10 @@ ranges.
 
 7. **Convergence tolerance is a FRACTION** (GM-78, 2026-10-14) —
    `tolerance=0.01` means the iteration stops once no layer's shear modulus
-   or damping changes by more than 1 % between iterations. pystrata's own
-   tolerance is in percent, so the wrapper passes `tolerance * 100`. Until
+   or damping changes by more than 1 % between iterations. pystrata 0.5's
+   tolerance is in percent, so the wrapper passes it `tolerance * 100`;
+   pystrata 0.6's is in decimal and takes the fraction as given
+   (`compat.py`, INF-68). Until
    2026-10-14 the fraction went through unchanged (a 0.01 % target), every
    run used all `max_iterations` and was reported not converged.
    `converged` is judged on the SIZE of the largest change
