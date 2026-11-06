@@ -107,14 +107,17 @@ dependencies = [
     # seismic_geotech.dynamic_properties, HS parameter estimation in
     # fem2d.hs_correlations.
     "openseespy>=3.6",
-    # pystrata 0.6.0 (2026-11-05, Python >= 3.13 only) renamed the site
-    # classes the site-response tools build on (DarendeliSoilType,
-    # MenqSoilType, NonlinearProperty); held below 0.6 until the tools
-    # move to its API (BACKLOG INF-68). pyrvt 0.9.0, out the same day, drops
-    # pyrvt.motions.SourceTheoryMotion, which pystrata 0.5.4 imports, so it
-    # is held too (the app does not import pyrvt itself).
-    "pystrata>=0.5,<0.6",
-    "pyrvt<0.9",
+    # pystrata by Python version (BACKLOG INF-68). pystrata 0.6.0 (2026-11-05)
+    # needs Python >= 3.13 and renamed the site classes the site-response
+    # tools build on; pystrata_agent/compat.py builds the same Darendeli,
+    # Menq, linear and custom soils on either API. Python 3.12 (every host
+    # today: Databricks, Foundry, Tiny Apps) stays on pystrata 0.5.x, which
+    # imports pyrvt.motions.SourceTheoryMotion, dropped in pyrvt 0.9.0, so
+    # pyrvt is held below 0.9 there. On 3.13+ pystrata 0.6 declares its own
+    # pyrvt (the app does not import pyrvt itself).
+    "pystrata>=0.5,<0.6; python_version < '3.13'",
+    "pystrata>=0.6,<0.7; python_version >= '3.13'",
+    "pyrvt<0.9; python_version < '3.13'",
     "eqsig>=1.2",
     "liquepy>=0.3",
     "pygef>=0.10",

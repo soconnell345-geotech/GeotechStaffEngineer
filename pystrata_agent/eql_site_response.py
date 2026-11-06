@@ -223,66 +223,46 @@ def _build_soil_type(pystrata, layer, layers, layer_idx):
     -------
     pystrata.site.SoilType or subclass
     """
+    from pystrata_agent import compat
+
     model = layer["soil_model"].lower().strip()
     unit_wt = layer["unit_wt"]
 
-    if model == "darendeli":
-        plas_index = layer["plas_index"]
-        ocr = layer.get("ocr", 1.0)
+    if model in ("darendeli", "menq"):
         if "stress_mean" in layer:
             stress_mean = layer["stress_mean"]
         else:
             stress_mean = _compute_stress_mean(layers, layer_idx)
-        return pystrata.site.DarendeliSoilType(
+
+    if model == "darendeli":
+        return compat.darendeli_soil_type(
+            pystrata,
             unit_wt=unit_wt,
-            plas_index=plas_index,
-            ocr=ocr,
+            plas_index=layer["plas_index"],
+            ocr=layer.get("ocr", 1.0),
             stress_mean=stress_mean,
         )
 
     elif model == "menq":
-        uniformity_coeff = layer.get("uniformity_coeff", 10.0)
-        diam_mean = layer.get("diam_mean", 5.0)
-        if "stress_mean" in layer:
-            stress_mean = layer["stress_mean"]
-        else:
-            stress_mean = _compute_stress_mean(layers, layer_idx)
-        return pystrata.site.MenqSoilType(
+        return compat.menq_soil_type(
+            pystrata,
             unit_wt=unit_wt,
-            uniformity_coeff=uniformity_coeff,
-            diam_mean=diam_mean,
+            uniformity_coeff=layer.get("uniformity_coeff", 10.0),
+            diam_mean=layer.get("diam_mean", 5.0),
             stress_mean=stress_mean,
         )
 
     elif model == "linear":
-        damping = layer["damping"]
-        return pystrata.site.SoilType(
-            name="Linear",
-            unit_wt=unit_wt,
-            mod_reduc=None,
-            damping=damping,
-        )
+        return compat.linear_soil_type(
+            pystrata, unit_wt=unit_wt, damping=layer["damping"])
 
     elif model == "custom":
-        strains = np.array(layer["strains"])
-        mod_reduc_vals = np.array(layer["mod_reduc"])
-        damping_vals = np.array(layer["damping_values"])
-
-        mod_reduc = pystrata.site.NonlinearProperty(
-            name="Custom G/Gmax",
-            strains=strains,
-            values=mod_reduc_vals,
-        )
-        damping_prop = pystrata.site.NonlinearProperty(
-            name="Custom Damping",
-            strains=strains,
-            values=damping_vals,
-        )
-        return pystrata.site.SoilType(
-            name="Custom",
+        return compat.custom_soil_type(
+            pystrata,
             unit_wt=unit_wt,
-            mod_reduc=mod_reduc,
-            damping=damping_prop,
+            strains=layer["strains"],
+            mod_reduc=layer["mod_reduc"],
+            damping=layer["damping_values"],
         )
 
 
@@ -434,6 +414,7 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
                       strain_ratio, tolerance, max_iterations,
                       max_freq_hz, wave_frac, analysis_type):
     """Build pystrata model, run analysis, extract results."""
+    from pystrata_agent import compat
 
     # 1. Build pystrata layers
     pystrata_layers = []
@@ -462,10 +443,10 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
     else:
         calc = pystrata.propagation.EquivalentLinearCalculator(
             strain_ratio=strain_ratio,
-            # pystrata's relative error is in PERCENT; passing the fraction
-            # straight through (0.01) asked for a 0.01 % change, so every
-            # run went to max_iterations (BACKLOG GM-78).
-            tolerance=tolerance * 100.0,
+            # pystrata 0.5's relative error is in PERCENT (passing the
+            # fraction straight through asked for 0.01 %, BACKLOG GM-78);
+            # 0.6's is in DECIMAL (INF-68). compat picks the unit.
+            tolerance=compat.eql_tolerance(pystrata, tolerance),
             max_iterations=max_iterations,
         )
 

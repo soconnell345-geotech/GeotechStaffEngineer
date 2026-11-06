@@ -13,12 +13,32 @@ scenarios.
 pystrata_agent/
   __init__.py              # exports public API
   pystrata_utils.py        # has_pystrata(), import_pystrata()
+  compat.py                # the soil types and EQL tolerance on pystrata 0.5 or 0.6
   eql_site_response.py     # analyze_eql/linear_site_response()
   results.py               # EQLSiteResponseResult dataclass
   tests/
     test_pystrata_agent.py  # Tier 1 + Tier 2 tests
+    test_compat.py          # same curves and answers on 0.5 and 0.6
 pystrata_agent_foundry.py  # Foundry wrapper (project root)
 ```
+
+## pystrata versions (BACKLOG INF-68)
+
+Python 3.12 installs pystrata 0.5.x (with pyrvt < 0.9); Python 3.13+
+installs pystrata 0.6.x, which needs 3.13 (pyproject markers). 0.6 renamed
+the soil classes (`DarendeliSoilType`, `MenqSoilType` and
+`NonlinearProperty` became `factories.darendeli_soil_type`,
+`factories.menq_soil_type`, `ModulusReductionCurve` and `DampingCurve`) and
+changed the equivalent-linear `tolerance` from percent to decimal.
+`compat.py` is the only code that knows which API is installed (it checks
+for `site.DarendeliSoilType`). The Darendeli and Menq curves are the same
+formulas on both (0.6's factories are a port of 0.5's
+`ModifiedHyperbolicSoilType`); the 2026-11-06 check gave the same
+amplification, iterations and compatible Vs to 1e-15 on seven
+equivalent-linear and two linear cases (`module_work/inf68/CHECK.md`).
+0.6 clips interpolated G/Gmax to (0.001, 1) and damping to (0, 0.49); 0.5
+did not, which only matters for a custom curve with points outside those
+ranges.
 
 ## Key Design Decisions
 
