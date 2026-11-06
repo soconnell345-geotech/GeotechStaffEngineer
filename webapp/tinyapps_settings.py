@@ -22,6 +22,11 @@ The names the engineers fill in for us (their ``.env.example``)::
     PROMPTER_URL   PROMPTER_MODEL   PROMPTER_API_KEY   PROMPTER_CA_BUNDLE
     GRAPH_TENANT_ID   GRAPH_CLIENT_ID   GRAPH_CLIENT_SECRET   SHAREPOINT_SITE_URL
 
+and, optionally, the SharePoint settings for any tenant (TA-34;
+``docs/SHAREPOINT_SETUP.md``): ``GRAPH_CLOUD``, ``GRAPH_LOGIN_URL``,
+``GRAPH_API_URL``, ``GRAPH_CLIENT_CERT`` and its companions, and
+``SHAREPOINT_SITE_URLS``.
+
 Nothing here imports Azure libraries until a Key Vault read is actually
 needed, so the module is importable in every environment the app runs in.
 """
