@@ -418,3 +418,22 @@ def test_the_flexible_design_beside_the_rigid_one_is_not_read():
                                          "po", "cd", "ec_psi")} == {
         "w18": 3.4e6, "reliability_pct": 90, "so": 0.34, "po": 4.5,
         "cd": 1.05, "ec_psi": 4.1e6}
+
+
+@pytest.mark.parametrize("unit", ["percent", "per cent", "Percent", "pct",
+                                  "percentage"])
+def test_reliability_printed_in_percent_words(unit):
+    d = D_REQ()
+    inputs = without("Reliability R") + [nq("Reliability R", 90, unit)]
+    row = one(pave([nq("Slab thickness D", round(d, 2), "in")], inputs))
+    assert row["flag"] == "agrees"
+    assert row["params"]["reliability_pct"] == 90
+
+
+def test_overall_deviation_is_so():
+    d = D_REQ()
+    inputs = without("Overall standard deviation So") + [
+        nq("Overall deviation, all sources", 0.34)]
+    row = one(pave([nq("Slab thickness D", round(d, 2), "in")], inputs))
+    assert row["flag"] == "agrees"
+    assert row["params"]["so"] == 0.34

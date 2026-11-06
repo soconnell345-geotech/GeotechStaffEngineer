@@ -1911,7 +1911,7 @@ def _pave_si(nq: NamedQuantity, kind: str) -> Tuple[Optional[float], str]:
             return v * 1e6, f"printed {v:g} {unit}: {v * 1e6:.6g} ESALs"
         return None, f"'{nq.name}' is in {unit!r}, not a number of ESALs"
     if kind == "percent":
-        if u == "%":
+        if u in ("%", "percent", "pct", "percentage"):  # 'per cent' too
             return v, ""
         if u in ("", "-", "--"):
             if 0 < v < 1:
@@ -1989,7 +1989,8 @@ _PAVE_INPUTS = (
           [r"deviate", *_FLEX_LABEL]),
     _Spec("so", "ratio",
           [r"\bs_?[o0]\b", r"(overall|combined) standard (error|deviation)",
-           r"^standard (error|deviation)"], _FLEX_LABEL),
+           r"^standard (error|deviation)", r"\boverall deviation\b"],
+          _FLEX_LABEL),
     _Spec("delta_psi", "ratio",
           [r"delta ?_?psi\b", r"serviceability loss",
            r"loss (of|in) serviceability", r"\bdpsi\b",
