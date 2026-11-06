@@ -216,6 +216,35 @@ def build_plotted_result() -> CalcPageGT:
         plot_bbox=box)
 
 
+def build_layer_table() -> CalcPageGT:
+    """A bearing sheet whose soil profile is a four-row table (RI-208).
+
+    Every value is made up. The floor kept only a grid's LAST row before
+    RI-208; every row's thickness, unit weight and friction angle is a value
+    of its own now.
+    """
+    doc, page = _page()
+    _text(page, 150, 56, "Shallow Foundation Bearing Check", 13, bold=True)
+    _grid(page, 60, 100, (80, 100, 110, 90),
+          [("Layer", "Thickness (ft)", "Unit weight (pcf)", "Phi (deg)"),
+           ("1", "4.0", "115", "30"),
+           ("2", "6.5", "120", "32"),
+           ("3", "8.0", "125", "34"),
+           ("4", "10.0", "130", "32")])
+    _text(page, 60, 760, "Page 1 of 1", 8)
+    pdf = doc.tobytes()
+    doc.close()
+    rows = {"1": (4.0, 115.0, 30.0), "2": (6.5, 120.0, 32.0),
+            "3": (8.0, 125.0, 34.0), "4": (10.0, 130.0, 32.0)}
+    inputs: Dict[str, Tuple[float, str]] = {}
+    for layer, (thick, gamma, phi) in rows.items():
+        inputs[f"Thickness (ft), Layer {layer}"] = (thick, "ft")
+        inputs[f"Unit weight (pcf), Layer {layer}"] = (gamma, "pcf")
+        inputs[f"Phi (deg), Layer {layer}"] = (phi, "deg")
+    return CalcPageGT(pdf=pdf, kind="shallow_foundation_bearing",
+                      inputs=inputs)
+
+
 def build_long_printout(n_pages: int = 16) -> CalcPageGT:
     """A printout longer than one window: banner first, the answer LAST.
 
