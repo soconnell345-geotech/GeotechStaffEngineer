@@ -281,7 +281,7 @@ _NUMBER = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
 _ROW_ID = re.compile(
     r"\b(?P<kw>sublayers?|layers?|strat(?:um|a)|soils?|cases?|scenarios?|"
     r"rows?|depths?|elevations?|sections?|zones?|options?|alternatives?|"
-    r"trials?|steps?)\s*(?:no\.?|nr\.?|#)?\s*[:=]?\s*"
+    r"trials?|steps?)\b\s*(?:no\b\.?|nr\b\.?|#)?\s*[:=]?\s*"
     r"(?P<id>[a-z]{1,2}-\d+[a-z]?(?![\w.])|(?:" + _NUMBER + r")[a-z]?"
     r"(?![\w.])|[a-z](?![\w.])|(?:iii|ii|iv|vi{0,3}|ix|x|i)(?![\w.]))")
 
@@ -386,10 +386,13 @@ def other_rows(left: str, right: str, loose: bool = False) -> bool:
       Case 2" whatever the order. Small words, units, numbers and a place on
       the printout ("second sheet") are not words of a row's name.
 
-    ``loose`` (the scorecard): two names that share a word are one row's,
-    because a hand and a reader name one row in different words ("seismic,
-    circular, 6.5 m wall" against "S-2 Seismic - Circular Failures"); the
-    merge, whose two labels come off one page, keeps the strict rule.
+    ``loose`` (the scorecard): two names sharing MORE THAN HALF the words
+    of the shorter are one row's, because a hand and a reader name one row
+    in different words ("seismic, circular, 6.5 m wall" against "S-2
+    Seismic - Circular Failures"); "spread footing on natural soils"
+    shares only "footing" with "Wall Footing - Bearing on New Fill" and is
+    another row. The merge, whose two labels come off one page, keeps the
+    strict rule.
 
     A label naming no row ("Unit weight") is never another row's, nor are
     two labels naming rows of different kinds ("Layer 2" against "Clay"),
@@ -403,7 +406,8 @@ def other_rows(left: str, right: str, loose: bool = False) -> bool:
         return False
     if not a.qualifier or not b.qualifier:
         return False
-    if loose and a.qualifier & b.qualifier:
+    if loose and 2 * len(a.qualifier & b.qualifier) > min(len(a.qualifier),
+                                                          len(b.qualifier)):
         return False
     return not (a.qualifier <= b.words or b.qualifier <= a.words)
 

@@ -221,6 +221,9 @@ def _credited(truth_name, record_name, value=1.25, unit=""):
      "Compacted Fill, 2.5 ksf"),
     ("Footing bearing pressure (ksf), on natural soils",
      "Footing bearing pressure (ksf), Spread Footing - Natural Soils"),
+    ("Total cumulative settlement (in), north spread footing on natural "
+     "soils", "Total cumulative settlement (in), North Spread Footing - "
+     "Bearing on Natural Soils"),
     # a place on the printout is not a row's name
     ("Allowable pressure, second sheet",
      "Allowable pressure (from settlement), Weathered rock"),
@@ -238,6 +241,11 @@ def test_the_scorer_credits_one_row_named_two_ways(truth_name, record_name):
     ("Total cumulative settlement (in), north spread footing on natural "
      "soil", "Total cumulative settlement (in) - North Strip Footing, "
      "Compacted Fill, 2.5 ksf"),
+    # two words in common of five are not one row's name
+    ("Total cumulative settlement (in), north spread footing on natural "
+     "soils", "Total cumulative settlement (in), North Wall Footing - "
+     "Bearing on New Fill"),
+    ("Unit weight (pcf), dense sand", "Unit weight (pcf), loose sand"),
     ("Embedment (D), scenario 1", "Embedment (D) Scenario 2, Clay"),
     ("Phi (deg), Layer 2", "Phi (deg), Layer 4"),
 ])
