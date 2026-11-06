@@ -158,6 +158,76 @@ re-reads saved model-first answers. `recompute_report_calcs` sees a
 parameter printed once per layer as "printed more than once with different
 values" and declines it rather than recomputing from the last row's value.
 
+## Review fixes
+
+An independent review (2026-11-06) asked for four changes. Each is its own
+commit with made-up tests in `test_ri208.py`; the prompt text is unchanged,
+so the version stays mf-10.
+
+1. **Scorer row match** (`calc_scoring.other_rows`, 98be680 and bd19bc1).
+   Labels split only at commas outside brackets and not between digits. A
+   number names a row only after a row word (layer, case, scenario, depth,
+   row ...), after a setting's "=", or at the end of a row's name. Small
+   words, units and a place on the printout ("second sheet") are not words
+   of a row's name. Two rows named by ids of different kinds are not told
+   apart. The scorecard counts two names as one row's when they share more
+   than half the words of the shorter one; the merge keeps the strict rule.
+2. **Merge** (`_readings_for`, 14b4180). `FloorValue.row` carries the row a
+   table value is one of. Such a value settles only onto a reading whose
+   label names that row (`names_row`), never through the table's shared
+   box. With no such reading, the row is kept as its own, with no
+   disagreement. A detected table has no row boxes, so "the same printed
+   line" cannot be told for a grid row.
+3. **Row numbers compared as numbers** (98be680), in the scorer, the merge
+   and the model-first fold: 5.0 and 5.5 are two rows, as are 0.5 and 5.0,
+   while 10 and 10.0 are one.
+4. **Numeric first column** (65672ef). A bare-number first cell (thickness,
+   depth) is a value again, one per row, labelled "<heading>, row N". A
+   column of row numbers ("Layer", "No.", "Case") or a numeric "heading"
+   gives none.
+
+Offline re-measurement on the saved records: no model call; the floor was
+re-run over the text-layer pages, and the saved answers were re-merged and
+re-scored.
+
+| | master | branch before | branch after |
+|---|---|---|---|
+| Hand values found, saved records (2,622) | 2,238 | 2,153 | 2,237 |
+| ... saved reader answer alone (2,459) | 2,103 | 2,019 | 2,102 |
+| ... new floor + saved answer merged (2,459) | 2,119 | 2,037 | 2,124 |
+| ... the same, under master's scorer | 2,119 | 2,119 | 2,125 |
+| ... new floor alone (2,622) | 1,660 | 1,706 | 1,766 |
+| Floor values, 792 printouts (table values) | 11,280 (1,828) | 13,309 (3,857) | 13,660 (4,208) |
+| Grid tables / rows kept (unique tables) | 190 / 190 | 226 / 755 | 226 / 757 |
+| Labels ending "last row of the table" | 805 | 0 | 0 |
+| Master's last-row values still a value / only inside a label / gone | | 651 / 149 / 5 | 711 / 87 / 7 |
+| Merge: reconciled / disagreements / kept / added | 2,439 / 384 / 2,715 / 1,278 | 2,700 / 512 / 3,995 / 947 | 2,531 / 433 / 4,313 / 865 |
+| Table rows settled onto a reading naming something else | | 196 | 27 |
+| Row pairs of one column the merge rule cannot tell apart | | 736 of 5,561 | 289 of 6,512 |
+
+- **Scores.** The one credit the scorer still refuses was given from another
+  scenario's number. Every other credit master gave is kept, and each now
+  goes to the right row's label. The review counted 3 wrong-row credits;
+  re-checked, 2 of those had the right row in the record as well, and it is
+  credited now.
+- **Rows kept.** Rows are counted as the most row names any one column
+  carries. The review counted names across all columns (774), which would
+  count fix 4's "row N" values twice.
+- **Merge.** The 27 rows still settled onto another label name the same row
+  in other words. Kept rows rise because a table row is no longer merged
+  into a reading that names no row.
+- **Master's last-row values.** The 87 left only inside a label are row
+  numbers under "Layer" or "Scenario", or junk headings. The 2 more gone
+  come from the one printout at the 300-value cap.
+- **Row pairs.** The pairs still not told apart are mostly rows named by a
+  single letter or code, or by OCR-broken headings.
+
+Tests, run from the worktree, each judged by its exit code: the 12
+report_ingest files matching calc, ri208, model_first or recompute, exit 0,
+575 passed; `module_work/report_ingest_harness/tests`, exit 0, 201 passed
+and 33 skipped; `webapp/tests/test_page_fingerprints.py`, exit 0, 15 passed
+(no re-record); `webapp/tests/test_public_text.py`, exit 0, 5 passed.
+
 ## What is left / noted, not fixed
 
 - Noted, not fixed: the floor still gives a whole-table box for every row's
