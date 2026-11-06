@@ -189,6 +189,12 @@ class CantileverWallGeometry:
         return max(self.wall_height - self.water_table_depth, 0.0)
 
 
+#: The face batter from vertical (deg) at which GEC-11 takes a wall as
+#: battered: Vol I p. 4-15, "near vertical walls (defined as walls with a
+#: face batter of less than 10 degrees from vertical)" (GM-307).
+BATTER_MIN_DEG = 10.0
+
+
 @dataclass
 class MSEWallGeometry:
     """MSE (Mechanically Stabilized Earth) wall geometry.
@@ -229,6 +235,15 @@ class MSEWallGeometry:
         For a broken backslope (GEC-11 Fig. 4-4): the height S of the slope
         crest above the top of the wall (m), with level ground behind it.
         Default None: the slope continues (GEC-11 Fig. 4-3).
+    face_batter : float, optional
+        Batter of the front face and the reinforced zone, omega (degrees
+        from vertical, the top set back toward the fill). Default 0
+        (vertical). Below 10 deg the wall is "near vertical" and is taken
+        as vertical (GEC-11 Vol I p. 4-15: theta = 90 deg for a face batter
+        of less than 10 deg); from 10 deg the wall is battered (theta = 90
+        + omega, Fig. 4-5; GM-307). An outward-leaning face (below 0) is
+        refused (GEC-11 Vol II p. 10-36: "Negative (outward leaning)
+        batter is not acceptable").
     """
     wall_height: float
     reinforcement_length: Optional[float] = None
@@ -237,10 +252,17 @@ class MSEWallGeometry:
     surcharge: float = 0.0
     broken_backslope_height: Optional[float] = None
     level_depths: Optional[Sequence[float]] = None
+    face_batter: float = 0.0
 
     def __post_init__(self):
         if self.wall_height <= 0:
             raise ValueError(f"Wall height must be positive, got {self.wall_height}")
+        if not 0 <= self.face_batter < 90:
+            raise ValueError(
+                f"face_batter must be from 0 to below 90 degrees from "
+                f"vertical, the top set back toward the fill; got "
+                f"{self.face_batter} (GEC-11 Vol II p. 10-36: 'Negative "
+                f"(outward leaning) batter is not acceptable')")
         if self.reinforcement_spacing <= 0:
             raise ValueError(f"Spacing must be positive, got {self.reinforcement_spacing}")
         if self.level_depths is not None:
@@ -272,6 +294,19 @@ class MSEWallGeometry:
 
         if self.reinforcement_length is None:
             self.reinforcement_length = round(max(0.7 * self.wall_height, 2.5), 2)
+
+    @property
+    def battered(self) -> bool:
+        """Whether the face is battered in GEC-11's sense, 10 deg or more
+        from vertical (Vol I p. 4-15; GM-307); below it, near vertical."""
+        return self.face_batter >= BATTER_MIN_DEG
+
+    @property
+    def theta_deg(self) -> float:
+        """GEC-11's theta, the inclination of the back of the facing from
+        the horizontal in front of the wall (Vol I Fig. 4-5, p. 4-16): 90
+        + face_batter when battered, else 90 (p. 4-15)."""
+        return 90.0 + self.face_batter if self.battered else 90.0
 
     @property
     def n_reinforcement_levels(self) -> int:

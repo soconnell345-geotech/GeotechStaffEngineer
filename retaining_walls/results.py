@@ -451,6 +451,10 @@ class MSEWallResult:
         plane height h, the thrust F_T and its components, the slope fill
         weight V2, and S_eq / sigma_2 / H1 for internal stability. None for
         a level backfill.
+    face_batter : dict or None
+        With a face battered 10 deg or more (GM-307), the GEC-11 basis of
+        the external earth pressure: theta, Kab, the thrust's angle, F_T,
+        its components and arm. None otherwise.
     external_terms : dict or None
         The ASD external-stability terms, unrounded, as the checks used
         them (GM-143, GM-164; ``mse._external_terms``): each vertical force
@@ -498,6 +502,7 @@ class MSEWallResult:
     FOS_sliding_required: float = 1.5
     FOS_overturning_required: float = 2.0
     backslope: Optional[Dict[str, Any]] = None
+    face_batter: Optional[Dict[str, Any]] = None
     external_terms: Optional[Dict[str, Any]] = None
     choices: List[Dict[str, Any]] = field(default_factory=list)
     local_shear: Optional[Dict[str, Any]] = None
@@ -650,6 +655,11 @@ class MSEWallResult:
                 f"{b['interface_angle_deg']:.1f} deg), h = {b['h_m']:.2f} m, "
                 f"F_T = {b['FT_kN_per_m']:.1f} kN/m",
             ])
+        if self.face_batter is not None:
+            fb = self.face_batter
+            lines.append(
+                f"  Face batter:       {fb['face_batter_deg']:.1f} deg "
+                f"(theta {fb['theta_deg']:.1f} deg), Kab = {fb['Ka']:.4f}")
         lines.extend([
             "",
             "  EXTERNAL STABILITY:",
@@ -736,6 +746,8 @@ class MSEWallResult:
             d["external_lrfd"] = self.external_lrfd
         if self.backslope is not None:
             d["backslope"] = self.backslope
+        if self.face_batter is not None:
+            d["face_batter"] = self.face_batter
         if self.local_shear is not None:
             d["local_shear"] = dict(self.local_shear)
         if self.grid_spacing is not None:

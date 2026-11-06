@@ -397,6 +397,20 @@ NOT_REACHED = {
         "retaining_walls|mse_wall#per_level",
         "retaining_walls|mse_wall#geogrid",
         "retaining_walls|mse_wall#depths")},
+    # GM-307: a batter under 10 deg is near vertical (GEC-11 Vol I p.
+    # 4-15); the probe's step from 0 stays below it, which only the
+    # choices then report
+    **{(k, "face_batter"): (
+        "the probe's step stays below the 10 deg from which GEC-11 Vol I "
+        "p. 4-15 takes a face as battered; a near-vertical face is "
+        "vertical, which the choices report")
+       for k in ("retaining_walls|mse_wall",
+                 "retaining_walls|mse_wall#surcharge",
+                 "retaining_walls|mse_wall#per_level",
+                 "retaining_walls|mse_wall#geogrid",
+                 "retaining_walls|mse_wall#depths",
+                 "calc_package|retaining_wall_package#mse",
+                 "calc_package|retaining_wall_package#mse_bearing")},
     ("calc_package|retaining_wall_package#surcharge",
      "surcharge_in_bearing"):
         "the probe gives no q_allowable, so the bearing check it enters "
