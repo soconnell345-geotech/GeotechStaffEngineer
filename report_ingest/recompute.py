@@ -400,8 +400,9 @@ _SHAPE_WORDS = (("strip", r"\bstrip\b|\bcontinuous\b|\bwall footing\b"),
 def _shape(calc: Calculation, found: Dict[str, Dict[str, Any]]
            ) -> Tuple[Optional[str], str]:
     """``(shape, how)`` from the printed words, else from this calculation's
-    (this case's) own labels when its words name several shapes or none,
-    else from L against B; None with the reason when nothing settles it."""
+    (this case's) own labels when its words name several shapes or none:
+    a shape word, else its printed L against B; None with the reason when
+    nothing settles it."""
     words = _all_words(calc)
     named = [s for s, pat in _SHAPE_WORDS if re.search(pat, words)]
     if len(named) == 1:
@@ -413,14 +414,14 @@ def _shape(calc: Calculation, found: Dict[str, Dict[str, Any]]
         return own[0], f"printed in this case's labels: {own[0]}"
     B = (found.get("width") or found.get("B") or {}).get("value")
     L = (found.get("length") or found.get("L") or {}).get("value")
-    if len(named) > 1:
-        return None, ("footing shape: the printout names several "
-                      f"({', '.join(named)})")
     if B is not None and L is not None:
         if abs(L - B) <= 1e-6 * max(B, 1.0):
             return "square", "from the printed L = B"
         if L > B:
             return "rectangular", "from the printed L > B"
+    if len(named) > 1:
+        return None, ("footing shape: the printout names several "
+                      f"({', '.join(named)})")
     return None, "footing shape (no shape word printed, and no L to set it)"
 
 

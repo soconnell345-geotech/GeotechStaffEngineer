@@ -432,6 +432,29 @@ def test_the_shape_from_the_labels_when_the_words_name_several():
     assert "this case's labels" in row["shape"]
 
 
+def test_several_shapes_named_the_case_s_printed_l_and_b_set_its_shape():
+    # review fix 4: the subject names two shapes and the cases' labels none;
+    # each case prints its own B and L
+    sq = bearing(width=1.1, friction_angle=33)["q_ultimate_kPa"]
+    rect = bearing(width=0.7, length=5.0, shape="rectangular",
+                   friction_angle=33)["q_ultimate_kPa"]
+    inputs = [nq("Df", 1.0, "m"), nq("phi", 33, "deg"),
+              nq("Unit weight", 18.5, "kN/m3"), nq("FS", 3.0),
+              nq("Scenario 1 Width (B)", 1.1, "m"),
+              nq("Scenario 1 Length (L)", 1.1, "m"),
+              nq("Scenario 2 Width (B)", 0.7, "m"),
+              nq("Scenario 2 Length (L)", 5.0, "m")]
+    rows = recompute_calculation(bearing_calc(
+        [nq("Scenario 1 Ultimate", round(sq), "kPa"),
+         nq("Scenario 2 Ultimate", round(rect), "kPa")], inputs,
+        subject="Strip and square footings"))
+    by_case = {r["case"]: r for r in rows}
+    assert by_case["scenario 1"]["flag"] == "agrees", by_case["scenario 1"]
+    assert by_case["scenario 1"]["shape"] == "square (from the printed L = B)"
+    assert by_case["scenario 2"]["flag"] == "agrees", by_case["scenario 2"]
+    assert by_case["scenario 2"]["shape"].startswith("rectangular")
+
+
 # -- 4. gamma' alone (OWN-130) -------------------------------------------------
 
 GP_INPUTS = [i for i in SHARED if i["name"] != "Unit weight"] + [
