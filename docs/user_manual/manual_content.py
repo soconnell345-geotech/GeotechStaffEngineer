@@ -296,58 +296,129 @@ WORKED = {
         "same <code>g()</code> contract and returns &beta; and P<sub>f</sub> instead of a lone number."),
 }
 
-# 21 reference modules: agent -> (title, standard, coverage)
+# The reference modules: agent -> (title, designation and date as printed on
+# the cover, coverage). Designations read off each PDF's cover in
+# geotech-references/docs (DOC-23, module_work/doc23/CHECK.md).
 REFERENCE_INFO = {
-    "dm7": ("NAVFAC DM7", "NAVFAC DM7.01 / DM7.02",
-            "The classic Navy design manual &mdash; soil classification, stress distribution, "
-            "settlement, seepage, bearing, lateral earth pressure, and slope charts. 340+ equations "
-            "plus figure catalogs."),
-    "gec4": ("FHWA GEC-4", "FHWA-IF-99-015",
-             "Ground anchors and anchored systems &mdash; apparent-pressure envelopes, tributary "
-             "anchor loads, wall design."),
-    "gec5": ("FHWA GEC-5", "FHWA-NHI-10-016",
-             "Soil and rock properties and their measurement."),
-    "gec6": ("FHWA GEC-6", "FHWA-SA-02-054",
-             "Shallow foundations &mdash; Vesic/AASHTO bearing factors, groundwater corrections, "
-             "the Hough settlement method."),
-    "gec7": ("FHWA GEC-7", "FHWA-0-IF-03-017",
-             "Soil-nail walls &mdash; nail-head strength, bond, facing, and global stability."),
-    "gec8": ("FHWA GEC-8", "FHWA-NHI-13-026",
-             "Design and construction of continuous flight auger piles."),
-    "gec9": ("FHWA GEC-9", "FHWA-NHI-16-009",
-             "Original design and construction of driven-pile foundations (companion to GEC-12)."),
-    "gec10": ("FHWA GEC-10", "FHWA-NHI-18-024",
+    "dm7": ("DM 7.1 / DM 7.2",
+            "UFS 3-220-10, Soil Mechanics (DM 7.1), 16 January 2026; UFC 3-220-20, Foundations "
+            "and Earth Structures (DM 7.2), 16 January 2025",
+            "The successors to NAVFAC DM 7.01 and DM 7.02 &mdash; soil classification, field and "
+            "laboratory testing, stress distribution, consolidation and settlement, seepage, slope "
+            "stability, correlations, earth pressures, shallow and deep foundations and retaining "
+            "structures. About 390 equation, table and figure lookups, plus chapter text and figure "
+            "catalogs."),
+    "gec4": ("FHWA GEC-4", "FHWA-IF-99-015, June 1999",
+             "Ground anchors and anchored systems &mdash; chapter text and figures, with lookups for "
+             "anchor bond stress and load transfer (Tables 6-8) and corrosion protection (Table 20)."),
+    "gec5": ("FHWA GEC-5", "FHWA NHI-16-072, April 2017",
+             "Geotechnical site characterization &mdash; chapter text and figure catalog."),
+    "gec6": ("FHWA GEC-6", "FHWA-SA-02-054, September 2002",
+             "Shallow foundations &mdash; bearing-capacity factors, rock properties, presumptive "
+             "bearing, the Hough bearing-capacity index (Fig. 5-19), chapter text and figures."),
+    "gec7": ("FHWA GEC-7", "FHWA-NHI-14-007, February 2015",
+             "Soil nail walls &mdash; bond strength, resistance factors, seismic coefficients, "
+             "chapter text and figures."),
+    "gec8": ("FHWA GEC-8", "FHWA-HIF-07-03, April 2007",
+             "Design and construction of continuous flight auger (CFA) piles."),
+    "gec9": ("FHWA GEC-9", "FHWA-HIF-18-031, April 2018",
+             "Design, analysis and testing of laterally loaded deep foundations &mdash; p-y "
+             "parameters (Appendix A), p-multipliers (Table 7-1), resistance factors (Table 4-1)."),
+    "gec10": ("FHWA GEC-10", "FHWA-NHI-18-024, September 2018",
               "Drilled shafts &mdash; alpha / beta side resistance, base resistance, rock sockets, "
               "the rational OCR/Ko and Chen-2011 chains."),
-    "gec11": ("FHWA GEC-11", "FHWA-NHI-10-025",
-              "MSE walls and reinforced-soil slopes &mdash; external/internal stability, LRFD "
-              "load-factor bookkeeping, seismic."),
-    "gec12": ("FHWA GEC-12", "FHWA-NHI-16-064",
-              "Driven-pile foundations &mdash; the Nordlund / Tomlinson worked examples the axial "
-              "pile module is validated against."),
-    "gec13": ("FHWA GEC-13", "FHWA ground-modification manual",
-              "Ground modification &mdash; aggregate piers, stone columns (the printed Priebe curve), prefabricated "
-              "vertical drains, surcharge preloading."),
-    "gec14": ("FHWA GEC-14", "FHWA-NHI ground-improvement",
-              "Additional ground-improvement methods."),
-    "micropile": ("FHWA Micropile Manual", "FHWA-NHI-05-039",
-                  "Micropile design &mdash; bond stress, structural capacity, the LPILE benchmark "
-                  "the lateral-pile module checks against."),
-    "ufc_backfill": ("UFC 3-220-04N", "Unified Facilities Criteria",
+    "gec11": ("FHWA GEC-11", "FHWA-NHI-10-024 (Vol. I) and FHWA-NHI-10-025 (Vol. II), November 2009",
+              "MSE walls and reinforced soil slopes &mdash; reinforcement, pullout, durability and "
+              "LRFD load and resistance factor tables, the K<sub>r</sub>/K<sub>a</sub> curve "
+              "(Fig. 4-10), chapter text and figures."),
+    "gec12": ("FHWA GEC-12", "FHWA-NHI-16-009 (Vols. I and II), July 2016",
+              "Driven-pile foundations &mdash; the Nordlund, alpha and beta charts and tables of "
+              "chapter 7, resistance factors, setup, chapter text and figures. The axial-pile module "
+              "is validated against the design examples of Vol. III (FHWA-NHI-16-064)."),
+    "gec13": ("FHWA GEC-13", "FHWA-NHI-16-027 (Vol. I) and FHWA-NHI-16-028 (Vol. II), April 2017",
+              "Ground modification methods &mdash; PVDs and preloading, lightweight fills, deep "
+              "compaction, aggregate columns, column-supported embankments, deep mixing, grouting, "
+              "pavement support stabilization and reinforced soil structures."),
+    "gec14": ("FHWA GEC-14", "FHWA-HIF-17-016, August 2016",
+              "Assuring quality in geotechnical reporting documents &mdash; chapter text and figure "
+              "catalog."),
+    "micropile": ("FHWA Micropile Manual", "FHWA NHI-05-039, December 2005",
+                  "Micropile design and construction &mdash; bond stress, structural capacity, the "
+                  "LPILE benchmark the lateral-pile module checks against."),
+    "ufc_backfill": ("UFC 3-220-04FA", "UFC 3-220-04FA, Backfill for Subsurface Structures, 16 January 2004",
                      "Backfill design &mdash; compaction, filter criteria, drainage."),
-    "ufc_expansive": ("UFC 3-220-07", "Unified Facilities Criteria",
+    "ufc_expansive": ("UFC 3-220-07", "UFC 3-220-07, Foundations in Expansive Soils, 16 January 2004",
                       "Expansive soils &mdash; swell potential, heave, pier design."),
-    "ufc_pavement": ("UFC 3-260-02", "Unified Facilities Criteria",
-                     "Airfield pavement design &mdash; CBR, thickness, equivalent single-wheel load."),
-    "fema_p2082": ("FEMA P-2082 / 2020 NEHRP", "NEHRP provisions",
+    "ufc_pavement": ("UFC 3-250-01",
+                     "UFC 3-250-01, Pavement Design for Roads and Parking Areas, 14 November 2016",
+                     "Road and parking-area pavement design (not airfields) &mdash; CBR flexible design "
+                     "(Fig. E-1) and the vehicle curves, rigid design (Fig. F-1), mixed traffic, "
+                     "stabilized layers, overlays, frost and drainage."),
+    "fema_p2082": ("FEMA P-2082-1 / 2020 NEHRP",
+                   "FEMA P-2082-1, NEHRP Recommended Seismic Provisions, 2020 Edition, Vol. I, "
+                   "September 2020",
                    "Seismic site classification &mdash; the BC/CD/DE site classes with the BC "
-                   "baseline (the post-2020 multi-period approach)."),
-    "california_trenching": ("Caltrans Trenching &amp; Shoring", "Caltrans T&amp;S Manual",
-                             "Shoring and excavation &mdash; soldier piles, anchored walls, basal "
-                             "heave, the worked examples validating soe / sheet_pile."),
-    "fhwa_pavements": ("FHWA Pavements", "FHWA-NHI-05-037",
+                   "baseline (the post-2020 multi-period approach), design spectra and seismic design "
+                   "category."),
+    "california_trenching": ("Caltrans Trenching &amp; Shoring",
+                             "Caltrans Trenching and Shoring Manual, June 2011, Revision 2, July 2025",
+                             "Shoring and excavation &mdash; earth pressures, apparent pressure "
+                             "envelopes, surcharges, basal heave, the worked examples validating soe / "
+                             "sheet_pile."),
+    "fhwa_pavements": ("FHWA Pavements", "FHWA NHI-05-037, May 2006",
                        "Geotechnical aspects of pavements &mdash; resilient modulus, CBR, frost, "
                        "drainage."),
+    "fhwa_soils_foundations": ("FHWA Soils and Foundations",
+                               "FHWA NHI-06-088 (Vol. I) and FHWA NHI-06-089 (Vol. II), December 2006",
+                               "Soils and foundations reference manual &mdash; chapter text read off "
+                               "the print, and figure catalog."),
+    "eurocode_7_1": ("Eurocode 7 Part 1", "EN 1997-1:2004",
+                     "Geotechnical design, general rules &mdash; Annex A partial factors (design "
+                     "approaches 1-3) and the methods of Annexes C to H."),
+    "eurocode_7_2": ("Eurocode 7 Part 2", "EN 1997-2:2007",
+                     "Ground investigation and testing &mdash; the CPT, PMT, SPT, DP, FVT, DMT and PLT "
+                     "correlations of the informative annexes."),
+    "aashto_1993": ("AASHTO 1993", "AASHTO Guide for Design of Pavement Structures, 1993",
+                    "Flexible structural number and rigid slab design equations, layer coefficients, "
+                    "reliability, Appendix D load-equivalency factors, the composite k worksheet and "
+                    "Appendix G swelling and frost-heave loss (US units)."),
+    "em_2104": ("USACE EM 1110-2-2104", "EM 1110-2-2104, 1 November 2023",
+                "Strength design for reinforced concrete hydraulic structures &mdash; load factors and "
+                "combinations, flexure and axial load, shear, serviceability, detailing (US units)."),
+    "em_2107": ("USACE EM 1110-2-2107", "EM 1110-2-2107, 1 August 2022",
+                "Design of hydraulic steel structures &mdash; LRFD loads and combinations, seismic "
+                "amplification, fatigue and fracture, connections, Tainter-gate loads (US units)."),
+    "ufc_structural": ("UFC 3-301-01", "UFC 3-301-01, Structural Engineering, 11 April 2023, Change 4, 3 June 2025",
+                       "The DoD modifications to the IBC and ASCE 7 &mdash; risk category, the "
+                       "seismic-force-resisting-system table, seismic load combinations, evaluation "
+                       "and retrofit, nonstructural seismic criteria."),
+    "ufc_collapse": ("UFC 4-023-03",
+                     "UFC 4-023-03, Design of Buildings to Resist Progressive Collapse, 14 July 2009, "
+                     "Change 4, 10 June 2024",
+                     "Progressive collapse &mdash; tie forces, alternate path, enhanced local "
+                     "resistance, by material."),
+    "gsa_collapse": ("GSA Alternate Path Guidelines",
+                     "GSA Alternate Path Analysis &amp; Design Guidelines for Progressive Collapse "
+                     "Resistance, 24 October 2013, Revision 1, 28 January 2016",
+                     "Progressive collapse for federal civilian buildings &mdash; alternate path "
+                     "analysis, redundancy, by material."),
+    "ufc_flexible_practice": ("UFC 3-250-03",
+                              "UFC 3-250-03, O&amp;M Manual: Standard Practice for Flexible Pavements, 30 May 2018",
+                              "Hot-mix asphalt construction practice &mdash; mix design, spray "
+                              "applications, seal coats."),
+    "ufc_concrete_practice": ("UFC 3-250-04",
+                              "UFC 3-250-04, Standard Practice for Concrete Pavement Construction, "
+                              "29 January 2024",
+                              "Concrete pavement construction practice &mdash; materials, mixture "
+                              "design, placement, joints, dowels."),
+    "ufc_stabilization": ("UFC 3-250-11",
+                          "UFC 3-250-11, Soil Stabilization and Modification for Pavements, 30 November 2020",
+                          "Soil stabilization &mdash; additive selection, strength and durability "
+                          "criteria, cement, lime and bituminous stabilization."),
+    "wood_handbook": ("Wood Handbook", "USDA Forest Products Laboratory, FPL-GTR-282 (2021)",
+                      "Wood as an engineering material &mdash; moisture relations, mechanical "
+                      "properties, fastenings and structural analysis equations (chapters 4, 5, 8 "
+                      "and 9)."),
     "reference_db": ("Cross-reference text search", "&mdash;",
                      "A full-text (SQLite FTS5) search DB over the chapter text of every reference, "
                      "with synonym query expansion."),
@@ -1393,7 +1464,7 @@ def _ch3_agent(ctx):
 
     ctx.section("References through a scoped consultant")
     ctx.para(
-        "The primary agent does not call the 21 reference modules directly. Reference access is routed "
+        "The primary agent does not call the reference modules directly. Reference access is routed "
         "through a single <code>consult_references</code> tool backed by a reference-scoped sub-agent "
         "&mdash; a second <code>GeotechAgent</code> restricted to the reference modules. This keeps the "
         "primary agent&rsquo;s tool surface small (which measurably cut module-name guessing) while "
