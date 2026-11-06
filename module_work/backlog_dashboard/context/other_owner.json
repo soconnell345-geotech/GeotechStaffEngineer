@@ -499,5 +499,32 @@
       "slope_stability/DESIGN.md",
       "slope_stability/VALIDATION.md"
     ]
+  },
+  "EV-35": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Make the Chartography data folder on your laptop and hand it, with the test wheel and the brief, to the AI FDE for a Foundry run of all 100 questions.",
+    "why": "You asked whether the setup behind the Opus 5.5 system card's chart result (a container plus an image-cropping tool) reads charts better than the Document Review page. The suite answers that on one model with one judge, and you have the Foundry budget for all 100 questions at once.",
+    "background": "The suite is funhouse_agent/chart_eval in the test wheel 5.34.0+foundry.20261106.1. It has five arms: no tools; the Claude Cookbook's zoom tool; zoom plus code in the app's locked plotting box; the Document Review page as users get it; and the page's minimal looking agent. It was tested offline with scripted models only, so nothing has run on a real model yet. Chartography is gated on Hugging Face and marked not for training, so Foundry cannot download it without your token and it must never go into a repo. The prepare script also copies Surge's own judge prompt into the private folder (their repository carries no licence). Estimated 40 to 100 M input tokens per model.",
+    "options": [],
+    "recommendation": "Accept the dataset's terms on Hugging Face, make a read token, run prepare.py, check PROVENANCE.json says 100 tasks and a judge prompt, then send the zip, the wheels and the brief to the AI FDE.",
+    "if_no_answer": "The suite stays built and untested on a real model; nothing else waits on it.",
+    "message_to_send": null,
+    "steps": [
+      "Open huggingface.co/datasets/surgeai/chartography and click Agree and access.",
+      "Make a read token (Settings, Access Tokens).",
+      "pip install huggingface_hub pandas pyarrow, set HF_TOKEN, then: python funhouse_agent/chart_eval/prepare.py --out chartography_data --zip",
+      "Check chartography_data/PROVENANCE.json: tasks 100, judge_prompt true.",
+      "Hand chartography_data.zip, the three wheels and module_work/FOUNDRY_BRIEF_CHARTOGRAPHY.md to the AI FDE.",
+      "When the output folders come back, keep them in a gitignored raw/ folder: they hold the dataset's questions and answers."
+    ],
+    "unblocks": [
+      "VIS-17"
+    ],
+    "sources": [
+      "BACKLOG.md EV-35",
+      "module_work/FOUNDRY_BRIEF_CHARTOGRAPHY.md",
+      "funhouse_agent/chart_eval/"
+    ]
   }
 }

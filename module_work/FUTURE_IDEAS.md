@@ -546,6 +546,7 @@ tools; BenchCAD Vision2Code voxel IoU 0.730 → 0.962. Public reference build:
 Claude Cookbook "multimodal-crop-tool" (pixel coords of the image the model saw,
 crop from full-res original, upscale to the model's image budget, JPEG q92).
 
+- **2026-11-06: the Chartography suite is built** (`funhouse_agent/chart_eval/`: arms `none`, `zoom` (the cookbook's tool), `zoom_code`, `page:baseline`, `page:minimal`); its Foundry run is BACKLOG EV-35, brief `module_work/FOUNDRY_BRIEF_CHARTOGRAPHY.md`. The dataset card's grading uses a model judge, not numeric ranges alone (it was described below as "no LLM judge").
 - **Chartography** (Surge AI, github.com/surge-ai/chartography): 100 specialised-chart
   questions, graded against expert per-chart acceptable ranges. Score the planlens
   vision loop (render_page / render_region / marks / grid) with and without zoom,
