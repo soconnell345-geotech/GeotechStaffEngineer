@@ -16,7 +16,7 @@ a model in its own tests. Everything below runs on Foundry's models.
 
 | Item | From | Notes |
 |---|---|---|
-| App test wheel `geotech_staff_engineer-5.34.0+foundry.20261106.1-py3-none-any.whl` | this branch (`claude/anthropic-vision-testing-harness-22m8ae`), version label only changed | carries `funhouse_agent/chart_eval/` |
+| App test wheel `geotech_staff_engineer-5.34.0+foundry.20261106.1-py3-none-any.whl` | commit 0b8caf6 on `claude/anthropic-vision-testing-harness-22m8ae`: master 8daed85 (5.34.0 plus the unreleased master fixes in HANDOFF, "Master after 5.34.0") plus `funhouse_agent/chart_eval/`; only the version label was changed for the build | set `GEOTECH_APP_COMMIT=0b8caf6` so every run records the commit |
 | `planlens 0.14.0`, `geotech-references 1.5.0` | PyPI (wheels in the delivery folder too) | what 5.34.0 pins |
 | `chartography_data.zip` | **the owner** makes it on a laptop (§1) | the dataset: gated, NOT FOR TRAINING |
 | `BUILD_NOTES.md` | the delivery folder | wheel versions, commit, install check |
