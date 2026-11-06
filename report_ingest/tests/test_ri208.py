@@ -11,12 +11,15 @@ scorer keep them apart. Every value here is made up.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from report_ingest import model_first as mf
 from report_ingest.calc_reader import (
     CalcFloor, CalcReading, FloorValue, ReadProv, ReadValue, _fold_readings,
-    _row_names, floor_from_pages, floor_from_record, merge_calculation,
+    _row_names, _values_from_table, floor_from_pages, floor_from_record,
+    merge_calculation,
 )
 from report_ingest.calc_scoring import other_rows, same_name, score_record
 from report_ingest.model import Calculation, NamedQuantity, Provenance, Quantity
@@ -301,6 +304,39 @@ def test_a_floor_read_back_from_its_record_keeps_each_value_s_row():
     floor = _phi_floor()
     again = floor_from_record(floor.as_calculation())
     assert [v.row for v in again.values] == [v.row for v in floor.values]
+
+
+def _table(header, body):
+    return SimpleNamespace(header=header, rows=body,
+                           bbox=(0.0, 0.0, 200.0, 100.0), source="pdf")
+
+
+def test_a_numeric_first_column_is_recorded_once_per_row():
+    """Review fix 4: a depth column names each row and is a value of the
+    row as well, labelled with its heading and the row's place."""
+    got = {v.name: (v.value, v.unit, v.row) for v in _values_from_table(
+        _table(["Depth (ft)", "Settlement (in)"],
+               [["5.0", "0.40"], ["10.0", "0.30"], ["15.0", "0.30"]]), 0)}
+
+    assert got == {
+        "Depth (ft), row 1": (5.0, "ft", "row 1"),
+        "Depth (ft), row 2": (10.0, "ft", "row 2"),
+        "Depth (ft), row 3": (15.0, "ft", "row 3"),
+        "Settlement (in), Depth (ft) 5.0": (0.40, "in", "Depth (ft) 5.0"),
+        "Settlement (in), Depth (ft) 10.0": (0.30, "in", "Depth (ft) 10.0"),
+        "Settlement (in), Depth (ft) 15.0": (0.30, "in", "Depth (ft) 15.0"),
+    }
+
+
+def test_a_column_of_row_numbers_is_not_a_value():
+    got = [v.name for v in _values_from_table(
+        _table(["Layer No.", "Phi (deg)"], [["1", "30"], ["2", "32"]]), 0)]
+    assert got == ["Phi (deg), Layer No 1", "Phi (deg), Layer No 2"]
+    # nor is a first column under a "heading" that is a number: a data row
+    # taken for the header
+    got = [v.name for v in _values_from_table(
+        _table(["0.5", "Phi (deg)"], [["1.0", "30"], ["2.0", "32"]]), 0)]
+    assert not [name for name in got if name.startswith("0.5, row")]
 
 
 @pytest.mark.parametrize("left, right, other", [

@@ -812,6 +812,26 @@ def _row_names(header: Sequence[str],
             for n, name in enumerate(names, start=1)]
 
 
+#: One printed number and nothing else: a first cell that is a quantity.
+#: "0-5" (a range), "<10" and "N/A" are not.
+_FIRST_NUMBER = re.compile(r"[-+‐‑‒–−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
+#: The words a column of row numbers is headed by.
+_INDEX_WORDS = frozenset(
+    "layer layers sublayer stratum strata soil unit case cases scenario row "
+    "rows item no nr number id point step trial option alternative section "
+    "zone boring sample test series".split())
+
+
+def _index_heading(head: str) -> bool:
+    """Is a first column's heading one a column of row numbers carries
+    ("Layer", "Layer No.", "Case #", "Item"), or no heading at all ("0.5")?
+    "Layer thickness (ft)" and "Depth (ft)" are quantities."""
+    words = {w for w in _label_words(head) if not w.isdigit()}
+    # A heading with no word at all ("0.5") is a data row taken for the
+    # header, and names no quantity either.
+    return not words or words <= _INDEX_WORDS
+
+
 def _values_from_table(table: Any, page: int) -> List[FloorValue]:
     """Every ``label -> value`` pair one detected table states.
 
@@ -848,10 +868,23 @@ def _values_from_table(table: Any, page: int) -> List[FloorValue]:
         body = [r for r in rows[1:]
                 if sum(1 for c in r if str(c).strip()) >= 2]
         names = _row_names(header, body)
-        for row, qualifier in zip(body, names):
+        head = _clean_name(header[0])
+        for n, (row, qualifier) in enumerate(zip(body, names), start=1):
             # The column the qualifier came from names the row; it is not
-            # one of the row's values.
+            # one more value of the row -- unless it is a QUANTITY printed as
+            # a bare number under a heading (a layer's thickness, a depth):
+            # then it is recorded once per row as well, under its heading
+            # and the row's place, "Thickness (ft), row 2" (review fix,
+            # RI-208; before RI-208 the last row's was recorded). A column
+            # of row numbers ("Layer", "No.") is no quantity.
             first = 0 if qualifier is None else 1
+            cell = " ".join(str(row[0] if row else "").split())
+            if first and head and _FIRST_NUMBER.fullmatch(cell) \
+                    and not _index_heading(head):
+                out.append(FloorValue(
+                    name=f"{head}, row {n}", value=_number(cell),
+                    unit=_unit_in_label(header[0]), page=page, bbox=bbox,
+                    method="tables", confidence=conf, row=f"row {n}"))
             for i, label in enumerate(header):
                 if i < first:
                     continue
