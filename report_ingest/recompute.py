@@ -34,6 +34,15 @@ Rules (``module_work/dr11/PLAN.md``):
 First slice: ``shallow_foundation_bearing`` and ``settlement`` (elastic, and
 one-layer Cc/Cr consolidation). Every other kind is a row saying why it was
 not recomputed; ``slope_stability`` is held (GM-140).
+
+Second slice (``module_work/dr11/CHECK_SLICE2.md``): a printout that puts
+several CASES in one calculation (scenario x stratum x load case, a footing
+shape) is split by the case its labels print, wherever in the label the
+qualifier sits ('phi, stratum 2, long term', 'B (Case A)', 'Stratum 2 phi'),
+and each case is recomputed on its own, its rows naming the case. Labels are
+matched with the case words taken out. A printout that gives only gamma'
+follows the setting :data:`GAMMA_PRIME_ENV` (OWN-130, the owner's open
+decision): refused by default.
 """
 
 from __future__ import annotations
@@ -46,7 +55,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from report_ingest.model import Calculation, NamedQuantity, calc_si
 
 __all__ = ["TOLERANCE", "TOLERANCE_BASIS", "NOT_RECOMPUTED",
-           "recompute_record",
+           "GAMMA_PRIME_ENV", "GAMMA_PRIME_RULES", "recompute_record",
            "recompute_calculation", "table_markdown", "find_record",
            "make_recompute_tool", "RECOMPUTE_TOOL_DESCRIPTION"]
 
@@ -60,6 +69,26 @@ TOLERANCE = 0.10
 TOLERANCE_BASIS = ("this table's QC threshold, not an engineering "
                    "criterion: printed factors are read off charts and "
                    "rounded")
+
+#: The setting for a bearing printout that gives only the effective unit
+#: weight gamma' and no total unit weight (OWN-130, the owner's open
+#: decision): ``refuse`` (the default) lists the calculation as 'water level
+#: not printed'; ``submerged`` runs it as the submerged case (gamma' above
+#: and below the footing base) and says so on the row. The function argument
+#: ``gamma_prime`` overrides it.
+GAMMA_PRIME_ENV = "GEOTECH_RECOMPUTE_GAMMA_PRIME"
+GAMMA_PRIME_RULES = ("refuse", "submerged")
+
+
+def _gamma_prime_rule(value: Optional[str]) -> str:
+    rule = (value if value is not None
+            else os.environ.get(GAMMA_PRIME_ENV, "")).strip().lower()
+    rule = rule or "refuse"
+    if rule not in GAMMA_PRIME_RULES:
+        raise ValueError(f"gamma_prime rule {rule!r}: one of "
+                         f"{', '.join(GAMMA_PRIME_RULES)} ({GAMMA_PRIME_ENV})")
+    return rule
+
 
 #: Why each kind the first slice does not build is not recomputed.
 NOT_RECOMPUTED: Dict[str, str] = {
@@ -101,7 +130,7 @@ NOT_RECOMPUTED: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 _GREEK = {"φ": "phi", "ϕ": "phi", "γ": "gamma", "σ": "sigma", "δ": "delta",
-          "Δ": "delta", "ν": "nu", "′": "'", "’": "'"}
+          "Δ": "delta", "ν": "nu", "ρ": "rho", "′": "'", "’": "'"}
 
 
 def _norm(text: str) -> str:
@@ -109,6 +138,149 @@ def _norm(text: str) -> str:
     for k, v in _GREEK.items():
         out = out.replace(k, v)
     return " ".join(out.lower().split())
+
+
+# -- the case a label prints --------------------------------------------------
+
+#: A case's id: a number (with a letter), a roman numeral or one letter.
+_CASE_ID = r"(?:no\.?\s*)?([0-9]+[a-z]?|[ivx]+(?![a-z])|[a-z](?![a-z]))"
+
+_SHAPE_CASE = {"strip": "strip", "continuous": "strip", "square": "square",
+               "circular": "circular", "round": "circular",
+               "rectangular": "rectangular"}
+
+#: The case dimensions a printout's labels carry, in the order a case is
+#: named: (dimension, pattern, value from the match).
+_CASE_DIMS: Tuple[Tuple[str, "re.Pattern[str]", Callable[[Any], str]],
+                  ...] = (
+    ("scenario", re.compile(r"\bscenario\s*" + _CASE_ID),
+     lambda m: m.group(1)),
+    ("case", re.compile(r"\b(?:load\s+)?case\s*" + _CASE_ID),
+     lambda m: m.group(1)),
+    ("stratum", re.compile(r"\b(?:soil\s+)?(?:stratum|layer)\s*" + _CASE_ID),
+     lambda m: m.group(1)),
+    ("term", re.compile(r"\b(short|long)[- ]?term\b"), lambda m: m.group(1)),
+    ("shape", re.compile(r"\b(strip|continuous|square|circular|round|"
+                         r"rectangular)\b(?:\s+(?:footing|foundation)s?\b)?"),
+     lambda m: _SHAPE_CASE[m.group(1)]),
+)
+
+
+def _case_of(label: str) -> Tuple[Dict[str, str], str]:
+    """``(the case the label prints, the label without it)``, normalised:
+    'phi, stratum 2, long term' -> ``({"stratum": "2", "term": "long"},
+    "phi")``; 'B (Case A)' -> ``({"case": "a"}, "b")``."""
+    lab = _norm(label)
+    case: Dict[str, str] = {}
+    for dim, pat, value in _CASE_DIMS:
+        def _take(m, dim=dim, value=value):
+            case.setdefault(dim, value(m))
+            return " "
+        lab = pat.sub(_take, lab)
+    if case:
+        lab = re.sub(r"[(\[]\s*[-,;:/&\s]*\s*[)\]]", " ", lab)
+        lab = re.sub(r"(\s*[-\u2013,;:/&]\s*){2,}", ", ", lab)
+        lab = re.sub(r"^[\s\-\u2013,;:/&]+|[\s\-\u2013,;:/&]+$", "", lab)
+        lab = re.sub(r"\s+([,;:)])", r"\1", lab)
+        lab = re.sub(r"[,;:]\s*\(", " (", lab)
+        lab = " ".join(lab.split())
+    return case, lab
+
+
+def _lab(label: str) -> str:
+    """A label as matched: normalised, its case words taken out."""
+    return _case_of(label)[1]
+
+
+def _case_name(case: Dict[str, str]) -> str:
+    parts = []
+    for dim, _pat, _v in _CASE_DIMS:
+        if dim not in case:
+            continue
+        v = case[dim]
+        v = v.upper() if len(v) == 1 and v.isalpha() else v
+        parts.append(f"{v} term" if dim == "term" else
+                     v if dim == "shape" else f"{dim} {v}")
+    if "name" in case:
+        parts.append(case["name"])
+    return ", ".join(parts)
+
+
+# -- a case printed by its name ----------------------------------------------
+
+#: The words of the module's own inputs and claims. What is left of a label
+#: without them, its case words, units, numbers, one-letter symbols and small
+#: words is the NAME of the case the label prints: a stratum printed by its
+#: soil ('phi (<soil>)', '<soil> phi', 'phi, <soil>'), or a structure.
+_NAME_NOISE = re.compile(
+    r"\b(bearing capacity|bearing pressure|bearing|capacity|pressure|"
+    r"allowable|ultimate|net|gross|footing|foundation|dimensions?|"
+    r"factor of safety|safety|factor|width|length|embedment|depth|"
+    r"friction angle|angle of (internal )?friction|friction|angle|cohesion|"
+    r"undrained|shear strength|strength|unit weight|unit wt|weight|density|"
+    r"effective|total|moist|saturated|buoyant|submerged|water table|"
+    r"groundwater|water|phi|gamma|settlement|immediate|elastic|"
+    r"consolidation|primary|cumulative|last row of the table|"
+    r"scenarios?|cases?|strat(um|a)|layers?|"
+    r"q_?all?|q_?ult|q_?a|q_?u)\b")
+
+#: A symbol of a factor or a ratio, never a name.
+_NAME_SYMBOL = re.compile(
+    r"^(n_?[cqg]|n_?gamma|n_?y|[sdi]_?[cqg]|[sdi]_?gamma|f[cqy]s|k[pa0o]|"
+    r"fs|fos|s_?u|c_?u|c'|e_?s|nu|ocr|d_?f|b/l|l/b|b/d_?f)$")
+
+
+def _names_of(lab: str) -> List[str]:
+    """The names a label (without its case words) prints: each part between
+    commas, colons or brackets, kept to its words once the module's own
+    words, units, numbers, one-letter symbols and small words are out."""
+    out = []
+    for part in re.split(r"[,;:()\[\]]", _NAME_NOISE.sub(" ", lab)):
+        words = []
+        for w in re.findall(r"[^\s/]+", part):
+            w = w.strip("-–—=.'\"")
+            if (len(w) < 2 or w in _STOP_WORDS or _UNIT_WORD.match(w)
+                    or _NAME_SYMBOL.match(w)
+                    or re.fullmatch(r"[\d.,+=\-]+", w)):
+                continue
+            words.append(w)
+        if words:
+            out.append(" ".join(words))
+    return out
+
+
+#: Words a label's length is counted without.
+_STOP_WORDS = frozenset(
+    "the of at to in a an for from on and or below above under per by with "
+    "is be".split())
+
+#: A unit printed as a word of a label ('ft', 'ksf', 'kN/m3').
+_UNIT_WORD = re.compile(
+    r"^(k?pa|mpa|[kpt]sf|ksi|psi|ft|feet|foot|m|meters?|metres?|in|inch|"
+    r"inches|mm|cm|deg|degrees?|°|[kp]cf|kn|kips?|k|lbs?|t)"
+    r"(/[a-z0-9^³²]+)*$")
+
+
+def _skip(nq: NamedQuantity, claim: bool = False) -> bool:
+    """A printed setting or a sentence, not a labelled value: printed as
+    words, a yes/no choice, an enumerated item ('a) ...') or a label of more
+    than eight words (its case, the parentheses, units, small words and
+    words with a digit left out: 'P1', 'L=10', '200 ft' are not words).
+    A claim (``claim``) is skipped only when printed as words: a result
+    label naming its structure and size is still the claim."""
+    if nq.value is None:
+        return True
+    if claim:
+        return False
+    raw = _norm(nq.name)
+    if re.search(r"\byes\b.*\bno\b|\by/n\b", raw) or re.match(
+            r"^\(?[a-z0-9]\)\s", raw):
+        return True
+    text = re.sub(r"\([^)]*\)", " ", _lab(nq.name))
+    words = [w for w in re.findall(r"[^\s,;:\[\]]+", text)
+             if w not in _STOP_WORDS and re.search(r"[a-z]", w)
+             and not re.search(r"\d", w) and not _UNIT_WORD.match(w)]
+    return len(words) > 8
 
 
 class _Spec:
@@ -124,7 +296,7 @@ class _Spec:
         self.exclude = [re.compile(p) for p in exclude]
 
     def matches(self, label: str) -> bool:
-        lab = _norm(label)
+        lab = _lab(label)
         return (any(p.search(lab) for p in self.patterns)
                 and not any(p.search(lab) for p in self.exclude))
 
@@ -179,6 +351,8 @@ def _collect(rows: Sequence[NamedQuantity], specs: Sequence[_Spec]
     found: Dict[str, Dict[str, Any]] = {}
     problems: Dict[str, str] = {}
     for nq in rows:
+        if _skip(nq):
+            continue
         spec = next((s for s in specs if s.matches(nq.name)), None)
         if spec is None:
             continue
@@ -225,22 +399,29 @@ _SHAPE_WORDS = (("strip", r"\bstrip\b|\bcontinuous\b|\bwall footing\b"),
 
 def _shape(calc: Calculation, found: Dict[str, Dict[str, Any]]
            ) -> Tuple[Optional[str], str]:
-    """``(shape, how)`` from the printed words, else from L against B; None
-    with the reason when the printout settles neither."""
+    """``(shape, how)`` from the printed words, else from this calculation's
+    (this case's) own labels when its words name several shapes or none:
+    a shape word, else its printed L against B; None with the reason when
+    nothing settles it."""
     words = _all_words(calc)
     named = [s for s, pat in _SHAPE_WORDS if re.search(pat, words)]
     if len(named) == 1:
         return named[0], f"printed: {named[0]}"
+    labels = _norm(" ".join(f"{nq.name} {nq.text}" for nq in
+                            list(calc.inputs) + list(calc.results)))
+    own = [s for s, pat in _SHAPE_WORDS if re.search(pat, labels)]
+    if len(own) == 1:
+        return own[0], f"printed in this case's labels: {own[0]}"
     B = (found.get("width") or found.get("B") or {}).get("value")
     L = (found.get("length") or found.get("L") or {}).get("value")
-    if len(named) > 1:
-        return None, ("footing shape: the printout names several "
-                      f"({', '.join(named)})")
     if B is not None and L is not None:
         if abs(L - B) <= 1e-6 * max(B, 1.0):
             return "square", "from the printed L = B"
         if L > B:
             return "rectangular", "from the printed L > B"
+    if len(named) > 1:
+        return None, ("footing shape: the printout names several "
+                      f"({', '.join(named)})")
     return None, "footing shape (no shape word printed, and no L to set it)"
 
 
@@ -334,46 +515,73 @@ def _basis(result: Dict[str, Any], what: str) -> str:
 
 # -- bearing capacity -------------------------------------------------------
 
+#: A ratio of two printed quantities (B/L, L/B, B/Df, q/Nc, su/sigma'v, a
+#: stress ratio) is never one of them. A unit's slash (kN/m2) is not a ratio.
+_RATIO = [r"\bratio\b",
+          r"(^|[\s(,])(b|l|d_?f|q_?c?|s_?u|c_?u|sigma\S*|width|length|depth)"
+          r"\s*/"]
+
+#: The footing's width and length; a ratio (B/L, L/B, B/Df) is neither.
+_WIDTH = _Spec("width", "length", [r"\bwidth\b", r"^b\b"],
+               [r"effective", r"b'"] + _RATIO)
+_LENGTH = _Spec("length", "length", [r"\blength\b", r"^l\b"],
+                [r"effective", r"l'"] + _RATIO)
+
+#: The total unit weight: gamma' is the effective one, a relative density
+#: no unit weight.
+_UNIT_WEIGHT = _Spec(
+    "unit_weight", "unit_weight",
+    [r"unit w(eigh)?t\b", r"\bdensity\b", r"^gamma\b"],
+    [r"effective", r"buoyant", r"submerged", r"water", r"gamma ?'",
+     r"\bprime\b", r"\bgamma_?(sub|b)\b", r"relative density", r"\bd_?r\b"])
+
+#: The effective (buoyant) unit weight gamma': used only under the OWN-130
+#: setting, never as the total.
+_GAMMA_PRIME = _Spec(
+    "gamma_prime", "unit_weight",
+    [r"effective unit w(eigh)?t\b", r"buoyant", r"submerged unit",
+     r"gamma ?'", r"\bgamma_?(sub|b)\b", r"\bprime\b"], [r"water"])
+
 _BEARING_INPUTS = (
-    _Spec("width", "length", [r"\bwidth\b", r"^b\b"],
-          [r"effective", r"b'"]),
-    _Spec("length", "length", [r"\blength\b", r"^l\b"],
-          [r"effective", r"l'"]),
+    _WIDTH,
+    _LENGTH,
     _Spec("depth", "length",
           [r"embedment", r"\b(footing|foundation) depth\b",
            r"\bdepth of (the )?(footing|foundation)\b", r"\bdf\b",
-           r"\bd_f\b"], [r"water", r"gwt"]),
+           r"\bd_f\b"], [r"water", r"gwt"] + _RATIO),
     _Spec("friction_angle", "angle",
           [r"friction angle", r"angle of (internal )?friction", r"^phi\b",
            r"\bphi'?\b"]),
     # an undrained strength is its own input: run as the cohesion with
     # phi = 0, never together with a drained c' or phi
+    # an unconfined strength (qu = 2 su) is not su
     _Spec("su", "stress",
           [r"undrained (shear )?strength", r"undrained cohesion",
-           r"\bs_?u\b", r"\bc_?u\b"]),
-    _Spec("cohesion", "stress", [r"cohesion", r"^c'?\b"], [r"undrained"]),
-    # the total unit weight: gamma' is the effective one
-    _Spec("unit_weight", "unit_weight", [r"unit weight", r"^gamma\b"],
-          [r"effective", r"buoyant", r"submerged", r"water", r"gamma ?'",
-           r"\bprime\b", r"\bgamma_?(sub|b)\b"]),
+           r"\bs_?u\b", r"\bc_?u\b"], [r"unconfined"] + _RATIO),
+    _Spec("cohesion", "stress", [r"cohesion", r"^c'?\b"],
+          [r"undrained", r"unconfined"] + _RATIO),
+    _UNIT_WEIGHT,
+    _GAMMA_PRIME,
     _Spec("gwt_depth", "length",
-          [r"water table", r"groundwater", r"\bgwt\b", r"\bd_?w\b"]),
+          [r"water table", r"groundwater", r"\bgwt\b", r"\bd_?w\b",
+           r"depth to (ground ?)?water", r"water depth"]),
     _Spec("factor_of_safety", "ratio",
           [r"factor of safety", r"\bf\.?s\.?\b", r"\bfos\b"]),
 )
 
 #: Claimed results, most specific first: the module's result key and the
 #: printed labels that claim it.
+_ALLOWABLE = r"allowable|\bq_?all?\b|\bq_?a\b"
 _BEARING_RESULTS = (
-    ("q_allowable_net_kPa", r"allowable", r"\bnet\b"),
-    ("q_allowable_kPa", r"allowable", None),
-    ("q_ultimate_kPa", r"ultimate", None),
+    ("q_allowable_net_kPa", _ALLOWABLE, r"\bnet\b"),
+    ("q_allowable_kPa", _ALLOWABLE, None),
+    ("q_ultimate_kPa", r"ultimate|\bq_?ult\b", None),
 )
 
 _BEARING_METHODS = ("vesic", "meyerhof", "terzaghi")
 
 #: A printed label naming a depth factor: the report used depth factors.
-_DEPTH_FACTOR_LABEL = re.compile(r"depth factor|\bd_?[cq]\b|\bd_?gamma\b")
+_DEPTH_FACTOR_LABEL = re.compile(r"depth factor|\bd ?_?(c|q|gamma|g)\b")
 
 #: The key of a "net ultimate" claim, which is not compared.
 _NET_ULTIMATE = "net_ultimate"
@@ -391,8 +599,8 @@ _BELOW_NOTE = (
 def _bearing_claims(calc: Calculation):
     out = []
     for nq in calc.results:
-        lab = _norm(nq.name)
-        if nq.value is None or "factor" in lab:
+        lab = _lab(nq.name)
+        if _skip(nq, claim=True) or "factor" in lab:
             continue
         for key, must, also in _BEARING_RESULTS:
             if re.search(must, lab) and (also is None or re.search(also, lab)):
@@ -429,7 +637,78 @@ def _net_ultimate_row(calc: Calculation, index: int, nq: NamedQuantity
                             "module's q_ult is the gross one"))
 
 
-def _recompute_bearing(calc: Calculation, index: int, tolerance: float
+#: A water depth printed below the footing, not below the ground.
+_BELOW_FOOTING = re.compile(r"below (the )?(footing|foundation|base|bottom|"
+                            r"bearing)")
+
+_SUBMERGED_NOTE = (
+    "only gamma' is printed: run as the submerged case, gamma' above and "
+    "below the footing base (water at or above the ground), the setting's "
+    "'submerged' rule (OWN-130); with the water between the ground and the "
+    "base the overburden would be larger")
+
+
+def _gamma_prime(found: Dict[str, Dict[str, Any]],
+                 problems: Dict[str, str], missing: List[str], rule: str,
+                 extra: Dict[str, Any]) -> None:
+    """The OWN-130 rule for a printout that gives gamma' and no total unit
+    weight. ``refuse``: 'water level not printed', the row not run.
+    ``submerged``: gamma' runs as the unit weight with no water table, and
+    the row says so. A printed water depth below the ground makes it a
+    refusal under both: the total unit weight above the water is missing."""
+    gp = found.get("gamma_prime")
+    problems.pop("gamma_prime", None)
+    if gp is None:
+        return
+    if "unit_weight" in found or "unit_weight" in problems:
+        gp["note"] = "not used: the total unit weight is printed"
+        return
+    gwt = found.get("gwt_depth")
+    what = f"'{gp['label']}' {gp['printed']}"
+    if gwt is not None and gwt["value"] > 0:
+        missing.append(
+            f"unit_weight: only the effective unit weight is printed ({what}) "
+            f"with a water depth below the ground ('{gwt['label']}' "
+            f"{gwt['printed']}): the total unit weight above the water is not "
+            f"printed")
+        return
+    if rule == "submerged":
+        found["unit_weight"] = {**gp, "note": _SUBMERGED_NOTE}
+        gp["note"] = "run as the unit weight (the submerged case)"
+        if gwt is not None:
+            gwt["note"] = ("not passed: the submerged case already takes "
+                           "gamma' everywhere")
+        extra["gamma_prime_rule"] = "submerged: " + _SUBMERGED_NOTE
+        return
+    note = (f"water level not printed: only the effective unit weight is "
+            f"printed ({what}) and no total unit weight; where the water "
+            f"stands is not printed (OWN-130; the setting {GAMMA_PRIME_ENV}"
+            f"='submerged' runs it as the submerged case)")
+    missing.append(note)
+    extra["water_level"] = "not printed"
+    extra["gamma_prime_rule"] = "refuse: " + note
+
+
+def _water_below_footing(found: Dict[str, Dict[str, Any]],
+                         missing: List[str]) -> None:
+    """A water depth printed below the footing: Df is added, and said."""
+    gwt = found.get("gwt_depth")
+    if gwt is None or not _BELOW_FOOTING.search(_lab(gwt["label"])):
+        return
+    depth = found.get("depth")
+    if depth is None:
+        found.pop("gwt_depth")
+        missing.append(f"gwt_depth: '{gwt['label']}' is below the footing, "
+                       f"and the footing depth Df is not printed")
+        return
+    gwt["value"] = gwt["value"] + depth["value"]
+    gwt["note"] = (f"printed below the footing: Df ('{depth['label']}' "
+                   f"{depth['printed']}) added, {gwt['value']:g} m below "
+                   f"the ground")
+
+
+def _recompute_bearing(calc: Calculation, index: int, tolerance: float,
+                       gamma_prime: str = "refuse"
                        ) -> List[Dict[str, Any]]:
     claims = _bearing_claims(calc)
     if not claims:
@@ -460,10 +739,16 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float
                 "recomputed together", inputs_used=found,
                 module="bearing_capacity",
                 module_method="bearing_capacity_analysis")] + net_rows
-    missing = [f"{p}: {why}" for p, why in problems.items()]
+    missing = [f"{p}: {why}" for p, why in problems.items()
+               if p != "gamma_prime"]
+    extra: Dict[str, Any] = {}
+    gp_missing: List[str] = []
+    _water_below_footing(found, gp_missing)
+    _gamma_prime(found, problems, gp_missing, gamma_prime, extra)
     for need in ("width", "depth", "unit_weight"):
         if need not in found and need not in problems:
             missing.append(f"{need}: not printed")
+    missing += gp_missing
     if not {"friction_angle", "cohesion", "su"} & (set(found) | set(problems)):
         missing.append("friction_angle or cohesion (c' or su): none printed")
     shape, shape_how = _shape(calc, found)
@@ -475,9 +760,12 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float
         return [_not_row(calc, index, "inputs not printed: "
                          + "; ".join(missing), inputs_missing=missing,
                          inputs_used=found, module="bearing_capacity",
-                         module_method="bearing_capacity_analysis")
+                         module_method="bearing_capacity_analysis", **extra)
                 ] + net_rows
-    params: Dict[str, Any] = {k: v["value"] for k, v in found.items()}
+    params: Dict[str, Any] = {k: v["value"] for k, v in found.items()
+                              if k != "gamma_prime"}
+    if extra.get("gamma_prime_rule", "").startswith("submerged"):
+        params.pop("gwt_depth", None)
     if su is not None:
         params["cohesion"] = params.pop("su")
         su["note"] = "run as the cohesion c with phi = 0 (the undrained case)"
@@ -522,7 +810,7 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float
                                  "method": other, "result": alt})
     # the module's default depth factors are Hansen's; a printout that names
     # none may have used none (GEC-6 Sec. 5.2.3.3), so both run
-    labels = [_norm(n.name) for n in list(calc.inputs) + list(calc.results)]
+    labels = [_lab(n.name) for n in list(calc.inputs) + list(calc.results)]
     depth_alt = (params.get("depth", 0) > 0 and used in ("vesic", "meyerhof")
                  and not any(_DEPTH_FACTOR_LABEL.search(lab)
                              for lab in labels))
@@ -550,7 +838,7 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float
                    method_reference=_basis(result, "bearing capacity method"),
                    inputs_used=found, inputs_missing=[],
                    assumed=result.get("defaults_used") or {},
-                   shape=f"{shape} ({shape_how})")
+                   shape=f"{shape} ({shape_how})", **extra)
         claimed = _si(nq, "stress")[0]
         if claimed is None:
             row.update(quantity=nq.name, status="not_compared",
@@ -592,9 +880,10 @@ _ELASTIC_INPUTS = (
           [r"pressure", r"\bbearing stress\b", r"^q\b", r"^q_?net\b",
            r"load intensity", r"applied stress", r"contact stress"],
           [r"preconsolidation", r"overburden", r"effective", r"initial",
-           r"allowable", r"ultimate", r"increase", r"added", r"pore"]),
-    _Spec("B", "length", [r"\bwidth\b", r"^b\b"], [r"effective", r"b'"]),
-    _Spec("L", "length", [r"\blength\b", r"^l\b"], [r"effective", r"l'"]),
+           r"allowable", r"ultimate", r"increase", r"added", r"pore",
+           r"water", r"^q_?c?\s*/"] + _RATIO),
+    _Spec("B", "length", _WIDTH.patterns, _WIDTH.exclude),
+    _Spec("L", "length", _LENGTH.patterns, _LENGTH.exclude),
     _Spec("Es", "stress",
           [r"modulus", r"^e_?s\b", r"^e\b", r"young"],
           [r"subgrade", r"reaction", r"shear modulus"]),
@@ -623,8 +912,11 @@ _CONSOLIDATION_INPUTS = (
     _Spec("sigma_v0", "stress",
           [r"(initial|existing|in.?situ).*(stress|overburden)",
            r"effective (overburden|vertical) stress", r"overburden",
-           r"^sigma'?_?v ?0\b", r"^sigma'?_?vo\b", r"^p_?0\b", r"^p_?o\b"]),
-    _Spec("thickness", "length", [r"thickness", r"^h\b"]),
+           r"^sigma'?_?v ?0\b", r"^sigma'?_?vo\b", r"^p_?0\b", r"^p_?o\b"],
+          _RATIO),
+    _Spec("thickness", "length",
+          [r"thickness", r"^h\b", r"height of (the )?(soil )?layer",
+           r"layer height"], [r"drain"]),
     _Spec("depth_to_center", "length",
           [r"depth to (the )?(mid|cent)", r"mid.?depth", r"(center|centre) "
            r"(depth|of (the )?layer)"]),
@@ -679,16 +971,30 @@ def _settlement_method(calc: Calculation) -> Tuple[Optional[str], str]:
                      "neither elastic nor consolidation"))
 
 
+#: A claimed settlement: the word, or the symbols rho, Se, delta, delta-h.
+_SETTLEMENT_CLAIM = re.compile(
+    r"settlement|^rho(_[a-z0-9]+)?\b|^s_?e\b|^delta[ _]?h?\b")
+
+
+def _settlement_candidates(calc: Calculation) -> List[NamedQuantity]:
+    """The printed results that claim a settlement: a settlement label and a
+    length unit (a time, a ratio or a pressure named with the word is not
+    one)."""
+    return [nq for nq in calc.results
+            if not _skip(nq, claim=True)
+            and _SETTLEMENT_CLAIM.search(_lab(nq.name))
+            and _si(nq, "length")[0] is not None]
+
+
 def _settlement_claim(calc: Calculation, method: str):
     """``(the claimed settlement, None)`` or ``(None, why)``."""
-    cands = [nq for nq in calc.results
-             if nq.value is not None and "settlement" in _norm(nq.name)]
+    cands = _settlement_candidates(calc)
     if not cands:
         return None, "no settlement among the printed results"
     if len(cands) > 1:
         pat = (r"immediate|elastic" if method == "elastic"
                else r"consolidation|primary")
-        named = [nq for nq in cands if re.search(pat, _norm(nq.name))]
+        named = [nq for nq in cands if re.search(pat, _lab(nq.name))]
         if len(named) == 1:
             return named[0], ""
         return None, ("more than one settlement printed ("
@@ -736,7 +1042,8 @@ def _stress_history(calc: Calculation, found: Dict[str, Dict[str, Any]],
                        "(normally consolidated would be a guess)")
 
 
-def _recompute_settlement(calc: Calculation, index: int, tolerance: float
+def _recompute_settlement(calc: Calculation, index: int, tolerance: float,
+                          gamma_prime: str = "refuse"
                           ) -> List[Dict[str, Any]]:
     method, how = _settlement_method(calc)
     if method is None:
@@ -750,7 +1057,7 @@ def _recompute_settlement(calc: Calculation, index: int, tolerance: float
     if method == "elastic":
         module_method = "elastic_settlement"
         other = [n.name for n in calc.inputs
-                 if _OTHER_FACTOR.search(_norm(n.name))
+                 if not _skip(n) and _OTHER_FACTOR.search(_lab(n.name))
                  and not _ELASTIC_INPUTS[-1].matches(n.name)]
         if other:
             return [_not_row(
@@ -800,8 +1107,8 @@ def _recompute_settlement(calc: Calculation, index: int, tolerance: float
         found, problems = _collect(calc.inputs, _CONSOLIDATION_INPUTS)
         missing = [f"{p}: {w}" for p, w in problems.items()]
         strain = [n.name for n in calc.inputs
-                  if re.search(r"\bratio\b", _norm(n.name))
-                  and re.search(r"compression|\bcr\b|\brr\b", _norm(n.name))]
+                  if re.search(r"\bratio\b", _lab(n.name))
+                  and re.search(r"compression|\bcr\b|\brr\b", _lab(n.name))]
         for p in _CONSOLIDATION_REQUIRED:
             if p not in found and p not in problems:
                 missing.append(f"{p}: not printed" + (
@@ -858,11 +1165,90 @@ def _recompute_settlement(calc: Calculation, index: int, tolerance: float
     return [row]
 
 
-_RECIPES: Dict[str, Callable[[Calculation, int, float],
-                             List[Dict[str, Any]]]] = {
+_RECIPES: Dict[str, Callable[..., List[Dict[str, Any]]]] = {
     "shallow_foundation_bearing": _recompute_bearing,
     "settlement": _recompute_settlement,
 }
+
+#: Whether a calculation (or one case of it) prints a claim the recipe
+#: compares: a case with none is not a row of its own.
+_HAS_CLAIM: Dict[str, Callable[[Calculation], bool]] = {
+    "shallow_foundation_bearing": lambda c: bool(_bearing_claims(c)),
+    "settlement": lambda c: bool(_settlement_candidates(c)),
+}
+
+
+def _cases(calc: Calculation) -> List[Tuple[Dict[str, str], Calculation]]:
+    """The calculation split by the case its labels print, or ``[]`` when
+    it is one case.
+
+    A case is each distinct combination (scenario, case, stratum, short or
+    long term, shape) the printed RESULTS carry. Each case gets the results
+    that carry exactly its combination, and every input whose own case does
+    not contradict it: an input with no case word is shared, 'phi, stratum
+    2' goes to every stratum-2 case, 'phi, stratum 1' to none of them.
+
+    An input naming a dimension that the cases with a claim use reaches only
+    the cases naming it with the same value: with claims for 'scenario 1'
+    and 'scenario 1, stratum 2', 'phi, stratum 2' never reaches the
+    'scenario 1' case, which names no stratum, so that case is not run on
+    another stratum's input. An input naming a dimension no claim uses
+    stays in every case, so two such values show as printed twice, never as
+    a choice between them.
+
+    A case is also printed by its NAME (:func:`_names_of`): a stratum by its
+    soil, in any word order ('phi (<soil>)', '<soil> phi', 'ultimate
+    bearing capacity, scenario 1, <soil>'). A name counts only when a
+    claim's label and an input's label both print it, and it splits like
+    the dimensions above (dimension ``name``)."""
+    claim = _HAS_CLAIM[calc.kind]
+
+    def read(rows):
+        out = []
+        for n in rows:
+            case, lab = _case_of(n.name)
+            out.append((dict(case), _names_of(lab), n))
+        return out
+
+    res_n, inp_n = read(calc.results), read(calc.inputs)
+    claimed = {x for _c, names, n in res_n
+               if claim(calc.model_copy(update={"results": [n]}))
+               for x in names}
+    shared = claimed & {x for _c, names, _n in inp_n for x in names}
+
+    def named(case: Dict[str, str], names: List[str]) -> Dict[str, str]:
+        mine = sorted(set(names) & shared)
+        if mine:
+            case["name"] = " / ".join(mine)
+        return case
+
+    res = [(named(c, names), n) for c, names, n in res_n]
+    inp = [(named(c, names), n) for c, names, n in inp_n]
+    combos: List[Dict[str, str]] = []
+    for case, _n in res:
+        if case not in combos:
+            combos.append(case)
+    if not combos or combos == [{}]:
+        return []
+    subs = [(combo, [n for case, n in res if case == combo])
+            for combo in combos]
+    in_play = {d for combo, results in subs
+               if claim(calc.model_copy(update={"results": results}))
+               for d in combo}
+
+    def fits(case: Dict[str, str], combo: Dict[str, str]) -> bool:
+        for d, v in case.items():
+            if d in combo:
+                if combo[d] != v:
+                    return False
+            elif d in in_play:
+                return False
+        return True
+
+    return [(combo, calc.model_copy(update={
+        "inputs": [n for case, n in inp if fits(case, combo)],
+        "results": results}))
+        for combo, results in subs]
 
 
 # ---------------------------------------------------------------------------
@@ -870,9 +1256,16 @@ _RECIPES: Dict[str, Callable[[Calculation, int, float],
 # ---------------------------------------------------------------------------
 
 def recompute_calculation(calc: Any, index: int = 0,
-                          tolerance: float = TOLERANCE
+                          tolerance: float = TOLERANCE,
+                          gamma_prime: Optional[str] = None
                           ) -> List[Dict[str, Any]]:
-    """The rows for one calculation (a :class:`Calculation` or its dict)."""
+    """The rows for one calculation (a :class:`Calculation` or its dict).
+
+    A calculation whose labels print several cases is recomputed case by
+    case, each row naming its ``case``. ``gamma_prime``: the OWN-130 rule
+    for a printout with only gamma' (``refuse`` or ``submerged``); None
+    reads :data:`GAMMA_PRIME_ENV`, default ``refuse``."""
+    rule = _gamma_prime_rule(gamma_prime)
     if not isinstance(calc, Calculation):
         calc = Calculation.model_validate(calc)
     recipe = _RECIPES.get(calc.kind)
@@ -880,27 +1273,42 @@ def recompute_calculation(calc: Any, index: int = 0,
         return [_not_row(calc, index, NOT_RECOMPUTED.get(
             calc.kind, f"no recompute for kind {calc.kind!r}"))]
     try:
-        return recipe(calc, index, tolerance)
+        cases = [(c, sub) for c, sub in _cases(calc)
+                 if _HAS_CLAIM[calc.kind](sub)]
+        if not cases:
+            return recipe(calc, index, tolerance, gamma_prime=rule)
+        rows: List[Dict[str, Any]] = []
+        for case, sub in cases:
+            name = _case_name(case)
+            for row in recipe(sub, index, tolerance, gamma_prime=rule):
+                if name:
+                    row["case"] = name
+                rows.append(row)
+        return rows
     except Exception as exc:  # noqa: BLE001 - one bad calc never ends the table
         return [_not_row(calc, index, f"the recompute failed: "
                          f"{type(exc).__name__}: {exc}")]
 
 
-def recompute_record(record: Any, tolerance: float = TOLERANCE
+def recompute_record(record: Any, tolerance: float = TOLERANCE,
+                     gamma_prime: Optional[str] = None
                      ) -> Dict[str, Any]:
     """The claimed-against-recomputed table for one report.
 
     ``record``: a :class:`~report_ingest.model.ReportRecord`, its dict, or
     the path of ``report.record.json`` or the folder report ingest wrote it
-    into. Returns ``{"report_id", "tolerance", "tolerance_basis", "rows",
-    "counts"}``: one row per claimed result (or one per calculation that was
-    not recomputed).
+    into. Returns ``{"report_id", "tolerance", "tolerance_basis",
+    "gamma_prime_rule", "rows", "counts"}``: one row per claimed result, per
+    case where the printout prints several (or one per calculation or case
+    that was not recomputed). ``gamma_prime``: as in
+    :func:`recompute_calculation`.
     """
     from report_ingest.checklist import load_record
+    rule = _gamma_prime_rule(gamma_prime)
     rec = load_record(record)
     rows: List[Dict[str, Any]] = []
     for i, calc in enumerate(rec.calculations):
-        rows += recompute_calculation(calc, i, tolerance)
+        rows += recompute_calculation(calc, i, tolerance, gamma_prime=rule)
     counts: Dict[str, int] = {"calculations": len(rec.calculations),
                               "rows": len(rows)}
     for row in rows:
@@ -908,7 +1316,8 @@ def recompute_record(record: Any, tolerance: float = TOLERANCE
         if row.get("flag"):
             counts[row["flag"]] = counts.get(row["flag"], 0) + 1
     return {"report_id": rec.document.report_id, "tolerance": tolerance,
-            "tolerance_basis": TOLERANCE_BASIS, "rows": rows,
+            "tolerance_basis": TOLERANCE_BASIS, "gamma_prime_rule": rule,
+            "rows": rows,
             "counts": counts}
 
 
@@ -936,8 +1345,11 @@ def table_markdown(table: Dict[str, Any]) -> str:
         if r.get("assumed"):
             method = f"{method}; assumed: {', '.join(r['assumed'])}".strip(
                 "; ")
+        quantity = r.get("quantity", "")
+        if r.get("case"):
+            quantity = f"{quantity} [{r['case']}]".strip()
         lines.append("| " + " | ".join(str(x).replace("|", "/") for x in (
-            r["calc_index"] + 1, r["kind"], r.get("quantity", ""), claimed,
+            r["calc_index"] + 1, r["kind"], quantity, claimed,
             rec.strip(), "" if diff is None else f"{diff:+.1f}", result,
             method, ", ".join(str(p) for p in r.get("pages") or []))) + " |")
     return "\n".join(lines)
