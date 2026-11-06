@@ -1739,13 +1739,19 @@ def _wall_row(calc: Calculation, index: int, key: str, nq: NamedQuantity,
             p["beta"] = alpha - 90
         return p
 
-    senses = _batter_senses(batter) if batter is not None else [(None, "")]
-    takes_batter = method in ("coulomb", "log_spiral", "mononobe_okabe")
+    # the printed batter is the back face's: it acts on Ka and KAE only (a
+    # passive coefficient acts on the front of the wall, K0 on a vertical
+    # back); Ka by Rankine runs it only in its Coulomb options
+    active_back = batter is not None and key in ("Ka", "KAE")
+    senses = (_batter_senses(batter) if active_back else [(None, "")])
+    takes_batter = active_back and method in ("coulomb", "mononobe_okabe")
     if batter is not None and not takes_batter:
         batter.setdefault("note", (
-            "not used: " + ("Rankine's coefficient acts on a vertical plane"
-                            if method == "rankine" else
-                            "the at-rest K0 is for a vertical wall")))
+            "not used: " + (
+                "a passive coefficient acts on the front of the wall, and the "
+                "printed batter is the back face's" if passive else
+                "the at-rest K0 is for a vertical wall" if key == "K0" else
+                "Rankine's coefficient acts on a vertical plane")))
     if seismic:
         module, mmethod = "seismic_geotech", "seismic_earth_pressure"
         default = mo(senses[0][0])

@@ -189,6 +189,32 @@ def test_coulomb_with_a_batter_runs_both_senses():
     assert any("alpha 100" in a["option"] for a in row["alternatives"])
 
 
+# Review fix F4: the back-face batter acts on Ka and KAE only; Kp and KPE
+# act on the front of the wall and run with a vertical face
+def test_the_back_face_batter_is_not_passed_to_kp_or_kpe():
+    batter = nq("Wall batter (back face)", 10, "deg")
+    kp = K(phi_deg=32, theory="coulomb", state="passive", delta_deg=10)
+    row = one(wall([nq("Kp", round(kp, 2))],
+                   [PHI, nq("Wall friction", 10, "deg"), batter],
+                   method="Coulomb"))
+    assert row["flag"] == "agrees"
+    assert row["recomputed_si"] == pytest.approx(kp, abs=1e-4)
+    assert "alpha_deg" not in row["params"]
+    assert not any("alpha" in a["option"] for a in row.get("alternatives", []))
+    assert "front of the wall" in row["inputs_used"]["batter"]["note"]
+    kpe = MO(phi=32, delta=10, kh=0.2, include_passive=True,
+             delta_passive=10)["KPE"]
+    row = one(wall([nq("KPE", round(kpe, 2))],
+                   [PHI, nq("Wall friction", 10, "deg"), nq("kh", 0.2),
+                    batter], method="Mononobe-Okabe"))
+    assert row["flag"] == "agrees" and "beta" not in row["params"]
+    # the active coefficient still takes the batter, both senses
+    kae = one(wall([nq("KAE", 0.5)],
+                   [PHI, nq("Wall friction", 10, "deg"), nq("kh", 0.2),
+                    batter], method="Mononobe-Okabe"))
+    assert kae["params"]["beta"] == -10
+
+
 def test_coulomb_without_a_wall_friction_is_refused():
     row = one(wall([nq("Ka", 0.28)], [PHI], method="Coulomb"))
     assert row["status"] == "not_recomputed"
