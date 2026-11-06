@@ -9,8 +9,9 @@ RI-208 is under review there. Line numbers are at this branch's head.
 ## 1. Method names read with spelling tolerance
 
 `_read_methods` (`report_ingest/recompute.py:463`) reads a printed method
-word that is one letter off exactly one known method (two letters for a
-name of seven letters or more), with the same first letter, as that method.
+word that is one letter off exactly one known method (two letters only for
+a name of eight letters or more, with its last letter and no English
+ending: review fix F1, below), with the same first letter, as that method.
 A swap of two letters counts as one (`_edits`, Damerau-Levenshtein).
 
 * Known names (`_KNOWN_METHODS`, line 436): Meyerhof, Terzaghi, Vesic,
@@ -116,7 +117,8 @@ would be a guess"); M-O without kh (above); the module refusing a case
 
 **What is not passed**: a backfill slope for a passive coefficient (the
 backfill is behind the wall; the passive side's slope is the 'front' or
-'toe' slope); a batter for Rankine (a vertical plane) or K0. Each is said
+'toe' slope); a batter for Rankine (a vertical plane) or K0, or for Kp and
+KPE (the back face's batter; review fix F4). Each is said
 on the input. Defaults the module took (level backfill, vertical wall,
 kv 0, OCR 1) are listed under `assumed`, from the module's own
 `defaults_used`.
@@ -213,10 +215,119 @@ Nothing calls a model. The measurement above is local and offline.
 * A sloping-backfill Rankine Kp and a K0 behind ground falling away are
   refused by the module (its own reasons), not run another way.
 * AASHTO's kh = 0.5 kh0 with kh0 = Fpga x PGA is read only where the
-  printout states kh against As or PGA directly; As is not computed from
-  Fpga and PGA.
+  printout states kh against As or PGA directly; a rule printed with Fpga
+  in it is refused (review fix F2); As is not computed from Fpga and PGA.
 * A batter label stating its sense in other words than toward / away from
   the backfill or "soil overhang" runs both senses.
+
+## Review fixes
+
+An independent review (merge after fixes) asked for four fixes. Each is a
+commit with its tests in `test_recompute_slice3.py`, made-up values. Line
+numbers above are at de4b88c, before them. N1 is left as it is; F5
+(Meyerhof's depth term beyond D/B = 1) is BACKLOG GM-309.
+
+* **F1, method spelling** (f6e4d98). One letter off for a name of seven
+  letters or fewer (Rankine, Coulomb, Kerisel, Hansen, Caquot, Okabe,
+  Vesic). Two letters only for Meyerhof, Terzaghi, Mononobe and
+  Schmertmann, and then only with the name's own last letter and no
+  English ending (-ing, -ole, -one, -oir). `_NOT_METHODS` gains Rankin,
+  Vesica and Hanse. Before, 'ranging', 'raking', 'ravine', 'Racine',
+  'monopole', 'monotone', 'couloir' and 'Kessel' were read as a method,
+  and a wall printout naming none ran Rankine. 'Coloumb' (two letters off a
+  seven-letter name) is no longer read; 'Coulumb' and 'Colomb' are.
+  Tests: 20 ordinary words, names and places never read; 15 misspellings
+  still read; a wall summary with such words is still refused for naming
+  no method.
+* **F2, the kh rule** (df78b5e). Read only as the printout states it:
+  'kh = <factor> x PGA', 'kh = PGA/2', 'kh = PGA', 'kh taken as one-half
+  of the PGA'. A kh value with the PGA beside it ('kh = 0.12 (PGA 0.24
+  g)', 'kh = 0.12, PGA 0.24') is no rule; before, it was read as 0.12 x
+  PGA. 'as' followed by a word is not As ('kh = 0.15 as recommended' was
+  read as 0.15 x As). A rule carrying the site factor ('kh = 0.5 PGA x
+  Fpga', 'kh = 0.5(PGA)(Fpga)') is refused with the reason; before, the
+  factor was dropped. Tests: six forms read, four not, three refused, and
+  a wall row with a kh value beside the PGA refused.
+* **F3, labels** (ad6ea9f). The increment sign U+2206 maps as the Greek
+  capital delta, so '∆ KAE' is a `not_compared` increment, not a KAE
+  claim. 'Eq.' or 'Eq 3' (an equation) no longer makes a static Ka
+  seismic; 'EQ' alone still does. Tests for both.
+* **F4, the batter** (11f51e4). A printed batter is the back face's: it
+  now goes to Ka and KAE only. Kp and KPE run with a vertical face, and
+  the batter input says "not used: a passive coefficient acts on the front
+  of the wall". Before, Coulomb's alpha, the log spiral's theta and M-O's
+  beta took it, and the vertical face was not run. Test: Coulomb Kp and
+  M-O KPE with a back-face batter agree with the vertical-face values; KAE
+  still takes it.
+
+**Tests after the fixes**: `test_recompute_slice3.py` has 85 tests (32 +
+53). `pytest -q report_ingest/tests/test_recompute.py
+report_ingest/tests/test_recompute_slice2.py
+report_ingest/tests/test_recompute_slice3.py
+webapp/tests/test_page_fingerprints.py webapp/tests/test_public_text.py`:
+exit 0, 196 passed (143 before the fixes).
+
+**The local measurement after the fixes**: the saved private records,
+offline, master (4b67aaa, its code unchanged since 1be5341) vs this
+branch, with the gamma' rule at its default and at `submerged`. The wall
+rows are the same under both rules.
+
+Retaining-wall coefficients:
+
+| measure | master | branch before the fixes | branch after |
+|---|---|---|---|
+| readings / unique calcs / reports | 93 / 56 / 7 | 93 / 56 / 7 | 93 / 56 / 7 |
+| rows | 93 | 268 | 268 |
+| readings recomputed (unique calcs, reports) | 0 | 38 (26, 7) | 38 (26, 7) |
+| claim rows (unique) | 0 | 107 (75) | 107 (75) |
+| Ka / Kp / K0 / KAE / KPE | - | 40 / 29 / 16 / 16 / 6 | 40 / 29 / 16 / 16 / 6 |
+| agrees (unique) | - | 86 (56) | 86 (56) |
+| within options | - | 0 | 0 |
+| differs (unique) | - | 21 (19) | 21 (19) |
+| median difference | - | 0.09 % | 0.09 % |
+| not_compared | 0 | 3 | 4 |
+| not_recomputed | 93 | 158 | 157 |
+
+One saved row moved, F3's: a seismic increment printed with U+2206, before
+refused as a KAE without phi or a kh rule, now a `not_compared` increment.
+F1, F2 and F4 move no saved row. Of the 21 rows that differ, 16 trace to
+the reading (13 a phi read as 0, 3 a slope taken from a table row), 4 are
+KPE values printed above the static Kp (the module takes the inertia away
+from the wall, the worst case), and 1 is a K0 taken from a reference table.
+
+Why the 157 rows are refused (rows / unique calcs; a row can have more
+than one reason):
+
+| reason | rows / unique |
+|---|---|
+| phi not printed | 45 / 30 (46 / 30 before) |
+| phi printed more than once | 50 / 8 |
+| phi in a unit that is not an angle | 13 / 1 |
+| kh printed more than once | 39 / 7 |
+| a PGA printed but no kh rule | 23 / 17 (24 / 18 before) |
+| kh not printed, nor a PGA | 4 / 1 |
+| no method and no wall friction | 10 / 3 |
+| wall friction not printed (M-O or Coulomb) | 4 / 1 |
+| wall friction printed more than once | 2 / 1 |
+| the module refused | 4 / 1 |
+| no coefficient among the results | 13 / 13 |
+
+Bearing (the same before and after the fixes):
+
+| measure | master default | branch default | master submerged | branch submerged |
+|---|---|---|---|---|
+| claim rows (unique) | 1 (1) | 1 (1) | 183 (173) | 183 (173) |
+| agrees | 0 | 0 | 167 | 173 |
+| within options | 0 | 0 | 14 | 0 |
+| below | 1 | 1 | 1 | 5 |
+| differs | 0 | 0 | 1 | 5 |
+| median difference | 87.5 % | 87.5 % | 4.01 % | 0.05 % |
+
+Under `submerged`, 182 rows move, all from 'myerhof' read as Meyerhof
+(still read after F1: one letter off an eight-letter name): 8 go from
+within options to agrees; 6 from within options to differs or below (the
+phi reading error the options had hidden); 2 from agrees to differs
+(Meyerhof's depth term beyond D/B = 1, GM-309). Settlement: no row moves.
 
 ## Release note
 
@@ -229,9 +340,10 @@ printout prints several walls or strata), with kh as printed or from a
 printed PGA only by a rule the printout states. A wall batter or kv whose
 sense is not printed runs both ways, and a claim matching the other is
 'within options'. A printout with no method and no wall friction, no phi,
-or a PGA without a kh rule is refused with the reason. Method names one
-or two letters off a known method (Mayerhof, Terzhagi, Coloumb) are read
-as that method, and the row says so. Rows that change: `retaining_wall`
+or a PGA without a kh rule (or with the site factor Fpga in it) is refused
+with the reason. Method names one letter off a known method, or two off a
+long one (Mayerhof, Terzhagi, Coulumb), are read as that method, and the
+row says so; ordinary words, names and places never are. Rows that change: `retaining_wall`
 calculations that claim a coefficient were one `not_recomputed` row and
 are now one row per coefficient; bearing calculations with a misspelled
 method name now run the printed method instead of the module's default
