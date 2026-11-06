@@ -77,6 +77,9 @@ MODEL_FIRST_ASKS = {
     # narrative is told its bound documents by kind and given today's
     # whole-report search, both after the instruction.
     "mf-9": "d529da015c69b0f808e0bad5675b5590d43ae553d046fc3d7a6444dab59df714",
+    # mf-10 (RI-208): the calc instruction asks for every row of a printed
+    # table, each value labelled by its column heading and its row.
+    "mf-10": "10f863c6f26241492876a1e217a2246459e1c9f341516f7e2944572898beadde",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,
@@ -219,11 +222,14 @@ def test_each_stage_has_its_answer_schema():
 # ---------------------------------------------------------------------------
 
 def test_the_model_first_instructions_add_to_the_plain_ones():
-    """Calc is asked as the plain baseline was; lab adds one sentence and
-    the narrative today's conventions (RI-175); logs name what the log
-    schema adds."""
+    """Calc adds one sentence (RI-208: every row of a printed table); lab
+    adds one sentence and the narrative today's conventions (RI-175); logs
+    name what the log schema adds."""
     assert set(mf.INSTRUCTIONS) == set(mf.PLAIN_INSTRUCTIONS)
-    assert mf.INSTRUCTIONS["calc"] == mf.PLAIN_INSTRUCTIONS["calc"]
+    calc = mf.INSTRUCTIONS["calc"]
+    assert calc.count(mf.CALC_TABLE_ROWS) == 1
+    assert calc.replace(f"{mf.CALC_TABLE_ROWS} ", "") == \
+        mf.PLAIN_INSTRUCTIONS["calc"]
     lab = mf.INSTRUCTIONS["lab"]
     assert lab.count(mf.LAB_TWO_TESTS) == 1
     assert lab.replace(f" {mf.LAB_TWO_TESTS}", "") == \

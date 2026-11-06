@@ -310,7 +310,10 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: the narrative gets today's whole-report search for the seven
 #: appendix-answered questions; the recommendedFoundations convention
 #: loses its "(DRAFT)" mark, confirmed by the owner.
-READ_PROMPT_VERSION = "mf-9"
+#: mf-10 (RI-208): the calc instruction asks for every row of a printed
+#: table, each value labelled by its column and its row
+#: (``CALC_TABLE_ROWS``).
+READ_PROMPT_VERSION = "mf-10"
 
 
 def prompt_version(stage: str) -> str:
@@ -506,7 +509,8 @@ PLAIN_INSTRUCTIONS: Dict[str, str] = {
 #: project name and number, the client, any other header field, recovery),
 #: a test pit's size with the bucket as its width (RI-198), and the pages of
 #: another exploration's log listed apart (RI-197).
-#: Calc is asked as the plain baseline was, and lab too but for one
+#: Calc is asked as the plain baseline was but for one sentence (RI-208:
+#: every row of a printed table, ``CALC_TABLE_ROWS``), and lab too but for one
 #: sentence (RI-175): two tests on one sample are two entries, Atterberg
 #: limits on a grading sheet among them, as today's lab reader asks. The
 #: narrative carries today's house conventions as well
@@ -565,8 +569,24 @@ NARRATIVE_OTHER_CLIENT = (
     "postName null and answer propertyType \"other\". Never infer a post "
     "from a city, a country or a project name.")
 
+#: The sentence the model-first calc instruction adds to the plain one
+#: (RI-208): a calculation's printed table -- a soil profile, a
+#: layer-by-layer settlement, a load schedule -- reached the saved records
+#: as its last row only, so the reading asks for every row, each named by
+#: its column and its row, which keeps the rows apart in the record and in
+#: the merge (``calc_reader._same_label``).
+CALC_TABLE_ROWS = (
+    "Where a table prints values for several rows (layers, depths, cases, "
+    "soils), give every row's values, not only the last row or the total: "
+    "one value per row and column, labelled with the column heading as "
+    "printed, a comma and the row's own name as printed ('Unit weight "
+    "(pcf), Layer 2', 'Settlement (in), Depth 10 ft').")
+
 INSTRUCTIONS: Dict[str, str] = {
     **PLAIN_INSTRUCTIONS,
+    "calc": PLAIN_INSTRUCTIONS["calc"].replace(
+        "each with its label and unit as printed. ",
+        f"each with its label and unit as printed. {CALC_TABLE_ROWS} "),
     "lab": PLAIN_INSTRUCTIONS["lab"].replace(
         " Give depths in the sheet's own unit",
         f" {LAB_TWO_TESTS} Give depths in the sheet's own unit"),

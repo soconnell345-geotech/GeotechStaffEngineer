@@ -54,7 +54,7 @@ __all__ = [
     "METRICS", "MODEL_ONLY", "NAME_RATIO", "PROGRAM_RATIO", "VALUE_TOL",
     "Score", "CalcScore", "Expected", "expectations_for", "pages_of",
     "report_of", "score_floor", "score_record", "score_one_calc",
-    "same_value", "same_name", "same_text", "rescore_saved",
+    "same_value", "same_name", "same_text", "other_rows", "rescore_saved",
 ]
 
 #: Two printed labels are the same label at this partial ratio. The reader's
@@ -259,6 +259,63 @@ def same_name(left: str, right: str, ratio: float = NAME_RATIO) -> bool:
             or _words_within(a_words, b_words))
 
 
+_UNIT_SPAN = re.compile(r"\([^)]*\)|\[[^\]]*\]|\^\s*-?\d+")
+
+
+def _row_numbers(text: Any) -> set:
+    """The numbers a label names its row or case by: its digit words, with
+    what sits in brackets (a unit, "(kN/m^3)") and an exponent left out."""
+    return {w for w in _name_words(_UNIT_SPAN.sub(" ", str(text or "")))
+            if w.isdigit()}
+
+
+#: The suffix the floor put on a table's last row before RI-208
+#: (``calc_reader.LAST_ROW_SUFFIX``), and the shorter form a hand wrote.
+_LAST_ROW = re.compile(r",\s*last row(?: of the table)?\s*$", re.IGNORECASE)
+
+
+def _without_last_row(text: Any) -> str:
+    return _LAST_ROW.sub("", str(text or ""))
+
+
+def other_rows(left: str, right: str) -> bool:
+    """Do two labels name DIFFERENT rows of one printed table (RI-208)?
+
+    A calculation's table now reaches the record one value per row and
+    column, each label the column's heading and the row's qualifier after
+    a comma: "Unit weight (pcf), Layer 2", "Phi (deg), Silty sand". The
+    partial ratio of :func:`same_name` passes "..., Layer 2" against
+    "..., Layer 3" and "..., Sand" against "..., Clay", so two rows that
+    happen to print one number would answer for each other. They are other
+    rows when:
+
+    * both labels number a row or case and neither's numbers are all among
+      the other's (units and exponents in brackets aside: "(kN/m^3)" names
+      no row; "at 30 ft, Scenario 1" is still scenario 1); or
+    * both carry a qualifier after their last comma and neither qualifier's
+      words are all among the other label's words -- "Clay" is within
+      "Allowable (kPa), Clay, Case 2" whatever the order, "Sand" is not
+      within "Unit weight, Clay".
+
+    A label with no qualifier ("Unit weight") is no row's in particular and
+    is never another row's; nor is the floor's old ", last row of the
+    table" a qualifier, which a saved record still carries.
+    """
+    a_text, b_text = (_without_last_row(left), _without_last_row(right))
+    a_numbers, b_numbers = _row_numbers(a_text), _row_numbers(b_text)
+    if a_numbers and b_numbers and not (a_numbers <= b_numbers
+                                        or b_numbers <= a_numbers):
+        return True
+    if "," not in a_text or "," not in b_text:
+        return False
+    a_tail = set(_name_words(a_text.rsplit(",", 1)[1]))
+    b_tail = set(_name_words(b_text.rsplit(",", 1)[1]))
+    if not a_tail or not b_tail:
+        return False
+    return not (a_tail <= set(_name_words(b_text))
+                or b_tail <= set(_name_words(a_text)))
+
+
 def _precision(value: float) -> float:
     text = repr(float(value))
     if "e" in text or "E" in text:
@@ -329,8 +386,8 @@ def _find(expect: Expected, rows: Sequence[Any]) -> Optional[Any]:
     """The row of a record that answers one expectation, or None."""
     names = [expect.name] + list(expect.alternates)
     for row in rows:
-        if any(same_name(name, row.name) for name in names) \
-                and same_value(expect, row):
+        if any(same_name(name, row.name) and not other_rows(name, row.name)
+               for name in names) and same_value(expect, row):
             return row
     return None
 
