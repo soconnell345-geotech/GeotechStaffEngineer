@@ -2988,5 +2988,33 @@
       "BACKLOG.md OWN-127",
       "module_work/ri102/CHECK.md"
     ]
+  },
+  "OWN-129": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Release planlens 0.15.0, so the app's document tools can become a thin binding to it (PL-29 (b))?",
+    "why": "PL-29 (b) moves about 5,300 lines of the app's document-tool code into planlens, where it already lives since PL-29 (a). It is built, reviewed (no change in what users or the model see; conversations kept apart) and fixed, and needs planlens 0.15 installed to merge.",
+    "background": "planlens main holds PL-29 (a) and PL-11 since 0.14.0. The review found 0.15.0 safe ahead of the app: today's 5.34.0 does not use the moved code. The one change a 5.34.0 user sees is PL-11 (a printed 'Label (unit): value' read as a quantity), which removes a wrong value from report ingest's calc reader.",
+    "options": [
+      {
+        "label": "Yes, release planlens 0.15.0",
+        "effect": "The lead tags planlens v0.15.0 (published by its tag workflow), raises the app's pin to planlens>=0.15 and merges PL-29 (b). The next app release ships with it."
+      },
+      {
+        "label": "Not yet",
+        "effect": "PL-29 (b) waits on its branch; the app split's step 11 (c) waits with it."
+      }
+    ],
+    "recommendation": "Yes: it is a library release with no change for today's app, and it unblocks the split.",
+    "if_no_answer": "PL-29 (b) stays on its branch.",
+    "message_to_send": null,
+    "unblocks": [
+      "PL-29 (b)",
+      "INF-32 step 11 (c)"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-129, PL-29",
+      "module_work/pl29/CHECK_B.md (branch claude/pl-29b-binding)"
+    ]
   }
 }
