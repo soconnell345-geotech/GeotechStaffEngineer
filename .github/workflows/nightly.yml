@@ -56,7 +56,9 @@ jobs:
           pip install matplotlib plotly jinja2 || true
           # v5.0 deepagents stack ([deep] extra) so funhouse_agent/deep tests run in CI
           pip install deepagents langchain langgraph langchain-anthropic "typing_extensions>=4.13" || true
-          pip install "pystrata>=0.5,<0.6" "pyrvt<0.9" || true
+          # pystrata by Python version (INF-68): 0.5 with pyrvt < 0.9 below
+          # 3.13, 0.6 (which needs 3.13) from 3.13; mirrors pyproject.toml.
+          pip install "pystrata>=0.5,<0.6; python_version < '3.13'" "pystrata>=0.6,<0.7; python_version >= '3.13'" "pyrvt<0.9; python_version < '3.13'" || true
           pip install eqsig || true
           pip install liquepy || true
           pip install pygef || true
