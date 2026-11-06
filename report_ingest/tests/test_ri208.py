@@ -18,7 +18,7 @@ from report_ingest.calc_reader import (
     CalcReading, ReadProv, ReadValue, _fold_readings, _row_names,
     floor_from_pages, merge_calculation,
 )
-from report_ingest.calc_scoring import other_rows, score_record
+from report_ingest.calc_scoring import other_rows, same_name, score_record
 from report_ingest.model import Calculation, NamedQuantity, Provenance, Quantity
 
 pymupdf = pytest.importorskip("pymupdf", reason="the fixture is drawn with PyMuPDF")
@@ -197,3 +197,89 @@ def test_the_model_first_calc_instruction_asks_for_every_row():
     assert mf.CALC_TABLE_ROWS in said
     assert mf.CALC_TABLE_ROWS not in mf.PLAIN_INSTRUCTIONS["calc"]
     assert mf.READ_PROMPT_VERSION == "mf-10"
+
+
+# ---------------------------------------------------------------------------
+# review fixes
+# ---------------------------------------------------------------------------
+
+def _credited(truth_name, record_name, value=1.25, unit=""):
+    truth = {"id": "SYN-calc-2", "kind": "other",
+             "inputs": [{"name": truth_name, "value": value, "unit": unit}]}
+    score = score_record(truth, _calc([(record_name, value, unit)]))
+    return score.scores["inputs"].found == 1
+
+
+@pytest.mark.parametrize("truth_name, record_name", [
+    # a comma inside brackets, or between digits, splits nothing
+    ("Fixed head, 1,200-mm pile", "Fixed head (1,200-mm pile, 2% steel)"),
+    ("Kh, active and passive", "Kh (active/passive, half the PGA)"),
+    ("Surcharge pressure, second", "Surcharge pressure (A-1, left)"),
+    # small words, and a tail that is a value and its unit, name no row
+    ("Total cumulative settlement (in), north strip footing on compacted "
+     "fill", "Total cumulative settlement (in) - North Strip Footing, "
+     "Compacted Fill, 2.5 ksf"),
+    ("Footing bearing pressure (ksf), on natural soils",
+     "Footing bearing pressure (ksf), Spread Footing - Natural Soils"),
+    # a place on the printout is not a row's name
+    ("Allowable pressure, second sheet",
+     "Allowable pressure (from settlement), Weathered rock"),
+    # digits of a description are not a row's number; one name, other words
+    ("Safety factor, static circular, 6.5 m wall",
+     "Safety factor, S-2 - S-2' Static - Circular Failures"),
+])
+def test_the_scorer_credits_one_row_named_two_ways(truth_name, record_name):
+    """Review fix 1: a correct reading the hand names in other words is
+    credited, as master's scorer credited it."""
+    assert _credited(truth_name, record_name)
+
+
+@pytest.mark.parametrize("truth_name, record_name", [
+    ("Total cumulative settlement (in), north spread footing on natural "
+     "soil", "Total cumulative settlement (in) - North Strip Footing, "
+     "Compacted Fill, 2.5 ksf"),
+    ("Embedment (D), scenario 1", "Embedment (D) Scenario 2, Clay"),
+    ("Phi (deg), Layer 2", "Phi (deg), Layer 4"),
+])
+def test_the_scorer_still_refuses_another_rows_number(truth_name,
+                                                      record_name):
+    """Review fix 1 keeps RI-208's point: another row printing the same
+    number does not answer for this one, though the labels are alike."""
+    assert same_name(truth_name, record_name)
+    assert not _credited(truth_name, record_name)
+
+
+@pytest.mark.parametrize("left, right, other", [
+    ("Settlement (in), Depth (ft) 5.0", "Settlement (in), Depth (ft) 5.5",
+     True),
+    ("Settlement (in), Depth (ft) 0.5", "Settlement (in), Depth (ft) 5.0",
+     True),
+    ("Settlement (in), Depth (ft) 2.0", "Settlement (in), Depth (ft) 2.2",
+     True),
+    ("Settlement (in), Depth (ft) 10", "Settlement (in), Depth (ft) 10.0",
+     False),
+    ("Settlement (in), Depth (ft) 10.0", "Settlement (in), Depth 10 ft",
+     False),
+    ("Dq, Width (ft) 3.5, row 2", "Dq, Width (ft) 3.5, row 3", True),
+    ("qall (ksf), Width B (ft) 2.0", "qall (ksf), Width B (ft) 3.0", True),
+    ("qall (ksf), B = 5 ft", "qall (ksf), B = 6 ft", True),
+    ("Phi (deg), Layer 1", "Phi (deg), Layer 10", True),
+])
+def test_row_numbers_are_compared_as_numbers(left, right, other):
+    """Review fix 3: 5.0 and 5.5 are two rows, 0.5 and 5.0 too (their
+    digits are one set), 10 and 10.0 one row."""
+    assert other_rows(left, right) is other
+    assert other_rows(left, right, loose=True) is other
+
+
+def test_the_fold_keeps_two_depth_rows_that_print_one_number():
+    """Review fix 3 in the model-first fold: rows at 5.0 ft and 5.5 ft read
+    on one page with one value are two rows."""
+    first = _reading([("Settlement (in), Depth 5.0 ft", 0.4, "in")])
+    second = _reading([("Settlement (in), Depth 5.5 ft", 0.4, "in"),
+                       ("Settlement (in), Depth 5.0 ft", 0.4, "in")])
+
+    folded = _fold_readings(first, second, fresh=True, same_value=True)
+
+    assert sorted(v.name for v in folded.inputs) == [
+        "Settlement (in), Depth 5.0 ft", "Settlement (in), Depth 5.5 ft"]

@@ -54,7 +54,8 @@ __all__ = [
     "METRICS", "MODEL_ONLY", "NAME_RATIO", "PROGRAM_RATIO", "VALUE_TOL",
     "Score", "CalcScore", "Expected", "expectations_for", "pages_of",
     "report_of", "score_floor", "score_record", "score_one_calc",
-    "same_value", "same_name", "same_text", "other_rows", "rescore_saved",
+    "same_value", "same_name", "same_text", "other_rows", "names_row",
+    "rescore_saved",
 ]
 
 #: Two printed labels are the same label at this partial ratio. The reader's
@@ -259,61 +260,174 @@ def same_name(left: str, right: str, ratio: float = NAME_RATIO) -> bool:
             or _words_within(a_words, b_words))
 
 
-_UNIT_SPAN = re.compile(r"\([^)]*\)|\[[^\]]*\]|\^\s*-?\d+")
-
-
-def _row_numbers(text: Any) -> set:
-    """The numbers a label names its row or case by: its digit words, with
-    what sits in brackets (a unit, "(kN/m^3)") and an exponent left out."""
-    return {w for w in _name_words(_UNIT_SPAN.sub(" ", str(text or "")))
-            if w.isdigit()}
-
+#: What sits in brackets (a unit, "(kN/m^3)", a note "(1,200-mm pile, 2%
+#: steel)") and an exponent. Neither names a row, and a comma inside a
+#: bracket does not split a label into its heading and its row.
+_BRACKETS = re.compile(r"\([^)]*\)|\[[^\]]*\]|\^\s*-?\d+")
 
 #: The suffix the floor put on a table's last row before RI-208
 #: (``calc_reader.LAST_ROW_SUFFIX``), and the shorter form a hand wrote.
 _LAST_ROW = re.compile(r",\s*last row(?: of the table)?\s*$", re.IGNORECASE)
 
+#: A comma that splits a label: not one between two digits ("1,200").
+_SPLIT = re.compile(r"(?<!\d),|,(?!\d)")
 
-def _without_last_row(text: Any) -> str:
-    return _LAST_ROW.sub("", str(text or ""))
+#: A printed number, thousands grouped or not.
+_NUMBER = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+
+#: The words a printout names a row or a case by, and the id after one:
+#: "Layer 2", "Layer No. 3", "Case B", "Scenario II", "Depth (ft) 10.0"
+#: (its bracket taken out first), "Section S-1", "row 4".
+_ROW_ID = re.compile(
+    r"\b(?P<kw>sublayers?|layers?|strat(?:um|a)|soils?|cases?|scenarios?|"
+    r"rows?|depths?|elevations?|sections?|zones?|options?|alternatives?|"
+    r"trials?|steps?)\s*(?:no\.?|nr\.?|#)?\s*[:=]?\s*"
+    r"(?P<id>[a-z]{1,2}-\d+[a-z]?(?![\w.])|(?:" + _NUMBER + r")[a-z]?"
+    r"(?![\w.])|[a-z](?![\w.])|(?:iii|ii|iv|vi{0,3}|ix|x|i)(?![\w.]))")
+
+#: A setting a row is printed for: "B = 2.5 ft", "kh = 0.15".
+_SETTING = re.compile(
+    r"\b(?P<var>[a-z][a-z0-9_']{0,6})\s*=\s*(?P<id>-?(?:" + _NUMBER + r"))")
+
+#: A number that ends a row's own name: the floor writes a row whose first
+#: cell is a bare number as its column's heading and the number
+#: ("Width (ft) 2.5"; ``calc_reader._row_names``).
+_LAST_NUMBER = re.compile(r"(?:^|\s)(?P<id>" + _NUMBER + r")\s*$")
+
+#: Words that name no row: small words, units, and a place on the
+#: printout ("second sheet", "page 3") -- a hand writes where it read a
+#: value, the page writes what the row is.
+_NOT_ROW_WORDS = frozenset(
+    "a an the of on at in into for to from by per with and or as is under "
+    "over below above "
+    "ft feet foot inch inches m mm cm metre metres meter meters km kpa mpa "
+    "pa psf ksf tsf psi ksi pcf kcf kn kips kip lb lbs deg degree degrees "
+    "percent m2 m3 ft2 ft3 sec "
+    "first second third fourth fifth sixth seventh eighth ninth tenth last "
+    "sheet sheets page pages pg".split())
 
 
-def other_rows(left: str, right: str) -> bool:
+def _row_id(token: str) -> str:
+    """A row's id as one spelling: "10" and "10.0" are one id, "1,200" and
+    "1200" too; a letter, a numeral or "S-1" as printed (lower case)."""
+    text = token.strip().lower()
+    match = re.fullmatch(r"(-?(?:" + _NUMBER + r"))([a-z]?)", text)
+    if match is None:
+        return text
+    return f"{float(match.group(1).replace(',', '')):g}{match.group(2)}"
+
+
+@dataclass
+class _RowKey:
+    """What a label says about its row: ``ids`` by kind ("layer" -> {"2"},
+    "=b" -> {"2.5"}, "" for a number ending a row's name), the words of its
+    row's name (``qualifier``) and every word of the label (``words``)."""
+
+    ids: Dict[str, set]
+    qualifier: set
+    words: set
+
+
+def _row_key(text: Any) -> _RowKey:
+    raw = _LAST_ROW.sub("", str(text or ""))
+    words = set(_name_words(raw))
+    flat = _BRACKETS.sub(" ", raw).lower()
+    ids: Dict[str, set] = {}
+    taken: List[Tuple[int, int]] = []
+    for match in _ROW_ID.finditer(flat):
+        kw = match.group("kw").rstrip("s")
+        kw = {"strata": "stratum", "stratum": "stratum"}.get(kw, kw)
+        ids.setdefault(kw, set()).add(_row_id(match.group("id")))
+        taken.append(match.span())
+    for match in _SETTING.finditer(flat):
+        ids.setdefault("=" + match.group("var"), set()).add(
+            _row_id(match.group("id")))
+        taken.append(match.span())
+    parts = _SPLIT.split(flat)
+    qualifier: set = set()
+    at = len(parts[0]) + 1
+    for part in parts[1:]:
+        start = at
+        at += len(part) + 1
+        if any(a < start + len(part) and b > start for a, b in taken):
+            pass
+        else:
+            last = _LAST_NUMBER.search(part)
+            if last is not None:
+                ids.setdefault("", set()).add(_row_id(last.group("id")))
+        qualifier |= {w for w in _name_words(part)
+                      if len(w) > 1 and w not in _NOT_ROW_WORDS
+                      and not any(ch.isdigit() for ch in w)}
+    return _RowKey(ids=ids, qualifier=qualifier, words=words)
+
+
+def other_rows(left: str, right: str, loose: bool = False) -> bool:
     """Do two labels name DIFFERENT rows of one printed table (RI-208)?
 
-    A calculation's table now reaches the record one value per row and
-    column, each label the column's heading and the row's qualifier after
-    a comma: "Unit weight (pcf), Layer 2", "Phi (deg), Silty sand". The
-    partial ratio of :func:`same_name` passes "..., Layer 2" against
-    "..., Layer 3" and "..., Sand" against "..., Clay", so two rows that
-    happen to print one number would answer for each other. They are other
-    rows when:
+    A calculation's table reaches the record one value per row and column,
+    each label the column's heading and the row's name after a comma:
+    "Unit weight (pcf), Layer 2", "Phi (deg), Silty sand". The partial
+    ratio of :func:`same_name` passes "..., Layer 2" against "..., Layer 3"
+    and "..., Sand" against "..., Clay", so two rows that happen to print
+    one number would answer for each other. They are other rows when:
 
-    * both labels number a row or case and neither's numbers are all among
-      the other's (units and exponents in brackets aside: "(kN/m^3)" names
-      no row; "at 30 ft, Scenario 1" is still scenario 1); or
-    * both carry a qualifier after their last comma and neither qualifier's
-      words are all among the other label's words -- "Clay" is within
-      "Allowable (kPa), Clay, Case 2" whatever the order, "Sand" is not
-      within "Unit weight, Clay".
+    * both name a row of one kind by DIFFERENT ids: "Layer 2" and "Layer
+      3", "Depth (ft) 5.0" and "Depth 5.5 ft", "Case B" and "Case C", "B =
+      2 ft" and "B = 3 ft", the floor's "..., Width (ft) 2.5" and "...,
+      Width (ft) 3.5", "..., row 2" and "..., row 3". Ids are compared as
+      numbers -- 10 and 10.0 are one row, 0.5 and 5.0 are two -- and a
+      number counts only where it names a row: after a row's word, after a
+      setting's "=", or ending a row's name. "4.5 m wall", "2% steel" and
+      "3.0 ksf" name none; nor does anything in brackets;
+    * where neither names a row by an id, both name a row in words after a
+      comma (commas inside brackets and between digits aside) and neither
+      name's words are all among the other label's words -- "Sand" is not
+      within "Unit weight, Clay"; "Clay" is within "Allowable (kPa), Clay,
+      Case 2" whatever the order. Small words, units, numbers and a place on
+      the printout ("second sheet") are not words of a row's name.
 
-    A label with no qualifier ("Unit weight") is no row's in particular and
-    is never another row's; nor is the floor's old ", last row of the
-    table" a qualifier, which a saved record still carries.
+    ``loose`` (the scorecard): two names that share a word are one row's,
+    because a hand and a reader name one row in different words ("seismic,
+    circular, 6.5 m wall" against "S-2 Seismic - Circular Failures"); the
+    merge, whose two labels come off one page, keeps the strict rule.
+
+    A label naming no row ("Unit weight") is never another row's, nor are
+    two labels naming rows of different kinds ("Layer 2" against "Clay"),
+    nor is the floor's old ", last row of the table" a row's name.
     """
-    a_text, b_text = (_without_last_row(left), _without_last_row(right))
-    a_numbers, b_numbers = _row_numbers(a_text), _row_numbers(b_text)
-    if a_numbers and b_numbers and not (a_numbers <= b_numbers
-                                        or b_numbers <= a_numbers):
-        return True
-    if "," not in a_text or "," not in b_text:
+    a, b = _row_key(left), _row_key(right)
+    for kind in set(a.ids) & set(b.ids):
+        if not (a.ids[kind] <= b.ids[kind] or b.ids[kind] <= a.ids[kind]):
+            return True
+    if a.ids or b.ids:
         return False
-    a_tail = set(_name_words(a_text.rsplit(",", 1)[1]))
-    b_tail = set(_name_words(b_text.rsplit(",", 1)[1]))
-    if not a_tail or not b_tail:
+    if not a.qualifier or not b.qualifier:
         return False
-    return not (a_tail <= set(_name_words(b_text))
-                or b_tail <= set(_name_words(a_text)))
+    if loose and a.qualifier & b.qualifier:
+        return False
+    return not (a.qualifier <= b.words or b.qualifier <= a.words)
+
+
+def names_row(row: str, label: str) -> bool:
+    """Does ``label`` name the row ``row`` names (``calc_reader``'s
+    qualifier, "Layer 2", "Depth (ft) 10.0", "Silty sand")? Every number
+    of the row's name among the label's numbers, compared as numbers, and
+    every word of it among the label's words, small words and units aside.
+    "Phi, layer 2" names "Layer 2"; "Phi (deg)" names no row and "Phi,
+    Layer 12" another one."""
+    def numbers(text: str) -> set:
+        return {_row_id(n) for n in re.findall(
+            _NUMBER, _BRACKETS.sub(" ", str(text or "")))}
+
+    def content(text: str) -> set:
+        return {w for w in _name_words(text) if len(w) > 1
+                and w not in _NOT_ROW_WORDS
+                and not any(ch.isdigit() for ch in w)}
+
+    want_n, want_w = numbers(row), content(_BRACKETS.sub(" ", row))
+    if not want_n and not want_w:
+        return False
+    return want_n <= numbers(label) and want_w <= set(_name_words(label))
 
 
 def _precision(value: float) -> float:
@@ -386,7 +500,8 @@ def _find(expect: Expected, rows: Sequence[Any]) -> Optional[Any]:
     """The row of a record that answers one expectation, or None."""
     names = [expect.name] + list(expect.alternates)
     for row in rows:
-        if any(same_name(name, row.name) and not other_rows(name, row.name)
+        if any(same_name(name, row.name)
+               and not other_rows(name, row.name, loose=True)
                for name in names) and same_value(expect, row):
             return row
     return None
