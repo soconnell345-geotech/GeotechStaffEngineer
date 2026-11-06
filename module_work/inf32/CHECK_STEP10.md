@@ -217,15 +217,46 @@ The released 5.34.0 is untouched by any of this. What changes is installing
   exist); noted, not fixed (no output changes).
 - Whether the app keeps listing requirements the core now carries, or
   drops them for the core's (after step 11).
-- The full gate's result is in §8.
+- The 14 environment failures of §8.
 
 ## 8. Exit: the gate on the exact tree
 
 Python 3.11.18, a fresh venv (core editable first, then the app and
 geotech-references editable), `pytest -n 4 --dist worksteal`, judged by
-pytest's exit code, chunk by chunk:
+pytest's exit code, chunk by chunk (2026-11-06, the tree of commits `3308a0d` and `47ca9dc`; nothing
+under test changed after them):
 
-(filled in below)
+| Chunk | Exit | Result |
+|---|---|---|
+| `webapp/tests` + `packages/aec-agent-core/tests` | 0 | 1,165 passed |
+| `funhouse_agent/tests` | 1 | 4,240 passed, 28 skipped, **2 failed** |
+| `funhouse_agent/deep/tests` | 0 | 1,187 passed, 4 skipped |
+| `funhouse_agent/review_eval` + `review_digest` | 0 | 203 passed |
+| the module suites (every other `testpaths` entry) | 1 | 18,424 passed, 104 skipped, 3 xfailed, **12 failed** |
+| `webapp/tests/test_wheels.py` alone, with `build` | 0 | 11 passed (5 slow), about 15 s |
+
+**The 14 failures are not this branch's.** The branch changes nothing under
+`opensees_agent`, `funhouse_agent` (code), `profile_figure`, `calc_package`
+or `geotech_common` (`git diff --stat 05eab2d -- ...` is empty), and the
+two `funhouse_agent/tests` failures fail the same way from a checkout of
+master in the same venv. They are this cloud venv's versions, newer than
+CI's:
+
+- `test_calc_package_figure_conventions::test_large_pile_group_leaves_the_forces_to_the_table`
+  and `test_defaults_used::...[profile_figure|plot_data]` (`logx`/`logy`
+  changed nothing): matplotlib **3.11.2** here;
+- 12 OpenSees site-response tests (`test_opensees_agent.py`
+  `TestSiteResponseIntegration`, `TestSiteResponseBenchmarks`,
+  `TestPorePressureRatio`; all five of `test_site_response_wiki_example.py`):
+  the solver child process reports "See stderr output" with openseespy
+  **3.7.1.2** on Python 3.11 / Linux here.
+
+Neither is pursued here (no output of a saved report changes from this
+branch); the lead may want a BACKLOG line if CI's nightly 3.11 job shows
+the same.
+
+The branch merges cleanly onto master `76d27ca` (checked with
+`git merge-tree`); the gate was run on the branch as based on `05eab2d`.
 
 ## Release note (three lines)
 
