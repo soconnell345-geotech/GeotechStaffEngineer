@@ -9,8 +9,10 @@ needs both (see "Notes for the lead").
 
 ## What the print says
 
-GEC-13 is FHWA-NHI-16-027 (2017): Vol I for chapters 1-5, Vol II for
-chapters 6-10. The PDFs in the refs repo's `docs/` were read with PyMuPDF.
+GEC-13 (2017) is two volumes, each with its own number on its cover:
+FHWA-NHI-16-027 is Vol I (chapters 1-5) and FHWA-NHI-16-028 is Vol II
+(chapters 6-10). Tables 8-1 and 8-6 are Vol II. The PDFs in the refs repo's
+`docs/` were read with PyMuPDF.
 Tables 4-3, 8-1 and 8-6 were rendered to PNG and read off the page; the
 extracted text matches.
 
@@ -152,9 +154,10 @@ judged by exit code:
   and triple fluid lists word for word; no number fields), `TestTable86`
   (every printed row; the kPa conversion), `TestRef62Removed` (the three
   old names are gone).
-- `tests/test_gec13*.py` collects 201 (was 197); the whole refs suite
-  collects 6,545 (was 6,541). The refs CLAUDE.md counts and its GEC-13
-  table paragraph are updated.
+- `tests/test_gec13*.py` collected 201 at d9c841c (was 197) and 205 after
+  the review fixes (below); the whole refs suite 6,545 (was 6,541), then
+  6,549. The refs CLAUDE.md counts and its GEC-13 table paragraph are
+  updated.
 
 App (`/tmp/v`, `pip install -e packages/aec-agent-core -e .`, the refs branch
 installed editable over the PyPI copy), judged by exit code:
@@ -168,6 +171,30 @@ installed editable over the PyPI copy), judged by exit code:
   same as `table_4_3_applied_energy` with the landfill row's printed
   12,400 and 22,700; `jet_grouting_systems` reaches Table 8-1;
   `jet_grout_strength` gives clays 250-500 psi).
+
+## Review fixes
+
+An independent review checked every value, label and page against the
+PDFs: all as printed. It found two citation faults, fixed in refs
+e2ad94b on the refs branch (after d9c841c):
+
+1. **Vol II's number.** Tables 8-1 and 8-6 cited "FHWA-NHI-16-027 (GEC-13)
+   Vol II"; Vol II's cover prints FHWA-NHI-16-028. Their reference
+   strings, section comments and docstrings now say -028, and the
+   `tables.py` module docstring names both volumes. REF-31 had left this
+   file and the agent to REF-62, so the agent's `equation_7_4` and
+   `equation_8_1` labels now say -028 too (figures.py already did).
+2. **The agent's source label.** The refs agent labelled every `tables.py`
+   function "FHWA-NHI-16-027, Chapters 1-5 Tables", the two chapter 8
+   tables included. `_FUNCTION_REFS` now gives each its own: Vol II, Ch. 8,
+   Table 8-1, p. 8-26 and Table 8-6, p. 8-71 (Burke 2004).
+
+`TestRef62Vol2Citations` (refs `tests/test_gec13_tables.py`) pins -028 and
+Vol II in both functions' results and docstrings and in the agent's Vol II
+labels, Table 4-3 as Vol I -027, and that no agent label names -027 with
+Vol II. The answers' values do not change; only the `reference` field of a
+Table 8-1 or 8-6 result does. This app branch's submodule pointer stays at
+d9c841c; the lead sets it at the merge.
 
 ## Release note
 
@@ -209,8 +236,9 @@ gone.
 
 1. Merge the refs branch first, then this app branch, and move the app's
    `geotech-references` submodule pointer to the refs merge commit in the
-   app merge (this branch already points at refs d9c841c). Otherwise CI
-   fails: `TestRef62Gec13Recited` finds the old names.
+   app merge (this branch points at refs d9c841c; the refs branch head is
+   now e2ad94b, the review fixes). Otherwise CI fails:
+   `TestRef62Gec13Recited` finds the old names.
 2. The release needs a refs version bump and a raised
    `geotech-references>=` pin. REF-61 already made that necessary; REF-62
    removes or renames three more public functions. Until then a PyPI
