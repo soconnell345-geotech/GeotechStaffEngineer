@@ -362,6 +362,28 @@ def test_a_seismic_increment_is_not_compared():
     assert rows[0]["status"] == "not_compared"
 
 
+# Review fix F3: the increment sign U+2206 is read as delta, and 'Eq.' (an
+# equation) does not make a static coefficient seismic
+def test_an_increment_printed_with_the_increment_sign_is_not_compared():
+    rows = recompute_calculation(wall(
+        [nq("∆ KAE", 0.08)],
+        [PHI, nq("delta", 21, "deg"), nq("kh", 0.2)],
+        method="Mononobe-Okabe"))
+    assert rows[0]["coefficient"] == "increment"
+    assert rows[0]["status"] == "not_compared"
+
+
+def test_an_equation_number_does_not_make_a_static_label_seismic():
+    ka = K(phi_deg=32, theory="rankine", state="active")
+    row = one(wall([nq("Ka (Eq. 3-1)", round(ka, 3))],
+                   [PHI, nq("kh", 0.2)], method="Rankine"))
+    assert row["coefficient"] == "Ka" and row["flag"] == "agrees"
+    seismic = one(wall([nq("Ka (EQ)", 0.5)],
+                       [PHI, nq("delta", 21, "deg"), nq("kh", 0.2)],
+                       method="Mononobe-Okabe"))
+    assert seismic["coefficient"] == "KAE"
+
+
 # -- 4. refusals and cases ---------------------------------------------------------
 
 def test_phi_not_printed_is_refused():

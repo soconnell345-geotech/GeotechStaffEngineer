@@ -142,7 +142,7 @@ NOT_RECOMPUTED: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 _GREEK = {"φ": "phi", "ϕ": "phi", "γ": "gamma", "σ": "sigma", "δ": "delta",
-          "Δ": "delta", "ν": "nu", "ρ": "rho", "β": "beta", "α": "alpha",
+          "Δ": "delta", "∆": "delta", "ν": "nu", "ρ": "rho", "β": "beta", "α": "alpha",
           "θ": "theta", "′": "'", "’": "'",
           # subscripts a coefficient is printed with (Kₐ, K₀, kₕ)
           "ₐ": "_a", "ₚ": "_p", "₀": "_0", "ₒ": "_o",
@@ -1324,9 +1324,10 @@ _WALL_CLAIMS = (
     ("Kp", r"\bk_?p\b|\bpassive\b"),
 )
 _WALL_CLAIM_CONTEXT = re.compile(r"\bk_?[ap0o]|\bcoeff")
-#: A static Ka or Kp named seismic is the seismic coefficient.
-_SEISMIC_WORD = re.compile(r"\b(seismic|dynamic|earthquake|eq|m-?o|"
-                           r"mononobe|okabe)\b")
+#: A static Ka or Kp named seismic is the seismic coefficient. 'EQ' is an
+#: earthquake; 'Eq. 3-1' (an equation) is not.
+_SEISMIC_WORD = re.compile(r"\b(seismic|dynamic|earthquake|eq(?!\s*\.|\s*\d)|"
+                           r"m-?o|mononobe|okabe)\b")
 
 
 def _wall_claim_key(nq: NamedQuantity) -> Optional[str]:
