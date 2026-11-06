@@ -18,27 +18,31 @@ a model in its own tests. Everything below runs on Foundry's models.
 |---|---|---|
 | App test wheel `geotech_staff_engineer-5.34.0+foundry.20261106.1-py3-none-any.whl` | commit 0b8caf6 on `claude/anthropic-vision-testing-harness-22m8ae`: master 8daed85 (5.34.0 plus the unreleased master fixes in HANDOFF, "Master after 5.34.0") plus `funhouse_agent/chart_eval/`; only the version label was changed for the build | set `GEOTECH_APP_COMMIT=0b8caf6` so every run records the commit |
 | `planlens 0.14.0`, `geotech-references 1.5.0` | PyPI (wheels in the delivery folder too) | what 5.34.0 pins |
-| `chartography_data.zip` | **the owner** makes it on a laptop (§1) | the dataset: gated, NOT FOR TRAINING |
+| `chartography_data.zip` | made in a Claude Code cloud session with the owner's Hugging Face token (§1) | the dataset: gated, NOT FOR TRAINING |
 | `BUILD_NOTES.md` | the delivery folder | wheel versions, commit, install check |
 
-## 1. The data folder (the owner, on a laptop; about 10 minutes)
+## 1. The data folder (made online, no local machine)
 
-Chartography is gated on Hugging Face, so it cannot be downloaded from
-Foundry without a token, and it must never be committed anywhere.
+Chartography is gated on Hugging Face, so it cannot be downloaded without a
+token, and it must never be committed anywhere. The owner works only in
+online services, so the folder is made in a Claude Code cloud session.
 
-1. Sign in at huggingface.co and open `datasets/surgeai/chartography`. Click
-   **Agree and access** (Surge may approve the request by hand). Then make a
-   **read** token under Settings → Access Tokens.
-2. On the laptop:
+1. The owner signs in at huggingface.co, opens
+   `datasets/surgeai/chartography`, clicks **Agree and access** (Surge may
+   approve the request by hand), and makes a **read** token under Settings →
+   Access Tokens (huggingface.co/settings/tokens).
+2. The owner saves the token in the cloud session's secure credential form,
+   as a network secret for `huggingface.co`. The session never sees the
+   value; its proxy adds it to requests to that host. The session then runs:
 
    ```
-   pip install huggingface_hub pandas pyarrow
-   set HF_TOKEN=<the read token>            (PowerShell: $env:HF_TOKEN="...")
-   python funhouse_agent/chart_eval/prepare.py --out chartography_data --zip
+   python -m funhouse_agent.chart_eval.prepare --out chartography_data --zip
    ```
 
-   `prepare.py` needs only those three packages and runs from a checkout of
-   this branch. It writes `chartography_data/` and `chartography_data.zip`:
+   (With a Foundry Code Workspace that can reach huggingface.co and a token
+   stored as a Foundry secret in `HF_TOKEN`, the AI FDE can run the same
+   command there instead.) `prepare` needs only `huggingface_hub`, `pandas`
+   and `pyarrow`. It writes `chartography_data/` and `chartography_data.zip`:
    `tasks.jsonl` (100 lines), `charts/`, `DATASET_CARD.md`,
    `PROVENANCE.json` and `judge_prompt.txt`. That last file is the judge
    prompt of Surge's own harness, read out of their `scorer.py` on GitHub.
@@ -47,7 +51,10 @@ Foundry without a token, and it must never be committed anywhere.
 3. Check `PROVENANCE.json` says `"tasks": 100` and `"judge_prompt": true`.
    If the judge prompt could not be fetched, the suite grades with its own
    wording of the same rules, and every result says which prompt graded it.
-4. Hand the zip to the AI FDE beside the wheels. Keep it out of every repo.
+4. The owner downloads the zip from the session and hands it to the AI FDE
+   beside the wheels. Afterwards, the owner can delete the token from the
+   cloud environment's settings (Network secrets). Keep the zip out of every
+   repo.
    `.gitignore` lists `chartography_data*`, but a Foundry workspace repo
    does not have that file.
 
