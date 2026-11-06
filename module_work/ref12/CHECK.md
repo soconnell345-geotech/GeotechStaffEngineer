@@ -73,7 +73,15 @@ App (refs branch on PYTHONPATH):
   reference adapters' text is not in the page builds, so no re-record).
 - `funhouse_agent/tests/test_reference_adapters.py`: 309 passed.
 - `funhouse_agent/tests/test_defaults_used.py -k "pavement or aashto"`: 34 passed.
-- the other files naming aashto/esal (see the app commit message for counts).
+- the other files naming aashto/esal or pavement, run together (test_cited_documents,
+  test_defaults_used, test_nested_keys, test_pavement_design_adapter,
+  test_reference_chart, test_reviewers, test_top_level_params,
+  test_reference_result_sizes, validation_examples v006_v008, v021_v022,
+  v074_v076_aashto1993): 1,269 passed, 23 skipped, 1 failed. The failure is
+  `test_defaults_used.py::...[profile_figure|plot_data]` ("logx/logy changed
+  nothing in the result"); it fails the same way with refs at c0ed2b9 (master's
+  pointer), so it predates this branch and has nothing to do with aashto_1993.
+  Noted, not fixed.
 
 ## App side
 
