@@ -1126,9 +1126,16 @@ def _cases(calc: Calculation) -> List[Tuple[Dict[str, str], Calculation]]:
     long term, shape) the printed RESULTS carry. Each case gets the results
     that carry exactly its combination, and every input whose own case does
     not contradict it: an input with no case word is shared, 'phi, stratum
-    2' goes to every stratum-2 case, 'phi, stratum 1' to none of them. An
-    input printed for a dimension the case does not name stays in, so two
-    such values show as printed twice, never as a choice between them."""
+    2' goes to every stratum-2 case, 'phi, stratum 1' to none of them.
+
+    An input naming a dimension that the cases with a claim use reaches only
+    the cases naming it with the same value: with claims for 'scenario 1'
+    and 'scenario 1, stratum 2', 'phi, stratum 2' never reaches the
+    'scenario 1' case, which names no stratum, so that case is not run on
+    another stratum's input. An input naming a dimension no claim uses
+    stays in every case, so two such values show as printed twice, never as
+    a choice between them."""
+    claim = _HAS_CLAIM[calc.kind]
     res = [(_case_of(n.name)[0], n) for n in calc.results]
     inp = [(_case_of(n.name)[0], n) for n in calc.inputs]
     combos: List[Dict[str, str]] = []
@@ -1137,14 +1144,25 @@ def _cases(calc: Calculation) -> List[Tuple[Dict[str, str], Calculation]]:
             combos.append(case)
     if not combos or combos == [{}]:
         return []
+    subs = [(combo, [n for case, n in res if case == combo])
+            for combo in combos]
+    in_play = {d for combo, results in subs
+               if claim(calc.model_copy(update={"results": results}))
+               for d in combo}
 
     def fits(case: Dict[str, str], combo: Dict[str, str]) -> bool:
-        return all(combo.get(d, v) == v for d, v in case.items())
+        for d, v in case.items():
+            if d in combo:
+                if combo[d] != v:
+                    return False
+            elif d in in_play:
+                return False
+        return True
 
     return [(combo, calc.model_copy(update={
         "inputs": [n for case, n in inp if fits(case, combo)],
-        "results": [n for case, n in res if case == combo]}))
-        for combo in combos]
+        "results": results}))
+        for combo, results in subs]
 
 
 # ---------------------------------------------------------------------------

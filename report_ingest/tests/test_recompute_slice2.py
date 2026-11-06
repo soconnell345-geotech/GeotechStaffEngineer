@@ -112,6 +112,39 @@ def test_a_claim_naming_no_case_among_cased_inputs_is_not_guessed():
                for m in row["inputs_missing"])
 
 
+def test_a_case_naming_no_stratum_never_takes_another_stratum_s_input():
+    # review fix 1: claims for 'scenario 1' and 'scenario 1, stratum 2';
+    # only stratum 2's phi is printed, so the 'scenario 1' case has none
+    q2 = bearing(friction_angle=34)["q_ultimate_kPa"]
+    inputs = SHARED + [nq("phi, stratum 2", 34, "deg")]
+    rows = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity, scenario 1", 700, "kPa"),
+         nq("Ultimate bearing capacity, scenario 1, stratum 2", round(q2),
+            "kPa")], inputs))
+    by_case = {r["case"]: r for r in rows}
+    own = by_case["scenario 1, stratum 2"]
+    assert own["flag"] == "agrees", own
+    bare = by_case["scenario 1"]
+    assert bare["status"] == "not_recomputed", bare
+    assert "friction_angle" not in bare["inputs_used"]
+    assert any("none printed" in m for m in bare["inputs_missing"])
+
+
+def test_an_input_naming_a_dimension_no_claim_uses_stays_shared():
+    # the claims split by case letter; 'phi, stratum 1' names a stratum no
+    # claim names, so both cases take it
+    a = bearing(width=1.4, friction_angle=31)["q_ultimate_kPa"]
+    b = bearing(width=2.6, friction_angle=31)["q_ultimate_kPa"]
+    inputs = [i for i in SHARED if i["name"] != "Footing width B"] + [
+        nq("phi, stratum 1", 31, "deg"), nq("B (Case A)", 1.4, "m"),
+        nq("B (Case B)", 2.6, "m")]
+    rows = recompute_calculation(bearing_calc(
+        [nq("q_ult (Case A)", round(a), "kPa"),
+         nq("q_ult (Case B)", round(b), "kPa")], inputs))
+    assert {r["case"]: r["flag"] for r in rows} == {"case A": "agrees",
+                                                    "case B": "agrees"}
+
+
 # -- 2. labels taken wrongly ---------------------------------------------------
 
 def test_ratios_of_width_length_and_depth_are_not_the_dimensions():
