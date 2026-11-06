@@ -119,6 +119,8 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     """
     wtype = _wall_type(result, analysis)
 
+    if wtype == "mse_lrfd":
+        return _input_summary_mse_lrfd(result, analysis)
     if wtype == "mse":
         return _input_summary_mse(result, analysis)
     else:
@@ -426,6 +428,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     """
     wtype = _wall_type(result, analysis)
 
+    if wtype == "mse_lrfd":
+        return _calc_steps_mse_lrfd(result, analysis)
     if wtype == "mse":
         return _calc_steps_mse(result, analysis)
     else:
@@ -2209,6 +2213,352 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
 
 
 # ════════════════════════════════════════════════════════════════════
+#  MSE LRFD EXTERNAL STABILITY (GM-307)
+# ════════════════════════════════════════════════════════════════════
+
+#: Where each LRFD factor comes from, GEC-11 (FHWA-NHI-10-024/025) as
+#: printed (GM-307): name in the result's load_factors -> (what, source).
+_LRFD_FACTOR_SOURCES = (
+    ("EV_max", "γ_EV max, vertical earth pressure (retaining walls)",
+     "GEC-11 Vol I Table 4-2 (p. 4-4): 1.35"),
+    ("EV_min", "γ_EV min", "GEC-11 Vol I Table 4-2 (p. 4-4): 1.00"),
+    ("EH_max", "γ_EH max, horizontal earth pressure (active)",
+     "GEC-11 Vol I Table 4-2 (p. 4-4): 1.50"),
+    ("EH_min", "γ_EH min", "GEC-11 Vol I Table 4-2 (p. 4-4): 0.90"),
+    ("LL", "γ_LL, live load and live-load surcharge, Strength I",
+     "GEC-11 Vol I Table 4-1 (p. 4-4): 1.75; Service I 1.00"),
+    ("phi_sliding", "φ_τ, sliding resistance",
+     "GEC-11 Vol I Table 4-5 (p. 4-19): 1.0; Eq. 4-4"),
+    ("ecc_limit_ratio", "e_max / L, Strength I",
+     "GEC-11 Vol I p. 4-23: L/4 on soil, 3/8 L on rock"),
+    ("ecc_limit_ratio_service", "e_max / L, Service I",
+     "GEC-11 Vol II Tables E3-6.3 (p. E3-11), E4-6.3 (p. E4-9): L/6"),
+)
+
+#: The values GEC-11 prints for them (the sources above).
+_LRFD_PRINTED = {"EV_max": 1.35, "EV_min": 1.00, "EH_max": 1.50,
+                 "EH_min": 0.90, "LL": 1.75, "phi_sliding": 1.0,
+                 "ecc_limit_ratio": (0.25, 0.375),
+                 "ecc_limit_ratio_service": 1 / 6}
+
+#: The combinations the tool checks (GEC-11 Vol II Table E4-5.1, p. E4-6;
+#: the critical one, Vol I p. 4-23 and Vol II Table E4-6.3, p. E4-9).
+_LRFD_COMBINATIONS = (
+    ("Strength I (max)", "EV_max", "EH_max", "LL"),
+    ("Strength I (min)", "EV_min", "EH_min", "LL"),
+    ("Critical (EV min, EH max)", "EV_min", "EH_max", "LL"),
+    ("Service I", None, None, None),
+)
+
+
+def _f(value, fmt=".3f", none="—"):
+    return none if value is None else format(value, fmt)
+
+
+def _input_summary_mse_lrfd(result, analysis) -> List[InputItem]:
+    """The LRFD package's inputs (GM-307): the geometry and the inputs the
+    mse_lrfd_external_stability run used."""
+    geom = _get(analysis, "geom")
+    items = [
+        InputItem("H", "Wall height", f"{geom.wall_height:.2f}", "m"),
+        InputItem("L", "Reinforcement length",
+                  f"{geom.reinforcement_length:.2f}", "m"),
+    ]
+    if geom.backfill_slope > 0:
+        items.append(InputItem("β", "Backfill slope",
+                               f"{geom.backfill_slope:.1f}", "deg"))
+    if geom.broken_backslope_height is not None:
+        items.append(InputItem("S", "Broken backslope height",
+                               f"{geom.broken_backslope_height:.2f}", "m"))
+    q = _get(analysis, "live_load")
+    q = geom.surcharge if q is None else q
+    if q:
+        items.append(InputItem("q", "Live-load surcharge", f"{q:.1f}", "kPa"))
+    for key, sym, name, unit in (
+            ("gamma_backfill", "γ_r", "Reinforced fill unit weight",
+             "kN/m³"),
+            ("phi_backfill", "φ_r", "Reinforced fill friction angle", "deg"),
+            ("phi_retained", "φ_b", "Retained fill friction angle", "deg"),
+            ("gamma_retained", "γ_b", "Retained fill unit weight", "kN/m³"),
+            ("phi_foundation", "φ_f", "Foundation friction angle", "deg"),
+            ("c_foundation", "c_f", "Foundation cohesion", "kPa"),
+            ("gamma_foundation", "γ_f", "Foundation unit weight", "kN/m³"),
+            ("bearing_resistance_strength", "q_R",
+             "Factored bearing resistance (Strength I), given", "kPa"),
+            ("bearing_resistance_service", "q_R,s",
+             "Bearing resistance (Service I), given", "kPa")):
+        value = _get(analysis, key)
+        if value is not None:
+            items.append(InputItem(sym, name, f"{value:g}", unit))
+    return items
+
+
+def _calc_steps_mse_lrfd(result, analysis) -> List[CalcSection]:
+    """The LRFD external-stability package's steps (GM-307): the result of
+    mse_lrfd_external_stability as the tool returned it, each combination
+    (Strength I max and min, the critical one, Service I) with the
+    equations and the load and resistance factors as GEC-11 prints them.
+    Nothing is worked out here: every number is the tool's."""
+    geom = _get(analysis, "geom")
+    lf = result["load_factors"]
+    uf = result["unfactored_kN_m"]
+    sl, ec, br = (result["sliding"], result["eccentricity"],
+                  result["bearing"])
+    sloping = geom.backfill_slope > 0
+    sections = []
+
+    # ── Factors ───────────────────────────────────────────────
+    rows, changed = [], []
+    for key, what, src in _LRFD_FACTOR_SOURCES:
+        if key in lf:
+            rows.append([what, f"{lf[key]:.3f}" if key.startswith("ecc")
+                         else f"{lf[key]:.2f}", src])
+            printed = _LRFD_PRINTED[key]
+            if all(abs(lf[key] - v) > 1e-9 for v in (
+                    printed if isinstance(printed, tuple) else (printed,))):
+                changed.append(what)
+    if br.get("phi_bearing") is not None:
+        rows.append(["φ_b, bearing resistance", f"{br['phi_bearing']:.2f}",
+                     "GEC-11 Vol I Table 4-5 (p. 4-19): 0.65; Eq. 4-23"])
+        if abs(br["phi_bearing"] - 0.65) > 1e-9:
+            changed.append("φ_b")
+    combo_rows = [[name] + ([f"{lf[ev]:.2f}", f"{lf[eh]:.2f}",
+                             f"{lf[ll]:.2f}"] if ev else
+                            ["1.00", "1.00", "1.00"])
+                  for name, ev, eh, ll in _LRFD_COMBINATIONS]
+    sections.append(CalcSection(title="Load and Resistance Factors", items=[
+        TableData(title="Factors used", headers=["Factor", "Value",
+                                                 "Printed source"],
+                  rows=rows,
+                  notes=(("Given, not the printed value: " + ", ".join(
+                      changed) + ".") if changed else
+                      "Each as printed.")),
+        TableData(title="Load combinations checked",
+                  headers=["Combination", "EV", "EH", "LL / LS"],
+                  rows=combo_rows,
+                  notes=("GEC-11 Vol II Table E4-5.1 (p. E4-6): Strength I "
+                         "(maximum), Strength I (minimum), Service I; the "
+                         "critical one pairs EV min with EH max (Vol I p. "
+                         "4-23: 'use the minimum EV and maximum EH load "
+                         "factors'; Vol II Table E4-6.3, p. E4-9). The live "
+                         "load over the reinforced zone is left out of "
+                         "sliding and eccentricity and counted in bearing "
+                         "(Vol I pp. 4-19, 4-22, 4-26; Fig. 4-2).")),
+    ]))
+
+    # ── Unfactored loads ──────────────────────────────────────
+    ld_items = []
+    if sloping:
+        bs = result.get("backslope", {})
+        ld_items.append(CalcStep(
+            title="Retained Fill Thrust (sloping backfill)",
+            equation="F_T = 0.5 K_ab γ_b h²;  F_H = F_T cos β, F_V = F_T sin β",
+            substitution=(f"K_ab = {uf['Ka_retained']:.4f} (Eqs. 4-2, 4-3), "
+                          f"h = {_f(bs.get('h_m'))} m: F_T = {uf['FT']:.1f}, "
+                          f"F_H = {uf['FT_H']:.1f}, F_V = {uf['FT_V']:.1f}"),
+            result_name="F_T",
+            result_value=f"{uf['FT']:.1f}",
+            result_unit="kN/m",
+            reference=("GEC-11 Vol I Eqs. 4-2, 4-3 (p. 4-15), Eq. 4-7 (p. "
+                       "4-20), Eqs. 4-10, 4-11 (p. 4-21)"),
+        ))
+        rows = [["V1 (reinforced fill)", "EV", f"{uf['V1']:.1f}"],
+                ["V2 (slope fill over the zone)", "EV", f"{uf['V2']:.1f}"],
+                ["F_T cos β (driving)", "EH", f"{uf['FT_H']:.1f}"],
+                ["F_T sin β (resisting)", "EH", f"{uf['FT_V']:.1f}"]]
+        if uf.get("F2"):
+            rows += [["F2 cos I (traffic behind the crest)", "LL",
+                      f"{uf['F2_H']:.1f}"],
+                     ["F2 sin I", "LL", f"{uf['F2_V']:.1f}"],
+                     ["Vs (live load over the zone)", "LL",
+                      f"{uf['Vs']:.1f}"]]
+    else:
+        ld_items.append(CalcStep(
+            title="Retained Fill and Surcharge Thrusts (level backfill)",
+            equation="K_ab = tan²(45° - φ_b/2);  F1 = 0.5 K_ab γ_b H²;  "
+                     "F2 = K_ab q H",
+            substitution=(f"K_ab = {uf['Ka_retained']:.4f}: F1 = "
+                          f"{uf['F1']:.1f}, F2 = {uf['F2']:.1f}"),
+            result_name="F1",
+            result_value=f"{uf['F1']:.1f}",
+            result_unit="kN/m",
+            reference=("GEC-11 Vol I Eq. 4-1 (p. 4-15), Eqs. 4-5, 4-6 (p. "
+                       "4-20)"),
+        ))
+        rows = [["V1 (reinforced fill)", "EV", f"{uf['V1']:.1f}"],
+                ["F1 (retained fill)", "EH", f"{uf['F1']:.1f}"]]
+        if uf.get("F2"):
+            rows += [["F2 (live-load surcharge)", "LS", f"{uf['F2']:.1f}"],
+                     ["Vs = q L (live load over the zone)", "LL",
+                      f"{uf['Vs']:.1f}"]]
+    ld_items.append(TableData(
+        title="Unfactored Loads", headers=["Load", "Type", "kN/m"],
+        rows=rows,
+        notes="Load types as GEC-11 Vol I Sec. 4.2 (p. 4-3) names them."))
+    sections.append(CalcSection(title="Unfactored Loads", items=ld_items))
+
+    # ── Sliding ───────────────────────────────────────────────
+    s_items = [CalcStep(
+        title="Sliding CDR",
+        equation=("CDR = R_R / P_d;  R_R = φ_τ R_τ;  R_τ = γ_EV V μ"
+                  + (" + γ_EH F_T sin β" if sloping else "")
+                  + ";  P_d = γ_EH " + ("F_T cos β" if sloping else
+                                        "F1 + γ_LS F2")),
+        substitution=(f"Strength I (max) {_f(sl.get('CDR_strength_max'))}, "
+                      f"(min) {_f(sl.get('CDR_strength_min'))}, critical "
+                      f"{_f(sl.get('CDR_critical'))}; μ by the "
+                      f"{sl.get('sliding_cohesion', 'drained')} rule"),
+        result_name="CDR_sliding",
+        result_value=_f(sl.get("CDR_governing")),
+        reference=("GEC-11 Vol I Eq. 4-4 (p. 4-19), Eqs. 4-9, 4-11 to "
+                   "4-13 (p. 4-21), μ p. 4-22; required 1.0"),
+    ), CheckItem(description="Sliding (governing combination)",
+                 demand=1.0, demand_label="Required",
+                 capacity=sl.get("CDR_governing"),
+                 capacity_label="CDR", passes=bool(sl.get("passes")))]
+    sections.append(CalcSection(title="Sliding", items=s_items))
+
+    # ── Eccentricity ──────────────────────────────────────────
+    e_rows = [["Strength I (max)", _f(ec.get("eL_strength_max_m")),
+               _f(ec.get("e_limit_m"))],
+              ["Strength I (min)", _f(ec.get("eL_strength_min_m")),
+               _f(ec.get("e_limit_m"))],
+              ["Critical (EV min, EH max)", _f(ec.get("eL_critical_m")),
+               _f(ec.get("e_limit_m"))],
+              ["Service I", _f(ec.get("eL_service_m")),
+               _f(ec.get("e_limit_service_m"))]]
+    e_items = [CalcStep(
+        title="Eccentricity",
+        equation="e = (ΣM_D - ΣM_R) / ΣV about the centre of L, ≤ e_max",
+        substitution=(f"governing e = {_f(ec.get('eL_governing_m'))} m ≤ "
+                      f"e_max = {_f(ec.get('e_limit_m'))} m"),
+        result_name="e",
+        result_value=_f(ec.get("eL_governing_m")),
+        result_unit="m",
+        reference=("GEC-11 Vol I Eq. 4-14 (p. 4-22), "
+                   + ("Eq. 4-16" if sloping else "Eq. 4-15")
+                   + " (p. 4-23), e_max p. 4-23"),
+    ), TableData(title="Eccentricity by Combination",
+                 headers=["Combination", "e (m)", "e_max (m)"], rows=e_rows),
+        CheckItem(description="Eccentricity, Strength I", demand=ec.get(
+            "eL_governing_m"), demand_label="e (m)",
+            capacity=ec.get("e_limit_m"), capacity_label="e_max (m)",
+            passes=bool(ec.get("passes_strength"))),
+        CheckItem(description="Eccentricity, Service I", demand=ec.get(
+            "eL_service_m"), demand_label="e (m)",
+            capacity=ec.get("e_limit_service_m"),
+            capacity_label="e_max (m)",
+            passes=bool(ec.get("passes_service")))]
+    sections.append(CalcSection(title="Eccentricity", items=e_items))
+
+    # ── Bearing ───────────────────────────────────────────────
+    worked = br.get("Nc") is not None
+    b_rows = [
+        ["Strength I (max)", _f(br.get("sigma_v_strength_max_kPa"), ".1f"),
+         _f(br.get("B_eff_strength_max_m")),
+         _f(br.get("qR_strength_max_kPa"), ".1f"),
+         _f(br.get("CDR_strength"))],
+        ["Strength I (min)", _f(br.get("sigma_v_strength_min_kPa"), ".1f"),
+         _f(br.get("B_eff_strength_min_m")),
+         _f(br.get("qR_strength_min_kPa"), ".1f"),
+         _f(br.get("CDR_strength_min"))],
+        ["Critical (EV min, EH max)",
+         _f(br.get("sigma_v_critical_kPa"), ".1f"),
+         _f(br.get("B_eff_critical_m")),
+         _f(br.get("qR_critical_kPa"), ".1f"),
+         _f(br.get("CDR_critical"))],
+        ["Service I", _f(br.get("sigma_v_service_kPa"), ".1f"), "—",
+         _f(_get(analysis, "bearing_resistance_service"), ".1f"),
+         _f(br.get("CDR_service"))]]
+    if not worked:
+        given = _get(analysis, "bearing_resistance_strength")
+        for row in b_rows[:3]:
+            row[3] = _f(given, ".1f")
+    b_items = [CalcStep(
+        title="Bearing Pressure (Meyerhof)",
+        equation="σ_v = ΣV / (L - 2e_B), L - 2e_B = L when e_B < 0",
+        substitution=(f"Strength I (max) {_f(br.get('sigma_v_strength_max_kPa'), '.1f')}, "
+                      f"(min) {_f(br.get('sigma_v_strength_min_kPa'), '.1f')}, "
+                      f"critical {_f(br.get('sigma_v_critical_kPa'), '.1f')}, "
+                      f"Service I {_f(br.get('sigma_v_service_kPa'), '.1f')} kPa"),
+        result_name="σ_v (Strength I max)",
+        result_value=_f(br.get("sigma_v_strength_max_kPa"), ".1f"),
+        result_unit="kPa",
+        reference=("GEC-11 Vol I Eq. 4-18 (p. 4-26), "
+                   + ("Eq. 4-21 (p. 4-28)" if sloping else
+                      "Eqs. 4-19, 4-20 (p. 4-27)")
+                   + "; the live load over the zone at γ_LL (Vol II "
+                   "Table E4-6.3, p. E4-9)"),
+    )]
+    if worked:
+        b_items.append(CalcStep(
+            title="Nominal and Factored Bearing Resistance",
+            equation="q_n = c_f N_c + 0.5 L' γ_f N_γ;  q_R = φ_b q_n",
+            substitution=(f"N_c = {br['Nc']:g}, N_γ = {br['Ngamma']:g} "
+                          f"(Table 4-6), φ_b = {br['phi_bearing']:g}; q_n "
+                          f"over each combination's L'"),
+            result_name="q_R (Strength I max)",
+            result_value=_f(br.get("qR_strength_max_kPa"), ".1f"),
+            result_unit="kPa",
+            reference=("GEC-11 Vol I Eqs. 4-22, 4-23 (p. 4-28), Table 4-6 "
+                       "(p. 4-29)"),
+        ))
+    b_items.append(TableData(
+        title="Bearing by Combination",
+        headers=["Combination", "σ_v (kPa)", "L' (m)", "q_R (kPa)", "CDR"],
+        rows=b_rows,
+        notes=("CDR = q_R / σ_v (Eq. 4-17, p. 4-26); '—': not checked, no "
+               "resistance given or worked out (GM-100).")))
+    if br.get("checked"):
+        b_items.append(CheckItem(
+            description="Bearing (governing combination)", demand=1.0,
+            demand_label="Required", capacity=br.get("CDR_governing"),
+            capacity_label="CDR", passes=bool(br.get("passes"))))
+    else:
+        b_items.append("Bearing capacity: NOT CHECKED — no bearing "
+                       "resistance given (bearing_resistance_strength) or "
+                       "worked out (gamma_foundation). σ_v above is "
+                       "reported.")
+    ls = result.get("local_shear")
+    if ls is not None:
+        b_items.append(CheckItem(
+            description="Local shear (GEC-11 Vol I Eq. 4-24, p. 4-30)",
+            demand=ls["gamma_r_H_kPa"], demand_label="γ_r H (kPa)",
+            capacity=ls["three_cu_kPa"], capacity_label="3 c_u (kPa)",
+            passes=ls["passes"]))
+    sections.append(CalcSection(title="Bearing", items=b_items))
+
+    # ── Summary ───────────────────────────────────────────────
+    summary = [TableData(
+        title="LRFD External Stability Summary",
+        headers=["Check", "Governing", "Required", "Status"],
+        rows=[["Sliding CDR", _f(sl.get("CDR_governing")), "1.0",
+               "OK" if sl.get("passes") else "FAIL"],
+              ["Eccentricity e (m), Strength I",
+               _f(ec.get("eL_governing_m")), f"≤ {_f(ec.get('e_limit_m'))}",
+               "OK" if ec.get("passes_strength") else "FAIL"],
+              ["Eccentricity e (m), Service I", _f(ec.get("eL_service_m")),
+               f"≤ {_f(ec.get('e_limit_service_m'))}",
+               "OK" if ec.get("passes_service") else "FAIL"],
+              ["Bearing CDR", _f(br.get("CDR_governing")), "1.0",
+               ("OK" if br.get("passes") else "FAIL") if br.get("checked")
+               else "NOT CHECKED"]])]
+    failed = result.get("checks_failed") or []
+    not_run = result.get("checks_not_run") or []
+    summary.append("Result: " + (
+        ("FAILS: " + ", ".join(failed)) if failed else "no check failed")
+        + ("; not checked: " + ", ".join(not_run) if not_run else "") + ".")
+    if result.get("warnings"):
+        summary.append(TableData(
+            title="Warnings (GEC-11 advice, not a check)",
+            headers=["Warning"], rows=[[w] for w in result["warnings"]]))
+    summary.append("Internal stability is not part of this package: the "
+                   "ASD package (wall_type 'mse') reports it.")
+    sections.append(CalcSection(title="Overall Assessment", items=summary))
+    return sections
+
+
+# ════════════════════════════════════════════════════════════════════
 #  FIGURES
 # ════════════════════════════════════════════════════════════════════
 
@@ -2228,6 +2578,10 @@ def get_figures(result, analysis) -> List[FigureData]:
     """
     wtype = _wall_type(result, analysis)
     figures = []
+    if wtype == "mse_lrfd":
+        # GM-307: the LRFD package reports external stability; its section
+        # is the ASD package's (wall_type 'mse')
+        return figures
 
     if wtype == "mse":
         # MSE wall cross-section

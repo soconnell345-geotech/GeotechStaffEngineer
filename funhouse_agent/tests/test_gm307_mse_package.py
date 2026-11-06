@@ -12,6 +12,10 @@ S_eq and sigma_2 (Fig. 4-11, p. 4-38).
 Part 2, a battered face (10 deg or more): Kab with theta (Eqs. 4-2, 4-3,
 p. 4-15; Fig. 4-5), the internal Ka of Eq. 4-26 (p. 4-36) and the
 extensible failure surface of Fig. 4-9(b) (p. 4-34).
+
+Part 3, an LRFD package (wall_type 'mse_lrfd'): mse_lrfd_external_stability's
+result, Strength I (min) included, with the load factors of Tables 4-1, 4-2
+(p. 4-4) and the resistance factors of Table 4-5 (p. 4-19).
 """
 
 import math
@@ -220,3 +224,100 @@ def test_a_near_vertical_face_is_printed_as_vertical(tmp_path):
     flat, _ = _package({**BATTER, "face_batter": 0.0}, tmp_path, "f.html")
     assert near["FOS_sliding"] == flat["FOS_sliding"]
     assert near["sigma_v_kPa"] == flat["sigma_v_kPa"]
+
+
+# --- Part 3: the LRFD package ------------------------------------------------
+
+#: A made-up wall for the LRFD package: level backfill, a live load, the
+#: bearing resistance worked out from the foundation's unit weight.
+LRFD = {"wall_type": "mse_lrfd", "wall_height": 6.0, "gamma_backfill": 19.0,
+        "phi_backfill": 34.0, "reinforcement_length": 4.5, "surcharge": 12.0,
+        "phi_foundation": 30.0, "gamma_foundation": 18.0}
+
+
+def _lrfd_tool(params):
+    return D.call_agent("retaining_walls", "mse_lrfd_external_stability", {
+        k: v for k, v in params.items() if k != "wall_type"})
+
+
+def test_strength_i_min_by_hand(tmp_path):
+    # Tables 4-1, 4-2: Strength I (min) EV 1.00, EH 0.90, LL 1.75.
+    # V1 = 19 x 6 x 4.5 = 513; Kab = 1/3 (phi_b 30, p. 4-10); F1 = 0.5 x
+    # 1/3 x 19 x 36 = 114 (Eq. 4-5); F2 = 1/3 x 12 x 6 = 24 (Eq. 4-6).
+    # Sliding (Eqs. 4-9, 4-12): 513 tan 30 / (0.9 x 114 + 1.75 x 24) =
+    # 296.18 / 144.6 = 2.048. Eccentricity (Eq. 4-15): (0.9 x 114 x 2 +
+    # 1.75 x 24 x 3) / 513 = 0.6456 m. Bearing (Eqs. 4-19, 4-20): eB =
+    # 331.2 / (513 + 1.75 x 12 x 4.5) = 0.5452, sigma_v = 607.5 / (4.5 - 2
+    # x 0.5452) = 178.2 kPa; qR = 0.65 x 0.5 x 3.4096 x 18 x 22.4 (Eqs.
+    # 4-22, 4-23, Table 4-6) = 446.8, CDR = 2.508
+    mu = math.tan(math.radians(30.0))
+    assert 513 * mu / (0.9 * 114 + 1.75 * 24) == pytest.approx(2.048,
+                                                               abs=5e-4)
+    eB = (0.9 * 114 * 2 + 1.75 * 24 * 3) / (513 + 1.75 * 12 * 4.5)
+    sigma = 607.5 / (4.5 - 2 * eB)
+    qR = 0.65 * 0.5 * (4.5 - 2 * eB) * 18 * 22.4
+    out, html = _package(LRFD, tmp_path)
+    assert out["analysis_type"] == "MSE Wall (LRFD external stability)"
+    assert out["sliding_CDR_strength_min"] == pytest.approx(2.048, abs=5e-4)
+    assert out["eL_strength_min_m"] == pytest.approx(
+        (0.9 * 114 * 2 + 1.75 * 24 * 3) / 513, abs=5e-4)
+    assert out["sigma_v_strength_min_kPa"] == pytest.approx(sigma, abs=0.05)
+    assert out["bearing_CDR_strength_min"] == pytest.approx(qR / sigma,
+                                                            abs=2e-3)
+    assert "Strength I (min)" in html
+    for cite in ("Table 4-2 (p. 4-4)", "Table 4-1 (p. 4-4)",
+                 "Table 4-5 (p. 4-19)", "Table E4-5.1 (p. E4-6)",
+                 "Eqs. 4-22, 4-23 (p. 4-28)"):
+        assert cite in html, cite
+
+
+@pytest.mark.parametrize("extra", [
+    {}, {"surcharge": 0.0, "backfill_slope": 18.0, "phi_retained": 30.0},
+    {"gamma_foundation": None, "bearing_resistance_strength": 400.0,
+     "bearing_resistance_service": 250.0},
+    {"gamma_EH_min": 0.95}],
+    ids=["level", "slope", "given_resistance", "own_factor"])
+def test_the_lrfd_package_prints_the_tools_numbers(extra, tmp_path):
+    params = {k: v for k, v in {**LRFD, **extra}.items() if v is not None}
+    out, html = _package(params, tmp_path)
+    tool = _lrfd_tool(params)
+    sl, ec, br = tool["sliding"], tool["eccentricity"], tool["bearing"]
+    assert out["sliding_CDR_governing"] == sl["CDR_governing"]
+    assert out["sliding_CDR_strength_min"] == sl["CDR_strength_min"]
+    assert out["eL_strength_min_m"] == ec["eL_strength_min_m"]
+    assert out["bearing_CDR_strength_min"] == br["CDR_strength_min"]
+    assert out["checks_failed"] == tool["checks_failed"]
+    assert out["checks_not_run"] == tool["checks_not_run"]
+    for key in ("CDR_strength_max", "CDR_strength_min", "CDR_critical"):
+        assert f"{sl[key]:.3f}" in html, key
+    for key in ("eL_strength_max_m", "eL_strength_min_m", "eL_critical_m",
+                "eL_service_m"):
+        assert f"{ec[key]:.3f}" in html, key
+    for key in ("sigma_v_strength_max_kPa", "sigma_v_strength_min_kPa",
+                "sigma_v_critical_kPa", "sigma_v_service_kPa"):
+        assert f"{br[key]:.1f}" in html, key
+    if "gamma_EH_min" in extra:
+        assert "Given, not the printed value: γ_EH min" in html
+    else:
+        assert "Each as printed." in html
+
+
+def test_every_lrfd_step_cites_a_printed_page():
+    from funhouse_agent.adapters.retaining_walls import (
+        run_mse_lrfd_external_stability)
+    from retaining_walls.calc_steps import get_calc_steps
+    result, used = run_mse_lrfd_external_stability(
+        {k: v for k, v in LRFD.items() if k != "wall_type"})
+    steps = [item for section in get_calc_steps(
+        result, {**used, "wall_type": "mse_lrfd"}) for item in section.items
+        if isinstance(item, CalcStep)]
+    assert len(steps) >= 5
+    for step in steps:
+        assert re.search(r"\bpp?\. (?:[A-Z]\d*|\d+)-\d+",
+                         step.reference or ""), (step.title, step.reference)
+
+
+def test_the_lrfd_tools_name_selects_it(tmp_path):
+    out, _ = _package({**LRFD,
+                       "wall_type": "mse_lrfd_external_stability"}, tmp_path)
+    assert out["analysis_type"] == "MSE Wall (LRFD external stability)"

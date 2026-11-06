@@ -678,6 +678,17 @@ def _run_mse_wall(params):
 def _run_mse_lrfd_external_stability(params):
     """AASHTO/GEC-11 LRFD external-stability CDR set (sliding / eccentricity /
     bearing) under Strength I (max + min) and Service I combinations."""
+    return run_mse_lrfd_external_stability(params)[0]
+
+
+def run_mse_lrfd_external_stability(params, *,
+                                    method="mse_lrfd_external_stability"):
+    """(result, inputs in force) of ``mse_lrfd_external_stability``: the
+    tool's own code path, also run by ``calc_package.retaining_wall_package``
+    with ``wall_type="mse_lrfd"`` (GM-307). The inputs in force are the
+    geometry (``geom``) and each input given, by the tool's names, with the
+    load and resistance factors the run took (the result's
+    ``load_factors``). ``method`` names the caller in error messages."""
     params = without_unused(
         apply_aliases(params, _MSE_ALIASES),
         METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"])
@@ -696,7 +707,7 @@ def _run_mse_lrfd_external_stability(params):
          "ecc_limit_ratio_service",
          "traffic_vertical_resists", "sliding_cohesion",
          "interface_gap_possible", "lowest_sheet_depth", "rho_tested"),
-        method="mse_lrfd_external_stability")
+        method=method)
     if (params.get("rho_tested") is not None
             and params.get("lowest_sheet_depth") is None):
         raise ValueError(
@@ -705,7 +716,7 @@ def _run_mse_lrfd_external_stability(params):
             "lowest_sheet_depth, the depth of that layer below the top of "
             "the wall (GEC-11 Vol I p. 4-21 Step 3(iii)).")
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
-                   method="mse_lrfd_external_stability")
+                   method=method)
     if (params.get("gamma_foundation") is not None
             and params.get("phi_foundation") is None):
         raise ValueError(NEEDS_PHI_FOUNDATION)
@@ -746,7 +757,11 @@ def _run_mse_lrfd_external_stability(params):
         **factors,
     )
     result["reinforcement_length_m"] = geom.reinforcement_length
-    return result
+    used = {k: v for k, v in params.items()
+            if k not in ("wall_height", "reinforcement_length", "surcharge",
+                         "backfill_slope", "broken_backslope_height")}
+    used["geom"] = geom
+    return result, used
 
 
 #: Names of the log-spiral passive Kp a theory input also takes (GM-242):

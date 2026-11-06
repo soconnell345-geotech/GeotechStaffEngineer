@@ -604,11 +604,17 @@ _PACKAGE_TOOLS = {
         "adapter": "retaining_walls",
         "selector": ("wall_type", "cantilever",
                      "The wall to analyse and report: 'cantilever' (the "
-                     "cantilever_wall tool) or 'mse' (the mse_wall tool, "
-                     "a level, sloping or broken backslope; GM-307)."),
-        "tools": {"cantilever": "cantilever_wall", "mse": "mse_wall"},
+                     "cantilever_wall tool), 'mse' (the mse_wall tool, ASD "
+                     "factors of safety, external and internal) or "
+                     "'mse_lrfd' (the mse_lrfd_external_stability tool, "
+                     "LRFD capacity:demand ratios under Strength I max and "
+                     "min, the critical combination and Service I, "
+                     "external stability only; GM-307)."),
+        "tools": {"cantilever": "cantilever_wall", "mse": "mse_wall",
+                  "mse_lrfd": "mse_lrfd_external_stability"},
         "selector_values": {"cantilever_wall": "cantilever",
-                            "mse_wall": "mse"},
+                            "mse_wall": "mse",
+                            "mse_lrfd_external_stability": "mse_lrfd"},
         # Where the shear key is drawn (GM-216): the sliding check takes
         # its passive on the plane below the toe over the key's depth,
         # wherever the key is, so its place is the figure's only
@@ -1967,6 +1973,12 @@ def _generate_retaining_wall_package(params: dict) -> dict:
     run = _run_tool("retaining_wall_package", params)
     result, used = run.out
     analysis = {**used, "wall_type": run.value}
+    if run.value == "mse_lrfd":
+        # GM-307: the LRFD external-stability package
+        return _build_response(
+            "retaining_walls", result, analysis, params, run=run,
+            analysis_type="MSE Wall (LRFD external stability)",
+            extra=_mse_lrfd_numbers(result))
     analysis.update(_shear_key_place(run.own, used.get("geom")))
 
     def _r2(x):
@@ -1991,6 +2003,27 @@ def _generate_retaining_wall_package(params: dict) -> dict:
         analysis_type="MSE Wall" if run.value == "mse" else "Retaining Wall",
         extra=extra,
     )
+
+
+def _mse_lrfd_numbers(result: dict) -> dict:
+    """The LRFD package's numbers beside the file (GM-307), as the
+    mse_lrfd_external_stability tool returned them: the verdict lists and
+    each mode's governing value, Strength I min included."""
+    sl, ec, br = (result["sliding"], result["eccentricity"],
+                  result["bearing"])
+    return {
+        "passes": result.get("passes"),
+        "checks_failed": result.get("checks_failed", []),
+        "checks_not_run": result.get("checks_not_run", []),
+        "sliding_CDR_governing": sl.get("CDR_governing"),
+        "sliding_CDR_strength_min": sl.get("CDR_strength_min"),
+        "eL_governing_m": ec.get("eL_governing_m"),
+        "eL_strength_min_m": ec.get("eL_strength_min_m"),
+        "e_limit_m": ec.get("e_limit_m"),
+        "bearing_CDR_governing": br.get("CDR_governing"),
+        "bearing_CDR_strength_min": br.get("CDR_strength_min"),
+        "sigma_v_strength_min_kPa": br.get("sigma_v_strength_min_kPa"),
+    }
 
 
 def _mse_numbers(result) -> dict:
@@ -3479,8 +3512,8 @@ METHOD_INFO = {
     },
     "retaining_wall_package": {
         "category": "Calculation Package",
-        "brief": "Run a cantilever retaining wall (cantilever_wall) or MSE wall (mse_wall) analysis and generate its calc package.",
-        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user."},
+        "brief": "Run a cantilever retaining wall (cantilever_wall), MSE wall (mse_wall, ASD) or MSE LRFD external stability (mse_lrfd_external_stability) analysis and generate its calc package.",
+        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user.", "(MSE LRFD numbers)": "wall_type 'mse_lrfd' only, in place of verdict and the FOS: passes, checks_failed, checks_not_run, sliding_CDR_governing and sliding_CDR_strength_min, eL_governing_m, eL_strength_min_m and e_limit_m, bearing_CDR_governing, bearing_CDR_strength_min and sigma_v_strength_min_kPa, as the mse_lrfd_external_stability tool works them out (null: not checked). Report them to the user."},
     },
     "ground_improvement_package": {
         "category": "Calculation Package",
