@@ -71,8 +71,12 @@ def growth_factor(growth_rate_pct, design_period_yr) -> dict:
 
 
 def _single_lef(pavement_type, axle_config, load_kips, sn, d_in, pt,
-                references):
-    """One axle-group LEF; returns (lef, basis_string)."""
+                references, notes=None):
+    """One axle-group LEF; returns (lef, basis_string).
+
+    A load, SN or D outside the printed table is read at the nearest printed
+    value; the lookup's note saying so goes into ``notes``.
+    """
     if _lef_mod is not None:
         kw = {"sn": sn} if pavement_type == "flexible" else {"d_in": d_in}
         r = _lef_mod.load_equivalency_factor(
@@ -80,6 +84,8 @@ def _single_lef(pavement_type, axle_config, load_kips, sn, d_in, pt,
             axle_load_kips=load_kips, pt=pt, **kw,
         )
         add_ref(references, r.get("reference"))
+        if notes is not None and r.get("note"):
+            notes.append(f"{axle_config} axle, {load_kips} kips: {r['note']}")
         return r["lef"], "appendix_d_tables"
     # Fallback for a geotech-references without lef.py: the esal_* lookups
     # (SN=5 / D=9 in, pt=2.5 only before refs REF-12; they read lef.py since).
@@ -103,6 +109,8 @@ def _single_lef(pavement_type, axle_config, load_kips, sn, d_in, pt,
         )
     r = table_fns[key]()
     add_ref(references, r.get("reference"))
+    if notes is not None and r.get("note"):
+        notes.append(f"{axle_config} axle, {load_kips} kips: {r['note']}")
     return r["lef"], "digitized_table"
 
 
@@ -174,7 +182,7 @@ def compute_design_esals(
                 )
             lef, lef_basis = _single_lef(
                 pavement_type, str(grp["axle_config"]).strip().lower(),
-                grp["load_kips"], sn, d_in, pt, references,
+                grp["load_kips"], sn, d_in, pt, references, notes,
             )
             annual = grp["daily_count"] * 365.0 * lef
             base_year += annual
