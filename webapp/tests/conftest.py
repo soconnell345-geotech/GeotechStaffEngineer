@@ -25,3 +25,12 @@ def _restore_process_env():
             os.environ.pop(key, None)
         else:
             os.environ[key] = value
+
+
+@pytest.fixture(autouse=True)
+def _no_sharepoint_log(monkeypatch):
+    """The SharePoint log (TA-35) writes on a thread of its own; left on, a
+    test's fake Graph could be gone by the time it writes. Off for every
+    webapp test; the log's own tests turn it on and wait for the write."""
+    monkeypatch.setenv("GEOTECH_SHAREPOINT_LOG", "0")
+    yield

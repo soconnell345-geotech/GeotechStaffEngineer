@@ -76,7 +76,7 @@ PLACEHOLDER_HOSTS = {
     "adb-dp-9.3.databricks.azure.us", "adb-99.11.azuredatabricks.net",
     "dbc-x.cloud.databricks.com", "dbc-deadbeef.cloud.databricks.com",
     "contoso.sharepoint.com", "host.sharepoint.com", "t.sharepoint.com",
-    "x.sharepoint.com",
+    "x.sharepoint.com", "contoso.sharepoint.us",
 }
 
 TEXT_SUFFIXES = {".py", ".md", ".txt", ".json", ".html", ".toml", ".yaml",

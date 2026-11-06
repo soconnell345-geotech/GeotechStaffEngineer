@@ -151,9 +151,13 @@ _SITE_PATH = re.compile(r"^/(sites|teams)/([^/]+)/(.*)$", re.IGNORECASE)
 _VIEW_SUFFIX = re.compile(r"/forms/[^/]+\.aspx$", re.IGNORECASE)
 
 
-def browser_url_to_path(url: str) -> Optional[str]:
+def browser_url_to_path(url: str, server_relative: bool = False
+                        ) -> Optional[str]:
     """The library path inside a SharePoint address copied from a browser,
-    or ``None`` when ``url`` is not one or carries no path.
+    or ``None`` when ``url`` is not one or carries no path. With
+    ``server_relative`` the configured site's path keeps its
+    ``/sites/<site>/`` too (the Graph client then matches the site AND its
+    host, TA-35).
 
     The forms that carry a path, all converted:
 
@@ -201,7 +205,8 @@ def browser_url_to_path(url: str) -> Optional[str]:
     segments = rest.split("/")
     if len(segments) == 1 and "." in segments[0]:
         return None                           # a file at the site root, no library
-    if (kind == "sites" and site.lower() == _configured_site()
+    if (not server_relative and kind == "sites"
+            and site.lower() == _configured_site()
             and segments[0].lower() == "shared documents"):
         return rest
     # Another site, a team, or another library of this site: the
@@ -224,17 +229,40 @@ def link_target_name(path_or_url: str) -> str:
     return s.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
 
 
+def _default_host() -> str:
+    """The default site's host (``contoso.sharepoint.com``), lower case;
+    ``""`` when it cannot be told."""
+    url = (os.environ.get(sharepoint_store.ENV_SITE, "")
+           or os.environ.get("SHAREPOINT_SITE_URL", "")).strip()
+    if not url:
+        try:
+            url = str(getattr(_fm(), "site_url", "") or "")
+        except Exception:                                  # noqa: BLE001
+            url = ""
+    if not url:
+        return ""
+    return (urlsplit(url if "://" in url else f"https://{url}").hostname
+            or "").lower()
+
+
 def _resolve(path: Optional[str]) -> str:
     """Resolve a tool-supplied path against the configured base folder.
 
     A SharePoint address copied from a browser is first turned into the path
-    it names (:func:`browser_url_to_path`). Absolute forms (full URL,
-    "/sites/...", "Shared Documents/...") pass through UNCHANGED (a leading
-    slash is meaningful to the SDK); anything else is joined under the
-    configured root.
+    it names (:func:`browser_url_to_path`) -- unless it is on another host
+    than the default site (another tenant's, or another cloud's): then it
+    passes through whole, so the file layer opens it on its own host or
+    refuses it, and never reads the same path on the default site (TA-35).
+    Absolute forms (full URL, "/sites/...", "Shared Documents/...") pass
+    through UNCHANGED (a leading slash is meaningful to the SDK); anything
+    else is joined under the configured root.
     """
     p = (path or "").strip().rstrip("/")
     if p.lower().startswith("http"):
+        host = (urlsplit(p).hostname or "").lower()
+        default = _default_host()
+        if host and default and host != default:
+            return p
         p = (browser_url_to_path(p) or p).rstrip("/")
     if not p or p == "/":
         return _root()
@@ -324,10 +352,24 @@ def _conversations_needle() -> List[str]:
     return tail + ["conversations"]
 
 
-class _Scope:
-    """Which conversation folders one conversation may touch."""
+def _in_app_log(path) -> bool:
+    """Whether ``path`` is in the app's own log folder (TA-35,
+    ``sharepoint_log.FOLDER``): it holds every user's SharePoint errors,
+    for the host's administrator to read in SharePoint."""
+    from webapp.sharepoint_log import FOLDER
+    segs = _segments(path)
+    return segs is not None and FOLDER.lower() in segs
 
-    def __init__(self, own_folders: List[str]):
+
+class _Scope:
+    """Which conversation folders one conversation may touch. The app's
+    log folder (``_app_log``) is closed to every conversation: it holds
+    every user's SharePoint errors (TA-35)."""
+
+    def __init__(self, own_folders: List[str], owner: str = ""):
+        #: The conversation owner's key: tags this conversation's SharePoint
+        #: log entries in memory (TA-35, ``sharepoint_log.speaking_for``).
+        self.owner = owner
         self.needle = _conversations_needle()
         self.own: List[List[str]] = []
         for folder in own_folders:
@@ -347,7 +389,7 @@ class _Scope:
         """``open`` (not a conversation folder), ``own``, ``container``
         (the conversations folder itself) or ``private``."""
         segs = _segments(remote)
-        if segs is None:
+        if segs is None or _in_app_log(remote):
             return "private"
         positions = self._positions(segs)
         if not positions:
@@ -363,6 +405,12 @@ class _Scope:
         return verdict
 
     def refusal(self, remote: str, action: str) -> str:
+        if _in_app_log(remote):
+            return (f"SharePoint {action} refused: '{remote}' is the app's "
+                    "own log folder. It holds every user's SharePoint "
+                    "errors and is kept for the host's administrator, who "
+                    "reads it in SharePoint; it is never opened for a "
+                    "conversation.")
         own = (f" This conversation's own SharePoint folder is "
                f"'{self.own_folder}'." if self.own_folder else "")
         return (f"SharePoint {action} refused: '{remote}' is in another "
@@ -477,7 +525,15 @@ def _scope(record_dir: Optional[str] = None,
     session = _session_folder(thread_id, record_dir)
     if session:
         own.append(session)
-    return _Scope(own)
+    return _Scope(own, owner)
+
+
+def _speaking_for(scope: Optional[_Scope]):
+    """The SharePoint log entries a tool call records are tagged (in
+    memory) with its conversation's owner, so the sidebar's diagnostics
+    show each person only their own (TA-35)."""
+    from webapp import sharepoint_log
+    return sharepoint_log.speaking_for(getattr(scope, "owner", "") or "")
 
 
 def _shown(path: str) -> str:
@@ -580,8 +636,31 @@ def _probe(fm) -> Tuple[bool, str]:
         return False, f"{type(exc).__name__}: {str(exc)[:200]}"
 
 
+def _logged(step: str, message: str, path: str = "") -> str:
+    """``message``, after appending it to the app's SharePoint log (TA-35;
+    never raises, never blocks the turn)."""
+    try:
+        from webapp import sharepoint_log
+        sharepoint_log.record(step, message, path)
+    except Exception:                                      # noqa: BLE001
+        pass
+    return message
+
+
+def _plain_refusal(exc: BaseException) -> Optional[str]:
+    """The plain words of a site or link the app cannot open (TA-35,
+    ``graph_sharepoint.SiteNotOpened``): said as they are, never followed
+    by a look on the default site."""
+    msg = getattr(exc, "user_message", None)
+    return msg if isinstance(msg, str) and msg else None
+
+
 def _not_answering(what: str, detail: str = "") -> str:
     """The message for a negative answer the base folder cannot vouch for."""
+    return _logged(f"sharepoint {what}", _not_answering_text(what, detail))
+
+
+def _not_answering_text(what: str, detail: str = "") -> str:
     return (f"SharePoint is not answering: {what} came back empty, and the "
             f"app's base folder ({_root()}) could not be read either"
             + (f" ({detail})" if detail else "")
@@ -593,8 +672,16 @@ def _not_answering(what: str, detail: str = "") -> str:
             "now and try again in a few minutes.")
 
 
-def _failure(what: str, exc: BaseException) -> str:
-    """A download/list/search failure, said for what it is."""
+def _failure(what: str, exc: BaseException, path: str = "") -> str:
+    """A download/list/search failure, said for what it is (and kept in the
+    app's SharePoint log)."""
+    return _logged(f"sharepoint {what}", _failure_text(what, exc), path)
+
+
+def _failure_text(what: str, exc: BaseException) -> str:
+    plain = _plain_refusal(exc)
+    if plain:
+        return plain
     kind = _classify(exc)
     status = _status(exc)
     code = f"HTTP {status}: " if status else ""
@@ -818,8 +905,8 @@ def _list(path: str, scope: Optional[_Scope] = None) -> str:
             return scope.refusal(remote, "list")
         entries = fm.ls(remote) or []
     except Exception as exc:
-        return _failure("list", exc).replace("SharePoint list failed",
-                                             "SharePoint list error", 1)
+        return _failure("list", exc, path).replace("SharePoint list failed",
+                                                   "SharePoint list error", 1)
     if scope is not None and entries:
         kept = [e for e in entries if scope.keep(e, remote)]
         if not kept:
@@ -865,7 +952,9 @@ def make_list_tool(record_dir: Optional[str] = None,
     ``note`` (the sites line, TA-34) is added to the description."""
 
     def sharepoint_list_files(path: str = "") -> str:
-        return _list(path, _scope(record_dir, thread_id))
+        scope = _scope(record_dir, thread_id)
+        with _speaking_for(scope):
+            return _list(path, scope)
 
     sharepoint_list_files.__doc__ = _with_note(_LIST_DOC, note)
     return tool(sharepoint_list_files)
@@ -956,7 +1045,9 @@ def _link_is_open(fm, url: str, scope: _Scope) -> bool:
         return False
     try:
         details = details_of(url) or {}
-    except Exception:                                      # noqa: BLE001
+    except Exception as exc:                               # noqa: BLE001
+        if _plain_refusal(exc):
+            raise                          # said plainly by the caller
         return False
     parent = (details.get("parentReference") or {}).get("path") \
         if isinstance(details.get("parentReference"), dict) else ""
@@ -994,7 +1085,7 @@ def _download(path: str, save_as: str, refresh: bool,
         fm = _fm()
         remote = _resolve(original)
     except Exception as exc:
-        return _failure("download", exc).replace(
+        return _failure("download", exc, original).replace(
             "SharePoint download failed", "SharePoint download error", 1)
     if scope is not None:
         for target in {remote, original}:
@@ -1055,13 +1146,13 @@ def _download(path: str, save_as: str, refresh: bool,
     if original.lower().startswith("http") and original != remote:
         attempts.append(original)       # the SDK's sharing-link route
     for target in attempts:
-        if scope is not None and target.lower().startswith("http") \
-                and not _link_is_open(fm, target, scope):
-            continue
         try:
+            if scope is not None and target.lower().startswith("http") \
+                    and not _link_is_open(fm, target, scope):
+                continue
             part = _fetch(fm, target, dest_dir)
         except Exception as exc:                           # noqa: BLE001
-            if _classify(exc) != "missing":
+            if _plain_refusal(exc) or _classify(exc) != "missing":
                 return _failure(f"download of {target}", exc)
             continue
         # A sharing link that resolved: file it under the path it was given
@@ -1132,8 +1223,9 @@ def make_download_tool(record_dir: Optional[str] = None,
 
     def sharepoint_download_file(path: str, save_as: str = "",
                                  refresh: bool = False) -> str:
-        return _download(path, save_as, refresh, record_dir,
-                         _scope(record_dir, thread_id))
+        scope = _scope(record_dir, thread_id)
+        with _speaking_for(scope):
+            return _download(path, save_as, refresh, record_dir, scope)
 
     sharepoint_download_file.__doc__ = _with_note(_DOWNLOAD_DOC, note)
     return tool(sharepoint_download_file)
@@ -1230,7 +1322,9 @@ def _upload(local_path: str, dest_folder: str, default_folder=None,
             remote = f"{folder}/{stem}_{time.strftime('%Y%m%d_%H%M%S')}{ext}"
             ok = fm.upload_file(local, remote, overwrite=False)
         if not ok:
-            return f"SharePoint upload failed for {remote} (upload rejected)."
+            return _logged("sharepoint upload",
+                           f"SharePoint upload failed for {remote} "
+                           "(upload rejected).", remote)
         try:
             from webapp.sharepoint_store import fix_web_url
             url = fix_web_url(fm.get_web_url(remote))
@@ -1239,7 +1333,10 @@ def _upload(local_path: str, dest_folder: str, default_folder=None,
         return (f"Uploaded '{_shown(local)}' -> {remote}{label}."
                 + (f" Link: {url}" if url else ""))
     except Exception as exc:
-        return f"SharePoint upload error: {type(exc).__name__}: {exc}"
+        plain = _plain_refusal(exc)
+        return _logged("sharepoint upload", plain or (
+            f"SharePoint upload error: {type(exc).__name__}: {exc}"),
+            dest_folder)
 
 
 def _mirrored(conv_dir: str, rel: str, local: str) -> bool:
@@ -1420,10 +1517,12 @@ def make_conversation_upload_tool(thread_id: str,
                               f"{type(exc).__name__}: {exc}")
                 if shared is not None:
                     return shared
-        return _upload(local, dest_folder, default_folder=_folder,
-                       default_label=" (this conversation's SharePoint folder)",
-                       scope=_scope(record_dir, thread_id),
-                       record_dir=conv_dir)
+        scope = _scope(record_dir, thread_id)
+        with _speaking_for(scope):
+            return _upload(
+                local, dest_folder, default_folder=_folder,
+                default_label=" (this conversation's SharePoint folder)",
+                scope=scope, record_dir=conv_dir)
 
     return sharepoint_upload_file
 
@@ -1495,7 +1594,7 @@ def _search_tool(query: str, path: str = "",
             return scope.refusal(remote, "search")
         hits = visible(_search(fm, query, remote))
     except Exception as exc:
-        return _failure("search", exc).replace("SharePoint search failed",
+        return _failure("search", exc, path).replace("SharePoint search failed",
                                                "SharePoint search error", 1)
     how = ""
     by_folder = 0
@@ -1554,7 +1653,9 @@ def make_search_tool(record_dir: Optional[str] = None,
     and their files never named (A1)."""
 
     def sharepoint_search_files(query: str, path: str = "") -> str:
-        return _search_tool(query, path, _scope(record_dir, thread_id))
+        scope = _scope(record_dir, thread_id)
+        with _speaking_for(scope):
+            return _search_tool(query, path, scope)
 
     sharepoint_search_files.__doc__ = _with_note(_SEARCH_DOC, note)
     return tool(sharepoint_search_files)
