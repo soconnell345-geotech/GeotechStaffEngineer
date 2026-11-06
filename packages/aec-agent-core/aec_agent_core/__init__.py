@@ -19,7 +19,8 @@ patches the real module, which a re-exporting stub would silently not do.
 An alias also covers what lies under the name: with the table above,
 ``funhouse_agent.vision_tools.sub`` is ``aec_agent_core.vision_tools.sub``.
 
-The alias is LAZY: nothing is imported until the old name is. The module
+The alias is LAZY: nothing is imported until the old name is looked up (an
+import, or ``importlib.util.find_spec``, which imports the target). The module
 keeps its own ``__name__``, ``__spec__`` and ``__file__`` (the new ones).
 """
 

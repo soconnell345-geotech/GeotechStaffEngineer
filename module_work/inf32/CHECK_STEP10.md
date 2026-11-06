@@ -94,7 +94,8 @@ so:
   `import old.x` and `monkeypatch.setattr("old.x.NAME", ...)` all reach the
   real module (tested);
 - lazy: nothing imports until the old name does (tested; matters for the
-  boundary test's import counts);
+  boundary test's import counts). `importlib.util.find_spec(old)` counts
+  as a look-up: it imports the target (review, §9);
 - a package alias covers what is under it (`old.box.child` →
   `new.box.child`), the longest alias wins;
 - the module keeps its own `__name__`, `__file__` and `__spec__` (the import
@@ -145,9 +146,13 @@ accepts it.
     found in the venv without being run; installed metadata agrees on the
     core's version and the app's pin;
   - the `geotech-disclaimer` console script runs from the venv.
-- Without the `build` package the slow tests skip with the reason, unless
-  `GEOTECH_REQUIRE_WHEEL_TEST=1`, which makes it a failure. The main
-  "Tests" job has no `build`, so it skips them there.
+- The slow tests are opt-in (since the review, §9): they run only with
+  `GEOTECH_REQUIRE_WHEEL_TEST=1` and skip, saying so, without it; with it,
+  a missing `build` package is a failure. So the main "Tests" job, nightly,
+  and a local or xdist run skip them (building the root writes into the
+  source tree, so two builds at once must not happen). On Windows, if
+  Smart App Control refuses the fresh `geotech-disclaimer.exe` (WinError
+  4551), the console-script check skips with that reason.
 - **CI's "Wheels" job** (tests.yml, Python 3.12, minutes): installs the
   core, then the app and geotech-references, plus `pytest build
   setuptools wheel`, sets `GEOTECH_REQUIRE_WHEEL_TEST=1` and runs this file
@@ -163,7 +168,9 @@ The released 5.34.0 is untouched by any of this. What changes is installing
    core is published, so `pip install geotech-staff-engineer==<next>` would
    fail. Any GSE release after this merge therefore waits for step 12
    (core first, then GSE), or this pin is taken out for it. **The owner
-   should know this before the next release word.**
+   should know this before the next release word.** Since the review the
+   publish workflow enforces it: a step before the upload fails the
+   publish unless the pinned core version is on PyPI (§9, F1).
 2. `docs/DATABRICKS_INSTALL.md` §1 (`%pip install
    "geotech-staff-engineer==X"`): unchanged in form after step 12; the core
    then arrives beside it. The log section ("what good looks like", the
@@ -187,9 +194,18 @@ The released 5.34.0 is untouched by any of this. What changes is installing
    `PYTHONPATH`) needs the core's source folder on the path too and its
    requirements (`app_src/requirements.txt` or the third-party pins). The
    dosdev round (OWN-29/OWN-30) should be run on a set that has it.
-5. `README.md`'s developer install (`pip install -e .`) and any session
-   setup that installs master: `pip install -e packages/aec-agent-core`
-   first (CI and this note say so; the README is a step-12 edit).
+5. Any developer or session setup that installs master with `pip install
+   -e .` must install the core in the same command: `pip install -e
+   packages/aec-agent-core -e . ...`. (Corrected after the review:
+   `README.md` has no developer install, only `pip install
+   geotech-staff-engineer`, an end-user install for step 12.) The two
+   setups that do this, the cloud briefs
+   `module_work/cloud_briefs/COMMON_MODULES.md` and
+   `COMMON_REPORT_INGEST.md`, are changed on this branch (§9, F2); a
+   search of `CLAUDE.md`, `README.md`, `.claude/`, the cloud briefs and
+   the workflows found no other. The end-user guides
+   (`docs/DATABRICKS_INSTALL.md`, `docs/FOUNDRY.md`, `tinyapps/`) wait for
+   step 12 as items 2-4 say.
 
 ## 6. What step 11 and step 12 need from this
 
@@ -202,6 +218,32 @@ The released 5.34.0 is untouched by any of this. What changes is installing
   The wheel test's `IMPORTS["aec_agent_core"]` should grow to the moved
   modules, and its "core wheel is `aec_agent_core` alone" check stays. The
   "core-only" CI job (§5) is step 11's, not added here.
+- **Step 11, the alias helper (the review's notes):**
+  - `python -m <old name>` fails (runpy needs `get_code`; for a package
+    the target's `__main__` runs once as a plain import before the
+    error). No documented `-m` command targets a module on the §2.3
+    list; use the new names.
+  - `importlib.util.find_spec(<old name>)` imports the target; only
+    `install_aliases` itself is lazy.
+  - Logger names follow the new `__name__`, so a test that captures by
+    logger name needs the new one: `webapp/tests/test_palantir_reasoning.py`
+    (`caplog.at_level(..., logger="webapp.palantir_sdk_engine")`) stops
+    capturing when `palantir_sdk_engine` moves (it fails loudly).
+  - A package alias covers every name under it (that is how a stale file
+    at the old path is kept out). A package that splits, such as
+    `review_eval` (the framework to the core, GSE's tasks stay), must be
+    aliased module by module, or GSE's own file at the old path can no
+    longer be imported.
+  - Install the table at the top of the old package's `__init__`, before
+    any import of a moved name.
+  - Tests that start a Python subprocess importing the app need
+    `packages/aec-agent-core` on that subprocess's `PYTHONPATH` (the root
+    conftest covers only the pytest process). Runs from source outside
+    pytest (the run skill's driver, `streamlit run`) in the shared local
+    venv need the core on the path too.
+  - The Foundry test wheels need a fourth wheel, the core's, at step 11 (a):
+    `docs/FOUNDRY.md` §1 items 3-4 (and the brief template's list of
+    wanted wheels) still say three.
 - **Step 12:** bump the core from 1.0.0.dev0 to 1.0.0 in its pyproject,
   `__version__` and the app's exact pin together (the fast wheel test
   fails until all three agree); add the `core-v*` tag trigger and a job that
@@ -211,6 +253,14 @@ The released 5.34.0 is untouched by any of this. What changes is installing
 
 ## 7. Left open
 
+- The name `aec-agent-core` is not registered on PyPI (the review found
+  `https://pypi.org/pypi/aec-agent-core/json` answering 404), while this
+  PUBLIC repository pins `aec-agent-core==1.0.0.dev0`: anyone could take
+  the name and upload that version. PyPI reserves a name only with an
+  upload, so registering it means publishing, which is the owner's
+  decision. Until then every documented install puts the local core
+  first (CI, nightly, the cloud briefs), so none resolves it from an
+  index, and the publish guard stops a GSE release that would.
 - PyMuPDF `<2` in the core or in Document Review's pins (§2).
 - The app's package-data line `calc_package = ["templates/*.html",
   "templates/*.tex"]` matches nothing (`calc_package/templates/` does not
@@ -257,6 +307,47 @@ the same.
 
 The branch merges cleanly onto master `76d27ca` (checked with
 `git merge-tree`); the gate was run on the branch as based on `05eab2d`.
+
+## 9. Review and fixes (2026-11-05)
+
+An independent review of this branch (F1-F8, most severe first) and what
+changed for each. No behaviour change to the app; no code moved.
+
+| Finding | What changed |
+|---|---|
+| F1 (HIGH) a GSE release before step 12 could not be installed | `publish.yml`: a step before the upload reads the exact `aec-agent-core` pin from `pyproject.toml` and asks `https://pypi.org/pypi/aec-agent-core/<version>/json`; a 404 fails the publish with a plain error naming step 12. No core requirement: nothing to check. A requirement that is not one exact pin, or PyPI unreachable: fails, saying why. The build, the `dist/` check, the upload and the publish job are unchanged. At step 12 the core goes up first and the step passes by itself. |
+| F2 (HIGH) cloud sessions stop at setup | Both cloud briefs (`COMMON_MODULES.md`, `COMMON_REPORT_INGEST.md`) now set up with `pip install -e packages/aec-agent-core -e . pytest pytest-xdist`, one command. A search of `CLAUDE.md`, `README.md`, `.claude/`, the cloud briefs and the workflows found no other developer setup with `pip install -e .` (there is no CONTRIBUTING, devcontainer or setup hook); old CHECK notes that record how they ran are history, left. §5.5 corrected (README has no developer install). End-user guides wait for step 12. |
+| F3 (HIGH, local) the shared-venv gate broke | (a) The root `conftest.py` puts this checkout's `packages/aec-agent-core` first on `sys.path`, so a plain `pytest` collects the core's tests with no install. (b) The slow wheel tests are opt-in (`GEOTECH_REQUIRE_WHEEL_TEST=1`, which CI's Wheels job already sets; tests.yml's comment updated), so a local or xdist run never builds the root, let alone twice at once; with the variable set a missing `build` is a failure. The console-script check skips with the reason when Windows refuses the fresh exe (WinError 4551, Smart App Control). Docstring's "a minute or two" now "under a minute". |
+| F4 (MEDIUM, step 11) a worktree would test another checkout's core | Fixed by F3 (a): each checkout's conftest puts its own core first. Subprocess tests need `PYTHONPATH` at step 11 (§6). |
+| F5 (MEDIUM, step 11) the core's tests removed the apps' aliases | `test_core_aliases.py`: the fixture saves the table and removes only the names its test added (never `remove_aliases()` with no name, which removes all); assertions check only the test's own entries; the finder is checked gone only when no other alias is left, and checked still there when one is. Checked with an alias installed before the suite: 21 passed, and that alias and the finder were still in place after. |
+| F6 (MEDIUM) the name can be taken on PyPI | The owner's decision (registering means an upload): §7. Until then every documented install puts the local core first, and F1's guard stops a release that would resolve it from PyPI. |
+| F7 (LOW) CI has never run on this branch | `tests.yml` already has `workflow_dispatch` (line 11), so the lead can run it on this branch before merging; nothing added. |
+| F8 (LOW, step 11 (a)) the Foundry test wheels | Left for step 11 (a), as the review says; noted in §6. |
+| Step-11 notes on the alias helper | Added to §6. §3's "lazy" now says `find_spec` on an old name imports the target, as does the helper's module docstring. |
+
+Tests rerun from this worktree with the shared Windows `.venv` (Python
+3.14, pytest 9.0.3; the core NOT installed there), no `PYTHONPATH`,
+`-p no:cacheprovider`, judged by exit code:
+
+| Run | Exit | Result |
+|---|---|---|
+| `packages/aec-agent-core/tests` (collects through the conftest) | 0 | 21 passed |
+| same, with an app alias installed before the suite (a throwaway runner) | 0 | 21 passed; the alias and the finder still in place after |
+| `webapp/tests/test_wheels.py`, plain | 0 | 6 passed, 5 skipped (opt-in) |
+| `webapp/tests/test_wheels.py`, `GEOTECH_REQUIRE_WHEEL_TEST=1` | 0 | 11 passed in 24 s (Smart App Control let the exe run this time; the WinError 4551 skip was checked with a faked error: it skips, and any other `OSError` still fails) |
+| `webapp/tests/test_public_text.py` | 0 | 5 passed |
+| `webapp/tests/test_version_guard.py` | 0 | 8 passed |
+| `webapp/tests/test_tinyapps_entry.py` | 0 | 9 passed |
+| `webapp/tests/test_docs_currency.py` | 0 | 6 passed |
+| `webapp/tests` whole, in one process (`-n 4` asked for, but the shared `.venv` has no pytest-xdist and nothing may be installed there) | 0 | 1,136 passed, 8 skipped (5 of them the opt-in wheel builds), 4 min 12 s |
+
+The publish guard's script, taken from `publish.yml` and run locally
+against PyPI in throwaway folders: the real `pyproject.toml` (core
+1.0.0.dev0, not on PyPI) exits 1 with the step-12 error; the same logic
+for `planlens==0.14.0` (on PyPI) exits 0 and for `planlens==9.9.9` exits 1;
+no core requirement exits 0; `aec-agent-core>=1.0` exits 1 asking for an
+exact pin. The step sits after the `dist/` check and before the upload.
+The wheel run's `*.egg-info` folders were removed from the worktree.
 
 ## Release note (three lines)
 

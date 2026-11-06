@@ -18,11 +18,17 @@ to be inside the venv all the same.
 
 How it runs:
 - the fast tests below (versions and pins in step) run everywhere;
-- the build test is marked ``slow`` (it builds the app's sdist and wheel,
-  about a minute or two) and needs the ``build`` package. Without it the
-  test skips, saying so, unless ``GEOTECH_REQUIRE_WHEEL_TEST=1`` is set,
-  which turns the skip into a failure. CI's "Wheels" job (tests.yml)
-  installs ``build``, sets that variable and runs this file alone.
+- the build tests are marked ``slow`` and are OPT-IN: they run only when
+  ``GEOTECH_REQUIRE_WHEEL_TEST=1`` is set, and otherwise skip, saying so.
+  They build the app's sdist and wheel from the repository root (under a
+  minute), and setuptools writes into the source tree while it does, so two
+  runs at once (two xdist workers, or a local run beside another) must
+  never build it. With the variable set, a missing ``build`` package is a
+  failure, not a skip. CI's "Wheels" job (tests.yml) installs ``build``,
+  sets that variable and runs this file alone, in one process.
+- On Windows, Smart App Control may refuse to run the freshly built
+  ``geotech-disclaimer.exe`` (WinError 4551); the console-script check then
+  skips with that reason. CI runs it on Linux.
 """
 
 from __future__ import annotations
@@ -132,12 +138,13 @@ PAGES = ("webapp.app", "webapp.pages_entry", "webapp.tinyapps_entry",
 
 
 def _need_build():
+    if os.environ.get("GEOTECH_REQUIRE_WHEEL_TEST") != "1":
+        pytest.skip("the wheel build test is opt-in: set "
+                    "GEOTECH_REQUIRE_WHEEL_TEST=1 and run this file alone, in "
+                    "one process (CI's Wheels job does)")
     if importlib.util.find_spec("build") is None:
-        msg = ("the wheel test needs the 'build' package "
-               "(pip install build)")
-        if os.environ.get("GEOTECH_REQUIRE_WHEEL_TEST") == "1":
-            pytest.fail(msg)
-        pytest.skip(msg)
+        pytest.fail("the wheel test needs the 'build' package "
+                    "(pip install build)")
 
 
 def _run(cmd, **kw):
@@ -303,5 +310,13 @@ def test_the_console_script_runs_from_the_wheel(venv):
                      else "bin/geotech-disclaimer")
     assert exe.exists()
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    out = _run([str(exe)], cwd=str(env_dir), env=env)
+    try:
+        out = _run([str(exe)], cwd=str(env_dir), env=env)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) != 4551:
+            raise
+        pytest.skip("Windows refused to run the freshly built "
+                    "geotech-disclaimer.exe (WinError 4551: an Application "
+                    "Control policy, Smart App Control); CI runs this check "
+                    "on Linux")
     assert "disclaimer" in (out.stdout + out.stderr).lower()

@@ -4,6 +4,11 @@ section 4, "Moves that git can follow").
 
 Each test builds a throwaway pair of packages on disk: ``old_<n>`` (the
 package a module moved out of) and ``new_<n>`` (the one it moved into).
+
+The alias table is process-wide, and from step 11 the apps install their
+own tables before these tests run. So a test removes only the aliases it
+added and checks only its own entries, never that the table is exactly its
+own.
 """
 
 from __future__ import annotations
@@ -48,8 +53,11 @@ def pair(tmp_path, monkeypatch):
     write(f"{new}/box/child.py", "WHO = 'child'\n")
     monkeypatch.syspath_prepend(str(tmp_path))
     importlib.invalidate_caches()
+    before = core.aliases()
     yield old, new, write
-    core.remove_aliases()
+    added = [name for name in core.aliases() if name not in before]
+    if added:                  # remove_aliases() with no name removes ALL
+        core.remove_aliases(*added)
     for name in list(sys.modules):
         if name.split(".")[0] in (old, new):
             del sys.modules[name]
@@ -145,7 +153,7 @@ def test_installing_the_same_pair_twice_is_harmless(pair):
     old, new, _ = pair
     core.install_aliases({f"{old}.tool": f"{new}.tool"})
     core.install_aliases({f"{old}.tool": f"{new}.tool"})
-    assert core.aliases() == {f"{old}.tool": f"{new}.tool"}
+    assert core.aliases()[f"{old}.tool"] == f"{new}.tool"
     assert sys.meta_path.count(core._FINDER) == 1
 
 
@@ -158,9 +166,11 @@ def test_installing_the_same_pair_twice_is_harmless(pair):
     {"a-b.c": "x.y"},
 ])
 def test_aliases_that_could_never_apply_are_refused(table):
+    before = core.aliases()
     with pytest.raises(ValueError):
         core.install_aliases(table)
-    assert core.aliases() == {}
+    after = core.aliases()
+    assert all(after.get(old) == before.get(old) for old in table)
 
 
 def test_repointing_an_alias_is_refused(pair):
@@ -183,8 +193,13 @@ def test_remove_aliases_stops_new_imports(pair):
     old, new, _ = pair
     core.install_aliases({f"{old}.tool": f"{new}.tool"})
     core.remove_aliases(f"{old}.tool")
-    assert core.aliases() == {}
-    assert core._FINDER not in sys.meta_path
+    assert f"{old}.tool" not in core.aliases()
+    # The finder leaves sys.meta_path with the last alias, and stays while
+    # any other alias (an app's table) is still installed.
+    if core.aliases():
+        assert core._FINDER in sys.meta_path
+    else:
+        assert core._FINDER not in sys.meta_path
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module(f"{old}.tool")
 
