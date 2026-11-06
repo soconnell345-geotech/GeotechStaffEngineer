@@ -60,7 +60,7 @@ x 2.5 x 1.8807 = 1.9404; d_q = 1 + 0.1 x 2.5 x 1.8807 = 1.4702.
 
 ## Tests
 
-- New `bearing_capacity/tests/test_meyerhof_linear_depth.py` (22 tests):
+- New `bearing_capacity/tests/test_meyerhof_linear_depth.py` (23 tests):
   by hand at Df/B 2.5 (phi 34, phi 0) and 0.6 (phi 28); linear equals the
   default up to Df/B = 1 (12 cases); refused with Vesic; the analysis
   carries the factors; choices report linear as given and the default
