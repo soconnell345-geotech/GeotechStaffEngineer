@@ -3022,7 +3022,7 @@
     "ask_who": null,
     "question": "When a report's bearing calculation prints only an effective unit weight (gamma'), should the recompute check run it as the fully submerged case?",
     "why": "The recompute QC (DR-11) re-runs a report's claimed bearing capacity through the app's modules. 7 of the saved reports' bearing calculations print gamma' and no total unit weight, so today it refuses them.",
-    "background": "Measured 2026-11-06 on the saved corpus with no model calls. With gamma' run as the submerged case (plus splitting each calculation by its printed cases), 181 of 196 claimed values agree within 10 % (median difference 3.7 %).",
+    "background": "Both choices are built (DR-11 slice 2, merged 2026-11-06); one setting picks. Measured on the saved corpus with no model calls: run as the submerged case, 167 of 183 claimed bearing values agree within 10 % (median difference 4 %), and the review found no recompute error in the rest; kept refusing, 1 value is checked.",
     "options": [
       {
         "label": "Run it as the submerged case",
