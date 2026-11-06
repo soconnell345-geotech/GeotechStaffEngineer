@@ -15,8 +15,8 @@ import pytest
 
 from report_ingest import model_first as mf
 from report_ingest.calc_reader import (
-    CalcReading, ReadProv, ReadValue, _fold_readings, _row_names,
-    floor_from_pages, merge_calculation,
+    CalcFloor, CalcReading, FloorValue, ReadProv, ReadValue, _fold_readings,
+    _row_names, floor_from_pages, floor_from_record, merge_calculation,
 )
 from report_ingest.calc_scoring import other_rows, same_name, score_record
 from report_ingest.model import Calculation, NamedQuantity, Provenance, Quantity
@@ -255,6 +255,52 @@ def test_the_scorer_still_refuses_another_rows_number(truth_name,
     number does not answer for this one, though the labels are alike."""
     assert same_name(truth_name, record_name)
     assert not _credited(truth_name, record_name)
+
+
+def _phi_floor():
+    """Four rows of one table, each value boxed by the WHOLE table, as the
+    floor boxes a grid's values (a detected table has no row boxes)."""
+    box = (10.0, 10.0, 300.0, 200.0)
+    return CalcFloor(values=[FloorValue(
+        name=f"Phi (deg), Layer {k}", value=v[2], unit="deg", page=0,
+        bbox=box, method="tables", confidence=0.85, row=f"Layer {k}")
+        for k, v in LAYERS.items()], pages=[0])
+
+
+def _boxed(name, value, box=(10.0, 170.0, 300.0, 185.0)) -> Calculation:
+    return Calculation(kind="shallow_foundation_bearing", inputs=[
+        NamedQuantity(name=name, value=Quantity(value=value, unit="deg"),
+                      prov=Provenance(page=0, bbox=box, method="model",
+                                      confidence=0.9))], pages=[0])
+
+
+def test_a_reading_that_names_no_row_merges_no_row_away():
+    """Review fix 2: "Phi (deg)" boxed inside the table is inside every
+    row's box; it names none of them, so it settles none. Every row stays,
+    and no row is set against it as a disagreement."""
+    merged, log = merge_calculation(_phi_floor(), _boxed("Phi (deg)", 32.0))
+
+    phi = sorted((v.name, v.value.value) for v in merged.inputs)
+    assert phi == sorted([("Phi (deg)", 32.0)] + [
+        (f"Phi (deg), Layer {k}", v[2]) for k, v in LAYERS.items()])
+    assert log.reconciled == 0
+    assert not log.disagreements
+
+
+def test_a_reading_that_names_the_row_settles_that_row_only():
+    merged, log = merge_calculation(_phi_floor(), _boxed("Phi, layer 2", 32.0))
+
+    names = sorted(v.name for v in merged.inputs)
+    assert names == sorted(["Phi, layer 2"] + [
+        f"Phi (deg), Layer {k}" for k in "134"])
+    assert log.reconciled == 1
+    assert not log.disagreements
+
+
+def test_a_floor_read_back_from_its_record_keeps_each_value_s_row():
+    floor = _phi_floor()
+    again = floor_from_record(floor.as_calculation())
+    assert [v.row for v in again.values] == [v.row for v in floor.values]
 
 
 @pytest.mark.parametrize("left, right, other", [

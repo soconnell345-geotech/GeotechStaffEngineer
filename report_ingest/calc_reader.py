@@ -87,7 +87,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from report_ingest.calc_scoring import other_rows
+from report_ingest.calc_scoring import names_row, other_rows
 from report_ingest.checks import check_mode, pdf_local
 from report_ingest.engine import (
     Engine, image_block, text_block, tool_result_block, user,
@@ -464,6 +464,11 @@ class FloorValue:
     bbox: Optional[Tuple[float, float, float, float]] = None
     method: str = "tables"
     confidence: float = CONF_TABLE
+    #: The row of a printed table this value is one of, as its label names
+    #: it ("Layer 2"; :func:`_row_names`), or ``""``. The value's box is the
+    #: whole table's, so the box cannot say which row a reading is of; the
+    #: label does (:func:`_readings_for`, RI-208).
+    row: str = ""
 
     @property
     def key(self) -> str:
@@ -475,7 +480,8 @@ class FloorValue:
             page=int(self.page), bbox=self.bbox,
             method="tables" if self.method == "tables" else "text",
             confidence=float(self.confidence),
-            note=f"read off the page by pattern ({self.method})")
+            note=f"read off the page by pattern ({self.method})"
+                 + (f"{_ROW_NOTE}{self.row}" if self.row else ""))
         if self.value is None:
             return NamedQuantity(name=self.name, text=self.text, prov=prov)
         return NamedQuantity(
@@ -519,6 +525,10 @@ class CalcFloor:
 
 
 _FLOOR_NOTE = re.compile(r"read off the page by pattern \((\w+)\)")
+#: How a floor value's provenance note says which row of a printed table it
+#: is (:attr:`FloorValue.row`), so a floor read back from its record keeps
+#: it (:func:`floor_from_record`).
+_ROW_NOTE = "; one row of a printed table: "
 
 
 def floor_from_record(calc: Calculation) -> CalcFloor:
@@ -536,6 +546,8 @@ def floor_from_record(calc: Calculation) -> CalcFloor:
     for named in list(calc.inputs) + list(calc.results):
         prov = named.prov
         said = _FLOOR_NOTE.search(str(prov.note or "")) if prov else None
+        method = said.group(1) if said else (
+            prov.method if prov else "tables")
         values.append(FloorValue(
             name=named.name,
             value=None if named.value is None else float(named.value.value),
@@ -543,9 +555,10 @@ def floor_from_record(calc: Calculation) -> CalcFloor:
             text=named.text or "",
             page=int(prov.page) if prov else 0,
             bbox=tuple(prov.bbox) if prov and prov.bbox else None,
-            method=said.group(1) if said else (
-                prov.method if prov else "tables"),
-            confidence=float(prov.confidence) if prov else CONF_TABLE))
+            method=method,
+            confidence=float(prov.confidence) if prov else CONF_TABLE,
+            row=(str(prov.note).split(_ROW_NOTE, 1)[1].strip()
+                 if prov and _ROW_NOTE in str(prov.note or "") else "")))
     return CalcFloor(program=calc.program, title=calc.subject or "",
                      values=values, pages=list(calc.pages))
 
@@ -855,7 +868,8 @@ def _values_from_table(table: Any, page: int) -> List[FloorValue]:
                     value=value,
                     unit=(_unit_in_label(label)
                           or (_unit_token(tail[-1]) if len(tail) > 1 else "")),
-                    page=page, bbox=bbox, method="tables", confidence=conf))
+                    page=page, bbox=bbox, method="tables", confidence=conf,
+                    row=qualifier or ""))
         if out:
             return out
 
@@ -1080,6 +1094,26 @@ def _same_label(left: str, right: str) -> bool:
     return _same_name(left, right) and not other_rows(left, right)
 
 
+def _readings_for(value: FloorValue,
+                  rows: Sequence[NamedQuantity]) -> List[NamedQuantity]:
+    """The reader's rows a floor value may be settled against.
+
+    Those under the same label (:func:`_same_label`). A value that is one
+    ROW of a printed table (:attr:`FloorValue.row`) carries the whole
+    table's box, so every reading inside the table is "at its place" and
+    the box says nothing about which row was read: such a value is settled
+    only against a reading whose label names its row
+    (:func:`report_ingest.calc_scoring.names_row`) -- "Phi, layer 2" for
+    "Phi (deg), Layer 2" -- never against "Phi (deg)" or "Sand unit weight"
+    read somewhere in the table, which would merge the row away (review
+    fix, RI-208). With no such reading the row is kept as its own.
+    """
+    same = [r for r in rows if _same_label(value.name, r.name)]
+    if value.row:
+        same = [r for r in same if names_row(value.row, r.name)]
+    return same
+
+
 def _label_words(text: str) -> set:
     return set(re.findall(r"[^\W_]+", str(text or "").lower()))
 
@@ -1197,7 +1231,7 @@ def _twin(value: FloorValue, named: NamedQuantity,
     it returned under it was read somewhere else -- a different printed
     value that shares a label, not a reading of this one.
     """
-    same_label = [r for r in rows if _same_label(value.name, r.name)]
+    same_label = _readings_for(value, rows)
     if not same_label:
         return None, None
     placed = [(r, _same_place(value, r.prov)) for r in same_label]
@@ -1366,8 +1400,8 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
 
     rows = model_results + model_inputs
     here = [value for value in floor.values
-            if any(_same_place(value, r.prov) is True for r in rows
-                   if _same_label(value.name, r.name))]
+            if any(_same_place(value, r.prov) is True
+                   for r in _readings_for(value, rows))]
     elsewhere = [value for value in floor.values
                  if not any(value is h for h in here)]
     for value in here + elsewhere:
