@@ -877,8 +877,11 @@ with st.sidebar:
                     page_checks=_PROFILE.diagnostics_checks)
                 ss.diag_report = _diag.format_report(_checks)
                 # TA-35: a SharePoint report that could not be kept in
-                # SharePoint is offered here instead.
-                ss.diag_sharepoint = _diag.sharepoint_download(_checks)
+                # SharePoint is offered here instead, with only this
+                # person's own entries (the owner key their conversations
+                # carry).
+                ss.diag_sharepoint = _diag.sharepoint_download(
+                    _checks, who=(_IDENT.key if _IDENT.multi_user else ""))
         if ss.get("diag_report"):
             st.code(ss.diag_report, language=None)
         if ss.get("diag_sharepoint"):
@@ -887,8 +890,8 @@ with st.sidebar:
                 file_name="sharepoint-report.txt", mime="text/plain",
                 key=f"diag_sp_{ss.thread_id}",
                 help="For the host's administrator: the connection test and "
-                     "the SharePoint errors met, which could not be saved "
-                     "to SharePoint itself.")
+                     "the SharePoint errors met in your conversations, "
+                     "which could not be saved to SharePoint itself.")
     try:
         import importlib.metadata as _md
         st.caption(" · ".join(f"{_d} {_md.version(_d)}"

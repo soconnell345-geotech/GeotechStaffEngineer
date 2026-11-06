@@ -365,6 +365,25 @@ def not_opened_message(where: str, status: Optional[int] = None,
             + (f" (Graph answered HTTP {status}.)" if status else ""))
 
 
+#: What the user pastes instead of a sharing link the app cannot read.
+LINK_INSTEAD = ("Paste the address from the browser bar while the file or "
+                "folder is open (…/Forms/AllItems.aspx?id=…, or the file's "
+                "own address), or its path (Shared Documents/…), instead.")
+
+
+def link_not_opened_message(status: Optional[int] = None) -> str:
+    """Plain words for a sharing link Graph's sharing-link call
+    (``GET /shares/...``) refused (TA-35). Microsoft does not list the
+    app's site-only permission (Sites.Selected) for that call, so a site
+    grant cannot fix it; the address or the path opens the same file."""
+    why = ("links of this kind cannot be opened with the app's permission "
+           "(it is granted sites, not sharing links)")
+    if status == 404:
+        why = ("the link was not found (it may have expired), or " + why)
+    return (f"The app cannot open that sharing link: {why}. " + LINK_INSTEAD
+            + (f" (Graph answered HTTP {status}.)" if status else ""))
+
+
 def configured_sites() -> List[Site]:
     """:func:`parse_sites` over the settings."""
     single = _setting(ENV_SITE_URL)
@@ -689,10 +708,11 @@ class GraphFileManager:
         for s in self.sites:
             if s.server_path == low and (host is None or _host(s.url) == host):
                 return s
-        known = self._adhoc.get(low)
+        host = host or _host(self.sites[0].url)
+        known = self._adhoc.get(f"{host}{low}")
         if known is not None:
             return known
-        url = f"https://{host or _host(self.sites[0].url)}{server.rstrip('/')}"
+        url = f"https://{host}{server.rstrip('/')}"
         other = cloud_of_site(url)
         if other and not _same_cloud(other, self.cloud):
             raise SiteNotOpened(
@@ -701,20 +721,25 @@ class GraphFileManager:
                 f"{cloud_label(self.cloud)} cloud. It can open only sites in "
                 "its own cloud.")
         site = Site(name=_default_site_name(url), url=url, adhoc=True)
-        self._adhoc[low] = site
+        self._adhoc[f"{host}{low}"] = site
         return site
 
     def _prefix_of(self, site: Site) -> str:
-        """What the paths handed back carry so they find ``site`` again."""
+        """What the paths handed back carry so they find ``site`` again:
+        a site on another host than the default site's keeps its whole
+        address, so it is never read on the default host in its place."""
         if site is self.sites[0]:
             return ""
         if site.adhoc:
+            host = _host(site.url)
+            if host != _host(self.sites[0].url):
+                return f"https://{host}{site.server_prefix}/"
             return f"{site.server_prefix}/"
         return f"{site.name}:"
 
-    def _from_address(self, url: str) -> str:
-        """A browser address or sharing link as a path this manager routes:
-        a plain address names its site and path; a token link
+    def _from_address(self, url: str) -> Tuple[Site, str]:
+        """``(site, library path)`` a browser address or sharing link names:
+        a plain address names its site (on ITS host) and path; a token link
         (``/:b:/s/...``, ``/:f:/g/...``) is read through Graph's sharing-link
         call, ``GET /shares/{u!base64url}/driveItem``."""
         if url in self._shares:
@@ -724,49 +749,67 @@ class GraphFileManager:
         m = re.match(r"^/(sites|teams)/([^/]+)/?$",
                      urllib.parse.unquote(parts.path), re.IGNORECASE)
         if m:                                  # the site's own address
-            site = self._site_at(f"/{m.group(1)}/{m.group(2)}", host)
-            return self._prefix_of(site)
+            return self._site_at(f"/{m.group(1)}/{m.group(2)}", host), ""
         try:
             from webapp.sharepoint_tools import browser_url_to_path
-            path = browser_url_to_path(url)
+            # Always the server-relative form, so the site is matched by
+            # its name AND this address's host: the configured site's name
+            # on another host is that host's site, never the default one.
+            path = browser_url_to_path(url, server_relative=True)
         except Exception:                              # noqa: BLE001
             path = None
-        if path:
-            if path.startswith("/"):           # another site: keep its host
-                segs = path.split("/")
-                site = self._site_at("/".join(segs[:3]), host)
-                rest = "/".join(segs[3:])
-                return f"{self._prefix_of(site)}{rest}"
-            return path
+        if path and path.startswith("/"):
+            segs = path.split("/")
+            return self._site_at("/".join(segs[:3]), host), "/".join(segs[3:])
         return self._from_share(url)
 
-    def _from_share(self, url: str) -> str:
+    def _from_share(self, url: str) -> Tuple[Site, str]:
         try:
             item = self._request("GET", f"shares/{share_id(url)}/driveItem")
-            ref = item.get("parentReference") or {}
-            drive = self._request("GET", f"drives/{ref['driveId']}")
+        except GraphError as exc:
+            if exc.status in (401, 403, 404):
+                # The sharing-link call itself: a site grant cannot fix it.
+                raise SiteNotOpened(link_not_opened_message(exc.status),
+                                    exc.status) from None
+            raise
+        ref = item.get("parentReference") or {}
+        drive_id = ref.get("driveId")
+        try:
+            if drive_id and item.get("id") and not ref.get("path"):
+                # Graph's sharing-link answer may leave the folder out; the
+                # item read by its drive and id carries it.
+                full = self._request(
+                    "GET", f"drives/{drive_id}/items/{item['id']}")
+                ref = full.get("parentReference") or ref
+                drive_id = ref.get("driveId") or drive_id
+            drive = self._request("GET", f"drives/{drive_id}") \
+                if drive_id else {}
         except GraphError as exc:
             if exc.status in (401, 403, 404):
                 raise SiteNotOpened(not_opened_message(url, exc.status,
                                                        link=True),
                                     exc.status) from None
             raise
+        if not drive_id or "root:" not in str(ref.get("path", "")) \
+                or not drive.get("webUrl"):
+            # Never the library's top folder in its place.
+            raise SiteNotOpened(
+                "The app could not tell where that sharing link points: "
+                "SharePoint did not say which folder holds it. "
+                + LINK_INSTEAD)
         lib_url = str(drive.get("webUrl", "")).rstrip("/")
         site_url, _, library = lib_url.rpartition("/")
         library = urllib.parse.unquote(library)
-        inside = ""
-        if "root:" in str(ref.get("path", "")):
-            inside = urllib.parse.unquote(
-                ref["path"].split("root:", 1)[1]).strip("/")
-        name = item.get("name", "") if ref.get("path") else ""
+        inside = urllib.parse.unquote(
+            ref["path"].split("root:", 1)[1]).strip("/")
+        name = item.get("name", "")
         site_parts = urllib.parse.urlparse(site_url)
         site = self._site_at(urllib.parse.unquote(site_parts.path),
                              (site_parts.hostname or "").lower())
-        site.drive_ids.setdefault(library.lower(), ref["driveId"])
+        site.drive_ids.setdefault(library.lower(), drive_id)
         rel = "/".join(x for x in (library, inside, name) if x)
-        path = f"{self._prefix_of(site)}{rel}"
-        self._shares[url] = path
-        return path
+        self._shares[url] = (site, rel)
+        return site, rel
 
     def _route(self, path: Optional[str]) -> Tuple[Site, str, str]:
         """``(site, library path, prefix)`` for a caller's path.
@@ -779,10 +822,12 @@ class GraphFileManager:
         anything else is on the default site. ``prefix`` is what the paths
         this manager hands back carry so they find the same site again:
         ``""`` on the default site, ``"name:"`` on another configured one,
-        ``"/sites/<site>/"`` on one a user pointed at."""
+        ``"/sites/<site>/"`` on one a user pointed at (its whole address
+        when it is on another host)."""
         p = (path or "").strip().replace("\\", "/")
         if p.lower().startswith(("http://", "https://")):
-            p = self._from_address(p)
+            site, p = self._from_address(p)
+            return site, p.strip("/"), self._prefix_of(site)
         site = self.sites[0]
         head, sep, tail = p.partition(":")
         if sep and "/" not in head:
@@ -1364,7 +1409,8 @@ __all__ = ["GraphFileManager", "GraphError", "LibraryNotFound", "configured",
            "certificate_from_settings", "check_connection", "format_check",
            "site_note", "started", "PROBE_NAME", "SiteNotOpened",
            "choose_cloud", "cloud_of_site", "cloud_label", "share_id",
-           "not_opened_message", "SHAREPOINT_CLOUDS",
+           "not_opened_message", "link_not_opened_message", "LINK_INSTEAD",
+           "SHAREPOINT_CLOUDS",
            "ENV_TENANT", "ENV_CLIENT_ID", "ENV_CLIENT_SECRET", "ENV_SITE_URL",
            "ENV_SITE_URLS", "ENV_CLOUD", "ENV_LOGIN_URL", "ENV_API_URL",
            "ENV_CLIENT_CERT", "ENV_CLIENT_KEY", "ENV_CLIENT_KEY_PASSWORD",

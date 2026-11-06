@@ -151,9 +151,13 @@ _SITE_PATH = re.compile(r"^/(sites|teams)/([^/]+)/(.*)$", re.IGNORECASE)
 _VIEW_SUFFIX = re.compile(r"/forms/[^/]+\.aspx$", re.IGNORECASE)
 
 
-def browser_url_to_path(url: str) -> Optional[str]:
+def browser_url_to_path(url: str, server_relative: bool = False
+                        ) -> Optional[str]:
     """The library path inside a SharePoint address copied from a browser,
-    or ``None`` when ``url`` is not one or carries no path.
+    or ``None`` when ``url`` is not one or carries no path. With
+    ``server_relative`` the configured site's path keeps its
+    ``/sites/<site>/`` too (the Graph client then matches the site AND its
+    host, TA-35).
 
     The forms that carry a path, all converted:
 
@@ -201,7 +205,8 @@ def browser_url_to_path(url: str) -> Optional[str]:
     segments = rest.split("/")
     if len(segments) == 1 and "." in segments[0]:
         return None                           # a file at the site root, no library
-    if (kind == "sites" and site.lower() == _configured_site()
+    if (not server_relative and kind == "sites"
+            and site.lower() == _configured_site()
             and segments[0].lower() == "shared documents"):
         return rest
     # Another site, a team, or another library of this site: the
@@ -224,17 +229,40 @@ def link_target_name(path_or_url: str) -> str:
     return s.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
 
 
+def _default_host() -> str:
+    """The default site's host (``contoso.sharepoint.com``), lower case;
+    ``""`` when it cannot be told."""
+    url = (os.environ.get(sharepoint_store.ENV_SITE, "")
+           or os.environ.get("SHAREPOINT_SITE_URL", "")).strip()
+    if not url:
+        try:
+            url = str(getattr(_fm(), "site_url", "") or "")
+        except Exception:                                  # noqa: BLE001
+            url = ""
+    if not url:
+        return ""
+    return (urlsplit(url if "://" in url else f"https://{url}").hostname
+            or "").lower()
+
+
 def _resolve(path: Optional[str]) -> str:
     """Resolve a tool-supplied path against the configured base folder.
 
     A SharePoint address copied from a browser is first turned into the path
-    it names (:func:`browser_url_to_path`). Absolute forms (full URL,
-    "/sites/...", "Shared Documents/...") pass through UNCHANGED (a leading
-    slash is meaningful to the SDK); anything else is joined under the
-    configured root.
+    it names (:func:`browser_url_to_path`) -- unless it is on another host
+    than the default site (another tenant's, or another cloud's): then it
+    passes through whole, so the file layer opens it on its own host or
+    refuses it, and never reads the same path on the default site (TA-35).
+    Absolute forms (full URL, "/sites/...", "Shared Documents/...") pass
+    through UNCHANGED (a leading slash is meaningful to the SDK); anything
+    else is joined under the configured root.
     """
     p = (path or "").strip().rstrip("/")
     if p.lower().startswith("http"):
+        host = (urlsplit(p).hostname or "").lower()
+        default = _default_host()
+        if host and default and host != default:
+            return p
         p = (browser_url_to_path(p) or p).rstrip("/")
     if not p or p == "/":
         return _root()
@@ -324,10 +352,24 @@ def _conversations_needle() -> List[str]:
     return tail + ["conversations"]
 
 
-class _Scope:
-    """Which conversation folders one conversation may touch."""
+def _in_app_log(path) -> bool:
+    """Whether ``path`` is in the app's own log folder (TA-35,
+    ``sharepoint_log.FOLDER``): it holds every user's SharePoint errors,
+    for the host's administrator to read in SharePoint."""
+    from webapp.sharepoint_log import FOLDER
+    segs = _segments(path)
+    return segs is not None and FOLDER.lower() in segs
 
-    def __init__(self, own_folders: List[str]):
+
+class _Scope:
+    """Which conversation folders one conversation may touch. The app's
+    log folder (``_app_log``) is closed to every conversation: it holds
+    every user's SharePoint errors (TA-35)."""
+
+    def __init__(self, own_folders: List[str], owner: str = ""):
+        #: The conversation owner's key: tags this conversation's SharePoint
+        #: log entries in memory (TA-35, ``sharepoint_log.speaking_for``).
+        self.owner = owner
         self.needle = _conversations_needle()
         self.own: List[List[str]] = []
         for folder in own_folders:
@@ -347,7 +389,7 @@ class _Scope:
         """``open`` (not a conversation folder), ``own``, ``container``
         (the conversations folder itself) or ``private``."""
         segs = _segments(remote)
-        if segs is None:
+        if segs is None or _in_app_log(remote):
             return "private"
         positions = self._positions(segs)
         if not positions:
@@ -363,6 +405,12 @@ class _Scope:
         return verdict
 
     def refusal(self, remote: str, action: str) -> str:
+        if _in_app_log(remote):
+            return (f"SharePoint {action} refused: '{remote}' is the app's "
+                    "own log folder. It holds every user's SharePoint "
+                    "errors and is kept for the host's administrator, who "
+                    "reads it in SharePoint; it is never opened for a "
+                    "conversation.")
         own = (f" This conversation's own SharePoint folder is "
                f"'{self.own_folder}'." if self.own_folder else "")
         return (f"SharePoint {action} refused: '{remote}' is in another "
@@ -477,7 +525,15 @@ def _scope(record_dir: Optional[str] = None,
     session = _session_folder(thread_id, record_dir)
     if session:
         own.append(session)
-    return _Scope(own)
+    return _Scope(own, owner)
+
+
+def _speaking_for(scope: Optional[_Scope]):
+    """The SharePoint log entries a tool call records are tagged (in
+    memory) with its conversation's owner, so the sidebar's diagnostics
+    show each person only their own (TA-35)."""
+    from webapp import sharepoint_log
+    return sharepoint_log.speaking_for(getattr(scope, "owner", "") or "")
 
 
 def _shown(path: str) -> str:
@@ -896,7 +952,9 @@ def make_list_tool(record_dir: Optional[str] = None,
     ``note`` (the sites line, TA-34) is added to the description."""
 
     def sharepoint_list_files(path: str = "") -> str:
-        return _list(path, _scope(record_dir, thread_id))
+        scope = _scope(record_dir, thread_id)
+        with _speaking_for(scope):
+            return _list(path, scope)
 
     sharepoint_list_files.__doc__ = _with_note(_LIST_DOC, note)
     return tool(sharepoint_list_files)
@@ -1165,8 +1223,9 @@ def make_download_tool(record_dir: Optional[str] = None,
 
     def sharepoint_download_file(path: str, save_as: str = "",
                                  refresh: bool = False) -> str:
-        return _download(path, save_as, refresh, record_dir,
-                         _scope(record_dir, thread_id))
+        scope = _scope(record_dir, thread_id)
+        with _speaking_for(scope):
+            return _download(path, save_as, refresh, record_dir, scope)
 
     sharepoint_download_file.__doc__ = _with_note(_DOWNLOAD_DOC, note)
     return tool(sharepoint_download_file)
@@ -1458,10 +1517,12 @@ def make_conversation_upload_tool(thread_id: str,
                               f"{type(exc).__name__}: {exc}")
                 if shared is not None:
                     return shared
-        return _upload(local, dest_folder, default_folder=_folder,
-                       default_label=" (this conversation's SharePoint folder)",
-                       scope=_scope(record_dir, thread_id),
-                       record_dir=conv_dir)
+        scope = _scope(record_dir, thread_id)
+        with _speaking_for(scope):
+            return _upload(
+                local, dest_folder, default_folder=_folder,
+                default_label=" (this conversation's SharePoint folder)",
+                scope=scope, record_dir=conv_dir)
 
     return sharepoint_upload_file
 
@@ -1592,7 +1653,9 @@ def make_search_tool(record_dir: Optional[str] = None,
     and their files never named (A1)."""
 
     def sharepoint_search_files(query: str, path: str = "") -> str:
-        return _search_tool(query, path, _scope(record_dir, thread_id))
+        scope = _scope(record_dir, thread_id)
+        with _speaking_for(scope):
+            return _search_tool(query, path, scope)
 
     sharepoint_search_files.__doc__ = _with_note(_SEARCH_DOC, note)
     return tool(sharepoint_search_files)

@@ -141,11 +141,17 @@ The name is the one given as `name=address`, or else the last part of the
 address (`/sites/Projects` → `Projects`). Grant each site to the app (step 3).
 
 **Sites not in the settings.** A user can paste the address of a file or
-folder on any other site of the tenant, or a sharing link to one, and the
-app opens it there directly. This works only for sites granted to the app
-(step 3); for any other site the user is told that the app cannot open it
-and to ask you to grant it. The app never reads the same path on the
-default site instead.
+folder on any other site of the tenant, and the app opens it there
+directly, on that address's own host. This works only for sites granted to
+the app (step 3); for any other site the user is told that the app cannot
+open it and to ask you to grant it. A site in another Microsoft cloud is
+refused. The app never reads the same path on the default site instead.
+
+A sharing link with a token in it (what "Copy link" gives, `/:b:/s/...`) is
+read through Microsoft's sharing-link call, which Microsoft does not list
+for the site-only permission (`Sites.Selected`). If that call is refused,
+the user is asked to paste the address from the browser bar, or the file's
+path, instead; granting a site does not change it.
 
 ## 6. Test the connection
 
@@ -187,15 +193,22 @@ address).
 The app appends every SharePoint error it meets (a tool that failed, a
 conversation that could not be saved, a site a user pointed at that it
 cannot open) and each connection test's report to a log file in its own
-SharePoint folder:
+SharePoint folder, the folder it keeps conversations in:
 
 ```
-<GEOTECH_SHAREPOINT_ROOT, else the library's top folder>/_app_log/sharepoint-YYYY-MM.log
+<GEOTECH_SHAREPOINT_ROOT, else Shared Documents/GeotechStaffEngineer>/_app_log/sharepoint-YYYY-MM.log
 ```
 
 One file a month, one line an entry: the time in UTC, the step or tool, the
 message, and the path, separated by tabs. It never holds a secret, a token,
-a key or anything users wrote. When the app cannot reach SharePoint at all
-(for example, sign-in is refused), the sidebar's **Connection diagnostics**
-shows the report and offers it as a download instead. Set
-`GEOTECH_SHAREPOINT_LOG=0` to turn the log off.
+a key or conversation text: a conversation that could not be saved is
+named by its thread id, never by its title. On a host with several users,
+the app's SharePoint tools never open the `_app_log` folder for anyone's
+conversation; you read it in SharePoint.
+
+When the app cannot reach SharePoint at all (for example, sign-in is
+refused), the sidebar's **Connection diagnostics** shows the report and
+offers it as a download instead. That download holds the connection test's
+report and the errors met in the downloader's own conversations, never
+another user's. Set `GEOTECH_SHAREPOINT_LOG=0` to turn the log off; like
+the other settings, it may go in Key Vault.

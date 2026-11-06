@@ -4,32 +4,42 @@ The host's admin cannot read the app's console on a shared host, so every
 SharePoint error the app meets -- a tool's failure, a conversation save that
 failed, a site a user pointed at that the app cannot open -- and each
 connection test's report is appended to a monthly log file in the app's own
-SharePoint folder::
+SharePoint folder (the store's root, ``GEOTECH_SHAREPOINT_ROOT``, else
+``Shared Documents/GeotechStaffEngineer``)::
 
-    <GEOTECH_SHAREPOINT_ROOT, else the library root>/_app_log/sharepoint-YYYY-MM.log
+    <the app's SharePoint folder>/_app_log/sharepoint-YYYY-MM.log
 
 One line an entry, tab-separated: the time in UTC, the step or tool, the
 message in plain words, the path (empty when there is none). A connection
 test's report is one entry, its lines joined with `` | ``.
 
 What is never written: a secret, a token, a key, or conversation text. The
-messages are the app's own plain words and Graph's error text; anything
-that looks like a bearer token, a JWT, a client secret or assertion, or the
-configured secret's value itself is replaced by ``[removed]``.
+messages are the app's own plain words and Graph's error text; a failed
+save names its conversation by the thread id, never by its folder (whose
+name comes from the first question). Anything that looks like a bearer
+token, a JWT, a client secret or assertion, or the configured secret's
+value itself (from the environment, Key Vault or ``.env``) is replaced by
+``[removed]``. On a host with several users the SharePoint tools never open
+the ``_app_log`` folder for a conversation; the admin reads it in
+SharePoint.
 
-``GEOTECH_SHAREPOINT_LOG=0`` (or ``off`` / ``false`` / ``no``) turns it off;
-it is on whenever SharePoint is configured.
+``GEOTECH_SHAREPOINT_LOG=0`` (or ``off`` / ``false`` / ``no``) turns it off,
+read like every other setting (environment, Key Vault, ``.env``); it is on
+whenever SharePoint is configured.
 
 It never raises into the caller and never loops: the write runs on its own
 thread, a write that fails is logged only to the process log (never back to
 SharePoint), and while a write is under way nothing new is sent to it from
-that write. The last entries stay in memory (:func:`recent`), so the
-sidebar's diagnostics can offer them as a download when SharePoint itself
-cannot be reached.
+that write. The last entries stay in memory (:func:`recent`), each tagged
+there -- never in the file -- with the person whose conversation met it
+(:func:`speaking_for`), so the sidebar's diagnostics offer a person only
+their own entries when SharePoint itself cannot be reached.
 """
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import logging
 import os
 import re
@@ -37,7 +47,7 @@ import tempfile
 import threading
 import time
 from collections import deque
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -47,21 +57,44 @@ FOLDER = "_app_log"
 MAX_MESSAGE = 600
 MAX_REPORT = 3000
 
+#: ``(who, line)``: ``who`` is the conversation owner's key (``""`` for a
+#: single-user host, or an entry no conversation made). In memory only.
 _recent: deque = deque(maxlen=200)
+_who: contextvars.ContextVar = contextvars.ContextVar("sharepoint_log_who",
+                                                      default="")
 _pending: List[str] = []
 _lock = threading.Lock()
 _cv = threading.Condition(_lock)
 _worker: Optional[threading.Thread] = None
 _writing = threading.local()
 _busy = False
+#: The switch as Key Vault / ``.env`` gave it, read once (``None``: not yet).
+_switch_setting: Optional[str] = None
 #: The last write's outcome: None (none yet), True, or the reason it failed.
 last_write: Any = None
 
 
+def _switch() -> str:
+    """``GEOTECH_SHAREPOINT_LOG`` as the app reads its settings: the
+    environment first (always read afresh), else Key Vault or ``.env``
+    through :func:`webapp.tinyapps_settings.get_setting`, read once per
+    process so a record never waits on Key Vault twice."""
+    global _switch_setting
+    value = os.environ.get(ENV_SWITCH)
+    if value is None:
+        if _switch_setting is None:
+            try:
+                from webapp.tinyapps_settings import get_setting
+                _switch_setting = get_setting(ENV_SWITCH) or ""
+            except Exception:                              # noqa: BLE001
+                _switch_setting = ""
+        value = _switch_setting
+    return value.strip().lower()
+
+
 def enabled() -> bool:
     """On when SharePoint is configured, unless the switch says off."""
-    if os.environ.get(ENV_SWITCH, "").strip().lower() in (
-            "0", "off", "false", "no"):
+    if _switch() in ("0", "off", "false", "no"):
         return False
     try:
         from webapp import sharepoint_store
@@ -71,11 +104,27 @@ def enabled() -> bool:
 
 
 def log_path(when: Optional[float] = None) -> str:
-    """This month's log file in the app's SharePoint folder."""
-    root = (os.environ.get("GEOTECH_SHAREPOINT_ROOT", "").strip()
-            or "Shared Documents").strip("/")
+    """This month's log file in the app's SharePoint folder (the store's
+    root: ``GEOTECH_SHAREPOINT_ROOT``, else the app's default folder)."""
+    try:
+        from webapp import sharepoint_store
+        root = sharepoint_store.get_store().root()
+    except Exception:                                      # noqa: BLE001
+        from webapp.sharepoint_store import DEFAULT_ROOT, ENV_ROOT
+        root = os.environ.get(ENV_ROOT, "").strip() or DEFAULT_ROOT
     month = time.strftime("%Y-%m", time.gmtime(when or time.time()))
-    return f"{root}/{FOLDER}/sharepoint-{month}.log"
+    return f"{root.strip('/')}/{FOLDER}/sharepoint-{month}.log"
+
+
+@contextlib.contextmanager
+def speaking_for(who: Optional[str]) -> Iterator[None]:
+    """Entries recorded inside this block are tagged, in memory only, with
+    ``who`` (the conversation owner's key) unless they name their own."""
+    token = _who.set(str(who or ""))
+    try:
+        yield
+    finally:
+        _who.reset(token)
 
 
 _SCRUB = [
@@ -88,15 +137,33 @@ _SCRUB = [
 ]
 
 
+_SECRET_NAMES = ("GRAPH_CLIENT_SECRET", "GRAPH_CLIENT_KEY_PASSWORD",
+                 "GEOTECH_SHAREPOINT_CLIENT_SECRET", "GEOTECH_SHAREPOINT_TOKEN")
+
+
+def _secret_values() -> List[str]:
+    """The configured secrets' values, wherever they came from: the
+    environment (where a local run's ``.env`` lines are put at start-up,
+    ``tinyapps_settings.export_dotenv``), and the settings reader's cache,
+    which holds every value the app has read through ``get_setting`` --
+    from Key Vault too (the client secret is read to sign in, before
+    anything can fail). No Key Vault call is made here."""
+    try:
+        from webapp.tinyapps_settings import _cache as read
+    except Exception:                                      # noqa: BLE001
+        read = {}
+    values = set()
+    for name in _SECRET_NAMES:
+        values.add(os.environ.get(name))
+        values.add(read.get(name))
+    return [v.strip() for v in values if v and len(v.strip()) >= 6]
+
+
 def scrub(text: str) -> str:
     """``text`` with anything secret-shaped replaced by ``[removed]``."""
     out = str(text or "")
-    for name in ("GRAPH_CLIENT_SECRET", "GRAPH_CLIENT_KEY_PASSWORD",
-                 "GEOTECH_SHAREPOINT_CLIENT_SECRET",
-                 "GEOTECH_SHAREPOINT_TOKEN"):
-        value = os.environ.get(name, "").strip()
-        if len(value) >= 6:
-            out = out.replace(value, "[removed]")
+    for value in _secret_values():
+        out = out.replace(value, "[removed]")
     for pattern in _SCRUB:
         out = pattern.sub(lambda m: (m.group(1) + m.group(2) + "[removed]")
                           if m.re.groups >= 2 else "[removed]", out)
@@ -117,14 +184,18 @@ def format_entry(step: str, message: str, path: str = "",
 
 
 def record(step: str, message: str, path: str = "", wait: bool = False,
-           limit: int = MAX_MESSAGE) -> Optional[str]:
+           limit: int = MAX_MESSAGE, who: Optional[str] = None
+           ) -> Optional[str]:
     """Append one entry; returns the line (None when nothing was kept).
-    Never raises. ``wait`` blocks until the write is done (tests, the CLI)."""
+    Never raises. ``wait`` blocks until the write is done (tests, the CLI).
+    ``who`` (else the :func:`speaking_for` around the call) tags the entry
+    in memory with the conversation owner it belongs to; the file never
+    carries it."""
     try:
         if getattr(_writing, "active", False):
             return None                    # from inside a log write: no loop
         line = format_entry(step, message, path, limit=limit)
-        _recent.append(line)
+        _recent.append((str(who if who is not None else _who.get()), line))
         if not enabled():
             return line
         _queue(line)
@@ -148,13 +219,20 @@ def record_check(results: List[Dict[str, Any]], wait: bool = False
                   wait=wait, limit=MAX_REPORT)
 
 
-def recent() -> List[str]:
-    """The entries kept in memory this process, oldest first."""
-    return list(_recent)
+def recent(who: Optional[str] = None) -> List[str]:
+    """The entries kept in memory this process, oldest first: every one
+    (tests, the CLI), or with ``who`` only those tagged with that owner
+    (``""``: the entries no owner's conversation made)."""
+    entries: List[Tuple[str, str]] = list(_recent)
+    return [line for tag, line in entries if who is None or tag == who]
 
 
-def recent_text() -> str:
-    return "\n".join(recent()) + ("\n" if _recent else "")
+def recent_text(who: str) -> str:
+    """One person's entries (:func:`recent` with ``who``), one a line --
+    never another person's: on a shared host they carry other people's
+    folder and file names."""
+    lines = recent(str(who or ""))
+    return "\n".join(lines) + ("\n" if lines else "")
 
 
 # ------------------------------------------------------------------ writing
@@ -163,6 +241,8 @@ def _queue(line: str) -> None:
     global _worker
     with _cv:
         _pending.append(line)
+        # The worker sets itself to None, under this lock, as it finds the
+        # queue empty, so a line queued as it ends always gets a new one.
         if _worker is None or not _worker.is_alive():
             _worker = threading.Thread(target=_run, name="sharepoint-log",
                                        daemon=True)
@@ -171,10 +251,11 @@ def _queue(line: str) -> None:
 
 
 def _run() -> None:
-    global _busy
+    global _busy, _worker
     while True:
         with _cv:
             if not _pending:
+                _worker = None
                 _cv.notify_all()
                 return
             lines = list(_pending)
@@ -250,12 +331,13 @@ def _write(lines: List[str]) -> None:
 
 def reset() -> None:
     """Forget what is in memory (tests)."""
-    global last_write
+    global last_write, _switch_setting
     flush(10.0)
     _recent.clear()
     last_write = None
+    _switch_setting = None
 
 
 __all__ = ["record", "record_check", "recent", "recent_text", "flush",
-           "enabled", "log_path", "format_entry", "scrub", "ENV_SWITCH",
-           "FOLDER", "reset"]
+           "enabled", "log_path", "format_entry", "scrub", "speaking_for",
+           "ENV_SWITCH", "FOLDER", "reset"]

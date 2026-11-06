@@ -678,15 +678,42 @@ class SharePointStore:
         self._syncs[str(thread_id)] = summary
         if summary["errors"] and self.backend == "sharepoint":
             try:                   # TA-35: kept in the app's SharePoint log
-                from webapp import sharepoint_log
-                sharepoint_log.record(
-                    "conversation save",
-                    f"{len(summary['errors'])} error(s): "
-                    + "; ".join(str(e) for e in summary["errors"][:5]),
-                    summary.get("folder") or "")
+                self._log_save_errors(thread_id, root, summary)
             except Exception:                          # noqa: BLE001
                 pass
         return summary
+
+    def _log_save_errors(self, thread_id: str, root: Optional[str],
+                         summary: dict) -> None:
+        """TA-35: a save with errors, in the app's SharePoint log under the
+        conversation's THREAD ID. Its folder's name -- the owner and a
+        title made from the first question -- never goes in: inside the
+        error texts it is replaced, as written and URL-quoted, by the
+        thread id (``.../conversations/<thread id>``). The entry is tagged
+        in memory with the owner, so only they see it in the diagnostics."""
+        from urllib.parse import quote
+        from webapp import sharepoint_log
+        tid = str(thread_id)
+        text = (f"{len(summary['errors'])} error(s): "
+                + "; ".join(str(e) for e in summary["errors"][:5]))
+        for folder in (summary.get("folder"), summary.get("renamed_from")):
+            folder = str(folder or "")
+            if "/conversations/" not in folder:
+                continue
+            tail = folder.split("/conversations/", 1)[1].strip("/")
+            for part in (tail, tail.rsplit("/", 1)[-1]):  # owner/title, title
+                if not part or part == tid:
+                    continue
+                for form in sorted({part, quote(part), quote(part, safe="")},
+                                   key=len, reverse=True):
+                    text = text.replace(form, tid)
+        try:
+            meta = core.load_meta(tid, root or core.thread_root(tid)) or {}
+            owner = str(meta.get("owner") or "").strip()
+        except Exception:                              # noqa: BLE001
+            owner = ""
+        sharepoint_log.record("conversation save", text,
+                              f"conversations/{tid}", who=owner)
 
     # -- saving in the background ------------------------------------------
 
