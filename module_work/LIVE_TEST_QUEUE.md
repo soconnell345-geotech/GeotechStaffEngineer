@@ -507,6 +507,19 @@ questions, about 50-100 thousand tokens).
 **Send:** the printed outputs, the conversation folders (steps 2-3) and the
 two RESULTS.md (step 4). Every run is read in full.
 
+## Check 13 — SharePoint for testers: the cloud, another site, sharing links, the log (BACKLOG Done TA-35; the testers' first session on Tiny Apps; no model cost)
+
+- Before: the host team has set the `GRAPH-*` values and `SHAREPOINT-SITE-URL` and granted the site (`docs/SHAREPOINT_SETUP.md`).
+- Run the connection test (`python -m webapp.graph_sharepoint`, or the sidebar diagnostics). It should name the commercial cloud "from the site address" (GCC uses the `.sharepoint.com` addresses).
+- In a conversation:
+  1. paste the browser-bar address of a file on the default site: it is found and downloaded;
+  2. paste SharePoint's "Copy link" link to the same file: either it opens, or the reply asks for the browser address. Note which. This settles whether Microsoft's sharing-link call works under Sites.Selected;
+  3. paste the address of a file on a site the app was NOT granted: the reply says the app cannot open that site and to ask the administrator;
+  4. if a second site has been granted, paste a file address on it: it opens there.
+- Then open `_app_log/sharepoint-YYYY-MM.log` in the app's SharePoint folder: the connection test's report and the refusal from step 3 are there, with times in UTC, and no secret, token or conversation title.
+
+**Send:** the connection test's output, the replies to steps 1-4, and the log file.
+
 ## Done
 
 - **2026-10-14, check 9 on Claude Sonnet (about 18 calls, $0.11 of API
