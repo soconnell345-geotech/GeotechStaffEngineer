@@ -136,7 +136,7 @@ Key conventions:
   adhesion and ask for Fig. 7-18's case under a softer clay; the user
   manual's HTML is rebuilt from master; `retaining_wall_package` writes an
   MSE wall's calc package (`wall_type="mse"`) and MSE LRFD reports Strength I
-  (min) apart; pystrata is held below 0.6 (INF-68); SharePoint works on any
+  (min) apart; the site-response tools run on pystrata 0.5 (Python 3.12) or 0.6 (Python 3.13); SharePoint works on any
   Microsoft cloud with a secret or a certificate and several sites, with a
   connection test and `docs/SHAREPOINT_SETUP.md`; the cloud is read off the
   site's address, a user can open any granted site by pasting its address,
