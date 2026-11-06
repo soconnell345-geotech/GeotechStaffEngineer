@@ -558,13 +558,18 @@ with the plain iteration.
 
 **Why it is not the default.** The goal (BACKLOG GM-308 (a)) was every
 frictional answer on the default mesh at the default max_iter within 1 %
-of its answer at four times max_iter. The accelerated iteration meets it
-on the c-phi check (c = 20 kPa, phi = 25, B = 2 m: 520.7 kPa at max_iter
-1000 and 4000, where the default reads 455.6 and 477.3) but not on the
-cohesionless and high-phi checks, where a load step below collapse sits on
-a residual plateau near 1e-3 and whether GM-306's settled-step test
-accepts it depends on max_iter (one case read 1015.4 at 1000 and 465.6 at
-4000); VALIDATION.md §3 has the table. The default stays
+of its answer at four times max_iter. The accelerated iteration reads the
+c-phi check (c = 20 kPa, phi = 25, B = 2 m) at 520.7 kPa at max_iter 4000
+and 16000, where the default reads 477.3 and 499.0, but it does not meet
+the goal on the cohesionless and high-phi checks, where a load step below
+collapse sits on a residual plateau near 1e-3 and whether GM-306's
+settled-step test accepts it depends on max_iter, so q_ult rose or fell
+with max_iter. Near collapse its answers also vary by machine: rounding
+differences between numpy/scipy builds grow over the hundreds of
+iterations of the last load steps (the constant-stiffness iteration damps
+them), so a step that converges on one machine stops the run on another.
+On none of the three machines checked did it meet the goal on every row;
+VALIDATION.md §3 has the table. The default stays
 `iteration='constant_stiffness'` (None means it), so no answer moves. A
 call that gives `iteration` gets a "nonlinear iteration" entry in
 `choices` (basis, and the other scheme as the alternative); left out, no
@@ -574,14 +579,15 @@ BFGS updates of K0^-1 with a line search (Matthies & Strang 1979) were
 tried first and dropped: with psi < phi the plastic flow is
 non-associated, the residual is not the gradient of a potential, and the
 line search on d . R(u + s d) let the residual ratio swing from about
-1e-2 to above 1; it read 499.0 and 542.4 kPa (c-phi, 40x20) at max_iter
-1000 and 4000, the 4000 run accepting a step with a residual ratio of 0.66
-(`module_work/gm308/CHECK_A.md`).
+1e-2 to above 1, and the prototype's 4000-iteration run on the c-phi
+check accepted a step with a residual ratio of 0.66 (its numbers, from one
+machine, are in `module_work/gm308/CHECK_A.md`).
 
 The stage under the soil's weight (stage 1) always uses the plain
 iteration, and every other caller of `run_nl` (strength reduction, staged
-construction and excavation, gravity) keeps its own method, unchanged to
-the digit (`fem2d/tests/test_gm308_iteration.py`).
+construction and excavation, gravity) keeps its own method, unchanged
+(identical to master on one machine; pinned in
+`fem2d/tests/test_gm308_iteration.py`).
 
 The default stays flexible on the mesh study in VALIDATION.md §3: on the
 uniform meshes the rigid footing reads high and converges slowly from above

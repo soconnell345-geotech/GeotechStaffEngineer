@@ -226,11 +226,12 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         Anderson acceleration (Anderson 1965, in the form of Walker & Ni
         2011, Sec. 2; ``fem2d.solver._anderson_step``), an option: on the
         c-phi check (c = 20 kPa, phi = 25, B = 2 m, 40 x 20) it reads 520.7
-        kPa at max_iter 1000, 4000 and 16000 where the default reads 455.6,
-        477.3 and 499.0, but on cohesionless and high-phi checks its q_ult
-        still moved with max_iter, in either direction (VALIDATION.md §3),
-        so it is not the default. The stage under the soil's weight always
-        uses the constant-stiffness iteration.
+        kPa at max_iter 4000 and 16000 where the default reads 477.3 and
+        499.0, but on cohesionless and high-phi checks its q_ult still
+        moved with max_iter, in either direction, and near collapse its
+        answers vary by machine (VALIDATION.md §3), so it is not the
+        default. The stage under the soil's weight always uses the
+        constant-stiffness iteration.
     q_applied : float, optional — a working/design pressure (kPa). If given, the
         bearing factor of safety q_ult / q_applied is reported.
     footing : 'flexible' (default) or 'rigid' — a uniform pressure ramped to
@@ -474,22 +475,35 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
         # max_iter; such a stop cannot be told from collapse, and q_ult
         # rose with max_iter without levelling off (fem2d VALIDATION.md
         # section 3), so it is a lower bound (GM-306 review).
-        result.warnings.append(
-            f"The load step after q_ult = {q_ult:.1f} kPa stopped at "
-            f"max_iter = {max_iter} iterations without converging. On a "
-            "frictional soil this iteration converges slowly near collapse, "
-            "more so on finer meshes, so such a stop cannot be told from "
-            "collapse and q_ult is a lower bound of this mesh's answer, "
-            "limited by the iteration count: c = 20 kPa, phi = 25, B = 2 m "
-            "read 455.6, 477.3 and 499.0 kPa at max_iter 1000, 4000 and "
-            "16000 on the default 40x20 mesh, still rising, and 217.0 and "
-            "455.6 at 1000 and 4000 on 80x40 (fem2d VALIDATION.md section "
-            "3). A larger max_iter can raise it."
-            + (" With iteration='accelerated' (Anderson acceleration) the "
-               "c-phi case read 520.7 kPa at max_iter 1000, 4000 and "
-               "16000, but cohesionless and high-phi cases still moved "
-               "with max_iter, in either direction."
-               if method == 'anderson' else ""))
+        if method == 'anderson':
+            # GM-308 review: with the accelerated iteration q_ult rose or
+            # fell with max_iter (fem2d VALIDATION.md section 3), so it is
+            # not a lower bound
+            result.warnings.append(
+                f"The load step after q_ult = {q_ult:.1f} kPa stopped at "
+                f"max_iter = {max_iter} iterations without converging. With "
+                "iteration='accelerated' (Anderson acceleration of the "
+                "constant-stiffness iteration) such a stop cannot be told "
+                "from collapse, and q_ult is not a bound of this mesh's "
+                "answer: it can move either way with max_iter. c = 20 kPa, "
+                "phi = 25, B = 2 m read 520.7 kPa at max_iter 4000 and 16000 "
+                "on the default 40x20 mesh, but on cohesionless and high-phi "
+                "cases q_ult rose or fell with max_iter, and near collapse "
+                "the accelerated answers vary by machine (fem2d "
+                "VALIDATION.md section 3).")
+        else:
+            result.warnings.append(
+                f"The load step after q_ult = {q_ult:.1f} kPa stopped at "
+                f"max_iter = {max_iter} iterations without converging. On a "
+                "frictional soil this iteration converges slowly near "
+                "collapse, more so on finer meshes, so such a stop cannot be "
+                "told from collapse and q_ult is a lower bound of this "
+                "mesh's answer, limited by the iteration count: c = 20 kPa, "
+                "phi = 25, B = 2 m read 455.6, 477.3 and 499.0 kPa at "
+                "max_iter 1000, 4000 and 16000 on the default 40x20 mesh, "
+                "still rising, and 217.0 and 455.6 at 1000 and 4000 on 80x40 "
+                "(fem2d VALIDATION.md section 3). A larger max_iter can "
+                "raise it.")
     if c <= 0 and phi > 0 and gamma > 0 and surcharge == 0:
         # GM-304 review: c = 0, phi = 30, gamma = 18 gave 102.5, 52.5, 35.0
         # and 27.5 kPa on 20x10 to 80x40 (fem2d/VALIDATION.md section 3).
@@ -643,15 +657,17 @@ def _iteration_choice(iteration, given, phi):
     acc = ("'accelerated': the same iteration with Anderson acceleration "
            "(Anderson 1965; Walker & Ni 2011, Sec. 2, Anderson(m), m = 5); "
            "on the c-phi check (c = 20 kPa, phi = 25, B = 2 m, 40x20) it "
-           "reads 520.7 kPa at max_iter 1000, 4000 and 16000, but on "
+           "reads 520.7 kPa at max_iter 4000 and 16000, but on "
            "cohesionless and high-phi checks its q_ult still moved with "
-           "max_iter (fem2d VALIDATION.md section 3)")
+           "max_iter, either way, and near collapse its answers vary by "
+           "machine (fem2d VALIDATION.md section 3)")
     if iteration == 'accelerated':
         basis = ("the constant-stiffness iteration (one factorized elastic "
                  "stiffness) with Anderson acceleration (Anderson 1965; "
                  "Walker & Ni 2011, Sec. 2, Anderson(m), m = 5); an option, "
                  "not the default: on cohesionless and high-phi checks its "
-                 "q_ult still moved with max_iter (fem2d VALIDATION.md "
+                 "q_ult still moved with max_iter, either way, and near "
+                 "collapse its answers vary by machine (fem2d VALIDATION.md "
                  "section 3)")
         alt = ["'constant_stiffness' (the default)"]
     else:
@@ -1031,7 +1047,7 @@ def _side_boundary_warnings(nodes, elements, surf, z_toe, material_props):
     clay below the toe) 0.645 with 19.5 m beyond the crest and the toe
     (0.8 times the depth), 0.660 with 1.5 times, 0.668 with 2 and 2.5 times
     (Taylor's circle 0.679); at D = 2, 1.2 times behind the crest reads
-    3.3 % low and 2 times not at all (VALIDATION.md section 3).
+    3.3 % low and 2 times not at all (VALIDATION.md section 11).
     """
     corners = nodes[np.asarray(elements)[:, :3]]
     cy = corners[:, :, 1].mean(axis=1)
@@ -1132,7 +1148,7 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         that soil yields at every trial and the iterations converge slowly;
         on a fine mesh a trial that would settle can then reach max_iter
         and count as failure (Duncan Ex 1, 100x30: 0.627 at nu = 0.35,
-        0.662 at 0.49; VALIDATION.md section 3).
+        0.662 at 0.49; VALIDATION.md section 11).
     depth : float, optional — depth below lowest surface. Default 2×H.
     nx, ny : int — mesh density.
     x_extend : float or (left, right), optional — extra flat margin. A

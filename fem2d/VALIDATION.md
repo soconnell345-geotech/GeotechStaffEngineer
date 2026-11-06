@@ -386,40 +386,49 @@ its one factorization, its steps combined by Anderson acceleration
 (Anderson 1965; Walker & Ni 2011, Sec. 2, Anderson(m) with m = 5;
 `solver._anderson_step`). The goal was that every frictional answer on the
 default mesh at the default max_iter (1000) lie within 1 % of its answer at
-4000 and no lower than the default iteration's at 16000. It is met on the
-c-phi case and not on the cohesionless and high-phi ones, so **the default
-stays the constant-stiffness iteration and no answer moves**. B = 2 m
-unless given, 40x20, defaults; kPa (run time, s, one thread):
+4000 and no lower than the default iteration's at 16000. No machine
+checked meets it on every row (the c-phi case meets it on two of three),
+so **the default stays the constant-stiffness iteration and no answer
+moves**. B = 2 m unless given, 40x20, defaults; kPa. Three machines: A,
+the one the option was built on (Linux, Python 3.12); B, Windows, Python
+3.14, numpy 2.4.6, scipy 1.17.1; C, Linux, Python 3.12, numpy 2.5.4, scipy
+1.18.1. One value: the three agree; otherwise A / B / C.
 
-| Case | default, 1000 | accelerated, 1000 | accelerated, 4000 | within 1 % |
+| Case | default, 1000 | accelerated, 1000 | accelerated, 4000 | within 1 % (A / B / C) |
 |---|---|---|---|---|
-| c = 20, phi = 25, gamma = 18 | 455.6 (19.7) | 520.7 (13.5) | 520.7 (26.4) | yes (16000: 520.7; default at 16000: 499.0) |
-| same, q = 0.01 | 455.7 (20.5) | 520.8 (13.2) | 520.8 (25.2) | yes |
-| c = 0, phi = 30, gamma = 18 | 43.0 (5.9) | 71.7 (6.1) | 86.0 (27.0) | no (set by the mesh, GM-304) |
-| same, psi = 30 | 43.0 (6.6) | 86.0 (8.1) | 86.0 (19.7) | yes |
-| c = 0, phi = 30, gamma = 18, q = 10 | 216.6 (15.1) | 278.6 (13.4) | 299.2 (40.0) | no |
-| same, psi = 30 | 257.9 (17.2) | 340.5 (7.8) | 361.2 (28.6) | no |
-| c = 0, phi = psi = 20, q = 20 | 130.9 (26.3) | 130.9 (8.9) | 130.9 (22.4) | yes |
-| c = 5, phi = 35, gamma = 19, q = 19 | 897.0 (22.1) | 897.0 (20.2) | 897.0 (60.6) | yes (two steps accepted as settled) |
-| B = 1, c = 10, phi = 30, gamma = 18, E = 2e4 | 321.9 (22.5) | 321.9 (12.5) | 375.6 (44.1) | no |
-| B = 3, c = 0, phi = 32, gamma = 19, q = 38 | 954.3 (28.3) | 1015.4 (24.8) | 465.6 (25.9) | no (lower at 4000) |
-| c = 10, phi = psi = 20, gamma = 18, q = 18 (GM-11 row) | 316.0 (20.5) | 340.9 (8.9) | 353.3 (40.0) | no |
+| c = 20, phi = 25, gamma = 18 | 455.6 | 520.7 / 520.7 / 499.0 | 520.7 | yes / yes / no (16000: 520.7 on all three; default at 16000: 499.0) |
+| same, q = 0.01 | 455.7 | 520.8 / 520.8 / 542.5 | 520.8 | yes / yes / no |
+| c = 0, phi = 30, gamma = 18 | 43.0 | 71.7 | 86.0 / 86.0 / 71.7 | no / no / yes (set by the mesh, GM-304) |
+| same, psi = 30 | 43.0 | 86.0 | 86.0 | yes |
+| c = 0, phi = 30, gamma = 18, q = 10 | 216.6 | 278.6 / 299.2 / 154.6 | 299.2 / 278.6 / 299.2 | no |
+| same, psi = 30 | 257.9 | 340.5 | 361.2 | no |
+| c = 0, phi = psi = 20, q = 20 | 130.9 | 130.9 | 130.9 | yes |
+| c = 5, phi = 35, gamma = 19, q = 19 | 897.0 | 897.0 / 897.0 / 959.8 | 897.0 / 1085.2 / 395.3 | yes / no / no |
+| B = 1, c = 10, phi = 30, gamma = 18, E = 2e4 | 321.9 | 321.9 / 321.9 / 196.7 | 375.6 | no |
+| B = 3, c = 0, phi = 32, gamma = 19, q = 38 | 954.3 | 1015.4 / 1137.6 / 465.6 | 465.6 / 1137.6 / 1015.4 | no / yes / no |
+| c = 10, phi = psi = 20, gamma = 18, q = 18 (GM-11 row) | 316.0 | 340.9 | 353.3 / 340.9 / 340.9 | no / yes / yes |
 
-On the failing cases a load step below collapse sits on a residual
-plateau near 1e-3 (tol 1e-4) for thousands of iterations, and whether the
-settled-step test (GM-306) accepts it depends on where `max_iter` cuts the
-plateau, so q_ult moves with `max_iter` in either direction. With the
-settled-step test off, q_ult no longer moves with max_iter but reads far
-below the default iteration (B = 1: 196.7; B = 3: 465.6; c = 5, phi = 35:
-395.3). On 20x10 the c-phi case read 542.4, 607.5 and 564.1 at 400, 1600
-and 6400. Variants tried (m = 3; m = 10; a fall-back to the plain iteration
-when the residual stalls; BFGS after Matthies & Strang 1979) and their
-numbers are in `module_work/gm308/CHECK_A.md`; none met the goal on every
-case. On undrained clay (phi = 0) the accelerated iteration converges one
-load step above the default on 40x20 (265.1 kPa against 255.9; Prandtl
-257.1): that mesh's own limit lies between 265.1 and 267.4 and the
-default's 255.9 is a stop of its iteration; 60x30 and 80x40 read 255.9
-with either (80x40 measured with m = 10).
+**Near collapse the accelerated answers vary by machine** (GM-308
+review): rounding differences between numpy/scipy builds grow over the
+hundreds of iterations of the last load steps, which the constant-stiffness
+iteration damps (its answers are the same on all three machines), so a step
+that converges or is accepted on one machine stops the run on another; on
+C the option read below the default on four rows. On the failing cases a
+load step below collapse sits on a residual plateau near 1e-3 (tol 1e-4)
+for thousands of iterations, and whether the settled-step test (GM-306)
+accepts it depends on where `max_iter` cuts the plateau, so q_ult moves
+with `max_iter` in either direction. With the settled-step test off
+(machine A only), q_ult no longer moved with max_iter but read far below
+the default iteration on three rows. On 20x10 the c-phi case moved with
+max_iter (400 to 6400) on two of the three machines. Variants tried
+(m = 3; m = 10; a fall-back to the plain iteration when the residual
+stalls; BFGS after Matthies & Strang 1979) and their numbers on machine A
+are in `module_work/gm308/CHECK_A.md`; none met the goal on every case. On
+undrained clay (phi = 0) the accelerated iteration converges one load step
+above the default on 40x20 (265.1 kPa against 255.9; Prandtl 257.1; that
+step converged to tol on all three machines): that mesh's own limit is at
+least 265.1 and the default's 255.9 is a stop of its iteration; 60x30
+reads 255.9 with either.
 
 ## 4. Elastic closed-form checks
 
