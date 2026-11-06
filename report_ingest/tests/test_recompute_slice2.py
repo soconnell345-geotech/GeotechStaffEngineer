@@ -145,6 +145,45 @@ def test_an_input_naming_a_dimension_no_claim_uses_stays_shared():
                                                     "case B": "agrees"}
 
 
+def test_a_stratum_printed_by_its_soil_is_a_case_in_any_word_order():
+    # review fix 3: the soil named in the claim's label and in the inputs'
+    # labels, in several word orders, splits the calculation
+    till = bearing(width=1.2, depth=0.8, unit_weight=20.5,
+                   friction_angle=37)["q_ultimate_kPa"]
+    silt = bearing(width=1.8, depth=0.8, unit_weight=17.0,
+                   friction_angle=27)["q_ultimate_kPa"]
+    inputs = [nq("Embedment (D)", 0.8, "m"), nq("Factor of safety", 3.0),
+              nq("phi (Glacial till)", 37, "deg"),
+              nq("Lagoon silt phi", 27, "deg"),
+              nq("Unit weight, Glacial till", 20.5, "kN/m3"),
+              nq("Lagoon silt unit weight", 17.0, "kN/m3"),
+              nq("Footing width (B), Scenario 1 (Glacial till)", 1.2, "m"),
+              nq("Lagoon silt - footing width B, scenario 1", 1.8, "m")]
+    rows = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity (kPa), Scenario 1 (Glacial till)",
+            round(till), "kPa"),
+         nq("Lagoon silt: ultimate bearing capacity, scenario 1",
+            round(silt), "kPa")], inputs))
+    by_case = {r["case"]: r for r in rows}
+    assert set(by_case) == {"scenario 1, glacial till",
+                            "scenario 1, lagoon silt"}
+    for case, want, phi in (("scenario 1, glacial till", till, 37),
+                            ("scenario 1, lagoon silt", silt, 27)):
+        row = by_case[case]
+        assert row["flag"] == "agrees", row
+        assert row["recomputed_si"] == pytest.approx(want)
+        assert row["inputs_used"]["friction_angle"]["value"] == phi
+
+
+def test_a_name_no_input_shares_does_not_split():
+    # words left in one claim's label that no input prints are no case
+    q = bearing(friction_angle=32)["q_ultimate_kPa"]
+    (row,) = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity (gross, checked)", round(q), "kPa")],
+        SHARED + [nq("phi", 32, "deg")]))
+    assert row["flag"] == "agrees" and "case" not in row, row
+
+
 # -- 2. labels taken wrongly ---------------------------------------------------
 
 def test_ratios_of_width_length_and_depth_are_not_the_dimensions():

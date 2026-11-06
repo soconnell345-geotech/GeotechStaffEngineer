@@ -201,7 +201,52 @@ def _case_name(case: Dict[str, str]) -> str:
         v = v.upper() if len(v) == 1 and v.isalpha() else v
         parts.append(f"{v} term" if dim == "term" else
                      v if dim == "shape" else f"{dim} {v}")
+    if "name" in case:
+        parts.append(case["name"])
     return ", ".join(parts)
+
+
+# -- a case printed by its name ----------------------------------------------
+
+#: The words of the module's own inputs and claims. What is left of a label
+#: without them, its case words, units, numbers, one-letter symbols and small
+#: words is the NAME of the case the label prints: a stratum printed by its
+#: soil ('phi (<soil>)', '<soil> phi', 'phi, <soil>'), or a structure.
+_NAME_NOISE = re.compile(
+    r"\b(bearing capacity|bearing pressure|bearing|capacity|pressure|"
+    r"allowable|ultimate|net|gross|footing|foundation|dimensions?|"
+    r"factor of safety|safety|factor|width|length|embedment|depth|"
+    r"friction angle|angle of (internal )?friction|friction|angle|cohesion|"
+    r"undrained|shear strength|strength|unit weight|unit wt|weight|density|"
+    r"effective|total|moist|saturated|buoyant|submerged|water table|"
+    r"groundwater|water|phi|gamma|settlement|immediate|elastic|"
+    r"consolidation|primary|cumulative|last row of the table|"
+    r"scenarios?|cases?|strat(um|a)|layers?|"
+    r"q_?all?|q_?ult|q_?a|q_?u)\b")
+
+#: A symbol of a factor or a ratio, never a name.
+_NAME_SYMBOL = re.compile(
+    r"^(n_?[cqg]|n_?gamma|n_?y|[sdi]_?[cqg]|[sdi]_?gamma|f[cqy]s|k[pa0o]|"
+    r"fs|fos|s_?u|c_?u|c'|e_?s|nu|ocr|d_?f|b/l|l/b|b/d_?f)$")
+
+
+def _names_of(lab: str) -> List[str]:
+    """The names a label (without its case words) prints: each part between
+    commas, colons or brackets, kept to its words once the module's own
+    words, units, numbers, one-letter symbols and small words are out."""
+    out = []
+    for part in re.split(r"[,;:()\[\]]", _NAME_NOISE.sub(" ", lab)):
+        words = []
+        for w in re.findall(r"[^\s/]+", part):
+            w = w.strip("-–—=.'\"")
+            if (len(w) < 2 or w in _STOP_WORDS or _UNIT_WORD.match(w)
+                    or _NAME_SYMBOL.match(w)
+                    or re.fullmatch(r"[\d.,+=\-]+", w)):
+                continue
+            words.append(w)
+        if words:
+            out.append(" ".join(words))
+    return out
 
 
 #: Words a label's length is counted without.
@@ -1148,10 +1193,36 @@ def _cases(calc: Calculation) -> List[Tuple[Dict[str, str], Calculation]]:
     'scenario 1' case, which names no stratum, so that case is not run on
     another stratum's input. An input naming a dimension no claim uses
     stays in every case, so two such values show as printed twice, never as
-    a choice between them."""
+    a choice between them.
+
+    A case is also printed by its NAME (:func:`_names_of`): a stratum by its
+    soil, in any word order ('phi (<soil>)', '<soil> phi', 'ultimate
+    bearing capacity, scenario 1, <soil>'). A name counts only when a
+    claim's label and an input's label both print it, and it splits like
+    the dimensions above (dimension ``name``)."""
     claim = _HAS_CLAIM[calc.kind]
-    res = [(_case_of(n.name)[0], n) for n in calc.results]
-    inp = [(_case_of(n.name)[0], n) for n in calc.inputs]
+
+    def read(rows):
+        out = []
+        for n in rows:
+            case, lab = _case_of(n.name)
+            out.append((dict(case), _names_of(lab), n))
+        return out
+
+    res_n, inp_n = read(calc.results), read(calc.inputs)
+    claimed = {x for _c, names, n in res_n
+               if claim(calc.model_copy(update={"results": [n]}))
+               for x in names}
+    shared = claimed & {x for _c, names, _n in inp_n for x in names}
+
+    def named(case: Dict[str, str], names: List[str]) -> Dict[str, str]:
+        mine = sorted(set(names) & shared)
+        if mine:
+            case["name"] = " / ".join(mine)
+        return case
+
+    res = [(named(c, names), n) for c, names, n in res_n]
+    inp = [(named(c, names), n) for c, names, n in inp_n]
     combos: List[Dict[str, str]] = []
     for case, _n in res:
         if case not in combos:
