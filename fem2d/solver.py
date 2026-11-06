@@ -631,7 +631,7 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
            line_search=False, mats_override=None,
            stall_window=None, stall_ratio=0.98, f_int_offset=None,
            settled_ratio=None, settled_residual_cap=1e-2, F_start=None,
-           iface_slip_init=None, prescribed=None):
+           iface_slip_init=None, prescribed=None, settled_early=True):
     """Run the incremental-iterative nonlinear solution on a context.
 
     Parameters
@@ -682,6 +682,12 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
         to `settled_ratio` of the first half. Default None (off: every
         non-converged step is a failure). Accepted steps are listed in
         ``settled``.
+    settled_early : bool — with ``settled_ratio``, also accept a step
+        whose displacements plainly stand still before the iteration
+        ceiling (the check above). False judges a step only at the
+        ceiling, so every step that meets ``tol`` on its own ends exactly
+        as it does with ``settled_ratio=None`` (GM-306: the flexible
+        footing's collapse test). Default True.
     F_start : (n_dof,) array, optional — the load already in equilibrium
         with the initial state. The step load then ramps from F_start to
         ctx['F_ext'] over `n_steps` (F_start + lam (F_ext - F_start))
@@ -882,7 +888,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                 u_half = u.copy()
                 u_check = u_half
                 r_half = r_ratio
-            elif (settled_ratio is not None and u_half is not None
+            elif (settled_ratio is not None and settled_early
+                  and u_half is not None
                   and (n_it - half) % _SETTLED_CHECK_EVERY == 0):
                 # Early acceptance of a step whose displacements stand
                 # still: even at _SETTLED_RATE_MARGIN times the recent rate
