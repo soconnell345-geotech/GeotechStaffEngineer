@@ -125,7 +125,10 @@ Key conventions:
   model-first answer); groundwater "not measured" and combined lab samples
   are kept; refs pinned at 32bbd77 (worked examples from five manuals); the
   app split's steps 6-8 are in (the Document Review page loads one geotech
-  package and four app modules; steps 9-11 next); the owner's question list
+  package and four app modules), and step 10: `aec-agent-core`, the shared
+  core, empty (1.0.0.dev0) in `packages/aec-agent-core`, pinned exactly; a
+  dev install puts it first: `pip install -e packages/aec-agent-core -e .`;
+  steps 9 (b) and 11 next; the owner's question list
   runs inside the ingest when `GSE_REPORT_QUESTIONS` names it, posts matched
   from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split; the
   geotech page keeps 15 document tools off the list until a document is
