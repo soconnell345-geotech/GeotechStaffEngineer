@@ -140,14 +140,14 @@ Key conventions:
   Microsoft cloud with a secret or a certificate and several sites, with a
   connection test and `docs/SHAREPOINT_SETUP.md`; the cloud is read off the
   site's address, a user can open any granted site by pasting its address,
-  and SharePoint errors are kept in a log in the app's SharePoint folder. Answers move in the MSE
+  and SharePoint errors are kept in a log in the app's SharePoint folder; GEC-13's lookups cite their printed equations (refs f62a1d1). Answers move in the MSE
   critical bearing (live load over the zone at 1.75), fem2d footing capacity
   (a surcharge is a real load; the soil's weight first; the default
   iteration limit grows with the mesh, so fine meshes no longer stop short,
   and a stopped run is called a lower bound; a graded mesh for clay; sand q_ult with
   no surcharge is set by the mesh and warned of; a rigid footing is a
-  choice, flexible stays the default) and sheet_pile (water standing in
-  the excavation).
+  choice, flexible stays the default) sheet_pile (water standing in
+  the excavation) and GEC-13's groutability band (N > 24 feasible, as printed).
 
 - **5.34.0 (2026-11-04; tag `v5.34.0` on branch `release/5.34.0`) with
   planlens 0.14.0 (tag `v0.14.0`) and geotech-references 1.5.0 (tag
