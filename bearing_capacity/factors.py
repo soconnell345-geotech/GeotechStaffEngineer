@@ -224,8 +224,9 @@ def shape_factors(phi_deg: float, B: float, L: float,
 #: ``depth_method`` values (GM-197): how the depth factors are worked out.
 #: "hansen": Brinch Hansen's (1970) depth parameter k in the Vesic or
 #: Meyerhof factors; "gec6": GEC-6's d_q alone (Eq. 5-14, Table 5-4);
-#: "none": no depth factors.
-DEPTH_FACTOR_METHODS = ("hansen", "gec6", "none")
+#: "linear" (GM-309): Meyerhof's factors with k = Df/B at every depth, as
+#: UFC 3-220-20 Table 5-6 prints them; "none": no depth factors.
+DEPTH_FACTOR_METHODS = ("hansen", "gec6", "linear", "none")
 
 #: Where each depth-factor method is printed.
 #: Brinch Hansen's depth parameter k as UFC 3-220-20 prints it.
@@ -249,6 +250,13 @@ DEPTH_FACTOR_BASIS = {
              "(Brinch Hansen 1970, p. 57) for Df/B from 1, which k = "
              "arctan(Df/B) reproduces; d_q = 1.0 for Df/B < 1, as the "
              "worked example on p. B-67 takes it"),
+    "linear": ("Meyerhof (1963) depth factors as UFC 3-220-20 Table 5-6 "
+               "(p. 294) prints them, linear in k = Df/B at every depth (the "
+               "table puts no limit on Df/B): d_c = 1 + 0.2 k sqrt(K_P); "
+               "d_q = d_gamma = 1 + 0.1 k sqrt(K_P) for phi' > 10 deg, 1 at "
+               "phi = 0 (the table prints nothing for 0 < phi' <= 10 deg; "
+               "d_q = d_gamma = 1 there); K_P = tan^2(pi/4 + phi'/2). "
+               "Larger than the 'hansen' factors beyond Df/B = 1"),
     "none": ("no depth factors: GEC-6 Sec. 5.2.3.3 (p. 57) omits them "
              "unless the cover over the footing is high-quality compacted "
              "granular material sure to stay in place, and Table 5-4's "
@@ -306,7 +314,8 @@ def depth_factors(phi_deg: float, Df: float, B: float,
     depth_method : str, optional
         One of :data:`DEPTH_FACTOR_METHODS` (basis in
         :data:`DEPTH_FACTOR_BASIS`): "hansen" (default), "gec6" (with
-        ``method="vesic"`` only) or "none".
+        ``method="vesic"`` only), "linear" (with ``method="meyerhof"``
+        only: k = Df/B at every depth) or "none".
 
     Returns
     -------
@@ -337,6 +346,9 @@ def depth_factors(phi_deg: float, Df: float, B: float,
         dc = 1 + 0.2*sqrt(Kp) * k
         dq = dg = 1 + 0.1*sqrt(Kp) * k   for phi > 10
         dq = dg = 1.0                     for phi <= 10
+    With depth_method="hansen" k is Df/B up to 1 and arctan(Df/B) beyond;
+    with depth_method="linear" k = Df/B at every depth, as Table 5-6
+    prints it (GM-309).
     """
     if B <= 0:
         raise ValueError(f"Footing width B must be positive, got {B}")
@@ -364,8 +376,14 @@ def depth_factors(phi_deg: float, Df: float, B: float,
         dq = (1.0 + 2.0 * math.tan(phi) * (1.0 - math.sin(phi)) ** 2
               * math.atan(DfoverB))
         return 1.0, dq, 1.0
+    if depth_method == "linear" and method != "meyerhof":
+        raise ValueError(
+            "depth_method 'linear' is Meyerhof's depth factors with k = "
+            "Df/B at every depth (UFC 3-220-20 Table 5-6), which go with "
+            "Meyerhof's own factors: method 'meyerhof'")
 
-    k = depth_parameter_k(Df, B, method)
+    k = DfoverB if depth_method == "linear" else depth_parameter_k(
+        Df, B, method)
 
     if method == "vesic":
         phi = math.radians(phi_deg)

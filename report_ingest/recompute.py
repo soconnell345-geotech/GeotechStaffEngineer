@@ -987,10 +987,26 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float,
             "why": ("no depth factor is printed: the module's default "
                     "(depth_factor_method 'hansen') and none both run"),
             "basis": _basis(alt, "depth factors"), "result": alt})
+    # GM-309: beyond Df/B = 1 Meyerhof's own k = Df/B (UFC 3-220-20
+    # Table 5-6) runs beside the default's arctan(Df/B)
+    linear_alt = (used == "meyerhof"
+                  and params.get("depth", 0) > params.get("width", 0) > 0)
+    if linear_alt:
+        alt = _call("bearing_capacity", "bearing_capacity_analysis",
+                    {**run, "factor_method": "meyerhof",
+                     "depth_factor_method": "linear"})
+        alternatives.append({
+            "option": "factor_method 'meyerhof' with depth_factor_method "
+                      "'linear'",
+            "method": "meyerhof", "depth_factor_method": "linear",
+            "why": ("beyond Df/B = 1 Meyerhof's own k = Df/B (UFC 3-220-20 "
+                    "Table 5-6) runs beside the default's arctan(Df/B)"),
+            "basis": _basis(alt, "depth factors"), "result": alt})
     default = (f"factor_method '{used}'"
                + (", ngamma_method 'hansen'"
                   if params.get("ngamma_method") else "")
-               + (", depth_factor_method 'hansen'" if depth_alt else ""))
+               + (", depth_factor_method 'hansen'"
+                  if depth_alt or linear_alt else ""))
     rows = []
     for key, nq in claims:
         row = _base_row(calc, index)
