@@ -254,8 +254,9 @@ DEPTH_FACTOR_BASIS = {
                "(p. 294) prints them, linear in k = Df/B at every depth (the "
                "table puts no limit on Df/B): d_c = 1 + 0.2 k sqrt(K_P); "
                "d_q = d_gamma = 1 + 0.1 k sqrt(K_P) for phi' > 10 deg, 1 at "
-               "phi = 0; K_P = tan^2(pi/4 + phi'/2). Larger than the "
-               "'hansen' factors beyond Df/B = 1"),
+               "phi = 0 (the table prints nothing for 0 < phi' <= 10 deg; "
+               "d_q = d_gamma = 1 there); K_P = tan^2(pi/4 + phi'/2). "
+               "Larger than the 'hansen' factors beyond Df/B = 1"),
     "none": ("no depth factors: GEC-6 Sec. 5.2.3.3 (p. 57) omits them "
              "unless the cover over the footing is high-quality compacted "
              "granular material sure to stay in place, and Table 5-4's "

@@ -79,9 +79,10 @@ wraps it).
   1.0 below (the worked example on p. B-67). "linear" (Meyerhof only,
   GM-309) takes Meyerhof's factors with k = Df/B at every depth, as UFC
   Table 5-6 (p. 294) prints them with no limit on Df/B: d_c = 1 + 0.2 k
-  √K_P, d_q = d_γ = 1 + 0.1 k √K_P for φ' > 10° (1 at φ = 0); the same as
-  "hansen" up to Df/B = 1 and larger beyond. "none" uses no depth factors
-  (GEC-6 Sec. 5.2.3.3 and Table 5-4 note). The result's `choices` state
+  √K_P, d_q = d_γ = 1 + 0.1 k √K_P for φ' > 10° (1 at φ = 0; the table
+  prints nothing for 0 < φ' ≤ 10°, where d_q = d_γ = 1, under "hansen"
+  too); the same as "hansen" up to Df/B = 1 and larger beyond. "none"
+  uses no depth factors (GEC-6 Sec. 5.2.3.3 and Table 5-4 note). The result's `choices` state
   the factors and what the other options give.
 - `BearingSoilProfile.effective_unit_weight()` was removed (BC-6, unused);
   use `geotech_common.water.effective_unit_weight` or
