@@ -29,8 +29,8 @@ import pytest
 
 from langchain_core.messages import AIMessageChunk, HumanMessage
 
-import funhouse_agent.deep.databricks_bridge as databricks_bridge
-from funhouse_agent.deep.databricks_bridge import PrompterChatModel
+import aec_agent_core.deep.databricks_bridge as databricks_bridge
+from aec_agent_core.deep.databricks_bridge import PrompterChatModel
 
 
 # ===========================================================================

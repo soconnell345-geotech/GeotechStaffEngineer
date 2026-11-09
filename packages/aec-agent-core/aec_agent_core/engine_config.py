@@ -388,7 +388,7 @@ def _resolve_palantir_sdk(model_id: str) -> "EngineResolution":
     host/token/proxy is involved. Never raises.
     """
     try:
-        from webapp.palantir_sdk_engine import PalantirSdkChatModel, \
+        from aec_agent_core.palantir_sdk_engine import PalantirSdkChatModel, \
             sdk_available
     except Exception as exc:
         return EngineResolution(
@@ -439,7 +439,7 @@ def _resolve_palantir_claude(model_id: str) -> "EngineResolution":
     """Build the in-platform ``palantir_models`` Claude engine for a model
     API name (BACKLOG INF-27). Never raises."""
     try:
-        from webapp.palantir_sdk_engine import PalantirClaudeChatModel, \
+        from aec_agent_core.palantir_sdk_engine import PalantirClaudeChatModel, \
             claude_sdk_available
     except Exception as exc:
         return EngineResolution(
@@ -740,7 +740,7 @@ def register_model_builder(builder: Optional[Callable[..., object]]) -> None:
     The deployment supplies a Prompter-backed LangChain chat model by calling
     this at startup::
 
-        from webapp.engine_config import register_model_builder
+        from aec_agent_core.engine_config import register_model_builder
         register_model_builder(lambda: PrompterChatModel(fh_prompter))
 
     ``resolve_engine`` then prefers that model over the ANTHROPIC_API_KEY path.

@@ -130,13 +130,13 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import ConfigDict, Field, PrivateAttr
 
-from funhouse_agent.deep.databricks_bridge import (
+from aec_agent_core.deep.databricks_bridge import (
     _FINISH_REASON_MAP,
     _text_content,
     _to_usage_metadata,
     _usage_to_dict,
 )
-from funhouse_agent.error_text import rate_limit_named
+from aec_agent_core.error_text import rate_limit_named
 
 
 def _sdk():

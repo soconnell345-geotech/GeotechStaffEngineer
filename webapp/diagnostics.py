@@ -307,11 +307,11 @@ def sharepoint_download(checks: List[dict], who: str) -> Optional[str]:
 def _prompter_key_check(identity: Any = None) -> dict:
     """Tiny Apps: which Prompter key SOURCE serves this caller — per-tester
     secret, the PROMPTER-KEYS mapping or the shared key — and the per-tester
-    secret's NAME. Never a key (``tinyapps_engine.key_source_report``)."""
+    secret's NAME. Never a key (``tinyapps_keys.key_source_report``)."""
     name = "Prompter key source"
     try:
-        from webapp import tinyapps_engine
-        ok, detail = tinyapps_engine.key_source_report(identity)
+        from webapp import tinyapps_keys
+        ok, detail = tinyapps_keys.key_source_report(identity)
     except Exception as exc:                         # noqa: BLE001
         return _check(name, WARN, f"{type(exc).__name__}: {exc}")
     return _check(name, PASS if ok else WARN, detail)

@@ -141,7 +141,7 @@ def _fit(width: int, height: int, engine=None) -> Tuple[int, int]:
     """The largest size of this shape the vision budget holds (larger or
     smaller than ``width`` x ``height``) - planlens' ``fit_size`` on
     ``vision_view.budget``, or the image edge cap when no budget applies."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     bud = vision_view.budget(engine)
     if bud is not None:
         try:
@@ -181,7 +181,7 @@ def tile_count(picture: Picture, engine=None) -> int:
     the model at :data:`WHOLE_MIN_SCALE` of its size or more, else enough
     that each tile goes at about its own resolution (at most
     ``vision_view.MAX_TILES_PER_SIDE``)."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     scale = whole_scale(picture, engine)
     if scale >= WHOLE_MIN_SCALE:
         return 1
@@ -192,7 +192,7 @@ def tile_count(picture: Picture, engine=None) -> int:
 def tile_boxes(picture: Picture, n: int) -> List[List[int]]:
     """``n`` x ``n`` overlapping tiles over the image (``vision_view.tile_boxes``),
     in whole pixels of the original, row-major from the top-left."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     out = []
     for b in vision_view.tile_boxes((0, 0, picture.width, picture.height), n):
         out.append(whole_box(b, picture))
@@ -264,7 +264,7 @@ def render(picture: Picture, box: Optional[Sequence[int]] = None, engine=None,
     original pixel, before any turn). The whole image, when it fits and
     nothing is drawn on it, is the file's own bytes."""
     from PIL import Image
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     W, H = picture.width, picture.height
     x0, y0, x1, y1 = [0, 0, W, H] if box is None else [int(v) for v in box]
     cw, ch = x1 - x0, y1 - y0
@@ -418,7 +418,7 @@ FRAME_NOTE = ("view, bbox and every box converted from an image_box are in "
 def precision_note(view: Sequence[float], scale: float) -> str:
     """How far a box read off this look of an image can be trusted, and
     that a box is not a measurement (``vision_view.NOT_A_MEASUREMENT``)."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     x0, y0, x1, y1 = (float(v) for v in view)
     vw, vh = x1 - x0, y1 - y0
     if scale >= 1.0:
@@ -439,7 +439,7 @@ def view_payload(info: Dict[str, Any], picture: Picture,
     page look's (``vision_view.view_payload``), with the precision and turn
     said for an image, the image's own size, the frame, and the scale it
     was sent at when it was not its own size."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     out = vision_view.view_payload(info, engine)
     out["view"] = [int(v) for v in info["clip"]]
     out["image_px"] = [picture.width, picture.height]

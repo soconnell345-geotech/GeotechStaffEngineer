@@ -123,7 +123,20 @@ FORBIDDEN_PARTS = {"tests", "module_work", "raw", "packages"}
 #: Modules imported in the fresh venv: the packages' entry points, all
 #: import-safe (no Streamlit page runs on import).
 IMPORTS = {
-    "aec_agent_core": "aec_agent_core",
+    # The core and what step 11 (a) moved into it (each imports with only
+    # the core's own requirements and planlens).
+    "aec_agent_core": (
+        "aec_agent_core", "aec_agent_core.hooks",
+        "aec_agent_core.engine_config", "aec_agent_core.palantir_sdk_engine",
+        "aec_agent_core.http_trace", "aec_agent_core.tinyapps_engine",
+        "aec_agent_core.vision_tools", "aec_agent_core.vision_view",
+        "aec_agent_core.image_view", "aec_agent_core.vision_probe",
+        "aec_agent_core.inline_store", "aec_agent_core.turn_question",
+        "aec_agent_core.error_text", "aec_agent_core._fileio",
+        "aec_agent_core.deep", "aec_agent_core.deep.vision_engine",
+        "aec_agent_core.deep.databricks_bridge",
+        "aec_agent_core.deep.pacing", "aec_agent_core.deep.inline_images",
+    ),
     "geotech-staff-engineer": (
         "funhouse_agent", "funhouse_agent._disclaimer",
         "funhouse_agent.deep", "funhouse_agent.deep.agent",
@@ -202,6 +215,11 @@ def test_the_core_wheel_is_the_core_alone(wheels):
     assert {t for t in tops if not t.endswith(".dist-info")} == \
         {"aec_agent_core"}, tops
     assert "aec_agent_core/__init__.py" in names
+    for moved in ("aec_agent_core/hooks.py", "aec_agent_core/vision_tools.py",
+                  "aec_agent_core/engine_config.py",
+                  "aec_agent_core/deep/__init__.py",
+                  "aec_agent_core/deep/vision_engine.py"):
+        assert moved in names, moved
     assert any(n.endswith(".dist-info/licenses/LICENSE") for n in names)
     with zipfile.ZipFile(wheels[CORE_NAME]) as z:
         meta = z.read(next(n for n in names
@@ -272,7 +290,7 @@ def venv(wheels, tmp_path_factory):
 @pytest.mark.slow
 def test_the_entry_points_import_from_the_installed_wheels(venv):
     env_dir, py = venv
-    mods = [IMPORTS["aec_agent_core"], *IMPORTS["geotech-staff-engineer"]]
+    mods = [*IMPORTS["aec_agent_core"], *IMPORTS["geotech-staff-engineer"]]
     script = textwrap.dedent(f"""
         import importlib, importlib.util, importlib.metadata as md, os, sys
         env = os.path.realpath({str(env_dir)!r})
@@ -292,6 +310,12 @@ def test_the_entry_points_import_from_the_installed_wheels(venv):
         assert md.version("aec-agent-core") == aec_agent_core.__version__
         reqs = md.requires("geotech-staff-engineer")
         assert "aec-agent-core==" + aec_agent_core.__version__ in reqs, reqs
+        # the old names of what moved into the core are the core's modules
+        import funhouse_agent, webapp
+        for old, new in {{**funhouse_agent.CORE_ALIASES,
+                         **webapp.CORE_ALIASES}}.items():
+            assert importlib.import_module(old) is \
+                importlib.import_module(new), old
         print("ok", len({mods!r}))
         """)
     env = {k: v for k, v in os.environ.items()

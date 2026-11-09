@@ -190,7 +190,7 @@ def test_a_requested_summary_that_is_not_read_is_logged_once(monkeypatch,
                                                  _responses_reply("b")])
     _with_reasoning_types(monkeypatch)
     m = _model()
-    with caplog.at_level(logging.INFO, logger="webapp.palantir_sdk_engine"):
+    with caplog.at_level(logging.INFO, logger="aec_agent_core.palantir_sdk_engine"):
         m.invoke([HumanMessage(content="hi")])
         m.invoke([HumanMessage(content="again")])
     lines = [r.getMessage() for r in caplog.records

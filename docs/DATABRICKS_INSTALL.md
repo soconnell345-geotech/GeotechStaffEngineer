@@ -30,6 +30,15 @@ No extras, no pins, no patch cell. `[deep,full]` has not been needed since
 The restart is not optional: pip installs into a notebook-scoped environment
 that the already-running Python process cannot see.
 
+**The core, from the next release (the app split, BACKLOG INF-32).** Master
+pins the shared core `aec-agent-core` exactly, and since step 11 (a) the
+app imports its model connections and vision tools from it. A release
+from master waits for the core on PyPI and Nexus (step 12), then the same
+`%pip install` line brings it beside the app: expect
+`aec-agent-core-<version>` in the "Successfully installed" list. Installing
+from wheels instead (a test build) takes the core's wheel too; from a
+checkout, `pip install -e packages/aec-agent-core -e .`.
+
 ---
 
 ## 2. What "good" looks like

@@ -29,6 +29,45 @@ or the reviewers (BACKLOG INF-30, the app split's step 2).
 import importlib as _importlib
 import importlib.util as _importlib_util
 
+# The modules moved into the shared core (BACKLOG INF-32, the app split's
+# step 11 (a); plan module_work/APP_SPLIT_PLAN.md section 2.3) keep their old
+# names here until step 16: each old name IS the core's module (the same
+# object, so a test that patches by the old name reaches the real module).
+# Installed first, before anything below imports a moved name.
+from aec_agent_core import install_aliases as _install_aliases
+
+#: Old name -> the core's name. Lazy: nothing is imported until an old name
+#: is looked up.
+CORE_ALIASES = {
+    "funhouse_agent._fileio": "aec_agent_core._fileio",
+    "funhouse_agent.error_text": "aec_agent_core.error_text",
+    "funhouse_agent.image_view": "aec_agent_core.image_view",
+    "funhouse_agent.inline_store": "aec_agent_core.inline_store",
+    "funhouse_agent.turn_question": "aec_agent_core.turn_question",
+    "funhouse_agent.vision_probe": "aec_agent_core.vision_probe",
+    "funhouse_agent.vision_tools": "aec_agent_core.vision_tools",
+    "funhouse_agent.vision_view": "aec_agent_core.vision_view",
+    "funhouse_agent.deep.databricks_bridge":
+        "aec_agent_core.deep.databricks_bridge",
+    "funhouse_agent.deep.inline_images": "aec_agent_core.deep.inline_images",
+    "funhouse_agent.deep.pacing": "aec_agent_core.deep.pacing",
+    "funhouse_agent.deep.vision_engine": "aec_agent_core.deep.vision_engine",
+}
+_install_aliases(CORE_ALIASES)
+
+# GSE fills the core's hooks for its own reference library (step 11 (a);
+# aec_agent_core.hooks): the folders the read tools may also read, and the
+# two readers of it. Strings, imported only when a hook is first asked for.
+from aec_agent_core.hooks import set_hook as _set_hook
+
+_set_hook("vision_tools.reference_read_roots",
+          "funhouse_agent.reference_vision:reference_read_roots")
+_set_hook("vision_tools.read_reference_figure",
+          "funhouse_agent.reference_vision:_dispatch_read_reference_figure")
+_set_hook("vision_tools.view_worked_example_source",
+          "funhouse_agent.reference_vision:_dispatch_view_worked_example")
+
+
 #: Each public name -> the module that defines it.
 _LAZY = {
     "GenAIEngine": "funhouse_agent.engine",

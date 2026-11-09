@@ -1,9 +1,12 @@
 """aec-agent-core: what document agents run below their chat pages.
 
-1.0.0.dev0 is the empty package of the app split's step 10 (BACKLOG INF-32;
-``module_work/APP_SPLIT_PLAN.md``). It holds one thing, the alias helper
-step 11 uses when it moves a module in here, so the module's old import
-path keeps working until step 16 takes the aliases out:
+The app split's core (BACKLOG INF-32; ``module_work/APP_SPLIT_PLAN.md``).
+Since step 11 (a) it holds the model connections and the vision calls, and
+:mod:`aec_agent_core.hooks`, where an app hands in what the core must not
+import; (b) and (c) bring the figure helper, the guards and records, and
+Word and Excel. This module is the alias helper each move uses, so a moved
+module's old import path keeps working until step 16 takes the aliases
+out:
 
     # in the old package's __init__.py, e.g. funhouse_agent/__init__.py
     from aec_agent_core import install_aliases
@@ -33,7 +36,7 @@ import sys
 import threading
 from typing import Mapping
 
-__version__ = "1.0.0.dev0"
+__version__ = "1.0.0.dev1"
 
 __all__ = ["install_aliases", "remove_aliases", "aliases", "resolve_alias",
            "__version__"]

@@ -74,7 +74,7 @@ system_prompt=build_document_review_prompt())`) and `webapp/tinyapps_entry.py`
   per deployment; on the published app each TESTER has their own (see
   "Per-tester Prompter keys" below). 180 s per call; the proxy times HTTP out near 120 s (our
   turns run detached from the request). Strict `json_schema` works. →
-  `webapp/tinyapps_engine.py` (`ChatOpenAI`, `max_completion_tokens`).
+  `packages/aec-agent-core/aec_agent_core/tinyapps_engine.py` (`ChatOpenAI`, `max_completion_tokens`).
 - **The pilot key serves ONE model, $50/month.** The deployment behind it
   MUST accept image inputs or the app's reason to exist fails — the first
   question to the team.
@@ -147,6 +147,13 @@ its wheel in `wheels/`, or its pin in `packages.txt`. After the app split,
 route A carries Document Review's source (`module_work/APP_SPLIT_PLAN.md`
 §1.4, step 14). Tests: `webapp/tests/test_tinyapps_wrapper.py`.
 
+A build from master since the app split's step 11 (a) (BACKLOG INF-32)
+also needs the shared core `aec-agent-core`, which the app imports its model
+connections and vision tools from: on route A its `aec_agent_core/` folder
+(from `packages/aec-agent-core/`) in `app_src/` beside the app's packages;
+on route B its wheel beside the app's in `wheels/`; on route C it comes from
+Nexus once it is published (step 12).
+
 ## Per-tester Prompter keys (built 2026-10-09, released in 5.33.0)
 
 Each tester on the published app gets their own Prompter key, so each has
@@ -157,7 +164,7 @@ their own budget, and the list of keys is the pilot's access list.
 `PROMPTER_API_KEY` exactly as before: dosdev with `DEV_IDENTITY`, a laptop,
 Databricks, and any request with no header.
 
-**Resolution order** for a tester (`webapp/tinyapps_engine.resolve_for`):
+**Resolution order** for a tester (`webapp/tinyapps_keys.resolve_for`):
 
 1. **The per-tester secret** `PROMPTER-API-KEY--<TESTER>`. The optional
    `PROMPTER-MODEL--<TESTER>` and `PROMPTER-URL--<TESTER>` fall back to the
@@ -288,8 +295,10 @@ budget returns).
 - `webapp/tinyapps_settings.py` — CfA's `get_setting` pattern.
 - `webapp/identity.py` — header / `DEV_IDENTITY` / `GEOTECH_USER_EMAIL` →
   `Identity` (folder key, display name, markup author).
-- `webapp/tinyapps_engine.py` — Prompter `ChatOpenAI` from `PROMPTER_*`;
-  registers the model builder; `GEOTECH_PROMPTER_DISABLE_STREAMING`.
+- `packages/aec-agent-core/aec_agent_core/tinyapps_engine.py` — Prompter `ChatOpenAI` from
+  `PROMPTER_*`; registers the model builder;
+  `GEOTECH_PROMPTER_DISABLE_STREAMING`. Whose key serves a caller
+  (per-tester keys, Key Vault names): `webapp/tinyapps_keys.py`.
 - `webapp/graph_sharepoint.py` — SDK-free Graph file manager;
   `sharepoint_store` prefers it when `GRAPH_*` + `SHAREPOINT_SITE_URL` are set.
 - `webapp/engine_config.is_tinyapps_deployment` / `is_keyless_deployment` —

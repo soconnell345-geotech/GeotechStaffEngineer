@@ -21,9 +21,9 @@ import pytest
 
 pymupdf = pytest.importorskip("pymupdf")
 
-from funhouse_agent import vision_probe, vision_view  # noqa: E402
-from funhouse_agent.deep import vision_engine  # noqa: E402
-from funhouse_agent.deep.vision_engine import (  # noqa: E402
+from aec_agent_core import vision_probe, vision_view  # noqa: E402
+from aec_agent_core.deep import vision_engine  # noqa: E402
+from aec_agent_core.deep.vision_engine import (  # noqa: E402
     LangChainVisionEngine, current_side_call, side_call)
 
 

@@ -23,9 +23,9 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.messages import AIMessage
 
-from funhouse_agent import _fileio
-from funhouse_agent.deep import vision_engine
-from funhouse_agent.deep.vision_engine import (
+from aec_agent_core import _fileio
+from aec_agent_core.deep import vision_engine
+from aec_agent_core.deep.vision_engine import (
     FairSlots, LangChainVisionEngine, busy_kind, describe_error,
     refused_detail, was_cut_off,
 )

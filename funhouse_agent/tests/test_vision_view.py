@@ -263,7 +263,7 @@ def test_chart_budget_from_the_environment(monkeypatch):
 
 def test_read_reference_figure_runs_at_the_chart_budget(monkeypatch, tmp_path,
                                                         pdf_bytes):
-    from funhouse_agent import vision_tools
+    from funhouse_agent import reference_vision
     pdf = tmp_path / "ref.pdf"
     pdf.write_bytes(pdf_bytes)
     from geotech_references import _figures_db
@@ -277,7 +277,7 @@ def test_read_reference_figure_runs_at_the_chart_budget(monkeypatch, tmp_path,
             seen["detail"] = vision_view.detail()
             return super().analyze_image(image_bytes, prompt)
 
-    out = json.loads(vision_tools._dispatch_read_reference_figure(
+    out = json.loads(reference_vision._dispatch_read_reference_figure(
         {"reference": "dm7_1", "figure_number": "5-6", "prompt": "read mu0"},
         ChartEngine()))
     assert "error" not in out, out
@@ -290,7 +290,7 @@ def test_read_reference_figure_runs_at_the_chart_budget(monkeypatch, tmp_path,
     assert vision_view.detail() == "high"  # restored after the call
     # ... and past it where the owner lifts the cap.
     monkeypatch.setenv(vision_view.MAX_PX_ENV, "none")
-    out = json.loads(vision_tools._dispatch_read_reference_figure(
+    out = json.loads(reference_vision._dispatch_read_reference_figure(
         {"reference": "dm7_1", "figure_number": "5-6", "prompt": "read mu0"},
         ChartEngine()))
     assert max(out["view_px"]) > 2100

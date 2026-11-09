@@ -20,8 +20,8 @@ import pytest
 
 pymupdf = pytest.importorskip("pymupdf")
 
-from funhouse_agent import vision_tools, vision_view  # noqa: E402
-from funhouse_agent.vision_tools import dispatch_extended_tool  # noqa: E402
+from aec_agent_core import vision_tools, vision_view  # noqa: E402
+from aec_agent_core.vision_tools import dispatch_extended_tool  # noqa: E402
 
 QUESTION = "Read every label and dimension in this region verbatim."
 

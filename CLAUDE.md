@@ -544,7 +544,7 @@ Key conventions:
   it; `render_region(image=, image_box=)` zooms on a box read off an earlier
   image (pixels or a 0-999 grid); `fmt="auto"` keeps PNG for drawings and
   JPEG for scans (PNG measured at half a JPEG's size on vector sheets); MCP
-  `--image-budget`/`--image-format`. **App:** `funhouse_agent/vision_view.py`
+  `--image-budget`/`--image-format`. **App:** `packages/aec-agent-core/aec_agent_core/vision_view.py`
   sizes every vision render (`GEOTECH_VISION_BUDGET`, default
   `openai-high`), gives chart read-offs GPT-5.4's `original` level
   (`GEOTECH_CHART_BUDGET`, default `openai-original`; `funhouse-gpt-high`
@@ -578,7 +578,7 @@ Key conventions:
   geotech page the app is byte-for-byte the old one (AppTest-pinned).
   (2) **Tiny Apps plumbing** — `webapp/tinyapps_settings.py` (CfA's
   `get_setting`: env → Key Vault by `KV_NAME` via managed identity → local
-  `.env`), `webapp/tinyapps_engine.py` (Prompter as `ChatOpenAI` from
+  `.env`), `packages/aec-agent-core/aec_agent_core/tinyapps_engine.py` (Prompter as `ChatOpenAI` from
   `PROMPTER_URL/MODEL/API_KEY/CA_BUNDLE`, key sent as `api-key` AND Bearer),
   `webapp/identity.py` (IIS `X-Windows-Auth-Header` via `st.context.headers`,
   `DEV_IDENTITY` locally, `GEOTECH_USER_EMAIL` on Databricks → folder key,

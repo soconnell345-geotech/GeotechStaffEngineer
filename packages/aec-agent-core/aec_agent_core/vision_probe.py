@@ -247,7 +247,7 @@ def _invoke_retrying(model, content, call: str, retries: Dict[str, int]):
     error as it came."""
     from langchain_core.messages import HumanMessage
     try:
-        from funhouse_agent.deep import vision_engine as ve
+        from aec_agent_core.deep import vision_engine as ve
         side_call = ve.side_call
     except Exception:                                      # noqa: BLE001
         ve = side_call = None
