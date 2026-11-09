@@ -211,14 +211,22 @@ def test_surge_task_pack_layout_loads(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_verdicts_parse_strictly():
-    ok = parse_verdict('```json\n{"scores": [{"criterion_id": "criterion_1",'
-                       ' "extracted_answer": "4", "score": 1, '
-                       '"rationale": "in range"}]}\n```')
-    assert ok[0]["score"] == 1
-    assert parse_verdict('Here: {"scores": [{"score": "0"}]} done')[0][
-        "score"] == 0
+    # this package's form, in a code fence
+    ok = parse_verdict('```json\n{"final_answer": "17.5", "correct": true, '
+                       '"reason": "the same value"}\n```')
+    assert ok == [{"part": "1", "answer": "17.5", "correct": True,
+                   "reason": "the same value"}]
+    # parts listed under "scores", with a sentence round the object
+    parts = parse_verdict('Verdict: {"scores": [{"score": 1}, '
+                          '{"score": "0"}, {"score": false}]} (done)')
+    assert [p["correct"] for p in parts] == [True, False, False]
+    assert [p["part"] for p in parts] == ["1", "2", "3"]
     for bad in ('{"scores": []}', '{"scores": [{"score": 0.5}]}',
-                '{"scores": [{"score": true}]}', 'no json'):
+                '{"correct": "partly"}', '{"correct": null}',
+                '{"scores": [3]}', '{"reason": "no decision"}',
+                '{"correct": tru', 'no json',
+                # a verdict cut off part way never reads as its first part
+                '{"scores": [{"score": 1}, {"score": 0}'):
         with pytest.raises(ValueError):
             parse_verdict(bad)
 
@@ -625,7 +633,7 @@ def test_charxiv_sample_keeps_the_answer_type_mix():
 
 def test_charxiv_verdicts_and_slots():
     got = parse_verdict('{"extracted_answer": "12", "score": 1}')
-    assert got[0]["score"] == 1 and got[0]["extracted_answer"] == "12"
+    assert got[0]["correct"] is True and got[0]["answer"] == "12"
     tpl = "Q:<|question|> G:<|ground_truth|> R:<|response|>"
     text = build_prompt("q?", "7", "it says <|ground_truth|>", tpl)
     assert text.startswith("Q:q? G:7 R:it says <|ground_truth|>")

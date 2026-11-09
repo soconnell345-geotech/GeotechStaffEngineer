@@ -17,9 +17,12 @@ alone, because the Foundry routes do not all take a response schema.
 Without one, :data:`OWN_TEMPLATE` states the grading rules in this package's
 own words. Every run records which prompt graded it.
 
-A verdict is either Surge's shape (``{"scores": [{"score": 0|1, ...}]}``,
-every part must score 1) or CharXiv's (``{"extracted_answer": ...,
-"score": 0|1}``).
+The verdict. :func:`parse_verdict` takes the JSON object out of the
+judge's reply and reads one decision from it, or one per part when the
+object lists parts under ``scores`` (the form ``judge_prompt.txt`` asks
+for). A decision is ``correct`` (this package's prompt) or ``score``
+(CharXiv's), given as true/false or 1/0; the answer is right only when every
+part is.
 """
 
 from __future__ import annotations
@@ -97,59 +100,82 @@ def _text_of(content: Any) -> str:
     return str(content or "")
 
 
-def parse_verdict(text: str) -> List[Dict[str, Any]]:
-    """The judge's ``scores`` list, each entry with a 0/1 ``score``; raises
-    :class:`VerdictError` on anything else."""
-    cleaned = str(text or "").strip()
-    cleaned = re.sub(r"\A```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s*```\Z", "", cleaned)
+def _outer_object(text: str) -> Dict[str, Any]:
+    """The JSON object in the judge's reply: everything from its first
+    ``{`` to its last ``}``, so a code fence or a sentence round the object
+    does not matter."""
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end < start:
+        raise VerdictError("no JSON object in the judge's reply")
     try:
-        payload = json.loads(cleaned)
-    except ValueError:
-        # a model that wrote a sentence round the object: take the object
-        start, end = cleaned.find("{"), cleaned.rfind("}")
-        if start < 0 or end <= start:
-            raise VerdictError("no JSON object in the judge's reply")
-        try:
-            payload = json.loads(cleaned[start:end + 1])
-        except ValueError as exc:
-            raise VerdictError(f"invalid JSON: {exc}")
-    if not isinstance(payload, dict):
-        raise VerdictError("the verdict is not a JSON object")
-    if "scores" not in payload and "score" in payload:
-        # CharXiv's shape: one answer, one score
-        payload = {"scores": [{
-            "criterion_id": "answer",
-            "extracted_answer": payload.get("extracted_answer",
-                                            payload.get("extract_answer", "")),
-            "score": payload.get("score"), "rationale": ""}]}
-    entries = payload.get("scores")
-    if not isinstance(entries, list) or not entries:
-        raise VerdictError("the verdict has no 'scores' list")
-    out = []
-    for e in entries:
-        if not isinstance(e, dict) or "score" not in e:
-            raise VerdictError("a 'scores' entry has no score")
-        raw = e.get("score")
-        if isinstance(raw, bool):
-            raise VerdictError("a score is a boolean, not 0 or 1")
-        try:
-            val = float(str(raw).strip())
-        except ValueError:
-            raise VerdictError(f"a score is not a number: {raw!r}")
-        if val not in (0.0, 1.0):
-            raise VerdictError(f"a score is {raw!r}, not 0 or 1")
-        out.append({"criterion_id": str(e.get("criterion_id", "")),
-                    "extracted_answer": str(e.get("extracted_answer", "")),
-                    "score": int(val),
-                    "rationale": str(e.get("rationale", ""))})
-    return out
+        found = json.loads(text[start:end + 1])
+    except ValueError as exc:
+        raise VerdictError(f"the judge's JSON does not parse: {exc}")
+    if not isinstance(found, dict):
+        raise VerdictError("the judge's JSON is not an object")
+    return found
+
+
+#: How a judge may write right and wrong.
+_RIGHT = ("1", "1.0", "true")
+_WRONG = ("0", "0.0", "false")
+
+
+def _decision(value: Any, part: int) -> bool:
+    """A judge's decision on one part: true/false, or 1/0 as a number or
+    as text. Anything else (0.5, "partly", null) is no decision."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return value == 1
+    if isinstance(value, str) and value.strip().lower() in _RIGHT + _WRONG:
+        return value.strip().lower() in _RIGHT
+    raise VerdictError(f"part {part}: {value!r} is neither right (1, true) "
+                       "nor wrong (0, false)")
+
+
+def _first_of(entry: Dict[str, Any], keys) -> str:
+    for key in keys:
+        if entry.get(key) is not None:
+            return str(entry[key])
+    return ""
+
+
+def _part(entry: Any, n: int) -> Dict[str, Any]:
+    """One part of a verdict, in this package's record form."""
+    if not isinstance(entry, dict):
+        raise VerdictError(f"part {n} is not a JSON object")
+    if "correct" in entry:
+        right = _decision(entry["correct"], n)
+    elif "score" in entry:
+        right = _decision(entry["score"], n)
+    else:
+        raise VerdictError(f"part {n} gives no decision")
+    return {"part": _first_of(entry, ("criterion_id",)) or str(n),
+            "answer": _first_of(entry, ("final_answer", "extracted_answer",
+                                        "extract_answer")),
+            "correct": right,
+            "reason": _first_of(entry, ("reason", "rationale"))}
+
+
+def parse_verdict(text: str) -> List[Dict[str, Any]]:
+    """The judge's decision on each part of the answer, as ``[{"part",
+    "answer", "correct", "reason"}]`` (one entry unless the reply lists
+    parts under ``scores``); raises :class:`VerdictError` when the reply is
+    not a usable verdict."""
+    found = _outer_object(str(text or ""))
+    listed = found.get("scores")
+    if isinstance(listed, list):
+        if not listed:
+            raise VerdictError("the verdict lists no parts")
+        return [_part(entry, n) for n, entry in enumerate(listed, 1)]
+    return [_part(found, 1)]
 
 
 def judge_answer(judge_model: Any, question: str, golden: str, response: str,
                  template: Optional[str] = None, retries: int = 4,
                  label: Optional[str] = None) -> Dict[str, Any]:
-    """Grade ``response``: ``{"passed": True/False/None, "scores": [...],
+    """Grade ``response``: ``{"passed": True/False/None, "parts": [...],
     "prompt": <label, else "data folder" or "own">, "attempts": n,
     "raw": <last reply>}``.
     ``passed`` is ``None`` (unscored) when the judge never gave a usable
@@ -157,10 +183,10 @@ def judge_answer(judge_model: Any, question: str, golden: str, response: str,
     without a judge call."""
     which = label or ("data folder" if template else "own")
     if response is None:
-        return {"passed": None, "scores": [], "prompt": which, "attempts": 0,
+        return {"passed": None, "parts": [], "prompt": which, "attempts": 0,
                 "error": "no response to grade"}
     if not str(response).strip():
-        return {"passed": False, "scores": [], "prompt": which,
+        return {"passed": False, "parts": [], "prompt": which,
                 "attempts": 0, "note": "empty answer: wrong, not judged"}
     from langchain_core.messages import HumanMessage
     prompt = build_prompt(question, golden, str(response), template)
@@ -169,17 +195,17 @@ def judge_answer(judge_model: Any, question: str, golden: str, response: str,
         try:
             reply = judge_model.invoke([HumanMessage(content=prompt)])
             raw = _text_of(getattr(reply, "content", reply))
-            scores = parse_verdict(raw)
+            parts = parse_verdict(raw)
         except VerdictError as exc:
             err = str(exc)
             continue
         except Exception as exc:                          # noqa: BLE001
             err = f"{type(exc).__name__}: {exc}"
             continue
-        return {"passed": all(s["score"] == 1 for s in scores),
-                "scores": scores, "prompt": which, "attempts": attempt,
+        return {"passed": all(p["correct"] for p in parts),
+                "parts": parts, "prompt": which, "attempts": attempt,
                 "raw": raw}
-    return {"passed": None, "scores": [], "prompt": which,
+    return {"passed": None, "parts": [], "prompt": which,
             "attempts": int(retries) + 1, "raw": raw, "error": err}
 
 
