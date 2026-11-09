@@ -165,6 +165,26 @@ def test_pack_figure_bbox_reaches_render_and_notes_reach_prompt(
         f"\n\n{reference_vision.READ_NOTES_HEADING}:\n{NOTES}")
 
 
+def test_read_notes_capped_in_the_prompt(with_packs, monkeypatch):
+    """A catalog never checked may carry longer notes than ``packs check``
+    allows: the prompt takes the first READ_NOTES_MAX characters."""
+    from geotech_references import _figures_db
+    cap = reference_vision.READ_NOTES_MAX
+    assert cap == 500
+    long_notes = "Read at the curve's centreline; made-up note. " * 60
+    assert len(long_notes) > 2000
+    real = _figures_db.figure_get
+    monkeypatch.setattr(_figures_db, "figure_get", lambda ref, n, **kw: {
+        **real(ref, n, **kw), "read_notes": long_notes})
+    fake = _FakeVision(monkeypatch)
+    out = _read(PID, "1-1")
+    assert "error" not in out, out
+    head = f"\n\n{reference_vision.READ_NOTES_HEADING}:\n"
+    tail = fake.prompts[0].split(head, 1)[1]
+    assert tail == long_notes[:cap].rstrip()
+    assert len(tail) <= cap
+
+
 def test_pack_figure_without_bbox_or_notes_renders_whole_page(
         with_packs, monkeypatch):
     fake = _FakeVision(monkeypatch)

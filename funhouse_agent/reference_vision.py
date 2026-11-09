@@ -185,6 +185,11 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
 #: The heading the catalog's ``read_notes`` go under in the read prompt.
 READ_NOTES_HEADING = ("Notes from the reference's catalog on reading this "
                       "figure")
+#: The most of a figure's ``read_notes`` the read prompt carries: the limit
+#: the library's ``packs check`` holds a catalog to
+#: (``geotech_references.packs.READ_NOTES_MAX``), kept here for a catalog
+#: that was never checked.
+READ_NOTES_MAX = 500
 
 
 def _dispatch_read_reference_figure(arguments, engine):
@@ -279,8 +284,9 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         f"Request: {question}"
     )
     # The catalog's own notes on reading this figure (``read_notes``,
-    # REF-64). Built-in figures carry none, so their prompt is as before.
-    notes = str(rec.get("read_notes") or "").strip()
+    # REF-64), at most READ_NOTES_MAX characters. Built-in figures carry
+    # none, so their prompt is as before.
+    notes = str(rec.get("read_notes") or "").strip()[:READ_NOTES_MAX].rstrip()
     if notes:
         full_prompt += f"\n\n{READ_NOTES_HEADING}:\n{notes}"
     # The second voter (W3 step 7): the side call also says, per curve it
