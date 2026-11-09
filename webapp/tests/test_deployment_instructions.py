@@ -152,3 +152,15 @@ def test_report_ingest_and_library_blocks_are_recorded(tmp_path, monkeypatch):
     monkeypatch.delenv(ins.ENV)
     plain = agent_mod._report_ingest_engine_factory(object())()
     assert isinstance(plain, Inner)
+
+
+def test_the_turn_record_carries_it(folder):
+    """``engine_record`` (each turn_start's ``engine``) carries the
+    appended record under ``build``; absent when unset."""
+    from webapp.core import engine_record
+    agent, _, _ = page_builds.build("review_default",
+                                    settings={ins.ENV: folder})
+    rec = engine_record(agent)["build"]["appended"]
+    assert rec["roles"]["main"]["sha"] and rec["roles"]["main"]["chars"]
+    plain, _, _ = page_builds.build("review_default")
+    assert "appended" not in engine_record(plain).get("build", {})
