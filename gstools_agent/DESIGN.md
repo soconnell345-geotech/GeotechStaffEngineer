@@ -64,7 +64,7 @@ marked and named) and a map of the probability that the value is above
 (below) the level in each cell, with the region outlines, the named
 observations and the bounds. The map is drawn as a plan (owner, 2026-10-15):
 to scale, with no axes or grid, the title at the left, and the scale bar and
-north arrow of `geotech_common/plan_furniture.py`, which
+north arrow of `packages/aec-agent-core/aec_agent_core/charts/plan_furniture.py`, which
 `profile_figure.plot_data(plan_view=True)` shares. `north_deg` (degrees
 clockwise from up, as the source plan shows it) turns the arrow; without it
 the arrow points up and the result's `notes` say so. `value_name` (what the
@@ -99,7 +99,7 @@ map are listed in a note, and `fit_nugget=true` with `fit_variogram=false`
 is refused (nothing is fitted).
 Both maps go through `plan_map.plan_map_figure`, one layout in printed
 points (the margins, bar and arrow of `profile_figure`'s plan view) and the
-furniture of `geotech_common/plan_furniture.py`; nothing in it is drawn
+furniture of `packages/aec-agent-core/aec_agent_core/charts/plan_furniture.py`; nothing in it is drawn
 twice. Set `figures=false` in a sweep of many calls.
 
 ## Conditional simulation: the method and its basis
