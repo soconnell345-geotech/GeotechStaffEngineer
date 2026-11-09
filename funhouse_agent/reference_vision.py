@@ -177,6 +177,11 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
     return json.dumps(out)
 
 
+#: The heading the catalog's ``read_notes`` go under in the read prompt.
+READ_NOTES_HEADING = ("Notes from the reference's catalog on reading this "
+                      "figure")
+
+
 def _dispatch_read_reference_figure(arguments, engine):
     """Chart read-off: rendered and sent at the chart budget
     (``vision_view.chart_reading``) — see ``_dispatch_read_reference_figure_at_budget``."""
@@ -218,12 +223,18 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
 
     # Render the page at the vision model's image budget: the largest image
     # it reads without shrinking, so curves and axis labels stay legible.
+    # A catalog may box the chart on its page (``bbox``, PDF points, top-left
+    # origin; REF-64): the chart, not the whole page, then fills the image
+    # budget. Built-in figures carry no box, so their render is as before.
+    render_kwargs = {}
+    if rec.get("bbox"):
+        render_kwargs["bbox"] = [float(v) for v in rec["bbox"]]
     from aec_agent_core import vision_view
     try:
         image_bytes, info = vision_view.render_view(
             str(pdf_abs), page=page_idx,
             allow_jpeg=getattr(engine, "accepts_jpeg", False),
-            engine=engine)
+            engine=engine, **render_kwargs)
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -262,6 +273,11 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         "flag that this is a chart read-off estimate.\n\n"
         f"Request: {question}"
     )
+    # The catalog's own notes on reading this figure (``read_notes``,
+    # REF-64). Built-in figures carry none, so their prompt is as before.
+    notes = str(rec.get("read_notes") or "").strip()
+    if notes:
+        full_prompt += f"\n\n{READ_NOTES_HEADING}:\n{notes}"
     # The second voter (W3 step 7): the side call also says, per curve it
     # read, where on the image the curve crosses the input, so code can
     # measure the same thing from the drawing.
