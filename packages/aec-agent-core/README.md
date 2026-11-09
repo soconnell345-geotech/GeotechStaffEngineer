@@ -15,16 +15,26 @@ Two applications are built on it:
 
 ## Status
 
-**1.0.0.dev0: an empty package.** It exists so that its build, its tests and
-the applications' pins on it can be checked before any code moves in. The
-only thing in it today is `aec_agent_core.install_aliases`, which lets a
-module keep answering to its old import path after it moves here, as the
-same module object (so an import or a test patch by either name reaches the
-one copy of the code).
+**1.0.0.dev1: under construction.** It holds the model connections
+(`engine_config` and its chat models, `deep.vision_engine`) and the vision
+calls (`vision_tools`, `vision_view`, `image_view`, `vision_probe`), with
+`hooks`, where an application hands in what the core must not import (its
+settings and key lookup, its own reference readers). It also holds the
+figure helper (`deep.figure_helper`), the plotting box (`plot_box`, which
+runs the model's plotting code in a locked child process) and the chart
+stack (`charts`: `plot_data`, the layout check, the scale bar and north
+arrow, the worked figure examples). An application with standard chart
+lines hands them in with `charts.register_reference_charts`. The guards
+and records, and Word and Excel, move in next. Until they do, drawing
+(`plot_data`, the plotting box, the worked examples) works with this
+package alone, but building the figure helper's tools needs
+GeotechStaffEngineer installed.
+`aec_agent_core.install_aliases` lets a moved module keep answering to its
+old import path, as the same module object.
 
-1.0.0.dev0 is on PyPI only to hold the name; GeotechStaffEngineer's CI
-still installs it from its own repository
-(`pip install -e packages/aec-agent-core`).
+PyPI holds only 1.0.0.dev0, an empty package that reserved the name;
+GeotechStaffEngineer installs this one from its own repository
+(`pip install -e packages/aec-agent-core`) until it is published.
 
 ## Install
 

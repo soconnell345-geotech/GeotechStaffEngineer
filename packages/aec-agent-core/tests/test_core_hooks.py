@@ -108,6 +108,48 @@ def test_without_a_page_and_no_key_nobody_is_served(monkeypatch):
     assert te.register() is False
 
 
+def _caller(multi_user, name="tester-a"):
+    """A caller as a page hands it in: identified by a host's header
+    (``multi_user``) or the one person a single-user host serves."""
+    from types import SimpleNamespace
+    return SimpleNamespace(multi_user=multi_user, display_name=name)
+
+
+def test_without_a_page_a_header_caller_is_refused(monkeypatch):
+    """Fail closed: no page decided whose key serves this tester, so the
+    shared key does not (the step 11 (a) review)."""
+    from aec_agent_core import tinyapps_engine as te
+    _prompter_env(monkeypatch)
+    monkeypatch.delenv("PROMPTER_SHARED_KEY_FALLBACK", raising=False)
+    with pytest.raises(te.NoPrompterKey) as e:
+        te.resolve_for(_caller(True))
+    assert str(e.value) == ("No AI key is set up for **tester-a** yet — "
+                            "ask the app owner.")
+    with pytest.raises(te.NoPrompterKey):
+        te.build_for(_caller(True))
+
+
+def test_without_a_page_the_fallback_setting_lets_a_header_caller_in(
+        monkeypatch):
+    from aec_agent_core import tinyapps_engine as te
+    _prompter_env(monkeypatch)
+    monkeypatch.setenv("PROMPTER_SHARED_KEY_FALLBACK", "yes")
+    rp = te.resolve_for(_caller(True))
+    assert rp.source == te.SOURCE_SHARED_FALLBACK
+    assert rp.settings.api_key == "k-1"
+    assert "PROMPTER_SHARED_KEY_FALLBACK is on" in rp.source_text
+
+
+def test_without_a_page_a_single_user_caller_keeps_the_shared_key(
+        monkeypatch):
+    from aec_agent_core import tinyapps_engine as te
+    _prompter_env(monkeypatch)
+    monkeypatch.delenv("PROMPTER_SHARED_KEY_FALLBACK", raising=False)
+    for ident in (_caller(False), None):
+        rp = te.resolve_for(ident)
+        assert rp.source == te.SOURCE_SHARED and rp.settings.api_key == "k-1"
+
+
 def test_a_page_reads_the_settings_and_decides_whose_key(monkeypatch):
     from aec_agent_core import tinyapps_engine as te
     for name in ("PROMPTER_URL", "PROMPTER_MODEL", "PROMPTER_API_KEY"):

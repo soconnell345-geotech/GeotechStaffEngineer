@@ -125,10 +125,13 @@ Key conventions:
   model-first answer); groundwater "not measured" and combined lab samples
   are kept; refs pinned at 32bbd77 (worked examples from five manuals); the
   app split's steps 6-8 are in (the Document Review page loads one geotech
-  package and four app modules), and step 10: `aec-agent-core`, the shared
-  core, empty (1.0.0.dev0) in `packages/aec-agent-core`, pinned exactly; a
-  dev install puts it first: `pip install -e packages/aec-agent-core -e .`;
-  steps 9 (b) and 11 next; the owner's question list
+  package and four app modules), and steps 10 and 11 (a): `aec-agent-core`,
+  the shared core, in `packages/aec-agent-core` (1.0.0.dev1, not on PyPI
+  yet), pinned exactly, holding the model connections, settings, identity,
+  vision calls and Tiny Apps key routes, GSE's part handed in through
+  `aec_agent_core.hooks`, old import paths kept as aliases; a dev install
+  puts it first: `pip install -e packages/aec-agent-core -e .`; steps
+  11 (b) and (c) next; the owner's question list
   runs inside the ingest when `GSE_REPORT_QUESTIONS` names it, posts matched
   from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split; the
   geotech page keeps 15 document tools off the list until a document is
@@ -544,7 +547,7 @@ Key conventions:
   it; `render_region(image=, image_box=)` zooms on a box read off an earlier
   image (pixels or a 0-999 grid); `fmt="auto"` keeps PNG for drawings and
   JPEG for scans (PNG measured at half a JPEG's size on vector sheets); MCP
-  `--image-budget`/`--image-format`. **App:** `funhouse_agent/vision_view.py`
+  `--image-budget`/`--image-format`. **App:** `packages/aec-agent-core/aec_agent_core/vision_view.py`
   sizes every vision render (`GEOTECH_VISION_BUDGET`, default
   `openai-high`), gives chart read-offs GPT-5.4's `original` level
   (`GEOTECH_CHART_BUDGET`, default `openai-original`; `funhouse-gpt-high`
@@ -578,7 +581,7 @@ Key conventions:
   geotech page the app is byte-for-byte the old one (AppTest-pinned).
   (2) **Tiny Apps plumbing** — `webapp/tinyapps_settings.py` (CfA's
   `get_setting`: env → Key Vault by `KV_NAME` via managed identity → local
-  `.env`), `webapp/tinyapps_engine.py` (Prompter as `ChatOpenAI` from
+  `.env`), `packages/aec-agent-core/aec_agent_core/tinyapps_engine.py` (Prompter as `ChatOpenAI` from
   `PROMPTER_URL/MODEL/API_KEY/CA_BUNDLE`, key sent as `api-key` AND Bearer),
   `webapp/identity.py` (IIS `X-Windows-Auth-Header` via `st.context.headers`,
   `DEV_IDENTITY` locally, `GEOTECH_USER_EMAIL` on Databricks → folder key,

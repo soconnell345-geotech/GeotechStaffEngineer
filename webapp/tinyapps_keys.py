@@ -58,7 +58,7 @@ from aec_agent_core.tinyapps_engine import (
     SHARED_FALLBACK_ENV, SOURCE_MAPPING, SOURCE_SHARED, SOURCE_SHARED_FALLBACK,
     SOURCE_TESTER,
     NoPrompterKey, PrompterSettings, ResolvedPrompter, _truthy,
-    settings)
+    no_key_message, settings)
 from webapp.tinyapps_settings import get_setting
 
 log = logging.getLogger(__name__)
@@ -155,15 +155,9 @@ def key_mapping() -> Dict[str, dict]:
     return out
 
 
-def no_key_message(ident, secret_name: Optional[str]) -> str:
-    """The polite refusal: who, what to do, and — for the app owner — the
-    secret NAME that would let this person in. Never a key."""
-    who = getattr(ident, "display_name", "") or "you"
-    msg = f"No AI key is set up for **{who}** yet — ask the app owner."
-    if secret_name:
-        msg += (f" (For the app owner: this person's key goes in the Key "
-                f"Vault secret `{secret_name}`.)")
-    return msg
+# no_key_message (the polite refusal) is the core's, so a page that forgets
+# the resolve_for hook refuses a tester in the same words (step 11 (a)
+# review); it stays importable from here.
 
 
 def _complete(ident, source: str, key: str, url: str, model: str,
