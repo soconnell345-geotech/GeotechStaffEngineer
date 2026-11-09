@@ -203,3 +203,83 @@ top, so the app needs planlens 0.15 installed; every `--no-deps` install
 released 5.34.0 does not import `planlens.review`, and its tool specs and
 fingerprint are unchanged; the one change a 5.34.0 user sees is PL-11
 (`Label (unit): value` read as a quantity), as intended.
+
+## Refresh 2026-11-09
+
+Branch `claude/pl-29b-refresh`, from `origin/claude/pl-29b-binding`
+`9630642`, with `origin/master` (`1d219c8`, 138 commits since this branch's
+base `05eab2d`) merged in as merge commit `40805b1` (not a rebase). The pin
+stays `planlens>=0.15`; tests ran against the cloned planlens main checkout
+(`34261bf`, `pip install -e --no-deps`). Master brought DR-36/37 (merge
+`111f3a9`), DR-39 (merge `b9c2843`), EV-35 (`funhouse_agent/chart_eval/`) and
+GM-309, among others.
+
+### Conflicts and how each was resolved
+
+| Where (in `40805b1`) | Kind | Resolution |
+|---|---|---|
+| `.github/workflows/tests.yml:149` (the numpy-1.26 job's `--no-deps` install) | text conflict, the only one | Both sides kept: master's `-e packages/aec-agent-core` and this branch's `"planlens>=0.15"` (section 7). |
+| `pyproject.toml:219` | auto-merged | Master's own edits (comments, agent-stack caps) plus this branch's `"planlens>=0.15"` and its comment line; `git diff origin/master 40805b1 -- pyproject.toml` is that one line. |
+| `funhouse_agent/vision_view.py:275` (`probe_fallback_note`) and `:542` (`view_payload`'s `vision_probe` line) | auto-merged (DR-36) | Both sit in what this branch KEPT in `vision_view` (budgets, `render_view`, `view_payload`); none of the 64 definitions moved to `planlens.review.frames` was touched by DR-36. A failed probe's fallback is still stated on every page, zoom and tile result. |
+| `funhouse_agent/vision_tools.py:2232-2251` (`ask_vision` hands the turn's question through `turn_question.with_question`) | auto-merged (DR-37) | Kept as master has it. This branch's binding gives planlens its LOOK as `ask_vision` with the build's engine (`document_tools.py:397-398`, `host_for` at `:373`), so the markup check and `find_like` reach the model through the same function. Their kinds (`check`, `find_like`) are not in `turn_question.QUESTION_KINDS`, which is exactly master's behaviour: DR-36/37 left them out on purpose (`module_work/dr36_37/CHECK.md`, "Left out"). Every kind that goes back to the main model (`image`, `page`, `overview`, `region`, `tile`, `reference_figure`, `worked_example_page`) still carries the question. |
+| `funhouse_agent/deep/vision_kit.py:559`, `:573` | auto-merged (DR-39 docstring) | Master's wording kept; this branch's change to the file (`annotate_document` and `find_like` passing the build's host) is in other lines. |
+| DR-39's deleted files (`deep/sweep.py`, `deep/findings_tools.py`, `review_findings.py`, `deep/geometry_tools.py`, `deep/digest_tools.py`, `review_digest/`) | no conflict | This branch edited none of them, so git reports no modify/delete conflict and they stay deleted. |
+| `funhouse_agent/document_tools.py:20`, `:466` (comments naming "the findings tools" DR-39 removed, and the coverage ledger) | stale text, not a conflict | Fixed in the DR-40 (b) commit `96a14d1` (the comments now name the cited-page check and `measure_tool`). |
+
+No code fix was needed after the merge: the suites below pass on `40805b1`
+as they do on master, and the page fingerprints pass unchanged.
+
+### Nothing DR-39 removed survives
+
+```
+$ git grep -nE 'review_findings|findings_tools|geometry_tools|digest_tools|review_digest|deep\.sweep|build_review_agent|make_reader_tool|INLINE_DESCRIPTIONS|KEPT_READINGS_TOOL|DOCUMENT_REVIEW_PROMPT_LEAN|unopened_citations|GEOTECH_REVIEW_(SWEEP|FINDINGS|OVERVIEW|GEOMETRY|DIGEST|KEPT_READINGS)|lean_agent|record_finding|pdf_page_count|ORIENTATION_REQUEST_LONG' -- '*.py'
+```
+On `40805b1` this finds only what master itself has: DR-39's own
+"removed" test (`test_review_harness_offline.py:137`, `:153`), docstring
+notes (`deep/inline_images.py:7`, `deep/review_agent.py:8`,
+`webapp/review_page.py:67`, `webapp/tests/test_orientation_overview.py:4`),
+the name tables DR-39 kept for old records (`cited_pages.py` / `coverage.py`
+`SWEEP_TOOLS`, `cited_documents.py:785`, `cited_pages.py:670`'s comment,
+`test_review_minimal_offline.py:27`), and the three `GEOTECH_VISION_INLINE`
+comments in `vision_tools.py` that DR-40 (a) then reworded. Over
+`planlens/review` (the planlens checkout) the same grep, with `sweep_pages`,
+finds one comment, `planlens/review/markup_check.py:1129` ("as sweep_pages
+does"): listed for the lead in `module_work/dr40/CHECK.md` §3, not edited.
+
+### Page fingerprints
+
+`webapp/tests/test_page_fingerprints.py` on `40805b1`: 13 passed, no skip,
+no re-record. The recorded `review_default`, `review_minimal` and
+`geotech_default` builds are what this branch builds after the merge, so no
+field differs from what section 3 already justified (and master's DR-39
+re-record, which only dropped `review_lean`, merged cleanly).
+
+### Tests on the merge commit
+
+Python 3.12 venv as in `COMMON_MODULES.md`, planlens main editable, each
+suite on pytest's own exit code, `-n 6`.
+
+| Suite | master `1d219c8` | merge `40805b1` |
+|---|---|---|
+| `funhouse_agent/tests` | 4,285 passed, 32 skipped, 16 failed, exit 1 | 4,284 passed, 32 skipped, **the same 16 failed**, exit 1 |
+| `funhouse_agent/deep/tests` | 1,091 passed, 4 skipped, exit 0 | 1,098 passed, 4 skipped, exit 0 |
+| `funhouse_agent/review_eval` | 112 passed, exit 0 | 112 passed, exit 0 |
+| `funhouse_agent/chart_eval/tests` | 33 passed, exit 0 | 33 passed, exit 0 |
+| `report_ingest/tests` | (stopped, see below) | 4,856 passed, 23 skipped, exit 0 |
+| `webapp/tests` | (stopped) | 1,155 passed, 5 skipped, exit 0 |
+| `webapp/tests/test_public_text.py` | | 5 passed, exit 0 |
+| `webapp/tests/test_page_fingerprints.py` | | 13 passed, exit 0 |
+| planlens `planlens/review/tests` (planlens main; they import no app module, and `test_end_to_end` asserts so) | | 245 passed, 1 skipped, exit 0 |
+
+The 16 `funhouse_agent/tests` failures are the same node ids on unmodified
+master in this venv (`origin/master` 1d219c8 in its own worktree, diffed by
+node id: identical). They are the reference-library and calc-package tests
+DR-39 already recorded under geotech-references 1.5.0 from PyPI:
+`test_citations::test_every_cited_number_is_in_its_manual`,
+`test_calc_package_figure_conventions::test_large_pile_group_leaves_the_forces_to_the_table`,
+`test_fhwa_soils_foundations_reference` (2), `test_reference_adapters`
+REF-61/62 (10), `test_reference_example_ids::test_examples_come_from_the_reference_itself`
+and `test_defaults_used[profile_figure|plot_data]`. Master's own
+`report_ingest/tests` and `webapp/tests` runs were stopped at the session's
+background time limit; both pass on the merge and the head, so no baseline
+is needed for them.

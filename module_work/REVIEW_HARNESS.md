@@ -10,6 +10,14 @@
 > `digest`, `kept_readings`. What this file says about them is history; the
 > inventory and its evidence are in `module_work/dr39/CHECK.md`.
 
+> **2026-11-09, BACKLOG DR-40:** the vision switches that never measured a
+> gain were removed from the code too: `GEOTECH_VISION_TEXT_CONTEXT`,
+> `GEOTECH_VISION_STRUCTURED` (the `LOCATED` request), `GEOTECH_VISION_TURN_RETRY`
+> (arm `turn_retry`) and `GEOTECH_VISION_PATCH_ALIGN`; and `GEOTECH_COVERAGE`
+> (the coverage ledger, `document_coverage`, the gate, `deep/coverage_tools.py`
+> and arm `coverage`; arm `checklist` is now `GEOTECH_REVIEW_CHECKLIST` alone).
+> What this file says about them is history; `module_work/dr40/CHECK.md`.
+
 Owner's ask: "take a big picture view of the harness workflow … the Claude Code
 sessions have been overfitting for more narrow use cases." The full review and
 approved plan: `C:/Users/socon/.claude/plans/we-ve-been-working-on-synchronous-lemon.md`.

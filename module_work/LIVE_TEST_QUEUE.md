@@ -226,6 +226,10 @@ can see exactly what is still wrong.
 
 ## Check 7 — Whole 32-px patches: does GPT-5.4's small y stretch go? (5.33.0 or later; about 30 minutes, ~130 thousand input tokens)
 
+> **Retired 2026-11-09 (BACKLOG DR-40):** the switch this check measures,
+> `GEOTECH_VISION_PATCH_ALIGN`, was removed with its code (owner: no rerun;
+> strip what never measured a gain). Kept as history; `module_work/dr40/CHECK.md`.
+
 **Status (2026-10-19).** Run once on Foundry in brief 5 (part F, one sample
 per look; `TRACE_REVIEW_B_AEFG.md`). The repeats are open: BACKLOG EV-02.
 
