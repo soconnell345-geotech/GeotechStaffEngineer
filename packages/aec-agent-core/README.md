@@ -22,8 +22,9 @@ module keep answering to its old import path after it moves here, as the
 same module object (so an import or a test patch by either name reaches the
 one copy of the code).
 
-It is not yet published; GeotechStaffEngineer installs it from its own
-repository (`pip install -e packages/aec-agent-core`) until it is.
+1.0.0.dev0 is on PyPI only to hold the name; GeotechStaffEngineer's CI
+still installs it from its own repository
+(`pip install -e packages/aec-agent-core`).
 
 ## Install
 

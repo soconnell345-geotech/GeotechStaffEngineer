@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 # INF-26 / INF-32; plan module_work/APP_SPLIT_PLAN.md sections 1.1 and 2.3).
 # Step 10 (this file): the package exists, EMPTY apart from the alias helper,
 # with its build, CI and a wheel test. Step 11 moves the code in. Step 12
-# publishes it, on the owner's word; until then nothing publishes it (the
-# publish workflow builds the repository root only).
+# publishes it, on the owner's word. 1.0.0.dev0, empty, was published
+# 2026-11-09 only to hold the name (publish-core.yml, tag core-v1.0.0.dev0).
 [project]
 name = "aec-agent-core"
 # Kept equal to geotech-staff-engineer's exact pin on it (its pyproject) and

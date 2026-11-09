@@ -1,0 +1,67 @@
+name: Publish aec-document-review to PyPI
+
+# Document Review as its own package (BACKLOG INF-33 step 13), from
+# packages/aec-document-review only, on a `document-review-v<version>` tag
+# (for example `document-review-v0.1.0.dev0`). The app's own publish
+# (publish.yml, `v*` tags) and the core's (publish-core.yml, `core-v*`)
+# never build it, and this workflow builds nothing else.
+#
+# PyPI takes this workflow through trusted publishing: the project's
+# publisher on pypi.org names this repository, this file
+# (publish-document-review.yml) and the `pypi` environment.
+
+on:
+  push:
+    tags:
+      - "document-review-v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build --outdir dist/ packages/aec-document-review
+      - name: Only aec-document-review is in dist/, at the tag's version
+        shell: python
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          import os
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          with open("packages/aec-document-review/pyproject.toml", "rb") as f:
+              version = tomllib.load(f)["project"]["version"]
+          tag = os.environ["TAG"]
+          if tag != f"document-review-v{version}":
+              print(f"::error::The tag {tag} does not match the package's "
+                    f"version {version} (expected document-review-v{version}).")
+              sys.exit(1)
+          files = sorted(p.name for p in Path("dist").iterdir())
+          print("\n".join(files))
+          bad = [n for n in files if not n.startswith(f"aec_document_review-{version}")]
+          if bad or not files:
+              print(f"::error::Unexpected files in dist/: {bad or 'none built'}")
+              sys.exit(1)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

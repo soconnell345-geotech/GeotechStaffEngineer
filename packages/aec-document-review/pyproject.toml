@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+# Document Review as its own package (the app split, BACKLOG INF-33 step 13;
+# plan module_work/APP_SPLIT_PLAN.md). 0.1.0.dev0 is EMPTY: its first upload,
+# from publish-document-review.yml on a `document-review-v0.1.0.dev0` tag,
+# holds the name on PyPI (owner 2026-11-09). Step 13 moves the page in and
+# adds its requirements (the core, planlens, Streamlit).
+[project]
+name = "aec-document-review"
+# Kept equal to aec_document_review.__version__.
+version = "0.1.0.dev0"
+description = "An LLM agent that reviews architecture, engineering and construction documents: drawings, specifications and reports. Not yet usable: this release only holds the name."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["aec_document_review*"]
+exclude = ["*.tests", "*.tests.*", "tests*"]
