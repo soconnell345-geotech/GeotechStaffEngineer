@@ -11,6 +11,7 @@ the tests themselves. Made-up values only.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import types
 
@@ -93,7 +94,8 @@ def test_a_task_runs_on_the_page_an_app_hands_in(tmp_path, clean_hooks):
     assert res["error"] is None, res.get("traceback") or res["error"]
     assert res["answer"] == "The wall is 3.5 m high."
     assert res["score"]["passed"], res["checks"]
-    assert res["files"] == ["files/memo.txt"]
+    # the runner records os.path.relpath (backslashes on Windows)
+    assert [f.replace(os.sep, "/") for f in res["files"]] == ["files/memo.txt"]
     assert host.calls[0] == ("build", "review", runner.SUITE_AUTHOR)
     assert host.calls[1][2] == 7                    # the page's own limit
     assert res["versions"]["made-up-app"]
