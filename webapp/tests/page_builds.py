@@ -159,7 +159,13 @@ def build(name: str, model=None, files_dir=None, capture: bool = False,
     helper = [None]
     if capture:
         import langchain.agents as lc_agents
-        from funhouse_agent.deep import agent as deep_agent
+        try:
+            from funhouse_agent.deep import agent as deep_agent
+        except ImportError:
+            # GSE's builder is absent in the core-only job (INF-32 step
+            # 11 (c), webapp/tests/core_only.py); the review page never
+            # compiles through it
+            deep_agent = None
         # the review page compiles through the shared assembly (step 8)
         from funhouse_agent.deep import assembly as deep_assembly
         depth = [0]
@@ -181,6 +187,8 @@ def build(name: str, model=None, files_dir=None, capture: bool = False,
         patches = [
             (deep_agent, "create_deep_agent",
              _wrap("create_deep_agent", deep_agent.create_deep_agent)),
+        ] if deep_agent is not None else []
+        patches += [
             (deep_assembly, "create_deep_agent",
              _wrap("create_deep_agent", deep_assembly.create_deep_agent)),
             (lc_agents, "create_agent",
@@ -292,7 +300,9 @@ def _middleware(items, norm) -> List[dict]:
     for m in items or []:
         cls = type(m)
         entry: Dict[str, Any] = {"class": cls.__name__}
-        if cls.__module__.startswith("funhouse_agent"):
+        # "ours": the app's and, since the split's step 11 (c) moved the
+        # guards and budgets there, the shared core's (the same classes).
+        if cls.__module__.startswith(("funhouse_agent", "aec_agent_core")):
             for a in _MW_NUMBERS:
                 v = getattr(m, a, None)
                 if isinstance(v, (int, float)) and not isinstance(v, bool):
@@ -571,6 +581,10 @@ GSE_MODULES = frozenset({
     # GSE's readers of its reference library, out of vision_tools when that
     # went into the shared core (INF-32 step 11 (a)).
     "funhouse_agent.reference_vision",
+    # GSE's part of the shared core, handed in through hooks (INF-32 step
+    # 11 (c)): the record shapes and reference modules, and where the review
+    # suite's documents and report fixture come from.
+    "funhouse_agent.core_hooks", "funhouse_agent.review_eval.host",
     "funhouse_agent.report_checklist", "funhouse_agent.adapters",
     "funhouse_agent.deep.agent", "funhouse_agent.deep.prompt",
     "funhouse_agent.deep.tools", "funhouse_agent.deep.fit_results",

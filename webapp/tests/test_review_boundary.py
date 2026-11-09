@@ -280,7 +280,8 @@ def test_the_shell_imports_nothing_of_geotech():
 #: both builds share imports nothing of GSE; the review build's one reach,
 #: the chart-lines hook inside a ``try``, is listed (it goes at step 13).
 REVIEW_BUILD = ("funhouse_agent/review_build.py",
-                "funhouse_agent/deep/assembly.py")
+                # in the shared core since step 11 (c)
+                _CORE + "deep/assembly.py")
 REVIEW_BUILD_HOOKS = {
     "funhouse_agent/review_build.py -> "
     "funhouse_agent.adapters.profile_figure_adapter":

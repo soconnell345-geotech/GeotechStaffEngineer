@@ -19,8 +19,9 @@ ALL_ALIASES = {**funhouse_agent.CORE_ALIASES, **webapp.CORE_ALIASES}
 
 
 def test_the_alias_tables_cover_the_moved_modules():
-    # 16 at step 11 (a), 7 more at 11 (b) (test_core_move_11b.py)
-    assert len(ALL_ALIASES) == 23
+    # 16 at step 11 (a), 7 more at 11 (b) (test_core_move_11b.py), 31 more
+    # at 11 (c) (test_core_move_11c.py)
+    assert len(ALL_ALIASES) == 54
     for old, new in ALL_ALIASES.items():
         # only the prefix changes (plan 2.3)
         assert new == "aec_agent_core." + old.split(".", 1)[1], old
