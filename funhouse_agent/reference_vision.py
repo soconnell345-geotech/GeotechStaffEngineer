@@ -31,8 +31,9 @@ from aec_agent_core import vision_tools as _vt
 def reference_read_roots() -> List[str]:
     """GSE's reference library folders, after ``GEOTECH_REFERENCES_DOCS``
     (which the core reads itself): the cache the app fetches reference PDFs
-    into, the installed library's ``docs`` and a source checkout's
-    ``geotech-references/docs``."""
+    into, the installed library's ``docs``, a source checkout's
+    ``geotech-references/docs`` and each local reference pack's folder
+    (REF-64; none with no packs)."""
     roots: List[str] = []
     try:
         from funhouse_agent import reference_docs
@@ -48,6 +49,10 @@ def reference_read_roots() -> List[str]:
     # checkout's folder is the same one it named.
     roots.append(os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), "geotech-references", "docs"))
+    # A pack's PDF may sit in its own folder: a read-off names it by its file
+    # name there, and render_region / read_document then find it.
+    from funhouse_agent.reference_packs import pack_folders
+    roots += pack_folders()
     return roots
 
 
@@ -177,6 +182,16 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
     return json.dumps(out)
 
 
+#: The heading the catalog's ``read_notes`` go under in the read prompt.
+READ_NOTES_HEADING = ("Notes from the reference's catalog on reading this "
+                      "figure")
+#: The most of a figure's ``read_notes`` the read prompt carries: the limit
+#: the library's ``packs check`` holds a catalog to
+#: (``geotech_references.packs.READ_NOTES_MAX``), kept here for a catalog
+#: that was never checked.
+READ_NOTES_MAX = 500
+
+
 def _dispatch_read_reference_figure(arguments, engine):
     """Chart read-off: rendered and sent at the chart budget
     (``vision_view.chart_reading``) — see ``_dispatch_read_reference_figure_at_budget``."""
@@ -218,12 +233,18 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
 
     # Render the page at the vision model's image budget: the largest image
     # it reads without shrinking, so curves and axis labels stay legible.
+    # A catalog may box the chart on its page (``bbox``, PDF points, top-left
+    # origin; REF-64): the chart, not the whole page, then fills the image
+    # budget. Built-in figures carry no box, so their render is as before.
+    render_kwargs = {}
+    if rec.get("bbox"):
+        render_kwargs["bbox"] = [float(v) for v in rec["bbox"]]
     from aec_agent_core import vision_view
     try:
         image_bytes, info = vision_view.render_view(
             str(pdf_abs), page=page_idx,
             allow_jpeg=getattr(engine, "accepts_jpeg", False),
-            engine=engine)
+            engine=engine, **render_kwargs)
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -262,6 +283,12 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         "flag that this is a chart read-off estimate.\n\n"
         f"Request: {question}"
     )
+    # The catalog's own notes on reading this figure (``read_notes``,
+    # REF-64), at most READ_NOTES_MAX characters. Built-in figures carry
+    # none, so their prompt is as before.
+    notes = str(rec.get("read_notes") or "").strip()[:READ_NOTES_MAX].rstrip()
+    if notes:
+        full_prompt += f"\n\n{READ_NOTES_HEADING}:\n{notes}"
     # The second voter (W3 step 7): the side call also says, per curve it
     # read, where on the image the curve crosses the input, so code can
     # measure the same thing from the drawing.

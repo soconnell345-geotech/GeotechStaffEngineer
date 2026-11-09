@@ -414,6 +414,36 @@ handle = run_on_databricks(port=8501, model="funhouse-gpt-high")
 
 A local folder is always tried first; SharePoint supplies only what it lacks.
 
+### Your deployment's own references (local reference packs)
+
+A deployment can add its own manuals to the reference library: the
+`references` helper then searches them, cites them and reads their figures
+like the built-in ones. Each manual is a *pack*, a folder named by its id
+(starting `local_`) with `pack.json`, `text/chapterNN.json` in the library's
+chapter format and, optionally, `figures_catalog.json` and the PDF. How to
+write and check one (`python -m geotech_references.packs check <pack folder>`)
+is in the geotech-references repo's
+[`docs/REFERENCE_PACKS.md`](https://github.com/soconnell345-geotech/geotech-references/blob/main/docs/REFERENCE_PACKS.md); packs
+need geotech-references 1.6.0 or later.
+
+Point `GEOTECH_REFERENCES_PACKS` at a pack folder or a folder of packs
+(several separated by `:`) before launching. On Databricks keep the packs in
+a Workspace folder or a volume, for example:
+
+```python
+import os
+os.environ["GEOTECH_REFERENCES_PACKS"] = "/Workspace/Users/<you>/geotech_agents/packs"
+handle = run_on_databricks(port=8501, model="funhouse-gpt-high")
+```
+
+The packs folder is only read, so a read-only folder is fine. A pack's PDF
+is looked for in its own folder, then in `GEOTECH_REFERENCES_DOCS`, then
+fetched from SharePoint `primary_references` by its file name like the
+built-in PDFs. The Connection diagnostics' reference PDF row lists pack PDFs
+and names any pack the library skipped, and the activity log's `turn_start`
+records which packs were in force (`reference_packs`). A deployment's packs
+are its own: never commit one to the public repos.
+
 ### Fallback: manual subprocess (loses the Prompter registration)
 
 If you can't use the launcher, run streamlit directly — but note this plain

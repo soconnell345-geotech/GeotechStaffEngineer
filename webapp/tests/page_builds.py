@@ -585,6 +585,8 @@ GSE_MODULES = frozenset({
     # 11 (c)): the record shapes and reference modules, and where the review
     # suite's documents and report fixture come from.
     "funhouse_agent.core_hooks", "funhouse_agent.review_eval.host",
+    # A deployment's local reference packs, as GSE reads them (REF-64).
+    "funhouse_agent.reference_packs",
     "funhouse_agent.report_checklist", "funhouse_agent.adapters",
     "funhouse_agent.deep.agent", "funhouse_agent.deep.prompt",
     "funhouse_agent.deep.tools", "funhouse_agent.deep.fit_results",
