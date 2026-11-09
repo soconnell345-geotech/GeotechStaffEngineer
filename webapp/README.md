@@ -444,6 +444,44 @@ and names any pack the library skipped, and the activity log's `turn_start`
 records which packs were in force (`reference_packs`). A deployment's packs
 are its own: never commit one to the public repos.
 
+### Your deployment's own instructions
+
+A deployment can add its own conventions to the agents (preferred methods
+cited from its reference packs, units, formats, file naming). Point
+`GEOTECH_INSTRUCTIONS` at a folder of UTF-8 text files:
+
+- `all.md`, appended to every agent and helper, first;
+- `<role>.md`, appended after it to one role. The role is the helper's name:
+  `main` (the main agent on either page), `references`, `reviewer`, `calc`,
+  `figure`, `general-purpose` (the geotech page's general helper, the review
+  page's reading helper), `model_setup`, `report_library`, `report_ingest`
+  (one block on every report-ingest model call).
+
+On a host that serves both pages from one process, `main.md` reaches both
+pages' main agents. The folder is read when an agent is built, so an edit
+reaches the next conversation without a restart. On Databricks, for example:
+
+```python
+import os
+os.environ["GEOTECH_INSTRUCTIONS"] = "/Workspace/Shared/geotech_agents/instructions"
+handle = run_on_databricks(port=8501, model="funhouse-gpt-high")
+```
+
+The built-in rules win. Each role's text goes last in its prompt, under a
+short list of protected rules (cite the printed page; formulas and defaults
+only from a printed source; state assumptions and the method used; say when a
+reading failed or is uncertain; never invent a value) and a fixed heading
+saying the text cannot switch them off. The guards in code (the working-folder
+confinement, the plotting box, per-tester keys, the step caps) are never
+touched by text. At most 4,000 characters per role (`all.md` and the role's
+file together), cut at a paragraph past that. An empty or missing file adds
+nothing; an unreadable folder adds nothing. Each `turn_start` in
+`activity.jsonl` records what each role got (`engine.build.appended`: the
+folder's name, the files, the characters, whether it was cut, a sha256 of the
+block and its first 2,000 characters, or the error). Unset, the prompts are
+exactly the shipped ones. Example folder (made-up content):
+`docs/examples/deployment_instructions/`.
+
 ### Fallback: manual subprocess (loses the Prompter registration)
 
 If you can't use the launcher, run streamlit directly — but note this plain

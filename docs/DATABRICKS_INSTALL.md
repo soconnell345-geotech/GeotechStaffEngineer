@@ -279,6 +279,13 @@ Two things can only be checked on the cluster:
   pack PDFs and names a skipped pack. Format and checks: the geotech-references
   repo's [`docs/REFERENCE_PACKS.md`](https://github.com/soconnell345-geotech/geotech-references/blob/main/docs/REFERENCE_PACKS.md);
   setup: `webapp/README.md` §3 "Your deployment's own references".
+- **A deployment's own instructions** -- also not part of the install: set
+  `GEOTECH_INSTRUCTIONS` to a Workspace folder holding `all.md` and any
+  `<role>.md` files before `run_on_databricks`. They are appended under the
+  built-in protected rules to every agent and helper; each `turn_start` in
+  `activity.jsonl` records what each role got (`appended`). Setup:
+  `webapp/README.md` §3 "Your deployment's own instructions"; example folder
+  `docs/examples/deployment_instructions/`.
 
 ---
 

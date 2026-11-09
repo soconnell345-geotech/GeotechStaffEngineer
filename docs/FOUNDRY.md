@@ -394,6 +394,30 @@ the turn record's `turn_start` lists them (`reference_packs`: id, title,
 files, a sha256 of their contents) and the Connection diagnostics' reference
 PDF row lists their PDFs and names any pack the library skipped.
 
+**A deployment's own instructions.** A deployment can add its own
+conventions to every agent and helper: preferred methods (cited from its own
+reference packs), units, formats, naming. `GEOTECH_INSTRUCTIONS` names a
+folder holding `all.md` (appended to every agent and helper) and one
+`<role>.md` per role (`main`, `references`, `reviewer`, `calc`, `figure`,
+`general-purpose`, `model_setup`, `report_library`, `report_ingest`). The
+built-in rules win: the app puts its protected integrity rules and a fixed
+heading above the deployment's text, and the guards in code are never
+touched by text. At most 4,000 characters per role, cut at a paragraph past
+that; an unreadable folder adds nothing and the record says why. On Foundry,
+commit an `instructions/` folder beside the app file and point the setting at
+it there:
+
+```python
+os.environ.setdefault("GEOTECH_INSTRUCTIONS", os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "instructions"))
+```
+
+The turn record's `turn_start` lists what each role got (`engine.build.
+appended`: the files, the characters, a sha256 and the first 2,000
+characters). An example folder with made-up content is in
+`docs/examples/deployment_instructions/`. A deployment's instructions are its
+own: keep them in the deployment's repository, not the public ones.
+
 ## 4. The 30-second proxy smoke test ("one curl")
 
 Before publishing, open the workspace **Terminal** and paste (substitute your
