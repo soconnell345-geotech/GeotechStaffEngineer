@@ -22,7 +22,7 @@ _NOTES: Dict[str, str] = {}
 def current_key() -> str:
     """The key of the conversation running in this context."""
     try:
-        from funhouse_agent._fileio import host_output_dir
+        from aec_agent_core._fileio import host_output_dir
         return host_output_dir() or ""
     except Exception:                                      # noqa: BLE001
         return ""

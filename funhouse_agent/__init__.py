@@ -52,6 +52,17 @@ CORE_ALIASES = {
     "funhouse_agent.deep.inline_images": "aec_agent_core.deep.inline_images",
     "funhouse_agent.deep.pacing": "aec_agent_core.deep.pacing",
     "funhouse_agent.deep.vision_engine": "aec_agent_core.deep.vision_engine",
+    # Step 11 (b): the figure helper, the plotting box and the chart stack
+    # (plan 2.3, 2.8), with the two leaves plot_data's call goes through.
+    # A package alias also covers its modules (funhouse_agent.charts.data_plot
+    # IS aec_agent_core.charts.data_plot).
+    "funhouse_agent.arg_checks": "aec_agent_core.arg_checks",
+    "funhouse_agent.charts": "aec_agent_core.charts",
+    "funhouse_agent.drawing_wait": "aec_agent_core.drawing_wait",
+    "funhouse_agent.method_call": "aec_agent_core.method_call",
+    "funhouse_agent.plot_box": "aec_agent_core.plot_box",
+    "funhouse_agent.progress_notes": "aec_agent_core.progress_notes",
+    "funhouse_agent.deep.figure_helper": "aec_agent_core.deep.figure_helper",
 }
 _install_aliases(CORE_ALIASES)
 

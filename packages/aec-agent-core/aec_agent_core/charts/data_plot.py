@@ -34,7 +34,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from funhouse_agent.charts.plotting import figure_to_png
+from aec_agent_core.charts.plotting import figure_to_png
 
 #: Series styles the caller may ask for. ``polygon`` draws a closed outline
 #: (a footprint, a site boundary, a zone), optionally filled.
@@ -897,7 +897,7 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
     return fig
 
 
-from funhouse_agent.charts.plan_furniture import nice_length as _nice_length
+from aec_agent_core.charts.plan_furniture import nice_length as _nice_length
 
 
 def _plan_layout(cleaned, axes_pt=None) -> dict:
@@ -962,7 +962,7 @@ def _draw_plan_furniture(ax, cleaned, units, north_deg, caption):
     the axes' box, never by trimming the view). Returns the layout, the
     text artists and the other artists drawn (the bar, the arrow), so
     point names keep clear of them and the layout check names them."""
-    from funhouse_agent.charts import plan_furniture as pf
+    from aec_agent_core.charts import plan_furniture as pf
 
     fig = ax.figure
     pos = ax.get_position(original=True)
@@ -994,7 +994,7 @@ def _plotly_plan_furniture(fig, cleaned, units, north_deg, caption,
                            lay=None):
     """The Plotly twin's scale bar, north arrow and caption (the PNG's
     layout when given)."""
-    from funhouse_agent.charts import plan_furniture as pf
+    from aec_agent_core.charts import plan_furniture as pf
 
     lay = lay or _plan_layout(cleaned)
     fig.update_xaxes(range=list(lay["xlim"]))
@@ -1406,7 +1406,7 @@ def _check_lettering(fig, ax, notes, artists, dpi, lines_named=None,
     names the series and reference lines by artist ``id``. One warning per
     piece of lettering found, the notes first; two pieces that meet are
     reported once, on the note when one is a note."""
-    from funhouse_agent.charts.layout_ink import layout_check
+    from aec_agent_core.charts.layout_ink import layout_check
 
     placed = list(placed)
     texts = list(artists) + [a for a, _n, _k in placed]
@@ -1565,7 +1565,7 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
         plan_view = False
     if plan_view:
         equal_aspect, grid = True, False
-        from funhouse_agent.charts.plan_furniture import north_or_default
+        from aec_agent_core.charts.plan_furniture import north_or_default
         _angle, north_note = north_or_default(north_deg)
         if north_note:
             warnings.append(north_note)

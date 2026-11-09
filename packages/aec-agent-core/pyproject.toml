@@ -6,7 +6,8 @@ build-backend = "setuptools.build_meta"
 # INF-26 / INF-32; plan module_work/APP_SPLIT_PLAN.md sections 1.1 and 2.3).
 # Step 10: the package exists, EMPTY apart from the alias helper, with its
 # build, CI and a wheel test. Step 11 moves the code in, in three merges;
-# (a), the model connections and the vision calls, is in. Step 12 publishes
+# (a), the model connections and the vision calls, and (b), the figure
+# helper, the plotting box and the chart stack, are in. Step 12 publishes
 # it, on the owner's word. 1.0.0.dev0, empty, was published
 # 2026-11-09 only to hold the name (publish-core.yml, tag core-v1.0.0.dev0).
 # 1.0.0.dev1 since step 11 (a): a version PyPI does not have, so nothing
@@ -57,7 +58,11 @@ dependencies = [
     # openai 3.x builds its own client on httpx2; 3.29.0 is the highest tested.
     "openai<3.29.1",
     "langchain-openai>=1.3",
-    # The figure helper, the plotting box and the chart stack.
+    # The figure helper, the plotting box and the chart stack (in the core
+    # since step 11 (b)): matplotlib draws, plotly writes the interactive
+    # twin beside plot_data's PNG. The box also lets the model's code import
+    # pandas; it is not required here (nor by the app): a script that names
+    # it where it is not installed gets the import error, as in the app.
     "matplotlib>=3.8",
     "plotly>=5",
     # Word out (and in), Excel out and in.

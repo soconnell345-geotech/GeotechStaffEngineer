@@ -424,7 +424,7 @@ the eyes). What changed on master after 5.33.0, in short:
   no axes, a scale bar, a north arrow from `north_deg` or up with a note),
   filled and hatched outlines, named points placed clear of each other,
   hover text, separate cases as markers along x, `xlim` / `ylim` and
-  `legend_position` (`profile_figure/data_plot.py`); its description says
+  `legend_position` (`packages/aec-agent-core/aec_agent_core/charts/data_plot.py`); its description says
   its PNG and chart are one figure. The `calc` helper, which draws the
   deliverable's figures, gets `analyze_image` to look at them. `save_file`
   adds a `chart_note` when it writes a `*.plotly.json` by hand
@@ -432,9 +432,9 @@ the eyes). What changed on master after 5.33.0, in short:
   beside it is now a different figure. Behind `GEOTECH_FIGURE_HELPER` (ON
   by default since 2026-10-20, the owner's "on everywhere" of GM-92,
   BACKLOG GM-227; `=0` with `GEOTECH_PLOT_CODE=0` leaves it out; arms
-  `figure_helper`, `figure_helper_off`): a `figure` helper (`deep/figure_helper.py`) with an
+  `figure_helper`, `figure_helper_off`): a `figure` helper (`packages/aec-agent-core/aec_agent_core/deep/figure_helper.py`) with an
   eleven-item figure checklist after Tufte, six worked examples
-  (`figure_examples`, from `profile_figure/figure_examples.py`), `plot_data`,
+  (`figure_examples`, from `packages/aec-agent-core/aec_agent_core/charts/figure_examples.py`), `plot_data`,
   `analyze_image`, `calculate` and a 14-call budget; both pages. On the
   Document Review page it has every tool it needs (`plot_data`,
   `analyze_image`, `list_files`, `read_text_file` and, with `plot_code`, the
@@ -443,7 +443,7 @@ the eyes). What changed on master after 5.33.0, in short:
   up a profile by default, kPa and kN, test points against an assumed
   design line, the wall drawn; with `plot_code` the examples tool also lists
   three worked `plot_code` scripts and says which kind each example is.
-- **Plotting code in a locked box** (GM-98; 2026-10-15; `plot_box/`):
+- **Plotting code in a locked box** (GM-98; 2026-10-15; `packages/aec-agent-core/aec_agent_core/plot_box/`):
   behind `GEOTECH_PLOT_CODE` (ON by default since 2026-10-20, GM-92 /
   GM-227; `=0` turns it off; arms `plot_code`, `plot_code_off`; it brings
   the figure helper with it) the figure helper and the `calc` helper get
@@ -466,13 +466,13 @@ the eyes). What changed on master after 5.33.0, in short:
   or chart being redrawn; at most 40 files); no process, socket, `ctypes`,
   registry, pickle or database. The code gets `data`, `save_figure`,
   `save_chart` and the plan furniture (`scale_bar`, `north_arrow`,
-  `nice_length` from `geotech_common/plan_furniture.py`); a figure left
+  `nice_length` from `packages/aec-agent-core/aec_agent_core/charts/plan_furniture.py`); a figure left
   open is saved. Limits: 600 s unless the call asks for more, up to 3,600 s
   (`GEOTECH_PLOT_CODE_SECONDS`, `GEOTECH_PLOT_CODE_MAX_SECONDS`; the owner:
   "I want it to cook"), 2,048 MB (`GEOTECH_PLOT_CODE_MEMORY_MB`), two at
   once per process (`GEOTECH_PLOT_CODE_AT_ONCE`). While it runs the app's
   "Working..." label reads "drawing with code: 2m 10s so far, stops at
-  10m 00s" (`funhouse_agent/progress_notes.py`, carried on the heartbeat).
+  10m 00s" (`packages/aec-agent-core/aec_agent_core/progress_notes.py`, carried on the heartbeat).
   Measured against an escape battery on Windows and Linux
   (`funhouse_agent/tests/test_plot_box.py`). Left as it is: a Python
   sandbox is not a kernel one; on Linux a kernel layer (Landlock or
@@ -506,7 +506,7 @@ the eyes). What changed on master after 5.33.0, in short:
   test_plot_box_drafts.py`, `deep/tests/test_figure_runs.py`.
 - **A figure is one thing across a turn, whoever draws it** (GM-151;
   2026-10-18; `module_work/live_smoke/runs/w12-figures-judgment/
-  TRACE_REVIEW.md` F55j, F65, fixes 1, 2, 7). `plot_box/figures.py`. Where
+  TRACE_REVIEW.md` F55j, F65, fixes 1, 2, 7). `packages/aec-agent-core/aec_agent_core/plot_box/figures.py`. Where
   `plot_code` or (behind the switches) `plot_data` runs, every draw is
   booked on the turn (`TurnScope.figures`; else the helper's record):
   under its name, a version of it (`plan_v2`) or a name its draw
@@ -572,8 +572,8 @@ the eyes). What changed on master after 5.33.0, in short:
   findings come back in `warnings`. `plot_code`'s description no longer
   lists leaders among what only it can draw. The notes are checked by the
   plotting box's own pixel check, moved for this to
-  `geotech_common/layout_ink.py` (the box loads it by its file path, so the
-  rest of `geotech_common` stays out of the box; behaviour and budgets
+  `packages/aec-agent-core/aec_agent_core/charts/layout_ink.py` (the box loads it by its file path, so
+  nothing else comes into the box; behaviour and budgets
   unchanged). In the app's process it runs one at a time under a lock, and
   a draw on any other thread passes straight through (the review saw 300 of
   300 figures saved by another thread lose their line while a check ran);

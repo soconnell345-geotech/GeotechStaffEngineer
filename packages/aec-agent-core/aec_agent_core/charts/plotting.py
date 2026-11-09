@@ -43,5 +43,5 @@ def figure_to_png(fig, dpi: int = 150) -> bytes:
     buf.close()
     # the PNG carries its smallest lettering, so a PDF built from it can
     # tell how large that prints (GM-168)
-    from funhouse_agent.charts.layout_ink import png_with_lettering
+    from aec_agent_core.charts.layout_ink import png_with_lettering
     return png_with_lettering(fig, data, dpi)

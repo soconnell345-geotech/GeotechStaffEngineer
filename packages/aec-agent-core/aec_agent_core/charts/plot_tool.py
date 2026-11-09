@@ -21,13 +21,13 @@ import copy
 import os
 from datetime import datetime
 
-from funhouse_agent._fileio import (default_output_dir, resolve_output_path,
+from aec_agent_core._fileio import (default_output_dir, resolve_output_path,
                                     save_verified, write_plotly_sidecar)
-from funhouse_agent.arg_checks import (apply_aliases, check_nested_keys,
+from aec_agent_core.arg_checks import (apply_aliases, check_nested_keys,
                                        check_nested_list, declare_aliases,
                                        declare_when_absent,
                                        reject_unknown_params, require_params)
-from funhouse_agent.charts import reference_charts
+from aec_agent_core.charts import reference_charts
 
 #: Use the registered reference charts' overlay (the default).
 _REGISTERED = object()
@@ -133,7 +133,7 @@ def run_plot_data(params: dict, overlay=_REGISTERED) -> dict:
     registered reference charts' (:func:`funhouse_agent.charts.
     register_reference_charts`), and without one the argument is refused
     by name."""
-    from funhouse_agent.charts.data_plot import render_data_plot
+    from aec_agent_core.charts.data_plot import render_data_plot
 
     if overlay is _REGISTERED:
         provider = reference_charts()
@@ -162,7 +162,7 @@ def run_plot_data(params: dict, overlay=_REGISTERED) -> dict:
 
     # Every figure saved reaches the user: one that only holds a place is
     # refused before anything is written (BACKLOG GM-190).
-    from funhouse_agent.plot_box.figures import STAND_IN_NOTE, stand_in
+    from aec_agent_core.plot_box.figures import STAND_IN_NOTE, stand_in
     why = stand_in(**_plot_words(params))
     if why:
         raise ValueError(f"plot_data drew no figure: {why}. {STAND_IN_NOTE}")
@@ -231,7 +231,7 @@ def run_plot_data(params: dict, overlay=_REGISTERED) -> dict:
     if response["status"] == "success":
         # a look at the figure, in a later step, before it is used: what
         # plot_code asks (BACKLOG GM-152, live wave w12)
-        from funhouse_agent.plot_box import next_step
+        from aec_agent_core.plot_box import next_step
         response["next"] = next_step(None, renamed_drafts=False,
                                      checked_in="warnings")
     if result.annotations:
@@ -525,6 +525,6 @@ PLOT_METHOD = _PlotMethod()
 def call_plot_data(parameters: dict, attachments: dict = None) -> dict:
     """``plot_data`` called as ``call_agent('profile_figure', 'plot_data',
     parameters)`` called it: its result, or ``{"error": ...}``."""
-    from funhouse_agent.method_call import run_method
+    from aec_agent_core.method_call import run_method
     return run_method(PLOT_METHOD, "profile_figure", "plot_data",
                       parameters, attachments)

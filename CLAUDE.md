@@ -129,9 +129,11 @@ Key conventions:
   the shared core, in `packages/aec-agent-core` (1.0.0.dev1, not on PyPI
   yet), pinned exactly, holding the model connections, settings, identity,
   vision calls and Tiny Apps key routes, GSE's part handed in through
-  `aec_agent_core.hooks`, old import paths kept as aliases; a dev install
-  puts it first: `pip install -e packages/aec-agent-core -e .`; steps
-  11 (b) and (c) next; the owner's question list
+  `aec_agent_core.hooks`, then (step 11 (b)) the figure helper, plotting
+  box, chart stack and worked examples, GSE's chart lines handed in by a
+  registration; old import paths kept as aliases; a dev install
+  puts it first: `pip install -e packages/aec-agent-core -e .`; step
+  11 (c) next; the owner's question list
   runs inside the ingest when `GSE_REPORT_QUESTIONS` names it, posts matched
   from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split; the
   geotech page keeps 15 document tools off the list until a document is
@@ -2213,11 +2215,11 @@ app-side wiring). Design notes: `planlens/document/DESIGN.md`,
 | `reviewer.py` | Reference consult sub-agent (`consult_references`) + legacy post-hoc reviewer (`run_review`/`needs_revision`) |
 | `system_prompt.py` | Self-contained system prompt (50 modules) |
 | `native_tools.py` | OpenAI tool schemas + dispatch for NativeToolEngine |
-| `vision_tools.py` | File and vision tools: `list_files`, `read_pdf_text`, `analyze_image`, `analyze_pdf_page`, `render_region` (zoom + set-of-marks), `read_reference_figure` (render a catalogued figure + read a value off it), `view_worked_example_source`, `save_file` |
+| `vision_tools.py` (in the core since step 11 (a): `packages/aec-agent-core/aec_agent_core/vision_tools.py`; `funhouse_agent.vision_tools` is an alias; the reference-figure reader is `funhouse_agent/reference_vision.py`) | File and vision tools: `list_files`, `read_pdf_text`, `analyze_image`, `analyze_pdf_page`, `render_region` (zoom + set-of-marks), `read_reference_figure` (render a catalogued figure + read a value off it), `view_worked_example_source`, `save_file` |
 | `document_tools.py` | The whole-document review tools (planlens `ReviewToolkit` bridge, 5.16.0): `open_document`, `document_structure`, `document_page_map`, `read_document`, `search_document`, `document_markups`, `render_page_thumbnails`, and, when the installed planlens serves them, `find_quantities`, `annotate_document`, `measure`, `log_grid` (`document_tool_names()`) — attachments via contextvar, one toolkit per conversation, look cues naming the app's vision tools |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
 | `adapters/` | analysis-module adapters + 16 reference adapters bridging flat JSON → module APIs (the former pygef/ags4/pydiggs adapters were folded into `subsurface_adapter`) |
-| `deep/` | The deepagents agent the app runs since 5.0 (`build_deep_agent`, helpers, budgets, busy retries, kept turns, `kept_readings`, `calculate`; the `figure` helper in `figure_helper.py`, behind `GEOTECH_FIGURE_HELPER`, ON by default since 2026-10-20); `funhouse_agent/DESIGN.md` describes it, including what changed after 5.33.0 |
+| `deep/` | The deepagents agent the app runs since 5.0 (`build_deep_agent`, helpers, budgets, busy retries, kept turns, `kept_readings`, `calculate`; the `figure` helper in `packages/aec-agent-core/aec_agent_core/deep/figure_helper.py` (the shared core's since INF-32 step 11 (b)), behind `GEOTECH_FIGURE_HELPER`, ON by default since 2026-10-20); `funhouse_agent/DESIGN.md` describes it, including what changed after 5.33.0 |
 | `cited_pages.py` | Pages an answer or a DIGGS file cites, checked against the pages a tool actually opened (EV-18; the answer note is behind `GEOTECH_CITED_PAGES`, OFF) |
 | `tests/` | 2,011 tests collected 2026-10-15 (0bb5f1b), and 3,167 across all of `funhouse_agent/` (mock engines, no API key needed) |
 

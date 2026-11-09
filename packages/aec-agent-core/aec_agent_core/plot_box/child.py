@@ -684,7 +684,7 @@ def _load_layout_ink():
     file in the chart folder beside this package, so nothing else of the
     app comes into the box."""
     if __name__ != "__main__":
-        from funhouse_agent.charts import layout_ink
+        from aec_agent_core.charts import layout_ink
         return layout_ink
     return _load_chart_file("layout_ink")
 
@@ -741,7 +741,7 @@ def _load_figure_rules():
     box then saves as before)."""
     try:
         if __name__ != "__main__":
-            from funhouse_agent.plot_box import figures
+            from aec_agent_core.plot_box import figures
             return figures
         import importlib.util
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
