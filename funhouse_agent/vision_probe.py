@@ -359,9 +359,6 @@ def probe(model) -> VisionProfile:
         for status, value in got[:3]:
             if status == "error":
                 raise value
-        if got[3][0] == "error" and isinstance(got[3][1], _Busy):
-            # Busy to the last try: NOT a refusal of "original" (DR-36).
-            raise got[3][1]
         (base, answered), (small, a1), (large, a2) = (v for _, v in got[:3])
         prof.answered_by = answered or a1 or a2
         if _is_claude(model, prof.answered_by):
@@ -373,6 +370,12 @@ def probe(model) -> VisionProfile:
                 prof.general, prof.detailed = found[0].name, found[1].name
                 prof.source = "model name"
                 return prof
+        if got[3][0] == "error" and isinstance(got[3][1], _Busy):
+            # Busy to the last try: NOT a refusal of "original" (DR-36).
+            # Raised after the answerer is known, so the fallback is that
+            # model's budget by name, and after the Claude branch, which
+            # never needs call 4.
+            raise got[3][1]
         if got[3][0] == "ok":
             orig = got[3][1][0]
         else:            # refused (not busy): original unsupported

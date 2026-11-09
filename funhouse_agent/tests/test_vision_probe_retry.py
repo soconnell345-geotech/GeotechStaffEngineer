@@ -180,7 +180,10 @@ def test_a_persistent_409_on_original_is_a_failed_probe_not_a_refusal(clean):
     assert "original_refused" not in prof.ratios   # never read as a refusal
     assert "409" in prof.error and "original" in prof.error
     assert model.calls.count("original") == vision_engine.busy_tries()
-    assert prof.source in ("model name", "none")   # the fallback
+    # The fallback: calls 1-3 named the model, but no budget is known by
+    # that (made-up) name, so the app's default stands.
+    assert prof.answered_by == "gpt-9-omni"
+    assert prof.source == "none" and prof.general is None
     # Never cached for the process ...
     assert not vision_probe._CACHE
     assert "FAILED" in prof.summary()
@@ -188,6 +191,34 @@ def test_a_persistent_409_on_original_is_a_failed_probe_not_a_refusal(clean):
     # ... and stated.
     note = prof.fallback_note()
     assert note and "could not be measured" in note
+
+
+def test_a_busy_original_falls_back_to_the_named_models_budget():
+    # Review of DR-36: the busy call 4 was raised before calls 1-3's answers
+    # were read, so a GPT-5.4 fell back to the default (page looks at detail
+    # "high") instead of its own budget by name ("original").
+    model = FlakyModel(fail_call="original", times=None, answered="gpt-5.4")
+    prof = vision_probe.profile_for(model)
+    assert prof.failed is True and not vision_probe._CACHE
+    assert prof.answered_by == "gpt-5.4" and prof.source == "model name"
+    assert prof.detailed == "openai-original"
+    engine = LangChainVisionEngine(model)
+    assert vision_view.budget_name(engine) == "openai-original"
+    assert vision_view.detail(engine) == "original"
+    assert "openai-original budget looked up by model name" in \
+        prof.fallback_note()
+
+
+def test_a_busy_original_does_not_fail_a_claude_probe():
+    # A Claude model's budget is by name and never needs call 4: as before
+    # DR-36, the probe finishes and is cached whatever call 4 answered.
+    model = FlakyModel(fail_call="original", times=None,
+                       answered="claude-opus-4-7")
+    prof = vision_probe.profile_for(model)
+    assert prof.failed is False and prof.error is None
+    assert prof.general == "claude" and prof.source == "model name"
+    assert vision_probe._CACHE and not vision_probe._FAILED
+    assert prof.fallback_note() is None
 
 
 @pytest.mark.parametrize("call", ["text", "small", "large"])
