@@ -20,8 +20,8 @@ import time
 import pytest
 from langchain_core.messages import AIMessage
 
-from funhouse_agent.deep import vision_engine
-from funhouse_agent.deep.vision_engine import (
+from aec_agent_core.deep import vision_engine
+from aec_agent_core.deep.vision_engine import (
     LangChainVisionEngine, VisionCallTimeout,
 )
 
@@ -160,8 +160,8 @@ def test_a_stalled_page_look_returns_an_error_not_a_hang(short_limit,
     """Through the tool: the stalled look comes back as a JSON error within
     the limit, so the turn goes on."""
     pymupdf = pytest.importorskip("pymupdf")
-    from funhouse_agent import vision_probe
-    from funhouse_agent.vision_tools import dispatch_extended_tool
+    from aec_agent_core import vision_probe
+    from aec_agent_core.vision_tools import dispatch_extended_tool
 
     monkeypatch.setenv(vision_probe.PROBE_ENV, "0")
     vision_probe.clear_cache()

@@ -24,9 +24,10 @@ pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import vision_probe, vision_view  # noqa: E402
 from funhouse_agent.deep.vision_engine import LangChainVisionEngine  # noqa: E402
-from funhouse_agent.vision_tools import (  # noqa: E402
-    _dispatch_analyze_pdf_page, _dispatch_read_reference_figure,
+from funhouse_agent.reference_vision import (  # noqa: E402
+    _dispatch_read_reference_figure,
 )
+from funhouse_agent.vision_tools import _dispatch_analyze_pdf_page  # noqa: E402
 
 
 def _png_size(data_url: str):

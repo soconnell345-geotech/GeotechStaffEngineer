@@ -22,6 +22,7 @@ import pytest
 
 from webapp import diagnostics, engine_config, identity
 from webapp import tinyapps_engine as te
+from webapp import tinyapps_keys as tk
 from webapp import tinyapps_settings as ts
 
 URL = "https://prompter.example/api/v1/chat/completions"
@@ -95,24 +96,24 @@ def _key_of(model) -> str:
 
 def test_suffix_is_the_identity_key_in_key_vault_alphabet():
     assert ALICE.key == "corp__alice"
-    assert te.tester_suffix(ALICE) == "CORP-ALICE"
-    assert te.tester_suffix(identity.Identity("Corp", "J.Doe", "header")) \
+    assert tk.tester_suffix(ALICE) == "CORP-ALICE"
+    assert tk.tester_suffix(identity.Identity("Corp", "J.Doe", "header")) \
         == "CORP-J-DOE"
     upn = identity.parse_principal("jdoe@agency.gov", "header")
-    assert te.tester_suffix(upn) == "AGENCY-GOV-JDOE"
-    name = te.tester_secret_name("PROMPTER_API_KEY", ALICE)
+    assert tk.tester_suffix(upn) == "AGENCY-GOV-JDOE"
+    name = tk.tester_secret_name("PROMPTER_API_KEY", ALICE)
     assert name == "PROMPTER-API-KEY--CORP-ALICE"
-    assert te.tester_secret_name("PROMPTER-MODEL", ALICE) == \
+    assert tk.tester_secret_name("PROMPTER-MODEL", ALICE) == \
         "PROMPTER-MODEL--CORP-ALICE"
     # Key Vault: letters, digits, hyphens; starts with a letter; <= 127
     for who in (ALICE, upn, identity.Identity("D_1", "a b.c-d", "header")):
-        n = te.tester_secret_name("PROMPTER_API_KEY", who)
+        n = tk.tester_secret_name("PROMPTER_API_KEY", who)
         assert re.fullmatch(r"[A-Za-z][A-Za-z0-9-]{0,126}", n), n
         # the separator is the only double hyphen: the split is unambiguous
         assert n.count("--") == 1
     # a name past the vault's limit is never asked for
     long_one = identity.Identity("CORP", "x" * 200, "header")
-    assert te.tester_secret_name("PROMPTER_API_KEY", long_one) is None
+    assert tk.tester_secret_name("PROMPTER_API_KEY", long_one) is None
 
 
 def test_the_vault_is_asked_for_exactly_the_documented_name(vault,
@@ -322,7 +323,7 @@ def test_a_broken_mapping_is_ignored_without_quoting_it(monkeypatch, caplog):
     monkeypatch.setenv("PROMPTER_KEYS",
                        '{"CORP\\\\alice": {"key": "leaky-key"')   # cut short
     with caplog.at_level(logging.DEBUG):
-        assert te.key_mapping() == {}
+        assert tk.key_mapping() == {}
         with pytest.raises(te.NoPrompterKey):
             te.resolve_for(ALICE)
     assert "PROMPTER_KEYS is not valid JSON" in caplog.text

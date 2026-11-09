@@ -6,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from langchain_core.messages import AIMessage
 
-from funhouse_agent.deep import vision_engine
-from funhouse_agent.deep.vision_engine import LangChainVisionEngine
+from aec_agent_core.deep import vision_engine
+from aec_agent_core.deep.vision_engine import LangChainVisionEngine
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 

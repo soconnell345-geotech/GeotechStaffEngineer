@@ -178,7 +178,7 @@ def test_a_chart_read_off_converts_only_tagged_boxes(monkeypatch, tmp_path,
                                                      sheet):
     """A chart read-off's answer is about VALUES: a bracketed list of four
     readings must never be rewritten as a box, whatever its shape."""
-    from funhouse_agent import vision_tools
+    from funhouse_agent import reference_vision
     pdf = tmp_path / "ref.pdf"
     pdf.write_bytes(sheet)
     from geotech_references import _figures_db
@@ -191,7 +191,7 @@ def test_a_chart_read_off_converts_only_tagged_boxes(monkeypatch, tmp_path,
             return ("Kp at 30, 35, 40, 45 deg: [500, 1200, 900, 1300]; the "
                     "curve label is at px=[1000, 500, 1100, 540]")
 
-    out = json.loads(vision_tools._dispatch_read_reference_figure(
+    out = json.loads(reference_vision._dispatch_read_reference_figure(
         {"reference": "dm7_1", "figure_number": "5-6", "prompt": "read Kp"},
         Reader()))
     assert "[500, 1200, 900, 1300]" in out["analysis"]

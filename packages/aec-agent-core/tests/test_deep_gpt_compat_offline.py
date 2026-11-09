@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from funhouse_agent.deep.databricks_bridge import (
+from aec_agent_core.deep.databricks_bridge import (
     PrompterChatModel,
     _adjust_request_for_param_error,
 )

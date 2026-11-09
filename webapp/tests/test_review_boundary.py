@@ -72,11 +72,15 @@ KNOWN_COUPLINGS = {
     # one deliberate fingerprint change; the earlier plan's "step 12").
     "funhouse_agent.review_build -> "
     "funhouse_agent.adapters.profile_figure_adapter": "2.7 soft, step 13",
-    "funhouse_agent.vision_tools -> funhouse_agent.reference_docs":
-        "2.7 soft, step 11",
-    "funhouse_agent.vision_tools -> geotech_references": "2.7 soft, step 11",
-    "funhouse_agent.vision_tools -> geotech_references._figures_db":
-        "2.7 soft, step 11",
+    # (vision_tools -> reference_docs, geotech_references and _figures_db:
+    # gone at step 11 (a); vision_tools is the shared core's, and asks the
+    # hook vision_tools.reference_read_roots for the reference library's
+    # folders.) GSE fills that hook from its package door, which the review
+    # page still loads, so the read tools reach the reference folders as
+    # before; inside a ``try``. Step 13 leaves it unfilled for Document
+    # Review.
+    "aec_agent_core.hooks -> funhouse_agent.reference_vision":
+        "2.7 soft, step 13",
     # (webapp.core -> webapp.reference_fetch: gone at step 7; the geotech
     # page's on_build hook registers the fetcher.)
 }
