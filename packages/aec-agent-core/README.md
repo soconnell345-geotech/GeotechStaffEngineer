@@ -19,8 +19,16 @@ Two applications are built on it:
 (`engine_config` and its chat models, `deep.vision_engine`) and the vision
 calls (`vision_tools`, `vision_view`, `image_view`, `vision_probe`), with
 `hooks`, where an application hands in what the core must not import (its
-settings and key lookup, its own reference readers). The guards and
-records, Word and Excel, and the figure helper move in next.
+settings and key lookup, its own reference readers). It also holds the
+figure helper (`deep.figure_helper`), the plotting box (`plot_box`, which
+runs the model's plotting code in a locked child process) and the chart
+stack (`charts`: `plot_data`, the layout check, the scale bar and north
+arrow, the worked figure examples). An application with standard chart
+lines hands them in with `charts.register_reference_charts`. The guards
+and records, and Word and Excel, move in next. Until they do, drawing
+(`plot_data`, the plotting box, the worked examples) works with this
+package alone, but building the figure helper's tools needs
+GeotechStaffEngineer installed.
 `aec_agent_core.install_aliases` lets a moved module keep answering to its
 old import path, as the same module object.
 

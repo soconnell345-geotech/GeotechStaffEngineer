@@ -25,6 +25,11 @@ The hooks step 11 (a) defines (each documented where it is asked for):
   ``vision_tools.view_worked_example_source``:
   :mod:`aec_agent_core.vision_tools` (an app's own reference library: the
   folders the read tools may also read, and two readers of it).
+
+Step 11 (b)'s chart lines (an app's standard chart lines for ``plot_data``
+and the plotting box) are handed in through
+:func:`aec_agent_core.charts.register_reference_charts`, a registration
+that takes a provider object, not through this table.
 """
 
 from __future__ import annotations

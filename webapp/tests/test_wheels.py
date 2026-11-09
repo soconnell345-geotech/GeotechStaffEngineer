@@ -136,6 +136,16 @@ IMPORTS = {
         "aec_agent_core.deep", "aec_agent_core.deep.vision_engine",
         "aec_agent_core.deep.databricks_bridge",
         "aec_agent_core.deep.pacing", "aec_agent_core.deep.inline_images",
+        # step 11 (b): the chart stack, the plotting box, the figure helper
+        "aec_agent_core.charts", "aec_agent_core.charts.data_plot",
+        "aec_agent_core.charts.plot_tool", "aec_agent_core.charts.layout_ink",
+        "aec_agent_core.charts.plan_furniture",
+        "aec_agent_core.charts.plotting",
+        "aec_agent_core.charts.figure_examples", "aec_agent_core.plot_box",
+        "aec_agent_core.plot_box.child", "aec_agent_core.plot_box.figures",
+        "aec_agent_core.deep.figure_helper", "aec_agent_core.drawing_wait",
+        "aec_agent_core.progress_notes", "aec_agent_core.arg_checks",
+        "aec_agent_core.method_call",
     ),
     "geotech-staff-engineer": (
         "funhouse_agent", "funhouse_agent._disclaimer",
@@ -218,7 +228,10 @@ def test_the_core_wheel_is_the_core_alone(wheels):
     for moved in ("aec_agent_core/hooks.py", "aec_agent_core/vision_tools.py",
                   "aec_agent_core/engine_config.py",
                   "aec_agent_core/deep/__init__.py",
-                  "aec_agent_core/deep/vision_engine.py"):
+                  "aec_agent_core/deep/vision_engine.py",
+                  "aec_agent_core/charts/layout_ink.py",
+                  "aec_agent_core/plot_box/child.py",
+                  "aec_agent_core/deep/figure_helper.py"):
         assert moved in names, moved
     assert any(n.endswith(".dist-info/licenses/LICENSE") for n in names)
     with zipfile.ZipFile(wheels[CORE_NAME]) as z:

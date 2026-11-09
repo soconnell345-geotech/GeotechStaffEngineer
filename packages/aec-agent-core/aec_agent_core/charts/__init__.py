@@ -1,4 +1,6 @@
-"""The chart stack both pages draw with (INF-31, the app split's step 6).
+"""The chart stack both pages draw with (INF-31, the app split's step 6;
+in the shared core since step 11 (b), INF-32, with the old
+``funhouse_agent.charts`` names as aliases).
 
 ``plot_data`` and the plotting box draw through these modules, which load
 nothing of the geotechnical toolkit:
@@ -22,6 +24,17 @@ keeps working. The standard chart lines of the reference library are not
 here: they are the geotechnical app's, which hands them in with
 :func:`register_reference_charts` (``plot_data``'s ``reference_chart`` and
 the plotting box's ``chart_lines``). Nothing here imports them.
+
+This registration is the core's chart-lines hook (plan section 2.8, OWN-77
+(b)). It takes a provider OBJECT rather than an
+:mod:`aec_agent_core.hooks` string, because the provider is four things at
+once (a module the box loads by file, an overlay, a parameter entry and a
+result note), and the geotechnical builds hand it in again on every build.
+GSE fills it from
+:func:`funhouse_agent.adapters.profile_figure_adapter.register_reference_charts`
+(on that adapter's import, and from each geotech build and, until step 13,
+the review build). With nothing registered the stack draws as before,
+without ``reference_chart`` and without ``chart_lines`` in the box.
 """
 
 from typing import Any, Optional

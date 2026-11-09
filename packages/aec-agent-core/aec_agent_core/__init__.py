@@ -3,10 +3,11 @@
 The app split's core (BACKLOG INF-32; ``module_work/APP_SPLIT_PLAN.md``).
 Since step 11 (a) it holds the model connections and the vision calls, and
 :mod:`aec_agent_core.hooks`, where an app hands in what the core must not
-import; (b) and (c) bring the figure helper, the guards and records, and
-Word and Excel. This module is the alias helper each move uses, so a moved
-module's old import path keeps working until step 16 takes the aliases
-out:
+import; since (b), the figure helper, the plotting box and the chart stack
+(:mod:`aec_agent_core.charts`, where an app hands in its standard chart
+lines); (c) brings the guards and records, and Word and Excel. This module
+is the alias helper each move uses, so a moved module's old import path
+keeps working until step 16 takes the aliases out:
 
     # in the old package's __init__.py, e.g. funhouse_agent/__init__.py
     from aec_agent_core import install_aliases

@@ -50,8 +50,8 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from funhouse_agent.plot_box import figures
-from funhouse_agent.plot_box.child import (ALLOWED_IMPORTS, check_code,
+from aec_agent_core.plot_box import figures
+from aec_agent_core.plot_box.child import (ALLOWED_IMPORTS, check_code,
                                            DEFAULT_PRINT_WIDTH_IN,
                                            MAX_CODE_CHARS)
 
@@ -141,7 +141,7 @@ def _slots(n: int) -> threading.BoundedSemaphore:
 def _root() -> str:
     """The conversation's folder; a fresh temporary folder for a library
     caller with none (never the current directory)."""
-    from funhouse_agent._fileio import host_output_dir
+    from aec_agent_core._fileio import host_output_dir
     root = host_output_dir()
     if not root:
         root = tempfile.mkdtemp(prefix="plot_code_")
@@ -339,7 +339,7 @@ def retire_drafts(names, root: Optional[str] = None, keep=(),
                                         "names"}]}
     if not root:
         try:
-            from funhouse_agent._fileio import host_output_dir
+            from aec_agent_core._fileio import host_output_dir
             root = host_output_dir()
         except Exception:                                  # noqa: BLE001
             root = None
@@ -521,7 +521,7 @@ def run_plot_code(code: str, data: Any = None, name: str = "",
     extra = {"replaces": replaces, "draw": draw,
              "print_width_in": width or DEFAULT_PRINT_WIDTH_IN}
 
-    from funhouse_agent.drawing_wait import drawing
+    from aec_agent_core.drawing_wait import drawing
     # A look at a figure in this folder waits until the box has written it
     # (live wave w8: a draw and a look in the same step read the old PNG).
     with drawing(root):
@@ -571,7 +571,7 @@ def next_step(draw: Optional[int], lettering: list = (),
 
 def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
     extra = extra or {}
-    from funhouse_agent import progress_notes
+    from aec_agent_core import progress_notes
     key = progress_notes.current_key()
     slots = _slots(cfg["at_once"])
     if not slots.acquire(timeout=max(60.0, limit)):
@@ -818,7 +818,7 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
 def _registered_chart_lines():
     """The registered reference charts' ``chart_lines`` module, or None
     (:func:`funhouse_agent.charts.register_reference_charts`)."""
-    from funhouse_agent.charts import reference_charts
+    from aec_agent_core.charts import reference_charts
     provider = reference_charts()
     return getattr(provider, "chart_lines", None) if provider else None
 

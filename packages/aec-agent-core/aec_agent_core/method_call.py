@@ -49,7 +49,7 @@ def _resolve_attachment(parameters: dict, attachments: dict,
     key = parameters.get("attachment_key")
     if not key:
         return parameters
-    from funhouse_agent._fileio import find_in_working_folder
+    from aec_agent_core._fileio import find_in_working_folder
     documented = documented or {}
     wants_path = "file_path" in documented and "content" not in documented
     params = dict(parameters)
@@ -91,7 +91,7 @@ def _inputs_from_working_folder(parameters):
     conversation-relative name, so the model passes those names back)."""
     if not isinstance(parameters, dict):
         return parameters
-    from funhouse_agent._fileio import find_in_working_folder
+    from aec_agent_core._fileio import find_in_working_folder
 
     def _resolve(value):
         if not isinstance(value, str) or not value.strip():
@@ -150,7 +150,7 @@ def _parameter_error(mod, agent_name: str, method: str, parameters: dict,
     # A did-you-mean for each given name the method does not take, as the
     # adapters' own check gives (GM-177): a reference function takes
     # 'phi_deg' where the analysis modules take 'phi'. Nothing is renamed.
-    from funhouse_agent.arg_checks import suggest_params
+    from aec_agent_core.arg_checks import suggest_params
     info = mod.METHOD_INFO.get(method) if hasattr(mod, "METHOD_INFO") else None
     aliases = (info.get("parameter_aliases") or {}) \
         if isinstance(info, dict) else {}
@@ -262,7 +262,7 @@ def _check_parameter_names(mod, method: str, parameters: dict) -> None:
         valid |= set(other.get("parameters") or {})
         aliases.update(other.get("parameter_aliases") or {})
         refused = {**(other.get("refused_parameters") or {}), **refused}
-    from funhouse_agent.arg_checks import (
+    from aec_agent_core.arg_checks import (
         accepted_as_unused, refused_reason, reject_unknown_params,
     )
     # A name the method deliberately does not take is refused with its
@@ -536,7 +536,7 @@ def _outputs_into_working_folder(parameters):
     file reaches the user whatever directory was named. ``named`` maps each
     output parameter given to what the model asked for. With no host folder
     nothing changes (a library caller keeps today's behaviour)."""
-    from funhouse_agent._fileio import host_output_dir, into_working_folder
+    from aec_agent_core._fileio import host_output_dir, into_working_folder
     folder = host_output_dir()
     if not folder or not isinstance(parameters, dict):
         return parameters, {}
@@ -556,7 +556,7 @@ def _outputs_into_working_folder(parameters):
 
 def _output_note(named: dict, parameters: dict) -> str:
     """What a writer's result says about where its file went."""
-    from funhouse_agent._fileio import host_output_dir
+    from aec_agent_core._fileio import host_output_dir
     folder = host_output_dir() or ""
     moved = []
     for key, asked in named.items():
@@ -602,7 +602,7 @@ def run_method(mod, agent_name: str, method: str, parameters: dict,
     before its defaults are listed (dispatch checks a calc package's
     citations there).
     """
-    from funhouse_agent._fileio import hide_working_folder
+    from aec_agent_core._fileio import hide_working_folder
     given = set(parameters)
     try:
         _check_parameter_names(mod, method, parameters)

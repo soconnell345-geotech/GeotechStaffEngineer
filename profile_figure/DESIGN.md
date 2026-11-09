@@ -76,8 +76,8 @@ move.
 | `plotting.py` | Drawing; house palette; `build_profile_figure` → `(fig, ax)`. |
 | `profile.py` | `render_profile_figure` — resolve, draw, PNG (file + base64). |
 | `results.py` | `ProfileFigureResult` (resolved geometry + image + `summary()`). |
-| `data_plot.py` | `plot_data`: `render_data_plot` (PNG) + `build_data_plot_figure` (its Plotly twin); see below. |
-| `figure_examples.py` | Worked examples on made-up data for the figure helper: six `plot_data` calls and three `plot_code` scripts; see below. |
+| `data_plot.py` | An alias of `packages/aec-agent-core/aec_agent_core/charts/data_plot.py` (moved at INF-31 step 6, in the shared core since INF-32 step 11 (b)). `plot_data`: `render_data_plot` (PNG) + `build_data_plot_figure` (its Plotly twin); see below. |
+| `figure_examples.py` | An alias of `packages/aec-agent-core/aec_agent_core/charts/figure_examples.py` (moved as `data_plot.py` was). Worked examples on made-up data for the figure helper: six `plot_data` calls and three `plot_code` scripts; see below. |
 
 `build_profile_figure` is exported so a module can drop the section into a
 bigger figure or a calc package; `render_profile_figure` closes its own figure
@@ -100,7 +100,7 @@ two consumers differ:
 
 Second method, same module, same contract (PNG on the real disk + an
 `html_img_tag`), from the owner's 2026-09-11 feedback that calc packages lacked
-"plots of data". `profile_figure/data_plot.py::render_data_plot` draws one or
+"plots of data". `packages/aec-agent-core/aec_agent_core/charts/data_plot.py::render_data_plot` draws one or
 more `{x, y, label, style, color}` series with matplotlib: `depth_axis=True`
 inverts y and puts the x axis on top (boring-log convention), `logx`/`logy`
 (ticks written 1, 10, 100), `hlines`/`vlines` as reference lines (a water
@@ -113,7 +113,7 @@ the axes WITH units. Non-finite points are dropped with a warning; unequal
 `x`/`y` lengths, an empty series and an unknown style are errors that name the
 series index. The agent's adapter also refuses, before anything is written, a
 figure that only holds a place: a title, axis or series named as a
-placeholder (BACKLOG GM-190; the rule is `funhouse_agent/plot_box/figures.py`
+placeholder (BACKLOG GM-190; the rule is `packages/aec-agent-core/aec_agent_core/plot_box/figures.py`
 `stand_in`). Axes named 'x' and 'y' alone are not refused: a plan or a
 coordinate plot is named so.
 `render_data_plot` itself does not check. It exists because the agent has no code-execution tool: without
@@ -181,7 +181,7 @@ that day (tests: `tests/test_data_plot_maps.py`):
   trims the view (BACKLOG GM-147: a 40 x 25 m outline lost its top edge,
   the view stopping at 24.76). It is ignored, with
   a warning, on named cases, log axes or a depth axis. The scale bar and
-  arrow are `geotech_common/plan_furniture.py`, which the gstools probability
+  arrow are `packages/aec-agent-core/aec_agent_core/charts/plan_furniture.py`, which the gstools probability
   map shares, so the plans read alike.
 - **`annotations`** places free text (BACKLOG GM-109; live wave w9 carried a
   plasticity chart's zone names on series of invisible markers, then moved it
@@ -207,7 +207,7 @@ that day (tests: `tests/test_data_plot_maps.py`):
   annotations[j]`; a line under the note's own box does not show), one the
   figure edge cuts, one that stands outside the axis limits and one whose
   point lies outside them. The first three are judged by the pixels drawn,
-  with the plotting box's own check (`geotech_common/layout_ink.py`, GM-108)
+  with the plotting box's own check (`packages/aec-agent-core/aec_agent_core/charts/layout_ink.py`, GM-108)
   at the PNG's dpi, about 50 ms a figure (the review of GM-109: a box check
   made 21 false reports in 236 one-note figures: rotated case names, legend
   padding, a two-line note's empty band, a boxed note under the title); the
@@ -227,7 +227,7 @@ that day (tests: `tests/test_data_plot_maps.py`):
 2026-10-15): six complete `plot_data` calls on made-up data (`EXAMPLES`),
 each with what it shows and why it is drawn that way: `plan_borings`,
 `spt_profile`, `cases`, `time_settlement`, `load_settlement` and
-`exceedance`. The figure helper (`funhouse_agent/deep/figure_helper.py`,
+`exceedance`. The figure helper (`packages/aec-agent-core/aec_agent_core/deep/figure_helper.py`,
 behind `GEOTECH_FIGURE_HELPER`, ON by default since 2026-10-20) fetches one by name through
 its `figure_examples` tool, a near name matched by shared words and then by
 spelling, and adapts it; `render_examples(out_dir)` draws them all. Every

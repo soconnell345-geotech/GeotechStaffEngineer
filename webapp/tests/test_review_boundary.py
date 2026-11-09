@@ -22,7 +22,8 @@ builds share (step 8) import nothing of GSE outside the listed hook.
 What neither the recorder nor the blocker sees: a module loaded from its
 file (``importlib.util.spec_from_file_location``), which the plotting box
 does with ``layout_ink.py``, ``plan_furniture.py`` (both in
-``funhouse_agent/charts/`` since step 6) and the chart-lines file an app
+``funhouse_agent/charts/`` since step 6, in the shared core's ``charts/``
+since step 11 (b)) and the chart-lines file an app
 registered; anything the plotting box's own child interpreter
 (``python -I``) imports; and data files read by path.
 The docreview-only CI job of step 12, with no geotech package installed,
@@ -233,11 +234,16 @@ def _python_files(*where: str) -> list:
 
 #: Step 6's exit (plan §4): the chart stack, the plotting box and the call
 #: plot_data runs through import nothing of GeotechStaffEngineer; the
-#: reference charts are handed in (``funhouse_agent.charts.
-#: register_reference_charts``).
-CHART_STACK = ("funhouse_agent/charts", "funhouse_agent/plot_box",
-               "funhouse_agent/method_call.py",
-               "funhouse_agent/arg_checks.py")
+#: reference charts are handed in (``aec_agent_core.charts.
+#: register_reference_charts``). In the shared core since step 11 (b), with
+#: the figure helper beside them (its own test,
+#: ``packages/aec-agent-core/tests/test_core_imports.py``, covers every core
+#: file).
+_CORE = "packages/aec-agent-core/aec_agent_core/"
+CHART_STACK = (_CORE + "charts", _CORE + "plot_box",
+               _CORE + "method_call.py", _CORE + "arg_checks.py",
+               _CORE + "deep/figure_helper.py", _CORE + "drawing_wait.py",
+               _CORE + "progress_notes.py")
 
 
 def test_the_chart_stack_imports_nothing_of_gse():
