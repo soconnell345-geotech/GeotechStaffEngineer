@@ -362,6 +362,33 @@ def test_reference_packs_in_build_record_only_with_packs(
     assert len(rec["sha"]) == 64
 
 
+def test_reference_packs_through_build_deep_agent(
+        no_packs, pack_root, monkeypatch):
+    """The real build: with packs, ``reference_packs`` is in
+    ``geotech_build`` and in the host's engine record (what each
+    ``turn_start`` writes); without, it is absent. Guards the record against
+    a move of ``record_build`` (app split step 11 (c))."""
+    from langchain_core.language_models.fake_chat_models import (
+        GenericFakeChatModel)
+    from langchain_core.messages import AIMessage
+    from funhouse_agent.deep.agent import build_deep_agent
+    from webapp import core
+
+    def build():
+        return build_deep_agent(model=GenericFakeChatModel(
+            messages=iter([AIMessage(content="ok")])))
+
+    plain = build()
+    assert isinstance(plain.geotech_build, dict) and plain.geotech_build
+    assert "reference_packs" not in plain.geotech_build
+    assert "reference_packs" not in core.engine_record(plain).get("build", {})
+    monkeypatch.setenv(_packs.PACKS_ENV, str(pack_root))
+    agent = build()
+    (rec,) = agent.geotech_build["reference_packs"]
+    assert rec["id"] == PID and rec["title"] == TITLE and len(rec["sha"]) == 64
+    assert core.engine_record(agent)["build"]["reference_packs"] == [rec]
+
+
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
