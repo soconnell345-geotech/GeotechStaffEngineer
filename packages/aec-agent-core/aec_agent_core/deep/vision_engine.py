@@ -182,7 +182,7 @@ def conversation_key() -> str:
     :mod:`funhouse_agent.document_tools`), ``""`` for a library caller with
     none."""
     try:
-        from funhouse_agent._fileio import host_output_dir
+        from aec_agent_core._fileio import host_output_dir
         folder = host_output_dir()
     except Exception:  # noqa: BLE001 - fairness must never break a call
         return ""
@@ -367,7 +367,7 @@ def _budget_spent(exc):
     """The :class:`~funhouse_agent.error_text.BudgetStop` of an error that
     says the AI budget is used up, else ``None``."""
     try:
-        from funhouse_agent.error_text import budget_exhausted
+        from aec_agent_core.error_text import budget_exhausted
         return budget_exhausted(exc)
     except Exception:  # noqa: BLE001 - classifying must never fail a call
         return None
@@ -377,7 +377,7 @@ def _rate_limit_named(exc) -> bool:
     """Whether an error NAMES a rate limit, as Foundry's 400s do
     (:func:`funhouse_agent.error_text.rate_limit_named`)."""
     try:
-        from funhouse_agent.error_text import rate_limit_named
+        from aec_agent_core.error_text import rate_limit_named
         return rate_limit_named(exc)
     except Exception:  # noqa: BLE001 - classifying must never fail a call
         return False
@@ -430,7 +430,7 @@ def describe_error(exc) -> str:
         return str(exc)
     stop = _budget_spent(exc)
     if stop is not None:
-        from funhouse_agent.error_text import BUDGET_HINT, budget_tool_note
+        from aec_agent_core.error_text import BUDGET_HINT, budget_tool_note
         return f"{budget_tool_note(stop)} -- this image was NOT read. " \
                f"{BUDGET_HINT}"
     kind = busy_kind(exc)
@@ -507,7 +507,7 @@ def _pace(model, messages):
     """``(pacer, ticket)`` after waiting for room on ``model``'s key, or
     ``(None, None)`` with pacing off. Never raises."""
     try:
-        from funhouse_agent.deep.pacing import estimate_tokens, pace
+        from aec_agent_core.deep.pacing import estimate_tokens, pace
         return pace(model, estimate_tokens(messages), what="vision")
     except Exception:  # noqa: BLE001 - pacing never fails a call
         return None, None
@@ -517,7 +517,7 @@ def _settle(pacer, ticket, response) -> None:
     if pacer is None:
         return
     try:
-        from funhouse_agent.deep.pacing import usage_tokens
+        from aec_agent_core.deep.pacing import usage_tokens
         pacer.settle(ticket, usage_tokens(response))
     except Exception:  # noqa: BLE001
         pass
@@ -620,7 +620,7 @@ class LangChainVisionEngine:
     anything exposing a compatible ``.invoke([messages]) -> AIMessage``):
 
         from langchain_anthropic import ChatAnthropic
-        from funhouse_agent.deep.vision_engine import LangChainVisionEngine
+        from aec_agent_core.deep.vision_engine import LangChainVisionEngine
 
         engine = LangChainVisionEngine(ChatAnthropic(model="claude-sonnet-4-6"))
         text = engine.analyze_image(png_bytes, "Read Kp off this chart.")
@@ -682,7 +682,7 @@ class LangChainVisionEngine:
         """What this model really is and what images it really takes —
         measured once per process by :mod:`funhouse_agent.vision_probe`
         (``None`` when probing is switched off)."""
-        from funhouse_agent import vision_probe
+        from aec_agent_core import vision_probe
         return vision_probe.profile_for(self._model)
 
     def analyze_image(
@@ -715,7 +715,7 @@ class LangChainVisionEngine:
         """
         from langchain_core.messages import HumanMessage
 
-        from funhouse_agent import vision_view
+        from aec_agent_core import vision_view
 
         if isinstance(image_input, (bytes, bytearray)):
             data = bytes(image_input)
@@ -736,7 +736,7 @@ class LangChainVisionEngine:
         # A failed probe's fallback budget, on this call's record in
         # activity.jsonl (DR-36). Read from the cache only: never a probe
         # that the call would not have made anyway.
-        from funhouse_agent import vision_probe
+        from aec_agent_core import vision_probe
         fallback = vision_view.probe_fallback_note(
             vision_probe.cached_profile(self._model))
         if fallback:

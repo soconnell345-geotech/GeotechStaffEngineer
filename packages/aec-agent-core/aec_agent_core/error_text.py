@@ -61,7 +61,7 @@ def scrub_paths(text: Any) -> str:
     if not s:
         return s
     try:
-        from funhouse_agent._fileio import hide_working_folder
+        from aec_agent_core._fileio import hide_working_folder
         hidden = hide_working_folder(s)
         if isinstance(hidden, str):
             s = hidden

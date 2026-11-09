@@ -449,7 +449,7 @@ class PathRefused(FileNotFoundError):
 
 def _host_folder() -> Optional[str]:
     """The working folder a host bound for this turn, or ``None``."""
-    from funhouse_agent._fileio import host_output_dir
+    from aec_agent_core._fileio import host_output_dir
     return host_output_dir()
 
 
@@ -505,7 +505,7 @@ def _extra_read_roots() -> List[str]:
     Databricks data folders on Databricks, and :data:`EXTRA_READ_ROOTS_ENV`."""
     roots: List[str] = []
     try:
-        from funhouse_agent._fileio import is_databricks
+        from aec_agent_core._fileio import is_databricks
         if is_databricks():
             roots += list(DATABRICKS_READ_ROOTS)
     except Exception:  # noqa: BLE001
@@ -629,7 +629,7 @@ def find_readable_file(name) -> Optional[str]:
         p = os.path.expanduser(s)
         if os.path.isfile(p):
             return os.path.abspath(p)
-        from funhouse_agent._fileio import find_in_working_folder
+        from aec_agent_core._fileio import find_in_working_folder
         return find_in_working_folder(p)
     cand = confine_read_path(s)
     if os.path.isfile(cand):
@@ -753,7 +753,7 @@ def _real_path_for(path: str) -> str:
     p = os.path.expanduser(path)
     if os.path.exists(p) or os.path.isabs(p):
         return os.path.abspath(p)
-    from funhouse_agent._fileio import find_in_working_folder
+    from aec_agent_core._fileio import find_in_working_folder
     return find_in_working_folder(p) or os.path.abspath(p)
 
 
@@ -1357,7 +1357,7 @@ def _vision_setup(engine) -> Dict[str, Any]:
             break
     setup: Dict[str, Any] = {"engine": type(engine).__name__, "model": name}
     try:
-        from funhouse_agent import vision_view
+        from aec_agent_core import vision_view
         setup.update(budget=vision_view.budget_name(engine),
                      detail=vision_view.detail(engine),
                      max_px=vision_view.max_px(engine),
@@ -1376,7 +1376,7 @@ def _repeat_key(tool, data, normalized, arguments, engine):
     if arguments.get("_inline"):
         return None
     try:
-        from funhouse_agent.deep.vision_engine import conversation_key
+        from aec_agent_core.deep.vision_engine import conversation_key
         conv = conversation_key()
     except Exception:  # noqa: BLE001
         return None
@@ -1528,7 +1528,7 @@ def _conversation_for(folder=None) -> str:
         except (OSError, ValueError):
             return str(folder)
     try:
-        from funhouse_agent.deep.vision_engine import conversation_key
+        from aec_agent_core.deep.vision_engine import conversation_key
         return conversation_key()
     except Exception:  # noqa: BLE001
         return ""
@@ -2233,8 +2233,8 @@ def ask_vision(engine, image, prompt, kind, where=None):
     turn_question.QUESTION_KINDS`) is also handed the turn's own user
     question, as context under the main model's prompt (DR-37); its record
     says how long (``user_question_chars``)."""
-    from funhouse_agent import turn_question
-    from funhouse_agent.deep.vision_engine import side_call
+    from aec_agent_core import turn_question
+    from aec_agent_core.deep.vision_engine import side_call
     cap = vision_output_cap(kind)
     asked = turn_question.with_question(prompt, kind)
     label = dict(where or {})
@@ -2400,7 +2400,7 @@ def _image_for_vision(data: bytes, name: str, engine=None, tools=None):
             im = im.convert("RGBA" if im.mode in ("P", "PA") else "RGB")
         cap = None
         try:
-            from funhouse_agent import vision_view
+            from aec_agent_core import vision_view
             cap = vision_view.max_px(engine)
         except Exception:  # noqa: BLE001
             cap = None
@@ -2431,7 +2431,7 @@ def _open_image(data, name, tools=None):
         return None, json.dumps({"error": _not_an_image_message(
             data, str(name or ""), tools)})
     try:
-        from funhouse_agent import image_view
+        from aec_agent_core import image_view
         return image_view.open_picture(data, kind), None
     except ImportError:                          # pragma: no cover - env
         return None, None
@@ -2522,7 +2522,7 @@ def _image_tile_count(tiles, picture, engine) -> int:
     :func:`_parse_tiles`): ``auto`` tiles only under the robust policy and
     only an image that reaches the model shrunk
     (:func:`image_view.tile_count`)."""
-    from funhouse_agent import image_view, vision_view
+    from aec_agent_core import image_view, vision_view
     if tiles == "off":
         return 1
     if tiles == "auto":
@@ -2537,7 +2537,7 @@ def _read_image(picture, data, prompt, tiles, tiles_note, turn_arg, engine):
     image (shrunk to fit when it must) and, when it reaches the model
     shrunk, its tiles cut from the original, read together as a page and
     its tiles are."""
-    from funhouse_agent import image_view, vision_view
+    from aec_agent_core import image_view, vision_view
     allow_jpeg = getattr(engine, "accepts_jpeg", False)
 
     try:
@@ -2656,7 +2656,7 @@ def _image_tile_jobs(picture, n, prompt, engine, turn_arg=None):
     budget holds it), reads it and returns its row (an ``error`` row, naming
     why in plain words, when it could not). Turned as the agent asked
     (``turn_arg``)."""
-    from funhouse_agent import image_view
+    from aec_agent_core import image_view
     boxes = image_view.tile_boxes(picture, n)
     allow_jpeg = getattr(engine, "accepts_jpeg", False)
 
@@ -2703,7 +2703,7 @@ def _render_image_region(arguments, engine, data, key, *, bbox, window,
     cut from the ORIGINAL at full resolution, enlarged by whole times to
     fill the vision budget (at most :data:`image_view.MAX_UPSCALE`), turned
     when asked, and read as a page zoom is. ``page`` is not used."""
-    from funhouse_agent import image_view
+    from aec_agent_core import image_view
     picture, refusal = _open_image(data, key)
     if refusal is not None:
         return refusal
@@ -2768,7 +2768,7 @@ def _render_image_region(arguments, engine, data, key, *, bbox, window,
     if inline:
         # The main model looks itself (the minimal build): the crop is
         # shown at its next call, labelled with its view on the image.
-        from funhouse_agent import inline_store
+        from aec_agent_core import inline_store
         name = _document_name(key)
         image_id = inline_store.put(image_bytes, {
             "label": f"zoom on the image {name}, view {clip} in its own "
@@ -2859,7 +2859,7 @@ def _dispatch_render_region(arguments, engine, attachments):
     pixels, and the window is cut from the original image
     (:func:`_render_image_region`).
     """
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
 
     key = arguments.get("attachment_key", "")
     bbox = arguments.get("bbox")
@@ -3023,7 +3023,7 @@ def _widen_window(window, pad_frac, layer):
     by ``pad_frac``, held to the page), widened by
     :func:`vision_view.widen_to_lines` — to render with no further padding.
     ``None`` when nothing was taken in (the window is drawn as before)."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     if window is None or layer is None:
         return None
     try:
@@ -3048,7 +3048,7 @@ def _say_how_far_from_the_aim(out, source_view, aim_box,
     Foundry brief 4 a window aimed at a look-alike was answered about a tag
     98 pt away, which was then ringed twice. ``unit`` is the view's (``pt``
     on a page, ``px`` on an image file)."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     try:
         ax = (float(aim_box[0]) + float(aim_box[2])) / 2.0
         ay = (float(aim_box[1]) + float(aim_box[3])) / 2.0
@@ -3125,7 +3125,7 @@ def _merge_found(out, what: str = "page") -> None:
     the agent worked from the page's list and the tag was never ringed (two
     runs of three on one model, one on the other). The same happened to a
     note the page answer did not name."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     whole, key, box_words = _FOUND_WORDS.get(what, _FOUND_WORDS["page"])
     page_view = out.get("view")
     if not page_view or not out.get("tiles"):
@@ -3219,7 +3219,7 @@ def _sent_turn(info) -> int:
 def _cut_note(info, layer) -> Optional[str]:
     """What the vision call is told about the text-layer lines its image's
     edges cut (VIS-04), or ``None``."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     if layer is None:
         return None
     try:
@@ -3319,7 +3319,7 @@ def _vision_prompt(prompt, size=None, shape=None, turn=0, cut=None) -> str:
     size the old 0-999 grid. ``turn``: the image goes turned that many
     degrees clockwise, ``size`` as sent (the instruction does not depend on
     it)."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     parts = [prompt]
     if shape:
         parts.append(shape)
@@ -3338,7 +3338,7 @@ def _finish_answer(out, info, note: bool = True,
     ``tagged_only`` (chart read-offs) converts only boxes tagged ``px=``;
     ``what`` names the thing looked at in that line (``image`` for an image
     file)."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     size, turn = _sent_size(info), _sent_turn(info)
     if not size or not isinstance(out.get("analysis"), str):
         return
@@ -3382,7 +3382,7 @@ INLINE_NOTE = (
 
 
 def _in_view() -> str:
-    from funhouse_agent import inline_store
+    from aec_agent_core import inline_store
     keep = inline_store.keep_from_env()
     return ("while it is the newest view" if keep == 1 else
             f"while it is among the newest {keep} views")
@@ -3398,7 +3398,7 @@ def _inline_result(image_bytes, info, page, engine, bbox=None):
     (the minimal build): no one-shot vision call — the image is
     stored and shown to the model at its next call
     (:mod:`funhouse_agent.deep.inline_images`)."""
-    from funhouse_agent import inline_store, vision_view
+    from aec_agent_core import inline_store, vision_view
     image_id = inline_store.put(image_bytes, {
         "page": page, "pdf_page": _pdf_page(page).get("pdf_page"),
         "view": [round(float(v), 1) for v in info["clip"]]})
@@ -3434,7 +3434,7 @@ def _inline_image_file_result(data, path):
     the model's next call, as :func:`_inline_result` does for a page. ``None``
     (keep the vision call) for bytes that are not a PNG, JPEG, GIF or WebP
     image, or that are too large to send."""
-    from funhouse_agent import inline_store, vision_view
+    from aec_agent_core import inline_store, vision_view
     data = bytes(data or b"")
     if not data or len(data) > INLINE_IMAGE_MAX_BYTES:
         return None
@@ -3489,7 +3489,7 @@ class _Failed:
 def _vision_error(exc) -> str:
     """Why a vision call gave no reading, in plain words (a busy model is
     said to be busy, not dumped as the SDK's error text)."""
-    from funhouse_agent.deep.vision_engine import describe_error
+    from aec_agent_core.deep.vision_engine import describe_error
     try:
         return describe_error(exc)
     except Exception:  # noqa: BLE001
@@ -3645,7 +3645,7 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     # (VIS-01), or as the agent's ``turn`` asks. Inline, the main model writes
     # image_box itself on the image it is shown, so that image goes as the
     # page shows it.
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     inline = bool(arguments.get("_inline"))
     layer = None if inline else vision_view.page_text_layer(pdf_bytes, page)
 
@@ -3788,7 +3788,7 @@ def _parse_tiles(tiles):
     argument: value is ``"auto"``, ``"off"`` or N (2-4); ``note`` says when
     N was held to the maximum; ``error`` names what is accepted when the
     value means nothing (it used to be read silently as no tiles)."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     top = vision_view.MAX_TILES_PER_SIDE
     if tiles is None or tiles is True:
         return "auto", None, None
@@ -3822,7 +3822,7 @@ def _parse_tiles(tiles):
 def _tile_count(tiles, info) -> int:
     """Tiles per side for a parsed ``tiles`` value (``_parse_tiles``); a raw
     argument is parsed here too, and one that means nothing is 1."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     if tiles not in ("auto", "off") and not isinstance(tiles, int):
         tiles, _note, error = _parse_tiles(tiles)
         if error:
@@ -3896,7 +3896,7 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
     (``layer``: the page's text layer, read once for all the tiles), as is
     every tile when the agent asked for a ``turn_arg``. The call is told
     which lines the tile's edges cut."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     boxes = vision_view.tile_boxes(info["clip"], n)
 
     def one(k):
@@ -4006,7 +4006,7 @@ _READ_OFF_NOTE_WITH_CODE = (
 def _dispatch_view_worked_example(arguments, engine):
     """Chart read-off: rendered and sent at the chart budget
     (``vision_view.chart_reading``) — see ``_dispatch_view_worked_example_at_budget``."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     with vision_view.chart_reading():
         return _dispatch_view_worked_example_at_budget(arguments, engine)
 
@@ -4059,7 +4059,7 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     try:
         image_bytes, info = vision_view.render_view(
             str(pdf_abs), page=page_1b - 1,
@@ -4109,7 +4109,7 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
 def _dispatch_read_reference_figure(arguments, engine):
     """Chart read-off: rendered and sent at the chart budget
     (``vision_view.chart_reading``) — see ``_dispatch_read_reference_figure_at_budget``."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     with vision_view.chart_reading():
         return _dispatch_read_reference_figure_at_budget(arguments, engine)
 
@@ -4147,7 +4147,7 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
 
     # Render the page at the vision model's image budget: the largest image
     # it reads without shrinking, so curves and axis labels stay legible.
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     try:
         image_bytes, info = vision_view.render_view(
             str(pdf_abs), page=page_idx,
@@ -4277,7 +4277,7 @@ def _dispatch_write_docx(arguments, save_fn):
     # Relative image paths resolve against the working folder, which is where
     # plot_data, render_figures and save_file have already put the agent's own
     # figures — so `![](profile.png)` finds the PNG written minutes earlier.
-    from funhouse_agent._fileio import default_output_dir
+    from aec_agent_core._fileio import default_output_dir
     base_dir = default_output_dir() or os.path.dirname(os.path.abspath(path))
 
     import base64
@@ -4328,7 +4328,7 @@ def _dispatch_save_file(arguments, save_fn):
         except Exception as e:
             return json.dumps({"error": f"Invalid base64 content: {e}"})
 
-    from funhouse_agent._fileio import (
+    from aec_agent_core._fileio import (
         into_working_folder, rescue_write, workspace_write_hint,
         written_file_problem, workspace_api_upload, _is_workspace_path,
     )

@@ -656,7 +656,7 @@ def write_plotly_sidecar(output_path, figure_json):
         return None
     import os as _os
     try:
-        from funhouse_agent._fileio import save_verified
+        from aec_agent_core._fileio import save_verified
         sidecar = _os.path.splitext(str(output_path))[0] + ".plotly.json"
         saved = save_verified(sidecar, figure_json)
     except Exception:                                      # noqa: BLE001

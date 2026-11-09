@@ -25,10 +25,10 @@ from typing import Any, List, Optional
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage, ToolMessage
 
-from funhouse_agent import inline_store
+from aec_agent_core import inline_store
 # Newest images shown at each call, and its setting: defined beside the
 # store so the tools' notes can say how long an image stays in view.
-from funhouse_agent.inline_store import (  # noqa: F401 - re-exported
+from aec_agent_core.inline_store import (  # noqa: F401 - re-exported
     DEFAULT_KEEP, KEEP_ENV, keep_from_env)
 
 _ID = re.compile(r'"image_id"\s*:\s*"(img_[0-9a-f]+)"')
@@ -64,7 +64,7 @@ def newest_image_ids(messages, keep: int = DEFAULT_KEEP) -> List[str]:
 def image_message(ids: List[str], detail: Optional[str] = None) -> HumanMessage:
     """One user message carrying the images ``ids``, each labelled with where
     it came from so the model can refer to it."""
-    from funhouse_agent import vision_view
+    from aec_agent_core import vision_view
     blocks: List[dict] = [{
         "type": "text",
         "text": ("[Images returned by your last page/region views, newest "
@@ -106,7 +106,7 @@ class InlineImageMiddleware(AgentMiddleware):
         ids = newest_image_ids(request.messages, self.keep)
         if not ids:
             return request
-        from funhouse_agent import vision_view
+        from aec_agent_core import vision_view
         msg = image_message(ids, detail=vision_view.detail(self.engine))
         return request.override(messages=[*request.messages, msg])
 
@@ -132,7 +132,7 @@ def probe(model) -> dict:
 
     Run it once per deployment before trusting the ``inline`` arm::
 
-        from funhouse_agent.deep.inline_images import probe
+        from aec_agent_core.deep.inline_images import probe
         probe(PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high"))
 
     Returns ``{"ok", "answer", "error"}``; ``ok`` means the reply names the

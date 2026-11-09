@@ -11,7 +11,7 @@ in ``funhouse_agent.agent._ask_native``.
 
 Construct it in a Databricks notebook with an already-initialized PrompterAPI::
 
-    from funhouse_agent.deep.databricks_bridge import PrompterChatModel
+    from aec_agent_core.deep.databricks_bridge import PrompterChatModel
     from funhouse_agent.deep.agent import build_deep_agent
 
     model = PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high")

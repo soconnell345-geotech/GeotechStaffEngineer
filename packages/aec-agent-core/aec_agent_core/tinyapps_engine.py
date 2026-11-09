@@ -80,7 +80,7 @@ import ssl
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from webapp.engine_config import EngineUnavailable
+from aec_agent_core.engine_config import EngineUnavailable
 from webapp.tinyapps_settings import get_setting
 
 log = logging.getLogger(__name__)
@@ -180,7 +180,7 @@ def no_retry_when_budget_spent(response) -> None:
             body = response.json()
         except Exception:  # noqa: BLE001 - a body that is not JSON
             body = None
-        from funhouse_agent.error_text import budget_signal
+        from aec_agent_core.error_text import budget_signal
         if budget_signal(response.status_code, body,
                          response.text or "") is not None:
             response.headers["x-should-retry"] = "false"
@@ -567,9 +567,9 @@ def build_chat_model(model_id: Optional[str] = None, *,
     (:func:`webapp.http_trace.note_response`).
     """
     import openai
-    from webapp.engine_config import (_default_max_tokens,
+    from aec_agent_core.engine_config import (_default_max_tokens,
                                       sdk_http_client_classes)
-    from webapp.http_trace import note_response
+    from aec_agent_core.http_trace import note_response
     ChatOpenAI = _chat_openai_class()
 
     ps = prompter or settings()
@@ -636,7 +636,7 @@ def register() -> bool:
     ps = settings()
     if ps is None and not tester_keys_possible():
         return False
-    from webapp.engine_config import register_model_builder
+    from aec_agent_core.engine_config import register_model_builder
 
     def _build(model_id: Optional[str] = None, identity=None):
         return build_for(identity, model_id)
