@@ -248,7 +248,7 @@ Setup: add `palantir-models` and `language-model-service-api` in the workspace
 **Libraries** panel, then either list the name in the picker env —
 `GEOTECH_FOUNDRY_MODELS=GPT 5.1=GPT_5_1` — or type `GPT_5_1` into the sidebar
 "Model RID or API name" box. Full tool calling is supported (the v3 request
-carries OpenAI-style `tools`); wrapper: `webapp/palantir_sdk_engine.py`.
+carries OpenAI-style `tools`); wrapper: `packages/aec-agent-core/aec_agent_core/palantir_sdk_engine.py`.
 Images (since the release after 5.31.0): a call that carries an image goes
 through `OpenAiGptChatWithVisionLanguageModel` with
 `GptChatWithVisionCompletionRequest` / `MultiContentChatMessage` /
@@ -296,7 +296,7 @@ main()
 
 Each call then goes through `AnthropicClaudeLanguageModel.get(<API name>)`
 and `create_chat_completion(ClaudeChatCompletionRequest, max_rate_limit_retries=4)`
-(wrapper: `PalantirClaudeChatModel` in `webapp/palantir_sdk_engine.py`): no
+(wrapper: `PalantirClaudeChatModel` in `packages/aec-agent-core/aec_agent_core/palantir_sdk_engine.py`): no
 token, no proxy address. Text and tool calls come back as the agent expects,
 tool results go back as `tool_result` blocks, page images go as base64 PNG or
 JPEG. No request asks for thinking; if a reply carries thinking blocks anyway,
