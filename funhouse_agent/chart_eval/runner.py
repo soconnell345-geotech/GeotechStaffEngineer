@@ -3,8 +3,10 @@
 The notebook entry point is :func:`score_chart_suite`. It mirrors the review
 suite's (:func:`funhouse_agent.review_eval.score_review_suite`): one folder
 per run with its whole record, resumable (a finished run is never asked
-again; a failed one is retried), ``RESULTS.md`` and ``results.json``
-rewritten after every run, and an optional durable copy of the output.
+again; a failed one is retried, its files moved to
+``earlier_attempts/NN/`` in the run's folder), ``RESULTS.md`` and
+``results.json`` rewritten after every run, and an optional durable copy of
+the output.
 
 Arms (see :mod:`funhouse_agent.chart_eval.arms`): ``none``, ``zoom``,
 ``zoom_code`` call the model directly; ``page:<arm>`` asks the app's
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import threading
 import time
@@ -119,14 +122,42 @@ def run_page(model: Any, task: ChartTask, run_dir: str, env: Dict[str, str],
 # One run
 # ---------------------------------------------------------------------------
 
+#: Where an earlier attempt's files go when a run is asked again.
+EARLIER = "earlier_attempts"
+
+
+def _set_aside(run_dir: str) -> Optional[str]:
+    """Move what an earlier attempt left in ``run_dir`` (a failed run, a run
+    stopped part way, or with ``redo`` a finished one) into
+    ``earlier_attempts/NN/``, so the run's folder holds only what this
+    attempt showed; that folder relative to ``run_dir``, or ``None`` when
+    there was nothing."""
+    if not os.path.isdir(run_dir):
+        return None
+    left = [e for e in os.listdir(run_dir) if e != EARLIER]
+    if not left:
+        return None
+    base = os.path.join(run_dir, EARLIER)
+    os.makedirs(base, exist_ok=True)
+    taken = [int(d) for d in os.listdir(base) if d.isdigit()]
+    dest = os.path.join(base, f"{max(taken, default=0) + 1:02d}")
+    os.makedirs(dest)
+    for entry in left:
+        shutil.move(os.path.join(run_dir, entry), os.path.join(dest, entry))
+    return os.path.relpath(dest, run_dir).replace(os.sep, "/")
+
+
 def _run_one(kind: str, arm: str, env: Dict[str, str], model: Any,
              task: ChartTask, run_dir: str, opts: Dict[str, Any]
              ) -> Dict[str, Any]:
+    earlier = _set_aside(run_dir)
     os.makedirs(run_dir, exist_ok=True)
     res: Dict[str, Any] = {
         "task": task.id, "arm": arm, "kind": kind, "domain": task.domain,
         "started": datetime.now().isoformat(timespec="seconds"),
         "error": None}
+    if earlier:
+        res["earlier_attempt"] = earlier
     t0 = time.monotonic()
     try:
         if kind == "direct":

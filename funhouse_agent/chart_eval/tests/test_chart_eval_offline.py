@@ -468,6 +468,31 @@ def test_a_failed_run_is_retried_and_never_graded(tmp_path):
     assert res["results"]["none"]["t0"]["correct"] is True
 
 
+def test_a_retry_moves_the_failed_attempt_aside(tmp_path):
+    root = make_data(tmp_path, n=1)
+    zoom = [{"name": "zoom", "id": "z1",
+             "args": {"x1": 0, "y1": 0, "x2": 100, "y2": 100}}]
+    failing = scripted(lambda m, n: ai("", zoom) if n == 1
+                       else ValueError("proxy said no"))
+    out = tmp_path / "out"
+    score_chart_suite(failing, judge_model=judge_fake(), data_dir=root,
+                      out_dir=out, arms=("zoom",), verbose=False)
+    run = out / "runs" / "zoom" / "t0"
+    assert sorted(os.listdir(run / "images")) == ["01_chart.png",
+                                                  "02_zoom.jpg"]
+    res = score_chart_suite(scripted(lambda m, n: ai("It is 42")),
+                            judge_model=judge_fake(), data_dir=root,
+                            out_dir=out, arms=("zoom",), verbose=False)
+    again = res["results"]["zoom"]["t0"]
+    assert again["correct"] is True
+    assert again["earlier_attempt"] == "earlier_attempts/01"
+    assert os.listdir(run / "images") == ["01_chart.png"]   # this attempt's
+    earlier = run / "earlier_attempts" / "01"
+    assert "02_zoom.jpg" in os.listdir(earlier / "images")
+    assert "proxy said no" in json.loads(
+        (earlier / "run.json").read_text(encoding="utf-8"))["error"]
+
+
 def test_repeats_and_dry_run(tmp_path):
     root = make_data(tmp_path, n=1)
     out = tmp_path / "out"
