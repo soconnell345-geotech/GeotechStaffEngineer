@@ -214,22 +214,14 @@ def test_the_log_is_read_again_as_it_grows(tmp_path):
         == "opened"
 
 
-def test_the_coverage_ledger_and_the_vision_reads_count(tmp_path):
+def test_the_vision_reads_count(tmp_path):
     conv = _conv(tmp_path)
-    (conv / "coverage.json").write_text(json.dumps({"documents": {
-        "sha1:x": {"name": "report.pdf", "source": "report.pdf",
-                   "inventory": {"n_pages": 10},
-                   "reads": {"4": {"how": ["text"]},
-                             "5": {"how": ["text_empty"]}}}}}),
-        encoding="utf-8")
     (conv / "reads.json").write_text(json.dumps({"reads": [
         {"document": "report.pdf", "page": 7, "tool": "analyze_pdf_page"}]}),
         encoding="utf-8")
     opened = cp.pages_opened(str(conv), folder=str(conv / "files"))
-    assert opened.knows_text
-    assert {"coverage ledger", "vision reads"} <= set(opened.records)
-    assert opened.status(4) == "opened"
-    assert opened.status(5) == "text_empty"
+    assert "vision reads" in opened.records
+    assert "coverage ledger" not in opened.records      # removed in DR-40
     assert opened.status(7) == "opened"
 
 

@@ -375,13 +375,12 @@ def test_parallel_writes_keep_every_record_whole(tmp_path):
     assert log.records_written == 80
 
 
-def test_the_coverage_gate_note_is_in_the_record(tmp_path):
+def test_an_unknown_custom_event_writes_nothing(tmp_path):
+    """The coverage gate's ``coverage_gate`` event went with the gate
+    (DR-40): like any event the log does not know, it writes nothing."""
     log = al.ActivityLogger(str(tmp_path), turn=3)
     log.on_custom_event("coverage_gate", {"note": "[Coverage check] read "
                                                    "pages 19-29"},
                         run_id=_u())
     log.on_custom_event("something_else", {"x": 1}, run_id=_u())
-    recs = al.load(str(tmp_path))
-    assert [r["event"] for r in recs] == ["coverage_gate"]
-    assert recs[0]["text"].startswith("[Coverage check]")
-    assert recs[0]["turn"] == 3
+    assert al.load(str(tmp_path)) == []

@@ -25,11 +25,14 @@ def test_an_old_ledger_call_says_what_it_reads_now(tmp_path):
     checks now read report ingest's record, so that call is refused by
     name rather than read as a path."""
     import pytest
-    from funhouse_agent.coverage import CoverageLedger
+
+    class CoverageLedger:
+        """A stand-in: the ledger itself was removed in DR-40."""
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         old = importlib.import_module("funhouse_agent.report_checklist")
-    ledger = CoverageLedger(path=str(tmp_path / "coverage.json"))
+    ledger = CoverageLedger()
     with pytest.raises(TypeError, match="CoverageLedger"):
         old.run_checklist(ledger, "doc")
     with pytest.raises(TypeError, match="record"):

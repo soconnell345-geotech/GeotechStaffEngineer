@@ -292,8 +292,8 @@ the eyes). What changed on master after 5.33.0, in short:
   laboratory tests, narrative answers, the reconciler's QA entries) instead
   of the coverage ledger, the PDF's text layer and `write_diggs`'
   cross-checks. `report_checklist(record)` is offered on the geotech page
-  only, behind `GEOTECH_REVIEW_CHECKLIST` (OFF); the coverage gate no longer
-  adds failed checks to its note. Report ingest itself is on the geotech
+  only, behind `GEOTECH_REVIEW_CHECKLIST` (OFF); the coverage gate that
+  once added failed checks to its note was removed in DR-40. Report ingest itself is on the geotech
   page behind `GEOTECH_REPORT_INGEST` (OFF; RI-35; the report library it
   fills is `GEOTECH_REPORT_LIBRARY` when set, RI-95): the record is written to
   `report_ingest/<file name>` in the conversation's folder and, with the
@@ -304,10 +304,8 @@ the eyes). What changed on master after 5.33.0, in short:
   `plot_data`, `search_document`, `render_page_thumbnails`
   (`review_agent.REVIEW_REWRITES`, phrase swaps),
   the figure helper's line in `task` (`REVIEW_HELPER_REWRITES`; its own
-  prompt and examples are the split plan's D8 (b)) and
-  `document_coverage` (`DOCUMENT_COVERAGE_DESCRIPTION_REVIEW`); there a
-  coverage task holds a turn only when declared (`CoverageLedger(
-  declared_only=True)`), not when some log or laboratory pages were read.
+  prompt and examples are the split plan's D8 (b)). (`document_coverage`,
+  with its own wording here, went with the coverage ledger in DR-40.)
   A guard (`deep/tests/test_review_page_vocabulary_offline.py`) keeps every
   prompt and tool description of the page's three builds, switches off and
   on, free of report words. The review suite's `report-extract-all` and
@@ -413,8 +411,8 @@ the eyes). What changed on master after 5.33.0, in short:
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
   `analyze_pdf_page` / `render_region`; boxes right on sideways sheets; a
   zoom that cuts lines of lettering widens to take them in or says which
-  edge cuts them; the turned re-read behind `GEOTECH_VISION_TURN_RETRY`
-  (OFF). The markup check keeps the agent correcting through checks 1-3,
+  edge cuts them (the turned re-read behind `GEOTECH_VISION_TURN_RETRY`
+  was removed in DR-40, never measured). The markup check keeps the agent correcting through checks 1-3,
   names unconfirmed marks at check 4, and returns `found_bbox` for a
   misplaced mark (DR-15, DR-16).
 - **The record** (`activity.jsonl`, EV-14): token use on the Prompter route,

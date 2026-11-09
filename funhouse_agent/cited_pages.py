@@ -30,14 +30,14 @@ WHAT "OPENED" MEANS. The record is the app's own, never the model's account
 (:func:`pages_opened`): every tool call of the primary and its helpers in the
 conversation's ``activity.jsonl`` (a page read as text by ``read_document`` /
 ``read_pdf_text`` / ``log_grid``, looked at by ``analyze_pdf_page`` /
-``render_region``, or asked about by ``sweep_pages``), the coverage ledger
-(``coverage.json``, with ``GEOTECH_COVERAGE`` on), the vision tools' read
-record (``reads.json``) and kept readings (``page_readings.json``). A page
+``render_region``, or asked about by ``sweep_pages`` in records from before
+DR-39), the vision tools' read record (``reads.json``) and kept readings
+(``page_readings.json``). A page
 reached only by a text tool that found no text layer was not read (there was
 nothing to read). A page named only in a search hit (``search_document``,
 ``find_quantities``...) is reported apart: the model saw a line of it, not
-the page. Without the activity log or the coverage ledger nothing knows the
-text reads, so nothing is checked and the result says so.
+the page. Without the activity log nothing knows the text reads, so nothing
+is checked and the result says so.
 
 CITATIONS. A citation that says PDF ("PDF page 24", "PDF pp. 108-119",
 "pdf_page 24", "PDF 133-134", "page 24 of the PDF") counts pages as a PDF
@@ -79,10 +79,9 @@ RETRY_STATUS = ("page check: the answer cites pages no tool opened; it is "
                 "being written again")
 
 ACTIVITY_FILE = "activity.jsonl"
-COVERAGE_FILE = "coverage.json"
 
-#: Tools whose results name the pages they READ or LOOKED AT (the coverage
-#: ledger's own list: :mod:`funhouse_agent.coverage`).
+#: Tools whose results name the pages they READ or LOOKED AT (the list
+#: :func:`funhouse_agent.coverage.pages_from_call` reads).
 TEXT_TOOLS = ("read_document", "read_pdf_text")
 LOOK_TOOLS = ("analyze_pdf_page", "render_region")
 SWEEP_TOOLS = ("sweep_pages",)
@@ -156,8 +155,8 @@ def _host_folder(folder=None) -> Optional[str]:
 
 
 def record_dir(folder=None) -> Optional[str]:
-    """The folder holding this conversation's ``activity.jsonl`` (or its
-    ``coverage.json``): the one the turn bound, else the one the working
+    """The folder holding this conversation's ``activity.jsonl``: the one
+    the turn bound, else the one the working
     folder sits in (the web app's ``<conversation>/files``, the review
     suite's ``<run>/files``), else the working folder itself. ``None`` when
     there is none."""
@@ -173,8 +172,7 @@ def record_dir(folder=None) -> Optional[str]:
         candidates.append(os.path.dirname(host.rstrip("\\/")))
     candidates.append(host)
     for c in candidates:
-        if os.path.isfile(os.path.join(c, ACTIVITY_FILE)) or \
-                os.path.isfile(os.path.join(c, COVERAGE_FILE)):
+        if os.path.isfile(os.path.join(c, ACTIVITY_FILE)):
             return c
     return None
 
@@ -226,10 +224,10 @@ class PagesOpened:
     sources: Dict[str, Set[str]] = field(default_factory=dict)
     #: document key -> page count, where a result said.
     n_pages: Dict[str, int] = field(default_factory=dict)
-    #: The records read ("activity log", "coverage ledger", ...).
+    #: The records read ("activity log", "vision reads", ...).
     records: List[str] = field(default_factory=list)
-    #: Whether a record of TEXT reads was found (the activity log or the
-    #: coverage ledger); without one nothing is checked.
+    #: Whether a record of TEXT reads was found (the activity log); without
+    #: one nothing is checked.
     knows_text: bool = False
     #: Page runs ``(first, last)``, 0-based, that a structure tool named
     #: (a segment, a run of one page kind, a work item): an answer naming
@@ -351,8 +349,8 @@ def _ref_of(args: dict, data: Optional[dict]) -> Tuple[str, str]:
 def _grid_pages(data: dict) -> List[int]:
     """A ``log_grid`` result that returned any of a log's content (rows,
     layers, samples, the header fields) read its pages, as far as a citation
-    is concerned (the coverage ledger, which asks whether a page was read
-    WHOLE, is stricter)."""
+    is concerned (:func:`funhouse_agent.coverage.pages_from_call`, which
+    asks whether a page was read WHOLE, is stricter)."""
     if any(data.get(k) for k in ("rows", "layers", "samples", "fields",
                                  "columns")):
         return _pages(data.get("pages"))
@@ -590,34 +588,6 @@ def _handle_name(handle: str) -> Optional[str]:
     return os.path.basename(str(got).replace("\\", "/")) if got else None
 
 
-def _from_coverage(path: str, out: PagesOpened) -> bool:
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        return False
-    docs = data.get("documents") if isinstance(data, dict) else None
-    if not isinstance(docs, dict):
-        return False
-    for d in docs.values():
-        if not isinstance(d, dict):
-            continue
-        shown = str(d.get("name") or d.get("source") or "")
-        key = doc_key(shown)
-        src = str(d.get("source") or "")
-        inv = d.get("inventory") or {}
-        if isinstance(inv, dict) and isinstance(inv.get("n_pages"), int):
-            out.n_pages.setdefault(key, inv["n_pages"])
-        for page, row in (d.get("reads") or {}).items():
-            try:
-                p = int(page)
-            except (TypeError, ValueError):
-                continue
-            for how in (row or {}).get("how") or []:
-                out.add(key, p, str(how), name=shown, source=src)
-    return True
-
-
 def _from_vision_records(folder, out: PagesOpened) -> List[str]:
     used = []
     try:
@@ -648,7 +618,7 @@ def pages_opened(record_folder: Optional[str] = None,
     """Every page any tool or helper reached in this conversation, from the
     app's records (never from what a model says it read).
 
-    ``record_folder`` holds ``activity.jsonl`` / ``coverage.json``
+    ``record_folder`` holds ``activity.jsonl``
     (:func:`record_dir` when ``None``); ``folder`` is the working folder the
     vision records are kept for (the one bound for the turn when ``None``).
     """
@@ -657,10 +627,6 @@ def pages_opened(record_folder: Optional[str] = None,
     if base:
         if _from_activity(os.path.join(base, ACTIVITY_FILE), out):
             out.records.append("activity log")
-            out.knows_text = True
-        cov = os.path.join(base, COVERAGE_FILE)
-        if os.path.isfile(cov) and _from_coverage(cov, out):
-            out.records.append("coverage ledger")
             out.knows_text = True
     out.records.extend(_from_vision_records(folder, out))
     return out

@@ -17,9 +17,8 @@ Where the text layer says which way the lettering runs, the view now goes to
 the model upright and its boxes come back turned; a zoom takes in whole the
 lines its edges cut, within a limit, and is told of the rest. Where there is
 no text layer (every sheet of the cases above), the agent may ask for a
-``turn``, and behind ``GEOTECH_VISION_TURN_RETRY`` (OFF) a look that finds
-its lettering turned is read again upright and a page found turned is sent
-turned.
+``turn``. (The switched re-read behind ``GEOTECH_VISION_TURN_RETRY`` was
+removed in BACKLOG DR-40: never measured.)
 
 The stand-in engines SEE: they find a red mark in the image they are sent
 and answer in its pixels, as the model is asked to. One of them also does
@@ -54,17 +53,12 @@ NOTE = "UNDERDRAIN PIPE SHALL BE 6 IN MIN AT 3 IN SPACING"
 def clean_env(monkeypatch):
     for env in (vision_view.BUDGET_ENV, vision_view.DETAIL_ENV,
                 vision_view.CHART_BUDGET_ENV, vision_view.MAX_PX_ENV,
-                vision_view.POLICY_ENV, vision_view.PATCH_ALIGN_ENV,
-                review_flags.VISION_TEXT_ENV,
-                review_flags.VISION_STRUCTURED_ENV,
-                review_flags.VISION_TURN_RETRY_ENV):
+                vision_view.POLICY_ENV):
         monkeypatch.delenv(env, raising=False)
     monkeypatch.setenv(vision_probe.PROBE_ENV, "0")
     vision_probe.clear_cache()
-    vision_tools.clear_turn_memory()
     yield
     vision_probe.clear_cache()
-    vision_tools.clear_turn_memory()
 
 
 def _sheet(text_rotate=0, page_rotate=0, n_lines=4, mark=MARK, text=NOTE,
@@ -387,37 +381,6 @@ def test_a_sideways_sheet_is_read_in_upright_tiles_whose_boxes_come_back():
                for f in out.get("found", []))
 
 
-def test_the_text_layer_and_located_items_use_the_turned_image(monkeypatch):
-    monkeypatch.setenv(review_flags.VISION_TEXT_ENV, "1")
-    monkeypatch.setenv(review_flags.VISION_STRUCTURED_ENV, "1")
-    pdf, shown = _sheet(text_rotate=90)
-
-    class Checks(Seer):
-        boxes = []
-
-        def analyze_image(self, image_bytes, prompt=""):
-            a = _pixels(image_bytes)
-            for m in re.finditer(r"px=\[(\d+), (\d+), (\d+), (\d+)\] UNDER",
-                                 prompt):
-                x0, y0, x1, y1 = (int(v) for v in m.groups())
-                Checks.boxes.append((x1 - x0, y1 - y0,
-                                     _black(a[y0:y1, x0:x1]).mean()))
-            b = _box(_red(a))
-            return ('The mark.\nLOCATED: [{"what": "mark", "px": '
-                    f'[{b[0]}, {b[1]}, {b[2]}, {b[3]}]' + '}]')
-
-    out = _page(pdf, Checks())
-    # each text line given to the call is a row ACROSS the image it got, and
-    # its box holds that line's ink
-    assert len(Checks.boxes) == 4
-    for w, h, ink in Checks.boxes:
-        assert w > 5 * h and ink > 0.05
-    (item,) = out["located"]
-    b = item["page_bbox"]
-    assert abs((b[0] + b[2]) / 2 - (shown[0] + shown[2]) / 2) < 1.0
-    assert abs((b[1] + b[3]) / 2 - (shown[1] + shown[3]) / 2) < 1.0
-
-
 def test_vis05_before_and_after_on_a_sideways_sheet(monkeypatch):
     """The brief-5 failure, measured on the fixture: a model that reads
     sideways lettering by turning the image gives its box in the turned
@@ -614,8 +577,7 @@ def test_a_window_narrow_enough_to_mark_from_stays_that_narrow():
 
 
 def test_a_prompt_puts_the_cut_note_before_the_location_sentence():
-    text = _vision_prompt("Q", [0, 0, 10, 10], None, (100, 100),
-                          shape="SHAPE", cut="CUT NOTE")
+    text = _vision_prompt("Q", (100, 100), shape="SHAPE", cut="CUT NOTE")
     assert text.index("Q") < text.index("SHAPE") < text.index("CUT NOTE") \
         < text.index("This image is")
 
@@ -711,11 +673,11 @@ def test_turn_is_offered_in_the_tools_own_descriptions_only():
         assert "TURNED" not in text
 
 
-# -- (b) GEOTECH_VISION_TURN_RETRY: found turned, read again upright ------------
+# -- (b) No second look: the agent's turn is the lever (DR-40) ---------------
 
 class SaysTurned(Seer):
-    """A model asked for the TURNED line: where the lettering (black lines)
-    in the image runs up it, it says so, and boxes the red mark either way."""
+    """A model that would say where the lettering (black lines) runs up the
+    image, if asked for the TURNED line, and boxes the red mark either way."""
 
     def analyze_image(self, image_bytes, prompt=""):
         answer = super().analyze_image(image_bytes, prompt)
@@ -728,148 +690,14 @@ class SaysTurned(Seer):
         return answer
 
 
-@pytest.fixture
-def retry_on(monkeypatch):
-    monkeypatch.setenv(review_flags.VISION_TURN_RETRY_ENV, "1")
-
-
-def test_the_switch_is_off_by_default_and_asks_nothing():
-    assert not review_flags.vision_turn_retry()
-    assert review_flags.VISION_TURN_RETRY_ENV in review_flags.ALL_ENVS
-    assert review_flags.ARMS["turn_retry"] == {
-        review_flags.VISION_TURN_RETRY_ENV: "1"}
+def test_a_look_at_turned_strokes_is_one_call_that_asks_nothing_more():
+    """BACKLOG DR-40: the switched re-read is gone; a sheet whose turned
+    lettering has no text layer is looked at once, as the page shows it."""
+    assert not hasattr(review_flags, "VISION_TURN_RETRY_ENV")
+    assert "turn_retry" not in review_flags.ARMS
     pdf, _shown = _sheet(text_rotate=90, strokes=True)
     engine = SaysTurned()
     out = _page(pdf, engine)
     assert len(engine.prompts) == 1 and "turned" not in out
     assert vision_view.TURN_TAG_INSTRUCTION not in engine.prompts[0]
-
-
-def test_a_look_found_turned_is_read_again_upright(retry_on):
-    pdf, shown = _sheet(text_rotate=90, strokes=True)
-    engine = SaysTurned()
-    out = _page(pdf, engine)
-    assert len(engine.prompts) == 2
-    assert vision_view.TURN_TAG_INSTRUCTION in engine.prompts[0]
-    assert vision_view.TURN_TAG_INSTRUCTION not in engine.prompts[1]
-    first, second = (_pixels(i).shape for i in engine.images)
-    assert first[0] > first[1] and second[1] > second[0]   # then sent across
-    assert "TURNED" not in out["analysis"]
-    assert "second reading" in out["turned"]
-    assert _centre_error(out["view"], _grid_box(out["analysis"]), shown) < 1.0
-
-
-def test_a_zoom_found_turned_is_read_again_upright(retry_on):
-    pdf, shown = _sheet(text_rotate=90, strokes=True,
-                        mark=(120.0, 600.0, 150.0, 612.0))
-    engine = SaysTurned()
-    out = _zoom(pdf, engine, bbox=[60, 440, 200, 720], pad_frac=0)
-    assert len(engine.prompts) == 2 and "second reading" in out["turned"]
-    assert _centre_error(out["view"], _grid_box(out["analysis"]), shown) < 0.5
-
-
-def test_a_page_found_turned_is_sent_turned_later(retry_on):
-    """Two looks found the page turned, the page look among them: the next
-    zoom goes turned from the start, in one call."""
-    pdf, shown = _sheet(text_rotate=90, strokes=True,
-                        mark=(120.0, 600.0, 150.0, 612.0))
-    _page(pdf, SaysTurned())
-    assert vision_tools.remembered_turn(pdf, 0) == 0     # one look is not two
-    _zoom(pdf, SaysTurned(), bbox=[60, 440, 200, 720], pad_frac=0)
-    assert vision_tools.remembered_turn(pdf, 0) == 90
-    engine = SaysTurned()
-    out = _zoom(pdf, engine, bbox=[80, 500, 180, 650], pad_frac=0)
-    assert len(engine.prompts) == 1
-    assert vision_view.TURN_TAG_INSTRUCTION not in engine.prompts[0]
-    assert "earlier looks at this page" in out["turned"]
-    assert _centre_error(out["view"], _grid_box(out["analysis"]), shown) < 0.5
-    # another page of the same file is its own page
-    assert vision_tools.remembered_turn(pdf, 1) == 0
-
-
-def test_zooms_on_a_few_turned_tags_do_not_turn_an_upright_page(retry_on):
-    """An upright sheet with one turned group: zooms on the group are read
-    again upright, but the whole-page look outweighs them, so later looks
-    at the page still go as it shows."""
-    doc = pymupdf.open()
-    page = doc.new_page(width=612, height=792)
-    for i in range(4):
-        page.draw_line(pymupdf.Point(60, 450 + 14 * i),
-                       pymupdf.Point(300, 450 + 14 * i), color=(0, 0, 0), width=2)
-        page.draw_line(pymupdf.Point(450 + 14 * i, 340),
-                       pymupdf.Point(450 + 14 * i, 100), color=(0, 0, 0), width=2)
-    page.draw_rect(pymupdf.Rect(*MARK), color=(1, 0, 0), fill=(1, 0, 0))
-    pdf = doc.tobytes()
-    doc.close()
-    engine = SaysTurned()
-    _page(pdf, engine)
-    assert len(engine.prompts) == 1                       # read upright
-    for _ in range(2):
-        e = SaysTurned()
-        out = _zoom(pdf, e, bbox=[430, 80, 520, 360], pad_frac=0)
-        assert len(e.prompts) == 2 and "second reading" in out["turned"]
-    assert vision_tools.remembered_turn(pdf, 0) == 0
-    e = SaysTurned()
-    _zoom(pdf, e, bbox=[40, 430, 320, 510], pad_frac=0)
-    assert len(e.prompts) == 1
-    assert vision_view.TURN_TAG_INSTRUCTION in e.prompts[0]
-
-
-def test_tiles_found_turned_are_read_again(retry_on):
-    pdf, shown = _sheet(text_rotate=90, strokes=True,
-                        mark=(120.0, 600.0, 150.0, 612.0))
-    engine = SaysTurned()
-    out = _page(pdf, engine, tiles="2")
-    again = [t for t in out["tiles"] if t.get("turned")]
-    assert again and all(t["turned_why"].startswith("a first look")
-                         for t in again)
-    assert len(engine.prompts) == 5 + 1 + len(again)
-    for t in again:
-        assert "TURNED" not in t["analysis"]
-        if "[" in t["analysis"]:
-            assert _centre_error(t["view"], _grid_box(t["analysis"]),
-                                 shown) < 0.5
-
-
-def test_the_text_layer_decides_before_the_model_is_asked(retry_on):
-    upright, _s = _sheet(text_rotate=0)
-    engine = SaysTurned()
-    _page(upright, engine)
-    assert vision_view.TURN_TAG_INSTRUCTION not in engine.prompts[0]
-    turned, _s = _sheet(text_rotate=90)
-    engine = SaysTurned()
-    out = _page(turned, engine)
-    assert len(engine.prompts) == 1 and "text layer" in out["turned"]
-    assert vision_view.TURN_TAG_INSTRUCTION not in engine.prompts[0]
-    # nor when the agent asked for a turn itself
-    strokes, _s = _sheet(text_rotate=90, strokes=True)
-    engine = SaysTurned()
-    _zoom(strokes, engine, bbox=[60, 440, 200, 720], pad_frac=0, turn=0)
-    assert len(engine.prompts) == 1
-    assert vision_view.TURN_TAG_INSTRUCTION not in engine.prompts[0]
-
-
-def test_a_second_look_that_fails_leaves_the_first(retry_on):
-    pdf, _shown = _sheet(text_rotate=90, strokes=True)
-
-    class FailsSecond(SaysTurned):
-        def analyze_image(self, image_bytes, prompt=""):
-            if self.prompts:
-                raise RuntimeError("the endpoint went away")
-            return super().analyze_image(image_bytes, prompt)
-
-    out = _zoom(pdf, FailsSecond(), bbox=[60, 440, 200, 720], pad_frac=0)
-    assert "error" not in out
-    assert "reading it again upright failed" in out["turn_retry_failed"]
-    assert "TURNED" not in out["analysis"] and "turned" not in out
-
-
-@pytest.mark.parametrize("line,turn", [
-    ("TURNED: bottom-to-top", 90), ("**TURNED:** top to bottom.", 270),
-    ("- TURNED: upside-down", 180), ("Turned: reads upward", 90),
-    ("TURNED: left-to-right", None), ("TURNED: none", None)])
-def test_the_turned_line_is_read_and_dropped(line, turn):
-    text, got = vision_view.read_turn_tag(f"MARK [1, 2, 3, 4]\n{line}")
-    assert got == turn and text == "MARK [1, 2, 3, 4]"
-    assert vision_view.read_turn_tag("the sheet is turned") == \
-        ("the sheet is turned", None)
+    assert "turn_retry_failed" not in out

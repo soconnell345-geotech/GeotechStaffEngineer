@@ -134,41 +134,6 @@ def test_a_history_rewrite_is_not_taken_for_the_reply():
     assert not any(e["kind"] == "tool_result" for e in entries)
 
 
-def test_the_coverage_gate_still_holds_the_first_reply_back(monkeypatch):
-    from langchain_core.messages import HumanMessage, RemoveMessage
-    from funhouse_agent.coverage import GATE_PREFIX
-    draft = "Draft: LL 32."
-    whole = "LL 32, PL 20; laboratory sheets 3 of 14 read."
-    script = [
-        _tok("Reading the sheets."),
-        _model_update("Reading the sheets.", calls=["read_document"]),
-        _tools_update("read_document", "{}"),
-        _tok(draft),
-        _model_update(draft),
-        ("updates", {"CoverageGate.after_model": {"messages": [
-            RemoveMessage(id="draft-1"),
-            HumanMessage(content=f"{GATE_PREFIX} write your whole answer")]}}),
-        _tok(whole),
-        _model_update(whole),
-    ]
-    entries = _run(_ScriptedAgent(script))
-    assert entries[-1]["answer"] == whole
-    assert any(e["kind"] == "tool_call" and e["text"] == core.GATE_STATUS
-               for e in entries)
-
-
-def test_the_gate_with_nothing_after_it_keeps_the_held_back_reply():
-    from langchain_core.messages import HumanMessage
-    from funhouse_agent.coverage import GATE_PREFIX
-    draft = "Draft: LL 32."
-    script = [
-        _tok(draft), _model_update(draft),
-        ("updates", {"CoverageGate.after_model": {"messages": [
-            HumanMessage(content=f"{GATE_PREFIX} note")]}}),
-    ]
-    assert _run(_ScriptedAgent(script))[-1]["answer"] == draft
-
-
 def test_auto_continue_still_fires_on_the_final_message():
     first = "Ka is next. Let me get that Ka."
     second = "Ka = 0.33 (Rankine, phi 30)."

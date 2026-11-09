@@ -162,7 +162,6 @@ def build_review_page_agent(
     summarization_trigger=_AUTO_SUMMARIZATION_TRIGGER,
     summarization_keep=_DEFAULT_SUMMARIZATION_KEEP,
     working_dir: Optional[str] = None,
-    coverage_dir: Optional[str] = None,
     subagent_models: Optional[dict] = None,
     allowed_agents=(),
     reference_mode: str = "off",
@@ -267,14 +266,6 @@ def build_review_page_agent(
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
     if parts.get("calc_nudge"):
         system_prompt = system_prompt + "\n\n" + parts["calc_nudge"]
-    # Coverage in code (GEOTECH_COVERAGE, OFF by default): on this page only
-    # a declared coverage task holds a turn (BACKLOG RI-34).
-    from funhouse_agent.deep.coverage_tools import coverage_kit
-    coverage = coverage_kit(attachments=attachments, folder=coverage_dir,
-                            max_result_chars=max_result_chars,
-                            review_page=True)
-    if coverage.tools:
-        tools = list(tools) + list(coverage.tools)
     # Every primary tool refuses an argument it does not take, by name
     # (brief 5, N3). See funhouse_agent/deep/strict_args.py.
     from funhouse_agent.deep.strict_args import strict_tools
@@ -309,8 +300,8 @@ def build_review_page_agent(
                 for t in _fig["tools"]))
     subagents += list(parts.get("subagents_after_figure") or [])
     # The page's reading helper replaces deepagents' stock one, so it
-    # carries the reading rules (DR-02); appended here so the guards and the
-    # coverage recorder reach it like every other helper.
+    # carries the reading rules (DR-02); appended here so the guards reach
+    # it like every other helper.
     reader = _review_reader_subagent(tools)
     if reader is not None:
         subagents.append(reader)
@@ -321,23 +312,20 @@ def build_review_page_agent(
         call_scope=parts.get("call_scope"),
         note_types=parts.get("note_types") or (),
         unknown_tool_hint=parts.get("unknown_tool_hint"),
-        subagent_models=subagent_models, coverage=coverage)
+        subagent_models=subagent_models)
 
     # deepagents' scratch-filesystem tools see none of the user's files and
     # answered "not found" for them (wave 2b, F41): kept off this page's
     # menu and prompt. Then a model-call budget whose last call answers from
     # what was gathered, so a long turn ends with findings and what was not
-    # checked, never a GraphRecursionError (DR-03); with the coverage gate
-    # on, the gate already ends an ordinary turn with an answer.
+    # checked, never a GraphRecursionError (DR-03).
     page_middleware = [HideScratchFilesystem()]
-    page_budget = None
-    if not coverage.gate_on:
-        page_budget = review_page_budget()
-        if page_budget:
-            from funhouse_agent.deep.review_agent import EXHAUSTED, FINAL_NUDGE
-            page_middleware.append(ModelCallBudgetMiddleware(
-                page_budget, final_turn_nudge=FINAL_NUDGE,
-                exhausted_message=EXHAUSTED))
+    page_budget = review_page_budget()
+    if page_budget:
+        from funhouse_agent.deep.review_agent import EXHAUSTED, FINAL_NUDGE
+        page_middleware.append(ModelCallBudgetMiddleware(
+            page_budget, final_turn_nudge=FINAL_NUDGE,
+            exhausted_message=EXHAUSTED))
     create_kwargs = assembly.create_kwargs_for(
         kwargs, model=model, store=store, checkpointer=checkpointer,
         enable_memory=enable_memory,
@@ -347,7 +335,7 @@ def build_review_page_agent(
         summarization_keep=summarization_keep,
         figure_tasks=figure_tasks, allowed_agents=allowed,
         unknown_tool_hint=parts.get("unknown_tool_hint"),
-        page_middleware=page_middleware, coverage=coverage)
+        page_middleware=page_middleware)
     agent = assembly.compile_agent(
         create or assembly.create_deep_agent, model=model, tools=tools,
         system_prompt=system_prompt, subagents=subagents,
@@ -357,8 +345,7 @@ def build_review_page_agent(
         subagents=subagents, system_prompt=system_prompt,
         helper_models=helper_models, judgment_consult=False,
         min_recursion_limit=(REVIEW_PAGE_STEPS_PER_CALL * page_budget + 30
-                             if page_budget else None),
-        coverage=coverage)
+                             if page_budget else None))
 
 
 #: ``build_deep_agent`` arguments the page has nothing to act on (they ask

@@ -146,7 +146,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install "numpy==1.26.4"
-          pip install --no-deps -e packages/aec-agent-core -e . -e geotech-references/ "planlens>=0.14"
+          pip install --no-deps -e packages/aec-agent-core -e . -e geotech-references/ "planlens>=0.15"
           python constraints/foundry_requirements.py > foundry-requirements.txt
           pip install -r foundry-requirements.txt -c constraints/foundry-numpy126.txt
           pip install pytest pytest-xdist -c constraints/foundry-numpy126.txt

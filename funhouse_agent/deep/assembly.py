@@ -6,8 +6,7 @@ Review page) do the same way once each has its tools, its prompt and its
 helpers: the guards round every helper (the record of what it read, the
 busy-model ladder, the tool-error and output-limit guards, the
 scratch-filesystem guard), deepagents' general-purpose helper re-declared
-with the same guards and a budget, a helper's own model, the coverage
-recorders, the persistent ``/memories/`` backend and the summarizer, the
+with the same guards and a budget, a helper's own model, the persistent ``/memories/`` backend and the summarizer, the
 main agent's middleware chain, the compile (with the planning middleware
 attached where deepagents no longer adds it), and the build record a host
 reads off the compiled agent. Moved here from :mod:`funhouse_agent.deep.
@@ -263,12 +262,10 @@ def _join_prompts(*parts):
 def guard_helpers(subagents: list, tools, *, allowed_agents=None,
                   call_scope: Optional[dict] = None, note_types=(),
                   unknown_tool_hint: Optional[Callable] = None,
-                  subagent_models: Optional[dict] = None,
-                  coverage=None) -> dict:
+                  subagent_models: Optional[dict] = None) -> dict:
     """Put the guards on every helper of a build, in place, and add
     deepagents' general-purpose helper with the same guards where the build
-    has not re-declared it; give a helper its own model; put the coverage
-    recorders on. Returns the helpers on a model of their own (name ->
+    has not re-declared it; give a helper its own model. Returns the helpers on a model of their own (name ->
     model), for the build record.
 
     ``tools`` are the main agent's (a helper without "tools" has them).
@@ -380,13 +377,6 @@ def guard_helpers(subagents: list, tools, *, allowed_agents=None,
         helper_models[str(name)] = (
             chosen if isinstance(chosen, str)
             else engine_facts(chosen).get("model") or type(chosen).__name__)
-    if coverage is not None and coverage.on:
-        # Every helper's reads count: the field session's helper read page
-        # ranges the primary never saw (FINDINGS P3).
-        for spec in subagents:
-            rec = coverage.recorder(str(spec.get("name") or "subagent"))
-            if rec is not None and "runnable" not in spec:
-                spec["middleware"] = list(spec.get("middleware") or []) + [rec]
     return helper_models
 
 
@@ -402,11 +392,11 @@ def create_kwargs_for(kwargs: dict, *, model, store=None, checkpointer=None,
                       summarization_keep=_DEFAULT_SUMMARIZATION_KEEP,
                       figure_tasks=None, allowed_agents=None,
                       unknown_tool_hint: Optional[Callable] = None,
-                      page_middleware=(), coverage=None) -> dict:
+                      page_middleware=()) -> dict:
     """``create_deep_agent``'s keyword arguments for a build's main agent:
     ``kwargs`` (the caller's own), the persistent memory, and the
-    middleware chain. ``page_middleware`` is the page's own, between the
-    unknown-tool hint and the coverage gate (the review page hides the
+    middleware chain. ``page_middleware`` is the page's own, after the
+    unknown-tool hint (the review page hides the
     scratch filesystem and keeps its model-call budget there; the geotech
     page hides the shell and delete)."""
     # ----- Phase-3: persistent /memories/ backend + memory= source -----
@@ -462,8 +452,6 @@ def create_kwargs_for(kwargs: dict, *, model, store=None, checkpointer=None,
     if allowed_agents and unknown_tool_hint is not None:
         middleware.append(unknown_tool_hint(allowed_agents))
     middleware.extend(page_middleware or ())
-    if coverage is not None and coverage.on:
-        middleware.append(coverage.primary())
     # Last: a reply cut at the output-token limit is caught before anything
     # acts on it -- a cut tool call is not run, cut text is continued
     # (wave 2b, C5).
@@ -518,8 +506,7 @@ def compile_agent(create: Callable, *, model, tools, system_prompt,
 def record_build(agent, *, attachments, model, tools, subagents,
                  system_prompt, helper_models: dict,
                  judgment_consult: bool = False,
-                 min_recursion_limit: Optional[int] = None,
-                 coverage=None):
+                 min_recursion_limit: Optional[int] = None):
     """Set what a host reads off the compiled agent; returns it."""
     # Expose the shared attachments dict so a UI (DeepNotebookChat FileUpload)
     # can add files that reach the already-built tools. Best-effort: if the
@@ -558,20 +545,6 @@ def record_build(agent, *, attachments, model, tools, subagents,
             agent.geotech_min_recursion_limit = min_recursion_limit
     except Exception:
         pass
-    if coverage is not None and coverage.on:
-        try:
-            agent.geotech_coverage_ledger = coverage.ledger
-            if coverage.gate_on:
-                # An extraction turn may run to EXTRACTION_STEP_LIMIT (150,
-                # owner 2026-10-08); an ordinary turn still ends at the app's
-                # own cap, with an answer (CoverageGate's step allowance).
-                # The web app reads this in core.stream_turn.
-                from funhouse_agent.deep.coverage_tools import (
-                    EXTRACTION_STEP_LIMIT)
-                agent.geotech_extraction_recursion_limit = \
-                    EXTRACTION_STEP_LIMIT
-        except Exception:
-            pass
     return agent
 
 

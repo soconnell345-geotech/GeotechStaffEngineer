@@ -42,7 +42,7 @@ NEIGHBOUR = (712.0, 404.0, 734.0, 413.0)
 def clean_env(monkeypatch):
     for env in (vision_view.BUDGET_ENV, vision_view.DETAIL_ENV,
                 vision_view.CHART_BUDGET_ENV, vision_view.MAX_PX_ENV,
-                vision_view.POLICY_ENV, vision_view.PATCH_ALIGN_ENV):
+                vision_view.POLICY_ENV):
         monkeypatch.delenv(env, raising=False)
     monkeypatch.setenv(vision_probe.PROBE_ENV, "0")
     vision_probe.clear_cache()
@@ -300,47 +300,3 @@ def test_a_bracketed_reading_comes_with_a_closer_zoom_note():
     assert "reading_note" not in plain
     assert vision_view.bracketed_note("G[C/O]E") is not None
     assert vision_view.bracketed_note("box [10, 20, 30, 40]") is None
-
-
-# -- K: whole 32 px patches, behind a switch ----------------------------------------
-
-def test_patch_alignment_is_off_by_default(monkeypatch):
-    monkeypatch.setenv(vision_view.BUDGET_ENV, "openai-original")
-    data, info = vision_view.render_view(_sheet(TARGET), page=0)
-    assert "patch_aligned" not in info
-    assert (info["width_px"], info["height_px"]) == (2048, 1325)
-
-
-def test_patch_alignment_pads_to_whole_patches_and_keeps_boxes_exact(
-        monkeypatch):
-    """GPT-5.4's pixel boxes were stretched in y by the height rounded up to
-    whole 32 px patches (1344 / 1325). With the switch on, the image already
-    IS whole patches: white paper added at the right and bottom, the view
-    widened by exactly what it shows — a box converted with the size sent
-    lands where it did before."""
-    monkeypatch.setenv(vision_view.PATCH_ALIGN_ENV, "1")
-    monkeypatch.setenv(vision_view.BUDGET_ENV, "openai-original")
-    pdf = _sheet(TARGET)
-    out = json.loads(_dispatch_analyze_pdf_page(
-        {"attachment_key": "s", "page": 0, "prompt": "find", "tiles": "off"},
-        Sees(), {"s": pdf}))
-    assert out["view_px"] == [2048, 1344]
-    assert out["view"][3] == pytest.approx(792 * 1344 / 1325, abs=0.1)
-    boxes = [[int(v) for v in m] for m in re.findall(
-        r"\[(\d+), (\d+), (\d+), (\d+)\]", out["analysis"])]
-    page_box = vision_view.image_box_to_page(out["view"], boxes[0])
-    assert all(abs(a - b) < 1.5 for a, b in zip(page_box, TARGET))
-    # zooms are aligned too
-    zoom = json.loads(_dispatch_render_region(
-        {"attachment_key": "s", "page": 0, "bbox": [560, 370, 680, 450]},
-        Sees(), {"s": pdf}))
-    assert all(v % 32 == 0 for v in zoom["view_px"])
-
-
-def test_patch_alignment_leaves_an_aligned_or_over_cap_image_alone():
-    info = {"width_px": 64, "height_px": 32, "clip": [0, 0, 10, 5],
-            "format": "png"}
-    assert vision_view.align_to_patches(b"x", info) == (b"x", info)
-    info2 = {"width_px": 2000, "height_px": 1000, "clip": [0, 0, 10, 5],
-             "format": "png"}
-    assert vision_view.align_to_patches(b"x", info2, cap=2000) == (b"x", info2)

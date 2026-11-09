@@ -657,6 +657,10 @@ def make_vision_tools(
                                            reference_result_chars)
     # Resolved once per build: the newer tools depend on the installed planlens.
     document_names = set(_document_tools.document_tool_names())
+    # This build's host for planlens.review (BACKLOG PL-29 (b)): its look is
+    # this build's engine and its signer this build's markup_author, passed
+    # on every document call, so two conversations never share either.
+    review_host = _document_tools.host_for(engine, markup_author)
     # plot_data draws per figure name, for the redraw note.
     draws: Dict[str, int] = {}
 
@@ -669,9 +673,17 @@ def make_vision_tools(
                 _document_tools.dispatch_document_tool(
                     tool_name, arguments, attachments=attachments,
                     max_chars=_document_tools.budget_for_cap(reference_cap),
-                    cap=reference_cap or None),
+                    cap=reference_cap or None, host=review_host),
                 reference_cap,
             )
+        if tool_name == "find_like":
+            # planlens.review's find_like, each candidate read by this
+            # build's look.
+            cap = (0 if max_result_chars <= 0
+                   else max(DEFAULT_VISION_RESULT_CHARS, reference_cap))
+            return _truncate(
+                _document_tools.find_like(arguments, attachments,
+                                          host=review_host), cap)
         # read_pdf_text (and an added reference reader) are text-payload
         # reads and list_files can be a long directory dump: the content IS
         # the answer, so they get the larger reference budget.
@@ -1129,79 +1141,19 @@ def make_vision_tools(
         caught an agent signing "AI Draft Review" unasked, which dropped the
         reviewer's name from every comment. So there is no ``author``
         argument."""
-        from funhouse_agent import markup_check
-        from funhouse_agent._fileio import hide_working_folder
-        from funhouse_agent.error_text import tool_error
-        # A markup may give pdf_page (1-based) instead of page (live smoke
-        # 2c); converted once, so the check reads the same pages.
-        markups, problem = _document_tools.markups_with_pages(markups)
-        if problem is None:
-            # A remove object with a key other than id/text is refused here,
-            # before its words are matched (BACKLOG DR-32).
-            problem = _document_tools.remove_problem(remove)
-        if problem is not None:
-            return json.dumps(problem)
-        signer = markup_author or _document_tools.markup_author()
-        # Words in remove name a mark by its comment OR its label (E9): the
-        # ones naming exactly one mark become its id here; the rest are
-        # refused here, never guessed.
-        refused_here = []
-        if remove:
-            try:
-                final = _document_tools.markup_output_path(output_path,
-                                                           handle)
-                if os.path.isfile(final):
-                    with open(final, "rb") as fh:
-                        named, refused_here = \
-                            markup_check.name_marks_by_words(
-                                fh.read(), remove, signer)
-                    # Nothing left to take out: [""] still makes the copy
-                    # the base for any new marks (the remover skips an
-                    # empty entry).
-                    remove = named or [""]
-            except Exception:  # noqa: BLE001 - the remover's own matching stands
-                refused_here = []
-        try:
-            # An IMAGE's marks are in its own pixels, as its looks give them
-            # (VIS-26); None for a PDF.
-            image = _document_tools.image_of(handle, attachments)
-            result = _document_tools.write_marked_copy(
-                handle, markups, output_path, append, signer,
-                lambda args: _dispatch("annotate_document", args),
-                remove=remove, image=image)
-        except Exception as exc:  # noqa: BLE001 - a tool error, not the turn's
-            return json.dumps(hide_working_folder(
-                tool_error("annotate_document", exc)))
-        # The check opens the marked copy by its ABSOLUTE path; the model is
-        # handed the conversation-relative name, AFTER the check, so no
-        # server path reaches it (live smoke 2a, B9: the last A6 leak). The
-        # file tools resolve that name in the working folder.
-        if not isinstance(result, dict):
-            return json.dumps(hide_working_folder({"error": str(result)}))
-        if refused_here and "error" not in result:
-            result["not_removed"] = (list(result.get("not_removed") or [])
-                                     + refused_here)
-        out_pdf = result.get("output_path")
-        if out_pdf and os.path.isfile(out_pdf) and "error" not in result:
-            try:
-                markup_check.describe_copy(result, signer)
-            except Exception:  # noqa: BLE001 - planlens' own note stands
-                pass
-        if check and out_pdf and os.path.isfile(out_pdf) \
-                and "error" not in result:
-            try:
-                block = markup_check.check_marks(out_pdf, result,
-                                                 list(markups or []), engine)
-            except Exception as exc:  # noqa: BLE001 - the file is written either way
-                from funhouse_agent.error_text import error_line
-                block = {"error": "the placement check failed: "
-                                  + error_line(exc)}
-            if block is not None:
-                result["check"] = block
-        # An image's marks were taken in its own pixels: the frame said, and
-        # any box on a copy at another scale given back in pixels (VIS-26).
-        _document_tools.image_frame_result(result)
-        return json.dumps(hide_working_folder(result))
+        # planlens.review's annotate_document (BACKLOG PL-29 (b)): signed by
+        # this build's signer, every mark checked by its look -- none when
+        # the engine cannot see images (no check block, as before).
+        args: Dict[str, Any] = {"handle": handle, "output_path": output_path,
+                                "append": append, "check": check}
+        if markups is not None:
+            args["markups"] = markups
+        if remove is not None:
+            args["remove"] = remove
+        return _document_tools.annotate_document(
+            args, attachments,
+            max_chars=_document_tools.budget_for_cap(reference_cap),
+            host=_document_tools.checking_host(review_host, engine))
 
     def measure(source: str, page: Optional[int] = None, kind: str = "line",
                 bbox: Optional[list] = None, view: Optional[list] = None,
@@ -1214,7 +1166,7 @@ def make_vision_tools(
         scan's label values itself). ``page`` counts from 0 (default 0);
         ``pdf_page`` is the same, 1-based."""
         from funhouse_agent.measure_tool import run_measure
-        from funhouse_agent.page_numbers import resolve_page
+        from planlens.review.page_numbers import resolve_page
         page, problem = resolve_page(page, pdf_page)
         if problem is not None:
             return json.dumps(problem)

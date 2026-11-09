@@ -604,7 +604,7 @@ def mirror_skips_dir(rel_dir: str) -> bool:
 #: the turn's messages so far, ``webapp.turn_record.CHECKPOINT_NAME``) ...
 IN_FLIGHT_FILES = ("partial.json", "partial_messages.json")
 #: ... and the part files a write renames into place when it is complete
-#: (``.part``: SharePoint downloads, the coverage ledger, reference PDFs;
+#: (``.part``: SharePoint downloads, reference PDFs;
 #: ``.tmp``: the downloads ledger).
 IN_FLIGHT_SUFFIXES = (".part", ".tmp")
 
@@ -783,7 +783,7 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
 
     ``profile`` is the page (:mod:`webapp.page_profile`; default as
     :func:`_page_for`): the shell adds what every page's agent gets (the
-    file and email tools, the feedback tool, the coverage folder), runs the
+    file and email tools, the feedback tool), runs the
     page's ``on_build`` hook, and hands the rest to its ``agent_builder``
     (the geotech page adds its report library there, the review page its
     working folder; INF-31 step 7).
@@ -805,10 +805,6 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
     on_build = page.hook("on_build")
     if on_build is not None:
         on_build()
-    # The coverage ledger (GEOTECH_COVERAGE, off by default) lives in the
-    # conversation's folder beside activity.jsonl, so it outlives a rebuild
-    # of the agent and is mirrored with the conversation. Unused when off.
-    kw.setdefault("coverage_dir", os.path.dirname(os.path.abspath(temp_dir)))
     agent = page.hook("agent_builder")(
         model,
         attachments=attachments,
@@ -1009,43 +1005,6 @@ def _new_run_messages(chunk) -> list:
             if kind in ("ai", "assistant", "tool", "AIMessageChunk"):
                 out.append(msg)
     return out
-
-
-# --- The coverage gate's held-back reply (Foundry brief 5, CV2/N4) -----------
-# With GEOTECH_COVERAGE on, the gate can stop the model as it finishes, take
-# its reply out of the conversation and give it a note (the pages nobody read;
-# state coverage as counts) in its place. The reply streamed before that note
-# is then NOT the answer: the reply after it is, whole. Brief 5 delivered
-# every gated answer as the first reply glued to the second (10 of 10 on the
-# new tasks, 5 of 6 on ordinary ones), sometimes mid-line.
-
-#: The status line shown when the gate holds a reply back.
-GATE_STATUS = ("coverage check: the app listed what has not been read; the "
-               "answer is being written again with it")
-
-
-def coverage_gate_spoke(chunk) -> bool:
-    """Whether an ``updates``-mode stream item carries the coverage gate's
-    note (a user-role message opening with the gate's prefix)."""
-    if not isinstance(chunk, dict):
-        return False
-    from funhouse_agent.coverage import GATE_PREFIX
-    for update in chunk.values():
-        if not isinstance(update, dict):
-            continue
-        msgs = update.get("messages")
-        if not isinstance(msgs, (list, tuple)):
-            continue
-        for msg in msgs:
-            if isinstance(msg, dict):
-                kind, content = msg.get("role"), msg.get("content")
-            else:
-                kind = getattr(msg, "type", None)
-                content = getattr(msg, "content", None)
-            if kind in ("human", "user") and isinstance(content, str) \
-                    and content.startswith(GATE_PREFIX):
-                return True
-    return False
 
 
 #: Seconds of stream silence before a heartbeat item is emitted. Behind the
@@ -1253,18 +1212,14 @@ def _history_after(run_state, added, work_messages, pass_text) -> list:
 def _note_step_cap(callbacks, config: dict) -> None:
     """Tell the turn's activity log (any callback with ``note_step_cap``)
     the step cap the run was given and the ordinary cap it travels with
-    when the extraction cap raised it, for ``turn_end`` (BACKLOG EV-06)."""
-    allowance = None
-    try:
-        from funhouse_agent.deep.coverage_tools import ALLOWANCE_KEY
-        allowance = (config.get("configurable") or {}).get(ALLOWANCE_KEY)
-    except Exception:  # noqa: BLE001 - a record, never the turn
-        pass
+    when the extraction cap raised it, for ``turn_end`` (BACKLOG EV-06).
+    (Only the coverage gate, removed in DR-40, raised it: no allowance is
+    passed now.)"""
     for cb in callbacks or ():
         note = getattr(cb, "note_step_cap", None)
         if callable(note):
             try:
-                note(config.get("recursion_limit"), allowance)
+                note(config.get("recursion_limit"))
             except Exception:  # noqa: BLE001
                 pass
 
@@ -1325,17 +1280,12 @@ def stream_turn(agent, messages: list, thread_id: str,
     pass before it announced (:func:`merge_continuation`): one answer, never
     two copies of it.
 
-    When the coverage gate holds a reply back (:func:`coverage_gate_spoke`),
-    the reply before its note is left out of ``answer``: the reply after the
-    note is the answer (or, if the model gave nothing after it, the reply
-    held back).
-
     The pages the answer cites are checked against the pages any tool or
     helper opened in the conversation (:func:`_turn_page_check`; BACKLOG
     EV-18) and the result kept in the activity log. With
     ``GEOTECH_CITED_PAGES=retry`` an answer citing pages no tool opened is
     held back once and the model told, and the reply after that note is the
-    answer, as with the coverage gate; with ``note`` (and after a retry that
+    answer; with ``note`` (and after a retry that
     still cites such pages) a note is appended to the answer. The published
     documents it cites (a GEC, AASHTO LRFD, an author and year) are checked
     the same way against what the conversation looked up and what the user
@@ -1366,18 +1316,6 @@ def stream_turn(agent, messages: list, thread_id: str,
     floor = getattr(agent, "geotech_min_recursion_limit", None)
     if floor:
         recursion_limit = max(int(recursion_limit or 0), int(floor))
-    # A build with the coverage gate (GEOTECH_COVERAGE) lets a turn that takes
-    # data out of a document run to a higher cap (150, owner 2026-10-08). The
-    # run is given that cap, and the ordinary cap travels with it as the
-    # turn's step allowance: an ordinary turn is ended there with an answer
-    # by the gate, and an extraction turn runs on.
-    extraction = getattr(agent, "geotech_extraction_recursion_limit", None)
-    if extraction:
-        allowance = int(recursion_limit or DEFAULT_BEHAVIOR["recursion_limit"])
-        if int(extraction) > allowance:
-            from funhouse_agent.deep.coverage_tools import ALLOWANCE_KEY
-            config["configurable"][ALLOWANCE_KEY] = allowance
-            recursion_limit = int(extraction)
     if recursion_limit:                     # A5(b): primary-agent step cap
         config["recursion_limit"] = int(recursion_limit)
     _note_step_cap(callbacks, config)
@@ -1398,7 +1336,6 @@ def stream_turn(agent, messages: list, thread_id: str,
         page_redo = False
         while True:
             pass_parts: List[str] = []
-            held_back: Optional[str] = None
             # The reply: the last AI message of this pass that asked for no
             # tool (None until one arrives). ``boundary``: a model call has
             # finished since the last streamed token, so the next token opens
@@ -1432,22 +1369,7 @@ def stream_turn(agent, messages: list, thread_id: str,
                             record.add(new)
                         except Exception:  # noqa: BLE001 - never the turn
                             pass
-                if mode == "updates" and coverage_gate_spoke(chunk):
-                    # The coverage gate (GEOTECH_COVERAGE) held the reply
-                    # streamed so far back from the user and asked for the
-                    # whole answer again: the reply after its note is THE
-                    # answer, never the two glued (Foundry brief 5, CV2/N4).
-                    held_back = (final_text if final_text is not None
-                                 else "".join(pass_parts))
-                    pass_parts = []
-                    final_text = None
-                    boundary = False
-                    yield {"kind": "tool_call", "text": GATE_STATUS}
-                    if held_back.strip():
-                        # Keeps the live view from running the two replies
-                        # together; the delivered answer is turn_done's.
-                        yield {"kind": "token", "text": "\n\n"}
-                elif mode == "updates":
+                if mode == "updates":
                     saw_ai, final = _final_answer_in_update(chunk)
                     if saw_ai:
                         boundary = True
@@ -1470,10 +1392,6 @@ def stream_turn(agent, messages: list, thread_id: str,
             streamed = "".join(pass_parts)
             pass_text = (final_text if final_text and final_text.strip()
                          else streamed)
-            if held_back is not None and not pass_text.strip():
-                # The model gave nothing after the note: the reply it had is
-                # better than none.
-                pass_text = held_back
             # ONE answer, however many passes: a continuation's reply takes
             # the place of the step its predecessor announced, never a
             # second copy of the answer (merge_continuation).

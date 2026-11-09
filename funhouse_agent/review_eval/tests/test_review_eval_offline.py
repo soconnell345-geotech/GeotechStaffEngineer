@@ -246,9 +246,9 @@ def test_runner_scores_both_arms_writes_results_and_resumes(tmp_path):
     model = _scripted_model(task.truth + " Cited on PDF page 2.")
     out = tmp_path / "suite"
     res = score_review_suite(model, ids=["fixture-markups"],
-                             arms=("baseline", "turn_retry"), out_dir=out,
+                             arms=("baseline", "step_cap_answer"), out_dir=out,
                              verbose=False)
-    for arm in ("baseline", "turn_retry"):
+    for arm in ("baseline", "step_cap_answer"):
         run = res["results"][arm]["fixture-markups"]
         assert run["error"] is None, run.get("traceback")
         assert run["score"]["passed"], run["checks"]
@@ -258,12 +258,12 @@ def test_runner_scores_both_arms_writes_results_and_resumes(tmp_path):
         assert (out / "runs" / arm / "fixture-markups" /
                 "activity.jsonl").is_file()
     md = (out / "RESULTS.md").read_text(encoding="utf-8")
-    assert "| baseline | 1/1 |" in md and "| turn_retry | 1/1 |" in md
+    assert "| baseline | 1/1 |" in md and "| step_cap_answer | 1/1 |" in md
     assert "no task changed outcome" in md
     # A second run resumes: nothing is asked of the model again.
     n = len(model.calls)
     score_review_suite(model, ids=["fixture-markups"],
-                       arms=("baseline", "turn_retry"), out_dir=out, verbose=False)
+                       arms=("baseline", "step_cap_answer"), out_dir=out, verbose=False)
     assert len(model.calls) == n
 
 

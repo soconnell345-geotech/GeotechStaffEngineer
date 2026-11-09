@@ -203,16 +203,18 @@ def test_the_open_document_limit_is_per_conversation(people):
                                              {"handle": h_bob}))
 
 
-def test_idle_toolkits_close_and_their_handles_reopen(people, monkeypatch):
-    monkeypatch.setattr(document_tools, "MAX_LIVE_TOOLKITS", 1)
-    with _fileio.working_dir_bound(people["alice"]):
-        h = _doc("open_document", {"source": "alice_report.pdf"})["handle"]
-        alice_space = document_tools._space()
-    with _fileio.working_dir_bound(people["bob"]):
-        _doc("open_document", {"source": "plan.pdf"})
-    assert alice_space.kit is None           # closed: memory stays bounded
-    with _fileio.working_dir_bound(people["alice"]):
-        out = _doc("read_document", {"handle": h})
+def test_idle_toolkits_close_and_their_handles_reopen(people):
+    # The limit is the host's (planlens.review; BACKLOG PL-29 (b)).
+    from planlens import review
+    with review.using(max_live_toolkits=1):
+        with _fileio.working_dir_bound(people["alice"]):
+            h = _doc("open_document", {"source": "alice_report.pdf"})["handle"]
+            alice_space = document_tools._space()
+        with _fileio.working_dir_bound(people["bob"]):
+            _doc("open_document", {"source": "plan.pdf"})
+        assert alice_space.kit is None       # closed: memory stays bounded
+        with _fileio.working_dir_bound(people["alice"]):
+            out = _doc("read_document", {"handle": h})
     assert "ALICE ONLY" in json.dumps(out) and "opened" not in out
 
 

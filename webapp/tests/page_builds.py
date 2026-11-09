@@ -369,7 +369,6 @@ def _call_record(call: dict, norm, planlens: frozenset) -> dict:
 
 #: Attributes the builds set on the compiled agent that bear on a turn.
 _AGENT_ATTRS = ("geotech_min_recursion_limit",
-                "geotech_extraction_recursion_limit",
                 "geotech_review_agent", "geotech_judgment_consult")
 
 

@@ -184,12 +184,9 @@ def test_the_arms_are_the_baseline_and_one_change_each():
         "baseline": {},
         # 5.32: the looking-only measuring stick, test_review_minimal_offline
         "minimal": {A.AGENT_ENV: "minimal"},
-        # plan W4 (coverage in code), pinned in test_coverage_offline.py
-        "coverage": {A.COVERAGE_ENV: "1"},
-        "checklist": {A.COVERAGE_ENV: "1", A.CHECKLIST_ENV: "1"},
-        # VIS-01 turned lettering, pinned in funhouse_agent/tests/
-        # test_vision_turned.py
-        "turn_retry": {A.VISION_TURN_RETRY_ENV: "1"},
+        # plan W4's report checklist (the geotech page only since RI-34;
+        # the coverage ledger it once came with went in DR-40)
+        "checklist": {A.CHECKLIST_ENV: "1"},
         # EV-18 cited pages no tool opened, pinned in
         # funhouse_agent/tests/test_cited_pages.py
         "cited_pages_note": {A.CITED_PAGES_ENV: "note"},

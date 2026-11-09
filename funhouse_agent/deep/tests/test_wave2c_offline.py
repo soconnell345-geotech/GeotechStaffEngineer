@@ -470,7 +470,9 @@ def test_the_temporary_name_is_short(folder):
 def test_an_unwritable_temporary_copy_is_said_plainly(folder, monkeypatch):
     blocker = folder.parent / "not_a_folder"
     blocker.write_text("x")
-    monkeypatch.setattr(document_tools, "_temp_beside",
+    # The marked copy is planlens.review's (BACKLOG PL-29 (b)).
+    from planlens.review import marked_copy
+    monkeypatch.setattr(marked_copy, "_temp_beside",
                         lambda final: str(blocker / "abcd1234.part.pdf"))
     calls = []
     out = document_tools.write_marked_copy(
