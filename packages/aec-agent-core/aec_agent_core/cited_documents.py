@@ -949,11 +949,7 @@ def source_kind(name: str, args: dict, agent: str = "") -> Optional[str]:
         return CATALOG
     if name == "call_agent":
         module = str(args.get("agent_name") or "").strip().lower()
-        try:
-            from funhouse_agent.dispatch import REFERENCE_MODULES
-        except Exception:  # noqa: BLE001
-            REFERENCE_MODULES = frozenset(MODULE_DOCUMENTS)
-        if module in REFERENCE_MODULES:
+        if module in _reference_modules():
             return REFERENCES
         if module == "worked_examples":
             return WORKED_EXAMPLE
@@ -963,6 +959,28 @@ def source_kind(name: str, args: dict, agent: str = "") -> Optional[str]:
     if name in DOCUMENT_TOOLS:
         return DOCUMENT
     return None
+
+
+#: The hook an app fills with the names of its reference modules (the
+#: ``call_agent`` modules whose answers are reference sources;
+#: ``aec_agent_core.hooks``): a callable with no arguments returning a
+#: collection of names. GeotechStaffEngineer fills it with its dispatch's
+#: ``REFERENCE_MODULES`` (``funhouse_agent.core_hooks.reference_modules``).
+#: Unfilled, or if it fails, the modules of :data:`MODULE_DOCUMENTS` are used,
+#: as this module did when the dispatch would not import (BACKLOG INF-32
+#: step 11 (c): this imported ``funhouse_agent.dispatch`` itself).
+REFERENCE_MODULES_HOOK = "cited_documents.reference_modules"
+
+
+def _reference_modules() -> frozenset:
+    from aec_agent_core.hooks import get_hook
+    try:
+        hook = get_hook(REFERENCE_MODULES_HOOK)
+        if hook is not None:
+            return frozenset(hook())
+    except Exception:  # noqa: BLE001 - as when the dispatch would not import
+        pass
+    return frozenset(MODULE_DOCUMENTS)
 
 
 def _target(args: dict, st: _LookupState) -> str:

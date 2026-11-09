@@ -115,6 +115,12 @@ _set_hook("vision_tools.read_reference_figure",
           "funhouse_agent.reference_vision:_dispatch_read_reference_figure")
 _set_hook("vision_tools.view_worked_example_source",
           "funhouse_agent.reference_vision:_dispatch_view_worked_example")
+# Step 11 (c): the record shapes a stopped helper's records are found by, and
+# the dispatch's reference modules (funhouse_agent.core_hooks).
+_set_hook("held_records.record_fields",
+          "funhouse_agent.core_hooks:record_fields")
+_set_hook("cited_documents.reference_modules",
+          "funhouse_agent.core_hooks:reference_modules")
 
 
 #: Each public name -> the module that defines it.

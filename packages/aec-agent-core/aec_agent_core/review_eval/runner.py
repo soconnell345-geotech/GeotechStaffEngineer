@@ -2,7 +2,7 @@
 
 The owner's notebook cell (Funhouse)::
 
-    from funhouse_agent.review_eval import score_review_suite
+    from funhouse_agent.review_eval import score_review_suite  # GSE's door
     res = score_review_suite(
         prompter=fh_prompter, model_name="funhouse-gpt-high",
         docs_dir="/Volumes/.../review_eval_docs",      # the public PDFs
@@ -17,6 +17,13 @@ Review page builds one (``webapp.core.build_agent`` with the page's profile),
 the document staged as an upload with the page's own attachment note, the
 question sent as the user's message, and the turn streamed through the page's
 own ``core.stream_turn``. So what is scored is what a tester would have got.
+
+The page is the APP's, handed in (BACKLOG INF-32 step 11 (c); plan
+``module_work/APP_SPLIT_PLAN.md`` 2.7 B): the hook :data:`PAGE_HOST_HOOK`
+(``aec_agent_core.hooks``) returns the page host, an object (a module will
+do) with the page's own turn path -- see :data:`PAGE_HOST_ATTRIBUTES`.
+GeotechStaffEngineer fills it with ``webapp.suite_page`` (both its pages);
+the tasks come from the hook ``review_eval.open_tasks`` (:mod:`.tasks`).
 An arm is only a set of switches (:mod:`funhouse_agent.review_flags`), set for
 the task and unset afterwards. A task with ``page="geotech"`` (the coverage
 tasks of plan W4) is asked on the GeotechStaffEngineer page instead, built
@@ -50,7 +57,7 @@ from uuid import uuid4
 from aec_agent_core import review_flags, turn_question
 from aec_agent_core.review_eval import checks as _checks
 from aec_agent_core.review_eval import documents as _documents
-from funhouse_agent.review_eval.tasks import Task, load_tasks, select
+from aec_agent_core.review_eval.tasks import Task, load_tasks, select
 
 #: Who the suite signs any markup as, so a produced PDF is recognisably a test.
 SUITE_AUTHOR = "Review suite via GeotechStaffEngineer (AI draft)"
@@ -77,23 +84,70 @@ def _model_from(prompter: Any, model_name: str):
     return PrompterChatModel(prompter=prompter, model=model_name)
 
 
-def _profile(page: str = "review"):
-    from webapp.profiles import DOCUMENT_REVIEW, GEOTECH
-    return GEOTECH if page == "geotech" else DOCUMENT_REVIEW
+#: The hook an app fills with its page host (``aec_agent_core.hooks``): a
+#: callable with no arguments returning the host.
+PAGE_HOST_HOOK = "review_eval.page_host"
+
+#: What a page host has: the page's own turn path, as its chat page runs it.
+#:
+#: - ``build_agent(model, attachments, files_dir, artifacts, *, page,
+#:   markup_author)``: the page's agent, built as the page builds it
+#:   (``page`` is a task's ``Task.page``);
+#: - ``stage_upload(attachments, files_dir, name, data)`` -> an upload with a
+#:   ``path``; ``attachment_note(uploads)``; ``assemble_user_message(notes,
+#:   text)``; ``orientation_request(uploads, page)`` -> the page's automatic
+#:   first turn, or ``None`` where the page sends none;
+#: - ``stream_turn(agent, history, thread, *, recursion_limit, callbacks)``:
+#:   the turn, yielding the page's items (a ``turn_done`` carries ``answer``
+#:   and ``turn_tokens``); ``default_recursion_limit()``;
+#: - ``engine_record(agent)``, ``tools_fingerprint(agent)``: the record;
+#: - ``output_collector()`` -> a callback that records the files a turn's
+#:   tools report writing (``outputs``, ``inputs``), or ``None``;
+#:   ``import_reported_outputs(outputs, files_dir, exclude)`` -> ``{source:
+#:   copy}``;
+#: - ``APP_DIST``, ``APP_PACKAGE``, ``APP_COMMIT_ENV``: the app's
+#:   distribution and package names, and the variable that may name its
+#:   commit (what ``run.json`` says the run ran on).
+PAGE_HOST_ATTRIBUTES = (
+    "build_agent", "stage_upload", "attachment_note",
+    "assemble_user_message", "orientation_request", "stream_turn",
+    "default_recursion_limit", "engine_record", "tools_fingerprint",
+    "output_collector", "import_reported_outputs", "APP_DIST", "APP_PACKAGE",
+    "APP_COMMIT_ENV")
+
+
+class NoPageHost(RuntimeError):
+    """No app has handed the suite a page to run turns on."""
+
+
+def page_host():
+    """The app's page host (:data:`PAGE_HOST_HOOK`); raises
+    :class:`NoPageHost` when no app fills the hook."""
+    from aec_agent_core.hooks import get_hook
+    hook = get_hook(PAGE_HOST_HOOK)
+    if hook is None:
+        raise NoPageHost(
+            f"no page to run the suite on: an app fills the hook "
+            f"{PAGE_HOST_HOOK!r} (aec_agent_core.hooks) with its page host "
+            f"(GeotechStaffEngineer: import funhouse_agent.review_eval)")
+    return hook()
+
+
+def _host_or_none():
+    try:
+        return page_host()
+    except Exception:  # noqa: BLE001 - a record, never a failure
+        return None
 
 
 def build_page_agent(model, attachments: Dict[str, bytes], files_dir: str,
                      artifacts: List[str], page: str = "review"):
-    """A page's agent, built the way ``webapp/app.py`` builds it (behaviour
-    defaults, then the page profile's overrides): the Document Review page,
-    or with ``page="geotech"`` the GeotechStaffEngineer page."""
-    from webapp import core
-    profile = _profile(page)
-    kw = profile.behavior_build_kwargs(None)
-    kw.update(profile.build_kwargs())
-    kw.setdefault("markup_author", SUITE_AUTHOR)
-    return core.build_agent(model, attachments, files_dir, artifacts,
-                            profile=profile, **kw)
+    """A page's agent, built the way the app's page builds it (in
+    GeotechStaffEngineer: behaviour defaults, then the page profile's
+    overrides): the Document Review page, or with ``page="geotech"`` the
+    GeotechStaffEngineer page."""
+    return page_host().build_agent(model, attachments, files_dir, artifacts,
+                                   page=page, markup_author=SUITE_AUTHOR)
 
 
 def _activity_records(run_dir: str) -> List[Dict[str, Any]]:
@@ -185,9 +239,7 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
              recursion_limit: Optional[int] = None) -> Dict[str, Any]:
     """One task under one arm, in a fresh conversation. Never raises: a
     failure is recorded on the result (and retried on the next run)."""
-    from webapp import core
     from aec_agent_core.activity_log import ActivityLogger
-    from webapp.profiles import DOCUMENT_REVIEW, orientation_request_for
 
     run_dir = os.path.abspath(run_dir)
     files_dir = os.path.join(run_dir, "files")
@@ -206,7 +258,12 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
     t0 = time.monotonic()
     staged: List[str] = []
     fingerprint: Dict[str, Any] = {}
-    collector = _output_collector()
+    try:
+        core = page_host()
+    except Exception as exc:  # noqa: BLE001 - recorded, as a build failure
+        result.update(error=f"{type(exc).__name__}: {exc}", seconds=0.0)
+        return result
+    collector = _output_collector(core)
     try:
         docs = [_documents.resolve(d, docs_dir) for d in task.documents]
     except _documents.MissingDocument as exc:
@@ -229,12 +286,13 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
             note = core.attachment_note(atts)
             # The page's own orientation text (the arm's switches are set);
             # the geotech page sends none.
-            turns = ([orientation_request_for(DOCUMENT_REVIEW, atts)]
-                     if orientation and page == "review" else [])
+            first = (core.orientation_request(atts, page)
+                     if orientation else None)
+            turns = [first] if first else []
             turns += [task.question] + list(task.followups)
             history: List[Dict[str, str]] = []
             thread = uuid4().hex
-            limit = recursion_limit or core.DEFAULT_BEHAVIOR["recursion_limit"]
+            limit = recursion_limit or core.default_recursion_limit()
             # What the run's agent offers, on the record as the app keeps it.
             engine = core.engine_record(agent) or None
             fingerprint["tools"] = core.tools_fingerprint(agent)
@@ -284,7 +342,7 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
     # does (webapp/turn_jobs.py): the suite scores what the user receives.
     # Foundry brief 5 (N1): a valid DIGGS file written to /tmp in 6 of 6
     # runs failed file_produced 6 of 6.
-    imported = _import_reported(collector, files_dir, staged)
+    imported = _import_reported(core, collector, files_dir, staged)
     if imported:
         result["imported_outputs"] = {
             src: os.path.relpath(dst, run_dir)
@@ -351,28 +409,27 @@ def rescore_saved(result: Dict[str, Any], task: Task,
 OUTCOME_ERRORS = ("GraphRecursionError",)
 
 
-def _output_collector():
-    """The app's own record of the files a turn's tools report writing
-    (``webapp.output_capture.OutputCollector``), or ``None`` where the app
-    is not importable."""
+def _output_collector(host):
+    """The app's own record of the files a turn's tools report writing (the
+    page host's ``output_collector``; GSE: ``webapp.output_capture.
+    OutputCollector``), or ``None`` where it has none."""
     try:
-        from webapp.output_capture import OutputCollector
-        return OutputCollector()
+        return host.output_collector()
     except Exception:  # noqa: BLE001 - the run goes on without it
         return None
 
 
-def _import_reported(collector, files_dir: str,
+def _import_reported(host, collector, files_dir: str,
                      staged: Sequence[str]) -> Dict[str, str]:
     """Copy the files ``collector`` saw reported outside the run's folder
-    into ``files_dir`` with the app's own import
-    (``webapp.core.import_reported_outputs``): staged uploads and files only
-    fetched to be read are left out. ``{source: copy}``; never raises."""
+    into ``files_dir`` with the app's own import (the page host's
+    ``import_reported_outputs``; GSE: ``webapp.core``): staged uploads and
+    files only fetched to be read are left out. ``{source: copy}``; never
+    raises."""
     if collector is None or not getattr(collector, "outputs", None):
         return {}
     try:
-        from webapp import core
-        return core.import_reported_outputs(
+        return host.import_reported_outputs(
             collector.outputs, files_dir,
             exclude=list(staged) + list(getattr(collector, "inputs", [])))
     except Exception:  # noqa: BLE001 - a record, never a failure
@@ -408,10 +465,24 @@ def _counts(names: Iterable[str]) -> Dict[str, int]:
 # The results file
 # ---------------------------------------------------------------------------
 
+#: Who the record names when no app hands the suite a page host.
+_CORE_APP = ("aec-agent-core", "aec_agent_core", "AEC_CORE_COMMIT")
+
+
+def _app() -> tuple:
+    """(distribution, package, commit variable) of the app the suite runs
+    on (the page host's ``APP_*``; the core's own when there is none)."""
+    host = _host_or_none()
+    try:
+        return (str(host.APP_DIST), str(host.APP_PACKAGE),
+                str(host.APP_COMMIT_ENV))
+    except Exception:  # noqa: BLE001
+        return _CORE_APP
+
+
 def _versions() -> Dict[str, str]:
     out = {}
-    for dist in ("geotech-staff-engineer", "planlens", "deepagents",
-                 "langchain"):
+    for dist in (_app()[0], "planlens", "deepagents", "langchain"):
         try:
             from importlib.metadata import version
             out[dist] = version(dist)
@@ -422,20 +493,23 @@ def _versions() -> Dict[str, str]:
 
 #: Where an operator can name the commit a wheel was built from, when the
 #: running copy cannot say (a test wheel installed from a file carries no
-#: git record): the AI FDE's runner knows which commit it built.
-COMMIT_ENVS = {"geotech-staff-engineer": "GEOTECH_APP_COMMIT",
-               "planlens": "PLANLENS_COMMIT"}
+#: git record): the AI FDE's runner knows which commit it built. The app's
+#: own variable comes from its page host (``APP_COMMIT_ENV``; GSE:
+#: ``GEOTECH_APP_COMMIT``).
+COMMIT_ENVS = {"planlens": "PLANLENS_COMMIT",
+               _CORE_APP[0]: _CORE_APP[2]}
 
 
 @functools.lru_cache(maxsize=None)
-def _commit(dist: str, package: str) -> Optional[str]:
+def _commit(dist: str, package: str,
+            env_name: Optional[str] = None) -> Optional[str]:
     """The commit ``dist`` runs from: the operator's own word
     (:data:`COMMIT_ENVS`), else the source checkout it is imported from
     (``git rev-parse``, ``+dirty`` when tracked files differ), else the
     install's PEP 610 record of a VCS install; ``None`` when nothing says.
     Brief 4 (2026-10-07): run.json named versions but not the commit, and
     test wheels share a version across builds."""
-    env = os.environ.get(COMMIT_ENVS.get(dist, ""), "").strip()
+    env = os.environ.get(env_name or COMMIT_ENVS.get(dist, ""), "").strip()
     if env:
         return env
     try:
@@ -470,7 +544,7 @@ def _commit(dist: str, package: str) -> Optional[str]:
 
 def _commits() -> Dict[str, Optional[str]]:
     """The app's and planlens' commits (:func:`_commit`)."""
-    return {"app": _commit("geotech-staff-engineer", "funhouse_agent"),
+    return {"app": _commit(*_app()),
             "planlens": _commit("planlens", "planlens")}
 
 
@@ -774,4 +848,5 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
 
 
 __all__ = ["score_review_suite", "run_task", "rescore_saved",
-           "build_page_agent", "summarize", "SUITE_AUTHOR"]
+           "build_page_agent", "summarize", "SUITE_AUTHOR", "PAGE_HOST_HOOK",
+           "PAGE_HOST_ATTRIBUTES", "NoPageHost", "page_host"]
