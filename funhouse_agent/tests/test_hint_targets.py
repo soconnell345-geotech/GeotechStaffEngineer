@@ -78,19 +78,30 @@ def test_the_scan_finds_the_three_reported_tables():
 
 
 def _all_hint_tables():
+    """Every ``*HINTS`` table of the app and of the shared core, where
+    plot_data's moved at INF-32 step 11 (b)."""
+    import aec_agent_core
     import funhouse_agent
-    root = pathlib.Path(funhouse_agent.__file__).parent
-    for path in sorted(root.rglob("*.py")):
-        if "tests" in path.parts:
-            continue
-        name = ".".join(path.relative_to(root.parent).with_suffix("").parts)
-        try:
-            mod = importlib.import_module(name)
-        except Exception:
-            continue
-        for attr, val in vars(mod).items():
-            if attr.endswith("HINTS") and isinstance(val, dict):
-                yield name, attr, val
+    for package in (funhouse_agent, aec_agent_core):
+        root = pathlib.Path(package.__file__).parent
+        for path in sorted(root.rglob("*.py")):
+            if "tests" in path.parts:
+                continue
+            name = ".".join(
+                path.relative_to(root.parent).with_suffix("").parts)
+            try:
+                mod = importlib.import_module(name)
+            except Exception:
+                continue
+            for attr, val in vars(mod).items():
+                if attr.endswith("HINTS") and isinstance(val, dict):
+                    yield name, attr, val
+
+
+def test_the_walk_reaches_the_core_hint_tables():
+    found = {(m, a) for m, a, _ in _all_hint_tables()}
+    assert ("aec_agent_core.charts.plot_tool", "_KEY_HINTS") in found
+    assert ("aec_agent_core.charts.data_plot", "_PLACED_HINTS") in found
 
 
 def test_every_hint_key_is_in_the_normalised_form_the_lookup_uses():

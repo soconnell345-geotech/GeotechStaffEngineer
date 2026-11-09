@@ -270,3 +270,76 @@ name goes: `funhouse_agent.deep.figure_helper.FigureLooks`,
 
 - The box offers `pandas` to the model's code but neither the core nor the
   app requires it (§5); unchanged by the move.
+
+## 11. Review fixes and master merge
+
+An independent review (2026-11-09, verdict MERGE) found nothing that changes
+what a user sees. It checked:
+
+- **The plotting box.** The same 12 escape probes were refused the same way on
+  master, on the branch by the old name and by the core's name, and the rule
+  sets have identical digests in all three.
+- **The aliases.** Eight import orders gave one module object per file, and the
+  chart-lines registration, progress notes and box slots were shared.
+- **The registration.** It is filled at the same points as on master at 11
+  entry points.
+- **The no-GSE-import test.** It caught four planted violations.
+- **Fingerprints.** `page_fingerprints.json` is byte-identical to master.
+- **The core alone.** A fresh venv with the core wheel and planlens 0.15.0
+  imports all 34 modules, draws, and passes its tests.
+
+Then, on `merge/step11b`:
+
+- **Master merged** (step 11 (a) with its review fixes, `798b0cc`; master head
+  `9a4c552`). No conflicts. The core keeps (a)'s version, 1.0.0.dev1. Its
+  README status and its `__init__` docstring now say what it holds after
+  (b): the figure helper, the plotting box and the chart stack, with
+  `charts.register_reference_charts` for an app's standard chart lines.
+  Drawing works with the core alone; building the figure helper's tools
+  waits on (c).
+- **The one finding, fixed.** `funhouse_agent/tests/test_hint_targets.py`
+  walked only `funhouse_agent/`. On master its two hint-key checks covered
+  `charts/plot_tool._KEY_HINTS` and `charts/data_plot._PLACED_HINTS`, and
+  the move took both out of the walk without a failure. It now walks
+  `aec_agent_core` too, and `test_the_walk_reaches_the_core_hint_tables`
+  asserts that both tables are scanned.
+- **Stale paths.** These files now name the moved files by their path in
+  `packages/aec-agent-core/aec_agent_core/` (paths only):
+  - `CLAUDE.md`, the `deep/` row;
+  - the DESIGN.md files of `funhouse_agent`, `geotech_common`,
+    `gstools_agent` and `profile_figure`.
+
+  Step 6's stubs (`geotech_common/layout_ink.py`, `plan_furniture.py`,
+  `profile_figure/data_plot.py`, `figure_examples.py`) are described as
+  aliases of the core's modules. Noted, not changed: the `vision_tools.py`
+  row of the same CLAUDE.md table still reads as a `funhouse_agent` file,
+  since step 11 (a) moved it; that is (a)'s, and the notes pass can take it.
+
+Re-run after the merge and the fixes: app venv, worktree imported, each run
+in the foreground with at least 4.2 GB free, judged by pytest's exit code.
+
+| Run | Exit | Result |
+|---|---|---|
+| `funhouse_agent/tests/test_hint_targets.py` | 0 | 22 passed |
+| `webapp/tests/test_wheels.py`, `test_version_guard.py`, `test_page_fingerprints.py`, `test_public_text.py` | 0 | 32 passed, 5 skipped; fingerprints byte-identical to `origin/master` |
+| `packages/aec-agent-core/tests` | 0 | 126 passed |
+| `webapp/tests/test_tinyapps_{keys,entry,wiring,wrapper}.py` + `packages/aec-agent-core/tests/test_core_hooks.py` | 0 | 89 passed |
+| `webapp/tests`, 3 chunks | 0, 0, 0 | 1,202 passed, 8 skipped |
+| `funhouse_agent/tests`, 11 chunks (`test_defaults_used.py` in three) | all 0 | 4,317 passed, 20 skipped |
+
+### For step 16
+
+- **Aliases out.** When step 16 takes the aliases out:
+  - step 6's four stubs import `funhouse_agent.charts.<x>`, an alias since
+    this merge: point them at `aec_agent_core.charts.<x>` or remove them;
+  - the "an alias of" lines in `geotech_common/DESIGN.md` and
+    `profile_figure/DESIGN.md` go with the stubs;
+  - `webapp/tests/test_core_move_11b.py` goes with the aliases.
+- **Docstrings.** The moved files' docstrings still name
+  `funhouse_agent.charts…`, `funhouse_agent.plot_box…` and
+  `funhouse_agent/charts/…` (§8). Rewrite them with the imports. Check the
+  fingerprints first, since some sit next to prompt text.
+- **Source walks.** Any test that walks a package's source folder, as
+  `test_hint_targets` did, sees only what lives there. A module moved out
+  drops from such a walk without a failure, so search the tests for
+  `__file__).parent` walks when the next modules move.

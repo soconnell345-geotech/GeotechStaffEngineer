@@ -47,8 +47,10 @@ fills three hooks (:mod:`aec_agent_core.hooks`):
 - ``prompter.get_setting(name)``: how a setting is read (the page: env
   var, else Key Vault, else ``.env``); unfilled, the environment only;
 - ``prompter.resolve_for(ident)``: the :class:`ResolvedPrompter` for one
-  caller, or :class:`NoPrompterKey`; unfilled, the shared settings for
-  everyone (a single-user host);
+  caller, or :class:`NoPrompterKey`; unfilled, the shared settings for a
+  single-user caller, and a refusal for a caller a host identified
+  (``ident.multi_user``) unless ``PROMPTER_SHARED_KEY_FALLBACK`` is on — a
+  page that forgets the hook never hands its testers the shared key;
 - ``prompter.tester_keys_possible()``: could per-tester keys serve someone
   although the shared set is incomplete; unfilled, no.
 """
@@ -73,7 +75,8 @@ ENV_CA_BUNDLE = "PROMPTER_CA_BUNDLE"
 DISABLE_STREAMING_ENV = "GEOTECH_PROMPTER_DISABLE_STREAMING"
 #: On a multi-user deployment, may a tester with no key of their own use the
 #: shared ``PROMPTER_API_KEY``? Off unless set truthy (read by the page's
-#: ``prompter.resolve_for``; named here for the key-source text below).
+#: ``prompter.resolve_for``, and by :func:`resolve_for` when no page fills
+#: that hook).
 SHARED_FALLBACK_ENV = "PROMPTER_SHARED_KEY_FALLBACK"
 
 #: Where a caller's key came from (the diagnostics panel shows THIS, never
@@ -272,21 +275,39 @@ def _truthy(value: Optional[str]) -> bool:
     return str(value or "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def no_key_message(ident, secret_name: Optional[str]) -> str:
+    """The polite refusal: who, what to do, and — for the app owner — the
+    secret NAME that would let this person in. Never a key."""
+    who = getattr(ident, "display_name", "") or "you"
+    msg = f"No AI key is set up for **{who}** yet — ask the app owner."
+    if secret_name:
+        msg += (f" (For the app owner: this person's key goes in the Key "
+                f"Vault secret `{secret_name}`.)")
+    return msg
+
+
 def resolve_for(ident=None) -> ResolvedPrompter:
     """The Prompter settings for ``ident`` (default: the current caller):
     the page's answer (the hook ``prompter.resolve_for``; the
     GeotechStaffEngineer pages: ``webapp.tinyapps_keys.resolve_for``, the
     per-tester secret, then ``PROMPTER-KEYS``, then the shared key when
-    allowed), else the shared settings for everyone. Raises
-    :class:`NoPrompterKey` or :class:`EngineUnavailable`, the polite
+    allowed). With no page's answer, a single-user caller gets the shared
+    settings, and a caller a host identified (``ident.multi_user``) is
+    refused unless ``PROMPTER_SHARED_KEY_FALLBACK`` is on: fail closed, so
+    a page that forgets the hook never serves its testers the shared key.
+    Raises :class:`NoPrompterKey` or :class:`EngineUnavailable`, the polite
     refusals; never returns a half-filled set."""
     hook = get_hook("prompter.resolve_for")
     if hook is not None:
         return hook(ident)
+    multi_user = bool(getattr(ident, "multi_user", False))
+    if multi_user and not _truthy(get_setting(SHARED_FALLBACK_ENV)):
+        raise NoPrompterKey(no_key_message(ident, None))
     ps = settings()
     if ps is None:
         raise EngineUnavailable(NOT_CONFIGURED_MESSAGE)
-    return ResolvedPrompter(ps, SOURCE_SHARED)
+    return ResolvedPrompter(
+        ps, SOURCE_SHARED_FALLBACK if multi_user else SOURCE_SHARED)
 
 
 def tester_keys_possible() -> bool:
@@ -489,4 +510,4 @@ __all__ = ["PrompterSettings", "settings", "configured", "build_chat_model",
            "SOURCE_TESTER", "SOURCE_MAPPING",
            "SOURCE_SHARED", "SOURCE_SHARED_FALLBACK", "NOT_CONFIGURED_MESSAGE",
            "NoPrompterKey", "ResolvedPrompter", "resolve_for", "build_for",
-           "tester_keys_possible"]
+           "no_key_message", "tester_keys_possible"]
