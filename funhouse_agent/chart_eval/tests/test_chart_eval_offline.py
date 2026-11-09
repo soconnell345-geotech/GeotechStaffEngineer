@@ -542,6 +542,102 @@ def test_page_runs_in_forked_children(tmp_path):
                for r in runs.values()), runs
 
 
+def client_model():
+    """A chat model that builds its HTTP client on first use and keeps it,
+    as ChatAnthropic does; its reply names the process that built it."""
+    from functools import cached_property
+
+    from langchain_core.language_models.fake_chat_models import (
+        FakeMessagesListChatModel)
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    class ClientModel(FakeMessagesListChatModel):
+        model: str = "claude-made-up-5"
+
+        @cached_property
+        def _client(self):
+            return {"pid": os.getpid()}
+
+        def _generate(self, messages, stop=None, run_manager=None, **kw):
+            text = f"It is 42; client built in process {self._client['pid']}"
+            return ChatResult(generations=[ChatGeneration(
+                message=AIMessage(content=text))])
+
+    return ClientModel(responses=[AIMessage(content="x")])
+
+
+def test_a_child_drops_the_clients_it_inherits():
+    from funhouse_agent.chart_eval import runner
+    lca = pytest.importorskip("langchain_anthropic._client_utils")
+    url = "https://proxy.example.invalid"
+    shared = lca._get_default_httpx_client(base_url=url, timeout=30)
+    model = client_model()
+    inherited = model._client                 # made before the fork
+    same, clients = runner.model_for_child(model)
+    assert same is model and clients["rebuilt"] is False
+    assert lca._get_default_httpx_client.cache_info().currsize == 0
+    assert lca._get_default_httpx_client(base_url=url, timeout=30) \
+        is not shared
+    assert model._client is not inherited     # built again on first use
+    assert "ClientModel._client" in clients["dropped"]
+    assert ("langchain_anthropic._client_utils._get_default_httpx_client"
+            in clients["dropped"])
+
+
+def test_a_model_foundry_model_built_is_built_again_in_the_child(
+        monkeypatch):
+    import webapp.engine_config as engine_config
+
+    import funhouse_agent.chart_eval as ce
+    from funhouse_agent.chart_eval import runner
+    built = []
+
+    class Resolution:
+        message = "made up"
+
+        def __init__(self):
+            self.model = client_model()
+
+    def resolve(mid):
+        built.append(mid)
+        return Resolution()
+
+    monkeypatch.setattr(engine_config, "resolve_engine", resolve)
+    model = ce.foundry_model("Made-up label=anthropic:made-up-id")
+    fresh, clients = runner.model_for_child(model)
+    assert fresh is not model and clients["rebuilt"] is True
+    assert built == ["anthropic:made-up-id", "anthropic:made-up-id"]
+    assert ce.rebuild_model(client_model()) is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="forked page runs are POSIX")
+def test_forked_page_runs_call_the_model_through_clients_of_their_own(
+        tmp_path, monkeypatch):
+    from funhouse_agent.chart_eval import runner
+    root = make_data(tmp_path, n=2)
+    model = client_model()
+    parent_client = model._client             # as after the direct runs
+
+    def page(model, task, run_dir, env, arm, **kw):
+        reply = model.invoke("Read the chart.")
+        return {"answer": reply.content, "stop": "answered",
+                "model_calls": 1, "usage": {}, "tool_counts": {}}
+
+    monkeypatch.setattr(runner, "run_page", page)
+    res = score_chart_suite(model, judge_model=judge_fake(), data_dir=root,
+                            out_dir=tmp_path / "out", arms=("page:baseline",),
+                            page_workers=2, verbose=False)
+    runs = res["results"]["page:baseline"]
+    assert set(runs) == {"t0", "t1"}
+    for run in runs.values():
+        child = run["child_clients"]["pid"]
+        assert child != os.getpid()
+        assert run["answer"].endswith(f"process {child}")
+        assert "ClientModel._client" in run["child_clients"]["dropped"]
+    assert model._client is parent_client     # the parent's own, untouched
+
+
 # ---------------------------------------------------------------------------
 # CharXiv
 # ---------------------------------------------------------------------------

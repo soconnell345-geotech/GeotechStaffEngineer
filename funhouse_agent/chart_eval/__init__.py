@@ -31,7 +31,7 @@ Run on Foundry (``module_work/FOUNDRY_BRIEF_CHART_SUITE.md``)::
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Dict, Optional, Tuple
 
 from funhouse_agent.chart_eval.arms import DIRECT_ARMS, run_direct
 from funhouse_agent.chart_eval.data import (ChartDataError, ChartTask,
@@ -39,6 +39,12 @@ from funhouse_agent.chart_eval.data import (ChartDataError, ChartTask,
 from funhouse_agent.chart_eval.judge import judge_answer
 from funhouse_agent.chart_eval.runner import (DEFAULT_ARMS, resolve_arm,
                                               score_chart_suite)
+
+#: The id each model :func:`foundry_model` built was made from, keyed by the
+#: object's id (the object is kept, so the key cannot be reused), so that a
+#: forked page run can build its own copy with its own connections
+#: (:func:`rebuild_model`).
+_BUILT: Dict[int, Tuple[str, Any]] = {}
 
 
 def foundry_model(model_id: str) -> Any:
@@ -56,9 +62,21 @@ def foundry_model(model_id: str) -> Any:
     if getattr(res, "model", None) is None:
         raise RuntimeError(f"could not build {model_id!r}: "
                            f"{getattr(res, 'message', res)}")
+    _BUILT[id(res.model)] = (mid, res.model)
     return res.model
 
 
-__all__ = ["score_chart_suite", "foundry_model", "load_chart_tasks",
-           "ChartTask", "ChartDataError", "judge_answer", "run_direct",
-           "resolve_arm", "DIRECT_ARMS", "DEFAULT_ARMS"]
+def rebuild_model(model: Any) -> Optional[Any]:
+    """A new build of ``model`` from the id :func:`foundry_model` made it
+    from (the same settings, new clients and model handles), or ``None``
+    when :func:`foundry_model` did not make it. Settings changed on the
+    object after it was built are not carried over."""
+    entry = _BUILT.get(id(model))
+    if entry is None or entry[1] is not model:
+        return None
+    return foundry_model(entry[0])
+
+
+__all__ = ["score_chart_suite", "foundry_model", "rebuild_model",
+           "load_chart_tasks", "ChartTask", "ChartDataError", "judge_answer",
+           "run_direct", "resolve_arm", "DIRECT_ARMS", "DEFAULT_ARMS"]

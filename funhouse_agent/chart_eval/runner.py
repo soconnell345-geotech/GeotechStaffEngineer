@@ -16,7 +16,10 @@ Concurrency. Direct runs share nothing, so they run ``workers`` at a time on
 threads. A page run sets process-wide switches (the review flags, the working
 folder), so page runs go one at a time, or, with ``page_workers`` above 1 on
 Linux, each in a forked child process (what the AI FDE's glue did for the
-review suite on Foundry), killed after ``page_timeout_s``.
+review suite on Foundry), killed after ``page_timeout_s``. A forked child
+inherits the parent's open HTTP connections (the direct runs' and the
+judge's), so before its run it drops them and opens its own
+(:func:`model_for_child`): no two processes write to one connection.
 
 What the results files name. ``RESULTS.md`` names tasks by id and domain
 only, never a question, a golden answer or a chart: Chartography is gated
@@ -29,6 +32,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 import traceback
@@ -193,18 +197,82 @@ def _load(run_dir: str) -> Optional[Dict[str, Any]]:
 # Page runs in forked children
 # ---------------------------------------------------------------------------
 
+#: Process-wide HTTP client caches: one client (one connection pool) per
+#: address, shared by every model of a family, the model under test and the
+#: parent's judge alike. A forked child must not reuse them.
+_CLIENT_CACHES = (
+    ("langchain_anthropic._client_utils",
+     ("_get_default_httpx_client", "_get_default_async_httpx_client")),
+    ("langchain_openai.chat_models._client_utils",
+     ("_cached_sync_httpx_client", "_cached_async_httpx_client")),
+)
+#: Clients a chat model builds on first use and keeps (ChatAnthropic's
+#: cached properties, the app's Foundry subclass included).
+_LAZY_CLIENTS = ("_client", "_async_client")
+
+
+def drop_inherited_clients() -> List[str]:
+    """Forget the process-wide HTTP clients this process inherited
+    (:data:`_CLIENT_CACHES` and the app's CA-bundle clients), so a model
+    built or first used here opens connections of its own; what was
+    dropped, for the run's record. Nothing is closed: the parent still uses
+    those connections."""
+    dropped: List[str] = []
+    for mod_name, names in _CLIENT_CACHES:
+        mod = sys.modules.get(mod_name)
+        for name in names:
+            clear = getattr(getattr(mod, name, None), "cache_clear", None)
+            if clear is not None:
+                clear()
+                dropped.append(f"{mod_name}.{name}")
+    engine = sys.modules.get("webapp.engine_config")
+    ca_clients = getattr(engine, "_CA_HTTP_CLIENTS", None)
+    if isinstance(ca_clients, dict) and ca_clients:
+        ca_clients.clear()
+        dropped.append("webapp.engine_config._CA_HTTP_CLIENTS")
+    return dropped
+
+
+def model_for_child(model: Any):
+    """``(model, record)``: the model a forked page run calls, with
+    connections of its own. The inherited process-wide clients are dropped
+    first (:func:`drop_inherited_clients`). A model
+    :func:`funhouse_agent.chart_eval.foundry_model` built is then built
+    again from its id (new clients, new SDK handles); any other model goes
+    on with the clients it built on first use dropped, but keeps any client
+    or handle it was given when it was made."""
+    dropped = drop_inherited_clients()
+    try:
+        from funhouse_agent.chart_eval import rebuild_model
+        fresh = rebuild_model(model)
+    except Exception as exc:                              # noqa: BLE001
+        dropped.append(f"rebuild failed ({type(exc).__name__}: {exc})")
+        fresh = None
+    if fresh is not None:
+        return fresh, {"rebuilt": True, "dropped": dropped}
+    held = getattr(model, "__dict__", None)
+    if isinstance(held, dict):
+        for attr in _LAZY_CLIENTS:
+            if held.pop(attr, None) is not None:
+                dropped.append(f"{type(model).__name__}.{attr}")
+    return model, {"rebuilt": False, "dropped": dropped}
+
+
 def _fork_runs(jobs: List[Dict[str, Any]], n: int, timeout_s: float,
                on_done: Callable[[Dict[str, Any], Dict[str, Any]], None],
                say: Callable[..., None]) -> None:
-    """Each job in a forked child (at most ``n`` at once), which writes its
-    run.json; ``on_done(job, result)`` in the parent as each ends."""
+    """Each job in a forked child (at most ``n`` at once), which opens its
+    own connections (:func:`model_for_child`) and writes its run.json;
+    ``on_done(job, result)`` in the parent as each ends."""
     import multiprocessing as mp
     ctx = mp.get_context("fork")
 
     def child(job):
         try:
-            res = _run_one(job["kind"], job["arm"], job["env"], job["model"],
+            model, clients = model_for_child(job["model"])
+            res = _run_one(job["kind"], job["arm"], job["env"], model,
                            job["task"], job["run_dir"], job["opts"])
+            res["child_clients"] = dict(clients, pid=os.getpid())
             _save(job["run_dir"], res)
         finally:
             os._exit(0)
