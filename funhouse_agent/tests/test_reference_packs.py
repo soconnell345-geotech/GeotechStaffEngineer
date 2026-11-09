@@ -260,6 +260,34 @@ def test_pack_pdf_missing_falls_back_to_host_fetcher(
     assert fake.renders[0]["bbox"] == BBOX
 
 
+@pytest.mark.skipif(pymupdf is None, reason="PyMuPDF not installed")
+def test_pack_pdf_opens_by_the_name_the_read_gives(
+        with_packs, monkeypatch, tmp_path):
+    """With a working folder bound (as in the web app), the read-off names a
+    pack's PDF by its file name, and render_region / read_document open it
+    from the pack's folder by that name, as the result's zoom_hint says."""
+    from aec_agent_core import vision_tools as vt
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path / "work"))
+    (tmp_path / "work").mkdir()
+    _FakeVision(monkeypatch)
+    out = _read(PID, "1-1")
+    assert "error" not in out, out
+    assert out["source"] == PDF_NAME                  # no host path
+    folder = with_packs / PID
+    assert str(folder) in reference_packs.pack_folders()
+    found = vt.find_readable_file(out["source"])
+    assert found and Path(found) == folder / PDF_NAME
+    data, _src = vt._resolve_attachment_or_path(out["source"], {})
+    assert bytes(data[:5]) == b"%PDF-"
+
+
+def test_no_pack_folders_without_packs(no_packs):
+    """No packs: the read folders are the three they always were (the
+    fetched-PDF cache, the library's docs, a checkout's docs)."""
+    assert reference_packs.pack_folders() == []
+    assert len(reference_vision.reference_read_roots()) == 3
+
+
 # ---------------------------------------------------------------------------
 # The packs line and the build record
 # ---------------------------------------------------------------------------

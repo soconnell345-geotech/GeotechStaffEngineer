@@ -10,11 +10,13 @@ sections 2.4 and 2.7):
 - :func:`packs_line`: one line for the librarian's prompt and its
   description, so the main agent routes questions about the deployment's own
   manual to the librarian and the librarian can scope a search to it;
-- :func:`pack_records`: the packs in force, for the build record.
+- :func:`pack_records`: the packs in force, for the build record;
+- :func:`pack_folders`: the packs' folders, among the folders the read tools
+  may open, so a zoom on a pack figure's PDF finds it in its pack.
 
-Both are empty with no packs, and on a refs older than 1.6.0 (feature
-detected by ``hasattr(_retrieval_db, "pack_dirs")``), so the app's prompts
-and records are then exactly what they were.
+All are empty with no packs, and on a refs older than 1.6.0 (feature
+detected by ``hasattr(_retrieval_db, "pack_dirs")``), so the app's prompts,
+records and read folders are then exactly what they were.
 """
 
 from typing import List
@@ -41,6 +43,17 @@ def pack_records() -> List[dict]:
     try:
         return list(mod.pack_records())
     except Exception:  # noqa: BLE001 - a record, never a failed build
+        return []
+
+
+def pack_folders() -> List[str]:
+    """The folder of every valid pack; ``[]`` with none."""
+    mod = _packs_module()
+    if mod is None:
+        return []
+    try:
+        return [str(folder) for folder in mod.pack_dirs()]
+    except Exception:  # noqa: BLE001 - a read folder, never a failed read
         return []
 
 

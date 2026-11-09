@@ -31,8 +31,9 @@ from aec_agent_core import vision_tools as _vt
 def reference_read_roots() -> List[str]:
     """GSE's reference library folders, after ``GEOTECH_REFERENCES_DOCS``
     (which the core reads itself): the cache the app fetches reference PDFs
-    into, the installed library's ``docs`` and a source checkout's
-    ``geotech-references/docs``."""
+    into, the installed library's ``docs``, a source checkout's
+    ``geotech-references/docs`` and each local reference pack's folder
+    (REF-64; none with no packs)."""
     roots: List[str] = []
     try:
         from funhouse_agent import reference_docs
@@ -48,6 +49,10 @@ def reference_read_roots() -> List[str]:
     # checkout's folder is the same one it named.
     roots.append(os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), "geotech-references", "docs"))
+    # A pack's PDF may sit in its own folder: a read-off names it by its file
+    # name there, and render_region / read_document then find it.
+    from funhouse_agent.reference_packs import pack_folders
+    roots += pack_folders()
     return roots
 
 
