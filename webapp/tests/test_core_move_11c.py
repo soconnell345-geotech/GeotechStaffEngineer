@@ -89,6 +89,8 @@ _ORDERS = [
     ["funhouse_agent.review_build", "webapp.core"],
     ["calc_package.docx_renderer", "funhouse_agent.docx_renderer",
      "aec_agent_core.docx_renderer"],
+    ["report_ingest.mirror", "funhouse_agent.run_mirror",
+     "aec_agent_core.run_mirror"],
 ]
 
 _PROBE = r"""
@@ -149,6 +151,18 @@ def test_calc_packages_old_name_for_the_word_renderer_is_the_core_module():
     funhouse_agent (a fresh interpreter)."""
     code = ("import sys, calc_package.docx_renderer as a\n"
             "import aec_agent_core.docx_renderer as b\n"
+            "print(a is b, 'funhouse_agent' in sys.modules)\n")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True, timeout=300)
+    assert out.stdout.split() == ["True", "False"], out.stderr[-2000:]
+
+
+def test_report_ingests_old_name_for_the_run_mirror_is_the_core_module():
+    """report_ingest.mirror (INF-30 step 5's alias) points at the core's
+    module directly, as calc_package.docx_renderer does, and importing it
+    loads nothing of funhouse_agent (a fresh interpreter)."""
+    code = ("import sys, report_ingest.mirror as a\n"
+            "import aec_agent_core.run_mirror as b\n"
             "print(a is b, 'funhouse_agent' in sys.modules)\n")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True,
                          text=True, timeout=300)
