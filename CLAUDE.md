@@ -131,9 +131,11 @@ Key conventions:
   vision calls and Tiny Apps key routes, GSE's part handed in through
   `aec_agent_core.hooks`, then (step 11 (b)) the figure helper, plotting
   box, chart stack and worked examples, GSE's chart lines handed in by a
-  registration; old import paths kept as aliases; a dev install
-  puts it first: `pip install -e packages/aec-agent-core -e .`; step
-  11 (c) next; the owner's question list
+  registration, then (step 11 (c)) guards and records, Word and Excel, the
+  checks, the review suite's framework and the shared assembly, with a
+  core-only CI job; old import paths kept as aliases; a dev install
+  puts it first: `pip install -e packages/aec-agent-core -e .`; the
+  core's first release (step 12) next; the owner's question list
   runs inside the ingest when `GSE_REPORT_QUESTIONS` names it, posts matched
   from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split; the
   geotech page keeps 15 document tools off the list until a document is
