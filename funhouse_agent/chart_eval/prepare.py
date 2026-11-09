@@ -127,7 +127,7 @@ def prepare_chartography(out_dir: Any, repo: str = REPO, split: str = "test",
             judge = fetch_judge_template(judge_url)
         except Exception as exc:                          # noqa: BLE001
             print(f"the judge prompt was not fetched ({exc}); the suite's "
-                  "own wording will grade", file=sys.stderr)
+                  "own prompt will grade", file=sys.stderr)
     if judge:
         (out / "judge_prompt.txt").write_text(judge, encoding="utf-8")
     prov = {"repo": repo, "split": split, "revision": sha or revision,

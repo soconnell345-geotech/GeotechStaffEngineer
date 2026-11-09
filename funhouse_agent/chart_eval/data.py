@@ -29,7 +29,7 @@ Optional, for grading as the benchmark's own authors grade:
 * ``judge_prompt.txt``: one prompt for every task (Surge's, for
   Chartography; :mod:`funhouse_agent.chart_eval.prepare` writes it).
 
-Without either, the suite's own wording of the grading rules is used
+Without either, the suite's own grading prompt is used
 (:mod:`funhouse_agent.chart_eval.judge`). A ``subset`` file (one task id per
 line, e.g. CharXiv's ``sample_100.txt``) narrows a run to those tasks.
 """

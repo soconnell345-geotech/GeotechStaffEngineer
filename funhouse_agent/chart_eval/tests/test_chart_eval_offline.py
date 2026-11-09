@@ -84,14 +84,15 @@ def make_data(tmp_path, n=2, judge_prompt=None):
 
 
 def judge_fake(passing_word="42"):
-    """A judge that passes a response containing ``passing_word``."""
+    """A judge (on the package's own prompt) that passes a response
+    containing ``passing_word``."""
     def fn(messages, n):
         text = messages[-1].content
-        response = text.split("Response:", 1)[1].split("Golden answer:")[0]
-        score = 1 if passing_word in response else 0
-        return ai("```json\n" + json.dumps({"scores": [{
-            "criterion_id": "criterion_1", "extracted_answer": response[:20],
-            "score": score, "rationale": "r"}]}) + "\n```")
+        response = text.split("Answer to check:", 1)[1].split(
+            "Judge the result")[0].strip()
+        return ai("```json\n" + json.dumps({
+            "final_answer": response[:20],
+            "correct": passing_word in response, "reason": "r"}) + "\n```")
     return scripted(fn, name="judge")
 
 
@@ -253,8 +254,12 @@ def test_the_data_folders_judge_prompt_is_used_word_for_word():
     assert text.startswith("Prompt: Q?\nResponse: R.\nGolden answer: G!")
     assert "JSON object only" in text
     own = build_prompt("Q?", "G!", "R.")
-    assert "Q?" in own and "{{" not in own and own.startswith(
-        OWN_TEMPLATE.split("\n")[0])
+    assert "Q?" in own and "{{" not in own and "<|" not in own
+    assert own.startswith(OWN_TEMPLATE.split("\n")[0])
+    assert own.index("Q?") < own.index("G!") < own.index("R.")
+    # the package's own prompt asks for the reply its parser reads
+    asked = own[own.index('{"final_answer"'):].split("\n")[0]
+    assert parse_verdict(asked)[0]["correct"] is True
 
 
 def test_the_judge_prompt_is_read_from_surges_source_without_running_it():
