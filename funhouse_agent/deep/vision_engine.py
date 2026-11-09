@@ -733,6 +733,14 @@ class LangChainVisionEngine:
                   else vision_view.detail(self)) or None
         _note_side_call(image_px=_image_px(data), detail=detail,
                         image_bytes=len(data))
+        # A failed probe's fallback budget, on this call's record in
+        # activity.jsonl (DR-36). Read from the cache only: never a probe
+        # that the call would not have made anyway.
+        from funhouse_agent import vision_probe
+        fallback = vision_view.probe_fallback_note(
+            vision_probe.cached_profile(self._model))
+        if fallback:
+            _note_side_call(probe_fallback=fallback)
 
         def message(with_detail: bool) -> "HumanMessage":
             image_url = {"url": data_uri}

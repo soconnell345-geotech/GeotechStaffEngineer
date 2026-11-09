@@ -43,7 +43,19 @@ units; INF-39).
 One probe per model per process (a few thousand input tokens, about a cent on
 GPT-5.4; with call 5, about 8,000 more where ``original`` is honoured, so
 about three cents), cached by the model object's identity and configured
-name. Turn it
+name.
+
+A probe call the model answers BUSY (409, 429, 5xx, a timeout or a dropped
+connection: :func:`funhouse_agent.deep.vision_engine.busy_kind`) is asked
+again with the vision calls' own backoff (DR-36). A probe that still could
+not finish is FAILED: its fallback budget is used, but it is not cached for
+the process -- it is held for :data:`FAILED_HOLD_S` and then measured again
+-- a busy error on call 4 is never read as "``original`` refused", and every
+vision result made on it says so (``vision_probe`` on the result,
+``probe_fallback`` on the side call's record). On the chart suite (EV-35,
+2026-11-08) one 409 at a run's first look set 8 of 200 runs to detail
+``high`` instead of ``original`` and changed one answer; in the app it would
+have held for every conversation on that model until a restart. Turn it
 off with ``GEOTECH_VISION_PROBE=0``; ``GEOTECH_VISION_BUDGET`` /
 ``GEOTECH_CHART_BUDGET`` still override whatever it finds.
 """
@@ -125,24 +137,48 @@ class VisionProfile:
     #: The longest side the HOST delivers (px), when the probe saw it shrink
     #: a larger image; ``None`` when none was seen (or not measured).
     max_edge: Optional[int] = None
+    #: True when a probe call still failed after its retries (DR-36): the
+    #: budget is a fallback, the profile is not cached for the process, and
+    #: vision results made on it say so (:meth:`fallback_note`).
+    failed: bool = False
+    #: Busy answers retried during the probe, by call (``text``, ``small``,
+    #: ``large``, ``original``, ``wide``).
+    retries: Dict[str, int] = field(default_factory=dict)
+
+    def fallback_note(self) -> Optional[str]:
+        """One line for a vision result made on a FAILED probe, else
+        ``None``."""
+        if not self.failed:
+            return None
+        used = (f"the {self.detailed} budget looked up by model name"
+                if self.detailed else "the app's default image budget")
+        why = self.error or "a probe call failed"
+        return (f"! the vision model could not be measured ({why}); this "
+                f"look used {used}, which may "
+                f"be a smaller image than the model takes. The model is "
+                f"measured again on a later look.")
 
     def summary(self) -> str:
         who = self.answered_by or "an unknown model"
         if not self.general:
-            return f"{who}: image budget not determined ({self.error or self.source})"
+            failed = " -- probe FAILED" if self.failed else ""
+            return (f"{who}: image budget not determined "
+                    f"({self.error or self.source}){failed}")
         charts = ("" if self.detailed == self.general
                   else f", charts at {self.detailed}")
         host = (f"; the host delivers at most {self.max_edge} px"
                 if self.max_edge else "")
+        failed = " -- probe FAILED, fallback in use" if self.failed else ""
         return (f"{who}: images at {self.general}{charts}{host} "
-                f"(from {self.source})")
+                f"(from {self.source}){failed}")
 
     def to_dict(self) -> Dict[str, Any]:
         return {"answered_by": self.answered_by, "general": self.general,
                 "detailed": self.detailed, "source": self.source,
                 "ratios": dict(self.ratios),
                 "image_tokens": dict(self.image_tokens), "error": self.error,
-                "max_edge": self.max_edge}
+                "max_edge": self.max_edge, "failed": self.failed,
+                "retries": dict(self.retries)}
 
 
 _CACHE: Dict[Any, VisionProfile] = {}
@@ -154,6 +190,18 @@ _INFLIGHT: Dict[Any, threading.Event] = {}
 #: Longest a vision call waits for ANOTHER call's probe of its model before
 #: going ahead with the configured budget (seconds).
 PROBE_WAIT_S = 60.0
+
+#: Failed probes (DR-36), by model: ``(monotonic time, profile)``. Never the
+#: process cache: a failed profile is handed back for :data:`FAILED_HOLD_S`
+#: (so a model that stays down is not re-probed on every look) and then
+#: measured again.
+_FAILED: Dict[Any, Tuple[float, VisionProfile]] = {}
+#: Seconds a failed probe's fallback stands before the model is measured
+#: again.
+FAILED_HOLD_S = 120.0
+
+#: The clock for the hold (tests replace it).
+_now = None
 
 
 def enabled() -> bool:
@@ -176,20 +224,64 @@ def _blank_png(side: int, height: Optional[int] = None) -> str:
     return base64.b64encode(pix.tobytes("png")).decode()
 
 
-def _call(model, content):
+def _monotonic() -> float:
+    import time
+    return (_now or time.monotonic)()
+
+
+class _Busy(Exception):
+    """A probe call the model still answered busy after its retries."""
+
+    def __init__(self, call: str, kind: str, tries: int, exc: BaseException):
+        super().__init__(f"probe call '{call}' failed after {tries} "
+                         f"tries ({kind}): {type(exc).__name__}: {exc}"[:300])
+        self.call, self.kind, self.tries, self.exc = call, kind, tries, exc
+
+
+def _invoke_retrying(model, content, call: str, retries: Dict[str, int]):
+    """``model.invoke`` for one probe call, asked again with the vision
+    calls' own backoff while the model answers busy (409, 429, 5xx,
+    timeout, dropped connection; :func:`funhouse_agent.deep.vision_engine.
+    busy_kind`), up to :func:`~funhouse_agent.deep.vision_engine.busy_tries`
+    times in all. Raises :class:`_Busy` when every try was busy; any other
+    error as it came."""
     from langchain_core.messages import HumanMessage
     try:
-        from funhouse_agent.deep.vision_engine import side_call
+        from funhouse_agent.deep import vision_engine as ve
+        side_call = ve.side_call
     except Exception:                                      # noqa: BLE001
-        side_call = None
-    if side_call is None:
-        msg = model.invoke([HumanMessage(content=content)])
-    else:
-        # Labelled in the record as the probe, not as the tool or helper
-        # that triggered it (live wave w8: four "OK." replies read as the
-        # figure helper's own calls; EV-20).
-        with side_call(kind="probe"):
-            msg = model.invoke([HumanMessage(content=content)])
+        ve = side_call = None
+    tries = ve.busy_tries() if ve is not None else 1
+    busy = 0
+    while True:
+        try:
+            if side_call is None:
+                return model.invoke([HumanMessage(content=content)])
+            # Labelled in the record as the probe, not as the tool or helper
+            # that triggered it (live wave w8: four "OK." replies read as
+            # the figure helper's own calls; EV-20).
+            with side_call(kind="probe", probe_call=call,
+                           probe_try=(busy + 1) if busy else None):
+                return model.invoke([HumanMessage(content=content)])
+        except Exception as exc:  # noqa: BLE001 - classified, then raised
+            kind = ve.busy_kind(exc) if ve is not None else None
+            if kind is None:
+                raise
+            busy += 1
+            if busy >= tries:
+                raise _Busy(call, kind, busy, exc) from exc
+            retries[call] = retries.get(call, 0) + 1
+            wait = ve._busy_wait_s(exc, busy - 1)
+            log.warning("vision probe: call '%s' busy (%s); asking again in "
+                        "%.1f s (try %d of %d)", call, kind, wait, busy + 1,
+                        tries)
+            ve._sleep(wait)
+
+
+def _call(model, content, call: str = "call",
+          retries: Optional[Dict[str, int]] = None):
+    msg = _invoke_retrying(model, content, call,
+                           retries if retries is not None else {})
     usage = getattr(msg, "usage_metadata", None) or {}
     meta = getattr(msg, "response_metadata", None) or {}
     answered = meta.get("model_name") or meta.get("model")
@@ -256,15 +348,20 @@ def probe(model) -> VisionProfile:
     try:
         small_b64 = _blank_png(PROBE_SMALL_PX)
         large_b64 = _blank_png(PROBE_LARGE_PX)
+        r = prof.retries
         got = _parallel([
-            lambda: _call(model, "Reply with OK."),
-            lambda: _call(model, _image_content(small_b64, "high")),
-            lambda: _call(model, _image_content(large_b64, "high")),
-            lambda: _call(model, _image_content(large_b64, "original")),
+            lambda: _call(model, "Reply with OK.", "text", r),
+            lambda: _call(model, _image_content(small_b64, "high"), "small", r),
+            lambda: _call(model, _image_content(large_b64, "high"), "large", r),
+            lambda: _call(model, _image_content(large_b64, "original"),
+                          "original", r),
         ])
         for status, value in got[:3]:
             if status == "error":
                 raise value
+        if got[3][0] == "error" and isinstance(got[3][1], _Busy):
+            # Busy to the last try: NOT a refusal of "original" (DR-36).
+            raise got[3][1]
         (base, answered), (small, a1), (large, a2) = (v for _, v in got[:3])
         prof.answered_by = answered or a1 or a2
         if _is_claude(model, prof.answered_by):
@@ -278,7 +375,7 @@ def probe(model) -> VisionProfile:
                 return prof
         if got[3][0] == "ok":
             orig = got[3][1][0]
-        else:                             # refused: original unsupported
+        else:            # refused (not busy): original unsupported
             orig = None
             prof.ratios["original_refused"] = 1.0
             log.info("vision probe: detail=original refused: %s", got[3][1])
@@ -297,7 +394,11 @@ def probe(model) -> VisionProfile:
                 _probe_host_edge(model, prof, base, toks["large_original"])
             return prof
         prof.error = "the responses carried no token counts"
+    except _Busy as exc:
+        prof.failed = True
+        prof.error = str(exc)
     except Exception as exc:
+        prof.failed = True
         prof.error = f"{type(exc).__name__}: {exc}"[:300]
     found = (_claude_budgets(budget_for_model, prof.answered_by)
              if _is_claude(model, prof.answered_by)
@@ -314,7 +415,8 @@ def _probe_host_edge(model, prof: VisionProfile, base: int,
     ``prof.max_edge``; a failure leaves it unset and never fails the probe."""
     try:
         w, h = WIDE_PX
-        wide, _ = _call(model, _image_content(_blank_png(w, h), "original"))
+        wide, _ = _call(model, _image_content(_blank_png(w, h), "original"),
+                        "wide", prof.retries)
         if wide is None:
             return
         wide_tokens = wide - base
@@ -322,6 +424,10 @@ def _probe_host_edge(model, prof: VisionProfile, base: int,
         if square_original and square_original > 0:
             prof.ratios["wide"] = round(wide_tokens / square_original, 3)
         prof.max_edge = host_edge_from_probe(square_original, wide_tokens)
+    except _Busy as exc:         # the budget stands; measured again later
+        prof.failed = True
+        prof.error = str(exc)
+        log.warning("vision probe: host edge not measured: %s", exc)
     except Exception as exc:     # the budget stands without it
         log.info("vision probe: host edge not measured: %s", exc)
 
@@ -344,6 +450,9 @@ def profile_for(model) -> Optional[VisionProfile]:
         cached = _CACHE.get(key)
         if cached is not None:
             return cached
+        held = _FAILED.get(key)
+        if held is not None and _monotonic() - held[0] < FAILED_HOLD_S:
+            return held[1]
         running = _INFLIGHT.get(key)
         if running is None:
             running = _INFLIGHT[key] = threading.Event()
@@ -353,16 +462,24 @@ def profile_for(model) -> Optional[VisionProfile]:
     if not mine:
         running.wait(PROBE_WAIT_S)
         with _LOCK:
-            return _CACHE.get(key)
+            got = _CACHE.get(key)
+            if got is None and key in _FAILED:
+                got = _FAILED[key][1]
+            return got
     prof = None
     try:
         prof = probe(model)
     except Exception as exc:  # noqa: BLE001 - probe() never raises; belt
-        prof = VisionProfile(error=f"{type(exc).__name__}: {exc}"[:300])
+        prof = VisionProfile(error=f"{type(exc).__name__}: {exc}"[:300],
+                             failed=True)
     finally:
         with _LOCK:
-            if prof is not None:
+            if prof is not None and prof.failed:
+                # Never cached for the process (DR-36): held, then re-probed.
+                _FAILED[key] = (_monotonic(), prof)
+            elif prof is not None:
                 _CACHE[key] = prof
+                _FAILED.pop(key, None)
             _INFLIGHT.pop(key, None)
         running.set()
     log.info("vision model: %s", prof.summary())
@@ -372,6 +489,7 @@ def profile_for(model) -> Optional[VisionProfile]:
 def clear_cache() -> None:
     with _LOCK:
         _CACHE.clear()
+        _FAILED.clear()
 
 
 def cached_profile(model) -> Optional[VisionProfile]:
@@ -379,16 +497,20 @@ def cached_profile(model) -> Optional[VisionProfile]:
     probing — for a run record (``None`` when it was never probed)."""
     if model is None:
         return None
+    key = _cache_key(model)
     with _LOCK:
-        return _CACHE.get(_cache_key(model))
+        got = _CACHE.get(key)
+        if got is None and key in _FAILED:
+            got = _FAILED[key][1]
+        return got
 
 
 def cached_profiles() -> List[VisionProfile]:
     """Every profile measured in this process, without probing."""
     with _LOCK:
-        return list(_CACHE.values())
+        return list(_CACHE.values()) + [p for _, p in _FAILED.values()]
 
 
-__all__ = ["PROBE_ENV", "WIDE_PX", "VisionProfile", "enabled", "probe",
+__all__ = ["PROBE_ENV", "WIDE_PX", "FAILED_HOLD_S", "VisionProfile", "enabled", "probe",
            "profile_for", "clear_cache", "host_edge_from_probe",
            "cached_profile", "cached_profiles"]
