@@ -77,6 +77,19 @@ def test_without_a_page_host_the_suite_says_so(clean_hooks):
                              "AEC_CORE_COMMIT")
 
 
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_without_a_page_host_the_suite_refuses_to_run(tmp_path, clean_hooks,
+                                                      dry_run):
+    """No page handed in: the suite says so instead of scoring no tasks,
+    before it writes anything."""
+    from aec_agent_core.review_eval import runner
+    out = tmp_path / "out"
+    with pytest.raises(runner.NoPageHost, match="no page to run its tasks"):
+        runner.score_review_suite(model=object(), out_dir=str(out),
+                                  dry_run=dry_run, verbose=False)
+    assert not out.exists()
+
+
 def test_a_task_runs_on_the_page_an_app_hands_in(tmp_path, clean_hooks):
     from aec_agent_core.review_eval import runner
     from aec_agent_core.review_eval.tasks import Task

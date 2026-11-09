@@ -127,9 +127,11 @@ def page_host():
     hook = get_hook(PAGE_HOST_HOOK)
     if hook is None:
         raise NoPageHost(
-            f"no page to run the suite on: an app fills the hook "
-            f"{PAGE_HOST_HOOK!r} (aec_agent_core.hooks) with its page host "
-            f"(GeotechStaffEngineer: import funhouse_agent.review_eval)")
+            f"The review suite has no page to run its tasks on: no app has "
+            f"handed one in (the hook {PAGE_HOST_HOOK!r} in "
+            f"aec_agent_core.hooks). In GeotechStaffEngineer, run the suite "
+            f"from funhouse_agent.review_eval, which hands in its pages and "
+            f"its tasks.")
     return hook()
 
 
@@ -727,6 +729,10 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
     question.
     ``rescore=True`` re-runs the checks on every saved run (no model call)
     before reusing it — after a check is fixed; runs not yet done still run.
+
+    Raises :class:`NoPageHost` when no app has handed in its page
+    (:data:`PAGE_HOST_HOOK`): with no page, no app has handed in its tasks
+    either, and the run would score none.
     """
     arm_list: List[tuple] = []
     for a in arms:
@@ -738,6 +744,10 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
         else:
             name, env = a
             arm_list.append((str(name), dict(env)))
+    # Fail fast (BACKLOG INF-32 step 11 (c) review): called from the core
+    # with no app's page handed in, the suite loaded no tasks and wrote an
+    # empty summary without saying why.
+    page_host()
     tasks = select(load_tasks(extra_tasks, include_open=include_open),
                    ids=ids, categories=categories, split=split)
     if max_tasks:
