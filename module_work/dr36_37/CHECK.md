@@ -20,11 +20,14 @@ answer (2108 baseline).
   `GEOTECH_VISION_BUSY_TRIES`), `_busy_wait_s` (2 s doubled, with jitter, or `retry-after`).
   Each retry is on the record (`probe_call`, `probe_try` on the side-call label) and counted in
   `VisionProfile.retries`.
-- `:362`: a call 4 that is busy to the last try raises; it is never read as a refusal. A real
-  refusal (a non-busy error) is still read as "original refused" and cached, as before.
-- `:397-401`, `:427`: any probe that could not finish (calls 1 to 3, a busy call 4, a busy
+- `:378`: a call 4 that is busy to the last try raises; it is never read as a refusal. It is
+  raised after calls 1 to 3's answers are read (so the fallback is that model's budget by name)
+  and after the Claude branch (a Claude budget is by name and never needs call 4); see Review
+  fixes. A real refusal (a non-busy error) is still read as "original refused" and cached, as
+  before.
+- `:400-404`, `:430-431`: any probe that could not finish (calls 1 to 3, a busy call 4, a busy
   call 5) sets `VisionProfile.failed`.
-- `:477-479` (`profile_for`): a failed profile is never put in the process cache. It is held in
+- `:480-482` (`profile_for`): a failed profile is never put in the process cache. It is held in
   `_FAILED` for `FAILED_HOLD_S` (120 s, `:201`) so a model that stays down is not re-probed on
   every look, and is measured again after that. The cache only ever holds finished probes.
   `cached_profile` / `cached_profiles` still return a held failure, so run records show it.
@@ -72,7 +75,7 @@ re-record commit.
 
 ## Tests (pytest exit codes)
 
-- `funhouse_agent/tests/test_vision_probe_retry.py` (new, 13): exit 0.
+- `funhouse_agent/tests/test_vision_probe_retry.py` (new, 13; 15 after the review fixes): exit 0.
   - A 409 on each of the four probe calls in turn, then success, gives the full profile:
     `openai-original`, not refused, cached, the backoff waited once.
   - A busy wide (call 5) is retried.
@@ -106,13 +109,54 @@ re-record commit.
     `test_defaults_used[profile_figure|plot_data]`.
   - Not caused by this branch.
 
+## Review fixes (independent review, 2026-11-08)
+
+The review's verdict was "merge after fixes". There was one finding; the review also asked for a
+test that proves the question cannot leak between conversations.
+
+1. **A busy call 4 skipped the model-name budget, and failed a Claude probe** (commit `1af2acd`).
+   - **The fault:** the busy check on call 4 ran before calls 1 to 3's answers were read and
+     before the Claude branch.
+     - A GPT-5.4 whose call 4 stayed busy fell back to the app's default, so page looks ran at
+       detail `high` during the 120 s hold: the DR-36 symptom.
+     - A Claude probe, whose budget is by name and which never reads call 4, was FAILED and
+       re-probed every 120 s, with "could not be measured" on every result. On master it finished.
+   - **The fix** (`funhouse_agent/vision_probe.py:373-378`): the check now comes after both.
+   - **Tests** (`test_vision_probe_retry.py`):
+     - `test_a_busy_original_falls_back_to_the_named_models_budget`: a GPT-5.4 gets
+       `openai-original` and detail `original` during the hold, and the note names that budget.
+     - `test_a_busy_original_does_not_fail_a_claude_probe`: the probe finishes and is cached,
+       with no note.
+     - `test_a_persistent_409_on_original_is_a_failed_probe_not_a_refusal` now asserts the
+       fallback exactly. It had accepted either source, which hid the fault.
+     - All three fail without the fix.
+2. **Isolation test** (commit `9104725`): `funhouse_agent/tests/test_turn_question_isolation.py`.
+   - **What it runs:** two conversations' turns at once through `turn_jobs.start_turn_job`,
+     `core.stream_turn`, the heartbeat pump and a real compiled deep agent. Each turn makes two
+     looks at once, and a `task` helper makes its own look.
+   - **What it checks:**
+     - A barrier proves the four main looks overlapped.
+     - All six looks carry their own turn's question, never the other turn's.
+   - **Proof that it can fail:** the reviewer replaced the context variable with a process-wide
+     one, and the test failed on a leaked question.
+   - **Store:** the store root is `tmp_path`, and the test checks it before any write.
+
+**Tests after the fixes** (pytest exit codes):
+- The new and changed tests (`test_vision_probe_retry`, `test_turn_question_isolation`,
+  `test_turn_question`, `test_vision_probe`): 52 passed, exit 0.
+- The funhouse_agent vision, probe and turn files (14, with `test_working_dir_binding`): 291
+  passed, exit 0.
+- `webapp/tests/test_page_fingerprints.py` and `test_public_text.py`, run with this section in
+  place: 20 passed, exit 0. The fingerprints are unchanged, and there is no re-record commit.
+
 ## Release note (what a user notices)
 
 - A vision model that answers "busy" while the app first measures it no longer quietly drops
-  every later look to a smaller image. The measurement is retried. If it still fails, the
-  fallback is not kept for the life of the process, and each vision result made on it says
+  every later look to a smaller image. The measurement is retried. If it still fails, the app
+  uses the model's own image budget where it knows the model by name (otherwise its default),
+  the fallback is not kept for the life of the process, and each vision result made on it says
   "the vision model could not be measured", until the model is measured again a couple of
-  minutes later.
+  minutes later. A Claude model is measured by name and is not affected.
 - The vision reading of an image, page, zoom or chart is now given the user's own question as
   context beside the agent's request. A reading should no longer answer a narrower or reworded
   question than the one the user asked.
