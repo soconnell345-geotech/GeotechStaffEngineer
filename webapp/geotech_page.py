@@ -234,6 +234,40 @@ def agent_picker(ss, rebuild) -> None:
 REFERENCE_DOCS_ENV = "GEOTECH_REFERENCES_DOCS"
 
 
+def _figure_catalogs() -> List[Path]:
+    """Every figure catalog the library reads: the installed package's and,
+    on refs 1.6.0+, each local reference pack's (REF-64; a pack's catalog
+    sits in its folder, named by its pack id)."""
+    try:
+        from geotech_references import _figures_db
+        if hasattr(_figures_db, "_iter_catalogs"):
+            from funhouse_agent.reference_packs import _packs_module
+            if _packs_module() is not None:
+                return list(_figures_db._iter_catalogs())
+    except Exception:                                   # noqa: BLE001
+        pass
+    import geotech_references
+    pkg = Path(geotech_references.__file__).parent
+    return sorted(pkg.glob("*/figures_catalog.json"))
+
+
+def _pack_folder_files() -> set:
+    """The file names in the local reference packs' folders, where a pack's
+    PDFs are looked for first (REF-64); empty with no packs."""
+    names: set = set()
+    try:
+        from funhouse_agent.reference_packs import _packs_module
+        mod = _packs_module()
+        for _pid, folder in (mod.packs() if mod is not None else []):
+            try:
+                names |= set(os.listdir(folder))
+            except OSError:
+                continue
+    except Exception:                                   # noqa: BLE001
+        pass
+    return names
+
+
 def reference_pdf_names() -> dict:
     """``{pdf filename: [what needs it]}`` for every source PDF the agent can
     open to look at a page — ``read_reference_figure`` (the installed figure
@@ -243,9 +277,7 @@ def reference_pdf_names() -> dict:
     import json
     names: dict = {}
     try:
-        import geotech_references
-        pkg = Path(geotech_references.__file__).parent
-        for cat in sorted(pkg.glob("*/figures_catalog.json")):
+        for cat in _figure_catalogs():
             try:
                 data = json.loads(cat.read_text(encoding="utf-8"))
             except (OSError, ValueError):
@@ -335,6 +367,12 @@ def reference_docs_check() -> dict:
         except OSError as exc:
             local_problem = f"{where} — cannot list the folder: {exc}"
 
+    # -- the local reference packs' own folders (REF-64) -------------------
+    pack_files = _pack_folder_files()
+    present |= pack_files
+    from funhouse_agent.reference_packs import pack_problems
+    packs_skipped = [f"reference pack skipped: {p}" for p in pack_problems()]
+
     # -- PDFs already fetched this session ---------------------------------
     try:
         from funhouse_agent import reference_docs
@@ -374,7 +412,7 @@ def reference_docs_check() -> dict:
     src = " + ".join(sources) or "the fetched-PDF cache"
     missing = [n for n in needed if n not in present and n not in remote]
     n_remote = sum(1 for n in needed if n not in present and n in remote)
-    extra = [p for p in (local_problem, sp_problem) if p]
+    extra = [p for p in (local_problem, sp_problem) if p] + packs_skipped
     if not missing:
         detail = f"{src}: all {len(needed)} PDFs found"
         if n_remote:
