@@ -1,5 +1,15 @@
 # Locating things on a page: where location error enters
 
+> **2026-11-09, BACKLOG DR-39:** the lean review build (`GEOTECH_REVIEW_AGENT=lean`)
+> and the experiments built on it were removed from the code: `GEOTECH_VISION_INLINE`,
+> `GEOTECH_REVIEW_SWEEP` (`deep/sweep.py`), `GEOTECH_REVIEW_FINDINGS`
+> (`review_findings.py`, `deep/findings_tools.py`), `GEOTECH_REVIEW_OVERVIEW`,
+> `GEOTECH_REVIEW_GEOMETRY` (`deep/geometry_tools.py`), `GEOTECH_REVIEW_DIGEST`
+> (`review_digest/`, `deep/digest_tools.py`), `GEOTECH_REVIEW_KEPT_READINGS`, and
+> the suite arms `lean`, `grounded`, `inline`, `sweep`, `overview`, `geometry`,
+> `digest`, `kept_readings`. What this file says about them is history; the
+> inventory and its evidence are in `module_work/dr39/CHECK.md`.
+
 How the Document Review agent finds WHERE something is on a PDF page, end to
 end, and every place where error can enter. Written 2026-10-07 against
 GeotechStaffEngineer `master` at `e034d01` (code identical to `4dd8fcd`) and

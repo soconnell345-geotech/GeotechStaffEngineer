@@ -14,12 +14,12 @@ Every switch is read from the environment AT CALL TIME, so a notebook (or the
 suite) can flip one between two runs without rebuilding anything but the agent.
 
 ``GEOTECH_REVIEW_AGENT``
-    ``legacy`` (default) builds the review page's agent the way it has been
-    built since 5.26: the geotechnical builder with the modules subtracted.
-    ``lean`` builds it on its own (:mod:`funhouse_agent.deep.review_agent`):
-    only the reading, looking and writing tools, no coding-agent prompt or
-    scratch-filesystem tools, a reading sub-agent that carries the review
-    rules, and a model-call budget that ends a long turn with an answer.
+    Unset (default) builds the review page's own agent
+    (:mod:`funhouse_agent.review_build`). ``minimal`` builds the
+    looking-only agent (:mod:`funhouse_agent.deep.minimal_agent`), a
+    measuring stick the suites compare against, not a product. (``lean``,
+    the page's own lean build, was removed with its switches in BACKLOG
+    DR-39: no suite run showed a gain; ``module_work/dr39/CHECK.md``.)
 ``GEOTECH_VISION_TEXT_CONTEXT``
     ``1`` gives every page/region vision call the PDF's own text-layer lines
     inside the view it is looking at (exact strings, with positions), or says
@@ -28,45 +28,6 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     ``1`` asks every page/region vision call to end with a machine-readable
     list of what it located, and returns those locations as boxes in PDF
     points the agent can pass straight back to ``render_region``.
-``GEOTECH_VISION_INLINE``
-    ``1`` lets the reasoning model look: the page/region tools stop making the
-    separate one-shot vision call and the newest images are shown to the main
-    model itself at its next call (lean agent only). ``analyze_image`` keeps
-    its one-shot vision call, exactly as released in 5.30, unless
-    ``GEOTECH_REVIEW_OVERVIEW`` is on too (see there).
-``GEOTECH_REVIEW_SWEEP``
-    ``1`` offers the ``sweep_pages`` tool (lean agent only): one question asked
-    of every page in a range, in parallel, answered per page with citations.
-``GEOTECH_REVIEW_FINDINGS``
-    ``1`` offers the findings tools (lean agent only): ``record_finding``,
-    ``list_findings`` and ``findings_report``. Each finding is kept in
-    ``findings.json`` in the conversation's working folder in the shared
-    format of :mod:`funhouse_agent.review_findings`, its quotes checked
-    against the pages it cites, and the Word comment log and marked-up PDFs
-    are rendered from it (plan S1.5, ``module_work/REVIEW_ARCHITECTURE.md``).
-``GEOTECH_REVIEW_OVERVIEW``
-    ``1`` makes the orientation turn after an upload ask for the contact
-    sheets explicitly when the new uploads run past
-    ``GEOTECH_REVIEW_OVERVIEW_PAGES`` pages in all (default 20), and to skip
-    them at or below it (plan S1.2). Only with BOTH this and
-    ``GEOTECH_VISION_INLINE`` on is the lean agent's ``analyze_image`` of an
-    image FILE (a contact sheet) shown to the model itself, like the inline
-    page tools; either one alone leaves ``analyze_image`` as released.
-``GEOTECH_REVIEW_GEOMETRY``
-    ``1`` offers the drawing-geometry tools (lean agent only):
-    ``drawing_callouts``, ``drawing_dimensions``, ``title_block`` and
-    ``revision_clouds`` (:mod:`funhouse_agent.deep.geometry_tools`). They
-    find leaders, dimension lines, the title block and revision clouds from
-    a sheet's line-work and return boxes to zoom on - "geometry says where,
-    vision says what" (plan S1.1).
-``GEOTECH_REVIEW_DIGEST``
-    ``1`` offers the digest tools (lean agent only; its reading helper gets
-    them too): ``document_inventory``, ``digest_search``, ``digest_pages``
-    and ``digest_references`` (:mod:`funhouse_agent.deep.digest_tools`) over
-    the FREE layer of each upload's digest (:mod:`funhouse_agent.
-    review_digest`: page map, text index, references, built by code in
-    seconds and kept in the working folder) - plan shape 2, Stage A. Its
-    small/large hint uses ``GEOTECH_REVIEW_SHAPE1_PAGES`` (default 20).
 ``GEOTECH_COVERAGE``
     ``1`` keeps a ledger of every page any tool or helper reads or looks at
     (:mod:`funhouse_agent.coverage`, derived from the tool calls, kept in
@@ -75,7 +36,7 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     pages marked extracted or skipped) and adds the gate: a turn that takes
     data out of a document and tries to finish with data pages unread is
     told once, with the list. BOTH pages and every agent build that reads
-    documents (the geotech page, the legacy and lean review agents); not the
+    documents (the geotech page and the review page); not the
     minimal agent (plan W4, ``module_work/COVERAGE_AND_CHECKLIST.md``). On
     the Document Review page only a declared coverage task holds a turn,
     and the tool's description names no kind of report (BACKLOG RI-34).
@@ -111,12 +72,6 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     turned from the start. Both pages; page and region looks and tiles
     (BACKLOG VIS-01: the sheets Sol misread sideways in Foundry brief 5 have
     no text layer to say which way their lettering runs).
-``GEOTECH_REVIEW_KEPT_READINGS``
-    ``1`` offers ``kept_readings`` on the Document Review page (and to its
-    reading helper): the conversation's kept page readings, listed by
-    reference and returned whole by document and page, read-only. The
-    geotech page always offers it; on the review page it waits for the
-    suite (arm ``kept_readings``; BACKLOG TA-28).
 ``GEOTECH_FIGURE_HELPER``
     ON by default (owner, 2026-10-15, GM-92: "on everywhere"; BACKLOG
     GM-227); ``0`` with ``GEOTECH_PLOT_CODE=0`` leaves it out (plotting
@@ -124,8 +79,8 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     (:mod:`funhouse_agent.deep.figure_helper`)
     to the agent: it draws a figure with ``plot_data`` from a figure
     checklist (after Tufte) and worked examples, looks at the PNG and
-    redraws (owner's choice, 2026-10-15, OWN-61 option B). Both pages; not
-    the lean review agent (BACKLOG GM-92).
+    redraws (owner's choice, 2026-10-15, OWN-61 option B). Both pages
+    (BACKLOG GM-92).
 ``GEOTECH_PLOT_CODE``
     ON by default (owner, 2026-10-15, GM-92; BACKLOG GM-227); ``0`` takes
     it away (and the figure helper too only with
@@ -205,17 +160,10 @@ from typing import Dict, Iterator, Mapping, Optional
 AGENT_ENV = "GEOTECH_REVIEW_AGENT"
 VISION_TEXT_ENV = "GEOTECH_VISION_TEXT_CONTEXT"
 VISION_STRUCTURED_ENV = "GEOTECH_VISION_STRUCTURED"
-VISION_INLINE_ENV = "GEOTECH_VISION_INLINE"
-SWEEP_ENV = "GEOTECH_REVIEW_SWEEP"
-FINDINGS_ENV = "GEOTECH_REVIEW_FINDINGS"
-OVERVIEW_ENV = "GEOTECH_REVIEW_OVERVIEW"
-GEOMETRY_ENV = "GEOTECH_REVIEW_GEOMETRY"
-DIGEST_ENV = "GEOTECH_REVIEW_DIGEST"
 COVERAGE_ENV = "GEOTECH_COVERAGE"
 CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
 REPORT_INGEST_ENV = "GEOTECH_REPORT_INGEST"
 VISION_TURN_RETRY_ENV = "GEOTECH_VISION_TURN_RETRY"
-KEPT_READINGS_ENV = "GEOTECH_REVIEW_KEPT_READINGS"
 CITED_PAGES_ENV = "GEOTECH_CITED_PAGES"
 CITED_DOCUMENTS_ENV = "GEOTECH_CITED_DOCUMENTS"
 FIGURE_HELPER_ENV = "GEOTECH_FIGURE_HELPER"
@@ -224,25 +172,18 @@ STEP_CAP_ANSWER_ENV = "GEOTECH_STEP_CAP_ANSWER"
 JUDGMENT_CALLS_ENV = "GEOTECH_JUDGMENT_CALLS"
 
 ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
-            VISION_INLINE_ENV, SWEEP_ENV, FINDINGS_ENV, OVERVIEW_ENV,
-            GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV,
-            VISION_TURN_RETRY_ENV, KEPT_READINGS_ENV, CITED_PAGES_ENV,
+            COVERAGE_ENV, CHECKLIST_ENV,
+            VISION_TURN_RETRY_ENV, CITED_PAGES_ENV,
             FIGURE_HELPER_ENV, PLOT_CODE_ENV, STEP_CAP_ANSWER_ENV,
             CITED_DOCUMENTS_ENV, JUDGMENT_CALLS_ENV, REPORT_INGEST_ENV)
 
-#: Not a switch but the overview's setting: above this many pages in the
-#: new uploads (all of them together) the orientation asks for contact sheets.
-OVERVIEW_PAGES_ENV = "GEOTECH_REVIEW_OVERVIEW_PAGES"
-DEFAULT_OVERVIEW_PAGES = 20
-
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
-#: switches): the overview's page threshold, the digest's small/large hint,
-#: how many inline images each call carries and the lean agent's model-call
-#: budget. :func:`switches` clears them too unless the arm names them, so an
-#: arm is exactly what it says. Named here as strings so this module imports
+#: switches): how many inline images each call of the minimal build carries,
+#: the review page's model-call budget and the plotting box's limits.
+#: :func:`switches` clears them too unless the arm names them, so an arm is
+#: exactly what it says. Named here as strings so this module imports
 #: nothing.
-SETTINGS_ENVS = (OVERVIEW_PAGES_ENV, "GEOTECH_REVIEW_SHAPE1_PAGES",
-                 "GEOTECH_VISION_INLINE_KEEP",
+SETTINGS_ENVS = ("GEOTECH_VISION_INLINE_KEEP",
                  "GEOTECH_REVIEW_MAX_MODEL_CALLS",
                  "GEOTECH_PLOT_CODE_SECONDS", "GEOTECH_PLOT_CODE_MAX_SECONDS",
                  "GEOTECH_PLOT_CODE_MEMORY_MB", "GEOTECH_PLOT_CODE_AT_ONCE")
@@ -266,11 +207,6 @@ def _on_by_default(env: str) -> bool:
     return str(os.environ.get(env, "")).strip().lower() not in _OFF
 
 
-def lean_agent() -> bool:
-    """Whether the review page builds its own lean agent."""
-    return str(os.environ.get(AGENT_ENV, "")).strip().lower() == "lean"
-
-
 def minimal_agent() -> bool:
     """Whether the review page builds the looking-only agent
     (:mod:`funhouse_agent.deep.minimal_agent`) — a measuring stick, not a
@@ -286,36 +222,6 @@ def vision_text_context() -> bool:
 def vision_structured() -> bool:
     """Whether vision calls return located findings as page-point boxes."""
     return _on(VISION_STRUCTURED_ENV)
-
-
-def vision_inline() -> bool:
-    """Whether the main model is shown the images itself (lean agent only)."""
-    return _on(VISION_INLINE_ENV)
-
-
-def sweep() -> bool:
-    """Whether the ``sweep_pages`` tool is offered (lean agent only)."""
-    return _on(SWEEP_ENV)
-
-
-def findings() -> bool:
-    """Whether the findings tools are offered (lean agent only)."""
-    return _on(FINDINGS_ENV)
-
-
-def overview() -> bool:
-    """Whether the orientation turn decides on contact sheets by page count."""
-    return _on(OVERVIEW_ENV)
-
-
-def geometry() -> bool:
-    """Whether the drawing-geometry tools are offered (lean agent only)."""
-    return _on(GEOMETRY_ENV)
-
-
-def digest() -> bool:
-    """Whether the digest tools are offered (lean agent only)."""
-    return _on(DIGEST_ENV)
 
 
 def coverage() -> bool:
@@ -334,14 +240,6 @@ def report_ingest() -> bool:
     """Whether the GeotechStaffEngineer page offers report ingest (the tool
     and the sub-agent; never the Document Review page)."""
     return _on(REPORT_INGEST_ENV)
-
-
-def kept_readings_on_review_page() -> bool:
-    """Whether the Document Review page offers ``kept_readings`` (the
-    conversation's kept page readings, TA-28). The geotech page always
-    does; on the testers' page it waits for the suite (arm
-    ``kept_readings``)."""
-    return _on(KEPT_READINGS_ENV)
 
 
 def vision_turn_retry() -> bool:
@@ -405,16 +303,6 @@ def cited_documents() -> str:
     return "off"
 
 
-def overview_pages() -> int:
-    """The page count above which the orientation asks for contact sheets
-    (``GEOTECH_REVIEW_OVERVIEW_PAGES``, default 20)."""
-    try:
-        return max(1, int(os.environ.get(OVERVIEW_PAGES_ENV,
-                                         DEFAULT_OVERVIEW_PAGES)))
-    except (TypeError, ValueError):
-        return DEFAULT_OVERVIEW_PAGES
-
-
 #: Named configurations the review suite compares. ``baseline`` is exactly
 #: what the page does with no switch set, the switches of
 #: :data:`DEFAULT_ON_ENVS` on among it. Each later arm adds one change (or,
@@ -422,20 +310,9 @@ def overview_pages() -> int:
 #: attributable to the change.
 ARMS: Dict[str, Dict[str, str]] = {
     "baseline": {},
-    "lean": {AGENT_ENV: "lean"},
-    "grounded": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
-                 VISION_STRUCTURED_ENV: "1"},
-    "inline": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
-               VISION_STRUCTURED_ENV: "1", VISION_INLINE_ENV: "1"},
-    "sweep": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
-              VISION_STRUCTURED_ENV: "1", SWEEP_ENV: "1"},
-    # Only the orientation turn differs: run it with orientation=True.
-    "overview": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
-                 VISION_STRUCTURED_ENV: "1", OVERVIEW_ENV: "1"},
-    "geometry": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
-                 VISION_STRUCTURED_ENV: "1", GEOMETRY_ENV: "1"},
-    "digest": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
-               VISION_STRUCTURED_ENV: "1", DIGEST_ENV: "1"},
+    # The lean build and the arms on it (grounded, inline, sweep, overview,
+    # geometry, digest) and kept_readings were removed with their switches
+    # in BACKLOG DR-39 (module_work/dr39/CHECK.md).
     # The looking-only agent (owner, 2026-10-02): which tools carry weight?
     "minimal": {AGENT_ENV: "minimal"},
     # Coverage in code (plan W4, 2026-10-08). On the DEFAULT agent of each
@@ -447,9 +324,6 @@ ARMS: Dict[str, Dict[str, str]] = {
     # Turned lettering read again upright (VIS-01, 2026-10-14). On the
     # DEFAULT agent, so it compares straight against `baseline`.
     "turn_retry": {VISION_TURN_RETRY_ENV: "1"},
-    # The kept page readings as a tool on the review page (TA-28,
-    # 2026-10-15). On the DEFAULT agent, so it compares against `baseline`.
-    "kept_readings": {KEPT_READINGS_ENV: "1"},
     # Cited pages no tool opened (EV-18, 2026-10-15): a note on the answer,
     # or the model told once. On the DEFAULT agent, against `baseline`.
     "cited_pages_note": {CITED_PAGES_ENV: "note"},
@@ -521,18 +395,15 @@ def describe() -> str:
 
 
 __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
-           "VISION_INLINE_ENV", "SWEEP_ENV", "FINDINGS_ENV", "OVERVIEW_ENV",
-           "GEOMETRY_ENV", "DIGEST_ENV", "COVERAGE_ENV", "CHECKLIST_ENV",
-           "VISION_TURN_RETRY_ENV", "KEPT_READINGS_ENV", "CITED_PAGES_ENV",
+           "COVERAGE_ENV", "CHECKLIST_ENV",
+           "VISION_TURN_RETRY_ENV", "CITED_PAGES_ENV",
            "FIGURE_HELPER_ENV", "PLOT_CODE_ENV", "STEP_CAP_ANSWER_ENV",
            "CITED_DOCUMENTS_ENV", "JUDGMENT_CALLS_ENV", "REPORT_INGEST_ENV",
-           "DEFAULT_ON_ENVS", "OVERVIEW_PAGES_ENV",
-           "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
-           "lean_agent",
-           "vision_text_context", "vision_structured", "vision_inline",
-           "sweep", "findings", "overview", "geometry", "digest",
+           "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
+           "minimal_agent",
+           "vision_text_context", "vision_structured",
            "coverage", "checklist", "report_ingest", "vision_turn_retry",
-           "kept_readings_on_review_page", "figure_helper", "plot_code",
+           "figure_helper", "plot_code",
            "step_cap_answer", "judgment_calls",
            "cited_pages", "cited_documents",
-           "overview_pages", "switches", "describe"]
+           "switches", "describe"]

@@ -16,7 +16,6 @@ reference-PDF line in the connection diagnostics. Each is reached inside a
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from webapp.page_profile import AppProfile
@@ -34,56 +33,6 @@ ORIENTATION_REQUEST = (
     "whom); and two or three things you could do next with it. Do not review "
     "it yet."
 )
-
-#: What the orientation asks for once the bearing is taken (shared by the
-#: two ``GEOTECH_REVIEW_OVERVIEW`` variants; the same words close
-#: :data:`ORIENTATION_REQUEST`).
-_ORIENTATION_ASK = (
-    "tell me — in under 250 words — what this appears to be; how it is "
-    "organised, with the printed page or sheet numbers where the document has "
-    "them; what you can read as text and what you would have to look at; any "
-    "existing reviewer markups (how many, by whom); and two or three things "
-    "you could do next with it. Do not review it yet."
-)
-
-#: ``GEOTECH_REVIEW_OVERVIEW``: the uploads run past the page threshold, so
-#: the contact sheets (one per 48 pages) are asked for by name — good for
-#: finding the plans, logs, tables and marked-up pages of a long document.
-ORIENTATION_REQUEST_LONG = (
-    "I just attached {names} ({pages} pages in all). Before I ask anything, "
-    "give me a short orientation: open it and take in the page map and the "
-    "structure; because it is long, also render the contact sheets of its "
-    "pages (render_page_thumbnails) and look at them before you summarise. "
-    "Then " + _ORIENTATION_ASK
-)
-
-#: ``GEOTECH_REVIEW_OVERVIEW``: at or under the threshold every page can be
-#: looked at individually, so the contact sheets are skipped.
-ORIENTATION_REQUEST_SHORT = (
-    "I just attached {names}. Before I ask anything, give me a short "
-    "orientation: open it and take in the page map and the structure. It is "
-    "short, so skip the contact sheets, and look at individual pages only "
-    "where the text does not tell you what they are. Then " + _ORIENTATION_ASK
-)
-
-
-def pdf_page_count(path: Optional[str]) -> int:
-    """Pages in the PDF at ``path``; 0 for anything that is not a readable
-    PDF (an image, a spreadsheet, a missing file). Never raises."""
-    try:
-        with open(os.fspath(path), "rb") as fh:
-            head = fh.read(1024)
-        if b"%PDF" not in head:
-            return 0
-        import pymupdf
-        doc = pymupdf.open(os.fspath(path), filetype="pdf")
-        try:
-            return int(doc.page_count)
-        finally:
-            doc.close()
-    except Exception:  # noqa: BLE001 - a count, never an error
-        return 0
-
 
 #: Uploads that are pictures, not documents to review.
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif",
@@ -114,28 +63,13 @@ def orient_on_upload(keys, transcript) -> bool:
 def orientation_request_for(profile: "AppProfile", attachments) -> str:
     """The orientation request for ``attachments`` (staged
     :class:`webapp.core.Attachment` objects) — the text the app and the
-    review suite both send.
-
-    With ``GEOTECH_REVIEW_OVERVIEW`` off it is exactly the profile's own
-    request. On, the PDF pages of the new uploads are counted: above
-    ``GEOTECH_REVIEW_OVERVIEW_PAGES`` (default 20) in all, the request asks
-    for the contact sheets by name and to look at them before summarising;
-    at or below it, to skip them and look at pages only where needed.
+    review suite both send: the profile's own request with the names filled
+    in. (The page-count variants behind ``GEOTECH_REVIEW_OVERVIEW`` were
+    removed in BACKLOG DR-39: the suite measured no gain.)
     """
     atts = list(attachments or [])
     names = ", ".join(f"`{a.key}`" for a in atts)
-    try:
-        from funhouse_agent import review_flags
-        overview = review_flags.overview()
-        threshold = review_flags.overview_pages()
-    except Exception:  # noqa: BLE001 - no switches, no change
-        overview = False
-    if not overview:
-        return profile.orientation_request.format(names=names)
-    pages = sum(pdf_page_count(getattr(a, "path", None)) for a in atts)
-    if pages > threshold:
-        return ORIENTATION_REQUEST_LONG.format(names=names, pages=pages)
-    return ORIENTATION_REQUEST_SHORT.format(names=names)
+    return profile.orientation_request.format(names=names)
 
 
 def finish_build_kwargs(kw: dict) -> dict:
@@ -154,10 +88,9 @@ def build_page_agent(model, *, attachments, save_fn, temp_dir, **kw):
     (:func:`webapp.core.build_agent`): the page's own build
     (:func:`funhouse_agent.review_build.build_review_page_agent`, INF-31
     step 8)."""
-    # The Document Review page's lean agent binds its findings and digests
-    # to THIS conversation's folder when it is built; the process-wide
-    # working folder can be re-pointed by another tab. (The default build
-    # accepts and ignores it.)
+    # THIS conversation's folder, bound when the agent is built (the
+    # process-wide working folder can be re-pointed by another tab): the
+    # minimal build records it; the default build accepts and ignores it.
     kw.setdefault("working_dir", temp_dir)
     from funhouse_agent.review_build import build_review_page_agent
     return build_review_page_agent(model, attachments=attachments,
@@ -243,7 +176,6 @@ DOCUMENT_REVIEW = AppProfile(
 
 
 __all__ = ["DOCUMENT_REVIEW", "ORIENTATION_REQUEST",
-           "ORIENTATION_REQUEST_LONG", "ORIENTATION_REQUEST_SHORT",
-           "IMAGE_SUFFIXES", "orientation_request_for", "pdf_page_count",
+           "IMAGE_SUFFIXES", "orientation_request_for",
            "orient_on_upload", "build_page_agent", "disclaimer_text",
            "turn_checks", "finish_build_kwargs"]

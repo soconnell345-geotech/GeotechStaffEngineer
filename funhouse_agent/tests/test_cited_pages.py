@@ -315,16 +315,6 @@ def test_records_without_pages_are_not_checked(tmp_path):
     assert entries == [] and summary["why"] == "no record cites a page"
 
 
-def test_unopened_citations_for_the_findings_tool(tmp_path):
-    opened = _opened(tmp_path)
-    got = cp.unopened_citations([("report.pdf", 9), ("report.pdf", 70),
-                                 ("doc_zzz", 0)], opened=opened)
-    assert got == [{"document": "report.pdf", "page": 70, "pdf_page": 71,
-                    "status": "never"}]
-    assert cp.unopened_citations([("report.pdf", 70)],
-                                 opened=cp.PagesOpened()) is None
-
-
 # ---------------------------------------------------------------------------
 # The answer
 # ---------------------------------------------------------------------------
@@ -593,26 +583,6 @@ def test_write_diggs_reads_the_record_the_turn_bound(tmp_path):
         res = _write_diggs({"investigations": [_hole("B-12", [107])],
                             "output_path": "site.diggs.xml"})
     assert [e["where"] for e in res["cross_checks"]["entries"]] == ["B-12"]
-
-
-def test_record_finding_names_cited_pages_nobody_opened(tmp_path):
-    pytest.importorskip("langchain_core")
-    conv = _conv(tmp_path)
-    _write_events(conv, HISTORY)
-    from funhouse_agent._fileio import working_dir_bound
-    from funhouse_agent.deep.findings_tools import (RECORD_DESCRIPTION,
-                                                    make_findings_tools)
-    assert "pages_not_opened" in RECORD_DESCRIPTION
-    tools = {t.name: t for t in make_findings_tools(
-        working_dir=str(conv / "files"))}
-    with working_dir_bound(str(conv / "files")):
-        out = json.loads(tools["record_finding"].invoke({
-            "statement": "The boring log omits the water level.",
-            "severity": "minor", "confidence": "medium", "evidence": "seen",
-            "citations": [{"document": "report.pdf", "page": 9},
-                          {"document": "report.pdf", "page": 70}]}))
-    assert out["pages_not_opened"] == ["report.pdf PDF page 71"], out
-    assert "page_check" in out
 
 
 def test_a_run_the_page_map_names_is_where_not_what(tmp_path):

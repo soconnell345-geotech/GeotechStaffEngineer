@@ -256,13 +256,12 @@ the eyes). What changed on master after 5.33.0, in short:
 - **`kept_readings`** (`vision_tools.py`, TA-28): a read-only tool that lists
   the conversation's kept page readings by reference and returns one whole
   by page, as `reuse=true` does. On the geotech page for the primary and its
-  helpers; on the review page only with `GEOTECH_REVIEW_KEPT_READINGS` (OFF).
+  helpers; not on the review page (its switch went with BACKLOG DR-39).
 - **Cited pages** (`cited_pages.py`, EV-18): after each turn the pages an
   answer cites are checked against the pages any tool or helper read or
   looked at, and a `cited_pages` event is recorded; `GEOTECH_CITED_PAGES`
   (`note` / `retry`; OFF) acts on it. `write_diggs` always adds a
-  `page_not_read` cross-check for a record citing pages no tool opened, and
-  `record_finding` returns `pages_not_opened`.
+  `page_not_read` cross-check for a record citing pages no tool opened.
 - **Cited documents** (`cited_documents.py`, EV-21; live wave w8b, where a
   brief made up "GEC-11 / AASHTO LRFD 3.11.5" and the PDF and the answer
   carried it as the user's): every published document an answer or a
@@ -300,10 +299,10 @@ the eyes). What changed on master after 5.33.0, in short:
   `report_ingest/<file name>` in the conversation's folder and, with the
   checklist on, its code checks run on it (`report.checklist.json`). `funhouse_agent/report_checklist.py` is a
   deprecated re-export until INF-26. The Document Review page keeps general
-  review only: no `log_grid` (legacy, lean or the reading helper), no
+  review only: no `log_grid` (the page or its reading helper), no
   `plot_data` `reference_chart`, and its own wording for `measure`,
   `plot_data`, `search_document`, `render_page_thumbnails`
-  (`review_agent.REVIEW_REWRITES`, phrase swaps on both builds),
+  (`review_agent.REVIEW_REWRITES`, phrase swaps),
   the figure helper's line in `task` (`REVIEW_HELPER_REWRITES`; its own
   prompt and examples are the split plan's D8 (b)) and
   `document_coverage` (`DOCUMENT_COVERAGE_DESCRIPTION_REVIEW`); there a
@@ -438,12 +437,10 @@ the eyes). What changed on master after 5.33.0, in short:
   `figure_helper`, `figure_helper_off`): a `figure` helper (`deep/figure_helper.py`) with an
   eleven-item figure checklist after Tufte, six worked examples
   (`figure_examples`, from `profile_figure/figure_examples.py`), `plot_data`,
-  `analyze_image`, `calculate` and a 14-call budget; both pages, not the
-  lean review agent. On the Document Review page it has every tool it
-  needs (`plot_data`, `analyze_image`, `list_files`, `read_text_file` and,
-  with `plot_code`, the box all serve that page), so "everywhere" holds
-  there too; the lean review agent (its own OFF switch) builds no figure
-  helper. The checklist, `plot_data`'s `depth_axis` and
+  `analyze_image`, `calculate` and a 14-call budget; both pages. On the
+  Document Review page it has every tool it needs (`plot_data`,
+  `analyze_image`, `list_files`, `read_text_file` and, with `plot_code`, the
+  box all serve that page), so "everywhere" holds there too. The checklist, `plot_data`'s `depth_axis` and
   `plot_code`'s description carry the owner's conventions (GM-97): elevation
   up a profile by default, kPa and kN, test points against an assumed
   design line, the wall drawn; with `plot_code` the examples tool also lists

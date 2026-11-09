@@ -1,5 +1,15 @@
 # Splitting Document Review from GeotechStaffEngineer (plan, 2026-10-20; rewritten 2026-10-21)
 
+> **2026-11-09, BACKLOG DR-39:** the lean review build (`GEOTECH_REVIEW_AGENT=lean`)
+> and the experiments built on it were removed from the code: `GEOTECH_VISION_INLINE`,
+> `GEOTECH_REVIEW_SWEEP` (`deep/sweep.py`), `GEOTECH_REVIEW_FINDINGS`
+> (`review_findings.py`, `deep/findings_tools.py`), `GEOTECH_REVIEW_OVERVIEW`,
+> `GEOTECH_REVIEW_GEOMETRY` (`deep/geometry_tools.py`), `GEOTECH_REVIEW_DIGEST`
+> (`review_digest/`, `deep/digest_tools.py`), `GEOTECH_REVIEW_KEPT_READINGS`, and
+> the suite arms `lean`, `grounded`, `inline`, `sweep`, `overview`, `geometry`,
+> `digest`, `kept_readings`. What this file says about them is history; the
+> inventory and its evidence are in `module_work/dr39/CHECK.md`.
+
 BACKLOG: **INF-26** (this plan; its steps are INF-30 to INF-35 and the
 planlens item of step 9), **INF-48** (this rewrite), the owner's open
 decisions **OWN-72** (the core's name; CfA's yes for a source folder in the

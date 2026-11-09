@@ -33,8 +33,7 @@ from webapp.page_profile import AppProfile
 # names stay importable from here.
 from webapp.review_page import (  # noqa: F401
     DOCUMENT_REVIEW, IMAGE_SUFFIXES, ORIENTATION_REQUEST,
-    ORIENTATION_REQUEST_LONG, ORIENTATION_REQUEST_SHORT, _ORIENTATION_ASK,
-    orient_on_upload, orientation_request_for, pdf_page_count,
+    orient_on_upload, orientation_request_for,
 )
 
 #: Env var naming the profile for a single-page launch.
@@ -120,8 +119,7 @@ def session_root(profile: AppProfile, identity: Identity,
 
 
 __all__ = ["AppProfile", "GEOTECH", "DOCUMENT_REVIEW", "PROFILES", "DEFAULT",
-           "ORIENTATION_REQUEST", "ORIENTATION_REQUEST_LONG",
-           "ORIENTATION_REQUEST_SHORT", "PROFILE_ENV", "SESSION_KEY",
+           "ORIENTATION_REQUEST", "PROFILE_ENV", "SESSION_KEY",
            "get", "current", "set_current", "session_root",
-           "orientation_request_for", "pdf_page_count", "orient_on_upload",
+           "orientation_request_for", "orient_on_upload",
            "IMAGE_SUFFIXES"]

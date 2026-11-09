@@ -706,7 +706,6 @@ def test_turn_is_offered_in_the_tools_own_descriptions_only():
             [0, 90, 180, 270]
     assert "`turn`" in vision_tools.VISION_TOOL_DESCRIPTIONS
     for text in (deep_prompt.DOCUMENT_REVIEW_PROMPT,
-                 deep_prompt.DOCUMENT_REVIEW_PROMPT_LEAN,
                  deep_prompt.build_domain_prompt()):
         assert "turn=" not in text and "turn =" not in text
         assert "TURNED" not in text

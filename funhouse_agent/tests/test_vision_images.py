@@ -564,8 +564,7 @@ def test_what_is_not_an_image_or_a_pdf_is_still_refused():
 def test_the_image_zoom_is_offered_in_the_tools_own_descriptions_only():
     from funhouse_agent.deep import prompt as deep_prompt
     from funhouse_agent.deep.agent import _review_page_descriptions
-    from funhouse_agent.deep.review_agent import (
-        INLINE_DESCRIPTIONS, REVIEW_DESCRIPTIONS)
+    from funhouse_agent.deep.review_agent import REVIEW_DESCRIPTIONS
     from funhouse_agent.deep.tools import make_vision_tools
     from funhouse_agent.native_tools import OPENAI_TOOLS
     zoom, look = vision_tools.IMAGE_ZOOM_NOTE, vision_tools.IMAGE_LOOK_NOTE
@@ -575,18 +574,15 @@ def test_the_image_zoom_is_offered_in_the_tools_own_descriptions_only():
     assert zoom in _review_page_descriptions()["render_region"]
     assert look in tools["analyze_image"].description
     assert {"tiles", "turn"} <= set(tools["analyze_image"].args)
-    # the lean build, with and without inline images
+    # the page's own descriptions
     assert zoom in REVIEW_DESCRIPTIONS["render_region"]
-    assert zoom in INLINE_DESCRIPTIONS["render_region"]
     assert look in REVIEW_DESCRIPTIONS["analyze_image"]
-    assert look in INLINE_DESCRIPTIONS["analyze_image"]
     # the native schemas
     schemas = {t["function"]["name"]: t["function"] for t in OPENAI_TOOLS}
     assert zoom in schemas["render_region"]["description"]
     assert {"tiles", "turn"} <= set(
         schemas["analyze_image"]["parameters"]["properties"])
     for text in (deep_prompt.DOCUMENT_REVIEW_PROMPT,
-                 deep_prompt.DOCUMENT_REVIEW_PROMPT_LEAN,
                  deep_prompt.build_domain_prompt()):
         assert zoom not in text and look not in text
         assert "own pixels" not in text
@@ -921,24 +917,8 @@ def test_the_image_frame_is_said_in_the_tools_own_descriptions_only():
     # the minimal arm no longer says an upload is shown to the model
     assert "shown to you" not in MINIMAL["analyze_image"]
     for text in (deep_prompt.DOCUMENT_REVIEW_PROMPT,
-                 deep_prompt.DOCUMENT_REVIEW_PROMPT_LEAN,
                  deep_prompt.build_domain_prompt(), MINIMAL_PROMPT):
         assert find not in text and mark not in text
-
-
-def test_the_lean_attachment_note_sends_a_screenshot_to_analyze_image(
-        tmp_path, monkeypatch):
-    from webapp import core
-    monkeypatch.setenv(review_flags.AGENT_ENV, "lean")
-    note = core.attachment_note([
-        core.Attachment(key="pasted_20261014.png",
-                        path=str(tmp_path / "p.png"), size=1),
-        core.Attachment(key="set.pdf", path=str(tmp_path / "s.pdf"), size=1)],
-        review=True)
-    shot_line, pdf_line = note.splitlines()[1:]
-    assert "analyze_image(attachment_key='pasted_20261014.png')" in shot_line
-    assert "open_document" not in shot_line
-    assert "open_document(source='set.pdf')" in pdf_line
 
 
 def test_the_turn_note_names_an_image_zoom_without_a_page(tmp_path):

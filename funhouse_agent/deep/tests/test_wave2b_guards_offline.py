@@ -239,7 +239,7 @@ def test_the_prompter_model_lowers_a_cap_the_model_refuses():
 def test_the_review_page_shows_no_scratch_tools(monkeypatch):
     monkeypatch.delenv("GEOTECH_REVIEW_AGENT", raising=False)
     from funhouse_agent import review_flags
-    if review_flags.lean_agent() or review_flags.minimal_agent():
+    if review_flags.minimal_agent():
         pytest.skip("a review-agent switch is on in this environment")
     from funhouse_agent.deep.prompt import build_document_review_prompt
     tools_seen, system_seen = [], []
@@ -283,7 +283,7 @@ def test_an_unknown_tool_error_does_not_list_the_hidden_tools(monkeypatch):
     error listed ls, read_file, write_file, ... as the page's tools."""
     monkeypatch.delenv("GEOTECH_REVIEW_AGENT", raising=False)
     from funhouse_agent import review_flags
-    if review_flags.lean_agent() or review_flags.minimal_agent():
+    if review_flags.minimal_agent():
         pytest.skip("a review-agent switch is on in this environment")
     seen = []
     model = _scripted([("", [("read_docx_placeholder", {"path": "a.docx"})]),
@@ -296,23 +296,6 @@ def test_an_unknown_tool_error_does_not_list_the_hidden_tools(monkeypatch):
     assert "open_document" in told.content
     for hidden in ("read_file", "write_file", "edit_file", "glob", "grep"):
         assert hidden not in told.content.split("try one of", 1)[-1], hidden
-
-
-def test_the_lean_review_agent_carries_both_guards(monkeypatch):
-    from funhouse_agent.deep import review_agent
-    captured = {}
-    import langchain.agents as la
-    real = la.create_agent
-
-    def spy(model, **kw):
-        captured.setdefault("mw", kw.get("middleware"))
-        return real(model, **kw)
-
-    monkeypatch.setattr(la, "create_agent", spy)
-    review_agent.build_review_agent(_scripted([("hi", [])]))
-    kinds = [type(m).__name__ for m in captured["mw"]]
-    assert "ToolErrorGuard" in kinds
-    assert kinds[-1] == "OutputLimitGuard"
 
 
 # ---------------------------------------------------------------------------

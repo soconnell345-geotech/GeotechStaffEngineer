@@ -201,21 +201,15 @@ def test_the_tool_describes_itself_and_reads_the_bound_folder(kept):
     assert "has no argument 'page'" in refused["error"]
 
 
-def test_the_review_page_offers_it_only_with_its_switch(monkeypatch):
-    """The geotech page always has kept_readings; the testers' review page
-    waits for the suite (owner's rule: new behaviour behind an OFF switch
-    until measured), arm ``kept_readings``."""
+def test_the_review_page_does_not_offer_it():
+    """The geotech page always has kept_readings; the review page does not
+    (its switch, arm ``kept_readings``, was never measured and went with
+    BACKLOG DR-39)."""
     from funhouse_agent import review_flags
-    from funhouse_agent.deep.review_agent import (
-        KEPT_READINGS_TOOL, READER_TOOLS, REVIEW_TOOLS)
-    assert KEPT_READINGS_TOOL == "kept_readings"
+    from funhouse_agent.deep.review_agent import READER_TOOLS, REVIEW_TOOLS
     assert "kept_readings" not in REVIEW_TOOLS + READER_TOOLS
-    monkeypatch.delenv(review_flags.KEPT_READINGS_ENV, raising=False)
-    assert not review_flags.kept_readings_on_review_page()
-    monkeypatch.setenv(review_flags.KEPT_READINGS_ENV, "1")
-    assert review_flags.kept_readings_on_review_page()
-    assert review_flags.ARMS["kept_readings"] == {
-        review_flags.KEPT_READINGS_ENV: "1"}
+    assert "kept_readings" not in review_flags.ARMS
+    assert not hasattr(review_flags, "kept_readings_on_review_page")
 
 
 def _first_human(messages) -> str:

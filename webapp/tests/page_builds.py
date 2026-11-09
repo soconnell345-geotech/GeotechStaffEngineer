@@ -45,11 +45,10 @@ GOLDEN = os.path.join(HERE, "page_fingerprints.json")
 #: The builds: (page, the review page's build switch).
 BUILDS = {
     "review_default": ("review", None),
-    "review_lean": ("review", "lean"),
     "review_minimal": ("review", "minimal"),
     "geotech_default": ("geotech", None),
 }
-REVIEW_BUILDS = ("review_default", "review_lean", "review_minimal")
+REVIEW_BUILDS = ("review_default", "review_minimal")
 
 #: Settings a build can read besides ``GEOTECH_*``; unset for every build,
 #: so a developer's shell cannot change the result.
@@ -145,7 +144,7 @@ def build(name: str, model=None, files_dir=None, capture: bool = False,
     framework: one entry per ``create_deep_agent`` / ``create_agent`` call
     of ours (a call made inside another is the framework's own, and
     deepagents' rebuild that only adds its todo middleware is left out).
-    The lean and minimal builds make their helper on first use, so their
+    The minimal build makes its helper on first use, so its
     ``task`` tool is called once, on the fake model, to record it.
     """
     page, switch = BUILDS[name]
@@ -582,9 +581,6 @@ GSE_MODULES = frozenset({
 #: import once the split is done.
 REVIEW_MODULES = frozenset({
     "funhouse_agent.deep.review_agent", "funhouse_agent.deep.minimal_agent",
-    "funhouse_agent.deep.sweep", "funhouse_agent.deep.findings_tools",
-    "funhouse_agent.review_findings", "funhouse_agent.deep.geometry_tools",
-    "funhouse_agent.deep.digest_tools", "funhouse_agent.review_digest",
     "funhouse_agent.review_prompt", "funhouse_agent.review_build",
     "webapp.tinyapps_entry",
     # The review page's own parts (INF-31 step 7).
@@ -717,7 +713,6 @@ def _turn_calls(build_name: str):
     whose code reaches into geotech modules when it runs (plan §2.7), and
     one helper."""
     helper = {"review_default": "general-purpose",
-              "review_lean": "page_reader",
               "review_minimal": "page_looker"}.get(build_name)
     calls = {
         "plot_data": {"series": [{"x": [0, 1, 2], "y": [0, 1, 4],

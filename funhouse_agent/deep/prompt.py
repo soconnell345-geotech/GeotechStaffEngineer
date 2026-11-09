@@ -18,7 +18,6 @@ from funhouse_agent.system_prompt import build_system_prompt
 # The review page's prompt, re-exported for the old import paths.
 from funhouse_agent.review_prompt import (  # noqa: F401
     DOCUMENT_REVIEW_PROMPT,
-    DOCUMENT_REVIEW_PROMPT_LEAN,
     DOCUMENT_REVIEW_READER_PROMPT,
     build_document_review_prompt,
 )
@@ -357,6 +356,6 @@ def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) ->
 
 
 __all__ = ["build_domain_prompt", "build_document_review_prompt",
-           "DOCUMENT_REVIEW_PROMPT", "DOCUMENT_REVIEW_PROMPT_LEAN",
+           "DOCUMENT_REVIEW_PROMPT",
            "DOCUMENT_REVIEW_READER_PROMPT", "REPORT_INGEST_NUDGE",
            "REPORT_LIBRARY_NUDGE", "judgment_calls_section"]

@@ -459,8 +459,7 @@ class Session:
         from webapp import core, profiles
         ss = self.ss
         atts = core.stage_uploads(ss.attachments, ss.temp_dir, pairs)
-        ss.pending_notes.append(core.attachment_note(
-            atts, review=not self.profile.specialists))
+        ss.pending_notes.append(core.attachment_note(atts))
         entries = [{"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"}
                    for a in atts]
         ss.transcript.extend(entries)

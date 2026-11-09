@@ -2,8 +2,7 @@
 
 :func:`build_review_page_agent` is the page's agent: the ``minimal`` build
 behind ``GEOTECH_REVIEW_AGENT=minimal`` (:mod:`funhouse_agent.deep.
-minimal_agent`), the ``lean`` one behind ``=lean`` (:mod:`funhouse_agent.
-deep.review_agent`), and otherwise today's build: the vision kit with the
+minimal_agent`), and otherwise today's build: the vision kit with the
 page's own descriptions, ``calculate``, the figure helper, the page's
 reading helper in place of deepagents' stock one, a model-call budget
 whose last call answers, and the scratch filesystem hidden. Extracted from
@@ -31,14 +30,14 @@ from funhouse_agent.deep.tool_guards import HideScratchFilesystem
 
 
 # ---------------------------------------------------------------------------
-# The Document Review page on the default build: three fixes the lean
-# build already had (BACKLOG DR-01 - DR-03; the review of 2026-09-26 and
+# The Document Review page on the default build: three fixes the former
+# lean build had (removed in DR-39) (BACKLOG DR-01 - DR-03; the review of 2026-09-26 and
 # check 1's trace review, causes C3 and C8)
 # ---------------------------------------------------------------------------
 
 #: Turns the page's model-call budget off on this build (the step cap then
 #: ends a long turn with GraphRecursionError, as before 5.34): a way back on a
-#: live host without a release. The lean build always keeps its budget.
+#: live host without a release.
 _BUDGET_OFF = ("0", "off", "none", "no", "false")
 
 #: Graph steps per model call on this build, with room to spare: one model
@@ -62,7 +61,7 @@ REVIEW_READER_DESCRIPTION = (
 #: Tools the geotech page has and this page cannot use: they render a
 #: reference library figure and a worked example's printed source page, and
 #: the review page has neither the library nor the examples (DR-04; the
-#: review of 2026-09-26). The lean build never had them. ``log_grid`` reads a
+#: review of 2026-09-26). ``log_grid`` reads a
 #: boring or test-pit log as its grid: a geotechnical report's page, which
 #: is not this page's document (BACKLOG RI-34). Since INF-30 step 4 the page
 #: is built without the first two (:data:`GEOTECH_VISION_TOOLS`, which GSE
@@ -80,7 +79,7 @@ def _review_page_descriptions() -> dict:
 
 
 def _review_page_rewrites() -> dict:
-    """The lean build's phrase swaps, so this build's examples name no kind
+    """The page's phrase swaps, so this build's examples name no kind
     of geotechnical report either (BACKLOG RI-34)."""
     from funhouse_agent.deep.review_agent import REVIEW_REWRITES
     return dict(REVIEW_REWRITES)
@@ -93,8 +92,8 @@ def _review_reader_subagent(primary_tools) -> Optional[dict]:
     286-character prompt and returned whole-page boxes as anchors).
 
     The name stays ``general-purpose`` so it REPLACES the stock helper. Its
-    tools are the primary's reading and looking tools, the same set the lean
-    build's ``page_reader`` gets; nothing that writes a file or a markup.
+    tools are the primary's reading and looking tools, the reading helper's set
+    (``review_agent.READER_TOOLS``); nothing that writes a file or a markup.
     """
     if _GENERAL_PURPOSE_SPEC is None:
         return None
@@ -118,7 +117,7 @@ def _review_reader_subagent(primary_tools) -> Optional[dict]:
 
 def review_page_budget() -> Optional[int]:
     """The review page's model calls per request on this build
-    (``GEOTECH_REVIEW_MAX_MODEL_CALLS``, default 40 as on the lean build), or
+    (``GEOTECH_REVIEW_MAX_MODEL_CALLS``, default 40), or
     ``None`` when that variable is ``off``."""
     import os
     from funhouse_agent.deep.review_agent import (MAX_MODEL_CALLS_ENV,
@@ -202,17 +201,6 @@ def build_review_page_agent(
             max_result_chars=max_result_chars,
             checkpointer=checkpointer, store=store,
             working_dir=working_dir)
-    if review_flags.lean_agent():
-        from funhouse_agent.deep.review_agent import build_review_agent
-        return build_review_agent(
-            model, engine=engine, attachments=attachments,
-            save_fn=save_fn, extra_tools=extra_tools,
-            extra_system_prompt=extra_system_prompt,
-            markup_author=markup_author,
-            max_result_chars=max_result_chars,
-            reference_result_chars=reference_result_chars,
-            checkpointer=checkpointer, store=store,
-            working_dir=working_dir, coverage_dir=coverage_dir)
     if geotech_parts is None and (allowed_agents or reference_mode != "off"
                                   or enable_calc_subagent):
         raise ValueError(
@@ -258,10 +246,10 @@ def build_review_page_agent(
         # a figure any helper drew this turn (GM-151)
         plot_data_replaces=_flags.figure_helper() or _flags.plot_code(),
     ) + [make_calculate_tool()]
-    # kept_readings (TA-28) waits for the suite on the testers' page;
-    # log_grid is a geotechnical report's (GEOTECH_ONLY_TOOLS).
-    _drop = ("log_grid",) + (
-        () if _flags.kept_readings_on_review_page() else ("kept_readings",))
+    # kept_readings (TA-28) is the geotech page's (its review-page switch
+    # went with BACKLOG DR-39); log_grid is a geotechnical report's
+    # (GEOTECH_ONLY_TOOLS).
+    _drop = ("log_grid", "kept_readings")
     tools = [t for t in tools if getattr(t, "name", None) not in _drop]
     if extra_tools:
         tools = list(tools) + list(extra_tools)
