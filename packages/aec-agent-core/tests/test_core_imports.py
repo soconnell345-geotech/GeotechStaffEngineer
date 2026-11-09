@@ -37,7 +37,14 @@ NOT_MOVED_YET = {
     "funhouse_agent.docx_renderer": "11 (c), Word and Excel",
     "funhouse_agent.office_text": "11 (c), Word and Excel",
     "funhouse_agent.dxf_notes": "11 (c) or planlens (plan 2.6, proposed)",
-    "funhouse_agent.plot_box.figures": "11 (b), the plotting box",
+    # Reached by the figure helper and the plotting box (moved at 11 (b)):
+    "funhouse_agent.review_flags": "11 (c), what both agents also run",
+    "funhouse_agent.deep.keep_work": "11 (c), what both agents also run",
+    "funhouse_agent.deep.limits": "11 (c), what both agents also run",
+    "funhouse_agent.deep.strict_args": "11 (c), what both agents also run",
+    "funhouse_agent.deep.calculate_tool":
+        "11 (c), what both agents also run",
+    "funhouse_agent.deep.vision_kit": "11 (c), the tools' assembly",
 }
 
 #: GeotechStaffEngineer's packages (plan 2.4), never imported by the core.
@@ -153,7 +160,15 @@ def test_the_core_is_a_package_of_its_own():
     names = {p.relative_to(CORE).as_posix() for p in _core_files()}
     for must in ("__init__.py", "hooks.py", "vision_tools.py",
                  "engine_config.py", "tinyapps_engine.py",
-                 "deep/vision_engine.py", "deep/databricks_bridge.py"):
+                 "deep/vision_engine.py", "deep/databricks_bridge.py",
+                 # step 11 (b)
+                 "charts/__init__.py", "charts/data_plot.py",
+                 "charts/plot_tool.py", "charts/layout_ink.py",
+                 "charts/plan_furniture.py", "charts/plotting.py",
+                 "charts/figure_examples.py", "plot_box/__init__.py",
+                 "plot_box/child.py", "plot_box/figures.py",
+                 "deep/figure_helper.py", "drawing_wait.py",
+                 "progress_notes.py", "arg_checks.py", "method_call.py"):
         assert must in names, must
     # the standard library check the module-level rule leans on
     assert "json" in getattr(sys, "stdlib_module_names", {"json"})
