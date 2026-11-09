@@ -311,3 +311,57 @@ A GSE release from master still waits for the core on PyPI (step 12).
 - The master baseline's failures in this venv (§7) are environment ones
   (geotech-references 1.5.0 from PyPI is older than the pinned refs
   checkout; matplotlib's version), not this branch's.
+
+## 12. Review fixes (independent review, 2026-11-09)
+
+The review (verdict "merge after fixes") found one install problem, two
+stale texts and one fail-open default, and fixed them in four commits:
+
+1. **The core is 1.0.0.dev1** (pyproject, `__version__`, the app's exact
+   pin). PyPI holds only 1.0.0.dev0, the EMPTY package that reserved the
+   name (`pip download` gives `__init__.py` alone). Pinned at 1.0.0.dev0,
+   an install of the app from master could take that package and fail at
+   import (`No module named 'aec_agent_core.hooks'`). `publish.yml`'s
+   guard ("the pinned core is on PyPI") also passed, so a `v*` tag would
+   have published that app.
+   - The guard's own script, run locally against PyPI, stops dev1 (exit 1,
+     "not on PyPI ... Publish the core first") and passes master's dev0
+     (exit 0).
+   - `test_wheels.py` and `test_version_guard.py` pass, and so does the
+     opt-in wheel build test.
+   - Stale comment fixed: the app's pyproject said the core was not on
+     PyPI at all.
+2. **The core's README and `__init__` docstring** say what it holds since
+   (a), not "an empty package".
+3. **Doc pointers** follow the moved files:
+   - `tinyapps/TINYAPPS.md`: the Prompter engine, the testers' resolution
+     order (now `webapp/tinyapps_keys.resolve_for`), the file list;
+   - `docs/FOUNDRY.md`: the SDK wrapper, twice;
+   - two `CLAUDE.md` path references.
+4. **The key resolver fails closed without a page.** Before, with nothing
+   in `prompter.resolve_for`, `aec_agent_core.tinyapps_engine.resolve_for`
+   gave every caller the shared key, testers identified by the header
+   included. A page that forgot the hook would have dropped the per-tester
+   access list without a word. Now, unfilled:
+   - a multi-user caller is refused (`NoPrompterKey`, "No AI key is set up
+     for <name> yet — ask the app owner."), unless
+     `PROMPTER_SHARED_KEY_FALLBACK` is on (then source `shared-fallback`);
+   - a single-user caller, or none given, keeps the shared key.
+
+   `no_key_message` moved into the core so both refusals use the same
+   words. `webapp.tinyapps_keys` imports it, so it is importable from
+   both; this corrects §3 and §10, which list it as page-only. Tests:
+   three in `packages/aec-agent-core/tests/test_core_hooks.py` (refused;
+   let in by the fallback setting; single-user unchanged). The GSE pages
+   fill the hook and are unchanged: the review's 13-scenario key-route
+   probe gives output byte-identical to master's. The probe covers
+   `resolve_for`, `key_source_report`, the secret names, the mapping,
+   `register()` and `resolve_engine(identity=...)`.
+
+**For later (step 16):** `funhouse_agent/chart_eval/runner.py:259` finds
+the engine module by its old name (`sys.modules.get("webapp.engine_config")`)
+to drop the CA clients a forked page run inherits. That works while every
+model builder imports `webapp.engine_config`. Once step 16 moves callers to
+the new names, it would silently drop nothing. Use
+`sys.modules.get("aec_agent_core.engine_config")`, which is always present
+once the module is loaded.
