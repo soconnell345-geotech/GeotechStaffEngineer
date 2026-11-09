@@ -1,6 +1,6 @@
 """Rendered page images waiting to be shown to the main model.
 
-With ``GEOTECH_VISION_INLINE`` on (lean review agent only), ``analyze_pdf_page``
+In the looking-only ``minimal`` build, ``analyze_pdf_page``
 and ``render_region`` (and ``analyze_image`` of an image file, such as a
 contact sheet) do not describe an image through a separate one-shot
 vision call; they store it here and return its ``image_id``, and

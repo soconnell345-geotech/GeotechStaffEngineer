@@ -45,7 +45,11 @@ _MSE_WALL_ALIASES = {**_MSE_ALIASES, "Cu": "Cu_backfill",
                      "Sh": "reinforcement_horizontal_spacing",
                      "horizontal_spacing": "reinforcement_horizontal_spacing",
                      "Rc": "coverage_ratio",
-                     "reinforcement_depths": "level_depths"}
+                     "reinforcement_depths": "level_depths",
+                     # GM-307: the face batter, as GM-114's package named it
+                     "wall_batter": "face_batter", "batter": "face_batter",
+                     "batter_angle": "face_batter",
+                     "face_batter_deg": "face_batter"}
 
 # Each built-in is a GEC-11 Vol II worked example's reinforcement as printed
 # (GM-262, GM-267, GM-271).
@@ -582,7 +586,7 @@ def run_mse_wall(params, *, method="mse_wall"):
         params,
         ("wall_height", "reinforcement_length", "reinforcement_spacing",
          "surcharge", "backfill_slope", "broken_backslope_height",
-         "gamma_backfill", "phi_backfill",
+         "face_batter", "gamma_backfill", "phi_backfill",
          "reinforcement_name", "reinforcement_type",
          "reinforcement_Tallowable", "reinforcement_width",
          "reinforcement_thickness",
@@ -609,6 +613,7 @@ def run_mse_wall(params, *, method="mse_wall"):
         backfill_slope=params.get("backfill_slope", 0.0),
         broken_backslope_height=params.get("broken_backslope_height"),
         level_depths=params.get("level_depths"),
+        face_batter=params.get("face_batter", 0.0),
     )
     if params.get("reinforcement_per_level") is not None:
         # GM-266: a reinforcement a level, as GEC-11 Vol II Example E4
@@ -673,6 +678,17 @@ def _run_mse_wall(params):
 def _run_mse_lrfd_external_stability(params):
     """AASHTO/GEC-11 LRFD external-stability CDR set (sliding / eccentricity /
     bearing) under Strength I (max + min) and Service I combinations."""
+    return run_mse_lrfd_external_stability(params)[0]
+
+
+def run_mse_lrfd_external_stability(params, *,
+                                    method="mse_lrfd_external_stability"):
+    """(result, inputs in force) of ``mse_lrfd_external_stability``: the
+    tool's own code path, also run by ``calc_package.retaining_wall_package``
+    with ``wall_type="mse_lrfd"`` (GM-307). The inputs in force are the
+    geometry (``geom``) and each input given, by the tool's names, with the
+    load and resistance factors the run took (the result's
+    ``load_factors``). ``method`` names the caller in error messages."""
     params = without_unused(
         apply_aliases(params, _MSE_ALIASES),
         METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"])
@@ -691,7 +707,7 @@ def _run_mse_lrfd_external_stability(params):
          "ecc_limit_ratio_service",
          "traffic_vertical_resists", "sliding_cohesion",
          "interface_gap_possible", "lowest_sheet_depth", "rho_tested"),
-        method="mse_lrfd_external_stability")
+        method=method)
     if (params.get("rho_tested") is not None
             and params.get("lowest_sheet_depth") is None):
         raise ValueError(
@@ -700,7 +716,7 @@ def _run_mse_lrfd_external_stability(params):
             "lowest_sheet_depth, the depth of that layer below the top of "
             "the wall (GEC-11 Vol I p. 4-21 Step 3(iii)).")
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
-                   method="mse_lrfd_external_stability")
+                   method=method)
     if (params.get("gamma_foundation") is not None
             and params.get("phi_foundation") is None):
         raise ValueError(NEEDS_PHI_FOUNDATION)
@@ -741,7 +757,11 @@ def _run_mse_lrfd_external_stability(params):
         **factors,
     )
     result["reinforcement_length_m"] = geom.reinforcement_length
-    return result
+    used = {k: v for k, v in params.items()
+            if k not in ("wall_height", "reinforcement_length", "surcharge",
+                         "backfill_slope", "broken_backslope_height")}
+    used["geom"] = geom
+    return result, used
 
 
 #: Names of the log-spiral passive Kp a theory input also takes (GM-242):
@@ -1293,7 +1313,7 @@ METHOD_INFO = {
     },
     "mse_wall": {
         "category": "MSE Wall",
-        "brief": "MSE wall external + internal stability analysis (GEC-11), level or sloping backfill (incl. a broken backslope).",
+        "brief": "MSE wall external + internal stability analysis (GEC-11), level or sloping backfill (incl. a broken backslope), vertical or battered face.",
         "parameters": {
             "wall_height": {"type": "float", "required": True, "description": "Design wall height H (m): the height of the reinforced soil mass, incl. embedment (GEC-11)."},
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
@@ -1316,6 +1336,7 @@ METHOD_INFO = {
             "reinforcement_transverse_spacing": {"type": "float", "required": False, "default": 0.0, "description": "Transverse-bar (grid) spacing St (m) for a steel bar mat / welded grid (the St in F* = 20 t/St, GEC-11 Vol I Eq. 3-6), required for a custom grid unless F_star_tested is given. Used only for bar_mat/welded_grid/metallic_grid. Checked against GEC-11 Vol I p. 3-21's 'maximum St distance is 24 in. (610 mm)' with the empirical F* (grid_spacing; a larger St fails), and under 6 in. (152 mm) it carries a warning (p. 3-20: 'St > 6 inches'); with F* from pullout tests (F_star_tested) an St over 24 in. is a warning, not a check."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Live-load (traffic) surcharge (kPa), e.g. heq*gamma. Externally its thrust drives every check; over the reinforced zone it is not a resisting force in sliding or overturning and it loads the base for bearing (GEC-11 Fig. 4-2; live_load_resists, surcharge_in_bearing). Internally it is in Tmax and not in the pullout resistance, which GEC-11 takes 'neglecting traffic loads' (p. 4-49). With a sloping backfill it is taken only with broken_backslope_height, as traffic on the level ground behind the crest; refused on a slope that continues."},
             "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the backfill surface above the wall, beta (degrees from horizontal), rising away from the face; 0 = level. GEC-11 Section 4.4.4: Coulomb Kab with the interface angle delta = beta (Eqs. 4-2/4-3); thrust F_T = 1/2*Kab*gamma_retained*h^2 on h = H + L*tan(beta), inclined at beta (Eq. 4-7); the slope fill over the reinforced zone is added to the weight; internally the slope adds S_eq = 1/2*(0.7H)*tan(beta) of fill (Fig. 4-11). Must not be steeper than phi_retained."},
+            "face_batter": {"type": "float", "required": False, "default": 0.0, "description": "Batter of the front face and reinforced zone, omega (degrees from vertical, the top set back toward the fill); 0 = vertical. Below 10 deg the wall is taken as vertical (GEC-11 Vol I p. 4-15, 'near vertical walls'; the choices say so). From 10 deg (GM-307): externally Kab by Eqs. 4-2, 4-3 with theta = 90 + omega and delta = beta, F_T at h/3 on the back of the zone at delta - omega to the horizontal (p. 4-15, Fig. 4-5); internally Ka by Eq. 4-26 (p. 4-36; taken as Eqs. 4-2, 4-3 with delta = beta = 0, the printed bracket lacking its square, choices give both), and for geosynthetics the Coulomb failure plane of Fig. 4-9(b) (p. 4-34) through the toe; steel keeps 0.3 H1 from the face (Fig. 4-9(a) note). Refused under a broken backslope (no printed rule) and with an outward lean (below 0). The result's face_batter gives the basis. Aliases: wall_batter, batter, batter_angle, face_batter_deg."},
             "phi_retained": {"type": "float", "required": False, "description": "Friction angle (deg) of the retained fill behind the reinforced zone, for the external thrust. Left out: 30 deg, the assumed value GEC-11 Vol I p. 4-10 prints for the retained backfill ('recommended only for preliminary sizing'), stated in choices."},
             "gamma_retained": {"type": "float", "required": False, "description": "Unit weight (kN/m3) of the retained fill behind the reinforced zone. Defaults to gamma_backfill."},
             "broken_backslope_height": {"type": "float", "required": False, "description": "For a broken backslope (GEC-11 Fig. 4-4): the height S (m) of the slope crest above the top of the wall, with level ground behind it. Omit for a slope that continues. Kab and the thrust inclination then use I, the angle from the top of the wall to the ground 2H behind the face, and h = H + min(L*tan(beta), S)."},

@@ -556,8 +556,8 @@ def make_vision_tools(
     card beside the final figure).
 
     ``description_overrides`` replaces a tool's model-facing description by
-    name — the lean Document Review agent describes its tools for the page it
-    is on (:mod:`funhouse_agent.deep.review_agent`). ``description_rewrites``
+    name — the Document Review page describes its tools for the page it is
+    on (:mod:`funhouse_agent.deep.review_agent`). ``description_rewrites``
     swaps phrases inside a tool's description, ``{name: [(old, new), ...]}``,
     after any override: the Document Review page's wording for a description
     built elsewhere (planlens' own, or one with feature-detected parts), so
@@ -570,8 +570,7 @@ def make_vision_tools(
     (only meaningful with the image middleware that shows it; see
     :mod:`funhouse_agent.deep.inline_images`). ``inline_image_files`` makes
     ``analyze_image`` do the same for an image FILE given by its path (a
-    contact sheet); the lean agent sets it only with both
-    ``GEOTECH_VISION_INLINE`` and ``GEOTECH_REVIEW_OVERVIEW`` on.
+    contact sheet); the ``minimal`` build sets both.
 
     ``added_tools`` are tools another app adds to the kit, ``{name:
     builder}``: ``builder(dispatch)`` returns ``(function, description)``,

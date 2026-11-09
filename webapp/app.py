@@ -227,8 +227,7 @@ def _stage_files(pairs) -> list:
     the transcript shows an ``attach`` line for each."""
     ss = st.session_state
     atts = core.stage_uploads(ss.attachments, ss.temp_dir, pairs)
-    ss.pending_notes.append(core.attachment_note(
-        atts, review=not _PROFILE.specialists))
+    ss.pending_notes.append(core.attachment_note(atts))
     entries = [{"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"}
                for a in atts]
     ss.transcript.extend(entries)                # in-memory (always)
@@ -871,13 +870,28 @@ with st.sidebar:
         if st.button("Run connection tests", key=f"diag_{ss.thread_id}"):
             from webapp import diagnostics as _diag
             with st.spinner("Running connection tests…"):
-                ss.diag_report = _diag.format_report(
-                    _diag.run_diagnostics(
-                        ss.model, identity=_IDENT,
-                        helper_models=ss.get("helper_models"),
-                        page_checks=_PROFILE.diagnostics_checks))
+                _checks = _diag.run_diagnostics(
+                    ss.model, identity=_IDENT,
+                    helper_models=ss.get("helper_models"),
+                    page_checks=_PROFILE.diagnostics_checks)
+                ss.diag_report = _diag.format_report(_checks)
+                # TA-35: a SharePoint report that could not be kept in
+                # SharePoint is offered here instead, with only this
+                # person's own entries (the owner key their conversations
+                # carry).
+                ss.diag_sharepoint = _diag.sharepoint_download(
+                    _checks, who=(_IDENT.key if _IDENT.multi_user else ""))
         if ss.get("diag_report"):
             st.code(ss.diag_report, language=None)
+        if ss.get("diag_sharepoint"):
+            st.caption("For the host's administrator: the connection test "
+                       "and the SharePoint errors met in your "
+                       "conversations, which could not be saved to "
+                       "SharePoint itself.")
+            file_widgets.download_button(
+                "Download the SharePoint report", ss.diag_sharepoint,
+                file_name="sharepoint-report.txt", mime="text/plain",
+                key=f"diag_sp_{ss.thread_id}")
     try:
         import importlib.metadata as _md
         st.caption(" · ".join(f"{_d} {_md.version(_d)}"
@@ -1653,8 +1667,8 @@ _orient = ss.pop("pending_orientation", None)
 _orientation_names = None        # set when THIS turn is the orientation
 if not prompt and _orient and _PROFILE.orientation and ss.agent is not None \
         and turn_jobs.get_turn_job(ss.thread_id) is None:
-    # The same text the review suite sends (webapp.profiles); with
-    # GEOTECH_REVIEW_OVERVIEW off it is the profile's request, unchanged.
+    # The same text the review suite sends (webapp.profiles): the
+    # profile's request.
     prompt = profiles.orientation_request_for(_PROFILE, [
         core.Attachment(key=n, path=os.path.join(ss.temp_dir, n), size=0)
         for n in _orient])

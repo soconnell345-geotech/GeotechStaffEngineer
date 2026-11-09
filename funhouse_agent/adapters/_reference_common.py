@@ -197,15 +197,17 @@ _ALIAS_PREFIXES = ("plot_figure", "table", "figure", "equation")
 # still not what a model reaches for. canonical_name -> [extra aliases].
 _CURATED_ALIASES = {
     # micropile
-    "table_5_3_alpha_bond": ["grout_bond_strength"],
+    "table_5_3_alpha_bond": ["grout_bond_strength",
+                             "micropile_grout_bond_strength"],
     "table_5_9_soil_modulus_k_sand": ["py_soil_modulus_sand"],
     "table_5_10_soil_modulus_k_clay": ["py_soil_modulus_clay"],
     "table_5_4_group_efficiency": ["group_efficiency_factor"],
     # gec13 (ground modification)
-    "table_10_1_micropile_bond_stress": ["micropile_grout_bond_strength",
-                                         "grout_bond_strength"],
-    "table_9_2_nail_bond_strength": ["soil_nail_bond_strength"],
     "figure_5_5_settlement_improvement": ["settlement_improvement_factor"],
+    # REF-62: the old table_4_1_ddc_parameters' stripped name now reaches
+    # the DDC table GEC-13 prints (Table 4-3, applied energy, p. 4-46)
+    "table_4_3_applied_energy": ["ddc_parameters", "ddc_applied_energy"],
+    "table_8_6_soilcrete_strength": ["jet_grout_strength"],
     # gec10 (drilled shafts)
     "figure_10_6_alpha_clay": ["alpha_adhesion_factor"],
     "table_10_2_nc_base_clay": ["bearing_capacity_factor_nc"],

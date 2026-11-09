@@ -1,5 +1,15 @@
 # Document Review architecture: three job shapes (plan of record, 2026-09-28)
 
+> **2026-11-09, BACKLOG DR-39:** the lean review build (`GEOTECH_REVIEW_AGENT=lean`)
+> and the experiments built on it were removed from the code: `GEOTECH_VISION_INLINE`,
+> `GEOTECH_REVIEW_SWEEP` (`deep/sweep.py`), `GEOTECH_REVIEW_FINDINGS`
+> (`review_findings.py`, `deep/findings_tools.py`), `GEOTECH_REVIEW_OVERVIEW`,
+> `GEOTECH_REVIEW_GEOMETRY` (`deep/geometry_tools.py`), `GEOTECH_REVIEW_DIGEST`
+> (`review_digest/`, `deep/digest_tools.py`), `GEOTECH_REVIEW_KEPT_READINGS`, and
+> the suite arms `lean`, `grounded`, `inline`, `sweep`, `overview`, `geometry`,
+> `digest`, `kept_readings`. What this file says about them is history; the
+> inventory and its evidence are in `module_work/dr39/CHECK.md`.
+
 Owner discussion, 2026-09-28, after 5.30.0 shipped the review suite and the
 switched harness changes (`module_work/REVIEW_HARNESS.md`). Nothing here is
 built yet. This is the design agreed in conversation, to be built in the

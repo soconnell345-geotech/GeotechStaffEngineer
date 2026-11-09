@@ -128,7 +128,10 @@ class BearingCapacityAnalysis:
         ``factors.DEPTH_FACTOR_BASIS``): "hansen" (default), Brinch
         Hansen's depth parameter k in the method's factors; "gec6"
         (``factor_method="vesic"`` only), GEC-6's d_q of Table 5-4 on the
-        surcharge term alone, 1.0 below Df/B = 1; "none", no depth factors.
+        surcharge term alone, 1.0 below Df/B = 1; "linear"
+        (``factor_method="meyerhof"`` only, GM-309), Meyerhof's factors
+        with k = Df/B at every depth as UFC 3-220-20 Table 5-6 (p. 294)
+        prints them; "none", no depth factors.
 
     Examples
     --------
@@ -202,6 +205,13 @@ class BearingCapacityAnalysis:
                 "depth_factor_method='gec6' is GEC-6's depth factor (Eq. "
                 "5-14, Table 5-4), which goes with GEC-6's own factors: "
                 "factor_method='vesic'.")
+        if self.depth_factor_method == "linear" \
+                and self.factor_method != "meyerhof":
+            raise ValueError(
+                "depth_factor_method='linear' is Meyerhof's depth factors "
+                "with k = Df/B at every depth (UFC 3-220-20 Table 5-6), "
+                "which go with Meyerhof's own factors: "
+                "factor_method='meyerhof'.")
         if terzaghi:
             bad = [name for name, v in (
                 ("load_inclination", self.load_inclination),
@@ -384,7 +394,7 @@ class BearingCapacityAnalysis:
                       + (" (1.0 below Df/B = 1)" if df_b < 1.0 else
                          " (Table 5-4)"))
         else:
-            k = depth_parameter_k(Df, B, fm)
+            k = df_b if dm == "linear" else depth_parameter_k(Df, B, fm)
             form = "Df/B" if k == df_b else "arctan(Df/B)"
             chosen = (f"k = {form} = {k:.3f} at Df/B = {df_b:.2f}: d_c, "
                       f"d_q, d_gamma = {r.dc:.3f}, {r.dq:.3f}, "
@@ -416,17 +426,13 @@ class BearingCapacityAnalysis:
             basis = DEPTH_FACTOR_BASIS[dm]
         alternatives = []
         for other in DEPTH_FACTOR_METHODS:
-            if other == dm or (other == "gec6" and fm != "vesic"):
+            if other == dm or (other == "gec6" and fm != "vesic") or (
+                    other == "linear" and fm != "meyerhof"):
                 continue
             d = depth_factors(phi, Df, B, fm, other)
             alternatives.append(
                 f"d_c, d_q, d_gamma = {factors(d)} (depth_factor_method "
                 f"'{other}'): {DEPTH_FACTOR_BASIS[other]}")
-        if fm == "meyerhof" and df_b > 1.0:
-            alternatives.append(
-                f"k = Df/B = {df_b:.2f}, as UFC 3-220-20 Table 5-6 (p. 294) "
-                "prints for Meyerhof at any depth (larger depth factors; "
-                "not an option of this tool)")
         if (fm == "vesic" and dm == "hansen" and phi > 0
                 and not self._no_cohesion()):
             # GM-214: the table's printed d_c is half its note C formula's

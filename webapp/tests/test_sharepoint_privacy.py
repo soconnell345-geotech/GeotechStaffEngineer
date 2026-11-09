@@ -222,6 +222,58 @@ def test_alice_still_reaches_her_own_file(site, monkeypatch, tmp_path):
         (rec / "files" / "10.17a.pdf").read_bytes() == b"%PDF alice"
 
 
+def test_the_app_log_is_closed_to_every_conversation(site, monkeypatch,
+                                                     tmp_path):
+    """TA-35: the app's SharePoint log holds every user's errors; on a
+    shared host no conversation lists, searches, downloads or uploads it
+    (the admin reads it in SharePoint)."""
+    log_file = f"{ROOT}/_app_log/sharepoint-2026-11.log"
+    site.files[log_file] = b"2026-11-05T00:00:00Z\tconversation save\tx\t\n"
+    _tid, rec, bob = _conversation(monkeypatch, tmp_path, "bob")
+    out = bob["sharepoint_list_files"].invoke({"path": ""})
+    assert "_app_log" not in out and "uploaded references" in out
+    for out in (bob["sharepoint_list_files"].invoke({"path": "_app_log"}),
+                bob["sharepoint_download_file"].invoke({"path": log_file}),
+                bob["sharepoint_search_files"].invoke(
+                    {"query": "sharepoint", "path": "_app_log"})):
+        assert "refused" in out and "log folder" in out
+    out = bob["sharepoint_search_files"].invoke({"query": "sharepoint-2026-11"})
+    assert "No files matching" in out and "_app_log" not in out
+    (rec / "files" / "mine.log").write_bytes(b"made up")
+    out = bob["sharepoint_upload_file"].invoke(
+        {"local_path": "mine.log", "dest_folder": "_app_log"})
+    assert "refused" in out
+    assert site.downloads == [] and site.uploads == []
+    assert not any("_app_log" in str(p) for p in site.listed)
+
+
+def test_each_tool_failure_is_its_owners_in_the_diagnostics(
+        site, monkeypatch, tmp_path):
+    """TA-35: a tool's failure is kept in memory tagged with its
+    conversation's owner, so the sidebar's download shows each person only
+    their own."""
+    from webapp import diagnostics, sharepoint_log
+    sharepoint_log.reset()
+
+    def refused(path):
+        raise RuntimeError(f"HTTP 503 while listing {path}")
+    monkeypatch.setattr(site, "ls", refused)
+    try:
+        _t, _r, alice = _conversation(monkeypatch, tmp_path, "alice")
+        alice["sharepoint_list_files"].invoke(
+            {"path": "projects/Alice_project"})
+        _t, _r, bob = _conversation(monkeypatch, tmp_path, "bob")
+        bob["sharepoint_list_files"].invoke({"path": "projects/Bob_project"})
+        fail = [{"name": "SharePoint connection",
+                 "status": diagnostics.FAIL, "detail": "FAIL  sign-in"}]
+        text = diagnostics.sharepoint_download(fail, who="bob")
+        assert "Bob_project" in text and "Alice_project" not in text
+        assert "Alice_project" in diagnostics.sharepoint_download(
+            fail, who="alice")
+    finally:
+        sharepoint_log.reset()
+
+
 def test_an_untagged_conversation_on_a_multi_user_host_fails_closed(
         site, monkeypatch, tmp_path):
     """The app records the owner at the start of the turn; if that write

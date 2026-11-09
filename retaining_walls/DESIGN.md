@@ -277,7 +277,7 @@ at its centroid), and the traffic over the level part is Vs = q (L − x_crest)
 bearing, as the level wall treats its live load (Fig. 4-2) — and counts in
 Tmax (not in pullout) as the level wall's surcharge does. As the crest height
 goes to zero every result tends to the level wall with its surcharge
-(tested). A battered face (10° or more) is still not covered.
+(tested). A battered face (10° or more) is covered since GM-307 (below).
 
 **Worked examples reproduced** (V-056 / V-057,
 `validation_examples/test_published_v056_v057_gec11_slope.py`), FHWA GEC-11
@@ -1819,3 +1819,71 @@ verdict where the page states a requirement; a warning where it advises.
   (summary and `to_dict`, each only when present); the LRFD dict gains
   `local_shear` and `warnings`. The calc package prints Eq. 4-24, the St
   check and a warnings table.
+
+
+## What GM-114 left: backslope and batter in the package, an LRFD package (GM-307, 2026-11-06)
+
+GEC-11 = FHWA-NHI-10-024 (Vol I) / -025 (Vol II), November 2009, as printed.
+Check record: `module_work/gm307/CHECK.md`.
+
+- **A sloping or broken backslope in the MSE package.** GM-112 made the MSE
+  calc steps level-only and GM-114's package refused a `backfill_slope`.
+  The steps now print Sec. 4.4.4's terms from the run's own
+  `external_terms["backslope_loads"]`: h (Eq. 4-7, p. 4-20, ≤ H + S), I for
+  a broken backslope (p. 4-15, Fig. 4-4), Kab with Γ (Eqs. 4-2, 4-3, p.
+  4-15), F_T and its components (Eqs. 4-7, 4-10, 4-13), the traffic thrust
+  behind the crest (Example E1), V2 (Figs. 4-3, 4-4, 4-8), bearing by Eq.
+  4-21 (p. 4-28); inside, S_eq and σ_2 (Fig. 4-11, p. 4-38; Eq. 4-29),
+  H1 for steel (Fig. 4-9a, p. 4-34) and Zp per level (Fig. 4-15). No value
+  changes.
+- **A battered face** (`face_batter`, ω from vertical, on
+  `MSEWallGeometry`). Under 10° the face is near vertical, θ = 90 (p.
+  4-15; a choice says so). From 10° (`geom.battered`, θ = 90 + ω, Fig.
+  4-5):
+  - external Kab by Eqs. 4-2, 4-3 with θ and δ = β (p. 4-15, "Battered
+    Wall with or without Backslope"); F_T at h/3 on the back of the zone,
+    at δ to its normal, so at δ − ω to the horizontal (Fig. 4-5: F_H at
+    θ − 90 to the normal). The zone is a parallelogram of horizontal width
+    L, its back L + y tan ω from the toe; V1 at L/2 + (H/2) tan ω, V2 and
+    Vs shifted by H tan ω, F_V at L + (h/3) tan ω. F_V < 0 (δ < ω, e.g. a
+    level backfill) points up and lessens V in every check; a surcharge
+    thrust's upward component is counted the same way;
+  - under a slope that continues, h = H + L tan β / (1 − tan ω tan β):
+    Fig. 4-5 draws h up to where the inclined back of the zone meets the
+    slope, the plane Eqs. 4-2, 4-3 are Coulomb's for; Eq. 4-7's H + L tan β
+    is written for a vertical wall and gives F_T 2 to 9 % low (GM-307
+    review; checked against a numerical Coulomb wedge). V2 = γ_r L (h − H)
+    / 2 (Fig. 4-3) with that h is the slope fill up to the inclined back,
+    at (2L + (h − H) tan ω) / 3 from the top of the face. A choice gives
+    Eq. 4-7's h and F_T beside it (`BATTER_SLOPE_H_BASIS`);
+  - internal Ka by Eq. 4-26 (p. 4-36). **The print drops the square on the
+    bracket**: as printed Eq. 4-26 gives 1 − sin φ at θ = 90, not Eq. 4-25,
+    against the same page ("Coulomb ... no wall friction and a β angle
+    equal to zero ... reduces to the Rankine equation"). The code takes
+    Eqs. 4-2, 4-3 with δ = β = 0 (`battered_internal_Ka`); the choices give
+    the as-printed value beside it (`battered_internal_Ka_as_printed`);
+  - extensible failure surface by Fig. 4-9(b) (p. 4-34; p. 4-33), through
+    the toe, δ = β, θ from horizontal (`extensible_failure_angle`). **The
+    figure's left side reads tan(ψ − θ)**; at a vertical face its right side
+    is tan(45 − φ/2), so only tan(ψ − φ) gives the figure's own "For
+    vertical face ψ = 45 + φ/2", and that is read. La = (H − z)(cot ψ −
+    tan ω) from the face;
+  - inextensible: Fig. 4-9(a)'s note, 0.3 H1 from the face, the upper part
+    parallel to it; measured from the face La is unchanged;
+  - under a slope, Zp measures the slope from the top of the face, z tan ω
+    behind a level's face.
+  Refused: a battered face under a broken backslope (p. 4-15 gives I for a
+  vertical wall only; Fig. 4-9(b)'s δ = β_cs for a broken backslope is not
+  defined), an outward lean (Vol II p. 10-36), and the LRFD path with a
+  battered geometry (`LRFD_BATTER_REASON`: its equations are written for a
+  vertical face). The result carries `face_batter` (θ, Ka, the thrust's
+  angle, F_T, its components and arm).
+- **An LRFD package**: `retaining_wall_package` with `wall_type="mse_lrfd"`
+  runs `run_mse_lrfd_external_stability` (the tool's own path; its `_run_`
+  wrapper calls it) and prints its result: the factors as Tables 4-1, 4-2
+  (p. 4-4) and 4-5 (p. 4-19) print them, the combinations of Vol II Table
+  E4-5.1 (p. E4-6) and the critical one, the unfactored loads, and per
+  combination the sliding CDR, the eccentricity and the bearing pressure,
+  resistance and CDR, Strength I (min) included. Nothing is worked out in
+  the steps; internal stability stays in the ASD package.
+

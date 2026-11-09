@@ -272,6 +272,38 @@ def _sharepoint_check() -> dict:
     return _check(name, PASS if ok else FAIL, gs.format_check(results))
 
 
+def sharepoint_download(checks: List[dict], who: str) -> Optional[str]:
+    """TA-35: the SharePoint report to offer as a download in the sidebar
+    when the connection test failed (sign-in refused, site unreachable, ...:
+    then the report may not have reached the SharePoint log): the test's
+    report, whether it reached the log, and the SharePoint errors met in
+    the conversations of ``who`` (the signed-in person's key on a shared
+    host, ``""`` on a single-user one) -- never another person's entries,
+    which carry their folder and file names. ``None`` when the test passed
+    or did not run. Never raises; carries no secret (the log's entries are
+    scrubbed)."""
+    try:
+        sp = next((c for c in checks
+                   if c.get("name") == "SharePoint connection"), None)
+        if sp is None or sp.get("status") == PASS:
+            return None
+        from webapp import sharepoint_log
+        sharepoint_log.flush(15.0)
+        kept = sharepoint_log.last_write is True
+        where = ("it was also appended to " + sharepoint_log.log_path()
+                 if kept else "it could not be written to SharePoint"
+                 + (f" ({sharepoint_log.last_write})"
+                    if isinstance(sharepoint_log.last_write, str) else ""))
+        return ("GeotechStaffEngineer SharePoint report\n"
+                f"Status: {str(sp.get('status')).upper()}; {where}.\n\n"
+                + sharepoint_log.scrub(str(sp.get("detail") or ""))
+                + "\n\nSharePoint errors met in your conversations (UTC "
+                "time, step, message, path):\n"
+                + (sharepoint_log.recent_text(who) or "(none)\n"))
+    except Exception:                                # noqa: BLE001
+        return None
+
+
 def _prompter_key_check(identity: Any = None) -> dict:
     """Tiny Apps: which Prompter key SOURCE serves this caller — per-tester
     secret, the PROMPTER-KEYS mapping or the shared key — and the per-tester

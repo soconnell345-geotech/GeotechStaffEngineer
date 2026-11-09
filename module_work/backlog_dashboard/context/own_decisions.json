@@ -2988,5 +2988,87 @@
       "BACKLOG.md OWN-127",
       "module_work/ri102/CHECK.md"
     ]
+  },
+  "OWN-129": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Release planlens 0.15.0, so the app's document tools can become a thin binding to it (PL-29 (b))?",
+    "why": "PL-29 (b) moves about 5,300 lines of the app's document-tool code into planlens, where it already lives since PL-29 (a). It is built, reviewed (no change in what users or the model see; conversations kept apart) and fixed, and needs planlens 0.15 installed to merge.",
+    "background": "planlens main holds PL-29 (a) and PL-11 since 0.14.0. The review found 0.15.0 safe ahead of the app: today's 5.34.0 does not use the moved code. The one change a 5.34.0 user sees is PL-11 (a printed 'Label (unit): value' read as a quantity), which removes a wrong value from report ingest's calc reader.",
+    "options": [
+      {
+        "label": "Yes, release planlens 0.15.0",
+        "effect": "The lead tags planlens v0.15.0 (published by its tag workflow), raises the app's pin to planlens>=0.15 and merges PL-29 (b). The next app release ships with it."
+      },
+      {
+        "label": "Not yet",
+        "effect": "PL-29 (b) waits on its branch; the app split's step 11 (c) waits with it."
+      }
+    ],
+    "recommendation": "Yes: it is a library release with no change for today's app, and it unblocks the split.",
+    "if_no_answer": "PL-29 (b) stays on its branch.",
+    "message_to_send": null,
+    "unblocks": [
+      "PL-29 (b)",
+      "INF-32 step 11 (c)"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-129, PL-29",
+      "module_work/pl29/CHECK_B.md (branch claude/pl-29b-binding)"
+    ]
+  },
+  "OWN-130": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "When a report's bearing calculation prints only an effective unit weight (gamma'), should the recompute check run it as the fully submerged case?",
+    "why": "The recompute QC (DR-11) re-runs a report's claimed bearing capacity through the app's modules. 7 of the saved reports' bearing calculations print gamma' and no total unit weight, so today it refuses them.",
+    "background": "Both choices are built (DR-11 slice 2, merged 2026-11-06); one setting picks. Measured on the saved corpus with no model calls: run as the submerged case, 167 of 183 claimed bearing values agree within 10 % (median difference 4 %), and the review found no recompute error in the rest; kept refusing, 1 value is checked.",
+    "options": [
+      {
+        "label": "Run it as the submerged case",
+        "effect": "Water is taken at or above the footing base with gamma' throughout; the row says this was assumed."
+      },
+      {
+        "label": "Keep refusing",
+        "effect": "The calculation is listed as 'water level not printed' and not recomputed."
+      }
+    ],
+    "recommendation": "Run it as the submerged case and say so on the row: a report that prints only gamma' is almost always treating the soil as submerged, and the row makes the assumption visible.",
+    "if_no_answer": "The next DR-11 slice keeps refusing these and lists them.",
+    "message_to_send": null,
+    "unblocks": [
+      "DR-11 slice 2"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-130, DR-11",
+      "module_work/dr11/LABELS_SUMMARY.md"
+    ]
+  },
+  "OWN-131": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "With Meyerhof's bearing capacity method, should the depth factors follow Meyerhof's own table at every depth, rather than switching to Brinch Hansen's form for footings deeper than they are wide?",
+    "why": "The app's Meyerhof answers for footings deeper than they are wide are 6 to 16 % lower than Meyerhof's own table gives. Every saved report that used Meyerhof at that depth (24 values, 3 reports) matches his table to within 0.25 %.",
+    "background": "UFC 3-220-20 Table 5-6 (p. 294) prints Meyerhof's depth factors with k = D_f/B and no depth limit; the arctan form the app uses beyond D_f/B = 1 is printed only for Brinch Hansen (p. 295). The app chose the smaller factors on purpose. Meyerhof's own form is now built as an option (GM-309), and the report recompute check counts a match to it as 'within options', so either answer leaves the QC check working.",
+    "options": [
+      {
+        "label": "Keep today's default",
+        "effect": "The smaller (Hansen-style) factors stay the default; Meyerhof's own form is a stated option the engineer can pick."
+      },
+      {
+        "label": "Follow Meyerhof's table at every depth",
+        "effect": "Bearing answers by Meyerhof for footings deeper than they are wide rise by up to about 16 %; a release note says so."
+      }
+    ],
+    "recommendation": "Keep today's default: it is the safe side, the option is offered and stated in every result, and the recompute check already accepts reports that used Meyerhof's own form.",
+    "if_no_answer": "Today's default stays, with Meyerhof's own form as an option.",
+    "message_to_send": null,
+    "unblocks": [
+      "GM-309 follow-up"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-131, GM-309",
+      "module_work/gm309/CHECK.md"
+    ]
   }
 }

@@ -76,7 +76,7 @@ PLACEHOLDER_HOSTS = {
     "adb-dp-9.3.databricks.azure.us", "adb-99.11.azuredatabricks.net",
     "dbc-x.cloud.databricks.com", "dbc-deadbeef.cloud.databricks.com",
     "contoso.sharepoint.com", "host.sharepoint.com", "t.sharepoint.com",
-    "x.sharepoint.com",
+    "x.sharepoint.com", "contoso.sharepoint.us",
 }
 
 TEXT_SUFFIXES = {".py", ".md", ".txt", ".json", ".html", ".toml", ".yaml",
@@ -91,19 +91,35 @@ def _h(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()[:16]
 
 
+def _project_roots() -> list[Path]:
+    """The repo root and every package built from ``packages/`` (the app
+    split's core from step 10, INF-32): each has its own pyproject."""
+    pkgs = REPO / "packages"
+    extra = sorted(p.parent for p in pkgs.glob("*/pyproject.toml")) \
+        if pkgs.is_dir() else []
+    return [REPO, *extra]
+
+
 def _shipped_files() -> list[Path]:
-    cfg = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
-    find = cfg["tool"]["setuptools"]["packages"]["find"]
-    include = find.get("include") or []
-    tops = sorted(p for p in REPO.iterdir() if p.is_dir()
-                  and any(fnmatch.fnmatch(p.name, pat) for pat in include))
     out = []
-    for top in tops:
-        for f in top.rglob("*"):
-            parts = f.relative_to(REPO).parts
-            if (f.is_file() and f.suffix.lower() in TEXT_SUFFIXES
-                    and "tests" not in parts and "__pycache__" not in parts):
-                out.append(f)
+    for root in _project_roots():
+        cfg = tomllib.loads((root / "pyproject.toml").read_text(
+            encoding="utf-8"))
+        find = cfg["tool"]["setuptools"]["packages"]["find"]
+        include = find.get("include") or []
+        tops = sorted(p for p in root.iterdir() if p.is_dir()
+                      and any(fnmatch.fnmatch(p.name, pat) for pat in include))
+        # what lands in the wheel beside the packages: the README is the
+        # PyPI page, the pyproject the metadata
+        out += [f for f in (root / "README.md", root / "pyproject.toml")
+                if root != REPO and f.is_file()]
+        for top in tops:
+            for f in top.rglob("*"):
+                parts = f.relative_to(root).parts
+                if (f.is_file() and f.suffix.lower() in TEXT_SUFFIXES
+                        and "tests" not in parts
+                        and "__pycache__" not in parts):
+                    out.append(f)
     return out
 
 
@@ -171,6 +187,15 @@ def test_shipped_packages_carry_no_guarded_names():
     # Report paths and counts only: printing the words would put them in
     # CI logs.
     assert not bad, f"guarded names in shipped files (path: count): {bad}"
+
+
+def test_the_package_walk_covers_the_core():
+    """The core under ``packages/`` ships to PyPI too (INF-32 step 10)."""
+    rel = {f.relative_to(REPO).as_posix() for f in _shipped_files()}
+    core = "packages/aec-agent-core"
+    assert f"{core}/aec_agent_core/__init__.py" in rel
+    assert f"{core}/README.md" in rel
+    assert not any(r.startswith(f"{core}/tests/") for r in rel)
 
 
 def test_public_repo_carries_no_department_or_deployment_addresses():

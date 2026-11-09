@@ -14,7 +14,7 @@ answer was re-derived from scratch at least twice:
 | asks you to change an agent or pipeline (prompts, tools, vision, report-ingest stages, scorers) | `module_work/harness_theory/` — how the three harnesses actually work, from the code and the recorded Foundry runs, with their known failure modes and open questions |
 | brings back the results of ANY model run (suite run, live check, Foundry hand-back, a field session's conversation, a report-ingest stage) | the section **"REVIEW EVERY MODEL RUN IN FULL"** just below — read every run's full record (tool calls, results, the model's own text), not just the scores |
 | asks about a number published in planlens docs/README | `module_work/drawing_ground_truth/doc_claims_check.py` — if a number disagrees with that script, the DOCUMENT is wrong |
-| bumps the version / cuts a release | `webapp/tests/test_docs_currency.py` will fail until CLAUDE.md's state block, HANDOFF §0a-current and the install guide's history table each name the new version. Refresh the prose, don't just paste the version in. Then sweep `BACKLOG.md`: every item the release closed moves to "Done since the last sweep" with its commit, and `module_work/backlog_dashboard/sweep_done.py` moves that list to `BACKLOG_DONE.md` (the archive; its IDs are never reused). |
+| bumps the version / cuts a release | `webapp/tests/test_docs_currency.py` will fail until CLAUDE.md's state block, HANDOFF §0a-current and the install guide's history table each name the new version. Refresh the prose, don't just paste the version in. Then sweep `BACKLOG.md`: every item the release closed moves to "Done since the last sweep" with its commit, and `module_work/backlog_dashboard/sweep_done.py` moves that list to `BACKLOG_DONE.md` (the archive; its IDs are never reused). After the bump, in the release venv, run `python module_work/doc10/check_manual.py --rebuild`; if it exits 1, run it with `--write`, read the diff and commit the rebuilt `docs/user_manual/manual.html` and `toc.json` with the release (the name check alone misses changed descriptions; the rebuild moves the cover version). |
 | finds a bug, a gap, a follow-up or an owner question while working — or a review, trace read, smoke wave or field session produces a fix list | add each item to `BACKLOG.md` under its area with the next free ID (`module_work/backlog_dashboard/sweep_done.py --next PREFIX` reads `BACKLOG.md` and `BACKLOG_DONE.md`; section "How every session uses this file" at its top). Never start a new to-do list anywhere else; `webapp/tests/test_backlog.py` checks the IDs. **No edge-case chasing (owner 2026-10-27):** a fix's follow-up becomes an item only if it changes a value in the saved reports' outputs; otherwise it is a "noted, not fixed" line in the parent's Done entry (the rule under BACKLOG's "How every session uses this file"). |
 
 **Why this block is here.** After a context compaction a fresh agent keeps only
@@ -125,7 +125,10 @@ Key conventions:
   model-first answer); groundwater "not measured" and combined lab samples
   are kept; refs pinned at 32bbd77 (worked examples from five manuals); the
   app split's steps 6-8 are in (the Document Review page loads one geotech
-  package and four app modules; steps 9-11 next); the owner's question list
+  package and four app modules), and step 10: `aec-agent-core`, the shared
+  core, empty (1.0.0.dev0) in `packages/aec-agent-core`, pinned exactly; a
+  dev install puts it first: `pip install -e packages/aec-agent-core -e .`;
+  steps 9 (b) and 11 next; the owner's question list
   runs inside the ingest when `GSE_REPORT_QUESTIONS` names it, posts matched
   from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split; the
   geotech page keeps 15 document tools off the list until a document is
@@ -135,17 +138,20 @@ Key conventions:
   are 3-D under DIGGS' compound CRS; driven piles take a layer's own
   adhesion and ask for Fig. 7-18's case under a softer clay; the user
   manual's HTML is rebuilt from master; `retaining_wall_package` writes an
-  MSE wall's calc package (`wall_type="mse"`) and MSE LRFD reports Strength I
-  (min) apart; pystrata is held below 0.6 (INF-68); SharePoint works on any
+  MSE wall's calc package (`wall_type="mse"`, with a sloping backslope or a
+  battered face; `mse_lrfd` for LRFD) and MSE LRFD reports Strength I
+  (min) apart; the site-response tools run on pystrata 0.5 (Python 3.12) or 0.6 (Python 3.13); SharePoint works on any
   Microsoft cloud with a secret or a certificate and several sites, with a
-  connection test and `docs/SHAREPOINT_SETUP.md`. Answers move in the MSE
+  connection test and `docs/SHAREPOINT_SETUP.md`; the cloud is read off the
+  site's address, a user can open any granted site by pasting its address,
+  and SharePoint errors are kept in a log in the app's SharePoint folder; GEC-13's lookups cite their printed equations and three it never printed are gone; GEC-10 and GEC-13 Vol II cited by their covers; NHI-06-088/089's cited equations carry their printed formulas; the AASHTO 1993 ESAL lookups read every printed SN, D and pt (refs e4b0fa1); the report recompute check splits a calculation by its printed cases (DR-11 slice 2, gamma'-only refused until OWN-130); a calculation's printed table keeps every row (RI-208, calc prompt mf-10); the recompute check also covers retaining-wall earth-pressure coefficients (DR-11 slice 3) and AASHTO 1993 rigid slab thickness (slice 4); GEC-13's deep dynamic compaction and jet grouting lookups give only what the print has, and the DDC depth is Eq. 4-1 as printed (refs 8a09592); bearing capacity offers Meyerhof's own depth factors at every depth as an option (GM-309; default unchanged, OWN-131); the chart suite (`funhouse_agent/chart_eval/`, CharXiv) is merged and its Foundry run read in full; the wrap-up is Document Review as the public package `aec-document-review` (INF-33); a failed vision probe no longer lowers the image detail for the process and the vision side calls see the user's question (DR-36/37); the review experiments that never earned a place are removed (DR-39; follow-up DR-40). Answers move in the MSE
   critical bearing (live load over the zone at 1.75), fem2d footing capacity
   (a surcharge is a real load; the soil's weight first; the default
   iteration limit grows with the mesh, so fine meshes no longer stop short,
   and a stopped run is called a lower bound; a graded mesh for clay; sand q_ult with
   no surcharge is set by the mesh and warned of; a rigid footing is a
-  choice, flexible stays the default) and sheet_pile (water standing in
-  the excavation).
+  choice, flexible stays the default) sheet_pile (water standing in
+  the excavation) and GEC-13's groutability band (N > 24 feasible, as printed).
 
 - **5.34.0 (2026-11-04; tag `v5.34.0` on branch `release/5.34.0`) with
   planlens 0.14.0 (tag `v0.14.0`) and geotech-references 1.5.0 (tag

@@ -155,22 +155,13 @@ def test_only_the_three_ruled_switches_are_on_by_default(monkeypatch):
         "GEOTECH_JUDGMENT_CALLS", "GEOTECH_FIGURE_HELPER",
         "GEOTECH_PLOT_CODE"}
     readers = {
-        review_flags.AGENT_ENV: lambda: (review_flags.lean_agent()
-                                         or review_flags.minimal_agent()),
+        review_flags.AGENT_ENV: review_flags.minimal_agent,
         review_flags.VISION_TEXT_ENV: review_flags.vision_text_context,
         review_flags.VISION_STRUCTURED_ENV: review_flags.vision_structured,
-        review_flags.VISION_INLINE_ENV: review_flags.vision_inline,
-        review_flags.SWEEP_ENV: review_flags.sweep,
-        review_flags.FINDINGS_ENV: review_flags.findings,
-        review_flags.OVERVIEW_ENV: review_flags.overview,
-        review_flags.GEOMETRY_ENV: review_flags.geometry,
-        review_flags.DIGEST_ENV: review_flags.digest,
         review_flags.COVERAGE_ENV: review_flags.coverage,
         review_flags.CHECKLIST_ENV: review_flags.checklist,
         review_flags.REPORT_INGEST_ENV: review_flags.report_ingest,
         review_flags.VISION_TURN_RETRY_ENV: review_flags.vision_turn_retry,
-        review_flags.KEPT_READINGS_ENV:
-            review_flags.kept_readings_on_review_page,
         review_flags.CITED_PAGES_ENV:
             lambda: review_flags.cited_pages() != "off",
         review_flags.CITED_DOCUMENTS_ENV:

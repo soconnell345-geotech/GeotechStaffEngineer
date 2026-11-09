@@ -225,6 +225,6 @@ def test_the_coverage_arms_are_switches_on_the_default_agents():
     assert A.ARMS["coverage"] == {A.COVERAGE_ENV: "1"}
     assert A.ARMS["checklist"] == {A.COVERAGE_ENV: "1", A.CHECKLIST_ENV: "1"}
     with A.switches(A.ARMS["checklist"]):
-        assert A.coverage() and A.checklist() and not A.lean_agent()
+        assert A.coverage() and A.checklist() and not A.minimal_agent()
     with A.switches(A.ARMS["baseline"]):
         assert not A.coverage() and not A.checklist()

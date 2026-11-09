@@ -40,7 +40,7 @@ Never do any of these: open a PR, push to master or main, create a tag, or edit 
   ```
 
   Also run the tests of any consumer outside report_ingest that you touched or that reads what you changed. If the fingerprints test fails because a prompt or tool text changed, re-record with `python -m webapp.tests.page_builds record`, in a commit of its own.
-- **Setup:** `python3.12 -m venv /tmp/v && /tmp/v/bin/pip install -e . pytest pytest-xdist`. planlens 0.14 and geotech-references 1.5.0 come from PyPI. Use that venv's python for everything.
+- **Setup:** `python3.12 -m venv /tmp/v && /tmp/v/bin/pip install -e packages/aec-agent-core -e . pytest pytest-xdist`. The app pins its core `aec-agent-core` exactly and the core is not on PyPI yet, so it is installed from this repository in the same command. planlens 0.14 and geotech-references 1.5.0 come from PyPI. Use that venv's python for everything.
 
 ## Finish with
 

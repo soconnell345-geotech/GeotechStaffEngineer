@@ -145,8 +145,8 @@ def _review_tools(monkeypatch, arm):
     return set(_tools_of(agent))
 
 
-def test_legacy_and_lean_review_builds_have_measure(monkeypatch):
-    for arm in ("baseline", "lean"):
+def test_the_review_page_build_has_measure(monkeypatch):
+    for arm in ("baseline",):
         names = _review_tools(monkeypatch, arm)
         assert "measure" in names, arm
         assert "log_grid" not in names, arm          # BACKLOG RI-34
@@ -184,8 +184,7 @@ def test_the_tools_describe_themselves_and_stay_small():
 def test_no_prompt_mentions_measure():
     """Tools describe themselves (owner's rule): no system prompt names it."""
     from funhouse_agent.deep import prompt as P
-    texts = [P.build_document_review_prompt(lean=True),
-             P.build_document_review_prompt(lean=False)]
+    texts = [P.build_document_review_prompt()]
     for t in texts:
         assert "measure(" not in t and "`measure`" not in t
         assert "log_grid" not in t

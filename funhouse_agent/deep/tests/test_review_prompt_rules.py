@@ -10,7 +10,7 @@ These pins keep the ordering from drifting back.
 """
 
 from funhouse_agent.deep import prompt as P
-from funhouse_agent.deep.review_agent import INLINE_DESCRIPTIONS, REVIEW_DESCRIPTIONS
+from funhouse_agent.deep.review_agent import REVIEW_DESCRIPTIONS
 
 
 def _flat(text):
@@ -20,7 +20,6 @@ def _flat(text):
 
 REVIEW_PROMPTS = {
     "legacy": _flat(P.DOCUMENT_REVIEW_PROMPT),
-    "lean": _flat(P.DOCUMENT_REVIEW_PROMPT_LEAN),
     "reader": _flat(P.DOCUMENT_REVIEW_READER_PROMPT),
 }
 
@@ -40,7 +39,7 @@ def test_review_prompts_make_coverage_part_of_every_answer():
 
 
 def test_markups_come_from_tool_results_not_memory():
-    for name in ("legacy", "lean"):
+    for name in ("legacy",):
         text = REVIEW_PROMPTS[name]
         # 2026-10-07: "the look that found it" was the whole-page look, and
         # every ring placed from one missed; anchor on the zoom instead.
@@ -59,25 +58,19 @@ def test_the_geotech_page_reads_text_pages_and_looks_at_pictures():
 
 
 def test_page_tools_are_for_every_page_not_a_fallback():
-    for table in (REVIEW_DESCRIPTIONS, INLINE_DESCRIPTIONS):
-        desc = _flat(table["analyze_pdf_page"])
-        assert "EVERY page" in desc and "not only when a" in desc
+    desc = _flat(REVIEW_DESCRIPTIONS["analyze_pdf_page"])
+    assert "EVERY page" in desc and "not only when a" in desc
 
 
 def test_each_review_prompt_names_the_calculation_tool_its_build_has():
-    # DOC-21: the default review page has `calculate`, the lean one has
-    # none; each prompt says what its own build has.
+    # DOC-21: the review page has `calculate` and its prompt says so.
     from funhouse_agent.deep.agent import build_primary_tools
-    from funhouse_agent.deep.review_agent import REVIEW_TOOLS
-    legacy, lean = REVIEW_PROMPTS["legacy"], REVIEW_PROMPTS["lean"]
+    legacy = REVIEW_PROMPTS["legacy"]
     assert "calculate" in {t.name for t in build_primary_tools(
         allowed_agents=())}
     assert "Your one calculation tool here is `calculate`" in legacy
     assert "no analysis tools on this page" in legacy
     assert "no engineering calculation tools" not in legacy
-    assert "calculate" not in REVIEW_TOOLS
-    assert "`calculate`" not in lean
-    assert "You have no engineering calculation tools on this page" in lean
 
 
 def test_the_review_prompt_is_the_same_from_its_own_module():

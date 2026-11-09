@@ -1,5 +1,15 @@
 # Document Review harness — plan of record (2026-09-26)
 
+> **2026-11-09, BACKLOG DR-39:** the lean review build (`GEOTECH_REVIEW_AGENT=lean`)
+> and the experiments built on it were removed from the code: `GEOTECH_VISION_INLINE`,
+> `GEOTECH_REVIEW_SWEEP` (`deep/sweep.py`), `GEOTECH_REVIEW_FINDINGS`
+> (`review_findings.py`, `deep/findings_tools.py`), `GEOTECH_REVIEW_OVERVIEW`,
+> `GEOTECH_REVIEW_GEOMETRY` (`deep/geometry_tools.py`), `GEOTECH_REVIEW_DIGEST`
+> (`review_digest/`, `deep/digest_tools.py`), `GEOTECH_REVIEW_KEPT_READINGS`, and
+> the suite arms `lean`, `grounded`, `inline`, `sweep`, `overview`, `geometry`,
+> `digest`, `kept_readings`. What this file says about them is history; the
+> inventory and its evidence are in `module_work/dr39/CHECK.md`.
+
 Owner's ask: "take a big picture view of the harness workflow … the Claude Code
 sessions have been overfitting for more narrow use cases." The full review and
 approved plan: `C:/Users/socon/.claude/plans/we-ve-been-working-on-synchronous-lemon.md`.
@@ -103,13 +113,13 @@ collect_public_docs("review_eval_docs")          # then copy to /Volumes/... or 
 # on the cluster
 from funhouse_agent.deep.inline_images import probe
 from funhouse_agent.deep.databricks_bridge import PrompterChatModel
-probe(PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high"))   # ok: True before trusting the inline arm
+probe(PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high"))   # ok: True before trusting the minimal arm
 
 from funhouse_agent.review_eval import score_review_suite
 res = score_review_suite(prompter=fh_prompter, model_name="funhouse-gpt-high",
                          docs_dir="/Volumes/.../review_eval_docs",
                          out_dir="/tmp/review_eval",
-                         arms=("baseline", "lean", "grounded", "inline", "sweep"),
+                         arms=("baseline", "minimal"),   # see review_flags.ARMS
                          sharepoint=fh_sp_client)   # durable copy; a restart resumes
 print(res["results_md"])
 ```

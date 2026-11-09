@@ -499,5 +499,30 @@
       "slope_stability/DESIGN.md",
       "slope_stability/VALIDATION.md"
     ]
+  },
+  "EV-35": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Hand the chart-suite delivery (the CharXiv data zip, the test wheel and the brief) to the AI FDE for a Foundry run.",
+    "why": "You asked whether the setup behind the Opus 5.5 system card's chart result (a container plus an image-cropping tool) reads charts better than the Document Review page. The suite answers that on one model with one judge, and the Foundry budget covers it.",
+    "background": "Chartography, the system card's benchmark, is private on Hugging Face (a 404 for you on 2026-11-06), so the suite runs on CharXiv: 1,000 real charts from arXiv papers with hand-written answers, graded with CharXiv's own prompts. The data folder was made in the cloud session; no laptop step. Five arms: no tools; the Claude Cookbook's zoom tool; zoom plus code in the app's locked plotting box; the Document Review page as users get it; and the page's minimal looking agent. Tested offline with scripted models only. Estimated 35 to 90 M input tokens per model for the 100-question sample. The Hugging Face token you saved is no longer needed; delete it from the environment's Network secrets.",
+    "options": [],
+    "recommendation": "Send the delivery zip and the data zip to the AI FDE with the brief; run the 100-question sample on Opus 5.5 and GPT-5.6 Sol.",
+    "if_no_answer": "The suite stays built and untested on a real model; nothing else waits on it.",
+    "message_to_send": null,
+    "steps": [
+      "Download the two zips from the session: the delivery (wheels, brief, build notes) and charxiv_data.zip.",
+      "Upload both to the AI FDE's workspace and point them at FOUNDRY_BRIEF_CHART_SUITE.md.",
+      "When the output folders come back, keep them in a gitignored raw/ folder: they hold the questions and copies of the charts.",
+      "Delete the Hugging Face token from the cloud environment's Network secrets."
+    ],
+    "unblocks": [
+      "VIS-17"
+    ],
+    "sources": [
+      "BACKLOG.md EV-35",
+      "module_work/FOUNDRY_BRIEF_CHART_SUITE.md",
+      "funhouse_agent/chart_eval/"
+    ]
   }
 }

@@ -15,7 +15,75 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install build
-      - run: python -m build
+      # Named directories only (the app split, INF-32 step 10): a `v*` tag
+      # builds the repository root, geotech-staff-engineer, and nothing
+      # else. The shared core in packages/aec-agent-core is NOT built or
+      # published here; it has its own workflow, publish-core.yml, on a
+      # `core-v*` tag.
+      - run: python -m build --outdir dist/ .
+      - name: Only geotech-staff-engineer is in dist/
+        run: |
+          ls dist/
+          for f in dist/*; do
+            case "$(basename "$f")" in
+              geotech_staff_engineer-*) ;;
+              *) echo "unexpected file in dist/: $f"; exit 1 ;;
+            esac
+          done
+      # A release must install: the app pins aec-agent-core exactly
+      # (INF-32), and pip can only find that version once it is on PyPI.
+      # Until the app split's step 12 publishes the core it is not, so a
+      # release tagged before then would install nowhere, and PyPI never
+      # takes the same version twice. This stops the publish instead. At
+      # step 12 the core goes up first and this check passes by itself.
+      - name: The aec-agent-core version the app pins is on PyPI
+        shell: python
+        run: |
+          import re
+          import sys
+          import tomllib
+          import urllib.error
+          import urllib.request
+
+          NAME = "aec-agent-core"
+          with open("pyproject.toml", "rb") as f:
+              deps = tomllib.load(f)["project"]["dependencies"]
+          specs = []
+          for dep in deps:
+              name = re.split(r"[\s<>=!~;\[(]", dep, maxsplit=1)[0]
+              if re.sub(r"[-_.]+", "-", name).lower() == NAME:
+                  specs.append(dep[len(name):].split(";")[0].strip())
+          if not specs:
+              print(f"The app does not require {NAME}; nothing to check.")
+              sys.exit(0)
+          pin = re.fullmatch(r"==\s*([^\s,]+)", specs[0]) if len(specs) == 1 else None
+          if pin is None:
+              print(f"::error::Expected one exact pin ({NAME}==<version>) in "
+                    f"pyproject.toml, found {specs}. Change this check together "
+                    f"with the pin.")
+              sys.exit(1)
+          version = pin.group(1)
+          url = f"https://pypi.org/pypi/{NAME}/{version}/json"
+          try:
+              with urllib.request.urlopen(url, timeout=60) as resp:
+                  ok = resp.status == 200
+          except urllib.error.HTTPError as exc:
+              if exc.code != 404:
+                  print(f"::error::Could not ask PyPI about {NAME} {version} "
+                        f"({url}: HTTP {exc.code}). Re-run this workflow.")
+                  sys.exit(1)
+              ok = False
+          except urllib.error.URLError as exc:
+              print(f"::error::Could not reach PyPI ({url}: {exc.reason}). "
+                    f"Re-run this workflow.")
+              sys.exit(1)
+          if not ok:
+              print(f"::error::Not published: geotech-staff-engineer pins "
+                    f"{NAME}=={version}, which is not on PyPI, so this release "
+                    f"could not be installed. Publish the core first (the app "
+                    f"split's step 12, BACKLOG INF-32), then publish the app.")
+              sys.exit(1)
+          print(f"{NAME} {version} is on PyPI: the release can install.")
       - uses: actions/upload-artifact@v4
         with:
           name: dist

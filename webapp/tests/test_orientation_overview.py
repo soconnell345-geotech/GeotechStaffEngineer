@@ -1,9 +1,8 @@
-"""The orientation turn with and without ``GEOTECH_REVIEW_OVERVIEW`` (S1.2).
+"""The orientation turn: the request is exactly the profile's own text, and
+the app and the review suite send the same.
 
-Switched off, the request is exactly the profile's own text (the app and the
-review suite send the same). Switched on, the PDF pages of the new uploads
-are counted: above ``GEOTECH_REVIEW_OVERVIEW_PAGES`` (default 20) the
-request asks for the contact sheets by name, at or below it to skip them.
+(The ``GEOTECH_REVIEW_OVERVIEW`` variants that counted the uploads' pages
+were removed in BACKLOG DR-39: the suite measured no gain.)
 """
 
 import os
@@ -18,14 +17,12 @@ from planlens.testing import build_synthetic_submittal  # noqa: E402
 from funhouse_agent import review_flags  # noqa: E402
 from webapp import core, profiles  # noqa: E402
 
-OVERVIEW = review_flags.OVERVIEW_ENV
 
 
 @pytest.fixture(autouse=True)
 def _no_switches(monkeypatch):
     for env in review_flags.ALL_ENVS:
         monkeypatch.delenv(env, raising=False)
-    monkeypatch.delenv(review_flags.OVERVIEW_PAGES_ENV, raising=False)
     monkeypatch.setenv("GEOTECH_VISION_PROBE", "0")
 
 
@@ -50,74 +47,13 @@ def _stage(tmp_path, files):
     return core.stage_uploads({}, str(tmp_path), files)
 
 
-def test_switch_off_is_exactly_today_s_request(tmp_path, submittal):
+def test_the_request_is_exactly_the_profile_s_own(tmp_path, submittal):
     atts = _stage(tmp_path, [("big.pdf", _long(submittal)),
                              ("photo.png", b"\x89PNG not really")])
     text = profiles.orientation_request_for(profiles.DOCUMENT_REVIEW, atts)
     assert text == profiles.ORIENTATION_REQUEST.format(
         names="`big.pdf`, `photo.png`")
     assert "(and the contact sheets if it is long)" in text
-    # the two new variants close with today's own words
-    assert profiles._ORIENTATION_ASK in profiles.ORIENTATION_REQUEST
-    for variant in (profiles.ORIENTATION_REQUEST_LONG,
-                    profiles.ORIENTATION_REQUEST_SHORT):
-        assert variant.endswith(profiles._ORIENTATION_ASK)
-
-
-def test_a_short_upload_skips_the_contact_sheets(tmp_path, submittal,
-                                                 monkeypatch):
-    monkeypatch.setenv(OVERVIEW, "1")
-    atts = _stage(tmp_path, [("sub.pdf", submittal)])
-    text = profiles.orientation_request_for(profiles.DOCUMENT_REVIEW, atts)
-    assert text == profiles.ORIENTATION_REQUEST_SHORT.format(names="`sub.pdf`")
-    assert "skip the contact sheets" in text
-    assert "render_page_thumbnails" not in text
-    assert "Do not review it yet." in text
-
-
-def test_a_long_upload_asks_for_the_contact_sheets(tmp_path, submittal,
-                                                   monkeypatch):
-    monkeypatch.setenv(OVERVIEW, "1")
-    atts = _stage(tmp_path, [("big.pdf", _long(submittal))])
-    text = profiles.orientation_request_for(profiles.DOCUMENT_REVIEW, atts)
-    assert "render_page_thumbnails" in text and "(22 pages in all)" in text
-    assert "look at them before you summarise" in text
-    assert "`big.pdf`" in text
-
-
-def test_pages_are_totalled_across_the_new_uploads(tmp_path, submittal,
-                                                   monkeypatch):
-    monkeypatch.setenv(OVERVIEW, "1")
-    atts = _stage(tmp_path, [("a.pdf", submittal), ("b.pdf", submittal),
-                             ("c.png", b"\x89PNG")])
-    text = profiles.orientation_request_for(profiles.DOCUMENT_REVIEW, atts)
-    assert "(22 pages in all)" in text
-
-
-def test_the_threshold_is_a_setting_and_at_it_is_short(tmp_path, submittal,
-                                                       monkeypatch):
-    monkeypatch.setenv(OVERVIEW, "1")
-    atts = _stage(tmp_path, [("sub.pdf", submittal)])
-    monkeypatch.setenv(review_flags.OVERVIEW_PAGES_ENV, "11")      # at it
-    assert "skip the contact sheets" in profiles.orientation_request_for(
-        profiles.DOCUMENT_REVIEW, atts)
-    monkeypatch.setenv(review_flags.OVERVIEW_PAGES_ENV, "10")      # above
-    assert "render_page_thumbnails" in profiles.orientation_request_for(
-        profiles.DOCUMENT_REVIEW, atts)
-
-
-def test_page_count_never_raises(tmp_path, submittal):
-    pdf = tmp_path / "s.pdf"
-    pdf.write_bytes(submittal)
-    png = tmp_path / "p.png"
-    png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    fake = tmp_path / "fake.pdf"
-    fake.write_bytes(b"%PDF-1.4 fake")
-    assert profiles.pdf_page_count(str(pdf)) == 11
-    assert profiles.pdf_page_count(str(png)) == 0
-    assert profiles.pdf_page_count(str(fake)) == 0
-    assert profiles.pdf_page_count(str(tmp_path / "missing.pdf")) == 0
-    assert profiles.pdf_page_count(None) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -158,16 +94,7 @@ def _orient(at, name, data):
     return at.session_state["transcript"][0]["text"]
 
 
-def test_the_app_sends_the_overview_request(monkeypatch, tmp_path, submittal):
-    monkeypatch.setenv(OVERVIEW, "1")
-    at = _harness(monkeypatch, tmp_path).run()
-    assert not at.exception
-    text = _orient(at, "plans.pdf", _long(submittal))
-    assert text == profiles.ORIENTATION_REQUEST_LONG.format(
-        names="`plans.pdf`", pages=22)
-
-
-def test_the_app_sends_today_s_request_with_the_switch_off(monkeypatch,
+def test_the_app_sends_the_profile_s_request(monkeypatch,
                                                            tmp_path,
                                                            submittal):
     at = _harness(monkeypatch, tmp_path).run()
@@ -197,7 +124,7 @@ def _answering_model():
     return Model(responses=[AIMessage(content="x")])
 
 
-@pytest.mark.parametrize("arm", ["baseline", "overview"])
+@pytest.mark.parametrize("arm", ["baseline"])
 def test_the_suite_s_orientation_turn_is_the_app_s(arm, tmp_path, submittal):
     pytest.importorskip("planlens.tools")
     from funhouse_agent.review_eval.runner import run_task
@@ -219,7 +146,7 @@ def test_the_suite_s_orientation_turn_is_the_app_s(arm, tmp_path, submittal):
             [core.Attachment(key="long.pdf", path=str(docs / "long.pdf"),
                              size=0)])
     assert first == expected
-    assert ("render_page_thumbnails" in first) == (arm == "overview")
+    assert "render_page_thumbnails" not in first
     assert res["turns"][1]["question"] == "What is it?"
 
 
@@ -249,43 +176,14 @@ def _captured_build(monkeypatch, tmp_path, **build_kwargs):
 
 def test_the_review_page_build_carries_its_conversation_folder(monkeypatch,
                                                                tmp_path):
-    """Review fix 6: another tab re-pointing GEOTECH_DEFAULT_OUTPUT_DIR must
-    not redirect this conversation's findings or digests, so the review
-    page's build is handed its folder; the geotech page's build is not."""
+    """Review fix 6: the review page's build is handed its conversation's
+    folder (another tab can re-point GEOTECH_DEFAULT_OUTPUT_DIR); the
+    geotech page's build is not."""
     got, files = _captured_build(monkeypatch, tmp_path,
                                  **profiles.DOCUMENT_REVIEW.build_kwargs())
     assert got["working_dir"] == files and got["review_page"] is True
     got, _files = _captured_build(monkeypatch, tmp_path)
     assert "working_dir" not in got
-
-
-def test_the_page_agent_s_ledger_follows_its_own_conversation(monkeypatch,
-                                                              tmp_path):
-    """End to end through core.build_agent: two conversations' lean agents
-    keep their findings apart while the process-wide folder points at a
-    third."""
-    pytest.importorskip("planlens.tools")
-    from funhouse_agent.review_findings import FindingsLedger
-    monkeypatch.setenv(review_flags.AGENT_ENV, "lean")
-    monkeypatch.setenv(review_flags.FINDINGS_ENV, "1")
-    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "data"))
-    agents = {}
-    for tid in ("conv_a", "conv_b"):
-        files = os.path.join(core.conversation_dir(tid), "files")
-        os.makedirs(files, exist_ok=True)
-        agents[tid] = (core.build_agent(
-            _answering_model(), {}, files, [],
-            **profiles.DOCUMENT_REVIEW.build_kwargs()), files)
-    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path / "other"))
-    for tid, (agent, _files) in agents.items():
-        tool = agent.nodes["tools"].bound.tools_by_name["record_finding"]
-        tool.invoke({"statement": f"Found in {tid}.", "severity": "info",
-                     "confidence": "high", "evidence": "read",
-                     "citations": [{"document": "x.pdf", "page": 0}]})
-    for tid, (_agent, files) in agents.items():
-        saved = FindingsLedger(os.path.join(files, "findings.json")).load()
-        assert [f.statement for f in saved] == [f"Found in {tid}."]
-    assert not (tmp_path / "other").exists()
 
 
 # -- a screenshot mid-conversation is evidence, not a document (2026-10-01) --

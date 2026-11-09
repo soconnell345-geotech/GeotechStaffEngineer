@@ -3,12 +3,26 @@ Root-level pytest conftest.py — shared configuration for all test modules.
 
 Sets the matplotlib backend to 'Agg' (non-interactive) once, so individual
 test files don't each need to do it themselves.
+
+Puts THIS checkout's shared core (``packages/aec-agent-core``, the app
+split's step 10, INF-32) first on ``sys.path``. pytest puts this folder on
+the path, so the app's own code already comes from the checkout under test;
+the core lives one level down and would otherwise come from wherever it is
+installed: nowhere in the shared local venv (its tests would not collect),
+or another checkout's copy (a worktree would test someone else's core).
 """
 
 import os
 import shutil
 import re as _re
+import sys as _sys
 import tempfile
+from pathlib import Path as _Path
+
+_CORE_SRC = str(_Path(__file__).resolve().parent / "packages" / "aec-agent-core")
+if _CORE_SRC in _sys.path:
+    _sys.path.remove(_CORE_SRC)
+_sys.path.insert(0, _CORE_SRC)
 
 import matplotlib
 matplotlib.use("Agg")

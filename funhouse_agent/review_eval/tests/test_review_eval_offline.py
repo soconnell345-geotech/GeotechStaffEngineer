@@ -246,9 +246,9 @@ def test_runner_scores_both_arms_writes_results_and_resumes(tmp_path):
     model = _scripted_model(task.truth + " Cited on PDF page 2.")
     out = tmp_path / "suite"
     res = score_review_suite(model, ids=["fixture-markups"],
-                             arms=("baseline", "lean"), out_dir=out,
+                             arms=("baseline", "turn_retry"), out_dir=out,
                              verbose=False)
-    for arm in ("baseline", "lean"):
+    for arm in ("baseline", "turn_retry"):
         run = res["results"][arm]["fixture-markups"]
         assert run["error"] is None, run.get("traceback")
         assert run["score"]["passed"], run["checks"]
@@ -258,12 +258,12 @@ def test_runner_scores_both_arms_writes_results_and_resumes(tmp_path):
         assert (out / "runs" / arm / "fixture-markups" /
                 "activity.jsonl").is_file()
     md = (out / "RESULTS.md").read_text(encoding="utf-8")
-    assert "| baseline | 1/1 |" in md and "| lean | 1/1 |" in md
+    assert "| baseline | 1/1 |" in md and "| turn_retry | 1/1 |" in md
     assert "no task changed outcome" in md
     # A second run resumes: nothing is asked of the model again.
     n = len(model.calls)
     score_review_suite(model, ids=["fixture-markups"],
-                       arms=("baseline", "lean"), out_dir=out, verbose=False)
+                       arms=("baseline", "turn_retry"), out_dir=out, verbose=False)
     assert len(model.calls) == n
 
 
@@ -617,10 +617,10 @@ def test_summary_reports_what_an_arm_fixed_and_broke():
     ok = {"score": {"passed": True, "checks_passed": 1, "checks_total": 1}}
     no = {"score": {"passed": False, "checks_passed": 0, "checks_total": 1},
           "checks": [{"label": "x", "passed": False, "detail": "missing: y"}]}
-    runs = {"baseline": {"a": ok, "b": no}, "lean": {"a": no, "b": ok}}
-    md = summarize(runs, ["baseline", "lean"], tasks,
+    runs = {"baseline": {"a": ok, "b": no}, "minimal": {"a": no, "b": ok}}
+    md = summarize(runs, ["baseline", "minimal"], tasks,
                    {"model": "m", "versions": {}, "updated": "now"})
-    assert "`lean` FIXES b" in md and "`lean` BREAKS a" in md
+    assert "`minimal` FIXES b" in md and "`minimal` BREAKS a" in md
     assert "missing: y" in md
 
 

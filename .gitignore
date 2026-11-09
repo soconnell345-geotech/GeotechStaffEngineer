@@ -40,3 +40,7 @@ module_work/backlog_dashboard/out/
 
 # Copyrighted book excerpts (photos of pages), local only (BACKLOG OWN-60)
 docs/Duncan*
+
+# Chart-suite data folders (Chartography: gated, not for training; CharXiv: charts owned by their authors): never commit them or their zips
+chartography_data*
+charxiv_data*

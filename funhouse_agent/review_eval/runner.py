@@ -7,7 +7,7 @@ The owner's notebook cell (Funhouse)::
         prompter=fh_prompter, model_name="funhouse-gpt-high",
         docs_dir="/Volumes/.../review_eval_docs",      # the public PDFs
         out_dir="/tmp/review_eval",
-        arms=("baseline", "lean"),                      # see review_flags.ARMS
+        arms=("baseline", "minimal"),                   # see review_flags.ARMS
         sharepoint=fh_sp_client,                        # durable copy
     )
     print(res["results_md"])
@@ -23,10 +23,7 @@ tasks of plan W4) is asked on the GeotechStaffEngineer page instead, built
 the same way from that page's profile.
 
 ``orientation=True`` sends the page's automatic orientation turn first, with
-the text the app sends (``webapp.profiles.orientation_request_for``, under the
-arm's switches). Run the ``overview`` arm (``GEOTECH_REVIEW_OVERVIEW``), and
-any arm that changes only the orientation, with ``orientation=True``: without
-it the arm is the same as its base arm.
+the text the app sends (``webapp.profiles.orientation_request_for``).
 
 Every run writes ``runs/<arm>/<task>/run.json`` (the answer, the checks, tool
 calls, model calls, tokens, seconds, and a ``fingerprint`` of the system
@@ -50,7 +47,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence
 from uuid import uuid4
 
-from funhouse_agent import review_flags
+from funhouse_agent import review_flags, turn_question
 from funhouse_agent.review_eval import checks as _checks
 from funhouse_agent.review_eval import documents as _documents
 from funhouse_agent.review_eval.tasks import Task, load_tasks, select
@@ -229,7 +226,7 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
             staged = [a.path for a in atts]
             agent = build_page_agent(model, attachments, files_dir, artifacts,
                                      page=page)
-            note = core.attachment_note(atts, review=(page == "review"))
+            note = core.attachment_note(atts)
             # The page's own orientation text (the arm's switches are set);
             # the geotech page sends none.
             turns = ([orientation_request_for(DOCUMENT_REVIEW, atts)]
@@ -251,12 +248,15 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
                 answer, tokens, err, kind = "", 0, None, None
                 callbacks = [logger] + ([collector] if collector else [])
                 try:
-                    for item in core.stream_turn(agent, history, thread,
-                                                 recursion_limit=limit,
-                                                 callbacks=callbacks):
-                        if item.get("kind") == "turn_done":
-                            answer = item.get("answer") or ""
-                            tokens = int(item.get("turn_tokens") or 0)
+                    # The turn's question for the vision side calls, as the
+                    # app binds it (webapp.turn_jobs; DR-37).
+                    with turn_question.bound(text):
+                        for item in core.stream_turn(agent, history, thread,
+                                                     recursion_limit=limit,
+                                                     callbacks=callbacks):
+                            if item.get("kind") == "turn_done":
+                                answer = item.get("answer") or ""
+                                tokens = int(item.get("turn_tokens") or 0)
                 except Exception as exc:  # noqa: BLE001 - recorded
                     err = f"{type(exc).__name__}: {exc}"
                     kind = ("outcome" if type(exc).__name__ in OUTCOME_ERRORS
@@ -650,7 +650,7 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
     ``extra_tasks`` adds private task files (a blind set). ``dry_run`` checks
     that every document resolves and lists the runs without calling a model.
     ``orientation=True`` sends the page's orientation turn before each
-    question — the ``overview`` arm only differs there, so run it with this.
+    question.
     ``rescore=True`` re-runs the checks on every saved run (no model call)
     before reusing it — after a check is fixed; runs not yet done still run.
     """
