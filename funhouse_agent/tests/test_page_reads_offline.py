@@ -24,9 +24,9 @@ import pytest
 
 pymupdf = pytest.importorskip("pymupdf")
 
-from aec_agent_core import _fileio, vision_tools  # noqa: E402
-from aec_agent_core.deep.vision_engine import VisionAnswer  # noqa: E402
-from aec_agent_core.vision_tools import (  # noqa: E402
+from funhouse_agent import _fileio, vision_tools  # noqa: E402
+from funhouse_agent.deep.vision_engine import VisionAnswer  # noqa: E402
+from funhouse_agent.vision_tools import (  # noqa: E402
     REPEAT_NOTE, dispatch_extended_tool, reads_for_conversation)
 
 TILE = re.compile(r"tile row (\d) of \d, column (\d)")

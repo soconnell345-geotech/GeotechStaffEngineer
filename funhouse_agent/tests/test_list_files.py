@@ -9,7 +9,7 @@ error for a missing/unreadable path — never raise.
 
 import json
 
-from aec_agent_core.vision_tools import (
+from funhouse_agent.vision_tools import (
     EXTENDED_TOOLS,
     _dispatch_list_files,
     dispatch_extended_tool,
@@ -97,7 +97,7 @@ class TestListFilesErrors:
 
     def test_entry_for_handles_stat_error(self):
         """A child whose stat() fails is recorded with an error, not raised."""
-        from aec_agent_core.vision_tools import _list_entry_for
+        from funhouse_agent.vision_tools import _list_entry_for
 
         class FakeEntry:
             name = "x"
