@@ -142,7 +142,7 @@ the chat page.
 | `geotech-references` / `geotech_references` | The cited reference library and chart catalogs | GSE only | numpy | PyPI | yes |
 | **The core** (`aec-agent-core` / `aec_agent_core`, owner 2026-11-04, OWN-72; NEW) | What both agents run below the chat page: the model connections, the vision calls and the file tools beside them, the figure helper with its plotting box, chart stack and the nine geotech worked examples for now (OWN-77 (b)), the agent's guards, limits and kept work, Word and Excel, the run record and its checks, the switches, the suite's framework (2.3). It has no Streamlit page and nothing that encodes a Department deployment. | Both apps, every host | planlens, deepagents/langchain/langgraph (today's caps), openai <3, langchain-openai, matplotlib, plotly, python-docx, markdown-it-py, openpyxl, numpy, scipy (the plotting box lets code import it); an `[anthropic]` extra for langchain-anthropic | PyPI → Nexus; each app pins an exact version | yes |
 | `geotech-staff-engineer` / `funhouse_agent`, `webapp`, the module packages | The geotech app: 33 modules, dispatch, the geotech agent and its helpers (calc, references, setup, reviewers), the chart lines it hands the figure helper, report_ingest, its own chat page, the Foundry and Funhouse entries | The owner on Foundry (Funhouse as backup) | the core with `[anthropic]` (exact), planlens, geotech-references, the analysis back ends as today | PyPI (Foundry's Libraries panel) or uploaded wheels | yes |
-| **Document Review** (a source folder in the GHE wrapper repo, for example `docreview/`; NEW) | The Document Review app: its own chat page, its agent builds (today's agent, `lean` and `minimal` behind their switches), its prompt and orientation, the review-only tools (findings, geometry, sweep, digest), the Tiny Apps host files (settings, sign-in header, Graph SharePoint), its 38 suite tasks and its tests (2.2) | Testers on Tiny Apps; suite runs on Foundry | the core (exact), planlens (exact), streamlit and the fleet pins | Runs from the repo folder (needs CfA's yes, 1.4) | **no**: private from the copy (step 13) |
+| **Document Review** (a source folder in the GHE wrapper repo, for example `docreview/`; NEW) | The Document Review app: its own chat page, its agent builds (today's agent, `lean` and `minimal` behind their switches; `lean` removed by DR-39), its prompt and orientation, the review-only tools (findings, geometry, sweep, digest; all removed by DR-39), the Tiny Apps host files (settings, sign-in header, Graph SharePoint), its 38 suite tasks and its tests (2.2) | Testers on Tiny Apps; suite runs on Foundry | the core (exact), planlens (exact), streamlit and the fleet pins | Runs from the repo folder (needs CfA's yes, 1.4) | **no**: private from the copy (step 13) |
 
 How they depend on each other:
 - planlens depends on nothing of ours.
@@ -341,18 +341,18 @@ about 16,800.
 
 | File | Lines | Notes |
 |---|---|---|
-| `funhouse_agent/deep/review_agent.py` | 543 | The `lean` build; `REVIEW_TOOLS`, `REVIEW_DESCRIPTIONS`, the reading helper |
+| `funhouse_agent/deep/review_agent.py` | 543 | The `lean` build (removed by DR-39); `REVIEW_TOOLS`, `REVIEW_DESCRIPTIONS`, the reading helper |
 | `funhouse_agent/deep/minimal_agent.py` | 303 | The `minimal` build (kept for measurement) |
-| `funhouse_agent/deep/sweep.py` | 259 | `GEOTECH_REVIEW_SWEEP` |
-| `funhouse_agent/deep/findings_tools.py`, `review_findings.py` | 599 + 755 | `GEOTECH_REVIEW_FINDINGS`: the finding format and ledger |
-| `funhouse_agent/deep/geometry_tools.py` | 1,144 | `GEOTECH_REVIEW_GEOMETRY` (`planlens.ir` constructs) |
-| `funhouse_agent/deep/digest_tools.py`, `review_digest/` (four files) | 467 + 2,004 | `GEOTECH_REVIEW_DIGEST` and the digest layer |
+| `funhouse_agent/deep/sweep.py` | 259 | `GEOTECH_REVIEW_SWEEP`. **Removed by DR-39.** |
+| `funhouse_agent/deep/findings_tools.py`, `review_findings.py` | 599 + 755 | `GEOTECH_REVIEW_FINDINGS`: the finding format and ledger. **Removed by DR-39.** |
+| `funhouse_agent/deep/geometry_tools.py` | 1,144 | `GEOTECH_REVIEW_GEOMETRY` (`planlens.ir` constructs). **Removed by DR-39.** |
+| `funhouse_agent/deep/digest_tools.py`, `review_digest/` (four files) | 467 + 2,004 | `GEOTECH_REVIEW_DIGEST` and the digest layer. **Removed by DR-39.** |
 | `funhouse_agent/review_prompt.py` | 227 | The review texts (step 3) |
 | `funhouse_agent/review_build.py` | about 270 | Today's review build, extracted from `deep/agent.py` at step 8 |
 | From `webapp/profiles.py` | about 150 | `DOCUMENT_REVIEW`, the orientation requests and their helpers |
 | From `funhouse_agent/review_eval/tasks.py` | about 950 | The 38 review tasks of 42 (meck, set, ufc, calc, fixture, produce, scale-plan-distance) |
 | `tinyapps/TINYAPPS.md`, `tinyapps/wrapper_repo/` | | Its deployment notes and wrapper template. The gitignored `tinyapps/reference/` stays local, never committed. |
-| Its tests | | The six `deep/tests/test_review_*` files, the findings tests, `review_digest/tests`, the review half of `webapp/tests/test_app_profiles.py`, `test_tinyapps_entry.py`, `test_orientation_overview.py`, the review fingerprints |
+| Its tests | | The six `deep/tests/test_review_*` files, the findings tests, `review_digest/tests` (the findings, geometry and digest tests removed by DR-39), the review half of `webapp/tests/test_app_profiles.py`, `test_tinyapps_entry.py`, `test_orientation_overview.py`, the review fingerprints |
 
 With its page copy (2.9) and its host files (664 lines).
 
@@ -490,7 +490,7 @@ each file moves with what it needs, and the host passes in the rest.
 | `scale_labels.py` | 287 | The scale-label read | The look function |
 | `dxf_notes.py` | 233 | Notes on a copy of a DXF | Nothing (ezdxf is planlens' own) |
 
-Not moving: `deep/geometry_tools.py` (1,144). It wraps only `planlens.ir`,
+Not moving: `deep/geometry_tools.py` (1,144; removed by DR-39). It wraps only `planlens.ir`,
 but it serves the review page alone and is switched off, so it goes with
 Document Review; it is a later planlens candidate.
 
@@ -1101,9 +1101,9 @@ The rule: a test goes with the code it tests.
 | Today (test files, counted 2026-10-21) | To planlens | To the core | To Document Review (private) | Stays in GSE |
 |---|---|---|---|---|
 | `webapp/tests` (66 files) | | The engine and activity-log tests | `test_tinyapps_entry`, `test_orientation_overview`, the review half of `test_app_profiles`, a copy of the page's tests (turn jobs, cards, SharePoint, identity, uploads, diagnostics base, `test_figure_code_cards`) | Repository gates (`test_backlog`, `test_docs_currency`, `test_public_text`, `test_wheels`, the boundary and fingerprint tests until step 13); `test_judgment_check_turn`; the geotech half of `test_app_profiles`; GSE's copy of the page's tests |
-| `funhouse_agent/tests` (122 files) | Markup check, `find_like`, page numbers, `measure`, scale labels, DXF notes | Vision, cited pages and documents, coverage, office files, xlsx, the plotting box (`test_plot_box`, `test_plot_box_drafts`) | Findings ledger tests | Dispatch, adapters, reviewers, worked examples, system prompt, disclaimer, chart reading, v1 agent |
-| `funhouse_agent/deep/tests` (70 files) | The document tools' planlens parts | Busy ladder, pacing, keep-work, limits, guards, vision engine, strict args, inline images, `calculate`, the figure helper (`test_figure_helper`, `test_figure_runs`, `test_figure_turn`) | `test_review_harness_offline`, `test_review_m1_offline`, `test_review_minimal_offline`, `test_review_geometry_offline`, `test_review_digest_tools_offline`, `test_review_prompt_rules` | The geotech build, the calc, references and setup helpers (with `test_deep_calc_figures_offline`), the eval harness, the coverage gate on the geotech page |
-| `review_eval/tests`, `review_digest/tests` (7 files) | | Framework parts | Task parts; all of `review_digest/tests` | Geotech-task parts |
+| `funhouse_agent/tests` (122 files) | Markup check, `find_like`, page numbers, `measure`, scale labels, DXF notes | Vision, cited pages and documents, coverage, office files, xlsx, the plotting box (`test_plot_box`, `test_plot_box_drafts`) | Findings ledger tests (removed by DR-39) | Dispatch, adapters, reviewers, worked examples, system prompt, disclaimer, chart reading, v1 agent |
+| `funhouse_agent/deep/tests` (70 files) | The document tools' planlens parts | Busy ladder, pacing, keep-work, limits, guards, vision engine, strict args, inline images, `calculate`, the figure helper (`test_figure_helper`, `test_figure_runs`, `test_figure_turn`) | `test_review_harness_offline`, `test_review_m1_offline` (now `test_review_switches_offline`, DR-39), `test_review_minimal_offline`, `test_review_geometry_offline` and `test_review_digest_tools_offline` (both removed by DR-39), `test_review_prompt_rules` | The geotech build, the calc, references and setup helpers (with `test_deep_calc_figures_offline`), the eval harness, the coverage gate on the geotech page |
+| `review_eval/tests`, `review_digest/tests` (7 files) | | Framework parts | Task parts; all of `review_digest/tests` (removed by DR-39) | Geotech-task parts |
 
 The repository gates stay at this repository's root, because they guard the
 repository, not a package.
@@ -1246,8 +1246,9 @@ card.
     backup.
 - **D5, which Document Review agent moves: DECIDED by the lead (a).**
   - It is the one testers get today, unchanged and proven by the
-    fingerprint, with `lean` and `minimal` behind their switches as now.
-  - DR-05 decides the default afterwards, on the suite.
+    fingerprint, with `lean` and `minimal` behind their switches as now
+    (`lean` removed by DR-39).
+  - DR-05 decides the default afterwards, on the suite (moot since DR-39).
   - The owner can overrule.
 - **D6, release what is waiting before files move → OWN-75, DECIDED
   2026-10-21:** release first, or hold if that is no longer practical,

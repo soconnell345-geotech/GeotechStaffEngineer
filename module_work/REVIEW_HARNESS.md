@@ -113,13 +113,13 @@ collect_public_docs("review_eval_docs")          # then copy to /Volumes/... or 
 # on the cluster
 from funhouse_agent.deep.inline_images import probe
 from funhouse_agent.deep.databricks_bridge import PrompterChatModel
-probe(PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high"))   # ok: True before trusting the inline arm
+probe(PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high"))   # ok: True before trusting the minimal arm
 
 from funhouse_agent.review_eval import score_review_suite
 res = score_review_suite(prompter=fh_prompter, model_name="funhouse-gpt-high",
                          docs_dir="/Volumes/.../review_eval_docs",
                          out_dir="/tmp/review_eval",
-                         arms=("baseline", "lean", "grounded", "inline", "sweep"),
+                         arms=("baseline", "minimal"),   # see review_flags.ARMS
                          sharepoint=fh_sp_client)   # durable copy; a restart resumes
 print(res["results_md"])
 ```
