@@ -123,6 +123,79 @@ jobs:
           GEOTECH_REQUIRE_WHEEL_TEST: "1"
         run: pytest -q --tb=short webapp/tests/test_wheels.py
 
+  core-only:
+    # The app split's step 11 (c) (INF-32; plan module_work/APP_SPLIT_PLAN.md
+    # section 5 and Step 11's Exit): the shared core with nothing geotech
+    # installed. Only aec-agent-core, planlens from PyPI and CfA's fleet
+    # pins (tinyapps/wrapper_repo/requirements-thirdparty.txt) are
+    # installed; no geotech-references submodule, no analysis back end, not
+    # geotech-staff-engineer. Every core module imports and the core's own
+    # tests pass outside the checkout; then today's Document Review page is
+    # built from this checkout's review files (on PYTHONPATH, every GSE
+    # module refused) and runs one turn, and its fingerprints match the
+    # recorded ones (webapp/tests/core_only.py). That proves the testers'
+    # install before the copy of step 13. 3.11 is the test machine's 3.11.9,
+    # 3.12 the App Service's. Minutes.
+    name: "core-only"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v5
+        # no submodules: the reference library is not part of this install
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the core, planlens and the fleet pins (nothing geotech)
+        run: |
+          pip install --upgrade pip
+          pip install packages/aec-agent-core "planlens>=0.15" pytest
+          pip install -r tinyapps/wrapper_repo/requirements-thirdparty.txt
+          pip list
+          python - <<'PY'
+          import importlib.metadata as md, importlib.util as u, sys
+          dists = [d for d in ("geotech-staff-engineer", "geotech-references")
+                   if any(x.metadata["Name"] == d for x in md.distributions())]
+          mods = [m for m in ("geotech_references", "pystrata", "liquepy",
+                              "gstools", "openseespy", "SALib", "pystra")
+                  if u.find_spec(m)]
+          print("geotech installed:", dists, mods)
+          sys.exit(1 if dists or mods else 0)
+          PY
+
+      - name: Every core module imports and the core's tests pass
+        run: |
+          T="$RUNNER_TEMP/core"
+          mkdir -p "$T"
+          cp -r packages/aec-agent-core/tests "$T/tests"
+          ln -s "$(python -c 'import aec_agent_core, os; print(os.path.dirname(aec_agent_core.__file__))')" "$T/aec_agent_core"
+          cd "$T"
+          python -I - <<'PY'
+          import importlib, pkgutil, sys
+          import aec_agent_core
+          names = [m.name for m in pkgutil.walk_packages(
+              aec_agent_core.__path__, "aec_agent_core.")]
+          for n in names:
+              importlib.import_module(n)
+          apps = sorted({m.split(".")[0] for m in sys.modules} & {
+              "funhouse_agent", "webapp", "report_ingest",
+              "geotech_references", "geotech_common", "calc_package",
+              "profile_figure"})
+          print(len(names), "core modules import; app modules loaded:", apps)
+          sys.exit(1 if apps else 0)
+          PY
+          python -I -m pytest -q -p no:cacheprovider tests
+
+      - name: Today's Document Review page builds, runs and matches
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m webapp.tests.core_only
+
   numpy126:
     # Foundry's transforms repos hold numpy at 1.26.4 (INF-53). Installs the
     # way docs/FOUNDRY.md says (the three packages with --no-deps, the rest
