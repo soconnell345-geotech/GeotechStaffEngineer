@@ -358,3 +358,89 @@ importing `funhouse_agent.review_eval` (or any of its old names) fills.
   hint tables' test stays in the app.
 - Docstrings in the moved files still name `funhouse_agent.…` paths (text,
   step 16), as (a) and (b) left them.
+
+## 12. Review fixes and master merge
+
+An independent review (2026-11-09) found the move sound and asked for the
+fixes below. Each is its own commit on `merge/step11c`.
+
+**Master merge (`1684017`).**
+- `origin/master` at `12dacae` brought in REF-64 (A)'s app half (`dd21205`)
+  and its notes.
+- The one conflict was `webapp/tests/page_builds.py` `GSE_MODULES`: both
+  sides had added entries after `funhouse_agent.reference_vision`. Both are
+  kept: this branch's `funhouse_agent.core_hooks` and
+  `funhouse_agent.review_eval.host`, and master's
+  `funhouse_agent.reference_packs`.
+- `funhouse_agent/deep/agent.py` merged cleanly. REF-64's
+  `_record_reference_packs(agent)` stays GSE's own code and runs right
+  after `_assembly.record_build(...)`, which is the core's. So
+  `reference_packs` is in `geotech_build` only when packs are set
+  (`test_reference_packs.py`, 21 passed).
+- The fingerprints stay byte-identical to master's.
+
+**The fixes.**
+1. `cb4a97b`: the core's suite test compares the produced file's path with
+   `/` separators. The runner records `os.path.relpath`, which gives
+   backslashes on Windows, so the core's tests exited 1 there (CI, on
+   Linux, passed).
+2. `b9ddb04`: `score_review_suite` calls `page_host()` before it loads tasks
+   or writes anything. With no app's page handed in, it raises `NoPageHost`
+   with a plain message saying where GSE's suite is run from; before, it
+   loaded no tasks and wrote an empty summary. A dry run fails the same way
+   (with no app there are no app tasks or documents to check either). Test:
+   `test_without_a_page_host_the_suite_refuses_to_run` (a real run and a dry
+   run).
+3. `627dcce`: `report_ingest.mirror` points at `aec_agent_core.run_mirror`
+   directly, as `calc_package.docx_renderer` does, so importing it loads
+   nothing of `funhouse_agent`. Before, it reached the core through
+   `funhouse_agent.run_mirror` (the same object, two hops). Tests: the same
+   module object with nothing of `funhouse_agent` loaded, and one more
+   import order in the no-double-load test.
+4. `d8e6f36`: tests stay out of the user's own `~/.geotech_webapp`. An
+   autouse, session-scoped fixture in the root `conftest.py` points
+   `GEOTECH_WEBAPP_DATA` at a temporary folder for the whole run; a test
+   that sets its own (`monkeypatch.setenv`, `page_environment`) still wins.
+   - Every conversation writer finds the folder through
+     `webapp.core.data_root()`, which reads `GEOTECH_WEBAPP_DATA` at each
+     call. Nothing else resolves `~/.geotech_webapp`.
+   - What wrote there before, on master too:
+     `test_core.py::test_build_reviewer_agent_builds_each_kind` and
+     `deep/tests/test_review_page_vocabulary_offline.py` made
+     `conversations/pytest-NNNN/files`;
+     `deep/tests/test_report_ingest_chat_model.py` made
+     `conversations/conversation/files`; and `test_turn_jobs.py`'s worker
+     threads, finishing after their test's own setting was undone, appended
+     to `conversations/TJR1` and `TJR2`.
+   - Checked: a listing of `~/.geotech_webapp` (every path, size and
+     mtime) is identical before and after `webapp/tests` and
+     `funhouse_agent/deep/tests`, and the redirected writes land in the
+     session's temporary folder.
+
+**For step 13 (review finding 3).** GeotechStaffEngineer's name is still
+hard-coded in the core. Nothing changes for GSE now, but once the core is
+published (step 12) these name GSE in another app's files and records:
+- the run record's version lookup: `activity_log.py` `_app_version()`
+  reads the version of `geotech-staff-engineer`, so under Document Review
+  every `process_start` record would carry `app_version: None`;
+- the Word and markup authors: `document_tools.py` `DEFAULT_MARKUP_AUTHOR`
+  and `OWN_MARK_WORDS`, `docx_renderer.py` `DEFAULT_AUTHOR`, and the
+  suite's `runner.SUITE_AUTHOR` (§9, §11);
+- the `runtime_check` messages, which tell a user that
+  "funhouse_agent.deep needs…".
+
+Step 13 hands in the app's name and distribution (for example through the
+page host's app details or a hook) and makes the messages neutral. The
+lead adds this to `BACKLOG.md` under INF-32.
+
+**Re-runs after the fixes** (Windows, the app venv, foreground, at least
+3.8 GB free, no other pytest; judged by pytest's exit code):
+
+| Suite | Exit | Result |
+|---|---|---|
+| `packages/aec-agent-core/tests` | 0 | 224 passed |
+| `funhouse_agent/review_eval/tests` | 0 | 110 passed |
+| `report_ingest/tests/test_mirror.py` | 0 | 30 passed |
+| `webapp/tests`, three chunks | 0, 0, 0 | 1,286 passed, 8 skipped |
+| `funhouse_agent/deep/tests`, two chunks | 0, 0 | 954 passed, 1 skipped |
+| `test_page_fingerprints.py` + `test_public_text.py` | 0 | 18 passed |
