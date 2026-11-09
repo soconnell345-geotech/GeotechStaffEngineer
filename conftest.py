@@ -47,6 +47,25 @@ def pytest_configure(config):
     config.add_cleanup(lambda: shutil.rmtree(path, ignore_errors=True))
 
 
+@_pytest.fixture(autouse=True, scope="session")
+def _app_data_in_a_temp_folder(tmp_path_factory):
+    """The web app's data folder is a temporary one for the whole run, so no
+    test writes into the user's own ``~/.geotech_webapp``.
+
+    Every conversation writer finds the folder through
+    ``webapp.core.data_root``, which reads ``GEOTECH_WEBAPP_DATA`` at each
+    call. Unset, tests wrote there (INF-32 step 11 (c) review): a test that
+    builds an agent in a ``tmp_path`` made ``conversations/pytest-NNNN/``,
+    and ``test_turn_jobs``' worker threads, still finishing after their
+    test's own setting was undone, appended to ``TJR1`` and ``TJR2``. A test
+    that sets its own (``monkeypatch.setenv``, ``page_environment``) still
+    wins, and is restored to this folder. It stays set to the end: a worker
+    thread a test started may still be writing."""
+    os.environ["GEOTECH_WEBAPP_DATA"] = str(
+        tmp_path_factory.mktemp("geotech_webapp_data"))
+    yield
+
+
 @_pytest.fixture(autouse=True)
 def _shared_host_flag_reset():
     """``funhouse_agent._fileio.require_turn_binding`` is process-wide (a
