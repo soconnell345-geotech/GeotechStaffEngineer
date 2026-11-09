@@ -571,6 +571,8 @@ GSE_MODULES = frozenset({
     # GSE's readers of its reference library, out of vision_tools when that
     # went into the shared core (INF-32 step 11 (a)).
     "funhouse_agent.reference_vision",
+    # A deployment's local reference packs, as GSE reads them (REF-64).
+    "funhouse_agent.reference_packs",
     "funhouse_agent.report_checklist", "funhouse_agent.adapters",
     "funhouse_agent.deep.agent", "funhouse_agent.deep.prompt",
     "funhouse_agent.deep.tools", "funhouse_agent.deep.fit_results",

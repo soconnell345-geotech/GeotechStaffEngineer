@@ -271,6 +271,14 @@ Two things can only be checked on the cluster:
   `GEOTECH_REFERENCES_DOCS` is tried first when set). The sidebar's Connection
   diagnostics row "reference PDFs (chart read-off)" says how many it can
   reach. Setup: `webapp/README.md` §3 "Reference PDFs".
+- **A deployment's own references (local reference packs)** — also not
+  part of the install: set `GEOTECH_REFERENCES_PACKS` to a Workspace folder or
+  a volume holding the packs before `run_on_databricks` (geotech-references
+  1.6.0 or later). `!python -m geotech_references.packs list` in a notebook
+  cell shows what the app will see; the Connection diagnostics row above lists
+  pack PDFs and names a skipped pack. Format and checks: the geotech-references
+  repo's [`docs/REFERENCE_PACKS.md`](https://github.com/soconnell345-geotech/geotech-references/blob/main/docs/REFERENCE_PACKS.md);
+  setup: `webapp/README.md` §3 "Your deployment's own references".
 
 ---
 

@@ -263,9 +263,17 @@ def build_references_subagent(
         system_prompt += _REFERENCES_BUDGET.format(n=int(max_model_calls))
     if extra_system_prompt:
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
+    # A deployment's own reference packs (REF-64): one line naming them, in
+    # the prompt and the description. None set: no line, the spec as before.
+    from funhouse_agent.reference_packs import packs_line
+    description = _REFERENCES_DESCRIPTION
+    line = packs_line()
+    if line:
+        system_prompt = system_prompt + "\n\n" + line
+        description = description + " " + line
     spec = {
         "name": "references",
-        "description": _REFERENCES_DESCRIPTION,
+        "description": description,
         "system_prompt": system_prompt,
         "tools": tools,
     }
@@ -1395,10 +1403,23 @@ def build_deep_agent(
         create_deep_agent, model=model, tools=tools,
         system_prompt=system_prompt, subagents=subagents,
         create_kwargs=create_kwargs)
-    return _assembly.record_build(
+    agent = _assembly.record_build(
         agent, attachments=attachments, model=model, tools=tools,
         subagents=subagents, system_prompt=system_prompt,
         helper_models=helper_models, judgment_consult=judgment_consult)
+    _record_reference_packs(agent)
+    return agent
+
+
+def _record_reference_packs(agent) -> None:
+    """The deployment's reference packs in the build record (REF-64), so
+    every ``turn_start`` says which pack edition was in force; absent with
+    no packs."""
+    from funhouse_agent.reference_packs import pack_records
+    records = pack_records()
+    build = getattr(agent, "geotech_build", None)
+    if records and isinstance(build, dict):
+        build["reference_packs"] = records
 
 
 def _call_scopes(allowed_agents) -> dict:

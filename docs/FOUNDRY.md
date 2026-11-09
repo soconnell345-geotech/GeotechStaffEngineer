@@ -368,6 +368,32 @@ os.environ.setdefault("GEOTECH_REFERENCES_DOCS", os.path.join(
 Where the PDFs should live for good (a media set or a dataset, with a fetcher
 like the SharePoint one) is BACKLOG INF-39 (e) and OWN-80.
 
+**A deployment's own references (local reference packs).** A deployment can
+add its own manuals beside the built-in library, so the references helper
+searches them, cites them and reads their figures like the built-in ones.
+Each manual is a *pack*: a folder named by its id (which starts with
+`local_`) holding `pack.json`, `text/chapterNN.json` in the library's chapter
+format and, optionally, `figures_catalog.json` and the PDF. The format, the
+rules (bodies in the print's own wording with page markers) and the check
+(`python -m geotech_references.packs check <pack folder>`, exit 0 or 1) are
+in the geotech-references repo's
+[`docs/REFERENCE_PACKS.md`](https://github.com/soconnell345-geotech/geotech-references/blob/main/docs/REFERENCE_PACKS.md). Packs
+need geotech-references 1.6.0 or later. On Foundry, commit the packs in a
+folder beside the reference PDFs and point the setting at it in the app file:
+
+```python
+os.environ.setdefault("GEOTECH_REFERENCES_PACKS", os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "references", "packs"))
+```
+
+A pack's PDF may sit in its own folder or in the `references/` folder above
+(by the file name its catalog gives). A deployment's packs are its own: never
+commit one to the public repos (a test fails on a tracked `pack.json`). With
+packs set, the references helper is told which manuals the deployment adds,
+the turn record's `turn_start` lists them (`reference_packs`: id, title,
+files, a sha256 of their contents) and the Connection diagnostics' reference
+PDF row lists their PDFs and names any pack the library skipped.
+
 ## 4. The 30-second proxy smoke test ("one curl")
 
 Before publishing, open the workspace **Terminal** and paste (substitute your
