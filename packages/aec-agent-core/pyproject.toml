@@ -5,10 +5,12 @@ build-backend = "setuptools.build_meta"
 # The core both agents run below their chat pages (the app split, BACKLOG
 # INF-26 / INF-32; plan module_work/APP_SPLIT_PLAN.md sections 1.1 and 2.3).
 # Step 10: the package exists, EMPTY apart from the alias helper, with its
-# build, CI and a wheel test. Step 11 moves the code in, in three merges;
-# (a), the model connections and the vision calls, and (b), the figure
-# helper, the plotting box and the chart stack, are in. Step 12 publishes
-# it, on the owner's word. 1.0.0.dev0, empty, was published
+# build, CI and a wheel test. Step 11 moved the code in, in three merges:
+# (a), the model connections and the vision calls; (b), the figure helper,
+# the plotting box and the chart stack; (c), the guards and records, Word
+# and Excel, the checks, the document tools' binding, the shared assembly
+# and the review suite's framework. Step 12 publishes it, on the owner's
+# word. 1.0.0.dev0, empty, was published
 # 2026-11-09 only to hold the name (publish-core.yml, tag core-v1.0.0.dev0).
 [project]
 name = "aec-agent-core"
@@ -62,7 +64,12 @@ dependencies = [
     # it where it is not installed gets the import error, as in the app.
     "matplotlib>=3.8",
     "plotly>=5",
-    # Word out (and in), Excel out and in.
+    # Word out (and in), Excel out and in (docx_renderer, office_text,
+    # xlsx_writer: in the core since step 11 (c)). Step 11 (c) needs nothing
+    # else new: the guards, records, checks, the assembly (deepagents and
+    # langchain, above), the document tools' binding (planlens and PyMuPDF,
+    # below), the DXF notes (ezdxf, through planlens) and the suite's
+    # framework import only what is already listed.
     "python-docx>=1.1",
     "markdown-it-py>=3",
     "openpyxl>=3.1",

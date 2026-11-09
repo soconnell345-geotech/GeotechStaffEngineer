@@ -26,6 +26,18 @@ The hooks step 11 (a) defines (each documented where it is asked for):
   :mod:`aec_agent_core.vision_tools` (an app's own reference library: the
   folders the read tools may also read, and two readers of it).
 
+Step 11 (c)'s:
+
+- ``held_records.record_fields``: :mod:`aec_agent_core.deep.held_records`
+  (the shapes of the records a stopped helper held);
+- ``cited_documents.reference_modules``:
+  :mod:`aec_agent_core.cited_documents` (the app's reference modules);
+- ``review_eval.page_host``, ``review_eval.open_tasks``,
+  ``review_eval.document_dirs``, ``review_eval.fetch_document``,
+  ``review_eval.fixture``: the review suite's framework
+  (:mod:`aec_agent_core.review_eval`: the page whose turn a task runs on,
+  the app's tasks, and where their documents are found).
+
 Step 11 (b)'s chart lines (an app's standard chart lines for ``plot_data``
 and the plotting box) are handed in through
 :func:`aec_agent_core.charts.register_reference_charts`, a registration
