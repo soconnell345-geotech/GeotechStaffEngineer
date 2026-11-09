@@ -15,7 +15,7 @@ Two applications are built on it:
 
 ## Status
 
-**1.0.0.dev0: filled, not yet released.** The app split's step 11 moved the
+**Filled, not yet released.** The app split's step 11 moved the
 code in, in three merges (BACKLOG INF-32; plan
 `module_work/APP_SPLIT_PLAN.md` in GeotechStaffEngineer's repository):
 
@@ -68,7 +68,7 @@ import path after it moved here, as the same module object (so an import or
 a test patch by either name reaches the one copy of the code);
 GeotechStaffEngineer keeps its old names this way until the split's step 16.
 
-1.0.0.dev0 is on PyPI only to hold the name (an empty upload);
+PyPI holds only 1.0.0.dev0, an empty package that reserved the name;
 GeotechStaffEngineer's CI installs the core from its own repository
 (`pip install -e packages/aec-agent-core`). Its "core-only" CI job installs
 this package with planlens and nothing geotech, imports every module, runs
