@@ -171,6 +171,13 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         bind_working_dir(ctx.get("working_dir"))
     except Exception:                                  # noqa: BLE001
         pass
+    # The user's own message, bound the same way, so the vision side calls
+    # read it as context beside the main model's prompt (DR-37).
+    try:
+        from funhouse_agent import turn_question
+        turn_question.bind(ctx.get("prompt"))
+    except Exception:                                  # noqa: BLE001
+        pass
     # The title is settled when the turn STARTS (live smoke wave 1, A10): the
     # SharePoint mirror names its folder once, at the first mirror, and a
     # link handed out during this turn must already point at that folder.

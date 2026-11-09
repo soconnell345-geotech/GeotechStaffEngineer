@@ -2233,10 +2233,21 @@ def ask_vision(engine, image, prompt, kind, where=None):
     """``engine.analyze_image(image, prompt)``, capped for a call of
     ``kind`` (:func:`vision_output_cap`) when the engine takes a cap. The
     call is labelled with ``kind`` and ``where`` (``page``, ``tile``) for
-    the activity log (``vision_engine.side_call``; BACKLOG EV-14)."""
+    the activity log (``vision_engine.side_call``; BACKLOG EV-14).
+
+    A reading that goes back to the main model (:data:`funhouse_agent.
+    turn_question.QUESTION_KINDS`) is also handed the turn's own user
+    question, as context under the main model's prompt (DR-37); its record
+    says how long (``user_question_chars``)."""
+    from funhouse_agent import turn_question
     from funhouse_agent.deep.vision_engine import side_call
     cap = vision_output_cap(kind)
-    with side_call(kind=kind, **(where or {})):
+    asked = turn_question.with_question(prompt, kind)
+    label = dict(where or {})
+    if asked is not prompt:
+        label["user_question_chars"] = len(turn_question.current() or "")
+        prompt = asked
+    with side_call(kind=kind, **label):
         if cap and getattr(engine, "accepts_output_cap", False):
             return engine.analyze_image(image, prompt, max_output_tokens=cap)
         return engine.analyze_image(image, prompt)

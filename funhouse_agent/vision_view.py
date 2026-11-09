@@ -276,6 +276,19 @@ def engine_profile(engine):
         return None
 
 
+def probe_fallback_note(prof) -> Optional[str]:
+    """The line a vision result carries when its model's probe FAILED and a
+    fallback budget was used (``VisionProfile.fallback_note``; DR-36), else
+    ``None``."""
+    fn = getattr(prof, "fallback_note", None)
+    if not callable(fn):
+        return None
+    try:
+        return fn()
+    except Exception:             # a record, never the call
+        return None
+
+
 def budget_name(engine=None) -> str:
     """Which budget applies now, by name (``none`` = the old fixed sizes).
 
@@ -530,6 +543,10 @@ def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
     prof = engine_profile(engine)
     if prof is not None and prof.answered_by:
         out["vision_model"] = prof.answered_by
+    note = probe_fallback_note(prof)
+    if note:
+        # A failed probe's fallback budget, said on the result (DR-36).
+        out["vision_probe"] = note
     if info.get("budget"):
         out["budget"] = info["budget"]
     d = detail(engine)

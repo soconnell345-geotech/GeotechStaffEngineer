@@ -325,7 +325,7 @@ def test_the_probe_calls_are_labelled_in_the_record():
             return AIMessage(content="OK.")
 
     vision_probe._call(_Model(), [{"type": "text", "text": "hi"}])
-    assert seen == [{"kind": "probe"}]
+    assert seen == [{"kind": "probe", "probe_call": "call"}]
     assert current_side_call() is None
 
 
