@@ -3,11 +3,13 @@
 BACKLOG INF-32, plan `module_work/APP_SPLIT_PLAN.md` §2.3 ("everything
 else"), §2.7 B, §5 (CI, "core-only") and "Step 11" (its Tests and Exit).
 Branch `claude/inf-32-step11c` from `origin/claude/inf-32-step11b`
-(`829158b`, step 11 (b), reviewed, not yet merged): `origin/master` did not
-hold "Merge INF-32 step 11 (b)" when this branch was pushed, so it was not
-merged in (§9 says what the merge will meet). Cloud session, 2026-11-09. No
-version change, no tag, nothing published; BACKLOG, HANDOFF and CLAUDE.md
-untouched.
+(`829158b`, step 11 (b), under review). While this branch was being
+tested, master took (b) ("Merge INF-32 step 11 (b)", `f9c170f`, and its
+notes `9b17e1a`); this branch then merged `origin/master` (`7efa6aa`, §9) and
+was tested again on the merged tree (§8). Cloud session, 2026-11-09. No
+version change (the core stays master's 1.0.0.dev1), no tag, nothing
+published; BACKLOG, HANDOFF and CLAUDE.md untouched (they came in only by
+the merge).
 
 **No behaviour change for a user**: both pages' agents are byte-identical
 (`webapp/tests/page_fingerprints.json` unchanged, no re-record), every old
@@ -191,10 +193,11 @@ absent (the core-only job).
 
 ## 6. The fingerprints
 
-`webapp/tests/page_fingerprints.json` is byte-identical to `829158b`
-(`git diff --quiet 829158b7 HEAD -- webapp/tests/page_fingerprints.json`),
-and `test_page_fingerprints.py` passes for all three builds with no
-re-record. Both pages' agents are unchanged.
+`webapp/tests/page_fingerprints.json` is byte-identical to `829158b` and,
+after the merge, to `origin/master` `9b17e1a` (`git diff --quiet <ref> HEAD
+-- webapp/tests/page_fingerprints.json`, both), and `test_page_fingerprints.py`
+passes for all three builds with no re-record, before and after the merge.
+Both pages' agents are unchanged.
 
 ## 7. The core-only CI job (new, `.github/workflows/tests.yml`, job `core-only`)
 
@@ -227,8 +230,11 @@ back end is installed. Then:
 
 (Resolved there: aec-agent-core from source, planlens 0.15.0, PyMuPDF
 1.28.2, deepagents 0.7.24, langchain 1.4.5, streamlit 1.62.0, pandas 3.1.1.)
-The 131 were counted before the eight tests of §2 moved in; the fresh-venv
-run of §8 is the later count.
+The 131 were counted before the eight tests of §2 moved in. **Again on the
+merged head** (`7efa6aa`, a fresh worktree and venv, Python 3.11.18): all
+three steps exit 0, aec-agent-core 1.0.0.dev1 installed, 66 core modules
+import with no app module loaded, **222 core tests passed** (219 + master's
+three new hook tests from (a)'s review), and the page check passes.
 
 ## 8. Tests (judged by pytest's exit code)
 
@@ -237,16 +243,17 @@ Python 3.12.3, venv `/tmp/v` (`pip install -e packages/aec-agent-core -e
 PyPI; the reference library from the sibling checkout, so the reference
 tests that failed for (a) and (b) against PyPI's 1.5.0 pass here),
 `pytest -q -n 6 -p no:cacheprovider`, each chunk's exit code recorded by
-the runner script, on the branch head before the notes commit (`a5ee2e2`).
+the runner script; first on the branch head before the merge (`a5ee2e2`),
+then on the merged head (`7efa6aa`).
 
-| Chunk | Exit | Result |
+| Chunk | Before the merge (`a5ee2e2`): exit, result | Merged (`7efa6aa`): exit, result |
 |---|---|---|
-| `webapp/tests` (fingerprints, public text, boundary, the 11a/11b/11c alias tests, version guard, wheels' fast checks) | **0** | 1,286 passed, 5 skipped |
-| `funhouse_agent/tests` + `funhouse_agent/deep/tests` | 1 | 5,163 passed, 34 skipped, **2 failed** (below) |
-| `funhouse_agent/review_eval` + `funhouse_agent/chart_eval/tests` + `report_ingest/tests` + `packages/aec-agent-core/tests` | **0** | 5,218 passed, 23 skipped |
-| `calc_package` (the one module suite that imports moved code: its `docx_renderer` alias; a grep for every moved name outside `funhouse_agent/`, `webapp/`, `report_ingest/` and the core finds only it and the user manual's prose) | **0** | 264 passed, 3 skipped |
-| `webapp/tests/test_wheels.py` with `GEOTECH_REQUIRE_WHEEL_TEST=1` (builds both wheels, fresh venv, imports the (c) modules, checks the core wheel holds them) | **0** | 11 passed |
-| `test_page_fingerprints.py` + `test_public_text.py` + `test_review_boundary.py` (in the first chunk) | **0** | no re-record |
+| `webapp/tests` (fingerprints, public text, boundary, the 11a/11b/11c alias tests, version guard, wheels' fast checks) | **0**: 1,286 passed, 5 skipped | **0**: 1,286 passed, 5 skipped |
+| `funhouse_agent/tests` + `funhouse_agent/deep/tests` | 1: 5,163 passed, 34 skipped, **2 failed** (below) | 1: 5,164 passed, 34 skipped, **2 failed**, the same two (+1: master's new hint-walk test) |
+| `funhouse_agent/review_eval` + `funhouse_agent/chart_eval/tests` + `report_ingest/tests` + `packages/aec-agent-core/tests` | **0**: 5,218 passed, 23 skipped | **0**: 5,221 passed, 23 skipped (+3: master's hook tests) |
+| `calc_package` (the one module suite that imports moved code: its `docx_renderer` alias; a grep for every moved name outside `funhouse_agent/`, `webapp/`, `report_ingest/` and the core finds only it and the user manual's prose) | **0**: 264 passed, 3 skipped | **0**: 264 passed, 3 skipped |
+| `webapp/tests/test_wheels.py` with `GEOTECH_REQUIRE_WHEEL_TEST=1` (builds both wheels, fresh venv, imports the (c) modules, checks the core wheel holds them) | **0**: 11 passed | **0**: 11 passed |
+| `test_page_fingerprints.py` + `test_public_text.py` + `test_review_boundary.py` (in the first chunk) | **0**, no re-record | **0**, no re-record |
 
 **The 2 failures happen on unmodified base too**: the same two node ids
 run on a worktree of `829158b` with `PYTHONPATH=<worktree>:<worktree>/
@@ -283,14 +290,15 @@ The core-only job's steps on 3.11 and 3.12 are §7.
 
 ## 9. What steps 12 and 13 need from here
 
-**Merging master.** `origin/master` (`9a4c552`) holds (a)'s merge with its
-review fixes but not (b). A trial `git merge-tree` of this branch into it
-conflicts in two files only, both docs: `packages/aec-agent-core/README.md`
-(the Status section: take this branch's, which names no development
-version) and `aec_agent_core/__init__.py` (the docstring: take this
-branch's; the version line `__version__ = "1.0.0.dev1"` is master's and
-must win, with the pyproject's `1.0.0.dev1`, which merges cleanly). The
-lead merges (b) first; (c) then merges onto it.
+**The merge of master (done, `7efa6aa`).** `origin/master` `9b17e1a` (with
+(b) merged, `f9c170f`) conflicted in two files only, both docs:
+`packages/aec-agent-core/README.md` (the Status section) and
+`aec_agent_core/__init__.py` (the docstring); both were taken from this
+branch, which describes the core after (c). The version is master's
+1.0.0.dev1 (pyproject and `__version__`, which merged cleanly). Master's
+(b) review fix, the hint-table walk over the core
+(`funhouse_agent/tests/test_hint_targets.py`), now also walks the (c)
+modules and passes.
 
 **Step 12 (the core's first real release, then GSE pinned to it):**
 
