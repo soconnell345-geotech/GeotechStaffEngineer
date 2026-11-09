@@ -146,6 +146,27 @@ IMPORTS = {
         "aec_agent_core.deep.figure_helper", "aec_agent_core.drawing_wait",
         "aec_agent_core.progress_notes", "aec_agent_core.arg_checks",
         "aec_agent_core.method_call",
+        # step 11 (c): guards and records, Word and Excel, the checks, the
+        # document tools' binding, the assembly and the suite's framework
+        "aec_agent_core.activity_log", "aec_agent_core.cited_documents",
+        "aec_agent_core.cited_pages", "aec_agent_core.coverage",
+        "aec_agent_core.document_tools", "aec_agent_core.docx_renderer",
+        "aec_agent_core.dxf_notes", "aec_agent_core.measure_tool",
+        "aec_agent_core.office_text", "aec_agent_core.review_flags",
+        "aec_agent_core.run_mirror", "aec_agent_core.runtime_check",
+        "aec_agent_core.safe_expr", "aec_agent_core.scale_labels",
+        "aec_agent_core.xlsx_writer", "aec_agent_core.deep.assembly",
+        "aec_agent_core.deep.busy_retry", "aec_agent_core.deep.calculate_tool",
+        "aec_agent_core.deep.delivered_log",
+        "aec_agent_core.deep.held_records", "aec_agent_core.deep.keep_work",
+        "aec_agent_core.deep.limits", "aec_agent_core.deep.result_map",
+        "aec_agent_core.deep.scratch_guard",
+        "aec_agent_core.deep.strict_args", "aec_agent_core.deep.tool_guards",
+        "aec_agent_core.deep.vision_kit", "aec_agent_core.deep.warm_imports",
+        "aec_agent_core.review_eval", "aec_agent_core.review_eval.runner",
+        "aec_agent_core.review_eval.checks",
+        "aec_agent_core.review_eval.documents",
+        "aec_agent_core.review_eval.tasks",
     ),
     "geotech-staff-engineer": (
         "funhouse_agent", "funhouse_agent._disclaimer",
@@ -231,7 +252,13 @@ def test_the_core_wheel_is_the_core_alone(wheels):
                   "aec_agent_core/deep/vision_engine.py",
                   "aec_agent_core/charts/layout_ink.py",
                   "aec_agent_core/plot_box/child.py",
-                  "aec_agent_core/deep/figure_helper.py"):
+                  "aec_agent_core/deep/figure_helper.py",
+                  # step 11 (c)
+                  "aec_agent_core/deep/assembly.py",
+                  "aec_agent_core/document_tools.py",
+                  "aec_agent_core/activity_log.py",
+                  "aec_agent_core/review_eval/runner.py",
+                  "aec_agent_core/review_eval/tasks.py"):
         assert moved in names, moved
     assert any(n.endswith(".dist-info/licenses/LICENSE") for n in names)
     with zipfile.ZipFile(wheels[CORE_NAME]) as z:

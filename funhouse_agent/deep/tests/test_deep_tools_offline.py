@@ -370,7 +370,10 @@ def test_write_docx_without_a_renderer_returns_an_instruction(monkeypatch,
     real_import = builtins.__import__
 
     def no_renderer(name, *args, **kwargs):
-        if name == "funhouse_agent.docx_renderer":
+        # the renderer's name in the shared core since INF-32 step 11 (c),
+        # and its old name
+        if name in ("aec_agent_core.docx_renderer",
+                    "funhouse_agent.docx_renderer"):
             raise ImportError("No module named 'docx'")
         return real_import(name, *args, **kwargs)
 

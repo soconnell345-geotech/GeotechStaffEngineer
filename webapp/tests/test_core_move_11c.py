@@ -87,6 +87,8 @@ _ORDERS = [
     ["aec_agent_core.document_tools", "funhouse_agent.markup_check",
      "funhouse_agent.document_tools"],
     ["funhouse_agent.review_build", "webapp.core"],
+    ["calc_package.docx_renderer", "funhouse_agent.docx_renderer",
+     "aec_agent_core.docx_renderer"],
 ]
 
 _PROBE = r"""
@@ -139,6 +141,18 @@ def test_the_package_doors_fill_the_new_hooks():
     for name in ("document_dirs", "fetch_document", "fixture"):
         assert filled[f"review_eval.{name}"] == \
             f"funhouse_agent.review_eval.host:{name}"
+
+
+def test_calc_packages_old_name_for_the_word_renderer_is_the_core_module():
+    """calc_package.docx_renderer (INF-30 step 5's alias) now points at the
+    core's module directly, and importing it loads nothing of
+    funhouse_agent (a fresh interpreter)."""
+    code = ("import sys, calc_package.docx_renderer as a\n"
+            "import aec_agent_core.docx_renderer as b\n"
+            "print(a is b, 'funhouse_agent' in sys.modules)\n")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True, timeout=300)
+    assert out.stdout.split() == ["True", "False"], out.stderr[-2000:]
 
 
 def test_held_records_reads_report_ingests_shapes_through_the_hook():

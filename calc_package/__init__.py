@@ -57,15 +57,17 @@ from calc_package.tables import (
 
 
 # The Word renderer is in funhouse_agent.docx_renderer (INF-30 step 5), which
-# both pages use; calc_package.docx_renderer is the same module, loaded when
-# it is first imported by either name, so importing this package loads
-# nothing of funhouse_agent (its first-import notice included). The old name
-# goes in step 16.
+# both pages use, and in the shared core since INF-32 step 11 (c)
+# (aec_agent_core.docx_renderer; funhouse_agent's old name is an alias of
+# it); calc_package.docx_renderer is the same module, loaded when it is
+# first imported by any name, so importing this package loads nothing of
+# funhouse_agent (its first-import notice included). The old name goes in
+# step 16.
 import importlib as _importlib
 import importlib.util as _importlib_util
 import sys as _sys
 
-_MOVED = {__name__ + ".docx_renderer": "funhouse_agent.docx_renderer"}
+_MOVED = {__name__ + ".docx_renderer": "aec_agent_core.docx_renderer"}
 
 
 class _MovedModule:
