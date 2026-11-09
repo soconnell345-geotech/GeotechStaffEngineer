@@ -148,6 +148,5 @@ def test_other_vision_prompts_take_no_shape():
     assert vision_tools._answer_shape("overview") is None
     assert vision_tools._answer_shape("tile") is None
     assert vision_tools._answer_shape("check") is None
-    assert vision_tools._vision_prompt("Q", [0, 0, 10, 10], None,
-                                       (100, 100)).startswith("Q\n\nThis "
-                                                              "image is")
+    assert vision_tools._vision_prompt("Q", (100, 100)).startswith(
+        "Q\n\nThis image is")

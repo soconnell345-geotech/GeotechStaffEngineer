@@ -210,35 +210,6 @@ def test_px_box_to_page_is_exact():
         vision_view.px_box_to_page([0, 0, 0, 1], [0, 0, 1, 1], (10, 10))
 
 
-def test_structured_locations_in_pixels_are_converted_exactly():
-    text, items = vision_view.split_located(
-        'Answer.\nLOCATED: [{"what": "tag", "px": [1000, 500, 1050, 520]}, '
-        '{"what": "old", "box": [100, 100, 200, 200]}]',
-        (0, 0, 1224, 792), (2048, 1326))
-    assert text == "Answer."
-    px_item, old = items
-    assert px_item["page_bbox"] == pytest.approx(
-        [597.7, 298.6, 627.5, 310.6], abs=0.1)
-    assert px_item["image_box"] == [488, 377, 512, 392]
-    # read off the whole sheet: a padded window to zoom on comes with it
-    zx0, zy0, zx1, zy1 = px_item["zoom_bbox"]
-    assert zx0 < 597.7 - 100 and zx1 > 627.5 + 100
-    assert old["page_bbox"] == pytest.approx([122.5, 79.3, 245.1, 158.6],
-                                             abs=0.1)
-    # from a zoom there is no need
-    _t, (zoomed,) = vision_view.split_located(
-        'x\nLOCATED: [{"what": "tag", "px": [10, 10, 40, 30]}]',
-        (500, 400, 700, 500), (2048, 1024))
-    assert "zoom_bbox" not in zoomed
-
-
-def test_the_text_layer_is_given_in_the_same_pixels():
-    lines = [("GENERAL NOTE A", (100.0, 100.0, 200.0, 110.0))]
-    block = vision_view.text_context(lines, (0, 0, 1224, 792), size=(2048, 1326))
-    assert "px=[167, 167, 335, 184] GENERAL NOTE A" in block
-    assert "in pixels of the image" in block
-
-
 # -- 2. never send more than the host delivers ----------------------------------
 
 def test_the_default_cap_and_its_override(monkeypatch):

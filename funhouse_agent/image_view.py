@@ -455,16 +455,8 @@ def view_payload(info: Dict[str, Any], picture: Picture,
     return out
 
 
-def frame_of(picture: Picture):
-    """A text-layer stand-in that carries only the image's size: what the
-    turn memory weighs a look by (its share of the image)."""
-    from funhouse_agent import vision_view
-    return vision_view.TextLayer([], float(picture.width),
-                                 float(picture.height))
-
-
 __all__ = ["MAX_UPSCALE", "WHOLE_MIN_SCALE", "MIN_WINDOW_PX", "JPEG_QUALITY",
            "Picture", "open_picture", "sent_size", "whole_scale",
            "tile_count", "tile_boxes", "whole_box", "zoom_box", "render",
            "MAX_PAGE_PT", "shown_size", "page_scale", "as_pdf",
-           "FRAME_NOTE", "precision_note", "view_payload", "frame_of"]
+           "FRAME_NOTE", "precision_note", "view_payload"]

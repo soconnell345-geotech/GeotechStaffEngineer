@@ -34,7 +34,7 @@ PIL = pytest.importorskip("PIL")
 from PIL import Image, ImageOps  # noqa: E402
 
 from funhouse_agent import (  # noqa: E402
-    image_view, review_flags, vision_probe, vision_tools, vision_view,
+    image_view, vision_probe, vision_tools, vision_view,
 )
 from funhouse_agent.deep import vision_engine as _vision_engine  # noqa: E402,F401
 from funhouse_agent.vision_tools import dispatch_extended_tool  # noqa: E402
@@ -49,18 +49,13 @@ LABEL = (3600, 40, 3700, 80)
 def clean_env(monkeypatch):
     for env in (vision_view.BUDGET_ENV, vision_view.DETAIL_ENV,
                 vision_view.CHART_BUDGET_ENV, vision_view.MAX_PX_ENV,
-                vision_view.POLICY_ENV, vision_view.PATCH_ALIGN_ENV,
-                review_flags.VISION_TEXT_ENV,
-                review_flags.VISION_STRUCTURED_ENV,
-                review_flags.VISION_TURN_RETRY_ENV):
+                vision_view.POLICY_ENV):
         monkeypatch.delenv(env, raising=False)
     monkeypatch.setenv(vision_probe.PROBE_ENV, "0")
     monkeypatch.setenv(vision_tools.REPEAT_CACHE_ENV, "0")
     vision_probe.clear_cache()
-    vision_tools.clear_turn_memory()
     yield
     vision_probe.clear_cache()
-    vision_tools.clear_turn_memory()
 
 
 def _screenshot(width=3840, height=2160, mark=MARK, label=LABEL,
@@ -479,53 +474,6 @@ def test_an_inline_zoom_on_an_image_is_shown_with_its_view():
         assert _pixels(data).shape[1] == out["view_px"][0]
     finally:
         inline_store.clear()
-
-
-class Locates(Reader):
-    """Ends with the structured LOCATED line when asked for it."""
-
-    def analyze_image(self, image_bytes, prompt=""):
-        text = super().analyze_image(image_bytes, prompt)
-        if "LOCATED:" not in prompt:
-            return text
-        m = re.search(r"MARK px=\[(\d+), (\d+), (\d+), (\d+)\]", text)
-        items = ([{"what": "mark", "px": [int(v) for v in m.groups()],
-                   "sure": True}] if m else [])
-        return text + "\nLOCATED: " + json.dumps(items)
-
-
-def test_structured_locations_on_an_image_are_in_its_own_pixels(monkeypatch):
-    monkeypatch.setenv(review_flags.VISION_STRUCTURED_ENV, "1")
-    out = _look(Locates(), _screenshot(label=None), tiles="off")
-    (item,) = out["located"]
-    assert "page_bbox" not in item
-    assert max(abs(item["bbox"][i] - MARK[i]) for i in range(4)) <= 3
-    assert "zoom_bbox" in item and "own pixels" in out["located_note"]
-
-
-class SaysTurned(Reader):
-    """Asked for the TURNED line, says its lettering runs up the image
-    while the image it is sent is wider than tall."""
-
-    def analyze_image(self, image_bytes, prompt=""):
-        text = super().analyze_image(image_bytes, prompt)
-        h, w = _pixels(image_bytes).shape[:2]
-        if vision_view.TURN_TAG_INSTRUCTION in prompt and w > h:
-            return text + "\nTURNED: bottom-to-top"
-        return text
-
-
-def test_the_switched_turned_reread_works_on_an_image_zoom(monkeypatch):
-    monkeypatch.setenv(review_flags.VISION_TURN_RETRY_ENV, "1")
-    engine = SaysTurned()
-    out = _zoom(engine, _screenshot(label=None), bbox=[960, 1470, 1120, 1530],
-                pad_frac=0)
-    assert len(engine.images) == 2
-    first, second = (_pixels(i).shape[:2] for i in engine.images)
-    assert first[1] > first[0] and second[0] > second[1]
-    assert "second reading" in out["turned"]
-    assert "TURNED" not in out["analysis"]
-    assert _err(out["view"], _grid(out["analysis"], "MARK"), MARK) <= 1
 
 
 def test_a_png_that_cannot_be_decoded_still_goes_whole_but_is_not_cut():

@@ -118,11 +118,11 @@ def test_an_arm_s_other_variables_are_set_and_restored(monkeypatch):
 
 
 def test_switches_set_exactly_the_arm_and_restore(monkeypatch):
-    monkeypatch.setenv(review_flags.VISION_TEXT_ENV, "1")
+    monkeypatch.setenv(review_flags.STEP_CAP_ANSWER_ENV, "1")
     with review_flags.switches(review_flags.ARMS["minimal"]):
         assert review_flags.minimal_agent()
-        assert not review_flags.vision_text_context()  # not in the arm: unset
-    assert review_flags.vision_text_context()          # restored
+        assert not review_flags.step_cap_answer()  # not in the arm: unset
+    assert review_flags.step_cap_answer()          # restored
     assert not review_flags.minimal_agent()
     assert set(review_flags.ARMS) >= {"baseline", "minimal"}
     assert review_flags.ARMS["baseline"] == {}
@@ -138,6 +138,24 @@ def test_the_removed_experiments_are_gone():
                  "overview", "geometry", "digest",
                  "kept_readings_on_review_page", "overview_pages"):
         assert not hasattr(review_flags, name), name
+
+
+def test_the_unmeasured_vision_switches_are_gone():
+    """BACKLOG DR-40: the vision switches that never measured a gain are
+    removed with their code; a notebook that still sets one gets the default
+    look."""
+    assert "turn_retry" not in review_flags.ARMS
+    for name in ("vision_text_context", "vision_structured",
+                 "vision_turn_retry", "VISION_TEXT_ENV",
+                 "VISION_STRUCTURED_ENV", "VISION_TURN_RETRY_ENV"):
+        assert not hasattr(review_flags, name), name
+    for name in ("text_context", "page_lines", "with_locations",
+                 "split_located", "patch_align", "align_to_patches",
+                 "PATCH_ALIGN_ENV"):
+        assert not hasattr(vision_view, name), name
+    for name in ("_lines_for_context", "_split_located", "_settle_turn",
+                 "remembered_turn", "clear_turn_memory", "_fit_located"):
+        assert not hasattr(vision_tools, name), name
 
 
 
@@ -341,57 +359,9 @@ def test_viewer_pages_never_push_a_result_past_its_limit():
 # Grounding the vision call
 # ---------------------------------------------------------------------------
 
-def test_vision_prompt_is_unchanged_with_the_switches_off():
-    assert vision_tools._vision_prompt("find X", (0, 0, 10, 10), None) == \
+def test_vision_prompt_is_the_agent_s_prompt_with_the_location_rule():
+    assert vision_tools._vision_prompt("find X") == \
         vision_view.with_grid("find X")
-    assert vision_tools._lines_for_context(b"", 0) is None
-
-
-def test_text_context_lists_the_view_s_lines_or_says_there_are_none(gt):
-    lines, reliable = vision_view.page_lines(gt.pdf, gt.sheet_page)
-    assert any("GENERAL NOTE A" in t for t, _ in lines)
-    doc = pymupdf.open(stream=gt.pdf, filetype="pdf")
-    rect = doc[gt.sheet_page].rect
-    whole = vision_view.text_context(lines, (0, 0, rect.width, rect.height),
-                                     reliable)
-    assert "GENERAL NOTE A" in whole and "0-999" in whole
-    empty = vision_view.text_context(lines, (1, 1, 2, 2), reliable)
-    assert "NO text layer" in empty
-
-
-def test_render_region_tells_the_vision_call_the_text_layer(gt, monkeypatch):
-    monkeypatch.setenv(review_flags.VISION_TEXT_ENV, "1")
-    eng = FakeEngine()
-    tool = next(t for t in make_vision_tools(engine=eng,
-                                             attachments={"r.pdf": gt.pdf})
-                if t.name == "render_region")
-    x, y = gt.sheet_text_upright_origin
-    out = json.loads(tool.invoke({"attachment_key": "r.pdf",
-                                  "page": gt.sheet_page,
-                                  "bbox": [x - 20, y - 40, x + 200, y + 20]}))
-    assert out["pdf_page"] == gt.sheet_page + 1
-    assert "GENERAL NOTE A" in eng.prompts[0]
-
-
-def test_structured_locations_come_back_as_page_boxes(gt, monkeypatch):
-    monkeypatch.setenv(review_flags.VISION_STRUCTURED_ENV, "1")
-    eng = FakeEngine('The note.\nLOCATED: [{"what": "note", "text": "GENERAL '
-                     'NOTE A", "box": [0, 0, 999, 999], "sure": true}]')
-    tool = next(t for t in make_vision_tools(engine=eng,
-                                             attachments={"r.pdf": gt.pdf})
-                if t.name == "render_region")
-    out = json.loads(tool.invoke({"attachment_key": "r.pdf", "page": 0,
-                                  "bbox": [50, 50, 250, 150]}))
-    assert "LOCATED" in eng.prompts[0]
-    assert out["analysis"] == "The note."
-    item = out["located"][0]
-    assert item["text"] == "GENERAL NOTE A"
-    assert item["page_bbox"] == pytest.approx(out["view"], abs=0.2)
-
-
-def test_split_located_keeps_an_answer_it_cannot_parse():
-    text = "no list here\nLOCATED: [broken"
-    assert vision_view.split_located(text, (0, 0, 10, 10)) == (text, [])
 
 
 # ---------------------------------------------------------------------------
@@ -502,34 +472,18 @@ def test_a_failing_reading_helper_does_not_end_the_turn():
     assert "helper failed" in out and "429" in out
 
 
-def test_located_lists_are_trimmed_to_fit_not_cut_mid_json():
+def test_long_results_are_trimmed_to_fit_not_cut_mid_json():
     """Review finding 3."""
-    item = {"what": "x" * 40, "text": "y" * 40, "image_box": [1, 2, 3, 4],
-            "page_bbox": [1.0, 2.0, 3.0, 4.0], "sure": True}
-    out = {"page": 0, "analysis": "a" * 3000, "located": [dict(item)] * 60,
-           "tiles": [{"tile": f"r{i}", "analysis": "b" * 1500,
-                      "located": [dict(item)] * 30} for i in range(16)]}
-    vision_tools._fit_located(out, vision_tools.TILED_RESULT_CHARS)
+    out = {"page": 0, "analysis": "a" * 3000,
+           "tiles": [{"tile": f"r{i}", "analysis": "b" * 3000}
+                     for i in range(16)]}
     vision_tools._fit_tiles(out)
     text = json.dumps(out)
     assert len(text) <= vision_tools.TILED_RESULT_CHARS
     json.loads(text)
-    region = {"page": 0, "analysis": "c" * 2000, "located": [dict(item)] * 80}
+    region = {"page": 0, "analysis": "c" * 20000}
     vision_tools._fit_region(region)
     assert len(json.dumps(region)) <= vision_tools.REGION_RESULT_CHARS
-    assert region.get("located_cut")
-
-
-def test_split_located_keeps_text_after_the_list():
-    text, items = vision_view.split_located(
-        'Answer.\nLOCATED: [{"what": "a", "box": [0, 0, 999, 999]}]\nMore.',
-        (0, 0, 100, 100))
-    assert text == "Answer.\nMore." and items[0]["page_bbox"] == \
-        [0.0, 0.0, 100.0, 100.0]
-
-
-def test_page_lines_unreadable_is_none_not_no_text_layer():
-    assert vision_view.page_lines(b"not a pdf", 0) is None
 
 
 def test_small_host_caps_keep_document_results_whole(gt):

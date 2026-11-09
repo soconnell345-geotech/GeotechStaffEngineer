@@ -1346,7 +1346,7 @@ def clear_repeat_reads() -> None:
 
 def _vision_setup(engine) -> Dict[str, Any]:
     """What else decides a reading besides the file, view and prompt: the
-    model, the image budget and detail, the vision policy and switches."""
+    model, the image budget and detail, and the vision policy."""
     model = getattr(engine, "model", None)
     name = None
     for attr in ("model_name", "model", "deployment_name", "azure_deployment",
@@ -1357,15 +1357,11 @@ def _vision_setup(engine) -> Dict[str, Any]:
             break
     setup: Dict[str, Any] = {"engine": type(engine).__name__, "model": name}
     try:
-        from funhouse_agent import review_flags, vision_view
+        from funhouse_agent import vision_view
         setup.update(budget=vision_view.budget_name(engine),
                      detail=vision_view.detail(engine),
                      max_px=vision_view.max_px(engine),
-                     policy=vision_view.policy(),
-                     patch_align=vision_view.patch_align(),
-                     text_context=review_flags.vision_text_context(),
-                     structured=review_flags.vision_structured(),
-                     turn_retry=review_flags.vision_turn_retry())
+                     policy=vision_view.policy())
     except Exception:  # noqa: BLE001 - an unknown setup just keys narrower
         setup["setup"] = "unknown"
     return setup
@@ -1410,7 +1406,6 @@ def _repeat_hit(rkey, tool) -> Optional[str]:
         return None
     out["repeat"] = REPEAT_NOTE
     if tool == "analyze_pdf_page":
-        _fit_located(out, TILED_RESULT_CHARS)
         if out.get("tiles"):
             _fit_tiles(out)
     else:
@@ -1811,7 +1806,6 @@ def _reused_result(entry) -> str:
     out["reused"] = REUSED_NOTE.format(
         view=entry.get("view") or "page",
         prompt=str(entry.get("prompt") or "")[:200])
-    _fit_located(out, TILED_RESULT_CHARS)
     if out.get("tiles"):
         _fit_tiles(out)
     return json.dumps(out)
@@ -2538,33 +2532,6 @@ def _image_tile_count(tiles, picture, engine) -> int:
     return max(1, min(vision_view.MAX_TILES_PER_SIDE, int(tiles)))
 
 
-#: Said on a located item of an image look (``GEOTECH_VISION_STRUCTURED``).
-IMAGE_LOCATED_NOTE = (
-    "each located item's bbox is in this image's own pixels: pass it as "
-    "render_region's bbox, with attachment_key = this image, to zoom")
-IMAGE_LOCATED_WIDE_NOTE = (
-    "each located item's bbox is in this image's own pixels, read off a "
-    "view this large: zoom with render_region(bbox=<its zoom_bbox>), the "
-    "box padded by this view's location error, before relying on it")
-
-
-def _image_located(holder) -> None:
-    """A structured LOCATED list on an image look, said in the image's
-    frame: each ``page_bbox`` becomes ``bbox`` (the image's own pixels)."""
-    items = holder.get("located") if isinstance(holder, dict) else None
-    if not items:
-        return
-    wide = False
-    for it in items:
-        if isinstance(it, dict):
-            if "page_bbox" in it:
-                it["bbox"] = it.pop("page_bbox")
-            wide = wide or "zoom_bbox" in it
-    if "located_note" in holder:
-        holder["located_note"] = (IMAGE_LOCATED_WIDE_NOTE if wide
-                                  else IMAGE_LOCATED_NOTE)
-
-
 def _read_image(picture, data, prompt, tiles, tiles_note, turn_arg, engine):
     """:func:`_dispatch_analyze_image` once the image is decoded: the whole
     image (shrunk to fit when it must) and, when it reaches the model
@@ -2572,20 +2539,11 @@ def _read_image(picture, data, prompt, tiles, tiles_note, turn_arg, engine):
     its tiles are."""
     from funhouse_agent import image_view, vision_view
     allow_jpeg = getattr(engine, "accepts_jpeg", False)
-    start = _start_turn(turn_arg, data, 0)
-    frame = image_view.frame_of(picture)
-
-    def whole(turn=None):
-        if turn is not None:
-            return image_view.render(picture, None, engine, turn=turn,
-                                     turn_from="asked",
-                                     allow_jpeg=allow_jpeg)
-        return image_view.render(picture, None, engine, turn=start,
-                                 turn_from="remembered",
-                                 allow_jpeg=allow_jpeg)
 
     try:
-        image_bytes, info = whole(turn_arg)
+        image_bytes, info = image_view.render(
+            picture, None, engine, turn=turn_arg or 0, turn_from="asked",
+            allow_jpeg=allow_jpeg)
     except Exception as exc:  # noqa: BLE001 - said, never raised
         return json.dumps({"error": f"the image could not be prepared: "
                                     f"{type(exc).__name__}: {exc}"})
@@ -2597,23 +2555,16 @@ def _read_image(picture, data, prompt, tiles, tiles_note, turn_arg, engine):
                         "read in tiles"]))
     kind = "overview" if n > 1 else "image"
 
-    def look_prompt(view_info, tag=False):
-        return _vision_prompt(
-            _overview_prompt(prompt, n, "picture") if n > 1 else prompt,
-            view_info["clip"], None, _sent_size(view_info),
-            turn=_sent_turn(view_info), tag=tag)
-
     def look():
-        asked = _wants_turn_tag(turn_arg, info)
-        text = ask_vision(engine, image_bytes, look_prompt(info, asked), kind)
-        return _settle_turn(
-            engine, text, info, asked=asked, data=data, page=0, layer=frame,
-            render=lambda t: whole(t), prompt_for=look_prompt, kind=kind)
+        text = ask_vision(engine, image_bytes, _vision_prompt(
+            _overview_prompt(prompt, n, "picture") if n > 1 else prompt,
+            _sent_size(info), turn=_sent_turn(info)), kind)
+        return text, info
 
     jobs = [look]
     if n > 1:
-        jobs += _image_tile_jobs(picture, data, n, prompt, engine,
-                                 turn_arg=turn_arg, start_turn=start)
+        jobs += _image_tile_jobs(picture, n, prompt, engine,
+                                 turn_arg=turn_arg)
     results = _run_together(jobs)
     result, tile_rows = results[0], (results[1:] if n > 1 else None)
     if not isinstance(result, _Failed):
@@ -2629,8 +2580,6 @@ def _read_image(picture, data, prompt, tiles, tiles_note, turn_arg, engine):
            **image_view.view_payload(info, picture, engine)}
     if picture.note:
         out["image_note"] = picture.note
-    if info.get("turn_retry_failed"):
-        out["turn_retry_failed"] = info["turn_retry_failed"]
     if isinstance(result, _Failed):
         out["overview_not_read"] = (
             f"the whole-image view was NOT read ({_vision_error(result.exc)});"
@@ -2645,7 +2594,6 @@ def _read_image(picture, data, prompt, tiles, tiles_note, turn_arg, engine):
             "the whole-image layout answer stopped at its output limit, so "
             "it may be incomplete; the tiles below read the lettering")
     _finish_answer(out, info, what="image")
-    _image_located(out)
     if tiles_note:
         out["tiles_note"] = tiles_note
     scale = float(info.get("scale") or 1.0)
@@ -2696,54 +2644,37 @@ def _read_image(picture, data, prompt, tiles, tiles_note, turn_arg, engine):
             f"tall may not have come through. Zoom with render_region on this "
             f"view + an image_box; a zoom is cut from the original at full "
             f"resolution.")
-    _fit_located(out, TILED_RESULT_CHARS)
     if n > 1:
         _fit_tiles(out)
     return json.dumps(out)
 
 
-def _image_tile_jobs(picture, data, n, prompt, engine, turn_arg=None,
-                     start_turn=0):
+def _image_tile_jobs(picture, n, prompt, engine, turn_arg=None):
     """One job per tile of an ``n`` x ``n`` overlapping split of an image
     file, in tile order: each cuts its tile from the original, sizes it to
     the budget (:func:`image_view.render`, enlarged by whole times where the
     budget holds it), reads it and returns its row (an ``error`` row, naming
     why in plain words, when it could not). Turned as the agent asked
-    (``turn_arg``) or as the image is remembered (``start_turn``); with
-    GEOTECH_VISION_TURN_RETRY a tile found turned is read again upright."""
+    (``turn_arg``)."""
     from funhouse_agent import image_view
     boxes = image_view.tile_boxes(picture, n)
     allow_jpeg = getattr(engine, "accepts_jpeg", False)
-    frame = image_view.frame_of(picture)
 
     def one(k):
         r, c = divmod(k, n)
         try:
-            def render(turn=None, source="asked"):
-                return image_view.render(picture, boxes[k], engine,
-                                         enlarge=True, turn=turn,
-                                         turn_from=source,
-                                         allow_jpeg=allow_jpeg)
-
-            img, tinfo = (render(turn_arg) if turn_arg is not None
-                          else render(start_turn, "remembered"))
+            img, tinfo = image_view.render(picture, boxes[k], engine,
+                                           enlarge=True, turn=turn_arg or 0,
+                                           turn_from="asked",
+                                           allow_jpeg=allow_jpeg)
             where = (f"This image is tile row {r + 1} of {n}, column {c + 1} "
                      f"of {n} of a larger picture (tiles overlap slightly). "
                      f"Report only what is IN this tile, briefly.")
 
-            def tile_prompt(view_info, tag=False):
-                return _vision_prompt(
-                    f"{prompt}\n\n{where}", view_info["clip"], None,
-                    _sent_size(view_info), turn=_sent_turn(view_info),
-                    tag=tag)
-
-            asked = _wants_turn_tag(turn_arg, tinfo)
-            text = ask_vision(engine, img, tile_prompt(tinfo, asked), "tile",
-                              where={"tile": f"r{r + 1}c{c + 1}"})
-            text, tinfo = _settle_turn(
-                engine, text, tinfo, asked=asked, data=data, page=0,
-                layer=frame, render=lambda t: render(t),
-                prompt_for=tile_prompt, kind="tile")
+            text = ask_vision(engine, img, _vision_prompt(
+                f"{prompt}\n\n{where}", _sent_size(tinfo),
+                turn=_sent_turn(tinfo)), "tile",
+                where={"tile": f"r{r + 1}c{c + 1}"})
             scale = float(tinfo.get("scale") or 1.0)
             row = {"tile": f"r{r + 1}c{c + 1}",
                    "view": [int(v) for v in tinfo["clip"]],
@@ -2752,13 +2683,9 @@ def _image_tile_jobs(picture, data, n, prompt, engine, turn_arg=None,
                       else {}),
                    **({"turned": _sent_turn(tinfo)}
                       if _sent_turn(tinfo) else {}),
-                   **({"turn_retry_failed": tinfo["turn_retry_failed"]}
-                      if tinfo.get("turn_retry_failed") else {}),
                    "analysis": text,
                    **({"cut_off": True} if _is_cut_off(text) else {})}
             _finish_answer(row, tinfo, note=False, what="image")
-            row.pop("located_note", None)
-            _image_located(row)
             return row
         except Exception as exc:                  # one tile, not the image
             return {"tile": f"r{r + 1}c{c + 1}", "view": list(boxes[k]),
@@ -2828,23 +2755,18 @@ def _render_image_region(arguments, engine, data, key, *, bbox, window,
 
     inline = bool(arguments.get("_inline"))
     allow_jpeg = getattr(engine, "accepts_jpeg", False)
-    start = 0 if inline else _start_turn(turn_arg, data, 0)
-
-    def render(turn=None, source="asked"):
-        return image_view.render(picture, crop, engine, enlarge=True,
-                                 turn=turn, turn_from=source, marks=marks,
-                                 allow_jpeg=allow_jpeg)
 
     try:
-        image_bytes, info = (render() if inline
-                             else render(turn_arg) if turn_arg is not None
-                             else render(start, "remembered"))
+        image_bytes, info = image_view.render(
+            picture, crop, engine, enlarge=True,
+            turn=None if inline else (turn_arg or 0), turn_from="asked",
+            marks=marks, allow_jpeg=allow_jpeg)
     except Exception as e:  # noqa: BLE001 - said, never raised
         return json.dumps({"error": f"the image could not be cut: "
                                     f"{type(e).__name__}: {e}"})
     clip = [int(v) for v in info["clip"]]
     if inline:
-        # The main model looks itself (GEOTECH_VISION_INLINE): the crop is
+        # The main model looks itself (the minimal build): the crop is
         # shown at its next call, labelled with its view on the image.
         from funhouse_agent import inline_store
         name = _document_name(key)
@@ -2860,27 +2782,14 @@ def _render_image_region(arguments, engine, data, key, *, bbox, window,
                                 "yourself: it is shown as the image shows it")
         return json.dumps(out)
 
-    frame = image_view.frame_of(picture)
-
-    def prompt_for(view_info, tag=False):
-        return _vision_prompt(prompt, view_info["clip"], None,
-                              _sent_size(view_info),
-                              shape=_answer_shape("region"),
-                              turn=_sent_turn(view_info), tag=tag)
-
     try:
-        asked = _wants_turn_tag(turn_arg, info)
-        result = ask_vision(engine, image_bytes, prompt_for(info, asked),
-                            "region")
-        result, info = _settle_turn(
-            engine, result, info, asked=asked, data=data, page=0, layer=frame,
-            render=lambda t: render(t), prompt_for=prompt_for, kind="region")
+        result = ask_vision(engine, image_bytes, _vision_prompt(
+            prompt, _sent_size(info), shape=_answer_shape("region"),
+            turn=_sent_turn(info)), "region")
         out = {"bbox": bbox, "analysis": result,
                **image_view.view_payload(info, picture, engine)}
         if picture.note:
             out["image_note"] = picture.note
-        if info.get("turn_retry_failed"):
-            out["turn_retry_failed"] = info["turn_retry_failed"]
         if _is_cut_off(result):
             out["cut_off"] = CUT_OFF_NOTE
         if padded is not None:
@@ -2892,7 +2801,6 @@ def _render_image_region(arguments, engine, data, key, *, bbox, window,
                 f"rather than concluding it is absent")
         out.update(notes)
         _finish_answer(out, info, what="image")
-        _image_located(out)
         if padded is not None:
             _say_how_far_from_the_aim(out, view, bbox, unit="px")
         _fit_region(out)
@@ -3031,19 +2939,15 @@ def _dispatch_render_region(arguments, engine, attachments):
     if widened is not None:
         window, render_pad = widened[0], 0.0
 
-    def render(turn=None, default_turn=0):
-        return vision_view.render_view(
-            pdf_bytes, page=page, bbox=window, marks=marks, dpi=dpi,
-            pad_frac=render_pad,
-            allow_jpeg=getattr(engine, "accepts_jpeg", False), engine=engine,
-            upright=not inline, text_layer=layer, turn=turn,
-            default_turn=default_turn)
-
     try:
         # Inline, the main model writes image_box on the image it is shown:
         # that image goes as the page shows it, whatever turn says.
-        image_bytes, info = (render() if inline else render(
-            turn_arg, _start_turn(turn_arg, pdf_bytes, page)))
+        image_bytes, info = vision_view.render_view(
+            pdf_bytes, page=page, bbox=window, marks=marks, dpi=dpi,
+            pad_frac=render_pad,
+            allow_jpeg=getattr(engine, "accepts_jpeg", False), engine=engine,
+            upright=not inline, text_layer=layer,
+            turn=None if inline else turn_arg)
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -3051,34 +2955,21 @@ def _dispatch_render_region(arguments, engine, attachments):
     except (ValueError, IndexError) as e:
         return _render_error(e)
 
-    lines = _lines_for_context(pdf_bytes, page)
     if inline:
-        out = _inline_result(image_bytes, info, page, engine, lines, bbox=bbox)
+        out = _inline_result(image_bytes, info, page, engine, bbox=bbox)
         if turn_arg:
             out["turn_note"] = ("turn is not used when you look at the "
                                 "image yourself: it is shown as the page "
                                 "shows it")
         return json.dumps(out)
 
-    def prompt_for(view_info, tag=False):
-        return _vision_prompt(prompt, view_info["clip"], lines,
-                              _sent_size(view_info),
-                              shape=_answer_shape("region"),
-                              turn=_sent_turn(view_info),
-                              cut=_cut_note(view_info, layer), tag=tag)
-
     try:
-        asked = _wants_turn_tag(turn_arg, info)
-        result = ask_vision(engine, image_bytes, prompt_for(info, asked),
-                            "region", where={"page": page})
-        result, info = _settle_turn(
-            engine, result, info, asked=asked, data=pdf_bytes, page=page,
-            layer=layer, render=lambda t: render(t), prompt_for=prompt_for,
-            kind="region")
+        result = ask_vision(engine, image_bytes, _vision_prompt(
+            prompt, _sent_size(info), shape=_answer_shape("region"),
+            turn=_sent_turn(info), cut=_cut_note(info, layer)),
+            "region", where={"page": page})
         out = {"page": page, **_pdf_page(page), "bbox": bbox,
                "analysis": result, **vision_view.view_payload(info, engine)}
-        if info.get("turn_retry_failed"):
-            out["turn_retry_failed"] = info["turn_retry_failed"]
         if _is_cut_off(result):
             out["cut_off"] = CUT_OFF_NOTE
         if padded is not None:
@@ -3105,8 +2996,8 @@ def _dispatch_render_region(arguments, engine, attachments):
         _finish_answer(out, info)
         if padded is not None:
             _say_how_far_from_the_aim(out, view, bbox)
-        # Under the tool cap as valid JSON: the located list, and the notes
-        # on a turned or widened window, can carry a long answer past it.
+        # Under the tool cap as valid JSON: the notes on a turned or widened
+        # window can carry a long answer past it.
         _fit_region(out)
         raw = json.dumps(out)
         _repeat_store(rkey, raw)
@@ -3307,15 +3198,6 @@ def _merge_found(out, what: str = "page") -> None:
                              f"there).")
 
 
-def _lines_for_context(pdf_bytes, page):
-    """The page's text-layer lines, when vision calls are to be told them
-    (``GEOTECH_VISION_TEXT_CONTEXT``); ``None`` otherwise."""
-    from funhouse_agent import review_flags, vision_view
-    if not review_flags.vision_text_context():
-        return None
-    return vision_view.page_lines(pdf_bytes, page)
-
-
 def _sent_size(info):
     """``(width_px, height_px)`` of the image as rendered and sent — the size
     a pixel box is converted with (never the size a model says it saw)."""
@@ -3348,15 +3230,14 @@ def _cut_note(info, layer) -> Optional[str]:
         return None
 
 
-# -- Turned lettering: the agent's turn, and the switched re-read ---------------
+# -- Turned lettering: the agent's turn ----------------------------------------
 #
 # VIS-01 (Foundry brief 5): Sol misread turned lettering far more often than
 # upright, and every sheet it did so on had no text layer to say which way
-# its lettering runs. Two levers for those sheets: ``turn`` on the page and
-# zoom tools, which the agent may use (on), and behind
-# ``GEOTECH_VISION_TURN_RETRY`` (OFF until the suite measures it) a look that
-# finds its lettering turned is read once more upright, and a page found
-# turned is sent turned.
+# its lettering runs. The lever for those sheets is ``turn`` on the page and
+# zoom tools, which the agent may use. (The switched re-read of a look found
+# turned, GEOTECH_VISION_TURN_RETRY, was removed in BACKLOG DR-40: never
+# measured.)
 
 #: What ``turn`` accepts, in the words the agent sees.
 TURN_ACCEPTED = ("90, 180 or 270 (degrees clockwise), or 0 to send the page "
@@ -3430,178 +3311,27 @@ def _parse_turn(value):
     return int(num) % 360, None
 
 
-#: A page is sent turned once at least this many looks at it, each sent as
-#: the page shows it, found its lettering running the same turned way ...
-TURN_REMEMBER_LOOKS = 2
-#: ... and more of the page's looked-at area turned that way than not (each
-#: look weighted by its share of the page: a whole-page look outweighs any
-#: number of zooms on turned tags among upright ones).
-_TURN_PAGES_KEPT = 512
-_TURN_LOCK = threading.Lock()
-_TURN_SEEN: "OrderedDict[tuple, list]" = OrderedDict()
-
-
-def _turn_key(data, page) -> tuple:
-    return (_conversation_for(), _file_id(data), int(page))
-
-
-def _view_weight(clip, layer) -> float:
-    """The share of the page a view shows (1 when the page size is not
-    known)."""
-    try:
-        x0, y0, x1, y1 = (float(v) for v in clip)
-        area = float(layer.width) * float(layer.height)
-        return max(0.0, min(1.0, (x1 - x0) * (y1 - y0) / area))
-    except Exception:  # noqa: BLE001
-        return 1.0
-
-
-def _note_turn(data, page, turn, weight) -> None:
-    """Keep what one look sent as the page shows it found: the turn its
-    lettering needed (0 = it read left to right) and its share of the page."""
-    with _TURN_LOCK:
-        key = _turn_key(data, page)
-        _TURN_SEEN.setdefault(key, []).append((int(turn or 0) % 360,
-                                               float(weight)))
-        _TURN_SEEN.move_to_end(key)
-        while len(_TURN_SEEN) > _TURN_PAGES_KEPT:
-            _TURN_SEEN.popitem(last=False)
-
-
-def remembered_turn(data, page) -> int:
-    """The turn later looks at this page are sent at, from what the looks so
-    far found (:data:`TURN_REMEMBER_LOOKS`); 0 when they do not agree it is
-    turned. Only with ``GEOTECH_VISION_TURN_RETRY`` does anything use it."""
-    with _TURN_LOCK:
-        seen = list(_TURN_SEEN.get(_turn_key(data, page)) or ())
-    count = {t: 0 for t in (0, 90, 180, 270)}
-    area = {t: 0.0 for t in (0, 90, 180, 270)}
-    for t, w in seen:
-        if t in count:
-            count[t] += 1
-            area[t] += w
-    best = max((90, 180, 270), key=lambda t: (count[t], area[t]))
-    if count[best] >= TURN_REMEMBER_LOOKS and area[best] > area[0]:
-        return best
-    return 0
-
-
-def clear_turn_memory() -> None:
-    """Forget what looks found about every page's turn."""
-    with _TURN_LOCK:
-        _TURN_SEEN.clear()
-
-
-def _start_turn(turn_arg, data, page) -> int:
-    """The turn a look is sent at when the text layer cannot say: a turn
-    remembered for the page (switch on, no ``turn`` asked for), else 0."""
-    from funhouse_agent import review_flags
-    if turn_arg is not None or not review_flags.vision_turn_retry():
-        return 0
-    return remembered_turn(data, page)
-
-
-def _wants_turn_tag(turn_arg, info) -> bool:
-    """Whether a look is asked for the TURNED line: the switch is on, no
-    ``turn`` was asked for, and the image goes as the page shows it because
-    nothing (the text layer, a remembered turn) said otherwise."""
-    from funhouse_agent import review_flags
-    return (review_flags.vision_turn_retry() and turn_arg is None
-            and not _sent_turn(info) and not info.get("direction_known"))
-
-
-def _settle_turn(engine, answer, info, *, asked, data, page, layer, render,
-                 prompt_for, kind):
-    """``(answer, info)`` for a look asked for the TURNED line (``asked``):
-    the answer without that line and, when it says the lettering runs other
-    than left to right, the answer of ONE more look at the same view, sent
-    turned so it reads upright (``render(turn)`` draws it, ``prompt_for(info)``
-    asks it), with that look's info. What the first look found is kept for
-    the page (:func:`remembered_turn`). A second look that fails leaves the
-    first answer, with ``info['turn_retry_failed']`` saying why."""
+def _vision_prompt(prompt, size=None, shape=None, turn=0, cut=None) -> str:
+    """The prompt one page/region vision call gets: the agent's own prompt,
+    the answer shape for its kind (``shape``, :func:`_answer_shape`), which
+    lines its edges cut (``cut``, :func:`_cut_note`) and the location
+    instruction — boxes in pixels of an image of ``size`` (w, h), or with no
+    size the old 0-999 grid. ``turn``: the image goes turned that many
+    degrees clockwise, ``size`` as sent (the instruction does not depend on
+    it)."""
     from funhouse_agent import vision_view
-    if not asked or not isinstance(answer, str):
-        return answer, info
-    answer, turn = vision_view.read_turn_tag(answer)
-    _note_turn(data, page, turn or 0, _view_weight(info.get("clip"), layer))
-    if not turn:
-        return answer, info
-    try:
-        img, again_info = render(turn)
-        again_info = dict(again_info)
-        again_info["turn_from"] = "retry"
-        again = ask_vision(engine, img, prompt_for(again_info), kind)
-    except Exception as exc:  # noqa: BLE001 - the first reading still stands
-        failed = dict(info)
-        failed["turn_retry_failed"] = (
-            f"a first look found this view's lettering turned; reading it "
-            f"again upright failed ({_vision_error(exc)}), so this is the "
-            f"first reading")
-        return answer, failed
-    return again, again_info
-
-
-def _vision_prompt(prompt, clip, lines, size=None, shape=None, turn=0,
-                   cut=None, tag=False) -> str:
-    """The prompt one page/region vision call gets: the text layer inside its
-    view (when switched on), the agent's own prompt, the answer shape for its
-    kind (``shape``, :func:`_answer_shape`), which lines its edges cut
-    (``cut``, :func:`_cut_note`), the TURNED line (``tag``,
-    :func:`_wants_turn_tag`), the location instruction — boxes in pixels
-    of an image of ``size`` (w, h), or with no size the old 0-999 grid — and
-    the LOCATED instruction (when switched on). ``turn``: the image goes
-    turned that many degrees clockwise, ``size`` as sent."""
-    from funhouse_agent import review_flags, vision_view
-    parts = []
-    if lines is not None:
-        parts.append(vision_view.text_context(lines[0], clip, lines[1],
-                                              size=size, turn=turn))
-    parts.append(prompt)
+    parts = [prompt]
     if shape:
         parts.append(shape)
     if cut:
         parts.append(cut)
-    if tag:
-        parts.append(vision_view.TURN_TAG_INSTRUCTION)
-    text = vision_view.with_location("\n\n".join(parts), size)
-    if review_flags.vision_structured():
-        text = vision_view.with_locations(text, size)
-    return text
-
-
-def _split_located(out, clip, size=None, turn=0) -> None:
-    """Move a structured LOCATED list out of ``out['analysis']`` into
-    ``out['located']`` with page boxes (``GEOTECH_VISION_STRUCTURED``)."""
-    from funhouse_agent import review_flags, vision_view
-    if not review_flags.vision_structured() or not out.get("analysis"):
-        return
-    try:
-        text, located = vision_view.split_located(str(out["analysis"]), clip,
-                                                  size, turn)
-    except Exception:  # noqa: BLE001 - an unparsed answer is still an answer
-        return
-    out["analysis"] = text
-    if located:
-        out["located"] = located
-        if any("zoom_bbox" in it for it in located):
-            out["located_note"] = (
-                "each located item's page_bbox is PDF points on this page, "
-                "read off a view too wide to place a mark from: zoom with "
-                "render_region(bbox=<its zoom_bbox>) — the box padded by "
-                "this view's location error — and place a mark from the "
-                "zoom")
-        else:
-            out["located_note"] = (
-                "each located item's page_bbox is PDF points on this page: "
-                "pass it as render_region's bbox to zoom, or as an "
-                "annotate_document box")
+    return vision_view.with_location("\n\n".join(parts), size)
 
 
 def _finish_answer(out, info, note: bool = True,
                    tagged_only: bool = False, what: str = "page") -> None:
-    """Turn a vision answer's locations into what the agent works with: the
-    structured LOCATED list split off (when switched on), then every pixel
-    box in the prose rewritten on the 0-999 grid of this view
+    """Turn a vision answer's locations into what the agent works with: every
+    pixel box in the prose rewritten on the 0-999 grid of this view
     (:func:`vision_view.boxes_to_grid`), converted with the size SENT and,
     for an image sent turned, turned back to the view as the page shows it.
     ``note`` adds the line saying so (a tile's rows leave it to the page);
@@ -3610,7 +3340,6 @@ def _finish_answer(out, info, note: bool = True,
     file)."""
     from funhouse_agent import vision_view
     size, turn = _sent_size(info), _sent_turn(info)
-    _split_located(out, info["clip"], size, turn)
     if not size or not isinstance(out.get("analysis"), str):
         return
     try:
@@ -3634,28 +3363,8 @@ def _finish_answer(out, info, note: bool = True,
 REGION_RESULT_CHARS = 7800
 
 
-def _fit_located(out, limit: int) -> None:
-    """Halve the longest ``located`` list (top level or a tile's) until the
-    result fits ``limit``; the analysis text is shortened after, by the
-    caller. Each list that was cut says so."""
-    while len(json.dumps(out)) > limit:
-        holders = [d for d in [out, *(out.get("tiles") or [])]
-                   if isinstance(d, dict) and d.get("located")]
-        if not holders:
-            return
-        h = max(holders, key=lambda d: len(json.dumps(d["located"])))
-        n = len(h["located"])
-        if n <= 1:
-            h.pop("located", None)
-            h.pop("located_note", None)
-        else:
-            h["located"] = h["located"][: n // 2]
-        h["located_cut"] = "some located items left out to fit; zoom closer"
-
-
 def _fit_region(out) -> None:
     """Keep a render_region result under :data:`REGION_RESULT_CHARS`."""
-    _fit_located(out, REGION_RESULT_CHARS)
     while len(json.dumps(out)) > REGION_RESULT_CHARS and \
             len(out.get("analysis") or "") > 200:
         a = out["analysis"]
@@ -3684,9 +3393,9 @@ def inline_note() -> str:
     return INLINE_NOTE.format(in_view=_in_view())
 
 
-def _inline_result(image_bytes, info, page, engine, lines, bbox=None):
+def _inline_result(image_bytes, info, page, engine, bbox=None):
     """The result a page/region tool returns when the main model looks itself
-    (``GEOTECH_VISION_INLINE``): no one-shot vision call — the image is
+    (the minimal build): no one-shot vision call — the image is
     stored and shown to the model at its next call
     (:mod:`funhouse_agent.deep.inline_images`)."""
     from funhouse_agent import inline_store, vision_view
@@ -3697,9 +3406,6 @@ def _inline_result(image_bytes, info, page, engine, lines, bbox=None):
            **({"bbox": bbox} if bbox is not None else {}),
            **vision_view.view_payload(info, engine), "note": inline_note()}
     out.pop("zoom_hint", None)
-    if lines is not None:
-        out["text_layer"] = vision_view.text_context(lines[0], info["clip"],
-                                                     lines[1])
     return out
 
 
@@ -3724,7 +3430,7 @@ INLINE_IMAGE_MAX_BYTES = 4 * 1024 * 1024
 
 def _inline_image_file_result(data, path):
     """``analyze_image`` of an image FILE when the main model looks itself
-    (``GEOTECH_VISION_INLINE``, lean agent): the image is stored and shown at
+    (the minimal build): the image is stored and shown at
     the model's next call, as :func:`_inline_result` does for a page. ``None``
     (keep the vision call) for bytes that are not a PNG, JPEG, GIF or WebP
     image, or that are too large to send."""
@@ -3936,25 +3642,19 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     """:func:`_dispatch_analyze_pdf_page` once the document is in hand."""
     # Render the page at the vision model's image budget -- turned so its
     # lettering reads upright where the text layer says it runs otherwise
-    # (VIS-01), or as the agent's ``turn`` asks, or as earlier looks found
-    # the page (GEOTECH_VISION_TURN_RETRY). Inline, the main model writes
+    # (VIS-01), or as the agent's ``turn`` asks. Inline, the main model writes
     # image_box itself on the image it is shown, so that image goes as the
     # page shows it.
     from funhouse_agent import vision_view
     inline = bool(arguments.get("_inline"))
     layer = None if inline else vision_view.page_text_layer(pdf_bytes, page)
-    start = 0 if inline else _start_turn(turn_arg, pdf_bytes, page)
-
-    def render(turn=None, default_turn=0):
-        return vision_view.render_view(
-            pdf_bytes, page=page,
-            allow_jpeg=getattr(engine, "accepts_jpeg", False),
-            engine=engine, upright=not inline, text_layer=layer, turn=turn,
-            default_turn=default_turn)
 
     try:
-        image_bytes, info = (render() if inline
-                             else render(turn_arg, start))
+        image_bytes, info = vision_view.render_view(
+            pdf_bytes, page=page,
+            allow_jpeg=getattr(engine, "accepts_jpeg", False),
+            engine=engine, upright=not inline, text_layer=layer,
+            turn=None if inline else turn_arg)
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -3962,11 +3662,10 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     except (ValueError, IndexError) as e:
         return _render_error(e)
 
-    lines = _lines_for_context(pdf_bytes, page)
     if inline:
         # The main model looks at the whole page itself and zooms with
         # render_region where the lettering is small: no tiles.
-        out = _inline_result(image_bytes, info, page, engine, lines)
+        out = _inline_result(image_bytes, info, page, engine)
         if turn_arg:
             out["turn_note"] = ("turn is not used when you look at the "
                                 "image yourself: it is shown as the page "
@@ -3984,28 +3683,20 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     # read whole, it was the read's long pole -- 55-72 s against 11-15 s).
     page_kind = "overview" if n > 1 else "page"
 
-    def page_prompt(view_info, tag=False):
-        return _vision_prompt(
-            _overview_prompt(prompt, n) if n > 1 else prompt,
-            view_info["clip"], lines, _sent_size(view_info),
-            shape=_answer_shape(page_kind), turn=_sent_turn(view_info),
-            cut=_cut_note(view_info, layer), tag=tag)
-
     def page_look():
-        asked = _wants_turn_tag(turn_arg, info)
-        text = ask_vision(engine, image_bytes, page_prompt(info, asked),
-                          page_kind, where={"page": page})
-        return _settle_turn(
-            engine, text, info, asked=asked, data=pdf_bytes, page=page,
-            layer=layer, render=lambda t: render(t), prompt_for=page_prompt,
-            kind=page_kind)
+        text = ask_vision(engine, image_bytes, _vision_prompt(
+            _overview_prompt(prompt, n) if n > 1 else prompt,
+            _sent_size(info), shape=_answer_shape(page_kind),
+            turn=_sent_turn(info), cut=_cut_note(info, layer)),
+            page_kind, where={"page": page})
+        return text, info
 
     # The whole page and its tiles at once: the tiles never use the
     # whole-page answer, so the read takes the longest call, not the sum.
     jobs = [page_look]
     if n > 1:
-        jobs += _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines,
-                           layer=layer, turn_arg=turn_arg, start_turn=start)
+        jobs += _tile_jobs(pdf_bytes, page, info, n, prompt, engine,
+                           layer=layer, turn_arg=turn_arg)
     results = _run_together(jobs)
     result, tile_rows = results[0], (results[1:] if n > 1 else None)
     if not isinstance(result, _Failed):
@@ -4021,8 +3712,6 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     out = {"page": page, **_pdf_page(page),
            "analysis": "" if isinstance(result, _Failed) else result,
            **vision_view.view_payload(info, engine)}
-    if info.get("turn_retry_failed"):
-        out["turn_retry_failed"] = info["turn_retry_failed"]
     if isinstance(result, _Failed):
         out["overview_not_read"] = (
             f"the whole-page view was NOT read ({_vision_error(result.exc)}); "
@@ -4080,8 +3769,6 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
                          None)
             if hedge:
                 out["reading_note"] = hedge
-    # Located lists first (they can outgrow the text), then the text.
-    _fit_located(out, TILED_RESULT_CHARS)
     if n > 1:
         _fit_tiles(out)
     return json.dumps(out)
@@ -4202,56 +3889,38 @@ def _tiles_not_read_note(rows) -> Optional[str]:
 
 
 #: A tile row's word for where its turn came from (``render_view``'s
-#: ``turn_from``, or ``retry``).
+#: ``turn_from``).
 _TURNED_WHY = {"text_layer": "the text layer shows its lettering turned",
-               "asked": "as asked",
-               "remembered": "earlier looks found this page turned",
-               "retry": "a first look found its lettering turned; read again"}
+               "asked": "as asked"}
 
 
-def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines=None,
-               layer=None, turn_arg=None, start_turn=0):
+def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
+               turn_arg=None):
     """One job per tile of an ``n`` x ``n`` overlapping split, in tile
     order; each renders its tile and reads it, and returns its row (an
     ``error`` row, naming why in plain words, when it could not). A tile
     whose text-layer lettering runs sideways is sent turned upright
     (``layer``: the page's text layer, read once for all the tiles), as is
-    every tile when the agent asked for a ``turn_arg`` or the page is
-    remembered turned (``start_turn``); with GEOTECH_VISION_TURN_RETRY a
-    tile found turned is read again upright. The call is told which lines
-    the tile's edges cut."""
+    every tile when the agent asked for a ``turn_arg``. The call is told
+    which lines the tile's edges cut."""
     from funhouse_agent import vision_view
     boxes = vision_view.tile_boxes(info["clip"], n)
 
     def one(k):
         r, c = divmod(k, n)
         try:
-            def render(turn=None, default_turn=0):
-                return vision_view.render_view(
-                    pdf_bytes, page=page, bbox=boxes[k], pad_frac=0.0,
-                    allow_jpeg=getattr(engine, "accepts_jpeg", False),
-                    engine=engine, upright=True, text_layer=layer, turn=turn,
-                    default_turn=default_turn)
-
-            img, tinfo = render(turn_arg, start_turn)
+            img, tinfo = vision_view.render_view(
+                pdf_bytes, page=page, bbox=boxes[k], pad_frac=0.0,
+                allow_jpeg=getattr(engine, "accepts_jpeg", False),
+                engine=engine, upright=True, text_layer=layer, turn=turn_arg)
             where = (f"This image is tile row {r + 1} of {n}, column {c + 1} "
                      f"of {n} of the sheet (tiles overlap slightly). Report "
                      f"only what is IN this tile, briefly.")
 
-            def tile_prompt(view_info, tag=False):
-                return _vision_prompt(
-                    f"{prompt}\n\n{where}", view_info["clip"], lines,
-                    _sent_size(view_info), turn=_sent_turn(view_info),
-                    cut=_cut_note(view_info, layer), tag=tag)
-
-            asked = _wants_turn_tag(turn_arg, tinfo)
-            text = ask_vision(engine, img, tile_prompt(tinfo, asked), "tile",
-                              where={"page": page,
-                                     "tile": f"r{r + 1}c{c + 1}"})
-            text, tinfo = _settle_turn(
-                engine, text, tinfo, asked=asked, data=pdf_bytes, page=page,
-                layer=layer, render=lambda t: render(t),
-                prompt_for=tile_prompt, kind="tile")
+            text = ask_vision(engine, img, _vision_prompt(
+                f"{prompt}\n\n{where}", _sent_size(tinfo),
+                turn=_sent_turn(tinfo), cut=_cut_note(tinfo, layer)),
+                "tile", where={"page": page, "tile": f"r{r + 1}c{c + 1}"})
             row = {"tile": f"r{r + 1}c{c + 1}",
                    "view": [round(v, 1) for v in tinfo["clip"]],
                    "view_px": [tinfo["width_px"], tinfo["height_px"]],
@@ -4259,14 +3928,11 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines=None,
                        "turned_why": _TURNED_WHY.get(
                            str(tinfo.get("turn_from")), "turned")}
                       if _sent_turn(tinfo) else {}),
-                   **({"turn_retry_failed": tinfo["turn_retry_failed"]}
-                      if tinfo.get("turn_retry_failed") else {}),
                    **({"text_px": tinfo["text_px"]}
                       if tinfo.get("text_px") else {}),
                    "analysis": text,
                    **({"cut_off": True} if _is_cut_off(text) else {})}
             _finish_answer(row, tinfo, note=False)
-            row.pop("located_note", None)
             return row
         except Exception as exc:                  # one tile, not the page
             return {"tile": f"r{r + 1}c{c + 1}",

@@ -20,14 +20,11 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     measuring stick the suites compare against, not a product. (``lean``,
     the page's own lean build, was removed with its switches in BACKLOG
     DR-39: no suite run showed a gain; ``module_work/dr39/CHECK.md``.)
-``GEOTECH_VISION_TEXT_CONTEXT``
-    ``1`` gives every page/region vision call the PDF's own text-layer lines
-    inside the view it is looking at (exact strings, with positions), or says
-    there are none.
-``GEOTECH_VISION_STRUCTURED``
-    ``1`` asks every page/region vision call to end with a machine-readable
-    list of what it located, and returns those locations as boxes in PDF
-    points the agent can pass straight back to ``render_region``.
+    (The vision switches ``GEOTECH_VISION_TEXT_CONTEXT``,
+    ``GEOTECH_VISION_STRUCTURED`` and ``GEOTECH_VISION_TURN_RETRY``, and
+    ``GEOTECH_VISION_PATCH_ALIGN`` in :mod:`funhouse_agent.vision_view`,
+    were removed in BACKLOG DR-40 for the same reason;
+    ``module_work/dr40/CHECK.md``.)
 ``GEOTECH_COVERAGE``
     ``1`` keeps a ledger of every page any tool or helper reads or looks at
     (:mod:`funhouse_agent.coverage`, derived from the tool calls, kept in
@@ -61,17 +58,6 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     where there is none it says so rather than reading the report on
     something else (BACKLOG RI-03). Never on the Document Review page
     (BACKLOG RI-34, RI-35).
-``GEOTECH_VISION_TURN_RETRY``
-    ``1`` makes a look whose image goes as the page shows it (no turn asked
-    for, none read off the text layer) end with one tagged line when most of
-    its lettering does not read left to right (``TURNED: bottom-to-top``,
-    ``top-to-bottom``, ``upside-down``). That view is then read ONCE more,
-    turned so its lettering reads upright, and that reading is the answer.
-    When looks at a page keep finding it turned (two or more, and more of the
-    page's looked-at area turned than not), later looks at the page are sent
-    turned from the start. Both pages; page and region looks and tiles
-    (BACKLOG VIS-01: the sheets Sol misread sideways in Foundry brief 5 have
-    no text layer to say which way their lettering runs).
 ``GEOTECH_FIGURE_HELPER``
     ON by default (owner, 2026-10-15, GM-92: "on everywhere"; BACKLOG
     GM-227); ``0`` with ``GEOTECH_PLOT_CODE=0`` leaves it out (plotting
@@ -158,12 +144,9 @@ from contextlib import contextmanager
 from typing import Dict, Iterator, Mapping, Optional
 
 AGENT_ENV = "GEOTECH_REVIEW_AGENT"
-VISION_TEXT_ENV = "GEOTECH_VISION_TEXT_CONTEXT"
-VISION_STRUCTURED_ENV = "GEOTECH_VISION_STRUCTURED"
 COVERAGE_ENV = "GEOTECH_COVERAGE"
 CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
 REPORT_INGEST_ENV = "GEOTECH_REPORT_INGEST"
-VISION_TURN_RETRY_ENV = "GEOTECH_VISION_TURN_RETRY"
 CITED_PAGES_ENV = "GEOTECH_CITED_PAGES"
 CITED_DOCUMENTS_ENV = "GEOTECH_CITED_DOCUMENTS"
 FIGURE_HELPER_ENV = "GEOTECH_FIGURE_HELPER"
@@ -171,9 +154,7 @@ PLOT_CODE_ENV = "GEOTECH_PLOT_CODE"
 STEP_CAP_ANSWER_ENV = "GEOTECH_STEP_CAP_ANSWER"
 JUDGMENT_CALLS_ENV = "GEOTECH_JUDGMENT_CALLS"
 
-ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
-            COVERAGE_ENV, CHECKLIST_ENV,
-            VISION_TURN_RETRY_ENV, CITED_PAGES_ENV,
+ALL_ENVS = (AGENT_ENV, COVERAGE_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
             FIGURE_HELPER_ENV, PLOT_CODE_ENV, STEP_CAP_ANSWER_ENV,
             CITED_DOCUMENTS_ENV, JUDGMENT_CALLS_ENV, REPORT_INGEST_ENV)
 
@@ -214,16 +195,6 @@ def minimal_agent() -> bool:
     return str(os.environ.get(AGENT_ENV, "")).strip().lower() == "minimal"
 
 
-def vision_text_context() -> bool:
-    """Whether vision calls are given the text layer inside their view."""
-    return _on(VISION_TEXT_ENV)
-
-
-def vision_structured() -> bool:
-    """Whether vision calls return located findings as page-point boxes."""
-    return _on(VISION_STRUCTURED_ENV)
-
-
 def coverage() -> bool:
     """Whether the coverage ledger, ``document_coverage`` and the gate are
     on (both pages)."""
@@ -240,12 +211,6 @@ def report_ingest() -> bool:
     """Whether the GeotechStaffEngineer page offers report ingest (the tool
     and the sub-agent; never the Document Review page)."""
     return _on(REPORT_INGEST_ENV)
-
-
-def vision_turn_retry() -> bool:
-    """Whether a look whose lettering is found turned is read again upright,
-    and a page found turned is sent turned (both pages)."""
-    return _on(VISION_TURN_RETRY_ENV)
 
 
 def figure_helper() -> bool:
@@ -321,9 +286,6 @@ ARMS: Dict[str, Dict[str, str]] = {
     # (which reaches only the geotech page since RI-34).
     "coverage": {COVERAGE_ENV: "1"},
     "checklist": {COVERAGE_ENV: "1", CHECKLIST_ENV: "1"},
-    # Turned lettering read again upright (VIS-01, 2026-10-14). On the
-    # DEFAULT agent, so it compares straight against `baseline`.
-    "turn_retry": {VISION_TURN_RETRY_ENV: "1"},
     # Cited pages no tool opened (EV-18, 2026-10-15): a note on the answer,
     # or the model told once. On the DEFAULT agent, against `baseline`.
     "cited_pages_note": {CITED_PAGES_ENV: "note"},
@@ -394,15 +356,12 @@ def describe() -> str:
     return ", ".join(out)
 
 
-__all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
-           "COVERAGE_ENV", "CHECKLIST_ENV",
-           "VISION_TURN_RETRY_ENV", "CITED_PAGES_ENV",
+__all__ = ["AGENT_ENV", "COVERAGE_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "FIGURE_HELPER_ENV", "PLOT_CODE_ENV", "STEP_CAP_ANSWER_ENV",
            "CITED_DOCUMENTS_ENV", "JUDGMENT_CALLS_ENV", "REPORT_INGEST_ENV",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
-           "vision_text_context", "vision_structured",
-           "coverage", "checklist", "report_ingest", "vision_turn_retry",
+           "coverage", "checklist", "report_ingest",
            "figure_helper", "plot_code",
            "step_cap_answer", "judgment_calls",
            "cited_pages", "cited_documents",

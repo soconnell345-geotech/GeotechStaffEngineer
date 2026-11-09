@@ -413,8 +413,8 @@ the eyes). What changed on master after 5.33.0, in short:
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
   `analyze_pdf_page` / `render_region`; boxes right on sideways sheets; a
   zoom that cuts lines of lettering widens to take them in or says which
-  edge cuts them; the turned re-read behind `GEOTECH_VISION_TURN_RETRY`
-  (OFF). The markup check keeps the agent correcting through checks 1-3,
+  edge cuts them (the turned re-read behind `GEOTECH_VISION_TURN_RETRY`
+  was removed in DR-40, never measured). The markup check keeps the agent correcting through checks 1-3,
   names unconfirmed marks at check 4, and returns `found_bbox` for a
   misplaced mark (DR-15, DR-16).
 - **The record** (`activity.jsonl`, EV-14): token use on the Prompter route,

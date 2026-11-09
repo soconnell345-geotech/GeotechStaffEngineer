@@ -156,12 +156,9 @@ def test_only_the_three_ruled_switches_are_on_by_default(monkeypatch):
         "GEOTECH_PLOT_CODE"}
     readers = {
         review_flags.AGENT_ENV: review_flags.minimal_agent,
-        review_flags.VISION_TEXT_ENV: review_flags.vision_text_context,
-        review_flags.VISION_STRUCTURED_ENV: review_flags.vision_structured,
         review_flags.COVERAGE_ENV: review_flags.coverage,
         review_flags.CHECKLIST_ENV: review_flags.checklist,
         review_flags.REPORT_INGEST_ENV: review_flags.report_ingest,
-        review_flags.VISION_TURN_RETRY_ENV: review_flags.vision_turn_retry,
         review_flags.CITED_PAGES_ENV:
             lambda: review_flags.cited_pages() != "off",
         review_flags.CITED_DOCUMENTS_ENV:

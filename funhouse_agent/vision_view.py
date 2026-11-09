@@ -88,7 +88,7 @@ import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import (
-    Any, Dict, Iterator, List, Optional, Sequence, Tuple,
+    Any, Dict, Iterator, Optional, Sequence, Tuple,
 )
 
 # The page and image frames, tiles, zoom windows and turned lettering moved
@@ -128,20 +128,6 @@ DEFAULT_MAX_PX = 2048
 
 #: An image edge below this is not a sensible cap (a typo, not a choice).
 _MIN_MAX_PX = 256
-
-#: ``1`` renders every image with both sides a whole number of
-#: :data:`PATCH_PX` patches (OFF by default — a hypothesis to measure, not a
-#: fix). GPT-5.4's pixel boxes came back stretched in y by 1.4-1.7 % and not
-#: at all in x, on four images whose height was not a multiple of 32 px and
-#: whose width (2,048) was; each stretch matched the height rounded up to
-#: whole 32 px patches (1344 / 1325 = 1.014; Foundry brief 4, part A). If the
-#: model works in a frame of whole patches, an image that already is one
-#: removes the stretch. Sol showed none either way. See
-#: :func:`align_to_patches` and module_work/LIVE_TEST_QUEUE.md.
-PATCH_ALIGN_ENV = "GEOTECH_VISION_PATCH_ALIGN"
-
-#: The patch a vision model of the GPT-5 family cuts an image into.
-PATCH_PX = 32
 
 #: ``robust`` (default, owner 2026-09-25: "robust first, then maybe we can
 #: dial back for efficiency later"): every image goes at the largest detail
@@ -397,7 +383,6 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
                 engine=None, upright: bool = False,
                 turn: Optional[int] = None,
                 text_layer: Optional["TextLayer"] = None,
-                default_turn: int = 0,
                 ) -> Tuple[bytes, Dict[str, Any]]:
     """Render ``page`` (or ``bbox`` on it) of a PDF for the vision model.
 
@@ -413,16 +398,15 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
 
     ``upright`` sends the view turned so that its lettering reads upright,
     when the page's text layer says which way it runs (:func:`reading_turn`;
-    ``text_layer`` is that layer when the caller already has it), and turned
-    ``default_turn`` when the text layer cannot say (a turn earlier looks
-    found for the page). ``turn`` (0/90/180/270, clockwise) turns it by hand
-    instead. A turned image carries ``info['turn']`` and where the turn came
-    from (``info['turn_from']``: ``text_layer``, ``remembered`` or
-    ``asked``), and ``width_px``/``height_px`` are its size AS SENT; ``clip``
+    ``text_layer`` is that layer when the caller already has it); when the
+    text layer cannot say it goes as the page shows it. ``turn``
+    (0/90/180/270, clockwise) turns it by hand instead. A turned image
+    carries ``info['turn']`` and where the turn came from
+    (``info['turn_from']``: ``text_layer`` or ``asked``), and ``width_px``/``height_px`` are its size AS SENT; ``clip``
     is still the page rect it shows, as the page displays it — pixel boxes
     on it go through :func:`unturn_px_box` (which :func:`px_to_grid`,
-    :func:`px_box_to_page`, :func:`boxes_to_grid` and :func:`split_located`
-    do when given the turn). ``info['direction_known']`` says the text layer
+    :func:`px_box_to_page` and :func:`boxes_to_grid` do when given the
+    turn). ``info['direction_known']`` says the text layer
     decided the view's direction (upright included).
     """
     from planlens.document import Document
@@ -449,8 +433,6 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
                 break
             kwargs["dpi"] = float(info["dpi"]) * (cap - 1.0) / side
             data, info = doc.render(int(page), **kwargs)
-        if patch_align():
-            data, info = align_to_patches(data, info, cap)
         quarter, source, known = 0, None, None
         if turn is not None:
             quarter = int(turn) % 360 if int(turn) % 90 == 0 else 0
@@ -459,11 +441,7 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
             layer = (text_layer if text_layer is not None
                      else _text_layer_of(doc, int(page)))
             known = reading_turn(layer, info["clip"], default=None)
-            if known is None:
-                quarter = int(default_turn or 0) % 360
-                quarter = quarter if quarter in TURNS else 0
-                source = "remembered"
-            else:
+            if known is not None:
                 quarter, source = known, "text_layer"
         if quarter:
             data, info = turn_image(data, info, quarter)
@@ -475,53 +453,6 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
         return data, info
     finally:
         doc.close()
-
-
-def patch_align() -> bool:
-    """Whether images are padded to whole :data:`PATCH_PX` patches
-    (``GEOTECH_VISION_PATCH_ALIGN``, OFF by default)."""
-    return str(os.environ.get(PATCH_ALIGN_ENV, "")).strip().lower() in (
-        "1", "true", "yes", "on")
-
-
-def align_to_patches(data: bytes, info: Dict[str, Any],
-                     cap: Optional[int] = None
-                     ) -> Tuple[bytes, Dict[str, Any]]:
-    """``(image, info)`` with both sides of the image rounded UP to whole
-    :data:`PATCH_PX` patches — at most 31 px of white paper added on the
-    right and at the bottom — and the ``clip`` (the view) widened by exactly
-    the points those pixels show, so a box converted with the view and the
-    size sent lands where it did before. ``info['patch_aligned']`` is the
-    ``[x, y]`` pixels added. Left as it was when it already fits, when the
-    padded side would pass ``cap``, or when the image cannot be decoded."""
-    import math
-    w, h = int(info["width_px"]), int(info["height_px"])
-    tw = int(math.ceil(w / PATCH_PX)) * PATCH_PX
-    th = int(math.ceil(h / PATCH_PX)) * PATCH_PX
-    if (tw, th) == (w, h) or (cap and max(tw, th) > cap):
-        return data, info
-    try:
-        import pymupdf
-        src = pymupdf.Pixmap(data)
-        if src.alpha:
-            src = pymupdf.Pixmap(src, 0)
-        if (src.width, src.height) != (w, h):
-            return data, info
-        canvas = pymupdf.Pixmap(src.colorspace, pymupdf.IRect(0, 0, tw, th), False)
-        canvas.clear_with(255)
-        canvas.copy(src, pymupdf.IRect(0, 0, w, h))
-        fmt = str(info.get("format") or "png").lower()
-        out = (canvas.tobytes("jpeg", jpg_quality=85) if fmt == "jpeg"
-               else canvas.tobytes("png"))
-    except Exception:                     # a padding that fails changes nothing
-        return data, info
-    x0, y0, x1, y1 = (float(v) for v in info["clip"])
-    aligned = dict(info)
-    aligned["clip"] = [x0, y0, x0 + (x1 - x0) * tw / w,
-                       y0 + (y1 - y0) * th / h]
-    aligned["width_px"], aligned["height_px"] = tw, th
-    aligned["patch_aligned"] = [tw - w, th - h]
-    return out, aligned
 
 
 def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
@@ -598,220 +529,6 @@ def with_location(prompt: str, size: Optional[Sequence[int]] = None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Grounding a vision call (GEOTECH_VISION_TEXT_CONTEXT / _STRUCTURED)
-# ---------------------------------------------------------------------------
-#
-# A vision call is a fresh, one-shot call: it sees the image and the agent's
-# prompt and nothing else. On most CAD sheets the exact words are in the PDF's
-# text layer, and a vision model reading 5-point lettering off pixels misreads
-# characters the text layer already has right (the review of 2026-09-26). So,
-# behind a switch, the call is told which strings the text layer holds inside
-# its view and where — or that there are none — and, behind another, it is
-# asked for what it located in a form the tools can turn into page boxes.
-
-#: Most characters of text-layer lines put in front of one vision call.
-TEXT_CONTEXT_CHARS = 3500
-
-#: A line more than this fraction U+FFFD is not text worth quoting.
-_UNMAPPED_LINE = 0.3
-
-
-def page_lines(source, page: int
-               ) -> Optional[Tuple[List[Tuple[str, Tuple[float, ...]]], bool]]:
-    """The page's text-layer lines as ``(text, bbox)`` in displayed points,
-    and whether the page's text layer is reliable. ``([], True)`` when the
-    page has no text layer; ``None`` when the page could not be read at all
-    (so nobody tells a vision call "no text layer" on a guess). Never
-    raises."""
-    try:
-        from planlens.document import Document
-        doc = (Document(content=source) if isinstance(source, (bytes, bytearray))
-               else Document(filepath=str(source)))
-    except Exception:
-        return None
-    try:
-        try:
-            reliable = bool(getattr(doc.summary(int(page)), "text_reliable", True))
-        except Exception:
-            reliable = True
-        pc = doc.page(int(page), tables=False)
-        out = []
-        for ln in pc.lines:
-            text = " ".join(str(ln.text or "").split())
-            if not text:
-                continue
-            if text.count("�") > _UNMAPPED_LINE * len(text):
-                continue
-            out.append((text, tuple(float(v) for v in ln.bbox)))
-        return out, reliable
-    except Exception:
-        return None
-    finally:
-        try:
-            doc.close()
-        except Exception:
-            pass
-
-
-def text_context(lines, clip, reliable: bool = True,
-                 limit: int = TEXT_CONTEXT_CHARS,
-                 size: Optional[Sequence[int]] = None,
-                 turn: int = 0) -> str:
-    """The block put in front of a vision prompt: the text-layer lines whose
-    centre falls inside ``clip`` (points), each with its box on the image of
-    that view — in pixels (``px=[..]``) when the image's ``size`` (w, h) is
-    given, the same convention the answer is asked for, otherwise on the
-    0-999 grid — or a plain statement that the view has no text layer, so
-    every word must be read off the image. ``turn``: the image is sent
-    turned that many degrees clockwise (``size`` as sent), and the pixel
-    boxes are given on it as sent."""
-    x0, y0, x1, y1 = (float(v) for v in clip)
-    w, h = max(x1 - x0, 1e-6), max(y1 - y0, 1e-6)
-    rows = []
-    for text, (bx0, by0, bx1, by1) in lines:
-        cx, cy = (bx0 + bx1) / 2.0, (by0 + by1) / 2.0
-        if not (x0 <= cx <= x1 and y0 <= cy <= y1):
-            continue
-        if size:
-            sw, sh = (float(v) for v in size)
-            uw, uh = unturned_size(size, turn)
-            box = turn_px_box([(bx0 - x0) / w * uw, (by0 - y0) / h * uh,
-                               (bx1 - x0) / w * uw, (by1 - y0) / h * uh],
-                              (uw, uh), turn)
-            box = [max(0, min(round(sw), round(box[0]))),
-                   max(0, min(round(sh), round(box[1]))),
-                   max(0, min(round(sw), round(box[2]))),
-                   max(0, min(round(sh), round(box[3])))]
-            rows.append(f"px={box} {text}")
-            continue
-        box = [max(0, min(999, round((bx0 - x0) / w * 999))),
-               max(0, min(999, round((by0 - y0) / h * 999))),
-               max(0, min(999, round((bx1 - x0) / w * 999))),
-               max(0, min(999, round((by1 - y0) / h * 999)))]
-        rows.append(f"{box} {text}")
-    if not rows:
-        return ("This view has NO text layer: every word in it has to be read "
-                "from the image itself.")
-    grid = ("in pixels of the image (px=[x0, y0, x1, y1])" if size
-            else "on the same 0-999 grid as the image")
-    head = (f"The PDF's own text layer inside this view (exact strings, each "
-            f"with its box {grid}). Where a string "
-            "below covers what you are reading, use it exactly; read from the "
-            "image only what it does not cover (lettering drawn as lines, "
-            "symbols, how things connect), and say which is which.")
-    if not reliable:
-        head += (" WARNING: this page's text layer is partly undecodable, so "
-                 "check each string against the image.")
-    body, used, dropped = [], 0, 0
-    for r in rows:
-        if used + len(r) + 1 > limit:
-            dropped += 1
-            continue
-        body.append(r)
-        used += len(r) + 1
-    tail = f"\n... and {dropped} more line(s) not listed." if dropped else ""
-    return head + "\n" + "\n".join(body) + tail
-
-
-#: Appended to a vision prompt when structured locations are switched on.
-LOCATED_INSTRUCTION = (
-    "After your answer, end with ONE line that starts with LOCATED: followed by "
-    "a JSON list of the things you located, each "
-    '{"what": short label, "text": the exact characters you read or null, '
-    '"box": [x0, y0, x1, y1] on the 0-999 grid, "sure": true or false}. '
-    "Write LOCATED: [] if you located nothing.")
-
-
-#: The same, asking for each box in pixels of the image (``{w}`` x ``{h}``).
-LOCATED_PX_INSTRUCTION = (
-    "After your answer, end with ONE line that starts with LOCATED: followed by "
-    "a JSON list of the things you located, each "
-    '{{"what": short label, "text": the exact characters you read or null, '
-    '"px": [x0, y0, x1, y1] in pixels of this {w} x {h} image, "sure": true '
-    "or false}}. Write LOCATED: [] if you located nothing.")
-
-
-def with_locations(prompt: str, size: Optional[Sequence[int]] = None) -> str:
-    """``prompt`` with the structured LOCATED instruction appended — boxes in
-    pixels of an image of ``size`` (w, h), or with no size on the 0-999
-    grid."""
-    if size:
-        w, h = (int(v) for v in size)
-        return (f"{prompt.rstrip()}\n\n"
-                f"{LOCATED_PX_INSTRUCTION.format(w=w, h=h)}")
-    return f"{prompt.rstrip()}\n\n{LOCATED_INSTRUCTION}"
-
-
-def split_located(text: str, view, size: Optional[Sequence[int]] = None,
-                  turn: int = 0) -> Tuple[str, List[Dict[str, Any]]]:
-    """``(answer without the LOCATED line, located items)`` — each item's
-    box given as ``image_box`` (0-999) and as ``page_bbox`` in PDF points on
-    the page, which ``render_region(bbox=...)`` takes directly. An item's
-    ``px`` box (pixels of the image, ``size`` = its w, h as sent, ``turn``
-    = degrees clockwise it was turned before sending) is converted exactly;
-    an old-style ``box`` is read on the 0-999 grid (in pixels if a value is
-    past 999 and the size is known). Never raises: an answer with no
-    parseable LOCATED line comes back whole with no items."""
-    import json as _json
-    if not text or "LOCATED:" not in text:
-        return text, []
-    at = text.rfind("LOCATED:")
-    head, tail = text[:at].rstrip(), text[at + len("LOCATED:"):]
-    start = tail.find("[")
-    if start < 0:
-        return text, []
-    depth, end = 0, None
-    for i, ch in enumerate(tail[start:], start):
-        if ch == "[":
-            depth += 1
-        elif ch == "]":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
-    if end is None:
-        return text, []
-    try:
-        items = _json.loads(tail[start:end])
-    except ValueError:
-        return text, []
-    after = tail[end:].strip()
-    if after:                       # anything written after the list stays
-        head = f"{head}\n{after}" if head else after
-    out = []
-    for it in items if isinstance(items, list) else []:
-        if not isinstance(it, dict):
-            continue
-        row = {k: it.get(k) for k in ("what", "text", "sure") if k in it}
-        px, box = it.get("px"), it.get("box")
-        try:
-            if size and isinstance(px, (list, tuple)) and len(px) == 4:
-                pxb = [float(v) for v in px]
-            elif (size and isinstance(box, (list, tuple)) and len(box) == 4
-                  and any(float(v) > _GRID_MAX for v in box)):
-                pxb = [float(v) for v in box]        # a pixel box, untagged
-            else:
-                pxb = None
-            if pxb is not None:
-                row["image_box"] = px_to_grid(pxb, size, turn)
-                row["page_bbox"] = [round(v, 1) for v in
-                                    px_box_to_page(view, pxb, size, turn)]
-            elif isinstance(box, (list, tuple)) and len(box) == 4:
-                row["image_box"] = [float(v) for v in box]
-                row["page_bbox"] = [round(v, 1) for v in
-                                    image_box_to_page(view, box)]
-            if "page_bbox" in row:
-                window = zoom_window(view, row["page_bbox"])
-                if window is not None:
-                    row["zoom_bbox"] = window
-        except (TypeError, ValueError):
-            for k in ("image_box", "page_bbox", "zoom_bbox"):
-                row.pop(k, None)
-        out.append(row)
-    return head, out
-
-
-# ---------------------------------------------------------------------------
 # Turned lettering (VIS-01, VIS-05) and lettering cut by a window (VIS-04)
 # ---------------------------------------------------------------------------
 #
@@ -845,10 +562,7 @@ __all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "POLICY_ENV",
            "LOCATION_ERROR_FRAC", "MIN_LOCATION_ERROR_PT", "MARK_VIEW_PT",
            "location_error", "precision_note", "NOT_A_MEASUREMENT",
            "zoom_pad", "zoom_window",
-           "TEXT_CONTEXT_CHARS", "page_lines", "text_context",
-           "LOCATED_INSTRUCTION", "LOCATED_PX_INSTRUCTION", "with_locations",
-           "split_located", "BRACKETED_NOTE", "bracketed_note",
-           "PATCH_ALIGN_ENV", "PATCH_PX", "patch_align", "align_to_patches",
+           "BRACKETED_NOTE", "bracketed_note",
            "AIM_TOLERANCE_FRAC", "aim_tolerance", "answer_boxes",
            "REGION_GRID", "FRAME_INSTRUCTION",
            "TURNS", "TURN_SHARE", "TURN_MIN_CHARS", "TURN_MIN_CHARS_PER_SQ_IN",
