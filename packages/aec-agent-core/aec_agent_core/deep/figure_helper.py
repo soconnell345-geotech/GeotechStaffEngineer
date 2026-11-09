@@ -199,7 +199,7 @@ _KINDS = {"plot_data": "plot_data call", "plot_code": "plot_code script"}
 def _example_names(with_code: bool = False) -> list:
     """The examples offered: the plot_data calls, then the plot_code
     scripts when the helper has plot_code."""
-    from funhouse_agent.charts.figure_examples import (code_example_names,
+    from aec_agent_core.charts.figure_examples import (code_example_names,
                                                 example_names)
     return example_names() + (code_example_names() if with_code else [])
 
@@ -210,7 +210,7 @@ def _closest_example(want: str, with_code: bool = False) -> Optional[str]:
     spelling."""
     import difflib
     import re
-    from funhouse_agent.charts.figure_examples import CODE_EXAMPLES, EXAMPLES
+    from aec_agent_core.charts.figure_examples import CODE_EXAMPLES, EXAMPLES
     names = _example_names(with_code)
     shows = {n: (EXAMPLES.get(n) or CODE_EXAMPLES[n])["shows"]
              for n in names}
@@ -238,7 +238,7 @@ def make_figure_examples_tool(plot_code: bool = False) -> StructuredTool:
 
     def figure_examples(name: str = "") -> str:
         """List the worked figure examples, or return one in full."""
-        from funhouse_agent.charts.figure_examples import example
+        from aec_agent_core.charts.figure_examples import example
         names = _example_names(plot_code)
         if not name:
             listing = []
@@ -311,7 +311,7 @@ def _plot_code_tool():
     from funhouse_agent import review_flags
     if not review_flags.plot_code():
         return None
-    from funhouse_agent import plot_box
+    from aec_agent_core import plot_box
     if not plot_box.available():
         return None
     return plot_box.make_plot_code_tool()
@@ -422,7 +422,7 @@ def nearest_example(brief: str, with_code: bool = False) -> Optional[str]:
     candidate sharing the most telling words wins, a word of its name or
     what it shows counting twice one of its reasons. ``None`` when there is
     no candidate: a figure no example is like gets none."""
-    from funhouse_agent.charts.figure_examples import CODE_EXAMPLES, EXAMPLES
+    from aec_agent_core.charts.figure_examples import CODE_EXAMPLES, EXAMPLES
     want = _words(brief)
     best, best_score = None, 0
     for name in _example_names(with_code):
@@ -453,7 +453,7 @@ def brief_with_example(brief: str, with_code: bool = False) -> str:
     name = nearest_example(brief, with_code)
     if name is None:
         return brief
-    from funhouse_agent.charts.figure_examples import example
+    from aec_agent_core.charts.figure_examples import example
     ex = example(name)
     lines = [brief.rstrip(), "",
              f"{EXAMPLE_HEADING} (the nearest to this brief, picked in "
@@ -548,7 +548,7 @@ def _drawn_files(tool: str, text: str):
 def _code_still_kept(path: str) -> bool:
     """Whether a kept code file is still there (a retired figure's goes)."""
     try:
-        from funhouse_agent._fileio import host_output_dir
+        from aec_agent_core._fileio import host_output_dir
         root = host_output_dir()
     except Exception:                                      # noqa: BLE001
         root = None
@@ -580,7 +580,7 @@ def _record_draws(rec):
     """``(draws, looks, look copies, code files, draws by tool)`` from a
     helper's record: each successful draw's figure files, in order; each
     look as ``(figure, draws before it, what it found)``."""
-    from funhouse_agent.plot_box import DRAW_TOOLS, drew_figure
+    from aec_agent_core.plot_box import DRAW_TOOLS, drew_figure
     calls = {}
     for step in list(rec.steps):
         if step.get("kind") == "model":
@@ -680,14 +680,14 @@ def redraw_brief(brief, root=None, named_from=None):
     has kept code, that code and what a redraw of it does
     (:func:`funhouse_agent.plot_box.figures.redraw_note`); the brief
     unchanged when it names none or carries the code already."""
-    from funhouse_agent.plot_box import figures
+    from aec_agent_core.plot_box import figures
     if not isinstance(brief, str) or figures.REDRAW_HEADING in brief:
         return brief, []
     if named_from is None:
         named_from = brief
     if root is None:
         try:
-            from funhouse_agent._fileio import host_output_dir
+            from aec_agent_core._fileio import host_output_dir
             root = host_output_dir()
         except Exception:                                  # noqa: BLE001
             root = None
@@ -776,14 +776,3 @@ __all__ = ["FIGURE_CHECKLIST", "FIGURE_HELPER_DESCRIPTION",
            "brief_with_example", "redraw_brief", "looks_report",
            "looked_at", "FigureTasks"]
 
-
-#: The calc helper's names, in :mod:`funhouse_agent.deep.calc_figures` since
-#: INF-30 step 5 (the calc helper is the geotech page's), from their old path.
-_MOVED = ("CALC_REDRAW_NOTE", "FigureLooks", "MODULE_FIGURE_LOOK")
-
-
-def __getattr__(name):
-    if name in _MOVED:
-        from funhouse_agent.deep import calc_figures
-        return getattr(calc_figures, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

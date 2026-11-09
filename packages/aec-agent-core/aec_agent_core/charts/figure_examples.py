@@ -978,7 +978,7 @@ def example(name: str) -> dict:
 
 def render_examples(out_dir: str, names: Optional[List[str]] = None) -> dict:
     """Draw the examples with plot_data: ``{name: png_path}``."""
-    from funhouse_agent.charts.data_plot import render_data_plot
+    from aec_agent_core.charts.data_plot import render_data_plot
     os.makedirs(out_dir, exist_ok=True)
     paths = {}
     for name in names or example_names():

@@ -25,9 +25,10 @@ from langchain_core.messages import AIMessage, ToolMessage  # noqa: E402
 from funhouse_agent import plot_box, review_flags  # noqa: E402
 from funhouse_agent._fileio import working_dir_bound  # noqa: E402
 from funhouse_agent.deep import keep_work  # noqa: E402
+from funhouse_agent.deep.calc_figures import (  # noqa: E402
+    CALC_REDRAW_NOTE, FigureLooks)
 from funhouse_agent.deep.figure_helper import (  # noqa: E402
-    CALC_REDRAW_NOTE, FIGURE_HELPER_DESCRIPTION, FIGURE_HELPER_NAME,
-    FigureLooks, FigureTasks, looks_report)
+    FIGURE_HELPER_DESCRIPTION, FIGURE_HELPER_NAME, FigureTasks, looks_report)
 from funhouse_agent.plot_box import figures  # noqa: E402
 
 DRAW = ("import matplotlib.pyplot as plt\nfig, ax = plt.subplots()\n"

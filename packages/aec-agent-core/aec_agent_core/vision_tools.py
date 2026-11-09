@@ -1046,7 +1046,7 @@ def _dispatch_list_files(arguments):
     at_home = roots is not None and _within(abs_path, roots[0]) \
         and os.path.normcase(os.path.realpath(abs_path)) == \
         os.path.normcase(os.path.realpath(roots[0]))
-    from funhouse_agent.plot_box.figures import CODE_DIR
+    from aec_agent_core.plot_box.figures import CODE_DIR
     try:
         entries, truncated = _collect_entries(
             abs_path, depth, max_entries, _LIST_FILES_CHAR_BUDGET,
