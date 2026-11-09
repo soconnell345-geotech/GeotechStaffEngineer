@@ -24,8 +24,8 @@ import pytest
 pytest.importorskip("planlens.tools")
 pymupdf = pytest.importorskip("pymupdf")
 
-from funhouse_agent import _fileio, document_tools, vision_tools  # noqa: E402
-from funhouse_agent.vision_tools import (  # noqa: E402
+from aec_agent_core import _fileio, document_tools, vision_tools  # noqa: E402
+from aec_agent_core.vision_tools import (  # noqa: E402
     SCRATCH_DIR, _resolve_attachment_or_path, dispatch_extended_tool)
 from planlens.testing import build_synthetic_review_document  # noqa: E402
 

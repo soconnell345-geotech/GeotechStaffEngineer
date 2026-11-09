@@ -1,4 +1,4 @@
-"""Offline tests for funhouse_agent.runtime_check.ensure_typing_extensions.
+"""Offline tests for aec_agent_core.runtime_check.ensure_typing_extensions.
 
 These simulate the Databricks "stale pre-imported typing_extensions" situation by
 swapping a FAKE module into ``sys.modules`` and a FAKE installed-dist lookup —
@@ -11,8 +11,8 @@ import types
 
 import pytest
 
-from funhouse_agent import runtime_check
-from funhouse_agent.runtime_check import (
+from aec_agent_core import runtime_check
+from aec_agent_core.runtime_check import (
     TypingExtensionsCheck,
     TypingExtensionsError,
     ensure_typing_extensions,
