@@ -9,8 +9,9 @@ in its source), so the same endpoint is driven here with ``langchain-openai``
 — which the Foundry route in :mod:`webapp.engine_config` already uses — and
 nothing else new.
 
-The four settings, in CfA's names, read through
-:mod:`webapp.tinyapps_settings` (env var, else Key Vault on the deployment,
+The four settings, in CfA's names, read through the page's settings reader
+(the hook ``prompter.get_setting`` below; on the GeotechStaffEngineer pages
+:mod:`webapp.tinyapps_settings`: env var, else Key Vault on the deployment,
 else a local ``.env``)::
 
     PROMPTER_URL         the endpoint their engineers give, e.g.
@@ -37,51 +38,31 @@ else. :func:`register` installs the model builder the app already looks for
 deployment's model to the sidebar picker, so nothing downstream knows which
 host it is on.
 
-**Per-tester keys** (owner, 2026-10-09). On the published deployment each
-tester gets an AI key, and so a budget, of their own. For a caller the
-proxy header identified (``Identity.multi_user``), :func:`resolve_for` takes,
-first that applies:
+**Whose key serves a caller** is the page's to say (BACKLOG INF-32, the
+app split's step 11 (a)): this module moved into the shared core, and the
+Key Vault lookup and the per-tester keys by sign-in name stayed with the
+page (``webapp.tinyapps_keys`` on the GeotechStaffEngineer pages). The page
+fills three hooks (:mod:`aec_agent_core.hooks`):
 
-1. the per-tester secret ``PROMPTER-API-KEY--<SUFFIX>`` (optionally
-   ``PROMPTER-MODEL--<SUFFIX>`` and ``PROMPTER-URL--<SUFFIX>``, else the
-   shared ``PROMPTER-MODEL`` / ``PROMPTER-URL``). ``<SUFFIX>`` is the
-   identity key in Key Vault's alphabet (:func:`tester_suffix`):
-   ``CORP\\jdoe`` -> ``CORP-JDOE``, every run of characters other than a
-   letter or digit -> one hyphen. As an App Service setting or a ``.env``
-   line the same name is spelt with underscores
-   (``PROMPTER_API_KEY__CORP_JDOE``);
-2. the JSON secret ``PROMPTER-KEYS``:
-   ``{"CORP\\\\jdoe": {"key": "...", "model": "...", "url": "..."}}`` —
-   identities matched case-insensitively, ``model`` / ``url`` optional, a
-   bare string value taken as the key;
-3. the shared ``PROMPTER-API-KEY``, ONLY when
-   ``PROMPTER_SHARED_KEY_FALLBACK`` is on (``1``/``true``/``yes``/``on``).
-
-Nothing found is a polite refusal (:class:`NoPrompterKey`, shown as written:
-"No AI key is set up for <name> yet — ask the app owner"), so the key list
-is the pilot's access list. A single-user host (``DEV_IDENTITY`` on dosdev,
-a laptop, Databricks, or no header at all) uses the shared key, as before.
-The builder resolves the key for the caller it is handed EVERY time it is
-called and caches no client: each conversation's agent is built with its
-own user's key. Missing secrets are not cached
-(:func:`webapp.tinyapps_settings.get_setting`), so a tester added to the
-vault is served at their next new conversation, without a restart; a
-rotated key is read at the next restart, as the shared key always was. No
-key is ever logged or shown — only its SOURCE (:func:`key_source_report`).
+- ``prompter.get_setting(name)``: how a setting is read (the page: env
+  var, else Key Vault, else ``.env``); unfilled, the environment only;
+- ``prompter.resolve_for(ident)``: the :class:`ResolvedPrompter` for one
+  caller, or :class:`NoPrompterKey`; unfilled, the shared settings for
+  everyone (a single-user host);
+- ``prompter.tester_keys_possible()``: could per-tester keys serve someone
+  although the shared set is incomplete; unfilled, no.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 import ssl
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Optional
 
 from aec_agent_core.engine_config import EngineUnavailable
-from webapp.tinyapps_settings import get_setting
+from aec_agent_core.hooks import get_hook
 
 log = logging.getLogger(__name__)
 
@@ -90,17 +71,10 @@ ENV_MODEL = "PROMPTER_MODEL"
 ENV_KEY = "PROMPTER_API_KEY"
 ENV_CA_BUNDLE = "PROMPTER_CA_BUNDLE"
 DISABLE_STREAMING_ENV = "GEOTECH_PROMPTER_DISABLE_STREAMING"
-
-#: The optional JSON secret mapping ``DOMAIN\\user`` -> ``{key, model?, url?}``.
-ENV_KEYS = "PROMPTER_KEYS"
 #: On a multi-user deployment, may a tester with no key of their own use the
-#: shared ``PROMPTER_API_KEY``? Off unless set truthy.
+#: shared ``PROMPTER_API_KEY``? Off unless set truthy (read by the page's
+#: ``prompter.resolve_for``; named here for the key-source text below).
 SHARED_FALLBACK_ENV = "PROMPTER_SHARED_KEY_FALLBACK"
-#: Between a setting's name and the tester suffix: ``PROMPTER-API-KEY--CORP-JDOE``.
-#: The suffix never holds two hyphens in a row, so this split is unambiguous.
-TESTER_SEPARATOR = "--"
-#: Key Vault secret names: 1-127 letters, digits and hyphens.
-KEY_VAULT_NAME_MAX = 127
 
 #: Where a caller's key came from (the diagnostics panel shows THIS, never
 #: the key).
@@ -256,7 +230,16 @@ def configured() -> bool:
     return settings() is not None
 
 
-# --------------------------------------------------------- per-tester keys
+# ------------------------------------------------- whose key serves a caller
+
+def get_setting(name: str) -> Optional[str]:
+    """One setting by name: the page's reader (the hook
+    ``prompter.get_setting``), else the environment."""
+    hook = get_hook("prompter.get_setting")
+    if hook is not None:
+        return hook(name)
+    return os.environ.get(name)
+
 
 class NoPrompterKey(EngineUnavailable):
     """A signed-in tester with no AI key of their own (and no shared-key
@@ -289,176 +272,28 @@ def _truthy(value: Optional[str]) -> bool:
     return str(value or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def shared_fallback_allowed() -> bool:
-    """``PROMPTER_SHARED_KEY_FALLBACK`` is on (env, Key Vault or ``.env``)."""
-    return _truthy(get_setting(SHARED_FALLBACK_ENV))
-
-
-def tester_suffix(ident) -> str:
-    """The identity key in Key Vault's alphabet: ``corp__j.doe`` ->
-    ``CORP-J-DOE``. Every run of characters other than a letter or a digit
-    becomes ONE hyphen, ends trimmed; upper case, the spelling
-    :func:`webapp.tinyapps_settings.get_setting` asks the vault for. Two
-    names that differ only in punctuation (``j.doe`` / ``j_doe``) share a
-    suffix: give such testers a ``PROMPTER-KEYS`` entry instead."""
-    key = str(getattr(ident, "key", "") or "")
-    return re.sub(r"[^A-Za-z0-9]+", "-", key).strip("-").upper()
-
-
-def tester_secret_name(setting: str, ident) -> Optional[str]:
-    """``PROMPTER-API-KEY--CORP-JDOE`` for ``setting="PROMPTER_API_KEY"`` and
-    ``CORP\\jdoe``; None when the identity gives no suffix or the name would
-    pass Key Vault's 127-character limit (then only ``PROMPTER-KEYS`` can
-    serve that person)."""
-    suffix = tester_suffix(ident)
-    if not suffix:
-        return None
-    name = (setting.replace("_", "-").upper() + TESTER_SEPARATOR + suffix)
-    return name if len(name) <= KEY_VAULT_NAME_MAX else None
-
-
-def _normal_principal(text: str) -> str:
-    """``CORP\\JDoe`` / ``jdoe@corp`` -> ``corp\\jdoe`` (case-insensitive,
-    the spelling ``Identity.qualified_name`` gives)."""
-    t = str(text or "").strip()
-    if "\\" not in t and "@" in t:
-        user, _, domain = t.rpartition("@")
-        t = f"{domain}\\{user}"
-    return t.lower()
-
-
-def key_mapping() -> Dict[str, dict]:
-    """``PROMPTER_KEYS`` parsed: ``{normalised principal: {key, model, url}}``.
-
-    A value that is not JSON, or an entry without a key, is left out with a
-    warning that names WHERE the fault is and never quotes the text (it holds
-    keys). ``{}`` when the setting is absent."""
-    raw = _text(ENV_KEYS)
-    if not raw:
-        return {}
-    try:
-        data = json.loads(raw)
-    except ValueError as exc:
-        log.warning("%s is not valid JSON (%s at character %s); ignored",
-                    ENV_KEYS, getattr(exc, "msg", "parse error"),
-                    getattr(exc, "pos", "?"))
-        return {}
-    if not isinstance(data, dict):
-        log.warning("%s must be a JSON object of identity -> key; ignored",
-                    ENV_KEYS)
-        return {}
-    out: Dict[str, dict] = {}
-    for who, entry in data.items():
-        if isinstance(entry, str):
-            entry = {"key": entry}
-        if not isinstance(entry, dict):
-            continue
-        key = str(entry.get("key") or entry.get("api_key") or "").strip()
-        if not key:
-            log.warning("%s: the entry for %r has no key; ignored",
-                        ENV_KEYS, who)
-            continue
-        out[_normal_principal(who)] = {
-            "key": key,
-            "model": str(entry.get("model") or "").strip(),
-            "url": str(entry.get("url") or "").strip()}
-    return out
-
-
-def no_key_message(ident, secret_name: Optional[str]) -> str:
-    """The polite refusal: who, what to do, and — for the app owner — the
-    secret NAME that would let this person in. Never a key."""
-    who = getattr(ident, "display_name", "") or "you"
-    msg = f"No AI key is set up for **{who}** yet — ask the app owner."
-    if secret_name:
-        msg += (f" (For the app owner: this person's key goes in the Key "
-                f"Vault secret `{secret_name}`.)")
-    return msg
-
-
-def _complete(ident, source: str, key: str, url: str, model: str,
-              own_model: bool, secret_name: Optional[str]) -> ResolvedPrompter:
-    if not (url and model):
-        gaps = [n for n, v in (("the endpoint URL", url),
-                               ("the model name", model)) if not v]
-        raise EngineUnavailable(
-            f"An AI key is set up for **{ident.display_name}**, but "
-            f"{' and '.join(gaps)} {'are' if len(gaps) > 1 else 'is'} "
-            "missing — ask the app owner. (For the app owner: set the "
-            "shared PROMPTER-URL / PROMPTER-MODEL secrets, or this person's "
-            "own.)")
-    ca = _text(ENV_CA_BUNDLE) or None
-    return ResolvedPrompter(
-        PrompterSettings(url=url, model=model, api_key=key, ca_bundle=ca),
-        source, own_model=own_model, secret_name=secret_name)
-
-
 def resolve_for(ident=None) -> ResolvedPrompter:
-    """The Prompter settings for ``ident`` (default: the current caller).
-
-    Single-user (no proxy header): the shared settings, as before. A caller
-    the proxy identified: the per-tester secret, then ``PROMPTER-KEYS``, then
-    — only when ``PROMPTER_SHARED_KEY_FALLBACK`` is on — the shared key.
-    Raises :class:`NoPrompterKey` (or :class:`EngineUnavailable` for an
-    incomplete set) — the polite refusals; never returns a half-filled set.
-    """
-    if ident is None:
-        from webapp.identity import current_identity
-        ident = current_identity()
-    if not getattr(ident, "multi_user", False):
-        ps = settings()
-        if ps is None:
-            raise EngineUnavailable(NOT_CONFIGURED_MESSAGE)
-        return ResolvedPrompter(ps, SOURCE_SHARED)
-
-    shared_url, shared_model = _text(ENV_URL), _text(ENV_MODEL)
-    key_name = tester_secret_name(ENV_KEY, ident)
-    # 1) this tester's own secret
-    key = _text(key_name)
-    if key:
-        own_url = _text(tester_secret_name(ENV_URL, ident))
-        own_model = _text(tester_secret_name(ENV_MODEL, ident))
-        return _complete(ident, SOURCE_TESTER, key, own_url or shared_url,
-                         own_model or shared_model, bool(own_model), key_name)
-    # 2) the JSON mapping
-    entry = key_mapping().get(_normal_principal(ident.qualified_name))
-    if entry:
-        return _complete(ident, SOURCE_MAPPING, entry["key"],
-                         entry["url"] or shared_url,
-                         entry["model"] or shared_model, bool(entry["model"]),
-                         key_name)
-    # 3) the shared key, only when the deployment allows it
-    if shared_fallback_allowed():
-        ps = settings()
-        if ps is not None:
-            return ResolvedPrompter(ps, SOURCE_SHARED_FALLBACK,
-                                    secret_name=key_name)
-    raise NoPrompterKey(no_key_message(ident, key_name))
+    """The Prompter settings for ``ident`` (default: the current caller):
+    the page's answer (the hook ``prompter.resolve_for``; the
+    GeotechStaffEngineer pages: ``webapp.tinyapps_keys.resolve_for``, the
+    per-tester secret, then ``PROMPTER-KEYS``, then the shared key when
+    allowed), else the shared settings for everyone. Raises
+    :class:`NoPrompterKey` or :class:`EngineUnavailable`, the polite
+    refusals; never returns a half-filled set."""
+    hook = get_hook("prompter.resolve_for")
+    if hook is not None:
+        return hook(ident)
+    ps = settings()
+    if ps is None:
+        raise EngineUnavailable(NOT_CONFIGURED_MESSAGE)
+    return ResolvedPrompter(ps, SOURCE_SHARED)
 
 
-def key_source_report(ident=None) -> tuple:
-    """``(ok, text)`` for the diagnostics panel: which key SOURCE serves the
-    caller, and the per-tester secret's NAME — never a key."""
-    if ident is None:
-        from webapp.identity import current_identity
-        ident = current_identity()
-    who = getattr(ident, "qualified_name", "") or "nobody"
-    mode = ("multi-user (identity header)"
-            if getattr(ident, "multi_user", False) else "single-user")
-    name = (tester_secret_name(ENV_KEY, ident)
-            if getattr(ident, "multi_user", False) else None)
-    tail = f"; per-tester secret name: {name}" if name else ""
-    try:
-        rp = resolve_for(ident)
-    except EngineUnavailable as exc:
-        return False, (f"{who}, {mode}: no key — {exc}")
-    except Exception as exc:  # noqa: BLE001 - a vault outage, say which
-        return False, (f"{who}, {mode}: key lookup failed: "
-                       f"{type(exc).__name__}: {exc}")
-    model = rp.settings.model + (" (this tester's own)" if rp.own_model
-                                 else "")
-    return True, (f"{who}, {mode}: key source = {rp.source_text}; "
-                  f"model {model}{tail}")
+def tester_keys_possible() -> bool:
+    """Could a tester be served although the shared set is incomplete? The
+    page's answer (the hook ``prompter.tester_keys_possible``), else no."""
+    hook = get_hook("prompter.tester_keys_possible")
+    return bool(hook()) if hook is not None else False
 
 
 def _streaming_disabled() -> bool:
@@ -616,12 +451,6 @@ def build_for(ident=None, model_id: Optional[str] = None):
                             prompter=rp.settings)
 
 
-def tester_keys_possible() -> bool:
-    """Could a tester be served although the shared set is incomplete? —
-    the shared URL is there (their keys hang off it) or the mapping is."""
-    return bool(_text(ENV_URL) or _text(ENV_KEYS))
-
-
 def register() -> bool:
     """Install the Prompter builder when the deployment has settings to
     serve anyone: the shared set, or what per-tester keys need
@@ -652,15 +481,12 @@ def register() -> bool:
 __all__ = ["PrompterSettings", "settings", "configured", "build_chat_model",
            "register", "base_url_from", "ssl_context",
            "ENV_URL", "ENV_MODEL", "ENV_KEY", "ENV_CA_BUNDLE",
-           "DISABLE_STREAMING_ENV", "STREAM_USAGE_ENV", "stream_usage",
+           "DISABLE_STREAMING_ENV", "SHARED_FALLBACK_ENV", "STREAM_USAGE_ENV", "stream_usage",
            "REQUEST_TIMEOUT_S", "MAX_RETRIES_ENV",
            "DEFAULT_MAX_RETRIES", "max_retries",
-           "no_retry_when_budget_spent",
-           # per-tester keys
-           "ENV_KEYS", "SHARED_FALLBACK_ENV", "TESTER_SEPARATOR",
-           "KEY_VAULT_NAME_MAX", "SOURCE_TESTER", "SOURCE_MAPPING",
+           "no_retry_when_budget_spent", "get_setting",
+           # whose key serves a caller (the page's hooks)
+           "SOURCE_TESTER", "SOURCE_MAPPING",
            "SOURCE_SHARED", "SOURCE_SHARED_FALLBACK", "NOT_CONFIGURED_MESSAGE",
            "NoPrompterKey", "ResolvedPrompter", "resolve_for", "build_for",
-           "tester_suffix", "tester_secret_name", "key_mapping",
-           "shared_fallback_allowed", "no_key_message", "key_source_report",
            "tester_keys_possible"]

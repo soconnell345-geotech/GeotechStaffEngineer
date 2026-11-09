@@ -55,6 +55,18 @@ CORE_ALIASES = {
 }
 _install_aliases(CORE_ALIASES)
 
+# GSE fills the core's hooks for its own reference library (step 11 (a);
+# aec_agent_core.hooks): the folders the read tools may also read, and the
+# two readers of it. Strings, imported only when a hook is first asked for.
+from aec_agent_core.hooks import set_hook as _set_hook
+
+_set_hook("vision_tools.reference_read_roots",
+          "funhouse_agent.reference_vision:reference_read_roots")
+_set_hook("vision_tools.read_reference_figure",
+          "funhouse_agent.reference_vision:_dispatch_read_reference_figure")
+_set_hook("vision_tools.view_worked_example_source",
+          "funhouse_agent.reference_vision:_dispatch_view_worked_example")
+
 
 #: Each public name -> the module that defines it.
 _LAZY = {

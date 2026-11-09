@@ -25,4 +25,16 @@ CORE_ALIASES = {
 }
 _install_aliases(CORE_ALIASES)
 
+# The page fills the Prompter connection's hooks (aec_agent_core.hooks): its
+# settings are read through Key Vault, and whose key serves a caller is
+# decided by the sign-in name (webapp.tinyapps_keys). Strings, imported only
+# when the connection first asks. Document Review's page fills them from
+# step 13 of the split.
+from aec_agent_core.hooks import set_hook as _set_hook
+
+_set_hook("prompter.get_setting", "webapp.tinyapps_settings:get_setting")
+_set_hook("prompter.resolve_for", "webapp.tinyapps_keys:resolve_for")
+_set_hook("prompter.tester_keys_possible",
+          "webapp.tinyapps_keys:tester_keys_possible")
+
 __all__ = ["core", "engine_config"]
