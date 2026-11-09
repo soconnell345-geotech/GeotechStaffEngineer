@@ -136,3 +136,56 @@ it in the pack folder, and name a skipped pack.
   its own setting; nothing in the plan asks for one.
 - The packs line uses `reference_title` from `pack.json`. A pack with no
   title is named by its id alone.
+
+## Review fixes (branch `merge/ref64app`, 2026-11-09)
+
+An independent review gave the verdict "merge after fixes". It confirmed
+that nothing changes without packs: a probe on master and on the branch was
+byte-identical for the librarian's spec, a built-in figure's render and
+prompt, the build record, the tools fingerprint and the diagnostics. It also
+ran an end-to-end probe with packs, through `build_deep_agent`, `stream_turn`
+and `activity.jsonl`, and found four gaps. Each is fixed in its own commit:
+
+| Commit | Fix |
+|---|---|
+| `3ce8181` | **A pack's own PDF opens by the name the read-off gives.** Before, a pack figure read off its pack folder came back as `source: "<file>.pdf"`. A `render_region` or `read_document` on that name failed with "not an attachment key ... Files here: none yet", although the result's `zoom_hint` says to do exactly that. `reference_packs.pack_folders()` (empty with no packs or on refs < 1.6.0) is now appended to `reference_vision.reference_read_roots()`. Tests: with a working folder bound, the read's `source` resolves to the pack PDF; with no packs, the three read folders are as before. |
+| `3efabe3` | Follow-up to fix 1. The review page's read folders now ask `reference_packs`. So `webapp/tests/page_builds.py` lists `funhouse_agent.reference_packs` with `reference_vision` among GSE's own modules. The split's boundary test then sees only the known soft hook (`test_review_boundary`, 7 passed). |
+| `7baac56` | **`read_notes` capped at 500 characters in the read prompt** (`reference_vision.READ_NOTES_MAX`, the limit `packs check` holds a catalog to). The refs index stores notes of any length, so an unchecked catalog sent all of them; the review's probe sent 2,400 characters. Test: notes of over 2,000 characters reach the prompt as their first 500. |
+| `4b62c62` | **A test of the build record through `build_deep_agent`.** With packs, `reference_packs` is in `geotech_build` and in `webapp.core.engine_record`'s `build`, which is what each `turn_start` writes. Without packs it is absent. The earlier test used a stand-in object, so a move of `record_build` would have gone unnoticed. |
+| `a5a633c` | **The diagnostics say when packs are set but the installed refs cannot read them.** The reference-PDF row adds "reference packs need geotech-references 1.6.0 or later; installed X, so GEOTECH_REFERENCES_PACKS is ignored" (`reference_packs.unsupported_note()`). A Foundry wheel set goes in with `--no-deps`, so the pin alone does not keep an older refs out. The skipped-pack lines now also reach the row's early outcomes (no catalogs; nothing found with `GEOTECH_REFERENCES_DOCS` unset or unreadable). With no packs set, every outcome is as before. Tests: the line appears both with the PDFs found and with the folder unset; it does not appear without the setting or with packs supported. |
+| `db75c90` | Merge of `origin/master`: INF-32 step 11 (b), merge `f9c170f`, and its notes `9b17e1a`. It was clean, with no file in common. The submodule stays at refs `76f494d` (1.6.0). |
+
+**Merge order with step 11 (c).**
+- (c) moves `funhouse_agent/deep/assembly.py` (`record_build`, which sets
+  `geotech_build`) and `webapp/activity_log.py` into the core, and rewrites
+  the imports in `funhouse_agent/deep/agent.py`.
+- This branch changes the tail of `build_deep_agent` in `deep/agent.py`, next
+  to the `_assembly.record_build(...)` call:
+  `agent = _assembly.record_build(...)`, then `_record_reference_packs(agent)`,
+  then `return agent`.
+- Expect a textual conflict there. Resolve it by keeping
+  `_record_reference_packs(agent)` after whatever `record_build` becomes.
+- `test_reference_packs_through_build_deep_agent` fails if the record is
+  lost.
+- `build_references_subagent`'s packs line, also in `agent.py`, sits away
+  from the import block.
+- Suggested order: this branch first, then (c) rebases over it.
+
+**After merging**, run `git submodule update` in a local checkout. While the
+submodule is still at 8a09592, `test_reference_packs.py` skips (refs < 1.6.0).
+
+Re-runs after the fixes and the merge (head `3efabe3`). All ran single-process
+and in the foreground, with no other pytest running and over 4 GB free.
+PYTHONPATH was the worktree, then `packages/aec-agent-core`, then a refs
+checkout at `76f494d`.
+
+| Run | Result | Exit |
+|---|---|---|
+| `funhouse_agent/tests/test_reference_packs.py` + `webapp/tests/test_no_reference_packs.py` | 21 passed | 0 |
+| `test_page_fingerprints` (`page_fingerprints.json` is the same blob as master's, `a72cd8e`), `test_public_text`, `test_docs_currency`, `test_backlog`, `test_wheels`, `test_version_guard` | 48 passed, 5 skipped (opt-in wheel build) | 0 |
+| Reference and librarian tests (the 25 test files naming `reference_db_adapter`, `figure_db` or `read_reference_figure`) | 688 passed, 5 skipped (live) | 0 |
+| `funhouse_agent/deep/tests`, files 1-33 | 460 passed, 1 skipped | 0 |
+| `funhouse_agent/deep/tests`, files 34-65 | 530 passed | 0 |
+| `webapp/tests`, files 1-26 | 418 passed, 3 skipped | 0 |
+| `webapp/tests`, files 27-50 | 387 passed | 0 |
+| `webapp/tests`, files 51-75 (after `3efabe3`; before it, `test_review_boundary` failed on the new crossing) | 398 passed, 5 skipped | 0 |
