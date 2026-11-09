@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence
 from uuid import uuid4
 
-from funhouse_agent import review_flags
+from funhouse_agent import review_flags, turn_question
 from funhouse_agent.review_eval import checks as _checks
 from funhouse_agent.review_eval import documents as _documents
 from funhouse_agent.review_eval.tasks import Task, load_tasks, select
@@ -251,12 +251,15 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
                 answer, tokens, err, kind = "", 0, None, None
                 callbacks = [logger] + ([collector] if collector else [])
                 try:
-                    for item in core.stream_turn(agent, history, thread,
-                                                 recursion_limit=limit,
-                                                 callbacks=callbacks):
-                        if item.get("kind") == "turn_done":
-                            answer = item.get("answer") or ""
-                            tokens = int(item.get("turn_tokens") or 0)
+                    # The turn's question for the vision side calls, as the
+                    # app binds it (webapp.turn_jobs; DR-37).
+                    with turn_question.bound(text):
+                        for item in core.stream_turn(agent, history, thread,
+                                                     recursion_limit=limit,
+                                                     callbacks=callbacks):
+                            if item.get("kind") == "turn_done":
+                                answer = item.get("answer") or ""
+                                tokens = int(item.get("turn_tokens") or 0)
                 except Exception as exc:  # noqa: BLE001 - recorded
                     err = f"{type(exc).__name__}: {exc}"
                     kind = ("outcome" if type(exc).__name__ in OUTCOME_ERRORS
