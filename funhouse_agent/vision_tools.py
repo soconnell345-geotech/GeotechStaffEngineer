@@ -3860,13 +3860,6 @@ def _has_ink(image_bytes) -> bool:
         return True
 
 
-def _read_tiles(pdf_bytes, page, info, n, prompt, engine, lines=None,
-                layer=None):
-    """Read the page in ``n`` x ``n`` overlapping tiles, in parallel."""
-    return _run_together(_tile_jobs(pdf_bytes, page, info, n, prompt, engine,
-                                    lines, layer=layer))
-
-
 def _tiles_not_read_note(rows) -> Optional[str]:
     """``"tile r2c3 failed: <why>; the rest were read …"`` for the tiles
     that came back with an error, or ``None`` (B7: a failed tile used to be
