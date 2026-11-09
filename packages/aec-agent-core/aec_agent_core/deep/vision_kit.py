@@ -25,10 +25,10 @@ from typing import (Annotated, Any, Callable, Dict, List, Optional, Sequence,
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, WithJsonSchema, create_model
 
-from funhouse_agent import document_tools as _document_tools
-from funhouse_agent.deep.limits import DEFAULT_MAX_RESULT_CHARS
-from funhouse_agent.deep.strict_args import strict_tool
-from funhouse_agent.vision_tools import (
+from aec_agent_core import document_tools as _document_tools
+from aec_agent_core.deep.limits import DEFAULT_MAX_RESULT_CHARS
+from aec_agent_core.deep.strict_args import strict_tool
+from aec_agent_core.vision_tools import (
     IMAGE_FIND_NOTE,
     IMAGE_LOOK_NOTE,
     IMAGE_MARKUP_NOTE,
@@ -168,7 +168,7 @@ def _plot_available() -> bool:
     """Whether the data-plot module can be imported (matplotlib is a core
     app dependency, so this is a guard for a stripped library install)."""
     try:
-        from funhouse_agent.charts import data_plot  # noqa: F401
+        from aec_agent_core.charts import data_plot  # noqa: F401
     except Exception:                                  # noqa: BLE001
         return False
     return True
@@ -176,7 +176,7 @@ def _plot_available() -> bool:
 
 def _xlsx_available() -> bool:
     try:
-        from funhouse_agent.xlsx_writer import available
+        from aec_agent_core.xlsx_writer import available
     except Exception:                                  # noqa: BLE001
         return False
     return available()
@@ -186,7 +186,7 @@ def _dxf_notes_available() -> bool:
     """Whether DXF notes can be written (ezdxf, a core app dependency
     through planlens; a guard for a stripped library install)."""
     try:
-        from funhouse_agent.dxf_notes import available
+        from aec_agent_core.dxf_notes import available
     except Exception:                                  # noqa: BLE001
         return False
     return available()
@@ -281,7 +281,7 @@ def _plot_description(reference_chart: bool = True) -> str:
     note. ``reference_chart=False`` leaves that argument out (the Document
     Review page, which draws no soil-classification chart: BACKLOG RI-34)."""
     try:
-        from funhouse_agent.charts.plot_tool import method_info
+        from aec_agent_core.charts.plot_tool import method_info
         info = method_info()
         params = info.get("parameters") or {}
         lines = [str(info.get("brief") or "").strip()]
@@ -328,8 +328,8 @@ def _write_xlsx(path: str, sheets, markdown: str, save_fn) -> str:
     """The ``write_xlsx`` tool: build the workbook, save it through the
     host's ``save_fn`` (so the web app records it and gives it a card), and
     name it by its conversation-relative name."""
-    from funhouse_agent import xlsx_writer
-    from funhouse_agent._fileio import (conversation_name, host_output_dir,
+    from aec_agent_core import xlsx_writer
+    from aec_agent_core._fileio import (conversation_name, host_output_dir,
                                         into_working_folder,
                                         resolve_output_path)
     name = str(path or "").strip() or "tables.xlsx"
@@ -476,10 +476,10 @@ def _app_document_description(name: str) -> str:
     visual-scale tools, the app's own words (they take a look's view +
     image_box and read a scan's labels, which planlens' text cannot say)."""
     if name == "measure":
-        from funhouse_agent.measure_tool import MEASURE_DESCRIPTION
+        from aec_agent_core.measure_tool import MEASURE_DESCRIPTION
         return MEASURE_DESCRIPTION + _PDF_PAGE_NOTE
     if name == "log_grid":
-        from funhouse_agent.measure_tool import log_grid_description
+        from aec_agent_core.measure_tool import log_grid_description
         return log_grid_description() + _PDF_PAGES_NOTE
     return (_document_tools.tool_description(name)
             + _DOCUMENT_TOOL_NOTES.get(name, ""))
@@ -815,8 +815,8 @@ def make_vision_tools(
                                        ".webp", ".svg")):
             return
         try:
-            from funhouse_agent._fileio import host_output_dir
-            from funhouse_agent.drawing_wait import (drawing_in,
+            from aec_agent_core._fileio import host_output_dir
+            from aec_agent_core.drawing_wait import (drawing_in,
                                                      wait_until_drawn)
             folder = host_output_dir()
         except Exception:                              # noqa: BLE001
@@ -1165,7 +1165,7 @@ def make_vision_tools(
         ``measure``; the app converts a look's view + image_box and reads a
         scan's label values itself). ``page`` counts from 0 (default 0);
         ``pdf_page`` is the same, 1-based."""
-        from funhouse_agent.measure_tool import run_measure
+        from aec_agent_core.measure_tool import run_measure
         from planlens.review.page_numbers import resolve_page
         page, problem = resolve_page(page, pdf_page)
         if problem is not None:
@@ -1188,7 +1188,7 @@ def make_vision_tools(
         """One boring or test-pit log as its grid (planlens' ``log_grid``;
         the app reads a textless scan's depth labels itself). ``row_detail``
         is compact (the default) or full."""
-        from funhouse_agent.measure_tool import run_log_grid
+        from aec_agent_core.measure_tool import run_log_grid
         args: Dict[str, Any] = {"handle": handle, "rows": rows,
                                 "offset": offset}
         if pages not in (None, ""):
@@ -1273,16 +1273,16 @@ def make_vision_tools(
                      ("reference_chart", reference_chart or None)):
             if v is not None:
                 params[k] = v
-        from funhouse_agent.drawing_wait import drawing
+        from aec_agent_core.drawing_wait import drawing
         try:
-            from funhouse_agent._fileio import host_output_dir
+            from aec_agent_core._fileio import host_output_dir
             folder = host_output_dir()
         except Exception:                              # noqa: BLE001
             folder = None
         # The chart stack's own call (INF-31 step 6): as call_agent's, it
         # adds defaults_used and the output note, and puts the file in the
         # working folder.
-        from funhouse_agent.charts.plot_tool import call_plot_data
+        from aec_agent_core.charts.plot_tool import call_plot_data
         with drawing(folder):
             result = call_plot_data(params, attachments)
         # one figure's versions share a name: plan.png, plan2.png, plan_v3
@@ -1302,7 +1302,7 @@ def make_vision_tools(
                     "draw it with plot_code where you have it, or hand it to "
                     "the figure helper where there is one; otherwise say "
                     "what it cannot show rather than drawing it again.")
-        from funhouse_agent import review_flags as _rf
+        from aec_agent_core import review_flags as _rf
         if (isinstance(result, dict) and result.get("status") == "success"
                 and (_rf.figure_helper() or _rf.plot_code())):
             # Inside a helper, draws are counted across plot_data and
@@ -1311,7 +1311,7 @@ def make_vision_tools(
             # draws across the turn, whoever draws it, with the arguments
             # that drew it kept beside it (live wave w12, GM-151); behind
             # the figure switches.
-            from funhouse_agent import plot_box as _box
+            from aec_agent_core import plot_box as _box
             before = _box.draws_so_far()
             drawn = [result.get("output_path"),
                      result.get("plotly_json_path")]
@@ -1519,7 +1519,7 @@ def _plot_takes_chart() -> bool:
     registered reference charts (the geotechnical app, from a reference
     library with chart_lines; :func:`funhouse_agent.charts.
     register_reference_charts`)."""
-    from funhouse_agent.charts import reference_charts
+    from aec_agent_core.charts import reference_charts
     return reference_charts() is not None
 
 
@@ -1557,7 +1557,7 @@ def _plot_data_retiring(tool):
 
     def plot_data(**kwargs) -> str:
         replaces = kwargs.pop("replaces", None)
-        from funhouse_agent import plot_box
+        from aec_agent_core import plot_box
         # the figure this draw replaces is counted on (GM-151)
         with plot_box.figures.replacing(replaces):
             out = inner(**kwargs)

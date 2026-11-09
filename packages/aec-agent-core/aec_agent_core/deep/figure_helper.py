@@ -234,7 +234,7 @@ def make_figure_examples_tool(plot_code: bool = False) -> StructuredTool:
     """``figure_examples``: the list of worked examples, or one in full.
     With ``plot_code`` (the helper has that tool) the list also holds the
     worked plot_code scripts."""
-    from funhouse_agent.deep.strict_args import strict_tool
+    from aec_agent_core.deep.strict_args import strict_tool
 
     def figure_examples(name: str = "") -> str:
         """List the worked figure examples, or return one in full."""
@@ -308,7 +308,7 @@ PLOT_CODE_DESCRIPTION_NOTE = (
 
 def _plot_code_tool():
     """``plot_code`` when its switch is on and the box can run here."""
-    from funhouse_agent import review_flags
+    from aec_agent_core import review_flags
     if not review_flags.plot_code():
         return None
     from aec_agent_core import plot_box
@@ -328,10 +328,10 @@ def build_figure_subagent(
     extra_system_prompt: Optional[str] = None,
 ) -> Optional[dict]:
     """The figure helper's spec, or None where plot_data cannot be built."""
-    from funhouse_agent.deep.limits import DEFAULT_MAX_RESULT_CHARS
-    from funhouse_agent.deep.calculate_tool import make_calculate_tool
-    from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
-    from funhouse_agent.deep.vision_kit import make_vision_tools
+    from aec_agent_core.deep.limits import DEFAULT_MAX_RESULT_CHARS
+    from aec_agent_core.deep.calculate_tool import make_calculate_tool
+    from aec_agent_core.deep.limits import ModelCallBudgetMiddleware
+    from aec_agent_core.deep.vision_kit import make_vision_tools
 
     tools = make_vision_tools(
         engine=engine, attachments=attachments, save_fn=save_fn,
@@ -744,7 +744,7 @@ class FigureTasks(AgentMiddleware):
 
     @staticmethod
     def _reported(result):
-        from funhouse_agent.deep.keep_work import _with_note, current_helper
+        from aec_agent_core.deep.keep_work import _with_note, current_helper
         rec = current_helper()
         if rec is None or rec.subagent not in DRAWING_HELPERS:
             return result

@@ -110,7 +110,7 @@ def read_office(path, *, image_dir: Optional[str] = None,
 # -- Word ---------------------------------------------------------------------
 
 def _docx(path, image_dir, image_ref):
-    from funhouse_agent.docx_renderer import docx_to_markdown
+    from aec_agent_core.docx_renderer import docx_to_markdown
     stem = re.sub(r"[^A-Za-z0-9_-]+", "_",
                   os.path.splitext(os.path.basename(path))[0]).strip("_")
     read = docx_to_markdown(path, image_dir=image_dir,

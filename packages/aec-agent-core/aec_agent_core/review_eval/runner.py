@@ -47,9 +47,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence
 from uuid import uuid4
 
-from funhouse_agent import review_flags, turn_question
-from funhouse_agent.review_eval import checks as _checks
-from funhouse_agent.review_eval import documents as _documents
+from aec_agent_core import review_flags, turn_question
+from aec_agent_core.review_eval import checks as _checks
+from aec_agent_core.review_eval import documents as _documents
 from funhouse_agent.review_eval.tasks import Task, load_tasks, select
 
 #: Who the suite signs any markup as, so a produced PDF is recognisably a test.
@@ -60,7 +60,7 @@ SUITE_AUTHOR = "Review suite via GeotechStaffEngineer (AI draft)"
 def _working_folder(path: str) -> Iterator[None]:
     """Point the tools' working folder at ``path`` for the block (the app does
     the same per conversation)."""
-    from funhouse_agent._fileio import DEFAULT_OUTPUT_DIR_ENV
+    from aec_agent_core._fileio import DEFAULT_OUTPUT_DIR_ENV
     saved = os.environ.get(DEFAULT_OUTPUT_DIR_ENV)
     os.environ[DEFAULT_OUTPUT_DIR_ENV] = path
     try:
@@ -73,7 +73,7 @@ def _working_folder(path: str) -> Iterator[None]:
 
 
 def _model_from(prompter: Any, model_name: str):
-    from funhouse_agent.deep.databricks_bridge import PrompterChatModel
+    from aec_agent_core.deep.databricks_bridge import PrompterChatModel
     return PrompterChatModel(prompter=prompter, model=model_name)
 
 
@@ -186,7 +186,7 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
     """One task under one arm, in a fresh conversation. Never raises: a
     failure is recorded on the result (and retried on the next run)."""
     from webapp import core
-    from webapp.activity_log import ActivityLogger
+    from aec_agent_core.activity_log import ActivityLogger
     from webapp.profiles import DOCUMENT_REVIEW, orientation_request_for
 
     run_dir = os.path.abspath(run_dir)
@@ -478,7 +478,7 @@ def _vision_profile(model) -> Dict[str, Any]:
     """What the vision probe measured for this run's model, as recorded in
     this process — never a new probe. Brief 4: run.json did not say which
     image budget and host edge a run used."""
-    from funhouse_agent import vision_probe
+    from aec_agent_core import vision_probe
     if not vision_probe.enabled():
         return {"probe": "off"}
     prof = vision_probe.cached_profile(model)
@@ -689,7 +689,7 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
     mirror = None
     if sharepoint is not None or durable_dir is not None:
         try:
-            from funhouse_agent.run_mirror import Mirror
+            from aec_agent_core.run_mirror import Mirror
             mirror = Mirror(sharepoint=sharepoint, durable_dir=durable_dir,
                             base_folder=sharepoint_folder)
             remote = mirror.remote_for(out.name)

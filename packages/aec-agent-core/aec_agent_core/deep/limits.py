@@ -407,7 +407,7 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
 def _note_budget_reached() -> None:
     """Tell the running ``task`` helper's record that its budget ended it."""
     try:
-        from funhouse_agent.deep.keep_work import note_budget_reached
+        from aec_agent_core.deep.keep_work import note_budget_reached
         note_budget_reached()
     except Exception:  # noqa: BLE001 - a note never fails a call
         pass

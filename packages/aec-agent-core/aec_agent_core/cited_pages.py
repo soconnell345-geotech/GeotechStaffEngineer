@@ -147,7 +147,7 @@ def _host_folder(folder=None) -> Optional[str]:
     if folder:
         return os.path.abspath(str(folder))
     try:
-        from funhouse_agent._fileio import host_output_dir
+        from aec_agent_core._fileio import host_output_dir
         got = host_output_dir()
     except Exception:  # noqa: BLE001 - no folder, then
         return None
@@ -182,12 +182,12 @@ def record_dir(folder=None) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def _pages(spec: Any) -> List[int]:
-    from funhouse_agent.coverage import parse_pages
+    from aec_agent_core.coverage import parse_pages
     return parse_pages(spec)
 
 
 def compact(pages: Iterable[int], offset: int = 0) -> str:
-    from funhouse_agent.coverage import compact as _compact
+    from aec_agent_core.coverage import compact as _compact
     return _compact(pages, offset)
 
 
@@ -437,7 +437,7 @@ def _reached_by_call(name: str, args: dict, result: Any
                      ) -> Tuple[Optional[Tuple[str, str]],
                                 List[Tuple[int, str]]]:
     """``(ref, [(page, how)])`` for one finished tool call."""
-    from funhouse_agent.coverage import pages_from_call
+    from aec_agent_core.coverage import pages_from_call
     data = _json(result)
     if data is not None and data.get("error"):
         return None, []
@@ -581,7 +581,7 @@ def _handle_name(handle: str) -> Optional[str]:
     """The file a document handle stands for in THIS conversation, as the
     document tools remember it (``None`` when they do not)."""
     try:
-        from funhouse_agent import document_tools
+        from aec_agent_core import document_tools
         got = document_tools.handle_source(handle)
     except Exception:  # noqa: BLE001
         return None
@@ -591,7 +591,7 @@ def _handle_name(handle: str) -> Optional[str]:
 def _from_vision_records(folder, out: PagesOpened) -> List[str]:
     used = []
     try:
-        from funhouse_agent.vision_tools import (readings_for_conversation,
+        from aec_agent_core.vision_tools import (readings_for_conversation,
                                                  reads_for_conversation)
     except Exception:  # noqa: BLE001
         return used
@@ -1058,7 +1058,7 @@ def planlens_labels(opened: PagesOpened, key: str
     document opened the way the document tools open it; ``None`` when it
     cannot be opened here."""
     try:
-        from funhouse_agent import document_tools
+        from aec_agent_core import document_tools
     except Exception:  # noqa: BLE001
         return None
     for src in sorted(opened.sources.get(key, ())):
@@ -1318,7 +1318,7 @@ class TurnPageCheck:
         self.log = log
         if mode is None:
             try:
-                from funhouse_agent import review_flags
+                from aec_agent_core import review_flags
                 mode = review_flags.cited_pages()
             except Exception:  # noqa: BLE001
                 mode = "off"

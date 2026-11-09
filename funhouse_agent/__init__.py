@@ -63,6 +63,44 @@ CORE_ALIASES = {
     "funhouse_agent.plot_box": "aec_agent_core.plot_box",
     "funhouse_agent.progress_notes": "aec_agent_core.progress_notes",
     "funhouse_agent.deep.figure_helper": "aec_agent_core.deep.figure_helper",
+    # Step 11 (c): guards and records, Word and Excel, the checks, the
+    # document tools' binding, the shared assembly (plan 2.3) and the review
+    # suite's framework. funhouse_agent.review_eval stays GSE's package (its
+    # tasks, its report fixture and its tests); only the three framework
+    # modules under it are aliased.
+    "funhouse_agent.cited_documents": "aec_agent_core.cited_documents",
+    "funhouse_agent.cited_pages": "aec_agent_core.cited_pages",
+    "funhouse_agent.coverage": "aec_agent_core.coverage",
+    "funhouse_agent.document_tools": "aec_agent_core.document_tools",
+    "funhouse_agent.docx_renderer": "aec_agent_core.docx_renderer",
+    "funhouse_agent.dxf_notes": "aec_agent_core.dxf_notes",
+    "funhouse_agent.measure_tool": "aec_agent_core.measure_tool",
+    "funhouse_agent.office_text": "aec_agent_core.office_text",
+    "funhouse_agent.review_flags": "aec_agent_core.review_flags",
+    "funhouse_agent.run_mirror": "aec_agent_core.run_mirror",
+    "funhouse_agent.runtime_check": "aec_agent_core.runtime_check",
+    "funhouse_agent.safe_expr": "aec_agent_core.safe_expr",
+    "funhouse_agent.scale_labels": "aec_agent_core.scale_labels",
+    "funhouse_agent.xlsx_writer": "aec_agent_core.xlsx_writer",
+    "funhouse_agent.deep.assembly": "aec_agent_core.deep.assembly",
+    "funhouse_agent.deep.busy_retry": "aec_agent_core.deep.busy_retry",
+    "funhouse_agent.deep.calculate_tool": "aec_agent_core.deep.calculate_tool",
+    "funhouse_agent.deep.delivered_log": "aec_agent_core.deep.delivered_log",
+    "funhouse_agent.deep.held_records": "aec_agent_core.deep.held_records",
+    "funhouse_agent.deep.keep_work": "aec_agent_core.deep.keep_work",
+    "funhouse_agent.deep.limits": "aec_agent_core.deep.limits",
+    "funhouse_agent.deep.result_map": "aec_agent_core.deep.result_map",
+    "funhouse_agent.deep.scratch_guard": "aec_agent_core.deep.scratch_guard",
+    "funhouse_agent.deep.strict_args": "aec_agent_core.deep.strict_args",
+    "funhouse_agent.deep.tool_guards": "aec_agent_core.deep.tool_guards",
+    "funhouse_agent.deep.vision_kit": "aec_agent_core.deep.vision_kit",
+    "funhouse_agent.deep.warm_imports": "aec_agent_core.deep.warm_imports",
+    "funhouse_agent.review_eval.checks":
+        "aec_agent_core.review_eval.checks",
+    "funhouse_agent.review_eval.documents":
+        "aec_agent_core.review_eval.documents",
+    "funhouse_agent.review_eval.runner":
+        "aec_agent_core.review_eval.runner",
 }
 _install_aliases(CORE_ALIASES)
 

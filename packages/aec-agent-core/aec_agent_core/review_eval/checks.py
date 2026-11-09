@@ -708,7 +708,7 @@ def check_pages_covered(answer: str, activity: Sequence[Dict[str, Any]] = (),
     ``activity.jsonl`` (every tool call of the primary and its helpers, with
     its arguments and result), independently of anything the app's coverage
     ledger says, so the arm that adds the ledger is not graded by it."""
-    from funhouse_agent.coverage import pages_from_call
+    from aec_agent_core.coverage import pages_from_call
     if not activity:
         return False, "no activity record for this run"
     looked, text, empty = set(), set(), set()

@@ -1146,7 +1146,7 @@ def _record_folder(record_folder: Optional[str]) -> Optional[str]:
     if record_folder:
         return record_folder
     try:
-        from funhouse_agent.cited_pages import record_dir
+        from aec_agent_core.cited_pages import record_dir
         return record_dir()
     except Exception:  # noqa: BLE001
         return None
@@ -1345,7 +1345,7 @@ def check_deliverable(texts: Iterable[str], where: str,
     :data:`RECORD_EVENT` event. Never raises; never refuses the file."""
     try:
         if mode is None:
-            from funhouse_agent import review_flags
+            from aec_agent_core import review_flags
             mode = review_flags.cited_documents()
         joined = "\n\n".join(str(t) for t in texts if t)
         if not joined.strip() or not find_citations(joined):
@@ -1413,7 +1413,7 @@ class TurnCitationCheck:
         self.log = log
         if mode is None:
             try:
-                from funhouse_agent import review_flags
+                from aec_agent_core import review_flags
                 mode = review_flags.cited_documents()
             except Exception:  # noqa: BLE001
                 mode = "off"
