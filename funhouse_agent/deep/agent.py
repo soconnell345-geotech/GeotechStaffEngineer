@@ -817,7 +817,18 @@ def _report_ingest_engine_factory(engine, model=None):
     """
     def factory():
         from report_ingest.engine import engine_for
-        return engine_for(engine, model=model)
+        built = engine_for(engine, model=model)
+        if built is None:
+            return None
+        # A deployment's report_ingest instructions (REF-64 (B)): one
+        # recorded block on every call's system prompt. Wrapped here, not in
+        # engine_for, so score_on_cluster keeps measuring the shipped prompts.
+        from aec_agent_core.deep import instructions as _instructions
+        block, record = _instructions.block_for("report_ingest")
+        if not block:
+            return built
+        return _instructions.InstructedEngine(
+            built, block, (record.get("roles") or {}).get("report_ingest"))
     return factory
 
 
@@ -1244,6 +1255,8 @@ def build_deep_agent(
     tools = strict_tools(tools)
 
     subagents = []
+    # deployment-instruction records for the compiled helpers (REF-64 (B))
+    appended_records: list = []
     if reference_mode != "off":
         subagents.append(
             build_references_subagent(
@@ -1345,10 +1358,17 @@ def build_deep_agent(
         # the tool was built, so the primary is never told to delegate to a
         # library that is not there.
         from report_ingest.library_agent import build_report_library_subagent
+        from aec_agent_core.deep import instructions as _instructions
+        # a deployment's report_library instructions (REF-64 (B)); a
+        # compiled helper, so it takes them here, not in compile_agent
+        _library_block, _library_record = _instructions.block_for(
+            "report_library")
+        appended_records.append(_library_record)
         subagents.append(
             build_report_library_subagent(
                 model,
                 library_root=library_root,
+                extra_system_prompt=_library_block.lstrip() or None,
                 db_path=library_db,
                 max_tool_calls=(library_max_tool_calls
                                 or DEFAULT_REPORT_LIBRARY_MAX_TOOL_CALLS),
@@ -1408,6 +1428,13 @@ def build_deep_agent(
         subagents=subagents, system_prompt=system_prompt,
         helper_models=helper_models, judgment_consult=judgment_consult)
     _record_reference_packs(agent)
+    if ingest_tools:
+        # report ingest's block, as its engine wrapper appends it
+        from aec_agent_core.deep import instructions as _instructions
+        appended_records.append(_instructions.block_for("report_ingest")[1])
+    from aec_agent_core.deep.instructions import merge_record
+    for _record in appended_records:
+        merge_record(agent, _record)
     return agent
 
 
