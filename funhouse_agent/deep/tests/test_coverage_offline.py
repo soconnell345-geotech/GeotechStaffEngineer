@@ -611,24 +611,6 @@ def test_on_the_review_page_only_a_declared_task_holds_a_turn(att):
     assert why == "declared" and groups == C.TARGET_GROUPS
 
 
-def test_the_lean_agent_and_its_helper_carry_it(att, monkeypatch):
-    from funhouse_agent.deep import review_agent
-    monkeypatch.setenv(review_flags.COVERAGE_ENV, "1")
-    seen = {}
-    real = review_agent.make_reader_tool
-
-    def spy(model, tools, budget=14, extra_middleware=None):
-        seen["mw"] = extra_middleware
-        return real(model, tools, budget, extra_middleware)
-
-    monkeypatch.setattr(review_agent, "make_reader_tool", spy)
-    agent = review_agent.build_review_agent(_Scripted(), attachments=att)
-    assert isinstance(agent.geotech_coverage_ledger, C.CoverageLedger)
-    assert any(isinstance(m, CT.CoverageRecorder) for m in seen["mw"])
-    names = set(agent.nodes["tools"].bound.tools_by_name)
-    assert "document_coverage" in names
-
-
 def test_every_helper_of_the_deep_build_records(att, monkeypatch):
     from funhouse_agent.deep import agent as A
     monkeypatch.setenv(review_flags.COVERAGE_ENV, "1")

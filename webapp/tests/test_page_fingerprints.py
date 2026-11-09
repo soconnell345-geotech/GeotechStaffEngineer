@@ -1,7 +1,7 @@
 """Each page's agent, pinned: the app split must not change what it is handed.
 
 BACKLOG INF-30 (``module_work/APP_SPLIT_PLAN.md`` §4). What is pinned, per
-build (the review page's default, ``lean`` and ``minimal`` builds, and the
+build (the review page's default and ``minimal`` builds, and the
 geotech page), with every switch at its default: the system prompt; each
 tool's name, description and argument schema; each helper's name,
 description, prompt, tools and middleware; the middleware classes in order,
@@ -171,9 +171,9 @@ def test_fingerprint_sees_a_changed_prompt(monkeypatch):
         kw["extra_system_prompt"] = "One more sentence."
         return kw
 
-    before = page_builds.fingerprint("review_lean")["app"]
+    before = page_builds.fingerprint("review_default")["app"]
     monkeypatch.setattr(page_builds, "page_kwargs", changed)
-    after = page_builds.fingerprint("review_lean")["app"]
+    after = page_builds.fingerprint("review_default")["app"]
     diff = page_builds.differences(before, after)
     assert diff and all("system_prompt" in d for d in diff), diff
 

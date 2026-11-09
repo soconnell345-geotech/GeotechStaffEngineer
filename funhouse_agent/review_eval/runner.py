@@ -7,7 +7,7 @@ The owner's notebook cell (Funhouse)::
         prompter=fh_prompter, model_name="funhouse-gpt-high",
         docs_dir="/Volumes/.../review_eval_docs",      # the public PDFs
         out_dir="/tmp/review_eval",
-        arms=("baseline", "lean"),                      # see review_flags.ARMS
+        arms=("baseline", "minimal"),                   # see review_flags.ARMS
         sharepoint=fh_sp_client,                        # durable copy
     )
     print(res["results_md"])
@@ -23,10 +23,7 @@ tasks of plan W4) is asked on the GeotechStaffEngineer page instead, built
 the same way from that page's profile.
 
 ``orientation=True`` sends the page's automatic orientation turn first, with
-the text the app sends (``webapp.profiles.orientation_request_for``, under the
-arm's switches). Run the ``overview`` arm (``GEOTECH_REVIEW_OVERVIEW``), and
-any arm that changes only the orientation, with ``orientation=True``: without
-it the arm is the same as its base arm.
+the text the app sends (``webapp.profiles.orientation_request_for``).
 
 Every run writes ``runs/<arm>/<task>/run.json`` (the answer, the checks, tool
 calls, model calls, tokens, seconds, and a ``fingerprint`` of the system
@@ -229,7 +226,7 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
             staged = [a.path for a in atts]
             agent = build_page_agent(model, attachments, files_dir, artifacts,
                                      page=page)
-            note = core.attachment_note(atts, review=(page == "review"))
+            note = core.attachment_note(atts)
             # The page's own orientation text (the arm's switches are set);
             # the geotech page sends none.
             turns = ([orientation_request_for(DOCUMENT_REVIEW, atts)]
@@ -650,7 +647,7 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
     ``extra_tasks`` adds private task files (a blind set). ``dry_run`` checks
     that every document resolves and lists the runs without calling a model.
     ``orientation=True`` sends the page's orientation turn before each
-    question — the ``overview`` arm only differs there, so run it with this.
+    question.
     ``rescore=True`` re-runs the checks on every saved run (no model call)
     before reusing it — after a check is fixed; runs not yet done still run.
     """

@@ -5,7 +5,7 @@ reports to report_ingest"; geotech reports are not this page's documents,
 and the page becomes its own package for people who are not geotechnical
 engineers (INF-26). So nothing the page's model is shown - its system
 prompts, its reading helper's prompt, every tool description - names a
-boring, a laboratory sheet, a DIGGS file or the like, on any of its three
+boring, a laboratory sheet, a DIGGS file or the like, on either of its two
 builds, with every review switch off and on. The geotech page keeps its
 wording: the phrase swaps (``review_agent.REVIEW_REWRITES``) apply only here,
 and each must still match the text it swaps, or the original wording would
@@ -44,16 +44,12 @@ class _Model(FakeMessagesListChatModel):
 
 
 #: The builds, each with every review switch off and with the switches on.
-_ON = {RF.COVERAGE_ENV: "1", RF.CHECKLIST_ENV: "1", RF.DIGEST_ENV: "1",
-       RF.GEOMETRY_ENV: "1", RF.FINDINGS_ENV: "1", RF.SWEEP_ENV: "1",
-       RF.OVERVIEW_ENV: "1", RF.KEPT_READINGS_ENV: "1",
+_ON = {RF.COVERAGE_ENV: "1", RF.CHECKLIST_ENV: "1",
        RF.FIGURE_HELPER_ENV: "1"}
 BUILDS = {
     "legacy": {},
-    "lean": {RF.AGENT_ENV: "lean"},
     "minimal": {RF.AGENT_ENV: "minimal"},
     "legacy+switches": dict(_ON),
-    "lean+switches": {RF.AGENT_ENV: "lean", **_ON},
 }
 
 
@@ -96,11 +92,9 @@ def test_review_page_names_no_geotech_report_things(build, tmp_path,
 def test_the_review_prompts_name_no_geotech_report_things():
     from funhouse_agent.deep import prompt as P
     texts = {"DOCUMENT_REVIEW_PROMPT": P.DOCUMENT_REVIEW_PROMPT,
-             "DOCUMENT_REVIEW_PROMPT_LEAN": P.DOCUMENT_REVIEW_PROMPT_LEAN,
              "DOCUMENT_REVIEW_READER_PROMPT":
                  P.DOCUMENT_REVIEW_READER_PROMPT,
-             "lean": P.build_document_review_prompt(lean=True),
-             "legacy": P.build_document_review_prompt(lean=False)}
+             "legacy": P.build_document_review_prompt()}
     assert not _hits(texts), "\n".join(_hits(texts))
 
 

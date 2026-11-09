@@ -3,8 +3,9 @@
 The review of 2026-09-26 found that the Document Review agent never sees a
 page. Every look was a separate, one-shot vision call that got only the image
 and the agent's question, and the agent reasoned from whatever that call chose
-to write. With ``GEOTECH_VISION_INLINE`` on (lean review agent only), the page
-and region tools store the image (:mod:`funhouse_agent.inline_store`) and this
+to write. In the looking-only ``minimal`` build (:mod:`funhouse_agent.deep.
+minimal_agent`; the lean build's ``GEOTECH_VISION_INLINE`` switch went with
+BACKLOG DR-39), the page and region tools store the image (:mod:`funhouse_agent.inline_store`) and this
 middleware puts the newest ones in front of the main model at its next call,
 as a user message after the tool results — the shape every OpenAI-compatible
 chat endpoint accepts (a tool message may carry text only).

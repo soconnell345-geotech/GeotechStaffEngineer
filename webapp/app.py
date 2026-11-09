@@ -227,8 +227,7 @@ def _stage_files(pairs) -> list:
     the transcript shows an ``attach`` line for each."""
     ss = st.session_state
     atts = core.stage_uploads(ss.attachments, ss.temp_dir, pairs)
-    ss.pending_notes.append(core.attachment_note(
-        atts, review=not _PROFILE.specialists))
+    ss.pending_notes.append(core.attachment_note(atts))
     entries = [{"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"}
                for a in atts]
     ss.transcript.extend(entries)                # in-memory (always)
@@ -1668,8 +1667,8 @@ _orient = ss.pop("pending_orientation", None)
 _orientation_names = None        # set when THIS turn is the orientation
 if not prompt and _orient and _PROFILE.orientation and ss.agent is not None \
         and turn_jobs.get_turn_job(ss.thread_id) is None:
-    # The same text the review suite sends (webapp.profiles); with
-    # GEOTECH_REVIEW_OVERVIEW off it is the profile's request, unchanged.
+    # The same text the review suite sends (webapp.profiles): the
+    # profile's request.
     prompt = profiles.orientation_request_for(_PROFILE, [
         core.Attachment(key=n, path=os.path.join(ss.temp_dir, n), size=0)
         for n in _orient])

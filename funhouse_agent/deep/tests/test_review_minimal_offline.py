@@ -50,7 +50,7 @@ def _agent(model, gt, engine=None, tmp_path=None):
 
 
 def test_the_arm_builds_the_looking_only_agent(gt):
-    assert review_flags.minimal_agent() and not review_flags.lean_agent()
+    assert review_flags.minimal_agent()
     agent = _agent(_model([]), gt)
     assert agent.geotech_review_agent == "minimal"
     names = set(_tools_of(agent))

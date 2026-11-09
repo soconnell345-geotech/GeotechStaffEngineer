@@ -23,8 +23,7 @@ WHAT. The model LOOKS and nothing else:
   zoom it came from: view + image_box).
 
 No text layer, no search, no page map or document structure, no markup
-reading, no sweep, no geometry, no digest — so the suite says what those were
-worth. The prompt is short and generic. It needs an endpoint that takes an
+reading — so the suite says what those were worth. The prompt is short and generic. It needs an endpoint that takes an
 image in a user message after tool results (``inline_images.probe``).
 """
 

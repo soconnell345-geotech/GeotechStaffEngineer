@@ -115,20 +115,18 @@ _REVIEW_HOW_YOU_READ = """\
 - **Follow `next` cursors.** A long result continues through them; do not
   assume you saw everything."""
 
-#: Neither review agent shows the model deepagents' scratch filesystem: the
-#: lean one never had it, and the legacy build keeps it off the menu since
-#: live smoke wave 2b (``tool_guards.HideScratchFilesystem``), so neither
-#: prompt mentions it. ``read_text_file`` reads Word and Excel files as
+#: The review page does not show the model deepagents' scratch filesystem:
+#: the build keeps it off the menu since live smoke wave 2b
+#: (``tool_guards.HideScratchFilesystem``), so the prompt does not mention
+#: it. ``read_text_file`` reads Word and Excel files as
 #: Markdown (``funhouse_agent.office_text``), and ``open_document`` reads
 #: them, and a DXF, as text.
-_REVIEW_SOURCES_LEAN = """\
+_REVIEW_SOURCES = """\
 - Any tool that takes a `source` accepts an attachment key or a real path.
   `read_text_file` reads a plain text, HTML, CSV or JSON file, and a Word
   (.docx) or Excel (.xlsx, .xlsm) file as Markdown; `open_document` reads
   those too, and a DXF drawing as its text and entities (none of them has
   pages to look at). `list_files` lists a real folder."""
-
-_REVIEW_SOURCES = _REVIEW_SOURCES_LEAN
 
 _REVIEW_HAND_BACK = """\
 ## What you hand back
@@ -176,27 +174,18 @@ _REVIEW_NOT = """\
   say what they need; a construction manager and a structural engineer ask
   different questions of the same sheet."""
 
-#: What the page has to calculate with (BACKLOG DOC-21): the default build
-#: gets ``calculate`` (``deep.agent.build_primary_tools``), the lean one
-#: none.
+#: What the page has to calculate with (BACKLOG DOC-21): the build gets
+#: ``calculate`` (``deep.calculate_tool``).
 _REVIEW_CALC = (
     "Your one calculation tool here is `calculate`, which evaluates a\n"
     "  formula you write out (a unit conversion, a sum or an equation the\n"
     "  document prints); there are no analysis tools on this page.")
-_REVIEW_CALC_LEAN = "You have no engineering calculation tools on this page."
 
 DOCUMENT_REVIEW_PROMPT = "\n\n".join([
     _REVIEW_INTRO, _REVIEW_HOW_YOU_READ + "\n" + _REVIEW_SOURCES,
     _REVIEW_HAND_BACK, _REVIEW_NOT.format(calc=_REVIEW_CALC)])
 
-#: The lean review agent's prompt (``GEOTECH_REVIEW_AGENT=lean``): the same
-#: rules, without the scratch filesystem or the ``calculate`` tool it does
-#: not have.
-DOCUMENT_REVIEW_PROMPT_LEAN = "\n\n".join([
-    _REVIEW_INTRO, _REVIEW_HOW_YOU_READ + "\n" + _REVIEW_SOURCES_LEAN,
-    _REVIEW_HAND_BACK, _REVIEW_NOT.format(calc=_REVIEW_CALC_LEAN)])
-
-#: The reading helper the lean agent delegates to. It gets the SAME reading
+#: The page's reading helper (``review_build._review_reader_subagent``). It gets the SAME reading
 #: rules as the page — deepagents' own general-purpose helper had a
 #: 286-character prompt and none of them — and no tool that writes.
 DOCUMENT_REVIEW_READER_PROMPT = """\
@@ -208,20 +197,19 @@ sheet number, the printed page number, or the page as a viewer counts it)
 and whether you read it from text or saw it by looking; then one line on
 anything you could not check. You never invent what a page says.
 
-""" + _REVIEW_HOW_YOU_READ + "\n" + _REVIEW_SOURCES_LEAN
+""" + _REVIEW_HOW_YOU_READ + "\n" + _REVIEW_SOURCES
 
 
-def build_document_review_prompt(*, memory_enabled: bool = False,
-                                 lean: bool = False) -> str:
+def build_document_review_prompt(*, memory_enabled: bool = False) -> str:
     """The document-review page's system prompt (see
-    :data:`DOCUMENT_REVIEW_PROMPT`; :data:`DOCUMENT_REVIEW_PROMPT_LEAN` for the
-    lean agent), plus the memory note when the agent is built with a store."""
-    prompt = DOCUMENT_REVIEW_PROMPT_LEAN if lean else DOCUMENT_REVIEW_PROMPT
+    :data:`DOCUMENT_REVIEW_PROMPT`), plus the memory note when the agent is
+    built with a store."""
+    prompt = DOCUMENT_REVIEW_PROMPT
     if memory_enabled:
         prompt = prompt + "\n\n## Memory\n\n" + MEMORY_SECTION
     return prompt
 
 
 __all__ = ["build_document_review_prompt", "DOCUMENT_REVIEW_PROMPT",
-           "DOCUMENT_REVIEW_PROMPT_LEAN", "DOCUMENT_REVIEW_READER_PROMPT",
+           "DOCUMENT_REVIEW_READER_PROMPT",
            "MEMORY_SECTION"]

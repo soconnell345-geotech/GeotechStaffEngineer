@@ -170,7 +170,7 @@ def is_image_name(name) -> bool:
     return os.path.splitext(str(name or ""))[1].lower() in IMAGE_EXTENSIONS
 
 
-def attachment_note(atts: List[Attachment], review: bool = False) -> str:
+def attachment_note(atts: List[Attachment]) -> str:
     """Build the system-style note telling the agent about staged attachments —
     the attachment key (for analyze_image / analyze_pdf_page / read_pdf_text)
     AND that the same NAME is a file in the working folder (for pdf_import /
@@ -181,35 +181,11 @@ def attachment_note(atts: List[Attachment], review: bool = False) -> str:
     2026-10-09, and the model used it and repeated it to users (live smoke
     wave 1, A6). Every file tool resolves the bare name.
 
-    ``review=True`` is the Document Review page's wording when that page runs
-    its own lean agent (``GEOTECH_REVIEW_AGENT=lean``): it names only tools
-    that agent has. With the switch off the note is the one it always was, so
-    the legacy page is unchanged."""
+    The same note on both pages (the Document Review page's lean build,
+    which had its own wording, was removed in BACKLOG DR-39)."""
     atts = list(atts or [])
     if not atts:
         return ""
-    try:
-        from funhouse_agent import review_flags
-        lean = review and review_flags.lean_agent()
-    except Exception:
-        lean = False
-    if lean:
-        lines = ["[System note] The user attached files, available to you as:"]
-        for a in atts:
-            if is_image_name(a.key):
-                # A screenshot or photo is looked at, not opened as a
-                # document (BACKLOG VIS-26).
-                lines.append(f"- '{a.key}': an image; look at it with "
-                             f"analyze_image(attachment_key='{a.key}') and "
-                             f"zoom with render_region on the same name "
-                             f"(it is a file of that name in the working "
-                             f"folder).")
-                continue
-            lines.append(f"- '{a.key}': open it with open_document(source="
-                         f"'{a.key}'); the page and region tools take the same "
-                         f"name (it is a file of that name in the working "
-                         f"folder).")
-        return "\n".join(lines)
     lines = ["[System note] The user attached files, available to you as:"]
     for a in atts:
         lines.append(
@@ -583,9 +559,10 @@ def collect_turn_artifacts(save_new: Iterable[str],
 #: working data, not deliverables, so they never become download cards, are
 #: never listed to the model as the conversation's files, and are not
 #: mirrored to SharePoint (``sharepoint_store`` prunes them; see
-#: :func:`mirror_skips_dir`). ``digest`` = the Document Review digest
-#: (funhouse_agent.review_digest: code only, rebuilt from the PDF in
-#: seconds); ``.scratch`` = the per-conversation tool scratch (contact
+#: :func:`mirror_skips_dir`). ``digest`` = the former Document Review digest
+#: cache (its code went with BACKLOG DR-39; the name stays so a folder an
+#: older conversation kept is still not a card); ``.scratch`` = the
+#: per-conversation tool scratch (contact
 #: sheets, thumbnails). Any other dot-folder is treated the same way.
 CACHE_DIRS = ("digest", ".scratch")
 

@@ -15,8 +15,6 @@ WHAT IS CHECKED, AND WHERE
   :data:`ENTRY_KIND` per record that cites a page no tool or helper read or
   looked at in this conversation (:func:`record_entries`). The file is
   written all the same: the check never refuses it.
-* ``record_finding`` (the findings tools) says which of a finding's cited
-  pages no tool opened (:func:`unopened_citations`).
 * The ANSWER: after each turn, every page citation in the reply ("PDF page
   24", "pp. 12-14", "page A-3", a table column headed "Pages") is checked
   (:func:`check_answer`). The result goes into the turn's record
@@ -790,31 +788,6 @@ def record_entries(groups: Dict[str, Sequence[Any]], document: Any = None,
     return entries, summary
 
 
-def unopened_citations(citations: Iterable[Tuple[Any, int]],
-                       record_folder: Optional[str] = None,
-                       opened: Optional[PagesOpened] = None
-                       ) -> Optional[List[Dict[str, Any]]]:
-    """``[{"document", "page", "pdf_page", "status"}]`` for each
-    ``(document, 0-based page)`` that no tool opened in this conversation;
-    ``None`` when there is no record of the text reads to check against."""
-    cits = [(d, p) for d, p in citations
-            if isinstance(p, int) and not isinstance(p, bool) and p >= 0]
-    if not cits:
-        return []
-    if opened is None:
-        opened = pages_opened(record_folder)
-    if not opened.knows_text:
-        return None
-    out = []
-    for document, page in cits:
-        docs = opened.documents(document)
-        st = opened.status(page, docs)
-        if st != "opened":
-            out.append({"document": str(document or ""), "page": page,
-                        "pdf_page": page + 1, "status": st})
-    return out
-
-
 # ---------------------------------------------------------------------------
 # Citations in an answer
 # ---------------------------------------------------------------------------
@@ -1437,7 +1410,7 @@ class TurnPageCheck:
 __all__ = ["RECORD_EVENT", "ENTRY_KIND", "NOTE_PREFIX", "RETRY_STATUS",
            "PagesOpened", "Cited", "TurnPageCheck", "bind_record_dir",
            "unbind_record_dir", "record_bound", "record_dir", "pages_opened",
-           "record_pages", "record_entries", "unopened_citations",
+           "record_pages", "record_entries",
            "find_citations", "check_answer", "summary_labels",
            "planlens_labels", "note_for_user", "note_for_model",
            "clear_cache", "doc_key"]
