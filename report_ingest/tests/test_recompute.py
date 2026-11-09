@@ -195,6 +195,47 @@ def test_depth_factors_off_run_beside_the_module_default():
     assert row["alternatives"] == [] and row["flag"] == "differs"
 
 
+# GM-309: Df/B = 3.0 / 1.2 = 2.5
+MEYERHOF_DEEP_INPUTS = [nq("Footing width B", 1.2, "m"),
+                        nq("Embedment depth Df", 3.0, "m"),
+                        nq("Friction angle phi", 33, "deg"),
+                        nq("Unit weight", 19.0, "kN/m3"),
+                        nq("Factor of safety", 3.0)]
+
+
+def test_meyerhof_linear_depth_runs_beside_the_default_beyond_df_b_one():
+    deep = {**BEARING_PARAMS, "width": 1.2, "depth": 3.0,
+            "friction_angle": 33, "unit_weight": 19.0,
+            "factor_method": "meyerhof"}
+    hansen = call_agent("bearing_capacity", "bearing_capacity_analysis",
+                        deep)["q_ultimate_kPa"]
+    linear = call_agent("bearing_capacity", "bearing_capacity_analysis",
+                        {**deep, "depth_factor_method": "linear"}
+                        )["q_ultimate_kPa"]
+    assert (linear - hansen) / hansen > TOLERANCE
+    # a printed depth factor keeps 'none' out, so 'linear' runs alone
+    (row,) = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity", round(linear), "kPa"),
+         nq("Depth factor dq", 1.4)], inputs=MEYERHOF_DEEP_INPUTS,
+        method="Meyerhof (1963)"))
+    assert row["recomputed_si"] == pytest.approx(hansen)
+    assert row["flag"] == "within_options"
+    (alt,) = row["alternatives"]
+    assert alt["depth_factor_method"] == "linear"
+    assert abs(alt["difference_pct"]) < 0.5
+    assert "Table 5-6" in alt["basis"]
+    assert "depth_factor_method 'hansen'" in row["flag_basis"]
+
+
+def test_no_meyerhof_linear_option_up_to_df_b_one():
+    # BEARING_INPUTS: Df/B = 0.5, where 'linear' equals the default
+    (row,) = recompute_calculation(bearing_calc(
+        [nq("Ultimate bearing capacity", 1000, "kPa")],
+        method="Meyerhof (1963)"))
+    assert not [a for a in row["alternatives"]
+                if a.get("depth_factor_method") == "linear"]
+
+
 def test_an_undrained_and_a_drained_strength_are_not_run_together():
     inputs = [nq("Footing width B", 1.5, "m"), nq("Embedment depth Df",
                                                    1.0, "m"),

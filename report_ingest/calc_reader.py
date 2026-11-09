@@ -87,6 +87,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from report_ingest.calc_scoring import names_row, other_rows
 from report_ingest.checks import check_mode, pdf_local
 from report_ingest.engine import (
     Engine, image_block, text_block, tool_result_block, user,
@@ -149,10 +150,12 @@ SUMMARY_WORDS = 60
 #: names. The merge does neither, so two labels the scorecard would credit
 #: as one can still be two slots here.
 NAME_RATIO = 80.0
-#: What the floor appends to a label it took off a table's last filled row
-#: (:func:`_values_from_table`). It says which row, not what was printed, so
-#: it is not a word of the label when two labels are compared
-#: (:func:`_names_same_thing`).
+#: What the floor appended, before RI-208, to a label it took off a table's
+#: last filled row, the only row it kept. The floor now keeps every row, each
+#: named by its own qualifier (:func:`_row_names`); the suffix stays known so
+#: a saved record's labels still compare as before: it says which row, not
+#: what was printed, so it is not a word of the label when two labels are
+#: compared (:func:`_names_same_thing`).
 LAST_ROW_SUFFIX = ", last row of the table"
 
 #: One line per kind, in wording that belongs to no firm and no program.
@@ -461,6 +464,11 @@ class FloorValue:
     bbox: Optional[Tuple[float, float, float, float]] = None
     method: str = "tables"
     confidence: float = CONF_TABLE
+    #: The row of a printed table this value is one of, as its label names
+    #: it ("Layer 2"; :func:`_row_names`), or ``""``. The value's box is the
+    #: whole table's, so the box cannot say which row a reading is of; the
+    #: label does (:func:`_readings_for`, RI-208).
+    row: str = ""
 
     @property
     def key(self) -> str:
@@ -472,7 +480,8 @@ class FloorValue:
             page=int(self.page), bbox=self.bbox,
             method="tables" if self.method == "tables" else "text",
             confidence=float(self.confidence),
-            note=f"read off the page by pattern ({self.method})")
+            note=f"read off the page by pattern ({self.method})"
+                 + (f"{_ROW_NOTE}{self.row}" if self.row else ""))
         if self.value is None:
             return NamedQuantity(name=self.name, text=self.text, prov=prov)
         return NamedQuantity(
@@ -516,6 +525,10 @@ class CalcFloor:
 
 
 _FLOOR_NOTE = re.compile(r"read off the page by pattern \((\w+)\)")
+#: How a floor value's provenance note says which row of a printed table it
+#: is (:attr:`FloorValue.row`), so a floor read back from its record keeps
+#: it (:func:`floor_from_record`).
+_ROW_NOTE = "; one row of a printed table: "
 
 
 def floor_from_record(calc: Calculation) -> CalcFloor:
@@ -533,6 +546,8 @@ def floor_from_record(calc: Calculation) -> CalcFloor:
     for named in list(calc.inputs) + list(calc.results):
         prov = named.prov
         said = _FLOOR_NOTE.search(str(prov.note or "")) if prov else None
+        method = said.group(1) if said else (
+            prov.method if prov else "tables")
         values.append(FloorValue(
             name=named.name,
             value=None if named.value is None else float(named.value.value),
@@ -540,9 +555,10 @@ def floor_from_record(calc: Calculation) -> CalcFloor:
             text=named.text or "",
             page=int(prov.page) if prov else 0,
             bbox=tuple(prov.bbox) if prov and prov.bbox else None,
-            method=said.group(1) if said else (
-                prov.method if prov else "tables"),
-            confidence=float(prov.confidence) if prov else CONF_TABLE))
+            method=method,
+            confidence=float(prov.confidence) if prov else CONF_TABLE,
+            row=(str(prov.note).split(_ROW_NOTE, 1)[1].strip()
+                 if prov and _ROW_NOTE in str(prov.note or "") else "")))
     return CalcFloor(program=calc.program, title=calc.subject or "",
                      values=values, pages=list(calc.pages))
 
@@ -763,16 +779,70 @@ def _table_rows(table: Any) -> List[List[str]]:
     return [r for r in rows if any(r)]
 
 
+def _row_names(header: Sequence[str],
+               body: Sequence[Sequence[str]]) -> List[Optional[str]]:
+    """The qualifier each body row of a grid is named by (RI-208).
+
+    ``None`` for every row of a ONE-row table: its values are the table's
+    and need no qualifier, as before. Otherwise the row's FIRST cell, which
+    is where a printed table names its row -- a layer, a depth, a case, a
+    soil. A cell with words in it stands as printed ("Silty sand", "Layer
+    1", "Case B"); a bare number takes its column's heading in front
+    ("Layer 2", "Depth (ft) 10.0"); an empty first cell is the row's place
+    in the table ("row 3"). Two rows that would carry one qualifier carry
+    their place as well, so no two rows of one table share a label.
+    """
+    if len(body) <= 1:
+        return [None] * len(body)
+    head = _clean_name(header[0]) if header else ""
+    names: List[str] = []
+    for n, row in enumerate(body, start=1):
+        cell = " ".join(str(row[0] if row else "").split())
+        if not cell:
+            names.append(f"row {n}")
+        elif any(ch.isalpha() for ch in cell) or not head:
+            names.append(_clip(cell, 60) if any(ch.isalpha() for ch in cell)
+                         else f"row {cell}")
+        else:
+            names.append(f"{head} {cell}")
+    seen: Dict[str, int] = {}
+    for name in names:
+        seen[fold(name)] = seen.get(fold(name), 0) + 1
+    return [f"{name}, row {n}" if seen[fold(name)] > 1 else name
+            for n, name in enumerate(names, start=1)]
+
+
+#: One printed number and nothing else: a first cell that is a quantity.
+#: "0-5" (a range), "<10" and "N/A" are not.
+_FIRST_NUMBER = re.compile(r"[-+‐‑‒–−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
+#: The words a column of row numbers is headed by.
+_INDEX_WORDS = frozenset(
+    "layer layers sublayer stratum strata soil unit case cases scenario row "
+    "rows item no nr number id point step trial option alternative section "
+    "zone boring sample test series".split())
+
+
+def _index_heading(head: str) -> bool:
+    """Is a first column's heading one a column of row numbers carries
+    ("Layer", "Layer No.", "Case #", "Item"), or no heading at all ("0.5")?
+    "Layer thickness (ft)" and "Depth (ft)" are quantities."""
+    words = {w for w in _label_words(head) if not w.isdigit()}
+    # A heading with no word at all ("0.5") is a data row taken for the
+    # header, and names no quantity either.
+    return not words or words <= _INDEX_WORDS
+
+
 def _values_from_table(table: Any, page: int) -> List[FloorValue]:
     """Every ``label -> value`` pair one detected table states.
 
-    TWO SHAPES, and nothing cleverer. A PROPERTY table puts the label in one
-    cell and the value beside it, which is what a spreadsheet's project block
-    and foundation block do. A ONE-ROW table puts the labels in the header
-    and the values under them. A table with several body rows is a grid of
-    data -- a soil profile, a load schedule -- whose rows mean something only
-    together, and reading one cell of it as a labelled value would produce
-    twenty values named ``Layer`` that are all different numbers.
+    THREE SHAPES, and nothing cleverer. A PROPERTY table puts the label in
+    one cell and the value beside it, which is what a spreadsheet's project
+    block and foundation block do. A ONE-ROW table puts the labels in the
+    header and the values under them. A GRID -- a header and several body
+    rows: a soil profile, a layer-by-layer settlement, a load schedule --
+    gives one value per row and column, each named by its column's heading
+    and its row's own qualifier (:func:`_row_names`), so twenty rows give
+    twenty distinct labels rather than twenty values named ``Layer``.
     """
     rows = _table_rows(table)
     if not rows:
@@ -782,25 +852,42 @@ def _values_from_table(table: Any, page: int) -> List[FloorValue]:
     out: List[FloorValue] = []
 
     # A table whose first row names its columns. With ONE body row that row
-    # holds the values; with several it is a grid of data -- a soil profile,
-    # a layer-by-layer settlement, a load schedule -- whose rows mean
-    # something only together. The LAST row of such a grid is still worth
-    # taking, because a printed table's last row is where the total, the
-    # cumulative settlement and the governing case are: it is labelled as
-    # the last row so nothing downstream mistakes it for the whole column.
+    # holds the values. With several it is a grid of data -- a soil profile,
+    # a layer-by-layer settlement, a load schedule -- and EVERY row is kept
+    # (RI-208): one labelled value per row and column, the column's heading
+    # first and the row's own qualifier after a comma (:func:`_row_names`),
+    # so "Unit weight (pcf), Layer 2" and "Unit weight (pcf), Layer 3" are
+    # two values and never one. Before, only the last filled row was kept,
+    # labelled LAST_ROW_SUFFIX, and every other row of the table was lost.
     if len(rows) >= 2 and len([c for c in rows[0] if c]) >= 2 \
             and len(rows[0]) <= 20:
         header = rows[0]
-        # The last row with more than one cell filled. A spreadsheet
-        # rules twenty rows and fills five, so "the last row" has to mean
-        # the last row that carries VALUES rather than the last ruled line
-        # with a row number in it.
+        # The rows with more than one cell filled. A spreadsheet rules
+        # twenty rows and fills five, so a ruled line with only a row
+        # number in it carries no values.
         body = [r for r in rows[1:]
                 if sum(1 for c in r if str(c).strip()) >= 2]
-        if body:
-            row = body[-1]
-            suffix = "" if len(body) == 1 else LAST_ROW_SUFFIX
+        names = _row_names(header, body)
+        head = _clean_name(header[0])
+        for n, (row, qualifier) in enumerate(zip(body, names), start=1):
+            # The column the qualifier came from names the row; it is not
+            # one more value of the row -- unless it is a QUANTITY printed as
+            # a bare number under a heading (a layer's thickness, a depth):
+            # then it is recorded once per row as well, under its heading
+            # and the row's place, "Thickness (ft), row 2" (review fix,
+            # RI-208; before RI-208 the last row's was recorded). A column
+            # of row numbers ("Layer", "No.") is no quantity.
+            first = 0 if qualifier is None else 1
+            cell = " ".join(str(row[0] if row else "").split())
+            if first and head and _FIRST_NUMBER.fullmatch(cell) \
+                    and not _index_heading(head):
+                out.append(FloorValue(
+                    name=f"{head}, row {n}", value=_number(cell),
+                    unit=_unit_in_label(header[0]), page=page, bbox=bbox,
+                    method="tables", confidence=conf, row=f"row {n}"))
             for i, label in enumerate(header):
+                if i < first:
+                    continue
                 if i >= len(row):
                     break
                 name = _clean_name(label)
@@ -809,10 +896,13 @@ def _values_from_table(table: Any, page: int) -> List[FloorValue]:
                     continue
                 tail = str(row[i]).split()
                 out.append(FloorValue(
-                    name=f"{name}{suffix}", value=value,
+                    name=(name if qualifier is None
+                          else f"{name}, {qualifier}"),
+                    value=value,
                     unit=(_unit_in_label(label)
                           or (_unit_token(tail[-1]) if len(tail) > 1 else "")),
-                    page=page, bbox=bbox, method="tables", confidence=conf))
+                    page=page, bbox=bbox, method="tables", confidence=conf,
+                    row=qualifier or ""))
         if out:
             return out
 
@@ -1029,6 +1119,34 @@ def _same_name(left: str, right: str) -> bool:
     return a == b or _ratio(a, b) >= NAME_RATIO
 
 
+def _same_label(left: str, right: str) -> bool:
+    """:func:`_same_name`, unless the two labels name different rows of one
+    printed table (:func:`report_ingest.calc_scoring.other_rows`, RI-208):
+    "Phi (deg), Layer 2" and "Phi (deg), Layer 3" pass the partial ratio
+    and are two values, never one slot."""
+    return _same_name(left, right) and not other_rows(left, right)
+
+
+def _readings_for(value: FloorValue,
+                  rows: Sequence[NamedQuantity]) -> List[NamedQuantity]:
+    """The reader's rows a floor value may be settled against.
+
+    Those under the same label (:func:`_same_label`). A value that is one
+    ROW of a printed table (:attr:`FloorValue.row`) carries the whole
+    table's box, so every reading inside the table is "at its place" and
+    the box says nothing about which row was read: such a value is settled
+    only against a reading whose label names its row
+    (:func:`report_ingest.calc_scoring.names_row`) -- "Phi, layer 2" for
+    "Phi (deg), Layer 2" -- never against "Phi (deg)" or "Sand unit weight"
+    read somewhere in the table, which would merge the row away (review
+    fix, RI-208). With no such reading the row is kept as its own.
+    """
+    same = [r for r in rows if _same_label(value.name, r.name)]
+    if value.row:
+        same = [r for r in same if names_row(value.row, r.name)]
+    return same
+
+
 def _label_words(text: str) -> set:
     return set(re.findall(r"[^\W_]+", str(text or "").lower()))
 
@@ -1146,12 +1264,21 @@ def _twin(value: FloorValue, named: NamedQuantity,
     it returned under it was read somewhere else -- a different printed
     value that shares a label, not a reading of this one.
     """
-    same_label = [r for r in rows if _same_name(value.name, r.name)]
+    same_label = _readings_for(value, rows)
     if not same_label:
         return None, None
     placed = [(r, _same_place(value, r.prov)) for r in same_label]
     here = sorted((r for r, p in placed if p is True),
                   key=lambda r: not _names_same_thing(value.name, r.name))
+    # A row whose label names the same thing first, and only then one that
+    # shares the value: a table's box holds every row's reading, and two
+    # rows of it may print one number (RI-208).
+    named_here = [r for r in here if _names_same_thing(value.name, r.name)]
+    for row in named_here:
+        if _same_value(named, row):
+            return row, True
+    if named_here:
+        return named_here[0], True
     for row in here:
         if _same_value(named, row):
             return row, True
@@ -1306,8 +1433,8 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
 
     rows = model_results + model_inputs
     here = [value for value in floor.values
-            if any(_same_place(value, r.prov) is True for r in rows
-                   if _same_name(value.name, r.name))]
+            if any(_same_place(value, r.prov) is True
+                   for r in _readings_for(value, rows))]
     elsewhere = [value for value in floor.values
                  if not any(value is h for h in here)]
     for value in here + elsewhere:
@@ -1377,9 +1504,9 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
             twin.value, twin.text = named.value, named.text
             log.keep(where, value.name, value.page, named.value or named.text)
 
-    floor_keys = [v.key for v in floor.values]
+    floor_names = [v.name for v in floor.values]
     for row in model_inputs + model_results:
-        if not any(_same_name(row.name, k) for k in floor_keys):
+        if not any(_same_label(row.name, k) for k in floor_names):
             page = row.prov.page if row.prov else None
             log.add(where, row.name, page, row.value or row.text,
                     method=row.prov.method if row.prov else "model")
@@ -2508,7 +2635,7 @@ def _read_twice(left: ReadValue, right: ReadValue,
     without one, two factors of safety printed on one page would otherwise
     be one slot and the first lost. The default is today's rule.
     """
-    if not _same_name(left.name, right.name):
+    if not _same_label(left.name, right.name):
         return False
     if int(left.prov.page) != int(right.prov.page):
         return False

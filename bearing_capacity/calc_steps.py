@@ -670,6 +670,8 @@ def _depth_factor_reference(analysis) -> str:
         return "None used; FHWA GEC-6 Sec. 5.2.3.3, Table 5-4 note"
     if dm == "gec6":
         return "FHWA GEC-6 Eq. 5-14, Table 5-4 (Brinch Hansen 1970)"
+    if dm == "linear":
+        return "Meyerhof (1963); UFC 3-220-20 Table 5-6, k = D_f/B at any depth"
     if analysis.factor_method == "meyerhof":
         return ("Meyerhof; UFC 3-220-20 Table 5-6; k beyond D_f/B = 1, "
                 "Brinch Hansen (1970), Table 5-8 note B")
@@ -714,6 +716,19 @@ def _depth_factor_equation(method: str, phi_deg: float,
             "d_q = 1 + 2\u00d7tan(\u03c6)\u00d7(1-sin(\u03c6))\u00b2\u00d7"
             "arctan(D_f/B) for D_f/B \u2265 1, 1.0 below,  "
             "d_c = d_\u03b3 = 1.0"
+        )
+    if depth_method == "linear":
+        # GM-309: Meyerhof's factors with k = Df/B at every depth
+        if phi_deg <= 10:
+            return (
+                "d_c = 1 + 0.2\u00d7\u221aKp\u00d7k,  "
+                "d_q = d_\u03b3 = 1.0  [\u03c6 \u2264 10\u00b0],  "
+                "k = D_f/B at every depth"
+            )
+        return (
+            "d_c = 1 + 0.2\u00d7\u221aKp\u00d7k,  "
+            "d_q = d_\u03b3 = 1 + 0.1\u00d7\u221aKp\u00d7k,  "
+            "k = D_f/B at every depth"
         )
     if method.lower() == "vesic":
         if phi_deg == 0:

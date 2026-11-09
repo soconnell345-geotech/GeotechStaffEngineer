@@ -204,6 +204,10 @@ _CURATED_ALIASES = {
     "table_5_4_group_efficiency": ["group_efficiency_factor"],
     # gec13 (ground modification)
     "figure_5_5_settlement_improvement": ["settlement_improvement_factor"],
+    # REF-62: the old table_4_1_ddc_parameters' stripped name now reaches
+    # the DDC table GEC-13 prints (Table 4-3, applied energy, p. 4-46)
+    "table_4_3_applied_energy": ["ddc_parameters", "ddc_applied_energy"],
+    "table_8_6_soilcrete_strength": ["jet_grout_strength"],
     # gec10 (drilled shafts)
     "figure_10_6_alpha_clay": ["alpha_adhesion_factor"],
     "table_10_2_nc_base_clay": ["bearing_capacity_factor_nc"],

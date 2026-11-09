@@ -117,16 +117,19 @@ class TestTheFloor:
                      if v.name == "Footing Width B (ft)")
         assert (width.value, width.unit) == (8.5, "ft")
 
-    def test_the_last_filled_row_of_a_table_is_read(self, spreadsheet):
+    def test_every_filled_row_of_a_table_is_read(self, spreadsheet):
         """The answer of a layer-by-layer settlement is the cumulative
-        column's last FILLED row, not the last ruled line."""
+        column's last FILLED row, not the last ruled line -- and since
+        RI-208 every filled row is read, each named by its own row."""
         doc, _gt = spreadsheet
         floor = floor_from_pages(doc, [0], "SYN")
 
-        row = next(v for v in floor.values
-                   if v.name.startswith("Total Cumulative Settlement"))
-        assert row.value == 0.52
-        assert "last row" in row.name
+        rows = {v.name: v.value for v in floor.values
+                if v.name.startswith("Total Cumulative Settlement")}
+        assert sorted(rows.values()) == [0.31, 0.45, 0.52]
+        assert rows[next(n for n in rows if n.endswith("Layer 3"))] == 0.52
+        assert not any("last row" in n or n.endswith(("Layer 4", "Layer 5"))
+                       for n in rows)
 
     def test_a_program_printouts_labelled_lines_are_pairs(self, printout):
         doc, gt = printout

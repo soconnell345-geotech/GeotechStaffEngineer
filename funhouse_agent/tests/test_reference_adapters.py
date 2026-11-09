@@ -506,3 +506,42 @@ class TestRef61Gec13Removed:
         # 35-70 kPa
         assert alias["alpha_bond_min_kpa"] == 35
         assert alias["alpha_bond_max_kpa"] == 70
+
+
+class TestRef62Gec13Recited:
+    """GEC-13 Table 4-1 is tamper equipment, Table 8-2 permeation grouts and
+    chapter 7 numbers no tables (REF-62): the DDC and jet grouting lookups
+    now give GEC-13 Tables 4-3, 8-1 and 8-6 as printed, and the deep mixing
+    strength lookup is gone."""
+
+    @pytest.mark.parametrize("name", [
+        "table_4_1_ddc_parameters",
+        "table_7_2_deep_mixing_strength",
+        "deep_mixing_strength",
+        "table_8_2_jet_grouting_systems",
+    ])
+    def test_not_in_gec13(self, name):
+        from funhouse_agent.adapters import gec13_adapter
+        assert name not in gec13_adapter.METHOD_REGISTRY
+
+    def test_ddc_parameters_reaches_table_4_3(self):
+        alias = call_agent("gec13", "ddc_parameters", {"soil_type": "landfill"})
+        canonical = call_agent("gec13", "table_4_3_applied_energy",
+                               {"soil_type": "landfill"})
+        assert "error" not in alias, alias
+        assert alias == canonical
+        # FHWA-NHI-16-027 Vol I Table 4-3, p. 4-46: landfills 12,400 to
+        # 22,700 ft-lbf/ft3 (600 to 1100 kJ/m3)
+        assert "12400" in str(alias) and "22700" in str(alias)
+
+    def test_jet_grouting_systems_reaches_table_8_1(self):
+        r = call_agent("gec13", "jet_grouting_systems", {"system": "triple"})
+        assert "error" not in r, r
+        assert "Best underpinning system" in str(r)
+
+    def test_soilcrete_strength_as_printed(self):
+        r = call_agent("gec13", "jet_grout_strength", {"soil_type": "clays"})
+        assert "error" not in r, r
+        # Table 8-6, p. 8-71: clays 250 to 500 psi (single fluid)
+        assert "'ucs_psi_low': 250" in str(r)
+        assert "'ucs_psi_high': 500" in str(r)
