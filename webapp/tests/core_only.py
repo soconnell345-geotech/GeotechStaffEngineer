@@ -2,8 +2,8 @@
 step 11 (c); plan ``module_work/APP_SPLIT_PLAN.md`` section 5 and Step 11's
 Exit).
 
-The job installs only ``aec-agent-core``, planlens and CfA's fleet pins:
-NOT geotech-staff-engineer, not the geotech-references submodule, not an
+The job installs only ``aec-agent-core``, planlens and the hosting fleet's
+pins: NOT geotech-staff-engineer, not the geotech-references submodule, not an
 analysis back end. This repository's checkout is on ``PYTHONPATH`` only so
 that the review page's own files (``funhouse_agent.review_build``, the
 review prompt and helpers) and the chat shell (``webapp.core``,

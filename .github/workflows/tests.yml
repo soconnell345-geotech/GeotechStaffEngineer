@@ -126,8 +126,8 @@ jobs:
   core-only:
     # The app split's step 11 (c) (INF-32; plan module_work/APP_SPLIT_PLAN.md
     # section 5 and Step 11's Exit): the shared core with nothing geotech
-    # installed. Only aec-agent-core, planlens from PyPI and CfA's fleet
-    # pins (tinyapps/wrapper_repo/requirements-thirdparty.txt) are
+    # installed. Only aec-agent-core, planlens from PyPI and the hosting
+    # fleet's pins (tinyapps/wrapper_repo/requirements-thirdparty.txt) are
     # installed; no geotech-references submodule, no analysis back end, not
     # geotech-staff-engineer. Every core module imports and the core's own
     # tests pass outside the checkout; then today's Document Review page is
