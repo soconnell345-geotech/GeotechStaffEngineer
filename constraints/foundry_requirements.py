@@ -22,6 +22,16 @@ OWN = ("geotech-staff-engineer", "aec-agent-core", "planlens",
 LEFT_OUT = set(OWN) | {"numpy", "pynitefea"}
 
 
+def _app_requires_core() -> bool:
+    """Whether the installed app pins aec-agent-core (master since step 10)."""
+    try:
+        reqs = md.requires("geotech-staff-engineer") or ()
+    except md.PackageNotFoundError:
+        return False
+    return any(re.split(r"[\s<>=!~;\[(]", r, maxsplit=1)[0].lower()
+               == "aec-agent-core" for r in reqs)
+
+
 def requirements() -> list:
     """The core requirement lines of the four installed packages."""
     lines = []
@@ -30,8 +40,12 @@ def requirements() -> list:
             reqs = md.requires(dist) or ()
         except md.PackageNotFoundError:
             # An app released before the core existed (5.34.0 and older)
-            # installs without it; any other missing package is an error.
-            if dist != "aec-agent-core":
+            # installs without it; any other missing package is an error,
+            # and so is the core for an app that requires it (built from
+            # master since step 10; since step 11 (a) the app imports its
+            # model connections and vision tools from the core, so a test
+            # wheel set without the core's wheel fails at import).
+            if dist != "aec-agent-core" or _app_requires_core():
                 raise
             continue
         for req in reqs:

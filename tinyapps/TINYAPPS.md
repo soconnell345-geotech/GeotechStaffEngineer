@@ -147,6 +147,13 @@ its wheel in `wheels/`, or its pin in `packages.txt`. After the app split,
 route A carries Document Review's source (`module_work/APP_SPLIT_PLAN.md`
 §1.4, step 14). Tests: `webapp/tests/test_tinyapps_wrapper.py`.
 
+A build from master since the app split's step 11 (a) (BACKLOG INF-32)
+also needs the shared core `aec-agent-core`, which the app imports its model
+connections and vision tools from: on route A its `aec_agent_core/` folder
+(from `packages/aec-agent-core/`) in `app_src/` beside the app's packages;
+on route B its wheel beside the app's in `wheels/`; on route C it comes from
+Nexus once it is published (step 12).
+
 ## Per-tester Prompter keys (built 2026-10-09, released in 5.33.0)
 
 Each tester on the published app gets their own Prompter key, so each has

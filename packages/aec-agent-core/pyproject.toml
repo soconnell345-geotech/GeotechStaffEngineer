@@ -4,9 +4,10 @@ build-backend = "setuptools.build_meta"
 
 # The core both agents run below their chat pages (the app split, BACKLOG
 # INF-26 / INF-32; plan module_work/APP_SPLIT_PLAN.md sections 1.1 and 2.3).
-# Step 10 (this file): the package exists, EMPTY apart from the alias helper,
-# with its build, CI and a wheel test. Step 11 moves the code in. Step 12
-# publishes it, on the owner's word. 1.0.0.dev0, empty, was published
+# Step 10: the package exists, EMPTY apart from the alias helper, with its
+# build, CI and a wheel test. Step 11 moves the code in, in three merges;
+# (a), the model connections and the vision calls, is in. Step 12 publishes
+# it, on the owner's word. 1.0.0.dev0, empty, was published
 # 2026-11-09 only to hold the name (publish-core.yml, tag core-v1.0.0.dev0).
 [project]
 name = "aec-agent-core"
@@ -35,8 +36,8 @@ classifiers = [
 # The list of plan section 1.1, at the caps and floors geotech-staff-engineer
 # has today (its pyproject carries the reasons for each; keep the two in
 # step: webapp/tests/test_version_guard.py reads the agent-stack caps in both
-# files). Step 10 installs nothing new: every line here is already a core
-# requirement of geotech-staff-engineer.
+# files). Nothing here installs anything new: every line is a core
+# requirement of geotech-staff-engineer too (Pillow through matplotlib).
 dependencies = [
     # numpy 1.26, not 2.0 (INF-53): Foundry's transforms repos hold 1.26.4.
     "numpy>=1.26",
@@ -60,8 +61,19 @@ dependencies = [
     "python-docx>=1.1",
     "markdown-it-py>=3",
     "openpyxl>=3.1",
-    # The document layer; the core binds its review tools.
-    "planlens>=0.14",
+    # The document layer; the core binds its review tools. 0.15 since step
+    # 11 (a): the app binds planlens.review (PL-29 (b)), and its pin is 0.15.
+    "planlens>=0.15",
+    # Step 11 (a), the vision tools: they open and render PDF pages with
+    # PyMuPDF themselves (vision_tools, vision_view), so it is listed here,
+    # not only through planlens; the range is the app's (INF-18: below 2
+    # until the host probe), which settles step 10's open question for the
+    # core. Already installed wherever planlens is.
+    "PyMuPDF>=1.27.2,<2",
+    # Step 11 (a), the vision tools: they size, crop and re-encode images
+    # with Pillow (vision_view, image_view, vision_tools). matplotlib
+    # already requires it (pillow>=8), so nothing new installs.
+    "Pillow>=8",
 ]
 
 [project.optional-dependencies]

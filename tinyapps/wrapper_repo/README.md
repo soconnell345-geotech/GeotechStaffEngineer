@@ -40,6 +40,13 @@ its packages in `app_src/` with its dependencies in `app_src/requirements.txt`,
 its wheel in `wheels/`, or its pin in `packages.txt`. After the app split,
 route A carries Document Review's source.
 
+A build from master since the app split's step 11 (a) (BACKLOG INF-32)
+also needs the shared core `aec-agent-core`, which the app imports its model
+connections and vision tools from: on route A its `aec_agent_core/` folder
+(from `packages/aec-agent-core/`) in `app_src/` beside the app's packages;
+on route B its wheel beside the app's in `wheels/`; on route C it comes from
+Nexus once it is published (step 12).
+
 To check a choice without installing anything, run
 `APP_DRY_RUN=1 bash run.sh`: it prints the route and the commands it would
 run, then exits.

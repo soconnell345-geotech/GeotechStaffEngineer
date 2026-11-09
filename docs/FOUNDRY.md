@@ -19,7 +19,7 @@ Everything lives in the pip package; the Foundry side is one workspace, a
    label (`5.33.0+foundry.20261020`), which the sidebar footer shows. What
    worked in the first run (the AI FDE, 2026-10-20), in order:
    1. **The other packages first.** Everything the app needs except its own
-      three packages goes into the managed environment as usual, plus three
+      four packages goes into the managed environment as usual, plus three
       pins: `websockets>=14,<16`, `polars>=1,<2` and `tenacity<9.2`
       (Streamlit's and Foundry's own libraries otherwise pull in newer
       versions than langgraph-sdk, pygef and google-genai accept, and
@@ -27,7 +27,13 @@ Everything lives in the pip package; the Foundry side is one workspace, a
       `polars 2.0.0`). Add the pins on the conda side beside the other
       dependencies. Foundry resolved numpy 2.5.4 on Python 3.12.15 in the
       Code Workspace; a transforms repo holds numpy at 1.26.4 (next item).
-   2. **Upload the three wheels**, and check their names. Unpacking a zip
+   2. **Upload the four wheels**: the app, its core `aec-agent-core`,
+      planlens and geotech-references. A set built from master since the
+      app split's step 11 (a) (BACKLOG INF-32) needs the core's wheel: the
+      app imports its model connections and vision tools from it, and pins
+      it exactly (`aec-agent-core==<version>`; with `--no-deps` pip does
+      not say it is missing, the app fails at import). Sets for 5.34.0 and
+      earlier have three. Check their names. Unpacking a zip
       in the workspace dropped the `+` from the names
       (`geotech_staff_engineer-5.33.0foundry.20261020-py3-none-any.whl`),
       and pip refuses a wheel whose name does not match its version. Put the
@@ -36,14 +42,14 @@ Everything lives in the pip package; the Foundry side is one workspace, a
    3. **Install them from the app file at start-up.** maestro does not take
       file paths (`maestro env pip install ./x.whl` answers "No valid
       versions found"), so the app file runs
-      `pip install --no-deps --no-index --target <folder>` on the three
+      `pip install --no-deps --no-index --target <folder>` on the four
       wheels, into a folder outside the managed environment, and puts that
       folder first on `sys.path` and `PYTHONPATH`. The lockfile then never
       lists the local builds, and the published app installs them the same
       way when it starts.
 
    The clean route is a Foundry Artifacts repository (or conda channel)
-   holding the three packages, so the environment lists them like any other
+   holding the four packages, so the environment lists them like any other
    dependency and step 3 goes away.
 4. **Transforms repos: numpy 1.26** (BACKLOG INF-53; where the evals run).
    The platform's `transforms` pins a pyspark that needs numpy < 2, so the
@@ -53,7 +59,7 @@ Everything lives in the pip package; the Foundry side is one workspace, a
    unpinned, pip put scipy 1.18.1 there, which cannot import its
    `optimize`, `interpolate`, `integrate` or `stats` on numpy 1.26
    (`np.long`), and 15 questions of the geotech eval failed on it. So:
-   1. install the three wheels with `--no-deps`, as above;
+   1. install the four wheels with `--no-deps`, as above;
    2. `python constraints/foundry_requirements.py > requirements.txt`
       prints what they need, numpy and PyNiteFEA left out;
    3. install that list with the constraints:
