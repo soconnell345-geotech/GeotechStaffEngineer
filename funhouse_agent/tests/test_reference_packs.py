@@ -432,3 +432,45 @@ def test_diagnostics_name_a_skipped_pack(tmp_path, monkeypatch):
     c = geotech_page.reference_docs_check()
     assert "reference pack skipped:" in c["detail"]
     assert "no_prefix" in c["detail"]
+
+
+_OLD_REFS_NOTE = "reference packs need geotech-references 1.6.0 or later; installed"
+
+
+@pytest.mark.parametrize("docs_set", [True, False])
+def test_diagnostics_say_packs_need_a_newer_refs(
+        docs_set, pack_root, tmp_path, monkeypatch):
+    """GEOTECH_REFERENCES_PACKS set on a refs without packs (as 1.5.0; a
+    Foundry wheel set goes in with --no-deps): the row says so plainly,
+    whether or not the reference PDFs are found."""
+    from webapp import geotech_page
+    monkeypatch.setenv(_packs.PACKS_ENV, str(pack_root))
+    monkeypatch.delattr(_retrieval_db, "pack_dirs")
+    monkeypatch.setattr(reference_packs, "refs_version", lambda: "1.5.0")
+    if docs_set:
+        monkeypatch.setenv(geotech_page.REFERENCE_DOCS_ENV, str(tmp_path))
+    else:
+        monkeypatch.delenv(geotech_page.REFERENCE_DOCS_ENV, raising=False)
+        from geotech_references import _figures_db
+        monkeypatch.setattr(_figures_db, "_REPO_ROOT", tmp_path / "no_repo")
+    monkeypatch.setattr(geotech_page, "reference_pdf_names",
+                        lambda: {"builtin.pdf": ["dm7_2"]})
+    from funhouse_agent import reference_docs
+    monkeypatch.setattr(reference_docs, "cache_dir",
+                        lambda: str(tmp_path / "no_cache"))
+    c = geotech_page.reference_docs_check()
+    assert f"{_OLD_REFS_NOTE} 1.5.0" in c["detail"]
+
+
+def test_diagnostics_no_refs_note_without_the_setting_or_with_packs(
+        pack_root, tmp_path, monkeypatch):
+    from webapp import geotech_page
+    monkeypatch.setenv(geotech_page.REFERENCE_DOCS_ENV, str(tmp_path))
+    monkeypatch.setattr(geotech_page, "reference_pdf_names",
+                        lambda: {"builtin.pdf": ["dm7_2"]})
+    monkeypatch.delenv(_packs.PACKS_ENV, raising=False)
+    assert reference_packs.unsupported_note() == ""
+    assert _OLD_REFS_NOTE not in geotech_page.reference_docs_check()["detail"]
+    monkeypatch.setenv(_packs.PACKS_ENV, str(pack_root))   # refs 1.6.0 here
+    assert reference_packs.unsupported_note() == ""
+    assert _OLD_REFS_NOTE not in geotech_page.reference_docs_check()["detail"]

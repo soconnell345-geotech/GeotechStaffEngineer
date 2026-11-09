@@ -16,10 +16,19 @@ sections 2.4 and 2.7):
 
 All are empty with no packs, and on a refs older than 1.6.0 (feature
 detected by ``hasattr(_retrieval_db, "pack_dirs")``), so the app's prompts,
-records and read folders are then exactly what they were.
+records and read folders are then exactly what they were. On such a refs
+with ``GEOTECH_REFERENCES_PACKS`` set, :func:`unsupported_note` says so for
+the diagnostics (a Foundry wheel set goes in with ``--no-deps``, so the pin
+alone does not keep an older refs out).
 """
 
+import os
 from typing import List
+
+#: The setting that names the packs (``geotech_references._packs.PACKS_ENV``).
+PACKS_ENV = "GEOTECH_REFERENCES_PACKS"
+#: The first geotech-references that reads packs.
+PACKS_MIN_REFS = "1.6.0"
 
 
 def _packs_module():
@@ -55,6 +64,26 @@ def pack_folders() -> List[str]:
         return [str(folder) for folder in mod.pack_dirs()]
     except Exception:  # noqa: BLE001 - a read folder, never a failed read
         return []
+
+
+def refs_version() -> str:
+    """The installed geotech-references' version, or ``"unknown"``."""
+    try:
+        from importlib.metadata import version
+        return version("geotech-references")
+    except Exception:  # noqa: BLE001 - a diagnostics line, never a failure
+        return "unknown"
+
+
+def unsupported_note() -> str:
+    """One plain line when ``GEOTECH_REFERENCES_PACKS`` is set but the
+    installed refs cannot read packs; ``""`` otherwise."""
+    if not (os.environ.get(PACKS_ENV) or "").strip():
+        return ""
+    if _packs_module() is not None:
+        return ""
+    return (f"reference packs need geotech-references {PACKS_MIN_REFS} or "
+            f"later; installed {refs_version()}, so {PACKS_ENV} is ignored")
 
 
 def pack_problems() -> List[str]:

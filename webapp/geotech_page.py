@@ -336,10 +336,16 @@ def reference_docs_check() -> dict:
     list. At most one SharePoint folder listing; no model call.
     """
     name = "reference PDFs (chart read-off)"
+    # -- the local reference packs (REF-64): a skipped pack, or a setting
+    # the installed refs cannot read, on every outcome of this row ---------
+    from funhouse_agent.reference_packs import pack_problems, unsupported_note
+    packs_notes = ([n for n in (unsupported_note(),) if n]
+                   + [f"reference pack skipped: {p}" for p in pack_problems()])
     needed = reference_pdf_names()
     if not needed:
-        return _check(name, SKIP, "no figure catalogs found "
-                                  "(geotech-references not installed?)")
+        return _check(name, SKIP, "\n".join(
+            ["no figure catalogs found (geotech-references not installed?)"]
+            + packs_notes))
 
     # -- local folder -------------------------------------------------------
     folder = (os.environ.get(REFERENCE_DOCS_ENV) or "").strip()
@@ -368,10 +374,7 @@ def reference_docs_check() -> dict:
             local_problem = f"{where} — cannot list the folder: {exc}"
 
     # -- the local reference packs' own folders (REF-64) -------------------
-    pack_files = _pack_folder_files()
-    present |= pack_files
-    from funhouse_agent.reference_packs import pack_problems
-    packs_skipped = [f"reference pack skipped: {p}" for p in pack_problems()]
+    present |= _pack_folder_files()
 
     # -- PDFs already fetched this session ---------------------------------
     try:
@@ -398,13 +401,13 @@ def reference_docs_check() -> dict:
 
     if sp_label is None and not present:
         if local_problem:
-            return _check(name, FAIL, local_problem)
+            return _check(name, FAIL, "\n".join([local_problem] + packs_notes))
         if not folder:
             from webapp import engine_config
-            return _check(name, WARN,
-                          _UNSET_MESSAGE_FOUNDRY
-                          if engine_config.is_foundry_deployment()
-                          else _UNSET_MESSAGE)
+            return _check(name, WARN, "\n".join(
+                [_UNSET_MESSAGE_FOUNDRY
+                 if engine_config.is_foundry_deployment()
+                 else _UNSET_MESSAGE] + packs_notes))
 
     sources = [s for s in (where,
                            sp_label and f"{sp_label} (fetched on first use)")
@@ -412,7 +415,7 @@ def reference_docs_check() -> dict:
     src = " + ".join(sources) or "the fetched-PDF cache"
     missing = [n for n in needed if n not in present and n not in remote]
     n_remote = sum(1 for n in needed if n not in present and n in remote)
-    extra = [p for p in (local_problem, sp_problem) if p] + packs_skipped
+    extra = [p for p in (local_problem, sp_problem) if p] + packs_notes
     if not missing:
         detail = f"{src}: all {len(needed)} PDFs found"
         if n_remote:
