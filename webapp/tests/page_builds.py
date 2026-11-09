@@ -59,17 +59,21 @@ _OTHER_ENVS = ("SHAREPOINT_SITE_URL", "SHAREPOINT_ROOT", "GRAPH_TENANT_ID",
 
 @contextlib.contextmanager
 def page_environment(switch=None, **settings: str) -> Iterator[None]:
-    """Every ``GEOTECH_*`` setting unset, the vision probe off,
-    ``GEOTECH_REVIEW_AGENT`` set to ``switch`` (None: the default build) and
-    ``settings`` set. Restored afterwards."""
+    """Every ``GEOTECH_*`` setting unset, the vision probe off, the app's
+    data folder a temporary one (a build makes a working folder, never in the
+    user's own data folder), ``GEOTECH_REVIEW_AGENT`` set to ``switch``
+    (None: the default build) and ``settings`` set. Restored afterwards."""
     names = {n for n in os.environ if n.startswith("GEOTECH_")}
     names |= set(_OTHER_ENVS) | set(settings) | {"GEOTECH_VISION_PROBE",
-                                                 "GEOTECH_REVIEW_AGENT"}
+                                                 "GEOTECH_REVIEW_AGENT",
+                                                 "GEOTECH_WEBAPP_DATA"}
     saved = {n: os.environ.get(n) for n in names}
+    data = tempfile.TemporaryDirectory(prefix="pagebuild_data_")
     try:
         for n in names:
             os.environ.pop(n, None)
         os.environ["GEOTECH_VISION_PROBE"] = "0"
+        os.environ["GEOTECH_WEBAPP_DATA"] = data.name
         if switch:
             os.environ["GEOTECH_REVIEW_AGENT"] = switch
         os.environ.update(settings)
@@ -80,6 +84,7 @@ def page_environment(switch=None, **settings: str) -> Iterator[None]:
                 os.environ.pop(n, None)
             else:
                 os.environ[n] = v
+        data.cleanup()
 
 
 def fake_model(first_step=None):
