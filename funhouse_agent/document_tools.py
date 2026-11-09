@@ -17,7 +17,7 @@ one :class:`planlens.review.ReviewHost`:
   reader, the image support, the error and record hooks, the hints naming
   this app's vision tools). It is installed for the process when this module
   is imported (``planlens.review.configure``), so a library caller (the
-  coverage ledger, the findings tools, the cited-page check) resolves and
+  cited-page check, ``measure_tool``) resolves and
   opens documents exactly as the agent's tools do;
 - :func:`host_for` -- one host per agent build (per ``make_vision_tools``
   call): the base with that build's LOOK (``vision_tools.ask_vision`` with
@@ -463,5 +463,5 @@ def __getattr__(name: str):
 _deployment_author = markup_author
 
 #: The process's host: every planlens.review call that no agent build serves
-#: with its own (the coverage ledger, the findings tools, library callers).
+#: with its own (the cited-page check, library callers).
 BASE_HOST = _review.configure(app_host())

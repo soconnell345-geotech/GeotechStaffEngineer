@@ -23,20 +23,10 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     (The vision switches ``GEOTECH_VISION_TEXT_CONTEXT``,
     ``GEOTECH_VISION_STRUCTURED`` and ``GEOTECH_VISION_TURN_RETRY``, and
     ``GEOTECH_VISION_PATCH_ALIGN`` in :mod:`funhouse_agent.vision_view`,
-    were removed in BACKLOG DR-40 for the same reason;
+    were removed in BACKLOG DR-40 for the same reason, with
+    ``GEOTECH_COVERAGE`` (the coverage ledger, ``document_coverage`` and the
+    gate; run 7: 39/42 either way, at +47 % input);
     ``module_work/dr40/CHECK.md``.)
-``GEOTECH_COVERAGE``
-    ``1`` keeps a ledger of every page any tool or helper reads or looks at
-    (:mod:`funhouse_agent.coverage`, derived from the tool calls, kept in
-    the conversation's ``coverage.json``), offers ``document_coverage`` (the
-    document's pages by what they are, what was read, coverage as counts,
-    pages marked extracted or skipped) and adds the gate: a turn that takes
-    data out of a document and tries to finish with data pages unread is
-    told once, with the list. BOTH pages and every agent build that reads
-    documents (the geotech page and the review page); not the
-    minimal agent (plan W4, ``module_work/COVERAGE_AND_CHECKLIST.md``). On
-    the Document Review page only a declared coverage task holds a turn,
-    and the tool's description names no kind of report (BACKLOG RI-34).
 ``GEOTECH_REVIEW_CHECKLIST``
     ``1`` offers ``report_checklist`` on the GeotechStaffEngineer page: the
     geotechnical report review checklist (DRAFT, OWN-31;
@@ -144,7 +134,6 @@ from contextlib import contextmanager
 from typing import Dict, Iterator, Mapping, Optional
 
 AGENT_ENV = "GEOTECH_REVIEW_AGENT"
-COVERAGE_ENV = "GEOTECH_COVERAGE"
 CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
 REPORT_INGEST_ENV = "GEOTECH_REPORT_INGEST"
 CITED_PAGES_ENV = "GEOTECH_CITED_PAGES"
@@ -154,7 +143,7 @@ PLOT_CODE_ENV = "GEOTECH_PLOT_CODE"
 STEP_CAP_ANSWER_ENV = "GEOTECH_STEP_CAP_ANSWER"
 JUDGMENT_CALLS_ENV = "GEOTECH_JUDGMENT_CALLS"
 
-ALL_ENVS = (AGENT_ENV, COVERAGE_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
+ALL_ENVS = (AGENT_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
             FIGURE_HELPER_ENV, PLOT_CODE_ENV, STEP_CAP_ANSWER_ENV,
             CITED_DOCUMENTS_ENV, JUDGMENT_CALLS_ENV, REPORT_INGEST_ENV)
 
@@ -193,12 +182,6 @@ def minimal_agent() -> bool:
     (:mod:`funhouse_agent.deep.minimal_agent`) — a measuring stick, not a
     product: page and zoom tools, helpers, and the two output tools."""
     return str(os.environ.get(AGENT_ENV, "")).strip().lower() == "minimal"
-
-
-def coverage() -> bool:
-    """Whether the coverage ledger, ``document_coverage`` and the gate are
-    on (both pages)."""
-    return _on(COVERAGE_ENV)
 
 
 def checklist() -> bool:
@@ -280,12 +263,12 @@ ARMS: Dict[str, Dict[str, str]] = {
     # in BACKLOG DR-39 (module_work/dr39/CHECK.md).
     # The looking-only agent (owner, 2026-10-02): which tools carry weight?
     "minimal": {AGENT_ENV: "minimal"},
-    # Coverage in code (plan W4, 2026-10-08). On the DEFAULT agent of each
-    # page, so it compares straight against `baseline`: the ledger, the
-    # coverage tool and the gate; then the same plus the report checklist
-    # (which reaches only the geotech page since RI-34).
-    "coverage": {COVERAGE_ENV: "1"},
-    "checklist": {COVERAGE_ENV: "1", CHECKLIST_ENV: "1"},
+    # The report checklist (plan W4, 2026-10-08), which reaches only the
+    # geotech page since RI-34. On the DEFAULT agent of each page, so it
+    # compares straight against `baseline`. (It set GEOTECH_COVERAGE too
+    # until the coverage ledger was removed in DR-40; the checklist reads
+    # report ingest's record, not the ledger.)
+    "checklist": {CHECKLIST_ENV: "1"},
     # Cited pages no tool opened (EV-18, 2026-10-15): a note on the answer,
     # or the model told once. On the DEFAULT agent, against `baseline`.
     "cited_pages_note": {CITED_PAGES_ENV: "note"},
@@ -356,12 +339,12 @@ def describe() -> str:
     return ", ".join(out)
 
 
-__all__ = ["AGENT_ENV", "COVERAGE_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
+__all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "FIGURE_HELPER_ENV", "PLOT_CODE_ENV", "STEP_CAP_ANSWER_ENV",
            "CITED_DOCUMENTS_ENV", "JUDGMENT_CALLS_ENV", "REPORT_INGEST_ENV",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
-           "coverage", "checklist", "report_ingest",
+           "checklist", "report_ingest",
            "figure_helper", "plot_code",
            "step_cap_answer", "judgment_calls",
            "cited_pages", "cited_documents",

@@ -44,8 +44,7 @@ class _Model(FakeMessagesListChatModel):
 
 
 #: The builds, each with every review switch off and with the switches on.
-_ON = {RF.COVERAGE_ENV: "1", RF.CHECKLIST_ENV: "1",
-       RF.FIGURE_HELPER_ENV: "1"}
+_ON = {RF.CHECKLIST_ENV: "1", RF.FIGURE_HELPER_ENV: "1"}
 BUILDS = {
     "legacy": {},
     "minimal": {RF.AGENT_ENV: "minimal"},

@@ -871,7 +871,6 @@ def build_deep_agent(
     summarization_keep=_DEFAULT_SUMMARIZATION_KEEP,
     review_page: bool = False,
     working_dir: Optional[str] = None,
-    coverage_dir: Optional[str] = None,
     subagent_models: Optional[dict] = None,
     document_signal: Optional[Callable[[], bool]] = None,
     **kwargs,
@@ -892,12 +891,10 @@ def build_deep_agent(
     host decides the map (``webapp.helper_models``); the compiled agent's
     ``geotech_build["helper_models"]`` records the result.
 
-    ``coverage_dir`` is the conversation's folder, where the coverage ledger
-    (``coverage.json``) is kept when ``GEOTECH_COVERAGE`` is on
-    (:mod:`funhouse_agent.deep.coverage_tools`); ``None`` keeps it in
-    memory. With the switch off (the default) it is unused and the build is
-    unchanged. ``GEOTECH_REVIEW_CHECKLIST`` keeps no ledger since RI-34: its
-    checks read report ingest's record (:mod:`report_ingest.checklist`).
+    ``GEOTECH_REVIEW_CHECKLIST`` keeps no ledger since RI-34: its checks
+    read report ingest's record (:mod:`report_ingest.checklist`). (The
+    coverage ledger behind ``GEOTECH_COVERAGE``, and ``coverage_dir`` with
+    it, were removed in BACKLOG DR-40.)
 
     ``review_page=True`` hands the build to the Document Review page's own
     (:func:`funhouse_agent.review_build.build_review_page_agent`, INF-31
@@ -1224,16 +1221,6 @@ def build_deep_agent(
         if library_tools:
             tools = list(tools) + list(library_tools)
             system_prompt = system_prompt + "\n\n" + REPORT_LIBRARY_NUDGE
-    # Coverage in code (GEOTECH_COVERAGE, OFF by default): the ledger every
-    # agent of this build reports its tool calls to, the gate on the primary,
-    # the tool. No prompt text: the tool describes itself. On the review page
-    # only a declared coverage task holds a turn (BACKLOG RI-34).
-    from funhouse_agent.deep.coverage_tools import coverage_kit
-    coverage = coverage_kit(attachments=attachments, folder=coverage_dir,
-                            max_result_chars=max_result_chars,
-                            review_page=False)
-    if coverage.tools:
-        tools = list(tools) + list(coverage.tools)
     # The geotechnical report review checklist (GEOTECH_REVIEW_CHECKLIST, OFF
     # by default): report_ingest's, run on the record report ingest wrote;
     # the geotech page only (BACKLOG RI-34).
@@ -1373,7 +1360,7 @@ def build_deep_agent(
         )
 
     # The guards on every helper, deepagents' general-purpose helper with
-    # them, a helper's own model and the coverage recorders: the assembly
+    # them and a helper's own model: the assembly
     # both pages share (funhouse_agent.deep.assembly, INF-31 step 8). An
     # agent with call_agent also gets the unknown-tool hint, scoped to the
     # modules that agent reaches; the calc helper's FigureLooks notes go
@@ -1383,7 +1370,7 @@ def build_deep_agent(
         subagents, tools, allowed_agents=allowed_agents,
         call_scope=_call_scopes(allowed_agents), note_types=(FigureLooks,),
         unknown_tool_hint=UnknownToolHint,
-        subagent_models=subagent_models, coverage=coverage)
+        subagent_models=subagent_models)
 
     # The geotech page: deepagents' shell and delete cannot run on this
     # backend (GM-176; wave w13b F55j called execute with no command); the
@@ -1401,8 +1388,7 @@ def build_deep_agent(
                          # INF-67: the document and drawing tools off the
                          # list until the conversation holds a document.
                          DocumentToolsGate(attachments,
-                                           signal=document_signal)],
-        coverage=coverage)
+                                           signal=document_signal)])
     # create_deep_agent is looked up here, so a test that patches this
     # module's name for it sees the call.
     agent = _assembly.compile_agent(
@@ -1412,8 +1398,7 @@ def build_deep_agent(
     return _assembly.record_build(
         agent, attachments=attachments, model=model, tools=tools,
         subagents=subagents, system_prompt=system_prompt,
-        helper_models=helper_models, judgment_consult=judgment_consult,
-        coverage=coverage)
+        helper_models=helper_models, judgment_consult=judgment_consult)
 
 
 def _call_scopes(allowed_agents) -> dict:
@@ -1513,7 +1498,7 @@ def _review_page_build(args: dict):
             "subagent_extra_tools", "subagent_extra_system_prompt", "store",
             "checkpointer", "enable_memory", "enable_summarization",
             "summarization_model", "summarization_trigger",
-            "summarization_keep", "working_dir", "coverage_dir",
+            "summarization_keep", "working_dir",
             "subagent_models", "reference_mode", "enable_calc_subagent")
     return review_build.build_review_page_agent(
         model, allowed_agents=allowed_agents,

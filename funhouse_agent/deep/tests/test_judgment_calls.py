@@ -156,7 +156,6 @@ def test_only_the_three_ruled_switches_are_on_by_default(monkeypatch):
         "GEOTECH_PLOT_CODE"}
     readers = {
         review_flags.AGENT_ENV: review_flags.minimal_agent,
-        review_flags.COVERAGE_ENV: review_flags.coverage,
         review_flags.CHECKLIST_ENV: review_flags.checklist,
         review_flags.REPORT_INGEST_ENV: review_flags.report_ingest,
         review_flags.CITED_PAGES_ENV:

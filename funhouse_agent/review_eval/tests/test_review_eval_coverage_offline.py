@@ -100,15 +100,13 @@ def test_states_coverage_wants_a_count_of_what_was_read():
     assert not C.check_states_coverage("The ratio is 3 of 4.")[0]
 
 
-def _report_model(final_answer, *, read_all_first=False):
-    """Opens the uploaded report, reads three lab sheets, answers; after a
-    coverage note, reads the rest and looks at the scans, then answers
-    ``final_answer``. ``read_all_first`` reads everything up front."""
+def _report_model(final_answer):
+    """Opens the uploaded report, reads every page and looks at the scans,
+    then answers ``final_answer``."""
     from langchain_core.language_models.fake_chat_models import (
         FakeMessagesListChatModel)
     from langchain_core.messages import AIMessage
     from langchain_core.outputs import ChatGeneration, ChatResult
-    from funhouse_agent.coverage import GATE_PREFIX
 
     class Model(FakeMessagesListChatModel):
         calls: list = []
@@ -124,38 +122,22 @@ def _report_model(final_answer, *, read_all_first=False):
             key = re.search(r"'([^']+\.pdf)'", str(humans[0].content)).group(1)
             tools = [m for m in messages if m.type == "tool"]
             names = [m.name for m in tools]
-            gate = any(str(m.content).startswith(GATE_PREFIX)
-                       for m in humans)
             handle = next((json.loads(m.content)["handle"] for m in tools
                            if m.name == "open_document"), None)
             n = len(self.calls)
             if handle is None:
                 return self._calls([("open_document", {"source": key})], n)
             if "read_document" not in names:
-                # one page a call when reading everything: a long range
-                # comes back in parts (a 'next' cursor) the fake would not
-                # follow
-                calls = ([("read_document", {"handle": handle,
-                                             "pages": str(p)})
-                          for p in range(30)] if read_all_first else
-                         [("read_document", {"handle": handle,
-                                             "pages": "16-18"})])
-                if read_all_first:
-                    calls += [("analyze_pdf_page", {"attachment_key": key,
-                                                    "page": p})
-                              for p in RF.SCANNED_LOG_PAGES]
+                # one page a call: a long range comes back in parts (a
+                # 'next' cursor) the fake would not follow
+                calls = [("read_document", {"handle": handle,
+                                            "pages": str(p)})
+                         for p in range(30)]
+                calls += [("analyze_pdf_page", {"attachment_key": key,
+                                                "page": p})
+                          for p in RF.SCANNED_LOG_PAGES]
                 return self._calls(calls, n)
-            if gate and names.count("read_document") < 2:
-                return self._calls(
-                    [("read_document", {"handle": handle,
-                                        "pages": "7-10,19-29"})]
-                    + [("analyze_pdf_page", {"attachment_key": key,
-                                             "page": p})
-                       for p in RF.SCANNED_LOG_PAGES], n)
-            if gate or read_all_first:
-                return self._r(AIMessage(content=final_answer))
-            return self._r(AIMessage(content="Tables of the three Atterberg "
-                                             "sheets I read."))
+            return self._r(AIMessage(content=final_answer))
 
         def _r(self, msg):
             return ChatResult(generations=[ChatGeneration(message=msg)])
@@ -168,37 +150,11 @@ def _report_model(final_answer, *, read_all_first=False):
     return Model(responses=[AIMessage(content="x")], calls=[])
 
 
-def test_the_coverage_arm_is_what_turns_the_extraction_task(tmp_path):
-    """Offline, on a scripted model that stops after three sheets unless it
-    is told: `baseline` fails the coverage checks, `coverage` passes them -
-    the arm measures the change it adds, through the run's own activity and
-    answer only."""
-    from funhouse_agent.review_eval import score_review_suite
-    task = next(t for t in OPEN_TASKS if t.id == "report-extract-all")
-    model = _report_model(task.truth)
-    res = score_review_suite(model, ids=["report-extract-all"],
-                             arms=("baseline", "coverage"),
-                             out_dir=tmp_path, verbose=False)
-    base = res["results"]["baseline"]["report-extract-all"]
-    cov = res["results"]["coverage"]["report-extract-all"]
-    assert base["error"] is None and cov["error"] is None, cov.get("traceback")
-    by = {c["label"]: c for c in base["checks"]}
-    assert not by["every log page and laboratory page was read"]["passed"]
-    assert not by["the answer states its coverage as counts"]["passed"]
-    assert cov["score"]["passed"], cov["checks"]
-    assert (tmp_path / "runs" / "coverage" / "report-extract-all" /
-            "coverage.json").is_file()
-    # the ledger lives beside the activity, never among the produced files
-    assert not any("coverage.json" in f for f in cov["files"])
-    assert "`coverage` FIXES report-extract-all" in res["results_md"]
-    assert "By app page" in res["results_md"]
-
-
 def test_a_geotech_page_task_is_run_on_the_geotech_page(tmp_path):
     from funhouse_agent.review_eval.runner import build_page_agent, run_task
     task = next(t for t in OPEN_TASKS if t.id == "report-extract-diggs")
     assert task.page == "geotech"
-    model = _report_model(task.truth, read_all_first=True)
+    model = _report_model(task.truth)
     res = run_task(task, model, arm="baseline", arm_env={}, docs_dir=None,
                    run_dir=str(tmp_path / "r"))
     assert res["error"] is None, res.get("traceback")
@@ -218,13 +174,3 @@ def test_a_task_round_trips_its_page():
     t = Task.from_dict({"id": "x", "question": "q", "page": "geotech"})
     assert t.page == "geotech" and Task.from_dict(t.to_dict()).page == "geotech"
     assert Task.from_dict({"id": "y", "question": "q"}).page == "review"
-
-
-def test_the_coverage_arms_are_switches_on_the_default_agents():
-    A = review_flags
-    assert A.ARMS["coverage"] == {A.COVERAGE_ENV: "1"}
-    assert A.ARMS["checklist"] == {A.COVERAGE_ENV: "1", A.CHECKLIST_ENV: "1"}
-    with A.switches(A.ARMS["checklist"]):
-        assert A.coverage() and A.checklist() and not A.minimal_agent()
-    with A.switches(A.ARMS["baseline"]):
-        assert not A.coverage() and not A.checklist()

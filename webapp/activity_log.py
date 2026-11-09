@@ -30,8 +30,8 @@ Record shape (one JSON object per line)::
 
 ``event`` is one of ``turn_start``, ``tool_start``, ``tool_end``,
 ``tool_error``, ``model_start``, ``model_end``, ``model_error``,
-``turn_end``, ``coverage_gate`` (the note the coverage gate gave the
-model, with ``GEOTECH_COVERAGE`` on), the app events of
+``turn_end``, ``coverage_gate`` (in records made before DR-40 removed the
+coverage gate: the note it gave the model), the app events of
 :data:`APP_EVENTS` (``cited_pages``: the answer's page citations checked
 against the pages opened; ``cited_documents``: the documents an answer or a
 writer cites, checked against what was looked up; ``judgment_check``: the
@@ -1310,10 +1310,8 @@ class ActivityLogger(BaseCallbackHandler):
 
     def on_custom_event(self, name, data, *, run_id, tags=None, metadata=None,
                         **kwargs):
-        """App events inside a run. ``coverage_gate``: the note the coverage
-        gate put in front of the model (``funhouse_agent.deep.
-        coverage_tools``) -- part of what the model was shown, so it belongs
-        in the record."""
+        """App events inside a run: a tool result as delivered, a document
+        lock's wait, and the app events of :data:`APP_EVENTS`."""
         try:
             if name == "tool_delivered":
                 self._delivered(data, run_id)
@@ -1336,13 +1334,6 @@ class ActivityLogger(BaseCallbackHandler):
                                 if k not in ("agent", "event")})
                 self._write(rec)
                 return
-            if name != "coverage_gate":
-                return
-            note = (data or {}).get("note") if isinstance(data, dict) else data
-            text, truncated, _n = _cap(note, self.max_chars)
-            self._write({"agent": PRIMARY, "event": "coverage_gate",
-                         "run_id": str(run_id), "text": text,
-                         "truncated": truncated})
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
 
