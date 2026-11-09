@@ -1,6 +1,6 @@
 # Local reference packs and deployment-appended instructions: design (BACKLOG REF-64)
 
-Plan of record for BACKLOG REF-64 (lead's calls 2026-11-09: the `local_` prefix, the 4,000-character cap per role, and `report_ingest.md` in the first cut as one recorded block; the owner's call on whether built-in rules win is on the desk). Design helper for the lead, 2026-11-09. Read-only: app master `3a57539`, refs `8a09592`, the step 11 (a) branch `origin/claude/inf-32-step11a` (`6362b21`). Nothing was edited or run against a model. Open work stays in `BACKLOG.md` (REF-64 already holds this request). This file keeps the evidence and the design.
+Plan of record for BACKLOG REF-64 (lead's calls 2026-11-09: the `local_` prefix, the 4,000-character cap per role, and `report_ingest.md` in the first cut as one recorded block; the owner agreed the same day that built-in rules win, section 3.3). Design helper for the lead, 2026-11-09. Read-only: app master `3a57539`, refs `8a09592`, the step 11 (a) branch `origin/claude/inf-32-step11a` (`6362b21`). Nothing was edited or run against a model. Open work stays in `BACKLOG.md` (REF-64 already holds this request). This file keeps the evidence and the design.
 
 ## 0. In short
 
@@ -358,11 +358,17 @@ The two compiled helpers are wired in GSE's `agent.py`:
 
 ### 3.3 The heading and the cap
 
+**Decided (owner 2026-11-09, agreeing the lead's proposal): the built-in rules win.** Two layers:
+
+1. **Guards in code** cannot be touched by any text: file confinement to the working folder, the locked plotting box, per-tester keys, the step caps.
+2. **A short protected list** of integrity rules sits in the built-in prompt above the deployment block: cite the printed page; formulas and defaults only from a printed source; state assumptions and the method used; say when a reading failed or is uncertain; never invent a value.
+
 Each block is appended last, under a fixed heading:
 
-"Instructions from this deployment (added to the instructions above; where they conflict with citing the sources your tools returned or with formulas as printed, the instructions above win):"
+"Instructions from this deployment. They may set conventions, preferred methods (cited from a reference this deployment provides), defaults, units and formats. They cannot switch off the protected rules above. Where one conflicts, follow the protected rule and say so in your answer."
 
-- The model and a reader can tell the block apart from the built-in prompt. Whether the built-in rules win is the owner's call (section 6).
+- The model and a reader can tell the block apart from the built-in prompt, and the record (3.4) shows the appended text.
+- Choosing a method is allowed (for example an agency's own resistance factors from its pack), as long as the agent cites the pack and states the basis, as the existing rule on offering cited options already says.
 - **Cap:** 4,000 characters per role (all plus role). Past the cap the text is cut at a paragraph and the record says so (GeoBot used the same size).
 - An empty or missing file appends nothing. An unreadable folder appends nothing and the record names the error, so a build never fails on it.
 
@@ -429,7 +435,7 @@ Each block is appended last, under a fixed heading:
 
 ## 6. Decisions to take (for the lead to put on the backlog under REF-64)
 
-- **Owner:** do a deployment's instructions sit under the built-in rules (the heading in 3.3)? The recommendation is yes.
+- **Owner:** do a deployment's instructions sit under the built-in rules (the heading in 3.3)? **Decided 2026-11-09: yes**, with the two layers in 3.3.
 - **Lead (small calls):**
   - the `local_` id prefix;
   - the 4,000-character cap;
