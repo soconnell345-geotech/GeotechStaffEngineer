@@ -259,7 +259,7 @@ def _working_file(path: str) -> Optional[str]:
     bound for the turn, when the folder holds a file of that name; else
     ``None`` (and always ``None`` with no folder bound)."""
     try:
-        from funhouse_agent._fileio import host_output_dir
+        from aec_agent_core._fileio import host_output_dir
         host = host_output_dir()
     except Exception:  # noqa: BLE001 - no host, no working folder
         return None
@@ -325,7 +325,7 @@ def _saved_name(path: str) -> str:
 def _shown(saved: str) -> str:
     """``saved`` as the agent names it: relative to the working folder."""
     try:
-        from funhouse_agent._fileio import host_output_dir
+        from aec_agent_core._fileio import host_output_dir
         base = host_output_dir()
         if base:
             rel = os.path.relpath(saved, base)
@@ -346,8 +346,8 @@ def _own_name(target: str) -> tuple:
     anything, so its redirect must not either. With no folder bound,
     ``(target, None)``."""
     try:
-        from funhouse_agent._fileio import host_output_dir, into_working_folder
-        from funhouse_agent.deep.keep_work import current_helper, saved_files
+        from aec_agent_core._fileio import host_output_dir, into_working_folder
+        from aec_agent_core.deep.keep_work import current_helper, saved_files
         host = host_output_dir()
         if not host:
             return target, None

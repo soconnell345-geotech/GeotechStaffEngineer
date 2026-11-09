@@ -18,6 +18,8 @@ from aec_agent_core import install_aliases as _install_aliases
 
 #: Old name -> the core's name (lazy; see ``aec_agent_core.install_aliases``).
 CORE_ALIASES = {
+    # Step 11 (c): the run record, which both pages and the suite write.
+    "webapp.activity_log": "aec_agent_core.activity_log",
     "webapp.engine_config": "aec_agent_core.engine_config",
     "webapp.http_trace": "aec_agent_core.http_trace",
     "webapp.palantir_sdk_engine": "aec_agent_core.palantir_sdk_engine",

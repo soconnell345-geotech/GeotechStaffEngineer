@@ -59,7 +59,7 @@ try:
 except ImportError:  # pragma: no cover - older layout
     from langchain.agents.middleware.types import AgentMiddleware
 
-from funhouse_agent.deep.tool_guards import GraphBubbleUp, _ai_of, _text
+from aec_agent_core.deep.tool_guards import GraphBubbleUp, _ai_of, _text
 
 #: The folder, inside the conversation's working folder, that kept work goes
 #: into. Its files get download cards like any file a turn writes, and the
@@ -258,7 +258,7 @@ def _json(obj: Any) -> str:
 
 
 def _result_messages(result) -> list:
-    from funhouse_agent.deep.delivered_log import _messages_of
+    from aec_agent_core.deep.delivered_log import _messages_of
     return _messages_of(result)
 
 
@@ -467,7 +467,7 @@ def kept_folder() -> str:
     with no working folder). On a shared host with no folder bound it
     raises :class:`~funhouse_agent._fileio.UnboundWorkingDir`, and nothing
     is kept: the temp folder is every user's (the callers catch it)."""
-    from funhouse_agent._fileio import UnboundWorkingDir, host_output_dir
+    from aec_agent_core._fileio import UnboundWorkingDir, host_output_dir
     base = None
     try:
         base = host_output_dir()
@@ -483,7 +483,7 @@ def kept_folder() -> str:
 def _relative(path: str) -> str:
     """``path`` as the agent names it: relative to the working folder."""
     try:
-        from funhouse_agent._fileio import host_output_dir
+        from aec_agent_core._fileio import host_output_dir
         base = host_output_dir()
         if base:
             rel = os.path.relpath(path, base)
@@ -520,7 +520,7 @@ def helper_file_text(rec: HelperRecord, why: str,
         f"Kept because: {why}.",
     ]
     if records:
-        from funhouse_agent.deep.held_records import describe
+        from aec_agent_core.deep.held_records import describe
         head.append(f"Records it held ({describe(records)}) are saved as "
                     f"'{records['name']}': pass that file to write_diggs.")
     head += [
@@ -619,7 +619,7 @@ def save_held_records(rec: HelperRecord,
     ``{"path", "name", "investigations", "lab_tests", "source"}``, or
     ``None`` when it held none or the file could not be written."""
     try:
-        from funhouse_agent.deep.held_records import (file_content,
+        from aec_agent_core.deep.held_records import (file_content,
                                                       held_records)
         held = held_records(rec, answer)
         if not held:
@@ -659,7 +659,7 @@ def _records_note(records: dict) -> str:
     """What the primary is told about a records file; a plainer line if
     the full note cannot be made (keeping never fails the call)."""
     try:
-        from funhouse_agent.deep.held_records import records_note
+        from aec_agent_core.deep.held_records import records_note
         return records_note(records["name"], records)
     except Exception:  # noqa: BLE001
         return (f"[Records this helper held are saved as "
@@ -732,7 +732,7 @@ def _event(name: str, data: dict) -> None:
 
 def _conversation() -> str:
     try:
-        from funhouse_agent.deep.vision_engine import conversation_key
+        from aec_agent_core.deep.vision_engine import conversation_key
         return conversation_key()
     except Exception:  # noqa: BLE001
         return ""
@@ -782,7 +782,7 @@ class KeepWork(AgentMiddleware):
     def _stopped(self, request, rec: HelperRecord, exc: BaseException):
         """A helper that raised: keep its work and say so, as the tool
         error the primary reads."""
-        from funhouse_agent.error_text import error_line
+        from aec_agent_core.error_text import error_line
         call = getattr(request, "tool_call", None) or {}
         out = {"error": f"task failed: the {rec.subagent} helper stopped "
                         f"on an error: {error_line(exc)}"}
@@ -816,7 +816,7 @@ class KeepWork(AgentMiddleware):
                            "a busy model), or another way; tell the user "
                            "plainly what could not be done.")
         try:
-            from funhouse_agent.error_text import budget_exhausted, BUDGET_HINT
+            from aec_agent_core.error_text import budget_exhausted, BUDGET_HINT
             if budget_exhausted(exc) is not None:
                 out["hint"] = BUDGET_HINT
         except Exception:  # noqa: BLE001

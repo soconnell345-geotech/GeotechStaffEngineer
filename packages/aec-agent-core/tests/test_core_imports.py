@@ -10,10 +10,10 @@ functions too), is checked:
   dispatch, adapters, agent, prompts, reference and worked-example readers,
   and the review page's own files;
 - of ``funhouse_agent``, only the modules on :data:`NOT_MOVED_YET`: files
-  plan section 2.3 puts in the core that merges (b) and (c) have not moved
-  yet, each imported INSIDE a function (so every core module imports with
-  only the core and planlens installed). The list only shrinks: an entry
-  nothing imports any more fails, like the boundary test's lists.
+  plan section 2.3 puts in the core that a later merge had not moved yet,
+  each imported INSIDE a function (so every core module imports with only
+  the core and planlens installed). Since step 11 (c) the list is EMPTY:
+  the core imports nothing of ``funhouse_agent`` at all.
 
 What the core may import at module level is the standard library, itself,
 planlens and third-party packages; this test reads the source, so it runs
@@ -31,20 +31,13 @@ CORE = pathlib.Path(__file__).resolve().parents[1] / "aec_agent_core"
 #: funhouse_agent modules the core may still reach, inside a function, until
 #: the merge named (plan 2.3: each is a core file). When the merge moves it,
 #: the import becomes the core's own and the entry goes.
-NOT_MOVED_YET = {
-    "funhouse_agent.cited_documents": "11 (c), the run record's checks",
-    "funhouse_agent.document_tools": "11 (c), the document tools' binding",
-    "funhouse_agent.docx_renderer": "11 (c), Word and Excel",
-    "funhouse_agent.office_text": "11 (c), Word and Excel",
-    "funhouse_agent.dxf_notes": "11 (c) or planlens (plan 2.6, proposed)",
-    # Reached by the figure helper and the plotting box (moved at 11 (b)):
-    "funhouse_agent.review_flags": "11 (c), what both agents also run",
-    "funhouse_agent.deep.keep_work": "11 (c), what both agents also run",
-    "funhouse_agent.deep.limits": "11 (c), what both agents also run",
-    "funhouse_agent.deep.strict_args": "11 (c), what both agents also run",
-    "funhouse_agent.deep.calculate_tool":
-        "11 (c), what both agents also run",
-    "funhouse_agent.deep.vision_kit": "11 (c), the tools' assembly",
+NOT_MOVED_YET: dict = {
+    # Empty since step 11 (c), the last fill: every core file the earlier
+    # merges reached inside a function (cited_documents, document_tools,
+    # docx_renderer, office_text, dxf_notes, review_flags, deep.keep_work,
+    # deep.limits, deep.strict_args, deep.calculate_tool, deep.vision_kit)
+    # is the core's own now. Kept, empty, so the rule stays written down: a
+    # core file may never again wait on GSE.
 }
 
 #: GeotechStaffEngineer's packages (plan 2.4), never imported by the core.
@@ -168,7 +161,22 @@ def test_the_core_is_a_package_of_its_own():
                  "charts/figure_examples.py", "plot_box/__init__.py",
                  "plot_box/child.py", "plot_box/figures.py",
                  "deep/figure_helper.py", "drawing_wait.py",
-                 "progress_notes.py", "arg_checks.py", "method_call.py"):
+                 "progress_notes.py", "arg_checks.py", "method_call.py",
+                 # step 11 (c)
+                 "activity_log.py", "cited_documents.py", "cited_pages.py",
+                 "coverage.py", "document_tools.py", "docx_renderer.py",
+                 "dxf_notes.py", "measure_tool.py", "office_text.py",
+                 "review_flags.py", "run_mirror.py", "runtime_check.py",
+                 "safe_expr.py", "scale_labels.py", "xlsx_writer.py",
+                 "deep/assembly.py", "deep/busy_retry.py",
+                 "deep/calculate_tool.py", "deep/delivered_log.py",
+                 "deep/held_records.py", "deep/keep_work.py",
+                 "deep/limits.py", "deep/result_map.py",
+                 "deep/scratch_guard.py", "deep/strict_args.py",
+                 "deep/tool_guards.py", "deep/vision_kit.py",
+                 "deep/warm_imports.py", "review_eval/__init__.py",
+                 "review_eval/runner.py", "review_eval/checks.py",
+                 "review_eval/documents.py", "review_eval/tasks.py"):
         assert must in names, must
     # the standard library check the module-level rule leans on
     assert "json" in getattr(sys, "stdlib_module_names", {"json"})

@@ -217,7 +217,7 @@ def _resolve_source(source: str):
     what this conversation may read is refused, naming the conversation's
     files rather than any server path."""
     from planlens.tools import ToolError
-    from funhouse_agent.vision_tools import (PathRefused, files_here_text,
+    from aec_agent_core.vision_tools import (PathRefused, files_here_text,
                                              find_readable_file, read_roots)
     attachments = _review.host.current_attachments()
     try:
@@ -244,7 +244,7 @@ def _read_office(path: str, name: str, image_dir=None, image_ref=None):
     """A Word or Excel file as ``(markdown, fields)``
     (``funhouse_agent.office_text``, the reader read_text_file uses); a
     reader without the picture arguments falls back to plain Markdown."""
-    from funhouse_agent import office_text
+    from aec_agent_core import office_text
     try:
         return office_text.read_office(path, image_dir=image_dir,
                                        image_ref=image_ref)
@@ -263,26 +263,26 @@ def _record(event: str, data: Dict[str, Any]) -> None:
 
 
 def _error_json(tool: str, exc: BaseException) -> str:
-    from funhouse_agent.error_text import tool_error_json
+    from aec_agent_core.error_text import tool_error_json
     return tool_error_json(tool, exc)
 
 
 def _after_marked_copy(result: Dict[str, Any], markups: list):
     """The documents a marked copy's notes cite, against what the
     conversation looked up (GEOTECH_CITED_DOCUMENTS; BACKLOG EV-21)."""
-    from funhouse_agent import cited_documents
+    from aec_agent_core import cited_documents
     return cited_documents.add_to_result(
         result, cited_documents.deliverable_texts(list(markups or [])),
         where="annotate_document")
 
 
 def _working_folder():
-    from funhouse_agent._fileio import host_output_dir
+    from aec_agent_core._fileio import host_output_dir
     return host_output_dir()
 
 
 def _verdict_key():
-    from funhouse_agent.vision_tools import reads_file
+    from aec_agent_core.vision_tools import reads_file
     return reads_file()
 
 
@@ -291,56 +291,56 @@ def _find_like_budget():
 
 
 def _display_path(path):
-    from funhouse_agent.vision_tools import display_path
+    from aec_agent_core.vision_tools import display_path
     return display_path(path)
 
 
 def _readable_file(name):
-    from funhouse_agent.vision_tools import find_readable_file
+    from aec_agent_core.vision_tools import find_readable_file
     return find_readable_file(name)
 
 
 def _output_path(name):
-    from funhouse_agent._fileio import resolve_output_path
+    from aec_agent_core._fileio import resolve_output_path
     return resolve_output_path(name)
 
 
 def _hide_paths(obj):
-    from funhouse_agent._fileio import hide_working_folder
+    from aec_agent_core._fileio import hide_working_folder
     return hide_working_folder(obj)
 
 
 def _find_like_source(key: str, attachments: Dict[str, bytes]) -> bytes:
     """The bytes ``find_like`` searches, by the vision tools' own resolver
     (their words for a key they cannot find)."""
-    from funhouse_agent.vision_tools import _resolve_attachment_or_path
+    from aec_agent_core.vision_tools import _resolve_attachment_or_path
     return _resolve_attachment_or_path(key, attachments)[0]
 
 
 def _open_image(data: bytes, name: str):
-    from funhouse_agent.vision_tools import _open_image as open_image
+    from aec_agent_core.vision_tools import _open_image as open_image
     return open_image(data, name)
 
 
 def _as_pdf(picture) -> bytes:
-    from funhouse_agent.image_view import as_pdf
+    from aec_agent_core.image_view import as_pdf
     return as_pdf(picture)
 
 
 def _page_scale(picture) -> float:
-    from funhouse_agent.image_view import page_scale
+    from aec_agent_core.image_view import page_scale
     return page_scale(picture)
 
 
 def _shown_size(data: bytes):
-    from funhouse_agent.image_view import shown_size
+    from aec_agent_core.image_view import shown_size
     return shown_size(data)
 
 
 def app_host() -> "_review.ReviewHost":
     """The host fields that are the same for every conversation (CHECK §3).
     The per-build ones (look, signer, crop render) are :func:`host_for`'s."""
-    from funhouse_agent.vision_tools import SCRATCH_DIR
+    from aec_agent_core.vision_tools import SCRATCH_DIR
     return _review.ReviewHost(
         resolve_source=_resolve_source,
         look=None,
@@ -387,14 +387,14 @@ def host_for(engine=None, markup_author: Optional[str] = None
         return who or _deployment_author()
 
     def render_crop(pdf: bytes, page: int, bbox):
-        from funhouse_agent import vision_view
+        from aec_agent_core import vision_view
         return vision_view.render_view(pdf, page=int(page), bbox=bbox,
                                        pad_frac=0.0, engine=engine)
 
     look = None
     if engine is not None:
         def look(image: bytes, question: str, kind: str) -> str:
-            from funhouse_agent.vision_tools import ask_vision
+            from aec_agent_core.vision_tools import ask_vision
             return ask_vision(engine, image, question, kind)
 
     return dataclasses.replace(BASE_HOST, look=look, signer=signer,

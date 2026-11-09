@@ -234,7 +234,7 @@ def drew_figure(text) -> bool:
 
 def _current_helper():
     try:
-        from funhouse_agent.deep.keep_work import current_helper
+        from aec_agent_core.deep.keep_work import current_helper
     except Exception:                                      # noqa: BLE001
         return None
     return current_helper()
@@ -300,7 +300,7 @@ def _drafts_since() -> Optional[float]:
     opens no turn scope, such as the eval harness); ``None`` when neither is
     known, and then nothing is removed."""
     try:
-        from funhouse_agent.deep.keep_work import current_turn
+        from aec_agent_core.deep.keep_work import current_turn
     except Exception:                                      # noqa: BLE001
         return None
     scope = current_turn()
@@ -929,7 +929,7 @@ def plot_code_description(cfg: Optional[Dict[str, int]] = None) -> str:
 def make_plot_code_tool():
     """``plot_code`` as a LangChain tool (refusing unknown arguments)."""
     from langchain_core.tools import StructuredTool
-    from funhouse_agent.deep.strict_args import strict_tool
+    from aec_agent_core.deep.strict_args import strict_tool
 
     def plot_code(code: str, data: Optional[dict] = None, name: str = "",
                   time_limit_s: Optional[int] = None,

@@ -164,7 +164,7 @@ def _book() -> Optional[dict]:
     """The figures booked this turn (else in this helper run), or ``None``
     outside both."""
     try:
-        from funhouse_agent.deep.keep_work import current_helper, current_turn
+        from aec_agent_core.deep.keep_work import current_helper, current_turn
     except Exception:                                      # noqa: BLE001
         return None
     scope = current_turn()

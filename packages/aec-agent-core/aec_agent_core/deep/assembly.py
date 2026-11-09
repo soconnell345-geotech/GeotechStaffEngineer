@@ -44,7 +44,7 @@ try:  # the spec deepagents auto-adds; re-declared below to carry the guard
 except Exception:  # noqa: BLE001 - layout differs: leave deepagents' default
     _GENERAL_PURPOSE_SPEC = None
 
-from funhouse_agent.deep.limits import (
+from aec_agent_core.deep.limits import (
     HELPER_EXHAUSTED,
     HELPER_FINAL_NUDGE,
     UNRUNNABLE_TOOLS,
@@ -52,12 +52,12 @@ from funhouse_agent.deep.limits import (
     ModelCallBudgetMiddleware,
     helper_max_model_calls,
 )
-from funhouse_agent.deep.busy_retry import AgentBusyRetry
-from funhouse_agent.deep.scratch_guard import ScratchFilesystemGuard
-from funhouse_agent.deep.delivered_log import DeliveredToolResults
-from funhouse_agent.deep.keep_work import HelperRecorder, KeepWork
-from funhouse_agent.deep.result_map import LargeResultKeyMap
-from funhouse_agent.deep.tool_guards import (OutputLimitGuard, ToolErrorGuard,
+from aec_agent_core.deep.busy_retry import AgentBusyRetry
+from aec_agent_core.deep.scratch_guard import ScratchFilesystemGuard
+from aec_agent_core.deep.delivered_log import DeliveredToolResults
+from aec_agent_core.deep.keep_work import HelperRecorder, KeepWork
+from aec_agent_core.deep.result_map import LargeResultKeyMap
+from aec_agent_core.deep.tool_guards import (OutputLimitGuard, ToolErrorGuard,
                                              auth_retry)
 
 
@@ -373,7 +373,7 @@ def guard_helpers(subagents: list, tools, *, allowed_agents=None,
         if chosen is None or "runnable" in spec:
             continue
         spec["model"] = chosen
-        from funhouse_agent.deep.busy_retry import engine_facts
+        from aec_agent_core.deep.busy_retry import engine_facts
         helper_models[str(name)] = (
             chosen if isinstance(chosen, str)
             else engine_facts(chosen).get("model") or type(chosen).__name__)
@@ -524,7 +524,7 @@ def record_build(agent, *, attachments, model, tools, subagents,
             _offered = sorted(agent.nodes["tools"].bound.tools_by_name)
         except Exception:                              # noqa: BLE001
             _offered = sorted(getattr(t, "name", str(t)) for t in tools)
-        from funhouse_agent import review_flags as _rf
+        from aec_agent_core import review_flags as _rf
         agent.geotech_build = {
             "tools": _offered,
             "helpers": [str(s.get("name")) for s in subagents

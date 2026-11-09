@@ -370,7 +370,7 @@ def _helper_fields() -> dict:
     2026-10-14: every helper's events said only ``general-purpose``, and 607
     of 916 vision calls could not be tied to a helper."""
     try:
-        from funhouse_agent.deep.keep_work import current_helper
+        from aec_agent_core.deep.keep_work import current_helper
         rec = current_helper()
     except Exception:                                  # noqa: BLE001
         return {}
@@ -385,7 +385,7 @@ def _side_call_fields() -> Optional[dict]:
     """The label of the vision side call running here (``kind``, ``page``,
     ``tile``, ``image_px``, ``detail``, ``queued_s``), if any."""
     try:
-        from funhouse_agent.deep.vision_engine import current_side_call
+        from aec_agent_core.deep.vision_engine import current_side_call
         info = current_side_call()
     except Exception:                                  # noqa: BLE001
         return None
@@ -397,7 +397,7 @@ def _refusal_fields(error) -> dict:
     headers, and the busy ladder's tries when it gave up."""
     out: dict = {}
     try:
-        from funhouse_agent.deep.busy_retry import refusal_facts
+        from aec_agent_core.deep.busy_retry import refusal_facts
         out.update(refusal_facts(error))
     except Exception:                                  # noqa: BLE001
         pass
@@ -675,7 +675,7 @@ def _delivered_text(content: Any) -> str:
     """A message's content as the delivered-result event writes it
     (``funhouse_agent.deep.delivered_log``), so the two compare."""
     try:
-        from funhouse_agent.deep.delivered_log import _text
+        from aec_agent_core.deep.delivered_log import _text
         return _text(content)
     except Exception:                                  # noqa: BLE001
         return _to_text(content)
@@ -725,7 +725,7 @@ def _side_prompt(messages: Any) -> dict:
                         texts.append(b["text"])
     prompt = "\n".join(t for t in texts if t)
     try:
-        from funhouse_agent.error_text import mask_secrets
+        from aec_agent_core.error_text import mask_secrets
         shown = mask_secrets(prompt)
     except Exception:  # noqa: BLE001 - no excerpt rather than a raw one
         shown = ""
@@ -1219,7 +1219,7 @@ class ActivityLogger(BaseCallbackHandler):
             elif rec["agent"] == PRIMARY and not source:
                 self._primary_call(messages, kwargs)
             try:
-                from webapp import http_trace
+                from aec_agent_core import http_trace
                 http_trace.begin()
             except Exception:                          # noqa: BLE001
                 pass
@@ -1262,7 +1262,7 @@ class ActivityLogger(BaseCallbackHandler):
         (``webapp.http_trace``): kept when there was more than one, or one
         that was not a 200."""
         try:
-            from webapp import http_trace
+            from aec_agent_core import http_trace
             tries = http_trace.take()
         except Exception:                              # noqa: BLE001
             return {}

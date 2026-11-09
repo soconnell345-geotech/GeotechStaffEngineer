@@ -60,11 +60,8 @@ never cites "page 0" (a tool's 0-based index leaking into a citation).
 
 from __future__ import annotations
 
-import json
-import os
 import re
-from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional
 
 from funhouse_agent.review_eval import report_fixture as _RF
 
@@ -84,65 +81,15 @@ DOC_TYPES = ("drawing_stroke", "drawing_set", "criteria_text",
 #: analysis modules and its DIGGS writer) - plan W4 asks for both harnesses.
 PAGES = ("review", "geotech")
 
-#: Giving up on legibility: calling the file too blurry, or asking for a
-#: better one. ("I zoomed in at higher resolution" is not giving up.)
-GIVE_UP_PHRASES = (
-    "too blurry",
-    {"re": r"(?:send|provide|upload|share|supply|need|request|obtain|get)"
-           r"\w*\b[^.\n]{0,60}\b(?:higher[- ]resolution|better(?:[- ]quality)?"
-           r"|clearer|sharper|higher[- ]quality|more legible)\s+"
-           r"(?:copy|scan|version|file|pdf|image|print)"},
-)
-
-#: Added to every task unless ``auto_checks=False``.
-AUTO_CHECKS: List[Dict[str, Any]] = [
-    {"type": "not_contains", "terms": list(GIVE_UP_PHRASES),
-     "label": "does not give up on legibility"},
-    {"type": "not_contains", "terms": [{"re": r"\b(?:page|p\.|pg\.?)\s*0\b"}],
-     "label": "no 0-based page citation"},
-]
-
-
-@dataclass
-class Task:
-    """One question, the document(s) it is asked of, and its checks."""
-    id: str
-    question: str
-    documents: List[str]
-    category: str
-    doc_type: str
-    checks: List[Dict[str, Any]]
-    truth: str = ""
-    split: str = "open"
-    followups: List[str] = field(default_factory=list)
-    auto_checks: bool = True
-    #: The app page the task is asked on (:data:`PAGES`).
-    page: str = "review"
-
-    def all_checks(self) -> List[Dict[str, Any]]:
-        return list(self.checks) + (list(AUTO_CHECKS) if self.auto_checks
-                                    else [])
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"id": self.id, "question": self.question,
-                "documents": list(self.documents), "category": self.category,
-                "doc_type": self.doc_type, "checks": list(self.checks),
-                "truth": self.truth, "split": self.split,
-                "followups": list(self.followups),
-                "auto_checks": self.auto_checks, "page": self.page}
-
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "Task":
-        return cls(id=str(d["id"]), question=str(d["question"]),
-                   documents=list(d.get("documents") or []),
-                   category=str(d.get("category", "locate")),
-                   doc_type=str(d.get("doc_type", "other")),
-                   checks=list(d.get("checks") or []),
-                   truth=str(d.get("truth", "")),
-                   split=str(d.get("split", "open")),
-                   followups=list(d.get("followups") or []),
-                   auto_checks=bool(d.get("auto_checks", True)),
-                   page=str(d.get("page", "review")))
+# The Task type, the checks every task gets and task selection are the
+# core's (BACKLOG INF-32 step 11 (c), aec_agent_core.review_eval.tasks); the
+# names stay importable from here. The open tasks below are GSE's, handed to
+# the core's runner through the hook review_eval.open_tasks (filled by
+# funhouse_agent/review_eval/__init__.py with open_tasks()).
+from aec_agent_core.review_eval.tasks import (  # noqa: E402
+    AUTO_CHECKS, GIVE_UP_PHRASES, Task, select)
+from aec_agent_core.review_eval.tasks import \
+    load_tasks as _load_tasks  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -1134,56 +1081,18 @@ OPEN_TASKS: List[Task] = [
 # Loading
 # ---------------------------------------------------------------------------
 
+def open_tasks() -> List[Task]:
+    """This app's shipped tasks (the core's ``review_eval.open_tasks``
+    hook)."""
+    return list(OPEN_TASKS)
+
+
 def load_tasks(extra: Optional[Iterable[Any]] = None,
                include_open: bool = True) -> List[Task]:
-    """The shipped open tasks plus any from ``extra``.
-
-    ``extra`` is a list of paths to JSON files (each a list of task dicts, or
-    ``{"tasks": [...]}``) and/or task dicts — how a private blind set on the
-    owner's SharePoint is added. A later task with an id already seen
-    replaces the earlier one.
-    """
-    out: Dict[str, Task] = {}
-    if include_open:
-        for t in OPEN_TASKS:
-            out[t.id] = t
-    for item in extra or ():
-        for d in _read_extra(item):
-            t = Task.from_dict(d)
-            out[t.id] = t
-    return list(out.values())
-
-
-def _read_extra(item: Any) -> List[Dict[str, Any]]:
-    if isinstance(item, dict):
-        return [item]
-    if isinstance(item, Task):
-        return [item.to_dict()]
-    path = os.fspath(item)
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
-    if isinstance(data, dict):
-        data = data.get("tasks", [])
-    return list(data)
-
-
-def select(tasks: Sequence[Task], ids: Optional[Iterable[str]] = None,
-           categories: Optional[Iterable[str]] = None,
-           split: Optional[str] = None) -> List[Task]:
-    """Filter by id prefix, category and split (``None`` keeps all)."""
-    ids = [str(i) for i in (ids or [])]
-    cats = set(categories or [])
-    out = []
-    for t in tasks:
-        if ids and not any(t.id == i or t.id.startswith(i) for i in ids):
-            continue
-        if cats and t.category not in cats:
-            continue
-        if split and t.split != split:
-            continue
-        out.append(t)
-    return out
+    """The shipped open tasks (:data:`OPEN_TASKS`) plus any from ``extra``
+    (the core's ``load_tasks``, which see)."""
+    return _load_tasks(extra, include_open=include_open, open=OPEN_TASKS)
 
 
 __all__ = ["Task", "OPEN_TASKS", "AUTO_CHECKS", "CATEGORIES", "DOC_TYPES",
-           "PAGES", "GIVE_UP_PHRASES", "load_tasks", "select"]
+           "PAGES", "GIVE_UP_PHRASES", "open_tasks", "load_tasks", "select"]

@@ -4,13 +4,15 @@ A document is one of:
 
 * ``{"file": "<name>.pdf"}`` — a real PDF, looked for (first hit wins) in the
   suite's ``docs_dir`` (and its sub-folders), ``$GEOTECH_REVIEW_EVAL_DOCS``,
-  ``$GEOTECH_REFERENCES_DOCS``, the source checkout's own folders, and last
-  through the app's reference-PDF fetcher (the SharePoint
-  ``primary_references/`` folder the app already reads UFCs from);
+  ``$GEOTECH_REFERENCES_DOCS``, the app's own folders (GSE: its source
+  checkout's), and last through the app's reference-PDF fetcher (GSE: the
+  SharePoint ``primary_references/`` folder it already reads UFCs from);
+  both handed in through hooks (:data:`DIRS_HOOK`, :data:`FETCH_HOOK`);
 * ``{"concat": [ids...], "name": ...}`` — several of the above bound into one
   PDF, the way a drawing set arrives;
 * ``{"fixture": "<name>"}`` — a synthetic PDF built by ``planlens.testing``
-  (shipped with planlens, so it needs no upload).
+  (shipped with planlens, so it needs no upload), or by the app
+  (:data:`FIXTURE_HOOK`).
 
 On the cluster, copy the public files once into a folder (or a SharePoint
 folder synced to one) and pass it as ``docs_dir``;
@@ -118,14 +120,35 @@ def scale_fixture(which: str):
     raise KeyError(f"no scale fixture {which!r}")
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+#: The hooks an app fills (``aec_agent_core.hooks``; BACKLOG INF-32 step
+#: 11 (c): before it, this module found GSE's source checkout from its own
+#: path, imported ``webapp.core`` and ``funhouse_agent.reference_docs`` and
+#: built GSE's report fixture itself):
+#:
+#: - ``review_eval.document_dirs``: no arguments, the app's own folders to
+#:   look in after ``docs_dir`` and the two environment variables (GSE: its
+#:   source checkout's folders, ``funhouse_agent.review_eval.host``);
+#: - ``review_eval.fetch_document``: a file name in, a local path or ``None``
+#:   out, asked last (GSE: its SharePoint ``primary_references/`` fetcher);
+#: - ``review_eval.fixture``: a fixture name in, PDF bytes or ``None`` out,
+#:   for fixtures this module does not build (GSE: ``"report"``).
+DIRS_HOOK = "review_eval.document_dirs"
+FETCH_HOOK = "review_eval.fetch_document"
+FIXTURE_HOOK = "review_eval.fixture"
+
+
+def _hook(name: str):
+    from aec_agent_core.hooks import get_hook
+    return get_hook(name)
 
 
 def _dev_dirs() -> List[Path]:
-    root = _repo_root()
-    return [root / "module_work" / "drawing_ground_truth" / "mecklenburg",
-            root / "geotech-references" / "docs", root / "sample_pdfs", root]
+    """The app's own folders (:data:`DIRS_HOOK`); none when unfilled."""
+    try:
+        dirs = _hook(DIRS_HOOK)
+        return [Path(os.fspath(d)) for d in (dirs() if dirs else ())]
+    except Exception:  # noqa: BLE001 - no app folders, not a failure
+        return []
 
 
 def _search_dirs(docs_dir: Any = None) -> List[Path]:
@@ -150,15 +173,10 @@ def find_file(name: str, docs_dir: Any = None) -> Optional[str]:
             if sub.is_file():
                 return str(sub)
     try:
-        # The app registers its SharePoint primary_references/ fetcher when
-        # it builds an agent; a suite run looks documents up BEFORE that.
-        from webapp.core import _register_reference_fetcher
-        _register_reference_fetcher()
-    except Exception:
-        pass
-    try:
-        from funhouse_agent import reference_docs
-        fetched = reference_docs.fetch(name)
+        # The app's own fetcher, last (FETCH_HOOK): GeotechStaffEngineer's
+        # reads the SharePoint primary_references/ folder.
+        fetch = _hook(FETCH_HOOK)
+        fetched = fetch(name) if fetch is not None else None
     except Exception:
         fetched = None
     return fetched if fetched and os.path.isfile(fetched) else None
@@ -184,15 +202,17 @@ def _fixture(name: str) -> bytes:
                 extra_callouts=LONG_SET_RARE).pdf
         except TypeError as exc:        # planlens older than 0.11
             raise ImportError(f"needs planlens 0.11 ({exc})")
-    if name == "report":
-        from funhouse_agent.review_eval.report_fixture import (
-            build_synthetic_extraction_report)
-        return build_synthetic_extraction_report().pdf
     if name == "scale_log":
         return scale_fixture("log").pdf
     if name == "scale_plan":
         return scale_fixture("plan").pdf
-    raise KeyError(f"unknown fixture {name!r}")
+    # The app's own fixtures (FIXTURE_HOOK): GeotechStaffEngineer builds
+    # "report", its synthetic geotechnical report.
+    build = _hook(FIXTURE_HOOK)
+    data = build(name) if build is not None else None
+    if data is None:
+        raise KeyError(f"unknown fixture {name!r}")
+    return data
 
 
 def _concat(members: Sequence[bytes]) -> bytes:

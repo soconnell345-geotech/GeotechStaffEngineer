@@ -1,13 +1,21 @@
 """aec-agent-core: what document agents run below their chat pages.
 
-The app split's core (BACKLOG INF-32; ``module_work/APP_SPLIT_PLAN.md``).
-Since step 11 (a) it holds the model connections and the vision calls, and
-:mod:`aec_agent_core.hooks`, where an app hands in what the core must not
-import; since (b), the figure helper, the plotting box and the chart stack
-(:mod:`aec_agent_core.charts`, where an app hands in its standard chart
-lines); (c) brings the guards and records, and Word and Excel. This module
-is the alias helper each move uses, so a moved module's old import path
-keeps working until step 16 takes the aliases out:
+The shared core of the app split (BACKLOG INF-32;
+``module_work/APP_SPLIT_PLAN.md``). Step 10 made the package, empty; step 11
+filled it in three merges: (a) the model connections and vision calls,
+(b) the figure helper, plotting box and chart stack, and (c) everything else
+both agents run -- the guards and records, Word and Excel, the run record
+and its checks, the document tools' binding to ``planlens.review``, the
+shared assembly (``deep.assembly``) and the review suite's framework
+(``review_eval``). The package's README lists the modules.
+
+The core imports neither application; where it needs something only an
+application knows it asks a hook, :mod:`aec_agent_core.hooks`, and the
+application fills it.
+
+This module holds the alias helper step 11 used when it moved a module in
+here, so the module's old import path keeps working until step 16 takes the
+aliases out:
 
     # in the old package's __init__.py, e.g. funhouse_agent/__init__.py
     from aec_agent_core import install_aliases

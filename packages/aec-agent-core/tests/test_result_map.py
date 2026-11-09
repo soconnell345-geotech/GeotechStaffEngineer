@@ -7,7 +7,7 @@ import json
 
 from langchain_core.messages import ToolMessage
 
-from funhouse_agent.deep.result_map import (MIN_CHARS, LargeResultKeyMap,
+from aec_agent_core.deep.result_map import (MIN_CHARS, LargeResultKeyMap,
                                             mapped_text)
 
 
@@ -66,7 +66,7 @@ def test_every_agent_carries_it():
     middleware, so it maps a result before it is moved)."""
     # the guards both builds put on are the shared assembly's (INF-31
     # step 8): every helper, the general-purpose helper, the primary
-    from funhouse_agent.deep import assembly
+    from aec_agent_core.deep import assembly
     import inspect
     src = (inspect.getsource(assembly.guard_helpers)
            + inspect.getsource(assembly.create_kwargs_for))

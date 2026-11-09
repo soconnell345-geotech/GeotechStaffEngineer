@@ -101,11 +101,13 @@ import sys as _sys
 from typing import Any
 
 # The run mirror is in funhouse_agent.run_mirror (INF-30 step 5), which the
-# review suite uses too; report_ingest.mirror is the same module, loaded when
-# it is first imported by either name, so importing this package loads
-# nothing of funhouse_agent (its first-import notice included). The old name
-# goes in step 16.
-_MOVED = {__name__ + ".mirror": "funhouse_agent.run_mirror"}
+# review suite uses too, and in the shared core since INF-32 step 11 (c)
+# (aec_agent_core.run_mirror; funhouse_agent's old name is an alias of it);
+# report_ingest.mirror is the same module, loaded when it is first imported
+# by any name, so importing this package or the mirror loads nothing of
+# funhouse_agent (its first-import notice included). The old name goes in
+# step 16.
+_MOVED = {__name__ + ".mirror": "aec_agent_core.run_mirror"}
 
 
 class _MovedModule:

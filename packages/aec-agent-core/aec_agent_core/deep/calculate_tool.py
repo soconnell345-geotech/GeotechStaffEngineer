@@ -65,7 +65,7 @@ def _constants_as_names(expression: str, values: Dict[str, float]) -> str:
     a float, in ``values`` (``__k0``, ``__k1``...): integers become floats
     (a huge power overflows at once), and a literal such as ``1e-3`` cannot
     trip the evaluator's identifier check on its ``e``."""
-    from funhouse_agent.safe_expr import _TOO_DEEP, _check_nesting
+    from aec_agent_core.safe_expr import _TOO_DEEP, _check_nesting
     try:
         tree = ast.parse(str(expression), mode="eval")
     except (RecursionError, MemoryError):
@@ -173,7 +173,7 @@ def _bind(variables) -> Tuple[Dict[str, Any], Optional[str]]:
 def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
              ) -> Dict[str, Any]:
     """``{"value", "expression", "variables"}`` or ``{"error", ...}``."""
-    from funhouse_agent.safe_expr import _MAX_EXPR_CHARS, _compile_g
+    from aec_agent_core.safe_expr import _MAX_EXPR_CHARS, _compile_g
     expr = str(expression or "").strip()
     if len(expr) > _MAX_EXPR_CHARS:
         return {"error": f"the expression is too long ({len(expr):,} "
@@ -248,7 +248,7 @@ def _several(expression) -> Optional[List[Tuple[Optional[str], str]]]:
     if isinstance(expression, (list, tuple)):
         return [(None, str(v)) for v in expression]
     if isinstance(expression, str):
-        from funhouse_agent.safe_expr import _MAX_EXPR_CHARS
+        from aec_agent_core.safe_expr import _MAX_EXPR_CHARS
         if len(expression) > _MAX_EXPR_CHARS:
             return None                 # evaluate says it is too long
         try:
@@ -306,7 +306,7 @@ def calculate_any(expression, variables=None) -> Dict[str, Any]:
 
 def make_calculate_tool() -> StructuredTool:
     """The ``calculate`` tool (strict arguments, JSON result)."""
-    from funhouse_agent.deep.strict_args import strict_tool
+    from aec_agent_core.deep.strict_args import strict_tool
 
     def calculate(expression: Union[str, List[str], Dict[str, str]],
                   variables: Optional[Dict[str, Any]] = None) -> str:

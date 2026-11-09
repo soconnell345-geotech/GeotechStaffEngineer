@@ -1,5 +1,5 @@
-"""The page parsers of :mod:`funhouse_agent.coverage`: which pages a tool
-call read or looked at, from the call itself. :mod:`funhouse_agent.cited_pages`
+"""The page parsers of :mod:`aec_agent_core.coverage`: which pages a tool
+call read or looked at, from the call itself. :mod:`aec_agent_core.cited_pages`
 and the review suite's checks read a conversation's tool calls with them.
 
 (The coverage ledger, the gate and ``document_coverage`` behind
@@ -9,7 +9,7 @@ DR-40: ``module_work/dr40/CHECK.md``.) Offline: no model, no network.
 
 import json
 
-from funhouse_agent import coverage as C
+from aec_agent_core import coverage as C
 
 
 # ---------------------------------------------------------------------------

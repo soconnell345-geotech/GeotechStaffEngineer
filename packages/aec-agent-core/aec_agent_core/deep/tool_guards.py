@@ -50,7 +50,7 @@ except Exception:  # pragma: no cover - control flow then has no base class
 # ---------------------------------------------------------------------------
 
 def _error_message(request, exc: BaseException) -> ToolMessage:
-    from funhouse_agent.error_text import tool_error
+    from aec_agent_core.error_text import tool_error
     call = getattr(request, "tool_call", None) or {}
     name = call.get("name") or "tool"
     return ToolMessage(
@@ -348,7 +348,7 @@ def strip_scratch_prompt(text: str) -> str:
 
 
 def _hide_tools_base():
-    from funhouse_agent.deep.limits import HideTools
+    from aec_agent_core.deep.limits import HideTools
     return HideTools
 
 
@@ -414,7 +414,7 @@ def auth_retry():
     ``None`` where langchain has no ``ModelRetryMiddleware``."""
     try:
         from langchain.agents.middleware import ModelRetryMiddleware
-        from funhouse_agent.error_text import auth_refused
+        from aec_agent_core.error_text import auth_refused
         return ModelRetryMiddleware(
             max_retries=1, retry_on=auth_refused, on_failure="error",
             initial_delay=AUTH_RETRY_DELAY_S, jitter=False)

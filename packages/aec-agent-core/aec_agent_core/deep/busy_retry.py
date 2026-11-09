@@ -49,7 +49,7 @@ try:
 except ImportError:  # pragma: no cover - older layout
     from langchain.agents.middleware.types import AgentMiddleware
 
-from funhouse_agent.deep.tool_guards import GraphBubbleUp, _ai_of
+from aec_agent_core.deep.tool_guards import GraphBubbleUp, _ai_of
 
 #: The waits between tries when the provider names none, in seconds.
 LADDER_S = (15.0, 30.0, 60.0, 120.0)
@@ -78,7 +78,7 @@ def busy(exc: BaseException) -> Optional[str]:
     """The kind of busy refusal ``exc`` is, or ``None`` (including a spent
     budget, never retried)."""
     try:
-        from funhouse_agent.deep.vision_engine import busy_kind
+        from aec_agent_core.deep.vision_engine import busy_kind
         return busy_kind(exc)
     except Exception:  # noqa: BLE001 - unclassifiable: not retried
         return None
@@ -89,7 +89,7 @@ def wait_s(exc: BaseException, attempt: int) -> float:
     ``retry-after`` (at most :data:`MAX_RETRY_AFTER_S`), else the ladder's
     rung, +/- 15 % so agents refused together do not return together."""
     try:
-        from funhouse_agent.deep.vision_engine import _retry_after_s
+        from aec_agent_core.deep.vision_engine import _retry_after_s
         after = _retry_after_s(exc)
     except Exception:  # noqa: BLE001
         after = None
@@ -104,7 +104,7 @@ def refusal_facts(exc: BaseException) -> dict:
     and the rate-limit headers a provider sends (``x-ratelimit-*``)."""
     out: dict = {}
     try:
-        from funhouse_agent.deep.vision_engine import (_chain, _retry_after_s,
+        from aec_agent_core.deep.vision_engine import (_chain, _retry_after_s,
                                                        _status_of)
         for e in _chain(exc):
             status = _status_of(e)
@@ -146,7 +146,7 @@ def _annotate(exc: BaseException, n: int, waited: float, kind: str,
 
 
 def _estimate(request) -> int:
-    from funhouse_agent.deep.pacing import estimate_tokens
+    from aec_agent_core.deep.pacing import estimate_tokens
     try:
         return estimate_tokens(getattr(request, "messages", None) or (),
                                getattr(request, "tools", None) or (),
@@ -159,7 +159,7 @@ def _settle(pacer, ticket, response) -> None:
     if pacer is None:
         return
     try:
-        from funhouse_agent.deep.pacing import usage_tokens
+        from aec_agent_core.deep.pacing import usage_tokens
         pacer.settle(ticket, usage_tokens(_ai_of(response)))
     except Exception:  # noqa: BLE001
         pass
@@ -185,7 +185,7 @@ class AgentBusyRetry(AgentMiddleware):
             _annotate(exc, attempt, waited, kind, "the ladder ran out")
             return None
         wait = wait_s(exc, attempt - 1)
-        from funhouse_agent.deep.keep_work import current_turn
+        from aec_agent_core.deep.keep_work import current_turn
         scope = current_turn()
         if scope is not None and not scope.spend_busy(spent + wait):
             _annotate(exc, attempt, waited, kind,
@@ -197,7 +197,7 @@ class AgentBusyRetry(AgentMiddleware):
         return wait
 
     def wrap_model_call(self, request, handler):
-        from funhouse_agent.deep.pacing import pace
+        from aec_agent_core.deep.pacing import pace
         n = self._n()
         attempt, waited = 0, 0.0
         while True:
@@ -221,7 +221,7 @@ class AgentBusyRetry(AgentMiddleware):
             return response
 
     async def awrap_model_call(self, request, handler):
-        from funhouse_agent.deep.pacing import pace
+        from aec_agent_core.deep.pacing import pace
         n = self._n()
         attempt, waited = 0, 0.0
         while True:
@@ -251,8 +251,8 @@ def retry_policy() -> dict:
     out: dict = {"agent_busy_tries": tries(), "agent_ladder_s": list(LADDER_S),
                  "agent_max_retry_after_s": MAX_RETRY_AFTER_S}
     try:
-        from funhouse_agent.deep import keep_work, pacing, vision_engine
-        from funhouse_agent.deep.limits import helper_max_model_calls
+        from aec_agent_core.deep import keep_work, pacing, vision_engine
+        from aec_agent_core.deep.limits import helper_max_model_calls
         out.update({
             "busy_turn_max_s": keep_work.TurnScope().busy_limit_s,
             "max_helpers": keep_work.max_helpers(),

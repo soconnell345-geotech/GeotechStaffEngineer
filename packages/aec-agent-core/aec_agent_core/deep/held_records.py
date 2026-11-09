@@ -15,7 +15,9 @@ calls. Only records in the shape ``write_diggs`` takes are taken -- an
 exploration (``investigation_id`` with layers, samples, SPTs, water levels,
 a total depth or a cone/probe/pit record) or a laboratory test (a lab
 ``kind`` with its result or the hole and sample it came from), the models
-of :mod:`report_ingest.model` -- never any other JSON. The source holding
+of the app's record shapes (``report_ingest.model`` in
+GeotechStaffEngineer, handed in through :data:`RECORD_FIELDS_HOOK`) -- never
+any other JSON. The source holding
 the most records is the one kept; records a call of the helper already
 delivered (a ``save_file`` or a ``write_diggs`` that succeeded) are left
 out, so the same exploration is never handed over twice.
@@ -44,21 +46,40 @@ _MAX_DEPTH = 12
 _MAX_TEXT_CHARS = 2_000_000
 
 
-@functools.lru_cache(maxsize=1)
+#: The hook an app fills with its record shapes (``aec_agent_core.hooks``):
+#: a callable with no arguments returning ``(exploration fields, lab-test
+#: fields, exploration kinds, lab kinds)``, four collections of strings.
+#: GeotechStaffEngineer fills it with ``report_ingest.model``'s
+#: ``Investigation`` / ``LabTest`` fields and kinds
+#: (``funhouse_agent.core_hooks.record_fields``). Unfilled, no record is held.
+RECORD_FIELDS_HOOK = "held_records.record_fields"
+
+_EMPTY = (frozenset(), frozenset(), frozenset(), frozenset())
+
+
 def _fields() -> Tuple[frozenset, frozenset, frozenset, frozenset]:
     """(exploration fields, lab-test fields, exploration kinds, lab kinds),
-    read off the record models; empty where report_ingest is missing."""
+    from the app's record shapes (:data:`RECORD_FIELDS_HOOK`); empty where
+    no app hands them in (BACKLOG INF-32 step 11 (c): this read
+    ``report_ingest.model`` itself)."""
+    from aec_agent_core.hooks import get_hook
     try:
-        from typing import get_args
+        hook = get_hook(RECORD_FIELDS_HOOK)
+    except Exception:  # noqa: BLE001 - a hook that will not load: none
+        hook = None
+    if hook is None:
+        return _EMPTY
+    return _fields_from(hook)
 
-        from report_ingest.model import (Investigation, InvestigationKind,
-                                         LabKind, LabTest)
-    except Exception:  # noqa: BLE001 - no record models, no records
-        return frozenset(), frozenset(), frozenset(), frozenset()
-    return (frozenset(Investigation.model_fields),
-            frozenset(LabTest.model_fields),
-            frozenset(get_args(InvestigationKind)),
-            frozenset(get_args(LabKind)))
+
+@functools.lru_cache(maxsize=4)
+def _fields_from(hook) -> Tuple[frozenset, frozenset, frozenset, frozenset]:
+    try:
+        inv, lab, inv_kinds, lab_kinds = hook()
+    except Exception:  # noqa: BLE001 - no record shapes, no records
+        return _EMPTY
+    return (frozenset(inv), frozenset(lab), frozenset(inv_kinds),
+            frozenset(lab_kinds))
 
 
 def _mostly_known(d: dict, known: frozenset) -> bool:

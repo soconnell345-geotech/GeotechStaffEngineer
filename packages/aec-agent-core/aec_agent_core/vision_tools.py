@@ -324,7 +324,7 @@ def _citations_checked(tool_name: str, arguments: Dict[str, Any],
     ``citation_note``; the file is written either way
     (:mod:`funhouse_agent.cited_documents`, BACKLOG EV-21)."""
     try:
-        from funhouse_agent import cited_documents
+        from aec_agent_core import cited_documents
         if tool_name == "write_docx":
             texts = [arguments.get("title"), arguments.get("markdown")]
         else:
@@ -686,7 +686,7 @@ def _handle_source(key) -> Optional[str]:
     if not key or not str(key).startswith("doc_"):
         return None
     try:
-        from funhouse_agent import document_tools
+        from aec_agent_core import document_tools
         return document_tools.handle_source(str(key))
     except Exception:  # noqa: BLE001
         return None
@@ -803,7 +803,7 @@ def _dispatch_read_text_file(arguments):
             f"'{shown}' is {size / 1e6:.1f} MB, too large to read as text.")})
     ext = os.path.splitext(resolved)[1].lower()
     extra: Dict[str, Any] = {}
-    from funhouse_agent import office_text
+    from aec_agent_core import office_text
     if office_text.is_office_file(resolved):
         # A .docx / .xlsx as Markdown (B3); a docx's pictures go to this
         # conversation's scratch folder, named so write_docx embeds them.
@@ -2374,7 +2374,7 @@ def _not_an_image_message(data: bytes, name: str, tools=None) -> str:
         return (f"'{shown}' is a PDF, not an image: "
                 + (", or ".join(ways) if ways
                    else "no tool here shows its pages") + ".")
-    from funhouse_agent import office_text
+    from aec_agent_core import office_text
     if office_text.is_office_file(name) or ext in office_text.LEGACY_OFFICE:
         return f"'{shown}' is a Word/Excel file, not an image{text_tip}"
     if data[:4] == b"PK\x03\x04":
@@ -3970,7 +3970,7 @@ def _dispatch_find_like(arguments, engine, attachments):
     an earlier vision result — ``text`` (what the mark reads, e.g. "GCE"),
     ``pages`` (default all), ``include_legend``, ``threshold``.
     """
-    from funhouse_agent import document_tools
+    from aec_agent_core import document_tools
     return document_tools.find_like(arguments, attachments,
                                     host=document_tools.host_for(engine))
 
@@ -4017,7 +4017,7 @@ def _dispatch_write_docx(arguments, save_fn):
     if not markdown:
         return json.dumps({"error": "Missing required parameter: markdown"})
     try:
-        from funhouse_agent.docx_renderer import markdown_to_docx
+        from aec_agent_core.docx_renderer import markdown_to_docx
     except ImportError as exc:
         return json.dumps({
             "error": f"Word output is not available here: {exc}",
@@ -4348,7 +4348,7 @@ def _dispatch_save_file_tool(arguments, attachments, save_fn):
                          f"open_document lists them; it writes a copy with "
                          f"a CAD library and checks it.")})
     check = None
-    from funhouse_agent import dxf_notes
+    from aec_agent_core import dxf_notes
     if dxf_notes.available():
         # The bytes that will be saved: base64 content as sent (read back as
         # latin-1 above), text as UTF-8 (how save_file writes it).
@@ -4375,7 +4375,7 @@ def _dispatch_annotate_dxf(arguments, attachments, save_fn):
     """Handle annotate_dxf: notes on a COPY of a DXF, written by a CAD
     library (:mod:`funhouse_agent.dxf_notes`) and saved as save_file saves,
     so it lands in the conversation as a download card."""
-    from funhouse_agent import dxf_notes
+    from aec_agent_core import dxf_notes
     if not dxf_notes.available():
         return json.dumps({"error": "DXF notes need the ezdxf package, "
                                     "which is not installed here."})

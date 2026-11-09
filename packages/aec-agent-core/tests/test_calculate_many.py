@@ -12,7 +12,7 @@ import math
 
 import pytest
 
-from funhouse_agent.deep.calculate_tool import (CALCULATE_DESCRIPTION,
+from aec_agent_core.deep.calculate_tool import (CALCULATE_DESCRIPTION,
                                                 MAX_EXPRESSIONS,
                                                 calculate_any, evaluate,
                                                 make_calculate_tool)

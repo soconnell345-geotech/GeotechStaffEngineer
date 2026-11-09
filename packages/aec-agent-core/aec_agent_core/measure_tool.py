@@ -71,7 +71,7 @@ def _json_error(msg: str, hint: str = "") -> str:
 
 def _entry_for(source: str, attachments: Optional[Dict[str, bytes]]):
     """The toolkit's open entry for a handle, an attachment key or a path."""
-    from funhouse_agent import document_tools as dt
+    from aec_agent_core import document_tools as dt
     entry = dt.document_entry(source) if source else None
     if entry is not None:
         return entry
@@ -113,7 +113,7 @@ def _read_values(entry, page: int, scales, engine
                  ) -> Tuple[Dict[str, List[Optional[str]]], Dict[str, Any]]:
     """``{scale_id: [label as printed or None, ...]}`` for ``scales``, and
     what reading them cost."""
-    from funhouse_agent import scale_labels
+    from aec_agent_core import scale_labels
     items: List[Tuple[int, Sequence[float]]] = []
     spans: List[Tuple[str, int, int]] = []
     for sc in scales:
@@ -129,7 +129,7 @@ def _read_values(entry, page: int, scales, engine
 
 def _labels_block(values: Dict[Any, List[Optional[str]]],
                   info: Dict[str, Any]) -> Dict[str, Any]:
-    from funhouse_agent import scale_labels
+    from aec_agent_core import scale_labels
     return {
         "read_by": scale_labels.describe(info),
         "values": {str(k): ", ".join("?" if v is None else v for v in vals)
@@ -151,8 +151,8 @@ def run_measure(arguments: Dict[str, Any],
     — ``bbox`` (PDF points) or ``view`` + ``image_box`` — plus ``at``,
     ``to``, ``scale``, ``side`` as planlens takes them.
     """
-    from funhouse_agent import document_tools as dt
-    from funhouse_agent import vision_view
+    from aec_agent_core import document_tools as dt
+    from aec_agent_core import vision_view
     from planlens.tools import ToolError
 
     source = str(arguments.get("source") or arguments.get("handle")
@@ -255,7 +255,7 @@ def run_measure(arguments: Dict[str, Any],
 def log_grid_description() -> str:
     """planlens' own words for ``log_grid``, fitted to this app: no pointer
     at a tool the agent does not have, and the labels read for it."""
-    from funhouse_agent import document_tools as dt
+    from aec_agent_core import document_tools as dt
     text = dt.tool_description("log_grid")
     text = text.replace(
         " (its continuation sheets included, as document_roles groups "
@@ -272,7 +272,7 @@ def log_grid_description() -> str:
 
 def log_grid_takes(param: str) -> bool:
     """Whether the installed planlens' ``log_grid`` takes ``param``."""
-    from funhouse_agent import document_tools as dt
+    from aec_agent_core import document_tools as dt
     spec = dt._spec("log_grid") or {}
     schema = spec.get("parameters") or spec.get("input_schema") or {}
     return param in (schema.get("properties") or {})
@@ -283,8 +283,8 @@ def run_log_grid(arguments: Dict[str, Any],
                  engine: Any = None, *, max_chars: Optional[int] = None,
                  cap: Optional[int] = None) -> str:
     """One ``log_grid`` call; a scan's depth labels read when they must be."""
-    from funhouse_agent import document_tools as dt
-    from funhouse_agent import scale_labels
+    from aec_agent_core import document_tools as dt
+    from aec_agent_core import scale_labels
 
     # pdf_pages (1-based) is turned into pages by the document tools' own
     # dispatch (document_tools._one_based_pages).

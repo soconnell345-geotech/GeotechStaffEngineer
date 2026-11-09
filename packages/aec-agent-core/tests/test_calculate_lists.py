@@ -11,7 +11,7 @@ import math
 
 import pytest
 
-from funhouse_agent.deep.calculate_tool import (CALCULATE_DESCRIPTION,
+from aec_agent_core.deep.calculate_tool import (CALCULATE_DESCRIPTION,
                                                 evaluate)
 
 Z = [870.1, 874.0, 875.2, 872.0, 873.6, 869.9, 876.1]
