@@ -42,6 +42,14 @@ The owner's words:
   all (the core adds no feature; it exists because Document Review must not
   install GSE, no code may live in two places, and Tiny Apps installs only
   from Nexus): "Ok keep the core."
+- 2026-11-09 (owner, chat): the wrap-up is "a clean wheel package of
+  Document Review that can be setup in Tiny Apps"; strip the parts that did
+  not earn their place (BACKLOG DR-39) and finish the split. Asked how
+  Tiny Apps gets it (Nexus mirrors PyPI only): "We can do PyPI. If it
+  doesn't work, wheel is backup." So Document Review is the PUBLIC package
+  `aec-document-review` built from `packages/aec-document-review/` in this
+  repository, not private source in the GHE repo (BACKLOG INF-33, INF-34);
+  where this document says "private" for Document Review, read that.
 
 ## In one page (for the owner)
 
