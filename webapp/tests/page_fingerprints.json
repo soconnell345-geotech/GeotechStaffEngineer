@@ -72,6 +72,9 @@
         ]
        },
        {
+        "class": "LookupReport"
+       },
+       {
         "class": "OutputLimitGuard"
        }
       ],
@@ -129,7 +132,7 @@
          }
         ],
         "name": "references",
-        "system_prompt": "d1e11d3de25c54cf",
+        "system_prompt": "4cac830f56a59afe",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -516,8 +519,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "fdca9679dea81810",
-      "system_prompt_chars": 26400,
+      "system_prompt": "71bb3b8baab0e97a",
+      "system_prompt_chars": 26863,
       "tool_order": [
        "list_agents",
        "list_methods",
