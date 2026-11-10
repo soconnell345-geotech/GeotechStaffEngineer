@@ -229,6 +229,44 @@ def block_for(role: str) -> Tuple[str, dict]:
     return block, ins.record({role: entry} if entry else {})
 
 
+def describe(instructions: Optional[Instructions] = None
+             ) -> Tuple[bool, List[str]]:
+    """What the folder appends, read now as the next build will read it,
+    for the connection diagnostics: ``(look, parts)``, one part per role
+    with a file of its own (its files and characters, and whether it was
+    cut), ``look`` when the folder or a file could not be read or a file
+    is empty; ``(False, ["none: ..."])`` when the setting is unset."""
+    ins = instructions if instructions is not None else Instructions()
+    if not ins.active:
+        return False, [f"none: {ENV} is not set"]
+    name = os.path.basename(os.path.normpath(ins.path))
+    if ins.error:
+        return True, [f"folder {name} could not be read ({ins.error}); "
+                      f"nothing is appended"]
+    cut_note = " (cut at a paragraph)"
+    parts = [f"folder {name}"]
+    if ALL_FILE in ins.texts:
+        text, cut = _cut(ins.texts[ALL_FILE])
+        parts.append(f"every agent and helper: {ALL_FILE}, {len(text):,} "
+                     f"characters" + (cut_note if cut else ""))
+    roles = [n[:-len(".md")] for n in sorted(ins.texts) if n != ALL_FILE]
+    for role in roles:
+        _, entry = ins.block(role)
+        parts.append(f"{role}: {' + '.join(entry['files'])}, "
+                     f"{entry['chars']:,} characters"
+                     + (cut_note if entry["cut"] else ""))
+    if not ins.texts:
+        parts.append("no text; nothing is appended")
+    for file, why in sorted(ins.file_errors.items()):
+        parts.append(f"could not read {file} ({why})")
+    if ins.empty:
+        parts.append("empty: " + ", ".join(ins.empty))
+    if roles:
+        parts.append("a file named for no agent or helper of this page "
+                     "adds nothing; each turn's record lists it as unused")
+    return bool(ins.file_errors or ins.empty), parts
+
+
 def merge_record(agent: Any, record: dict) -> None:
     """Merge ``record``'s roles into ``agent.geotech_build["appended"]``
     (best effort; nothing when ``record`` is empty)."""
@@ -279,4 +317,5 @@ def instructed(engine: Any, block: str = "",
 
 __all__ = ["ENV", "ALL_FILE", "MAIN_ROLE", "CAP_CHARS", "RECORD_TEXT_CHARS",
            "PROTECTED_RULES", "HEADING", "Instructions", "folder", "apply",
-           "block_for", "merge_record", "InstructedEngine", "instructed"]
+           "block_for", "merge_record", "InstructedEngine", "instructed",
+           "describe"]

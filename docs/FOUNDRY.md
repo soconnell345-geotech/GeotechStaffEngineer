@@ -414,7 +414,8 @@ os.environ.setdefault("GEOTECH_INSTRUCTIONS", os.path.join(
 
 The turn record's `turn_start` lists what each role got (`engine.build.
 appended`: the files, the characters, a sha256 and the first 2,000
-characters). An example folder with made-up content is in
+characters), and the Connection diagnostics' "deployment instructions" line
+shows what each role gets, or "none". An example folder with made-up content is in
 `docs/examples/deployment_instructions/`. A deployment's instructions are its
 own: keep them in the deployment's repository, not the public ones.
 

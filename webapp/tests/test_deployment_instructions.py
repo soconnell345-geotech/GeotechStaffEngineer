@@ -204,6 +204,22 @@ def test_both_routes_of_each_compiled_helper_get_its_block(tmp_path,
                       Inner)
 
 
+def test_the_diagnostics_line(folder, monkeypatch):
+    """The connection diagnostics name what each role gets, or none."""
+    from webapp import diagnostics as diag
+    monkeypatch.delenv(ins.ENV, raising=False)
+    line = diag._instructions_check()
+    assert line["name"] == "deployment instructions"
+    assert line["status"] == diag.PASS and line["detail"].startswith("none")
+    monkeypatch.setenv(ins.ENV, folder)
+    line = diag._instructions_check()
+    assert line["status"] == diag.PASS
+    assert "main: all.md + main.md, " in line["detail"]
+    assert "references: all.md + references.md, " in line["detail"]
+    monkeypatch.setenv(ins.ENV, folder + "_missing")
+    assert diag._instructions_check()["status"] == diag.WARN
+
+
 def test_the_turn_record_carries_it(folder):
     """``engine_record`` (each turn_start's ``engine``) carries the
     appended record under ``build``; absent when unset."""

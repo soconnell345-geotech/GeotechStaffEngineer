@@ -481,7 +481,9 @@ folder's name, the files, the characters, whether it was cut, a sha256 of the
 block and its first 2,000 characters, or the error). It also names the files
 that did nothing: `unused` (no agent or helper of that page took them: a
 misspelt role name such as `reviwer.md`, or a role the page does not have)
-and `empty`. Unset, the prompts are
+and `empty`. The Connection diagnostics' "deployment instructions" line shows
+what each role gets, read as the next conversation will read it (the files
+and characters per role), or "none". Unset, the prompts are
 exactly the shipped ones. Example folder (made-up content):
 `docs/examples/deployment_instructions/`.
 

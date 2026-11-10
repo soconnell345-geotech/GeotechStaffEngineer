@@ -141,6 +141,28 @@ def test_an_unreadable_file_is_skipped_and_named(monkeypatch, tmp_path):
     assert "main.md" in record["file_errors"]
 
 
+def test_describe_says_what_each_role_gets(monkeypatch, tmp_path):
+    monkeypatch.delenv(ins.ENV, raising=False)
+    assert ins.describe() == (False, [f"none: {ins.ENV} is not set"])
+    folder = tmp_path / "made_up_inst"
+    folder.mkdir()
+    monkeypatch.setenv(ins.ENV, _folder(folder, **{
+        "all.md": "Use metres.", "main.md": "Main rule.",
+        "reviwer.md": "Misspelt.", "figure.md": ""}))
+    look, parts = ins.describe()
+    assert look is True                                  # an empty file
+    assert parts[0] == "folder made_up_inst"
+    assert "every agent and helper: all.md, 11 characters" in parts
+    assert "main: all.md + main.md, 23 characters" in parts
+    assert "reviwer: all.md + reviwer.md, 22 characters" in parts
+    assert "empty: figure.md" in parts
+    assert any("unused" in p for p in parts)
+    monkeypatch.setenv(ins.ENV, str(tmp_path / "not_there"))
+    look, parts = ins.describe()
+    assert look is True and parts[0].startswith(
+        "folder not_there could not be read (FileNotFoundError")
+
+
 def test_block_for_and_merge_record(monkeypatch, tmp_path):
     monkeypatch.setenv(ins.ENV, _folder(tmp_path, **{
         "all.md": "Everyone.", "report_ingest.md": "Ingest rule."}))
