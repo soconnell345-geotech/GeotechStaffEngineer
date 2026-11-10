@@ -1043,10 +1043,107 @@ def call_agent(
             near = _closest_methods(mod, method)
             return {"error": f"Unknown method '{method}'. Did you mean: "
                              f"{near}? {avail}"}
-    return run_method(mod, agent_name, method, parameters, attachments,
-                      inputs=_choices_call_inputs,
-                      after=lambda params, result: _citations_checked(
-                          agent_name, method, params, result))
+    if agent_name in REFERENCE_MODULES:
+        refused = _reference_bool_error(mod, agent_name, method, parameters)
+        if refused is not None:
+            return refused
+    result = run_method(mod, agent_name, method, parameters, attachments,
+                        inputs=_choices_call_inputs,
+                        after=lambda params, result: _citations_checked(
+                            agent_name, method, params, result))
+    if agent_name in REFERENCE_MODULES:
+        result = _with_missing_described(mod, agent_name, method, parameters,
+                                         result)
+    return result
+
+
+def _reference_spec(mod, method: str):
+    """(``parameters``, ``parameter_aliases``) of a reference method's
+    METHOD_INFO: name -> spec, and alias -> name."""
+    info = (getattr(mod, "METHOD_INFO", None) or {}).get(method) or {}
+    params = info.get("parameters")
+    return (params if isinstance(params, dict) else {},
+            dict(info.get("parameter_aliases") or {}))
+
+
+def _declared_bool(spec) -> bool:
+    """Whether a parameter is declared a bool: its type says so (annotation
+    or docstring line), or it has no type and its default is True or
+    False."""
+    if not isinstance(spec, dict):
+        return False
+    kind = str(spec.get("type") or "").strip().lower()
+    return kind in ("bool", "boolean") or (
+        kind in ("", "any") and isinstance(spec.get("default"), bool))
+
+
+def _reference_bool_error(mod, agent_name: str, method: str,
+                          parameters: dict) -> Optional[dict]:
+    """A reference call that gives a string to a parameter declared a bool,
+    refused before it runs (2026-11-10 review, item 4): Python reads any
+    non-empty string as True, so "no" and "false" switched the option ON.
+    None when every such parameter got something else."""
+    params, aliases = _reference_spec(mod, method)
+    for given, value in parameters.items():
+        name = given if given in params else aliases.get(given)
+        if not isinstance(value, str) or not _declared_bool(params.get(name)):
+            continue
+        return {"error": (f"{agent_name}.{method}: '{given}' takes true or "
+                          f"false (a JSON boolean, no quotes), not the "
+                          f"string '{value}'. Call again with "
+                          f"\"{given}\": true or \"{given}\": false."),
+                "parameter": given,
+                "accepted_values": [True, False]}
+    return None
+
+
+#: The most of one parameter's description a missing-argument error
+#: carries.
+_MISSING_DESCRIPTION_CHARS = 200
+
+
+def _parameter_line(spec: dict) -> str:
+    """One parameter as a missing-argument error lists it: its type,
+    required or its default, and its description."""
+    parts = [str(spec.get("type") or "any")]
+    if spec.get("required"):
+        parts.append("required")
+    elif "default" in spec:
+        parts.append(f"default {json.dumps(spec['default'], default=str)}")
+    line = ", ".join(parts)
+    desc = " ".join(str(spec.get("description") or "").split())
+    if desc:
+        if len(desc) > _MISSING_DESCRIPTION_CHARS:
+            desc = desc[:_MISSING_DESCRIPTION_CHARS - 3].rstrip() + "..."
+        line += f". {desc}"
+    return line
+
+
+def _with_missing_described(mod, agent_name: str, method: str,
+                            parameters: dict, result):
+    """A reference call that failed with a required parameter left out:
+    the error names what is missing and lists every parameter with its
+    type and description (2026-11-10 review, item 4: helpers called tables
+    with no arguments 15 times to see what they hold, and the reply named
+    the parameters only). Any other result is returned as it is."""
+    if not isinstance(result, dict) or "error" not in result \
+            or "attachment_key" in parameters:
+        return result
+    params, aliases = _reference_spec(mod, method)
+    given = set(parameters) | {aliases[k] for k in parameters if k in aliases}
+    missing = [n for n, s in params.items()
+               if isinstance(s, dict) and s.get("required") and n not in given]
+    if not missing:
+        return result
+    out = dict(result)
+    if "needs" not in str(out.get("error")):
+        out["error"] = (f"{agent_name}.{method} needs "
+                        + ", ".join(f"'{n}'" for n in missing)
+                        + f" (left out). {out.get('error')}")
+    out["missing_parameters"] = missing
+    out["parameters"] = {n: _parameter_line(s) for n, s in params.items()
+                         if isinstance(s, dict)}
+    return out
 
 
 def _choices_call_inputs():
