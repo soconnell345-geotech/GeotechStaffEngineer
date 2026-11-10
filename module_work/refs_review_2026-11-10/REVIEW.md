@@ -151,15 +151,31 @@ fingerprints) follows the merges (REF-74), then the release (INF-72).
 
 ## 5. The owner's decisions (2026-11-10, evening)
 
-- New references: not built yet; a later item (OWN-135). EM 1110-1-1905 was
-  asked for separately and its build continues (REF-72).
-- DM 7.2: no rebuild; the citation moves to UFS 3-220-20 (2026), as DM 7.1 is
-  already cited as UFS 3-220-10 (2026) (OWN-137, work REF-75).
-- The three copyrighted PDFs tracked in the reference repository stay
-  (OWN-138).
-- Release when everything is merged and checked (OWN-139, work INF-72).
-- Equation judgment calls: the lead decides; revisit later (OWN-136, one
-  answer per call from `findings/RULINGS.md`).
+In the owner's words, with where each is filed:
+
+- New references: "for those 'references to add next', don't build those
+  yet. Just put them on a 'later' backlog item." Nothing is built until the
+  owner says (OWN-135, with the lead's suggested order). EM 1110-1-1905 was asked
+  for separately and its build continues (REF-72). The held documents the
+  same search reported superseded or archived are to be verified (REF-90).
+- DM 7.2's reissue: "Agreed with not rebuilding DM 7.2 (I believe the same
+  redesignation happened for 7.1)." The lead's reading: the citation moves to
+  UFS 3-220-20 (26 March 2026), saying the content is the 16 January 2025
+  UFC's, page for page, and nothing is rebuilt (REF-75). DM 7.1 is already
+  cited as UFS 3-220-10 (16 January 2026) (REF-28, done).
+- The three copyrighted PDFs tracked in the reference repository
+  (`docs/aashto1993.pdf` and the two EN 1997 parts): "The copyright PDFs are
+  OK in the repo. I downloaded these freely off the web; my understanding is
+  they're on there because they're adopted law." No action (recorded as
+  OWN-137 in the backlog's Done list).
+- Release: "You can release when everything is merged and checked." The
+  lead releases the library's next version and the app's pin once every fix
+  branch and the app-side branch is merged, checked and green, then tells
+  the owner (INF-72).
+- Equation judgment calls: "for all equation judgement calls, go with
+  whatever you think is best, but file away a 'later' backlog item for me to
+  revisit it in the future" (OWN-136, one answer per call from
+  `findings/RULINGS.md`).
 
 ## 6. What is left open
 
@@ -179,7 +195,8 @@ fingerprints) follows the merges (REF-74), then the release (INF-72).
   chart code readings that never give a value (VIS-10).
 - **Tidy:** the empty package folders, NOAA in the app's strings and the
   unused airfield PDF (REF-89); the retired `agents/references_agent.py`
-  (INF-06).
+  (INF-06); held documents reported superseded or archived, to verify
+  (REF-90).
 
 ## 7. Files here
 

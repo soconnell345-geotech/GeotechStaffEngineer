@@ -3153,10 +3153,10 @@
   "OWN-135": {
     "kind": "decision",
     "ask_who": null,
-    "question": "Which of these public references should be added to the library, and when?",
+    "question": "Which of these references should be added to the library, and when?",
     "multi": true,
-    "why": "Each fills a gap where the library holds no printed method today: DoD minimum factors of safety, slope stability and seepage as USACE prints them, liquefaction triggering and seismic settlement, frost depth, dewatering, overseas seismic ground motions. You said on 2026-11-10 not to build any yet.",
-    "background": "The reference review checked 58 public candidates on 2026-11-10; these are the 12 it ranked first. All are US-government works in the public domain except Boulanger and Idriss (2014) and EPRI EL-6800, which are free to read or download but copyrighted and not to be redistributed. The recorded helper runs argue for EM 1110-2-1902 and GEC-3 (REF-35); EM 1110-2-1902's Appendix G is also the source for step 9 of the slope plan (OWN-101), and USBR DS-13 prints Youd et al. (2001), which the library does not hold (OWN-12). The USACE manuals' currency is unconfirmed, because the official site refuses automated reads. UFC 3-220-01 (2026) is published only in WBDG's viewer; its newest PDF is the 2012 edition. The same check found held documents superseded or archived on WBDG: UFC 3-220-07 (archived, replaced by UFC 3-220-01), UFC 4-023-03 (archived, UFC 3-301-01 Change 5), UFC 3-301-01 Change 4 (Changes 5 and 6 are out), UFC 3-250-03, -04 and -11 (UFS editions, 2026), UFC 3-250-01 (2016; a 2026 digital edition), UFC 3-260-02 (2001, held but not built; the 2026 edition is 127 pages and drops the CBR method) and UFC 3-220-04FA (inactive). EM 1110-1-1905 (2025), which you asked for separately, is being built (REF-72).",
+    "why": "You said on 2026-11-10 not to build any of these yet and to keep them on a later item. Each fills a gap where the library holds no printed method today: DoD minimum factors of safety, slope stability and seepage as USACE prints them, liquefaction triggering and seismic settlement, frost depth, dewatering, overseas seismic ground motions.",
+    "background": "The reference review checked 58 public candidates on 2026-11-10; these are the 12 it ranked first (the other 46 are in CANDIDATES.md). All are US-government works in the public domain except Boulanger and Idriss (2014) and EPRI EL-6800, which are free to read or download but copyrighted and not to be redistributed. The recorded helper runs asked for EM 1110-2-1902 and GEC-3 content most (REF-35 is GEC-3); EM 1110-2-1902's Appendix G is also the source for step 9 of the slope plan (OWN-101), and USBR DS-13 prints Youd et al. (2001), which the library does not hold (OWN-12). The USACE listings could not be confirmed by an automated check, because the official site refuses automated reads; they need a browser. UFC 3-220-01 (2026) is published only in WBDG's viewer; its newest PDF is the 2012 edition. EM 1110-1-1905 (2025) is separate: you asked for it and its build continues (REF-72). Held documents the same search reported superseded or archived are REF-90.",
     "options": [
       {
         "label": "1. UFC 3-220-01 Geotechnical Engineering (2026)",
@@ -3207,7 +3207,7 @@
         "effect": "DoD seismic design ground motions for overseas locations; its columns were not checked."
       }
     ],
-    "recommendation": "When you want them: EM 1110-2-1902 and GEC-3 first (the recorded runs argue for both, and each already has an open item waiting on it: OWN-101 step 9 and REF-35), then UFC 3-220-01 once its 2026 text is in hand. Ask before Boulanger and Idriss (2014) or EPRI EL-6800 go into the public repository.",
+    "recommendation": "The lead's suggested order: EM 1110-2-1902, EM 1110-2-1901, GEC-3, USBR DS-13 Chapter 13, UFC 3-130-03 (the 2025 PDF), UFC 3-220-05; then UFC 3-220-01 once its text can be had. The two copyrighted ones (Boulanger and Idriss 2014; EPRI EL-6800) not stored in the public repository.",
     "if_no_answer": "Nothing is built; the library keeps what it holds. EM 1110-1-1905 (REF-72) carries on.",
     "message_to_send": null,
     "steps": [
@@ -3553,7 +3553,7 @@
         "multi": false
       },
       {
-        "label": "24. ufc_expansive rebuilt from the held UFC 3-220-07, which WBDG now lists as archived, replaced by UFC 3-220-01 (OWN-135).",
+        "label": "24. ufc_expansive rebuilt from the held UFC 3-220-07, which WBDG is reported to list as archived, replaced by UFC 3-220-01 (REF-90).",
         "options": [
           {
             "label": "Keep the lead's call",
