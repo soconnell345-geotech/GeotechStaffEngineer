@@ -78,7 +78,7 @@
       "other_arguments": [],
       "subagents": [
        {
-        "description": "6ee4188a4e519b98",
+        "description": "8465702830af8d01",
         "middleware": [
          {
           "class": "ModelCallBudgetMiddleware",
@@ -1245,7 +1245,7 @@
      }
     ]
    },
-   "planlens": "0.14.0"
+   "planlens": "0.15.1"
   },
   "f440beafcd9dfd89": {
    "builds": {
