@@ -39,6 +39,9 @@ MAX_ROWS = 100_000
 
 _NUMBER = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
 _THOUSANDS = re.compile(r"^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
+#: Characters a workbook does not allow (tab, line feed and carriage
+#: return are).
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _EMPHASIS = re.compile(r"^(\*\*|__|\*|_|`)(.+)\1$")
 _HEADING = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
 _SEPARATOR_CELL = re.compile(r"^:?-{2,}:?$")
@@ -131,7 +134,9 @@ def cell_value(value: Any) -> Any:
         return None
     if isinstance(value, bool) or isinstance(value, (int, float)):
         return value
-    text = str(value).strip()
+    # control characters (text copied out of a PDF carries them) are not
+    # allowed in a workbook: openpyxl raises on one and the file was lost
+    text = _CONTROL_CHARS.sub("", str(value)).strip()
     m = _EMPHASIS.match(text)
     while m:
         text = m.group(2).strip()
@@ -323,6 +328,10 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
                 if v is not None and not isinstance(v, (int, float, str)):
                     v = str(v)
                 cell = ws.cell(row=r, column=c, value=v)
+                # text that opens with "=" (a note such as "= 2 x 150 mm")
+                # is text: as a formula Excel shows an error in its place
+                if isinstance(v, str) and v.startswith("="):
+                    cell.data_type = "s"
                 if spec["header"] and r == 1:
                     cell.font = Font(bold=True)
                 widths[c] = max(widths.get(c, 0), _longest_line(v))

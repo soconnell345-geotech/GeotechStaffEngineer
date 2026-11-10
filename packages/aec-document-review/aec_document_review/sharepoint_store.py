@@ -894,8 +894,12 @@ class SharePointStore:
                               else f"{remote_base}/{rel_dir}")
                 try:
                     self._ensure_folder(fm, remote_dir)
-                    fm.upload_file(local, f"{remote_dir}/{name}",
-                                   overwrite=True)
+                    # A file manager that answers False refused the upload:
+                    # the file is NOT stamped as saved, so the next sync
+                    # sends it again.
+                    if fm.upload_file(local, f"{remote_dir}/{name}",
+                                      overwrite=True) is False:
+                        raise RuntimeError("the upload was refused")
                     sent[rel] = stamp
                     summary["uploaded"] += 1
                 except Exception as exc:

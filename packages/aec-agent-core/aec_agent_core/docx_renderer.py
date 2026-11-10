@@ -68,6 +68,8 @@ def __getattr__(attr):
     raise AttributeError(f"module {__name__!r} has no attribute {attr!r}")
 
 _BR_TAG = re.compile(r"^<br\s*/?>$", re.IGNORECASE)
+#: Characters XML 1.0 does not allow (tab, line feed and carriage return are).
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def markdown_to_docx(markdown: str, output_path: str, *,
@@ -119,6 +121,13 @@ def markdown_to_docx(markdown: str, output_path: str, *,
             "pip install python-docx"
         ) from exc
     from markdown_it import MarkdownIt
+
+    # A form feed or another control character (text copied out of a PDF
+    # carries them) is not allowed in a Word file: python-docx raises on it
+    # and the whole document was lost.
+    markdown = _CONTROL_CHARS.sub(" ", markdown or "")
+    if title:
+        title = _CONTROL_CHARS.sub(" ", title)
 
     notes = warnings if warnings is not None else []
     doc = docx.Document()

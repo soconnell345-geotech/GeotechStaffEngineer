@@ -195,8 +195,11 @@ def find_in_working_folder(name: str):
     base = default_output_dir()
     if not base:
         return None
-    candidate = os.path.join(base, p)
-    return os.path.abspath(candidate) if os.path.isfile(candidate) else None
+    candidate = os.path.abspath(os.path.join(base, p))
+    # "../other/file" names a file OUTSIDE the folder: not found here
+    if not _inside(candidate, os.path.abspath(base)):
+        return None
+    return candidate if os.path.isfile(candidate) else None
 
 
 def resolve_output_path(output_path: str) -> str:

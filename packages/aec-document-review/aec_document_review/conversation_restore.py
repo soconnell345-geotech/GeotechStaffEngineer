@@ -315,10 +315,16 @@ def _retag(stage: str, meta: dict, owner: Optional[str],
            owner_name: Optional[str]) -> None:
     """Make the restored meta this person's: the owner fields are the ones
     this session tags (none on a single-user host), so the next mirror goes
-    to their own folder. Rewritten only when they differ."""
+    to their own folder. Rewritten only when they differ.
+
+    The zip's ``working_dir`` is dropped: it is a path on the machine the
+    conversation was saved from, and here it would bind whatever folder it
+    names. The restored conversation works in its own ``files/`` folder."""
     want = {"owner": owner, "owner_name": owner_name}
-    if all(meta.get(k) == v for k, v in want.items()):
+    if (all(meta.get(k) == v for k, v in want.items())
+            and not meta.get("working_dir")):
         return
+    meta.pop("working_dir", None)
     for k, v in want.items():
         if v:
             meta[k] = v
