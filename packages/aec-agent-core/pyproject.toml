@@ -15,24 +15,26 @@ build-backend = "setuptools.build_meta"
 # 1.0.0.dev1 since step 11 (a): a version PyPI does not have, so nothing
 # built from master can install the empty 1.0.0.dev0 in its place, and
 # publish.yml stops an app release until step 12 publishes this one.
+# 1.0.0 since step 13 (INF-33): the first real release, published by the
+# lead (tag core-v1.0.0) before GSE's release that pins it and before
+# aec-document-review, which requires it exactly.
 [project]
 name = "aec-agent-core"
 # Kept equal to geotech-staff-engineer's exact pin on it (its pyproject) and
 # to aec_agent_core.__version__; webapp/tests/test_wheels.py checks all three.
-version = "1.0.0.dev1"
+version = "1.0.0"
 description = "The shared core of LLM agents that review and produce architecture, engineering and construction documents: model connections, vision calls, guards and records, Word and Excel, and a figure helper. No user interface of its own."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     {name = "Sean O'Connell", email = "soconnell345@gmail.com"},
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",

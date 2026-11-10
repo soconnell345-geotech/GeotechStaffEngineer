@@ -1,0 +1,566 @@
+{
+ "_about": "What Document Review's page agent is handed with default switches (BACKLOG INF-33). Re-record only for a deliberate change, in its own commit with the reason: python -m tests.page_builds record, from packages/aec-document-review (see test_review_fingerprints.py)",
+ "app_environment": {
+  "reference_charts_registered": false
+ },
+ "builds": {
+  "review_default": {
+   "app": {
+    "agent": {
+     "geotech_judgment_consult": false,
+     "geotech_min_recursion_limit": 350
+    },
+    "calls": [
+     {
+      "kind": "create_deep_agent",
+      "middleware": [
+       {
+        "class": "AgentBusyRetry"
+       },
+       {
+        "class": "ModelRetryMiddleware"
+       },
+       {
+        "class": "DeliveredToolResults"
+       },
+       {
+        "class": "ToolErrorGuard"
+       },
+       {
+        "class": "LargeResultKeyMap"
+       },
+       {
+        "class": "KeepWork"
+       },
+       {
+        "class": "FigureTasks"
+       },
+       {
+        "class": "ScratchFilesystemGuard"
+       },
+       {
+        "class": "HideScratchFilesystem",
+        "hidden": [
+         "delete",
+         "edit_file",
+         "execute",
+         "glob",
+         "grep",
+         "ls",
+         "read_file",
+         "write_file"
+        ]
+       },
+       {
+        "class": "ModelCallBudgetMiddleware",
+        "exhausted_message": "29d8e5e43dc95476",
+        "final_turn_nudge": "a05a7ab785626365",
+        "low_budget_note": "51c76e8ddedef43c",
+        "run_limit": 40,
+        "warn_remaining": 0
+       },
+       {
+        "class": "OutputLimitGuard"
+       }
+      ],
+      "other_arguments": [],
+      "subagents": [
+       {
+        "description": "24b508e4bcab41df",
+        "middleware": [
+         {
+          "class": "ModelCallBudgetMiddleware",
+          "exhausted_message": "6e2f9cda580db504",
+          "final_turn_nudge": "d0b8010c6c23f069",
+          "low_budget_note": "51c76e8ddedef43c",
+          "run_limit": 14,
+          "warn_remaining": 0
+         },
+         {
+          "class": "AgentBusyRetry"
+         },
+         {
+          "class": "ModelRetryMiddleware"
+         },
+         {
+          "class": "HelperRecorder"
+         },
+         {
+          "class": "DeliveredToolResults"
+         },
+         {
+          "class": "ToolErrorGuard"
+         },
+         {
+          "class": "LargeResultKeyMap"
+         },
+         {
+          "class": "ScratchFilesystemGuard"
+         },
+         {
+          "class": "HideTools",
+          "hidden": [
+           "delete",
+           "execute"
+          ]
+         },
+         {
+          "class": "OutputLimitGuard"
+         }
+        ],
+        "name": "figure",
+        "system_prompt": "451e34bda5b6f14d",
+        "tool_order": [
+         "list_files",
+         "read_text_file",
+         "analyze_image",
+         "plot_data",
+         "figure_examples",
+         "calculate",
+         "plot_code",
+         "record_feedback"
+        ],
+        "tools": {
+         "analyze_image": {
+          "args": "63cf273a21391067",
+          "description": "28446f0f8850822b"
+         },
+         "calculate": {
+          "args": "1aecab9eb7331f9c",
+          "description": "27b0304d9d7dd690"
+         },
+         "figure_examples": {
+          "args": "52b5c31c06b61eb4",
+          "description": "ebf98a6b2d0f72d6"
+         },
+         "list_files": {
+          "args": "98dda59e280d68aa",
+          "description": "74e9d3bddb45285e"
+         },
+         "plot_code": {
+          "args": "77fc6b735ad07fe8",
+          "description": "f4d5de4c2ae70d9f"
+         },
+         "plot_data": {
+          "args": "e4002b9340a8e506",
+          "description": "a1264b3138f40d93"
+         },
+         "read_text_file": {
+          "args": "38bb764f5dde0d41",
+          "description": "84031e22eef7cfbb"
+         },
+         "record_feedback": {
+          "args": "42af7e94a16912e9",
+          "description": "954dbdaace1595cb"
+         }
+        }
+       },
+       {
+        "description": "12e04b70c3d3ff72",
+        "middleware": [
+         {
+          "class": "ModelCallBudgetMiddleware",
+          "exhausted_message": "4641897fe135c099",
+          "final_turn_nudge": "e625a87495615e33",
+          "low_budget_note": "51c76e8ddedef43c",
+          "run_limit": 14,
+          "warn_remaining": 0
+         },
+         {
+          "class": "HideScratchFilesystem",
+          "hidden": [
+           "delete",
+           "edit_file",
+           "execute",
+           "glob",
+           "grep",
+           "ls",
+           "read_file",
+           "write_file"
+          ]
+         },
+         {
+          "class": "AgentBusyRetry"
+         },
+         {
+          "class": "ModelRetryMiddleware"
+         },
+         {
+          "class": "HelperRecorder"
+         },
+         {
+          "class": "DeliveredToolResults"
+         },
+         {
+          "class": "ToolErrorGuard"
+         },
+         {
+          "class": "LargeResultKeyMap"
+         },
+         {
+          "class": "ScratchFilesystemGuard"
+         },
+         {
+          "class": "OutputLimitGuard"
+         }
+        ],
+        "name": "general-purpose",
+        "system_prompt": "94ac4edf7c074b92",
+        "tool_order": [
+         "list_files",
+         "read_text_file",
+         "analyze_image",
+         "analyze_pdf_page",
+         "find_like",
+         "render_region"
+        ],
+        "tools": {
+         "analyze_image": {
+          "args": "63cf273a21391067",
+          "description": "28446f0f8850822b"
+         },
+         "analyze_pdf_page": {
+          "args": "6aa8b746320aba95",
+          "description": "3d2ba968d3114429"
+         },
+         "find_like": {
+          "args": "68a6ba0d25530eb1",
+          "description": "d5d00ac36728d05a"
+         },
+         "list_files": {
+          "args": "98dda59e280d68aa",
+          "description": "74e9d3bddb45285e"
+         },
+         "read_text_file": {
+          "args": "38bb764f5dde0d41",
+          "description": "84031e22eef7cfbb"
+         },
+         "render_region": {
+          "args": "4b281cd72cdadfde",
+          "description": "f1d82f347e78ed3a"
+         }
+        }
+       }
+      ],
+      "system_prompt": "38c87917b04b67d9",
+      "system_prompt_chars": 9854,
+      "tool_order": [
+       "list_files",
+       "read_pdf_text",
+       "read_text_file",
+       "analyze_image",
+       "analyze_pdf_page",
+       "find_like",
+       "render_region",
+       "save_file",
+       "write_docx",
+       "plot_data",
+       "write_xlsx",
+       "annotate_dxf",
+       "calculate",
+       "record_feedback"
+      ],
+      "tools": {
+       "analyze_image": {
+        "args": "63cf273a21391067",
+        "description": "28446f0f8850822b"
+       },
+       "analyze_pdf_page": {
+        "args": "6aa8b746320aba95",
+        "description": "3d2ba968d3114429"
+       },
+       "annotate_dxf": {
+        "args": "510eb92450d072d9",
+        "description": "2fa83d517121e79a"
+       },
+       "calculate": {
+        "args": "1aecab9eb7331f9c",
+        "description": "27b0304d9d7dd690"
+       },
+       "find_like": {
+        "args": "68a6ba0d25530eb1",
+        "description": "d5d00ac36728d05a"
+       },
+       "list_files": {
+        "args": "98dda59e280d68aa",
+        "description": "74e9d3bddb45285e"
+       },
+       "plot_data": {
+        "args": "09d5ac130924f6e2",
+        "description": "0fe78d52c2e95a18"
+       },
+       "read_pdf_text": {
+        "args": "77c7dbbf83562c31",
+        "description": "cdffb03f6cc25eea"
+       },
+       "read_text_file": {
+        "args": "38bb764f5dde0d41",
+        "description": "84031e22eef7cfbb"
+       },
+       "record_feedback": {
+        "args": "42af7e94a16912e9",
+        "description": "954dbdaace1595cb"
+       },
+       "render_region": {
+        "args": "4b281cd72cdadfde",
+        "description": "f1d82f347e78ed3a"
+       },
+       "save_file": {
+        "args": "30860c936fbfb717",
+        "description": "2ccd9aea0cd7485d"
+       },
+       "write_docx": {
+        "args": "2219ff317cc4702f",
+        "description": "cd0b8b099f4b9b43"
+       },
+       "write_xlsx": {
+        "args": "fe3a7d8225108605",
+        "description": "bafe16a1346653f8"
+       }
+      }
+     }
+    ]
+   }
+  },
+  "review_minimal": {
+   "app": {
+    "agent": {
+     "geotech_min_recursion_limit": 350,
+     "geotech_review_agent": "minimal"
+    },
+    "calls": [
+     {
+      "kind": "create_agent",
+      "middleware": [
+       {
+        "class": "PatchToolCallsMiddleware"
+       },
+       {
+        "class": "AgentBusyRetry"
+       },
+       {
+        "class": "ModelRetryMiddleware"
+       },
+       {
+        "class": "SummarizationMiddleware"
+       },
+       {
+        "class": "InlineImageMiddleware"
+       },
+       {
+        "class": "ModelCallBudgetMiddleware",
+        "exhausted_message": "29d8e5e43dc95476",
+        "final_turn_nudge": "a05a7ab785626365",
+        "low_budget_note": "51c76e8ddedef43c",
+        "run_limit": 40,
+        "warn_remaining": 0
+       }
+      ],
+      "other_arguments": [],
+      "system_prompt": "c45bc8c17d0dfb8d",
+      "system_prompt_chars": 1637,
+      "tool_order": [
+       "analyze_pdf_page",
+       "render_region",
+       "analyze_image",
+       "page_count",
+       "write_docx",
+       "mark_up",
+       "task"
+      ],
+      "tools": {
+       "analyze_image": {
+        "args": "9e960e831c7722e1",
+        "description": "76802096fd1c8192"
+       },
+       "analyze_pdf_page": {
+        "args": "bf2d308c35ba29af",
+        "description": "84e583e7e5b779bc"
+       },
+       "mark_up": {
+        "args": "6b347343d857e8bd",
+        "description": "d7837acada2ffbf2"
+       },
+       "page_count": {
+        "args": "a827db005ead940b",
+        "description": "f07af56cabc99bfd"
+       },
+       "render_region": {
+        "args": "34c74ad104c8b6d9",
+        "description": "9f1fcff1f09bb3f5"
+       },
+       "task": {
+        "args": "5d3344a186db774c",
+        "description": "9e5803c4b25d66e3"
+       },
+       "write_docx": {
+        "args": "116e147830df8835",
+        "description": "a6371bd040825324"
+       }
+      }
+     },
+     {
+      "helper_made_by": "task",
+      "kind": "create_agent",
+      "middleware": [
+       {
+        "class": "PatchToolCallsMiddleware"
+       },
+       {
+        "class": "AgentBusyRetry"
+       },
+       {
+        "class": "ModelRetryMiddleware"
+       },
+       {
+        "class": "InlineImageMiddleware"
+       },
+       {
+        "class": "ModelCallBudgetMiddleware",
+        "exhausted_message": "4641897fe135c099",
+        "final_turn_nudge": "e625a87495615e33",
+        "low_budget_note": "51c76e8ddedef43c",
+        "run_limit": 14,
+        "warn_remaining": 0
+       }
+      ],
+      "other_arguments": [],
+      "system_prompt": "442f72f81e731ff4",
+      "system_prompt_chars": 517,
+      "tool_order": [
+       "analyze_pdf_page",
+       "render_region",
+       "analyze_image",
+       "page_count"
+      ],
+      "tools": {
+       "analyze_image": {
+        "args": "9e960e831c7722e1",
+        "description": "76802096fd1c8192"
+       },
+       "analyze_pdf_page": {
+        "args": "bf2d308c35ba29af",
+        "description": "84e583e7e5b779bc"
+       },
+       "page_count": {
+        "args": "a827db005ead940b",
+        "description": "f07af56cabc99bfd"
+       },
+       "render_region": {
+        "args": "34c74ad104c8b6d9",
+        "description": "9f1fcff1f09bb3f5"
+       }
+      }
+     }
+    ]
+   }
+  }
+ },
+ "planlens": {
+  "709cbea6e23e8aaa": {
+   "builds": {
+    "review_default": [
+     {
+      "call": 0,
+      "subagents": {
+       "figure": {},
+       "general-purpose": {
+        "document_markups": {
+         "args": "ddfc51844e5b1412",
+         "description": "e76078c537260c20"
+        },
+        "document_page_map": {
+         "args": "665f72192044caac",
+         "description": "ebb841b0ff44e45e"
+        },
+        "document_structure": {
+         "args": "75aca17975a312b8",
+         "description": "90a50a09fbce2aff"
+        },
+        "find_quantities": {
+         "args": "622c49e76114bb80",
+         "description": "97e383198864374b"
+        },
+        "measure": {
+         "args": "7dc6558fc93b2776",
+         "description": "62bc800c36aac2c1"
+        },
+        "open_document": {
+         "args": "178a4b401ed2c071",
+         "description": "d9dc416f29a2cddd"
+        },
+        "read_document": {
+         "args": "b1720bbd433edbc5",
+         "description": "04758e899cfdcd4d"
+        },
+        "render_page_thumbnails": {
+         "args": "68484b680da324a6",
+         "description": "276bf6dfafb5d4c5"
+        },
+        "search_document": {
+         "args": "3522b8922be2c55e",
+         "description": "411e70e9762d01ac"
+        }
+       }
+      },
+      "tools": {
+       "annotate_document": {
+        "args": "e61aa0124fac52ee",
+        "description": "fa5c88e3b8fffb1d"
+       },
+       "document_markups": {
+        "args": "ddfc51844e5b1412",
+        "description": "e76078c537260c20"
+       },
+       "document_page_map": {
+        "args": "665f72192044caac",
+        "description": "ebb841b0ff44e45e"
+       },
+       "document_structure": {
+        "args": "75aca17975a312b8",
+        "description": "90a50a09fbce2aff"
+       },
+       "find_quantities": {
+        "args": "622c49e76114bb80",
+        "description": "97e383198864374b"
+       },
+       "measure": {
+        "args": "7dc6558fc93b2776",
+        "description": "62bc800c36aac2c1"
+       },
+       "open_document": {
+        "args": "178a4b401ed2c071",
+        "description": "d9dc416f29a2cddd"
+       },
+       "read_document": {
+        "args": "b1720bbd433edbc5",
+        "description": "04758e899cfdcd4d"
+       },
+       "render_page_thumbnails": {
+        "args": "68484b680da324a6",
+        "description": "276bf6dfafb5d4c5"
+       },
+       "search_document": {
+        "args": "3522b8922be2c55e",
+        "description": "411e70e9762d01ac"
+       }
+      }
+     }
+    ],
+    "review_minimal": [
+     {
+      "call": 0,
+      "subagents": {},
+      "tools": {}
+     },
+     {
+      "call": 1,
+      "subagents": {},
+      "tools": {}
+     }
+    ]
+   },
+   "planlens": "0.15.0"
+  }
+ }
+}

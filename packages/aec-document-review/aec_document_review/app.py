@@ -1,0 +1,1785 @@
+"""Streamlit shell for the geotech web chat app — a thin view over aec_document_review.core.
+
+Run locally:
+
+    streamlit run aec_document_review/app.py
+
+Everything with logic (attachment staging, artifact capture, streaming, engine
+resolution, the disclaimer text) lives in ``aec_document_review.core`` / ``aec_agent_core.engine_config``
+so it is testable without a streamlit runtime. This file only wires those to
+streamlit widgets. One conversation per browser session (``st.session_state``),
+with a per-session LangGraph ``thread_id``.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import time
+from typing import Optional
+
+# streamlit runs this file with webapp/ as the script dir; the repo/site root
+# that contains the `webapp` package is one level up and must be importable.
+_PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PKG_ROOT not in sys.path:
+    sys.path.insert(0, _PKG_ROOT)
+
+import streamlit as st
+
+from aec_document_review import budget_panel, core, file_widgets, helper_models, identity, profiles, sharepoint_store, turn_jobs, ws_upload
+from aec_agent_core import engine_config
+
+# Which PAGE this run serves (aec_document_review.profiles): the geotech agent by default
+# — a plain `streamlit run aec_document_review/app.py` and the Databricks launcher change
+# nothing — or the document-review page when the Tiny Apps entry's page
+# function said so. WHO is using it (aec_document_review.identity): the IIS header on Tiny
+# Apps, DEV_IDENTITY locally, the launcher's email on Databricks, else nobody.
+# The two together decide where this session's conversations live.
+_PROFILE = profiles.current()
+_IDENT = identity.current_identity()
+_ROOT = profiles.session_root(_PROFILE, _IDENT)
+#: None when this session uses the process default root (the legacy layout).
+_THREAD_ROOT = _ROOT if os.path.abspath(_ROOT) != \
+    os.path.abspath(core.data_root()) else None
+
+# The multi-page entry (aec_document_review.tinyapps_entry) calls set_page_config ONCE for
+# the run and flags it; a second call raises.
+if not st.session_state.get("_page_config_set"):
+    st.set_page_config(page_title=_PROFILE.title, page_icon=_PROFILE.icon,
+                       layout="wide")
+
+
+# Idle websocket keepalive: a timed fragment that re-renders an invisible
+# element, generating periodic server->browser DATA frames even when nobody
+# is typing. Complements the launcher's server_websocketPingInterval fix
+# (protocol ping/pong frames are swallowed by the Databricks driver proxy)
+# in case the proxy also runs a data-idle timer. GEOTECH_IDLE_KEEPALIVE_S=0
+# disables; default 20 s.
+def _install_idle_keepalive() -> None:
+    try:
+        interval = float(os.environ.get("GEOTECH_IDLE_KEEPALIVE_S", "20") or 0)
+    except ValueError:
+        interval = 20.0
+    if interval <= 0 or not hasattr(st, "fragment"):
+        return
+
+    @st.fragment(run_every=interval)
+    def _idle_keepalive() -> None:
+        st.empty()
+
+    try:
+        _idle_keepalive()
+    except Exception:
+        pass                       # keepalive must never break a render
+
+
+_install_idle_keepalive()
+
+# MIME by extension for download buttons — without an explicit mime the
+# browser guesses from application/octet-stream and can save e.g. a .md as
+# ".bin" (owner-reported, wall session 2026-07-14).
+_OOXML = "application/vnd.openxmlformats-officedocument"
+_MIME_BY_EXT = {".pdf": "application/pdf", ".html": "text/html",
+                ".md": "text/markdown", ".txt": "text/plain",
+                ".csv": "text/csv", ".json": "application/json",
+                ".png": "image/png", ".svg": "image/svg+xml",
+                ".dxf": "application/dxf",
+                # Office files: a .docx served as octet-stream downloads as a
+                # zip on some browsers, which is what the agent's Word output
+                # would have looked like to the reader.
+                ".docx": f"{_OOXML}.wordprocessingml.document",
+                ".xlsx": f"{_OOXML}.spreadsheetml.sheet",
+                ".pptx": f"{_OOXML}.presentationml.presentation"}
+
+
+def _mime_for(name: str) -> str:
+    return _MIME_BY_EXT.get(os.path.splitext(name)[1].lower(),
+                            "application/octet-stream")
+
+
+def _embed_frame(src: str, height: int) -> None:
+    """Embed raw HTML or a data: URI in an iframe, on any Streamlit version.
+
+    ``st.iframe`` (which auto-detects both forms) replaced the deprecated
+    ``st.components.v1.html`` after Streamlit 1.59; deployment base images
+    (e.g. Foundry) may pin an older version without it.
+    """
+    if hasattr(st, "iframe"):
+        st.iframe(src, height=height)
+        return
+    import streamlit.components.v1 as components
+    if src.startswith("data:"):
+        components.html(
+            f'<iframe src="{src}" width="100%" height="{height - 20}" '
+            f'style="border:none"></iframe>', height=height)
+    else:
+        components.html(src, height=height, scrolling=True)
+
+
+# ---------------------------------------------------------------------------
+# Session bootstrap
+# ---------------------------------------------------------------------------
+
+#: Bump when the session-state SHAPE changes. On a streamlit hot-reload the old
+#: session_state survives into new code; if the schema differs we re-init cleanly
+#: rather than run half-alive (the model-picker reload is what surfaced this).
+_SCHEMA_VERSION = 2
+
+#: App-owned session-state keys cleared on a schema-mismatch re-init (widget keys
+#: like open_*/model_pick/uploader_* are left alone — they re-key per thread).
+_APP_STATE_KEYS = (
+    "initialized", "thread_id", "temp_dir", "attachments", "artifacts",
+    "messages", "transcript", "pending_notes", "total_tokens",
+    "last_turn_tokens", "agent", "agent_error", "engine", "model", "save_error",
+    "behavior", "upload_epoch", "pending_orientation", "sp_sync",
+    "helper_models", "helper_engines",
+)
+
+
+def _build_agent_for_session() -> None:
+    """(Re)build the compiled agent wired to the current attachments dict +
+    persistent files dir. Surfaces build errors without crashing the app."""
+    ss = st.session_state
+    ss.agent = None
+    ss.agent_error = None
+    ss.helper_engines = []
+    if ss.engine.ok:
+        try:
+            _kind = (ss.get("behavior") or {}).get("agent_type", "full")
+            if not _PROFILE.specialists:
+                _kind = "full"          # the review page has no specialists
+            # A helper's own model (INF-41): this host's defaults, the env,
+            # the sidebar; built like the main model, for this caller.
+            ss.helper_engines = helper_models.resolve(
+                ss.model, ss.get("helper_models"), identity=_IDENT)
+            _helper_kw = helper_models.build_kwargs(ss.helper_engines)
+            if _kind == "full":
+                # The behavior pickers first, then the PAGE's own overrides
+                # (the document-review page: no modules, no reference
+                # sub-agent, its own prompt) — the page wins.
+                _kw = _PROFILE.behavior_build_kwargs(ss.get("behavior"))  # A5
+                _kw.update(_helper_kw)
+                _kw.update(_PROFILE.build_kwargs())
+                _kw.setdefault("markup_author", _IDENT.markup_author)
+                ss.agent = core.build_agent(
+                    ss.engine.model, ss.attachments, ss.temp_dir, ss.artifacts,
+                    profile=_PROFILE, **_kw)
+            else:                                                         # A5e
+                _kw = core.specialist_build_kwargs(ss.get("behavior"))
+                _kw.update(_helper_kw)
+                ss.agent = _PROFILE.hook("specialist_builder")(
+                    _kind, ss.engine.model, ss.attachments, ss.temp_dir,
+                    ss.artifacts, **_kw)
+        except Exception as exc:  # surface, don't crash the app
+            ss.agent_error = f"{type(exc).__name__}: {exc}"
+
+
+def _resolve_and_build(model_id: str) -> None:
+    """Set the active model, (re)resolve the engine for it, and rebuild the agent
+    on the CURRENT conversation — keeping thread/messages/attachments/artifacts.
+    The persist+replay design makes a mid-conversation model switch safe: the next
+    turn replays the existing history into the newly-built model. (The deployment
+    Prompter engine is fixed and ignores the picked id — see engine_config.)"""
+    ss = st.session_state
+    ss.model = model_id
+    # The keyed Model selectbox keeps its own sticky state across reruns and
+    # would otherwise clobber a programmatic model change (custom RID box,
+    # conversation resume) back to the widget's remembered value on the next
+    # render. Flag the change so the sidebar pushes ss.model INTO the widget
+    # before it is instantiated.
+    ss._model_dirty = True
+    # Built for THIS session's signed-in person: on Tiny Apps the engine
+    # carries their own Prompter key (aec_agent_core.tinyapps_engine), so it lives in
+    # this session's state and is never shared.
+    ss.engine = engine_config.resolve_engine(model_id=model_id,
+                                             identity=_IDENT)
+    _build_agent_for_session()
+
+
+def _new_conversation() -> None:
+    """Start a fresh conversation: new thread id + persistent files dir + agent.
+    The conversation's meta is not written until its first turn, so an unused
+    'New conversation' does not clutter the saved list."""
+    ss = st.session_state
+    ss.thread_id = core.new_thread_id()
+    core.register_thread_root(ss.thread_id, _THREAD_ROOT)
+    ss.temp_dir = core.conversation_files_dir(ss.thread_id)
+    ss.attachments = {}                 # shared with the agent's vision tools
+    ss.artifacts = []                   # agent-produced files (download list)
+    ss.messages = []                    # agent-facing history (replayed)
+    ss.transcript = []                  # display entries
+    ss.pending_notes = []               # attachment notes for the next turn
+    ss.total_tokens = 0
+    ss.last_turn_tokens = 0
+    ss.save_error = None
+    ss.feedback_saved = None
+    ss.recovered_notice = False
+    ss.sp_sync = None                   # D3: the sidebar shows THIS one's only
+    ss.behavior = core.default_behavior()       # A5: per-conversation pickers
+    _resolve_and_build(core.default_model_id())
+
+
+def _stage_files(pairs) -> list:
+    """Stage ``(name, bytes)`` uploads into this conversation — the sidebar
+    uploader and the chat box both come through here: the files land in the
+    working folder, the agent's next message carries the attachment note, and
+    the transcript shows an ``attach`` line for each."""
+    ss = st.session_state
+    atts = core.stage_uploads(ss.attachments, ss.temp_dir, pairs)
+    ss.pending_notes.append(core.attachment_note(atts))
+    entries = [{"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"}
+               for a in atts]
+    ss.transcript.extend(entries)                # in-memory (always)
+    try:                                          # persist — never crash
+        for entry in entries:
+            core.append_transcript(ss.thread_id, entry)
+        core.save_attachments_index(ss.thread_id, list(ss.attachments))
+        ss.save_error = None
+    except Exception as exc:
+        ss.save_error = f"{type(exc).__name__}: {exc}"
+    # A document added to a conversation that already has a title joins it
+    # (live smoke wave 2b, C14); the first upload's turn titles a new one,
+    # and a screenshot dropped in mid-conversation is evidence, not a name.
+    _keys = [a.key for a in atts]
+    if profiles.orient_on_upload(_keys, ss.transcript):
+        core.retitle_for_upload(ss.thread_id, _keys)
+    return atts
+
+
+def _bind_working_folder(path) -> None:
+    """Bind this conversation's working folder to the current script run's
+    context (``aec_agent_core._fileio.bind_working_dir``): every tool or
+    folder read on this thread resolves names there, whatever another
+    session did to the process-wide env var. Best-effort."""
+    try:
+        from aec_agent_core._fileio import bind_working_dir
+        bind_working_dir(path)
+    except Exception:                                  # noqa: BLE001
+        pass
+
+
+def _queue_orientation(atts) -> None:
+    """The review page orients itself on a fresh upload — one cheap turn,
+    sent on the user's behalf at the next run (owner, 2026-09-21: automatic,
+    not a button). Only when there is an agent to answer and no turn already
+    running; the request text is the user's message in the transcript, so it
+    replays like any other. Not for a screenshot dropped in mid-conversation:
+    that is evidence for the next message (profiles.orient_on_upload)."""
+    ss = st.session_state
+    if _PROFILE.orientation and ss.agent is not None \
+            and turn_jobs.get_turn_job(ss.thread_id) is None \
+            and profiles.orient_on_upload([a.key for a in atts],
+                                          ss.transcript):
+        ss.pending_orientation = [a.key for a in atts]
+
+
+def _chat_input_takes_files() -> bool:
+    """Whether this Streamlit's chat box can take files (``accept_file``,
+    Streamlit 1.43+) — pasted screenshots included."""
+    import inspect
+    try:
+        return "accept_file" in inspect.signature(st.chat_input).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+def _open_conversation(thread_id: str) -> None:
+    """Resume a saved conversation: reload the display transcript, replay the
+    agent-facing messages, re-register staged attachments, rebuild the download
+    list, restore the conversation's model, and rebuild the agent on the SAME
+    thread + persistent files dir."""
+    ss = st.session_state
+    ss.thread_id = thread_id
+    core.register_thread_root(thread_id, _THREAD_ROOT)
+    ss.temp_dir = core.conversation_files_dir(thread_id)
+    ss.attachments = {}
+    ss.recovered_notice = False
+    core.load_attachments(thread_id, ss.attachments)   # re-register upload bytes
+    ss.transcript = core.load_transcript(thread_id)
+    # A3 crash recovery: a turn interrupted mid-stream (kill/OOM/reload) left a
+    # partial checkpoint — fold it in as a clearly-marked "recovered" entry.
+    # NOT when a detached worker is still running this conversation's turn
+    # (post-reconnect resume): that partial is live, not crashed.
+    _rec = (None if turn_jobs.get_turn_job(thread_id) is not None
+            else core.recover_partial(thread_id))
+    if _rec is not None:
+        ss.transcript.append(_rec)
+        try:
+            core.append_transcript(thread_id, _rec)
+        except Exception:
+            pass
+        ss.recovered_notice = True
+    ss.messages = core.load_messages(thread_id)         # replayed → agent memory
+    ss.artifacts = core.artifacts_from_transcript(ss.transcript)
+    ss.pending_notes = []
+    ss.total_tokens = 0
+    ss.last_turn_tokens = 0
+    ss.save_error = None
+    ss.feedback_saved = None
+    ss.sp_sync = None                   # D3: the sidebar shows THIS one's only
+    _meta = core.load_meta(thread_id) or {}
+    ss.behavior = core.behavior_from_meta(_meta)     # A5: restore pickers
+    _resolve_and_build(_meta.get("model") or core.default_model_id())
+
+
+def _follow_turn_job(job) -> None:
+    """Render a detached turn's live progress; fold in the result when done.
+
+    Reattachable by design: when the driver proxy kills the websocket (hard
+    ~60 s TTL, live-confirmed 2026-09-03), this script thread dies but the
+    worker keeps computing; the next script run — same session or a fresh
+    one after reconnect — calls this again and resumes the display.
+    """
+    ss = st.session_state
+    with st.chat_message("assistant"):
+        answer_box = st.empty()
+        status = st.status("Working…", expanded=False)
+        answer = ""
+        for item in job.follow():
+            kind = item.get("kind")
+            if kind == "heartbeat":
+                _m, _s = divmod(int(item.get("elapsed_s", 0)), 60)
+                _note = item.get("note")
+                status.update(label=(f"Working… {_m}m {_s:02d}s ({_note})"
+                                     if _note else
+                                     f"Working… {_m}m {_s:02d}s (long step)"))
+            elif kind == "token":
+                answer += item.get("text", "")
+                answer_box.markdown(answer)
+            elif kind in ("tool_call", "todos", "tool_result"):
+                status.write(item.get("text", ""))
+        res = job.result
+        final = res.get("final") or answer or "(no answer text)"
+        answer_box.markdown(final)
+        if res.get("error"):
+            status.update(label="Error", state="error")
+            st.error(res["error"])
+        else:
+            status.update(label="Done", state="complete")
+
+    # Sync THIS session with what the worker persisted. Same-session case:
+    # the worker mutated ss.messages / ss.transcript / ss.artifacts in place
+    # — already consistent. Reconnected-new-session case: reload from disk.
+    synced = bool(ss.transcript) and \
+        ss.transcript[-1].get("role") == "assistant" and \
+        ss.transcript[-1].get("text") == res.get("final")
+    if not synced:
+        ss.transcript = core.load_transcript(ss.thread_id)
+        ss.messages = core.load_messages(ss.thread_id)
+        ss.artifacts = core.artifacts_from_transcript(ss.transcript)
+    ss.last_turn_tokens = res.get("turn_tokens", 0)
+    ss.total_tokens += res.get("turn_tokens", 0)
+    ss.save_error = res.get("save_error")
+    if res.get("sp_sync") is not None:
+        ss.sp_sync = res["sp_sync"]
+    job.consumed = True
+    st.rerun()
+
+
+def _init_session() -> None:
+    ss = st.session_state
+    if ss.get("initialized") and ss.get("_schema_version") == _SCHEMA_VERSION \
+            and ss.get("_profile") == _PROFILE.name:
+        return
+    # A PAGE SWITCH (the two-page Tiny Apps entry shares one session_state):
+    # park the page we are leaving so coming back resumes its conversation,
+    # then rebuild the app state for this page.
+    if ss.get("initialized") and ss.get("_profile") not in (None, _PROFILE.name):
+        ss.setdefault("_page_threads", {})[ss["_profile"]] = ss.get("thread_id")
+    # first run OR a post-hot-reload schema mismatch: drop app state + re-init
+    # cleanly (persisted conversations are unaffected and remain resumable).
+    for k in _APP_STATE_KEYS:
+        ss.pop(k, None)
+    ss._schema_version = _SCHEMA_VERSION
+    ss._profile = _PROFILE.name
+    _parked = (ss.get("_page_threads") or {}).get(_PROFILE.name)
+    if _parked and core.load_meta(_parked, _ROOT) is not None:
+        _open_conversation(_parked)
+    else:
+        _new_conversation()
+    ss.initialized = True
+
+
+_init_session()
+ss = st.session_state
+
+# A rerun that raises is kept in the open conversation's activity log
+# (aec_document_review.page_errors; BACKLOG EV-19). Recording only.
+try:
+    from aec_document_review import page_errors as _page_errors
+    _page_errors.install()
+    _page_errors.bind(core.conversation_dir(ss.thread_id, _THREAD_ROOT))
+except Exception:                                      # noqa: BLE001
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Header + disclaimer (prominent, at the very top)
+# ---------------------------------------------------------------------------
+
+st.title(f"{_PROFILE.icon} {_PROFILE.title}")
+st.caption(_PROFILE.caption)
+
+# ONE disclaimer widget. There used to be an ``st.warning`` above the expander
+# that printed ``disclaimer_text().splitlines()[0]`` — the notice's TITLE line
+# — so the page carried two banners both reading "Professional-use disclaimer"
+# and the solid one said nothing (owner feedback 2026-09-11). The expander
+# holds the full text; that is the disclaimer.
+_disc = core.disclaimer_text(_PROFILE)
+with st.expander("Professional-use disclaimer — read before relying on any result",
+                 expanded=False):
+    st.text(_disc or "Professional-use disclaimer: research/analysis aid, "
+            "not a design deliverable.")
+
+if ss.get("save_error"):
+    st.warning(f"⚠️ This conversation could not be auto-saved: {ss.save_error}. "
+               "Your current chat is intact on screen; the next successful turn "
+               "will re-save it.")
+
+if ss.get("recovered_notice"):
+    st.info("♻️ A previous turn was interrupted before it finished saving. The "
+            "partial response was recovered and added to this conversation "
+            "(marked below).")
+
+
+# ---------------------------------------------------------------------------
+# Sidebar: engine status, attachments, artifacts, tokens, reset
+# ---------------------------------------------------------------------------
+
+# Row-action glyphs for the conversation list. The glyph goes in the button's
+# `icon` slot, NOT in its label: streamlit >= 1.62 stopped WRAPPING a control's
+# label inside a column and truncates it with an ellipsis instead, which erased
+# these one-glyph labels entirely in the narrow rename/delete columns (owner
+# report against the cluster's 1.63.0; reproduced side by side with 1.59.1 —
+# blank buttons on 1.63, visible on 1.59). Icons are exempt from that
+# truncation, and render identically on both lines.
+_ICON_RENAME = ":material/edit:"
+_ICON_DELETE = ":material/delete:"
+
+#: Emoji shown instead when streamlit predates the button `icon` parameter
+#: (added in 1.39; pyproject's floor is still 1.36).
+_ICON_FALLBACK = {_ICON_RENAME: "✏️", _ICON_DELETE: "🗑️"}
+
+_HAS_BUTTON_ICON = "icon" in __import__("inspect").signature(
+    st.button).parameters
+
+
+def _sp_auth_problem(summary, foundry: bool = False) -> bool:
+    """True when a sync/restore summary's errors smell like an expired or
+    rejected token (401/403/unauthorized/token/auth). On Foundry storage
+    also a refusal that carries none of those words (``PermissionDenied``,
+    ``"errorCode": "PERMISSION_DENIED"``) and an alias the workspace does
+    not define (``AliasNotDefined``)."""
+    try:
+        text = " ".join(str(e) for e in (summary or {}).get("errors") or [])
+    except Exception:                                  # noqa: BLE001
+        return False
+    low = text.lower()
+    keys = ("401", "403", "unauthor", "token", "authenticat", "forbidden")
+    if foundry:
+        keys += ("permissiondenied", "permission_denied", "aliasnotdefined")
+    return any(k in low for k in keys)
+
+
+def _sp_configured() -> bool:
+    """True when the SharePoint mirror/tools are configured (best-effort);
+    False when the permanent storage is the Foundry dataset (INF-38), which
+    the agent cannot fetch files from."""
+    try:
+        from aec_document_review import sharepoint_store
+        store = sharepoint_store.get_store()
+        return bool(store.configured) and \
+            getattr(store, "backend", "sharepoint") == "sharepoint"
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
+def _no_match_hint() -> str:
+    """The conversation filter's line when nothing here matches: it points
+    at the block below that can bring an older one back -- Permanent
+    storage (SharePoint, or Foundry storage, INF-38) when it is drawn, else
+    the zip restore (INF-45), else nothing (Foundry wiring audit,
+    2026-11-03: the old line pointed at a block Foundry did not draw)."""
+    head = "No saved conversation matches"
+    try:
+        stored = bool(sharepoint_store.get_store().configured)
+    except Exception:                                  # noqa: BLE001
+        stored = False
+    if stored:
+        return (f"{head} — search **Find a past conversation** under "
+                "Permanent storage below to restore an older one.")
+    if _PROFILE.conversation_download:
+        return (f"{head} — **Restore a downloaded conversation** below "
+                "brings one back from its zip.")
+    return f"{head}."
+
+
+#: The sidebar's warning when Foundry storage refuses the app or does not
+#: know the dataset's alias.
+_FOUNDRY_STORAGE_AUTH = (
+    "Foundry storage could not reach the conversation dataset. Import it "
+    "into the workspace (Data panel, read and write), push, and set "
+    "GEOTECH_FOUNDRY_CONVERSATION_DATASET to its alias; the publisher needs "
+    "edit access to it (docs/FOUNDRY.md, 'Conversations that survive a "
+    "rebuild'). Then Sync now.")
+
+#: The head of the sidebar's warning on Foundry when no dataset keeps the
+#: conversations; the store's ``not_kept_reason`` follows it.
+_NOT_KEPT_HEAD = "**Conversations are NOT kept across restarts.** "
+
+
+def _row_action(icon: str, *, key: str, help: str) -> bool:
+    """A one-glyph conversation-row button (rename / delete)."""
+    if _HAS_BUTTON_ICON:
+        return st.button("", key=key, icon=icon, help=help,
+                         use_container_width=True)
+    return st.button(_ICON_FALLBACK[icon], key=key, help=help,
+                     use_container_width=True)
+
+
+def _relative_time(updated: float) -> str:
+    import time as _t
+    ago = max(0, int(_t.time() - (updated or 0)))
+    if ago < 60:
+        return "just now"
+    if ago < 3600:
+        return f"{ago // 60}m ago"
+    if ago < 86400:
+        return f"{ago // 3600}h ago"
+    return f"{ago // 86400}d ago"
+
+
+#: Seconds between looks at the storage status while the Foundry dataset's
+#: first check, or a save in the background, runs (INF-65); none after.
+_STORAGE_POLL_S = 2.0
+
+
+def _storage_busy(store, thread_id) -> bool:
+    """True while the Foundry dataset's first check, or a save of this
+    conversation, runs in the background. Never on SharePoint, which saves
+    within the turn."""
+    try:
+        check = getattr(store, "check_state", None)
+        state = getattr(store, "save_state", None)
+        return bool((callable(check) and check())
+                    or (callable(state) and state(thread_id)))
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
+def _storage_status(store, thread_id, drawn: Optional[float] = None) -> None:
+    """The Permanent storage block's status lines: why conversations are
+    NOT kept (the Connection diagnostics line's text), the dataset's first
+    check, a save in the background, this conversation's latest save. With
+    ``drawn`` (when the page drew it) it runs as a timed fragment
+    (``_storage_panel``) while something runs in the background; when that
+    ends a timed run reruns the page once, which shows the result and stops
+    the timer, so the result shows without a click (the FDE, build i: no
+    save line after the turn). The first draw, inside the page's own run,
+    never reruns: ``st.rerun()`` would end that run before the chat box and
+    the buttons below, and Streamlit drops a message sent or a click made
+    in it."""
+    ss = st.session_state
+    foundry = getattr(store, "backend", "sharepoint") == "foundry"
+    label = getattr(store, "label", "SharePoint")
+    try:
+        not_kept_of = getattr(store, "not_kept_reason", None)
+        not_kept = not_kept_of() if callable(not_kept_of) else None
+    except Exception:                                  # noqa: BLE001
+        not_kept = None
+    if not_kept:
+        st.warning(_NOT_KEPT_HEAD + not_kept)
+    # This conversation's own mirror record only -- never the store-wide
+    # last sync, which on a shared host is another person's folder and
+    # link (live smoke wave 2c, D3).
+    sync = sharepoint_store.sync_for_conversation(
+        store, thread_id, ss.get("sp_sync"))
+    try:
+        check_of = getattr(store, "check_state", None)
+        checking = bool(callable(check_of) and check_of()) and not not_kept
+        state_of = getattr(store, "save_state", None)
+        state = state_of(thread_id) if callable(state_of) else None
+    except Exception:                                  # noqa: BLE001
+        checking, state = False, None
+    if checking:
+        st.caption(f"{label}: checking the conversation dataset…")
+    if state:
+        st.caption(f"{label}: saving the latest turn…" if state == "saving"
+                   else f"{label}: the latest turn is waiting to be saved…")
+    if sync:
+        n_err = len(sync.get("errors") or [])
+        failed = f", {n_err} failed" if n_err else ""
+        if foundry and sync.get("at"):
+            line = (f"{label}: saved {sync['uploaded']} file(s) "
+                    f"{_relative_time(sync['at'])}, {sync['skipped']} "
+                    f"up-to-date{failed} · {sync['duration_s']}s")
+        else:
+            line = (f"{label}: {sync['uploaded']} uploaded, "
+                    f"{sync['skipped']} up-to-date{failed}"
+                    f" · {sync['duration_s']}s")
+        if n_err:
+            st.warning(line)
+            with st.expander("Sync errors", expanded=False):
+                for e in sync["errors"]:
+                    st.caption(e)
+        else:
+            st.caption(line)
+        if sync.get("folder"):
+            st.caption(f"Folder: {os.path.basename(sync['folder'])}")
+        if sync.get("renamed_from"):
+            st.caption("Renamed — the folder before the rename keeps a "
+                       "copy and a MOVED.txt pointing here.")
+        if sync.get("web_url"):
+            st.markdown(f"[Open session folder]({sync['web_url']})")
+        if sync.get("note"):
+            st.info(sync["note"])
+    elif not state and not not_kept and not checking:
+        st.caption("Foundry storage is on — this conversation's files "
+                   "are saved to the Foundry dataset after each turn."
+                   if foundry else
+                   "SharePoint mirroring is on — this conversation's "
+                   "files sync after each turn.")
+    if _sp_auth_problem(sync, foundry=foundry) and not not_kept:
+        st.warning(_FOUNDRY_STORAGE_AUTH if foundry else
+                   "SharePoint rejected the app's token — it has probably "
+                   "expired (the refresher lives in the launching "
+                   "notebook and stops when that notebook clears). "
+                   "Re-run `stage_sharepoint(...)` in the notebook, "
+                   "then Sync now.")
+    # A timed run comes a poll or more after the page drew the fragment.
+    if drawn is not None and time.time() - drawn >= _STORAGE_POLL_S / 2 \
+            and not _storage_busy(store, thread_id):
+        st.rerun()
+
+
+def _storage_panel(store, thread_id) -> None:
+    """:func:`_storage_status`, as a fragment that looks again every
+    :data:`_STORAGE_POLL_S` while something runs in the background (Foundry
+    only, in practice); drawn once otherwise."""
+    try:
+        store.not_kept_reason()      # starts the dataset's first check
+    except Exception:                                  # noqa: BLE001
+        pass
+    if _storage_busy(store, thread_id) and hasattr(st, "fragment"):
+        st.fragment(_storage_status, run_every=_STORAGE_POLL_S)(
+            store, thread_id, time.time())
+    else:
+        _storage_status(store, thread_id)
+
+
+with st.sidebar:
+    if _IDENT.authenticated:
+        # Who the host says is here — the IIS header on Tiny Apps (never typed
+        # into the app), the launcher's email on Databricks. Their
+        # conversations for THIS page are the only ones listed below.
+        st.caption(f"Signed in as **{_IDENT.display_name}**")
+    st.header("Conversations")
+    if st.button("➕ New conversation", use_container_width=True,
+                 key="new_conv"):
+        _new_conversation()
+        st.rerun()
+
+    # Filter box (owner feedback 2026-09-11): the list was capped at 50 with
+    # no way to find an older one. With a filter typed, every conversation
+    # on disk is searched by title; without one the newest 50 show as before.
+    _all_convs = core.list_conversations(_ROOT)
+    _filter = ""
+    if len(_all_convs) > 8:
+        _filter = (st.text_input(
+            "Find a conversation", key="conv_filter",
+            placeholder="Filter by title…",
+            label_visibility="collapsed") or "").strip().lower()
+    if _filter:
+        _shown = [m for m in _all_convs
+                  if _filter in str(m.get("title") or "").lower()]
+        if not _shown:
+            st.caption(_no_match_hint())
+    else:
+        _shown = _all_convs[:50]
+    for _m in _shown:
+        _tid = _m["thread_id"]
+        _current = (_tid == ss.thread_id)
+        _title = _m.get("title") or "Untitled"
+        _at = (_m.get("behavior") or {}).get("agent_type")
+        _at_lbl = (f" · {core.agent_type_label(_at)}"
+                   if _at and _at != "full" else "")
+        _row = st.columns([0.64, 0.18, 0.18])
+        with _row[0]:
+            if st.button(("● " if _current else "") + _title, key=f"open_{_tid}",
+                         help=f"{_relative_time(_m.get('updated'))} · "
+                              f"{_m.get('turn_count', 0)} turns" +
+                              (f" · {core.model_label(_m['model'])}"
+                               if _m.get("model") else "") + _at_lbl,
+                         use_container_width=True):
+                if not _current:
+                    _open_conversation(_tid)
+                    st.rerun()
+        with _row[1]:
+            if _row_action(_ICON_RENAME, key=f"rn_{_tid}", help="Rename"):
+                ss[f"renaming_{_tid}"] = not ss.get(f"renaming_{_tid}", False)
+        with _row[2]:
+            if _row_action(_ICON_DELETE, key=f"del_{_tid}",
+                           help="Delete (to trash)"):
+                core.delete_conversation(_tid, _ROOT)
+                if _current:
+                    _new_conversation()
+                st.rerun()
+        if ss.get(f"renaming_{_tid}"):
+            _new_title = st.text_input("New title", value=_title,
+                                       key=f"rntext_{_tid}")
+            if st.button("Save title", key=f"rnsave_{_tid}"):
+                core.rename_conversation(_tid, _new_title or _title, _ROOT)
+                ss[f"renaming_{_tid}"] = False
+                st.rerun()
+
+    st.divider()
+    st.header("Session")
+
+    eng = ss.engine
+    if ss.agent is not None:
+        st.success(eng.message)
+    elif ss.agent_error:
+        st.error(f"Engine resolved ({eng.model_name}) but the agent failed to "
+                 f"build: {ss.agent_error}")
+    elif eng.source == "error":
+        st.error(eng.message)
+    elif eng.source == "unavailable":      # polite: e.g. no AI key for you
+        st.info(eng.message)
+    else:
+        st.warning(eng.message)
+
+    # Model picker — applies to the CURRENT conversation going forward; the
+    # persist+replay design keeps history/uploads/artifacts across the switch.
+    _opts = core.model_choices()
+    _ids = [c["id"] for c in _opts]
+    _labels = {c["id"]: f"{c['label']} — {c['blurb']}" for c in _opts}
+    if ss.model and ss.model not in _ids:   # a custom id/RID stays selectable
+        _ids.insert(0, ss.model)
+        _labels[ss.model] = f"{ss.model} — custom"
+    _foundry_mode = engine_config.is_foundry_deployment()
+    _cur = ss.model if ss.model in _ids else (_ids[0] if _ids else "")
+    # Programmatic model change (custom RID box, conversation resume): sync the
+    # widget's sticky state to ss.model BEFORE instantiating it, else the widget
+    # reports its old value as "the user's pick" and reverts the change.
+    if ss.get("_model_dirty"):
+        ss._model_dirty = False
+        if _ids and st.session_state.get("model_pick") not in (None, _cur):
+            st.session_state["model_pick"] = _cur
+    # Model switches fire ONLY from the widget's own change event (on_change),
+    # never from comparing the widget value to ss.model after the fact: through
+    # a proxy (Foundry preview/publish) the client can deliver a queued rerun
+    # still carrying the dropdown's OLD value, and a value-comparison would
+    # misread that stale echo as "the user picked the old model" and revert a
+    # just-applied custom RID within one render.
+    def _on_model_pick() -> None:
+        picked = st.session_state.get("model_pick")
+        if picked and picked != st.session_state.model:
+            _resolve_and_build(picked)
+            if core.load_meta(st.session_state.thread_id) is not None:
+                core.touch_conversation(st.session_state.thread_id, model=picked)
+
+    if _ids:
+        st.selectbox(
+            "Model", _ids, index=_ids.index(_cur),
+            format_func=lambda i: _labels.get(i, i), key="model_pick",
+            on_change=_on_model_pick,
+            help="Switch the model for this conversation going forward (cheaper/"
+                 "faster models for quick questions). History, uploads and artifacts "
+                 "are kept; the next turn replays the conversation into the new model.")
+    if eng.source == "prompter" and not core.prompter_model_choices():
+        st.caption("Model is fixed by the deployment; the picker doesn't apply.")
+
+    # A helper on a model of its own (INF-41): one picker per helper this
+    # host or GEOTECH_HELPER_MODELS names (on Foundry, the references
+    # helper); every other helper follows the Model picker above.
+    def _on_helper_pick(name: str) -> None:
+        picked = st.session_state.get(f"helper_model_{name}")
+        ss.helper_models = {**(ss.get("helper_models") or {}), name: picked}
+        _build_agent_for_session()
+
+    for _h in (ss.get("helper_engines") or []) if _ids else []:
+        _h_ids = [helper_models.MAIN] + _ids
+        _h_cur = _h.model_id or helper_models.MAIN
+        if _h_cur not in _h_ids:                  # an id set by env
+            _h_ids.append(_h_cur)
+        st.selectbox(
+            f"{helper_models.helper_label(_h.name)} model", _h_ids,
+            index=_h_ids.index(_h_cur),
+            format_func=lambda i: ("Same as the main model"
+                                   if i == helper_models.MAIN
+                                   else _labels.get(i, i)),
+            key=f"helper_model_{_h.name}", on_change=_on_helper_pick,
+            args=(_h.name,),
+            help=f"The model the {_h.name} helper runs on (default: "
+                 f"{_h.setting or 'the main model'}, {_h.source}). Every "
+                 f"other helper runs on the main model. Set by "
+                 f"{helper_models.ENV} too.")
+        if _h.note:
+            st.caption(f"{helper_models.helper_label(_h.name)}: the main "
+                       f"model ({_h.note}).")
+
+    # Model RID input. On a Foundry deployment this is the PRIMARY (often only)
+    # model surface, shown inline; elsewhere it stays tucked in an "advanced"
+    # expander. Same widget keys either way (regression tests rely on them).
+    def _render_rid_input():
+        _rid = st.text_input(
+            "Model RID or API name" if _foundry_mode
+            else "Model id or Foundry RID",
+            value="", key=f"custom_model_{ss.thread_id}",
+            help="An 'ri.…' RID routes through the Foundry LLM proxy; a model "
+                 "API name (e.g. GPT_5_1) uses the in-platform palantir_models "
+                 "SDK — no proxy or token needed (see docs/FOUNDRY.md). "
+                 "Applies to this conversation going forward.")
+        # Which proxy shape the model speaks. Auto reads it off the id; a
+        # Claude RID that does not say so needs "Anthropic" (INF-25). The
+        # choice travels with the id as a prefix (engine_config).
+        _fams = {"auto": "Auto (from the id)",
+                 "anthropic": "Anthropic (Claude)",
+                 "openai": "OpenAI (GPT)"}
+        _fam = st.selectbox(
+            "Model family", list(_fams), format_func=_fams.get,
+            key=f"custom_family_{ss.thread_id}",
+            help="Auto: an id naming Anthropic, Claude, Opus, Sonnet, Haiku or "
+                 "Fable goes to the "
+                 "Anthropic-messages proxy (a Claude API name to the "
+                 "palantir_models SDK when GEOTECH_FOUNDRY_CLAUDE_SDK is on); "
+                 "anything else to the OpenAI proxy "
+                 "(an 'ri.…' RID) or the palantir_models SDK (an API name). "
+                 "Choose Anthropic for a Claude RID that does not say so.")
+        if st.button("Use this model", key=f"use_custom_{ss.thread_id}") \
+                and _rid.strip():
+            _mid = engine_config.with_model_family(_rid.strip(), _fam)
+            _resolve_and_build(_mid)
+            if core.load_meta(ss.thread_id) is not None:
+                core.touch_conversation(ss.thread_id, model=_mid)
+            st.rerun()
+
+    if _foundry_mode:
+        _render_rid_input()
+    else:
+        with st.expander("Custom model id (advanced)", expanded=False):
+            _render_rid_input()
+
+    # Connection diagnostics — runs the same calls a chat turn makes (resolve,
+    # plain request, streaming request, tool-calling request) one stage at a
+    # time and prints every failure VERBATIM. The report persists until re-run.
+    with st.expander("Connection diagnostics", expanded=False):
+        st.caption("Tests the configured model with three tiny requests and "
+                   "prints exactly what fails (nothing flashes away).")
+        if st.button("Run connection tests", key=f"diag_{ss.thread_id}"):
+            from aec_document_review import diagnostics as _diag
+            with st.spinner("Running connection tests…"):
+                _checks = _diag.run_diagnostics(
+                    ss.model, identity=_IDENT,
+                    helper_models=ss.get("helper_models"),
+                    page_checks=_PROFILE.diagnostics_checks)
+                ss.diag_report = _diag.format_report(_checks)
+                # TA-35: a SharePoint report that could not be kept in
+                # SharePoint is offered here instead, with only this
+                # person's own entries (the owner key their conversations
+                # carry).
+                ss.diag_sharepoint = _diag.sharepoint_download(
+                    _checks, who=(_IDENT.key if _IDENT.multi_user else ""))
+        if ss.get("diag_report"):
+            st.code(ss.diag_report, language=None)
+        if ss.get("diag_sharepoint"):
+            st.caption("For the host's administrator: the connection test "
+                       "and the SharePoint errors met in your "
+                       "conversations, which could not be saved to "
+                       "SharePoint itself.")
+            file_widgets.download_button(
+                "Download the SharePoint report", ss.diag_sharepoint,
+                file_name="sharepoint-report.txt", mime="text/plain",
+                key=f"diag_sp_{ss.thread_id}")
+    try:
+        import importlib.metadata as _md
+        st.caption(" · ".join(f"{_d} {_md.version(_d)}"
+                              for _d in _PROFILE.version_dists)
+                   + f" · engine: {eng.source or 'none'}")
+    except Exception:
+        pass
+    # Runtime drift guard: warn when the agent stack is running versions the
+    # offline gate never exercised (base-image shadowing / unpinned installs —
+    # the root of the 2026-08 outage). Never crashes the sidebar.
+    try:
+        from aec_document_review import version_guard
+        for _w in version_guard.check_versions():
+            st.warning(_w, icon="⚠️")
+    except Exception:
+        pass
+
+    # The page's own sidebar controls (the geotech page's Agent picker, A5e:
+    # the full geotech agent, or a narrow domain reviewer, per conversation;
+    # aec_document_review/geotech_page.py). The document-review page has none.
+    _extras = _PROFILE.hook("sidebar_extras")
+    if _extras is not None:
+        _extras(ss, _resolve_and_build)
+
+    # Working folder — where the agent's saves (calc packages, plots, files)
+    # land. Default = this conversation's files/ dir (durable; shown as download
+    # cards). Point it elsewhere (e.g. a project folder) and a durable copy is
+    # still kept with the conversation. Persisted per conversation; applied to
+    # the tool default-output-dir env each render so the next turn saves here.
+    _wd = core.working_dir_for(ss.thread_id)
+    _wd_in = st.text_input(
+        "Working folder (agent saves land here)", value=_wd,
+        key=f"workdir_{ss.thread_id}",
+        help="Calc packages, plots and saved files default into this folder. "
+             "Default is the conversation's files/ dir (kept with the chat, "
+             "shown as download cards). Clear the box to reset to that default.")
+    if (_wd_in or "").strip() != _wd:
+        core.set_working_dir(ss.thread_id, _wd_in)
+        st.rerun()
+    core.apply_default_output_dir(_wd)
+    # ...and bound to THIS script run's context, which the tools read first:
+    # the env var is process-wide and another session's rerun repoints it
+    # (on a shared host, someone else's folder). The env stays a fallback.
+    _bind_working_folder(_wd)
+
+    # Behavior (A5): per-conversation pickers, persisted in meta. A change
+    # rebuilds the agent for THIS conversation going forward (defaults reproduce
+    # today's behavior exactly).
+    _b = ss.behavior
+    with st.expander("Behavior", expanded=False):
+        # The three geotech-only pickers (reference library, analysis depth,
+        # the calc sub-agent) are the geotech page's; the document-review
+        # page's agent has none of those and its profile fixes them.
+        _geo = _PROFILE.specialists
+        _refs_on = st.checkbox(
+            "Consult references", value=(_b["references"] != "off"),
+            key=f"refs_{ss.thread_id}",
+            help="When on, the agent can look things up in the reference "
+                 "library (DM7, GEC, UFC and others) through a references "
+                 "helper; when an answer ends with its judgment calls, the "
+                 "agent asks that helper once for the source of each call "
+                 "no tool gave a basis for. "
+                 "Turn off to stop these look-ups, which also lowers the "
+                 "cost of each turn: the judgment calls are still "
+                 "listed, each with the basis a tool gave or a plain "
+                 "\"rests on judgment\".") \
+            if _geo else (_b["references"] != "off")
+        _depth = st.select_slider(
+            "Analysis depth", options=list(core.ANALYSIS_DEPTHS),
+            value=_b["analysis_depth"], format_func=str.title,
+            key=f"depth_{ss.thread_id}",
+            help="How much analysis the agent does (a prompt preset, every "
+                 "engine). Screening: single most appropriate method, concise. "
+                 "Standard: default. Comprehensive: multiple methods compared + a "
+                 "second-approach cross-check + a short sensitivity on governing "
+                 "inputs + governing conditions & confidence + an offer to build a "
+                 "calc package.") \
+            if _geo else _b["analysis_depth"]
+        _route_calc = st.checkbox(
+            "Route calculations through a calc agent (recommended)",
+            value=bool(_b.get("route_calc", True)),
+            key=f"routecalc_{ss.thread_id}",
+            help="Runs tool-heavy calculations in a scoped sub-agent so the bulky "
+                 "calc output stays out of this conversation — cheaper long chats "
+                 "(A2). The key results (values + units + method) and the saved "
+                 "calc-package path come back; the full detail is saved to a file "
+                 "so nothing is lost.") \
+            if _geo else bool(_b.get("route_calc", True))
+        _trace_cb = st.checkbox(
+            "Show turn details (time, tokens, tool calls)",
+            value=core.tracing_enabled(_b.get("trace")),
+            key=f"trace_{ss.thread_id}",
+            help="After each answer, adds a 'turn details' expander with the "
+                 "turn's duration, token count and every tool call (including "
+                 "sub-agent hops), and logs one JSON line per turn to the "
+                 "conversation's trace.jsonl. Applies from the next turn.")
+        with st.expander("Advanced caps", expanded=False):
+            _refcalls = st.number_input(
+                "Reference consult budget (model calls)", min_value=1,
+                max_value=40, value=int(_b["ref_max_calls"]), step=1,
+                key=f"refcalls_{ss.thread_id}",
+                help="The most model calls the references helper may spend "
+                     "on one look-up before it must answer from what it "
+                     "found; the look-up for the judgment calls stays within "
+                     "it too. Lower it to cut the cost of each look-up; turn "
+                     "\"Consult references\" off to stop them.") \
+                if _geo else int(_b["ref_max_calls"])
+            _rlim = st.number_input(
+                "Primary step cap (recursion limit)", min_value=5, max_value=200,
+                value=int(_b["recursion_limit"]), step=5,
+                key=f"rlim_{ss.thread_id}",
+                help="Max reasoning/tool steps the main agent may take in one turn "
+                     "(LangGraph recursion limit).")
+        _new_b = {**_b, "references": "anytime" if _refs_on else "off",
+                  "analysis_depth": _depth, "ref_max_calls": int(_refcalls),
+                  "recursion_limit": int(_rlim), "route_calc": bool(_route_calc)}
+        if bool(_trace_cb) != core.tracing_enabled(_b.get("trace")):
+            _new_b["trace"] = bool(_trace_cb)   # explicit once touched
+        if _new_b != _b:
+            ss.behavior = _new_b
+            if core.load_meta(ss.thread_id) is not None:
+                core.set_behavior(ss.thread_id, _new_b)
+            if {k: v for k, v in _new_b.items() if k != "trace"} == \
+                    {k: v for k, v in _b.items() if k != "trace"}:
+                st.rerun()                   # trace-only change: no rebuild
+            else:
+                _resolve_and_build(ss.model)  # references/depth/caps -> rebuild
+                st.rerun()
+
+    st.divider()
+    st.subheader("Attachments")
+    # Two attach transports, same downstream staging. "ws" sends the bytes
+    # over the app websocket (the Databricks driver proxy 403s the native
+    # uploader's HTTP PUT); "http" is the stock st.file_uploader.
+    from aec_document_review import ws_upload
+    pairs = []
+    if ws_upload.upload_mode() == "ws":
+        # The cap is OURS (ws_upload.MAX_FILE_MB), not Streamlit's: the whole
+        # file rides ONE websocket message through the driver proxy. Larger
+        # files take the SharePoint route — no proxy crossing, no cap.
+        # Owner feedback 2026-09-11; the "attach from SharePoint" sidebar
+        # widget (no LLM turn) is a recorded item: BACKLOG TA-07.
+        _sp_hint = (" Put it in SharePoint (the GSE_app folder) and ask the "
+                    "agent to fetch it by name — it lands in this "
+                    "conversation's working folder."
+                    if _sp_configured() else
+                    " Ask the agent to read it from a SharePoint or /Volumes "
+                    "path instead.")
+        st.caption(f"Up to {ws_upload.MAX_FILE_MB} MB per file.{_sp_hint}")
+        try:
+            pairs, _up_errors = ws_upload.ws_file_uploader(
+                core.ACCEPTED_UPLOAD_TYPES,
+                key=ws_upload.next_upload_key(
+                    ss.thread_id, ss.get("upload_epoch", 0)))
+        except Exception as exc:      # component missing/old streamlit
+            _up_errors = [f"ws uploader unavailable ({type(exc).__name__}: "
+                          f"{exc}) — falling back to the standard uploader"]
+            pairs = []
+        if _up_errors:
+            for _e in _up_errors:
+                st.caption(f"⚠️ {_e}")
+        if not pairs and _up_errors:
+            uploaded = st.file_uploader(
+                "Attach files (PDF, image, Word, Excel, DXF, CSV, DIGGS…)",
+                type=core.ACCEPTED_UPLOAD_TYPES, accept_multiple_files=True,
+                key=f"uploader_{ss.thread_id}",
+            )
+            if uploaded:
+                pairs = [(f.name, f.getvalue()) for f in uploaded]
+    else:
+        uploaded = st.file_uploader(
+            "Attach files (PDF, image, Word, Excel, DXF, CSV, DIGGS…)",
+            type=core.ACCEPTED_UPLOAD_TYPES, accept_multiple_files=True,
+            key=f"uploader_{ss.thread_id}",
+        )
+        if uploaded:
+            pairs = [(f.name, f.getvalue()) for f in uploaded]
+    if pairs:
+        # Retire the uploader's widget id NOW that the bytes are in hand. A
+        # component value is widget state, and the browser re-sends every
+        # widget state on every rerun and reconnect, so a file left in the
+        # widget is re-uploaded forever — a 22 MB attachment cannot cross the
+        # driver proxy inside one socket lifetime, so the app falls into a
+        # permanent ~14 s reconnect loop (live 2026-09-09). Bumping the epoch
+        # gives the component a fresh id, which drops the payload from the
+        # client's state map as well as ours. Do this whether or not the file
+        # is new: a duplicate name is still 29 MB sitting in widget state.
+        _retired = False
+        if ws_upload.upload_mode() == "ws":
+            ss.upload_epoch = ss.get("upload_epoch", 0) + 1
+            _retired = True
+        # Only stage names not already registered this session.
+        fresh = [(n, d) for (n, d) in pairs
+                 if core.sanitize_key(n) not in ss.attachments]
+        if not fresh and _retired:
+            st.rerun()      # nothing new to stage, but retire the widget now
+        if fresh:
+            atts = _stage_files(fresh)
+            _queue_orientation(atts)
+            st.rerun()
+
+    if ss.attachments:
+        for key in ss.attachments:
+            st.markdown(f"- `{key}`")
+    else:
+        st.caption("No attachments yet.")
+
+    # Downloads made on request (this conversation's zip, INF-38; on Foundry
+    # a large file's bytes, INF-44) are dropped once the conversation moves
+    # on: a turn, or another conversation. On Foundry their bytes travel
+    # inside the page on every rerun while they are kept.
+    _conv_stamp = (ss.thread_id, len(ss.transcript))
+    if ss.get("prepared_stamp") != _conv_stamp:
+        ss.prepared_stamp = _conv_stamp
+        ss.pop("conv_zip", None)
+        file_widgets.forget_prepared()
+
+    if ss.artifacts:
+        st.divider()
+        st.subheader("Downloads")
+        for path in ss.artifacts:
+            import os as _os
+            try:
+                file_widgets.download_file(
+                    _os.path.basename(path), path,
+                    mime=_mime_for(path), key=f"dl_{path}")
+            except OSError:
+                pass
+
+    # Download this conversation (INF-38): a zip of its record, files and
+    # figures, to keep where the conversations folder is not kept (inside a
+    # published Foundry app's container). Built only when Prepare is pressed
+    # and dropped once the conversation moves on (above).
+    if _PROFILE.conversation_download and \
+            core.load_meta(ss.thread_id) is not None:
+        st.divider()
+        st.subheader("Download this conversation")
+        _zip_cap = file_widgets.download_limit_bytes()
+
+        def _prepare_zip(record_only: bool = False) -> None:
+            from aec_document_review import conversation_export as _cx
+            with st.spinner("Zipping the conversation…"):
+                ss.conv_zip = {"export": _cx.build(
+                    ss.thread_id, cap=_zip_cap, record_only=record_only)}
+
+        def _zip_size(n: int) -> str:
+            return (f"{n / 1048576:.1f} MB" if n >= 104858
+                    else f"{max(1, round(n / 1024))} KB")
+
+        if st.button("Prepare download", key=f"conv_zip_{ss.thread_id}",
+                     help="Zips this conversation's record, files and "
+                          "figures (caches, and anything that may hold a "
+                          "key, are left out), then shows the download."):
+            _prepare_zip()
+        _zip = ss.get("conv_zip")
+        if _zip:
+            _x = _zip["export"]
+            if _x.data is not None:
+                file_widgets.download_button(
+                    f"Download {_x.name}", _x.data, file_name=_x.name,
+                    mime="application/zip",
+                    key=f"conv_zip_dl_{ss.thread_id}", prepare=False)
+                if _x.record_only:
+                    _n_del = sum(1 for f in _x.files if "/" in f)
+                    st.caption(f"The record and {_n_del} deliverables, "
+                               f"{_zip_size(_x.size)}. LEFT_OUT.txt in the "
+                               "zip names what was left out.")
+                else:
+                    st.caption(f"{len(_x.files)} files, "
+                               f"{_zip_size(_x.size)}.")
+            elif _x.record_only:
+                st.caption(
+                    "Even the record alone zips to more than the "
+                    f"{(_x.cap or 0) / 1048576:.3g} MB a download in the "
+                    "Foundry app can carry (raise "
+                    f"{file_widgets.DOWNLOAD_MAX_MB_ENV} in the app file to "
+                    "carry more).")
+            else:
+                st.caption(
+                    f"The whole conversation ({len(_x.files)} files, "
+                    f"{_zip_size(_x.folder_bytes)} on disk) zips to "
+                    f"more than the {(_x.cap or 0) / 1048576:.3g} MB a "
+                    "download in the Foundry app can carry (raise "
+                    f"{file_widgets.DOWNLOAD_MAX_MB_ENV} in the app file to "
+                    "carry more). The record alone can be downloaded, with "
+                    "the deliverables that fit.")
+                if st.button("Prepare the record alone",
+                             key=f"conv_zip_rec_{ss.thread_id}"):
+                    _prepare_zip(record_only=True)
+                    st.rerun()
+
+    # Feedback (owner feedback 2026-09-11): a note from the user, saved WITH
+    # the conversation (feedback.jsonl + FEEDBACK.md in the record dir, so
+    # the SharePoint mirror carries it up). The agent has the matching
+    # record_feedback tool for capability gaps — see aec_document_review/feedback.py.
+    st.divider()
+    with st.expander("Feedback", expanded=False):
+        with st.form(key=f"feedback_form_{ss.thread_id}",
+                     clear_on_submit=True, border=False):
+            _fb_text = st.text_area(
+                "Tell the developers what worked, what didn't, or what you "
+                "wish the app could do",
+                key=f"feedback_text_{ss.thread_id}", height=120,
+                label_visibility="collapsed",
+                placeholder="What worked, what didn't, what you wish it could do…")
+            _fb_submit = st.form_submit_button("Save feedback")
+        if _fb_submit:
+            _fb_note = (_fb_text or "").strip()
+            if not _fb_note:
+                st.caption("Nothing to save — the box was empty.")
+            else:
+                try:
+                    from aec_document_review import feedback as _feedback
+                    core.ensure_conversation(ss.thread_id)
+                    _entry = _feedback.record(
+                        core.conversation_dir(ss.thread_id),
+                        source="user", kind="user_feedback",
+                        summary=_fb_note.splitlines()[0][:120],
+                        details=_fb_note,
+                        context={"thread_id": ss.thread_id,
+                                 "turn": sum(1 for e in ss.transcript
+                                             if e.get("role") == "user"),
+                                 "model": ss.get("model")})
+                    ss.feedback_saved = _entry["iso"]
+                    # Mirror now (incremental) so the note reaches permanent
+                    # storage even if this is the last thing done today (on
+                    # Foundry in the background, as after a turn).
+                    try:
+                        _sp0 = sharepoint_store.get_store()
+                        if _sp0.configured:
+                            _fb_sync = sharepoint_store.save_after_change(
+                                _sp0, ss.thread_id)
+                            if _fb_sync is not None:
+                                ss.sp_sync = _fb_sync
+                    except Exception:                  # noqa: BLE001
+                        pass
+                except Exception as exc:               # noqa: BLE001
+                    st.error(f"Could not save feedback: "
+                             f"{type(exc).__name__}: {exc}")
+        if ss.get("feedback_saved"):
+            st.caption(f"✅ Saved with this conversation ({ss.feedback_saved}). "
+                       "It travels with the conversation record.")
+
+    # Permanent storage (SharePoint mirror) — rendered only when configured
+    # via the GEOTECH_SHAREPOINT_* env vars, or on Foundry the conversation
+    # dataset (GEOTECH_FOUNDRY_CONVERSATION_DATASET, INF-38: "Foundry
+    # storage"). The mirror runs after each turn (on Foundry in the
+    # background); this block shows the result and offers a manual sync.
+    _sp = sharepoint_store.get_store()
+    # On Foundry, why conversations are NOT kept across restarts, when they
+    # are not (no alias set, a resource ID in its place, the library
+    # missing, an alias the workspace does not define): the same line as
+    # Connection diagnostics, so no one takes them for kept.
+    try:
+        _not_kept_of = getattr(_sp, "not_kept_reason", None)
+        _not_kept = _not_kept_of() if callable(_not_kept_of) else None
+    except Exception:                                  # noqa: BLE001
+        _not_kept = None
+    if _sp.configured:
+        # getattr: a stand-in store (tests, the live smoke) may predate them
+        _sp_foundry = getattr(_sp, "backend", "sharepoint") == "foundry"
+        _sp_label = getattr(_sp, "label", "SharePoint")
+        st.divider()
+        st.subheader("Permanent storage")
+        # This page's own folder of mirrors — the same owner/page segments
+        # the turn records with core.tag_conversation (below), so the
+        # geotech page never lists the review page's folder as a
+        # conversation, and the review page lists its own.
+        _sp_where = {"owner": (_IDENT.key if _IDENT.multi_user
+                               else None),
+                     "page": _PROFILE.name}
+        # The status lines; on Foundry they look again by themselves while
+        # the first check or a save runs in the background (INF-65).
+        _storage_panel(_sp, ss.thread_id)
+        if st.button("Sync now", key=f"spsync_{ss.thread_id}"):
+            with st.spinner(f"Saving to {_sp_label}…"):
+                ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
+            # the list of past conversations is read again when next shown
+            ss.pop(sharepoint_store.listing_cache_key(**_sp_where), None)
+            st.rerun()
+
+        # Restore (owner feedback 2026-09-11): the driver disk is wiped on
+        # a cluster restart, so old conversations vanish from the list
+        # above while their mirrors sit in SharePoint. The folder name
+        # (<title>_<date>) is the search key; Restore pulls the record AND
+        # its files back and opens it.
+        with st.expander("Find a past conversation (permanent storage)",
+                         expanded=False):
+            # Cached PER PAGE (and person): the pages share one session_state
+            # (Streamlit's multipage design), so a single cache key served
+            # whichever page was opened first to both — the review page, the
+            # app's root, so the geotech page showed the review page's list
+            # (owner, 2026-10-06).
+            _sp_list_key = sharepoint_store.listing_cache_key(**_sp_where)
+            _sp_result_key = f"{_sp_list_key}:restore"
+            _rc1, _rc2 = st.columns([0.75, 0.25])
+            with _rc1:
+                _rq = (st.text_input("Search mirrored conversations",
+                                     key=f"sp_restore_query_{_PROFILE.name}",
+                                     placeholder="Part of the title or date…",
+                                     label_visibility="collapsed") or "")
+            with _rc2:
+                _sp_refresh = st.button("Refresh", key="sp_restore_refresh",
+                                        use_container_width=True)
+            # Read on demand (INF-38): a listing takes seconds (Foundry's
+            # files() reads the whole dataset, 3-4 s), and an expander's
+            # body runs even while it is closed, so listing here held up
+            # every new session's first draw. Refresh, a search or the
+            # button below reads it; it is then cached for the session.
+            if _sp_refresh or (_sp_list_key not in ss and (
+                    _rq.strip() or st.button(
+                        "Show past conversations", key="sp_restore_load",
+                        use_container_width=True))):
+                with st.spinner(f"Reading {_sp_label}…"):
+                    ss[_sp_list_key] = _sp.list_remote_conversations(
+                        **_sp_where)
+            _sp_listed = _sp_list_key in ss
+            _remote = ss.get(_sp_list_key) or []
+            _local_folders = set()
+            try:
+                # conversation_folder(), not _sp.folder_name(): that reloads
+                # the meta AND re-lists every conversation per call, and this
+                # runs once per conversation on every sidebar rerun.
+                # _all_convs is already the list_conversations() metas.
+                _local_folders = {
+                    sharepoint_store.conversation_folder(
+                        m["thread_id"], m, _all_convs)
+                    for m in _all_convs}
+            except Exception:                          # noqa: BLE001
+                pass
+            _q = _rq.strip().lower()
+            _hits = [r for r in _remote
+                     if not _q or _q in r["name"].lower()]
+            if _sp_listed and not _remote:
+                st.caption(f"Nothing mirrored yet (or {_sp_label} could not "
+                           "be listed — check the token).")
+            elif _remote:
+                st.caption(f"{len(_hits)} of {len(_remote)} mirrored "
+                           "conversations" + (" match" if _q else ""))
+            for _r in _hits[:25]:
+                _here = _r["name"] in _local_folders
+                _c1, _c2 = st.columns([0.72, 0.28])
+                with _c1:
+                    st.caption(("✓ " if _here else "") + _r["name"])
+                with _c2:
+                    if st.button("Open" if _here else "Restore",
+                                 key=f"sp_restore_{_r['name']}",
+                                 use_container_width=True,
+                                 help=("Already on this machine" if _here
+                                       else "Download the record and its "
+                                            "files back into the app")):
+                        with st.spinner(f"Restoring from {_sp_label}…"):
+                            _res = _sp.restore_conversation(
+                                _r["name"], root=_ROOT, **_sp_where)
+                        ss[_sp_result_key] = _res
+                        if _res.get("thread_id") and _res.get("status") in (
+                                "restored", "exists"):
+                            _open_conversation(_res["thread_id"])
+                        st.rerun()
+            _rr = ss.get(_sp_result_key)
+            if _rr:
+                if _rr.get("status") == "restored":
+                    st.success(f"Restored '{_rr.get('title') or _rr['thread_id']}'"
+                               f" — {_rr['downloaded']} files in "
+                               f"{_rr['duration_s']}s.")
+                elif _rr.get("status") == "exists":
+                    st.info("That conversation is already on this machine — "
+                            "opened it.")
+                elif _rr.get("status") == "moved":
+                    st.warning("That folder is the copy left behind by a "
+                               "rename. Restore the current one instead: "
+                               f"{_rr.get('moved_to') or 'see MOVED.txt'}")
+                else:
+                    st.error("Restore failed: "
+                             + "; ".join(_rr.get("errors") or ["unknown"]))
+                if _sp_auth_problem(_rr, foundry=_sp_foundry):
+                    st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
+                               "Looks like an expired token — re-run "
+                               "`stage_sharepoint(...)` in the notebook.")
+    elif _not_kept:
+        # Foundry with no usable dataset: a short block rather than none,
+        # while every conversation stays in the container.
+        st.divider()
+        st.subheader("Permanent storage")
+        st.warning(_NOT_KEPT_HEAD + _not_kept)
+
+    # Restore a downloaded conversation (INF-45): the zip from "Download
+    # this conversation" back into this person's conversations, under its
+    # own thread id. On Foundry it is the way back after a container
+    # rebuild. The zip is restored once per file (and Replace setting), then
+    # the uploader is cleared and the conversation opens.
+    if _PROFILE.conversation_download:
+        with st.expander("Restore a downloaded conversation",
+                         expanded=False):
+            st.caption("A zip from **Download this conversation** comes "
+                       "back into your conversations and opens.")
+            _replace = st.checkbox(
+                "Replace the existing copy", key="restore_replace",
+                help="If this conversation is already here, the zip's copy "
+                     "takes its place (the copy here goes to the trash "
+                     "folder, as a delete does).")
+            _rkey = f"restore_zip_{ss.get('restore_epoch', 0)}"
+            _rzip = None                      # (name, bytes or file, id)
+            if ws_upload.upload_mode() == "ws":
+                # A file left in the websocket uploader is sent again on
+                # every rerun (the Attachments box above), so the zip is
+                # taken out at once and held here until it is restored.
+                try:
+                    _rpairs, _rerrs = ws_upload.ws_file_uploader(
+                        ["zip"], key=_rkey)
+                except Exception as exc:      # noqa: BLE001
+                    _rpairs, _rerrs = [], [f"uploader unavailable "
+                                           f"({type(exc).__name__})"]
+                for _e in _rerrs:
+                    st.caption(f"⚠️ {_e}")
+                if _rpairs:
+                    import hashlib as _hashlib
+                    _rn, _rd = _rpairs[0]
+                    ss.restore_held = (_rn, _rd,
+                                       _hashlib.sha1(_rd).hexdigest())
+                    ss.restore_epoch = ss.get("restore_epoch", 0) + 1
+                    st.rerun()
+                _rzip = ss.get("restore_held")
+            else:
+                _rf = st.file_uploader("Conversation zip", type=["zip"],
+                                       key=_rkey)
+                if _rf is not None:
+                    _rzip = (_rf.name, _rf, getattr(_rf, "file_id", None)
+                             or f"{_rf.name}:{_rf.size}")
+            if _rzip is not None and \
+                    ss.get("restore_sig") != (_rzip[2], bool(_replace)):
+                ss.restore_sig = (_rzip[2], bool(_replace))
+                from aec_document_review import conversation_restore as _cr
+                with st.spinner("Restoring the conversation…"):
+                    _res = _cr.restore(
+                        _rzip[1], root=_ROOT, replace=bool(_replace),
+                        zip_name=_rzip[0], page=_PROFILE.name,
+                        owner=(_IDENT.key if _IDENT.multi_user else None),
+                        owner_name=(_IDENT.display_name if _IDENT.multi_user
+                                    else None),
+                        busy=lambda t: turn_jobs.get_turn_job(t) is not None)
+                ss.restore_result = {"status": _res.status,
+                                     "message": _res.message,
+                                     "thread_id": _res.thread_id}
+                if _res.status == "restored":
+                    _open_conversation(_res.thread_id)
+                    if _res.agent_note():
+                        ss.pending_notes = [_res.agent_note()]
+                    ss.restore_epoch = ss.get("restore_epoch", 0) + 1
+                    ss.pop("restore_sig", None)
+                    ss.pop("restore_held", None)
+                    st.rerun()
+            # A refusal shows while its zip is in the box; a restore while
+            # the restored conversation is the open one.
+            _rres = ss.get("restore_result")
+            if _rres and (_rres.get("thread_id") == ss.thread_id
+                          if _rres["status"] == "restored"
+                          else _rzip is not None):
+                {"restored": st.success, "exists": st.info}.get(
+                    _rres["status"], st.error)(_rres["message"])
+
+    st.divider()
+    st.caption(core.token_line(ss.last_turn_tokens, ss.total_tokens))
+    # AI budget line (Funhouse metered spend vs the monthly cap) — rendered
+    # only when the Funhouse budget SDK is present. get_current_spend() is an
+    # expensive month rollup, so the status is fetched ONCE per session and
+    # cached in session state; the small refresh button re-reads on demand.
+    # Best-effort: a budget hiccup must never crash the sidebar.
+    try:
+        if budget_panel.available():
+            if "budget_status" not in ss:
+                ss.budget_status = budget_panel.get_budget_status()
+            _bs = ss.budget_status
+            if _bs:
+                _bline = budget_panel.format_line(_bs)
+                if _bs["cap"] > 0 and _bs["spent"] / _bs["cap"] >= 0.9:
+                    st.warning(_bline + " — nearly exhausted; metered AI "
+                               "calls stop at the cap.")
+                else:
+                    st.caption(_bline)
+            if st.button("Refresh budget", key="budget_refresh"):
+                ss.budget_status = budget_panel.get_budget_status()
+                st.rerun()
+    except Exception:
+        pass
+    _at_now = (ss.behavior or {}).get("agent_type", "full")
+    st.caption(f"model: {core.model_label(ss.model)}"
+               + (f" · {core.agent_type_label(_at_now)}" if _at_now != "full"
+                  else "")
+               + f" · thread `{ss.thread_id[:8]}` · {len(ss.messages)} msgs · "
+               "auto-saved")
+
+
+# ---------------------------------------------------------------------------
+# Artifact card (inline, in the chat flow at the turn that produced the file)
+# ---------------------------------------------------------------------------
+
+_KIND_ICON = {"plotly": "📈", "html": "📄", "pdf": "📕", "png": "🖼️",
+              "image": "🖼️", "svg": "🖼️", "dxf": "📐", "csv": "📊",
+              "text": "📄", "other": "📎"}
+
+
+def _render_artifact_card(path: str, slot: str = "") -> None:
+    """Render one artifact as a card: name/size/type + download + inline preview
+    (HTML in a sandboxed iframe inside an expander, PDF via base64 data-URI
+    iframe, images inline). Big files are download-only.
+
+    ``slot`` names where the card stands (transcript entry and position). A
+    file rewritten in a later turn is carded in both turns, so a key made of
+    the path alone repeats and Streamlit stops the page
+    (StreamlitDuplicateElementKey; field session 2026-10-15)."""
+    card = core.describe_artifact(path)
+    if not card.exists:
+        # Fail soft: the file is gone (e.g. produced in an external working
+        # folder and not copied in, or deleted after the fact) — show a small
+        # note instead of silently dropping the card or crashing on resume.
+        st.caption(f"📎 {card.name} — file no longer available")
+        return
+    icon = _KIND_ICON.get(card.kind, "📎")
+    with st.container(border=True):
+        st.markdown(f"{icon} **{card.name}** · {card.size:,} bytes · "
+                    f"{card.kind.upper()}")
+        # A chart card downloads the figure's PNG (its HTML copy when there
+        # is no PNG), not Plotly's JSON (live smoke wave 1, A15d).
+        dl_path = (core.plotly_download_twin(path) if card.kind == "plotly"
+                   else path)
+        dl_name = os.path.basename(dl_path)
+        try:
+            file_widgets.download_file("Download", dl_path,
+                                       mime=_mime_for(dl_name),
+                                       key=f"dlcard_{slot}_{path}")
+        except OSError:
+            st.caption("(file unavailable)")
+            return
+        if card.kind == "plotly":
+            # Native interactive chart from a *.plotly.json sidecar. plotly is
+            # imported lazily/guarded so the app still runs without it (then the
+            # figure is just download-only). Any parse error falls back to the
+            # download button already rendered above.
+            try:
+                import plotly.io as pio
+                fig = pio.from_json(core.read_text(path))
+                # theme=None: the chart is drawn in its own colours, as its
+                # PNG twin and the report copy are. Streamlit's theme
+                # recoloured the text for the dark page and left titles, axis
+                # labels and legends unreadable on the chart's light paper
+                # (field session 2026-10-15).
+                st.plotly_chart(fig, use_container_width=True, theme=None,
+                                key=f"chart_{slot}_{path}")
+            except Exception:
+                st.caption("(could not render Plotly figure inline — "
+                           "download above)")
+        elif card.kind in ("png", "image", "svg"):
+            try:
+                st.image(path)
+            except Exception:
+                st.caption("(could not render image inline — download above)")
+        elif card.kind == "html":
+            with st.expander("Preview (HTML)", expanded=False):
+                if card.size <= core.HTML_PREVIEW_MAX_BYTES:
+                    # Streamlit's frame allows the app's origin; the page
+                    # the agent wrote gets a sandboxed frame inside it, with
+                    # an origin of its own (INF-44).
+                    _embed_frame(file_widgets.sandboxed_html_page(
+                        core.read_text(path)), height=600)
+                else:
+                    st.caption(f"Too large to preview inline "
+                               f"({card.size:,} bytes) — download above.")
+        elif card.kind == "pdf" and engine_config.is_foundry_deployment():
+            # The Foundry app frame blocks a data: PDF in a frame; the pages
+            # go as images there, drawn when asked for (INF-37).
+            file_widgets.pdf_page_preview(path, key=f"pdfpages_{slot}_{path}")
+        elif card.kind == "pdf":
+            with st.expander("Preview (PDF)", expanded=False):
+                uri = core.pdf_data_uri(path)
+                if uri:
+                    _embed_frame(uri, height=620)
+                else:
+                    st.caption(
+                        f"Too large to preview inline "
+                        f"(> {core.PDF_PREVIEW_MAX_BYTES // (1024 * 1024)} MB) — "
+                        f"download above.")
+
+
+# ---------------------------------------------------------------------------
+# Transcript
+# ---------------------------------------------------------------------------
+
+for _entry_no, entry in enumerate(ss.transcript):
+    role = entry.get("role")
+    text = entry.get("text", "")
+    if role == "attach":
+        st.chat_message("user").caption(f"📎 attached {text}")
+    else:
+        with st.chat_message(role):
+            st.markdown(core.displayable_markdown(text, entry.get("artifacts", []))
+                        if role == "assistant" else text)
+            # A turn error must STAY visible on replay — before this, st.error
+            # rendered only during the turn's own run and vanished on the next
+            # rerun (the "flashing error" seen live on Foundry).
+            if entry.get("error"):
+                st.error(entry["error"])
+            for _card_no, _path in enumerate(entry.get("artifacts", [])):
+                _render_artifact_card(_path, slot=f"{_entry_no}.{_card_no}")
+            if entry.get("inputs"):
+                # Fetched to read, not produced (field feedback N8).
+                st.caption("Read from SharePoint: " + ", ".join(entry["inputs"]))
+
+
+# Turn details (A7 local tracer) — the latest turn's trace, when tracing is on
+# (sidebar Behavior toggle; on unless GEOTECH_TRACE=0).
+if core.tracing_enabled(ss.behavior.get("trace")):
+    _recent = core.load_recent_traces(ss.thread_id, n=1)
+    if _recent:
+        _tr = _recent[-1]
+        _lbl = (f"turn details · {_tr.get('duration_s', '?')}s · "
+                f"{_tr.get('turn_tokens', 0):,} tok · "
+                f"{_tr.get('n_tool_calls', 0)} tool calls"
+                + (" · error" if _tr.get("error") else ""))
+        with st.expander(_lbl, expanded=False):
+            st.json(_tr)
+
+
+# ---------------------------------------------------------------------------
+# Chat input + streaming
+# ---------------------------------------------------------------------------
+
+# Detached-turn resume: if a worker is still computing (or finished while we
+# were disconnected — the proxy's hard ~60 s websocket TTL), re-attach and
+# follow it instead of offering the input box. Ends in st.rerun().
+_active_job = turn_jobs.get_turn_job(ss.thread_id)
+if _active_job is not None:
+    st.info("⏳ Reconnected — your analysis kept running in the background "
+            "and is being followed live below. Connection blips don't stop "
+            "the work.")
+    _follow_turn_job(_active_job)
+
+_placeholder = _PROFILE.placeholder
+# Where the browser's own upload request reaches the server (not behind the
+# Databricks driver proxy, which refuses it — that host has the websocket
+# uploader and its paste target), the chat box takes files too: a dropped
+# file or a PASTED SCREENSHOT goes with the message (owner, 2026-10-01).
+_chat_files = (ws_upload.upload_mode() == "http" and _chat_input_takes_files())
+_chat_value = st.chat_input(
+    _placeholder if ss.agent is not None else
+    ("The AI is not available to you yet (see the sidebar)"
+     if getattr(ss.get("engine"), "source", "") == "unavailable" else
+     "Configure an engine to start (see the sidebar)"),
+    **({"accept_file": "multiple", "file_type": core.ACCEPTED_UPLOAD_TYPES}
+       if _chat_files else {}))
+prompt = _chat_value
+if _chat_value is not None and not isinstance(_chat_value, str):
+    _chat_text = str(getattr(_chat_value, "text", "") or "")
+    _chat_up = list(getattr(_chat_value, "files", None) or [])
+    if _chat_up:
+        _pairs = [(core.pasted_upload_name(f.name, i), f.getvalue())
+                  for i, f in enumerate(_chat_up)]
+        _fresh = [(n, d) for (n, d) in _pairs
+                  if core.sanitize_key(n) not in ss.attachments]
+        if _fresh:
+            _atts = _stage_files(_fresh)
+            if not _chat_text.strip():
+                # Files alone: as an upload — show the attach line(s) now and
+                # let the next run send any orientation the upload queued.
+                _queue_orientation(_atts)
+                st.rerun()
+    prompt = _chat_text.strip() or None
+
+# The automatic orientation turn (review page): the upload handler queued the
+# attachment names; this run sends the request as if the user had typed it.
+# A typed message in the same run wins — the user's question, not ours.
+_orient = ss.pop("pending_orientation", None)
+_orientation_names = None        # set when THIS turn is the orientation
+if not prompt and _orient and _PROFILE.orientation and ss.agent is not None \
+        and turn_jobs.get_turn_job(ss.thread_id) is None:
+    # The same text the review suite sends (aec_document_review.profiles): the
+    # profile's request.
+    prompt = profiles.orientation_request_for(_PROFILE, [
+        core.Attachment(key=n, path=os.path.join(ss.temp_dir, n), size=0)
+        for n in _orient])
+    # The conversation is titled after the files, not after this request
+    # (core.turn_title; live smoke wave 1, A10).
+    _orientation_names = list(_orient)
+
+if prompt:
+    if ss.agent is None and ss.engine.source == "unavailable":
+        # A polite refusal (a Tiny Apps tester with no AI key of their own):
+        # the message as written, not an error.
+        st.chat_message("assistant").info(ss.engine.message)
+    elif ss.agent is None:
+        st.chat_message("assistant").error(
+            "No engine is configured, so I can't answer yet. "
+            + ss.engine.message)
+    else:
+        if turn_jobs.get_turn_job(ss.thread_id) is not None:
+            st.warning("An analysis is already running for this conversation "
+                       "— re-send your question after it finishes.")
+            st.rerun()
+        st.chat_message("user").markdown(prompt)
+        user_entry = {"role": "user", "text": prompt}
+        ss.transcript.append(user_entry)
+        try:
+            core.append_transcript(ss.thread_id, user_entry)     # persist
+        except Exception as exc:
+            ss.save_error = f"{type(exc).__name__}: {exc}"
+
+        agent_content = core.assemble_user_message(ss.pending_notes, prompt)
+        ss.pending_notes = []
+        ss.messages.append({"role": "user", "content": agent_content})
+
+        import os as _os
+        before = core.snapshot_dir(ss.temp_dir)
+        # and each file's time, so a file REWRITTEN this turn gets a card (A13)
+        before_mtimes = core.snapshot_mtimes(ss.temp_dir)
+        artifacts_before_len = len(ss.artifacts)     # save_fn appends here live
+        staged_inputs = {  # staged upload paths are inputs, not artifacts
+            _os.path.join(ss.temp_dir, k) for k in ss.attachments
+        }
+
+        # A6/A4: the working folder may point OUTSIDE the conversation files/ dir
+        # (the agent's calc packages / plots default there via the output-dir
+        # env). Snapshot it so those saves can be bridged back into files/ below
+        # for durable, portable cards. None => same dir (the default), where the
+        # files/ diff already covers everything and no bridging is needed.
+        working_dir = core.working_dir_for(ss.thread_id)
+        # Re-apply at TURN START: the output-dir env is process-wide, so another
+        # browser tab's sidebar rerun (a different conversation) could have
+        # repointed it since this tab's last rerun (QC 2026-07-15).
+        core.apply_default_output_dir(working_dir)
+        _bind_working_folder(working_dir)
+        before_wd = (core.snapshot_dir(working_dir)
+                     if os.path.abspath(working_dir) != os.path.abspath(ss.temp_dir)
+                     else None)
+
+        # The conversation's owner and page, recorded once so the SharePoint
+        # mirror files it under the person (multi-user hosts only) and the
+        # page it belongs to (the geotech page on a single-user host records
+        # nothing and keeps its layout).
+        # (Since the copy, step 13, the review page is this package's
+        # default and still records its page, as it did beside the geotech
+        # page.)
+        if True:
+            try:
+                # owner = the person's unique key (domain__user, the same
+                # key as their local users/<key> folder): two people with
+                # the same display name in two domains must not share one
+                # SharePoint owner folder. owner_name is for display.
+                core.tag_conversation(
+                    ss.thread_id,
+                    owner=(_IDENT.key if _IDENT.multi_user else None),
+                    owner_name=(_IDENT.display_name if _IDENT.multi_user
+                                else None),
+                    page=_PROFILE.name)
+            except Exception:                      # never blocks a turn
+                pass
+        # What the conversation already holds on disk -- attached, fetched,
+        # produced -- for THIS turn's message only: the model sees earlier
+        # turns only through its own answers, so without this it can forget
+        # a file it downloaded (field session 2026-10-06).
+        try:
+            _turn_note = core.working_files_note(
+                ss.temp_dir, ss.transcript, exclude_text=agent_content,
+                reads_folder=working_dir)
+        except Exception:                          # never blocks a turn
+            _turn_note = ""
+        core.begin_partial(ss.thread_id, prompt)   # A3: mark in-progress turn
+        # Detached execution: the ENTIRE turn pipeline (streaming, partial
+        # checkpoints, artifact diffing, transcript/messages persistence,
+        # tracing, SharePoint mirror) runs in a background worker thread that
+        # survives the driver proxy's hard ~60 s websocket TTL. This script
+        # only DISPLAYS progress — and re-attaches after every reconnect.
+        job = turn_jobs.start_turn_job(
+            ss.agent, ss.messages, ss.thread_id,
+            ss.behavior.get("recursion_limit"),
+            ctx={
+                "prompt": prompt,
+                "orientation": _orientation_names,
+                "temp_dir": ss.temp_dir,
+                "before": before,
+                "before_mtimes": before_mtimes,
+                "staged_inputs": staged_inputs,
+                "working_dir": working_dir,
+                "before_wd": before_wd,
+                "artifacts": ss.artifacts,
+                "artifacts_before_len": artifacts_before_len,
+                "transcript": ss.transcript,
+                "trace_on": core.tracing_enabled(ss.behavior.get("trace")),
+                "model": ss.model,
+                "behavior": ss.behavior,
+                "turn_note": _turn_note,
+            })
+        _follow_turn_job(job)          # renders live; ends in st.rerun()

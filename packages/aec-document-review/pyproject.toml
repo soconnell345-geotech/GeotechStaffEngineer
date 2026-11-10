@@ -3,27 +3,74 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 # Document Review as its own package (the app split, BACKLOG INF-33 step 13;
-# plan module_work/APP_SPLIT_PLAN.md). 0.1.0.dev0 is EMPTY: its first upload,
-# from publish-document-review.yml on a `document-review-v0.1.0.dev0` tag,
-# holds the name on PyPI (owner 2026-11-09). Step 13 moves the page in and
-# adds its requirements (the core, planlens, Streamlit).
+# plan module_work/APP_SPLIT_PLAN.md in GeotechStaffEngineer's repository).
+# 0.1.0.dev0 was EMPTY and only held the name. 0.1.0 is the page itself,
+# copied out of GeotechStaffEngineer at step 13; it imports nothing
+# geotechnical. Published by publish-document-review.yml on a
+# `document-review-v<version>` tag, AFTER aec-agent-core at the version
+# pinned below (the workflow refuses otherwise).
 [project]
 name = "aec-document-review"
-# Kept equal to aec_document_review.__version__.
-version = "0.1.0.dev0"
-description = "An LLM agent that reviews architecture, engineering and construction documents: drawings, specifications and reports. Not yet usable: this release only holds the name."
+# Kept equal to aec_document_review.__version__ (tests/test_package.py).
+version = "0.1.0"
+description = "An LLM agent that reviews architecture, engineering and construction documents (drawings, specifications, reports, calculations) as a Streamlit page: it looks at the pages, not only the text, and hands back Word memos and marked-up PDFs."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 3 - Alpha",
+    "Framework :: Streamlit",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
 ]
-dependencies = []
+# Exact pins on our own two packages (plan Step 13): the page is tested
+# against exactly these. Everything else the copied code imports comes
+# through the core (numpy, the agent stack, matplotlib, plotly, python-docx,
+# openpyxl, PyMuPDF, Pillow) or is listed here.
+dependencies = [
+    "aec-agent-core==1.0.0",
+    "planlens==0.15.0",
+    # The page (app.py and the shell's widgets); requests comes with it and
+    # the diagnostics' upload probe uses it.
+    "streamlit>=1.39",
+    "requests>=2",
+    # langgraph-sdk needs websockets<16; a host image that ships 16.x makes
+    # the resolve unsatisfiable (GeotechStaffEngineer's pin, kept here).
+    "websockets>=14,<16",
+]
+
+[project.optional-dependencies]
+# Key Vault reads on the App Service and a certificate for the SharePoint
+# app registration (tinyapps_settings, graph_sharepoint import these lazily;
+# a local .env run needs none of them). The hosting fleet's pin file
+# installs them already.
+azure = [
+    "azure-identity>=1.21",
+    "azure-keyvault-secrets>=4.9",
+    "cryptography>=42",
+]
+
+[project.scripts]
+aec-document-review = "aec_document_review.launch:main"
+
+[project.urls]
+Homepage = "https://github.com/soconnell345-geotech/GeotechStaffEngineer"
+Repository = "https://github.com/soconnell345-geotech/GeotechStaffEngineer/tree/master/packages/aec-document-review"
 
 [tool.setuptools.packages.find]
 include = ["aec_document_review*"]
 exclude = ["*.tests", "*.tests.*", "tests*"]
+
+[tool.setuptools.package-data]
+# The websocket uploader's component page (ws_upload.py loads it by path).
+aec_document_review = ["ws_upload_component/*.html"]
+
+[tool.pytest.ini_options]
+# The package's own tests, run from this folder (CI's document-review job;
+# nothing geotech installed). GeotechStaffEngineer's root conftest is not
+# loaded: this folder is the root.
+testpaths = ["tests"]

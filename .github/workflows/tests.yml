@@ -98,7 +98,10 @@ jobs:
     # file is opt-in: it runs only with GEOTECH_REQUIRE_WHEEL_TEST=1, which
     # this job sets (a missing 'build' is then a failure), so the main job
     # and nightly skip it. Run alone, in one process: two builds of the
-    # root at once would share its source tree. A few minutes.
+    # root at once would share its source tree. Then the sdists of the core
+    # and of aec-document-review are built from copies and checked to carry
+    # no tests (webapp/tests/test_sdists.py; the variable makes a missing
+    # build tool a failure there too). A few minutes.
     name: "Wheels"
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -122,6 +125,11 @@ jobs:
         env:
           GEOTECH_REQUIRE_WHEEL_TEST: "1"
         run: pytest -q --tb=short webapp/tests/test_wheels.py
+
+      - name: The packages' sdists carry no tests
+        env:
+          GEOTECH_REQUIRE_WHEEL_TEST: "1"
+        run: pytest -q --tb=short webapp/tests/test_sdists.py
 
   core-only:
     # The app split's step 11 (c) (INF-32; plan module_work/APP_SPLIT_PLAN.md
@@ -195,6 +203,114 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: python -m webapp.tests.core_only
+
+  document-review:
+    # The app split's step 13 (INF-33; plan module_work/APP_SPLIT_PLAN.md
+    # section 5 and Step 13): Document Review as its own package,
+    # packages/aec-document-review, with nothing geotech installed. Its
+    # wheel is built the way publish-document-review.yml builds it (sdist,
+    # then the wheel) and its file list checked; then the wheel is installed
+    # with the checkout's core (aec-agent-core, pinned exactly), planlens at
+    # its exact pin from PyPI and the hosting fleet's pins
+    # (tinyapps/wrapper_repo/requirements-thirdparty.txt). The package's
+    # tests run: its page and review tests, the boundary as a plain test
+    # (tests/test_boundary.py: no package file imports geotech, a build and
+    # a turn load none) and its own fingerprints
+    # (tests/review_fingerprints.json). 3.11 is the test machine's 3.11.9,
+    # 3.12 the App Service's. Minutes.
+    name: "document-review"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v5
+        # no submodules: the reference library is not part of this install
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build the package's wheel and check what is in it
+        run: |
+          pip install --upgrade pip
+          pip install build
+          python -m build --outdir "$RUNNER_TEMP/dist" packages/aec-document-review
+          # -I in each check run from the checkout root: the root's own
+          # folders (webapp/, funhouse_agent/, ...) are then not on sys.path.
+          python -I - "$RUNNER_TEMP/dist" <<'PY'
+          import pathlib, sys, zipfile
+          dist = pathlib.Path(sys.argv[1])
+          wheel = next(dist.glob("aec_document_review-*.whl"))
+          names = zipfile.ZipFile(wheel).namelist()
+          print("\n".join(names))
+          bad = [n for n in names if n.split("/")[0] in ("tests", "module_work")
+                 or "/tests/" in n or n.endswith((".json.gz", ".pdf"))]
+          need = ["aec_document_review/__init__.py", "aec_document_review/app.py",
+                  "aec_document_review/entry.py",
+                  "aec_document_review/tinyapps_entry.py",
+                  "aec_document_review/review_eval/tasks.py",
+                  "aec_document_review/ws_upload_component/index.html"]
+          missing = [n for n in need if n not in names]
+          print("not to ship:", bad, "missing:", missing)
+          sys.exit(1 if bad or missing else 0)
+          PY
+
+      - name: Install the wheel, the core, planlens and the fleet pins (nothing geotech)
+        run: |
+          pip install packages/aec-agent-core
+          pip install "$RUNNER_TEMP"/dist/aec_document_review-*.whl pytest
+          pip install -r tinyapps/wrapper_repo/requirements-thirdparty.txt
+          pip list
+          python -I - <<'PY'
+          import importlib.metadata as md, importlib.util as u, sys
+          dists = [d for d in ("geotech-staff-engineer", "geotech-references")
+                   if any(x.metadata["Name"] == d for x in md.distributions())]
+          mods = [m for m in ("geotech_references", "funhouse_agent", "webapp",
+                              "pystrata", "liquepy", "gstools", "openseespy")
+                  if u.find_spec(m)]
+          print("geotech installed:", dists, mods)
+          sys.exit(1 if dists or mods else 0)
+          PY
+
+      - name: The installed page builds outside the checkout
+        run: |
+          cd "$RUNNER_TEMP"
+          MPLBACKEND=Agg python -I - <<'PY'
+          import importlib, pkgutil, sys
+          import aec_document_review as p
+          assert "site-packages" in p.__file__, p.__file__
+          for m in pkgutil.walk_packages(p.__path__, "aec_document_review."):
+              if m.name not in ("aec_document_review.app",
+                                "aec_document_review.entry"):
+                  importlib.import_module(m.name)
+          from aec_document_review import core, profiles
+          from langchain_core.language_models.fake_chat_models import (
+              FakeMessagesListChatModel)
+          from langchain_core.messages import AIMessage
+          import tempfile, os
+          files = os.path.join(tempfile.mkdtemp(), "files")
+          os.makedirs(files)
+          prof = profiles.DOCUMENT_REVIEW
+          kw = prof.behavior_build_kwargs(None)
+          kw.update(prof.build_kwargs())
+          agent = core.build_agent(
+              FakeMessagesListChatModel(responses=[AIMessage(content="ok")]),
+              {}, files, [], profile=prof, **kw)
+          apps = sorted({m.split(".")[0] for m in sys.modules} & {
+              "funhouse_agent", "webapp", "geotech_references",
+              "geotech_common", "report_ingest", "calc_package"})
+          print("built", type(agent).__name__, "; geotech loaded:", apps)
+          sys.exit(1 if apps else 0)
+          PY
+
+      - name: The package's tests (page, review, boundary, fingerprints)
+        working-directory: packages/aec-document-review
+        env:
+          MPLBACKEND: Agg
+        run: python -m pytest -q -p no:cacheprovider --tb=short
 
   numpy126:
     # Foundry's transforms repos hold numpy at 1.26.4 (INF-53). Installs the

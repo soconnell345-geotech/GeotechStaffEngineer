@@ -38,6 +38,13 @@ Step 11 (c)'s:
   (:mod:`aec_agent_core.review_eval`: the page whose turn a task runs on,
   the app's tasks, and where their documents are found).
 
+Step 13's (INF-33):
+
+- ``app.details``: :mod:`aec_agent_core.app_details` (which application
+  runs on the core: its name, distribution and package, for the run
+  record's version, the default Word and markup authors and the runtime
+  messages; filled with :func:`aec_agent_core.app_details.hand_in`).
+
 Step 11 (b)'s chart lines (an app's standard chart lines for ``plot_data``
 and the plotting box) are handed in through
 :func:`aec_agent_core.charts.register_reference_charts`, a registration

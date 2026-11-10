@@ -1,0 +1,3659 @@
+"""Framework-agnostic logic for the geotech web chat app.
+
+Everything here is import-testable WITHOUT streamlit and without a live model:
+the streamlit shell (``app.py``) is a thin view over these functions, and the
+offline tests exercise this module directly. Heavy imports (the deepagents
+builder, langchain callbacks, the LangChain model) are done lazily inside the
+functions that need them so ``import aec_document_review.core`` stays cheap and side-effect
+free.
+
+Responsibilities:
+
+* **Attachments** — an uploaded file is (a) registered in the live attachments
+  dict the agent's vision tools read (by a sanitized key), AND (b) staged as a
+  real file under the session temp dir so real-path tools (pdf_import /
+  dxf_import / drawing_ir / read_pdf_text) can open it. A system-style note
+  tells the agent both the key and the staged path.
+* **Artifacts** — a ``save_fn`` captures files the agent writes via ``save_file``
+  (resolved into the session temp dir), and a directory snapshot/diff catches
+  anything else written there (calc packages, DXFs, plots) for download.
+* **Streaming** — one turn is streamed from the compiled deep agent, reusing the
+  PURE formatters and token accounting from ``aec_document_review.stream_format`` so
+  the parsing logic is shared with the notebook UI and already unit-tested.
+* **Disclaimer** — the package's professional-use disclaimer text, captured for
+  prominent rendering at the top of the app.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import tempfile
+import threading
+import time
+from dataclasses import dataclass
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from uuid import uuid4
+
+#: Accepted upload types (mirrors the notebook FileUpload accept list). Word
+#: and Excel files are read as Markdown (``aec_agent_core.office_text``) by
+#: ``open_document`` / ``read_document`` / ``read_text_file``; until live
+#: smoke wave 2b (C2) the uploader refused them.
+ACCEPTED_UPLOAD_TYPES = [
+    "pdf", "png", "jpg", "jpeg", "tif", "tiff",
+    "dxf", "csv", "txt", "xml", "diggs",
+    "docx", "xlsx", "xlsm",
+]
+
+
+# ---------------------------------------------------------------------------
+# Disclaimer
+# ---------------------------------------------------------------------------
+
+def disclaimer_text(profile=None) -> str:
+    """Return the page's full professional-use disclaimer as text.
+
+    The page says what it is (its ``disclaimer`` hook, :mod:`webapp.
+    page_profile`; ``profile`` defaults to the page this run serves). Falls
+    back to a short notice when the page has none to give, so the banner is
+    never empty.
+    """
+    try:
+        if profile is None:
+            from aec_document_review import profiles
+            profile = profiles.current()
+        hook = profile.hook("disclaimer")
+        text = hook() if hook is not None else None
+        if text:
+            return text
+    except Exception:
+        pass
+    return (
+        "Document Review is a REVIEW AID, not a professional opinion. Check "
+        "every finding against the document before relying on it. No "
+        "warranty; no professional engagement."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Session temp dir
+# ---------------------------------------------------------------------------
+
+def new_session_dir(prefix: str = "geotech_webapp_") -> str:
+    """Create and return a fresh per-session temp directory for staged inputs
+    and agent-produced artifacts."""
+    return tempfile.mkdtemp(prefix=prefix)
+
+
+# ---------------------------------------------------------------------------
+# Attachments — register bytes + stage to disk
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Attachment:
+    """A staged upload: attachment ``key`` (for vision / read_pdf_text) and the
+    on-disk ``path`` (for real-path tools)."""
+    key: str
+    path: str
+    size: int
+
+
+#: Names a browser gives a picture pasted from the clipboard.
+_CLIPBOARD_NAMES = {"image.png", "image.jpg", "image.jpeg", "image.gif",
+                    "image.webp", "image.bmp", "blob"}
+
+
+def pasted_upload_name(name, index: int = 0, when: Optional[float] = None
+                       ) -> str:
+    """A screenshot pasted into the chat box arrives called ``image.png``
+    every time; a second paste would be taken for the first (attachments are
+    deduplicated by name). So a clipboard name becomes
+    ``pasted_<YYYYmmdd_HHMMSS>[_<n>].<ext>``; any other name is kept."""
+    base = os.path.basename(str(name or "").replace("\\", "/")).lower()
+    if base not in _CLIPBOARD_NAMES:
+        return str(name)
+    ext = os.path.splitext(base)[1] or ".png"
+    stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(
+        time.time() if when is None else when))
+    return f"pasted_{stamp}{'_' + str(index) if index else ''}{ext}"
+
+
+def sanitize_key(name) -> str:
+    """Reduce an uploaded filename to a safe attachment key (reuses the
+    funhouse helper; falls back to a local implementation offline)."""
+    try:
+        from aec_agent_core.vision_tools import sanitize_upload_name
+        return sanitize_upload_name(name)
+    except Exception:
+        import re
+        base = os.path.basename(str(name or "").replace("\\", "/")) or "file"
+        base = re.sub(r"[^A-Za-z0-9._-]", "_", base)
+        return base or "file"
+
+
+def stage_upload(attachments: dict, temp_dir: str, name, data: bytes) -> Attachment:
+    """Register ``data`` in the live ``attachments`` dict under a sanitized key
+    AND write it as a real file under ``temp_dir``.
+
+    Returns the :class:`Attachment`. An existing key is overwritten (both the
+    dict entry and the file), so re-uploading the same filename replaces it.
+    """
+    if not isinstance(data, (bytes, bytearray)):
+        raise TypeError("upload data must be bytes")
+    data = bytes(data)
+    key = sanitize_key(name)
+    attachments[key] = data
+    path = os.path.join(temp_dir, key)
+    with open(path, "wb") as fh:
+        fh.write(data)
+    return Attachment(key=key, path=path, size=len(data))
+
+
+def stage_uploads(attachments: dict, temp_dir: str,
+                  files: Iterable[Tuple[object, bytes]]) -> List[Attachment]:
+    """Stage a batch of ``(name, bytes)`` pairs. Returns the list of
+    :class:`Attachment`."""
+    out = []
+    for name, data in files:
+        out.append(stage_upload(attachments, temp_dir, name, data))
+    return out
+
+
+#: File name endings of the image files the looking tools take as images.
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif",
+                    ".tiff", ".webp")
+
+
+def is_image_name(name) -> bool:
+    """Whether a file name is an image file's (by its ending)."""
+    return os.path.splitext(str(name or ""))[1].lower() in IMAGE_EXTENSIONS
+
+
+def attachment_note(atts: List[Attachment]) -> str:
+    """Build the system-style note telling the agent about staged attachments —
+    the attachment key (for analyze_image / analyze_pdf_page / read_pdf_text)
+    AND that the same NAME is a file in the working folder (for pdf_import /
+    dxf_import / drawing_ir tools that need a file path: a bare name is
+    looked up there). Returns ``""`` for an empty list.
+
+    No server path: the note named the absolute staging path until
+    2026-10-09, and the model used it and repeated it to users (live smoke
+    wave 1, A6). Every file tool resolves the bare name.
+
+    The same note on both pages (the Document Review page's lean build,
+    which had its own wording, was removed in BACKLOG DR-39)."""
+    atts = list(atts or [])
+    if not atts:
+        return ""
+    lines = ["[System note] The user attached files, available to you as:"]
+    for a in atts:
+        lines.append(
+            f"- '{a.key}': attachment key '{a.key}' "
+            f"(to review a PDF, open_document with source='{a.key}'; use "
+            f"analyze_image / analyze_pdf_page / read_pdf_text with "
+            f"attachment_key='{a.key}'); it is also the file '{a.key}' in the "
+            f"working folder (tools that take a file path -- pdf_import / "
+            f"dxf_import / drawing_ir, a call_agent file_path -- take that "
+            f"name)."
+        )
+    return "\n".join(lines)
+
+
+def assemble_user_message(pending_notes: Iterable[str], user_text: str) -> str:
+    """Compose the agent-facing user message: any pending attachment notes,
+    then the user's typed text. When there are no notes this is just
+    ``user_text`` (byte-identical), so the no-attachment path is unchanged."""
+    notes = [n for n in (pending_notes or []) if n]
+    if not notes:
+        return user_text
+    return "\n\n".join(notes + [user_text])
+
+
+# ---------------------------------------------------------------------------
+# Artifacts — save_fn capture + directory watch
+# ---------------------------------------------------------------------------
+
+#: What the ``save_file`` tool result says once a file lands in the conversation
+#: files dir. That directory IS the chat-attachment surface — its contents show
+#: up as download cards in the transcript and in the sidebar — but the model had
+#: no way to know it, so it wrote reports there and told the user in the same
+#: breath that it "can't directly attach the binary PDF into the chat stream"
+#: (field feedback 2026-09-04, a downdrag session). Awareness gap, not a capability
+#: gap: the tool result now says what the save already accomplished.
+ATTACHMENT_NOTE = (
+    "This file is now ATTACHED to this conversation — it appears as a download "
+    "card in the chat and in the sidebar file list, so the user can already "
+    "open it. Tell the user it is attached; do NOT say you cannot attach files."
+)
+
+
+def attachment_note_for(path, files_dir: str) -> Optional[str]:
+    """``ATTACHMENT_NOTE`` when ``path`` landed inside ``files_dir`` (the
+    conversation's chat-attachment surface), else ``None``.
+
+    Saves into a custom working folder are bridged into ``files_dir`` after the
+    turn (see ``import_external_artifacts``) and so become attachments too, but
+    only at turn end — this note describes what is already true at save time.
+    """
+    try:
+        ap = os.path.abspath(str(path))
+        fd = os.path.abspath(files_dir)
+    except (TypeError, ValueError):
+        return None
+    if ap == fd or ap.startswith(fd + os.sep):
+        return ATTACHMENT_NOTE
+    return None
+
+
+def make_save_fn(temp_dir: str, artifacts: List[str]) -> Callable[[str, object], str]:
+    """Build a ``save_fn(path, content) -> saved_path`` for ``build_deep_agent``.
+
+    A bare/relative path is resolved into the session ``temp_dir`` (by
+    basename) so the app can serve it; an absolute path is honored as-is. Every
+    resolved path is appended to ``artifacts`` (deduplicated) for the download
+    list. Bytes or text content are both handled.
+
+    The returned callable also carries a ``saved_note(path) -> str | None``
+    attribute, the hook ``funhouse_agent.deep.tools`` uses to let the host add
+    a line to the ``save_file`` tool result (here: "this file is now attached").
+    """
+    def save_fn(path, content) -> str:
+        p = str(path)
+        if not os.path.isabs(p):
+            p = os.path.join(temp_dir, os.path.basename(p) or "output")
+        parent = os.path.dirname(p)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        if isinstance(content, (bytes, bytearray)):
+            with open(p, "wb") as fh:
+                fh.write(content)
+        else:
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write(str(content))
+        # A REWRITE of a file saved in an earlier turn is not appended again
+        # (the download list stays one entry per file); it still gets this
+        # turn's card, because the turn compares file times
+        # (:func:`rewritten_files`, live smoke wave 1, A13). Tool scratch
+        # (a dot-folder, a cache folder) is never a deliverable.
+        if p not in artifacts and not is_cache_path(p, temp_dir):
+            artifacts.append(p)
+        return p
+
+    save_fn.saved_note = lambda saved: attachment_note_for(saved, temp_dir)
+    return save_fn
+
+
+#: Extension -> artifact kind (drives the card icon + which inline preview to
+#: use). Anything unlisted is "other" (download-only).
+_ARTIFACT_KIND_BY_EXT = {
+    ".html": "html", ".htm": "html",
+    ".pdf": "pdf",
+    ".png": "png",
+    ".jpg": "image", ".jpeg": "image", ".gif": "image", ".webp": "image",
+    ".bmp": "image",
+    ".svg": "svg",
+    ".dxf": "dxf",
+    ".csv": "csv", ".txt": "text", ".md": "text", ".json": "text",
+}
+
+#: Inline-preview size caps. Bigger files are offered download-only — a
+#: self-contained calc-package HTML or a big PDF should not be inlined on every
+#: rerun.
+HTML_PREVIEW_MAX_BYTES = 4 * 1024 * 1024
+PDF_PREVIEW_MAX_BYTES = 10 * 1024 * 1024
+
+
+@dataclass
+class ArtifactCard:
+    """Display data for one agent-produced artifact (streamlit-free — the
+    rendering lives in app.py)."""
+    path: str
+    name: str
+    size: int
+    kind: str
+
+    @property
+    def exists(self) -> bool:
+        return os.path.isfile(self.path)
+
+
+def classify_artifact(path) -> str:
+    """Map a file path to an artifact kind by extension
+    (``plotly``/``html``/``pdf``/``png``/``image``/``svg``/``dxf``/``csv``/``text``/``other``).
+
+    A ``*.plotly.json`` sidecar (a Plotly figure serialized with
+    ``figure.to_json()``) classifies as ``plotly`` so the app can render it
+    natively with ``st.plotly_chart`` — checked before the plain-extension
+    lookup, which would otherwise see only ``.json`` and return ``text``.
+    """
+    if str(path).lower().endswith(".plotly.json"):
+        return "plotly"
+    return _ARTIFACT_KIND_BY_EXT.get(os.path.splitext(str(path))[1].lower(),
+                                     "other")
+
+
+def describe_artifact(path) -> ArtifactCard:
+    """Build the :class:`ArtifactCard` for ``path`` (name, size, kind)."""
+    p = str(path)
+    try:
+        size = os.path.getsize(p)
+    except OSError:
+        size = 0
+    return ArtifactCard(path=p, name=os.path.basename(p), size=size,
+                        kind=classify_artifact(p))
+
+
+def artifact_bytes(path) -> bytes:
+    """Read an artifact's raw bytes (for download / preview)."""
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def read_text(path) -> str:
+    """Read an artifact as UTF-8 text (lossy on undecodable bytes)."""
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def pdf_data_uri(path, max_bytes: int = PDF_PREVIEW_MAX_BYTES) -> Optional[str]:
+    """Return a ``data:application/pdf;base64,…`` URI for inline preview, or
+    ``None`` when the file is missing/empty or exceeds ``max_bytes`` (then the
+    app shows download-only)."""
+    import base64
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+    if size <= 0 or size > max_bytes:
+        return None
+    return "data:application/pdf;base64," + \
+        base64.b64encode(artifact_bytes(path)).decode("ascii")
+
+
+#: Pages a page-image preview of a PDF shows (where a ``data:`` PDF cannot
+#: be framed: the Foundry app frame, INF-37), and how finely they are drawn.
+PDF_PREVIEW_PAGES = 10
+PDF_PREVIEW_DPI = 110
+
+_PDF_PAGE_CACHE: dict = {}
+_PDF_PAGE_CACHE_MAX = 16
+
+
+def pdf_page_pngs(path, max_pages: int = PDF_PREVIEW_PAGES,
+                  dpi: int = PDF_PREVIEW_DPI) -> "tuple[list, int]":
+    """``(PNG bytes of the first pages, the PDF's page count)``, or
+    ``([], 0)`` when the file is missing, empty or cannot be read.
+
+    Every rerun draws each card again, so the pages are kept per file
+    version (path, size, modification time) for the process."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return [], 0
+    if info.st_size <= 0:
+        return [], 0
+    key = (os.path.abspath(str(path)), info.st_size, info.st_mtime_ns,
+           max_pages, dpi)
+    hit = _PDF_PAGE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:
+        import pymupdf  # PyMuPDF
+        with pymupdf.open(str(path)) as doc:
+            count = doc.page_count
+            pngs = [doc[i].get_pixmap(dpi=dpi).tobytes("png")
+                    for i in range(min(count, max(0, max_pages)))]
+    except Exception:                                    # noqa: BLE001
+        return [], 0
+    if len(_PDF_PAGE_CACHE) >= _PDF_PAGE_CACHE_MAX:
+        _PDF_PAGE_CACHE.pop(next(iter(_PDF_PAGE_CACHE)))
+    _PDF_PAGE_CACHE[key] = (pngs, count)
+    return pngs, count
+
+
+#: A Plotly sidecar and the static image it supersedes share everything but
+#: this suffix (``lateral_pressure.png`` / ``lateral_pressure.plotly.json``).
+PLOTLY_SIDECAR_SUFFIX = ".plotly.json"
+_SUPERSEDED_IMAGE_EXTS = (".png", ".jpg", ".jpeg")
+#: Every twin a sidecar's card stands for: the static image, and the
+#: self-contained HTML copy a plot method also writes (a 4.8 MB second card
+#: for the same figure in live smoke wave 1, A15d).
+_SUPERSEDED_BY_PLOTLY_EXTS = _SUPERSEDED_IMAGE_EXTS + (".html", ".htm")
+
+
+def plotly_download_twin(path: str) -> str:
+    """The file a plotly card's Download button serves: the figure's PNG
+    (else JPG, else its HTML copy) beside the ``*.plotly.json``; the sidecar
+    itself only when there is no twin -- a reader downloading a chart wants
+    the picture, not Plotly's JSON (live smoke wave 1, A15d)."""
+    p = str(path)
+    if not p.lower().endswith(PLOTLY_SIDECAR_SUFFIX):
+        return p
+    stem = p[:-len(PLOTLY_SIDECAR_SUFFIX)]
+    for ext in (".png", ".jpg", ".jpeg", ".html", ".htm"):
+        for cand in (stem + ext, stem + ext.upper()):
+            if os.path.isfile(cand):
+                return cand
+    return p
+
+
+def plotly_picture_twin(path: str) -> Optional[str]:
+    """The static picture (PNG, else JPG) beside a ``*.plotly.json`` sidecar,
+    or ``None`` when ``path`` is not a sidecar or has no picture. The card
+    list keeps only the sidecar (:func:`collect_turn_artifacts`), so the
+    per-turn file note names the picture from here (live smoke wave 2a,
+    B10: "put that plot in the memo" had no image to find)."""
+    p = str(path)
+    if not p.lower().endswith(PLOTLY_SIDECAR_SUFFIX):
+        return None
+    stem = p[:-len(PLOTLY_SIDECAR_SUFFIX)]
+    for ext in _SUPERSEDED_IMAGE_EXTS:
+        for cand in (stem + ext, stem + ext.upper()):
+            if os.path.isfile(cand):
+                return cand
+    return None
+
+
+def _plotly_sidecar_stems(paths: Iterable[str]) -> set:
+    """Lower-cased paths-without-suffix of every ``*.plotly.json`` in ``paths``."""
+    stems = set()
+    for p in paths or ():
+        low = str(p).lower()
+        if low.endswith(PLOTLY_SIDECAR_SUFFIX):
+            stems.add(low[:-len(PLOTLY_SIDECAR_SUFFIX)])
+    return stems
+
+
+def _superseded_by_plotly(path: str, stems: set) -> bool:
+    """True when ``path`` is the static image -- or the self-contained HTML
+    copy -- of a figure that also has an interactive sidecar in the same
+    list."""
+    low = str(path).lower()
+    if not low.endswith(_SUPERSEDED_BY_PLOTLY_EXTS):
+        return False
+    return os.path.splitext(low)[0] in stems
+
+
+#: A figure's files: a figure file the turn wrote and then removed (a draft
+#: a drawing tool retired) gets no card.
+_FIGURE_FILE_EXTS = (PLOTLY_SIDECAR_SUFFIX,) + _SUPERSEDED_IMAGE_EXTS + (
+    ".svg", ".gif", ".webp")
+
+
+def _mtime_ns(path: str) -> Optional[int]:
+    try:
+        return os.stat(path).st_mtime_ns
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def _removed_figure(path: str) -> bool:
+    """A figure file that is gone from a folder that is still there: a
+    draft removed later in the same turn."""
+    p = str(path)
+    if not p.lower().endswith(_FIGURE_FILE_EXTS) or os.path.exists(p):
+        return False
+    return os.path.isdir(os.path.dirname(p) or ".")
+
+
+def _newer(a: str, b: str) -> bool:
+    """Whether file ``a`` was written after file ``b`` (both on disk)."""
+    ta, tb = _mtime_ns(a), _mtime_ns(b)
+    return ta is not None and tb is not None and ta > tb
+
+
+def collect_turn_artifacts(save_new: Iterable[str],
+                           dir_new: Iterable[str]) -> List[str]:
+    """Associate a turn's artifacts: the union of the paths the save_fn recorded
+    during the turn and the new files the directory diff found, deduplicated and
+    order-preserving (save_fn first).
+
+    One figure, one card: when a ``*.plotly.json`` sidecar is present, the PNG
+    (or JPG, or the self-contained HTML copy) of the SAME figure is dropped
+    from this list, so the chat shows the interactive chart rather than a
+    chart and a picture of it; the card's Download serves the PNG
+    (:func:`plotly_download_twin`). The NEWER of the two is the figure
+    (live wave w9: a PNG redrawn in code after a ``plot_data`` draft was
+    hidden behind the draft's chart): a picture written after its sidecar
+    takes the card and the sidecar is dropped. A figure file removed later
+    in the turn (a draft a drawing tool retired) gets no card. Only the
+    CARD list is filtered — the caller's own artifact list still carries the
+    image, so the SharePoint mirror, the sidebar downloads and ``html_to_pdf``
+    are untouched."""
+    out: List[str] = []
+    seen = set()
+    for p in list(save_new or []) + list(dir_new or []):
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    out = [p for p in out if not _removed_figure(p)]
+    stems = _plotly_sidecar_stems(out)
+    if not stems:
+        return out
+    cards: List[str] = []
+    for p in out:
+        low = str(p).lower()
+        if low.endswith(PLOTLY_SIDECAR_SUFFIX):
+            picture = plotly_picture_twin(p)
+            if picture is not None and _newer(picture, p):
+                # the picture was drawn after the chart: it is the figure
+                if picture not in out and picture not in cards:
+                    cards.append(picture)
+                continue
+            cards.append(p)
+        elif _superseded_by_plotly(p, stems):
+            # an HTML copy always goes with its chart; a picture only when
+            # the chart is the newer
+            sidecar = os.path.splitext(str(p))[0] + PLOTLY_SIDECAR_SUFFIX
+            twin = next((q for q in out
+                         if str(q).lower() == sidecar.lower()), sidecar)
+            if low.endswith(_SUPERSEDED_IMAGE_EXTS) and _newer(p, twin):
+                cards.append(p)
+        else:
+            cards.append(p)
+    return cards
+
+
+#: Cache and scratch folders tools keep in the working folder: their files are
+#: working data, not deliverables, so they never become download cards, are
+#: never listed to the model as the conversation's files, and are not
+#: mirrored to SharePoint (``sharepoint_store`` prunes them; see
+#: :func:`mirror_skips_dir`). ``digest`` = the former Document Review digest
+#: cache (its code went with BACKLOG DR-39; the name stays so a folder an
+#: older conversation kept is still not a card); ``.scratch`` = the
+#: per-conversation tool scratch (contact
+#: sheets, thumbnails). Any other dot-folder is treated the same way.
+CACHE_DIRS = ("digest", ".scratch")
+
+
+def _skipped_dir(name: str) -> bool:
+    return name in CACHE_DIRS or name.startswith(".")
+
+
+def is_cache_path(path, files_dir: str) -> bool:
+    """True when ``path`` lies in a cache or scratch folder of ``files_dir``
+    (a top-level :data:`CACHE_DIRS` entry, or any dot-folder at any depth)."""
+    try:
+        ap = os.path.abspath(str(path))
+        fd = os.path.abspath(files_dir)
+    except (TypeError, ValueError):
+        return False
+    if not ap.startswith(fd + os.sep):
+        return False
+    parts = os.path.relpath(ap, fd).split(os.sep)[:-1]
+    return bool(parts) and (parts[0] in CACHE_DIRS
+                            or any(p.startswith(".") for p in parts))
+
+
+def mirror_skips_dir(rel_dir: str) -> bool:
+    """Whether the SharePoint mirror leaves out a conversation sub-folder,
+    given relative to the CONVERSATION folder with '/' separators: the
+    working folder's cache and scratch folders (``files/digest``,
+    ``files/.scratch``, any dot-folder under ``files/``)."""
+    parts = [p for p in str(rel_dir or "").replace("\\", "/").split("/")
+             if p and p != "."]
+    if len(parts) < 2 or parts[0] != "files":
+        return False
+    return parts[1] in CACHE_DIRS or any(p.startswith(".")
+                                         for p in parts[1:])
+
+
+#: Files that exist only while a turn runs or a write is half done: the
+#: turn's checkpoints in the conversation folder (:func:`begin_partial`, and
+#: the turn's messages so far, ``aec_document_review.turn_record.CHECKPOINT_NAME``) ...
+IN_FLIGHT_FILES = ("partial.json", "partial_messages.json")
+#: ... and the part files a write renames into place when it is complete
+#: (``.part``: SharePoint downloads, reference PDFs;
+#: ``.tmp``: the downloads ledger).
+IN_FLIGHT_SUFFIXES = (".part", ".tmp")
+
+
+def is_in_flight_file(rel_path) -> bool:
+    """Whether a conversation file -- given relative to the CONVERSATION
+    folder, '/' separators -- is an in-progress file the SharePoint mirror
+    never uploads and a restore never downloads.
+
+    Live smoke wave 2a (B2): "save it to SharePoint" mirrors the conversation
+    in the MIDDLE of a turn, which uploaded that turn's ``partial.json``; the
+    end-of-turn mirror never removed it, and restoring the conversation later
+    turned it into a fake "interrupted" turn. ``partial.json`` counts only at
+    the top of the conversation folder: a file of that name a user put in
+    ``files/`` is theirs."""
+    rel = str(rel_path or "").replace("\\", "/").strip("/")
+    if not rel:
+        return False
+    if rel in IN_FLIGHT_FILES:
+        return True
+    return rel.lower().endswith(IN_FLIGHT_SUFFIXES)
+
+
+def snapshot_dir(temp_dir: str) -> set:
+    """Return the set of file paths currently under ``temp_dir`` (recursive),
+    leaving out the top-level :data:`CACHE_DIRS` and every dot-folder."""
+    found = set()
+    top = os.path.abspath(temp_dir)
+    for root, dirs, names in os.walk(temp_dir):
+        if os.path.abspath(root) == top:
+            dirs[:] = [d for d in dirs if not _skipped_dir(d)]
+        else:
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for n in names:
+            found.add(os.path.join(root, n))
+    return found
+
+
+def snapshot_mtimes(temp_dir: str) -> Dict[str, Tuple[int, int]]:
+    """``{path: (mtime_ns, size)}`` for :func:`snapshot_dir`'s files -- taken
+    before a turn so a file REWRITTEN during it is found (A13)."""
+    out: Dict[str, Tuple[int, int]] = {}
+    for p in snapshot_dir(temp_dir):
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        out[p] = (st.st_mtime_ns, st.st_size)
+    return out
+
+
+def rewritten_files(temp_dir: str, before: Optional[dict],
+                    input_paths: Iterable[str] = ()) -> List[str]:
+    """Files that existed before the turn (``before`` from
+    :func:`snapshot_mtimes`) and were written again during it -- a memo
+    rewritten under the same name gets its card in the turn that rewrote it
+    (live smoke wave 1, A13: the only card was the earlier turn's). Staged
+    inputs are left out. Sorted."""
+    if not before:
+        return []
+    inputs = {os.path.abspath(p) for p in (input_paths or ())}
+    out = []
+    for p, stamp in before.items():
+        if os.path.abspath(p) in inputs:
+            continue
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        if (st.st_mtime_ns, st.st_size) != tuple(stamp):
+            out.append(p)
+    return sorted(out)
+
+
+def new_artifacts(temp_dir: str, before: set, input_paths: Iterable[str]) -> List[str]:
+    """Files under ``temp_dir`` that appeared since the ``before`` snapshot and
+    are NOT staged inputs — i.e. agent-produced artifacts to offer for
+    download. Sorted for stable display."""
+    inputs = set(input_paths or ())
+    after = snapshot_dir(temp_dir)
+    return sorted(p for p in (after - before) if p not in inputs)
+
+
+# ---------------------------------------------------------------------------
+# Agent construction
+# ---------------------------------------------------------------------------
+
+def _add_feedback_tool(kw: dict, temp_dir: str) -> None:
+    """Splice the ``record_feedback`` tool and its instructions into
+    ``build_deep_agent`` kwargs (owner feedback 2026-09-11).
+
+    The agent records capability gaps / tool errors / in-chat feedback into
+    the CONVERSATION directory (temp_dir is <conversation>/files, so its parent
+    is the record dir). It reaches the primary (``extra_tools``) and EVERY
+    sub-agent (``subagent_extra_tools``: references, reviewer, calc,
+    model_setup) — a sub-agent is where most gaps are found: calc when no tool
+    draws the figure, references when a chart's source PDF is missing. Until
+    2026-09-15 only primary + calc had it. Best-effort: never blocks a build.
+    """
+    try:
+        from aec_document_review import feedback as _fb
+        _conv_dir = os.path.dirname(os.path.abspath(temp_dir))
+        _thread_id = os.path.basename(_conv_dir)
+
+        def _fb_context(_tid=_thread_id):
+            try:
+                tr = load_transcript(_tid)
+                turn = sum(1 for e in tr if e.get("role") == "user")
+                meta = load_meta(_tid) or {}
+                return {"thread_id": _tid, "turn": turn,
+                        "model": meta.get("model")}
+            except Exception:                              # noqa: BLE001
+                return {"thread_id": _tid}
+
+        _fb_tools, _fb_prompt = _fb.tools_for(_conv_dir, _fb_context)
+    except Exception:
+        return
+    for tools_key, prompt_key in (
+            ("extra_tools", "extra_system_prompt"),
+            ("subagent_extra_tools", "subagent_extra_system_prompt")):
+        kw[tools_key] = list(kw.get(tools_key) or []) + _fb_tools
+        kw[prompt_key] = "\n\n".join(
+            p for p in (kw.get(prompt_key), _fb_prompt) if p)
+
+
+def _add_file_tools(kw: dict, temp_dir: str) -> None:
+    """Splice the SharePoint file tools and the email tool, with their
+    instructions, into ``build_deep_agent`` kwargs: the full agent's and
+    every specialist's (BACKLOG GM-40; until then a specialist had neither).
+
+    SharePoint (browse/search/download/upload) is injected ONLY when the
+    deployment is configured for SharePoint, and ``email_file`` ONLY when
+    the Funhouse email SDK is importable, so everyone else carries zero
+    extra tool surface. Best-effort: a tools-layer problem must never block
+    building the agent.
+    """
+    try:
+        from aec_document_review import sharepoint_tools
+        # thread id = the conversation dir name (temp_dir is <conv>/files), so
+        # an upload with no destination lands in this conversation's folder;
+        # the conversation dir itself keeps the downloads ledger.
+        _conv_dir = os.path.dirname(os.path.abspath(temp_dir))
+        _sp_tools, _sp_prompt = sharepoint_tools.tools_if_configured(
+            thread_id=os.path.basename(_conv_dir), record_dir=_conv_dir)
+    except Exception:
+        _sp_tools, _sp_prompt = [], ""
+    try:
+        from aec_document_review import email_tools
+        _em_tools, _em_prompt = email_tools.tools_if_available()
+    except Exception:
+        _em_tools, _em_prompt = [], ""
+    for tools, prompt in ((_sp_tools, _sp_prompt), (_em_tools, _em_prompt)):
+        if tools:
+            kw["extra_tools"] = list(kw.get("extra_tools") or []) + tools
+            kw["extra_system_prompt"] = "\n\n".join(
+                p for p in (kw.get("extra_system_prompt"), prompt) if p)
+
+
+def _page_for(build_kwargs: dict, profile=None):
+    """The page a build is for: ``profile``, else (a caller from before the
+    hooks) the Document Review page for a ``review_page`` build, else the
+    page this run serves."""
+    if profile is not None:
+        return profile
+    from aec_document_review import profiles
+    if build_kwargs.get("review_page"):
+        return profiles.DOCUMENT_REVIEW
+    return profiles.current()
+
+
+def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
+                checkpointer=None, profile=None, **build_kwargs):
+    """Build the compiled agent wired to the SHARED attachments dict and a
+    session-dir save_fn. ``build_kwargs`` pass through to the page's agent
+    builder (e.g. ``enable_memory``).
+
+    ``profile`` is the page (:mod:`aec_document_review.page_profile`; default as
+    :func:`_page_for`): the shell adds what every page's agent gets (the
+    file and email tools, the feedback tool), runs the
+    page's ``on_build`` hook, and hands the rest to its ``agent_builder``
+    (the geotech page adds its report library there, the review page its
+    working folder; INF-31 step 7).
+
+    ``checkpointer`` (optional) is a LangGraph checkpointer forwarded to
+    the builder for durable/resumable thread state. The shipped webapp
+    resumes conversations by REPLAYING the persisted agent-facing message history
+    (see the Persistence section) rather than depending on a durable checkpointer,
+    so this defaults to ``None`` (byte-identical to the pre-persistence build);
+    it is exposed so a durable saver (e.g. a LangGraph SQLite saver, an optional
+    dependency) can be dropped in without touching the builder wiring.
+    """
+    page = _page_for(build_kwargs, profile)
+    kw = dict(build_kwargs)
+    if checkpointer is not None:
+        kw["checkpointer"] = checkpointer
+    _add_file_tools(kw, temp_dir)
+    _add_feedback_tool(kw, temp_dir)
+    on_build = page.hook("on_build")
+    if on_build is not None:
+        on_build()
+    agent = page.hook("agent_builder")(
+        model,
+        attachments=attachments,
+        save_fn=make_save_fn(temp_dir, artifacts),
+        temp_dir=temp_dir,
+        **kw,
+    )
+    # The page's check of the answer at each turn's end (stream_turn).
+    try:
+        agent.geotech_turn_checks = page.turn_checks
+    except Exception:                                  # noqa: BLE001
+        pass
+    return agent
+
+
+#: Names that moved to the geotech page's own file (INF-31 step 7), still
+#: answered here for the callers that import them from this module.
+# ---------------------------------------------------------------------------
+# Streaming one turn
+# ---------------------------------------------------------------------------
+
+def new_thread_id() -> str:
+    """A fresh LangGraph thread id."""
+    return uuid4().hex
+
+
+def token_line(turn_tokens: int, total_tokens: int) -> str:
+    """Format the per-turn / running token line (reuses the notebook helper)."""
+    try:
+        from aec_document_review.stream_format import _format_token_line
+        return _format_token_line(turn_tokens, total_tokens)
+    except Exception:
+        return (f"tokens this turn: {turn_tokens:,} | "
+                f"conversation total: {total_tokens:,}")
+
+
+# --- Mid-turn-stop fix (owner bug, 2026-07-14 retaining-wall session) --------
+# A model sometimes ENDS its reply on a stated-but-unperformed next step
+# ("Let me get that Ka …") with no tool call behind it — the graph sees no tool
+# call and the turn ends silently mid-analysis. stream_turn detects that shape
+# and re-invokes with a terse nudge, at most MAX_AUTO_CONTINUES times.
+
+CONTINUE_NUDGE = "Continue — complete the action you just stated."
+MAX_AUTO_CONTINUES = 2
+
+#: A reply this long is an answer, not a stop on a stated step -- unless its
+#: last line opens something it never delivers (it ends on ":" or "…").
+MID_TASK_MAX_CHARS = 600
+
+# The last sentence must OPEN with the speaker's own next step ("Let me …",
+# "Now I'll …", "Next, I will …"), after an optional list marker or
+# discourse word. "I'll" further in ("… tell me and I'll re-map them") is an
+# offer, not a step being taken.
+_LEAD_INTENT_RE = re.compile(
+    r"^(?:(?:ok(?:ay)?|now|next|first|then|so|right|alright|good|great)"
+    r"[,:]?\s+)*"
+    r"(?:let me|let's|let us|i'?ll|i will|i'?m going to|i am going to|"
+    r"i need to|i'?m now going to)\b", re.IGNORECASE)
+# Anything in the last sentence that makes the step wait on the user, or
+# puts it to the user, makes the reply a finished answer: a condition
+# ("if", "once", "when" … "then"), a request ("tell me", "give me",
+# "send"), an offer ("I can", "happy to", "would you"), or the user named at
+# all ("you", "your").
+_ADDRESSED_RE = re.compile(
+    r"\b(if|once|when|whenever|after|as soon as|then|unless|until|"
+    r"you|your|yours|you'?(?:d|ll|re|ve)|let me know|tell me|give me|"
+    r"send me|show me|say|ask|happy|glad|feel free|want|prefer|wish|"
+    r"can|could|would|should|may|might|wait|await|ready|available|"
+    r"needed|necessary|required)\b", re.IGNORECASE)
+_LIST_MARK_RE = re.compile(r"^(?:[-*•]+|\d+[.)]|\(\w\))\s*")
+
+
+def _last_sentence(text: str) -> str:
+    """The final sentence of ``text``'s last non-empty line, list marker
+    and emphasis stripped."""
+    lines = [ln.strip() for ln in str(text or "").splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    line = _LIST_MARK_RE.sub("", lines[-1]).strip().strip("*_").strip()
+    parts = [p for p in re.split(r"(?<=[.!?])\s+", line) if p.strip()]
+    if not parts:
+        return ""
+    tail = parts[-1].strip()
+    # "2. Give me the name" splits as "2." + "Give me ..."; a bare number is
+    # never the sentence.
+    return _LIST_MARK_RE.sub("", tail).strip().strip("*_").strip()
+
+
+def ends_mid_task(text: str, saw_tool_call: bool) -> bool:
+    """True when an assistant reply STOPPED on a step it announced and did
+    not take ("Let me get that Ka …" with no tool call behind it).
+
+    An offer to the user ("If your roles are different, tell me and I'll
+    re-map them"), a request ("Give me the file name and I'll look for it"),
+    a step that waits on the user ("Once I have the log, I'll check each
+    submittal") and a question are FINISHED answers. Live smoke wave 2b
+    (C1): the old rule fired on any "I'll" in the last sentence, nudged on
+    three such endings and delivered each answer two or three times, once
+    with a false confession that a save had not happened.
+
+    So it fires only when the turn used tools, the reply does not end with a
+    question, its last sentence OPENS with the speaker's own next step and
+    has nothing in it that hands the step to the user, and the reply is
+    short (narration, :data:`MID_TASK_MAX_CHARS`) or its last line opens
+    something it never delivers (ends on ":" or "…"). A missed stop costs
+    the old behaviour (the user asks again); a false one costs a repeated,
+    contradicting answer -- so it errs towards missing.
+    """
+    t = (text or "").strip()
+    if not t or not saw_tool_call or t.endswith("?"):
+        return False
+    tail = _last_sentence(t)
+    if not tail or tail.endswith("?") or not _LEAD_INTENT_RE.match(tail):
+        return False
+    if _ADDRESSED_RE.search(tail):
+        return False
+    open_end = t.endswith((":", "…", "...")) or tail.endswith((":", "…",
+                                                               "..."))
+    return len(t) <= MID_TASK_MAX_CHARS or open_end
+
+
+def _without_stated_step(text: str) -> str:
+    """``text`` less the trailing sentence that announced the step a
+    continuation pass then took ("Ka is next. Let me get that Ka." -> "Ka is
+    next."); ``""`` when that sentence was all of it."""
+    t = str(text or "").rstrip()
+    tail = _last_sentence(t)
+    if not tail:
+        return t.strip()
+    cut = t.rfind(tail)
+    if cut < 0:
+        return t.strip()
+    body = t[:cut].rstrip()
+    # a list marker or emphasis left dangling on its own
+    body = re.sub(r"(?:\n|^)\s*(?:[-*•]+|\d+[.)])?\s*[*_]*\s*$", "", body)
+    return body.strip()
+
+
+def _norm_text(text: str) -> str:
+    return " ".join(str(text or "").split()).lower()
+
+
+def merge_continuation(previous: str, following: str) -> str:
+    """The answer after an auto-continue pass: what the earlier reply said
+    before the step it announced, then the reply that took the step.
+
+    The announcement itself ("Let me get that Ka.") is dropped -- the next
+    reply is what came of it -- and so is the earlier text when the next
+    reply already repeats it, so the user never gets one answer twice. An
+    empty next reply leaves the earlier one standing."""
+    nxt = str(following or "").strip()
+    if not nxt:
+        return str(previous or "").strip()
+    body = _without_stated_step(previous)
+    if not body or _norm_text(body) in _norm_text(nxt):
+        return nxt
+    return f"{body}\n\n{nxt}"
+
+
+def _run_messages(chunk) -> Optional[list]:
+    """The whole message list of a ``values``-mode stream item (the graph's
+    state after a step), or ``None``."""
+    if isinstance(chunk, dict) and isinstance(chunk.get("messages"),
+                                              (list, tuple)):
+        return list(chunk["messages"])
+    return None
+
+
+def _new_run_messages(chunk) -> list:
+    """The messages an ``updates``-mode item ADDS to the run (model and tool
+    results), for a host whose stream has no ``values`` mode. A node that
+    rewrites the whole history adds nothing here."""
+    from aec_document_review.stream_format import _update_messages
+    out: list = []
+    if not isinstance(chunk, dict):
+        return out
+    for update in chunk.values():
+        for msg in _update_messages(update):
+            kind = (msg.get("role") if isinstance(msg, dict)
+                    else getattr(msg, "type", None))
+            if kind in ("ai", "assistant", "tool", "AIMessageChunk"):
+                out.append(msg)
+    return out
+
+
+#: Seconds of stream silence before a heartbeat item is emitted. Behind the
+#: Databricks driver proxy, a websocket with no traffic for ~1-2 min gets
+#: killed ("Connecting" flaps, orphaned turns — observed live through 5.10.2):
+#: a long reasoning-model call or a slow tool (big PDF read, SharePoint
+#: download) produces exactly that silence. The app turns each heartbeat into
+#: a status-label update, which IS websocket traffic, keeping the connection
+#: alive. Override via GEOTECH_HEARTBEAT_S (<=0 disables).
+HEARTBEAT_INTERVAL_S = 15.0
+
+
+def heartbeat_interval() -> float:
+    raw = os.environ.get("GEOTECH_HEARTBEAT_S", "").strip()
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return HEARTBEAT_INTERVAL_S
+
+
+def with_heartbeat(gen, interval_s: Optional[float] = None):
+    """Yield ``gen``'s items as they arrive, inserting
+    ``{"kind": "heartbeat", "elapsed_s": float}`` items whenever the stream is
+    silent for ``interval_s`` seconds.
+
+    The wrapped generator runs in a daemon worker thread feeding a queue; the
+    consumer polls with a timeout. Exceptions from ``gen`` re-raise here (same
+    surface as consuming ``gen`` directly). ``interval_s <= 0`` disables the
+    wrapper entirely (items pass straight through on the caller's thread).
+    """
+    import queue as _queue
+    import threading as _threading
+    import time as _time
+
+    interval = heartbeat_interval() if interval_s is None else float(interval_s)
+    if interval <= 0:
+        yield from gen
+        return
+
+    q: "_queue.Queue" = _queue.Queue()
+
+    def _pump():
+        try:
+            for item in gen:
+                q.put(("item", item))
+            q.put(("done", None))
+        except BaseException as exc:                    # re-raised on consumer
+            q.put(("exc", exc))
+
+    # Run the pump in a COPY of this context: the turn worker binds the
+    # conversation's working folder in a contextvar, and a bare Thread starts
+    # with an empty context -- the tools then fell back to the process-wide
+    # env var, so two testers at once wrote into each other's folders (live
+    # smoke wave 2c, F47).
+    import contextvars as _contextvars
+    _threading.Thread(target=_contextvars.copy_context().run, args=(_pump,),
+                      daemon=True, name="geotech-turn-pump").start()
+    # A long tool's own line for the label ("drawing with code: 2m 10s so
+    # far"), kept per conversation folder (aec_agent_core.progress_notes).
+    try:
+        from aec_agent_core import progress_notes as _notes
+        note_key = _notes.current_key()
+    except Exception:                                  # noqa: BLE001
+        _notes, note_key = None, ""
+    t0 = _time.monotonic()
+    while True:
+        try:
+            kind, payload = q.get(timeout=interval)
+        except _queue.Empty:
+            beat = {"kind": "heartbeat",
+                    "elapsed_s": round(_time.monotonic() - t0, 1)}
+            note = _notes.note_for(note_key) if _notes is not None else None
+            if note:
+                beat["note"] = note
+            yield beat
+            continue
+        if kind == "item":
+            yield payload
+        elif kind == "done":
+            return
+        else:
+            raise payload
+
+
+def _turn_page_check(callbacks):
+    """The check of the pages this turn's answer cites against the pages
+    any tool or helper opened in the conversation (:mod:`funhouse_agent.
+    cited_pages`, BACKLOG EV-18), or ``None`` where it cannot be had. Its
+    record is the folder of the turn's activity log (the ``ActivityLogger``
+    among ``callbacks``), and its result is kept in that log."""
+    try:
+        from aec_agent_core.cited_pages import TurnPageCheck
+        logger = next((cb for cb in callbacks or ()
+                       if hasattr(cb, "conv_dir")
+                       and hasattr(cb, "on_custom_event")), None)
+        log = None
+        if logger is not None:
+            def log(data, _logger=logger):
+                _logger.on_custom_event("cited_pages", data, run_id=None)
+        return TurnPageCheck(record_folder=getattr(logger, "conv_dir", None),
+                             log=log)
+    except Exception:  # noqa: BLE001 - the turn runs without it
+        return None
+
+
+def _page_record_bound(page_check):
+    """Binds the conversation's record folder for the turn's tools (the
+    cited-page check in ``write_diggs`` reads it), or a no-op."""
+    import contextlib
+    folder = getattr(page_check, "record_folder", None)
+    if not folder:
+        return contextlib.nullcontext()
+    try:
+        from aec_agent_core.cited_pages import record_bound
+        return record_bound(folder)
+    except Exception:  # noqa: BLE001
+        return contextlib.nullcontext()
+
+
+def _turn_citation_check(callbacks, messages):
+    """The check of the published documents this turn's answer cites
+    against what the conversation looked up (:mod:`funhouse_agent.
+    cited_documents`, BACKLOG EV-21), or ``None`` where it cannot be had.
+    Its record is the folder of the turn's activity log, the user's own
+    words are the user messages in ``messages``, and its result is kept in
+    that log."""
+    try:
+        from aec_agent_core.cited_documents import (RECORD_EVENT,
+                                                    TurnCitationCheck,
+                                                    user_texts)
+        logger = next((cb for cb in callbacks or ()
+                       if hasattr(cb, "conv_dir")
+                       and hasattr(cb, "on_custom_event")), None)
+        log = None
+        if logger is not None:
+            def log(data, _logger=logger):
+                _logger.on_custom_event(RECORD_EVENT, data, run_id=None)
+        return TurnCitationCheck(
+            record_folder=getattr(logger, "conv_dir", None),
+            user_words=user_texts(messages), log=log)
+    except Exception:  # noqa: BLE001 - the turn runs without it
+        return None
+
+
+def _page_turn_check(agent, callbacks):
+    """The page's check of the answer at each turn's end (its
+    ``turn_checks`` hook: the judgment-call check, :mod:`funhouse_agent.
+    judgment_check`, BACKLOG GM-174), from the page the agent was built for,
+    else the page this run serves. ``None`` where it cannot be had."""
+    try:
+        hook = getattr(agent, "geotech_turn_checks", None)
+        if hook is None:
+            from aec_document_review import profiles
+            hook = profiles.current().turn_checks
+        from aec_document_review.page_profile import resolve
+        fn = resolve(hook)
+        return fn(agent, callbacks) if fn is not None else None
+    except Exception:  # noqa: BLE001 - the turn runs without it
+        return None
+
+
+def _citation_words_bound(citation_check):
+    """Binds the user's own words for the turn's tools (a writer's
+    citation check reads them), or a no-op."""
+    import contextlib
+    try:
+        return citation_check.bound()
+    except Exception:  # noqa: BLE001
+        return contextlib.nullcontext()
+
+
+def _checked_answer(page_check, answer: str, citation_check=None,
+                    judgment_check=None) -> str:
+    """``answer`` after the turn's page and citation checks (recorded;
+    noted per ``GEOTECH_CITED_PAGES`` / ``GEOTECH_CITED_DOCUMENTS``) and the
+    judgment-call check (recorded only). Each check reads the answer as the
+    model wrote it, never the other's note."""
+    head = str(answer or "").rstrip()
+    notes = []
+    for check in (page_check, citation_check, judgment_check):
+        if check is None:
+            continue
+        try:
+            noted = check.finish(answer)
+        except Exception:  # noqa: BLE001 - never the answer
+            continue
+        if isinstance(noted, str) and noted != answer \
+                and noted.startswith(head):
+            notes.append(noted[len(head):])
+    return head + "".join(notes) if notes else answer
+
+
+def _history_after(run_state, added, work_messages, pass_text) -> list:
+    """The run's messages after a pass, for the next pass to go on from:
+    the graph's own state, else what the updates added, else the reply."""
+    if run_state is not None:
+        return list(run_state)
+    if added:
+        return list(work_messages) + added
+    return list(work_messages) + [{"role": "assistant", "content": pass_text}]
+
+
+def _note_step_cap(callbacks, config: dict) -> None:
+    """Tell the turn's activity log (any callback with ``note_step_cap``)
+    the step cap the run was given and the ordinary cap it travels with
+    when the extraction cap raised it, for ``turn_end`` (BACKLOG EV-06).
+    (Only the coverage gate, removed in DR-40, raised it: no allowance is
+    passed now.)"""
+    for cb in callbacks or ():
+        note = getattr(cb, "note_step_cap", None)
+        if callable(note):
+            try:
+                note(config.get("recursion_limit"))
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _turn_scope():
+    """The scope one turn's agents share (:mod:`funhouse_agent.deep.
+    keep_work`), or a no-op where it cannot be imported."""
+    try:
+        from aec_agent_core.deep.keep_work import turn_scope
+        return turn_scope()
+    except Exception:  # noqa: BLE001 - the turn runs without it
+        import contextlib
+        return contextlib.nullcontext(None)
+
+
+def stream_turn(agent, messages: list, thread_id: str,
+                max_result_chars: int = 2000,
+                recursion_limit: Optional[int] = None,
+                callbacks: Optional[list] = None,
+                turn_note: Optional[str] = None,
+                record=None):
+    """Stream ONE turn from the compiled deep agent.
+
+    ``callbacks`` (optional) are LangChain callback handlers attached to the
+    run config alongside the usage-metadata callback; they propagate into
+    sub-agent invocations (the ``activity_log.ActivityLogger`` rides here).
+
+    ``turn_note`` (optional) is put in front of the turn's user message for
+    THIS run only (:func:`with_turn_note`) -- the app's per-turn note of the
+    files the conversation already holds (:func:`working_files_note`).
+
+    ``record`` (optional, a :class:`aec_document_review.turn_record.TurnRecord`) is
+    handed every model reply and tool result the run adds, as they arrive,
+    so a turn that errors keeps its work (BACKLOG TA-19). The whole run is
+    one turn scope (:func:`aec_agent_core.deep.keep_work.turn_scope`): its
+    agents share the turn's bound on waiting for a busy model, and its
+    very large results are kept whole there; ``record.scope`` is set to it.
+
+    ``messages`` is the full agent-facing history INCLUDING the new user turn
+    (the caller appends it and, on completion, appends the assistant answer from
+    the ``turn_done`` item). Yields entry dicts:
+
+    * ``{"kind": "token", "text": str}`` — a streamed answer token.
+    * ``{"kind": "tool_call"|"todos"|"tool_result", "text": str}`` — activity.
+    * ``{"kind": "turn_done", "answer": str, "turn_tokens": int}`` — final,
+      carrying the answer and the token spend for this turn (aggregated
+      across every model call in the run, sub-agents included).
+
+    The ANSWER is the run's final AI message -- the last one that requested
+    no tool, read off the ``updates`` stream -- not every token the model
+    streamed: narration between tool calls ("I'll open the page map.") is
+    shown live but is not the reply, and a context-summarization call's
+    handoff never becomes text at all (live smoke wave 1, A3). The live view
+    puts a paragraph break between model calls. Only when the stream carried
+    no such message (an agent that streams tokens alone) is the streamed text
+    the answer. An auto-continue pass (:func:`ends_mid_task`) goes on from
+    the run's own messages, and its reply takes the place of the step the
+    pass before it announced (:func:`merge_continuation`): one answer, never
+    two copies of it.
+
+    The pages the answer cites are checked against the pages any tool or
+    helper opened in the conversation (:func:`_turn_page_check`; BACKLOG
+    EV-18) and the result kept in the activity log. With
+    ``GEOTECH_CITED_PAGES=retry`` an answer citing pages no tool opened is
+    held back once and the model told, and the reply after that note is the
+    answer; with ``note`` (and after a retry that
+    still cites such pages) a note is appended to the answer. The published
+    documents it cites (a GEC, AASHTO LRFD, an author and year) are checked
+    the same way against what the conversation looked up and what the user
+    said (:func:`_turn_citation_check`; BACKLOG EV-21), behind
+    ``GEOTECH_CITED_DOCUMENTS``; when both checks tell the model, they do it
+    in one note. With ``GEOTECH_JUDGMENT_CALLS`` on, an answer whose
+    "Judgment calls" list has calls that name no source, in a turn with no
+    ``references`` task, is sent back once the same way, asking for one
+    consult (:func:`_page_turn_check`; BACKLOG GM-174).
+
+    Reuses the PURE ``_format_update`` parser and ``_sum_callback_tokens`` from
+    ``aec_document_review.stream_format`` so the stream contract is shared with the
+    notebook UI. The whole stream runs under a usage-metadata callback; if that
+    is unavailable the turn still streams (token spend simply reports 0).
+    """
+    from aec_document_review.stream_format import (_final_answer_in_update,
+                                              _format_update,
+                                              _sum_callback_tokens)
+
+    answer_parts: List[str] = []
+    saw_tool = False
+    work_messages = with_turn_note(messages, turn_note)
+    continuations = 0
+    config = {"configurable": {"thread_id": thread_id}}
+    # An agent that ends long requests itself (the lean review agent's
+    # model-call budget) says how many graph steps that needs; the host's cap
+    # is raised to it so the budget, not a GraphRecursionError, ends the turn.
+    floor = getattr(agent, "geotech_min_recursion_limit", None)
+    if floor:
+        recursion_limit = max(int(recursion_limit or 0), int(floor))
+    if recursion_limit:                     # A5(b): primary-agent step cap
+        config["recursion_limit"] = int(recursion_limit)
+    _note_step_cap(callbacks, config)
+    try:
+        from langchain_core.callbacks import get_usage_metadata_callback
+        cb_ctx = get_usage_metadata_callback()
+    except Exception:
+        cb_ctx = None
+    page_check = _turn_page_check(callbacks)
+    citation_check = _turn_citation_check(callbacks, messages)
+    judgment_check = _page_turn_check(agent, callbacks)
+
+    def _run_passes(run_config):
+        # One or more graph invocations: the extra passes are the bounded
+        # auto-continue for replies that end on a stated-but-unperformed step,
+        # and the page check's one pass (GEOTECH_CITED_PAGES=retry).
+        nonlocal work_messages, continuations, saw_tool
+        page_redo = False
+        while True:
+            pass_parts: List[str] = []
+            # The reply: the last AI message of this pass that asked for no
+            # tool (None until one arrives). ``boundary``: a model call has
+            # finished since the last streamed token, so the next token opens
+            # a new paragraph in the live view.
+            final_text: Optional[str] = None
+            boundary = False
+            # The run's own messages -- its tool calls and their results as
+            # well as its replies -- so a continuation pass goes on from what
+            # the run DID, not from a text-only history (wave 2b, C1: the
+            # second pass lost its own save and "confessed" it had never
+            # happened). ``values`` gives the graph's whole state; a host
+            # without that mode falls back to what the updates added.
+            run_state: Optional[list] = None
+            added: list = []
+            for mode, chunk in agent.stream(
+                    {"messages": work_messages}, config=run_config,
+                    stream_mode=["updates", "messages", "values"]):
+                if mode == "values":
+                    state = _run_messages(chunk)
+                    if state is not None:
+                        run_state = state
+                    continue
+                if mode == "updates":
+                    new = _new_run_messages(chunk)
+                    added.extend(new)
+                    if judgment_check is not None and new:
+                        # the turn's references tasks (GM-174)
+                        judgment_check.saw(new)
+                    if record is not None and new:
+                        try:
+                            record.add(new)
+                        except Exception:  # noqa: BLE001 - never the turn
+                            pass
+                if mode == "updates":
+                    saw_ai, final = _final_answer_in_update(chunk)
+                    if saw_ai:
+                        boundary = True
+                    if final is not None:
+                        final_text = final
+                for entry in _format_update(mode, chunk,
+                                            max_result_chars=max_result_chars):
+                    if entry["kind"] == "token":
+                        if boundary and pass_parts and \
+                                not pass_parts[-1].endswith("\n\n"):
+                            # Narration of one model call must not run into
+                            # the next call's text mid-sentence.
+                            pass_parts.append("\n\n")
+                            yield {"kind": "token", "text": "\n\n"}
+                        boundary = False
+                        pass_parts.append(entry["text"])
+                    elif entry["kind"] == "tool_call":
+                        saw_tool = True
+                    yield entry
+            streamed = "".join(pass_parts)
+            pass_text = (final_text if final_text and final_text.strip()
+                         else streamed)
+            # ONE answer, however many passes: a continuation's reply takes
+            # the place of the step its predecessor announced, never a
+            # second copy of the answer (merge_continuation).
+            if page_redo:
+                # The reply after the page check's note replaces the one held
+                # back, whole (or that one stands, if it gave nothing).
+                page_redo = False
+                if pass_text.strip():
+                    answer_parts[:] = [pass_text]
+            else:
+                answer_parts[:] = [merge_continuation("".join(answer_parts),
+                                                      pass_text)
+                                   if continuations else pass_text]
+            if (continuations < MAX_AUTO_CONTINUES
+                    and ends_mid_task(pass_text, saw_tool)):
+                continuations += 1
+                history = _history_after(run_state, added, work_messages,
+                                         pass_text)
+                work_messages = history + [
+                    {"role": "user", "content": CONTINUE_NUDGE}]
+                yield {"kind": "tool_call",
+                       "text": (f"auto-continue {continuations}/"
+                                f"{MAX_AUTO_CONTINUES}: finishing the stated "
+                                "next step")}
+                continue
+            # Pages the answer cites that no tool opened, documents it cites
+            # that nothing looked up, and judgment calls that name no source
+            # with no consult: each told once, before it goes out, in one
+            # note (GEOTECH_CITED_PAGES / GEOTECH_CITED_DOCUMENTS=retry;
+            # GEOTECH_JUDGMENT_CALLS; EV-18, EV-21, GM-174).
+            told = []
+            for check in (page_check, citation_check, judgment_check):
+                if check is None:
+                    continue
+                try:
+                    said = check.feedback("".join(answer_parts))
+                except Exception:  # noqa: BLE001 - never the turn
+                    said = None
+                if said:
+                    told.append((check, said))
+            if told:
+                page_redo = True
+                history = _history_after(run_state, added, work_messages,
+                                         pass_text)
+                work_messages = history + [{
+                    "role": "user",
+                    "content": "\n\n".join(said for _c, said in told)}]
+                from aec_agent_core.cited_pages import RETRY_STATUS
+                for check, _said in told:
+                    yield {"kind": "tool_call",
+                           "text": getattr(check, "retry_status", None)
+                           or RETRY_STATUS}
+                if pass_text.strip():
+                    yield {"kind": "token", "text": "\n\n"}
+                continue
+            return
+
+    extra_cbs = list(callbacks or [])
+
+    def _passes_noting_reply(run_config):
+        # A turn that fails keeps the reply it had completed (an earlier
+        # pass's) on the error, for the host to show labelled as cut short
+        # instead of the raw stream (turn_jobs, failed_turn_text).
+        try:
+            with _turn_scope() as scope, _page_record_bound(page_check), \
+                    _citation_words_bound(citation_check):
+                if record is not None:
+                    try:
+                        record.scope = scope
+                    except Exception:  # noqa: BLE001
+                        pass
+                yield from _run_passes(run_config)
+        except BaseException as exc:
+            try:
+                done = "".join(answer_parts).strip()
+                if done and not getattr(exc, "geotech_reply", None):
+                    exc.geotech_reply = done
+            except Exception:  # noqa: BLE001 - never mask the error
+                pass
+            raise
+
+    if cb_ctx is None:
+        run_config = dict(config)
+        if extra_cbs:
+            run_config["callbacks"] = extra_cbs
+        for entry in _passes_noting_reply(run_config):
+            yield entry
+        yield {"kind": "turn_done",
+               "answer": _checked_answer(page_check, "".join(answer_parts),
+                                         citation_check, judgment_check),
+               "turn_tokens": 0}
+        return
+
+    with cb_ctx as cb:
+        run_config = dict(config)
+        run_config["callbacks"] = [cb] + extra_cbs
+        try:
+            for entry in _passes_noting_reply(run_config):
+                yield entry
+        except BaseException as exc:
+            # A turn that errors still used tokens: the record keeps them
+            # (live wave w8: turn_end said 0 after about 1.04 M; EV-20).
+            try:
+                exc.geotech_turn_tokens = _sum_callback_tokens(
+                    dict(cb.usage_metadata))
+            except Exception:  # noqa: BLE001 - never mask the error
+                pass
+            raise
+        turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
+    yield {"kind": "turn_done",
+           "answer": _checked_answer(page_check, "".join(answer_parts),
+                                     citation_check, judgment_check),
+           "turn_tokens": turn_tokens}
+
+
+# ---------------------------------------------------------------------------
+# Model choices (the in-app picker)
+# ---------------------------------------------------------------------------
+#
+# Curated Claude models offered in the sidebar picker, as DATA (id/label/blurb)
+# so it is testable and trivial to extend. The first entry is the default unless
+# ``GEOTECH_WEBAPP_MODEL`` is set (then that id is prepended and becomes the
+# default). Keep the first id aligned with ``engine_config.DEFAULT_MODEL``.
+
+MODEL_CHOICES = [
+    {"id": "claude-opus-4-8", "label": "Opus 4.8",
+     "blurb": "deepest reasoning, default"},
+    {"id": "claude-sonnet-5", "label": "Sonnet 5",
+     "blurb": "fast + capable"},
+    {"id": "claude-haiku-4-5-20251001", "label": "Haiku 4.5",
+     "blurb": "quick questions"},
+]
+
+
+#: Env listing Foundry model RIDs for the picker, comma-separated; each entry
+#: is either a bare RID or "Label=RID" (e.g. "GPT 5.2=ri.language-model-
+#: service..language-model.gpt-5-2"). Set in the Foundry workspace so new RIDs
+#: (e.g. Claude once enabled) plug in with no code change. An id may carry its
+#: model family, "Opus 5.5=anthropic:ri.…", for a Claude RID that does not say
+#: so (``engine_config.split_model_family``).
+FOUNDRY_MODELS_ENV = "GEOTECH_FOUNDRY_MODELS"
+
+
+def _parse_model_env(text: str, blurb: str) -> List[dict]:
+    """Parse a ``Label=id,...`` model-list env value into picker entries."""
+    out: List[dict] = []
+    for item in (text or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" in item:
+            label, mid = item.split("=", 1)
+            label, mid = label.strip(), mid.strip()
+        else:
+            label, mid = item, item
+        if mid and not any(c["id"] == mid for c in out):
+            out.append({"id": mid, "label": label or mid, "blurb": blurb})
+    return out
+
+
+def foundry_model_choices(raw: Optional[str] = None) -> List[dict]:
+    """Parse ``GEOTECH_FOUNDRY_MODELS`` (or ``raw``) into picker entries."""
+    text = raw if raw is not None else os.environ.get(FOUNDRY_MODELS_ENV, "")
+    return _parse_model_env(text, "Foundry model")
+
+
+#: Env listing Prompter model ids for the picker on a deployment-provided
+#: (registered-builder) engine, comma-separated ``Label=id`` or bare ids —
+#: e.g. "GPT deep=funhouse-gpt-high,GPT 5.1 fast=funhouse-gpt-medium". Only
+#: honored when the registered builder accepts a model id (see
+#: engine_config.register_model_builder); the databricks launcher sets it.
+PROMPTER_MODELS_ENV = "GEOTECH_PROMPTER_MODELS"
+
+
+def prompter_model_choices(raw: Optional[str] = None) -> List[dict]:
+    """Parse ``GEOTECH_PROMPTER_MODELS`` (or ``raw``) into picker entries."""
+    text = raw if raw is not None else os.environ.get(PROMPTER_MODELS_ENV, "")
+    return _parse_model_env(text, "Prompter model")
+
+
+def model_choices(env_model: Optional[str] = None) -> List[dict]:
+    """The picker list ``[{id,label,blurb}, ...]``. Foundry RIDs from
+    ``GEOTECH_FOUNDRY_MODELS`` are PREPENDED (first one = default on a Foundry
+    deployment); then, if ``GEOTECH_WEBAPP_MODEL`` (or the ``env_model``
+    override) names a model not already listed, it is prepended above those.
+    Returns fresh dicts (safe to mutate)."""
+    envm = (env_model if env_model is not None
+            else os.environ.get("GEOTECH_WEBAPP_MODEL"))
+    from aec_agent_core import engine_config
+    # Deployment-provided engine (registered builder) with a configured
+    # Prompter model list: those are the ONLY sensible choices — the curated
+    # Anthropic list cannot be served by the Prompter.
+    if engine_config.has_model_builder():
+        pm = prompter_model_choices()
+        if pm:
+            return pm
+    # Foundry deployment: RIDs are the ONLY model surface — the curated
+    # Anthropic list is not offered (and the key path is disabled in
+    # engine_config), so an unconfigured deployment shows just the RID input.
+    # A Tiny Apps deployment likewise never offers the curated list: its one
+    # model arrives through the Prompter builder above, or not at all.
+    if engine_config.is_keyless_deployment():
+        choices = foundry_model_choices()
+    else:
+        choices = foundry_model_choices() + [dict(c) for c in MODEL_CHOICES]
+    if envm and not any(c["id"] == envm for c in choices):
+        choices.insert(0, {"id": envm, "label": envm,
+                           "blurb": "from GEOTECH_WEBAPP_MODEL"})
+    return choices
+
+
+def default_model_id(env_model: Optional[str] = None) -> str:
+    """The default selected model id: ``GEOTECH_WEBAPP_MODEL`` if set (whether
+    or not it is already curated), else, from ``GEOTECH_FOUNDRY_MODELS``,
+    this host's main default (on Foundry the entry labelled "Opus 5.5",
+    BACKLOG INF-41) or the list's first entry (a Foundry deployment defaults
+    to its own models), else the first curated choice."""
+    return default_model(env_model)[0]
+
+
+def default_model(env_model: Optional[str] = None) -> "tuple[str, str]":
+    """``(default model id, where it came from)``: see
+    :func:`default_model_id`. The source is said as Connection diagnostics
+    say it (``GEOTECH_WEBAPP_MODEL``, "this host's default", "first in
+    GEOTECH_FOUNDRY_MODELS", ...)."""
+    envm = (env_model if env_model is not None
+            else os.environ.get("GEOTECH_WEBAPP_MODEL"))
+    if envm:
+        return envm, "GEOTECH_WEBAPP_MODEL"
+    from aec_agent_core import engine_config
+    if engine_config.has_model_builder():
+        pm = prompter_model_choices()
+        if pm:
+            return pm[0]["id"], f"first in {PROMPTER_MODELS_ENV}"
+    fm = foundry_model_choices()
+    if fm:
+        from aec_document_review import helper_models
+        main = helper_models.host_main_choice(fm)
+        if main is not None:
+            return main["id"], helper_models.SOURCE_HOST
+        return fm[0]["id"], f"first in {FOUNDRY_MODELS_ENV}"
+    # Foundry deployment with nothing configured: no default model exists —
+    # the app boots engineless and offers the RID input only. Same on Tiny
+    # Apps: no Prompter settings, no model.
+    if engine_config.is_keyless_deployment():
+        return "", ""
+    return MODEL_CHOICES[0]["id"], "the app's default"
+
+
+def model_label(model_id: Optional[str]) -> str:
+    """Short display label for a model id (falls back to the id; ``""`` for
+    ``None``/empty)."""
+    if not model_id:
+        return ""
+    for c in MODEL_CHOICES + foundry_model_choices() + prompter_model_choices():
+        if c["id"] == model_id:
+            return c["label"]
+    return model_id
+
+
+# ---------------------------------------------------------------------------
+# Persistence — durable, resumable conversations
+# ---------------------------------------------------------------------------
+#
+# A conversation is a directory ``<data_root>/conversations/<thread_id>/`` with:
+#   meta.json          {thread_id, title, created, updated, turn_count}
+#   transcript.jsonl   one display entry per line (append-on-turn)
+#   messages.json      the agent-facing message history (replayed on resume so
+#                      the model "remembers" the conversation without depending
+#                      on a durable LangGraph checkpointer)
+#   attachments.json   the staged upload keys (re-registered into the live
+#                      attachments dict on resume)
+#   files/             the working dir: staged uploads AND agent artifacts (this
+#                      is the ``temp_dir`` the rest of core.py already uses, made
+#                      persistent so artifacts survive restarts)
+# Deleting a conversation MOVES its directory into ``<data_root>/.trash/`` rather
+# than hard-deleting. The data root is ``$GEOTECH_WEBAPP_DATA`` or, by default,
+# ``~/.geotech_webapp`` (TinyApp deployments override it to a writable volume).
+
+import json as _json
+import shutil as _shutil
+import time as _time
+
+
+def data_root() -> str:
+    """Root directory for persisted conversations. ``$GEOTECH_WEBAPP_DATA`` if
+    set (``~`` expanded), else ``~/.geotech_webapp``."""
+    env = os.environ.get("GEOTECH_WEBAPP_DATA")
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    return os.path.join(os.path.expanduser("~"), ".geotech_webapp")
+
+
+def conversations_root(root: Optional[str] = None) -> str:
+    return os.path.join(root or data_root(), "conversations")
+
+
+# A conversation's ROOT can differ from the process default. On Tiny Apps one
+# process serves many people and two pages, so each person's conversations
+# for each page live under their own root (``aec_document_review.profiles.session_root``).
+# Everything downstream — the detached turn worker included — addresses a
+# conversation by ``thread_id`` alone, so the root is REGISTERED against the
+# thread when the conversation is opened and looked up here. A thread nobody
+# registered uses the default root, byte-identical to the single-user app.
+_THREAD_ROOTS: Dict[str, str] = {}
+_THREAD_ROOTS_LOCK = threading.Lock()
+
+
+def register_thread_root(thread_id: str, root: Optional[str]) -> None:
+    """Remember that ``thread_id`` lives under ``root`` (``None`` forgets)."""
+    with _THREAD_ROOTS_LOCK:
+        if root:
+            _THREAD_ROOTS[thread_id] = os.path.abspath(root)
+        else:
+            _THREAD_ROOTS.pop(thread_id, None)
+
+
+def thread_root(thread_id: str) -> Optional[str]:
+    """The registered root for ``thread_id``, or ``None`` (the default)."""
+    with _THREAD_ROOTS_LOCK:
+        return _THREAD_ROOTS.get(thread_id)
+
+
+def conversation_dir(thread_id: str, root: Optional[str] = None) -> str:
+    return os.path.join(conversations_root(root or thread_root(thread_id)),
+                        thread_id)
+
+
+def conversation_files_dir(thread_id: str, root: Optional[str] = None) -> str:
+    """The conversation's working dir (staged uploads + artifacts) — the
+    persistent replacement for ``new_session_dir()``. Created on demand."""
+    d = os.path.join(conversation_dir(thread_id, root), "files")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def working_dir_for(thread_id: str, meta: Optional[dict] = None,
+                    root: Optional[str] = None) -> str:
+    """The conversation's WORKING FOLDER — where the agent's saves (calc
+    packages, plots, ``save_file``) default. ``meta['working_dir']`` if set
+    (``~`` expanded, absolute), else the conversation ``files/`` dir. The
+    directory is created on demand."""
+    if meta is None:
+        meta = load_meta(thread_id, root)
+    wd = (meta or {}).get("working_dir")
+    if wd and str(wd).strip():
+        path = os.path.abspath(os.path.expanduser(str(wd).strip()))
+    else:
+        path = conversation_files_dir(thread_id, root)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def set_working_dir(thread_id: str, path: Optional[str],
+                    root: Optional[str] = None) -> str:
+    """Persist the conversation's working folder in meta. A blank/None ``path``
+    resets it to the ``files/`` default. Returns the resolved absolute dir."""
+    p = str(path or "").strip()
+    resolved = os.path.abspath(os.path.expanduser(p)) if p else None
+    meta = ensure_conversation(thread_id, root=root)
+    meta["working_dir"] = resolved          # None => default (files dir)
+    meta["updated"] = _time.time()
+    save_meta(thread_id, meta, root)
+    return working_dir_for(thread_id, meta, root)
+
+
+def apply_default_output_dir(path: Optional[str]) -> None:
+    """Point the agent's default output dir at ``path`` (via the
+    ``GEOTECH_DEFAULT_OUTPUT_DIR`` env the tool layer reads in
+    ``aec_agent_core._fileio.default_output_dir``), so tool saves default INTO
+    the conversation working folder instead of the system temp dir. Falsy clears
+    it (restores the pre-app default). Precedence: an explicit tool
+    ``output_path`` > this working folder > the temp fallback."""
+    try:
+        from aec_agent_core._fileio import DEFAULT_OUTPUT_DIR_ENV as _ENV
+        from aec_agent_core._fileio import turn_binding_required
+    except Exception:
+        _ENV = "GEOTECH_DEFAULT_OUTPUT_DIR"
+        turn_binding_required = lambda: False          # noqa: E731
+    if turn_binding_required():
+        # A shared host: the env var would belong to whoever reran last.
+        # Each turn binds its own folder in its context instead.
+        os.environ.pop(_ENV, None)
+        return
+    if path:
+        os.environ[_ENV] = str(path)
+    else:
+        os.environ.pop(_ENV, None)
+
+
+def _unique_dest(path: str) -> str:
+    """A destination path that does not overwrite a DIFFERENT existing file:
+    return ``path`` if free, else append ``_1``/``_2``/… to the stem."""
+    if not os.path.exists(path):
+        return path
+    stem, ext = os.path.splitext(path)
+    n = 1
+    while os.path.exists(f"{stem}_{n}{ext}"):
+        n += 1
+    return f"{stem}_{n}{ext}"
+
+
+def import_external_artifacts(working_dir: str, files_dir: str, before: set,
+                              input_paths: Iterable[str]) -> List[str]:
+    """Copy files newly produced in ``working_dir`` (since the ``before``
+    snapshot, excluding staged ``input_paths``) INTO ``files_dir`` so they
+    persist with the conversation and render as durable cards. Returns the
+    destination paths under ``files_dir`` (sorted). A no-op returning ``[]`` when
+    the working dir IS the files dir (the default — normal capture covers it)."""
+    wd = os.path.abspath(working_dir)
+    fd = os.path.abspath(files_dir)
+    if wd == fd:
+        return []
+    inputs = set(input_paths or ())
+    new = sorted(p for p in (snapshot_dir(wd) - set(before or ()))
+                 if p not in inputs)
+    out: List[str] = []
+    for src in new:
+        dst = _unique_dest(os.path.join(fd, os.path.basename(src)))
+        try:
+            _shutil.copy2(src, dst)
+        except OSError:
+            continue
+        out.append(dst)
+    return out
+
+
+#: Files larger than this are not copied into the conversation folder.
+IMPORT_MAX_BYTES = 200 * 1024 * 1024
+
+
+def _same_bytes(a: str, b: str, chunk: int = 1 << 20) -> bool:
+    """True when two files hold the same bytes.
+
+    NOT ``filecmp.cmp``: that caches by (size, mtime), so a rebuilt file of
+    the SAME byte size written in the same clock tick reads as unchanged — and
+    the conversation would keep showing the previous version, which is the
+    very failure this import exists to prevent (caught 2026-09-15 when the
+    suite's ordering made the cache hit).
+    """
+    try:
+        if os.path.getsize(a) != os.path.getsize(b):
+            return False
+        with open(a, "rb") as fa, open(b, "rb") as fb:
+            while True:
+                ba, bb = fa.read(chunk), fb.read(chunk)
+                if ba != bb:
+                    return False
+                if not ba:
+                    return True
+    except OSError:
+        return False
+
+
+def _reported_path(path, base: str) -> str:
+    """A path a tool reported, made absolute: a relative one is a name in
+    the working folder ``base`` -- tool results name files that way since
+    2026-10-09 (live smoke wave 1, A6) -- not a path under the process cwd."""
+    p = os.path.expanduser(str(path).strip().strip("'\""))
+    if not os.path.isabs(p):
+        p = os.path.join(base, p)
+    return os.path.abspath(p)
+
+
+def import_reported_outputs(paths: Iterable[str], files_dir: str,
+                            exclude: Iterable[str] = (),
+                            working_dir: Optional[str] = None) -> dict:
+    """Copy files a tool REPORTED writing outside the conversation folder into
+    ``files_dir``, so they get a download card, show inline and reach the
+    SharePoint mirror (field feedback 2026-09-15, N4: the calc package and its
+    figures were written to /tmp and the owner never received them).
+
+    A RELATIVE reported path is a name in the working folder (``working_dir``,
+    default ``files_dir``): results give conversation-relative names.
+
+    Files already inside the conversation directory, missing files, excluded
+    paths (staged uploads, files fetched only to be read) and files over
+    ``IMPORT_MAX_BYTES`` are skipped. A same-named file with identical content
+    is reused; different content gets ``_1``/``_2``... Returns
+    ``{source_abs_path: destination_path}``.
+    """
+    fd = os.path.abspath(files_dir)
+    conv = os.path.dirname(fd)
+    base = os.path.abspath(working_dir) if working_dir else fd
+    skip = set()
+    for p in exclude or ():
+        try:
+            skip.add(_reported_path(p, base))
+        except (TypeError, ValueError):
+            continue
+    copied: dict = {}
+    for p in dict.fromkeys(paths or ()):
+        try:
+            src = _reported_path(p, base)
+        except (TypeError, ValueError):
+            continue
+        if (src in skip or src in copied or not os.path.isfile(src)
+                or src.startswith(conv + os.sep)):
+            continue
+        try:
+            if os.path.getsize(src) > IMPORT_MAX_BYTES:
+                continue
+            os.makedirs(fd, exist_ok=True)
+            dst = os.path.join(fd, os.path.basename(src))
+            if not (os.path.isfile(dst) and _same_bytes(src, dst)):
+                dst = _unique_dest(dst)
+                _shutil.copy2(src, dst)
+        except OSError:
+            continue
+        copied[src] = dst
+    return copied
+
+
+_LOCAL_MD_IMAGE = re.compile(r"!\[([^\]]*)\]\((?!https?:|data:)([^)\s]+)[^)]*\)")
+
+
+def displayable_markdown(text: str, artifact_paths: Iterable[str] = ()) -> str:
+    """Replace markdown images that point at local files -- which the chat
+    cannot display (field feedback N6: a broken-image icon where the PYWall
+    plot should have been) -- with a pointer to the card shown under the
+    reply, or a plain note when there is no such card.
+
+    A figure whose PNG card was replaced by its interactive Plotly chart
+    (:func:`collect_turn_artifacts`) still counts as shown: the reader sees
+    that figure below the reply, so the PNG link must not read "not viewable"."""
+    names = {os.path.basename(str(p)) for p in artifact_paths or ()}
+    for name in list(names):                   # the sidecar stands in for its
+        low = name.lower()                     # image — same figure, one card
+        if low.endswith(PLOTLY_SIDECAR_SUFFIX):
+            stem = name[:-len(PLOTLY_SIDECAR_SUFFIX)]
+            names.update(stem + ext for ext in _SUPERSEDED_IMAGE_EXTS)
+
+    def _swap(m):
+        alt = m.group(1).strip() or "figure"
+        if os.path.basename(m.group(2)) in names:
+            return f"*({alt} — shown below)*"
+        return f"*({alt} — local file `{m.group(2)}`, not viewable in chat)*"
+
+    return _LOCAL_MD_IMAGE.sub(_swap, text or "")
+
+
+# ---------------------------------------------------------------------------
+# Behavior settings (A5): per-conversation pickers, persisted in meta
+# ---------------------------------------------------------------------------
+# Five knobs the sidebar exposes and stores under meta["behavior"]:
+#   references     -- "anytime" (consult sub-agent offered) | "off" (no refs)
+#   ref_max_calls  -- the reference consult model-call budget
+#   recursion_limit-- the PRIMARY agent's LangGraph step cap (per-turn)
+#   analysis_depth -- "screening" | "standard" | "comprehensive": a system-prompt
+#                     preset applied on ALL engines (Anthropic + Prompter). This is
+#                     NOT LLM "thinking" — that name is reserved for the future
+#                     API-level control (deferred adaptive-thinking follow-up;
+#                     budget_tokens 400s on Opus 4.8 / Sonnet 5 — see
+#                     module_work/APP_PLAN.md A5 notes).
+#   agent_type     -- "full" (general agent) | a narrow domain reviewer
+#                     (seismic / foundations / earth_retention / slope_fem)
+#   route_calc     -- bool: delegate tool-heavy calc to a `calc` sub-agent so the
+#                     bulky calc trace stays out of the conversation (A2). ON by
+#                     default in the app (the owner-approved A2 default-on; the
+#                     build_deep_agent library default stays OFF).
+#   trace          -- per-conversation "turn details" tracer toggle: True/False
+#                     explicit, None = follow the GEOTECH_TRACE env default.
+# Defaults: references anytime, ref budget 8, recursion_limit 50 (raised from
+# the LangGraph-default 25 in 5.10.2 — see the inline note), route_calc ON
+# (owner-approved A2), analysis_depth "standard" == no preset, agent_type
+# "full".
+
+ANALYSIS_DEPTHS = ("screening", "standard", "comprehensive")
+REFERENCE_CHOICES = ("anytime", "off")
+
+#: Selectable agent variants (value -> sidebar label). "full" is the default
+#: general geotech agent; the rest are the narrow domain reviewers (F8/D6),
+#: each scoped to one discipline's methods + references and prompted in review
+#: mode (built via funhouse_agent.reviewers.make_*_reviewer_deep).
+AGENT_TYPES = {
+    "full": "Full geotech agent",
+    "seismic": "Seismic reviewer",
+    "foundations": "Foundations reviewer",
+    "earth_retention": "Earth-retention reviewer",
+    "slope_fem": "Slope / FEM reviewer",
+    "pavement": "Pavement design specialist",
+    "structural": "Structural calc specialist",
+}
+
+DEFAULT_BEHAVIOR = {
+    "references": "anytime",
+    # 10 since 2026-10-09 (aec_agent_core.deep.limits: live smoke wave 1, G5)
+    "ref_max_calls": 10,
+    # 25 (the LangGraph default) proved too tight once SharePoint fetch +
+    # multi-page PDF reads entered normal workflows (owner hit the cap on the
+    # downdrag task 2026-08); 50 covers those while still bounding runaways.
+    "recursion_limit": 50,
+    "analysis_depth": "standard",
+    "agent_type": "full",
+    "route_calc": True,
+    # Per-conversation tracer override: True/False = explicit sidebar choice,
+    # None = follow the GEOTECH_TRACE env default (see tracing_enabled()).
+    "trace": None,
+}
+
+
+def agent_type_label(kind: Optional[str]) -> str:
+    """Human label for an agent-type value (defaults to the 'full' label)."""
+    return AGENT_TYPES.get(kind or "full", str(kind))
+
+_DEPTH_SCREENING = (
+    "ANALYSIS DEPTH: SCREENING. Give a fast, concise screening answer. Run the "
+    "single most appropriate method, report the result with its key assumptions, "
+    "and stop. Do not run multiple methods, cross-checks, sensitivity studies, or "
+    "other elective extras unless the user explicitly asks.")
+_DEPTH_COMPREHENSIVE = (
+    "ANALYSIS DEPTH: COMPREHENSIVE. Be thorough. Where the question warrants it: "
+    "run multiple applicable methods and compare them; cross-check the governing "
+    "result via a second, independent approach; run a short sensitivity on the "
+    "governing inputs and state the resulting range/spread (the true answer is a "
+    "distribution, not a point); state the governing conditions and your "
+    "confidence; and offer to produce a calc package.")
+
+
+def default_behavior() -> dict:
+    """A fresh copy of the default behavior settings."""
+    return dict(DEFAULT_BEHAVIOR)
+
+
+def behavior_from_meta(meta: Optional[dict]) -> dict:
+    """Behavior settings for a conversation: ``meta['behavior']`` merged over the
+    defaults (unknown keys ignored, missing keys defaulted), so an old meta with
+    no behavior block reads as today's defaults."""
+    b = dict(DEFAULT_BEHAVIOR)
+    src = (meta or {}).get("behavior")
+    if isinstance(src, dict):
+        for k in DEFAULT_BEHAVIOR:
+            if src.get(k) is not None:
+                b[k] = src[k]
+    return b
+
+
+def set_behavior(thread_id: str, behavior: dict,
+                 root: Optional[str] = None) -> dict:
+    """Persist a conversation's behavior settings in meta. Returns the resolved
+    (defaulted) settings."""
+    meta = ensure_conversation(thread_id, root=root)
+    meta["behavior"] = {k: behavior[k] for k in DEFAULT_BEHAVIOR if k in behavior}
+    meta["updated"] = _time.time()
+    save_meta(thread_id, meta, root)
+    return behavior_from_meta(meta)
+
+
+def _busy_kind(exc: BaseException) -> Optional[str]:
+    """``rate limit`` / ``overloaded`` / ``server error …`` / ``connection``
+    / ``timeout`` for an error that asking again later would fix, else
+    ``None``. Read off the error's type, HTTP status and body
+    (``vision_engine.busy_kind``, which reads Foundry's 400 that names a
+    rate limit: BACKLOG INF-62), with the error's name and text as a
+    fallback for hosts whose errors carry neither."""
+    name = type(exc).__name__.lower()
+    if budget_exhausted(exc) is not None:
+        return None                     # used up: asking later cannot fix it
+    if "timeout" in name or isinstance(exc, TimeoutError):
+        return "timeout"
+    kind = None
+    try:
+        from aec_agent_core.deep.vision_engine import busy_kind
+        kind = busy_kind(exc)
+    except Exception:  # noqa: BLE001 - advice must never mask the error
+        kind = None
+    low = str(exc).lower()
+    if kind is None:
+        if "ratelimit" in name or "rate_limit_exceeded" in low \
+                or "too many requests" in low or _rate_limit_named(exc):
+            kind = "rate limit"
+        elif "overloaded" in name or "overloaded_error" in low:
+            kind = "overloaded"
+    return kind
+
+
+def budget_exhausted(exc: BaseException):
+    """The :class:`aec_agent_core.error_text.BudgetStop` of an error that
+    says the AI budget or quota is USED UP, else ``None`` (live smoke wave
+    2c, D2). Never raises."""
+    try:
+        from aec_agent_core.error_text import budget_exhausted as _spent
+        return _spent(exc)
+    except Exception:  # noqa: BLE001 - advice must never mask the error
+        return None
+
+
+def _rate_limit_named(exc: BaseException) -> bool:
+    """Whether an error NAMES a rate limit, as Foundry's 400s do
+    (:func:`aec_agent_core.error_text.rate_limit_named`). Never raises."""
+    try:
+        from aec_agent_core.error_text import rate_limit_named
+        return rate_limit_named(exc)
+    except Exception:  # noqa: BLE001 - advice must never mask the error
+        return False
+
+
+def is_step_cap(exc: BaseException) -> bool:
+    """Whether a turn stopped at the graph's step cap (LangGraph's
+    ``GraphRecursionError``)."""
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return "recursion" in text and "limit" in text
+
+
+#: What the last call is told when a turn has hit its step cap
+#: (``GEOTECH_STEP_CAP_ANSWER``; TA-33).
+STEP_CAP_NUDGE = (
+    "This turn has reached its step limit, so no more tools can run. Do not "
+    "call any tool. Answer now from what was gathered above: what was "
+    "asked; what was done and found, with the numbers and the names of any "
+    "files saved; what was NOT finished or checked; and what to ask for "
+    "next to finish it. Say plainly that the turn stopped at its step "
+    "limit. Never invent a result that was not gathered.")
+#: Each tool result is cut to this many characters for that call.
+STEP_CAP_RESULT_CHARS = 4000
+
+
+def answer_at_step_cap(agent, question: Any,
+                       turn_messages: List[dict]) -> Optional[str]:
+    """One last model call, with no tools, that answers from what a turn
+    gathered before it hit its step cap (TA-33; live wave w8, F55: the user
+    got a raw error and five chart cards, no answer). ``turn_messages`` are
+    the turn's own replies and tool results (``aec_document_review.turn_record``);
+    ``None`` when there is no model or nothing was gathered."""
+    model = getattr(agent, "geotech_model", None)
+    if model is None or not turn_messages:
+        return None
+    msgs: List[dict] = []
+    q = question.get("content") if isinstance(question, dict) else question
+    if q:
+        msgs.append({"role": "user", "content": str(q)})
+    for m in turn_messages:
+        m = dict(m)
+        if m.get("role") == "tool" and isinstance(m.get("content"), str) \
+                and len(m["content"]) > STEP_CAP_RESULT_CHARS:
+            m["content"] = (m["content"][:STEP_CAP_RESULT_CHARS]
+                            + " ...[cut for the step-limit answer]")
+        msgs.append(m)
+    msgs.append({"role": "user", "content": STEP_CAP_NUDGE})
+    reply = model.invoke(msgs)
+    text = getattr(reply, "content", reply)
+    if isinstance(text, list):
+        text = "".join(b.get("text", "") if isinstance(b, dict) else str(b)
+                       for b in text)
+    text = str(text or "").strip()
+    return text or None
+
+
+def friendly_turn_error(exc: BaseException, kept: Optional[str] = None) -> str:
+    """Turn-failure text for the transcript: the raw error plus, for known
+    cases, plain-language advice (owner ask 2026-08: a raw GraphRecursionError
+    traceback reads as a crash, when the fix is one sidebar setting).
+
+    ``kept`` is the sentence saying what the stopped turn kept
+    (``aec_document_review.turn_record.KeptWork.line``; BACKLOG TA-19). Without it the
+    text claims only what is always true -- files saved or downloaded are
+    in the conversation -- never "nothing is lost" (field session
+    2026-10-14: that claim sent the user to "continue" into a turn that
+    started from nothing).
+
+    No server path ever reaches the user (live smoke wave 2b, C3: a MuPDF
+    error showed ``C:\\…\\users\\livesmoke__tester\\…``):
+    :func:`aec_agent_core.error_text.scrub_paths` leaves each path's file
+    name. A busy model (rate limit, overload, a 5xx, a timeout) is said in
+    plain words first, with the raw text after it, shortened.
+
+    An AI budget or quota that is USED UP (:func:`budget_exhausted`: the
+    Funhouse SDK's ``BudgetExceededError``, an ``insufficient_quota`` 429,
+    Anthropic's 400 "usage limits", a 402) is ONE plain line and nothing
+    else -- no provider JSON, no request id, no "ask again" (live smoke wave
+    2c, D2: the tester saw Anthropic's raw 400 under "ask again"). The raw
+    text goes to the activity log (``turn_jobs``).
+
+    The AI service refusing the call's sign-in (an HTTP 401: OpenAI's
+    ``AuthenticationError``, an IIS "401 - Unauthorized" page) is said
+    plainly, naming the model service, with the page cut to its title
+    (BACKLOG TA-01; field session 2026-09-09 showed the raw IIS page, which
+    read as a SharePoint failure)."""
+    stop = budget_exhausted(exc)
+    if stop is not None:
+        try:
+            from aec_agent_core.error_text import budget_message
+            return budget_message(stop)
+        except Exception:  # noqa: BLE001
+            return ("The AI budget for this app is used up. Tell the app "
+                    "owner.")
+    try:
+        from aec_agent_core.error_text import auth_message, auth_refused
+        if auth_refused(exc):
+            return auth_message(exc)
+    except Exception:  # noqa: BLE001 - the raw error is shown instead
+        pass
+    text = f"{type(exc).__name__}: {exc}"
+    try:
+        from aec_agent_core.error_text import scrub_paths
+        text = scrub_paths(text)
+    except Exception:  # noqa: BLE001 - the error is shown either way
+        pass
+    low = text.lower()
+    if is_step_cap(exc):
+        # Plain words only (live wave w8, TA-33: the user got LangGraph's
+        # error name and a LangChain documentation link); the raw text is in
+        # the activity log.
+        return ("The agent ran out of its steps for this turn before it "
+                "finished. For document-heavy or multi-part requests, raise "
+                "'Primary step cap (recursion limit)' under Behavior > "
+                "Advanced caps in the sidebar (e.g. 50-100) and re-ask, or "
+                "split the request across turns; "
+                + (kept if kept else "work done so far (downloads, saved "
+                   "files) is kept."))
+    kind = _busy_kind(exc)
+    if kind is None:
+        return text + (f"\n\n{kept}" if kept else "")
+    # A busy model (field session 2026-10-06; live smoke wave 2a, B7): said
+    # in plain words FIRST, the raw text after it for whoever reports it.
+    detail = " ".join(text.split())
+    if len(detail) > 300:
+        detail = detail[:300] + " …"
+    kept = ((kept + " Wait a minute, then ask the agent to continue.")
+            if kept else
+            ("Files downloaded or saved this turn are still in the "
+             "conversation. Wait a minute, then ask the agent to continue."))
+    if kind == "rate limit":
+        lead = ("The AI model's rate limit was reached (too many requests "
+                "or tokens in the last minute — several people may be "
+                "sharing it) — a throttle, not a fault.")
+    elif kind == "overloaded":
+        lead = ("The AI model is overloaded right now (busy at the "
+                "provider), so this turn stopped — a temporary condition, "
+                "not a fault in your request.")
+    elif kind == "timeout":
+        lead = ("The AI model did not answer in time, so this turn stopped "
+                "— usually a busy service, not a fault in your request.")
+    elif kind == "connection":
+        lead = ("A network connection to the AI model failed, so this turn "
+                "stopped — usually temporary.")
+    else:
+        lead = (f"The AI service had a temporary problem ({kind}), so this "
+                f"turn stopped — not a fault in your request.")
+    # How long the agents' busy ladder kept asking (BACKLOG TA-20).
+    tried = getattr(exc, "geotech_busy", None)
+    if isinstance(tried, dict) and int(tried.get("tries") or 0) > 1:
+        secs = float(tried.get("waited_s") or 0)
+        span = (f"{secs / 60:.0f} minutes" if secs >= 90
+                else f"{secs:.0f} seconds")
+        lead += (f" The app asked {int(tried['tries'])} times over {span} "
+                 f"before stopping ({tried.get('why') or 'no answer'}).")
+    return f"{lead} {kept}\n\n(Details: {detail})"
+
+
+#: How long the readable part of a failed turn's streamed text must be to be
+#: kept (labelled as cut short) rather than replaced by the error alone.
+USEFUL_PARTIAL_CHARS = 200
+
+#: The label put on a failed turn's partial answer.
+CUT_SHORT_LABEL = ("*This answer was cut short: the turn stopped on an error "
+                   "before it finished (see the message below). What follows "
+                   "is what had been written by then.*")
+
+#: What a failed turn says when nothing it wrote is worth keeping.
+NOTHING_KEPT = ("This turn stopped on an error before it could answer (see "
+                "the message below). Files saved or downloaded this turn are "
+                "still in the conversation; ask again, or ask the agent to "
+                "continue.")
+
+#: The same, when asking again cannot help (the AI budget is used up: live
+#: smoke wave 2c, D2) -- the message below says what to do instead.
+NOTHING_KEPT_NO_RETRY = ("This turn stopped before it could answer (see the "
+                         "message below). Files saved or downloaded in this "
+                         "conversation are kept.")
+
+
+def _is_narration(paragraph: str) -> bool:
+    """A short paragraph that only announces a step ("I'll open the page
+    map.", "Now let me zoom on the title block:")."""
+    p = paragraph.strip()
+    if not p:
+        return True
+    if len(p) > 240:
+        return False
+    first = _LIST_MARK_RE.sub("", p).strip()
+    return bool(_LEAD_INTENT_RE.match(first)) or p.endswith(":")
+
+
+def failed_turn_text(streamed: str = "", reply: Optional[str] = None,
+                     retry: bool = True) -> str:
+    """What a FAILED turn shows as its answer (the error itself is shown
+    under it).
+
+    A reply the run had completed (an earlier pass's) is kept; otherwise the
+    text streamed so far is kept only when, with the step announcements
+    taken out, it still says something (:data:`USEFUL_PARTIAL_CHARS`) --
+    raw narration ("I'll open the page map.") is not an answer. Either way
+    it is labelled as cut short. Paths are scrubbed. ``retry=False`` (an
+    error asking again cannot fix: the AI budget is used up) never says
+    "ask again" (:data:`NOTHING_KEPT_NO_RETRY`)."""
+    try:
+        from aec_agent_core.error_text import scrub_paths
+    except Exception:  # noqa: BLE001
+        def scrub_paths(t):
+            return t
+    reply = str(reply or "").strip()
+    if reply:
+        return f"{CUT_SHORT_LABEL}\n\n{scrub_paths(reply)}"
+    paras = [p.strip() for p in re.split(r"\n\s*\n", str(streamed or ""))
+             if p.strip()]
+    kept = [p for p in paras if not _is_narration(p)]
+    body = "\n\n".join(kept)
+    if len(body) >= USEFUL_PARTIAL_CHARS:
+        return f"{CUT_SHORT_LABEL}\n\n{scrub_paths(body)}"
+    return NOTHING_KEPT if retry else NOTHING_KEPT_NO_RETRY
+
+
+def depth_prompt(depth: str) -> str:
+    """The system-prompt preset appended for an analysis-depth level ("" for
+    "standard"/unknown == today's default behavior, byte-identical)."""
+    return {"screening": _DEPTH_SCREENING,
+            "comprehensive": _DEPTH_COMPREHENSIVE}.get(depth, "")
+
+
+def behavior_build_kwargs(behavior: Optional[dict]) -> dict:
+    """Translate behavior settings into ``build_deep_agent`` kwargs (via
+    ``build_agent``): reference mode, the reference call budget, and the
+    analysis-depth prompt preset. Recursion is applied at stream time, not here.
+    Defaults produce an EMPTY-of-overrides-equivalent build (reference_mode
+    anytime, ref budget 8, no extra prompt)."""
+    b = behavior_from_meta({"behavior": behavior}) if behavior is not None \
+        else default_behavior()
+    kw: dict = {
+        "reference_mode": "off" if b["references"] == "off" else "anytime",
+        "references_max_model_calls": int(b["ref_max_calls"]),
+    }
+    preset = depth_prompt(b["analysis_depth"])
+    if preset:
+        kw["extra_system_prompt"] = preset
+    if b.get("route_calc", True):          # A2: delegate heavy calc to `calc`
+        kw["enable_calc_subagent"] = True
+    return kw
+
+
+def specialist_build_kwargs(behavior: Optional[dict]) -> dict:
+    """The behavior settings a specialist from the Agent picker takes (via
+    ``build_reviewer_agent``): the calc helper alone, under the same
+    "Route calculations through a calc agent" setting as the full agent,
+    which is where the full agent's calculation packages are built (BACKLOG
+    GM-40). A specialist keeps its own references (its domain's are in its
+    scope) and its own prompt, so the reference and analysis-depth settings
+    do not apply to it."""
+    b = behavior_from_meta({"behavior": behavior}) if behavior is not None \
+        else default_behavior()
+    return {"enable_calc_subagent": True} if b.get("route_calc", True) else {}
+
+
+# ---------------------------------------------------------------------------
+# Run tracing (A7 rec 1): the local summary is ON by default (owner, 2026-10-06)
+# ---------------------------------------------------------------------------
+# Two independent paths:
+#   * LangSmith (SaaS) — set LANGCHAIN_TRACING_V2=true + LANGCHAIN_API_KEY; the
+#     langchain/langgraph stack auto-traces every run, no code here.
+#   * Local (no SaaS) — on unless GEOTECH_TRACE=0 (or "Show turn details" is
+#     unticked for the conversation);
+#     the app writes ONE compact JSONL SUMMARY line per turn (duration,
+#     tokens, an 80-char one-liner per PRIMARY tool call, error) to
+#     <conversation>/trace.jsonl and shows a "turn details" expander.
+#     It does NOT see sub-agent internals.
+# Independent of both, and ALWAYS on: <conversation>/activity.jsonl
+# (aec_document_review/activity_log.py) — every tool call with full args, every tool
+# result (capped at 32 KB), every model call's usage, for the primary AND
+# the calc/references sub-agents, attributed by `task` nesting. That file
+# is the archive; trace.jsonl is the on-screen summary.
+
+#: ``GEOTECH_TRACE`` values that turn the per-turn details OFF. Anything else,
+#: including the variable being unset, leaves them ON.
+_TRACE_OFF = ("0", "false", "no", "off")
+
+
+def tracing_enabled(override: Optional[bool] = None) -> bool:
+    """True when the local per-turn tracer is on.
+
+    ``override`` is the per-conversation sidebar choice (``behavior["trace"]``):
+    an explicit ``True``/``False`` wins; ``None`` falls back to the
+    ``GEOTECH_TRACE`` env default, which is ON unless the variable says
+    ``0``/``false``/``no``/``off`` (owner, 2026-10-06 field session: "Make
+    showing turn details the default" -- the record is cheap and the person
+    using the app is the one who reads it)."""
+    if override is not None:
+        return bool(override)
+    raw = str(os.environ.get("GEOTECH_TRACE", "")).strip().lower()
+    return raw not in _TRACE_OFF
+
+
+def trace_path(thread_id: str, root: Optional[str] = None) -> str:
+    return _conv_path(thread_id, "trace.jsonl", root)
+
+
+def write_turn_trace(thread_id: str, record: dict,
+                     root: Optional[str] = None) -> None:
+    """Append one per-turn trace ``record`` as a JSONL line in the conversation
+    dir. Best-effort — a trace failure must NEVER affect the turn."""
+    try:
+        os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+        with open(trace_path(thread_id, root), "a", encoding="utf-8") as fh:
+            fh.write(_json.dumps(record, ensure_ascii=False) + "\n")
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def load_recent_traces(thread_id: str, n: int = 1,
+                       root: Optional[str] = None) -> List[dict]:
+    """The last ``n`` per-turn trace records (oldest→newest), or ``[]``."""
+    p = trace_path(thread_id, root)
+    if not os.path.isfile(p):
+        return []
+    try:
+        with open(p, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return []
+    out: List[dict] = []
+    for line in lines[-int(max(1, n)):]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(_json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+def auto_title(text, n_words: int = 8) -> str:
+    """First ~``n_words`` words of the first user message, as a conversation
+    title. Falls back to 'New conversation' for empty input."""
+    words = str(text or "").split()
+    if not words:
+        return "New conversation"
+    title = " ".join(words[:n_words])
+    if len(words) > n_words:
+        title += "…"
+    return title
+
+
+#: Where a conversation's title came from (meta ``title_source``): the
+#: attached files (an orientation turn), the first typed question, or the
+#: user's own Rename. Only an attachments title is changed by a question,
+#: and then only extended: the files stay in it (:func:`turn_title`).
+TITLE_FROM_ATTACHMENTS = "attachments"
+TITLE_FROM_QUESTION = "question"
+TITLE_FROM_USER = "user"
+
+
+def orientation_title(names: Iterable[str], max_names: int = 3) -> str:
+    """A conversation title for an automatic orientation turn: the attached
+    files' names (``21.01.pdf``, ``a.pdf + b.pdf``, ``a.pdf + b.pdf + 2
+    more``), not the request the app sent for the user. Live smoke wave 1,
+    A10: 18 of 28 conversations were titled "I just attached `x.pdf`.
+    Before I ask anything,…", and so were their SharePoint folders."""
+    shown = [str(n).strip() for n in (names or ()) if str(n or "").strip()]
+    if not shown:
+        return "New conversation"
+    head = " + ".join(shown[:max_names])
+    more = len(shown) - max_names
+    return head + (f" + {more} more" if more > 0 else "")
+
+
+#: Words of the first typed question added after a files title.
+QUESTION_GIST_WORDS = 6
+
+#: Between a files title and the question's gist.
+TITLE_JOINER = " — "
+
+
+def files_and_question_title(files_title, prompt,
+                             n_words: int = QUESTION_GIST_WORDS) -> str:
+    """A files title extended by the first typed question's gist:
+    ``3000.pdf — What is this sheet?``.
+
+    Live smoke wave 2a (B11): the question used to REPLACE the files title,
+    so two conversations about two different sheets were both "What is this
+    sheet?" in the sidebar and neither named its file. The files stay; the
+    gist alone is used only when it already names the files title, and the
+    files title alone when there is no question."""
+    files_title = str(files_title or "").strip()
+    gist = auto_title(prompt, n_words=n_words) if str(prompt or "").strip() \
+        else ""
+    if not files_title or files_title.lower() == "new conversation":
+        return gist or "New conversation"
+    if not gist:
+        return files_title
+    if files_title.lower() in gist.lower():
+        return gist
+    return f"{files_title}{TITLE_JOINER}{gist}"
+
+
+_MORE_RE = re.compile(r"^(\d+) more$")
+_FILE_PIECE_RE = re.compile(r"^[^\s/\\][^/\\]*\.[A-Za-z0-9]{1,6}$")
+
+
+def _title_files(head: str) -> Optional[Tuple[List[str], int]]:
+    """``(names, hidden)`` when ``head`` is a files title
+    (:func:`orientation_title`'s ``a.pdf + b.pdf + 2 more``), else ``None``."""
+    names, hidden = [], 0
+    for piece in [p.strip() for p in str(head or "").split(" + ")]:
+        more = _MORE_RE.match(piece)
+        if more:
+            hidden += int(more.group(1))
+        elif _FILE_PIECE_RE.match(piece):
+            names.append(piece)
+        else:
+            return None
+    return (names, hidden) if names else None
+
+
+def title_with_new_files(meta: Optional[dict], names: Iterable[str],
+                         max_names: int = 3) -> Optional[str]:
+    """The conversation title once files are attached to a conversation that
+    already has one, or ``None`` to keep it.
+
+    Live smoke wave 2b (C14): the 21.01 review stayed titled after
+    "scan_0001.pdf", the blank wrong file, and a report added later never
+    reached its conversation's name. A later upload's names join the files
+    part of the title (``a.pdf + b.pdf — gist``), or go in front of a
+    question title; names already in it, a title the user typed, and a
+    conversation not yet titled (its first turn titles it) are left alone.
+    The SharePoint folder does not follow (``meta.mirror_folder``)."""
+    meta = meta or {}
+    title = str(meta.get("title") or "").strip()
+    if (meta.get("title_source") == TITLE_FROM_USER or not title
+            or title.lower() == "new conversation"):
+        return None
+    low = title.lower()
+    new = []
+    for n in names or ():
+        n = str(n or "").strip()
+        if n and n.lower() not in low and n not in new:
+            new.append(n)
+    if not new:
+        return None
+    head, sep, tail = title.partition(TITLE_JOINER)
+    parsed = _title_files(head)
+    if parsed is not None:
+        known, hidden = parsed
+        allnames = known + new
+        shown = allnames[:max_names]
+        more = hidden + len(allnames) - len(shown)
+        head = " + ".join(shown) + (f" + {more} more" if more > 0 else "")
+        return head + (sep + tail if sep else "")
+    return orientation_title(new, max_names=max_names) + TITLE_JOINER + title
+
+
+def retitle_for_upload(thread_id: str, names: Iterable[str],
+                       root: Optional[str] = None) -> Optional[str]:
+    """Give a conversation that already has a title the names of files
+    attached to it later (:func:`title_with_new_files`). Returns the new
+    title, or ``None`` when it is kept. Never raises."""
+    try:
+        meta = load_meta(thread_id, root)
+        if not meta:
+            return None
+        new = title_with_new_files(meta, names)
+        if new:
+            touch_conversation(thread_id, title=new, root=root)
+        return new
+    except Exception:  # noqa: BLE001 - a title is never worth a failure
+        return None
+
+
+def turn_title(meta: Optional[dict], prompt, user_turns: int,
+               orientation: Optional[Iterable[str]] = None
+               ) -> Tuple[Optional[str], Optional[str]]:
+    """``(title, title_source)`` a finished turn gives the conversation, or
+    ``(None, None)`` to keep the title it has.
+
+    An orientation turn (``orientation`` = the attached names) titles a
+    conversation that has no typed question yet after its files; the first
+    TYPED question then adds its gist to that title, keeping the files in it
+    (:func:`files_and_question_title`); a conversation whose first turn is
+    typed is titled by the question as it always has been. A title the user
+    typed (Rename) is never replaced. The SharePoint folder never follows a
+    retitle: it is fixed at the first mirror (``meta.mirror_folder``)."""
+    meta = meta or {}
+    source = meta.get("title_source")
+    if source == TITLE_FROM_USER:
+        return None, None
+    if orientation is not None:
+        # Only a conversation's FIRST turn: a later upload's orientation
+        # keeps the title the conversation already has.
+        if source is None and user_turns <= 1:
+            return orientation_title(orientation), TITLE_FROM_ATTACHMENTS
+        return None, None
+    if not prompt:
+        return None, None
+    if source == TITLE_FROM_ATTACHMENTS:
+        return (files_and_question_title(meta.get("title"), prompt),
+                TITLE_FROM_QUESTION)
+    if user_turns == 1:
+        return auto_title(prompt), TITLE_FROM_QUESTION
+    return None, None
+
+
+def _conv_path(thread_id, name, root=None) -> str:
+    return os.path.join(conversation_dir(thread_id, root), name)
+
+
+def load_meta(thread_id: str, root: Optional[str] = None) -> Optional[dict]:
+    """Load a conversation's meta dict, or ``None`` if it does not exist."""
+    p = _conv_path(thread_id, "meta.json", root)
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return _json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def save_meta(thread_id: str, meta: dict, root: Optional[str] = None) -> None:
+    os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+    with open(_conv_path(thread_id, "meta.json", root), "w",
+              encoding="utf-8") as fh:
+        _json.dump(meta, fh, ensure_ascii=False, indent=2)
+
+
+def ensure_conversation(thread_id: str, title: Optional[str] = None,
+                        root: Optional[str] = None) -> dict:
+    """Return the conversation's meta, creating it (with ``title`` or a
+    placeholder) on first use."""
+    meta = load_meta(thread_id, root)
+    if meta is None:
+        now = _time.time()
+        meta = {"thread_id": thread_id, "title": title or "New conversation",
+                "created": now, "updated": now, "turn_count": 0, "model": None}
+        save_meta(thread_id, meta, root)
+    return meta
+
+
+def touch_conversation(thread_id: str, *, title: Optional[str] = None,
+                       turn_count: Optional[int] = None,
+                       model: Optional[str] = None,
+                       root: Optional[str] = None,
+                       title_source: Optional[str] = None) -> dict:
+    """Update ``updated`` (and optionally ``title`` / ``turn_count`` / ``model``)
+    on a conversation's meta; creates it if missing. ``title_source`` records
+    where a new title came from (:func:`turn_title`)."""
+    meta = ensure_conversation(thread_id, title=title, root=root)
+    if title is not None:
+        meta["title"] = title
+        if title_source is not None:
+            meta["title_source"] = title_source
+    if turn_count is not None:
+        meta["turn_count"] = turn_count
+    if model is not None:
+        meta["model"] = model
+    meta["updated"] = _time.time()
+    save_meta(thread_id, meta, root)
+    return meta
+
+
+def engine_record(agent) -> dict:
+    """Which client served a turn (class, model, the client's own retries,
+    whether streamed replies carry usage) and the waiting, pacing and
+    helper policy in force (BACKLOG EV-14: the field session's ``meta.json``
+    named the model only). Never a key or an address; ``{}`` on failure."""
+    try:
+        from aec_agent_core.deep.busy_retry import engine_facts, retry_policy
+        out = engine_facts(getattr(agent, "geotech_model", None))
+        out["policy"] = retry_policy()
+        build = getattr(agent, "geotech_build", None)
+        if isinstance(build, dict) and build:
+            # the tools, helpers and switches the turn ran with (EV-20)
+            out["build"] = build
+        # the tools' wording, as one fingerprint (EV-06)
+        tools_sha = tools_fingerprint(agent).get("sha")
+        if tools_sha:
+            out["tools_sha"] = tools_sha
+        return out
+    except Exception:  # noqa: BLE001 - a record, never the turn
+        return {}
+
+
+def tools_fingerprint(agent) -> dict:
+    """``{"sha", "names"}`` of the tools a built agent offers its model: a
+    fingerprint (``aec_agent_core.activity_log.fingerprint``) of every tool's name,
+    description and argument schema, and the names. Two runs with the same
+    ``sha`` were offered the same tools, worded the same (BACKLOG EV-06;
+    the check1 trace review could not tell). Worked out once per agent;
+    ``{}`` when the build cannot say."""
+    cached = getattr(agent, "geotech_tools_fingerprint", None)
+    if isinstance(cached, dict):
+        return cached
+    try:
+        tools = agent.nodes["tools"].bound.tools_by_name
+    except Exception:  # noqa: BLE001 - not a graph with a tool node
+        return {}
+    try:
+        rows = []
+        for name in sorted(tools):
+            tool = tools[name]
+            try:
+                schema = tool.tool_call_schema.model_json_schema()
+            except Exception:  # noqa: BLE001 - a tool without a schema
+                schema = None
+            rows.append([name, str(getattr(tool, "description", "") or ""),
+                         schema])
+        from aec_agent_core.activity_log import fingerprint
+        out = {"sha": fingerprint(_json.dumps(rows, sort_keys=True,
+                                              default=str)),
+               "names": sorted(tools)}
+    except Exception:  # noqa: BLE001 - a record, never the run
+        return {}
+    try:
+        agent.geotech_tools_fingerprint = out
+    except Exception:  # noqa: BLE001 - a compiled graph that refuses it
+        pass
+    return out
+
+
+def record_engine(thread_id: str, record: dict,
+                  root: Optional[str] = None) -> None:
+    """Keep the latest turn's :func:`engine_record` in ``meta.json``."""
+    if not record:
+        return
+    meta = ensure_conversation(thread_id, root=root)
+    meta["engine"] = record
+    save_meta(thread_id, meta, root)
+
+
+def tag_conversation(thread_id: str, root: Optional[str] = None,
+                     **fields) -> dict:
+    """Set descriptive fields on a conversation's meta that are not already
+    set — ``owner`` (the signed-in person) and ``page`` (the app profile) on
+    a multi-user host — creating the meta if needed. Existing values win, so
+    a conversation keeps the owner it was created under."""
+    meta = ensure_conversation(thread_id, root=root)
+    changed = False
+    for key, value in fields.items():
+        if value and not meta.get(key):
+            meta[key] = value
+            changed = True
+    if changed:
+        save_meta(thread_id, meta, root)
+    return meta
+
+
+def rename_conversation(thread_id: str, title: str,
+                        root: Optional[str] = None) -> dict:
+    """Set a conversation's title (the user's own: never replaced by a
+    question's, see :func:`turn_title`)."""
+    return touch_conversation(thread_id, title=str(title), root=root,
+                              title_source=TITLE_FROM_USER)
+
+
+def list_conversations(root: Optional[str] = None) -> List[dict]:
+    """Every saved conversation's meta, most-recently-updated first. Skips the
+    ``.trash`` folder and any dir without a readable meta.json."""
+    base = conversations_root(root)
+    out: List[dict] = []
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return out
+    for name in names:
+        if not os.path.isdir(os.path.join(base, name)):
+            continue
+        meta = load_meta(name, root)
+        if meta:
+            out.append(meta)
+    out.sort(key=lambda m: m.get("updated", 0), reverse=True)
+    return out
+
+
+def _rel_artifact(path, files_dir) -> str:
+    """Store an artifact reference portably: relative to the conversation files
+    dir when it lives under it, else the absolute path."""
+    ap = os.path.abspath(str(path))
+    fd = os.path.abspath(files_dir)
+    if ap == fd or ap.startswith(fd + os.sep):
+        return os.path.relpath(ap, fd)
+    return ap
+
+
+def _resolve_artifact(ref, files_dir) -> str:
+    """Inverse of ``_rel_artifact``: resolve a stored reference back to a path
+    under the (possibly relocated) conversation files dir."""
+    if os.path.isabs(ref):
+        return ref
+    return os.path.join(files_dir, ref)
+
+
+def append_transcript(thread_id: str, entry: dict,
+                      root: Optional[str] = None) -> None:
+    """Append ONE display entry to ``transcript.jsonl``. Artifact paths in the
+    entry are stored relative to the conversation files dir (portable)."""
+    os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+    files_dir = conversation_files_dir(thread_id, root)
+    rec = dict(entry)
+    if rec.get("artifacts"):
+        rec["artifacts"] = [_rel_artifact(p, files_dir) for p in rec["artifacts"]]
+    with open(_conv_path(thread_id, "transcript.jsonl", root), "a",
+              encoding="utf-8") as fh:
+        fh.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def load_transcript(thread_id: str, root: Optional[str] = None) -> List[dict]:
+    """Load the display transcript, resolving artifact refs back to absolute
+    paths under the conversation files dir."""
+    p = _conv_path(thread_id, "transcript.jsonl", root)
+    files_dir = conversation_files_dir(thread_id, root)
+    out: List[dict] = []
+    try:
+        fh = open(p, encoding="utf-8")
+    except OSError:
+        return out
+    with fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = _json.loads(line)
+            except ValueError:
+                continue
+            if rec.get("artifacts"):
+                rec["artifacts"] = [_resolve_artifact(r, files_dir)
+                                    for r in rec["artifacts"]]
+            out.append(rec)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Mid-turn crash safety (A3): a per-turn "partial" checkpoint file
+# ---------------------------------------------------------------------------
+# A hard interruption mid-stream (process kill, OOM, browser close, forced
+# rerun — not a Python exception) would lose the streamed text. ``begin_partial``
+# marks an in-progress turn before streaming, ``checkpoint_partial`` overwrites
+# the accumulating text every few chunks, and a clean completion calls
+# ``clear_partial``. On the next boot ``recover_partial`` folds any leftover
+# partial into the transcript as a clearly-marked "recovered" entry.
+
+def partial_path(thread_id: str, root: Optional[str] = None) -> str:
+    return _conv_path(thread_id, "partial.json", root)
+
+
+def begin_partial(thread_id: str, prompt: str,
+                  root: Optional[str] = None) -> None:
+    """Mark an in-progress assistant turn BEFORE streaming (the A3 placeholder).
+    Best-effort — never raises into the turn loop."""
+    try:
+        os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+        with open(partial_path(thread_id, root), "w", encoding="utf-8") as fh:
+            _json.dump({"prompt": prompt, "text": "", "started": _time.time()},
+                       fh, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def checkpoint_partial(thread_id: str, text: str,
+                       root: Optional[str] = None) -> None:
+    """Overwrite the in-progress assistant text (called every N stream chunks).
+    Best-effort: a checkpoint failure must NEVER break the stream."""
+    try:
+        p = partial_path(thread_id, root)
+        prompt = ""
+        started = None
+        try:
+            with open(p, encoding="utf-8") as fh:
+                data = _json.load(fh) or {}
+            prompt = data.get("prompt", "")
+            # When the turn began: an interrupted turn's files are the ones
+            # written since (recover_partial; BACKLOG TA-28).
+            started = data.get("started")
+        except (OSError, ValueError, AttributeError):
+            pass
+        os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+        rec = {"prompt": prompt, "text": text, "updated": _time.time()}
+        if started is not None:
+            rec["started"] = started
+        with open(p, "w", encoding="utf-8") as fh:
+            _json.dump(rec, fh, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def partial_messages_path(thread_id: str, root: Optional[str] = None) -> str:
+    """The running turn's messages so far (``aec_document_review.turn_record``): what a
+    turn the process never finished is recovered from (BACKLOG TA-19)."""
+    from aec_document_review.turn_record import CHECKPOINT_NAME
+    return _conv_path(thread_id, CHECKPOINT_NAME, root)
+
+
+def clear_partial(thread_id: str, root: Optional[str] = None) -> None:
+    """Remove the partial checkpoints (the streamed text and the turn's
+    messages) after a turn is durably persisted."""
+    for path in (partial_path(thread_id, root),
+                 partial_messages_path(thread_id, root)):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _fold_partial_messages(thread_id: str, root: Optional[str] = None,
+                           question: str = "") -> int:
+    """Fold an interrupted turn's checkpointed messages into
+    ``messages.json``: the question (when the saved history does not end
+    with it), the turn's tool calls and results in valid order (large ones
+    moved to ``kept/``), and a closing note; how many tool results were
+    kept. Never raises."""
+    try:
+        from aec_document_review.turn_record import KeptWork, TurnRecord
+        rec = TurnRecord.from_checkpoint(partial_messages_path(thread_id, root))
+        if rec is None or not len(rec):
+            return 0
+        n_user = sum(1 for e in load_transcript(thread_id, root)
+                     if e.get("role") == "user")
+        kept = rec.kept(working_dir_for(thread_id, root=root), turn=n_user)
+        if not kept.messages:
+            return 0
+        history = load_messages(thread_id, root)
+        q = rec.question or ({"role": "user", "content": question}
+                             if question else None)
+        last_user = next((m for m in reversed(history)
+                          if m.get("role") in ("user", "human")), None)
+        if q is not None and (not history or history[-1].get("role")
+                              not in ("user", "human")
+                              or last_user.get("content") != q.get("content")):
+            history.append(q)
+        history.extend(kept.messages)
+        history.append({"role": "assistant", "content": kept.history_note(
+            "the app restarted or the turn was interrupted")})
+        save_messages(thread_id, history, root)
+        return kept.n_results
+    except Exception:  # noqa: BLE001 - recovery never blocks the open
+        return 0
+
+
+def partial_is_stale(data: Optional[dict], transcript: Iterable[dict]) -> bool:
+    """Whether a turn checkpoint belongs to a turn the transcript shows as
+    FINISHED, so it records no interruption.
+
+    A turn writes its question to the transcript, then the checkpoint, and
+    its answer last; an interrupted turn therefore always leaves its question
+    as the transcript's LAST entry. So a checkpoint is stale when the last
+    entry is an answer and the checkpoint's question has one (or it names no
+    question at all). Such checkpoints came from a mirror taken mid-turn and
+    restored later (live smoke wave 2a, B2), or a turn whose answer was saved
+    but whose checkpoint could not be removed."""
+    entries = [e for e in (transcript or ()) if isinstance(e, dict)]
+    if not entries or entries[-1].get("role") != "assistant":
+        return False
+    prompt = str((data or {}).get("prompt") or "").strip()
+    if not prompt:
+        return True
+    answered = set()
+    question = None
+    for e in entries:
+        if e.get("role") == "user":
+            question = str(e.get("text") or "").strip()
+        elif e.get("role") == "assistant" and question is not None:
+            answered.add(question)
+            question = None
+    return prompt in answered
+
+
+def recover_partial(thread_id: str, root: Optional[str] = None) -> Optional[dict]:
+    """If a turn was interrupted (``partial.json`` present), return a recovered
+    display entry to append to the transcript, else ``None``. A checkpoint
+    whose turn the transcript shows as answered is stale and ignored
+    (:func:`partial_is_stale`); the rare append-succeeded-but-clear-failed
+    case is also caught by comparing against the last assistant entry
+    already on disk. Clears the partial file either way."""
+    p = partial_path(thread_id, root)
+    if not os.path.isfile(p):
+        clear_partial(thread_id, root)        # a stray messages checkpoint
+        return None
+    try:
+        with open(p, encoding="utf-8") as fh:
+            data = _json.load(fh) or {}
+    except (OSError, ValueError):
+        clear_partial(thread_id, root)
+        return None
+    transcript = load_transcript(thread_id, root)
+    if not isinstance(data, dict) or partial_is_stale(data, transcript):
+        clear_partial(thread_id, root)
+        return None
+    text = (data.get("text") or "").strip()
+    if text:
+        for e in reversed(transcript):
+            if e.get("role") == "assistant":
+                if text in (e.get("text") or ""):
+                    clear_partial(thread_id, root)
+                    return None
+                break
+    # The files the turn saved before it stopped (a DIGGS file, a helper's
+    # records) become its cards, and the next turn's note names them as the
+    # turn's own (BACKLOG TA-28). Taken BEFORE the fold below, which writes
+    # the turn's largest results to kept/ and is not the turn's own work.
+    try:
+        files = interrupted_turn_files(thread_id, data.get("started"), root)
+    except Exception:  # noqa: BLE001 - recovery never blocks the open
+        files = []
+    # The turn's tool calls and results so far go into the history, so a
+    # "continue" picks up from them (BACKLOG TA-19).
+    kept = _fold_partial_messages(thread_id, root,
+                                  question=str(data.get("prompt") or ""))
+    clear_partial(thread_id, root)
+    body = text or "_(this turn was interrupted before any output was produced)_"
+    note = ("_(recovered after an interrupted session"
+            + (f"; its {kept} finished tool "
+               f"{'result is' if kept == 1 else 'results are'} kept, so "
+               "asking the agent to continue picks up from "
+               f"{'it' if kept == 1 else 'them'}" if kept else "")
+            + (f"; the {len(files)} "
+               f"{'file' if len(files) == 1 else 'files'} it saved before "
+               "it stopped " + ("is" if len(files) == 1 else "are")
+               + " below" if files else "") + ")_")
+    entry = {"role": "assistant", "recovered": True,
+             "text": body + "\n\n" + note}
+    if files:
+        entry["artifacts"] = files
+    return entry
+
+
+def interrupted_turn_files(thread_id: str, started,
+                           root: Optional[str] = None) -> List[str]:
+    """The files a turn the process never finished wrote in the
+    conversation's working folder, oldest first: modified since the turn
+    ``started`` (epoch seconds, :func:`begin_partial`), outside the cache and
+    scratch folders, no part file, and neither an upload nor a SharePoint
+    download (the turn note names those as inputs). ``[]`` when the start
+    is not known.
+
+    Field session 2026-10-14: turn 2 wrote a DIGGS file with a better grid
+    and was then killed mid-turn; the recovered entry named no files, so
+    turn 3's note of the conversation's files left it out and turn 3 built
+    a third grid while the better one sat in the folder (BACKLOG TA-28)."""
+    try:
+        t0 = float(started)
+    except (TypeError, ValueError):
+        return []
+    fd = conversation_files_dir(thread_id, root)
+    conv = conversation_dir(thread_id, root)
+
+    def key(p) -> str:
+        return os.path.normcase(os.path.abspath(str(p)))
+
+    inputs = {key(os.path.join(fd, k)) for k in _attachment_keys(conv)}
+    inputs |= {key(d["local"]) for d in load_downloads(conv)}
+    found = []
+    for p in snapshot_dir(fd):
+        if is_cache_path(p, fd) or str(p).lower().endswith(
+                IN_FLIGHT_SUFFIXES) or key(p) in inputs:
+            continue
+        try:
+            mtime = os.path.getmtime(p)
+        except OSError:
+            continue
+        if mtime >= t0 - 1.0:              # a coarse file clock's slack
+            found.append((mtime, p))
+    return [p for _, p in sorted(found)]
+
+
+def _msg_to_plain(m) -> dict:
+    """A LangChain BaseMessage (or a dict) -> a plain ``{role, content}``
+    dict. An AI reply keeps its ``tool_calls`` and a tool result its
+    ``tool_call_id`` (and name, and an error status): a turn that stopped
+    on an error keeps its tool calls and results in the history (BACKLOG
+    TA-19), and a replay needs every call matched to its result."""
+    if isinstance(m, dict):
+        return m
+    role = {"human": "user", "ai": "assistant", "system": "system",
+            "tool": "tool", "function": "tool"}.get(
+                getattr(m, "type", ""), "assistant")
+    out = {"role": role, "content": getattr(m, "content", "")}
+    if role == "assistant":
+        calls = [{"name": c.get("name"), "args": c.get("args") or {},
+                  "id": c.get("id"), "type": "tool_call"}
+                 for c in (getattr(m, "tool_calls", None) or [])
+                 if isinstance(c, dict) and c.get("id") and c.get("name")]
+        if calls:
+            out["tool_calls"] = calls
+    elif role == "tool":
+        out["tool_call_id"] = getattr(m, "tool_call_id", "") or ""
+        if getattr(m, "name", None):
+            out["name"] = m.name
+        if getattr(m, "status", None) == "error":
+            out["status"] = "error"
+    return out
+
+
+def serialize_messages(messages: list) -> list:
+    """Turn the agent-facing history into a JSON-safe list. The history may hold
+    plain ``{role, content}`` dicts AND/OR LangChain message OBJECTS
+    (HumanMessage / AIMessage) — the latter are NOT json-serializable, which is
+    the crash this guards. ``convert_to_messages`` normalizes the mixed list to
+    BaseMessage, then ``messages_to_dict`` makes it JSON-safe; on any failure a
+    per-item best-effort keeps the save from ever raising."""
+    msgs = list(messages or [])
+    try:
+        from langchain_core.messages import (messages_to_dict,
+                                             convert_to_messages)
+        return messages_to_dict(convert_to_messages(msgs))
+    except Exception:
+        out = []
+        for m in msgs:
+            if isinstance(m, dict):
+                out.append(m)
+            else:
+                out.append({"role": getattr(m, "type", "assistant"),
+                            "content": str(getattr(m, "content", m))})
+        return out
+
+
+def deserialize_messages(data) -> list:
+    """Inverse of :func:`serialize_messages` -> plain ``{role, content}`` dicts
+    (the form the replay path feeds ``agent.stream``). Handles BOTH the
+    ``messages_to_dict`` form (``{type, data}``) and older plain-dict files."""
+    if not isinstance(data, list) or not data:
+        return []
+    if all(isinstance(m, dict) and "type" in m and "data" in m for m in data):
+        try:
+            from langchain_core.messages import messages_from_dict
+            return [_msg_to_plain(m) for m in messages_from_dict(data)]
+        except Exception:
+            pass
+    return [m if isinstance(m, dict) else _msg_to_plain(m) for m in data]
+
+
+def save_messages(thread_id: str, messages: list,
+                  root: Optional[str] = None) -> None:
+    """Persist the agent-facing message history (small; full rewrite). Robust to
+    LangChain message objects in the history (see :func:`serialize_messages`)."""
+    os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+    with open(_conv_path(thread_id, "messages.json", root), "w",
+              encoding="utf-8") as fh:
+        _json.dump(serialize_messages(messages), fh, ensure_ascii=False)
+
+
+def load_messages(thread_id: str, root: Optional[str] = None) -> list:
+    """Load the agent-facing message history (replayed on resume) as plain
+    ``{role, content}`` dicts."""
+    p = _conv_path(thread_id, "messages.json", root)
+    try:
+        with open(p, encoding="utf-8") as fh:
+            data = _json.load(fh)
+    except (OSError, ValueError):
+        return []
+    return deserialize_messages(data)
+
+
+def save_attachments_index(thread_id: str, keys: Iterable[str],
+                           root: Optional[str] = None) -> None:
+    """Record the staged upload keys so they can be re-registered on resume."""
+    os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+    with open(_conv_path(thread_id, "attachments.json", root), "w",
+              encoding="utf-8") as fh:
+        _json.dump(list(keys or []), fh, ensure_ascii=False)
+
+
+def load_attachments(thread_id: str, attachments: dict,
+                     root: Optional[str] = None) -> List[Attachment]:
+    """Re-register a conversation's staged uploads into the live ``attachments``
+    dict by reading each key's bytes from the conversation files dir. Returns the
+    :class:`Attachment` list (so callers can rebuild the agent-facing note)."""
+    p = _conv_path(thread_id, "attachments.json", root)
+    files_dir = conversation_files_dir(thread_id, root)
+    try:
+        with open(p, encoding="utf-8") as fh:
+            keys = _json.load(fh)
+    except (OSError, ValueError):
+        return []
+    out: List[Attachment] = []
+    for key in keys or []:
+        fpath = os.path.join(files_dir, key)
+        try:
+            with open(fpath, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            continue
+        attachments[key] = data
+        out.append(Attachment(key=key, path=fpath, size=len(data)))
+    return out
+
+
+def delete_conversation(thread_id: str, root: Optional[str] = None) -> Optional[str]:
+    """Move a conversation directory into ``<data_root>/.trash/`` (soft delete).
+    Returns the trash path, or ``None`` if the conversation did not exist."""
+    src = conversation_dir(thread_id, root)
+    if not os.path.isdir(src):
+        return None
+    trash = os.path.join(root or thread_root(thread_id) or data_root(), ".trash")
+    os.makedirs(trash, exist_ok=True)
+    dst = os.path.join(trash, f"{thread_id}_{int(_time.time())}")
+    _shutil.move(src, dst)
+    return dst
+
+
+def artifacts_from_transcript(transcript: Iterable[dict]) -> List[str]:
+    """Rebuild the download list (unique artifact paths, in order) from a loaded
+    transcript's per-turn artifact references."""
+    out: List[str] = []
+    seen = set()
+    for entry in transcript or []:
+        for p in entry.get("artifacts", []) or []:
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# What the conversation already has on disk, told to the agent every turn
+# ---------------------------------------------------------------------------
+# Field session 2026-10-06 (geotech page): the agent downloaded a report from
+# SharePoint in turn 4, worked from it in turns 4 and 5, and in turn 7 told the
+# user it had "only ever had the original attachment" and that its earlier
+# work was "not verified". Nothing was wrong with the file -- it was still in
+# the working folder. The app replays earlier turns to the model as the
+# user's messages and the model's FINAL ANSWERS only (see the Persistence
+# section): every tool result, the download included, is gone from the next
+# turn's view, so the model had no record that the file existed. A turn-6
+# SharePoint failure then read, to the model, as proof it never had the file.
+#
+# Two pieces of record fix that, without replaying tool results:
+#   * a downloads ledger (``downloads.json`` in the conversation folder), which
+#     the SharePoint download tool writes: which SharePoint file became which
+#     local file, so a repeat fetch reuses it under ONE name (the session saved
+#     the same 37 MB report twice under two names) and the agent can be told
+#     where each input came from;
+#   * :func:`working_files_note`, a short "[System note]" put in front of the
+#     CURRENT turn's user message only (never saved into the history): the
+#     files already in the working folder -- attached, fetched, produced --
+#     by their names in that folder (never server paths: live smoke wave 1,
+#     A6, a model quoted the absolute path from this note to the user).
+
+#: The ledger of SharePoint downloads, in the conversation record folder.
+DOWNLOADS_LEDGER = "downloads.json"
+
+#: How many files the per-turn note names (the newest ones).
+WORKING_FILES_NOTE_MAX = 30
+
+#: ... plus at most this many of the folder's OTHER files -- the ones no
+#: upload, answer or download names (BACKLOG TA-28) -- the newest.
+UNNAMED_FILES_NOTE_MAX = 10
+
+#: Where a stopped turn's largest results and a stopped helper's work are
+#: kept in the working folder (``aec_document_review.turn_record.KEPT_DIR``).
+KEPT_FOLDER = "kept"
+
+
+def load_downloads(conv_dir: str) -> List[dict]:
+    """The conversation's download ledger, ``[]`` when there is none.
+
+    Each entry: ``{"remote": <SharePoint path>, "local": <absolute path>,
+    "bytes": int, "ts": float}`` -- one per SharePoint file, the latest copy.
+    The file holds ``local`` relative to the conversation folder
+    (:func:`_ledger_name`); it is returned absolute, resolved against
+    ``conv_dir`` -- so a conversation restored to another place still finds
+    its downloads. An older ledger's absolute path is returned as it is.
+    """
+    try:
+        with open(os.path.join(conv_dir, DOWNLOADS_LEDGER),
+                  encoding="utf-8") as fh:
+            data = _json.load(fh)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    out = []
+    for d in data:
+        if not isinstance(d, dict) or not d.get("local"):
+            continue
+        local = str(d["local"])
+        if not os.path.isabs(local):
+            d = {**d, "local": os.path.normpath(
+                os.path.join(os.path.abspath(conv_dir), local))}
+        out.append(d)
+    return out
+
+
+def _ledger_name(conv_dir: str, local: str) -> str:
+    """``local`` as the ledger stores it: relative to the conversation
+    folder, forward slashes (``files/report.pdf``), never the server's
+    absolute path (live smoke wave 3, F8: the ledger, mirrored to
+    SharePoint, carried each download's path on the server). A file on
+    another drive, which no relative name reaches, keeps its path."""
+    ap = os.path.abspath(str(local))
+    try:
+        return os.path.relpath(ap, os.path.abspath(conv_dir)).replace(
+            os.sep, "/")
+    except ValueError:              # another drive (Windows)
+        return ap
+
+
+#: One lock per conversation folder for the ledger's read-modify-write.
+_DOWNLOADS_LOCKS: Dict[str, threading.Lock] = {}
+_DOWNLOADS_LOCKS_GUARD = threading.Lock()
+
+
+def _downloads_lock(conv_dir: str) -> threading.Lock:
+    key = os.path.normcase(os.path.abspath(str(conv_dir)))
+    with _DOWNLOADS_LOCKS_GUARD:
+        lock = _DOWNLOADS_LOCKS.get(key)
+        if lock is None:
+            lock = _DOWNLOADS_LOCKS[key] = threading.Lock()
+        return lock
+
+
+def record_download(conv_dir: str, remote: str, local: str,
+                    size: int = 0) -> None:
+    """Record that SharePoint file ``remote`` is the local file ``local``.
+
+    One entry per remote (case-insensitive); a later download of the same
+    remote replaces its entry. Best-effort: a ledger that cannot be written
+    must never fail the download it describes.
+
+    Live smoke wave 2c (E5): two downloads 3 ms apart each read the ledger,
+    added their own entry and wrote it back through one shared temporary
+    file, so one entry was lost. The read-modify-write now holds the
+    conversation's lock, and each write goes through a temporary file of
+    its own."""
+    if not conv_dir or not remote or not local:
+        return
+    try:
+        with _downloads_lock(conv_dir):
+            entries = [{**d, "local": _ledger_name(conv_dir, d["local"])}
+                       for d in load_downloads(conv_dir)
+                       if str(d.get("remote", "")).lower()
+                       != str(remote).lower()]
+            entries.append({"remote": str(remote),
+                            "local": _ledger_name(conv_dir, local),
+                            "bytes": int(size or 0), "ts": _time.time()})
+            os.makedirs(conv_dir, exist_ok=True)
+            tmp = os.path.join(
+                conv_dir, f"{DOWNLOADS_LEDGER}.{os.getpid()}-"
+                          f"{threading.get_ident()}.tmp")
+            try:
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    _json.dump(entries, fh, ensure_ascii=False, indent=1)
+                os.replace(tmp, os.path.join(conv_dir, DOWNLOADS_LEDGER))
+            except (OSError, TypeError, ValueError):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                raise
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def _attachment_keys(conv_dir: str) -> List[str]:
+    try:
+        with open(os.path.join(conv_dir, "attachments.json"),
+                  encoding="utf-8") as fh:
+            keys = _json.load(fh)
+    except (OSError, ValueError):
+        return []
+    return [str(k) for k in keys or [] if k]
+
+
+def _note_name(path: str, files_dir: str) -> str:
+    """A file as the turn note names it: relative to the working folder
+    (forward slashes) when inside it -- the name the tools resolve -- and the
+    path as it is only for a file elsewhere (a custom working folder)."""
+    ap = os.path.abspath(path)
+    fd = os.path.abspath(files_dir)
+    if ap.startswith(fd + os.sep):
+        return os.path.relpath(ap, fd).replace(os.sep, "/")
+    return ap
+
+
+#: Characters of the "already looked at" line at most.
+READS_NOTE_MAX_CHARS = 900
+
+
+def _page_list(pages: List[int]) -> str:
+    """``[1, 2, 3, 5]`` -> ``"1-3, 5"``."""
+    pages = sorted(set(int(p) for p in pages))
+    out, i = [], 0
+    while i < len(pages):
+        j = i
+        while j + 1 < len(pages) and pages[j + 1] == pages[j] + 1:
+            j += 1
+        out.append(str(pages[i]) if i == j else f"{pages[i]}-{pages[j]}")
+        i = j + 1
+    return ", ".join(out)
+
+
+def reads_note(folder: Optional[str]) -> str:
+    """One line naming the pages this conversation has LOOKED AT with the
+    page and zoom tools, per document, in a viewer's page numbers; ``""``
+    when none are recorded.
+
+    Live smoke wave 2b (C7): asked "what pages did you look at?", a model
+    that had viewed all ten sheets said its claim was "stronger than my
+    record supports" and re-read all ten ($1.86, 152 s); 67 of 162 page reads
+    re-read a page an earlier turn had read. The vision tools keep the record
+    (``aec_agent_core.vision_tools.reads_for_conversation``); this puts it in
+    front of the turn."""
+    try:
+        from aec_agent_core.vision_tools import reads_for_conversation
+        reads = reads_for_conversation(folder) if folder else []
+    except Exception:  # noqa: BLE001 - a missing record is no record
+        return ""
+    if not reads:
+        return ""
+    docs: Dict[str, Dict[str, set]] = {}
+    order: List[str] = []
+    for r in reads:
+        name = str(r.get("document") or "").strip()
+        page = r.get("pdf_page")
+        if not name or not isinstance(page, int):
+            continue
+        if name not in docs:
+            docs[name] = {"whole": set(), "tiled": set(), "zoom": set()}
+            order.append(name)
+        view = r.get("view")
+        if isinstance(view, str) and "tiles" in view:
+            docs[name]["tiled"].add(page)
+            docs[name]["whole"].add(page)
+        elif view == "page" or view is None:
+            docs[name]["whole"].add(page)
+        else:
+            docs[name]["zoom"].add(page)
+    parts = []
+    for name in order:
+        d = docs[name]
+        bits = []
+        if is_image_name(name):
+            # An image has no pages: "p. 1" read as a page of a document
+            # (BACKLOG VIS-26).
+            if d["whole"]:
+                bits.append("looked at whole")
+            if d["zoom"]:
+                bits.append("zoomed on (boxes in its own pixels)")
+            if bits:
+                parts.append(f"'{name}' (an image): " + "; ".join(bits))
+            continue
+        if d["whole"]:
+            bits.append(f"whole page p. {_page_list(sorted(d['whole']))}")
+        if d["tiled"]:
+            bits.append(f"also in tiles p. {_page_list(sorted(d['tiled']))}")
+        if d["zoom"]:
+            bits.append(f"zoomed on p. {_page_list(sorted(d['zoom']))}")
+        if bits:
+            parts.append(f"'{name}': " + "; ".join(bits))
+    if not parts:
+        return ""
+    line = ("Already LOOKED AT in this conversation (page and zoom tools, "
+            "PDF pages as a viewer counts them): " + " | ".join(parts) + ".")
+    if len(line) > READS_NOTE_MAX_CHARS:
+        line = line[:READS_NOTE_MAX_CHARS - 40].rsplit(" | ", 1)[0] + \
+            " | ... (more not listed)."
+    return line + (" Use this when asked what you looked at; look again only "
+                   "when the question needs something those reads did not "
+                   "cover. Text you read (read_document, search) is not in "
+                   "this list.") + readings_note(folder)
+
+
+#: Characters of the "readings kept" sentence at most (zooms are listed
+#: too since live smoke wave 3, F6, each with the box to pass back).
+READINGS_NOTE_MAX_CHARS = 1000
+
+
+def readings_note(folder: Optional[str]) -> str:
+    """The sentence naming the page READINGS kept for this conversation --
+    each page's full result, with what it was asked -- and how to have one
+    back without a new look; ``""`` when none are kept.
+
+    Live smoke wave 2c (E2): F44 transcribed one sheet whole in all four
+    turns (206 s) though the note above said it had been looked at; the
+    note said WHICH pages, not what was seen, and the full readings were
+    gone after each turn."""
+    try:
+        from aec_agent_core.vision_tools import readings_for_conversation
+        kept = readings_for_conversation(folder) if folder else []
+    except Exception:  # noqa: BLE001 - no record, no sentence
+        return ""
+    items: List[str] = []
+    for r in reversed(kept):              # the newest first
+        name = str(r.get("document") or "").strip()
+        page = r.get("pdf_page")
+        if not name or not isinstance(page, int):
+            continue
+        asked = " ".join(str(r.get("prompt") or "").split())
+        if len(asked) > 60:
+            asked = asked[:57].rstrip() + "..."
+        view = r.get("view") or "page"
+        region = r.get("region")
+        image = is_image_name(name)
+        if view == "zoom" and isinstance(region, list) and len(region) == 4:
+            # the box to pass back for this zoom (live smoke wave 3, F6)
+            view = "zoom bbox=[" + ", ".join(f"{float(v):g}"
+                                             for v in region) + "]" + \
+                (" px" if image else "")
+        # An image has no pages to name (BACKLOG VIS-26).
+        where = f"'{name}' (image)" if image else f"'{name}' p. {page}"
+        items.append(f"{where} ({view}, asked \"{asked}\")")
+    if not items:
+        return ""
+    head = (" Readings already taken and kept (newest first; "
+            "analyze_pdf_page(..., pdf_page=N, reuse=true) returns a page "
+            "reading and render_region(..., pdf_page=N, bbox=<the zoom's "
+            "bbox>, reuse=true) a zoom, without a new look, each saying what "
+            "it was asked): ")
+    room = READINGS_NOTE_MAX_CHARS - len(head) - 30
+    shown: List[str] = []
+    for it in items:
+        if sum(len(s) + 2 for s in shown) + len(it) > room:
+            break
+        shown.append(it)
+    more = len(items) - len(shown)
+    return head + "; ".join(shown) + (f"; and {more} more." if more else ".")
+
+
+def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
+                       exclude_text: str = "",
+                       limit: int = WORKING_FILES_NOTE_MAX,
+                       reads_folder: Optional[str] = None) -> str:
+    """The "[System note]" naming the files this conversation already holds,
+    for the front of the current turn's message; ``""`` when there are none.
+
+    ``reads_folder`` is the working folder the turn is bound to (the key of
+    the vision tools' record of pages looked at, :func:`reads_note`);
+    ``None`` uses ``files_dir``.
+
+    Sources, all already on disk: ``attachments.json`` (the user's uploads),
+    the downloads ledger (SharePoint files fetched to read, with where they
+    came from), and the transcript (each turn's produced files, and the files
+    a turn fetched -- which also covers conversations from before the ledger).
+    A file of a turn that never answered (interrupted, or stopped on an
+    error) says so. Then every OTHER file in the folder, at most
+    :data:`UNNAMED_FILES_NOTE_MAX` of them, newest last, with what it likely
+    is (BACKLOG TA-28: an interrupted turn's DIGGS file was in the folder and
+    not in the note, so the next turn rebuilt it). Cache and scratch folders
+    are never listed. Only files that still exist are named. A file whose
+    path or name appears in ``exclude_text`` -- this turn's own attachment
+    note -- is left out, so a fresh upload is not announced twice."""
+    fd = os.path.abspath(files_dir)
+    conv = os.path.dirname(fd)
+    found: Dict[str, dict] = {}
+    order: List[str] = []
+
+    def add(path: str, **info) -> None:
+        try:
+            ap = os.path.abspath(str(path))
+        except (TypeError, ValueError):
+            return
+        if ap not in found:
+            found[ap] = {}
+            order.append(ap)
+        for k, v in info.items():
+            if v not in (None, "") and not found[ap].get(k):
+                found[ap][k] = v
+
+    for key in _attachment_keys(conv):
+        add(os.path.join(fd, key), origin="attached by the user")
+    turn = 0
+    for entry in transcript or ():
+        role = entry.get("role")
+        if role == "user":
+            turn += 1
+        elif role == "assistant":
+            # A turn that never answered: no answer of the model's names
+            # its files, so the note says why (BACKLOG TA-28).
+            stopped = ("that turn was interrupted before it answered, so no "
+                       "answer of yours names this file"
+                       if entry.get("recovered") else
+                       "that turn stopped on an error" if entry.get("error")
+                       else "")
+            for name in entry.get("inputs") or ():
+                add(os.path.join(fd, str(name)), origin="fetched to read",
+                    turn=turn)
+            for ref in entry.get("artifacts") or ():
+                path = _resolve_artifact(str(ref), fd)
+                # A chart's card is its interactive sidecar; its picture is
+                # named too, beside it, for a document that needs the image.
+                picture = plotly_picture_twin(path)
+                if picture:
+                    add(picture, origin="you produced it", turn=turn,
+                        note="the picture of the chart "
+                             f"'{_note_name(path, fd)}'; use it in documents")
+                    add(path, origin="you produced it", turn=turn,
+                        note="the interactive chart shown to the user; "
+                             f"its picture is '{_note_name(picture, fd)}'")
+                else:
+                    add(path, origin="you produced it", turn=turn,
+                        stopped=stopped)
+    for d in load_downloads(conv):
+        add(d["local"], origin="fetched to read", remote=d.get("remote"))
+    # Every other file in the folder (BACKLOG TA-28): what a turn saved
+    # before it was interrupted in an older record, a stopped helper's kept
+    # work, a file restored without its turn. Newest last.
+    unnamed = []
+    for p in snapshot_dir(fd):
+        ap = os.path.abspath(p)
+        if ap in found or str(p).lower().endswith(IN_FLIGHT_SUFFIXES):
+            continue
+        try:
+            unnamed.append((os.path.getmtime(ap), ap))
+        except OSError:
+            continue
+    for _, ap in sorted(unnamed):
+        rel = _note_name(ap, fd)
+        if rel.startswith(KEPT_FOLDER + "/helper_"):
+            origin = "what a helper that stopped had gathered, kept"
+        elif rel.startswith(KEPT_FOLDER + "/"):
+            origin = "a tool result kept whole from a turn that stopped"
+        else:
+            origin = ("in the folder, though no answer of yours names it "
+                      "(saved by a turn that was interrupted, or by a "
+                      "helper)")
+        add(ap, origin=origin, unnamed=True)
+
+    rows, extra_rows = [], []
+    excl = str(exclude_text or "")
+    for ap in order:
+        if not os.path.isfile(ap) or is_cache_path(ap, fd):
+            continue
+        if excl and (ap in excl or f"'{os.path.basename(ap)}'" in excl):
+            continue
+        info = found[ap]
+        where = ""
+        if info.get("remote"):
+            where = f" from SharePoint '{info['remote']}'"
+        when = f" in turn {info['turn']}" if info.get("turn") else ""
+        if info.get("stopped") and when:
+            when += f" ({info['stopped']})"
+        what = f" -- {info['note']}" if info.get("note") else ""
+        try:
+            size = f"{os.path.getsize(ap):,} bytes"
+        except OSError:
+            size = "size unknown"
+        (extra_rows if info.get("unnamed") else rows).append(
+            f"- '{_note_name(ap, fd)}' ({size}): "
+            f"{info.get('origin', 'in the folder')}{where}{when}{what}")
+    looked = reads_note(reads_folder or files_dir)
+    if not rows and not extra_rows and not looked:
+        return ""
+    skipped = max(0, len(rows) - int(limit))
+    rows = rows[-int(limit):] if skipped else rows
+    # The folder's other files never push out the named ones: at most
+    # UNNAMED_FILES_NOTE_MAX of them, the newest.
+    more = max(0, len(extra_rows) - UNNAMED_FILES_NOTE_MAX)
+    if more:
+        extra_rows = extra_rows[-UNNAMED_FILES_NOTE_MAX:]
+        skipped += more
+    rows = rows + extra_rows
+    head = ("[System note] Files already in this conversation's working "
+            "folder, from earlier turns. You see earlier turns through the "
+            "answers you gave, not through their tool results (only a turn "
+            "that stopped on an error keeps its tool results), so this "
+            "list is the record of what you already have. Use these files "
+            "by these names -- every file tool looks a name up in the "
+            "working folder -- and do not fetch them again; do not tell "
+            "the user a file is unavailable, or that you never had it, while "
+            "it is listed here.")
+    head += (" The pages you looked at are listed after the files; which "
+             "pages you read as text is only in your earlier answers."
+             if looked else
+             " Which pages of a file you actually read is only in your "
+             "earlier answers.")
+    if skipped:
+        head += f" (The {skipped} oldest are not listed; list_files shows all.)"
+    return "\n".join([head] + rows + ([looked] if looked else []))
+
+
+def with_turn_note(messages: list, note: Optional[str]) -> list:
+    """A copy of ``messages`` with ``note`` put in front of the LAST message
+    when that message is the user's (the turn being answered). The caller's
+    list is not touched, so the note never enters the saved history -- each
+    turn gets a fresh one."""
+    out = list(messages or [])
+    if not note or not out:
+        return out
+    last = out[-1]
+    if isinstance(last, dict):
+        if last.get("role") in ("user", "human") and \
+                isinstance(last.get("content"), str):
+            out[-1] = {**last, "content": f"{note}\n\n{last['content']}"}
+        return out
+    if getattr(last, "type", "") == "human" and \
+            isinstance(getattr(last, "content", None), str):
+        out[-1] = {"role": "user", "content": f"{note}\n\n{last.content}"}
+    return out

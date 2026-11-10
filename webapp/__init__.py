@@ -39,4 +39,15 @@ _set_hook("prompter.resolve_for", "webapp.tinyapps_keys:resolve_for")
 _set_hook("prompter.tester_keys_possible",
           "webapp.tinyapps_keys:tester_keys_possible")
 
+# Which application runs on the core (INF-33 step 13; aec_agent_core.
+# app_details): the run record's app version, the default Word and markup
+# authors and the runtime messages name GeotechStaffEngineer, as before the
+# core named no application. The same values are handed in by
+# funhouse_agent, webapp and calc_package, whichever loads first
+# (webapp/tests/test_app_details.py checks they agree).
+from aec_agent_core.app_details import hand_in as _hand_in_app
+
+_hand_in_app(name="GeotechStaffEngineer", dist="geotech-staff-engineer",
+             package="funhouse_agent.deep")
+
 __all__ = ["core", "engine_config"]
