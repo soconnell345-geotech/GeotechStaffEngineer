@@ -3149,5 +3149,446 @@
       "BACKLOG.md OWN-134",
       "module_work/docreview_review_2026-11-10/REVIEW.md section 4"
     ]
+  },
+  "OWN-135": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Which of these public references should be added to the library, and when?",
+    "multi": true,
+    "why": "Each fills a gap where the library holds no printed method today: DoD minimum factors of safety, slope stability and seepage as USACE prints them, liquefaction triggering and seismic settlement, frost depth, dewatering, overseas seismic ground motions. You said on 2026-11-10 not to build any yet.",
+    "background": "The reference review checked 58 public candidates on 2026-11-10; these are the 12 it ranked first. All are US-government works in the public domain except Boulanger and Idriss (2014) and EPRI EL-6800, which are free to read or download but copyrighted and not to be redistributed. The recorded helper runs argue for EM 1110-2-1902 and GEC-3 (REF-35); EM 1110-2-1902's Appendix G is also the source for step 9 of the slope plan (OWN-101), and USBR DS-13 prints Youd et al. (2001), which the library does not hold (OWN-12). The USACE manuals' currency is unconfirmed, because the official site refuses automated reads. UFC 3-220-01 (2026) is published only in WBDG's viewer; its newest PDF is the 2012 edition. The same check found held documents superseded or archived on WBDG: UFC 3-220-07 (archived, replaced by UFC 3-220-01), UFC 4-023-03 (archived, UFC 3-301-01 Change 5), UFC 3-301-01 Change 4 (Changes 5 and 6 are out), UFC 3-250-03, -04 and -11 (UFS editions, 2026), UFC 3-250-01 (2016; a 2026 digital edition), UFC 3-260-02 (2001, held but not built; the 2026 edition is 127 pages and drops the CBR method) and UFC 3-220-04FA (inactive). EM 1110-1-1905 (2025), which you asked for separately, is being built (REF-72).",
+    "options": [
+      {
+        "label": "1. UFC 3-220-01 Geotechnical Engineering (2026)",
+        "effect": "The DoD criteria document: minimum factors of safety for liquefaction (now with Risk Category V) and for foundations in rock and soil. Its 2026 text has to be copied by hand from WBDG's viewer, or wait for a PDF."
+      },
+      {
+        "label": "2. EM 1110-2-1902 Slope Stability (2003)",
+        "effect": "Limit-equilibrium methods, USACE minimum factors of safety by load case, drained, undrained and rapid-drawdown strengths. Currency to confirm in a browser."
+      },
+      {
+        "label": "3. EM 1110-2-1901 Seepage Analysis and Control for Dams (1986, Change 1 1993)",
+        "effect": "Flow nets, foundation and embankment seepage, cutoffs, blankets, drains, relief wells, filters (its filter criteria are older than NRCS's). Currency to confirm in a browser."
+      },
+      {
+        "label": "4. FHWA GEC-3, FHWA-NHI-11-032 (2011)",
+        "effect": "Liquefaction triggering, seismic settlement, lateral spread, seismic slope deformation, site response, seismic earth pressure; the public source REF-35 asks for."
+      },
+      {
+        "label": "5. USBR Design Standards No. 13, Chapter 13 (2015)",
+        "effect": "A federal text that prints the simplified liquefaction method with the K-sigma correction and cites Youd et al. (2001) and Idriss and Boulanger (2008, 2010)."
+      },
+      {
+        "label": "6. Boulanger and Idriss, UCD/CGM-14/01 (2014)",
+        "effect": "The current Idriss-Boulanger CPT and SPT triggering relationships. Copyrighted: free to read, not to redistribute; ask before storing its text in the public repository."
+      },
+      {
+        "label": "7. Reclamation and USACE risk-analysis chapters A-1, A-7, D-8 (2019)",
+        "effect": "Probability basics, probabilistic limit-state analysis (FOSM, Monte Carlo), seismic risk for embankments; USBR calls them training material, not a stand-alone reference."
+      },
+      {
+        "label": "8. NOAA air-freezing index return periods",
+        "effect": "Air-freezing index at 1.1- to 100-year return periods for US stations (the frost-depth slot); US only."
+      },
+      {
+        "label": "9. UFC 3-130-03 Arctic and Subarctic Foundations (2025 PDF)",
+        "effect": "A frost-depth method usable abroad (freezing index, n-factors, modified Berggren) and an adfreeze table; the 2026 digital edition dropped most tables, so the 2025 PDF."
+      },
+      {
+        "label": "10. UFC 3-220-05 Dewatering and Groundwater Control (2004)",
+        "effect": "Well and wellpoint design, pressure relief, aquifer characterization, cutoffs (the dewatering slot); inactive on WBDG, usable after a relevancy check."
+      },
+      {
+        "label": "11. EPRI EL-6800 Estimating Soil Properties for Foundation Design (1990)",
+        "effect": "Soil property correlations from in-situ and laboratory tests, with variability data. Copyrighted: free download, not to redistribute."
+      },
+      {
+        "label": "12. UFC 3-301-01 OCONUS ground-motions spreadsheet (2025)",
+        "effect": "DoD seismic design ground motions for overseas locations; its columns were not checked."
+      }
+    ],
+    "recommendation": "When you want them: EM 1110-2-1902 and GEC-3 first (the recorded runs argue for both, and each already has an open item waiting on it: OWN-101 step 9 and REF-35), then UFC 3-220-01 once its 2026 text is in hand. Ask before Boulanger and Idriss (2014) or EPRI EL-6800 go into the public repository.",
+    "if_no_answer": "Nothing is built; the library keeps what it holds. EM 1110-1-1905 (REF-72) carries on.",
+    "message_to_send": null,
+    "steps": [
+      "Before a USACE manual is built: open the EM listing in a browser (https://www.publications.usace.army.mil/USACE-Publications/Engineer-Manuals/, three pages) and check that EM 1110-2-1902 (31 Oct 2003) and EM 1110-2-1901 (30 Sep 1986, Change 1 1993) are listed with those dates.",
+      "For UFC 3-220-01 (2026): its text is only in WBDG's viewer (https://www.wbdg.org/criteria/b1df8bb0-4932-492e-990b-754d2485abef/latest); copy it from there, or wait for a PDF."
+    ],
+    "unblocks": [
+      "REF-35"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-135",
+      "module_work/refs_review_2026-11-10/findings/CANDIDATES.md",
+      "module_work/refs_review_2026-11-10/findings/traces.md"
+    ]
+  },
+  "OWN-136": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Do the lead's calls stand where a printed equation, table or chart looked wrong?",
+    "why": "You left these calls to the lead on 2026-11-10 and asked for a later item to revisit them. Each sets a number the references helper returns; if a call is wrong, the helper's answer is wrong the same way every time.",
+    "background": "Each call is one of three kinds: the print contradicts itself or its own worked example; a unit or symbol is missing; or a table or chart gives no rule between its printed values. In every case the function's description and result state the printed form, the coded form and the page, so a reader sees the departure. The calls are on the fix branches (REF-65 to REF-70) and reach the library when they merge; a branch still running may add one, which goes on this card. Two were settled from public prints and are not on it: FHWA-NHI-05-037 Table 5-34's DCP index is in mm per blow (TM 3-34.48-2 Figure G-11; WES Instruction Report GL-92-3, p. 17), and UFC 3-250-11 Table 2-3 note (c) is PI <= 20 + (50 - percent passing No. 200)/4 (the 2004 edition's Table 2-1 note b; at 10 % passing the limit is 30, not 60). Pages are 'PDF page, printed page'. The full table is findings/RULINGS.md.",
+    "parts": [
+      {
+        "label": "1. DM 7.1 Eq. 3-2, relative density from dry density (PDF 169, printed 141): the typeset second form has gamma_d-max in the numerator's bracket, negative for any soil looser than its densest state. Kept the code (gamma_d-min), the only form that makes the print's two forms equal.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "2. DM 7.1 Eq. 4-7, trench load coefficient (PDF 223, printed 195): printed Cd = [1 - e^(-K mu' H/Bd)]/(2 K mu'). Kept the code's 2 in the exponent: with no wall friction the printed pair (Eqs. 4-6, 4-7) gives half the backfill weight; as typeset, rigid-pipe loads fall about 40 %.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "3. DM 7.1 Eq. 4-8, flexible pipe trench load (PDF 225, printed 197): printed Wc = Cd gamma_t Bc D with Bc and D both the pipe's outside diameter. Kept the code's trench width for one of them: a higher load whenever the trench is wider than the pipe; as typeset is the unsafe side.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "4. DM 7.1 Eq. 8-44, Benson and Trast hydraulic conductivity (PDF 491, printed 463): no unit printed for w. The saturation term taken in percent: in Eq. 8-43 on the same page the same term can only be a decimal, and here as a decimal it barely changes k. A public source is being sought.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "5. DM 7.1 Eq. 8-43, Benson landfill-liner hydraulic conductivity (same page): kept as printed (w a decimal, k in m/s), with a note that ordinary liner inputs give about 3.6e-8 m/s; the source may be in cm/s (3.6e-10 m/s), which the page cannot settle.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "6. DM 7.1 Eq. 5-23, drain spacing factor Fn (PDF 295, printed 267): follows the typeset form; the page's sentence on the approximation's error fits an older bracketed form slightly better. Under 0.1 % apart at n 20 to 50.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "7. DM 7.1 Figure 5-6(a), mu1 (PDF 258, printed 230): below H/B 1.5 the five curves run in one band and no rule is printed between curves. The band's middle for every L/B (within 0.03), straight-line between curves in L/B.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "8. DM 7.1 input limits added by the fixes: where only a chart's axis or curve end gives a range, that is the limit (only Hazen's and Eq. 8-38's ranges are stated in words); Kozeny-Carman fractions must total 1 or 100; Eqs. 8-43 and 8-44 accept a computed saturation up to 1.10, since measurement scatter puts some a little over 100 %.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "9. Caltrans Trenching and Shoring Eqs. 4-5-1 to 4-5-4, maximum allowable slope angle (PDF 73-74): Eq. 4-5-2 is not dimensionally consistent, and the angle can fall as cohesion rises (61.1 deg at c 400 psf, 46.9 at 800). Kept as typeset; the result opens with a caution and says to check by a stability analysis. The 1997 ASCE paper it cites is not held.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "10. EN 1997-1 Table A.10 for a number of tests it does not print (n = 1, 2, 3, 4, 5, 7, 10 only, no rule between): refused, giving the neighbouring printed values.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "11. GEC-12 Table 7-10 (Brown's method), compression rows for gravelly sand to boulders and rock (PDF 306, printed 260): Bb printed equal to Ab (0.888, 2.89) while the tension rows print 0.0. Returns Bb = 0.0 with a note saying what is printed (with 0.888, Eq. 7-21 gives 27.5 ksf at N60 30 against Table 7-8's 2.4 ksf limit); the vibratory rows filed under tension, as typeset.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "12. FHWA-NHI-05-037 Table 5-34, CBR = 75/(1 + 0.728 wPI): printed 'P200 = % passing No. 200'. P200 kept as a decimal: with the percent the equation gives a CBR under 1 for any plastic soil.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "13. GEC-7 Table 4.9, F_PGA (PDF 134, printed 94): the column headings are the Fa table's (0.25 to 1.25). Uses PGA 0.1 to 0.5, as GEC-12 Table 7-27 prints the same values; site class D at PGA 0.30 gives 1.2 (was 1.56).",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "14. UFC 3-250-01 Eq. 20-3, Taylor's permeability (PDF 113, printed 93): printed with (1 - e) in the denominator. Kept the code's e^3/(1 + e), Taylor's form; the departure is stated.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "15. AASHTO 1993 Figures 3.5 and 3.6 (relative damage for rigid pavements, loss of support): charts with no printed closed form. The code's fitted forms kept and disclosed as fits (up to 12.5 % off chart reads; LS = 1 matches the printed example); the pavement calc module uses them.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "16. DM 7.2 Eq. 3-4, relative water content: the equation prints w_opt - w_field; footnote A of Tables 3-10 and 3-11 defines w_field - w_opt. Kept the code, which follows the tables, whose limits read that way.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "17. DM 7.2 Eq. 6-15, Coleman's alpha for CFA piles: prints 0.53 (su/Pa) with no exponent. Kept the coded -1 exponent, which follows Figure 6-14 curve E.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "18. EM 1110-2-2107 Appendix F (PDF 436-445): three typeset forms disagree with the manual's own worked example and tables (Eq. F.10's sign, -50.0 against Table F.3's +50.0; theta_p typeset tan^-1(Ph/Pv), the example uses Pv/Ph; theta_Rt typeset tan^-1(Rtx/Rty), the example uses 363/1336). The code follows the worked example; the departure and the sign are stated.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "19. Wood Handbook Eq. 9-24, torsional shear stress of a rectangular section (PDF 244-245, printed 9-13): printed T/(beta h b^2). Code beta T/(h b^2): the print's own Figure 9-15 gives beta from 3 to 4.8, a multiplier; as printed the stress is 9 to 23 times too low.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "20. Wood Handbook Eq. 9-32, critical ponding spacing: the SI form prints water's density, 1000 kg/m3. Uses the unit weight, 9,810 N/m3: a mass density with force-per-length inputs makes the spacing 9.81 times too large (unsafe); the inch-pound value printed is a weight density.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "21. Wood Handbook Eq. 9-41, elastic buckling stress in edgewise bending (PDF 249): printed 1.44 E d2/(le d1), which is not a stress and changes with the length unit. Code 1.44 E d2^2/(le d1), unless the page's own figure or text contradicts it (the fixer is to check).",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "22. Where EM 1110-2-2107 or EM 1110-2-2104 disagrees with itself, the code follows the stated equation: EM 2107 Eq. 10.1 against F.2 and F.3 (a factor of two in the seal friction term); Eq. 4.4 against Eq. 4.6 (C = 0.75); EM 2104's D-5 example uses the 4-ksi coefficient for 5-ksi concrete.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "23. ufc_backfill rebuilt from the held UFC 3-220-04FA (2004), overturning REF-31's 'stays 04N'.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "24. ufc_expansive rebuilt from the held UFC 3-220-07, which WBDG now lists as archived, replaced by UFC 3-220-01 (OWN-135).",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "25. Functions with no printed basis removed rather than kept behind a warning: `aashto_reliability_index`, `modulus_subgrade_reaction_from_cbr`, the Komornik-David and Seed functions, backfill Types I-III, and others the branches list.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      }
+    ],
+    "recommendation": "Let them stand. Look first at 4 and 5 (Eqs. 8-43 and 8-44) and 9 (Caltrans): those are the ones a source could still settle (the public source being sought for Eqs. 8-43 and 8-44; the 1997 ASCE paper Caltrans cites).",
+    "if_no_answer": "Every call stands as decided, and each function keeps stating the printed form, the coded form and the page.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-136",
+      "module_work/refs_review_2026-11-10/findings/RULINGS.md",
+      "module_work/refs_review_2026-11-10/findings/dm71_fixes.md"
+    ]
   }
 }
