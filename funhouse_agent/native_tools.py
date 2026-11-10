@@ -11,7 +11,7 @@ import json
 from typing import Any, Callable, Dict, Optional
 
 from funhouse_agent.dispatch import (
-    call_agent, describe_method, list_agents, list_methods,
+    call_agent, describe_method, held_references, list_agents, list_methods,
     parameters_object,
 )
 from funhouse_agent.vision_tools import (
@@ -446,8 +446,8 @@ CONSULT_REFERENCES_TOOL = {
         "name": "consult_references",
         "description": (
             "Ask the geotechnical reference librarian a question. It searches "
-            "the design references (NAVFAC DM7, the FHWA GEC series, UFC, "
-            "micropile, FEMA, NOAA — chapter text, tables, equations, and "
+            "the design references (" + "; ".join(held_references())
+            + " — chapter text, tables, equations, and "
             "figure charts) and returns a cited answer. Use it whenever you "
             "need a code provision, a recommended method, a parameter range, a "
             "required factor of safety, or a value read off a design chart. You "

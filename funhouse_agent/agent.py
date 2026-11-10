@@ -26,7 +26,7 @@ from funhouse_agent.react_support import (
     AgentResult, ConversationHistory, _truncate, parse_response,
 )
 
-from funhouse_agent.dispatch import dispatch_tool
+from funhouse_agent.dispatch import dispatch_tool, held_references
 from funhouse_agent.system_prompt import build_system_prompt
 from funhouse_agent.reviewer import run_review, needs_revision
 
@@ -97,8 +97,9 @@ def _build_native_system_prompt(allowed_agents=None) -> str:
 # tool via the OpenAI tools parameter instead (CONSULT_REFERENCES_TOOL).
 CONSULT_TEXT_DESCRIPTION = (
     "\n\n### consult_references\n"
-    "Ask the reference librarian a question (NAVFAC DM7, FHWA GEC series, UFC, "
-    "micropile, FEMA, NOAA — text, tables, figures). Returns a cited answer. You "
+    "Ask the reference librarian a question ("
+    + "; ".join(held_references())
+    + " — text, tables, figures). Returns a cited answer. You "
     "do NOT have the reference modules directly; this is the only way to reach "
     "them.\n"
     "```\n"

@@ -77,6 +77,21 @@ REFERENCE_MODULES = frozenset({
     "eurocode_7_1", "eurocode_7_2", "aashto_1993",
 })
 
+
+def held_references() -> list:
+    """The references the reference modules hold, each by the name its
+    manual is known by (the registry entry's ``title``), in registry order.
+
+    The references helper's description names them from here, so a module
+    added to ``REFERENCE_MODULES`` with a title appears there by itself
+    (2026-11-10 review, item 3: the hand-written list named a NOAA
+    reference that does not exist and left out Eurocode 7, AASHTO 1993,
+    the USACE EMs and Caltrans). The two search modules, ``reference_db``
+    and ``figure_db``, search these and hold none of their own.
+    """
+    return [spec["title"] for name, spec in MODULE_REGISTRY.items()
+            if name in REFERENCE_MODULES and spec.get("title")]
+
 # Analysis (computation) modules: everything the primary agent may call directly.
 ANALYSIS_MODULES = frozenset(MODULE_REGISTRY) - REFERENCE_MODULES
 

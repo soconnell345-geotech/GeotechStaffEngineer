@@ -53,7 +53,8 @@ from funhouse_agent.deep.assembly import (  # noqa: F401
     build_summarization_middleware,
 )
 
-from funhouse_agent.dispatch import ANALYSIS_MODULES, REFERENCE_MODULES
+from funhouse_agent.dispatch import (ANALYSIS_MODULES, REFERENCE_MODULES,
+                                     held_references)
 from funhouse_agent.reviewer import CONSULTANT_ROLE, REVIEWER_DEEP_PROMPT
 from funhouse_agent.system_prompt import (REFERENCE_MODULES_CLAUSE,
                                           REFERENCES_HELPER_CLAUSE)
@@ -154,12 +155,16 @@ _REFERENCES_BUDGET = (
 # Sub-agent descriptions (what the primary uses to decide when to delegate)
 # ---------------------------------------------------------------------------
 
+#: The references named from the registry (``dispatch.held_references``),
+#: so the list cannot drift from what the helper can reach (2026-11-10
+#: review, item 3: it had named a NOAA reference that does not exist and
+#: left out Eurocode 7, AASHTO 1993, the USACE EMs and Caltrans).
 _REFERENCES_DESCRIPTION = (
     "The geotechnical reference librarian. Delegate to it whenever you need a "
     "code provision, a recommended method, a parameter range, a required "
-    "factor of safety, or a value read off a design chart. It searches the "
-    "design references (NAVFAC DM7, the FHWA GEC series, UFC, micropile, FEMA, "
-    "NOAA — chapter text, tables, equations, and figure charts), cites the "
+    "factor of safety, or a value read off a design chart. The references "
+    "it holds: " + "; ".join(held_references()) + ". It searches their "
+    "chapter text, tables, equations and figure charts, cites the "
     "specific reference and section/table/figure number, and reads chart "
     "values off the actual figures. You do NOT have the reference modules "
     "directly — delegating to this sub-agent is the only way to reach them."
