@@ -44,12 +44,11 @@ if ("GEOTECH_WEBAPP_DATA" not in os.environ and os.path.isdir("/home")
     os.environ["GEOTECH_WEBAPP_DATA"] = "/home/data/geotech_webapp"
 
 # Plotting code written by the model is OFF on the App Service unless the app
-# setting GEOTECH_PLOT_CODE=1 turns it on. The box it runs in limits Python,
-# not the operating system, and a review on 2026-11-10 read files outside the
-# conversation folder from inside it. This process holds every tester's
-# conversations and the app's secrets, and a document can ask for code. The
-# figure helper and its fixed plotting tool (plot_data) stay. (App backlog
-# INF-16: an operating-system layer.)
+# setting GEOTECH_PLOT_CODE=1 turns it on. The box it runs in limits Python;
+# it is not an operating-system boundary (app backlog INF-16). This process
+# holds every tester's conversations and the app's settings, and a document
+# can ask the model for code. The figure helper and its fixed plotting tool
+# (plot_data) stay.
 if os.environ.get("WEBSITE_SITE_NAME") or os.environ.get("IDENTITY_ENDPOINT"):
     os.environ.setdefault("GEOTECH_PLOT_CODE", "0")
 
