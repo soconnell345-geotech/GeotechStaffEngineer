@@ -2,9 +2,9 @@
 Reviewer agent — checks primary agent output against reference standards.
 
 Runs after the primary agent produces a final answer that included call_agent
-tool calls. Uses only the 14 geotech-references adapters (DM7, GECs, UFCs,
-FEMA, NOAA, micropile) to verify methodology, parameter ranges, required
-safety factors, and applicable code provisions.
+tool calls. Uses only the reference modules (``dispatch.REFERENCE_MODULES``:
+DM7, the GECs, the UFCs, Eurocode 7 and the others) to verify methodology,
+parameter ranges, required safety factors, and applicable code provisions.
 
 Returns a structured review that the primary agent can use to revise its answer.
 """
@@ -88,8 +88,6 @@ _REVIEW_RULES = """\
 3. Cite the specific reference section, table or figure — only ones a tool \
 returned in this review.
 4. Do NOT repeat the full analysis — only comment on what needs checking.
-5. Limit yourself to 3-4 reference lookups maximum. Focus on the most \
-critical checks.
 """
 
 #: The text-protocol tail: the v1 agent parses <tool_call> tags out of text.

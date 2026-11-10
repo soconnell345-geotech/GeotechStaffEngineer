@@ -16,6 +16,17 @@ def test_reviewer_may_cite_only_what_its_tools_returned():
     assert "only ones a tool returned in this review" in REVIEWER_SYSTEM_PROMPT
 
 
+def test_the_reviewer_has_no_lookup_count_in_its_rules():
+    """2026-11-10 reference review, item 7: the reviewer has a model-call
+    budget (DEFAULT_REVIEWER_MAX_MODEL_CALLS); the old "3-4 reference
+    lookups maximum" rule was left beside it, in both prompts."""
+    from funhouse_agent.reviewer import REVIEWER_DEEP_PROMPT
+    for prompt in (REVIEWER_SYSTEM_PROMPT, REVIEWER_DEEP_PROMPT):
+        assert "lookups maximum" not in prompt
+        assert "Limit yourself" not in prompt
+        assert "4. Do NOT repeat the full analysis" in prompt
+
+
 def test_references_consult_may_not_cite_from_memory():
     assert "never from memory" in CONSULTANT_FRAMING
     assert CONSULTANT_FRAMING.endswith("Question: ")
