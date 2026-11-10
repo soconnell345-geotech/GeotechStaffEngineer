@@ -79,3 +79,43 @@ def test_a_workbook_a_run_delivered_is_read_with_the_answer(tmp_path):
     bad = tmp_path / "broken.xlsx"
     bad.write_bytes(b"not a workbook")
     assert C.delivered_text([str(bad)]) == ("", [])
+
+
+NOT = {"re": r"\bnot\b"}
+
+
+def test_a_term_in_the_heading_counts_for_every_line_under_it():
+    filler = "".join(f"- item {n}, as drawn on the plan\n" for n in range(30))
+    for head in ("## On a plan but not scheduled", "**Not scheduled:**",
+                 "- **Not scheduled**", "On a plan but not scheduled:"):
+        answer = f"{head}\n\n{filler}- D-7\n"
+        got = _together(answer, ["d-7", NOT], window=40)
+        assert got["passed"], head
+        assert "under the heading" in got["detail"]
+    # a heading counts for its own list only
+    other = ("## Not scheduled\n\n- D-1\n\n## On the plans\n\n"
+             + filler + "- D-7\n")
+    assert not _together(other, ["d-7", NOT], window=40)["passed"]
+
+
+def test_a_table_header_row_heads_its_rows():
+    rows = "".join(f"| D-{n} | A-10{n} | tagged near the stair |\n"
+                   for n in range(1, 8))
+    table = "| Mark | Sheet | Not in the schedule |\n|---|---|---|\n" + rows
+    assert _together(table, ["d-7", NOT], window=40)["passed"]
+    # the heading above a table and its header row both count
+    both = "### Not scheduled\n\n| Mark | Sheet | Where |\n|---|---|---|\n" + rows
+    assert _together(both, ["d-7", NOT], window=40)["passed"]
+    # text after the table is no longer under its header row
+    after = table + "\nOther marks seen: " + "x " * 40 + "D-9.\n"
+    assert not _together(after, ["d-9", NOT], window=40)["passed"]
+
+
+def test_the_terms_under_a_heading_must_still_be_together():
+    filler = "".join(f"- item {n}\n" for n in range(30))
+    answer = ("## Levels that differ\n\n- 104.20 on the elevation\n"
+              + filler + "- 104.50 on the section\n")
+    # the heading holds neither value: they are too far apart
+    assert not _together(answer, ["104.20", "104.50"], window=60)["passed"]
+    answer = "## Second floor, 104.20 elsewhere\n\n" + filler + "- A-301: 104.50\n"
+    assert _together(answer, ["104.20", "104.50"], window=60)["passed"]

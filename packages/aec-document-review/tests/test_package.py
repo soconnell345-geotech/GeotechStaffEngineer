@@ -96,11 +96,11 @@ def test_the_uploader_component_ships():
                                        "index.html"))
 
 
-def test_the_suite_has_its_50_tasks_all_on_this_page():
+def test_the_suite_has_its_52_tasks_all_on_this_page():
     from aec_document_review.review_eval import OPEN_TASKS
-    assert len(OPEN_TASKS) == 50
+    assert len(OPEN_TASKS) == 52
     assert {t.page for t in OPEN_TASKS} == {"review"}
-    assert len({t.id for t in OPEN_TASKS}) == 50
+    assert len({t.id for t in OPEN_TASKS}) == 52
 
 
 def test_the_suite_dry_run_lists_its_tasks(tmp_path):
@@ -108,7 +108,7 @@ def test_the_suite_dry_run_lists_its_tasks(tmp_path):
     out = score_review_suite(out_dir=str(tmp_path), dry_run=True)
     text = out["results_md"]
     assert text.startswith("# Dry run")
-    assert "50 tasks" in text
+    assert "52 tasks" in text
 
 
 def test_no_text_the_package_shows_names_geotechstaffengineer():

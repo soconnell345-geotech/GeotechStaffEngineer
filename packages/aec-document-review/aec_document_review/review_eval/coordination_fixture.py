@@ -17,6 +17,8 @@ building; every name and number is made up):
   sizes: 6 to 9 pt), with 13 planted problems (:data:`BASE_PLANTED`);
 * the same set at issue 0, before three changes: two clouded and listed in
   their sheets' revision blocks, one made silently (:data:`REVISIONS`);
+* the issue 1 set as a scan: each sheet a grey image at 150 dpi, no text
+  layer, so only a look at the page reads it (:func:`build_scanned_set`);
 * a five-storey version of the set (40 sheets, with reflected ceiling,
   mechanical and power plans) that keeps the 13 problems and adds six
   (:data:`LONG_PLANTED`);
@@ -57,10 +59,17 @@ MANUAL_SECTIONS = (
     ("01 33 00", "SUBMITTAL PROCEDURES"),
     ("03 30 00", "CAST-IN-PLACE CONCRETE"),
     ("04 20 00", "UNIT MASONRY"),
+    ("05 12 00", "STRUCTURAL STEEL FRAMING"),
+    ("05 31 00", "STEEL DECKING"),
+    ("07 21 00", "THERMAL INSULATION"),
     ("07 92 00", "JOINT SEALANTS"),
     ("08 11 13", "HOLLOW METAL DOORS AND FRAMES"),
+    ("08 51 13", "ALUMINUM WINDOWS"),
     ("08 71 00", "DOOR HARDWARE"),
+    ("09 29 00", "GYPSUM BOARD"),
+    ("09 51 00", "ACOUSTICAL CEILINGS"),
     ("09 91 00", "PAINTING"),
+    ("31 20 00", "EARTH MOVING"),
 )
 #: The sections the drawings' general notes cite (G-002).
 CITED_SECTIONS = (
@@ -298,9 +307,22 @@ def _door_row(number: str, issue: int) -> Tuple[str, ...]:
     return (number, room, "915", "2135", "A", "HM", rating, hardware)
 
 
-FOOTING_ROWS = (("F1", "1500 x 1500", "400", "8-15M EACH WAY"),
-                ("F2", "1800 x 1800", "450", "10-15M EACH WAY"),
-                ("F3", "2200 x 2200", "500", "10-20M EACH WAY"))
+def footing_rows(floors: int) -> Tuple[Tuple[str, ...], ...]:
+    """The footing schedule (the five-storey building's are larger)."""
+    if floors > 2:
+        return (("F1", "1800 x 1800", "500", "10-15M EACH WAY"),
+                ("F2", "2400 x 2400", "600", "12-20M EACH WAY"),
+                ("F3", "3000 x 3000", "700", "14-20M EACH WAY"))
+    return (("F1", "1500 x 1500", "400", "8-15M EACH WAY"),
+            ("F2", "1800 x 1800", "450", "10-15M EACH WAY"),
+            ("F3", "2200 x 2200", "500", "10-20M EACH WAY"))
+
+
+def _footing_sizes(floors: int) -> Dict[str, int]:
+    """Each mark's plan size in millimetres as drawn (F4 has no row)."""
+    sizes = {row[0]: int(row[1].split()[0]) for row in footing_rows(floors)}
+    sizes["F4"] = 2800 if floors > 2 else 2600
+    return sizes
 
 
 def _footing_at(i: int, j: int) -> str:
@@ -351,7 +373,7 @@ def _project(floors: int = 2, issue: int = 1) -> Project:
             s.callouts[1] = ("section", "2", "A-302")
             s.callouts += [("plan", "2", "A-401"), ("detail", "5", "A-501")]
         else:
-            s.callouts += [("detail", {3: "1", 4: "2", 5: "4"}[k], "A-501")]
+            s.callouts += [("detail", {3: "3", 4: "5", 5: "3"}[k], "A-501")]
     if long:
         pairs = {1: ("1", "2"), 2: ("3", "4"), 3: ("5", "6"), 4: ("7", "9"),
                  5: ("8", "1")}
@@ -405,7 +427,7 @@ def _project(floors: int = 2, issue: int = 1) -> Project:
             callouts=[] if roof else [("detail", "4", "S-501")])
     add("S-501", "FOUNDATION DETAILS AND FOOTING SCHEDULE",
         "details_schedule", views=["1", "2", "3", "4"],
-        rows={"footing": list(FOOTING_ROWS)})
+        rows={"footing": list(footing_rows(floors))})
     if long:
         for k in range(1, floors + 1):
             add(f"M-10{k}", f"{FLOOR_WORDS[k - 1]} FLOOR MECHANICAL PLAN",
@@ -428,8 +450,8 @@ def _project(floors: int = 2, issue: int = 1) -> Project:
                  if m != "LP-4B"]
         add("E-601", "PANEL SCHEDULE", "panel_schedule",
             rows={"panel": [
-                (m, "FIRST FLOOR ELECTRICAL ROOM" if m == "MDP" else
-                 f"{FLOOR_WORDS[int(m[3]) - 1]} FLOOR ELECTRICAL ROOM",
+                (m, "FIRST FLOOR CORE" if m == "MDP" else
+                 f"{FLOOR_WORDS[int(m[3]) - 1]} FLOOR CORE",
                  "400 / 230 V", "800" if m == "MDP" else "100",
                  "UTILITY" if m == "MDP" else "MDP")
                 for m in marks]})
@@ -872,13 +894,19 @@ def _sketch(c: _Canvas, x: float, y: float, w: float, h: float,
 
 
 _DETAIL_TITLES = {
-    "A-501": ("SILL AT STOREFRONT", "PARAPET AT ROOF EDGE",
-              "HEAD AT HOLLOW METAL FRAME", "SLAB EDGE AT CURTAIN WALL",
-              "JAMB AT HOLLOW METAL FRAME", "ROOF DRAIN"),
-    "A-502": ("CEILING AT PERIMETER WALL", "CEILING AT COLUMN",
-              "BULKHEAD AT CORRIDOR", "ACCESS PANEL", "CEILING AT GLAZING",
-              "LIGHT FIXTURE SUPPORT", "DIFFUSER IN TILE CEILING",
-              "CONTROL JOINT IN GYPSUM CEILING"),
+    # each is called where it belongs: 1 from the core's wall (A-401), 2,
+    # 4 and 6 from the section (A-301: parapet, second floor, grade), 3 and
+    # 5 from the plans' exterior wall
+    "A-501": ("CORE WALL AT FLOOR SLAB", "PARAPET AT ROOF EDGE",
+              "WINDOW HEAD AT EXTERIOR WALL", "SLAB EDGE AT EXTERIOR WALL",
+              "WINDOW JAMB AT EXTERIOR WALL",
+              "BASE OF EXTERIOR WALL AT GRADE"),
+    # all called from the ceiling plans' exterior wall
+    "A-502": ("CEILING AT EXTERIOR WALL", "CEILING AT WINDOW HEAD",
+              "BULKHEAD AT EXTERIOR WALL", "CEILING AT BLIND POCKET",
+              "CEILING EDGE TRIM", "CEILING AT EXPANSION JOINT",
+              "PERIMETER HANGER AND BRACING",
+              "CEILING AT COLUMN ENCLOSURE"),
     "S-501": ("TYPICAL SPREAD FOOTING", "FOOTING AT COLUMN",
               "SLAB ON GRADE AT EXTERIOR WALL", "SLAB EDGE AT STEEL BEAM"),
 }
@@ -936,6 +964,10 @@ def _structural_notes(issue: int) -> List[str]:
         "SLAB ON GRADE: 150 mm ON 150 mm COMPACTED GRANULAR BASE; MODULUS OF "
         f"SUBGRADE REACTION {f['subgrade']}.",
         "STRUCTURAL STEEL: GRADE 350W. BOLTS: GRADE 8.8.",
+        "REMOVE ALL FILL BELOW FOOTINGS AND SLABS ON GRADE. THE GEOTECHNICAL "
+        "ENGINEER IS TO INSPECT EVERY FOOTING SUBGRADE BEFORE CONCRETE IS "
+        "PLACED.",
+        "EXCAVATIONS DEEPER THAN 1.2 m ARE TO BE SLOPED OR SHORED.",
     ]
 
 
@@ -1014,7 +1046,7 @@ def _draw(c: _Canvas, project: Project, sheet: Sheet) -> None:
             c.text(p.px(9600), p.py(2700), "ACOUSTIC TILE CEILING AT 2700 "
                    "A.F.F.", size=9, align="c")
         elif kind == "foundation":
-            size = {"F1": 1500, "F2": 1800, "F3": 2200, "F4": 2600}
+            size = _footing_sizes(floors)
             for i in range(4):
                 for j in range(3):
                     mark = _footing_at(i, j)
@@ -1044,8 +1076,10 @@ def _draw(c: _Canvas, project: Project, sheet: Sheet) -> None:
             c.text(p.px(9600), p.py(2700) + 14,
                    "150 mm CONCRETE SLAB ON METAL DECK", size=8, align="c")
         elif kind == "mech":
+            # four fan coil units in the rooms; the air handler, last, in
+            # the core
             slots = ((3000, 2700), (9600, 2700), (16200, 2700),
-                     (3000, 8100), (16200, 8100))
+                     (3000, 8100), (9600, 8100))
             marks = sheet.tags["fcu"]
             if "AHU-1" in marks:
                 marks = marks[1:] + marks[:1]
@@ -1092,11 +1126,15 @@ def _draw(c: _Canvas, project: Project, sheet: Sheet) -> None:
             _level_marks(c, x, x1, base, k, sheet.levels, floors)
             c.view_title(x, base + 70, str(view), sheet.number, name, "1:100")
             x = x1 + 420
-        for i, (_kind, view, target) in enumerate(sheet.callouts):
-            bx, by = DX0 + 150 + i * 190, base - 70 - i * 60
-            c.circle((bx, by), 12, width=0.8, dashes="[4 3] 0")
-            c.line((bx + 12, by), (bx + 60, by - 40))
-            c.bubble(bx + 72, by - 50, view, target)
+        # the first view's west wall, top down: the parapet, the second
+        # floor's slab edge, the base of the wall
+        wall = DX0 + 120
+        spots = (base - (levels(floors)[-1][1] - FIRST_FLOOR_EL) * 1000 * k,
+                 base - STOREY_M * 1000 * k, base)
+        for (_kind, view, target), y in zip(sheet.callouts, spots):
+            c.circle((wall, y), 12, width=0.8, dashes="[4 3] 0")
+            c.line((wall - 10, y - 7), (wall - 52, y - 30))
+            c.bubble(wall - 66, y - 38, view, target)
     elif kind == "enlarged":
         printed = sheet.bays["B-C"]
         for view in (1, 2):
@@ -1311,7 +1349,10 @@ def build_project_manual() -> bytes:
     d.h("TABLE OF CONTENTS", 15)
     d.table((90, 330), [("SECTION", "TITLE")] + [
         (n, t) for n, t in MANUAL_SECTIONS])
-    d.p("Sections not listed here are not part of this project manual.")
+    d.p("Sections not listed here are not part of this project manual. "
+        "This volume binds Sections 01 33 00, 03 30 00 and 08 71 00 in "
+        "full; the other sections listed are issued separately. Mechanical "
+        "and electrical work is specified in Volume 2.")
     d.new_page()
     d.h("SECTION 01 33 00  -  SUBMITTAL PROCEDURES", 13)
     d.h("PART 1  GENERAL", 11)
@@ -1386,7 +1427,7 @@ def build_geotechnical_memo() -> bytes:
     d.p("This memorandum gives foundation recommendations for the proposed "
         "building, a steel-framed office building on spread footings with a "
         "slab on grade. It is based on four borings, B-1 to B-4, drilled to "
-        "12 m at the corners of the building, and on laboratory tests of "
+        "12 m near the corners of the building, and on laboratory tests of "
         "samples from them.")
     d.h("2  SUBSURFACE CONDITIONS")
     d.p("The borings met the same sequence across the site:")
@@ -1473,10 +1514,12 @@ def build_concrete_submittal() -> bytes:
     d.h("2  STRENGTH RECORD, MIX NO. C-35-20", 13)
     d.p("28-day compressive strength, consecutive tests, each the average "
         "of two cylinders:")
+    import datetime
     tests = (41.2, 39.8, 42.5, 40.1, 43.0, 38.9, 41.7, 40.6, 42.2, 39.5,
              41.0, 40.3)
+    first = datetime.date(2025, 9, 2)
     d.table((80, 130, 130), [("TEST", "DATE CAST", "STRENGTH (MPa)")] + [
-        (str(i), f"2025-{9 + (i - 1) // 6:02d}-{3 + 4 * ((i - 1) % 6):02d}",
+        (str(i), (first + datetime.timedelta(days=7 * (i - 1))).isoformat(),
          f"{v:.1f}") for i, v in enumerate(tests, 1)])
     d.p(f"Number of tests: {len(tests)}.  Average: "
         f"{sum(tests) / len(tests):.1f} MPa.")
@@ -1496,10 +1539,37 @@ def build_concrete_submittal() -> bytes:
     return d.bytes("Submittal 03 30 00-02, concrete mix design, Class C")
 
 
+#: Dots per inch of the scanned set: 6 pt lettering is about 12 pixels
+#: tall, legible in a zoom and not in a view of the whole sheet.
+SCAN_DPI = 150
+
+
+@lru_cache(maxsize=None)
+def build_scanned_set(dpi: int = SCAN_DPI) -> bytes:
+    """The issue 1 set as a scan: each sheet one grey image, no text layer.
+    The same sheets with the same 13 problems; only a look reads them."""
+    import pymupdf
+    src = pymupdf.open(stream=build_drawing_set(2, 1).pdf, filetype="pdf")
+    out = pymupdf.open()
+    try:
+        for page in src:
+            pix = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY)
+            new = out.new_page(width=page.rect.width,
+                               height=page.rect.height)
+            new.insert_image(new.rect,
+                             stream=pix.tobytes("jpeg", jpg_quality=60))
+        out.set_metadata({"title": f"{PROJECT} drawings, issue 1 (scan)"})
+        return out.tobytes(garbage=3, deflate=True, no_new_id=True)
+    finally:
+        out.close()
+        src.close()
+
+
 #: Fixture name -> what it builds (the core's ``review_eval.fixture`` hook).
 _BUILDERS = {
     "coord_set": lambda: build_drawing_set(2, 1).pdf,
     "coord_set_prev": lambda: build_drawing_set(2, 0).pdf,
+    "coord_set_scan": build_scanned_set,
     "coord_set_long": lambda: build_drawing_set(5, 1).pdf,
     "coord_manual": build_project_manual,
     "coord_memo": build_geotechnical_memo,
@@ -1517,6 +1587,7 @@ def fixture(name: str) -> Optional[bytes]:
 __all__ = ["Planted", "BASE_PLANTED", "LONG_PLANTED", "REVISIONS",
            "SUBMITTAL_PLANTED", "MANUAL_SECTIONS", "CITED_SECTIONS",
            "CONCRETE", "FOUNDATION", "DrawingSet", "build_drawing_set",
+           "build_scanned_set", "SCAN_DPI", "footing_rows",
            "build_project_manual", "build_geotechnical_memo",
            "build_concrete_submittal", "audit", "fixture", "levels",
            "doors_on_plan", "doors_scheduled", "room_names"]

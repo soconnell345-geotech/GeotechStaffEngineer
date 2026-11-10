@@ -171,6 +171,7 @@ def test_the_documents_resolve_by_their_suite_ids():
     names = {}
     for doc_id, pages in (("fixture_coord_set", 15),
                           ("fixture_coord_set_prev", 15),
+                          ("fixture_coord_set_scan", 15),
                           ("fixture_coord_set_long", 40),
                           ("fixture_coord_manual", 5),
                           ("fixture_coord_memo", 4),
@@ -178,7 +179,7 @@ def test_the_documents_resolve_by_their_suite_ids():
         name, data = D.resolve(doc_id)
         assert data[:5] == b"%PDF-" and len(_pages(data)) == pages
         names[doc_id] = name
-    assert len(set(names.values())) == 6
+    assert len(set(names.values())) == 7
     # an upload's name says what it is and nothing of what is wrong with it
     for name in names.values():
         for word in ("planted", "fixture", "coord", "synthetic", "error"):
@@ -198,7 +199,7 @@ def test_a_build_is_the_same_bytes_every_time():
 # ---------------------------------------------------------------------------
 
 def test_the_tasks_cover_every_planted_problem():
-    assert len(COORDINATION_TASKS) == 12
+    assert len(COORDINATION_TASKS) == 14
     assert all(t in OPEN_TASKS for t in COORDINATION_TASKS)
     labels = {t.id: [c["label"] for c in t.checks if not c.get("info")]
               for t in COORDINATION_TASKS}
@@ -285,12 +286,15 @@ def test_a_section_number_is_not_a_strength():
 def test_a_callout_is_recognised_however_it_is_written():
     for text in ("7/A-501 does not exist", "detail 7 on A-501 is not there",
                  "Detail 7 (sheet A-501) is not drawn",
-                 "A-501 has no detail 7", "bubble 7 over A-501",
-                 "callout 7 / A501"):
+                 "A-501 has no detail 7", "bubble 7 over A-501 leads nowhere",
+                 "callout 7 / A501 cannot be found",
+                 "7/A-501: sheet A-501 has details 1 to 6 only"):
         assert "callout-missing-detail" in _passes("coord-callouts", text), \
             text
-    for text in ("3/A-501 and 5/A-501 resolve", "17/A-501", "7/A-5010",
-                 "details 1 to 6 are on A-501", "A-501 at 1:5, 7 sheets on"):
+    for text in ("3/A-501 and 5/A-501 do not resolve", "17/A-501 is missing",
+                 "7/A-5010 is missing", "details 1 to 6 only are on A-501",
+                 "7/A-501 resolves to its detail",
+                 "A-501 at 1:5, not 7 sheets on"):
         assert "callout-missing-detail" not in _passes("coord-callouts",
                                                        text), text
 
@@ -328,7 +332,62 @@ def test_the_dry_run_resolves_the_coordination_documents(tmp_path):
     out = score_review_suite(out_dir=str(tmp_path), dry_run=True,
                              ids=["coord-"])
     text = out["results_md"]
-    assert "12 tasks" in text
+    assert "14 tasks" in text
     assert ("fixture_coord_set_long -> "
             "north_yard_annex_full_set_issue_1.pdf") in text
     assert "MISSING" not in text.upper().replace("CALLOUT-MISSING", "")
+
+
+def test_an_all_clear_that_lists_everything_is_not_a_finding():
+    clear = ("Doors 101 to 109 are tagged on A-101 and I found no "
+             "discrepancies with the schedule; nothing is missing. Door 204 "
+             "is scheduled, no issues. Footings F1 to F4: no problems. The "
+             "index lists A-202 and S-201 ROOF FRAMING PLAN, and I did not "
+             "find any mismatch with the sheets.")
+    assert _passes("coord-schedules", clear) == []
+    assert _passes("coord-sheet-index", clear) == []
+
+
+def test_a_finding_said_in_a_heading_over_a_long_table_counts():
+    rows = "".join(
+        f"| {mark} | {sheet} | Tagged at grid {g}; see the plan. |\n"
+        for mark, sheet, g in (
+            ("Door 109", "A-101", "B/2-3"), ("Door 407", "A-104", "C-D/2"),
+            ("Footing F4", "S-101", "C/2"), ("FCU-3-4", "M-103", "A-B/2-3"),
+            ("Panel LP-4B", "E-104", "B-C/2-3")))
+    answer = ("## On a plan but not scheduled\n\n"
+              "| Mark | Sheet | Where |\n|---|---|---|\n" + rows +
+              "\n## Scheduled but not on a plan\n\n"
+              "- Door 204 (A-601)\n- Door 509 (A-602)\n")
+    assert _passes("coord-long-schedules", answer) == [
+        "door-not-scheduled", "door-not-on-plan", "door-not-scheduled-4",
+        "door-not-on-plan-5", "footing-not-scheduled", "fcu-not-scheduled",
+        "panel-not-scheduled"]
+    # the same marks under a heading that says nothing is wrong
+    fine = answer.replace("On a plan but not scheduled",
+                          "Marks checked on the plans").replace(
+        "Scheduled but not on a plan", "Schedule rows checked")
+    assert _passes("coord-long-schedules", fine) == []
+
+
+def test_the_scanned_set_is_images_with_no_text():
+    data = F.build_scanned_set()
+    doc = pymupdf.open(stream=data, filetype="pdf")
+    try:
+        assert len(doc) == 15
+        for page in doc:
+            assert page.get_text().strip() == ""
+            (image,) = page.get_images(full=True)
+            # 34 x 22 in at 150 dpi: 6 pt lettering about 12 pixels tall
+            assert (image[2], image[3]) == (5100, 3300)
+    finally:
+        doc.close()
+    assert len(data) < 12_000_000
+    # the two scanned tasks ask what their text-layer twins ask
+    for scan, twin in (("coord-scan-callouts", "coord-callouts"),
+                       ("coord-scan-schedules", "coord-schedules")):
+        assert BY_ID[scan].question == BY_ID[twin].question
+        assert BY_ID[scan].documents == ["fixture_coord_set_scan"]
+        assert ([c["label"] for c in BY_ID[scan].checks if not c.get("info")]
+                == [c["label"] for c in BY_ID[twin].checks
+                    if not c.get("info")])

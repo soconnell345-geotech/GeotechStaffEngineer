@@ -115,22 +115,12 @@ def _term_spans(term: Any, text: str) -> List[Tuple[int, int]]:
     return out
 
 
-def check_stated_together(answer: str, terms: Sequence[Any],
-                          window: int = 300, **_) -> Tuple[bool, str]:
-    """Every term inside one stretch of ``window`` characters of the answer.
-
-    For a finding that is a RELATION between things: the two values that
-    disagree, a mark and the word that says it is missing, a sheet and what
-    is wrong on it. ``contains_all`` would pass an answer that states each
-    of them somewhere, in unrelated sentences; this asks for them in one
-    place. It cannot tell whether the sentence is right, only that the
-    answer put the pieces side by side, which a full read of the run
-    confirms."""
-    text = normalize(answer)
+def _closest(terms: Sequence[Any], text: str) -> Optional[int]:
+    """The shortest stretch of ``text`` (already normalized) that holds
+    every term, in characters; None when a term is not there."""
     spans = [_term_spans(t, text) for t in terms]
-    missing = [_label(t) for t, s in zip(terms, spans) if not s]
-    if missing:
-        return False, f"missing: {missing}"
+    if not all(spans):
+        return None
     best = None
     for start in sorted({a for ss in spans for a, _b in ss}):
         ends = []
@@ -142,8 +132,86 @@ def check_stated_together(answer: str, terms: Sequence[Any],
         else:
             reach = max(ends) - start
             best = reach if best is None else min(best, reach)
+    return best
+
+
+#: A line that heads what is under it: a markdown heading, a line that is
+#: all bold, or a short line that ends with a colon.
+_HEADING = re.compile(r"^\s{0,3}(?:#{1,6}\s+\S.*|(?:[-*]\s+)?\*\*[^*\n]"
+                      r"{1,140}\*\*:?|[^|\n]{1,140}:)\s*$")
+#: The rule under a markdown table's header row.
+_TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{2,}")
+
+
+def _sections(answer: str) -> List[Tuple[str, str]]:
+    """The answer as ``(heading, body)`` pieces. The heading of a piece is
+    the heading line over it, with a table's header row for the rows of
+    that table; the body is the lines under it."""
+    out: List[Tuple[str, str]] = []
+    section, table = "", ""
+    body: List[str] = []
+
+    def flush() -> None:
+        if body:
+            out.append(((section + " " + table).strip(), "\n".join(body)))
+        body.clear()
+
+    lines = str(answer or "").splitlines()
+    for i, line in enumerate(lines):
+        after = lines[i + 1] if i + 1 < len(lines) else ""
+        if "|" in line and _TABLE_RULE.match(after):
+            flush()
+            table = line
+        elif table and _TABLE_RULE.match(line):
+            continue
+        elif _HEADING.match(line):
+            flush()
+            section, table = line, ""
+        elif not line.strip():
+            if table:
+                flush()
+                table = ""
+        else:
+            body.append(line)
+    flush()
+    return out
+
+
+def check_stated_together(answer: str, terms: Sequence[Any],
+                          window: int = 300, **_) -> Tuple[bool, str]:
+    """Every term inside one stretch of ``window`` characters of the answer.
+
+    For a finding that is a RELATION between things: the two values that
+    disagree, a mark and the word that says it is missing, a sheet and what
+    is wrong on it. ``contains_all`` would pass an answer that states each
+    of them somewhere, in unrelated sentences; this asks for them in one
+    place.
+
+    A term may also be said once for a whole list or table, in the heading
+    over it ("On a plan but not scheduled:" over seven marks): the terms
+    the heading holds count as beside every line under it, and the others
+    must be within ``window`` of each other there.
+
+    It cannot tell whether the sentence is right, only that the answer put
+    the pieces side by side, which a full read of the run confirms."""
+    text = normalize(answer)
+    spans = [_term_spans(t, text) for t in terms]
+    missing = [_label(t) for t, s in zip(terms, spans) if not s]
+    if missing:
+        return False, f"missing: {missing}"
+    best = _closest(terms, text)
     if best is not None and best <= int(window):
         return True, f"together within {best} characters"
+    for head, body in _sections(answer):
+        head, body = normalize(head), normalize(body)
+        said = [bool(_term_spans(t, head)) for t in terms]
+        if not any(said) or all(said):
+            continue
+        reach = _closest([t for t, there in zip(terms, said) if not there],
+                         body)
+        if reach is not None and reach <= int(window):
+            return True, (f"together within {reach} characters, under the "
+                          f"heading that holds the rest")
     return False, (f"all present, never within {int(window)} characters of "
                    f"each other (closest: {best})")
 

@@ -78,14 +78,18 @@ DOCUMENTS: Dict[str, Dict[str, Any]] = {
     # in them (BACKLOG DR-25), built by Document Review's own fixture
     # (aec_document_review.review_eval.coordination_fixture, through
     # FIXTURE_HOOK): the drawing set at issue 1 (15 sheets) and at issue 0,
-    # a five-storey version (40 sheets), the project manual, the
-    # geotechnical memorandum and a concrete mix submittal.
+    # the issue 1 set as a scan with no text layer, a five-storey version
+    # (40 sheets), the project manual, the geotechnical memorandum and a
+    # concrete mix submittal.
     "fixture_coord_set": {
         "fixture": "coord_set",
         "name": "north_yard_annex_drawings_issue_1.pdf"},
     "fixture_coord_set_prev": {
         "fixture": "coord_set_prev",
         "name": "north_yard_annex_drawings_issue_0.pdf"},
+    "fixture_coord_set_scan": {
+        "fixture": "coord_set_scan",
+        "name": "north_yard_annex_drawings_issue_1_scan.pdf"},
     "fixture_coord_set_long": {
         "fixture": "coord_set_long",
         "name": "north_yard_annex_full_set_issue_1.pdf"},

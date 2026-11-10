@@ -62,7 +62,7 @@ def test_tasks_are_well_formed():
     # the truth is known by construction)
     # (the coordination tasks, BACKLOG DR-25, are counted apart: whether a
     # disagreement between two sheets was found can only be scored where
-    # every disagreement is known, so all twelve are synthetic by need)
+    # every disagreement is known, so all fourteen are synthetic by need)
     coordination = [t for t in OPEN_TASKS
                     if t.doc_type == "coordination_set"]
     synthetic = [t for t in OPEN_TASKS
@@ -70,7 +70,7 @@ def test_tasks_are_well_formed():
                  and t not in coordination]
     assert len(synthetic) <= 9
     assert len(synthetic) < (len(OPEN_TASKS) - len(coordination)) / 4
-    assert len(coordination) == 12
+    assert len(coordination) == 14
     for t in OPEN_TASKS:
         assert t.page in PAGES, t.id
 

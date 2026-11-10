@@ -148,7 +148,11 @@ This repository builds three packages; the app also needs two more of the same p
   `aec-agent-core` 1.0.1 and `aec-document-review` 0.1.1 (tags `v0.15.1`,
   `core-v1.0.1`, `document-review-v0.1.1`), pinned in the wrapper's
   `packages.txt`. The app itself is not released: 5.35.0 keeps the core at
-  1.0.0, and master pins 1.0.1 for its next release.
+  1.0.0, and master pins 1.0.1 for its next release. Since those releases
+  (unreleased): the review suite has 52 tasks, fourteen of them coordination
+  tasks on one made-up building's documents with planted problems (DR-25;
+  `review_eval/coordination_fixture.py` in `aec-document-review`; not yet
+  run on a model, EV-40).
   Before it, docs and tests only:
   field-session place names out of the current files (three field-feedback
   folders renamed; `test_public_text` guards the place words in every

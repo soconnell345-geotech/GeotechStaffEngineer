@@ -2,8 +2,8 @@
 
 Copied from GeotechStaffEngineer's ``funhouse_agent/review_eval/tasks.py`` at
 the app split's step 13 (BACKLOG INF-33): its 38 review-page tasks, and
-since BACKLOG DR-25 twelve coordination tasks of this package's own (at the
-end of this file), 50 in all. The four
+since BACKLOG DR-25 fourteen coordination tasks of this package's own (at
+the end of this file), 52 in all. The four
 asked on the GeotechStaffEngineer page (the synthetic geotechnical report's
 three and the boring-log scale) stayed in that app, with the report fixture;
 what the text below says of them is history. The framework (the runner, the
@@ -1006,15 +1006,27 @@ def _qty(n: str, unit: str) -> Dict[str, str]:
                   rf"(?=[^.;\n]{{0,30}}?{unit})"}
 
 
+#: What follows "no" or "not" in an all-clear, which is not a finding ("no
+#: discrepancies", "did not find any").
+_CLEAR_NOUN = (r"(?:discrepanc\w*|issues?|problems?|conflicts?|errors?|"
+               r"mismatch\w*|findings?|deviations?|inconsisten\w*|"
+               r"omissions?|exceptions?|other|further|additional)")
+_NO_WORD = rf"no(?!\s+{_CLEAR_NOUN})"
+_NOT_WORD = (r"not(?!\s+(?:find|found|identif\w+|see|seen|observe\w*|"
+             r"detect\w*|aware|applicable|missing))")
 #: A word that says something is not there (a mark with no schedule row, a
-#: scheduled item with no tag, a report that was not sent).
-_ABSENT = {"re": r"\b(?:not|no|never|none|missing|absent|omitted|without|"
-                 r"lacks?|lacking|unscheduled|untagged|isn't|doesn't|"
-                 r"nowhere|unresolved|orphan\w*)\b"}
+#: scheduled item with no tag, a report that was not sent). "Lists F1 to F3
+#: only" says it too. "Nothing is missing" does not.
+_ABSENT = {"re": rf"\b(?:{_NO_WORD}|{_NOT_WORD}|never|neither|nor|only|"
+                 r"(?<!nothing is )(?<!nothing )(?<!none is )(?<!none are )"
+                 r"(?<!none )missing|absent|omitted|without|lacks?|lacking|"
+                 r"unscheduled|untagged|unlisted|isn't|doesn't|cannot|can't|"
+                 r"nowhere|unresolved|nonexistent|non-existent|orphan\w*)\b"}
 #: A word that says a change was not flagged.
-_UNFLAGGED = {"re": r"\b(?:not|no|never|without|silent\w*|un(?:clouded|"
-                    r"marked|flagged|documented|recorded|identified|tracked|"
-                    r"noted|announced))\b"}
+_UNFLAGGED = {"re": rf"\b(?:{_NO_WORD}|{_NOT_WORD}|never|without|"
+                    r"silent\w*|"
+                    r"un(?:clouded|marked|flagged|documented|recorded|"
+                    r"identified|tracked|noted|announced))\b"}
 _PCT = r"(?:%|percent)"
 _EL_104_20 = [_num("104.20"), _num("104.2")]
 _EL_104_50 = [_num("104.50"), _num("104.5")]
@@ -1038,14 +1050,20 @@ def _n_tests(n: str, word: str) -> Dict[str, str]:
 #: One check per planted problem, by its key in the fixture.
 _PLANTED_CHECKS: Dict[str, Dict[str, Any]] = {
     "index-missing-sheet": {
-        "type": "contains_all", "terms": [_sheet("A-202")]},
+        "type": "stated_together", "terms": [_sheet("A-202"), _ABSENT],
+        "window": 200},
+    # both titles: the index's (roof) and the sheet's own
     "index-title": {
         "type": "stated_together",
-        "terms": [_sheet("S-201"), ["roof framing"]]},
+        "terms": [_sheet("S-201"), ["roof"],
+                  ["second floor framing", "2nd floor framing",
+                   "level 2 framing"]]},
     "callout-missing-detail": {
-        "type": "contains_all", "terms": [_callout("7", "A-501")]},
+        "type": "stated_together",
+        "terms": [_callout("7", "A-501"), _ABSENT], "window": 200},
     "callout-missing-sheet": {
-        "type": "contains_all", "terms": [_sheet("A-302")]},
+        "type": "stated_together", "terms": [_sheet("A-302"), _ABSENT],
+        "window": 200},
     "door-not-scheduled": {
         "type": "stated_together", "terms": [_num("109"), _ABSENT],
         "window": 160},
@@ -1057,7 +1075,8 @@ _PLANTED_CHECKS: Dict[str, Dict[str, Any]] = {
     "bay-b-c": {
         "type": "stated_together", "terms": [_BAY_7200, _BAY_7500]},
     "spec-section-missing": {
-        "type": "contains_all", "terms": [_SECTION_07_84_00]},
+        "type": "stated_together", "terms": [_SECTION_07_84_00, _ABSENT],
+        "window": 200},
     "bearing-pressure": {
         "type": "stated_together",
         "terms": [_qty("200", "kpa"), _qty("150", "kpa")]},
@@ -1070,7 +1089,8 @@ _PLANTED_CHECKS: Dict[str, Dict[str, Any]] = {
     "footing-not-scheduled": {
         "type": "stated_together", "terms": [_F4, _ABSENT], "window": 160},
     "callout-missing-ceiling-detail": {
-        "type": "contains_all", "terms": [_callout("9", "A-502")]},
+        "type": "stated_together",
+        "terms": [_callout("9", "A-502"), _ABSENT], "window": 200},
     "door-not-scheduled-4": {
         "type": "stated_together", "terms": [_num("407"), _ABSENT],
         "window": 160},
@@ -1253,6 +1273,39 @@ COORDINATION_TASKS: List[Task] = [
         checks=_planted(_BASE_KEYS, with_files=True),
         truth=_truth(_BASE_KEYS) + " Thirteen planted problems, one check "
         "each; the score is how many the log holds. " + _BUILT),
+    Task(
+        id="coord-scan-callouts",
+        question=("Check the section, detail and enlarged-plan callouts in "
+                  "this set: does each one point to a view that exists on "
+                  "the sheet it names? List the ones that do not."),
+        documents=["fixture_coord_set_scan"], category="check",
+        doc_type="coordination_set",
+        checks=_planted(["callout-missing-detail", "callout-missing-sheet"])
+        + [{"type": "pages_covered", "pages": list(range(15)),
+            "look_pages": list(range(15)), "info": True,
+            "label": "sheets looked at (recorded, not scored)"}],
+        truth=_truth(["callout-missing-detail", "callout-missing-sheet"]) +
+        " The same sheets as coord-callouts, scanned: each a grey image at "
+        "150 dpi with no text layer, so the bubbles are read by looking, "
+        "and their 6 and 9 pt lettering only in a zoom. " + _BUILT),
+    Task(
+        id="coord-scan-schedules",
+        question=("Check the schedules against the plans: the door "
+                  "schedule against the door numbers on the floor plans, "
+                  "and the footing schedule against the footing marks on "
+                  "the foundation plan. What is on a plan but not "
+                  "scheduled, and what is scheduled but not on a plan?"),
+        documents=["fixture_coord_set_scan"], category="check",
+        doc_type="coordination_set",
+        checks=_planted(["door-not-scheduled", "door-not-on-plan",
+                         "footing-not-scheduled"])
+        + [{"type": "pages_covered", "pages": list(range(15)),
+            "look_pages": list(range(15)), "info": True,
+            "label": "sheets looked at (recorded, not scored)"}],
+        truth=_truth(["door-not-scheduled", "door-not-on-plan",
+                      "footing-not-scheduled"]) +
+        " The same sheets as coord-schedules, scanned, with no text "
+        "layer. " + _BUILT),
     Task(
         id="coord-long-callouts",
         question=("Check the section, detail and enlarged-plan callouts in "
