@@ -512,6 +512,9 @@ def compile_agent(create: Callable, *, model, tools, system_prompt,
     if appended:
         try:
             agent.geotech_appended = appended
+            # the main prompt as compiled, its block included, for
+            # record_build's prompt_chars
+            agent.geotech_prompt_chars = len(system_prompt or "")
         except Exception:                              # noqa: BLE001
             pass
     return agent
@@ -548,8 +551,12 @@ def record_build(agent, *, attachments, model, tools, subagents,
         }
         appended = getattr(agent, "geotech_appended", None)
         if isinstance(appended, dict) and appended:
-            # a deployment's instructions, per role (REF-64 (B))
+            # a deployment's instructions, per role (REF-64 (B)); the
+            # prompt's size is then the compiled one, the main block in it
             agent.geotech_build["appended"] = appended
+            chars = getattr(agent, "geotech_prompt_chars", None)
+            if isinstance(chars, int):
+                agent.geotech_build["prompt_chars"] = chars
         if helper_models:
             # the helpers on a model of their own (INF-41)
             agent.geotech_build["helper_models"] = helper_models

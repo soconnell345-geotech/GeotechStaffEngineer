@@ -48,6 +48,8 @@ def test_every_role_gets_its_block_last(name, folder):
         TAIL + "Report lengths in metres.\n\nMain agent rule.")
     roles = agent.geotech_build["appended"]["roles"]
     assert roles["main"]["files"] == ["all.md", "main.md"]
+    # the recorded size is the prompt as compiled, the block in it
+    assert agent.geotech_build["prompt_chars"] == len(kw["system_prompt"])
     for spec in kw["subagents"]:
         if "runnable" in spec:
             continue
