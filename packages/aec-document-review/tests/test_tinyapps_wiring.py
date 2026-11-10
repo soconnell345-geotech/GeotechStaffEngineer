@@ -128,7 +128,16 @@ def test_the_deployed_host_serves_nobody_it_cannot_name(monkeypatch):
     assert named.source == "header" and named.multi_user and not named.refused
 
 
+def test_the_app_service_is_known_by_its_own_marker_too(monkeypatch):
+    """No managed identity and no APP_ENV: the platform still sets
+    WEBSITE_SITE_NAME on every App Service."""
+    monkeypatch.setenv("WEBSITE_SITE_NAME", "madeup-site")
+    monkeypatch.setenv("DEV_IDENTITY", "CORP\\jdoe")
+    assert identity.current_identity() is identity.UNIDENTIFIED
+
+
 def test_a_local_run_is_never_refused(monkeypatch):
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
     assert not identity.ANONYMOUS.refused
     monkeypatch.setenv("DEV_IDENTITY", "CORP\\jdoe")
     assert not identity.current_identity().refused

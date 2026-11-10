@@ -135,7 +135,10 @@ UNIDENTIFIED_MESSAGE = (
 
 
 def _deployed() -> bool:
-    """On the App Service (``tinyapps_settings.app_env`` is ``azure``)."""
+    """On the App Service: the platform's own ``WEBSITE_SITE_NAME`` is set
+    (always, there), or ``tinyapps_settings.app_env`` is ``azure``."""
+    if os.environ.get("WEBSITE_SITE_NAME", "").strip():
+        return True
     try:
         from aec_document_review import tinyapps_settings
         return tinyapps_settings.app_env() == "azure"
