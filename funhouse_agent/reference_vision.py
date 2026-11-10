@@ -23,6 +23,7 @@ in ``funhouse_agent/__init__.py``:
 
 import json
 import os
+import re
 from typing import List
 
 from aec_agent_core import vision_tools as _vt
@@ -192,6 +193,102 @@ READ_NOTES_HEADING = ("Notes from the reference's catalog on reading this "
 READ_NOTES_MAX = 500
 
 
+#: The step every chart read starts with (2026-11-10 reference review, item
+#: 6): it confirms the figure asked for and states the axes it sees, which
+#: had been asked only of a page located by estimate.
+_CONFIRM_STEP = (
+    "1. FIRST confirm you are looking at Figure {fig}: give the figure "
+    "number and caption as printed on the page, and the quantity and unit "
+    "printed on each axis. If Figure {fig} is not on this page, say so "
+    "plainly and do not read a value{estimated}. Ignore other figures and "
+    "body text.\n")
+_CONFIRM_ESTIMATED = (" (the page lookup was estimated, so an adjacent page "
+                      "should be tried)")
+
+#: Said after the steps: what is the page's and what is the reader's own.
+_PRINTED_ONLY = (
+    "Report only what is printed on this page. Mark anything else as your "
+    "own and say what it rests on: a value from memory, a unit conversion, "
+    "a curve extended past its printed end.\n\n")
+
+#: How long the reason is when code's measurement gave no value.
+_NO_VALUE_REASON_CHARS = 160
+
+#: Said beside the read when the library computes the same figure.
+_DIGITIZED_NOTE = (
+    "The library also computes this figure with the method(s) named here "
+    "(call_agent on the module; not called by this read). Call one with the "
+    "same inputs and compare: where the two differ by more than this read's "
+    "stated tolerance, report both values.")
+
+
+def _figure_tokens(figure_number: str) -> List[str]:
+    """A figure number as it appears in method names: '7-15' -> '7_15',
+    '4.3' -> '4_3', '5-18(a)' -> '5_18_a' and '5_18a'."""
+    tok = "_".join(t for t in re.split(
+        r"[^a-z0-9]+", str(figure_number or "").lower()) if t)
+    if not tok:
+        return []
+    joined = re.sub(r"_(?=[a-z]$)", "", tok)
+    return list(dict.fromkeys((tok, joined)))
+
+
+def same_figure_methods(catalog_id: str, figure_number: str,
+                        catalog_title: str = ""):
+    """The reference module serving ``catalog_id`` and its methods that
+    compute ``figure_number`` (their names carry the figure number:
+    ``figure_7_15_...``, a lettered part ``figure_5_18a_...`` counting as
+    its figure), as ``(module, [methods])``; drawing methods
+    (``plot_...``) are left out. A module that holds more than one manual
+    keeps only methods whose own reference names this catalog's document
+    number (DM7.1's 'Figure 5-16' is not DM7.2's)."""
+    from funhouse_agent import dispatch
+    module = dispatch.reference_module(catalog_id)
+    tokens = _figure_tokens(figure_number)
+    if module is None or not tokens:
+        return module, []
+    try:
+        info = dispatch._load_adapter(module).METHOD_INFO
+    except Exception:  # noqa: BLE001 - a pointer, never the read
+        return module, []
+    # a lettered part counts as its figure: figure_5_18a is Figure 5-18
+    pats = [re.compile(rf"(?:^|_)figures?_{re.escape(t)}[a-z]?(?:_|$)")
+            for t in tokens]
+    methods = [name for name in info
+               if not name.startswith("plot_")
+               and any(p.search(name) for p in pats)]
+    if methods:
+        try:
+            from geotech_references import _figures_db
+            served = {r["reference"] for r in _figures_db.list_indexed_figures()
+                      if dispatch.reference_module(r["reference"]) == module}
+        except Exception:  # noqa: BLE001
+            served = set()
+        numbers = re.findall(r"\d+(?:-\d+)+", str(catalog_title or ""))
+        if len(served) > 1 and numbers:
+            methods = [name for name in methods if any(
+                n in f"{info[name].get('reference', '')} "
+                     f"{info[name].get('references', '')}" for n in numbers)]
+    return module, methods
+
+
+def _no_code_value(block: dict) -> str:
+    """The plain sentence for a chart read whose code measurement gave no
+    value (in the recorded reads, 22 of 22)."""
+    reason = block.get("note") or ""
+    for row in block.get("readings") or []:
+        if reason:
+            break
+        reason = row.get("note") or row.get("status") or ""
+    reason = " ".join(str(reason or block.get("status") or "").split())
+    if len(reason) > _NO_VALUE_REASON_CHARS:
+        reason = reason[:_NO_VALUE_REASON_CHARS].rsplit(" ", 1)[0] + "..."
+    return ("Code's measurement of the chart gave no value"
+            + (f" ({reason})" if reason else "")
+            + ": the value here is the vision read-off alone, not checked "
+              "by a second reading.")
+
+
 def _dispatch_read_reference_figure(arguments, engine):
     """Chart read-off: rendered and sent at the chart budget
     (``vision_view.chart_reading``) — see ``_dispatch_read_reference_figure_at_budget``."""
@@ -261,14 +358,9 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         "ESTIMATE and may be off by a page or two."
         if estimated else ""
     )
-    step_one = (
-        f"1. FIRST confirm Figure {rec['figure_number']} actually appears on this "
-        "page. If it does NOT, say so plainly and do not read a value — report "
-        "that the page lookup was estimated and an adjacent page should be tried.\n"
-        if estimated else
-        f"1. Locate Figure {rec['figure_number']} on the page; ignore other "
-        "figures and body text.\n"
-    )
+    step_one = _CONFIRM_STEP.format(
+        fig=rec["figure_number"],
+        estimated=_CONFIRM_ESTIMATED if estimated else "")
     full_prompt = (
         f"This image is a rendered page from {reference} {locate_clause} Figure "
         f"{rec['figure_number']}: \"{rec['caption']}\".{est_caveat}\n\n"
@@ -279,8 +371,10 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         "3. For the requested inputs, select the correct curve (interpolating "
         "between curves where needed) and read the value at the right axis "
         "position.\n"
-        "4. Report the value(s) clearly, state which curve/axis you used, and "
-        "flag that this is a chart read-off estimate.\n\n"
+        "4. Report the value(s) clearly with the unit printed on the axis, "
+        "state which curve/axis you used, and flag that this is a chart "
+        "read-off estimate.\n\n"
+        + _PRINTED_ONLY +
         f"Request: {question}"
     )
     # The catalog's own notes on reading this figure (``read_notes``,
@@ -311,6 +405,9 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         "reference": reference,
         "figure_number": rec["figure_number"],
         "caption": rec["caption"],
+        # the page as a PDF viewer numbers it (1-based), beside the 0-based
+        # index the renderer takes (2026-11-10 reference review, item 6)
+        "pdf_page": page_idx + 1,
         "pdf_page_index": page_idx,
         "page_estimated": rec.get("page_estimated", False),
         "analysis": result,
@@ -335,5 +432,20 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
                              f"{type(e).__name__}: {e}"}
         out["code_reading"] = block
         out["note"] = _READ_OFF_NOTE_WITH_CODE
+        if block.get("status") != "measured":
+            # said at the top, in plain words (item 6: 22 of 22 recorded
+            # reads had no code value, said only inside the block)
+            out["second_reading"] = _no_code_value(block)
+    # The library's own function for this figure, named, not called: the
+    # helper calls it and compares (item 6).
+    try:
+        module, methods = same_figure_methods(
+            rec.get("reference") or reference, rec["figure_number"],
+            rec.get("reference_title") or "")
+    except Exception:  # noqa: BLE001 - a pointer, never the read
+        module, methods = None, []
+    if methods:
+        out["digitized_lookup"] = {"module": module, "methods": methods,
+                                   "note": _DIGITIZED_NOTE}
     _vt._finish_answer(out, info, tagged_only=True)
     return json.dumps(out)

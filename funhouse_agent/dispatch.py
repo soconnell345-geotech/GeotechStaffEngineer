@@ -92,6 +92,18 @@ def held_references() -> list:
     return [spec["title"] for name, spec in MODULE_REGISTRY.items()
             if name in REFERENCE_MODULES and spec.get("title")]
 
+
+def reference_module(reference_id: str) -> Optional[str]:
+    """The reference module that serves a library reference id, as the
+    figure and text catalogs name it ('gec_12' -> 'gec12', 'dm7_1' ->
+    'dm7', 'micropile' -> 'micropile'), or ``None``."""
+    rid = str(reference_id or "").strip().lower()
+    for cand in (rid, rid.replace("_", ""), rid.rsplit("_", 1)[0]):
+        if cand in REFERENCE_MODULES and cand not in ("reference_db",
+                                                      "figure_db"):
+            return cand
+    return None
+
 # Analysis (computation) modules: everything the primary agent may call directly.
 ANALYSIS_MODULES = frozenset(MODULE_REGISTRY) - REFERENCE_MODULES
 
