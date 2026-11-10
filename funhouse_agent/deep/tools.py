@@ -366,6 +366,59 @@ class _CallAgentArgs(BaseModel):
     )
 
 
+class _ReferenceCallAgentArgs(_CallAgentArgs):
+    """``call_agent``'s schema where only reference modules are in scope:
+    the inputs are in the units of the manual the lookup comes from, not SI
+    (2026-11-10 review, item 2)."""
+
+    parameters: Annotated[Any, WithJsonSchema({
+        "anyOf": [{"additionalProperties": True, "type": "object"},
+                  {"type": "null"}]})] = Field(
+        default=None,
+        description=(
+            "Nested dict of the method's inputs, in the units of the manual "
+            "the lookup comes from (describe_method gives each input's "
+            'unit). Example: {"phi": 32}. Use describe_method first to see '
+            "the required keys."
+        ),
+    )
+
+
+#: ``call_agent``'s description for the calculation modules: their inputs
+#: and results are SI.
+CALL_AGENT_DESCRIPTION = (
+    "Execute a geotechnical calculation. All method-specific "
+    "inputs (width, depth, friction_angle, unit_weight, etc.) "
+    "MUST go inside the 'parameters' object — never as top-level "
+    "arguments. All units are SI. A result's 'choices' say what "
+    "the module chose (given, default or module) and "
+    "'defaults_used' the declared defaults the run used."
+)
+
+#: ``call_agent``'s description where only reference modules are in scope
+#: (the references helper, the reviewer): a lookup is in the units of its
+#: manual, many of them US customary, and says which (2026-11-10 review,
+#: item 2: "All units are SI" was false for much of the library).
+REFERENCE_CALL_AGENT_DESCRIPTION = (
+    "Run a reference lookup: one of a reference's table, figure, equation "
+    "or text-search methods. All method-specific inputs MUST go inside the "
+    "'parameters' object — never as top-level arguments. A lookup uses the "
+    "units of the manual it comes from, many of them US customary (ft, psf, "
+    "pcf, ksf, tsf), not SI: describe_method gives each input's unit and "
+    "what the method returns, and a bare-number result says what it is. "
+    "'defaults_used' lists the declared defaults the lookup used."
+)
+
+
+def reference_scope(allowed_agents) -> bool:
+    """Whether a tool scope holds reference modules only (the references
+    helper's and the reviewer's)."""
+    if allowed_agents is None:
+        return False
+    names = set(allowed_agents)
+    return bool(names) and names <= set(REFERENCE_MODULES)
+
+
 def make_core_tools(
     allowed_agents=None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
@@ -409,6 +462,7 @@ def make_core_tools(
     """
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
+    references = reference_scope(allowed_agents)
 
     def list_agents() -> str:
         """List all available geotechnical analysis modules with brief
@@ -553,15 +607,12 @@ def make_core_tools(
         StructuredTool.from_function(
             call_agent,
             name="call_agent",
-            description=(
-                "Execute a geotechnical calculation. All method-specific "
-                "inputs (width, depth, friction_angle, unit_weight, etc.) "
-                "MUST go inside the 'parameters' object — never as top-level "
-                "arguments. All units are SI. A result's 'choices' say what "
-                "the module chose (given, default or module) and "
-                "'defaults_used' the declared defaults the run used."
-            ),
-            args_schema=_CallAgentArgs,
+            # A reference-only scope (the references helper, the reviewer)
+            # is told the truth about units; the calculation scopes keep SI.
+            description=(REFERENCE_CALL_AGENT_DESCRIPTION if references
+                         else CALL_AGENT_DESCRIPTION),
+            args_schema=(_ReferenceCallAgentArgs if references
+                         else _CallAgentArgs),
         ),
     ])
 

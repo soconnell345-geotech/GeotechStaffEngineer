@@ -225,6 +225,17 @@ REFERENCE_MODULES_CLAUSE = (
 SYSTEM_PROMPT = REACT_PREFIX + _build_module_catalog()
 
 
+#: Rule 7 for the calculation modules, and its place taken where only
+#: reference modules are in scope (the v1 consult): a lookup is in its
+#: manual's units, many US customary (2026-11-10 review, item 2).
+SI_UNITS_RULE = "7. All units are SI: meters, kPa, kN, kN/m3, degrees."
+REFERENCE_UNITS_RULE = (
+    "7. A reference lookup uses the units of the manual it comes from (many "
+    "are US customary); describe_method and the result say which. Give "
+    "every value with its unit as the reference gives it; if you convert "
+    "one, say so and from what.")
+
+
 def build_system_prompt(allowed_agents=None) -> str:
     """Full system prompt: ReAct instructions + module catalog.
 
@@ -232,6 +243,13 @@ def build_system_prompt(allowed_agents=None) -> str:
     ----------
     allowed_agents : iterable of str, optional
         If provided, only these modules appear in the catalog. Defaults to the
-        full registry.
+        full registry. A scope of reference modules only gets
+        :data:`REFERENCE_UNITS_RULE` in place of the SI rule.
     """
-    return REACT_PREFIX + _build_module_catalog(allowed_agents)
+    prefix = REACT_PREFIX
+    if allowed_agents is not None:
+        from funhouse_agent.dispatch import REFERENCE_MODULES
+        names = set(allowed_agents)
+        if names and names <= set(REFERENCE_MODULES):
+            prefix = prefix.replace(SI_UNITS_RULE, REFERENCE_UNITS_RULE)
+    return prefix + _build_module_catalog(allowed_agents)

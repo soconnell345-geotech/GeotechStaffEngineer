@@ -112,6 +112,18 @@ _REFERENCES_CONCISION = (
     "plus the citation is ideal."
 )
 
+#: The units rule, after the concision rule (2026-11-10 review, item 2): a
+#: lookup is in its manual's units, many of them US customary, and the
+#: helper had been told "All units are SI". A tsf reached the main agent
+#: as a bare number.
+_REFERENCES_UNITS = (
+    "\n\nUnits: each lookup uses the units of the manual it comes from (many "
+    "are US customary), and describe_method and the result say which. Give "
+    "every value you hand back with its unit as the reference gives it. "
+    "Convert a unit only with the `calculate` tool, and say that you "
+    "converted it and from what."
+)
+
 #: Added after the concision rule with ``GEOTECH_JUDGMENT_CALLS`` on (BACKLOG
 #: GM-116): one value where the references give several hides a choice that
 #: is the user's to make.
@@ -253,7 +265,7 @@ def build_references_subagent(
     ) + [make_calculate_tool()]
     if extra_tools:
         tools = list(tools) + list(extra_tools)
-    system_prompt = CONSULTANT_ROLE + _REFERENCES_CONCISION
+    system_prompt = CONSULTANT_ROLE + _REFERENCES_CONCISION + _REFERENCES_UNITS
     from funhouse_agent import review_flags as _flags
     warn = None
     if _flags.judgment_calls():
