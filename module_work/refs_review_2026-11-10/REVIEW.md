@@ -161,17 +161,18 @@ In the owner's words, with where each is filed:
 - DM 7.2's reissue: "Agreed with not rebuilding DM 7.2 (I believe the same
   redesignation happened for 7.1)." The lead's reading: the citation moves to
   UFS 3-220-20 (26 March 2026), saying the content is the 16 January 2025
-  UFC's, page for page, and nothing is rebuilt (REF-75). DM 7.1 is already
+  UFC's, page for page, and nothing is rebuilt (recorded as OWN-137; work
+  REF-75). DM 7.1 is already
   cited as UFS 3-220-10 (16 January 2026) (REF-28, done).
 - The three copyrighted PDFs tracked in the reference repository
   (`docs/aashto1993.pdf` and the two EN 1997 parts): "The copyright PDFs are
   OK in the repo. I downloaded these freely off the web; my understanding is
   they're on there because they're adopted law." No action (recorded as
-  OWN-137 in the backlog's Done list).
+  OWN-138 in the backlog's Done list).
 - Release: "You can release when everything is merged and checked." The
   lead releases the library's next version and the app's pin once every fix
   branch and the app-side branch is merged, checked and green, then tells
-  the owner (INF-72).
+  the owner (recorded as OWN-139; work INF-72).
 - Equation judgment calls: "for all equation judgement calls, go with
   whatever you think is best, but file away a 'later' backlog item for me to
   revisit it in the future" (OWN-136, one answer per call from
