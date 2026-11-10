@@ -78,6 +78,7 @@ from funhouse_agent.deep.scratch_guard import ScratchFilesystemGuard
 from funhouse_agent.deep.unknown_tool import UnknownToolHint
 from funhouse_agent.deep.delivered_log import DeliveredToolResults
 from funhouse_agent.deep.keep_work import HelperRecorder, KeepWork
+from funhouse_agent.deep.lookup_report import LOOKUPS_NOTE, LookupReport
 from funhouse_agent.deep.result_map import LargeResultKeyMap
 from funhouse_agent.deep.tool_guards import (HideScratchFilesystem,
                                              OutputLimitGuard, ToolErrorGuard,
@@ -1184,6 +1185,10 @@ def build_deep_agent(
             # no references helper to run a reference's function through
             system_prompt = system_prompt.replace(
                 REFERENCES_HELPER_CLAUSE, REFERENCE_MODULES_CLAUSE)
+        else:
+            # what the app's block on a consult's result means (2026-11-10
+            # review, item 5; LookupReport below)
+            system_prompt += "\n\n" + LOOKUPS_NOTE
         from funhouse_agent import review_flags as _flags
         if _flags.judgment_calls():
             # The judgment calls put in front of the user (GM-116), behind
@@ -1444,7 +1449,12 @@ def build_deep_agent(
                          # INF-67: the document and drawing tools off the
                          # list until the conversation holds a document.
                          DocumentToolsGate(attachments,
-                                           signal=document_signal)])
+                                           signal=document_signal),
+                         # A references or reviewer task's result says how
+                         # its lookups went, counted by code (2026-11-10
+                         # review, item 5); inside KeepWork, whose record
+                         # of the helper it reads.
+                         LookupReport()])
     # create_deep_agent is looked up here, so a test that patches this
     # module's name for it sees the call.
     agent = _assembly.compile_agent(

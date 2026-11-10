@@ -17,8 +17,16 @@ def test_reviewer_may_cite_only_what_its_tools_returned():
 
 
 def test_references_consult_may_not_cite_from_memory():
-    assert "rather than citing from memory" in CONSULTANT_FRAMING
+    assert "never from memory" in CONSULTANT_FRAMING
     assert CONSULTANT_FRAMING.endswith("Question: ")
+
+
+def test_not_found_is_only_for_a_lookup_that_ran_and_found_nothing():
+    """2026-11-10 reference review, item 5: "not found" had covered lookups
+    that errored or were never made."""
+    assert ('Say "not found" only for a lookup that ran and returned '
+            "nothing, and name that lookup") in CONSULTANT_FRAMING
+    assert "say it failed or was not made" in CONSULTANT_FRAMING
 
 
 def test_category_that_matches_nothing_lists_the_real_categories():

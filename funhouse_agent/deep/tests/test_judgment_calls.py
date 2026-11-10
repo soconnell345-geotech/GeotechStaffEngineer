@@ -20,6 +20,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult  # noqa: E402
 
 from funhouse_agent import review_flags  # noqa: E402
 from funhouse_agent.deep import agent as agent_mod  # noqa: E402
+from funhouse_agent.deep.lookup_report import LOOKUPS_NOTE  # noqa: E402
 from funhouse_agent.deep.limits import (  # noqa: E402
     DEFAULT_REFERENCES_MAX_MODEL_CALLS, JUDGMENT_REFERENCES_MAX_MODEL_CALLS,
     JUDGMENT_REFERENCES_WARN_REMAINING, ModelCallBudgetMiddleware)
@@ -222,6 +223,8 @@ def test_switch_off_leaves_every_prompt_as_it_was(monkeypatch, calc,
     if reference_mode == "off":     # no helper to name (GM-230)
         want = want.replace(REFERENCES_HELPER_CLAUSE,
                             REFERENCE_MODULES_CLAUSE)
+    else:                           # the consult's lookups block (review
+        want += "\n\n" + LOOKUPS_NOTE   # 2026-11-10, item 5), unswitched
     if calc:
         want += "\n\n" + agent_mod._CALC_DELEGATION_NUDGE
     assert captured["system_prompt"] == want
@@ -265,6 +268,7 @@ def test_switch_on_ends_the_geotech_prompt_with_the_judgment_calls(
     captured, agent = _built(monkeypatch, True, enable_calc_subagent=calc,
                              extra_system_prompt="HOST BLOCK")
     want = (build_domain_prompt(ANALYSIS_MODULES, memory_enabled=False)
+            + "\n\n" + LOOKUPS_NOTE
             + "\n\n" + judgment_calls_section(references=True)
             + "\n\nHOST BLOCK")
     if calc:
