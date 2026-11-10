@@ -80,6 +80,7 @@ def _spec(captured, name):
 
 def _references_prompt(options: bool, consult: bool = False) -> str:
     return (CONSULTANT_ROLE + agent_mod._REFERENCES_CONCISION
+            + agent_mod._REFERENCES_UNITS
             + (agent_mod._REFERENCES_OPTIONS if options else "")
             + (agent_mod._REFERENCES_JUDGMENT_CALLS if consult else "")
             + agent_mod._REFERENCES_BUDGET.format(
