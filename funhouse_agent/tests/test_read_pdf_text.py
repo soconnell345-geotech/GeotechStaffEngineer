@@ -230,7 +230,7 @@ class TestRealPathFallback:
 
 class TestUploadHelpers:
     def test_sanitize_basename_and_chars(self):
-        assert sanitize_upload_name("Mali Report v2.pdf") == "Mali_Report_v2.pdf"
+        assert sanitize_upload_name("Site Report v2.pdf") == "Site_Report_v2.pdf"
         assert sanitize_upload_name("/tmp/sub/dir/a b.pdf") == "a_b.pdf"
         assert sanitize_upload_name("C:\\x\\y z.PDF") == "y_z.PDF"
         assert sanitize_upload_name("") == "file"

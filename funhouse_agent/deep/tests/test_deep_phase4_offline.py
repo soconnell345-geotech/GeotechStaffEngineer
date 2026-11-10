@@ -298,10 +298,10 @@ def test_ingest_uploads_writes_and_sanitizes(tmp_path):
     ag = _FakeAgent()
     chat = DeepNotebookChat(ag)
     names = chat._ingest_uploads((
-        {"name": "Mali Report v2.pdf", "content": b"%PDF-1.4 data"},
+        {"name": "Site Report v2.pdf", "content": b"%PDF-1.4 data"},
     ))
-    assert names == ["Mali_Report_v2.pdf"]
-    assert ag.geotech_attachments["Mali_Report_v2.pdf"] == b"%PDF-1.4 data"
+    assert names == ["Site_Report_v2.pdf"]
+    assert ag.geotech_attachments["Site_Report_v2.pdf"] == b"%PDF-1.4 data"
     assert chat._transcript[-1]["kind"] == "attachment"
     assert "reference it by that name" in chat._transcript[-1]["text"]
 

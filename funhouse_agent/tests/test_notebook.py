@@ -53,10 +53,10 @@ class TestUploadWidget:
     def test_upload_sanitizes_key_and_posts_system_line(self):
         chat = _make_chat()
         chat._on_upload_change(
-            {"new": ({"name": "Mali Report.pdf", "content": b"%PDF data"},)})
-        assert chat._agent.attachments["Mali_Report.pdf"] == b"%PDF data"
+            {"new": ({"name": "Site Report.pdf", "content": b"%PDF data"},)})
+        assert chat._agent.attachments["Site_Report.pdf"] == b"%PDF data"
         sys_msgs = [m for m in chat._messages if m["role"] == "system"]
-        assert sys_msgs and "Mali_Report.pdf" in sys_msgs[-1]["content"]
+        assert sys_msgs and "Site_Report.pdf" in sys_msgs[-1]["content"]
         assert "📎" in chat._render_chat_html()
 
     def test_upload_7x_dict_and_overwrite(self):

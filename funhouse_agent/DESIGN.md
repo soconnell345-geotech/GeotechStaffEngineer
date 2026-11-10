@@ -808,7 +808,7 @@ DeepNotebookChat.from_model(model).display()           # builds the agent for yo
 Both chats expose an **Attach** `FileUpload` button that writes uploaded bytes
 straight into the agent's **live attachments dict**, so a file dropped mid-chat
 is immediately reachable by `read_pdf_text` / `analyze_pdf_page` / `analyze_image`
-under its sanitized filename (e.g. `Mali Report v2.pdf` → key `Mali_Report_v2.pdf`).
+under its sanitized filename (e.g. `Site Report v2.pdf` → key `Site_Report_v2.pdf`).
 Re-uploading the same name overwrites and says so; an attachments indicator shows
 the current keys. A system-style chat line names each attached key so the user
 knows what to reference.
