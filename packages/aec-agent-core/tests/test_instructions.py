@@ -140,3 +140,8 @@ def test_the_engine_wrapper_appends_to_system():
     wrapped.pacer = "p"
     assert inner.pacer == "p"
     assert wrapped.appended == {"files": ["all.md"]}
+    # instructed(): the wrapper only where there is a block and an engine
+    assert ins.instructed(inner) is inner
+    assert ins.instructed(inner, "", None) is inner
+    assert ins.instructed(None, "\n\nBLOCK", None) is None
+    assert ins.instructed(inner, "\n\nBLOCK", None)._block == "\n\nBLOCK"

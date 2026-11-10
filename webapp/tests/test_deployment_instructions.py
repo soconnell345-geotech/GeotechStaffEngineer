@@ -87,13 +87,20 @@ def test_an_unreadable_folder_still_builds(tmp_path):
     assert ins.HEADING not in _main_call(calls)["kwargs"]["system_prompt"]
 
 
-def test_report_ingest_and_library_blocks_are_recorded(tmp_path, monkeypatch):
-    """The two compiled helpers: the library's prompt takes its block, the
-    ingest's engine appends its block to every call, both recorded."""
+def test_both_routes_of_each_compiled_helper_get_its_block(tmp_path,
+                                                           monkeypatch):
+    """report_ingest and report_library are each reached two ways: the
+    primary tool of that name and ``task`` to the sub-agent. Every route
+    gets the block read when the agent was built, and the record names it
+    (the review of REF-64 (B) found the two tools had none)."""
     from langchain_core.language_models.fake_chat_models import (
         FakeMessagesListChatModel)
-    from langchain_core.messages import AIMessage
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from funhouse_agent import document_tools
     from funhouse_agent.deep import agent as agent_mod
+    import report_ingest.engine as engine_mod
+    import report_ingest.subagent as subagent_mod
     from report_ingest.tests.library_fixtures import build_library
 
     library = tmp_path / "library"
@@ -107,51 +114,77 @@ def test_report_ingest_and_library_blocks_are_recorded(tmp_path, monkeypatch):
     (inst / "report_ingest.md").write_text("Ingest rule.", encoding="utf-8")
     monkeypatch.setenv(ins.ENV, str(inst))
 
-    seen = {}
-
-    def fake_library(model, **kw):
-        seen["library_prompt"] = kw.get("extra_system_prompt")
-        return {"name": "report_library", "description": "d",
-                "runnable": object()}
-
-    import report_ingest.library_agent as library_agent
-    monkeypatch.setattr(library_agent, "build_report_library_subagent",
-                        fake_library)
-    monkeypatch.setattr(agent_mod, "create_deep_agent",
-                        lambda **kw: type("Agent", (), {})())
-    model = FakeMessagesListChatModel(responses=[AIMessage(content="ok")])
-    agent = agent_mod.build_deep_agent(
-        model, enable_report_ingest=True, enable_report_library=True,
-        library_root=str(library))
-    roles = agent.geotech_build["appended"]["roles"]
-    assert roles["report_library"]["files"] == ["all.md",
-                                                "report_library.md"]
-    assert seen["library_prompt"].endswith("Everyone rule.\n\nLibrary rule.")
-    assert seen["library_prompt"].startswith(ins.PROTECTED_RULES)
-    assert roles["report_ingest"]["files"] == ["all.md", "report_ingest.md"]
-
-    # the ingest's engine: its system prompt gets the block on every call
-    calls = {}
+    systems = []        # every system prompt an engine or the model got
 
     class Inner:
         name = "inner"
 
         def complete(self, messages, *, system=None, **kw):
-            calls["system"] = system
+            systems.append(system)
             return "ok"
 
-    import report_ingest.engine as engine_mod
+    class Chat(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kw):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kw):
+            systems.append("\n".join(m.content for m in messages
+                                     if m.type == "system"))
+            return ChatResult(generations=[ChatGeneration(
+                message=AIMessage(content="done"))])
+
+    def fake_run_ingest(source, questions, *, engine=None,
+                        vision_engine=None, **kw):
+        engine.complete([], system="SHIPPED INGEST PROMPT")
+        vision_engine.complete([], system="SHIPPED VOTER PROMPT")
+        return subagent_mod.IngestSummary(error="stopped by the test")
+
     monkeypatch.setattr(engine_mod, "engine_for",
                         lambda obj, model=None: Inner())
-    engine = agent_mod._report_ingest_engine_factory(object())()
-    engine.complete([], system="SHIPPED INGEST PROMPT")
-    assert calls["system"] == ("SHIPPED INGEST PROMPT" + TAIL
-                               + "Everyone rule.\n\nIngest rule.")
-    assert engine.appended["files"] == ["all.md", "report_ingest.md"]
+    monkeypatch.setattr(subagent_mod, "run_ingest", fake_run_ingest)
+    monkeypatch.setattr(document_tools, "resolve_document_source",
+                        lambda source, attachments=None: source)
+    built = {}
+    monkeypatch.setattr(agent_mod, "create_deep_agent", lambda **kw: (
+        built.update(kw), type("Agent", (), {})())[1])
+    agent = agent_mod.build_deep_agent(
+        Chat(responses=[AIMessage(content="x")]), enable_report_ingest=True,
+        enable_report_library=True, library_root=str(library))
+    # read at build: an edit after it reaches the next build, not this one
+    (inst / "report_ingest.md").write_text("Edited later.", encoding="utf-8")
+    roles = agent.geotech_build["appended"]["roles"]
+    assert roles["report_ingest"]["files"] == ["all.md", "report_ingest.md"]
+    assert roles["report_library"]["files"] == ["all.md",
+                                                "report_library.md"]
+    tools = {t.name: t for t in built["tools"]}
+    subs = {s["name"]: s for s in built["subagents"]}
 
-    monkeypatch.delenv(ins.ENV)
-    plain = agent_mod._report_ingest_engine_factory(object())()
-    assert isinstance(plain, Inner)
+    ingest_tail = TAIL + "Everyone rule.\n\nIngest rule."
+    for route in (
+            lambda: tools["report_ingest"].func(source="made_up.pdf"),
+            lambda: subs["report_ingest"]["runnable"].invoke(
+                {"messages": [HumanMessage(content="Read made_up.pdf")]})):
+        del systems[:]
+        route()
+        assert systems == ["SHIPPED INGEST PROMPT" + ingest_tail,
+                           "SHIPPED VOTER PROMPT" + ingest_tail]
+
+    library_tail = TAIL + "Everyone rule.\n\nLibrary rule."
+    question = "Which reports are there?"
+    for route in (
+            lambda: tools["report_library"].func(question=question),
+            lambda: subs["report_library"]["runnable"].invoke(
+                {"messages": [HumanMessage(content=question)],
+                 "question": question})):
+        del systems[:]
+        route()
+        assert systems and all(s.endswith(library_tail)
+                               and s.count(ins.HEADING) == 1
+                               for s in systems), systems
+
+    # no instructions: the factory's engine is the one engine_for built
+    assert isinstance(agent_mod._report_ingest_engine_factory(object())(),
+                      Inner)
 
 
 def test_the_turn_record_carries_it(folder):

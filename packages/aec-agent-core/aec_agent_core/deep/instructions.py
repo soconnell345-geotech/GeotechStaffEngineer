@@ -234,6 +234,16 @@ class InstructedEngine:
         setattr(self._inner, name, value)
 
 
+def instructed(engine: Any, block: str = "",
+               appended: Optional[dict] = None) -> Any:
+    """``engine`` in an :class:`InstructedEngine` carrying ``block``, or
+    ``engine`` itself when there is no block (or no engine), for every
+    route to a compiled helper's engine (its tool and its sub-agent)."""
+    if engine is None or not block:
+        return engine
+    return InstructedEngine(engine, block, appended)
+
+
 __all__ = ["ENV", "ALL_FILE", "MAIN_ROLE", "CAP_CHARS", "RECORD_TEXT_CHARS",
            "PROTECTED_RULES", "HEADING", "Instructions", "folder", "apply",
-           "block_for", "merge_record", "InstructedEngine"]
+           "block_for", "merge_record", "InstructedEngine", "instructed"]
