@@ -144,7 +144,7 @@ def _build():
             else:
                 qualified = name
 
-            registry[qualified] = make_wrapper(func)
+            registry[qualified] = make_wrapper(func, ref)
             info[qualified] = extract_method_info(func, cat, ref)
 
     register_semantic_aliases(registry, info)
