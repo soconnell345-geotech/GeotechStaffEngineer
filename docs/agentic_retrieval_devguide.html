@@ -610,7 +610,7 @@ print(agent.ask(<span class="s">"What does the spec say about X, and cite the se
         <tr><td>Agent loop</td><td><code>funhouse_agent/agent.py</code></td><td><code>GeotechAgent</code> — native + ReAct loops, vision</td></tr>
         <tr><td>Dispatch + scoping</td><td><code>funhouse_agent/dispatch.py</code></td><td><code>call_agent</code>, <code>REFERENCE_MODULES</code>, method resolution</td></tr>
         <tr><td>Consult sub-agent</td><td><code>funhouse_agent/reviewer.py</code></td><td><code>consult_references</code> (scoped librarian) + reviewer</td></tr>
-        <tr><td>Vision read-off</td><td><code>funhouse_agent/vision_tools.py</code></td><td><code>read_reference_figure</code> (render 220 DPI → vision)</td></tr>
+        <tr><td>Vision read-off</td><td><code>funhouse_agent/reference_vision.py</code> · the shared core's <code>aec_agent_core/vision_tools.py</code> and <code>vision_view.py</code> (package <code>aec-agent-core</code>, in <code>packages/aec-agent-core/</code>)</td><td><code>read_reference_figure</code>: the app's reader finds the figure's page; the core renders it and asks the vision model</td></tr>
       </tbody>
     </table>
   </div>

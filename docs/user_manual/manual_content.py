@@ -1434,7 +1434,10 @@ def _ch1_what(ctx):
         "<table><thead><tr><th>Layer</th><th>What it is</th><th>Why it&rsquo;s separate</th></tr></thead><tbody>"
         "<tr><td><strong>Agent harness</strong></td><td>An engine-agnostic LLM driver "
         "(<code>funhouse_agent</code>) that discovers modules, calls methods, reads figures, and cites "
-        "references</td><td>The reasoning that <em>combines</em> methods lives here, not inside the "
+        "references; the chat web app (<code>webapp</code>, two pages: GeotechStaffEngineer and "
+        "Document Review); and below both the shared core <code>aec-agent-core</code> (model "
+        "connections, vision calls, guards and records, Word and Excel), a separate package this one "
+        "pins exactly</td><td>The reasoning that <em>combines</em> methods lives here, not inside the "
         "methods</td></tr>"
         "<tr><td><strong>Variability engine</strong></td><td><code>reliability</code> &mdash; FOSM, "
         "PEM, Monte Carlo, FORM &rarr; &beta; and P<sub>f</sub>, plus a published COV database and spatial "
@@ -1461,17 +1464,18 @@ def _ch2_install(ctx):
     ctx.section("Install from PyPI")
     ctx.raw("<pre class='call'><code># the whole stack: analysis modules, reference library, deep agent, webapp\n"
             "pip install geotech-staff-engineer\n\n"
-            "# everything (all optional analysis backends + the deep agent)\n"
-            "pip install \"geotech-staff-engineer[deep,full]\"\n\n"
-            "pip install geotech-staff-engineer</code></pre>")
+            "# Document Review alone, with nothing geotechnical (a separate package)\n"
+            "pip install aec-document-review</code></pre>")
     ctx.para(
-        "The core install already covers the native modules &mdash; bearing capacity, settlement, piles, "
+        "The plain install already covers the native modules &mdash; bearing capacity, settlement, piles, "
         "walls, slope stability, the reliability engine, fem2d, and the reference library "
         "(<code>geotech-references</code> is a hard dependency, so DM7/GEC/UFC lookups work out of the "
-        "box). Since 5.8.1 the plain install also brings the third-party libraries the wrapper modules "
-        "drive; the extra names below are kept as empty aliases so old install lines still work. Three "
-        "extras still add a package: <code>[ags4]</code> and <code>[subsurface]</code> (python-ags4) and "
-        "<code>[pydiggs]</code>.")
+        "box). It also brings two other packages of the same project: the shared core "
+        "<code>aec-agent-core</code> (pinned exactly) and <code>planlens</code>. Since 5.8.1 the plain "
+        "install also brings the third-party libraries the wrapper modules drive; the extra names below "
+        "(<code>[deep]</code>, <code>[full]</code> and the rest) are kept as empty aliases so old install "
+        "lines still work. Three extras still add a package: <code>[ags4]</code> and "
+        "<code>[subsurface]</code> (python-ags4) and <code>[pydiggs]</code>.")
 
     ctx.section("The extras groups")
     rows = ["<table><thead><tr><th>Extra</th><th>Pulls in</th><th>Unlocks</th></tr></thead><tbody>"]
@@ -1510,14 +1514,29 @@ def _ch2_install(ctx):
         "an <code>ANTHROPIC_API_KEY</code> in the environment. Keys are read from the environment at "
         "run time &mdash; never pass them through a notebook cell or a chat transcript.")
 
+    ctx.section("The chat web app")
+    ctx.para(
+        "The install includes the Streamlit chat app: two pages over one shell, Document Review (the "
+        "app root) and GeotechStaffEngineer (<code>/geotech</code>). Its files are inside the installed "
+        "package, so point Streamlit at them:")
+    ctx.raw("<pre class='call'><code>streamlit run \"$(python -c 'import webapp, os; "
+            "print(os.path.dirname(webapp.__file__))')/pages_entry.py\"</code></pre>")
+    ctx.para(
+        "Put <code>app.py</code> in place of <code>pages_entry.py</code> for the geotech page alone; in "
+        "Windows PowerShell write <code>\\pages_entry.py</code> after the closing parenthesis. "
+        "Databricks, Foundry and the app&rsquo;s settings are in the repository&rsquo;s "
+        "<code>webapp/README.md</code>.")
+
     ctx.section("Databricks / Funhouse")
     ctx.para(
         "Install from a cluster-accessible location &mdash; <code>/tmp</code> or a Unity Catalog "
         "Volume, <em>not</em> <code>/Workspace</code> (the workspace FUSE mount mangles wheel filenames "
         "and does not durably store output files):")
     ctx.raw("<pre class='call'><code>%pip install \"geotech-staff-engineer\"\n"
-            "# or a test wheel uploaded to /tmp or a UC Volume:\n"
-            "%pip install \"/tmp/geotech_staff_engineer-<ver>-py3-none-any.whl\"</code></pre>")
+            "# or a test wheel uploaded to /tmp or a UC Volume; when the test set carries\n"
+            "# the core's wheel too, put it on the same line:\n"
+            "%pip install \"/tmp/geotech_staff_engineer-&lt;ver&gt;-py3-none-any.whl\" "
+            "\"/tmp/aec_agent_core-&lt;core ver&gt;-py3-none-any.whl\"</code></pre>")
     ctx.callout("No compiled meshing dependency",
         "<p>The cross-section and RC-section engines used to wrap "
         "<code>sectionproperties</code> and <code>concreteproperties</code>, which both "
@@ -1532,7 +1551,9 @@ def _ch2_install(ctx):
         "kernel startup, which used to break the langgraph imports behind the <code>[deep]</code> agent "
         "with <code>TypeError: TypedDict() got an unexpected keyword argument 'extra_items'</code>, "
         "requiring <code>dbutils.library.restartPython()</code>. As of v5.4 the package repairs this in "
-        "place: <code>funhouse_agent.runtime_check.ensure_typing_extensions()</code> runs automatically "
+        "place: <code>ensure_typing_extensions()</code> (in the shared core&rsquo;s "
+        "<code>aec_agent_core.runtime_check</code>; the old name <code>funhouse_agent.runtime_check</code> "
+        "is an alias) runs automatically "
         "at the top of the first <code>funhouse_agent.deep</code> import, reloading the freshly-installed "
         "<code>typing_extensions&ge;4.13</code> so the restart is normally no longer needed. If an even "
         "older copy is pinned at cluster scope and the in-place reload can&rsquo;t win, it raises a clear "
@@ -1626,7 +1647,7 @@ def _ch3_agent(ctx):
 
     ctx.section("The v2 deep agent and notebook chat")
     ctx.para(
-        "Installing the <code>[deep]</code> extra unlocks <code>funhouse_agent.deep.build_deep_agent</code>, "
+        "The plain install includes <code>funhouse_agent.deep.build_deep_agent</code>, "
         "a deepagents/LangGraph-based loop with the same toolbox and an optional staged, human-gated "
         "model-setup sub-agent (off by default). For interactive use in Jupyter or Databricks, "
         "<code>NotebookChat</code> (v1) and <code>DeepNotebookChat</code> (v2) give an ipywidgets chat "

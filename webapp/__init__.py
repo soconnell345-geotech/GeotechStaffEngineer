@@ -1,7 +1,11 @@
 """Streamlit web chat app over the GeotechStaffEngineer deep agent.
 
-Runs standalone locally (``streamlit run webapp/app.py``) and is the submission
-target for the "Tiny Apps" hosting environment (Streamlit / Python).
+Two pages over one shell, declared in :mod:`webapp.pages_entry`: Document
+Review and GeotechStaffEngineer (``streamlit run webapp/app.py`` runs the
+geotech page alone). It runs locally, on Databricks and on Foundry. The
+"Tiny Apps" host runs Document Review alone, from its own package
+``aec-document-review`` (``tinyapps/TINYAPPS.md``); :mod:`webapp.tinyapps_entry`
+stays here, frozen, until the app split's step 15.
 
 All logic lives in :mod:`webapp.core` and :mod:`webapp.engine_config` (both
 import-testable without streamlit); ``webapp/app.py`` is a thin view over them.

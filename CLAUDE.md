@@ -2237,7 +2237,9 @@ Run: `pytest foundry_test_harness/ -v`
 
 Everything that reads a PDF, an image or a DXF lives in the separate,
 published package **planlens** (`C:/dev/planlens`,
-PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.15` since
+PyPI `planlens`; the dev venv has the released wheel (0.15.0), not an
+editable install, so to work on planlens install it editable first,
+`.venv/Scripts/pip install -e ../planlens`; app pin `planlens>=0.15` since
 5.35.0 (0.15.0 holds `planlens.review`, the app's document tools; see its
 CHANGELOG), `planlens>=0.14` since 5.34.0, `planlens>=0.13` since 5.33.0;
 earlier,
@@ -2594,7 +2596,7 @@ only on the refs branch `rescue/reference-wip-2026-06-02` (7fb6fe8, unmerged): B
 
 ## Environment
 
-- Windows 11, Python 3.14.5, venv at `.venv/`, with the core, the app and `geotech-references/` installed editable (`pip install -e packages/aec-agent-core -e . -e geotech-references`); the packages declare Python 3.11 or newer, and every host runs 3.12
+- Windows 11, Python 3.14.5, venv at `.venv/`, with the core, the app and `geotech-references/` installed editable (`pip install -e packages/aec-agent-core -e . -e geotech-references`), and planlens from PyPI (`pip install -e ../planlens` to work on it); the packages declare Python 3.11 or newer, and every host runs 3.12
 - Workspace `C:\dev` since 2026-10-22 (moved off OneDrive, whose sync competed for the laptop's memory). The gitignored private folders (`module_work/field_feedback/**/raw/`, the Foundry and Funhouse evidence folders, `module_work/live_smoke/runs/`, `tinyapps/reference/`) are junctions to the old copy under `C:\Users\socon\OneDrive\dev`, so OneDrive still backs them up (BACKLOG INF-50).
 - Git repo: github.com/soconnell345-geotech/GeotechStaffEngineer — **PUBLIC**
   (checked 2026-09-22; so are `geotech-references` and `planlens`). Department

@@ -250,6 +250,7 @@
             .z{font-family:var(--mono,monospace);font-size:11px;letter-spacing:.1em;fill:#6b778c}
             .chip{font-family:var(--mono,monospace);font-size:10.5px;fill:#cfe}
           </style>
+        </defs>
 
           <!-- top: engineer -->
           <rect x="380" y="24" width="380" height="46" rx="10" fill="#1a1326" stroke="#c8a0ff"/>
@@ -259,14 +260,16 @@
           <!-- agent layer -->
           <rect x="40" y="92" width="1060" height="92" rx="12" fill="#120f1c" stroke="#3a2d52"/>
           <text x="58" y="114" class="z" fill="#c8a0ff">AGENT HARNESS — natural-language driver, engine-agnostic</text>
-          <rect x="58" y="124" width="250" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
-          <text x="74" y="146" class="lbl">funhouse_agent</text><text x="74" y="163" class="s">GeotechAgent · dispatch · vision</text>
-          <rect x="322" y="124" width="230" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
-          <text x="338" y="146" class="lbl">foundry/ wrappers</text><text x="338" y="163" class="s">25 standalone tool agents</text>
-          <rect x="566" y="124" width="250" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
-          <text x="582" y="146" class="lbl">external-library agents</text><text x="582" y="163" class="s">opensees · pystrata · liquepy …</text>
-          <rect x="830" y="124" width="252" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
-          <text x="846" y="146" class="lbl">geo_project</text><text x="846" y="163" class="s">staged, human-gated model setup</text>
+          <rect x="58" y="124" width="195" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
+          <text x="72" y="146" class="lbl">webapp</text><text x="72" y="163" class="s">geotech + Document Review</text>
+          <rect x="265" y="124" width="195" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
+          <text x="279" y="146" class="lbl">funhouse_agent</text><text x="279" y="163" class="s">deep agent · dispatch</text>
+          <rect x="472" y="124" width="195" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
+          <text x="486" y="146" class="lbl">aec-agent-core</text><text x="486" y="163" class="s">shared core: models, vision</text>
+          <rect x="679" y="124" width="195" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
+          <text x="693" y="146" class="lbl">library agents</text><text x="693" y="163" class="s">opensees · pystrata …</text>
+          <rect x="886" y="124" width="195" height="48" rx="8" fill="#161d2e" stroke="#c8a0ff"/>
+          <text x="900" y="146" class="lbl">geo_project</text><text x="900" y="163" class="s">staged, human-gated setup</text>
 
           <!-- variability layer (emphasized) -->
           <rect x="40" y="204" width="1060" height="104" rx="12" fill="#241804" stroke="#ffb86b" stroke-width="1.5"/>
@@ -337,8 +340,8 @@
 
           <!-- references -->
           <rect x="756" y="562" width="326" height="56" rx="12" fill="#130f1c" stroke="#c8a0ff"/>
-          <text x="774" y="584" class="z" fill="#c8a0ff">REFERENCE LIBRARY</text>
-          <text x="774" y="604" class="lbl">geotech-references — printed manuals <tspan class="s">DM7·GEC·UFC·FHWA</tspan></text>
+          <text x="774" y="584" class="z" fill="#c8a0ff">REFERENCE LIBRARY — printed manuals</text>
+          <text x="774" y="604" class="lbl">geotech-references <tspan class="s">DM7·GEC·UFC·FHWA</tspan></text>
 
           <!-- ground -->
           <rect x="40" y="638" width="1042" height="46" rx="12" fill="#0e1626" stroke="#27324a"/>
@@ -359,6 +362,8 @@
       <div class="card lead-cyan"><h4>Why no cross-imports</h4><p>Analysis modules are independent leaves. That keeps each testable in isolation, swappable, and safe for an agent to call à la carte — the routing that <i>combines</i> them lives in the agent layer, not inside a module.</p></div>
       <div class="card lead-amber"><h4>Why variability is its own layer</h4><p>Because it's orthogonal. <code>reliability</code> doesn't know what bearing capacity <i>is</i> — it knows how to take any callable <code>g(values)</code> and characterize how its output scatters. Wrap once, apply everywhere.</p></div>
     </div>
+
+    <div class="note violet"><b>Why a shared core —</b> what an agent runs below its chat page (the model connections, the vision calls, the guards and records, Word and Excel in and out) is its own package, <a href="https://pypi.org/project/aec-agent-core/"><code>aec-agent-core</code></a>, which <code>geotech-staff-engineer</code> pins exactly. The web app has two pages, GeotechStaffEngineer and Document Review; Document Review is also published alone, with nothing geotechnical, as <a href="https://pypi.org/project/aec-document-review/"><code>aec-document-review</code></a>, the package the Tiny Apps host installs. Both packages are built from this repository's <code>packages/</code> folder.</div>
     </div>
 </section>
 
@@ -427,6 +432,7 @@ print(mc.beta, mc.pf)     <span class="c"># reliability index & probability of f
         <tr><td class="dom">deep foundations</td><td><code>axial_pile</code> · <code>lateral_pile</code> · <code>pile_group</code> · <code>drilled_shaft</code> · <code>wave_equation</code> · <code>downdrag</code></td><td>Driven &amp; bored pile capacity, p-y lateral analysis, rigid-cap groups, Smith wave-equation drivability, neutral-plane downdrag.</td></tr>
         <tr><td class="dom">earth retention</td><td><code>sheet_pile</code> · <code>soe</code> · <code>retaining_walls</code> · <code>ground_improvement</code></td><td>Cantilever/anchored walls, support-of-excavation, cantilever &amp; MSE walls, aggregate piers / wick drains / vibro.</td></tr>
         <tr><td class="dom">slope · FEM · CAD</td><td><code>slope_stability</code> · <code>fem2d</code> · <code>dxf_import</code> · <code>dxf_export</code> · <code>planlens</code></td><td>Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction; geometry I/O.</td></tr>
+        <tr><td class="dom">document review</td><td><code>planlens</code> (separate package, installed as a dependency)</td><td>Any PDF or image as review-ready data for the agent: page map, text with exact locations, tables, review markups, drawing geometry. The web app's Document Review page reviews any AEC document this way; it is also published alone as <code>aec-document-review</code>.</td></tr>
         <tr><td class="dom">seismic</td><td><code>seismic_geotech</code> · <code>opensees_agent</code> · <code>pystrata_agent</code> · <code>liquepy_agent</code> · <code>seismic_signals_agent</code></td><td>Site class, M-O pressures, liquefaction triggering (B&amp;I-2014 / NCEER), 1D site response, ground-motion processing.</td></tr>
         <tr><td class="dom">characterization</td><td><code>subsurface_characterization</code> · <code>gstools_agent</code></td><td>DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields.</td></tr>
         <tr><td class="dom">variability</td><td><code>reliability</code> · <code>salib_agent</code> · <code>pystra_agent</code></td><td>FOSM/PEM/MC/FORM + COV database + spatial averaging; Sobol/Morris sensitivity; structural FORM/SORM/MC.</td></tr>
@@ -435,7 +441,7 @@ print(mc.beta, mc.pf)     <span class="c"># reliability index & probability of f
       </tbody>
     </table>
 
-    <div class="note cyan"><b>Sibling guide —</b> for exactly how the reference library and the agent retrieve and cite standards (FTS5 search, figure + vision read-off, the scoped consult sub-agent), see the companion walkthrough <code>funhouse_agentic_retrieval_devguide.html</code>.</div>
+    <div class="note cyan"><b>Sibling guide —</b> for exactly how the reference library and the agent retrieve and cite standards (FTS5 search, figure + vision read-off, the scoped consult sub-agent), see the companion walkthrough <a href="agentic_retrieval_devguide.html"><code>agentic_retrieval_devguide.html</code></a>.</div>
   </div>
 </section>
 
