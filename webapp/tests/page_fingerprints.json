@@ -220,7 +220,7 @@
          }
         ],
         "name": "reviewer",
-        "system_prompt": "195594fc21772abf",
+        "system_prompt": "ad2111a0beadf975",
         "tool_order": [
          "list_agents",
          "list_methods",
