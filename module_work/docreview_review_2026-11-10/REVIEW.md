@@ -9,7 +9,8 @@ improvements.
 Six read-only reviewers each took a slice (isolation on the shared host; the
 agent loop; the model connection and vision; SharePoint; saved files, records
 and the page shell; `planlens.review`). The lead checked each finding against
-the code before acting on it. Open work from this review is in `BACKLOG.md`
+the code before acting on it. A seventh reviewer, who had seen none of that,
+then read the fixes as a diff; what it found is folded in below. Open work from this review is in `BACKLOG.md`
 under the IDs named here; this file holds the detail.
 
 Two findings are described here by their kind only. How they were shown is
@@ -23,7 +24,8 @@ has a test with made-up values. Nothing is released: see §4.
 ### 1.1 One process, several testers
 
 On Tiny Apps one Streamlit process serves every tester. The review found
-five ways one tester's session could reach outside its own conversation.
+eight ways one tester's session could reach outside its own conversation
+(the last three in the table came from the independent read of the fixes).
 
 | Was | Now |
 | --- | --- |
@@ -32,6 +34,9 @@ five ways one tester's session could reach outside its own conversation.
 | A restored zip's `meta.json` could carry a working folder, and its transcript could name files anywhere on the server as downloads. | The zip's working folder is dropped. On a shared host a file reference never leaves the conversation folder. |
 | A file path in the text of a tool result was copied into the conversation as a download. A tool result can quote a document, so a line in an uploaded file could pick a server file. | Only a file in the working folder or the temporary folder is copied. |
 | `find_in_working_folder("../x")` found a file outside the folder. | It does not. |
+| A restored zip's `attachments.json` could name any file on the server; it was read and handed to the agent as an attachment. | A key names a file in the conversation's own folder, or it is skipped. |
+| A zip restored on a shared host kept the id inside it. The app finds a conversation's folder and its running turn by id alone, so when a colleague's zip was restored and both people had it open, one person's next turn wrote into the other's conversation. | A restore on a shared host is a copy with an id of its own, unless the person still has that conversation. |
+| The temporary folder counted as a place tools save to. It is every tester's. | On a shared host only the conversation's own folder counts. |
 
 **Model-written plotting code.** The figure helper can run matplotlib or
 Plotly code the model writes, in a box: a separate process with a code check,
@@ -54,7 +59,11 @@ reverses "on everywhere" (GM-92) for that one host: OWN-133.
 - **No waiting on a busy service.** A throttled call (429) now waits as the
   service asks and is sent again, up to four sends; so is a read or an
   upload the service was too busy for (503, 504). A 401 on a token the app
-  still held as good gets a new token and one more send.
+  still held as good gets a new token and one more send. When the throttle
+  outlives those sends, or the service asks for more than 20 s, the call
+  fails and later calls are held back unsent until the wait is over: a
+  mirror runs under one lock for all testers, and must not wait out every
+  remaining file behind one throttle. Those files go at the next sync.
 - **An upload session's address went into the log** with its query, which
   carries a temporary token. Error texts now give the address without it.
 - **"SharePoint refused the app"** was decided by finding "403" or "token"
@@ -82,7 +91,9 @@ reverses "on everywhere" (GM-92) for that one host: OWN-133.
   take such characters out.
 - **Excel: text that opens with "="** (a note such as "= 2 x 150 mm") was
   written as a formula, which Excel shows as an error or offers to repair.
-  It is written as text, and the tool's result says so.
+  It is written as text, and the tool's result says so. A real formula
+  (`=SUM(B2:B3)`) is text now too; the tool never promised formulas, and
+  DR-41 has the way to allow them on purpose.
 - **A setting that is not a number** (`GEOTECH_DOCUMENT_TOOLKITS=eight`)
   stopped the app starting. It now falls back to the default.
 - **Connection diagnostics on Tiny Apps:** the upload probe showed a standing
@@ -101,7 +112,7 @@ reverses "on everywhere" (GM-92) for that one host: OWN-133.
   warning that the page will not load through IIS.
 - `/home/data/...` is used only where `/home` is the app's to write in.
 
-### 1.6 planlens (`fix/review-findings-2026-11-10`, PL-36)
+### 1.6 planlens (merged to its main, de93bc1; PL-36)
 
 - A marked copy could replace the document that was opened, or a user's own
   file that happened to carry the default name.
@@ -147,7 +158,8 @@ not measure.
 - Sign-in names that differ only in punctuation map to one secret name and
   one folder (`j.doe`, `j-doe`, `j_doe`).
 - A conversation's folder and its running turn are found by the
-  conversation id alone, and a restore accepts the id inside the zip.
+  conversation id alone. The known way to two people holding one id is
+  closed (§1.1); keying those tables by folder and id would close the kind.
 - The vision probe's verdict is kept per model and address, not per key:
   one tester's spent key lowers every tester's image size for two minutes.
 

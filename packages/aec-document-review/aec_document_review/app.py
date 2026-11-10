@@ -962,7 +962,7 @@ with st.sidebar:
     # conversation's own (core.working_dir_for), and the box is not drawn: a
     # typed path would bind any folder on the server, another person's too.
     _wd = core.working_dir_for(ss.thread_id)
-    if not _IDENT.multi_user:
+    if not _IDENT.multi_user and not core._shared_host():
         _wd_in = st.text_input(
             "Working folder (agent saves land here)", value=_wd,
             key=f"workdir_{ss.thread_id}",

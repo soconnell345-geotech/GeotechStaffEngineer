@@ -94,6 +94,19 @@ def test_two_header_values_trust_neither():
     assert identity.from_header_values(["CORP\\a", "CORP\\b"]) is None
 
 
+def test_an_account_name_is_whatever_windows_allows():
+    """The deployed host refuses a caller it cannot name, so a name it
+    cannot read is a person locked out: an apostrophe and an accented
+    letter are names. What Windows forbids in a name still is not one."""
+    ident = identity.from_header_values(["CORP\\o'brien"])
+    assert ident is not None and ident.username == "o'brien"
+    assert ident.multi_user and ident.key == "corp__o_brien"
+    assert identity.from_header_values(["CORP\\jos" + chr(233)]) is not None
+    for bad in ("CORP\\a:b", "CORP\\a/b", "CORP\\a\\b", "CORP\\a*", "jdoe",
+                "CORP\\a" + chr(9) + "b"):
+        assert identity.from_header_values([bad]) is None, bad
+
+
 def test_dev_identity_and_email_fallbacks(monkeypatch):
     assert identity.current_identity() is identity.ANONYMOUS
     monkeypatch.setenv("GEOTECH_USER_EMAIL", "jane.doe@agency.gov")
@@ -620,9 +633,36 @@ def test_a_call_still_throttled_after_the_last_try_raises(fm, monkeypatch):
     assert exc.value.status == 429
     assert len(refused) == graph_sharepoint.BUSY_TRIES
     assert waits == [1.0, 2.0, 4.0]          # no Retry-After: 1, 2, 4 s
-    # no single wait is longer than the cap
-    assert graph_sharepoint._busy_wait(
-        _http_error("u", 429), 9) == graph_sharepoint.BUSY_WAIT_MAX_S
+
+
+def test_after_a_throttle_outlives_its_sends_later_calls_are_not_sent(
+        fm, monkeypatch):
+    """A mirror holds the store's lock for all its files: behind one
+    throttle it waited out every remaining file's sends, and everybody
+    else's save waited behind it. The rest now fail at once, unsent, and
+    are sent at the next sync."""
+    waits, refused = _answering(fm, monkeypatch, 429, 99, _drives)
+    with pytest.raises(graph_sharepoint.GraphError):
+        fm._request("GET", "sites/SITE/drives")
+    sent = len(fm._fake.calls) + len(refused)
+    with pytest.raises(graph_sharepoint.GraphError) as exc:
+        fm._request("GET", "drives/D1/root")          # another address
+    assert exc.value.status == 429 and "not sent" in str(exc.value)
+    assert len(fm._fake.calls) + len(refused) == sent and len(waits) == 3
+    # once the wait is over, calls go out again
+    fm._busy_until = 0.0
+    assert fm._request("GET", "drives/D1/root")["id"] == "ROOT"
+
+
+def test_a_wait_longer_than_the_cap_is_not_waited_out(fm, monkeypatch):
+    waits, refused = _answering(fm, monkeypatch, 429, 99, _drives,
+                                headers={"Retry-After": "120"})
+    with pytest.raises(graph_sharepoint.GraphError) as exc:
+        fm._request("GET", "sites/SITE/drives")
+    assert exc.value.status == 429
+    assert len(refused) == 1 and waits == []      # one send, no sleeping
+    held = fm._busy_until - graph_sharepoint.time.time()
+    assert 100 < held <= 120                      # as long as it asked
 
 
 def test_a_busy_service_gets_a_read_again_but_not_a_create(fm, monkeypatch):

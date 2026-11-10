@@ -122,3 +122,45 @@ def test_a_helpers_budget_is_noted_on_its_record_not_on_the_turn():
             keep_work._HELPER.reset(token)
         assert rec.budget_reached is True
         assert scope.budget_reached is False
+
+
+# ---------------------------------------------------------------------------
+# From the independent review of the fixes above
+# ---------------------------------------------------------------------------
+
+def test_a_control_character_in_a_sheet_name_or_a_table_row_is_dropped():
+    openpyxl = pytest.importorskip("openpyxl")
+    data, summary, _warnings = xlsx_writer.build_workbook(
+        sheets=[{"name": "Bar\x0c list", "rows": [["Mark"], ["B1"]]}],
+        markdown=("| Sheet | Comment |\n|---|---|\n"
+                  "| S-201 | lap\x0clength |\n| S-202 | cover |\n"))
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    assert wb.sheetnames[0] == "Bar list"
+    # the form feed did not end the table at its row: both rows are there
+    assert summary[1]["rows"] == 3
+    assert wb[wb.sheetnames[1]]["B2"].value == "lap length"
+
+
+def test_characters_xml_cannot_hold_are_dropped_from_both_files(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    docx = pytest.importorskip("docx")
+    pytest.importorskip("markdown_it")
+    from aec_agent_core.docx_renderer import markdown_to_docx
+    odd = "cover" + chr(0xFFFE) + " 40" + chr(0xD800) + " mm" + chr(0xFFFF)
+    data, _summary, _warnings = xlsx_writer.build_workbook(
+        sheets=[{"name": "Notes", "rows": [["Note"], [odd]]}])
+    assert openpyxl.load_workbook(io.BytesIO(data))["Notes"]["A2"].value == \
+        "cover 40 mm"
+    out = tmp_path / "notes.docx"
+    markdown_to_docx("Check: " + odd + "\n", str(out), title=2024)
+    text = "\n".join(p.text for p in docx.Document(str(out)).paragraphs)
+    assert "cover" in text and "40" in text and "mm" in text
+
+
+def test_a_setting_of_inf_or_nan_is_the_default(monkeypatch):
+    pytest.importorskip("planlens.tools")
+    from aec_agent_core import document_tools
+    name = "GEOTECH_DOCUMENT_TOOLKITS"
+    for value in ("inf", "-inf", "nan"):
+        monkeypatch.setenv(name, value)
+        assert document_tools._number_setting(name, 8) == 8.0, value

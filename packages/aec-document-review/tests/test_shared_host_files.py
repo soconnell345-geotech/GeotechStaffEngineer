@@ -113,3 +113,87 @@ def test_an_artifact_reference_stays_in_the_conversation_folder(tmp_path):
     assert core._resolve_artifact(outside, files) == \
         os.path.join(files, ".env")
     assert core._resolve_artifact(inside, files) == inside
+
+
+# ---------------------------------------------------------------------------
+# The independent review of the fixes above found three more of the kind
+# ---------------------------------------------------------------------------
+
+def test_the_temporary_folder_is_not_a_source_on_a_shared_host(
+        tmp_path, monkeypatch):
+    """It is everybody's there, and the tools save into the conversation."""
+    files = _files_dir(tmp_path)
+    temp = tmp_path / "tmp"
+    temp.mkdir()
+    monkeypatch.setattr(core.tempfile, "gettempdir", lambda: str(temp))
+    (temp / "review_memo.docx").write_bytes(b"somebody else's memo")
+    _fileio.require_turn_binding(True)
+    assert core.import_reported_outputs(
+        [str(temp / "review_memo.docx")], str(files)) == {}
+    assert os.listdir(files) == []
+
+
+def test_an_attachment_key_names_a_file_in_the_conversation_only(tmp_path):
+    """``attachments.json`` comes with a restored zip: a key was opened
+    wherever it pointed, and its bytes handed to the agent by that key."""
+    root = str(tmp_path / "data")
+    core.ensure_conversation("mine", root=root)
+    files = core.conversation_files_dir("mine", root=root)
+    with open(os.path.join(files, "plan.pdf"), "wb") as fh:
+        fh.write(b"%PDF mine")
+    theirs = tmp_path / "theirs.pdf"
+    theirs.write_bytes(b"%PDF somebody else's")
+    climbing = os.path.relpath(str(theirs), files)
+    core.save_attachments_index(
+        "mine", ["plan.pdf", climbing, str(theirs)], root=root)
+    live = {}
+    got = core.load_attachments("mine", live, root=root)
+    assert [a.key for a in got] == ["plan.pdf"]
+    assert live == {"plan.pdf": b"%PDF mine"}
+
+
+def test_a_restored_zip_is_a_copy_with_its_own_id_on_a_shared_host(tmp_path):
+    """The process finds a conversation's folder and its running turn by id
+    alone: a colleague's zip restored under the colleague's id answered into
+    the colleague's conversation once both were open."""
+    data = _zip({}, meta={"thread_id": "abc123", "title": "A footing",
+                          "owner": "dom__alice", "owner_name": "Alice"})
+    bob = conversation_restore.restore(
+        data, root=str(tmp_path / "bob"), owner="dom__bob", owner_name="Bob")
+    carol = conversation_restore.restore(
+        data, root=str(tmp_path / "carol"), owner="dom__carol",
+        owner_name="Carol")
+    assert bob.status == carol.status == "restored"
+    assert len({"abc123", bob.thread_id, carol.thread_id}) == 3
+    meta = core.load_meta(bob.thread_id, str(tmp_path / "bob"))
+    assert meta["thread_id"] == bob.thread_id and meta["owner"] == "dom__bob"
+    assert meta["title"] == "A footing"
+    # her own zip is a copy too, unless she still has the conversation
+    alice_root = str(tmp_path / "alice")
+    again = conversation_restore.restore(
+        data, root=alice_root, owner="dom__alice", owner_name="Alice")
+    assert again.status == "restored" and again.thread_id != "abc123"
+    assert core.load_meta(again.thread_id, alice_root)["thread_id"] == \
+        again.thread_id
+
+
+def test_a_conversation_this_person_already_has_keeps_its_id(tmp_path):
+    root = str(tmp_path / "alice")
+    core.ensure_conversation("abc123", root=root)
+    data = _zip({}, meta={"thread_id": "abc123", "title": "A footing",
+                          "owner": "dom__alice", "owner_name": "Alice"})
+    res = conversation_restore.restore(
+        data, root=root, owner="dom__alice", owner_name="Alice")
+    assert res.status == "exists" and res.thread_id == "abc123"
+    res = conversation_restore.restore(
+        data, root=root, owner="dom__alice", owner_name="Alice",
+        replace=True)
+    assert res.status == "restored" and res.replaced
+    assert res.thread_id == "abc123"
+
+
+def test_one_persons_own_machine_restores_under_the_zips_id(tmp_path):
+    res = conversation_restore.restore(
+        _zip({}, meta={"thread_id": "abc123", "title": "A footing"}),
+        root=str(tmp_path / "solo"))
+    assert res.status == "restored" and res.thread_id == "abc123"

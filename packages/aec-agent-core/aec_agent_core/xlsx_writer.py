@@ -41,7 +41,8 @@ _NUMBER = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
 _THOUSANDS = re.compile(r"^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
 #: Characters a workbook does not allow (tab, line feed and carriage
 #: return are).
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_CONTROL_CHARS = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 _EMPHASIS = re.compile(r"^(\*\*|__|\*|_|`)(.+)\1$")
 _HEADING = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
 _SEPARATOR_CELL = re.compile(r"^:?-{2,}:?$")
@@ -94,7 +95,9 @@ def tables_from_markdown(markdown: str) -> List[Dict[str, Any]]:
     """Every pipe table in ``markdown`` as ``{"name", "rows"}`` -- the header
     row first. A table is named by the nearest heading above it (``Table N``
     when there is none)."""
-    lines = str(markdown or "").splitlines()
+    # a control character is a space here: a form feed inside a row would
+    # otherwise end the table at it (splitlines breaks on one)
+    lines = _CONTROL_CHARS.sub(" ", str(markdown or "")).splitlines()
     tables: List[Dict[str, Any]] = []
     heading: Optional[str] = None
     i = 0
@@ -182,7 +185,8 @@ def _rows_of(raw: Any) -> List[List[Any]]:
 
 def sheet_name(name: Any, taken: Iterable[str]) -> str:
     """An Excel-safe sheet name, unique (case-insensitive) among ``taken``."""
-    base = _BAD_SHEET_CHARS.sub("-", str(name or "").strip()).strip("'")
+    base = _CONTROL_CHARS.sub("", str(name or ""))
+    base = _BAD_SHEET_CHARS.sub("-", base.strip()).strip("'")
     base = (base or "Sheet")[:MAX_SHEET_NAME]
     used = {t.lower() for t in taken}
     if base.lower() not in used:

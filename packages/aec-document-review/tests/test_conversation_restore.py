@@ -275,7 +275,9 @@ def test_the_restored_conversation_is_this_persons(tmp_path):
                                        root=str(tmp_path / "bob"),
                                        owner="dom__bob", owner_name="Bob")
     assert res.status == "restored", res.message
-    got = core.load_meta("abc123", str(tmp_path / "bob"))
+    # (a copy with its own id on a host that tags owners:
+    # test_shared_host_files.py)
+    got = core.load_meta(res.thread_id, str(tmp_path / "bob"))
     assert (got["owner"], got["owner_name"]) == ("dom__bob", "Bob")
     # a single-user host tags no owner
     res = conversation_restore.restore(_zip({}, meta=meta),

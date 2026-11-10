@@ -47,8 +47,12 @@ MARKUP_AUTHOR_ENV = "GEOTECH_MARKUP_AUTHOR"
 DEFAULT_MARKUP_AUTHOR = "Document Review (AI draft)"
 
 # DOMAIN\user — Windows account names cannot contain " / \ [ ] : ; | = , + * ? < >
+# (and no control character). Anything else is a name: an apostrophe, an
+# accented letter. Folder and secret names are made from it by rules of
+# their own (``Identity.key``, ``tinyapps_keys.tester_suffix``).
 _PRINCIPAL = re.compile(
-    r"^(?P<domain>[A-Za-z0-9._-]{1,64})\\(?P<user>[A-Za-z0-9._@ -]{1,256})$")
+    r"^(?P<domain>[A-Za-z0-9._-]{1,64})\\"
+    r"(?P<user>[^\"/\\\[\]:;|=,+*?<>\x00-\x1f]{1,256})$")
 _UPN = re.compile(
     r"^(?P<user>[A-Za-z0-9._-]{1,256})@(?P<domain>[A-Za-z0-9._-]{1,255})$")
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -128,10 +132,11 @@ UNIDENTIFIED = Identity(None, "unidentified", "unidentified")
 
 #: What the page shows a caller it refuses.
 UNIDENTIFIED_MESSAGE = (
-    "This app could not tell who you are: the sign-in header ({header}) did "
-    "not arrive with this request. Open the app from its published address. "
-    "If you did, tell the app owner: the web server in front of the app is "
-    "not passing the header.")
+    "This app could not tell who you are: the sign-in header ({header}) was "
+    "missing from this request, or could not be read. Open the app from its "
+    "published address. If you did, tell the app owner: the web server in "
+    "front of the app is not passing a usable header (the app's log says "
+    "which).")
 
 
 def _deployed() -> bool:

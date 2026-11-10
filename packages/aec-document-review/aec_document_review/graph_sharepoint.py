@@ -105,19 +105,25 @@ SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024
 #: Upload-session chunk: a multiple of 320 KiB, as Graph requires.
 CHUNK_SIZE = 10 * 320 * 1024
 #: Sends of one request while the service answers "throttled" or "busy",
-#: and the longest single wait between them (seconds).
+#: and the longest single wait between them (seconds). A wait the service
+#: names that is longer than this is not waited out: the call fails.
 BUSY_TRIES = 4
 BUSY_WAIT_MAX_S = 20.0
+#: After a throttled or busy call has failed, later calls are refused
+#: without being sent for as long as the service named, within these bounds
+#: (seconds). A conversation mirror holds the store's lock for all its
+#: files, and every other person's save waits behind it: it must not wait
+#: out each remaining file's sends behind one throttle.
+BUSY_HOLD_MIN_S = 30.0
+BUSY_HOLD_MAX_S = 300.0
 
 
-def _busy_wait(exc: Any, attempt: int) -> float:
-    """Seconds to wait before the next send: the service's ``Retry-After``
-    when it gives one, else 1, 2, 4...; never above ``BUSY_WAIT_MAX_S``."""
+def _retry_after(exc: Any) -> float:
+    """The seconds the service's ``Retry-After`` names, or 0."""
     try:
-        named = float((exc.headers or {}).get("Retry-After"))
+        return max(float((exc.headers or {}).get("Retry-After")), 0.0)
     except (TypeError, ValueError, AttributeError):
-        named = 0.0
-    return min(named if named > 0 else float(2 ** attempt), BUSY_WAIT_MAX_S)
+        return 0.0
 
 #: The setting names CfA's engineers provision (env or Key Vault spelling).
 ENV_TENANT = "GRAPH_TENANT_ID"
@@ -662,10 +668,19 @@ class GraphFileManager:
               ) -> bytes:
         """One HTTP request. A throttled call (429) is sent again after the
         wait the service names, and so is a GET or PUT the service was too
-        busy for (503, 504): up to ``BUSY_TRIES`` sends in all. The error
-        text names the address without its query, which on an upload
-        session carries a pre-authenticated token."""
+        busy for (503, 504): up to ``BUSY_TRIES`` sends in all, each wait
+        at most ``BUSY_WAIT_MAX_S``. When that fails, or the service names
+        a longer wait, the call fails and later calls are refused unsent
+        until the wait is over (``BUSY_HOLD_MIN_S`` to ``BUSY_HOLD_MAX_S``).
+        The error text names the address without its query, which on an
+        upload session carries a pre-authenticated token."""
         shown = req.full_url.split("?", 1)[0]
+        held = getattr(self, "_busy_until", 0.0) - time.time()
+        if held > 0:
+            raise GraphError(
+                f"{req.get_method()} {shown} not sent: SharePoint asked the "
+                f"app to wait (HTTP 429 or 503 on an earlier call; about "
+                f"{held:.0f} s more)", status=429)
         for attempt in range(BUSY_TRIES):
             try:
                 with urllib.request.urlopen(
@@ -675,9 +690,15 @@ class GraphFileManager:
                 again = exc.code == 429 or (
                     exc.code in (503, 504)
                     and req.get_method() in ("GET", "PUT"))
-                if again and attempt + 1 < BUSY_TRIES:
-                    time.sleep(_busy_wait(exc, attempt))
+                named = _retry_after(exc)
+                if again and attempt + 1 < BUSY_TRIES \
+                        and named <= BUSY_WAIT_MAX_S:
+                    time.sleep(named if named > 0 else
+                               min(float(2 ** attempt), BUSY_WAIT_MAX_S))
                     continue
+                if again:
+                    self._busy_until = time.time() + min(
+                        max(named, BUSY_HOLD_MIN_S), BUSY_HOLD_MAX_S)
                 detail = ""
                 try:
                     detail = exc.read().decode("utf-8", "replace")[:500]

@@ -79,13 +79,15 @@ esac
 # wins, and survives an update of this file.
 PUBLISHED_ORIGINS="${APP_ORIGINS:-https://CHANGE-ME}"
 ORIGIN_ARGS=()
-for origin in ${PUBLISHED_ORIGINS//,/ }; do
-    ORIGIN_ARGS+=(--server.corsAllowedOrigins "$origin")
+# split on commas and spaces; each address is taken as written (no file-name
+# matching on a "*")
+IFS=', ' read -r -a ORIGIN_LIST <<< "$PUBLISHED_ORIGINS"
+for origin in "${ORIGIN_LIST[@]}"; do
+    [ -n "$origin" ] && ORIGIN_ARGS+=(--server.corsAllowedOrigins "$origin")
 done
-case "$PUBLISHED_ORIGINS" in
-    *CHANGE-ME*)
-        echo "WARNING: the published address is not set (APP_ORIGINS, or https://CHANGE-ME in run.sh). Through IIS the app will start but the page will not load: Streamlit rejects the browser's WebSocket." >&2 ;;
-esac
+if [ ${#ORIGIN_ARGS[@]} -eq 0 ] || [[ "$PUBLISHED_ORIGINS" == *CHANGE-ME* ]]; then
+    echo "WARNING: the published address is not set (APP_ORIGINS, or https://CHANGE-ME in run.sh). Through IIS the app will start but the page will not load: Streamlit rejects the browser's WebSocket." >&2
+fi
 
 if [ "${APP_DRY_RUN:-}" = "1" ]; then
     echo "DRY RUN: origins ${ORIGIN_ARGS[*]}"

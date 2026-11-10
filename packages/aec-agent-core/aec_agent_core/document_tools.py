@@ -148,9 +148,12 @@ def _number_setting(name: str, default: float) -> float:
     value that is not a number (a typing slip in an app setting) must not
     stop this module importing, which stops the app starting."""
     try:
-        return float((os.environ.get(name) or "").strip() or default)
+        value = float((os.environ.get(name) or "").strip() or default)
     except ValueError:
         return float(default)
+    # "inf" and "nan" are floats, and neither is a count or a time
+    return value if value == value and abs(value) != float("inf") \
+        else float(default)
 
 
 #: Conversations whose toolkits are kept open at once; past it the least

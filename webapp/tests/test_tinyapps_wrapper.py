@@ -349,3 +349,24 @@ def test_app_py_turns_model_written_plot_code_off_on_the_app_service(
                        capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     assert f"plot code: {expect}" in r.stdout
+
+
+@needs_bash
+def test_an_address_list_of_separators_only_is_an_address_not_set(tmp_path):
+    d = _wrapper(tmp_path)
+    r = _run(d, APP_ORIGINS=" , ")
+    assert r.returncode == 0, r.stderr
+    assert _origins(r.stdout) == []
+    assert "WARNING: the published address is not set" in r.stderr
+
+
+@needs_bash
+def test_an_address_is_taken_as_written(tmp_path):
+    """A star is passed on as a star, not matched against the files beside
+    run.sh."""
+    d = _wrapper(tmp_path)
+    r = _run(d, APP_ORIGINS="https://apps.example  *")
+    assert r.returncode == 0, r.stderr
+    assert _origins(r.stdout) == [
+        "--server.corsAllowedOrigins", "https://apps.example",
+        "--server.corsAllowedOrigins", "*"]

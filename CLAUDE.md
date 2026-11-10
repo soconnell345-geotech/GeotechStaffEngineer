@@ -143,8 +143,8 @@ This repository builds three packages; the app also needs two more of the same p
   refused on the App Service; a tester's conversation cannot reach another
   folder; model-written plotting code off there, OWN-133), SharePoint (a
   refused upload is no longer counted as saved; waits on a busy service),
-  the turn's budget, Word and Excel text, and the wrapper's start; planlens
-  PL-36. The releases that carry them to Tiny Apps wait on the owner
+  the turn's budget, Word and Excel text, and the wrapper's start; planlens' four
+  review fixes are on its main (de93bc1). The releases that carry them to Tiny Apps wait on the owner
   (OWN-134: planlens 0.15.1, the core 1.0.1, `aec-document-review` 0.1.1).
   Before it, docs and tests only:
   field-session place names out of the current files (three field-feedback

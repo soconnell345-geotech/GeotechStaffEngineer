@@ -69,7 +69,8 @@ def __getattr__(attr):
 
 _BR_TAG = re.compile(r"^<br\s*/?>$", re.IGNORECASE)
 #: Characters XML 1.0 does not allow (tab, line feed and carriage return are).
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_CONTROL_CHARS = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 
 
 def markdown_to_docx(markdown: str, output_path: str, *,
@@ -127,7 +128,7 @@ def markdown_to_docx(markdown: str, output_path: str, *,
     # and the whole document was lost.
     markdown = _CONTROL_CHARS.sub(" ", markdown or "")
     if title:
-        title = _CONTROL_CHARS.sub(" ", title)
+        title = _CONTROL_CHARS.sub(" ", str(title))
 
     notes = warnings if warnings is not None else []
     doc = docx.Document()

@@ -1896,12 +1896,14 @@ def import_reported_outputs(paths: Iterable[str], files_dir: str,
     copied. The paths come from the TEXT of tool results, and a tool result
     can quote a document: a line in an uploaded file that reads like a save
     report must not turn a server file (the process's settings, another
-    person's conversation) into a download.
+    person's conversation) into a download. On a host shared by several
+    people the temporary folder is everybody's, and the tools save into the
+    conversation's own folder there, so only the working folder counts.
     """
     fd = os.path.abspath(files_dir)
     conv = os.path.dirname(fd)
     base = os.path.abspath(working_dir) if working_dir else fd
-    sources = (base, tempfile.gettempdir())
+    sources = (base,) if _shared_host() else (base, tempfile.gettempdir())
     skip = set()
     for p in exclude or ():
         try:
@@ -3201,7 +3203,13 @@ def load_attachments(thread_id: str, attachments: dict,
         return []
     out: List[Attachment] = []
     for key in keys or []:
+        # A key is a file in the files dir. The list is attachments.json,
+        # which a restored zip supplies: a key that names a file anywhere
+        # else (an absolute path, "../..") is not an attachment.
+        key = str(key)
         fpath = os.path.join(files_dir, key)
+        if not _under(fpath, files_dir):
+            continue
         try:
             with open(fpath, "rb") as fh:
                 data = fh.read()
