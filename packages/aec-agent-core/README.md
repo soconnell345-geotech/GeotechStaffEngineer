@@ -65,17 +65,26 @@ The chart lines `plot_data` and the plotting box can draw are handed in by a
 registration, `aec_agent_core.charts.register_reference_charts`. Unfilled,
 each place says what it does without the hook.
 
+A deployment can add its own instructions to every agent and helper
+(`deep.instructions`, applied by `deep.assembly` for both applications).
+`GEOTECH_INSTRUCTIONS` names a folder: `all.md` goes to every agent and
+helper, then one `<role>.md` per role (`main` for the main agent, else the
+helper's name). Each role's text goes last in its prompt, under protected
+rules it cannot switch off, at most 4,000 characters a role. The setting is
+read from the environment only; unset, the prompts are unchanged.
+
 `aec_agent_core.install_aliases` lets a module keep answering to its old
 import path after it moved here, as the same module object (so an import or
 a test patch by either name reaches the one copy of the code);
 GeotechStaffEngineer keeps its old names this way until the split's step 16.
 
-1.0.0 is the first real release (the split's step 12, published before
-the applications that pin it); until it is on PyPI, GeotechStaffEngineer's
-CI installs the core from its own repository
-(`pip install -e packages/aec-agent-core`). Its "core-only" CI job installs
-this package with planlens and nothing geotech, imports every module, runs
-these tests and builds the document review page on it.
+1.0.0 is the first real release (the split's step 12, on PyPI since
+2026-11-10, published before the applications that pin it).
+GeotechStaffEngineer's CI installs the core from its own repository
+(`pip install -e packages/aec-agent-core`), so every change is tested with
+the core beside it. Its "core-only" CI job installs this package with
+planlens and nothing geotech, imports every module, runs these tests and
+builds the document review page on it.
 
 ## Install
 
@@ -83,6 +92,9 @@ these tests and builds the document review page on it.
 pip install aec-agent-core
 pip install "aec-agent-core[anthropic]" # with Claude through LangChain
 ```
+
+Python 3.11 or later. An application installs it for you: each pins the
+core it was tested with.
 
 ## Licence
 

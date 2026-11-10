@@ -6,8 +6,9 @@ app split (owner, 2026-10-20) and runs on its own elsewhere. Document Review
 is its own public package, `aec-document-review` 0.1.0, which pins the
 shared core `aec-agent-core` 1.0.0 and the document layer `planlens` 0.15.0
 exactly (`packages/aec-document-review/`; built at step 13,
-`module_work/inf33/CHECK_STEP13.md`). The lead releases the three to PyPI;
-the company's Nexus mirror carries them a day or two later. The wrapper
+`module_work/inf33/CHECK_STEP13.md`). All three are on PyPI (planlens
+0.15.0 since 2026-11-09, the core and Document Review since 2026-11-10);
+the company's Nexus mirror carries a release a day or two later. The wrapper
 template in `tinyapps/wrapper_repo/` installs them from Nexus, or from two
 wheels in the repo as the backup. Next: the owner's first round on the test
 machine (dosdev), with the checklist below. The end-to-end check of the
@@ -154,6 +155,11 @@ most 4,000 characters a role; Connection diagnostics says what each role
 gets. Details: `webapp/README.md` §3 "Your deployment's own instructions";
 example folder `docs/examples/deployment_instructions/`.
 
+A deployment's own references (REF-64 (A), local reference packs named by
+`GEOTECH_REFERENCES_PACKS`) belong to the geotechnical page's reference
+library. Document Review has no reference library, so a Tiny Apps
+deployment leaves that setting unset.
+
 ## Per-tester Prompter keys
 
 Each tester on the published app gets their own Prompter key, so each has
@@ -229,9 +235,10 @@ little under the deployment's limit; unset means no pacing),
 Do these in order. Each step says what you should see. If a step fails,
 stop and copy the last screen's text into a note for the lead.
 
-**Before you start.** The lead tells you the three packages are on PyPI
-(`aec-document-review` 0.1.0, `aec-agent-core` 1.0.0, `planlens` 0.15.0).
-Wait a day or two for the company's Nexus mirror to carry them. You need
+**Before you start.** The three packages are on PyPI
+(`aec-document-review` 0.1.0 and `aec-agent-core` 1.0.0 since 2026-11-10,
+`planlens` 0.15.0 since 2026-11-09). The company's Nexus mirror carries a
+release a day or two after PyPI; step 2 shows whether it has them. You need
 from CfA: the Prompter values (URL, model, key, CA bundle) and, for step 7,
 the four SharePoint values. If the SharePoint values have not arrived, do
 steps 1-6 and leave step 7 for later.
