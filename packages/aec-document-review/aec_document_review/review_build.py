@@ -22,8 +22,7 @@ from typing import Callable, Optional
 
 from aec_agent_core.deep import assembly
 from aec_agent_core.deep.assembly import (_AUTO_SUMMARIZATION_TRIGGER,
-                                          _DEFAULT_SUMMARIZATION_KEEP,
-                                          _GENERAL_PURPOSE_SPEC)
+                                          _DEFAULT_SUMMARIZATION_KEEP)
 from aec_agent_core.deep.limits import (DEFAULT_MAX_RESULT_CHARS,
                                         ModelCallBudgetMiddleware)
 from aec_agent_core.deep.tool_guards import HideScratchFilesystem
@@ -85,6 +84,11 @@ def _review_page_rewrites() -> dict:
     return dict(REVIEW_REWRITES)
 
 
+#: The stock helper's name in the agent library: a helper declared with it
+#: takes the stock one's place.
+READER_NAME = "general-purpose"
+
+
 def _review_reader_subagent(primary_tools,
                             show_images=None) -> Optional[dict]:
     """deepagents' ``general-purpose`` helper, re-declared for the review
@@ -95,18 +99,22 @@ def _review_reader_subagent(primary_tools,
     The name stays ``general-purpose`` so it REPLACES the stock helper. Its
     tools are the primary's reading and looking tools, the reading helper's set
     (``review_agent.READER_TOOLS``); nothing that writes a file or a markup.
+
+    The helper is declared whole here, by its name. It used to start from
+    the agent library's own spec, imported from a private name: had that
+    name moved in an upgrade, this returned nothing and the page silently
+    got the stock helper, with every tool and none of the reading rules
+    (BACKLOG INF-71).
     ``show_images`` is the middleware that shows the helper an image it asked
     to be shown (``show_me``, BACKLOG DR-38); the helper holds the primary's
     looking tools, so it needs its own.
     """
-    if _GENERAL_PURPOSE_SPEC is None:
-        return None
     from aec_document_review.review_prompt import DOCUMENT_REVIEW_READER_PROMPT
     from aec_document_review.review_agent import (
         READER_EXHAUSTED, READER_MAX_MODEL_CALLS, READER_NUDGE, READER_TOOLS)
     wanted = set(READER_TOOLS)
     return {
-        **_GENERAL_PURPOSE_SPEC,
+        "name": READER_NAME,
         "description": REVIEW_READER_DESCRIPTION,
         "system_prompt": DOCUMENT_REVIEW_READER_PROMPT,
         "tools": [t for t in primary_tools

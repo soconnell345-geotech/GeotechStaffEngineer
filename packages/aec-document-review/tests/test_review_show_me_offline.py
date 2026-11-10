@@ -247,3 +247,23 @@ def test_the_suite_has_the_arm(on):
     with review_flags.switches({}):
         assert not review_flags.show_me()     # baseline clears it
     assert review_flags.show_me()
+
+
+def test_the_reading_helper_does_not_hang_on_the_agent_library_s_spec(
+        gt, monkeypatch):
+    """BACKLOG INF-71: the helper used to start from a spec imported from a
+    private name; had the name moved, the page silently got the stock
+    helper with every tool. It is declared here now, whatever that name
+    holds."""
+    from aec_agent_core.deep import assembly
+    from aec_document_review import review_build
+    from aec_document_review.review_agent import READER_TOOLS
+    monkeypatch.setattr(assembly, "_GENERAL_PURPOSE_SPEC", None)
+    spec = review_build._review_reader_subagent(
+        list(_tools_of(_agent(_model([]), gt)).values()))
+    assert spec["name"] == "general-purpose"
+    assert {t.name for t in spec["tools"]} <= set(READER_TOOLS)
+    assert spec["tools"] and "annotate_document" not in {
+        t.name for t in spec["tools"]}
+    assert set(spec) == {"name", "description", "system_prompt", "tools",
+                         "middleware"}
