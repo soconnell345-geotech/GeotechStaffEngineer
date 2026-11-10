@@ -2486,7 +2486,10 @@ def _dispatch_analyze_image(arguments, engine, attachments):
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
 
-    if arguments.get("_inline") and src == "path":
+    # An image FILE in the working folder (a contact sheet); an upload too
+    # where the call asked to be shown it (show_me, BACKLOG DR-38).
+    if arguments.get("_inline") and (src == "path"
+                                     or arguments.get("_inline_upload")):
         try:
             shown, _note = _image_for_vision(image_data, key, engine,
                                              tools)

@@ -65,8 +65,10 @@ include = ["aec_document_review*"]
 exclude = ["*.tests", "*.tests.*", "tests*"]
 
 [tool.setuptools.package-data]
-# The websocket uploader's component page (ws_upload.py loads it by path).
-aec_document_review = ["ws_upload_component/*.html"]
+# The websocket uploader's component page (ws_upload.py loads it by path),
+# and the review method's two files (review_method/, read as deployment
+# instructions when GEOTECH_INSTRUCTIONS names that folder; BACKLOG DR-06).
+aec_document_review = ["ws_upload_component/*.html", "review_method/*.md"]
 
 [tool.pytest.ini_options]
 # The package's own tests, run from this folder (CI's document-review job;

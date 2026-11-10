@@ -17,6 +17,7 @@ closured in at build time; for offline construction ``analyze_*`` return a
 clear error if no engine was wired.
 """
 
+import contextvars
 import json
 import os
 from typing import (Annotated, Any, Callable, Dict, List, Optional, Sequence,
@@ -542,6 +543,7 @@ def make_vision_tools(
     description_overrides: Optional[Dict[str, str]] = None,
     inline_images: bool = False,
     inline_image_files: bool = False,
+    show_choice: bool = False,
     plot_data_replaces: bool = False,
     description_rewrites: Optional[
         Dict[str, Sequence[Tuple[str, str]]]] = None,
@@ -570,7 +572,10 @@ def make_vision_tools(
     (only meaningful with the image middleware that shows it; see
     :mod:`funhouse_agent.deep.inline_images`). ``inline_image_files`` makes
     ``analyze_image`` do the same for an image FILE given by its path (a
-    contact sheet); the ``minimal`` build sets both.
+    contact sheet); the ``minimal`` build sets both. ``show_choice`` gives
+    the three tools a ``show_me`` argument instead: the model chooses per
+    call between today's vision call and looking for itself (an uploaded
+    picture too), behind ``GEOTECH_VISION_SHOW_ME`` (BACKLOG DR-38).
 
     ``added_tools`` are tools another app adds to the kit, ``{name:
     builder}``: ``builder(dispatch)`` returns ``(function, description)``,
@@ -799,6 +804,10 @@ def make_vision_tools(
             # An image FILE (a contact sheet) is shown to the main model like
             # the inline page tools' images; an upload keeps the vision call.
             args["_inline"] = True
+        if _SHOW_ME.get():
+            # asked for by the call (show_me): an upload is shown too
+            args["_inline"] = True
+            args["_inline_upload"] = True
         # A file that is not an image is answered with the tools that read
         # it, of those this agent has (GM-175: the calc helper was told to
         # use analyze_pdf_page, which it did not have).
@@ -867,7 +876,7 @@ def make_vision_tools(
             args["reuse"] = True
         if turn is not None:
             args["turn"] = turn
-        if inline_images:
+        if inline_images or _SHOW_ME.get():
             args["_inline"] = True
         return _dispatch("analyze_pdf_page", args)
 
@@ -978,7 +987,7 @@ def make_vision_tools(
             args["reuse"] = True
         if turn is not None:
             args["turn"] = turn
-        if inline_images:
+        if inline_images or _SHOW_ME.get():
             args["_inline"] = True
         return _dispatch("render_region", args)
 
@@ -1508,10 +1517,66 @@ def make_vision_tools(
                 tool = _plot_data_retiring(tool)
             if name in document_names:
                 tool = _shown_as(tool, _document_tool_schemas(name))
+            if show_choice and name in SHOW_ME_NOTES:
+                tool = _showing(tool, SHOW_ME_NOTES[name])
             # An unknown argument (analyze_pdf_page(pages=12)) is refused by
             # name rather than dropped (brief 5, N3).
             tools.append(strict_tool(tool))
     return tools
+
+
+#: True while a looking tool runs a call that asked for ``show_me``.
+_SHOW_ME: "contextvars.ContextVar[bool]" = contextvars.ContextVar(
+    "aec_agent_core_show_me", default=False)
+
+#: What ``show_me`` says in the tools' argument lists.
+SHOW_ME_FIELD = ("true: the image is shown to you at your next step, to "
+                 "look at yourself. No vision call runs and the prompt is "
+                 "not used.")
+
+_SHOW_ME_PAGE = (
+    " show_me: true shows the image to YOU at your next step instead of "
+    "having a vision call describe it (the prompt is then not used). Use it "
+    "when you must judge with your own eyes: whether two things on a sheet "
+    "agree, what a callout or leader points at, whether a mark sits on the "
+    "right thing. Leave it off to have a page READ OUT (lettering, tables, "
+    "schedules, notes): the vision call reads small lettering in close-up "
+    "tiles, which one view of a whole sheet does not show. Only the newest "
+    "views stay in front of you: write down what you saw before you look at "
+    "the next.")
+#: Added to each looking tool's description where it takes ``show_me``.
+SHOW_ME_NOTES = {
+    "analyze_pdf_page": _SHOW_ME_PAGE,
+    "render_region": _SHOW_ME_PAGE,
+    "analyze_image": (
+        " show_me: true shows the picture to YOU at your next step instead "
+        "of having a vision call describe it (the prompt is then not used); "
+        "use it when you must judge it with your own eyes."),
+}
+
+
+def _showing(tool, note: str):
+    """``tool`` that also takes ``show_me``: with it, the call's image is
+    stored and shown to the agent's own model at its next step
+    (:mod:`aec_agent_core.deep.inline_images`) and no vision call runs.
+    The tool's function is unchanged; it reads the choice from
+    :data:`_SHOW_ME`."""
+    schema = create_model(
+        tool.args_schema.__name__, __base__=tool.args_schema,
+        show_me=(bool, Field(default=False, description=SHOW_ME_FIELD)))
+    inner = tool.func
+
+    def call(**kwargs) -> str:
+        token = _SHOW_ME.set(bool(kwargs.pop("show_me", False)))
+        try:
+            return inner(**kwargs)
+        finally:
+            _SHOW_ME.reset(token)
+
+    call.__name__ = getattr(inner, "__name__", tool.name)
+    call.__doc__ = inner.__doc__
+    return StructuredTool(name=tool.name, description=tool.description + note,
+                          args_schema=schema, func=call)
 
 
 def _plot_takes_chart() -> bool:
