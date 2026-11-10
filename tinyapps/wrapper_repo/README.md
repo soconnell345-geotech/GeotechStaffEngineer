@@ -1,88 +1,114 @@
-# GeotechStaffEngineer — Tiny Apps wrapper
+# Document Review: Tiny Apps wrapper
 
 A document-review assistant for engineers, architects and construction
-managers that can **look at the pages** (drawings, scans, figures, reviewer
-markups) and **produce documents back** (Word memos, marked-up PDFs,
-calculation packages, figures), with the geotechnical staff engineer as its
-deepest worked example. It complements the Department's chatbot rather than
+managers. It **looks at the pages** (drawings, scans, figures, reviewer
+markups), not only their text, and **hands documents back** (Word memos,
+marked-up PDFs, figures). It complements a general chatbot rather than
 duplicating it: the value is vision and deliverables.
 
-This repository holds the launch shell and, depending on the route chosen
-below, our code. By default the application is the released
-`geotech-staff-engineer` package from the Data.State Nexus mirror.
+This repository holds only the launch shell. The application is the
+released `aec-document-review` package, installed from the Nexus mirror
+with its two companions, the shared core `aec-agent-core` and the document
+layer `planlens`.
 
 ```
 app.py                       sets two environment defaults, then runs the app
-packages.txt                 route C: our package pin + the third-party pins
+packages.txt                 route C: the three package pins + the third-party pins
 requirements-thirdparty.txt  CfA fleet pins + Key Vault libraries (every route)
 run.sh                       CfA's Streamlit startup template; picks the route
-.env.example                 the settings the engineers provide, for local runs
+.env.example                 the settings, for local runs
 .gitattributes               keeps run.sh LF (bash on App Service fails on CRLF)
-app_src/                     route A only: our source
-wheels/                      route B only: our wheels
+.gitignore                   keeps .env (the keys) and .venv out of commits
+wheels/                      route B only: the wheels
+app_src/                     route A only: a development copy of the source
 ```
 
-## Choosing how the code arrives (CfA's answer)
+## Choosing how the code arrives
 
 `run.sh` takes one of three routes. The app setting `APP_SOURCE` names it;
 without it, `run.sh` takes the first route whose files the repo holds, in
-the order below. It prints one line naming the route, and it stops with an
+this order: `app_src/` (A), then `wheels/` (B), then `packages.txt` (C).
+So a repo holding only the template takes route C. It prints one line naming the route, and it stops with an
 error if `APP_SOURCE` names a route whose files are missing.
 
 | Route | Put in the repo | Setting |
 | --- | --- | --- |
-| **A. Source folder** | `app_src/` holding our importable packages (for example `app_src/webapp/`), and optionally `app_src/requirements.txt` listing their own dependencies. `run.sh` puts `app_src/` first on `PYTHONPATH` and installs `requirements-thirdparty.txt` plus that file from Nexus. | `APP_SOURCE=source` |
-| **B. Wheels** | Our wheel(s) in `wheels/*.whl`. `run.sh` installs them with `requirements-thirdparty.txt`; their dependencies resolve from Nexus. | `APP_SOURCE=wheel` |
-| **C. Nexus** (today's) | Nothing beyond this template: `packages.txt` names our package, and `run.sh` installs it with the third-party pins from Nexus. | `APP_SOURCE=nexus` |
+| **C. Nexus** (the normal one) | Nothing beyond this template. `packages.txt` pins `aec-document-review==0.1.0`, `aec-agent-core==1.0.0` and `planlens==0.15.0`, and includes `requirements-thirdparty.txt`; `run.sh` installs it all from Nexus. | `APP_SOURCE=nexus` |
+| **B. Wheels** (the backup) | The two wheels in `wheels/`: `aec_agent_core-1.0.0-py3-none-any.whl` and `aec_document_review-0.1.0-py3-none-any.whl`. `run.sh` installs them with `requirements-thirdparty.txt`; planlens 0.15.0 (pinned exactly by Document Review's wheel) and every other dependency resolve from Nexus. A planlens wheel may sit in `wheels/` too. | `APP_SOURCE=wheel` |
+| **A. Source folder** (development copies) | `app_src/aec_document_review/` (from `packages/aec-document-review/` in the source repository) and `app_src/requirements.txt`, below. `run.sh` puts `app_src/` first on `PYTHONPATH` and installs `requirements-thirdparty.txt` plus that file from Nexus. | `APP_SOURCE=source` |
 
-Today's single package (the GSE app with both pages) works under all three:
-its packages in `app_src/` with its dependencies in `app_src/requirements.txt`,
-its wheel in `wheels/`, or its pin in `packages.txt`. After the app split,
-route A carries Document Review's source.
+**Route A's `app_src/requirements.txt`** lists what the copied source needs
+from Nexus:
 
-A build from master since the app split's step 11 (a) (BACKLOG INF-32)
-also needs the shared core `aec-agent-core`, which the app imports its model
-connections and vision tools from: on route A its `aec_agent_core/` folder
-(from `packages/aec-agent-core/`) in `app_src/` beside the app's packages;
-on route B its wheel beside the app's in `wheels/`; on route C it comes from
-Nexus once it is published (step 12).
+```
+aec-agent-core==1.0.0
+planlens==0.15.0
+websockets>=14,<16
+```
+
+To try an unreleased core as well, copy its `aec_agent_core/` folder (from
+`packages/aec-agent-core/` in the source repository) into `app_src/` beside
+`aec_document_review/`, and in `app_src/requirements.txt` replace the
+`aec-agent-core` line with the core's own dependencies (the `dependencies`
+list in its `pyproject.toml`).
 
 To check a choice without installing anything, run
 `APP_DRY_RUN=1 bash run.sh`: it prints the route and the commands it would
 run, then exits.
 
-## Run locally (dosdev)
+## Run locally (the test machine)
 
 ```bash
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 python -m pip install -r packages.txt
 cp .env.example .env          # fill in the Prompter and SharePoint values
 python -m streamlit run app.py
 ```
 
-On route A, install `requirements-thirdparty.txt` (and
-`app_src/requirements.txt`) instead of `packages.txt`; `app.py` finds
-`app_src/` itself. On route B, install the wheels with
-`requirements-thirdparty.txt`.
+On route B, install the wheels with `requirements-thirdparty.txt`, naming
+both files (Windows does not expand `wheels/*.whl`):
+
+```bash
+python -m pip install wheels/aec_agent_core-1.0.0-py3-none-any.whl wheels/aec_document_review-0.1.0-py3-none-any.whl -r requirements-thirdparty.txt
+```
+
+On route A, install `requirements-thirdparty.txt` and `app_src/requirements.txt`;
+`app.py` finds `app_src/` itself.
 
 Set `DEV_IDENTITY` in `.env` to stand in for the signed-in user; deployed,
 IIS supplies it in the `X-Windows-Auth-Header` header and the value is ignored.
 
 ## Update the deployed app
 
-On route C, bump the `geotech-staff-engineer` pin in `packages.txt` to a
-release tested on dosdev; on route A or B, replace `app_src/` or the wheels
-with the tested ones. Push, and ask the App Services team to sync.
+On route C, bump the three pins in `packages.txt` to a release tested on
+the test machine (the new `aec-document-review` release names its core and
+planlens versions exactly; copy those); on route B, replace the wheels.
+Push, and ask the App Services team to sync.
 
-## Settings the engineers provide
+## Settings
+
+The package reads these itself, in this order: a real environment variable
+or app setting, then the Key Vault named by `KV_NAME` (secret names use
+hyphens: `PROMPTER-API-KEY`), then the local `.env`. Several names begin
+`GEOTECH_`: Document Review was built inside a larger project and kept its
+setting names, so existing deployments keep working.
 
 | Value | Purpose |
 | --- | --- |
-| `PROMPTER_URL`, `PROMPTER_MODEL`, `PROMPTER_API_KEY`, `PROMPTER_CA_BUNDLE` | the model endpoint (the deployment must accept image inputs — the app's vision tools depend on it) |
-| `PROMPTER-API-KEY--<TESTER>` per tester (optional `PROMPTER-MODEL--<TESTER>`, `PROMPTER-URL--<TESTER>`) | each tester's OWN key on the published app. `<TESTER>` is the sign-in `DOMAIN\user` in upper case, every run of other characters one hyphen: `CORP\jdoe` → `PROMPTER-API-KEY--CORP-JDOE` |
-| `PROMPTER-KEYS` (optional) | the alternative: one JSON secret, `{"CORP\\jdoe": {"key": "…", "model": "…", "url": "…"}}` (`model`, `url` optional) |
-| `PROMPTER_SHARED_KEY_FALLBACK` (optional) | `1` lets a signed-in tester with no key of their own use the shared `PROMPTER_API_KEY`. Off by default: a tester without a key is told politely to ask the owner |
-| `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `SHAREPOINT_SITE_URL` | the app registration that mirrors conversations to the team's SharePoint site |
+| `PROMPTER_URL`, `PROMPTER_MODEL`, `PROMPTER_API_KEY`, `PROMPTER_CA_BUNDLE` | the model endpoint. The deployment must accept image inputs: the app's vision tools depend on it |
+| `PROMPTER-API-KEY--<TESTER>` per tester (optional `PROMPTER-MODEL--<TESTER>`, `PROMPTER-URL--<TESTER>`) | each tester's OWN key on the published app. `<TESTER>` is the sign-in `DOMAIN\user` in upper case, every run of other characters one hyphen: `CORP\jdoe` becomes `PROMPTER-API-KEY--CORP-JDOE` |
+| `PROMPTER-KEYS` (optional) | the alternative: one JSON secret, `{"CORP\\jdoe": {"key": "...", "model": "...", "url": "..."}}` (`model`, `url` optional) |
+| `PROMPTER_SHARED_KEY_FALLBACK` (optional) | `1` lets a signed-in tester with no key of their own use the shared `PROMPTER_API_KEY`. Off by default: a tester without a key is told politely to ask the app owner |
+| `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `SHAREPOINT_SITE_URL` | the app registration that mirrors conversations to the team's SharePoint site; a certificate may replace the secret (`GRAPH_CLIENT_CERT`, `GRAPH_CLIENT_KEY`, see `.env.example`). Test with `python -m aec_document_review.graph_sharepoint --check` |
+| `GEOTECH_SHAREPOINT_ROOT` (optional) | the folder inside the site; default `Shared Documents/GeotechStaffEngineer`. A tester's conversations go to `<root>/conversations/<tester>/document_review/` (one person with no sign-in: `<root>/conversations/document_review/`) |
+| `SHAREPOINT_SITE_URLS`, `GRAPH_CLOUD` (optional) | more sites; the Microsoft cloud when the site address does not say it |
 | `KV_NAME` (app setting) | the Key Vault the values above live in |
-| `--server.corsAllowedOrigins` in `run.sh` | the published URL of the app |
+| `GEOTECH_WEBAPP_DATA` (optional) | where conversations live on the machine; `app.py` sets `/home/data/geotech_webapp` on the App Service |
+| `DEV_IDENTITY` (local only) | stands in for the signed-in user |
+| `--server.corsAllowedOrigins` in `run.sh` | the published URL of the app (CfA fills it in) |
 
-Support: CfA's Tiny Apps support mailbox (its address is in the Tiny Apps user guide).
+The optional tuning settings (pacing, helpers, retries, the figure helper)
+are listed, commented out, in `.env.example`.
+
+Support: CfA's Tiny Apps support mailbox (its address is in the Tiny Apps
+user guide).
