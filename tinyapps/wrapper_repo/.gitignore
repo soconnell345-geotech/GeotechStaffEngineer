@@ -1,0 +1,7 @@
+# Never commit these. .env holds the keys (copy .env.example to make it);
+# .venv is this machine's Python. wheels/ is NOT ignored: route B commits
+# the wheels.
+.env
+.venv/
+__pycache__/
+*.pyc

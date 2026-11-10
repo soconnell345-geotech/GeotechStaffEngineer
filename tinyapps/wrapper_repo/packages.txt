@@ -1,14 +1,18 @@
-# Tiny Apps package manifest — installed by run.sh from the Data.State Nexus
-# mirror (--index-url $PIP_INDEX_URL) on route C ("nexus"), the route run.sh
-# takes when the repo holds no app_src/ folder and no wheels/ (README,
-# "Choosing how the code arrives"). The whole toolkit is ONE released
-# package; an app update is a one-line pin bump plus an App Services sync.
+# Tiny Apps package manifest: installed by run.sh from the Nexus mirror
+# (--index-url $PIP_INDEX_URL) on route C ("nexus"), the route run.sh takes
+# when the repo holds no app_src/ folder and no wheels/ (README, "Choosing
+# how the code arrives").
 #
-# Pin the exact release that was tested on dosdev before asking for a sync.
-# 5.26 is the first release that carries the Tiny Apps entry point
-# (webapp.tinyapps_entry with the document-review and geotech pages).
-geotech-staff-engineer>=5.26
+# Document Review is ONE released package. It pins its two companions
+# exactly (the shared core and planlens); they are pinned here as well so
+# this file says the whole tested set. An app update is a pin bump here
+# (all three lines, to the versions the new release's metadata names) plus
+# an App Services sync. Pin only a release that was tested on the test
+# machine first.
+aec-document-review==0.1.0
+aec-agent-core==1.0.0
+planlens==0.15.0
 
 # The third-party pins (CfA's fleet pins and the Key Vault libraries) live in
-# their own file, so routes A and B install them without the line above.
+# their own file, so routes A and B install them without the lines above.
 -r requirements-thirdparty.txt
