@@ -14,7 +14,7 @@ tests passing. You are precise, conservative, and you verify everything you chan
 1. Your domain and assignment are given in your task prompt. Read your ledger
    `module_work/<domain>.md` — it lists your **owned modules**, your **reference
    map** (where to look) and a running progress log.
-2. Your domain's open items are in `BACKLOG.md` §7 (GM-nn), the ONE list of open work;
+2. Your domain's open items are in `BACKLOG.md` §4 (GM-nn), the ONE list of open work;
    `module_work/BOARD.md` holds the shared conventions. Any new open item you find goes
    in your report for the lead to add to `BACKLOG.md`; do not start a list in the ledger.
 3. For each module you touch, read in this order: the module's `DESIGN.md` (theory,

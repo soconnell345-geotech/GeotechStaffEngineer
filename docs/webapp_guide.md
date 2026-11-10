@@ -2,10 +2,13 @@
 
 A browser-based chat over the GeotechStaffEngineer deep agent. It's the same
 agent you drive from the Databricks notebook (`funhouse_agent.deep`), wrapped in
-a web UI so you (or a reviewer) can use it from a plain URL — locally today, and
-in the **Tiny Apps** environment for hosting.
+a web UI so you (or a reviewer) can use it from a plain URL — locally, on a
+Databricks cluster and on Palantir Foundry. It has two pages: Document Review
+(the app root) and GeotechStaffEngineer (`/geotech`). The **Tiny Apps** host
+runs Document Review alone, from its own package `aec-document-review`.
 
-The app lives in `webapp/`. It runs standalone with one command and needs no
+The app lives in `webapp/`, on the shared core `aec-agent-core`
+(`packages/aec-agent-core/`). It runs standalone with one command and needs no
 analysis code of its own — it's UI and glue over the shipped modules.
 
 ---
@@ -66,13 +69,14 @@ analysis code of its own — it's UI and glue over the shipped modules.
 
 ## Run it locally (today)
 
-You already have the agent installed in the project `.venv`. Add streamlit once,
-set your key, and run:
+You already have the agent installed in the project `.venv` (once: the core,
+then the app, `.venv\Scripts\pip install -e packages\aec-agent-core -e .`;
+Python 3.11 or newer). Set your key and run:
 
 ```powershell
-.venv\Scripts\pip install streamlit
 $env:ANTHROPIC_API_KEY = "sk-..."
-.venv\Scripts\streamlit run webapp\app.py
+.venv\Scripts\streamlit run webapp\app.py          # the geotech page alone
+.venv\Scripts\streamlit run webapp\pages_entry.py  # both pages
 ```
 
 Streamlit opens `http://localhost:8501` in your browser. That's it.
@@ -99,20 +103,29 @@ Deferred — capture these on first real run and drop them here:
 
 ## Tiny Apps deployment
 
-The Tiny Apps deployment is a thin wrapper repo over the released package:
-`tinyapps/wrapper_repo/` (`app.py`, `packages.txt`, `run.sh`, `.env.example`).
-Settings, per-tester keys, storage, the dosdev recipe and the questions for
-CfA are in `tinyapps/TINYAPPS.md`, the plan of record; open work is in
-`BACKLOG.md` (TA-nn, OWN-43 to OWN-51). The older submit-`app.py`-and-
-`requirements.txt` checklist that stood here was retired on 2026-10-12.
+Tiny Apps hosts Document Review alone. The deployment is a thin wrapper repo
+over the released package `aec-document-review` (with `aec-agent-core` and
+`planlens`, pinned exactly): `tinyapps/wrapper_repo/` (`app.py`,
+`packages.txt`, `requirements-thirdparty.txt`, `run.sh`, `.env.example`).
+Settings, per-tester keys, storage, the dosdev recipe, the owner's
+first-round checklist and the questions for CfA are in
+`tinyapps/TINYAPPS.md`, the plan of record; open work is in `BACKLOG.md`
+(TA-nn, OWN-44, INF-34). The older submit-`app.py`-and-`requirements.txt`
+checklist that stood here was retired on 2026-10-12.
 
 ---
 
 ## How it's built (for maintenance)
 
-- `webapp/core.py` and `webapp/engine_config.py` hold **all** the logic and are
-  import-testable without streamlit or a live model. `webapp/app.py` is a thin
-  streamlit view over them.
+- `webapp/core.py` and the core's
+  `packages/aec-agent-core/aec_agent_core/engine_config.py` (still importable
+  as `webapp.engine_config`) hold **all** the logic and are import-testable
+  without streamlit or a live model. `webapp/app.py` is a thin streamlit view
+  over them.
+- A change to the Document Review page goes to
+  `packages/aec-document-review/aec_document_review/`; this repository's
+  copy of the review files is frozen (`webapp/tests/test_review_freeze.py`)
+  until the split's step 15.
 - The streaming/token parsing is **reused** from
   `funhouse_agent/deep/notebook.py` (the notebook chat's pure formatters), so
   the two front-ends stay in sync.

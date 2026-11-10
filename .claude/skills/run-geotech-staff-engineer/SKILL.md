@@ -7,7 +7,10 @@ description: Run, smoke-test, launch, or screenshot GeotechStaffEngineer — the
 
 All paths are relative to the repo root (`GeotechStaffEngineer/`). This is a
 Python package (31 analysis modules + `funhouse_agent/` LLM dispatch) with a
-Streamlit chat webapp (`webapp/app.py`) on top. Nothing needs building — the
+Streamlit chat webapp (`webapp/app.py`) on top, on the shared core
+`aec-agent-core` (`packages/aec-agent-core/`: model connections, vision
+tools, guards and records; the old `funhouse_agent.*` / `webapp.*` names of
+its modules are aliases). Nothing needs building — the
 repo runs from source in the existing venv. Most PRs touch analysis modules or
 adapters; verify those with the driver + direct invocation. The webapp is the
 interactive surface; drive it with the AppTest harness (offline) or a real
@@ -18,6 +21,13 @@ interactive surface; drive it with the AppTest harness (offline) or a real
 - venv at `.venv/` (Python 3.14), all deps installed.
 - `geotech-references/` submodule is an **editable install** (`pip install -e
   geotech-references/`) — reference changes are live from source.
+- `packages/aec-agent-core/` is an editable install too (`pip install -e
+  packages/aec-agent-core -e .`, the core first); a fresh venv needs it
+  before the app imports. `packages/aec-document-review/` (Document Review
+  alone) is not installed here: CI's `document-review` job builds and tests
+  it with nothing geotech present, and a change to the Document Review page
+  goes there (`webapp/tests/test_review_freeze.py` keeps this repo's copy
+  frozen).
 - Live LLM runs read `ANTHROPIC_API_KEY` from the Windows User env at runtime.
   Never echo it into chat or transcripts.
 
@@ -75,6 +85,8 @@ per-module while iterating, and never two heavy suites at once on the laptop).
 .venv/Scripts/streamlit.exe run webapp/app.py --server.headless true --server.port 8501
 ```
 
+(`webapp/app.py` is the geotech page alone; `webapp/pages_entry.py` serves
+both pages, Document Review at the root and the geotech page at `/geotech`.)
 Then open http://localhost:8501 (humans double-click `Start Geotech App.bat`
 instead — same thing plus auto-opening the browser). First render takes
 ~5–10 s. With `ANTHROPIC_API_KEY` present the sidebar shows "Using Claude via

@@ -266,9 +266,12 @@ library in 2026-06.)
 
 ### Document review tools (planlens, 5.20.0 — deep agent's primary surface)
 
-Whole-document tools served by the `planlens` package's `ReviewToolkit`
-through `funhouse_agent/document_tools.py`. `source` is an attachment key or
-a real path; results page through a `next` cursor and never truncate mid-JSON.
+Whole-document tools served by the `planlens` package (`planlens.review`
+since planlens 0.15) through the shared core's binding,
+`packages/aec-agent-core/aec_agent_core/document_tools.py`
+(`funhouse_agent.document_tools` is an alias of it). `source` is an
+attachment key or a real path; results page through a `next` cursor and
+never truncate mid-JSON.
 
 | Tool | Purpose |
 |------|---------|
@@ -621,11 +624,14 @@ scripted transcript.
 ## Installing in Databricks / Funhouse (and the gotchas)
 
 ```python
-# from PyPI (released versions):
+# from PyPI (released versions; Python 3.11 or newer; brings the shared core
+# aec-agent-core, planlens and geotech-references with it):
 %pip install "geotech-staff-engineer"   # or pin a release with ==<version>
 # or from a test wheel -- upload to /tmp or a UC Volume (NOT /Workspace,
-# which mangles the filename):
+# which mangles the filename); when the test set carries the core's wheel,
+# add it to the same line:
 %pip install "/tmp/geotech_staff_engineer-<version>-py3-none-any.whl"
+# %pip install "/tmp/geotech_staff_engineer-<version>-py3-none-any.whl" "/tmp/aec_agent_core-<core version>-py3-none-any.whl"
 
 # No dbutils.library.restartPython() needed in the normal flow (see below).
 import funhouse_agent.deep   # auto-repairs the stale typing_extensions on import
@@ -641,7 +647,8 @@ import funhouse_agent.deep   # auto-repairs the stale typing_extensions on impor
   `funhouse_agent.deep` then failed with
   `TypeError: ... unexpected keyword argument 'extra_items'` (langgraph/langchain
   build PEP 728 `TypedDict`s at import, which need `typing_extensions>=4.13`).
-  `funhouse_agent/runtime_check.py` now runs at the top of `funhouse_agent.deep`
+  The runtime check (`packages/aec-agent-core/aec_agent_core/runtime_check.py`,
+  in the shared core; `funhouse_agent.runtime_check` is an alias) now runs at the top of `funhouse_agent.deep`
   and **reloads the already-installed `typing_extensions` in place** (`importlib.reload`
   re-executes the same module object, so `typing_extensions.TypedDict` is rebound to
   the PEP 728 implementation before langchain imports it). You can just
@@ -781,8 +788,11 @@ funhouse_agent/
   engine.py            # GenAIEngine Protocol + ClaudeEngine adapter
   dispatch.py          # Tool dispatch — routes to adapters (not foundry)
   system_prompt.py     # Self-contained system prompt (50 modules)
-  vision_tools.py      # Vision tool definitions and dispatch
   notebook.py          # NotebookChat — ipywidgets chat interface
+  # The vision and file tools (vision_tools), the document tools' binding
+  # (document_tools) and the deep agent's guards and records live in the
+  # shared core, packages/aec-agent-core/aec_agent_core/; their old
+  # funhouse_agent names are aliases (CORE_ALIASES in __init__.py).
   DESIGN.md            # Architecture and design decisions
   adapters/
     __init__.py              # MODULE_REGISTRY + clean_value/clean_result

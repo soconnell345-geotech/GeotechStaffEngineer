@@ -155,11 +155,14 @@ path, instead; granting a site does not change it.
 
 ## 6. Test the connection
 
-On the host, from the app's folder:
+On the host, in the app's Python environment:
 
 ```sh
-python -m webapp.graph_sharepoint --check
+python -m aec_document_review.graph_sharepoint --check
 ```
+
+(On a GeotechStaffEngineer install the same test is
+`python -m webapp.graph_sharepoint --check`.)
 
 In the app, open **Connection diagnostics** in the sidebar. The line
 "SharePoint connection" runs the same test.
