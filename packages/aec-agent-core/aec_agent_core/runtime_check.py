@@ -110,6 +110,18 @@ def _supports_pep728(module: object) -> bool:
         return False
 
 
+def _who() -> str:
+    """What the messages say needs the newer typing_extensions: the
+    package of the application the page handed in
+    (:func:`aec_agent_core.app_details.package`; GeotechStaffEngineer's is
+    ``funhouse_agent.deep``, as these messages always said)."""
+    try:
+        from aec_agent_core.app_details import package
+        return package()
+    except Exception:                                  # noqa: BLE001
+        return "aec_agent_core"
+
+
 def _restart_hint(min_version: str) -> str:
     return (
         "Restart the Python kernel so the freshly installed "
@@ -168,7 +180,7 @@ def ensure_typing_extensions(min_version: str = "4.13") -> TypingExtensionsCheck
     # new enough — otherwise say so plainly.
     if installed is not None and _version_lt(installed, min_version):
         raise TypingExtensionsError(
-            f"funhouse_agent.deep needs typing_extensions>={min_version} "
+            f"{_who()} needs typing_extensions>={min_version} "
             "(langchain/langgraph build PEP 728 TypedDicts at import), but the "
             f"installed version is {installed}. Install a newer one:\n"
             f"    %pip install --upgrade 'typing_extensions>={min_version}'\n"
@@ -181,14 +193,14 @@ def ensure_typing_extensions(min_version: str = "4.13") -> TypingExtensionsCheck
         reloaded = importlib.reload(module)
     except Exception as exc:  # noqa: BLE001 - any reload failure -> restart fallback
         raise TypingExtensionsError(
-            "funhouse_agent.deep tried to reload a stale typing_extensions "
+            f"{_who()} tried to reload a stale typing_extensions "
             f"(loaded={loaded_version!r}, installed={installed!r}) in place, but "
             f"the reload failed: {exc}\n" + _restart_hint(min_version)
         ) from exc
 
     if not _supports_pep728(reloaded):
         raise TypingExtensionsError(
-            "funhouse_agent.deep reloaded typing_extensions in place but it still "
+            f"{_who()} reloaded typing_extensions in place but it still "
             "does not support PEP 728 TypedDict "
             f"(loaded={getattr(reloaded, '__version__', None)!r}, "
             f"installed={installed!r}). An even older copy is probably winning at "

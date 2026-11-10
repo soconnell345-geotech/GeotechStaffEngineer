@@ -1,6 +1,6 @@
 """A model call refused at sign-in (HTTP 401) - BACKLOG TA-01.
 
-Field session 2026-09-09 (Nairobi SoE): the agent's own model call to the
+Field session 2026-09-09 (an SoE job): the agent's own model call to the
 Funhouse proxy came back as an IIS "401 - Unauthorized" HTML page; the turn
 ended on it, the raw page was shown, and it read as a SharePoint permissions
 failure. The next turn worked seconds later on the same credentials. So the

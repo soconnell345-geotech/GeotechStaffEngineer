@@ -224,7 +224,7 @@ def test_folder_chain_created_once(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_sanitize_folder_name_strips_what_sharepoint_rejects():
-    assert sp.sanitize_folder_name("Praia Downdrag") == "Praia_Downdrag"
+    assert sp.sanitize_folder_name("Dunmarsh Downdrag") == "Dunmarsh_Downdrag"
     # every forbidden character becomes a single underscore run
     assert sp.sanitize_folder_name('a/b\\c:d*e?f"g<h>i|j#k%l') == \
         "a_b_c_d_e_f_g_h_i_j_k_l"
@@ -246,10 +246,10 @@ def test_sanitize_folder_name_strips_what_sharepoint_rejects():
 
 def test_conversation_folder_uses_title_and_creation_date():
     created = time.mktime((2026, 9, 4, 13, 0, 0, 0, 0, -1))
-    meta = {"thread_id": "abc123def456", "title": "Praia Downdrag",
+    meta = {"thread_id": "abc123def456", "title": "Dunmarsh Downdrag",
             "created": created}
     assert sp.conversation_folder("abc123def456", meta) == \
-        "Praia_Downdrag_2026-09-04"
+        "Dunmarsh_Downdrag_2026-09-04"
 
 
 def test_conversation_folder_falls_back_to_thread_id_when_unnamed():
@@ -289,10 +289,10 @@ def test_session_folder_uses_the_conversation_name(tmp_path):
     root = str(tmp_path)
     tid = "1234567890ab"
     core.ensure_conversation(tid, root=root)
-    core.rename_conversation(tid, "Praia Downdrag", root=root)
+    core.rename_conversation(tid, "Dunmarsh Downdrag", root=root)
     store = sp.SharePointStore(file_manager=FakeFM())
     folder = store.session_folder(tid, root=root)
-    assert folder.startswith(f"{sp.DEFAULT_ROOT}/conversations/Praia_Downdrag_")
+    assert folder.startswith(f"{sp.DEFAULT_ROOT}/conversations/Dunmarsh_Downdrag_")
     assert tid not in folder
 
 
@@ -530,12 +530,12 @@ class TestListAndRestore:
         fm = RemoteFM()
         store = _configured_store(monkeypatch, fm)
         base = store.root() + "/conversations"
-        fm.put(f"{base}/Praia_downdrag_2026-09-04/meta.json", b"{}")
-        fm.put(f"{base}/Nairobi_SOE_2026-09-09/meta.json", b"{}")
+        fm.put(f"{base}/Dunmarsh_downdrag_2026-09-04/meta.json", b"{}")
+        fm.put(f"{base}/Brackmoor_SOE_2026-09-09/meta.json", b"{}")
         fm.put(f"{base}/abc123hex/meta.json", b"{}")           # unnamed
         fm.put(f"{base}/stray_file.txt", b"nope")
         names = [r["name"] for r in store.list_remote_conversations()]
-        assert names == ["Nairobi_SOE_2026-09-09", "Praia_downdrag_2026-09-04",
+        assert names == ["Brackmoor_SOE_2026-09-09", "Dunmarsh_downdrag_2026-09-04",
                          "abc123hex"]
         assert "stray_file.txt" not in names
 
@@ -614,18 +614,18 @@ class TestListAndRestore:
         root_b = str(tmp_path / "driver_after_restart")
         fm = RemoteFM()
         store = _configured_store(monkeypatch, fm)
-        conv_a = _rich_conversation(root_a, "T-REST", "Praia downdrag",
+        conv_a = _rich_conversation(root_a, "T-REST", "Dunmarsh downdrag",
                                     created=time.mktime((2026, 9, 4, 12, 0, 0,
                                                          0, 0, -1)))
         up = store.mirror_conversation("T-REST", root=root_a)
         assert not up["errors"] and up["uploaded"] == 5
 
         listing = store.list_remote_conversations()
-        assert listing[0]["name"] == "Praia_downdrag_2026-09-04"
+        assert listing[0]["name"] == "Dunmarsh_downdrag_2026-09-04"
 
-        res = store.restore_conversation("Praia_downdrag_2026-09-04", root=root_b)
+        res = store.restore_conversation("Dunmarsh_downdrag_2026-09-04", root=root_b)
         assert res["status"] == "restored", res
-        assert res["thread_id"] == "T-REST" and res["title"] == "Praia downdrag"
+        assert res["thread_id"] == "T-REST" and res["title"] == "Dunmarsh downdrag"
         assert res["downloaded"] == 5 and not res["errors"]
 
         conv_b = core.conversation_dir("T-REST", root_b)

@@ -11,11 +11,12 @@ Two applications are built on it:
 
 - **GeotechStaffEngineer** (`pip install geotech-staff-engineer`), the
   geotechnical engineering agent, which pins this package exactly;
-- a document review application.
+- **Document Review** (`pip install aec-document-review`), a document
+  review application, which pins this package exactly.
 
 ## Status
 
-**Filled, not yet released.** The app split's step 11 moved the
+**1.0.0, the first release.** The app split's step 11 moved the
 code in, in three merges (BACKLOG INF-32; plan
 `module_work/APP_SPLIT_PLAN.md` in GeotechStaffEngineer's repository):
 
@@ -58,6 +59,7 @@ only an application knows, it asks for a **hook**
 | `review_eval.page_host` | its chat page's turn path, for the review suite |
 | `review_eval.open_tasks` | its review tasks |
 | `review_eval.document_dirs`, `.fetch_document`, `.fixture` | where its tasks' documents are found |
+| `app.details` | its name, distribution and package (`aec_agent_core.app_details.hand_in`): the run record's version, the default Word and markup authors, the runtime messages |
 
 The chart lines `plot_data` and the plotting box can draw are handed in by a
 registration, `aec_agent_core.charts.register_reference_charts`. Unfilled,
@@ -68,8 +70,9 @@ import path after it moved here, as the same module object (so an import or
 a test patch by either name reaches the one copy of the code);
 GeotechStaffEngineer keeps its old names this way until the split's step 16.
 
-PyPI holds only 1.0.0.dev0, an empty package that reserved the name;
-GeotechStaffEngineer's CI installs the core from its own repository
+1.0.0 is the first real release (the split's step 12, published before
+the applications that pin it); until it is on PyPI, GeotechStaffEngineer's
+CI installs the core from its own repository
 (`pip install -e packages/aec-agent-core`). Its "core-only" CI job installs
 this package with planlens and nothing geotech, imports every module, runs
 these tests and builds the document review page on it.
@@ -77,7 +80,7 @@ these tests and builds the document review page on it.
 ## Install
 
 ```
-pip install aec-agent-core              # once published
+pip install aec-agent-core
 pip install "aec-agent-core[anthropic]" # with Claude through LangChain
 ```
 

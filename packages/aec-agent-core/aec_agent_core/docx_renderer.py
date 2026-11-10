@@ -55,9 +55,17 @@ MONO_FONT = "Consolas"
 #: Indent applied to a block quote, in inches.
 QUOTE_INDENT_IN = 0.4
 
-#: Author written into File > Info when the caller names nobody (python-docx's
-#: template otherwise says "python-docx").
-DEFAULT_AUTHOR = "GeotechStaffEngineer"
+# DEFAULT_AUTHOR: the author written into File > Info when the caller names
+# nobody (python-docx's template otherwise says "python-docx"): the name of
+# the application the page handed in (aec_agent_core.app_details; INF-33
+# step 13), read at each use through the module's __getattr__ below.
+
+
+def __getattr__(attr):
+    if attr == "DEFAULT_AUTHOR":
+        from aec_agent_core.app_details import name
+        return name()
+    raise AttributeError(f"module {__name__!r} has no attribute {attr!r}")
 
 _BR_TAG = re.compile(r"^<br\s*/?>$", re.IGNORECASE)
 
@@ -191,7 +199,7 @@ def _first_heading(tokens):
 def _set_properties(doc, title, author):
     """File > Info: the title and the author, never python-docx's own."""
     cp = doc.core_properties
-    who = str(author or "").strip() or DEFAULT_AUTHOR
+    who = str(author or "").strip() or __getattr__("DEFAULT_AUTHOR")
     now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None,
                                                                microsecond=0)
     try:

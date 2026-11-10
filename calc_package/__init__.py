@@ -67,6 +67,17 @@ import importlib as _importlib
 import importlib.util as _importlib_util
 import sys as _sys
 
+# Which application runs on the core (INF-33 step 13; aec_agent_core.
+# app_details): the run record's app version, the default Word and markup
+# authors and the runtime messages name GeotechStaffEngineer, as before the
+# core named no application. The same values are handed in by
+# funhouse_agent, webapp and calc_package, whichever loads first
+# (webapp/tests/test_app_details.py checks they agree).
+from aec_agent_core.app_details import hand_in as _hand_in_app
+
+_hand_in_app(name="GeotechStaffEngineer", dist="geotech-staff-engineer",
+             package="funhouse_agent.deep")
+
 _MOVED = {__name__ + ".docx_renderer": "aec_agent_core.docx_renderer"}
 
 

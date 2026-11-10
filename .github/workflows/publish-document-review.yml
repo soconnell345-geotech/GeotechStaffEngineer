@@ -2,7 +2,10 @@ name: Publish aec-document-review to PyPI
 
 # Document Review as its own package (BACKLOG INF-33 step 13), from
 # packages/aec-document-review only, on a `document-review-v<version>` tag
-# (for example `document-review-v0.1.0.dev0`). The app's own publish
+# (for example `document-review-v0.1.0`). It refuses a tag that does not
+# match the package's version, and a release whose exact pins
+# (aec-agent-core, planlens) are not on PyPI yet: publish the core first
+# (publish-core.yml, `core-v<version>`). The app's own publish
 # (publish.yml, `v*` tags) and the core's (publish-core.yml, `core-v*`)
 # never build it, and this workflow builds nothing else.
 #
@@ -48,6 +51,63 @@ jobs:
           if bad or not files:
               print(f"::error::Unexpected files in dist/: {bad or 'none built'}")
               sys.exit(1)
+      # A release must install: the package pins aec-agent-core and planlens
+      # exactly (plan Step 13), and pip can only find those versions once
+      # they are on PyPI. A release tagged before the core is published would
+      # install nowhere, and PyPI never takes the same version twice, so this
+      # stops the publish instead (as publish.yml does for the app).
+      - name: The aec-agent-core and planlens versions the package pins are on PyPI
+        shell: python
+        run: |
+          import re
+          import sys
+          import tomllib
+          import urllib.error
+          import urllib.request
+
+          NAMES = ("aec-agent-core", "planlens")
+          with open("packages/aec-document-review/pyproject.toml", "rb") as f:
+              deps = tomllib.load(f)["project"]["dependencies"]
+          failed = False
+          for NAME in NAMES:
+              specs = []
+              for dep in deps:
+                  name = re.split(r"[\s<>=!~;\[(]", dep, maxsplit=1)[0]
+                  if re.sub(r"[-_.]+", "-", name).lower() == NAME:
+                      specs.append(dep[len(name):].split(";")[0].strip())
+              pin = re.fullmatch(r"==\s*([^\s,]+)", specs[0]) \
+                  if len(specs) == 1 else None
+              if pin is None:
+                  print(f"::error::Expected one exact pin ({NAME}==<version>) "
+                        f"in the package's pyproject.toml, found {specs}. "
+                        f"Change this check together with the pin.")
+                  failed = True
+                  continue
+              version = pin.group(1)
+              url = f"https://pypi.org/pypi/{NAME}/{version}/json"
+              try:
+                  with urllib.request.urlopen(url, timeout=60) as resp:
+                      ok = resp.status == 200
+              except urllib.error.HTTPError as exc:
+                  if exc.code != 404:
+                      print(f"::error::Could not ask PyPI about {NAME} "
+                            f"{version} ({url}: HTTP {exc.code}). Re-run this "
+                            f"workflow.")
+                      sys.exit(1)
+                  ok = False
+              except urllib.error.URLError as exc:
+                  print(f"::error::Could not reach PyPI ({url}: {exc.reason}). "
+                        f"Re-run this workflow.")
+                  sys.exit(1)
+              if not ok:
+                  print(f"::error::Not published: aec-document-review pins "
+                        f"{NAME}=={version}, which is not on PyPI, so this "
+                        f"release could not be installed. Publish {NAME} "
+                        f"{version} first, then tag this package again.")
+                  failed = True
+              else:
+                  print(f"{NAME} {version} is on PyPI.")
+          sys.exit(1 if failed else 0)
       - uses: actions/upload-artifact@v4
         with:
           name: dist

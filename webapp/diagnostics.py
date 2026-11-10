@@ -151,6 +151,19 @@ def _optional_packages_check() -> dict:
     return _check("optional packages", PASS, summary)
 
 
+def _instructions_check() -> dict:
+    """What a deployment's own instructions append (``GEOTECH_INSTRUCTIONS``,
+    REF-64 (B)): each role's files and characters, or none. Read now, as
+    the next conversation's build reads them; never raises."""
+    name = "deployment instructions"
+    try:
+        from aec_agent_core.deep import instructions
+        look, parts = instructions.describe()
+    except Exception as exc:                            # noqa: BLE001
+        return _check(name, SKIP, f"not available: {type(exc).__name__}")
+    return _check(name, WARN if look else PASS, " | ".join(parts))
+
+
 def _env_check() -> dict:
     """Which engine-relevant env vars are set (values masked).
 
@@ -589,7 +602,8 @@ def run_diagnostics(model_id: Optional[str] = None,
     be opened); None takes the page this run serves."""
     from webapp import engine_config
     checks = [_versions_check(), _drift_check(), _optional_packages_check(),
-              _env_check(), _upload_probe_check()] + _page_checks(page_checks)
+              _env_check(), _upload_probe_check(),
+              _instructions_check()] + _page_checks(page_checks)
     if engine_config.is_tinyapps_deployment():
         checks.append(_prompter_key_check(identity))
     if _sharepoint_started():

@@ -1,0 +1,468 @@
+"""Detached turn execution — analyses that survive websocket death.
+
+Live evidence (2026-09-03, owner DevTools + the funhouse dev's probe): the
+Databricks driver proxy enforces a HARD ~60-second websocket lifetime. No
+keepalive — protocol pings, app-level data frames, bidirectional traffic —
+prevents it; every socket dies at the same round interval and Streamlit
+reconnects a moment later. Any turn longer than the TTL therefore crossed a
+socket death, and because the turn ran IN the script thread, the disconnect
+killed the analysis mid-flight ("the question dropped").
+
+This module flips the architecture: the ENTIRE turn pipeline — streaming the
+agent, checkpointing partials, artifact diffing, transcript/messages
+persistence, tracing, the SharePoint mirror — runs in a background worker
+thread that never touches Streamlit. The page merely FOLLOWS the job's
+recorded events and re-attaches after every reconnect: socket deaths now
+cost a one-second display blink, never the work.
+
+Jobs are process-global (one Streamlit server process hosts every session),
+keyed by conversation thread_id, one active job per conversation.
+"""
+
+from __future__ import annotations
+
+import os
+import threading
+import time
+from typing import Optional
+
+from aec_document_review import core
+
+__all__ = ["TurnJob", "start_turn_job", "get_turn_job"]
+
+_JOBS: dict[str, "TurnJob"] = {}
+_JOBS_LOCK = threading.Lock()
+
+
+class TurnJob:
+    """One running (or finished, not-yet-consumed) turn for a conversation."""
+
+    def __init__(self, thread_id: str, prompt: str):
+        self.thread_id = thread_id
+        self.prompt = prompt
+        self.started_at = time.time()
+        self.events: list[dict] = []
+        self.done = False
+        self.consumed = False          # a session folded the result into its UI
+        self.result: dict = {}
+        self._lock = threading.Lock()
+
+    # -- worker side ------------------------------------------------------
+    def _add(self, item: dict) -> None:
+        with self._lock:
+            self.events.append(item)
+
+    def _finish(self, **result) -> None:
+        with self._lock:
+            self.result = result
+            self.done = True
+
+    # -- UI side ----------------------------------------------------------
+    def follow(self, start: int = 0, poll_s: float = 0.5):
+        """Yield events from index ``start``; return once done AND drained.
+
+        Called from a Streamlit script thread. If that thread dies with its
+        websocket, the job is unaffected — the next script run re-follows.
+        """
+        i = start
+        while True:
+            with self._lock:
+                chunk = self.events[i:]
+                finished = self.done
+            for item in chunk:
+                yield item
+            i += len(chunk)
+            if finished and i >= len(self.events):
+                return
+            time.sleep(poll_s)
+
+
+def get_turn_job(thread_id: str) -> Optional[TurnJob]:
+    """The active or finished-unconsumed job for a conversation, if any."""
+    with _JOBS_LOCK:
+        job = _JOBS.get(thread_id)
+    if job is not None and job.done and job.consumed:
+        return None
+    return job
+
+
+def start_turn_job(agent, messages: list, thread_id: str,
+                   recursion_limit, ctx: dict) -> TurnJob:
+    """Start the detached turn worker (no-op returns the existing active job).
+
+    ``ctx`` carries everything the post-turn pipeline needs, resolved by the
+    submitting session BEFORE the socket can die:
+      prompt, temp_dir, before (files snapshot), staged_inputs,
+      working_dir, before_wd (or None), artifacts (the session list, mutated
+      in place), artifacts_before_len, transcript (session list, mutated),
+      trace_on (bool), model, behavior (dict); optionally before_mtimes
+      (``core.snapshot_mtimes``: rewritten files get cards) and orientation
+      (the attached names when the app sent the orientation request: the
+      conversation is titled after them).
+    """
+    with _JOBS_LOCK:
+        existing = _JOBS.get(thread_id)
+        if existing is not None and not existing.done:
+            return existing
+        job = TurnJob(thread_id, ctx.get("prompt") or "")
+        _JOBS[thread_id] = job
+    worker = threading.Thread(
+        target=_run_turn_job, name=f"turn-{thread_id[:8]}",
+        args=(job, agent, messages, thread_id, recursion_limit, ctx),
+        daemon=True)
+    worker.start()
+    return job
+
+
+def _accepts(fn, name: str) -> bool:
+    """Whether ``fn`` takes a keyword argument ``name`` (or any keyword)."""
+    import inspect
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == name or p.kind is p.VAR_KEYWORD for p in params)
+
+
+def _turn_no_of(ctx: dict) -> int:
+    """The 1-based number of the turn being run (its user entries)."""
+    try:
+        return sum(1 for e in (ctx.get("transcript") or [])
+                   if e.get("role") == "user")
+    except Exception:                                  # noqa: BLE001
+        return 0
+
+
+def _record_turn_files(activity, thread_id: str, turn_paths, dir_new,
+                       rewritten) -> None:
+    """The turn's files on its activity log (``turn_files``): each card's
+    file with its size, a hash of its content, and whether the turn wrote
+    it new, rewrote it, or only listed it (a file a tool reported that the
+    folder's before-and-after did not show changing) (BACKLOG EV-19).
+    Never raises."""
+    try:
+        from aec_agent_core.activity_log import file_facts
+        conv = core.conversation_dir(thread_id)
+        new = {os.path.abspath(p) for p in dir_new}
+        again = {os.path.abspath(p) for p in rewritten or ()}
+        files = []
+        for p in turn_paths:
+            facts = file_facts(p, conv)
+            if facts is None:
+                continue
+            ap = os.path.abspath(p)
+            facts["how"] = ("rewritten" if ap in again
+                            else "new" if ap in new else "listed")
+            files.append(facts)
+        activity.turn_files(files)
+    except Exception:                                  # noqa: BLE001
+        pass
+
+
+def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
+                  recursion_limit, ctx: dict) -> None:
+    """The entire turn pipeline, Streamlit-free. Never raises."""
+    # This conversation's working folder, bound to THIS worker thread's
+    # context: the process-wide env var is repointed by any other session's
+    # rerun mid-turn, which on a shared host (Tiny Apps) could send this
+    # turn's files into another person's folder. Tools read the binding first.
+    try:
+        from aec_agent_core._fileio import bind_working_dir
+        bind_working_dir(ctx.get("working_dir"))
+    except Exception:                                  # noqa: BLE001
+        pass
+    # The user's own message, bound the same way, so the vision side calls
+    # read it as context beside the main model's prompt (DR-37).
+    try:
+        from aec_agent_core import turn_question
+        turn_question.bind(ctx.get("prompt"))
+    except Exception:                                  # noqa: BLE001
+        pass
+    # The title is settled when the turn STARTS (live smoke wave 1, A10): the
+    # SharePoint mirror names its folder once, at the first mirror, and a
+    # link handed out during this turn must already point at that folder.
+    # An orientation turn is titled after the attached files; the first
+    # typed question adds its gist and keeps the files in the title
+    # ("3000.pdf — What is this sheet?", live smoke wave 2a B11). The
+    # folder does not move.
+    try:
+        _user_turns = sum(1 for e in (ctx.get("transcript") or [])
+                          if e.get("role") == "user")
+        _title, _source = core.turn_title(
+            core.load_meta(thread_id), ctx.get("prompt"), _user_turns,
+            orientation=ctx.get("orientation"))
+        if _title:
+            core.touch_conversation(thread_id, title=_title,
+                                    title_source=_source)
+    except Exception:                                  # noqa: BLE001
+        pass
+    answer = ""
+    final = ""
+    turn_tokens = 0
+    turn_error = None
+    error_detail = None
+    _chunks = 0
+    trace_t0 = time.time()
+    trace_tools: list[dict] = []
+    # Always-on activity log (owner feedback 2026-09-11): every tool call /
+    # result / model call, primary AND sub-agents, into <conv>/activity.jsonl
+    # — independent of the "Show turn details" toggle (which only gates the
+    # per-turn SUMMARY in trace.jsonl and its expander). Best-effort: a
+    # logger problem must never cost the turn.
+    activity = None
+    # Which client serves this turn and the waiting policy in force, on
+    # the record and in meta.json (BACKLOG EV-14).
+    engine = {}
+    try:
+        engine = core.engine_record(agent)
+        core.record_engine(thread_id, engine)
+    except Exception:                                  # noqa: BLE001
+        pass
+    try:
+        from aec_agent_core import activity_log
+        _turn_no = sum(1 for e in (ctx.get("transcript") or [])
+                       if e.get("role") == "user")
+        activity = activity_log.ActivityLogger(
+            core.conversation_dir(thread_id), turn=_turn_no)
+        activity.turn_start(prompt=ctx.get("prompt"), model=ctx.get("model"),
+                            note=ctx.get("turn_note"), engine=engine or None)
+    except Exception:                                  # noqa: BLE001
+        activity = None
+    # Which files the turn wrote / only read (field feedback 2026-09-15, N4/N8)
+    # -- see aec_document_review/output_capture.py. Best-effort like the activity log.
+    collector = None
+    try:
+        from aec_document_review.output_capture import OutputCollector
+        collector = OutputCollector()
+    except Exception:                                  # noqa: BLE001
+        collector = None
+    callbacks = [c for c in (activity, collector) if c is not None]
+    # The files the conversation already holds, in front of THIS turn's
+    # message only (core.working_files_note; field session 2026-10-06).
+    extra = ({"turn_note": ctx["turn_note"]} if ctx.get("turn_note") else {})
+    # The turn's own model replies and tool results, as they arrive, with a
+    # checkpoint on disk: a turn that errors, or that the process never
+    # finishes, keeps its work in the history (BACKLOG TA-19; field session
+    # 2026-10-14 lost 51 minutes of helpers' extraction to one refusal).
+    record = None
+    try:
+        if _accepts(core.stream_turn, "record"):
+            from aec_document_review.turn_record import TurnRecord
+            record = TurnRecord(
+                question=messages[-1] if messages else None,
+                checkpoint_path=core.partial_messages_path(thread_id))
+            extra["record"] = record
+    except Exception:                                  # noqa: BLE001
+        record = None
+    kept = None
+    try:
+        for item in core.with_heartbeat(core.stream_turn(
+                agent, messages, thread_id,
+                recursion_limit=recursion_limit,
+                callbacks=callbacks or None, **extra)):
+            kind = item.get("kind")
+            job._add(item)
+            if kind == "token":
+                answer += item.get("text", "")
+                _chunks += 1
+                if _chunks % 8 == 0:
+                    core.checkpoint_partial(thread_id, answer)
+            elif kind in ("tool_call", "todos", "tool_result"):
+                core.checkpoint_partial(thread_id, answer)
+                if ctx.get("trace_on") and kind == "tool_call":
+                    trace_tools.append(
+                        {"t": round(time.time() - trace_t0, 3),
+                         "call": (item.get("text") or "")[:80]})
+            elif kind == "turn_done":
+                final = item.get("answer", "")
+                turn_tokens = item.get("turn_tokens", 0)
+    except Exception as exc:                      # noqa: BLE001
+        # The tokens a failed turn used (EV-20), counted up to the error.
+        turn_tokens = getattr(exc, "geotech_turn_tokens", turn_tokens) or 0
+        # What the turn had done: its tool calls and results, in an order a
+        # replay accepts, the largest moved to kept/ (TA-19).
+        if record is not None:
+            try:
+                kept = record.kept(ctx.get("working_dir") or ctx["temp_dir"],
+                                   turn=_turn_no_of(ctx))
+            except Exception:                      # noqa: BLE001
+                kept = None
+        try:
+            turn_error = core.friendly_turn_error(
+                exc, kept=kept.line() if kept is not None else None)
+        except Exception:
+            turn_error = f"{type(exc).__name__}: {exc}"
+        # An AI budget that is used up (live smoke wave 2c, D2): the tester
+        # gets one plain line and no "ask again"; the provider's own text
+        # (its JSON, the request id) is kept for the owner in the activity
+        # log, never shown.
+        spent = core.budget_exhausted(exc) is not None
+        if spent:
+            try:
+                from aec_agent_core.error_text import scrub_paths
+                error_detail = scrub_paths(f"{type(exc).__name__}: {exc}")
+            except Exception:                      # noqa: BLE001
+                error_detail = type(exc).__name__
+        # A failed turn shows the friendly error under a clearly labelled
+        # partial answer -- or under one line saying it stopped -- never the
+        # raw stream of step announcements (live smoke wave 2b, C3/B7).
+        try:
+            final = core.failed_turn_text(
+                answer, getattr(exc, "geotech_reply", None),
+                retry=not spent)
+        except Exception:                          # noqa: BLE001
+            final = ""
+        # TA-33 (behind GEOTECH_STEP_CAP_ANSWER, OFF): a turn stopped at its
+        # step cap answers from what it gathered, in one last call with no
+        # tools, instead of ending on an error (live wave w8, F55).
+        try:
+            from aec_agent_core import review_flags as _rf
+            if (_rf.step_cap_answer() and record is not None
+                    and core.is_step_cap(exc)):
+                written = core.answer_at_step_cap(
+                    agent, messages[-1] if messages else None,
+                    record.messages)
+                if written:
+                    final = written
+                    error_detail = f"{type(exc).__name__}: {exc}"[:2000]
+                    turn_error = None
+        except Exception:                          # noqa: BLE001
+            pass
+
+    final = final or answer or "(no answer text)"
+    if activity is not None:
+        try:
+            activity.turn_end(turn_tokens=turn_tokens, error=turn_error,
+                              answer_chars=len(final),
+                              error_detail=error_detail)
+        except Exception:                              # noqa: BLE001
+            pass
+    save_error = None
+    sp_sync = None
+    try:
+        # -- artifact association (mirrors the old in-script logic) --------
+        artifacts = ctx["artifacts"]
+        fetched = set(collector.inputs) if collector is not None else set()
+        dir_new = [p for p in core.new_artifacts(ctx["temp_dir"], ctx["before"],
+                                                 ctx["staged_inputs"])
+                   if os.path.abspath(p) not in fetched]
+        # A file the turn wrote AGAIN (a memo rewritten under its own name)
+        # gets this turn's card too (live smoke wave 1, A13).
+        rewritten = core.rewritten_files(ctx["temp_dir"],
+                                         ctx.get("before_mtimes"),
+                                         ctx["staged_inputs"])
+        for p in rewritten:
+            if os.path.abspath(p) not in fetched and p not in dir_new:
+                dir_new.append(p)
+        if ctx.get("before_wd") is not None:
+            for p in core.import_external_artifacts(
+                    ctx["working_dir"], ctx["temp_dir"], ctx["before_wd"],
+                    list(ctx["staged_inputs"]) + sorted(fetched)):
+                if p not in dir_new:
+                    dir_new.append(p)
+        # Files a tool reported writing OUTSIDE the conversation folder (e.g.
+        # /tmp) are copied in, and their cards point at the copy.
+        copied = {}
+        if collector is not None:
+            try:
+                copied = core.import_reported_outputs(
+                    collector.outputs, ctx["temp_dir"],
+                    exclude=list(ctx["staged_inputs"]) + sorted(fetched),
+                    working_dir=ctx.get("working_dir"))
+            except Exception:                          # noqa: BLE001
+                copied = {}
+        for i, p in enumerate(artifacts):
+            dst = copied.get(os.path.abspath(p))
+            if dst is not None:
+                artifacts[i] = dst
+        for dst in copied.values():
+            if dst not in dir_new:
+                dir_new.append(dst)
+        save_new = artifacts[ctx["artifacts_before_len"]:]
+        for p in dir_new:
+            if p not in artifacts:
+                artifacts.append(p)
+        # Tool scratch and caches (files/.scratch, digest/) never make cards.
+        turn_paths = [p for p in core.collect_turn_artifacts(save_new, dir_new)
+                      if not core.is_cache_path(p, ctx["temp_dir"])]
+        if activity is not None:
+            _record_turn_files(activity, thread_id, turn_paths, dir_new,
+                               rewritten)
+
+        assistant_entry = {"role": "assistant", "text": final,
+                           "artifacts": turn_paths}
+        if fetched:
+            assistant_entry["inputs"] = sorted(os.path.basename(p)
+                                               for p in fetched)
+        if turn_error:
+            assistant_entry["error"] = turn_error
+        elif final == "(no answer text)":
+            assistant_entry["error"] = (
+                "The model returned no visible text. Open 'Connection "
+                "diagnostics' in the sidebar and run the tests — common "
+                "causes: a reasoning model spending the whole token budget "
+                "before any output (raise GEOTECH_WEBAPP_MAX_TOKENS), or the "
+                "proxy rejecting a request parameter.")
+
+        if kept is not None and kept.messages:
+            # The stopped turn's work stays in the history, then a note
+            # saying where it stopped (TA-19).
+            messages.extend(kept.messages)
+            note = kept.history_note(turn_error or "")
+            messages.append({"role": "assistant",
+                             "content": (f"{final}\n\n{note}"
+                                         if final not in (core.NOTHING_KEPT,
+                                                          core.NOTHING_KEPT_NO_RETRY)
+                                         else note)})
+            assistant_entry["kept"] = {"tool_results": kept.n_results,
+                                       "files": [os.path.basename(p)
+                                                 for p in kept.files],
+                                       "helper_files": [
+                                           os.path.basename(p)
+                                           for p in kept.helper_files]}
+        else:
+            messages.append({"role": "assistant", "content": final})
+        ctx["transcript"].append(assistant_entry)
+        try:
+            core.append_transcript(thread_id, assistant_entry)
+            transcript = ctx["transcript"]
+            user_turns = sum(1 for e in transcript if e.get("role") == "user")
+            # (the title was settled when the turn started; see above)
+            core.save_messages(thread_id, messages)
+            core.touch_conversation(thread_id, turn_count=user_turns,
+                                    model=ctx.get("model"))
+            core.set_behavior(thread_id,
+                              ctx.get("behavior") or core.default_behavior())
+            core.clear_partial(thread_id)
+        except Exception as exc:                  # noqa: BLE001
+            save_error = f"{type(exc).__name__}: {exc}"
+
+        if ctx.get("trace_on"):
+            try:
+                core.write_turn_trace(thread_id, {
+                    "ts": time.time(),
+                    "duration_s": round(time.time() - trace_t0, 3),
+                    "turn_tokens": turn_tokens,
+                    "n_tool_calls": len(trace_tools),
+                    "tools": trace_tools,
+                    "error": turn_error,
+                })
+            except Exception:
+                pass
+
+        try:                                       # permanent storage mirror
+            # The record is complete here. On the Foundry dataset the save
+            # (5-7 s) is queued and runs after the turn, so the chat does
+            # not wait for it (sp_sync stays None; the sidebar reads the
+            # save's state from the store). SharePoint saves here, as before.
+            from aec_document_review import sharepoint_store
+            _sp = sharepoint_store.get_store()
+            if _sp.configured:
+                sp_sync = sharepoint_store.save_after_change(_sp, thread_id)
+        except Exception:
+            pass
+    except Exception as exc:                       # noqa: BLE001
+        save_error = save_error or f"{type(exc).__name__}: {exc}"
+
+    job._finish(final=final, turn_tokens=turn_tokens, error=turn_error,
+                save_error=save_error, sp_sync=sp_sync)

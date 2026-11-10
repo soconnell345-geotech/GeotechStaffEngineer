@@ -1,0 +1,157 @@
+"""Deliverables written outside the conversation folder, and files only read.
+
+Field feedback 2026-09-15 (an SOE re-run): the calc package, figures and
+plot were written to /tmp, so no download card, no inline image and no
+SharePoint copy (N4/N6); the SharePoint download the agent only READ was shown
+as if produced (N8).
+"""
+
+import json
+import os
+
+from langchain_core.messages import ToolMessage
+
+from aec_document_review import core
+from aec_document_review.output_capture import OutputCollector, paths_in
+
+
+def test_paths_in_json_repr_and_sharepoint_results():
+    js = json.dumps({"status": "success", "output_path": "/tmp/SOE review.pdf",
+                     "figures": [{"output_path": "C:\\tmp\\fig 1.png"}]})
+    outs, ins = paths_in(js)
+    assert outs == ["/tmp/SOE review.pdf", "C:\\tmp\\fig 1.png"]
+    assert ins == []
+    outs, _ = paths_in("{'saved': '/tmp/pywall.png', 'file_exists': True}")
+    assert outs == ["/tmp/pywall.png"]
+    dl = ("Downloaded Shared Documents/General/GSE_app/uploaded references/a b.pdf "
+          "-> /root/.geotech_webapp/conversations/t/files/a b.pdf (23,006,108 "
+          "bytes). The file is now in the working folder.")
+    outs, ins = paths_in(dl)
+    assert outs == [] and ins == ["/root/.geotech_webapp/conversations/t/files/a b.pdf"]
+    up = "Uploaded /tmp/SOE.pdf -> Shared Documents/General/GSE_app/x/SOE.pdf."
+    assert paths_in(up)[0] == ["/tmp/SOE.pdf"]
+
+
+def test_paths_in_picks_up_the_plotly_sidecar():
+    """The interactive chart is a separate file the tool reports under its own
+    key. Missed here, a sidecar written to /tmp never reaches the conversation
+    folder and the chat has nothing to render (the N6 failure mode)."""
+    js = json.dumps({"status": "success", "output_path": "/tmp/plot.png",
+                     "plotly_json_path": "/tmp/plot.plotly.json"})
+    outs, _ = paths_in(js)
+    assert outs == ["/tmp/plot.png", "/tmp/plot.plotly.json"]
+    outs, _ = paths_in("{'plotly_json_path': '/tmp/p.plotly.json'}")
+    assert outs == ["/tmp/p.plotly.json"]
+
+
+def test_collector_reads_tool_messages_and_dedupes():
+    c = OutputCollector()
+    msg = ToolMessage(content=json.dumps({"saved": "/tmp/a.html"}),
+                      tool_call_id="1")
+    c.on_tool_end(msg)
+    c.on_tool_end(json.dumps({"output_path": "/tmp/a.html"}))
+    c.on_tool_end(object())                       # never raises
+    assert c.outputs == ["/tmp/a.html"]
+
+
+def test_import_copies_outside_files_in_and_dedupes(tmp_path):
+    conv = tmp_path / "conversations" / "t1"
+    files = conv / "files"
+    files.mkdir(parents=True)
+    outside = tmp_path / "tmp"
+    outside.mkdir()
+    pdf = outside / "SOE_sensitivity_review_embedded.pdf"
+    pdf.write_bytes(b"%PDF-1.4 numbers")
+    inside = files / "already_here.png"
+    inside.write_bytes(b"png")
+    staged = outside / "upload.pdf"
+    staged.write_bytes(b"%PDF upload")
+
+    copied = core.import_reported_outputs(
+        [str(pdf), str(pdf), str(inside), str(outside / "gone.png"), str(staged)],
+        str(files), exclude=[str(staged)])
+    assert list(copied) == [os.path.abspath(pdf)]
+    dst = copied[os.path.abspath(pdf)]
+    assert os.path.dirname(dst) == os.path.abspath(files)
+    assert open(dst, "rb").read() == b"%PDF-1.4 numbers"
+
+    # same content again: reuse; changed content: a new name, history kept
+    assert core.import_reported_outputs([str(pdf)], str(files))[
+        os.path.abspath(pdf)] == dst
+    # Rebuilt with DIFFERENT content of the SAME size, and the same
+    # timestamp: filecmp.cmp caches by (size, mtime) and would call these
+    # equal, leaving the conversation showing the old version.
+    stamp = os.stat(pdf).st_mtime
+    pdf.write_bytes(b"%PDF-1.4 rebuilt")
+    assert len(b"%PDF-1.4 rebuilt") == len(b"%PDF-1.4 numbers")
+    os.utime(pdf, (stamp, stamp))
+    dst2 = core.import_reported_outputs([str(pdf)], str(files))[os.path.abspath(pdf)]
+    assert dst2 != dst and dst2.endswith("_1.pdf")
+    assert open(dst2, "rb").read() == b"%PDF-1.4 rebuilt"
+    assert open(dst, "rb").read() == b"%PDF-1.4 numbers"
+
+
+def test_displayable_markdown_points_local_images_at_the_card():
+    text = ("Plot:\n\n![PYWall lateral earth pressures](/tmp/pywall_lateral_pressures.png)"
+            "\n\n![web](https://example.com/a.png)\n![x](/tmp/other.png)")
+    out = core.displayable_markdown(
+        text, ["/root/c/files/pywall_lateral_pressures.png"])
+    assert "*(PYWall lateral earth pressures — shown below)*" in out
+    assert "![web](https://example.com/a.png)" in out
+    assert "not viewable in chat" in out and "/tmp/other.png" in out
+
+
+def test_displayable_markdown_counts_a_plotly_sidecar_as_the_figure():
+    """The PNG card is replaced by the interactive chart of the same figure,
+    so its markdown link still resolves to "shown below" — the figure IS under
+    the reply, just as a chart instead of an image."""
+    text = "![Lateral pressure](/tmp/pywall.png)"
+    out = core.displayable_markdown(text, ["/root/c/files/pywall.plotly.json"])
+    assert "*(Lateral pressure — shown below)*" in out
+    assert "not viewable" not in out
+
+
+def test_a_fetched_file_named_by_its_place_is_still_only_an_input(
+        tmp_path, monkeypatch):
+    """N8 under live smoke 1's A6 wording: the SharePoint download now names
+    its local copy by its place in the working folder ("-> 'a b.pdf'"),
+    not by its server path. The collector must still resolve it to the real
+    file, so the turn keeps a fetched file off the produced files (no card);
+    the save and upload results' relative names resolve the same way."""
+    import aec_document_review.sharepoint_store as sp
+    import aec_document_review.sharepoint_tools as spt
+
+    files = tmp_path / "conv" / "files"
+    files.mkdir(parents=True)
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(files))
+    monkeypatch.setenv(sp.ENV_SITE, "https://t.sharepoint.com/sites/X")
+    monkeypatch.setenv(sp.ENV_TOKEN, "tok")
+    monkeypatch.setenv(sp.ENV_ROOT, "Shared Documents/General/GSE_app")
+
+    class FM:
+        def download_file(self, path, local_path=None, return_bytes=True,
+                          overwrite=False):
+            with open(local_path, "wb") as fh:
+                fh.write(b"%PDF fetched")
+            return True
+
+    monkeypatch.setattr(sp, "_STORE", sp.SharePointStore(file_manager=FM()))
+    spt._DOWNLOADS.clear()
+    before = core.snapshot_dir(str(files))
+    out = spt.sharepoint_download_file.invoke(
+        {"path": "uploaded references/a b.pdf"})
+    assert "-> 'a b.pdf' (" in out and str(files) not in out
+
+    c = OutputCollector()
+    c.on_tool_end(ToolMessage(content=out, tool_call_id="1"))
+    assert c.inputs == [os.path.abspath(files / "a b.pdf")]
+    # what the turn worker does with them (aec_document_review.turn_jobs)
+    fetched = set(c.inputs)
+    dir_new = [p for p in core.new_artifacts(str(files), before, [])
+               if os.path.abspath(p) not in fetched]
+    assert dir_new == []
+
+    c.on_tool_end(json.dumps({"saved": "memo.docx"}))
+    c.on_tool_end("Uploaded 'figs/x.png' -> Shared Documents/x/x.png.")
+    assert c.outputs == [os.path.abspath(files / "memo.docx"),
+                         os.path.abspath(files / "figs" / "x.png")]

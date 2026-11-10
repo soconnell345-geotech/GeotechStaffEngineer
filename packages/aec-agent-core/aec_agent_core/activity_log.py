@@ -276,9 +276,14 @@ def _process_started() -> float:
 
 
 def _app_version() -> Optional[str]:
+    """The version of the application the page handed in (its distribution,
+    :func:`aec_agent_core.app_details.dist`); None when none was named or it
+    is not installed."""
     try:
         from importlib.metadata import version
-        return version("geotech-staff-engineer")
+        from aec_agent_core.app_details import dist
+        name = dist()
+        return version(name) if name else None
     except Exception:                                  # noqa: BLE001
         return None
 

@@ -220,7 +220,7 @@ class TestBaseFolderNotDoubled:
 
 
 # ---------------------------------------------------------------------------
-# Field feedback 2026-09-15 (Nairobi SOE re-run): N5 and N8
+# Field feedback 2026-09-15 (an SOE re-run): N5 and N8
 # ---------------------------------------------------------------------------
 
 class TestConversationFolder:

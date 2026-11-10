@@ -1,6 +1,6 @@
 """Deliverables written outside the conversation folder, and files only read.
 
-Field feedback 2026-09-15 (Nairobi SOE re-run): the calc package, figures and
+Field feedback 2026-09-15 (an SOE re-run): the calc package, figures and
 plot were written to /tmp, so no download card, no inline image and no
 SharePoint copy (N4/N6); the SharePoint download the agent only READ was shown
 as if produced (N8).

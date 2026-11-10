@@ -106,12 +106,24 @@ OPTIONAL_DOCUMENT_TOOL_NAMES = (
 #: without asking, so the default says so in the name; a deployment that signs
 #: its reviews differently sets the env var.
 MARKUP_AUTHOR_ENV = "GEOTECH_MARKUP_AUTHOR"
-DEFAULT_MARKUP_AUTHOR = "GeotechStaffEngineer (AI draft)"
+# DEFAULT_MARKUP_AUTHOR: "<the application's name> (AI draft)", and
+# OWN_MARK_WORDS: the words in a markup's author that make it one this app
+# wrote, so ``remove`` may take it out (besides the signer itself; another
+# reviewer's markup in the copy is left alone). Both follow the application
+# the page handed in (aec_agent_core.app_details; INF-33 step 13), so they
+# are read at each use through the module's __getattr__ (at its end).
 
-#: Words in a markup's author that make it one this app wrote, so ``remove``
-#: may take it out (besides the signer itself); another reviewer's markup in
-#: the copy is left alone.
-OWN_MARK_WORDS = ("GeotechStaffEngineer", "(AI draft)")
+
+def _app_named(attr: str):
+    """DEFAULT_MARKUP_AUTHOR and OWN_MARK_WORDS, from the application's
+    details; None for any other name."""
+    if attr == "DEFAULT_MARKUP_AUTHOR":
+        from aec_agent_core.app_details import markup_author as _author
+        return _author()
+    if attr == "OWN_MARK_WORDS":
+        from aec_agent_core.app_details import own_mark_words
+        return own_mark_words()
+    return None
 
 #: How the model views a PNG planlens wrote (the thumbnail contact sheets):
 #: the app's analyze_image accepts a real path as its attachment_key.
@@ -194,8 +206,8 @@ def search_supports_fuzzy() -> bool:
 
 def markup_author() -> str:
     """The author ``annotate_document`` signs this app's comments with."""
-    return (os.environ.get(MARKUP_AUTHOR_ENV) or "").strip() \
-        or DEFAULT_MARKUP_AUTHOR
+    from aec_agent_core.app_details import markup_author as _default
+    return (os.environ.get(MARKUP_AUTHOR_ENV) or "").strip() or _default()
 
 
 REPORT_INGEST_TOOLS = ("document_roles", "log_grid")
@@ -364,7 +376,7 @@ def app_host() -> "_review.ReviewHost":
         vision_hint=VISION_HINT,
         image_view_hint=IMAGE_VIEW_HINT,
         scratch_dir=SCRATCH_DIR,
-        own_mark_words=OWN_MARK_WORDS,
+        own_mark_words=_app_named("OWN_MARK_WORDS"),
         max_live_toolkits=MAX_LIVE_TOOLKITS,
         idle_close_s=IDLE_CLOSE_S,
     )
@@ -452,8 +464,12 @@ def find_like(arguments: Dict[str, Any],
 
 
 def __getattr__(name: str):
-    """Any other name that moved to planlens.review (an alias until step
-    16): the toolkit per conversation, then the marked copy's."""
+    """DEFAULT_MARKUP_AUTHOR and OWN_MARK_WORDS (the application's; INF-33
+    step 13), then any other name that moved to planlens.review (an alias
+    until step 16): the toolkit per conversation, then the marked copy's."""
+    named = _app_named(name)
+    if named is not None:
+        return named
     for module in (_conv, _marks, _rspecs):
         if hasattr(module, name):
             return getattr(module, name)

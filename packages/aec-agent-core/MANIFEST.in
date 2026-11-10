@@ -1,0 +1,4 @@
+# The tests stay in the repository. setuptools would otherwise put
+# tests/test*.py in the sdist, and PyPI keeps an upload for good.
+# GeotechStaffEngineer's webapp/tests/test_sdists.py checks it.
+prune tests

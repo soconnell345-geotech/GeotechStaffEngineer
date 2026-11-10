@@ -723,6 +723,7 @@ def make_report_ingest_tool(
     review_mode: str = "disagreements",
     max_model_calls: Optional[int] = None,
     checklist: bool = False,
+    instructions: Optional[tuple] = None,
 ) -> list:
     """The ``report_ingest`` primary tool, or an empty list.
 
@@ -750,6 +751,10 @@ def make_report_ingest_tool(
     ``None``: no ceiling beyond the readers' own budgets). ``checklist``
     runs the report review checklist's code checks on the record written
     and returns them in the answer (BACKLOG RI-35).
+
+    ``instructions`` is the deployment's report_ingest block and its record
+    entry (REF-64 (B); ``build_deep_agent`` reads them once): both engines
+    get it on every call, as the sub-agent's do.
     """
     if not _document_tools.report_ingest_supported():
         return []
@@ -757,6 +762,7 @@ def make_report_ingest_tool(
     attachments = attachments if attachments is not None else {}
 
     def report_ingest(source: str, questions: str = "") -> str:
+        from aec_agent_core.deep.instructions import instructed
         from report_ingest.engine import engine_for
         from report_ingest.subagent import run_ingest
 
@@ -767,13 +773,14 @@ def make_report_ingest_tool(
             return json.dumps({"error": f"{type(exc).__name__}: {exc}",
                                "hint": "give the attachment key of the "
                                        "uploaded PDF or a real file path"})
-        ingest_engine = engine_for(engine)
+        ingest_engine = instructed(engine_for(engine), *(instructions or ()))
         # The page-label vote's second voter looks at EVERY page, so it runs
         # on the cheapest tier the deployment has rather than on the tier
         # the readers use; on a host whose engine is not a Prompter (the
         # page's chat model) this is None and the graph falls back to the
         # one engine it has.
-        vision_engine = engine_for(engine, model=VISION_TIER)
+        vision_engine = instructed(engine_for(engine, model=VISION_TIER),
+                                   *(instructions or ()))
         if ingest_engine is None:
             return json.dumps({
                 "error": "no ingest engine is configured in this deployment",
@@ -874,6 +881,7 @@ def make_report_library_tool(
     db_path: Optional[str] = None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     max_tool_calls: Optional[int] = None,
+    extra_system_prompt: Optional[str] = None,
 ) -> list:
     """The ``report_library`` primary tool, or an empty list.
 
@@ -886,6 +894,10 @@ def make_report_library_tool(
     ``model`` is the app's own chat model, which is what the library
     sub-agent reads query results with; without one the tool is still built
     and says so when called, the same choice the ingest tool makes.
+
+    ``extra_system_prompt`` is the deployment's report_library block
+    (REF-64 (B); ``build_deep_agent`` reads it once), appended to the
+    library's prompt as on its sub-agent.
     """
     from report_ingest.library_agent import library_available
 
@@ -908,7 +920,8 @@ def make_report_library_tool(
             answer = answer_question(
                 question, model=model, library_root=library_root,
                 db_path=db_path,
-                max_tool_calls=max_tool_calls or MAX_TOOL_CALLS)
+                max_tool_calls=max_tool_calls or MAX_TOOL_CALLS,
+                extra_system_prompt=extra_system_prompt)
         except Exception as exc:  # noqa: BLE001 - one question, not the turn
             return json.dumps({"error": f"the library query failed: "
                                         f"{type(exc).__name__}: {exc}"})

@@ -59,8 +59,24 @@ from aec_agent_core.review_eval import checks as _checks
 from aec_agent_core.review_eval import documents as _documents
 from aec_agent_core.review_eval.tasks import Task, load_tasks, select
 
-#: Who the suite signs any markup as, so a produced PDF is recognisably a test.
-SUITE_AUTHOR = "Review suite via GeotechStaffEngineer (AI draft)"
+# SUITE_AUTHOR: who the suite signs any markup as, so a produced PDF is
+# recognisably a test: "Review suite via <the application's name> (AI
+# draft)", the application the page handed in (aec_agent_core.app_details;
+# INF-33 step 13), read at each use through the module's __getattr__.
+
+
+def __getattr__(attr):
+    if attr == "SUITE_AUTHOR":
+        from aec_agent_core.app_details import name
+        return f"Review suite via {name()} (AI draft)"
+    raise AttributeError(f"module {__name__!r} has no attribute {attr!r}")
+
+
+def _suite_folder() -> str:
+    """The suite's default SharePoint folder: ``<the application's
+    name>/review_eval`` (GeotechStaffEngineer's is unchanged)."""
+    from aec_agent_core.app_details import name
+    return f"{name()}/review_eval"
 
 
 @contextmanager
@@ -149,7 +165,7 @@ def build_page_agent(model, attachments: Dict[str, bytes], files_dir: str,
     overrides): the Document Review page, or with ``page="geotech"`` the
     GeotechStaffEngineer page."""
     return page_host().build_agent(model, attachments, files_dir, artifacts,
-                                   page=page, markup_author=SUITE_AUTHOR)
+                                   page=page, markup_author=__getattr__("SUITE_AUTHOR"))
 
 
 def _activity_records(run_dir: str) -> List[Dict[str, Any]]:
@@ -712,7 +728,7 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
                        orientation: bool = False,
                        recursion_limit: Optional[int] = None,
                        sharepoint: Any = None,
-                       sharepoint_folder: str = "GeotechStaffEngineer/review_eval",
+                       sharepoint_folder: Optional[str] = None,
                        durable_dir: Any = None,
                        dry_run: bool = False,
                        rescore: bool = False,
@@ -775,7 +791,7 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
         try:
             from aec_agent_core.run_mirror import Mirror
             mirror = Mirror(sharepoint=sharepoint, durable_dir=durable_dir,
-                            base_folder=sharepoint_folder)
+                            base_folder=sharepoint_folder or _suite_folder())
             remote = mirror.remote_for(out.name)
             restored = mirror.restore_dir(remote, out)
             say(f"mirror: {mirror.describe(remote)}; restored {restored}")

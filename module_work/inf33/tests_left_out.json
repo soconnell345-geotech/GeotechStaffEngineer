@@ -1,0 +1,312 @@
+{
+ "test_agent_busy_routes.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_app_profiles.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_geotech_page_anonymous_is_the_old_app",
+   "test_geotech_page_never_orients",
+   "test_review_page_builds_the_document_review_agent",
+   "test_single_user_identity_keeps_the_geotech_layout"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_app_smoke.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_agent_picker_builds_reviewer_and_persists",
+   "test_conversation_filter_searches_past_the_cap",
+   "test_picked_specialist_gets_the_calc_helper",
+   "test_restore_from_permanent_storage_opens_the_conversation"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_auth_refusal.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_budget_panel.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_card_keys.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_cited_documents_turn.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_cited_pages_turn.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_conversation_export.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_nothing_is_zipped_until_prepare_is_pressed",
+   "test_on_foundry_a_record_alone_over_the_limit_says_so",
+   "test_on_foundry_over_the_limit_the_record_alone_is_offered",
+   "test_on_foundry_the_zip_is_the_browser_download",
+   "test_the_button_is_the_geotech_pages"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_conversation_restore.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_on_the_websocket_uploader_the_zip_is_taken_out_at_once",
+   "test_the_box_is_the_geotech_pages",
+   "test_the_sidebar_replaces_only_once_ticked",
+   "test_the_sidebar_restores_the_zip_and_opens_it"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_core.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_build_reviewer_agent_builds_each_kind",
+   "test_specialists_get_the_full_agents_file_tools",
+   "test_specialists_without_file_tools_where_none_are_offered"
+  ],
+  "dropped_at_copy (they need GSE code)": [
+   "test_specialist_builds_with_the_calc_helper_and_deliverables"
+  ]
+ },
+ "test_diagnostics.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_the_tls_line_is_foundrys_only"
+  ],
+  "dropped_at_copy (they need GSE code)": [
+   "test_reference_docs_partial_folder_names_the_missing",
+   "test_reference_docs_all_found_passes",
+   "test_reference_docs_empty_or_absent_folder_fails",
+   "test_reference_docs_unset_on_an_install_warns",
+   "test_reference_docs_unset_advice_fits_the_host",
+   "test_reference_docs_counts_what_sharepoint_can_supply",
+   "test_reference_docs_unlistable_sharepoint_folder_is_reported",
+   "test_reference_pdf_names_reads_the_real_catalogs"
+  ]
+ },
+ "test_download_mime.py": {
+  "whole file left out": "every test in it needed GSE code"
+ },
+ "test_feedback.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_build_agent_hands_tool_to_primary_and_subagents",
+   "test_every_builtin_subagent_carries_the_tool",
+   "test_specialist_agents_carry_the_tool"
+  ],
+  "dropped_at_copy (they need GSE code)": [
+   "test_calc_subagent_spec_accepts_extra_tools"
+  ]
+ },
+ "test_figure_code_cards.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_file_widgets.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_final_answer.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_graph_sharepoint_setup.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_helper_models.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_interrupted_turn_files.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_kept_turn_work.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": [
+   "test_the_activity_log_records_kept_helpers_and_their_queue"
+  ]
+ },
+ "test_orientation_overview.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_the_review_page_build_carries_its_conversation_folder"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_output_capture.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_past_conversations_pages.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_each_page_lists_its_own_conversations_in_one_session",
+   "test_refresh_relists_only_this_page",
+   "test_restore_on_the_geotech_page_uses_the_geotech_folder"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_record_ev06.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": [
+   "test_a_result_moved_to_scratch_is_logged_as_the_model_got_it"
+  ]
+ },
+ "test_record_ev14.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": [
+   "test_every_event_inside_a_helper_names_its_task"
+  ]
+ },
+ "test_review_binding_offline.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_review_eval_coverage_offline.py": {
+  "whole file left out": "it imports GSE's report fixture (the geotech page's coverage tasks)"
+ },
+ "test_review_eval_delivered_offline.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_a_with_files_check_reads_the_delivered_tables",
+   "test_the_extraction_tasks_read_their_files_and_drop_shell",
+   "test_write_diggs_to_tmp_is_delivered_on_the_geotech_page"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_review_eval_offline.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_review_eval_scales_offline.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_both_are_suite_documents_and_run_by_default",
+   "test_the_checks_take_right_answers_and_refuse_wrong_ones",
+   "test_the_log_is_what_its_task_says",
+   "test_the_log_task_passes_measured_and_fails_by_eye",
+   "test_tools_called_records_what_each_call_gave_back"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_review_harness_offline.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_default_page_zoom_tool_names_no_missing_tools",
+   "test_geotech_page_has_no_review_budget"
+  ],
+  "dropped_at_copy (they need GSE code)": [
+   "test_switch_off_builds_the_page_exactly_as_before",
+   "test_default_page_offers_only_the_review_tools",
+   "test_default_page_helper_has_the_review_rules_and_no_writing_tools"
+  ]
+ },
+ "test_review_minimal_offline.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_review_page_vocabulary_offline.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_the_geotech_page_keeps_its_wording"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_review_prompt_rules.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_the_geotech_page_reads_text_pages_and_looks_at_pictures"
+  ],
+  "dropped_at_copy (they need GSE code)": [
+   "test_each_review_prompt_names_the_calculation_tool_its_build_has",
+   "test_the_review_prompt_is_the_same_from_its_own_module"
+  ]
+ },
+ "test_review_switches_offline.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_sharepoint_links_and_failures.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_sharepoint_privacy.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_sharepoint_store.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_sharepoint_ta35.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_sharepoint_tools.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_build_agent_binds_the_upload_tool_to_the_conversation"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_tinyapps_entry.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_core_dependencies_install_beside_cfa_s_pandas_pin",
+   "test_default_profile_is_geotech_and_env_can_pick",
+   "test_document_review_profile_builds_a_different_agent",
+   "test_empty_scope_builds_an_agent_with_no_dispatch_tools",
+   "test_main_runs_two_pages_document_review_first",
+   "test_session_root_keeps_the_legacy_layout_for_the_single_user_app",
+   "test_the_shared_core_installs_beside_cfa_s_pandas_pin_too"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_tinyapps_keys.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_tinyapps_wiring.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_titles_cards_scratch.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_turn_jobs.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_version_guard.py": {
+  "dropped_after_a_run (geotech page behaviour)": [
+   "test_guard_mirrors_pyproject_caps"
+  ],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_wave2a_bookkeeping.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_wave2b_turns.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_wave2c_fixes.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_wave2c_second_pass.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_wave3_polish.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_workdir_durability.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_working_files_note.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ },
+ "test_ws_upload.py": {
+  "dropped_after_a_run (geotech page behaviour)": [],
+  "dropped_at_copy (they need GSE code)": []
+ }
+}
