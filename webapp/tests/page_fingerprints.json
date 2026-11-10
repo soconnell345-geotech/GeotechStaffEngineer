@@ -129,7 +129,7 @@
          }
         ],
         "name": "references",
-        "system_prompt": "cafd8f2dc17535a2",
+        "system_prompt": "d1e11d3de25c54cf",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -145,8 +145,8 @@
           "description": "27b0304d9d7dd690"
          },
          "call_agent": {
-          "args": "5bf326e50affd832",
-          "description": "a3c45983c2070af0"
+          "args": "624484c3729fa58a",
+          "description": "b1f867ea28fdd042"
          },
          "describe_method": {
           "args": "d69ec7c20ff033aa",
@@ -227,8 +227,8 @@
         ],
         "tools": {
          "call_agent": {
-          "args": "5bf326e50affd832",
-          "description": "a3c45983c2070af0"
+          "args": "624484c3729fa58a",
+          "description": "b1f867ea28fdd042"
          },
          "describe_method": {
           "args": "d69ec7c20ff033aa",
