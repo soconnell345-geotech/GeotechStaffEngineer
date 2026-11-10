@@ -121,7 +121,7 @@ This repository builds three packages; the app also needs two more of the same p
 
 | Package (import) | Where | What |
 |---|---|---|
-| `geotech-staff-engineer` (the analysis modules, `funhouse_agent`, `report_ingest`, `webapp`, ...) | the repo root (`pyproject.toml`) | The geotech agent and the two-page web app. Pins the core exactly (`aec-agent-core==1.0.0` on 5.35.0). Python 3.11 or newer. |
+| `geotech-staff-engineer` (the analysis modules, `funhouse_agent`, `report_ingest`, `webapp`, ...) | the repo root (`pyproject.toml`) | The geotech agent and the two-page web app. Pins the core exactly (`aec-agent-core==1.0.0` on 5.35.0; master pins 1.0.1, released 2026-11-10 for Document Review). Python 3.11 or newer. |
 | `aec-agent-core` (`aec_agent_core`) | `packages/aec-agent-core/` | The shared core: model connections (`engine_config` and the Prompter, Foundry and Palantir SDK engines), vision and file tools, the figure helper and plotting box, the agent's guards and records, Word and Excel, the run record, the document tools' binding to `planlens.review`, the review suite's framework. It names no application: each app hands in its name and fills the core's hooks (`aec_agent_core.hooks`; GSE does it in `funhouse_agent/__init__.py` and `webapp/__init__.py`). Its README lists what moved in. |
 | `aec-document-review` (`aec_document_review`) | `packages/aec-document-review/` | Document Review alone, nothing geotech; pins the core and planlens exactly; not a GSE dependency. Tiny Apps installs it (`tinyapps/TINYAPPS.md`, template `tinyapps/wrapper_repo/`). |
 | `planlens` | `C:/dev/planlens`, its own repo | The document layer; `planlens.review` holds the document tools since 0.15.0. |
@@ -144,8 +144,11 @@ This repository builds three packages; the app also needs two more of the same p
   folder; model-written plotting code off there, OWN-133), SharePoint (a
   refused upload is no longer counted as saved; waits on a busy service),
   the turn's budget, Word and Excel text, and the wrapper's start; planlens' four
-  review fixes are on its main (de93bc1). The releases that carry them to Tiny Apps wait on the owner
-  (OWN-134: planlens 0.15.1, the core 1.0.1, `aec-document-review` 0.1.1).
+  review fixes are on its main (de93bc1). Released for Tiny Apps on 2026-11-10 (the owner's go): planlens 0.15.1,
+  `aec-agent-core` 1.0.1 and `aec-document-review` 0.1.1 (tags `v0.15.1`,
+  `core-v1.0.1`, `document-review-v0.1.1`), pinned in the wrapper's
+  `packages.txt`. The app itself is not released: 5.35.0 keeps the core at
+  1.0.0, and master pins 1.0.1 for its next release.
   Before it, docs and tests only:
   field-session place names out of the current files (three field-feedback
   folders renamed; `test_public_text` guards the place words in every

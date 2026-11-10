@@ -50,7 +50,10 @@ dependencies = [
     # It adds no package of its own: everything it requires is a core
     # requirement here too. webapp/tests/test_wheels.py keeps this pin
     # equal to the core's version.
-    "aec-agent-core==1.0.0",
+    # 1.0.1 on master since 2026-11-10 (the deployment review's fixes,
+    # BACKLOG TA-36; released for Document Review on Tiny Apps). The app's
+    # next release takes it; 5.35.0 on PyPI pins 1.0.0.
+    "aec-agent-core==1.0.1",
     # -- agent stack (formerly the [deep] extra) --
     # Agent-stack UPPER BOUNDS (5.10.2): unpinned drift has broken deployed
     # clusters twice (Pygments via pydiggs; then deepagents 0.7.11 dropping the

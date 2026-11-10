@@ -33,16 +33,16 @@ error if `APP_SOURCE` names a route whose files are missing.
 
 | Route | Put in the repo | Setting |
 | --- | --- | --- |
-| **C. Nexus** (the normal one) | Nothing beyond this template. `packages.txt` pins `aec-document-review==0.1.0`, `aec-agent-core==1.0.0` and `planlens==0.15.0`, and includes `requirements-thirdparty.txt`; `run.sh` installs it all from Nexus. | `APP_SOURCE=nexus` |
-| **B. Wheels** (the backup) | The two wheels in `wheels/`: `aec_agent_core-1.0.0-py3-none-any.whl` and `aec_document_review-0.1.0-py3-none-any.whl`. `run.sh` installs them with `requirements-thirdparty.txt`; planlens 0.15.0 (pinned exactly by Document Review's wheel) and every other dependency resolve from Nexus. A planlens wheel may sit in `wheels/` too. | `APP_SOURCE=wheel` |
+| **C. Nexus** (the normal one) | Nothing beyond this template. `packages.txt` pins `aec-document-review==0.1.1`, `aec-agent-core==1.0.1` and `planlens==0.15.1`, and includes `requirements-thirdparty.txt`; `run.sh` installs it all from Nexus. | `APP_SOURCE=nexus` |
+| **B. Wheels** (the backup) | The two wheels in `wheels/`: `aec_agent_core-1.0.1-py3-none-any.whl` and `aec_document_review-0.1.1-py3-none-any.whl`. `run.sh` installs them with `requirements-thirdparty.txt`; planlens 0.15.1 (pinned exactly by Document Review's wheel) and every other dependency resolve from Nexus. A planlens wheel may sit in `wheels/` too. | `APP_SOURCE=wheel` |
 | **A. Source folder** (development copies) | `app_src/aec_document_review/` (from `packages/aec-document-review/` in the source repository) and `app_src/requirements.txt`, below. `run.sh` puts `app_src/` first on `PYTHONPATH` and installs `requirements-thirdparty.txt` plus that file from Nexus. | `APP_SOURCE=source` |
 
 **Route A's `app_src/requirements.txt`** lists what the copied source needs
 from Nexus:
 
 ```
-aec-agent-core==1.0.0
-planlens==0.15.0
+aec-agent-core==1.0.1
+planlens==0.15.1
 websockets>=14,<16
 ```
 
@@ -69,7 +69,7 @@ On route B, install the wheels with `requirements-thirdparty.txt`, naming
 both files (Windows does not expand `wheels/*.whl`):
 
 ```bash
-python -m pip install wheels/aec_agent_core-1.0.0-py3-none-any.whl wheels/aec_document_review-0.1.0-py3-none-any.whl -r requirements-thirdparty.txt
+python -m pip install wheels/aec_agent_core-1.0.1-py3-none-any.whl wheels/aec_document_review-0.1.1-py3-none-any.whl -r requirements-thirdparty.txt
 ```
 
 On route A, install `requirements-thirdparty.txt` and `app_src/requirements.txt`;

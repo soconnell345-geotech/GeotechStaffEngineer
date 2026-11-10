@@ -22,7 +22,7 @@ build-backend = "setuptools.build_meta"
 name = "aec-agent-core"
 # Kept equal to geotech-staff-engineer's exact pin on it (its pyproject) and
 # to aec_agent_core.__version__; webapp/tests/test_wheels.py checks all three.
-version = "1.0.0"
+version = "1.0.1"
 description = "The shared core of LLM agents that review and produce architecture, engineering and construction documents: model connections, vision calls, guards and records, Word and Excel, and a figure helper. No user interface of its own."
 readme = "README.md"
 license = "MIT"

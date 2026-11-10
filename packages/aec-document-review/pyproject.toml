@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aec-document-review"
 # Kept equal to aec_document_review.__version__ (tests/test_package.py).
-version = "0.1.0"
+version = "0.1.1"
 description = "An LLM agent that reviews architecture, engineering and construction documents (drawings, specifications, reports, calculations) as a Streamlit page: it looks at the pages, not only the text, and hands back Word memos and marked-up PDFs."
 readme = "README.md"
 license = "MIT"
@@ -31,8 +31,8 @@ classifiers = [
 # through the core (numpy, the agent stack, matplotlib, plotly, python-docx,
 # openpyxl, PyMuPDF, Pillow) or is listed here.
 dependencies = [
-    "aec-agent-core==1.0.0",
-    "planlens==0.15.0",
+    "aec-agent-core==1.0.1",
+    "planlens==0.15.1",
     # The page (app.py and the shell's widgets); requests comes with it and
     # the diagnostics' upload probe uses it.
     "streamlit>=1.39",

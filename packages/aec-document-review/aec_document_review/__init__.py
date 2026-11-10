@@ -32,7 +32,7 @@ standard geotechnical chart lines (the split's one deliberate fingerprint
 change).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 #: This application's name and distribution, handed to the core.
 APP_NAME = "Document Review"

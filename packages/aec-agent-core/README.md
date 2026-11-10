@@ -16,6 +16,15 @@ Two applications are built on it:
 
 ## Status
 
+**1.0.1 (2026-11-10).** Fixes from a deployment review of Document
+Review (GeotechStaffEngineer's BACKLOG, TA-36): a control character in
+text no longer loses a Word or Excel file, and Excel text that opens
+with "=" is written as text; a file name that climbs out of the
+working folder is not found; the primary agent's model-call budget is
+noted on the turn, so a host does not start another pass with a new
+one; a document-tools setting that is not a number falls back to its
+default.
+
 **1.0.0, the first release.** The app split's step 11 moved the
 code in, in three merges (BACKLOG INF-32; plan
 `module_work/APP_SPLIT_PLAN.md` in GeotechStaffEngineer's repository):
