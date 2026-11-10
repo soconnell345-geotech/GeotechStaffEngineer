@@ -115,114 +115,13 @@ GSE venv (`pip install -e packages/aec-agent-core -e .`, Python 3.12):
 |---|---|---|
 | `webapp/tests/test_tinyapps_wrapper.py webapp/tests/test_public_text.py webapp/tests/test_docs_currency.py` | 0 | 26 passed |
 
-## 5. The owner's checklist (as in `tinyapps/TINYAPPS.md`)
+## 5. The owner's checklist
 
-### The owner's first round on the test machine (paste-ready checklist)
-
-Do these in order. Each step says what you should see. If a step fails,
-stop and copy the last screen's text into a note for the lead.
-
-**Before you start.** The lead tells you the three packages are on PyPI
-(`aec-document-review` 0.1.0, `aec-agent-core` 1.0.0, `planlens` 0.15.0).
-Wait a day or two for the company's Nexus mirror to carry them. You need
-from CfA: the Prompter values (URL, model, key, CA bundle) and, for step 7,
-the four SharePoint values. If the SharePoint values have not arrived, do
-steps 1-6 and leave step 7 for later.
-
-1. **Make the wrapper repo.** On GitHub Enterprise, create a new private
-   repository (for example `document-review-tinyapp`). Copy into it every
-   file in `tinyapps/wrapper_repo/` of this public repository: `app.py`,
-   `packages.txt`, `requirements-thirdparty.txt`, `run.sh`,
-   `.env.example`, `.gitattributes`, `README.md`. Do not add `app_src/` or
-   `wheels/`. Commit and push.
-2. **Get it onto the test machine.** On dosdev, open a terminal in VS Code
-   and run, with your repository's address:
-   ```
-   git clone <your GHE repository address> document-review-tinyapp
-   cd document-review-tinyapp
-   python -m venv .venv
-   .venv\Scripts\activate
-   python -m pip install -r packages.txt
-   ```
-   You should see "Successfully installed ... aec-document-review-0.1.0 ...
-   aec-agent-core-1.0.0 ... planlens-0.15.0 ... pandas-3.0.2 ...". If pip
-   says it cannot find `aec-document-review` (or the core or planlens), the
-   mirror does not carry it yet: wait a day, or ask CfA (ask 1 below). If
-   pip prints a conflict, copy it into the note and stop.
-3. **Fill in the settings.** Run `copy .env.example .env`, then open `.env`
-   in VS Code and fill in `PROMPTER_URL`, `PROMPTER_MODEL`,
-   `PROMPTER_API_KEY` and `PROMPTER_CA_BUNDLE` (from CfA). Fill in the four
-   SharePoint lines (`GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`,
-   `GRAPH_CLIENT_SECRET`, `SHAREPOINT_SITE_URL`) if you have them; leave
-   them empty if not. Set `DEV_IDENTITY` to your own `DOMAIN\user`. Save.
-   Never commit `.env` (it holds keys).
-4. **Start the app.** Run `python -m streamlit run app.py`. A browser tab
-   opens at `http://localhost:8501`. You should see the **Document Review**
-   page, "Signed in as <you>" in the sidebar, and the model's name. In the
-   sidebar, open **Connection diagnostics** and press **Run connection
-   tests**: the plain, stream and tool-call checks should all pass. If the
-   page instead shows the "No model configured" banner, a Prompter
-   value in `.env` is missing or misspelt.
-5. **Run one short review.** Drag a small PDF (a public drawing sheet or a
-   few pages of a public report) into the upload box. The orientation turn
-   appears by itself within a minute or two. Then type: *"Mark up the
-   first page with two review comments and give me a one-page Word memo of
-   them."* You should get two download cards: a `..._marked.pdf` and a
-   `.docx`. Open both.
-6. **Stop the app.** Press Ctrl+C in the terminal.
-7. **Check the SharePoint copy** (only with the four SharePoint values).
-   First run `python -m aec_document_review.graph_sharepoint --check`:
-   every line should say PASS (or SKIP), none FAIL. Start the app again
-   (step 4), open the conversation from step 5 in the sidebar, and press
-   **Sync now** under **Permanent storage** in the sidebar. On the
-   SharePoint site, open
-   `Shared Documents/GeotechStaffEngineer/conversations/document_review/`
-   (on the published app, with sign-in, it is
-   `.../conversations/<you>/document_review/`): a folder named after the
-   conversation and its date holds the transcript, the upload, the
-   marked-up PDF and the Word memo.
-8. **Deploy.** Send CfA asks 2-5 below, with your repository's address. When
-   they report it is deployed, open the published address. You should see
-   the same page with your own sign-in name; repeat step 5 there, and step 7
-   with the `conversations/<you>/document_review/` folder.
-9. **Send the lead your note**: which steps passed, and the text of anything
-   that failed.
-
-### What to ask CfA (paste-ready)
-
-1. **Nexus carries our three public packages.** "Please make sure the Nexus
-   mirror carries `aec-document-review==0.1.0`, `aec-agent-core==1.0.0` and
-   `planlens==0.15.0` from PyPI, and clears them through the firewall if it
-   holds them back. They are our own packages, public on PyPI." (If this
-   cannot be done, the backup is route B: "May our repo carry two small
-   pure-Python wheels of ours in `wheels/`, installed by path?")
-2. **Deploy the repo.** "Please deploy `<your GHE repository address>` as a
-   Streamlit Tiny App. The startup command is `bash run.sh`; it installs
-   `packages.txt` from Nexus with `--index-url $PIP_INDEX_URL`. Does your
-   deploy run `run.sh`'s install, or does it install `packages.txt` itself?
-   Either works with this repo."
-3. **Fill in the published address.** "Please replace `https://CHANGE-ME` in
-   `run.sh`'s `--server.corsAllowedOrigins` with the app's published
-   address (one flag per address), and tell us the address."
-4. **Settings in Key Vault.** "Please put these in the app's Key Vault and
-   set `KV_NAME`: `PROMPTER-URL`, `PROMPTER-MODEL`, `PROMPTER-CA-BUNDLE`;
-   one `PROMPTER-API-KEY--<TESTER>` per tester (the app's refusal message
-   shows each name); `PROMPTER-SHARED-KEY-FALLBACK` = `1` until every
-   tester's key exists; and the SharePoint registration's
-   `GRAPH-TENANT-ID`, `GRAPH-CLIENT-ID`, `GRAPH-CLIENT-SECRET` (or a
-   certificate) and `SHAREPOINT-SITE-URL`. The registration's setup is in
-   `docs/SHAREPOINT_SETUP.md` of our public repository."
-5. **Health check.** "Please set the App Service health check path to
-   `/_stcore/health`."
-
-Still open with CfA from earlier rounds (BACKLOG OWN-44): is every tester's
-key on a deployment with image input, passed through at full resolution;
-does the gateway pass streaming; is the SharePoint tenant inside the pilot's
-boundary; does IIS pass `X-Windows-Auth-Header` and replace any value a
-browser sends; what the Prompter returns when a key's budget is spent, its
-tokens-per-minute limit and its per-request time limit; are the fleet pins
-still the six above.
-
+The one current copy is in `tinyapps/TINYAPPS.md`: "The owner's first
+round on the test machine (paste-ready checklist)" and "What to ask CfA
+(paste-ready)". This section held a copy as built; the review fixes (§8)
+changed steps 1, 2, 4, 7 and 8 and ask 4, so the copy was dropped rather
+than kept in step by hand.
 
 ## 6. What still needs CfA or the owner
 
@@ -232,8 +131,9 @@ still the six above.
   the firewall (else may the repo carry two wheels); deploy the repo and say
   whether their deploy runs `run.sh`'s install or reads `packages.txt`
   itself (both work); the published address in `corsAllowedOrigins`; the
-  settings in Key Vault (Prompter values, per-tester keys, the shared-key
-  fallback, the SharePoint registration per `docs/SHAREPOINT_SETUP.md`); the
+  settings in Key Vault (Prompter values, the shared key with the
+  shared-key fallback, the owner's own key and the other per-tester keys,
+  the SharePoint registration per `docs/SHAREPOINT_SETUP.md`); the
   health path `/_stcore/health`.
 - **CfA, still open from OWN-44:** image input at full resolution on every
   tester's deployment; streaming through the gateway; the SharePoint tenant
@@ -250,3 +150,37 @@ still the six above.
   `GEOTECH_`; renaming them is the package's change, not the wrapper's.
 - The package's prompt still points geotechnical reports to "the
   GeotechStaffEngineer page" (CHECK_STEP13 §11); a package change.
+
+## 8. Review fixes (2026-11-09, branch `merge/step14b`)
+
+The cloud branch sat on step 13's pre-squash history, so step 14 was
+re-made on master `972ffad` as one commit (`b181798`). `tinyapps/TINYAPPS.md`
+conflicted with master's REF-64 (B) section, "A deployment's own
+instructions". The section is kept and adapted to Document Review: its
+roles are `main`, `general-purpose` and `figure`, and `GEOTECH_INSTRUCTIONS`
+is an app setting holding the full path (`/home/site/wwwroot/instructions`),
+not a Key Vault secret, because the core reads only the environment. The
+Python floor reads "3.11 or newer", matching the package's pyproject.
+
+An independent review found four fixes, each its own commit:
+
+| Fix | Commit | What changed |
+|---|---|---|
+| F1 | `82a9eb9` | CfA ask 4 asked for `PROMPTER-SHARED-KEY-FALLBACK` = `1` but not for the shared `PROMPTER-API-KEY`. Without that key, `tinyapps_keys.resolve_for` refuses every tester, the owner included, so step 8 would fail. The ask now names the shared key with the fallback and the owner's own `PROMPTER-API-KEY--<MYDOMAIN>-<MYUSER>` (generic placeholders). Step 8 says what the "No AI key is set up" refusal means, and the "Behaviour to know" bullet says the fallback needs the shared key. |
+| F2 | `fc83722` | `tinyapps/wrapper_repo/.gitignore` (`.env`, `.venv/`, `__pycache__/`, `*.pyc`), because steps 2-3 create `.venv` and `.env` (the keys) inside the clone. `wheels/` is not ignored, because route B commits its wheels. It is named in step 1 and in both file trees. The test `test_template_keeps_the_keys_and_the_venv_out_of_commits` pins it. |
+| F3 | `d8a773d` | Steps 2, 4 and 7 run `.venv\Scripts\python -m ...` instead of activating the venv. On Windows, VS Code's terminal is PowerShell, which often refuses the activate script. |
+| F4 | `fd98ffb` | The README's route B install names the two wheels, because Windows does not expand `wheels/*.whl`. Step 1 reuses a wrapper repository that already exists. Step 4 says to press Enter at Streamlit's first-run e-mail prompt. "Both wheels pin planlens" became "Document Review's wheel pins it exactly", because the core asks `>=0.15`. |
+
+§5's copy of the checklist was replaced with a pointer to `TINYAPPS.md`, so
+only one copy exists.
+
+Re-checks after the fixes (Windows 11, judged by exit codes):
+
+| Check | Exit | Result |
+|---|---|---|
+| `webapp/tests/test_tinyapps_wrapper.py webapp/tests/test_public_text.py` | 0 | 21 passed |
+| Wheels route end to end: the template as committed (`git archive HEAD`), wheels built from this branch, a fresh venv on Python 3.12.15, `PIP_INDEX_URL` unset (so PyPI), `bash run.sh` in Git Bash. The throwaway copy listens on `127.0.0.1` instead of `0.0.0.0`, to avoid a firewall prompt. | 0 | Installed aec-agent-core 1.0.0, aec-document-review 0.1.0, planlens 0.15.0, pandas 3.0.2, streamlit 1.62.0, PyJWT 2.13.0, msal 1.37.0, azure-identity 1.21.0 and azure-keyvault-secrets 4.9.0. `pip check` clean. `/_stcore/health` returned `ok` 200 and `/` returned 200. |
+| The page script in Streamlit's `AppTest` | 0 | No exceptions. The title is "Document Review", with the "No model configured" banner and "aec-document-review 0.1.0 · engine: none". |
+
+Not run: Nexus, the App Service, IIS, Key Vault, real Prompter or
+SharePoint values, and route C (its packages are not on PyPI yet).
