@@ -96,6 +96,126 @@ def check_not_contains(answer: str, terms: Sequence[Any], **_) -> Tuple[bool, st
     return (not hit, "clean" if not hit else f"contains: {hit}")
 
 
+def _term_spans(term: Any, text: str) -> List[Tuple[int, int]]:
+    """Where ``term`` (string, alternatives list or regex) is in ``text``
+    (already normalized), as ``(start, end)`` spans."""
+    if isinstance(term, (list, tuple)):
+        return [s for t in term for s in _term_spans(t, text)]
+    if isinstance(term, dict) and "re" in term:
+        return [m.span() for m in re.finditer(term["re"], text,
+                                              flags=re.IGNORECASE)]
+    want = normalize(str(term))
+    out: List[Tuple[int, int]] = []
+    # _dehyphen swaps one character for one, so positions hold in both
+    for hay, needle in ((text, want), (_dehyphen(text), _dehyphen(want))):
+        at = hay.find(needle) if needle else -1
+        while at >= 0:
+            out.append((at, at + len(needle)))
+            at = hay.find(needle, at + 1)
+    return out
+
+
+def _closest(terms: Sequence[Any], text: str) -> Optional[int]:
+    """The shortest stretch of ``text`` (already normalized) that holds
+    every term, in characters; None when a term is not there."""
+    spans = [_term_spans(t, text) for t in terms]
+    if not all(spans):
+        return None
+    best = None
+    for start in sorted({a for ss in spans for a, _b in ss}):
+        ends = []
+        for ss in spans:
+            inside = [b for a, b in ss if a >= start]
+            if not inside:
+                break
+            ends.append(min(inside))
+        else:
+            reach = max(ends) - start
+            best = reach if best is None else min(best, reach)
+    return best
+
+
+#: A line that heads what is under it: a markdown heading, a line that is
+#: all bold, or a short line that ends with a colon.
+_HEADING = re.compile(r"^\s{0,3}(?:#{1,6}\s+\S.*|(?:[-*]\s+)?\*\*[^*\n]"
+                      r"{1,140}\*\*:?|[^|\n]{1,140}:)\s*$")
+#: The rule under a markdown table's header row.
+_TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{2,}")
+
+
+def _sections(answer: str) -> List[Tuple[str, str]]:
+    """The answer as ``(heading, body)`` pieces. The heading of a piece is
+    the heading line over it, with a table's header row for the rows of
+    that table; the body is the lines under it."""
+    out: List[Tuple[str, str]] = []
+    section, table = "", ""
+    body: List[str] = []
+
+    def flush() -> None:
+        if body:
+            out.append(((section + " " + table).strip(), "\n".join(body)))
+        body.clear()
+
+    lines = str(answer or "").splitlines()
+    for i, line in enumerate(lines):
+        after = lines[i + 1] if i + 1 < len(lines) else ""
+        if "|" in line and _TABLE_RULE.match(after):
+            flush()
+            table = line
+        elif table and _TABLE_RULE.match(line):
+            continue
+        elif _HEADING.match(line):
+            flush()
+            section, table = line, ""
+        elif not line.strip():
+            if table:
+                flush()
+                table = ""
+        else:
+            body.append(line)
+    flush()
+    return out
+
+
+def check_stated_together(answer: str, terms: Sequence[Any],
+                          window: int = 300, **_) -> Tuple[bool, str]:
+    """Every term inside one stretch of ``window`` characters of the answer.
+
+    For a finding that is a RELATION between things: the two values that
+    disagree, a mark and the word that says it is missing, a sheet and what
+    is wrong on it. ``contains_all`` would pass an answer that states each
+    of them somewhere, in unrelated sentences; this asks for them in one
+    place.
+
+    A term may also be said once for a whole list or table, in the heading
+    over it ("On a plan but not scheduled:" over seven marks): the terms
+    the heading holds count as beside every line under it, and the others
+    must be within ``window`` of each other there.
+
+    It cannot tell whether the sentence is right, only that the answer put
+    the pieces side by side, which a full read of the run confirms."""
+    text = normalize(answer)
+    spans = [_term_spans(t, text) for t in terms]
+    missing = [_label(t) for t, s in zip(terms, spans) if not s]
+    if missing:
+        return False, f"missing: {missing}"
+    best = _closest(terms, text)
+    if best is not None and best <= int(window):
+        return True, f"together within {best} characters"
+    for head, body in _sections(answer):
+        head, body = normalize(head), normalize(body)
+        said = [bool(_term_spans(t, head)) for t in terms]
+        if not any(said) or all(said):
+            continue
+        reach = _closest([t for t, there in zip(terms, said) if not there],
+                         body)
+        if reach is not None and reach <= int(window):
+            return True, (f"together within {reach} characters, under the "
+                          f"heading that holds the rest")
+    return False, (f"all present, never within {int(window)} characters of "
+                   f"each other (closest: {best})")
+
+
 #: An id range written out: "BH-1 to BH-3", "B-1 through B-3", "BH-1 - BH-3"
 #: (en dashes are ASCII after :func:`normalize`), "B-1-3".
 _ID_RANGE = re.compile(
@@ -619,7 +739,7 @@ def check_docx_contains(answer: str, files: Sequence[str] = (),
 #: report-extract-all was in the delivered CSV / docx / md, and the check
 #: read only the answer's pointer to them).
 DELIVERED_TEXT_EXTS = (".xml", ".csv", ".tsv", ".md", ".txt", ".json",
-                       ".docx")
+                       ".docx", ".xlsx")
 #: Characters read from any one delivered file.
 DELIVERED_MAX_CHARS = 2_000_000
 
@@ -635,6 +755,24 @@ def _cells_as_words(text: str, delimiter: str) -> str:
     return "\n".join(" | ".join(cell.strip() for cell in row) for row in rows)
 
 
+def _xlsx_text(path: str) -> str:
+    """A workbook's cells, sheet by sheet, a row to a line with " | "
+    between cells (a comment log is usually delivered as one)."""
+    import openpyxl
+    book = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        lines: List[str] = []
+        for sheet in book.worksheets:
+            lines.append(str(sheet.title))
+            for row in sheet.iter_rows(values_only=True):
+                cells = ["" if v is None else str(v).strip() for v in row]
+                if any(cells):
+                    lines.append(" | ".join(cells))
+        return "\n".join(lines)
+    finally:
+        book.close()
+
+
 def delivered_text(files: Sequence[str] = ()) -> Tuple[str, List[str]]:
     """``(text, names)``: the text of every delivered file of a
     :data:`DELIVERED_TEXT_EXTS` kind, and the names read. A file that cannot
@@ -648,6 +786,8 @@ def delivered_text(files: Sequence[str] = ()) -> Tuple[str, List[str]]:
         try:
             if ext == ".docx":
                 text = _docx_text(path)
+            elif ext == ".xlsx":
+                text = _xlsx_text(path)
             else:
                 with open(path, encoding="utf-8", errors="replace") as fh:
                     text = fh.read(DELIVERED_MAX_CHARS)
@@ -956,6 +1096,7 @@ CHECKS = {
     "states_coverage": check_states_coverage,
     "value_within": check_value_within,
     "tools_called": check_tools_called,
+    "stated_together": check_stated_together,
 }
 
 #: Checks on what the run DID (its activity), not on its answer text.

@@ -74,6 +74,34 @@ DOCUMENTS: Dict[str, Dict[str, Any]] = {
     # is right. The upload names say nothing of either.
     "fixture_scale_log": {"fixture": "scale_log", "name": "boring_log.pdf"},
     "fixture_scale_plan": {"fixture": "scale_plan", "name": "site_plan.pdf"},
+    # One made-up building's documents with coordination problems planted
+    # in them (BACKLOG DR-25), built by Document Review's own fixture
+    # (aec_document_review.review_eval.coordination_fixture, through
+    # FIXTURE_HOOK): the drawing set at issue 1 (15 sheets) and at issue 0,
+    # the issue 1 set as a scan with no text layer, a five-storey version
+    # (40 sheets), the project manual, the geotechnical memorandum and a
+    # concrete mix submittal.
+    "fixture_coord_set": {
+        "fixture": "coord_set",
+        "name": "north_yard_annex_drawings_issue_1.pdf"},
+    "fixture_coord_set_prev": {
+        "fixture": "coord_set_prev",
+        "name": "north_yard_annex_drawings_issue_0.pdf"},
+    "fixture_coord_set_scan": {
+        "fixture": "coord_set_scan",
+        "name": "north_yard_annex_drawings_issue_1_scan.pdf"},
+    "fixture_coord_set_long": {
+        "fixture": "coord_set_long",
+        "name": "north_yard_annex_full_set_issue_1.pdf"},
+    "fixture_coord_manual": {
+        "fixture": "coord_manual",
+        "name": "north_yard_annex_project_manual.pdf"},
+    "fixture_coord_memo": {
+        "fixture": "coord_memo",
+        "name": "geotechnical_recommendations_memorandum.pdf"},
+    "fixture_coord_submittal": {
+        "fixture": "coord_submittal",
+        "name": "submittal_03_30_00-02_concrete_mix.pdf"},
 }
 
 #: The long tag set's rare tag and the 0-based pages that carry it.
