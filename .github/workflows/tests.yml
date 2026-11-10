@@ -119,7 +119,7 @@ jobs:
           pip install --upgrade pip
           pip install -e packages/aec-agent-core
           pip install -e . -e geotech-references/
-          pip install pytest build "setuptools>=68" wheel
+          pip install pytest build "setuptools>=68" wheel trove-classifiers
 
       - name: Build, install and check both wheels
         env:
@@ -130,6 +130,11 @@ jobs:
         env:
           GEOTECH_REQUIRE_WHEEL_TEST: "1"
         run: pytest -q --tb=short webapp/tests/test_sdists.py
+
+      - name: Every classifier is one PyPI accepts
+        env:
+          GEOTECH_REQUIRE_WHEEL_TEST: "1"
+        run: pytest -q --tb=short webapp/tests/test_classifiers.py
 
   core-only:
     # The app split's step 11 (c) (INF-32; plan module_work/APP_SPLIT_PLAN.md
