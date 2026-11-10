@@ -754,6 +754,13 @@ def test_marks_added_to_a_copy_at_another_scale_are_converted_exactly(
     with pymupdf.open(stream=photo) as img:
         old = pymupdf.open("pdf", img.convert_to_pdf())
     assert round(old[0].rect.width, 2) == 420.0          # 560 px at 0.75
+    # An earlier marked copy holds a mark of the app's: planlens adds to an
+    # existing file only when it does (PL-36). Blue, so the red ink measured
+    # below is this call's mark alone.
+    earlier = old[0].add_rect_annot(pymupdf.Rect(300, 400, 340, 430))
+    earlier.set_colors(stroke=(0, 0, 1))
+    earlier.set_info(title="an earlier call (AI draft)")
+    earlier.update()
     old.save(str(tmp_path / "old_marked.pdf"))
     old.close()
     engine = SeesInk()

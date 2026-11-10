@@ -179,12 +179,45 @@ def test_foundry_disable_streaming_env(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# The report on Tiny Apps (deployment review 2026-11-10): the streaming
+# switch is the one that host reads, the upload probe's refusal is expected
+# there, and a token an error text quoted is not shown. Values are made up.
+# ---------------------------------------------------------------------------
+
+def test_the_streaming_switch_is_named_for_the_host(monkeypatch):
+    monkeypatch.delenv("GEOTECH_DEPLOYMENT", raising=False)
+    assert diag._streaming_switch() == "GEOTECH_FOUNDRY_DISABLE_STREAMING"
+    monkeypatch.setenv("GEOTECH_DEPLOYMENT", "tinyapps")
+    assert diag._streaming_switch() == "GEOTECH_PROMPTER_DISABLE_STREAMING"
+    _patch_engine(monkeypatch, _BoomModel())
+    detail = _by_name(diag.run_diagnostics("ri.fake"),
+                      "streaming request")["detail"]
+    assert "GEOTECH_PROMPTER_DISABLE_STREAMING=1" in detail
+    assert "GEOTECH_FOUNDRY_DISABLE_STREAMING" not in detail
 
 
+def test_the_upload_probes_refusal_is_expected_on_tiny_apps(monkeypatch):
+    requests = pytest.importorskip("requests")
+
+    class _Refused:
+        status_code = 403
+
+    monkeypatch.setattr(requests, "request", lambda *a, **k: _Refused())
+    monkeypatch.delenv("GEOTECH_DEPLOYMENT", raising=False)
+    assert diag._upload_probe_check()["status"] == diag.WARN
+    monkeypatch.setenv("GEOTECH_DEPLOYMENT", "tinyapps")
+    check = diag._upload_probe_check()
+    assert check["status"] == diag.PASS
+    assert "expected on this host" in check["detail"]
 
 
-
-
-
-
-
+def test_the_report_shows_setting_names_but_no_token():
+    text = diag.format_report([
+        diag._check("plain request (invoke)", diag.FAIL,
+                    "AuthenticationError: sent Authorization: Bearer "
+                    "MADEUP.TOKEN-123 and was refused\n"
+                    "Set GEOTECH_PROMPTER_DISABLE_STREAMING=1 if it repeats.")])
+    assert "MADEUP.TOKEN-123" not in text
+    assert "GEOTECH_PROMPTER_DISABLE_STREAMING=1" in text
+    assert "plain request (invoke): FAIL" in text

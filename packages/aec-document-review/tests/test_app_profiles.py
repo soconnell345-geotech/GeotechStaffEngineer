@@ -111,3 +111,25 @@ def test_upload_on_the_review_page_triggers_orientation(harness, tmp_path):
 
 
 
+
+
+# ---------------------------------------------------------------------------
+# The Working folder box (deployment review 2026-11-10): a typed path bound
+# any folder on the server, so it is not drawn for a tester the proxy named.
+# ---------------------------------------------------------------------------
+
+def _working_folder_boxes(at):
+    return [w for w in at.text_input
+            if str(getattr(w, "key", "") or "").startswith("workdir_")]
+
+
+def test_a_named_tester_gets_no_working_folder_box(harness):
+    at = harness(header="CORP\\jdoe").run()
+    assert not at.exception
+    assert _working_folder_boxes(at) == []
+
+
+def test_one_persons_own_machine_keeps_the_working_folder_box(harness):
+    at = harness(identity="CORP\\jdoe").run()
+    assert not at.exception
+    assert len(_working_folder_boxes(at)) == 1

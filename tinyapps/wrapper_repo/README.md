@@ -77,6 +77,9 @@ On route A, install `requirements-thirdparty.txt` and `app_src/requirements.txt`
 
 Set `DEV_IDENTITY` in `.env` to stand in for the signed-in user; deployed,
 IIS supplies it in the `X-Windows-Auth-Header` header and the value is ignored.
+A request that reaches the deployed app with no header (the App Service's
+own address opened directly, say) is refused with a message: one process
+serves every tester there, and it serves nobody it cannot name.
 
 ## Update the deployed app
 
@@ -105,8 +108,9 @@ setting names, so existing deployments keep working.
 | `KV_NAME` (app setting) | the Key Vault the values above live in |
 | `GEOTECH_WEBAPP_DATA` (optional) | where conversations live on the machine; `app.py` sets `/home/data/geotech_webapp` on the App Service |
 | `GEOTECH_INSTRUCTIONS` (optional; an app setting or a `.env` line, not Key Vault) | the full path of a folder of this deployment's own instructions for the agents (units, formats, house style): `all.md` for every agent and helper, then `main.md`, `general-purpose.md` (the reading helper) and `figure.md`. In an `instructions/` folder of this repository it is `/home/site/wwwroot/instructions` on the App Service. Each role's text goes last in its prompt, under rules it cannot switch off, at most 4,000 characters a role; Connection diagnostics says what each role gets |
-| `DEV_IDENTITY` (local only) | stands in for the signed-in user |
-| `--server.corsAllowedOrigins` in `run.sh` | the published URL of the app (CfA fills it in) |
+| `DEV_IDENTITY` (local only) | stands in for the signed-in user; not read on the App Service |
+| `APP_ORIGINS` (app setting) | the published address(es) of the app, as the browser shows them; several are separated by a space or a comma. `run.sh` passes each to Streamlit as `--server.corsAllowedOrigins`. Unset, the `https://CHANGE-ME` line in `run.sh` is used, and until one of the two is set the start log carries a warning and the page does not load through IIS |
+| `GEOTECH_PLOT_CODE` (app setting; optional) | `1` lets the figure helper run plotting code the model writes. `app.py` turns it off on the App Service: one process holds every tester's conversations there, and the box the code runs in limits Python, not the operating system. Figures are still drawn, with the fixed plotting tool |
 
 The optional tuning settings (pacing, helpers, retries, the figure helper)
 are listed, commented out, in `.env.example`.

@@ -56,7 +56,9 @@ The Prompter engine itself is in the core:
   reads it via `st.context.headers`. Trusted because the App Service accepts
   traffic only from the IIS servers and the IIS module replaces any client
   value; the app never verifies it and never lets a user type one. Locally
-  `DEV_IDENTITY` stands in.
+  `DEV_IDENTITY` stands in. On the App Service a request with no usable
+  header is refused with a message, and `DEV_IDENTITY` is not read (until
+  2026-11-10 such a request was served as one unnamed user).
 - **Secrets**: the Key Vault named by the `KV_NAME` app setting, read with
   the managed identity; secret names hyphenated, environment names
   underscored; a real environment variable always wins.
@@ -79,7 +81,8 @@ The Prompter engine itself is in the core:
   Document Review, the core or planlens caps pandas.
 - **Streamlit on App Service**: bind `--server.port ${PORT:-8000}` (the
   probe is on 8000; 8501 gets the container recycled);
-  `--server.corsAllowedOrigins <published URL>` per origin, or Streamlit
+  `--server.corsAllowedOrigins <published URL>` per origin (`run.sh` builds
+  them from the app setting `APP_ORIGINS`, else its CHANGE-ME line), or Streamlit
   refuses the websocket behind IIS/ARR and the page never loads (confirmed
   live 2026-09-17; keeps CORS and XSRF on); health path `/_stcore/health`;
   `STREAMLIT_SERVER_BASE_URL_PATH` if published under a sub-path.
@@ -109,8 +112,10 @@ packages.txt     aec-document-review, aec-agent-core and planlens, pinned
                  exactly, + -r requirements-thirdparty.txt
 requirements-thirdparty.txt
                  CfA's fleet pins (pandas==3.0.2 included) + Key Vault libraries
-run.sh           CfA's Streamlit template (PORT, corsAllowedOrigins CHANGE-ME);
-                 picks the code route (below)
+run.sh           CfA's Streamlit template (PORT; the published address from
+                 the app setting APP_ORIGINS, else its CHANGE-ME line); picks
+                 the code route (below); stops with a plain error when the
+                 install failed and nothing is installed
 .env.example     the settings, for local runs
 .gitattributes   keeps run.sh LF
 .gitignore       keeps .env (the keys), .venv and caches out of commits
@@ -118,7 +123,7 @@ README.md        routes, local run, update, settings
 ```
 
 An app update is a pin bump in `packages.txt` plus an App Services sync.
-The engineers fill in `corsAllowedOrigins` and provision Key Vault; nothing
+The engineers set `APP_ORIGINS` and provision Key Vault; nothing
 in our code changes between dosdev and production: the same names are read
 from `.env` there and from Key Vault here.
 
@@ -167,7 +172,8 @@ their own budget, and the list of keys is the pilot's access list.
 
 **Who counts as a tester.** A caller identified by the IIS header.
 Single-user hosts keep the shared `PROMPTER_API_KEY`: dosdev with
-`DEV_IDENTITY`, a laptop, and any request with no header.
+`DEV_IDENTITY`, and a laptop. On the App Service a request with no header
+is not served.
 
 **Resolution order** for a tester (`aec_document_review/tinyapps_keys.py`,
 `resolve_for`):
@@ -229,6 +235,10 @@ little under the deployment's limit; unset means no pacing),
 `GEOTECH_AGENT_BUSY_TRIES` (5), `GEOTECH_BUSY_TURN_MAX_S` (900),
 `GEOTECH_PROMPTER_STREAM_USAGE` (on), and the figure helper's two switches,
 `GEOTECH_FIGURE_HELPER` and `GEOTECH_PLOT_CODE` (on; `0` turns each off).
+On the App Service the wrapper's `app.py` sets `GEOTECH_PLOT_CODE=0` unless
+the app setting says `1`: the box that code runs in limits Python, not the
+operating system (INF-16), and one process holds every tester's files. The
+figure helper still draws, with the fixed plotting tool.
 
 ## The owner's first round on the test machine (paste-ready checklist)
 
@@ -328,9 +338,11 @@ steps 1-6 and leave step 7 for later.
    `packages.txt` from Nexus with `--index-url $PIP_INDEX_URL`. Does your
    deploy run `run.sh`'s install, or does it install `packages.txt` itself?
    Either works with this repo."
-3. **Fill in the published address.** "Please replace `https://CHANGE-ME` in
-   `run.sh`'s `--server.corsAllowedOrigins` with the app's published
-   address (one flag per address), and tell us the address."
+3. **Fill in the published address.** "Please set the app setting
+   `APP_ORIGINS` to the app's published address (several addresses:
+   separate them with a space), and tell us the address." (Replacing
+   `https://CHANGE-ME` in `run.sh` does the same, but is lost when the
+   file is updated.)
 4. **Settings in Key Vault.** "Please put these in the app's Key Vault and
    set `KV_NAME`: `PROMPTER-URL`, `PROMPTER-MODEL`, `PROMPTER-CA-BUNDLE`;
    the shared pilot key as `PROMPTER-API-KEY`, with

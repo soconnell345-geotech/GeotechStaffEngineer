@@ -39,6 +39,10 @@ MAX_ROWS = 100_000
 
 _NUMBER = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
 _THOUSANDS = re.compile(r"^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
+#: Characters a workbook does not allow (tab, line feed and carriage
+#: return are).
+_CONTROL_CHARS = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 _EMPHASIS = re.compile(r"^(\*\*|__|\*|_|`)(.+)\1$")
 _HEADING = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
 _SEPARATOR_CELL = re.compile(r"^:?-{2,}:?$")
@@ -91,7 +95,9 @@ def tables_from_markdown(markdown: str) -> List[Dict[str, Any]]:
     """Every pipe table in ``markdown`` as ``{"name", "rows"}`` -- the header
     row first. A table is named by the nearest heading above it (``Table N``
     when there is none)."""
-    lines = str(markdown or "").splitlines()
+    # a control character is a space here: a form feed inside a row would
+    # otherwise end the table at it (splitlines breaks on one)
+    lines = _CONTROL_CHARS.sub(" ", str(markdown or "")).splitlines()
     tables: List[Dict[str, Any]] = []
     heading: Optional[str] = None
     i = 0
@@ -131,7 +137,9 @@ def cell_value(value: Any) -> Any:
         return None
     if isinstance(value, bool) or isinstance(value, (int, float)):
         return value
-    text = str(value).strip()
+    # control characters (text copied out of a PDF carries them) are not
+    # allowed in a workbook: openpyxl raises on one and the file was lost
+    text = _CONTROL_CHARS.sub("", str(value)).strip()
     m = _EMPHASIS.match(text)
     while m:
         text = m.group(2).strip()
@@ -177,7 +185,8 @@ def _rows_of(raw: Any) -> List[List[Any]]:
 
 def sheet_name(name: Any, taken: Iterable[str]) -> str:
     """An Excel-safe sheet name, unique (case-insensitive) among ``taken``."""
-    base = _BAD_SHEET_CHARS.sub("-", str(name or "").strip()).strip("'")
+    base = _CONTROL_CHARS.sub("", str(name or ""))
+    base = _BAD_SHEET_CHARS.sub("-", base.strip()).strip("'")
     base = (base or "Sheet")[:MAX_SHEET_NAME]
     used = {t.lower() for t in taken}
     if base.lower() not in used:
@@ -316,6 +325,7 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
             rows = rows[:MAX_ROWS]
         widths: Dict[int, int] = {}
         n_cols = 0
+        n_equals = 0
         for r, row in enumerate(rows, start=1):
             n_cols = max(n_cols, len(row))
             for c, value in enumerate(row, start=1):
@@ -323,9 +333,20 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
                 if v is not None and not isinstance(v, (int, float, str)):
                     v = str(v)
                 cell = ws.cell(row=r, column=c, value=v)
+                # Cells hold values, not formulas: text that opens with "="
+                # (a note such as "= 2 x 150 mm") stays text. Left as a
+                # formula, Excel shows an error in its place or offers to
+                # repair the file.
+                if isinstance(v, str) and v.startswith("="):
+                    cell.data_type = "s"
+                    n_equals += 1
                 if spec["header"] and r == 1:
                     cell.font = Font(bold=True)
                 widths[c] = max(widths.get(c, 0), _longest_line(v))
+        if n_equals:
+            warnings.append(
+                f"sheet '{name}': {n_equals} cell(s) open with '=' and were "
+                "written as text (this tool writes values, not formulas)")
         width_of = {c: column_width(w) for c, w in widths.items()}
         for c, w in width_of.items():
             ws.column_dimensions[get_column_letter(c)].width = w

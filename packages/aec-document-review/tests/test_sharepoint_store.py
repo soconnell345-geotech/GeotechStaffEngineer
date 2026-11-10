@@ -679,3 +679,29 @@ class TestListAndRestore:
         assert res["status"] == "error" and "meta.json" in res["errors"][0]
         assert not os.path.exists(core.conversations_root(str(tmp_path))) or \
             core.list_conversations(str(tmp_path)) == []
+
+
+def test_an_upload_the_file_manager_refuses_is_not_counted_as_saved(tmp_path):
+    """Deployment review 2026-11-10: a file manager that answers False (the
+    Graph one did, for any failure) left the file stamped as sent, and it
+    was never sent again."""
+    root = str(tmp_path)
+    tid, _conv = _make_conversation(root)
+
+    class RefusingFM(FakeFM):
+        refuse = True
+
+        def upload_file(self, local, remote, overwrite=False):
+            if self.refuse and os.path.basename(remote) == "calc_package.pdf":
+                return False
+            return super().upload_file(local, remote, overwrite)
+
+    fm = RefusingFM()
+    store = sp.SharePointStore(file_manager=fm)
+    s = store.mirror_conversation(tid, root=root)
+    assert any("calc_package.pdf" in e and "refused" in e
+               for e in s["errors"])
+    fm.refuse = False
+    s2 = store.mirror_conversation(tid, root=root)
+    assert s2["uploaded"] == 1 and not s2["errors"]
+    assert fm.uploads[-1][1].endswith("files/calc_package.pdf")

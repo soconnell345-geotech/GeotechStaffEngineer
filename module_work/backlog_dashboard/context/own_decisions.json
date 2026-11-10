@@ -3095,5 +3095,59 @@
       "BACKLOG.md OWN-132",
       "C:/dev/tmp/doc_review/C.md (local)"
     ]
+  },
+  "OWN-133": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "On Tiny Apps, should the figure helper stay limited to the fixed plotting tool (no plotting code written by the model) until the box that code runs in has an operating-system layer?",
+    "why": "On the App Service one process serves every tester and holds everyone's files and the app's settings. The box that runs model-written plotting code limits Python; it is not an operating-system boundary. A document can ask the model for code, so on a shared host that box is the only thing between one tester's upload and everyone's files.",
+    "background": "You chose \"on everywhere\" for the figure helper and its plotting code on 2026-10-15 (GM-92). The 2026-11-10 deployment review confirmed what INF-16 already warned of, and the wrapper's app.py now turns the code off on the App Service unless an app setting turns it on. The figure helper still draws, with the fixed plotting tool (plot_data). Nothing changes on a host one person uses: your Foundry app keeps it on.",
+    "options": [
+      {
+        "label": "Keep it off on Tiny Apps",
+        "effect": "Testers still get figures, drawn with the fixed plotting tool. Unusual figure types the fixed tool cannot draw are not available there until INF-16 is built."
+      },
+      {
+        "label": "Turn it back on",
+        "effect": "Set the app setting GEOTECH_PLOT_CODE=1. Testers get every figure type; a crafted document could reach other testers' files or the app's settings."
+      }
+    ],
+    "recommendation": "Keep it off on Tiny Apps. The figures testers ask for in a document review (a schedule as a chart, a comparison) are within the fixed tool, and the setting is one line to change later.",
+    "if_no_answer": "It stays off on Tiny Apps.",
+    "message_to_send": null,
+    "unblocks": [
+      "INF-16"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-133",
+      "module_work/docreview_review_2026-11-10/REVIEW.md section 1.1"
+    ]
+  },
+  "OWN-134": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Release the deployment review's fixes now, before the testers' round on Tiny Apps?",
+    "why": "The fixes are on master but not in what Tiny Apps installs. The released version has the faults the review found: one tester's session could reach another's files in several ways, a refused SharePoint upload was counted as saved, and a full-set review could spend three times its stated budget in one turn.",
+    "background": "Four steps, in order: planlens 0.15.1, aec-agent-core 1.0.1, aec-document-review 0.1.1 (pinning both), then the three version lines in the wrapper's packages.txt. The geotechnical app takes the new core at its next release. Your 2026-11-09 pre-approval covers Document Review's fix releases. The lead held these because three of the fixes change what a tester sees: a request with no sign-in header is refused with a message, a tester has no Working folder box, and the model writes no plotting code there (OWN-133).",
+    "options": [
+      {
+        "label": "Go: release all three",
+        "effect": "The lead releases planlens, the core and Document Review once CI is green, updates the wrapper's pins, and tells you the versions."
+      },
+      {
+        "label": "Wait: I want to change something first",
+        "effect": "Nothing is released. Say what to change in the notes."
+      }
+    ],
+    "recommendation": "Go. Every fix has a test, both package suites pass, and the testers' round should not start on the released version.",
+    "if_no_answer": "The fixes stay on master, unreleased; Tiny Apps keeps 0.1.0.",
+    "message_to_send": null,
+    "unblocks": [
+      "OWN-133"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-134",
+      "module_work/docreview_review_2026-11-10/REVIEW.md section 4"
+    ]
   }
 }

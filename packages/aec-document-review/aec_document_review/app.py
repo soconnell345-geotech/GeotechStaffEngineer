@@ -14,6 +14,7 @@ with a per-session LangGraph ``thread_id``.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 from typing import Optional
@@ -47,6 +48,14 @@ _THREAD_ROOT = _ROOT if os.path.abspath(_ROOT) != \
 if not st.session_state.get("_page_config_set"):
     st.set_page_config(page_title=_PROFILE.title, page_icon=_PROFILE.icon,
                        layout="wide")
+
+# The deployed host serves nobody it cannot name (identity.UNIDENTIFIED):
+# an unnamed request would share one folder and one model key with every
+# other unnamed request.
+if getattr(_IDENT, "refused", False):
+    st.error(identity.UNIDENTIFIED_MESSAGE.format(
+        header=identity.header_name()))
+    st.stop()
 
 
 # Idle websocket keepalive: a timed fragment that re-renders an invisible
@@ -465,20 +474,54 @@ _HAS_BUTTON_ICON = "icon" in __import__("inspect").signature(
 
 
 def _sp_auth_problem(summary, foundry: bool = False) -> bool:
-    """True when a sync/restore summary's errors smell like an expired or
-    rejected token (401/403/unauthorized/token/auth). On Foundry storage
-    also a refusal that carries none of those words (``PermissionDenied``,
-    ``"errorCode": "PERMISSION_DENIED"``) and an alias the workspace does
-    not define (``AliasNotDefined``)."""
+    """True when a sync/restore summary's errors say the storage refused
+    the app: an HTTP 401 or 403, "unauthorized", "forbidden", "access
+    denied", or a token the service calls invalid or expired. The errors
+    carry FILE NAMES, so a bare "403" or "token" is not enough (a file named
+    ``Spec_03403.pdf`` or ``token_ring.pdf`` is not a refusal). On Foundry
+    storage also a refusal that carries none of those words
+    (``PermissionDenied``, ``"errorCode": "PERMISSION_DENIED"``) and an
+    alias the workspace does not define (``AliasNotDefined``)."""
     try:
         text = " ".join(str(e) for e in (summary or {}).get("errors") or [])
     except Exception:                                  # noqa: BLE001
         return False
     low = text.lower()
-    keys = ("401", "403", "unauthor", "token", "authenticat", "forbidden")
-    if foundry:
-        keys += ("permissiondenied", "permission_denied", "aliasnotdefined")
-    return any(k in low for k in keys)
+    if _SP_REFUSED.search(low):
+        return True
+    return foundry and any(k in low for k in (
+        "permissiondenied", "permission_denied", "aliasnotdefined"))
+
+
+#: What a refusal looks like in an error text (lower case): the status as
+#: the clients print it, or the service's own words.
+_SP_REFUSED = re.compile(
+    r"http (?:error )?(?:401|403)\b"
+    r"|\b(?:401|403)\b[ :,-]*(?:client error|unauthori[sz]ed|forbidden)"
+    r"|unauthori[sz]ed|forbidden|access ?denied"
+    r"|invalidauthenticationtoken|invalid_client|aadsts\d+"
+    r"|token (?:is |has )?(?:expired|invalid)|(?:expired|invalid) token")
+
+
+def _sp_auth_text() -> str:
+    """What to do when SharePoint refused the app, for THIS host: with an
+    app registration (Tiny Apps) the secret or the site permission is the
+    app owner's to check; from a notebook the token refresher is re-run."""
+    try:
+        from aec_document_review import graph_sharepoint
+        registered = graph_sharepoint.configured()
+    except Exception:                                  # noqa: BLE001
+        registered = False
+    if registered or engine_config.is_tinyapps_deployment():
+        return ("SharePoint refused the app (401/403). Ask the app owner "
+                "to check the app registration's secret or certificate "
+                "(it may have expired) and its permission on the site; "
+                "Connection diagnostics shows the check. Then Sync now.")
+    return ("SharePoint rejected the app's token — it has probably "
+            "expired (the refresher lives in the launching "
+            "notebook and stops when that notebook clears). "
+            "Re-run `stage_sharepoint(...)` in the notebook, "
+            "then Sync now.")
 
 
 def _sp_configured() -> bool:
@@ -640,12 +683,7 @@ def _storage_status(store, thread_id, drawn: Optional[float] = None) -> None:
                    "SharePoint mirroring is on — this conversation's "
                    "files sync after each turn.")
     if _sp_auth_problem(sync, foundry=foundry) and not not_kept:
-        st.warning(_FOUNDRY_STORAGE_AUTH if foundry else
-                   "SharePoint rejected the app's token — it has probably "
-                   "expired (the refresher lives in the launching "
-                   "notebook and stops when that notebook clears). "
-                   "Re-run `stage_sharepoint(...)` in the notebook, "
-                   "then Sync now.")
+        st.warning(_FOUNDRY_STORAGE_AUTH if foundry else _sp_auth_text())
     # A timed run comes a poll or more after the page drew the fragment.
     if drawn is not None and time.time() - drawn >= _STORAGE_POLL_S / 2 \
             and not _storage_busy(store, thread_id):
@@ -920,16 +958,21 @@ with st.sidebar:
     # cards). Point it elsewhere (e.g. a project folder) and a durable copy is
     # still kept with the conversation. Persisted per conversation; applied to
     # the tool default-output-dir env each render so the next turn saves here.
+    # On a host shared by several people the folder is always the
+    # conversation's own (core.working_dir_for), and the box is not drawn: a
+    # typed path would bind any folder on the server, another person's too.
     _wd = core.working_dir_for(ss.thread_id)
-    _wd_in = st.text_input(
-        "Working folder (agent saves land here)", value=_wd,
-        key=f"workdir_{ss.thread_id}",
-        help="Calc packages, plots and saved files default into this folder. "
-             "Default is the conversation's files/ dir (kept with the chat, "
-             "shown as download cards). Clear the box to reset to that default.")
-    if (_wd_in or "").strip() != _wd:
-        core.set_working_dir(ss.thread_id, _wd_in)
-        st.rerun()
+    if not _IDENT.multi_user and not core._shared_host():
+        _wd_in = st.text_input(
+            "Working folder (agent saves land here)", value=_wd,
+            key=f"workdir_{ss.thread_id}",
+            help="Calc packages, plots and saved files default into this "
+                 "folder. Default is the conversation's files/ dir (kept "
+                 "with the chat, shown as download cards). Clear the box to "
+                 "reset to that default.")
+        if (_wd_in or "").strip() != _wd:
+            core.set_working_dir(ss.thread_id, _wd_in)
+            st.rerun()
     core.apply_default_output_dir(_wd)
     # ...and bound to THIS script run's context, which the tools read first:
     # the env var is process-wide and another session's rerun repoints it
@@ -1326,7 +1369,7 @@ with st.sidebar:
                      if not _q or _q in r["name"].lower()]
             if _sp_listed and not _remote:
                 st.caption(f"Nothing mirrored yet (or {_sp_label} could not "
-                           "be listed — check the token).")
+                           "be listed — Connection diagnostics shows why).")
             elif _remote:
                 st.caption(f"{len(_hits)} of {len(_remote)} mirrored "
                            "conversations" + (" match" if _q else ""))
@@ -1367,9 +1410,8 @@ with st.sidebar:
                     st.error("Restore failed: "
                              + "; ".join(_rr.get("errors") or ["unknown"]))
                 if _sp_auth_problem(_rr, foundry=_sp_foundry):
-                    st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry else
-                               "Looks like an expired token — re-run "
-                               "`stage_sharepoint(...)` in the notebook.")
+                    st.warning(_FOUNDRY_STORAGE_AUTH if _sp_foundry
+                               else _sp_auth_text())
     elif _not_kept:
         # Foundry with no usable dataset: a short block rather than none,
         # while every conversation stays in the container.

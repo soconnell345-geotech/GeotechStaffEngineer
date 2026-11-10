@@ -47,8 +47,12 @@ MARKUP_AUTHOR_ENV = "GEOTECH_MARKUP_AUTHOR"
 DEFAULT_MARKUP_AUTHOR = "Document Review (AI draft)"
 
 # DOMAIN\user — Windows account names cannot contain " / \ [ ] : ; | = , + * ? < >
+# (and no control character). Anything else is a name: an apostrophe, an
+# accented letter. Folder and secret names are made from it by rules of
+# their own (``Identity.key``, ``tinyapps_keys.tester_suffix``).
 _PRINCIPAL = re.compile(
-    r"^(?P<domain>[A-Za-z0-9._-]{1,64})\\(?P<user>[A-Za-z0-9._@ -]{1,256})$")
+    r"^(?P<domain>[A-Za-z0-9._-]{1,64})\\"
+    r"(?P<user>[^\"/\\\[\]:;|=,+*?<>\x00-\x1f]{1,256})$")
 _UPN = re.compile(
     r"^(?P<user>[A-Za-z0-9._-]{1,256})@(?P<domain>[A-Za-z0-9._-]{1,255})$")
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -56,14 +60,21 @@ _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 @dataclass(frozen=True)
 class Identity:
-    """The caller. ``authenticated`` is False for :data:`ANONYMOUS` only."""
+    """The caller. ``authenticated`` is False for :data:`ANONYMOUS` and
+    :data:`UNIDENTIFIED` only."""
     domain: Optional[str]
     username: str
-    source: str            # "header" | "dev" | "email" | "none"
+    source: str            # "header" | "dev" | "email" | "none" | "unidentified"
 
     @property
     def authenticated(self) -> bool:
-        return self.source != "none"
+        return self.source not in ("none", "unidentified")
+
+    @property
+    def refused(self) -> bool:
+        """True for :data:`UNIDENTIFIED`: the deployed, shared host could not
+        tell who is calling, and the page serves nobody it cannot name."""
+        return self.source == "unidentified"
 
     @property
     def multi_user(self) -> bool:
@@ -112,6 +123,32 @@ class Identity:
 
 #: The caller nobody identified.
 ANONYMOUS = Identity(None, "anonymous", "none")
+
+#: A caller the DEPLOYED host could not name: the proxy header was missing,
+#: doubled or unreadable. On the App Service one process serves every tester,
+#: and without a name the request would get the folder and the model key
+#: every other unnamed request gets, so the page refuses it.
+UNIDENTIFIED = Identity(None, "unidentified", "unidentified")
+
+#: What the page shows a caller it refuses.
+UNIDENTIFIED_MESSAGE = (
+    "This app could not tell who you are: the sign-in header ({header}) was "
+    "missing from this request, or could not be read. Open the app from its "
+    "published address. If you did, tell the app owner: the web server in "
+    "front of the app is not passing a usable header (the app's log says "
+    "which).")
+
+
+def _deployed() -> bool:
+    """On the App Service: the platform's own ``WEBSITE_SITE_NAME`` is set
+    (always, there), or ``tinyapps_settings.app_env`` is ``azure``."""
+    if os.environ.get("WEBSITE_SITE_NAME", "").strip():
+        return True
+    try:
+        from aec_document_review import tinyapps_settings
+        return tinyapps_settings.app_env() == "azure"
+    except Exception:                                  # noqa: BLE001
+        return False
 
 
 def header_name() -> str:
@@ -176,7 +213,11 @@ def _streamlit_header_values() -> list:
 
 def current_identity() -> Identity:
     """Resolve the caller: proxy header, else ``DEV_IDENTITY``, else the
-    launcher-captured email, else :data:`ANONYMOUS`. Never raises."""
+    launcher-captured email, else :data:`ANONYMOUS`. Never raises.
+
+    On the deployed host the header is the ONLY source: without it the
+    answer is :data:`UNIDENTIFIED` (``DEV_IDENTITY`` is for a local run, and
+    is not read there)."""
     ident = from_header_values(_streamlit_header_values())
     if ident is not None:
         if ident.multi_user:
@@ -188,6 +229,10 @@ def current_identity() -> Identity:
             except Exception:                          # noqa: BLE001
                 pass
         return ident
+    if _deployed():
+        log.warning("No usable %s header on the deployed host: the request "
+                    "is not served", header_name())
+        return UNIDENTIFIED
     dev = os.environ.get(DEV_IDENTITY_ENV, "").strip()
     if dev:
         ident = parse_principal(dev, "dev")
@@ -203,7 +248,8 @@ def current_identity() -> Identity:
     return ANONYMOUS
 
 
-__all__ = ["Identity", "ANONYMOUS", "current_identity", "parse_principal",
+__all__ = ["Identity", "ANONYMOUS", "UNIDENTIFIED", "UNIDENTIFIED_MESSAGE",
+           "current_identity", "parse_principal",
            "from_header_values", "header_name", "DEFAULT_HEADER",
            "DEV_IDENTITY_ENV", "USER_EMAIL_ENV", "MARKUP_AUTHOR_ENV",
            "DEFAULT_MARKUP_AUTHOR"]

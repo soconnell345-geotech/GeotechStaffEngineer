@@ -125,6 +125,9 @@ class TurnScope:
         # the figures drawn this turn, by any helper or tool, and how often
         # (funhouse_agent.plot_box.figures; BACKLOG GM-151)
         self.figures: dict = {}
+        # the primary agent's model-call budget forced its last call
+        # (note_budget_reached): the turn's answer is final
+        self.budget_reached = False
         self._lock = threading.Lock()
 
     def note_full_result(self, call_id: Optional[str], text: str) -> None:
@@ -244,10 +247,17 @@ def current_helper() -> Optional[HelperRecord]:
 
 def note_budget_reached() -> None:
     """Called by a model-call budget when it forces its last call
-    (:class:`funhouse_agent.deep.limits.ModelCallBudgetMiddleware`)."""
+    (:class:`funhouse_agent.deep.limits.ModelCallBudgetMiddleware`).
+
+    A helper's budget is noted on its record; the primary's on the turn, so
+    the host does not start another pass with a fresh budget."""
     rec = _HELPER.get()
     if rec is not None:
         rec.budget_reached = True
+        return
+    scope = _TURN.get()
+    if scope is not None:
+        scope.budget_reached = True
 
 
 def _json(obj: Any) -> str:

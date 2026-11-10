@@ -1217,6 +1217,16 @@ def _turn_scope():
         return contextlib.nullcontext(None)
 
 
+def _budget_ended_turn() -> bool:
+    """The primary agent's model-call budget forced its last call in this
+    turn (``aec_agent_core.deep.limits``, noted on the turn's scope)."""
+    try:
+        from aec_agent_core.deep.keep_work import current_turn
+        return bool(getattr(current_turn(), "budget_reached", False))
+    except Exception:  # noqa: BLE001 - an older core: as before
+        return False
+
+
 def stream_turn(agent, messages: list, thread_id: str,
                 max_result_chars: int = 2000,
                 recursion_limit: Optional[int] = None,
@@ -1387,7 +1397,11 @@ def stream_turn(agent, messages: list, thread_id: str,
                 answer_parts[:] = [merge_continuation("".join(answer_parts),
                                                       pass_text)
                                    if continuations else pass_text]
+            # A pass the model-call budget ended is the turn's answer: a
+            # continuation would start a new budget (three passes were up to
+            # three budgets in one turn).
             if (continuations < MAX_AUTO_CONTINUES
+                    and not _budget_ended_turn()
                     and ends_mid_task(pass_text, saw_tool)):
                 continuations += 1
                 history = _history_after(run_state, added, work_messages,
@@ -1719,12 +1733,35 @@ def working_dir_for(thread_id: str, meta: Optional[dict] = None,
     if meta is None:
         meta = load_meta(thread_id, root)
     wd = (meta or {}).get("working_dir")
-    if wd and str(wd).strip():
+    # On a host shared by several people the folder is always the
+    # conversation's own: a stored path (typed, or carried in by a restored
+    # zip) could name any folder on the server, another person's too.
+    if wd and str(wd).strip() and not _shared_host():
         path = os.path.abspath(os.path.expanduser(str(wd).strip()))
     else:
         path = conversation_files_dir(thread_id, root)
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def _shared_host() -> bool:
+    """One process serves several people: the proxy named a caller, and the
+    tools are bound per turn (``aec_agent_core._fileio.require_turn_binding``)."""
+    try:
+        from aec_agent_core._fileio import turn_binding_required
+        return bool(turn_binding_required())
+    except Exception:  # noqa: BLE001 - an older core: a single-user host
+        return False
+
+
+def _under(path: str, folder: str) -> bool:
+    """``path`` is ``folder`` or inside it, links followed."""
+    try:
+        p = os.path.normcase(os.path.realpath(path))
+        f = os.path.normcase(os.path.realpath(folder))
+        return os.path.commonpath([p, f]) == f
+    except (ValueError, OSError):      # another drive, an unusable path
+        return False
 
 
 def set_working_dir(thread_id: str, path: Optional[str],
@@ -1854,10 +1891,19 @@ def import_reported_outputs(paths: Iterable[str], files_dir: str,
     ``IMPORT_MAX_BYTES`` are skipped. A same-named file with identical content
     is reused; different content gets ``_1``/``_2``... Returns
     ``{source_abs_path: destination_path}``.
+
+    Only a file in the working folder or the system's temporary folder is
+    copied. The paths come from the TEXT of tool results, and a tool result
+    can quote a document: a line in an uploaded file that reads like a save
+    report must not turn a server file (the process's settings, another
+    person's conversation) into a download. On a host shared by several
+    people the temporary folder is everybody's, and the tools save into the
+    conversation's own folder there, so only the working folder counts.
     """
     fd = os.path.abspath(files_dir)
     conv = os.path.dirname(fd)
     base = os.path.abspath(working_dir) if working_dir else fd
+    sources = (base,) if _shared_host() else (base, tempfile.gettempdir())
     skip = set()
     for p in exclude or ():
         try:
@@ -1872,6 +1918,8 @@ def import_reported_outputs(paths: Iterable[str], files_dir: str,
             continue
         if (src in skip or src in copied or not os.path.isfile(src)
                 or src.startswith(conv + os.sep)):
+            continue
+        if not any(_under(src, folder) for folder in sources):
             continue
         try:
             if os.path.getsize(src) > IMPORT_MAX_BYTES:
@@ -2178,10 +2226,9 @@ def friendly_turn_error(exc: BaseException, kept: Optional[str] = None) -> str:
         # error name and a LangChain documentation link); the raw text is in
         # the activity log.
         return ("The agent ran out of its steps for this turn before it "
-                "finished. For document-heavy or multi-part requests, raise "
-                "'Primary step cap (recursion limit)' under Behavior > "
-                "Advanced caps in the sidebar (e.g. 50-100) and re-ask, or "
-                "split the request across turns; "
+                "finished. Split the request across turns (one document or "
+                "one question at a time) and ask again; the step cap is "
+                "under Behavior > Advanced caps in the sidebar; "
                 + (kept if kept else "work done so far (downloads, saved "
                    "files) is kept."))
     kind = _busy_kind(exc)
@@ -2755,10 +2802,21 @@ def _rel_artifact(path, files_dir) -> str:
 
 def _resolve_artifact(ref, files_dir) -> str:
     """Inverse of ``_rel_artifact``: resolve a stored reference back to a path
-    under the (possibly relocated) conversation files dir."""
+    under the (possibly relocated) conversation files dir.
+
+    A relative reference never leaves the conversation folder, and on a host
+    shared by several people neither does an absolute one (a restored zip's
+    transcript is somebody's text): such a reference comes back as its file
+    name in the files dir."""
+    ref = str(ref)
+    conv = os.path.dirname(os.path.abspath(files_dir))
     if os.path.isabs(ref):
-        return ref
-    return os.path.join(files_dir, ref)
+        if not _shared_host() or _under(ref, conv):
+            return ref
+    elif _under(os.path.join(files_dir, ref), conv):
+        return os.path.join(files_dir, ref)
+    return os.path.join(files_dir,
+                        os.path.basename(ref.replace("\\", "/").rstrip("/")))
 
 
 def append_transcript(thread_id: str, entry: dict,
@@ -3145,7 +3203,13 @@ def load_attachments(thread_id: str, attachments: dict,
         return []
     out: List[Attachment] = []
     for key in keys or []:
+        # A key is a file in the files dir. The list is attachments.json,
+        # which a restored zip supplies: a key that names a file anywhere
+        # else (an absolute path, "../..") is not an attachment.
+        key = str(key)
         fpath = os.path.join(files_dir, key)
+        if not _under(fpath, files_dir):
+            continue
         try:
             with open(fpath, "rb") as fh:
                 data = fh.read()

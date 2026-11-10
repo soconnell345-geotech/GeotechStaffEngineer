@@ -104,6 +104,26 @@ CLOUDS: Dict[str, Tuple[str, str]] = {
 SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024
 #: Upload-session chunk: a multiple of 320 KiB, as Graph requires.
 CHUNK_SIZE = 10 * 320 * 1024
+#: Sends of one request while the service answers "throttled" or "busy",
+#: and the longest single wait between them (seconds). A wait the service
+#: names that is longer than this is not waited out: the call fails.
+BUSY_TRIES = 4
+BUSY_WAIT_MAX_S = 20.0
+#: After a throttled or busy call has failed, later calls are refused
+#: without being sent for as long as the service named, within these bounds
+#: (seconds). A conversation mirror holds the store's lock for all its
+#: files, and every other person's save waits behind it: it must not wait
+#: out each remaining file's sends behind one throttle.
+BUSY_HOLD_MIN_S = 30.0
+BUSY_HOLD_MAX_S = 300.0
+
+
+def _retry_after(exc: Any) -> float:
+    """The seconds the service's ``Retry-After`` names, or 0."""
+    try:
+        return max(float((exc.headers or {}).get("Retry-After")), 0.0)
+    except (TypeError, ValueError, AttributeError):
+        return 0.0
 
 #: The setting names CfA's engineers provision (env or Key Vault spelling).
 ENV_TENANT = "GRAPH_TENANT_ID"
@@ -646,35 +666,75 @@ class GraphFileManager:
     # -------------------------------------------------------------- plumbing
     def _send(self, req: urllib.request.Request, timeout: Optional[float] = None
               ) -> bytes:
-        try:
-            with urllib.request.urlopen(req, timeout=timeout or self._timeout) as r:
-                return r.read()
-        except urllib.error.HTTPError as exc:
-            detail = ""
+        """One HTTP request. A throttled call (429) is sent again after the
+        wait the service names, and so is a GET or PUT the service was too
+        busy for (503, 504): up to ``BUSY_TRIES`` sends in all, each wait
+        at most ``BUSY_WAIT_MAX_S``. When that fails, or the service names
+        a longer wait, the call fails and later calls are refused unsent
+        until the wait is over (``BUSY_HOLD_MIN_S`` to ``BUSY_HOLD_MAX_S``).
+        The error text names the address without its query, which on an
+        upload session carries a pre-authenticated token."""
+        shown = req.full_url.split("?", 1)[0]
+        held = getattr(self, "_busy_until", 0.0) - time.time()
+        if held > 0:
+            raise GraphError(
+                f"{req.get_method()} {shown} not sent: SharePoint asked the "
+                f"app to wait (HTTP 429 or 503 on an earlier call; about "
+                f"{held:.0f} s more)", status=429)
+        for attempt in range(BUSY_TRIES):
             try:
-                detail = exc.read().decode("utf-8", "replace")[:500]
-            except Exception:
-                pass
-            raise GraphError(f"{req.get_method()} {req.full_url} -> "
-                             f"HTTP {exc.code}: {detail}", status=exc.code)
-        except urllib.error.URLError as exc:
-            raise GraphError(f"{req.get_method()} {req.full_url} failed: "
-                             f"{exc.reason}")
+                with urllib.request.urlopen(
+                        req, timeout=timeout or self._timeout) as r:
+                    return r.read()
+            except urllib.error.HTTPError as exc:
+                again = exc.code == 429 or (
+                    exc.code in (503, 504)
+                    and req.get_method() in ("GET", "PUT"))
+                named = _retry_after(exc)
+                if again and attempt + 1 < BUSY_TRIES \
+                        and named <= BUSY_WAIT_MAX_S:
+                    time.sleep(named if named > 0 else
+                               min(float(2 ** attempt), BUSY_WAIT_MAX_S))
+                    continue
+                if again:
+                    self._busy_until = time.time() + min(
+                        max(named, BUSY_HOLD_MIN_S), BUSY_HOLD_MAX_S)
+                detail = ""
+                try:
+                    detail = exc.read().decode("utf-8", "replace")[:500]
+                except Exception:
+                    pass
+                raise GraphError(f"{req.get_method()} {shown} -> "
+                                 f"HTTP {exc.code}: {detail}", status=exc.code)
+            except urllib.error.URLError as exc:
+                raise GraphError(f"{req.get_method()} {shown} failed: "
+                                 f"{exc.reason}")
+        raise GraphError(f"{req.get_method()} {shown} failed")  # not reached
 
     def _request(self, method: str, url: str, data: Optional[bytes] = None,
                  content_type: str = "application/json",
                  extra_headers: Optional[Dict[str, str]] = None,
                  raw: bool = False) -> Any:
-        """One Graph call; parsed JSON, or bytes when ``raw``."""
+        """One Graph call; parsed JSON, or bytes when ``raw``. A 401 on a
+        token this manager still held as good (revoked, or the clock moved)
+        is answered with a new token and one more send."""
         if not url.startswith("http"):
             url = f"{self.graph_url}/v1.0/{url.lstrip('/')}"
-        headers = {"Authorization": f"Bearer {self._get_token()}"}
-        if data is not None:
-            headers["Content-Type"] = content_type
-        if extra_headers:
-            headers.update(extra_headers)
-        body = self._send(urllib.request.Request(url, data=data, headers=headers,
-                                                 method=method))
+        for renewed in (False, True):
+            token = self._get_token()       # its own failure is not retried
+            headers = {"Authorization": f"Bearer {token}"}
+            if data is not None:
+                headers["Content-Type"] = content_type
+            if extra_headers:
+                headers.update(extra_headers)
+            try:
+                body = self._send(urllib.request.Request(
+                    url, data=data, headers=headers, method=method))
+                break
+            except GraphError as exc:
+                if exc.status != 401 or renewed:
+                    raise
+                self._token = None
         if raw:
             return body
         return json.loads(body) if body else {}
@@ -955,9 +1015,11 @@ class GraphFileManager:
 
     def upload_file(self, local_path: str, path: str, overwrite: bool = False,
                     **_ignored) -> bool:
-        """Upload ``local_path`` to ``path``. False when the target exists and
-        ``overwrite`` is False (the caller's retry-with-a-new-name relies on
-        that), or when the upload fails; a missing local file raises."""
+        """Upload ``local_path`` to ``path``. False ONLY when the target
+        exists and ``overwrite`` is False (the caller's retry-with-a-new-name
+        relies on that). Any other failure raises :class:`GraphError`, as a
+        missing local file raises: a caller that does not read the result
+        (the conversation mirror) must not count a refused upload as saved."""
         with open(local_path, "rb") as fh:
             content = fh.read()
         drive_id, rest = self._split_path(path)
@@ -980,7 +1042,7 @@ class GraphFileManager:
                 return False
             log.error("SharePoint upload of %s -> %s failed: %s",
                       local_path, path, exc)
-            return False
+            raise
 
     def _ensure_folder(self, drive_id: str, folder: str) -> str:
         parent = self._request("GET", f"drives/{drive_id}/root")["id"]

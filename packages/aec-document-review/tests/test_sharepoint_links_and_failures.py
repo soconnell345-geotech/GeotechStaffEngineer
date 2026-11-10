@@ -398,3 +398,46 @@ class TestOneCopy:
             fh.write(b"%PDF other")
         _download(tree, path="uploaded references/Other notes.pdf")
         assert sorted(os.listdir(tree.work)) == ["Other notes.pdf"]
+
+
+# ---------------------------------------------------------------------------
+# "SharePoint refused the app": told from an error that only NAMES a file
+# with 403 in it (deployment review 2026-11-10). Names are made up.
+# ---------------------------------------------------------------------------
+
+def _page_names(*names):
+    """The named module-level functions and constants of ``app.py``, on
+    their own (the page itself needs a Streamlit session)."""
+    import ast
+    import re
+    path = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "aec_document_review", "app.py")
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read(), filename=path)
+    keep = [n for n in tree.body
+            if (isinstance(n, ast.FunctionDef) and n.name in names)
+            or (isinstance(n, ast.Assign) and any(
+                getattr(t, "id", None) in names for t in n.targets))]
+    assert len(keep) == len(names), [getattr(n, "name", None) for n in keep]
+    space = {"re": re}
+    exec(compile(ast.Module(body=keep, type_ignores=[]), path, "exec"), space)
+    return space
+
+
+def test_a_refusal_is_told_from_a_file_name_with_403_in_it():
+    refused = _page_names("_sp_auth_problem", "_SP_REFUSED")["_sp_auth_problem"]
+    assert refused({"errors": [
+        "notes.pdf: GraphError: PUT https://graph.example/v1.0/x -> "
+        "HTTP 403: {}"]})
+    assert refused({"errors": [
+        "HTTPError: 401 Client Error: Unauthorized for url"]})
+    assert refused({"errors": ["AADSTS7000222: the secret has expired"]})
+    assert refused({"errors": ["the token has expired"]})
+    # a name is not a refusal
+    assert not refused({"errors": ["Spec_03403.pdf: RuntimeError: boom"]})
+    assert not refused({"errors": ["token_ring.pdf: TimeoutError: timed out"]})
+    assert not refused({"errors": []})
+    assert not refused(None)
+    # Foundry storage refuses in its own words
+    assert refused({"errors": ["PermissionDenied"]}, foundry=True)
+    assert not refused({"errors": ["PermissionDenied"]})

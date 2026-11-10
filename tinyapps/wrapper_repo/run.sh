@@ -1,7 +1,8 @@
 #!/bin/bash
 # App Service startup (CfA Streamlit starter template, 2026-09-17): install
 # packages from the internal feed, then run the app. The App Services team
-# fills in the published origin below at deployment.
+# gives the published origin at deployment: the app setting APP_ORIGINS, or
+# the CHANGE-ME line below.
 APP_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # How our code arrives (README, "Choosing how the code arrives"). The app
@@ -50,30 +51,60 @@ pip_install() {
     fi
 }
 
+INSTALL_OK=1
 case "$APP_SOURCE" in
     source)
         echo "Code route: source ($SRC_DIR first on PYTHONPATH; $HOW)"
         REQS=(-r "$APP_DIR/requirements-thirdparty.txt")
         [ -f "$SRC_DIR/requirements.txt" ] && REQS+=(-r "$SRC_DIR/requirements.txt")
         echo "Installing Python packages: third-party pins (+ app_src/requirements.txt)..."
-        pip_install "${REQS[@]}"
+        pip_install "${REQS[@]}" || INSTALL_OK=0
         export PYTHONPATH="$SRC_DIR${PYTHONPATH:+:$PYTHONPATH}"
         ;;
     wheel)
         echo "Code route: wheel (${WHEELS[*]##*/}; $HOW)"
         echo "Installing Python packages: our wheels + third-party pins..."
-        pip_install "${WHEELS[@]}" -r "$APP_DIR/requirements-thirdparty.txt"
+        pip_install "${WHEELS[@]}" -r "$APP_DIR/requirements-thirdparty.txt" || INSTALL_OK=0
         ;;
     nexus)
         echo "Code route: nexus (packages.txt from the feed; $HOW)"
         echo "Installing Python packages from packages.txt..."
-        pip_install -r "$APP_DIR/packages.txt"
+        pip_install -r "$APP_DIR/packages.txt" || INSTALL_OK=0
         ;;
 esac
 
+# The published address(es): every URL the browser SHOWS for this app. Set
+# the app setting APP_ORIGINS (several: separate them with a space or a
+# comma), or replace https://CHANGE-ME on the next line. The app setting
+# wins, and survives an update of this file.
+PUBLISHED_ORIGINS="${APP_ORIGINS:-https://CHANGE-ME}"
+ORIGIN_ARGS=()
+# split on commas and spaces; each address is taken as written (no file-name
+# matching on a "*")
+IFS=', ' read -r -a ORIGIN_LIST <<< "$PUBLISHED_ORIGINS"
+for origin in "${ORIGIN_LIST[@]}"; do
+    [ -n "$origin" ] && ORIGIN_ARGS+=(--server.corsAllowedOrigins "$origin")
+done
+if [ ${#ORIGIN_ARGS[@]} -eq 0 ] || [[ "$PUBLISHED_ORIGINS" == *CHANGE-ME* ]]; then
+    echo "WARNING: the published address is not set (APP_ORIGINS, or https://CHANGE-ME in run.sh). Through IIS the app will start but the page will not load: Streamlit rejects the browser's WebSocket." >&2
+fi
+
 if [ "${APP_DRY_RUN:-}" = "1" ]; then
+    echo "DRY RUN: origins ${ORIGIN_ARGS[*]}"
     echo "DRY RUN: PYTHONPATH=${PYTHONPATH:-} python -m streamlit run $APP_DIR/app.py --server.port ${PORT:-8000} ..."
     exit 0
+fi
+
+# A failed install (the feed unreachable, a pin the feed does not hold) is
+# said here, in the log's own words, instead of an import error later. The
+# app still starts when an earlier install left everything it needs.
+if [ "$INSTALL_OK" != "1" ]; then
+    echo "ERROR: the package install failed (see pip's lines above). Usual causes: PIP_INDEX_URL does not reach the Nexus feed, or the feed does not hold a pinned version." >&2
+    if python -c "import streamlit, aec_document_review" 2>/dev/null; then
+        echo "WARNING: starting with the packages already installed; they may be older than this repo pins." >&2
+    else
+        fail "the app cannot start: its packages are not installed. Fix the install and restart the app."
+    fi
 fi
 
 echo "Starting Streamlit..."
@@ -81,7 +112,8 @@ echo "Starting Streamlit..."
 # the container (503) if nothing answers there; Streamlit's own default is 8501.
 #
 # --server.corsAllowedOrigins must list every URL the browser SHOWS for this
-# app (the IIS-published ones, one flag per origin). Through IIS/ARR the
+# app (the IIS-published ones, one flag per origin; built above from
+# APP_ORIGINS or the CHANGE-ME line). Through IIS/ARR the
 # browser's Origin is the published URL while Streamlit sees the internal App
 # Service hostname, and without this flag Streamlit rejects the WebSocket
 # ("Rejecting WebSocket connection with disallowed Origin or Host header") —
@@ -103,5 +135,4 @@ exec python -m streamlit run "$APP_DIR/app.py" \
     --browser.gatherUsageStats false \
     --client.toolbarMode viewer \
     --server.fileWatcherType none \
-    --server.corsAllowedOrigins "https://CHANGE-ME"   # the published address CfA gives you
-    # --server.corsAllowedOrigins "https://CHANGE-ME-TOO"  # repeat per additional published origin
+    "${ORIGIN_ARGS[@]}"

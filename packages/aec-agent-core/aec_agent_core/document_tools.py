@@ -143,12 +143,24 @@ VISION_HINT = (
     "what it found"
 )
 
+def _number_setting(name: str, default: float) -> float:
+    """The number in the environment variable ``name``, else ``default``: a
+    value that is not a number (a typing slip in an app setting) must not
+    stop this module importing, which stops the app starting."""
+    try:
+        value = float((os.environ.get(name) or "").strip() or default)
+    except ValueError:
+        return float(default)
+    # "inf" and "nan" are floats, and neither is a count or a time
+    return value if value == value and abs(value) != float("inf") \
+        else float(default)
+
+
 #: Conversations whose toolkits are kept open at once; past it the least
 #: recently used idle one is closed (its handles reopen on their next use).
-MAX_LIVE_TOOLKITS = int(os.environ.get("GEOTECH_DOCUMENT_TOOLKITS", "8") or 8)
+MAX_LIVE_TOOLKITS = int(_number_setting("GEOTECH_DOCUMENT_TOOLKITS", 8))
 #: A conversation's toolkit idle this long (seconds) is closed.
-IDLE_CLOSE_S = float(os.environ.get("GEOTECH_DOCUMENT_TOOLKIT_IDLE_S", "1800")
-                     or 1800)
+IDLE_CLOSE_S = _number_setting("GEOTECH_DOCUMENT_TOOLKIT_IDLE_S", 1800)
 
 #: Seconds one ``find_like`` call may spend in all, read on every call
 #: (unset: planlens' default, 300 s; ``0`` or less: no limit).

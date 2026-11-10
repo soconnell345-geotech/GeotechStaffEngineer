@@ -199,3 +199,16 @@ def test_header_has_exactly_one_disclaimer_widget(monkeypatch, tmp_path):
 
 
 
+
+
+def test_the_deployed_page_refuses_a_request_it_cannot_name(monkeypatch,
+                                                            tmp_path):
+    """Deployment review 2026-11-10: on the App Service a request with no
+    sign-in header gets the message and nothing else (it was served as one
+    unnamed user, sharing a folder and the shared settings)."""
+    monkeypatch.setenv("WEBSITE_SITE_NAME", "madeup-site")
+    at = _mk_at(monkeypatch, tmp_path, _stream_ok).run()
+    assert not at.exception
+    assert any("could not tell who you are" in e.value for e in at.error)
+    assert not at.chat_input
+    assert "initialized" not in at.session_state

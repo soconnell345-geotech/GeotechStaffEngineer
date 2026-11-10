@@ -88,15 +88,30 @@ def test_an_all_skipped_call_writes_nothing_and_says_why(folder):
     assert _leftovers(folder.parent) == []
 
 
+def _earlier_copy(author="me") -> bytes:
+    """A marked copy an earlier call left: a PDF holding one mark of the
+    author's. planlens adds to an existing file only when it is one (since
+    PL-36 a file with no mark of the app's is left alone)."""
+    d = pymupdf.open()
+    page = d.new_page(width=612, height=792)
+    annot = page.add_rect_annot(pymupdf.Rect(72, 72, 144, 144))
+    annot.set_info(title=author)
+    annot.update()
+    data = d.tobytes()
+    d.close()
+    return data
+
+
 def test_an_all_skipped_append_leaves_the_existing_copy_as_it_was(folder):
-    (folder / "set_marked.pdf").write_bytes(b"%PDF earlier marks")
+    earlier = _earlier_copy()
+    (folder / "set_marked.pdf").write_bytes(earlier)
     out = document_tools.write_marked_copy(
         "set.pdf", [{"kind": "box", "page": 0, "comment": "x",
                      "bbox": [1, 1, 5, 5]}],
         "set_marked.pdf", True, "me", _all_skipped)
     assert "output_path" not in out
     assert "'set_marked.pdf' is unchanged" in out["note"]
-    assert (folder / "set_marked.pdf").read_bytes() == b"%PDF earlier marks"
+    assert (folder / "set_marked.pdf").read_bytes() == earlier
     assert _leftovers(folder.parent) == []
 
 

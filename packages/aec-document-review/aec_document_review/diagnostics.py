@@ -37,6 +37,17 @@ def _check(name: str, status: str, detail: str) -> dict:
     return {"name": name, "status": status, "detail": detail}
 
 
+def _streaming_switch() -> str:
+    """The setting that turns streaming off on this host's model route."""
+    try:
+        from aec_agent_core import engine_config
+        if engine_config.is_tinyapps_deployment():
+            return "GEOTECH_PROMPTER_DISABLE_STREAMING"
+    except Exception:                            # noqa: BLE001
+        pass
+    return "GEOTECH_FOUNDRY_DISABLE_STREAMING"
+
+
 def format_report(checks: List[dict]) -> str:
     """Plain-text rendering of a diagnostics run (one line per check + detail
     lines for anything that isn't a clean pass)."""
@@ -48,7 +59,15 @@ def format_report(checks: List[dict]) -> str:
                 lines.append(f"    {dl}")
         elif c["detail"]:
             lines.append(f"    {c['detail']}")
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    # The report is shown on the page and sent on to the app owner: a token
+    # or a secret's value an error text quoted does not go with it (the
+    # names of settings, which the report is for, stay).
+    try:
+        from aec_document_review.sharepoint_log import scrub
+        return scrub(text)
+    except Exception:                            # noqa: BLE001
+        return text
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +356,7 @@ def _stream_check(model: Any) -> dict:
             "streaming request", FAIL,
             f"{type(exc).__name__}: {exc}\n"
             "If the plain request PASSED, set "
-            "GEOTECH_FOUNDRY_DISABLE_STREAMING=1 in the app file — the app "
+            f"{_streaming_switch()}=1 in the app's settings — the app "
             "will fall back to non-streaming requests.")
     if not text.strip():
         return _check("streaming request", WARN,
@@ -413,6 +432,14 @@ def _upload_probe_check() -> dict:
                           "carries no browser session, so Streamlit refuses "
                           "it. Uploading from the browser works in the "
                           "published app (tested 2026-10-20).")
+        if engine_config.is_tinyapps_deployment():
+            # Streamlit's own cross-site check is on here (run.sh keeps it
+            # on), so a probe with no browser session is always refused.
+            return _check("upload endpoint (localhost probe)", PASS,
+                          detail + " — expected on this host: the probe "
+                          "carries no browser session, so Streamlit refuses "
+                          "it. It says nothing about uploads from the "
+                          "browser.")
         if any(s.endswith("403") for s in results):
             return _check("upload endpoint (localhost probe)", WARN,
                           detail + " — 403 WITHOUT the proxy: Streamlit-side "

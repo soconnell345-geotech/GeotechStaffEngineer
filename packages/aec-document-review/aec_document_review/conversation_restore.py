@@ -312,13 +312,19 @@ def _append_entry(stage: str, entry: dict) -> None:
 
 
 def _retag(stage: str, meta: dict, owner: Optional[str],
-           owner_name: Optional[str]) -> None:
+           owner_name: Optional[str], rewrite: bool = False) -> None:
     """Make the restored meta this person's: the owner fields are the ones
     this session tags (none on a single-user host), so the next mirror goes
-    to their own folder. Rewritten only when they differ."""
+    to their own folder. Rewritten only when they differ.
+
+    The zip's ``working_dir`` is dropped: it is a path on the machine the
+    conversation was saved from, and here it would bind whatever folder it
+    names. The restored conversation works in its own ``files/`` folder."""
     want = {"owner": owner, "owner_name": owner_name}
-    if all(meta.get(k) == v for k, v in want.items()):
+    if (not rewrite and all(meta.get(k) == v for k, v in want.items())
+            and not meta.get("working_dir")):
         return
+    meta.pop("working_dir", None)
     for k, v in want.items():
         if v:
             meta[k] = v
@@ -377,6 +383,20 @@ def _restore(data, root, replace, zip_name, page, owner, owner_name, busy,
             raise Refused(f"It is a conversation of the {their_page!r} page; "
                           "restore it there.")
         target_root = os.path.abspath(root or core.data_root())
+        dest = core.conversation_dir(tid, target_root)
+        here = os.path.isfile(os.path.join(dest, "meta.json"))
+        renamed = bool(owner) and not here
+        if renamed:
+            # On a host shared by several people a zip restores as a COPY
+            # with an id of its own, unless this person already has that
+            # conversation (then it is theirs, and Replace applies). The
+            # process finds a conversation's folder and its running turn by
+            # id alone, so two people must never hold one id: a colleague's
+            # zip, restored, would otherwise answer into the colleague's
+            # conversation (review 2026-11-10).
+            tid = core.new_thread_id()
+            meta["thread_id"] = tid
+            dest = core.conversation_dir(tid, target_root)
         registered = core.thread_root(tid)
         if registered is not None and os.path.abspath(registered) != \
                 target_root:
@@ -385,8 +405,6 @@ def _restore(data, root, replace, zip_name, page, owner, owner_name, busy,
         result = Restore(status="restored", thread_id=tid,
                          title=meta.get("title"), partial=note is not None,
                          left_out=_left_out_paths(note or ""))
-        dest = core.conversation_dir(tid, target_root)
-        here = os.path.isfile(os.path.join(dest, "meta.json"))
         if here and not replace:
             result.status = "exists"
             result.message = (
@@ -400,7 +418,7 @@ def _restore(data, root, replace, zip_name, page, owner, owner_name, busy,
         stage = tempfile.mkdtemp(prefix=".restoring-", dir=target_root)
         try:
             _unpack(zf, files, stage, cap, result)
-            _retag(stage, meta, owner, owner_name)
+            _retag(stage, meta, owner, owner_name, rewrite=renamed)
             if note is not None:
                 _append_entry(stage, _note_entry(zip_name, note, when))
             if os.path.exists(dest):

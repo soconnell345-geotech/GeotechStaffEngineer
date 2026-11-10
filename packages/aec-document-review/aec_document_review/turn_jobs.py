@@ -104,6 +104,11 @@ def start_turn_job(agent, messages: list, thread_id: str,
         existing = _JOBS.get(thread_id)
         if existing is not None and not existing.done:
             return existing
+        # A finished turn a session has folded into its page is dropped
+        # here: its events and messages were otherwise held for the life of
+        # the process, one entry per conversation ever run.
+        for tid in [t for t, j in _JOBS.items() if j.done and j.consumed]:
+            del _JOBS[tid]
         job = TurnJob(thread_id, ctx.get("prompt") or "")
         _JOBS[thread_id] = job
     worker = threading.Thread(
@@ -398,10 +403,12 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
             assistant_entry["error"] = turn_error
         elif final == "(no answer text)":
             assistant_entry["error"] = (
-                "The model returned no visible text. Open 'Connection "
-                "diagnostics' in the sidebar and run the tests — common "
-                "causes: a reasoning model spending the whole token budget "
-                "before any output (raise GEOTECH_WEBAPP_MAX_TOKENS), or the "
+                "The model returned no visible text. Ask again; a shorter "
+                "request (one document or one question) is the usual fix. "
+                "If it repeats, run 'Connection diagnostics' in the sidebar "
+                "and send the result to the app owner — common causes: a "
+                "reasoning model spending the whole token budget before any "
+                "output (the app setting GEOTECH_WEBAPP_MAX_TOKENS), or the "
                 "proxy rejecting a request parameter.")
 
         if kept is not None and kept.messages:
