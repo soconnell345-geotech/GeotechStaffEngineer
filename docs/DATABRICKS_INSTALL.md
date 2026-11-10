@@ -11,16 +11,17 @@ Last install log triaged line by line: **5.14.0, 2026-09-11** (clean). Installed
 and used on the cluster since: 5.20.0 (2026-09-18, the first scoring run),
 5.32.0 (2026-10-07, live checks 1 and 4) and 5.33.0 (2026-10-14, the
 owner's geotech-page sessions, on streamlit 1.65.0); no log was pasted for
-triage. The current release is **5.34.0** (2026-11-04, with planlens 0.14.0
-and geotech-references 1.5.0); its cluster install is not yet confirmed
-(§11).
+triage. The current release is **5.35.0** (2026-11-10, with planlens 0.15.0,
+geotech-references 1.6.0 and the new shared core `aec-agent-core` 1.0.0);
+neither
+its cluster install nor 5.34.0's is confirmed yet (§11).
 
 ---
 
 ## 1. The install
 
 ```python
-%pip install "geotech-staff-engineer==5.34.0"
+%pip install "geotech-staff-engineer==5.35.0"
 %restart_python
 ```
 
@@ -30,14 +31,17 @@ No extras, no pins, no patch cell. `[deep,full]` has not been needed since
 The restart is not optional: pip installs into a notebook-scoped environment
 that the already-running Python process cannot see.
 
-**The core, from the next release (the app split, BACKLOG INF-32).** Master
-pins the shared core `aec-agent-core` exactly, and since step 11 (a) the
-app imports its model connections and vision tools from it. A release
-from master waits for the core on PyPI and Nexus (step 12), then the same
-`%pip install` line brings it beside the app: expect
-`aec-agent-core-<version>` in the "Successfully installed" list. Installing
-from wheels instead (a test build) takes the core's wheel too; from a
-checkout, `pip install -e packages/aec-agent-core -e .`.
+**The core (from 5.35.0, the app split).** The app pins the shared core
+`aec-agent-core` exactly and imports its model connections, vision tools,
+guards and records from it. The core reaches PyPI (and then Nexus) before
+the app, so the same `%pip install` line brings it beside the app: expect
+`aec-agent-core-1.0.0` in the "Successfully installed" list. It
+requires nothing the app does not already require, so it pulls in no other
+package. Installing from wheels instead (a test build) takes the core's
+wheel too; from a checkout, `pip install -e packages/aec-agent-core -e .`.
+5.35.0 pins `aec-agent-core==1.0.0` and needs Python 3.11 or newer, as
+the core and deepagents do (the cluster runs 3.12). Document Review's own package,
+`aec-document-review`, is not part of this install.
 
 ---
 
@@ -45,12 +49,13 @@ checkout, `pip install -e packages/aec-agent-core -e .`.
 
 Three lines decide it. Find them and you're done:
 
-1. **`Successfully installed ... geotech-staff-engineer-5.34.0 ...`** — with
-   `planlens-0.14.0` and `geotech-references-1.5.0` in the same list.
-   `planlens-0.14.0` declares the same packages `planlens-0.4.0` did
-   (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz; only the
-   floors moved: numpy 1.26, PyMuPDF 1.27.2), so nothing new should appear
-   beside it.
+1. **`Successfully installed ... geotech-staff-engineer-5.35.0 ...`** — with
+   `planlens-0.15.0`, `geotech-references-1.6.0` and
+   `aec-agent-core-1.0.0` in the same list. `planlens-0.15.0` declares
+   the same packages `planlens-0.4.0` did (numpy, ezdxf, PyMuPDF,
+   opencv-python-headless, rapidfuzz; only the floors moved: numpy 1.26,
+   PyMuPDF 1.27.2), and the core requires nothing the app does not, so
+   nothing else new should appear beside them.
 2. **No `403` and no `quarantined` anywhere.**
 3. The final `ERROR: pip's dependency resolver ...` block lists **only** the
    conflicts in §3. That block is a *warning printed as ERROR* — pip says
@@ -196,12 +201,13 @@ verified:
 | `rapidfuzz` (via `planlens`, new at 5.18.0) | `>=3.9` — **no ceiling** | **3.14.6** expected | **New at 5.18.0.** Arrives with planlens 0.4.0, which moved it into its core; it is not an app dependency. Cleared the Nexus probe 2026-09-16 at 3.14.6. MIT, and it pulls **no dependencies of its own** — a C++ extension with prebuilt wheels, so it cannot disturb the numpy or streamlit resolution. |
 | `numpy` | `>=1.26` (was `>=2.0` to 5.33.0; INF-53, for Foundry's numpy 1.26) | 2.4.6 | §4; still lands on 2.4.6 here, PyNiteFEA needs >=2.4 |
 | `streamlit` | `>=1.39` | 1.65.0 (2026-10-14) | fine; tested to 1.66.0, the drift warning's range is `<1.67` |
-| `openai` | `<3.29.1` (was `<3` to 5.33.0) | 2.54.0 on 5.33.0; 3.29.0 expected on 5.34.0 | bounded; 3.29.0 tested offline (§5, §6) |
+| `openai` | `<3.29.1` (was `<3` to 5.33.0) | 2.54.0 on 5.33.0; 3.29.0 expected from 5.34.0 | bounded; 3.29.0 tested offline (§5, §6) |
 | agent stack | ranges `<0.7.25` / `<1.4.6` / `<1.3` (were `<0.8` / `<1.4` / `<1.3`) | ceilings | §6 |
-| `PyMuPDF` | `>=1.27.2,<2` (app; planlens 0.14 has no cap) | 1.27.x | the cap stays until INF-18's import probe on the hosts |
+| `PyMuPDF` | `>=1.27.2,<2` (app and core; planlens 0.14 and 0.15 have no cap) | 1.27.x | the cap stays until INF-18's import probe on the hosts |
+| `pystrata` / `pyrvt` | from 5.35.0, by Python version: `pystrata>=0.5,<0.6` and `pyrvt<0.9` below 3.13, `pystrata>=0.6,<0.7` from 3.13 (was `pystrata>=0.5`) | 0.5.x (Python 3.12) | **Bounded on purpose.** pystrata 0.6.0 (2026-11-05) needs Python 3.13 and renamed the site classes the site-response tools build; pyrvt 0.9.0 dropped a class pystrata 0.5.4 imports. The tools build the same soils on either pystrata (`pystrata_agent/compat.py`). The cluster's Python 3.12 stays on 0.5. |
 
-**No planlens since 0.4.0 has added a third-party package** (0.14.0, the
-5.34.0 pin, included). Every one declares exactly what 0.4.0 declared —
+**No planlens since 0.4.0 has added a third-party package** (0.15.0, the
+5.35.0 pin, included). Every one declares exactly what 0.4.0 declared —
 numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz, with `ocr` and
 `mcp` as extras we do not install — so a log should read like 5.18.0's with
 the new planlens in place of `planlens-0.4.0` and nothing else moved. The
@@ -302,8 +308,8 @@ Stop and investigate only for these:
 - `ResolutionImpossible`, or backtracking that ends in an error rather than
   `Successfully installed`.
 - A package we depend on **failing to build** a wheel.
-- `geotech-staff-engineer`, `planlens`, or `geotech-references` resolving to an
-  **older version than requested**.
+- `geotech-staff-engineer`, `aec-agent-core`, `planlens`, or
+  `geotech-references` resolving to an **older version than requested**.
 - After install: the agent failing **every** question with a recursion error
   (§6).
 - A dependency at a **new major version** not in §7's table.
@@ -329,6 +335,7 @@ Stop and investigate only for these:
 | 5.20.3 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.2 plus the strict-schema fix in `report_ingest/engine.py` (pydantic's `default`/`minItems`/`maxItems` stripped from every structured-output schema; OpenAI refused the readers' schemas before any token was spent). Expect the 5.20.0 log exactly. Superseded by 5.20.4. |
 | 5.20.4 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.3 plus tuple-to-array in `strict_schema` (the readers' four-number bbox). Expect the 5.20.0 log exactly. Superseded by 5.20.5. |
 | 5.20.5 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.4 plus a wait-and-retry on the provider's rate limit (429) in `report_ingest/engine.py`. Expect the 5.20.0 log exactly. Superseded by 5.21.0. |
+| 5.35.0 | — | Not yet installed. **Released with planlens 0.15.0 and geotech-references 1.6.0 (both on PyPI 2026-11-09) and the new shared core `aec-agent-core`, published first** (tags `v5.35.0`, `v0.15.0`, `v1.6.0`, `core-v1.0.0`; the Nexus mirror delivers them a day or two after PyPI). Pins `planlens>=0.15`, `geotech-references>=1.6.0` and `aec-agent-core==1.0.0`. **Python 3.11 or newer**, as the core and deepagents need (`requires-python` was 3.10; the cluster runs 3.12). **Dependency changes:** one new package of ours, `aec-agent-core`, which requires only packages the app already requires (§1); pystrata by Python version, `pystrata>=0.5,<0.6` and `pyrvt<0.9` below Python 3.13 (the cluster) and `pystrata>=0.6,<0.7` from 3.13 (§7); planlens 0.15.0 and geotech-references 1.6.0 add no package. **No new third-party package.** Expect the 5.34.0 log (as its row below describes) with `aec-agent-core-1.0.0` added, `pyrvt` below 0.9 and the three new versions; `anthropic` must NOT appear. A deployment's own references and instructions are not part of the install (§9). Replace this row when the cluster install is confirmed. |
 | 5.34.0 | — | Not yet installed. **Released with planlens 0.14.0 and geotech-references 1.5.0** (tags `v5.34.0`, `v0.14.0`, `v1.5.0`; the Nexus mirror delivers them a day or two after PyPI). Pins `planlens>=0.14`, `geotech-references>=1.5.0`. **Dependency changes, no new third-party package:** `python-ags4` leaves core for the `[ags4]` extra and `openpyxl` becomes direct (§8); `pyrotd` is dropped; numpy's floor is 1.26 (still lands on 2.4.6 here, §4); the agent-stack caps are deepagents `<0.7.25`, langchain `<1.4.6`, openai `<3.29.1` (§6), so expect openai 3.29.0 and langchain 1.4.5 in the log; PyMuPDF `>=1.27.2,<2`. planlens 0.14.0 declares the same packages as 0.4.0. Expect the 5.33.0 log without `python-ags4` and with those versions. Replace this row when the cluster install is confirmed. |
 | 5.33.0 | 2026-10-14 | **Installed and used on the cluster** (the owner's geotech-page sessions of 2026-10-14, on streamlit 1.65.0; the install log was not pasted for triage). **RELEASED to PyPI 2026-10-09 (tag `v5.33.0`) with planlens 0.13.0 and geotech-references 1.4.1 — THIS IS THE VERSION TO INSTALL**, once the Nexus mirror delivers all three a day or two later. **Pins raised to `planlens>=0.13` and `geotech-references>=1.4.1`; no new third-party package** (python-docx and openpyxl were already installed; planlens 0.13.0 declares exactly what 0.12.0 did). Expect the 5.32.1 log with `geotech_staff_engineer-5.33.0`, `planlens-0.13.0` and `geotech_references-1.4.1`; `anthropic` must NOT appear. What changed, briefly: per-user isolation and per-tester Prompter keys for Tiny Apps; one final answer per turn; Word/Excel in and out; tool errors never end a turn; faster page reads; markups right on rotated sheets; the GEC-12 Fig 7-15 and sheet-pile water-table fixes (HANDOFF §0a-current). As master stands (2026-10-15), the next release adds no third-party package; `python-ags4` leaves the core dependencies for the `[ags4]` extra and `openpyxl` becomes direct (§8). |
 | 5.32.1 | — | **RELEASED to PyPI 2026-10-08 (tag `v5.32.1`) with planlens 0.12.0**, superseded by 5.33.0 (install 5.33.0), once the Nexus mirror delivers both a day or two later. **Pin raised to `planlens>=0.12`; no new third-party package** (planlens 0.12.0 declares exactly what 0.11.0 did). Expect the 5.32.0 log with `geotech_staff_engineer-5.32.1` and `planlens-0.12.0`; `anthropic` must NOT appear. New at runtime: `find_like` runs on a numpy matcher where OpenCV cannot load (Funhouse and Foundry are FIPS hosts), and the vision probe makes a fifth small call. Replace this row when the cluster install is confirmed. |

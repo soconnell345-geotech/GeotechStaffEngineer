@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "5.34.0"
+version = "5.35.0"
 description = "Python toolkit for LLM-based geotechnical engineering agents - 33 analysis modules covering foundations, piles, slopes, structural section/RC/frame analysis, reliability, seismic site response, excavation support, pavement design (AASHTO 1993 / UFC 3-250-01), subsurface characterization (DIGGS/GEF/AGS4), FEM, drawing & profile rendering, and a cited public-domain reference layer."
 readme = "README.md"
 license = "MIT"
@@ -13,7 +13,9 @@ license = "MIT"
 # "Professional-use disclaimer" section is the PyPI-page notice; DISCLAIMER.md is
 # the full text a `pip download` / installed copy carries alongside it.
 license-files = ["LICENSE", "DISCLAIMER.md"]
-requires-python = ">=3.10"
+# 3.11 from 5.35.0 (was 3.10): the core aec-agent-core and deepagents need
+# it, and a 3.10 install otherwise failed in the resolver on the core.
+requires-python = ">=3.11"
 authors = [
     {name = "Sean O'Connell", email = "soconnell345@gmail.com"},
 ]
@@ -22,7 +24,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
 
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -40,11 +41,12 @@ dependencies = [
     "geotech-references>=1.6.0",
     # The shared core of the app split (INF-26 / INF-32; built from
     # packages/aec-agent-core in this repository), pinned EXACTLY: the two
-    # move together. 1.0.0 is the core's first real release (step 12; set at
-    # step 13, INF-33): the lead publishes it (tag core-v1.0.0) BEFORE the
-    # app release that carries this pin. Until it is on PyPI, install it
-    # first: `pip install -e packages/aec-agent-core` (CI does). publish.yml
-    # stops an app release while it is missing.
+    # move together. REQUIRED FROM 5.35.0 (2026-11-10): 1.0.0 is the core's
+    # first real release (step 12; set at step 13, INF-33), published by its
+    # tag core-v1.0.0 BEFORE the app's tag. It needs Python 3.11 or later,
+    # as the app now declares. From a checkout, install it first:
+    # `pip install -e packages/aec-agent-core` (CI does). publish.yml stops
+    # an app release while the pinned version is missing from PyPI.
     # It adds no package of its own: everything it requires is a core
     # requirement here too. webapp/tests/test_wheels.py keeps this pin
     # equal to the core's version.
@@ -218,7 +220,10 @@ dependencies = [
     # installs on Foundry's numpy 1.26 from PyPI (INF-53). planlens 0.14 raises its PyMuPDF floor
     # to 1.27.2 (the app's own floor already) and drops its cap; the app
     # keeps `<2` above until INF-18's host probe. No new package.
-    # RAISED TO `planlens>=0.15`: 0.15 carries planlens.review, the document tools the app binds to (PL-29 (b)).
+    # RAISED TO `planlens>=0.15` (5.35.0, 2026-11-09): 0.15 carries
+    # planlens.review, the document tools the app binds to (PL-29 (b)), and
+    # reads `Label (unit): value` as a quantity (PL-11). Dependencies again
+    # IDENTICAL: no new package.
     "planlens>=0.15",
     # -- structural round 1 (owner, 2026-09-03): section/RC/frame analysis --
     # sectionproperties and concreteproperties were REMOVED in 5.13.0: both

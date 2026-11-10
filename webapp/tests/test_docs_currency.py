@@ -30,10 +30,11 @@ ROOT = pathlib.Path(__file__).parents[2]
 def _version() -> str:
     """The ``[project]`` version from pyproject.toml, read with a regex.
 
-    Deliberately NOT tomllib: that is 3.11+ stdlib while pyproject declares
-    ``requires-python = ">=3.10"``, and on 3.10 the ImportError would take this
-    whole file out at collection — silently disabling every guard in it, which
-    is the drift it exists to catch.
+    Deliberately NOT tomllib: written while pyproject declared
+    ``requires-python = ">=3.10"`` (3.11 since 5.35.0), when on 3.10 the
+    ImportError would have taken this whole file out at collection —
+    silently disabling every guard in it, which is the drift it exists to
+    catch. The regex still works and stays.
     """
     text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     for line in text.split("[project]", 1)[-1].splitlines():

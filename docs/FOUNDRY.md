@@ -28,8 +28,8 @@ Everything lives in the pip package; the Foundry side is one workspace, a
       dependencies. Foundry resolved numpy 2.5.4 on Python 3.12.15 in the
       Code Workspace; a transforms repo holds numpy at 1.26.4 (next item).
    2. **Upload the four wheels**: the app, its core `aec-agent-core`,
-      planlens and geotech-references. A set built from master since the
-      app split's step 11 (a) (BACKLOG INF-32) needs the core's wheel: the
+      planlens and geotech-references. A set for 5.35.0 or later (or built
+      from master since the app split's step 11 (a)) needs the core's wheel: the
       app imports its model connections and vision tools from it, and pins
       it exactly (`aec-agent-core==<version>`; with `--no-deps` pip does
       not say it is missing, the app fails at import). Sets for 5.34.0 and

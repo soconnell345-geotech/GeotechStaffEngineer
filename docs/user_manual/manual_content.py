@@ -1339,7 +1339,7 @@ VALIDATION_ROWS = [
 
 # Version history (Appendix B)
 VERSION_HISTORY = [
-    ("5.4.0 &ndash; 5.34.0", "2026-07 &ndash; 2026-11",
+    ("5.4.0 &ndash; 5.35.0", "2026-07 &ndash; 2026-11",
      "Not yet summarised in this appendix. Each release&rsquo;s notes, including the changes that "
      "move a calculation&rsquo;s answer, are in the repository&rsquo;s <code>HANDOFF.md</code> and "
      "<code>CLAUDE.md</code>; the method and parameter tables in this manual are generated from "
@@ -1504,7 +1504,8 @@ def _ch2_install(ctx):
 
     ctx.section("Local Python")
     ctx.para(
-        "Requires Python 3.10+. The package is pure Python; the only heavy dependencies are numpy and "
+        "Requires Python 3.11 or newer (the shared core and deepagents need it). The package is pure "
+        "Python; the only heavy dependencies are numpy and "
         "scipy. For the LLM agent you need an engine (see the next chapter) and, for a Claude engine, "
         "an <code>ANTHROPIC_API_KEY</code> in the environment. Keys are read from the environment at "
         "run time &mdash; never pass them through a notebook cell or a chat transcript.")
