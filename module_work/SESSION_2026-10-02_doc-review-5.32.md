@@ -27,7 +27,7 @@ still holds. Session "document-review-architecture" (Claude Code, Opus 5.5).
   FDE's estimates).
 - **Data:** the report-ingest bundle (manifest, truth, templates.json) is NOT
   SBU (owner, 2026-10-01) — it may pass through this chat but never into a
-  commit. Material marked SBU (the IZD drawing set and its screenshots) never
+  commit. Material marked SBU (the penetrations drawing set and its screenshots) never
   goes to Anthropic and never into the public repos; it lives only under
   gitignored `raw/` folders. Internal hostnames/URLs never go into commits.
 - One subagent at a time; builders run suites in the FOREGROUND; gate on

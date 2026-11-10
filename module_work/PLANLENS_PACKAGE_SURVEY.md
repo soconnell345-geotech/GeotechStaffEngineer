@@ -321,7 +321,7 @@ branch with tests; nothing bumps the version until the owner says so.
   `filled: bool`; `queries.py` arrowhead/bubble finders can read it (no re-tuning —
   just carried as evidence; tuning is frozen).
 - Measure on: the private submittal PDF (local path under
-  `GeotechStaffEngineer/module_work/field_feedback/2026-09-09_nairobi-soe_v5.11.2/raw/files/`)
+  `GeotechStaffEngineer/module_work/field_feedback/2026-09-09_soe-review_v5.11.2/raw/files/`)
   and the ten Mecklenburg sheets
   (`GeotechStaffEngineer/module_work/drawing_ground_truth/mecklenburg/*.pdf`).
   Report: pages with viewports, ratio strings found, OCG names per sheet, count of

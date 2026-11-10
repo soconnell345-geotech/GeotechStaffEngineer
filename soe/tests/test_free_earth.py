@@ -1,6 +1,6 @@
 """Free-earth-support solvers (soe.free_earth) and the SOE wall analyses on them.
 
-Field feedback 2026-09-15 (Nairobi SOE re-run, item N2): the old cantilever
+Field feedback 2026-09-15 (SOE review re-run, item N2): the old cantilever
 used only the first soil layer and put the passive resultant at H + D/3 about
 the wall base (a 6.3 m wall in uniform sand got 2.5 m of embedment against
 6.9 m required); the braced embedment used d/3 and D/3 arms; the braced top
@@ -152,7 +152,7 @@ class TestCantileverClosedForm:
 # 3. Parity with sheet_pile.analyze_cantilever (layered, wet, surcharge)
 # ---------------------------------------------------------------------------
 
-_NAIROBI = [  # (thickness, gamma, phi, c): the 2026-09-15 session's profile
+_LAYERED = [  # (thickness, gamma, phi, c): the 2026-09-15 session's profile
     (1.5, 14.9, 0.0, 19.0), (2.5, 16.5, 33.0, 50.0), (2.0, 16.5, 33.0, 50.0),
     (0.3, 14.8, 26.0, 9.0), (2.7, 14.8, 26.0, 9.0), (1.0, 20.7, 38.0, 0.0),
     (20.0, 20.7, 38.0, 0.0),
@@ -162,7 +162,7 @@ _NAIROBI = [  # (thickness, gamma, phi, c): the 2026-09-15 session's profile
 @pytest.mark.parametrize("layers, gwt", [
     ([(30.0, 16.5, 33.0, 0.0)], None),
     ([(30.0, 16.5, 33.0, 0.0)], 4.0),
-    (_NAIROBI, 4.0),
+    (_LAYERED, 4.0),
 ])
 def test_cantilever_matches_sheet_pile(layers, gwt):
     from sheet_pile.cantilever import WallSoilLayer, analyze_cantilever
@@ -184,10 +184,10 @@ def test_cantilever_matches_sheet_pile(layers, gwt):
 # Regressions from the session
 # ---------------------------------------------------------------------------
 
-def _nairobi_geometry(phi_mid=33.0, c_mid=50.0, supports=()):
+def _layered_geometry(phi_mid=33.0, c_mid=50.0, supports=()):
     """The session's profile; "mid" = Stratum C, the two phi = 33 layers."""
     layers = []
-    for t, g, p, c in _NAIROBI:
+    for t, g, p, c in _LAYERED:
         if p == 33.0:
             p, c = phi_mid, c_mid
         layers.append(SOEWallLayer(t, g, p, c,
@@ -200,8 +200,8 @@ def _nairobi_geometry(phi_mid=33.0, c_mid=50.0, supports=()):
 def test_cantilever_uses_every_layer():
     """The session got Ka = Kp = 1.0 (the top clay layer) and 0.60 m of
     embedment, identical for every phi of the layers below."""
-    base = analyze_cantilever_excavation(_nairobi_geometry(33.0, c_mid=0.0))
-    weak = analyze_cantilever_excavation(_nairobi_geometry(26.0, c_mid=0.0))
+    base = analyze_cantilever_excavation(_layered_geometry(33.0, c_mid=0.0))
+    weak = analyze_cantilever_excavation(_layered_geometry(26.0, c_mid=0.0))
     assert base.required_embedment_m > 5.0
     assert base.Ka == pytest.approx(0.3905, abs=1e-3)  # the phi = 26 layer at H
     assert weak.max_moment_kNm_per_m > base.max_moment_kNm_per_m
@@ -215,15 +215,15 @@ def test_cohesive_stratum_c_carries_no_active_pressure():
     the same reason PYWall's per-layer active pressure for those layers is
     0.00 and only its sand envelope loads them (FINDINGS N17). Removing the
     cohesion does change the answer."""
-    a = analyze_cantilever_excavation(_nairobi_geometry(33.0, c_mid=50.0))
-    b = analyze_cantilever_excavation(_nairobi_geometry(26.0, c_mid=50.0))
-    c0 = analyze_cantilever_excavation(_nairobi_geometry(33.0, c_mid=0.0))
+    a = analyze_cantilever_excavation(_layered_geometry(33.0, c_mid=50.0))
+    b = analyze_cantilever_excavation(_layered_geometry(26.0, c_mid=50.0))
+    c0 = analyze_cantilever_excavation(_layered_geometry(33.0, c_mid=0.0))
     assert a.max_moment_kNm_per_m == pytest.approx(b.max_moment_kNm_per_m)
     assert c0.max_moment_kNm_per_m > a.max_moment_kNm_per_m
 
 
 def test_braced_embedment_about_the_lowest_support():
-    one = _nairobi_geometry(supports=[SupportLevel(depth=2.0)])
+    one = _layered_geometry(supports=[SupportLevel(depth=2.0)])
     d13 = compute_embedment(one, FOS_passive=1.3)
     d15 = compute_embedment(one, FOS_passive=1.5)
     assert 0 < d13 < d15
@@ -231,7 +231,7 @@ def test_braced_embedment_about_the_lowest_support():
     detail = embedment_detail(one, FOS_passive=1.3)
     assert detail.D == pytest.approx(d13)
     # two supports: the body starts at the lowest support (hinge method)
-    two = _nairobi_geometry(supports=[SupportLevel(depth=1.5),
+    two = _layered_geometry(supports=[SupportLevel(depth=1.5),
                                       SupportLevel(depth=4.0)])
     assert compute_embedment(two, FOS_passive=1.3) != pytest.approx(d13)
 

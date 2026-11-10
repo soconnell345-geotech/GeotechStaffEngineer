@@ -58,7 +58,7 @@ detailed Phase-E history; this file supersedes it.
 **0. 5.35.0 (2026-11-10) with planlens 0.15.0, geotech-references 1.6.0 and the new shared core `aec-agent-core` 1.0.0: everything on master since 5.34.0 (through ed929c7), ending with a deployment's own instructions (merge 4f22c00), Document Review's own package (the app split's step 13, merge 9411d1a; INF-33) and its Tiny Apps template (step 14, merge 47db5a3; INF-34).** The owner pre-approved the app split's releases on 2026-11-09 (the core, `aec-document-review`, planlens and the GSE release that pins the core). planlens 0.15.0 and geotech-references 1.6.0 went to PyPI on 2026-11-09, and the releases went out in this order on 2026-11-10: the core, tag `core-v1.0.0` at 972ffad (`publish-core.yml`; on PyPI); `aec-document-review` 0.1.0, tag `document-review-v0.1.0` at 2237b31 (`publish-document-review.yml`, which needs only the core and planlens on PyPI; the first upload, from 972ffad, was refused by PyPI for the classifier 'Framework :: Streamlit', which it does not list, nothing was uploaded, and `webapp/tests/test_classifiers.py` now checks every classifier; a clean venv installs it from PyPI with nothing geotech); then the app, tag `v5.35.0` on `release/5.35.0` (`publish.yml` checks the core is on PyPI). The Nexus mirror carries them a day or two later.
 - **The three items merged last (2026-11-10):**
   - a deployment's own instructions (merge 4f22c00, BACKLOG Done; `module_work/ref64/CHECK_INSTRUCTIONS.md`): `GEOTECH_INSTRUCTIONS` names a folder of `all.md` (every agent and helper) and one `<role>.md` per role (`main`, `references`, `reviewer`, `calc`, `figure`, `general-purpose`, `model_setup`, `report_library`, `report_ingest`); the text goes last in each prompt, once, under the built-in protected integrity rules and a fixed heading, so the built-in rules win and the guards in code are untouched; at most 4,000 characters a role, cut at a paragraph; an unreadable folder adds nothing and the record says why; report ingest gets the block on every model call; each `turn_start` (`engine.build.appended`) and the Connection diagnostics show what each role got, unused or misspelt files included. Unset, every prompt is byte-identical (fingerprints unchanged); no answer changes. Host setup: `docs/FOUNDRY.md`, `docs/DATABRICKS_INSTALL.md`, `webapp/README.md` §3, `tinyapps/TINYAPPS.md`; example folder `docs/examples/deployment_instructions/`.
-  - Document Review's own package (the app split's step 13, squash merge 9411d1a; INF-33; `module_work/inf33/CHECK_STEP13.md`): `aec-document-review` 0.1.0 in `packages/aec-document-review`, a copy of the review page, its shell, Tiny Apps entry, tests and 38 suite tasks with nothing geotech, pinning `aec-agent-core==1.0.0` and `planlens==0.15.0`; the core at 1.0.0 names no application (each page hands in its own name), and GSE pins it exactly. GSE's two pages are unchanged (fingerprints byte-identical) and GSE still carries both; its copy of the review files is frozen by hash (`webapp/tests/test_review_freeze.py`) until step 15, so review-page changes go to the package. The package's page differs from GSE's review page only in `plot_data` (no `reference_chart`) and `plot_code` (no standard chart lines). Neither sdist ships tests; a `document-review` CI job builds and tests the package on Python 3.11 and 3.12 with nothing geotech installed. Not a GSE dependency. Follow-up INF-69.
+  - Document Review's own package (the app split's step 13, squash merge 9411d1a; INF-33; `module_work/inf33/CHECK_STEP13.md`): `aec-document-review` 0.1.0 in `packages/aec-document-review`, a copy of the review page, its shell, Tiny Apps entry, tests and 38 suite tasks with nothing geotech, pinning `aec-agent-core==1.0.0` and `planlens==0.15.0`; the core at 1.0.0 names no application (each page hands in its own name), and GSE pins it exactly. GSE's two pages are unchanged (fingerprints byte-identical) and GSE still carries both; its copy of the review files is frozen by hash (`webapp/tests/test_review_freeze.py`) until step 15, so review-page changes go to the package. The package's page differs from GSE's review page only in `plot_data` (no `reference_chart`) and `plot_code` (no standard chart lines). Neither sdist ships tests; a `document-review` CI job builds and tests the package on Python 3.11 and 3.12 with nothing geotech installed. Not a GSE dependency. Its follow-up (field-session place names left in current files) is done, BACKLOG Done 2026-11-10: the names replaced, three field-feedback folders renamed, and `test_public_text` now guards the place words in every tracked file and path.
   - the Tiny Apps template for Document Review alone (the app split's step 14, merge 47db5a3; INF-34, open for the owner's first round; `module_work/inf34/CHECK_STEP14.md`): template and docs only, no package change; `tinyapps/TINYAPPS.md` has the first-round checklist.
 - **Branches and tags:**
   - geotech-references 1.6.0: tag `v1.6.0` (76f494d), on PyPI; the app's submodule already points there, so nothing to cut;
@@ -597,7 +597,7 @@ checkout must branch; release commits stage by exact path.
 
 **Why.** 5.29.0 wired `find_like` into both system prompts, the `! look:`
 hint on every drawing/scan result and the note on every stroke-lettered
-sheet, and turned the IZD case's specifics into rules. The owner: "This seems
+sheet, and turned the penetrations case's specifics into rules. The owner: "This seems
 kinda niche. The example I gave was one of hundreds that could be run. I
 think you may have overfit a solution to this one example. Not that we need
 to get rid of the tool, but can you confirm that the setup is such that this
@@ -665,7 +665,7 @@ conclude absence from whole-sheet views).
 **Owner's next checks (Funhouse, once the mirror has 5.29.0).** Connection
 diagnostics: `vision model: gpt-5.4-...: images at gpt-4.1-high, charts at
 openai-original (from probe)` — and under the robust policy every image goes
-at `original`. Re-run the IZD question ("find every GCE penetration callout,
+at `original`. Re-run the penetrations question ("find every GCE penetration callout,
 not the legend"): the agent should zoom to the legend, confirm GCE, call
 `find_like`, and report ~34 callouts by sheet with contact sheets in the
 folder. If it reports far more candidates than expected, the dense plan
@@ -1856,7 +1856,7 @@ says what a good log looks like). Parked from the same train, recorded in
 `module_work/FUTURE_IDEAS.md`: Tier 2 scanned-page engines (need Funhouse to OK
 vendored model files), drawing revision comparison, a toolkit MCP server (after
 Funhouse names an in-enclave host). Private measurements + probe scripts:
-`module_work/field_feedback/2026-09-09_nairobi-soe_v5.11.2/PLANLENS_SURVEY_MEASUREMENTS.md`.**
+`module_work/field_feedback/2026-09-09_soe-review_v5.11.2/PLANLENS_SURVEY_MEASUREMENTS.md`.**
 
 Two feature branches merged into master, no conflicts, **no new direct
 dependency**. `feature/plotly-plot-data`: `plot_data` draws an interactive
@@ -1919,9 +1919,9 @@ ordering minutes after 5.17.0 was tagged; a release command whose pytest output
 went through `tail` had hidden the failing status. **Lesson for the next
 release: gate on pytest's exit code, never on a piped tail.**
 
-### 5.17.0 RELEASED (2026-09-15, tag `v5.17.0`) — the Nairobi SOE fix train
+### 5.17.0 RELEASED (2026-09-15, tag `v5.17.0`) — the SOE review fix train
 
-`module_work/field_feedback/2026-09-15_nairobi-soe-rerun_v5.15.0/FINDINGS.md`,
+`module_work/field_feedback/2026-09-15_soe-review-rerun_v5.15.0/FINDINGS.md`,
 17 items from one real review session, fixed the same day. The FINDINGS "Train
 record" has the commit per item, what to check on the next live run, and what
 was noticed but not done. Ten commits `5c1058b`..`380e3f8` on top of 5.16.0;
@@ -1974,7 +1974,7 @@ flexible package an LLM harness uses to review ANY AEC document — geometry int
 hard data, common drawing objects, text with location (Azure DI allowed).
 Verdict: mostly drifted. Months of effort had gone into arrowhead/leader/
 dimension tuning on ten no-text-layer Mecklenburg sheets, while the package had
-no document layer at all. Measured on the real 260-page Nairobi submittal
+no document layer at all. Measured on the real 260-page SOE submittal
 (field_feedback 2026-09-09): every PDF text item said rotation 0 (215 of 245
 wrong on a /Rotate 270 sheet); reviewer comments were read as drawing text; the
 submittal's whole review record (Bluebeam callouts, replies, stamps, checker
@@ -2044,7 +2044,7 @@ drawing tools (digitize/query/get_entities/snip/search_drawing_set) from
 `drawing_ir_adapter.py` into `planlens.tools`; move the geotech cross-section
 code (`planlens.pdf` vision prompts, `candidate_ground_surface`) back into the
 app with a deprecation path; a multi-firm TEXT-BEARING evaluation set (the
-Nairobi submittal first — private, never into planlens' public repo);
+SOE submittal first — private, never into planlens' public repo);
 `planlens.ocr` as a text source; a visual-reading-order option for form pages
 (boring logs read in drafting order today); give the calc sub-agent read-only
 document tools. Arrowhead tuning is FROZEN.
@@ -2061,7 +2061,7 @@ PDF layer names + fill in the IR (`include_hidden_layers`; page map faster);
 image-hash duplicates on scans (dHash, distance 2); `open_document` size-budget
 bug fixed; `planlens.mcp_server` / `planlens-mcp` (mcp 2.2 low-level Server, ten
 tools generated from the plain specs, images attached, stdio + `--http`).
-Private measurements: `module_work/field_feedback/2026-09-09_nairobi-soe_v5.11.2/
+Private measurements: `module_work/field_feedback/2026-09-09_soe-review_v5.11.2/
 PLANLENS_SURVEY_MEASUREMENTS.md` (+ four probe scripts, untracked).
 **Nexus probe DONE 2026-09-16 (owner ran `nexus_pip_install` on the cluster,
 858 blocked versions loaded): both cleared.** Reproducible pins the helper
@@ -2203,7 +2203,7 @@ numba 0.67).
 
 **Both working trees are now clean of release work.** The app tree still has
 the owner's untracked scratch (the `*_copy.md` plans, docs PDFs, the .bat,
-`bamako_agent_cell.py`, `suite_trial.json`) — deliberately never staged.
+an agent-cell script, `suite_trial.json`) — deliberately never staged.
 planlens has the one stray screenshot, never staged.
 
 **Open, in priority order:**
@@ -2376,9 +2376,9 @@ longer achieves it. Not currently breaking anything — the gate machine runs th
 same stack, and the Prompter's NTLM path still uses the untouched httpx 0.28.1
 — but the pin's rationale comment is now wrong about what protects what.
 
-### FIELD FEEDBACK 2026-09-09 — Nairobi SoE: the 401 was the MODEL, not SharePoint
+### FIELD FEEDBACK 2026-09-09 — SOE review: the 401 was the MODEL, not SharePoint
 
-Drop triaged into `module_work/field_feedback/2026-09-09_nairobi-soe_v5.11.2/`
+Drop triaged into `module_work/field_feedback/2026-09-09_soe-review_v5.11.2/`
 (FINDINGS.md committed, raw/ gitignored). The owner's read was that the agent
 "did some search it didn't have credentials for". The evidence says otherwise
 and the correction matters: `AuthenticationError` is the **openai** exception
@@ -2834,7 +2834,7 @@ holds, uploads work; **planlens split executed** (owner-named).
    it's a worked-examples corpus play (discuss usage before building).
 6. **FIELD FEEDBACK — ALL SIX FIXED 2026-09-05 (owner ordered
    execution; commits + details in the FINDINGS.md disposition table:
-   module_work/field_feedback/2026-09-04_praia-downdrag_v5.11.2/).
+   module_work/field_feedback/2026-09-04_downdrag_v5.11.2/).
    Ships with 5.12.0. Original items for reference:**
    (a) false "sources unavailable" in calc reports — calc sub-agent
        isolation likely drops working-folder visibility (TRUST issue);

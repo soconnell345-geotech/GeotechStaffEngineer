@@ -19,6 +19,7 @@ design is built on. Output goes to stdout only (no files written).
 from __future__ import annotations
 
 import glob
+import os
 import re
 import sys
 import time
@@ -26,11 +27,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pymupdf
 
-SUBMITTAL = (r"C:\Users\socon\OneDrive\dev\GeotechStaffEngineer\module_work"
-             r"\field_feedback\2026-09-09_nairobi-soe_v5.11.2\raw\files"
-             r"\315000-001-00 Excavation Support Dwg & Calcs.pdf")
-MECKLENBURG = (r"C:\Users\socon\OneDrive\dev\GeotechStaffEngineer\module_work"
-               r"\drawing_ground_truth\mecklenburg\*.pdf")
+HERE = os.path.dirname(os.path.abspath(__file__))
+# the submittal: the one PDF in the private raw/files folder
+SUBMITTAL = next(iter(sorted(glob.glob(os.path.join(
+    HERE, "raw", "files", "*.pdf")))), "")
+MECKLENBURG = os.path.join(os.path.dirname(os.path.dirname(HERE)),
+                           "drawing_ground_truth", "mecklenburg", "*.pdf")
 
 
 # ---------------------------------------------------------------------------

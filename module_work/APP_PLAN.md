@@ -12,7 +12,7 @@ commits, lead reviews everything.
   picker, artifact cards (native Plotly via .plotly.json sidecar; HTML iframe;
   PDF), Attach uploads, save hardening (v5.5.1 crash fixed), Databricks
   Prompter launcher (NEEDS-LIVE-VERIFICATION).
-- Owner's live sessions: Bamako BTL mat review ×2 (PDFs in docs/).
+- Owner's live sessions: mat foundation review ×2 (PDFs in docs/).
 
 ## A-items (owner's list, 2026-07-13)
 - [ ] A1 **Inline Plotly by default** — every agent-produced plot should render

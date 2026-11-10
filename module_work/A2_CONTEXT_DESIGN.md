@@ -14,7 +14,7 @@ subsequent turn's input.
 
 ## Method (measured, not guessed)
 
-Offline model of a **10-turn calc-heavy session** (the Bamako BTL-mat style; the
+Offline model of a **10-turn calc-heavy session** (the mat-review style; the
 owner's 2026-07-13 transcript ran ~40–80k tok/turn). Content blocks are realistic
 geotech payloads sized with the **real Claude tokenizer** (`anthropic
 messages.count_tokens`, model `claude-sonnet-5`); script:

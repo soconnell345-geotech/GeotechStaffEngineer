@@ -1,6 +1,6 @@
 """html_to_pdf figure-embedding contract.
 
-Covers the 2026-09-04 field feedback (Praia downdrag): the renderer
+Covers the 2026-09-04 field feedback (the downdrag job): the renderer
 silently dropped figures it could not embed, so a report PDF shipped with a
 literal "[image]" placeholder where the profile figure belonged. Now a real
 local PNG path is embedded for the caller, and anything still unembeddable

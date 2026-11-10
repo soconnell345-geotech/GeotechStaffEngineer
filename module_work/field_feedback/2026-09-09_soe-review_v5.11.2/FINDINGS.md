@@ -1,4 +1,4 @@
-# Field feedback — Nairobi SoE, first attempt (2026-09-09, v5.11.2)
+# Field feedback — SOE review, first attempt (2026-09-09, v5.11.2)
 
 Session `4700a8fc5994493b87bf4de90fc26888`, model `funhouse-gpt-high`,
 2 turns spanning **43 seconds** (created 11:27:26.5, updated 11:28:09.5).
@@ -189,8 +189,8 @@ Two turns run against the same file to exercise the planlens 0.1.0 path.
 ## F6 — Turn 1 succeeded, and the extraction quality is genuinely good
 
 Page 11 digitized to **7,882 IR entities** (6,438 lines / 1,199 polylines / 245
-text). It recovered the title block (project 25230022.000, "NAIROBI CAA ANNEX
-/ TEMPORARY SOE DESIGN", sheet 5 of 7 "SECTIONS", the PE number and the
+text). It recovered the title block (the project number and title,
+sheet 5 of 7 "SECTIONS", the PE number and the
 designed/drawn/checked initials), real dimensions (H = 6300 mm, MIN. EMBEDMENT
 11700/13700 mm, TIP EL 1684 m, 21° TYP) and real leader callouts (HP260X87
 RAKER, HP 305X126 WALER, TANGENT PILE (TYP), "APPLY 171 kN PRE-LOAD"). That is

@@ -16,8 +16,9 @@ of the ``geotech-references`` submodule when it is checked out (CI checks
 it out). It fails on the Department and deployment words, the guarded
 hosts, and any Foundry enclave, Databricks workspace, SharePoint tenant or
 Azure resource host that is not one of the placeholders listed below by
-exact name. Place names are not guarded there: whether docs may name them
-is OWN-26.
+exact name. Since 2026-11-10 it guards the place words too, in file text
+and in tracked paths (INF-69, the owner's answer to OWN-26: replace them);
+git history keeps the old text (OWN-56).
 
 The guarded words are stored only as SHA-256 prefixes, so this public file
 does not repeat them. To guard a new word, add
@@ -38,7 +39,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
-#: Single words: field-session place and project names (shipped files only).
+#: Single words: field-session place and project names. Guarded in every
+#: tracked file and path (INF-69).
 PLACE_WORDS = {
     "7ba9b19fc81560f4", "a5c49775b0a68d9f", "8c75350c087ec2d7",
     "267a58403ed7e3f8", "e18ad88cf9a0960f",
@@ -207,9 +209,11 @@ def test_public_repo_carries_no_department_or_deployment_addresses():
         if b"\0" in raw[:8192]:
             continue  # binary
         text = raw.decode("utf-8", errors="ignore")
-        hits = _findings(text, ADDRESS_WORDS) | _deployment_hosts(text)
+        rel = f.relative_to(REPO).as_posix()
+        hits = (_findings(text) | _deployment_hosts(text)
+                | _findings(rel, PLACE_WORDS))
         if hits:
-            bad[f.relative_to(REPO).as_posix()] = len(hits)
+            bad[rel] = len(hits)
     # Paths and counts only, as above.
-    assert not bad, (f"Department or deployment addresses in tracked files "
-                     f"(path: count): {bad}")
+    assert not bad, (f"guarded names or deployment addresses in tracked "
+                     f"files (path: count): {bad}")

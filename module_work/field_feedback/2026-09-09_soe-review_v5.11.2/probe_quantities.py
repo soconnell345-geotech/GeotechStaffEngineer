@@ -23,14 +23,16 @@ separately AND as FP, because a bare number is exactly what the rule excludes.
 
 from __future__ import annotations
 
+import glob
 import os
 import sys
 import time
 from typing import Dict, List, Sequence, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PDF = os.path.join(HERE, "raw", "files",
-                   "315000-001-00 Excavation Support Dwg & Calcs.pdf")
+# the submittal: the one PDF in the private raw/files folder
+PDF = next(iter(sorted(glob.glob(os.path.join(
+    HERE, "raw", "files", "*.pdf")))), "")
 
 # (sentence, must-find values, also-allowed values)
 INVENTED: Sequence[Tuple[str, Sequence[float], Sequence[float]]] = [

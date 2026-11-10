@@ -1,4 +1,4 @@
-"""find_like in the app, and the tiled page read — the IZD "GCE" failure as a test.
+"""find_like in the app, and the tiled page read — the penetrations set's "GCE" failure as a test.
 
 On 2026-09-25 the agent read a 0.06 in stroke-lettered tag "GCE" as "QCE"
 from a whole-sheet image and found none of 34 callouts. The fixture here is

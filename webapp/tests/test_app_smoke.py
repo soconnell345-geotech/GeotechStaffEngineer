@@ -242,18 +242,18 @@ def test_conversation_filter_searches_past_the_cap(monkeypatch, tmp_path):
         m = core.load_meta(tid)
         m["updated"] = _t.time() - i          # T000 newest ... T059 oldest
         if i == 59:
-            m["title"] = "Nairobi SOE oldest"   # set in meta: rename() would
+            m["title"] = "Riverside SOE oldest"   # set in meta: rename() would
         core.save_meta(tid, m)                   # bump updated -> newest
     at = _mk_at(monkeypatch, tmp_path, _stream_ok).run()
     assert not at.exception
     opens = [b for b in at.sidebar.button if str(b.key).startswith("open_")]
     assert len(opens) == 50
-    assert not any("Nairobi" in str(b.label) for b in opens)
+    assert not any("Riverside" in str(b.label) for b in opens)
     box = next(t for t in at.sidebar.text_input if t.key == "conv_filter")
-    box.set_value("nairobi").run()
+    box.set_value("riverside").run()
     assert not at.exception
     opens = [b for b in at.sidebar.button if str(b.key).startswith("open_")]
-    assert len(opens) == 1 and "Nairobi" in str(opens[0].label)
+    assert len(opens) == 1 and "Riverside" in str(opens[0].label)
 
 
 def test_restore_from_permanent_storage_opens_the_conversation(monkeypatch,
@@ -270,7 +270,7 @@ def test_restore_from_permanent_storage_opens_the_conversation(monkeypatch,
     monkeypatch.setattr(sp, "_STORE", store)
     # a conversation mirrored from the "old" driver, gone from the new one
     before = str(tmp_path / "before")
-    _rich_conversation(before, "T-OLD", "Praia downdrag", created=1_757_000_000)
+    _rich_conversation(before, "T-OLD", "Harbor downdrag", created=1_757_000_000)
     assert not store.mirror_conversation("T-OLD", root=before)["errors"]
     folder = store.folder_name("T-OLD", before)
 

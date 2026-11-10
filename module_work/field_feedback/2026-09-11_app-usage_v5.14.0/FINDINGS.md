@@ -154,7 +154,7 @@ SharePoint folder, and a pre-restart conversation restored from the sidebar.
 
 ## planlens — NOTED, not acted on (owner: planlens burns usage)
 
-- `planlens/pdf/vision.py:222 _render_pdf_page` — no output-size cap (Nairobi F5).
-- `planlens/ocr.py augment_ir_with_ocr` — dpi=300 with no megapixel clamp (Nairobi F7).
+- `planlens/pdf/vision.py:222 _render_pdf_page` — no output-size cap (SOE review F5).
+- `planlens/ocr.py augment_ir_with_ocr` — dpi=300 with no megapixel clamp (SOE review F7).
 - Bound the raster extra `opencv-python-headless>=4.8,<6` (HANDOFF 4b).
 - planlens findings 5/6 (60°+ triangles, concave dart).

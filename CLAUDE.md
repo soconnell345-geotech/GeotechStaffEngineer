@@ -583,7 +583,7 @@ Key conventions:
   mirror carried 5.29.0 to the testers.
 - **5.29.0 RELEASED 2026-09-25 (tag `v5.29.0`) with planlens 0.10.0 (tag
   `v0.10.0`, published first — pin `planlens>=0.10`). No new package.**
-  Out of the IZD test run (Funhouse, 5.28.0): 85 sheets of 0.06 in lettering
+  Out of the penetrations drawing-set test run (Funhouse, 5.28.0): 85 sheets of 0.06 in lettering
   DRAWN AS LINES (no text layer), a legend on every sheet; asked where the
   "GCE" penetrations are, the agent read GCE as QCE from whole-sheet images and
   found none of 34 callouts. Causes: the probe mapped Funhouse GPT-5.4 (`high`
@@ -1375,7 +1375,7 @@ Key conventions:
   The owner asked for an interactive plot of PYWall lateral pressures and got a
   static image; the agent had picked the right tool, the generic x/y tool was
   matplotlib-only. The app now also copies a sidecar written to `/tmp` into the
-  conversation folder (the Nairobi failure mode) and **hides the PNG card when
+  conversation folder (the 2026-09-09 SOE review's failure mode) and **hides the PNG card when
   a sidecar stands beside it**, so the reader sees one card, the interactive
   one — the CARD list only, so the SharePoint mirror, the sidebar downloads and
   `html_to_pdf` still get the image. The deep prompt's figure wording is now
@@ -1414,9 +1414,9 @@ Key conventions:
   byte comparison (`webapp/core._same_bytes`), with the case pinned (same
   size, same timestamp, different bytes). 5.17.0 follows.
 
-- **app 5.17.0** (tag `v5.17.0`, 2026-09-15) — the NAIROBI SOE FIX TRAIN, out
+- **app 5.17.0** (tag `v5.17.0`, 2026-09-15) — the SOE REVIEW FIX TRAIN, out
   of a real review session (ledger:
-  `module_work/field_feedback/2026-09-15_nairobi-soe-rerun_v5.15.0/FINDINGS.md`,
+  `module_work/field_feedback/2026-09-15_soe-review-rerun_v5.15.0/FINDINGS.md`,
   17 items, commit per item in its "Train record").
   **Analysis-module defects fixed:** `soe/free_earth.py` replaces the
   cantilever and braced-embedment routines. The cantilever used the FIRST
@@ -1497,7 +1497,7 @@ repo.** Short version:
   **11,594 passed / 33 skipped / 0 failed**; planlens suite 804. The
   `geotech-references` pointer is at 1.4.0. Both trees are clean of release
   work — what remains untracked is the owner's scratch (plans, PDFs, a .bat,
-  `bamako_agent_cell.py`) and one planlens screenshot, all deliberately never
+  an agent-cell script) and one planlens screenshot, all deliberately never
   staged.
 - **Installed and verified on the cluster** (owner confirmed the app runs).
   **Before triaging any `%pip install` log, read
@@ -1617,7 +1617,7 @@ test). Survey + links: module_work/STRUCTURAL_REFS_SURVEY.md. FEMA
 P-2192 download still blocked (fema.gov 502s).
 
 **FIELD-FEEDBACK TRAIN (2026-09-05, all six items FIXED same night —
-ledger: module_work/field_feedback/2026-09-04_praia-downdrag_v5.11.2/
+ledger: module_work/field_feedback/2026-09-04_downdrag_v5.11.2/
 FINDINGS.md):** calc sub-agent gained working-folder READ access (the
 "sources unavailable" trust fix); **profile_figure = the 33rd module**
 (subsurface schematic renderer — layers/GWT/pile overlay → PNG;

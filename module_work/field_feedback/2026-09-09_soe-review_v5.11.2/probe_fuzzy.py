@@ -31,6 +31,7 @@ GeotechStaffEngineer venv.
 from __future__ import annotations
 
 import argparse
+import glob
 import os
 import random
 import statistics
@@ -38,8 +39,10 @@ import sys
 import time
 from typing import Dict, List, Tuple
 
-PDF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "raw", "files",
-                   "315000-001-00 Excavation Support Dwg & Calcs.pdf")
+HERE = os.path.dirname(os.path.abspath(__file__))
+# the submittal: the one PDF in the private raw/files folder
+PDF = next(iter(sorted(glob.glob(os.path.join(
+    HERE, "raw", "files", "*.pdf")))), "")
 
 N_CALLOUTS = 15
 THRESHOLDS = [60, 65, 70, 75, 80, 82, 85, 88, 90, 92, 95]

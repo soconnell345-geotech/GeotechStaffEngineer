@@ -1,4 +1,4 @@
-# Field feedback — Nairobi SOE review, re-run (2026-09-15, v5.15.0)
+# Field feedback — SOE review, re-run (2026-09-15, v5.15.0)
 
 Session `b9efee4d3c4d4785a033fba4cdc08557`, model `funhouse-gpt-high`, 9 turns,
 calc routing on, references `anytime` (ref budget 10), recursion limit 80.
@@ -358,7 +358,7 @@ search) target exactly this; measure it on the next live run.
 - N12 and N16, partly: document tools for the primary agent.
 - Nothing else in this list.
 
-## Train record (2026-09-15, branch `feature/nairobi-rerun-fixes`, unreleased)
+## Train record (2026-09-15, on a feature branch, unreleased)
 
 Owner said "start on the fixes in that order". Every item except N16 (cost;
 measure on the next live run) and N17 (notes on the answers) is fixed:

@@ -1,6 +1,6 @@
 """Profile-figure adapter — the subsurface schematic tool the agent calls.
 
-Covers the 2026-09-04 field feedback (Praia downdrag): asked for "a figure
+Covers the 2026-09-04 field feedback (the downdrag job): asked for "a figure
 showing the pile and a subsurface profile", the agent had no drawing tool at
 all and shipped a coloured HTML table instead.
 """

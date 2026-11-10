@@ -1,6 +1,6 @@
 """Scratch-filesystem guard and the delegation rules that go with it.
 
-Field feedback 2026-09-15 (Nairobi SOE re-run), N1/N12/N14: agents ran
+Field feedback 2026-09-15 (SOE review re-run), N1/N12/N14: agents ran
 deepagents' scratch ``grep``/``read_file`` on real files about 35 times and
 got "No matches found" / "not found"; a calc sub-agent that could not "find"
 its own earlier report rebuilt it with placeholder text where the numbers

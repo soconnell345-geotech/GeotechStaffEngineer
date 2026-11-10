@@ -1,4 +1,4 @@
-"""Small fixes from field feedback 2026-09-15 (Nairobi SOE re-run).
+"""Small fixes from field feedback 2026-09-15 (SOE review re-run).
 
 N7  html_to_pdf refused <img src="file:///tmp/x.png">: the Linux path lost its
     leading slash and was looked up inside the working folder.
@@ -52,7 +52,7 @@ def test_html_to_pdf_embeds_a_file_uri_image(tmp_path):
 def test_bare_name_resolves_in_the_working_folder(tmp_path, monkeypatch):
     pymupdf = pytest.importorskip("pymupdf")
     monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
-    name = "315000-001-00 Excavation Support Dwg & Calcs.pdf"
+    name = "100000-001-00 Excavation Support Dwg & Calcs.pdf"
     doc = pymupdf.open()
     doc.new_page().insert_text((72, 72), "PRESSURE DIAGRAM FOR SAND")
     doc.save(str(tmp_path / name))

@@ -1,6 +1,6 @@
-# Feedback: Praia_Downdrag session (2026-09-04, v5.11.2)
+# Feedback: Downdrag session (2026-09-04, v5.11.2)
 
-Session: "Praia_Downdrag", 7 turns, funhouse-gpt-high, full agent,
+Session: "Downdrag", 7 turns, funhouse-gpt-high, full agent,
 route_calc=true, recursion_limit=200, on the Funhouse cluster the same
 night as the 5.11.2 shakedown. Owner's notes: "downdrag convo
 feedback.docx" (in raw/, not committed). Task: independent downdrag

@@ -437,7 +437,7 @@
   "target": "",
   "merge_text": "",
   "reason": "Three tracked folder names still carry a place name; renaming them is cheap and needs no history rewrite.",
-  "evidence": "git ls-files module_work/field_feedback: 2026-09-04_praia-downdrag, 2026-09-09_nairobi-soe, 2026-09-15_nairobi-soe-rerun",
+  "evidence": "git ls-files module_work/field_feedback: three folders named after a field session's place (renamed 2026-11-10, INF-69)",
   "question": "Rename the three field-feedback folders that carry a place name to neutral names, without rewriting history? (Recommended: yes.)",
   "share": "owner"
  },

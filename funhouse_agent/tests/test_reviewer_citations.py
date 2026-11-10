@@ -1,4 +1,4 @@
-"""Field feedback 2026-09-15 (Nairobi SOE re-run), N13.
+"""Field feedback 2026-09-15 (SOE review re-run), N13.
 
 The reviewer sub-agent's four reference lookups all came back empty -- two of
 them a list_methods category filter that matched nothing and returned {} --
