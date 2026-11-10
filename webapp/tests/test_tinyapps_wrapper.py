@@ -10,6 +10,7 @@ installed or started. Since the app split's step 14 the template runs
 names, beside the fleet pins with pandas==3.0.2.
 """
 
+import fnmatch
 import os
 import re
 import shutil
@@ -152,6 +153,18 @@ def test_template_keeps_run_sh_lf():
     """App Service runs ``bash run.sh``; a CRLF copy fails at the first line."""
     attrs = (WRAPPER / ".gitattributes").read_text(encoding="utf-8")
     assert "*.sh text eol=lf" in attrs.splitlines()
+
+
+def test_template_keeps_the_keys_and_the_venv_out_of_commits():
+    """The owner's checklist makes ``.venv`` and ``.env`` (the keys) inside
+    the clone; a stage-all commit must not take them. Route B commits its
+    wheels, so nothing of the template or of ``wheels/`` is ignored."""
+    ignored = _reqs(".gitignore")
+    assert ".env" in ignored and ".venv/" in ignored
+    for kept in (".env.example", "run.sh", "app.py", "packages.txt",
+                 "wheels", "aec_document_review-0.1.0-py3-none-any.whl"):
+        assert not any(fnmatch.fnmatch(kept, pat.rstrip("/"))
+                       for pat in ignored), kept
 
 
 def _reqs(name):

@@ -18,6 +18,7 @@ requirements-thirdparty.txt  CfA fleet pins + Key Vault libraries (every route)
 run.sh                       CfA's Streamlit startup template; picks the route
 .env.example                 the settings, for local runs
 .gitattributes               keeps run.sh LF (bash on App Service fails on CRLF)
+.gitignore                   keeps .env (the keys) and .venv out of commits
 wheels/                      route B only: the wheels
 app_src/                     route A only: a development copy of the source
 ```

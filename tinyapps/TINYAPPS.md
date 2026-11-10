@@ -112,6 +112,7 @@ run.sh           CfA's Streamlit template (PORT, corsAllowedOrigins CHANGE-ME);
                  picks the code route (below)
 .env.example     the settings, for local runs
 .gitattributes   keeps run.sh LF
+.gitignore       keeps .env (the keys), .venv and caches out of commits
 README.md        routes, local run, update, settings
 ```
 
@@ -239,8 +240,10 @@ steps 1-6 and leave step 7 for later.
    repository (for example `document-review-tinyapp`). Copy into it every
    file in `tinyapps/wrapper_repo/` of this public repository: `app.py`,
    `packages.txt`, `requirements-thirdparty.txt`, `run.sh`,
-   `.env.example`, `.gitattributes`, `README.md`. Do not add `app_src/` or
-   `wheels/`. Commit and push.
+   `.env.example`, `.gitattributes`, `.gitignore`, `README.md`. Do not add
+   `app_src/` or `wheels/`. Commit and push. (`.gitignore` keeps the `.env`
+   of step 3, which holds your keys, and the `.venv` folder of step 2 out
+   of every later commit.)
 2. **Get it onto the test machine.** On dosdev, open a terminal in VS Code
    and run, with your repository's address:
    ```
