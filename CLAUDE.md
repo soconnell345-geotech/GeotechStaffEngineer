@@ -116,18 +116,20 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-11-09; release 5.35.0) — 5.35.0 with planlens 0.15.0 (pin >=0.15), geotech-references 1.6.0 (pin >=1.6.0) and the new shared core aec-agent-core (pinned exactly, published first): the app split's core filled (model connections, vision calls, guards and records, Word and Excel, the figure helper and plotting box; old import paths kept), Document Review stripped to what earned its place and bound to planlens.review, the report recompute check, local reference packs, SharePoint set up by the host team on any Microsoft cloud, and answers moving in fem2d, sheet_pile, drilled_shaft, wave_equation, MSE walls and some GEC-13 reference lookups (release notes by module in HANDOFF §0a-current item 0); [[PENDING: REF-64 (B) and INF-33 step 13 — the lead fills these in after the merges]]; before it 5.34.0 RELEASED with planlens 0.14.0 (pin >=0.14) and geotech-references 1.5.0 (pin >=1.5.0): the geotech calc modules checked against their printed references (many answers move; release notes by module in HANDOFF §0a-current item 0a), report ingest model-first by default, GSE on Foundry (installs on numpy 1.26, conversations saved to a Foundry dataset); review switches still OFF; before it 5.33.0 RELEASED with planlens 0.13.0 (pin >=0.13) and geotech-references 1.4.1 (pin >=1.4.1): hardened for OTHER testers on Tiny Apps by live smoke waves (per-user isolation, per-tester Prompter keys, one final answer per turn, Word/Excel in and out, tool errors never end a turn, faster vision, rotated-sheet markups) plus the brief-5 fixes and engineering fixes (GEC-12 Fig 7-15, sheet-pile water table, fem2d consolidation, downdrag basis); all review switches still OFF; before it 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-11-10; release 5.35.0) — 5.35.0 with planlens 0.15.0 (pin >=0.15), geotech-references 1.6.0 (pin >=1.6.0) and the new shared core aec-agent-core 1.0.0 (pinned exactly, published first): the app split's core filled (model connections, vision calls, guards and records, Word and Excel, the figure helper and plotting box; old import paths kept), Document Review stripped to what earned its place and bound to planlens.review, the report recompute check, local reference packs, SharePoint set up by the host team on any Microsoft cloud, and answers moving in fem2d, sheet_pile, drilled_shaft, wave_equation, MSE walls and some GEC-13 reference lookups (release notes by module in HANDOFF §0a-current item 0); also a deployment's own instructions (`GEOTECH_INSTRUCTIONS`, under the built-in rules) and Document Review copied into its own public package `aec-document-review` 0.1.0 on the core 1.0.0 (GSE still carries both pages); before it 5.34.0 RELEASED with planlens 0.14.0 (pin >=0.14) and geotech-references 1.5.0 (pin >=1.5.0): the geotech calc modules checked against their printed references (many answers move; release notes by module in HANDOFF §0a-current item 0a), report ingest model-first by default, GSE on Foundry (installs on numpy 1.26, conversations saved to a Foundry dataset); review switches still OFF; before it 5.33.0 RELEASED with planlens 0.13.0 (pin >=0.13) and geotech-references 1.4.1 (pin >=1.4.1): hardened for OTHER testers on Tiny Apps by live smoke waves (per-user isolation, per-tester Prompter keys, one final answer per turn, Word/Excel in and out, tool errors never end a turn, faster vision, rotated-sheet markups) plus the brief-5 fixes and engineering fixes (GEC-12 Fig 7-15, sheet-pile water table, fem2d consolidation, downdrag basis); all review switches still OFF; before it 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
-- **5.35.0 (2026-11-09; tag `v5.35.0` on branch `release/5.35.0`) with
+- **5.35.0 (2026-11-10; tag `v5.35.0` on branch `release/5.35.0`) with
   planlens 0.15.0 (tag `v0.15.0`) and geotech-references 1.6.0 (tag
   `v1.6.0`), both on PyPI since 2026-11-09, and the shared core
-  `aec-agent-core`, a NEW dependency, published first from
-  `packages/aec-agent-core` by its own `core-v*` tag; pins
-  `planlens>=0.15`, `geotech-references>=1.6.0` and `aec-agent-core`
-  exactly.** It is everything on master since 5.34.0 (through 1caf160)
-  plus two branches merged for it: the "Master after 5.34.0" paragraph at
-  the end of this entry is its content, with
-  [[PENDING: REF-64 (B) and INF-33 step 13 — the lead fills these in after the merges]].
+  `aec-agent-core` 1.0.0, a NEW dependency, published first from
+  `packages/aec-agent-core` by its own tag `core-v1.0.0`; pins
+  `planlens>=0.15`, `geotech-references>=1.6.0` and
+  `aec-agent-core==1.0.0`.** It is everything on master since 5.34.0
+  (through 972ffad): the "Master after 5.34.0" paragraph at the end of
+  this entry is its content, ending with a deployment's own instructions
+  (merge 4f22c00) and Document Review's own package (the app split's step
+  13, merge 9411d1a). `aec-document-review` 0.1.0 publishes after the app,
+  by its own tag `document-review-v0.1.0`; it is not a GSE dependency.
   Release gate on the exact tree, the wheel checks and the release notes
   (what changes a calculation's answer, by module): HANDOFF §0a-current
   item 0.
@@ -165,22 +167,27 @@ Key conventions:
     - `GEOTECH_FIGURE_HELPER`, `GEOTECH_PLOT_CODE` and
       `GEOTECH_JUDGMENT_CALLS` stay on by default; `GEOTECH_REPORT_INGEST`
       stays off;
-    - [[PENDING: REF-64 (B) and INF-33 step 13 — the lead fills these in after the merges]]
+    - a deployment can add its own instructions to every agent and
+      helper (`GEOTECH_INSTRUCTIONS`, a folder of short Markdown files);
+      the built-in rules come first and win; unset, nothing changes;
+    - Document Review is now also its own package, `aec-document-review`
+      0.1.0; GSE still carries both pages, unchanged.
   - **Install changes:** one new package, the shared core
-    `aec-agent-core`, pinned exactly; it requires nothing the app did not
-    already require, so an install log gains only
-    `aec-agent-core-<version>`. planlens 0.15 and geotech-references 1.6.0
+    `aec-agent-core`, pinned at 1.0.0 and released first; it requires
+    nothing the app did not already require, so an install log gains only
+    `aec-agent-core-1.0.0`. The core needs Python 3.11 or later, so 5.35.0
+    does too in practice (every host runs 3.12). planlens 0.15 and geotech-references 1.6.0
     add no package. pystrata by Python version: `pystrata>=0.5,<0.6` with
     `pyrvt<0.9` on Python 3.12, `pystrata>=0.6,<0.7` on 3.13 (5.34.0 on
     3.13 broke site response). A checkout installs the core first:
     `pip install -e packages/aec-agent-core -e .`. No new third-party
     package. Install guide §11.
   - **Held:** no slope_stability changes after 2026-10-18 (GM-140); the
-    Tiny Apps tester deploy waits on the host team (OWN-44) and on
-    Document Review's own package (INF-33, INF-34).
+    Tiny Apps tester deploy waits on the host team (OWN-44) and on the
+    wrapper installing `aec-document-review` (INF-34).
 
   - **Master after 5.34.0 (the train released as 5.35.0, 2026-11-04 to
-    2026-11-09):** fixes merged since 5.34.0, each built by a cloud
+    2026-11-10):** fixes merged since 5.34.0, each built by a cloud
     session and reviewed before the merge; what changes an answer is in
     HANDOFF §0a-current item 0, and change by change in its "Master
     after 5.34.0" record.

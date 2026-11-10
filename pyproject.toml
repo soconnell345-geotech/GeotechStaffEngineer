@@ -40,11 +40,12 @@ dependencies = [
     "geotech-references>=1.6.0",
     # The shared core of the app split (INF-26 / INF-32; built from
     # packages/aec-agent-core in this repository), pinned EXACTLY: the two
-    # move together. 1.0.0 is the core's first real release (step 12; set at
-    # step 13, INF-33): the lead publishes it (tag core-v1.0.0) BEFORE the
-    # app release that carries this pin. Until it is on PyPI, install it
-    # first: `pip install -e packages/aec-agent-core` (CI does). publish.yml
-    # stops an app release while it is missing.
+    # move together. REQUIRED FROM 5.35.0 (2026-11-10): 1.0.0 is the core's
+    # first real release (step 12; set at step 13, INF-33), published by its
+    # tag core-v1.0.0 BEFORE the app's tag. It needs Python 3.11 or later,
+    # so the app does too in practice. From a checkout, install it first:
+    # `pip install -e packages/aec-agent-core` (CI does). publish.yml stops
+    # an app release while the pinned version is missing from PyPI.
     # It adds no package of its own: everything it requires is a core
     # requirement here too. webapp/tests/test_wheels.py keeps this pin
     # equal to the core's version.
