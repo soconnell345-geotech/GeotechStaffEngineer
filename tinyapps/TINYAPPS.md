@@ -194,8 +194,9 @@ entry instead.
 **Behaviour to know.**
 
 - **Tell CfA to set `PROMPTER_SHARED_KEY_FALLBACK=1` until the per-tester
-  keys exist.** On the published app with only the shared key, every tester
-  is refused while it is off.
+  keys exist,** with the shared `PROMPTER-API-KEY` in Key Vault: the
+  fallback does nothing without it. On the published app with only the
+  shared key, every tester is refused while the fallback is off.
 - A secret added for a new tester takes effect at their next new
   conversation or page reload, with no restart. A rotated key is used only
   after an app restart.
@@ -289,7 +290,10 @@ steps 1-6 and leave step 7 for later.
 8. **Deploy.** Send CfA asks 2-5 below, with your repository's address. When
    they report it is deployed, open the published address. You should see
    the same page with your own sign-in name; repeat step 5 there, and step 7
-   with the `conversations/<you>/document_review/` folder.
+   with the `conversations/<you>/document_review/` folder. If the page says
+   "No AI key is set up for **<you>** yet", CfA has set neither the shared
+   `PROMPTER-API-KEY` (with the fallback) nor your own key: send them ask 4
+   again, with the secret name that message shows.
 9. **Send the lead your note**: which steps passed, and the text of anything
    that failed.
 
@@ -311,9 +315,14 @@ steps 1-6 and leave step 7 for later.
    address (one flag per address), and tell us the address."
 4. **Settings in Key Vault.** "Please put these in the app's Key Vault and
    set `KV_NAME`: `PROMPTER-URL`, `PROMPTER-MODEL`, `PROMPTER-CA-BUNDLE`;
-   one `PROMPTER-API-KEY--<TESTER>` per tester (the app's refusal message
-   shows each name); `PROMPTER-SHARED-KEY-FALLBACK` = `1` until every
-   tester's key exists; and the SharePoint registration's
+   the shared pilot key as `PROMPTER-API-KEY`, with
+   `PROMPTER-SHARED-KEY-FALLBACK` = `1`, so a tester without a key of their
+   own uses it until theirs exists (the fallback does nothing without the
+   shared key); my own key as `PROMPTER-API-KEY--<MYDOMAIN>-<MYUSER>` (my
+   sign-in `<MYDOMAIN>\<myuser>` in capitals, each run of other characters
+   one hyphen: `CORP\jdoe` becomes `PROMPTER-API-KEY--CORP-JDOE`); one
+   `PROMPTER-API-KEY--<TESTER>` per further tester, named the same way (the
+   app's refusal message shows each name); and the SharePoint registration's
    `GRAPH-TENANT-ID`, `GRAPH-CLIENT-ID`, `GRAPH-CLIENT-SECRET` (or a
    certificate) and `SHAREPOINT-SITE-URL`. The registration's setup is in
    `docs/SHAREPOINT_SETUP.md` of our public repository."
