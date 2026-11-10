@@ -11,7 +11,10 @@ Everything lives in the pip package; the Foundry side is one workspace, a
    - `geotech-staff-engineer`  — as of the release after 5.8.0, this single
      package brings everything: all analysis backends, the deep agent,
      Streamlit, PDF reporting, and both LLM clients (`langchain-openai` for
-     GPT-family RIDs, `langchain-anthropic` for Claude RIDs).
+     GPT-family RIDs, `langchain-anthropic` for Claude RIDs). From 5.35.0 it
+     also brings the shared core `aec-agent-core`, which the app pins
+     exactly (`aec-agent-core==1.0.0` on 5.35.0), and it needs Python 3.11
+     or newer (Foundry runs 3.12).
    - (On 5.8.0 or older, use the old form: `geotech-staff-engineer[deep,full,pdf]`
      plus `streamlit` plus `langchain-openai`.)
 3. **Test wheels** (built from master, not on PyPI; e.g. the INF-25 set in
@@ -71,10 +74,9 @@ Everything lives in the pip package; the Foundry side is one workspace, a
       the same in lower case (SALib is `salib`); liquepy and pygef are not
       on conda-forge, so cap them wherever they come from.
       pip then reports that PyNiteFEA is not installed,
-      which is expected. With planlens 0.13 it also reports that planlens
-      declares numpy >= 2.0; planlens runs on 1.26.4 (its suite passes
-      there), and the warning goes away with the next planlens release,
-      which declares numpy >= 1.26.
+      which is expected. (planlens 0.13 also drew a warning, for declaring
+      numpy >= 2.0; from 0.14, and so on 5.34.0 and later, planlens
+      declares numpy >= 1.26 and the warning is gone.)
    4. to keep the `pynite` tool (frame and continuous-beam analysis),
       install PyNiteFEA without its dependencies, then its one pure-Python
       requirement under the constraints:
@@ -206,7 +208,9 @@ first run.
 **What the proxy refuses, and what the app sends instead** (measured with
 both Claude 5.5 RIDs on 2026-10-20; each refusal is a 400 whose body names
 the field, e.g. `unrecognizedProperty=cache_control`). Every request passes
-`engine_config.sanitize_foundry_anthropic_payload` on its final payload, so
+`engine_config.sanitize_foundry_anthropic_payload`
+(`packages/aec-agent-core/aec_agent_core/engine_config.py`, the shared
+core) on its final payload, so
 this holds for plain, streamed and tool calls and whatever middleware asked:
 
 | Field | Proxy | The app |

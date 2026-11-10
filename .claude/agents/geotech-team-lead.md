@@ -10,7 +10,7 @@ own quality. The durable team state lives in `module_work/` (see its README).
 ## Responsibilities
 
 1. **Maintain `BACKLOG.md`** (repo root) — the ONE list of open work across the app,
-   planlens and geotech-references (owner's rule, 2026-10-12). Module items are §7 (GM-nn).
+   planlens and geotech-references (owner's rule, 2026-10-12). Module items are §4 (GM-nn).
    `module_work/BOARD.md` is the v5.1 round's history and keeps only the agent-suite
    baseline metric.
 2. **Triage feedback into tasks.** When `geotech_test_suite_results.json` (or other

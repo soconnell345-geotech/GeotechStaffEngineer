@@ -56,8 +56,9 @@ flowchart TB
     ENG["Engineer asks in natural language"]
 
     subgraph AGENT["Agent harness - engine-agnostic LLM driver"]
-        FA["funhouse_agent: GeotechAgent, dispatch, vision"]
-        FD["foundry wrappers: 25 standalone tool agents"]
+        APP["webapp: the chat app - a geotech page and a Document Review page"]
+        FA["funhouse_agent: the deep agent, dispatch, adapters"]
+        CORE["aec-agent-core: shared core - model connections, vision, guards, Word and Excel"]
         LIB["external-library agents: opensees, pystrata, liquepy, ..."]
         GP["geo_project: staged human-gated setup"]
     end
@@ -91,7 +92,7 @@ flowchart TB
     classDef spine fill:#0e1f16,stroke:#7df0c0,color:#e8edf6
     classDef ref fill:#130f1c,stroke:#c8a0ff,color:#e8edf6
     classDef ground fill:#0e1626,stroke:#6b778c,color:#9aa7bd
-    class FA,FD,LIB,GP agent
+    class APP,FA,CORE,LIB,GP agent
     class REL,COV,SENS var
     class F,S,SE det
     class SPINE spine
@@ -102,6 +103,7 @@ flowchart TB
 - **Why a shared spine** — one `SoilProfile` type means modules compose without knowing about each other, and an agent learns one way to describe the ground.
 - **Why no cross-imports** — analysis modules are independent, testable leaves; the routing that *combines* them lives in the agent layer.
 - **Why variability is its own layer** — it's orthogonal. `reliability` doesn't know what bearing capacity *is*; it knows how to take any callable `g(values)` and characterize how its output scatters. Wrap once, apply everywhere.
+- **Why a shared core** — what an agent runs below its chat page (the model connections, the vision calls, the guards and records, Word and Excel in and out) is its own package, [`aec-agent-core`](https://pypi.org/project/aec-agent-core/), which this package pins exactly. The Document Review page is also published alone, with nothing geotechnical, as [`aec-document-review`](https://pypi.org/project/aec-document-review/). Both are built from `packages/` in this repository.
 
 ---
 
@@ -156,7 +158,7 @@ Thirty analysis modules grouped by discipline, plus the shared layers. Native mo
 | **deep foundations** | `axial_pile` · `lateral_pile` · `pile_group` · `drilled_shaft` · `wave_equation` · `downdrag` | Driven & bored pile capacity, p-y lateral analysis, rigid-cap groups, Smith wave-equation drivability, neutral-plane downdrag |
 | **earth retention** | `sheet_pile` · `soe` · `retaining_walls` · `ground_improvement` | Cantilever/anchored walls, support-of-excavation, cantilever & MSE walls, aggregate piers / wick drains / vibro |
 | **slope · FEM · CAD** | `slope_stability` · `fem2d` · `dxf_import` · `dxf_export` · `planlens.pdf` | Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction, staged construction and staged excavation; geometry I/O |
-| **document review** | [`planlens`](https://pypi.org/project/planlens/) (separate package, installed as a dependency) | Any PDF or image as review-ready data for the agent: a page map and the document's structure (from the pages' own headers, footers and printed numbering), text with exact locations, tables, the review markups (who said what, where it points), AutoCAD hidden text, contact sheets; plus drawing geometry and annotation constructs (leaders, dimensions, callouts). The agent looks at every page a question covers and uses the text as supporting evidence. |
+| **document review** | [`planlens`](https://pypi.org/project/planlens/) (separate package, installed as a dependency) | Any PDF or image as review-ready data for the agent: a page map and the document's structure (from the pages' own headers, footers and printed numbering), text with exact locations, tables, the review markups (who said what, where it points), AutoCAD hidden text, contact sheets; plus drawing geometry and annotation constructs (leaders, dimensions, callouts). The agent looks at every page a question covers and uses the text as supporting evidence. The web app's Document Review page reviews any AEC document this way; it is also published alone as `aec-document-review`. |
 | **seismic** | `seismic_geotech` · `opensees_agent` · `pystrata_agent` · `liquepy_agent` · `seismic_signals_agent` | Site class, M-O pressures, liquefaction triggering (B&I-2014 / NCEER), 1D site response, ground-motion processing |
 | **structural** | `section_props_agent` · `concrete_props_agent` · `pynite_agent` | Cross-section properties (exact polygon integration + closed-form torsion), RC section capacity/cracked properties (ACI strain compatibility), elastic frame + continuous-beam analysis |
 | **characterization** | `subsurface_characterization` · `gstools_agent` | DIGGS/GEF/AGS4 data I/O + plots; geostatistics: kriging, random fields, and conditional simulation (realizations that honour the borings, for the probability of a total over a footprint, such as a volume of rock above a level) |
@@ -202,6 +204,10 @@ pip install geotech-staff-engineer
 # (the old extra names -- [deep], [full], [plot] ... -- are empty aliases kept
 # only so older install commands keep working; they add nothing)
 ```
+
+Python 3.11 or newer. The install brings three packages of the same project with it: `aec-agent-core` (the shared core, pinned exactly), `planlens` and `geotech-references`. From a checkout, install the core first: `pip install -e packages/aec-agent-core -e .`
+
+Document Review alone, with nothing geotechnical: `pip install aec-document-review`.
 
 ## Quick start — three ways in
 
@@ -264,7 +270,11 @@ B&I-2014 is the default for both. The underlying per-module functions remain ava
 
 [geotech-references](https://pypi.org/project/geotech-references/) — Digitized NAVFAC DM7 and FHWA GEC reference library (installed automatically as a dependency). For how the agent searches and cites it — full-text search, figure + vision read-off, and a scoped consult sub-agent — see the [agentic retrieval developer guide](docs/agentic_retrieval_devguide.html).
 
-[planlens](https://pypi.org/project/planlens/) — Review-ready data from AEC documents for LLMs (installed automatically as a dependency): the whole-document layer behind the agent's `open_document` / `read_document` / `document_markups` tools and the drawing-geometry layer behind its drawing tools. Independent of this package; usable from any LLM harness.
+[planlens](https://pypi.org/project/planlens/) — Review-ready data from AEC documents for LLMs (installed automatically as a dependency): the whole-document layer behind the agent's `open_document` / `read_document` / `document_markups` tools (the tools themselves are `planlens.review` since planlens 0.15) and the drawing-geometry layer behind its drawing tools. Independent of this package; usable from any LLM harness.
+
+[aec-agent-core](https://pypi.org/project/aec-agent-core/) — The shared core both web pages run on (installed automatically, pinned exactly): model connections, vision calls, the agent's guards and records, the figure helper, Word and Excel in and out. It imports nothing geotechnical.
+
+[aec-document-review](https://pypi.org/project/aec-document-review/) — Document Review alone, as a Streamlit page, on the same core and planlens. Not a dependency of this package; it is what the Tiny Apps host installs (`tinyapps/TINYAPPS.md`).
 
 ## License
 

@@ -6,8 +6,20 @@ industry-standard analysis modules and reference lookups and streams its answer
 back, with file upload (PDF/DXF/CSV/images), artifact downloads (calc packages,
 DXFs, plots), and live token counts.
 
-It runs **standalone** (one command, on your machine) and is the submission
-target for the **Tiny Apps** hosting environment (Streamlit / Python).
+It runs **standalone** (one command, on your machine), on a **Databricks**
+cluster (§3) and on **Palantir Foundry** (`docs/FOUNDRY.md`). The app has
+two pages over one shell, declared in `webapp/pages_entry.py`: **Document
+Review** (the app root) and **GeotechStaffEngineer** (`/geotech`);
+`streamlit run webapp/app.py` runs the geotech page alone. The **Tiny Apps**
+host runs Document Review alone, from its own package `aec-document-review`
+(§4).
+
+Since 5.35.0 the model connections, vision calls, guards and records, and
+Word and Excel come from the shared core `aec-agent-core`
+(`packages/aec-agent-core/`), which the app pins exactly; the old
+`webapp.engine_config`, `webapp.activity_log`, `webapp.http_trace`,
+`webapp.palantir_sdk_engine` and `webapp.tinyapps_engine` names are aliases
+of the core's modules (`CORE_ALIASES` in `webapp/__init__.py`).
 
 > **Analysis/research aid — not a design deliverable.** Every result must be
 > independently reviewed by a licensed professional engineer familiar with the
@@ -28,16 +40,17 @@ streamlit run webapp/app.py
 Streamlit prints a local URL (default `http://localhost:8501`) and opens it in
 your browser. That's the whole thing.
 
-**From this repo (development)** — the app imports from the source tree, so just
-add streamlit to the project venv and run:
+Python 3.11 or newer. The install brings the shared core `aec-agent-core`,
+`planlens` and `geotech-references` with it.
+
+**From this repo (development)** — the app imports from the source tree. Install
+the core and the app editable into the project venv (once), then run:
 
 ```bash
-.venv/Scripts/pip install streamlit          # one-time (already installed by a plain pip install of the package)
-.venv/Scripts/streamlit run webapp/app.py
+.venv/Scripts/pip install -e packages/aec-agent-core -e .   # one-time: the core first, then the app with its dependencies
+.venv/Scripts/streamlit run webapp/app.py                     # the geotech page alone
+.venv/Scripts/streamlit run webapp/pages_entry.py             # both pages
 ```
-
-(`langchain-anthropic` and the analysis backends are already in the project
-`.venv`; only `streamlit` is new.)
 
 ### Choosing the model
 
@@ -161,7 +174,7 @@ SharePoint's own uploader (no size problem there) and ask the agent to fetch it
 folder, where every file tool can read it, and it shows up as an attachment.
 Requires the SharePoint setup below. (A sidebar "attach from SharePoint" box
 that does this without an agent turn, and a chunked websocket upload that
-raises the cap, are both on the backlog — `HANDOFF.md` §0a.)
+raises the cap, are both parked in `BACKLOG.md`: TA-07 and TA-08.)
 
 ### What the record holds (activity log)
 
@@ -278,7 +291,8 @@ installed in the app environment (it is, on Funhouse clusters). Implementation:
 
 Run the app on a Databricks cluster and reach it through the **driver proxy
 URL** — and drive it with the **Funhouse Prompter** engine, no Anthropic key.
-This is the TinyApp dress rehearsal: same Prompter data connection, same app.
+The launcher starts both pages (`webapp/pages_entry.py`) by default;
+`pages=False` starts the geotech page alone.
 
 > ⚠️ **Needs live verification.** The exact proxy path and server flags vary by
 > workspace/runtime; the launcher encodes the recipe below, but confirm on your
@@ -349,8 +363,9 @@ handle = dl.run_on_databricks(prompter_key=dict(
 
 That replaces the older cell (four `os.environ[...]` lines, `prompter=`,
 a hand-built `app_path=` and `models=`). The launcher gives the key to the
-app only (not to the notebook, and it never prints it), starts the same app
-the Tiny Apps testers get, puts that one model in the model picker, and the
+app only (not to the notebook, and it never prints it), starts both pages
+through the app's Tiny Apps entry (`webapp/tinyapps_entry.py`, the
+per-tester key route), puts that one model in the model picker, and the
 first printed line names the model really in use. Add `ca_bundle=` to the
 `dict` if your endpoint needs an internal certificate. If you already set the
 `PROMPTER_URL` / `PROMPTER_MODEL` / `PROMPTER_API_KEY` environment variables,
@@ -518,12 +533,19 @@ and the cluster allows the driver-proxy for your workspace. The local path
 
 ## 4. Tiny Apps deployment (Azure Government)
 
-The Tiny Apps deployment is a thin wrapper repo over the released package:
-`tinyapps/wrapper_repo/` (`app.py`, `packages.txt`, `run.sh`, `.env.example`).
-Settings, per-tester keys, storage, the dosdev recipe and the questions for
-CfA are in `tinyapps/TINYAPPS.md`, the plan of record; open work is in
-`BACKLOG.md` (TA-nn, OWN-43 to OWN-51). The older submit-`app.py`-and-
-`requirements.txt` checklist that stood here was retired on 2026-10-12.
+Tiny Apps hosts **Document Review alone**; the geotech page left that host at
+the app split. The deployment is a thin wrapper repo over the released
+package `aec-document-review` (`packages/aec-document-review/`), which pins
+`aec-agent-core` and `planlens` exactly: `tinyapps/wrapper_repo/`
+(`app.py`, which calls `aec_document_review.tinyapps_entry.main()`,
+`packages.txt`, `requirements-thirdparty.txt`, `run.sh`, `.env.example`).
+It installs the package from the Nexus mirror, or from wheels in the repo as
+the backup. Settings, per-tester keys, storage, the dosdev recipe, the
+owner's first-round checklist and the questions for CfA are in
+`tinyapps/TINYAPPS.md`, the plan of record; open work is in `BACKLOG.md`
+(TA-nn, OWN-44, INF-34). This app's own Tiny Apps entry,
+`webapp/tinyapps_entry.py`, stays (frozen) until the split's step 15
+(INF-35).
 
 ---
 
@@ -532,13 +554,16 @@ CfA are in `tinyapps/TINYAPPS.md`, the plan of record; open work is in
 | File | Purpose |
 |------|---------|
 | `app.py` | Streamlit shell — a thin view over `core.py` (no logic). |
+| `pages_entry.py`, `profiles.py`, `page_profile.py` | The two pages (Document Review at the root, GeotechStaffEngineer at `/geotech`) over the one shell, and each page's profile. |
+| `geotech_page.py`, `review_page.py` | Each page's own parts. `review_page.py` is a frozen copy (`webapp/tests/test_review_freeze.py`): a change to the Document Review page goes to `packages/aec-document-review/aec_document_review/`. |
+| `foundry_entry.py`, `tinyapps_entry.py` | Host entries: Palantir Foundry (`docs/FOUNDRY.md`) and this app's Tiny Apps entry (frozen; the testers' host runs `aec-document-review`, §4). |
 | `core.py` | All logic: attachment staging, artifact capture, streaming, disclaimer, and conversation **persistence** (per-conversation dir under `GEOTECH_WEBAPP_DATA`: transcript / messages / attachments / artifacts / meta; list / resume / rename / delete-to-trash). Import-testable without streamlit. |
-| `engine_config.py` | Env-driven engine resolution (Anthropic key / Prompter hook / no-engine). |
+| `engine_config.py` (in the core) | Env-driven engine resolution (Anthropic key / Prompter hook / Foundry / no-engine): `packages/aec-agent-core/aec_agent_core/engine_config.py`; `webapp.engine_config` is an alias. |
 | `databricks_launcher.py` | One-cell Databricks launcher (`run_on_databricks`): reconstructs the Prompter engine on the driver (or takes a personal Prompter key, `prompter_key=`) and runs streamlit under the driver proxy; `running_apps` / `stop_running` / `diagnose` find, stop and inspect a copy the notebook has lost (§3). |
 | `turn_jobs.py` | Detached turn execution: the whole turn pipeline runs in a worker thread keyed by conversation, so a websocket death never kills an analysis; the page re-attaches. |
 | `turn_record.py` | Records every reply and tool result of a turn as it arrives (checkpointed to `partial_messages.json`), so a turn that errors or is killed becomes replayable history instead of an error stub. |
-| `http_trace.py` | An httpx hook (Prompter key route) that lists every HTTP try inside a model call in `activity.jsonl` (status, retry-after, rate-limit headers; never the body). |
-| `activity_log.py` | Always-on per-turn archive `activity.jsonl` — every tool call (full args), tool result (capped 32 KB), model call (usage), primary AND sub-agents, attributed by `task` nesting. A LangChain callback handler on the run config. |
+| `http_trace.py` (in the core) | An httpx hook (Prompter key route) that lists every HTTP try inside a model call in `activity.jsonl` (status, retry-after, rate-limit headers; never the body): `packages/aec-agent-core/aec_agent_core/http_trace.py`. |
+| `activity_log.py` (in the core) | Always-on per-turn archive `activity.jsonl` — every tool call (full args), tool result (capped 32 KB), model call (usage), primary AND sub-agents, attributed by `task` nesting. A LangChain callback handler on the run config: `packages/aec-agent-core/aec_agent_core/activity_log.py`. |
 | `feedback.py` | Feedback writer (`FEEDBACK.md` + `feedback.jsonl` in the conversation dir) behind the sidebar box and the agent's `record_feedback` tool. |
 | `sharepoint_store.py` | Permanent storage: mirror a conversation dir to SharePoint after each turn (incremental manifest), list mirrored conversations, restore one back. |
 | `foundry_dataset_store.py` | Permanent storage on Foundry (INF-38): the same mirror into a Foundry dataset of raw files through the workspace dataset library (`foundry.transforms`, found by the dataset's workspace alias; imported only when used); one transaction per save (staged under `/foundry/outputs`, then `upload_directory`), run after the turn in the background, retried while another is open; a restore downloads in parallel. `docs/FOUNDRY.md` §4c. |
@@ -546,7 +571,7 @@ CfA are in `tinyapps/TINYAPPS.md`, the plan of record; open work is in
 | `ws_upload.py` + `ws_upload_component/` | Websocket file uploader used on Databricks (the driver proxy 403s the native uploader's PUT); 25 MB per file. |
 | `diagnostics.py` | Sidebar "Connection diagnostics" battery (resolve / plain / stream / tool-call / upload probe); terminal-callable. |
 | `budget_panel.py`, `version_guard.py`, `email_tools.py` | AI-budget line, agent-stack drift warnings, and the `email_file` tool. |
-| `requirements.txt` | TinyApp dependency pin. |
+| `requirements.txt` | The old TinyApp dependency pin; nothing reads it since the wrapper repo (§4). |
 | `tests/` | Offline tests (AppTest for the shell, fakes for SharePoint / the agent stream; no live model). |
 
 Owner-facing overview: `docs/webapp_guide.md`.
