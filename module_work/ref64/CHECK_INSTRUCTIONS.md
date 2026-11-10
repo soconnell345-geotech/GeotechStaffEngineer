@@ -239,3 +239,110 @@ and `test_defaults_used.py::test_every_default_a_run_lists_changes_its_result[pr
 - Host setup: `docs/FOUNDRY.md`, `docs/DATABRICKS_INSTALL.md`,
   `webapp/README.md` §3, `tinyapps/TINYAPPS.md`.
 - Example: `docs/examples/deployment_instructions/`.
+
+## 7. Review fixes
+
+This section covers an independent review of 44c04c6. It used probes with
+made-up text: the prompt each model call really received during fake-model
+turns through `start_turn_job`, plus the `activity.jsonl` they wrote. Its
+verdict was MERGE AFTER FIXES. Each fix below is its own commit on
+`merge/ref64b`.
+
+**F1 (High), commit ed5bed4: both routes of each compiled helper.** With
+ingest and the library on, the main agent reaches each helper two ways: the
+primary tool of that name, and `task` to the sub-agent. Only the sub-agent
+routes carried the block, yet the record listed both roles. The fix:
+- `build_deep_agent` reads each block once (`funhouse_agent/deep/agent.py:1216`,
+  `:1246`) and hands the same block to the tool and to the sub-agent.
+- The record entries come from those same reads (`:1445`).
+- `make_report_ingest_tool(instructions=)` wraps both engines
+  (`funhouse_agent/deep/tools.py:776`, `:782`).
+- `_report_ingest_engine_factory(instructions=)` no longer re-reads the folder
+  on each ingest run.
+- `make_report_library_tool(extra_system_prompt=)` hands the library block to
+  `answer_question(extra_system_prompt=)` (`report_ingest/library_agent.py`).
+  That passes it on to `build_report_library_graph`.
+- New core helper: `instructions.instructed()` (`instructions.py:308`).
+- Test: `test_both_routes_of_each_compiled_helper_get_its_block` covers all
+  four routes. Each gets the block read at build; an edit made after the build
+  does not reach them. The test fails on 44c04c6's tool code.
+
+**F2 (Medium), commit 8f3bc1c: files that did nothing.** The record gains two
+lists:
+- `unused`: files with text that no role of the build takes. `apply()` counts
+  main and every helper spec's name, compiled helpers included.
+- `empty`: the empty files.
+
+Before, a misspelt `reviwer.md` gave only `"roles": {}`. Now the geotech page
+records `"unused": ["reviwer.md"]`, and the review page also lists
+`reviewer.md`, because it has no reviewer. Tests cover the core and both
+pages, and the docs now say so.
+
+**F3 (Low), commit f413679: no host paths in the record.** `error` and
+`file_errors` are now the exception's type plus its `strerror` alone
+(`_reason`, `instructions.py:99`). Before, they carried the full folder path,
+while `folder` kept only the basename. A non-UTF-8 test now runs on Windows
+too.
+
+**F4 (Low), commit 9727792: `prompt_chars`.** `compile_agent` keeps the
+compiled main prompt's length when it appended something
+(`assembly.py:517`), and `record_build` records that instead
+(`assembly.py:557`). Unset, nothing changes.
+
+**Plan item, built: the diagnostics line (commit 8f3f450).** The Connection
+diagnostics gain a "deployment instructions" line, from
+`instructions.describe()` (`instructions.py:232`) and
+`webapp/diagnostics.py:154`. Both pages show it.
+It gives:
+- "none" when unset;
+- otherwise the folder's name, then for `all.md` and each role file the files
+  and characters, and whether the text was cut;
+- a warning when the folder or a file cannot be read, or a file is empty.
+
+**Plan item, not built: `appended` in the ingest's own run record.** It is
+more than small. The ingest has no run record apart from
+`report.record.json`. Putting `appended` there means a new `DocumentFacts`
+field, which:
+- lands in every saved record;
+- is read by the library and the DIGGS writer;
+- is pinned by the schema snapshots.
+
+So it changes a saved report's output. The turn record now carries the
+ingest's block correctly for both routes.
+
+A related limit, seen in the code and not tested: a resumed ingest checks a
+saved step against its `made_by` (for example the range labels' engine name
+and prompt versions, `report_ingest/graph.py:1554`). `made_by` does not hold
+the deployment's block, so an edit between two runs of the same report does
+not by itself redo a saved step.
+
+**After the fixes.** I ran the review's probes again, in the same
+environment.
+- **Unset:** every prompt on both pages (geotech, also with ingest and the
+  library on), the report library's prompt and `prompt_chars` equal master
+  1caf160's exactly.
+- **Fingerprints:** `page_fingerprints.json` is unchanged.
+- **Routes:** all four routes carry the block (ingest tool and sub-agent are
+  each an `InstructedEngine`; library tool and sub-agent each pass 1 of 1
+  model calls).
+- **Turn record:** a fake-model turn's `turn_start` reads, on geotech,
+  `"unused": ["model_setup.md", "reviwer.md"]` (model_setup is off by
+  default), and `prompt_chars` 28,020, the compiled prompt. On review it reads
+  `"unused": ["calc.md", "model_setup.md", "references.md",
+  "report_ingest.md", "report_library.md", "reviewer.md", "reviwer.md"]`.
+- **Test run:** one run, Python 3.14 venv, serial; no other pytest running,
+  at least 3.7 GB free; exit code from pytest. GitHub runs the full suite on
+  the merge.
+
+  | Tests | Result | Exit |
+  |---|---|---|
+  | `packages/aec-agent-core/tests`, `webapp/tests/test_deployment_instructions.py`, `funhouse_agent/deep/tests/test_report_ingest_chat_model.py`, `test_report_ingest_offline.py`, `test_report_library_offline.py`, `report_ingest/tests/test_library_agent.py`, `test_package.py`, `test_subagent.py`, `webapp/tests/test_page_fingerprints.py`, `test_review_boundary.py`, `test_public_text.py`, `test_diagnostics.py`, `test_docs_currency.py` | 414 passed, 1 skipped (POSIX permissions, on Windows) | 0 |
+
+- `~/.geotech_webapp` has the same listing before and after.
+
+**Notes, unchanged:**
+- "Last in its prompt" means last in the prompt our code hands deepagents.
+  deepagents then adds its base prompt and tool sections, about 12,100
+  characters after the block on the geotech main agent and about 2,500 on a
+  helper.
+- The minimal review arm still gets no block.
