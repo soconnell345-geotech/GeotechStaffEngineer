@@ -104,7 +104,12 @@ def _num(s: str) -> Optional[float]:
 def parse_reads(text: str) -> Tuple[List[Dict[str, Any]],
                                     Optional[Dict[str, Any]]]:
     """The ``READ`` lines and the ``ANSWER`` line of a raw answer (its pixel
-    boxes not yet rewritten): ``([{axis, at, curve, value, px}], answer)``."""
+    boxes not yet rewritten): ``([{axis, at, curve, value, px}], answer)``.
+
+    In each ``key = value`` field the key is what comes before the first
+    equals sign and the value what follows the last one, so a field that
+    restates the quantity (``x = s_u2/s_u1 = 0.30``) reads 0.30, not the
+    digit in the symbol's name (the 2026-11-10 review found it read 2.0)."""
     reads: List[Dict[str, Any]] = []
     answer = None
     for line in (text or "").splitlines():
@@ -117,8 +122,9 @@ def parse_reads(text: str) -> Tuple[List[Dict[str, Any]],
         for part in s.split("|")[1:]:
             if "=" not in part and ":" not in part:
                 continue
-            k, _, v = part.partition("=") if "=" in part else \
-                part.partition(":")
+            sep = "=" if "=" in part else ":"
+            k = part.split(sep, 1)[0]
+            v = part.rsplit(sep, 1)[1]
             k = k.strip().lower()
             if k in ("x", "y") and axis is None:
                 axis, at = k, _num(v)
