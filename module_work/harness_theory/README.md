@@ -37,6 +37,12 @@ matters, the documents say so.
 
 ### Changed since this was written
 
+**2026-11-10, on master, off by default:** `GEOTECH_VISION_SHOW_ME=1` gives
+the Document Review page's three looking tools a `show_me` argument. With
+it a look is not a side call: the image goes to the agent's own model at
+its next step (`aec_agent_core/deep/inline_images.py`). Without it nothing
+below changes. Not measured (BACKLOG DR-38, EV-40).
+
 These changes date from 2026-10-07. They shipped in app 5.32.1 with planlens
 0.12.0, both released on 2026-10-08 after Foundry brief 4 measured them.
 The body text still describes 5.32.0; short notes in the affected sections

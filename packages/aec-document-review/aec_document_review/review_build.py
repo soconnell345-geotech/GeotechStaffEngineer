@@ -85,7 +85,8 @@ def _review_page_rewrites() -> dict:
     return dict(REVIEW_REWRITES)
 
 
-def _review_reader_subagent(primary_tools) -> Optional[dict]:
+def _review_reader_subagent(primary_tools,
+                            show_images=None) -> Optional[dict]:
     """deepagents' ``general-purpose`` helper, re-declared for the review
     page with the review's reading rules, the read-only tools and a budget
     whose last call reports (DR-02, check 1 C8: the stock helper had a
@@ -94,6 +95,9 @@ def _review_reader_subagent(primary_tools) -> Optional[dict]:
     The name stays ``general-purpose`` so it REPLACES the stock helper. Its
     tools are the primary's reading and looking tools, the reading helper's set
     (``review_agent.READER_TOOLS``); nothing that writes a file or a markup.
+    ``show_images`` is the middleware that shows the helper an image it asked
+    to be shown (``show_me``, BACKLOG DR-38); the helper holds the primary's
+    looking tools, so it needs its own.
     """
     if _GENERAL_PURPOSE_SPEC is None:
         return None
@@ -107,12 +111,24 @@ def _review_reader_subagent(primary_tools) -> Optional[dict]:
         "system_prompt": DOCUMENT_REVIEW_READER_PROMPT,
         "tools": [t for t in primary_tools
                   if getattr(t, "name", None) in wanted],
-        "middleware": [ModelCallBudgetMiddleware(
+        "middleware": [*([show_images] if show_images is not None else []),
+                       ModelCallBudgetMiddleware(
                            READER_MAX_MODEL_CALLS,
                            final_turn_nudge=READER_NUDGE,
                            exhausted_message=READER_EXHAUSTED),
                        HideScratchFilesystem()],
     }
+
+
+def _show_images(engine):
+    """The middleware that shows an agent the images its ``show_me`` looks
+    stored, or ``None`` when the switch is off (``GEOTECH_VISION_SHOW_ME``,
+    BACKLOG DR-38). One per agent that holds the looking tools."""
+    from aec_agent_core import review_flags
+    if not review_flags.show_me():
+        return None
+    from aec_agent_core.deep.inline_images import InlineImageMiddleware
+    return InlineImageMiddleware(engine=engine)
 
 
 def review_page_budget() -> Optional[int]:
@@ -231,6 +247,8 @@ def build_review_page_agent(
         description_rewrites=_review_page_rewrites(),
         plot_reference_charts=False,
         added_tools=None,
+        # the looking tools take show_me behind its switch (DR-38)
+        show_choice=_flags.show_me(),
         # behind the figure switches the main agent's own redraw can retire
         # a figure any helper drew this turn (GM-151)
         plot_data_replaces=_flags.figure_helper() or _flags.plot_code(),
@@ -292,7 +310,7 @@ def build_review_page_agent(
     # The page's reading helper replaces deepagents' stock one, so it
     # carries the reading rules (DR-02); appended here so the guards reach
     # it like every other helper.
-    reader = _review_reader_subagent(tools)
+    reader = _review_reader_subagent(tools, show_images=_show_images(engine))
     if reader is not None:
         subagents.append(reader)
 
@@ -309,7 +327,11 @@ def build_review_page_agent(
     # menu and prompt. Then a model-call budget whose last call answers from
     # what was gathered, so a long turn ends with findings and what was not
     # checked, never a GraphRecursionError (DR-03).
-    page_middleware = [HideScratchFilesystem()]
+    # First, so it reads the tool results as the turn left them: an image a
+    # look asked to be shown goes in front of the model at its next call.
+    page_middleware = [*([m] if (m := _show_images(engine)) is not None
+                         else []),
+                       HideScratchFilesystem()]
     page_budget = review_page_budget()
     if page_budget:
         from aec_document_review.review_agent import EXHAUSTED, FINAL_NUDGE
