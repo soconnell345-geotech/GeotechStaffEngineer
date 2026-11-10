@@ -15,8 +15,11 @@ step-by-step computation, engineering checks (pass/fail), and figures.
 - `template.py` — HTML/CSS template as Python string (no external files)
 - `docx_renderer.py` — markdown -> Word (.docx) for prose the agent composed
   (see "Word output" below); nothing to do with the packages themselves.
-  Since INF-30 step 5 it is `funhouse_agent/docx_renderer.py`, both pages'
-  module; `calc_package.docx_renderer` is the same module under its old name
+  Since 5.35.0 it is the shared core's
+  `packages/aec-agent-core/aec_agent_core/docx_renderer.py` (INF-30 step 5
+  moved it to `funhouse_agent`, INF-32 step 11 (c) to the core), both pages'
+  module; `calc_package.docx_renderer` and `funhouse_agent.docx_renderer`
+  are the same module under its old names
 - `tables.py` — calculation tables (GM-39): one CSV per table and the printed
   "Calculation Tables" section (see "Calculation tables" below)
 - `latex_renderer.py`, `latex_template.py`, `latex_compiler.py` — the LaTeX / PDF
@@ -192,8 +195,10 @@ reads. The agent composes a memo, a findings summary or a review response as
 markdown, and reviewers ask for it as `.docx` — a file they can track changes
 in, paste into a report template and send on. `markdown_to_docx(markdown,
 output_path, base_dir=..., title=...)` is that one step, and the agent tool
-`write_docx` is it on the tool surface (`funhouse_agent/vision_tools.py`,
-registered beside `save_file` in `funhouse_agent/deep/tools.py`).
+`write_docx` is it on the tool surface
+(`packages/aec-agent-core/aec_agent_core/vision_tools.py`, registered beside
+`save_file` in the core's `deep/vision_kit.py`, which
+`funhouse_agent/deep/tools.py` uses).
 
 It renders headings 1-4 to Word's own heading styles, runs of **bold**,
 *italic* and `inline code`, bullet and numbered lists with one level of
