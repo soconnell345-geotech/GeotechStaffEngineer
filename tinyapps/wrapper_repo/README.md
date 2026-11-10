@@ -104,6 +104,7 @@ setting names, so existing deployments keep working.
 | `SHAREPOINT_SITE_URLS`, `GRAPH_CLOUD` (optional) | more sites; the Microsoft cloud when the site address does not say it |
 | `KV_NAME` (app setting) | the Key Vault the values above live in |
 | `GEOTECH_WEBAPP_DATA` (optional) | where conversations live on the machine; `app.py` sets `/home/data/geotech_webapp` on the App Service |
+| `GEOTECH_INSTRUCTIONS` (optional; an app setting or a `.env` line, not Key Vault) | the full path of a folder of this deployment's own instructions for the agents (units, formats, house style): `all.md` for every agent and helper, then `main.md`, `general-purpose.md` (the reading helper) and `figure.md`. In an `instructions/` folder of this repository it is `/home/site/wwwroot/instructions` on the App Service. Each role's text goes last in its prompt, under rules it cannot switch off, at most 4,000 characters a role; Connection diagnostics says what each role gets |
 | `DEV_IDENTITY` (local only) | stands in for the signed-in user |
 | `--server.corsAllowedOrigins` in `run.sh` | the published URL of the app (CfA fills it in) |
 
