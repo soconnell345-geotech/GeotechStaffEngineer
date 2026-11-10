@@ -3070,5 +3070,30 @@
       "BACKLOG.md OWN-131, GM-309",
       "module_work/gm309/CHECK.md"
     ]
+  },
+  "OWN-132": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "The test machine's name (the one your Tiny Apps round runs on) is in about 26 files of the public app repo. Keep it, or replace it with \"the test machine\" everywhere?",
+    "why": "The GitHub repo is public. The name's first three letters can read as a government department's abbreviation, the kind of name the repo otherwise keeps out.",
+    "background": "It sits in tinyapps/TINYAPPS.md, HANDOFF, CLAUDE.md and older module_work notes. The place names were removed the same way on 2026-11-10 (INF-69), and the repo's privacy test now guards them in every file. Git history keeps old text either way (OWN-56).",
+    "options": [
+      {
+        "label": "Replace it",
+        "effect": "Every current file says \"the test machine\" instead, and the privacy test guards the name so it cannot come back."
+      },
+      {
+        "label": "Keep it",
+        "effect": "Nothing changes; the name stays in the public docs."
+      }
+    ],
+    "recommendation": "Replace it: a small change, the same as the place names, and nothing reads the name.",
+    "if_no_answer": "The name stays as it is.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-132",
+      "C:/dev/tmp/doc_review/C.md (local)"
+    ]
   }
 }
