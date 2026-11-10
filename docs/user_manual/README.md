@@ -1,9 +1,12 @@
 # User Manual — source & build
 
-The distributed PDF is `../GeotechStaffEngineer_User_Manual_v<version>.pdf`,
-named for the `pyproject.toml` version it was built from (the copy in the repo
-is still `..._v5.3.pdf`). It is regenerable from source each release with three
-steps (run from this folder, using the project venv):
+The manual is `manual.html` in this folder (rebuilt for 5.35.0 on
+2026-11-10). The PDF, `../GeotechStaffEngineer_User_Manual_v<version>.pdf`,
+named for the `pyproject.toml` version, is not kept in the repo: at 5.35.0 it
+is 188 pages and about 11 MB, and every release would add that to the public
+repo's history. Render it on demand with step 3; the old v5.3 PDF was removed
+on 2026-11-10 (BACKLOG DOC-10). The three steps (run from this folder, using
+the project venv):
 
 ```bash
 # 1. Capture real worked-example output from the live dispatch layer
