@@ -29,16 +29,25 @@ of the core's modules (`CORE_ALIASES` in `webapp/__init__.py`).
 
 ## 1. Run it locally (one command after install)
 
-From a published install:
+From a published install. The app's files are inside the installed package,
+so the last line asks Python where they are:
 
 ```bash
 pip install "geotech-staff-engineer"        # one install brings the whole stack; the old [deep,full,webapp] extras still work as empty aliases
 export ANTHROPIC_API_KEY=sk-...          # Windows PowerShell: $env:ANTHROPIC_API_KEY="sk-..."
-streamlit run webapp/app.py
+streamlit run "$(python -c 'import webapp, os; print(os.path.dirname(webapp.__file__))')/pages_entry.py"
 ```
 
-Streamlit prints a local URL (default `http://localhost:8501`) and opens it in
-your browser. That's the whole thing.
+In Windows PowerShell the last line is:
+
+```powershell
+streamlit run "$(python -c 'import webapp, os; print(os.path.dirname(webapp.__file__))')\pages_entry.py"
+```
+
+That starts both pages. Put `app.py` in place of `pages_entry.py` for the
+geotech page alone. `streamlit run webapp/app.py` works only from a checkout
+of this repository (below). Streamlit prints a local URL (default
+`http://localhost:8501`) and opens it in your browser. That's the whole thing.
 
 Python 3.11 or newer. The install brings the shared core `aec-agent-core`,
 `planlens` and `geotech-references` with it.
@@ -571,7 +580,6 @@ owner's first-round checklist and the questions for CfA are in
 | `ws_upload.py` + `ws_upload_component/` | Websocket file uploader used on Databricks (the driver proxy 403s the native uploader's PUT); 25 MB per file. |
 | `diagnostics.py` | Sidebar "Connection diagnostics" battery (resolve / plain / stream / tool-call / upload probe); terminal-callable. |
 | `budget_panel.py`, `version_guard.py`, `email_tools.py` | AI-budget line, agent-stack drift warnings, and the `email_file` tool. |
-| `requirements.txt` | The old TinyApp dependency pin; nothing reads it since the wrapper repo (§4). |
 | `tests/` | Offline tests (AppTest for the shell, fakes for SharePoint / the agent stream; no live model). |
 
 Owner-facing overview: `docs/webapp_guide.md`.
