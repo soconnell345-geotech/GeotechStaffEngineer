@@ -126,16 +126,19 @@ Key conventions:
   are kept; refs at 1.6.0 (76f494d; pin `geotech-references>=1.6.0`): a deployment adds its own references as packs named by `GEOTECH_REFERENCES_PACKS` (refs' `docs/REFERENCE_PACKS.md`), and its own instructions by `GEOTECH_INSTRUCTIONS`, appended under the protected rules (merge 4f22c00); earlier pinned at 32bbd77 (worked examples from five manuals); the
   app split's steps 6-8 are in (the Document Review page loads one geotech
   package and four app modules), and steps 10 and 11 (a): `aec-agent-core`,
-  the shared core, in `packages/aec-agent-core` (1.0.0.dev1, not on PyPI
-  yet), pinned exactly, holding the model connections, settings, identity,
+  the shared core, in `packages/aec-agent-core` (1.0.0, released
+  first at step 12), pinned exactly, holding the model connections, settings, identity,
   vision calls and Tiny Apps key routes, GSE's part handed in through
   `aec_agent_core.hooks`, then (step 11 (b)) the figure helper, plotting
   box, chart stack and worked examples, GSE's chart lines handed in by a
   registration, then (step 11 (c)) guards and records, Word and Excel, the
   checks, the review suite's framework and the shared assembly, with a
   core-only CI job; old import paths kept as aliases; a dev install
-  puts it first: `pip install -e packages/aec-agent-core -e .`; the
-  core's first release (step 12) next; the owner's question list
+  puts it first: `pip install -e packages/aec-agent-core -e .`; then
+  (step 13) Document Review as the public package `aec-document-review`
+  0.1.0 in `packages/aec-document-review` on the core at 1.0.0 (pinned
+  exactly), GSE's review files frozen by hash; the releases (step 12)
+  next; the owner's question list
   runs inside the ingest when `GSE_REPORT_QUESTIONS` names it, posts matched
   from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split; the
   geotech page keeps 15 document tools off the list until a document is
