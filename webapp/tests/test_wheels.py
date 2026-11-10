@@ -51,7 +51,8 @@ CORE_NAME = "aec-agent-core"
 
 
 def _project_version(pyproject: pathlib.Path) -> str:
-    # A regex rather than tomllib, as test_docs_currency does (3.10 has none).
+    # A regex rather than tomllib, as test_docs_currency does (written while
+    # the floor was 3.10, which has none).
     text = pyproject.read_text(encoding="utf-8")
     for line in text.split("[project]", 1)[-1].splitlines():
         if line.startswith("["):

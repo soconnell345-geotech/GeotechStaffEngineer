@@ -98,7 +98,7 @@ system_prompt=build_document_review_prompt())`) and `webapp/tinyapps_entry.py`
   to SharePoint as before.
 - Multi-tenant shared VM, one slot; CfA monitors usage; heavy fem2d / Monte
   Carlo runs may need throttling courtesy. Python on dosdev: 3.11.9 (we
-  require ≥3.10).
+  require ≥3.11 from 5.35.0).
 - Approval path: MOU → GHE repo → SIA (1–2 wk; business-justification script
   in guide §5.3.1) → DT CAB only for connections outside the Data.State
   boundary (the Department's SharePoint tenant — ask) → PCR (1–2 d). Code must run locally

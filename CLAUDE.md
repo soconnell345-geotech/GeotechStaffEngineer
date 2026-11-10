@@ -175,8 +175,9 @@ Key conventions:
   - **Install changes:** one new package, the shared core
     `aec-agent-core`, pinned at 1.0.0 and released first; it requires
     nothing the app did not already require, so an install log gains only
-    `aec-agent-core-1.0.0`. The core needs Python 3.11 or later, so 5.35.0
-    does too in practice (every host runs 3.12). planlens 0.15 and geotech-references 1.6.0
+    `aec-agent-core-1.0.0`. Python 3.11 or newer, as the core and
+    deepagents need (`requires-python` raised from 3.10; every host runs
+    3.12). planlens 0.15 and geotech-references 1.6.0
     add no package. pystrata by Python version: `pystrata>=0.5,<0.6` with
     `pyrvt<0.9` on Python 3.12, `pystrata>=0.6,<0.7` on 3.13 (5.34.0 on
     3.13 broke site response). A checkout installs the core first:
