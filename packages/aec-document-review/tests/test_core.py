@@ -1155,3 +1155,38 @@ def test_a_turn_at_the_step_cap_answers_from_what_it_gathered():
     assert msgs[-1]["content"] == core.STEP_CAP_NUDGE
     assert len(msgs[2]["content"]) < 5000
     assert core.answer_at_step_cap(object(), "q", turn) is None
+
+
+# ---------------------------------------------------------------------------
+# A pass the model-call budget ended is not continued (deployment review
+# 2026-11-10: each continuation started a new budget, up to three in a turn)
+# ---------------------------------------------------------------------------
+
+class _BudgetEndedAgent:
+    """Its one pass ends the way the budget's forced last call does: the
+    budget is noted on the turn, and the reply still names a next step."""
+    def __init__(self):
+        self.n = 0
+
+    def stream(self, inp, config=None, stream_mode=None):
+        from aec_agent_core.deep.keep_work import note_budget_reached
+        self.n += 1
+        note_budget_reached()
+        yield ("messages", (_Msg("Now let me run the next step."),
+                            {"langgraph_node": "model"}))
+
+
+def test_stream_turn_does_not_continue_a_pass_the_budget_ended(monkeypatch):
+    monkeypatch.setattr(core, "ends_mid_task", lambda text, saw: True)
+    agent = _BudgetEndedAgent()
+    entries = list(core.stream_turn(
+        agent, [{"role": "user", "content": "go"}], "tid"))
+    assert agent.n == 1
+    assert not any(e["kind"] == "tool_call" and "auto-continue" in e["text"]
+                   for e in entries)
+    assert entries[-1]["kind"] == "turn_done"
+    assert entries[-1]["answer"] == "Now let me run the next step."
+    # the note is the turn's own: the next turn continues as before
+    again = _AlwaysIntentAgent()
+    list(core.stream_turn(again, [{"role": "user", "content": "go"}], "tid"))
+    assert again.n == 1 + core.MAX_AUTO_CONTINUES

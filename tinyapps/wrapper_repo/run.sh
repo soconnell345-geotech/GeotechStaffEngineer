@@ -88,6 +88,7 @@ case "$PUBLISHED_ORIGINS" in
 esac
 
 if [ "${APP_DRY_RUN:-}" = "1" ]; then
+    echo "DRY RUN: origins ${ORIGIN_ARGS[*]}"
     echo "DRY RUN: PYTHONPATH=${PYTHONPATH:-} python -m streamlit run $APP_DIR/app.py --server.port ${PORT:-8000} ..."
     exit 0
 fi

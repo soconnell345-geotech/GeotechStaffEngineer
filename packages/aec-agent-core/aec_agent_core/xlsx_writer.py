@@ -321,6 +321,7 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
             rows = rows[:MAX_ROWS]
         widths: Dict[int, int] = {}
         n_cols = 0
+        n_equals = 0
         for r, row in enumerate(rows, start=1):
             n_cols = max(n_cols, len(row))
             for c, value in enumerate(row, start=1):
@@ -328,13 +329,20 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
                 if v is not None and not isinstance(v, (int, float, str)):
                     v = str(v)
                 cell = ws.cell(row=r, column=c, value=v)
-                # text that opens with "=" (a note such as "= 2 x 150 mm")
-                # is text: as a formula Excel shows an error in its place
+                # Cells hold values, not formulas: text that opens with "="
+                # (a note such as "= 2 x 150 mm") stays text. Left as a
+                # formula, Excel shows an error in its place or offers to
+                # repair the file.
                 if isinstance(v, str) and v.startswith("="):
                     cell.data_type = "s"
+                    n_equals += 1
                 if spec["header"] and r == 1:
                     cell.font = Font(bold=True)
                 widths[c] = max(widths.get(c, 0), _longest_line(v))
+        if n_equals:
+            warnings.append(
+                f"sheet '{name}': {n_equals} cell(s) open with '=' and were "
+                "written as text (this tool writes values, not formulas)")
         width_of = {c: column_width(w) for c, w in widths.items()}
         for c, w in width_of.items():
             ws.column_dimensions[get_column_letter(c)].width = w

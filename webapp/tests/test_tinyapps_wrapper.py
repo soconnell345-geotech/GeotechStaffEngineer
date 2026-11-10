@@ -239,3 +239,113 @@ def test_the_real_template_takes_route_nexus_by_default(tmp_path):
     assert "Code route: nexus" in r.stdout
     assert "packages.txt" in _pip_line(r.stdout)
     assert r.stdout.splitlines()[-1].endswith("app.py --server.port 8000 ...")
+
+
+# --- deployment review 2026-11-10 -------------------------------------------
+
+def _origins(out):
+    lines = [ln for ln in out.splitlines()
+             if ln.startswith("DRY RUN: origins ")]
+    assert len(lines) == 1, out
+    return lines[0].split()[3:]
+
+
+@needs_bash
+def test_the_published_address_comes_from_an_app_setting(tmp_path):
+    """The address was a line to edit in run.sh, lost at every update of
+    the file; left as it was, the page never loaded and nothing said why."""
+    d = _wrapper(tmp_path)
+    r = _run(d, APP_ORIGINS="https://apps.example, https://review.example")
+    assert r.returncode == 0, r.stderr
+    assert _origins(r.stdout) == [
+        "--server.corsAllowedOrigins", "https://apps.example",
+        "--server.corsAllowedOrigins", "https://review.example"]
+    assert "WARNING: the published address is not set" not in r.stderr
+
+
+@needs_bash
+def test_an_address_never_set_is_said_at_the_start(tmp_path):
+    d = _wrapper(tmp_path)
+    full = {k: v for k, v in os.environ.items()
+            if k not in ("APP_SOURCE", "PYTHONPATH", "APP_ORIGINS")}
+    full.update(APP_DRY_RUN="1", PIP_INDEX_URL=INDEX)
+    r = subprocess.run([_BASH, "run.sh"], cwd=d, env=full,
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert _origins(r.stdout) == ["--server.corsAllowedOrigins",
+                                  "https://CHANGE-ME"]
+    assert "WARNING: the published address is not set (APP_ORIGINS" in r.stderr
+
+
+def _start(tmp_path, packages_present):
+    """Run run.sh for real against a made-up ``python``: its ``pip install``
+    fails, its import check answers ``packages_present``, and it prints a
+    line where Streamlit would start."""
+    d = _wrapper(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "python"
+    stub.write_bytes((
+        "#!/bin/bash\n"
+        'case "$1 $2" in\n'
+        '    "-m pip") echo "made-up pip: no such index"; exit 1 ;;\n'
+        f'    "-c "*) exit {0 if packages_present else 1} ;;\n'
+        '    "-m streamlit") echo "made-up streamlit started"; exit 0 ;;\n'
+        "esac\n"
+        "exit 0\n").encode())
+    stub.chmod(0o755)
+    full = {k: v for k, v in os.environ.items()
+            if k not in ("APP_SOURCE", "PYTHONPATH", "APP_DRY_RUN")}
+    full.update(PIP_INDEX_URL=INDEX, APP_ORIGINS="https://apps.example",
+                PATH=str(bin_dir) + os.pathsep + full.get("PATH", ""))
+    return subprocess.run([_BASH, "run.sh"], cwd=d, env=full,
+                          capture_output=True, text=True, timeout=60)
+
+
+@needs_bash
+def test_a_failed_install_with_nothing_installed_stops_the_start(tmp_path):
+    """The start went on to Streamlit, and the log's first error was an
+    import error far from the cause."""
+    r = _start(tmp_path, packages_present=False)
+    assert r.returncode != 0
+    assert "ERROR: the package install failed" in r.stderr
+    assert "ERROR: the app cannot start" in r.stderr
+    assert "Starting Streamlit" not in r.stdout
+    assert "made-up streamlit started" not in r.stdout
+
+
+@needs_bash
+def test_a_failed_install_over_an_earlier_one_starts_with_a_warning(tmp_path):
+    r = _start(tmp_path, packages_present=True)
+    assert r.returncode == 0, r.stderr
+    assert "ERROR: the package install failed" in r.stderr
+    assert "WARNING: starting with the packages already installed" in r.stderr
+    assert "made-up streamlit started" in r.stdout
+
+
+@pytest.mark.parametrize("env, expect", [
+    ({"WEBSITE_SITE_NAME": "madeup-site"}, "0"),          # the App Service
+    ({"WEBSITE_SITE_NAME": "madeup-site",
+      "GEOTECH_PLOT_CODE": "1"}, "1"),                    # the app setting wins
+    ({}, "None"),                                         # a local run
+])
+def test_app_py_turns_model_written_plot_code_off_on_the_app_service(
+        tmp_path, env, expect):
+    """One process holds every tester's conversations there, and the box the
+    code runs in limits Python, not the operating system (INF-16)."""
+    d = tmp_path / "wrapper"
+    entry = d / "app_src" / "aec_document_review"
+    entry.mkdir(parents=True)
+    shutil.copy(WRAPPER / "app.py", d / "app.py")
+    (entry / "__init__.py").write_text("")
+    (entry / "tinyapps_entry.py").write_text(
+        "import os\n\n\ndef main():\n"
+        "    print('plot code:', os.environ.get('GEOTECH_PLOT_CODE'))\n")
+    full = {k: v for k, v in os.environ.items()
+            if k not in ("APP_SOURCE", "PYTHONPATH", "GEOTECH_PLOT_CODE",
+                         "WEBSITE_SITE_NAME", "IDENTITY_ENDPOINT")}
+    full.update(env)
+    r = subprocess.run([sys.executable, "app.py"], cwd=d, env=full,
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert f"plot code: {expect}" in r.stdout

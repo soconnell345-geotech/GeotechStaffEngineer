@@ -158,3 +158,25 @@ class TestRegistry:
         # ...and a new turn can start afterwards
         j2 = tj.start_turn_job(object(), [], tid, 50, _ctx(tid, files, [], []))
         assert j2 is not job
+
+
+def test_a_finished_turn_the_page_has_shown_is_dropped_from_the_table(
+        monkeypatch):
+    """Deployment review 2026-11-10: every conversation ever run kept its
+    turn's events and messages in the process for good."""
+    monkeypatch.setattr(core, "stream_turn", _fake_stream(EVENTS_OK))
+    jobs = {}
+    for tid in ("TJA", "TJB"):
+        _tid, files = _mk_conv(tid)
+        jobs[tid] = tj.start_turn_job(object(), [], tid, 50,
+                                      _ctx(tid, files, [], []))
+        _wait_done(jobs[tid])
+    jobs["TJA"].consumed = True              # the page has folded it in
+    _tid, files = _mk_conv("TJC")
+    last = tj.start_turn_job(object(), [], "TJC", 50,
+                             _ctx("TJC", files, [], []))
+    _wait_done(last)
+    assert "TJA" not in tj._JOBS
+    # finished but not yet shown to anyone: kept until it is
+    assert tj.get_turn_job("TJB") is jobs["TJB"]
+    assert tj.get_turn_job("TJC") is last

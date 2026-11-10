@@ -60,11 +60,12 @@ def format_report(checks: List[dict]) -> str:
         elif c["detail"]:
             lines.append(f"    {c['detail']}")
     text = "\n".join(lines)
-    # The report is shown on the page and sent on to the app owner: a key or
-    # a token an error text quoted does not go with it.
+    # The report is shown on the page and sent on to the app owner: a token
+    # or a secret's value an error text quoted does not go with it (the
+    # names of settings, which the report is for, stay).
     try:
-        from aec_agent_core.error_text import mask_secrets
-        return mask_secrets(text)
+        from aec_document_review.sharepoint_log import scrub
+        return scrub(text)
     except Exception:                            # noqa: BLE001
         return text
 

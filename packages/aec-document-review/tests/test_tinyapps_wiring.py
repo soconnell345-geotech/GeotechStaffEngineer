@@ -104,6 +104,36 @@ def test_dev_identity_and_email_fallbacks(monkeypatch):
     assert identity.current_identity().source == "dev"
 
 
+def test_the_deployed_host_serves_nobody_it_cannot_name(monkeypatch):
+    """Deployment review 2026-11-10: a request with no header on the App
+    Service was served as "anonymous" (one folder and the shared settings
+    for every such request), and DEV_IDENTITY was read there."""
+    monkeypatch.setenv("APP_ENV", "azure")
+    monkeypatch.setenv("DEV_IDENTITY", "CORP\\jdoe")
+    monkeypatch.setenv("GEOTECH_USER_EMAIL", "jane.doe@agency.gov")
+    ts.reset()
+    ident = identity.current_identity()
+    assert ident is identity.UNIDENTIFIED
+    assert ident.refused and not ident.authenticated and not ident.multi_user
+    assert identity.header_name() in identity.UNIDENTIFIED_MESSAGE.format(
+        header=identity.header_name())
+    # two values in the header: neither is trusted, there as anywhere
+    monkeypatch.setattr(identity, "_streamlit_header_values",
+                        lambda: ["CORP\\a", "CORP\\b"])
+    assert identity.current_identity() is identity.UNIDENTIFIED
+    # the header names the caller
+    monkeypatch.setattr(identity, "_streamlit_header_values",
+                        lambda: ["CORP\\jdoe"])
+    named = identity.current_identity()
+    assert named.source == "header" and named.multi_user and not named.refused
+
+
+def test_a_local_run_is_never_refused(monkeypatch):
+    assert not identity.ANONYMOUS.refused
+    monkeypatch.setenv("DEV_IDENTITY", "CORP\\jdoe")
+    assert not identity.current_identity().refused
+
+
 def test_local_dotenv_reaches_settings_read_from_the_environment(
         tmp_path, monkeypatch):
     """TA-17: DEV_IDENTITY, GEOTECH_SHAREPOINT_ROOT and
@@ -537,6 +567,107 @@ def test_store_builds_the_graph_manager_when_configured(fm, monkeypatch):
     monkeypatch.delenv(sharepoint_store.ENV_SITE, raising=False)
     mgr = sharepoint_store._build_file_manager()
     assert isinstance(mgr, graph_sharepoint.GraphFileManager)
+
+
+# --- a busy or refusing service (deployment review 2026-11-10) -------------
+
+def _answering(fm, monkeypatch, code, times, when, headers=None):
+    """The fake site, except that the first ``times`` requests ``when(req)``
+    picks are answered with HTTP ``code``. Returns the waits the manager
+    took (``time.sleep`` is recorded, not slept) and the refused sends."""
+    import io
+    import urllib.error
+    waits, refused = [], []
+    monkeypatch.setattr(graph_sharepoint.time, "sleep", waits.append)
+    fake = fm._fake
+
+    def urlopen(req, timeout=None):
+        if when(req) and len(refused) < times:
+            refused.append((req.get_method(), req.full_url))
+            raise urllib.error.HTTPError(req.full_url, code, "err",
+                                         headers or {}, io.BytesIO(b"{}"))
+        return fake(req, timeout=timeout)
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    return waits, refused
+
+
+def _drives(req):
+    return req.full_url.endswith("/sites/SITE/drives")
+
+
+def test_a_throttled_call_waits_as_told_and_is_sent_again(fm, monkeypatch):
+    waits, refused = _answering(fm, monkeypatch, 429, 2, _drives,
+                                headers={"Retry-After": "3"})
+    assert {e["name"] for e in fm.ls("Shared Documents/GSE")} == {"a.txt",
+                                                                  "sub"}
+    assert len(refused) == 2 and waits == [3.0, 3.0]
+
+
+def test_a_call_still_throttled_after_the_last_try_raises(fm, monkeypatch):
+    waits, refused = _answering(fm, monkeypatch, 429, 99, _drives)
+    with pytest.raises(graph_sharepoint.GraphError) as exc:
+        fm._request("GET", "sites/SITE/drives")
+    assert exc.value.status == 429
+    assert len(refused) == graph_sharepoint.BUSY_TRIES
+    assert waits == [1.0, 2.0, 4.0]          # no Retry-After: 1, 2, 4 s
+    # no single wait is longer than the cap
+    assert graph_sharepoint._busy_wait(
+        _http_error("u", 429), 9) == graph_sharepoint.BUSY_WAIT_MAX_S
+
+
+def test_a_busy_service_gets_a_read_again_but_not_a_create(fm, monkeypatch):
+    waits, refused = _answering(fm, monkeypatch, 503, 1, _drives)
+    assert fm._request("GET", "sites/SITE/drives")["value"]
+    assert len(refused) == 1 and waits == [1.0]
+    # a POST may have been carried out: it is not sent a second time
+    waits, refused = _answering(
+        fm, monkeypatch, 503, 99, lambda req: req.get_method() == "POST"
+        and req.full_url.endswith("/children"))
+    with pytest.raises(graph_sharepoint.GraphError) as exc:
+        fm._request("POST", "drives/D1/items/ROOT/children",
+                    data=b'{"name": "newdir"}')
+    assert exc.value.status == 503 and len(refused) == 1 and waits == []
+
+
+def test_a_401_gets_a_new_token_and_one_more_send(fm, monkeypatch):
+    _waits, refused = _answering(fm, monkeypatch, 401, 1, _drives)
+    assert fm._request("GET", "sites/SITE/drives")["value"]
+    assert len(refused) == 1
+    assert len([c for c in fm._fake.calls if "oauth2" in c[1]]) == 2
+    # refused again with the new token: the error, not a loop
+    _waits, refused = _answering(fm, monkeypatch, 401, 99, _drives)
+    with pytest.raises(graph_sharepoint.GraphError) as exc:
+        fm._request("GET", "sites/SITE/drives")
+    assert exc.value.status == 401 and len(refused) == 2
+
+
+def test_an_error_text_carries_no_address_query(fm, monkeypatch):
+    """An upload session's address holds a pre-authenticated token in its
+    query; the error goes to the log and the diagnostics report."""
+    _answering(fm, monkeypatch, 400, 99, lambda req: True)
+    req = urllib.request.Request(
+        "https://host.sharepoint.com/upload/session?tempauth=MADE-UP-TOKEN",
+        data=b"x", method="PUT")
+    with pytest.raises(graph_sharepoint.GraphError) as exc:
+        fm._send(req)
+    assert "https://host.sharepoint.com/upload/session" in str(exc.value)
+    assert "MADE-UP-TOKEN" not in str(exc.value)
+    assert "tempauth" not in str(exc.value)
+
+
+def test_a_refused_upload_raises(fm, tmp_path, monkeypatch):
+    """It answered False, which the conversation mirror did not read: the
+    file was counted as saved and never sent again."""
+    src = tmp_path / "hello.txt"
+    src.write_bytes(b"hello")
+    _answering(fm, monkeypatch, 403, 99,
+               lambda req: req.get_method() == "PUT")
+    with pytest.raises(graph_sharepoint.GraphError) as exc:
+        fm.upload_file(str(src), "Shared Documents/GSE/hello.txt",
+                       overwrite=True)
+    assert exc.value.status == 403
+    assert "GSE/hello.txt" not in fm._fake.files
 
 
 # ------------------------------------------------------------------ helpers
