@@ -33,6 +33,27 @@ Dispatch Chain:
   (No dependency on foundry/ files — those are Palantir Foundry artifacts)
 ```
 
+## Where the code lives (5.35.0)
+
+Since 5.35.0 the parts both pages share are in the shared core,
+`aec-agent-core` (`packages/aec-agent-core/aec_agent_core/`, BACKLOG
+INF-32): the vision and file tools (`vision_tools.py`, `image_view.py`,
+`_fileio.py`), the deep agent's guards and records (`deep/keep_work.py`,
+`deep/busy_retry.py`, `deep/pacing.py`, `deep/limits.py`,
+`cited_pages.py`, `cited_documents.py`, `review_flags.py` and others), the
+charts and the plotting box, Word and Excel, and the model connections
+(`engine_config.py`, `tinyapps_engine.py`, `palantir_sdk_engine.py`, from
+`webapp/`). This package keeps the geotech parts: the v1 agent, the
+dispatch and adapters, the deep agent's geotech build (`deep/agent.py`,
+`deep/prompt.py`, `deep/tools.py`), the reviewers and the reference tools.
+The old names still import and give the same module
+(`funhouse_agent.vision_tools` IS `aec_agent_core.vision_tools`; the list
+is `CORE_ALIASES` in `funhouse_agent/__init__.py`, and the aliases go at
+the split's step 16, INF-35). File paths below name the core's file where
+the code now lives. Document Review alone is the package
+`aec-document-review` (`packages/aec-document-review/`); GSE still carries
+its own copy of the review page.
+
 ## Key Design: Dependency Injection
 
 The agent accepts a `genai_engine` object rather than importing any specific SDK.
@@ -136,7 +157,7 @@ format adapters, and all visualization:
 | `plot_cross_section` | Lithology column profile along a transect |
 | `compute_trend` | Linear/log-linear regression with R², COV |
 | `parse_cpt`, `parse_bore` | GEF or BRO-XML CPT and borehole files (pygef) |
-| `read_ags4`, `validate_ags4` | AGS4 files (python-ags4; from the release after 5.33.0 an optional extra, `[ags4]`) |
+| `read_ags4`, `validate_ags4` | AGS4 files (python-ags4; since 5.34.0 an optional extra, `[ags4]`) |
 | `validate_diggs_schema`, `validate_diggs_dictionary` | DIGGS XML against the schema (2.6 bundled; 2.5.a and the dictionary need pydiggs) |
 | `spt_correction`, `stress_dilatancy` | SPT N → N60 → (N1)60; Bolton (1986) dilatancy |
 
@@ -169,7 +190,7 @@ Beyond the 4 standard ReAct tools (`call_agent`, `list_methods`,
   image's own pixels are a frame like a page's: the result gives its `view`
   and 0-999 boxes, an image too large for one look is also read in tiles cut
   from the original, and `render_region` takes the image as
-  `attachment_key` to zoom (`funhouse_agent/image_view.py`). Since VIS-26
+  `attachment_key` to zoom (`packages/aec-agent-core/aec_agent_core/image_view.py`). Since VIS-26
   `annotate_document` and `find_like` take an image in the same pixels:
   PyMuPDF opens an image as a page sized by the dpi the file declares (0.75
   pt a pixel with none), so the app puts the image on its own page at one
@@ -195,7 +216,8 @@ These are dispatched within the agent's ReAct loop (and via the native
 
 ### Verified saves (`_fileio.py`)
 
-`save_file` (and `calc_package`) write through helpers in `_fileio.py` that
+`save_file` (and `calc_package`) write through helpers in
+`packages/aec-agent-core/aec_agent_core/_fileio.py` that
 **verify what actually landed on disk** — a plain write to Databricks
 `/Workspace` can "succeed" while the workspace stores a literal `PLACEHOLDER`
 (confirmed live 2026-06-12). `written_file_problem` reads the file back and
@@ -210,11 +232,12 @@ verified write when `databricks-sdk` is not importable. The SDK stays an
 OPTIONAL dependency (preinstalled on Databricks runtimes, guarded everywhere); a
 custom `save_fn` is the caller's explicit backend and is never rerouted.
 
-## Deep agent: long turns, helpers and the record (on master after 5.33.0, unreleased)
+## Deep agent: long turns, helpers and the record (since 5.34.0)
 
-The deep agent (`funhouse_agent/deep/`) is described from the code in
+The deep agent (`funhouse_agent/deep/`, with its shared parts in the core's
+`aec_agent_core/deep/`) is described from the code in
 `module_work/harness_theory/` (`shared_machinery.md`: the loop, the limits,
-the eyes). What changed on master after 5.33.0, in short:
+the eyes). What changed from 5.34.0 on, in short:
 
 - **An errored turn keeps its work** (`webapp/turn_record.py`, TA-19): every
   reply and tool result is recorded as it arrives; on an error the record
@@ -222,7 +245,7 @@ the eyes). What changed on master after 5.33.0, in short:
   Very large results are kept whole in the conversation's `kept/` folder. An
   interrupted turn's new files get download cards and are named in the next
   turn's files note (TA-28).
-- **Helpers** (`deep/keep_work.py`, TA-21, TA-22): at most
+- **Helpers** (`packages/aec-agent-core/aec_agent_core/deep/keep_work.py`, TA-21, TA-22): at most
   `GEOTECH_MAX_HELPERS` (2) at once; a general-purpose helper has a 30-call
   budget (`GEOTECH_HELPER_MAX_MODEL_CALLS`) whose last call hands over what
   it gathered; a helper that stops writes what it read to
@@ -230,7 +253,7 @@ the eyes). What changed on master after 5.33.0, in short:
   so the primary passes the file instead of retyping it (RI-31). A helper
   that stops also leaves the boring-log and lab records it held and had not
   saved (in its answer or a call, found by the shape `write_diggs` takes,
-  `deep/held_records.py`; never other JSON) as
+  `packages/aec-agent-core/aec_agent_core/deep/held_records.py`; never other JSON) as
   `kept/helper_*_records.json`, named in the same note; and a helper's
   `.json` `write_file` is saved on the real disk with its own `save_file`
   (`ScratchFilesystemGuard(json_saver=...)`), where `write_diggs` reads it,
@@ -242,27 +265,27 @@ the eyes). What changed on master after 5.33.0, in short:
   has; its description says to use it only after a draft answer that
   involved calculations, and that it sees only its brief: it cannot open
   documents, pages or files.
-- **Busy refusals** (`deep/busy_retry.py`, `AgentBusyRetry`, TA-20): every
+- **Busy refusals** (`packages/aec-agent-core/aec_agent_core/deep/busy_retry.py`, `AgentBusyRetry`, TA-20): every
   agent model call retries a 429 / 529 / 5xx / overloaded / connection /
   timeout refusal on the provider's retry-after or 15/30/60/120 s,
   `GEOTECH_AGENT_BUSY_TRIES` (5) tries within `GEOTECH_BUSY_TURN_MAX_S`
   (900 s) a turn. An optional per-key token pacer:
-  `GEOTECH_TOKENS_PER_MINUTE` (`deep/pacing.py`; unset = off).
+  `GEOTECH_TOKENS_PER_MINUTE` (`packages/aec-agent-core/aec_agent_core/deep/pacing.py`; unset = off).
 - **Request time limits** (TA-26): a model request gives up after 180 s on
-  the Prompter key route (`webapp/tinyapps_engine.REQUEST_TIMEOUT_S`) and
+  the Prompter key route (`aec_agent_core.tinyapps_engine.REQUEST_TIMEOUT_S`) and
   600 s on the Foundry proxy and Anthropic routes
-  (`webapp/engine_config.MODEL_REQUEST_TIMEOUT_S`); before, langchain handed
+  (`aec_agent_core.engine_config.MODEL_REQUEST_TIMEOUT_S`); before, langchain handed
   the SDK no limit at all. A timeout is then retried as busy.
-- **`kept_readings`** (`vision_tools.py`, TA-28): a read-only tool that lists
+- **`kept_readings`** (`packages/aec-agent-core/aec_agent_core/vision_tools.py`, TA-28): a read-only tool that lists
   the conversation's kept page readings by reference and returns one whole
   by page, as `reuse=true` does. On the geotech page for the primary and its
   helpers; not on the review page (its switch went with BACKLOG DR-39).
-- **Cited pages** (`cited_pages.py`, EV-18): after each turn the pages an
+- **Cited pages** (`packages/aec-agent-core/aec_agent_core/cited_pages.py`, EV-18): after each turn the pages an
   answer cites are checked against the pages any tool or helper read or
   looked at, and a `cited_pages` event is recorded; `GEOTECH_CITED_PAGES`
   (`note` / `retry`; OFF) acts on it. `write_diggs` always adds a
   `page_not_read` cross-check for a record citing pages no tool opened.
-- **Cited documents** (`cited_documents.py`, EV-21; live wave w8b, where a
+- **Cited documents** (`packages/aec-agent-core/aec_agent_core/cited_documents.py`, EV-21; live wave w8b, where a
   brief made up "GEC-11 / AASHTO LRFD 3.11.5" and the PDF and the answer
   carried it as the user's): every published document an answer or a
   deliverable cites (GEC-n and FHWA report numbers as one document, AASHTO
@@ -594,10 +617,10 @@ the eyes). What changed on master after 5.33.0, in short:
   result of 60,000 characters or more opens with a map of its keys (the
   line each starts on, what it holds), so the preview deepagents shows of
   a result moved to scratch says where each key is
-  (`deep/result_map.py`); each turn's engine record lists the tools,
+  (`packages/aec-agent-core/aec_agent_core/deep/result_map.py`); each turn's engine record lists the tools,
   helpers and switches it ran with; an errored turn keeps its token
   count; the vision probe's calls are labelled `probe`.
-- **`calculate`** (`deep/calculate_tool.py`, GM-94; 2026-10-15): a variable
+- **`calculate`** (`packages/aec-agent-core/aec_agent_core/deep/calculate_tool.py`, GM-94; 2026-10-15): a variable
   may be a list of numbers, used through count, sum, mean, median, std
   (sample), min, max, `percentile(L, p)`, `count_above(L, v)` and
   `count_below(L, v)`; a list in arithmetic is refused with a plain message
@@ -756,7 +779,7 @@ the eyes). What changed on master after 5.33.0, in short:
   built. Revisit if a trace shows a specialist running another
   discipline's package.
 
-Every switch and its default: `review_flags.py` and
+Every switch and its default: `packages/aec-agent-core/aec_agent_core/review_flags.py` and
 `module_work/REVIEW_HARNESS.md`. Three are ON by default by the owner's
 ruling of 2026-10-20 (`review_flags.DEFAULT_ON_ENVS`: the figure helper,
 plotting code and judgment calls; `0` turns each off); the build record

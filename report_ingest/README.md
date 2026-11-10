@@ -1548,7 +1548,9 @@ Three engines implement it: `ClaudeEngine` (the Claude API, for development),
 October 2026 used) and, since BACKLOG RI-03, `ChatModelEngine`: any LangChain
 chat model, which is how a report is read on the app's own page. On Foundry
 the page's model is a `palantir_models` class
-(`webapp/palantir_sdk_engine.py`, GPT or Claude).
+(`packages/aec-agent-core/aec_agent_core/palantir_sdk_engine.py` in the
+shared core since 5.35.0, GPT or Claude; `webapp.palantir_sdk_engine` is its
+old name).
 
 **How `ChatModelEngine` calls the model.** A pass's tools are bound with
 `bind_tools`. A structured answer comes back as a call to an `answer` tool
@@ -2256,6 +2258,12 @@ run with no Document Intelligence text at all, pass `di_dir=False` (to
 ingest `run.json` carry `di_withheld: true`, and RESULTS says so.
 
 ### The cells, in order
+
+These cells were written for 5.25.0 (2026-09-21) and pin it. Report ingest is
+now measured on Foundry, and from 5.34.0 every stage reads model first by
+default (`GEOTECH_INGEST_MODEL_FIRST`, above). A current install is
+`geotech-staff-engineer==5.35.0`, which brings the shared core
+`aec-agent-core`, planlens and geotech-references with it.
 
 ```python
 # 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
@@ -3687,11 +3695,17 @@ with planlens.
   10", which holds no strictly rising run of three, so the ruler was refused
   and the sheet came back with no depths at all. planlens 0.6.0 declares
   exactly the dependencies 0.4.0 did, so the pin adds no new package to the
-  cluster.
+  cluster. The app's pin is now `planlens>=0.15` (5.35.0).
 - `pydantic` and `openpyxl`, both already there: pydantic through the agent
-  stack, openpyxl as a hard requirement of `python-ags4`, which this app
-  depends on directly. The hand-label reader imports openpyxl lazily anyway,
-  so a run that never touches the spreadsheet never needs it.
+  stack, openpyxl as a direct requirement of the app (`python-ags4`, which
+  brought it before, is an optional extra since 5.34.0). The hand-label
+  reader imports openpyxl lazily anyway, so a run that never touches the
+  spreadsheet never needs it.
+- **The shared core** (5.35.0): the app's wheel installs only beside
+  `aec-agent-core==1.0.0`, and a few modules here reach the core's modules
+  by their old `funhouse_agent` and `webapp` names (the error text, the
+  scale labels, the output files folder, the model connections);
+  `report_ingest.mirror` is the core's `aec_agent_core.run_mirror`.
 - `anthropic` is **optional**, and on the cluster not installed at all.
   Nothing outside `ClaudeEngine` imports it, `report_ingest/__init__.py` reaches
   every entry point through a lazy import, and a test spawns a fresh
