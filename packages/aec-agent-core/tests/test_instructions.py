@@ -114,7 +114,21 @@ def test_an_unreadable_folder_appends_nothing_and_names_the_error(
     prompt, out, record = ins.apply("MAIN", _specs())
     assert prompt == "MAIN"
     assert record["roles"] == {}
-    assert "FileNotFoundError" in record["error"]
+    assert record["error"].startswith("FileNotFoundError: ")
+    # the folder's basename only, as "folder": never the host's path
+    assert record["folder"] == "not_there"
+    assert str(tmp_path) not in record["error"]
+    assert "not_there" not in record["error"]
+
+
+def test_a_file_that_is_not_utf8_is_skipped_and_named(monkeypatch, tmp_path):
+    (tmp_path / "main.md").write_bytes("Caf\xe9 rule".encode("latin-1"))
+    monkeypatch.setenv(ins.ENV, _folder(tmp_path, **{"all.md": "Fine."}))
+    prompt, _, record = ins.apply("MAIN", [])
+    assert prompt.endswith("Fine.")
+    assert record["roles"]["main"]["files"] == ["all.md"]
+    assert record["file_errors"]["main.md"].startswith("UnicodeDecodeError")
+    assert str(tmp_path) not in record["file_errors"]["main.md"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")

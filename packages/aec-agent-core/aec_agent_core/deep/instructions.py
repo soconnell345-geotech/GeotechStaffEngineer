@@ -96,6 +96,17 @@ def _read(path: str) -> str:
         return fh.read().strip()
 
 
+def _reason(exc: BaseException) -> str:
+    """What went wrong, without the path an OS error names: the record
+    keeps the folder's basename only, never where the host keeps it."""
+    if isinstance(exc, OSError):
+        detail = exc.strerror or ""
+    else:
+        detail = str(exc)
+    return f"{type(exc).__name__}: {detail}" if detail else (
+        type(exc).__name__)
+
+
 class Instructions:
     """One read of the folder: the files' texts and what went wrong."""
 
@@ -110,7 +121,7 @@ class Instructions:
         try:
             names = sorted(os.listdir(self.path))
         except Exception as exc:                       # noqa: BLE001
-            self.error = f"{type(exc).__name__}: {exc}"
+            self.error = _reason(exc)
             return
         for name in names:
             if not name.endswith(".md"):
@@ -121,7 +132,7 @@ class Instructions:
             try:
                 text = _read(full)
             except Exception as exc:                   # noqa: BLE001
-                self.file_errors[name] = f"{type(exc).__name__}: {exc}"
+                self.file_errors[name] = _reason(exc)
                 continue
             if text:
                 self.texts[name] = text
