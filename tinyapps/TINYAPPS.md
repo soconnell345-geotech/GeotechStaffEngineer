@@ -250,10 +250,12 @@ steps 1-6 and leave step 7 for later.
    git clone <your GHE repository address> document-review-tinyapp
    cd document-review-tinyapp
    python -m venv .venv
-   .venv\Scripts\activate
-   python -m pip install -r packages.txt
+   .venv\Scripts\python -m pip install -r packages.txt
    ```
-   You should see "Successfully installed ... aec-document-review-0.1.0 ...
+   Every command below starts with `.venv\Scripts\python`, the folder's own
+   Python, so nothing needs "activating" (PowerShell often refuses the
+   activate script). Run them in the `document-review-tinyapp` folder; in a
+   new terminal, `cd` there first. You should see "Successfully installed ... aec-document-review-0.1.0 ...
    aec-agent-core-1.0.0 ... planlens-0.15.0 ... pandas-3.0.2 ...". If pip
    says it cannot find `aec-document-review` (or the core or planlens), the
    mirror does not carry it yet: wait a day, or ask CfA (ask 1 below). If
@@ -265,7 +267,7 @@ steps 1-6 and leave step 7 for later.
    `GRAPH_CLIENT_SECRET`, `SHAREPOINT_SITE_URL`) if you have them; leave
    them empty if not. Set `DEV_IDENTITY` to your own `DOMAIN\user`. Save.
    Never commit `.env` (it holds keys).
-4. **Start the app.** Run `python -m streamlit run app.py`. A browser tab
+4. **Start the app.** Run `.venv\Scripts\python -m streamlit run app.py`. A browser tab
    opens at `http://localhost:8501`. You should see the **Document Review**
    page, "Signed in as <you>" in the sidebar, and the model's name. In the
    sidebar, open **Connection diagnostics** and press **Run connection
@@ -280,7 +282,8 @@ steps 1-6 and leave step 7 for later.
    `.docx`. Open both.
 6. **Stop the app.** Press Ctrl+C in the terminal.
 7. **Check the SharePoint copy** (only with the four SharePoint values).
-   First run `python -m aec_document_review.graph_sharepoint --check`:
+   First run
+   `.venv\Scripts\python -m aec_document_review.graph_sharepoint --check`:
    every line should say PASS (or SKIP), none FAIL. Start the app again
    (step 4), open the conversation from step 5 in the sidebar, and press
    **Sync now** under **Permanent storage** in the sidebar. On the
