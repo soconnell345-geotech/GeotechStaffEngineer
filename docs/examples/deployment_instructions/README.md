@@ -15,6 +15,9 @@ invented for illustration; replace it with your own.
   past that the text is cut at a paragraph and the turn record says so.
 - An empty or missing file adds nothing; an unreadable folder adds nothing
   and the record names the error.
+- A file no agent or helper takes (a misspelt role name such as
+  `reviwer.md`, or a role that page does not have) adds nothing; the turn
+  record lists it under `unused`, and empty files under `empty`.
 
 The app puts the built-in protected rules (cite the printed page, formulas
 and defaults only from a printed source, state assumptions and the method,

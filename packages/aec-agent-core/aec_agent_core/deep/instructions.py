@@ -23,9 +23,13 @@ an unreadable folder appends nothing and the record names the error.
 
 The record (:func:`apply`'s second value, ``geotech_build["appended"]``):
 ``{"folder": <basename>, "roles": {role: {"files", "chars", "sha", "cut",
-"text"}}}``, plus ``"error"`` when the folder could not be read. ``chars``
-is the deployment text appended (after any cut), ``sha`` the sha256 of the
-whole appended block, ``text`` its first :data:`RECORD_TEXT_CHARS`.
+"text"}}}``, plus ``"error"`` when the folder could not be read,
+``"file_errors"`` for a file that could not be read, ``"empty"`` for the
+empty files and ``"unused"`` for the files no agent or helper of this build
+took (a misspelt role name, or a role this page does not have), so a
+deployment can see why a file of its own did nothing. ``chars`` is the
+deployment text appended (after any cut), ``sha`` the sha256 of the whole
+appended block, ``text`` its first :data:`RECORD_TEXT_CHARS`.
 """
 
 from __future__ import annotations
@@ -100,6 +104,7 @@ class Instructions:
         self.texts: Dict[str, str] = {}
         self.error: Optional[str] = None
         self.file_errors: Dict[str, str] = {}
+        self.empty: List[str] = []
         if not self.path:
             return
         try:
@@ -120,6 +125,8 @@ class Instructions:
                 continue
             if text:
                 self.texts[name] = text
+            else:
+                self.empty.append(name)
 
     @property
     def active(self) -> bool:
@@ -139,7 +146,15 @@ class Instructions:
                  "cut": cut, "text": text[:RECORD_TEXT_CHARS]}
         return block, entry
 
-    def record(self, roles: Dict[str, dict]) -> dict:
+    def unused(self, roles) -> List[str]:
+        """The files with text that none of ``roles`` (the roles of one
+        build) takes: a misspelt role name, or a role the build lacks."""
+        present = set(roles)
+        return [n for n in sorted(self.texts)
+                if n != ALL_FILE and n[:-len(".md")] not in present]
+
+    def record(self, roles: Dict[str, dict],
+               unused: Optional[List[str]] = None) -> dict:
         """The build record: ``{}`` when the setting is unset."""
         if not self.active:
             return {}
@@ -150,6 +165,10 @@ class Instructions:
             rec["error"] = self.error
         if self.file_errors:
             rec["file_errors"] = dict(self.file_errors)
+        if self.empty:
+            rec["empty"] = list(self.empty)
+        if unused:
+            rec["unused"] = list(unused)
         return rec
 
 
@@ -161,7 +180,8 @@ def apply(system_prompt: str, subagents: List[Any],
     (``"runnable"`` in its spec) has no prompt and is skipped (a builder
     hands it its block itself). Returns the prompt, the helper list (specs
     that changed are copies; the rest are the same objects) and the
-    record (``{}`` when unset)."""
+    record (``{}`` when unset), whose ``unused`` names the files no role
+    of this build takes (a compiled helper's role counts as present)."""
     ins = instructions if instructions is not None else Instructions()
     if not ins.active:
         return system_prompt, subagents, {}
@@ -171,6 +191,8 @@ def apply(system_prompt: str, subagents: List[Any],
         system_prompt = (system_prompt or "") + block
         roles[MAIN_ROLE] = entry
     out: List[Any] = []
+    present = {MAIN_ROLE} | {str(s["name"]) for s in subagents
+                             if isinstance(s, dict) and s.get("name")}
     for spec in subagents:
         if (isinstance(spec, dict) and "runnable" not in spec
                 and spec.get("name")):
@@ -181,7 +203,7 @@ def apply(system_prompt: str, subagents: List[Any],
                     (spec.get("system_prompt") or "") + block)}
                 roles[role] = entry
         out.append(spec)
-    return system_prompt, out, ins.record(roles)
+    return system_prompt, out, ins.record(roles, ins.unused(present))
 
 
 def block_for(role: str) -> Tuple[str, dict]:

@@ -72,6 +72,27 @@ def test_no_text_for_a_role_appends_nothing(monkeypatch, tmp_path):
     assert set(record["roles"]) == {"references"}
 
 
+def test_unused_and_empty_files_are_named(monkeypatch, tmp_path):
+    """A misspelt role name, or a role this build lacks, appends nothing;
+    the record names the file so the deployment can see why."""
+    monkeypatch.setenv(ins.ENV, _folder(tmp_path, **{
+        "all.md": "", "reviwer.md": "Misspelt rule.", "mian.md": "Main?",
+        "references.md": "Prefer pack A.", "report_library.md": "Lib.",
+        "notes.txt": "not a role file"}))
+    prompt, _, record = ins.apply("MAIN", _specs())
+    assert prompt == "MAIN"
+    assert set(record["roles"]) == {"references"}
+    # report_library is a compiled helper of this build: present, not unused
+    assert record["unused"] == ["mian.md", "reviwer.md"]
+    assert record["empty"] == ["all.md"]
+    # nothing to name: neither key
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    monkeypatch.setenv(ins.ENV, _folder(clean, **{"main.md": "Main."}))
+    _, _, record = ins.apply("MAIN", _specs())
+    assert "unused" not in record and "empty" not in record
+
+
 def test_the_cap_cuts_at_a_paragraph_and_says_so(monkeypatch, tmp_path):
     para = " ".join(["Made-up convention sentence."] * 20)  # ~580 chars
     text = "\n\n".join(f"{i} {para}" for i in range(10))  # ~5,800

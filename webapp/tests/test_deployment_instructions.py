@@ -78,6 +78,21 @@ def test_the_only_fingerprint_difference_is_the_prompts(folder, monkeypatch):
     assert before["calls"][0]["subagents"][index]["name"] == "references"
 
 
+def test_a_misspelt_role_file_is_named_in_the_record(tmp_path):
+    """reviwer.md reaches no helper; the record says so (the review page
+    has no reviewer either, so reviewer.md is unused there)."""
+    (tmp_path / "reviwer.md").write_text("Misspelt.", encoding="utf-8")
+    (tmp_path / "reviewer.md").write_text("Reviewer rule.", encoding="utf-8")
+    geotech, _, _ = page_builds.build(
+        "geotech_default", settings={ins.ENV: str(tmp_path)})
+    rec = geotech.geotech_build["appended"]
+    assert rec["unused"] == ["reviwer.md"] and "reviewer" in rec["roles"]
+    review, _, _ = page_builds.build(
+        "review_default", settings={ins.ENV: str(tmp_path)})
+    assert review.geotech_build["appended"]["unused"] == ["reviewer.md",
+                                                          "reviwer.md"]
+
+
 def test_an_unreadable_folder_still_builds(tmp_path):
     agent, calls, _ = page_builds.build(
         "review_default", capture=True,
