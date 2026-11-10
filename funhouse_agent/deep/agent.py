@@ -804,7 +804,7 @@ DEFAULT_REPORT_LIBRARY_MAX_TOOL_CALLS = 8
 DEFAULT_REPORT_LIBRARY_MAX_MODEL_CALLS = 10
 
 
-def _report_ingest_engine_factory(engine, model=None):
+def _report_ingest_engine_factory(engine, model=None, instructions=None):
     """A factory for the ingest's engine on whatever ``engine`` holds: the
     page's own chat model (``report_ingest.engine.ChatModelEngine``, how it
     runs on Foundry; BACKLOG RI-03) or a live Prompter.
@@ -814,10 +814,18 @@ def _report_ingest_engine_factory(engine, model=None):
     says so rather than reading it on something else. ``model`` names a tier
     (the page voter's cheap one), as the tool asks; a chat model is not one,
     and the voter then runs on the ingest's own engine.
+
+    ``instructions`` is the deployment's report_ingest block and its record
+    entry (REF-64 (B)), read once when the agent is built: one recorded
+    block on every call's system prompt, on the tool's engines as on these.
+    Wrapped here, not in ``engine_for``, so score_on_cluster keeps measuring
+    the shipped prompts.
     """
     def factory():
         from report_ingest.engine import engine_for
-        return engine_for(engine, model=model)
+        from aec_agent_core.deep.instructions import instructed
+        return instructed(engine_for(engine, model=model),
+                          *(instructions or ()))
     return factory
 
 
@@ -1196,16 +1204,28 @@ def build_deep_agent(
     if enable_report_ingest is None:
         enable_report_ingest = _review_flags.report_ingest()
     ingest_checklist = _review_flags.checklist()
+    # A deployment's instructions for the two compiled helpers (REF-64 (B)),
+    # each read once here: the same block on the helper's primary tool and
+    # on its sub-agent, and the build record says what both got.
+    from aec_agent_core.deep import instructions as _instructions
+    appended_records: list = []
+    ingest_instructions = None
     ingest_tools = []
     if enable_report_ingest:
         from funhouse_agent.deep.tools import make_report_ingest_tool
+        _ingest_block, _ingest_record = _instructions.block_for(
+            "report_ingest")
+        ingest_instructions = (
+            _ingest_block,
+            (_ingest_record.get("roles") or {}).get("report_ingest"))
         ingest_tools = make_report_ingest_tool(
             engine=engine, attachments=attachments,
             out_dir=report_ingest_out_dir, budgets=report_ingest_budgets,
             db_path=report_ingest_db, max_result_chars=max_result_chars,
             max_model_calls=report_ingest_max_model_calls,
-            checklist=ingest_checklist)
+            checklist=ingest_checklist, instructions=ingest_instructions)
         if ingest_tools:
+            appended_records.append(_ingest_record)
             tools = list(tools) + list(ingest_tools)
             system_prompt = system_prompt + "\n\n" + REPORT_INGEST_NUDGE
             # DR-11: the calculations an ingested report claims, recomputed
@@ -1220,13 +1240,18 @@ def build_deep_agent(
     # agent over an empty folder would only teach the primary to ask it
     # things nothing can answer.
     library_tools = []
+    library_block = ""
     if enable_report_library:
         from funhouse_agent.deep.tools import make_report_library_tool
+        library_block, _library_record = _instructions.block_for(
+            "report_library")
         library_tools = make_report_library_tool(
             model=model, library_root=library_root, db_path=library_db,
             max_result_chars=max_result_chars,
-            max_tool_calls=library_max_tool_calls)
+            max_tool_calls=library_max_tool_calls,
+            extra_system_prompt=library_block.lstrip() or None)
         if library_tools:
+            appended_records.append(_library_record)
             tools = list(tools) + list(library_tools)
             system_prompt = system_prompt + "\n\n" + REPORT_LIBRARY_NUDGE
     # The geotechnical report review checklist (GEOTECH_REVIEW_CHECKLIST, OFF
@@ -1320,10 +1345,12 @@ def build_deep_agent(
         from report_ingest.subagent import build_report_ingest_subagent
         subagents.append(
             build_report_ingest_subagent(
-                _report_ingest_engine_factory(engine),
+                _report_ingest_engine_factory(
+                    engine, instructions=ingest_instructions),
                 # The page voter on the cheap tier, as the tool runs it.
                 vision_engine_factory=_report_ingest_engine_factory(
-                    engine, model=VISION_TIER),
+                    engine, model=VISION_TIER,
+                    instructions=ingest_instructions),
                 # The conversation's own folder, resolved when the report is
                 # read (the folder is bound per turn), as the tool does.
                 out_dir_factory=(
@@ -1349,6 +1376,10 @@ def build_deep_agent(
             build_report_library_subagent(
                 model,
                 library_root=library_root,
+                # a deployment's report_library instructions (REF-64 (B)),
+                # read above with the tool's; a compiled helper, so it takes
+                # them here, not in compile_agent
+                extra_system_prompt=library_block.lstrip() or None,
                 db_path=library_db,
                 max_tool_calls=(library_max_tool_calls
                                 or DEFAULT_REPORT_LIBRARY_MAX_TOOL_CALLS),
@@ -1408,6 +1439,10 @@ def build_deep_agent(
         subagents=subagents, system_prompt=system_prompt,
         helper_models=helper_models, judgment_consult=judgment_consult)
     _record_reference_packs(agent)
+    # the compiled helpers' blocks, read once above for each one's tool and
+    # sub-agent alike
+    for _record in appended_records:
+        _instructions.merge_record(agent, _record)
     return agent
 
 

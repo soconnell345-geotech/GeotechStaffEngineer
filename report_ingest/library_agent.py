@@ -1088,15 +1088,19 @@ def answer_question(question: str, *, model: Any, library_root: Any = None,
                     library: Any = None, db_path: Any = None,
                     max_tool_calls: int = MAX_TOOL_CALLS,
                     max_rows: int = MAX_ROWS_PER_CALL,
-                    max_result_chars: int = MAX_RESULT_CHARS
+                    max_result_chars: int = MAX_RESULT_CHARS,
+                    extra_system_prompt: Optional[str] = None
                     ) -> LibraryAnswer:
-    """One question through the graph, for a caller that is not deepagents."""
+    """One question through the graph, for a caller that is not deepagents.
+    ``extra_system_prompt`` is appended to the library's prompt, as for the
+    sub-agent (:func:`build_report_library_graph`)."""
     from langchain_core.messages import HumanMessage
 
     graph = build_report_library_graph(
         model, library_root=library_root, library=library, db_path=db_path,
         max_tool_calls=max_tool_calls, max_rows=max_rows,
-        max_result_chars=max_result_chars)
+        max_result_chars=max_result_chars,
+        extra_system_prompt=extra_system_prompt)
     state = graph.invoke({"messages": [HumanMessage(content=str(question))],
                           "question": str(question)})
     answer = state.get("structured_response")

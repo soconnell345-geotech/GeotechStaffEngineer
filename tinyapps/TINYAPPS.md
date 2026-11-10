@@ -154,6 +154,16 @@ connections and vision tools from: on route A its `aec_agent_core/` folder
 on route B its wheel beside the app's in `wheels/`; on route C it comes from
 Nexus once it is published (step 12).
 
+### A deployment's own instructions (REF-64 (B))
+
+A deployment's conventions for the agents live in a folder in the wrapper
+repo, for example `instructions/` with `all.md` and `<role>.md` files, named
+by `GEOTECH_INSTRUCTIONS` (exported in `run.sh` or set as an app setting;
+the core reads `os.environ`). How the files are used, the protected rules
+above them and the 4,000-character cap: `webapp/README.md` §3 "Your
+deployment's own instructions"; example folder
+`docs/examples/deployment_instructions/`.
+
 ## Per-tester Prompter keys (built 2026-10-09, released in 5.33.0)
 
 Each tester on the published app gets their own Prompter key, so each has

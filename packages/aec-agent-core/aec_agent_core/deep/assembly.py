@@ -476,7 +476,16 @@ def compile_agent(create: Callable, *, model, tools, system_prompt,
     the todo middleware automatically; newer versions don't — attach it
     explicitly and rebuild (cheap, offline) when it is missing. Checking the
     COMPILED agent (rather than version-sniffing) stays correct on both old
-    and new deepagents without ever double-attaching."""
+    and new deepagents without ever double-attaching.
+
+    A deployment's instructions (``GEOTECH_INSTRUCTIONS``, REF-64 (B)) are
+    appended here, last, to the main prompt and each helper's, once both
+    pages have their final prompt and complete helper list; unset, nothing
+    changes. What was appended rides on the agent as ``geotech_appended``
+    for :func:`record_build`."""
+    from aec_agent_core.deep import instructions as _instructions
+    system_prompt, subagents, appended = _instructions.apply(
+        system_prompt, subagents)
     agent = create(
         model=model,
         tools=tools,
@@ -500,6 +509,14 @@ def compile_agent(create: Callable, *, model, tools, system_prompt,
                 subagents=subagents,
                 **create_kwargs,
             )
+    if appended:
+        try:
+            agent.geotech_appended = appended
+            # the main prompt as compiled, its block included, for
+            # record_build's prompt_chars
+            agent.geotech_prompt_chars = len(system_prompt or "")
+        except Exception:                              # noqa: BLE001
+            pass
     return agent
 
 
@@ -532,6 +549,14 @@ def record_build(agent, *, attachments, model, tools, subagents,
             "switches": _rf.describe(),
             "prompt_chars": len(system_prompt or ""),
         }
+        appended = getattr(agent, "geotech_appended", None)
+        if isinstance(appended, dict) and appended:
+            # a deployment's instructions, per role (REF-64 (B)); the
+            # prompt's size is then the compiled one, the main block in it
+            agent.geotech_build["appended"] = appended
+            chars = getattr(agent, "geotech_prompt_chars", None)
+            if isinstance(chars, int):
+                agent.geotech_build["prompt_chars"] = chars
         if helper_models:
             # the helpers on a model of their own (INF-41)
             agent.geotech_build["helper_models"] = helper_models
