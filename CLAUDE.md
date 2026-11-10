@@ -123,7 +123,7 @@ Key conventions:
   changes an answer is in HANDOFF §0a-current, "Master after 5.34.0".
   Report ingest prompts are mf-9 (the next live run re-reads every saved
   model-first answer); groundwater "not measured" and combined lab samples
-  are kept; refs at 1.6.0 (76f494d; pin `geotech-references>=1.6.0`): a deployment adds its own references as packs named by `GEOTECH_REFERENCES_PACKS` (REF-64 (A); refs' `docs/REFERENCE_PACKS.md`); earlier pinned at 32bbd77 (worked examples from five manuals); the
+  are kept; refs at 1.6.0 (76f494d; pin `geotech-references>=1.6.0`): a deployment adds its own references as packs named by `GEOTECH_REFERENCES_PACKS` (refs' `docs/REFERENCE_PACKS.md`), and its own instructions by `GEOTECH_INSTRUCTIONS`, appended under the protected rules (merge 4f22c00); earlier pinned at 32bbd77 (worked examples from five manuals); the
   app split's steps 6-8 are in (the Document Review page loads one geotech
   package and four app modules), and steps 10 and 11 (a): `aec-agent-core`,
   the shared core, in `packages/aec-agent-core` (1.0.0.dev1, not on PyPI
