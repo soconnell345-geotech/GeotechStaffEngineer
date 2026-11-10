@@ -211,6 +211,9 @@ def test_the_arms_are_the_baseline_and_one_change_each():
         "judgment_calls": {A.JUDGMENT_CALLS_ENV: "1"},
         # GM-226 on by default; this takes it away
         "judgment_calls_off": {A.JUDGMENT_CALLS_ENV: "0"},
+        # DR-38 the main model looks for itself where it asks to, pinned in
+        # aec_document_review/tests/test_review_show_me_offline.py
+        "show_me": {A.SHOW_ME_ENV: "1"},
     }
 
 

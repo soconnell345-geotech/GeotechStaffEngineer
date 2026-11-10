@@ -1,7 +1,12 @@
 # A review method for Document Review: draft
 
-**Status: a draft, not measured.** BACKLOG DR-06. Nothing here is in the
-package or the wrapper template.
+**Status: a draft, not measured.** BACKLOG DR-06. Since 2026-11-10 the two
+files are in the package, as data nothing loads by itself:
+`packages/aec-document-review/aec_document_review/review_method/`
+(`main.md`, `general-purpose.md`). The review suite runs them as an arm
+(`aec_document_review.review_eval.method_arm()`), with the coordination
+tasks (BACKLOG EV-40). They are not in the page's prompt or the wrapper
+template.
 
 The page's prompt is thorough on how to read a document and says nothing on
 how to review one. `instructions/main.md` is a method for a set review: the
@@ -15,8 +20,8 @@ wrapper README, "Settings"): each role's text goes last in its prompt,
 under rules it cannot switch off, at most 4,000 characters a role. So the
 draft can be tried without a release:
 
-1. Copy the `instructions/` folder into the wrapper repository (or anywhere
-   on the test machine).
+1. Copy the package's `review_method/` folder (the two `.md` files) into
+   the wrapper repository (or anywhere on the test machine).
 2. Set `GEOTECH_INSTRUCTIONS` to that folder's full path (a `.env` line on
    the test machine; an app setting on the App Service, where a folder in
    the repository is `/home/site/wwwroot/instructions`).
