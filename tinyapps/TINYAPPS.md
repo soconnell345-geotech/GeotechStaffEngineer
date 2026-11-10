@@ -133,7 +133,7 @@ its commands without installing or starting anything.
 | Route | Put in the repo | Setting |
 | --- | --- | --- |
 | **C. Nexus** (the normal one; owner, 2026-11-09) | Only the template: `packages.txt` pins the three packages and includes the third-party pins. | `APP_SOURCE=nexus` |
-| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.0.0-py3-none-any.whl` and `wheels/aec_document_review-0.1.0-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.15.0, which both wheels pin, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
+| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.0.0-py3-none-any.whl` and `wheels/aec_document_review-0.1.0-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.15.0, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
 | **A. Source folder** (development copies) | `app_src/aec_document_review/` (copied from `packages/aec-document-review/`) and `app_src/requirements.txt` holding `aec-agent-core==1.0.0`, `planlens==0.15.0` and `websockets>=14,<16`. It goes first on `PYTHONPATH` (`app.py` also adds it for a plain `streamlit run app.py`). For an unreleased core as well, add `app_src/aec_agent_core/` and list the core's own dependencies in place of its pin. | `APP_SOURCE=source` |
 
 Tests: `webapp/tests/test_tinyapps_wrapper.py` (each route's dry run, the
@@ -243,7 +243,10 @@ steps 1-6 and leave step 7 for later.
    `.env.example`, `.gitattributes`, `.gitignore`, `README.md`. Do not add
    `app_src/` or `wheels/`. Commit and push. (`.gitignore` keeps the `.env`
    of step 3, which holds your keys, and the `.venv` folder of step 2 out
-   of every later commit.)
+   of every later commit.) If you already have a wrapper repository from
+   the September round, or CfA made one for the pilot, use that one
+   instead: delete its old files, put these in their place, commit and
+   push.
 2. **Get it onto the test machine.** On dosdev, open a terminal in VS Code
    and run, with your repository's address:
    ```
@@ -267,7 +270,9 @@ steps 1-6 and leave step 7 for later.
    `GRAPH_CLIENT_SECRET`, `SHAREPOINT_SITE_URL`) if you have them; leave
    them empty if not. Set `DEV_IDENTITY` to your own `DOMAIN\user`. Save.
    Never commit `.env` (it holds keys).
-4. **Start the app.** Run `.venv\Scripts\python -m streamlit run app.py`. A browser tab
+4. **Start the app.** Run `.venv\Scripts\python -m streamlit run app.py`.
+   The first time Streamlit runs on a machine it may stop in the terminal
+   at "Welcome to Streamlit! ... Email:"; just press Enter. A browser tab
    opens at `http://localhost:8501`. You should see the **Document Review**
    page, "Signed in as <you>" in the sidebar, and the model's name. In the
    sidebar, open **Connection diagnostics** and press **Run connection
