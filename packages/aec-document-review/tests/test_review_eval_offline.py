@@ -60,10 +60,17 @@ def test_tasks_are_well_formed():
     # page is known by construction; two more since W3, because how far a
     # measured depth or distance is from the truth can only be scored where
     # the truth is known by construction)
+    # (the coordination tasks, BACKLOG DR-25, are counted apart: whether a
+    # disagreement between two sheets was found can only be scored where
+    # every disagreement is known, so all twelve are synthetic by need)
+    coordination = [t for t in OPEN_TASKS
+                    if t.doc_type == "coordination_set"]
     synthetic = [t for t in OPEN_TASKS
-                 if any(d.startswith("fixture_") for d in t.documents)]
+                 if any(d.startswith("fixture_") for d in t.documents)
+                 and t not in coordination]
     assert len(synthetic) <= 9
-    assert len(synthetic) < len(OPEN_TASKS) / 4
+    assert len(synthetic) < (len(OPEN_TASKS) - len(coordination)) / 4
+    assert len(coordination) == 12
     for t in OPEN_TASKS:
         assert t.page in PAGES, t.id
 

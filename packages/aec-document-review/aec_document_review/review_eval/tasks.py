@@ -1,7 +1,9 @@
 """The Document Review suite's tasks: questions a reviewer asks, with checks.
 
 Copied from GeotechStaffEngineer's ``funhouse_agent/review_eval/tasks.py`` at
-the app split's step 13 (BACKLOG INF-33): its 38 review-page tasks. The four
+the app split's step 13 (BACKLOG INF-33): its 38 review-page tasks, and
+since BACKLOG DR-25 twelve coordination tasks of this package's own (at the
+end of this file), 50 in all. The four
 asked on the GeotechStaffEngineer page (the synthetic geotechnical report's
 three and the boring-log scale) stayed in that app, with the report fixture;
 what the text below says of them is history. The framework (the runner, the
@@ -77,10 +79,13 @@ CATEGORIES = ("orient", "summarize", "locate", "count", "check", "compare",
 
 #: What kind of document the task is asked of. ``log_scanned``: a boring
 #: log as an image with no text layer; ``drawing_text``: a drawing sheet
-#: whose lettering is real text (the counterpart of ``drawing_stroke``).
+#: whose lettering is real text (the counterpart of ``drawing_stroke``);
+#: ``coordination_set``: one made-up project's drawings, manual, memorandum
+#: and submittal, with planted disagreements (the coordination tasks).
 DOC_TYPES = ("drawing_stroke", "drawing_set", "criteria_text",
              "criteria_scanned", "long_text", "calc_package", "markup_set",
-             "submittal", "report", "log_scanned", "drawing_text")
+             "submittal", "report", "log_scanned", "drawing_text",
+             "coordination_set")
 
 #: Which page of the app a task is asked on: the Document Review page (the
 #: suite's home) or the GeotechStaffEngineer page (the geotech agent, its
@@ -953,6 +958,353 @@ OPEN_TASKS: List[Task] = [
 
 
 # ---------------------------------------------------------------------------
+# The coordination tasks (BACKLOG DR-25)
+# ---------------------------------------------------------------------------
+#
+# The tasks above ask about one place in one document, and every build of the
+# page answers nearly all of them. These ask what a design review mostly
+# asks: does one sheet agree with another, does a callout lead anywhere, does
+# a schedule hold what the plans tag, do the drawings follow the
+# specification and the geotechnical recommendations, what changed between
+# two issues. They run on one made-up building's documents
+# (review_eval/coordination_fixture.py), where every disagreement is planted
+# by name, so a check can say which were found.
+#
+# A check here asks for the two sides of a finding SIDE BY SIDE in the answer
+# (the core's ``stated_together``): both values, or a mark and a word that
+# says it is missing. It reads the reply and, where a comment log is asked
+# for, the files delivered with it. It does not score false alarms: an answer
+# that calls a sound callout broken loses nothing here, and the full read of
+# each run is where that shows.
+
+from aec_document_review.review_eval import coordination_fixture as _coord
+
+
+def _sheet(number: str) -> Dict[str, str]:
+    """A sheet number however an answer writes it: A-501, A501, A 501."""
+    letter, digits = number.split("-")
+    return {"re": rf"(?<![\w-]){letter}[\s-]?{digits}(?!\d)"}
+
+
+def _callout(view: str, number: str) -> Dict[str, str]:
+    """A callout however an answer writes it: "7/A-501", "detail 7 on
+    A-501", "A-501, detail 7"."""
+    sheet = _sheet(number)["re"]
+    one = rf"(?<![\w.]){view}(?![\w.])"
+    kind = (r"(?:details?|sections?|det\.?|sec\.?|views?|callouts?|bubbles?|"
+            r"plans?|no\.?|number|#)")
+    return {"re": rf"{one}\s*(?:/|on|over|of|at)\s*(?:sheet\s*)?{sheet}"
+                  rf"|{kind}\s*{one}[^.;\n]{{0,60}}?{sheet}"
+                  rf"|{sheet}[^.;\n]{{0,60}}?{kind}\s*{one}"}
+
+
+def _qty(n: str, unit: str) -> Dict[str, str]:
+    """``n`` as a quantity in ``unit`` (a regex): "25 MPa", or "25" with the
+    unit a few words on ("25 instead of 30 MPa"). Not a piece of a section
+    number ("03 30 00")."""
+    return {"re": rf"{_LEAD}(?<!\d\d\s){re.escape(n)}(?!\d)(?!\s\d\d\b)"
+                  rf"(?=[^.;\n]{{0,30}}?{unit})"}
+
+
+#: A word that says something is not there (a mark with no schedule row, a
+#: scheduled item with no tag, a report that was not sent).
+_ABSENT = {"re": r"\b(?:not|no|never|none|missing|absent|omitted|without|"
+                 r"lacks?|lacking|unscheduled|untagged|isn't|doesn't|"
+                 r"nowhere|unresolved|orphan\w*)\b"}
+#: A word that says a change was not flagged.
+_UNFLAGGED = {"re": r"\b(?:not|no|never|without|silent\w*|un(?:clouded|"
+                    r"marked|flagged|documented|recorded|identified|tracked|"
+                    r"noted|announced))\b"}
+_PCT = r"(?:%|percent)"
+_EL_104_20 = [_num("104.20"), _num("104.2")]
+_EL_104_50 = [_num("104.50"), _num("104.5")]
+_BAY_7200 = [_num("7200"), _num("7,200"), _num("7 200"),
+             {"re": rf"{_LEAD}7\.20?\s*m\b"}]
+_BAY_7500 = [_num("7500"), _num("7,500"), _num("7 500"),
+             {"re": rf"{_LEAD}7\.50?\s*m\b"}]
+_SECTION_07_84_00 = {"re": r"07[\s.-]?84[\s.-]?00"}
+_F4 = {"re": r"(?<![\w-])f-?4(?!\d)"}
+_FCU_3_4 = {"re": r"fcu[\s-]?3[\s-]?4(?!\d)"}
+_LP_4B = {"re": r"lp[\s-]?4b\b"}
+
+
+def _n_tests(n: str, word: str) -> Dict[str, str]:
+    """``n`` strength tests: "12 tests", "12 consecutive strength tests",
+    "twelve tests"."""
+    return {"re": rf"(?:{_LEAD}{n}|\b{word})\s+(?:[a-z-]+\s+){{0,3}}?"
+                  r"(?:tests?|results?|breaks?)\b"}
+
+
+#: One check per planted problem, by its key in the fixture.
+_PLANTED_CHECKS: Dict[str, Dict[str, Any]] = {
+    "index-missing-sheet": {
+        "type": "contains_all", "terms": [_sheet("A-202")]},
+    "index-title": {
+        "type": "stated_together",
+        "terms": [_sheet("S-201"), ["roof framing"]]},
+    "callout-missing-detail": {
+        "type": "contains_all", "terms": [_callout("7", "A-501")]},
+    "callout-missing-sheet": {
+        "type": "contains_all", "terms": [_sheet("A-302")]},
+    "door-not-scheduled": {
+        "type": "stated_together", "terms": [_num("109"), _ABSENT],
+        "window": 160},
+    "door-not-on-plan": {
+        "type": "stated_together", "terms": [_num("204"), _ABSENT],
+        "window": 160},
+    "level-second-floor": {
+        "type": "stated_together", "terms": [_EL_104_20, _EL_104_50]},
+    "bay-b-c": {
+        "type": "stated_together", "terms": [_BAY_7200, _BAY_7500]},
+    "spec-section-missing": {
+        "type": "contains_all", "terms": [_SECTION_07_84_00]},
+    "bearing-pressure": {
+        "type": "stated_together",
+        "terms": [_qty("200", "kpa"), _qty("150", "kpa")]},
+    "footing-depth": {
+        "type": "stated_together",
+        "terms": [_qty("1.2", r"m\b"), _qty("1.5", r"m\b")]},
+    "footing-concrete": {
+        "type": "stated_together",
+        "terms": [_qty("25", "mpa"), _qty("30", "mpa"), ["footing"]]},
+    "footing-not-scheduled": {
+        "type": "stated_together", "terms": [_F4, _ABSENT], "window": 160},
+    "callout-missing-ceiling-detail": {
+        "type": "contains_all", "terms": [_callout("9", "A-502")]},
+    "door-not-scheduled-4": {
+        "type": "stated_together", "terms": [_num("407"), _ABSENT],
+        "window": 160},
+    "door-not-on-plan-5": {
+        "type": "stated_together", "terms": [_num("509"), _ABSENT],
+        "window": 160},
+    "level-fifth-floor": {
+        "type": "stated_together",
+        "terms": [[_num("116.80"), _num("116.8")],
+                  [_num("116.50"), _num("116.5")]]},
+    "fcu-not-scheduled": {
+        "type": "stated_together", "terms": [_FCU_3_4, _ABSENT],
+        "window": 160},
+    "panel-not-scheduled": {
+        "type": "stated_together", "terms": [_LP_4B, _ABSENT],
+        "window": 160},
+    # the submittal's four
+    "water-cement": {
+        "type": "stated_together", "terms": [_num("0.48"), _num("0.45")]},
+    "fly-ash": {
+        "type": "stated_together",
+        "terms": [["fly ash"], _qty("30", _PCT), _qty("25", _PCT)]},
+    "reactivity-report": {
+        "type": "stated_together",
+        "terms": [["alkali", "asr", "reactivity"], _ABSENT], "window": 200},
+    "strength-record": {
+        "type": "stated_together",
+        "terms": [_n_tests("12", "twelve"), _n_tests("30", "thirty")]},
+}
+
+
+def _planted(keys: Iterable[str], with_files: bool = False,
+             source: Iterable[Any] = _coord.LONG_PLANTED +
+             _coord.SUBMITTAL_PLANTED) -> List[Dict[str, Any]]:
+    """The checks for the planted problems ``keys``, each labelled with the
+    problem's key."""
+    known = {p.key for p in source}
+    out = []
+    for key in keys:
+        assert key in known, key
+        check = dict(_PLANTED_CHECKS[key], label=key)
+        if with_files:
+            check["with_files"] = True
+        out.append(check)
+    return out
+
+
+def _truth(keys: Iterable[str]) -> str:
+    """The fixture's own sentence for each planted problem."""
+    by_key = {p.key: p.truth for p in
+              _coord.LONG_PLANTED + _coord.SUBMITTAL_PLANTED}
+    return " ".join(by_key[k] for k in keys)
+
+
+_BASE_KEYS = [p.key for p in _coord.BASE_PLANTED]
+_LONG_KEYS = [p.key for p in _coord.LONG_PLANTED]
+_BUILT = ("(review_eval/coordination_fixture.py builds the documents; the "
+          "truth is the fixture's own.)")
+
+COORDINATION_TASKS: List[Task] = [
+    Task(
+        id="coord-sheet-index",
+        question=("Check the sheet index on the cover sheet against the "
+                  "sheets that are actually in this set. What does not "
+                  "match?"),
+        documents=["fixture_coord_set"], category="check",
+        doc_type="coordination_set",
+        checks=_planted(["index-missing-sheet", "index-title"]),
+        truth=_truth(["index-missing-sheet", "index-title"]) +
+        " The other 14 rows match their sheets. " + _BUILT),
+    Task(
+        id="coord-callouts",
+        question=("Check the section, detail and enlarged-plan callouts in "
+                  "this set: does each one point to a view that exists on "
+                  "the sheet it names? List the ones that do not."),
+        documents=["fixture_coord_set"], category="check",
+        doc_type="coordination_set",
+        checks=_planted(["callout-missing-detail", "callout-missing-sheet"])
+        + [{"type": "pages_covered", "pages": list(range(15)), "info": True,
+            "label": "sheets read (recorded, not scored)"}],
+        truth=_truth(["callout-missing-detail", "callout-missing-sheet"]) +
+        " The other callouts resolve: 1 and 2 on A-301, 1 and 2 on A-401, "
+        "1 to 6 on A-501, 1 to 4 on S-501. A callout is a bubble with the "
+        "view number over the sheet number, two separate pieces of text, "
+        "so a text search for the pair finds nothing. " + _BUILT),
+    Task(
+        id="coord-schedules",
+        question=("Check the schedules against the plans: the door "
+                  "schedule against the door numbers on the floor plans, "
+                  "and the footing schedule against the footing marks on "
+                  "the foundation plan. What is on a plan but not "
+                  "scheduled, and what is scheduled but not on a plan?"),
+        documents=["fixture_coord_set"], category="check",
+        doc_type="coordination_set",
+        checks=_planted(["door-not-scheduled", "door-not-on-plan",
+                         "footing-not-scheduled"]),
+        truth=_truth(["door-not-scheduled", "door-not-on-plan",
+                      "footing-not-scheduled"]) + " " + _BUILT),
+    Task(
+        id="coord-levels-dimensions",
+        question=("Check that the floor levels and the grid dimensions "
+                  "agree from sheet to sheet: plans, elevations, sections, "
+                  "enlarged plans and structural plans. Where do they "
+                  "disagree?"),
+        documents=["fixture_coord_set"], category="compare",
+        doc_type="coordination_set",
+        checks=_planted(["level-second-floor", "bay-b-c"]),
+        truth=_truth(["level-second-floor", "bay-b-c"]) +
+        " The other levels (100.00, 108.40, 109.30) and bays (6000, 5400) "
+        "agree. " + _BUILT),
+    Task(
+        id="coord-drawings-vs-manual",
+        question=("Check the notes on the drawings against the project "
+                  "manual. List any conflict between them, and any "
+                  "reference to the manual that does not resolve."),
+        documents=["fixture_coord_set", "fixture_coord_manual"],
+        category="compare", doc_type="coordination_set",
+        checks=_planted(["spec-section-missing", "footing-concrete"]),
+        truth=_truth(["spec-section-missing", "footing-concrete"]) +
+        " The other cited sections are in the manual, and the other "
+        "strengths agree (slabs on grade 30 MPa, columns and suspended "
+        "slabs 35 MPa). " + _BUILT),
+    Task(
+        id="coord-drawings-vs-geotech",
+        question=("Do the structural drawings follow the foundation "
+                  "recommendations of the geotechnical memorandum? List "
+                  "every difference."),
+        documents=["fixture_coord_set", "fixture_coord_memo"],
+        category="compare", doc_type="coordination_set",
+        checks=_planted(["bearing-pressure", "footing-depth"]),
+        truth=_truth(["bearing-pressure", "footing-depth"]) +
+        " The site class (C), the design groundwater level (El. 96.50) and "
+        "the modulus of subgrade reaction (40 MN/m3) agree. " + _BUILT),
+    Task(
+        id="coord-revisions",
+        question=("These are two issues of the same drawing set. What "
+                  "changed in issue 1? For each change, say whether it is "
+                  "clouded and listed in the sheet's revision block."),
+        documents=["fixture_coord_set_prev", "fixture_coord_set"],
+        category="compare", doc_type="coordination_set",
+        checks=[
+            {"type": "stated_together",
+             "terms": [_sheet("A-401"), _BAY_7500],
+             "label": "core-dimension"},
+            {"type": "stated_together",
+             "terms": [_num("107"), {"re": r"hw[\s-]?2(?!\d)"}],
+             "label": "door-hardware"},
+            {"type": "stated_together",
+             "terms": [_sheet("S-001"), _qty("200", "kpa"), _UNFLAGGED],
+             "window": 400,
+             "label": "bearing-pressure, and that it is not flagged"},
+        ],
+        truth=" ".join(what for _k, _s, what, _f in _coord.REVISIONS[:2]) +
+        " Both are clouded with revision 1 and listed in their sheets' "
+        "revision blocks (A-401 REVISED CORE LAYOUT, A-601 REVISED DOOR "
+        "HARDWARE). On S-001 the allowable bearing pressure in note 2 "
+        "changed from 150 kPa to 200 kPa with no cloud and no entry in the "
+        "revision block; the sheet still shows revision 0. The cover's "
+        "index and revision block changed with the issue. " + _BUILT),
+    Task(
+        id="coord-submittal",
+        question=("Review this concrete mix submittal against the "
+                  "specification section it is submitted under. What does "
+                  "not comply, and what is missing?"),
+        documents=["fixture_coord_manual", "fixture_coord_submittal"],
+        category="check", doc_type="coordination_set",
+        checks=_planted([p.key for p in _coord.SUBMITTAL_PLANTED]),
+        truth=_truth([p.key for p in _coord.SUBMITTAL_PLANTED]) +
+        " The transmittal marks no deviations. Strength (35 MPa), slump "
+        "(100 mm) and aggregate size (20 mm) comply. " + _BUILT),
+    Task(
+        id="coord-full-review",
+        question=("Do a coordination review of this drawing set before it "
+                  "goes out, and check it against the project manual and "
+                  "the geotechnical memorandum. Give me a comment log: one "
+                  "row per comment, with the sheet and what is wrong."),
+        documents=["fixture_coord_set", "fixture_coord_manual",
+                   "fixture_coord_memo"],
+        category="check", doc_type="coordination_set",
+        checks=_planted(_BASE_KEYS, with_files=True),
+        truth=_truth(_BASE_KEYS) + " Thirteen planted problems, one check "
+        "each; the score is how many the log holds. " + _BUILT),
+    Task(
+        id="coord-long-callouts",
+        question=("Check the section, detail and enlarged-plan callouts in "
+                  "this set: does each one point to a view that exists on "
+                  "the sheet it names? List the ones that do not."),
+        documents=["fixture_coord_set_long"], category="check",
+        doc_type="coordination_set",
+        checks=_planted(["callout-missing-detail", "callout-missing-sheet",
+                         "callout-missing-ceiling-detail"])
+        + [{"type": "pages_covered", "pages": list(range(40)), "info": True,
+            "label": "sheets read (recorded, not scored)"}],
+        truth=_truth(["callout-missing-detail", "callout-missing-sheet",
+                      "callout-missing-ceiling-detail"]) +
+        " 40 sheets; 39 callouts on 22 of them. " + _BUILT),
+    Task(
+        id="coord-long-schedules",
+        question=("Check every schedule in this set against the marks on "
+                  "the plans. What is on a plan but not scheduled, and what "
+                  "is scheduled but not on a plan?"),
+        documents=["fixture_coord_set_long"], category="check",
+        doc_type="coordination_set",
+        checks=_planted(["door-not-scheduled", "door-not-on-plan",
+                         "door-not-scheduled-4", "door-not-on-plan-5",
+                         "footing-not-scheduled", "fcu-not-scheduled",
+                         "panel-not-scheduled"])
+        + [{"type": "pages_covered", "pages": list(range(40)), "info": True,
+            "label": "sheets read (recorded, not scored)"}],
+        truth=_truth(["door-not-scheduled", "door-not-on-plan",
+                      "door-not-scheduled-4", "door-not-on-plan-5",
+                      "footing-not-scheduled", "fcu-not-scheduled",
+                      "panel-not-scheduled"]) +
+        " Four schedules (doors on A-601 and A-602, footings on S-501, "
+        "mechanical equipment on M-601, panels on E-601) against 16 plan "
+        "sheets. " + _BUILT),
+    Task(
+        id="coord-long-review",
+        question=("Do a coordination review of this drawing set before it "
+                  "goes out, and check it against the project manual and "
+                  "the geotechnical memorandum. Give me a comment log: one "
+                  "row per comment, with the sheet and what is wrong."),
+        documents=["fixture_coord_set_long", "fixture_coord_manual",
+                   "fixture_coord_memo"],
+        category="check", doc_type="coordination_set",
+        checks=_planted(_LONG_KEYS, with_files=True),
+        truth=_truth(_LONG_KEYS) + " Nineteen planted problems over 40 "
+        "sheets, one check each. " + _BUILT),
+]
+
+OPEN_TASKS += COORDINATION_TASKS
+
+
+# ---------------------------------------------------------------------------
 # Loading
 # ---------------------------------------------------------------------------
 
@@ -969,5 +1321,6 @@ def load_tasks(extra: Optional[Iterable[Any]] = None,
     return _load_tasks(extra, include_open=include_open, open=OPEN_TASKS)
 
 
-__all__ = ["Task", "OPEN_TASKS", "AUTO_CHECKS", "CATEGORIES", "DOC_TYPES",
+__all__ = ["Task", "OPEN_TASKS", "COORDINATION_TASKS", "AUTO_CHECKS",
+           "CATEGORIES", "DOC_TYPES",
            "PAGES", "GIVE_UP_PHRASES", "open_tasks", "load_tasks", "select"]

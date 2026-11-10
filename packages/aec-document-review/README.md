@@ -77,7 +77,7 @@ and the wrapper template
 
 ## The review suite
 
-The 38 review tasks the page is measured on, with deterministic checks, run
+The 50 review tasks the page is measured on, with deterministic checks, run
 through the core's suite framework on this page:
 
 ```python
