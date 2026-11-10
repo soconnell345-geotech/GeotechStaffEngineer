@@ -116,49 +116,112 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-11-04; release 5.34.0) — 5.34.0 with planlens 0.14.0 (pin >=0.14) and geotech-references 1.5.0 (pin >=1.5.0): the geotech calc modules checked against their printed references (many answers move; release notes by module in HANDOFF §0a-current item 0), report ingest model-first by default, GSE on Foundry (installs on numpy 1.26, conversations saved to a Foundry dataset); review switches still OFF; before it 5.33.0 RELEASED with planlens 0.13.0 (pin >=0.13) and geotech-references 1.4.1 (pin >=1.4.1): hardened for OTHER testers on Tiny Apps by live smoke waves (per-user isolation, per-tester Prompter keys, one final answer per turn, Word/Excel in and out, tool errors never end a turn, faster vision, rotated-sheet markups) plus the brief-5 fixes and engineering fixes (GEC-12 Fig 7-15, sheet-pile water table, fem2d consolidation, downdrag basis); all review switches still OFF; before it 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-11-09; release 5.35.0) — 5.35.0 with planlens 0.15.0 (pin >=0.15), geotech-references 1.6.0 (pin >=1.6.0) and the new shared core aec-agent-core (pinned exactly, published first): the app split's core filled (model connections, vision calls, guards and records, Word and Excel, the figure helper and plotting box; old import paths kept), Document Review stripped to what earned its place and bound to planlens.review, the report recompute check, local reference packs, SharePoint set up by the host team on any Microsoft cloud, and answers moving in fem2d, sheet_pile, drilled_shaft, wave_equation, MSE walls and some GEC-13 reference lookups (release notes by module in HANDOFF §0a-current item 0); [[PENDING: REF-64 (B) and INF-33 step 13 — the lead fills these in after the merges]]; before it 5.34.0 RELEASED with planlens 0.14.0 (pin >=0.14) and geotech-references 1.5.0 (pin >=1.5.0): the geotech calc modules checked against their printed references (many answers move; release notes by module in HANDOFF §0a-current item 0a), report ingest model-first by default, GSE on Foundry (installs on numpy 1.26, conversations saved to a Foundry dataset); review switches still OFF; before it 5.33.0 RELEASED with planlens 0.13.0 (pin >=0.13) and geotech-references 1.4.1 (pin >=1.4.1): hardened for OTHER testers on Tiny Apps by live smoke waves (per-user isolation, per-tester Prompter keys, one final answer per turn, Word/Excel in and out, tool errors never end a turn, faster vision, rotated-sheet markups) plus the brief-5 fixes and engineering fixes (GEC-12 Fig 7-15, sheet-pile water table, fem2d consolidation, downdrag basis); all review switches still OFF; before it 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
-- **Master after 5.34.0 (unreleased; 2026-11-05):** fixes merged since the
-  release, each built by a cloud session and reviewed before the merge; what
-  changes an answer is in HANDOFF §0a-current, "Master after 5.34.0".
-  Report ingest prompts are mf-9 (the next live run re-reads every saved
-  model-first answer); groundwater "not measured" and combined lab samples
-  are kept; refs at 1.6.0 (76f494d; pin `geotech-references>=1.6.0`): a deployment adds its own references as packs named by `GEOTECH_REFERENCES_PACKS` (REF-64 (A); refs' `docs/REFERENCE_PACKS.md`); earlier pinned at 32bbd77 (worked examples from five manuals); the
-  app split's steps 6-8 are in (the Document Review page loads one geotech
-  package and four app modules), and steps 10 and 11 (a): `aec-agent-core`,
-  the shared core, in `packages/aec-agent-core` (1.0.0.dev1, not on PyPI
-  yet), pinned exactly, holding the model connections, settings, identity,
-  vision calls and Tiny Apps key routes, GSE's part handed in through
-  `aec_agent_core.hooks`, then (step 11 (b)) the figure helper, plotting
-  box, chart stack and worked examples, GSE's chart lines handed in by a
-  registration, then (step 11 (c)) guards and records, Word and Excel, the
-  checks, the review suite's framework and the shared assembly, with a
-  core-only CI job; old import paths kept as aliases; a dev install
-  puts it first: `pip install -e packages/aec-agent-core -e .`; the
-  core's first release (step 12) next; the owner's question list
-  runs inside the ingest when `GSE_REPORT_QUESTIONS` names it, posts matched
-  from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split; the
-  geotech page keeps 15 document tools off the list until a document is
-  present (about a quarter of each call's prefix); `recompute_report_calcs`
-  re-runs a report's claimed bearing and settlement calcs (DR-11, first
-  slice, with report ingest); DIGGS points with a printed vertical datum
-  are 3-D under DIGGS' compound CRS; driven piles take a layer's own
-  adhesion and ask for Fig. 7-18's case under a softer clay; the user
-  manual's HTML is rebuilt from master; `retaining_wall_package` writes an
-  MSE wall's calc package (`wall_type="mse"`, with a sloping backslope or a
-  battered face; `mse_lrfd` for LRFD) and MSE LRFD reports Strength I
-  (min) apart; the site-response tools run on pystrata 0.5 (Python 3.12) or 0.6 (Python 3.13); SharePoint works on any
-  Microsoft cloud with a secret or a certificate and several sites, with a
-  connection test and `docs/SHAREPOINT_SETUP.md`; the cloud is read off the
-  site's address, a user can open any granted site by pasting its address,
-  and SharePoint errors are kept in a log in the app's SharePoint folder; GEC-13's lookups cite their printed equations and three it never printed are gone; GEC-10 and GEC-13 Vol II cited by their covers; NHI-06-088/089's cited equations carry their printed formulas; the AASHTO 1993 ESAL lookups read every printed SN, D and pt (refs e4b0fa1); the report recompute check splits a calculation by its printed cases (DR-11 slice 2, gamma'-only refused until OWN-130); a calculation's printed table keeps every row (RI-208, calc prompt mf-10); the recompute check also covers retaining-wall earth-pressure coefficients (DR-11 slice 3) and AASHTO 1993 rigid slab thickness (slice 4); GEC-13's deep dynamic compaction and jet grouting lookups give only what the print has, and the DDC depth is Eq. 4-1 as printed (refs 8a09592); bearing capacity offers Meyerhof's own depth factors at every depth as an option (GM-309; default unchanged, OWN-131); the chart suite (`funhouse_agent/chart_eval/`, CharXiv) is merged and its Foundry run read in full; the wrap-up is Document Review as the public package `aec-document-review` (INF-33); a failed vision probe no longer lowers the image detail for the process and the vision side calls see the user's question (DR-36/37); the review experiments that never earned a place are removed (DR-39; follow-up DR-40); planlens 0.15.0 is on PyPI (2026-11-09) and the app binds to `planlens.review`, requiring planlens>=0.15 (PL-29 (b), with DR-40's last switch removals), and the names `aec-agent-core` and `aec-document-review` are held there by empty first uploads. Answers move in the MSE
-  critical bearing (live load over the zone at 1.75), fem2d footing capacity
-  (a surcharge is a real load; the soil's weight first; the default
-  iteration limit grows with the mesh, so fine meshes no longer stop short,
-  and a stopped run is called a lower bound; a graded mesh for clay; sand q_ult with
-  no surcharge is set by the mesh and warned of; a rigid footing is a
-  choice, flexible stays the default) sheet_pile (water standing in
-  the excavation) and GEC-13's groutability band (N > 24 feasible, as printed).
+- **5.35.0 (2026-11-09; tag `v5.35.0` on branch `release/5.35.0`) with
+  planlens 0.15.0 (tag `v0.15.0`) and geotech-references 1.6.0 (tag
+  `v1.6.0`), both on PyPI since 2026-11-09, and the shared core
+  `aec-agent-core`, a NEW dependency, published first from
+  `packages/aec-agent-core` by its own `core-v*` tag; pins
+  `planlens>=0.15`, `geotech-references>=1.6.0` and `aec-agent-core`
+  exactly.** It is everything on master since 5.34.0 (through 1caf160)
+  plus two branches merged for it: the "Master after 5.34.0" paragraph at
+  the end of this entry is its content, with
+  [[PENDING: REF-64 (B) and INF-33 step 13 — the lead fills these in after the merges]].
+  Release gate on the exact tree, the wheel checks and the release notes
+  (what changes a calculation's answer, by module): HANDOFF §0a-current
+  item 0.
+  - **What a user notices:**
+    - a few calculation answers move: fem2d footing capacity (a surcharge
+      now loads the ground beside the footing, the soil's weight goes on
+      first, fine meshes no longer stop short) and fem2d seepage flow
+      (about 29 times too high before); sheet piles with water standing
+      in the excavation; a drilled shaft's factored rock base when the
+      concrete strength is given; the wave equation, which now asks for
+      the hammer cushion and helmet instead of using unprinted values;
+      the MSE wall's critical bearing; and some GEC-13 reference look-ups
+      (deep dynamic compaction, jet grouting, grout ratings); compare a
+      5.34.0 answer only with the release notes in hand;
+    - new: a check that recomputes a report's own bearing, settlement,
+      wall-pressure and pavement-thickness calculations
+      (`recompute_report_calcs`; part of report ingest, so off unless
+      `GEOTECH_REPORT_INGEST` is on); MSE calc packages with a sloping
+      backslope, a battered face or LRFD;
+    - report ingest keeps "water level not measured" apart, links a lab
+      result on combined samples to each sample, keeps every row of a
+      calculation's table and writes 3-D DIGGS points where a datum is
+      printed (prompts mf-9 and mf-10: a live run starts in a fresh
+      folder);
+    - Document Review is the same page with its unused experiments taken
+      out (a removed setting still set is ignored); its picture readings
+      now see the user's question;
+    - SharePoint: the host team can set it up on any Microsoft cloud,
+      with a certificate and several sites, a connection test in the
+      sidebar diagnostics and an error log in the app's SharePoint folder
+      (`GEOTECH_SHAREPOINT_LOG`, on by default);
+    - new settings that do nothing when unset: `GEOTECH_REFERENCES_PACKS`
+      (a deployment's own references), `GSE_REPORT_QUESTIONS` and
+      `GSE_REPORT_POSTS` (the owner's question list inside report ingest);
+    - `GEOTECH_FIGURE_HELPER`, `GEOTECH_PLOT_CODE` and
+      `GEOTECH_JUDGMENT_CALLS` stay on by default; `GEOTECH_REPORT_INGEST`
+      stays off;
+    - [[PENDING: REF-64 (B) and INF-33 step 13 — the lead fills these in after the merges]]
+  - **Install changes:** one new package, the shared core
+    `aec-agent-core`, pinned exactly; it requires nothing the app did not
+    already require, so an install log gains only
+    `aec-agent-core-<version>`. planlens 0.15 and geotech-references 1.6.0
+    add no package. pystrata by Python version: `pystrata>=0.5,<0.6` with
+    `pyrvt<0.9` on Python 3.12, `pystrata>=0.6,<0.7` on 3.13 (5.34.0 on
+    3.13 broke site response). A checkout installs the core first:
+    `pip install -e packages/aec-agent-core -e .`. No new third-party
+    package. Install guide §11.
+  - **Held:** no slope_stability changes after 2026-10-18 (GM-140); the
+    Tiny Apps tester deploy waits on the host team (OWN-44) and on
+    Document Review's own package (INF-33, INF-34).
+
+  - **Master after 5.34.0 (the train released as 5.35.0, 2026-11-04 to
+    2026-11-09):** fixes merged since 5.34.0, each built by a cloud
+    session and reviewed before the merge; what changes an answer is in
+    HANDOFF §0a-current item 0, and change by change in its "Master
+    after 5.34.0" record.
+    Report ingest prompts are mf-9 (the next live run re-reads every saved
+    model-first answer); groundwater "not measured" and combined lab samples
+    are kept; refs at 1.6.0 (76f494d; pin `geotech-references>=1.6.0`): a deployment adds its own references as packs named by `GEOTECH_REFERENCES_PACKS` (REF-64 (A); refs' `docs/REFERENCE_PACKS.md`); earlier pinned at 32bbd77 (worked examples from five manuals); the
+    app split's steps 6-8 are in (the Document Review page loads one geotech
+    package and four app modules), and steps 10 and 11 (a): `aec-agent-core`,
+    the shared core, in `packages/aec-agent-core` (1.0.0.dev1, not on PyPI
+    yet), pinned exactly, holding the model connections, settings, identity,
+    vision calls and Tiny Apps key routes, GSE's part handed in through
+    `aec_agent_core.hooks`, then (step 11 (b)) the figure helper, plotting
+    box, chart stack and worked examples, GSE's chart lines handed in by a
+    registration, then (step 11 (c)) guards and records, Word and Excel, the
+    checks, the review suite's framework and the shared assembly, with a
+    core-only CI job; old import paths kept as aliases; a dev install
+    puts it first: `pip install -e packages/aec-agent-core -e .`; the
+    core's first release (step 12) next; the owner's question list
+    runs inside the ingest when `GSE_REPORT_QUESTIONS` names it, posts matched
+    from `GSE_REPORT_POSTS`; activity.jsonl keeps the prompt-cache split; the
+    geotech page keeps 15 document tools off the list until a document is
+    present (about a quarter of each call's prefix); `recompute_report_calcs`
+    re-runs a report's claimed bearing and settlement calcs (DR-11, first
+    slice, with report ingest); DIGGS points with a printed vertical datum
+    are 3-D under DIGGS' compound CRS; driven piles take a layer's own
+    adhesion and ask for Fig. 7-18's case under a softer clay; the user
+    manual's HTML is rebuilt from master; `retaining_wall_package` writes an
+    MSE wall's calc package (`wall_type="mse"`, with a sloping backslope or a
+    battered face; `mse_lrfd` for LRFD) and MSE LRFD reports Strength I
+    (min) apart; the site-response tools run on pystrata 0.5 (Python 3.12) or 0.6 (Python 3.13); SharePoint works on any
+    Microsoft cloud with a secret or a certificate and several sites, with a
+    connection test and `docs/SHAREPOINT_SETUP.md`; the cloud is read off the
+    site's address, a user can open any granted site by pasting its address,
+    and SharePoint errors are kept in a log in the app's SharePoint folder; GEC-13's lookups cite their printed equations and three it never printed are gone; GEC-10 and GEC-13 Vol II cited by their covers; NHI-06-088/089's cited equations carry their printed formulas; the AASHTO 1993 ESAL lookups read every printed SN, D and pt (refs e4b0fa1); the report recompute check splits a calculation by its printed cases (DR-11 slice 2, gamma'-only refused until OWN-130); a calculation's printed table keeps every row (RI-208, calc prompt mf-10); the recompute check also covers retaining-wall earth-pressure coefficients (DR-11 slice 3) and AASHTO 1993 rigid slab thickness (slice 4); GEC-13's deep dynamic compaction and jet grouting lookups give only what the print has, and the DDC depth is Eq. 4-1 as printed (refs 8a09592); bearing capacity offers Meyerhof's own depth factors at every depth as an option (GM-309; default unchanged, OWN-131); the chart suite (`funhouse_agent/chart_eval/`, CharXiv) is merged and its Foundry run read in full; the wrap-up is Document Review as the public package `aec-document-review` (INF-33); a failed vision probe no longer lowers the image detail for the process and the vision side calls see the user's question (DR-36/37); the review experiments that never earned a place are removed (DR-39; follow-up DR-40); planlens 0.15.0 is on PyPI (2026-11-09) and the app binds to `planlens.review`, requiring planlens>=0.15 (PL-29 (b), with DR-40's last switch removals), and the names `aec-agent-core` and `aec-document-review` are held there by empty first uploads. Answers move in the MSE
+    critical bearing (live load over the zone at 1.75), fem2d footing capacity
+    (a surcharge is a real load; the soil's weight first; the default
+    iteration limit grows with the mesh, so fine meshes no longer stop short,
+    and a stopped run is called a lower bound; a graded mesh for clay; sand q_ult with
+    no surcharge is set by the mesh and warned of; a rigid footing is a
+    choice, flexible stays the default) sheet_pile (water standing in
+    the excavation) and GEC-13's groutability band (N > 24 feasible, as printed).
 
 - **5.34.0 (2026-11-04; tag `v5.34.0` on branch `release/5.34.0`) with
   planlens 0.14.0 (tag `v0.14.0`) and geotech-references 1.5.0 (tag
@@ -167,7 +230,7 @@ Key conventions:
   the "Master after 5.33.0" paragraph under 5.33.0 below is its content.
   Release gate on the exact tree, the wheel checks and the release notes
   (what changes a calculation's answer, by module): HANDOFF §0a-current
-  item 0.
+  item 0a.
   - **What a user notices:**
     - the geotech calc modules checked against their printed references
       (GM-281 to GM-303 and the earlier GM fixes), so many answers move:
@@ -2140,8 +2203,10 @@ Run: `pytest foundry_test_harness/ -v`
 
 Everything that reads a PDF, an image or a DXF lives in the separate,
 published package **planlens** (`C:/dev/planlens`,
-PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.14` since
-5.34.0 (see its CHANGELOG), `planlens>=0.13` since 5.33.0; earlier,
+PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.15` since
+5.35.0 (0.15.0 holds `planlens.review`, the app's document tools; see its
+CHANGELOG), `planlens>=0.14` since 5.34.0, `planlens>=0.13` since 5.33.0;
+earlier,
 `planlens>=0.7` since
 5.26.0 — 0.7.0 adds `annotate_document` / `document.markup_writer`, the
 WRITE side of the review markups, with the same dependencies as 0.6.0 — and

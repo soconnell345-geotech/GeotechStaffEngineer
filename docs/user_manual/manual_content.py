@@ -1339,7 +1339,7 @@ VALIDATION_ROWS = [
 
 # Version history (Appendix B)
 VERSION_HISTORY = [
-    ("5.4.0 &ndash; 5.34.0", "2026-07 &ndash; 2026-11",
+    ("5.4.0 &ndash; 5.35.0", "2026-07 &ndash; 2026-11",
      "Not yet summarised in this appendix. Each release&rsquo;s notes, including the changes that "
      "move a calculation&rsquo;s answer, are in the repository&rsquo;s <code>HANDOFF.md</code> and "
      "<code>CLAUDE.md</code>; the method and parameter tables in this manual are generated from "
