@@ -101,15 +101,65 @@ def _num(s: str) -> Optional[float]:
             return None
 
 
+#: A field's value that is a number alone, perhaps with its unit
+#: ("0.30", "35.9 tsf", "12 %", "32°"); "3/4" or "s_u2/s_u1" is not.
+_PLAIN = re.compile(rf"^\s*{_NUM}\s*(?:[%°µA-Za-z][%°µA-Za-z0-9/^.]*)?\s*$")
+
+_OPEN, _CLOSE = "([{", ")]}"
+
+
+def _segments(text: str, sep: str) -> List[str]:
+    """``text`` split at each ``sep`` outside brackets: an equals sign
+    inside "(at phi = 30)" or "(H/B=1.0)" belongs to its bracket."""
+    out, depth, start = [], 0, 0
+    for i, ch in enumerate(text):
+        if ch in _OPEN:
+            depth += 1
+        elif ch in _CLOSE:
+            depth = max(0, depth - 1)
+        elif ch == sep and depth == 0:
+            out.append(text[start:i])
+            start = i + 1
+    out.append(text[start:])
+    return out
+
+
+def _unbracketed(text: str) -> str:
+    """``text`` with every bracketed part taken out."""
+    out, depth = [], 0
+    for ch in text:
+        if ch in _OPEN:
+            depth += 1
+        elif ch in _CLOSE:
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            out.append(ch)
+    return "".join(out)
+
+
+def _field_value(chain: List[str]) -> str:
+    """A field's value from what follows its key: in a chain of equalities
+    (``s_u2/s_u1 = 0.30``, ``B/H = 0.75 = 3/4``) the first part that is a
+    number alone (its bracketed remark left out); with none, the last
+    part as written (``Nc,m (H/B=1.0)``)."""
+    for part in chain:
+        bare = _unbracketed(part).strip()
+        if _PLAIN.match(bare):
+            return bare
+    return chain[-1].strip()
+
+
 def parse_reads(text: str) -> Tuple[List[Dict[str, Any]],
                                     Optional[Dict[str, Any]]]:
     """The ``READ`` lines and the ``ANSWER`` line of a raw answer (its pixel
     boxes not yet rewritten): ``([{axis, at, curve, value, px}], answer)``.
 
     In each ``key = value`` field the key is what comes before the first
-    equals sign and the value what follows the last one, so a field that
-    restates the quantity (``x = s_u2/s_u1 = 0.30``) reads 0.30, not the
-    digit in the symbol's name (the 2026-11-10 review found it read 2.0)."""
+    equals sign outside brackets and the value comes from what follows
+    (:func:`_field_value`): a field that restates the quantity
+    (``x = s_u2/s_u1 = 0.30``) reads 0.30, not the digit in the symbol's
+    name (the 2026-11-10 review found it read 2.0); a remark in brackets
+    (``value = 18.4 (at phi = 30)``) is not the value."""
     reads: List[Dict[str, Any]] = []
     answer = None
     for line in (text or "").splitlines():
@@ -123,8 +173,10 @@ def parse_reads(text: str) -> Tuple[List[Dict[str, Any]],
             if "=" not in part and ":" not in part:
                 continue
             sep = "=" if "=" in part else ":"
-            k = part.split(sep, 1)[0]
-            v = part.rsplit(sep, 1)[1]
+            chain = _segments(part, sep)
+            if len(chain) < 2:
+                continue                  # its only sign is in brackets
+            k, v = chain[0], _field_value(chain[1:])
             k = k.strip().lower()
             if k in ("x", "y") and axis is None:
                 axis, at = k, _num(v)
