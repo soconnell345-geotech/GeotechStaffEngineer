@@ -152,7 +152,7 @@ This repository builds three packages; the app also needs two more of the same p
   (unreleased): the review suite has 52 tasks, fourteen of them coordination
   tasks on one made-up building's documents with planted problems (DR-25;
   `review_eval/coordination_fixture.py` in `aec-document-review`; not yet
-  run on a model, EV-40), and a switch, off by default, that lets the
+  run on a model: EV-40, Foundry brief 7 written, OWN-140), and a switch, off by default, that lets the
   page's main model look at a page or region itself where it asks to
   (`GEOTECH_VISION_SHOW_ME`, DR-38; suite arm `show_me`), and the draft
   review method as package data and a suite arm (DR-06;
