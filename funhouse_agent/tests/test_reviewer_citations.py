@@ -24,7 +24,19 @@ def test_the_reviewer_has_no_lookup_count_in_its_rules():
     for prompt in (REVIEWER_SYSTEM_PROMPT, REVIEWER_DEEP_PROMPT):
         assert "lookups maximum" not in prompt
         assert "Limit yourself" not in prompt
-        assert "4. Do NOT repeat the full analysis" in prompt
+        assert "5. Focus on the most critical checks." in prompt
+
+
+def test_the_deep_reviewer_is_told_its_call_budget():
+    """Review F3: with the lookup count gone, the deep reviewer is told its
+    model-call budget, as the references helper is."""
+    from funhouse_agent.deep.agent import build_reviewer_subagent
+    from funhouse_agent.deep.limits import DEFAULT_REVIEWER_MAX_MODEL_CALLS
+    prompt = build_reviewer_subagent()["system_prompt"]
+    assert (f"You have {DEFAULT_REVIEWER_MAX_MODEL_CALLS} model calls for "
+            "this review, the last of which must be your review") in prompt
+    assert "model calls for this review" not in \
+        build_reviewer_subagent(max_model_calls=None)["system_prompt"]
 
 
 def test_references_consult_may_not_cite_from_memory():

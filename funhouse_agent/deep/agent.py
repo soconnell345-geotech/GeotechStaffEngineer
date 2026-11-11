@@ -113,6 +113,14 @@ _REFERENCES_CONCISION = (
     "plus the citation is ideal."
 )
 
+#: The reviewer's model-call budget, stated to it after its rules (2026-11-10
+#: review F3), worded as the references helper's (_REFERENCES_BUDGET).
+_REVIEWER_BUDGET = (
+    "\nYou have {n} model calls for this review, the last of which must be "
+    "your review: make independent lookups in the SAME turn (several tool "
+    "calls at once) rather than one per turn.\n"
+)
+
 #: The units rule, after the concision rule (2026-11-10 review, item 2): a
 #: lookup is in its manual's units, many of them US customary, and the
 #: helper had been told "All units are SI". A tsf reached the main agent
@@ -723,6 +731,11 @@ def build_reviewer_subagent(
     if extra_tools:
         tools = list(tools) + list(extra_tools)
     system_prompt = REVIEWER_DEEP_PROMPT
+    if max_model_calls:
+        # its budget, stated to it as the references helper's is (review
+        # F3: the "3-4 lookups" rule had been its only bound)
+        system_prompt = system_prompt + _REVIEWER_BUDGET.format(
+            n=int(max_model_calls))
     if extra_system_prompt:
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
     spec = {

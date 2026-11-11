@@ -236,7 +236,8 @@ def test_switch_off_leaves_every_prompt_as_it_was(monkeypatch, calc,
         assert _budget(_spec(captured, "references")) == (
             DEFAULT_REFERENCES_MAX_MODEL_CALLS, 0)
         assert _spec(captured, "reviewer")["system_prompt"] == \
-            REVIEWER_DEEP_PROMPT
+            REVIEWER_DEEP_PROMPT + agent_mod._REVIEWER_BUDGET.format(
+                n=agent_mod.DEFAULT_REVIEWER_MAX_MODEL_CALLS)
     else:
         assert not {"references", "reviewer"} & names
     if calc:

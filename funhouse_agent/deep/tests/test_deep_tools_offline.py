@@ -484,7 +484,11 @@ def test_subagents_configured():
     assert refs["system_prompt"].startswith(CONSULTANT_ROLE)
     assert "Question:" not in refs["system_prompt"]
     assert "concise" in refs["system_prompt"].lower()
-    assert rev["system_prompt"] == REVIEWER_DEEP_PROMPT
+    # the reviewer's prompt, then its call budget (2026-11-10 review F3)
+    from funhouse_agent.deep.agent import _REVIEWER_BUDGET
+    from funhouse_agent.deep.limits import DEFAULT_REVIEWER_MAX_MODEL_CALLS
+    assert rev["system_prompt"] == REVIEWER_DEEP_PROMPT + \
+        _REVIEWER_BUDGET.format(n=DEFAULT_REVIEWER_MAX_MODEL_CALLS)
     assert "<tool_call>" not in rev["system_prompt"]
     assert "<tool_call>" in REVIEWER_SYSTEM_PROMPT        # v1 still parses it
     assert all(m in rev["system_prompt"] for m in REFERENCE_MODULES)

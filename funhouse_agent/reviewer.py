@@ -88,6 +88,7 @@ _REVIEW_RULES = """\
 3. Cite the specific reference section, table or figure — only ones a tool \
 returned in this review.
 4. Do NOT repeat the full analysis — only comment on what needs checking.
+5. Focus on the most critical checks.
 """
 
 #: The text-protocol tail: the v1 agent parses <tool_call> tags out of text.
