@@ -43,6 +43,15 @@ it a look is not a side call: the image goes to the agent's own model at
 its next step (`aec_agent_core/deep/inline_images.py`). Without it nothing
 below changes. Not measured (BACKLOG DR-38, EV-40).
 
+**2026-11-10, on master, off by default:** `GEOTECH_REVIEW_SHEET_TOOLS=1`
+gives the Document Review page and its reading helper two planlens tools,
+where the installed planlens has them (its main after 0.15.1):
+`sheet_index` (a drawing set's sheets read from their title blocks) and
+`check_cross_references` (each callout checked against the sheet it names:
+`unresolved`, `not_in_document`, `cannot_tell` or `resolved`, with the box
+to view). Code reports what the text shows; whether a flagged callout is a
+finding stays the agent's call. Not measured (BACKLOG PL-37, DR-07, EV-40).
+
 These changes date from 2026-10-07. They shipped in app 5.32.1 with planlens
 0.12.0, both released on 2026-10-08 after Foundry brief 4 measured them.
 The body text still describes 5.32.0; short notes in the affected sections

@@ -429,6 +429,7 @@ _DOCUMENT_TOOL_NOTES = {
     "document_page_map": _PDF_PAGES_NOTE,
     "document_markups": _PDF_PAGES_NOTE,
     "find_quantities": _PDF_PAGES_NOTE,
+    "check_cross_references": _PDF_PAGES_NOTE,
     "render_page_thumbnails": _PDF_PAGES_NOTE,
     "annotate_document": (
         " In this app give output_path a bare file name: it is written into "
@@ -544,6 +545,7 @@ def make_vision_tools(
     inline_images: bool = False,
     inline_image_files: bool = False,
     show_choice: bool = False,
+    sheet_tools: bool = False,
     plot_data_replaces: bool = False,
     description_rewrites: Optional[
         Dict[str, Sequence[Tuple[str, str]]]] = None,
@@ -576,6 +578,10 @@ def make_vision_tools(
     the three tools a ``show_me`` argument instead: the model chooses per
     call between today's vision call and looking for itself (an uploaded
     picture too), behind ``GEOTECH_VISION_SHOW_ME`` (BACKLOG DR-38).
+    ``sheet_tools`` adds planlens' ``sheet_index`` and
+    ``check_cross_references`` where the installed planlens has them
+    (after 0.15.1; nothing is added otherwise), behind
+    ``GEOTECH_REVIEW_SHEET_TOOLS`` (BACKLOG PL-37, DR-07).
 
     ``added_tools`` are tools another app adds to the kit, ``{name:
     builder}``: ``builder(dispatch)`` returns ``(function, description)``,
@@ -628,6 +634,11 @@ def make_vision_tools(
     attachments = attachments if attachments is not None else {}
     save_fn = save_fn or _default_save_fn
     added = dict(added_tools or {})
+    # The sheet tools: asked for AND in the installed planlens.
+    sheet_names = (set(_document_tools.SHEET_TOOL_NAMES)
+                   if sheet_tools and _document_tools.available()
+                   and _document_tools.sheet_tools_available() else set())
+    default_include = include is None
     if include is None:
         include = {
             "list_files", "read_pdf_text", "read_text_file", "analyze_image",
@@ -658,14 +669,17 @@ def make_vision_tools(
         # find_like needs planlens 0.10 (planlens.document.findlike).
         if _find_like_available():
             include |= {"find_like"}
+    if default_include:
+        include |= sheet_names
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
     # Resolved once per build: the newer tools depend on the installed planlens.
-    document_names = set(_document_tools.document_tool_names())
+    document_names = set(_document_tools.document_tool_names()) | sheet_names
     # This build's host for planlens.review (BACKLOG PL-29 (b)): its look is
     # this build's engine and its signer this build's markup_author, passed
     # on every document call, so two conversations never share either.
-    review_host = _document_tools.host_for(engine, markup_author)
+    review_host = _document_tools.host_for(engine, markup_author,
+                                           sheet_tools=bool(sheet_names))
     # plot_data draws per figure name, for the redraw note.
     draws: Dict[str, int] = {}
 
@@ -1117,6 +1131,22 @@ def make_vision_tools(
             args["author"] = author
         return _dispatch("document_markups", _with_pdf_pages(args, pdf_pages))
 
+    def sheet_index(handle: str, offset: int = 0) -> str:
+        """The drawing set's sheets, read from their title blocks."""
+        return _dispatch("sheet_index", {"handle": handle, "offset": offset})
+
+    def check_cross_references(handle: str, pages: Any = None,
+                               status: str = "", offset: int = 0,
+                               pdf_pages: Any = None) -> str:
+        """Every callout in the set, checked against the sheet it names."""
+        args = {"handle": handle, "offset": offset}
+        if pages not in (None, ""):
+            args["pages"] = pages
+        if status:
+            args["status"] = status
+        return _dispatch("check_cross_references",
+                         _with_pdf_pages(args, pdf_pages))
+
     def annotate_document(handle: str, markups: Optional[list] = None,
                           output_path: str = "",
                           append: bool = True, check: bool = True,
@@ -1373,6 +1403,10 @@ def make_vision_tools(
     ]
     if _document_tools.has_tool("find_quantities"):
         document_review_builders.append(("find_quantities", find_quantities))
+    if sheet_names:
+        document_review_builders += [
+            ("sheet_index", sheet_index),
+            ("check_cross_references", check_cross_references)]
     if _document_tools.has_tool("annotate_document"):
         document_review_builders.append(("annotate_document", annotate_document))
     # Visual scales (planlens' find_scales behind both): described in the

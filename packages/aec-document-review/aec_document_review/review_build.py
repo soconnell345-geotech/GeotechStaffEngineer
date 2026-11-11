@@ -112,7 +112,10 @@ def _review_reader_subagent(primary_tools,
     from aec_document_review.review_prompt import DOCUMENT_REVIEW_READER_PROMPT
     from aec_document_review.review_agent import (
         READER_EXHAUSTED, READER_MAX_MODEL_CALLS, READER_NUDGE, READER_TOOLS)
-    wanted = set(READER_TOOLS)
+    # the sheet tools read and write nothing: the helper has them where the
+    # page does (PL-37)
+    from aec_agent_core.document_tools import SHEET_TOOL_NAMES
+    wanted = set(READER_TOOLS) | set(SHEET_TOOL_NAMES)
     return {
         "name": READER_NAME,
         "description": REVIEW_READER_DESCRIPTION,
@@ -257,6 +260,8 @@ def build_review_page_agent(
         added_tools=None,
         # the looking tools take show_me behind its switch (DR-38)
         show_choice=_flags.show_me(),
+        # planlens' sheet index and callout check behind theirs (PL-37)
+        sheet_tools=_flags.sheet_tools(),
         # behind the figure switches the main agent's own redraw can retire
         # a figure any helper drew this turn (GM-151)
         plot_data_replaces=_flags.figure_helper() or _flags.plot_code(),

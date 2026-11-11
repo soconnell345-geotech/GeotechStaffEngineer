@@ -101,6 +101,13 @@ OPTIONAL_DOCUMENT_TOOL_NAMES = (
     "log_grid",
 )
 
+#: planlens' sheet tools (a drawing set's sheets read from their title
+#: blocks, and its callouts checked against them; planlens after 0.15.1).
+#: planlens offers them only to a host that asks, and this app asks only
+#: where a page was built with them (``GEOTECH_REVIEW_SHEET_TOOLS``, BACKLOG
+#: PL-37, DR-07): not measured yet, so not on by default.
+SHEET_TOOL_NAMES = ("sheet_index", "check_cross_references")
+
 #: Who a comment this app writes onto a PDF is signed by. A reviewer opening
 #: the marked-up file has to be able to tell a drafted comment from a person's
 #: without asking, so the default says so in the name; a deployment that signs
@@ -182,10 +189,13 @@ def tool_description(name: str) -> str:
 def _spec(name: str) -> Optional[Dict[str, Any]]:
     """The installed planlens' spec for ``name``, or ``None``."""
     try:
-        from planlens.tools.specs import TOOL_SPECS
+        from planlens.tools import specs as _specs
     except ImportError:
         return None
-    for spec in TOOL_SPECS:
+    # The sheet tools' specs are kept in a list of their own (a host that
+    # reads TOOL_SPECS gets no tool it did not ask for).
+    for spec in list(_specs.TOOL_SPECS) + list(
+            getattr(_specs, "SHEET_TOOL_SPECS", ())):
         if spec.get("name") == name:
             return spec
     return None
@@ -205,6 +215,14 @@ def document_tool_names() -> tuple:
     """
     return DOCUMENT_TOOL_NAMES + tuple(
         name for name in OPTIONAL_DOCUMENT_TOOL_NAMES if has_tool(name))
+
+
+def sheet_tools_available() -> bool:
+    """Whether the installed planlens has the sheet tools
+    (:data:`SHEET_TOOL_NAMES`) and a host can ask for them."""
+    return (all(has_tool(name) for name in SHEET_TOOL_NAMES)
+            and "toolkit_options" in {
+                f.name for f in dataclasses.fields(_review.ReviewHost)})
 
 
 def search_supports_fuzzy() -> bool:
@@ -394,8 +412,8 @@ def app_host() -> "_review.ReviewHost":
     )
 
 
-def host_for(engine=None, markup_author: Optional[str] = None
-             ) -> "_review.ReviewHost":
+def host_for(engine=None, markup_author: Optional[str] = None,
+             sheet_tools: bool = False) -> "_review.ReviewHost":
     """One agent build's host: the process's (:func:`app_host`, as
     installed) with that build's look, signer and crop render.
 
@@ -404,7 +422,8 @@ def host_for(engine=None, markup_author: Optional[str] = None
     ``signer`` is ``markup_author`` (the signed-in person) or, read at call
     time, the deployment's :func:`markup_author`; the markup check's crop is
     ``vision_view.render_view`` sized to ``engine``, unpadded (the check's
-    box already holds its margin)."""
+    box already holds its margin). ``sheet_tools`` asks planlens for the
+    sheet tools on this build's conversations (:data:`SHEET_TOOL_NAMES`)."""
     who = markup_author
 
     def signer() -> str:
@@ -421,8 +440,12 @@ def host_for(engine=None, markup_author: Optional[str] = None
             from aec_agent_core.vision_tools import ask_vision
             return ask_vision(engine, image, question, kind)
 
-    return dataclasses.replace(BASE_HOST, look=look, signer=signer,
+    host = dataclasses.replace(BASE_HOST, look=look, signer=signer,
                                render_crop=render_crop)
+    if sheet_tools:
+        host = dataclasses.replace(host, toolkit_options={
+            **(host.toolkit_options or {}), "sheet_tools": True})
+    return host
 
 
 def checking_host(host: "_review.ReviewHost", engine) -> "_review.ReviewHost":
