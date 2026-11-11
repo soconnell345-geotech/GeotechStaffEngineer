@@ -208,8 +208,10 @@ def returns_parts(func) -> dict:
     """What a reference function's docstring says it returns: ``type`` (the
     type line, or the entries' types), ``text`` (the description; named
     entries as ``name (type): description``) and ``elements`` (the names of
-    a tuple's or list's elements, from named entries or a leading
-    ``(a, b, c)`` in the description; empty when it names none)."""
+    a tuple's or list's elements, from named entries or, where the type
+    says tuple or list, a leading ``(a, b, c)`` in the description; empty
+    when it names none: "(US customary, as printed)" before a float's
+    description is not two elements, review F9)."""
     sections = docstring_sections(inspect.getdoc(func) or "")
     entries = docstring_entries(sections.get("returns"))
     named = [e for e in entries if e[0]]
@@ -226,7 +228,8 @@ def returns_parts(func) -> dict:
             ", ".join(named[0][0])
     elements: list = []
     m = re.match(r"\s*\(([^()]+)\)", text)
-    if m and "," in m.group(1):
+    if m and "," in m.group(1) and re.search(r"\b(?:tuple|list)\b", typ,
+                                             re.I):
         elements = [p.strip() for p in m.group(1).split(",") if p.strip()]
     return {"type": typ, "text": text, "elements": elements}
 
@@ -275,6 +278,20 @@ def reference_line(func, reference: str = "") -> str:
     return _trim(line, RESULT_REFERENCE_CHARS)
 
 
+def _default_type(default) -> str:
+    """The type a parameter with neither annotation nor docstring type
+    shows, from its default: "bool", "float" or "number" (an int default),
+    else "any" (review F9: 19 numeric and 6 true/false defaults showed
+    "any")."""
+    if isinstance(default, bool):
+        return "bool"
+    if isinstance(default, float):
+        return "float"
+    if isinstance(default, int):
+        return "number"
+    return "any"
+
+
 def extract_method_info(func, category: str, reference: str) -> dict:
     """Build a METHOD_INFO entry from a function's signature + docstring.
 
@@ -317,7 +334,7 @@ def extract_method_info(func, category: str, reference: str) -> dict:
                       inspect.Parameter.VAR_POSITIONAL):
             continue
         if p.annotation is inspect.Parameter.empty:
-            ptype = param_types.get(pname) or "any"
+            ptype = param_types.get(pname) or _default_type(p.default)
         else:
             ptype = param_type_str(p.annotation)
         pinfo: dict = {

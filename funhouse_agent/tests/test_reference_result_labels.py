@@ -140,8 +140,31 @@ class TestParameterTypes:
         params = extract_method_info(made_up_factors, "c", "r")["parameters"]
         assert params["a"]["type"] == "float"      # docstring line
         assert params["kind"]["type"] == "str"     # docstring line
-        assert params["flag"]["type"] == "any"     # neither: never "float"
+        # neither: its default says (review F9), never a guessed "float"
+        assert params["flag"]["type"] == "bool"
         assert params["flag"]["description"].startswith("A parameter with")
+
+    def test_a_default_gives_the_type_where_nothing_else_does(self):
+        def defaults(es=29000.0, n=3, name=None, given=None):
+            """Brief.
+
+            Parameters
+            ----------
+            es
+                A made-up modulus.
+            n
+                A made-up count.
+            name
+                A made-up name.
+            given : str
+                Typed by its line.
+            """
+            return es
+        params = extract_method_info(defaults, "c", "r")["parameters"]
+        assert params["es"]["type"] == "float"
+        assert params["n"]["type"] == "number"
+        assert params["name"]["type"] == "any"      # None says nothing
+        assert params["given"]["type"] == "str"
 
     def test_annotation_wins(self):
         params = extract_method_info(made_up_chart_value, "c",
@@ -215,6 +238,22 @@ class TestBareResultsAreLabelled:
         out = make_wrapper(three, "R")({})
         assert "elements" not in out
         assert out["result"] == [1.0, 2.0, 3.0]
+
+    def test_a_bracketed_remark_before_a_number_is_not_elements(self):
+        """Review F9: "(US customary, as printed)" opening a float's
+        description was read as two element names; only a tuple's or a
+        list's leading bracket names elements (test_tuple_names_its_elements)."""
+        def one_value():
+            """Brief.
+
+            Returns
+            -------
+            float
+                (US customary, as printed) a made-up value in ksf.
+            """
+            return 1.0
+        from funhouse_agent.adapters._reference_common import returns_parts
+        assert returns_parts(one_value)["elements"] == []
 
     def test_type_only_returns_falls_back_to_the_brief(self):
         out = make_wrapper(made_up_type_only, "MADE-UP-2")({"a": 3.0})
