@@ -3228,7 +3228,7 @@
     "ask_who": null,
     "question": "Do the lead's calls stand where a printed equation, table or chart looked wrong?",
     "why": "You left these calls to the lead on 2026-11-10 and asked for a later item to revisit them. Each sets a number the references helper returns; if a call is wrong, the helper's answer is wrong the same way every time.",
-    "background": "Each call is one of three kinds: the print contradicts itself or its own worked example; a unit or symbol is missing; or a table or chart gives no rule between its printed values. In every case the function's description and result state the printed form, the coded form and the page, so a reader sees the departure. The calls are on the fix branches (REF-65 to REF-70) and reach the library when they merge; a branch still running may add one, which goes on this card. Two were settled from public prints and are not on it: FHWA-NHI-05-037 Table 5-34's DCP index is in mm per blow (TM 3-34.48-2 Figure G-11; WES Instruction Report GL-92-3, p. 17), and UFC 3-250-11 Table 2-3 note (c) is PI <= 20 + (50 - percent passing No. 200)/4 (the 2004 edition's Table 2-1 note b; at 10 % passing the limit is 30, not 60). Pages are 'PDF page, printed page'. The full table is findings/RULINGS.md.",
+    "background": "Each call is one of three kinds: the print contradicts itself or its own worked example; a unit or symbol is missing; or a table or chart gives no rule between its printed values. In every case the function's description and result state the printed form, the coded form and the page, so a reader sees the departure. The calls are on the fix branches (REF-65 to REF-71) and reach the library when they merge; a branch still running may add one, which goes on this card. Two were settled from public prints and are not on it: FHWA-NHI-05-037 Table 5-34's DCP index is in mm per blow (TM 3-34.48-2 Figure G-11; WES Instruction Report GL-92-3, p. 17), and UFC 3-250-11 Table 2-3 note (c) is PI <= 20 + (50 - percent passing No. 200)/4 (the 2004 edition's Table 2-1 note b; at 10 % passing the limit is 30, not 60). Pages are 'PDF page, printed page'. The full table is findings/RULINGS.md.",
     "parts": [
       {
         "label": "1. DM 7.1 Eq. 3-2, relative density from dry density (PDF 169, printed 141): the typeset second form has gamma_d-max in the numerator's bracket, negative for any soil looser than its densest state. Kept the code (gamma_d-min), the only form that makes the print's two forms equal.",
@@ -3329,7 +3329,7 @@
         "multi": false
       },
       {
-        "label": "8. DM 7.1 input limits added by the fixes: where only a chart's axis or curve end gives a range, that is the limit (only Hazen's and Eq. 8-38's ranges are stated in words); Kozeny-Carman fractions must total 1 or 100; Eqs. 8-43 and 8-44 accept a computed saturation up to 1.10, since measurement scatter puts some a little over 100 %.",
+        "label": "8. Input limits read from a plotted curve or axis end where the manual states none in words: refused outside, naming the range and page (REF-58's rule). DM 7.1 Eqs. 8-4, 8-26, 8-39, Figure 8-46 and others (only Hazen's and Eq. 8-38's ranges are stated in words); AASHTO 1993 Figure 2.5 from about 106,000 psi; UFC 3-250-01 Figure 10-1 from 25 pci. The other choice is an answer at the edge with a note saying so. (The saturation and fraction-total guards are part 30.)",
         "options": [
           {
             "label": "Keep the lead's call",
@@ -3579,9 +3579,93 @@
           }
         ],
         "multi": false
+      },
+      {
+        "label": "26. DM 7.2 Figure 5-18 (a) and (b), N_cm for a stiff layer over a soft one (PDF 348, printed 310): the equation printed in the figure, 1.5 H/B + 5.14 su2/su1 <= 5.14, is drawn as straight lines except the H/B = 0.5 curve (H/2R = 0.25 in panel b), which leaves the line at about su2/su1 0.68 and runs up to about 8 % below it to 1.0. N_cm stays the printed equation's value, and the result says so, notes the drawn curve, gives that curve's value on it (`N_cm_drawn_curve`) and keeps the text's 10 % reduction for 0.7 < su2/su1 < 1, which is at or below the drawn curve.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "27. GEC-12 Volume II's report number: the cover prints FHWA-NHI-16-009 (Volume I's number), the documentation page FHWA-NHI-16-010, and Volume III's abstract names 16-009 and 16-010 as two documents. Cited as FHWA-NHI-16-010, the cover taken as a misprint.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "28. UFC 3-220-07 Table 4-2, Johnson's swell relation for PI <= 40 (PDF 33, printed 4-3): the scan shows two operators as '='. Read as minus signs: the two forms then nearly meet at PI 40 (16.21 against 16.43); read as plus, the PI <= 40 form gives about 95 there.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "29. AASHTO 1993 aggregate-loss equations (printed II-12): the scan drops leading zeros and decimal points. Read as f values .037, .043, .028 and .059 and the term .092 T; the old 0.37 and the like gave ten times the loss.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "30. Guards against a percent entered as a decimal or the reverse, where the print sets no limit: DM 7.1 Eqs. 8-43 and 8-44 refuse a computed saturation above 110 % (measurement scatter puts some a little over 100 %); Kozeny-Carman fractions that do not total 1 or 100 within 2 % are refused. Stated in the result as the library's guards, not the print's.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "31. UFC 4-023-03 and GSA gravity load, 1.2 D + (0.5 L or 0.2 S): refused when both a live and a snow load are given, since the print says 'or'; the old code added both.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
       }
     ],
-    "recommendation": "Let them stand. Look first at 4 and 5 (Eqs. 8-43 and 8-44) and 9 (Caltrans): those are the ones a source could still settle (the public source being sought for Eqs. 8-43 and 8-44; the 1997 ASCE paper Caltrans cites).",
+    "recommendation": "Let them stand. Look first at 4 and 5 (Eqs. 8-43 and 8-44) and 9 (Caltrans): those are the ones a source could still settle (the public source being sought for Eqs. 8-43 and 8-44; the 1997 ASCE paper Caltrans cites). Part 8 is a preference more than a reading: a refusal outside the drawn range, or an answer at the edge with a note.",
     "if_no_answer": "Every call stands as decided, and each function keeps stating the printed form, the coded form and the page.",
     "message_to_send": null,
     "unblocks": [],
