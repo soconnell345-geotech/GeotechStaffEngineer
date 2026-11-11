@@ -69,8 +69,9 @@ def test_errored_empty_and_cut_are_counted_and_named():
     # describe_method is not a lookup
     assert "3 made; 1 errored, 1 came back empty, 1 cut at the size limit" \
         in head
-    assert ("- gec12.made_up_section errored: Section '99.9' not found in "
-            "reference 'made_up'") in block
+    # the exception's name is kept, its quoted message unquoted
+    assert ("- gec12.made_up_section errored: KeyError: Section '99.9' not "
+            "found in reference 'made_up'") in block
     assert '- reference_db.reference_search "made up words" came back empty' \
         in block
     assert "made_up_text" not in block          # cut is counted, not listed
@@ -102,8 +103,61 @@ def test_ending_on_the_budget_is_said():
     rec = _record([("call_agent", _lookup("gec12", "m"), OK, None)],
                   budget=True)
     block = lookup_block(rec)
-    assert "ended on its call budget" in block
-    assert "do not fill them from memory" in block
+    assert "ended on its call budget, so its answer may be incomplete" \
+        in block
+    assert "do not fill" not in block       # nothing failed
+
+
+def test_a_retried_lookup_that_answered_is_not_a_failure():
+    """The review's fake-model run: an argument slip, then the same method
+    answers; the answer used the second value."""
+    rec = _record([
+        ("call_agent", _lookup("gec12", "made_up_chart", phi=80),
+         json.dumps({"error": "ValueError: phi=80 is outside the chart"}),
+         None),
+        ("call_agent", _lookup("gec12", "made_up_chart", phi=34), OK, None),
+    ])
+    rows = lookup_outcomes(rec)
+    assert rows[0]["outcome"] == "errored" and rows[0]["recovered"]
+    block = lookup_block(rec)
+    head = block.splitlines()[0]
+    assert ("2 made; each one that failed was answered by a later call to "
+            "the same method.") in head
+    assert "do not fill" not in block
+    assert block.endswith("- failed, then answered by a later call: "
+                          "gec12.made_up_chart]")
+
+
+def test_an_error_never_answered_is_still_a_failure():
+    rec = _record([
+        ("call_agent", _lookup("gec12", "made_up_chart", phi=34), OK, None),
+        ("call_agent", _lookup("gec12", "made_up_chart", phi=80),
+         json.dumps({"error": "ValueError: phi=80 is outside the chart"}),
+         None),
+        ("call_agent", _lookup("gec12", "other_made_up"), ERROR, None),
+    ])
+    rows = lookup_outcomes(rec)
+    # an answer BEFORE the error does not recover it
+    assert [r["recovered"] for r in rows] == [False, False, False]
+    block = lookup_block(rec)
+    assert "3 made; 2 errored" in block
+    assert "Tell the user which lookups failed" in block
+    assert "answered by a later call" not in block
+
+
+def test_a_failure_recovered_beside_one_that_is_not():
+    rec = _record([
+        ("call_agent", _lookup("gec12", "a_made_up"), ERROR, None),
+        ("call_agent", _lookup("gec12", "a_made_up", phi=30), OK, None),
+        ("call_agent", _lookup("gec12", "b_made_up"), ERROR, None),
+    ], budget=True)
+    block = lookup_block(rec)
+    lines = block.splitlines()
+    assert "3 made; 1 errored, 0 came back empty" in lines[0]
+    assert "may be incomplete" in lines[0]
+    assert "Tell the user which lookups failed" in lines[0]
+    assert lines[1].startswith("- gec12.b_made_up errored: KeyError")
+    assert lines[2] == "- failed, then answered by a later call: gec12.a_made_up]"
 
 
 def test_a_long_list_is_cut_to_its_first_lookups():
@@ -152,6 +206,22 @@ def test_a_command_result_gets_the_block():
     out = _run(_Request("task", "references"), rec,
                Command(update={"messages": [msg]}))
     assert BLOCK_HEAD in out.update["messages"][0].content
+
+
+def test_a_block_that_fails_is_logged_and_the_answer_kept(monkeypatch,
+                                                          caplog):
+    from funhouse_agent.deep import lookup_report
+
+    def boom(rec):
+        raise RuntimeError("made-up failure")
+
+    monkeypatch.setattr(lookup_report, "lookup_block", boom)
+    msg = ToolMessage(content="Value 1.23.", tool_call_id="t1")
+    with caplog.at_level("WARNING", logger=lookup_report.__name__):
+        out = _run(_Request("task", "references"), _record([]), msg)
+    assert out is msg
+    assert "lookups block was not added" in caplog.text
+    assert "made-up failure" in caplog.text
 
 
 def test_other_helpers_and_tools_are_left_alone():

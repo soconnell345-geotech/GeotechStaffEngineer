@@ -17,12 +17,15 @@ The primary is told what to do with the block by :data:`LOOKUPS_NOTE`.
 """
 
 import json
+import logging
 import re
 from typing import Optional
 
 from langchain.agents.middleware import AgentMiddleware
 
 from funhouse_agent.deep.keep_work import TASK_TOOL, _with_note, current_helper
+
+_log = logging.getLogger(__name__)
 
 #: The helpers whose ``task`` results get the block: the references
 #: librarian and the reviewer, which both look references up.
@@ -40,29 +43,36 @@ BLOCK_HEAD = "Lookups, as counted by the app"
 _CUT = re.compile(r"\.\.\.\[truncated (\d+) chars\]")
 
 #: An exception's class name at the front of an error text.
-_EXCEPTION_NAME = re.compile(r"^[A-Z]\w*(?:Error|Exception|Warning):\s*")
+_EXCEPTION_NAME = re.compile(r"^([A-Z]\w*(?:Error|Exception|Warning)):\s*")
 
-#: Room for each listed lookup's reason, a search's query and the number
-#: of lookups listed by name.
+#: Room for each listed lookup's reason, a search's query, the number of
+#: lookups listed by name and of methods named as answered on a later try.
 REASON_CHARS = 90
 QUERY_CHARS = 40
 MAX_LISTED = 6
+MAX_RECOVERED_NAMED = 4
 
-#: Said to the primary where a lookup errored, none was made or the
-#: budget ended the consult.
-_FAILED_ADVICE = (" Tell the user which lookups failed or were not "
-                  "completed; do not fill them from memory.")
+#: Said to the primary where a lookup failed and no later call to the same
+#: method answered, or where no lookup was made.
+_FAILED_ADVICE = (" Tell the user which lookups failed; do not fill them "
+                  "from memory.")
+
+#: Said where the helper's model-call budget ended the consult.
+_BUDGET_LINE = (" The consult ended on its call budget, so its answer may "
+                "be incomplete.")
 
 #: The primary's note, where the references helper is built: what the
 #: block is and what to do with it.
 LOOKUPS_NOTE = (
     "A `references` or `reviewer` task's result ends with a block the app "
     f"writes, \"{BLOCK_HEAD}\", which says how the helper's lookups went. "
-    "Where it says a lookup errored, that no lookup was made, or that the "
-    "consult ended on its call budget, tell the user that the lookup failed "
-    "or was not completed, and do not fill the gap from memory as if it "
-    "were the reference. \"Came back empty\" means the reference was "
-    "searched and that search found nothing.")
+    "Where it says a lookup errored (and no later call to the same method "
+    "answered) or that no lookup was made, tell the user that the lookup "
+    "failed, and do not fill the gap from memory as if it were the "
+    "reference. Where it says the consult ended on its call budget, its "
+    "answer may be incomplete: say so where it matters. \"Came back "
+    "empty\" means the reference was searched and that search found "
+    "nothing.")
 
 
 def _trim(text: str, room: int) -> str:
@@ -108,17 +118,39 @@ def _empty(data) -> bool:
     return False
 
 
+def _unquoted(text: str) -> str:
+    """``text`` without one pair of quotes round all of it (a KeyError's
+    message is quoted)."""
+    if len(text) > 1 and text[0] == text[-1] and text[0] in "\"'":
+        return text[1:-1]
+    return text
+
+
 def _reason(error: str, name: str) -> str:
     """A few words of an error: its first line, without the lookup's own
-    name or an exception's class name in front."""
+    name in front; an exception's class name is kept ("KeyError: x")."""
     text = str(error).strip().splitlines()[0] if str(error).strip() else ""
     for prefix in (name + ": ", name.split(" ")[0] + ": "):
         if text.startswith(prefix):
             text = text[len(prefix):]
-    text = _EXCEPTION_NAME.sub("", text).strip()
-    if len(text) > 1 and text[0] == text[-1] and text[0] in "\"'":
-        text = text[1:-1]               # a KeyError's message is quoted
+    text = text.strip()
+    m = _EXCEPTION_NAME.match(text)
+    if m:
+        text = f"{m.group(1)}: {_unquoted(text[m.end():].strip())}"
+    else:
+        text = _unquoted(text)
     return _trim(text, REASON_CHARS) or "an error"
+
+
+def _lookup_key(tool: str, args) -> str:
+    """What makes two lookups the same method: module.method, or the
+    figure a chart read asked for (a search's query left out)."""
+    args = args if isinstance(args, dict) else {}
+    if tool == "read_reference_figure":
+        return f"{tool} {args.get('reference') or ''} " \
+               f"{args.get('figure_number') or ''}".strip()
+    return ".".join(str(p) for p in (args.get("agent_name"),
+                                     args.get("method")) if p) or tool
 
 
 def _lookup_name(tool: str, args) -> str:
@@ -142,8 +174,11 @@ def _lookup_name(tool: str, args) -> str:
 
 
 def lookup_outcomes(rec) -> list:
-    """Each lookup the helper made, in order: ``{"name", "outcome",
-    "reason", "cut"}``, ``outcome`` one of "ok", "errored", "empty"."""
+    """Each lookup the helper made, in order: ``{"name", "key", "outcome",
+    "reason", "cut", "recovered"}``, ``outcome`` one of "ok", "errored",
+    "empty". An errored or empty lookup is ``recovered`` when a later call
+    to the same method (``key``) succeeded: most errors in the recorded
+    consults were argument slips, then retried."""
     args_by_id = {}
     for step in rec.steps:
         if step.get("kind") == "model":
@@ -154,52 +189,66 @@ def lookup_outcomes(rec) -> list:
         if step.get("kind") != "result" or step.get("name") not in LOOKUP_TOOLS:
             continue
         text = step.get("text") or ""
-        name = _lookup_name(step["name"], args_by_id.get(step.get("id") or ""))
-        cut = bool(_CUT.search(text))
+        args = args_by_id.get(step.get("id") or "")
+        name = _lookup_name(step["name"], args)
+        row = {"name": name, "key": _lookup_key(step["name"], args),
+               "outcome": "ok", "reason": "",
+               "cut": bool(_CUT.search(text)), "recovered": False}
         data = _parsed(text)
         error = _error_of(data)
         if error is None and step.get("status") == "error":
             error = text
         if error is not None:
-            out.append({"name": name, "outcome": "errored",
-                        "reason": _reason(error, name), "cut": cut})
-        elif not cut and _empty(data):
-            out.append({"name": name, "outcome": "empty",
-                        "reason": "returned nothing", "cut": cut})
-        else:
-            out.append({"name": name, "outcome": "ok", "reason": "",
-                        "cut": cut})
+            row.update(outcome="errored", reason=_reason(error, name))
+        elif not row["cut"] and _empty(data):
+            row.update(outcome="empty", reason="returned nothing")
+        out.append(row)
+    for i, row in enumerate(out):
+        if row["outcome"] != "ok":
+            row["recovered"] = any(later["key"] == row["key"]
+                                   and later["outcome"] == "ok"
+                                   for later in out[i + 1:])
     return out
 
 
 def lookup_block(rec) -> str:
     """The block for one consult's record (see the module docstring)."""
     outcomes = lookup_outcomes(rec)
-    errored = [o for o in outcomes if o["outcome"] == "errored"]
-    empty = [o for o in outcomes if o["outcome"] == "empty"]
+    failed = [o for o in outcomes
+              if o["outcome"] != "ok" and not o["recovered"]]
+    errored = [o for o in failed if o["outcome"] == "errored"]
+    empty = [o for o in failed if o["outcome"] == "empty"]
+    recovered = list(dict.fromkeys(o["key"] for o in outcomes
+                                   if o["recovered"]))
     cut = sum(1 for o in outcomes if o["cut"])
     if not outcomes:
         line = f"[{BLOCK_HEAD}: no lookup was made."
-    elif not (errored or empty or cut):
+    elif not (errored or empty or cut or recovered):
         line = (f"[{BLOCK_HEAD}: {len(outcomes)} made; none errored, came "
                 "back empty or was cut at the size limit.")
+    elif not (errored or empty or cut):
+        line = (f"[{BLOCK_HEAD}: {len(outcomes)} made; each one that failed "
+                "was answered by a later call to the same method.")
     else:
         line = (f"[{BLOCK_HEAD}: {len(outcomes)} made; {len(errored)} "
                 f"errored, {len(empty)} came back empty, {cut} cut at the "
                 "size limit.")
     if rec.budget_reached:
-        line += (" The consult ended on its call budget: its answer is "
-                 "what it had gathered by then.")
-    if not outcomes or errored or rec.budget_reached:
+        line += _BUDGET_LINE
+    if not outcomes or errored:
         line += _FAILED_ADVICE
     lines = [line]
-    listed = errored + empty
-    for o in listed[:MAX_LISTED]:
+    for o in failed[:MAX_LISTED]:
         what = "errored" if o["outcome"] == "errored" else "came back empty"
         reason = f": {o['reason']}" if o["outcome"] == "errored" else ""
         lines.append(f"- {o['name']} {what}{reason}")
-    if len(listed) > MAX_LISTED:
-        lines.append(f"- and {len(listed) - MAX_LISTED} more")
+    if len(failed) > MAX_LISTED:
+        lines.append(f"- and {len(failed) - MAX_LISTED} more")
+    if recovered:
+        named = ", ".join(recovered[:MAX_RECOVERED_NAMED])
+        if len(recovered) > MAX_RECOVERED_NAMED:
+            named += f" and {len(recovered) - MAX_RECOVERED_NAMED} more"
+        lines.append(f"- failed, then answered by a later call: {named}")
     return "\n".join(lines) + "]"
 
 
@@ -222,6 +271,10 @@ class LookupReport(AgentMiddleware):
         try:
             block = lookup_block(rec)
         except Exception:                                  # noqa: BLE001
+            # the consult's answer goes back without the block, and why is
+            # kept in the log
+            _log.warning("the %s consult's lookups block was not added",
+                         rec.subagent, exc_info=True)
             return result
         return _with_note(result, block)
 
