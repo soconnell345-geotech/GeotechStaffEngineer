@@ -177,20 +177,30 @@ In the owner's words, with where each is filed:
   whatever you think is best, but file away a 'later' backlog item for me to
   revisit it in the future" (OWN-136, one answer per call from
   `findings/RULINGS.md`).
+- Building out the references the library holds: "please finish any building
+  that needs to be done with our existing references". The lead's reading:
+  the text, figure-row, missing-chapter and table work on held references is
+  current work, not later (REF-79 to REF-86, REF-08, REF-34); new references
+  stay with OWN-135. Building started on 2026-11-10 (REF-79, REF-80, REF-81,
+  REF-83), each build checked against the print before it merges; the rest
+  starts once the remaining fix branches merge. The release does not wait
+  for the builds (INF-72).
 
 ## 6. What is left open
 
 - **Not started, changes what the helper returns:** the out-of-range pass
   over the 81 clamping functions (REF-76); US-unit inputs that take SI values
   silently (REF-77); what a result says, its unit and its page (REF-78); the
-  DM 7 chapter-text equations (REF-79); GEC-11's text rebuilt (REF-80);
-  GEC-10 chapters 6 and 8 rewritten (REF-81); the FHWA pavements text rebuilt
-  (REF-82); an every-equation pass over the other never-checked references
-  (REF-83).
-- **Coverage:** GEC-5's 90 and 135 appendix figures (REF-84; GEC-13's are
-  REF-08); worked-example appendices and the two UFCs with no text (REF-85);
-  printed tables the helper cannot reach (REF-34); table and equation entries
-  outside the search (REF-86).
+  FHWA pavements text rebuilt (REF-82).
+- **Being built (§5):** the DM 7 chapter-text equations (REF-79); GEC-11's
+  text rebuilt (REF-80); GEC-10 chapters 6 and 8 rewritten (REF-81); an
+  every-equation pass over the other never-checked references (REF-83; EN
+  1997-1, Caltrans and FEMA P-2082 first).
+- **Coverage (current work under §5, after the fix branches merge):** GEC-5's
+  90 and 135 appendix figures (REF-84; GEC-13's are REF-08); worked-example
+  appendices and the two UFCs with no text (REF-85); printed tables the helper
+  cannot reach (REF-34); table and equation entries outside the search
+  (REF-86); UFC 3-220-07's printed heave methods (REF-91).
 - **Measurement and checks:** the helper's call budgets measured again after
   the fixes (REF-87); two library checks that pass on wrong code (REF-88);
   chart code readings that never give a value (VIS-10).
