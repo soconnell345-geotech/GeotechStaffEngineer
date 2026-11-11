@@ -198,15 +198,17 @@ def test_pack_figure_without_bbox_or_notes_renders_whole_page(
 #: builds it with no pack set. A change here changes every built-in chart
 #: read. Changed on purpose once since REF-64: the 2026-11-10 reference
 #: review (item 6) has every read confirm the figure and its axes, give
-#: the axis unit and mark what is not printed.
+#: the axis unit and mark what is not printed; review F9 has a figure not
+#: on the page open with a fixed phrase.
 _BUILTIN_PROMPT = (
     'This image is a rendered page from dm7_2 containing Figure 4-12: '
     '"{caption}".\n\n'
     "Read the requested value(s) off this engineering chart:\n"
     "1. FIRST confirm you are looking at Figure 4-12: give the figure "
     "number and caption as printed on the page, and the quantity and unit "
-    "printed on each axis. If Figure 4-12 is not on this page, say so "
-    "plainly and do not read a value. Ignore other figures and body text.\n"
+    "printed on each axis. If Figure 4-12 is not on this page, begin your "
+    "answer with \"NOT ON THIS PAGE:\", say what the page shows instead and "
+    "do not read a value. Ignore other figures and body text.\n"
     "2. Identify the axes (note any logarithmic scales) and the family of "
     "curves and what parameter distinguishes them.\n"
     "3. For the requested inputs, select the correct curve (interpolating "

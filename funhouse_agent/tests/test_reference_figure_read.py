@@ -93,6 +93,8 @@ def test_the_result_gives_the_1_based_pdf_page(figure):
     assert out["pdf_page"] == 1 and out["pdf_page_index"] == 0
     keys = list(out)
     assert keys.index("pdf_page") + 1 == keys.index("pdf_page_index")
+    # review F5: no bare, unlabelled 0-based "page" beside them
+    assert "page" not in out
 
 
 def test_no_code_value_is_said_at_the_top(figure):
@@ -102,6 +104,27 @@ def test_no_code_value_is_said_at_the_top(figure):
         "Code's measurement of the chart gave no value (the vision answer "
         "gave no READ line")
     assert "vision read-off alone" in out["second_reading"]
+
+
+@pytest.mark.parametrize("answer", [
+    "NOT ON THIS PAGE: the page shows Table 9-8, a made-up table.",
+    "**Not on this page:** a made-up table.",
+    "Figure 9-9 is not on this page; it shows a made-up table instead."])
+def test_a_figure_not_on_the_page_is_not_called_a_read_off(figure, answer):
+    """Review F9: where the reader said the figure is not on the page,
+    there is no "vision read-off alone" to speak of."""
+    eng = _Reader(answer)
+    out = _read(eng)
+    assert 'begin your answer with "NOT ON THIS PAGE:"' in eng.prompts[0]
+    assert out["second_reading"].startswith(
+        "The vision reader said Figure 9-9 is not on this page (PDF page 1)")
+    assert "read-off alone" not in out["second_reading"]
+
+
+def test_another_thing_not_on_the_page_is_still_a_read(figure):
+    out = _read(_Reader("Figure 9-9, a made-up chart. The legend is not on "
+                        "this page. About 0.2."))
+    assert "read-off alone" in out["second_reading"]
 
 
 def test_a_measured_read_has_no_such_line(figure, monkeypatch):
@@ -139,9 +162,25 @@ def test_a_figure_with_no_lookup_has_no_pointer(figure):
 
 @pytest.mark.parametrize("number,tokens", [
     ("7-15", ["7_15"]), ("4.3", ["4_3"]), ("5-18(a)", ["5_18_a", "5_18a"]),
-    ("B-5", ["b_5"]), ("", [])])
+    # review F4: a lettered appendix figure is written both ways
+    ("E-1", ["e_1", "e1"]), ("", [])])
 def test_figure_tokens(number, tokens):
     assert _figure_tokens(number) == tokens
+
+
+def test_appendix_figures_and_ranges_are_pointed_to():
+    """Review F4: ufc_pavement's figure_e1_... and figure_f1_... and
+    gec12's figure_7_10_to_13_kd (Figures 7-10 to 7-13)."""
+    assert same_figure_methods("ufc_pavement", "E-1")[1] == [
+        "figure_e1_flexible_thickness"]
+    assert same_figure_methods("ufc_pavement", "F-1")[1] == [
+        "figure_f1_rigid_thickness"]
+    for number in ("7-10", "7-11", "7-13"):
+        assert "figure_7_10_to_13_kd" in same_figure_methods(
+            "gec_12", number)[1]
+    for number in ("7-9", "7-14", "6-11"):
+        assert "figure_7_10_to_13_kd" not in same_figure_methods(
+            "gec_12", number)[1]
 
 
 def test_same_figure_methods_on_the_real_library():

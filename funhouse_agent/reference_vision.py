@@ -176,7 +176,10 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
         # The PDF by its name in the reference library, which render_region
         # resolves; the server path stays internal.
         "source": _vt.display_path(str(pdf_abs)),
-        "page": page_1b - 1,
+        # the 0-based index render_region's ``page`` takes, labelled as such
+        # beside the 1-based pdf_page (2026-11-10 review F5: it was a bare
+        # "page", one less than the "pdf_page" above it)
+        "pdf_page_index": page_1b - 1,
         **vision_view.view_payload(info, engine),
     }
     _vt._finish_answer(out, info, tagged_only=True)
@@ -199,9 +202,18 @@ READ_NOTES_MAX = 500
 _CONFIRM_STEP = (
     "1. FIRST confirm you are looking at Figure {fig}: give the figure "
     "number and caption as printed on the page, and the quantity and unit "
-    "printed on each axis. If Figure {fig} is not on this page, say so "
-    "plainly and do not read a value{estimated}. Ignore other figures and "
-    "body text.\n")
+    "printed on each axis. If Figure {fig} is not on this page, begin your "
+    "answer with \"{not_here}\", say what the page shows instead and do "
+    "not read a value{estimated}. Ignore other figures and body text.\n")
+
+#: How a read's answer opens when the figure is not on the page, as the
+#: confirm step asks.
+NOT_ON_PAGE = "NOT ON THIS PAGE:"
+
+#: The same said in words, for an answer that did not open with the marker.
+_NOT_ON_PAGE_WORDS = re.compile(
+    r"\b(?:is|was) not (?:shown |present |printed |visible )?on this page\b"
+    r"|\bdoes not appear on this page\b|\bnot on this page\b", re.I)
 _CONFIRM_ESTIMATED = (" (the page lookup was estimated, so an adjacent page "
                       "should be tried)")
 
@@ -223,14 +235,39 @@ _DIGITIZED_NOTE = (
 
 
 def _figure_tokens(figure_number: str) -> List[str]:
-    """A figure number as it appears in method names: '7-15' -> '7_15',
-    '4.3' -> '4_3', '5-18(a)' -> '5_18_a' and '5_18a'."""
-    tok = "_".join(t for t in re.split(
-        r"[^a-z0-9]+", str(figure_number or "").lower()) if t)
-    if not tok:
+    """A figure number as it may appear in method names, every spelling:
+    '7-15' -> '7_15'; '4.3' -> '4_3'; '5-18(a)' -> '5_18_a', '5_18a';
+    'E-1' -> 'e_1', 'e1' (a lettered appendix figure)."""
+    parts = [t for t in re.split(r"[^a-z0-9]+",
+                                 str(figure_number or "").lower()) if t]
+    if not parts:
         return []
-    joined = re.sub(r"_(?=[a-z]$)", "", tok)
-    return list(dict.fromkeys((tok, joined)))
+    # a letter and a number written apart are also written together
+    joined = re.sub(r"(?<=[a-z])_(?=\d)|(?<=\d)_(?=[a-z]$)", "",
+                    "_".join(parts))
+    tokens = ["_".join(parts),
+              re.sub(r"_(?=[a-z]$)", "", "_".join(parts)),
+              re.sub(r"(?<=^[a-z])_(?=\d)", "", "_".join(parts)),
+              joined]
+    return list(dict.fromkeys(tokens))
+
+
+#: A method named for a range of figures: figure_7_10_to_13_kd is Figures
+#: 7-10 to 7-13.
+_FIGURE_RANGE = re.compile(r"(?:^|_)figures?_(?:(.+?)_)?(\d+)_to_(\d+)(?:_|$)")
+
+
+def _in_figure_range(name: str, figure_number: str) -> bool:
+    """Whether method ``name`` is named for a range of figures holding
+    ``figure_number`` (same prefix, its last number within the range)."""
+    m = _FIGURE_RANGE.search(name)
+    parts = [t for t in re.split(r"[^a-z0-9]+",
+                                 str(figure_number or "").lower()) if t]
+    if not m or not parts or not parts[-1].isdigit():
+        return False
+    prefix = "_".join(parts[:-1])
+    lo, hi, n = int(m.group(2)), int(m.group(3)), int(parts[-1])
+    return (m.group(1) or "") == prefix and lo <= n <= hi
 
 
 def same_figure_methods(catalog_id: str, figure_number: str,
@@ -238,7 +275,9 @@ def same_figure_methods(catalog_id: str, figure_number: str,
     """The reference module serving ``catalog_id`` and its methods that
     compute ``figure_number`` (their names carry the figure number:
     ``figure_7_15_...``, a lettered part ``figure_5_18a_...`` counting as
-    its figure), as ``(module, [methods])``; drawing methods
+    its figure, an appendix figure as ``figure_e1_...`` or ``figure_e_1_...``,
+    a range ``figure_7_10_to_13_...`` holding 7-10 to 7-13), as
+    ``(module, [methods])``; drawing methods
     (``plot_...``) are left out. A module that holds more than one manual
     keeps only methods whose own reference names this catalog's document
     number (DM7.1's 'Figure 5-16' is not DM7.2's)."""
@@ -256,7 +295,8 @@ def same_figure_methods(catalog_id: str, figure_number: str,
             for t in tokens]
     methods = [name for name in info
                if not name.startswith("plot_")
-               and any(p.search(name) for p in pats)]
+               and (any(p.search(name) for p in pats)
+                    or _in_figure_range(name, figure_number))]
     if methods:
         try:
             from geotech_references import _figures_db
@@ -287,6 +327,31 @@ def _no_code_value(block: dict) -> str:
             + (f" ({reason})" if reason else "")
             + ": the value here is the vision read-off alone, not checked "
               "by a second reading.")
+
+
+def said_not_on_page(analysis, figure_number="") -> bool:
+    """Whether a read's answer says the figure is not on the page: it opens
+    with :data:`NOT_ON_PAGE`, as the confirm step asks, or a sentence in
+    its first three lines names the figure and says it is not on this
+    page ("the legend is not on this page" is not the figure)."""
+    text = str(analysis or "").strip().lstrip("*_#> ").upper()
+    if text.startswith(NOT_ON_PAGE.rstrip(":")):
+        return True
+    fig = str(figure_number or "").strip().lower()
+    head = " ".join(str(analysis or "").strip().splitlines()[:3])
+    return bool(fig) and any(
+        fig in sentence.lower() and _NOT_ON_PAGE_WORDS.search(sentence)
+        for sentence in re.split(r"(?<=[.;!?])\s+", head))
+
+
+def _not_on_page(figure_number, pdf_page, estimated: bool) -> str:
+    """The sentence for a read whose reader said the figure is not on the
+    page: no value was read, so there is none to check (review F9)."""
+    return (f"The vision reader said Figure {figure_number} is not on this "
+            f"page (PDF page {pdf_page}): no value was read off it, so there "
+            "is none to check."
+            + (" The page was located by estimate; read the adjacent pages."
+               if estimated else ""))
 
 
 def _dispatch_read_reference_figure(arguments, engine):
@@ -359,7 +424,7 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         if estimated else ""
     )
     step_one = _CONFIRM_STEP.format(
-        fig=rec["figure_number"],
+        fig=rec["figure_number"], not_here=NOT_ON_PAGE,
         estimated=_CONFIRM_ESTIMATED if estimated else "")
     full_prompt = (
         f"This image is a rendered page from {reference} {locate_clause} Figure "
@@ -413,10 +478,11 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         "analysis": result,
         "note": _READ_OFF_NOTE,
         # Zooming on the chart (an axis, a curve label) goes through
-        # render_region on the same PDF page -- named by its file name in
-        # the reference library, which render_region resolves.
+        # render_region on the same PDF page (its pdf_page, or page =
+        # pdf_page_index) -- named by its file name in the reference
+        # library, which render_region resolves. No bare "page" beside them
+        # (review F5: an unlabelled 0-based number one less than pdf_page).
         "source": _vt.display_path(str(pdf_abs)),
-        "page": page_idx,
         **vision_view.view_payload(info, engine),
     }
     if code_voter:
@@ -432,7 +498,12 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
                              f"{type(e).__name__}: {e}"}
         out["code_reading"] = block
         out["note"] = _READ_OFF_NOTE_WITH_CODE
-        if block.get("status") != "measured":
+        if said_not_on_page(result, rec["figure_number"]):
+            # no read-off to call "alone" (review F9)
+            out["second_reading"] = _not_on_page(
+                rec["figure_number"], page_idx + 1,
+                bool(rec.get("page_estimated")))
+        elif block.get("status") != "measured":
             # said at the top, in plain words (item 6: 22 of 22 recorded
             # reads had no code value, said only inside the block)
             out["second_reading"] = _no_code_value(block)
