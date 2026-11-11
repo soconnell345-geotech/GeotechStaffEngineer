@@ -168,6 +168,8 @@ def test_only_the_three_ruled_switches_are_on_by_default(monkeypatch):
         review_flags.FIGURE_HELPER_ENV: review_flags.figure_helper,
         review_flags.PLOT_CODE_ENV: review_flags.plot_code,
         review_flags.JUDGMENT_CALLS_ENV: review_flags.judgment_calls,
+        review_flags.SHOW_ME_ENV: review_flags.show_me,
+        review_flags.SHEET_TOOLS_ENV: review_flags.sheet_tools,
     }
     assert set(readers) == set(review_flags.ALL_ENVS)
     for unset in (None, "", "  "):

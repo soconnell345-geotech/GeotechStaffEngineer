@@ -152,7 +152,15 @@ This repository builds three packages; the app also needs two more of the same p
   (unreleased): the review suite has 52 tasks, fourteen of them coordination
   tasks on one made-up building's documents with planted problems (DR-25;
   `review_eval/coordination_fixture.py` in `aec-document-review`; not yet
-  run on a model, EV-40).
+  run on a model: EV-40, Foundry brief 7 written, OWN-140), and a switch, off by default, that lets the
+  page's main model look at a page or region itself where it asks to
+  (`GEOTECH_VISION_SHOW_ME`, DR-38; suite arm `show_me`), and the draft
+  review method as package data and a suite arm (DR-06;
+  `aec_document_review/review_method/`, `review_eval.method_arm()`), and
+  planlens' sheet index and callout check on the page behind
+  `GEOTECH_REVIEW_SHEET_TOOLS`, off by default (PL-37, DR-07; arm
+  `sheet_tools`; planlens main after 0.15.1, so nothing on the pinned
+  release).
   Before it, docs and tests only:
   field-session place names out of the current files (three field-feedback
   folders renamed; `test_public_text` guards the place words in every

@@ -125,6 +125,31 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     engineering judgements to the user. User's judgement is the one that
     matters." The geotech page only: the Document Review page has its own
     prompt and the figure helper is unchanged (BACKLOG GM-116, EV-26).
+
+``GEOTECH_VISION_SHOW_ME`` (default off)
+    ``1`` gives the Document Review page's ``analyze_pdf_page``,
+    ``render_region`` and ``analyze_image`` a ``show_me`` argument. A look
+    with ``show_me=true`` runs no separate vision call: the image is shown
+    to the agent's own model at its next step
+    (:mod:`aec_agent_core.deep.inline_images`), so it can judge with its own
+    eyes what two descriptions written by a side call cannot settle (does
+    this callout match that detail, is the mark on the right thing). Left
+    off, a look is today's: a vision call reads the page, in close-up tiles
+    where the lettering is small. The model chooses per call. BACKLOG DR-38:
+    on the chart suite every loss of the page traced to the side call's
+    text, which the main model never saw past. Not measured on the review
+    suite yet; the ``show_me`` arm does (EV-40).
+
+``GEOTECH_REVIEW_SHEET_TOOLS`` (default off)
+    ``1`` gives the Document Review page planlens' two sheet tools, where
+    the installed planlens has them (after 0.15.1; otherwise the page is
+    the default build): ``sheet_index``, a drawing set's sheets read from
+    their title blocks (number, title, revision, views), and
+    ``check_cross_references``, every callout checked against the sheet it
+    names, the unresolved first, each with the box to view. Code does the
+    looking-up that is the same on every set; the agent views what the
+    check flags and judges it. BACKLOG PL-37, DR-07. Not measured; the
+    ``sheet_tools`` arm does (EV-40).
 """
 
 from __future__ import annotations
@@ -142,10 +167,13 @@ FIGURE_HELPER_ENV = "GEOTECH_FIGURE_HELPER"
 PLOT_CODE_ENV = "GEOTECH_PLOT_CODE"
 STEP_CAP_ANSWER_ENV = "GEOTECH_STEP_CAP_ANSWER"
 JUDGMENT_CALLS_ENV = "GEOTECH_JUDGMENT_CALLS"
+SHOW_ME_ENV = "GEOTECH_VISION_SHOW_ME"
+SHEET_TOOLS_ENV = "GEOTECH_REVIEW_SHEET_TOOLS"
 
 ALL_ENVS = (AGENT_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
             FIGURE_HELPER_ENV, PLOT_CODE_ENV, STEP_CAP_ANSWER_ENV,
-            CITED_DOCUMENTS_ENV, JUDGMENT_CALLS_ENV, REPORT_INGEST_ENV)
+            CITED_DOCUMENTS_ENV, JUDGMENT_CALLS_ENV, REPORT_INGEST_ENV,
+            SHOW_ME_ENV, SHEET_TOOLS_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -182,6 +210,18 @@ def minimal_agent() -> bool:
     (:mod:`funhouse_agent.deep.minimal_agent`) — a measuring stick, not a
     product: page and zoom tools, helpers, and the two output tools."""
     return str(os.environ.get(AGENT_ENV, "")).strip().lower() == "minimal"
+
+
+def show_me() -> bool:
+    """Whether the review page's looking tools take ``show_me`` (the image
+    shown to the agent's own model instead of a vision call's reading)."""
+    return _on(SHOW_ME_ENV)
+
+
+def sheet_tools() -> bool:
+    """Whether the review page asks planlens for its sheet tools (a sheet
+    index from the title blocks and a check of the callouts)."""
+    return _on(SHEET_TOOLS_ENV)
 
 
 def checklist() -> bool:
@@ -297,6 +337,13 @@ ARMS: Dict[str, Dict[str, str]] = {
     # so this arm is `baseline`, and `judgment_calls_off` takes it away.
     "judgment_calls": {JUDGMENT_CALLS_ENV: "1"},
     "judgment_calls_off": {JUDGMENT_CALLS_ENV: "0"},
+    # The main model looks for itself where it asks to (DR-38, 2026-11-10):
+    # the review page's looking tools take show_me. On the DEFAULT agent.
+    "show_me": {SHOW_ME_ENV: "1"},
+    # planlens' sheet index and callout check on the page (PL-37, DR-07,
+    # 2026-11-10). On the DEFAULT agent; the default build where the
+    # installed planlens does not have them.
+    "sheet_tools": {SHEET_TOOLS_ENV: "1"},
 }
 
 
@@ -342,6 +389,7 @@ def describe() -> str:
 __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "FIGURE_HELPER_ENV", "PLOT_CODE_ENV", "STEP_CAP_ANSWER_ENV",
            "CITED_DOCUMENTS_ENV", "JUDGMENT_CALLS_ENV", "REPORT_INGEST_ENV",
+           "SHOW_ME_ENV", "show_me", "SHEET_TOOLS_ENV", "sheet_tools",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",

@@ -17,6 +17,7 @@ closured in at build time; for offline construction ``analyze_*`` return a
 clear error if no engine was wired.
 """
 
+import contextvars
 import json
 import os
 from typing import (Annotated, Any, Callable, Dict, List, Optional, Sequence,
@@ -428,6 +429,7 @@ _DOCUMENT_TOOL_NOTES = {
     "document_page_map": _PDF_PAGES_NOTE,
     "document_markups": _PDF_PAGES_NOTE,
     "find_quantities": _PDF_PAGES_NOTE,
+    "check_cross_references": _PDF_PAGES_NOTE,
     "render_page_thumbnails": _PDF_PAGES_NOTE,
     "annotate_document": (
         " In this app give output_path a bare file name: it is written into "
@@ -542,6 +544,8 @@ def make_vision_tools(
     description_overrides: Optional[Dict[str, str]] = None,
     inline_images: bool = False,
     inline_image_files: bool = False,
+    show_choice: bool = False,
+    sheet_tools: bool = False,
     plot_data_replaces: bool = False,
     description_rewrites: Optional[
         Dict[str, Sequence[Tuple[str, str]]]] = None,
@@ -570,7 +574,14 @@ def make_vision_tools(
     (only meaningful with the image middleware that shows it; see
     :mod:`funhouse_agent.deep.inline_images`). ``inline_image_files`` makes
     ``analyze_image`` do the same for an image FILE given by its path (a
-    contact sheet); the ``minimal`` build sets both.
+    contact sheet); the ``minimal`` build sets both. ``show_choice`` gives
+    the three tools a ``show_me`` argument instead: the model chooses per
+    call between today's vision call and looking for itself (an uploaded
+    picture too), behind ``GEOTECH_VISION_SHOW_ME`` (BACKLOG DR-38).
+    ``sheet_tools`` adds planlens' ``sheet_index`` and
+    ``check_cross_references`` where the installed planlens has them
+    (after 0.15.1; nothing is added otherwise), behind
+    ``GEOTECH_REVIEW_SHEET_TOOLS`` (BACKLOG PL-37, DR-07).
 
     ``added_tools`` are tools another app adds to the kit, ``{name:
     builder}``: ``builder(dispatch)`` returns ``(function, description)``,
@@ -623,6 +634,11 @@ def make_vision_tools(
     attachments = attachments if attachments is not None else {}
     save_fn = save_fn or _default_save_fn
     added = dict(added_tools or {})
+    # The sheet tools: asked for AND in the installed planlens.
+    sheet_names = (set(_document_tools.SHEET_TOOL_NAMES)
+                   if sheet_tools and _document_tools.available()
+                   and _document_tools.sheet_tools_available() else set())
+    default_include = include is None
     if include is None:
         include = {
             "list_files", "read_pdf_text", "read_text_file", "analyze_image",
@@ -653,14 +669,17 @@ def make_vision_tools(
         # find_like needs planlens 0.10 (planlens.document.findlike).
         if _find_like_available():
             include |= {"find_like"}
+    if default_include:
+        include |= sheet_names
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
     # Resolved once per build: the newer tools depend on the installed planlens.
-    document_names = set(_document_tools.document_tool_names())
+    document_names = set(_document_tools.document_tool_names()) | sheet_names
     # This build's host for planlens.review (BACKLOG PL-29 (b)): its look is
     # this build's engine and its signer this build's markup_author, passed
     # on every document call, so two conversations never share either.
-    review_host = _document_tools.host_for(engine, markup_author)
+    review_host = _document_tools.host_for(engine, markup_author,
+                                           sheet_tools=bool(sheet_names))
     # plot_data draws per figure name, for the redraw note.
     draws: Dict[str, int] = {}
 
@@ -799,6 +818,10 @@ def make_vision_tools(
             # An image FILE (a contact sheet) is shown to the main model like
             # the inline page tools' images; an upload keeps the vision call.
             args["_inline"] = True
+        if _SHOW_ME.get():
+            # asked for by the call (show_me): an upload is shown too
+            args["_inline"] = True
+            args["_inline_upload"] = True
         # A file that is not an image is answered with the tools that read
         # it, of those this agent has (GM-175: the calc helper was told to
         # use analyze_pdf_page, which it did not have).
@@ -867,7 +890,7 @@ def make_vision_tools(
             args["reuse"] = True
         if turn is not None:
             args["turn"] = turn
-        if inline_images:
+        if inline_images or _SHOW_ME.get():
             args["_inline"] = True
         return _dispatch("analyze_pdf_page", args)
 
@@ -978,7 +1001,7 @@ def make_vision_tools(
             args["reuse"] = True
         if turn is not None:
             args["turn"] = turn
-        if inline_images:
+        if inline_images or _SHOW_ME.get():
             args["_inline"] = True
         return _dispatch("render_region", args)
 
@@ -1107,6 +1130,22 @@ def make_vision_tools(
         if author:
             args["author"] = author
         return _dispatch("document_markups", _with_pdf_pages(args, pdf_pages))
+
+    def sheet_index(handle: str, offset: int = 0) -> str:
+        """The drawing set's sheets, read from their title blocks."""
+        return _dispatch("sheet_index", {"handle": handle, "offset": offset})
+
+    def check_cross_references(handle: str, pages: Any = None,
+                               status: str = "", offset: int = 0,
+                               pdf_pages: Any = None) -> str:
+        """Every callout in the set, checked against the sheet it names."""
+        args = {"handle": handle, "offset": offset}
+        if pages not in (None, ""):
+            args["pages"] = pages
+        if status:
+            args["status"] = status
+        return _dispatch("check_cross_references",
+                         _with_pdf_pages(args, pdf_pages))
 
     def annotate_document(handle: str, markups: Optional[list] = None,
                           output_path: str = "",
@@ -1364,6 +1403,10 @@ def make_vision_tools(
     ]
     if _document_tools.has_tool("find_quantities"):
         document_review_builders.append(("find_quantities", find_quantities))
+    if sheet_names:
+        document_review_builders += [
+            ("sheet_index", sheet_index),
+            ("check_cross_references", check_cross_references)]
     if _document_tools.has_tool("annotate_document"):
         document_review_builders.append(("annotate_document", annotate_document))
     # Visual scales (planlens' find_scales behind both): described in the
@@ -1508,10 +1551,66 @@ def make_vision_tools(
                 tool = _plot_data_retiring(tool)
             if name in document_names:
                 tool = _shown_as(tool, _document_tool_schemas(name))
+            if show_choice and name in SHOW_ME_NOTES:
+                tool = _showing(tool, SHOW_ME_NOTES[name])
             # An unknown argument (analyze_pdf_page(pages=12)) is refused by
             # name rather than dropped (brief 5, N3).
             tools.append(strict_tool(tool))
     return tools
+
+
+#: True while a looking tool runs a call that asked for ``show_me``.
+_SHOW_ME: "contextvars.ContextVar[bool]" = contextvars.ContextVar(
+    "aec_agent_core_show_me", default=False)
+
+#: What ``show_me`` says in the tools' argument lists.
+SHOW_ME_FIELD = ("true: the image is shown to you at your next step, to "
+                 "look at yourself. No vision call runs and the prompt is "
+                 "not used.")
+
+_SHOW_ME_PAGE = (
+    " show_me: true shows the image to YOU at your next step instead of "
+    "having a vision call describe it (the prompt is then not used). Use it "
+    "when you must judge with your own eyes: whether two things on a sheet "
+    "agree, what a callout or leader points at, whether a mark sits on the "
+    "right thing. Leave it off to have a page READ OUT (lettering, tables, "
+    "schedules, notes): the vision call reads small lettering in close-up "
+    "tiles, which one view of a whole sheet does not show. Only the newest "
+    "views stay in front of you: write down what you saw before you look at "
+    "the next.")
+#: Added to each looking tool's description where it takes ``show_me``.
+SHOW_ME_NOTES = {
+    "analyze_pdf_page": _SHOW_ME_PAGE,
+    "render_region": _SHOW_ME_PAGE,
+    "analyze_image": (
+        " show_me: true shows the picture to YOU at your next step instead "
+        "of having a vision call describe it (the prompt is then not used); "
+        "use it when you must judge it with your own eyes."),
+}
+
+
+def _showing(tool, note: str):
+    """``tool`` that also takes ``show_me``: with it, the call's image is
+    stored and shown to the agent's own model at its next step
+    (:mod:`aec_agent_core.deep.inline_images`) and no vision call runs.
+    The tool's function is unchanged; it reads the choice from
+    :data:`_SHOW_ME`."""
+    schema = create_model(
+        tool.args_schema.__name__, __base__=tool.args_schema,
+        show_me=(bool, Field(default=False, description=SHOW_ME_FIELD)))
+    inner = tool.func
+
+    def call(**kwargs) -> str:
+        token = _SHOW_ME.set(bool(kwargs.pop("show_me", False)))
+        try:
+            return inner(**kwargs)
+        finally:
+            _SHOW_ME.reset(token)
+
+    call.__name__ = getattr(inner, "__name__", tool.name)
+    call.__doc__ = inner.__doc__
+    return StructuredTool(name=tool.name, description=tool.description + note,
+                          args_schema=schema, func=call)
 
 
 def _plot_takes_chart() -> bool:

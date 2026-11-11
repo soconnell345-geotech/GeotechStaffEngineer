@@ -795,5 +795,28 @@
       "BACKLOG.md OWN-128, INF-33",
       "module_work/inf32/CHECK_STEP10.md section 7"
     ]
+  },
+  "OWN-140": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Send Foundry brief 7 to the AI FDE: the first model run of the fourteen coordination tasks, on Document Review as shipped and on each of the three changes built for them (about five minutes).",
+    "why": "The older suite tasks each ask about one place in one document, and every build scores 33 or 34 of 35 on them. Nothing measured so far says how Document Review does where a question needs two places at once: a callout against the sheet it names, a schedule against a plan, a drawing against the specification. The three changes from the 2026-11-10 review are built for that, each off by default, and none goes on without this run.",
+    "background": "The tasks use one made-up building's documents with known problems planted in them (DR-25). The arms: the page as shipped; the main model looking at a page itself where it asks to (DR-38); a drafted review method added to the prompt (DR-06); a sheet index and a callout check from planlens (PL-37). Estimate 8 to 15 M input tokens an arm on the testers' model, four arms and an optional fifth, with a pause at 20 M an arm. The wheels in the zip are test builds: nothing is released, and testers see no change.",
+    "options": [],
+    "recommendation": "Send it. Every run comes back whole and is read in full before any switch is proposed.",
+    "if_no_answer": "The three changes stay off and unmeasured; nothing else waits on it.",
+    "message_to_send": null,
+    "steps": [
+      "In the local hand-off folder (foundry_handoff, beside the repositories), take brief7_2026-11-10.zip. It holds the brief (AI_FDE_BRIEF_7.md) and three wheel files.",
+      "Upload the zip to Foundry and ask the AI FDE to follow the brief inside it. The brief has the install order, a setup check to run before any paid run, the runs in order and what to hand back.",
+      "Answer done on this card, or say hold. When the run folders come back, put them where you put brief 6's and say so here."
+    ],
+    "unblocks": [
+      "EV-40"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-140, EV-40",
+      "module_work/review_eval_results/2026-11-10_coordination_tasks_blind/README.md"
+    ]
   }
 }
