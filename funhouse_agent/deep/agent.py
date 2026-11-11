@@ -126,8 +126,10 @@ _REVIEWER_BUDGET = (
 #: helper had been told "All units are SI". A tsf reached the main agent
 #: as a bare number.
 _REFERENCES_UNITS = (
-    "\n\nUnits: each lookup uses the units of the manual it comes from (many "
-    "are US customary), and describe_method and the result say which. Give "
+    "\n\nUnits: each lookup uses the units of the manual it comes from (US "
+    "customary in many, SI in others). describe_method and the result give "
+    "a unit where the method's description states one; where none is "
+    "stated, say that the unit is not stated and do not assume one. Give "
     "every value you hand back with its unit as the reference gives it. "
     "Convert a unit only with the `calculate` tool, and say that you "
     "converted it and from what."

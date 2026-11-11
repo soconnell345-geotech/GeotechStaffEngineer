@@ -230,10 +230,11 @@ SYSTEM_PROMPT = REACT_PREFIX + _build_module_catalog()
 #: manual's units, many US customary (2026-11-10 review, item 2).
 SI_UNITS_RULE = "7. All units are SI: meters, kPa, kN, kN/m3, degrees."
 REFERENCE_UNITS_RULE = (
-    "7. A reference lookup uses the units of the manual it comes from (many "
-    "are US customary); describe_method and the result say which. Give "
-    "every value with its unit as the reference gives it; if you convert "
-    "one, say so and from what.")
+    "7. A reference lookup uses the units of the manual it comes from (US "
+    "customary in many, SI in others); describe_method gives a unit where "
+    "the method's description states one, and where none is stated, say "
+    "so and do not assume one. Give every value with its unit as the "
+    "reference gives it; if you convert one, say so and from what.")
 
 
 def build_system_prompt(allowed_agents=None) -> str:

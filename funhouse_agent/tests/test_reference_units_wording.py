@@ -33,6 +33,22 @@ def test_the_reference_scope_is_told_the_manuals_units():
     assert "SI" not in desc and "units of the manual" in desc
 
 
+def test_no_unit_is_assumed_and_si_manuals_are_not_called_customary():
+    """Review F8: "not SI" was false for Eurocode 7 and FEMA, and a method
+    that states no unit was said to state one."""
+    from funhouse_agent.deep.agent import build_references_subagent
+    from funhouse_agent.system_prompt import REFERENCE_UNITS_RULE
+    texts = [_call_agent_tool(REFERENCE_MODULES).description,
+             _parameters_description(_call_agent_tool(REFERENCE_MODULES)),
+             build_references_subagent()["system_prompt"],
+             REFERENCE_UNITS_RULE]
+    for text in texts:
+        assert "not SI" not in text
+        assert "do not assume one" in text
+    for text in (texts[0], texts[2], REFERENCE_UNITS_RULE):
+        assert "SI in others" in text
+
+
 def test_the_calculation_scopes_keep_si():
     for scope in (ANALYSIS_MODULES, None,
                   set(REFERENCE_MODULES) | {"bearing_capacity"}):

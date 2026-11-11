@@ -368,8 +368,8 @@ class _CallAgentArgs(BaseModel):
 
 class _ReferenceCallAgentArgs(_CallAgentArgs):
     """``call_agent``'s schema where only reference modules are in scope:
-    the inputs are in the units of the manual the lookup comes from, not SI
-    (2026-11-10 review, item 2)."""
+    the inputs are in the units of the manual the lookup comes from, US
+    customary or SI (2026-11-10 review, item 2 and F8)."""
 
     parameters: Annotated[Any, WithJsonSchema({
         "anyOf": [{"additionalProperties": True, "type": "object"},
@@ -377,9 +377,10 @@ class _ReferenceCallAgentArgs(_CallAgentArgs):
         default=None,
         description=(
             "Nested dict of the method's inputs, in the units of the manual "
-            "the lookup comes from (describe_method gives each input's "
-            'unit). Example: {"phi": 32}. Use describe_method first to see '
-            "the required keys."
+            "the lookup comes from (describe_method gives an input's unit "
+            "where the method's description states one; where none is "
+            'stated, do not assume one). Example: {"phi": 32}. Use '
+            "describe_method first to see the required keys."
         ),
     )
 
@@ -397,16 +398,19 @@ CALL_AGENT_DESCRIPTION = (
 
 #: ``call_agent``'s description where only reference modules are in scope
 #: (the references helper, the reviewer): a lookup is in the units of its
-#: manual, many of them US customary, and says which (2026-11-10 review,
-#: item 2: "All units are SI" was false for much of the library).
+#: manual, US customary in many and SI in others (2026-11-10 review, item 2:
+#: "All units are SI" was false for much of the library; F8: "not SI" was
+#: false for Eurocode 7 and FEMA, and not every method states its units).
 REFERENCE_CALL_AGENT_DESCRIPTION = (
     "Run a reference lookup: one of a reference's table, figure, equation "
     "or text-search methods. All method-specific inputs MUST go inside the "
     "'parameters' object — never as top-level arguments. A lookup uses the "
-    "units of the manual it comes from, many of them US customary (ft, psf, "
-    "pcf, ksf, tsf), not SI: describe_method gives each input's unit and "
-    "what the method returns, and a bare-number result says what it is. "
-    "'defaults_used' lists the declared defaults the lookup used."
+    "units of the manual it comes from: US customary in many (ft, psf, pcf, "
+    "ksf, tsf), SI in others. describe_method gives an input's unit and "
+    "what the method returns where the method's description states them; "
+    "where no unit is stated, say so and do not assume one. A bare-number "
+    "result says what it is. 'defaults_used' lists the declared defaults "
+    "the lookup used."
 )
 
 
