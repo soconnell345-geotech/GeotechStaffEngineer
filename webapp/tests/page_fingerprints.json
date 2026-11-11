@@ -132,7 +132,7 @@
          }
         ],
         "name": "references",
-        "system_prompt": "4cac830f56a59afe",
+        "system_prompt": "8a22168905c2205b",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -148,8 +148,8 @@
           "description": "27b0304d9d7dd690"
          },
          "call_agent": {
-          "args": "624484c3729fa58a",
-          "description": "b1f867ea28fdd042"
+          "args": "fef8092381110492",
+          "description": "49a8dc4348c092ca"
          },
          "describe_method": {
           "args": "d69ec7c20ff033aa",
@@ -220,7 +220,7 @@
          }
         ],
         "name": "reviewer",
-        "system_prompt": "ad2111a0beadf975",
+        "system_prompt": "12354ceec08ada30",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -230,8 +230,8 @@
         ],
         "tools": {
          "call_agent": {
-          "args": "624484c3729fa58a",
-          "description": "b1f867ea28fdd042"
+          "args": "fef8092381110492",
+          "description": "49a8dc4348c092ca"
          },
          "describe_method": {
           "args": "d69ec7c20ff033aa",
@@ -519,8 +519,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "71bb3b8baab0e97a",
-      "system_prompt_chars": 26863,
+      "system_prompt": "c98b626e21edcdcc",
+      "system_prompt_chars": 26953,
       "tool_order": [
        "list_agents",
        "list_methods",
