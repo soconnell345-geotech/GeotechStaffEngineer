@@ -148,8 +148,8 @@
           "description": "27b0304d9d7dd690"
          },
          "call_agent": {
-          "args": "fef8092381110492",
-          "description": "49a8dc4348c092ca"
+          "args": "b48f8177ee3c92fb",
+          "description": "f5392db875034283"
          },
          "describe_method": {
           "args": "d69ec7c20ff033aa",
@@ -230,8 +230,8 @@
         ],
         "tools": {
          "call_agent": {
-          "args": "fef8092381110492",
-          "description": "49a8dc4348c092ca"
+          "args": "b48f8177ee3c92fb",
+          "description": "f5392db875034283"
          },
          "describe_method": {
           "args": "d69ec7c20ff033aa",
@@ -519,8 +519,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "c822f342f773433c",
-      "system_prompt_chars": 26976,
+      "system_prompt": "3a0024c1165decee",
+      "system_prompt_chars": 27137,
       "tool_order": [
        "list_agents",
        "list_methods",
