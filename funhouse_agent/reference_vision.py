@@ -374,11 +374,21 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
                      "(find them via figure_db.figure_search)."
         })
 
-    # Resolve the figure to its source PDF page.
+    # Resolve the figure to its source PDF page: for a number the catalog
+    # holds more than once (a figure over several sheets, a number printed
+    # twice) the library takes the page asked for, and without one refuses
+    # naming each page.
+    page_kw = {}
+    asked_page = arguments.get("pdf_page_index")
     try:
         from geotech_references import _figures_db
-        rec = _figures_db.figure_get(reference, figure_number)
-        pdf_abs, page_idx = _figures_db.resolve_pdf(reference, figure_number)
+        from funhouse_agent.adapters._reference_common import takes
+        if asked_page not in (None, "") and takes(_figures_db.figure_get,
+                                                  "pdf_page_index"):
+            page_kw["pdf_page_index"] = int(asked_page)
+        rec = _figures_db.figure_get(reference, figure_number, **page_kw)
+        pdf_abs, page_idx = _figures_db.resolve_pdf(reference, figure_number,
+                                                    **page_kw)
     except KeyError as e:
         return json.dumps({"error": f"Figure not found: {e}"})
     except FileNotFoundError as e:

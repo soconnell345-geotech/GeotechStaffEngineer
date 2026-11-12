@@ -631,6 +631,7 @@ def _read_reference_figure_tool(dispatch):
         reference: str,
         figure_number: str,
         prompt: str = "",
+        pdf_page_index: Optional[int] = None,
     ) -> str:
         """Render a digitized reference figure (e.g. a DM7 design chart) and
         read a value off it with vision. Use this whenever a numeric value must
@@ -638,24 +639,27 @@ def _read_reference_figure_tool(dispatch):
         from memory. Find the figure first with ``call_agent`` →
         ``figure_db.figure_search``, then pass its ``reference`` +
         ``figure_number`` here with a ``prompt`` describing the value(s) you
-        need. Returns a chart read-off estimate and, where code can find the
-        chart's axes and curve in the drawing, a measured value beside it
-        (``code_reading``) — verify against a closed-form/digitized method
-        where one exists.
+        need, and its ``pdf_page_index`` where the hit's ``read_value`` gives
+        one (needed for a figure printed over several sheets or a number the
+        print uses twice). Returns a chart read-off estimate and, where code
+        can find the chart's axes and curve in the drawing, a measured value
+        beside it (``code_reading``) — verify against a closed-form/digitized
+        method where one exists.
         """
-        return dispatch(
-            "read_reference_figure",
-            {
-                "reference": reference,
-                "figure_number": figure_number,
-                "prompt": prompt,
-            },
-        )
+        args = {
+            "reference": reference,
+            "figure_number": figure_number,
+            "prompt": prompt,
+        }
+        if pdf_page_index is not None:
+            args["pdf_page_index"] = pdf_page_index
+        return dispatch("read_reference_figure", args)
     return read_reference_figure, (
         "Render a digitized reference figure (e.g. a DM7 design chart) "
         "and read a value off it with vision. Find the figure first via "
         "figure_db.figure_search, then read the value off the actual "
-        "chart. Returns the vision read-off estimate and, where the "
+        "chart (pass the hit's pdf_page_index where its read_value gives "
+        "one). Returns the vision read-off estimate and, where the "
         "chart's axes and curve can be found in the drawing, a value "
         "MEASURED from it with its +/- beside the estimate "
         "(code_reading; flagged where the two disagree)."
