@@ -2,7 +2,12 @@ name: Tests
 
 on:
   push:
-    branches: [master]
+    # master, and any branch pushed as ci/<name>: a feature branch is gated
+    # here before its merge by pushing it under that name, so the suite
+    # does not have to run on the developer's machine (owner, 2026-11-11,
+    # after local runs were stopped for low memory). Each branch has its
+    # own concurrency group, so a ci/ run never cancels master's.
+    branches: [master, "ci/**"]
     # A commit that touches only notes (BACKLOG, HANDOFF, plans, docs) does
     # not start the suite; a commit with any code in it still does.
     paths-ignore: ["**.md", "module_work/**", "docs/**"]
