@@ -3693,7 +3693,12 @@
     ],
     "recommendation": "Yes, one unit.",
     "if_no_answer": "Nothing changes; the next release goes out in three steps as the last one did.",
-    "unblocks": "The order of INF-35 and INF-71.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "INF-35",
+      "INF-71"
+    ],
     "sources": [
       "BACKLOG OWN-141",
       "module_work/review_eval_results/2026-11-12_foundry_brief7/FIRST_PASS_AND_PLAN.md"

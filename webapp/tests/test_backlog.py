@@ -240,3 +240,31 @@ def test_every_owner_item_has_a_desk_card():
         f"[owner] items without a Backlog Desk card: {missing}. Add one to "
         "module_work/backlog_dashboard/context/*.json (fields in its README), "
         "then rebuild and republish the page.")
+
+
+def test_every_desk_card_has_the_shape_the_page_opens():
+    """The page maps over a card's list fields: a string in one of them
+    stops the card from opening and shows nothing (OWN-141, 2026-11-12)."""
+    import importlib.util
+    import json
+    desk = ROOT / "module_work" / "backlog_dashboard"
+    spec = importlib.util.spec_from_file_location("desk_build",
+                                                  desk / "build.py")
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    assert build.card_shape_errors({"unblocks": "the next release"}) == [
+        "'unblocks' must be a list, not str"]
+    assert build.card_shape_errors(
+        {"options": [{"effect": "nothing changes"}]}) == [
+        "each option needs a 'label'"]
+    assert build.card_shape_errors(
+        {"options": [{"label": "Yes", "effect": "it goes ahead"}],
+         "unblocks": ["GM-01"], "steps": None}) == []
+    bad = {}
+    for p in sorted((desk / "context").glob("*.json")):
+        for card_id, card in json.loads(
+                p.read_text(encoding="utf-8")).items():
+            errors = build.card_shape_errors(card)
+            if errors:
+                bad[card_id] = errors
+    assert not bad, f"Backlog Desk cards the page cannot open: {bad}"
