@@ -29,14 +29,23 @@ def _pages(pdf: bytes):
 
 
 def _passes(task_id: str, answer: str):
-    """The labels of the task's scored checks ``answer`` passes."""
+    """The labels of the task's planted-problem checks ``answer`` passes
+    (the false-alarm check, which an answer that names nothing passes, is
+    tested on its own: :func:`_alarm`)."""
     out = []
     for check in BY_ID[task_id].checks:
-        if check.get("info"):
+        if check.get("info") or check["type"] == "no_false_alarm":
             continue
         if C.run_check(check, answer)["passed"]:
             out.append(check["label"])
     return out
+
+
+def _alarm(task_id: str, answer: str):
+    """The task's false-alarm check on ``answer``."""
+    (check,) = [c for c in BY_ID[task_id].checks
+                if c["type"] == "no_false_alarm"]
+    return C.run_check(check, answer)
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +220,14 @@ def test_the_tasks_cover_every_planted_problem():
     # a comment log may come as a file: the review tasks read those too
     for task_id in ("coord-full-review", "coord-long-review"):
         assert all(c.get("with_files") for c in BY_ID[task_id].checks)
+    # the callout and schedule questions also score false alarms (EV-44)
+    alarms = sorted(t.id for t in COORDINATION_TASKS for c in t.checks
+                    if c["type"] == "no_false_alarm")
+    assert alarms == sorted(
+        f"coord-{w}{k}" for w in ("", "scan-", "long-")
+        for k in ("callouts", "schedules"))
+    for task_id in alarms:
+        assert labels[task_id][-1] == "no-false-alarm"
 
 
 @pytest.mark.parametrize("planted", F.LONG_PLANTED + F.SUBMITTAL_PLANTED,
@@ -249,6 +266,9 @@ def test_listing_what_is_there_is_not_finding_what_is_missing():
              "F4 on S-101 is missing from the footing schedule.")
     assert _passes("coord-schedules", found) == [
         "door-not-scheduled", "door-not-on-plan", "footing-not-scheduled"]
+    # neither raises a false alarm
+    for answer in (listed, found):
+        assert _alarm("coord-schedules", answer)["passed"], answer
 
 
 def test_both_sides_of_a_disagreement_are_wanted_side_by_side():
@@ -346,6 +366,7 @@ def test_an_all_clear_that_lists_everything_is_not_a_finding():
              "find any mismatch with the sheets.")
     assert _passes("coord-schedules", clear) == []
     assert _passes("coord-sheet-index", clear) == []
+    assert _alarm("coord-schedules", clear)["passed"]
 
 
 def test_a_finding_said_in_a_heading_over_a_long_table_counts():
@@ -391,3 +412,122 @@ def test_the_scanned_set_is_images_with_no_text():
         assert ([c["label"] for c in BY_ID[scan].checks if not c.get("info")]
                 == [c["label"] for c in BY_ID[twin].checks
                     if not c.get("info")])
+
+
+# ---------------------------------------------------------------------------
+# Foundry brief 7's scorer defects (BACKLOG EV-44)
+# ---------------------------------------------------------------------------
+
+def test_a_door_number_is_not_the_front_of_a_decimal():
+    # the fixture's parapet level starts with a door number
+    level = ("The parapet is at EL. 109.30 on A-201; its height is not "
+             "dimensioned.")
+    assert "door-not-scheduled" not in _passes("coord-schedules", level)
+    box = "A tag box at 204.9 mm from the sheet edge has no label."
+    assert "door-not-on-plan" not in _passes("coord-schedules", box)
+    for said in ("Door 109 is tagged on A-101 and is not scheduled.",
+                 "Door 109. Not in the schedule."):
+        assert "door-not-scheduled" in _passes("coord-schedules", said), said
+
+
+def test_the_index_title_wants_both_titles_in_one_line_or_item():
+    built = F.build_drawing_set(2, 1)
+    listing = ("The sheet index matches the set.\n\nSheets in the set:\n"
+               + "".join(f"- {n} - {t.title()}\n" for n, t in built.sheets))
+    assert "index-title" not in _passes("coord-sheet-index", listing)
+    for found in (
+            "The index calls S-201 ROOF FRAMING PLAN; the sheet itself is "
+            "titled SECOND FLOOR FRAMING PLAN.",
+            "2. S-201 is misnamed in the index.\n"
+            "   - Index: S-201 Roof Framing Plan\n"
+            "   - Title block: S-201 Second Floor Framing Plan\n",
+            "| S-201 | ROOF FRAMING PLAN | SECOND FLOOR FRAMING PLAN |",
+            "**S-201 title:**\n- Index: Roof Framing Plan\n"
+            "- Sheet: Second Floor Framing Plan\n"):
+        assert "index-title" in _passes("coord-sheet-index", found), found
+
+
+def test_a_good_callout_called_broken_is_a_false_alarm():
+    wrong = ("Callouts that do not resolve:\n"
+             "- 7/A-501 on A-101: A-501 has no detail 7.\n"
+             "- 2/A-302 on A-102: there is no sheet A-302.\n"
+             "- 3/A-501 on A-101: sheet A-501 is not in the set.\n")
+    got = _alarm("coord-callouts", wrong)
+    assert not got["passed"] and "3/A-501" in got["detail"]
+    # the planted checks alone cannot tell
+    assert _passes("coord-callouts", wrong) == [
+        "callout-missing-detail", "callout-missing-sheet"]
+    right = ("| Sheet | Callout | Why it does not resolve |\n|---|---|---|\n"
+             "| A-101 | 7/A-501 | A-501 holds details 1 to 6 only; detail 7 "
+             "is missing. |\n"
+             "| A-102 | 2/A-302 | There is no sheet A-302 in the set. |\n\n"
+             "Every other callout leads to its view: 1/A-301, 2/A-301, "
+             "1/A-401, 2/A-401, 3/A-501 and 5/A-501 among them. Sheet A-501 "
+             "holds details 1 to 6, and detail 7 is not on it.")
+    for task_id in ("coord-callouts", "coord-scan-callouts"):
+        got = _alarm(task_id, right)
+        assert got["passed"], got["detail"]
+    assert _passes("coord-callouts", right) == [
+        "callout-missing-detail", "callout-missing-sheet"]
+    # the 40-sheet set: its own good callouts, and its third broken one
+    assert not _alarm("coord-long-callouts",
+                      "4/S-501 on S-203 is broken: no sheet S-501 in this "
+                      "set.")["passed"]
+    ceiling = ("9/A-502 on A-114 does not resolve: A-502 holds details 1 "
+               "to 8, and 1/A-502 and 8/A-502 lead to theirs.")
+    got = _alarm("coord-long-callouts", right + "\n" + ceiling)
+    assert got["passed"], got["detail"]
+
+
+def test_a_mark_that_is_fine_called_missing_is_a_false_alarm():
+    wrong = ("Door 109 is not in the schedule. Doors 201, 202, 203, 205 and "
+             "206 are scheduled but not tagged on A-101.")
+    got = _alarm("coord-schedules", wrong)
+    assert not got["passed"]
+    for door in ("201", "202", "203", "205", "206"):
+        assert f"door {door}" in got["detail"]
+    assert "door 109" not in got["detail"]
+    # a door number that no sheet carries, said to be missing from a plan
+    assert not _alarm("coord-long-schedules", "Door 409 is scheduled on "
+                      "A-602 but not tagged on A-104.")["passed"]
+    right = ("Door 109 is tagged on A-101 and A-401 but has no row in the "
+             "schedule, which lists 101 to 108. Door 204 has a schedule row, "
+             "yet A-102 tags only 201, 202, 203, 205 and 206. The S-501 "
+             "schedule has rows for F1, F2 and F3 only; F4, drawn on S-101, "
+             "is missing from it.\n"
+             "Door 407 is not scheduled: the A-602 rows run 406 then 408. "
+             "Door 509 has a row on A-602 but no tag on A-105, which carries "
+             "501 to 508. LP-4A is scheduled on E-601, LP-4B is not. FCU-3-4 "
+             "on M-103 is missing from M-601; FCU-3-1 to FCU-3-3 are there.")
+    got = _alarm("coord-long-schedules", right)
+    assert got["passed"], got["detail"]
+    assert _passes("coord-long-schedules", right) == [
+        "door-not-scheduled", "door-not-on-plan", "door-not-scheduled-4",
+        "door-not-on-plan-5", "footing-not-scheduled", "fcu-not-scheduled",
+        "panel-not-scheduled"]
+
+
+def test_the_truth_texts_agree_with_the_fixture():
+    long = F._project(5, 1)
+    numbers = {s.number: s for s in long.sheets}
+    called = [(v, t) for s in long.sheets for _k, v, t in s.callouts]
+    good = [(v, t) for v, t in called
+            if t in numbers and v in numbers[t].views]
+    on = [s for s in long.sheets if s.callouts]
+    assert (len(called), len(on), len(good)) == (39, 17, 36)
+    assert (f"{len(called)} callouts on {len(on)} of them, {len(good)} of "
+            f"which resolve") in BY_ID["coord-long-callouts"].truth
+    # drawings against the manual: which cited sections the volume binds,
+    # and which its contents list as issued separately
+    manual = " ".join("\n".join(_pages(F.build_project_manual())).split())
+    bound = [n for n, _t in F.MANUAL_SECTIONS if f"SECTION {n} -" in manual]
+    listed = {n for n, _t in F.MANUAL_SECTIONS}
+    separate = [n for n, _t in F.CITED_SECTIONS
+                if n in listed and n not in bound]
+    assert bound == ["01 33 00", "03 30 00", "08 71 00"]
+    assert separate == ["04 20 00", "07 92 00", "08 11 13", "09 91 00"]
+    truth = BY_ID["coord-drawings-vs-manual"].truth
+    assert "01 33 00, 03 30 00 and 08 71 00 are bound" in truth
+    assert ("04 20 00, 07 92 00, 08 11 13 and 09 91 00 are listed as issued "
+            "separately") in truth
+    assert "the other cited sections are in the manual" not in truth.lower()
