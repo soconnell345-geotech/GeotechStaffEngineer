@@ -81,7 +81,7 @@
       "other_arguments": [],
       "subagents": [
        {
-        "description": "10aca954a04ef433",
+        "description": "bb98acf4ffc08333",
         "middleware": [
          {
           "class": "ModelCallBudgetMiddleware",
