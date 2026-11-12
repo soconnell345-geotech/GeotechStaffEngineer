@@ -696,6 +696,16 @@ figure helper and its fixed plotting tool stay. To turn the code on, set
 `os.environ["GEOTECH_PLOT_CODE"] = "1"` in the workspace file before
 `main()`. (The geotech app's Foundry entry leaves it on, as before.)
 
+**Two people at the same time.** The page's protections for a shared host
+switch on when a sign-in header names the viewer, so on Foundry they are
+off, as for the geotech app. With two people using the published app at the
+same moment, a file one of them asks for can be saved into the other's
+conversation, and the agent may read files outside the conversation's own
+folder. For a trial, one person uses it at a time. Do not set
+`WEBSITE_SITE_NAME`, `APP_ENV=azure` or `IDENTITY_ENDPOINT` in the workspace
+file: each makes the page take the host for the Tiny Apps App Service and
+refuse every viewer it cannot name.
+
 ## Foundry deployment mode (5.9.1+): no API-key surface
 
 The Foundry entry (`webapp/foundry_entry.py`) marks the process as a Foundry
