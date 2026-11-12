@@ -107,11 +107,18 @@ def _resolves(reference: str, figure_number: str, pdf_page_index=None,
     try:
         from geotech_references import _figures_db
         from funhouse_agent.adapters._reference_common import takes
-        kw = {}
-        if pdf_page_index not in (None, "") and takes(_figures_db.resolve_pdf,
-                                                      "pdf_page_index"):
-            kw["pdf_page_index"] = int(pdf_page_index)
-        _figures_db.resolve_pdf(reference, figure_number, **kw)
+    except Exception:  # noqa: BLE001
+        return False
+
+    def _page(func) -> dict:
+        # a library before the 2026-11-10 review fetches by number only
+        if pdf_page_index in (None, "") or not takes(func, "pdf_page_index"):
+            return {}
+        return {"pdf_page_index": int(pdf_page_index)}
+
+    try:
+        _figures_db.resolve_pdf(reference, figure_number,
+                                **_page(_figures_db.resolve_pdf))
         return True
     except FileNotFoundError:
         pass
@@ -119,11 +126,8 @@ def _resolves(reference: str, figure_number: str, pdf_page_index=None,
         return False
     if not pdf_path:
         try:
-            from geotech_references import _figures_db
             pdf_path = _figures_db.figure_get(
-                reference, figure_number,
-                **({"pdf_page_index": int(pdf_page_index)}
-                   if pdf_page_index not in (None, "") else {})
+                reference, figure_number, **_page(_figures_db.figure_get)
             ).get("pdf_path", "")
         except Exception:  # noqa: BLE001
             return False

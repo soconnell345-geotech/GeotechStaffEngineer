@@ -42,7 +42,7 @@ pytest.importorskip("geotech_references")
 from funhouse_agent import dispatch, reference_docs  # noqa: E402
 from funhouse_agent.adapters import MODULE_REGISTRY  # noqa: E402
 from funhouse_agent.adapters._reference_common import (  # noqa: E402
-    build_lookup_registry, json_cannot_carry)
+    build_lookup_registry, json_cannot_carry, takes)
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -273,6 +273,10 @@ def test_every_catalog_figure_resolves_to_its_page(monkeypatch):
         import pymupdf
     except ImportError:                                # pragma: no cover
         pymupdf = None
+    if not takes(_figures_db.resolve_pdf, "pdf_page_index"):
+        pytest.skip("this reference library fetches a figure by its number "
+                    "only, so a number held on several pages cannot be "
+                    "fetched by page")
     pages = {}
     failed = []
     for reference, number, page in rows:
