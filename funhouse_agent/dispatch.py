@@ -958,6 +958,8 @@ def _text_search_elsewhere(agent_name: str, method: str,
         key = re.sub(r"[^a-z0-9]", "", agent_name.lower())
         for row in list_indexed_references():
             ref = str(row.get("reference") or "")
+            if not row.get("n_sections"):
+                continue  # a reference pack the index skipped: no text
             if re.sub(r"[^a-z0-9]", "", ref.lower()).startswith(key):
                 ids.append(ref)
     except Exception:                                  # noqa: BLE001

@@ -761,7 +761,12 @@ def add_text_retrieval(registry, info, ref_package_name, reference_str):
             "parameters": {
                 "query": {
                     "type": "str", "required": True,
-                    "description": "Search query (case-insensitive, multi-word AND).",
+                    "description": (
+                        "Search query (case-insensitive). Sections holding "
+                        "every word come first; when none holds them all, "
+                        "the hits hold some of the words, each marked "
+                        "match 'any word' with 'lacks' (the words it does "
+                        "not hold): no match for the whole query."),
                 },
                 "limit": {
                     "type": "int", "required": False,

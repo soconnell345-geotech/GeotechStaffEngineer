@@ -69,6 +69,15 @@ def resolve_reference(name: str, indexed) -> tuple:
     return None, [by_squash[n] for n in near] or ids
 
 
+def close_ids(name: str, indexed) -> list:
+    """The indexed ids spelled most like ``name`` (none when nothing is
+    close)."""
+    by_squash = {_squash(i): i for i in indexed}
+    near = difflib.get_close_matches(_squash(name), list(by_squash), n=5,
+                                     cutoff=0.5)
+    return [by_squash[n] for n in near]
+
+
 def _unknown_reference(name: str, suggestions) -> dict:
     return {"error": f"no reference named {name!r} is indexed",
             "did_you_mean": suggestions,
@@ -88,10 +97,25 @@ def _build():
         _retrieval_db.reference_get).parameters
     # ... and before REF-26 no results shaped to a size (offset, max_chars).
     shaped = takes(_retrieval_db.reference_search, "max_chars")
+    # The library reads a search's scope itself since the 2026-11-10 review
+    # (another spelling of an id, a report number, one volume of a manual)
+    # and refuses a name it cannot read, "dm7" included, naming the ids.
+    library_scopes = hasattr(_retrieval_db, "search_scope")
+    resolve_text = getattr(_retrieval_db, "resolve_text_reference", None)
 
     def _indexed():
         return [r["reference"] for r in
                 _retrieval_db.list_indexed_references()]
+
+    def _app_spelling(name: str):
+        """The indexed id the app reads ``name`` as (a printed name or an
+        FHWA report number the app's aliases know), else None. Never a
+        close match: a guess is not a scope."""
+        ids = _indexed()
+        if name in ids:
+            return name
+        hit, _near = resolve_reference(name, ids)
+        return hit
 
     def reference_search(query: str, reference: str = "",
                          chapter: int = 0, limit: int = 5,
@@ -113,17 +137,26 @@ def _build():
         Parameters
         ----------
         query : str
-            FTS5 MATCH query. Plain words are AND-matched with porter
-            stemming. Use quotes for phrases (``"primary consolidation"``),
-            ``OR`` for alternatives, ``NEAR()`` for proximity,
-            ``col:term`` to scope to one column (title/summary/body/
-            key_points/applicability).
+            FTS5 MATCH query, words matched with porter stemming. The
+            sections holding every word come first; when none holds them
+            all, the hits are sections holding some of the words, each
+            marked ``match: "any word"`` with ``lacks`` (the words it does
+            not hold): read such a hit as no match for the whole query.
+            Use quotes for phrases (``"primary consolidation"``), ``OR``
+            for alternatives, ``NEAR()`` for proximity, ``col:term`` to
+            scope to one column (title/summary/body/key_points/
+            applicability).
         reference : str, optional
-            Reference id to scope to (e.g. ``"dm7_1"``, ``"gec_12"``).
-            Empty string searches all references.
+            Reference id to scope to (e.g. ``"dm7_1"``, ``"gec_12"``),
+            another spelling of it (``"GEC-12"``) or a report number its
+            text carries (``"FHWA-NHI-06-089"``: that volume alone).
+            ``"dm7"`` is two references: give ``"dm7_1"`` or ``"dm7_2"``.
+            A name not indexed is an error naming the ids. Empty string
+            searches all references.
         chapter : int, optional
             Chapter number to scope to (only meaningful with
-            ``reference``). ``0`` means no chapter filter.
+            ``reference``; a chapter it does not have is an error naming
+            its chapters). ``0`` means no chapter filter.
         limit : int, optional
             Max hits (default 5, capped at 50; fewer when they would
             not fit).
@@ -135,15 +168,24 @@ def _build():
         -------
         dict
             ``result``: summary-only hits, each with ``reference``,
-            ``reference_title``, ``chapter``, ``chapter_title``,
+            ``reference_title``, ``reference_id`` (the report number of
+            the section's volume), ``chapter``, ``chapter_title``,
             ``section_id``, ``title``, ``parent_id``, ``under`` (e.g.
             ``"7.2 Strength Limit States > 7.2.1 Nominal Axial ..."``;
-            empty at the top level), ``summary``; ``shown``; and, when
-            hits were left out, cut or more match, ``left_out``,
-            ``next_offset`` and ``note``.
+            empty at the top level), ``summary``, and, on a hit that does
+            not hold every word, ``match`` (``"synonyms"``; ``"all
+            words"`` with ``not_as_phrase``; ``"any word"`` with
+            ``lacks``); ``shown``; ``matched`` and ``words_not_found``
+            when some hits do not hold every word; ``resolved_reference``
+            (and ``report_number`` for one volume) when ``reference`` was
+            not itself an id; and, when hits were left out or cut, or
+            more were found, ``left_out``, ``next_offset`` and ``note``.
+            An empty result's ``note`` names the scope searched and the
+            words nothing there holds. An error is
+            ``[{"error": "..."}]``.
         """
         ref = reference if reference else None
-        if ref:
+        if ref and not (library_scopes and shaped):
             ref, near = resolve_reference(ref, _indexed())
             if ref is None:
                 return {"result": [_unknown_reference(reference, near)]}
@@ -153,9 +195,29 @@ def _build():
                 query, reference=ref, chapter=ch,
                 limit=int(limit) + int(offset or 0))
             return {"result": hits[int(offset or 0):]}
-        out = _retrieval_db.reference_search(
-            query, reference=ref, chapter=ch, limit=int(limit),
-            offset=int(offset or 0), max_chars=RESULT_BUDGET_CHARS)
+
+        def run(scope):
+            return _retrieval_db.reference_search(
+                query, reference=scope, chapter=ch, limit=int(limit),
+                offset=int(offset or 0), max_chars=RESULT_BUDGET_CHARS)
+
+        out = run(ref)
+        if "error" in out and ref:
+            # a printed name or report number only the app's aliases know
+            # (GEC-12 Vol III's NHI-16-064) is searched as the id it names;
+            # any other refusal (an unknown name, "dm7") is the library's,
+            # with the ids it names
+            again = _app_spelling(ref)
+            if again and again != ref:
+                retried = run(again)
+                if "error" not in retried:
+                    out = dict(retried, resolved_reference=again)
+            ids = _indexed()
+            if "error" in out and "did_you_mean" not in out \
+                    and ref not in ids:
+                near = close_ids(ref, ids)
+                if near:
+                    out = dict(out, did_you_mean=near)
         if "error" in out:
             return {"result": [out]}
         return as_result(out, "hits")
@@ -194,6 +256,14 @@ def _build():
         """
         reference_in = reference
         reference, near = resolve_reference(reference, _indexed())
+        if reference is None and resolve_text is not None:
+            # a report number the library's text carries; its refusal
+            # ("dm7" is two references) names the ids
+            try:
+                reference = resolve_text(reference_in)
+            except KeyError as exc:
+                return {"error": str(exc.args[0] if exc.args else exc),
+                        "did_you_mean": near}
         if reference is None:
             return _unknown_reference(reference_in, near)
         if takes_include and include_subsections:
@@ -253,7 +323,9 @@ def _build():
         -------
         list
             One dict per reference with ``reference``, ``reference_title``,
-            ``n_chapters``, ``n_sections``.
+            ``n_chapters``, ``n_sections``. A deployment's reference pack
+            the index skipped is listed with ``n_sections`` 0 and its
+            ``problems``: it cannot be searched.
         """
         return _retrieval_db.list_indexed_references()
 
