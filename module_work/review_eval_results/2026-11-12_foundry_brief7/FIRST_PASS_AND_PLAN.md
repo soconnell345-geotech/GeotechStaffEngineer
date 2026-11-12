@@ -1,6 +1,6 @@
 # Document Review: brief 7 results, and the plan for after the usage reset
 
-> Open work from this plan is in `BACKLOG.md`, not here: EV-42 (the full read), EV-43 (brief 8), INF-74 (Document Review on Foundry) and OWN-141 (the package question); EV-40 and EV-41 are done. The first table below is the score as recorded on Foundry; the corrected one is `RESCORED.md` beside this file. Written 2026-11-12 and approved by the owner the same day.
+> Open work from this plan is in `BACKLOG.md`, not here: EV-43 (brief 8), INF-74 (Document Review on Foundry), OWN-141 (the package question) and the full read's follow-ups (EV-44, PL-39, VIS-31, DR-43, INF-75); EV-40, EV-41 and EV-42 are done, and the full read is `TRACE_REVIEW.md` beside this file. The first table below is the score as recorded on Foundry; the corrected one is `RESCORED.md` beside this file. Written 2026-11-12 and approved by the owner the same day.
 
 ## Context
 
