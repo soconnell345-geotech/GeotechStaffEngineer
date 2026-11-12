@@ -199,7 +199,7 @@ def _conversation_storage_check() -> dict:
     "Conversations are NOT kept" block shows the same text, and a failed
     read here reaches it through the store's shared record, INF-65). A new
     dataset with nothing committed yet passes as empty."""
-    from aec_document_review import foundry_dataset_store as fds
+    from aec_agent_core import foundry_dataset_store as fds
     name = "conversation storage"
     if not fds.dataset_alias():
         return _check(name, SKIP, fds.not_kept_reason())

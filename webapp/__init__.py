@@ -25,6 +25,9 @@ CORE_ALIASES = {
     # Step 11 (c): the run record, which both pages and the suite write.
     "webapp.activity_log": "aec_agent_core.activity_log",
     "webapp.engine_config": "aec_agent_core.engine_config",
+    # INF-74: the Foundry dataset store, so Document Review keeps its
+    # conversations on Foundry as the geotech page does.
+    "webapp.foundry_dataset_store": "aec_agent_core.foundry_dataset_store",
     "webapp.http_trace": "aec_agent_core.http_trace",
     "webapp.palantir_sdk_engine": "aec_agent_core.palantir_sdk_engine",
     "webapp.tinyapps_engine": "aec_agent_core.tinyapps_engine",

@@ -1,7 +1,14 @@
-"""Offline tests for the Foundry dataset store (BACKLOG INF-38).
+"""Offline tests for the Foundry dataset store (BACKLOG INF-38) as the
+geotech page uses it: through the store, the sidebar, the app and
+Connection diagnostics. The module is the shared core's since INF-74
+(``aec_agent_core.foundry_dataset_store``); ``webapp.foundry_dataset_store``
+is an alias of it, the name these tests import it by. The file manager on
+its own is tested with the core, in
+``packages/aec-agent-core/tests/test_foundry_dataset_store.py``.
 
 A fake ``foundry.transforms`` module stands in for the workspace dataset
-library: no network, and every alias, path and name below is made up. The
+library (``packages/aec-agent-core/tests/foundry_fake.py``, loaded from
+there): no network, and every alias, path and name below is made up. The
 fake keeps what the AI FDE measured from a published app (2026-11-03):
 
 * ``Dataset.get`` of an alias the workspace does not define fails with
@@ -22,22 +29,45 @@ fake keeps what the AI FDE measured from a published app (2026-11-03):
   makes the first commit.
 """
 
+import importlib.util
 import json
 import os
 import sys
 import threading
 import time
-import types
-from datetime import datetime, timezone
 
 import pytest
 
 import webapp.core as core
 import webapp.foundry_dataset_store as fds
 import webapp.sharepoint_store as sp
+from aec_agent_core import foundry_dataset_store as core_fds
 
-ALIAS = "made_up_conversations"
-TOP = fds.DEFAULT_ROOT
+
+def _core_fake():
+    """The fake library, kept beside the core's tests with the module it
+    fakes (``packages/aec-agent-core/tests/foundry_fake.py``)."""
+    if "foundry_fake" in sys.modules:
+        return sys.modules["foundry_fake"]
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))), "packages", "aec-agent-core", "tests",
+        "foundry_fake.py")
+    spec = importlib.util.spec_from_file_location("foundry_fake", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["foundry_fake"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_fake = _core_fake()
+FakeLibrary = _fake.FakeLibrary
+SidecarError = _fake.SidecarError
+NO_COMMIT = _fake.NO_COMMIT
+NOT_RESOLVED = _fake.NOT_RESOLVED
+
+ALIAS = _fake.ALIAS
+#: GeotechStaffEngineer's folder in the dataset, as before the move.
+TOP = "GeotechStaffEngineer"
 
 _ENVS = (fds.ENV_DATASET, "GEOTECH_DEPLOYMENT", "GEOTECH_FOUNDRY_TOKEN",
          "FOUNDRY_TOKEN", "GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME",
@@ -56,188 +86,6 @@ def _clean_env(monkeypatch, tmp_path):
     monkeypatch.setattr(fds, "_READS", fds._Reads())   # what reads found
     yield
     fds.wait_checks(5)
-
-
-# ---------------------------------------------------------------------------
-# the fake workspace dataset library
-# ---------------------------------------------------------------------------
-
-class IllegalArgumentError(Exception):
-    pass
-
-
-class SidecarError(Exception):
-    """The library's refusals carry the status and the error name."""
-
-
-#: A new dataset's answer to a read, in the library's shape.
-NO_COMMIT = ("400 FoundryContainerService:FailedToResolveDataset {'message': "
-             "'The dataset does not have any committed transaction on the "
-             "requested branch or across fallback branches'}")
-#: The same error name for another cause (made-up wording).
-NOT_RESOLVED = ("400 FoundryContainerService:FailedToResolveDataset "
-                "{'message': 'made-up: the alias resolves to a dataset this "
-                "app cannot read'}")
-
-
-class FakeFile:
-    def __init__(self, ds, path, data):
-        self.path = path
-        self.size_bytes = len(data)
-        self.updated_time = datetime(2026, 1, 2, tzinfo=timezone.utc)
-        self._ds = ds
-
-    def download(self):
-        return self._ds.download(self.path)
-
-
-class FakeDataset:
-    """One dataset's files, with the one-open-transaction rule."""
-
-    def __init__(self, lib):
-        self.lib = lib
-        self.files_ = {}             # dataset path -> bytes
-        self.calls = []
-        self.busy = 0                # writes refused before one goes through
-        self.open = False
-        self.download_delay = 0.0
-        self.gate = None             # an Event a write waits on
-        self.uncommitted = False     # new: reads refused until a write
-        self.get_error = None        # what Dataset.get raises
-        self.files_error = None      # what files() raises
-        self.files_gate = None       # an Event a listing waits on
-        self.active = 0
-        self.peak = 0
-        self.n = 0
-        self._lock = threading.Lock()
-
-    def _begin(self, what):
-        self.calls.append((what,))
-        if self.busy:
-            self.busy -= 1
-            raise SidecarError("400 Catalog:SimultaneousOpenTransactionsNotAllowed"
-                               " {'openTransactionRid': 'ri.made-up.1'}")
-        if self.open:
-            raise SidecarError("400 Catalog:SimultaneousOpenTransactionsNotAllowed")
-        self.open = True
-        if self.gate is not None:
-            self.gate.wait(5)
-
-    def upload_file(self, path, logical_path=None):
-        self._begin("upload_file")
-        try:
-            logical = (logical_path or os.path.basename(path)).lstrip("/")
-            with open(path, "rb") as fh:
-                self.files_[logical] = fh.read()
-            self.calls[-1] = ("upload_file", logical)
-            self.uncommitted = False             # the first commit
-            return logical
-        finally:
-            self.open = False
-
-    def upload_directory(self, local_dir_path):
-        out = os.path.normpath(self.lib.outputs)
-        given = os.path.normpath(os.path.abspath(local_dir_path))
-        if given != out and not given.startswith(out + os.sep):
-            raise IllegalArgumentError(
-                f"Provided path {local_dir_path} should be in {out}")
-        self._begin("upload_directory")
-        try:
-            result = {}
-            for dirpath, _dirs, names in os.walk(given):
-                for name in names:
-                    local = os.path.join(dirpath, name)
-                    logical = os.path.relpath(local, out).replace(os.sep, "/")
-                    with open(local, "rb") as fh:
-                        self.files_[logical] = fh.read()
-                    result[local] = logical
-            self.calls[-1] = ("upload_directory", sorted(result.values()))
-            self.uncommitted = False             # the first commit
-            return result
-        finally:
-            self.open = False
-
-    def files(self, mode="current", show_hidden_files=False):
-        self.calls.append(("files",))
-        if self.files_gate is not None:
-            self.files_gate.wait(5)
-        if self.files_error:
-            raise SidecarError(self.files_error)
-        if self.uncommitted:
-            raise SidecarError(NO_COMMIT)
-        return iter([FakeFile(self, p, b)
-                     for p, b in sorted(self.files_.items())
-                     if show_hidden_files or not any(
-                         s.startswith(("_", ".")) for s in p.split("/"))])
-
-    def download(self, path):
-        with self._lock:
-            self.calls.append(("download", path))
-            self.active += 1
-            self.peak = max(self.peak, self.active)
-            self.n += 1
-            n = self.n
-        try:
-            if self.download_delay:
-                time.sleep(self.download_delay)
-            if path not in self.files_:
-                raise SidecarError(f"404 FileNotFound {path}")
-            dst = os.path.join(self.lib.cache, f"{n}_{path.rsplit('/', 1)[-1]}")
-            with open(dst, "wb") as fh:
-                fh.write(self.files_[path])
-            return dst
-        finally:
-            with self._lock:
-                self.active -= 1
-
-    def count(self, kind):
-        return sum(1 for c in self.calls if c[0] == kind)
-
-    def uploads(self):
-        return [c for c in self.calls
-                if c[0] in ("upload_file", "upload_directory") and len(c) > 1]
-
-
-class FakeLibrary:
-    """``foundry.transforms`` with one dataset under :data:`ALIAS`."""
-
-    def __init__(self, tmp_path):
-        self.outputs = str(tmp_path / "foundry" / "outputs")
-        self.cache = str(tmp_path / "library_cache")
-        os.makedirs(self.cache, exist_ok=True)
-        self.ds = FakeDataset(self)
-        lib = self
-
-        class Dataset:
-            @staticmethod
-            def get(alias):
-                lib.ds.calls.append(("get", alias))
-                if alias != ALIAS:
-                    raise SidecarError("404 FoundryContainerSidecar:"
-                                       f"AliasNotDefined {{'alias': '{alias}'}}")
-                if lib.ds.get_error:
-                    raise SidecarError(lib.ds.get_error)
-                return lib.ds
-
-        pkg = types.ModuleType("foundry")
-        pkg.__path__ = []
-        mod = types.ModuleType("foundry.transforms")
-        mod.Dataset = Dataset
-        pkg.transforms = mod
-        self.modules = {"foundry": pkg, "foundry.transforms": mod}
-
-    def install(self, monkeypatch):
-        for name, module in self.modules.items():
-            monkeypatch.setitem(sys.modules, name, module)
-        monkeypatch.setattr(fds, "OUTPUTS_DIR", self.outputs)
-        return self
-
-    def leftovers(self):
-        """Every file left in the outputs folder."""
-        return sorted(os.path.relpath(os.path.join(d, n), self.outputs)
-                      .replace(os.sep, "/")
-                      for d, _s, names in os.walk(self.outputs)
-                      for n in names)
 
 
 @pytest.fixture
@@ -284,196 +132,24 @@ def _write(path, data=b"x"):
 
 
 # ---------------------------------------------------------------------------
-# the file manager alone
+# the module moved into the shared core (INF-74)
 # ---------------------------------------------------------------------------
 
-def test_ls_filters_the_whole_listing_and_makes_folders(lib):
-    lib.ds.files_ = {f"{TOP}/conversations/Alpha_2026-01-02/meta.json": b"{}",
-                     f"{TOP}/conversations/Alpha_2026-01-02/files/a.pdf": b"%",
-                     f"{TOP}/conversations/Beta_2026-01-01/meta.json": b"{}",
-                     f"{TOP}/conversations/stray.txt": b"x",
-                     f"{TOP}/other/z.txt": b"z",
-                     "someone_else/file.txt": b"y"}
-    fm = _fm(lib)
-    top = {(e["name"], e["type"]) for e in fm.ls(f"{TOP}/conversations")}
-    assert top == {("Alpha_2026-01-02", "folder"),
-                   ("Beta_2026-01-01", "folder"), ("stray.txt", "file")}
-    alpha = {(e["name"], e["type"], e["path"]) for e in
-             fm.ls(f"/{TOP}/conversations/Alpha_2026-01-02/")}
-    assert alpha == {
-        ("meta.json", "file", f"{TOP}/conversations/Alpha_2026-01-02/meta.json"),
-        ("files", "folder", f"{TOP}/conversations/Alpha_2026-01-02/files")}
-    assert fm.ls(f"{TOP}/conversations/Nope") == []
-    # outside a batch each listing reads the whole dataset once
-    assert lib.ds.count("files") == 3 and lib.ds.count("get") == 1
-    deep = [e["path"] for e in fm.ls(f"{TOP}/conversations", recursive=True,
-                                     type="files")]
-    assert len(deep) == 4 and f"{TOP}/other/z.txt" not in deep
-    assert fm.create_folder(f"{TOP}/x/y")["path"] == f"{TOP}/x/y"   # no-op
-    assert fm.get_web_url(f"{TOP}/conversations") == ""
-    assert not lib.ds.uploads()
-
-
-def test_hidden_files_are_listed_too(lib):
-    """A name starting ``_`` or ``.`` is hidden by default in a listing; the
-    app asks for hidden files, so a restore misses none."""
-    lib.ds.files_ = {f"{TOP}/c/T/files/_made_up.txt": b"h",
-                     f"{TOP}/c/T/meta.json": b"{}"}
-    names = {e["name"] for e in _fm(lib).ls(f"{TOP}/c/T", recursive=True,
-                                            type="files")}
-    assert names == {"_made_up.txt", "meta.json"}
-
-
-def test_a_single_upload_is_one_transaction_and_keeps_other_files(lib,
-                                                                  tmp_path):
-    fm = _fm(lib)
-    note = _write(str(tmp_path / "note.txt"), b"first")
-    other = _write(str(tmp_path / "other.txt"), b"other")
-    assert fm.upload_file(note, f"{TOP}/n/note.txt", overwrite=True)
-    assert fm.upload_file(other, f"{TOP}/n/other.txt", overwrite=True)
-    _write(note, b"second")
-    assert fm.upload_file(note, f"{TOP}/n/note.txt", overwrite=True)
-    assert lib.ds.files_ == {f"{TOP}/n/note.txt": b"second",
-                             f"{TOP}/n/other.txt": b"other"}
-    assert lib.ds.count("upload_file") == 3
-    assert lib.ds.count("upload_directory") == 0
-    assert fm.download_file(f"{TOP}/n/note.txt") == b"second"
-    out = tmp_path / "back" / "note.txt"
-    assert fm.download_file(f"{TOP}/n/note.txt", local_path=str(out),
-                            return_bytes=False, overwrite=True) is True
-    assert out.read_bytes() == b"second"
-    with pytest.raises(ValueError):
-        fm.upload_file(note, f"{TOP}/../escape.txt")
-
-
-def test_a_batch_is_one_upload_directory_and_clears_what_it_staged(lib,
-                                                                   tmp_path):
-    fm = _fm(lib)
-    fm.begin_batch()
-    assert fm.end_batch() == 0
-    assert lib.ds.calls == []                  # nothing changed, no save
-    fm.begin_batch()
-    paths = []
-    for i in range(3):
-        f = _write(str(tmp_path / f"f{i}.txt"), b"x" * (i + 1))
-        paths.append(f"{TOP}/c/T/f{i}.txt")
-        fm.upload_file(f, paths[-1], overwrite=True)
-    # a temporary file gone before the save still goes (it was copied)
-    gone = _write(str(tmp_path / "MOVED.txt"), b"moved")
-    fm.upload_file(gone, f"{TOP}/c/Old/MOVED.txt", overwrite=True)
-    os.remove(gone)
-    assert lib.ds.files_ == {}                 # nothing written yet
-    assert fm.end_batch() == 4
-    assert lib.ds.uploads() == [("upload_directory",
-                                 sorted(paths + [f"{TOP}/c/Old/MOVED.txt"]))]
-    assert lib.ds.files_[f"{TOP}/c/Old/MOVED.txt"] == b"moved"
-    assert lib.leftovers() == []
-    assert os.listdir(lib.outputs) == []       # the folders it made, too
-
-
-def test_upload_directory_refuses_a_folder_outside_the_outputs_folder(
-        lib, tmp_path):
-    """The library takes only the outputs folder; staged elsewhere, the
-    save fails (and is cleared) rather than writing anything."""
-    elsewhere = str(tmp_path / "not_outputs")
-    fm = fds.DatasetFileManager(ALIAS, outputs_dir=elsewhere,
-                                sleep=lambda s: None)
-    fm.begin_batch()
-    fm.upload_file(_write(str(tmp_path / "a.txt")), f"{TOP}/a.txt")
-    with pytest.raises(IllegalArgumentError):
-        fm.end_batch()
-    assert lib.ds.files_ == {}
-    assert [os.path.join(d, n) for d, _s, ns in os.walk(elsewhere)
-            for n in ns] == []
-
-
-def test_a_foreign_file_in_outputs_is_never_uploaded_or_deleted(lib,
-                                                                tmp_path):
-    foreign = _write(os.path.join(lib.outputs, "made_up_other_job",
-                                  "result.csv"), b"theirs")
-    fm = _fm(lib)
-    for round_ in range(2):
-        fm.begin_batch()
-        fm.upload_file(_write(str(tmp_path / "a.txt"), b"a"), f"{TOP}/c/a.txt")
-        fm.upload_file(_write(str(tmp_path / "b.txt"), b"b"), f"{TOP}/c/b.txt")
-        assert fm.end_batch() == 2
-        note = fm.take_note()
-        if round_ == 0:
-            assert note and "file by file" in note
-        else:
-            assert note is None                # said once per process
-    assert lib.ds.count("upload_directory") == 0
-    assert lib.ds.count("upload_file") == 4    # one transaction per file
-    assert set(lib.ds.files_) == {f"{TOP}/c/a.txt", f"{TOP}/c/b.txt"}
-    assert os.path.isfile(foreign)
-    assert lib.leftovers() == ["made_up_other_job/result.csv"]
-
-
-def test_the_apps_own_leftover_in_outputs_is_cleared_not_sent(lib, tmp_path):
-    """Anything under the app's own folder in the outputs folder is left
-    from a save that stopped: cleared, never uploaded."""
-    _write(os.path.join(lib.outputs, TOP, "conversations", "Old_2026-01-01",
-                        "stale.json"), b"old")
-    fm = _fm(lib)
-    fm.begin_batch()
-    fm.upload_file(_write(str(tmp_path / "a.txt")), f"{TOP}/c/a.txt")
-    fm.end_batch()
-    assert lib.ds.uploads() == [("upload_directory", [f"{TOP}/c/a.txt"])]
-    assert lib.leftovers() == []
-
-
-def test_a_busy_dataset_is_tried_again_with_a_growing_pause(lib, tmp_path):
-    lib.ds.busy = 2
-    pauses = []
-    fm = _fm(lib, pauses)
-    fm.begin_batch()
-    fm.upload_file(_write(str(tmp_path / "a.txt")), f"{TOP}/a.txt")
-    assert fm.end_batch() == 1
-    assert pauses == [1.0, 2.0] and lib.ds.count("upload_directory") == 3
-    assert lib.ds.files_ == {f"{TOP}/a.txt": b"x"}
-    assert lib.leftovers() == []
-
-
-def test_a_dataset_busy_for_the_whole_wait_gives_up_plainly(lib, tmp_path):
-    lib.ds.busy = 99
-    pauses = []
-    fm = _fm(lib, pauses)
-    fm.begin_batch()
-    fm.upload_file(_write(str(tmp_path / "a.txt")), f"{TOP}/a.txt")
-    with pytest.raises(fds.StorageBusy) as err:
-        fm.end_batch()
-    assert "another save holds the conversation dataset" in str(err.value)
-    assert sum(pauses) == pytest.approx(30.0)
-    assert lib.ds.files_ == {} and lib.leftovers() == []
-
-
-def test_an_alias_the_workspace_does_not_define_says_how_to_import(lib):
-    fm = fds.DatasetFileManager("made_up_missing", outputs_dir=lib.outputs)
-    with pytest.raises(fds.AliasNotDefined) as err:
-        fm.ls(TOP)
-    text = str(err.value)
-    assert "made_up_missing" in text and "import the dataset into the " \
-        "workspace (Data panel, read and write), push" in text
-
-
-def test_a_restore_downloads_in_parallel_through_one_listing(lib, tmp_path):
-    lib.ds.download_delay = 0.05
-    for i in range(14):
-        lib.ds.files_[f"{TOP}/c/T/files/f{i:02d}.txt"] = f"n{i}".encode()
-    fm = _fm(lib)
-    fm.begin_batch()
-    pairs = [(f"{TOP}/c/T/files/f{i:02d}.txt",
-              str(tmp_path / "back" / f"f{i:02d}.txt")) for i in range(14)]
-    errors = fm.download_files(pairs + [(f"{TOP}/c/T/missing.txt",
-                                         str(tmp_path / "back" / "m.txt"))])
-    fm.end_batch(commit=False)
-    assert errors[:14] == [None] * 14
-    assert isinstance(errors[14], FileNotFoundError)
-    assert 1 < lib.ds.peak <= fds.PARALLEL_DOWNLOADS
-    assert lib.ds.count("files") == 1
-    for i in range(14):
-        assert (tmp_path / "back" / f"f{i:02d}.txt").read_bytes() == \
-            f"n{i}".encode()
+def test_the_old_name_is_the_cores_module():
+    """``webapp.foundry_dataset_store`` IS the core's module (an alias, as
+    for every earlier move), the geotech page keeps its folder in the
+    dataset, and its store reads the same base-folder setting as the core."""
+    import webapp
+    assert fds is core_fds
+    assert webapp.CORE_ALIASES["webapp.foundry_dataset_store"] == \
+        "aec_agent_core.foundry_dataset_store"
+    assert webapp.foundry_dataset_store is core_fds
+    from webapp.foundry_dataset_store import DatasetFileManager
+    assert DatasetFileManager is core_fds.DatasetFileManager
+    assert core_fds.__file__.replace(os.sep, "/").endswith(
+        "aec_agent_core/foundry_dataset_store.py")
+    assert fds.DEFAULT_ROOT == TOP
+    assert sp.ENV_ROOT == core_fds.ENV_ROOT
 
 
 # ---------------------------------------------------------------------------
@@ -1133,21 +809,6 @@ def test_a_turn_saves_and_a_fresh_container_restores_it(lib, monkeypatch,
 # a new dataset with nothing committed; the sidebar and diagnostics agree;
 # the save line updates by itself (INF-65)
 # ---------------------------------------------------------------------------
-
-def test_the_no_commit_error_is_matched_by_name_and_wording():
-    assert fds._is_no_commit(SidecarError(NO_COMMIT))
-    assert not fds._is_no_commit(SidecarError(NOT_RESOLVED))   # another cause
-    assert not fds._is_no_commit(SidecarError(              # another error name
-        "400 Catalog:MadeUpError {'message': 'The dataset does not have any "
-        "committed transaction'}"))
-    try:
-        try:
-            raise SidecarError(NO_COMMIT)
-        except SidecarError as inner:
-            raise RuntimeError("made-up wrapper") from inner
-    except RuntimeError as outer:
-        assert fds._is_no_commit(outer)                        # wrapped
-
 
 def test_a_new_dataset_reads_as_empty_and_its_first_save_commits(
         lib, monkeypatch, tmp_path):
