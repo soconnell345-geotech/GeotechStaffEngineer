@@ -208,3 +208,107 @@ def test_the_working_folder_names_match_the_tools_that_write_them():
     vision = pytest.importorskip("aec_agent_core.vision_tools")
     keep = pytest.importorskip("aec_agent_core.deep.keep_work")
     assert C.WORKING_DIRS == (vision.SCRATCH_DIR, keep.KEPT_DIR)
+
+
+# -- Foundry brief 7's scorer defects (EV-44) --------------------------------
+
+ABSENT = {"re": r"\babsent\b"}
+
+
+def test_a_heading_in_the_reply_does_not_head_a_delivered_file(tmp_path):
+    rows = "".join(f"{n} | Q-10{n} | Checked against the schedule.\n"
+                   for n in range(2, 9))
+    log = tmp_path / "comment_log.md"
+    log.write_text("1 | Q-101 | Bubble 4/Q-501 drawn as called.\n" + rows
+                   + "9 | Q-109 | Bubble 8/Q-502 seen near grid C.\n",
+                   encoding="utf-8")
+    # the reply ends on a bold line, which reads as a heading
+    reply = ("Two findings; the log is attached.\n\n"
+             "- Door 31 is drawn on Q-101.\n"
+             "- **Footing K4 is absent from the schedule.**")
+    check = {"type": "stated_together", "terms": ["8/q-502", ABSENT],
+             "window": 60, "with_files": True}
+    got = C.run_check(check, reply, files=[str(log)])
+    assert not got["passed"], got["detail"]
+    # a heading inside the file still heads that file's own lines
+    log.write_text("Absent from the schedule:\n" + rows + "- 8/Q-502\n",
+                   encoding="utf-8")
+    got = C.run_check(check, reply, files=[str(log)])
+    assert got["passed"] and "under the heading" in got["detail"]
+    # and a heading at the end of one file does not head the next one
+    first = tmp_path / "a_log.md"
+    first.write_text("1 | Q-101 | Door 31 drawn.\nAbsent from the schedule:\n",
+                     encoding="utf-8")
+    second = tmp_path / "b_log.md"
+    second.write_text(rows + "9 | Q-109 | Bubble 8/Q-502 seen.\n",
+                      encoding="utf-8")
+    text, names = C.delivered_text([str(first), str(second)])
+    assert names == ["a_log.md", "b_log.md"] and C.FILE_BREAK in text
+    assert not C.run_check(check, "See the logs.",
+                           files=[str(first), str(second)])["passed"]
+    # to every match the break is only whitespace
+    assert C.normalize("Door 31" + C.FILE_BREAK + "is drawn") == \
+        "door 31 is drawn"
+
+
+def test_scope_item_wants_the_terms_in_one_line_or_list_item():
+    terms = ["q-201", "roof", "second floor framing"]
+    listing = ("The index matches the set.\n\nSheets in the set:\n"
+               "- Q-101 First Floor Plan\n- Q-201 Second Floor Framing Plan\n"
+               "- Q-202 Roof Framing Plan\n- Q-501 Details\n")
+    # the window alone passes a plain list of the sheets
+    assert _together(listing, terms)["passed"]
+    got = _together(listing, terms, scope="item")
+    assert not got["passed"] and "one line or list item" in got["detail"]
+    for found in (
+            "Q-201 is ROOF FRAMING PLAN in the index; its title block says "
+            "SECOND FLOOR FRAMING PLAN.",
+            "1. Q-201 has the wrong title in the index.\n"
+            "   - Index: Q-201 Roof Framing Plan\n"
+            "   - Sheet: Q-201 Second Floor Framing Plan\n"
+            "2. Q-202 is right.\n",
+            "| Q-201 | Roof Framing Plan | Second Floor Framing Plan |",
+            # the heading rule still holds: the heading names the sheet
+            "### Q-201 title\n\n- Index: Roof Framing Plan\n"
+            "- Sheet: Second Floor Framing Plan\n"):
+        got = _together(found, terms, scope="item")
+        assert got["passed"], (found, got["detail"])
+
+
+SOUND = {f"door {n}": {"re": rf"(?<![\w-]){n}(?!\d)"} for n in (31, 32, 34)}
+FAULTY = {"re": r"\b(?:not|missing|absent)\b"}
+
+
+def _alarm(answer):
+    return C.run_check({"type": "no_false_alarm", "sound": SOUND,
+                        "words": FAULTY,
+                        "problems": [{"re": r"(?<![\w-])33(?!\d)"}]}, answer)
+
+
+def test_a_sound_item_called_missing_is_a_false_alarm():
+    got = _alarm("Door 32 is not on the plan.")
+    assert not got["passed"] and "door 32" in got["detail"]
+    assert not C.score([got])["passed"]
+    # a list of names takes the word together
+    got = _alarm("Doors 31, 32, 33 and 34 are not on Q-101.")
+    assert not got["passed"]
+    assert "['door 31', 'door 32', 'door 34']" in got["detail"]
+    # a sentence ends at a semicolon, or at a full stop before a capital,
+    # and not at "p. 4"
+    assert not _alarm("Door 31 (PDF p. 4) is not on the plan.")["passed"]
+
+
+def test_the_word_belongs_to_the_nearest_name():
+    for fine in ("Q-601 lists 31, 32 and 34; 33 is missing.",
+                 "Q-601 schedules 34 but not 33.",
+                 "Door 33 is not scheduled. All other doors (31, 32 and 34) "
+                 "are scheduled.",
+                 "| 33 | Q-101 | not in the schedule |\n"
+                 "| 31 | Q-101 | scheduled |",
+                 "Doors 31, 32 and 34 are on the plan and scheduled.",
+                 ""):
+        got = _alarm(fine)
+        assert got["passed"], (fine, got["detail"])
+    # a table row is one statement, whatever its cells hold
+    assert not _alarm("| 34 | Q-101 | Not in the schedule. Seen at grid C. |"
+                      )["passed"]

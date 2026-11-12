@@ -973,11 +973,22 @@ OPEN_TASKS: List[Task] = [
 # A check here asks for the two sides of a finding SIDE BY SIDE in the answer
 # (the core's ``stated_together``): both values, or a mark and a word that
 # says it is missing. It reads the reply and, where a comment log is asked
-# for, the files delivered with it. It does not score false alarms: an answer
-# that calls a sound callout broken loses nothing here, and the full read of
-# each run is where that shows.
+# for, the files delivered with it. The callout and schedule questions also
+# score false alarms (the core's ``no_false_alarm``, BACKLOG EV-44): the
+# fixture knows every callout that resolves and every mark that is both
+# drawn and scheduled, and an answer that calls one of them broken or
+# missing fails that check. On the other tasks false alarms are not scored;
+# the full read of each run is where they show.
 
 from aec_document_review.review_eval import coordination_fixture as _coord
+
+
+def _mark(n: str) -> Dict[str, str]:
+    """A whole-number mark (a door number) as :func:`_num` reads it, and
+    not the front of a decimal: door 109 is not in "EL. 109.30", nor 204 in
+    "204.9" (Foundry brief 7, BACKLOG EV-44). ``_num`` itself still reads
+    "398" in "398.4", which a value check on a rounded result wants."""
+    return {"re": rf"{_LEAD}{re.escape(n)}(?!\d|\.\d)"}
 
 
 def _sheet(number: str) -> Dict[str, str]:
@@ -1052,12 +1063,14 @@ _PLANTED_CHECKS: Dict[str, Dict[str, Any]] = {
     "index-missing-sheet": {
         "type": "stated_together", "terms": [_sheet("A-202"), _ABSENT],
         "window": 200},
-    # both titles: the index's (roof) and the sheet's own
+    # both titles: the index's (roof) and the sheet's own, in one line or
+    # list item: in any ordered list of the sheets S-201's own title sits
+    # next to S-202's ROOF FRAMING PLAN (EV-44)
     "index-title": {
         "type": "stated_together",
         "terms": [_sheet("S-201"), ["roof"],
                   ["second floor framing", "2nd floor framing",
-                   "level 2 framing"]]},
+                   "level 2 framing"]], "scope": "item"},
     "callout-missing-detail": {
         "type": "stated_together",
         "terms": [_callout("7", "A-501"), _ABSENT], "window": 200},
@@ -1065,10 +1078,10 @@ _PLANTED_CHECKS: Dict[str, Dict[str, Any]] = {
         "type": "stated_together", "terms": [_sheet("A-302"), _ABSENT],
         "window": 200},
     "door-not-scheduled": {
-        "type": "stated_together", "terms": [_num("109"), _ABSENT],
+        "type": "stated_together", "terms": [_mark("109"), _ABSENT],
         "window": 160},
     "door-not-on-plan": {
-        "type": "stated_together", "terms": [_num("204"), _ABSENT],
+        "type": "stated_together", "terms": [_mark("204"), _ABSENT],
         "window": 160},
     "level-second-floor": {
         "type": "stated_together", "terms": [_EL_104_20, _EL_104_50]},
@@ -1092,10 +1105,10 @@ _PLANTED_CHECKS: Dict[str, Dict[str, Any]] = {
         "type": "stated_together",
         "terms": [_callout("9", "A-502"), _ABSENT], "window": 200},
     "door-not-scheduled-4": {
-        "type": "stated_together", "terms": [_num("407"), _ABSENT],
+        "type": "stated_together", "terms": [_mark("407"), _ABSENT],
         "window": 160},
     "door-not-on-plan-5": {
-        "type": "stated_together", "terms": [_num("509"), _ABSENT],
+        "type": "stated_together", "terms": [_mark("509"), _ABSENT],
         "window": 160},
     "level-fifth-floor": {
         "type": "stated_together",
@@ -1145,6 +1158,112 @@ def _truth(keys: Iterable[str]) -> str:
     return " ".join(by_key[k] for k in keys)
 
 
+#: A word that calls a thing broken or missing, for the false-alarm check:
+#: :data:`_ABSENT`'s words less "only" (that word lists what IS there: "S-501
+#: lists F1, F2 and F3 only"), with "not found on A-104" and "did not find
+#: it" counted (what was not found is said to be missing there; "did not
+#: find any problems" is still an all-clear), and the words for a broken
+#: callout.
+_FAULT_NOT = (r"not(?!\s+(?:aware|applicable|missing)\b)"
+              r"(?!\s+(?:find|found|identif\w+|see|seen|observe\w*|"
+              rf"detect\w*)\s+(?:any|{_CLEAR_NOUN})\b)")
+_FAULTY = {"re": rf"\b(?:{_NO_WORD}|{_FAULT_NOT}|never|neither|nor|"
+                 r"(?<!nothing is )(?<!nothing )(?<!none is )(?<!none are )"
+                 r"(?<!none )missing|absent|omitted|omits|without|lacks?|"
+                 r"lacking|unscheduled|untagged|unlisted|isn't|doesn't|"
+                 r"cannot|can't|nowhere|unresolved|nonexistent|non-existent|"
+                 r"orphan\w*|broken|invalid|mismatch\w*|dangling)\b"}
+#: Not one end of a range ("101-108", "F1 to F3", "FCU-1-1 to FCU-1-4"): a
+#: range names a run of marks, and says nothing of any one of them.
+_NO_RANGE_BEFORE = r"(?<!to )(?<!thru )(?<!through )"
+_NO_RANGE_AFTER = (r"(?!\s*(?:-|to|thru|through)\s*[a-z]{0,4}[\s-]?"
+                   r"(?:\d+[\s-])?\d)")
+
+
+def _one_callout(view: str, number: str) -> Dict[str, str]:
+    """One callout, in the forms that name one view: "1/A-301", "detail 1
+    on A-501". Not "details 1 to 6 on A-501" or "A-501 holds details 1 to
+    6", which say what a sheet holds (the planted checks' :func:`_callout`
+    reads those too, to find a missing detail)."""
+    sheet = _sheet(number)["re"]
+    kind = r"(?:details?|sections?|views?|callouts?|bubbles?|plans?)"
+    return {"re": rf"(?<![\w./-]){view}\s*/\s*{sheet}"
+                  rf"|\b{kind}\s+{view}\s+(?:on|of|at)\s+(?:sheet\s+)?"
+                  rf"{sheet}"}
+
+
+def _mark_term(mark: str, single: bool = False) -> Dict[str, str]:
+    """One mark of the fixture's kinds (door 105, F1, FCU-1-1, LP-1A, MDP,
+    AHU-1) however an answer writes it; ``single``: not as one end of a
+    range."""
+    m = mark.lower()
+    if m.isdigit():
+        core = rf"{_LEAD}{m}(?!\d|\.\d)"
+    elif re.fullmatch(r"f\d", m):
+        core = rf"(?<![\w-])f-?{m[1]}(?!\d)"
+    elif m.startswith("fcu-"):
+        floor, n = m[4:].split("-")
+        core = rf"(?<![\w-])fcu[\s-]?{floor}[\s-]?{n}(?!\d)"
+    elif m.startswith("lp-"):
+        core = rf"(?<![\w-])lp[\s-]?{m[3:]}\b"
+    elif m.startswith("ahu-"):
+        core = rf"(?<![\w-])ahu[\s-]?{m[4:]}(?!\d)"
+    else:
+        core = rf"\b{re.escape(m)}\b"
+    if single:
+        core = _NO_RANGE_BEFORE + core + _NO_RANGE_AFTER
+    return {"re": core}
+
+
+def _false_alarms(floors: int, kind: str) -> Dict[str, Any]:
+    """The false-alarm check (the core's ``no_false_alarm``) for a callout
+    question (``kind="callouts"``) or a schedule question on the
+    ``floors``-storey set, from the fixture's own model: the sound items
+    are every callout that resolves, or every mark both drawn and
+    scheduled together with every door number of a floor's run (x01 to
+    x09) that no sheet carries; the problems are the broken callouts (and
+    the sheet a callout names that is not in the set) or the marks drawn
+    and not scheduled, or scheduled and not drawn. An answer that states a
+    sound item broken or missing fails (Foundry brief 7, BACKLOG EV-44:
+    GPT-5.4 called 18 good callouts broken, said five doors tagged on A-102
+    were on no plan and invented a door 409, and the planted checks could
+    not see it)."""
+    project = _coord._project(floors)
+    sheets = {s.number: s for s in project.sheets}
+    sound: Dict[str, Dict[str, str]] = {}
+    problems: List[Dict[str, str]] = []
+    if kind == "callouts":
+        for s in project.sheets:
+            for _kind, view, target in s.callouts:
+                if target in sheets and view in sheets[target].views:
+                    sound[f"{view}/{target}"] = _one_callout(view, target)
+                else:
+                    problems.append(_one_callout(view, target))
+                    if target not in sheets:
+                        problems.append(_sheet(target))
+    else:
+        unplanned: List[str] = []
+        for group in ("door", "footing", "fcu", "panel"):
+            drawn = {t for s in project.sheets
+                     for t in s.tags.get(group, [])}
+            listed = {r[0] for s in project.sheets
+                      for r in s.rows.get(group, [])}
+            for mark in sorted(drawn | listed):
+                if (mark in drawn) != (mark in listed):
+                    problems.append(_mark_term(mark))
+                else:
+                    unplanned.append(mark)
+            if group == "door":
+                unplanned += [str(f * 100 + n) for f in range(1, floors + 1)
+                              for n in range(1, 10)
+                              if str(f * 100 + n) not in drawn | listed]
+        for mark in unplanned:
+            label = f"door {mark}" if mark.isdigit() else mark
+            sound[label] = _mark_term(mark, single=True)
+    return {"type": "no_false_alarm", "label": "no-false-alarm",
+            "sound": sound, "words": _FAULTY, "problems": problems}
+
+
 _BASE_KEYS = [p.key for p in _coord.BASE_PLANTED]
 _LONG_KEYS = [p.key for p in _coord.LONG_PLANTED]
 _BUILT = ("(review_eval/coordination_fixture.py builds the documents; the "
@@ -1169,7 +1288,8 @@ COORDINATION_TASKS: List[Task] = [
         documents=["fixture_coord_set"], category="check",
         doc_type="coordination_set",
         checks=_planted(["callout-missing-detail", "callout-missing-sheet"])
-        + [{"type": "pages_covered", "pages": list(range(15)), "info": True,
+        + [_false_alarms(2, "callouts"),
+           {"type": "pages_covered", "pages": list(range(15)), "info": True,
             "label": "sheets read (recorded, not scored)"}],
         truth=_truth(["callout-missing-detail", "callout-missing-sheet"]) +
         " The other callouts resolve: 1 and 2 on A-301, 1 and 2 on A-401, "
@@ -1186,7 +1306,8 @@ COORDINATION_TASKS: List[Task] = [
         documents=["fixture_coord_set"], category="check",
         doc_type="coordination_set",
         checks=_planted(["door-not-scheduled", "door-not-on-plan",
-                         "footing-not-scheduled"]),
+                         "footing-not-scheduled"])
+        + [_false_alarms(2, "schedules")],
         truth=_truth(["door-not-scheduled", "door-not-on-plan",
                       "footing-not-scheduled"]) + " " + _BUILT),
     Task(
@@ -1210,9 +1331,12 @@ COORDINATION_TASKS: List[Task] = [
         category="compare", doc_type="coordination_set",
         checks=_planted(["spec-section-missing", "footing-concrete"]),
         truth=_truth(["spec-section-missing", "footing-concrete"]) +
-        " The other cited sections are in the manual, and the other "
-        "strengths agree (slabs on grade 30 MPa, columns and suspended "
-        "slabs 35 MPa). " + _BUILT),
+        " The other cited sections are listed in the manual's contents: "
+        "01 33 00, 03 30 00 and 08 71 00 are bound in this volume, and "
+        "04 20 00, 07 92 00, 08 11 13 and 09 91 00 are listed as issued "
+        "separately (an answer that says these four are not in this "
+        "volume is right). The other strengths agree (slabs on grade 30 "
+        "MPa, columns and suspended slabs 35 MPa). " + _BUILT),
     Task(
         id="coord-drawings-vs-geotech",
         question=("Do the structural drawings follow the foundation "
@@ -1236,7 +1360,7 @@ COORDINATION_TASKS: List[Task] = [
              "terms": [_sheet("A-401"), _BAY_7500],
              "label": "core-dimension"},
             {"type": "stated_together",
-             "terms": [_num("107"), {"re": r"hw[\s-]?2(?!\d)"}],
+             "terms": [_mark("107"), {"re": r"hw[\s-]?2(?!\d)"}],
              "label": "door-hardware"},
             {"type": "stated_together",
              "terms": [_sheet("S-001"), _qty("200", "kpa"), _UNFLAGGED],
@@ -1281,7 +1405,8 @@ COORDINATION_TASKS: List[Task] = [
         documents=["fixture_coord_set_scan"], category="check",
         doc_type="coordination_set",
         checks=_planted(["callout-missing-detail", "callout-missing-sheet"])
-        + [{"type": "pages_covered", "pages": list(range(15)),
+        + [_false_alarms(2, "callouts"),
+           {"type": "pages_covered", "pages": list(range(15)),
             "look_pages": list(range(15)), "info": True,
             "label": "sheets looked at (recorded, not scored)"}],
         truth=_truth(["callout-missing-detail", "callout-missing-sheet"]) +
@@ -1299,7 +1424,8 @@ COORDINATION_TASKS: List[Task] = [
         doc_type="coordination_set",
         checks=_planted(["door-not-scheduled", "door-not-on-plan",
                          "footing-not-scheduled"])
-        + [{"type": "pages_covered", "pages": list(range(15)),
+        + [_false_alarms(2, "schedules"),
+           {"type": "pages_covered", "pages": list(range(15)),
             "look_pages": list(range(15)), "info": True,
             "label": "sheets looked at (recorded, not scored)"}],
         truth=_truth(["door-not-scheduled", "door-not-on-plan",
@@ -1315,11 +1441,13 @@ COORDINATION_TASKS: List[Task] = [
         doc_type="coordination_set",
         checks=_planted(["callout-missing-detail", "callout-missing-sheet",
                          "callout-missing-ceiling-detail"])
-        + [{"type": "pages_covered", "pages": list(range(40)), "info": True,
+        + [_false_alarms(5, "callouts"),
+           {"type": "pages_covered", "pages": list(range(40)), "info": True,
             "label": "sheets read (recorded, not scored)"}],
         truth=_truth(["callout-missing-detail", "callout-missing-sheet",
                       "callout-missing-ceiling-detail"]) +
-        " 40 sheets; 39 callouts on 22 of them. " + _BUILT),
+        " 40 sheets; 39 callouts on 17 of them, 36 of which resolve. " +
+        _BUILT),
     Task(
         id="coord-long-schedules",
         question=("Check every schedule in this set against the marks on "
@@ -1331,7 +1459,8 @@ COORDINATION_TASKS: List[Task] = [
                          "door-not-scheduled-4", "door-not-on-plan-5",
                          "footing-not-scheduled", "fcu-not-scheduled",
                          "panel-not-scheduled"])
-        + [{"type": "pages_covered", "pages": list(range(40)), "info": True,
+        + [_false_alarms(5, "schedules"),
+           {"type": "pages_covered", "pages": list(range(40)), "info": True,
             "label": "sheets read (recorded, not scored)"}],
         truth=_truth(["door-not-scheduled", "door-not-on-plan",
                       "door-not-scheduled-4", "door-not-on-plan-5",
