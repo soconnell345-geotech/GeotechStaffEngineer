@@ -337,10 +337,16 @@ def said_not_on_page(analysis, figure_number="") -> bool:
     text = str(analysis or "").strip().lstrip("*_#> ").upper()
     if text.startswith(NOT_ON_PAGE.rstrip(":")):
         return True
-    fig = str(figure_number or "").strip().lower()
+    fig = str(figure_number or "").strip()
+    if not fig:
+        return False
+    # the whole number: asked for 7-1, "Figure 7-15" is another figure, and
+    # asked for 7-15, so is "Figure 7-150" (or 7-15.2, 17-15)
+    whole = re.compile(rf"(?<![\w.\-]){re.escape(fig)}(?![\w]|[.\-]\d)",
+                       re.I)
     head = " ".join(str(analysis or "").strip().splitlines()[:3])
-    return bool(fig) and any(
-        fig in sentence.lower() and _NOT_ON_PAGE_WORDS.search(sentence)
+    return any(
+        whole.search(sentence) and _NOT_ON_PAGE_WORDS.search(sentence)
         for sentence in re.split(r"(?<=[.;!?])\s+", head))
 
 

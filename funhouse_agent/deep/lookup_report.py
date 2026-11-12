@@ -52,10 +52,18 @@ QUERY_CHARS = 40
 MAX_LISTED = 6
 MAX_RECOVERED_NAMED = 4
 
-#: Said to the primary where a lookup failed and no later call to the same
-#: method answered, or where no lookup was made.
+#: Said to the primary where a lookup failed and no later call for the same
+#: thing answered.
 _FAILED_ADVICE = (" Tell the user which lookups failed; do not fill them "
                   "from memory.")
+
+#: Said where the helper made no lookup at all.
+_NO_LOOKUP_ADVICE = (" Nothing in the answer comes from the references; say "
+                     "so to the user.")
+
+#: The reason given for a chart read whose reader said the figure is not on
+#: the page it was shown.
+NOT_ON_THE_PAGE = "the reader said the figure is not on the page"
 
 #: Said where the helper's model-call budget ended the consult.
 _BUDGET_LINE = (" The consult ended on its call budget, so its answer may "
@@ -66,13 +74,15 @@ _BUDGET_LINE = (" The consult ended on its call budget, so its answer may "
 LOOKUPS_NOTE = (
     "A `references` or `reviewer` task's result ends with a block the app "
     f"writes, \"{BLOCK_HEAD}\", which says how the helper's lookups went. "
-    "Where it says a lookup errored (and no later call to the same method "
-    "answered) or that no lookup was made, tell the user that the lookup "
-    "failed, and do not fill the gap from memory as if it were the "
-    "reference. Where it says the consult ended on its call budget, its "
-    "answer may be incomplete: say so where it matters. \"Came back "
-    "empty\" means the reference was searched and found nothing that "
-    "holds all the words asked for.")
+    "Where it says a lookup errored (and no later call for the same thing "
+    "answered), tell the user that the lookup failed, and do not fill the "
+    "gap from memory as if it were the reference. Where it says no lookup "
+    "was made, nothing in the answer comes from the references: say so. "
+    "Where it says the consult ended on its call budget, its answer may be "
+    "incomplete: say so where it matters. \"Came back empty\" means the "
+    "reference was searched and found nothing that holds all the words "
+    "asked for (each such search is named with its query), or a chart's "
+    "reader found the figure not on its page.")
 
 
 def _trim(text: str, room: int) -> str:
@@ -143,6 +153,20 @@ def _no_whole_match(data) -> bool:
                               for h in hits)
 
 
+def _read_not_on_page(data, args) -> bool:
+    """Whether a chart read's answer says the figure is not on the page it
+    was shown (the read tool's own test, ``said_not_on_page``)."""
+    if not isinstance(data, dict) or not data.get("analysis"):
+        return False
+    args = args if isinstance(args, dict) else {}
+    try:
+        from funhouse_agent.reference_vision import said_not_on_page
+    except Exception:                                      # noqa: BLE001
+        return False
+    return said_not_on_page(data["analysis"], data.get("figure_number")
+                            or args.get("figure_number") or "")
+
+
 def _unquoted(text: str) -> str:
     """``text`` without one pair of quotes round all of it (a KeyError's
     message is quoted)."""
@@ -167,15 +191,29 @@ def _reason(error: str, name: str) -> str:
     return _trim(text, REASON_CHARS) or "an error"
 
 
+def _query(args) -> str:
+    """A search's query as the helper gave it (``parameters.query``, or a
+    flattened ``query``), quotes round it dropped; "" for a lookup that is
+    not a search."""
+    args = args if isinstance(args, dict) else {}
+    params = args.get("parameters")
+    params = params if isinstance(params, dict) else {}
+    query = params.get("query") or args.get("query")
+    return query.strip(" \"'") if isinstance(query, str) else ""
+
+
 def _lookup_key(tool: str, args) -> str:
-    """What makes two lookups the same method: module.method, or the
-    figure a chart read asked for (a search's query left out)."""
+    """What makes two lookups the same: module.method, with a search's
+    query (case and spacing folded), or the figure a chart read asked for.
+    A search for another topic answering does not answer the first."""
     args = args if isinstance(args, dict) else {}
     if tool == "read_reference_figure":
         return f"{tool} {args.get('reference') or ''} " \
                f"{args.get('figure_number') or ''}".strip()
-    return ".".join(str(p) for p in (args.get("agent_name"),
-                                     args.get("method")) if p) or tool
+    key = ".".join(str(p) for p in (args.get("agent_name"),
+                                    args.get("method")) if p) or tool
+    query = " ".join(_query(args).lower().split())
+    return f'{key} "{query}"' if query else key
 
 
 def _lookup_name(tool: str, args) -> str:
@@ -187,12 +225,9 @@ def _lookup_name(tool: str, args) -> str:
             tool, args.get("reference") or "",
             ("figure " + str(args["figure_number"]))
             if args.get("figure_number") else "") if p)
-    params = args.get("parameters")
-    params = params if isinstance(params, dict) else {}
     name = ".".join(str(p) for p in (args.get("agent_name"),
                                      args.get("method")) if p) or tool
-    query = params.get("query") or args.get("query")
-    query = query.strip(" \"'") if isinstance(query, str) else ""
+    query = _query(args)
     if query:
         name += ' "' + _trim(query, QUERY_CHARS) + '"'
     return name
@@ -202,8 +237,9 @@ def lookup_outcomes(rec) -> list:
     """Each lookup the helper made, in order: ``{"name", "key", "outcome",
     "reason", "cut", "recovered"}``, ``outcome`` one of "ok", "errored",
     "empty". An errored or empty lookup is ``recovered`` when a later call
-    to the same method (``key``) succeeded: most errors in the recorded
-    consults were argument slips, then retried."""
+    for the same lookup (``key``: the same method, and for a search the
+    same query) succeeded: most errors in the recorded consults were
+    argument slips, then retried."""
     args_by_id = {}
     for step in rec.steps:
         if step.get("kind") == "model":
@@ -231,6 +267,10 @@ def lookup_outcomes(rec) -> list:
             # hits holding only some of the words are no match for the
             # query (2026-11-10 review, core-05)
             row.update(outcome="empty", reason=NO_WHOLE_MATCH)
+        elif step["name"] == "read_reference_figure" and _read_not_on_page(
+                data, args):
+            # no value was read off a page the figure is not on
+            row.update(outcome="empty", reason=NOT_ON_THE_PAGE)
         out.append(row)
     for i, row in enumerate(out):
         if row["outcome"] != "ok":
@@ -257,20 +297,23 @@ def lookup_block(rec) -> str:
                 "back empty or was cut at the size limit.")
     elif not (errored or empty or cut):
         line = (f"[{BLOCK_HEAD}: {len(outcomes)} made; each one that failed "
-                "was answered by a later call to the same method.")
+                "was answered by a later call for the same lookup.")
     else:
         line = (f"[{BLOCK_HEAD}: {len(outcomes)} made; {len(errored)} "
                 f"errored, {len(empty)} came back empty, {cut} cut at the "
                 "size limit.")
     if rec.budget_reached:
         line += _BUDGET_LINE
-    if not outcomes or errored:
+    if not outcomes:
+        line += _NO_LOOKUP_ADVICE
+    elif errored:
         line += _FAILED_ADVICE
     lines = [line]
     for o in failed[:MAX_LISTED]:
         what = "errored" if o["outcome"] == "errored" else "came back empty"
         reason = (f": {o['reason']}" if o["outcome"] == "errored"
-                  or o["reason"] == NO_WHOLE_MATCH else "")
+                  or o["reason"] in (NO_WHOLE_MATCH, NOT_ON_THE_PAGE)
+                  else "")
         lines.append(f"- {o['name']} {what}{reason}")
     if len(failed) > MAX_LISTED:
         lines.append(f"- and {len(failed) - MAX_LISTED} more")

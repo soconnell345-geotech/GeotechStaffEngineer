@@ -147,7 +147,80 @@ def test_no_lookup_made_is_said():
     rec = _record([])
     block = lookup_block(rec)
     assert block.startswith(f"[{BLOCK_HEAD}: no lookup was made.")
-    assert "do not fill them from memory" in block
+    # nothing failed: the answer simply comes from no reference
+    assert "Nothing in the answer comes from the references" in block
+    assert "which lookups failed" not in block
+
+
+def _chart_read(figure, analysis):
+    return json.dumps({"reference": "made_up", "figure_number": figure,
+                       "caption": "A made-up chart", "analysis": analysis})
+
+
+def test_a_chart_read_off_the_wrong_page_came_back_empty():
+    """The reader said the figure is not on the page: no value was read,
+    so the read is no answer (review follow-up 1)."""
+    rec = _record([
+        ("read_reference_figure", {"reference": "made_up",
+                                   "figure_number": "7-1"},
+         _chart_read("7-1", "Figure 7-1 is not on this page; the page shows "
+                            "a table of made-up values."), None),
+        ("read_reference_figure", {"reference": "made_up",
+                                   "figure_number": "7-2"},
+         _chart_read("7-2", "NOT ON THIS PAGE: the page is text."), None),
+        ("read_reference_figure", {"reference": "made_up",
+                                   "figure_number": "7-3"},
+         _chart_read("7-3", "Following the made-up curve, the value is 1.2. "
+                            "The legend is not on this page."), None),
+    ])
+    outcomes = lookup_outcomes(rec)
+    assert [o["outcome"] for o in outcomes] == ["empty", "empty", "ok"]
+    block = lookup_block(rec)
+    assert "3 made; 0 errored, 2 came back empty" in block
+    assert ("- read_reference_figure made_up figure 7-1 came back empty: "
+            "the reader said the figure is not on the page") in block
+
+
+def test_said_not_on_page_matches_the_whole_figure_number():
+    """Asked for 7-1, Figure 7-15 is another figure; asked for 7-15, so
+    is 7-150 (review follow-up 5)."""
+    from funhouse_agent.reference_vision import said_not_on_page
+    assert not said_not_on_page("Figure 7-15 is not on this page.", "7-1")
+    assert not said_not_on_page("Figure 7-150 is not on this page.", "7-15")
+    assert not said_not_on_page("Figure 17-1 is not on this page.", "7-1")
+    assert not said_not_on_page("Figure 7-1.5 is not on this page.", "7-1")
+    assert said_not_on_page("Figure 7-1 is not on this page.", "7-1")
+    assert said_not_on_page("Figure 7-15's curves are not on this page.",
+                            "7-15")
+    assert said_not_on_page("FIGURE D-1 does not appear on this page.", "d-1")
+    assert said_not_on_page("Figure 2.5 is not on this page.", "2.5")
+
+
+def test_a_search_for_another_topic_does_not_answer_an_empty_one():
+    """Recovery is keyed on the query for a search: an empty search stays
+    listed with its query when a search for a different topic finds hits;
+    the same query asked again (case and spacing aside) answers it
+    (review follow-up 2)."""
+    hit = json.dumps({"result": [{"reference": "made_up",
+                                  "section_id": "1.1"}], "shown": 1})
+    rec = _record([
+        ("call_agent", _lookup("reference_db", "reference_search",
+                               query="made up topic one"), EMPTY_SEARCH, None),
+        ("call_agent", _lookup("reference_db", "reference_search",
+                               query="made up topic two"), hit, None),
+        ("call_agent", _lookup("figure_db", "figure_search",
+                               query="Made Up  chart"), ERROR, None),
+        ("call_agent", _lookup("figure_db", "figure_search",
+                               query="made up chart"), hit, None),
+    ])
+    rows = lookup_outcomes(rec)
+    assert [r["recovered"] for r in rows] == [False, False, True, False]
+    block = lookup_block(rec)
+    assert "1 came back empty" in block
+    assert ('- reference_db.reference_search "made up topic one" came back '
+            "empty") in block
+    assert ('- failed, then answered by a later call: figure_db.figure_search '
+            '"made up chart"]') in block
 
 
 def test_ending_on_the_budget_is_said():
@@ -172,8 +245,8 @@ def test_a_retried_lookup_that_answered_is_not_a_failure():
     assert rows[0]["outcome"] == "errored" and rows[0]["recovered"]
     block = lookup_block(rec)
     head = block.splitlines()[0]
-    assert ("2 made; each one that failed was answered by a later call to "
-            "the same method.") in head
+    assert ("2 made; each one that failed was answered by a later call for "
+            "the same lookup.") in head
     assert "do not fill" not in block
     assert block.endswith("- failed, then answered by a later call: "
                           "gec12.made_up_chart]")
