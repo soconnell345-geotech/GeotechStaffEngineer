@@ -55,6 +55,18 @@ GSE_TOP_LEVEL = frozenset({
     "foundry_test_harness",
 })
 
+#: Third-party modules under a top-level name GSE also uses: the Foundry
+#: Code Workspace's dataset library ``foundry.transforms``, which the
+#: Foundry dataset store imports inside its functions (INF-74), is not
+#: GSE's retired ``foundry/`` wrapper folder (which has no ``transforms``).
+NOT_GSE = frozenset({"foundry.transforms"})
+
+
+def _gse(name: str) -> bool:
+    """``name`` is one of GSE's packages, or inside one."""
+    return name.split(".")[0] in GSE_TOP_LEVEL and not any(
+        name == n or name.startswith(n + ".") for n in NOT_GSE)
+
 
 def _imports(path: pathlib.Path):
     """``(module, lineno, at_module_level)`` for every import in ``path``,
@@ -94,7 +106,7 @@ def _core_files():
 
 
 def _first_party(name: str) -> bool:
-    return name.split(".")[0] in GSE_TOP_LEVEL | {"funhouse_agent"}
+    return _gse(name) or name.split(".")[0] == "funhouse_agent"
 
 
 def test_the_core_imports_nothing_of_either_app():
@@ -103,7 +115,7 @@ def test_the_core_imports_nothing_of_either_app():
         rel = path.relative_to(CORE.parent).as_posix()
         for name, line, _ in _imports(path):
             top = name.split(".")[0]
-            if top in GSE_TOP_LEVEL:
+            if _gse(name):
                 bad.append(f"{rel}:{line} -> {name}")
             elif top == "funhouse_agent" and name != "funhouse_agent" and \
                     not any(name == o or name.startswith(o + ".")

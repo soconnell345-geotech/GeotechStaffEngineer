@@ -2,7 +2,9 @@
 
 Design + rationale: `module_work/FOUNDRY_APP_PLAN.md`. This is the do-it page.
 Everything lives in the pip package; the Foundry side is one workspace, a
-2-line file, and a few environment variables.
+2-line file, and a few environment variables. Document Review on its own,
+from its own package `aec-document-review`, is published the same way:
+section 6.
 
 ## 1. Create the workspace and install the package
 
@@ -600,6 +602,109 @@ conversations already go in a folder of their own.)
    any resource.
 3. To upgrade later: bump `geotech-staff-engineer` in the Libraries panel and
    republish. The 2-line `app.py` never changes.
+
+## 6. Document Review on Foundry (a second host)
+
+Document Review, the document review page, can be published from a Foundry
+Code Workspace on its own, from its own package `aec-document-review`, as a
+second host in case Tiny Apps is withdrawn (BACKLOG INF-74). It is the same
+Streamlit page the testers use on Tiny Apps, with the geotech app's Foundry
+behaviour: the models are Foundry model RIDs, and the conversations can be
+saved to a Foundry dataset. It needs the first `aec-document-review`
+release after 0.1.1, which has the Foundry entry, with the core release it
+pins; 0.1.1 and earlier cannot save to a Foundry dataset. Until that
+release, use test wheels as in section 1, step 3, with three wheels
+instead of four: `aec-document-review`, `aec-agent-core` and `planlens`
+(nothing geotechnical).
+
+1. **Install the package.** In the workspace's **Libraries** panel, install
+   `aec-document-review` from PyPI. It brings the shared core
+   `aec-agent-core` and `planlens` at the exact versions it was tested
+   with, and Streamlit. For Claude models also install `langchain-anthropic`
+   (the core's `anthropic` extra); GPT models need nothing more. It needs
+   Python 3.11 or newer. If the panel reports a conflict with Foundry's own
+   libraries, the pins in section 1, step 3.1 apply here too.
+2. **Create the app file.** Create `app.py` at the root of the workspace
+   repository, with these two lines:
+   ```python
+   from aec_document_review.foundry_entry import main
+   main()
+   ```
+   `main()` marks the process as a Foundry deployment
+   (`GEOTECH_DEPLOYMENT=foundry`) and runs the page. As with the geotech
+   app, the page then offers only Foundry model RIDs and never reads or
+   mentions a personal API key.
+3. **Set the models.** Set `GEOTECH_FOUNDRY_MODELS` to the model RIDs, as
+   in section 3 (`Label=RID`, comma-separated; the first one is the
+   default). Choose models that accept images: the page looks at drawing
+   pages. The Foundry token and the proxy address are found as for the
+   geotech app (section 3); a Code Workspace provides them.
+4. **Keep the conversations (recommended).** Follow section 4c, steps 1 to
+   4, with a dataset used only for Document Review (for example
+   `review_conversations`), and set its alias in the app file before
+   `main()`:
+   ```python
+   import os
+   os.environ["GEOTECH_FOUNDRY_CONVERSATION_DATASET"] = "review_conversations"  # the alias, not the ri. ID
+   from aec_document_review.foundry_entry import main
+   main()
+   ```
+   After the first turn the dataset holds one folder per conversation,
+   `Document Review/conversations/document_review/<title>_<date>/`: the
+   top folder is named after the application (`GEOTECH_SHAREPOINT_ROOT`
+   names another). Without the alias the conversations live in the app's
+   container and are lost when it is rebuilt; the sidebar and Connection
+   diagnostics say so. SharePoint (`GRAPH_*` and `SHAREPOINT_SITE_URL`, as
+   on Tiny Apps) is used only when the alias is not set, as for the geotech
+   app.
+5. **Preview, then publish** as in section 5, naming `app.py`. To upgrade
+   later, bump `aec-document-review` in the Libraries panel and republish.
+
+Other settings it reads, all optional: `GEOTECH_WEBAPP_DATA` (the folder in
+the app's container where conversations are kept while it runs),
+`GEOTECH_INSTRUCTIONS` (the deployment's own instructions to the agents,
+section 3d), `GEOTECH_MARKUP_AUTHOR` (who the markups it writes on a PDF are
+signed by) and the model settings of section 3 (`GEOTECH_HELPER_MODELS`,
+`GEOTECH_FOUNDRY_DISABLE_STREAMING` and the others). The Tiny Apps model
+settings (`PROMPTER_*`) are not used on Foundry.
+
+**Who is viewing, and what keeps viewers apart: nothing.** A Foundry app is
+not told who is viewing it. On Tiny Apps a sign-in header names each tester,
+and each one's conversations and files go in a folder of their own. On
+Foundry there is no such header, so Document Review runs as it does on a
+laptop, for one unnamed user, exactly as the geotech app does on Foundry
+today. Nothing keeps one viewer's conversations and files apart from
+another's: everyone who can open the published app sees the same list of
+conversations, can open, rename or delete any of them and download their
+files, and **Find a past conversation** lists and restores every
+conversation in the dataset. The **Working folder** box is shown, as for the
+geotech app, so a viewer can point the agent's saves at another folder in
+the app's container. Dataset writes run as the publisher's account (as far
+as the AI FDE's test could tell), and whoever can open the dataset can read
+every conversation in it. So share the published app only with people who
+may see each other's documents, and keep the dataset in a project only they
+can see (section 4c, "One user"). The page refuses no one on Foundry: its
+refusal of a caller it cannot name applies only on the Tiny Apps App
+Service.
+
+**Plotting code written by the model is off.** For the same reason,
+Document Review's Foundry entry starts with `GEOTECH_PLOT_CODE=0`, as its
+Tiny Apps wrapper does: one process holds every viewer's conversations and
+the app's settings, a document can ask the model for code, and the box that
+code runs in limits Python but is not an operating-system boundary. The
+figure helper and its fixed plotting tool stay. To turn the code on, set
+`os.environ["GEOTECH_PLOT_CODE"] = "1"` in the workspace file before
+`main()`. (The geotech app's Foundry entry leaves it on, as before.)
+
+**Two people at the same time.** The page's protections for a shared host
+switch on when a sign-in header names the viewer, so on Foundry they are
+off, as for the geotech app. With two people using the published app at the
+same moment, a file one of them asks for can be saved into the other's
+conversation, and the agent may read files outside the conversation's own
+folder. For a trial, one person uses it at a time. Do not set
+`WEBSITE_SITE_NAME`, `APP_ENV=azure` or `IDENTITY_ENDPOINT` in the workspace
+file: each makes the page take the host for the Tiny Apps App Service and
+refuse every viewer it cannot name.
 
 ## Foundry deployment mode (5.9.1+): no API-key surface
 
