@@ -34,13 +34,15 @@ from aec_document_review import foundry_entry, identity, pages_entry
 ALIAS = "made_up_review_conversations"
 
 #: Env the tests set or clear, and the entry WRITES straight into
-#: ``os.environ`` (``GEOTECH_DEPLOYMENT``): restored by hand afterwards,
+#: ``os.environ`` (``GEOTECH_DEPLOYMENT``, ``GEOTECH_PLOT_CODE``): restored
+#: by hand afterwards,
 #: since monkeypatch records no undo for a variable it deleted while absent.
 _ENV = ("GEOTECH_DEPLOYMENT", fds.ENV_DATASET, sp.ENV_ROOT, sp.ENV_SITE,
         sp.ENV_CLIENT_ID, sp.ENV_CLIENT_SECRET, sp.ENV_TOKEN,
         sp.ENV_TOKEN_FILE, sp.ENV_DRIVE, "GEOTECH_APP_PROFILE",
         "DEV_IDENTITY", "GEOTECH_USER_EMAIL", "WEBSITE_SITE_NAME", "APP_ENV",
-        "IDENTITY_ENDPOINT", "GEOTECH_FOUNDRY_MODELS", "ANTHROPIC_API_KEY")
+        "IDENTITY_ENDPOINT", "GEOTECH_FOUNDRY_MODELS", "ANTHROPIC_API_KEY",
+        "GEOTECH_PLOT_CODE")
 
 
 @pytest.fixture(autouse=True)
@@ -157,6 +159,21 @@ def test_the_entry_marks_foundry_before_the_page_runs(monkeypatch):
     monkeypatch.setenv("GEOTECH_DEPLOYMENT", "made-up-host")
     foundry_entry.main()
     assert seen[-1] == ("made-up-host", False)
+
+
+def test_plotting_code_is_off_on_foundry_unless_the_workspace_turns_it_on(
+        monkeypatch):
+    """One process serves every viewer there, as on Tiny Apps, whose
+    wrapper turns model-written plotting code off the same way."""
+    from aec_agent_core import review_flags
+    assert review_flags.plot_code() is True      # the default elsewhere
+    foundry_entry.mark_deployment()
+    assert os.environ["GEOTECH_PLOT_CODE"] == "0"
+    assert review_flags.plot_code() is False
+    # the workspace file's own choice is kept
+    monkeypatch.setenv("GEOTECH_PLOT_CODE", "1")
+    foundry_entry.mark_deployment()
+    assert review_flags.plot_code() is True
 
 
 def test_the_two_line_workspace_file_starts_the_page_on_foundry(

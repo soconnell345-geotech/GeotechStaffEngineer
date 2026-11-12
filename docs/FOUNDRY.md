@@ -687,6 +687,15 @@ can see (section 4c, "One user"). The page refuses no one on Foundry: its
 refusal of a caller it cannot name applies only on the Tiny Apps App
 Service.
 
+**Plotting code written by the model is off.** For the same reason,
+Document Review's Foundry entry starts with `GEOTECH_PLOT_CODE=0`, as its
+Tiny Apps wrapper does: one process holds every viewer's conversations and
+the app's settings, a document can ask the model for code, and the box that
+code runs in limits Python but is not an operating-system boundary. The
+figure helper and its fixed plotting tool stay. To turn the code on, set
+`os.environ["GEOTECH_PLOT_CODE"] = "1"` in the workspace file before
+`main()`. (The geotech app's Foundry entry leaves it on, as before.)
+
 ## Foundry deployment mode (5.9.1+): no API-key surface
 
 The Foundry entry (`webapp/foundry_entry.py`) marks the process as a Foundry

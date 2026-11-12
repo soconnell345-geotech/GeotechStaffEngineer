@@ -34,6 +34,13 @@ Who is viewing: a Foundry app is not told, so the page runs as on a laptop
 open the app. ``docs/FOUNDRY.md`` in the project's repository says what
 that means for who may open it.
 
+Plotting code written by the model is off here unless the workspace file
+sets ``GEOTECH_PLOT_CODE=1`` before ``main()``, as on Tiny Apps: one process
+holds every viewer's conversations and the app's settings, a document can ask
+the model for code, and the box that code runs in limits Python but is not an
+operating-system boundary. The figure helper and its fixed plotting tool
+(``plot_data``) stay.
+
 A crash of the page is kept in the open conversation's record (BACKLOG
 EV-19) by :func:`aec_document_review.pages_entry.page_runner`, which runs
 the page inside :func:`aec_document_review.page_errors.recording`, as on
@@ -51,8 +58,11 @@ DEPLOYMENT_NAME = "foundry"
 
 def mark_deployment() -> None:
     """Set ``GEOTECH_DEPLOYMENT=foundry`` (idempotent; a value already set
-    is kept, as GeotechStaffEngineer's Foundry entry does)."""
+    is kept, as GeotechStaffEngineer's Foundry entry does), and turn
+    model-written plotting code off unless ``GEOTECH_PLOT_CODE`` is already
+    set (the Tiny Apps wrapper does the same on its shared host)."""
     os.environ.setdefault("GEOTECH_DEPLOYMENT", DEPLOYMENT_NAME)
+    os.environ.setdefault("GEOTECH_PLOT_CODE", "0")
 
 
 def main() -> None:
