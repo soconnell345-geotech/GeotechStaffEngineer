@@ -423,10 +423,32 @@ def check_cites(answer: str, pages: Sequence[Any] = (),
 # File checks (on the files the agent wrote into its working folder)
 # ---------------------------------------------------------------------------
 
+#: Folders of a run's working folder that hold the run's own working files,
+#: not what it delivered: the vision tools' read record and kept page
+#: readings (``aec_agent_core.vision_tools.SCRATCH_DIR``) and the work kept
+#: from a stopped turn or helper (``aec_agent_core.deep.keep_work.KEPT_DIR``).
+#: The user never receives them, so no check counts them as produced or
+#: reads them as delivered. Foundry brief 7 (2026-11-12): on the two
+#: whole-set review tasks a planted problem passed from a page reading that
+#: never reached the comment log. Named here, not imported: this module
+#: loads without the agent stack (a test keeps the names in step).
+WORKING_DIRS = (".scratch", "kept")
+
+
+def is_working_file(path: Any) -> bool:
+    """True for a file directly inside one of :data:`WORKING_DIRS`, with
+    either path separator (a run saved on one system is re-scored on
+    another)."""
+    parts = re.split(r"[\\/]+", str(path).rstrip("\\/"))
+    return len(parts) >= 2 and parts[-2] in WORKING_DIRS
+
+
 def _files(files: Iterable[str], ext: str = "",
            name_contains: str = "") -> List[str]:
     out = []
     for f in files or ():
+        if is_working_file(f):
+            continue
         base = os.path.basename(f).lower()
         if ext and not base.endswith(ext.lower()):
             continue
@@ -776,10 +798,21 @@ def _xlsx_text(path: str) -> str:
 def delivered_text(files: Sequence[str] = ()) -> Tuple[str, List[str]]:
     """``(text, names)``: the text of every delivered file of a
     :data:`DELIVERED_TEXT_EXTS` kind, and the names read. A file that cannot
-    be read is skipped."""
+    be read is skipped. The run's working files (:func:`is_working_file`)
+    are not delivered and are not read."""
+    return _files_text(f for f in files or () if not is_working_file(f))
+
+
+def working_text(files: Sequence[str] = ()) -> Tuple[str, List[str]]:
+    """``(text, names)`` of the run's working files only (its page readings
+    and kept helper work): what the run saw or wrote down for itself."""
+    return _files_text(f for f in files or () if is_working_file(f))
+
+
+def _files_text(files: Iterable[str]) -> Tuple[str, List[str]]:
     texts: List[str] = []
     names: List[str] = []
-    for path in files or ():
+    for path in files:
         ext = os.path.splitext(str(path))[1].lower()
         if ext not in DELIVERED_TEXT_EXTS or not os.path.isfile(path):
             continue
@@ -1112,7 +1145,10 @@ def run_check(check: Dict[str, Any], answer: str,
     ``pages_covered`` and ``tools_called``). A check with ``"with_files":
     true`` reads the answer AND the text of the files the run delivered
     (:func:`delivered_text`): what the user receives, not only the reply's
-    pointer to it."""
+    pointer to it. Where such a check fails on that and would pass with the
+    run's working notes added (:func:`working_text`), the result says so
+    and carries ``"notes_only": True``: the run saw the thing and did not
+    deliver it. It is still a failed check."""
     kind = check.get("type")
     fn = CHECKS.get(kind)
     params = {k: v for k, v in check.items()
@@ -1122,7 +1158,7 @@ def run_check(check: Dict[str, Any], answer: str,
         return {"type": kind, "label": label, "passed": False,
                 "info": bool(check.get("info")),
                 "detail": f"unknown check type {kind!r}"}
-    text, read = answer or "", []
+    text, read, notes_only = answer or "", [], False
     try:
         if check.get("with_files"):
             extra, read = delivered_text(files)
@@ -1132,10 +1168,22 @@ def run_check(check: Dict[str, Any], answer: str,
                         activity=activity, **params)
         if read:
             detail = f"{detail} (answer + {', '.join(read)})"
+        if check.get("with_files") and not ok:
+            notes, names = working_text(files)
+            if notes and fn(text + "\n\n" + notes, files=files,
+                            tool_calls=tool_calls, activity=activity,
+                            **params)[0]:
+                notes_only = True
+                detail = (f"{detail}; found only in the run's working notes "
+                          f"({', '.join(names)}), which the user does not "
+                          f"receive")
     except Exception as exc:
         ok, detail = False, f"check error: {type(exc).__name__}: {exc}"
-    return {"type": kind, "label": label, "passed": bool(ok),
-            "info": bool(check.get("info")), "detail": detail}
+    out = {"type": kind, "label": label, "passed": bool(ok),
+           "info": bool(check.get("info")), "detail": detail}
+    if notes_only and not ok:
+        out["notes_only"] = True
+    return out
 
 
 def score(results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1148,4 +1196,5 @@ def score(results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 
 __all__ = ["normalize", "term_found", "run_check", "score", "CHECKS",
            "PROCESS_CHECKS", "delivered_text", "expand_id_ranges",
-           "DELIVERED_TEXT_EXTS"]
+           "DELIVERED_TEXT_EXTS", "WORKING_DIRS", "is_working_file",
+           "working_text"]

@@ -119,3 +119,92 @@ def test_the_terms_under_a_heading_must_still_be_together():
     assert not _together(answer, ["104.20", "104.50"], window=60)["passed"]
     answer = "## Second floor, 104.20 elsewhere\n\n" + filler + "- A-301: 104.50\n"
     assert _together(answer, ["104.20", "104.50"], window=60)["passed"]
+
+
+# -- what a run delivered, and what it only noted (Foundry brief 7, EV-41) --
+
+def _run_folder(tmp_path, log_text, reading_text, helper_text=""):
+    """A made-up run's working folder: a delivered log, the vision tools'
+    kept page readings and a helper's kept work."""
+    files = tmp_path / "files"
+    (files / ".scratch").mkdir(parents=True)
+    (files / "kept").mkdir()
+    log = files / "comment_log.md"
+    log.write_text(log_text, encoding="utf-8")
+    readings = files / ".scratch" / "page_readings.json"
+    readings.write_text('{"readings": ["' + reading_text + '"]}',
+                        encoding="utf-8")
+    out = [str(log), str(readings)]
+    if helper_text:
+        helper = files / "kept" / "helper_sheet_check.md"
+        helper.write_text(helper_text, encoding="utf-8")
+        out.append(str(helper))
+    return out
+
+
+LEVELS = {"type": "stated_together", "terms": ["212.40", "212.75"],
+          "with_files": True, "label": "level-roof"}
+
+
+def test_a_page_reading_is_not_what_the_run_delivered(tmp_path):
+    files = _run_folder(
+        tmp_path, "1 | Q-101 | Door 31 is not in the schedule.",
+        "Q-301 shows the roof at 212.40 where Q-201 shows 212.75.")
+    text, names = C.delivered_text(files)
+    assert names == ["comment_log.md"] and "212.40" not in text
+    notes, note_names = C.working_text(files)
+    assert note_names == ["page_readings.json"] and "212.40" in notes
+    got = C.run_check(LEVELS, "The comment log is attached.", files=files)
+    assert not got["passed"] and got["notes_only"] is True
+    assert "page_readings.json" in got["detail"]
+    assert "comment_log.md" in got["detail"]
+    assert C.score([got]) == {"checks_passed": 0, "checks_total": 1,
+                              "passed": False}
+
+
+def test_a_finding_in_the_delivered_log_passes_without_the_notes(tmp_path):
+    files = _run_folder(
+        tmp_path, "1 | Q-301 | Roof 212.40 here, 212.75 on Q-201.",
+        "Q-301 shows the roof at 212.40 where Q-201 shows 212.75.")
+    got = C.run_check(LEVELS, "The comment log is attached.", files=files)
+    assert got["passed"] and "notes_only" not in got
+    assert "page_readings.json" not in got["detail"]
+
+
+def test_a_finding_nowhere_is_a_plain_miss(tmp_path):
+    files = _run_folder(tmp_path, "1 | Q-101 | Door 31 is not scheduled.",
+                        "Q-301 shows the roof at 212.40.")
+    got = C.run_check(LEVELS, "The comment log is attached.", files=files)
+    assert not got["passed"] and "notes_only" not in got
+    assert "working notes" not in got["detail"]
+
+
+def test_a_helpers_kept_work_is_not_a_produced_file(tmp_path):
+    files = _run_folder(
+        tmp_path, "1 | Q-101 | Door 31 is not scheduled.", "nothing",
+        helper_text="Roof 212.40 on Q-301 against 212.75 on Q-201.")
+    got = C.run_check(LEVELS, "The comment log is attached.", files=files)
+    assert not got["passed"] and got["notes_only"] is True
+    assert "helper_sheet_check.md" in got["detail"]
+    made = C.run_check({"type": "file_produced", "ext": ".md",
+                        "name_contains": "helper"}, "", files=files)
+    assert not made["passed"]
+    made = C.run_check({"type": "file_produced", "ext": ".md"}, "",
+                       files=files)
+    assert made["passed"] and "comment_log.md" in made["detail"]
+    assert "helper_sheet_check.md" not in made["detail"].split("among")[0]
+
+
+def test_a_working_file_is_told_by_its_folder_with_either_separator():
+    assert C.is_working_file("runs/a/files/.scratch/reads.json")
+    assert C.is_working_file("runs" + chr(92) + "a" + chr(92) + "files"
+                             + chr(92) + "kept" + chr(92) + "helper.md")
+    assert not C.is_working_file("runs/a/files/comment_log.docx")
+    assert not C.is_working_file("kept/runs/a/files/comment_log.docx")
+    assert not C.is_working_file("reads.json")
+
+
+def test_the_working_folder_names_match_the_tools_that_write_them():
+    vision = pytest.importorskip("aec_agent_core.vision_tools")
+    keep = pytest.importorskip("aec_agent_core.deep.keep_work")
+    assert C.WORKING_DIRS == (vision.SCRATCH_DIR, keep.KEPT_DIR)

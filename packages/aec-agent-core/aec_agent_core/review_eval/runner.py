@@ -689,6 +689,21 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
                         f"{str(c['detail'])[:300]}")
     if recorded:
         lines += ["", "## Recorded, not scored", ""] + recorded
+    undelivered = []
+    for arm in arms:
+        for t in tasks:
+            r = runs.get(arm, {}).get(t.id) or {}
+            labels = [str(c["label"]) for c in r.get("checks") or []
+                      if c.get("notes_only")]
+            if labels:
+                undelivered.append(f"- `{arm}` {t.id}: {len(labels)} "
+                                   f"({', '.join(labels)})")
+    if undelivered:
+        lines += ["", "## In the run's working notes, not in what it "
+                  "delivered", "",
+                  "Failed checks that would have passed on the run's own "
+                  "page readings or kept helper work: the run saw the "
+                  "thing and did not deliver it.", ""] + undelivered
     lines += ["", "## Failed checks", ""]
     for arm in arms:
         for t in tasks:

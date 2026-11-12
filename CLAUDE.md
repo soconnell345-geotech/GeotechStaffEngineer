@@ -152,8 +152,10 @@ This repository builds three packages; the app also needs two more of the same p
   1.0.0, and master pins 1.0.1 for its next release. Since those releases
   (unreleased): the review suite has 52 tasks, fourteen of them coordination
   tasks on one made-up building's documents with planted problems (DR-25;
-  `review_eval/coordination_fixture.py` in `aec-document-review`; not yet
-  run on a model: EV-40, Foundry brief 7 written, OWN-140), and a switch, off by default, that lets the
+  `review_eval/coordination_fixture.py` in `aec-document-review`; run on Foundry
+  2026-11-12 (brief 7): the corrected scores are in
+  `module_work/review_eval_results/2026-11-12_foundry_brief7/`,
+  no switch goes on from it; every run read in full, `TRACE_REVIEW.md` there), and a switch, off by default, that lets the
   page's main model look at a page or region itself where it asks to
   (`GEOTECH_VISION_SHOW_ME`, DR-38; suite arm `show_me`), and the draft
   review method as package data and a suite arm (DR-06;
