@@ -335,14 +335,14 @@ def test_packs_line_only_with_packs(no_packs, pack_root, monkeypatch):
 def test_references_spec_carries_line_only_with_packs(
         no_packs, pack_root, monkeypatch):
     from funhouse_agent.deep.agent import (
-        _REFERENCES_DESCRIPTION, build_references_subagent)
+        build_references_subagent, references_description)
     plain = build_references_subagent()
-    assert plain["description"] == _REFERENCES_DESCRIPTION
+    assert plain["description"] == references_description()
     assert "This deployment adds" not in plain["system_prompt"]
     monkeypatch.setenv(_packs.PACKS_ENV, str(pack_root))
     spec = build_references_subagent()
     line = f"This deployment adds: {TITLE} (`{PID}`)."
-    assert spec["description"] == _REFERENCES_DESCRIPTION + " " + line
+    assert spec["description"] == references_description() + " " + line
     assert spec["system_prompt"] == plain["system_prompt"] + "\n\n" + line
 
 

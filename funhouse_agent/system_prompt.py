@@ -3,6 +3,9 @@
 Lists all analysis modules available through the adapter layer.
 """
 
+import re
+from typing import Optional
+
 from funhouse_agent.adapters import MODULE_REGISTRY
 
 _NUM_MODULES = len(MODULE_REGISTRY)
@@ -225,6 +228,37 @@ REFERENCE_MODULES_CLAUSE = (
 SYSTEM_PROMPT = REACT_PREFIX + _build_module_catalog()
 
 
+#: The v1 prompt's chart paragraph, and its place taken on a host that
+#: cannot reach the reference PDFs (no fetcher, no PDFs;
+#: ``reference_docs.chart_reads_available``; 2026-11-10 reach audit).
+CHART_READS_PARAGRAPH = (
+    "**Reading values off published charts:** when a question needs a numeric value \
+that lives in a chart or figure (an earth-pressure coefficient, bearing-capacity \
+factor, influence factor, correlation, etc.), do NOT estimate it from the figure \
+caption or from memory. Find the figure with `call_agent` -> `figure_db` \
+(`figure_search`), then call `read_reference_figure` to render the actual chart \
+and read the value off it. Report the result as a chart read-off estimate.")
+NO_CHART_READS_PARAGRAPH = (
+    "**Values on published charts:** no value can be read off a reference "
+    "chart here (the reference PDFs are not on this host). When a question "
+    "needs a numeric value that lives only in a chart or figure, find the "
+    "figure with `call_agent` -> `figure_db` (`figure_search`), cite it, and "
+    "say its value could not be read; do NOT estimate it from the figure "
+    "caption or from memory.")
+assert CHART_READS_PARAGRAPH in REACT_PREFIX
+
+#: The v1 vision tool text's read_reference_figure section, left out where
+#: no chart can be read.
+_READ_FIGURE_SECTION = re.compile(
+    r"### \d+\. read_reference_figure\n.*?(?=### \d+\. |\Z)", re.DOTALL)
+
+
+def without_chart_reads(tool_text: str) -> str:
+    """``tool_text`` (the v1 vision tool descriptions) without its
+    ``read_reference_figure`` section."""
+    return _READ_FIGURE_SECTION.sub("", tool_text)
+
+
 #: Rule 7 for the calculation modules, and its place taken where only
 #: reference modules are in scope (the v1 consult): a lookup is in its
 #: manual's units, many US customary (2026-11-10 review, item 2).
@@ -237,7 +271,8 @@ REFERENCE_UNITS_RULE = (
     "reference gives it; if you convert one, say so and from what.")
 
 
-def build_system_prompt(allowed_agents=None) -> str:
+def build_system_prompt(allowed_agents=None,
+                        chart_reads: Optional[bool] = None) -> str:
     """Full system prompt: ReAct instructions + module catalog.
 
     Parameters
@@ -246,8 +281,19 @@ def build_system_prompt(allowed_agents=None) -> str:
         If provided, only these modules appear in the catalog. Defaults to the
         full registry. A scope of reference modules only gets
         :data:`REFERENCE_UNITS_RULE` in place of the SI rule.
+    chart_reads : bool, optional
+        Whether a value can be read off a reference chart on this host
+        (None: ask :func:`funhouse_agent.reference_docs.chart_reads_available`);
+        where not, :data:`NO_CHART_READS_PARAGRAPH` takes the chart
+        paragraph's place.
     """
     prefix = REACT_PREFIX
+    if chart_reads is None:
+        from funhouse_agent.reference_docs import chart_reads_available
+        chart_reads = chart_reads_available()
+    if not chart_reads:
+        prefix = prefix.replace(CHART_READS_PARAGRAPH,
+                                NO_CHART_READS_PARAGRAPH)
     if allowed_agents is not None:
         from funhouse_agent.dispatch import REFERENCE_MODULES
         names = set(allowed_agents)

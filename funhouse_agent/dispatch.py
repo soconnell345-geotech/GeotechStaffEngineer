@@ -104,6 +104,43 @@ def reference_module(reference_id: str) -> Optional[str]:
             return cand
     return None
 
+
+def reference_coverage() -> dict:
+    """``{module: {"text": sections, "figures": figures}}`` for each
+    reference module, as the reference library on the path indexes them
+    (its chapter-text search and its figure catalogs), or ``{}`` when the
+    library cannot say. The references helper's description names the
+    references with none of either from here (2026-11-10 reach audit: it
+    said every reference's chapter text was searched, and UFC 3-220-04FA
+    and UFC 3-220-07 have no chapter text indexed)."""
+    cov = {m: {"text": 0, "figures": 0} for m in REFERENCE_MODULES
+           if m not in ("reference_db", "figure_db")}
+    try:
+        from geotech_references import _figures_db, _retrieval_db
+        texts = _retrieval_db.list_indexed_references()
+        figures = _figures_db.list_indexed_figures()
+    except Exception:  # noqa: BLE001 - an old or absent library says nothing
+        return {}
+    for rows, kind, count in ((texts, "text", "n_sections"),
+                              (figures, "figures", "n_figures")):
+        for row in rows or []:
+            module = reference_module(row.get("reference"))
+            if module in cov:
+                cov[module][kind] += int(row.get(count) or 0)
+    return cov
+
+
+def references_without(kind: str, coverage: Optional[dict] = None) -> list:
+    """The titles (as :func:`held_references` names them) of the held
+    references with nothing of ``kind`` ("text" or "figures") indexed, in
+    registry order; empty when the library cannot say."""
+    cov = reference_coverage() if coverage is None else coverage
+    if not cov:
+        return []
+    return [spec["title"] for name, spec in MODULE_REGISTRY.items()
+            if name in cov and spec.get("title")
+            and not cov[name].get(kind)]
+
 # Analysis (computation) modules: everything the primary agent may call directly.
 ANALYSIS_MODULES = frozenset(MODULE_REGISTRY) - REFERENCE_MODULES
 

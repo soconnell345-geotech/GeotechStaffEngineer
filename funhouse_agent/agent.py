@@ -27,7 +27,8 @@ from funhouse_agent.react_support import (
 )
 
 from funhouse_agent.dispatch import dispatch_tool, held_references
-from funhouse_agent.system_prompt import build_system_prompt
+from funhouse_agent.system_prompt import (build_system_prompt,
+                                          without_chart_reads)
 from funhouse_agent.reviewer import run_review, needs_revision
 
 from funhouse_agent.vision_tools import (
@@ -67,8 +68,12 @@ def _build_agent_system_prompt(allowed_agents=None) -> str:
     Uses the funhouse-specific module catalog (optionally scoped to
     ``allowed_agents``) plus vision tool descriptions.
     """
-    base = build_system_prompt(allowed_agents)
-    return base + "\n\n" + VISION_TOOL_DESCRIPTIONS
+    from funhouse_agent.reference_docs import chart_reads_available
+    charts = chart_reads_available()
+    base = build_system_prompt(allowed_agents, chart_reads=charts)
+    tools = (VISION_TOOL_DESCRIPTIONS if charts
+             else without_chart_reads(VISION_TOOL_DESCRIPTIONS))
+    return base + "\n\n" + tools
 
 
 def _build_native_system_prompt(allowed_agents=None) -> str:
@@ -79,7 +84,7 @@ def _build_native_system_prompt(allowed_agents=None) -> str:
     OpenAI-native ``tools`` parameter.  Keeps domain guidance, DIGGS
     workflow, and module catalog.
     """
-    base = build_system_prompt(allowed_agents)
+    base = build_system_prompt(allowed_agents, chart_reads=True)
     # Remove "## ReAct Protocol" through "## Rules" (inclusive of Rules body)
     base = re.sub(
         r"## ReAct Protocol.*?(?=## Available Modules|\Z)",

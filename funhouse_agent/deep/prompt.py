@@ -332,7 +332,9 @@ def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) ->
         concise note nudging the deepagents-native planning + scratch filesystem
         (and persistent ``/memories/`` when enabled).
     """
-    base = build_system_prompt(allowed_agents)
+    # the chart paragraph is in the sections stripped below, so the host's
+    # PDFs are not looked for
+    base = build_system_prompt(allowed_agents, chart_reads=True)
     # Remove "## ReAct Protocol" through the start of "## Available Modules"
     # (drops Protocol + Available Tools + Rules). Mirrors
     # agent._build_native_system_prompt's regex.

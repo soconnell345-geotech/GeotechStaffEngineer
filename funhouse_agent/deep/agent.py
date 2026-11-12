@@ -8,9 +8,11 @@ Wires the v1 tool surface and sub-agent design onto
   delegating to the ``references`` sub-agent via the deepagents-native
   ``task`` tool — that is the v5 replacement for v1's ``consult_references``.
 * **references sub-agent** — the reference librarian. Scoped to
-  ``REFERENCE_MODULES``, prompted with ``reviewer.CONSULTANT_ROLE``, and
-  given the ``read_reference_figure`` vision tool so it can read values off
-  design charts (DM7/GEC/UFC/micropile/FEMA).
+  ``REFERENCE_MODULES``, prompted with ``reviewer.consultant_role()``, and,
+  where this host can reach the reference PDFs
+  (``reference_docs.chart_reads_available``), given the
+  ``read_reference_figure`` vision tool so it can read values off design
+  charts.
 * **reviewer sub-agent** — checks the primary's work against the references.
   Scoped to ``REFERENCE_MODULES``, prompted with
   ``reviewer.REVIEWER_DEEP_PROMPT`` (the v1 prompt minus its text-tag protocol).
@@ -54,8 +56,10 @@ from funhouse_agent.deep.assembly import (  # noqa: F401
 )
 
 from funhouse_agent.dispatch import (ANALYSIS_MODULES, REFERENCE_MODULES,
-                                     held_references)
-from funhouse_agent.reviewer import CONSULTANT_ROLE, REVIEWER_DEEP_PROMPT
+                                     held_references, reference_coverage,
+                                     references_without)
+from funhouse_agent.reference_docs import chart_reads_available
+from funhouse_agent.reviewer import REVIEWER_DEEP_PROMPT, consultant_role
 from funhouse_agent.system_prompt import (REFERENCE_MODULES_CLAUSE,
                                           REFERENCES_HELPER_CLAUSE)
 
@@ -178,20 +182,54 @@ _REFERENCES_BUDGET = (
 # Sub-agent descriptions (what the primary uses to decide when to delegate)
 # ---------------------------------------------------------------------------
 
-#: The references named from the registry (``dispatch.held_references``),
-#: so the list cannot drift from what the helper can reach (2026-11-10
-#: review, item 3: it had named a NOAA reference that does not exist and
-#: left out Eurocode 7, AASHTO 1993, the USACE EMs and Caltrans).
-_REFERENCES_DESCRIPTION = (
-    "The geotechnical reference librarian. Delegate to it whenever you need a "
-    "code provision, a recommended method, a parameter range, a required "
-    "factor of safety, or a value read off a design chart. The references "
-    "it holds: " + "; ".join(held_references()) + ". It searches their "
-    "chapter text, tables, equations and figure charts, cites the "
-    "specific reference and section/table/figure number, and reads chart "
-    "values off the actual figures. You do NOT have the reference modules "
-    "directly — delegating to this sub-agent is the only way to reach them."
-)
+def references_description(chart_reads: Optional[bool] = None) -> str:
+    """What the main agent is told the ``references`` helper holds and does.
+
+    The references are named from the registry (``dispatch.held_references``),
+    so the list cannot drift from what the helper can reach (2026-11-10
+    review, item 3: it had named a NOAA reference that does not exist and
+    left out Eurocode 7, AASHTO 1993, the USACE EMs and Caltrans); those
+    with no chapter text or no figure catalog in the library on the path
+    are named as such, and chart reads are promised only where this host
+    can reach the reference PDFs (``chart_reads`` None: ask
+    :func:`~funhouse_agent.reference_docs.chart_reads_available`; the
+    2026-11-10 reach audit found both said of every reference and host).
+    """
+    if chart_reads is None:
+        chart_reads = chart_reads_available()
+    coverage = reference_coverage()
+    no_text = references_without("text", coverage)
+    no_figures = references_without("figures", coverage)
+    if no_text:
+        searches = ("It searches the chapter text of every one but "
+                    + " and ".join(no_text) + ", which it reaches by their "
+                    "lookups and figures, and their tables, equations and "
+                    "figure catalogs")
+    else:
+        searches = ("It searches their chapter text, tables, equations and "
+                    "figure catalogs")
+    if no_figures:
+        searches += (" (" + " and ".join(no_figures) + " have no figure "
+                     "catalog)")
+    if chart_reads:
+        wants = ("a required factor of safety, or a value read off a design "
+                 "chart")
+        charts = (", cites the specific reference and section/table/figure "
+                  "number, and reads chart values off the actual figures.")
+    else:
+        wants = "or a required factor of safety"
+        charts = (", and cites the specific reference and "
+                  "section/table/figure number. It cannot read a value off a "
+                  "chart here (the reference PDFs are not on this host): it "
+                  "finds and cites a figure, but a value printed only on a "
+                  "chart is not available.")
+    return (
+        "The geotechnical reference librarian. Delegate to it whenever you "
+        "need a code provision, a recommended method, a parameter range, "
+        + wants + ". The references it holds: "
+        + "; ".join(held_references()) + ". " + searches + charts
+        + " You do NOT have the reference modules directly — delegating to "
+        "this sub-agent is the only way to reach them.")
 
 _REVIEWER_DESCRIPTION = (
     "A senior geotechnical reviewer. Delegate to it only AFTER you have "
@@ -219,9 +257,13 @@ def build_references_subagent(
     """Build the ``references`` sub-agent spec (reference librarian).
 
     Scoped to ``REFERENCE_MODULES`` core tools plus the ``read_reference_figure``
-    vision tool (so it can read values off design charts). The vision tool
-    needs an engine to actually call the model; offline it returns a clear
-    "vision not available" error rather than raising.
+    vision tool (so it can read values off design charts) where this host
+    can reach the reference PDFs
+    (:func:`~funhouse_agent.reference_docs.chart_reads_available`); where it
+    cannot, the tool is left out and the prompt and description say no
+    chart value can be read here. The vision tool needs an engine to
+    actually call the model; offline it returns a clear "vision not
+    available" error rather than raising.
 
     Parameters
     ----------
@@ -261,22 +303,24 @@ def build_references_subagent(
         and names the two lookups (BACKLOG GM-187). Off by default: the spec
         as before.
     """
+    charts = chart_reads_available()
     tools = make_core_tools(
         allowed_agents=REFERENCE_MODULES,
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
         attachments=attachments,
-    ) + make_vision_tools(
+    ) + (make_vision_tools(
         engine=engine,
         attachments=attachments,
         save_fn=save_fn,
         include={"read_reference_figure"},
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
-    ) + [make_calculate_tool()]
+    ) if charts else []) + [make_calculate_tool()]
     if extra_tools:
         tools = list(tools) + list(extra_tools)
-    system_prompt = CONSULTANT_ROLE + _REFERENCES_CONCISION + _REFERENCES_UNITS
+    system_prompt = (consultant_role(charts) + _REFERENCES_CONCISION
+                     + _REFERENCES_UNITS)
     from funhouse_agent import review_flags as _flags
     warn = None
     if _flags.judgment_calls():
@@ -294,7 +338,7 @@ def build_references_subagent(
     # A deployment's own reference packs (REF-64): one line naming them, in
     # the prompt and the description. None set: no line, the spec as before.
     from funhouse_agent.reference_packs import packs_line
-    description = _REFERENCES_DESCRIPTION
+    description = references_description(charts)
     line = packs_line()
     if line:
         system_prompt = system_prompt + "\n\n" + line
@@ -792,6 +836,9 @@ def build_primary_tools(
         Whether the geotech page's two reference readers
         (:data:`~funhouse_agent.deep.tools.GEOTECH_VISION_TOOLS`) are added
         to the vision kit's tools (the Document Review page: no; DR-04).
+        ``read_reference_figure`` is left out where this host cannot reach
+        the reference PDFs
+        (:func:`~funhouse_agent.reference_docs.chart_reads_available`).
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
@@ -806,6 +853,11 @@ def build_primary_tools(
         attachments=attachments,
     ) if allowed_agents else []
     from funhouse_agent import review_flags as _flags
+    readers = None
+    if geotech_vision_tools:
+        readers = dict(GEOTECH_VISION_TOOLS)
+        if not chart_reads_available():
+            readers.pop("read_reference_figure", None)
     return core_tools + make_vision_tools(
         engine=engine,
         attachments=attachments,
@@ -816,7 +868,7 @@ def build_primary_tools(
         description_overrides=description_overrides,
         description_rewrites=description_rewrites,
         plot_reference_charts=plot_reference_charts,
-        added_tools=GEOTECH_VISION_TOOLS if geotech_vision_tools else None,
+        added_tools=readers,
         # behind the figure switches the main agent's own redraw can retire
         # a figure any helper drew this turn (GM-151)
         plot_data_replaces=_flags.figure_helper() or _flags.plot_code(),

@@ -69,6 +69,104 @@ def fetch(filename: str) -> Optional[str]:
     return path if path and os.path.isfile(path) else None
 
 
+#: Tests and page fingerprints pin the answer (``pin_chart_reads``): True
+#: as on a host with the PDFs, False as on one without, None to look.
+_PINNED: Optional[bool] = None
+
+
+def pin_chart_reads(value: Optional[bool]) -> None:
+    """Pin :func:`chart_reads_available` to ``value`` (None: look again)."""
+    global _PINNED
+    _PINNED = None if value is None else bool(value)
+
+
+def _catalog_pdfs() -> list:
+    """One figure catalog row for each source PDF the catalogs name:
+    ``(reference, figure_number, pdf_page_index, pdf_path)``."""
+    try:
+        from geotech_references import _figures_db
+        conn = _figures_db._ro_connect()
+    except Exception:  # noqa: BLE001
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT reference, figure_number, pdf_page_index, pdf_path "
+            "FROM figures GROUP BY reference, pdf_path").fetchall()
+        return [tuple(r) for r in rows]
+    except Exception:  # noqa: BLE001
+        return []
+    finally:
+        conn.close()
+
+
+def _resolves(reference: str, figure_number: str, pdf_page_index=None,
+              pdf_path: str = "") -> bool:
+    """Whether the library's own ``resolve_pdf`` finds this figure's PDF
+    (its docs folder, ``GEOTECH_REFERENCES_DOCS`` or a pack's folder), or
+    a fetched copy is in the cache. Never fetches."""
+    try:
+        from geotech_references import _figures_db
+        from funhouse_agent.adapters._reference_common import takes
+        kw = {}
+        if pdf_page_index not in (None, "") and takes(_figures_db.resolve_pdf,
+                                                      "pdf_page_index"):
+            kw["pdf_page_index"] = int(pdf_page_index)
+        _figures_db.resolve_pdf(reference, figure_number, **kw)
+        return True
+    except FileNotFoundError:
+        pass
+    except Exception:  # noqa: BLE001 - an unknown figure is not readable
+        return False
+    if not pdf_path:
+        try:
+            from geotech_references import _figures_db
+            pdf_path = _figures_db.figure_get(
+                reference, figure_number,
+                **({"pdf_page_index": int(pdf_page_index)}
+                   if pdf_page_index not in (None, "") else {})
+            ).get("pdf_path", "")
+        except Exception:  # noqa: BLE001
+            return False
+    return bool(pdf_path) and _cached(os.path.basename(pdf_path)) is not None
+
+
+def chart_reads_available() -> bool:
+    """Whether a value can be read off a reference chart on this host: a
+    fetcher is registered (the web app's SharePoint ``primary_references/``),
+    or the source PDF of at least one figure catalog is found where the
+    library's ``resolve_pdf`` looks (its docs folder,
+    ``GEOTECH_REFERENCES_DOCS`` or a reference pack's folder) or is in the
+    cache of fetched PDFs. Where not, no text the helpers read promises a
+    chart read and ``read_reference_figure`` is not offered (2026-11-10
+    reference review: the wheel ships no PDFs and Foundry has no fetcher,
+    so every read there failed after the prompt had promised it)."""
+    if _PINNED is not None:
+        return _PINNED
+    if _FETCHER is not None:
+        return True
+    return any(_resolves(*row) for row in _catalog_pdfs())
+
+
+def figure_readable(reference: str, figure_number: str,
+                    pdf_page_index=None) -> bool:
+    """Whether this one figure can be read on this host (see
+    :func:`chart_reads_available`): a fetcher may supply any PDF; else its
+    own PDF must be found or cached."""
+    if _PINNED is not None:
+        return _PINNED
+    if _FETCHER is not None:
+        return True
+    return _resolves(reference, figure_number, pdf_page_index)
+
+
+#: What a figure_search hit says where its chart cannot be read here.
+NO_CHART_READ = (
+    "The source PDF for this figure is not on this host, so no value can "
+    "be read off it here: this hit identifies the figure by its number, "
+    "caption and page only. Do NOT report a value off this chart from the "
+    "caption or from memory; say that the chart could not be read.")
+
+
 def missing_message(original: str, filename: str) -> str:
     """The not-found error, saying where else was tried."""
     desc = fetcher_description()
@@ -80,4 +178,5 @@ def missing_message(original: str, filename: str) -> str:
 
 
 __all__ = ["register_fetcher", "fetch", "cache_dir", "fetcher_description",
-           "missing_message", "CACHE_ENV"]
+           "missing_message", "CACHE_ENV", "chart_reads_available",
+           "figure_readable", "pin_chart_reads", "NO_CHART_READ"]

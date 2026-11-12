@@ -431,11 +431,11 @@ MODULE_REGISTRY = {
     # --- geotech-references agents (reference modules + cross-reference DB) ---
     "reference_db": {
         "adapter": "funhouse_agent.adapters.reference_db_adapter",
-        "brief": "Text search over the reference chapters (DM7, GEC, micropile); use first to scope, then reference_get",
+        "brief": "Text search over the reference chapters (list_indexed_references names them); use first to scope, then reference_get",
     },
     "figure_db": {
         "adapter": "funhouse_agent.adapters.figure_db_adapter",
-        "brief": "Find a reference chart (DM7/GEC figure catalogs) by meaning; read values off it with read_reference_figure",
+        "brief": "Find a reference chart in the figure catalogs (list_indexed_figures) by meaning; read values off it with read_reference_figure where its hit says so",
     },
     "dm7": {
         "adapter": "funhouse_agent.adapters.dm7_adapter",

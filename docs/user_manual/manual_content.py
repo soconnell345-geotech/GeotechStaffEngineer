@@ -312,7 +312,7 @@ REFERENCE_INFO = {
             "catalogs."),
     "gec4": ("FHWA GEC-4", "FHWA-IF-99-015, June 1999",
              "Ground anchors and anchored systems &mdash; chapter text and figures, with lookups for "
-             "anchor bond stress and load transfer (Tables 6-8) and corrosion protection (Table 20)."),
+             "anchor bond stress and load transfer (Tables 6 to 8) and corrosion protection (Table 20)."),
     "gec5": ("FHWA GEC-5", "FHWA NHI-16-072, April 2017",
              "Geotechnical site characterization &mdash; chapter text and figure catalog."),
     "gec6": ("FHWA GEC-6", "FHWA-SA-02-054, September 2002",
@@ -426,12 +426,14 @@ REFERENCE_INFO = {
                       "properties, fastenings and structural analysis equations (chapters 4, 5, 8 "
                       "and 9)."),
     "reference_db": ("Cross-reference text search", "&mdash;",
-                     "A full-text (SQLite FTS5) search DB over the chapter text of every reference, "
-                     "with synonym query expansion."),
+                     "A full-text (SQLite FTS5) search DB over the chapter text of the references "
+                     "that have it indexed (all but UFC 3-220-04FA and UFC 3-220-07, which are "
+                     "lookups and figures only), with synonym query expansion."),
     "figure_db": ("Figure catalog + vision read-off", "&mdash;",
-                  "A searchable catalog of every figure across the references; pairs with the "
-                  "<code>read_reference_figure</code> vision tool to render a chart and read a value "
-                  "off it."),
+                  "A searchable catalog of the figures the references' catalogs list; pairs with "
+                  "the <code>read_reference_figure</code> vision tool to render a chart and read a "
+                  "value off it where the reference PDFs reach the host (a docs folder or the "
+                  "SharePoint fetcher); without them a figure is found and cited, not read."),
 }
 
 

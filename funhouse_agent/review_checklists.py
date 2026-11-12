@@ -167,8 +167,9 @@ provisions that ARE available:
 - **`reference_db` / `figure_db`** — full-text and figure search across the
   WHOLE library (not just the seismic subset), so you can find a seismic
   provision or chart wherever it lives. When a value lives on a design chart,
-  find it with `figure_search` and read it off with `read_reference_figure` —
-  never read a chart value from memory.
+  find it with `figure_search` and read it off with `read_reference_figure`
+  where the hit says it can be read (otherwise say the chart could not be
+  read here) — never read a chart value from memory.
 
 ## Output format
 
@@ -237,7 +238,9 @@ judging it by eye. Reference lookups anchor every code/convention call.
 {anchors}
 - **`reference_db` / `figure_db`** search the WHOLE library, so a provision or
   chart in any reference is still reachable. Read chart values off the actual
-  figure (via `figure_search` + `read_reference_figure`), never from memory.
+  figure (via `figure_search` + `read_reference_figure`) where the hit says it
+  can be read, otherwise say the chart could not be read here; never from
+  memory.
 
 {_REVIEW_OUTPUT_FORMAT}
 

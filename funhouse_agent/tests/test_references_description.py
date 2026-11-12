@@ -38,13 +38,13 @@ def test_every_reference_module_has_a_title():
 
 
 def test_the_description_names_every_held_reference():
-    from funhouse_agent.deep.agent import (_REFERENCES_DESCRIPTION,
-                                           build_references_subagent)
+    from funhouse_agent.deep.agent import (build_references_subagent,
+                                           references_description)
     titles = dispatch.held_references()
     assert len(titles) == len(dispatch.REFERENCE_MODULES - SEARCH_MODULES)
     desc = build_references_subagent()["description"]
     for title in titles:
-        assert title in _REFERENCES_DESCRIPTION
+        assert title in references_description(False)
         assert title in desc
     assert "NOAA" not in desc
     for name in ("Eurocode 7", "AASHTO 1993", "EM 1110-2-2104",

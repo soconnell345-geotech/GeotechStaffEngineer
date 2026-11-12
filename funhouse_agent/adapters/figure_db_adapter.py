@@ -4,7 +4,7 @@ digitized figure catalog (``<reference>/figures_catalog.json``).
 Companion to ``reference_db_adapter`` (which searches chapter *text*). Use this
 to locate an engineering chart/figure by meaning and resolve it to a renderable
 PDF page, then read a value off it with the ``read_reference_figure`` vision
-tool.
+tool where the PDF reaches this host (each hit's ``read_value`` says which).
 
 - ``figure_search(query, reference="", chapter=0, limit=5)`` — ranked figure
   hits (number, caption, page) over captions + cross-linked chapter context.
@@ -62,9 +62,19 @@ def _build():
     by_page = takes(_figures_db.figure_get, "pdf_page_index")
 
     def _signpost(hit: dict) -> None:
-        """Every real hit gets the exact next call (see figure_search)."""
+        """Every real hit gets the exact next call (see figure_search), or,
+        where its chart cannot be read on this host (no fetcher and its
+        source PDF not here; ``reference_docs.figure_readable``), says so:
+        the 2026-11-10 reach audit found every read failing on a host with
+        no PDFs after the hit had told the model to make it."""
         if not (isinstance(hit, dict) and hit.get("figure_number")
                 and "error" not in hit):
+            return
+        from funhouse_agent import reference_docs
+        if not reference_docs.figure_readable(
+                hit.get("reference", ""), hit["figure_number"],
+                hit.get("pdf_page_index") if by_page else None):
+            hit["read_value"] = reference_docs.NO_CHART_READ
             return
         page = ""
         if by_page and hit.get("pdf_page_index") not in (None, ""):
@@ -126,10 +136,12 @@ def _build():
             ``printed_page``, ``pages`` (every sheet's ``pdf_page_index``
             and ``printed_page``) on a figure printed over several sheets,
             ``match`` (with ``lacks``) on a hit that does not hold every
-            word, and a ``read_value`` next-step instruction: a chart value
-            must be read off the rendered figure via
-            ``read_reference_figure``, never inferred from the caption or
-            memory. As the agent gets it the hits are under ``result``,
+            word, and a ``read_value`` next step: the exact
+            ``read_reference_figure`` call that reads a value off the
+            rendered figure or, where the figure's source PDF is not on this
+            host, that no value can be read off it here. A chart value is
+            never inferred from the caption or memory. As the agent gets it
+            the hits are under ``result``,
             with ``matched`` and ``words_not_found`` when some do not hold
             every word, ``resolved_reference`` when ``reference`` was not
             itself an id, and an empty result's ``note`` naming the scope
@@ -185,10 +197,11 @@ def _build():
         dict
             Full row incl. ``caption``, ``description``, ``chapter``,
             ``pdf_path``, ``pdf_page_index`` (0-based for rendering),
-            ``printed_page``, ``page_estimated``. Pass ``reference``,
-            ``figure_number`` (and ``pdf_page_index``) to
-            ``read_reference_figure`` to read a value off the chart with
-            vision. A row too long for one result (a few catalog captions
+            ``printed_page``, ``page_estimated``. Where
+            ``read_reference_figure`` is offered (the reference PDFs reach
+            this host), pass it ``reference``, ``figure_number`` (and
+            ``pdf_page_index``) to read a value off the chart with vision.
+            A row too long for one result (a few catalog captions
             run on into the page text) has its caption cut, and a ``note``
             says so.
         """

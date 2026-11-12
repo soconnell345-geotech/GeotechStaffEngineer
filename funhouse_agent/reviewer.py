@@ -274,9 +274,43 @@ def needs_revision(review_text: str) -> bool:
     return "REVIEW_STATUS: REVISE" in review_text
 
 
+#: The librarian's chart sentence where values can be read off the charts
+#: (a fetcher or the PDFs on this host; ``reference_docs``), and where not.
+_CHART_READS = (
+    "If a value lives in a design chart, find it with figure_search and "
+    "read it off with read_reference_figure (never infer chart values from "
+    "memory). ")
+_NO_CHART_READS = (
+    "No value can be read off a reference chart here (the reference PDFs "
+    "are not on this host): if a value lives only in a design chart, find "
+    "the figure with figure_search, cite it, and say its value could not "
+    "be read; never give a chart value from its caption or from memory. ")
+
+
+def consultant_role(chart_reads: Optional[bool] = None) -> str:
+    """The librarian's role (:data:`CONSULTANT_ROLE`), its chart sentence
+    as this host allows (``chart_reads`` None: ask
+    :func:`funhouse_agent.reference_docs.chart_reads_available`)."""
+    if chart_reads is None:
+        from funhouse_agent.reference_docs import chart_reads_available
+        chart_reads = chart_reads_available()
+    if chart_reads:
+        return CONSULTANT_ROLE
+    return CONSULTANT_ROLE.replace(_CHART_READS, _NO_CHART_READS)
+
+
+def consultant_framing(chart_reads: Optional[bool] = None) -> str:
+    """The v1 consult's prompt (:data:`CONSULTANT_FRAMING`) as this host
+    allows."""
+    return consultant_role(chart_reads) + "\n\nQuestion: "
+
+
 #: The librarian's role, with no question label: the deep references
 #: helper's system prompt, whose question arrives as its task (GM-230: the
-#: label had dangled there, followed by the concision rule).
+#: label had dangled there, followed by the concision rule). This is the
+#: role where chart values can be read; the builders take
+#: :func:`consultant_role`, which says otherwise on a host without the
+#: reference PDFs (2026-11-10 reach audit).
 CONSULTANT_ROLE = (
     "You are acting as a geotechnical REFERENCE LIBRARIAN. Using ONLY the "
     "reference lookup tools available to you (NAVFAC DM7, the FHWA GEC series, "
@@ -291,9 +325,9 @@ CONSULTANT_ROLE = (
     "search); a search whose hits are all marked match \"any word\" (each "
     "holds only some of your words) found nothing for the whole query. A "
     "lookup that errored, or one you did not make, is not "
-    "\"not found\": say it failed or was not made. If "
-    "a value lives in a design chart, find it with figure_search and read it off "
-    "with read_reference_figure (never infer chart values from memory). Do NOT "
+    "\"not found\": say it failed or was not made. "
+    + _CHART_READS +
+    "Do NOT "
     "run engineering analyses — that is the asker's job. When the question "
     "gives the inputs and the reference gives the equation or table, return "
     "the value the reference's own function computes, or evaluate the "
@@ -334,5 +368,5 @@ def consult_references(
         temperature=temperature,
         verbose=verbose,
     )
-    result = sub.ask(CONSULTANT_FRAMING + question)
+    result = sub.ask(consultant_framing() + question)
     return result.answer
