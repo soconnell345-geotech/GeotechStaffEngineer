@@ -3703,5 +3703,33 @@
       "BACKLOG OWN-141",
       "module_work/review_eval_results/2026-11-12_foundry_brief7/FIRST_PASS_AND_PLAN.md"
     ]
+  },
+  "OWN-142": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Should the reference PDFs be installed on Foundry with this release, so the references helper can read charts and table pages there?",
+    "why": "The installed library ships the text and catalogs but no PDFs, so on Foundry every chart or table-page read fails (REF-92, failure (a)).",
+    "background": "The installed library ships the text and catalogs but no PDFs, so on Foundry the references helper cannot read a chart or a table page (REF-92, failure (a)). Options: (1) the AI FDE installs the PDFs beside the wheel (the library reads a folder named by GEOTECH_REFERENCES_DOCS), so chart and table reads work there; (2) no PDFs there, and the helper says it has captions only. The lead recommends (1) and is building both; the answer is needed when the Foundry brief for this release is written. Asked in chat 2026-11-12.",
+    "options": [
+      {
+        "label": "Yes, install the PDFs beside the wheel",
+        "effect": "The AI FDE installs the PDFs in a folder and the library reads it (GEOTECH_REFERENCES_DOCS); chart and table reads work on Foundry."
+      },
+      {
+        "label": "No PDFs on Foundry",
+        "effect": "The helper says it has captions only; chart and table-page reads are not offered there."
+      }
+    ],
+    "recommendation": "Yes, install the PDFs beside the wheel.",
+    "if_no_answer": "The lead builds both; the Foundry brief for this release is held until you answer.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "REF-92",
+      "INF-72"
+    ],
+    "sources": [
+      "BACKLOG OWN-142"
+    ]
   }
 }
