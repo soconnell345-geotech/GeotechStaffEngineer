@@ -554,6 +554,53 @@ def register_semantic_aliases(registry: dict, info: dict) -> tuple:
 # Registry factory
 # ---------------------------------------------------------------------------
 
+#: A parameter type that names a function, which JSON cannot carry.
+_CALLABLE_TYPE = re.compile(r"\b(callable|function)\b", re.IGNORECASE)
+#: A dict parameter whose description says its keys are numbers ("keys:
+#: 9.5, 4.75, ..."): JSON object keys are strings, so the lookup is never
+#: reached with the keys it compares.
+_NUMBER_KEYS = re.compile(r"\bkeys?\b[^.;]{0,40}?:?\s*-?\d", re.IGNORECASE)
+_NUMBER_KEY_TYPE = re.compile(r"dict\[\s*(float|int)\b", re.IGNORECASE)
+
+
+def json_cannot_carry(func, pinfo: dict, pname: str = "") -> str:
+    """Why a parameter's value cannot come through a JSON tool call (a
+    function, or a mapping keyed by numbers), or ``""``. ``pinfo`` is its
+    :func:`extract_method_info` entry; ``pname`` its name in ``func``."""
+    ptype = str(pinfo.get("type") or "")
+    annotation = ""
+    if pname:
+        try:
+            ann = inspect.signature(func).parameters[pname].annotation
+            if ann is not inspect.Parameter.empty:
+                annotation = str(ann)
+        except (KeyError, TypeError, ValueError):
+            pass
+    if _CALLABLE_TYPE.search(ptype) or "Callable" in annotation:
+        return "a function"
+    if "dict" in ptype.lower() or "dict" in annotation.lower():
+        if (_NUMBER_KEY_TYPE.search(ptype) or _NUMBER_KEY_TYPE.search(annotation)
+                or _NUMBER_KEYS.search(str(pinfo.get("description") or ""))):
+            return "a mapping keyed by numbers"
+    return ""
+
+
+def carriable(func, info: dict) -> bool:
+    """Whether a tool call can reach ``func``: no REQUIRED parameter is one
+    JSON cannot carry (:func:`json_cannot_carry`). An optional one is taken
+    off ``info``'s parameters, so it is not offered (2026-11-10 reach audit:
+    AASHTO 1993's performance-period worksheet asks for two functions and
+    UFC 3-250-03's slurry-seal surface area for a mapping keyed by sieve
+    size in mm; neither could be called from a tool call)."""
+    params = info.get("parameters") or {}
+    for pname, pinfo in list(params.items()):
+        if json_cannot_carry(func, pinfo, pname):
+            if pinfo.get("required"):
+                return False
+            params.pop(pname)
+    return True
+
+
 def build_lookup_registry(lookup_modules, *, skip_callable=False):
     """Scan modules for public functions and build registries.
 
@@ -562,6 +609,8 @@ def build_lookup_registry(lookup_modules, *, skip_callable=False):
     lookup_modules : list of (module, category_str, reference_str)
     skip_callable : bool
         If True, skip functions with Callable-typed parameters (DM7).
+        Whatever it is, a function a tool call cannot reach (a required
+        parameter JSON cannot carry: :func:`carriable`) is left out.
 
     Returns
     -------
@@ -578,8 +627,11 @@ def build_lookup_registry(lookup_modules, *, skip_callable=False):
                 continue
             if skip_callable and has_callable_param(func):
                 continue
+            entry = extract_method_info(func, category, reference)
+            if not carriable(func, entry):
+                continue
             registry[name] = make_wrapper(func, reference)
-            info[name] = extract_method_info(func, category, reference)
+            info[name] = entry
     register_semantic_aliases(registry, info)
     return registry, info
 
