@@ -92,6 +92,57 @@ def test_a_tool_error_status_and_a_listed_error_count_as_errors():
     assert outcomes[1]["reason"] == "no such figure"
 
 
+def _any_word(section, lacks):
+    return {"reference": "made_up", "section_id": section,
+            "match": "any word", "lacks": lacks}
+
+
+def test_a_search_with_only_any_word_hits_is_no_match():
+    """The library fills a search no section answers with hits holding
+    some of the words, marked "any word" (2026-11-10 review, core-05):
+    such a search found nothing for the query."""
+    partial = json.dumps({"result": [_any_word("1.1", ["zzz"]),
+                                     _any_word("2.3", ["zzz", "yyy"])],
+                          "shown": 2, "matched": "any word",
+                          "words_not_found": ["zzz"]})
+    mixed = json.dumps({"result": [{"reference": "made_up",
+                                    "section_id": "4.1"},
+                                   _any_word("2.3", ["yyy"])],
+                        "shown": 2, "matched": "any word"})
+    figure_hits = json.dumps({"result": [
+        dict(_any_word("9-9", ["zzz"]), figure_number="9-9",
+             read_value="To read a numeric value ...")], "shown": 1})
+    rec = _record([
+        ("call_agent", _lookup("reference_db", "reference_search",
+                               query="made up yyy"), mixed, None),
+        ("call_agent", _lookup("reference_db", "reference_search",
+                               query="made up zzz"), partial, None),
+        ("call_agent", _lookup("figure_db", "figure_search",
+                               query="made up zzz"), figure_hits, None),
+    ])
+    outcomes = lookup_outcomes(rec)
+    assert [o["outcome"] for o in outcomes] == ["ok", "empty", "empty"]
+    block = lookup_block(rec)
+    assert "3 made; 0 errored, 2 came back empty" in block
+    assert ('- reference_db.reference_search "made up zzz" came back empty: '
+            "no hit holds every word") in block
+    assert "holds all the words asked for" in LOOKUPS_NOTE
+
+
+def test_a_refused_scope_is_an_error_with_its_message():
+    """A search scope the library refuses ("dm7", an unknown name) comes
+    back as an error naming the valid ids, never as "nothing found"."""
+    refused = json.dumps({"result": [{"error": (
+        "'dm7' names two references here: dm7_1 (made up), dm7_2 (made "
+        "up); give one")}]})
+    rec = _record([("call_agent", _lookup("figure_db", "figure_search",
+                                          query="made up", reference="dm7"),
+                    refused, None)])
+    [o] = lookup_outcomes(rec)
+    assert o["outcome"] == "errored"
+    assert "dm7_1" in o["reason"]
+
+
 def test_no_lookup_made_is_said():
     rec = _record([])
     block = lookup_block(rec)

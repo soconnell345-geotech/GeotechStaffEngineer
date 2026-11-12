@@ -71,8 +71,8 @@ LOOKUPS_NOTE = (
     "failed, and do not fill the gap from memory as if it were the "
     "reference. Where it says the consult ended on its call budget, its "
     "answer may be incomplete: say so where it matters. \"Came back "
-    "empty\" means the reference was searched and that search found "
-    "nothing.")
+    "empty\" means the reference was searched and found nothing that "
+    "holds all the words asked for.")
 
 
 def _trim(text: str, room: int) -> str:
@@ -116,6 +116,31 @@ def _empty(data) -> bool:
         if data.get("shown") == 0 or data.get("total_hits") == 0:
             return True
     return False
+
+
+#: How the library marks a search hit that holds only some of the query's
+#: words (``match``; geotech-references since the 2026-11-10 review).
+ANY_WORD = "any word"
+
+#: The reason given for a search whose every hit holds only some words.
+NO_WHOLE_MATCH = "no hit holds every word"
+
+
+def _hits(data):
+    """A search result's hits: the list under ``result`` (or ``hits``), or
+    the list itself; ``None`` for anything else."""
+    if isinstance(data, dict):
+        data = data.get("result", data.get("hits"))
+    return data if isinstance(data, list) else None
+
+
+def _no_whole_match(data) -> bool:
+    """Whether a search found nothing for the whole query: it has hits, and
+    every one is marked as holding only some of the words (the library
+    fills a search no section answers with such hits)."""
+    hits = _hits(data)
+    return bool(hits) and all(isinstance(h, dict) and h.get("match") == ANY_WORD
+                              for h in hits)
 
 
 def _unquoted(text: str) -> str:
@@ -202,6 +227,10 @@ def lookup_outcomes(rec) -> list:
             row.update(outcome="errored", reason=_reason(error, name))
         elif not row["cut"] and _empty(data):
             row.update(outcome="empty", reason="returned nothing")
+        elif not row["cut"] and _no_whole_match(data):
+            # hits holding only some of the words are no match for the
+            # query (2026-11-10 review, core-05)
+            row.update(outcome="empty", reason=NO_WHOLE_MATCH)
         out.append(row)
     for i, row in enumerate(out):
         if row["outcome"] != "ok":
@@ -240,7 +269,8 @@ def lookup_block(rec) -> str:
     lines = [line]
     for o in failed[:MAX_LISTED]:
         what = "errored" if o["outcome"] == "errored" else "came back empty"
-        reason = f": {o['reason']}" if o["outcome"] == "errored" else ""
+        reason = (f": {o['reason']}" if o["outcome"] == "errored"
+                  or o["reason"] == NO_WHOLE_MATCH else "")
         lines.append(f"- {o['name']} {what}{reason}")
     if len(failed) > MAX_LISTED:
         lines.append(f"- and {len(failed) - MAX_LISTED} more")
