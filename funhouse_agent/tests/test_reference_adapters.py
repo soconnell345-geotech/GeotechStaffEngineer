@@ -385,16 +385,24 @@ class TestGEC7:
 
 class TestUFCBackfill:
     def test_method_count(self):
+        # 7 since the library rebuilt ufc_backfill from the held UFC
+        # 3-220-04FA (review of 2026-11-10): the drainage table, the
+        # compaction-induced pressure and the filter check are not printed
+        # there and were removed; Table 5-1 and Figure 2-5 were added.
         methods = list_methods("ufc_backfill")
         total = sum(len(v) for v in methods.values())
-        assert total == 8
+        assert total == 7
 
 
 class TestUFCExpansive:
     def test_method_count(self):
+        # 14 since the library rebuilt ufc_expansive from UFC 3-220-07
+        # (review of 2026-11-10: four unprinted correlations removed, Table
+        # 4-2's four swell relations added) and built the manual's printed
+        # heave methods (Figure 4-1, Eqs. 4-1, 5-2, 5-3 to 5-5, 5-8).
         methods = list_methods("ufc_expansive")
         total = sum(len(v) for v in methods.values())
-        assert total == 9
+        assert total == 14
 
 
 class TestUFCPavement:

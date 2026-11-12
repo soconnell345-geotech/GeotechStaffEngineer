@@ -514,12 +514,12 @@ MODULE_REGISTRY = {
     },
     "ufc_backfill": {
         "adapter": "funhouse_agent.adapters.ufc_backfill_adapter",
-        "brief": "UFC 3-220-04N (compaction, filter criteria, drainage)",
-        "title": "UFC 3-220-04N (backfill for subsurface structures)",
+        "brief": "UFC 3-220-04FA: backfill density requirements, Table 5-1 compaction criteria, backfill materials, lift thickness, compaction equipment, Fig 2-5 compaction-induced lateral pressure (US)",
+        "title": "UFC 3-220-04FA (backfill for subsurface structures)",
     },
     "ufc_expansive": {
         "adapter": "funhouse_agent.adapters.ufc_expansive_adapter",
-        "brief": "UFC 3-220-07 (swell potential, heave, pier design)",
+        "brief": "UFC 3-220-07: Table 4-1 swell potential, active zone depth, heave prediction (Table 4-2 swell relations, Van Der Merwe Eq 4-1, Eqs 5-2 and 5-8), Table 6-1 foundation systems, grade-beam void (US)",
         "title": "UFC 3-220-07 (expansive soils)",
     },
     "ufc_pavement": {

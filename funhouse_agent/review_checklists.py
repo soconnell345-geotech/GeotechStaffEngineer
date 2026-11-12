@@ -392,7 +392,8 @@ FOUNDATIONS_REVIEWER_PREAMBLE = _reviewer_preamble(
 - **`gec12`** — driven piles (Nordlund, β, static methods, resistance factors).
 - **`gec13`** — ground modification (aggregate columns, PVDs, deep mixing).
 - **`micropile`** — micropile bond stress / structural capacity.
-- **`ufc_expansive`** — foundations on expansive soils (heave, pier design).""",
+- **`ufc_expansive`** — foundations on expansive soils (swell potential, active
+  zone, heave prediction, Table 6-1 foundation systems).""",
     error_examples=(
         "a bearing wedge that ignores the water table, a settlement method used "
         "on the wrong soil, a drag load added to capacity like a structural load"),

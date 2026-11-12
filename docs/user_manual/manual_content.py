@@ -347,10 +347,14 @@ REFERENCE_INFO = {
     "micropile": ("FHWA Micropile Manual", "FHWA NHI-05-039, December 2005",
                   "Micropile design and construction &mdash; bond stress, structural capacity, the "
                   "LPILE benchmark the lateral-pile module checks against."),
-    "ufc_backfill": ("UFC 3-220-04N", "UFC 3-220-04N, Backfill for Subsurface Structures (the copy held, UFC 3-220-04FA of 16 January 2004, lacks the compaction table and filter ratios the module uses)",
-                     "Backfill design &mdash; compaction, filter criteria, drainage."),
+    "ufc_backfill": ("UFC 3-220-04FA", "UFC 3-220-04FA, Backfill for Subsurface Structures, 16 January 2004",
+                     "Backfill for subsurface structures &mdash; density requirements, Table 5-1 compaction "
+                     "criteria, backfill materials, lift thickness, compaction equipment and Fig. 2-5's "
+                     "compaction-induced lateral pressures."),
     "ufc_expansive": ("UFC 3-220-07", "UFC 3-220-07, Foundations in Expansive Soils, 16 January 2004",
-                      "Expansive soils &mdash; swell potential, heave, pier design."),
+                      "Expansive soils &mdash; swell potential, the active zone, heave prediction (Table "
+                      "4-2's swell relations, Van Der Merwe's Eq. 4-1, Eqs. 5-2 and 5-8), Table 6-1's "
+                      "foundation systems and the grade-beam void."),
     "ufc_pavement": ("UFC 3-250-01",
                      "UFC 3-250-01, Pavement Design for Roads and Parking Areas, 14 November 2016",
                      "Road and parking-area pavement design (not airfields) &mdash; CBR flexible design "
