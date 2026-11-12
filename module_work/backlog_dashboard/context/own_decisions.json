@@ -3674,5 +3674,29 @@
       "module_work/refs_review_2026-11-10/findings/RULINGS.md",
       "module_work/refs_review_2026-11-10/findings/dm71_fixes.md"
     ]
+  },
+  "OWN-141": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Should the shared core and Document Review be released as one unit, with one version number?",
+    "why": "You asked for the lead's own view of the packages. One feature now crosses three packages, and the fixes of 2026-11-10 took three releases in a fixed order. Each extra release is a chance for a pin to be wrong on the testers' host.",
+    "background": "The lead's view: the two layers are right. planlens reads documents and calls no model; the shared core (aec-agent-core) runs a model. Neither does the other's job, so planlens stays its own library; its worth does not depend on which model is used. The cost is in the release trains. The core and Document Review are in one repository and already pinned exactly to each other, so giving them one version number and one tag that publishes both moves no code and removes one release from every train. After it come two items already on the backlog: GSE lets go of its frozen copy of the Document Review page (INF-35), and planlens' tools are bound once so a new one needs no hand-written wrapper in the core (INF-71). Not proposed: merging planlens into the core, or splitting further.",
+    "options": [
+      {
+        "label": "Yes, one unit",
+        "effect": "From the next release the core and Document Review share a version and a tag. GSE pins that one version. Nothing changes for testers."
+      },
+      {
+        "label": "Leave as is",
+        "effect": "Three release trains stay (planlens, the core, Document Review), each released in order as now."
+      }
+    ],
+    "recommendation": "Yes, one unit.",
+    "if_no_answer": "Nothing changes; the next release goes out in three steps as the last one did.",
+    "unblocks": "The order of INF-35 and INF-71.",
+    "sources": [
+      "BACKLOG OWN-141",
+      "module_work/review_eval_results/2026-11-12_foundry_brief7/FIRST_PASS_AND_PLAN.md"
+    ]
   }
 }
