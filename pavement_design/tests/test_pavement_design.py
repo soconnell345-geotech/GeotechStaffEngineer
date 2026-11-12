@@ -95,6 +95,24 @@ class TestFlexibleDesign:
         assert res.layers[1]["a"] == pytest.approx(0.14, abs=0.005)
         assert res.layers[2]["a"] == pytest.approx(0.11, abs=0.005)
 
+    def test_asphalt_modulus_below_figure_2_5_refused_plainly(self):
+        """Figure 2.5's curve starts at about 106,000 psi (a1 0.20): a softer
+        asphalt gets the module's own message naming the chart's range and
+        what to do, not a bare library error."""
+        with pytest.raises(ValueError) as exc:
+            design_flexible_pavement(
+                layers=[PavementLayer("asphalt", modulus_psi=90000)],
+                **FLEX_EXAMPLE)
+        msg = str(exc.value)
+        assert "Figure 2.5" in msg
+        assert "106,000" in msg and "500,000" in msg
+        assert "'a' directly" in msg
+        # a direct coefficient for the same course designs as usual
+        res = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", modulus_psi=90000, a=0.18)],
+            **FLEX_EXAMPLE)
+        assert res.layers[0]["a"] == pytest.approx(0.18)
+
     def test_seasonal_mr_guide_example(self):
         res = design_flexible_pavement(
             w18=5e6, reliability_pct=95, so=0.35, delta_psi=1.9,

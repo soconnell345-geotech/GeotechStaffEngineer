@@ -126,7 +126,18 @@ def _resolve_a(layer: PavementLayer, references, warnings):
                 "asphalt layer needs modulus_psi (EAC at 68 F) or a direct "
                 "'a' coefficient."
             )
-        r = _tb.layer_coefficient_a1_asphalt(layer.modulus_psi)
+        try:
+            r = _tb.layer_coefficient_a1_asphalt(layer.modulus_psi)
+        except ValueError as exc:
+            # the library refuses an EAC below where Figure 2.5's curve
+            # begins (about 106,000 psi, a1 0.20; 2026-11-10 review)
+            raise ValueError(
+                f"asphalt modulus_psi {layer.modulus_psi} is outside AASHTO "
+                "1993 Figure 2.5 (printed II-18), which draws a1 for EAC at "
+                "68 F from about 106,000 psi (a1 0.20) to 500,000 psi; give "
+                "the layer coefficient 'a' directly for this course. "
+                f"(Figure 2.5 lookup: {exc})"
+            ) from exc
         add_ref(references, r["reference"])
         if "note" in r:
             warnings.append(f"a1 (asphalt): {r['note']}")
