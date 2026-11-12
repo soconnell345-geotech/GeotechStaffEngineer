@@ -39,14 +39,17 @@ def test_no_unit_is_assumed_and_si_manuals_are_not_called_customary():
     from funhouse_agent.deep.agent import build_references_subagent
     from funhouse_agent.system_prompt import REFERENCE_UNITS_RULE
     texts = [_call_agent_tool(REFERENCE_MODULES).description,
-             _parameters_description(_call_agent_tool(REFERENCE_MODULES)),
              build_references_subagent()["system_prompt"],
              REFERENCE_UNITS_RULE]
     for text in texts:
         assert "not SI" not in text
         assert "do not assume one" in text
-    for text in (texts[0], texts[2], REFERENCE_UNITS_RULE):
         assert "SI in others" in text
+    # the inputs are the caller's own: it says which unit it passed each
+    # value in, rather than being told not to assume one (review follow-up)
+    params = _parameters_description(_call_agent_tool(REFERENCE_MODULES))
+    assert "not SI" not in params and "do not assume one" not in params
+    assert "which unit each value you passed is in" in params
 
 
 def test_the_calculation_scopes_keep_si():

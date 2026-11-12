@@ -379,8 +379,9 @@ class _ReferenceCallAgentArgs(_CallAgentArgs):
             "Nested dict of the method's inputs, in the units of the manual "
             "the lookup comes from (describe_method gives an input's unit "
             "where the method's description states one; where none is "
-            'stated, do not assume one). Example: {"phi": 32}. Use '
-            "describe_method first to see the required keys."
+            "stated, say in your answer which unit each value you passed "
+            'is in). Example: {"phi": 32}. Use describe_method first to see '
+            "the required keys."
         ),
     )
 
@@ -408,7 +409,8 @@ REFERENCE_CALL_AGENT_DESCRIPTION = (
     "units of the manual it comes from: US customary in many (ft, psf, pcf, "
     "ksf, tsf), SI in others. describe_method gives an input's unit and "
     "what the method returns where the method's description states them; "
-    "where no unit is stated, say so and do not assume one. A bare-number "
+    "where a result's unit is not stated, say so and do not assume one. "
+    "A bare-number "
     "result says what it is. 'defaults_used' lists the declared defaults "
     "the lookup used."
 )

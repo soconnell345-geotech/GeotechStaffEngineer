@@ -124,6 +124,23 @@ available: {_REFERENCE_LIST}.
 
 REVIEWER_SYSTEM_PROMPT = REVIEWER_SYSTEM_PROMPT + _TEXT_PROTOCOL + _REVIEW_RULES
 
+#: The v1 reviewer's budget, stated after its rules with ``run_review``'s
+#: own ``max_rounds`` (as the deep reviewer is told its model calls): one
+#: tool call a response, and a review not given by the last response is
+#: never given ("[Review incomplete ...]").
+_V1_BUDGET = (
+    "\nYou have {n} responses for this review, each with at most one tool "
+    "call; a response with no tool call is your review. Give it by "
+    "response {n}, so make at most {lookups} lookups.\n"
+)
+
+
+def v1_reviewer_prompt(max_rounds: int) -> str:
+    """The v1 reviewer's system prompt with its budget for ``max_rounds``
+    responses."""
+    n = max(1, int(max_rounds))
+    return REVIEWER_SYSTEM_PROMPT + _V1_BUDGET.format(n=n, lookups=n - 1)
+
 #: The same reviewer for the deep agent (native tool calling).
 REVIEWER_DEEP_PROMPT = (REVIEWER_SYSTEM_PROMPT.split("## ReAct Protocol")[0]
                         + _NATIVE_TOOLS + _REVIEW_RULES)
@@ -205,10 +222,11 @@ def run_review(
     history.add_user(review_prompt)
 
     max_result_chars = 4000
+    system = v1_reviewer_prompt(max_rounds)
 
     for rnd in range(1, max_rounds + 1):
         prompt = history.format_prompt()
-        response = engine.chat(prompt, REVIEWER_SYSTEM_PROMPT, temperature)
+        response = engine.chat(prompt, system, temperature)
 
         if response is None:
             history.add_assistant("")
