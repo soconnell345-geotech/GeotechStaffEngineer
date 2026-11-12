@@ -81,7 +81,7 @@
       "other_arguments": [],
       "subagents": [
        {
-        "description": "8465702830af8d01",
+        "description": "10aca954a04ef433",
         "middleware": [
          {
           "class": "ModelCallBudgetMiddleware",
@@ -132,7 +132,7 @@
          }
         ],
         "name": "references",
-        "system_prompt": "8a22168905c2205b",
+        "system_prompt": "51ab4153e257e462",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -164,8 +164,8 @@
           "description": "4bf41a9b372e5f12"
          },
          "read_reference_figure": {
-          "args": "0072a67ff0ecbd0f",
-          "description": "9cd9290f04110375"
+          "args": "829597cd62930f11",
+          "description": "669146ab88b9ce26"
          },
          "record_feedback": {
           "args": "42af7e94a16912e9",
@@ -519,8 +519,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "c98b626e21edcdcc",
-      "system_prompt_chars": 26953,
+      "system_prompt": "c822f342f773433c",
+      "system_prompt_chars": 26976,
       "tool_order": [
        "list_agents",
        "list_methods",
@@ -598,8 +598,8 @@
         "description": "cdffb03f6cc25eea"
        },
        "read_reference_figure": {
-        "args": "0072a67ff0ecbd0f",
-        "description": "9cd9290f04110375"
+        "args": "829597cd62930f11",
+        "description": "669146ab88b9ce26"
        },
        "read_text_file": {
         "args": "38bb764f5dde0d41",
