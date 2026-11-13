@@ -430,6 +430,20 @@ _CALC_FRAMING = (
     "truly is not there, name what you looked for and where."
 )
 
+#: The published worked examples, said to the calc helper (GM-328). It could
+#: always reach the ``worked_examples`` module; only the primary's prompt
+#: named it (``prompt.py``, "Consult a worked example ..."), and deepagents
+#: does not pass that prompt down. Said only where the module is in the
+#: helper's scope.
+_CALC_WORKED_EXAMPLES = (
+    "\nWORKED EXAMPLES: before a calc package or report that is not "
+    "trivial, find the nearest worked example (call_agent('worked_examples', "
+    "'find_worked_examples', {topic}), then get_worked_example): a validated "
+    "calculation from a real published design report. Follow its structure "
+    "and its `report_notes` (what a professional calc report for that "
+    "problem presents); do NOT copy its numbers: use the delegation's "
+    "inputs.")
+
 #: Added to the calc helper's prompt when ``plot_code`` is offered.
 _CALC_PLOT_CODE = (
     "\nA FIGURE NONE OF THESE DRAW (a wall with its pressure diagrams, "
@@ -621,6 +635,8 @@ def build_calc_subagent(
         reference_result_chars=reference_result_chars,
     ) + [make_calculate_tool()]
     system_prompt = _CALC_PREAMBLE + _CALC_FRAMING
+    if "worked_examples" in allowed:        # GM-328
+        system_prompt = system_prompt + _CALC_WORKED_EXAMPLES
     if max_model_calls:     # the budget, stated (GM-101; unswitched)
         system_prompt = system_prompt + _CALC_BUDGET.format(
             n=int(max_model_calls))

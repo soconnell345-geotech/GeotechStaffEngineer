@@ -241,6 +241,7 @@ def test_switch_off_leaves_every_prompt_as_it_was(monkeypatch, calc,
         # GM-101's budget line is unswitched (it states the budget).
         assert _spec(captured, "calc")["system_prompt"] == (
             agent_mod._CALC_PREAMBLE + agent_mod._CALC_FRAMING
+            + agent_mod._CALC_WORKED_EXAMPLES
             + agent_mod._CALC_BUDGET.format(
                 n=agent_mod.DEFAULT_CALC_MAX_MODEL_CALLS))
     for s in captured["subagents"]:

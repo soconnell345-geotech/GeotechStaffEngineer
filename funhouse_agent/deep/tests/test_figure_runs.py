@@ -109,6 +109,7 @@ def test_switches_off_leave_the_default_agent_unchanged(monkeypatch):
             # GM-101's budget line is unswitched (it states the budget).
             assert spec["system_prompt"] == (
                 agent_mod._CALC_PREAMBLE + agent_mod._CALC_FRAMING
+                + agent_mod._CALC_WORKED_EXAMPLES
                 + agent_mod._CALC_BUDGET.format(
                     n=agent_mod.DEFAULT_CALC_MAX_MODEL_CALLS))
 

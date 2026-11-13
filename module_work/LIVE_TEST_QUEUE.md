@@ -524,6 +524,42 @@ two RESULTS.md (step 4). Every run is read in full.
 
 **Send:** the connection test's output, the replies to steps 1-4, and the log file.
 
+## Check 14 — Does the calc helper look up a worked example before a package? (BACKLOG GM-328; the release after 5.35.0; geotech page; an estimate of 0.3–1 million input tokens)
+
+**Why.** The calc helper builds every calc package and could always reach
+the 28 published `worked_examples`; only the main agent's prompt named
+them, and that prompt is not passed down. GM-328 adds one instruction to
+the helper: before a calc package or report that is not trivial, find the
+nearest worked example and follow its structure and its `report_notes`,
+never its numbers. It is pinned offline; only the real model shows whether
+the helper does it, and what it costs of its 16 calls.
+
+**How.** On the geotech page, three questions, each in a fresh
+conversation, with made-up inputs of your own (not an example's):
+
+1. an MSE wall's external stability by LRFD, as a calc package (the
+   nearest examples are WE-MSE-1 and WE-MSE-2);
+2. a two-level anchored soldier-beam wall by the FHWA apparent pressure
+   method, as a calc package (WE-SOE-2);
+3. a single footing's bearing capacity with nothing unusual, as a calc
+   package (a trivial one: a lookup is not needed here).
+
+**Read**, in each conversation's `activity.jsonl`, the calc helper's calls:
+- whether it calls `find_worked_examples` (and `get_worked_example`)
+  before the package call in questions 1 and 2, and what it does in 3;
+- that no number of the example reaches the package: every input is the
+  question's (set the package's Given Inputs beside your question);
+- whether the package follows the example's `report_notes` (for the MSE
+  wall: the unfactored loads tabulated, each load combination, the
+  capacity:demand ratios);
+- the helper's call count against its budget of 16, and whether the
+  package was still checked (`html_to_pdf`'s `page_contents`,
+  `read_pdf_text`) with calls to spare. If the lookup costs the check,
+  say so: the instruction would then go to the delegating agent's brief
+  instead.
+
+**Send:** the three conversation folders. Every run is read in full.
+
 ## Done
 
 - **2026-10-14, check 9 on Claude Sonnet (about 18 calls, $0.11 of API
