@@ -6,6 +6,69 @@ AUDIT.md`) §2.1, §2.2 X1 and X2, §6 T1 (c) and T2. No print reference is
 involved: both are dispatch-layer changes, and no formula, default or
 coefficient changes.
 
+## Review of 2026-11-12: what each finding became
+
+Branch `fix/gm316-review` (from 52b0053), one commit per finding.
+
+| # | What | Became |
+|---|---|---|
+| A1 | `catch_warnings` blocks could leave "ignore everything" in front for good | Fixed: a `warnings.warn` wrapper records the packages' own warnings before any filter; our two analysis blocks removed (section "Review fix A1") |
+| B2 | `any_case` stripped where the handler did not (" strip " ran as a square) | Fixed: each list names its handler's fold (section "Review fix B2") |
+| B3 | aliases advertised as values ("grid" for a geogrid) | Fixed: `value_aliases`, shown in words; three misleading ones read but hidden (section "Review fix B3") |
+| B4 | package said its warnings were printed; Python ones were not | Fixed: printed as "Warnings Raised by the Calculation" (section "Review fix B4") |
+| B5 | a second pass over the 251 probes, 209 s, could not fail | Fixed: the check rides on the defaults guard's run |
+| C6 | a warning raised outside a call silenced the same one in later calls | Fixed by A1 for the packages' own warnings (test); numpy's still so (noted) |
+| C7 | thread note partly wrong | Corrected (Noted, not fixed, piece 1) |
+| C8 | O(n^2) bucket; 19 us per repeat | The bucket keeps a set (A1); the per-repeat cost is noted |
+| C9 | numpy's empty-slice warnings dropped (numpy frame) | Noted, not fixed: counting them risks noise from rejected trial surfaces |
+| C10 | texts kept raw (a path, scipy's six lines) | Noted, not fixed: the working folder is hidden as before |
+| C11 | recorder sees one per location; ResourceWarning source | Recorder now sees every occurrence (A1, test); docstring says the rest |
+| C12 | registry race | Only the numpy path pops the registry now; noted |
+| C13 | hook installed lazily | Installed at import of `method_call` |
+| C14 | raw `any_case` / `refused_values` and a backlog ID in describe_method | Fixed in B3: one `values_note` in words; "GM-191" taken out of the soe reasons |
+| C15 | "AUTO", "LINEAR" now refused | Acceptable (did-you-mean given) |
+| C16 | M-O case with no solution warns twice | Left: two lines for one condition, the module's with the detail |
+| C17 | test gaps | Outside-call raise, `logging.captureWarnings` round trip added (A1); liquefaction test now calls |
+| C18 | follow-ups without backlog IDs | Listed below for the lead to file |
+| C19 | 3.14 skip counts | Nothing to do |
+| C20 | package spec merge took the first tool's | Fixed in B3: aliases and refusals merged; a test checks `any_case` agrees |
+| C21 | in-window drop while a block is open | Fixed by A1 |
+
+### Follow-ups for the backlog (review C18)
+
+Each says whether doing it would change a value a user sees (a saved
+report's output).
+
+1. axial_pile: a pile tip below the soil profile runs on the profile
+   extended (now warned). Refuse or state it: **changes a value**.
+2. drilled_shaft: the same for a shaft longer than the profile: **changes a
+   value**.
+3. lateral_pile: soil layers ending above the pile toe give no resistance
+   below (now warned): **changes a value**.
+4. settlement `consolidation_settlement`: Cr greater than Cc runs with a
+   warning; likely a swapped input. Refusing it **changes a value**.
+5. Owner's call (B3): MSE `reinforcement_type` "grid" / "strip" and
+   liquefaction `method` "simplified" are still read (hidden). Refusing them
+   **changes a result** for calls that use them today.
+6. Parameters read on one path only (`pct_saturation_time`, lateral pile
+   `axis`, `hammer_type`, ...): off that path a listed value is ignored.
+   No value changes.
+7. fem2d `n_gp=3.9` runs as 3. No value changes for a whole number.
+8. `compute_trend` `log_linear` fits a power law; its description (wave
+   2e). Wording only, no value changes.
+9. Threads: a worker's warning after the call returns, or a plain thread's,
+   stays on stderr (C7). No value changes.
+10. numpy's floating-point warnings still depend on the filters and the
+    registry (C6, C12). No value changes.
+11. numpy's empty-slice warnings are dropped (C9). No value changes.
+12. A warning raised while a package itself is drawn is in the result, not
+    the package (B4). No value changes.
+13. Cost: about 19 us per repeated warning inside a call (C8). No value
+    changes.
+
+Only 1 to 5 change a saved report's output; by the owner's rule 6 to 13
+need no backlog item unless the lead decides otherwise.
+
 ## Piece 1, GM-316: a Python warning raised inside a method reaches the agent
 
 ### What changed
@@ -468,14 +531,18 @@ full (counts under Tests).
 `docs/user_manual/manual.html`: only the "allowed:" spans of the parameter
 rows whose list changed were edited (35 rows), by matching each row's
 parameter name and old list within its method's section. `any_case` is not
-printed by the manual builder; no rebuild was run.
+printed by the manual builder; no rebuild was run. Review fix B3 took the
+aliases back out of 33 of those rows and added an "also read as:" span
+(as `build_manual.py` now prints it), by script, no rebuild.
 
 ### Tests changed because a message or a list changed
 
 - `test_adapter_ergonomics.py`: the retaining-wall `theory` and
-  `reinforcement_type` lists now carry the adapter's other spellings.
-- `test_liquefaction_router.py`: `method`'s list is the two ids then the
-  spellings `_METHOD_NORMALIZE` reads.
+  `reinforcement_type` lists are as on master; since B3 the tests also
+  check their `value_aliases` (and the hidden "grid", "strip").
+- `test_liquefaction_router.py`: `method`'s list is the two ids, as on
+  master; since B3 and C17 the test passes spellings through the check and
+  `_normalize_method`.
 - `test_calc_package_tool_parity.py` (soe_package `wall_type="anchored"`),
   `test_mse_level_depths_adapter.py` (`sigma_H_average="mean"`),
   `test_drawing_ir_adapter.py` (`query="frobnicate"`): each was already
@@ -508,6 +575,19 @@ printed by the manual builder; no rebuild was run.
 - Page fingerprints unchanged: no tool description or prompt changed
   (`allowed_values`, `any_case` and `refused_values` live in METHOD_INFO,
   read by describe_method).
+- Review round (branch `fix/gm316-review`), each file alone, exit 0:
+  core `test_call_warnings.py` 24 passed; `test_allowed_values.py` 286;
+  `test_probe_warnings.py` 8 (4.8 s, was 209 s); `test_defaults_used.py`
+  per-probe guard (`-k the_defaults_a_run_lists`, not slow) 250;
+  `test_adapter_ergonomics.py` 170; `test_liquefaction_router.py` 28;
+  `test_calc_package_tool_parity.py` 181; `test_calc_package_adapter.py`
+  84; `calc_package/tests/test_assumed_inputs.py` 5;
+  `soe/tests/test_anchor_gec4.py` 20; lateral_pile `test_no_solution.py` 8
+  and `test_stickup_and_banded.py` 12; drilled_shaft
+  `test_gec10_2018_beta.py` 13 and `test_drilled_shaft.py` 74;
+  `test_page_fingerprints.py` 13 (fingerprints unchanged, none
+  re-recorded);
+  `test_public_text.py` 5. Full suites not run here (they run on GitHub).
 
 ## Release note
 
@@ -528,9 +608,11 @@ did-you-mean, where before many such values silently ran as something else
 file, the Nordlund/alpha method instead of beta, Rankine instead of
 Coulomb, a zero-deflection pile head, a local FOS with no strength
 reduction). Calls with a listed value are unchanged; spellings the code
-already accepted (case where it ignores case, "logspiral", "2to1", the calc
-packages' older selector names, the liquefaction method aliases) are now
-listed and still accepted. This is an aec-agent-core change (method_call.py,
+already accepted ("logspiral", "2to1", the calc packages' older selector
+names, the liquefaction method aliases) are still accepted and shown as
+"also read as", and case or surrounding spaces are ignored exactly where
+the code ignores them. A calc package now prints the warnings its
+calculation raised, under "Warnings Raised by the Calculation". This is an aec-agent-core change (method_call.py,
 call_warnings.py, hooks.py, plot_tool.py), so it ships with a core release.
 
 ## Noted, not fixed (piece 2)
