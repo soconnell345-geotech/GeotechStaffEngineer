@@ -32,12 +32,19 @@ OWN-131 (the print followed although it is the less conservative reading).
 ### OWN-101: the slope plan (GM-140)
 
 **Call:** agree the ten steps of `module_work/slope_integral_review/ACCOUNT.md`
-section 12, in the order written. Build first the steps that change a
-factor of safety: 1 (one material per point), 2 (a method's own solution or
-no number), 3 (the printed acceptability checks), 4 (tension cracks and
-reverse curvature), 5 (water and loads), 6 (one method across the search)
-and 9 (rapid drawdown as EM 1110-2-1902 App. G prints it). Then 8
-(supports), 7 (search coverage) and 10 (reporting).
+section 12. Priority goes to the steps that change a factor of safety:
+1 (one material per point), 2 (a method's own solution or no number),
+3 (the printed acceptability checks), 4 (tension cracks and reverse
+curvature), 5 (water and loads), 6 (one method across the search) and
+9 (rapid drawdown as EM 1110-2-1902 App. G prints it). Step 5 is split
+into 5a (the pore-pressure rules, this week) and 5b (new load types: line,
+inclined and varying loads, the vertical seismic coefficient; after).
+Step 10 (reporting) is small and is built alongside, its method-per-family
+part after step 6. Steps 8 (supports) and 7 (search coverage) follow.
+
+**Build dependency:** step 1 first and alone; then 2, 3, 6 and 7 in series
+(all edit the search and the surface screening); 4, 5a, 8, 9 and 10 in
+parallel once step 1 is merged.
 
 **Basis:** step 1 is a weight error on every model with a sloping layer
 boundary (one slice 39.1 kN/m by hand against the module's 116.0); steps 2
