@@ -40,7 +40,7 @@ The transformation itself is plain arithmetic. A spring ka along the unit vector
 - `pile_group/calc_steps.py`: the 6-DOF step says how a pile is modelled; the simple method's section says the cap displacements are not calculated in place of a table of zeros.
 - `funhouse_agent/adapters/pile_group.py`: the new tool; the `piles[]` refusal for the simple method; the briefs, the `piles` descriptions and the `returns` of both group tools (the 6-DOF `returns` named a key `cap_displacement` that does not exist).
 - `funhouse_agent/tests/method_probes.json`: two probes for the new tool; the simple probe's battered pile taken out (it is now refused).
-- Tests: `pile_group/tests/test_pile_group.py` (9 new), `funhouse_agent/tests/test_gm319_pile_group.py` (15 new), one case of `test_nested_keys.py` moved to the 6-DOF tool.
+- Tests: `pile_group/tests/test_pile_group.py` (9 new), `funhouse_agent/tests/test_gm319_pile_group.py` (14 new), one case of `test_nested_keys.py` moved to the 6-DOF tool.
 - `docs/user_manual/manual_content.py` and the matching rows of `manual.html` (rendered with the builder's own table functions; no rebuild). `pile_group/DESIGN.md`.
 
 No fingerprint re-record was needed: `webapp/tests/test_page_fingerprints.py` passes unchanged.
@@ -81,13 +81,58 @@ Venv per COMMON_MODULES (Python 3.12). Judged by pytest's exit code.
 
 Two tests fail on master 2feea3d as well, in this environment, and are not touched by this branch: `test_defaults_used.py::test_every_default_a_run_lists_changes_its_result[profile_figure|plot_data]` (logx/logy) and `test_calc_package_figure_conventions.py::test_large_pile_group_leaves_the_forces_to_the_table` (a figure-layout note; it fails the same way with this branch's changes stashed).
 
+## Review round (2026-11-13)
+
+Independent review of 7ddbd73 (verdict: merge after fixes), fixed on `fix/gm319-review` from 9e5f439 (7ddbd73 with that morning's master merged in). The lead's rulings are taken as given.
+
+| # | Grade | Finding | What it became |
+|---|---|---|---|
+| 1 | A (older than the branch) | `pile_group_simple` skipped Mx when every pile is on y = 0 (one row) and My on one column, without a word; the 6-DOF refusal of the same layout said "lateral force or torsion" and pointed to the simple method | **Fixed.** `analyze_vertical_group_simple` refuses a non-zero Mx when SUM(y²) = 0 and My when SUM(x²) = 0: "piles pinned to the cap on one line cannot carry a moment about that line; give piles off that line, or leave Mx out if the cap is restrained against that rotation another way". A zero moment runs. `analyze_group_6dof` says load by load what the group cannot carry and why (Vx/Vy: no stiffness along that axis; Mz: no horizontal stiffness; Mx/My: the one-line reason) and no longer points to the simple method. Both tools' Mx/My descriptions say so. Tests both directions, zero moment, moment across the row, both tools. |
+| 2 | B | The settlement tool did not say Eq. 6-54 is for coarse-grained soil; it cited GEC-12 Sec. 7.3.5.3 (cohesive soils, consolidation) for it; nu up to 0.49 passed silently | **Fixed.** Brief, `constrained_modulus_kPa`, `youngs_modulus_kPa` and `poissons_ratio` say "coarse-grained (drained) soil" (UFC 3-220-20 Eq. 6-54, pp. 448-449) and send a group in cohesive soil to consolidation, GEC-12 Sec. 7.3.5.3, with the settlement module's `consolidation_settlement` (it takes each layer's `delta_sigmas`, so the footing's Q/[(B + z)(Z + z)] can be given). Sec. 7.3.5.3 is cited only as that method; the footing cites GEC-12 Fig. 7-44 and Eq. 7-55, the piles' compression Sec. 7.3.5.1, Eq. 7-48. No new refusal below 0.5. With Es and nu the modulus choice states M and M/Es. Above nu = 0.40 a `warnings` entry (printed basis below). Library docstring, DESIGN.md and the manual narrative follow. |
+| 3 | C | `num_sublayers` 2.7 ran as 2 | **Fixed.** Refused unless a whole number of 1 or more, as `n_rows`/`n_cols`. |
+| 4 | C | Spacing below the pile diameter accepted | **Fixed.** `group_settlement_equivalent_raft` refuses s < b when the group has more than one pile in a direction (the tool reaches it). |
+| 5 | C | sin²bx + sin²by > 1 clamped lz to 0 | **Fixed.** `GroupPile.direction_cosines` refuses sin²bx + sin²by ≥ 1, naming the pile and the sum; the 6-DOF `piles` description says the limit. |
+| 6 | C | Simple note "…and none was given" | **Fixed.** "…use no pile stiffness (the pile_group_simple tool takes none). The 6-DOF analysis (pile_group_6dof) gives the cap's displacements…" |
+| 7 | C | Alias `soil_modulus_kPa` read a "soil modulus" as M; `D` for `pile_length` | **Fixed.** Both dropped (nothing else used them; grep of tests, probes, manual, worked examples). The library keyword `soil_modulus_kPa` of `group_settlement_equivalent_raft` is unchanged. |
+| 8 | C | CHECK said 15 new tests in `test_gm319_pile_group.py` | **Fixed**: 14 (above). |
+| 9 | C | No opposed-batter symmetry test | **Added** (`TestOpposedBatter`): battered piles at x = ±1.2 m, 12° outward, axial only; vertical piles at (0, ±0.9) m with kl = 4,000 kN/m. Vz alone: dx = ry = 0, equal pairs. Vx = 120 kN alone: dx = 120/(2 × 4,000) = 15.0 mm, ry = −dx/h with h = 1.2/tan 12° = 5.65 m, battered axial forces 0; with Vz added they equal the Vz-alone forces. |
+| 10 | C | Simple tool refuses an equal per-pile stiffness | Nothing (the review says none is needed). |
+
+**Before and after** (made-up values; "before" is 9e5f439):
+
+| Call | Before | After |
+|---|---|---|
+| `pile_group_simple` n_rows 1, n_cols 3, s 1.5, Vz 900, Mx 300 | 300 / 300 / 300 kN, no word | refused: "Mx = 300 kN-m cannot be carried: every pile is on y = 0, one line along the x axis…" |
+| the same with n_rows 3, n_cols 1, My 300 | 300 / 300 / 300 kN, no word | refused, the same for My on x = 0 |
+| the same with Mx 0 | 300 / 300 / 300 kN | 300 / 300 / 300 kN |
+| `pile_group_6dof` n_rows 1, n_cols 3, ka 2e5, Vz 900, Mx 300 | refused: "…cannot carry lateral force or torsion… or use analyze_vertical_group_simple" | refused: "…cannot carry the applied Mx. Mx: every pile is on y = 0…" |
+| `pile_group_6dof`, a pile at 50° and 50° | lz clamped to 0 (singular in the review's layout) | refused: "sin^2(batter_x) + sin^2(batter_y) = 1.174, at or above 1" |
+| `equivalent_footing_settlement` 3 x 3, s 0.9, b 0.3, D 12, Q 3,000, Es 20,000 kPa, nu 0.49 | 2.84 mm, M 342,282 kPa, no word | 2.84 mm, choice "342,282 kPa = 17.11 Es", and the warning |
+| the same with nu 0.3 | 36.09 mm | 36.09 mm, choice "26,923 kPa = 1.35 Es", no warning |
+| the same with M 40,000 kPa, `num_sublayers` 2.7 | 21.89 mm (run as 2) | refused |
+| the same with s 0.2 m | 72.9 mm (0.7 m footing) | refused: "Spacing 0.2 m is less than the pile diameter 0.3 m" |
+| the same with `soil_modulus_kPa` 40,000 | run as M, "given" | refused as an unknown parameter |
+
+No calculated value of a call that was right changes.
+
+**Calls made in this round**
+
+6. **The Poisson's ratio warning has a printed basis.** FHWA GEC-5 (FHWA-NHI-16-072, 2016) p. 8-26, Table 8-10 (after AASHTO 2014, read from the rendered page): sand 0.2 to 0.36 (loose) to 0.3 to 0.4 (dense), gravel 0.2 to 0.35 to 0.3 to 0.4; the same page: "approximately 0.1 to 0.2 for drained loading of coarse-grained soils". The warning starts above 0.40, the top of the table's coarse-grained rows (the text's 0.1 to 0.2 would flag the table's own values). So the lead's no-basis fallback was not needed; the threshold is the same 0.40.
+7. **Eq. 6-54's page.** Its scope sentence ("Elastic compression of coarse-grained soil can be approximated…") is at the foot of UFC 3-220-20 p. 448 and the equation on p. 449 (checked in the PDF), so the tool cites pp. 448-449.
+8. **Where the refusals sit.** The one-line moment in the library (both tools reach it; "on the line" is SUM(y²) or SUM(x²) at or below 1e-12 m²); the batter limit in `GroupPile.direction_cosines` (every caller); the spacing in the library function, only when a direction has more than one pile (a single pile has no spacing); `num_sublayers` in the tool.
+9. **The manual's cover counts** were copied in with the rows, so the rebuild differs from the committed manual only at line 1596 (formerly 1594), the older difference on master.
+
+**Tests run in this round** (venv `C:\dev\GeotechStaffEngineer\.venv`, PYTHONPATH the worktree and its `packages/aec-agent-core`, one file at a time, judged by exit code): `pile_group/tests/test_pile_group.py` 100 passed (13 new); `funhouse_agent/tests/test_gm319_pile_group.py` 29 passed (15 new); `funhouse_agent/tests/test_nested_keys.py` 66 passed; `funhouse_agent/tests/test_adapter_ergonomics.py` 170 passed; `funhouse_agent/tests/test_defaults_used.py -k pile_group` 42 passed; `webapp/tests/test_page_fingerprints.py` 13 passed (no re-record needed); `webapp/tests/test_public_text.py` 5 passed; `funhouse_agent/tests/test_citations.py` 5 passed (run for the new cites, against the installed reference library). `module_work/doc10/check_manual.py`: OK, exit 0; `--rebuild`: differs at line 1596 only.
+
+**Follow-up** (changes a saved report's output; pre-existing, not in the review; for the lead to file): `pile_group_simple` takes `piles[]` coordinates as measured from the piles' centroid (`GroupLoad`: loads "at the centroid of the pile group") but neither shifts nor refuses an off-centre layout. Piles at x = −1, 1 and 3 m, Vz 900 kN, My 200 kN-m give 281.8 / 318.2 / 354.5 kN, which sum to 954.5 kN, not 900; with My 0 they give 300 kN each, where `pile_group_6dof` (equal ka) gives 525 / 300 / 75 kN.
+
 ## Release note
 
-pile_group, 6-DOF analysis with battered piles: the pile forces and cap displacements change. Each pile's stiffness is now turned to the global axes in full; before, the terms between the horizontal and vertical head components were left out and a battered pile's axial force did not balance the applied loads (in the example above, 715.7 kN where statics gives 386.4 kN). Groups of vertical piles are unchanged. `pile_group_simple` now refuses a pile entry with a batter or a stiffness, and returns no cap displacement (null) where it returned zeros. New tool `equivalent_footing_settlement` (GEC-12 Sec. 7.3.5.3; UFC 3-220-20 Sec. 6-5.8.4). Both group tools' results carry a new `notes` list.
+pile_group, 6-DOF analysis with battered piles: the pile forces and cap displacements change. Each pile's stiffness is now turned to the global axes in full; before, the terms between the horizontal and vertical head components were left out and a battered pile's axial force did not balance the applied loads (in the example above, 715.7 kN where statics gives 386.4 kN). Groups of vertical piles are unchanged. `pile_group_simple` now refuses a pile entry with a batter or a stiffness, and returns no cap displacement (null) where it returned zeros. Both rigid-cap tools refuse a moment about the one line every pile is on (Mx with every pile on y = 0, My with every pile on x = 0); before, `pile_group_simple` returned equal shares as if the moment were not there. A pile battered both ways with sin²(batter_x) + sin²(batter_y) at or above 1 is refused. New tool `equivalent_footing_settlement`: the elastic compression of coarse-grained soil below the equivalent footing (UFC 3-220-20 Sec. 6-5.8.4, Eq. 6-54; the footing of GEC-12 Fig. 7-44 and Eq. 7-55); it sends a group in cohesive soil to consolidation (`consolidation_settlement`), warns above a Poisson's ratio of 0.40, and states M/Es when M is worked out from Es and nu. Both group tools' results carry a new `notes` list.
 
 ## Noted, not fixed
 
-- The manual's cover and KPI counts ("1534 agent-callable methods") are one short until the next rebuild; a hand edit of the cover was left to the release rebuild.
+- The manual's cover and KPI counts were one short after the first round; the review round copied the rebuilt counts in (1535 methods, 5818 parameters).
 - `docs/user_manual/worked_examples.json`'s `pile_group_6dof` result has no `notes` key until the examples are regenerated; its numbers are unchanged.
 - `foundry/pile_group_agent_foundry.py` (retired route) still describes the old behaviour.
 - The calc package has no section for the equivalent-footing settlement (audit row 6, C).
