@@ -545,6 +545,20 @@ two RESULTS.md (step 4). Every run is read in full.
 
 **Send:** what you saw at each step, the two `activity.jsonl` files and the SharePoint log. They carry sign-in names: keep them out of the repository.
 
+## Check 15 — Stop, the whole-turn budget, the spend line, real Word and Excel files, the gateway's refusals (BACKLOG TA-42 and TA-24; the testers' host, or a local run with a real model, with the release that carries them; a few turns)
+
+- The detail behind every step is in `module_work/ta37/CHECK.md` ("For the lead"), `module_work/dr41/CHECK.md`, `module_work/inf75/CHECK.md` and `module_work/pl39/CHECK.md`.
+- Stop (`GEOTECH_STOP_BUTTON=1`):
+  1. press Stop during a multi-sheet read: time the click, "Stopping…" (up to 15 s) and "Stopped"; count the `model_end` events after `turn_stop_requested` in `activity.jsonl` (a page look already under way finishes its side calls); then ask to continue: it picks up from the kept results and does not read the same sheets again. Also press Stop while a turn waits on a busy model;
+  2. two testers at once: A stops; B's turn finishes normally, with no stop event in B's `activity.jsonl`.
+- The budget: a long question that continues by itself. The main agent's `model_end` events in the turn are 40 or fewer.
+- The spend line (`GEOTECH_SPEND_ESTIMATE=1` and the prices): set the estimate beside the key's own meter after a few turns, and time the sidebar after a turn for a tester with many conversations.
+- Word and Excel: attach a Word file made in Word, with comments, a footnote and a text box, and a workbook made in Excel with merged cells. Ask what the comments say and for one row of the schedule: the comments, the note and the merged labels are in the answer.
+- The gateway: what a 429 carries (`retry-after`, `x-ratelimit-*`; the `model_busy` event and `model_error`'s `http` record them), which wait clears its window, and whether page readings come back "not read" more often now that the model client asks again once.
+- After the planlens release that carries the four tool-result repairs: on the 40-sheet coordination set, `pages_to_view` holds every sheet. Note the vision calls per turn; the look count goes up by design.
+
+**Send:** what you saw at each step and the `activity.jsonl` files. They carry sign-in names: keep them out of the repository.
+
 ## Done
 
 - **2026-10-14, check 9 on Claude Sonnet (about 18 calls, $0.11 of API

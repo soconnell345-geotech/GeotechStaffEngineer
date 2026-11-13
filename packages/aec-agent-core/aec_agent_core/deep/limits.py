@@ -331,11 +331,18 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
     # -- forced final turn ---------------------------------------------------
 
     def _calls_left(self, request) -> Optional[int]:
-        """Calls left in budget, the one about to be made included."""
+        """Calls left in budget, the one about to be made included. In a
+        turn whose budget is the whole turn's (BACKLOG TA-38) the primary's
+        count runs over every pass, and the continuations of cut-off replies
+        are counted too (:mod:`aec_agent_core.deep.keep_work`)."""
         if self.run_limit is None:
             return None
         state = request.state or {}
-        return self.run_limit - state.get("run_model_call_count", 0)
+        used = state.get("run_model_call_count", 0)
+        over_turn = _turn_model_calls()
+        if over_turn is not None:
+            used = max(used, over_turn)
+        return self.run_limit - used - _extra_model_calls()
 
     def _is_final_budgeted_call(self, request) -> bool:
         """True when the call about to be made is the LAST one in budget.
@@ -378,12 +385,27 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
 
     def wrap_model_call(self, request, handler):
         """On the last budgeted call, force a tool-less final-answer turn;
-        near it, say how many calls are left."""
+        near it, say how many calls are left. A turn the user asked to stop
+        raises here instead (BACKLOG TA-37)."""
+        _check_stop()
+        _note_budget(self.run_limit)
         return handler(self._budgeted(request))
 
     async def awrap_model_call(self, request, handler):
         """Async mirror of :meth:`wrap_model_call`."""
+        _check_stop()
+        _note_budget(self.run_limit)
         return await handler(self._budgeted(request))
+
+    def after_model(self, state, runtime):
+        """The inherited per-run count, and the primary's count over the
+        whole turn where the turn keeps one (TA-38)."""
+        result = super().after_model(state, runtime)
+        _note_primary_model_call()
+        return result
+
+    async def aafter_model(self, state, runtime):
+        return self.after_model(state, runtime)
 
     # -- hard backstop (inherited check, friendlier message) ------------------
 
@@ -397,11 +419,72 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
         parent gets a usable directive (re-delegate narrower) instead.
         """
         result = super().before_model(state, runtime)
+        if result is None and self._turn_spent():
+            # A later pass of a turn whose budget the forced last reply
+            # already ended: no new budget (TA-38).
+            result = {"jump_to": "end"}
         if isinstance(result, dict) and result.get("jump_to") == "end":
             _note_budget_reached()
             result = dict(result)
             result["messages"] = [AIMessage(content=self.exhausted_message)]
         return result
+
+    @hook_config(can_jump_to=["end"])
+    async def abefore_model(self, state, runtime):
+        return self.before_model(state, runtime)
+
+    def _turn_spent(self) -> bool:
+        """The primary's budget over the whole turn is used up and its
+        forced last reply was made (TA-38); never for a helper or a turn
+        that counts per pass."""
+        over_turn = _turn_model_calls()
+        if over_turn is None or self.run_limit is None:
+            return False
+        try:
+            from aec_agent_core.deep.keep_work import current_turn
+            reached = bool(getattr(current_turn(), "budget_reached", False))
+        except Exception:  # noqa: BLE001
+            return False
+        return reached and over_turn + _extra_model_calls() >= self.run_limit
+
+
+def _check_stop() -> None:
+    """Raise :class:`~aec_agent_core.deep.keep_work.TurnStopped` when the
+    user asked to stop the turn (BACKLOG TA-37)."""
+    from aec_agent_core.deep.keep_work import check_stop
+    check_stop()
+
+
+def _note_budget(limit) -> None:
+    try:
+        from aec_agent_core.deep.keep_work import note_budget
+        note_budget(limit)
+    except Exception:  # noqa: BLE001 - a note never fails a call
+        pass
+
+
+def _note_primary_model_call() -> None:
+    try:
+        from aec_agent_core.deep.keep_work import note_primary_model_call
+        note_primary_model_call()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _turn_model_calls() -> Optional[int]:
+    try:
+        from aec_agent_core.deep.keep_work import turn_model_calls
+        return turn_model_calls()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _extra_model_calls() -> int:
+    try:
+        from aec_agent_core.deep.keep_work import extra_model_calls
+        return int(extra_model_calls() or 0)
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 def _note_budget_reached() -> None:
