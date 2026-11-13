@@ -5,6 +5,7 @@ import math
 
 import pytest
 
+from funhouse_agent.adapters.calc_package import METHOD_REGISTRY as CALC
 from funhouse_agent.adapters.settlement import METHOD_REGISTRY as SETTLEMENT
 from funhouse_agent.adapters.soe import METHOD_INFO as SOE_INFO
 from funhouse_agent.adapters.soe import METHOD_REGISTRY as SOE
@@ -44,18 +45,38 @@ _SCH = {"q_net": 120.0, "q_overburden": 20.0, "B": 2.0, "gamma_soil": 18.0,
 
 
 def test_schmertmann_short_profile_refused_then_stated():
-    with pytest.raises(ValueError, match="from 2 to 4 m is not covered"):
+    with pytest.raises(ValueError, match="2 to 4 m below the footing base "
+                                         "is not covered"):
         SETTLEMENT["schmertmann_settlement"](_SCH)
     cont = SETTLEMENT["schmertmann_settlement"](
         dict(_SCH, below_profile="last_layer_continued"))
     rock = SETTLEMENT["schmertmann_settlement"](
         dict(_SCH, below_profile="incompressible"))
+    clay = SETTLEMENT["schmertmann_settlement"](
+        dict(_SCH, below_profile="settled_by_another_method"))
     assert rock["schmertmann_settlement_mm"] < cont["schmertmann_settlement_mm"]
-    for out, word in ((cont, "continued"), (rock, "incompressible")):
+    assert clay["schmertmann_settlement_mm"] == rock["schmertmann_settlement_mm"]
+    for out, word in ((cont, "continued"), (rock, "incompressible"),
+                      (clay, "not granular soil")):
         assert out["influence_depth_m"] == 4.0
         assert out["layers_bottom_m"] == 2.0
+        assert out["depths_not_covered_m"] == [[2.0, 4.0]]
         assert word in out["choices"][0]["chosen"]
-        assert "stop at 2 m" in out["warnings"][0]
+        assert "do not cover" in out["warnings"][0]
+        assert "(below_profile)" in out["warnings"][0]
+
+
+def test_schmertmann_gap_refused_then_listed():
+    gap = dict(_SCH, layers=[
+        {"depth_top": 0.0, "depth_bottom": 1.0, "Es": 12000.0},
+        {"depth_top": 3.0, "depth_bottom": 4.0, "Es": 12000.0}])
+    with pytest.raises(ValueError, match="1 to 3 m below the footing base "
+                                         "is not covered"):
+        SETTLEMENT["schmertmann_settlement"](gap)
+    out = SETTLEMENT["schmertmann_settlement"](
+        dict(gap, below_profile="incompressible"))
+    assert out["depths_not_covered_m"] == [[1.0, 3.0]]
+    assert "1 to 3 m" in out["warnings"][0]
 
 
 def test_schmertmann_full_profile_has_no_note():
@@ -69,6 +90,21 @@ def test_schmertmann_full_profile_has_no_note():
     assert out["schmertmann_settlement_mm"] == cont["schmertmann_settlement_mm"]
 
 
+@pytest.mark.parametrize("tool", ["combined_settlement_analysis",
+                                  "settlement_package"])
+def test_combined_tools_name_their_own_parameter(tool):
+    """The refusal names schmertmann_below_profile (review B2)."""
+    p = {"q_applied": 140.0, "q_overburden": 20.0, "B": 2.0,
+         "immediate_method": "schmertmann", "gamma_soil": 18.0,
+         "schmertmann_layers": _SCH["layers"]}
+    call = SETTLEMENT[tool] if tool in SETTLEMENT else CALC[tool]
+    with pytest.raises(ValueError) as e:
+        call(p)
+    msg = str(e.value)
+    assert "with schmertmann_below_profile:" in msg
+    assert "with below_profile" not in msg
+
+
 def test_combined_analysis_takes_schmertmann_below_profile():
     p = {"q_applied": 140.0, "q_overburden": 20.0, "B": 2.0,
          "immediate_method": "schmertmann", "gamma_soil": 18.0,
@@ -77,7 +113,42 @@ def test_combined_analysis_takes_schmertmann_below_profile():
         SETTLEMENT["combined_settlement_analysis"](p)
     out = SETTLEMENT["combined_settlement_analysis"](
         dict(p, schmertmann_below_profile="incompressible"))
-    assert any("stop at 2 m" in w for w in out["warnings"])
+    assert any("do not cover" in w and "(schmertmann_below_profile)" in w
+               for w in out["warnings"])
+
+
+def test_app_a7_arrangement_through_the_tool():
+    """NHI-06-089 App. A.7's arrangement (pp. A.7-10 to A.7-13) with
+    made-up numbers: a 2 m strip on 3 m of sand over clay, the diagram to
+    4B = 8 m, the clay consolidated. Hand-worked in
+    settlement/tests/test_gm320_short_profile.py::test_app_a7_arrangement_by_hand:
+    Se = 0.9 x 150 x 1.44728 / 30 000 = 6.51 mm."""
+    p = {"q_applied": 180.0, "q_overburden": 30.0, "B": 2.0,
+         "shape": "strip", "immediate_method": "schmertmann",
+         "gamma_soil": 18.0,
+         "schmertmann_layers": [{"depth_top": 0.0, "depth_bottom": 3.0,
+                                 "Es": 30000.0}],
+         "consolidation_layers": [dict(_CLAY, thickness=4.0,
+                                       depth_to_center=5.0, sigma_v0=80.0)]}
+    with pytest.raises(ValueError) as e:
+        SETTLEMENT["combined_settlement_analysis"](p)
+    assert "'settled_by_another_method'" in str(e.value)
+    assert "'incompressible'" not in str(e.value)
+    with pytest.raises(ValueError, match="consolidates its consolidation"):
+        SETTLEMENT["combined_settlement_analysis"](
+            dict(p, schmertmann_below_profile="incompressible"))
+    out = SETTLEMENT["combined_settlement_analysis"](
+        dict(p, schmertmann_below_profile="settled_by_another_method"))
+    assert out["immediate_mm"] == pytest.approx(6.51, abs=0.01)
+    assert out["consolidation_mm"] > 0
+    entry = [c for c in out["choices"]
+             if c["what"] == "ground the Schmertmann layers do not cover"][0]
+    assert "not granular soil" in entry["chosen"]
+    assert "3 to 8 m" in entry["chosen"]
+    assert "App. A.7" in entry["basis"]
+    text = " ".join(out["warnings"]) + " ".join(
+        str(c["chosen"]) for c in out["choices"])
+    assert "incompressible" not in text
 
 
 _WALL = {"excavation_depth": 7.0,
@@ -115,10 +186,23 @@ def test_every_promised_support_key_is_returned():
         assert key in text and key in out["support_reactions"][0]
 
 
+def test_null_angle_is_horizontal_as_before():
+    null = SOE["braced_excavation"](dict(_WALL, supports=[
+        {"depth": 2.0, "spacing": 3.0, "angle_deg": None}]))
+    flat = SOE["braced_excavation"](dict(_WALL, supports=[
+        {"depth": 2.0, "spacing": 3.0}]))
+    assert null["support_reactions"] == flat["support_reactions"]
+    assert null["support_reactions"][0]["angle_deg"] == 0.0
+
+
 @pytest.mark.parametrize("support, text", [
     ({"depth": 2.0, "spacing": 0}, r"supports\[0\].*spacing must be positive"),
     ({"depth": 2.0, "angle_deg": 95}, r"supports\[0\].*less than 90"),
     ({"depth": 2.0, "preload_kN_per_m": 80}, "preload .*is not an input"),
+    ({"depth": 2.0, "angle_deg": "15"},
+     r"supports\[0\].*angle_deg must be a number"),
+    ({"depth": 2.0, "spacing": "3"},
+     r"supports\[0\].*spacing must be a number"),
 ])
 def test_bad_support_inputs_refused(support, text):
     with pytest.raises(ValueError, match=text):
