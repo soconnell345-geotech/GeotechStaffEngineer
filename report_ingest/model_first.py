@@ -63,12 +63,15 @@ probe cannot pass for this one.
 
 from __future__ import annotations
 
+import os
 import random
 import re
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from report_ingest import lab_reader as _lab
 from report_ingest import log_reader as _log
@@ -322,17 +325,61 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 READ_PROMPT_VERSION = "mf-11"
 
 
+#: Off by default (BACKLOG RI-99 (5)): the model-first lab answer schema
+#: describes a summary row's ``sample_id`` as the test's own is described.
+LAB_SAMPLE_ID_AS_PRINTED_ENV = "GEOTECH_INGEST_LAB_SAMPLE_ID_AS_PRINTED"
+_SAMPLE_ID_FORCED: ContextVar[Optional[bool]] = ContextVar(
+    "ingest_lab_sample_id_as_printed", default=None)
+
+
+def lab_sample_id_as_printed_enabled() -> bool:
+    """Whether the model-first lab schema describes a summary row's
+    ``sample_id`` (default: off)."""
+    forced = _SAMPLE_ID_FORCED.get()
+    if forced is not None:
+        return forced
+    return (os.environ.get(LAB_SAMPLE_ID_AS_PRINTED_ENV) or ""
+            ).strip().lower() in ("1", "on", "true", "yes")
+
+
+@contextmanager
+def use_lab_sample_id_as_printed(on: bool = True) -> Iterator[None]:
+    """Turn the row's ``sample_id`` description on (or off) inside the
+    block."""
+    token = _SAMPLE_ID_FORCED.set(bool(on))
+    try:
+        yield
+    finally:
+        _SAMPLE_ID_FORCED.reset(token)
+
+
 def prompt_version(stage: str) -> str:
     """The version a ``stage`` answer is saved and resumed under:
     :data:`READ_PROMPT_VERSION`, with ``+wnm`` on the logs while
     GEOTECH_INGEST_WATER_NOT_MEASURED adds its sentence to the log
     instruction (RI-106), so a resumed run never takes a log answer read
-    with the switch the other way as current."""
+    with the switch the other way as current; with ``+li`` on the logs
+    while GEOTECH_INGEST_LOG_INTERVALS changes the log instruction and
+    answer schema (RI-103), for the same reason; and with ``+sid`` on the
+    lab while GEOTECH_INGEST_LAB_SAMPLE_ID_AS_PRINTED changes its answer
+    schema (RI-99)."""
     from report_ingest.water_status import water_not_measured_enabled
 
+    version = READ_PROMPT_VERSION
     if stage == "logs" and water_not_measured_enabled():
-        return READ_PROMPT_VERSION + "+wnm"
-    return READ_PROMPT_VERSION
+        version += "+wnm"
+    if stage == "logs":
+        # RI-103, behind GEOTECH_INGEST_LOG_INTERVALS (off): its own suffix,
+        # after the water switch's when both are on.
+        from report_ingest.log_intervals import (
+            VERSION_SUFFIX, log_intervals_enabled,
+        )
+        if log_intervals_enabled():
+            version += VERSION_SUFFIX
+    if stage == "lab" and lab_sample_id_as_printed_enabled():
+        # RI-99 (5), behind GEOTECH_INGEST_LAB_SAMPLE_ID_AS_PRINTED (off).
+        version += "+sid"
+    return version
 
 
 def _described(cls: Any, name: str) -> Optional[str]:
@@ -437,6 +484,30 @@ class LabSheetReading(_lab.LabSheetReading):
         description=_described(_lab.LabSheetReading, "tests"))
 
 
+# RI-99 (5), behind GEOTECH_INGEST_LAB_SAMPLE_ID_AS_PRINTED (off). Today's
+# schema describes a test's own ``sample_id`` ("as printed") and gives a
+# summary row's none, so nothing tells a model that a row's sample is the
+# table's own printed label. On, the lab answer schema is the three classes
+# below: the same names and fields, the row's ``sample_id`` carrying the
+# test's own description. Off, :func:`answer_schema` gives the classes
+# above, byte for byte.
+_RowAsPrinted = create_model(
+    "ReadRow", __base__=ReadRow, __doc__=ReadRow.__doc__,
+    sample_id=(str, Field(default="",
+                          description=_described(_lab.ReadTest,
+                                                 "sample_id"))))
+_TestAsPrinted = create_model(
+    "ReadTest", __base__=ReadTest, __doc__=ReadTest.__doc__,
+    rows=(List[_RowAsPrinted],                       # type: ignore[valid-type]
+          Field(default_factory=list,
+                description=_described(_lab.ReadTest, "rows"))))
+_SheetAsPrinted = create_model(
+    "LabSheetReading", __base__=LabSheetReading,
+    __doc__=LabSheetReading.__doc__,
+    tests=(List[_TestAsPrinted],                     # type: ignore[valid-type]
+           Field(description=_described(_lab.LabSheetReading, "tests"))))
+
+
 #: The fields each class above adds, by class: what the model is asked that
 #: today's schema does not ask. ``ReadSample.recovery_percent`` is not here:
 #: it is today's field with a new description.
@@ -453,9 +524,15 @@ def answer_schema(stage: str) -> Any:
     answer tool: logs and lab take the classes above, calc and narrative
     today's (section 8.5 adds nothing to them)."""
     if stage == "logs":
+        # RI-103, behind GEOTECH_INGEST_LOG_INTERVALS (off): off, the class
+        # above, as it was.
+        from report_ingest import log_intervals
+        if log_intervals.log_intervals_enabled():
+            return log_intervals.LogReading
         return LogReading
     if stage == "lab":
-        return LabSheetReading
+        return (_SheetAsPrinted if lab_sample_id_as_printed_enabled()
+                else LabSheetReading)
     if stage == "calc":
         from report_ingest.calc_reader import CalcReading
         return CalcReading
@@ -681,6 +758,15 @@ def instruction(stage: str, report: str, pages: Sequence[int], *,
             said = said.replace("and the water levels. ",
                                 "and the water levels. "
                                 + MODEL_FIRST_SENTENCE + " ", 1)
+        # RI-103, behind GEOTECH_INGEST_LOG_INTERVALS (off): off, the
+        # instruction is byte for byte what it was.
+        from report_ingest.log_intervals import (
+            MODEL_FIRST_PARAGRAPH, log_intervals_enabled,
+        )
+        if log_intervals_enabled():
+            said = said.replace("say which unit. ",
+                                "say which unit. "
+                                + MODEL_FIRST_PARAGRAPH + " ", 1)
     return said
 
 

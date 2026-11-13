@@ -484,3 +484,57 @@ SHOWN_ONLY_WHEN_GIVEN = {
         "the calc steps print a rock-socket diameter row only when it is "
         "given; the probe has no rock layer",
 }
+
+
+# ---------------------------------------------------------------------------
+# GM-316: every warning a run raises that must reach the agent is in its
+# result. Checked on every probe inside the defaults guard's own run
+# (test_defaults_used; review B5: no second pass over the probes).
+
+def _warning_dirs() -> tuple:
+    """The folders of the app's calculation packages, each ending in a
+    separator (``funhouse_agent.core_hooks.WARNING_PACKAGES``)."""
+    import os
+    from funhouse_agent.core_hooks import WARNING_PACKAGES
+    out = []
+    for name in WARNING_PACKAGES:
+        try:
+            spec = importlib.util.find_spec(name)
+        except (ImportError, ValueError):
+            spec = None
+        for loc in (getattr(spec, "submodule_search_locations", None)
+                    or ()):
+            out.append(os.path.normcase(os.path.abspath(loc)) + os.sep)
+    return tuple(out)
+
+
+WARNING_DIRS = _warning_dirs()
+
+
+def must_reach(w) -> bool:
+    """Whether a recorded warning must reach the agent: a numpy
+    floating-point notice anywhere, or any warning but a notice raised in
+    a calculation package (``aec_agent_core.call_warnings``'s rule)."""
+    import os
+    from aec_agent_core.call_warnings import _NOISE, _NUMPY_FP
+    if issubclass(w.category, _NOISE):
+        return False
+    if issubclass(w.category, RuntimeWarning) and _NUMPY_FP.match(
+            str(w.message)):
+        return True
+    return os.path.normcase(os.path.abspath(w.filename)).startswith(
+        WARNING_DIRS)
+
+
+def lost_warnings(recorded, result) -> list:
+    """The texts of the ``recorded`` warnings (a ``catch_warnings(record=
+    True)`` list under ``simplefilter("always")``) that must reach the agent
+    and are not in ``result``'s ``warnings`` (a list cut with "and N more"
+    loses none)."""
+    got = result.get("warnings") if isinstance(result, dict) else None
+    got = [str(g) for g in (got or [])]
+    if any(g.startswith("and ") and g.endswith(" more") for g in got):
+        return []
+    return [str(w.message) for w in recorded
+            if must_reach(w) and str(w.message) not in got]
+

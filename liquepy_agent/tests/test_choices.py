@@ -30,7 +30,8 @@ def test_spt_layers_carry_rd_msf_and_k_sigma():
     procedure, c0, stress = d["choices"]
     assert procedure["chosen"] == "Boulanger & Idriss (2014) SPT"
     assert c0 == {**c0, "chosen": "2.8", "how": "default"}
-    assert "not summed" in stress["basis"]
+    assert stress["chosen"] == "summed through the layers above"
+    assert "sum of gamma_i x h_i" in stress["basis"]
 
 
 def test_a_result_built_without_the_factors_still_lists_its_layers():

@@ -252,6 +252,111 @@ def _activity(conv_dir: str) -> Dict[str, Any]:
             "tokens_out": tokens_out}
 
 
+def _unknown_arguments(result: Any) -> bool:
+    """Whether a tool's own result is the refusal of a call with an
+    argument the tool does not take (``deep.strict_args``: the call was
+    not run)."""
+    if not isinstance(result, str) or '"unknown_arguments"' not in result:
+        return False
+    try:
+        got = json.loads(result)
+    except ValueError:
+        return True                    # cut by the record's cap: the key is there
+    return isinstance(got, dict) and bool(got.get("unknown_arguments"))
+
+
+def _asked_to_be_shown(args: Any) -> bool:
+    """Whether a tool call's arguments carry ``show_me`` set true (the
+    image shown to the main model itself, ``GEOTECH_VISION_SHOW_ME``)."""
+    if isinstance(args, str):
+        if "show_me" not in args:
+            return False
+        try:
+            args = json.loads(args)
+        except ValueError:
+            return False
+    if not isinstance(args, dict):
+        return False
+    value = args.get("show_me")
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return value is True
+
+
+def record_counts(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """What the results table counts off a run's record besides its model
+    and tool calls (BACKLOG INF-75; Foundry brief 7 read "failed calls 0"
+    and "errors 0" on a run with three refused tool calls, and on 44 side
+    calls given up at their limit):
+
+    * ``side_call_timeouts``: asks of a vision side call given up at the
+      limit (``side_call_timeout`` events), and ``side_calls_not_read``,
+      those not asked again (the image was reported as not read);
+    * ``side_call_late_ends``: abandoned asks that ended after all;
+    * ``tool_calls_refused``: tool calls that gave the model no result of
+      the tool's own, with ``tool_calls_refused_by``: ``raised`` (a
+      ``tool_error``), ``no_tool_ran`` (a ``tool_refused`` for a call that
+      did not raise: an unknown tool name, a guard's interception) and
+      ``unknown_arguments`` (a ``tool_end`` whose result is the refusal of
+      an argument the tool does not take);
+    * ``model_calls_unended``: ``model_start`` records with neither a
+      ``model_end`` nor a ``model_error``. Readable off any record, old
+      ones included, where the timeout events are not.
+    * ``show_me_looks``: tool calls made with ``show_me`` set true. An arm
+      that offers the argument and never uses it reads 0, and is not a
+      measurement of it (brief 7: 0 of 70 runs).
+
+    A tool that raises leaves a ``tool_error`` and a ``tool_refused``: the
+    pair is one call. They are matched by ``raised`` on the refusal, and in
+    a record written before that field by tool name and agent."""
+    timeouts = not_read = late = 0
+    starts = ended = shown = 0
+    raised = unknown = 0
+    unmatched: Dict[tuple, int] = {}      # (agent, name) -> old tool_errors
+    refusals: List[Dict[str, Any]] = []
+    for rec in records:
+        ev = rec.get("event")
+        if ev == "side_call_timeout":
+            timeouts += 1
+            if rec.get("asked_again") is False:
+                not_read += 1
+        elif ev == "side_call_late_end":
+            late += 1
+        elif ev == "model_start":
+            starts += 1
+        elif ev in ("model_end", "model_error"):
+            ended += 1
+        elif ev == "tool_start":
+            if _asked_to_be_shown(rec.get("args")):
+                shown += 1
+        elif ev == "tool_error":
+            raised += 1
+            if not rec.get("tool_call_id"):
+                key = (rec.get("agent"), rec.get("name"))
+                unmatched[key] = unmatched.get(key, 0) + 1
+        elif ev == "tool_refused":
+            refusals.append(rec)
+        elif ev == "tool_end" and _unknown_arguments(rec.get("result")):
+            unknown += 1
+    no_tool = 0
+    for rec in refusals:
+        if rec.get("raised"):
+            continue
+        key = (rec.get("agent"), rec.get("name"))
+        if unmatched.get(key):
+            unmatched[key] -= 1
+            continue
+        no_tool += 1
+    return {"side_call_timeouts": timeouts, "side_calls_not_read": not_read,
+            "side_call_late_ends": late,
+            "tool_calls_refused": raised + no_tool + unknown,
+            "tool_calls_refused_by": {"raised": raised,
+                                      "no_tool_ran": no_tool,
+                                      "unknown_arguments": unknown},
+            "model_calls_unended": max(0, starts - ended),
+            "show_me_looks": shown}
+
+
 def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
              docs_dir: Any, run_dir: str, orientation: bool = False,
              recursion_limit: Optional[int] = None) -> Dict[str, Any]:
@@ -378,6 +483,7 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
                   tool_calls=act["tool_calls"],
                   tool_counts=_counts(c["name"] for c in act["tool_calls"]))
     records = _activity_records(run_dir)
+    result.update(record_counts(records))
     result["fingerprint"] = _fingerprint(fingerprint, records)
     result["checks"] = [
         _checks.run_check(c, result["answer"], files=produced,
@@ -416,6 +522,18 @@ def rescore_saved(result: Dict[str, Any], task: Task,
                                 activity=records)
               for c in task.all_checks()]
     out = dict(result)
+    if records:
+        # Counts off the record, for a run saved before the table had them
+        # (INF-75). A record written before the timeout events existed says
+        # nothing of timeouts, so those are left unset, not set to 0.
+        counts = record_counts(records)
+        if not (counts["side_call_timeouts"]
+                or counts["side_call_late_ends"]):
+            for key in ("side_call_timeouts", "side_calls_not_read",
+                        "side_call_late_ends"):
+                counts.pop(key)
+        for key, value in counts.items():
+            out.setdefault(key, value)
     out.setdefault("score_before_rescore", result.get("score"))
     out["checks"] = checks
     out["score"] = _checks.score(checks)
@@ -595,6 +713,13 @@ def _mark(run: Optional[Dict[str, Any]]) -> str:
     return f"{tick} {sc.get('checks_passed', 0)}/{sc.get('checks_total', 0)}{err}"
 
 
+def _recorded(rs: Sequence[Dict[str, Any]], key: str) -> str:
+    """The sum of a per-run count over an arm's runs; ``·`` when no run
+    holds it (not recorded is not zero)."""
+    got = [r[key] for r in rs if isinstance(r.get(key), (int, float))]
+    return str(sum(got)) if got else "·"
+
+
 def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
               tasks: Sequence[Task], meta: Dict[str, Any]) -> str:
     """RESULTS.md: per-arm totals, by category and document type, per task,
@@ -613,10 +738,18 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
     # on to finish (a dropped connection, a rate limit on a vision call); a
     # run that failed outright is an "error". Both can change what the agent
     # did, so both are shown.
+    # "side-call timeouts" are asks of a vision side call given up at the
+    # time limit (each held its look for the whole limit); "refused tool
+    # calls" are tool calls that raised, that no tool ran for, or that were
+    # refused for an argument the tool does not take (INF-75). A "·" means
+    # no run of the arm recorded the count (a run saved before it existed).
+    # "show_me looks" are tool calls made with show_me set true: 0 on an
+    # arm that offers the argument means the arm did not measure it.
     lines.append("| arm | tasks passed | checks passed | model calls | tool "
                  "calls | tokens (in/out) | minutes | errors | failed calls "
-                 "| step caps |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|")
+                 "| step caps | side-call timeouts | refused tool calls "
+                 "| show_me looks |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for arm in arms:
         rs = [r for r in runs.get(arm, {}).values() if not r.get("skipped")]
         tp = sum(1 for r in rs if (r.get("score") or {}).get("passed"))
@@ -632,7 +765,9 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
         caps = sum(1 for r in rs if r.get("outcome_error"))
         lines.append(f"| {arm} | {tp}/{len(rs)} | {cp}/{ct} | {mc} | {tc} | "
                      f"{ti:,}/{to:,} | {mins:.1f} | {errs} | {failed} | "
-                     f"{caps} |")
+                     f"{caps} | {_recorded(rs, 'side_call_timeouts')} | "
+                     f"{_recorded(rs, 'tool_calls_refused')} | "
+                     f"{_recorded(rs, 'show_me_looks')} |")
     for title, key in (("By category", "category"),
                        ("By document type", "doc_type"),
                        ("By app page", "page")):

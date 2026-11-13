@@ -30,7 +30,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from module_work.report_ingest_harness import corpus as C
 from report_ingest.model import (
-    DrillingDetails, Investigation, Layer, Quantity, SPT, Sample, WaterLevel,
+    DrillingDetails, Investigation, Layer, LayerNote, Quantity, SPT, Sample,
+    WaterLevel,
 )
 
 __all__ = [
@@ -201,7 +202,34 @@ def _layers(rows: Sequence[dict], unit: str) -> List[Layer]:
         out.append(Layer(
             top=top, bottom=_q(row.get("bottom"), unit),
             description=str(row.get("description") or ""),
-            uscs=str(row.get("uscs") or "")))
+            uscs=str(row.get("uscs") or ""),
+            **_interval(row, unit)))
+    return out
+
+
+def _interval(row: dict, unit: str) -> Dict[str, Any]:
+    """What an answer sheet's layer may carry under BACKLOG RI-103, as the
+    record's fields (``report_ingest.log_scoring.INTERVAL_METRICS`` says how
+    each is scored): ``notes`` (``[{"depth": 7, "text": "wet below 7 ft"},
+    {"text": "as above, but brown"}]``), ``line`` and ``line_full_width``
+    (the interval's top line), ``label``, ``label_source`` and
+    ``label_carried``. A row with none of them gives nothing, so its record
+    is what it always was."""
+    out: Dict[str, Any] = {}
+    notes = [LayerNote(depth=_q(note.get("depth"), unit),
+                       text=str(note.get("text") or ""))
+             for note in row.get("notes") or []
+             if str(note.get("text") or "").strip()]
+    if notes:
+        out["notes"] = notes
+    if row.get("line"):
+        out["top_line"] = str(row["line"])
+    if row.get("line_full_width") is not None:
+        out["top_line_full_width"] = bool(row["line_full_width"])
+    if row.get("label"):
+        out["stratum_label"] = str(row["label"])
+        out["stratum_label_source"] = str(row.get("label_source") or "")
+        out["stratum_label_carried"] = bool(row.get("label_carried"))
     return out
 
 

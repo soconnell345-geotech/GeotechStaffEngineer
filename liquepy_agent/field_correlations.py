@@ -186,6 +186,7 @@ def analyze_field_correlations(
         n_points=len(depth),
         gwl_m=float(gwl),
         vs_method=vs_method,
+        i_c_limit=float(i_c_limit),
         depth=depth,
         vs_m_per_s=vs,
         relative_density=dr,

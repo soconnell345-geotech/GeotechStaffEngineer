@@ -111,7 +111,8 @@ from typing import Any, Collection, Dict, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.bound import APPENDED_LABEL, compact_pages
 from report_ingest.calc_reader import split_calc_items
-from report_ingest.completeness import completeness_qa, page_texts
+from report_ingest.completeness import (
+    completeness_qa, named_not_held_qa, page_texts)
 from report_ingest.engine import (LARGE_REQUEST_FRACTION, TOKENS_IN_PARTS,
                                   CallCeilingReached, tokens_in)
 from report_ingest.lab_reader import split_lab_items
@@ -1477,7 +1478,29 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                                prefix=_log_prefix(model_first),
                                descriptions=_log_descriptions(model_first)))
     qa.extend(_inside_dividers(own, model_first))           # RI-197
-    qa.extend(completeness_qa(page_texts(doc), labels))     # RI-184
+    # The completeness checks read text only; one that fails is a note, not
+    # the end of a paid ingest.
+    texts: Optional[List[str]] = None
+    try:
+        texts = page_texts(doc)
+        qa.extend(completeness_qa(texts, labels))           # RI-184
+    except Exception as exc:              # one check, not the report
+        qa.append(QAEntry(
+            kind="note", where="document.completeness",
+            detail=f"the completeness check did not run "
+                   f"({type(exc).__name__}: {exc}), so this copy's page "
+                   f"numbering and citations were not checked"))
+    if texts is not None:
+        try:
+            qa.extend(named_not_held_qa(texts, labels, record,  # RI-185
+                                        sorted(bound), doc=doc))
+        except Exception as exc:          # one check, not the report
+            qa.append(QAEntry(
+                kind="note", where="document.completeness",
+                detail=f"the completeness check of what the text names "
+                       f"did not run ({type(exc).__name__}: {exc}), so "
+                       f"this copy's logs, laboratory results and listed "
+                       f"appendices were not checked"))
     # A volume or data report of THIS investigation bound in (RI-94) holds
     # this report's own holes, read into its own record below: the counts
     # wait for it. Without one, nothing moves.
@@ -3823,6 +3846,7 @@ def _join_by_hole(record: ReportRecord, start: int,
                               "each later one's layers, samples, blow "
                               "counts and water readings are appended"),
                     pages=list(inv.pages)))
+                _recheck_carried_labels(inv, unresolved)
             out.append(inv)
     record.investigations[start:] = out
 
@@ -3841,6 +3865,33 @@ def _join_by_hole(record: ReportRecord, start: int,
                     f"separate logs, as a report can number two holes so"),
             pages=sorted({p for f in folds for inv in logs[f]
                           for p in inv.pages})))
+
+
+def _recheck_carried_labels(inv: Any,
+                            unresolved: List[Dict[str, Any]]) -> None:
+    """RI-103, under GEOTECH_INGEST_LOG_INTERVALS only: a log joined from
+    parts read apart is asked again for labels marked carried with none
+    printed above. An entry a part gave that the join has made untrue (the
+    label is printed above, on an earlier part) is dropped; one already
+    listed is not listed twice."""
+    from report_ingest.log_intervals import (carried_label_entries,
+                                             log_intervals_enabled)
+    if not log_intervals_enabled():
+        return
+
+    def key(row: Dict[str, Any]) -> Tuple[Any, Any, Any]:
+        return row.get("what"), row.get("page"), row.get("read")
+
+    now = carried_label_entries(inv)
+    true = {key(row) for row in now}
+    pages = set(inv.pages)
+    unresolved[:] = [row for row in unresolved
+                     if not (row.get("flag") == "label_carried"
+                             and row.get("page") in pages
+                             and key(row) not in true)]
+    listed = {key(row) for row in unresolved
+              if row.get("flag") == "label_carried"}
+    unresolved.extend(row for row in now if key(row) not in listed)
 
 
 def _continues_log(first: Any, later: Any, slack: float = 0.0) -> str:

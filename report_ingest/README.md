@@ -368,6 +368,17 @@ label, in whatever layout the form uses, names that hole. It changes what the
 model is asked, so it stays off until a Foundry pair of runs measures it; a run
 file says which arm it ran in.
 
+**A summary row's sample as printed (RI-99), off by default, model first
+only.** Today's lab answer schema describes a test's own `sample_id` ("as
+printed") and gives a summary row's `sample_id` no description.
+`GEOTECH_INGEST_LAB_SAMPLE_ID_AS_PRINTED=1` (or
+`with model_first.use_lab_sample_id_as_printed():`) gives the row's the same
+description on the model-first lab schema. It changes what the model is sent,
+so it stays off until it is measured; on, lab answers are saved and resumed
+under `prompt_version("lab")` = the read version with `+sid`, so a run never
+takes an answer read with the switch the other way as current. Today's lab
+reader is not changed.
+
 **The per-page floor in the brief (RI-56), off by default.**
 `GEOTECH_INGEST_LAB_FLOOR_PER_PAGE=1` (or `with use_floor_per_page():`) shows
 the model THE STARTING RECORD as the merge takes it: the corrected kind, and,
@@ -1512,6 +1523,30 @@ written to `placement.json` beside `items/`. Each
 result is saved as `items/mf-<key>.json`; a group no answer came back for is not
 saved, so a resumed run asks again. Cone soundings and dynamic probes keep the
 sounding reader.
+
+**Every drawn line an interval** (BACKLOG RI-103 parts 1 and 2,
+`log_intervals.py`), behind `GEOTECH_INGEST_LOG_INTERVALS` (or
+`with use_log_intervals():`), off by default, on the model-first log reading
+only. On, the log instruction and answer schema ask for one layer for every
+line the log draws across its soil column, and the record never joins two of
+them, whatever their descriptions. A change the log writes inside an interval
+with no line ("wet below 7 ft") is a note on that interval (`Layer.notes`,
+each with its depth where one is written), never an interval of its own. An
+interval also keeps the elevation the log prints for its top
+(`top_elevation`), the kind of its top line where the log's legend or the line
+itself says it and whether the line runs the full width (`top_line`,
+`top_line_full_width`), and a stratum label only where the log prints one, as
+printed, with where it was printed and whether it was carried down from one
+printed above (`stratum_label`, `stratum_label_source`,
+`stratum_label_carried`). The new fields are left out of a saved record when
+empty and out of the DIGGS file, the summary and the library page; the
+library's search and the question list's soft-layer reading do read the
+notes' words. Off, the instruction and the schema are today's to the byte;
+on, a log answer is saved under `mf-<n>+li`, so a resumed run never mixes the
+two. The log scorer scores them as groups of their own, outside its totals,
+on the answer sheets that carry them (`log_scoring.INTERVAL_METRICS`). Not
+measured live yet. Mapping each interval to the narrative's units (part 3) is
+not built.
 
 **The narrative is read once** (BACKLOG RI-14). planlens starts a new work item
 wherever a run of narrative pages is broken by a figure, a table page or a tab,

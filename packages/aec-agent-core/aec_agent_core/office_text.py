@@ -130,6 +130,13 @@ def _docx(path, image_dir, image_ref):
         note += (f" (title='{read['title']}': its Title is the first # "
                  f"line, written once)")
     note += "; the layout carries over."
+    extras = read.get("extras") or []
+    if extras:
+        note += (" After the body come sections headed "
+                 + ", ".join(f"'{e}'" for e in extras)
+                 + ": what the file also holds, read for you. They are not "
+                 "part of the document's text, so leave them out when you "
+                 "write the document back.")
     if saved:
         fields["pictures"] = saved
         note += (" Its pictures were saved beside it and are referenced by "
@@ -199,9 +206,50 @@ def _header_index(grid) -> Tuple[int, bool]:
     return 0, False
 
 
+def _merged_ranges(path) -> Dict[str, list]:
+    """``{sheet name: [(row1, col1, row2, col2), ...]}`` of each sheet's
+    merged ranges (1-based), read from the workbook's XML because openpyxl's
+    read-only sheets do not carry them. ``{}`` where they cannot be read."""
+    import posixpath
+    import zipfile
+    from xml.etree import ElementTree as ET
+    from openpyxl.utils import range_boundaries
+    out: Dict[str, list] = {}
+    try:
+        with zipfile.ZipFile(path) as z:
+            wb = ET.fromstring(z.read("xl/workbook.xml"))
+            rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
+            targets = {r.get("Id"): r.get("Target") for r in rels}
+            for sh in wb.iter():
+                if not sh.tag.endswith("}sheet"):
+                    continue
+                rid = next((v for k, v in sh.attrib.items()
+                            if k.endswith("}id")), None)
+                target = targets.get(rid)
+                if not target:
+                    continue
+                part = (target.lstrip("/") if target.startswith("/")
+                        else posixpath.normpath(posixpath.join("xl", target)))
+                found = []
+                for _ev, el in ET.iterparse(z.open(part)):
+                    if el.tag.endswith("}mergeCell"):
+                        ref = el.get("ref") or ""
+                        if ":" in ref:
+                            c1, r1, c2, r2 = range_boundaries(ref)
+                            found.append((r1, c1, r2, c2))
+                    el.clear()
+                if found:
+                    out[sh.get("name")] = found
+    except Exception:  # noqa: BLE001 - a workbook still reads without them
+        return {}
+    return out
+
+
 def _xlsx(path):
     from openpyxl import load_workbook
     from openpyxl.utils import get_column_letter
+
+    merged = _merged_ranges(path)
 
     values = load_workbook(path, read_only=True, data_only=True)
     try:
@@ -225,22 +273,55 @@ def _xlsx(path):
                     wf = None
             f_rows = wf.iter_rows(values_only=True) if wf is not None else None
             grid, cut = [], False
+            ranges = merged.get(ws.title, [])
+            stored = {}           # row number -> its values as stored
             for r_no, row in enumerate(ws.iter_rows(values_only=True), 1):
                 f_row = next(f_rows, None) if f_rows is not None else None
-                cells, words = [], []
+                vals = []
                 for j, v in enumerate(row):
                     if v is None and f_row is not None and j < len(f_row) \
                             and isinstance(f_row[j], str) \
                             and f_row[j].startswith("="):
                         v = f_row[j]
-                    cells.append(_cell_text(v))
-                    words.append(_is_words(v))
+                    vals.append(v)
+                cells = [_cell_text(v) for v in vals]
+                words = [_is_words(v) for v in vals]
                 grid.append((r_no, cells, words))
+                if ranges:
+                    stored[r_no] = vals
                 budget -= max(1, len(cells))
                 if budget <= 0:
                     cut = True
                     break
             grid = [(n, c, w) for n, c, w in grid if any(c)]
+            # A merged cell holds its value in the corner only: in the table
+            # every row and column of the range gets it (DR-41). The header
+            # and the rows above it are still found on the cells as stored
+            # (a title merged across the top stays a line above the table),
+            # and a range is filled no wider than the widest row's own cells
+            # (a range merged over a whole row would pad to Excel's last
+            # column).
+            filled = {}
+            if ranges:
+                widest = max((max((k + 1 for k, v in enumerate(c) if v),
+                                  default=0) for _n, c, _w in grid),
+                             default=0)
+                for n, c, _w in grid:
+                    vals = list(stored.get(n, []))
+                    for r1, c1, r2, c2 in ranges:
+                        if not r1 <= n <= r2:
+                            continue
+                        top_row = stored.get(r1) or []
+                        top = top_row[c1 - 1] if c1 - 1 < len(top_row) \
+                            else None
+                        if top is None:
+                            continue
+                        last = min(c2, widest)
+                        vals += [None] * (last - len(vals))
+                        for col in range(c1, last + 1):
+                            if vals[col - 1] is None:
+                                vals[col - 1] = top
+                    filled[n] = [_cell_text(v) for v in vals]
             hidden = getattr(ws, "sheet_state", "visible") != "visible"
             title = f"## Sheet: {ws.title}" + (" (hidden)" if hidden else "")
             if not grid:
@@ -252,7 +333,8 @@ def _xlsx(path):
             # above it is kept as text above the table.
             head_i, found = _header_index(grid)
             above, table = grid[:head_i], grid[head_i:]
-            used = [k for _n, c, _w in table for k, v in enumerate(c) if v]
+            table = [(n, filled.get(n, c), w) for n, c, w in table]
+            used =[k for _n, c, _w in table for k, v in enumerate(c) if v]
             c0, c1 = min(used), max(used) + 1
             width = c1 - c0
             rows = [(n, (c + [""] * c1)[c0:c1]) for n, c, _w in table]
@@ -266,6 +348,15 @@ def _xlsx(path):
                              + "; ".join(v for v in c if v))
             if above:
                 lines.append("")
+            if ranges:
+                shown = ", ".join(
+                    f"{get_column_letter(c1)}{r1}:{get_column_letter(c2)}{r2}"
+                    for r1, c1, r2, c2 in ranges[:20])
+                more = (f" and {len(ranges) - 20} more"
+                        if len(ranges) > 20 else "")
+                lines += [f"Merged ranges in this sheet: {shown}{more}; "
+                          f"in the table every cell of a merged range shows "
+                          f"the merged cell's value.", ""]
             lines += [f"Excel rows {head_no}-{rows[-1][0]}, "
                       f"columns {get_column_letter(c0 + 1)}-"
                       f"{get_column_letter(c1)}; row {head_no} is the header "

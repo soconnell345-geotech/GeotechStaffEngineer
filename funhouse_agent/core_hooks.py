@@ -12,7 +12,12 @@ hook is first asked for):
   ``aec_agent_core.deep.held_records`` finds in a stopped helper's words;
 - ``cited_documents.reference_modules`` -> :func:`reference_modules`: the
   dispatch's reference modules, whose ``call_agent`` answers are reference
-  sources for ``aec_agent_core.cited_documents``.
+  sources for ``aec_agent_core.cited_documents``;
+- ``method_call.warning_packages``: GSE's calculation packages, whose
+  Python warnings raised during a method call reach the agent
+  (``aec_agent_core.call_warnings``, BACKLOG GM-316). The door fills this
+  one with a function of its own (every method call asks for it, the review
+  page's too); :data:`WARNING_PACKAGES` here is the door's list.
 
 The review suite's hooks (its tasks, documents and the page's turn) are
 filled by ``funhouse_agent/review_eval/__init__.py``.
@@ -43,3 +48,11 @@ def reference_modules() -> frozenset:
     REFERENCE_MODULES``)."""
     from funhouse_agent.dispatch import REFERENCE_MODULES
     return frozenset(REFERENCE_MODULES)
+
+
+#: GSE's calculation packages, whose Python warnings raised during a method
+#: call reach the agent. Held by the package door, which fills the hook with
+#: a function of its own (a string here would import this module into the
+#: review page on its first method call); re-exported for GSE's tests.
+from funhouse_agent import _WARNING_PACKAGES as WARNING_PACKAGES  # noqa: E402
+from funhouse_agent import _warning_packages as warning_packages  # noqa: E402,F401

@@ -28,7 +28,23 @@ from typing import Optional
 
 from aec_document_review import core
 
-__all__ = ["TurnJob", "start_turn_job", "get_turn_job"]
+__all__ = ["TurnJob", "start_turn_job", "get_turn_job", "stop_button_on",
+           "STOP_BUTTON_ENV"]
+
+#: Shows a Stop button while the user's own turn runs (BACKLOG TA-37). Off
+#: unless set to 1/true/yes/on: unset, no turn can be stopped and the page
+#: looks and runs as before.
+STOP_BUTTON_ENV = "GEOTECH_STOP_BUTTON"
+
+#: Added under the error of a turn that failed after Stop was pressed: the
+#: error is shown as itself, not as a stopped turn (TA-37 review).
+STOP_ASKED_NOTE = "You had pressed Stop; the turn ended on this error."
+
+
+def stop_button_on() -> bool:
+    """Whether ``GEOTECH_STOP_BUTTON`` is on (read each time)."""
+    return (os.environ.get(STOP_BUTTON_ENV) or "").strip().lower() in (
+        "1", "true", "yes", "on")
 
 _JOBS: dict[str, "TurnJob"] = {}
 _JOBS_LOCK = threading.Lock()
@@ -46,6 +62,35 @@ class TurnJob:
         self.consumed = False          # a session folded the result into its UI
         self.result: dict = {}
         self._lock = threading.Lock()
+        # The Stop button (TA-37): set by the user's own page, read by the
+        # turn before each model call, wait and pass. ``stoppable`` is fixed
+        # when the job starts (GEOTECH_STOP_BUTTON then).
+        self.stoppable = False
+        self.stop_event = threading.Event()
+        self.stop_requested_at: Optional[float] = None
+
+    # -- stop (TA-37) -----------------------------------------------------
+    @property
+    def stop_requested(self) -> bool:
+        return self.stop_event.is_set()
+
+    def request_stop(self) -> bool:
+        """Ask the running turn to stop; ``True`` when the request was
+        taken (a stoppable job, still running, not asked before). The
+        request is written to the conversation's activity log."""
+        with self._lock:
+            if not self.stoppable or self.done or self.stop_event.is_set():
+                return False
+            self.stop_requested_at = time.time()
+            self.stop_event.set()
+        try:
+            from aec_agent_core import activity_log
+            activity_log.append_event(
+                core.conversation_dir(self.thread_id), "turn_stop_requested",
+                elapsed_s=round(self.stop_requested_at - self.started_at, 3))
+        except Exception:                              # noqa: BLE001
+            pass
+        return True
 
     # -- worker side ------------------------------------------------------
     def _add(self, item: dict) -> None:
@@ -110,6 +155,7 @@ def start_turn_job(agent, messages: list, thread_id: str,
         for tid in [t for t, j in _JOBS.items() if j.done and j.consumed]:
             del _JOBS[tid]
         job = TurnJob(thread_id, ctx.get("prompt") or "")
+        job.stoppable = stop_button_on()
         _JOBS[thread_id] = job
     worker = threading.Thread(
         target=_run_turn_job, name=f"turn-{thread_id[:8]}",
@@ -259,7 +305,13 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
             extra["record"] = record
     except Exception:                                  # noqa: BLE001
         record = None
+    # The Stop button (TA-37, behind GEOTECH_STOP_BUTTON): the job's flag is
+    # handed to the turn only when the setting was on at the start.
+    if job.stoppable and _accepts(core.stream_turn, "stop"):
+        extra["stop"] = job.stop_event
     kept = None
+    stopped = False
+    budget_ended = False
     try:
         for item in core.with_heartbeat(core.stream_turn(
                 agent, messages, thread_id,
@@ -284,6 +336,13 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     except Exception as exc:                      # noqa: BLE001
         # The tokens a failed turn used (EV-20), counted up to the error.
         turn_tokens = getattr(exc, "geotech_turn_tokens", turn_tokens) or 0
+        # A turn the user stopped (TA-37): only one that ended on the stop
+        # itself. Any other error raised after Stop was pressed (a spent AI
+        # budget, a refused key, a busy wait the stop refused) is shown as
+        # that error, with a line saying a stop had been asked for.
+        stopped = bool(job.stoppable and core.is_turn_stopped(exc))
+        stop_asked = bool(job.stoppable and job.stop_requested
+                          and not stopped)
         # What the turn had done: its tool calls and results, in an order a
         # replay accepts, the largest moved to kept/ (TA-19).
         if record is not None:
@@ -292,54 +351,96 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                                    turn=_turn_no_of(ctx))
             except Exception:                      # noqa: BLE001
                 kept = None
-        try:
-            turn_error = core.friendly_turn_error(
-                exc, kept=kept.line() if kept is not None else None)
-        except Exception:
-            turn_error = f"{type(exc).__name__}: {exc}"
-        # An AI budget that is used up (live smoke wave 2c, D2): the tester
-        # gets one plain line and no "ask again"; the provider's own text
-        # (its JSON, the request id) is kept for the owner in the activity
-        # log, never shown.
-        spent = core.budget_exhausted(exc) is not None
-        if spent:
+        if stopped:
+            # Not an error: the user's own stop. The answer says so, what
+            # the turn did and what it had written; its work is kept below
+            # as an interrupted turn's is (TA-19).
             try:
-                from aec_agent_core.error_text import scrub_paths
-                error_detail = scrub_paths(f"{type(exc).__name__}: {exc}")
+                final = core.stopped_turn_text(
+                    answer, getattr(exc, "geotech_reply", None), kept,
+                    record.messages if record is not None else None)
             except Exception:                      # noqa: BLE001
-                error_detail = type(exc).__name__
-        # A failed turn shows the friendly error under a clearly labelled
-        # partial answer -- or under one line saying it stopped -- never the
-        # raw stream of step announcements (live smoke wave 2b, C3/B7).
-        try:
-            final = core.failed_turn_text(
-                answer, getattr(exc, "geotech_reply", None),
-                retry=not spent)
-        except Exception:                          # noqa: BLE001
-            final = ""
-        # TA-33 (behind GEOTECH_STEP_CAP_ANSWER, OFF): a turn stopped at its
-        # step cap answers from what it gathered, in one last call with no
-        # tools, instead of ending on an error (live wave w8, F55).
-        try:
-            from aec_agent_core import review_flags as _rf
-            if (_rf.step_cap_answer() and record is not None
-                    and core.is_step_cap(exc)):
-                written = core.answer_at_step_cap(
-                    agent, messages[-1] if messages else None,
-                    record.messages)
-                if written:
-                    final = written
-                    error_detail = f"{type(exc).__name__}: {exc}"[:2000]
-                    turn_error = None
-        except Exception:                          # noqa: BLE001
-            pass
+                final = core.STOPPED_LABEL
+        else:
+            try:
+                turn_error = core.friendly_turn_error(
+                    exc, kept=kept.line() if kept is not None else None)
+            except Exception:
+                turn_error = f"{type(exc).__name__}: {exc}"
+            if stop_asked:
+                turn_error = f"{turn_error}\n\n{STOP_ASKED_NOTE}"
+            # An AI budget that is used up (live smoke wave 2c, D2): the tester
+            # gets one plain line and no "ask again"; the provider's own text
+            # (its JSON, the request id) is kept for the owner in the activity
+            # log, never shown.
+            spent = core.budget_exhausted(exc) is not None
+            if spent:
+                try:
+                    from aec_agent_core.error_text import scrub_paths
+                    error_detail = scrub_paths(f"{type(exc).__name__}: {exc}")
+                except Exception:                      # noqa: BLE001
+                    error_detail = type(exc).__name__
+            # A failed turn shows the friendly error under a clearly labelled
+            # partial answer -- or under one line saying it stopped -- never the
+            # raw stream of step announcements (live smoke wave 2b, C3/B7).
+            try:
+                final = core.failed_turn_text(
+                    answer, getattr(exc, "geotech_reply", None),
+                    retry=not spent)
+            except Exception:                          # noqa: BLE001
+                final = ""
+            # TA-33 (behind GEOTECH_STEP_CAP_ANSWER, OFF): a turn stopped at its
+            # step cap answers from what it gathered, in one last call with no
+            # tools, instead of ending on an error (live wave w8, F55).
+            try:
+                from aec_agent_core import review_flags as _rf
+                if (_rf.step_cap_answer() and record is not None
+                        and not stop_asked and core.is_step_cap(exc)):
+                    written = core.answer_at_step_cap(
+                        agent, messages[-1] if messages else None,
+                        record.messages)
+                    if written:
+                        final = written
+                        error_detail = f"{type(exc).__name__}: {exc}"[:2000]
+                        turn_error = None
+            except Exception:                          # noqa: BLE001
+                pass
 
+    # The forced last reply of a turn whose model-call budget ended came
+    # back empty (TA-38): say so, and what the turn did, from its record,
+    # instead of "(no answer text)"; its work is kept like a stopped turn's.
+    if (not stopped and not turn_error and record is not None
+            and not str(final or answer or "").strip()
+            and bool(getattr(getattr(record, "scope", None),
+                             "budget_reached", False))):
+        budget_ended = True
+        try:
+            kept = record.kept(ctx.get("working_dir") or ctx["temp_dir"],
+                               turn=_turn_no_of(ctx))
+        except Exception:                              # noqa: BLE001
+            kept = None
+        try:
+            final = core.budget_ended_text(record.messages, kept)
+        except Exception:                              # noqa: BLE001
+            final = core.BUDGET_ENDED_LEAD
     final = final or answer or "(no answer text)"
     if activity is not None:
         try:
             activity.turn_end(turn_tokens=turn_tokens, error=turn_error,
                               answer_chars=len(final),
                               error_detail=error_detail)
+        except Exception:                              # noqa: BLE001
+            pass
+    if stopped:
+        try:
+            from aec_agent_core import activity_log as _al
+            _al.append_event(
+                core.conversation_dir(thread_id), "turn_stopped",
+                turn=_turn_no_of(ctx),
+                after_request_s=(round(time.time() - job.stop_requested_at, 3)
+                                 if job.stop_requested_at else None),
+                tool_results_kept=(kept.n_results if kept is not None
+                                   else 0))
         except Exception:                              # noqa: BLE001
             pass
     save_error = None
@@ -399,6 +500,10 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         if fetched:
             assistant_entry["inputs"] = sorted(os.path.basename(p)
                                                for p in fetched)
+        if stopped:
+            assistant_entry["stopped"] = True          # TA-37
+        if budget_ended:
+            assistant_entry["budget_ended"] = True     # TA-38
         if turn_error:
             assistant_entry["error"] = turn_error
         elif final == "(no answer text)":
@@ -415,7 +520,10 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
             # The stopped turn's work stays in the history, then a note
             # saying where it stopped (TA-19).
             messages.extend(kept.messages)
-            note = kept.history_note(turn_error or "")
+            note = kept.history_note(
+                turn_error or "",
+                why=("user" if stopped else "budget" if budget_ended
+                     else None))
             messages.append({"role": "assistant",
                              "content": (f"{final}\n\n{note}"
                                          if final not in (core.NOTHING_KEPT,
@@ -472,4 +580,5 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         save_error = save_error or f"{type(exc).__name__}: {exc}"
 
     job._finish(final=final, turn_tokens=turn_tokens, error=turn_error,
-                save_error=save_error, sp_sync=sp_sync)
+                save_error=save_error, sp_sync=sp_sync,
+                **({"stopped": True} if stopped else {}))

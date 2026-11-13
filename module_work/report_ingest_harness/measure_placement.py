@@ -44,6 +44,20 @@ In sample, where the pipeline's Opus arm (``logs_opus``,
 two boxes are set side by side: same page, same printed line (their
 vertical extents overlap), same spot (the boxes intersect).
 
+A LAB TEST'S TWO BOXES ARE NOT ONE THING (BACKLOG RI-99 (3)). Placement
+boxes a lab test where its values are printed (its results' row, or its
+sample's column at the property's rows); the pipeline boxed the line that
+names its sample. On a sheet that prints the two apart, both are right and
+"same line" is low for that reason alone. So each lab pair on one page is
+also put in one of three groups (:func:`where_beside`), reported in a table
+of their own: ``same line``; ``same sample block`` (different lines, one
+on a line printing the test's own sample label, or its boring's where it
+names no sample, the other on a line printing that label or at least two
+of the test's own results); ``elsewhere`` (anything else: the two boxes
+are in different samples' rows, even where another sample's row prints
+one of the test's numbers, or one is on neither). Only ``elsewhere`` is a
+disagreement to read.
+
 Run it from the repo root (or a worktree) with the app venv::
 
     .venv/Scripts/python -m module_work.report_ingest_harness.measure_placement
@@ -321,6 +335,58 @@ def compare(box: Sequence[float], page: int, other: Dict[str, Any]
     return out
 
 
+#: The three places a lab test's two boxes can sit, on one page.
+BESIDE = ("same_line", "same_block", "elsewhere")
+
+
+def _rows_under(text: Any, box: Sequence[float]) -> List[Any]:
+    """The printed rows a box's vertical extent meets."""
+    return [row for row in text.rows if row.words
+            and min(box[3], row.bbox[3]) - max(box[1], row.bbox[1])
+            >= -LINE_SLACK]
+
+
+def sample_block(text: Any, mine: Sequence[float], theirs: Sequence[float],
+                 test: Any) -> bool:
+    """Whether two boxes on different lines of one page sit in one
+    sample's block: one on a line printing the test's own sample label (its
+    boring's, where it names no sample), the other on a line printing that
+    label or at least two of the test's own results (a line printing only
+    one of them may be another sample's row)."""
+    from report_ingest import locate
+
+    label = (str(getattr(test, "sample_id", "") or "").strip()
+             or str(getattr(test, "investigation_id", "") or "").strip())
+    if not label:
+        return False
+    named = {id(row) for row, _ in locate.label_hits(text, label)}
+    numbers = locate.result_numbers(getattr(test, "result", None))
+
+    def names(rows: Sequence[Any]) -> bool:
+        return any(id(row) in named for row in rows)
+
+    def prints(rows: Sequence[Any]) -> bool:
+        return names(rows) or any(
+            sum(any(w.prints(n) for w in row.words) for n in numbers) >= 2
+            for row in rows)
+
+    a, b = _rows_under(text, mine), _rows_under(text, theirs)
+    return (names(a) and prints(b)) or (names(b) and prints(a))
+
+
+def where_beside(got: Dict[str, Any], text: Any, mine: Sequence[float],
+                 theirs: Optional[Sequence[float]], test: Any
+                 ) -> Optional[str]:
+    """Which of :data:`BESIDE` a lab test's two boxes on one page are;
+    None when they are on different pages or the other has no box."""
+    if not got.get("same_page") or not theirs:
+        return None
+    if got.get("same_line"):
+        return "same_line"
+    return ("same_block" if sample_block(text, mine, theirs, test)
+            else "elsewhere")
+
+
 def printed_under(text: Any, box: Sequence[float], limit: int = 70) -> str:
     """The words a box covers, for reading a disagreement (private
     RESULTS only)."""
@@ -409,10 +475,16 @@ def _row(got: Any, words: Any, obj: Any = None) -> Dict[str, Any]:
     return row
 
 
-def _beside(got: Any, other: Dict[str, Any], words: Any) -> Dict[str, Any]:
+def _beside(got: Any, other: Dict[str, Any], words: Any,
+            obj: Any = None) -> Dict[str, Any]:
     out = compare(got.bbox, got.page, other)
     out["their_bbox"] = other.get("bbox")
     out["their_page"] = other.get("page")
+    if got.kind == "test" and obj is not None:
+        where = where_beside(out, words(got.page), got.bbox,
+                             other.get("bbox"), obj)
+        if where is not None:
+            out["where"] = where
     if out["same_page"] and not out.get("same_line"):
         out["mine_reads"] = printed_under(words(got.page), got.bbox)
         out["theirs_reads"] = printed_under(words(got.page), other["bbox"])
@@ -437,7 +509,7 @@ def measure_item(stage: str, blob: Dict[str, Any], corpus: Any,
         if got.boxed and theirs:
             other = pair(stage, got.kind, obj, theirs)
             if other is not None and other.get("bbox"):
-                row["pipeline"] = _beside(got, other, words)
+                row["pipeline"] = _beside(got, other, words, obj)
         rows.append(row)
     return {"item": blob["item"], "report": report, "pages": pages,
             "step1": dict(step1), "note": placements.qa_note(),
@@ -467,7 +539,7 @@ def measure_heldout_item(stage: str, blob: Dict[str, Any], corpus: Any,
         row = _row(got, words, obj)
         if got.boxed and box:
             row["pipeline"] = _beside(got, {"page": page, "bbox": box},
-                                      words)
+                                      words, obj)
         rows.append(row)
     item = blob.get("log_id") or blob.get("sheet_id") or blob.get("calc_id")
     return {"item": str(item), "report": report, "pages": pages,
@@ -587,6 +659,8 @@ def stage_summary(items: List[Dict[str, Any]]) -> Dict[str, Any]:
                 cmp["same_page"] += bool(got.get("same_page"))
                 cmp["same_line"] += bool(got.get("same_line"))
                 cmp["same_spot"] += bool(got.get("same_spot"))
+                if got.get("where") in BESIDE:
+                    cmp["lab_" + got["where"]] += 1
     total = sum(counts.values())
     with_text = total - counts["no_text"]
     placed = counts["placed"] + counts["moved"] - page_level
@@ -687,6 +761,8 @@ def _disagreements(items: List[Dict[str, Any]], same_page: bool,
             if got is None or got.get("same_line") or \
                     bool(got.get("same_page")) != same_page:
                 continue
+            if got.get("where") == "same_block":
+                continue        # a lab test's label line and its results
             if same_page:
                 out.append(f"| {item['item']} | {row['page']} | "
                            f"{row['kind']} | {row['what']} | "
@@ -754,6 +830,19 @@ def _details(title: str, items: List[Dict[str, Any]]) -> List[str]:
     return lines
 
 
+_WHERE_HEAD = ["| stage or arm | set | on the same page | same line | "
+               "same sample block | elsewhere |",
+               "|---|---|---:|---:|---:|---:|"]
+
+
+def _where_row(name: str, which: str, s: Dict[str, Any]) -> str:
+    cmp = s["compare"]
+    counts = [cmp.get("lab_" + w, 0) for w in BESIDE]
+    m = sum(counts)
+    return (f"| {name} | {which} | {m} | "
+            + " | ".join(_pct(n, m) for n in counts) + " |")
+
+
 def write_results(out: Path, results: Dict[str, List[Dict[str, Any]]],
                   held_out: Optional[Dict[str, Tuple[
                       str, List[Dict[str, Any]]]]] = None) -> List[str]:
@@ -802,6 +891,19 @@ def write_results(out: Path, results: Dict[str, List[Dict[str, Any]]],
     lab = [(n, items) for n, items in results.items() if n == "lab"] + [
         (a, items) for a, (st, items) in held_out.items() if st == "lab"]
     if lab:
+        lines += ["", "## Lab: where the two boxes sit", "",
+                  "Placement boxes a lab test where its values are printed; "
+                  "the pipeline boxed the line naming its sample (RI-99 "
+                  "(3)). So the lab pairs on one page are in three groups: "
+                  "same line; same sample block (different lines, one "
+                  "printing the test's own sample or boring label, the "
+                  "other that label or one of its results); elsewhere. "
+                  "Only elsewhere is a disagreement.", "", *_WHERE_HEAD]
+        for name, items in lab:
+            for which in _sets(items):
+                lines.append(_where_row(name, which,
+                                        stage_summary(_in_set(items,
+                                                              which))))
         lines += ["", "## Lab titles by test kind", "",
                   "Counted from each answer's own records (its test kinds), "
                   "blind included: the title of a page whose only test "
