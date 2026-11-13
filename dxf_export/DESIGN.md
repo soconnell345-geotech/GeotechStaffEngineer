@@ -75,9 +75,12 @@ The object is drawn in model space at true size in MILLIMETRES. The sheet
 model space too, N times its printed size, so plotting model space at 1:N
 gives the sheet. `render.py` does exactly that: `Frontend` +
 `PyMuPdfBackend`, a page of the sheet's size, `fit_page=False`,
-`scale=1/N`. The border is the content's outermost box and sits 10 mm
-inside the sheet's edge, so centring the content puts the sheet on the page
-exactly (tested: the border lands 10 mm inside the page). The PNG is the
+`scale=1/N`, no page margins, and the page is the sheet's own rectangle in
+model space (`render_box`, from `SheetInfo.origin`), whatever the content
+holds: the border lands 10 mm inside the page (tested, also with a word
+far wider than its column, which is broken). ezdxf's default, centring on
+the content's box, let one over-long word slide the whole sheet, stamp
+and all, off the page (GM-313 review A1). The PNG is the
 PDF page rasterised at 200 dpi, so it cannot differ from the PDF. Black on
 white (`ColorPolicy.BLACK`); the DXF keeps layer colours for CAD.
 
@@ -121,7 +124,8 @@ NOT FOR CONSTRUCTION` on every sheet (`sheet.STAMP`; no input removes it).
   does not fit is refused with the one that does; so are notes or a table
   too big for the sheet. Nothing is written on a refusal.
 - **Sheets**: `letter` (default, as a calc package's pages), `tabloid`,
-  `a4`, `a3`, always landscape. The right-hand 80 mm strip holds the notes
+  `a4`, `a3`, always landscape. The right-hand strip, 80 mm wide (100 or
+  120 mm, by the code, only when the notes do not fit 80), holds the notes
   over the title block; the table and the scale bar sit at the bottom
   left; the stamp is boxed at the top left.
 
@@ -162,8 +166,8 @@ the right), y up from the underside of the base.
 Layout rules (fixed; the sheet's notes state the first three):
 
 1. A stem bar that lies in the section runs from one cover below the top
-   of the stem, parallel to its face, down into the base to the level of
-   the base's bottom steel. A base bar that lies in the section runs the
+   of the stem, parallel to its face, down into the base to stand on the
+   base's whole bottom mat (its bars along the wall included). A base bar that lies in the section runs the
    full width of the base, one cover in from each end. No bar is cut off
    or lapped.
 2. Bars along the wall are dots at their spacing, inside the in-section
@@ -188,7 +192,18 @@ Layout rules (fixed; the sheet's notes state the first three):
    the wall height outside them; toe, stem thickness at the base and heel
    chained below, the base width outside them; the stem's top thickness
    above, with the stem's covers on the line under it; the base's covers
-   at the toe's face; a shear key's distance, width and depth.
+   at the toe's face; a shear key's distance, width and depth. Every
+   number is placed where the code lays it out (`dimtix`, an explicit
+   location); a chain link whose number is too wide for it gets a row of
+   its own under the chain, the toe's set outward, so no number prints
+   over another's (tested on GM-312's three walls).
+   A shear key given by its depth only (GM-312 gives no width or
+   position) is drawn under the stem, as wide as the stem's base, as the
+   calc package's own wall figure draws it; only its depth is dimensioned,
+   and a note and a warning say its width and position are assumed.
+   At most 5,000 bars along the wall are laid out (a description asking
+   for more is refused before layout); any drawing holds at most 20,000
+   points.
 6. One callout per bar set (its mark in a circle and its `callout` text).
    Front-face stem sets leave to the left, everything else to the right,
    in one column beyond the heel, ordered by height so no two leaders

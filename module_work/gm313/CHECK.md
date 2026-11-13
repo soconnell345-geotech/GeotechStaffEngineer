@@ -232,3 +232,48 @@ do not pass sheets yet: that is the join after GM-312).
   could be one step off.
 - `geotech-references`: no defect found. The library holds no printed
   standard-hook geometry (ACI 318 is not a held reference).
+
+## Review fixes (2026-11-13)
+
+From the independent review of b7372c3 (merge after fixes). One line per
+finding; "not fixed" items are the lead's or noted.
+
+- A1 fixed: the PDF page is the sheet's own rectangle (`render_box` from
+  `SheetInfo.origin`, no margins); `_fonts.wrap` breaks a word wider than
+  its column; tested with a 290-character word and a 160-character title
+  (the border lands 10 mm inside the page).
+- A2 fixed: a shear key given by its depth only (GM-312) is drawn under the
+  stem, as wide as the stem's base (as `retaining_walls`' wall figure);
+  only its depth is dimensioned; a note and a warning say it is assumed.
+- A3 fixed: the three GM-312 walls fit letter (plain 1:50, key_surcharge
+  1:100, front_batter 1:50): the basis is not repeated, the drawing's own
+  notes are two, notes and callouts at a 3.8 mm pitch, table rows 4.5 mm,
+  the notes strip 80 mm and 100 or 120 only when the notes need it.
+- A4 fixed: every dimension number is placed where the code lays it out
+  (`dimtix` 1, an explicit location); a chain link too narrow for its
+  number gets a row of its own, the toe's number set outward; the key
+  depth's number gets room; tested: no two numbers overlap on any GM-312
+  wall.
+- A5 fixed: stem bars stand on the whole bottom mat (bars along the wall
+  included); tested.
+- B1 fixed: the basis is appended only when no note carries it.
+- B2 fixed: at most 20,000 points in a drawing; a wall asking for more
+  than 5,000 bars along the wall is refused before layout.
+- B3 fixed: a test runs `render_pdf(renderer="pdflatex")` with the compile
+  stood in for and checks the sheet's page is appended.
+- B4, B5 fixed: the A1 test; the three GM-312 descriptions are a fixture
+  (`dxf_export/tests/fixtures/gm312_real_descriptions.json`): each
+  validates, draws on letter, audits clean, prints no "None".
+- C1 fixed: control characters dropped from text. C2 fixed: a title past
+  three lines ends in "..." with a warning.
+- C3 (a battered face's cover measured horizontally), C4 (the second unit
+  is text, not DIMALT), C5 (base leaders run diagonally), C7 (ezdxf
+  private attributes, with a fallback): noted, not fixed.
+- C6 (`wall.dxf` overwrites an existing `wall.pdf`/`wall.png` in the
+  folder): for the lead, a product call.
+- Lead's L1: dimension, extension and leader lines are the thinnest (0.13
+  mm); ground lines 0.50 mm with 45-degree strokes under them (0.25 mm).
+- Lead's L2: one example set is committed (`wall_example` .dxf/.pdf/.png)
+  and `wall_real_design.png` (GM-312's key_surcharge wall);
+  `make_examples.py --all` still writes the low, tall and keyed walls
+  named above, uncommitted.

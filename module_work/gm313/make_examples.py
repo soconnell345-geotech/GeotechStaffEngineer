@@ -1,21 +1,30 @@
 """Draw GM-313's example sheets (made-up walls; not designs).
 
-    python module_work/gm313/make_examples.py
+    python module_work/gm313/make_examples.py          # the committed set
+    python module_work/gm313/make_examples.py --all    # and three more
 
-Writes <name>.dxf, <name>.pdf and <name>.png beside this file, each from
-the made-up fixture ``dxf_export/tests/fixtures/wall_section_example.json``
-with its geometry changed.
+The committed set (the repository is public and kept small): the made-up
+fixture ``dxf_export/tests/fixtures/wall_section_example.json`` as
+``wall_example.dxf``, ``.pdf`` and ``.png``, and the PNG alone of a real
+GM-312 description, the "key_surcharge" wall of
+``dxf_export/tests/fixtures/gm312_real_descriptions.json``, as
+``wall_real_design.png``. ``--all`` also writes the low wall, the tall wall
+with a long heel and the front-battered stem with a shear key (each as
+its three files), which are not committed.
 """
 import copy
 import json
 import os
+import sys
 
 from dxf_export.render import write_sheet
 from dxf_export.wall_section import wall_section_drawing
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FIXTURE = os.path.join(HERE, "..", "..", "dxf_export", "tests", "fixtures",
-                       "wall_section_example.json")
+FIXTURES = os.path.join(HERE, "..", "..", "dxf_export", "tests", "fixtures")
+FIXTURE = os.path.join(FIXTURES, "wall_section_example.json")
+REAL = os.path.join(FIXTURES, "gm312_real_descriptions.json")
+COMMITTED = ("wall_example",)
 
 
 def examples():
@@ -54,7 +63,10 @@ def examples():
 
 
 if __name__ == "__main__":
+    every = "--all" in sys.argv[1:]
     for name, (description, sheet) in examples().items():
+        if not every and name not in COMMITTED:
+            continue
         drawing = wall_section_drawing(
             description, sheet=sheet,
             title_block={"project": "Made-up example", "drawn_by": "GSE",
@@ -62,3 +74,16 @@ if __name__ == "__main__":
         result = write_sheet(drawing, os.path.join(HERE, name))
         print(name, result.to_dict()["scale"], result.counts,
               result.warnings)
+    # a real GM-312 description, as the PNG alone
+    from dxf_export.render import render_sheet
+    with open(REAL, encoding="utf-8") as handle:
+        real = json.load(handle)["key_surcharge"]
+    drawing = wall_section_drawing(
+        real, title_block={"project": "Made-up wall, GM-312 design",
+                           "drawn_by": "GSE", "date": "2026-11-13",
+                           "drawing_number": "wall_real_design"})
+    files = render_sheet(drawing)
+    with open(os.path.join(HERE, "wall_real_design.png"), "wb") as handle:
+        handle.write(files["png"])
+    print("wall_real_design", f"1:{files['info'].scale}",
+          drawing.layout_warnings)
