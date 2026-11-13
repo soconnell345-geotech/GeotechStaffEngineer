@@ -84,7 +84,8 @@ record and its exports out -- and the pieces it drives are:
     document: it runs on the run files already on disk.
 
 IMPORTS ARE LAZY ON PURPOSE. Importing this package pulls in nothing but the
-standard library: the passes are reached through :func:`triage` and
+standard library and the core's small ``app_details`` hook (below): the
+passes are reached through :func:`triage` and
 :func:`review_labels` below, which import their modules on the first call,
 and ``anthropic`` is imported only inside
 :class:`report_ingest.engine.ClaudeEngine`. So the app never pays for this
@@ -99,6 +100,19 @@ import importlib as _importlib
 import importlib.util as _importlib_util
 import sys as _sys
 from typing import Any
+
+from aec_agent_core.app_details import hand_in as _hand_in_app
+
+# Which application runs on the core (aec_agent_core.app_details), handed in
+# here too (BACKLOG RI-209): the report tables are sent to the Foundry
+# dataset under the application's top folder, and a process that loads only
+# report_ingest (the command line's --deliver, a notebook, the cluster)
+# would otherwise send them under the core's default name, a second tree in
+# the same dataset. The same values as funhouse_agent, webapp and
+# calc_package hand in, whichever loads first
+# (webapp/tests/test_app_details.py checks they agree).
+_hand_in_app(name="GeotechStaffEngineer", dist="geotech-staff-engineer",
+             package="funhouse_agent.deep")
 
 # The run mirror is in funhouse_agent.run_mirror (INF-30 step 5), which the
 # review suite uses too, and in the shared core since INF-32 step 11 (c)

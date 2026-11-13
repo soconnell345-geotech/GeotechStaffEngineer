@@ -1642,7 +1642,9 @@ def send_to_dataset(paths: Sequence[str], v1: str, *,
     v1>``; the top folder is the one the conversation store saves under
     (``aec_agent_core.foundry_dataset_store``), so the save shares that
     store's lock and its outputs folder and goes up in one transaction.
-    Only on a Foundry deployment with the alias set; otherwise nothing is
+    It is ``GeotechStaffEngineer`` in any process, because importing
+    ``report_ingest`` hands the core the application's name (BACKLOG
+    RI-209). Only on a Foundry deployment with the alias set; otherwise nothing is
     imported and nothing sent. Never raises: what happened, in words.
     ``file_manager`` replaces the store's file manager (tests)."""
     alias = dataset_alias()

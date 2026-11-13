@@ -25,7 +25,11 @@ Under one folder, `report_tables/v1/`, inside a root folder:
 
 On a Foundry deployment with a dataset named (below), each report's export
 is also sent to that dataset, under the application's own top folder:
-`<app folder>/report_tables/v1/...`, the same layout. In a Foundry build (a
+`GeotechStaffEngineer/report_tables/v1/...`, the same layout. (Importing
+`report_ingest` names the application to the shared core, so the command
+line, a notebook and the app all send under that one folder; a
+`GEOTECH_SHAREPOINT_ROOT` setting, which the conversation store also reads,
+names another.) In a Foundry build (a
 job running `score_on_cluster`) there is no dataset hand-off: the job's
 local `report_tables/v1/` folder is the interface, and the job carries it to
 its output dataset as it carries everything else.
@@ -48,8 +52,10 @@ shared report library and the report's folder is inside it, the library's
 own folder; else the report's own folder. So in the app with a shared
 library, every report read into it (one folder per file) exports into the
 library's one `report_tables/`; without one, a report's tables sit in its
-own folder inside the conversation's. On Foundry with the dataset set, they
-all land in the one dataset folder either way.
+own folder inside the conversation's. On Foundry with the dataset set, every
+report's files land in the dataset's one
+`GeotechStaffEngineer/report_tables/v1/` either way, whichever process sent
+them.
 
 ## The folder
 

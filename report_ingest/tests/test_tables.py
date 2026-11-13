@@ -1182,7 +1182,8 @@ class TestDelivery:
         shutil.copytree(ingested.out, out)
         parent, child = _keys(ingested)
         outcome = tables.export_report(out, out, deliver=True)
-        top = f"{fds._app_top()}/report_tables/v1/"
+        top = "GeotechStaffEngineer/report_tables/v1/"
+        assert fds._app_top() == "GeotechStaffEngineer"
 
         assert outcome.status == "written"
         assert outcome.delivery.startswith("sent ")
@@ -1197,6 +1198,59 @@ class TestDelivery:
             assert any(p.startswith(top + f"ingest_run/{key}.")
                        for p in sent)
         assert foundry.leftovers() == []
+
+    def test_a_process_with_only_report_ingest_sends_under_the_apps_name(
+            self, tmp_path):
+        """RI-209 review A2: the command line's --deliver, a notebook or the
+        cluster loads report_ingest alone; its files must land under the
+        same top folder as the app's (GeotechStaffEngineer), never under the
+        core's default name. In a fresh process, since this one has loaded
+        the app's packages."""
+        import subprocess
+
+        root = Path(__file__).resolve().parents[2]
+        code = (
+            "import importlib.util, os, sys\n"
+            "from pathlib import Path\n"
+            f"tmp = Path({str(tmp_path)!r})\n"
+            "spec = importlib.util.spec_from_file_location('foundry_fake', "
+            f"{str(root / 'packages' / 'aec-agent-core' / 'tests' / 'foundry_fake.py')!r})\n"
+            "fake = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(fake)\n"
+            "lib = fake.FakeLibrary(tmp / 'fake')\n"
+            "sys.modules.update(lib.modules)\n"
+            "import aec_agent_core.foundry_dataset_store as fds\n"
+            "fds.OUTPUTS_DIR = lib.outputs\n"
+            "from report_ingest import tables\n"
+            "from report_ingest.model import ReportRecord\n"
+            "from report_ingest.writers import write_outputs\n"
+            "src = tmp / 'in.pdf'\n"
+            "src.write_bytes(b'%PDF-1.4' + b' made up' * 200)\n"
+            "r = ReportRecord()\n"
+            "r.document.report_id = 'SYN'\n"
+            "r.document.n_pages = 1\n"
+            "write_outputs(r, tmp / 'run' / 'R1', source=str(src))\n"
+            "code = tables.main([str(tmp / 'run'), '--deliver'])\n"
+            "loaded = [m for m in ('funhouse_agent', 'webapp', "
+            "'calc_package') if m in sys.modules]\n"
+            "assert not loaded, loaded\n"
+            "sent = sorted(lib.ds.files_)\n"
+            "assert code == 0 and sent, (code, sent)\n"
+            "bad = [p for p in sent if not "
+            "p.startswith('GeotechStaffEngineer/report_tables/v1/')]\n"
+            "assert not bad, bad\n"
+            "print('ok')\n")
+        env = dict(os.environ, GEOTECH_DEPLOYMENT="foundry",
+                   GSE_REPORT_TABLES_DATASET=_fake().ALIAS)
+        env.pop("GEOTECH_SHAREPOINT_ROOT", None)
+        env["PYTHONPATH"] = os.pathsep.join(
+            [str(root / "packages" / "aec-agent-core"), str(root),
+             env.get("PYTHONPATH", "")])
+        done = subprocess.run([sys.executable, "-c", code], env=env,
+                              capture_output=True, text=True, timeout=300,
+                              cwd=str(tmp_path))
+        assert done.returncode == 0, done.stderr[-2000:]
+        assert done.stdout.strip().endswith("ok")
 
     def test_an_ingest_sends_its_export(self, foundry, tmp_path):
         pdf = tmp_path / "made_up_report.pdf"
