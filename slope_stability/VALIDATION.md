@@ -131,20 +131,28 @@ On the manual's twelve slices K_c is 1.72 on every slice (printed 1.71), the
 second-stage strength is within 0.03 ksf of Fig. G-10b on every slice, and the
 same three slices (1, 2 and 12) take the drained strength in the third stage.
 The printed weights are those of slices with straight bases; the module weighs
-down to the arc at each slice's middle, 5 to 7 % more on the two thin end
-slices, which is the 0.03 ksf.
+down to the arc at each slice's middle, 5.9 and 6.7 % more on the two thin
+end slices (1.3 % more in all), which is the 0.03 ksf: the slicing differs,
+not the strength rule. From the printed inputs the strength rule itself is
+within 0.011 ksf of Fig. G-10b on every slice
+(`test_strengths_are_eqs_g9_g10_g12_on_every_slice_of_the_table`).
 
 ### Single specified surface (validation_examples V-037 / V-038)
 
 The tests' section (Fig 95.1, recovered); pool El. 110 as Slide2's text gives
-it, El. 103 as the manual has it.
+it, El. 103 as the manual has it. Slide2's text and its figure disagree on
+the pool: the text of #95 and #96 gives 110 ft, Fig 95.1 draws it at about
+103 ft. Each pin is a printed value on its own source's printed inputs: the
+EM's 1.35 (p. G-15) at the EM's 103 ft pool is pinned to 1 %; Slide2's 1.347
+at the 110 ft its text gives reads 1.304 by the same method of slices
+(-3.2 %), a strict xfail at 1 %, reported and not tuned.
 
 | Problem | Procedure, method of slices | Before step 9 | Now | Printed | vs print |
 |---------|-----------------------------|--------------:|----:|--------:|---------:|
 | #96, pool 110 | three-stage, Spencer | 1.235 | 1.427 | 1.443 | -1.1 % |
 | #96, pool 103 | three-stage, Spencer | 1.237 | 1.431 | 1.443 (EM 1.44) | -0.8 % |
-| #95, pool 103 | Corps 1970, force equilibrium at 19.4 deg | not offered | 1.338 | 1.347 (EM 1.35) | -0.7 % |
-| #95, pool 110 | Corps 1970, force equilibrium at 19.4 deg | not offered | 1.304 | 1.347 | -3.2 % |
+| #95, pool 103 | Corps 1970, force equilibrium at 19.4 deg | not offered | 1.338 | EM 1.35 (p. G-15; its own pool) | -0.9 % (pinned) |
+| #95, pool 110 | Corps 1970, force equilibrium at 19.4 deg | not offered | 1.304 | Slide2 1.347 (its text's pool) | -3.2 % (strict xfail) |
 | #95, pool 110 | Corps 1970, Spencer (the module's answer) | 1.207 | 1.207 | 1.347 | -10.4 % |
 
 The final value cannot tell a 103 ft pool from a 110 ft pool. Which method of

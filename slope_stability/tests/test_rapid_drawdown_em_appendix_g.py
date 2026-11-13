@@ -171,21 +171,30 @@ def test_em_example_by_bishop_on_the_manuals_twelve_slices():
     assert r.stage3_fos == pytest.approx(1.44, rel=0.01)
     assert r.answer_stage == 3 and r.FOS == r.stage3_fos
     rows = list(reversed(r.slice_table()))          # slice 1 at the crest
+    # Why K_c, tau_ff and N below are pinned wider than the table's
+    # rounding (0.015, 0.03 ksf, max(5 kips, 3 %)): the slicing differs
+    # from the print's, not the strength rule. The manual's slices have
+    # straight bases (the chord between the edges' points on the circle;
+    # their areas are 0.9 % less than the areas down to the arc); the
+    # module weighs each slice down to the arc at the slice's middle and
+    # puts its base there: 1.3 % more area than the print's in all, 5.9 %
+    # and 6.7 % more on the thin end slices 2 and 12. Those two read
+    # tau_ff 1.515 and 1.337 ksf against the printed 1.49 and 1.31, and N
+    # 56.6 and 77.3 kips against 52 and 73. No
+    # slicing mode is added for this check. The strength rule itself
+    # (Eqs. G-9, G-10 and G-12) is pinned from the printed inputs to
+    # 0.011 ksf on every slice of the table by
+    # test_strengths_are_eqs_g9_g10_g12_on_every_slice_of_the_table.
     for k, (row, printed) in enumerate(zip(rows, FIG_G10B_G11B), start=1):
         assert row["Kf"] == pytest.approx(KF, abs=1e-9)
         assert row["Kc"] == pytest.approx(printed[2], abs=0.015)
-        # The printed weights are those of slices with straight bases; the
-        # module weighs down to the arc at the slice's middle, 5 to 7 %
-        # more on the thin end slices (2 and 12) and under 1.5 % elsewhere.
-        # So tau_ff is within 0.03 ksf of the print on every slice, not
-        # within its 0.005 rounding (the equations themselves are pinned to
-        # the rounding by the tests above).
         assert row["tau_ff"] / KSF == pytest.approx(printed[5], abs=0.03), k
         assert row["strength_used"] == printed[10], k
         assert row["u_after"] / KSF == pytest.approx(printed[7], abs=0.06), k
     assert r.n_drained_substituted == 3
     # the second stage's N of Eq. G-13, slice by slice (kips; the print's
-    # are to 1 kip on its lighter slices)
+    # are to 1 kip on its lighter slices; wider than that for the slicing,
+    # as said above)
     for row, printed in zip(rows, FIG_G10B_G11B):
         assert row["N_stage2"] / KIP_FT == pytest.approx(
             printed[6], abs=max(5.0, 0.03 * abs(printed[6])))
@@ -289,12 +298,19 @@ def test_a_trial_without_a_solution_is_not_scored_by_the_search(monkeypatch):
     monkeypatch.setattr(
         rd, "_spencer_solution",
         lambda *a, **k: rd.StageSolution(reason="made to fail"))
+    # The windows of the test below, so that trials reach the scoring (at
+    # the default windows no circle of this 2 x 2 grid met the entry/exit
+    # check, and the search scored nothing with the real solver either).
     r = search_rapid_drawdown(_dam(), 103 * FT, 24 * FT, nx=2, ny=2,
+                              surface_type="entry_exit",
+                              x_entry_range=(40 * FT, 100 * FT),
+                              x_exit_range=(320 * FT, 380 * FT),
                               n_slices=12, toe_circles=False,
                               infinite_slope=False, refine=False)
     assert r.no_surface_found and r.to_dict()["FOS"] is None
-    counted = [rec for rec in r.no_solution if rec["method"] == "duncan_3stage"]
-    assert counted and counted[0]["n"] > 0
+    counted = [rec for rec in r.search.no_solution
+               if rec["method"] == "corps_2stage"]     # the search's default
+    assert counted and counted[0]["n"] == counted[0]["not_converged"] > 0
 
 
 def test_the_search_scores_a_trial_as_the_single_surface_does():
@@ -393,6 +409,8 @@ def test_water_before_and_after_is_stated():
     r = _run()
     assert "level pool" in r.water_before and "assumed" in r.water_before
     assert "level pool" in r.water_after and "assumed" in r.water_after
+    assert f"elevation {103 * FT:g} m " in r.water_before     # with its unit
+    assert f"elevation {24 * FT:g} m " in r.water_after
     whats = {c["what"]: c for c in r.choices}
     assert whats["water before drawdown"]["how"] == "default"
     assert whats["water after drawdown"]["how"] == "default"

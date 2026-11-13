@@ -50,10 +50,11 @@ def test_convergence_flags_reported():
     """Both GLE stages converge on the well-posed dam, so the flags are True and
     no warning is emitted (regression guard for the dead-ternary fix)."""
     r = _rd(_dam(), "duncan_3stage")
-    assert r.stage1_converged is True and r.stage3_converged is True
+    assert r.stage1_converged is True and r.last_stage_converged is True
     assert r.warnings == []
     d = r.to_dict()
-    assert d["stage3_converged"] is True and "warnings" not in d
+    assert d["last_stage_converged"] is True and "warnings" not in d
+    assert "stage3_converged" not in d    # it said true beside a null stage3_FOS
 
 
 def test_rapid_drawdown_more_critical_than_drained():

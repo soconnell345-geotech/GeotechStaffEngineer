@@ -30,9 +30,13 @@ VERDICTS (GM-140 step 9: every stage as Appendix G prints it)
   test_rapid_drawdown_em_appendix_g.py` (2.20 / 1.52 / 1.44 printed).
 * V-037 (#95, Corps 1970): the EM computed its example of this procedure by
   the Modified Swedish Method with the side forces at a fixed 19.4 deg (G-5,
-  pp. G-9 to G-15: 3.49, then 1.35). The library's force-equilibrium solution
-  at that inclination gives 1.338 at the EM's pool (-0.7 % on 1.347) and
-  1.304 at 110 ft (-3.2 %). The module's own answer is by Spencer's method,
+  pp. G-9 to G-15: 3.49, then 1.35). Each pin is a printed value on that
+  source's own printed inputs: the library's force-equilibrium solution at
+  that inclination gives 1.338 at the EM's 103 ft pool against the EM's own
+  1.35 (p. G-15; -0.9 %), and 1.304 at the 110 ft pool Slide2's #95 text
+  gives against Slide2's 1.347 (-3.2 %, outside 1 %: a strict xfail).
+  Slide2's text gives 110 ft; its Fig 95.1 draws the pool at about 103 ft.
+  The module's own answer is by Spencer's method,
   which the manual recommends: 1.207 (1.236 at 103 ft), about 10 % below the
   printed value; the result says what the manual's example used. Which
   method of slices Slide2 used for #95 and #96 is not settled.
@@ -67,13 +71,29 @@ def _fos(method, pool_ft=110, **kw):
 
 
 def test_v037_corps_1970_by_the_manuals_own_method_of_slices():
-    """#95 printed 1.347 (EM 1110-2-1902 p. G-15: 1.35, by the Modified
-    Swedish Method with side forces at 19.4 deg). Force equilibrium at that
-    fixed inclination, at the EM's 103 ft pool: 1.338, -0.7 %."""
+    """EM 1110-2-1902 p. G-15 prints 1.35 for its example of the 1970
+    procedure, by the Modified Swedish Method with side forces at 19.4 deg,
+    on its own 103 ft pool. Force equilibrium at that fixed inclination, at
+    that pool: 1.338, -0.9 %."""
     r = _fos("corps_2stage", pool_ft=103, stage_solver=("force", 19.4))
-    assert r.FOS == pytest.approx(1.347, rel=0.01)
+    # GM-140 step 9 review: the EM's own 1.35 on the EM's own pool (this
+    # pinned Slide2's 1.347 on the EM's pool before); 1.338, -0.9 %
+    assert r.FOS == pytest.approx(1.35, rel=0.01)            # EM p. G-15
     assert r.stage1_fos == pytest.approx(3.49, rel=0.01)     # EM p. G-12
     assert r.answer_stage == 2 and r.stage3_fos is None
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "Slide2 #95 on its own printed inputs (the 110 ft pool its text gives) "
+    "by the EM's method of slices (force equilibrium at 19.4 deg): 1.304 "
+    "against the printed 1.347, -3.2 %, outside the 1 % the printed stages "
+    "are pinned to. Slide2's text gives 110 ft, its Fig 95.1 draws about "
+    "103 ft; which method of slices Slide2 used is not settled. Reported, "
+    "not tuned (GM-140 step 9 review)."))
+def test_v037_slide2_95_on_its_own_printed_pool():
+    """Slide2 #95 prints 1.347 with the maximum pool at 110 ft (its text)."""
+    r = _fos("corps_2stage", pool_ft=110, stage_solver=("force", 19.4))
+    assert r.FOS == pytest.approx(1.347, rel=0.01)
 
 
 def test_v037_corps_1970_by_spencer_is_the_modules_answer():

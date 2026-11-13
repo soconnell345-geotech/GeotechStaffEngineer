@@ -180,7 +180,7 @@ def test_rapid_drawdown_counts_reinforcement():
     circle = dict(xc=10.0, yc=25.0, radius=27.0)
     plain = rapid_drawdown_fos(dam(), 13.0, 3.0, **circle)
     reinforced = rapid_drawdown_fos(dam(80.0), 13.0, 3.0, **circle)
-    assert plain.stage3_converged and reinforced.stage3_converged
+    assert plain.last_stage_converged and reinforced.last_stage_converged
     # GM-140 step 9: a made-up section with no printed answer, so the
     # module's own values (1.006 and 1.043 before the stages followed EM
     # 1110-2-1902 Appendix G) are not pinned; the reinforcement raises

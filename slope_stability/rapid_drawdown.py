@@ -234,8 +234,12 @@ class RapidDrawdownResult:
         return self.stage1_fos is not None
 
     @property
-    def stage3_converged(self) -> bool:
-        """The last stage computed has a solution."""
+    def last_stage_converged(self) -> bool:
+        """The last stage computed has a solution (stage 2 for Lowe and
+        Karafiath, for the Corps procedure and for a three-stage run no
+        slice needed a third stage for; stage 3 otherwise). It was named
+        ``stage3_converged``, which said true beside ``stage3_FOS`` null
+        where no third stage was computed (GM-140 step 9 review)."""
         return self.FOS is not None
 
     def slice_table(self) -> List[Dict[str, Any]]:
@@ -292,7 +296,7 @@ class RapidDrawdownResult:
             "n_undrained_slices": self.n_undrained_slices,
             "n_drained_substituted": self.n_drained_substituted,
             "stage1_converged": self.stage1_converged,
-            "stage3_converged": self.stage3_converged,
+            "last_stage_converged": self.last_stage_converged,
             "m_alpha_min_stage1": round(self.m_alpha_min_stage1, 3),
             "m_alpha_min": round(self.m_alpha_min, 3),
         }
@@ -794,7 +798,7 @@ def _drawdown_choices(method, f_interslice, stage_solver, before_given,
     out.append(choice(
         "water before drawdown",
         ("the seepage line given (stage1_phreatic_points)" if before_given
-         else f"a level pool at elevation {drawdown_from:g}, hydrostatic "
+         else f"a level pool at elevation {drawdown_from:g} m, hydrostatic "
               "below it"),
         how_given(None if not before_given else True, None,
                   name="stage1_phreatic_points"),
@@ -807,7 +811,7 @@ def _drawdown_choices(method, f_interslice, stage_solver, before_given,
     out.append(choice(
         "water after drawdown",
         ("the line given (drawdown_phreatic_points)" if after_given
-         else f"a level pool at elevation {drawdown_to:g}, hydrostatic "
+         else f"a level pool at elevation {drawdown_to:g} m, hydrostatic "
               "below it"),
         how_given(None if not after_given else True, None,
                   name="drawdown_phreatic_points"),
@@ -962,7 +966,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     else:
         g_full = _pool_geometry(geom, drawdown_from_elevation)
         water_before = (
-            f"a level pool at elevation {drawdown_from_elevation:g} with "
+            f"a level pool at elevation {drawdown_from_elevation:g} m with "
             "hydrostatic pressures below it: assumed, as in the manual's "
             "own example (EM 1110-2-1902 G-4b, p. G-9), no seepage line "
             "being given")
@@ -973,7 +977,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     else:
         g_draw = _pool_geometry(geom, drawdown_to_elevation)
         water_after = (
-            f"a level pool at elevation {drawdown_to_elevation:g} with "
+            f"a level pool at elevation {drawdown_to_elevation:g} m with "
             "hydrostatic pressures below it: assumed, as in the manual's "
             "own example (EM 1110-2-1902 G-4b, p. G-9), no line after "
             "drawdown being given")
