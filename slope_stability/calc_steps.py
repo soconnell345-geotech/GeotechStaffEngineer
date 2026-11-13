@@ -125,6 +125,20 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     if result.tension_crack_depth > 0:
         items.append(InputItem("z_t", "Tension crack depth",
                                f"{result.tension_crack_depth:.2f}", "m"))
+        crack = getattr(result, "tension_crack", None) or {}
+        if crack:
+            # how the depth was set and what the crack does (GM-140 step 4)
+            basis = {"given": "given",
+                     "rankine": "Rankine, developed strengths "
+                                "(EM 1110-2-1902 Eq. C-36)",
+                     "min_fos": "minimum factor of safety, scanned "
+                                "(EM 1110-2-1902 2-2f(4), C-10c)"}.get(
+                         crack.get("depth_basis"), "")
+            model = ("surface ends at the crack"
+                     if crack.get("model") == "truncation"
+                     else "cracked soil kept without strength")
+            items.append(InputItem("z_t basis", "Tension crack depth basis; model",
+                                   f"{basis}; {model}", ""))
         if result.tension_crack_water_depth > 0:
             items.append(InputItem(
                 "z_w", "Water depth in tension crack",

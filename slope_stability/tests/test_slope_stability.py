@@ -625,7 +625,7 @@ class TestPublishedBenchmarks:
         "below the crest is a reverse-curvature circle and is now closed "
         "by Rankine's crack with the developed strengths (EM 1110-2-1902 "
         "Eq. C-36: 3.03 m), so it governs at 1.835 where the base circle "
-        "gave 1.935: away from Taylor's 1.947 (-5.8 %), whose chart has no "
+        "gave 1.942: away from Taylor's 1.947 (-5.8 %), whose chart has no "
         "crack. With every such circle discarded the search reads 1.942 "
         "(-0.3 %). module_work/gm140/STEP4_CHECK.md"))
     def test_taylor_undrained_nc(self):
@@ -645,7 +645,7 @@ class TestPublishedBenchmarks:
     @pytest.mark.xfail(strict=True, reason=(
         "GM-140 step 4 (OWN-103): the short profile's best circle is a "
         "reverse-curvature toe circle, now closed by Rankine's crack "
-        "(EM 1110-2-1902 Eq. C-36: 3.03 m): 1.970 -> 1.833, below Taylor's "
+        "(EM 1110-2-1902 Eq. C-36: 3.03 m): 2.062 -> 1.833, below Taylor's "
         "1.947, whose chart has no crack. With every such circle discarded "
         "2.065. module_work/gm140/STEP4_CHECK.md"))
     def test_taylor_short_profile_reads_high_and_warns(self):

@@ -737,7 +737,7 @@
    "hand-calculation benchmark"
   ],
   "source": "California Department of Transportation (Caltrans), California Trenching & Shoring Manual, July 2025 edition, Chapter 10, Examples 10-3 (Ordinary Method of Slices) and 10-4 (Simplified Bishop), pp. 240-243.",
-  "problem": "A homogeneous slope rises at 4V:3H from a toe at (0, 0) m to a crest at (18.288, 24.384) m (60 ft run, 80 ft rise), with flat ground beyond the crest and left of the toe. Soil: gamma = 18.065 kN/m3 (115 pcf), phi' = 30 deg, c' = 9.576 kPa (200 psf), no groundwater. Compute the factor of safety on a SPECIFIED (pinned, not searched) toe circle centered directly above the toe at (0, 18.288) m with radius 18.288 m (60 ft), by the Ordinary Method of Slices (Fellenius) and by Simplified Bishop. The circle is tangent to the flat ground at the toe, so the analysis radius is nudged to 18.2885 m to give a proper 2-point ground intersection. Published: OMS FS = 0.87; Bishop hand-iterated to '~0.90' (the source stopped one iteration short — the true fixed point of the source's own 6-slice table is 0.96).",
+  "problem": "A homogeneous slope rises at 4V:3H from a toe at (0, 0) m to a crest at (18.288, 24.384) m (60 ft run, 80 ft rise), with flat ground beyond the crest and left of the toe. Soil: gamma = 18.065 kN/m3 (115 pcf), phi' = 30 deg, c' = 9.576 kPa (200 psf), no groundwater. Compute the factor of safety on a SPECIFIED (pinned, not searched) toe circle centered directly above the toe at (0, 18.288) m with radius 18.288 m (60 ft), by the Ordinary Method of Slices (Fellenius) and by Simplified Bishop. The circle is tangent to the flat ground at the toe, so the analysis radius is nudged to 18.2885 m to give a proper 2-point ground intersection. The circle's centre is 6.096 m (20 ft) below the crest, so the arc turns vertical under the crest and would turn back over itself (a reverse-curvature circle): the source analyses it as drawn, so it is closed here by a given tension crack 6.096 m deep (tension_crack_depth). Without a given crack the module closes such a circle with Rankine's crack (EM 1110-2-1902 Eq. C-36), which is shallower here, and reports no factor of safety for it. Published: OMS FS = 0.87; Bishop hand-iterated to '~0.90' (the source stopped one iteration short — the true fixed point of the source's own 6-slice table is 0.96).",
   "dispatch_calls": [
    {
     "module": "slope_stability",
@@ -775,6 +775,7 @@
      "xc": 0.0,
      "yc": 18.288,
      "radius": 18.2885,
+     "tension_crack_depth": 6.096,
      "method": "fellenius",
      "n_slices": 30,
      "compare_methods": true

@@ -869,11 +869,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "points (<code>pore_pressure_points</code>) interpolated linearly on their Delaunay "
             "triangulation, with suction set to zero. The ACADS 5 / Slide2 #10 flow net could not be "
             "pinned: Fig. 10.2&rsquo;s grid values did not survive the text extraction, and they are not invented (V-029).",
-            "A tension crack sits at the entry side (default) or the exit side "
-            "(<code>tension_crack_side</code>). By default the cracked wedge is kept as zero-strength "
-            "driving soil with the full hydrostatic thrust, which is conservative. "
-            "<code>tension_crack_model='truncation'</code> removes the wedge from the sliding mass, as "
-            "Slide2 does, and reproduces ACADS 1(b) within 0.5&nbsp;% (V-026).",
+            "A tension crack ends the slip surface: the soil upslope of it is left out and its water acts on the vertical boundary there (EM 1110-2-1902 2-2f(3), C-10c; Slide2 the same), which reproduces ACADS 1(b) within 0.5&nbsp;% (V-026). It sits at the end of the surface where the ground is higher unless <code>tension_crack_side</code> gives the end. Its depth is given, Rankine&rsquo;s with the developed strengths (EM Eq. C-36) or the depth of minimum factor of safety (<code>tension_crack_depth_basis</code>). <code>tension_crack_model='strength'</code> keeps the cracked soil as weight without strength, the earlier default (lower, no printed source). A circle whose centre is below the ground at its upper end is closed by a crack of the printed depth, and discarded where it overhangs deeper (<code>reverse_curvature</code>).",
             "When a rigorous method finds no solution on a surface that supports cross, the result gives "
             "no FOS for that method and says so, rather than an unreinforced value.",
         ],
@@ -1969,9 +1965,7 @@ def _ch9_limitations(ctx):
         "<code>wave_equation</code> models every hammer as a rigid ram at its rated energy; a diesel&rsquo;s "
         "combustion and changing stroke are not modelled and the result warns that its blow counts are "
         "likely low (GEC-12 Vol. 2 p. 206); treat diesel bearing graphs as a trend, not a tie-out.",
-        "<code>slope_stability</code>&rsquo;s tension crack keeps the cracked wedge as zero-strength "
-        "driving soil by default (a conservative convention); <code>tension_crack_model='truncation'</code> "
-        "removes it from the sliding mass as Slide2 does.",
+        "<code>slope_stability</code>&rsquo;s tension crack ends the slip surface at the crack, as EM 1110-2-1902 and Slide2 do; <code>tension_crack_model='strength'</code> keeps the cracked soil as zero-strength driving soil (lower).",
         "<code>ground_improvement</code> uses an equal-strain settlement-reduction model for aggregate "
         "piers, not the GEC-13 stiffness-modulus two-layer method; the Priebe curve is GEC-13's "
         "printed curve (&phi; = 37.5&deg;) and depends on the area-ratio convention you feed it.",

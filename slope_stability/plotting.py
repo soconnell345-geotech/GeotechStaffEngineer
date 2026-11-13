@@ -286,6 +286,9 @@ def plot_cross_section(result, geom, show_slices=True,
         z_en = geom.ground_elevation_at(result.x_entry)
         z_ex = geom.ground_elevation_at(result.x_exit)
         x_crk = result.x_entry if z_en >= z_ex else result.x_exit
+        side = (getattr(result, "tension_crack", None) or {}).get("side")
+        if side in ("entry", "exit"):           # the end it was solved at
+            x_crk = result.x_entry if side == "entry" else result.x_exit
         z_top_crk = geom.ground_elevation_at(x_crk)
         z_bot_crk = z_top_crk - result.tension_crack_depth
         ax.plot([x_crk, x_crk], [z_bot_crk, z_top_crk], '-',

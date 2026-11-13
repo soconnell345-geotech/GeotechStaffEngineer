@@ -60,7 +60,7 @@ def test_crack_lands_at_the_crest_end_either_way(mirror):
         assert max(xs) < r.x_exit - 1.0
     else:
         assert min(xs) > r.x_entry + 1.0
-    assert r.FOS == pytest.approx(1.5729, abs=2e-4)
+    assert r.FOS == pytest.approx(1.5733, abs=2e-4)
 
 
 def test_the_two_slopes_agree_and_a_given_side_is_kept():
@@ -272,8 +272,8 @@ def test_scan_returns_the_depth_of_minimum_fos():
     and take the one of minimum factor of safety. The hand table (Bishop,
     this circle, each depth given): 0 m 1.663, 1 m 1.609, 2 m 1.573,
     2.5 m 1.563, 3 m 1.560, 4 m 1.576, 5 m 1.631. The minimum is near 3 m;
-    the scan returns a depth between 2.5 and 4 m and an F no higher than
-    the table's lowest row, and it is close to Rankine's depth with the
+    the scan returns a depth between 2.5 and 4 m and the F of the
+    table's lowest row to 0.001, and it is close to Rankine's depth with the
     developed strengths (2.85 m), as the manual's two ways should be."""
     table = {d: analyze_slope(_geom(tension_crack_depth=d), **_CIRCLE).FOS
              for d in (1.0, 2.0, 2.5, 3.0, 4.0, 5.0)}
@@ -283,7 +283,9 @@ def test_scan_returns_the_depth_of_minimum_fos():
     t = r.tension_crack
     assert t["depth_basis"] == "min_fos"
     assert 2.5 < t["depth_m"] < 4.0
-    assert r.FOS <= table[3.0] + 1e-9
+    # the scan steps by a twentieth of its range (0.52 m here), so its
+    # minimum is the table's to within that step's effect on F
+    assert r.FOS == pytest.approx(table[3.0], abs=1e-3)
     assert r.FOS == min(row["FOS"] for row in t["scan"]) or \
         r.FOS == pytest.approx(min(row["FOS"] for row in t["scan"]),
                                abs=1e-4)

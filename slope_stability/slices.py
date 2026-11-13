@@ -357,6 +357,39 @@ def slice_breaks(geom: SlopeGeometry, slip, x_entry: float,
     return inside(out)
 
 
+def _kept_span(geom: SlopeGeometry, slip, bounds: List[float],
+               x_entry: float, x_exit: float
+               ) -> Optional[Tuple[float, float]]:
+    """The stretch of the surface a tension crack leaves, (x_low, x_high),
+    or None without a crack that ends the surface. EM 1110-2-1902 C-10c,
+    p. C-36: the slip surface is terminated where it reaches the bottom of
+    the crack. Walking from the middle of the surface towards its crest
+    end over the stretches between ``bounds`` (the crack's base is one of
+    them), the surface ends at the first stretch whose base lies above the
+    crack's bottom."""
+    from slope_stability.cracks import crack_for_slices
+    crack = crack_for_slices(geom, slip, x_entry, x_exit)
+    if crack is None or not crack["truncate"]:
+        return None
+    x_half = 0.5 * (x_entry + x_exit)
+    pairs = list(zip(bounds[:-1], bounds[1:]))
+    if crack["side"] == "entry":
+        for a, b in reversed(pairs):
+            if 0.5 * (a + b) > x_half:
+                continue
+            z = slip.slip_elevation_at(0.5 * (a + b))
+            if z is None or z >= crack["base"]:
+                return (b, x_exit)
+        return None
+    for a, b in pairs:
+        if 0.5 * (a + b) < x_half:
+            continue
+        z = slip.slip_elevation_at(0.5 * (a + b))
+        if z is None or z >= crack["base"]:
+            return (x_entry, a)
+    return None
+
+
 def slice_boundaries(geom: SlopeGeometry, slip, n_slices: int,
                      x_entry: Optional[float] = None,
                      x_exit: Optional[float] = None,
@@ -397,12 +430,19 @@ def slice_boundaries(geom: SlopeGeometry, slip, n_slices: int,
         if (x - bounds[i - 1] >= tol and bounds[i] - x >= tol):
             bounds.insert(i, x)
 
+    # A crack that ends the surface (GM-140 step 4): the slices run from
+    # the crack's vertical boundary to the other end, so the mass that is
+    # kept is cut into the slices asked for.
+    kept = _kept_span(geom, slip, bounds, x_entry, x_exit)
+    if kept is not None:
+        bounds = [b for b in bounds if kept[0] <= b <= kept[1]]
+
     widths = [b - a for a, b in zip(bounds[:-1], bounds[1:])]
     counts = [1] * len(widths)
     for _ in range(n_slices - len(widths)):
         k = max(range(len(widths)), key=lambda i: widths[i] / counts[i])
         counts[k] += 1
-    out = [x_entry]
+    out = [bounds[0]]
     for a, b, c in zip(bounds[:-1], bounds[1:], counts):
         out += [a + (b - a) * j / c for j in range(1, c)] + [b]
     return out

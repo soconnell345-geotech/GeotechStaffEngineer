@@ -225,6 +225,26 @@ def test_v043_clay_no_reinforcement_no_crack_is_high():
     assert fos > 0.975                  # higher than the water-crack value
 
 
+def test_v043_clay_with_the_printed_crack_rule():
+    """GM-140 step 4 (GM-18's crack item): the problem has a water-filled
+    tension crack in the clay embankment's crest and prints no depth for
+    it. With Rankine's depth with the developed strengths (EM 1110-2-1902
+    Eq. C-36, p. C-36, at the surface's own F; 2.14 m in the 6 m
+    embankment), full of water, the surface ended at the crack (2-2f(3),
+    p. 2-6), the recovered circle reads Spencer 0.964."""
+    xc, yc, r = _CLAY_CIRC
+    g = _geom("clay")
+    g.tension_crack_depth_basis = "rankine"
+    g.tension_crack_water_depth = 99.0          # full
+    res = analyze_slope(g, xc=xc, yc=yc, radius=r, method="spencer")
+    # GM-140 step 4: 1.041 (no crack) -> 0.964; printed 0.975 (Slide2 #39, V-043,
+    # clay fill, no reinforcement), -1.1 % where it was +6.8 %
+    assert res.FOS == pytest.approx(0.964, abs=0.005)
+    assert res.FOS == pytest.approx(0.975, rel=0.02)
+    assert res.tension_crack["depth_basis"] == "rankine"
+    assert res.tension_crack["depth_m"] == pytest.approx(2.14, abs=0.02)
+
+
 def test_v043_clay_circle_as_recovered_touches_the_base():
     """GM-128: the clay circle as the search recovered it, 3.5 mm under the
     firm base, touches it (within 9 mm, a thousandth of the 9 m model) and

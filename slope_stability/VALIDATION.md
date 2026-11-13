@@ -794,6 +794,47 @@ text were searched). The sloping-boundary checks are:
   the printed slices end about 5 ft short of where the stated circle leaves the
   crest, and the page takes each area from the slice's mean height.
 
+## B20 — Tension cracks and reverse-curvature circles as printed (GM-140 step 4, 2026-11-13)
+
+The rule and its print are in DESIGN.md ("Tension cracks and
+reverse-curvature circles as printed"); the record, with every reading and
+the tests run, is `module_work/gm140/STEP4_CHECK.md`. "Before" is master at
+2cc2c45, measured there; a given surface with no crack and no reverse curvature runs the
+same code before and after.
+
+| Benchmark | Before | After | Printed | What moved it |
+|---|---|---|---|---|
+| ACADS 1(b), Slide2 #2 (V-026): given 3.81 m crack full of water, Bishop / Spencer / GLE | 1.485 / 1.486 / 1.482 | 1.603 / 1.599 / 1.600 | 1.596 / 1.592 / 1.592 (referee 1.65) | the default model: the surface ends at the crack |
+| same, `tension_crack_model='strength'` | 1.485 / 1.486 / 1.482 | the same | | the stated option |
+| same, Eq. C-36 with the developed strengths, full of water (2.19 m) | not offered | 1.631 / 1.627 / 1.628 | the problem uses the full strengths (3.81 m) | reported, not pinned |
+| V-043 clay embankment, water-filled crest crack, Spencer, recovered circle | 1.041 (no crack) | 0.964 (Eq. C-36, 2.14 m, full) | 0.975 | the Rankine depth, which the problem does not print |
+| V-054 steep phi = 0 slope from the toe, Bishop search | 2.346 | 2.113 | 2.16 (FLAC 2.18) | reverse-curvature toe circle closed by Eq. C-36's crack (1.89 m) |
+| V-054 toe circle (2.5, 4.0), R 4.717 | 2.379 | 2.218 | 2.16 | the same (1.80 m crack; centre 1 m below the crest) |
+| V-054 Bakklandet ratios on that circle | 1.942 (-18.4 %) | 1.693 (-23.7 %) | -24 % | the same, at the active strength |
+| V-054 Bakklandet ratios on circle (3, 3) | 1.886 (-20.7 %) | 1.848 (-16.7 %) | -24 % | the same; **away from print, strict xfail** |
+| Vertical cut in clay, Bishop search | 0.842 | 0.752 (`'discard'` 0.935) | Taylor 0.851 | toe circle closed by a 2.95 m Rankine crack where it was closed at 2.30 m; **away, strict xfail** |
+| Taylor 45 deg, D = 2.25, 4 H each side | 1.942 (base circle) | 1.835 (toe circle, 3.03 m crack; `'discard'` 1.942) | Taylor 1.947 | a toe circle with its centre 0.01 m below the crest gets the crack; **away, strict xfail** |
+| Taylor 45 deg, short profile | 2.062 | 1.833 (`'discard'` 2.065) | Taylor 1.947 | the same; **strict xfail** |
+| Slide2 #85, one support, active, Bishop search | 1.372 | 1.361 (`'discard'` 1.508) | 1.531 (D&W 1.51) | the governing circle changed: centre 0.89 ft below the crest, 5.25 ft Rankine crack; the old one (5.89 ft below) is discarded. **Away, strict xfail** |
+| #85 passive, Bishop search | 1.254 | 1.206 (`'discard'` 1.316) | 1.324 (D&W 1.32) | the same |
+| #85 active, Spencer / GLE search | 1.551 / 1.573 | 1.551 / 1.573 | 1.884 / 1.575 | not moved |
+| #85 toe family, Spencer | 1.564 | 1.627 | spread 1.51 to 1.884 | the toe family's circles closed or discarded by the rule |
+| Caltrans T&S Ex. 10-3 / 10-4 circle (worked example WE-SLOPE-1) | OMS 0.839, Bishop 0.977 | no number by default; the same with a 6.096 m crack given | 0.87, 0.96 | the printed circle's centre is 20 ft below the crest: deeper than Eq. C-36's crack |
+
+Every other benchmark of the published set reads as before (the
+`validation_examples` slope files and the benchmark files of
+`slope_stability/tests`: `module_work/gm140/step4_section11.py`).
+
+The cases marked "away" share one cause, which the owner's call OWN-103
+was to be measured for: a circle whose centre is a hair below the crest
+takes the whole Rankine crack, and a circle whose centre is a hair above it
+takes none, so on steep phi = 0 slopes the search settles on circles that
+are barely reverse-curved. Taylor's chart and Duncan and Wright's #85 have
+no crack. With a Rankine crack on every surface
+(`tension_crack_depth_basis='rankine'`) the Taylor 45 deg case reads 1.811
+and the vertical cut 0.605; with every reverse-curvature circle discarded,
+1.942 and 0.935.
+
 ## Notes / known deviations
 
 - Ordinary method with ru: formulation-sensitive (F&K 1.607 vs Slide2
