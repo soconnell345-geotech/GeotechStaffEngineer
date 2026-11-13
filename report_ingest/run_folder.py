@@ -235,7 +235,8 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                                if vision_engine_factory else None),
                 vision_mode=vision_mode, vision_detail=vision_detail,
                 trust_table=trust_table, templates=templates,
-                ingest_bound=ingest_bound, report_tables=report_tables)
+                ingest_bound=ingest_bound, report_tables=report_tables,
+                source_path=path)
         except KeyboardInterrupt:
             log("  interrupted; what is finished is on disk and a later call "
                 "resumes")

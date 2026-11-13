@@ -704,6 +704,28 @@ def _is_document(source: Any) -> bool:
                for name in ("page_map", "render", "n_pages", "page"))
 
 
+def _source_file(source: Any, source_path: Any = None) -> Optional[str]:
+    """The PDF file the report was read from, when one is known (BACKLOG
+    RI-209): the caller's ``source_path``, else ``source`` itself when it is
+    a path, else, for an open document, the file planlens opened it from
+    (only a fallback: a document opened from bytes has none). It keys the
+    report and gives the report tables the file's name, size and SHA-256,
+    so one PDF has one key however it was handed in."""
+    candidates = [source_path]
+    if isinstance(source, (str, os.PathLike)):
+        candidates.append(source)
+    elif _is_document(source):
+        candidates.append(getattr(source, "path", None))
+        candidates.append(getattr(getattr(source, "_doc", None), "name",
+                                  None))
+    for candidate in candidates:
+        if not isinstance(candidate, (str, os.PathLike)) or not candidate:
+            continue
+        if os.path.isfile(os.fspath(candidate)):
+            return os.fspath(candidate)
+    return None
+
+
 def _open(source: Any, di_result: Any, report_id: str):
     from planlens.document import open_document
     if _is_document(source):
@@ -874,7 +896,8 @@ def ingest_report(source: Any, engine: Any, *,
                   model_first: Any = None,
                   stage_engines: Any = None,
                   page_route: Optional[str] = None,
-                  report_tables: Any = None) -> ReportRecord:
+                  report_tables: Any = None,
+                  source_path: Any = None) -> ReportRecord:
     """Read one report end to end and write its record and its exports.
 
     ``source`` is a PDF path, its bytes, or an OPEN planlens document (the
@@ -1001,6 +1024,15 @@ def ingest_report(source: Any, engine: Any, *,
         ``"off"``) writes none of it; a folder names the root. Ignored with
         ``write=False``. The export never changes the record and never
         fails the run.
+    source_path
+        The PDF file ``source`` was read from, when ``source`` is an open
+        document or bytes and the caller knows the file (BACKLOG RI-209).
+        The report is keyed off that file, and the report tables name, size
+        and hash it, so a PDF has one key whether it came as a path, as
+        bytes or as a document. The cluster stage and ``run_folder`` pass
+        it. Without it, an open document's own file (the one planlens opened
+        it from) is used when it is readable; a document with no file keys
+        off ``report_id``, as before.
 
     The cost on ``record.document`` is the WHOLE run's, the children
     included; each child's own block says what that child cost. It is THIS
@@ -1101,13 +1133,16 @@ def ingest_report(source: Any, engine: Any, *,
     record.document.resumed = spend.resumed()
 
     if write:
-        if _is_document(source):
-            key_source: Any = getattr(source, "path", None) or report_id \
-                or None
+        # One PDF, one key, however it was handed in (BACKLOG RI-209): the
+        # file when it is known, else the bytes (which key alike), else a
+        # document's report_id as before.
+        source_file = _source_file(source, source_path)
+        if source_file:
+            key_source: Any = source_file
         elif isinstance(source, (bytes, bytearray)):
-            # The bytes key the row as a path does (BACKLOG RI-209): the
-            # same file, the same key, however it was handed in.
             key_source = bytes(source)
+        elif _is_document(source):
+            key_source = report_id or None
         else:
             key_source = source
         # The children FIRST: their records carry the DIGGS verdicts their
@@ -1131,8 +1166,8 @@ def ingest_report(source: Any, engine: Any, *,
         write_outputs(record, out, source=key_source, db_path=db_path)
         from report_ingest.tables import after_ingest
 
-        after_ingest(out, record=record, children=children, source=source,
-                     key_source=key_source, db_path=db_path,
+        after_ingest(out, record=record, children=children,
+                     source=source_file or source, key_source=key_source, db_path=db_path,
                      setting=report_tables, question_list=questions_ran)
     return record
 

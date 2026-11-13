@@ -915,6 +915,51 @@ class TestTheKey:
         page = (tmp_path / "by_bytes" / "report.page.md").read_text("utf-8")
         assert "%PDF" not in page and "b'" not in page
 
+    def test_an_open_document_keys_as_its_file_does(self, tmp_path):
+        """RI-209 review A1: the cluster stage hands the graph an open
+        planlens document. Its file, named by ``source_path`` (or, failing
+        that, the one planlens opened), keys the report and gives the source
+        facts, so a path, bytes and a document of one PDF give one key and
+        one SHA-256, whatever the report_id."""
+        from planlens.document import open_document
+
+        data = _pdf_bytes()
+        pdf = tmp_path / "made_up_report.pdf"
+        pdf.write_bytes(data)
+        _needs_person(pdf, tmp_path / "by_path")
+        _needs_person(data, tmp_path / "by_bytes")
+        with open_document(str(pdf), name="SYN") as doc:
+            _needs_person(doc, tmp_path / "by_document")
+        with open_document(data, name="SYN") as doc:
+            # opened from bytes, so only the caller can name the file
+            _needs_person(doc, tmp_path / "by_document_and_path",
+                          source_path=pdf)
+
+        def run(folder):
+            return json.loads((tmp_path / folder / tables.RUN_NAME)
+                              .read_text("utf-8"))
+
+        runs = [run(name) for name in ("by_path", "by_bytes", "by_document",
+                                       "by_document_and_path")]
+        assert len({r["report_key"] for r in runs}) == 1
+        assert {r["source_sha256"] for r in runs} == \
+            {hashlib.sha256(data).hexdigest()}
+        assert [r["source_name"] for r in runs] == \
+            ["made_up_report.pdf", None, "made_up_report.pdf",
+             "made_up_report.pdf"]
+
+    def test_a_document_with_no_file_keys_as_before(self, tmp_path):
+        """With no file to read, a document still keys off what the record
+        says (its report_id), and the source facts stay null."""
+        from planlens.document import open_document
+
+        with open_document(_pdf_bytes(), name="SYN") as doc:
+            _needs_person(doc, tmp_path / "no_file")
+        run = json.loads((tmp_path / "no_file" / tables.RUN_NAME)
+                         .read_text("utf-8"))
+        assert run["report_key"]
+        assert (run["source_name"], run["source_sha256"]) == (None, None)
+
     def test_bytes_key_a_record_as_the_file_does(self, tmp_path):
         pdf = _made_up_pdf(tmp_path)
         record = build_record()

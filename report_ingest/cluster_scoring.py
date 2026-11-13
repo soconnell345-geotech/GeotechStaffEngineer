@@ -6007,6 +6007,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                                        narrative_skips_bound),
                                    triage_engine=brake.wrap(triage_engine),
                                    report_tables=report_tables,
+                                   # the PDF keys the report (RI-209)
+                                   source_path=corpus.pdf_path(rid),
                                    **brake.wrap_kwargs(arm_kwargs))
             n_pages = doc.n_pages
         except KeyboardInterrupt:

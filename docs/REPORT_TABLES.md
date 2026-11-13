@@ -89,7 +89,13 @@ report_tables/v1/
 `report_key` is the key the report library already uses: the library
 page's `id` and the `reports.db` row. It comes from the PDF itself (its size
 and first megabyte), so the same file gets the same key whatever it is
-called and however it arrived. A report bound inside another report (an
+called and whether it arrived as a path, as bytes or as an open document
+(the cluster stage's way; it names the PDF with `source_path`). Only a
+document whose file nobody names, and that was not opened from a file, keys
+off what the record says it is (its report id, project number and name), as
+the library always has; its `source_*` columns are null. Cluster libraries
+built before RI-209 keyed every report that way, so their reports get a new
+key once. A report bound inside another report (an
 earlier firm's report reproduced as an appendix, say) is a report of its
 own: its key comes from its parent's key and its handle inside the parent
 (`bound_id`: `bound1`, `bound2` in page order).
@@ -189,14 +195,14 @@ Files: `report/<report_key>.jsonl`. Primary key: `report_key`.
 | Column | Type | Null? | What it holds |
 |---|---|---|---|
 | `export_version` | string | no | The export's version (v1). |
-| `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte; for a report bound inside another one, from its parent's key and its bound_id. |
+| `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte, whether the file came as a path, as bytes or as an open document (only a document with no known file keys off its report id, project number and name); for a report bound inside another one, from its parent's key and its bound_id. |
 | `parent_report_key` | string | yes | For a report bound inside another one, the parent's report_key; null for a report of its own. |
 | `bound_id` | string | yes | For a bound-in report, its handle inside the parent (bound1, bound2, in page order); null otherwise. It is a count, not a name: when the ingest finds the bound-in reports differently, they are renumbered and their report_keys change. |
 | `bound_report_keys` | array<string> | no | The report_keys of the reports bound inside this one, as of its latest ingest; empty when none. A report row whose parent_report_key does not list it any more is left over from an earlier ingest. |
 | `report_id` | string | yes | The caller's handle for the report (a file stem or a corpus id); null when none was given. |
-| `source_name` | string | yes | The source file's name, never a path; for a bound-in report, its parent's file. Null when the ingest was given the file's bytes or a document with no path, and for a folder ingested before this export. |
-| `source_bytes` | integer | yes | The source file's size in bytes; null as source_name. |
-| `source_sha256` | string | yes | The SHA-256 of the whole source file, in hex, so the PDF a dataset holds can be matched to its report; null as source_name. |
+| `source_name` | string | yes | The source file's name, never a path; for a bound-in report, its parent's file. Null when the ingest was given the file's bytes, or a document whose file is not known, and for a folder ingested before this export. |
+| `source_bytes` | integer | yes | The source file's size in bytes. Null when the ingest had neither the file nor its bytes (a document whose file is not known), and for a folder ingested before this export. |
+| `source_sha256` | string | yes | The SHA-256 of the whole source file, in hex, so the PDF a dataset holds can be matched to its report; null as source_bytes. |
 | `n_pages` | integer | no | Pages in the report: the whole file for a report, its own range for a bound-in report. |
 | `title` | string | no | What the library page calls the report: its project name and document type. |
 | `document_type` | string | yes | The owner's documentType answer (geotechnical report, recommendation letter, ...); null when the record does not state it. |
@@ -229,7 +235,7 @@ Files: `report_page/<report_key>.jsonl`. Primary key: `report_key`, `pdf_page`.
 | Column | Type | Null? | What it holds |
 |---|---|---|---|
 | `export_version` | string | no | The export's version (v1). |
-| `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte; for a report bound inside another one, from its parent's key and its bound_id. |
+| `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte, whether the file came as a path, as bytes or as an open document (only a document with no known file keys off its report id, project number and name); for a report bound inside another one, from its parent's key and its bound_id. |
 | `pdf_page` | integer | no | The page as a PDF viewer numbers it, from 1 at the file's first page. For a bound-in report, the page of its parent's file (file_report_key). |
 | `file_report_key` | string | no | The report_key of the file pdf_page counts in: the report's own for a report, its parent's for a bound-in report. |
 | `printed_page` | string | yes | The page number printed on the page, as printed; null when none was read. |
@@ -258,7 +264,7 @@ Files: `report_answer/<report_key>.jsonl`. Primary key: `report_key`, `question_
 | Column | Type | Null? | What it holds |
 |---|---|---|---|
 | `export_version` | string | no | The export's version (v1). |
-| `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte; for a report bound inside another one, from its parent's key and its bound_id. |
+| `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte, whether the file came as a path, as bytes or as an open document (only a document with no known file keys off its report id, project number and name); for a report bound inside another one, from its parent's key and its bound_id. |
 | `question_set` | string | no | general or natural_hazards (the owner's two schemas), or question_list (the owner's question list). |
 | `question_key` | string | no | The owner's field name (general, natural_hazards) or the list's Key (question_list). |
 | `position` | integer | no | The question's place in its set, from 1, in the owner's order. |
@@ -290,7 +296,7 @@ Files: `report_file/<report_key>.jsonl`. Primary key: `report_key`, `kind`.
 | Column | Type | Null? | What it holds |
 |---|---|---|---|
 | `export_version` | string | no | The export's version (v1). |
-| `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte; for a report bound inside another one, from its parent's key and its bound_id. |
+| `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte, whether the file came as a path, as bytes or as an open document (only a document with no known file keys off its report id, project number and name); for a report bound inside another one, from its parent's key and its bound_id. |
 | `kind` | string | no | diggs, record, summary or questions. |
 | `path` | string | no | The file, relative to the export's v1 folder, with forward slashes. |
 | `bytes` | integer | no | The file's size in bytes. |
@@ -306,13 +312,13 @@ Files: `ingest_run/<report_key>.<run_id>.jsonl`. Primary key: `report_key`, `run
 | Column | Type | Null? | What it holds |
 |---|---|---|---|
 | `export_version` | string | no | The export's version (v1). |
-| `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte; for a report bound inside another one, from its parent's key and its bound_id. |
+| `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte, whether the file came as a path, as bytes or as an open document (only a document with no known file keys off its report id, project number and name); for a report bound inside another one, from its parent's key and its bound_id. |
 | `run_id` | string | no | The ingest: its UTC time and a short random suffix. A bound-in report shares its parent's. For a folder ingested before this export, the record file's time and part of its hash. |
 | `ingested_at` | timestamp | no | When the ingest wrote its outputs. For a folder ingested before this export, the record file's modified time. |
 | `report_id` | string | yes | The caller's handle for the report (a file stem or a corpus id); null when none was given. |
-| `source_name` | string | yes | The source file's name, never a path; for a bound-in report, its parent's file. Null when the ingest was given the file's bytes or a document with no path, and for a folder ingested before this export. |
-| `source_bytes` | integer | yes | The source file's size in bytes; null as source_name. |
-| `source_sha256` | string | yes | The SHA-256 of the whole source file, in hex, so the PDF a dataset holds can be matched to its report; null as source_name. |
+| `source_name` | string | yes | The source file's name, never a path; for a bound-in report, its parent's file. Null when the ingest was given the file's bytes, or a document whose file is not known, and for a folder ingested before this export. |
+| `source_bytes` | integer | yes | The source file's size in bytes. Null when the ingest had neither the file nor its bytes (a document whose file is not known), and for a folder ingested before this export. |
+| `source_sha256` | string | yes | The SHA-256 of the whole source file, in hex, so the PDF a dataset holds can be matched to its report; null as source_bytes. |
 | `n_pages` | integer | no | Pages in the report: the whole file for a report, its own range for a bound-in report. |
 | `document_type` | string | yes | The owner's documentType answer (geotechnical report, recommendation letter, ...); null when the record does not state it. |
 | `workflow` | string | yes | The workflow triage chose: standard, appendix_only, partial, multi_document, scanned or needs_person (nothing read: no page rows); null when no triage ran. |

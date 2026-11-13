@@ -206,23 +206,28 @@ _VERSION = _c("export_version", "string",
 _KEY = _c("report_key", "string",
           "The report's key: the library key the ingest computes, the same "
           "as the library page's id and the reports.db row. For a report, "
-          "it comes from its source file's size and first megabyte; for a "
-          "report bound inside another one, from its parent's key and its "
-          "bound_id.", False)
+          "it comes from its source file's size and first megabyte, whether "
+          "the file came as a path, as bytes or as an open document (only a "
+          "document with no known file keys off its report id, project "
+          "number and name); for a report bound inside another one, from "
+          "its parent's key and its bound_id.", False)
 _REPORT_ID = _c("report_id", "string",
                 "The caller's handle for the report (a file stem or a "
                 "corpus id); null when none was given.")
 _SOURCE_NAME = _c("source_name", "string",
                   "The source file's name, never a path; for a bound-in "
                   "report, its parent's file. Null when the ingest was given "
-                  "the file's bytes or a document with no path, and for a "
-                  "folder ingested before this export.")
+                  "the file's bytes, or a document whose file is not known, "
+                  "and for a folder ingested before this export.")
 _SOURCE_BYTES = _c("source_bytes", "integer",
-                   "The source file's size in bytes; null as source_name.")
+                   "The source file's size in bytes. Null when the ingest "
+                   "had neither the file nor its bytes (a document whose "
+                   "file is not known), and for a folder ingested before "
+                   "this export.")
 _SOURCE_SHA = _c("source_sha256", "string",
                  "The SHA-256 of the whole source file, in hex, so the PDF "
                  "a dataset holds can be matched to its report; null as "
-                 "source_name.")
+                 "source_bytes.")
 _N_PAGES = _c("n_pages", "integer",
               "Pages in the report: the whole file for a report, its own "
               "range for a bound-in report.", False)
@@ -841,7 +846,9 @@ def _version(dist: str) -> Optional[str]:
 def source_facts(source: Any) -> Dict[str, Any]:
     """The source file's name, size and SHA-256 (``source_name``,
     ``source_bytes``, ``source_sha256``): from a readable path, from bytes
-    (no name), from an open document's path; all None otherwise."""
+    (no name), from an open document's path; all None otherwise. The graph
+    hands in the PDF's path whenever it knows it, a document's included
+    (``ingest_report(source_path=...)``, BACKLOG RI-209)."""
     facts: Dict[str, Any] = {"source_name": None, "source_bytes": None,
                              "source_sha256": None}
     if isinstance(source, (bytes, bytearray)):
