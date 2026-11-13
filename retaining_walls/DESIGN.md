@@ -1995,7 +1995,8 @@ here was read from the PDF.
 - **Agent and package.** `retaining_walls.cantilever_wall_structural_design`
   takes `cantilever_wall`'s inputs and the structural ones;
   `retaining_wall_package` with `wall_type="cantilever_reinforced"` prints the
-  stability sections and then the structural ones. No drawing.
+  stability sections and then the structural ones, and ends with the
+  reinforcement sheet (GM-335, below).
 
 Pinned against the print in `tests/test_gm312_structural.py`: D-3 (Mu 11
 k-ft, As 0.43 sq in, No. 6 at 12 in., rho 0.0061 against 0.0071, fs 24.96
@@ -2048,3 +2049,20 @@ and then 0.111, and Step 5 prints x as 9.96 and uses 10.09, and prints fs =
 - **D-5 Step 5(a).** The print gives fs = 34.7 ksi "< 35 ksi"; its own
   numbers give 35.5 ksi (35.47 on x = 9.96 in.). The module's 35.47 and its
   failed check are pinned (`test_d5_service_stress_is_the_arithmetic_not_the_printed_34_7`).
+
+### The reinforcement sheet at the end of the package (GM-313, the join, 2026-11-13)
+
+`retaining_wall_package` with `wall_type="cantilever_reinforced"` ends with
+the reinforcement sheet: the agent layer
+(`funhouse_agent/adapters/calc_package.py`, `_wall_sheet`) hands the
+design's `reinforcement` description to `dxf_export.wall_section_drawing`,
+appends the sheet with `generate_calc_package(sheets=...)` and writes
+`<package>_reinforcement.dxf` and `.png` beside the package; this module
+imports nothing of `dxf_export`, and of `calc_package` only its sections'
+data model, as before. The description is unchanged but for the shear key: the
+design gives its depth only, and where the package was given
+`key_distance_from_toe` and `key_width` (GM-216) they are put into the
+description, so the sheet draws the key where the package's wall figure
+does; left out, they stay null and the sheet draws the key under the stem
+and says so. A sheet that cannot be drawn costs the sheet, never the
+package (the result's `warnings` says why).

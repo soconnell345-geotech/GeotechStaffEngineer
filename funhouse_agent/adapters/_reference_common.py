@@ -34,9 +34,11 @@ def has_callable_param(func) -> bool:
 
 
 def param_type_str(annotation) -> str:
-    """Convert a type annotation to a human-readable string."""
+    """Convert a type annotation to a human-readable string ("any" for a
+    parameter with none: a text parameter left unannotated was advertised
+    as "float", 247 of them in the 2026-11-10 review)."""
     if annotation is inspect.Parameter.empty:
-        return "float"
+        return "any"
     _MAP = {float: "float", int: "int", bool: "bool", str: "str"}
     if annotation in _MAP:
         return _MAP[annotation]
@@ -78,49 +80,249 @@ def catch_all_is_read(func) -> bool:
                for stmt in body for node in ast.walk(stmt))
 
 
+# ---------------------------------------------------------------------------
+# Docstring sections (numpy style, as the reference library writes them)
+# ---------------------------------------------------------------------------
+
+#: Section headings read from a reference function's docstring, by the
+#: name each is filed under.
+_SECTION_NAMES = {
+    "parameters": "parameters", "args": "parameters",
+    "arguments": "parameters", "other parameters": "parameters",
+    "returns": "returns", "return": "returns", "yields": "returns",
+    "raises": "raises", "notes": "notes", "note": "notes",
+    "references": "references", "reference": "references",
+    "examples": "examples", "example": "examples",
+    "warnings": "warnings", "see also": "see also",
+}
+
+#: The most of each docstring section ``describe_method`` carries for a
+#: reference method (2026-11-10 review: the Returns text, where the unit
+#: is, never reached the helper).
+RETURNS_CHARS = 400
+RAISES_CHARS = 400
+NOTES_CHARS = 400
+REFERENCES_CHARS = 200
+
+#: The most of the Returns text and of the reference line a bare-number,
+#: tuple or list result carries beside ``result``.
+RESULT_RETURNS_CHARS = 200
+RESULT_REFERENCE_CHARS = 160
+
+_DASHES = re.compile(r"-{3,}")
+_ENTRY_NAMES = re.compile(r"\*{0,2}[A-Za-z_]\w*(\s*,\s*\*{0,2}[A-Za-z_]\w*)*")
+
+
+def docstring_sections(doc: str) -> dict:
+    """A numpy-style docstring cut into its sections: section name (see
+    :data:`_SECTION_NAMES`) -> its lines, as ``inspect.getdoc`` leaves them;
+    the text before the first heading under ``""``. A heading is a line
+    with no indent, underlined with dashes, ending with a colon, or
+    standing alone after a blank line."""
+    lines = doc.split("\n")
+    out: dict = {"": []}
+    current = ""
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        key = stripped.rstrip(":").strip().lower()
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        underlined = bool(_DASHES.fullmatch(nxt))
+        if key in _SECTION_NAMES and not line[:1].isspace() and (
+                underlined or stripped.endswith(":")
+                or (i > 0 and not lines[i - 1].strip())):
+            current = _SECTION_NAMES[key]
+            out.setdefault(current, [])
+            i += 2 if underlined else 1
+            continue
+        out.setdefault(current, []).append(line)
+        i += 1
+    return out
+
+
+def docstring_entries(lines) -> list:
+    """The entries of a section, each ``(names, head, description)``.
+
+    An entry starts on a line with no indent: a ``name : type`` line
+    (``names`` the names before the colon, ``head`` the type), or a line
+    with indented text under it, a single word, or a section's only line
+    when it is short and not a sentence (no ``names``; ``head`` is a
+    Returns type, a Raises exception or a bare parameter name). Its
+    description is the lines under it. Text with no indent that starts no
+    entry is description: of the entry above, or of one with neither name
+    nor head."""
+    lines = list(lines or [])
+    entries: list = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not line[:1].isspace():
+            head, sep, typ = stripped.partition(" : ")
+            if sep:
+                names = [n.strip().lstrip("*") for n in head.split(",")
+                         if n.strip()]
+                entries.append([names, typ.strip(), []])
+                continue
+            nxt = next((n for n in lines[i + 1:] if n.strip()), "")
+            # a section that is one short line, not a sentence ("list of
+            # str"), is its head
+            alone = not nxt and not entries and len(stripped) <= 60 \
+                and not stripped.endswith(".")
+            if nxt[:1].isspace() or alone or _ENTRY_NAMES.fullmatch(stripped):
+                entries.append([[], stripped, []])
+                continue
+        if entries:
+            entries[-1][2].append(stripped)
+        else:
+            entries.append([[], "", [stripped]])
+    return [(names, head, " ".join(desc)) for names, head, desc in entries]
+
+
+def _trim(text: str, limit: int) -> str:
+    """``text`` on one line, cut to ``limit`` characters with "..."."""
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= limit else text[:limit - 3].rstrip() + "..."
+
+
+def _first_sentence(text: str, limit: int) -> str:
+    """The first sentence of ``text`` (a full stop after a letter, digit or
+    bracket, then a space and a capital or a bracket), at most ``limit``
+    characters."""
+    text = " ".join(str(text or "").split())
+    m = re.search(r"(?<=[\w)]\.)\s+(?=[A-Z(])", text[20:])
+    if m:
+        text = text[:20 + m.start()]
+    return _trim(text, limit)
+
+
+def _doc_type(typ: str) -> str:
+    """A docstring's parameter type, without its "optional" marker."""
+    typ = re.sub(r",?\s*optional\s*$", "", str(typ or "").strip(),
+                 flags=re.I).strip().rstrip(",").strip()
+    return _trim(typ, 60)
+
+
+def returns_parts(func) -> dict:
+    """What a reference function's docstring says it returns: ``type`` (the
+    type line, or the entries' types), ``text`` (the description; named
+    entries as ``name (type): description``) and ``elements`` (the names of
+    a tuple's or list's elements, from named entries or, where the type
+    says tuple or list, a leading ``(a, b, c)`` in the description; empty
+    when it names none: "(US customary, as printed)" before a float's
+    description is not two elements, review F9)."""
+    sections = docstring_sections(inspect.getdoc(func) or "")
+    entries = docstring_entries(sections.get("returns"))
+    named = [e for e in entries if e[0]]
+    if len(named) > 1:
+        return {"type": "tuple",
+                "text": "; ".join(f"{', '.join(n)} ({t}): {d}".replace(
+                    " (): ", ": ").rstrip(": ") for n, t, d in named),
+                "elements": [n for names, _t, _d in named for n in names]}
+    typ = " ".join(t for _n, t, _d in entries if t)
+    text = " ".join(d for _n, _t, d in entries if d)
+    if len(named) == 1:
+        typ = named[0][1]
+        text = f"{', '.join(named[0][0])}: {text}" if text else \
+            ", ".join(named[0][0])
+    elements: list = []
+    m = re.match(r"\s*\(([^()]+)\)", text)
+    if m and "," in m.group(1) and re.search(r"\b(?:tuple|list)\b", typ,
+                                             re.I):
+        elements = [p.strip() for p in m.group(1).split(",") if p.strip()]
+    return {"type": typ, "text": text, "elements": elements}
+
+
+def _section_text(sections: dict, name: str) -> str:
+    """A section on one line: Raises as ``Exception: when; ...``, any other
+    section as its text."""
+    if name != "raises":
+        return " ".join(" ".join(sections.get(name) or []).split())
+    parts = []
+    for names, head, desc in docstring_entries(sections.get(name)):
+        head = head or ", ".join(names)
+        parts.append(f"{head}: {desc}" if head and desc else (head or desc))
+    return "; ".join(p for p in parts if p)
+
+
+#: A table, figure or equation named in brackets in a method's brief
+#: ("... (Figure 7-15)."), read as the place it is printed.
+_PRINTED_PLACE = re.compile(
+    r"\(((?:Table|Tables|Figure|Figures|Fig\.|Equation|Equations|Eq\.|Eqs\."
+    r"|Section|Sec\.|Chapter|Clause|Annex|Appendix|Chart|Exhibit)"
+    r"\s[^()]*)\)")
+
+
+def _brief_of(doc: str) -> str:
+    """A docstring's first paragraph, on one line."""
+    lines = []
+    for line in doc.split("\n"):
+        if not line.strip():
+            break
+        lines.append(line.strip())
+    return " ".join(lines)
+
+
+def reference_line(func, reference: str = "") -> str:
+    """The reference a function's result comes from: its docstring's
+    References text, else the adapter's ``reference`` with the table,
+    figure or equation its brief names in brackets."""
+    doc = inspect.getdoc(func) or ""
+    refs = _section_text(docstring_sections(doc), "references")
+    if refs:
+        return _trim(refs, RESULT_REFERENCE_CHARS)
+    places = _PRINTED_PLACE.findall(_brief_of(doc))
+    line = ", ".join([p for p in [str(reference or "").strip()] if p]
+                     + places[-1:])
+    return _trim(line, RESULT_REFERENCE_CHARS)
+
+
+def _default_type(default) -> str:
+    """The type a parameter with neither annotation nor docstring type
+    shows, from its default: "bool", "float" or "number" (an int default),
+    else "any" (review F9: 19 numeric and 6 true/false defaults showed
+    "any")."""
+    if isinstance(default, bool):
+        return "bool"
+    if isinstance(default, float):
+        return "float"
+    if isinstance(default, int):
+        return "number"
+    return "any"
+
+
 def extract_method_info(func, category: str, reference: str) -> dict:
     """Build a METHOD_INFO entry from a function's signature + docstring.
 
     A function whose ``**kwargs`` catch-all is read is marked
     ``open_parameters`` (dispatch cannot tell what it takes) until its
     adapter declares what it reads; one whose catch-all is never read is
-    checked by dispatch against its named parameters (GM-110)."""
+    checked by dispatch against its named parameters (GM-110).
+
+    Besides the parameters, the entry carries what the docstring says the
+    function returns (``returns``: its type and description, where a unit
+    is usually stated), and its ``raises`` (where the printed limits of a
+    chart or table usually are), ``notes`` and ``references`` text, each
+    trimmed: the 2026-11-10 review found the helper saw only
+    ``"returns": "float"``. A parameter with no annotation takes its type
+    from its docstring line, else "any".
+    """
     doc = inspect.getdoc(func) or ""
+    brief = _brief_of(doc) or "No description available."
+    sections = docstring_sections(doc)
 
-    # Brief: first paragraph
-    desc_lines = []
-    for line in doc.split("\n"):
-        if line.strip() == "":
-            break
-        desc_lines.append(line.strip())
-    brief = " ".join(desc_lines) if desc_lines else "No description available."
-
-    # Parse numpy-style docstring for parameter descriptions
+    # Parameter descriptions and docstring types
     param_descs: dict[str, str] = {}
-    in_params = False
-    current_param = None
-    for dline in doc.split("\n"):
-        stripped = dline.strip()
-        if stripped.lower() in ("parameters", "parameters:", "args", "args:"):
-            in_params = True
-            continue
-        if stripped.startswith("---"):
-            continue
-        if stripped.lower() in (
-            "returns", "returns:", "raises", "raises:",
-            "examples", "examples:", "notes", "notes:",
-            "references", "references:",
-        ):
-            in_params = False
-            current_param = None
-            continue
-        if in_params:
-            if " : " in stripped:
-                current_param = stripped.split(" : ")[0].strip()
-                param_descs[current_param] = ""
-            elif current_param and stripped:
-                prev = param_descs[current_param]
-                param_descs[current_param] = (prev + " " + stripped) if prev else stripped
+    param_types: dict[str, str] = {}
+    for names, typ, desc in docstring_entries(sections.get("parameters")):
+        if not names and _ENTRY_NAMES.fullmatch(typ):
+            # a bare parameter name with no type
+            names, typ = [n.strip().lstrip("*") for n in typ.split(",")], ""
+        for name in names:
+            param_descs[name] = desc
+            if typ:
+                param_types[name] = _doc_type(typ)
 
     sig = inspect.signature(func)
     params = {}
@@ -131,8 +333,12 @@ def extract_method_info(func, category: str, reference: str) -> dict:
         if p.kind in (inspect.Parameter.VAR_KEYWORD,
                       inspect.Parameter.VAR_POSITIONAL):
             continue
+        if p.annotation is inspect.Parameter.empty:
+            ptype = param_types.get(pname) or _default_type(p.default)
+        else:
+            ptype = param_type_str(p.annotation)
         pinfo: dict = {
-            "type": param_type_str(p.annotation),
+            "type": ptype,
             "required": p.default is inspect.Parameter.empty,
         }
         if p.default is not inspect.Parameter.empty:
@@ -147,9 +353,20 @@ def extract_method_info(func, category: str, reference: str) -> dict:
         "reference": reference,
         "parameters": params,
     }
+    ret = returns_parts(func)
     ret_ann = sig.return_annotation
-    if ret_ann is not inspect.Parameter.empty:
-        info["returns"] = param_type_str(ret_ann)
+    ret_type = ret["type"] or (param_type_str(ret_ann)
+                               if ret_ann is not inspect.Parameter.empty
+                               else "")
+    if ret_type or ret["text"]:
+        info["returns"] = _trim(
+            f"{ret_type}: {ret['text']}" if ret_type and ret["text"]
+            else (ret_type or ret["text"]), RETURNS_CHARS)
+    for name, limit in (("raises", RAISES_CHARS), ("notes", NOTES_CHARS),
+                        ("references", REFERENCES_CHARS)):
+        text = _section_text(sections, name)
+        if text:
+            info[name] = _trim(text, limit)
     if catch_all_is_read(func):
         info["open_parameters"] = True
     return info
@@ -159,21 +376,60 @@ def extract_method_info(func, category: str, reference: str) -> dict:
 # Result conversion
 # ---------------------------------------------------------------------------
 
-def clean_ref_result(result):
-    """Convert a reference function result to a JSON-safe dict."""
+def result_label(func, reference: str = "") -> dict:
+    """What a bare number, tuple or list from ``func`` is, to go beside it
+    in the result: ``method`` (its name), ``returns`` (the first sentence of
+    its docstring's Returns text, else of its brief) and ``reference`` (see
+    :func:`reference_line`); ``elements`` names a tuple's or list's
+    elements where the docstring does."""
+    doc = inspect.getdoc(func) or ""
+    ret = returns_parts(func)
+    label: dict = {"method": getattr(func, "__name__", "")}
+    what = _first_sentence(ret["text"] or _brief_of(doc),
+                           RESULT_RETURNS_CHARS)
+    if what:
+        label["returns"] = what
+    ref = reference_line(func, reference)
+    if ref:
+        label["reference"] = ref
+    if ret["elements"]:
+        label["elements"] = list(ret["elements"])
+    return label
+
+
+def clean_ref_result(result, label: dict = None):
+    """Convert a reference function result to a JSON-safe dict.
+
+    A dict is the result as it stands. A bare number, string, tuple or list
+    goes under ``result`` with ``label`` (:func:`result_label`) before it:
+    the method, what its Returns text says it is and its reference
+    (2026-11-10 review: 423 of 1,227 lookups returned a bare number and a
+    tsf came back as ``{"result": 35.9}``); ``elements`` only where it
+    names as many elements as the result has."""
     if isinstance(result, dict):
         return {k: clean_value(v) for k, v in result.items()}
     if isinstance(result, np.ndarray):
-        return {"result": result.tolist()}
-    if isinstance(result, (list, tuple)):
-        return {"result": [clean_value(v) for v in result]}
-    return {"result": clean_value(result)}
+        value = result.tolist()
+    elif isinstance(result, (list, tuple)):
+        value = [clean_value(v) for v in result]
+    else:
+        value = clean_value(result)
+    out = {k: v for k, v in (label or {}).items() if k != "elements"}
+    elements = (label or {}).get("elements")
+    if elements and isinstance(value, list) and len(elements) == len(value):
+        out["elements"] = list(elements)
+    out["result"] = value
+    return out
 
 
-def make_wrapper(func):
-    """Create adapter wrapper: ``params`` dict → ``func(**params)`` → clean dict."""
+def make_wrapper(func, reference: str = ""):
+    """Create adapter wrapper: ``params`` dict → ``func(**params)`` → clean
+    dict, a bare result labelled with what it is (:func:`result_label`;
+    ``reference``: the adapter's reference for the function)."""
+    label = result_label(func, reference)
+
     def wrapper(params):
-        return clean_ref_result(func(**params))
+        return clean_ref_result(func(**params), label)
     wrapper.__wrapped__ = func
     return wrapper
 
@@ -249,6 +505,13 @@ _CURATED_ALIASES = {
     "table_5_57_permeability_highway_materials": ["highway_material_permeability"],
     "table_7_17_swell_potential_ll_pi": ["swell_potential_from_atterberg"],
     "table_5_18_compaction_aashto": ["compaction_by_aashto_class"],
+    # em_1905 (EM 1110-1-1905): stripped, these names would mislead (the
+    # adapter drops "time_factor", "shape_factor" and "factor_of_safety")
+    "equation_7_34_time_factor": ["burland_burbidge_time_factor"],
+    "figure_7_16_time_factor": ["consolidation_time_factor"],
+    "equation_7_32_shape_factor": ["burland_burbidge_shape_factor"],
+    "equation_7_33_thickness_factor": ["burland_burbidge_thickness_factor"],
+    "equation_5_23_factor_of_safety": ["bearing_factor_of_safety"],
 }
 
 
@@ -298,6 +561,85 @@ def register_semantic_aliases(registry: dict, info: dict) -> tuple:
 # Registry factory
 # ---------------------------------------------------------------------------
 
+#: A parameter type that names a function, which JSON cannot carry.
+_CALLABLE_TYPE = re.compile(r"\b(callable|function)\b", re.IGNORECASE)
+#: A dict parameter whose description says its keys are numbers ("keys:
+#: 9.5, 4.75, ..."): JSON object keys are strings, so the lookup is never
+#: reached with the keys it compares.
+_NUMBER_KEYS = re.compile(r"\bkeys?\b[^.;]{0,40}?:?\s*-?\d", re.IGNORECASE)
+_NUMBER_KEY_TYPE = re.compile(r"dict\[\s*(float|int)\b", re.IGNORECASE)
+
+
+def json_cannot_carry(func, pinfo: dict, pname: str = "") -> str:
+    """Why a parameter's value cannot come through a JSON tool call (a
+    function, or a mapping keyed by numbers), or ``""``. ``pinfo`` is its
+    :func:`extract_method_info` entry; ``pname`` its name in ``func``."""
+    ptype = str(pinfo.get("type") or "")
+    annotation = ""
+    if pname:
+        try:
+            ann = inspect.signature(func).parameters[pname].annotation
+            if ann is not inspect.Parameter.empty:
+                annotation = str(ann)
+        except (KeyError, TypeError, ValueError):
+            pass
+    if _CALLABLE_TYPE.search(ptype) or "Callable" in annotation:
+        return "a function"
+    if "dict" in ptype.lower() or "dict" in annotation.lower():
+        if (_NUMBER_KEY_TYPE.search(ptype) or _NUMBER_KEY_TYPE.search(annotation)
+                or _NUMBER_KEYS.search(str(pinfo.get("description") or ""))):
+            return "a mapping keyed by numbers"
+    return ""
+
+
+def carriable(func, info: dict) -> bool:
+    """Whether a tool call can reach ``func``: no REQUIRED parameter is one
+    JSON cannot carry (:func:`json_cannot_carry`). An optional one is taken
+    off ``info``'s parameters, so it is not offered (2026-11-10 reach audit:
+    AASHTO 1993's performance-period worksheet asks for two functions and
+    UFC 3-250-03's slurry-seal surface area for a mapping keyed by sieve
+    size in mm; neither could be called from a tool call)."""
+    params = info.get("parameters") or {}
+    for pname, pinfo in list(params.items()):
+        if json_cannot_carry(func, pinfo, pname):
+            if pinfo.get("required"):
+                return False
+            params.pop(pname)
+    return True
+
+
+#: A result type that is a drawing object (a matplotlib Axes or Figure).
+#: It reaches a tool call only as its repr ("Axes(0.125,0.11;0.775x0.77)"),
+#: which tells the helper nothing.
+_DRAWING_TYPE = re.compile(
+    r"\bmatplotlib\b|\bAxes(?:Subplot)?\b|^\s*(?:plt\.)?Figure\s*$")
+
+
+def returns_a_drawing(func, info: dict) -> bool:
+    """Whether ``func`` returns a drawing object rather than data, by its
+    return annotation or its documented Returns type (``info``: its
+    :func:`extract_method_info` entry)."""
+    heads = [str(info.get("returns") or "").split("\n")[0]]
+    try:
+        ann = inspect.signature(func).return_annotation
+        if ann is not inspect.Signature.empty:
+            heads.append(getattr(ann, "__name__", "") or str(ann))
+            heads.append(str(ann))
+    except (TypeError, ValueError):
+        pass
+    return any(_DRAWING_TYPE.search(h) for h in heads if h)
+
+
+def listable(func, info: dict) -> bool:
+    """Whether the references helper is offered ``func``: a tool call can
+    reach it (:func:`carriable`) and its answer is data a tool result can
+    carry, not a drawing object (:func:`returns_a_drawing`; 2026-11-12
+    reach audit, BACKLOG REF-22: DM7's seven ``plot_figure_*`` functions
+    draw on a matplotlib Axes and return it, which reached the helper as
+    the text "Axes(...)"; the calc packages import them directly)."""
+    return carriable(func, info) and not returns_a_drawing(func, info)
+
+
 def build_lookup_registry(lookup_modules, *, skip_callable=False):
     """Scan modules for public functions and build registries.
 
@@ -306,6 +648,9 @@ def build_lookup_registry(lookup_modules, *, skip_callable=False):
     lookup_modules : list of (module, category_str, reference_str)
     skip_callable : bool
         If True, skip functions with Callable-typed parameters (DM7).
+        Whatever it is, a function the helper cannot use is left out: one
+        a tool call cannot reach (a required parameter JSON cannot carry)
+        or one that returns a drawing object (:func:`listable`).
 
     Returns
     -------
@@ -322,8 +667,11 @@ def build_lookup_registry(lookup_modules, *, skip_callable=False):
                 continue
             if skip_callable and has_callable_param(func):
                 continue
-            registry[name] = make_wrapper(func)
-            info[name] = extract_method_info(func, category, reference)
+            entry = extract_method_info(func, category, reference)
+            if not listable(func, entry):
+                continue
+            registry[name] = make_wrapper(func, reference)
+            info[name] = entry
     register_semantic_aliases(registry, info)
     return registry, info
 
@@ -359,6 +707,15 @@ def as_result(shaped: dict, key: str) -> dict:
     return out
 
 
+def _section_depth(sid: str) -> int:
+    """How deep a section number sits: one level for each '.' or '-', and
+    for an Army paragraph number ('5-5a(2)(c)1', EM 1110-1-1905) one for a
+    letter after a number, each parenthesis and a number after one."""
+    return (len(re.findall(r"[.-]", sid)) + sid.count("(")
+            + len(re.findall(r"(?<=\d)[a-z]", sid))
+            + len(re.findall(r"(?<=\))\d", sid)))
+
+
 def example_section_ids(ref_package_name: str, n: int = 3) -> list[str]:
     """Up to ``n`` section numbers this reference holds, one per level from
     the top (``['D', '3.2.1', '5.2.3.1.1']`` for GEC-12, whose Appendix D
@@ -382,7 +739,7 @@ def example_section_ids(ref_package_name: str, n: int = 3) -> list[str]:
                 # numbered section sits at that level (EN 1997-2 lists its
                 # annexes first)
                 target = by_depth if re.match(r"\d|P-", sid) else lettered
-                target.setdefault(len(re.findall(r"[.-]", sid)), sid)
+                target.setdefault(_section_depth(sid), sid)
     for depth, sid in lettered.items():
         by_depth.setdefault(depth, sid)
     depths = sorted(by_depth)
@@ -505,7 +862,12 @@ def add_text_retrieval(registry, info, ref_package_name, reference_str):
             "parameters": {
                 "query": {
                     "type": "str", "required": True,
-                    "description": "Search query (case-insensitive, multi-word AND).",
+                    "description": (
+                        "Search query (case-insensitive). Sections holding "
+                        "every word come first; when none holds them all, "
+                        "the hits hold some of the words, each marked "
+                        "match 'any word' with 'lacks' (the words it does "
+                        "not hold): no match for the whole query."),
                 },
                 "limit": {
                     "type": "int", "required": False,

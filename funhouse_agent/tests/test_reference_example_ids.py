@@ -23,8 +23,10 @@ from funhouse_agent.adapters._reference_common import (  # noqa: E402
     example_section_ids,
 )
 
-#: A quoted section number in a description: '7.2.1.3.1', ``"4-2.1"``.
-_QUOTED_ID = re.compile(r"""['"]([0-9P]+(?:[-.][0-9A-Za-z]+)*)['"]""")
+#: A quoted section number in a description: '7.2.1.3.1', ``"4-2.1"``,
+#: an appendix or part by its letter or numeral ('B', 'II-2.1.1') and an
+#: Army paragraph number ('2-7a(2)(c)1', EM 1110-1-1905).
+_QUOTED_ID = re.compile(r"""['"]([0-9A-Z][0-9A-Za-z().-]*)['"]""")
 
 
 def _section_params(agent: str):

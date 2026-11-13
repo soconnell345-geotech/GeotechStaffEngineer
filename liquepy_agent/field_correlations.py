@@ -46,6 +46,8 @@ def _validate_correlation_inputs(depth, q_c, f_s, u_2, gwl, vs_method):
         raise ValueError(f"f_s length ({len(f_s)}) must match depth length ({n})")
     if u_2 is not None and len(u_2) != n:
         raise ValueError(f"u_2 length ({len(u_2)}) must match depth length ({n})")
+    from liquepy_agent.cpt_liquefaction import refuse_missing_readings
+    refuse_missing_readings(depth=depth, q_c=q_c, f_s=f_s, u_2=u_2)
 
     if gwl is None:
         raise ValueError(WATER_TABLE_REQUIRED)

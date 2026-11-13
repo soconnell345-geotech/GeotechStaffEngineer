@@ -202,6 +202,9 @@ _ITERATIONS = "the probe converges in fewer iterations"
 _BLOWUP = ("the probe's strength reduction fails by non-convergence "
            "before either blow-up factor")
 NOT_REACHED = {
+    ("dxf_import|parse_geometry", "ignore_header_units"):
+        "the probe gives no units, so there is no difference from the "
+        "drawing's header to ignore",
     ("axial_pile|axial_pile_capacity#clay", "adhesion_curve"): _ADHESION,
     ("axial_pile|axial_pile_capacity#clay", "adhesion_chart"):
         "the probe gives no fig_7_18_case, so no Fig. 7-18 chart is read",
