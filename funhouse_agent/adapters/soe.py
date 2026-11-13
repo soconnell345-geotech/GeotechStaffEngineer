@@ -101,6 +101,24 @@ def _build_layers(params, *, method, envelope=False):
     return layers
 
 
+def _support_number(s, key, i, *, method):
+    """A support's ``spacing`` or ``angle_deg`` as a number (GM-321
+    review): null is not given (None); a number written as a string is
+    read as one, as this adapter reads a layer's thickness and other
+    adapters their numeric inputs (``float``); anything else, a bool
+    included, is refused naming the key and the support."""
+    value = s.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            pass
+    raise ValueError(f"{method}: supports[{i}]: {key} must be a number, "
+                     f"got {value!r}")
+
+
 def _build_geometry(params, *, method, envelope=False):
     require_params(params, ["excavation_depth"], method=method)
     layers = _build_layers(params, method=method, envelope=envelope)
@@ -120,11 +138,12 @@ def _build_geometry(params, *, method, envelope=False):
             supports.append(SupportLevel(
                 depth=s["depth"],
                 support_type=s.get("support_type", "strut"),
-                # no spacing given: loads per metre of wall only (GM-321)
-                spacing=s.get("spacing"),
+                # no spacing given (or null): loads per metre of wall
+                # only (GM-321)
+                spacing=_support_number(s, "spacing", i, method=method),
                 # null: not given, horizontal (as before GM-321)
-                angle_deg=(0.0 if s.get("angle_deg") is None
-                           else s["angle_deg"])))
+                angle_deg=_support_number(s, "angle_deg", i,
+                                          method=method) or 0.0))
         except ValueError as exc:
             raise ValueError(f"{method}: supports[{i}]: {exc}") from None
     return ExcavationGeometry(

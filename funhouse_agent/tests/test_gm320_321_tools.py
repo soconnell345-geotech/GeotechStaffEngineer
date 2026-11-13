@@ -195,14 +195,47 @@ def test_null_angle_is_horizontal_as_before():
     assert null["support_reactions"][0]["angle_deg"] == 0.0
 
 
+def test_null_spacing_is_per_metre_only_as_before():
+    null = SOE["braced_excavation"](dict(_WALL, supports=[
+        {"depth": 2.0, "spacing": None, "angle_deg": 10.0}]))
+    left_out = SOE["braced_excavation"](dict(_WALL, supports=[
+        {"depth": 2.0, "angle_deg": 10.0}]))
+    assert null["support_reactions"] == left_out["support_reactions"]
+    assert null["support_reactions"][0]["spacing_m"] is None
+    assert null["support_reactions"][0]["axial_load_kN_per_support"] is None
+
+
+def test_angle_written_as_a_string_is_read_as_the_number():
+    # as the adapters read other numeric inputs (float): "15" is 15
+    text = SOE["braced_excavation"](dict(_WALL, supports=[
+        {"depth": 2.0, "spacing": 3.0, "angle_deg": "15"}]))
+    num = SOE["braced_excavation"](dict(_WALL, supports=[
+        {"depth": 2.0, "spacing": 3.0, "angle_deg": 15.0}]))
+    assert text["support_reactions"] == num["support_reactions"]
+    assert text["support_reactions"][0]["angle_deg"] == 15.0
+
+
+def test_spacing_written_as_a_string_is_read_as_the_number():
+    text = SOE["braced_excavation"](dict(_WALL, supports=[
+        {"depth": 2.0, "spacing": "3"}]))
+    num = SOE["braced_excavation"](dict(_WALL, supports=[
+        {"depth": 2.0, "spacing": 3.0}]))
+    assert text["support_reactions"] == num["support_reactions"]
+    assert text["support_reactions"][0]["spacing_m"] == 3.0
+
+
 @pytest.mark.parametrize("support, text", [
     ({"depth": 2.0, "spacing": 0}, r"supports\[0\].*spacing must be positive"),
     ({"depth": 2.0, "angle_deg": 95}, r"supports\[0\].*less than 90"),
     ({"depth": 2.0, "preload_kN_per_m": 80}, "preload .*is not an input"),
-    ({"depth": 2.0, "angle_deg": "15"},
-     r"supports\[0\].*angle_deg must be a number"),
-    ({"depth": 2.0, "spacing": "3"},
-     r"supports\[0\].*spacing must be a number"),
+    ({"depth": 2.0, "angle_deg": "fifteen"},
+     r"supports\[0\]: angle_deg must be a number, got 'fifteen'"),
+    ({"depth": 2.0, "spacing": "3 m"},
+     r"supports\[0\]: spacing must be a number, got '3 m'"),
+    ({"depth": 2.0, "spacing": True},
+     r"supports\[0\]: spacing must be a number, got True"),
+    ({"depth": 2.0, "angle_deg": [15]},
+     r"supports\[0\]: angle_deg must be a number, got \[15\]"),
 ])
 def test_bad_support_inputs_refused(support, text):
     with pytest.raises(ValueError, match=text):
