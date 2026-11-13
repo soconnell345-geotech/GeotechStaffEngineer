@@ -13,6 +13,16 @@ from typing import Dict, Any, Optional
 import numpy as np
 
 
+#: The periods whose spectral ordinates ``to_dict`` reports (s). The full
+#: spectra (500 periods, 0.01 to 10 s) stay on the result object.
+REPORTED_PERIODS_S = (0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 2.0, 3.0,
+                      5.0)
+
+#: Most rows ``depth_profile`` gives: tool results are kept under 8000
+#: characters.
+PROFILE_MAX_ROWS = 20
+
+
 @dataclass
 class EQLSiteResponseResult:
     """Results from 1D equivalent-linear (or linear elastic) site response.
@@ -58,6 +68,22 @@ class EQLSiteResponseResult:
         Surface response spectrum (g, 5% damping).
     Sa_input_g : numpy.ndarray
         Input response spectrum (g, 5% damping).
+    depths_accel, depths_vs : numpy.ndarray
+        The depths of ``max_accel_g`` and of the two Vs profiles (m), as
+        pystrata gives them; ``depths`` is the strain profile's.
+    water_table_depth_m : float or None
+        The water table behind the Darendeli/Menq confining stress (None:
+        none taken in the profile).
+    k0 : float
+        The at-rest coefficient in that stress.
+    layer_stresses : list of dict
+        One row per Darendeli or Menq layer: the stresses at its
+        mid-depth and the mean effective stress its curves were built for
+        (``eql_site_response.curve_layer_stresses``).
+    choices : list of dict
+        What the run chose (``geotech_common.choices``).
+    warnings : list of str
+        What the reader should know (e.g. no water table given).
     """
     analysis_type: str = "equivalent_linear"
     total_depth_m: float = 0.0
@@ -78,6 +104,13 @@ class EQLSiteResponseResult:
     periods: np.ndarray = field(default_factory=lambda: np.array([]))
     Sa_surface_g: np.ndarray = field(default_factory=lambda: np.array([]))
     Sa_input_g: np.ndarray = field(default_factory=lambda: np.array([]))
+    depths_accel: np.ndarray = field(default_factory=lambda: np.array([]))
+    depths_vs: np.ndarray = field(default_factory=lambda: np.array([]))
+    water_table_depth_m: Optional[float] = None
+    k0: float = 0.5
+    layer_stresses: list = field(default_factory=list)
+    choices: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
 
     def summary(self) -> str:
         atype = ("EQUIVALENT-LINEAR" if self.analysis_type == "equivalent_linear"
@@ -121,7 +154,110 @@ class EQLSiteResponseResult:
         if len(self.max_strain_pct) > 0:
             d["max_shear_strain_pct"] = round(
                 float(np.max(self.max_strain_pct)), 4)
+        # The spectra and the profiles with depth (GM-325: computed and
+        # never returned).
+        if len(self.periods) > 1 and len(self.Sa_surface_g) == len(self.periods):
+            T = np.asarray(self.periods, dtype=float)
+            at = [p for p in REPORTED_PERIODS_S if T[0] <= p <= T[-1]]
+            logT = np.log(T)
+            d["periods_s"] = list(at)
+            d["Sa_surface_g"] = [round(float(v), 4) for v in
+                                 np.interp(np.log(at), logT, self.Sa_surface_g)]
+            if len(self.Sa_input_g) == len(T):
+                d["Sa_input_g"] = [round(float(v), 4) for v in
+                                   np.interp(np.log(at), logT, self.Sa_input_g)]
+            k = int(np.argmax(self.Sa_surface_g))
+            d["Sa_surface_max_g"] = round(float(self.Sa_surface_g[k]), 4)
+            d["period_at_Sa_surface_max_s"] = float(f"{T[k]:.3g}")
+        rows, note = self.depth_profile()
+        if rows:
+            d["depth_profile"] = rows
+            if note:
+                d["depth_profile_note"] = note
+        d["water_table_depth_m"] = self.water_table_depth_m
+        d["K0"] = self.k0
+        if self.layer_stresses:
+            d["layer_stresses"] = [dict(r) for r in self.layer_stresses]
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
+
+    def depth_profile(self, max_rows: int = PROFILE_MAX_ROWS):
+        """The response with depth, as rows a tool result can carry.
+
+        One row per sub-layer of the discretised profile (the half-space
+        left out): ``top_m`` and ``bottom_m``, ``max_strain_pct`` (peak
+        shear strain at the sub-layer's middle), ``max_accel_g`` (peak
+        acceleration at its top), ``initial_Vs_m_per_s`` and
+        ``compatible_Vs_m_per_s``. More than ``max_rows`` sub-layers are
+        merged, neighbours together, about equally many in each row: the
+        row then carries the LARGEST strain and acceleration and the
+        thickness-weighted (travel-time) Vs of its sub-layers.
+
+        Returns
+        -------
+        (rows, note) : (list of dict, str or None)
+        """
+        tops = np.asarray(self.depths_vs, dtype=float).ravel()
+        n = len(tops) - 1          # the last depth is the half-space's top
+        if n < 1 or len(self.depths_accel) < n + 1:
+            return [], None
+        bottoms = np.asarray(self.depths_accel, dtype=float).ravel()[1:n + 1]
+        tops = tops[:n]
+        thick = bottoms - tops
+        # pystrata gives the strain at each sub-layer's MIDDLE, after a
+        # leading point at the surface, so the strain samples are matched
+        # to the sub-layers by depth, not by position in the array.
+        strain_all = np.asarray(self.max_strain_pct, dtype=float).ravel()
+        z_strain = np.asarray(self.depths, dtype=float).ravel()
+        if len(z_strain) != len(strain_all) or len(strain_all) == 0:
+            return [], None
+        mids = 0.5 * (tops + bottoms)
+        nearest = np.argmin(np.abs(z_strain[None, :] - mids[:, None]), axis=1)
+        if np.any(np.abs(z_strain[nearest] - mids) > 0.5 * thick + 1e-9):
+            return [], None            # no strain sample inside a sub-layer
+        strain = strain_all[nearest]
+        accel = np.asarray(self.max_accel_g, dtype=float).ravel()
+        # pystrata writes the two Vs profiles for a step plot: the first
+        # sub-layer's value twice, then one value per sub-layer, against
+        # the depths of the sub-layer tops and the top of the half-space
+        # (pystrata.output.InitialVelProfile). So sub-layer i is entry
+        # i + 1; a profile not of that form is not returned.
+        vs0 = np.asarray(self.initial_Vs, dtype=float).ravel()
+        vs1 = np.asarray(self.compatible_Vs, dtype=float).ravel()
+        if len(accel) < n or len(vs0) != n + 1 or len(vs1) != n + 1:
+            return [], None
+        if vs0[0] != vs0[1] or vs1[0] != vs1[1]:
+            return [], None
+        vs0, vs1 = vs0[1:], vs1[1:]
+
+        def vs_avg(v, idx):
+            # the velocity that gives the same travel time over the row
+            t = float(np.sum(thick[idx] / v[idx]))
+            return round(float(np.sum(thick[idx]) / t), 1) if t > 0 else None
+
+        chunks = (np.array_split(np.arange(n), max_rows) if n > max_rows
+                  else [np.array([i]) for i in range(n)])
+        rows = []
+        for idx in chunks:
+            rows.append({
+                "top_m": round(float(tops[idx[0]]), 2),
+                "bottom_m": round(float(bottoms[idx[-1]]), 2),
+                "max_strain_pct": round(float(np.max(strain[idx])), 4),
+                "max_accel_g": round(float(np.max(accel[idx])), 4),
+                "initial_Vs_m_per_s": vs_avg(vs0, idx),
+                "compatible_Vs_m_per_s": vs_avg(vs1, idx),
+            })
+        note = None
+        if n > max_rows:
+            note = (
+                f"{n} sub-layers merged into {len(rows)} rows to keep the "
+                "result small: each row carries the largest strain and "
+                "acceleration of its sub-layers and their travel-time "
+                "average Vs.")
+        return rows, note
 
     def plot_surface_motion(self, ax=None, show=True, **kwargs):
         """Plot surface acceleration time history."""

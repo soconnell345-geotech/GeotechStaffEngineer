@@ -54,10 +54,19 @@ ranges.
 4. **Ground motions** — reuses `opensees_agent/ground_motions.py` (lazy import).
    That module has zero openseespy dependency.
 
-5. **stress_mean auto-calculation** — when Darendeli/Menq layers omit
-   `stress_mean`, it is computed from profile geometry:
-   `sigma_v_mid * (1 + 2*K0) / 3`, K0=0.5, floor at 5 kPa.
-
+5. **stress_mean auto-calculation** — when a Darendeli or Menq layer
+   omits `stress_mean`, it is computed at the layer's mid-depth
+   (`eql_site_response.layer_stress`): total stress from the layers'
+   unit weights, less hydrostatic pore pressure below `water_table_depth`
+   (9.81 kN/m3), then `sigma'm = sigma'v (1 + 2 K0) / 3` (NAVFAC DM7.2
+   Eq. 6-22, with `k0` for its 1 - sin(phi')), floor 5 kPa. Defaults:
+   NO water table (effective = total stress) and K0 = 0.5; with no water
+   table given the result's `warnings` and `choices` say so. Until GM-325
+   (2026-11-13) this was the same formula on total stress with K0 fixed
+   at 0.5 and no water table input. The result lists each curve layer's
+   stresses (`layer_stresses`). A total-stress analysis has no pore
+   pressure otherwise: the water table changes only this confining
+   stress.
 6. **Profile auto-discretization** — pystrata subdivides thick layers for
    numerical accuracy. Controlled by `max_freq_hz` (default 25 Hz) and
    `wave_frac` (default 0.2 = λ/5).
@@ -109,3 +118,22 @@ ranges.
 - **Linear bedrock**: The half-space is always linear elastic (no
   modulus reduction). Use `soil_model="linear"` with appropriate damping
   (typically 0.5-2% for rock).
+
+## What the tool result carries (GM-325, 2026-11-13)
+
+`to_dict()` returns, beside the scalars: the surface and input spectra at
+11 periods (`REPORTED_PERIODS_S`, read off the 500-period spectra on a log
+period axis), the largest surface ordinate and its period, and
+`depth_profile`, one row per sub-layer of the discretised profile (at most
+20; more are merged, keeping the largest strain and acceleration and the
+travel-time average Vs). pystrata's profile outputs do not share one depth
+array: the strain is at each sub-layer's middle after a leading surface
+point, the acceleration at each sub-layer's top, and the two Vs profiles
+are in step-plot form (the first value twice, pystrata 0.5.4
+`output.InitialVelProfile`). `depth_profile` matches the strain by depth
+and reads Vs from entry i + 1; a Vs array not of that form gives no
+profile instead of a shifted one. Checked on pystrata 0.5.4 only (0.6
+needs Python 3.13).
+
+The input motion is applied as a rock outcrop motion at the top of the
+half-space; the tool text and `choices` say so.

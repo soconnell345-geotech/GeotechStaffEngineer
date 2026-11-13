@@ -180,32 +180,180 @@ def _validate_eql_inputs(layers, strain_ratio=0.65, tolerance=0.01,
 # Soil type builders
 # ===========================================================================
 
-def _compute_stress_mean(layers, layer_idx):
-    """Auto-compute mean effective stress at layer midpoint.
+#: Unit weight of water in the pore pressure below the water table (kN/m3).
+GAMMA_W = 9.81
 
-    Uses simplified calculation: sigma_v = sum(unit_wt * thickness) above,
-    then stress_mean = sigma_v_mid * (1 + 2*K0) / 3 with K0=0.5.
+#: The at-rest coefficient taken when ``k0`` is not given. 0.5 is Jaky's
+#: 1 - sin(phi') at phi' = 30 deg, the K0 NAVFAC DM7.2 Eq. 6-22 puts in the
+#: mean effective stress.
+K0_DEFAULT = 0.5
+
+#: The lowest mean effective stress handed to a curve (kPa): the curves'
+#: reference-strain terms take a power of the stress, and a layer at the
+#: ground surface would otherwise start from about zero.
+STRESS_MEAN_FLOOR = 5.0
+
+
+def _validate_stress_inputs(water_table_depth, k0):
+    if water_table_depth is not None and water_table_depth < 0:
+        raise ValueError(
+            "water_table_depth must be >= 0 (m below the ground surface), "
+            f"got {water_table_depth}")
+    if k0 is None or not (0 < k0 <= 3.0):
+        raise ValueError(
+            f"k0 must be above 0 and at most 3 (at-rest earth pressure "
+            f"coefficient), got {k0}")
+
+
+def layer_stress(layers, layer_idx, water_table_depth=None, k0=K0_DEFAULT):
+    """Stresses at a layer's mid-depth, for the Darendeli and Menq curves.
+
+    The total vertical stress is the sum of unit_wt x thickness over the
+    layers above plus half this layer. The pore pressure is hydrostatic
+    below ``water_table_depth`` (none when it is None: the profile is taken
+    to have no water table, so effective = total). The mean effective
+    stress is sigma'm = sigma'v (1 + 2 K0) / 3 (NAVFAC DM7.2 Eq. 6-22, with
+    K0 for its 1 - sin(phi')), not below :data:`STRESS_MEAN_FLOOR`.
+
+    Until GM-325 the "mean effective stress" was this formula on the TOTAL
+    stress with K0 fixed at 0.5, whatever the water table.
+
+    Returns
+    -------
+    dict
+        ``mid_depth_m``, ``sigma_v_kPa``, ``u_kPa``, ``sigma_v_eff_kPa``,
+        ``K0``, ``stress_mean_kPa`` and ``floored`` (True when the floor
+        set the value).
     """
-    K0 = 0.5
-    cumulative_depth = 0.0
-    sigma_v_top = 0.0
-
+    z = 0.0
+    sigma_v = 0.0
     for i in range(layer_idx):
-        h = layers[i]["thickness"]
-        gamma = layers[i]["unit_wt"]
-        sigma_v_top += gamma * h
-        cumulative_depth += h
+        sigma_v += layers[i]["unit_wt"] * layers[i]["thickness"]
+        z += layers[i]["thickness"]
+    half = layers[layer_idx]["thickness"] / 2.0
+    sigma_v += layers[layer_idx]["unit_wt"] * half
+    z += half
+    u = 0.0
+    if water_table_depth is not None and z > water_table_depth:
+        u = GAMMA_W * (z - water_table_depth)
+    sigma_v_eff = sigma_v - u
+    mean = sigma_v_eff * (1.0 + 2.0 * k0) / 3.0
+    return {
+        "mid_depth_m": z,
+        "sigma_v_kPa": sigma_v,
+        "u_kPa": u,
+        "sigma_v_eff_kPa": sigma_v_eff,
+        "K0": k0,
+        "stress_mean_kPa": max(mean, STRESS_MEAN_FLOOR),
+        "floored": bool(mean < STRESS_MEAN_FLOOR),
+    }
 
-    # Stress at midpoint of target layer
-    h_target = layers[layer_idx]["thickness"]
-    gamma_target = layers[layer_idx]["unit_wt"]
-    sigma_v_mid = sigma_v_top + gamma_target * (h_target / 2.0)
 
-    stress_mean = sigma_v_mid * (1.0 + 2.0 * K0) / 3.0
-    return max(stress_mean, 5.0)  # Floor at 5 kPa
+def _compute_stress_mean(layers, layer_idx, water_table_depth=None,
+                         k0=K0_DEFAULT):
+    """Mean effective stress at a layer's mid-depth (kPa);
+    :func:`layer_stress` has the rule."""
+    return layer_stress(layers, layer_idx, water_table_depth,
+                        k0)["stress_mean_kPa"]
 
 
-def _build_soil_type(pystrata, layer, layers, layer_idx):
+def curve_layer_stresses(layers, water_table_depth=None, k0=K0_DEFAULT):
+    """One row per Darendeli or Menq layer: the confining stress its
+    curves were built for and where it came from (GM-325).
+
+    A layer's own ``stress_mean`` is used as given (``stress_mean_from``
+    "given"); otherwise the value is :func:`layer_stress`'s ("computed").
+    ``layer`` counts from 1 at the ground surface.
+    """
+    rows = []
+    for i, layer in enumerate(layers):
+        model = str(layer["soil_model"]).lower().strip()
+        if model not in ("darendeli", "menq"):
+            continue
+        st = layer_stress(layers, i, water_table_depth, k0)
+        row = {
+            "layer": i + 1,
+            "mid_depth_m": round(st["mid_depth_m"], 3),
+            "sigma_v_kPa": round(st["sigma_v_kPa"], 2),
+            "u_kPa": round(st["u_kPa"], 2),
+            "sigma_v_eff_kPa": round(st["sigma_v_eff_kPa"], 2),
+        }
+        if "stress_mean" in layer:
+            row["stress_mean_kPa"] = round(float(layer["stress_mean"]), 2)
+            row["stress_mean_from"] = "given"
+        else:
+            row["stress_mean_kPa"] = round(st["stress_mean_kPa"], 2)
+            row["stress_mean_from"] = (
+                f"computed (floor {STRESS_MEAN_FLOOR:g} kPa)"
+                if st["floored"] else "computed")
+        rows.append(row)
+    return rows
+
+
+def stress_choices(layers, water_table_depth=None, k0=K0_DEFAULT):
+    """What the run chose (``geotech_common.choices``) and what to warn
+    of: the motion's placement, and, when a Darendeli or Menq layer's
+    stress was computed, the water table and K0 behind it.
+
+    Returns
+    -------
+    (choices, warnings) : (list of dict, list of str)
+    """
+    from geotech_common.choices import MODULE, choice, how_given
+    out = [choice(
+        "input motion", "a rock outcrop motion at the top of the half-space",
+        MODULE,
+        "the record is taken as recorded on outcropping rock, and the "
+        "half-space's own Vs and unit weight carry the radiation into it; "
+        "it is not applied as a within (borehole) motion")]
+    warns = []
+    rows = curve_layer_stresses(layers, water_table_depth, k0)
+    computed = [r["layer"] for r in rows
+                if r["stress_mean_from"] != "given"]
+    if not computed:
+        return out, warns
+    which = ", ".join(str(n) for n in computed)
+    if water_table_depth is None:
+        out.append(choice(
+            "water table", "none in the profile: effective stress = total "
+            "stress", how_given(None, None, name="water_table_depth"),
+            "no water_table_depth was given. Below a real water table the "
+            "confining stress is lower than this, and the Darendeli and "
+            "Menq curves then give more modulus reduction and damping at "
+            "a strain (give water_table_depth)"))
+        warns.append(
+            "No water_table_depth was given, so the mean effective stress "
+            f"behind the Darendeli/Menq curves of layer(s) {which} was "
+            "computed with no pore pressure (effective = total stress). "
+            "If the water table is within the profile, give "
+            "water_table_depth: the stress below it is lower, and the "
+            "curves soften.")
+    else:
+        out.append(choice(
+            "water table", f"{water_table_depth:g} m below the ground "
+            "surface",
+            how_given(water_table_depth, None, name="water_table_depth"),
+            f"hydrostatic pore pressure below it at {GAMMA_W:g} kN/m3"))
+    out.append(choice(
+        "mean effective stress for the Darendeli and Menq curves",
+        f"sigma'm = sigma'v (1 + 2 K0) / 3 with K0 = {k0:g}",
+        how_given(k0, K0_DEFAULT, name="k0"),
+        "NAVFAC DM7.2 Eq. 6-22 (its K0 is 1 - sin(phi'); 0.5 is phi' = 30 "
+        "deg), at each layer's mid-depth, sigma'v from the layers' unit "
+        f"weights and the water table; layer(s) {which} (layer_stresses "
+        "lists the values). A layer's own stress_mean replaces it",
+        alternatives=["a layer's own stress_mean (kPa)"]))
+    floored = [r["layer"] for r in rows if "floor" in r["stress_mean_from"]]
+    if floored:
+        warns.append(
+            "The computed mean effective stress of layer(s) "
+            + ", ".join(str(n) for n in floored)
+            + f" was below {STRESS_MEAN_FLOOR:g} kPa and was set to it.")
+    return out, warns
+
+
+def _build_soil_type(pystrata, layer, layers, layer_idx,
+                     water_table_depth=None, k0=K0_DEFAULT):
     """Build a pystrata SoilType from a layer dict.
 
     Parameters
@@ -232,7 +380,8 @@ def _build_soil_type(pystrata, layer, layers, layer_idx):
         if "stress_mean" in layer:
             stress_mean = layer["stress_mean"]
         else:
-            stress_mean = _compute_stress_mean(layers, layer_idx)
+            stress_mean = _compute_stress_mean(
+                layers, layer_idx, water_table_depth, k0)
 
     if model == "darendeli":
         return compat.darendeli_soil_type(
@@ -281,6 +430,8 @@ def analyze_eql_site_response(
     max_iterations=15,
     max_freq_hz=25.0,
     wave_frac=0.2,
+    water_table_depth=None,
+    k0=K0_DEFAULT,
 ):
     """Run 1D equivalent-linear site response analysis using pystrata.
 
@@ -318,6 +469,16 @@ def analyze_eql_site_response(
         Maximum frequency for profile auto-discretization (Hz). Default 25.
     wave_frac : float
         Wavelength fraction for auto-discretization. Default 0.2 (1/5).
+    water_table_depth : float, optional
+        Depth to the water table (m below the ground surface), for the
+        mean effective stress behind the Darendeli and Menq curves
+        (:func:`layer_stress`). None (default): no water table in the
+        profile, so effective stress = total stress; the result says so.
+        It changes nothing else: a total-stress analysis has no pore
+        pressure.
+    k0 : float, optional
+        At-rest earth pressure coefficient in that mean effective stress,
+        sigma'm = sigma'v (1 + 2 K0) / 3. Default 0.5.
 
     Returns
     -------
@@ -333,6 +494,7 @@ def analyze_eql_site_response(
     """
     _validate_eql_inputs(layers, strain_ratio, tolerance,
                          max_iterations, max_freq_hz, wave_frac)
+    _validate_stress_inputs(water_table_depth, k0)
 
     from opensees_agent.ground_motions import (
         validate_motion_input, motion_label)
@@ -347,6 +509,7 @@ def analyze_eql_site_response(
         pystrata, layers, accel_g, dt_motion, motion_name,
         strain_ratio, tolerance, max_iterations, max_freq_hz, wave_frac,
         analysis_type="equivalent_linear",
+        water_table_depth=water_table_depth, k0=k0,
     )
 
 
@@ -358,6 +521,8 @@ def analyze_linear_site_response(
     target_pga_g=None,
     max_freq_hz=25.0,
     wave_frac=0.2,
+    water_table_depth=None,
+    k0=K0_DEFAULT,
 ):
     """Run 1D linear elastic site response analysis using pystrata.
 
@@ -381,6 +546,16 @@ def analyze_linear_site_response(
         Max frequency for auto-discretization (Hz). Default 25.
     wave_frac : float
         Wavelength fraction for auto-discretization. Default 0.2.
+    water_table_depth : float, optional
+        Depth to the water table (m below the ground surface), for the
+        mean effective stress behind the Darendeli and Menq curves
+        (:func:`layer_stress`). None (default): no water table in the
+        profile, so effective stress = total stress; the result says so.
+        It changes nothing else: a total-stress analysis has no pore
+        pressure.
+    k0 : float, optional
+        At-rest earth pressure coefficient in that mean effective stress,
+        sigma'm = sigma'v (1 + 2 K0) / 3. Default 0.5.
 
     Returns
     -------
@@ -389,6 +564,7 @@ def analyze_linear_site_response(
     """
     # Validate with default EQL params (they won't be used)
     _validate_eql_inputs(layers, max_freq_hz=max_freq_hz, wave_frac=wave_frac)
+    _validate_stress_inputs(water_table_depth, k0)
 
     from opensees_agent.ground_motions import (
         validate_motion_input, motion_label)
@@ -404,6 +580,7 @@ def analyze_linear_site_response(
         strain_ratio=0.65, tolerance=0.01, max_iterations=1,
         max_freq_hz=max_freq_hz, wave_frac=wave_frac,
         analysis_type="linear_elastic",
+        water_table_depth=water_table_depth, k0=k0,
     )
 
 
@@ -413,14 +590,16 @@ def analyze_linear_site_response(
 
 def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
                       strain_ratio, tolerance, max_iterations,
-                      max_freq_hz, wave_frac, analysis_type):
+                      max_freq_hz, wave_frac, analysis_type,
+                      water_table_depth=None, k0=K0_DEFAULT):
     """Build pystrata model, run analysis, extract results."""
     from pystrata_agent import compat
 
     # 1. Build pystrata layers
     pystrata_layers = []
     for i, layer in enumerate(layers):
-        soil_type = _build_soil_type(pystrata, layer, layers, i)
+        soil_type = _build_soil_type(pystrata, layer, layers, i,
+                                     water_table_depth, k0)
         pystrata_layers.append(
             pystrata.site.Layer(soil_type, layer["thickness"], layer["Vs"])
         )
@@ -553,6 +732,8 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
         n_iterations = (eql_passes if callable(orig_calc_waves)
                         and eql_passes >= 1 else None)
 
+    run_choices, run_warnings = stress_choices(layers, water_table_depth, k0)
+
     return EQLSiteResponseResult(
         analysis_type=analysis_type,
         total_depth_m=total_depth,
@@ -573,4 +754,11 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
         periods=periods,
         Sa_surface_g=Sa_surface,
         Sa_input_g=Sa_input,
+        depths_accel=depths_accel,
+        depths_vs=depths_vs,
+        water_table_depth_m=water_table_depth,
+        k0=k0,
+        layer_stresses=curve_layer_stresses(layers, water_table_depth, k0),
+        choices=run_choices,
+        warnings=run_warnings,
     )
