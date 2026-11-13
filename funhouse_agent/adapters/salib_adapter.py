@@ -591,7 +591,7 @@ METHOD_INFO = {
             },
             "n_samples": {
                 "type": "int",
-                "brief": "Base number of samples used in sobol_sample().",
+                "brief": "Recorded only: not used by the analysis. The count analysed is the length of Y (which must equal the sample design's row count).",
                 "default": 1024,
             },
             "calc_second_order": {
@@ -606,7 +606,7 @@ METHOD_INFO = {
             },
         },
         "returns": {
-            "n_samples": "Number of model evaluations.",
+            "n_samples": "Number of model outputs analysed (the length of Y).",
             "n_vars": "Number of variables.",
             "var_names": "Variable names.",
             "S1": "First-order Sobol indices.",
@@ -673,7 +673,7 @@ METHOD_INFO = {
             },
             "n_trajectories": {
                 "type": "int",
-                "brief": "Number of trajectories used in morris_sample().",
+                "brief": "Recorded only (echoed in the result): not used by the analysis. The trajectories analysed are implied by the length of X and Y.",
                 "default": 20,
             },
             "num_levels": {

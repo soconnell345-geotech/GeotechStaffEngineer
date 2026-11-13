@@ -351,7 +351,7 @@ METHOD_INFO = {
             "cv_m2_per_year": {"type": "float", "required": False, "description": "Vertical coefficient of consolidation (m2/yr)."},
             "Hdr_m": {"type": "float", "required": False, "description": "Vertical drainage path length (m)."},
         },
-        "returns": {"recommended_methods": "List of feasible methods.", "is_feasible": "Overall feasibility."},
+        "returns": {"applicable_methods": "Methods the screen found applicable.", "not_applicable": "Methods ruled out, each with its reason.", "recommendations": "Ranked recommendations.", "preliminary_sizing": "Preliminary sizing per applicable method.", "soil_description": "The soil inputs as understood.", "design_problem": "The design-problem inputs as understood."},
     },
 }
 
