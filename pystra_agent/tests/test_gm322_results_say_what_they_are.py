@@ -143,6 +143,17 @@ class TestSormFailure:
         assert d["sorm_failed"] is True
         assert "FAILED" in r.summary()
 
+    def test_unconverged_form_runs_no_sorm(self):
+        """g never reaches 0, so FORM does not converge. SORM is then not
+        fitted on either pystra version (1.x used to fit it at the last
+        iterate)."""
+        r = analyze_sorm([N("R", 200, 20)], "(R - 190)**2 + 1")
+        if r.form_converged:
+            pytest.skip("FORM converged on this pystra version")
+        assert r.sorm_failed is True and r.sorm_converged is False
+        assert r.beta_breitung is None and r.pf_breitung is None
+        assert r.sorm_message.startswith("SORM was not run")
+
     def test_good_sorm_is_not_flagged(self):
         r = analyze_sorm(SAFE, "R - S")
         assert r.sorm_failed is False and r.converged is True

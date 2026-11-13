@@ -130,6 +130,14 @@ def run_form(sm, lsf, with_sorm: bool = False) -> _Run:
                    else f"FORM iteration limit ({int(options.getImax())}) "
                         f"reached")
     if with_sorm:
+        # as on 2.x: SORM is fitted at FORM's design point, so an
+        # unconverged FORM carries no SORM numbers (GM-322 review)
+        if not out.converged:
+            out.sorm_converged = False
+            out.sorm_message = (
+                "SORM was not run: it is fitted at FORM's design point, "
+                "and FORM did not converge")
+            return out
         try:
             sorm = pystra.Sorm(sm, lsf, options, form)
             sorm.run()
