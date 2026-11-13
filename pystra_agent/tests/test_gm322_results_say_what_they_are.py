@@ -245,3 +245,13 @@ class TestMonteCarloSeedAndCounts:
         d = r.to_dict()
         assert d["beta"] is None and d["cov_pf"] is None
         assert "not reported" in r.summary()
+
+    def test_every_sample_failed_reports_no_beta_and_no_cov(self):
+        """GM-322 review: with pf = 1 the COV of pf is undefined, as at
+        pf = 0; it used to read 0.0."""
+        r = analyze_monte_carlo(SAFE, "R - S - 500", n_samples=2_000,
+                                seed=1)
+        assert r.pf == 1.0 and r.n_failures == 2000
+        assert r.beta is None and r.cov_pf is None
+        assert r.to_dict()["cov_pf"] is None
+        assert any("Every sample failed" in w for w in r.warnings)

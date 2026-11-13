@@ -219,8 +219,12 @@ All result classes provide:
   has beta < 0.
 - **A failed SORM returns no SORM numbers.** `beta_breitung` and
   `pf_breitung` are `None`, `sorm_failed` is true and `sorm_message` holds
-  pystra's reason (Breitung's formula is undefined when 1 + beta*kappa <= 0
-  for a fitted curvature, which includes every case with beta < 0). The
+  pystra's reason. Breitung's formula is undefined where 1 + beta*kappa <= 0
+  for a fitted curvature. pystra also rejects every case with beta < 0:
+  that is pystra's own rule (Breitung's form is an asymptotic one, for
+  large beta), not the formula's, which stays defined for a linear limit
+  state (kappa = 0) at any beta. An unconverged FORM runs no SORM, on 1.x
+  as on 2.x (GM-322 review). The
   FORM values are never reported under the SORM names. pystra 1.x marks
   this case by printing a line and setting both values to exactly 0; the
   wrapper reads that marker.

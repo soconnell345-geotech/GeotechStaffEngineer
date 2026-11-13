@@ -412,7 +412,9 @@ def analyze_monte_carlo(
     # the count; the two-sided 95 % Clopper-Pearson interval for it runs up
     # to 1 - 0.025^(1/n), about 3.7/n.
     if n_failures > 0 and pf > 0:
-        cov_pf = float(np.sqrt((1.0 - pf) / (n_run * pf)))
+        # with every sample failed (pf = 1) it is undefined too, not 0
+        cov_pf = (float(np.sqrt((1.0 - pf) / (n_run * pf)))
+                  if n_failures < n_run else None)
         beta = run.beta if np.isfinite(run.beta) else None
         pf_upper95 = None
     else:
@@ -427,8 +429,8 @@ def analyze_monte_carlo(
             f"FORM/SORM for a small probability.")
     if beta is None and n_failures > 0:
         notes.append(
-            "Every sample failed (pf = 1): beta is not finite and is not "
-            "reported.")
+            "Every sample failed (pf = 1): beta is not finite and cov_pf "
+            "is undefined; neither is reported.")
     if seed is None:
         notes.append(
             "No seed was given: the samples, and so pf, differ from run "

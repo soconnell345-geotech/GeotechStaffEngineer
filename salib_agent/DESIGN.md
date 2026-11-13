@@ -92,7 +92,9 @@ count on trust:
   GM-323 the given value was copied into the result unchecked.
 - One ambiguity the check cannot see: a length that is a whole multiple of
   both 2D+2 and D+2 fits either design, so `calc_second_order` must still
-  match the sampling. Giving `n_samples` removes the ambiguity.
+  match the sampling. Giving `n_samples` removes the ambiguity. Without
+  it, the result's `warnings` and `choices` name the design taken and the
+  other reading (GM-323 review).
 
 ## Expression limits (GM-323)
 

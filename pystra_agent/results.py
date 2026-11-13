@@ -377,8 +377,8 @@ class MonteCarloResult:
             ran a different number, which ``warnings`` then says)
         n_failures: Number of samples where limit state <= 0 (failure)
         cov_pf: Coefficient of variation of pf estimate,
-            sqrt((1 - pf) / (n pf)). None when no sample failed (it is
-            undefined there, not zero)
+            sqrt((1 - pf) / (n pf)). None when no sample failed or every
+            one did (it is undefined there, not zero)
         pf_upper95_no_failures: With no failure, the upper end of the
             two-sided 95 % Clopper-Pearson interval on pf, 1 - 0.025^(1/n);
             None otherwise
