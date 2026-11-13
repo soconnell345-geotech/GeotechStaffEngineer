@@ -48,6 +48,31 @@ main()
 
 With no model configured the page starts and says so in a banner.
 
+### On Palantir Foundry
+
+Published from a Foundry Code Workspace, the app file is these two lines:
+
+```python
+from aec_document_review.foundry_entry import main
+main()
+```
+
+`main()` marks the process as a Foundry deployment and runs the page. The
+models are then Foundry model RIDs only, listed in `GEOTECH_FOUNDRY_MODELS`
+(for Claude models also install `langchain-anthropic`), and no personal API
+key is read or mentioned. With `GEOTECH_FOUNDRY_CONVERSATION_DATASET` set to
+a Foundry dataset's workspace alias, each conversation is saved to that
+dataset after every turn and can be brought back from the sidebar; without
+it, conversations are lost when the app's container is rebuilt.
+
+A Foundry app is not told who is viewing it, so everyone who can open the
+published app shares one list of conversations and their files: nothing
+keeps one viewer's work apart from another's there. Share the app, and the
+dataset, only with people who may see each other's documents. The steps are
+in the project's
+[`docs/FOUNDRY.md`](https://github.com/soconnell345-geotech/GeotechStaffEngineer/blob/master/docs/FOUNDRY.md),
+section 6.
+
 ## Settings
 
 Read from the environment, then from an Azure Key Vault (when `KV_NAME`
@@ -61,6 +86,7 @@ the working folder.
 | `KV_NAME` | The Key Vault the settings above may be read from |
 | `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET` (or `GRAPH_CLIENT_CERT`, `GRAPH_CLIENT_KEY`, `GRAPH_CLIENT_KEY_PASSWORD`, `GRAPH_CLIENT_CERT_THUMBPRINT`) | An app registration that may read and write the SharePoint site, by secret or certificate |
 | `SHAREPOINT_SITE_URL` (or `SHAREPOINT_SITE_URLS`), `GEOTECH_SHAREPOINT_ROOT` | The site, or several, and the folder conversations are kept in; the cloud is read off the site's address (`GRAPH_CLOUD` to set it) |
+| `GEOTECH_FOUNDRY_MODELS`, `GEOTECH_FOUNDRY_CONVERSATION_DATASET` | On Palantir Foundry (above): the model RIDs (`Label=RID`, comma-separated, the first is the default), and the workspace alias of the dataset conversations are saved to |
 | `X-Windows-Auth-Header` (a request header, `WINDOWS_AUTH_HEADER` to rename it) | The signed-in user, as a reverse proxy doing Windows sign-in passes it; each user's conversations are kept apart |
 | `DEV_IDENTITY` | A stand-in for that header on a laptop (`DOMAIN\user`) |
 | `GEOTECH_WEBAPP_DATA` | The folder conversations are kept in locally |

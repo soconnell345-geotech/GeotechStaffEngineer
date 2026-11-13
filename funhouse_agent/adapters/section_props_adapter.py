@@ -51,7 +51,7 @@ METHOD_INFO = {
             "t_w": {"type": "float", "required": False, "description": "Web thickness (mm) — i_section."},
             "r": {"type": "float", "required": False, "default": 0.0, "description": "Root radius (mm) — i_section."},
             "r_out": {"type": "float", "required": False, "description": "Outer corner radius (mm) — rhs. Default 2t."},
-            "mesh_size": {"type": "float", "required": False, "description": "FE mesh element area target (mm^2). Auto if omitted."},
+            "mesh_size": {"type": "float", "required": False, "description": "Ignored for these parametric shapes: their properties are exact integrals and need no mesh (kept only for compatibility). Only polygon_section uses a mesh size."},
             "warping": {"type": "bool", "required": False, "default": True, "description": "Compute J and warping constant (slower)."},
         },
         "returns": {"area_mm2": "Area.", "ixx_mm4": "Centroidal Ixx.",
@@ -63,7 +63,7 @@ METHOD_INFO = {
         "brief": "Properties of an arbitrary closed polygon section from vertex coordinates (mm).",
         "parameters": {
             "points": {"type": "array", "required": True, "description": "Vertices [[x, y], ...] in mm, in order."},
-            "mesh_size": {"type": "float", "required": False, "description": "FE mesh element area target (mm^2)."},
+            "mesh_size": {"type": "float", "required": False, "description": "Target cell area (mm^2) for the torsion-constant solve only; the geometric properties are exact and unaffected. Auto if omitted."},
             "warping": {"type": "bool", "required": False, "default": True, "description": "Compute J and warping constant."},
         },
         "returns": {"area_mm2": "Area.", "ixx_mm4": "Centroidal Ixx.",
@@ -85,6 +85,6 @@ declare_when_absent(METHOD_INFO, {
     "section_properties": {
         "r_out": ("2 t", "the outer corner radius of a rectangular hollow "
                   "section"),
-        "mesh_size": _GRID},
+        "mesh_size": ("not used", "parametric shapes ignore it")},
     "polygon_section": {"mesh_size": _GRID},
 })

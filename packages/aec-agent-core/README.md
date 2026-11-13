@@ -16,6 +16,19 @@ Two applications are built on it:
 
 ## Status
 
+**Since 1.0.1 (not released yet).** One more module moved in:
+`foundry_dataset_store`, the Foundry dataset store, from
+GeotechStaffEngineer's `webapp` (BACKLOG INF-74), so that Document Review
+can keep its conversations on Palantir Foundry the way the geotech page
+does. On a Foundry deployment with the dataset's workspace alias set
+(`GEOTECH_FOUNDRY_CONVERSATION_DATASET`), an application's conversation
+store saves each conversation to that dataset after every turn and brings
+past ones back. The folder inside the dataset is the name the application
+handed in (`GeotechStaffEngineer` for the geotech app, as before;
+`Document Review` for Document Review), unless `GEOTECH_SHAREPOINT_ROOT`
+names another. GeotechStaffEngineer's old import path,
+`webapp.foundry_dataset_store`, is an alias of the moved module.
+
 **1.0.1 (2026-11-10).** Fixes from a deployment review of Document
 Review (GeotechStaffEngineer's BACKLOG, TA-36): a control character in
 text no longer loses a Word or Excel file, and Excel text that opens

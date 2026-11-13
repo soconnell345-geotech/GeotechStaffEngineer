@@ -1,15 +1,23 @@
 """Conversations kept in a Foundry dataset: permanent storage on Foundry.
 
-On Funhouse the app mirrors each conversation folder to SharePoint after
-every turn and restores past conversations from the sidebar
-(:mod:`webapp.sharepoint_store`). On Foundry a published app's conversations
-live in its container and are lost when the container is rebuilt (BACKLOG
-INF-38). This module is the Foundry side of the same mirror: a file manager
-over a Foundry dataset of raw files (no schema), with the methods
-:class:`webapp.sharepoint_store.SharePointStore` calls on SharePoint's
-(``ls``, ``create_folder``, ``upload_file``, ``download_file``,
-``get_web_url``), so the store, the sidebar's permanent storage, "Sync now",
-the past-conversations list and restore work unchanged on top of it.
+On Funhouse and Tiny Apps a page mirrors each conversation folder to
+SharePoint after every turn and restores past conversations from the
+sidebar (each application's ``sharepoint_store``). On Foundry a published
+app's conversations live in its container and are lost when the container
+is rebuilt (BACKLOG INF-38). This module is the Foundry side of the same
+mirror: a file manager over a Foundry dataset of raw files (no schema),
+with the methods the application's ``SharePointStore`` calls on
+SharePoint's (``ls``, ``create_folder``, ``upload_file``,
+``download_file``, ``get_web_url``), so the store, the sidebar's permanent
+storage, "Sync now", the past-conversations list and restore work unchanged
+on top of it.
+
+Moved into the shared core from GeotechStaffEngineer's ``webapp`` (BACKLOG
+INF-74), so Document Review can keep its conversations on Foundry as the
+geotech page does; ``webapp.foundry_dataset_store`` is an alias of this
+module. It names no application: the base folder in the dataset is the
+name the application handed in (:mod:`aec_agent_core.app_details`), unless
+:data:`ENV_ROOT` sets one.
 
 How it reaches the dataset (the AI FDE's test from a published app,
 2026-11-03): the platform's datasets API is turned off inside app
@@ -48,6 +56,8 @@ How a dataset differs from a SharePoint library:
 Configuration (on a Foundry deployment, ``GEOTECH_DEPLOYMENT=foundry``):
 
     GEOTECH_FOUNDRY_CONVERSATION_DATASET   the dataset's workspace alias (required)
+    GEOTECH_SHAREPOINT_ROOT                the base folder in the dataset
+                                           (optional; the app's name)
 
 Nothing to install: the library comes with a Code Workspace. It is imported
 only when storage is used; without it permanent storage stays off and
@@ -71,9 +81,27 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, \
 
 ENV_DATASET = "GEOTECH_FOUNDRY_CONVERSATION_DATASET"
 
-#: The base folder inside the dataset (``GEOTECH_SHAREPOINT_ROOT`` still
-#: overrides it, as it does on SharePoint).
-DEFAULT_ROOT = "GeotechStaffEngineer"
+#: The setting that names the store's base folder, here as on SharePoint.
+#: Each application's ``sharepoint_store`` reads the same name (its own
+#: ``ENV_ROOT``; their tests check the two agree).
+ENV_ROOT = "GEOTECH_SHAREPOINT_ROOT"
+
+# DEFAULT_ROOT: the base folder inside the dataset when ENV_ROOT is unset:
+# the name of the application the page handed in (aec_agent_core.
+# app_details; GeotechStaffEngineer's is "GeotechStaffEngineer", as before
+# the move), read at each use through the module's __getattr__ below.
+
+
+def _default_root() -> str:
+    from aec_agent_core.app_details import name
+    return _clean(name())
+
+
+def __getattr__(attr):
+    if attr == "DEFAULT_ROOT":
+        return _default_root()
+    raise AttributeError(f"module {__name__!r} has no attribute {attr!r}")
+
 
 #: The workspace dataset library, for the messages.
 LIBRARY = "foundry.transforms"
@@ -145,7 +173,7 @@ def looks_like_resource_id(value: str) -> bool:
 def selected() -> bool:
     """True on a Foundry deployment with the conversation dataset set: then
     the permanent storage is this dataset, whether or not it works."""
-    from webapp import engine_config
+    from aec_agent_core import engine_config
     return engine_config.is_foundry_deployment() and bool(dataset_alias())
 
 
@@ -159,7 +187,7 @@ def library_installed() -> bool:
 
 def unconfigured_reason() -> Optional[str]:
     """Why the dataset cannot be used, in a sentence; ``None`` when it can."""
-    from webapp import engine_config
+    from aec_agent_core import engine_config
     if not engine_config.is_foundry_deployment():
         return "this is not a Foundry deployment"
     alias = dataset_alias()
@@ -189,7 +217,7 @@ def not_kept_reason(fm: Any = None) -> Optional[str]:
     dataset is set up) adds why the dataset could not be read, as its latest
     read found (:meth:`DatasetFileManager.known_problem`: an alias the
     workspace does not define, or any other refusal)."""
-    from webapp import engine_config
+    from aec_agent_core import engine_config
     if not engine_config.is_foundry_deployment():
         return None
     if not dataset_alias():
@@ -276,9 +304,9 @@ def _iso(value: Any) -> str:
 def _app_top() -> str:
     """The first segment of the store's base folder: the one folder in the
     outputs folder that is the app's own."""
-    from webapp.sharepoint_store import ENV_ROOT
-    root = _clean(os.environ.get(ENV_ROOT) or DEFAULT_ROOT)
-    return root.split("/")[0] or DEFAULT_ROOT
+    default = _default_root()
+    root = _clean(os.environ.get(ENV_ROOT) or default)
+    return root.split("/")[0] or default
 
 
 class _Batch:
@@ -309,7 +337,6 @@ class DatasetFileManager:
     """
 
     BACKEND = "foundry"
-    DEFAULT_ROOT = DEFAULT_ROOT
 
     #: The outputs folder held something the app did not stage: said once
     #: per process.
@@ -656,7 +683,7 @@ class DatasetFileManager:
         # A copy now: the file may change before the save, or be a
         # temporary one gone by then (the MOVED.txt pointer).
         if batch.copies is None:
-            batch.copies = tempfile.mkdtemp(prefix="gse_save_")
+            batch.copies = tempfile.mkdtemp(prefix="dataset_save_")
         copy = os.path.join(batch.copies, *parts)
         os.makedirs(os.path.dirname(copy), exist_ok=True)
         shutil.copyfile(local_path, copy)
@@ -714,7 +741,7 @@ class DatasetFileManager:
 
         workers = min(self._workers, len(pairs))
         with ThreadPoolExecutor(max_workers=workers,
-                                thread_name_prefix="gse-restore") as pool:
+                                thread_name_prefix="dataset-restore") as pool:
             futures = [pool.submit(one, p) for p in pairs]
         return [f.exception() for f in futures]
 
@@ -743,7 +770,7 @@ class DatasetFileManager:
                 f"{self.outputs_dir}")
 
 
-__all__ = ["DatasetFileManager", "ENV_DATASET", "DEFAULT_ROOT",
+__all__ = ["DatasetFileManager", "ENV_DATASET", "ENV_ROOT", "DEFAULT_ROOT",
            "AliasNotDefined", "StorageBusy", "configured", "dataset_alias",
            "library_installed", "looks_like_resource_id", "not_kept_reason",
            "selected", "unconfigured_reason", "wait_checks"]

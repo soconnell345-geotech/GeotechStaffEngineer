@@ -10,7 +10,8 @@ Supports:
 - Cantilever (unbraced) excavation walls
 - Sand, soft clay, and stiff clay soil profiles
 - HP section, sheet pile, and W section selection
-- Embedment depth computation (USACE method)
+- Embedment depth computation (free earth support: Caltrans Trenching and
+  Shoring Manual Sec 8-4.02 hinge method; cantilever Simplified Method)
 - Stability checks: basal heave, bottom blowout, piping
 
 References:

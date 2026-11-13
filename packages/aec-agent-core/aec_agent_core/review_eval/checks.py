@@ -141,12 +141,22 @@ _HEADING = re.compile(r"^\s{0,3}(?:#{1,6}\s+\S.*|(?:[-*]\s+)?\*\*[^*\n]"
                       r"{1,140}\*\*:?|[^|\n]{1,140}:)\s*$")
 #: The rule under a markdown table's header row.
 _TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{2,}")
+#: A line holding only this (the unit separator) is where one text ends and
+#: the next begins, where a check reads the reply and the delivered files
+#: together (:data:`FILE_BREAK`). Every match reads it as whitespace.
+_FILE_MARK = "\x1f"
+#: What :func:`run_check` puts between the reply and a delivered file's text,
+#: and between two files: a heading in the reply must not head a file's text
+#: (Foundry brief 7, BACKLOG EV-44: the reply's last bold line headed a whole
+#: delivered comment log, and two checks passed on its neutral rows).
+FILE_BREAK = "\n\n" + _FILE_MARK + "\n\n"
 
 
 def _sections(answer: str) -> List[Tuple[str, str]]:
     """The answer as ``(heading, body)`` pieces. The heading of a piece is
     the heading line over it, with a table's header row for the rows of
-    that table; the body is the lines under it."""
+    that table; the body is the lines under it. A section ends where a
+    delivered file's text begins (:data:`FILE_BREAK`)."""
     out: List[Tuple[str, str]] = []
     section, table = "", ""
     body: List[str] = []
@@ -159,7 +169,10 @@ def _sections(answer: str) -> List[Tuple[str, str]]:
     lines = str(answer or "").splitlines()
     for i, line in enumerate(lines):
         after = lines[i + 1] if i + 1 < len(lines) else ""
-        if "|" in line and _TABLE_RULE.match(after):
+        if line == _FILE_MARK:
+            flush()
+            section, table = "", ""
+        elif "|" in line and _TABLE_RULE.match(after):
             flush()
             table = line
         elif table and _TABLE_RULE.match(line):
@@ -177,8 +190,47 @@ def _sections(answer: str) -> List[Tuple[str, str]]:
     return out
 
 
+#: A line that starts a list item: "- ", "* ", "+ ", "1. ", "2) ".
+_LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d{1,3}[.)])\s+\S")
+
+
+def _items(answer: str) -> List[str]:
+    """The answer cut into the pieces a finding is written in: each list
+    item with the lines nested under it (its sub-list, an indented
+    continuation), and every other line on its own (a paragraph, a table
+    row). A delivered file's text (:data:`FILE_BREAK`) ends an item."""
+    out: List[str] = []
+    item: List[str] = []
+    indent = 0
+
+    def close() -> None:
+        if item:
+            out.append("\n".join(item))
+        item.clear()
+
+    for line in str(answer or "").splitlines():
+        if line == _FILE_MARK:
+            close()
+            continue
+        if not line.strip():
+            continue
+        lead = len(line) - len(line.lstrip())
+        if item and lead > indent:
+            item.append(line)
+            continue
+        close()
+        if _LIST_ITEM.match(line):
+            item.append(line)
+            indent = lead
+        else:
+            out.append(line)
+    close()
+    return out
+
+
 def check_stated_together(answer: str, terms: Sequence[Any],
-                          window: int = 300, **_) -> Tuple[bool, str]:
+                          window: int = 300, scope: str = "",
+                          **_) -> Tuple[bool, str]:
     """Every term inside one stretch of ``window`` characters of the answer.
 
     For a finding that is a RELATION between things: the two values that
@@ -192,6 +244,13 @@ def check_stated_together(answer: str, terms: Sequence[Any],
     the heading holds count as beside every line under it, and the others
     must be within ``window`` of each other there.
 
+    ``scope="item"`` asks, besides, for the terms in one line or one list
+    item (with the lines nested under it, :func:`_items`): where the terms
+    are also what a plain list of things puts on neighbouring lines (S-201's
+    own title and S-202's ROOF FRAMING PLAN in any ordered list of the
+    sheets; Foundry brief 7, BACKLOG EV-44), the window alone passes the
+    list. The heading rule is unchanged.
+
     It cannot tell whether the sentence is right, only that the answer put
     the pieces side by side, which a full read of the run confirms."""
     text = normalize(answer)
@@ -199,9 +258,18 @@ def check_stated_together(answer: str, terms: Sequence[Any],
     missing = [_label(t) for t, s in zip(terms, spans) if not s]
     if missing:
         return False, f"missing: {missing}"
-    best = _closest(terms, text)
+    where = ""
+    if scope == "item":
+        where = " in one line or list item"
+        best = None
+        for unit in _items(answer):
+            reach = _closest(terms, normalize(unit))
+            if reach is not None and (best is None or reach < best):
+                best = reach
+    else:
+        best = _closest(terms, text)
     if best is not None and best <= int(window):
-        return True, f"together within {best} characters"
+        return True, f"together within {best} characters{where}"
     for head, body in _sections(answer):
         head, body = normalize(head), normalize(body)
         said = [bool(_term_spans(t, head)) for t in terms]
@@ -213,7 +281,102 @@ def check_stated_together(answer: str, terms: Sequence[Any],
             return True, (f"together within {reach} characters, under the "
                           f"heading that holds the rest")
     return False, (f"all present, never within {int(window)} characters of "
-                   f"each other (closest: {best})")
+                   f"each other{where} (closest: {best})")
+
+
+#: Where a sentence ends inside a line: after a semicolon, or after ".",
+#: "!" or "?" where the next sentence starts with a capital, so "PDF p. 4"
+#: and "EL. 104.20" stay whole.
+_SENTENCE_END = re.compile(r"(?<=;)\s+|(?<=[.!?])\s+(?=[*_`\"'(\[]*[A-Z])")
+
+
+def _statements(answer: str) -> List[str]:
+    """The answer as statements: a table row whole (a row is one record,
+    whatever its cells hold), any other line cut into its sentences."""
+    out: List[str] = []
+    for line in str(answer or "").splitlines():
+        if not line.strip() or _TABLE_RULE.match(line):
+            continue
+        if "|" in line:
+            out.append(line)
+        else:
+            out += [s for s in _SENTENCE_END.split(line) if s.strip()]
+    return out
+
+
+#: What stands between two names of one list: "201, 202 and 203", "4/A-501
+#: & 6/A-501".
+_LIST_JOIN = re.compile(r"[\s,/&]*(?:\b(?:and|or)\b)?[\s,/&]*")
+
+
+def _listed_with(named: List[Tuple[str, Tuple[int, int]]], at: int,
+                 text: str) -> List[Tuple[str, Tuple[int, int]]]:
+    """``named[at]`` and the names listed with it in ``text``: its
+    neighbours with nothing but commas and "and" between (``named`` in
+    order of position)."""
+    def joined(a: Tuple[int, int], b: Tuple[int, int]) -> bool:
+        return bool(_LIST_JOIN.fullmatch(text[a[1]:b[0]]
+                                         if b[0] > a[1] else ""))
+    lo = hi = at
+    while lo > 0 and joined(named[lo - 1][1], named[lo][1]):
+        lo -= 1
+    while hi + 1 < len(named) and joined(named[hi][1], named[hi + 1][1]):
+        hi += 1
+    return named[lo:hi + 1]
+
+
+def check_no_false_alarm(answer: str, sound: Dict[str, Any],
+                         words: Any, problems: Sequence[Any] = (),
+                         **_) -> Tuple[bool, str]:
+    """No ``sound`` item is stated as broken or missing.
+
+    For a question whose truth knows every item that is fine (a callout
+    that resolves, a mark that is both drawn and scheduled): an answer that
+    calls one of them faulty raised a false alarm, and the checks on the
+    planted problems cannot see it (Foundry brief 7, BACKLOG EV-44: 18 good
+    callouts called broken, beside two planted ones that passed).
+
+    ``sound`` maps a label to a term (string, alternatives or regex);
+    ``words`` is the term for a word that says a thing is broken or
+    missing; ``problems`` are the terms for the real problems. An item is
+    called faulty where one statement (a table row, or one sentence of any
+    other line: :func:`_statements`) holds such a word and names the item
+    nearest to that word, or in one list with the name nearest to it ("201,
+    202, 203 and 204 are not on A-101"); a tie goes to the problem. So
+    "A-602 lists 401 to 406 and 408; 407 is missing" and "E-601 schedules
+    LP-4A but not LP-4B" charge nothing, and a list of the items that
+    resolve, after a sentence on the ones that do not, is not read as more
+    of them.
+
+    Passes on an answer that names nothing at all; the planted problems'
+    own checks score what was found."""
+    flagged: Dict[str, List[str]] = {}
+    for raw in _statements(answer):
+        s = normalize(raw)
+        hits = _term_spans(words, s)
+        if not hits:
+            continue
+        named = [(label, span) for label, term in (sound or {}).items()
+                 for span in _term_spans(term, s)]
+        if not named:
+            continue
+        named += [("", span) for term in problems or ()
+                  for span in _term_spans(term, s)]
+        named.sort(key=lambda n: n[1])
+        for w0, w1 in hits:
+            at = min(range(len(named)), key=lambda i: (
+                max(0, named[i][1][0] - w1, w0 - named[i][1][1]),
+                named[i][0] != ""))
+            for label, _span in _listed_with(named, at, s):
+                if label and raw.strip() not in flagged.get(label, []):
+                    flagged.setdefault(label, []).append(raw.strip())
+    if not flagged:
+        return True, "no sound item stated as broken or missing"
+    said = sorted({st for sts in flagged.values() for st in sts})
+    first = next(iter(flagged.values()))[0]
+    return False, (f"stated as broken or missing in {len(said)} "
+                   f"statement(s): {sorted(flagged)}; e.g. "
+                   f"'{first[:200]}'")
 
 
 #: An id range written out: "BH-1 to BH-3", "B-1 through B-3", "BH-1 - BH-3"
@@ -831,7 +994,7 @@ def _files_text(files: Iterable[str]) -> Tuple[str, List[str]]:
             continue
         texts.append(text[:DELIVERED_MAX_CHARS])
         names.append(os.path.basename(str(path)))
-    return "\n\n".join(texts), names
+    return FILE_BREAK.join(texts), names
 
 
 # ---------------------------------------------------------------------------
@@ -1130,6 +1293,7 @@ CHECKS = {
     "value_within": check_value_within,
     "tools_called": check_tools_called,
     "stated_together": check_stated_together,
+    "no_false_alarm": check_no_false_alarm,
 }
 
 #: Checks on what the run DID (its activity), not on its answer text.
@@ -1163,14 +1327,14 @@ def run_check(check: Dict[str, Any], answer: str,
         if check.get("with_files"):
             extra, read = delivered_text(files)
             if extra:
-                text = text + "\n\n" + extra
+                text = text + FILE_BREAK + extra
         ok, detail = fn(text, files=files, tool_calls=tool_calls,
                         activity=activity, **params)
         if read:
             detail = f"{detail} (answer + {', '.join(read)})"
         if check.get("with_files") and not ok:
             notes, names = working_text(files)
-            if notes and fn(text + "\n\n" + notes, files=files,
+            if notes and fn(text + FILE_BREAK + notes, files=files,
                             tool_calls=tool_calls, activity=activity,
                             **params)[0]:
                 notes_only = True
@@ -1197,4 +1361,4 @@ def score(results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 __all__ = ["normalize", "term_found", "run_check", "score", "CHECKS",
            "PROCESS_CHECKS", "delivered_text", "expand_id_ranges",
            "DELIVERED_TEXT_EXTS", "WORKING_DIRS", "is_working_file",
-           "working_text"]
+           "working_text", "FILE_BREAK"]

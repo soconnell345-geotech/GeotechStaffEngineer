@@ -1,12 +1,41 @@
-"""Phase E / v5.3 B2 round 1 validation — slope_stability.
+"""V-028: Slide2 Verification Manual problem #9 = ACADS 4, the weak seam
+(manual pp. 50-54; printed Spencer 0.760, GLE 0.720, Janbu corrected
+0.734, Table 9.4, p. 52; referee 0.78).
 
-V-028  Slide2 #9 = ACADS 4 weak-seam noncircular (referee 0.78) — RE-VALIDATED
-       after the weak-layer search degenerate-surface fix (SS-6). Previously the
-       search returned spurious ~0.05-0.18 surfaces; it now finds a sane
-       seam-following surface at Spencer ~0.81 (+3.6% vs the referee 0.78;
-       0.79 on even slices across its corners before GM-131).
+The comparison with print is in test_published_v028_e8.py: with the
+problem's loads (Table 9.2) on, the lowest of a declared family of
+surfaces along the seam reads Spencer 0.753, Morgenstern-Price 0.722 and
+Janbu corrected 0.728, each within 1 % of its printed value. This file
+keeps three things without the loads:
 
-See validation_examples/INVENTORY.md (V-028) and RESULTS.md.
+1. The weights (GM-140 step 1, one material per point): every soil here
+   weighs 18.84 kN/m3, so the mass on the kept surface weighs 18.84 times
+   its area, 3,003 kN/m. All three layers are entered with a top at el.
+   40, and before the step each was weighed from that flat top (8,768
+   kN/m).
+2. The kept surface, as a record of what moved when each point is weighed
+   once: Janbu's simplified method (corrected) read 0.819 on it before
+   and reads 1.073 now. It is the minimum of a weak-layer search run on
+   the tripled weights (seed 3, 30 slices), NOT a critical surface, and
+   nothing printed is compared with it. Spencer and Morgenstern-Price do
+   not converge on it.
+3. The SS-6 regression: the weak-layer search returns a surface that
+   solves at the slice counts that used to break it. Its value is not
+   pinned: see ``test_v028_weak_layer_search_against_print`` in
+   test_published_v028_e8.py (a strict xfail).
+
+What the problem text gives (module_work/slope_v53/
+slide2_selected_problems.txt, manual pp. 50-54): the two soils (Table 9.1),
+the loads (Table 9.2) and the piezometric line (Table 9.3). The ground
+surface, the seam and the slip surface are in Figure 9.1 only, which is
+not in the repository, so the geometry below (read off the figure in
+2026-06) cannot be checked. Table 9.2 puts the bench load at y = 27.75,
+and the piezometric line is at 27.75 along the bench, where the ground
+here is at 28.0: reported, not changed. The piezometric line is entered as
+Table 9.3 prints it (29.8, 34.0 and 37.6 at x = 49, 60 and 74).
+
+See module_work/gm140/STEP1_CHECK.md, validation_examples/INVENTORY.md
+(V-028) and slope_stability/VALIDATION.md B11.
 """
 
 import pytest
@@ -14,7 +43,6 @@ import pytest
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.slip_surface import PolylineSlipSurface
 from slope_stability.slices import build_slices
-from slope_stability.methods import spencer_fos
 from slope_stability.gle import gle_fos, janbu_fos
 from slope_stability.analysis import search_critical_surface
 
@@ -31,8 +59,9 @@ from slope_stability.analysis import search_critical_surface
 _V028_SURF = [(20.0, 28.0), (43.0, 28.0), (68.0, 40.0), (84.0, 40.0)]
 _V028_SEAM_TOP = [(20.0, 19.0), (84.0, 37.0)]
 _V028_SEAM_BOT = [(20.0, 18.0), (84.0, 36.0)]
-_V028_PIEZO = [(20.0, 27.75), (43.0, 27.75), (49.0, 29.86), (60.0, 34.06),
-               (66.0, 35.80), (74.0, 37.68), (80.0, 38.4), (84.0, 38.4)]
+# Table 9.3 as printed
+_V028_PIEZO = [(20.0, 27.75), (43.0, 27.75), (49.0, 29.8), (60.0, 34.0),
+               (66.0, 35.8), (74.0, 37.6), (80.0, 38.4), (84.0, 38.4)]
 
 
 def _v028_geom():
@@ -51,35 +80,48 @@ def _v028_geom():
         gwt_points=_V028_PIEZO)
 
 
-# The weak-layer search critical surface (deterministic, seed=3, 30 slices).
+# The surface the weak-layer search returned while the soil was weighed
+# three times (seed=3, 30 slices). A record only: not a critical surface.
 _V028_SURFACE = [(41.987, 28.0), (49.095, 26.656), (56.203, 28.249),
                  (63.312, 30.304), (70.42, 35.555), (77.528, 40.0)]
 
 
-def test_v028_weak_seam_pinned_surface_matches_referee():
-    """PASS: on the weak-layer search's seam-following critical surface, the
-    module's Spencer FOS = 0.808 -- within +3.6% of the referee 0.78 (and above
-    Slide2's no-optimization 0.760 / optimized 0.707 band). GLE 0.802, Janbu
-    0.819. The surface follows the weak seam (c=0, phi=10) with the inclined
-    piezometric surface active. Sliced at its corners (GM-131) it reads 0.808
-    on 30 to 1,600 slices; the 0.792 pinned before was even slices across its
-    corners on 50 (0.830 on 51, 0.806 to 0.815 on 100 to 1,600)."""
-    geom = _v028_geom()
+def _v028_slices(n=50):
     slip = PolylineSlipSurface(points=_V028_SURFACE)
-    sl = build_slices(geom, slip, 50)
-    fs, _ = spencer_fos(sl, slip)
-    fg = gle_fos(sl, slip, f_interslice="half_sine").fos
-    fj, _u, _f0 = janbu_fos(sl, slip)
-    assert fs == pytest.approx(0.808, abs=0.005)         # ours
-    assert fs == pytest.approx(0.78, rel=0.05)           # referee 0.78
-    assert fg == pytest.approx(0.802, abs=0.005)
-    assert fj == pytest.approx(0.819, abs=0.005)
+    return build_slices(_v028_geom(), slip, n), slip
 
 
-def test_v028_weak_layer_search_is_sane_after_fix():
-    """REGRESSION for the SS-6 fix: the weak-layer noncircular search now returns
-    a sane seam-following critical (~0.81), NOT the pre-fix degenerate spurious
-    ~0.05-0.18 surface. Robust across the slice count that used to break it."""
+def test_v028_slices_weigh_their_area():
+    """Every soil here weighs 18.84 kN/m3, so each slice weighs 18.84 h b
+    and the mass 3,003 kN/m (8,768 before GM-140 step 1)."""
+    sl, _slip = _v028_slices()
+    for s in sl:
+        assert s.weight == pytest.approx(18.84 * s.height * s.width, rel=1e-9)
+    assert sum(s.weight for s in sl) == pytest.approx(3003.0, abs=1.0)
+
+
+def test_v028_kept_surface_record():
+    """RECORD of what moved when each point is weighed once, not a
+    validation: on the kept surface Janbu's simplified method (corrected)
+    reads 1.073 (0.819 while the soil was weighed three times). The
+    surface is the minimum of a search run on the tripled weights and not
+    a critical surface. Spencer and Morgenstern-Price (half-sine) do not
+    converge on it, and no value is pinned from a solution that did not
+    converge."""
+    sl, slip = _v028_slices()
+    fj, _uncorrected, _f0 = janbu_fos(sl, slip)
+    assert fj == pytest.approx(1.073, abs=0.005)
+    assert not gle_fos(sl, slip, f_interslice="constant").converged
+    assert not gle_fos(sl, slip, f_interslice="half_sine").converged
+
+
+def test_v028_weak_layer_search_is_not_degenerate():
+    """REGRESSION for the SS-6 fix: the weak-layer noncircular search
+    returns a surface with a solution, not the pre-fix degenerate
+    ~0.05-0.18, at the slice counts that used to break it. The value it
+    returns is not pinned here: it does not reach print (see
+    ``test_v028_weak_layer_search_against_print`` in
+    test_published_v028_e8.py)."""
     geom = _v028_geom()
     for n_slices in (30, 40):
         res = search_critical_surface(
@@ -87,5 +129,5 @@ def test_v028_weak_layer_search_is_sane_after_fix():
             n_trials=700, n_points=6, n_slices=n_slices, seed=3,
             x_entry_range=(20.0, 50.0), x_exit_range=(58.0, 84.0))
         assert res.critical is not None
-        # sane physical range near the referee, never the degenerate < 0.3
-        assert 0.70 < res.critical.FOS < 0.90
+        assert res.critical.FOS > 0.3
+        assert [o["layer"] for o in res.layer_overlaps] == ["weak", "lower"]

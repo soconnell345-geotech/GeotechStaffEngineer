@@ -344,10 +344,17 @@ class TestSlopeReportPackage:
         finally:
             doc.close()
 
-    def test_v028_weak_seam_report_matches_referee(self, tmp_path):
-        """Validate the report against the V-028 (Slide2 #9 / ACADS 4) weak-seam
-        search: the critical Spencer FOS is ~0.808 (referee 0.78), and the
-        report renders the search story with rejection diagnostics."""
+    def test_v028_weak_seam_report(self, tmp_path):
+        """The report on the V-028 (Slide2 #9 / ACADS 4) weak-seam search:
+        it renders the search story with rejection diagnostics and the
+        overlapping-layers table. No factor of safety is pinned. The
+        search does not reach print (Spencer 0.515 against the printed
+        0.760: the strict xfail test_v028_weak_layer_search_against_print
+        in validation_examples/test_published_v028_e8.py, where surfaces
+        along the seam read within 1 % of print), and the report's own
+        figure, 1.16, is its re-analysis of the search's surface, on which
+        Spencer's method does not converge (the result says so:
+        method_solved is false)."""
         from funhouse_agent.adapters.calc_package import _generate_slope_report_package
         out = str(tmp_path / "v028.html")
         res = _generate_slope_report_package({
@@ -362,19 +369,16 @@ class TestSlopeReportPackage:
                 {"name": "lower", "top_elevation": 40, "bottom_elevation": 15,
                  "gamma": 18.84, "phi": 20, "c_prime": 28.5},
             ],
-            "gwt_points": [[20, 27.75], [43, 27.75], [49, 29.86], [60, 34.06],
-                           [66, 35.80], [74, 37.68], [80, 38.4], [84, 38.4]],
+            "gwt_points": [[20, 27.75], [43, 27.75], [49, 29.8], [60, 34.0],
+                           [66, 35.8], [74, 37.6], [80, 38.4], [84, 38.4]],
             "surface_type": "weak_layer", "method": "spencer",
             "n_trials": 700, "n_points": 6, "n_slices": 30, "seed": 3,
             "x_entry_range": [20, 50], "x_exit_range": [58, 84],
             "output_path": out,
         })
         assert res["status"] == "success"
-        # module Spencer 0.808; referee 0.78 (+3.6%); 0.792 before GM-131
-        assert res["FOS"] == pytest.approx(0.808, abs=0.005)
-        assert res["FOS"] == pytest.approx(0.78, rel=0.05)
-        assert res["is_stable"] is False           # 0.81 < 1.5
         html = open(out, encoding="utf-8").read()
+        assert "Overlapping layers" in html
         assert "Critical Surface Search" in html
         assert "rejected" in html.lower()          # rejection diagnostics
         assert "Method Comparison" in html

@@ -1271,8 +1271,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "needs.",
         "methods": [
             "Jinja2-templated **HTML** and **LaTeX** calc packages for 17 analysis modules "
-            "(<code>calc_package.list_supported_modules()</code>), with matplotlib figures and Plotly "
-            "interactive viewers; PDF by <code>pdflatex</code> where it is installed and otherwise by "
+            "(<code>calc_package.list_supported_modules()</code>), with matplotlib figures (the Plotly "
+            "interactive viewers in <code>calc_package.interactive</code> are library functions with no agent tool); PDF by <code>pdflatex</code> where it is installed and otherwise by "
             "PyMuPDF&rsquo;s HTML engine (simpler layout). <code>html_to_pdf</code> turns a report you "
             "compose in HTML into a PDF the same way.",
             "**Calculation tables** in the style of Ensoft&rsquo;s output: a printed &ldquo;Calculation "

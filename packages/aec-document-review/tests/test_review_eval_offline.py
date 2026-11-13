@@ -82,8 +82,11 @@ def test_the_truth_passes_its_own_checks_and_silence_does_not(task):
     for c in answer_checks:
         r = C.run_check(c, task.truth)
         assert r["passed"], (c, r["detail"])
+    # a check that an answer must NOT trip passes on silence (a false
+    # alarm cannot be raised by saying nothing; EV-44)
     for c in task.checks:
-        if c["type"] in FILE_CHECKS or c["type"] == "not_contains":
+        if c["type"] in FILE_CHECKS or c["type"] in ("not_contains",
+                                                     "no_false_alarm"):
             continue
         assert not C.run_check(c, "")["passed"], c
 

@@ -26,18 +26,27 @@ assumption. Includes group efficiency and p-multiplier corrections.
   GM-286: Converse-Labarre, printed in no held document.
 
 ## Files
-- `pile_layout.py` — GroupPile dataclass, rectangular_layout() generator
+- `pile_layout.py` — GroupPile dataclass, create_rectangular_layout() generator
 - `group_efficiency.py` — group_efficiency_factor() (the printed eta_g
   rows), block_failure_resistance() / block_failure_capacity(),
   group_uplift_resistance(),
   p_multiplier() (AASHTO, Mokwa), group_settlement_equivalent_raft(),
   meyerhof_group_settlement()
 - `rigid_cap.py` — simplified elastic + 6-DOF stiffness matrix
-- `results.py` — PileGroupResult with summary()/to_dict()
+- (`GroupLoad` and `PileGroupResult` (summary()/to_dict()) live in `rigid_cap.py`; there is no `results.py`)
 
 ## Public API
 ```python
-analyze_pile_group(piles, loads, soil_params, ...) -> PileGroupResult
+# exports of pile_group/__init__.py
+GroupPile, create_rectangular_layout(n_rows, n_cols, spacing_x, spacing_y,
+    axial_stiffness=None, lateral_stiffness=None) -> List[GroupPile]
+GroupLoad, PileGroupResult
+analyze_vertical_group_simple(piles: List[GroupPile], load: GroupLoad) -> PileGroupResult
+analyze_group_6dof(piles: List[GroupPile], load: GroupLoad) -> PileGroupResult
+group_efficiency_factor, block_failure_resistance, block_failure_capacity,
+group_plan_dimensions, group_uplift_resistance, p_multiplier,
+group_settlement_equivalent_raft, meyerhof_group_settlement,
+BLOCK_FAILURE_PHI, GROUP_UPLIFT_PHI   # see group_efficiency.py for signatures
 ```
 
 ## Key Notes

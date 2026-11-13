@@ -72,16 +72,13 @@
         ]
        },
        {
-        "class": "LookupReport"
-       },
-       {
         "class": "OutputLimitGuard"
        }
       ],
       "other_arguments": [],
       "subagents": [
        {
-        "description": "3301ddf9372cb937",
+        "description": "6ee4188a4e519b98",
         "middleware": [
          {
           "class": "ModelCallBudgetMiddleware",
@@ -132,7 +129,7 @@
          }
         ],
         "name": "references",
-        "system_prompt": "23656e2a37b58b44",
+        "system_prompt": "cafd8f2dc17535a2",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -148,8 +145,8 @@
           "description": "27b0304d9d7dd690"
          },
          "call_agent": {
-          "args": "b48f8177ee3c92fb",
-          "description": "f5392db875034283"
+          "args": "5bf326e50affd832",
+          "description": "a3c45983c2070af0"
          },
          "describe_method": {
           "args": "d69ec7c20ff033aa",
@@ -164,8 +161,8 @@
           "description": "4bf41a9b372e5f12"
          },
          "read_reference_figure": {
-          "args": "829597cd62930f11",
-          "description": "669146ab88b9ce26"
+          "args": "0072a67ff0ecbd0f",
+          "description": "9cd9290f04110375"
          },
          "record_feedback": {
           "args": "42af7e94a16912e9",
@@ -220,7 +217,7 @@
          }
         ],
         "name": "reviewer",
-        "system_prompt": "ed1d51bbdd693c5b",
+        "system_prompt": "195594fc21772abf",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -230,8 +227,8 @@
         ],
         "tools": {
          "call_agent": {
-          "args": "b48f8177ee3c92fb",
-          "description": "f5392db875034283"
+          "args": "5bf326e50affd832",
+          "description": "a3c45983c2070af0"
          },
          "describe_method": {
           "args": "d69ec7c20ff033aa",
@@ -519,8 +516,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "3a0024c1165decee",
-      "system_prompt_chars": 27137,
+      "system_prompt": "7a1a322c643b1897",
+      "system_prompt_chars": 26465,
       "tool_order": [
        "list_agents",
        "list_methods",
@@ -598,8 +595,8 @@
         "description": "cdffb03f6cc25eea"
        },
        "read_reference_figure": {
-        "args": "829597cd62930f11",
-        "description": "669146ab88b9ce26"
+        "args": "0072a67ff0ecbd0f",
+        "description": "9cd9290f04110375"
        },
        "read_text_file": {
         "args": "38bb764f5dde0d41",
