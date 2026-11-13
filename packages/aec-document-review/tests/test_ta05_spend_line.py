@@ -104,3 +104,40 @@ def test_no_folder_or_a_bad_record_never_raises(tmp_path):
 def test_the_sdk_line_is_unchanged():
     assert bp.format_line({"spent": 12.345, "cap": 50.0}) == (
         "AI budget: $12.35 of $50.00 used this month")
+
+
+# ---------------------------------------------------------------------------
+# The page's sidebar
+# ---------------------------------------------------------------------------
+
+def _sidebar_captions(monkeypatch, tmp_path):
+    st = pytest.importorskip("streamlit")  # noqa: F841
+    from streamlit.testing.v1 import AppTest
+
+    import aec_agent_core.engine_config as engine_config
+    from aec_agent_core.engine_config import EngineResolution
+    from aec_document_review import core
+
+    app = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "aec_document_review", "app.py")
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path))
+    monkeypatch.setattr(engine_config, "resolve_engine",
+                        lambda *a, **k: EngineResolution(
+                            model=object(), source="anthropic",
+                            model_name="fake-model", message=""))
+    monkeypatch.setattr(core, "build_agent", lambda *a, **k: object())
+    at = AppTest.from_file(app, default_timeout=30).run()
+    assert not at.exception
+    return [c.value for c in at.sidebar.caption]
+
+
+def test_the_sidebar_shows_the_estimate_only_when_the_setting_is_on(
+        tmp_path, monkeypatch):
+    if bp.available():
+        pytest.skip("the Funhouse SDK is installed: its line is shown")
+    off = _sidebar_captions(monkeypatch, tmp_path / "off")
+    assert not any("(estimate)" in c for c in off)
+    monkeypatch.setenv(bp.SPEND_ESTIMATE_ENV, "1")
+    on = _sidebar_captions(monkeypatch, tmp_path / "on")
+    assert ("AI use this month (estimate): 0 input and 0 output tokens in "
+            "your conversations; no token prices set") in on
