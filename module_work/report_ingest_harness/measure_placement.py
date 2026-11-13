@@ -52,9 +52,10 @@ names its sample. On a sheet that prints the two apart, both are right and
 also put in one of three groups (:func:`where_beside`), reported in a table
 of their own: ``same line``; ``same sample block`` (different lines, one
 on a line printing the test's own sample label, or its boring's where it
-names no sample, the other on a line printing that label or one of the
-test's own results); ``elsewhere`` (anything else: the two boxes are in
-different samples' rows, or one is on neither). Only ``elsewhere`` is a
+names no sample, the other on a line printing that label or at least two
+of the test's own results); ``elsewhere`` (anything else: the two boxes
+are in different samples' rows, even where another sample's row prints
+one of the test's numbers, or one is on neither). Only ``elsewhere`` is a
 disagreement to read.
 
 Run it from the repo root (or a worktree) with the app venv::
@@ -350,7 +351,8 @@ def sample_block(text: Any, mine: Sequence[float], theirs: Sequence[float],
     """Whether two boxes on different lines of one page sit in one
     sample's block: one on a line printing the test's own sample label (its
     boring's, where it names no sample), the other on a line printing that
-    label or one of the test's own results."""
+    label or at least two of the test's own results (a line printing only
+    one of them may be another sample's row)."""
     from report_ingest import locate
 
     label = (str(getattr(test, "sample_id", "") or "").strip()
@@ -364,8 +366,9 @@ def sample_block(text: Any, mine: Sequence[float], theirs: Sequence[float],
         return any(id(row) in named for row in rows)
 
     def prints(rows: Sequence[Any]) -> bool:
-        return names(rows) or any(w.prints(n) for row in rows
-                                  for w in row.words for n in numbers)
+        return names(rows) or any(
+            sum(any(w.prints(n) for w in row.words) for n in numbers) >= 2
+            for row in rows)
 
     a, b = _rows_under(text, mine), _rows_under(text, theirs)
     return (names(a) and prints(b)) or (names(b) and prints(a))

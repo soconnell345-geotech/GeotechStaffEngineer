@@ -60,7 +60,7 @@ A lab pair on one page is now also put in one of three groups
 (`where_beside`, `sample_block`): `same line`; `same sample block`
 (different lines; one box on a line printing the test's own sample label,
 or its boring's where it names no sample, the other on a line printing that
-label or one of the test's results); `elsewhere`. `RESULTS.md` gains the
+label or at least two of the test's results); `elsewhere`. `RESULTS.md` gains the
 table "Lab: where the two boxes sit" (counts and shares of the pairs on one
 page, per stage or arm and set), `results.json` carries `where` on each lab
 pair and `lab_same_line`, `lab_same_block`, `lab_elsewhere` in each
@@ -201,10 +201,12 @@ marked above.
 
 ## Prompt versions
 
-None moved. `READ_PROMPT_VERSION` stays `mf-10`: with the switch off, every
-instruction and answer schema is byte for byte what it was (the digest
-tests pass unchanged). With `GEOTECH_INGEST_LAB_SAMPLE_ID_AS_PRINTED` on,
-`prompt_version("lab")` is `mf-10+sid`. Page fingerprints are unchanged.
+None moved. The branch does not raise `READ_PROMPT_VERSION`: with the
+switch off, every instruction and answer schema is byte for byte what it
+was (the digest tests pass unchanged). With
+`GEOTECH_INGEST_LAB_SAMPLE_ID_AS_PRINTED` on, `prompt_version("lab")` is
+`+sid` on `READ_PROMPT_VERSION` (mf-11 on master today). Page fingerprints
+are unchanged.
 
 ## Record fields and exports
 
@@ -221,14 +223,16 @@ its results is boxed on the row printing its results (anchor `sample
 results`), not on the heading line; its page and confidence do not change.
 (2) A log read in more than one call keeps a later sheet's remark that the
 sheet prints on its own, even when the first sheet's remarks hold the same
-words, so `remarks` can be longer. (3) A calculation printout read in two
-windows no longer keeps a second window's misreading of a value on a shared
-page as a value of its own: where the page prints the label once, the
-record keeps the printed number, with the other reading as an alternative
-and one QA entry, so such a printout has one input or result fewer.
-(4) A laboratory answer that gives one printed test twice, alike in
-everything, keeps it once where the page prints its results on one row,
-with one QA entry, so such a sheet has one test fewer.
+words, so a log's `remarks` may now hold a second remark printed separately
+on a later sheet and repeat words already there (never the same remark
+twice: a line printed on every sheet is joined once). (3) A calculation
+printout read in two windows no longer keeps a second window's misreading
+of a value on a shared page as a value of its own: a calc value read two
+ways where the page prints it once keeps the printed reading, with the
+other reading as an alternative and one QA entry, so such a printout has
+one input or result fewer. (4) A laboratory test given twice where the
+sheet prints it once (alike in everything, its results on one row) is kept
+once, with one QA entry, so such a sheet has one test fewer.
 
 ## To measure live
 
@@ -257,8 +261,10 @@ No model call is needed for 1 to 3.
    an anchor that reads the sample id (`sample column`, `sample results`,
    `sample label`) against all lab tests, and the summary rows whose
    `sample_id` is printed on the page as written (`locate.label_hits` finds
-   it). The switch earns its place if the second count rises and no test's
-   link is lost.
+   it). The first count cannot move for summary rows: `lab_targets` reads
+   only the test's `sample_id`, never a row's (the review's check 8). The
+   second count is the measure: the switch earns its place if it rises and
+   no test's link is lost.
 
 ## Calls made
 
@@ -273,7 +279,8 @@ No model call is needed for 1 to 3.
    The brief's rule ("an undescribed field is a schema defect") points at
    the row's. The other reading: strengthen the test's description beyond
    "as printed"; that would be new wording chosen for one model's habit, so
-   it is not done.
+   it is not done. The review agreed: the brief had the two `sample_id`
+   levels swapped, and the builder followed the code.
 3. **(5) uses the test's own words, "as printed".** No example ids were
    added to the description. The other reading: a longer description with
    examples.
@@ -284,7 +291,8 @@ No model call is needed for 1 to 3.
    number, or results each on a line of their own, keeps its label line.
 5. **(3) "same sample block" is defined by printed words, not distance:**
    one box on a line printing the test's label, the other on a line
-   printing the label or one of its results. The other reading: any two
+   printing the label or at least two of its results (review fix 2: one
+   number alone can be another sample's row). The other reading: any two
    boxes within some points of each other. Words do not depend on a
    sheet's spacing.
 6. **(4a) when no page can be searched, the later remark is dropped, as
@@ -292,9 +300,11 @@ No model call is needed for 1 to 3.
    same text read twice. Dropping changes nothing on scans, and the later
    words are already in the first remark.
 7. **(4a) a remarks line repeated on every sheet of a log is now kept once
-   per sheet** where a later one is shorter than the first (identical ones
-   were already joined only once, and still are). That is the lead's rule
-   (printed separately is kept).
+   per sheet** where a later one is shorter than the first; identical ones
+   are joined only once. That is the lead's rule (printed separately is
+   kept). The review found identical ones doubled on the branch (found
+   apart on the later sheet, the same words were appended again); review
+   fix 1 restored joining them once.
 8. **(4b) acts only on a clean pair:** one row from each answer, no twin,
    no third reading, and the print settling it. Everything else keeps both
    values, as today, with no new entry.
@@ -305,6 +315,32 @@ No model call is needed for 1 to 3.
     beside a per-row test, or a density entry carrying a compaction sheet's
     points (RI-98's two shapes), are different kinds and are not touched:
     whether those are one printed test is a reading question.
+
+## Review fixes (2026-11-13)
+
+The lead's review of 025d6d5 (verdict "fix first") found two defects, both
+fixed; no model or API was called.
+
+1. **A remark printed on every sheet is joined once**
+   (`report_ingest/model_first_read.py`, `_join_logs`). The join keeps the
+   remarks already joined, starting with the first answer's own, and drops
+   a later remark whose whitespace-normalised text equals one of them
+   before asking whether it is printed apart. Before: a line printed on
+   both sheets and read by both calls came out twice ("X; X"). Test
+   `test_a_remark_printed_on_every_sheet_is_joined_once` (made-up). The
+   review's cases A, B, E, F, H and I give what they gave before; case C
+   is now "once".
+2. **The measure's same sample block needs the label or two of the test's
+   numbers** (`module_work/report_ingest_harness/measure_placement.py`,
+   `sample_block`). A row that does not name the sample's label counts as
+   its block only when it prints at least two of the test's numbers.
+   Before: placement on another sample's row sharing one number with the
+   test counted as `same_block`, hiding a disagreement part (3) should
+   list. Test `test_another_samples_row_sharing_one_number_is_elsewhere`
+   (made-up): now `elsewhere`.
+
+The review's two low findings (cases D and G) are not fixed; see "Noted,
+not fixed".
 
 ## Noted, not fixed
 
@@ -328,3 +364,13 @@ No model call is needed for 1 to 3.
   count as one text.
 - (4b) leaves a misreading in place when its number happens to be printed
   at the same label elsewhere on the page.
+- Review, case D (low): the earlier sheet prints two remarks that open with
+  the same six words, and the later answer repeats one of them, which its
+  own sheet does not print. The six-word search finds it in two places, so
+  the remark is doubled. It needs an answer to give words its pages lack
+  (inferred rare). No fix.
+- Review, case G (low): in (4b), a true second value printed as feet and
+  inches (`7'-9"`) cannot be read by the number search, so it is set beside
+  the first value as an alternative, with an entry saying the page prints
+  it once; it is not lost. It needs each window to read only one of two
+  values on a shared page (inferred rare). No fix.

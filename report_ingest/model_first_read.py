@@ -719,14 +719,16 @@ def _join_logs(built: Sequence[Any],
     later value listed as read (one entry each). Each answer's remarks are
     appended, a later one whose words the earlier remarks already hold only
     where ``apart`` (:func:`_printed_apart`) says the pages print it
-    separately (without ``apart``, never); its header fields added (one printed under a label already
-    there with another value is kept beside it, numbered); its layers,
-    samples, blow counts, water readings and provenance appended; the pages
+    separately (without ``apart``, never), and one with the same words
+    (spacing aside) as a remark already joined never; its header fields
+    added (one printed under a label already there with another value is
+    kept beside it, numbered); its layers, samples, blow counts, water readings and provenance appended; the pages
     joined. Returns the log and the entries: those above, one when two
     answers give depths in different units, and one naming the join."""
     out = built[0].model_copy(deep=True)
     rows: List[Dict[str, Any]] = []
     what = f"log {out.investigation_id}".strip()
+    joined = [" ".join(out.remarks.split())]
     for later in built[1:]:
         later = later.model_copy(deep=True)
         if later.depth_unit and out.depth_unit \
@@ -746,11 +748,13 @@ def _join_logs(built: Sequence[Any],
             _put_field(fields, label, value)
         out.fields = fields
         remarks = later.remarks.strip()
-        if remarks and (remarks not in out.remarks or (
-                apart is not None
-                and apart(remarks, out.pages, later.pages))):
+        if remarks and " ".join(remarks.split()) not in joined and (
+                remarks not in out.remarks or (
+                    apart is not None
+                    and apart(remarks, out.pages, later.pages))):
             out.remarks = "; ".join(r for r in (out.remarks.strip(), remarks)
                                     if r)
+            joined.append(" ".join(remarks.split()))
         _join_slots(out, later, _JOINED_APART, what, later.pages, rows)
         out.pages = sorted(set(out.pages) | set(later.pages))
     parts = "; ".join(_span(b.pages) for b in built)

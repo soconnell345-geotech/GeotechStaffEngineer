@@ -1269,6 +1269,15 @@ def test_a_later_remark_no_page_can_be_searched_for_is_dropped():
     assert inv["remarks"] == FIRST_REMARKS
 
 
+def test_a_remark_printed_on_every_sheet_is_joined_once():
+    """RI-99 review: a line the form prints on both sheets, read by both
+    calls, is one remark; it is joined once, not found apart on the later
+    sheet and doubled."""
+    box = "Made-up note: water levels are approximate."
+    inv = _two_sheet_log({3: [box], 4: [box]}, box, box)
+    assert inv["remarks"] == box
+
+
 def _two_window_calc(printed, first, later):
     from report_ingest.model import Calculation
 

@@ -259,6 +259,36 @@ def test_a_lab_tests_two_boxes_are_put_in_three_groups(tmp_path):
         doc.close()
 
 
+def test_another_samples_row_sharing_one_number_is_elsewhere(tmp_path):
+    """RI-99 review: a summary table where another sample's row prints one
+    of the test's numbers. Placement on that row and the pipeline on the
+    test's own sample's row are in different samples' rows: elsewhere."""
+    import pymupdf
+    from planlens.document import open_document
+    from report_ingest.locate import PageWords
+
+    pdf = pymupdf.open()
+    page = pdf.new_page()
+    for x, y, text in [(72, 150, "S-2"), (160, 150, "41"), (250, 150, "19"),
+                       (340, 150, "22"),
+                       (72, 240, "S-7"), (160, 240, "55"), (250, 240, "19"),
+                       (340, 240, "36")]:
+        page.insert_text((x, y), text, fontsize=10)
+    path = tmp_path / "made_summary.pdf"
+    pdf.save(str(path))
+    pdf.close()
+    doc = open_document(str(path))
+    try:
+        text = PageWords(doc)(0)
+        s2_row = [70, 141, 360, 153]
+        s7_row = [70, 231, 360, 243]
+        apart = {"same_page": True, "same_line": False}
+        assert mp.where_beside(apart, text, s7_row, s2_row, _lab_test()) \
+            == "elsewhere"
+    finally:
+        doc.close()
+
+
 def _lab_row(where):
     row = _row("placed", kind="test", same_line=(where == "same_line"))
     row["pipeline"]["where"] = where
