@@ -200,3 +200,39 @@ calculated value changes.
   pdflatex they would differ).
 - The old committed samples (`docs/examples/*.html`, `sample_pdfs/`,
   `sample_calc_package.pdf`, `generate_all_pdfs.py`) are untouched: OWN-144.
+
+
+## Review round (2026-11-13)
+
+Branch `fix/gm328-review` on 49dc3a0. Master merged first (b906e95).
+
+**Merge conflicts.** `drilled_shaft/calc_steps.py` `get_tables` (master's `curve`, used
+for its extended-length note, kept inside this branch's guard); `module_work/LIVE_TEST_QUEUE.md`
+(both entries kept: master's Check 14 (TA-42) and Check 15 stay, this branch's calc helper
+check is now Check 16); `webapp/tests/page_fingerprints.json` (re-recorded: only the calc
+helper's prompt); `docs/user_manual/manual.html` (rebuilt; only the old soe `* D_embed` line
+differs from a rebuild). After the merge one test failed: master changed the wording of the
+refusal for a value outside `allowed_values`, so `test_an_unknown_analysis_type_is_refused`
+now checks master's wording.
+
+| Finding | Before | After |
+|---|---|---|
+| A1 | SRM failing at the lowest SRF tried (FOS = srf_low, converged False): `meets_FOS_required` True, HTML "PASS ... FOS_computed = 2.0", SRM step "FOS = 2.000" | `fem2d.calc_steps.srm_meets`, used by the response and the Checks section: an upper bound (converged False) fails only at or below FOS_required; a lower bound (`range_exhausted`) passes only at or above it; otherwise NOT DETERMINED, `meets_FOS_required` None and `FOS_required_note` naming the srf_range that settles it. The SRM step prints "Upper bound on FOS = 2.000" with "FOS < 2.000: the slope already fails at the lowest strength reduction factor tried" (lower: "FOS >= ..."); the decided bound checks print `FOS_upper_bound` / `FOS_lower_bound`. The fem2d tool's two warnings now say the FOS reported is that bound; no number changes. A converged run's HTML is unchanged (probe slope_ok, text compared). |
+| B1 | Response lacked `fos_basis` | `_fem2d_numbers` adds it for an SRM result; a test compares every single-number key of the slope and consolidation tools with the package's (only `analysis_type` differs, by design). Probe: none missing on slope, bound slope or consolidation. |
+| B2 | -1 accepted (True, package written); "abc" failed after the FEM run with a TypeError | Refused before the FEM run unless a finite number at or above 1.0 (also NaN, 0.9, True, null), naming the parameter and what it takes. |
+| B3 | `app_version` from the installed metadata ("4.6.0" on this host) | The tree's `pyproject.toml` (tomllib); the installed metadata only if that fails, said in INDEX.md and in index.json's new `app_version_source`. This run: 5.35.0 from pyproject.toml. |
+| C1 | Whole length table dropped; reason only in the last printed table's note; lost with no printed table; not in the response | Each length whose tip is in a cohesionless layer with no N60 is left out and the rest kept (WE-SHAFT-1: 19 of 20 lengths, from 3.32 m; the note and the response's `tables_note` name L = 3 m). Any other refusal still costs that table alone, now said in `tables_note` too and attached to the last table even when none is printed. Mechanism: `CalcTable.left_out` (new, default empty), joined into `tables_note` by the adapter. Other tables and numbers unchanged (probe CLAY row identical). |
+| C2 | Assumed Inputs row "The required factor of safety the package's check sets the..." | The cut is `_plain_label`'s 80-character cap on the label (first clause of the parameter description). The description's first clause is now "Required factor of safety, this package's choice, not a printed requirement", shown whole. The cap is unchanged (it serves every package). |
+| C3 | Exit 0 with `tables_error` / `figures_error` / `pdf_error` | Exit 1, the methods printed to stderr; INDEX.md still lists them under Problems. |
+| C4, C5 | | Not this round. |
+
+**Checks.** The test loop (the branch's test files, `fem2d/tests/test_calc_viz.py`,
+drilled_shaft's `test_calc_tables`, `test_steps_match_the_analysis`, `test_skipped_depths`,
+`test_tip_N60`, `test_catalog_routing_hints`, `test_calc_package_adapter`, the parity file,
+`test_page_fingerprints`, `test_public_text`, `test_defaults_used -k "fem2d or package"`):
+all pass (fem2d package file 20 tests, sample packages 28, defaults 178 passed, 2 skipped).
+`check_manual.py` exit 0, rebuilt row copied in. Catalog briefs unchanged. Reviewer's probes
+re-run: covered cases unchanged apart from the fixes above. Sample script into the scratch
+folder: exit 0, no Problems.
+
+**Calls made:** about 60 (one merge, one test-loop run before and one after the fixes).
