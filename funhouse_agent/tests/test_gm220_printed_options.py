@@ -72,7 +72,9 @@ def test_the_shaft_package_prints_the_zone(tmp_path, monkeypatch):
     assert "p. 8-15" in html
 
 
-_PIERS = {"column_diameter": 0.9, "spacing": 2.1, "S_unreinforced": 150.0}
+# n given: no stress ratio is assumed for an unnamed column (GM-310)
+_PIERS = {"column_diameter": 0.9, "spacing": 2.1, "S_unreinforced": 150.0,
+          "n": 5.0}
 
 
 @pytest.mark.parametrize("method, settlement", [

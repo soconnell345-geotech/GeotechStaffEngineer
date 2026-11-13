@@ -150,6 +150,7 @@ def test_the_pier_package_cites_the_stress_reduction_method(tmp_path,
     r = _call("calc_package", "ground_improvement_package",
               {"method": "aggregate_piers", "column_diameter": 0.9,
                "spacing": 2.1, "S_unreinforced": 150.0,
+               "column_type": "stone_column",
                "output_path": str(tmp_path / "gi.html")})
     assert r.get("status") == "success", r
     html = (tmp_path / "gi.html").read_text(encoding="utf-8")

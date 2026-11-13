@@ -79,7 +79,9 @@ class AggregatePierResult:
             f"  Column diameter:          {self.column_diameter_m:.3f} m",
             f"  Column spacing:           {self.column_spacing_m:.2f} m ({self.pattern})",
             f"  Area replacement ratio:   {self.area_replacement_ratio:.4f}",
-            f"  Stress concentration (n): {self.stress_concentration_ratio:.1f}",
+            "  Stress concentration (n): "
+            + (f"{self.stress_concentration_ratio:.1f}"
+               if self.stress_concentration_ratio else "not given, not used"),
             "",
             f"  Composite modulus:        {self.composite_modulus_kPa:.0f} kPa",
             f"  Settlement reduction:     {self.settlement_reduction_factor:.3f}",

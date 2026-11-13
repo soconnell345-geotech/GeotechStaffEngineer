@@ -245,6 +245,32 @@ def improved_settlement(S_unreinforced: float, as_ratio: float,
 #: (``ground_improvement.settlement_ratio``, GM-220). GEC-13 p. 5-36 prints
 #: the settlement ratio as "n" in quotes; it is not the stress ratio n of
 #: Eq. 5-2, so the module calls it the settlement ratio (GM-279).
+#: The stress concentration ratio n taken for a column type when n is not
+#: given (GM-310, the call for OWN-108 of 2026-11-12). Before it one
+#: default of 5.0 served both: the top of the stone columns' measured
+#: range and the bottom of the rammed aggregate piers'.
+COLUMN_TYPE_N = {"stone_column": 2.5, "rammed_aggregate_pier": 5.0}
+COLUMN_TYPE_BASIS = {
+    "stone_column": (
+        "GEC-13 (FHWA-NHI-16-027) p. 5-32, for stone columns: 'For "
+        "preliminary design, a ratio of 2.5 is often conservatively used "
+        "for stability and bearing resistance calculations'; measured "
+        "'between 2.0 and 5.0' (p. 5-31)"),
+    "rammed_aggregate_pier": (
+        "GEC-13 (FHWA-NHI-16-027) p. 5-43, for rammed aggregate piers: 'a "
+        "stress ratio of 5 to 10 for area ground improvement applications "
+        "under flexible embankment loading', the low end taken; 'a "
+        "somewhat higher stress ratio (10)' under rigid footings"),
+}
+N_NEEDS_COLUMN_TYPE = (
+    "the stress concentration ratio n is not given, and GEC-13 "
+    "(FHWA-NHI-16-027) prints different values by column type, so none is "
+    "assumed. Give column_type: 'stone_column' takes n = 2.5 ('often "
+    "conservatively used' for preliminary design, p. 5-32; 2.0 to 5.0 "
+    "measured, p. 5-31) and 'rammed_aggregate_pier' takes n = 5 (5 to 10 "
+    "under flexible embankment loading, 10 under rigid footings, p. "
+    "5-43); or give n itself")
+
 SETTLEMENT_METHODS = ("stress_ratio", "weighted_modulus", "balaam_rigid",
                       "balaam_flexible")
 
@@ -255,10 +281,11 @@ def analyze_aggregate_piers(
     pattern: str = "triangular",
     E_column: Optional[float] = None,
     E_soil: float = 5000.0,
-    n: float = 5.0,
+    n: Optional[float] = None,
     q_unreinforced: float = 0.0,
     S_unreinforced: float = 0.0,
     settlement_method: str = "stress_ratio",
+    column_type: Optional[str] = None,
 ) -> AggregatePierResult:
     """Run a complete aggregate pier analysis.
 
@@ -280,14 +307,21 @@ def analyze_aggregate_piers(
         Modulus of surrounding soil (kPa). Default 5,000 kPa. With
         'stress_ratio' used only for the composite modulus; with the
         Fig. 5-21 methods it also sets E_c / E_s.
-    n : float
-        Stress concentration ratio sigma_c / sigma_s. Default 5.0. GEC-13
+    n : float, optional
+        Stress concentration ratio sigma_c / sigma_s. Default None: by
+        ``column_type`` (:data:`COLUMN_TYPE_N`), and refused where neither
+        is given and n is used (GM-310, the call for OWN-108; 5.0 for
+        every column before it). GEC-13
         for stone columns: measured "between 2.0 and 5.0" (p. 5-31), "For
         preliminary design, a ratio of 2.5 is often conservatively used for
         stability and bearing resistance calculations" (p. 5-32); for
         rammed aggregate piers 5 to 10 under flexible embankment loading,
         10 under rigid footings (p. 5-43); "stress concentration ratios
         range from 4 to 45 for rigid footings" (p. 5-45).
+    column_type : str, optional
+        "stone_column" or "rammed_aggregate_pier": the n taken when ``n``
+        is not given, 2.5 and 5 (:data:`COLUMN_TYPE_N`). Not used when
+        ``n`` is given.
     q_unreinforced : float
         Unreinforced bearing capacity (kPa). Default 0 (not computed).
     S_unreinforced : float
@@ -326,6 +360,16 @@ def analyze_aggregate_piers(
         raise ValueError(
             f"settlement_method {settlement_method!r} works the settlement "
             "ratio out from E_c / E_s (GEC-13 Fig. 5-21): give E_column")
+    # GM-310 (OWN-108): no one n for every column
+    if column_type is not None and column_type not in COLUMN_TYPE_N:
+        raise ValueError(
+            f"column_type must be one of {list(COLUMN_TYPE_N)}, got "
+            f"{column_type!r}")
+    n_given = n is not None
+    if not n_given and column_type is not None:
+        n = COLUMN_TYPE_N[column_type]
+    if n is None and (not by_moduli or q_unreinforced > 0):
+        raise ValueError(N_NEEDS_COLUMN_TYPE)
     if E_column is not None and E_column < E_soil and not by_moduli:
         warnings.warn(
             f"Column modulus ({E_column} kPa) is less than soil modulus "
@@ -355,7 +399,8 @@ def analyze_aggregate_piers(
 
     return AggregatePierResult(
         area_replacement_ratio=as_ratio,
-        stress_concentration_ratio=n,
+        # 0.0: no n given or used (a Fig. 5-21 settlement, no bearing)
+        stress_concentration_ratio=0.0 if n is None else n,
         composite_modulus_kPa=E_comp,
         settlement_reduction_factor=srf,
         improved_bearing_kPa=q_improved,
@@ -370,7 +415,8 @@ def analyze_aggregate_piers(
         modular_ratio=modular_ratio,
         choices=aggregate_pier_choices(
             n, E_soil, pattern, settlement_method, as_ratio, modular_ratio,
-            1.0 / srf, q_unreinforced),
+            1.0 / srf, q_unreinforced,
+            column_type=None if n_given else column_type),
     )
 
 
@@ -436,20 +482,34 @@ def aggregate_pier_choices(n: float, E_soil: float, pattern: str,
                            as_ratio: Optional[float] = None,
                            modular_ratio: Optional[float] = None,
                            n_prime: Optional[float] = None,
-                           q_unreinforced: float = 0.0) -> list:
+                           q_unreinforced: float = 0.0,
+                           column_type: Optional[str] = None) -> list:
     """What :func:`analyze_aggregate_piers` chose (GM-142, GM-220), as a
     result's ``choices`` (``geotech_common.choices``). With a Fig. 5-21
     settlement method n sets only the improved bearing, so it is a choice
-    only with ``q_unreinforced``."""
-    from geotech_common.choices import choice, how_given
+    only with ``q_unreinforced``. ``column_type``: the column type n was
+    taken from when it was not given (GM-310)."""
+    from geotech_common.choices import DEFAULT, choice, how_given
     by_moduli = settlement_method != "stress_ratio"
     sets = ("the improved bearing; the settlement is by E_c/E_s "
             f"(settlement_method {settlement_method!r})" if by_moduli
             else "the settlement reduction factor 1 / [1 + a_s (n - 1)], "
             "the improved bearing and the composite modulus")
+    if column_type is not None:
+        other = next(k for k in COLUMN_TYPE_N if k != column_type)
+        n_said = (f"{n:g}, taken for column_type {column_type!r} when n is "
+                  "not given: " + COLUMN_TYPE_BASIS[column_type])
+        n_how = how_given(None, None, name="n")
+        n_other = [f"column_type {other!r}: n {COLUMN_TYPE_N[other]:g} ("
+                   + COLUMN_TYPE_BASIS[other] + ")",
+                   "n given, from measurements or the designer's own "
+                   "basis"]
+    elif n is not None:
+        n_said, n_how, n_other = f"{n:g}", how_given(n, None, name="n"), []
+    else:                        # not given and not used: no choice below
+        n_said, n_how, n_other = "", "", []
     n_choice = [
-        choice("stress concentration ratio n", f"{n:g}",
-               how_given(n, 5.0, name="n"),
+        choice("stress concentration ratio n", n_said, n_how,
                "n = sigma_c / sigma_s, taken as given and not worked out "
                "from the moduli; GEC-13 (FHWA-NHI-16-027) for stone "
                "columns: measured 'between 2.0 and 5.0' (p. 5-31), and "
@@ -461,7 +521,7 @@ def aggregate_pier_choices(n: float, E_soil: float, pattern: str,
                "somewhat higher stress ratio (10)' under rigid footings "
                "(p. 5-43); 'stress concentration ratios range from 4 to 45 "
                "for rigid footings' (p. 5-45). It sets " + sets,
-               ["n from the moduli, n = E_c / E_s (equal-strain modular "
+               n_other + ["n from the moduli, n = E_c / E_s (equal-strain modular "
                 "ratio; settlement_method 'weighted_modulus')",
                 "the settlement ratio off GEC-13's printed Priebe curve, "
                 "Fig. 5-21 curve (4) (priebe_improvement_factor)"]),

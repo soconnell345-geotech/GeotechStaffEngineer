@@ -2225,18 +2225,19 @@
       "column_diameter": 0.76,
       "spacing": 1.5,
       "pattern": "triangular",
+      "column_type": "stone_column",
       "E_soil": 8000.0,
       "S_unreinforced": 100.0,
       "q_unreinforced": 150.0
     },
     "result": {
       "area_replacement_ratio": 0.2328,
-      "stress_concentration_ratio": 5.0,
-      "composite_modulus_kPa": 15450.0,
-      "settlement_reduction_factor": 0.5178,
-      "improved_bearing_kPa": 289.7,
+      "stress_concentration_ratio": 2.5,
+      "composite_modulus_kPa": 10793.7,
+      "settlement_reduction_factor": 0.7412,
+      "improved_bearing_kPa": 202.4,
       "unreinforced_bearing_kPa": 150.0,
-      "settlement_improved_mm": 51.8,
+      "settlement_improved_mm": 74.1,
       "settlement_unreinforced_mm": 100.0,
       "column_diameter_m": 0.76,
       "column_spacing_m": 1.5,
@@ -2255,10 +2256,12 @@
         },
         {
           "what": "stress concentration ratio n",
-          "chosen": "5",
+          "chosen": "2.5, taken for column_type 'stone_column' when n is not given: GEC-13 (FHWA-NHI-16-027) p. 5-32, for stone columns: 'For preliminary design, a ratio of 2.5 is often conservatively used for stability and bearing resistance calculations'; measured 'between 2.0 and 5.0' (p. 5-31)",
           "how": "default",
           "basis": "n = sigma_c / sigma_s, taken as given and not worked out from the moduli; GEC-13 (FHWA-NHI-16-027) for stone columns: measured 'between 2.0 and 5.0' (p. 5-31), and 'For preliminary design, a ratio of 2.5 is often conservatively used for stability and bearing resistance calculations' (p. 5-32); for rammed aggregate piers 'a stress ratio of 5 to 10 for area ground improvement applications under flexible embankment loading', 'a somewhat higher stress ratio (10)' under rigid footings (p. 5-43); 'stress concentration ratios range from 4 to 45 for rigid footings' (p. 5-45). It sets the settlement reduction factor 1 / [1 + a_s (n - 1)], the improved bearing and the composite modulus",
           "alternatives": [
+            "column_type 'rammed_aggregate_pier': n 5 (GEC-13 (FHWA-NHI-16-027) p. 5-43, for rammed aggregate piers: 'a stress ratio of 5 to 10 for area ground improvement applications under flexible embankment loading', the low end taken; 'a somewhat higher stress ratio (10)' under rigid footings)",
+            "n given, from measurements or the designer's own basis",
             "n from the moduli, n = E_c / E_s (equal-strain modular ratio; settlement_method 'weighted_modulus')",
             "the settlement ratio off GEC-13's printed Priebe curve, Fig. 5-21 curve (4) (priebe_improvement_factor)"
           ]
@@ -2280,7 +2283,7 @@
         }
       ],
       "defaults_used": {
-        "n": 5.0,
+        "n": "by column_type: 2.5 for 'stone_column', 5 for 'rammed_aggregate_pier'; refused with neither given where n is used: GEC-13 pp. 5-31, 5-32 (stone columns: 2.0 to 5.0 measured, 2.5 often conservatively used for preliminary design) and p. 5-43 (rammed aggregate piers: 5 to 10)",
         "settlement_method": "stress_ratio"
       }
     }
