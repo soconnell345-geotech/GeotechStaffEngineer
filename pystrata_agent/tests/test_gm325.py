@@ -312,17 +312,24 @@ class TestThroughPystrata:
         for layers, (H, vs1, g1, xi1) in ((one, (10, 200, 18, 0.02)),
                                           (flat, (12, 180, 17, 0.03))):
             r = analyze_linear_site_response(layers, motion="synthetic_pulse")
-            z = np.asarray(r.depths, dtype=float)[1:]     # sub-layer middles
-            assert np.all((z > 0) & (z < H))
+            # MaxStrainProfile's depths: the surface, each sub-layer's
+            # middle, and on pystrata 0.6 the base of the soil column too,
+            # which carries the last sub-layer's value
+            depths = np.asarray(r.depths, dtype=float)
+            strain = np.asarray(r.max_strain_pct, dtype=float)
+            assert depths[0] == 0.0 and strain[0] == 0.0
+            mid = (depths > 0) & (depths < H)
+            assert set(depths[~mid][1:]) <= {float(H)}
+            assert np.all(strain[depths == H] == strain[mid][-1])
+            z = depths[mid]                               # sub-layer middles
             want = self._closed_form_peak_strains(
                 accel, dt, H, vs1, g1, xi1, 760, 22, 0.01, z)
-            assert np.asarray(r.max_strain_pct)[1:] == pytest.approx(
-                100.0 * want, rel=1e-6)
+            assert strain[mid] == pytest.approx(100.0 * want, rel=1e-6)
             d = r.to_dict()
             assert d["max_shear_strain_pct"] == pytest.approx(
                 100.0 * want.max(), abs=1e-4)
             assert d["max_shear_strain_pct"] > 0
-        assert len(np.asarray(r.depths)) > 2   # the flat layer was split
+        assert np.count_nonzero(mid) > 1       # the flat layer was split
         # a linear soil does not soften: the equivalent-linear method gives
         # the same strain, from pystrata's own strain_max
         lin = analyze_linear_site_response(one, motion="synthetic_pulse")

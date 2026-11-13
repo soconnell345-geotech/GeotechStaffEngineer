@@ -676,7 +676,7 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
     # gives the strain history at a depth (the strain transfer function on
     # the input motion); its peak at each sub-layer's middle is what the
     # equivalent-linear calculator stores as strain_max.
-    linear_strain = None
+    linear_peaks = None
     if analysis_type == "linear_elastic":
         z_mid = np.asarray(calc.profile.depth_mid, dtype=float)[:-1]
         strain_ts = pystrata.output.OutputCollection([
@@ -684,10 +684,9 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
                 pystrata.output.OutputLocation("within", depth=float(z)))
             for z in z_mid])
         strain_ts(calc)
-        # the surface point first, as MaxStrainProfile writes it
-        linear_strain = np.r_[0.0, [
+        linear_peaks = np.array([
             float(np.max(np.abs(np.asarray(o.values, dtype=float))))
-            for o in strain_ts]]
+            for o in strain_ts])
 
     # 8. Extract results
     # Surface acceleration time history
@@ -717,9 +716,18 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
     init_vel_output = outputs[5]
     compat_vel_output = outputs[6]
 
-    depths_strain = np.array(strain_output.refs).flatten()
-    if linear_strain is not None:
-        max_strain = linear_strain
+    depths_strain = np.array(strain_output.refs, dtype=float).flatten()
+    if linear_peaks is not None:
+        # Laid out on MaxStrainProfile's own depths, which differ by
+        # version: pystrata 0.5 gives the surface and each sub-layer's
+        # middle; 0.6 adds the base of the soil column, carrying the last
+        # sub-layer's value (output._LayerMidProfile). Each depth takes the
+        # strain of the sub-layer it lies in; the surface takes 0.0, as
+        # MaxStrainProfile writes it.
+        tops = np.asarray(calc.profile.depth, dtype=float)[:len(linear_peaks)]
+        where = np.clip(np.searchsorted(tops, depths_strain, side="right") - 1,
+                        0, len(linear_peaks) - 1)
+        max_strain = np.where(depths_strain > 0, linear_peaks[where], 0.0)
     else:
         # A sub-layer pystrata gave no strain for stays missing (NaN, null
         # in the result), never 0.0.

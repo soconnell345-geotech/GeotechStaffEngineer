@@ -128,13 +128,16 @@ period axis), the largest surface ordinate and its period, and
 20; more are merged, keeping the largest strain and acceleration and the
 travel-time average Vs). pystrata's profile outputs do not share one depth
 array: the strain is at each sub-layer's middle after a leading surface
-point, the acceleration at each sub-layer's top, and the two Vs profiles
-are in step-plot form (the first value twice, pystrata 0.5.4
-`output.InitialVelProfile`). `depth_profile` matches the strain by depth
-and reads Vs from entry i + 1; arrays not of that form give
-`depth_profile` null with the reason in `depth_profile_note`, instead of
-a shifted profile (until the GM-325 review it was left out without a
-word). Checked on pystrata 0.5.4 only (0.6 needs Python 3.13).
+point (pystrata 0.6 adds a last point at the base of the soil column,
+carrying the last sub-layer's value: `output._LayerMidProfile`), the
+acceleration at each sub-layer's top, and the two Vs profiles are in
+step-plot form (the first value twice, pystrata 0.5.4
+`output.InitialVelProfile`, the same in 0.6). `depth_profile` matches the
+strain by depth and reads Vs from entry i + 1; arrays not of that form
+give `depth_profile` null with the reason in `depth_profile_note`, instead
+of a shifted profile (until the GM-325 review it was left out without a
+word). Run on pystrata 0.5.4 (Python 3.12) and 0.6.0 (Python 3.13, in
+WSL).
 
 The input motion is applied as a rock outcrop motion at the top of the
 half-space; the tool text and `choices` say so.
@@ -147,9 +150,12 @@ equivalent-linear calculator does, after its last iteration, as
 module turned it into 0.0, in `max_shear_strain_pct` and in every
 `depth_profile` row. A linear run now adds pystrata's `StrainTSOutput` at
 each sub-layer's middle and takes the peak of each history: the same
-quantity. Checked against the closed-form solution for one uniform damped
-layer on an elastic half-space (`tests/test_gm325.py`), and on a linear
-soil it equals the equivalent-linear run's strain. A sub-layer pystrata
+quantity, laid out on `MaxStrainProfile`'s depths for the version
+installed (each depth takes the strain of the sub-layer it lies in; the
+first build assumed 0.5's layout, and on 0.6 the counts disagreed and
+`depth_profile` came back null). Checked against the closed-form
+solution for one uniform damped layer on an elastic half-space
+(`tests/test_gm325.py`), and on a linear soil it equals the equivalent-linear run's strain. A sub-layer pystrata
 gives no strain for is null, never 0.0.
 
 **The water table and K0 in the result.** They enter only the confining
