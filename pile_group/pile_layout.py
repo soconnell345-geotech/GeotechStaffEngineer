@@ -26,9 +26,12 @@ class GroupPile:
     Parameters
     ----------
     x : float
-        X-coordinate of pile head relative to cap centroid (m).
+        X-coordinate of the pile head in the cap's plan axes (m). The
+        simplified method measures it from the piles' centroid, where it
+        takes the loads; the 6-DOF method from the origin (GM-319 review).
     y : float
-        Y-coordinate of pile head relative to cap centroid (m).
+        Y-coordinate of the pile head in the cap's plan axes (m), the
+        same way.
     batter_x : float, optional
         Batter angle in X-direction (degrees from vertical).
         Positive = pile leans in +X direction. Default 0 (vertical).
@@ -76,12 +79,29 @@ class GroupPile:
         -------
         lx, ly, lz : float
             Direction cosines. lz is the vertical component (≈1 for vertical).
+
+        Raises
+        ------
+        ValueError
+            If sin²(batter_x) + sin²(batter_y) >= 1: no vertical component
+            is left (GM-319 review; before, lz was set to 0 and the vector
+            was not of unit length, which scaled the pile's springs).
         """
         bx = self.batter_x_rad
         by = self.batter_y_rad
         lx = math.sin(bx)
         ly = math.sin(by)
-        lz = math.sqrt(max(1.0 - lx**2 - ly**2, 0.0))
+        s2 = lx**2 + ly**2
+        if s2 >= 1.0:
+            raise ValueError(
+                f"Pile {self.label or f'at ({self.x:g}, {self.y:g})'}: "
+                f"batter_x {self.batter_x:g} and batter_y {self.batter_y:g} "
+                f"degrees give sin^2(batter_x) + sin^2(batter_y) = {s2:.3f}, "
+                "at or above 1, which leaves the pile no vertical component "
+                "(its direction cosines are sin batter_x, sin batter_y and "
+                "the rest). Give batters whose squared sines sum to less "
+                "than 1.")
+        lz = math.sqrt(1.0 - s2)
         return lx, ly, lz
 
 

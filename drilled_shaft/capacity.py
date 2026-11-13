@@ -17,7 +17,6 @@ References:
     FHWA GEC-10 (FHWA-NHI-18-024), Chapter 10, Sec. 10.3.5
 """
 
-import contextvars
 import math
 import warnings
 from dataclasses import dataclass, replace
@@ -44,16 +43,6 @@ from drilled_shaft.end_bearing import (
 )
 from drilled_shaft.results import DrillShaftResult
 from drilled_shaft.lrfd import RESISTANCE_FACTORS
-
-#: True while :meth:`DrillShaftAnalysis._alternative` runs a trial copy of
-#: an analysis: the copy does not raise the warnings the analysis it was
-#: copied from has raised already (a shaft longer than the profile). Per
-#: thread and per context, so a trial in one call never quiets another
-#: call (GM-316 review A1: the trial used ``warnings.catch_warnings``,
-#: which swaps the process's warning filters for every thread).
-_IN_TRIAL: contextvars.ContextVar = contextvars.ContextVar(
-    "drilled_shaft_in_trial", default=False)
-
 
 def require_tip_N60(tip_layer: ShaftSoilLayer, depth: float) -> float:
     """The N60 a cohesionless tip layer's end bearing uses (GM-142).
@@ -82,6 +71,19 @@ def skipped_depths_note(skipped, n_points: int) -> str:
     return (f"The analysis refused {len(skipped)} of the {n_points} trial "
             f"shaft lengths, which the capacity against length leaves out: "
             f"{shown}{more}")
+
+
+def extended_lengths_note(given: float, lengths) -> str:
+    """One sentence for a capacity-against-length curve whose ``lengths``
+    (m) pass the profile, which ends at ``given`` m, run with
+    ``extend_last_layer`` (GM-318 review A1)."""
+    shown = ", ".join(f"{d:g}" for d in lengths)
+    return (f"The soil profile ends at {given:g} m: the trial shaft lengths "
+            f"past it ({shown} m) were run with the last layer taken to go "
+            f"on to the base (extend_last_layer), so their side resistance "
+            f"below {given:g} m and their whole base resistance are in "
+            f"ground nobody explored; each of those rows carries the "
+            f"warning. Confirm the ground there before relying on them.")
 
 
 def side_n60_choice(spans) -> dict:
@@ -249,6 +251,8 @@ def _zone_steps(zone: dict) -> dict:
                for r in zone["rows"]]}
     if zone["profile_bottom_m"] < zone["bottom_m"] - 1e-9:
         out["su_profile_ends_m"] = zone["profile_bottom_m"]
+    if zone.get("carried_on_to_m") is not None:
+        out["su_last_layer_carried_to_m"] = zone["carried_on_to_m"]
     return out
 
 
@@ -267,7 +271,20 @@ def _n60_zone_steps(zone: dict) -> dict:
                for r in zone["rows"]]}
     if zone["profile_bottom_m"] < zone["bottom_m"] - 1e-9:
         out["N60_profile_ends_m"] = zone["profile_bottom_m"]
+    if zone.get("carried_on_to_m") is not None:
+        out["N60_last_layer_carried_to_m"] = zone["carried_on_to_m"]
     return out
+
+
+def _profile_ends_words(end: float, carried: Optional[float]) -> str:
+    """"ends at X m", and with ``extend_last_layer`` the base its last
+    layer was carried on to (GM-318 review B1: the depth the layers given
+    reach, not the carried-on one)."""
+    words = f"ends at {end:g} m"
+    if carried is not None:
+        words += (f" (its last layer carried on to the base at "
+                  f"{carried:g} m, extend_last_layer)")
+    return words
 
 
 def _n60_zone_words(steps: dict) -> str:
@@ -278,9 +295,10 @@ def _n60_zone_words(steps: dict) -> str:
     used = [r for r in rows if r["N60"] is not None]
     other = [r for r in rows if r["N60"] is None]
     end = steps.get("N60_profile_ends_m", z2)
+    carried = steps.get("N60_last_layer_carried_to_m")
     if not used:
         words = (f"the tip layer's N60 {steps['N60_tip']:g}, as the profile "
-                 + (f"ends at {end:g} m" if not rows else
+                 + (_profile_ends_words(end, carried) if not rows else
                     f"gives no cohesionless N60 within 2B below the base "
                     f"({z1:g}-{z2:g} m)"))
     elif len(used) == 1 and used[0]["N60"] == steps["N60_tip"]:
@@ -312,9 +330,11 @@ def _su_zone_words(steps: dict, tip_words: str) -> str:
     clay = [r for r in rows if r["su_kPa"] is not None]
     other = [r for r in rows if r["su_kPa"] is None]
     end = steps.get("su_profile_ends_m", z2)
+    carried = steps.get("su_last_layer_carried_to_m")
     if not rows:
-        return (tip_words + f", as the profile ends at {end:g} m and gives "
-                "nothing below the base")
+        return (tip_words + ", as the profile "
+                + _profile_ends_words(end, carried)
+                + " and gives nothing below the base")
     if not clay:
         words = (tip_words + ", as the profile gives no cohesive soil "
                  f"within 2B below the base ({z1:g}-{z2:g} m)")
@@ -885,6 +905,18 @@ class DrillShaftAnalysis:
     rock_joints : str, optional
         For rock_side_method "caving": the joint condition of Table 10-3,
         "closed" (default) or "open" (open or gouge-filled joints).
+    extend_last_layer : bool, optional
+        What to do with a shaft longer than the soil profile (GM-318).
+        False (default): the run is refused, naming the depth not covered;
+        GEC-10 takes the base resistance from the soil at and to 2B below
+        the base (Eq. 10-14, p. 10-15; Eq. 10-19, p. 10-19) and no held
+        manual prints carrying the last layer on. True: the last layer is
+        taken to go on to the base (side resistance and base in it), and
+        the result says so in its warnings and choices.
+    profile_depth_given : float or None, optional
+        Set by the analysis, not by a caller: the depth (m) the given layers
+        reached before ``extend_last_layer`` carried the last one on. A
+        value deeper than the profile is refused.
 
     The rock side resistance takes qu no higher than the shaft's
     ``concrete_fc`` where it is given (GEC-10 p. 10-21,
@@ -918,6 +950,8 @@ class DrillShaftAnalysis:
     large_base_reduction: bool = False
     rock_side_method: str = "normal"
     rock_joints: str = "closed"
+    extend_last_layer: bool = False
+    profile_depth_given: Optional[float] = None
 
     def __post_init__(self):
         if self.shaft is None:
@@ -988,12 +1022,98 @@ class DrillShaftAnalysis:
             raise ValueError(
                 f"su_test_type must be 'ciuc', 'uc', or 'uu', got '{self.su_test_type}'"
             )
-        if (self.shaft.length > self.soil.total_thickness
-                and not _IN_TRIAL.get()):
-            warnings.warn(
-                f"Shaft length ({self.shaft.length}m) exceeds soil profile "
-                f"({self.soil.total_thickness}m); using full profile depth"
-            )
+        self._cover_the_base()
+
+    def _cover_the_base(self) -> None:
+        """Refuse a base below the soil profile, or with
+        ``extend_last_layer`` carry the last layer on to it (GM-318)."""
+        if (self.profile_depth_given is not None
+                and self.profile_depth_given
+                > self.soil.total_thickness + 1e-9):
+            # GM-318 review C1: a caller's value here brought back the old
+            # silent basis (a base below the layers, run as if covered)
+            raise ValueError(
+                f"profile_depth_given = {self.profile_depth_given:g} m is "
+                f"deeper than the soil profile, which ends at "
+                f"{self.soil.total_thickness:g} m. It is set by the "
+                f"analysis (the depth the layers given reach, before "
+                f"extend_last_layer carries the last one on), not by a "
+                f"caller: leave it out, and set extend_last_layer=true to "
+                f"run a base below the profile.")
+        given = (self.profile_depth_given
+                 if self.profile_depth_given is not None
+                 else self.soil.total_thickness)
+        L = self.shaft.length
+        if L <= given + 1e-9:
+            return
+        if not self.extend_last_layer:
+            raise ValueError(
+                f"The soil profile ends at {given:g} m below the ground "
+                f"surface and the shaft is {L:g} m long: the soil from "
+                f"{given:g} m to the base and below it is not in the "
+                f"profile, so the base resistance would be end bearing in "
+                f"soil or rock nobody explored (GEC-10 takes it from the "
+                f"ground at and to 2B below the base: Eq. 10-14, p. 10-15; "
+                f"Eq. 10-19, p. 10-19). Give layers down to the base, or "
+                f"set extend_last_layer=true to take the last layer as "
+                f"going on to the base; the result then says so.")
+        self.profile_depth_given = given
+        short = L - self.soil.total_thickness
+        if short > 0:
+            layers = list(self.soil.layers)
+            layers[-1] = replace(layers[-1],
+                                 thickness=layers[-1].thickness + short)
+            self.soil = replace(self.soil, layers=layers)
+
+    def _extension_note(self) -> Optional[str]:
+        """The warning of a run on an extended last layer, or None."""
+        given = self.profile_depth_given
+        L = self.shaft.length
+        if given is None or L <= given + 1e-9:
+            return None
+        return (f"The soil profile ends at {given:g} m and the shaft base "
+                f"is at {L:g} m: the last layer was taken to go on to the "
+                f"base (extend_last_layer). The side resistance from "
+                f"{given:g} m to {L:g} m and the whole base resistance are "
+                f"in ground nobody explored; confirm it before relying on "
+                f"this capacity.")
+
+    def _given_soil(self) -> ShaftSoilProfile:
+        """The soil profile as its layers were given, before
+        ``extend_last_layer`` carried the last one on (GM-318)."""
+        given = self.profile_depth_given
+        extra = (self.soil.total_thickness - given
+                 if given is not None else 0.0)
+        if extra <= 1e-9:
+            return self.soil
+        layers = list(self.soil.layers)
+        layers[-1] = replace(layers[-1],
+                             thickness=layers[-1].thickness - extra)
+        return replace(self.soil, layers=layers)
+
+    def _extension_choice(self, base: Optional[float] = None) -> dict:
+        """The choice "soil below the profile" of a run on an extended last
+        layer; ``base`` the base depth (m), the shaft's when left out (a
+        capacity-against-length curve gives its deepest length). The depth
+        the layers given reach is read from them, so a curve whose design
+        shaft ends inside the profile (``profile_depth_given`` None) gets
+        the choice too (GM-318 re-check N1)."""
+        from geotech_common.choices import choice, how_given
+        base = self.shaft.length if base is None else base
+        given = self._given_soil().total_thickness
+        return choice(
+            "soil below the profile",
+            f"last layer taken to go on from {given:g} m "
+            f"to the base at {base:g} m",
+            how_given(self.extend_last_layer, False,
+                      name="extend_last_layer"),
+            "extend_last_layer: the side resistance below the profile and "
+            "the base resistance are in ground that was not explored "
+            "(GEC-10 takes the base resistance from the ground at and to "
+            "2B below the base, Eqs. 10-14 and 10-19); no held manual "
+            "prints this extension",
+            ["layers given down to the base (the default refuses a shaft "
+             "longer than the profile)"])
 
     def _gec10_beta(self, layer, sigma_v: float, where: str) -> dict:
         """GEC-10 (2018) Sec. 10.3.5.1 beta of a cohesionless layer, each
@@ -1360,9 +1480,11 @@ class DrillShaftAnalysis:
         Q_allowable = Q_ultimate / self.factor_of_safety
 
         choices = []
+        extended = self._extension_note()
         if report:
             choices = (
-                self._side_choices(layer_results, Qs_sand, Q_ultimate)
+                ([self._extension_choice()] if extended else [])
+                + self._side_choices(layer_results, Qs_sand, Q_ultimate)
                 + self._clay_side_choices(layer_results, Qs_clay,
                                           Q_ultimate)
                 + ([side_n60_choice(no_n60)] if no_n60 else [])
@@ -1390,6 +1512,7 @@ class DrillShaftAnalysis:
             sigma_v_tip=sigma_v_tip,
             base_steps=_rounded(base_steps, sig=("s",)),
             choices=choices,
+            warnings=[extended] if extended else [],
         )
 
     def _tip_index(self, L: float) -> int:
@@ -1868,28 +1991,28 @@ class DrillShaftAnalysis:
         from N60 that ``sigma_p_correlation``; ``soil`` replaces the
         profile.
 
-        The trial raises no warning (:data:`_IN_TRIAL`; numpy's
-        floating-point notices off through ``np.errstate``, which is per
-        thread): the analysis it was copied from has raised the
-        profile's. No ``warnings.catch_warnings`` here: it swaps the
-        process's filters, and two calls in threads whose blocks
-        interleaved left every warning silenced for good (GM-316 review
-        A1)."""
+        Numpy's floating-point notices are off in the trial through
+        ``np.errstate``, which is per thread. A warning the copy raises
+        again (a casing deeper than the shaft, when ``changes`` rebuild
+        the shaft) is one the analysis raised already, and the call lists
+        each text once. The shaft-longer-than-the-profile warning this
+        once quieted is gone: that case is refused, or run with
+        ``extend_last_layer`` and said in the result (GM-318). No
+        ``warnings.catch_warnings`` here: it swaps the process's filters,
+        and two calls in threads whose blocks interleaved left every
+        warning silenced for good (GM-316 review A1)."""
         soil = self.soil if soil is None else soil
         if correlation is not None:
             soil = replace(soil, layers=[
                 replace(lay, sigma_p_correlation=correlation)
                 if lay.soil_type == "cohesionless" and not lay.OCR > 0
                 else lay for lay in soil.layers])
-        token = _IN_TRIAL.set(True)
         try:
             with np.errstate(all="ignore"):
                 r = replace(self, soil=soil, **changes)._compute(
                     sublayer=sublayer, report=False)
         except ValueError as exc:
             return f"refused: {exc}"
-        finally:
-            _IN_TRIAL.reset(token)
         return _values(r, part)
 
     def _top_zone_choice(self, layer_results) -> Optional[dict]:
@@ -2131,8 +2254,7 @@ class DrillShaftAnalysis:
         t = sum(r["bottom_m"] - r["top_m"] for r in clay)
         su = (sum(r["su_kPa"] * (r["bottom_m"] - r["top_m"]) for r in clay)
               / t if t > 0 else su_tip)
-        return {"top_m": L, "bottom_m": z2,
-                "profile_bottom_m": self.soil.total_thickness,
+        return {"top_m": L, "bottom_m": z2, **self._profile_bottom(),
                 "rows": rows, "su_kPa": su, "su_tip_kPa": su_tip}
 
     def _n60_zone(self, tip_layer, B: float) -> dict:
@@ -2162,9 +2284,19 @@ class DrillShaftAnalysis:
         t = sum(r["bottom_m"] - r["top_m"] for r in used)
         N60 = (sum(r["N60"] * (r["bottom_m"] - r["top_m"]) for r in used)
                / t if t > 0 else tip_layer.N60)
-        return {"top_m": L, "bottom_m": z2,
-                "profile_bottom_m": self.soil.total_thickness,
+        return {"top_m": L, "bottom_m": z2, **self._profile_bottom(),
                 "rows": rows, "N60": N60, "N60_tip": tip_layer.N60}
+
+    def _profile_bottom(self) -> dict:
+        """The depth the layers given reach (``profile_bottom_m``) and,
+        with the last carried on to the base (``extend_last_layer``), that
+        base (``carried_on_to_m``): GM-318 review B1, the base steps gave
+        the carried-on depth as the profile's end."""
+        given = self.profile_depth_given
+        total = self.soil.total_thickness
+        if given is None or given >= total - 1e-9:
+            return {"profile_bottom_m": total}
+        return {"profile_bottom_m": given, "carried_on_to_m": total}
 
     def _tip_su(self, tip_layer, layer_results):
         """su (kPa) of the layer the base is in and where it came from:
@@ -2569,7 +2701,12 @@ class DrillShaftAnalysis:
         -------
         list of dict
             Each dict has 'depth_m', 'Q_ultimate_kN', 'Q_skin_kN', 'Q_tip_kN'
-            and 'Q_allowable_kN' (Q_ultimate / factor_of_safety).
+            and 'Q_allowable_kN' (Q_ultimate / factor_of_safety), and
+            'warnings' where that length's run had any (with
+            ``extend_last_layer``, a length past the profile: the last
+            layer carried on to its base). Each length is run on the layers
+            as given, as a run of that length alone would be (GM-318
+            review A1).
         """
         if depth_max is None:
             depth_max = min(self.shaft.length, self.soil.total_thickness)
@@ -2588,11 +2725,25 @@ class DrillShaftAnalysis:
 
         # Use a copy of the shaft per trial depth rather than temporarily
         # mutating the shared shaft.length (re-entrant / thread-safe).
+        # Each trial takes the layers as given (GM-318 review A1): the last
+        # layer carried on to this shaft's base would put ground nobody
+        # explored in a shorter trial's 2B zone below its base, unsaid; a
+        # trial past the profile carries the layer on to its own base.
+        soil = self._given_soil()
+        given = soil.total_thickness
         missed = []
         for d in depths:
+            if d > given + 1e-9 and not self.extend_last_layer:
+                # a short reason, not the whole refusal again for each
+                # (GM-318 review C7)
+                missed.append({"depth_m": round(float(d), 2),
+                               "reason": f"below the profile, which ends "
+                                         f"at {given:g} m"})
+                continue
             try:
                 trial_shaft = replace(self.shaft, length=float(d))
-                trial = replace(self, shaft=trial_shaft)
+                trial = replace(self, shaft=trial_shaft, soil=soil,
+                                profile_depth_given=None)
                 r = trial._compute(report=False)
                 results.append({
                     "depth_m": round(d, 2),
@@ -2600,6 +2751,7 @@ class DrillShaftAnalysis:
                     "Q_skin_kN": round(r.Q_skin, 1),
                     "Q_tip_kN": round(r.Q_tip, 1),
                     "Q_allowable_kN": round(r.Q_allowable, 1),
+                    **({"warnings": r.warnings} if r.warnings else {}),
                 })
             except Exception as exc:
                 missed.append({"depth_m": round(float(d), 2),
