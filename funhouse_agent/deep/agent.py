@@ -59,6 +59,7 @@ from funhouse_agent.dispatch import (ANALYSIS_MODULES, REFERENCE_MODULES,
                                      held_references, reference_coverage,
                                      references_without)
 from funhouse_agent.reference_docs import (chart_reads_available,
+                                           table_catalogs_available,
                                            worked_example_pages_available)
 from funhouse_agent.reviewer import REVIEWER_DEEP_PROMPT, consultant_role
 from funhouse_agent.system_prompt import (REFERENCE_MODULES_CLAUSE,
@@ -100,8 +101,10 @@ from funhouse_agent.deep.setup_agent import build_setup_subagent
 from funhouse_agent.deep.tools import (
     DEFAULT_MAX_RESULT_CHARS,
     GEOTECH_VISION_TOOLS,
+    REFERENCE_PAGE_READERS,
     make_core_tools,
     make_vision_tools,
+    reference_page_readers,
 )
 from funhouse_agent.deep.vision_engine import LangChainVisionEngine
 
@@ -191,8 +194,9 @@ def references_description(chart_reads: Optional[bool] = None) -> str:
     review, item 3: it had named a NOAA reference that does not exist and
     left out Eurocode 7, AASHTO 1993, the USACE EMs and Caltrans); those
     with no chapter text or no figure catalog in the library on the path
-    are named as such, and chart reads are promised only where this host
-    can reach the reference PDFs (``chart_reads`` None: ask
+    are named as such, and chart reads (and reads of a table printed only
+    on its page) are promised only where this host can reach the
+    reference PDFs (``chart_reads`` None: ask
     :func:`~funhouse_agent.reference_docs.chart_reads_available`; the
     2026-11-10 reach audit found both said of every reference and host).
     """
@@ -212,18 +216,24 @@ def references_description(chart_reads: Optional[bool] = None) -> str:
     if no_figures:
         searches += (" (" + " and ".join(no_figures) + " have no figure "
                      "catalog)")
+    tables = table_catalogs_available()
     if chart_reads:
         wants = ("a required factor of safety, or a value read off a design "
                  "chart")
         charts = (", cites the specific reference and section/table/figure "
-                  "number, and reads chart values off the actual figures.")
+                  "number, and reads chart values off the actual figures"
+                  + (" and a table's values off its printed page where they "
+                     "are printed only there" if tables else "") + ".")
     else:
         wants = "or a required factor of safety"
         charts = (", and cites the specific reference and "
                   "section/table/figure number. It cannot read a value off a "
                   "chart here (the reference PDFs are not on this host): it "
                   "finds and cites a figure, but a value printed only on a "
-                  "chart is not available.")
+                  "chart is not available."
+                  + (" Nor can it read a table whose values are printed only "
+                     "on its page: it finds the table and cites its printed "
+                     "page." if tables else ""))
     return (
         "The geotechnical reference librarian. Delegate to it whenever you "
         "need a code provision, a recommended method, a parameter range, "
@@ -258,13 +268,14 @@ def build_references_subagent(
     """Build the ``references`` sub-agent spec (reference librarian).
 
     Scoped to ``REFERENCE_MODULES`` core tools plus the ``read_reference_figure``
-    vision tool (so it can read values off design charts) where this host
+    and ``read_reference_table`` vision tools (so it can read values off
+    design charts and off a table printed only on its page) where this host
     can reach the reference PDFs
     (:func:`~funhouse_agent.reference_docs.chart_reads_available`); where it
-    cannot, the tool is left out and the prompt and description say no
-    chart value can be read here. The vision tool needs an engine to
-    actually call the model; offline it returns a clear "vision not
-    available" error rather than raising.
+    cannot, both are left out and the prompt and description say no chart
+    value, and no value printed only on a table's page, can be read here.
+    The vision tool needs an engine to actually call the model; offline it
+    returns a clear "vision not available" error rather than raising.
 
     Parameters
     ----------
@@ -314,7 +325,7 @@ def build_references_subagent(
         engine=engine,
         attachments=attachments,
         save_fn=save_fn,
-        include={"read_reference_figure"},
+        include=reference_page_readers(),
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     ) if charts else []) + [make_calculate_tool()]
@@ -664,7 +675,7 @@ def build_calc_subagent(
         # equation or the micropile tables and hand-calculated instead. The
         # two pure search modules stay with the references librarian.
         allowed = allowed | (frozenset(REFERENCE_MODULES)
-                             - {"reference_db", "figure_db"})
+                             - {"reference_db", "figure_db", "table_db"})
     tools = make_core_tools(
         allowed_agents=allowed,
         max_result_chars=max_result_chars,
@@ -834,11 +845,11 @@ def build_primary_tools(
         soil-classification charts (the Document Review page: no; BACKLOG
         RI-34).
     geotech_vision_tools : bool, optional
-        Whether the geotech page's two reference readers
+        Whether the geotech page's reference readers
         (:data:`~funhouse_agent.deep.tools.GEOTECH_VISION_TOOLS`) are added
         to the vision kit's tools (the Document Review page: no; DR-04).
-        ``read_reference_figure`` is left out where this host cannot reach
-        the reference PDFs
+        ``read_reference_figure`` and ``read_reference_table`` are left out
+        where this host cannot reach the reference PDFs
         (:func:`~funhouse_agent.reference_docs.chart_reads_available`), and
         ``view_worked_example_source`` where it cannot reach the worked
         examples' source PDFs (:func:`~funhouse_agent.reference_docs.
@@ -860,8 +871,11 @@ def build_primary_tools(
     readers = None
     if geotech_vision_tools:
         readers = dict(GEOTECH_VISION_TOOLS)
-        if not chart_reads_available():
-            readers.pop("read_reference_figure", None)
+        offered = (reference_page_readers() if chart_reads_available()
+                   else set())
+        for name in REFERENCE_PAGE_READERS:
+            if name not in offered:
+                readers.pop(name, None)
         if not worked_example_pages_available():
             readers.pop("view_worked_example_source", None)
     return core_tools + make_vision_tools(
@@ -1562,7 +1576,7 @@ def _call_scopes(allowed_agents) -> dict:
     _calc_scope = frozenset(allowed_agents or ())
     if _calc_scope == frozenset(ANALYSIS_MODULES):      # as build_calc_subagent
         _calc_scope |= (frozenset(REFERENCE_MODULES)
-                        - {"reference_db", "figure_db"})
+                        - {"reference_db", "figure_db", "table_db"})
     return {"references": REFERENCE_MODULES,
             "reviewer": REFERENCE_MODULES,
             "calc": _calc_scope,

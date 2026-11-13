@@ -286,18 +286,44 @@ _NO_CHART_READS = (
     "chart-reading tool): if a value lives only in a design chart, find "
     "the figure with figure_search, cite it, and say its value could not "
     "be read; never give a chart value from its caption or from memory. ")
+#: The librarian's table sentence where a table's printed page can be read
+#: (the same host rule as the chart sentence), and where not.
+_TABLE_READS = (
+    "A printed table is found with table_search or table_get, whose "
+    "how_to_read says where its values are: the section to fetch, the "
+    "lookup to call, or the read_reference_table call for a table printed "
+    "only on its page (never give a table value from its caption or from "
+    "memory). ")
+_NO_TABLE_READS = (
+    "A printed table is found with table_search or table_get, whose "
+    "how_to_read says where its values are (the section to fetch or the "
+    "lookup to call); a table whose values are printed only on its page "
+    "cannot be read here: cite the table and its printed page and say its "
+    "values could not be read; never give a table value from its caption "
+    "or from memory. ")
 
 
-def consultant_role(chart_reads: Optional[bool] = None) -> str:
-    """The librarian's role (:data:`CONSULTANT_ROLE`), its chart sentence
-    as this host allows (``chart_reads`` None: ask
-    :func:`funhouse_agent.reference_docs.chart_reads_available`)."""
+def consultant_role(chart_reads: Optional[bool] = None,
+                    tables: Optional[bool] = None) -> str:
+    """The librarian's role (:data:`CONSULTANT_ROLE`), its chart and table
+    sentences as this host allows (``chart_reads`` None: ask
+    :func:`funhouse_agent.reference_docs.chart_reads_available`;
+    ``tables`` None: whether the library has table catalogs,
+    :func:`funhouse_agent.reference_docs.table_catalogs_available`, and
+    with none the table sentence is left out)."""
+    from funhouse_agent import reference_docs
     if chart_reads is None:
-        from funhouse_agent.reference_docs import chart_reads_available
-        chart_reads = chart_reads_available()
-    if chart_reads:
-        return CONSULTANT_ROLE
-    return CONSULTANT_ROLE.replace(_CHART_READS, _NO_CHART_READS)
+        chart_reads = reference_docs.chart_reads_available()
+    if tables is None:
+        tables = reference_docs.table_catalogs_available()
+    role = CONSULTANT_ROLE
+    if not tables:
+        role = role.replace(_TABLE_READS, "")
+    elif not chart_reads:
+        role = role.replace(_TABLE_READS, _NO_TABLE_READS)
+    if not chart_reads:
+        role = role.replace(_CHART_READS, _NO_CHART_READS)
+    return role
 
 
 def consultant_framing(chart_reads: Optional[bool] = None) -> str:
@@ -328,7 +354,7 @@ CONSULTANT_ROLE = (
     "holds only some of your words) found nothing for the whole query. A "
     "lookup that errored, or one you did not make, is not "
     "\"not found\": say it failed or was not made. "
-    + _CHART_READS +
+    + _CHART_READS + _TABLE_READS +
     "Do NOT "
     "run engineering analyses — that is the asker's job. When the question "
     "gives the inputs and the reference gives the equation or table, return "
