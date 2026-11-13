@@ -225,6 +225,12 @@ _PRINTED_ONLY = (
     "own and say what it rests on: a value from memory, a unit conversion, "
     "a curve extended past its printed end.\n\n")
 
+#: The same for a printed table: no chart wording.
+_PRINTED_ONLY_TABLE = (
+    "Report only what is printed on this page. Mark anything else as your "
+    "own and say what it rests on: a value from memory, a unit conversion, "
+    "a value between printed rows or columns.\n\n")
+
 #: How long the reason is when code's measurement gave no value.
 _NO_VALUE_REASON_CHARS = 160
 
@@ -530,10 +536,13 @@ def _dispatch_read_reference_table_at_budget(arguments, engine):
             "column heads and the unit printed in the heads, the caption or "
             "a note; give any footnote or note that applies to it. Do not "
             "interpolate between rows unless asked, and say so if you do.\n\n"
-            + _PRINTED_ONLY +
+            + _PRINTED_ONLY_TABLE +
             f"Request: {question}")
 
     def job(i, page, image_bytes, info):
+        # the side call keeps the figure reader's kind: the core binds the
+        # user's question and the one-image note by kind
+        # (turn_question.QUESTION_KINDS), which has no table kind
         return lambda: _vt.ask_vision(
             engine, image_bytes,
             vision_view.with_location(prompt_for(i, page),

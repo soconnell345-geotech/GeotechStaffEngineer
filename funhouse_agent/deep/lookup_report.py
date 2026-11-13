@@ -66,6 +66,8 @@ _NO_LOOKUP_ADVICE = (" Nothing in the answer comes from the references; say "
 #: The reason given for a chart read whose reader said the figure is not on
 #: the page it was shown.
 NOT_ON_THE_PAGE = "the reader said the figure is not on the page"
+#: The same for a table page read.
+TABLE_NOT_ON_THE_PAGE = "the reader said the table is not on the page"
 
 #: Said where the helper's model-call budget ended the consult.
 _BUDGET_LINE = (" The consult ended on its call budget, so its answer may "
@@ -83,8 +85,8 @@ LOOKUPS_NOTE = (
     "Where it says the consult ended on its call budget, its answer may be "
     "incomplete: say so where it matters. \"Came back empty\" means the "
     "reference was searched and found nothing that holds all the words "
-    "asked for (each such search is named with its query), or a chart's "
-    "reader found the figure not on its page.")
+    "asked for (each such search is named with its query), or a page "
+    "reader found the figure or table not on its page.")
 
 
 def _trim(text: str, room: int) -> str:
@@ -288,8 +290,10 @@ def lookup_outcomes(rec) -> list:
         elif step["name"] in ("read_reference_figure",
                               "read_reference_table") and _read_not_on_page(
                 data, args):
-            # no value was read off a page the figure is not on
-            row.update(outcome="empty", reason=NOT_ON_THE_PAGE)
+            # no value was read off a page the figure or table is not on
+            row.update(outcome="empty", reason=(
+                TABLE_NOT_ON_THE_PAGE if step["name"] == "read_reference_table"
+                else NOT_ON_THE_PAGE))
         out.append(row)
     for i, row in enumerate(out):
         if row["outcome"] != "ok":
@@ -331,7 +335,8 @@ def lookup_block(rec) -> str:
     for o in failed[:MAX_LISTED]:
         what = "errored" if o["outcome"] == "errored" else "came back empty"
         reason = (f": {o['reason']}" if o["outcome"] == "errored"
-                  or o["reason"] in (NO_WHOLE_MATCH, NOT_ON_THE_PAGE)
+                  or o["reason"] in (NO_WHOLE_MATCH, NOT_ON_THE_PAGE,
+                                     TABLE_NOT_ON_THE_PAGE)
                   else "")
         lines.append(f"- {o['name']} {what}{reason}")
     if len(failed) > MAX_LISTED:

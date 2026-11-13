@@ -181,6 +181,33 @@ def test_a_chart_read_off_the_wrong_page_came_back_empty():
             "the reader said the figure is not on the page") in block
 
 
+def test_a_table_read_off_the_wrong_page_is_a_table_read():
+    """A table page read is named and counted as a table read, and its
+    reason names the table, not a figure."""
+    def table_read(analysis):
+        return json.dumps({"reference": "made_up", "table_number": "9-9",
+                           "pages_read": [{"pdf_page_index": 4,
+                                           "analysis": analysis}]})
+    rec = _record([
+        ("read_reference_table", {"reference": "made_up",
+                                  "table_number": "9-9"},
+         table_read("NOT ON THIS PAGE: the page is text."), None),
+        ("read_reference_table", {"reference": "made_up",
+                                  "table_number": "9-9"},
+         table_read("Table 9-9, row A, column B: a made-up 1.2."), None),
+    ])
+    outcomes = lookup_outcomes(rec)
+    assert [o["outcome"] for o in outcomes] == ["empty", "ok"]
+    assert outcomes[0]["name"] == "read_reference_table made_up table 9-9"
+    assert outcomes[0]["recovered"]
+    rec = _record([("read_reference_table",
+                    {"reference": "made_up", "table_number": "9-9"},
+                    table_read("NOT ON THIS PAGE."), None)])
+    assert ("- read_reference_table made_up table 9-9 came back empty: "
+            "the reader said the table is not on the page") in \
+        lookup_block(rec)
+
+
 def test_said_not_on_page_matches_the_whole_figure_number():
     """Asked for 7-1, Figure 7-15 is another figure; asked for 7-15, so
     is 7-150 (review follow-up 5)."""

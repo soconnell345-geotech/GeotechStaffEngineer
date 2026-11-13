@@ -248,6 +248,8 @@ def test_a_read_sends_at_most_four_pages_and_names_the_rest(made_up_table):
         assert "FIRST confirm you are looking at Table 9-9" in prompt
         assert "printed over 6 pages" in prompt
         assert "Request: read row A, column B" in prompt
+        # a table read carries no chart wording
+        assert "curve" not in prompt and "axis" not in prompt
     for page in out["pages_read"]:
         assert page["analysis"].startswith("Table 9-9")
         assert page["view"] and page["view_px"]
