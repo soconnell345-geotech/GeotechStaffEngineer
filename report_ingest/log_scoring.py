@@ -26,7 +26,8 @@ lives in the repo's harness folder. The rules, and why each is what it is:
   the templates print only the drives, and neither the grid nor the reader
   does arithmetic by design, so counting that as a miss would score a
   decision rather than a defect. That credit is given only for a record of
-  as many increments as a printed rule is held for (``N_RULES``: three).
+  as many increments as a printed rule is held for (``N_RULES``: three,
+  and four, the three and the occasional fourth).
   For any other number the scorer works out nothing: where the drives stand
   at that depth with no N printed, the answer's N is SET ASIDE
   (``LogScore.set_aside``, group ``n_no_rule``), counted and listed but in
@@ -260,14 +261,22 @@ def _penetrations_agree(got: Sequence[Any], want: Sequence[Any]) -> bool:
 #: blows to advance the second and third increments are summed to give the
 #: N-value" (FHWA NHI-06-088, Soils and Foundations Reference Manual
 #: Vol. I, Sec. 3.7, p. 3-51; ``geotech_references/fhwa_soils_foundations``
-#: chapter 3). No other count has an entry, because no page held says how
-#: its increments are summed: a record driven in six increments follows a
-#: different procedure (EN 1997-2:2007 Sec. 4.6.2, p. 49, sends the test to
-#: EN ISO 22476-3, which the library does not hold; Sec. 4.6.1 (2)P gives N
-#: as the blows "for 300 mm of sampler penetration ... below a seating
-#: drive" and prints no increments), and for four Fig. 3-20 (p. 3-52)
-#: prints both an "occasional fourth increment" and "the last 300 mm".
-N_RULES: Dict[int, Tuple[int, ...]] = {3: (1, 2)}
+#: chapter 3). A record of four drives keeps that rule: Fig. 3-20 (FHWA
+#: NHI-06-088 Vol. I, Sec. 3.7, p. 3-52) draws "First Increment", "Second
+#: Increment", "Third Increment" and "Note: Occasional Fourth Increment Used
+#: to provide additional soil material", so the N is still the 2nd + 3rd.
+#: That is the record's own rule for a fourth drive, cited from the same
+#: page ("Fig. 3-20, FHWA NHI-06-088 Vol. I, p. 3-52",
+#: ``log_floor.FOURTH_INCREMENT_SOURCE``, RI-70). The figure also prints
+#: "the last 300 mm"; the lead's call of 2026-11-13 (RI-79 review) keeps
+#: four drives on the record's reading. No other count has an entry,
+#: because no page held says how its increments are summed: a record driven
+#: in six increments follows a different procedure (EN 1997-2:2007 Sec.
+#: 4.6.2, p. 49, sends the test to EN ISO 22476-3, which the library does
+#: not hold; Sec. 4.6.1 (2)P gives N as the blows "for 300 mm of sampler
+#: penetration ... below a seating drive" and prints no increments), and
+#: the figure prints one fourth increment, so five or more is not its case.
+N_RULES: Dict[int, Tuple[int, ...]] = {3: (1, 2), 4: (1, 2)}
 
 #: The set-aside groups a score can carry (``LogScore.set_aside``): counted
 #: and listed, never in a metric's total.

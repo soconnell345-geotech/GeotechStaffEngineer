@@ -10,12 +10,13 @@ N worked out by a rule nothing held prints for that number of increments.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from report_ingest.log_scoring import (
     METRICS, N_RULES, SET_ASIDE, _blow_entries, _blow_numbers, rescore_run,
-    rescore_saved, score_record,
+    rescore_saved, score_grid, score_record,
 )
 from report_ingest.model import Investigation, Quantity, SPT, Sample
 
@@ -136,8 +137,29 @@ def test_a_sheet_without_the_mark_is_scored_as_before():
 
 # -- 4. N from the increments -----------------------------------------------------
 
-def test_the_one_rule_held_is_three_increments():
-    assert N_RULES == {3: (1, 2)}
+def test_the_rule_held_is_three_increments_and_the_occasional_fourth():
+    """p. 3-51's 2nd + 3rd, and for a fourth drive the same (Fig. 3-20,
+    p. 3-52, the record's own reading; the lead's call of 2026-11-13)."""
+    assert N_RULES == {3: (1, 2), 4: (1, 2)}
+
+
+def test_four_increments_with_no_printed_n_are_credited_as_on_master():
+    truth = _truth({"top": 3.0, "bottom": 3.6, "blows": [5, 9, 12, 14],
+                    "n": 21})
+    record = _record(SPT(depth_top=_m(3.0), blows=[5, 9, 12, 14]))
+    score = score_record(truth, [record])
+    assert (score.scores["n_value"].found,
+            score.scores["n_value"].total) == (1, 1)
+    assert score.set_aside == {}
+
+
+def test_five_increments_with_no_printed_n_are_still_set_aside():
+    truth = _truth({"top": 3.0, "bottom": 3.75,
+                    "blows": [5, 9, 12, 14, 16], "n": 21})
+    record = _record(SPT(depth_top=_m(3.0), blows=[5, 9, 12, 14, 16]))
+    score = score_record(truth, [record])
+    assert "n_value" not in score.scores
+    assert score.set_aside == {"n_no_rule": ["N=21 at 3.0 m (5 increments)"]}
 
 
 def test_three_increments_with_no_printed_n_are_credited_by_the_rule():
@@ -207,6 +229,30 @@ def test_a_struck_field_is_in_no_total_and_an_unstruck_one_is_scored():
     unstruck = score_record(truth, [record])
     assert (unstruck.scores["fields"].found,
             unstruck.scores["fields"].total) == (1, 2)
+
+
+# -- the grid scorer's own branches (items 4 and 6) -------------------------------
+
+def test_the_grid_scorer_sets_aside_an_n_with_no_rule_and_a_struck_field():
+    """The grid path: six increments standing in a blows column with no N
+    printed set the answer's N aside, and a struck field is in no total."""
+    cell = SimpleNamespace(depth=3.0, depth_top=None, depth_bottom=None,
+                           column_id="c1", numbers=[1, 2, 2, 3, 3, 4],
+                           bbox=(0.0, 0.0, 1.0, 1.0))
+    columns = {"c1": SimpleNamespace(names=("blows",))}
+    grid = SimpleNamespace(rows=[cell], unit="m", column=columns.get,
+                           fields={"project": "Made-up Road"}, layers=[],
+                           water=[], warnings=[])
+    truth = _truth(SIX, fields={"client": "A Client",
+                                "project": "Made-up Road"},
+                   fields_struck=["client"])
+    score = score_grid(truth, grid)
+    assert "n_value" not in score.scores
+    assert score.set_aside["n_no_rule"] == ["N=12 at 3.0 m (6 increments)"]
+    assert score.scores["blows"].found == 1
+    assert (score.scores["fields"].found, score.scores["fields"].total) == (
+        1, 1)
+    assert score.set_aside["fields_struck"] == ["client='A Client'"]
 
 
 # -- a saved run, re-scored with no model call ----------------------------------------

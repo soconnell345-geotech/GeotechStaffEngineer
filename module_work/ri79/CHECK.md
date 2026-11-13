@@ -104,15 +104,19 @@ What is held in print (searched `geotech-references/` at the pinned
   to EN ISO 22476-3, which the library does not hold. No copy of the AGS4
   data dictionary is in the repository (searched for `ISPT_INC`, `ISPT_SEAT`:
   only `ags_truth.py` itself).
-- **Four increments: not settled by the print.** Fig. 3-20 (p. 3-52) prints
-  both "Occasional Fourth Increment Used to provide additional soil
-  material" and "total number of blows to drive sampler last 300 mm".
+- **Four increments: the same rule** (the lead's call, 2026-11-13; Call 1).
+  Fig. 3-20 (FHWA NHI-06-088 Vol. I, p. 3-52) draws the three increments
+  and "Occasional Fourth Increment Used to provide additional soil
+  material", so the N is still the 2nd + 3rd. That is the record's own rule
+  for a fourth drive, from the same page (`log_floor.py`,
+  `FOURTH_INCREMENT_SOURCE`, RI-70). The figure also prints "total number
+  of blows to drive sampler last 300 mm".
 
 So:
 
-- (a) `N_RULES = {3: (1, 2)}` with the cite in the code
-  (`log_scoring.py:257-270`); `_n_by_rule` computes an N for three
-  increments only.
+- (a) `N_RULES = {3: (1, 2), 4: (1, 2)}` with the cites in the code
+  (`log_scoring.py:257-279`); `_n_by_rule` computes an N for three
+  increments and for four, the 2nd + 3rd in both.
 - (b) For any other number of increments nothing is computed. Where the
   answer has an N, the record prints none, and the answer's drives stand at
   that depth on a drive record with no N, the N goes to
@@ -128,6 +132,8 @@ So:
 | record prints N=12 | found | found |
 | record prints N=11 | miss | miss |
 | answer N=21 on 5, 9, 12, record has the drives only | found | found |
+| answer N=21 on 5, 9, 12, 14, record has the drives only | found | found |
+| answer N=21 on 5, 9, 12, 14, 16, record has the drives only | found (9 + 12) | set aside |
 
 `set_aside` is in the run file's `after` (and in `model_alone` /
 `floor_alone`) only when not empty, as `{group: {count, what, items}}`.
@@ -167,7 +173,8 @@ set aside.
 
 ## Tests
 
-New file `report_ingest/tests/test_log_scoring_ri79.py` (33 tests) and seven
+New file `report_ingest/tests/test_log_scoring_ri79.py` (35 tests: 32 as
+first built, three more from the review fixes below) and seven
 new tests in `module_work/report_ingest_harness/tests/test_ags_truth.py`
 (13 with parameters); two assertions there changed (`"1"` to `"D1"`, `"9"`
 to `"B9"`).
@@ -233,7 +240,8 @@ re-scored, and the set-aside counts. It reads no PDF and calls no model. Add
 `--write` to replace each run file's `after` (the saved one is kept beside
 it as `after_as_run`, and writing into a tracked path is refused). In code:
 `report_ingest.log_scoring.rescore_run(logs_dir, truth_dir, write=False)`.
-It prints counts only.
+It prints counts only. It re-scores `after` only: `before`, the grid score,
+needs the PDF and stays as saved.
 
 Rebuild the sheets first: items 3, 5 and 6 are on the sheet
 (`blows_kind`, `id`, `fields_from_data`). Items 1, 2 and 4 apply to the old
@@ -256,20 +264,29 @@ sheets as they are.
 4. Header fields: a reviewer who may open the scans strikes, per sheet, the
    fields in `fields_from_data` the form does not print, then re-score.
 5. The hand-truthed corpus logs, re-scored the same way, to confirm their
-   totals move only where a record kept increments in one string or a
-   four-increment record prints no N (expected: few or none).
+   totals move only in these cases (expected: few or none). A four-drive
+   record with no printed N does not move: it keeps the 2nd + 3rd credit.
+   - A record kept its increments in one string.
+   - An answer N on a record of 1, 2 or 5 or more increments, whose drives
+     stand at that depth with no printed N, goes from a miss to set aside
+     (`n_no_rule`). On 5 or more, an answer N equal to the 2nd + 3rd, which
+     master credited, also goes to set aside.
+   - A record's lone unit-less `A/B` is now one count over a penetration
+     (Call 5).
 
 ## Calls made
 
 Each is a judgement between two defensible readings.
 
-1. **Four increments have no rule.** The repository already reads Fig. 3-20
-   as "the N is still the 2nd + 3rd" for a fourth increment
-   (`log_floor.py`, RI-50 / RI-70), and master's scorer credited any record
-   of three or more increments by 2nd + 3rd. I took the stricter reading:
-   the figure prints "last 300 mm" as well, and a four-count record is also
-   what a six-increment test halted early looks like. Other reading: add
-   `4: (1, 2)` to `N_RULES` with the Fig. 3-20 cite; one line.
+1. **Four increments keep the cited rule: the lead decided this on
+   2026-11-13.** The repository already reads Fig. 3-20 (p. 3-52) as "the N
+   is still the 2nd + 3rd" for a fourth increment (`log_floor.py`, RI-50 /
+   RI-70), and master's scorer credited such a record by 2nd + 3rd. The
+   branch first took the stricter reading: the figure prints "last 300 mm"
+   as well, and a four-count record is also what a six-increment test halted
+   early looks like. The lead kept four increments on the record's reading,
+   so `N_RULES` has `4: (1, 2)` with the Fig. 3-20 cite, and old sheets do
+   not move on four-drive records.
 2. **The bundled AGS4 dictionary was not used as a held page.**
    `python-ags4` (an optional dependency, installed here only to run the
    tests) ships the AGS4 standard dictionary. It names `ISPT_INC1` and
@@ -311,6 +328,25 @@ Each is a judgement between two defensible readings.
    that prints the type and number in two columns would be `D` and `1`.
 9. **`fields_from_data` lists the scored fields only** (those in
    `FIELD_MAP`): an unscored field needs no strike.
+
+## Review fixes
+
+From the branch's review (verdict "merge", five findings), on
+`fix/ri79-review`:
+
+1. **Four increments keep the cited rule** (finding 1, the lead's call).
+   `N_RULES` is `{3: (1, 2), 4: (1, 2)}`, cited to Fig. 3-20, p. 3-52, as
+   `log_floor.py` cites it. New tests: a four-increment record with drives
+   and no printed N is credited; a five-increment one is still set aside.
+   The test that pinned `{3: (1, 2)}` now pins both entries.
+2. **A test for the grid scorer's new branches** (finding 3).
+   `test_the_grid_scorer_sets_aside_an_n_with_no_rule_and_a_struck_field`
+   builds a made-up grid with a six-increment answer in a `blows` column
+   (`n_no_rule` 1, no `n_value`) and one struck header field (`fields`
+   1/1).
+3. **This file's account of what moves** (findings 2, 4 and 5): the cases
+   under "To measure live" item 5, what a re-score leaves alone, the test
+   count, and Call 1.
 
 ## Noted, not fixed
 
