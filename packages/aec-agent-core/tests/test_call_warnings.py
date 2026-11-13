@@ -138,6 +138,16 @@ def package(params):
     assert CW.so_far() == []
 
 
+def test_a_warning_made_an_error_is_said_once():
+    """Re-check N3: under ``-W error`` the warning becomes the call's error;
+    it is not repeated under ``warnings``."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        r = _run("warn_once")
+    assert "tip below the profile: 1" in r["error"]
+    assert "warnings" not in r
+
+
 def test_two_calls_in_a_row_both_carry_it():
     # pytest's own default action shows a warning once per location; the
     # second call must still get it.

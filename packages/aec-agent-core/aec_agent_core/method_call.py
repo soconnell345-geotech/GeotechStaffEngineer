@@ -857,7 +857,12 @@ def run_method(mod, agent_name: str, method: str, parameters: dict,
     with collecting() as caught:
         result = _run_checked(mod, agent_name, method, parameters,
                               attachments, inputs, after)
-    return hide_working_folder(add_to_result(result, caught.texts))
+    texts = caught.texts
+    if isinstance(result, dict) and isinstance(result.get("error"), str):
+        # a warning made an error (``-W error``) is said once, in the error
+        # (GM-316 re-check N3)
+        texts = [t for t in texts if t not in result["error"]]
+    return hide_working_folder(add_to_result(result, texts))
 
 
 def _run_checked(mod, agent_name: str, method: str, parameters: dict,
