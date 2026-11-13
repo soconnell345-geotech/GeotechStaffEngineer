@@ -100,7 +100,10 @@ def test_an_account_name_is_whatever_windows_allows():
     letter are names. What Windows forbids in a name still is not one."""
     ident = identity.from_header_values(["CORP\\o'brien"])
     assert ident is not None and ident.username == "o'brien"
-    assert ident.multi_user and ident.key == "corp__o_brien"
+    # TA-39: a name the folder alphabet cannot spell carries its hash, so
+    # it shares no folder with o_brien (whose key is corp__o_brien)
+    assert ident.multi_user and ident.legacy_key == "corp__o_brien"
+    assert ident.key == f"corp__o_brien__{ident.name_hash}"
     assert identity.from_header_values(["CORP\\jos" + chr(233)]) is not None
     for bad in ("CORP\\a:b", "CORP\\a/b", "CORP\\a\\b", "CORP\\a*", "jdoe",
                 "CORP\\a" + chr(9) + "b"):
@@ -196,7 +199,9 @@ def test_the_app_service_exports_nothing(tmp_path, monkeypatch):
 def test_key_is_case_insensitive_and_folder_safe():
     a = identity.parse_principal("CORP\\J Doe", "header")
     b = identity.parse_principal("corp\\j doe", "header")
-    assert a.key == b.key == "corp__j_doe"
+    # TA-39: the space is outside the folder alphabet, so the key carries
+    # the name's hash and CORP\j_doe (key corp__j_doe) is someone else
+    assert a.key == b.key == f"corp__j_doe__{a.name_hash}"
     assert "\\" not in a.key and " " not in a.key
 
 
