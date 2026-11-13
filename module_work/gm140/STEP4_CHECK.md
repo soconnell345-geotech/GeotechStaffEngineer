@@ -480,7 +480,7 @@ reverse-curvature circles only); not a test.
 | `slope_stability/tests/test_usability_features.py` | 0 | 49 passed |
 | `slope_stability/tests/test_own_solution_or_no_number.py` | 0 | 26 passed, 1 xfailed |
 | `validation_examples/test_published_v026_slope.py` | 0 | 13 passed (the Spencer search, 4 minutes, in the first run; 12 rerun after the last code change) |
-| `validation_examples/test_published_v031_slope.py` | 0 | passed |
+| `validation_examples/test_published_v031_slope.py` | 0 | 10 passed |
 | `validation_examples/test_published_v043_slope_reinforced.py` | 0 | 8 passed, 1 xfailed |
 | `validation_examples/test_published_v054_anisotropic_su.py` | 0 | 4 passed, 1 xfailed |
 | `funhouse_agent/tests/test_slope_stability_adapter.py` | 0 | 92 passed |
