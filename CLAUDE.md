@@ -184,6 +184,11 @@ This repository builds three packages; the app also needs two more of the same p
   (`report_ingest/tables.py`, `docs/REPORT_TABLES.md`; sent to the dataset
   `GSE_REPORT_TABLES_DATASET` names; `GSE_REPORT_TABLES=0` turns it off;
   not yet run on Foundry, RI-212).
+  In the shared core since 2026-11-13 (so it ships with a core release,
+  INF-76): a Python warning raised inside a method reaches the agent under
+  `warnings` (`aec_agent_core/call_warnings.py`), and a value outside a
+  parameter's `allowed_values` is refused with a did-you-mean
+  (`method_call.py`).
   Before it, docs and tests only:
   field-session place names out of the current files (three field-feedback
   folders renamed; `test_public_text` guards the place words in every

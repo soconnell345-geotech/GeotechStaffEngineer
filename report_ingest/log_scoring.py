@@ -25,7 +25,23 @@ lives in the repo's harness folder. The rules, and why each is what it is:
   define it -- the second and third six inches -- stand at that depth. Half
   the templates print only the drives, and neither the grid nor the reader
   does arithmetic by design, so counting that as a miss would score a
-  decision rather than a defect;
+  decision rather than a defect. That credit is given only for a record of
+  as many increments as a printed rule is held for (``N_RULES``: three,
+  and four, the three and the occasional fourth).
+  For any other number the scorer works out nothing: where the drives stand
+  at that depth with no N printed, the answer's N is SET ASIDE
+  (``LogScore.set_aside``, group ``n_no_rule``), counted and listed but in
+  no total (BACKLOG RI-79);
+* a blow record is compared on its COUNTS: several increments joined in one
+  string are each read, and the penetration of a drive stopped short
+  (``50/5"``, ``50/20``) is kept out of them and compared only where both
+  sides state one;
+* the blows of a driven sampler that is not a split spoon (the answer
+  sheet's ``blows_kind: "sampler"``) are found on a drive record of their
+  own at that sample's depth -- the record keeps every driven record in
+  ``spt``, N or no N -- never among another test's increments;
+* a header field the answer sheet strikes (``fields_struck``) is left out
+  of the total;
 * a column counts as the right one when it carries the value's canonical name
   or one of its family, because a form that heads one column "SAMPLING DATA"
   and prints the id, the drives and the recovery inside it is not wrong.
@@ -49,6 +65,7 @@ __all__ = [
     "COLUMN_FAMILY", "FIELD_MAP", "INDEX_KEYS", "METRICS",
     "Score", "LogScore", "score_grid", "score_record", "score_one_log",
     "truth_investigations", "rescore_saved", "dump_investigations",
+    "N_RULES", "SET_ASIDE", "rescore_run",
 ]
 
 #: From the plan. A sample or index value has to land within 0.15 m and a
@@ -148,14 +165,134 @@ def _wanted_numbers(value: Any) -> List[float]:
     return list(_numbers(str(value)))
 
 
-def _blow_numbers(blows: Sequence[Any]) -> List[float]:
-    out: List[float] = []
+#: A length unit after a penetration, folded to one spelling: ``5"``,
+#: ``5 in`` and ``5 inches`` are one unit.
+_PEN_UNITS: Dict[str, str] = {
+    "mm": "mm", "cm": "cm", "m": "m", "in": "in", "in.": "in", "ins": "in",
+    "inch": "in", "inches": "in", '"': "in", "\u201d": "in", "\u2033": "in",
+    "''": "in", "ft": "ft", "ft.": "ft", "'": "ft", "\u2032": "ft",
+}
+_PEN_UNIT_RE = (r"(?:mm|cm|m|inches|inch|ins|in\.?|ft\.?|\"|\u201d|\u2033|''"
+                r"|'|\u2032)")
+#: One increment inside a blow record: a count, and where the record says
+#: so the penetration it was counted over -- ``21 for 60mm``, ``50/5"``,
+#: ``50 blows for 20 mm``. A slash with NO unit after it is left to the
+#: caller: ``3/6/8`` is three increments, a lone ``50/20`` a count over a
+#: penetration.
+_INCREMENT_RE = re.compile(
+    r"(?<![\d.])(\d+(?:\.\d+)?)(?:\s*blows?)?"
+    r"(?:\s*for\s*(\d+(?:\.\d+)?)\s*(" + _PEN_UNIT_RE + r")?(?![A-Za-z])"
+    r"|\s*/\s*(\d+(?:\.\d+)?)\s*(" + _PEN_UNIT_RE + r")(?![A-Za-z]))?",
+    re.I)
+#: A whole entry that is one count over one penetration with no unit:
+#: ``50/20``.
+_LONE_OVER_RE = re.compile(
+    r"\(?\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\s*\)?")
+
+
+def _blow_entries(blows: Sequence[Any]
+                  ) -> List[Tuple[float, Optional[float], str]]:
+    """A blow record as ``(count, penetration, unit)`` per increment.
+
+    An entry is a number, or a string as a log prints it (BACKLOG RI-79):
+
+    * several increments in one string, however joined -- ``3,6``,
+      ``3, 6, 8``, ``3/6/8``, ``3-6-8``, ``1,2/2,3,3,4`` -- are each an
+      increment. (Read as one number, ``3,6`` gave its first count only.)
+    * a count over a penetration -- ``50/5"``, ``50/20mm``, ``21 for
+      60mm``, and a lone ``50/20`` with no unit -- is ONE increment whose
+      count is the count. The penetration is kept beside it, never among
+      the counts: ``report_ingest.model.SPT`` keeps such an entry as the
+      string the log printed, "50 blows over 5 in, a drive stopped short of
+      its increment, not the number fifty".
+
+    The penetration is None, and the unit empty, where the entry gives
+    none.
+    """
+    out: List[Tuple[float, Optional[float], str]] = []
     for entry in blows:
+        if isinstance(entry, bool):
+            continue
         if isinstance(entry, (int, float)):
-            out.append(float(entry))
-        else:
-            out.extend(_numbers(str(entry)))
+            out.append((float(entry), None, ""))
+            continue
+        text = str(entry or "").strip()
+        lone = _LONE_OVER_RE.fullmatch(text)
+        if lone:
+            out.append((float(lone.group(1)), float(lone.group(2)), ""))
+            continue
+        for found in _INCREMENT_RE.finditer(text):
+            pen = found.group(2) or found.group(4)
+            unit = (found.group(3) or found.group(5) or "").lower()
+            out.append((float(found.group(1)),
+                        float(pen) if pen is not None else None,
+                        _PEN_UNITS.get(unit, unit)))
     return out
+
+
+def _blow_numbers(blows: Sequence[Any]) -> List[float]:
+    """The blow COUNT of every increment of a record, in order: the
+    penetration of a drive stopped short is not a count
+    (:func:`_blow_entries`)."""
+    return [count for count, _pen, _unit in _blow_entries(blows)]
+
+
+def _penetrations_agree(got: Sequence[Any], want: Sequence[Any]) -> bool:
+    """Do two blow records agree on the penetrations they both state?
+
+    Only where BOTH state one in the same unit (or both with none): the
+    answer's ``50/5"`` against a record's ``50/3"`` is a different drive.
+    A side that states no penetration (an answer that carries counts only)
+    is not held against the other.
+    """
+    mine = [(p, u) for _c, p, u in _blow_entries(got) if p is not None]
+    theirs = [(p, u) for _c, p, u in _blow_entries(want) if p is not None]
+    if not mine or not theirs:
+        return True
+    if {u for _p, u in mine} != {u for _p, u in theirs}:
+        return True                     # different units: not comparable
+    return _as_multiset([p for p, _u in mine], [p for p, _u in theirs])
+
+
+#: How many increments a driven record must have for its N to be worked out
+#: from them, and which of them are summed (0-based). ONE rule is held in
+#: print: three successive 6 in (150 mm) increments, "the first recorded
+#: increment is considered as a 'seating' penetration, while the number of
+#: blows to advance the second and third increments are summed to give the
+#: N-value" (FHWA NHI-06-088, Soils and Foundations Reference Manual
+#: Vol. I, Sec. 3.7, p. 3-51; ``geotech_references/fhwa_soils_foundations``
+#: chapter 3). A record of four drives keeps that rule: Fig. 3-20 (FHWA
+#: NHI-06-088 Vol. I, Sec. 3.7, p. 3-52) draws "First Increment", "Second
+#: Increment", "Third Increment" and "Note: Occasional Fourth Increment Used
+#: to provide additional soil material", so the N is still the 2nd + 3rd.
+#: That is the record's own rule for a fourth drive, cited from the same
+#: page ("Fig. 3-20, FHWA NHI-06-088 Vol. I, p. 3-52",
+#: ``log_floor.FOURTH_INCREMENT_SOURCE``, RI-70). The figure also prints
+#: "the last 300 mm"; the lead's call of 2026-11-13 (RI-79 review) keeps
+#: four drives on the record's reading. No other count has an entry,
+#: because no page held says how its increments are summed: a record driven
+#: in six increments follows a different procedure (EN 1997-2:2007 Sec.
+#: 4.6.2, p. 49, sends the test to EN ISO 22476-3, which the library does
+#: not hold; Sec. 4.6.1 (2)P gives N as the blows "for 300 mm of sampler
+#: penetration ... below a seating drive" and prints no increments), and
+#: the figure prints one fourth increment, so five or more is not its case.
+N_RULES: Dict[int, Tuple[int, ...]] = {3: (1, 2), 4: (1, 2)}
+
+#: The set-aside groups a score can carry (``LogScore.set_aside``): counted
+#: and listed, never in a metric's total.
+SET_ASIDE: Dict[str, str] = {
+    "n_no_rule": "N not printed, no rule held for this number of "
+                 "increments",
+    "fields_struck": "header fields the answer sheet strikes as not "
+                     "printed on the form",
+}
+
+
+def _n_by_rule(counts: Sequence[float]) -> Optional[float]:
+    """The N a record's increments define, where a printed rule is held
+    for that number of increments (:data:`N_RULES`); else None."""
+    rule = N_RULES.get(len(counts))
+    return None if rule is None else sum(counts[i] for i in rule)
 
 
 def _in_order(got: Sequence[float], want: Sequence[float]) -> bool:
@@ -276,6 +413,14 @@ class LogScore:
     #: calls, the layer tops found in a scan's pixels and their votes
     #: against the record. Empty with the setting off (BACKLOG RI-05).
     visual_scales: Dict[str, Any] = field(default_factory=dict)
+    #: Answer values that are in NO metric's total, by group
+    #: (:data:`SET_ASIDE`), each a line saying which value: an N the record
+    #: could not be expected to hold, a header field the sheet strikes.
+    #: Empty for an answer sheet with none, and then not in the run file.
+    set_aside: Dict[str, List[str]] = field(default_factory=dict)
+
+    def aside(self, group: str, what: str) -> None:
+        self.set_aside.setdefault(group, []).append(what)
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -293,6 +438,8 @@ class LogScore:
         return {
             **({"visual_scales": dict(self.visual_scales)}
                if self.visual_scales else {}),
+            **({"set_aside": _aside_dict(self.set_aside)}
+               if self.set_aside else {}),
             "log_id": self.log_id, "report": self.report, "stage": self.stage,
             "scores": {k: v.to_dict() for k, v in self.scores.items()},
             "overall": self.total.to_dict(),
@@ -307,6 +454,19 @@ class LogScore:
             "record": self.record, "model_record": self.model_record,
             "floor_record": self.floor_record,
         }
+
+
+def _aside_dict(groups: Dict[str, List[str]]) -> Dict[str, Any]:
+    return {group: {"count": len(lines), "what": SET_ASIDE.get(group, ""),
+                    "items": list(lines[:25])}
+            for group, lines in groups.items()}
+
+
+def _struck(truth: Dict[str, Any]) -> set:
+    """The header fields an answer sheet strikes: a reviewer who opened the
+    pages found the form does not print them (an AGS4 answer sheet fills
+    its header from the data, whatever the form prints)."""
+    return {str(key) for key in truth.get("fields_struck") or ()}
 
 
 def truth_investigations(truth: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -401,10 +561,16 @@ def score_grid(truth: Dict[str, Any], grid: Any) -> LogScore:
             n = float(sample["n"])
             pool = numbers_in_window(window, COLUMN_FAMILY["n"])
             ok = any(_close(v, n) for v in pool)
-            if not ok and len(want) >= 3 and _close(want[1] + want[2], n):
-                ok = _as_multiset(
-                    numbers_in_window(window, ("blows", "n_value")), want)
-            out.score("n_value").add(ok, f"N={sample['n']} at {depth_text}")
+            standing = (not ok and bool(want) and _as_multiset(
+                numbers_in_window(window, ("blows", "n_value")), want))
+            ruled = _n_by_rule(want)
+            if standing and ruled is None:
+                out.aside("n_no_rule", f"N={sample['n']} at {depth_text} "
+                                       f"({len(want)} increments)")
+            else:
+                ok = ok or (standing and _close(ruled, n))
+                out.score("n_value").add(
+                    ok, f"N={sample['n']} at {depth_text}")
         # A sample DEPTH is recovered when anything belonging to that sample
         # stands in its window: the grid has no sample object to bind to.
         placed = bool(numbers_in_window(window, COLUMN_FAMILY["blows"])
@@ -469,9 +635,13 @@ def score_grid(truth: Dict[str, Any], grid: Any) -> LogScore:
             f"water at {depth} {unit}")
 
     fields = dict(truth.get("fields") or {})
+    struck = _struck(truth)
     for key, value in fields.items():
         names = FIELD_MAP.get(key)
         if not names:
+            continue
+        if key in struck:
+            out.aside("fields_struck", f"{key}={value!r}")
             continue
         got = ""
         for name in names:
@@ -627,24 +797,44 @@ def score_record(truth: Dict[str, Any], investigations: Sequence[Any]
 
         blows = sample.get("blows") or []
         want = _blow_numbers(blows)
-        if blows:
-            ok = any(_in_order(_blow_numbers(r.blows), want)
-                     or _as_multiset(_blow_numbers(r.blows), want)
+        def holds(r) -> bool:
+            got = _blow_numbers(r.blows)
+            return ((_in_order(got, want) or _as_multiset(got, want))
+                    and _penetrations_agree(r.blows, blows))
+
+        if blows and sample.get("blows_kind") == "sampler":
+            # A driven sampler that is not a split spoon (a tube, a ring):
+            # the record keeps its blows as a drive record of its own at
+            # the sample's depth (``model.SPT``: "one driven penetration
+            # record", its N None), so that is where they are found -- the
+            # whole record, never a count among another test's increments.
+            ok = any(len(_blow_numbers(r.blows)) == len(want) and holds(r)
                      for r in near_spt)
+            out.score("blows").add(
+                ok, f"sampler blows {blows} at {depth_text}")
+        elif blows:
+            ok = any(holds(r) for r in near_spt)
             out.score("blows").add(ok, f"blows {blows} at {depth_text}")
         if sample.get("n") is not None:
             n = float(sample["n"])
             ok = any(r.n is not None and _close(float(r.n), n)
                      for r in near_spt)
-            if not ok and len(want) >= 3 and _close(want[1] + want[2], n):
-                # The log printed only the drives, and neither the grid nor
-                # the reader does arithmetic. The drives standing at the
-                # right depth ARE the N being present.
-                ok = any(r.n is None
-                         and (_in_order(_blow_numbers(r.blows), want)
-                              or _as_multiset(_blow_numbers(r.blows), want))
-                         for r in near_spt)
-            out.score("n_value").add(ok, f"N={sample['n']} at {depth_text}")
+            # The log printed only the drives, and neither the grid nor the
+            # reader does arithmetic. Where a printed rule is held for that
+            # number of increments (N_RULES) and gives the answer's N, the
+            # drives standing at the right depth ARE the N being present.
+            # For any other number nothing is worked out: the N is set
+            # aside, counted and listed, and is in no total.
+            standing = (not ok and bool(want)
+                        and any(r.n is None and holds(r) for r in near_spt))
+            ruled = _n_by_rule(want)
+            if standing and ruled is None:
+                out.aside("n_no_rule", f"N={sample['n']} at {depth_text} "
+                                       f"({len(want)} increments)")
+            else:
+                ok = ok or (standing and _close(ruled, n))
+                out.score("n_value").add(
+                    ok, f"N={sample['n']} at {depth_text}")
 
         for key, attribute in (("recovery", "recovery_percent"),
                                ("rqd", "rqd_percent")):
@@ -706,8 +896,12 @@ def score_record(truth: Dict[str, Any], investigations: Sequence[Any]
                 for d in record_water),
             f"water at {depth} {unit}")
 
+    struck = _struck(truth)
     for key, value in (truth.get("fields") or {}).items():
         if key not in FIELD_MAP:
+            continue
+        if key in struck:
+            out.aside("fields_struck", f"{key}={value!r}")
             continue
         got = record_fields.get(key, "")
         if not got:
@@ -834,7 +1028,9 @@ def _load_investigations(blobs: Sequence[Dict[str, Any]]) -> List[Any]:
 
 def _scored(score: LogScore) -> Dict[str, Any]:
     return {"scores": {k: v.to_dict() for k, v in score.scores.items()},
-            "overall": score.total.to_dict()}
+            "overall": score.total.to_dict(),
+            **({"set_aside": _aside_dict(score.set_aside)}
+               if score.set_aside else {})}
 
 
 def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any]
@@ -852,6 +1048,7 @@ def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any]
     if not after or after.get("record") is None:
         return None
     out = dict(after)
+    out.pop("set_aside", None)          # the current checks decide it anew
     out.update(_scored(score_record(
         truth, _load_investigations(after["record"]))))
     if after.get("model_record") is not None:
@@ -861,3 +1058,64 @@ def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any]
         out["floor_alone"] = _scored(score_record(
             truth, _load_investigations(after["floor_record"])))
     return out
+
+
+def rescore_run(logs_dir: Any, truth_dir: Any, *, write: bool = False
+                ) -> Dict[str, Any]:
+    """Re-score every run file of a saved logs run with the CURRENT checks
+    -- no model call, no PDF (BACKLOG RI-79).
+
+    ``logs_dir`` holds the run files (``<out_dir>/logs/<log id>.json``, as
+    the logs stage writes them) and ``truth_dir`` the answer sheets
+    (``<log id>.json``). Returns, per metric, found and total as SAVED and
+    as RE-SCORED, the set-aside counts, and the run files that could not be
+    re-scored (no answer sheet, or written before the records were kept).
+    With ``write`` each run file's ``after`` is replaced by the re-scored
+    one and what it held is kept beside it as ``after_as_run``, once.
+    Counts only: no value of a record or an answer sheet is returned.
+    """
+    import json
+    from pathlib import Path
+
+    def tally(into: Dict[str, List[int]], blob: Dict[str, Any]) -> None:
+        for name, score in (blob.get("scores") or {}).items():
+            cell = into.setdefault(name, [0, 0])
+            cell[0] += int(score.get("found") or 0)
+            cell[1] += int(score.get("total") or 0)
+
+    saved: Dict[str, List[int]] = {}
+    again: Dict[str, List[int]] = {}
+    aside: Dict[str, int] = {}
+    skipped: Dict[str, str] = {}
+    done = 0
+    for path in sorted(Path(logs_dir).glob("*.json")):
+        blob = json.loads(path.read_text(encoding="utf-8"))
+        after = blob.get("after") or {}
+        sheet = Path(truth_dir) / f"{blob.get('log_id') or path.stem}.json"
+        if not sheet.is_file():
+            skipped[path.stem] = "no answer sheet"
+            continue
+        truth = json.loads(sheet.read_text(encoding="utf-8"))
+        new = rescore_saved(truth, after)
+        if new is None:
+            skipped[path.stem] = "the run file keeps no record"
+            continue
+        done += 1
+        tally(saved, blob.get("after_as_run") or after)
+        tally(again, new)
+        for group, entry in (new.get("set_aside") or {}).items():
+            aside[group] = aside.get(group, 0) + int(entry.get("count") or 0)
+        if write:
+            blob.setdefault("after_as_run", after)
+            blob["after"] = new
+            path.write_text(json.dumps(blob, indent=1, ensure_ascii=False),
+                            encoding="utf-8")
+
+    def total(cells: Dict[str, List[int]]) -> List[int]:
+        return [sum(c[0] for k, c in cells.items() if k in METRICS),
+                sum(c[1] for k, c in cells.items() if k in METRICS)]
+
+    return {"run_files": done, "skipped": skipped,
+            "saved": {**saved, "overall": total(saved)},
+            "rescored": {**again, "overall": total(again)},
+            "set_aside": aside}

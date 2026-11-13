@@ -17,6 +17,7 @@ References:
     FHWA GEC-10 (FHWA-NHI-18-024), Chapter 10, Sec. 10.3.5
 """
 
+import contextvars
 import math
 import warnings
 from dataclasses import dataclass, replace
@@ -43,6 +44,15 @@ from drilled_shaft.end_bearing import (
 )
 from drilled_shaft.results import DrillShaftResult
 from drilled_shaft.lrfd import RESISTANCE_FACTORS
+
+#: True while :meth:`DrillShaftAnalysis._alternative` runs a trial copy of
+#: an analysis: the copy does not raise the warnings the analysis it was
+#: copied from has raised already (a shaft longer than the profile). Per
+#: thread and per context, so a trial in one call never quiets another
+#: call (GM-316 review A1: the trial used ``warnings.catch_warnings``,
+#: which swaps the process's warning filters for every thread).
+_IN_TRIAL: contextvars.ContextVar = contextvars.ContextVar(
+    "drilled_shaft_in_trial", default=False)
 
 
 def require_tip_N60(tip_layer: ShaftSoilLayer, depth: float) -> float:
@@ -978,7 +988,8 @@ class DrillShaftAnalysis:
             raise ValueError(
                 f"su_test_type must be 'ciuc', 'uc', or 'uu', got '{self.su_test_type}'"
             )
-        if self.shaft.length > self.soil.total_thickness:
+        if (self.shaft.length > self.soil.total_thickness
+                and not _IN_TRIAL.get()):
             warnings.warn(
                 f"Shaft length ({self.shaft.length}m) exceeds soil profile "
                 f"({self.soil.total_thickness}m); using full profile depth"
@@ -1855,20 +1866,30 @@ class DrillShaftAnalysis:
         ``changes`` to this analysis, in words; or why it is refused.
         ``correlation`` gives every cohesionless layer that takes sigma'p
         from N60 that ``sigma_p_correlation``; ``soil`` replaces the
-        profile."""
+        profile.
+
+        The trial raises no warning (:data:`_IN_TRIAL`; numpy's
+        floating-point notices off through ``np.errstate``, which is per
+        thread): the analysis it was copied from has raised the
+        profile's. No ``warnings.catch_warnings`` here: it swaps the
+        process's filters, and two calls in threads whose blocks
+        interleaved left every warning silenced for good (GM-316 review
+        A1)."""
         soil = self.soil if soil is None else soil
         if correlation is not None:
             soil = replace(soil, layers=[
                 replace(lay, sigma_p_correlation=correlation)
                 if lay.soil_type == "cohesionless" and not lay.OCR > 0
                 else lay for lay in soil.layers])
+        token = _IN_TRIAL.set(True)
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with np.errstate(all="ignore"):
                 r = replace(self, soil=soil, **changes)._compute(
                     sublayer=sublayer, report=False)
         except ValueError as exc:
             return f"refused: {exc}"
+        finally:
+            _IN_TRIAL.reset(token)
         return _values(r, part)
 
     def _top_zone_choice(self, layer_results) -> Optional[dict]:
