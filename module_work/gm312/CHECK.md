@@ -4,12 +4,14 @@ Branch `claude/gm-312-wall-structural-design`. Manual: USACE EM 1110-2-2104, "St
 
 ## Contract changes
 
-None. The `reinforcement` description has exactly the keys of the brief, in its order, and a test pins them (`test_the_reinforcement_description_keeps_its_contract`). Four things GM-313 should know about the values:
+**One, from the review (2026-11-13, finding C6): the number of bar sets.** When the base slab's top and bottom covers differ (the usual case: 75 mm top by Table 2-1, 100 mm bottom against the foundation), the base's temperature and shrinkage bars along the wall are TWO sets: `F` (`face: "top"`, the top cover) and `G` (`face: "bottom"`, the bottom cover), same size and spacing. When the covers are equal there is one set `F` with `face: "both"`, as before. So `bars` holds six or seven entries, marks A to F or A to G: **the drawing code must not assume six marks**; read each set's `face` and `cover_mm`. The keys of each bar and of the description are unchanged; the contract test pins both shapes.
+
+Otherwise the `reinforcement` description has exactly the keys of the brief, in its order, and a test pins them (`test_the_reinforcement_description_keeps_its_contract`). Four things GM-313 should know about the values:
 
 - `geometry.key_width` and `geometry.key_distance_from_toe` are always `null` from this module, with or without a key. They are the calc package's own figure inputs, not inputs of the wall tool. The join can fill them from the package's `_shear_key_place`.
 - A wall with no toe (or no heel) still gets marks D and E. The missing one is then a temperature and shrinkage set with `element: "base"`, not a flexure set.
 - `bars[0].end.ldh_mm` is `null` when f'c is 6,000 psi (41.4 MPa) or more: the manual prints the hook formula's concrete factor for lower strengths only.
-- `spacing_mm` and `cover_mm` are the metric values the manual prints beside its inch values (300 for 12 in., 150 for 6 in., 100 for 4 in., 75 for 3 in.). A spacing or cover the engineer gives is passed through in mm, and the callout shows its inch value to two decimals.
+- `spacing_mm` and `cover_mm` are the metric values the manual prints beside its inch values (300 for 12 in., 150 for 6 in., 100 for 4 in., 75 for 3 in.). A spacing or cover the engineer gives is passed through in mm, and the callout shows its inch value to two decimals; since the review (C3), a given 300, 150, 100 or 75 mm is taken as 12, 6, 4 or 3 in. and reads "(12 in.)" and so on.
 
 ## What the print says
 
@@ -111,7 +113,7 @@ The brief's ten were built as written; each is in `choices` with its basis. One 
 
 D-5's Tables D-2 and D-4 do print enough to rebuild the stem's loads: the two water triangles, the at-rest earth on the buoyant weight each side, and the wave load at its elevation.
 
-D-5's own slips, not pinned: Step 3(g) (p. 85) uses the 4,000 psi coefficient 2.4956 for 5,000 psi concrete; Step 3(i) prints Ku = 0.088 and then puts 0.111 in the As line (the 2.73 follows from 0.088); Step 5(a) (p. 86) prints x = 9.96 in. and then uses 10.09, and calls the service moment "Mn". D-3 Step 4 cites "paragraph 3-5" on p. 53 for the steel ratio limit, which is para. 3-6.
+D-5's own slips, not pinned: Step 3(g) (p. 85) uses the 4,000 psi coefficient 2.4956 for 5,000 psi concrete; Step 3(i) prints Ku = 0.088 and then puts 0.111 in the As line (the 2.73 follows from 0.088); Step 5(a) (p. 86) prints x = 9.96 in. and then uses 10.09, and calls the service moment "Mn"; and it prints fs = 34.7 ksi "< 35 ksi, OK" where its own numbers (M = 306 k-ft, As = 3.12, d = 36.5, x = 9.96 or 10.09) give 35.5 ksi, over the 35 ksi limit of Table 3-3: the module gives 35.47 ksi and FAILS the check on the manual's own example, which is the correct arithmetic (found by the review, B6; pinned in `test_d5_service_stress_is_the_arithmetic_not_the_printed_34_7` so nobody "corrects" it to 34.7). D-3 Step 4 cites "paragraph 3-5" on p. 53 for the steel ratio limit, which is para. 3-6.
 
 ## A made-up wall, by hand
 
@@ -211,3 +213,22 @@ Also not done, and said where it arises:
 - The tool's result is about 39 kB of JSON, a quarter of it `choices`.
 - `docs/user_manual/manual.html` line 1594 differs from a rebuild by `*...*` against `<em>...</em>` in one existing parameter description of `cantilever_wall`. It was so before this branch; I kept the committed line.
 - `structural_section.design_section` picks 12 in. then 6 in. A given spacing is taken as it is, and a spacing over 12 in. fails the printed limit rather than being refused.
+
+## Review fixes (2026-11-13)
+
+The independent review of a969908 (findings A1, B1 to B6, C1 to C9) and the lead's decisions on it; branch `fix/gm312-review`. One line each.
+
+- **A1** Temperature steel along the wall banded on the metres Table 2-3 (p. 7) prints: below 9 m 0.003, 9 to 12 m 0.004, above 12 m 0.005 (9.0 m was 0.003, 12.1 m was 0.004); the choice and the `joint_spacing` text say so; tests at 8.9, 9.0, 12.0 and 12.1 m.
+- **B1** A cover the engineer gives is a required wall check, `clear cover >= Table 2-1 (stem | base top | base bottom)`, in mm against the printed 10 cm / 7.5 cm, with a note naming the value to give; a formed face 12 in. or thinner keeps the old rule.
+- **B2** The choice "strength load factors" and the calc package's Table E-2 table say the 1.5 on EH assumes the active state (Table E-2 note b, p. 93, quoted) and name the at-rest basis (EH driving 1.35, para. 3-3d, p. 22) as not built. No new input.
+- **B3** A trial bar is chosen only when its clear cover (2.5 db, Table 2-1 Note) and clear distance (para. 2-6a) pass too; the review's wall (H 6.6 m, stem 550 mm, no surcharge) now gets No. 8 @ 150 mm and passes (was No. 11 @ 300, failing the cover).
+- **B4** Wording only: the result's development (`confirm`), the anchorage choice, the drawing note, the summary and the calc package's hook step say the factors are D-5 Step 6's (pp. 86-87), that ACI 318-19 (not held) sets when each applies and its own minimum lengths, and that the hook must be confirmed against ACI 318-19. No ACI value written.
+- **B5** Para. 3-7 (p. 27) in metric: the wall's height (underside of base to top of stem, the conservative reading, said in a new choice "minimum wall thickness") against 3 m; the stem top against 305 mm or 200 mm; a failure names the value to give. In `cantilever_wall_structural_design` only, a stem top left out is 0.305 m for the stability run and the design (choice "stem thickness at the top", parameter text and default 0.305); `cantilever_wall` unchanged. `when_absent` could not carry it: aec-agent-core refuses a case on a parameter with a default, so the parameter's default (0.305) and description say it, and `defaults_used` lists 0.305.
+- **B6** The module's 35.47 ksi for D-5 Step 5(a) is pinned with a comment (the print says 34.7; its own numbers give 35.5); the slip is added to D-5's list above.
+- **C1** The "at least" checks read "needs 3.53 in., has 3.00 in." (the least value rounded up); a failed check's note follows it in the verdict.
+- **C2** The choice "which loads are which" quotes para. 3-2f(7) (p. 19) for the live surcharge; still no rule printed for a permanent one.
+- **C3** The spacing parameters say 300 (the manual's "12 in. (30 cm)"); a given 300, 150, 100 or 75 mm spacing or cover is taken as 12, 6, 4 or 3 in.
+- **C6** Bar set F splits into F (top) and G (bottom) when the base's covers differ; "Contract changes" above.
+- **C8** FHWA GEC-6 (FHWA-SA-02-054) Sec. 6.6 added to the calc package's REFERENCES.
+- **C4, C5, C7, C9** Not changed, by the lead's decision (C4 and C5 are for the drawing code).
+- The first bullet of "Noted, not fixed" above (the 0.30 m default top) is answered by B5 for this tool.

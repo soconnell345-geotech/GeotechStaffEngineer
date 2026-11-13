@@ -1963,7 +1963,8 @@ here was read from the PDF.
 - **Bars.** No. 4 to No. 11 (areas: FHWA GEC-10 Table 6-2, p. 6-3). The
   smallest bar that gives the steel at 12 in.; if No. 11 does not, the
   smallest at 6 in. (D-3, p. 75; D-5, p. 85); the engineer may give either.
-  A spacing that fails the crack-control spacing is passed over.
+  A bar or spacing that fails the crack-control spacing, the clear cover or
+  the clear distance is passed over.
 - **Crack control** (para. 2-6b, p. 5). Usual loads: met by 12 in. Unusual
   loads: s_max = 15 (40,000 / fs) - 2.5 cc as printed in D-3 Step 5(b)
   (p. 76), cc the lesser of 2.5 in. and the cover, on the actual service
@@ -2000,4 +2001,48 @@ ksi, 19 in.) and D-5 (the stem's loads rebuilt from Tables D-2 and D-4 to Vu
 36.9 kips/ft and Mu 428 k-ft/ft; phi Vc 46.5; As 2.73; No. 11 at 6 in.; ldh
 24.1 in.). D-5 has slips of its own that are not pinned: Step 3(g) uses the
 4,000 psi coefficient for 5,000 psi concrete, Step 3(i) prints Ku as 0.088
-and then 0.111, and Step 5 prints x as 9.96 and uses 10.09.
+and then 0.111, and Step 5 prints x as 9.96 and uses 10.09, and prints fs =
+34.7 ksi where its own numbers give 35.5 (pinned at the module's 35.47).
+
+### Review fixes (GM-312 review, 2026-11-13)
+
+- **Table 2-3 on the metres.** The temperature steel along the wall is banded
+  on the metres the table prints beside its feet (p. 7): below 9 m 0.003,
+  9 to 12 m (both included) 0.004, above 12 m 0.005. A joint spacing of 9.0 m
+  had taken 0.003 through the feet.
+- **A given cover against Table 2-1.** A cover the engineer gives is a
+  required wall check, `clear cover >= Table 2-1 (stem | base top | base
+  bottom)`, compared in mm with the metric value the table prints (10 cm,
+  7.5 cm), wherever the table prints one; a formed face 12 in. or thinner
+  keeps the old rule (the cover must be given; the table prints none).
+- **Printed metric values are the inch values.** A spacing or cover given as
+  300, 150, 100 or 75 mm is taken as 12, 6, 4 or 3 in., so 300 mm meets the
+  12 in. limit and reads "(12 in.)".
+- **Bar choice.** A trial is chosen only when its clear cover (2.5 bar
+  diameters, Table 2-1 Note) and its clear distance (para. 2-6a) pass too;
+  if none passes, the first that gives the steel is reported with its failed
+  checks.
+- **Strength factors.** The choice and the calc package say that 1.5 on EH
+  assumes the active state (Table E-2 note b, p. 93) and name the at-rest
+  basis, EH driving 1.35 (para. 3-3d, p. 22), as not built.
+- **Live surcharge.** Para. 3-2f(7) (p. 19) is cited for ES; the manual
+  prints no rule for a permanent surcharge.
+- **Hook.** Where the hook length is stated, the result says its factors are
+  those of D-5 Step 6 and that ACI 318-19 (not held) sets when each applies
+  and its own minimum lengths, so the hook must be confirmed against it. No
+  number changed.
+- **Minimum wall thickness** (para. 3-7, p. 27). The wall's height, the
+  underside of the base to the top of the stem (the conservative reading of
+  "height"), against the printed 3 m; the stem's top against 305 mm over 3 m,
+  200 mm otherwise, in mm; a failure names the value to give. In
+  `cantilever_wall_structural_design` only, a stem top left out is 0.305 m
+  (the manual's 12 in.) for the stability run and the design alike; the
+  `cantilever_wall` tool keeps 0.30 m.
+- **Verdict wording.** The "at least" checks (clear cover, clear distance,
+  stem thickness) read "needs X, has Y"; a failed check's note follows it.
+- **Bar set F.** When the base's top and bottom covers differ, the bars along
+  the wall are two sets, F (top) and G (bottom), each at its own cover; with
+  equal covers, one set F on both faces. A drawing must not assume six marks.
+- **D-5 Step 5(a).** The print gives fs = 34.7 ksi "< 35 ksi"; its own
+  numbers give 35.5 ksi (35.47 on x = 9.96 in.). The module's 35.47 and its
+  failed check are pinned (`test_d5_service_stress_is_the_arithmetic_not_the_printed_34_7`).
