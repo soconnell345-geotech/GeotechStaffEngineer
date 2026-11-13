@@ -2249,6 +2249,7 @@ def ask_vision(engine, image, prompt, kind, where=None):
     from aec_agent_core import turn_question
     from aec_agent_core.deep.vision_engine import side_call
     cap = vision_output_cap(kind)
+    prompt = turn_question.with_one_image(prompt, kind)
     asked = turn_question.with_question(prompt, kind)
     label = dict(where or {})
     if asked is not prompt:

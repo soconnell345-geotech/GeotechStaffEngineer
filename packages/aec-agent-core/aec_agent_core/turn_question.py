@@ -36,6 +36,15 @@ MAX_CHARS = 600
 QUESTION_KINDS = frozenset({"image", "page", "overview", "region", "tile",
                             "reference_figure", "worked_example_page"})
 
+#: Said to every reading in :data:`QUESTION_KINDS`, with or without a bound
+#: question (VIS-31): the call is shown one image and nothing else.
+ONE_IMAGE_NOTE = (
+    "\n\nYou are shown ONE image only (one page, region or tile). You "
+    "cannot see any other issue, sheet or image. If the request asks you to "
+    "compare this with another issue, sheet or image, transcribe what is in "
+    "this one and say that the comparison needs the other image; do not "
+    "report differences or no differences.")
+
 _HEAD = (
     "\n\nFor context only -- the user's own latest message in this "
     "conversation. The request above, from the agent working on it, is what "
@@ -80,6 +89,14 @@ def current() -> Optional[str]:
     return text
 
 
+def with_one_image(prompt: str, kind: str) -> str:
+    """``prompt`` with :data:`ONE_IMAGE_NOTE` under it for a side call of
+    ``kind`` in :data:`QUESTION_KINDS`; any other kind is unchanged."""
+    if kind not in QUESTION_KINDS or not isinstance(prompt, str):
+        return prompt
+    return f"{prompt}{ONE_IMAGE_NOTE}"
+
+
 def with_question(prompt: str, kind: str) -> str:
     """``prompt`` with the turn's question under it as context, for a side
     call of ``kind`` in :data:`QUESTION_KINDS`; ``prompt`` unchanged when no
@@ -94,4 +111,4 @@ def with_question(prompt: str, kind: str) -> str:
 
 
 __all__ = ["MAX_CHARS", "QUESTION_KINDS", "bind", "unbind", "bound",
-           "current", "with_question"]
+           "current", "with_question", "with_one_image", "ONE_IMAGE_NOTE"]
