@@ -1312,7 +1312,7 @@ METHOD_INFO = {
         },
         "returns": {
             "n_points": "Number of points the fit used.",
-            "n_dropped": "Points given and left out of the fit (log_linear only: depth <= 0 or value <= 0).",
+            "n_dropped": "Points given and left out of the fit: a null (missing) depth or value, and for log_linear a depth <= 0 or value <= 0. The notes say how many of each.",
             "fitted": "True (a result is returned only when a line was fitted).",
             "slope": "Regression slope.",
             "intercept": "Regression intercept.",

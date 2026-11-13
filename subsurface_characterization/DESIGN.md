@@ -114,9 +114,11 @@ What a fit says about itself (GM-326, 2026-11-13):
   `compute_grouped_trends` returns it with `fitted=False` and
   `not_fitted_reason`; its slope, intercept, R-squared, residual and COV are
   `None` in `to_dict`. `plot_parameter_vs_depth` names it in `skipped`.
-- **`n_points` is the number of points the fit used.** The log-linear fit
-  cannot take a point at depth <= 0 or with a value <= 0 (the logarithm does
-  not exist); those are counted in `n_dropped` with `dropped_reason`.
+- **`n_points` is the number of points the fit used.** A point whose depth
+  or value is missing (NaN, a null reading) enters no fit, and the
+  log-linear fit cannot take a point at depth <= 0 or with a value <= 0 (the
+  logarithm does not exist); both are counted in `n_dropped` with
+  `dropped_reason`.
 - **Two points.** The line passes through both, so R-squared is 1 by
   construction; `std_residual` and `cov` are `None` in `to_dict` and a note
   says why (`scatter_defined=False`).

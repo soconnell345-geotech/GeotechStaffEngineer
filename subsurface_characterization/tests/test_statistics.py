@@ -74,12 +74,30 @@ class TestComputeTrend:
         d = r.to_dict()
         assert d["n_points"] == 4 and d["n_dropped"] == 2
         assert "2 of 6 points left out" in d["notes"][0]
+        assert "2 at depth <= 0 or with a value <= 0" in d["notes"][0]
         # the same data with nothing to drop reports none
         clean = compute_trend(depths[1:5], values[1:5],
                               trend_type="log_linear").to_dict()
         assert clean["n_dropped"] == 0 and "notes" not in clean
         # a linear fit drops nothing
         assert compute_trend(depths, values).n_dropped == 0
+
+    def test_a_missing_reading_is_left_out_and_counted(self):
+        """A null reading (NaN, as a parsed CPT file gives a void) made
+        every fitted number NaN; it is left out of the fit and counted."""
+        nan = float("nan")
+        r = compute_trend([1.0, 2.0, 3.0, 4.0], [10.0, nan, 30.0, 40.0])
+        assert r.n_points == 3 and r.n_dropped == 1
+        assert r.slope == pytest.approx(10.0)
+        assert "1 with a missing" in r.to_dict()["notes"][0]
+        # the agent's route: a JSON null
+        from funhouse_agent.dispatch import call_agent
+        out = call_agent("subsurface", "compute_trend", {
+            "depths": [1.0, 2.0, 3.0, 4.0],
+            "values": [10.0, None, 30.0, 40.0]})
+        assert out["slope"] == 10.0 and out["n_dropped"] == 1
+        with pytest.raises(ValueError, match="1 of the 2 given have both"):
+            compute_trend([1.0, 2.0], [10.0, nan])
 
     def test_log_fit_with_too_few_positive_points_refused(self):
         with pytest.raises(ValueError, match="1 of the 3 given qualify"):

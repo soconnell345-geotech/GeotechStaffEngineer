@@ -32,9 +32,10 @@ class TrendAnalysisResult:
         Number of data points the fit USED (the points given, less
         ``n_dropped``).
     n_dropped : int
-        Points given and left out of the fit. Only the log-linear fit drops
-        points: ln(depth) and ln(value) exist only for positive numbers, so
-        a point at depth <= 0 or with a value <= 0 cannot enter it.
+        Points given and left out of the fit: a point whose depth or value
+        is missing (NaN), and, in a log-linear fit, a point at depth <= 0 or
+        with a value <= 0 (ln(depth) and ln(value) exist only for positive
+        numbers).
     dropped_reason : str
         Why the dropped points were dropped ("" when none were).
     fitted : bool
@@ -200,8 +201,8 @@ def compute_trend(
     -------
     TrendAnalysisResult
         ``n_points`` is the number of points the fit used and ``n_dropped``
-        the number left out (log-linear only: points at depth <= 0 or with a
-        value <= 0).
+        the number left out (a missing depth or value; log-linear also
+        points at depth <= 0 or with a value <= 0).
 
     Raises
     ------
@@ -223,17 +224,32 @@ def compute_trend(
             f"A trend line needs at least 2 points; {n} given"
             f"{_for_label(parameter, group_label)}. No trend is fitted.")
 
-    n_dropped = 0
-    dropped_reason = ""
+    # A point whose depth or value is missing (NaN: a null reading, as a
+    # parsed CPT file gives a void) cannot enter any fit; one NaN made
+    # every fitted number NaN.
+    reasons = []
+    finite = np.isfinite(depths) & np.isfinite(values)
+    n_missing = n - int(finite.sum())
+    if n_missing:
+        reasons.append(f"{n_missing} with a missing (null or non-finite) "
+                       f"depth or value")
+        depths, values = depths[finite], values[finite]
+    n_finite = len(depths)
+    if n_finite < 2:
+        raise ValueError(
+            f"A trend line needs at least 2 points; {n_finite} of the {n} "
+            f"given have both a depth and a value"
+            f"{_for_label(parameter, group_label)}. No trend is fitted.")
+
     if trend_type == "log_linear":
         # Log-linear: ln(value) = slope * ln(depth) + intercept
         mask = (depths > 0) & (values > 0)
         n_used = int(mask.sum())
-        n_dropped = n - n_used
-        if n_dropped:
-            dropped_reason = (
-                "a log-linear fit takes ln(depth) and ln(value), so a point "
-                "at depth <= 0 or with a value <= 0 cannot enter it")
+        if n_finite - n_used:
+            reasons.append(
+                f"{n_finite - n_used} at depth <= 0 or with a value <= 0 (a "
+                f"log-linear fit takes ln(depth) and ln(value), which exist "
+                f"only for positive numbers)")
         if n_used < 2:
             raise ValueError(
                 f"A log-linear trend needs at least 2 points with depth > 0 "
@@ -252,7 +268,7 @@ def compute_trend(
         mean_val = float(np.mean(values[mask]))
     else:
         # Linear: value = slope * depth + intercept
-        n_used = n
+        n_used = n_finite
         coeffs = np.polyfit(depths, values, 1)
         slope, intercept = coeffs[0], coeffs[1]
         predicted = np.polyval(coeffs, depths)
@@ -260,7 +276,7 @@ def compute_trend(
         ss_res = np.sum(residuals ** 2)
         ss_tot = np.sum((values - np.mean(values)) ** 2)
         r_squared = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
-        std_residual = float(np.std(residuals, ddof=1)) if n > 2 else 0.0
+        std_residual = float(np.std(residuals, ddof=1)) if n_used > 2 else 0.0
         mean_val = float(np.mean(values))
 
     cov = std_residual / abs(mean_val) if abs(mean_val) > 1e-10 else 0.0
@@ -275,8 +291,8 @@ def compute_trend(
         std_residual=std_residual,
         cov=cov,
         group_label=group_label,
-        n_dropped=n_dropped,
-        dropped_reason=dropped_reason,
+        n_dropped=n - n_used,
+        dropped_reason="; ".join(reasons),
         scatter_defined=n_used > 2,
     )
 
