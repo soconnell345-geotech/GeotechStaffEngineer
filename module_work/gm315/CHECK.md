@@ -279,3 +279,25 @@ model-written code, so hosts with plot code off get these figures.
   got better or worse is GM-314's to measure.
 - The page tool has no `height_in`, `width_in`, `dpi` or `grid` argument
   (before this change too).
+
+## Review fixes (2026-11-13)
+
+Independent review: `notes/review_gm315.txt` in the drawings lead's folder (not in the repo). One line per finding:
+
+- B1 fixed: a single plot's footnote is broken to the figure's width (`data_plot.py`, panel_plot's `_fit_text`); the contour example's PNG is 6.37 in wide, smallest lettering 7.0 pt as printed (was 6.85 in, 6.64 pt; its test failed).
+- B2 fixed (test): `test_fill_bands_dimension_and_arrow_are_drawn` put the arrow's tail at 25 kPa, and its text crossed the diagram (the layout check was right); the tail is now at 34 kPa. B1 and B2 were the main CI job's failures.
+- B3 fixed: `reference_chart` with panels, or with a contour and no series, is refused by name in `run_plot_data`; it crashed with KeyError 'series' in the overlay.
+- B4 fixed: a contour grid over 250,000 values, more than 50,000 scattered points or more than 30 chosen levels is refused in plain words; at most 3 numbers per level (longest lines first), none past 300 separate pieces (warned). A noisy 100 x 100 grid: 100 s before, 0.8 s now.
+- B5 fixed: a panel's title or xlabel, a band label, dimension or arrow text that is not text, and a bad band or arrow colour, are refused under their own place (`panels[0] bands[0] label must be text`), not as "footnote" or "annotations[0]".
+- B6 fixed: `legend`'s description says that with panels there is a legend only when it is true (+29 characters; both pages' fingerprints must be re-recorded at the merge).
+- B7 not fixed, for the lead: where plot code is off, `nearest_example` attaches no example to a pile or settlement brief (the redraws' names need 'panels'); the fix changes `funhouse_agent/deep/tests/test_figure_runs.py:198` and `figure_helper.py` code, or renames the examples.
+- C1 not fixed: `to_dict()` carries `contour`, `panels` and `footnote` on every result; the tool's response is unchanged.
+- C2 fixed: `width_in` in the panels' echo is a plain float.
+- C3 fixed: one chosen level has no twin "at a single level", not "unevenly spaced".
+- C4 fixed: an all-missing z grid is refused as "has no values", with no numpy warning.
+- C5 fixed: points on one line are refused in plain words, without qhull's own message.
+- C6 not fixed (scope): `docs/user_manual/manual.html` was regenerated, and the figure_examples tool's description changed beyond the named sentences; both consistent.
+- C7 not fixed: with panels, `legend_position` and `scale_units` are ignored without a word (the tool function always sends them).
+- C8 not fixed: `filled: "false"` (a string) reads as true, as the existing flags do.
+- C9 not fixed: the settlement footnote's last word stands alone on its line (cosmetic).
+- The four `plot_data_*.png` pairs were re-drawn with `render_plot_data_examples.py` after these fixes, on the review machine (Windows, matplotlib 3.10.9). The committed ones were a different size for all four (the contour 961 x 528 px against 1028 x 506 here before B1's fix), so the builder's session laid out lettering differently from this machine.
