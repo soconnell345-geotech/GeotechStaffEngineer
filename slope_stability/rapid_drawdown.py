@@ -74,6 +74,10 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from slope_stability.cracks import (
+    counts_reverse_discards as _counts_reverse_discards,
+    crack_choices as _crack_choices, discards_so_far as _discards_so_far,
+)
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
 from slope_stability.slices import build_slices, slice_breaks
@@ -465,6 +469,28 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
             raise ValueError("provide slip_surface or all of xc, yc, radius")
         slip = CircularSlipSurface(xc, yc, radius)
 
+    # The surface's crack as printed (GM-140 step 4, ``cracks``): one crack
+    # for every stage, its depth, where it depends on the factor of safety,
+    # taken at the drawdown factor of safety itself.
+    from slope_stability import cracks
+    if cracks.may_need_solution(geom, slip):
+        plan = cracks.plan_crack(geom, slip)
+        if plan is not None and (plan.needs_solution or plan.discard):
+            res, crack = cracks.solve_with_crack(
+                geom, slip,
+                lambda g: rapid_drawdown_fos(
+                    g, drawdown_from_elevation, drawdown_to_elevation,
+                    slip_surface=slip, method=method,
+                    f_interslice=f_interslice, n_slices=n_slices, tol=tol,
+                    stage1_phreatic_points=stage1_phreatic_points,
+                    stage3_effective_normal=stage3_effective_normal),
+                fos_of=lambda r: r.FOS, plan=plan)
+            if crack.discarded:
+                raise cracks.refusal_error(crack)
+            if crack.depth > 0:
+                res.warnings.append(crack.statement())
+            return res
+
     # Reinforcement crossings on this surface, resolved as analyze_slope does
     # and applied at every stage (GM-53). None without reinforcement, which
     # leaves every stage solve unchanged.
@@ -641,6 +667,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
 
 
 @_counts_refusals
+@_counts_reverse_discards
 def search_rapid_drawdown(geom: SlopeGeometry,
                           drawdown_from_elevation: float,
                           drawdown_to_elevation: float,
@@ -897,6 +924,9 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
         infinite_slope=infinite_slope,
         surface_types=("circular", "entry_exit", "noncircular",
                        "noncircular_de"), budget=budget)
+    search.choices += _crack_choices(
+        geom, _discards_so_far(),
+        circles=surface_type in ("circular", "entry_exit") or toe_circles)
     if window_note:
         search.warnings.insert(0, window_note)
     note_budget(search, budget)     # a search cut short says so first

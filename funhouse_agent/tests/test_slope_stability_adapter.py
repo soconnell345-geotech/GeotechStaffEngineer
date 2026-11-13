@@ -341,6 +341,10 @@ def _slide85(**over):
         "anchors": [{"x_head": 20.0, "z_head": 20.0, "length": 37.0,
                      "T_allow": 9000.0, "inclination": 0.0}],
         "xc": 15.012, "yc": 24.112, "radius": 14.112,
+        # the circle's centre is 5.89 below the crest: closed by a given
+        # crack that deep (GM-140 step 4; by default Rankine's crack is
+        # shallower and the circle has no factor of safety)
+        "tension_crack_depth": 5.89,
     }
     p.update(over)
     return p
@@ -766,9 +770,22 @@ class TestV54TensionCrack:
 
     def test_allowed_values_and_bad_values(self):
         gp = METHOD_INFO["analyze_slope"]["parameters"]
-        assert gp["tension_crack_side"]["allowed_values"] == ["entry", "exit"]
+        assert gp["tension_crack_side"]["allowed_values"] == \
+            ["crest", "entry", "exit"]
+        assert gp["tension_crack_side"]["default"] == "crest"
         assert gp["tension_crack_model"]["allowed_values"] == \
-            ["strength", "truncation"]
+            ["truncation", "strength"]
+        assert gp["tension_crack_model"]["default"] == "truncation"
+        assert gp["tension_crack_depth_basis"]["allowed_values"] == \
+            ["given", "rankine", "min_fos"]
+        # GM-140 step 4's review, F1: no crack basis of their own for
+        # reverse-curvature circles; the crack is the analysis's
+        assert "reverse_curvature_crack_basis" not in gp
+        assert gp["reverse_curvature"]["default"] == "tension_crack"
+        with pytest.raises(ValueError,
+                           match="tension_crack_depth_basis 'bogus'"):
+            METHOD_REGISTRY["analyze_slope"](self._acads1b(
+                tension_crack_depth_basis="bogus"))
         with pytest.raises(ValueError, match="tension_crack_side 'bogus'"):
             METHOD_REGISTRY["analyze_slope"](self._acads1b(
                 tension_crack_side="bogus"))

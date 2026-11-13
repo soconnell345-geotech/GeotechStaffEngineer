@@ -1,0 +1,5723 @@
+{
+ "aashto_1993": {
+  "aggregate_loss_brazil": {
+   "bladings": 6,
+   "ladt": 200,
+   "radius_ft": 1000,
+   "grade_pct": 3
+  },
+  "aggregate_loss_truck_traffic": {
+   "loaded_trucks_thousands": 50
+  },
+  "annual_aggregate_loss_kenya": {
+   "traffic_thousands": 2,
+   "rainfall_in": 30,
+   "grade_pct": 5
+  },
+  "composite_k_subbase": {
+   "mr_psi": 7000,
+   "esb_psi": 20000,
+   "dsb_in": 6.0
+  },
+  "design_serviceability_loss": {
+   "po": 4.2,
+   "pt": 2.5
+  },
+  "directional_distribution_default": {},
+  "drainage_cd_rigid": {
+   "quality": "fair",
+   "pct_saturation_time": "1-5%"
+  },
+  "drainage_mi_flexible": {
+   "quality": "fair",
+   "pct_saturation_time": "1-5%"
+  },
+  "effective_modulus_subgrade_reaction": {
+   "seasonal": [
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    },
+    {
+     "mr_psi": 5000
+    }
+   ],
+   "slab_d_in": 10
+  },
+  "effective_roadbed_resilient_modulus": {
+   "monthly_mr_psi": [
+    1.0,
+    2.0,
+    3.0
+   ]
+  },
+  "esal_flexible_single_axle": {
+   "axle_load_kips": 18.0
+  },
+  "esal_flexible_tandem_axle": {
+   "axle_load_kips": 36.0
+  },
+  "esal_rigid_single_axle": {
+   "axle_load_kips": 18.0
+  },
+  "esal_rigid_tandem_axle": {
+   "axle_load_kips": 36.0
+  },
+  "flexible_sn_from_w18": {
+   "w18": 5000000.0,
+   "zr": -1.645,
+   "so": 0.45,
+   "delta_psi": 1.9,
+   "mr_psi": 5000
+  },
+  "flexible_w18_from_sn": {
+   "sn": 4.0,
+   "zr": -1.037,
+   "so": 0.45,
+   "delta_psi": 2.0,
+   "mr_psi": 8000
+  },
+  "frost_heave_rate_group": {
+   "uscs_group": "gw"
+  },
+  "frost_heave_serviceability_loss": {
+   "phi_mm_day": 5,
+   "pf_pct": 30,
+   "delta_psi_max": 2.0,
+   "t_yr": 15
+  },
+  "frost_susceptibility_classification": {
+   "rate_mm_day": 30
+  },
+  "k_loss_of_support": {
+   "k_pci": 540,
+   "ls": 2.0
+  },
+  "k_rigid_foundation_correction": {
+   "mr_psi": 4000,
+   "dsg_ft": 5.0,
+   "k_inf_pci": 230
+  },
+  "lane_distribution_factor": {
+   "num_lanes_per_direction": 1
+  },
+  "layer_coefficient_a1_asphalt": {
+   "eac_psi": 500000
+  },
+  "layer_coefficient_a2_bituminous_treated": {
+   "marshall_stability_lb": 1500
+  },
+  "layer_coefficient_a2_cement_treated": {
+   "ucs_7day_psi": 700
+  },
+  "layer_coefficient_a2_granular_base": {
+   "ebs_psi": 30000
+  },
+  "layer_coefficient_a3_granular_subbase": {
+   "esb_psi": 15000
+  },
+  "load_equivalency_factor": {
+   "pavement_type": "rigid",
+   "axle_config": "triple",
+   "axle_load_kips": 74,
+   "d_in": 8,
+   "pt": 2.0
+  },
+  "load_transfer_coefficient_j": {
+   "pavement_type": "plain_jointed_jrcp",
+   "shoulder_type": "asphalt",
+   "load_transfer_devices": true
+  },
+  "loss_of_support_values": {
+   "material": "cement_treated_granular_base"
+  },
+  "max_serviceability_loss_frost": {
+   "drainage_quality": "poor",
+   "depth_ft": 5
+  },
+  "minimum_layer_thickness": {
+   "esal": 30000
+  },
+  "minimum_layer_thicknesses": {
+   "sn_over_base": 2.0,
+   "sn_over_subbase": 3.5,
+   "sn_over_roadbed": 5.0,
+   "a1": 0.42,
+   "a2": 0.14,
+   "m2": 1.0,
+   "a3": 0.11,
+   "m3": 1.0
+  },
+  "modulus_subgrade_reaction_simple": {
+   "mr_psi": 7000
+  },
+  "overall_standard_deviation_range": {
+   "pavement_type": "flexible"
+  },
+  "potential_vertical_rise": {
+   "pi": 50,
+   "condition": "average",
+   "thickness_ft": 5
+  },
+  "quality_of_drainage_definitions": {},
+  "recommended_reliability": {
+   "functional_class": "interstate_freeway",
+   "area": "urban"
+  },
+  "relative_damage_rigid": {
+   "d_in": 9.0,
+   "k_pci": 1350
+  },
+  "relative_damage_uf": {
+   "mr_psi": 5000
+  },
+  "rigid_d_from_w18": {
+   "w18": 5000000.0,
+   "zr": -1.645,
+   "so": 0.35,
+   "delta_psi": 1.7,
+   "sc_psi": 650,
+   "cd": 1.0,
+   "j": 3.2,
+   "ec_psi": 4200000.0,
+   "k_pci": 100
+  },
+  "rigid_w18_from_d": {
+   "d": 10,
+   "zr": -1.645,
+   "so": 0.35,
+   "delta_psi": 1.7,
+   "sc_psi": 650,
+   "cd": 1.0,
+   "j": 3.2,
+   "ec_psi": 4200000.0,
+   "k_pci": 100
+  },
+  "stage_reliability": {
+   "overall_reliability_pct": 95,
+   "n_stages": 2
+  },
+  "standard_normal_deviate_zr": {
+   "reliability_pct": 98.5
+  },
+  "structural_number": {
+   "a1": 0.42,
+   "d1": 4.0
+  },
+  "swell_probability_guidance": {
+   "pi": 35,
+   "thickness_ft": 3
+  },
+  "swell_rate_constant_theta": {
+   "moisture_supply_frac": 0.0,
+   "soil_fabric_frac": 0.0
+  },
+  "swelling_serviceability_loss": {
+   "vr_in": 2,
+   "ps_pct": 60,
+   "theta": 0.1,
+   "t_yr": 15
+  },
+  "terminal_serviceability_guidance": {},
+  "total_environmental_loss": {
+   "t_yr": 15,
+   "swelling": {
+    "vr_in": 2,
+    "ps_pct": 60,
+    "theta": 0.1
+   },
+   "frost": {
+    "phi_mm_day": 5,
+    "pf_pct": 30,
+    "delta_psi_max": 2.0
+   }
+  },
+  "unbound_k1_k2": {
+   "layer": "base",
+   "moisture_condition": "dry"
+  },
+  "weighted_swell_parameters": {
+   "sections": [
+    {
+     "length_ft": 100,
+     "vr_in": 1.0,
+     "swell_rate": 0.1,
+     "probability_pct": 50
+    }
+   ]
+  }
+ },
+ "california_trenching": {
+  "aep_cohesive_max_ordinate": {
+   "gamma_pcf": 120,
+   "height_ft": 20,
+   "ns": 3,
+   "factor": 0.3
+  },
+  "aep_multi_level_cohesionless": {
+   "gamma_pcf": 120,
+   "height_ft": 30,
+   "ka": 0.33,
+   "h1_ft": 6,
+   "hn1_ft": 6
+  },
+  "aep_single_level_cohesionless": {
+   "gamma_pcf": 120,
+   "height_ft": 20,
+   "ka": 0.33
+  },
+  "apparent_active_coefficient": {
+   "sigma_a_psf": 100,
+   "gamma_pcf": 120,
+   "height_ft": 20
+  },
+  "at_rest_k0": {
+   "phi_deg": 30,
+   "beta_deg": 20
+  },
+  "boussinesq_strip_load_pressure": {
+   "q_psf": 30,
+   "alpha_deg": 30,
+   "beta_deg": 30
+  },
+  "coulomb_ka": {
+   "phi_deg": 30,
+   "delta_deg": 0,
+   "beta_deg": 0,
+   "omega_deg": 0
+  },
+  "effective_pile_width_arching": {
+   "effective_width_ft": 1.0,
+   "phi_deg": 35
+  },
+  "factor_of_safety_requirements": {},
+  "heave_factor_of_safety": {
+   "cohesion_psf": 500,
+   "nc": 7.6,
+   "gamma_pcf": 120,
+   "height_ft": 30,
+   "width_ft": 15,
+   "surcharge_psf": 300
+  },
+  "lagging_design_load": {
+   "earth_pressure_psf": 500,
+   "surcharge_present": false
+  },
+  "lateral_earth_pressure_resultant": {
+   "gamma_pcf": 120,
+   "height_ft": 12,
+   "k": 0.33
+  },
+  "log_spiral_passive_kp": {
+   "kp_initial": 19,
+   "reduction_factor_r": 0.679
+  },
+  "matrix_4_1_passive_reduction_factor": {
+   "phi_deg": 32,
+   "delta_over_phi": 0.44
+  },
+  "max_allowable_slope_angle": {
+   "phi_deg": 30,
+   "cohesion_psf": 0,
+   "gamma_pcf": 120,
+   "height_ft": 10
+  },
+  "minimum_construction_surcharge": {},
+  "osha_soil_classification": {},
+  "osha_soil_type_from_qu": {
+   "qu_tsf": 30
+  },
+  "osha_timber_shoring_pressure": {
+   "soil_type": "A",
+   "depth_ft": 30
+  },
+  "overstress_factor": {},
+  "rankine_ka": {
+   "phi_deg": 30,
+   "beta_deg": 20
+  },
+  "rankine_kp": {
+   "phi_deg": 30,
+   "beta_deg": 10
+  },
+  "stability_number": {
+   "gamma_pcf": 120,
+   "height_ft": 30,
+   "cu_psf": 500
+  },
+  "table_2_1_max_allowable_slope": {
+   "soil_type": "C"
+  },
+  "table_3_1_granular_properties": {
+   "density": "dense"
+  },
+  "table_3_2_simplified_soil_values": {
+   "soil_class": "gravel",
+   "density": "dense"
+  },
+  "table_3_3_cohesive_properties": {},
+  "table_3_4_test_reliability": {},
+  "table_4_1_mobilized_wall_movements": {},
+  "table_4_2_wall_friction": {
+   "interface_material": "mass concrete"
+  },
+  "tension_crack_depth": {
+   "cohesion_psf": 500,
+   "gamma_pcf": 120,
+   "ka": 0.33
+  },
+  "uniform_surcharge_pressure": {
+   "q_psf": 300,
+   "k": 0.33
+  }
+ },
+ "dm7": {
+  "Nc_star_FHWA_from_Ir": {
+   "I_r": 50.0
+  },
+  "Nc_star_FHWA_from_su": {
+   "s_u": 50.0,
+   "P_a": 100.0
+  },
+  "aashto_group_index": {
+   "F": 55.0,
+   "LL": 50.0,
+   "PI": 25.0
+  },
+  "aashto_group_index_a2": {
+   "F": 30.0,
+   "PI": 20.0
+  },
+  "active_earth_pressure_resultant": {
+   "Ka": 0.333,
+   "gamma": 120.0,
+   "H": 0.0
+  },
+  "allowable_friction_angle": {
+   "phi_prime_deg": 30.0,
+   "F": 2.0
+  },
+  "allowable_passive_resistance": {
+   "Pp": 18000.0,
+   "F": 2.0
+  },
+  "alpha_API_P2A": {
+   "s_u": 50.0,
+   "sigma_z_eff": 100.0
+  },
+  "alpha_API_from_OCR": {
+   "OCR": 1.0
+  },
+  "alpha_chen_drilled_shaft": {
+   "s_u_ICU": 100.0,
+   "P_a": 100.0
+  },
+  "alpha_coleman_CFA": {
+   "s_u": 100.0,
+   "P_a": 100.0
+  },
+  "alpha_method_unit_shaft_resistance": {
+   "alpha": 0.5,
+   "s_u": 200.0
+  },
+  "alpha_salgado_drilled_shaft": {
+   "s_u": 100.0,
+   "P_a": 100.0
+  },
+  "alpha_tomlinson_transition": {
+   "s_u": 100.0,
+   "P_a": 100.0
+  },
+  "angular_distortion": {
+   "delta_Vi": 1.2,
+   "delta_Vj": 0.4,
+   "d_b": 480.0
+  },
+  "anisotropic_transformation_factor": {
+   "k_max": 4.0,
+   "k_min": 1.0
+  },
+  "at_rest_coefficient_mayne_kulhawy": {
+   "phi_prime_deg": 30.0,
+   "OCR": 1.0
+  },
+  "at_rest_earth_pressure_coefficient": {
+   "sigma_h_eff": 600.0,
+   "sigma_z_eff": 1200.0
+  },
+  "average_cohesion_mixed_layers": {
+   "H1": 3.0,
+   "c1": 100.0,
+   "H2": 5.0,
+   "c2": 200.0
+  },
+  "average_friction_angle_mixed_layers": {
+   "H1": 3.0,
+   "phi1_deg": 30.0,
+   "H2": 5.0,
+   "phi2_deg": 20.0
+  },
+  "base_pressure_max_trapezoidal": {
+   "R": 10000.0,
+   "e": 1.0,
+   "B": 8.0
+  },
+  "base_pressure_max_triangular": {
+   "R": 10000.0,
+   "x0": 2.0
+  },
+  "base_pressure_min_trapezoidal": {
+   "R": 10000.0,
+   "e": 1.0,
+   "B": 8.0
+  },
+  "base_pressure_uniform": {
+   "R": 10000.0,
+   "x0": 2.0
+  },
+  "bearing_capacity_factor_Nc_increasing_su": {
+   "k": 10.0,
+   "B": 4.0,
+   "s_u0": 200.0
+  },
+  "beta_coefficient": {
+   "K": 1.0,
+   "delta_deg": 30.0
+  },
+  "beta_method_unit_shaft_resistance": {
+   "beta": 0.3,
+   "sigma_z_eff": 100.0
+  },
+  "block_failure_Nc": {
+   "B": 6.0,
+   "L": 9.0,
+   "Z": 20.0
+  },
+  "block_failure_resistance": {
+   "Z": 20.0,
+   "B": 6.0,
+   "L": 9.0,
+   "f_s1": 1.0,
+   "s_u2": 2.0,
+   "N_c": 7.5
+  },
+  "borrow_volume_from_waste_fraction": {
+   "V_F": 1000.0,
+   "gamma_d_F": 120.0,
+   "gamma_d_B": 100.0,
+   "X_L": 0.1
+  },
+  "borrow_volume_from_waste_weight": {
+   "V_F": 1000.0,
+   "gamma_d_F": 120.0,
+   "gamma_d_B": 100.0,
+   "W_L": 5000.0
+  },
+  "boussinesq_circular_load": {
+   "q0": 1000.0,
+   "r": 1.0,
+   "z": 100.0
+  },
+  "boussinesq_line_load": {
+   "P": 30,
+   "x": 30,
+   "z": 30
+  },
+  "boussinesq_point_load": {
+   "Q": 1000.0,
+   "x": 100.0,
+   "y": 100.0,
+   "z": 1.0
+  },
+  "boussinesq_rectangular_load": {
+   "q0": 100.0,
+   "x": 1.0,
+   "y": 1.0,
+   "z": 1000.0
+  },
+  "boussinesq_semi_infinite_load": {
+   "q0": 30,
+   "x": 30,
+   "z": 30,
+   "R": 30,
+   "beta": 30
+  },
+  "boussinesq_slope_load": {
+   "q0": 30,
+   "x": 30,
+   "z": 30,
+   "a": 30,
+   "beta": 30
+  },
+  "boussinesq_strip_load": {
+   "q0": 30,
+   "alpha": 30,
+   "gamma_angle": 30
+  },
+  "boussinesq_terrace_load": {
+   "q0": 30,
+   "x": 30,
+   "a": 30,
+   "alpha": 30,
+   "beta": 30
+  },
+  "boussinesq_triangular_load": {
+   "q0": 30,
+   "x": 30,
+   "a": 30,
+   "b": 30,
+   "alpha": 30,
+   "beta": 30
+  },
+  "broms_drained_Zmin": {
+   "P_t_ult": 10.0,
+   "M_t_ult": 50.0,
+   "gamma_eff": 0.06,
+   "b": 1.0,
+   "K_P": 3.0
+  },
+  "broms_drained_max_moment": {
+   "M_t_ult": 50.0,
+   "P_t_ult": 10.0,
+   "f": 5.0,
+   "gamma_eff": 0.06,
+   "b": 1.0,
+   "K_P": 3.0
+  },
+  "broms_drained_passive": {
+   "gamma_eff": 0.06,
+   "b": 1.0,
+   "K_P": 3.0,
+   "Z_min": 10.0
+  },
+  "broms_drained_zero_shear_depth": {
+   "P_t_ult": 27.0,
+   "gamma_eff": 0.06,
+   "b": 1.0,
+   "K_P": 3.0
+  },
+  "broms_factored_load": {
+   "P_dead": 10.0,
+   "P_live": 20.0
+  },
+  "broms_factored_moment": {
+   "M_dead": 100.0,
+   "M_live": 200.0
+  },
+  "broms_factored_phi": {
+   "phi_deg": 30.0
+  },
+  "broms_factored_su": {
+   "s_u": 2.0
+  },
+  "broms_undrained_Zmin": {
+   "b": 1.0,
+   "f": 4.0,
+   "g": 9.25
+  },
+  "broms_undrained_f": {
+   "P_t_ult": 54.0,
+   "s_u_star": 1.5,
+   "b": 1.0
+  },
+  "broms_undrained_g": {
+   "M_t_ult": 100.0,
+   "P_t_ult": 54.0,
+   "b": 1.0,
+   "f": 4.0,
+   "s_u_star": 1.5
+  },
+  "cbr_from_dcp_nazzal": {
+   "dcp": 20.0
+  },
+  "cbr_from_dcp_power": {
+   "a_coeff": 292.0,
+   "dcp": 10.0,
+   "x": -1.12
+  },
+  "cbr_from_spt": {
+   "n": 10.0
+  },
+  "check_eccentricity_one_direction": {
+   "e": 0.5,
+   "dimension": 6.0
+  },
+  "check_eccentricity_two_directions": {
+   "e_B": 0.1,
+   "e_L": 0.1,
+   "B": 6.0,
+   "L": 12.0
+  },
+  "cheng_Nq": {
+   "phi_deg": 30.0,
+   "Z_over_b": 20.0
+  },
+  "circular_effective_length": {
+   "r": 5.0,
+   "e_x": 1.0
+  },
+  "circular_effective_width": {
+   "r": 5.0,
+   "e_x": 1.0,
+   "L_prime": 8.47702
+  },
+  "clm_deflection_from_load": {
+   "P_t": 10.0,
+   "P_c": 100.0,
+   "b": 1.0,
+   "a": 0.15,
+   "n": 0.73
+  },
+  "clm_deflection_from_moment": {
+   "M_t": 50.0,
+   "M_c": 500.0,
+   "b": 1.0,
+   "a": 0.15,
+   "n": 0.73
+  },
+  "clm_load_from_deflection": {
+   "y_t": 0.5,
+   "b": 1.0,
+   "P_c": 100.0,
+   "a": 0.15,
+   "n": 0.73
+  },
+  "clm_max_moment": {
+   "P_t": 10.0,
+   "P_c": 100.0,
+   "M_c": 500.0,
+   "a": 0.1,
+   "n": 0.68
+  },
+  "clm_moment_from_deflection": {
+   "y_t": 0.5,
+   "b": 1.0,
+   "M_c": 500.0,
+   "a": 0.15,
+   "n": 0.73
+  },
+  "coefficient_of_curvature": {
+   "D60": 6.0,
+   "D30": 3.0,
+   "D10": 1.0
+  },
+  "coefficient_of_interaction": {
+   "delta_deg": 30.0,
+   "phi_eff_deg": 45.0
+  },
+  "coefficient_of_uniformity": {
+   "D60": 6.0,
+   "D10": 1.5
+  },
+  "coefficient_of_variation": {
+   "x": [
+    2,
+    4,
+    6,
+    8
+   ]
+  },
+  "coefficient_of_variation_from_params": {
+   "std_dev": 2.5,
+   "mean": 10.0
+  },
+  "combined_cov": {
+   "cov_w": 0.1,
+   "cov_e": 0.2,
+   "cov_t": 0.3
+  },
+  "combined_degree_of_consolidation": {
+   "Uz": 50.0,
+   "Ur": 60.0
+  },
+  "confinement_factor_from_blast_data": {
+   "PPV": 2.0,
+   "SD": 15.0
+  },
+  "constrained_modulus_cpt": {
+   "alpha": 2.5,
+   "qc": 4000.0
+  },
+  "constrained_modulus_linear": {
+   "m": 10.0,
+   "sigma_v_eff": 50.0
+  },
+  "constrained_modulus_nonlinear": {
+   "m": 10.0,
+   "sigma_v_eff": 100.0,
+   "pa": 101.325
+  },
+  "constrained_modulus_spt": {
+   "f": 5.0,
+   "n": 20.0,
+   "pa": 101.325
+  },
+  "corner_bearing_pressure": {
+   "q_gross": 10.0,
+   "e_B": 0.5,
+   "e_L": 1.0,
+   "B": 6.0,
+   "L": 12.0
+  },
+  "corrected_spt_silty_sand": {
+   "N_prime": 25.0
+  },
+  "corrected_undrained_shear_strength_vane": {
+   "s_u_fv": 500.0,
+   "mu_R": 0.8
+  },
+  "coulomb_active_coefficient": {
+   "phi_prime_deg": 30.0
+  },
+  "coulomb_active_earth_pressure": {
+   "gamma": 120.0,
+   "H": 10.0,
+   "phi_prime_deg": 30.0
+  },
+  "coulomb_passive_coefficient": {
+   "phi_prime_deg": 30.0
+  },
+  "coulomb_passive_earth_pressure": {
+   "gamma": 120.0,
+   "H": 10.0,
+   "phi_prime_deg": 30.0
+  },
+  "cpt_friction_angle_mayne": {
+   "qt": 10000.0,
+   "sigma_v_eff": 400.0,
+   "pa": 100.0
+  },
+  "cpt_friction_angle_robertson_campanella": {
+   "qc": 10000.0,
+   "sigma_v_eff": 100.0
+  },
+  "cpt_oc_nc_resistance_ratio": {
+   "ocr": 4.0,
+   "beta": 0.5
+  },
+  "cpt_undrained_strength_nc": {
+   "qc": 2000.0,
+   "nc": 20.0
+  },
+  "cpt_undrained_strength_nk": {
+   "qc": 2000.0,
+   "sigma_v": 100.0,
+   "nk": 15.0
+  },
+  "cpt_undrained_strength_nkt": {
+   "qt": 2500.0,
+   "sigma_v": 120.0,
+   "nkt": 15.0
+  },
+  "critical_depth_vertical_cut_clay": {
+   "s_u": 500.0,
+   "gamma_t": 120.0
+  },
+  "critical_scour_velocity": {
+   "D50": 2.0
+  },
+  "cumulative_mass_function": {
+   "pmf_values": [
+    0.2,
+    0.3,
+    0.5
+   ],
+   "index": 1
+  },
+  "cyclic_stress_ratio": {
+   "tau_cyc": 500.0,
+   "sigma_v_eff": 2000.0
+  },
+  "darcy_flow_rate": {
+   "k": 0.01,
+   "i": 0.5,
+   "A": 10.0
+  },
+  "darcy_flow_rate_per_unit_width": {
+   "k": 0.02,
+   "i": 0.3,
+   "y": 5.0
+  },
+  "depth_to_fixity_drained": {
+   "E_p": 29000.0,
+   "I_p": 100.0,
+   "n_h": 5.0
+  },
+  "depth_to_fixity_undrained": {
+   "E_p": 29000.0,
+   "I_p": 100.0,
+   "b": 1.0,
+   "k_h": 10.0
+  },
+  "discharge_velocity": {
+   "k": 0.05,
+   "i": 0.4
+  },
+  "dm7_1_ch3_relative_compaction": {
+   "gamma_d": 110.0,
+   "gamma_d_max": 125.0
+  },
+  "dm7_1_ch3_relative_density_from_void_ratio": {
+   "e": 0.65,
+   "e_max": 0.9,
+   "e_min": 0.5
+  },
+  "dm7_1_ch4_pore_water_pressure": {
+   "h_p": 10.0,
+   "gamma_w": 62.4
+  },
+  "dm7_1_ch6_pore_water_pressure": {
+   "h_t": 15.0,
+   "h_z": 5.0,
+   "gamma_w": 62.4
+  },
+  "dm7_1_ch8_power_function_shear_strength": {
+   "a": 0.5,
+   "sigma_ff_eff": 200.0,
+   "pa": 101.325,
+   "b": 0.8
+  },
+  "dm7_2_ch3_relative_compaction": {
+   "gamma_d_field": 110.0,
+   "gamma_d_max": 125.0
+  },
+  "dm7_2_ch3_relative_density_from_void_ratio": {
+   "e": 0.65,
+   "e_max": 0.9,
+   "e_min": 0.5
+  },
+  "dm7_2_pro_power_function_shear_strength": {
+   "a": 0.8,
+   "b": 0.9,
+   "sigma_prime": 2116.0,
+   "p_a": 2116.0
+  },
+  "dmt_friction_angle_lower_bound": {
+   "kd": 5.0
+  },
+  "dmt_friction_angle_upper_bound": {
+   "kd": 5.0
+  },
+  "dmt_horizontal_stress_index": {
+   "p0": 300.0,
+   "u0": 50.0,
+   "sigma_v_eff": 100.0
+  },
+  "drag_force_check": {
+   "Q_d": 100.0,
+   "Q_np": 150.0,
+   "P_r": 200.0
+  },
+  "drain_spacing_factor": {
+   "n": 20.0,
+   "approximate": true
+  },
+  "drained_youngs_modulus_from_undrained": {
+   "eu": 3000.0,
+   "nu": 0.3
+  },
+  "drilled_shaft_base_resistance_at_4pct": {
+   "R_b": 1000.0,
+   "soil_type": "fine"
+  },
+  "driving_stress_limit_concrete_compression": {
+   "phi_da": 1.0,
+   "f_c_prime": 5.0,
+   "f_pe": 0.7
+  },
+  "driving_stress_limit_concrete_tension": {
+   "phi_da": 1.0,
+   "f_c_prime": 5.0,
+   "f_pe": 0.7
+  },
+  "driving_stress_limit_steel": {
+   "phi_da": 1.0,
+   "f_y": 50.0
+  },
+  "driving_stress_limit_timber": {
+   "phi_da": 1.15,
+   "f_cto": 1.2
+  },
+  "dry_unit_weight": {
+   "gamma_t": 120.0,
+   "w": 15.0
+  },
+  "dry_unit_weight_from_saturation": {
+   "S": 85.0,
+   "w": 15.0,
+   "G_s": 2.7,
+   "gamma_w": 62.4
+  },
+  "eccentricity": {
+   "M": 50.0,
+   "Q": 200.0
+  },
+  "effective_base_width_triangular": {
+   "x0": 2.0
+  },
+  "effective_base_width_uniform": {
+   "x0": 2.0
+  },
+  "effective_foundation_length": {
+   "L": 12.0,
+   "e_L": 1.0
+  },
+  "effective_foundation_width": {
+   "B": 6.0,
+   "e_B": 0.5
+  },
+  "effective_horizontal_stress": {
+   "K": 0.5,
+   "sigma_v_eff": 1000.0
+  },
+  "effective_vertical_stress": {
+   "sigma_v": 1800.0,
+   "u": 624.0
+  },
+  "elastic_compression_pile": {
+   "delta_Q": 100.0,
+   "Z": 30.0,
+   "A_p": 1.0,
+   "E_p": 29000.0
+  },
+  "equivalent_cohesion": {
+   "a": 0.8,
+   "b": 0.85,
+   "sigma_prime_low": 500.0,
+   "sigma_prime_high": 2000.0,
+   "p_a": 2116.0
+  },
+  "equivalent_drain_diameter": {
+   "a": 4.0,
+   "b": 0.25
+  },
+  "equivalent_fluid_unit_weight": {
+   "gamma": 120.0,
+   "K": 0.5
+  },
+  "equivalent_footing_length": {
+   "L": 18.0,
+   "z2": 0.0
+  },
+  "equivalent_footing_width": {
+   "B": 18.0,
+   "z2": 0.0
+  },
+  "equivalent_friction_angle": {
+   "a": 0.8,
+   "b": 0.85,
+   "sigma_prime_low": 500.0,
+   "sigma_prime_high": 2000.0,
+   "p_a": 2116.0
+  },
+  "equivalent_layer_thickness": {
+   "cv_i": 0.5,
+   "cv_n": 2.0,
+   "Hn": 10.0
+  },
+  "equivalent_uniform_bearing_pressure": {
+   "Q_DL_LL": 100.0,
+   "W_F": 20.0,
+   "W_S": 30.0,
+   "B_prime": 5.0,
+   "L_prime": 10.0
+  },
+  "expansion_index": {
+   "delta_H": 0.05,
+   "H_i": 1.0
+  },
+  "factor_of_safety": {
+   "s": 500.0,
+   "tau": 250.0
+  },
+  "figure_4_36_moment_reduction": {
+   "rho": 20.0,
+   "soil_type": "Very dense coarse-grained"
+  },
+  "figure_5_16_Tv_from_U": {
+   "U": 10.0
+  },
+  "figure_5_16_U_from_Tv": {
+   "Tv": 2.0
+  },
+  "figure_5_18a_Ncm_strip": {
+   "cu2_over_cu1": 1.0,
+   "H_over_B": 0.5
+  },
+  "figure_5_18b_Ncm_circular": {
+   "cu2_over_cu1": 0.9,
+   "H_over_B": 0.1
+  },
+  "figure_5_30_Tr": {
+   "Ur": 0.8,
+   "n": 15.0,
+   "Fs": 0.0,
+   "Fr": 0.0
+  },
+  "figure_5_6_mu0": {
+   "D_over_B": 0.0
+  },
+  "figure_5_6_mu1": {
+   "H_over_B": 10.0,
+   "L_over_B": 2.0
+  },
+  "figure_8_46_f": {
+   "pi": 20.0
+  },
+  "flexible_pipe_prism_load": {
+   "gamma_t": 120.0,
+   "H": 10.0,
+   "D": 2.0
+  },
+  "flexible_pipe_trench_load": {
+   "C_d": 1.5,
+   "gamma_t": 120.0,
+   "B_d": 3.0,
+   "D": 2.0
+  },
+  "floating_mat_net_pressure": {
+   "W_structure": 5000.0,
+   "W_excavated": 3000.0,
+   "A_mat": 100.0
+  },
+  "flow_net_flow_rate": {
+   "k": 0.01,
+   "h_L": 10.0,
+   "N_f": 4.0,
+   "N_d": 8.0,
+   "W": 5.0
+  },
+  "fosm_variance_analytical": {
+   "partial_derivatives": [
+    2.0,
+    3.0
+   ],
+   "std_devs": [
+    1.0,
+    2.0
+   ]
+  },
+  "foundation_stiffness_factor": {
+   "ks": 100.0,
+   "B": 2.0,
+   "Ec": 3000000.0,
+   "I": 0.5
+  },
+  "fully_softened_friction_angle": {
+   "pi": 40.0
+  },
+  "geosynthetic_pullout_resistance": {
+   "f_star": 0.8,
+   "alpha": 0.6,
+   "sigma_v_eff": 500.0,
+   "l_e": 5.0
+  },
+  "geotextile_permeability_factor_of_safety": {
+   "k_g": 0.01,
+   "k_s": 0.001
+  },
+  "gross_allowable_bearing_pressure": {
+   "q_ult": 1000.0,
+   "F_BC": 3.0
+  },
+  "gross_bearing_pressure": {
+   "Q_DL_LL": 100.0,
+   "W_F": 20.0,
+   "W_S": 30.0,
+   "A": 10.0
+  },
+  "group_axial_capacity": {
+   "n": 4,
+   "eta_g": 1.0,
+   "R_r": 200.0,
+   "R_r_gblock": 1000.0
+  },
+  "group_uplift_capacity": {
+   "n": 4,
+   "R_r_s": 50.0,
+   "W_r_e": 10.0,
+   "W_r_e_cap": 20.0,
+   "R_r_ublock": 500.0
+  },
+  "hansen_Ngamma": {
+   "phi_deg": 30.0
+  },
+  "hansen_base_factor_phi0": {
+   "eta_rad": 0.5
+  },
+  "hansen_base_factors": {
+   "eta_rad": 0.3,
+   "phi_deg": 30.0
+  },
+  "hansen_correction_factor_c_phi0": {
+   "sc": 0.2,
+   "dc": 0.4,
+   "ic": 0.1
+  },
+  "hansen_depth_factor_phi0": {
+   "Df": 2.0,
+   "B": 4.0
+  },
+  "hansen_depth_factors": {
+   "Df": 2.0,
+   "B": 4.0,
+   "phi_deg": 30.0
+  },
+  "hansen_ground_factor_phi0": {
+   "beta_rad": 0.3
+  },
+  "hansen_ground_factors": {
+   "beta_deg": 10.0
+  },
+  "hansen_inclination_factor_phi0": {
+   "H": 50.0,
+   "A_prime": 100.0,
+   "Ca": 2.0
+  },
+  "hansen_inclination_factors": {
+   "H": 100.0,
+   "V": 500.0,
+   "A_prime": 20.0,
+   "Ca": 10.0,
+   "phi_deg": 30.0
+  },
+  "hansen_shape_factors": {
+   "B": 4.0,
+   "L": 8.0,
+   "phi_deg": 30.0
+  },
+  "hansen_shape_factors_phi0": {
+   "B": 4.0,
+   "L": 8.0
+  },
+  "head_loss_per_drop": {
+   "h_L": 12.0,
+   "N_d": 4.0
+  },
+  "horizontal_earth_pressure_with_surcharge": {
+   "gamma_eq": 60.0,
+   "z": 15.0,
+   "K": 0.5,
+   "q": 0.0
+  },
+  "horizontal_strain": {
+   "delta_Hi": 0.6,
+   "delta_Hj": 0.1,
+   "d_b": 600.0
+  },
+  "hydraulic_conductivity_benson_landfill": {
+   "cf": 30.0,
+   "gc": 4.0,
+   "w_compactor": 200.0,
+   "pi": 25.0,
+   "w": 0.18,
+   "gamma_w": 9.81,
+   "gamma_d": 17.0,
+   "gs": 2.7
+  },
+  "hydraulic_conductivity_benson_trast": {
+   "pi": 25.0,
+   "cf": 30.0,
+   "e_effort": 0.0,
+   "w": 0.18,
+   "gamma_w": 9.81,
+   "gamma_d": 17.0,
+   "gs": 2.7
+  },
+  "hydraulic_conductivity_carrier_beckman": {
+   "e": 1.5,
+   "pl": 25.0,
+   "pi": 30.0
+  },
+  "hydraulic_conductivity_effective_grain_size": {
+   "beta_alpha": 1.0,
+   "D_alpha": 0.2
+  },
+  "hydraulic_conductivity_from_consolidation": {
+   "c_v": 0.01,
+   "m_v": 0.0005,
+   "gamma_w": 9.81
+  },
+  "hydraulic_conductivity_hazen": {
+   "d10": 0.5
+  },
+  "hydraulic_conductivity_kozeny_carman": {
+   "fractions": [
+    [
+     0.5,
+     2.0,
+     0.85
+    ],
+    [
+     0.5,
+     0.85,
+     0.425
+    ]
+   ],
+   "e": 0.6
+  },
+  "hydraulic_gradient": {
+   "h_L": 10.0,
+   "L": 50.0
+  },
+  "hydrodynamic_water_force": {
+   "gamma_w": 62.4,
+   "kh": 0.2,
+   "H": 20.0
+  },
+  "hydrodynamic_water_pressure": {
+   "gamma_w": 62.4,
+   "kh": 0.2,
+   "H": 20.0,
+   "z": 10.0
+  },
+  "immediate_settlement": {
+   "q0": 2000.0,
+   "B": 6.0,
+   "Es": 500000.0,
+   "mu0": 0.9,
+   "mu1": 1.2
+  },
+  "intrinsic_compression_index": {
+   "e_star_100": 1.2,
+   "e_star_1000": 0.8
+  },
+  "intrinsic_compression_index_from_el": {
+   "e_l": 1.5
+  },
+  "intrinsic_void_ratio_at_100kpa": {
+   "e_l": 1.5
+  },
+  "inverse_specific_resistance_sheet_piling": {
+   "q": 0.001,
+   "gamma_w": 9.81,
+   "delta_p": 50.0
+  },
+  "kozeny_carman_hydraulic_conductivity": {
+   "fractions": [
+    [
+     0.5,
+     2.0,
+     0.85
+    ],
+    [
+     0.5,
+     0.85,
+     0.425
+    ]
+   ],
+   "S": 7.0,
+   "e": 0.6
+  },
+  "kozeny_void_ratio_conductivity_ratio": {
+   "e1": 0.8,
+   "e2": 0.5
+  },
+  "laplace_check_2d": {
+   "d2h_dx2": 5.0,
+   "d2h_dy2": -5.0
+  },
+  "lcpc_unit_base_resistance": {
+   "q_c_avg": 10000.0,
+   "P_a": 100.0,
+   "k_t": 0.4
+  },
+  "lcpc_unit_shaft_resistance": {
+   "q_c": 5000.0,
+   "P_a": 100.0,
+   "k_s": 200.0,
+   "fp_over_Pa": 0.8
+  },
+  "load_increment_ratio": {
+   "delta_sigma": 1000.0,
+   "sigma_0": 1000.0
+  },
+  "local_shear_terzaghi": {
+   "c_prime": 200.0,
+   "phi_prime_deg": 30.0
+  },
+  "local_shear_vesic": {
+   "c_prime": 200.0,
+   "phi_prime_deg": 30.0,
+   "Dr": 0.3
+  },
+  "log_spiral_passive_coefficient": {
+   "phi_prime_deg": 30.0,
+   "delta_deg": 0.0
+  },
+  "long_term_geosynthetic_strength": {
+   "t_ult": 4800.0,
+   "rf_cr": 2.0,
+   "rf_d": 1.5,
+   "rf_id": 1.2
+  },
+  "lumped_correction_factor_c": {
+   "sc": 1.2,
+   "dc": 1.1,
+   "ic": 0.9
+  },
+  "lumped_correction_factor_gamma": {
+   "s_gamma": 0.8,
+   "i_gamma": 0.7
+  },
+  "lumped_correction_factor_q": {
+   "sq": 1.3,
+   "dq": 1.05,
+   "iq": 0.8
+  },
+  "mean_effective_stress": {
+   "sigma_zD_eff": 100.0,
+   "phi_deg": 30.0
+  },
+  "meyerhof_Ngamma": {
+   "phi_deg": 30.0
+  },
+  "meyerhof_depth_factors": {
+   "Df": 3.0,
+   "B": 6.0,
+   "phi_deg": 30.0
+  },
+  "meyerhof_group_settlement": {
+   "Q_d": 500.0,
+   "B": 10.0,
+   "L": 15.0,
+   "N1_60": 25.0,
+   "I_f": 0.8
+  },
+  "meyerhof_hansen_Nc": {
+   "phi_deg": 30.0
+  },
+  "meyerhof_hansen_Nq": {
+   "phi_deg": 30.0
+  },
+  "meyerhof_inclination_factors": {
+   "theta_deg": 10.0,
+   "phi_deg": 30.0
+  },
+  "meyerhof_influence_factor": {
+   "Z": 20.0,
+   "B": 10.0
+  },
+  "meyerhof_shape_factors": {
+   "B": 4.0,
+   "L": 8.0,
+   "phi_deg": 30.0
+  },
+  "micropile_shaft_resistance": {
+   "alpha_bond": 150.0,
+   "b": 0.3,
+   "Z_b": 5.0
+  },
+  "mobilized_passive_resistance": {
+   "P_P_ult": 100.0,
+   "y": 0.5,
+   "H_cap": 3.0
+  },
+  "modified_Nc_rectangular_layered_clay": {
+   "Nc_m_s": 5.0,
+   "Nc_m_c": 6.2,
+   "B": 3.0,
+   "L": 6.0
+  },
+  "modified_compression_index": {
+   "Cc": 0.3,
+   "e0": 1.0
+  },
+  "modified_recompression_index": {
+   "Cr": 0.05,
+   "e0": 0.8
+  },
+  "modified_secondary_compression_index_from_wn": {
+   "wn": 40.0
+  },
+  "modulus_of_subgrade_reaction": {
+   "q": 2000.0,
+   "s": 0.05
+  },
+  "mohr_coulomb_drained": {
+   "c_prime": 200.0,
+   "sigma_prime": 1000.0,
+   "phi_prime_deg": 30.0
+  },
+  "mohr_coulomb_undrained_partial": {
+   "c": 500.0,
+   "sigma": 2000.0,
+   "phi_deg": 15.0
+  },
+  "mohr_coulomb_undrained_saturated": {
+   "c": 250.0
+  },
+  "mononobe_okabe_active_coefficient": {
+   "phi_prime_deg": 30.0,
+   "kh": 0.0
+  },
+  "mononobe_okabe_active_force": {
+   "gamma": 120.0,
+   "H": 10.0,
+   "KAE": 0.5,
+   "kv": 0.0
+  },
+  "movement_soft_to_medium_clay": {
+   "delta_m": 1.5,
+   "d_i": 10.0,
+   "H": 20.0
+  },
+  "movement_stiff_clay_sand": {
+   "delta_m": 0.5,
+   "d_i": 10.0,
+   "d_0": 30.0
+  },
+  "net_allowable_bearing_pressure": {
+   "q_ult": 1000.0,
+   "F_BC": 3.0,
+   "sigma_zD": 50.0
+  },
+  "net_bearing_pressure": {
+   "Q_DL_LL": 200.0,
+   "A": 8.0
+  },
+  "net_bearing_pressure_from_ultimate": {
+   "q_ult": 500.0,
+   "sigma_zD": 120.0
+  },
+  "nominal_axial_resistance": {
+   "R_s": 100.0,
+   "R_b": 50.0
+  },
+  "nominal_base_resistance": {
+   "q_b": 100.0,
+   "A_b": 2.5
+  },
+  "nominal_shaft_resistance": {
+   "segments": [
+    [
+     10.0,
+     5.0
+    ]
+   ]
+  },
+  "normalized_wall_stiffness": {
+   "E": 1000000.0,
+   "I": 1.0,
+   "gamma_t": 100.0,
+   "h": 5.0
+  },
+  "overconsolidation_ratio": {
+   "sigma_p": 4000.0,
+   "sigma_z0": 2000.0
+  },
+  "oversize_corrected_dry_unit_weight": {
+   "gamma_dF": 115.0,
+   "P_C": 0.3,
+   "G_sC": 2.65,
+   "P_F": 0.7,
+   "gamma_w": 62.4
+  },
+  "oversize_corrected_water_content": {
+   "P_C": 0.3,
+   "w_C": 0.02,
+   "P_F": 0.7,
+   "w_F": 0.15
+  },
+  "passive_earth_pressure_resultant": {
+   "Kp": 3.0,
+   "gamma": 120.0,
+   "H": 10.0
+  },
+  "peak_particle_velocity": {
+   "K": 150.0,
+   "SD": 20.0
+  },
+  "pile_impedance": {
+   "E": 30000.0,
+   "A": 10.0,
+   "c": 5000.0
+  },
+  "point_load_strength_index": {
+   "P": 5.0,
+   "d": 50.0,
+   "D_e": 50.0
+  },
+  "poissons_ratio_from_friction_angle": {
+   "phi_prime_deg": 30.0
+  },
+  "power_function_dimensional_to_normalized": {
+   "a_dim": 2.5,
+   "b": 0.8,
+   "p_a": 2116.0
+  },
+  "power_function_normalized_to_dimensional": {
+   "a": 0.6,
+   "b": 0.8,
+   "p_a": 2116.0
+  },
+  "power_function_undrained_strength": {
+   "a_u": 0.3,
+   "b_u": 0.85,
+   "sigma_1_con": 4232.0,
+   "p_a": 2116.0
+  },
+  "preconsolidation_stress_from_su": {
+   "su": 300.0,
+   "usr_nc": 0.25,
+   "m": 0.8,
+   "sigma_z0": 1000.0
+  },
+  "primary_consolidation_settlement_nc": {
+   "C_epsilon_c": 0.15,
+   "sigma_z0": 1000.0,
+   "delta_sigma_z": 1000.0,
+   "H": 10.0
+  },
+  "primary_consolidation_settlement_oc_beyond": {
+   "C_epsilon_r": 0.03,
+   "C_epsilon_c": 0.15,
+   "sigma_z0": 1000.0,
+   "delta_sigma_z": 2000.0,
+   "sigma_p": 2000.0,
+   "H": 10.0
+  },
+  "primary_consolidation_settlement_oc_recompression": {
+   "C_epsilon_r": 0.03,
+   "sigma_z0": 2000.0,
+   "delta_sigma_z": 500.0,
+   "H": 12.0
+  },
+  "probability_of_failure_normal": {
+   "beta": 3.0
+  },
+  "pullout_resistance_factor": {
+   "c_i": 0.8,
+   "phi_eff_deg": 30.0
+  },
+  "rankine_Ka_Kp_reciprocal": {
+   "Ka": 1.0
+  },
+  "rankine_active_horizontal_stress": {
+   "Ka": 0.25,
+   "sigma_z_eff": 2000.0,
+   "c_prime": 100.0
+  },
+  "rankine_active_pressure_coefficient": {
+   "phi_prime_deg": 30.0
+  },
+  "rankine_passive_horizontal_stress": {
+   "Kp": 3.0,
+   "sigma_z_eff": 1000.0
+  },
+  "rankine_passive_pressure_coefficient": {
+   "phi_prime_deg": 30.0
+  },
+  "rate_of_exceedance": {
+   "return_period": 100.0
+  },
+  "rate_of_exceedance_from_probability": {
+   "prob_exceedance": 0.1,
+   "exposure_period": 50.0
+  },
+  "reduced_rigidity_index": {
+   "I_r": 100.0,
+   "epsilon_v": 0.01
+  },
+  "relative_density_from_dry_density": {
+   "gamma_d": 105.0,
+   "gamma_d_max": 120.0,
+   "gamma_d_min": 95.0
+  },
+  "relative_density_from_dry_unit_weight": {
+   "gamma_d_field": 100.0,
+   "gamma_d_max": 110.0,
+   "gamma_d_min": 90.0
+  },
+  "relative_flexibility_anchored_bulkhead": {
+   "H": 48.0,
+   "D": 24.0,
+   "E": 29000000.0,
+   "I": 50.0
+  },
+  "relative_stiffness_factor": {
+   "E_prime_Ib": 1000000.0,
+   "Es": 500.0,
+   "B": 10.0
+  },
+  "relative_water_content": {
+   "w_field": 18.0,
+   "w_opt": 15.0
+  },
+  "reliability_index": {
+   "mu_g": 10.0,
+   "sigma_g": 2.5
+  },
+  "reliability_index_lognormal": {
+   "mu_g": 30,
+   "sigma_g": 30
+  },
+  "required_drain_diameter": {
+   "ch": 0.5,
+   "t": 365.0,
+   "Tr": 0.2
+  },
+  "residual_friction_angle_gibson": {
+   "pi": 40.0
+  },
+  "residual_friction_angle_stark_hussain": {
+   "ll": 60.0,
+   "c0": 46.6,
+   "c1": -0.3357,
+   "c2": -0.00171,
+   "c3": 1.38e-05
+  },
+  "rigid_pipe_trench_load": {
+   "C_d": 1.5,
+   "gamma_t": 120.0,
+   "B_d": 3.0
+  },
+  "rigidity_index": {
+   "E": 1000.0,
+   "nu": 0.3,
+   "sigma_m_eff": 50.0,
+   "phi_deg": 30.0
+  },
+  "rock_bearing_capacity_factor_Nc": {
+   "phi_rf_deg": 30.0
+  },
+  "rock_bearing_capacity_factor_Ngamma": {
+   "Nq": 27.0
+  },
+  "rock_bearing_capacity_factor_Nq": {
+   "phi_rf_deg": 30.0
+  },
+  "rock_reduced_ultimate_bearing_capacity": {
+   "q_ult": 1000.0,
+   "RQD": 0.8
+  },
+  "rock_socket_unit_base_resistance": {
+   "N_cr_star": 2.5,
+   "q_u": 5000.0
+  },
+  "rock_socket_unit_shaft_resistance": {
+   "q_u": 5000.0,
+   "P_a": 100.0
+  },
+  "sample_mean": {
+   "x": [
+    2,
+    4,
+    6,
+    8
+   ]
+  },
+  "sample_standard_deviation": {
+   "x": [
+    2,
+    4,
+    6,
+    8
+   ]
+  },
+  "sample_variance": {
+   "x": [
+    2,
+    4,
+    6,
+    8
+   ]
+  },
+  "scaled_distance": {
+   "D": 100.0,
+   "W": 25.0
+  },
+  "schmertmann_embedment_correction": {
+   "sigma_z0": 500.0,
+   "q0": 2000.0
+  },
+  "schmertmann_settlement": {
+   "C1": 1.0,
+   "C2": 1.0,
+   "q0": 2000.0,
+   "sigma_z0": 500.0,
+   "Iz": [
+    0.4,
+    0.2
+   ],
+   "Es": [
+    1000.0,
+    500.0
+   ],
+   "dz": [
+    2.0,
+    2.0
+   ]
+  },
+  "schmertmann_time_correction": {
+   "t_years": 0.1
+  },
+  "secant_friction_angle_shear_strength": {
+   "sigma_ff_eff": 100.0,
+   "phi_sec_deg": 30.0
+  },
+  "second_layer_thickness": {
+   "B": 8.0,
+   "H1": 7.0,
+   "c1": 200.0,
+   "c2": 400.0,
+   "phi1_deg": 28.0,
+   "phi2_deg": 20.0
+  },
+  "secondary_compression_ratio": {
+   "wn": 40.0
+  },
+  "secondary_compression_settlement": {
+   "C_epsilon_alpha": 0.004,
+   "t": 10.0,
+   "tp": 1.0,
+   "H0": 20.0
+  },
+  "seed_whitman_dynamic_increment": {
+   "gamma": 120.0,
+   "H": 10.0,
+   "kh": 0.2
+  },
+  "seepage_force": {
+   "i": 0.5,
+   "gamma_w": 62.4
+  },
+  "seepage_velocity": {
+   "v_d": 0.5,
+   "n": 0.4
+  },
+  "seismic_adjusted_unit_weight": {
+   "gamma_sat": 125.0,
+   "gamma_w": 62.4
+  },
+  "seismic_psi_low_permeability": {
+   "gamma_sat": 125.0,
+   "gamma_w": 62.4,
+   "kh": 0.2
+  },
+  "sensitivity_vane": {
+   "s_u_fv": 100.0,
+   "s_ur_fv": 10.0
+  },
+  "settlement_clay": {
+   "H0": 10.0,
+   "C_er": 0.01,
+   "C_ec": 0.1,
+   "sigma_z0_eff": 100.0,
+   "sigma_p": 200.0,
+   "delta_sigma_z": 50.0
+  },
+  "settlement_from_strain": {
+   "epsilon_z": [
+    0.01,
+    0.03,
+    0.005
+   ],
+   "H": [
+    5.0,
+    10.0,
+    8.0
+   ]
+  },
+  "settlement_sand_elastic": {
+   "H0": 10.0,
+   "nu_s": 0.3,
+   "E_s": 5000.0,
+   "delta_sigma_z": 100.0
+  },
+  "shaft_critical_depth_clay": {
+   "s_u": 500.0,
+   "gamma_t": 120.0
+  },
+  "shaft_horizontal_pressure_clay": {
+   "gamma_eff": 60.0,
+   "z": 20.0,
+   "s_u": 200.0
+  },
+  "shear_wave_velocity_spt": {
+   "b": 80.0,
+   "n": 20.0,
+   "x": 0.33
+  },
+  "shrinkage_factor": {
+   "gamma_d_F": 120.0,
+   "gamma_d_B": 100.0,
+   "X_L": 0.1
+  },
+  "size_correction_factor": {
+   "D_e": 50.0
+  },
+  "smear_factor": {
+   "kh": 1e-06,
+   "ks": 5e-07,
+   "s": 3.0
+  },
+  "spt_friction_angle_buildings": {
+   "n60": 50.0
+  },
+  "spt_friction_angle_hatanaka_uchida": {
+   "n1_60": 25.0
+  },
+  "spt_friction_angle_kulhawy_mayne": {
+   "n60": 20.0,
+   "sigma_v_eff": 100.0,
+   "pa": 101.325
+  },
+  "spt_friction_angle_roads": {
+   "n60": 20.0
+  },
+  "spt_friction_angle_wolff": {
+   "n1_60": 20.0
+  },
+  "spt_n_correction_for_pore_pressure": {
+   "n60": 10.0
+  },
+  "spt_undrained_strength_stroud_butler": {
+   "n": 20.0,
+   "pi": 30.0
+  },
+  "stability_number_drained": {
+   "gamma": 110.0,
+   "H": 15.0,
+   "c_prime": 250.0
+  },
+  "stability_number_undrained": {
+   "gamma": 120.0,
+   "H": 10.0,
+   "s_u": 500.0
+  },
+  "std_dev_from_range": {
+   "hcv": 100.0,
+   "lcv": 40.0
+  },
+  "stress_change_2V1H": {
+   "Q": 1000.0,
+   "B_prime": 10.0,
+   "L_prime": 13.0,
+   "z_prime": 5.0
+  },
+  "stress_change_neutral_plane": {
+   "Q": 1000.0,
+   "B_prime": 10.0,
+   "L_prime": 13.0,
+   "z_prime": 5.0,
+   "delta_sigma_other": 2.0
+  },
+  "su_ICU_from_DSS": {
+   "s_u_DSS": 100.0
+  },
+  "su_ICU_from_UC": {
+   "s_u_UC": 50.0,
+   "OCR": 1.0
+  },
+  "su_ICU_from_UU": {
+   "s_u_UU": 50.0,
+   "OCR": 1.0
+  },
+  "subgrade_modulus_coupling": {
+   "ks_edge": 500.0,
+   "sigma_z_ave_edge": 100.0,
+   "sigma_z_ave_i": 200.0
+  },
+  "subgrade_modulus_from_elastic_parameters": {
+   "B": 4.0,
+   "Es": 5000.0,
+   "mu0": 0.5,
+   "mu1": 0.8
+  },
+  "subgrade_modulus_from_plate_load_test": {
+   "kp": 500.0,
+   "Bp": 1.0,
+   "B": 4.0,
+   "n": 0.5
+  },
+  "subgrade_modulus_time_dependent": {
+   "s": 0.02,
+   "sc": 0.03,
+   "ks": 40000.0
+  },
+  "surcharge_degree_of_consolidation": {
+   "qf": 1000.0,
+   "sigma_z0": 2000.0,
+   "qs": 500.0
+  },
+  "surcharge_degree_of_consolidation_with_secondary": {
+   "qf": 1000.0,
+   "sigma_z0": 2000.0,
+   "qs": 500.0,
+   "C_alpha_over_Cc": 0.04,
+   "t": 50.0,
+   "tp": 2.0
+  },
+  "table_4_3_trench_fill": {
+   "fill_type": "dry_sand"
+  },
+  "table_4_9_tunnel_behavior": {
+   "N_crit_range": "2-3",
+   "soil_type": "clayey_fine_grained"
+  },
+  "table_5_6_Calpha_Cc": {
+   "soil_type": "organic_clays_silts"
+  },
+  "table_6_18_Fnu": {
+   "poisson_ratio": 0.5,
+   "pile_shape": "circular"
+  },
+  "table_6_21_ks": {
+   "soil_type": "soft_clay_and_mud",
+   "group": "II-A"
+  },
+  "table_6_22_fp": {
+   "soil_type": "soft_clay_and_mud",
+   "group": "II-A"
+  },
+  "table_6_23_kt": {
+   "soil_type": "compact_to_very_compact_sand_and_gravel",
+   "group": "II"
+  },
+  "table_6_36_clm": {
+   "soil_type": "clay",
+   "ratio": "Pt/Pc",
+   "fixity": "free"
+  },
+  "table_6_37_clm": {
+   "soil_type": "clay",
+   "fixity": "free"
+  },
+  "table_8_24_cbr_dcp": {
+   "source": "harrison_1986_clay_dcp_lt_10"
+  },
+  "table_8_6_stark_hussain": {
+   "cf_range": "lt_20",
+   "sigma_n_range": "50_kPa"
+  },
+  "table_8_9_shansep_m": {
+   "soil": "theoretical"
+  },
+  "terzaghi_Nc": {
+   "phi_deg": 30.0
+  },
+  "terzaghi_Ngamma": {
+   "phi_deg": 30.0
+  },
+  "terzaghi_Nq": {
+   "phi_deg": 30.0
+  },
+  "terzaghi_shape_factors": {
+   "shape": "continuous"
+  },
+  "three_parameter_power_function": {
+   "a": 0.8,
+   "b": 0.9,
+   "t": 0.1,
+   "sigma_prime": 2116.0,
+   "p_a": 2116.0
+  },
+  "time_factor_radial": {
+   "Ur": 0.5,
+   "Fn": 2.0
+  },
+  "time_factor_vertical": {
+   "cv": 0.5,
+   "t": 100.0,
+   "Hdr": 10.0
+  },
+  "total_horizontal_stress": {
+   "sigma_h_eff": 500.0,
+   "u": 624.0
+  },
+  "total_hydraulic_head": {
+   "u": 624.0,
+   "gamma_w": 62.4,
+   "z": 5.0
+  },
+  "total_transformed_thickness": {
+   "H_prime": [
+    5.0
+   ]
+  },
+  "total_vertical_stress": {
+   "layers": [
+    [
+     10.0,
+     120.0
+    ]
+   ]
+  },
+  "trench_load_coefficient": {
+   "H": 10.0,
+   "B_d": 3.0,
+   "K": 0.33,
+   "mu_prime": 0.55
+  },
+  "ultimate_bearing_capacity_drained": {
+   "c_prime": 200.0,
+   "sigma_zD_prime": 500.0,
+   "gamma": 120.0,
+   "B": 4.0,
+   "Nc": 14.8,
+   "Nq": 6.4,
+   "N_gamma": 5.0
+  },
+  "ultimate_bearing_capacity_undrained_saturated": {
+   "s_u": 500.0,
+   "sigma_zD": 300.0,
+   "Nc": 5.14
+  },
+  "ultimate_bearing_capacity_undrained_unsaturated": {
+   "c": 150.0,
+   "sigma_zD": 400.0,
+   "gamma": 115.0,
+   "B": 3.0,
+   "Nc": 14.8,
+   "Nq": 6.4,
+   "N_gamma": 5.0
+  },
+  "undrained_rigidity_index": {
+   "E_u": 300.0,
+   "s_u": 2.0
+  },
+  "undrained_shear_strength_from_ocr": {
+   "usr_nc": 0.25,
+   "ocr": 4.0,
+   "m": 0.8,
+   "sigma_z0": 2000.0
+  },
+  "undrained_shear_strength_vane": {
+   "T_max": 100.0,
+   "D": 0.5
+  },
+  "undrained_stability_factor": {
+   "sigma_v_eff": 2000.0,
+   "sigma_t": 500.0,
+   "s_u": 300.0
+  },
+  "undrained_strength_from_preconsolidation": {
+   "sigma_p_eff": 200.0
+  },
+  "undrained_strength_ratio_acu_from_icu": {
+   "su_sigma_v_icu": 0.5
+  },
+  "undrained_strength_ratio_hansbo": {
+   "ll": 50.0
+  },
+  "undrained_strength_ratio_oc": {
+   "su_sigma_v_nc": 0.25,
+   "ocr": 4.0,
+   "m": 0.8
+  },
+  "undrained_strength_ratio_skempton": {
+   "pi": 30.0
+  },
+  "undrained_subgrade_modulus": {
+   "C": 67.0,
+   "s_u": 2.0
+  },
+  "unit_base_resistance_drained": {
+   "N_q": 40.0,
+   "sigma_zD_eff": 100.0
+  },
+  "unit_base_resistance_undrained": {
+   "N_c_star": 9.0,
+   "s_u": 50.0
+  },
+  "unit_base_resistance_vesic_drained": {
+   "N_q_star": 50.0,
+   "sigma_m_eff": 80.0
+  },
+  "uplift_block_capacity_undrained": {
+   "Z": 10.0,
+   "B": 6.0,
+   "L": 9.0,
+   "s_u_avg": 2.0,
+   "W_e_g": 1000.0
+  },
+  "uplift_block_volume": {
+   "B": 6.0,
+   "L": 9.0,
+   "Z": 10.0
+  },
+  "uplift_block_weight_undrained": {
+   "B": 6.0,
+   "L": 9.0,
+   "Z1": 5.0,
+   "Z2": 5.0,
+   "gamma_m": 120.0,
+   "gamma_b": 60.0,
+   "W_cap": 50.0
+  },
+  "usr_acu_triaxial": {
+   "phi_prime_deg": 30.0
+  },
+  "usr_dss": {
+   "phi_prime_deg": 30.0
+  },
+  "usr_icu_triaxial": {
+   "phi_prime_deg": 30.0
+  },
+  "vesic_Nc_star": {
+   "I_rr": 50.0
+  },
+  "vesic_Nq_star": {
+   "phi_deg": 30.0,
+   "I_rr": 50.0
+  },
+  "void_index": {
+   "e": 1.5,
+   "e_star_100": 1.2,
+   "c_star_c": 0.4
+  },
+  "volumetric_strain": {
+   "q_b_app": 200.0,
+   "E_s": 10000.0,
+   "F_nu": 0.5
+  },
+  "well_resistance_factor": {
+   "kh": 1e-06,
+   "z": 5.0,
+   "Lm": 20.0,
+   "qw": 0.001
+  },
+  "winkler_spring_stiffness": {
+   "ks": 500.0,
+   "A_cont": 4.0
+  },
+  "wood_nonyielding_seismic_force": {
+   "gamma": 120.0,
+   "H": 10.0,
+   "kh": 0.2
+  }
+ },
+ "em_1905": {
+  "equation_5_17_punching_capacity": {
+   "q_ult_1": 20.0,
+   "q_ult_2": 8.0,
+   "H_s": 3.0,
+   "B_eff": 6.0,
+   "L_eff": 6.0,
+   "B": 6.0,
+   "L": 6.0
+  },
+  "equation_5_19_effective_unit_weight": {
+   "gamma_t": 0.12,
+   "D_w": 2.5,
+   "D_f": 2.5,
+   "B": 8,
+   "method": "usace"
+  },
+  "equation_5_1_vertical_load": {
+   "Q": 200.0,
+   "Wf": 30.0
+  },
+  "equation_5_22_ultimate_bearing_capacity": {
+   "c": 0.0,
+   "q0": 0.5,
+   "gamma_eff": 0.06,
+   "B_eff": 6.0,
+   "Nc": 30.14,
+   "Nq": 18.4,
+   "N_gamma": 15.67,
+   "sc": 1.0,
+   "dc": 1.0,
+   "ic": 1.0,
+   "bc": 1.0,
+   "gc": 1.0,
+   "sq": 1.0,
+   "dq": 1.0,
+   "iq": 1.0,
+   "bq": 1.0,
+   "gq": 1.0,
+   "s_gamma": 1.0,
+   "d_gamma": 1.0,
+   "i_gamma": 1.0,
+   "b_gamma": 1.0,
+   "g_gamma": 1.0
+  },
+  "equation_5_23_factor_of_safety": {
+   "q_ult": 15.0,
+   "q_eq": 5.0
+  },
+  "equation_5_24_geometric_mean": {
+   "values": [
+    2.2,
+    3.1,
+    4.0
+   ]
+  },
+  "equation_5_25_in_situ_bearing_capacity": {
+   "drainage": "drained",
+   "k": 0.3,
+   "s": 40.0,
+   "q0": 0.5,
+   "s_factor": 1.0,
+   "d_factor": 1.0,
+   "i_factor": 1.0,
+   "b_factor": 1.0,
+   "g_factor": 1.0
+  },
+  "equation_5_27_in_situ_inclination_factor": {
+   "Df": 3.0,
+   "B_eff": 6.0,
+   "iq": 0.8,
+   "i_gamma": 0.7
+  },
+  "equation_5_29_sliding_factor_of_safety_drained": {
+   "N": 100,
+   "U": 10,
+   "delta_deg": 25,
+   "ca_over_c": 0,
+   "c_eff": 0,
+   "A": 50,
+   "H": 20,
+   "P_ad": 0,
+   "P_pd": 0
+  },
+  "equation_5_2_equivalent_bearing_pressure": {
+   "Q": 1.2,
+   "Wf": 0.6,
+   "B_eff": 2,
+   "L_eff": null,
+   "u_d": 0
+  },
+  "equation_5_30_sliding_factor_of_safety_undrained": {
+   "ca_over_su": 0.5,
+   "su": 1.0,
+   "A": 40,
+   "H": 5,
+   "P_ad": 0,
+   "P_pd": 0
+  },
+  "equation_5_31_developed_strength": {
+   "fs_slide": 2.0,
+   "phi_deg": 30,
+   "c_eff": 0.4
+  },
+  "equation_5_34_developed_earth_forces": {
+   "gamma_eff": 0.12,
+   "Df": 3,
+   "Kp_d": 2.0,
+   "Ka_d": 0.5,
+   "c_d": 0.0,
+   "L": 1
+  },
+  "equation_5_36_uplift_factor_of_safety": {
+   "Wf": 30,
+   "Ws": 20,
+   "Wc": 0,
+   "U": 40
+  },
+  "equation_5_4_effective_dimensions": {
+   "B": 8,
+   "L": 10,
+   "V": 200,
+   "M_B": 100,
+   "M_L": 0
+  },
+  "equation_5_9_circular_effective_footing": {
+   "A": 28.27,
+   "e": 0.5
+  },
+  "equation_6_12_two_to_one_influence_factor": {
+   "shape": "rectangle",
+   "B": 6.0,
+   "z": 6.0,
+   "L": 9.0
+  },
+  "equation_6_1_total_vertical_stress": {
+   "thicknesses": [
+    8,
+    8.0
+   ],
+   "unit_weights": [
+    0.05,
+    0.0565
+   ]
+  },
+  "equation_6_2_effective_vertical_stress": {
+   "sigma_z": 1.0,
+   "u": 0.3
+  },
+  "equation_6_3_overconsolidation": {
+   "sigma_p": 1.0,
+   "sigma_zo": 0.36
+  },
+  "equation_6_5_net_bearing_pressure": {
+   "q": 0.3,
+   "sigma_zD": 0.5
+  },
+  "equation_6_6_induced_vertical_stress": {
+   "I_sigma": 0.5,
+   "q": 0.3,
+   "sigma_zD": 0.5
+  },
+  "equation_6_7_embankment_stress": {
+   "I_sigma": 0.5,
+   "q": 0.54
+  },
+  "equation_6_8_influence_factor": {
+   "shape": "square",
+   "B": 8.0,
+   "z": 14.0,
+   "L": null
+  },
+  "equation_7_10_constrained_modulus_settlement": {
+   "layers": [
+    [
+     1.0,
+     1.0,
+     100.0
+    ]
+   ]
+  },
+  "equation_7_11_menard_settlement": {
+   "q": 3.31,
+   "sigma_zD": 0.156,
+   "B": 8.0,
+   "E_d": 152,
+   "E_c": 78,
+   "alpha_d": 0.5,
+   "alpha_c": 0.33,
+   "lambda_d": 1.1,
+   "lambda_c": 1.1,
+   "soft_layers": []
+  },
+  "equation_7_13_harmonic_mean": {
+   "moduli": [
+    100.0,
+    200.0,
+    400.0
+   ]
+  },
+  "equation_7_14_equivalent_distortion_modulus": {
+   "E1": 225,
+   "E2": 254,
+   "E345": 69,
+   "E678": 509,
+   "E916": 1429
+  },
+  "equation_7_16_cpt_modulus": {
+   "qc": 100,
+   "footing": "axisymmetric"
+  },
+  "equation_7_18_peak_strain_influence": {
+   "q": 2.0,
+   "sigma_zD": 0.2,
+   "sigma_zp": 0.4
+  },
+  "equation_7_19_strain_influence_factor": {
+   "footing": "axisymmetric",
+   "z": 2.0,
+   "B": 6.0,
+   "I_zp": 0.6,
+   "L": null
+  },
+  "equation_7_1_total_settlement": {
+   "delta_i": 0.2,
+   "delta_c": 1.0,
+   "delta_s": 0.3
+  },
+  "equation_7_24_embedment_factor": {
+   "q": 3.31,
+   "sigma_zD": 0.156
+  },
+  "equation_7_25_creep_factor": {
+   "t_years": 50
+  },
+  "equation_7_26_schmertmann_settlement": {
+   "C1": 0.95,
+   "C2": 1.2,
+   "q": 2.0,
+   "sigma_zD": 0.2,
+   "layers": [
+    [
+     0.3,
+     3.0,
+     200.0
+    ],
+    [
+     0.5,
+     3.0,
+     300.0
+    ]
+   ]
+  },
+  "equation_7_27_depth_of_influence": {
+   "B": 8.0
+  },
+  "equation_7_28_compressibility_index": {
+   "N60_mean": 14
+  },
+  "equation_7_29_burland_burbidge_settlement": {
+   "state": "overconsolidated",
+   "q": 3.31,
+   "sigma_zo_mean": 0.35,
+   "sigma_p": 3.88,
+   "Z_I": 6.13,
+   "I_c": 0.0087,
+   "C1": 1.0,
+   "C2": 1.0,
+   "C3": 1.54
+  },
+  "equation_7_32_shape_factor": {
+   "footing": "rectangular",
+   "L": 8.0,
+   "B": 8.0
+  },
+  "equation_7_33_thickness_factor": {
+   "H_s": 3.0,
+   "Z_I": 6.0
+  },
+  "equation_7_34_time_factor": {
+   "R3": 0.3,
+   "Rt": 0.2,
+   "t_years": 50
+  },
+  "equation_7_35_excavation_unloading": {
+   "gamma_t": 0.06,
+   "D": 10.0,
+   "I_sigma": 0.8,
+   "sigma_zgw": 1.2
+  },
+  "equation_7_38_void_ratio_change_settlement": {
+   "H": 10.0,
+   "delta_e": 0.02,
+   "e": 0.8,
+   "kind": "rebound"
+  },
+  "equation_7_3_constrained_modulus": {
+   "e0": 0.9,
+   "sigma_z": 1.0,
+   "sigma_f": 2.0,
+   "sigma_p": 1.5,
+   "Cc": 0.3,
+   "Cr": 0.05
+  },
+  "equation_7_41_settlement_at_time": {
+   "U_percent": 50.0,
+   "delta_c": 4.0
+  },
+  "equation_7_42_time_for_consolidation": {
+   "T_v": 0.403,
+   "H_dr": 12.5,
+   "cv_ft2_per_day": 0.412
+  },
+  "equation_7_43_coefficient_of_consolidation": {
+   "method": "log time",
+   "H_dr": 0.5,
+   "t": 0.01
+  },
+  "equation_7_45_void_ratio_from_dial": {
+   "H0": 1.0,
+   "e0": 1.0,
+   "d0": 0.0,
+   "dt": -0.1
+  },
+  "equation_7_46_secondary_compression_index": {
+   "e1": 0.8,
+   "e2": 0.79,
+   "t1": 100,
+   "t2": 1000
+  },
+  "equation_7_47_secondary_settlement": {
+   "C_alpha": 0.01,
+   "e_p": 1.0,
+   "H": 10.0,
+   "t1": 1000.0,
+   "t2": 100000.0
+  },
+  "equation_7_5_compression_indices": {
+   "e_1": 0.8,
+   "e_2": 0.77,
+   "sigma_1": 1.0,
+   "sigma_2": 10.0,
+   "index": "Cr"
+  },
+  "equation_7_7_consolidation_settlement": {
+   "H": 2.0,
+   "e0": 1.0,
+   "Cc": 0.3,
+   "Cr": 0.03,
+   "sigma_zo": 1.0,
+   "sigma_zf": 2.0,
+   "sigma_p": 1.0
+  },
+  "figure_7_16_time_factor": {
+   "U_percent": 70,
+   "T_v": null
+  },
+  "table_2_1_minimum_factor_of_safety": {
+   "failure_mode": "overturning"
+  },
+  "table_5_2_aashto_shape_depth_factors": {
+   "phi_deg": 30,
+   "B_eff": 2,
+   "L_eff": 2,
+   "Df": 40
+  },
+  "table_5_2_bearing_capacity_factors": {
+   "phi_deg": 30.0,
+   "method": "usace"
+  },
+  "table_5_2_usace_shape_depth_factors": {
+   "flow_number": 3,
+   "B_eff": 8,
+   "L_eff": 8,
+   "Df": 2.5
+  },
+  "table_5_3_aashto_load_inclination_factors": {
+   "H": 10,
+   "V": 100,
+   "B_eff": 5,
+   "L_eff": 10,
+   "c": 0,
+   "phi_deg": 30,
+   "theta_deg": 0
+  },
+  "table_5_3_base_inclination_factors": {
+   "alpha_b_deg": 10,
+   "phi_deg": 30
+  },
+  "table_5_3_usace_ground_inclination_factors": {
+   "alpha_g_deg": 20,
+   "d_g": 0,
+   "B_eff": 5,
+   "phi_deg": 30
+  },
+  "table_5_3_usace_load_inclination_factors": {
+   "H": 10,
+   "V": 100,
+   "phi_deg": 30
+  },
+  "table_5_4_undrained_factors": {
+   "method": "usace",
+   "B_eff": 2,
+   "L_eff": 2,
+   "Df": 6,
+   "H": 0,
+   "V": 10,
+   "su": 1,
+   "theta_deg": null,
+   "alpha_b_deg": 0,
+   "alpha_g_deg": 0,
+   "d_g": null
+  },
+  "table_5_5_in_situ_bearing_factor": {
+   "test": "PMT",
+   "drainage": "undrained"
+  },
+  "table_7_6_menard_rheological_factor": {
+   "soil": "sand",
+   "state": "overconsolidated"
+  },
+  "ultimate_bearing_capacity_drained": {
+   "method": "aashto",
+   "phi_deg": 30,
+   "c": 0,
+   "q0": 4.0,
+   "gamma_eff": 0.06,
+   "B_eff": 2,
+   "L_eff": 2,
+   "Df": 40,
+   "H": 0,
+   "V": 100,
+   "theta_deg": null,
+   "alpha_b_deg": 0,
+   "alpha_g_deg": 0,
+   "d_g": null
+  },
+  "ultimate_bearing_capacity_undrained": {
+   "method": "usace",
+   "su": 1.0,
+   "q0": 0.5,
+   "B_eff": 2,
+   "L_eff": 2,
+   "Df": 6,
+   "H": 0,
+   "V": 10,
+   "theta_deg": null,
+   "alpha_b_deg": 0,
+   "alpha_g_deg": 0,
+   "d_g": null
+  }
+ },
+ "em_2104": {
+  "aci_beta1": {
+   "fc_prime": 4.0
+  },
+  "balanced_eccentricity_doubly": {
+   "kb": 0.6,
+   "beta1": 0.85,
+   "dprime_over_d": 0.1,
+   "rho": 0.01,
+   "rho_prime": 0.005,
+   "fy": 60,
+   "fc_prime": 4
+  },
+  "balanced_eccentricity_singly": {
+   "kb": 30,
+   "rho": 30,
+   "fy": 30,
+   "fc_prime": 30
+  },
+  "balanced_strain_kb": {
+   "beta1": 0.85,
+   "fy": 60.0
+  },
+  "bresler_biaxial_check": {
+   "mux": 50.0,
+   "phi_m0x": 100.0,
+   "muy": 0.0,
+   "phi_m0y": 80.0
+  },
+  "compression_controlled_capacity_doubly": {
+   "e_prime_over_d": 0.3,
+   "dprime_over_d": 0.1,
+   "rho": 0.01,
+   "rho_prime": 0.005,
+   "fy": 60,
+   "fc_prime": 4,
+   "beta1": 0.85,
+   "b": 12,
+   "d": 20,
+   "h": 24,
+   "phi": 0.65
+  },
+  "compression_controlled_capacity_singly": {
+   "e_prime_over_d": 30,
+   "rho": 30,
+   "fy": 30,
+   "fc_prime": 30,
+   "b": 30,
+   "d": 30,
+   "h": 30,
+   "phi": 30,
+   "beta1": 1.0
+  },
+  "compression_steel_stress_at_ku": {
+   "ku": 0.3,
+   "dprime_over_d": 0.15,
+   "beta1": 1.0,
+   "fy": 30
+  },
+  "deflection_control_reinforcement_ratio": {
+   "rho_b": 0.0285
+  },
+  "design_doubly_reinforced": {
+   "mn": 8000.0,
+   "pn": 0.0,
+   "d": 30.0,
+   "dprime": 3.0,
+   "h": 34.0,
+   "b": 12.0,
+   "fc_prime": 4.0,
+   "fy": 60.0
+  },
+  "design_singly_reinforced": {
+   "mn": 147.0,
+   "pn": 0.0,
+   "d": 6.0,
+   "h": 9.0,
+   "b": 12.0,
+   "fc_prime": 4.0,
+   "fy": 60.0
+  },
+  "earthquake_load_combination": {
+   "permanent_sum": 100.0,
+   "eq_load": 40.0,
+   "method": "standard_obe"
+  },
+  "eccentricity_ratio": {
+   "mu": 1200.0,
+   "pu": 50.0,
+   "d": 16.0,
+   "h": 20.0
+  },
+  "kd_table_d1": {
+   "rho_over_rho_b": 3.5,
+   "beta1": 30,
+   "fy": 30
+  },
+  "load_combination_lrfd": {
+   "permanent_terms": [
+    [
+     100.0,
+     1.2
+    ]
+   ],
+   "principal_term": [
+    50.0,
+    1.5
+   ],
+   "companion_terms": [
+    [
+     10.0,
+     1.0
+    ]
+   ]
+  },
+  "max_axial_capacity_doubly": {
+   "phi": 30,
+   "fc_prime": 30,
+   "ag": 30,
+   "rho": 30,
+   "rho_prime": 30,
+   "fy": 30,
+   "bd": 30
+  },
+  "max_axial_capacity_singly": {
+   "phi": 1.0,
+   "fc_prime": 4.0,
+   "ag": 288.0,
+   "as_": 2.0,
+   "fy": 60.0
+  },
+  "max_axial_tension_capacity": {
+   "phi": 0.9,
+   "rho": 0.01,
+   "rho_prime": 0.005,
+   "fy": 60.0,
+   "bd": 720.0
+  },
+  "max_moment_at_rho_limit": {
+   "fc_prime": 30,
+   "kd": 30,
+   "b": 30,
+   "d": 30,
+   "h": 30
+  },
+  "max_reinforcement_ratio": {
+   "rho_b": 0.02851
+  },
+  "min_wall_thickness": {
+   "height_ft": 15.0
+  },
+  "minimum_effective_depth": {
+   "mn": 30,
+   "b": 30,
+   "fc_prime": 30,
+   "kd": 1.0
+  },
+  "probability_of_failure_from_beta": {
+   "beta": 3.5
+  },
+  "pure_flexure_doubly": {
+   "as_": 8.0,
+   "as_prime": 4.0,
+   "fc_prime": 4.0,
+   "fy": 60.0,
+   "b": 12.0,
+   "d": 60.0,
+   "dprime": 6.0
+  },
+  "pure_flexure_singly": {
+   "as_": 1.58,
+   "fy": 60.0,
+   "fc_prime": 4.0,
+   "b": 12.0,
+   "d": 20.5,
+   "phi": 0.9
+  },
+  "pure_tension_capacity": {
+   "phi": 0.9,
+   "as_": 3.0,
+   "as_prime": 2.0,
+   "fy": 60.0
+  },
+  "required_strength_check": {
+   "u_demand": 100.0,
+   "phi": 0.9,
+   "rn_nominal": 150.0
+  },
+  "shear_capacity_curved_member": {
+   "fc_prime": 4000,
+   "nu": 162500,
+   "ag": 576,
+   "b": 12,
+   "d": 43.5
+  },
+  "shear_capacity_one_way_slab": {
+   "fc_prime": 4000,
+   "nu": 0.0,
+   "ag": 336,
+   "b": 12,
+   "d": 24
+  },
+  "shear_capacity_special_straight_member": {
+   "fc_prime": 4000,
+   "ln": 120,
+   "nu": 31700,
+   "ag": 336,
+   "b": 12,
+   "d": 24
+  },
+  "shrinkage_temperature_reinforcement": {
+   "joint_spacing_ft": 45,
+   "gross_thickness_in": 42,
+   "unit_width_in": 12
+  },
+  "single_load_factor_design_moment": {
+   "m_service": 5.0,
+   "category": "usual"
+  },
+  "table_2_1_min_cover": {
+   "concrete_section": "unformed_contact_foundation"
+  },
+  "table_2_2_splice_stagger": {
+   "bar_size": 11
+  },
+  "table_2_3_temp_shrinkage_ratio": {
+   "joint_spacing_ft": 30
+  },
+  "table_3_1_load_inventory": {
+   "load_id": "Hs"
+  },
+  "table_3_2_load_factor": {
+   "load_id": "Hs",
+   "category": "usual"
+  },
+  "table_3_2_permanent_load_factor": {
+   "load_id": "D",
+   "effect": "add"
+  },
+  "table_3_3_max_service_stress": {
+   "category": "usual"
+  },
+  "table_3_4_single_load_factor": {
+   "category": "unusual",
+   "action": "direct_tension"
+  },
+  "table_f2_target_reliability": {
+   "structure_class": "normal",
+   "load_path": "single"
+  },
+  "table_g1_shear_coefficient": {
+   "thickness_in": 120
+  },
+  "tension_between_layers_capacity": {
+   "e_prime_over_d": 0.3,
+   "dprime_over_d": 0.15,
+   "rho": 0.01,
+   "rho_prime": 0.008,
+   "fy": 60.0
+  },
+  "tension_controlled_by_compression_side_ku": {
+   "e_prime_over_d": -0.5,
+   "rho": 0.01,
+   "fy": 60.0,
+   "fc_prime": 4.0
+  },
+  "tension_controlled_capacity_doubly": {
+   "e_prime_over_d": 2.0,
+   "dprime_over_d": 0.1,
+   "rho": 0.01,
+   "rho_prime": 0.005,
+   "fy": 60,
+   "fc_prime": 4,
+   "beta1": 0.85,
+   "b": 12,
+   "d": 20,
+   "h": 24,
+   "phi": 0.9
+  },
+  "tension_controlled_capacity_singly": {
+   "e_prime_over_d": 30,
+   "rho": 30,
+   "fy": 30,
+   "fc_prime": 30,
+   "b": 30,
+   "d": 30,
+   "h": 30,
+   "phi": 30
+  },
+  "tension_flexure_eccentricity_range": {
+   "h": 24.0,
+   "d": 20.0
+  }
+ },
+ "em_2107": {
+  "aep_from_return_period": {
+   "return_period_years": 300.0
+  },
+  "amplification_factor": {
+   "sa": 0.684,
+   "gamma_tilde": 2.8,
+   "pga": 0.325,
+   "z": 311.5,
+   "hs": 350.0
+  },
+  "anchorage_shear_friction_check": {
+   "vu": 50.0,
+   "mu": 0.6,
+   "r": 100.0
+  },
+  "bolt_grade_check": {
+   "grade": "ASTM F3125 Grade A325",
+   "application": "structural"
+  },
+  "dam_period_estimate": {
+   "hs": 350.0,
+   "es": 4000000.0
+  },
+  "earthquake_load_combination": {
+   "permanent_sum": 100.0,
+   "eq_load": 40.0,
+   "method": "standard_obe"
+  },
+  "fatigue_check_required": {
+   "dead_load_compressive_stress": 20.0,
+   "live_load_tensile_stress": 9.0
+  },
+  "fatigue_load_factor": {
+   "life": "finite"
+  },
+  "fatigue_serviceability_load_factor": {
+   "load_id": "Hs"
+  },
+  "faying_surface_class": {
+   "surface_condition": "clean_mill_scale"
+  },
+  "fracture_critical_redundancy_check": {
+   "q_demand_unfactored_sum": 30.0,
+   "rn_nominal": 40.0,
+   "fy": 50.0
+  },
+  "girder_deflection_limit": {
+   "length": 800.0,
+   "cantilever": false
+  },
+  "hss_support_acceleration": {
+   "sa": 0.684,
+   "gamma_tilde": 2.8,
+   "pga": 0.325,
+   "z": 311.5,
+   "hs": 350.0
+  },
+  "hss_support_acceleration_with_c_factor": {
+   "sa": 0.684,
+   "gamma_tilde": 2.8,
+   "pga": 0.325,
+   "z": 311.5,
+   "hs": 350.0
+  },
+  "hydrostatic_horizontal_component": {
+   "r": 30,
+   "gamma_w": 30,
+   "y": 30,
+   "theta1": 30,
+   "theta2": 30
+  },
+  "hydrostatic_moment": {
+   "r": 30,
+   "gamma_w": 30,
+   "y": 30,
+   "theta1": 30,
+   "theta2": 30
+  },
+  "hydrostatic_radial_force": {
+   "r": 30,
+   "gamma_w": 30,
+   "y": 30,
+   "theta1": 30,
+   "theta2": 30
+  },
+  "hydrostatic_resultant_location": {
+   "mh": 533.33,
+   "ph": 50.0,
+   "mv": 533.33,
+   "pv": 15.081
+  },
+  "hydrostatic_simplified_projection": {
+   "gamma_w": 0.0625,
+   "h": 40.0
+  },
+  "hydrostatic_vertical_component": {
+   "r": 30,
+   "gamma_w": 30,
+   "y": 30,
+   "theta1": 30,
+   "theta2": 30
+  },
+  "ice_debris_load": {},
+  "load_category_from_return_period": {
+   "return_period_years": 10.0,
+   "structure_class": "normal"
+  },
+  "load_combination_lrfd": {
+   "permanent_terms": [
+    [
+     100.0,
+     1.2
+    ]
+   ],
+   "principal_term": [
+    50.0,
+    1.5
+   ],
+   "companion_terms": [
+    [
+     10.0,
+     1.0
+    ]
+   ]
+  },
+  "minimum_barge_impact_load": {
+   "gate_width_ft": 35.0
+  },
+  "minimum_rib_depth": {},
+  "mode_shape_phi": {
+   "z": 311.5,
+   "hs": 350.0
+  },
+  "nominal_friction_coefficients": {},
+  "performance_factor": {},
+  "principal_load_condition_factor": {
+   "condition": "condition_1"
+  },
+  "principal_load_factor_self_straining": {},
+  "required_strength_check": {
+   "u_demand": 100.0,
+   "phi": 0.9,
+   "rn_nominal": 150.0
+  },
+  "resultant_angle_from_horizontal": {
+   "ph": 50.0,
+   "pv": 15.081
+  },
+  "seal_preset_force": {
+   "delta": 0.25,
+   "e_seal": 600.0,
+   "i_seal": 1.0,
+   "d1": 4.0
+  },
+  "side_seal_friction_force": {
+   "mu_s": 30,
+   "s_preset": 30,
+   "l_total": 30,
+   "gamma_w": 30,
+   "d2": 30,
+   "l1": 30,
+   "l2": 30,
+   "h": 30
+  },
+  "skin_plate_deflection_limit": {
+   "thickness": 0.5
+  },
+  "skin_plate_thickness_bounds": {},
+  "table_10_load_combination": {
+   "eq_number": "10.7"
+  },
+  "table_3_1_target_reliability": {
+   "structure_class": "normal",
+   "load_path": "redundant"
+  },
+  "table_4_1_load_factor": {
+   "load_id": "Hs",
+   "category": "usual"
+  },
+  "table_4_1_permanent_load_factor": {
+   "load_id": "D",
+   "effect": "add"
+  },
+  "table_4_2_scale_factor": {
+   "height_to_width_category": "gt_1h_1.5w"
+  },
+  "table_d1_measured_amplification": {},
+  "trunnion_friction_force": {
+   "mu": 0.3,
+   "rt": 1385.0
+  },
+  "trunnion_friction_moment": {
+   "ft": 415.3,
+   "r": 0.5
+  },
+  "trunnion_reaction_force": {
+   "rtx": -1336.0,
+   "rty": -363.0
+  },
+  "welding_code_selection": {
+   "cyclically_loaded_or_fcm": true
+  },
+  "westergaard_pressure": {
+   "gamma_w": 62.4,
+   "ac": 0.5,
+   "h": 100.0,
+   "y": 50.0
+  },
+  "wire_rope_tangent_load": {
+   "theta_w": 0.878,
+   "t": 78.44
+  },
+  "wire_rope_wrap_reaction": {
+   "t": 10.0,
+   "b_deg": 90.0
+  }
+ },
+ "eurocode_7_1": {
+  "active_earth_pressure": {
+   "K_a": 0.33,
+   "gamma": 18.0,
+   "depth": 3.0,
+   "q": 10.0
+  },
+  "adjusted_elasticity_settlement": {
+   "p": 100.0,
+   "B": 2.0,
+   "f": 0.6,
+   "E_m": 20000.0
+  },
+  "bearing_capacity_factors": {
+   "phi_deg": 30.0
+  },
+  "cohesion_earth_pressure_coefficient": {
+   "K": 30,
+   "adhesion": 30,
+   "cohesion": 30
+  },
+  "design_approach_sets": {
+   "approach": "DA1-C1"
+  },
+  "drained_bearing_resistance": {
+   "phi_deg": 30.0,
+   "c": 0.0,
+   "q": 50.0,
+   "gamma": 18.0,
+   "B": 2.0,
+   "L": 4.0,
+   "shape": "rectangular"
+  },
+  "mobilised_wall_angle_mw": {
+   "phi_deg": 30,
+   "delta_deg": 30
+  },
+  "passive_earth_pressure": {
+   "K_p": 4.6,
+   "gamma": 18.0,
+   "depth": 2.0,
+   "q": 5.0
+  },
+  "pressuremeter_bearing_resistance": {
+   "sigma_v0": 50.0,
+   "k": 1.0,
+   "p_le_star": 800.0
+  },
+  "table_a_10_correlation_ground_test": {
+   "factor": "mean",
+   "n": 1
+  },
+  "table_a_11_correlation_dynamic_impact_test": {
+   "factor": "mean",
+   "n": 2,
+   "model_factor": "signal_matching"
+  },
+  "table_a_12_anchorage_resistance": {
+   "anchorage_type": "temporary",
+   "factor_set": "R1"
+  },
+  "table_a_13_retaining_structure_resistance": {
+   "resistance": "bearing",
+   "factor_set": "R1"
+  },
+  "table_a_14_slope_stability_resistance": {
+   "factor_set": "R1"
+  },
+  "table_a_15_upl_actions": {
+   "action": "permanent",
+   "condition": "unfavourable"
+  },
+  "table_a_16_upl_soil_resistance": {
+   "parameter": "phi"
+  },
+  "table_a_17_hyd_actions": {
+   "action": "permanent",
+   "condition": "unfavourable"
+  },
+  "table_a_1_equ_actions": {
+   "action": "permanent",
+   "condition": "unfavourable"
+  },
+  "table_a_2_equ_soil_parameters": {
+   "parameter": "phi"
+  },
+  "table_a_3_str_geo_actions": {
+   "action": "permanent",
+   "condition": "unfavourable",
+   "factor_set": "A1"
+  },
+  "table_a_4_str_geo_soil_parameters": {
+   "parameter": "phi",
+   "factor_set": "M2"
+  },
+  "table_a_5_spread_foundation_resistance": {
+   "resistance": "bearing",
+   "factor_set": "R1"
+  },
+  "table_a_6_driven_pile_resistance": {
+   "resistance": "base",
+   "factor_set": "R1"
+  },
+  "table_a_7_bored_pile_resistance": {
+   "resistance": "base",
+   "factor_set": "R1"
+  },
+  "table_a_8_cfa_pile_resistance": {
+   "resistance": "base",
+   "factor_set": "R1"
+  },
+  "table_a_9_correlation_static_load_test": {
+   "factor": "mean",
+   "n": 1
+  },
+  "table_g_1_rock_group": {
+   "rock_type": "pure limestone"
+  },
+  "table_h_1_limiting_relative_rotation": {
+   "limit_type": "acceptable_many_structures",
+   "mode": "sagging"
+  },
+  "table_h_2_limiting_total_settlement": {},
+  "undrained_bearing_resistance": {
+   "cu": 50.0,
+   "q": 30.0,
+   "B": 2.0
+  },
+  "weight_density_coefficient": {
+   "K_n": 5.0,
+   "beta_deg": 0.0,
+   "theta_deg": 0.0
+  }
+ },
+ "eurocode_7_2": {
+  "equation_4_1_cu_from_cpt": {
+   "qc_kpa": 1500,
+   "sigma_v0_kpa": 100,
+   "nk": 15
+  },
+  "equation_4_2_cu_from_cptu": {
+   "qt_kpa": 1600,
+   "sigma_v0_kpa": 100,
+   "nkt": 12
+  },
+  "equation_4_3_oedometer_modulus_from_qc": {
+   "alpha": 2,
+   "qc_mpa": 5
+  },
+  "equation_4_4_cu_from_fvt": {
+   "mu": 0.8,
+   "cfv_kpa": 40
+  },
+  "equation_4_5_cu_from_dmt": {
+   "sigma_v0_eff_kpa": 100,
+   "k_dmt": 5,
+   "i_dmt": 0.4
+  },
+  "equation_burland_burbridge_icc": {
+   "n_avg": 20
+  },
+  "equation_burland_burbridge_settlement": {
+   "b_m": 2,
+   "icc": 0.05,
+   "q_kpa": 200,
+   "sigma_p_kpa": 50,
+   "normally_consolidated": true
+  },
+  "equation_burland_burbridge_shape_factor": {
+   "l_over_b": 1000
+  },
+  "equation_d2_phi_from_qc": {
+   "qc_mpa": 10.0
+  },
+  "equation_d3_settlement_coefficients": {
+   "sigma_v0_eff_kpa": 50,
+   "q_kpa": 150,
+   "t_years": 10,
+   "foundation_shape": "square"
+  },
+  "equation_d3_youngs_modulus_from_qc": {
+   "qc_mpa": 10,
+   "foundation_shape": "axisymmetric"
+  },
+  "equation_d5_stiffness_coefficient_from_qc": {
+   "soil_type": "poorly_graded_sand",
+   "qc_mpa": 10
+  },
+  "equation_g1_density_index_from_dp": {
+   "n10": 10,
+   "grading": "poorly_graded",
+   "groundwater": "above",
+   "probe_type": "dpl"
+  },
+  "equation_g3_stiffness_coefficient_from_dp": {
+   "n10": 10,
+   "soil_type": "sand",
+   "probe_type": "dpl"
+  },
+  "equation_i5_fvt_correction_factor": {
+   "w_l_pct": 60
+  },
+  "equation_j_dmt_oedometer_modulus": {
+   "i_dmt": 0.5,
+   "k_dmt": 5,
+   "e_dmt_mpa": 10
+  },
+  "equation_k1_plt_undrained_shear_strength": {
+   "pu_kpa": 300,
+   "gamma_z_kpa": 20,
+   "plate_condition": "surface"
+  },
+  "equation_k2_plt_modulus": {
+   "delta_p_kpa": 100,
+   "delta_s_mm": 5,
+   "b_m": 0.3,
+   "poisson": 0.3
+  },
+  "equation_k3_plt_subgrade_reaction": {
+   "delta_p_kpa": 100,
+   "delta_s_mm": 5
+  },
+  "equation_n_caco3_from_co2": {
+   "co2_pct": 10
+  },
+  "equation_n_so4_from_so3": {
+   "so3_pct": 10
+  },
+  "table_2_1_test_applicability": {
+   "soil_property": "shear_strength",
+   "method": "cpt_cptu"
+  },
+  "table_3_1_quality_class": {
+   "quality_class": 1
+  },
+  "table_d1_phi_e_from_qc": {
+   "qc_mpa": 7.0
+  },
+  "table_d2_alpha_oedometer": {
+   "soil_type": "low_plasticity_clay",
+   "qc_mpa": 1.0
+  },
+  "table_d3_pile_base_resistance": {
+   "settlement_ratio": 0.02,
+   "qc_mpa": 15
+  },
+  "table_d4_pile_shaft_resistance": {
+   "qc_mpa": 10
+  },
+  "table_d5_alpha_p_alpha_s_sand": {
+   "pile_type": "driven_prefab"
+  },
+  "table_d6_alpha_s_clay_silt_peat": {
+   "soil_type": "clay"
+  },
+  "table_e1_pmt_bearing_factor_k": {
+   "soil_category": "sand_and_gravel",
+   "plm_category": "b",
+   "b_m": 2.0,
+   "l_m": 2.0,
+   "de_m": 1.0
+  },
+  "table_e2_pmt_shape_coefficients": {
+   "lb_ratio": 3,
+   "shape": "square"
+  },
+  "table_e3_pmt_rheological_factor": {
+   "ground_type": "sand_dense"
+  },
+  "table_e4_pmt_pile_compression_factor": {
+   "soil_category": "sand_and_gravel",
+   "plm_category": "a",
+   "pile_type": "bored"
+  },
+  "table_f1_density_index_from_n160": {
+   "n1_60": 15
+  },
+  "table_f2_ageing_factor": {
+   "deposit_type": "natural_deposits"
+  },
+  "table_f3_phi_from_density_index": {
+   "density_index_pct": 40,
+   "grain_size": "fine",
+   "grading": "uniform"
+  },
+  "table_g1_phi_from_density_index_dp": {
+   "grading": "poorly_graded",
+   "density_state": "dense"
+  },
+  "table_h1_phi_e_from_wst": {
+   "density_category": "dense"
+  },
+  "table_l1_sample_mass": {
+   "test": "water_content"
+  },
+  "table_l2_min_mass_sieving": {
+   "largest_particle_mm": 20
+  },
+  "table_m1_classification_test_count": {
+   "test": "particle_size_distribution",
+   "comparable_experience": true
+  },
+  "table_min_test_count": {
+   "test_family": "triaxial_phi",
+   "variability": "low",
+   "comparable_experience": "extensive"
+  },
+  "table_v1_swelling_test_specimens": {
+   "test_type": "swelling_pressure_zero_volume_change"
+  }
+ },
+ "fema_p2082": {
+  "design_response_spectrum_sa": {
+   "period": 0.0,
+   "sds": 1.0,
+   "sd1": 0.6,
+   "tl": 8.0
+  },
+  "design_spectral_acceleration_1s": {
+   "sm1": 0.9
+  },
+  "design_spectral_acceleration_short": {
+   "sms": 1.5
+  },
+  "importance_factor": {
+   "risk_category": "I"
+  },
+  "mcer_from_design_spectrum": {
+   "sa_design": 0.4
+  },
+  "sdc_from_sd1": {
+   "sd1": 30
+  },
+  "sdc_from_sds": {
+   "sds": 30
+  },
+  "seismic_design_category": {
+   "sds": 0.4,
+   "sd1": 0.25,
+   "risk_category": "II",
+   "s1": 0.2
+  },
+  "site_class_f_triggers": {},
+  "site_class_from_vs30": {
+   "vs30": 305.0,
+   "unit": "m/s"
+  },
+  "site_class_table": {},
+  "two_period_spectrum_parameters": {
+   "sds": 1.0,
+   "sd1": 0.6
+  }
+ },
+ "fhwa_pavements": {
+  "backcalculated_to_design_modulus": {
+   "mr_backcalculated_psi": 20000,
+   "basis": "nchrp_1_37a",
+   "layer": "subgrade"
+  },
+  "cbr_from_dcp": {
+   "dcp_mm_per_blow": 12.7
+  },
+  "cbr_from_plasticity_gradation": {
+   "p200": 0.8,
+   "pi": 20
+  },
+  "effective_subgrade_modulus_from_relative_damage": {
+   "uf_avg": 1.0
+  },
+  "granular_resilient_modulus_bulk_stress": {
+   "theta_psi": 30,
+   "k1": 6000,
+   "k2": 0.5
+  },
+  "resilient_modulus_from_cbr": {
+   "cbr": 10,
+   "units": "mpa"
+  },
+  "resilient_modulus_from_cbr_aashto93": {
+   "cbr": 15
+  },
+  "resilient_modulus_from_dcp": {
+   "dcp_mm_per_blow": 10
+  },
+  "resilient_modulus_from_r_value": {
+   "r_value": 60
+  },
+  "seasonal_relative_damage": {
+   "mr_psi": 10000
+  },
+  "table_4_14_soil_as_pavement_material": {
+   "soil_class": "GW"
+  },
+  "table_5_18_compaction_aashto": {
+   "soil_class": "A-1"
+  },
+  "table_5_24_swell_potential_holtz_gibbs": {
+   "potential": "very high"
+  },
+  "table_5_28_typical_cbr": {},
+  "table_5_34_resilient_modulus_correlations": {
+   "property": "cbr"
+  },
+  "table_5_35_default_resilient_modulus": {
+   "soil_class": "A-6"
+  },
+  "table_5_49_drainage_modifier_mi": {
+   "quality": "excellent"
+  },
+  "table_5_50_drainage_coefficient_cd": {
+   "quality": "very poor"
+  },
+  "table_5_56_permeability_soils": {
+   "soil_description": "clean gravel"
+  },
+  "table_5_57_permeability_highway_materials": {
+   "material": "portland cement concrete"
+  },
+  "table_7_12_frost_susceptibility": {
+   "frost_group": "F1"
+  },
+  "table_7_15_geosynthetic_stabilization_criteria": {},
+  "table_7_17_swell_potential_ll_pi": {
+   "potential": "high"
+  },
+  "table_7_4_drainage_quality_definitions": {}
+ },
+ "gec10": {
+  "equation_10_21_rock_socket_side": {
+   "qu_kpa": 1000.0
+  },
+  "equation_10_22_caving_rock_side": {
+   "qu_kpa": 1000.0,
+   "rqd_pct": 100,
+   "joint_condition": "closed"
+  },
+  "figure_10_6_alpha_clay": {
+   "su_ciuc_kpa": 50.0
+  },
+  "su_uc_to_ciuc": {
+   "su_uc_kpa": 50,
+   "sigma_v0_kpa": 200
+  },
+  "su_uu_to_ciuc": {
+   "su_uu_kpa": 50,
+   "sigma_v0_kpa": 200
+  },
+  "table_10_2_nc_base_clay": {
+   "su_psf": 500
+  },
+  "table_11_1_p_multiplier": {
+   "row_position": "lead",
+   "spacing_over_d": 3.0
+  },
+  "table_11_2_group_efficiency_cohesionless": {
+   "spacing_over_d": 2.5
+  },
+  "table_8_4_by_category": {
+   "category": ""
+  },
+  "table_8_4_resistance_factor": {
+   "method": "side_rock_compression"
+  },
+  "table_9_1_lateral_resistance_factor": {
+   "method": "individual"
+  }
+ },
+ "gec11": {
+  "figure_4_10_kr_ka_ratio": {
+   "depth_m": 0.0,
+   "reinforcement_type": "geosynthetic"
+  },
+  "table_2_1_min_reinforcement_length": {},
+  "table_2_2_min_embedment_depth": {},
+  "table_3_11_pet_durability": {},
+  "table_3_1_select_fill_gradation": {},
+  "table_3_3_electrochemical_steel": {},
+  "table_3_4_electrochemical_geosynth": {
+   "polymer": "PET"
+  },
+  "table_3_6_pullout_parameters": {},
+  "table_3_7_galvanization": {},
+  "table_3_8_corrosion_rates": {},
+  "table_3_9_installation_damage": {},
+  "table_4_1_load_combinations": {},
+  "table_4_2_permanent_load_factors": {},
+  "table_4_4_traffic_surcharge": {},
+  "table_4_5_external_resistance": {},
+  "table_4_6_bearing_capacity_factors": {},
+  "table_4_7_internal_resistance": {}
+ },
+ "gec12": {
+  "figure_7_10_to_13_kd": {
+   "phi": 30,
+   "V": 0.5
+  },
+  "figure_7_14_correction_factor": {
+   "phi": 30,
+   "delta_phi_ratio": 0.7
+  },
+  "figure_7_15_limiting_toe_resistance": {
+   "phi": 35.5
+  },
+  "figure_7_16a_alpha_t": {
+   "phi": 30,
+   "D_over_b": 20
+  },
+  "figure_7_16b_nq": {
+   "phi": 39.5
+  },
+  "figure_7_17_adhesion": {
+   "su_ksf": 1.5,
+   "D_over_b": 10.0,
+   "pile_surface": "concrete"
+  },
+  "figure_7_18_adhesion_factor": {
+   "su_ksf": 1.0,
+   "D_over_b": 40,
+   "stratigraphy": "sand_over_stiff_clay"
+  },
+  "figure_7_9_delta_phi_ratio": {
+   "pile_type": "pipe_pile",
+   "V": 1.05
+  },
+  "table_7_10_brown_method_factors": {
+   "loading": "compression",
+   "installation": "impact",
+   "soil_type": "clay_to_sand"
+  },
+  "table_7_11_eslami_fellenius_cs": {
+   "soil_type": "fine_sand"
+  },
+  "table_7_16_soil_setup_factor": {
+   "soil_type": "clay"
+  },
+  "table_7_1_resistance_factor_static": {
+   "method": "NORDLUND",
+   "condition": "COMPRESSION"
+  },
+  "table_7_2_resistance_factor_field": {
+   "method": "static load test and dynamic testing"
+  },
+  "table_7_3_static_analysis_methods": {},
+  "table_7_8_api_design_parameters": {
+   "delta_deg": 15
+  },
+  "table_7_9_beta_nt_coefficients": {
+   "soil_type": "clay"
+  }
+ },
+ "gec13": {
+  "equation_11_1_ltds": {
+   "t_ult_kn_m": 200.0,
+   "rf_id": 1.3,
+   "rf_cr": 1.8,
+   "rf_cbd": 1.3
+  },
+  "equation_4_1_ddc_depth": {
+   "weight_tonnes": 10.0,
+   "drop_height_m": 10.0
+  },
+  "equation_7_4_composite_modulus": {
+   "e_col_kpa": 50000,
+   "e_soil_kpa": 1000,
+   "area_replacement_ratio": 0.2
+  },
+  "equation_8_1_groutability_ratio": {
+   "d15_soil_mm": 0.5,
+   "d85_grout_mm": 0.015
+  },
+  "figure_4_1_ddc_depth": {
+   "weight_tonnes": 30,
+   "drop_height_m": 30
+  },
+  "figure_4_3_suitability_number": {
+   "d50_mm": 0.5,
+   "d20_mm": 0.3,
+   "d10_mm": 0.15
+  },
+  "figure_5_2_area_replacement_ratio": {
+   "column_diameter_m": 0.9,
+   "spacing_m": 2.4,
+   "pattern": "triangular"
+  },
+  "figure_5_5_settlement_improvement": {
+   "area_replacement_ratio": 0.2,
+   "stress_concentration_ratio": 3.0
+  },
+  "table_1_2_applicability": {},
+  "table_1_3_by_function": {},
+  "table_1_6_unit_cost": {},
+  "table_2_1_pvd_applications": {},
+  "table_3_1_lightweight_fill": {},
+  "table_4_3_applied_energy": {
+   "soil_type": "zone 1"
+  },
+  "table_8_1_jet_grouting_systems": {
+   "system": "single"
+  },
+  "table_8_6_soilcrete_strength": {
+   "soil_type": "clays"
+  }
+ },
+ "gec4": {
+  "table_20_corrosion_protection": {
+   "protection_class": "class_i"
+  },
+  "table_6_soil_anchor_transfer_load": {
+   "soil_type": "sand_and_gravel",
+   "relative_density_or_consistency": "medium_dense"
+  },
+  "table_7_bond_stress_cohesionless": {
+   "sub_type": "gravity_grouted_all"
+  },
+  "table_7_bond_stress_cohesive": {
+   "sub_type": "gravity_grouted_all"
+  },
+  "table_7_bond_stress_rock": {
+   "rock_type": "granite_basalt"
+  },
+  "table_8_rock_anchor_transfer_load": {
+   "rock_type": "granite_basalt"
+  }
+ },
+ "gec6": {
+  "figure_4_1_relative_density_spt": {
+   "n_value": 3,
+   "sigma_v_kpa": 48
+  },
+  "figure_4_2_friction_angle_from_density": {
+   "gamma_d_kNm3": 17.3,
+   "relative_density_pct": 0
+  },
+  "figure_5_19_hough_bearing_capacity_index": {
+   "n_prime": 32,
+   "soil_type": "well-graded silty sand and gravel"
+  },
+  "table_4_1_spt_soil_properties": {
+   "n_value": 2,
+   "soil_type": "sand"
+  },
+  "table_5_10_fill_bearing_capacity": {},
+  "table_5_12_shape_rigidity_factor": {
+   "shape": "rectangle",
+   "location": "center",
+   "length_width": 2.0
+  },
+  "table_5_13_poissons_ratio_rock": {
+   "rock_type": "granite"
+  },
+  "table_5_14_youngs_modulus_rock": {
+   "rock_type": "granite"
+  },
+  "table_5_15_friction_factor": {
+   "interface": "rock"
+  },
+  "table_5_1_bearing_capacity_factors": {
+   "phi": 0
+  },
+  "table_5_4_depth_correction_factor": {
+   "phi": 35,
+   "df_bf": 2
+  },
+  "table_5_7_presumptive_bearing_rock": {
+   "rock_type": "massive"
+  },
+  "table_5_9_rqd_bearing_capacity": {
+   "rqd": 100
+  }
+ },
+ "gec7": {
+  "figure_4_3_friction_angle_spt": {
+   "n60": 5,
+   "sigma_v_ratio": 0.5
+  },
+  "figure_5_11_basal_heave_nc": {
+   "h_be": 5.0,
+   "be_le": 0.0
+  },
+  "table_4_10_site_coefficient_fv": {
+   "site_class": "C",
+   "s1": 0.25
+  },
+  "table_4_2a_spt_soil_properties": {
+   "n60": 20
+  },
+  "table_4_3a_elastic_properties": {
+   "soil_type": "clay_soft"
+  },
+  "table_4_3b_elastic_modulus_spt": {
+   "soil_type": "clean_fine_to_medium_sand",
+   "n1_60": 20
+  },
+  "table_4_4a_bond_strength_coarse": {
+   "construction_method": "rotary_drilled",
+   "soil_type": "sand_gravel"
+  },
+  "table_4_4b_bond_strength_fine": {
+   "construction_method": "rotary_drilled",
+   "soil_type": "silty_clay"
+  },
+  "table_4_5_bond_strength_rock": {
+   "rock_type": "basalt"
+  },
+  "table_4_6_pullout_resistance": {
+   "soil_type": "sand_and_gravel",
+   "density": "medium_dense"
+  },
+  "table_4_9_site_coefficient_fpga": {
+   "site_class": "D",
+   "pga": 0.3
+  },
+  "table_5_12_wall_displacement": {
+   "soil_condition": "weathered_rock_stiff_soil"
+  },
+  "table_5_1_factors_of_safety": {
+   "limit_state": "overall_stability"
+  },
+  "table_5_3_load_factors_permanent": {
+   "load_type": "dc_dead_loads"
+  },
+  "table_5_resistance_factors": {
+   "limit_state": "overall_stability"
+  }
+ },
+ "gec8": {
+  "cfa_allowable_capacity_kN": {
+   "ultimate_resistance_kN": 400.0
+  },
+  "cfa_grout_volume_factor": {
+   "delivered_volume_L": 120.0,
+   "nominal_pile_volume_L": 100.0
+  },
+  "dd_pile_side_resistance_MPa": {
+   "spt_n": 20.0,
+   "soil_type": "dirty_rounded"
+  },
+  "table_5_4_p_multiplier": {
+   "row_position": "lead",
+   "spacing_over_b": 3.0,
+   "soil_type": "medium_dense_sand"
+  },
+  "table_group_efficiency_cohesionless": {
+   "spacing_over_d": 2.5
+  }
+ },
+ "gec9": {
+  "table_4_1_lateral_resistance_factor": {
+   "condition": "individual"
+  },
+  "table_7_1_p_multiplier": {
+   "row_position": "lead",
+   "spacing_over_b": 3.0
+  },
+  "table_a1_k_stiff_clay": {
+   "ca_tsf": 0.75,
+   "loading": "static"
+  },
+  "table_a2_epsilon50_stiff_clay": {
+   "ca_tsf": 0.75
+  },
+  "table_a3_k_sand": {
+   "relative_density": "loose",
+   "condition": "submerged"
+  }
+ },
+ "gsa_collapse": {
+  "addition_triggers_existing_building_evaluation": {
+   "addition_gross_area": 4000,
+   "existing_gross_area": 10000,
+   "existing_undergoing_major_renovation": true
+  },
+  "adjacent_element_removal_trigger": {
+   "distance": 9.0,
+   "reference_dimension": 30.0
+  },
+  "cfs_material_basis": {},
+  "cfs_phi_basis": {},
+  "classify_action": {
+   "curve_type": 1,
+   "e_over_g": 3,
+   "is_primary": true
+  },
+  "column_axial_classification": {
+   "p": 600.0,
+   "p_cl": 1000.0
+  },
+  "column_deformation_controlled_shear_check": {
+   "vp": 45.0,
+   "vo": 100.0
+  },
+  "component_capacity_linear": {
+   "deformation_controlled": true
+  },
+  "component_capacity_nonlinear": {
+   "deformation_controlled": true
+  },
+  "counts_as_story": {
+   "is_mechanical_penthouse_or_parking": true
+  },
+  "dcr": {
+   "q_udlim": 150.0,
+   "q_ce": 100.0
+  },
+  "default_lower_bound_factor": {},
+  "deformation_controlled_capacity_check": {
+   "phi": 0.9,
+   "m": 10.74,
+   "q_ce": 100.0,
+   "q_ud": 900.0
+  },
+  "deformation_controlled_capacity_check_nonlinear": {
+   "expected_deformation_capacity": 0.05,
+   "demand": 0.03
+  },
+  "deformation_controlled_load_lsp": {
+   "omega_ld": 2.0,
+   "d": 100.0,
+   "l": 50.0
+  },
+  "disproportionate_collapse_allowance": {
+   "is_exterior_removal": true
+  },
+  "enhanced_local_resistance_removed": {},
+  "fixed_fixed_flexural_stiffness": {
+   "ec": 4031.0,
+   "icr": 16423.0,
+   "length": 450.0
+  },
+  "force_controlled_capacity_check": {
+   "phi": 0.75,
+   "q_cl": 200.0,
+   "q_uf": 140.0
+  },
+  "force_controlled_load_lsp": {
+   "omega_lf": 2.0,
+   "d": 100.0,
+   "l": 50.0
+  },
+  "fsl_applicability": {
+   "fsl": "I"
+  },
+  "gravity_load_away_from_removal": {
+   "d": 100.0,
+   "l": 50.0
+  },
+  "irregularity_check": {},
+  "list_table_c1_1_connection_types": {
+   "restraint": "FR"
+  },
+  "load_redistribution_average_stiffness": {
+   "kr_values": [
+    528.0,
+    528.0,
+    528.0
+   ]
+  },
+  "load_redistribution_average_strength": {
+   "qr_values": [
+    1444.4,
+    1444.4,
+    1444.4
+   ]
+  },
+  "load_redistribution_stiffness_ratio": {
+   "kr_i": 528.0,
+   "kr_bar": 528.0
+  },
+  "load_redistribution_strength_ratio": {
+   "qr_i": 130.0,
+   "qr_bar": 100.0
+  },
+  "load_redistribution_system_stiffness": {
+   "component_stiffnesses": [
+    279.0,
+    249.0
+   ]
+  },
+  "load_redistribution_system_strength": {
+   "component_strengths": [
+    839.8,
+    604.6
+   ],
+   "phi_factors": [
+    1.0,
+    1.0
+   ]
+  },
+  "lrfd_strength_check": {
+   "phi": 0.9,
+   "rn": 100,
+   "ru": 80
+  },
+  "lsp_applicable": {
+   "is_irregular": true,
+   "max_dcr": 2.0
+  },
+  "lsp_story_limit": {},
+  "masonry_material_basis": {},
+  "masonry_phi_basis": {},
+  "masonry_wood_cfs_performance_level": {
+   "material": "masonry"
+  },
+  "minimum_load_redistribution_systems": {
+   "total_floors": 8
+  },
+  "nonlinear_dynamic_load": {
+   "d": 100.0,
+   "l": 50.0
+  },
+  "nonlinear_static_load": {
+   "omega_n": 1.5,
+   "d": 100.0,
+   "s": 20.0
+  },
+  "removal_locations_fsl_3_4": {},
+  "removal_locations_fsl_5": {},
+  "removed_element_extent": {
+   "clear_height_or_story_height": 12.0
+  },
+  "table_10_fr_connection_mfactor": {
+   "connection_type": "improved_wuf_bolted_web",
+   "d": 30.0
+  },
+  "table_10_pr_flexible_connection_mfactor": {
+   "connection_type": "simple_shear_tab",
+   "dbg": 12.0
+  },
+  "table_10_pr_stiff_connection_mfactor": {
+   "connection_type": "double_split_tee",
+   "limit_state": "shear_in_bolt"
+  },
+  "table_11_fr_connection_modeling": {
+   "connection_type": "improved_wuf_bolted_web",
+   "d": 20.0
+  },
+  "table_11_pr_flexible_connection_modeling": {
+   "connection_type": "simple_shear_tab",
+   "dbg": 12.0
+  },
+  "table_11_pr_stiff_connection_modeling": {
+   "connection_type": "double_split_tee",
+   "limit_state": "shear_in_bolt"
+  },
+  "table_4_load_increase_factor": {
+   "material": "steel",
+   "structure_type": "framed",
+   "m_lif": 1.8
+  },
+  "table_5_dynamic_increase_factor": {
+   "material": "steel",
+   "structure_type": "framed",
+   "theta_pra": 0.04,
+   "theta_y": 0.02
+  },
+  "table_6_beam_flexure_modeling": {
+   "rho_diff_over_rho_bal": 0.0,
+   "transverse_reinf": "C",
+   "vw_ratio": 3.0
+  },
+  "table_6_beam_other_modeling": {
+   "condition": "shear",
+   "stirrup_spacing_le_d2": true
+  },
+  "table_7_beam_flexure_mfactor": {
+   "rho_diff_over_rho_bal": 0.037,
+   "transverse_reinf": "C",
+   "vw_ratio": 3.0
+  },
+  "table_7_beam_other_mfactor": {
+   "condition": "shear",
+   "stirrup_spacing_le_d2": true
+  },
+  "table_8_slab_flexure_modeling": {
+   "vg_over_vo": 0.2,
+   "continuity_reinforcement": true
+  },
+  "table_8_slab_other_modeling": {
+   "condition": "development"
+  },
+  "table_9_slab_flexure_mfactor": {
+   "vg_over_vo": 0.2,
+   "continuity_reinforcement": true
+  },
+  "table_9_slab_other_mfactor": {
+   "condition": "development"
+  },
+  "table_c1_1_connection_type": {
+   "connection_type": "reduced_beam_section"
+  },
+  "tie_forces_removed": {},
+  "wood_material_basis": {},
+  "wood_phi_basis": {},
+  "wood_time_effect_factor": {}
+ },
+ "micropile": {
+  "figure_5_23_limiting_lateral_modulus": {
+   "section": "5.5x0.36_n80"
+  },
+  "table_2_1_classification": {
+   "type_letter": "A",
+   "subtype": 1
+  },
+  "table_4_2_rebar_properties": {
+   "bar_size": "#14",
+   "grade": 520
+  },
+  "table_4_5_pipe_properties": {
+   "od_mm": 177.8,
+   "wall_mm": 12.6,
+   "steel_type": "n80"
+  },
+  "table_5_10_soil_modulus_k_clay": {
+   "consistency": "very_stiff",
+   "loading": "static"
+  },
+  "table_5_11_fixity": {
+   "fixity_pct": 0
+  },
+  "table_5_12_elastic_modulus": {
+   "soil_type": "clay_soft"
+  },
+  "table_5_13_elastic_modulus_spt": {
+   "soil_type": "silts_sandy_silts",
+   "n1_60": 20
+  },
+  "table_5_3_alpha_bond": {
+   "soil_type": "silt_clay_soft",
+   "micropile_type": "A"
+  },
+  "table_5_4_group_efficiency": {},
+  "table_5_5_corrosion_criteria": {},
+  "table_5_7_epsilon_50": {
+   "consistency": "soft"
+  },
+  "table_5_8_epsilon_50_stiff": {
+   "su_kpa": 60
+  },
+  "table_5_9_soil_modulus_k_sand": {
+   "density": "loose",
+   "submerged": true
+  }
+ },
+ "ufc_backfill": {
+  "figure_2_5_compaction_induced_lateral_pressure": {
+   "equipment": "10-ton smooth wheel roller"
+  },
+  "relative_compaction_check": {
+   "dry_density_kN_per_m3": 18.0,
+   "max_dry_density_kN_per_m3": 19.0,
+   "required_pct": 95.0
+  },
+  "table_5_1_compaction_criteria": {
+   "soil_group": "pervious",
+   "compaction": "compacted"
+  },
+  "table_backfill_material_classification": {
+   "uscs_class": "GW"
+  },
+  "table_compaction_equipment_selection": {
+   "soil_type": "gravels"
+  },
+  "table_compaction_requirements": {
+   "application": "open_area"
+  },
+  "table_maximum_lift_thickness": {
+   "case": "cohesive_sheepsfoot_or_pneumatic"
+  }
+ },
+ "ufc_collapse": {
+  "adjacent_element_removal_trigger": {
+   "distance": 9.0,
+   "reference_dimension": 30.0
+  },
+  "classify_action": {
+   "curve_type": 1,
+   "e_over_g": 3,
+   "is_primary": true
+  },
+  "cold_formed_steel_alternate_path_modeling_source": {},
+  "cold_formed_steel_default_lower_bound_factor": {},
+  "cold_formed_steel_material_code_references": {},
+  "column_axial_classification": {
+   "p": 600.0,
+   "p_cl": 1000.0
+  },
+  "construction_document_requirements": {},
+  "dcr": {
+   "q_udlim": 150.0,
+   "q_ce": 100.0
+  },
+  "deformation_controlled_capacity_check": {
+   "phi": 0.9,
+   "m": 10.74,
+   "q_ce": 100.0,
+   "q_ud": 900.0
+  },
+  "deformation_controlled_load_lsp": {
+   "omega_ld": 2.0,
+   "d": 100.0,
+   "l": 50.0
+  },
+  "effective_wf_for_nonuniform_load": {
+   "bay_loads_and_areas": [
+    [
+     207.8,
+     16875
+    ],
+    [
+     235.3,
+     3375
+    ],
+    [
+     212.8,
+     1125
+    ]
+   ]
+  },
+  "elr_location_requirement": {
+   "risk_category": "II"
+  },
+  "elr_lrfd_check": {
+   "rn": 100,
+   "ru": 90
+  },
+  "floor_load_wf": {
+   "dead_load": 100,
+   "live_load": 50
+  },
+  "force_controlled_capacity_check": {
+   "phi": 0.75,
+   "q_cl": 200.0,
+   "q_uf": 140.0
+  },
+  "force_controlled_load_lsp": {
+   "omega_lf": 2.0,
+   "d": 100.0,
+   "l": 50.0
+  },
+  "gravity_load_away_from_removal": {
+   "d": 100.0,
+   "l": 50.0
+  },
+  "internal_tie_force_framed": {
+   "wf": 10,
+   "l1": 20
+  },
+  "internal_tie_force_one_way_wall": {
+   "wf": 10,
+   "l1": 52
+  },
+  "internal_tie_force_two_way_wall": {
+   "wf": 10,
+   "l1": 20
+  },
+  "irregularity_check": {},
+  "is_story": {
+   "has_human_occupancy_egress_light_ventilation": true
+  },
+  "list_table_c1_connection_types": {
+   "restraint": "FR"
+  },
+  "lrfd_strength_check": {
+   "phi": 0.9,
+   "rn": 100,
+   "ru": 80
+  },
+  "lsp_applicable": {
+   "is_irregular": true,
+   "max_dcr": 2.0
+  },
+  "masonry_alternate_path_modeling_source": {},
+  "masonry_material_code_references": {},
+  "max_force_in_column_or_wall_strip": {
+   "fi_per_length": 10,
+   "l_transverse_or_longitudinal": 20
+  },
+  "max_tie_spacing": {
+   "l_transverse_or_longitudinal": 20
+  },
+  "minimum_bays_for_tie_force": {
+   "bays_direction_1": 4,
+   "bays_direction_2": 4
+  },
+  "nonlinear_static_load": {
+   "omega_n": 1.5,
+   "d": 100.0,
+   "s": 20.0
+  },
+  "one_way_wall_transverse_length": {
+   "clear_story_height": 12,
+   "building_width": 100
+  },
+  "partial_occupancy_threshold": {},
+  "perimeter_column_effective_wf": {
+   "wf_floor": 30,
+   "cladding_dead_load_psf": 30,
+   "clear_story_height": 30,
+   "cladding_tributary_width": 30,
+   "column_tributary_area": 30
+  },
+  "peripheral_tie_force_one_way": {
+   "wf": 100,
+   "l1": 20,
+   "wc": 10,
+   "ww": 5,
+   "lp": 3.3
+  },
+  "peripheral_tie_force_two_way": {
+   "wf": 214.5,
+   "l1": 37.5,
+   "wc": 35100,
+   "lp": 3.0
+  },
+  "qa_plan_detailed_requirements": {},
+  "qa_plan_required": {
+   "risk_category": "I"
+  },
+  "rc4_column_flexural_demand": {
+   "baseline_gravity_only_mn": 100,
+   "current_design_mn": 150
+  },
+  "rc4_tie_force_minimum_exempt": {
+   "ufc_3_301_01_risk_category": "IV"
+  },
+  "rc4_wall_flexural_demand": {
+   "baseline_gravity_only_mn": 100,
+   "current_design_mn": 120
+  },
+  "rebound_reaction_force": {
+   "inbound_reaction_force": 200
+  },
+  "removed_column_extent": {
+   "clear_height_between_lateral_restraints": 12
+  },
+  "removed_wall_extent": {
+   "clear_story_height": 10,
+   "option": "prescribed"
+  },
+  "required_removal_stories": {},
+  "required_tie_area": {
+   "ru": 250.1,
+   "fy": 60,
+   "phi": 0.75,
+   "overstrength_factor": 1.25
+  },
+  "shear_demand_pinned_fixed_column": {
+   "mn": 783,
+   "l": 16
+  },
+  "special_inspection_requirements": {
+   "material": "structural_steel"
+  },
+  "splice_exclusion_zone": {
+   "bay_or_span_length": 100
+  },
+  "story_count_threshold": {},
+  "structural_observation_required": {
+   "contracting_officer_requires": false,
+   "risk_category": "IV"
+  },
+  "table_2_1_risk_category": {
+   "risk_category": "IV"
+  },
+  "table_2_2_design_requirements": {
+   "risk_category": "I"
+  },
+  "table_3_4_load_increase_factor": {
+   "material": "steel",
+   "structure_type": "framed",
+   "m_lif": 1.8
+  },
+  "table_3_5_dynamic_increase_factor": {
+   "material": "steel",
+   "structure_type": "framed",
+   "theta_pra": 0.05,
+   "theta_y": 0.01
+  },
+  "table_4_1_beam_flexure_modeling": {
+   "rho_diff_over_rho_bal": 0.0,
+   "transverse_reinf": "C",
+   "vw_ratio": 3
+  },
+  "table_4_1_beam_other_modeling": {
+   "condition": "shear",
+   "stirrup_spacing_le_d2": true
+  },
+  "table_4_2_beam_flexure_mfactor": {
+   "rho_diff_over_rho_bal": 0.0,
+   "transverse_reinf": "C",
+   "vw_ratio": 2.0
+  },
+  "table_4_2_beam_other_mfactor": {
+   "condition": "shear",
+   "stirrup_spacing_le_d2": false
+  },
+  "table_4_3_slab_flexure_modeling": {
+   "vg_over_vo": 0.2,
+   "continuity_reinforcement": true
+  },
+  "table_4_3_slab_other_modeling": {
+   "condition": "inadequate_embedment"
+  },
+  "table_4_4_slab_flexure_mfactor": {
+   "vg_over_vo": 0.2,
+   "continuity_reinforcement": true
+  },
+  "table_4_4_slab_other_mfactor": {
+   "condition": "development"
+  },
+  "table_5_1_fr_connection_mfactor": {
+   "connection_type": "improved_wuf_bolted_web",
+   "d": 30
+  },
+  "table_5_1_pr_flexible_connection_mfactor": {
+   "connection_type": "double_angles",
+   "dbg": 10,
+   "limit_state": "shear_in_bolt"
+  },
+  "table_5_1_pr_stiff_connection_mfactor": {
+   "connection_type": "double_split_tee",
+   "limit_state": "shear_in_bolt"
+  },
+  "table_5_2_fr_connection_modeling": {
+   "connection_type": "wuf",
+   "d": 30
+  },
+  "table_5_2_pr_flexible_connection_modeling": {
+   "connection_type": "double_angles",
+   "dbg": 9,
+   "limit_state": "flexure_in_angles"
+  },
+  "table_5_2_pr_stiff_connection_modeling": {
+   "connection_type": "double_split_tee",
+   "limit_state": "tension_in_bolt"
+  },
+  "table_c1_connection_type": {
+   "connection_type": "reduced_beam_section"
+  },
+  "tie_rebar_phi": {},
+  "tie_strength_check": {
+   "phi": 0.75,
+   "rn": 100,
+   "ru": 50
+  },
+  "vertical_tie_force": {
+   "tributary_area": 351.6,
+   "wf": 314.3
+  },
+  "wood_alternate_path_modeling_source": {},
+  "wood_default_lower_bound_factor": {},
+  "wood_material_code_references": {},
+  "wood_time_effect_factor": {}
+ },
+ "ufc_concrete_practice": {
+  "coarseness_factor": {
+   "pct_retained_9_5mm": 40,
+   "pct_retained_2_36mm": 60
+  },
+  "dowel_bar_alignment_tolerance": {},
+  "dowel_bar_corner_clearance": {},
+  "dowel_bar_drilled_hole_oversize": {},
+  "edge_slump_tolerance": {},
+  "table_3_1_weather_severity": {
+   "air_freezing_index": 400,
+   "avg_monthly_precip_in": 5.0
+  },
+  "table_3_2_deleterious_material_limit": {
+   "material": "clay_lumps_and_friable_particles",
+   "aggregate_category": "coarse_severe"
+  },
+  "table_3_3_aggregate_test_time": {
+   "test_method": "astm_c1260"
+  },
+  "table_3_4_portland_cement_type": {
+   "cement_type": "type_i"
+  },
+  "table_3_5_blended_cement_type": {
+   "cement_type": "type_is"
+  },
+  "table_3_6_hydraulic_cement_type": {
+   "cement_type": "type_hs"
+  },
+  "table_3_7_ggbf_slag_grade": {
+   "grade": "grade_120"
+  },
+  "table_3_8_admixture_type": {
+   "admixture_type": "type_g"
+  },
+  "table_8_1_dowel_misalignment_impact": {
+   "misalignment_type": "horizontal_translation"
+  },
+  "table_9_1_maximum_joint_spacing": {
+   "slab_thickness_in": 8,
+   "facility_type": "airfield"
+  },
+  "table_d1_cracking_causes": {
+   "crack_type": "plastic_shrinkage"
+  },
+  "table_e1_rcc_gradation": {
+   "sieve_mm": 4.75
+  },
+  "workability_factor": {
+   "pct_passing_2_36mm": 35,
+   "cementitious_content_kg_m3": 335
+  }
+ },
+ "ufc_expansive": {
+  "eq_4_1_van_der_merwe_heave": {
+   "layers": [
+    {
+     "thickness_ft": 10,
+     "plasticity_index": 40,
+     "clay_fraction_pct": 30
+    }
+   ]
+  },
+  "eq_5_2_potential_vertical_heave": {
+   "elements": [
+    {
+     "initial_void_ratio": 0.8,
+     "final_void_ratio": 0.9
+    }
+   ],
+   "depth_increment_ft": 1.0,
+   "vertical_swell_fraction": 1.0
+  },
+  "eq_5_3_to_5_5_equilibrium_pore_water_pressure": {
+   "profile": "saturated",
+   "depth_ft": 5
+  },
+  "eq_5_8_consolidometer_heave": {
+   "layers": [
+    {
+     "thickness_ft": 1,
+     "swell_index": 0.1,
+     "initial_void_ratio": 1.0,
+     "swell_pressure_tsf": 4,
+     "total_vertical_pressure_tsf": 0.4
+    }
+   ]
+  },
+  "figure_4_1_potential_expansiveness": {
+   "plasticity_index": 40,
+   "clay_fraction_pct": 30
+  },
+  "heave_prediction_mm": {
+   "layers": [
+    {
+     "thickness_m": 1.0,
+     "swell_strain_pct": 2.0
+    },
+    {
+     "thickness_m": 1.0,
+     "swell_strain_pct": 1.0
+    }
+   ]
+  },
+  "table_4_2_swell_johnson": {
+   "plasticity_index": 50,
+   "depth_ft": 5,
+   "initial_water_content": 25
+  },
+  "table_4_2_swell_mckeen_lytton": {
+   "suction_compression_index": 0.1,
+   "final_suction": [
+    1,
+    1,
+    1
+   ],
+   "initial_suction": [
+    12,
+    10,
+    5
+   ]
+  },
+  "table_4_2_swell_schneider_poor": {
+   "plasticity_index": 30,
+   "initial_water_content": 20
+  },
+  "table_4_2_swell_vijayvergiya_ghazzaly": {
+   "liquid_limit": 60,
+   "initial_water_content": 20
+  },
+  "table_active_zone_depth": {
+   "profile": "moist"
+  },
+  "table_foundation_selection": {
+   "predicted_differential_movement_in": 0.5
+  },
+  "table_grade_beam_void_space": {},
+  "table_swell_potential_classification": {
+   "plasticity_index": 5
+  }
+ },
+ "ufc_flexible_practice": {
+  "air_voids_vtm": {
+   "gmb": 2.421,
+   "gmm": 2.519
+  },
+  "bulk_specific_gravity_gmb": {
+   "wt_dry_air": 1237.9,
+   "wt_ssd": 1240.2,
+   "wt_submerged": 510.9
+  },
+  "bulk_specific_gravity_gmb_geometric": {
+   "wt_dry_air": 2500,
+   "diameter": 15.24,
+   "height": 6.35
+  },
+  "fuller_thompson_max_density_passing": {
+   "sieve_size_mm": 19.0,
+   "max_particle_size_mm": 19.0
+  },
+  "rmp_optimum_asphalt_content": {
+   "sigma": 30,
+   "apparent_sg_combined_aggregate": 30
+  },
+  "rmp_specific_surface_area": {
+   "pct_retained_no4": 30,
+   "pct_passing_no4_retained_no30": 40,
+   "pct_passing_no30_retained_no200": 20,
+   "pct_passing_no200": 10
+  },
+  "slurry_seal_asphalt_for_film_thickness": {
+   "csa_m2_per_kg": 8.31,
+   "film_thickness_um": 8,
+   "sg_asphalt": 1.028
+  },
+  "slurry_seal_corrected_surface_area": {
+   "surface_area_m2_per_kg": 30,
+   "apparent_sg_aggregate": 30
+  },
+  "slurry_seal_total_asphalt_required": {
+   "saa_pct": 30,
+   "ka_pct": 30
+  },
+  "spray_application_rate": {
+   "application_type": "prime_coat"
+  },
+  "table_2_12_pfc_gradation": {
+   "gradation": "gradation_a",
+   "sieve_mm": 4.75
+  },
+  "table_2_15_sma_gradation": {
+   "sieve_mm": 19.0
+  },
+  "table_2_17_sma_mix_design_requirements": {},
+  "table_2_1_gradation_hma": {
+   "gradation": "gradation_1",
+   "sieve_mm": 4.75
+  },
+  "table_2_3_asphalt_grade_by_pti": {
+   "pti_c": 10.0
+  },
+  "table_2_5_asphalt_grade_by_freezing_index": {
+   "dfi_c": 1000
+  },
+  "table_2_7_minimum_vma": {
+   "gradation": "gradation_1"
+  },
+  "table_2_8_marshall_design_criteria": {
+   "mix_type": "hma",
+   "compaction": "50_blows"
+  },
+  "table_3_2_tack_coat_temperature": {
+   "material_type": "cutback",
+   "grade": "rc_70"
+  },
+  "table_4_2_gradation_sbst": {
+   "designation": "no_1",
+   "sieve_mm": 19.0
+  },
+  "table_4_3_gradation_dbst": {
+   "designation": "no_1",
+   "sieve_mm": 4.75
+  },
+  "table_4_4_slurry_seal_gradation": {
+   "type_": "type_2",
+   "sieve_mm": 9.5
+  },
+  "table_4_5_frs_application_rate": {
+   "gradation": "coarse"
+  },
+  "table_4_7_micro_surfacing_gradation": {
+   "type_": "type_2",
+   "sieve_mm": 4.75
+  },
+  "table_6_1_cold_mix_gradation": {
+   "mix_type": "dense_graded",
+   "column": 1,
+   "sieve_mm": 9.5
+  },
+  "table_6_2_cold_mix_asphalt_selection": {
+   "climate": "cold"
+  },
+  "table_6_3_cold_mix_optimum_ac_selection": {},
+  "table_6_4_mixing_temperature": {
+   "material_type": "emulsified",
+   "grade": "ms_2"
+  },
+  "table_7_2_ogam_gradation": {
+   "sieve_mm": 19.0
+  },
+  "table_7_3_slurry_grout_gradation": {
+   "sieve_mm": 1.18
+  },
+  "table_7_4_grout_mix_proportions": {},
+  "table_7_5_grout_viscosity": {
+   "time_elapsed": "0_30_min"
+  },
+  "table_b1_surface_area_factor": {
+   "sieve_mm": 4.75
+  },
+  "voids_filled_with_asphalt_vfa": {
+   "vma_percent": 14.8,
+   "vv_percent": 3.9
+  },
+  "voids_in_mineral_aggregate_vma": {
+   "gmb": 2.421,
+   "gsb": 2.7,
+   "pb": 0.05
+  }
+ },
+ "ufc_pavement": {
+  "collector_drain_flow": {
+   "h": 0.33,
+   "i": 0.02,
+   "k": 1000,
+   "units": "ft_day"
+  },
+  "darcy_flow_rate": {
+   "k": 0.01,
+   "i": 0.5,
+   "area": 10.0
+  },
+  "drainage_layer_drainable_flow": {
+   "t": 2,
+   "k": 1000,
+   "i": 0.02,
+   "h": 4,
+   "length": 50
+  },
+  "drainage_layer_storage_capacity": {
+   "ne": 0.25,
+   "h": 4
+  },
+  "drainage_layer_thickness_required": {
+   "f": 0.5,
+   "r": 0.2,
+   "length": 50,
+   "t": 1,
+   "ne": 0.25,
+   "k": 1000,
+   "i": 0.02
+  },
+  "drainage_layer_thickness_simplified": {
+   "f": 0.5,
+   "r": 0.2,
+   "t": 1,
+   "ne": 0.25
+  },
+  "drainage_path_length": {
+   "lt": 24,
+   "it": 0.02,
+   "ie": 0.01
+  },
+  "drainage_path_slope": {
+   "it": 0.02,
+   "ie": 0.01
+  },
+  "effective_horizontal_permeability": {
+   "layers": [
+    [
+     100,
+     4
+    ],
+    [
+     10,
+     8
+    ]
+   ]
+  },
+  "effective_porosity": {
+   "dry_density": 110,
+   "gs": 2.68,
+   "water_unit_weight": 62.4,
+   "we": 0.05
+  },
+  "figure_10_1_k_on_base": {
+   "k_subgrade_psi_in": 25,
+   "base_thickness_in": 10
+  },
+  "figure_14_1_reinforced_pavement_design": {
+   "hd_in": 7.9,
+   "s_pct": 0.1
+  },
+  "figure_15_1_cracking_projection_factor": {
+   "passes": 20000000,
+   "k_existing_psi_in": 100
+  },
+  "figure_19_5_design_base_thickness": {
+   "c_in": 32,
+   "r": 2.0
+  },
+  "figure_19_6_frost_area_index_of_reaction": {
+   "base_thickness_in": 8,
+   "frost_group": "F3_F4"
+  },
+  "figure_e1_flexible_thickness": {
+   "cbr": 3,
+   "passes": 1000000
+  },
+  "figure_e_vehicle_allowable_passes": {
+   "vehicle": "truck_5_axle",
+   "cbr": 3,
+   "thickness_in": 16.4
+  },
+  "figure_e_vehicle_thickness": {
+   "vehicle": "truck_5_axle",
+   "cbr": 3,
+   "passes": 100000
+  },
+  "figure_f1_rigid_thickness": {
+   "flexural_psi": 650,
+   "k_psi_in": 100,
+   "passes": 20000000
+  },
+  "flexible_overlay_of_rigid_thickness": {
+   "f": 0.93,
+   "hd_in": 8.1,
+   "c": 1.0,
+   "hE_in": 6
+  },
+  "free_draining_layer_required": {
+   "bound_layer_thickness_in": 50.0,
+   "design_freezing_index": 1000
+  },
+  "granular_permeability_estimate": {
+   "d10_mm": 0.5,
+   "n": 0.35,
+   "p200_pct": 5,
+   "units": "mm_per_sec"
+  },
+  "insulation_initial_temperature_differential": {
+   "mean_annual_soil_temp_f": 40
+  },
+  "insulation_mean_soil_temperature_estimate": {
+   "mean_annual_air_temp_f": 33
+  },
+  "mixed_traffic_equivalent_esal": {
+   "vehicles": [
+    {
+     "name": "truck",
+     "design_passes": 1000,
+     "required_thickness_in": 8,
+     "allowable_passes_at_controlling": 5000
+    }
+   ]
+  },
+  "pipe_capacity_manning": {
+   "n": 0.013,
+   "d_ft": 0.5,
+   "s": 0.0015,
+   "units": "us"
+  },
+  "plain_concrete_thickness_on_stabilized_foundation": {
+   "hd_in": 8.3,
+   "ef_psi": 650000,
+   "hs_in": 6
+  },
+  "reinforced_pavement_max_slab_length": {
+   "hr_in": 7,
+   "fs_psi": 60000,
+   "s_pct": 0.1
+  },
+  "rigid_overlay_fully_bonded": {
+   "hd_in": 8.1,
+   "he_in": 6
+  },
+  "rigid_overlay_non_bonded": {
+   "hd_in": 8.1,
+   "he_in": 8.1,
+   "hE_in": 6,
+   "c": 1.0
+  },
+  "rigid_overlay_partially_bonded": {
+   "hd_in": 8.1,
+   "he_in": 8.1,
+   "hE_in": 6,
+   "c": 1.0
+  },
+  "stabilized_layer_thickness_in": {
+   "conventional_thickness_in": 4.0,
+   "equivalency_factor": 1.15
+  },
+  "table_10_1_k_subgrade": {
+   "uscs_group": "CL",
+   "moisture_pct": 10
+  },
+  "table_15_condition_factor": {
+   "overlay_type": "rigid",
+   "existing_pavement_type": "plain",
+   "c": 1.0
+  },
+  "table_16_1_joint_spacing": {
+   "thickness_in": 6
+  },
+  "table_16_2_dowel_size": {
+   "thickness_in": 6
+  },
+  "table_19_1_distress_modes": {
+   "distress_mode": "cracking"
+  },
+  "table_19_2_frost_classification": {
+   "uscs_class": "CL"
+  },
+  "table_19_3_frost_support_index": {
+   "frost_group": "F2"
+  },
+  "table_20_1_permeability_estimate": {
+   "pct_passing_no200": 10
+  },
+  "table_20_2_frost_susceptible_soils": {
+   "frost_group": "F1"
+  },
+  "table_20_8_pipe_roughness": {
+   "pipe_type": "clay_concrete_smooth_plastic_asbestos_cement"
+  },
+  "table_21_1_aggregate_gradation": {
+   "gradation_no": 1
+  },
+  "table_21_2_aggregate_compaction_depth": {
+   "passes": 1000000,
+   "density_pct": 95,
+   "soil_type": "cohesionless"
+  },
+  "table_4_1_subgrade_category": {
+   "cbr": 4.0
+  },
+  "table_5_1_compaction_depth": {
+   "passes": 1000000,
+   "density_pct": 95,
+   "soil_type": "cohesive",
+   "pavement_type": "flexible"
+  },
+  "table_6_1_subbase_permissible_values": {
+   "design_cbr": 50
+  },
+  "table_7_1_base_design_cbr": {
+   "material_type": "graded_crushed_aggregate"
+  },
+  "table_7_2_min_thickness": {
+   "esal": 10000,
+   "base_cbr": 100
+  },
+  "table_9_1_equivalency_factor": {
+   "stabilizer_type": "cement",
+   "uscs_class": "GP",
+   "layer_type": "base"
+  },
+  "taylor_permeability": {
+   "ds_mm": 0.5,
+   "c": 25,
+   "gamma": 62.4,
+   "mu": 1.0,
+   "e": 0.6
+  },
+  "time_for_50pct_drainage": {
+   "ne": 0.25,
+   "d": 50,
+   "i": 0.02,
+   "k": 1000
+  },
+  "time_for_85pct_drainage": {
+   "ne": 0.25,
+   "d": 50,
+   "i": 0.02,
+   "k": 1000
+  }
+ },
+ "ufc_stabilization": {
+  "equation_cement_content_modifying_soils": {
+   "percent_passing_no40": 0.6,
+   "percent_cement_for_pi": 0.08
+  },
+  "equation_cement_pi_limit_table_2_3": {
+   "percent_passing_no200": 25
+  },
+  "equation_cutback_asphalt_content_estimate": {
+   "percent_retained_no50": 10,
+   "percent_no50_to_no100": 20,
+   "percent_no100_to_no200": 30,
+   "percent_passing_no200": 40,
+   "percent_solvent": 0
+  },
+  "equation_gravimetric_percent_so4": {
+   "weight_of_residue_g": 0.1,
+   "oven_dry_weight_g": 10
+  },
+  "equation_oven_dry_weight_from_air_dry": {
+   "air_dry_weight_g": 10.12,
+   "air_dry_moisture_content_pct": 9.36
+  },
+  "equation_stabilized_equivalent_thickness": {
+   "conventional_thickness_in": 4,
+   "equivalency_factor": 1.15
+  },
+  "equation_turbidimetric_percent_so4": {
+   "concentration_ppm": 80.0,
+   "total_volume_ml": 39.1,
+   "dry_weight_g": 9.27
+  },
+  "table_2_1_min_ucs_requirements": {
+   "layer": "base",
+   "pavement_type": "flexible"
+  },
+  "table_2_2_durability_requirements": {
+   "soil_type": "granular_pi_lt_10"
+  },
+  "table_2_3_additive_selection_guide": {
+   "area": "1c"
+  },
+  "table_3_1_cement_gradation": {
+   "course_type": "base"
+  },
+  "table_3_2_cement_content_by_soil": {
+   "uscs_class": "GW"
+  },
+  "table_3_3_bituminous_subgrade_gradation": {},
+  "table_3_4_bituminous_base_subbase_gradation": {
+   "max_size": "1.5in",
+   "sieve": "no4"
+  },
+  "table_3_5_emulsified_asphalt_requirements": {
+   "percent_passing_200": 0,
+   "percent_passing_no10": 100
+  },
+  "table_3_6_swell_potential": {
+   "liquid_limit": 65,
+   "plasticity_index": 40
+  },
+  "table_a1_equivalency_factors": {
+   "stabilizer_type": "cement",
+   "soil_class": "gp"
+  }
+ },
+ "ufc_structural": {
+  "alternate_rc4_seismic_combination": {
+   "d": 100,
+   "l": 20,
+   "s": 10,
+   "e": 50,
+   "combination": "additive"
+  },
+  "basic_combination_with_vertical_seismic_asd": {
+   "d": 100,
+   "ev0": 20,
+   "eh": 50
+  },
+  "basic_combination_with_vertical_seismic_lrfd": {
+   "d": 100,
+   "ev0": 20,
+   "eh": 50,
+   "l": 10,
+   "s": 5
+  },
+  "best_practice_guidance": {
+   "topic": "building_drift_limits"
+  },
+  "certification_out_of_plane_response_threshold": {},
+  "counterweight_tie_bracket_spacing": {},
+  "coupling_beam_shear_demand": {
+   "mn1": 500.0,
+   "mn2": 500.0,
+   "lc": 100.0,
+   "vg": 20.0
+  },
+  "cybersecurity_requirement": {},
+  "elevator_equipment_car_rpo_ratio": {
+   "is_rigid_and_rigidly_attached": true
+  },
+  "elevator_guide_rail_deflection_limits": {},
+  "elevator_retainer_plate_clearance": {},
+  "evaluation_trigger_cost_threshold": {
+   "seismic_design_category": "C"
+  },
+  "flexible_pipe_clearance_requirements": {},
+  "gable_bent_tie_rod_force_range": {},
+  "gfrp_bend_strength_reduction_factor": {},
+  "gfrp_environmental_reduction_factor": {},
+  "gfrp_fire_rating_limitation": {},
+  "gfrp_seismic_applicability": {
+   "seismic_design_category": "A",
+   "is_part_of_lateral_force_resisting_system": true
+  },
+  "gfrp_sustained_stress_limit": {},
+  "gfrp_temperature_limits": {},
+  "gfrp_uv_exposure_storage_limit": {},
+  "healthcare_elevator_seismic_force_asd": {},
+  "healthcare_retaining_wall_lateral_load_minimum": {},
+  "healthcare_structural_configuration_limits": {},
+  "list_best_practice_topics": {},
+  "list_nonbuilding_structure_types": {},
+  "list_table_3_1_systems": {
+   "category": "A"
+  },
+  "list_table_7_1_systems": {
+   "category": "C"
+  },
+  "list_table_b1_systems": {},
+  "list_table_e1_occupancies": {},
+  "masonry_veneer_ledge_offset": {},
+  "modification_action_definition": {
+   "action": "replacement"
+  },
+  "nonbuilding_structure_governing_standard": {
+   "structure_type": "highway_bridge"
+  },
+  "nonpermanent_structure_wind_reduction_factor": {},
+  "nonrigid_partition_drift_capacity": {},
+  "performance_level_definition": {
+   "abbreviation": "CP"
+  },
+  "pipe_car_rpo_ratio": {
+   "is_rigid": true
+  },
+  "progressive_collapse_applicability": {},
+  "rigid_pipe_fundamental_period": {
+   "support_condition": "pinned_pinned",
+   "length": 100.0,
+   "ei": 2000000.0,
+   "w": 0.5
+  },
+  "rigid_pipe_period_constant": {
+   "support_condition": "pinned_pinned"
+  },
+  "risk_category_v_note": {},
+  "roof_diaphragm_high_wind_retrofit_trigger": {
+   "basic_wind_speed_mph": 110
+  },
+  "rp10_incidental_occupancy_exemption": {},
+  "shelf_angle_deflection_limit": {},
+  "structural_separation_healthcare": {
+   "cd": 5.5,
+   "delta_max": 2.0
+  },
+  "table_2_1_wind_deflection_limit": {
+   "cladding_type": "metal_or_vinyl_siding_and_insulated_metal_panel"
+  },
+  "table_2_2_note": {
+   "note_id": "c"
+  },
+  "table_2_2_risk_category": {
+   "risk_category": "III"
+  },
+  "table_3_1_footnote": {
+   "footnote_id": "d"
+  },
+  "table_3_1_seismic_system": {
+   "category": "A",
+   "system": "special_reinforced_concrete_shear_walls"
+  },
+  "table_4_1a_structural_performance_objective": {
+   "trigger": "a"
+  },
+  "table_4_1b_nonstructural_performance_objective": {
+   "trigger": "a",
+   "risk_category": "IV"
+  },
+  "table_6_1_masonry_wall_thickness": {
+   "wall_type": "stone_masonry_bearing_or_shear"
+  },
+  "table_7_1_healthcare_seismic_system": {
+   "category": "B",
+   "system": "steel_eccentrically_braced_frames"
+  },
+  "table_b1_footnote": {
+   "footnote_id": "1"
+  },
+  "table_b1_rc4_permitted_system": {
+   "category": "Moment-Resisting Frame Systems",
+   "system": "special_steel_moment_frames"
+  },
+  "table_c1_pipe_span": {
+   "diameter_in": 2,
+   "pipe_type": "std_wt_steel_40s"
+  },
+  "table_c2_pipe_span": {
+   "diameter_in": 2,
+   "pipe_type": "std_wt_steel_40s"
+  },
+  "table_c3_pipe_span": {
+   "diameter_in": 2,
+   "pipe_type": "std_wt_steel_40s"
+  },
+  "table_e1_live_load": {
+   "occupancy": "office_offices"
+  },
+  "table_e1_note": {
+   "note_id": "d"
+  },
+  "table_g1_material_property": {
+   "property_name": "modulus_of_elasticity"
+  },
+  "vertical_ground_motion_threshold_check": {
+   "sds": 0.75
+  },
+  "vertical_seismic_effect_ev0": {
+   "sds": 0.8,
+   "d": 100.0
+  },
+  "wind_speed_conversion_asd": {
+   "v": 150.0
+  },
+  "wind_speed_conversion_fastest_mile": {
+   "v": 150.0
+  }
+ },
+ "wood_handbook": {
+  "adjust_property_for_moisture_content": {
+   "p12": 103000,
+   "pg": 66000,
+   "moisture_content_pct": 8,
+   "mp_pct": 24
+  },
+  "angle_of_twist": {
+   "torque": 500.0,
+   "length": 2.0,
+   "shear_modulus": 600000000.0,
+   "torsional_constant": 1e-06
+  },
+  "axial_deformation": {
+   "axial_force": 10000.0,
+   "length": 3.0,
+   "area": 0.01,
+   "modulus_of_elasticity": 10000000000.0
+  },
+  "axial_stress": {
+   "axial_load": 10000.0,
+   "area": 0.02
+  },
+  "beam_shear_stress": {
+   "shear_force": 5000.0,
+   "area": 0.03,
+   "shape": "rectangular"
+  },
+  "bending_stress": {
+   "moment": 30,
+   "section_modulus_value": 30
+  },
+  "biaxial_beam_column_interaction": {
+   "fc": 1000000.0,
+   "fc_prime": 2000000.0,
+   "fb1": 0.0,
+   "e1_over_d1": 0.0,
+   "theta_c1": 1.0,
+   "fb1_prime": 10000000.0,
+   "fb2": 0.0,
+   "e2_over_d2": 0.0,
+   "theta_c2": 1.0,
+   "fb2_allow": 10000000.0
+  },
+  "built_up_column_capacity": {
+   "fc": 30,
+   "fe": 17.0,
+   "c": 0.85,
+   "k_f": 0.7
+  },
+  "combined_bending_axial_deflection": {
+   "delta_0": 0.01,
+   "axial_load": 1000.0,
+   "p_critical": 4000.0,
+   "is_tension": false
+  },
+  "combined_bending_axial_stress": {
+   "fb0": 1000000.0,
+   "axial_load": 5000.0,
+   "area": 0.02,
+   "p_critical": 50000.0,
+   "is_tension": true
+  },
+  "convert_specific_gravity": {
+   "gx_prime": 0.5,
+   "sx_prime_pct": 10.0,
+   "sx_double_prime_pct": 10.0
+  },
+  "crack_initiation_check": {
+   "h": 0.3,
+   "b": 0.1,
+   "moment": 0.0,
+   "shear_force": 0.0,
+   "a_coefficient": 1e-05,
+   "b_coefficient": 1e-05
+  },
+  "critical_ponding_spacing": {
+   "modulus_of_elasticity": 10000000000.0,
+   "moment_of_inertia": 5e-05,
+   "length": 4.0,
+   "end_condition": "simple"
+  },
+  "deck_shear_stiffness_parameter": {
+   "beam_spacing": 0.6,
+   "deck_shear_rigidity": 1000000.0,
+   "length": 6.0,
+   "ei_y": 500000.0
+  },
+  "density_from_ovendry_density": {
+   "rho_0": 30,
+   "moisture_content_pct": 30,
+   "s0_pct": 30
+  },
+  "density_from_specific_gravity": {
+   "gx": 0.6,
+   "moisture_content_pct": 12.0
+  },
+  "dowel_bearing_strength": {
+   "specific_gravity": 0.5
+  },
+  "drift_bolt_withdrawal": {
+   "specific_gravity": 0.5,
+   "diameter_mm": 12.7,
+   "penetration_mm": 100.0
+  },
+  "eccentric_axial_bending_deflection": {
+   "eccentricity": 0.02,
+   "axial_load": 0.0,
+   "p_critical": 4000.0,
+   "is_tension": false
+  },
+  "eccentric_bending_axial_stress": {
+   "fb0": 10.0,
+   "eccentricity": 0.5,
+   "section_modulus_value": 2.0,
+   "axial_load": 4.0,
+   "area": 2.0,
+   "p_critical": 20.0,
+   "is_tension": false
+  },
+  "elastic_buckling_stress_edgewise_bending": {
+   "modulus_of_elasticity": 10000000000.0,
+   "le": 3.0,
+   "d1": 0.3,
+   "d2": 0.05
+  },
+  "elastic_buckling_stress_edgewise_flatwise": {
+   "modulus_of_elasticity": 10000000000.0,
+   "le": 3.0,
+   "d": 0.3
+  },
+  "equilibrium_moisture_content": {
+   "temp_c": 21.1,
+   "relative_humidity": 0.4
+  },
+  "equilibrium_moisture_content_glass": {
+   "temp_c": 21.1,
+   "relative_humidity": 0.65
+  },
+  "estimate_total_shrinkage_from_basic_sg": {
+   "basic_specific_gravity": 0.5
+  },
+  "estimate_total_shrinkage_from_ovendry_density": {
+   "rho_0": 30
+  },
+  "euler_critical_stress": {
+   "modulus_of_elasticity": 10000000000.0,
+   "unbraced_length": 1.0,
+   "radius_of_gyration_value": 0.05
+  },
+  "figure_9_14_coefficients": {
+   "a_over_h": 0.1,
+   "edge": "tension"
+  },
+  "flange_instability_stress": {
+   "modulus_of_elasticity": 10000000000.0,
+   "flange_thickness": 0.02,
+   "flange_width": 0.1
+  },
+  "hankinson_bearing_strength": {
+   "p_parallel": 100.0,
+   "q_perpendicular": 20.0,
+   "theta_deg": 0.0
+  },
+  "lag_screw_lateral_resistance_pre1991": {
+   "k_coefficient": 26.34,
+   "diameter_mm": 9.5
+  },
+  "lag_screw_withdrawal": {
+   "specific_gravity": 0.5,
+   "diameter_mm": 9.5,
+   "penetration_mm": 60.0
+  },
+  "lateral_torsional_buckling_stress": {
+   "modulus_of_elasticity": 10000000000.0,
+   "alpha": 20.0
+  },
+  "max_moisture_content": {
+   "basic_specific_gravity": 0.3
+  },
+  "moment_magnification_edgewise": {
+   "fc": 0.0,
+   "fc1_double_prime": 10000000.0,
+   "beam_spacing": 0.0,
+   "s_cr": 4.0
+  },
+  "moment_magnification_flatwise": {
+   "fc": 0.0,
+   "fc2_double_prime": 10000000.0,
+   "fb1": 0.0,
+   "e1_over_d1": 0.0,
+   "fb1_double_prime": 10000000.0
+  },
+  "nail_lateral_resistance_pre1991": {
+   "k_coefficient": 62.55,
+   "diameter_mm": 3.76
+  },
+  "nail_withdrawal_annularly_threaded": {
+   "specific_gravity": 0.45,
+   "diameter_mm": 3.76,
+   "penetration_mm": 50.0
+  },
+  "nail_withdrawal_common": {
+   "specific_gravity": 0.5,
+   "diameter_mm": 3.76,
+   "penetration_mm": 50.0
+  },
+  "ponding_deflection_amplification": {
+   "delta_0": 0.01,
+   "beam_spacing": 1.0,
+   "critical_spacing": 4.0
+  },
+  "radius_of_gyration": {
+   "shape": "rectangular",
+   "b": 0.1
+  },
+  "relative_humidity_from_emc": {
+   "temp_c": 30,
+   "emc_pct": 30
+  },
+  "screw_lateral_resistance_pre1991": {
+   "k_coefficient": 29.79,
+   "diameter_mm": 4.83
+  },
+  "section_modified_shear_area": {
+   "shape": "rectangular",
+   "b_or_d": 0.1,
+   "h": 0.2
+  },
+  "section_modulus": {
+   "shape": "rectangular",
+   "b_or_d": 0.1,
+   "h": 0.3
+  },
+  "section_moment_of_inertia": {
+   "shape": "rectangular",
+   "b_or_d": 0.1,
+   "h": 0.2
+  },
+  "shear_strength_size_adjusted": {
+   "cf": 2.0,
+   "tau_astm": 5.0,
+   "area": 100.0,
+   "units": "metric"
+  },
+  "shrinkage_at_moisture_content": {
+   "s0_pct": 12.4,
+   "moisture_content_pct": 30.0,
+   "mc_fs": 30.0
+  },
+  "sink_moisture_content": {
+   "basic_specific_gravity": 0.5
+  },
+  "size_effect_midspan_reference": {
+   "r2": 10000.0,
+   "h1": 10.0,
+   "l1": 216.0,
+   "a1": 72.0,
+   "m": 18.0,
+   "units": "inch-pound"
+  },
+  "size_effect_ratio_two_point_vs_concentrated": {
+   "h1": 10,
+   "l1": 200,
+   "a1": 0,
+   "h2": 10,
+   "l2": 200,
+   "a2": 0,
+   "m": 18.0
+  },
+  "size_effect_ratio_uniform_vs_concentrated": {
+   "hu": 10,
+   "lu": 200,
+   "hc": 10,
+   "lc": 200,
+   "ac": 0,
+   "m": 18.0
+  },
+  "slenderness_factor": {
+   "ei_y": 500000.0,
+   "gj": 200000.0,
+   "le": 6.0,
+   "h": 0.3,
+   "b": 0.1
+  },
+  "specific_gravity_from_basic": {
+   "basic_specific_gravity": 0.55,
+   "moisture_content_pct": 12.0
+  },
+  "straight_beam_deflection": {
+   "kb": 30,
+   "ks": 30,
+   "w_total": 30,
+   "length": 30,
+   "moment_of_inertia": 30,
+   "modified_area": 30,
+   "modulus_of_elasticity": 30,
+   "shear_modulus": 30
+  },
+  "table_4_1_green_moisture_content": {
+   "species": "Douglas-fir, coast"
+  },
+  "table_4_3_shrinkage": {
+   "species": "douglas-fir, coast"
+  },
+  "table_5_13_intersection_mc": {
+   "species": "douglas-fir"
+  },
+  "table_5_15_temperature_effect": {
+   "property_name": "bending_strength",
+   "moisture_condition": ">fsp"
+  },
+  "table_5_16_temperature_adjustment": {
+   "property_name": "moe",
+   "lumber_grade": "all",
+   "moisture_condition": "12",
+   "temp_f": 70.0
+  },
+  "table_5_3_mechanical_properties": {
+   "species": "douglas-fir, coast",
+   "moisture_condition": "12"
+  },
+  "table_8_10_thickness_factor": {
+   "side_member_ratio": 3.5
+  },
+  "table_8_11_perpendicular_factor": {
+   "shank_diameter_mm": 12.7
+  },
+  "table_8_1_common_nail_size": {
+   "penny_size": "16d"
+  },
+  "table_8_4_lateral_load_coefficient": {
+   "wood_type": "softwoods",
+   "specific_gravity": 0.4,
+   "fastener": "nails"
+  },
+  "table_8_9_screw_shank_diameter": {
+   "gauge": 10
+  },
+  "table_9_1_kb_ks": {
+   "loading": "uniformly_distributed",
+   "support": "simply_supported"
+  },
+  "table_9_2_effective_length": {
+   "support": "simple_support",
+   "load": "equal_end_moments",
+   "length": 6.0,
+   "depth": 0.3
+  },
+  "tapered_beam_interaction": {
+   "fx": 10.0,
+   "fxy": 0.0,
+   "fy": 0.0,
+   "fx_allow": 10.0,
+   "fxy_allow": 5.0,
+   "fy_allow": 2.0
+  },
+  "tapered_beam_shear_deflection": {
+   "load": 1000.0,
+   "length": 4.0,
+   "shear_modulus": 600000000.0,
+   "b": 0.1,
+   "h0": 0.2,
+   "loading": "uniform"
+  },
+  "tapered_beam_stresses": {
+   "moment": 30,
+   "b": 30,
+   "h0": 30,
+   "theta_rad": 30
+  },
+  "thermal_conductivity": {
+   "gx": 0.45,
+   "moisture_content_pct": 12.0
+  },
+  "torsional_constant_circular": {
+   "diameter": 0.2
+  },
+  "torsional_constant_rectangular": {
+   "h": 0.1,
+   "b": 0.1
+  },
+  "torsional_shear_stress_circular": {
+   "torque": 500.0,
+   "diameter": 0.1
+  },
+  "torsional_shear_stress_rectangular": {
+   "torque": 500.0,
+   "h": 0.1,
+   "b": 0.1
+  },
+  "wood_screw_withdrawal": {
+   "specific_gravity": 0.5,
+   "diameter_mm": 4.83,
+   "penetration_mm": 25.0
+  },
+  "yield_limit_lateral_strength": {
+   "fastener_type": "nail",
+   "diameter_mm": 30,
+   "fem_mpa": 30,
+   "fes_mpa": 30,
+   "fyb_mpa": 620.0
+  },
+  "ylinen_buckling_stress": {
+   "fc": 30,
+   "fe": 17.0
+  },
+  "ylinen_critical_stress_fourth_power": {
+   "fc": 30,
+   "unbraced_length": 30,
+   "radius_of_gyration_value": 30,
+   "modulus_of_elasticity": 30
+  },
+  "ylinen_strain": {
+   "fc": 30000000.0,
+   "stress": 15000000.0,
+   "modulus_of_elasticity": 10000000000.0,
+   "c": 0.8
+  }
+ }
+}

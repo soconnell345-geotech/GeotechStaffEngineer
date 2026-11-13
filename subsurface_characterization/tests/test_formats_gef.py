@@ -27,6 +27,7 @@ requires_pygef = pytest.mark.skipif(
 # Path to test data files
 TEST_DIR = os.path.dirname(__file__)
 SAMPLE_CPT = os.path.join(TEST_DIR, "sample_cpt.gef")
+SAMPLE_CPT_VOID = os.path.join(TEST_DIR, "sample_cpt_void.gef")
 SAMPLE_BORE = os.path.join(TEST_DIR, "sample_bore.gef")
 
 
@@ -112,6 +113,56 @@ class TestCPTParseResultDefaults:
         d = r.to_liquepy_inputs()
         assert len(d["f_s"]) == 3  # Should default to zeros
         assert np.all(d["f_s"] == 0)
+
+
+class TestMissingReadingsInAResult:
+    """A reading that is not there stays missing in everything the result
+    hands on: null in the dict, left out of the liquefaction inputs, no
+    measurement in a site model (GM-326)."""
+
+    def _result(self):
+        nan = float("nan")
+        return CPTParseResult(
+            n_points=4, alias="CPT-09", gwl_m=1.0,
+            depth_m=np.array([1.0, 2.0, 3.0, 4.0]),
+            q_c_kPa=np.array([5000.0, nan, 7000.0, 8000.0]),
+            f_s_kPa=np.array([50.0, 60.0, nan, 80.0]),
+        )
+
+    def test_to_dict_gives_null_and_counts(self):
+        d = self._result().to_dict()
+        assert d["q_c_kPa"] == [5000.0, None, 7000.0, 8000.0]
+        assert d["f_s_kPa"] == [50.0, 60.0, None, 80.0]
+        assert d["missing_values"] == {"q_c_kPa": 1, "f_s_kPa": 1}
+        assert "q_c_kPa 1 of 4" in d["warnings"][0]
+        json.dumps(d, allow_nan=False)           # no NaN reaches the JSON
+
+    def test_nothing_missing_says_zero_and_no_warning(self):
+        d = CPTParseResult(
+            n_points=2, depth_m=np.array([1.0, 2.0]),
+            q_c_kPa=np.array([5000.0, 6000.0])).to_dict()
+        assert d["missing_values"] == {"q_c_kPa": 0}
+        assert "warnings" not in d
+
+    def test_summary_names_the_missing(self):
+        assert "missing readings: q_c_kPa 1, f_s_kPa 1" in \
+            self._result().summary()
+
+    def test_liquepy_inputs_leave_the_depths_out_and_say_so(self):
+        d = self._result().to_liquepy_inputs()
+        assert d["depth"].tolist() == [1.0, 4.0]
+        assert d["q_c"].tolist() == [5000.0, 8000.0]
+        assert d["f_s"].tolist() == [50.0, 80.0]
+        assert d["rows_dropped"] == 2 and "missing" in d["rows_dropped_reason"]
+        assert d["columns_assumed_zero"] == ["u_2"]
+
+    def test_site_model_gets_measured_values_only(self):
+        from subsurface_characterization import load_cpt_to_investigation
+        inv = load_cpt_to_investigation(self._result())
+        assert [m.depth_m for m in inv.get_measurements("qc_kPa")] == \
+            [1.0, 3.0, 4.0]
+        assert [m.depth_m for m in inv.get_measurements("fs_kPa")] == \
+            [1.0, 2.0, 4.0]
 
 
 class TestBoreParseResultDefaults:
@@ -243,6 +294,48 @@ class TestUtilities:
 # =====================================================================
 # Tier 2: CPT parsing integration (requires pygef)
 # =====================================================================
+
+@requires_pygef
+class TestCPTVoidReadings:
+    """sample_cpt_void.gef is sample_cpt.gef with the cone resistance at
+    1.5 m and the sleeve friction at 3.0 m set to the column's void value
+    (-9999), and the friction ratio void on both rows. Made-up values."""
+
+    def _parse(self):
+        from subsurface_characterization.formats.gef import parse_cpt_file
+        return parse_cpt_file(SAMPLE_CPT_VOID)
+
+    def test_a_void_reading_is_missing_not_zero_and_not_interpolated(self):
+        r = self._parse()
+        assert np.isnan(r.q_c_kPa[2])      # pygef alone: 10000 (interpolated)
+        assert np.isnan(r.f_s_kPa[5])      # pygef alone: 125 (interpolated)
+        assert np.isnan(r.Rf_pct[2]) and np.isnan(r.Rf_pct[5])
+        # every other reading is the file's own
+        assert r.q_c_kPa[1] == pytest.approx(8000.0)
+        assert r.q_c_kPa[3] == pytest.approx(12000.0)
+        assert r.f_s_kPa[4] == pytest.approx(150.0)
+
+    def test_the_count_per_column_is_reported(self):
+        r = self._parse()
+        assert r.missing_values == {"q_c_kPa": 1, "f_s_kPa": 1, "Rf_pct": 2}
+        d = r.to_dict()
+        assert d["missing_values"] == r.missing_values
+        assert d["q_c_kPa"][2] is None and d["f_s_kPa"][5] is None
+        assert "Rf_pct 2 of 10" in d["warnings"][0]
+
+    def test_a_file_with_no_voids_reports_none(self):
+        from subsurface_characterization.formats.gef import parse_cpt_file
+        r = parse_cpt_file(SAMPLE_CPT)
+        assert r.missing_values == {"q_c_kPa": 0, "f_s_kPa": 0, "Rf_pct": 0}
+        assert "warnings" not in r.to_dict()
+
+    def test_the_agent_tool_says_it(self):
+        from funhouse_agent.dispatch import call_agent
+        out = call_agent("subsurface", "parse_cpt",
+                         {"file_path": SAMPLE_CPT_VOID})
+        assert out["q_c_kPa"][2] is None
+        assert out["missing_values"]["q_c_kPa"] == 1 and out["warnings"]
+
 
 @requires_pygef
 class TestCPTParsingIntegration:

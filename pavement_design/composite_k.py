@@ -178,6 +178,20 @@ def composite_k_inf(mr_psi, esb_psi, dsb_in) -> dict:
     return out
 
 
+def _chart(step, lookup, *args):
+    """One Figure 3.4-3.6 read. Outside a chart's drawn curves or axes the
+    lookup refuses (refs REF-76; it used to read the nearest curve with a
+    note): the refusal is raised again with the worksheet step named and
+    the lookup's message whole, and the worksheet stops there."""
+    try:
+        return lookup(*args)
+    except ValueError as exc:
+        raise ValueError(
+            f"Section 3.2 composite k, {step}: {exc} The worksheet stops "
+            "here; give k_pci directly if there is another basis for k."
+        ) from exc
+
+
 def effective_k(seasonal, slab_d_in, dsb_in=None, esb_psi=None, dsg_ft=None,
                 ls=0.0) -> dict:
     """Table 3.2 worksheet (pdf_page 127, printed II-38) with Figure 3.3 as
@@ -188,7 +202,9 @@ def effective_k(seasonal, slab_d_in, dsb_in=None, esb_psi=None, dsg_ft=None,
     Same arguments and result keys as the reference layer's
     ``composite_k.effective_modulus_subgrade_reaction``; only the Figure
     3.3 step differs (``composite_k_inf``). A season with no subbase uses
-    k = MR/19.4 (Section 3.2.1, printed II-44).
+    k = MR/19.4 (Section 3.2.1, printed II-44). An input outside Figure
+    3.4's, 3.5's or 3.6's drawn curves or axes raises ValueError naming
+    the season and step, with the chart lookup's message whole.
     """
     if _ck is None:  # pragma: no cover - depends on refs version
         raise NotImplementedError(
@@ -228,7 +244,10 @@ def effective_k(seasonal, slab_d_in, dsb_in=None, esb_psi=None, dsg_ft=None,
             row["note"] = "no subbase (or esb_psi not given): k = MR/19.4"
 
         if dsg_ft is not None and dsg_ft < 10:
-            rf = _ck.k_rigid_foundation_correction(mr, dsg_ft, k_composite)
+            rf = _chart(f"seasonal[{i}] (MR {mr:,} psi): Figure 3.4, the "
+                        "rigid-foundation correction",
+                        _ck.k_rigid_foundation_correction, mr, dsg_ft,
+                        k_composite)
             k_for_ur = rf["k_pci"]
             row["k_rigid_foundation_pci"] = k_for_ur
             fig34_ref = rf["reference"]
@@ -240,7 +259,10 @@ def effective_k(seasonal, slab_d_in, dsb_in=None, esb_psi=None, dsg_ft=None,
         else:
             k_for_ur = k_composite
 
-        row["u_r"] = _ck.relative_damage_rigid(slab_d_in, k_for_ur)["u_r"]
+        row["u_r"] = _chart(
+            f"seasonal[{i}] (MR {mr:,} psi): Figure 3.5, the relative "
+            f"damage for a {slab_d_in:g}-in slab",
+            _ck.relative_damage_rigid, slab_d_in, k_for_ur)["u_r"]
         rows.append(row)
 
     n = len(rows)
@@ -255,7 +277,9 @@ def effective_k(seasonal, slab_d_in, dsb_in=None, esb_psi=None, dsg_ft=None,
             "non-physical. Increase slab_d_in or check the seasonal inputs."
         )
     k_effective = (base / 0.39) ** 4
-    ls_result = _ck.k_loss_of_support(k_effective, ls)
+    ls_result = _chart(f"Figure 3.6, the loss-of-support correction of the "
+                       f"effective k {k_effective:,.0f} pci at LS {ls:g}",
+                       _ck.k_loss_of_support, k_effective, ls)
 
     out = {
         "rows": rows,

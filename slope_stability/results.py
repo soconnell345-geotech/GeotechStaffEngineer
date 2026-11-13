@@ -224,6 +224,11 @@ class SlopeStabilityResult:
     slip_points: Optional[List[Tuple[float, float]]] = None
     tension_crack_depth: float = 0.0
     tension_crack_water_depth: float = 0.0
+    # The crack the surface was solved with (GM-140 step 4,
+    # ``cracks.CrackOutcome.to_dict``): its depth and how it was set, its
+    # side and model, where it is, and for a Rankine depth the F it was
+    # taken at. None without a crack.
+    tension_crack: Optional[Dict[str, Any]] = None
     method_solved: bool = True
     method_used: Optional[str] = ""
     methods_without_solution: List[str] = field(default_factory=list)
@@ -391,6 +396,8 @@ class SlopeStabilityResult:
         if self.tension_crack_depth > 0:
             d["tension_crack_depth_m"] = round(self.tension_crack_depth, 2)
             d["tension_crack_water_depth_m"] = round(self.tension_crack_water_depth, 2)
+            if self.tension_crack:
+                d["tension_crack"] = dict(self.tension_crack)
         if self.slip_points is not None:
             d["slip_points"] = [
                 (round(x, 3), round(z, 3)) for x, z in self.slip_points
@@ -717,6 +724,13 @@ class SearchResult:
     n_rejected_jagged: int = 0
     n_rejected_ground_crossings: int = 0
     n_rejected_m_alpha: int = 0
+    # Surfaces the crack rule refused (GM-140 step 4 and its review's D5),
+    # by reason (``cracks.REFUSAL_TEXT``): {reason: {'n', 'what',
+    # 'x_end_range_m', 'first': the first few with centre, radius,
+    # overhang depth, crack depth and why}}; empty when none was.
+    # ``n_discarded_reverse_curvature`` sums the reverse-curvature reasons.
+    n_discarded_reverse_curvature: int = 0
+    crack_refused: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     no_solution: List[Dict[str, Any]] = field(default_factory=list)
     governing_surface: str = ""
     candidates: Dict[str, float] = field(default_factory=dict)
@@ -869,6 +883,9 @@ class SearchResult:
             d["governing_location"] = dict(self.governing_location)
         if self.refused_lowest:
             d["refused_lowest"] = dict(self.refused_lowest)
+        if self.crack_refused:
+            d["crack_refused"] = {k: dict(v) for k, v in
+                                  self.crack_refused.items()}
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
         if self.layer_overlaps:
