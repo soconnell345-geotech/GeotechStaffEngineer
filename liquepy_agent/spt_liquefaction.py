@@ -94,6 +94,17 @@ def _validate_spt_inputs(depth, n1_60, fc, gamma, amax_g, gwt_depth, m_w):
         raise ValueError(f"m_w must be positive, got {m_w}")
     if gwt_depth < 0:
         raise ValueError(f"gwt_depth must be >= 0, got {gwt_depth}")
+    if any(z2 <= z1 for z1, z2 in zip(depth, depth[1:])):
+        # the total stress is summed down through the depths (GM-324)
+        raise ValueError(
+            "depth must be in strictly increasing order: the total "
+            "vertical stress at each depth is the sum of gamma x thickness "
+            "over the depths above it, each gamma applying from the "
+            "previous depth (the ground surface for the first) to its own")
+    if len(depth) and depth[0] <= 0:
+        raise ValueError(
+            f"depth must be positive (m below the ground surface), got "
+            f"{depth[0]}")
 
 
 def analyze_spt_liquefaction(
@@ -115,13 +126,23 @@ def analyze_spt_liquefaction(
     Parameters
     ----------
     depth : array_like
-        Mid-depth of each evaluation layer (m).
+        Depths (m below the ground surface) where (N1)60 was measured,
+        increasing and positive; each is an evaluation point. The total
+        vertical stress is summed down through them (``gamma``), so a
+        change in unit weight between two depths is taken at the upper
+        one: give a depth at each change in unit weight (a layer's base,
+        with that layer's values), the water table included where the
+        unit weight changes there.
     n1_60 : array_like
         Corrected SPT blow count (N1)60 at each depth.
     fc : array_like
         Fines content (%) at each depth.
     gamma : array_like
-        Total unit weight (kN/m3) at each depth.
+        Total unit weight (kN/m3) at each depth. The value given at a
+        depth applies from the previous depth (the ground surface for the
+        first) down to that depth, and the total vertical stress is the
+        sum: sigma_v(z_k) = sum_i gamma_i (z_i - z_(i-1)) (for one unit
+        weight throughout, gamma z).
     amax_g : float
         Peak ground acceleration (fraction of g).
     gwt_depth : float
@@ -161,12 +182,19 @@ def analyze_spt_liquefaction(
     msf_arr = np.zeros(n)
     k_sigma_arr = np.zeros(n)
 
+    sv_prev, z_prev = 0.0, 0.0
     for i in range(n):
         z = depth[i]
 
-        # Total stress (gamma * z is a simple approximation when only the
-        # mid-depth gamma is supplied — matches seismic_geotech's convention).
-        sv = gamma[i] * z
+        # Total stress: the sum of the layers above (GM-324). Each gamma
+        # applies from the previous evaluation depth (the ground surface
+        # for the first) down to its own depth, the rule
+        # seismic_geotech.evaluate_liquefaction uses, so the two SPT
+        # procedures see one overburden for one input. Until GM-324 this
+        # was gamma[i] * z, the depth's own unit weight over everything
+        # above it.
+        sv = sv_prev + gamma[i] * (z - z_prev)
+        sv_prev, z_prev = sv, z
         if z <= gwt_depth:
             sve = sv
         else:
@@ -235,9 +263,28 @@ def spt_choices(c_0: float = 2.8) -> list:
         choice("CRR curve C0", f"{c_0:g}", how_given(c_0, 2.8, name="c_0"),
                "2.8: B&I (2014)'s deterministic curve; a smaller C0 gives "
                "a higher CRR"),
-        choice("total vertical stress", "gamma x depth, each depth's own "
-               "gamma", MODULE,
-               "the unit weight given at a depth applies over the whole "
-               "depth above it; layers above with another unit weight are "
-               "not summed"),
+        total_stress_choice(),
     ]
+
+
+#: The one total-stress rule both SPT procedures use (GM-324), in the
+#: words their results carry. seismic_geotech.liquefaction holds the same
+#: text (the analysis modules do not import each other); a test compares
+#: the two.
+TOTAL_STRESS_RULE = (
+    "summed through the layers above",
+    "each gamma applies from the previous evaluation depth (the ground "
+    "surface for the first) down to its own depth: sigma_v(z_k) = sum of "
+    "gamma_i x h_i. A change in unit weight between two given depths is "
+    "therefore taken at the upper one, so the depths should include each "
+    "change in unit weight (a layer's base). sigma_v is the total "
+    "vertical overburden of the simplified procedure's CSR (FHWA GEC-13 "
+    "Vol I Eq. 5-9). The same rule on both SPT procedures (bi2014 and "
+    "nceer2001)")
+
+
+def total_stress_choice() -> dict:
+    """The total-stress entry of an SPT result's ``choices``."""
+    from geotech_common.choices import MODULE, choice
+    return choice("total vertical stress", TOTAL_STRESS_RULE[0], MODULE,
+                  TOTAL_STRESS_RULE[1])

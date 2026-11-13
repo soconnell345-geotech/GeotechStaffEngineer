@@ -254,6 +254,16 @@ class AnchorDesignResult:
 # Braced excavation result
 # ============================================================================
 
+def _own_load_text(rxn: dict) -> str:
+    """A support's own axial load for the summary line (GM-321)."""
+    axial = rxn.get("axial_load_kN_per_support")
+    if axial is None:
+        return ""
+    return (f"  |  {axial:.1f} kN axial per support at "
+            f"{rxn['spacing_m']:g} m"
+            + (f", {rxn['angle_deg']:g} deg" if rxn.get("angle_deg") else ""))
+
+
 @dataclass
 class BracedExcavationResult:
     """Results from a multi-level braced excavation analysis.
@@ -271,7 +281,12 @@ class BracedExcavationResult:
     support_reactions : list
         List of dicts with "depth_m", "load_kN_per_m" (None when the
         lowest support's load from below is not found), "from_above_kN_per_m",
-        "from_below_kN_per_m", "type".
+        "from_below_kN_per_m", "type", and the support's own loads
+        (GM-321; GEC-4 Eqs. 19 to 21): "spacing_m", "angle_deg",
+        "axial_load_kN_per_m" (load / cos angle), and, None without a
+        spacing, "horizontal_load_kN_per_support" (load x spacing),
+        "axial_load_kN_per_support" (that / cos angle) and
+        "vertical_load_kN_per_support" (axial x sin angle).
     max_moment_kNm_per_m : float
         Maximum wall bending moment (kN·m/m of wall).
     max_moment_depth_m : float
@@ -362,6 +377,7 @@ class BracedExcavationResult:
                 f"    z = {rxn['depth_m']:.2f} m  |  "
                 + (_NOT_FOUND if load is None else f"{load:.1f} kN/m")
                 + f"  |  {rxn['type']}"
+                + _own_load_text(rxn)
             )
         lines.append(f"  Support loads by:            {self.support_load_method}")
         if self.subgrade_reaction_kN_per_m is not None:

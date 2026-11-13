@@ -17,6 +17,7 @@ from calc_package.data_model import (
     InputItem, CalcStep, CheckItem, FigureData, CalcSection, TableData,
 )
 from calc_package.renderer import figure_to_base64
+from settlement.immediate import schmertmann_below_warning
 
 DISPLAY_NAME = "Settlement Analysis"
 
@@ -203,10 +204,23 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                     f"{layer.thickness:.2f}",
                     f"{layer.Es:.0f}",
                 ])
+            # what the sum took where the layers do not cover the diagram
+            # (GM-320): the continued layer is a row, and the note says it
+            sterms = getattr(result, "schmertmann_terms", None) or {}
+            below_note = schmertmann_below_warning(
+                sterms, param="schmertmann_below_profile") or ""
+            if sterms.get("below_profile") == "last_layer_continued":
+                deepest = max(analysis.schmertmann_layers,
+                              key=lambda layer: layer.depth_bottom)
+                top, bot = sterms["uncovered"][-1]
+                layer_rows.append([
+                    "continued", f"{top:.2f}", f"{bot:.2f}",
+                    f"{bot - top:.2f}", f"{deepest.Es:.0f}"])
             imm_items.append(TableData(
                 title="Schmertmann Sublayers",
                 headers=["#", "z_top (m)", "z_bot (m)", "\u0394z (m)", "E_s (kPa)"],
                 rows=layer_rows,
+                notes=below_note,
             ))
 
     sections.append(CalcSection(title="Immediate Settlement", items=imm_items))
