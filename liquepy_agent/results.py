@@ -396,6 +396,9 @@ class FieldCorrelationsResult:
     n_points: int = 0
     gwl_m: float = 0.0
     vs_method: str = ""
+    #: Ic below it: sand-like (the Dr range); at or above it: clay-like
+    #: (the su/sigma'v range).
+    i_c_limit: float = 2.6
 
     # Arrays
     depth: np.ndarray = field(default_factory=lambda: np.array([]))
@@ -509,14 +512,28 @@ class FieldCorrelationsResult:
             d["vs_min_m_per_s"] = round(float(valid.min()), 1)
             d["vs_max_m_per_s"] = round(float(valid.max()), 1)
             d["vs_avg_m_per_s"] = round(float(valid.mean()), 1)
-        valid = finite(self.relative_density)
-        if len(valid) > 0:
-            d["dr_min"] = round(float(valid.min()), 3)
-            d["dr_max"] = round(float(valid.max()), 3)
-        valid = finite(self.su_ratio)
-        if len(valid) > 0:
-            d["su_ratio_min"] = round(float(valid.min()), 3)
-            d["su_ratio_max"] = round(float(valid.max()), 3)
+        # Dr is a sand correlation and su/sigma'v a clay one: each range is
+        # taken over the readings of its own soil type by Ic, null when
+        # there is none (GM-324 review: an su ratio maximum came from a
+        # sand reading and a Dr minimum from a clay band).
+        ic = np.asarray(self.i_c, dtype=float)
+
+        def of_type(a, sand):
+            a = np.asarray(a, dtype=float)
+            if len(a) != len(ic):
+                return a[:0]
+            kind = ic < self.i_c_limit if sand else ic >= self.i_c_limit
+            return a[np.isfinite(a) & np.isfinite(ic) & kind]
+
+        for key, attr, sand in (("dr", "relative_density", True),
+                                ("su_ratio", "su_ratio", False)):
+            if len(np.asarray(getattr(self, attr))) == 0:
+                continue
+            valid = of_type(getattr(self, attr), sand)
+            d[f"{key}_min"] = (round(float(valid.min()), 3) if len(valid)
+                               else None)
+            d[f"{key}_max"] = (round(float(valid.max()), 3) if len(valid)
+                               else None)
         valid = finite(self.i_c)
         if len(valid) > 0:
             d["i_c_min"] = round(float(valid.min()), 3)

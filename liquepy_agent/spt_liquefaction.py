@@ -126,17 +126,23 @@ def analyze_spt_liquefaction(
     Parameters
     ----------
     depth : array_like
-        Mid-depth of each evaluation layer (m).
+        Depths (m below the ground surface) where (N1)60 was measured,
+        increasing and positive; each is an evaluation point. The total
+        vertical stress is summed down through them (``gamma``), so a
+        change in unit weight between two depths is taken at the upper
+        one: give a depth at each change in unit weight (a layer's base,
+        with that layer's values), the water table included where the
+        unit weight changes there.
     n1_60 : array_like
         Corrected SPT blow count (N1)60 at each depth.
     fc : array_like
         Fines content (%) at each depth.
     gamma : array_like
-        Total unit weight (kN/m3) at each depth. Each value applies from
-        the previous evaluation depth (the ground surface for the first)
-        down to its own depth, and the total vertical stress is the sum
-        over the layers above: sigma_v(z_k) = sum_i gamma_i h_i (for one
-        unit weight throughout, gamma z). Depths must increase.
+        Total unit weight (kN/m3) at each depth. The value given at a
+        depth applies from the previous depth (the ground surface for the
+        first) down to that depth, and the total vertical stress is the
+        sum: sigma_v(z_k) = sum_i gamma_i (z_i - z_(i-1)) (for one unit
+        weight throughout, gamma z).
     amax_g : float
         Peak ground acceleration (fraction of g).
     gwt_depth : float
@@ -269,9 +275,12 @@ TOTAL_STRESS_RULE = (
     "summed through the layers above",
     "each gamma applies from the previous evaluation depth (the ground "
     "surface for the first) down to its own depth: sigma_v(z_k) = sum of "
-    "gamma_i x h_i. sigma_v is the total vertical overburden of the "
-    "simplified procedure's CSR (FHWA GEC-13 Vol I Eq. 5-9). The same "
-    "rule on both SPT procedures (bi2014 and nceer2001)")
+    "gamma_i x h_i. A change in unit weight between two given depths is "
+    "therefore taken at the upper one, so the depths should include each "
+    "change in unit weight (a layer's base). sigma_v is the total "
+    "vertical overburden of the simplified procedure's CSR (FHWA GEC-13 "
+    "Vol I Eq. 5-9). The same rule on both SPT procedures (bi2014 and "
+    "nceer2001)")
 
 
 def total_stress_choice() -> dict:

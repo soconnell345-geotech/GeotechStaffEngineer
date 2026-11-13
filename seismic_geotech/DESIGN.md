@@ -57,7 +57,12 @@ analyze_liquefaction(N160, FC, sigma_v, sigma_v_eff, amax, M, ...) -> Liquefacti
   Since GM-324 (2026-11-13) the B&I (2014) SPT route in `liquepy_agent`
   uses the same rule (`TOTAL_STRESS_RULE`, the same text in both modules),
   the result's `choices` states it, and the K_sigma entry names the depths
-  with sigma'v above 100 kPa, where leaving K_sigma out matters.
+  with sigma'v above 100 kPa, where leaving K_sigma out matters. The
+  depths are where (N1)60 was measured, not layer mid-depths: a change in
+  unit weight between two depths is taken at the upper one, so the tool
+  text asks for a depth at each change in unit weight, and `choices` says
+  so. A first depth of 0 or less is refused, as on the B&I route (it gave
+  the FOS 99.9 placeholder).
 - Site coefficients (SG-2): `site_coefficients(..., pga=)` interpolates Fpga
   against PGA per AASHTO Table 3.10.3.2-1. Without `pga`, Fpga ≈ Fa(Ss) — a
   documented approximation (same table values, wrong abscissa; exact only

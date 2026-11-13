@@ -88,16 +88,20 @@ def test_field_correlations():
 def test_unified_liquefaction_analysis():
     promised = _returns("liquefaction_adapter", "liquefaction_analysis")
     cpt = {**CPT, "gwt_depth": 2.0, "amax_g": 0.3}
-    seen, (c, b, n) = _seen([
+    seen, (c, b, n, _dry) = _seen([
         ("liquefaction", "liquefaction_analysis", cpt),
         ("liquefaction", "liquefaction_analysis", SPT),
         ("liquefaction", "liquefaction_analysis",
          {**SPT, "method": "nceer2001"}),
+        # no reading below the water table: the case with `warnings`
+        ("liquefaction", "liquefaction_analysis",
+         {**cpt, "gwt_depth": 50.0}),
     ])
     assert promised <= seen, sorted(promised - seen)
     cpt_only = {"depth_profile", "lpi", "lsn", "ldi_m", "min_fos_basis",
-                "max_settlement_mm"}
-    assert promised - {"layer_results"} <= set(c)
+                "max_settlement_mm", "n_susceptible", "warnings",
+                "n_points", "gwl_m", "pga_g", "i_c_limit"}
+    assert promised - {"layer_results", "warnings"} <= set(c)
     for spt in (b, n):
         assert promised - cpt_only <= set(spt)
         assert not cpt_only & set(spt)
@@ -131,9 +135,38 @@ def test_one_total_stress_for_one_gamma():
                   if c["what"] == "total vertical stress"]
         assert len(stress) == 1
         assert stress[0]["chosen"] == "summed through the layers above"
+        # the result says where a change in unit weight is taken (GM-324
+        # review: the depths were described as layer mid-depths)
+        assert "taken at the upper one" in stress[0]["basis"]
     assert b["choices"][-1]["basis"] == [
         c for c in n["choices"] if c["what"] == "total vertical stress"
     ][0]["basis"]
+
+
+def test_both_spt_routes_refuse_a_depth_of_zero():
+    """GM-324 review: the bi2014 route refused a first depth of 0 and the
+    nceer2001 route returned its FOS 99.9 placeholder for it."""
+    for method in ("bi2014", "nceer2001"):
+        out = call_agent("liquefaction", "liquefaction_analysis",
+                         {**SPT, "depth": [0.0, 5.0, 8.0, 12.0],
+                          "method": method})
+        out = json.loads(out) if isinstance(out, str) else out
+        assert "positive" in str(out.get("error")), (method, out)
+
+
+def test_the_depth_text_says_where_to_put_depths():
+    import importlib
+    for adapter, method, name in (
+            ("liquefaction_adapter", "liquefaction_analysis", "depth"),
+            ("liquepy_adapter", "spt_liquefaction", "depth"),
+            ("seismic_geotech", "liquefaction_evaluation", "depths")):
+        p = importlib.import_module(
+            f"funhouse_agent.adapters.{adapter}").METHOD_INFO[method][
+                "parameters"][name]
+        text = p.get("description") or p.get("brief")
+        assert "mid-depth" not in text
+        assert "where (N1)60 was measured" in text
+        assert "each change in unit weight" in text
 
 
 def test_the_two_modules_hold_one_rule_text():

@@ -208,7 +208,13 @@ def evaluate_liquefaction(
     Parameters
     ----------
     layer_depths : list of float
-        Depth to midpoint of each evaluation layer (m).
+        Depths (m below the ground surface) where (N1)60 was measured,
+        increasing and positive; each is an evaluation point. The total
+        vertical stress is summed down through them (``layer_gamma``), so
+        a change in unit weight between two depths is taken at the upper
+        one: give a depth at each change in unit weight (a layer's base,
+        with that layer's values), the water table included where the
+        unit weight changes there.
     layer_N160 : list of float
         Corrected SPT (N1)60 at each depth.
     layer_FC : list of float
@@ -245,6 +251,11 @@ def evaluate_liquefaction(
     """
     if any(z2 <= z1 for z1, z2 in zip(layer_depths, layer_depths[1:])):
         raise ValueError("layer_depths must be in strictly increasing order")
+    if len(layer_depths) and layer_depths[0] <= 0:
+        # as the bi2014 route refuses it (GM-324 review): depth 0 gave the
+        # FOS 99.9 placeholder
+        raise ValueError(f"layer_depths must be positive (m below the "
+                         f"ground surface), got {layer_depths[0]}")
     if amax_g is None or amax_g <= 0:
         # With no shaking there is nothing to trigger; the FOS was a 99.9
         # placeholder (GM-104), as liquepy_agent already refuses.
@@ -308,9 +319,12 @@ TOTAL_STRESS_RULE = (
     "summed through the layers above",
     "each gamma applies from the previous evaluation depth (the ground "
     "surface for the first) down to its own depth: sigma_v(z_k) = sum of "
-    "gamma_i x h_i. sigma_v is the total vertical overburden of the "
-    "simplified procedure's CSR (FHWA GEC-13 Vol I Eq. 5-9). The same "
-    "rule on both SPT procedures (bi2014 and nceer2001)")
+    "gamma_i x h_i. A change in unit weight between two given depths is "
+    "therefore taken at the upper one, so the depths should include each "
+    "change in unit weight (a layer's base). sigma_v is the total "
+    "vertical overburden of the simplified procedure's CSR (FHWA GEC-13 "
+    "Vol I Eq. 5-9). The same rule on both SPT procedures (bi2014 and "
+    "nceer2001)")
 
 
 def _msf_applied(M: float) -> float:

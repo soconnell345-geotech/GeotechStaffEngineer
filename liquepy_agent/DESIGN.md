@@ -159,6 +159,15 @@ only.
   `funhouse_agent/tests` compares them). Until GM-324 this route took
   `gamma[i] * z`, the depth's own unit weight over everything above it.
   Depths must increase and be positive.
+- **What `depth` means.** The depths are where (N1)60 was measured, not
+  layer mid-depths: with the summed rule a change in unit weight between
+  two depths is taken at the upper one, so mid-depths of real layers put
+  each change half a layer too high (the GM-324 review's made-up case: 0-4
+  m at 16 kN/m3 over 20, depths 2 and 7 m, sigma_v 132 kPa at 7 m against
+  a true 124, FS 4.5 % high). The tool text asks for a depth at each change
+  in unit weight (a layer's base, with that layer's values), and the
+  result's `choices` says how the stresses were summed. The arithmetic is
+  unchanged.
 - **CPT result.** `n_susceptible` (readings below the water table with Ic
   under the limit), `n_liquefiable` (those with FS < 1.0) and
   `min_fos_basis`. With no susceptible reading `min_fos` is still the
@@ -166,7 +175,10 @@ only.
   result.
 - **Field correlations.** `to_dict()` carries `profile`: Vs, Dr, su ratio
   and Ic by depth, one row per reading up to 40, depth bands of band
-  averages beyond that. Permeability is computed and NOT returned: no
+  averages beyond that. The Dr range (`dr_min`, `dr_max`) is taken over
+  the sand-like readings (Ic below `i_c_limit`, 2.6) and the su/sigma'v
+  range over the clay-like ones (Ic at or above it), null when there is
+  none (GM-324 review). Permeability is computed and NOT returned: no
   reference in the library prints the Robertson and Cabal (2012) relation,
   so the unit in the attribute's name (`permeability_cm_per_s`) is
   unchecked.

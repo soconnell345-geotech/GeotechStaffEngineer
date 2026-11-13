@@ -120,6 +120,30 @@ def test_correlation_profile_of_a_long_sounding_is_banded():
     assert len(json.dumps(d)) < 8000
 
 
+def test_each_range_is_over_its_own_soil_type():
+    """GM-324 review: the su/sigma'v maximum came from a sand reading and
+    the Dr minimum from a clay band. Made-up readings: sand, clay, sand,
+    clay, and one with no Ic."""
+    r = FieldCorrelationsResult(
+        n_points=5, gwl_m=1.0, vs_method="mcgann2015",
+        depth=np.array([1.0, 2.0, 3.0, 4.0, 5.0]),
+        vs_m_per_s=np.full(5, 180.0),
+        relative_density=np.array([0.55, -0.20, 0.70, -0.10, 0.05]),
+        su_ratio=np.array([9.0, 0.30, 12.0, 0.45, 0.01]),
+        i_c=np.array([1.9, 3.1, 2.2, 2.6, np.nan]),
+        permeability_cm_per_s=np.full(5, 1e-5))
+    d = r.to_dict()
+    assert (d["dr_min"], d["dr_max"]) == (0.55, 0.70)       # Ic < 2.6
+    assert (d["su_ratio_min"], d["su_ratio_max"]) == (0.30, 0.45)  # >= 2.6
+    # no clay-like reading: the su range is null, not a sand's value
+    sand = FieldCorrelationsResult(
+        depth=np.array([1.0, 2.0]), relative_density=np.array([0.5, 0.6]),
+        su_ratio=np.array([8.0, 9.0]), i_c=np.array([1.8, 2.0]))
+    d = sand.to_dict()
+    assert d["su_ratio_min"] is None and d["su_ratio_max"] is None
+    assert d["dr_min"] == 0.5
+
+
 def test_correlation_profile_keeps_a_missing_value_missing():
     r = _fc(5)
     r.su_ratio[2] = np.nan

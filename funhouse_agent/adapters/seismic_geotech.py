@@ -369,10 +369,10 @@ METHOD_INFO = {
         "category": "Liquefaction",
         "brief": "Full liquefaction triggering evaluation (SPT-based, simplified method).",
         "parameters": {
-            "depths": {"type": "array", "required": True, "description": "Layer depths (m)."},
+            "depths": {"type": "array", "required": True, "description": "Depths (m below the ground surface) where (N1)60 was measured, increasing, the first below the surface; each is an evaluation point. The total vertical stress is summed down through them, the gamma given at a depth applying from the previous depth (the ground surface for the first) down to it. So give a depth at each change in unit weight (a layer's base, with that layer's N160, FC and gamma), the water table included where the unit weight changes there; otherwise the change is taken at the depth above it."},
             "N160": {"type": "array", "required": True, "description": "Corrected SPT blow counts."},
             "FC": {"type": "array", "required": True, "description": "Fines content (%)."},
-            "gamma": {"type": "array", "required": True, "description": "Total unit weight (kN/m3) at each depth. Each value applies from the previous depth (the ground surface for the first) down to its own depth, and the total vertical stress is the sum over the layers above (the same rule on the bi2014 and nceer2001 SPT procedures). Depths must increase."},
+            "gamma": {"type": "array", "required": True, "description": "Total unit weight (kN/m3) at each depth. The value given at a depth applies from the previous depth (the ground surface for the first) down to that depth, and the total vertical stress is the sum of gamma x interval over the depths down to it (the same rule on the bi2014 and nceer2001 SPT procedures; see depths)."},
             "amax_g": {"type": "float", "required": True, "description": "Peak ground acceleration (g)."},
             "gwt_depth": {"type": "float", "required": True, "description": "Groundwater depth (m)."},
             "magnitude": {"type": "float", "required": False, "default": 7.5, "description": "Earthquake magnitude."},
