@@ -58,7 +58,8 @@ from funhouse_agent.deep.assembly import (  # noqa: F401
 from funhouse_agent.dispatch import (ANALYSIS_MODULES, REFERENCE_MODULES,
                                      held_references, reference_coverage,
                                      references_without)
-from funhouse_agent.reference_docs import chart_reads_available
+from funhouse_agent.reference_docs import (chart_reads_available,
+                                           worked_example_pages_available)
 from funhouse_agent.reviewer import REVIEWER_DEEP_PROMPT, consultant_role
 from funhouse_agent.system_prompt import (REFERENCE_MODULES_CLAUSE,
                                           REFERENCES_HELPER_CLAUSE)
@@ -838,7 +839,10 @@ def build_primary_tools(
         to the vision kit's tools (the Document Review page: no; DR-04).
         ``read_reference_figure`` is left out where this host cannot reach
         the reference PDFs
-        (:func:`~funhouse_agent.reference_docs.chart_reads_available`).
+        (:func:`~funhouse_agent.reference_docs.chart_reads_available`), and
+        ``view_worked_example_source`` where it cannot reach the worked
+        examples' source PDFs (:func:`~funhouse_agent.reference_docs.
+        worked_example_pages_available`).
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
@@ -858,6 +862,8 @@ def build_primary_tools(
         readers = dict(GEOTECH_VISION_TOOLS)
         if not chart_reads_available():
             readers.pop("read_reference_figure", None)
+        if not worked_example_pages_available():
+            readers.pop("view_worked_example_source", None)
     return core_tools + make_vision_tools(
         engine=engine,
         attachments=attachments,

@@ -163,6 +163,38 @@ def figure_readable(reference: str, figure_number: str,
     return _resolves(reference, figure_number, pdf_page_index)
 
 
+def worked_example_pages_available() -> bool:
+    """Whether a worked example's printed source page can be shown on this
+    host (``view_worked_example_source``), by the same rule as
+    :func:`chart_reads_available`: pinned; a fetcher is registered; or the
+    source PDF of at least one worked example with catalogued pages is
+    found where the corpus looks (``GEOTECH_REFERENCES_DOCS``, a checkout's
+    ``geotech-references/docs``) or is in the cache of fetched PDFs."""
+    if _PINNED is not None:
+        return _PINNED
+    if _FETCHER is not None:
+        return True
+    try:
+        from funhouse_agent import worked_examples as _we
+        entries = [e for e in _we.load_examples()
+                   if e.get("source_pdf_pages") and e.get("source_doc")]
+    except Exception:  # noqa: BLE001
+        return False
+    seen = set()
+    for entry in entries:
+        doc = str(entry["source_doc"])
+        if doc in seen:
+            continue
+        seen.add(doc)
+        try:
+            _we.resolve_source_pdf(entry)
+            return True
+        except Exception:  # noqa: BLE001 - absent here; maybe fetched
+            if _cached(os.path.basename(doc)):
+                return True
+    return False
+
+
 #: What a figure_search hit says where its chart cannot be read here.
 NO_CHART_READ = (
     "The source PDF for this figure is not on this host, so no value can "
@@ -183,4 +215,5 @@ def missing_message(original: str, filename: str) -> str:
 
 __all__ = ["register_fetcher", "fetch", "cache_dir", "fetcher_description",
            "missing_message", "CACHE_ENV", "chart_reads_available",
-           "figure_readable", "pin_chart_reads", "NO_CHART_READ"]
+           "figure_readable", "pin_chart_reads", "NO_CHART_READ",
+           "worked_example_pages_available"]

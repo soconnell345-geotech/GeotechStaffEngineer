@@ -12,6 +12,7 @@ are all preserved.
 """
 
 import re
+from typing import Optional
 
 from funhouse_agent.system_prompt import build_system_prompt
 
@@ -310,7 +311,22 @@ def judgment_calls_section(references: bool = True) -> str:
               else _JUDGMENT_CALLS_NONE_NO_HELPER))
 
 
-def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) -> str:
+#: What the prompt says of a worked example's printed source page, where it
+#: can be shown here and where it cannot (the source PDFs do not reach the
+#: host: :func:`funhouse_agent.reference_docs.worked_example_pages_available`).
+_SOURCE_PAGES_SHOWN = (
+    "When the entry\n  lists `source_pdf_pages`, `view_worked_example_source` "
+    "renders the PRINTED\n  page of the original design example (figures and "
+    "all) so you can follow the\n  real thing.")
+_SOURCE_PAGES_NOT_SHOWN = (
+    "The printed source\n  pages cannot be shown on this host (the reference "
+    "PDFs are not here), so an\n  entry's `source_pdf_pages` is a citation "
+    "only: follow the entry's text.")
+assert _SOURCE_PAGES_SHOWN in _PLANNING_AND_SCRATCH_SECTION
+
+
+def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False,
+                        source_pages: Optional[bool] = None) -> str:
     """Return the domain system prompt with the ReAct XML sections stripped.
 
     Parameters
@@ -322,6 +338,11 @@ def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) ->
         When ``True``, append a short note telling the agent that ``/memories/``
         persists across sessions (only meaningful when the agent is built with a
         store / ``enable_memory``). Defaults to ``False``.
+    source_pages : bool, optional
+        Whether ``view_worked_example_source`` can show a worked example's
+        printed page on this host; ``None`` looks
+        (:func:`funhouse_agent.reference_docs.worked_example_pages_available`).
+        Where not, the prompt says the pages cannot be shown here.
 
     Returns
     -------
@@ -347,6 +368,13 @@ def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) ->
     base = base.strip()
 
     section = _PLANNING_AND_SCRATCH_SECTION
+    if source_pages is None:
+        from funhouse_agent.reference_docs import (
+            worked_example_pages_available)
+        source_pages = worked_example_pages_available()
+    if not source_pages:
+        section = section.replace(_SOURCE_PAGES_SHOWN,
+                                  _SOURCE_PAGES_NOT_SHOWN)
     if memory_enabled:
         section = section + "\n" + _MEMORY_SECTION
     return base + "\n\n" + section

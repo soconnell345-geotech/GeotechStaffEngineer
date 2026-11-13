@@ -16,7 +16,8 @@ standing, against whatever reference library is on the path:
 * the helper's description names the references with no chapter text as
   the library indexes them;
 * on a host with no reference PDFs and no fetcher, nothing the helpers read
-  promises a chart read; with one PDF, only that reference's charts;
+  promises a chart read or a worked example's printed page; with one PDF,
+  only that reference's charts;
 * every "Table / Fig. / Eq. N" a reference module's brief or user-manual
   entry names resolves to a lookup, a catalog figure or the method text;
 * the helper's prompt names only modules in its scope, and each specialist
@@ -445,7 +446,6 @@ def test_a_host_without_the_pdfs_is_promised_no_chart_read(host):
     assert "cannot read a value off a chart here" in spec["description"]
     primary = {getattr(t, "name", None) for t in build_primary_tools()}
     assert "read_reference_figure" not in primary
-    assert "view_worked_example_source" in primary
     v1 = _build_agent_system_prompt(dispatch.REFERENCE_MODULES)
     assert CHART_READS_PARAGRAPH not in v1
     assert "### 10. read_reference_figure" not in v1
@@ -453,6 +453,39 @@ def test_a_host_without_the_pdfs_is_promised_no_chart_read(host):
     assert hits
     for hit in hits:
         assert hit["read_value"] == reference_docs.NO_CHART_READ
+
+
+def _worked_example_sources() -> list:
+    from funhouse_agent import worked_examples
+    return sorted({os.path.basename(e["source_doc"])
+                   for e in worked_examples.load_examples()
+                   if e.get("source_pdf_pages") and e.get("source_doc")})
+
+
+def test_a_host_without_the_pdfs_shows_no_worked_example_page(host):
+    from funhouse_agent.deep.agent import build_primary_tools
+    from funhouse_agent.deep.prompt import build_domain_prompt
+
+    assert _worked_example_sources()
+    assert reference_docs.worked_example_pages_available() is False
+    primary = {getattr(t, "name", None) for t in build_primary_tools()}
+    assert "view_worked_example_source" not in primary
+    assert "render_region" in primary          # the rest of the kit stays
+    prompt = build_domain_prompt()
+    assert "view_worked_example_source" not in prompt
+    assert "cannot be shown on this host" in prompt
+
+
+@pytest.mark.parametrize("where", ["docs", "cache"])
+def test_a_host_with_a_source_pdf_shows_worked_example_pages(host, where):
+    from funhouse_agent.deep.agent import build_primary_tools
+    from funhouse_agent.deep.prompt import build_domain_prompt
+
+    (host[where] / _worked_example_sources()[0]).write_bytes(b"%PDF-1.4\n")
+    assert reference_docs.worked_example_pages_available() is True
+    primary = {getattr(t, "name", None) for t in build_primary_tools()}
+    assert "view_worked_example_source" in primary
+    assert "`view_worked_example_source` renders" in build_domain_prompt()
 
 
 def test_a_host_with_one_pdf_reads_only_its_charts(host):
@@ -473,6 +506,7 @@ def test_a_fetcher_makes_every_chart_readable(host):
     assert reference_docs.chart_reads_available() is False
     reference_docs.register_fetcher(lambda name, dest: None)
     assert reference_docs.chart_reads_available() is True
+    assert reference_docs.worked_example_pages_available() is True
     assert reference_docs.figure_readable(*rows[0][:3]) is True
     from funhouse_agent.deep.agent import build_references_subagent
     spec = build_references_subagent()
