@@ -229,3 +229,37 @@ See `validation_examples/RESULTS.md`.
 The agent tool's `capacity_vs_depth` takes the same GEC-12 options and
 custom section as `axial_pile_capacity` (GM-144) and returns the choices of
 its deepest run.
+
+## A pile toe below the soil profile (GM-318)
+
+GEC-12 Vol I Sec. 4.2.3.2 (p. 87): "Minimum exploration depths should
+extend 20 feet below expected pile toe elevation, or at least two times the
+pile group width." No held manual prints carrying the last explored layer on
+below the profile. So a toe (`head_depth + pile_length`) below the last
+layer is refused, naming the depth the layers do not cover.
+
+`extend_last_layer=True` is the one input that runs it: the last layer is
+taken to go on to the toe, with side resistance and toe resistance in it
+(the same numbers as a profile given to the toe), and the result says so in
+its first warning and in the choice "soil below the profile"; the calc
+package's soil tables mark the last layer "(given to 10 m, assumed below)"
+(review C6). Before GM-318
+such a run went ahead with only a Python warning: no side resistance below
+the profile, and the toe in the last layer at the toe's own effective
+stress.
+
+A toe at the profile's bottom is accepted. `toe_phi_zone` "average_3b"
+still takes the last layer as continuing through its 3b zone (Step 7c
+above); it is an option, not the default. Its "toe friction angle" choice
+names the part of the zone below the profile as the last layer carried on,
+assumed (review C5).
+
+`capacity_vs_depth` names each trial length the analysis refused
+(`skipped`, the tool's `skipped_depths` and `warning`), as drilled_shaft's
+does since GM-203; with every length refused the call is refused. Before,
+`except Exception: pass` dropped them. Its default deepest length is the
+profile's depth below the pile head. A length below the profile is named
+with a short reason ("below the profile, which ends at 10 m"; review C7).
+The calc package's "capacity against pile length" table names refused
+lengths in its note, as drilled_shaft's does; with every length refused the
+table is left out and a warning says why (review C2).

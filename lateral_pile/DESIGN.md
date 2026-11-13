@@ -343,3 +343,40 @@ results.summary()
 - Force/moment equilibrium: <0.01% error
 - validation.py (97 tests) + tests/ (12 regression tests) + composite-section
   hand-check tests (tests/test_composite_section.py)
+
+## Layers that do not cover the pile (GM-318)
+
+A pile node outside every layer gets p = 0. Before GM-318, layers that
+started below the ground surface or stopped above the toe only raised a
+Python warning and the run went on with no soil resistance there. No held
+manual (GEC 9, COM624P) prints a rule for either case, so:
+
+- layers that start below the ground surface are refused. The message
+  points to `stickup` for a free length and to measuring depths from the
+  new ground surface where soil is gone. That is the scour model: GEC 9
+  (FHWA-HIF-18-031) Sec. 6.7.5, p. 91, "the entire soil depth within the
+  scour zone should be considered to be removed by scour". The other case,
+  soil that stays in place (its weight on the soil below, the p-y depths
+  from the old surface) but is to give no resistance over a top zone, is
+  different, and the message says so: give that zone as a top layer of
+  negligible strength from the ground surface (GM-318 review B2; the
+  arithmetic is unchanged);
+- layers that stop above the toe are refused, naming the depth not covered.
+  `LateralPileAnalysis(..., extend_last_layer=True)` (the tool's
+  `extend_last_layer`) takes the last layer's p-y model on to the toe; the
+  result's `warnings` and the choice "soil below the layers given" say so;
+  the last layer's p-y choice and the calc package's soil tables mark it
+  "(given to 10 m, assumed below)" (review C6).
+  This is not the old behaviour (p = 0 below the layers), which no input
+  reproduces.
+
+## The cracked-section EI iteration's record (GM-318)
+
+`Results` carries `ei_converged`, `ei_iterations`, `ei_last_change` (the
+last pass's largest change in EI over the largest EI) and `ei_tolerance`
+for a pile with an RC section; `to_dict()` gives them beside
+`EI_profile_kNm2`. When the loop runs out of passes, `ei_converged` is
+False and `warnings` says the deflections and moments are from an EI
+profile that had not settled (before: a Python warning only).
+`max_ei_iterations` below 1 is refused (0 gave a last change of nan;
+review C4).
