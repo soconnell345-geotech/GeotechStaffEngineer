@@ -321,12 +321,23 @@ def prompt_version(stage: str) -> str:
     :data:`READ_PROMPT_VERSION`, with ``+wnm`` on the logs while
     GEOTECH_INGEST_WATER_NOT_MEASURED adds its sentence to the log
     instruction (RI-106), so a resumed run never takes a log answer read
-    with the switch the other way as current."""
+    with the switch the other way as current; and with ``+li`` on the logs
+    while GEOTECH_INGEST_LOG_INTERVALS changes the log instruction and
+    answer schema (RI-103), for the same reason."""
     from report_ingest.water_status import water_not_measured_enabled
 
+    version = READ_PROMPT_VERSION
     if stage == "logs" and water_not_measured_enabled():
-        return READ_PROMPT_VERSION + "+wnm"
-    return READ_PROMPT_VERSION
+        version += "+wnm"
+    if stage == "logs":
+        # RI-103, behind GEOTECH_INGEST_LOG_INTERVALS (off): its own suffix,
+        # after the water switch's when both are on.
+        from report_ingest.log_intervals import (
+            VERSION_SUFFIX, log_intervals_enabled,
+        )
+        if log_intervals_enabled():
+            version += VERSION_SUFFIX
+    return version
 
 
 def _described(cls: Any, name: str) -> Optional[str]:
@@ -447,6 +458,11 @@ def answer_schema(stage: str) -> Any:
     answer tool: logs and lab take the classes above, calc and narrative
     today's (section 8.5 adds nothing to them)."""
     if stage == "logs":
+        # RI-103, behind GEOTECH_INGEST_LOG_INTERVALS (off): off, the class
+        # above, as it was.
+        from report_ingest import log_intervals
+        if log_intervals.log_intervals_enabled():
+            return log_intervals.LogReading
         return LogReading
     if stage == "lab":
         return LabSheetReading
@@ -659,6 +675,15 @@ def instruction(stage: str, report: str, pages: Sequence[int], *,
             said = said.replace("and the water levels. ",
                                 "and the water levels. "
                                 + MODEL_FIRST_SENTENCE + " ", 1)
+        # RI-103, behind GEOTECH_INGEST_LOG_INTERVALS (off): off, the
+        # instruction is byte for byte what it was.
+        from report_ingest.log_intervals import (
+            MODEL_FIRST_PARAGRAPH, log_intervals_enabled,
+        )
+        if log_intervals_enabled():
+            said = said.replace("say which unit. ",
+                                "say which unit. "
+                                + MODEL_FIRST_PARAGRAPH + " ", 1)
     return said
 
 

@@ -69,8 +69,8 @@ from typing import (Any, Dict, Iterable, List, Optional, Sequence, Set,
 from pydantic import BaseModel, Field
 
 from report_ingest.model import (
-    UNITLESS_FIELDS, Investigation, LabTest, QAEntry, Quantity, ReportRecord,
-    Sample, lab_hole, si_numbers, unit_printed,
+    LAYER_INTERVAL_FIELDS, UNITLESS_FIELDS, Investigation, LabTest, QAEntry,
+    Quantity, ReportRecord, Sample, lab_hole, si_numbers, unit_printed,
 )
 from report_ingest.printed_depths import _WHOLE_RANGE, _range, _sample_cell
 from report_ingest.scoring import KEY_CONTENT
@@ -876,11 +876,20 @@ def _fold_into(first: Investigation, later: Investigation) -> Dict[str, Any]:
     said["restated"] += _join_rows(first.spt, later.spt,
                                    "depth_top", "depth_bottom")
     for layer in later.layers:
-        if not any(_restated(k, layer, "top", "bottom")
-                   and " ".join(k.description.split()) ==
-                   " ".join(layer.description.split())
-                   for k in first.layers):
+        twin = next((k for k in first.layers
+                     if _restated(k, layer, "top", "bottom")
+                     and " ".join(k.description.split()) ==
+                     " ".join(layer.description.split())), None)
+        if twin is None:
             first.layers.append(layer)
+            continue
+        # The same interval printed again on the next sheet. What its
+        # second printing adds under RI-103 (its notes, its line, its
+        # stratum label: set only under GEOTECH_INGEST_LOG_INTERVALS) is
+        # kept on the one copy, not lost with the other.
+        for name in LAYER_INTERVAL_FIELDS:
+            if _unset(twin, name) and not _unset(layer, name):
+                setattr(twin, name, getattr(layer, name))
     for water in later.water:
         if not any(w.when == water.when and depth_m(w.depth) is not None
                    and depth_m(water.depth) is not None

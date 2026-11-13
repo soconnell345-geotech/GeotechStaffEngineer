@@ -3788,7 +3788,7 @@ def _rate(row: Dict[str, int]) -> str:
 def _render_logs(logs: Dict[str, Any]) -> List[str]:
     """The logs stage, as tables that carry IDs, counts and rates only."""
     from report_ingest.log_scoring import (
-        LAYER_TOL_M, METRICS, SAMPLE_TOL_M, WATER_TOL_M,
+        INTERVAL_METRICS, LAYER_TOL_M, METRICS, SAMPLE_TOL_M, WATER_TOL_M,
     )
 
     out: List[str] = [
@@ -3837,12 +3837,35 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
                        f"{_opt_rate((floor or {}).get(metric)):>14}"
                        f"{_opt_rate((alone or {}).get(metric)):>14}"
                        f"{_rate(after):>14}")
-        before_all = _sum_of(row["before"])
-        after_all = _sum_of(row["after"])
+
+        def of_metrics(totals: Dict[str, Dict[str, int]]
+                       ) -> Dict[str, Dict[str, int]]:
+            # OVERALL is today's metrics; the interval groups (RI-103) are
+            # listed below it and stay out, so totals compare across runs.
+            return {m: v for m, v in totals.items() if m in METRICS}
+
+        before_all = _sum_of(of_metrics(row["before"]))
+        after_all = _sum_of(of_metrics(row["after"]))
+        floor_all = _sum_of(of_metrics(floor)) if floor else None
+        alone_all = _sum_of(of_metrics(alone)) if alone else None
         out += [f"{'OVERALL':<16}{_rate(before_all):>14}"
-                f"{_opt_rate(_sum_of(floor) if floor else None):>14}"
-                f"{_opt_rate(_sum_of(alone) if alone else None):>14}"
+                f"{_opt_rate(floor_all):>14}{_opt_rate(alone_all):>14}"
                 f"{_rate(after_all):>14}", "```"]
+        if any((row["after"].get(m) or {}).get("total")
+               for m in INTERVAL_METRICS):
+            out += ["", "Intervals (RI-103: notes, line kinds and stratum "
+                        "labels, on the logs whose answer sheet carries "
+                        "them; not in OVERALL):", "", "```",
+                    f"{'group':<16}{'floor':>14}{'model':>14}{'after':>14}"]
+            for metric in INTERVAL_METRICS:
+                after = row["after"].get(metric)
+                if not after or not after["total"]:
+                    continue
+                out.append(f"{metric:<16}"
+                           f"{_opt_rate((floor or {}).get(metric)):>14}"
+                           f"{_opt_rate((alone or {}).get(metric)):>14}"
+                           f"{_rate(after):>14}")
+            out.append("```")
         for key, label in (("n_floor", "floor"), ("n_model", "model")):
             if row.get(key, 0) < row["n_logs"]:
                 out.append(f"`{label}` is over the {row.get(key, 0)} of "

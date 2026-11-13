@@ -47,6 +47,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 __all__ = [
     "SAMPLE_TOL_M", "LAYER_TOL_M", "WATER_TOL_M", "DRIVEN_LENGTH_M",
     "COLUMN_FAMILY", "FIELD_MAP", "INDEX_KEYS", "METRICS",
+    "INTERVAL_METRICS",
     "Score", "LogScore", "score_grid", "score_record", "score_one_log",
     "truth_investigations", "rescore_saved", "dump_investigations",
 ]
@@ -116,6 +117,41 @@ FIELD_MAP: Dict[str, Tuple[str, ...]] = {
 #: The metrics, in the order a scorecard prints them.
 METRICS: Tuple[str, ...] = ("n_value", "blows", "sample_depth", "layer_top",
                             "uscs", "water", "recovery", "index", "fields")
+
+#: The interval groups (BACKLOG RI-103), scored only where an answer sheet's
+#: layer carries their keys and NOT part of :data:`METRICS`, so
+#: ``LogScore.total`` and every total built on it stay what they were:
+#:
+#: * ``interval_note``: each of a layer's ``notes`` (``{"depth": 7, "text":
+#:   "wet below 7 ft"}``, ``depth`` left out where the log writes none) is
+#:   found when the record's interval at that top holds a note with those
+#:   words (:func:`_same_text`, the comparison descriptions and header
+#:   fields get) and, where the sheet gives a depth, a depth within
+#:   :data:`LAYER_TOL_M`; a sheet note with no depth is found only in a
+#:   record note with none, as a depth the log never wrote is not a reading;
+#: * ``line_kind``: ``line`` (the kind of the interval's top line as the
+#:   legend prints it; ``""`` says the log says nothing, and then the record
+#:   must say nothing) against ``Layer.top_line``, exact after whitespace
+#:   and case;
+#: * ``line_width``: ``line_full_width`` (true or false) against
+#:   ``Layer.top_line_full_width``;
+#: * ``stratum_label``: ``label`` (as printed; ``""`` says the log prints
+#:   none for this interval) against ``Layer.stratum_label``, exact after
+#:   whitespace and case, whatever the carried marks say;
+#: * ``label_source``: ``label_source`` against
+#:   ``Layer.stratum_label_source`` (:func:`_same_text`), where the label
+#:   was found;
+#: * ``label_carried``: ``label_carried`` (absent is false: printed against
+#:   this interval) against ``Layer.stratum_label_carried``, where the label
+#:   was found and is not empty: a label the record carries down that the
+#:   sheet marks as printed, or the reverse, misses here and not on the
+#:   label.
+#:
+#: The record's interval "at that top" is the one whose top is nearest the
+#: sheet's, within :data:`LAYER_TOL_M`.
+INTERVAL_METRICS: Tuple[str, ...] = (
+    "interval_note", "line_kind", "line_width", "stratum_label",
+    "label_source", "label_carried")
 
 
 # ---------------------------------------------------------------------------
@@ -695,6 +731,8 @@ def score_record(truth: Dict[str, Any], investigations: Sequence[Any]
             out.score("uscs").add(
                 any(_same_text(ly.uscs, str(uscs)) for ly in near),
                 f"USCS {uscs} at {top} {unit}")
+        _score_interval(out, layer, record_layers, want, f"{top} {unit}",
+                        unit, q_m)
 
     for water in _flat(truth, "water"):
         depth = water.get("depth")
@@ -723,6 +761,75 @@ def score_record(truth: Dict[str, Any], investigations: Sequence[Any]
                 ok = _same_text(value, got)
         out.score("fields").add(ok, f"{key}={value!r} -> {got!r}")
     return out
+
+
+def _label_text(text: Any) -> str:
+    """A label to compare as printed: exact after whitespace and case."""
+    return " ".join(str(text or "").split()).casefold()
+
+
+def _score_interval(out: LogScore, layer: Dict[str, Any],
+                    record_layers: Sequence[Tuple[Any, Optional[float]]],
+                    want: float, where: str, unit: Optional[str],
+                    q_m: Any) -> None:
+    """The interval groups of one answer-sheet layer (:data:`
+    INTERVAL_METRICS`), each scored only where the sheet's layer carries its
+    key: a sheet without the keys adds nothing to ``out``."""
+    keys = ("notes", "line", "line_full_width", "label")
+    if not any(key in layer for key in keys):
+        return
+    near = sorted(((abs(top - want), n) for n, (_ly, top)
+                   in enumerate(record_layers)
+                   if top is not None and abs(top - want) <= LAYER_TOL_M))
+    found = record_layers[near[0][1]][0] if near else None
+
+    for note in layer.get("notes") or []:
+        words = str(note.get("text") or "")
+        depth = note.get("depth")
+        ok = False
+        for got in (getattr(found, "notes", None) or []):
+            if not _same_text(got.text, words):
+                continue
+            got_m = q_m(got.depth)
+            if depth is None:
+                ok = got.depth is None
+            else:
+                ok = (got_m is not None and
+                      abs(got_m - _to_m(depth, unit)) <= LAYER_TOL_M)
+            if ok:
+                break
+        at = f" at {depth} {unit}" if depth is not None else ""
+        out.score("interval_note").add(
+            ok, f"note {words!r}{at} in the interval at {where}")
+
+    if "line" in layer:
+        line = layer.get("line")
+        out.score("line_kind").add(
+            found is not None
+            and _label_text(found.top_line) == _label_text(line),
+            f"line {line!r} at {where}")
+    if layer.get("line_full_width") is not None:
+        width = bool(layer["line_full_width"])
+        out.score("line_width").add(
+            found is not None and found.top_line_full_width is width,
+            f"line full width {width} at {where}")
+
+    if "label" in layer:
+        label = layer.get("label")
+        ok = (found is not None
+              and _label_text(found.stratum_label) == _label_text(label))
+        out.score("stratum_label").add(ok, f"label {label!r} at {where}")
+        if ok and _label_text(label):
+            if layer.get("label_source"):
+                source = str(layer["label_source"])
+                out.score("label_source").add(
+                    _same_text(found.stratum_label_source, source),
+                    f"label source {source!r} at {where}")
+            carried = bool(layer.get("label_carried"))
+            out.score("label_carried").add(
+                bool(found.stratum_label_carried) is carried,
+                f"label {label!r} at {where} "
+                + ("carried down" if carried else "printed against it"))
 
 
 # ---------------------------------------------------------------------------
