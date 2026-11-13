@@ -32,7 +32,7 @@ in this table are the review's (F) and the lead's (A1-B7) ids.
 | 5 | B4 | B | "UFS 3-220-10 Sec. 5-3" is wrong. | **Fixed.** The library's PDF is UFS 3-220-10 (16 January 2026); the Schmertmann Method is Sec. 5-4.1.2 (p. 231); Sec. 5-3 is "Settlement Calculations". Corrected in all five places. |
 | 6 | B7 | B | The package's sublayer table left out the continued layer its S_e includes. | **Fixed** (a few lines in `settlement/calc_steps.py`): a row marked "continued" and the below-profile note under the table. |
 | 7 | B5 | B | `angle_deg: null`, `"15"`, `spacing: "3"` raised a raw TypeError (all three ran on the base). | **Fixed** in the tool: null is not given (angle horizontal, spacing per metre only), as before the branch; a number written as a string is read as the number, as the adapters read other numeric inputs (`float`, e.g. this adapter's layer thickness, slope_stability's `time_budget_s`, reliability's inputs); anything else (`"fifteen"`, `"3 m"`, a bool, a list) is refused naming the key and the support. `SupportLevel` itself still refuses a string or bool. One tool test for each case. |
-| 8 | B3 | B | The vertical component reported and not applied was said in DESIGN.md only. | **Fixed.** The description (supports and returns) and a note in the result when a support is inclined: the wall and its toe must carry it, this tool does not check that (Caltrans Sec. 11-3.04, p. 11-12, read; GEC-4 App. A p. A-13, read). |
+| 8 | B3 | B | The vertical component reported and not applied was said in DESIGN.md only. | **Fixed.** The description (supports and returns) and a note in the result when a support is inclined: reported, not applied, not checked (Caltrans Sec. 11-3.04, p. 11-12, read; GEC-4 App. A p. A-13, read); since the re-check also in the package (N4), with its direction the support's (C3). |
 | 9 | B6 | B | The Caltrans manual does print spacing and inclination. | **Fixed.** Example 8-1, Eq. 8-4-21 (p. 8-15) and Eq. 8-4-22 (p. 8-16) read on the PDF and cited beside GEC-4 in the basis, description and DESIGN.md; "not found" corrected here and in DESIGN.md; a made-up hand check (50 kN/m, 3 m, 15 deg: 150, 155.29, 40.19 kN) pins the code's form. |
 | 10 | | C | `below_profile` listed in `defaults_used` when the layers cover the diagram. | Not done (needs a condition in the dispatch's defaults_used, more than a line). Its text now reads "nothing assumed where the layers do not reach", true either way. |
 | 11 | | C | Empty layers with `last_layer_continued`: raw `max()` error. | **Fixed:** empty layers refused first, by name. |
@@ -45,6 +45,26 @@ in this table are the review's (F) and the lead's (A1-B7) ids.
 | 18 | | C | `SoilProfile.to_soe_input` keeps the 3.0 default and raises before it returns. | Not done; for the lead to file as a backlog line (it cannot run, so no output changes). |
 | 19 | | C | Small truths in wording. | **Fixed:** the GEC-4 Sec. 7.5 words are now the print's (below); the soe test file names the test that uses GEC-4's printed numbers. The unused `schmertmann_below_profile` with the elastic method: left (no output change). |
 | 20 | | C | UFC 3-220-20 p. 261 as a third cite. | Not done (optional). |
+
+## The re-check's findings and what each became
+
+Re-check: `recheck-gm320`, 2026-11-13, of the fixes up to b9023f6 (with
+master merged, 292a7bc): MERGE AFTER FIXES. A1, A2, B1, B2 and B4 to B7
+closed; B3 closed in the tool, not in the package (N4). Its probes'
+numbers below are the re-checker's; the fixes are 9f9f199 and 328bdf8.
+
+| Re-check | Grade | Finding | What it became |
+|---|---|---|---|
+| N4 | B | B3 in the soe package: "vertical 57.31 kN (Eq. 21)" and nothing more. | **Fixed.** The "design load, one support" step's note carries the result note's sentence and cites (`VERTICAL_NOTE`, `soe/beam_analysis.py`). Test on `get_calc_steps`. |
+| N2 | B | With consolidation layers in the depth not covered, the choice listed `incompressible` and `last_layer_continued`, which the same call refuses. | **Fixed.** The terms carry `settled`; the choice then lists only what the call takes: Schmertmann layers over the depth in neither list, if there is one, else nothing. |
+| N1 | B | Clay given from 3.5 to 6 m under a depth not covered of 2.5 to 6 m: 4.82 + 25.19 = 30.01 mm, 2.5 to 3.5 m in neither sum, while the warning said its settlement came from consolidation. | **Fixed.** The terms carry `neither`; the choice and the warning say "2.5 to 3.5 m below the footing base is in neither the Schmertmann nor the consolidation layers of this call: its settlement is not in the total settlement", and the warning asks for Schmertmann layers there if that ground is granular, consolidation layers if it is a clay. The same in a combined analysis with no consolidation layers. Not refused (calls made, 10). |
+| N3 | B | The refusal's first route, layers down to 6 m with no gaps, followed over the clay counts its depth twice: 8.02 + 42.24 mm against 4.82 + 42.24 mm. | **Fixed in the refusal.** Where consolidation layers lie in the depth not covered, it no longer offers that route: it says Schmertmann layers there would count that depth twice, names any depth in neither list and asks for Schmertmann layers there if that ground is granular. Schmertmann layers given over a consolidation layer still run: with the overlap follow-up (below). |
+| C1 | C | Doubled "braced_excavation: supports[1]:" prefix in the B5 refusals. | **Fixed:** `_support_number` gives the bare message (its unused arguments dropped); the caller adds the prefix once. The tool tests count it. |
+| C2 | C | `spacing: "inf"` accepted: infinite loads, a NaN vertical load. | **Fixed:** `SupportLevel` refuses a spacing that is not finite. Tests on `SupportLevel` (inf, NaN) and the tool ("inf", "nan"). |
+| C3 | C | "The wall and its toe must carry it" reads for an anchor; a raker's component on the wall acts up, which the toe does not carry. | **Fixed:** "it acts on the wall along the wall's axis, down or up by the support's direction (an anchor inclined below the horizontal pulls the wall down; a raker braced from below pushes it up), and this analysis does not check the wall for it"; Caltrans Sec. 11-3.04 cited as printed for a ground anchor. In the result's note, the package step, both descriptions (supports, returns), the three manual rows and `soe/DESIGN.md`. |
+| C4 | C | `COVER_TOL_M`'s wording: 10 mm at the peak is 0.3 to 1.7 % of the sum, not of the order of 1e-5. | Not done: not in the lead's list for this round. |
+| C5 | C | `delta_sigmas` with "30" refused, where a support's "3" is read as 3. | Not done: not in the list; no number affected. |
+| C6 | C | The settlement package's inputs say "N_layers 1" beside the table's continued row. | Not done: not in the list; the table is right. |
 
 ## What the print says
 
@@ -140,7 +160,8 @@ this analysis, so it is no longer accepted.
 **soe** (080faf2, then the review's cd5f2b2)
 - `soe/geometry.py`: `SupportLevel.spacing` is optional with no default
   (was 3.0, never read); `angle_deg` must be 0 to under 90 (None: 0),
-  `spacing` positive, both numbers; `preload_kN_per_m` removed.
+  `spacing` positive (and finite, since the re-check), both numbers;
+  `preload_kN_per_m` removed.
 - `soe/beam_analysis.py`: `support_own_loads`; each entry of
   `support_reactions` gains `spacing_m`, `angle_deg`,
   `axial_load_kN_per_m`, `horizontal_load_kN_per_support`,
@@ -156,6 +177,23 @@ this analysis, so it is no longer accepted.
 - `foundry/soe_agent_foundry.py` (retired route, still tested): no longer
   passes the removed field or the 3.0 default.
 - `soe/DESIGN.md`: a section for this.
+
+**Re-check round** (9f9f199, 328bdf8)
+- `settlement/immediate.py`: the terms carry `settled` (the depth not
+  covered that the call's consolidation layers settle) and `neither`
+  (with `settled_by_another_method` in `SettlementAnalysis`, the depth
+  in neither list; `settled_elsewhere` is None for a call that settles
+  nothing else). Where consolidation layers lie in the depth not
+  covered, the refusal asks for Schmertmann layers over the rest only;
+  the choice lists only what the call takes; the choice and the
+  warning name the `neither` depth as not in the total settlement.
+  `settlement/DESIGN.md` says so.
+- `soe/beam_analysis.py`: `VERTICAL_NOTE`, used by the result's note
+  and by `soe/calc_steps.py`'s "design load, one support" step;
+  `soe/geometry.py` refuses a spacing that is not finite;
+  `funhouse_agent/adapters/soe.py`: the prefix once, and the
+  descriptions; the manual's three `supports` rows and
+  `soe/DESIGN.md` follow. `check_manual.py` exits 0.
 
 **Manual** (ade2168, then a719b80): the rows of
 `docs/user_manual/manual.html` for `schmertmann_settlement` (layers,
@@ -219,13 +257,28 @@ at 2 m (spacing 3 m) and 5 m (anchor, spacing 2.4 m, 20 deg):
 | Support | Base | Now |
 |---|---|---|
 | 1 | `load_kN_per_m` 115.66 | `load_kN_per_m` 115.66; per support 346.97 kN horizontal and axial |
-| 2 | `load_kN_per_m` 67.03 | `load_kN_per_m` 67.03; `axial_load_kN_per_m` 71.33; per support 160.87 kN horizontal, 171.19 kN axial, 58.55 kN vertical, and a note that the wall must carry the vertical and this tool does not check it |
+| 2 | `load_kN_per_m` 67.03 | `load_kN_per_m` 67.03; `axial_load_kN_per_m` 71.33; per support 160.87 kN horizontal, 171.19 kN axial, 58.55 kN vertical, and a note that the vertical is reported, not applied, acts on the wall in the support's direction and is not checked |
 
 Moment, shear and embedment: unchanged. `angle_deg: null`, `"15"` and
 `spacing: "3"`: base ran (none was read), head raised a TypeError; now
 null runs as not given and the two strings run as 15 deg and 3 m.
 `angle_deg: "fifteen"`: now "supports[0]: angle_deg must be a number, got
 'fifteen'".
+
+Re-check round: no number changes, only what the refusal, the choice,
+the warning and the notes say. Made-up probe through
+`combined_settlement_analysis`: square B 3 m, q_applied 118 kPa,
+q_overburden 18 kPa, gamma_soil 19 kN/m3; sand 0 to 1 m (Es 15 MPa) and
+1 to 2.5 m (Es 25 MPa); the diagram to 6 m; clay e0 0.9, Cc 0.3,
+Cr 0.05. Clay from 3.5 to 6 m (sigma_v0 70 kPa), stated
+`settled_by_another_method`: 4.82 + 33.25 = 38.07 mm, and now the choice
+and the warning name 2.5 to 3.5 m as in neither sum, the choice's only
+alternative is Schmertmann layers over 2.5 to 3.5 m (was
+`incompressible` and "layers down to 6 m with no gaps"). Clay from 2.5
+to 6 m (sigma_v0 65 kPa): 4.82 + 56.12 = 60.93 mm; the refusal no longer
+offers layers down to 6 m; given anyway (the sand's 25 MPa to 6 m),
+8.02 + 56.12 mm still runs (the overlap follow-up). The raker probe
+(2.7 m, 18 deg): 190.29 kN axial, 58.80 kN vertical, as before.
 
 ## Calls made (for the owner to revisit)
 
@@ -245,7 +298,10 @@ null runs as not given and the two strings run as 15 deg and 3 m.
    and taken. The lead ruled out `incompressible` there; I also refuse
    `last_layer_continued` there, since it would count the clay's strain
    with the sand's Es and consolidate it too. A consolidation layer only
-   below the diagram does not restrict the choice.
+   below the diagram does not restrict the choice. Since the re-check
+   the refusal there does not offer layers down to the bottom of the
+   diagram (over the clay they would count it twice), and the choice
+   lists only what the call takes.
 4. **10 mm tolerance** on the cover check, a numerical one; the refusal
    prints the depth rounded up to the centimetre.
 5. **`spacing` has no default.** It was 3.0 m in the dataclass and the
@@ -260,11 +316,20 @@ null runs as not given and the two strings run as 15 deg and 3 m.
    that number (the adapters' practice); anything else not a number is
    refused.
 8. **The vertical component is reported, not applied**: the wall analysis
-   has no axial check, and adding one is not this item. The description
-   and the result now say so, with the print's words that it must be
-   carried.
+   has no axial check, and adding one is not this item. The description,
+   the result and the calc package say so, with the print's words that
+   it must be carried (printed for a ground anchor). Its direction on the
+   wall is said to be the support's: down for an anchor inclined below
+   the horizontal, up for a raker braced from below. That is statics;
+   no held page prints the raker case.
 9. **Preload is refused, not ignored**, on the tool, and the field is gone
    from `SupportLevel`.
+10. **A depth in neither the Schmertmann nor the consolidation layers**
+   of a combined analysis, with `settled_by_another_method`, runs and is
+   named in the choice and the warning as not in the total settlement;
+   it is not refused, since the input says its settlement is worked out
+   by another method. Before the stated value, the refusal names it and
+   asks for Schmertmann layers there if that ground is granular.
 
 ## Tests
 
@@ -304,9 +369,23 @@ changed: checked by a probe of `get_calc_steps`), `test_defaults_used.py`
 (the absence texts changed wording only), `test_page_fingerprints.py`
 (see Fingerprints above).
 
-New tests: `settlement/tests/test_gm320_short_profile.py` (19),
-`soe/tests/test_gm321_support_loads.py` (15),
-`funhouse_agent/tests/test_gm320_321_tools.py` (25, with a check that
+Re-check round (2026-11-13), the same way:
+
+| File | Result |
+|---|---|
+| `settlement/tests/test_gm320_short_profile.py` | 22 passed, exit 0 |
+| `soe/tests/test_gm321_support_loads.py` | 19 passed, exit 0 |
+| `funhouse_agent/tests/test_gm320_321_tools.py` | 27 passed, exit 0 |
+| `soe/tests/test_gm290_print.py` (the soe package steps) | 24 passed, exit 0 |
+| `funhouse_agent/tests/test_nested_keys.py` | 67 passed, exit 0 |
+| `funhouse_agent/tests/test_adapter_ergonomics.py` | 170 passed, exit 0 |
+| `webapp/tests/test_public_text.py` | 5 passed, exit 0 |
+| `module_work/doc10/check_manual.py` | OK, exit 0 |
+
+New tests: `settlement/tests/test_gm320_short_profile.py` (19, 22 since
+the re-check),
+`soe/tests/test_gm321_support_loads.py` (15, then 19),
+`funhouse_agent/tests/test_gm320_321_tools.py` (25, then 27, with a check that
 every support key the tool promises is returned); `test_nested_keys.py`
 checks the preload refusal. No probe, worked example or validation example
 relied on a Schmertmann profile that does not cover the diagram, an
@@ -324,14 +403,17 @@ counted as not settling. Say what lies there with `below_profile`
 package): `settled_by_another_method` for non-granular soil settled by
 another method, as NHI-06-089 App. A.7 does for sand over clay;
 `incompressible` for rock; or `last_layer_continued`. When consolidation
-layers lie there, only `settled_by_another_method` is accepted. Depths
+layers lie there, only `settled_by_another_method` is accepted, and a
+depth in neither the Schmertmann nor the consolidation layers is named
+as not in the total. Depths
 within 10 mm count as covered. A `delta_sigmas` list that is not one
 number per layer is refused. Support of excavation: each braced support
 now reports its own load from its spacing and inclination (GEC-4 Eqs. 19
 to 21; Caltrans Example 8-1); `spacing` no longer defaults to 3 m; an
-inclined support's vertical component is reported with a note that the
-wall must carry it and this tool does not check it; a support's preload is
-refused. No number that was returned before changes: the settlement of a
+inclined support's vertical component is reported, with a note in the
+result and the calc package that it acts on the wall in the support's
+direction and this tool does not check it; a support's preload, and a
+spacing that is not a finite positive number, are refused. No number that was returned before changes: the settlement of a
 profile that covers the diagram, and a wall's loads per metre, moment,
 shear and embedment, are the same.
 
@@ -341,7 +423,14 @@ shear and embedment, are the same.
   last sentence: layers 0 to 2 m and 1 to 4 m, Es 12 000 kPa, give
   18.06 mm where one layer 0 to 4 m gives 12.88 mm). Refusing an overlap,
   naming the depths, would change any saved run that had one. Not in the
-  lead's ruling for this round.
+  lead's ruling for this round. **The same item: Schmertmann layers over
+  a consolidation layer** in the combined analysis count that depth in
+  both sums (the re-check's N3: the sand's Es given to 6 m over a clay
+  consolidated from 2.5 to 6 m, 8.02 + 42.24 mm against 4.82 + 42.24 mm,
+  nothing said; the re-checker read it as so on master too, not run). The
+  refusal no longer offers that route, but a call that gives it runs.
+  One check of every layer list against the others, for one backlog
+  item.
 - **The braced package's inputs table** lists each support's depth only;
   spacing and inclination are in the echo, the choices row and the step.
   Adding them changes the package's inputs table (review C16).
