@@ -1109,11 +1109,14 @@
       "values": [
         {
           "name": "FOS",
-          "value": 1.223,
-          "rtol": 0.08
+          "value": 1.101,
+          "rtol": 0.08,
+          "alt": [
+            1.223
+          ]
         }
       ],
-      "source": "v5.3/v5.4 worktree ground truth, 2026-07-07 (recomputed by the E10 offline test)"
+      "source": "module ground truth, 2026-11-13 (GM-140 step 3): the grid's head stands above the ground at the toe, so u b exceeds W on the toe slices; Bishop's W - u b is used as printed (Bishop 1955 Eq. 13, p. 10), 1.101. The alternative 1.223 is the value with negative_friction_term='zero', the module's rule when the key was first set (2026-07-07)."
     }
   },
   {

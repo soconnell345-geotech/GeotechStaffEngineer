@@ -40,6 +40,36 @@ def _no_circle(p):
     return {k: v for k, v in p.items() if k not in ("xc", "yc", "radius")}
 
 
+def test_a_flagged_headline_never_comes_alone():
+    """GM-140 step 3, the review's ruling 5. ACADS 1(a) (printed 1.00), a
+    200-trial random Spencer search: the lowest solved surface (0.633 when
+    measured) is flagged and the lowest with no flag is higher (1.09).
+    Neither alone is safe, so the tool result gives the headline, its
+    flags, the lowest surface with no flag and the option that refuses
+    flagged surfaces, as fields and in its one-sentence summary."""
+    r = METHOD_REGISTRY["search_critical_surface"]({
+        "surface_points": [[20, 25], [30, 25], [50, 35], [70, 35]],
+        "soil_layers": [{"name": "soil", "top_elevation": 35,
+                         "bottom_elevation": 20, "gamma": 20, "phi": 19.6,
+                         "c_prime": 3}],
+        "surface_type": "noncircular", "method": "spencer",
+        "n_trials": 200, "n_points": 6, "n_slices": 25, "seed": 42,
+        "x_entry_range": [20, 32], "x_exit_range": [46, 68]})
+    fos = r["critical"]["FOS"]
+    flags = r["critical_flags"]
+    low = r["lowest_unflagged"]["FOS"]
+    assert {"base_tension", "side_tension", "thrust_outside"} <= set(flags)
+    assert low > fos
+    assert "low_m_alpha='refuse'" in r["refuse_option"]
+    s = r["summary"]
+    assert s.endswith(".") and ". " not in s          # one sentence
+    assert f"FOS {fos:.3f}" in s and f"FOS {low:.3f}" in s
+    assert "a tensile interslice force" in s
+    assert r["refuse_option"] in s
+    for key in ("summary", "refuse_option"):
+        assert key in METHOD_INFO["search_critical_surface"]["returns"]
+
+
 # ----------------------------------------------------------------------------
 # METHOD_INFO contract
 # ----------------------------------------------------------------------------

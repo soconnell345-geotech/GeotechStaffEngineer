@@ -112,7 +112,14 @@ def test_a_circle_with_no_spencer_solution_has_no_number(method):
     # Bishop's simplified method solves the same circle: its own number,
     # 1.7268 by the review's own Bishop (1955 Eq. 13, p. 10) on 30 slices
     b = analyze_slope(g, method="bishop", **_NO_SPENCER_CIRCLE)
-    assert b.method_solved and b.FOS == pytest.approx(1.7268, rel=0.01)
+    assert b.method_solved
+    assert b.FOS_bishop == pytest.approx(1.7268, rel=0.01)
+    # GM-140 step 3 (OWN-102; Duncan 1996, p. 580): on this circle Bishop's
+    # value is below the Ordinary Method of Slices value (1.750), so the
+    # latter is the factor of safety reported, and the result says so.
+    assert b.FOS == pytest.approx(b.FOS_fellenius)
+    assert b.FOS_fellenius > b.FOS_bishop
+    assert "Ordinary Method of Slices" in b.method_used
 
 
 def test_no_approximate_solver_is_left_in_the_package():
@@ -651,35 +658,91 @@ def test_the_robust_lambda_search_runs_without_supports():
 
 @pytest.mark.xfail(strict=True, reason=(
     "The step 2 review's D1, not applied: the module finds no Spencer "
-    "solution on this circle, which has one (2.9435 by the review's own "
-    "Spencer). Making the direct march the fallback on every run where the "
+    "solution on this circle, which has one (with phi = 0, the moment "
+    "ratio worked out in the test). Making the direct march the fallback on every run where the "
     "fixed-point step cannot be taken finds it (2.9458) but also gives "
     "states resting on the m_alpha clamp, with base tension, on surfaces "
     "GM-131 found to have no Spencer solution (test_search_robustness, "
     "test_m_alpha), loses the yield coefficient of an ordinary slope "
     "(test_slope_stability_adapter::TestNewmark) and quadruples a "
     "noncircular search's run time (module_work/gm140/STEP2_CHECK.md, "
-    "section 11). Left for the lead."))
+    "section 11). Decided in GM-140 step 3 (item 7): not applied. With "
+    "the rule added that a marched state resting on the m_alpha clamp or "
+    "on a base in tension is no state, the march finds this circle "
+    "(2.9458) and no longer solves the GM-131 surfaces, but it still "
+    "takes away a state the lambda search had "
+    "(test_the_robust_lambda_search_runs_without_supports), an ordinary "
+    "slope's yield coefficient (test_newmark::"
+    "test_yield_acceleration_self_consistent: no solution at kh = 1.0) "
+    "and changes two searches (module_work/gm140/STEP3_CHECK.md)."))
 def test_the_march_is_tried_where_the_lagged_iteration_cannot_step():
     """Item 3 (the step 2 review's D1). Where the lagged iteration at a
     fixed lambda cannot take a step (a denominator at or below 1e-9), the
     direct march is tried only with supports. On this made-up phi = 0
     circle Spencer's method gives no number ("no lambda from -1.5 to 1.5
     gives an equilibrium state"). It has a solution: with phi = 0 the
-    moment about the centre does not depend on the side-force inclination,
-    so Spencer's F is sum(c l) / sum(W sin alpha), 2.9435 on 30 slices
-    (theta 2.16 degrees) by the review's own Spencer (Spencer 1967 Eqs. 7
-    and 8, p. 15; nothing from this module). The circle's centre is below
-    the ground at its upper end, which is closed by a vertical crack, as
-    there."""
+    moment about the centre does not depend on the side forces, so
+    Spencer's F, which satisfies moment equilibrium (Spencer 1967 Eq. 8,
+    p. 15), is the moment ratio cu R (arc length) / sum(W x), x the moment
+    arm of each slice's weight about the centre. The target below is that
+    arithmetic on 600 equal slices, nothing from this module (3.084; the
+    step 3 review got the same; the 2.9435 the step 2 review gave was
+    wrong). The circle's centre is 3.0 m below the crest where it ends, so
+    it is a reverse-curvature circle: since GM-140 step 4 it is no surface
+    unless a crack is asked for, so a dry 3.0 m crack is given, which
+    closes it at x = 41, where the arc turns vertical (EM 1110-2-1902
+    C-10c; the module's Bishop reads 3.068 on 30 slices of the same
+    surface; the test below checks the target)."""
+    g, target = _march_circle()
+    r = analyze_slope(g, xc=32.0, yc=7.0, radius=9.0, method="spencer",
+                      n_slices=30)
+    assert r.method_solved and r.FOS == pytest.approx(target, rel=0.01)
+
+
+def test_the_march_circle_s_target_is_the_moment_ratio():
+    """The strict xfail above holds its target: the moment ratio on 600
+    slices, 3.084, and Bishop's simplified method, which with phi = 0
+    gives the same ratio slice by slice, reads it within 1 % on 30 slices
+    of the same surface, closed by the 3.0 m crack at x = 41."""
+    g, target = _march_circle()
+    assert target == pytest.approx(3.084, abs=0.001)
+    b = analyze_slope(g, xc=32.0, yc=7.0, radius=9.0, method="bishop",
+                      n_slices=30)
+    assert b.tension_crack["x_m"] == pytest.approx(41.0, abs=0.01)
+    assert b.FOS == pytest.approx(target, rel=0.01)
+
+
+def _march_circle():
+    """The step 2 review's phi = 0 circle ((32, 7), R 9; cu 25 kPa, gamma
+    18) with the dry 3.0 m crack that closes it, and its factor of safety
+    as the moment ratio cu R (arc length) / sum(W x) on 600 equal slices
+    (with phi = 0 every method satisfying moment equilibrium gives it)."""
+    xc, yc, R, cu, gamma = 32.0, 7.0, 9.0, 25.0, 18.0
+
+    def ground(x):
+        return 0.0 if x <= 15.0 else min(10.0, (x - 15.0) * 10.0 / 15.0)
+
+    # the lower end, on the face z = (x - 15) 2/3:
+    # (x - 32)^2 + (2x/3 - 17)^2 = 81
+    a, b, c = 13.0 / 9.0, -64.0 - 68.0 / 3.0, 1024.0 + 289.0 - 81.0
+    x_lo = (-b - math.sqrt(b * b - 4.0 * a * c)) / (2.0 * a)
+    x_hi = xc + R                              # the crack, at x = 41
+    n = 600
+    w = (x_hi - x_lo) / n
+    moment = 0.0
+    for i in range(n):
+        x = x_lo + (i + 0.5) * w
+        z_arc = yc - math.sqrt(max(R * R - (x - xc) ** 2, 0.0))
+        moment += gamma * w * (ground(x) - z_arc) * (x - xc)
+    angle_lo = math.atan2(x_lo - xc, yc - ground(x_lo))
+    arc = R * (math.pi / 2.0 - angle_lo)       # up to the vertical at 41
     g = SlopeGeometry(
         surface_points=[(0, 0), (15, 0), (30, 10), (50, 10)],
         soil_layers=[SlopeSoilLayer(name="clay", top_elevation=10.0,
-                                    bottom_elevation=-12.0, gamma=18.0,
-                                    cu=25.0, analysis_mode="undrained")])
-    r = analyze_slope(g, xc=32.0, yc=7.0, radius=9.0, method="spencer",
-                      n_slices=30)
-    assert r.method_solved and r.FOS == pytest.approx(2.9435, rel=0.01)
+                                    bottom_elevation=-12.0, gamma=gamma,
+                                    cu=cu, analysis_mode="undrained")],
+        tension_crack_depth=3.0)
+    return g, cu * R * arc / moment
 
 
 def test_an_iteration_that_does_not_settle_is_not_a_state():

@@ -115,7 +115,8 @@ from slope_stability.gle import gle_fos
 from slope_stability.results import SearchResult
 from slope_stability.search import (
     _counts_refusals, _ordered_windows, _count_m_alpha_refusal,
-    m_alpha_rule_in_force,
+    m_alpha_rule_in_force, _applies_m_alpha_rule, low_m_alpha_in_force,
+    _note_trial_flags,
 )
 from slope_stability.methods import M_ALPHA_MIN, m_alpha_min as _m_alpha_min
 
@@ -1170,6 +1171,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
 
 @_counts_refusals
 @_counts_reverse_discards
+@_applies_m_alpha_rule
 def search_rapid_drawdown(geom: SlopeGeometry,
                           drawdown_from_elevation: float,
                           drawdown_to_elevation: float,
@@ -1190,6 +1192,7 @@ def search_rapid_drawdown(geom: SlopeGeometry,
                           refine: bool = True,
                           time_budget_s: Optional[float] = None,
                           drawdown_phreatic_points: Optional[List] = None,
+                          low_m_alpha: str = "flag",
                           ) -> RapidDrawdownSearchResult:
     """Find the critical slip surface UNDER RAPID-DRAWDOWN strengths.
 
@@ -1260,6 +1263,12 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         search on the centre (GM-87; ``search.grid_search``). With a
         per-surface solve this costly only the lowest grid centre is
         refined, three step halvings, at most 12 centres. Default True.
+    low_m_alpha : str
+        A trial surface with m_alpha < 0.2 on a drawn-down slice at the
+        drawdown FOS: 'flag' (default), kept and counted as flagged in
+        ``search.trial_flags`` (Whitman and Bailey 1967, p. 487, print a
+        warning, not a rejection; GM-140 step 3); 'refuse', left out and
+        counted in ``search.n_rejected_m_alpha``, as before.
     time_budget_s : float or None
         Time budget of the whole search, in seconds, as
         ``search_critical_surface`` (GM-123): the main search scores coarse
@@ -1326,11 +1335,17 @@ def search_rapid_drawdown(geom: SlopeGeometry,
             return _FOS_MAX
         if r.stage1_fos < 0.5:
             return _FOS_MAX
-        # m_alpha < 0.2 on a drawn-down slice at the drawdown FOS: left out
-        # and counted, as every search does (GM-127; Slide2's -112)
-        if r.m_alpha_min < M_ALPHA_MIN:
+        # m_alpha < 0.2 on a drawn-down slice at the drawdown FOS: kept and
+        # counted as flagged, as every search does by default (GM-140 step
+        # 3, OWN-102; Whitman and Bailey 1967, p. 487, print a warning, not
+        # a rejection); left out and counted under ``low_m_alpha='refuse'``
+        # (GM-127).
+        low = r.m_alpha_min < M_ALPHA_MIN
+        if low and low_m_alpha_in_force() == "refuse":
             _count_m_alpha_refusal()
             return _FOS_MAX
+        _note_trial_flags("rapid_drawdown", r.FOS,
+                          ["low_m_alpha"] if low else [], slip)
         return r.FOS
 
     x_entry_range, x_exit_range, window_note = _ordered_windows(
@@ -1429,11 +1444,16 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
     from slope_stability.search_supplements import search_choices
     from slope_stability.search import _m_alpha_refusals_so_far
     search.n_rejected_m_alpha = _m_alpha_refusals_so_far()
+    from slope_stability.search import _flag_tally_so_far, flag_records
+    search.trial_flags = flag_records(
+        _flag_tally_so_far(),
+        rename={"main": CIRCULAR if circular else NONCIRCULAR})
     search.choices = search_choices(
         search, surface_type=surface_type, toe_circles=toe_circles,
         infinite_slope=infinite_slope,
         surface_types=("circular", "entry_exit", "noncircular",
-                       "noncircular_de"), budget=budget)
+                       "noncircular_de"), budget=budget,
+        low_m_alpha=low_m_alpha_in_force())
     search.choices += _crack_choices(
         geom, _discards_so_far(),
         circles=surface_type in ("circular", "entry_exit") or toe_circles)

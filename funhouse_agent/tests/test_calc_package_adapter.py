@@ -231,8 +231,17 @@ class TestSlopePackageNoNumber:
             self._FILL, method="bishop",
             output_path=str(tmp_path / "b.html")))
         # 1.7268 by the review's own Bishop (1955 Eq. 13, p. 10), 30 slices
-        assert result["FOS"] == pytest.approx(1.7268, rel=0.01)
+        assert result["FOS_bishop"] == pytest.approx(1.7268, rel=0.01)
+        # GM-140 step 3 (OWN-102; Duncan 1996, p. 580): Bishop's value is
+        # below the Ordinary Method of Slices value on this circle, so the
+        # latter is the factor of safety and the package says so
+        assert result["FOS"] > result["FOS_bishop"]
+        assert "Ordinary Method of Slices" in result["method_used"]
+        assert result["flags"] == ["bishop_below_oms"]
         assert "no_solution" not in result
+        html = open(tmp_path / "b.html", encoding="utf-8").read()
+        assert "Printed Acceptability Checks" in html
+        assert "Factor of Safety Reported" in html
 
     def test_report_refuses_an_unknown_interslice_function(self, tmp_path):
         from funhouse_agent.adapters.calc_package import (
