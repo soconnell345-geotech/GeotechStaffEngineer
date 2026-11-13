@@ -394,6 +394,7 @@ def _follow_turn_job(job) -> None:
     ss.last_turn_tokens = res.get("turn_tokens", 0)
     ss.total_tokens += res.get("turn_tokens", 0)
     ss.save_error = res.get("save_error")
+    ss.pop("spend_estimate", None)     # re-read after the turn (TA-05)
     if res.get("sp_sync") is not None:
         ss.sp_sync = res["sp_sync"]
     job.consumed = True
@@ -1530,6 +1531,23 @@ with st.sidebar:
                     st.caption(_bline)
             if st.button("Refresh budget", key="budget_refresh"):
                 ss.budget_status = budget_panel.get_budget_status()
+                st.rerun()
+        elif budget_panel.estimate_on():
+            # No SDK: an estimate from the caller's own conversations'
+            # records (BACKLOG TA-05, behind GEOTECH_SPEND_ESTIMATE). Read
+            # once, again after each turn and on the refresh button.
+            if "spend_estimate" not in ss:
+                ss.spend_estimate = budget_panel.estimate_status(_ROOT)
+            _es = ss.spend_estimate
+            if _es:
+                _eline = budget_panel.format_estimate_line(_es)
+                if _es.get("cap") and _es.get("spent") is not None \
+                        and _es["spent"] / _es["cap"] >= 0.9:
+                    st.warning(_eline + " — nearly at the monthly budget.")
+                else:
+                    st.caption(_eline)
+            if st.button("Refresh estimate", key="spend_estimate_refresh"):
+                ss.spend_estimate = budget_panel.estimate_status(_ROOT)
                 st.rerun()
     except Exception:
         pass
