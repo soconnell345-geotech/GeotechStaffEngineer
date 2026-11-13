@@ -123,6 +123,24 @@ M 252 kN-m/m before; the clean sand row, Kp 5.26, D 5.06 m, M 174 kN-m/m
 now. The chart sources (Figs. 4-12, 4-13) still refuse a delta other than
 0.66 phi', the row included.
 
+**GM-310 (the call for OWN-82, 2026-11-12): no wall friction unless the
+layer is marked.** The paragraph above is the GM-242 rule; since GM-310 a
+layer that names no wall friction takes none under "log_spiral" too, and
+its Kp is Rankine's. UFC 3-220-20 Fig. 4-37 step 1 (p. 237) includes wall
+friction on the passive side only "for clean coarse grained soils"; a
+friction angle with zero cohesion does not say a soil is clean (a silty
+sand has both), so the layer takes the table's delta only where the caller
+marks it `interface_soil` 'clean_sand' (17 deg) or 'clean_gravel' (22 deg),
+or gives `wall_friction_deg`. A marked row is used on both sides, as
+before. Delta stays 0 under "coulomb" (UFC p. 190, USS p. 9, Caltrans p.
+4-16). `choices` say "not marked clean sand or gravel" and give, on the
+clean sand row's alternative, the embedment with those layers marked
+(`clean_sand_where_left_out`). The probe above (4 m cantilever, phi' 32,
+water at the excavation level), nothing marked: D 7.21 m, M 252 kN-m/m
+(Rankine's Kp 3.25) where GM-242 gave D 5.06 m, M 174 kN-m/m; marked
+'clean_sand' the passive side is as GM-242's, with 17 deg on the active
+side too.
+
 ## Anchored wall shear and moment (GM-69, fixed 2026-10-14)
 `analyze_anchored` finds the embedment D by moments about the anchor and the
 anchor force T by horizontal equilibrium (both unchanged), then integrates the

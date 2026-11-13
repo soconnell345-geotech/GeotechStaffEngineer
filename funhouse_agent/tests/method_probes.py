@@ -141,6 +141,12 @@ _PLANE_STRAIN = ("plane strain: the thickness scales the stiffness, the "
                  "beams, springs and wall joints), so the per-metre "
                  "results do not change")
 LABEL_ONLY = {
+    # GM-310 (OWN-82): a layer naming no wall friction takes none under
+    # log_spiral, and at delta = 0 every source's Kp is Rankine's; the
+    # #log_spiral and #interface_soil probes (a delta given) reach it
+    ("sheet_pile|cantilever_wall#log_spiral_left_out", "log_spiral_source"):
+        "the probe's layer names no wall friction, so delta = 0, where "
+        "every printed source of the log-spiral Kp gives Rankine's",
     **{(f"wave_equation|{m}", n): _HAMMER_LABEL
        for m in ("bearing_graph", "drivability", "single_blow")
        for n in ("hammer_type", "hammer_custom_name")},
