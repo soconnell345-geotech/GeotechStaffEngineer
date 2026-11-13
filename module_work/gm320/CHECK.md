@@ -31,7 +31,7 @@ in this table are the review's (F) and the lead's (A1-B7) ids.
 | 4 | B1 | B | Gaps and a first layer below the base still silent (4.6 mm, 6.47 mm, 0.0 mm). | **Fixed.** `schmertmann_uncovered`: every depth from the base to z_max not covered is refused, naming the ranges; when stated, the terms (`uncovered`), choice, warning and the tool (`depths_not_covered_m`) list them. `last_layer_continued` speaks only for the depth below the deepest layer and is refused for a gap. Overlaps: not in the ruling, see Follow-ups. |
 | 5 | B4 | B | "UFS 3-220-10 Sec. 5-3" is wrong. | **Fixed.** The library's PDF is UFS 3-220-10 (16 January 2026); the Schmertmann Method is Sec. 5-4.1.2 (p. 231); Sec. 5-3 is "Settlement Calculations". Corrected in all five places. |
 | 6 | B7 | B | The package's sublayer table left out the continued layer its S_e includes. | **Fixed** (a few lines in `settlement/calc_steps.py`): a row marked "continued" and the below-profile note under the table. |
-| 7 | B5 | B | `angle_deg: null`, `"15"`, `spacing: "3"` raised a raw TypeError. | **Fixed.** Null angle = horizontal, as before the branch; a string or bool spacing or angle is refused naming the key and the support. |
+| 7 | B5 | B | `angle_deg: null`, `"15"`, `spacing: "3"` raised a raw TypeError (all three ran on the base). | **Fixed** in the tool: null is not given (angle horizontal, spacing per metre only), as before the branch; a number written as a string is read as the number, as the adapters read other numeric inputs (`float`, e.g. this adapter's layer thickness, slope_stability's `time_budget_s`, reliability's inputs); anything else (`"fifteen"`, `"3 m"`, a bool, a list) is refused naming the key and the support. `SupportLevel` itself still refuses a string or bool. One tool test for each case. |
 | 8 | B3 | B | The vertical component reported and not applied was said in DESIGN.md only. | **Fixed.** The description (supports and returns) and a note in the result when a support is inclined: the wall and its toe must carry it, this tool does not check that (Caltrans Sec. 11-3.04, p. 11-12, read; GEC-4 App. A p. A-13, read). |
 | 9 | B6 | B | The Caltrans manual does print spacing and inclination. | **Fixed.** Example 8-1, Eq. 8-4-21 (p. 8-15) and Eq. 8-4-22 (p. 8-16) read on the PDF and cited beside GEC-4 in the basis, description and DESIGN.md; "not found" corrected here and in DESIGN.md; a made-up hand check (50 kN/m, 3 m, 15 deg: 150, 155.29, 40.19 kN) pins the code's form. |
 | 10 | | C | `below_profile` listed in `defaults_used` when the layers cover the diagram. | Not done (needs a condition in the dispatch's defaults_used, more than a line). Its text now reads "nothing assumed where the layers do not reach", true either way. |
@@ -221,10 +221,11 @@ at 2 m (spacing 3 m) and 5 m (anchor, spacing 2.4 m, 20 deg):
 | 1 | `load_kN_per_m` 115.66 | `load_kN_per_m` 115.66; per support 346.97 kN horizontal and axial |
 | 2 | `load_kN_per_m` 67.03 | `load_kN_per_m` 67.03; `axial_load_kN_per_m` 71.33; per support 160.87 kN horizontal, 171.19 kN axial, 58.55 kN vertical, and a note that the wall must carry the vertical and this tool does not check it |
 
-Moment, shear and embedment: unchanged. `angle_deg: null`: base ran
-(horizontal), head raised a TypeError, now runs as horizontal;
-`angle_deg: "15"`: now "supports[0]: a support's angle_deg must be a
-number".
+Moment, shear and embedment: unchanged. `angle_deg: null`, `"15"` and
+`spacing: "3"`: base ran (none was read), head raised a TypeError; now
+null runs as not given and the two strings run as 15 deg and 3 m.
+`angle_deg: "fifteen"`: now "supports[0]: angle_deg must be a number, got
+'fifteen'".
 
 ## Calls made (for the owner to revisit)
 
@@ -254,8 +255,10 @@ number".
    applied to any support type** (strut, anchor, raker), as statics.
    `support_type` stays a label.
 7. **`angle_deg` is 0 up to under 90**; null is 0, a negative value (a
-   support inclined upward) is refused rather than read by its sign, a
-   value that is not a number is refused.
+   support inclined upward) is refused rather than read by its sign. In
+   the tool a spacing or angle written as a string of a number is read as
+   that number (the adapters' practice); anything else not a number is
+   refused.
 8. **The vertical component is reported, not applied**: the wall analysis
    has no axial check, and adding one is not this item. The description
    and the result now say so, with the print's words that it must be
@@ -290,7 +293,7 @@ code:
 |---|---|
 | `settlement/tests/test_gm320_short_profile.py` | 19 passed, exit 0 |
 | `soe/tests/test_gm321_support_loads.py` | 15 passed, exit 0 |
-| `funhouse_agent/tests/test_gm320_321_tools.py` | 20 passed, exit 0 |
+| `funhouse_agent/tests/test_gm320_321_tools.py` | 25 passed, exit 0 (after the B5 addition; 20 before) |
 | `funhouse_agent/tests/test_nested_keys.py` | 67 passed, exit 0 |
 | `funhouse_agent/tests/test_adapter_ergonomics.py` | 170 passed, exit 0 |
 | `webapp/tests/test_public_text.py` | 5 passed, exit 0 |
@@ -303,7 +306,7 @@ changed: checked by a probe of `get_calc_steps`), `test_defaults_used.py`
 
 New tests: `settlement/tests/test_gm320_short_profile.py` (19),
 `soe/tests/test_gm321_support_loads.py` (15),
-`funhouse_agent/tests/test_gm320_321_tools.py` (20, with a check that
+`funhouse_agent/tests/test_gm320_321_tools.py` (25, with a check that
 every support key the tool promises is returned); `test_nested_keys.py`
 checks the preload refusal. No probe, worked example or validation example
 relied on a Schmertmann profile that does not cover the diagram, an
