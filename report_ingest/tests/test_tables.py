@@ -1,4 +1,4 @@
-"""The report tables (BACKLOG RI-11): one ingest's results as flat, keyed
+"""The report tables (BACKLOG RI-209): one ingest's results as flat, keyed
 rows a pipeline reads one step per table, built from the saved outputs.
 
 Two kinds of report go through it here. The synthetic report goes through
@@ -40,8 +40,8 @@ from report_ingest.tests.test_graph import (  # noqa: E402
     full_script, triage_turn,
 )
 
-_ENVS = (tables.ENV_ROOT, tables.ENV_DATASET, "GSE_REPORT_QUESTIONS",
-         "GSE_REPORT_POSTS", "GEOTECH_DEPLOYMENT")
+_ENVS = (tables.ENV_ROOT, tables.ENV_DATASET, tables.LIBRARY_ENV,
+         "GSE_REPORT_QUESTIONS", "GSE_REPORT_POSTS", "GEOTECH_DEPLOYMENT")
 
 
 def _plain(mp: pytest.MonkeyPatch) -> None:
@@ -1016,6 +1016,51 @@ class TestTheSwitch:
 
         assert tables.export_root(None, tmp_path / "one", db) == \
             str(tmp_path / "shared")
+
+    def test_in_the_apps_shared_library_the_root_is_the_library(
+            self, monkeypatch, tmp_path):
+        library = tmp_path / "library"
+        own = tmp_path / "conversation" / "report_ingest" / "Report"
+        monkeypatch.setenv(tables.LIBRARY_ENV, str(library))
+
+        assert tables.export_root(None, library / "Report-1a2b3c4d") == \
+            str(library)
+        assert tables.export_root(None, own) == str(own)   # not in it
+        assert tables.export_root(None, library / "R",
+                                  tmp_path / "run" / "reports.db") == \
+            str(tmp_path / "run")                          # a named library
+        assert tables.export_root(str(tmp_path / "elsewhere"),
+                                  library / "R") == str(tmp_path / "elsewhere")
+        monkeypatch.delenv(tables.LIBRARY_ENV)
+        assert tables.export_root(None, library / "R") == str(library / "R")
+
+    def test_every_report_read_into_the_library_shares_one_export(
+            self, monkeypatch, tmp_path):
+        library = tmp_path / "library"
+        monkeypatch.setenv(tables.LIBRARY_ENV, str(library))
+        keys = []
+        for name in ("Report-one", "Report-two"):
+            pdf = tmp_path / f"{name}.pdf"
+            pdf.write_bytes(b"%PDF-1.7\n" + name.encode("ascii") * 900)
+            folder = library / name             # as the app names it
+            written = write_outputs(build_record(), folder, source=pdf)
+            record = ReportRecord.model_validate_json(
+                (folder / "report.record.json").read_text("utf-8"))
+            outcome = tables.after_ingest(folder, record=record, source=pdf,
+                                          key_source=pdf)
+            assert outcome.folder == str(library / "report_tables" / "v1")
+            keys.append(written.key)
+
+        v1 = library / "report_tables" / "v1"
+        assert sorted(p.stem for p in (v1 / "report").glob("*.jsonl")) == \
+            sorted(keys)
+        assert not list(library.glob("Report-*/report_tables"))
+
+    def test_the_library_setting_is_the_apps_own(self):
+        tools = (Path(__file__).resolve().parents[2] / "funhouse_agent" /
+                 "deep" / "tools.py").read_text("utf-8")
+
+        assert f'REPORT_LIBRARY_ENV = "{tables.LIBRARY_ENV}"' in tools
 
     def test_off_writes_nothing_at_all(self, monkeypatch, tmp_path):
         monkeypatch.setenv(tables.ENV_ROOT, "0")

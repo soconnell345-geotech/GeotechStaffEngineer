@@ -185,7 +185,7 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
     files can make more than 300 rows, which is right and is why the index
     counts them. ``ingest_bound=False`` turns it off.
 
-    THE REPORT TABLES (BACKLOG RI-11) go beside the library by default:
+    THE REPORT TABLES (BACKLOG RI-209) go beside the library by default:
     each report, once written, is exported under ``<the folder holding the
     library>/report_tables/v1/`` (``report_tables`` is the graph's own; a
     report skipped as already done is not re-exported: ``python -m

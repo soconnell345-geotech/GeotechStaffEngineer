@@ -1,10 +1,12 @@
-# CHECK: the report tables (BACKLOG RI-11), branch feat/ri-report-tables
+# CHECK: the report tables (BACKLOG RI-209), branch feat/ri-report-tables
 
 The owner's ask (2026-11-12): the report ingest "wired to data in foundry".
 After every ingest the app now writes flat, keyed tables plus the DIGGS
 file, the record and the summary, so the FDE can build an Ontology on them,
 and sends them to a Foundry dataset when one is named. Reference for the FDE
-and the owner: `docs/REPORT_TABLES.md`.
+and the owner: `docs/REPORT_TABLES.md`. The `ingest_run` table is the ingest
+ledger BACKLOG RI-11 asked for. (The first commit, c78573d, cites RI-11 in
+its message; RI-209 was filed for this work the same day.)
 
 ## What was built
 
@@ -30,7 +32,7 @@ and the owner: `docs/REPORT_TABLES.md`.
 - `report_ingest/run_folder.py`, `report_ingest/cluster_scoring.py`:
   `report_tables` passed through; the cluster stage's `run.json` gains
   `report_tables` (the outcome) when the export ran.
-- `report_ingest/tests/test_tables.py` (new, 60 tests), `docs/REPORT_TABLES.md`
+- `report_ingest/tests/test_tables.py` (new, 63 tests), `docs/REPORT_TABLES.md`
   (new), a README section, two rows in `docs/FOUNDRY.md` §3 (nothing else
   there touched).
 
@@ -59,9 +61,13 @@ and the owner: `docs/REPORT_TABLES.md`.
    `ingest_run` file of its keys, so a delivery missed earlier catches up.
 9. A bound-in report shares its parent's `run_id`.
 10. Off (`GSE_REPORT_TABLES=0`) writes nothing at all, not even the run file.
-11. The default root follows the brief (the folder holding `reports.db`). In
-    the app each report keeps its own `reports.db` in its own folder, so
-    the default there is each report's folder (see "For the lead").
+11. The default root, in order (the lead's rule for the app, 2026-11-12): a
+    root the setting or argument names; the folder holding `reports.db`
+    when the caller names one (a folder run, the cluster stage); the app's
+    shared report library (`GEOTECH_REPORT_LIBRARY`) when the report's
+    folder is inside it, so the library has ONE `report_tables/`; else the
+    report's own folder (the app without a library: inside the
+    conversation's folder, whose mirror then carries a small copy, left so).
 12. An old folder with only the answer sheet: status from the Answer cell
     (`N/A` does not apply, empty not said, else answered); data type and
     typed value null.
@@ -83,7 +89,7 @@ Each run alone, in the foreground, with at least 2 GB free:
 
 | Test file | Result | Exit |
 |---|---|---|
-| `report_ingest/tests/test_tables.py` | 60 passed | 0 |
+| `report_ingest/tests/test_tables.py` | 63 passed | 0 |
 | `report_ingest/tests/test_question_list.py` | 35 passed | 0 |
 | `report_ingest/tests/test_ri101_question_list_run.py` | 31 passed | 0 |
 | `report_ingest/tests/test_writers.py` | 48 passed | 0 |
@@ -109,15 +115,11 @@ changed).
   byte for byte the same as an export-off run (the run's folder, the clock
   and the DIGGS creation date taken out), adding only the export's folder
   and the run files.
-- In the app the default root is each report's own folder, which sits in the
-  conversation's folder unless `GEOTECH_REPORT_LIBRARY` is set; on Foundry
-  that folder is mirrored to the conversation dataset, so the export files
-  (about 20 small files and copies of the record, DIGGS file and summary per
-  report) go there too. Setting `GSE_REPORT_TABLES` to a folder outside the
-  conversation's avoids it.
+- Settled by the lead (2026-11-12): with `GEOTECH_REPORT_LIBRARY` set, the
+  root is the library's folder (decision 11, tested in `test_tables.py`
+  `TestTheSwitch`); the conversation mirror is left alone.
 
 ## Follow-ups (one line each, for the lead to file)
 
-- Decide the app's default root for the report tables (each report's folder today) and whether the conversation mirror should skip `report_tables/`.
 - Have the FDE build the Ontology from `docs/REPORT_TABLES.md` and confirm the Post link (question-list post row vs `post_name`).
 - Run `python -m report_ingest.tables <folder> --deliver` over the reports already ingested on Foundry once the dataset alias exists.

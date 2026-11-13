@@ -5,7 +5,7 @@ what it found as **flat tables**: one row for the report, one row per page,
 one row per standard question, one row per file, and one row per ingest. A
 data pipeline reads each table as one step, and an Ontology can be built on
 them. The DIGGS file, the whole record and the summary page go out beside
-the tables. (BACKLOG RI-11; the code is `report_ingest/tables.py`.)
+the tables. (BACKLOG RI-209; the code is `report_ingest/tables.py`.)
 
 Nothing about the ingest itself changes: the same calls, the same record,
 the same files in the report's folder. The tables are made afterwards, from
@@ -20,7 +20,8 @@ Under one folder, `report_tables/v1/`, inside a root folder:
 |---|---|
 | A folder of reports (`run_folder`) | the folder that holds the run's `reports.db` (the run's output folder, unless `db_path` names another) |
 | The corpus run on the cluster (`score_on_cluster`, the `ingest` stage) | `<out_dir>/ingest/`, beside its shared `reports.db` |
-| One report on its own (the app's tool, a notebook call) | that report's own output folder |
+| The app, with a shared report library (`GEOTECH_REPORT_LIBRARY` set) | the library's own folder: ONE `report_tables/` for every report ingested into the library |
+| One report on its own (the app without a shared library, a notebook call) | that report's own output folder |
 
 On a Foundry deployment with a dataset named (below), each report's export
 is also sent to that dataset, under the application's own top folder:
@@ -40,12 +41,15 @@ In code, `ingest_report(..., report_tables=...)` wins over the setting:
 `False` is off, `True` the default root, a folder that root. `run_folder`
 and `score_on_cluster` pass it through under the same name.
 
-In the app, a report's output folder is in the conversation's own folder
-(or, with `GEOTECH_REPORT_LIBRARY` set, in the shared library, one folder per
-file), and each report keeps its own `reports.db` there, so by default each
-report's export sits in its own folder. To gather every report's tables in
-one place on a machine, point `GSE_REPORT_TABLES` at one folder. On Foundry
-with the dataset set, they all land in the one dataset folder either way.
+The rule, in order: a root named by the setting or the argument; else the
+folder holding the ingest's `reports.db` when the caller names one (a folder
+run, the cluster stage); else, when `GEOTECH_REPORT_LIBRARY` names the app's
+shared report library and the report's folder is inside it, the library's
+own folder; else the report's own folder. So in the app with a shared
+library, every report read into it (one folder per file) exports into the
+library's one `report_tables/`; without one, a report's tables sit in its
+own folder inside the conversation's. On Foundry with the dataset set, they
+all land in the one dataset folder either way.
 
 ## The folder
 
@@ -295,7 +299,7 @@ Files: `report_file/<report_key>.jsonl`. Primary key: `report_key`, `kind`.
 
 ### `ingest_run`
 
-One row per ingest of a report, never overwritten: the history (the owner's ingest ledger). Each ingest adds one small file.
+One row per ingest of a report, never overwritten: the history, which is the ingest ledger BACKLOG RI-11 asked for. Each ingest adds one small file.
 
 Files: `ingest_run/<report_key>.<run_id>.jsonl`. Primary key: `report_key`, `run_id`.
 

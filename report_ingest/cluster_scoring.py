@@ -1328,7 +1328,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         settings is NOT redone unless ``redo`` -- start a fresh ``out_dir``
         to compare two settings.
     report_tables
-        ``graph.ingest_report``'s own (BACKLOG RI-11): unset, each report
+        ``graph.ingest_report``'s own (BACKLOG RI-209): unset, each report
         the ``ingest`` stage reads is exported beside the shared library,
         under ``<out_dir>/ingest/report_tables/v1/``, and its ``run.json``
         says what the export did (``report_tables``). ``False`` turns it
@@ -6107,7 +6107,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "qa_by_kind": qa_by_kind,
             "diggs": _diggs_verdicts(record, outputs),
             "outputs": {k: str(v) for k, v in outputs.items()},
-            # What the report tables' export did (BACKLOG RI-11); absent
+            # What the report tables' export did (BACKLOG RI-209); absent
             # when it was off.
             **({"report_tables": exported} if exported else {}),
             "scores": _score_ingest_record(record, rid, truth, bound),

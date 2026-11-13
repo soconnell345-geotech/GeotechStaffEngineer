@@ -988,14 +988,16 @@ def ingest_report(source: Any, engine: Any, *,
         vision voter and the label review stay on their own engines.
         ``page_route`` is ignored with every reader stage off.
     report_tables
-        The report tables (BACKLOG RI-11, :mod:`report_ingest.tables`):
+        The report tables (BACKLOG RI-209, :mod:`report_ingest.tables`):
         after the outputs are written, the run's facts are saved beside
         each record (``report.run.json``) and the report and the reports
         bound inside it are exported as flat, keyed rows under
         ``<root>/report_tables/v1/``, then sent to the Foundry dataset
         ``GSE_REPORT_TABLES_DATASET`` names, on a Foundry deployment.
         ``None`` follows ``GSE_REPORT_TABLES``: unset, on, the root being
-        the folder holding ``db_path`` (else ``out_dir``); ``False`` (or
+        the folder holding ``db_path``, else the app's shared report library
+        (``GEOTECH_REPORT_LIBRARY``) when ``out_dir`` is inside it, else
+        ``out_dir`` (:func:`report_ingest.tables.export_root`); ``False`` (or
         ``"off"``) writes none of it; a folder names the root. Ignored with
         ``write=False``. The export never changes the record and never
         fails the run.
@@ -1103,7 +1105,7 @@ def ingest_report(source: Any, engine: Any, *,
             key_source: Any = getattr(source, "path", None) or report_id \
                 or None
         elif isinstance(source, (bytes, bytearray)):
-            # The bytes key the row as a path does (BACKLOG RI-11): the
+            # The bytes key the row as a path does (BACKLOG RI-209): the
             # same file, the same key, however it was handed in.
             key_source = bytes(source)
         else:

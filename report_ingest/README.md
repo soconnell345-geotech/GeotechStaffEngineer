@@ -1281,7 +1281,7 @@ printed page numbers the harness reads (`pages_to_read`, `page_texts`,
 as data in `report.questions.json` (each question's Key, Output, Category
 and Data Type with its typed answer, status, pages, note and From, and the
 Run tab's facts; `answer_json`), which the report tables read (BACKLOG
-RI-11). The list's calls count
+RI-209). The list's calls count
 in the record's cost; each structured reply is kept in
 `items/question_list.calls.json` with its cost, so a resumed run that sends
 the same request pays nothing for it, and the record's
@@ -1417,7 +1417,7 @@ a narrative that barely answered makes it `low`.
 
 After the writers, every ingest exports the report as flat, keyed tables a
 pipeline reads one step per table, under `<root>/report_tables/v1/`
-(BACKLOG RI-11): `report` (one row), `report_page` (one per page: the
+(BACKLOG RI-209): `report` (one row), `report_page` (one per page: the
 label, each voter's label, the page's description), `report_answer` (the 38
 fields of the owner's two schemas every time, and the question list's rows
 when it ran), `report_file`, and `ingest_run` (one file per ingest, never
@@ -1432,7 +1432,7 @@ trust in a dataset, and a suggested Ontology.
 
 | Setting | What it gives | Unset |
 |---|---|---|
-| `GSE_REPORT_TABLES` | `0` / `off`: no export and nothing written; a folder: that root for every report; `on`: the default root | on; the root is the folder holding the ingest's `reports.db` (a folder run's or the cluster stage's library; a lone report's own folder) |
+| `GSE_REPORT_TABLES` | `0` / `off`: no export and nothing written; a folder: that root for every report; `on`: the default root | on; the root is the folder holding the ingest's `reports.db` (a folder run's or the cluster stage's library), else the app's shared report library (`GEOTECH_REPORT_LIBRARY`) for a report ingested into it, else the report's own folder |
 | `GSE_REPORT_TABLES_DATASET` | a Foundry workspace dataset alias: on a Foundry deployment, each report's export goes to it in one save, under the application's top folder (`aec_agent_core.foundry_dataset_store`, the conversation store's lock and outputs folder) | nothing is sent and nothing of Foundry's is imported |
 
 `ingest_report(report_tables=...)` wins over the setting (`False` off,

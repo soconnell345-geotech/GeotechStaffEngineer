@@ -1,4 +1,4 @@
-"""The report tables: one ingest's results as flat, keyed rows (BACKLOG RI-11).
+"""The report tables: one ingest's results as flat, keyed rows (BACKLOG RI-209).
 
 An ingest leaves a folder per report: the record, the summary, the library
 page, the DIGGS file, the page labels, and on some runs the owner's question
@@ -39,8 +39,9 @@ facts are null and its time is the record file's.
 
 THE SETTINGS. :data:`ENV_ROOT` (``GSE_REPORT_TABLES``) unset, the export is
 ON and its root is the folder holding the ingest's ``reports.db`` (a folder
-run's or the cluster stage's shared library; a lone report's own folder);
-set to a folder it names another root; ``0`` or ``off`` turns it off, and
+run's or the cluster stage's shared library), else the app's shared report
+library (:data:`LIBRARY_ENV`) for a report ingested into it, else the
+report's own folder; set to a folder it names another root; ``0`` or ``off`` turns it off, and
 then nothing at all is written. ``ingest_report(report_tables=...)`` wins
 over it. :data:`ENV_DATASET` (``GSE_REPORT_TABLES_DATASET``) names a Foundry
 workspace dataset alias: on a Foundry deployment, each report's export
@@ -73,7 +74,8 @@ from typing import (Any, Dict, Iterable, List, Mapping, Optional, Sequence,
 
 __all__ = [
     "EXPORT_VERSION", "EXPORT_DIR", "ENV_ROOT", "ENV_DATASET", "RUN_NAME",
-    "TYPES", "Column", "Link", "Table", "Document", "TABLES", "TABLE",
+    "LIBRARY_ENV", "TYPES", "Column", "Link", "Table", "Document", "TABLES",
+    "TABLE",
     "DOCUMENTS", "ExportOutcome", "schema", "columns_markdown", "make_row",
     "check_row",
     "export_root", "export_dir", "after_ingest", "export_report",
@@ -94,6 +96,10 @@ EXPORT_DIR = "report_tables"
 ENV_ROOT = "GSE_REPORT_TABLES"
 #: The Foundry workspace dataset alias each report's export is sent to.
 ENV_DATASET = "GSE_REPORT_TABLES_DATASET"
+#: The app's shared report library (``funhouse_agent.deep.tools``'
+#: ``REPORT_LIBRARY_ENV``): a report ingested into it exports into ONE
+#: ``report_tables/`` at the library's top, beside every other report.
+LIBRARY_ENV = "GEOTECH_REPORT_LIBRARY"
 
 #: The run's facts beside each record: written by :func:`after_ingest`.
 RUN_NAME = "report.run.json"
@@ -514,8 +520,8 @@ TABLES: Tuple[Table, ...] = (
     Table(
         name="ingest_run",
         description="One row per ingest of a report, never overwritten: "
-                    "the history (the owner's ingest ledger). Each ingest "
-                    "adds one small file.",
+                    "the history, which is the ingest ledger BACKLOG RI-11 "
+                    "asked for. Each ingest adds one small file.",
         primary_key=("report_key", "run_id"),
         file_pattern="<report_key>.<run_id>.jsonl",
         columns=(
@@ -706,7 +712,10 @@ def export_root(setting: Any = None, out_dir: Any = ".",
     off. ``setting`` is ``ingest_report(report_tables=...)``: None follows
     :data:`ENV_ROOT`; False, ``0`` or ``off`` is off; True, ``1`` or ``on``
     is the default root; anything else names the root. The default is the
-    folder holding ``db_path`` (the shared library), else ``out_dir``."""
+    folder holding ``db_path`` (a run's shared library); else, when
+    :data:`LIBRARY_ENV` names the app's shared report library and
+    ``out_dir`` is inside it, that library's folder (one ``report_tables/``
+    for every report ingested into the library); else ``out_dir``."""
     if setting is None:
         setting = os.environ.get(ENV_ROOT, "")
     if isinstance(setting, bool):
@@ -720,7 +729,23 @@ def export_root(setting: Any = None, out_dir: Any = ".",
         return os.path.expanduser(text)
     if db_path:
         return os.path.dirname(os.path.abspath(str(db_path)))
-    return str(out_dir)
+    return _library_holding(out_dir) or str(out_dir)
+
+
+def _library_holding(out_dir: Any) -> str:
+    """The app's shared report library's folder (:data:`LIBRARY_ENV`, ``~``
+    expanded, made absolute, as the app reads it) when ``out_dir`` is
+    inside it; "" otherwise."""
+    value = str(os.environ.get(LIBRARY_ENV) or "").strip()
+    if not value:
+        return ""
+    library = os.path.abspath(os.path.expanduser(value))
+    here = os.path.abspath(str(out_dir))
+    try:
+        inside = os.path.commonpath([library, here]) == library
+    except ValueError:                        # another drive
+        return ""
+    return library if inside and here != library else ""
 
 
 def export_dir(root: Any) -> str:

@@ -2164,7 +2164,7 @@ def answer_json(questions: Sequence[Question], answers: Mapping[str, Answer],
     with ``code_value_text`` for code's reading); and a ``run`` block with
     what the sheet's Run tab says (the date in UTC). Nothing is asked: it
     is the same run, so the report tables need not read a spreadsheet
-    back (BACKLOG RI-11)."""
+    back (BACKLOG RI-209)."""
     import json
     from datetime import timezone
 
@@ -2385,7 +2385,7 @@ def apply_posts(questions: Sequence[Question], answers: Mapping[str, Answer],
 SHEET_NAME = "report.questions.xlsx"
 
 #: The same answers as data, beside the sheet (:func:`answer_json`): what
-#: the report tables read (:mod:`report_ingest.tables`, BACKLOG RI-11).
+#: the report tables read (:mod:`report_ingest.tables`, BACKLOG RI-209).
 ANSWERS_NAME = "report.questions.json"
 
 #: The calls' replies, under the run's ``items/`` folder, so a resumed run
