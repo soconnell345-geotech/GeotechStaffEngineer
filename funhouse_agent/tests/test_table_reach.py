@@ -186,14 +186,36 @@ def test_every_named_function_is_a_method_of_the_reference_module():
     assert not missing, missing[:10]
 
 
+def _lookup_step_misses(row, step: str) -> list:
+    """The functions a lookup row lists (``values_in`` and
+    ``implemented_in``, but one that takes Python functions) that are not
+    a method of the reference's module or not named in ``step``."""
+    misses = []
+    module = None
+    for path in dict.fromkeys([row["values_in"]] + row["implemented_in"]):
+        if _takes_python_functions(row["reference"], path):
+            continue
+        mod, method = table_db_adapter.lookup_target(row["reference"], path)
+        module = module or mod
+        if mod is None or method not in step:
+            misses.append(path)
+    if module is None or f"call_agent('{module}'," not in step:
+        misses.append("call_agent")
+    return misses
+
+
 def test_every_lookup_row_names_the_call_that_runs_it():
-    failed = []
+    """A table coded by several functions (Nc, Nq and N-gamma; one load
+    case each) has every one named, so a reader asking for one value is
+    sent to its function."""
+    failed, several = [], 0
     for row in _rows("lookup"):
         step = _get(row)["how_to_read"]
-        module, method = table_db_adapter.lookup_target(row["reference"],
-                                                        row["values_in"])
-        if module is None or f"call_agent('{module}', '{method}'" not in step:
-            failed.append((row["reference"], row["table_number"], step[:90]))
+        several += len(set([row["values_in"]] + row["implemented_in"])) > 1
+        misses = _lookup_step_misses(row, step)
+        if misses:
+            failed.append((row["reference"], row["table_number"], misses))
+    assert several > 20
     assert not failed, failed[:10]
 
 
@@ -253,7 +275,8 @@ def test_every_page_row_gets_a_next_step_the_helper_has():
 
 
 def test_search_hits_carry_the_same_next_steps():
-    for query in ("bond strength", "resistance factors", "pile", "soil"):
+    for query in ("bond strength", "resistance factors", "pile", "soil",
+                  "bearing capacity factors"):
         out = _call("table_db", "table_search", {"query": query, "limit": 50})
         hits = out["result"]
         assert hits, query
@@ -263,6 +286,11 @@ def test_search_hits_carry_the_same_next_steps():
             assert "lookup_reference" not in step
             if hit["values"] == "text" and hit["values_in"]:
                 assert "'reference_db', 'reference_get'" in step
+            elif hit["values"] == "lookup":
+                # the same step as the row's, every coding function named
+                row = _get(hit)
+                assert step == row["how_to_read"], (hit["table_number"],)
+                assert not _lookup_step_misses(row, step), row
             elif hit["values"] == "page":
                 assert ("read_reference_table(" in step) or \
                     "cannot read that page" in step

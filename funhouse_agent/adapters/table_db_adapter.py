@@ -9,8 +9,9 @@ section, ``values_in``), ``"lookup"`` (a coded function returns them) or
 ``how_to_read``, the next step in this app's own tool names:
 
 - ``"text"``: ``reference_db.reference_get`` on the section named;
-- ``"lookup"``: ``call_agent`` on the reference's own module, with the
-  method that returns the values;
+- ``"lookup"``: ``call_agent`` on the reference's own module, naming
+  every method that codes the table (``values_in`` and ``implemented_in``,
+  one for each part of a table coded by several);
 - ``"page"``: the ``read_reference_table`` call that reads the page with
   vision, where this host can reach the reference PDF (the switch that
   offers ``read_reference_figure``, ``reference_docs.table_readable``);
@@ -42,9 +43,9 @@ from funhouse_agent.adapters._reference_common import (
 _LIMIT_ALIASES = ("top_k", "k", "n", "max_results", "top", "num_results")
 
 #: Room kept for each hit's ``how_to_read`` when the library fits the hits
-#: to a size (the longest next step is about 420 characters), and the
-#: least the library is given to fit them in.
-_SIGNPOST_ROOM = 440
+#: to a size (the longest next step is about 470 characters: a table coded
+#: by nine methods), and the least the library is given to fit them in.
+_SIGNPOST_ROOM = 480
 _LEAST_LIBRARY_BUDGET = 4000
 
 #: Room ``table_get`` keeps beside the library's fitted row for the app's
@@ -79,6 +80,41 @@ def lookup_target(reference: str, values_in: str):
     return (module, method) if method in registry else (None, None)
 
 
+def _takes_python_functions(reference: str, path: str) -> bool:
+    """Whether the library function ``path`` ("module.function") of
+    ``reference`` takes Python functions as inputs (the library marks it
+    ``needs_python_callables``): no JSON call can pass them."""
+    import importlib
+    mod, _, name = f"geotech_references.{reference}.{path}".rpartition(".")
+    try:
+        fn = getattr(importlib.import_module(mod), name)
+    except (ImportError, AttributeError, ValueError):
+        return False
+    return bool(getattr(fn, "needs_python_callables", False))
+
+
+def lookup_methods(row: dict):
+    """``(module, [method, ...])``: every function a lookup row lists
+    (``values_in``, then ``implemented_in``) that the reference's own
+    module offers by its name, leaving out one that takes Python
+    functions; ``(None, [])`` when there is none. A table coded by
+    several functions (Nc, Nq and N-gamma, or one case each) has each
+    named, so a reader asking for one value is sent to its function."""
+    ref = row.get("reference") or ""
+    paths = [row.get("values_in") or ""] + list(row.get("implemented_in")
+                                                 or [])
+    module, methods = None, []
+    for path in dict.fromkeys(p.strip() for p in paths if p and p.strip()):
+        mod, method = lookup_target(ref, path)
+        if mod is None or method in methods \
+                or _takes_python_functions(ref, path):
+            continue
+        module = module or mod
+        if mod == module:
+            methods.append(method)
+    return module, methods
+
+
 def how_to_read(row: dict, chart_reads=None) -> str:
     """The next step for one catalog row or search hit, in this app's tool
     names (module docstring). ``chart_reads``: whether
@@ -94,12 +130,20 @@ def how_to_read(row: dict, chart_reads=None) -> str:
                 "call_agent('reference_db', 'reference_get', "
                 f"{{'reference': '{ref}', 'section_id': '{values_in}'}}).")
     if values == "lookup" and values_in:
-        module, method = lookup_target(ref, values_in)
-        if module:
+        module, methods = lookup_methods(row)
+        if len(methods) == 1:
+            method = methods[0]
             return (f"A coded lookup returns its values: call_agent("
                     f"'{module}', '{method}', {{...}}); "
                     f"describe_method('{module}', '{method}') gives its "
                     "parameters.")
+        if methods:
+            return (f"Coded lookups return its values, {len(methods)} "
+                    f"methods of '{module}', each for part of the table: "
+                    + ", ".join(methods) + f". Call call_agent('{module}', "
+                    "<method>, {...}) with the one for the value needed; "
+                    f"describe_method('{module}', <method>) says which "
+                    "values it returns and its parameters.")
     page = row.get("pdf_page_index")
     printed = row.get("printed_page")
     if not reference_docs.table_readable(ref, number, page, chart_reads):
@@ -149,8 +193,20 @@ def _build():
             return
         needs_host = hit.get("values") not in ("text", "lookup") or \
             not hit.get("values_in")
+        row = hit
+        if hit.get("values") == "lookup" and "implemented_in" not in hit:
+            # a hit carries values_in only; the row lists every function
+            # that codes the table
+            try:
+                full = _tables_db.table_get(
+                    hit["reference"], hit["table_number"],
+                    pdf_page_index=hit.get("pdf_page_index"))
+                row = dict(hit, implemented_in=full.get("implemented_in")
+                           or [])
+            except (KeyError, ValueError, TypeError):
+                pass
         hit["how_to_read"] = how_to_read(
-            hit, chart_reads() if needs_host else None)
+            row, chart_reads() if needs_host else None)
 
     def table_search(query: str, reference: str = "", chapter: int = 0,
                      limit: int = 5, offset: int = 0, **kwargs) -> list:

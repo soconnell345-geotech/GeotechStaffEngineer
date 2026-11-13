@@ -71,7 +71,8 @@ def test_every_hit_names_its_next_step_in_this_apps_tools():
         elif hit["values"] == "lookup" and hit["values_in"]:
             module, method = table_db_adapter.lookup_target(
                 hit["reference"], hit["values_in"])
-            assert f"call_agent('{module}', '{method}'" in step
+            # one method, or each of several, named with the module's call
+            assert f"call_agent('{module}'," in step and method in step
     assert len(kinds) >= 2
 
 
