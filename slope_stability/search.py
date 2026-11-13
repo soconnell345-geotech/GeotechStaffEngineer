@@ -1963,6 +1963,28 @@ def search_pso(
 
 # ── Weak-Layer Biased Search (SNIFF-inspired) ────────────────────────────
 
+def _layer_band_at(geom: SlopeGeometry, layer, x: float):
+    """(z_bottom, z_top) of the ground ``layer`` holds at x, for the
+    weak-layer search to aim at; None where it holds none.
+
+    A layer is where its top and bottom put it at x (``top_at`` and
+    ``bottom_at``: the polylines where given, else the flat elevations),
+    less what the layers listed before it hold
+    (``SlopeGeometry.column_at``; one material per point, GM-140 step 1).
+    The top is not cut at the ground: the search keeps its trial points
+    below the ground itself. For a layer with a flat top and bottom that
+    no earlier layer overlaps this is (bottom_elevation, top_elevation).
+    Where a layer listed before it cuts the layer in two, the thicker
+    stretch.
+    """
+    stretches = [(z_bot, z_top)
+                 for held_by, z_bot, z_top in geom.column_at(x, z_high=math.inf)
+                 if held_by is layer]
+    if not stretches:
+        return None
+    return max(stretches, key=lambda s: s[1] - s[0])
+
+
 @_counts_refusals
 def search_weak_layer_biased(
     geom: SlopeGeometry,
@@ -2062,9 +2084,16 @@ def search_weak_layer_biased(
             x_pt = x_entry + frac * (x_exit - x_entry)
             z_ground = geom.ground_elevation_at(x_pt)
 
-            if random.random() < 0.7:
-                layer_mid = (target_layer.top_elevation + target_layer.bottom_elevation) / 2.0
-                thickness = target_layer.top_elevation - target_layer.bottom_elevation
+            # Aimed at the target layer where it is at this x (GM-140 step
+            # 1: one material per point), not at its flat elevations. Where
+            # the layer holds no ground at x the point is placed as the
+            # points not aimed at a layer are.
+            band = (_layer_band_at(geom, target_layer, x_pt)
+                    if random.random() < 0.7 else None)
+            if band is not None:
+                z_band_bot, z_band_top = band
+                layer_mid = (z_band_top + z_band_bot) / 2.0
+                thickness = z_band_top - z_band_bot
                 noise = random.gauss(0, max(thickness / 4.0, 0.1))
                 z_pt = layer_mid + noise
                 z_pt = max(min_layer_bot, min(z_ground - 0.3, z_pt))

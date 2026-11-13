@@ -44,10 +44,14 @@ stabilizing piles in every method (`reinforcement.py`).
 
 ## Layers: one material per point (GM-140 step 1, 2026-11-13)
 
-Print: total unit weights for all soils, one weight per point (EM
-1110-2-1902 2-2d, p. 2-5), and the engineer checks "the weights of slices,
-shear strength properties, and pore water pressures at the bottoms of
-slices" (EM 4-2d(2), p. 4-2); both as quoted in
+Print: a slice that holds two soils is weighed in two portions, each
+soil's part of the slice at its own unit weight (EM 1110-2-1902 Appendix F,
+F-5d, p. F-19: slices containing both embankment and foundation soil "were
+divided into two portions for calculating the slice weights"; worked in
+Fig. F-11, p. F-21), with total unit weights for all soils (2-2d, p. 2-5);
+and the engineer checks "the weights of slices, shear strength properties,
+and pore water pressures at the bottoms of slices" (EM 4-2d(2), p. 4-2).
+2-2d and 4-2d(2) are as quoted in
 `module_work/slope_integral_review/ACCOUNT.md` section 2 (the EM is not in
 the repository).
 
@@ -71,9 +75,15 @@ the repository).
 - **Overlaps.** Where two layers cover the same ground the first listed
   holds it. `SlopeGeometry.layer_overlaps()` lists each layer that loses
   ground (the layers that hold it, the x range, the tallest shared stretch
-  below the ground) and every result carries it (`layer_overlaps`, in
-  `to_dict()` when not empty, a LAYERS line in `summary()`, a table in the
-  calc package).
+  below the ground). The results of `analyze_slope`,
+  `search_critical_surface`, `compare_methods_table` and
+  `rapid_drawdown_fos` carry it (`layer_overlaps`, in `to_dict()` when not
+  empty; a LAYERS line in the summaries of the first three), and the calc
+  package prints it as a table. The FOSM and Monte Carlo results, the
+  yield acceleration, the result of a search function called directly
+  (`grid_search`, `search_weak_layer_biased` and the others in `search.py`)
+  and the top level of the drawdown search's result do not carry it: read
+  it from the geometry there.
 - **Lenses.** A layer listed before the layer it sits in holds its own
   ground and the host is weighed around it (two stretches in the column).
   No closed-region input was added.
@@ -96,8 +106,10 @@ the repository).
 - **Not done here.** A layer boundary's vertices are not slice boundaries
   (only its crossings with the slip surface are), so a slice with a kink
   of the boundary inside it takes its weight from the mid-point column;
-  the weak-layer search and the su-with-depth law still read a layer's
-  flat `top_elevation` / `bottom_elevation`; `ru` still uses the base
+  the su-with-depth law still reads a layer's flat `top_elevation` /
+  `bottom_elevation` (the weak-layer search aims at the ground a layer
+  holds at each x since the fix round, `search._layer_band_at`; its lower
+  limit is still the lowest flat `bottom_elevation`); `ru` still uses the base
   layer's unit weight over the column (the account's D3). See
   `module_work/gm140/STEP1_CHECK.md`.
 

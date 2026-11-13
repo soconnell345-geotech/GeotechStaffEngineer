@@ -347,10 +347,13 @@ class SlopeGeometry:
         z = elevation. Must have at least 2 points.
     soil_layers : list of SlopeSoilLayer
         Soil layers, usually top to bottom. ONE MATERIAL PER POINT
-        (GM-140 step 1; EM 1110-2-1902 2-2d, p. 2-5): at a point below the
-        ground the first listed layer whose top and bottom contain it holds
-        it, for the weight as for the strength (``column_at``,
-        ``layer_at_point``). Where two layers overlap the later one loses
+        (GM-140 step 1): at a point below the ground the first listed
+        layer whose top and bottom contain it holds it, for the weight as
+        for the strength (``column_at``, ``layer_at_point``). A slice in
+        two soils is weighed in two portions, each at its own soil's unit
+        weight (EM 1110-2-1902 Appendix F, F-5d, p. F-19); the weights of
+        slices are among what the engineer checks (EM 4-2d(2), p. 4-2).
+        Where two layers overlap the later one loses
         the shared ground, and ``layer_overlaps()`` says where. Ground
         between the surface and the bottom of the deepest layer that no
         layer covers is refused here, with its location.
@@ -477,15 +480,20 @@ class SlopeGeometry:
                         f"(x, z, u) triple, got {p!r}")
         self._overlaps, gap = self._scan_layers()
         if gap is not None:
+            thick = gap["z_high"] - gap["z_low"]
+            # two decimals, or as many as show the first two figures of
+            # a thin gap's thickness (a gap is at least _COVER_TOL thick)
+            nd = min(8, max(2, 1 - math.floor(math.log10(thick))))
             raise ValueError(
-                "Soil layers leave a gap: no layer covers the ground "
-                f"between elevation {gap['z_low']:.2f} and "
-                f"{gap['z_high']:.2f} m at x = {gap['x']:.2f} m (uncovered "
-                f"from x = {gap['x_from']:.2f} to {gap['x_to']:.2f} m). "
-                "Every point between the ground surface and the bottom of "
-                "the deepest layer needs one layer: raise a layer's top "
-                "(top_elevation or top_boundary_points) or lower the one "
-                "above it to close the gap.")
+                f"Soil layers leave a gap {thick:.{nd}f} m thick: no layer "
+                "covers the ground between elevation "
+                f"{gap['z_low']:.{nd}f} and {gap['z_high']:.{nd}f} m at "
+                f"x = {gap['x']:.2f} m (uncovered from x = "
+                f"{gap['x_from']:.2f} to {gap['x_to']:.2f} m). Every point "
+                "between the ground surface and the bottom of the deepest "
+                "layer needs one layer: to close the gap, raise the top of "
+                "the layer below it (top_elevation) or give that layer its "
+                "top polyline (top_boundary_points).")
 
     # -- one material per point (GM-140 step 1) --------------------------
 
