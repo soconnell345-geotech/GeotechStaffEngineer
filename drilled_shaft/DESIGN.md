@@ -347,6 +347,11 @@ layer.
 
 A base at the profile's bottom is accepted; the 2B zone below it is then
 "the mean over what the profile gives", as the base choices already say.
+In an extended run the base steps give `su_profile_ends_m` (clay base) or
+`N60_profile_ends_m` (sand base) as the depth the layers given reach, with
+`su_last_layer_carried_to_m` / `N60_last_layer_carried_to_m` the base the
+last layer was carried on to, and the base choice says both (GM-318 review
+B1; it gave the carried-on depth as the end of the profile).
 `capacity_vs_depth` lists a trial length past the profile among its skipped
 depths. With `extend_last_layer` it runs those lengths instead, each on the
 layers as given (the run of that length alone; the profile carried on to

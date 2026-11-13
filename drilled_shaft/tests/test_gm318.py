@@ -44,6 +44,51 @@ def test_extension_equals_a_profile_given_to_the_base():
     assert "Warnings:" in ext.summary()
 
 
+def _choice(r, what):
+    return next(c for c in r.choices if c["what"] == what)
+
+
+def test_clay_base_names_where_the_layers_given_end():
+    """Review B1: the base choice and base_steps gave the carried-on depth
+    (15 m) as the end of the profile; the layers given end at 12 m."""
+    ext = _analysis(15.0, extend_last_layer=True).compute()
+    assert ext.base_steps["su_profile_ends_m"] == 12.0
+    assert ext.base_steps["su_last_layer_carried_to_m"] == 15.0
+    words = _choice(ext, "base resistance in cohesive soil")["chosen"]
+    assert "the profile ends at 12 m (its last layer carried on to the " \
+           "base at 15 m" in words
+    assert "ends at 15 m" not in words
+    plain = _analysis(12.0).compute()         # not extended: as before
+    assert plain.base_steps["su_profile_ends_m"] == 12.0
+    assert "su_last_layer_carried_to_m" not in plain.base_steps
+    words = _choice(plain, "base resistance in cohesive soil")["chosen"]
+    assert "as the profile ends at 12 m and gives nothing below" in words
+
+
+def _sand(length, **kw):
+    soil = ShaftSoilProfile(layers=[
+        ShaftSoilLayer(5.0, "cohesionless", 18.0, phi=32.0, N60=15.0),
+        ShaftSoilLayer(7.0, "cohesionless", 19.0, phi=34.0, N60=25.0),
+    ])
+    return DrillShaftAnalysis(shaft=DrillShaft(diameter=1.0, length=length),
+                              soil=soil, **kw).compute()
+
+
+def test_sand_base_names_where_the_layers_given_end():
+    ext = _sand(14.0, extend_last_layer=True)
+    assert ext.base_steps["N60_profile_ends_m"] == 12.0
+    assert ext.base_steps["N60_last_layer_carried_to_m"] == 14.0
+    words = _choice(ext, "base resistance in cohesionless soil")["chosen"]
+    assert "the profile ends at 12 m (its last layer carried on to the " \
+           "base at 14 m" in words
+    assert "ends at 14 m" not in words
+    plain = _sand(12.0)
+    assert plain.base_steps["N60_profile_ends_m"] == 12.0
+    assert "N60_last_layer_carried_to_m" not in plain.base_steps
+    words = _choice(plain, "base resistance in cohesionless soil")["chosen"]
+    assert "as the profile ends at 12 m" in words and "carried" not in words
+
+
 def test_curve_lists_lengths_past_the_profile_as_skipped():
     skipped = []
     curve = _analysis(12.0).capacity_vs_depth(8.0, 16.0, 3, skipped=skipped)

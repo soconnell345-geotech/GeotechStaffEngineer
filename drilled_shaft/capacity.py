@@ -262,6 +262,8 @@ def _zone_steps(zone: dict) -> dict:
                for r in zone["rows"]]}
     if zone["profile_bottom_m"] < zone["bottom_m"] - 1e-9:
         out["su_profile_ends_m"] = zone["profile_bottom_m"]
+    if zone.get("carried_on_to_m") is not None:
+        out["su_last_layer_carried_to_m"] = zone["carried_on_to_m"]
     return out
 
 
@@ -280,7 +282,20 @@ def _n60_zone_steps(zone: dict) -> dict:
                for r in zone["rows"]]}
     if zone["profile_bottom_m"] < zone["bottom_m"] - 1e-9:
         out["N60_profile_ends_m"] = zone["profile_bottom_m"]
+    if zone.get("carried_on_to_m") is not None:
+        out["N60_last_layer_carried_to_m"] = zone["carried_on_to_m"]
     return out
+
+
+def _profile_ends_words(end: float, carried: Optional[float]) -> str:
+    """"ends at X m", and with ``extend_last_layer`` the base its last
+    layer was carried on to (GM-318 review B1: the depth the layers given
+    reach, not the carried-on one)."""
+    words = f"ends at {end:g} m"
+    if carried is not None:
+        words += (f" (its last layer carried on to the base at "
+                  f"{carried:g} m, extend_last_layer)")
+    return words
 
 
 def _n60_zone_words(steps: dict) -> str:
@@ -291,9 +306,10 @@ def _n60_zone_words(steps: dict) -> str:
     used = [r for r in rows if r["N60"] is not None]
     other = [r for r in rows if r["N60"] is None]
     end = steps.get("N60_profile_ends_m", z2)
+    carried = steps.get("N60_last_layer_carried_to_m")
     if not used:
         words = (f"the tip layer's N60 {steps['N60_tip']:g}, as the profile "
-                 + (f"ends at {end:g} m" if not rows else
+                 + (_profile_ends_words(end, carried) if not rows else
                     f"gives no cohesionless N60 within 2B below the base "
                     f"({z1:g}-{z2:g} m)"))
     elif len(used) == 1 and used[0]["N60"] == steps["N60_tip"]:
@@ -325,9 +341,11 @@ def _su_zone_words(steps: dict, tip_words: str) -> str:
     clay = [r for r in rows if r["su_kPa"] is not None]
     other = [r for r in rows if r["su_kPa"] is None]
     end = steps.get("su_profile_ends_m", z2)
+    carried = steps.get("su_last_layer_carried_to_m")
     if not rows:
-        return (tip_words + f", as the profile ends at {end:g} m and gives "
-                "nothing below the base")
+        return (tip_words + ", as the profile "
+                + _profile_ends_words(end, carried)
+                + " and gives nothing below the base")
     if not clay:
         words = (tip_words + ", as the profile gives no cohesive soil "
                  f"within 2B below the base ({z1:g}-{z2:g} m)")
@@ -2229,8 +2247,7 @@ class DrillShaftAnalysis:
         t = sum(r["bottom_m"] - r["top_m"] for r in clay)
         su = (sum(r["su_kPa"] * (r["bottom_m"] - r["top_m"]) for r in clay)
               / t if t > 0 else su_tip)
-        return {"top_m": L, "bottom_m": z2,
-                "profile_bottom_m": self.soil.total_thickness,
+        return {"top_m": L, "bottom_m": z2, **self._profile_bottom(),
                 "rows": rows, "su_kPa": su, "su_tip_kPa": su_tip}
 
     def _n60_zone(self, tip_layer, B: float) -> dict:
@@ -2260,9 +2277,19 @@ class DrillShaftAnalysis:
         t = sum(r["bottom_m"] - r["top_m"] for r in used)
         N60 = (sum(r["N60"] * (r["bottom_m"] - r["top_m"]) for r in used)
                / t if t > 0 else tip_layer.N60)
-        return {"top_m": L, "bottom_m": z2,
-                "profile_bottom_m": self.soil.total_thickness,
+        return {"top_m": L, "bottom_m": z2, **self._profile_bottom(),
                 "rows": rows, "N60": N60, "N60_tip": tip_layer.N60}
+
+    def _profile_bottom(self) -> dict:
+        """The depth the layers given reach (``profile_bottom_m``) and,
+        with the last carried on to the base (``extend_last_layer``), that
+        base (``carried_on_to_m``): GM-318 review B1, the base steps gave
+        the carried-on depth as the profile's end."""
+        given = self.profile_depth_given
+        total = self.soil.total_thickness
+        if given is None or given >= total - 1e-9:
+            return {"profile_bottom_m": total}
+        return {"profile_bottom_m": given, "carried_on_to_m": total}
 
     def _tip_su(self, tip_layer, layer_results):
         """su (kPa) of the layer the base is in and where it came from:
