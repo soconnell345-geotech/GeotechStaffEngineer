@@ -73,3 +73,25 @@ def test_layer_echo(solved):
     assert not t.printed
     assert t.column("Soil type") == ["cohesive", "cohesionless", "rock"]
     assert t.column("Bottom") == [8.0, 18.0, 24.0]
+
+
+def test_a_length_table_that_cannot_be_built_costs_only_itself():
+    """GM-328: a shorter shaft would tip in a cased sand with no N60 (the
+    design shaft only passes through it). The capacity-against-length
+    table is then not built, and says so; the other tables are."""
+    from drilled_shaft.calc_steps import get_tables
+    from funhouse_agent.adapters.drilled_shaft import (
+        run_drilled_shaft_capacity)
+    result, analysis = run_drilled_shaft_capacity({
+        "diameter": 1.2, "shaft_length": 9.0, "casing_depth": 3.0,
+        "layers": [
+            {"thickness": 3.0, "soil_type": "cohesionless",
+             "unit_weight": 18.0, "phi": 30},
+            {"thickness": 8.0, "soil_type": "cohesionless",
+             "unit_weight": 19.0, "phi": 36, "N60": 28}]})
+    tables = get_tables(result, analysis)
+    titles = [t.title for t in tables]
+    assert "Side resistance per layer" in titles
+    assert "Ultimate capacity against shaft length" not in titles
+    printed = [t for t in tables if t.printed]
+    assert "is not built" in printed[-1].note and "N60" in printed[-1].note

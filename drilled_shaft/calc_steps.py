@@ -1124,11 +1124,29 @@ def get_tables(result, analysis) -> list:
     low = min(3.0, length)
     if top > low:
         skipped = []
-        rows = [[r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
-                 r["Q_ultimate_kN"]]
-                for r in analysis.capacity_vs_depth(
-                    depth_min=low, depth_max=top,
-                    n_points=CAPACITY_TABLE_POINTS, skipped=skipped)]
+        try:
+            rows = [[r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
+                     r["Q_ultimate_kN"]]
+                    for r in analysis.capacity_vs_depth(
+                        depth_min=low, depth_max=top,
+                        n_points=CAPACITY_TABLE_POINTS, skipped=skipped)]
+        except ValueError as exc:
+            # A shorter shaft would tip in a layer the design shaft only
+            # passes through, which need not carry what a base there needs
+            # (a cased sand with no N60): that costs this table, said in
+            # the note of the last table the package prints, never the
+            # package's other tables
+            # (GM-328).
+            rows = []
+            shown = [i for i, t in enumerate(tables) if t.printed]
+            if shown:
+                from dataclasses import replace
+                last = tables[shown[-1]]
+                said = ("The table of ultimate capacity against shaft "
+                        f"length is not built: {exc}")
+                tables[shown[-1]] = replace(
+                    last, note=(last.note.rstrip(". ") + ". "
+                                if last.note else "") + said)
         note = ("The same analysis re-run with the shaft length set to "
                 "each value (SHAFT's capacity against depth); FS is not "
                 "applied")
