@@ -62,6 +62,26 @@ class TestPystraTools:
         assert "seed" in METHOD_INFO["monte_carlo_analysis"]["parameters"]
 
 
+class TestReliabilityPackage:
+    def test_monte_carlo_package_says_what_was_dropped(self, tmp_path):
+        """GM-322 review: the package's note says how many realizations
+        were dropped; the agent-facing result says it too."""
+        r = call_agent("calc_package", "reliability_package", {
+            "engine": "monte_carlo", "convention": "margin",
+            "g_expression": "x - 8.5 + 0*sqrt(12 - x)",
+            "variables": {"x": {"mean": 10.0, "std": 1.0}},
+            "n": 4000, "seed": 12,
+            "output_path": str(tmp_path / "rel.html")})
+        assert r["n_requested"] == 4000
+        assert r["n_dropped"] > 0
+        assert r["n"] == 4000 - r["n_dropped"]
+        lo, hi = r["pf_bounds_dropped"]
+        assert lo <= r["pf"] <= hi
+        assert r["pf_ci95_method"] == "normal_approximation"
+        assert any("dropped" in w or "not finite" in w
+                   for w in r["warnings"])
+
+
 class TestSalibTools:
     NAMES = ["a", "b"]
     BOUNDS = [[0, 1], [0, 1]]
