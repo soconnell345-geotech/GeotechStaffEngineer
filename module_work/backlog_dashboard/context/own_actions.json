@@ -919,26 +919,5 @@
       "BACKLOG.md OWN-149, INF-76",
       ".github/workflows/publish.yml"
     ]
-  },
-  "OWN-153": {
-    "kind": "action",
-    "ask_who": "CfA (the Tiny Apps team)",
-    "question": "Ask CfA whether testers' keys can reach Claude Opus 5.5.",
-    "why": "You chose Opus 5.5 for the testers. In the standing tests it found every planted problem in all three repeats of the whole-set reviews, where GPT-5.6 Sol passed 3 of 9. But the testers' app can only use the model behind each tester's key, and that key comes from CfA's Prompter. Today the planned deployment is a GPT model.",
-    "background": "The app talks to the Prompter the way it talks to an OpenAI model. If CfA can serve Opus 5.5 the same way, switching is a setting and a new key for each tester, with no release. If CfA serves it only through Anthropic's own interface, the app needs a small addition that ships with the next release of the shared core.",
-    "options": [],
-    "recommendation": "Send the message below to CfA. When they answer, tell me which interface they offer and I will set up the rest.",
-    "if_no_answer": "Testers stay on the GPT deployment their keys name.",
-    "message_to_send": "Hello, for the Document Review app on Tiny Apps: can the Prompter serve a Claude Opus 5.5 deployment that accepts images, with one key per tester as planned? If so, is it reached through the same OpenAI-style chat completions interface as today's deployment, or through Anthropic's own Messages interface? And what does it cost per million input and output tokens, compared with the GPT deployment? Thank you.",
-    "steps": [
-      "Send the message to your CfA contact.",
-      "Paste their answer here, or tell the orchestrating session."
-    ],
-    "unblocks": [
-      "TA-44"
-    ],
-    "sources": [
-      "BACKLOG.md OWN-153, TA-44, OWN-150"
-    ]
   }
 }
