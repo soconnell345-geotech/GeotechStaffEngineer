@@ -578,8 +578,10 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "much a group settles: axial/lateral/torsional load sharing under a 6-DOF load set, group "
             "efficiency, and group settlement.",
         "methods": [
-            "**Rigid-cap 6-DOF** stiffness analysis &mdash; per-pile axial and lateral stiffness, batter, "
-            "and one right-hand sign convention carried end to end.",
+            "**Rigid-cap 6-DOF** stiffness analysis &mdash; per-pile axial and lateral stiffness, batter "
+            "carried in full (each pile&rsquo;s springs turned to the global axes), and one right-hand "
+            "sign convention carried end to end. The simplified method (<code>pile_group_simple</code>) is "
+            "for equal vertical piles and refuses a batter or a per-pile stiffness.",
             "**Group efficiency factor** &eta;<sub>g</sub> read from the printed rows by soil, the cap's "
             "contact with the ground and the spacing (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26 for "
             "drilled shafts, CFA, displacement piles and micropiles); **block failure** by GEC-12 "
@@ -590,16 +592,20 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "rigid-cap tools flag every pile in tension and say to run it, and the pile-group calc package "
             "checks the piles in tension when it has the block&rsquo;s inputs).",
             "**Meyerhof (1976)** SPT group settlement as GEC-12 Eqs. 7-50 to 7-52 print it, and an "
-            "elastic equivalent-footing settlement (GEC-12 Sec. 7.3.5.3, Eq. 7-55, 2V:1H spread) summed to "
+            "elastic equivalent-footing settlement (the <code>equivalent_footing_settlement</code> tool; "
+            "GEC-12 Sec. 7.3.5.3, Eq. 7-55, 2V:1H spread; UFC 3-220-20 Eq. 6-54) summed to "
             "where the stress falls to 10&nbsp;% of the footing&rsquo;s bearing stress (UFC 3-220-20 p. 449; "
             "GEC-12 step 1c&rsquo;s 10&nbsp;% of the existing effective stress as "
-            "<code>influence_depth_m</code>).",
+            "<code>influence_depth_m</code>). It gives the compression of the soil below the footing; the "
+            "piles&rsquo; elastic compression and a clay&rsquo;s consolidation settlement are not included.",
             "References: FHWA GEC-12 Vol. I ch. 7; UFC 3-220-20 ch. 6; validated against GEC-12 "
             "Vol. III Tables D-13, D-14 and D-23 and UFC 3-220-20 Appendix B-5.4 (V-005, V-060).",
         ],
         "limits": [
             "The cap is treated as rigid; pile&ndash;soil&ndash;pile interaction (p-multipliers) is not "
             "part of the 6-DOF stiffness distribution.",
+            "Piles are pinned to the cap in the 6-DOF analysis: no moment or torsional stiffness of a "
+            "pile&rsquo;s own head, so no fixed-head moment is returned.",
         ],
     },
 
