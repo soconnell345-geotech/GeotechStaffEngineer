@@ -16,11 +16,15 @@ on:
   workflow_dispatch:
 
 # A session pushes several commits an hour; only the newest needs testing.
-# A newer push cancels the run still going (a cancelled run sends no
-# failure e-mail).
+# Off master, a newer push cancels the run still going (a cancelled run
+# sends no failure e-mail). On master a run always finishes: a newer push
+# waits as the one pending run of the group (GitHub keeps only the newest
+# pending one), so master gets a full result between merges instead of a
+# chain of cancelled runs (2026-11-13: five master runs in a row were
+# cancelled by the next merge).
 concurrency:
   group: tests-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   test:

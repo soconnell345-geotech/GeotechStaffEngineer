@@ -47,6 +47,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from slope_stability.slices import Slice
+from slope_stability.solution import NoSolution
 
 _FOS_MAX = 999.9
 
@@ -438,9 +439,9 @@ class _GLESystem:
         m_alpha = math.cos(s.alpha) + math.sin(s.alpha) * s.tan_phi / F
         if abs(m_alpha) < 0.05:
             m_alpha = math.copysign(0.05, m_alpha)
-            if "m_alpha clamped" not in self.warnings:
-                self.warnings.append("m_alpha clamped (|m_a| < 0.05) on at "
-                                     "least one slice")
+            w = "m_alpha clamped (|m_a| < 0.05) on at least one slice"
+            if w not in self.warnings:      # (said once; it used to repeat)
+                self.warnings.append(w)
         num = (s.W + s.rv_down - dV
                - (s.c * s.length - s.u * s.length * s.tan_phi)
                * math.sin(s.alpha) / F)
@@ -515,7 +516,10 @@ class _GLESystem:
         march instead (``_solve_marched``): the lagged iteration below swings
         between two states there and its last state is not an equilibrium
         state (GM-60). With support forces it is also the fallback whenever
-        the lagged iteration fails. Without them the iteration is as it was.
+        the lagged iteration cannot take a step. With or without them, an
+        iteration that runs ``max_iter`` times without settling is solved
+        by the direct march, and where that finds nothing there is no
+        state (GM-140 step 2).
         """
         if self.point_loads and lam != 0.0:
             return self._solve_marched(lam, f0)
@@ -569,14 +573,13 @@ class _GLESystem:
             Fm, Ff = Fm_new, Ff_new
 
         # The lagged iteration did not settle (with a large point load it
-        # can swing between two states, GM-60): with support forces solve by
-        # the direct march; failing that, return the last state, flagged by
-        # the caller.
-        if self.point_loads:
-            marched = self._solve_marched(lam, f0)
-            if marched is not None:
-                return marched
-        return (Fm, Ff, E, V, N_f)
+        # can swing between two states, GM-60): solve by the direct march,
+        # with or without support forces. Failing that there is no state at
+        # this lambda. The last iterate is not an equilibrium state, and a
+        # factor of safety is a method's own converged solution or no
+        # number (GM-140 step 2; UFC 3-220-10 p. 362); before, it was
+        # returned as a state and nothing flagged it.
+        return self._solve_marched(lam, f0)
 
     # -- direct solution for a fixed lambda (GM-60) ---------------------------
 
@@ -780,9 +783,15 @@ def gle_fos(slices: List[Slice],
     st0 = sys_.solve_for_lambda(0.0)
     lo_b, hi_b = lambda_bounds
     lam0 = 0.0
-    # With support forces (concentrated loads at slice bases) the lambda
-    # search below is made robust (GM-60); without them it is as it was.
-    robust = sys_.point_loads
+    # The lambda search below is the robust one of GM-60 for every run,
+    # with or without support forces (GM-140 step 2): the scan starts from
+    # the nearest lambda that has a state when lambda = 0 has none, steps
+    # over a lambda with no equilibrium state, and passes over a bracket
+    # whose bisection does not close. Before, a run without supports
+    # stopped at the first of these and the surface was left to an
+    # approximate solver (EM 1110-2-1902 C-10d, pp. C-37 to C-38, on
+    # avoiding non-convergence; UFC 3-220-10 p. 362).
+    robust = True
     if st0 is None and not robust:
         result.fos = _FOS_MAX
         return result
@@ -889,8 +898,8 @@ def gle_fos(slices: List[Slice],
             break
 
     if found is None and fallback is None:
-        # No crossing found in range — report the starting moment solution,
-        # flagged as not converged (caller may fall back to legacy).
+        # No crossing found in range: the starting moment solution, flagged
+        # as not converged (no factor of safety: the callers give no number).
         result.fos = Fm0
         result.fos_moment = Fm0
         result.fos_force = Ff0
@@ -1050,6 +1059,12 @@ def janbu_fos(slices: List[Slice],
     -------
     (fos_corrected, fos_uncorrected, f0) : tuple of float
 
+    Raises
+    ------
+    NoSolution
+        The force-equilibrium iteration has no state at lambda = 0: there
+        is no number (GM-140 step 2).
+
     References
     ----------
     Janbu (1973); Fredlund & Krahn (1977); Abramson et al. (2002).
@@ -1065,8 +1080,13 @@ def janbu_fos(slices: List[Slice],
     reinf_n = _assign_reinforcement(ns, reinf_forces, mirrored)
     sys_ = _GLESystem(ns, axis, "constant", tol, reinf=reinf_n)
     st = sys_.solve_for_lambda(0.0)
-    if st is None:
-        return (_FOS_MAX, _FOS_MAX, 1.0)
+    if st is None or not (0.0 < st[1] < _FOS_MAX):
+        # no number (GM-140 step 2): this used to return the 999.9 marker
+        # (and, where the iteration did not settle, its last iterate)
+        raise NoSolution(
+            "horizontal force equilibrium with horizontal interslice "
+            "forces has no state: the iteration on F cannot take a step "
+            "(no net driving force) or does not settle")
     _, ff, _, _, _ = st
     f0 = janbu_f0(slices)
     return (f0 * ff, ff, f0)

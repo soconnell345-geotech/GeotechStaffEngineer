@@ -83,21 +83,25 @@ def slope_interactive_figure(result, geom, search=None):
     zg = np.array([geom.ground_elevation_at(x) for x in xs])
 
     # Soil layers as filled polygons
+    # each layer where it holds the ground (one material per point,
+    # ``SlopeGeometry.layer_bands``)
+    bands = geom.layer_bands([float(x) for x in xs])
     for i, layer in enumerate(geom.soil_layers):
-        top = np.minimum(zg, np.array([layer.top_at(x) for x in xs]))
-        bot = np.array([layer.bottom_at(x) for x in xs])
-        mask = top > bot
-        if not np.any(mask):
-            continue
-        xv = xs[mask]
-        poly_x = np.concatenate([xv, xv[::-1]])
-        poly_z = np.concatenate([top[mask], bot[mask][::-1]])
-        fig.add_trace(go.Scatter(
-            x=poly_x, y=poly_z, fill='toself', mode='none',
-            fillcolor=_LAYER_COLORS[i % len(_LAYER_COLORS)],
-            opacity=0.65, name=layer.name, legendgroup='layers',
-            hoverinfo='name',
-        ))
+        for k, (tops, bots) in enumerate(bands[i]):
+            top = np.array([np.nan if v is None else v for v in tops])
+            bot = np.array([np.nan if v is None else v for v in bots])
+            mask = ~np.isnan(top)
+            if not np.any(mask):
+                continue
+            xv = xs[mask]
+            poly_x = np.concatenate([xv, xv[::-1]])
+            poly_z = np.concatenate([top[mask], bot[mask][::-1]])
+            fig.add_trace(go.Scatter(
+                x=poly_x, y=poly_z, fill='toself', mode='none',
+                fillcolor=_LAYER_COLORS[i % len(_LAYER_COLORS)],
+                opacity=0.65, name=layer.name, legendgroup='layers',
+                showlegend=(k == 0), hoverinfo='name',
+            ))
 
     # Ground surface
     sx = [p[0] for p in geom.surface_points]

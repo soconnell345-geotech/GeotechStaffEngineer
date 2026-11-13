@@ -129,25 +129,30 @@ class SlopeStabilityResult:
     Attributes
     ----------
     FOS : float or None
-        Factor of safety. None when the method finds no equilibrium
-        solution on the surface and nothing may stand in for it (supports
-        cross the surface: the legacy approximate solver ignores them).
-        See ``method_solved`` and ``warnings``.
+        Factor of safety: the method's own converged solution on the
+        surface. None when the method has no solution there (GM-140 step
+        2): nothing stands in for it. See ``method_solved`` and
+        ``warnings``.
     method : str
-        Analysis method ('Fellenius', 'Bishop', 'Spencer', 'Morgenstern-Price').
+        Analysis method ('Fellenius', 'Bishop', 'Janbu', 'Spencer',
+        'Morgenstern-Price', 'GLE').
     method_solved : bool
-        False when the method (Spencer / Morgenstern-Price / GLE) finds no
-        equilibrium solution on this surface: its rigorous GLE solution
-        does not converge (GM-81).
+        False when the method has no solution on this surface (Spencer /
+        Morgenstern-Price / GLE: the rigorous GLE solution does not
+        converge; Bishop / Janbu: the iteration does not converge; no
+        driving moment or force). ``FOS`` is then None.
     method_used : str or None
-        What produced ``FOS``: '' (default) for the method itself; the
-        legacy approximate solver's name when it stood in (a surface no
-        support crosses); None when nothing did (``FOS`` is None).
+        What produced ``FOS``: '' (default) for the method itself; None
+        when the method has no solution (``FOS`` is None).
     methods_without_solution : list of str
-        The rigorous methods ('Spencer', 'Morgenstern-Price') whose FOS
-        field on this result holds no converged solution (the headline or a
-        compare_methods value): the legacy approximate solver's value, or
-        None.
+        The methods ('Fellenius', 'Bishop', 'Janbu', 'Spencer',
+        'Morgenstern-Price') with no solution on this surface, the headline
+        method or a compare_methods one: their FOS field is None.
+    layer_overlaps : list of dict
+        Where a soil layer was given ground that a layer listed before it
+        also covers (``SlopeGeometry.layer_overlaps``): the first listed
+        layer holds that ground, for weight and strength. Empty when no
+        two layers overlap. In ``to_dict()`` only when not empty.
     warnings : list of str
         Plain statements of what the engineer must check on this surface: a
         method with no equilibrium solution, a reverse-curvature circle
@@ -223,6 +228,7 @@ class SlopeStabilityResult:
     method_used: Optional[str] = ""
     methods_without_solution: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    layer_overlaps: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def is_circular(self) -> bool:
@@ -247,14 +253,11 @@ class SlopeStabilityResult:
         if self.FOS is None:
             return (f"none: {self.method} finds no equilibrium solution "
                     f"on this surface (see WARNING)")
-        if not self.method_solved:
-            return (f"{self.FOS:.3f}  from the {self.produced_by}; "
-                    f"{self.method} has no solution here (see WARNING)")
         return f"{self.FOS:.3f}"
 
     def _no_solution_mark(self, method: str) -> str:
-        return ("  (legacy approximate solver, no solution)"
-                if method in self.methods_without_solution else "")
+        # (a method with no solution has no value to mark: its field is None)
+        return ""
 
     def summary(self) -> str:
         lines = [
@@ -309,6 +312,8 @@ class SlopeStabilityResult:
         if self.FOS_janbu_uncorrected is not None:
             lines.append(f"  FOS (Janbu unc.): {self.FOS_janbu_uncorrected:.3f}"
                          + (f"  (f0={self.janbu_f0:.3f})" if self.janbu_f0 else ""))
+        for o in self.layer_overlaps:
+            lines.append(f"  LAYERS: {o['statement']}")
         for w in self.warnings:
             lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
@@ -413,6 +418,8 @@ class SlopeStabilityResult:
             ]
         if self.methods_without_solution:
             d["methods_without_solution"] = list(self.methods_without_solution)
+        if self.layer_overlaps:
+            d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d
@@ -514,9 +521,8 @@ class SlopeStabilityResult:
              f"λ = {self.lambda_mp:.3f}"
              if self.lambda_mp is not None else ""),
         ]
-        rows = [[name, fos, extra + ("; " if extra else "")
-                 + "legacy approximate solver: no converged solution"
-                 if name in self.methods_without_solution else extra]
+        # (a method with no solution has no row: its value is None)
+        rows = [[name, fos, extra]
                 for name, fos, extra in by_method if fos is not None]
         if rows:
             tables.append(CalcTable(
@@ -606,6 +612,25 @@ class SearchResult:
         = cos(a) (1 + tan(a) tan(phi) / F) fell below 0.2 on a slice at the
         method's own F (GM-127; Slide2's check, its error -112). Counted as
         ``n_rejected_ground_crossings`` is.
+    no_solution : list of dict
+        Trial surfaces left without a solution, by family and by method
+        (GM-140 step 2): ``{"family", "method", "n", "not_converged",
+        "no_driving", "below_0_05"}``. They are not scored: nothing stands
+        in for the method. ``not_converged``: the method's own solve did not
+        converge (Spencer / Morgenstern-Price / GLE: no lambda at which the
+        moment and force factors of safety agree; Bishop / Janbu: the
+        iteration does not converge or has no state). ``no_driving``: the
+        surface has no net driving moment or force (as where a support's
+        force exceeds it), so the ratio has no meaning. ``below_0_05``: the
+        method solved the surface with a value below 0.05, which a search
+        does not take as a factor of safety. ``n`` is their sum. ``family`` is
+        'circular' / 'noncircular' (the main search; 'main' when a search
+        was called directly), 'toe_circle', 'circle_above_toe' or
+        'infinite_slope'. ``n_no_solution`` is the total. ``warnings``
+        says so when the governing family lost trials to non-convergence
+        (UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as a
+        result of non-convergence. The engineer should be able to identify
+        when convergence issues are present.").
     governing_surface : str
         Which kind of surface governs ``critical`` (set by
         ``search_critical_surface``): 'circular' / 'noncircular' (the main
@@ -617,13 +642,18 @@ class SearchResult:
         search was called directly (grid_search etc.).
     candidates : dict
         Minimum FOS of each surface family tried, keyed as above.
+    layer_overlaps : list of dict
+        Where a soil layer was given ground that a layer listed before it
+        also covers (``SlopeGeometry.layer_overlaps``): the first listed
+        layer holds that ground, for weight and strength. Empty when no
+        two layers overlap. In ``to_dict()`` only when not empty.
     warnings : list of str
         Plain statements where the search cannot be sure of its answer
         (a supplementary family undercut the main search, the critical
         surface sits on the edge of the searched region, a cohesionless
         face could not be checked, the governing circle is closed by a
         reverse-curvature crack, has supports Bishop counts little of, or
-        was scored by the legacy approximate solver).
+        the governing family lost trials the method has no solution on).
     infinite_slope_checks : list of dict
         One entry per stretch of slope face where cohesionless soil is at
         the surface: x range, slope angle beta, layer, phi', the dry
@@ -677,9 +707,11 @@ class SearchResult:
     n_rejected_jagged: int = 0
     n_rejected_ground_crossings: int = 0
     n_rejected_m_alpha: int = 0
+    no_solution: List[Dict[str, Any]] = field(default_factory=list)
     governing_surface: str = ""
     candidates: Dict[str, float] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
+    layer_overlaps: List[Dict[str, Any]] = field(default_factory=list)
     infinite_slope_checks: List[Dict[str, Any]] = field(default_factory=list)
     search_ranges: Dict[str, Any] = field(default_factory=dict)
     governing_location: Dict[str, Any] = field(default_factory=dict)
@@ -687,6 +719,12 @@ class SearchResult:
     choices: List[Dict[str, Any]] = field(default_factory=list)
     families_scored: List[str] = field(default_factory=list)
     families_not_scored: Dict[str, str] = field(default_factory=dict)
+
+    @property
+    def n_no_solution(self) -> int:
+        """Trial surfaces left without a solution, every family and method
+        (``no_solution``)."""
+        return sum(r["n"] for r in self.no_solution)
 
     def summary(self) -> str:
         lines = [
@@ -703,6 +741,18 @@ class SearchResult:
         if self.n_rejected_m_alpha:
             lines.append(f"  Left out, m_alpha < 0.2 on a slice (Slide2's "
                          f"check): {self.n_rejected_m_alpha}")
+        if self.n_no_solution:
+            lines.append(f"  Not scored, the method has no solution on "
+                         f"them: {self.n_no_solution} ("
+                         + "; ".join(
+                             f"{r['family']}, {r['method']}: {r['n']}"
+                             + (f" ({r['no_driving']} with no net driving "
+                                f"moment or force)" if r.get("no_driving")
+                                else "")
+                             + (f" ({r['below_0_05']} solved below 0.05)"
+                                if r.get("below_0_05") else "")
+                             for r in self.no_solution)
+                         + ")")
         if self.critical:
             lines.append(f"  Minimum FOS:       {self.critical.FOS:.3f}")
             lines.append(f"  Method:            {self.critical.method}")
@@ -742,6 +792,8 @@ class SearchResult:
                              f"(the slope's reach: x = {x:.2f})")
         from geotech_common.choices import choices_lines
         lines.extend(choices_lines(self.choices))
+        for o in self.layer_overlaps:
+            lines.append(f"  LAYERS: {o['statement']}")
         for w in self.warnings:
             lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
@@ -790,6 +842,9 @@ class SearchResult:
                 "ground_crossings": self.n_rejected_ground_crossings,
                 "m_alpha": self.n_rejected_m_alpha,
             }
+        if self.no_solution:
+            # trials the method has no solution on, by family and method
+            d["no_solution"] = [dict(r) for r in self.no_solution]
         if self.critical:
             d["critical"] = self.critical.to_dict()
         if self.governing_surface:
@@ -806,6 +861,8 @@ class SearchResult:
             d["refused_lowest"] = dict(self.refused_lowest)
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
+        if self.layer_overlaps:
+            d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d

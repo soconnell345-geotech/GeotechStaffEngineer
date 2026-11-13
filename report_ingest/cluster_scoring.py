@@ -1051,7 +1051,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      range_conventions: str = "B",
                      model_first: Any = None,
                      stage_models: Optional[Dict[str, str]] = None,
-                     page_route: Optional[str] = None
+                     page_route: Optional[str] = None,
+                     report_tables: Any = None
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -1326,6 +1327,14 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         ``run.json`` records them, and a report already done under other
         settings is NOT redone unless ``redo`` -- start a fresh ``out_dir``
         to compare two settings.
+    report_tables
+        ``graph.ingest_report``'s own (BACKLOG RI-209): unset, each report
+        the ``ingest`` stage reads is exported beside the shared library,
+        under ``<out_dir>/ingest/report_tables/v1/``, and its ``run.json``
+        says what the export did (``report_tables``). ``False`` turns it
+        off. A report skipped as already done is not re-exported: ``python
+        -m report_ingest.tables <out_dir>/ingest`` exports them all from
+        disk.
     describe_model, range_model, range_arms, range_workers, range_conventions
         The ``range_labels`` stage (BACKLOG RI-73). ``describe_model``
         describes the pages, one vision call a page, on the vision engine
@@ -1757,7 +1766,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                                  ingest_narrative_skips_bound),
                              oos=oos, mapped=mapped, sync=sync,
                              first=first, describe_model=describe_model,
-                             range_model=range_model)
+                             range_model=range_model,
+                             report_tables=report_tables)
         results["ingest"] = ingest
         lines += _render_ingest(ingest)
 
@@ -3745,6 +3755,15 @@ def _score_logs(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "floor_alone": floor, "n_floor": n_floor,
             "model_alone": alone, "n_model": n_model,
         }
+        # Answer values the scorer set aside (log_scoring.SET_ASIDE): in no
+        # total above, so they are counted here. Absent when there are none.
+        aside: Dict[str, int] = {}
+        for r in group:
+            for key, entry in ((r.get("after") or {}).get("set_aside")
+                               or {}).items():
+                aside[key] = aside.get(key, 0) + int(entry.get("count") or 0)
+        if aside:
+            sets[name]["set_aside"] = aside
     cost = _cost_totals()
     visual = _visual_counts()
     for row in rows:
@@ -3788,7 +3807,7 @@ def _rate(row: Dict[str, int]) -> str:
 def _render_logs(logs: Dict[str, Any]) -> List[str]:
     """The logs stage, as tables that carry IDs, counts and rates only."""
     from report_ingest.log_scoring import (
-        LAYER_TOL_M, METRICS, SAMPLE_TOL_M, WATER_TOL_M,
+        INTERVAL_METRICS, LAYER_TOL_M, METRICS, SAMPLE_TOL_M, WATER_TOL_M,
     )
 
     out: List[str] = [
@@ -3837,16 +3856,43 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
                        f"{_opt_rate((floor or {}).get(metric)):>14}"
                        f"{_opt_rate((alone or {}).get(metric)):>14}"
                        f"{_rate(after):>14}")
-        before_all = _sum_of(row["before"])
-        after_all = _sum_of(row["after"])
+
+        def of_metrics(totals: Dict[str, Dict[str, int]]
+                       ) -> Dict[str, Dict[str, int]]:
+            # OVERALL is today's metrics; the interval groups (RI-103) are
+            # listed below it and stay out, so totals compare across runs.
+            return {m: v for m, v in totals.items() if m in METRICS}
+
+        before_all = _sum_of(of_metrics(row["before"]))
+        after_all = _sum_of(of_metrics(row["after"]))
+        floor_all = _sum_of(of_metrics(floor)) if floor else None
+        alone_all = _sum_of(of_metrics(alone)) if alone else None
         out += [f"{'OVERALL':<16}{_rate(before_all):>14}"
-                f"{_opt_rate(_sum_of(floor) if floor else None):>14}"
-                f"{_opt_rate(_sum_of(alone) if alone else None):>14}"
+                f"{_opt_rate(floor_all):>14}{_opt_rate(alone_all):>14}"
                 f"{_rate(after_all):>14}", "```"]
+        if any((row["after"].get(m) or {}).get("total")
+               for m in INTERVAL_METRICS):
+            out += ["", "Intervals (RI-103: notes, line kinds and stratum "
+                        "labels, on the logs whose answer sheet carries "
+                        "them; not in OVERALL):", "", "```",
+                    f"{'group':<16}{'floor':>14}{'model':>14}{'after':>14}"]
+            for metric in INTERVAL_METRICS:
+                after = row["after"].get(metric)
+                if not after or not after["total"]:
+                    continue
+                out.append(f"{metric:<16}"
+                           f"{_opt_rate((floor or {}).get(metric)):>14}"
+                           f"{_opt_rate((alone or {}).get(metric)):>14}"
+                           f"{_rate(after):>14}")
+            out.append("```")
         for key, label in (("n_floor", "floor"), ("n_model", "model")):
             if row.get(key, 0) < row["n_logs"]:
                 out.append(f"`{label}` is over the {row.get(key, 0)} of "
                            f"{row['n_logs']} log(s) whose run file keeps it.")
+        for key, count in (row.get("set_aside") or {}).items():
+            from report_ingest.log_scoring import SET_ASIDE
+            out.append(f"Set aside from `after`, in no total: {count} -- "
+                       f"{SET_ASIDE.get(key, key)}.")
 
     out += ["", "## Per log", "", "```",
             f"{'log':<14}{'set':<7}{'before':>12}{'floor':>12}{'model':>12}"
@@ -5744,7 +5790,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 sync: Optional[Any] = None,
                 first: Optional[_FirstArm] = None,
                 describe_model: Optional[str] = None,
-                range_model: Optional[str] = None) -> Dict[str, Any]:
+                range_model: Optional[str] = None,
+                report_tables: Any = None) -> Dict[str, Any]:
     """The whole pipeline on each report, into ``ingest/<ID>/``.
 
     Restartable twice over: the stage skips a report whose ``run.json`` is
@@ -5854,6 +5901,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     from report_ingest.calc_reader import page_images_enabled
     from report_ingest.engine import CostMeter
     from report_ingest.graph import Budgets, ingest_report, output_paths
+    from report_ingest.tables import export_outcome
     from report_ingest.lab_reader import (
         floor_per_page_enabled, link_from_label_enabled,
     )
@@ -5994,6 +6042,9 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                                    narrative_skips_bound=(
                                        narrative_skips_bound),
                                    triage_engine=brake.wrap(triage_engine),
+                                   report_tables=report_tables,
+                                   # the PDF keys the report (RI-209)
+                                   source_path=corpus.pdf_path(rid),
                                    **brake.wrap_kwargs(arm_kwargs))
             n_pages = doc.n_pages
         except KeyboardInterrupt:
@@ -6067,6 +6118,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 other_engine = saved_engine
         # Scored, and looked through for items not read (RI-187).
         bound = _bound_records(record, folder)
+        exported = export_outcome(folder)
         blob = {
             "id": rid,
             "run_date": date.today().isoformat(),
@@ -6093,6 +6145,9 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "qa_by_kind": qa_by_kind,
             "diggs": _diggs_verdicts(record, outputs),
             "outputs": {k: str(v) for k, v in outputs.items()},
+            # What the report tables' export did (BACKLOG RI-209); absent
+            # when it was off.
+            **({"report_tables": exported} if exported else {}),
             "scores": _score_ingest_record(record, rid, truth, bound),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),

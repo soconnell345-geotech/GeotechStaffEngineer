@@ -20,6 +20,9 @@ mechanically stabilized earth (MSE) walls per GEC-11.
   level or sloping backfill (`backslope_geometry`, `backslope_loads`)
 - `reinforcement.py` — Reinforcement dataclass + built-in products
 - `results.py` — CantileverWallResult, MSEWallResult
+- `structural.py`, `structural_section.py`, `structural_steps.py` — the
+  cantilever wall's structural design on EM 1110-2-2104 (GM-312, the last
+  section of this file)
 
 ## Public API
 ```python
@@ -28,6 +31,8 @@ CantileverWallGeometry, MSEWallGeometry, Reinforcement, CantileverWallResult, MS
 analyze_cantilever_wall(geom, gamma_backfill, phi_backfill, c_backfill=0.0,
     phi_foundation=None, c_foundation=0.0, q_allowable=None, ...) -> CantileverWallResult
 analyze_mse_wall(geom, gamma_backfill, phi_backfill, reinforcement, ...) -> MSEWallResult
+analyze_cantilever_wall_structure(geom, gamma_backfill, phi_backfill, *,
+    fc_MPa, joint_spacing, fy_MPa=414.0, ...) -> CantileverWallStructuralResult
 check_external_stability_lrfd(geom, gamma_backfill, phi_backfill, phi_foundation=None,
     *, ...) -> Dict[str, Any]  # CDRs
 ```
@@ -1893,3 +1898,169 @@ Check record: `module_work/gm307/CHECK.md`.
   resistance and CDR, Strength I (min) included. Nothing is worked out in
   the steps; internal stability stays in the ASD package.
 
+
+## The cantilever wall's structural design (GM-312, 2026-11-13)
+
+`structural.py` (`analyze_cantilever_wall_structure`), `structural_section.py`
+(one strip's design, US customary units) and `structural_steps.py` (the calc
+package's sections). On USACE EM 1110-2-2104, "Strength Design for Reinforced
+Concrete Hydraulic Structures" (1 November 2023). ACI 318 is not held: where
+the manual sends the reader to ACI 318-19 and prints nothing, that part is not
+designed and the result's `not_designed` says so. The equations come from
+`geotech_references.em_2104` by direct import (a shared library, as
+`pavement_design` calls `geotech_references.aashto_1993`); every page cited
+here was read from the PDF.
+
+- **One wall.** `analyze_cantilever_wall` runs first on the same inputs and
+  its result is kept (`stability`). The loads are the wall module's own:
+  `_active_thrust_terms` (Ka, the thrust, the water), `_vertical_force_items`
+  (the weights) and `earth_pressure.active_force_components[_water]` over the
+  stem's height.
+- **Units.** SI in and out; the section design is worked in the manual's
+  units on a 12 in. strip and every structural quantity is returned in both
+  (`Mu_kNm_per_m` and `Mu_kipft_per_ft`, and so on). Converters in
+  `geotech_common/units.py`, from the manual's p. 129. A length the module
+  takes at the manual's inch value (12 in. spacing, 4 in. and 3 in. cover) is
+  reported at the metric value the manual prints beside it (30 cm, 10 cm,
+  7.5 cm).
+- **Load cases** (Table E-2, p. 93). Case 1, normal operating (usual), and,
+  when there is a live-load surcharge, case 2, normal operating + surcharge
+  (unusual). Both columns are worked: serviceability by the single load
+  factors of Table 3-4 (p. 26; 2.2 usual, 1.6 unusual; the unfactored results
+  times the factor, para. 3-1f, pp. 13-14) and strength, (1.2 or 0.9) D + 1.5
+  EH + (1.35 or 1.0) EV + 1.0 Hs (+ 1.6 ES), each of the four D and EV pairs
+  on the whole wall with the base pressure from the factored loads (para.
+  3-3d, p. 22; para. 3-1f). The largest moment and the largest shear govern.
+  In case 2 the surcharge is tried over the heel and behind it only. Not
+  designed: cases 3A and 3B (earthquake), 4 (maximum hydrostatic) and 5
+  (construction).
+- **Which load is which** (the module's reading; Table E-1, p. 92, names the
+  loads and prints no rule for a permanent surcharge): D the concrete; EV the
+  soil over the heel and the toe and a dead-load surcharge on the heel; EH the
+  active thrust without the live load; ES the live-load surcharge, its thrust
+  and its weight on the heel; Hs the water's thrust and the uplift.
+- **Sections.** Stem: the base of the stem, moment and shear (para. 5-3,
+  pp. 35-36; D-3, p. 73), on the horizontal component of the active pressure
+  and the water pressure over the stem's height, the surcharge from the back
+  of the stem (FHWA NHI-06-089 Sec. 10.5.3, p. 10-41), no axial load (D-5
+  Step 2, p. 84). Toe: shear at d from the front face of the stem; heel: shear
+  at the back face (para. 5-3, p. 36; Fig. 5-1). **The toe's and the heel's
+  moment sections are not printed in a held reference** (the manual, p. 87,
+  refers to EM 1110-2-2502, which is not held): they are taken at the faces
+  of the stem, by statics, with the trapezoid or triangle of base pressure
+  (FHWA NHI-06-089 Fig. 10-17, p. 10-39; GEC-6 Sec. 6.6, pp. 121-122) and the
+  water pressure under the base.
+- **Section design.** d = h - cover - half the main bar, the main bars the
+  outer layer of their face (para. 2-3, p. 4; the examples, pp. 75, 84). Steel
+  by Eq. D-8 and D-9 (p. 72), capacity by Eq. B-49 and B-50 (p. 51), phi =
+  0.90 and 0.75 as D-5 prints them (p. 84). Shear by Eq. 5-1 (p. 35) in its
+  US form, without the axial term, with the printed SI form's result beside
+  it (about 2 % higher). Steel ratio at most 0.50 rho_b (para. 3-6, p. 27),
+  0.25 rho_b recommended (para. 3-4b(2)); rho_b as printed on pp. 53 and 75,
+  beta1 ACI 318-19's by the reference library unless given (the manual prints
+  only 0.85 at 4,000 psi and 0.80 at 5,000 psi). The least flexural steel is
+  the shrinkage and temperature steel (para. 2-9g, p. 8).
+- **Bars.** No. 4 to No. 11 (areas: FHWA GEC-10 Table 6-2, p. 6-3). The
+  smallest bar that gives the steel at 12 in.; if No. 11 does not, the
+  smallest at 6 in. (D-3, p. 75; D-5, p. 85); the engineer may give either.
+  A bar or spacing that fails the crack-control spacing, the clear cover or
+  the clear distance is passed over.
+- **Crack control** (para. 2-6b, p. 5). Usual loads: met by 12 in. Unusual
+  loads: s_max = 15 (40,000 / fs) - 2.5 cc as printed in D-3 Step 5(b)
+  (p. 76), cc the lesser of 2.5 in. and the cover, on the actual service
+  stress when `modular_ratio` is given and else on the 35 ksi limit of Table
+  3-3, which gives 10.9 in. at 2.5 in. of cover or more. So a wall with a
+  live-load surcharge and no modular ratio gets its main bars at 6 in.
+- **Another fy.** Table 3-4 is printed for 60,000 psi (414 MPa) only. Another
+  fy is refused unless `modular_ratio` is given; the design is then by the
+  strength column with the service steel stress checked against Table 3-3.
+- **Cover** (Table 2-1, p. 5): 4 in. against the foundation; 4 in. for a
+  section 24 in. thick or more, 3 in. over 12 in.; required from the engineer
+  at 12 in. or less, where the table says "According to ACI 318-19".
+- **Temperature and shrinkage steel** (para. 2-9, Table 2-3, pp. 6-8): along
+  the wall by the joint spacing (required input), up the stem and across the
+  base 0.003, half in each face, No. 4 at 12 in. to No. 9 at 12 in.
+- **Development.** The stem's main bars end in a standard hook in the base
+  (para. 2-10a, Fig. 2-1, p. 9) with the hook development length D-5 Step 6
+  prints (pp. 86-87), checked against the base thickness less the bottom
+  cover and the bottom mat. Lap lengths, straight development lengths and
+  bar cut-offs are not designed.
+- **The result** carries `stability`, `elements` (stem, toe, heel),
+  `secondary`, `development`, `checks`, `reinforcement` (the
+  `reinforced_wall_section/1` description a drawing is made from), `choices`
+  (the stability analysis's and the design's), `not_designed` and a verdict
+  that names failed checks first.
+- **Agent and package.** `retaining_walls.cantilever_wall_structural_design`
+  takes `cantilever_wall`'s inputs and the structural ones;
+  `retaining_wall_package` with `wall_type="cantilever_reinforced"` prints the
+  stability sections and then the structural ones, and ends with the
+  reinforcement sheet (GM-335, below).
+
+Pinned against the print in `tests/test_gm312_structural.py`: D-3 (Mu 11
+k-ft, As 0.43 sq in, No. 6 at 12 in., rho 0.0061 against 0.0071, fs 24.96
+ksi, 19 in.) and D-5 (the stem's loads rebuilt from Tables D-2 and D-4 to Vu
+36.9 kips/ft and Mu 428 k-ft/ft; phi Vc 46.5; As 2.73; No. 11 at 6 in.; ldh
+24.1 in.). D-5 has slips of its own that are not pinned: Step 3(g) uses the
+4,000 psi coefficient for 5,000 psi concrete, Step 3(i) prints Ku as 0.088
+and then 0.111, and Step 5 prints x as 9.96 and uses 10.09, and prints fs =
+34.7 ksi where its own numbers give 35.5 (pinned at the module's 35.47).
+
+### Review fixes (GM-312 review, 2026-11-13)
+
+- **Table 2-3 on the metres.** The temperature steel along the wall is banded
+  on the metres the table prints beside its feet (p. 7): below 9 m 0.003,
+  9 to 12 m (both included) 0.004, above 12 m 0.005. A joint spacing of 9.0 m
+  had taken 0.003 through the feet.
+- **A given cover against Table 2-1.** A cover the engineer gives is a
+  required wall check, `clear cover >= Table 2-1 (stem | base top | base
+  bottom)`, compared in mm with the metric value the table prints (10 cm,
+  7.5 cm), wherever the table prints one; a formed face 12 in. or thinner
+  keeps the old rule (the cover must be given; the table prints none).
+- **Printed metric values are the inch values.** A spacing or cover given as
+  300, 150, 100 or 75 mm is taken as 12, 6, 4 or 3 in., so 300 mm meets the
+  12 in. limit and reads "(12 in.)".
+- **Bar choice.** A trial is chosen only when its clear cover (2.5 bar
+  diameters, Table 2-1 Note) and its clear distance (para. 2-6a) pass too;
+  if none passes, the first that gives the steel is reported with its failed
+  checks.
+- **Strength factors.** The choice and the calc package say that 1.5 on EH
+  assumes the active state (Table E-2 note b, p. 93) and name the at-rest
+  basis, EH driving 1.35 (para. 3-3d, p. 22), as not built.
+- **Live surcharge.** Para. 3-2f(7) (p. 19) is cited for ES; the manual
+  prints no rule for a permanent surcharge.
+- **Hook.** Where the hook length is stated, the result says its factors are
+  those of D-5 Step 6 and that ACI 318-19 (not held) sets when each applies
+  and its own minimum lengths, so the hook must be confirmed against it. No
+  number changed.
+- **Minimum wall thickness** (para. 3-7, p. 27). The wall's height, the
+  underside of the base to the top of the stem (the conservative reading of
+  "height"), against the printed 3 m; the stem's top against 305 mm over 3 m,
+  200 mm otherwise, in mm; a failure names the value to give. In
+  `cantilever_wall_structural_design` only, a stem top left out is 0.305 m
+  (the manual's 12 in.) for the stability run and the design alike; the
+  `cantilever_wall` tool keeps 0.30 m.
+- **Verdict wording.** The "at least" checks (clear cover, clear distance,
+  stem thickness) read "needs X, has Y"; a failed check's note follows it.
+- **Bar set F.** When the base's top and bottom covers differ, the bars along
+  the wall are two sets, F (top) and G (bottom), each at its own cover; with
+  equal covers, one set F on both faces. A drawing must not assume six marks.
+- **D-5 Step 5(a).** The print gives fs = 34.7 ksi "< 35 ksi"; its own
+  numbers give 35.5 ksi (35.47 on x = 9.96 in.). The module's 35.47 and its
+  failed check are pinned (`test_d5_service_stress_is_the_arithmetic_not_the_printed_34_7`).
+
+### The reinforcement sheet at the end of the package (GM-313, the join, 2026-11-13)
+
+`retaining_wall_package` with `wall_type="cantilever_reinforced"` ends with
+the reinforcement sheet: the agent layer
+(`funhouse_agent/adapters/calc_package.py`, `_wall_sheet`) hands the
+design's `reinforcement` description to `dxf_export.wall_section_drawing`,
+appends the sheet with `generate_calc_package(sheets=...)` and writes
+`<package>_reinforcement.dxf` and `.png` beside the package; this module
+imports nothing of `dxf_export`, and of `calc_package` only its sections'
+data model, as before. The description is unchanged but for the shear key: the
+design gives its depth only, and where the package was given
+`key_distance_from_toe` and `key_width` (GM-216) they are put into the
+description, so the sheet draws the key where the package's wall figure
+does; left out, they stay null and the sheet draws the key under the stem
+and says so. A sheet that cannot be drawn costs the sheet, never the
+package (the result's `warnings` says why).

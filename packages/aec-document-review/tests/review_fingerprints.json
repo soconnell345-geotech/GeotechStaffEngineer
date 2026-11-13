@@ -66,7 +66,7 @@
       "other_arguments": [],
       "subagents": [
        {
-        "description": "24b508e4bcab41df",
+        "description": "b76fcb7d67ad7ae5",
         "middleware": [
          {
           "class": "ModelCallBudgetMiddleware",
@@ -130,20 +130,20 @@
           "description": "27b0304d9d7dd690"
          },
          "figure_examples": {
-          "args": "52b5c31c06b61eb4",
-          "description": "ebf98a6b2d0f72d6"
+          "args": "fa472ecd76530059",
+          "description": "4ec6de2c37a3f6b0"
          },
          "list_files": {
           "args": "98dda59e280d68aa",
           "description": "74e9d3bddb45285e"
          },
          "plot_code": {
-          "args": "77fc6b735ad07fe8",
-          "description": "f4d5de4c2ae70d9f"
+          "args": "00457743ce9c9195",
+          "description": "916b77a827b7cbea"
          },
          "plot_data": {
-          "args": "e4002b9340a8e506",
-          "description": "a1264b3138f40d93"
+          "args": "d3b4e2d4c4a831a8",
+          "description": "1ae68658354104cf"
          },
          "read_text_file": {
           "args": "38bb764f5dde0d41",
@@ -286,8 +286,8 @@
         "description": "74e9d3bddb45285e"
        },
        "plot_data": {
-        "args": "09d5ac130924f6e2",
-        "description": "0fe78d52c2e95a18"
+        "args": "7636f2964766714c",
+        "description": "ac914e87eaf465ee"
        },
        "read_pdf_text": {
         "args": "77c7dbbf83562c31",
@@ -560,7 +560,7 @@
      }
     ]
    },
-   "planlens": "0.15.0"
+   "planlens": "0.15.1"
   }
  }
 }

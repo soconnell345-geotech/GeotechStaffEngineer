@@ -232,28 +232,62 @@ external equilibrium force. Default (active) byte-identical to V-040. NOT tuned.
 
 ## B11 — Multiple surcharge zones (v5.4 E8, validation_examples V-028 E8)
 [Slide2 Verification #9 = ACADS 4: weak-seam noncircular slope + piezometric surface
-+ TWO external loads (Table 9.2): a bench load ~20 kPa (x 23-43) and a crest load
-~20->40 kPa (x 70-80). Published no-optimization Spencer 0.760 / GLE 0.720; referee
-0.78.]
++ TWO external loads (Table 9.2): a bench load 20 kPa (x 23-43) and a crest load
+20->40 kPa (x 70-80). Printed, no optimisation (Table 9.4, manual p. 52): Spencer
+0.760 / GLE 0.720 / Janbu corrected 0.734; referee 0.78.]
 
 `SlopeGeometry.surcharges` = list of (pressure, x_start, x_end) zones, summed by
 `surcharge_at` on top of the single surcharge. slices + search route through
 `surcharge_at`, so no change there.
 
-| V-028 pinned seam surface | Spencer | GLE |
-|---------------------------|--------:|----:|
-| no surcharge (V-028)      | 0.808   | 0.802 |
-| + 2 zones (bench + crest) | 0.806   | 0.799 |
+**Validates on surfaces along the seam (GM-140 step 1 fix round, 2026-11-13).**
+A family of 81 three-part surfaces is declared in
+`validation_examples/test_published_v028_e8.py`: the seam's mid-line reached at
+x = 45, 47, 49 by a wedge from the bench side at 25, 30, 35 degrees, and left at
+x = 72, 76, 80 by a wedge up to the crest at 50, 57.5, 65 degrees; 30 slices; no
+search routine of the module. With Table 9.2's loads on (the crest's 20->40 kPa
+as its mean, 30 kPa), all 81 solve by all three methods:
 
-(Since GM-131, B15; before, on 50 even slices across the surface's corners:
-0.792 / 0.786 and 0.788 / 0.782.)
+| Method | Lowest of the family, loads on | Printed, Table 9.4 (no optimisation) | Difference |
+|---|---:|---:|---:|
+| Spencer | 0.753 | 0.760 | -0.9 % |
+| Morgenstern-Price, half-sine | 0.722 | 0.720 (GLE) | +0.3 % |
+| Janbu, corrected | 0.728 | 0.734 | -0.8 % |
 
-VERDICT: **PASS — capability built, small seam-governed movement.** The two ACADS-4
-zones lower the FOS by ~0.3% (Spencer 0.808 -> 0.806): the crest-side zone (x 70-80,
-~11 slices on the sliding mass) adds driving weight; the bench zone (x 23-43) barely
-overlaps the mass (~1 slice). The move is small because the weak seam (c'=0, phi'=10)
-governs the FOS, as expected. Default (no `surcharges`) byte-identical to V-028. The
-crest 20->40 kPa ramp is represented as a uniform 30 kPa (its mean). NOT tuned.
+Each method's lowest is on (42.91, 28.0), (47.0, 26.09), (76.0, 34.25), (79.66,
+40.0). The tests assert each within 3 % of print. Without the loads the same
+family reads 0.787 / 0.753 / 0.752. Nothing was fitted: the family was declared
+before it was scored.
+
+Not checkable from the repository: the ground, the seam and the base are read
+off Figure 9.1, and the printed critical surfaces are in Figures 9.2 to 9.4, none
+of which is here (the comparison is of each method's lowest value, not of one
+surface); the bench is entered at el. 28.0 where Table 9.2 puts the bench load at
+y = 27.75; the crest load is entered as its mean. The piezometric line is Table
+9.3 as printed.
+
+**The module's weak-layer search does not reach these values.** As V-028 calls it
+(seed 3, 700 trials, 6 points, 30 slices, the loads on) it returns Spencer 0.830
+on a surface along the seam, x = 41.59 to 77.19, 9.2 % above the printed 0.760.
+Since GM-140 step 2 (B20) that is Spencer's own solution on the surface it
+reports: `analyze_slope` gives the same 0.830 (theta 8.0 degrees), Janbu
+(corrected) 0.830 and Morgenstern-Price 0.816. Before that step it returned
+0.515 on a short surface leaving the seam at x = 60, a state with the interslice
+force at -43.5 degrees and tension across the back wedge, accepted about the
+search's second moment axis where the single-surface solver had no solution. A
+strict xfail against the printed 0.760
+(`test_v028_weak_layer_search_against_print`), nothing pinned to the module's own
+number. What is left is the search's generator (277 of the 700 trials have no
+Spencer solution; its best surface is not the declared family's best, 0.753):
+step 7 of the slope rebuild (the account's D12).
+
+**The kept surface, a record only.** (41.987, 28.0) ... (77.528, 40.0) was the
+minimum of the weak-layer search while the soil was weighed three times (B19); it
+is not a critical surface. Janbu (corrected) reads 1.073 on it with no load and
+1.034 with both zones (1.023 with the crest zone alone); Spencer and
+Morgenstern-Price do not converge on it. Before the step, on the tripled weights,
+it read Spencer 0.808 / GLE 0.802 (0.806 / 0.799 with both zones; 0.792 / 0.786
+and 0.788 / 0.782 before GM-131, B15): those values are not current.
 
 ## B12 — Search: toe circles and the infinite slope (GM-13, GM-14, 2026-10-14)
 [`search_critical_surface` now scores circles through each slope toe and, on any
@@ -461,10 +495,10 @@ slope`; every other value stayed within 1e-4):
 
 | Case | Before | After | Published | Why |
 |---|---:|---:|---:|---|
-| V-028 Slide2 #9 / ACADS 4 seam surface, Spencer / GLE / Janbu | 0.792 / 0.786 / 0.804 | 0.808 / 0.802 / 0.819 | referee 0.78; Slide2 no-optimization Spencer 0.760 | old: 50 even slices (0.830 on 51; 0.806-0.815 on 100 to 1,600); now 0.808 on 30 to 1,600 |
-| V-028 E8, both loads, Spencer / GLE (B11) | 0.788 / 0.782 | 0.806 / 0.799 | | the same |
-| V-028 weak-layer search, 30 / 40 slices | 0.792 / 0.820 | 0.808 / 0.808 | referee 0.78 | the same surface at both counts now |
-| V-028 `noncircular_de` seeds 1 / 2, 6 points, 30 slices, the seam windows (not pinned) | 0.715 / 0.738 | 0.715 / 0.714 | Slide2 optimized Spencer 0.707 | |
+| V-028 Slide2 #9 / ACADS 4, the kept surface, Spencer / GLE / Janbu (on the tripled weights; not current, B19) | 0.792 / 0.786 / 0.804 | 0.808 / 0.802 / 0.819 | referee 0.78; Slide2 no-optimization Spencer 0.760 | old: 50 even slices (0.830 on 51; 0.806-0.815 on 100 to 1,600); now 0.808 on 30 to 1,600 |
+| V-028 E8, both loads, the kept surface, Spencer / GLE (on the tripled weights; not current, B19) | 0.788 / 0.782 | 0.806 / 0.799 | | the same |
+| V-028 weak-layer search, 30 / 40 slices (on the tripled weights; not current, B19) | 0.792 / 0.820 | 0.808 / 0.808 | referee 0.78 | the same surface at both counts now |
+| V-028 `noncircular_de` seeds 1 / 2, 6 points, 30 slices, the seam windows (not pinned; on the tripled weights, not re-measured since B19) | 0.715 / 0.738 | 0.715 / 0.714 | Slide2 optimized Spencer 0.707 | |
 | V-030 Duncan (2000) Lash surface, Spencer / GLE / Janbu | 1.190 / 1.192 / 1.182 | 1.218 / 1.220 / 1.207 | Slide2 1.157 / 1.160 / 1.168; Duncan 1.17 | old slicing 1.226 at 240 slices, 1.215 at 960, 1.218 at 3,840; the +5.3 % on Slide2 is not slicing |
 | B2 F&K weak layer, ordinary / Spencer / M-P / Spencer ru / M-P ru | 1.283 / 1.354 / 1.349 / 1.109 / 1.102 | 1.313 / 1.386 / 1.381 / 1.138 / 1.132 | F&K 1.288 / 1.373 / 1.370 / 1.118 / 1.118 | an 82-point polyline: 85 slices; 1.389 on 960 slices either way |
 | V-043 sand embankment, `noncircular_de` seeds 1-3 | 1.09-1.10 | 1.234 | Slide2 1.188, Tandjiria 1.192 | old DE surfaces dived into the soft clay and read 1.24-1.32 with one slice more; a KNOWN GAP now (GM-117): 1.234 is above our converged critical circle (1.213) and a 41-point polyline inscribed in it (1.2145) |
@@ -678,6 +712,127 @@ V-031 Spencer 1.4174 -> 1.4160, V-043 Spencer 1.1859 -> 1.1853, Slide2 #85
 support uncounted); they keep to the model instead.
 
 ---
+
+## B19 — One material per point (GM-140 step 1, 2026-11-13)
+[The account's departure D1 (`module_work/slope_integral_review/ACCOUNT.md`
+section 2). A slice's weight summed every layer overlapping its height, each
+from its own flat top; the strength came from the first listed layer
+containing the point. Now both come from one lookup, `SlopeGeometry.column_at`
+(DESIGN.md "Layers: one material per point"). Tests:
+`tests/test_one_material_per_point.py`. Full record:
+`module_work/gm140/STEP1_CHECK.md`.]
+
+**What moved.** Only models in which two layers were given the same ground.
+Across `slope_stability/tests`, `validation_examples`, `dxf_import`,
+`geo_project` and `calc_package/tests` (1,476 tests before), every call of
+the slice weight was computed by the old rule and the new one side by side:
+they differ in V-028 and its E8 variant and in one unit test with a sloping
+boundary (`test_polyline_layers`), and nowhere else beyond rounding (V-030's
+sub-layers, 2e-15). The solvers, the searches and the slicing are untouched,
+so every other pinned value in this file is the same number as before.
+
+| Case | Before | After | Printed |
+|------|-------:|------:|---------|
+| V-028 one slice, x = 47.97 to 48.53, weight (kN/m) | 116.0 | 39.13 | by hand 18.84 x 3.7073 x 0.5602 = 39.13 |
+| V-028 sliding mass on the kept surface, weight (kN/m) | 8,768 | 3,003 | 3,003 from its area |
+| V-028 kept surface (the old search minimum; not a critical surface), Janbu (corrected) | 0.819 | 1.073 | none for this surface: a record of the weight change |
+| V-028 kept surface, Spencer | 0.808 | no solution | none for this surface |
+| V-028 kept surface, GLE half-sine | 0.802 | no solution | none for this surface |
+| V-028 kept surface, E8, both loads | Spencer 0.806 | Janbu 1.034 | none for this surface |
+| V-028 family of 81 surfaces along the seam, both loads: lowest Spencer / Morgenstern-Price / Janbu corrected (B11) | not measured | 0.753 / 0.722 / 0.728 | Slide2 Table 9.4, no optimisation: 0.760 / 0.720 / 0.734 |
+| V-028 weak-layer search, Spencer, 30 / 40 slices, no loads | 0.808 / 0.808 | 1.435 / 1.435 with the step (Table 9.3's line as printed; 1.430 / 1.431 with the line as entered before); 0.515 / 0.515 after the fix round, on another surface (B11: not confirmed by the direct solution; strict xfail) | Slide2 Spencer 0.760 |
+| Two-layer test geometry of `test_polyline_layers`, circle (15, 20) R 18: Bishop; mass (kN/m) | 2.488; 2,017 | 2.849; 1,757 | none (made-up values); 1,757 from its areas, 37.763 m2 of sand at 18 and 63.379 m2 of clay at 17 |
+| EM 1110-2-1902 Figs. F-10 and F-11, two soils on a level boundary, Bishop on 30 slices | not re-measured (a level boundary with no overlap: the step does not change it) | 1.329 | 1.33 (Fig. F-11, p. F-21) |
+
+(The piezometric line is now Table 9.3 as the problem text prints it; with the
+line as entered before, the after values are Janbu 1.070, fallback Spencer
+1.038, as the account measured.)
+
+**V-028 / B11 validate on surfaces along the seam (the fix round,
+2026-11-13).** The step's first reading, that V-028 no longer validated, came
+from the kept surface: the minimum of a search run while the soil was weighed
+three times, which is not a critical surface once each point is weighed once,
+scored without the problem's loads. With Table 9.2's loads on, a declared family
+of surfaces along the seam reads within 1 % of Slide2's printed no-optimisation
+values by Spencer, Morgenstern-Price and Janbu corrected (B11). The problem text
+gives the soils, the loads and the piezometric line; the ground, the seam and the
+slip surfaces are in figures only, which are not in the repository, so the
+entered geometry cannot be checked (Table 9.2 puts the bench load at y = 27.75
+where the ground is entered at 28.0). The module's weak-layer search does not
+reach the printed values (B11): a strict xfail against print, nothing pinned to
+the module's own number.
+
+**The weak-layer search follows a sloping layer (the fix round).** It aimed its
+trial surfaces at the target layer's flat `top_elevation` and
+`bottom_elevation`; in V-028 every layer reads 40 and 15, so the trials centred
+on el. 27.5, not on the seam. It now takes the ground the layer holds at each x
+(`search._layer_band_at`: `top_at`, `bottom_at`, less what the layers listed
+before it hold). Nothing else in the search changed. For a layer with a flat top
+and bottom nothing moves: the two-layer flat section of `tests/test_new_search.py`
+(seed 42, 200 trials) reads 1.125632861657882 before and after, on the same
+surface to the last digit. A made-up section with a 1 m weak layer between two
+sloping polylines (`tests/test_one_material_per_point.py`): the critical surface
+had 20 % of its length in the layer before (FOS 2.87) and 75 % after (1.23).
+
+**Printed checks of a sloping boundary.** No printed benchmark with different
+unit weights across a sloping boundary was found in the references held (EM
+1110-2-1902 Appendix F, FHWA NHI-06-088 chapter 6, UFS 3-220-10 and the Slide2
+text were searched). The sloping-boundary checks are:
+
+- ACADS 4 (B11): a sloping seam, equal unit weights, within 1 % of print;
+- made-up sections checked by hand: a fill over a clay on a 1-in-5 boundary
+  (every slice's weight against a hand formula; one slice by hand, 164.07 kN/m,
+  213.67 by the old rule; the mass against its two areas, 3,253.4 kN/m), and the
+  sand-over-clay section of `test_polyline_layers` (the mass 1,757 kN/m from its
+  areas and Bishop 2.849; 2,017 and 2.488 before the step);
+- for two soils on a LEVEL boundary, EM 1110-2-1902 Figs. F-10 and F-11 (pp.
+  F-20, F-21; F-5d, p. F-19, where slices in both soils "were divided into two
+  portions for calculating the slice weights"): Simplified Bishop 1.329 on 30
+  slices against the printed 1.33 (-0.1 %), and the weight in each soil against
+  its exact area, embankment 1,724.8 kips against 1,724.1 and foundation 327.7
+  against 327.3. It does not exercise a sloping boundary and reads the same as
+  before the step. The printed total weight (2,022 kips) is not asserted: column
+  3 of Fig. F-11 prints the widths against the slice numbers in reverse order,
+  the printed slices end about 5 ft short of where the stated circle leaves the
+  crest, and the page takes each area from the slice's mean height.
+
+## B20 — A method's own solution, or no number (GM-140 step 2, 2026-11-13)
+
+The rule, its print and what it replaced: DESIGN.md, "A method's own solution,
+or no number". The record with every count: `module_work/gm140/STEP2_CHECK.md`;
+the measurements are `module_work/gm140/step2_section11.py`, run on master and
+on the branch.
+
+**What moved.** Two benchmark values, and nothing that is pinned to print:
+
+| Case | Before | After | Printed | Why |
+|---|---|---|---|---|
+| Slide2 #85 without its support, Spencer search, 6 x 6 | 0.9095 (a toe circle scored by the old approximate solver; 267 circles went to it) | 1.047 (a toe circle, Spencer's own solution; 329 trials without one, counted and warned of) | none for this case (Bishop's simplified method: 0.9095, unchanged) | No circle is scored by another solver. On this steep phi = 0 slope Spencer's method has no solution on the circles that govern, so its search cannot reach them; the result says a lower surface cannot be ruled out. |
+| ACADS 4 (V-028), weak-layer search, Spencer, loads on | 0.515 | 0.830 | 0.760 (Slide2 Table 9.4) | One solver and one moment axis in a search and on one surface; an iteration that does not settle is no state (B11). |
+| ACADS 4, the calc-package report of that search (no loads) | 1.161 printed (the approximate solver on the search's 0.515 surface) | 0.879, the search's own value on its surface | none | The report's re-analysis and the search are the same solve. |
+
+**What did not move** (each measured before and after): #85 with its support
+(Bishop 1.372, Spencer 1.551, GLE 1.573, passive GLE 1.359), #86 with its
+tiebacks (1.613 / 1.607 / 1.607) and without (0.942), ACADS 1(a) (0.985 / 0.984 /
+0.984 / 0.983), V-043 (Spencer 1.1859, the pinned circles 1.2096 and 1.1858),
+V-031 (1.4205 / 1.4247 / 1.4091; Spencer search 1.4174), V-044 (1.5974 / 1.5962 /
+1.5933), the yield coefficient of V-039's demonstration (Spencer 0.565), the
+FOSM and Monte Carlo cases (B4, V-030, V-042, V-045) and ACADS 4's declared
+family (0.753 / 0.722 / 0.728). On none of them did the approximate solver, an
+unsettled iteration or the second moment axis supply the governing value. Over
+1,432 solves of made-up circles (three slopes, the constant and half-sine
+functions) no converged GLE value moved by more than 0.002; 3 circles gained a
+solution (the lambda search) and 2 lost one (their "solution" was an iteration
+that had not settled).
+
+**What a result says now.** #85 with its support, Spencer search: 357 circles of
+the main search have no Spencer solution (counted under `no_solution`); the
+governing circle is one Spencer solves. #85 with its support, Bishop: 178 + 28 +
+92 trials have no net driving moment left (the support's force exceeds it),
+counted as `no_driving` and not warned of. A single surface the method cannot
+solve: `FOS` None, never another solver's value (GM-139's kind of circle; V-054's
+circle by Spencer and GLE; a stabilizing-pile row whose force exceeds the driving
+moment, which returned 999.9).
 
 ## Notes / known deviations
 

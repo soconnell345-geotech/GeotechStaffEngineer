@@ -187,6 +187,23 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     soil = analysis.soil
     sections = []
 
+    # the last layer carried on below the profile (GM-318): said first
+    _given = getattr(analysis, "profile_depth_given", None)
+    _notes = [w for w in (getattr(result, "warnings", None) or [])
+              if "extend_last_layer" in w]
+    if _given is not None and _notes:
+        sections.append(CalcSection(
+            title="Soil Below the Profile (Assumed)",
+            items=[CalcStep(
+                title="Last layer carried on to the base",
+                equation="", substitution="",
+                result_name="Profile given to",
+                result_value=f"{_given:g}",
+                result_unit="m",
+                notes=f"The base is at {analysis.shaft.length:g} m. WARNING: "
+                      + " ".join(_notes),
+            )]))
+
     # ── Section 1: Shaft Geometry ────────────────────────────────
     geom_steps = []
     geom_steps.append(CalcStep(
@@ -1125,11 +1142,9 @@ def get_tables(result, analysis) -> list:
     if top > low:
         skipped = []
         try:
-            rows = [[r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
-                     r["Q_ultimate_kN"]]
-                    for r in analysis.capacity_vs_depth(
-                        depth_min=low, depth_max=top,
-                        n_points=CAPACITY_TABLE_POINTS, skipped=skipped)]
+            curve = analysis.capacity_vs_depth(
+                depth_min=low, depth_max=top,
+                n_points=CAPACITY_TABLE_POINTS, skipped=skipped)
         except ValueError as exc:
             # A shorter shaft would tip in a layer the design shaft only
             # passes through, which need not carry what a base there needs
@@ -1137,7 +1152,7 @@ def get_tables(result, analysis) -> list:
             # the note of the last table the package prints, never the
             # package's other tables
             # (GM-328).
-            rows = []
+            curve = []
             shown = [i for i, t in enumerate(tables) if t.printed]
             if shown:
                 from dataclasses import replace
@@ -1147,9 +1162,16 @@ def get_tables(result, analysis) -> list:
                 tables[shown[-1]] = replace(
                     last, note=(last.note.rstrip(". ") + ". "
                                 if last.note else "") + said)
+        rows = [[r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
+                 r["Q_ultimate_kN"]] for r in curve]
         note = ("The same analysis re-run with the shaft length set to "
                 "each value (SHAFT's capacity against depth); FS is not "
                 "applied")
+        if any(r.get("warnings") for r in curve):
+            # GM-318 review A1
+            note += ("; the lengths past the soil profile take its last "
+                     "layer carried on to their base (extend_last_layer), "
+                     "ground nobody explored")
         if skipped:
             from drilled_shaft.capacity import skipped_depths_note
             note += ". " + skipped_depths_note(skipped,
@@ -1167,10 +1189,12 @@ def get_tables(result, analysis) -> list:
             ))
 
     layer_rows, depth = [], 0.0
+    given = getattr(analysis, "profile_depth_given", None)
     for i, layer in enumerate(analysis.soil.layers, 1):
         layer_rows.append([
             i, depth, depth + layer.thickness, layer.soil_type,
-            layer.description, layer.unit_weight, layer.cu, layer.phi,
+            _carried_on(layer.description, given, depth + layer.thickness),
+            layer.unit_weight, layer.cu, layer.phi,
             layer.N60, layer.qu, layer.RQD])
         depth += layer.thickness
     if layer_rows:
@@ -1193,6 +1217,16 @@ def get_tables(result, analysis) -> list:
 
 
 # ── Helper functions ──────────────────────────────────────────────
+
+
+def _carried_on(description: str, given, bottom: float) -> str:
+    """A layer's description, marked where ``extend_last_layer`` carried
+    it on below the depth the layers given reach (GM-318 review C6)."""
+    if given is None or bottom <= given + 1e-9:
+        return description
+    return ((f"{description} " if description else "")
+            + f"(given to {given:g} m, assumed below)")
+
 
 def _base(shaft, soil):
     """(name, diameter m, area m\u00b2) of the base the end bearing acts on,
