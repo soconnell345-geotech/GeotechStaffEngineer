@@ -1166,27 +1166,10 @@ def _appendix_list(src: _Source, q: Question) -> Answer:
 def _field_work(src: _Source) -> Tuple[Any, str]:
     """The record's own field work (:class:`FieldWork`) with its bound
     volumes', and where it came from."""
-    from report_ingest.record_facts import field_work
-
     records, _missing = _bound_of(src, ("volume",))
-    logs = []
-    for rec in [src.record] + records:
-        work = rec.field_work
-        if work is None and rec.investigations:
-            # A record saved before the field: the same reading of its logs.
-            work = field_work(rec)
-        if work is not None:
-            logs.append(work)
-    if not logs:
+    merged = _work_of([src.record] + records)
+    if merged is None:
         return None, ""
-    from report_ingest.model import FieldWork
-
-    merged = FieldWork(
-        years=sorted({y for w in logs for y in w.years}),
-        dates=list(dict.fromkeys(d for w in logs for d in w.dates)),
-        firms=list(dict.fromkeys(f for w in logs for f in w.firms)),
-        holes=sum(w.holes for w in logs),
-        pages=sorted({p for w in logs for p in w.pages}))
     return merged, (" (with its bound volumes)" if records else "")
 
 
@@ -1311,24 +1294,91 @@ def _work_of(records: Sequence[Any]) -> Any:
         pages=sorted({p for w in found for p in w.pages}))
 
 
+def _printed_years(inv: Any) -> Tuple[Tuple[int, ...], bool]:
+    """The four-digit years a log's printed dates hold, and whether it
+    prints a date with digits but no four-digit year ('3/8/99')."""
+    said = [" ".join(str(d or "").split())
+            for d in (inv.date_started, inv.date_finished)]
+    years = tuple(sorted({int(y) for d in said
+                          for y in _RE_A_YEAR.findall(d)}))
+    return years, not years and any(c.isdigit() for d in said for c in d)
+
+
+def _holes_in_words(logs: Sequence[Any],
+                    kinds: Mapping[str, Sequence[str]]) -> str:
+    """How many holes of each count's kinds these logs are, in words ("4
+    borings, 1 test pit"), holes of no count's kind as "other"."""
+    said: List[str] = []
+    counted: set = set()
+    for name, of in kinds.items():
+        counted.update(of)
+        n = _holes([i for i in logs if i.kind in of])[0]
+        if n:
+            word = name.replace("_", " ")
+            said.append(f"{n} {word[:-1] if n == 1 else word}")
+    other = _holes([i for i in logs if i.kind not in counted])[0]
+    if other:
+        said.append(f"{other} other hole{'' if other == 1 else 's'}")
+    return ", ".join(said) or "no hole"
+
+
+def _several_years(who: str, logs: Sequence[Any], printed: Sequence[int],
+                   kinds: Mapping[str, Sequence[str]]) -> str:
+    """The note for an investigation whose logs print more than one year,
+    or a four-digit year beside dates with none: the years, the holes of
+    each kind under each, and why code gives no year and no count."""
+    groups: Dict[Any, List[Any]] = {}
+    short = False
+    for inv in logs:
+        years, no_four = _printed_years(inv)
+        short = short or no_four
+        groups.setdefault(years or ("short" if no_four else "none"),
+                          []).append(inv)
+    by_year = [f"{'/'.join(map(str, key))} ({_holes_in_words(g, kinds)})"
+               for key, g in sorted(((k, g) for k, g in groups.items()
+                                     if isinstance(k, tuple)),
+                                    key=lambda kg: kg[0])]
+
+    def holes(key: str) -> str:
+        group = groups.get(key, [])
+        n = _holes(group)[0]
+        return str(n) + (f" ({_holes_in_words(group, kinds)})" if n else "")
+    return (f"{who}: year and counts left empty: its logs print "
+            f"{', '.join(map(str, printed))}"
+            + (" and dates with no four-digit year" if short else "")
+            + f"; holes by the year their logs print: "
+            f"{', '.join(by_year) or 'none'}; holes whose logs print a date "
+            f"with no four-digit year: {holes('short')}; holes whose logs "
+            f"print no date: {holes('none')}; code cannot tell field "
+            f"campaigns of one investigation from an earlier investigation's "
+            f"logs reproduced in the report")
+
+
 def _investigation(who: str, status: str, logs: Sequence[Any], work: Any,
                    partial: bool, kinds: Mapping[str, Sequence[str]],
                    unread: Sequence[str], printed_date: str,
                    notes: List[str]) -> Dict[str, Any]:
     """One investigation's fields from what its record holds. A part code
-    cannot settle stays out, with the reason in ``notes``: never a guess."""
+    cannot settle stays out, with the reason in ``notes``: never a guess.
+    Logs that print more than one year, or a four-digit year beside dates
+    with none, give no year and no counts (the lead's call, 2026-11-13)."""
     known: Dict[str, Any] = {"status": status}
     pages = sorted({i.pages[0] + 1 for i in logs if i.pages}
                    | {p + 1 for p in (work.pages if work else ())})
     if pages:
         known["pdf_pages"], known["pdf_page"] = pages, pages[0]
     years = list(work.years) if work is not None else []
-    if years:
+    dated = [_printed_years(i) for i in logs]
+    printed = sorted(set(years) | {y for ys, _short in dated for y in ys})
+    several = len(printed) > 1 or bool(
+        printed and any(short for _ys, short in dated))
+    if several:
+        # Field campaigns of one investigation, or an earlier one's logs
+        # reproduced in the report: code cannot tell, so neither the year
+        # nor the counts, and what the logs print in the note.
+        notes.append(_several_years(who, logs, printed, kinds))
+    elif years:
         known["year"] = years[0]
-        if len(years) > 1:
-            notes.append(f"{who}: its logs print dates in "
-                         f"{', '.join(map(str, years))}; the earliest is "
-                         f"given")
     elif status == _PRIOR:
         notes.append(f"{who}: year left empty: its logs print no date with "
                      f"a four-digit year"
@@ -1350,6 +1400,7 @@ def _investigation(who: str, status: str, logs: Sequence[Any], work: Any,
                      f"driller is not counted)")
     if unread:
         notes.append(f"{who}: counts left empty: " + "; ".join(unread))
+    if several or unread:
         return known
     counted = {name: _holes([i for i in logs if i.kind in of])[0]
                for name, of in kinds.items()}
@@ -1386,6 +1437,7 @@ def _investigations(arg: str) -> Callable[[_Source, Question], Answer]:
     investigation it does not bind in, which no record shows. The answer is
     marked so (``lower_bound``) and :func:`compare` treats it so."""
     from report_ingest.model import InvestigationKind
+    from report_ingest.record_facts import field_work
 
     kinds = dict(_COUNT_KINDS)
     for piece in (p.strip() for p in arg.split(";")):
@@ -1460,16 +1512,18 @@ def _investigations(arg: str) -> Callable[[_Source, Question], Answer]:
                 if held:
                     unread.append(f"its record holds {held} log(s) and was "
                                   f"not given")
-                work, child_logs, partial = None, [], False
+                child_logs, partial = [], False
             else:
                 child = _as_record(child)
                 child_logs = list(child.investigations)
-                work = _work_of([child])
                 partial = _partial(child)
-                if not child_logs and not mine and work is None:
+                if not child_logs and not mine:
                     notes.append(f"{where} is not listed: its record holds "
                                  f"no log")
                     continue
+            # Its year and firm off every log of it: its own record's and
+            # the parent's placed on its pages.
+            work = field_work(src.record, logs=mine + child_logs)
             known = _investigation(where, _PRIOR, mine + child_logs, work,
                                    partial, kinds, unread, doc.date, notes)
             known.setdefault("pdf_pages", [doc.first_page + 1])
@@ -1987,7 +2041,8 @@ def _compare_lower_bound(question: Question, out: Answer, model: Answer,
                       f"are not a disagreement: code's list is a lower "
                       f"bound")
     return out.noted(f"code (may be short): "
-                     f"{_shown(question, code.value)}")
+                     f"{_shown(question, code.value)}; code's note: "
+                     f"{code.note}")
 
 
 

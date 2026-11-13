@@ -31,7 +31,8 @@ prior" with what the record holds, and says its list may be short.
   plus its bound volumes' records (the same placing `hole_count` uses).
 - One record for each bound report of kind `appended_prior_report`, from
   that report's own record (`bound=` or `record_dir=`, as `prior_hole_count`
-  reads it), plus any log of the parent placed on its pages.
+  reads it), plus any log of the parent placed on its pages, counted and
+  read for the year and the firm with the prior record's own logs.
 - A prior report whose record holds no log is not listed. One whose record
   was not given but whose pointer counts logs is listed as prior with empty
   parts and the reason.
@@ -41,9 +42,9 @@ prior" with what the record holds, and says its list may be short.
 
 | Part | Given | Left empty, with the reason in the note |
 |---|---|---|
-| year | the year in the logs' printed dates (the earliest, with a note, when they span more than one) | no log prints a four-digit year. A prior report's printed date is never used; the note quotes it and says why |
+| year | the year in the logs' printed dates, when every dated log prints the same four-digit year | no log prints a four-digit year. Or the logs print more than one year, or a four-digit year beside dates with none (a two-digit year such as '99): then the counts are empty too, and the note gives the years printed, the holes of each kind under each year, how many holes print a date with no four-digit year and how many print no date. A prior report's printed date is never used; the note quotes it and says why |
 | consultant | the one firm the logs name (firm, company or consultant header field) | the logs name two or more (the note names them), or none |
-| each count | the holes of that kind; 0 only where the record holds a log of another counted kind, none of this kind, and no partial flag | the copy is flagged partial and holds none of the kind; the record holds no log of any counted kind; a bound record with logs was not given |
+| each count | the holes of that kind; 0 only where the record holds a log of another counted kind, none of this kind, and no partial flag | the copy is flagged partial and holds none of the kind; the record holds no log of any counted kind; a bound record with logs was not given; the logs print more than one year, or a four-digit year beside dates with none (see year) |
 | current or prior | the row's own option for it | the row has no two-option part with a word for each |
 
 The counts default to `boring`, `test_pit` and `cpt` logs. The code map can
@@ -68,8 +69,10 @@ both give one. Investigations only the model lists are not a disagreement,
 and the note counts them. The consultant is not compared (two spellings of
 one firm are common; it is on the sheet for the owner). The From column
 reads "both: agree" or "both: disagree" as on other rows; the note carries
-"code (may be short): ...". A model answer of "not said" beside a code list
-is still a disagreement, as on every other row.
+"code (may be short): ...; code's note: ...", so the reason for each empty
+part reaches the sheet. An empty part is not compared. A model answer of
+"not said" beside a code list is still a disagreement, as on every other
+row.
 
 **Lower-bound mark.** Code's note starts "code's list may be short (a lower
 bound): ...", and the answer carries `lower_bound=True`. No sheet column was
@@ -143,9 +146,18 @@ For when the lead maps the row: "The question list's row with one record per
 investigation is now also answered by code, from the report's own logs and
 the logs of each prior report bound into the file. Code's list is a lower
 bound, because a report can describe an earlier investigation it does not
-bind in. The row's From column changes from report text to 'both: agree' or
-'both: disagree'; it disagrees only when an investigation the record holds
-has no match in the model's list. The model's answer itself is unchanged."
+bind in. Where one investigation's logs print more than one year, or a
+four-digit year beside dates with none, code gives no year and no counts
+for it, and its note gives the years printed and the holes of each kind
+under each year: code cannot tell field campaigns of one investigation from
+an earlier investigation's logs reproduced in the report. An empty part is
+not compared. Where code lists an investigation, the row's From column
+changes from report text to 'both: agree' or 'both: disagree': it disagrees
+when an investigation code lists has no match in the model's list, or when
+the model answers 'not said' beside code's list. Where the record holds no
+log (R05 of the six open saved records), code says 'not said' and From stays
+'report text'. The compared answer's note carries code's own note, with the
+reason for each empty part. The model's answer itself is unchanged."
 
 ## What an export would need
 
@@ -155,11 +167,15 @@ beside the note.
 
 ## To measure live
 
-1. Map the row in the private code map: `"<Key>": "investigations"` (or
-   with kinds, `"investigations:borings=boring,well"`, to count as the
-   boring-count row does). `load_questions` then checks it. If the row's
-   Answered by is "Report text (model)", the map is refused: the row must be
-   "Both, compared" (or "Code").
+1. Map the row in the private code map, under `"readings"`:
+   `"all_investigations": "investigations"`. `load_questions` then checks
+   it. If the row's Answered by is "Report text (model)", the map is
+   refused: the row must be "Both, compared" (or "Code"). The longer form
+   `"investigations:borings=boring,well"` also counts a well logged in a
+   hole of its own as a boring, as the boring-count row does; it matters
+   only on a record with such a well (a well logged in a boring is that
+   boring already), and on the six open saved records both forms give the
+   same answers.
 2. Code only, on saved records, no model call:
 
    ```
@@ -208,13 +224,17 @@ year, and every "both: disagree".
 Things worth counting over the 13 reports: how many list a current
 investigation; how many consultants are empty (field_work reads only a firm,
 company or consultant header field, so this may be most of them); how often
-the year the model gives differs from the logs' earliest year.
+an investigation gets no year and no counts because its logs print
+several years.
 
 ## Calls made
 
-- **Year when the logs span two years**: the earliest, with a note, as
-  `investigation_year` does. The other reading: leave it empty. If the model
-  gives the later year, the row disagrees.
+- **Year when the logs span two years**: the lead decided on 2026-11-13:
+  several printed years leave the year and counts empty, with the years and
+  holes per year in the note. The same holds where a log prints a date with
+  no four-digit year beside logs that print one. Not split into one record
+  per year. (The branch first gave the earliest year, as
+  `investigation_year` does; `investigation_year` is unchanged.)
 - **Consultant when no log names a firm**: empty. The other reading: the
   firm the bound report prints for itself (`BoundReport.firm`) or the
   narrative's firm. Both are model answers, and RI-102 kept them out of
@@ -253,4 +273,48 @@ the year the model gives differs from the logs' earliest year.
 - Two prior investigations bound as one report give one record.
 - `module_work/report_ingest_harness/run_question_list.py` still collects
   bound records itself and does not pass `record_dir=`; it works as is.
-- Two-digit years on logs are not read (RI-102's rule).
+- Two-digit years on logs are not read as years (RI-102's rule); beside a
+  four-digit year they now leave the year and counts empty (review fix 1).
+
+## Review fixes (2026-11-13)
+
+The review's verdict was "fix first". Fixed on `fix/ri207-review`; lines
+are `report_ingest/question_list.py` on the fix commit, before the merge
+with master.
+
+1. **Several printed years** (`_investigation`, `:1373`; the note,
+   `_several_years`, `:1325`; a log's years, `_printed_years`, `:1297`).
+   When the logs taken as one investigation print more than one four-digit
+   year, or a log prints a date with digits but no four-digit year beside
+   logs that print one, the year and all three counts are left empty. The
+   note gives the years printed, the holes of each kind under each year,
+   how many holes print a date with no four-digit year and how many print
+   no date, and says code cannot tell field campaigns of one investigation
+   from an earlier investigation's logs reproduced in the report. It holds
+   for the current investigation and each prior report alike. Where every
+   dated log prints one year, nothing changes. An empty part compares as
+   not given.
+2. **The reasons reach the sheet** (`_compare_lower_bound`, `:2044`): on
+   the lower-bound path only, the compared answer's note carries "code (may
+   be short): ...; code's note: ...".
+3. **A prior report's logs in the main record** (`:1526`): its year and
+   firm are read off its own record's logs and the parent's logs on its
+   pages together (`field_work` over both), also when its record is not
+   given.
+4. **The repeated merge** (`_field_work`, `:1166`) now calls `_work_of`;
+   the behaviour is the same.
+5. **This file**: the release note corrected, and the year rule added to it
+   and to "Calls made".
+
+Tests: six more in `report_ingest/tests/test_question_list_investigations.py`
+(from `:276`; 20 in all): logs of two years, current and prior; a two-digit
+year beside a four-digit one, and two-digit years alone as before; all logs
+of one year as before; empty parts compare as not given; the reasons on a
+Both row; a prior report's logs in the main record with its own record
+empty or not given.
+
+Measured on the six open saved records with the row mapped, no model call:
+R16, R28, R30 and R21 (its current investigation and its prior report) now
+carry no year and no counts, with the years and the holes per year in the
+note; R15 and R05 are unchanged. With the row unmapped, all 162
+row-answers are the same as master's and as the branch's before the fixes.

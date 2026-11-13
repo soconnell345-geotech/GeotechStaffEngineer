@@ -261,3 +261,106 @@ def test_the_sheet_s_note_says_the_list_may_be_short(tmp_path):
     cells = [c.value for c in sheet[2]]
     assert cells[6] == "code" and "may be short" in cells[7]
     assert "status: current" in cells[4]
+
+
+# ---------------------------------------------------------------------------
+# the review's fixes (2026-11-13): several printed years, the reasons on a
+# Both row, a prior report's logs in the main record
+# ---------------------------------------------------------------------------
+
+TWO_YEARS = [_log("B-1", 4, date="3/4/2031", firm="Invented Geo"),
+             _log("B-2", 5, date="3/5/2032", firm="Invented Geo"),
+             _log("TP-1", 6, kind="test_pit", date="3/6/2031")]
+
+
+def test_logs_of_two_years_leave_the_year_and_counts_empty():
+    got = _code(_record(TWO_YEARS))
+    assert got.value == [{"year": "", "consultant": "Invented Geo",
+                          "borings": "", "test_pits": "", "cones": "",
+                          "status": "current"}]
+    assert ("the current investigation: year and counts left empty: its "
+            "logs print 2031, 2032; holes by the year their logs print: "
+            "2031 (1 boring, 1 test pit), 2032 (1 boring); holes whose logs "
+            "print a date with no four-digit year: 0; holes whose logs print "
+            "no date: 0; code cannot tell field campaigns of one "
+            "investigation from an earlier investigation's logs reproduced "
+            "in the report") in got.note
+    assert "the earliest" not in got.note
+    # A prior report's logs are read the same way.
+    prior = _record([_log("BH-1", 22, date="8/9/2018", firm="Older Geo"),
+                     _log("BH-2", 23, date="8/9/2017", firm="Older Geo")])
+    got = _code(_record(OWN, [PRIOR_DOC]), bound={"bound1": prior})
+    assert got.value[1] == {"year": "", "consultant": "Older Geo",
+                            "borings": "", "test_pits": "", "cones": "",
+                            "status": "prior"}
+    assert "2017 (1 boring), 2018 (1 boring)" in got.note
+    assert got.value[0]["year"] == "2031"      # its own: one year, as before
+
+
+def test_a_two_digit_year_beside_a_four_digit_one_leaves_them_empty():
+    logs = [_log("B-1", 4, date="3/4/2031"), _log("B-2", 5, date="3/5/31"),
+            _log("B-3", 6), _log("TP-1", 7, kind="test_pit", date="3/7/31")]
+    got = _code(_record(logs))
+    assert got.value[0]["year"] == got.value[0]["borings"] == ""
+    assert got.value[0]["test_pits"] == got.value[0]["cones"] == ""
+    assert ("its logs print 2031 and dates with no four-digit year; holes "
+            "by the year their logs print: 2031 (1 boring); holes whose logs "
+            "print a date with no four-digit year: 2 (1 boring, 1 test pit); "
+            "holes whose logs print no date: 1 (1 boring)") in got.note
+    # Two-digit years with no four-digit year beside them: as before, no
+    # year, and the counts given.
+    short = _code(_record(logs[1:]))
+    assert short.value[0]["year"] == ""
+    assert (short.value[0]["borings"], short.value[0]["test_pits"]) == (
+        "2", "1")
+
+
+def test_all_logs_of_one_year_are_as_before():
+    got = _code(_record(OWN + [_log("B-3", 7)]))   # one log prints no date
+    assert got.value == [{"year": "2031", "consultant": "Invented Geo",
+                          "borings": "3", "test_pits": "1", "cones": "0",
+                          "status": "current"}]
+    assert "year and counts left empty" not in got.note
+
+
+def test_an_empty_year_and_counts_compare_as_not_given():
+    row = _row()
+    code = _code(_record(TWO_YEARS))
+    # Whatever year and counts the model gives the current investigation,
+    # code's empty parts do not disagree; current against prior still does.
+    assert ql.compare(row, _model(_mine(year="2032")),
+                      code).source == "both: agree"
+    assert ql.compare(row, _model(_mine(year="2030", borings="7")),
+                      code).source == "both: agree"
+    assert ql.compare(row, _model(_mine(status="prior")),
+                      code).source == "both: disagree"
+
+
+def test_the_reasons_for_empty_parts_reach_a_both_row_s_note():
+    row = _row()
+    logs = [_log("B-1", 4, date="3/4/2031", firm="Invented Geo"),
+            _log("B-2", 5, date="3/5/2031", firm="Made-Up Soils")]
+    code = _code(_record(logs))
+    assert code.value[0]["consultant"] == ""
+    out = ql.compare(row, _model(_mine(test_pits="0")), code)
+    assert out.source == "both: agree"
+    assert "code's note: code's list may be short" in out.note
+    assert "consultant left empty: its logs name 2 firms" in out.note
+    out = ql.compare(row, _model(_mine()), _code(_record(TWO_YEARS)))
+    assert "year and counts left empty: its logs print 2031, 2032" in out.note
+
+
+def test_a_prior_report_s_logs_in_the_main_record_give_its_year_and_firm():
+    on_its_pages = [_log("BH-1", 22, date="8/9/2018", firm="Older Geo"),
+                    _log("BH-2", 23, date="8/10/2018", firm="Older Geo")]
+    record = _record(OWN + on_its_pages,
+                     [PRIOR_DOC.model_copy(update={"counts": {}})])
+    want = {"year": "2018", "consultant": "Older Geo", "borings": "2",
+            "test_pits": "0", "cones": "0", "status": "prior"}
+    # Its own record holds no log ...
+    got = _code(record, bound={"bound1": _record([])})
+    assert got.value[1] == want
+    assert "its logs print no date" not in got.note
+    assert "no log of it names a firm" not in got.note
+    # ... or is not given.
+    assert _code(record).value[1] == want
