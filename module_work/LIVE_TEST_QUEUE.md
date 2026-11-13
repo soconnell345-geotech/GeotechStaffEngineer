@@ -1,7 +1,7 @@
 # Live checks — what to run on Funhouse, and why
 
 > **This file is the RUNBOOK for live checks; the list of what is open is
-> `BACKLOG.md`** (OWN-32, EV-02, EV-13, EV-15, TA-03, TA-04, and the live
+> `BACKLOG.md`** (OWN-32, EV-07, EV-15, TA-03, TA-04, and the live
 > halves of VIS-26, TA-28, RI-31, GM-96). A new check is written up here AND added
 > to the backlog by ID.
 
@@ -37,8 +37,8 @@ thousand input tokens, and check 6 runs it six times.
 
 Checks 1, 2, 3, 4 and 6 are done, and check 9 on Claude (see "Done").
 Check 7 and check 8 (steps 1, 2 and 4) ran on Foundry in brief 5
-(5.33.0rc1, 2026-10-08); check 7's repeats and check 8 step 3 are open
-(BACKLOG EV-02, for Foundry brief 6).
+(5.33.0rc1, 2026-10-08); check 7 is retired with its switch (DR-40), and
+check 8 step 3 is open (BACKLOG EV-07, for the next geotech eval on Foundry).
 
 ---
 
@@ -231,7 +231,8 @@ can see exactly what is still wrong.
 > strip what never measured a gain). Kept as history; `module_work/dr40/CHECK.md`.
 
 **Status (2026-10-19).** Run once on Foundry in brief 5 (part F, one sample
-per look; `TRACE_REVIEW_B_AEFG.md`). The repeats are open: BACKLOG EV-02.
+per look; `TRACE_REVIEW_B_AEFG.md`). The repeats were never run; retired
+with the switch (above).
 
 **Why.** In brief 4 (part A) GPT-5.4's pixel boxes came back stretched in y
 by 1.4–1.7 % and not at all in x. Each stretch matched the image's height
@@ -409,7 +410,7 @@ count (BACKLOG GM-96: your own call) and say so in the question.
 
 **Status (2026-10-19).** Steps 1, 2 and 4 ran on Foundry in brief 5
 (5.33.0rc1; see "Done"), and its part E read GEC-12 Fig 7-15. Step 3's
-DM7.2 Fig 4-12 question is open: BACKLOG EV-02.
+DM7.2 Fig 4-12 question is open: BACKLOG EV-07.
 The text below is as written before brief 5.
 
 **Why.** W3's app side (`module_work/VISUAL_SCALES_DESIGN.md` §12) has only
@@ -537,7 +538,8 @@ two RESULTS.md (step 4). Every run is read in full.
   `module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/`
   (`TRACE_REVIEW_B_AEFG.md`: part A label crops, E the chart's second
   reading, F patch alignment, G report ingest with visual scales off and
-  on). Check 8 step 3 and check 7's repeats are still open (BACKLOG EV-02).
+  on). Check 8 step 3 is still open (BACKLOG EV-07); check 7's repeats were
+  retired with its switch (DR-40).
 
 - **2026-10-07, checks 6 and 3 on Foundry (brief 4, 5.32.1rc3; GPT-5.4 and Sol).**
   - **The location fix held:** whole-page pixel boxes were a median 3.5–19 pt off on GPT-5.4 and 1–1.5 pt on Sol. Every ring was placed from a zoom.
