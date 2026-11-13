@@ -20,8 +20,9 @@ class AggregatePierResult:
     ----------
     area_replacement_ratio : float
         as = Ac/A, column area over tributary area.
-    stress_concentration_ratio : float
-        n = sigma_c / sigma_s.
+    stress_concentration_ratio : float or None
+        n = sigma_c / sigma_s; None where n is neither given nor used (a
+        GEC-13 Fig. 5-21 settlement with no bearing).
     composite_modulus_kPa : float
         E_comp = Es * [1 + as*(n-1)].
     settlement_reduction_factor : float
@@ -55,7 +56,7 @@ class AggregatePierResult:
         ``aggregate_piers.aggregate_pier_choices``).
     """
     area_replacement_ratio: float = 0.0
-    stress_concentration_ratio: float = 0.0
+    stress_concentration_ratio: Optional[float] = 0.0
     composite_modulus_kPa: float = 0.0
     settlement_reduction_factor: float = 0.0
     improved_bearing_kPa: float = 0.0
@@ -113,7 +114,9 @@ class AggregatePierResult:
     def to_dict(self) -> Dict[str, Any]:
         d = {
             "area_replacement_ratio": round(self.area_replacement_ratio, 4),
-            "stress_concentration_ratio": round(self.stress_concentration_ratio, 2),
+            "stress_concentration_ratio": (
+                None if self.stress_concentration_ratio is None
+                else round(self.stress_concentration_ratio, 2)),
             "composite_modulus_kPa": round(self.composite_modulus_kPa, 1),
             "settlement_reduction_factor": round(self.settlement_reduction_factor, 4),
             "improved_bearing_kPa": round(self.improved_bearing_kPa, 1),

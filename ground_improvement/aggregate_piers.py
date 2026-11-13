@@ -366,9 +366,12 @@ def analyze_aggregate_piers(
             f"column_type must be one of {list(COLUMN_TYPE_N)}, got "
             f"{column_type!r}")
     n_given = n is not None
-    if not n_given and column_type is not None:
+    # n sets the stress split, the improved bearing or both; a Fig. 5-21
+    # settlement with no bearing uses none, so none is taken by type
+    n_used = not by_moduli or q_unreinforced > 0
+    if not n_given and column_type is not None and n_used:
         n = COLUMN_TYPE_N[column_type]
-    if n is None and (not by_moduli or q_unreinforced > 0):
+    if n is None and n_used:
         raise ValueError(N_NEEDS_COLUMN_TYPE)
     if E_column is not None and E_column < E_soil and not by_moduli:
         warnings.warn(
@@ -399,8 +402,8 @@ def analyze_aggregate_piers(
 
     return AggregatePierResult(
         area_replacement_ratio=as_ratio,
-        # 0.0: no n given or used (a Fig. 5-21 settlement, no bearing)
-        stress_concentration_ratio=0.0 if n is None else n,
+        # None: no n given or used (a Fig. 5-21 settlement, no bearing)
+        stress_concentration_ratio=n,
         composite_modulus_kPa=E_comp,
         settlement_reduction_factor=srf,
         improved_bearing_kPa=q_improved,
@@ -416,7 +419,7 @@ def analyze_aggregate_piers(
         choices=aggregate_pier_choices(
             n, E_soil, pattern, settlement_method, as_ratio, modular_ratio,
             1.0 / srf, q_unreinforced,
-            column_type=None if n_given else column_type),
+            column_type=column_type if n_used and not n_given else None),
     )
 
 

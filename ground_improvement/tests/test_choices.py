@@ -123,10 +123,38 @@ def test_a_fig_5_21_settlement_with_no_bearing_needs_no_n():
     r = analyze_aggregate_piers(column_diameter=0.9, spacing=2.1,
                                 S_unreinforced=150.0, E_column=50000.0,
                                 settlement_method="weighted_modulus")
-    assert r.stress_concentration_ratio == 0.0
+    assert r.stress_concentration_ratio is None
+    assert r.to_dict()["stress_concentration_ratio"] is None
     assert "stress concentration ratio n" not in _by_what(r.choices)
     assert "not given, not used" in r.summary()
+    (row,) = [i for i in get_input_summary(r, {"method": "aggregate_piers"})
+              if i.name == "n"]
+    assert row.value == "not used in this method"
     with pytest.raises(ValueError, match="Give column_type"):
         analyze_aggregate_piers(column_diameter=0.9, spacing=2.1,
                                 E_column=50000.0, q_unreinforced=100.0,
                                 settlement_method="weighted_modulus")
+
+
+def test_a_column_type_takes_n_only_where_n_is_used():
+    """GM-310 review: a Fig. 5-21 settlement with no bearing uses no n, so
+    a column_type takes none there; with the bearing it takes the type's
+    n. A run that gives n keeps it, and the settlement is the same."""
+    base = dict(column_diameter=0.9, spacing=2.1, S_unreinforced=150.0,
+                E_column=50000.0, settlement_method="weighted_modulus")
+    bare = analyze_aggregate_piers(**base)
+    typed = analyze_aggregate_piers(**base, column_type="stone_column")
+    assert typed.stress_concentration_ratio is None
+    assert "stress concentration ratio n" not in _by_what(typed.choices)
+    given = analyze_aggregate_piers(**base, n=4.0)
+    assert given.stress_concentration_ratio == 4.0
+    for r in (typed, given):
+        assert r.settlement_improved_mm == pytest.approx(
+            bare.settlement_improved_mm)
+    bearing = analyze_aggregate_piers(**base, column_type="stone_column",
+                                      q_unreinforced=100.0)
+    assert bearing.stress_concentration_ratio == 2.5
+    (row,) = [i for i in get_input_summary(bearing,
+                                           {"method": "aggregate_piers"})
+              if i.name == "n"]
+    assert row.value == 2.5
