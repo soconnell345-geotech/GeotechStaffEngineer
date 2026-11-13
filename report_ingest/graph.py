@@ -111,7 +111,8 @@ from typing import Any, Collection, Dict, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.bound import APPENDED_LABEL, compact_pages
 from report_ingest.calc_reader import split_calc_items
-from report_ingest.completeness import completeness_qa, page_texts
+from report_ingest.completeness import (
+    completeness_qa, named_not_held_qa, page_texts)
 from report_ingest.engine import (LARGE_REQUEST_FRACTION, TOKENS_IN_PARTS,
                                   CallCeilingReached, tokens_in)
 from report_ingest.lab_reader import split_lab_items
@@ -1416,7 +1417,10 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                                prefix=_log_prefix(model_first),
                                descriptions=_log_descriptions(model_first)))
     qa.extend(_inside_dividers(own, model_first))           # RI-197
-    qa.extend(completeness_qa(page_texts(doc), labels))     # RI-184
+    texts = page_texts(doc)
+    qa.extend(completeness_qa(texts, labels))               # RI-184
+    qa.extend(named_not_held_qa(texts, labels, record,      # RI-185
+                                sorted(bound)))
     # A volume or data report of THIS investigation bound in (RI-94) holds
     # this report's own holes, read into its own record below: the counts
     # wait for it. Without one, nothing moves.
