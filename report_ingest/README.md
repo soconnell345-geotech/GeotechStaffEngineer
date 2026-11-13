@@ -1513,6 +1513,30 @@ result is saved as `items/mf-<key>.json`; a group no answer came back for is not
 saved, so a resumed run asks again. Cone soundings and dynamic probes keep the
 sounding reader.
 
+**Every drawn line an interval** (BACKLOG RI-103 parts 1 and 2,
+`log_intervals.py`), behind `GEOTECH_INGEST_LOG_INTERVALS` (or
+`with use_log_intervals():`), off by default, on the model-first log reading
+only. On, the log instruction and answer schema ask for one layer for every
+line the log draws across its soil column, and the record never joins two of
+them, whatever their descriptions. A change the log writes inside an interval
+with no line ("wet below 7 ft") is a note on that interval (`Layer.notes`,
+each with its depth where one is written), never an interval of its own. An
+interval also keeps the elevation the log prints for its top
+(`top_elevation`), the kind of its top line where the log's legend or the line
+itself says it and whether the line runs the full width (`top_line`,
+`top_line_full_width`), and a stratum label only where the log prints one, as
+printed, with where it was printed and whether it was carried down from one
+printed above (`stratum_label`, `stratum_label_source`,
+`stratum_label_carried`). The new fields are left out of a saved record when
+empty and out of the DIGGS file, the summary and the library page; the
+library's search and the question list's soft-layer reading do read the
+notes' words. Off, the instruction and the schema are today's to the byte;
+on, a log answer is saved under `mf-<n>+li`, so a resumed run never mixes the
+two. The log scorer scores them as groups of their own, outside its totals,
+on the answer sheets that carry them (`log_scoring.INTERVAL_METRICS`). Not
+measured live yet. Mapping each interval to the narrative's units (part 3) is
+not built.
+
 **The narrative is read once** (BACKLOG RI-14). planlens starts a new work item
 wherever a run of narrative pages is broken by a figure, a table page or a tab,
 so one report's prose is often several items. Until RI-14 each was read on its

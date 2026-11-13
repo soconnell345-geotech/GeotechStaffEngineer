@@ -179,11 +179,31 @@ This repository builds three packages; the app also needs two more of the same p
   empty folder, OWN-147); and on the Graph route SharePoint saves run on
   background workers, with a size limit
   (`GEOTECH_SHAREPOINT_MAX_UPLOAD_MB`, 2048 MB; live checks TA-42).
+  From the same round, also unreleased: a Stop button and a spend line
+  on the Document Review page, each behind a setting, off by default
+  (`GEOTECH_STOP_BUTTON`, `GEOTECH_SPEND_ESTIMATE`; `turn_jobs.py`),
+  and the page's model-call budget counted over the whole turn (40
+  calls, always on); `read_office` returns a Word file's comments,
+  notes, headers and text boxes and an Excel sheet's merged labels
+  (`docx_renderer._DocxReader`, `office_text.py`); the run record
+  keeps stalled, late and retried calls (`side_call_timeout`,
+  `side_call_late_end`, `engine_retry`, `vision_slot_timeout`), a
+  stalled page reading is given up at 90 s, the model client asks
+  again once, and the wait for a reading slot is bounded
+  (`GEOTECH_VISION_SLOT_WAIT_S`, 600 s; the gateway check is TA-24);
+  planlens main holds four tool-result repairs (BACKLOG Done PL-39,
+  unreleased: every page 11 x 17 in or larger is on `pages_to_view`,
+  and a search lists only the pages it could not read).
   Also since 2026-11-13: after every ingest, report ingest writes
   the report as five tables in JSON Lines with a `schema.json`
   (`report_ingest/tables.py`, `docs/REPORT_TABLES.md`; sent to the dataset
   `GSE_REPORT_TABLES_DATASET` names; `GSE_REPORT_TABLES=0` turns it off;
   not yet run on Foundry, RI-212).
+  In the shared core since 2026-11-13 (so it ships with a core release,
+  INF-76): a Python warning raised inside a method reaches the agent under
+  `warnings` (`aec_agent_core/call_warnings.py`), and a value outside a
+  parameter's `allowed_values` is refused with a did-you-mean
+  (`method_call.py`).
   Before it, docs and tests only:
   field-session place names out of the current files (three field-feedback
   folders renamed; `test_public_text` guards the place words in every
