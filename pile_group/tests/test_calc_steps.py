@@ -162,7 +162,9 @@ class TestGetCalcSteps:
         layout_section = sections[0]
         tables = [i for i in layout_section.items if isinstance(i, TableData)]
         assert len(tables) >= 1
-        assert tables[0].title == "Pile Coordinates (relative to cap centroid)"
+        # the coordinates as given (GM-319 review: the simplified method
+        # measures from the piles' centroid, its own step)
+        assert tables[0].title == "Pile Coordinates"
         assert len(tables[0].rows) == 9  # 3x3
 
     def test_efficiency_read_from_the_printed_row(self):
@@ -245,6 +247,56 @@ class TestGetCalcSteps:
         assert len(force_steps) == 1
 
 
+class TestCentroidSteps:
+    """GM-319 review: the simplified method takes the loads at the piles'
+    centroid and measures x and y from it; the package says so. Made-up
+    values."""
+
+    @staticmethod
+    def _steps(xs, method='simple'):
+        from pile_group import GroupPile
+        piles = [GroupPile(x=x, y=0.0, axial_stiffness=5e4) for x in xs]
+        load = GroupLoad(Vz=900, My=200)
+        analyze = (analyze_group_6dof if method == '6dof'
+                   else analyze_vertical_group_simple)
+        analysis = _Analysis()
+        analysis.piles, analysis.load, analysis.method = piles, load, method
+        sections = get_calc_steps(analyze(piles, load), analysis)
+        return {i.title: i for s in sections for i in s.items
+                if isinstance(i, CalcStep)}
+
+    def test_off_centre_layout(self):
+        steps = self._steps((-1.0, 1.0, 3.0))
+        c = steps["Centroid of the Piles"]
+        assert c.result_value == "x_c = 1.000 m, y_c = 0.000 m"
+        assert "WARNING: The loads are taken at the centroid" in c.notes
+        assert "-900.0 kN-m to My" in c.notes
+        s = steps["Sum of Squared Distances"]
+        assert "(x_i − x_c)" in s.equation
+        assert s.result_value.startswith("Σx² = 8.000 m²")
+        d = steps["Simplified Elastic Load Distribution"]
+        assert d.substitution == ("P_i = 900.0/3 + 200.0·(x_i − "
+                                  "1.000)/8.000")
+        assert "Eq. 8-79 (p. 468)" in d.reference
+
+    def test_centred_layout_unchanged_but_for_the_centroid(self):
+        steps = self._steps((-2.0, 0.0, 2.0))
+        c = steps["Centroid of the Piles"]
+        assert c.result_value == "x_c = 0.000 m, y_c = 0.000 m"
+        assert "WARNING" not in c.notes
+        assert steps["Sum of Squared Distances"].equation.startswith(
+            "Σx² = sum of x_i²")
+        assert steps["Simplified Elastic Load Distribution"].substitution \
+            == "P_i = 900.0/3 + 200.0·x_i/8.000"
+
+    def test_6dof_has_no_centroid_step(self):
+        steps = self._steps((-1.0, 1.0, 3.0), method='6dof')
+        assert "Centroid of the Piles" not in steps
+        # its sums step as before, from the coordinates as given
+        assert steps["Sum of Squared Distances"].result_value.startswith(
+            "Σx² = 11.000 m²")
+
+
 # ===================================================================
 # get_figures
 # ===================================================================
@@ -301,3 +353,55 @@ class TestCalcPackageIntegration:
         assert 'Pile Group Analysis' in html
         assert 'Group Efficiency Factor' in html
         assert 'Converse' not in html
+
+
+class TestProductTermSteps:
+    """GM-319 re-check: where SUM dx dy is not zero the package shows the
+    product term; a negative centroid reads '+'. Made-up values."""
+
+    @staticmethod
+    def _steps(xy, **load):
+        from pile_group import GroupPile
+        piles = [GroupPile(x=x, y=y) for x, y in xy]
+        load = GroupLoad(**load)
+        analysis = _Analysis()
+        analysis.piles, analysis.load, analysis.method = piles, load, 'simple'
+        sections = get_calc_steps(analyze_vertical_group_simple(piles, load),
+                                  analysis)
+        return {i.title: i for s in sections for i in s.items
+                if isinstance(i, CalcStep)}
+
+    LESS_A_CORNER = ((0.0, 0.0), (1.5, 0.0), (3.0, 0.0), (0.0, 1.5),
+                     (1.5, 1.5))
+
+    def test_product_term_shown(self):
+        steps = self._steps(self.LESS_A_CORNER, Vz=2000, Mx=300, My=300)
+        s = steps["Sum of Squared Distances"]
+        assert "Σxy = sum of (x_i − x_c)(y_i − y_c)" in s.equation
+        assert s.result_value.endswith("Σxy = -1.350 m²")
+        assert "not symmetric about their centroidal axes" in s.notes
+        d = steps["Simplified Elastic Load Distribution"]
+        assert d.equation.startswith("P_i = V_z/n + a·(x_i − x_c)")
+        lines = d.substitution.split("\n")
+        assert lines[0] == ("D = 6.300·2.700 − (-1.350)² = "
+                            "15.188 m⁴")
+        # a = (300 x 2.7 + 300 x -1.35)/15.1875, b = -(300 x 6.3 - 405)/D
+        assert lines[1].endswith("= 26.667 kN/m")
+        assert lines[2].endswith("= -97.778 kN/m")
+        assert lines[3] == ("P_i = 2,000.0/5 + 26.667·(x_i − 1.200)"
+                            " − 97.778·(y_i − 0.600)")
+        assert "Eq. 8-79 is the case Σxy = 0" in d.reference
+        assert "product term is included" in d.notes
+
+    def test_symmetric_layout_has_no_product_term(self):
+        steps = self._steps(((-1.0, 0.0), (1.0, 0.0), (3.0, 0.0)),
+                            Vz=900, My=200)
+        assert "Σxy" not in steps["Sum of Squared Distances"].equation
+        assert "a·" not in steps[
+            "Simplified Elastic Load Distribution"].equation
+
+    def test_negative_centroid_reads_plus(self):
+        steps = self._steps(((-3.0, 0.0), (-1.0, 0.0), (1.0, 0.0)),
+                            Vz=900, My=200)
+        assert steps["Simplified Elastic Load Distribution"].substitution \
+            == "P_i = 900.0/3 + 200.0·(x_i + 1.000)/8.000"
