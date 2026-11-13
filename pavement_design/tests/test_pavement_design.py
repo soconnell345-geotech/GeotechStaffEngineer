@@ -857,9 +857,13 @@ class TestTreatedBaseScales:
                         ucs_7day_psi=800)[0] == pytest.approx(0.22)
         assert self._a2(layer_type="cement_treated_base",
                         ucs_7day_psi=1000)[0] == pytest.approx(0.25)
-        # the library's read, to three decimals
+        # between ticks, the design takes the library's own read of the
+        # chart (no value off the printed chart is held here)
+        from geotech_references.aashto_1993.tables import (
+            layer_coefficient_a2_cement_treated)
+        lib = layer_coefficient_a2_cement_treated(300)["a2"]
         assert self._a2(layer_type="cement_treated_base",
-                        ucs_7day_psi=300)[0] == 0.141
+                        ucs_7day_psi=300)[0] == pytest.approx(lib, abs=5e-4)
         # above the top tick refused, as below the bottom one (refs
         # REF-76; the top tick's a2 used to be held with a warning)
         with pytest.raises(ValueError, match="cement_treated_base layer: "
