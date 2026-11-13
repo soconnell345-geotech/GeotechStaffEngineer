@@ -69,9 +69,21 @@ def test_curve_names_the_lengths_it_left_out():
                                 skipped=skipped)
     assert [row["depth_m"] for row in curve] == [6.0, 8.0, 10.0]
     assert [m["depth_m"] for m in skipped] == [12.0, 14.0]
-    assert all("ends at 10 m" in m["reason"] for m in skipped)
+    # review C7: a short reason, not the whole refusal again for each
+    assert [m["reason"] for m in skipped] == [
+        "below the profile, which ends at 10 m"] * 2
     with pytest.warns(UserWarning, match="refused 2 of the 5"):
         a.capacity_vs_depth(depth_min=6.0, depth_max=14.0, n_points=5)
+
+
+def test_curve_skipped_reason_under_a_buried_head_names_the_toe():
+    a = AxialPileAnalysis(pile=_pile(), soil=_soil(), pile_length=8.0,
+                          head_depth=1.0)
+    skipped = []
+    a.capacity_vs_depth(depth_min=7.0, depth_max=10.0, n_points=2,
+                        skipped=skipped)
+    assert skipped == [{"depth_m": 10.0, "reason": "toe at 11 m, below the "
+                        "profile, which ends at 10 m"}]
 
 
 def test_curve_with_every_length_refused_is_refused():

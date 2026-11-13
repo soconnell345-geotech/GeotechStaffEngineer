@@ -2097,9 +2097,24 @@ class AxialPileAnalysis:
         wanted: Optional[JudgmentNeeded] = None
         missed = []
 
+        # a length below the profile gets a short reason, not the whole
+        # refusal again for each (GM-318 review C7)
+        given = (self.profile_depth_given
+                 if self.profile_depth_given is not None
+                 else self.soil.total_thickness)
+
         # Use a copy per trial depth rather than temporarily mutating
         # self.pile_length (re-entrant / thread-safe).
         for d in depths:
+            toe = self.head_depth + float(d)
+            if toe > given + 1e-9 and not self.extend_last_layer:
+                missed.append({
+                    "depth_m": round(float(d), 2),
+                    "reason": ((f"toe at {toe:g} m, " if self.head_depth
+                                else "")
+                               + f"below the profile, which ends at "
+                                 f"{given:g} m")})
+                continue
             try:
                 trial = replace(self, pile_length=float(d))
                 r = trial.compute()

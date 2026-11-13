@@ -2737,8 +2737,16 @@ class DrillShaftAnalysis:
         # explored in a shorter trial's 2B zone below its base, unsaid; a
         # trial past the profile carries the layer on to its own base.
         soil = self._given_soil()
+        given = soil.total_thickness
         missed = []
         for d in depths:
+            if d > given + 1e-9 and not self.extend_last_layer:
+                # a short reason, not the whole refusal again for each
+                # (GM-318 review C7)
+                missed.append({"depth_m": round(float(d), 2),
+                               "reason": f"below the profile, which ends "
+                                         f"at {given:g} m"})
+                continue
             try:
                 trial_shaft = replace(self.shaft, length=float(d))
                 trial = replace(self, shaft=trial_shaft, soil=soil,

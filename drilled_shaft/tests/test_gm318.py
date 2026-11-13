@@ -100,7 +100,8 @@ def test_curve_lists_lengths_past_the_profile_as_skipped():
     curve = _analysis(12.0).capacity_vs_depth(8.0, 16.0, 3, skipped=skipped)
     assert [r["depth_m"] for r in curve] == [8.0, 12.0]
     assert [s["depth_m"] for s in skipped] == [16.0]
-    assert "ends at 12 m" in skipped[0]["reason"]
+    # review C7: a short reason, not the whole refusal again
+    assert skipped[0]["reason"] == "below the profile, which ends at 12 m"
 
 
 _PARAMS = {
