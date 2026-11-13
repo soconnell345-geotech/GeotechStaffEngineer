@@ -36,6 +36,10 @@ __all__ = ["TurnJob", "start_turn_job", "get_turn_job", "stop_button_on",
 #: looks and runs as before.
 STOP_BUTTON_ENV = "GEOTECH_STOP_BUTTON"
 
+#: Added under the error of a turn that failed after Stop was pressed: the
+#: error is shown as itself, not as a stopped turn (TA-37 review).
+STOP_ASKED_NOTE = "You had pressed Stop; the turn ended on this error."
+
 
 def stop_button_on() -> bool:
     """Whether ``GEOTECH_STOP_BUTTON`` is on (read each time)."""
@@ -332,10 +336,13 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     except Exception as exc:                      # noqa: BLE001
         # The tokens a failed turn used (EV-20), counted up to the error.
         turn_tokens = getattr(exc, "geotech_turn_tokens", turn_tokens) or 0
-        # A turn the user stopped (TA-37): whatever the turn raised once the
-        # flag was set (the stop itself, or a wait refused because of it).
-        stopped = bool(job.stoppable and (job.stop_requested
-                                          or core.is_turn_stopped(exc)))
+        # A turn the user stopped (TA-37): only one that ended on the stop
+        # itself. Any other error raised after Stop was pressed (a spent AI
+        # budget, a refused key, a busy wait the stop refused) is shown as
+        # that error, with a line saying a stop had been asked for.
+        stopped = bool(job.stoppable and core.is_turn_stopped(exc))
+        stop_asked = bool(job.stoppable and job.stop_requested
+                          and not stopped)
         # What the turn had done: its tool calls and results, in an order a
         # replay accepts, the largest moved to kept/ (TA-19).
         if record is not None:
@@ -360,6 +367,8 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                     exc, kept=kept.line() if kept is not None else None)
             except Exception:
                 turn_error = f"{type(exc).__name__}: {exc}"
+            if stop_asked:
+                turn_error = f"{turn_error}\n\n{STOP_ASKED_NOTE}"
             # An AI budget that is used up (live smoke wave 2c, D2): the tester
             # gets one plain line and no "ask again"; the provider's own text
             # (its JSON, the request id) is kept for the owner in the activity
@@ -386,7 +395,7 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
             try:
                 from aec_agent_core import review_flags as _rf
                 if (_rf.step_cap_answer() and record is not None
-                        and core.is_step_cap(exc)):
+                        and not stop_asked and core.is_step_cap(exc)):
                     written = core.answer_at_step_cap(
                         agent, messages[-1] if messages else None,
                         record.messages)

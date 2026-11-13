@@ -22,7 +22,7 @@ import time
 
 import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import StructuredTool
 
@@ -255,3 +255,65 @@ def test_an_empty_forced_reply_says_the_budget_ended_and_what_was_done(
     assert [m["role"] for m in saved] == (["user"] + ["assistant", "tool"] * 3
                                           + ["assistant"])
     assert "used its whole model-call budget" in saved[-1]["content"]
+
+
+# ---------------------------------------------------------------------------
+# 4. The minimal measuring arm keeps its per-pass count (review 2026-11-13)
+# ---------------------------------------------------------------------------
+
+class MainAndHelper(BaseChatModel):
+    """The minimal arm (GEOTECH_REVIEW_AGENT=minimal): the main agent reads
+    12 times, hands its helper a job, then answers; the helper reads until
+    its own budget forces its answer. Logs (who, forced) per call."""
+
+    log: list = []
+
+    @property
+    def _llm_type(self):
+        return "main-and-helper"
+
+    def bind_tools(self, tools, **kw):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        from aec_document_review.minimal_agent import READER_PROMPT
+        sysm = next((m for m in messages if isinstance(m, SystemMessage)),
+                    None)
+        helper = sysm is not None and READER_PROMPT[:40] in str(sysm.content)
+        forced = _forced(messages)
+        self.log.append(("helper" if helper else "main", forced))
+        n_main = sum(1 for who, _f in self.log if who == "main")
+        n = len(self.log)
+        if forced:
+            reply = AIMessage(content="Sheets 1-5 give 4000 psi.")
+        elif helper or n_main <= 12:
+            reply = AIMessage(content="", tool_calls=[
+                {"name": "page_count", "id": f"call_{n}",
+                 "args": {"source": "plans.pdf"}}])
+        elif n_main == 13:
+            reply = AIMessage(content="", tool_calls=[
+                {"name": "task", "id": f"call_{n}",
+                 "args": {"description": "Read sheets 1-5."}}])
+        else:
+            reply = AIMessage(content="Done.")
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
+
+def test_the_minimal_arms_helper_keeps_its_own_budget(monkeypatch):
+    """The minimal agent's helper runs as a plain tool, outside the page's
+    helper records, so a whole-turn count took its budget for the main
+    agent's and forced it to answer on its first call. The arm keeps the
+    per-pass count: after the main agent's 13 calls the helper still makes
+    its own 14, only the last forced. Before the fix: one helper call,
+    forced."""
+    from aec_document_review.minimal_agent import (READER_MAX_MODEL_CALLS,
+                                                   build_minimal_agent)
+    monkeypatch.setenv("GEOTECH_REVIEW_AGENT", "minimal")
+    model = MainAndHelper(log=[])
+    job = _run(build_minimal_agent(model), "CEIL3")
+    helper = [f for who, f in model.log if who == "helper"]
+    main = [f for who, f in model.log if who == "main"]
+    assert helper == [False] * (READER_MAX_MODEL_CALLS - 1) + [True]
+    assert main == [False] * 14
+    assert job.result["error"] is None
+    assert job.result["final"] == "Done."

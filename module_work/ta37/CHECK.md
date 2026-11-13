@@ -27,7 +27,7 @@ Files from another task: none edited. `activity_log.py`, `busy_retry.py`, `visio
   - before each pass in `core.stream_turn`: the top of `_run_passes`' loop, which covers auto-continue and the page check's pass.
   
   A check raises `keep_work.TurnStopped`, an `Exception`. A helper that meets it has its work kept by `KeepWork` as before. The primary's next call raises it out of the run.
-- **The stopped turn.** `turn_jobs` treats any exception raised after the flag was set as a stop: `job.stop_requested`, or a `TurnStopped`.
+- **The stopped turn.** `turn_jobs` treats a turn as stopped only when it ended on `TurnStopped` (`core.is_turn_stopped`). Any other error raised after Stop was pressed (a spent AI budget, a refused key, a busy wait the stop refused) is shown as that error, followed by `turn_jobs.STOP_ASKED_NOTE` ("You had pressed Stop; the turn ended on this error."); the turn's work is kept as for any failed turn (review fix 2).
   - The turn's work is kept as an interrupted turn's (`record.kept`, TA-19).
   - The answer is `core.stopped_turn_text`. It holds `STOPPED_LABEL`, then the tool calls on the record by name, then `KeptWork.line()`, then any reply or useful text written by then, labelled.
   - There is no `error`. The transcript entry gets `"stopped": true`. The history note is `KeptWork.history_note(why="user")`.
@@ -52,7 +52,7 @@ Files from another task: none edited. `activity_log.py`, `busy_retry.py`, `visio
    - `before_model` jumps to the end (with its exhausted message) on a later pass once the forced last reply was made and the turn's count reached the limit.
    - `stream_turn` no longer runs the page check's pass once the budget ended. With `GEOTECH_CITED_PAGES=retry` the check then appends its note through `finish`, as after a retry.
    
-   Helpers (`_HELPER` set) keep their per-run budgets. GSE's turns (no `whole_turn_budget`) keep the per-pass count, so GSE's frozen copy of the page behaves as before.
+   Helpers (`_HELPER` set) keep their per-run budgets. The minimal measuring agent (`GEOTECH_REVIEW_AGENT=minimal`) keeps the per-pass count for the whole turn: its helper runs as a plain tool outside `KeepWork`, so on a whole-turn scope its budget was taken for the main agent's (review fix 1). GSE's turns (no `whole_turn_budget`) keep the per-pass count. One repair does reach the geotech page once GSE's core pin moves to this core: the keep-the-text-on-error change in `tool_guards.OutputLimitGuard._continue_text` (item 2 below) applies on every agent, with or without a whole-turn scope.
 2. **Continuations counted.** `keep_work.take_extra_model_call()` decides whether one more continuation fits. It counts the continuation on the turn (primary) or on the helper's `HelperRecord.extra_model_calls`, and refuses one that would leave no call for the forced last reply. It refuses all on the forced call itself.
    - The budget middleware records each agent's limit (`note_budget`) and subtracts the extras (`extra_model_calls`).
    - Outside a whole-turn scope nothing is counted, as before.
@@ -100,8 +100,8 @@ Files from another task: none edited. `activity_log.py`, `busy_retry.py`, `visio
 
 ## Tests
 
-**New tests.** Each one fails on master: source changes stashed, tests kept, `8 failed, 12 errors`.
-- `test_ta37_stop.py`, 7 tests. All error on master: the fixture reads `turn_jobs.STOP_BUTTON_ENV`, and the API is new.
+**New tests.** Each one fails on master: source changes stashed, tests kept, `8 failed, 12 errors`. That count (20 tests) was taken before 3c1c63e added the AppTest check, the 21st: 7 + 5 errors (stop, spend line), 6 + 2 failures (ceilings, attachment note). The review fixes add one test to each of the first two files (see "Review fixes (2026-11-13)").
+- `test_ta37_stop.py`, 7 tests (8 after the review). All error on master: the fixture reads `turn_jobs.STOP_BUTTON_ENV`, and the API is new.
   - the stopped turn end to end: no model call after the stop, the answer, the kept history, both events on the log;
   - unset, the turn cannot be stopped and runs as before;
   - a finished job takes no stop;
@@ -111,7 +111,7 @@ Files from another task: none edited. `activity_log.py`, `busy_retry.py`, `visio
   - the helper-place wait ends within 1.5 s.
   
   On master, three of these guard behaviour that should not change and error only for the missing API: unset, finished, and the outside-a-turn part of `check_stop`.
-- `test_ta38_turn_ceilings.py`, 6 tests. All fail on master.
+- `test_ta38_turn_ceilings.py`, 6 tests (7 after the review). All fail on master.
   - auto-continue with what is left (5 calls, not 8);
   - continuations counted, and one left for the forced answer;
   - a helper's continuations go on its own record;
@@ -147,9 +147,9 @@ Existing tests edited: none.
 ## Calls made
 
 - **Where the checks sit.** The stop is checked in `OutputLimitGuard` as well as `HelperRecorder` and `ModelCallBudgetMiddleware`. `OutputLimitGuard` is on every agent, the primary included, even with the page budget off (`GEOTECH_REVIEW_MAX_MODEL_CALLS=off`).
-- **The stop is an `Exception`.** `TurnStopped` subclasses `Exception`, not `BaseException`, so `KeepWork` keeps a stopped helper's work. Any exception raised after the flag is set counts as the stop (for example a busy wait refused because of it).
+- **The stop is an `Exception`.** `TurnStopped` subclasses `Exception`, not `BaseException`, so `KeepWork` keeps a stopped helper's work. Only `TurnStopped` counts as the stop. Another exception raised after the flag is set (a busy wait refused because of it, a spent budget, a refused key) is shown as the error with `STOP_ASKED_NOTE` under it (review fix 2), and the optional step-cap answer (`GEOTECH_STEP_CAP_ANSWER`) makes no further model call once Stop was pressed.
 - **Helper-place wait.** It is polled every 0.5 s, only on a stoppable turn.
-- **Whole-turn budget only on Document Review.** It is opt-in on the scope (`whole_turn_budget`), set only by Document Review's `stream_turn`, so the geotech page and GSE's frozen copy of the review page keep the per-pass count.
+- **Whole-turn budget only on Document Review.** It is opt-in on the scope (`whole_turn_budget`), set only by Document Review's `stream_turn`, so the geotech page and GSE's frozen copy of the review page keep the per-pass count. Document Review's minimal measuring agent keeps it too (review fix 1).
 - **Counting point.** Primary calls are counted in `after_model`, once per model node, not in `wrap_model_call`, which a busy retry outside it would call twice.
 - **Continuations keep a call back.** A continuation is refused when it would leave no call for the forced answer, and on the forced call itself. A cut forced answer is then delivered as it is.
 - **The page check's pass.** It is skipped once the budget ended, rather than counted as an over-budget call.
@@ -163,23 +163,24 @@ Existing tests edited: none.
 ## Release note
 
 With the core and Document Review release:
-- A turn on the Document Review page can be stopped with a Stop button when the host sets `GEOTECH_STOP_BUTTON=1`. What the turn had done is kept, and the agent can be asked to continue.
+- A turn on the Document Review page can be stopped with a Stop button when the host sets `GEOTECH_STOP_BUTTON=1`. What the turn had done is kept, and the agent can be asked to continue. If the turn instead ends on an error after Stop was pressed (for example a spent AI budget or a refused key), the page shows that error, with a line saying Stop had been pressed.
 - With `GEOTECH_SPEND_ESTIMATE=1` and token prices set (`GEOTECH_SPEND_INPUT_USD_PER_MTOK`, `GEOTECH_SPEND_OUTPUT_USD_PER_MTOK`, optionally `GEOTECH_SPEND_MONTHLY_BUDGET_USD`), a host without the Funhouse SDK shows each tester an estimate of their own AI spend this month.
 - Unset, both are as before.
 
 Always on (repairs):
-- The page's model-call budget now covers the whole turn. An automatic "continue" no longer starts a fresh budget, and the extra calls that finish a cut-off reply count against it. So a long turn can end a few calls sooner than before.
-- A failed call while finishing a cut-off reply keeps the text already written.
+- The page's model-call budget now covers the whole turn. An automatic "continue" no longer starts a fresh budget, and the extra calls that finish a cut-off reply count against it. With the default budget of 40, the most the main agent can do in one turn goes from 118 model calls (three passes of up to 39, 39 and 40, plus uncounted continuations of cut-off replies) to 40 in all, continuations included. A helper's continuations now count inside its own 14 calls. In the 84 saved runs of the review suite's brief 7 (2026-11-12) the most the main agent used in one turn was 17 (median 13). The lead's decision: this ships as is, with no higher ceiling and no setting, because the budget is the tester's money.
+- A failed call while finishing a cut-off reply keeps the text already written. This one also reaches the geotech page once GSE's core pin moves to this core.
 - A turn whose budget ran out on an empty reply says so, and what it did, instead of "(no answer text)".
 - The note after a saved file tells the agent to give the file name, not a `/tmp` path or a `sandbox:` link (Document Review and the geotech page).
 
 ## For the lead
 
-- **Live check of the Stop button** (needs the testers' host or a local `streamlit run`, `GEOTECH_STOP_BUTTON=1`):
-  1. Ask a question that reads many sheets, and press Stop during a page look.
-  2. Expect the look to finish (its side calls run to their limit), then the turn to end with "Stopped by you…", "Stopped" in the status label, `turn_stop_requested` and `turn_stopped` in `activity.jsonl`, and a "continue" turn that picks up from the kept results.
-  3. Also press Stop while a turn waits on a busy model, and while a second helper waits for a place.
-- **Spend line on Tiny Apps.** Set the three spend settings and compare the estimate with the Prompter key's own meter after a few turns. The estimate leaves out vision side calls if their tokens are not in `turn_end`'s `usage` (that depends on the side calls' callbacks; worth a look in a real record).
+- **Live checks** (the reviewer's four; need the testers' host or a local `streamlit run` with a real model):
+  1. Stop during a multi-sheet read (`GEOTECH_STOP_BUTTON=1`): time the click, "Stopping…" (up to 15 s, the follow loop's heartbeat) and "Stopped"; count the `model_end` events after `turn_stop_requested` in `activity.jsonl` (a page look already under way finishes its side calls); then "continue" must pick up from the kept results and not read the same sheets again. Also press Stop while a turn waits on a busy model, and while a second helper waits for a place.
+  2. Two testers at once: A stops; B's turn finishes normally, with no stop event in B's `activity.jsonl`.
+  3. A long question that auto-continues: count the main agent's `model_end` events in the turn; expect 40 or fewer.
+  4. Spend line (`GEOTECH_SPEND_ESTIMATE=1` and the prices): compare the estimate with the key's own meter after a few turns, and time the sidebar after a turn for a tester with many conversations. The estimate leaves out vision side calls if their tokens are not in `turn_end`'s `usage`.
+- **Task D's two `app.py` edits** (the "Sync now" button through `save_after_change`, and the past-conversations listing showing a failed listing's error), written out in `module_work/ta40/CHECK.md`, go in on this branch after master is merged into it, because this branch holds `app.py`.
 - **Owner's call:** turning either setting on for a tester round.
 - **Image-call ceiling:** the design above, once tasks B and E are merged.
 - **GSE's copies of the turn** (`webapp/turn_jobs.py`, `webapp/core.stream_turn`) have none of this, by design (INF-35).
@@ -190,3 +191,13 @@ Always on (repairs):
 - A stop requested while the primary writes its final answer, with no later check, lets the turn finish normally. The answer is then the full answer, not "stopped".
 - The page check's `retry` mode, after a budget-ended turn, appends its note as after a retry, though no retry was made. Only with `GEOTECH_CITED_PAGES=retry`, off by default.
 - A failed continuation of a cut-off reply leaves no event on the activity log. `activity_log.APP_EVENTS` (task B's file) would need a name for it.
+- Stop does not cancel tool calls the model already issued in the same reply: they run (a page look can make up to 17 image calls), and the click registers at the follow loop's next event, up to 15 s later (`HEARTBEAT_INTERVAL_S`).
+- The spend line (`budget_panel.month_tokens`, setting on) re-reads each of the tester's this-month `activity.jsonl` files in full, in the page's thread, after every turn; unmetered calls and turns with no `turn_end` are left out without saying so.
+
+## Review fixes (2026-11-13)
+
+1. **The minimal arm keeps per-pass budgets.** DR `core._turn_scope` sets `whole_turn_budget=not review_flags.minimal_agent()`. Under `GEOTECH_REVIEW_AGENT=minimal` the helper runs as a plain tool outside `KeepWork`, so on a whole-turn scope its budget middleware took itself for the main agent's and forced the helper's first call. Test `test_ta38_turn_ceilings.py::test_the_minimal_arms_helper_keeps_its_own_budget`: after the main agent's 13 calls the helper makes its own 14, only the last forced (without the fix: one call, forced).
+2. **An error after Stop is the error.** DR `turn_jobs._run_turn_job`: only `TurnStopped` makes a stopped turn; any other error raised after Stop was pressed is shown as itself with `STOP_ASKED_NOTE` under it, in `error`, the transcript entry and `turn_end`; no `turn_stopped` event; the step-cap answer makes no further call. Test `test_ta37_stop.py::test_an_error_after_stop_is_shown_as_the_error` (without the fix the turn read "Stopped by you" and `error` was empty).
+3. **This file made true.** The stopped-turn rule and "Calls made"; the release note gives the 118-to-40 change and the lead's decision that it ships as is; the minimal arm and the `tool_guards` repair that reaches the geotech page; the test count; the live checks and task D's `app.py` edits under "For the lead"; two notes above.
+
+Both new tests were run with the two source files set aside: 2 failed; with them, `test_ta37_stop.py` and `test_ta38_turn_ceilings.py` 15 passed. The full runs for the commit are in its report to the lead.

@@ -1219,8 +1219,18 @@ def _turn_scope(stop=None):
     raises ``TurnStopped``."""
     try:
         from aec_agent_core.deep.keep_work import TurnScope, turn_scope
+        # Not for the minimal measuring agent (GEOTECH_REVIEW_AGENT=minimal,
+        # suite arm ``minimal``): its helper runs as a plain tool, outside
+        # KeepWork, so a whole-turn count would take the helper's budget and
+        # calls for the main agent's and force the helper to answer at once.
+        # That arm keeps the per-pass count, so its saved runs do not change.
         try:
-            scope = TurnScope(stop_event=stop, whole_turn_budget=True)
+            from aec_agent_core import review_flags
+            whole_turn = not review_flags.minimal_agent()
+        except Exception:  # noqa: BLE001
+            whole_turn = True
+        try:
+            scope = TurnScope(stop_event=stop, whole_turn_budget=whole_turn)
         except TypeError:                  # an older core
             scope = None
         return turn_scope(scope)

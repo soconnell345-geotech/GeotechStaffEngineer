@@ -263,3 +263,48 @@ def test_the_wait_for_a_helper_place_ends_on_stop():
     assert "got" not in out
     assert out["stopped"] - asked < 1.5
     assert places._queue == []                        # left the queue
+
+
+# ---------------------------------------------------------------------------
+# An error after Stop is shown as the error (review 2026-11-13)
+# ---------------------------------------------------------------------------
+
+class StopThenFail(BaseChatModel):
+    """Stop is pressed while the first model call is under way, and that
+    call then fails on its own, as a refused key or a spent budget would."""
+
+    tid: str = ""
+    calls: list = []
+
+    @property
+    def _llm_type(self):
+        return "stop-then-fail"
+
+    def bind_tools(self, tools, **kw):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kw):
+        self.calls.append(len(messages))
+        assert tj.get_turn_job(self.tid).request_stop() is True
+        raise ValueError("the model service rejected the request")
+
+
+def test_an_error_after_stop_is_shown_as_the_error(monkeypatch):
+    """Only the stop itself reads as a stopped turn. An error the turn
+    raises after Stop was pressed is shown as that error, with a line
+    saying Stop had been pressed. Before: it read "Stopped by you" and the
+    error was not shown."""
+    monkeypatch.setenv(tj.STOP_BUTTON_ENV, "1")
+    model = StopThenFail(calls=[], tid="STOP5")
+    job = _wait(_start(_agent(model), "STOP5"))
+    assert len(model.calls) == 1
+    res = job.result
+    assert "stopped" not in res
+    assert "rejected the request" in res["error"]
+    assert res["error"].endswith(tj.STOP_ASKED_NOTE)
+    assert not res["final"].startswith(core.STOPPED_LABEL)
+    entry = core.load_transcript("STOP5")[-1]
+    assert "stopped" not in entry and entry["error"] == res["error"]
+    names = [e.get("event") for e in _events("STOP5")]
+    assert "turn_stop_requested" in names
+    assert "turn_stopped" not in names
