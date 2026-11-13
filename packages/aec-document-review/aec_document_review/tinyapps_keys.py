@@ -42,20 +42,30 @@ an EXACT secret name as well, and that one is looked up first::
     PROMPTER-API-KEY--<SUFFIX>--<HASH>      (PROMPTER_API_KEY__<SUFFIX>__<HASH>)
 
 ``<HASH>`` is the first ten hex digits, in upper case, of SHA-256 over the
-sign-in name spelt ``domain\\user``, case-folded, in UTF-8
-(``Identity.name_hash``). For such a name the order is: the exact secret
-(with ``PROMPTER-MODEL--<SUFFIX>--<HASH>`` / ``PROMPTER-URL--...`` beside
-it), then the ``PROMPTER-KEYS`` entry, which is matched on the exact name
-too, then the secret named by ``<SUFFIX>`` alone, so a tester who had a key
-before TA-39 still has it. A name of letters and digits only has one secret
-name and the order above, unchanged.
+sign-in name spelt ``domain\\user``, case-folded, in Unicode's composed
+form, in UTF-8 (``Identity.name_hash``). For such a name the order is: the
+exact secret (with ``PROMPTER-MODEL--<SUFFIX>--<HASH>`` /
+``PROMPTER-URL--...`` beside it), then the ``PROMPTER-KEYS`` entry, which
+is matched on the exact name too, then the secret named by ``<SUFFIX>``
+alone, so a tester who had a key before TA-39 still has it. A name of
+letters and digits only has one secret name and the order above, unchanged.
 
-To give two such testers different keys: give EACH an exact secret (or a
-``PROMPTER-KEYS`` entry), and delete the secret named by ``<SUFFIX>`` alone
-once both are served; while it exists, whoever of them has no exact secret
-and no mapping entry is served by it. The exact name is shown, never a key:
-in the refusal a tester without a key sees ("this person's key goes in the
-Key Vault secret ..."), in the sidebar's Connection diagnostics, and by::
+**A secret named by ``<SUFFIX>`` alone is shared by look-alike names**:
+every sign-in name whose punctuation and accents reduce to that suffix. A
+name of letters and digits has look-alikes too, because punctuation or an
+accented letter at an end of a part is dropped: ``corp\\jdoe_``,
+``corp\\_jdoe``, ``corp\\jdoe'`` and ``corp\\jdoe$`` all reduce to
+``corp\\jdoe``'s ``CORP-JDOE``. While that secret exists, a look-alike with
+no exact secret and no ``PROMPTER-KEYS`` entry of its own is still served
+it, as before TA-39. A key that is one tester's alone is the exact secret
+name the app shows for that tester, or a ``PROMPTER-KEYS`` entry. So, to
+give two look-alike testers different keys: give EACH one of those, then
+delete the secret named by ``<SUFFIX>`` alone. A tester whose name is
+letters and digits has no exact secret name (the app shows the ``<SUFFIX>``
+one): the key that is theirs alone is a ``PROMPTER-KEYS`` entry. The app
+shows the name, never a key: in the refusal a tester without a key sees
+("this person's key goes in the Key Vault secret ..."), in the sidebar's
+Connection diagnostics, and by::
 
     python -m aec_document_review.tinyapps_keys "CORP\\j.doe"
 
@@ -142,10 +152,14 @@ def tester_secret_name(setting: str, ident) -> Optional[str]:
 
 
 def suffix_is_exact(ident) -> bool:
-    """Whether :func:`tester_suffix` belongs to this sign-in name alone: its
-    domain and user part hold only the letters A-Z and digits (case apart),
-    so the suffix is ``DOMAIN-USER`` and reads back one way. Any other
-    character became a hyphen that another name's character also becomes."""
+    """Whether this sign-in name's domain and user part hold only the
+    letters A-Z and digits (case apart). :func:`tester_suffix` is then
+    ``DOMAIN-USER``, no other name of letters and digits has it, and it is
+    this name's one secret name. It is not this name's alone: a look-alike
+    that adds punctuation or an accented letter at an end of a part
+    (``corp\\jdoe_`` beside ``corp\\jdoe``) reduces to the same suffix, and
+    is served by that secret while it has no key of its own (the module
+    docstring says how to give a tester a key that is theirs alone)."""
     parts = [str(p) for p in (getattr(ident, "domain", None),
                               getattr(ident, "username", None)) if p]
     return bool(parts) and all(
@@ -185,7 +199,9 @@ def tester_secret_names(setting: str, ident) -> list:
 def advertised_secret_name(ident) -> Optional[str]:
     """The key secret's name the app owner is TOLD for ``ident`` (the
     refusal, the diagnostics): the exact name where there is one, so a new
-    tester is never provisioned under a name another tester shares."""
+    tester with punctuation or an accent in the name is not provisioned
+    under a name look-alikes share. A name of letters and digits has only
+    the name by suffix."""
     names = tester_secret_names(ENV_KEY, ident)
     return names[0] if names else None
 

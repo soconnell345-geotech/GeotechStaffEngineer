@@ -240,3 +240,155 @@ def test_key_refusal_reads_the_error_and_what_it_was_raised_from():
             raise RuntimeError("wrapped") from inner
     except RuntimeError as outer:
         assert vision_probe.key_refusal(outer) == "no access"
+
+
+# ------------------------------------------------- review fixes (2026-11-13)
+
+class _Engine:
+    """What the vision tools hold: the caller's model, asked for its
+    profile at every lookup of a look."""
+
+    def __init__(self, model):
+        self._model = model
+
+    def vision_profile(self):
+        return vision_probe.profile_for(self._model)
+
+
+_VIEW = {"clip": [0, 0, 612, 792], "width_px": 1000, "height_px": 1294}
+
+
+@pytest.mark.parametrize("error, why", REFUSALS)
+def test_a_key_refused_on_the_host_edge_call_is_not_a_measured_profile(
+        error, why):
+    """Calls 1 to 4 pass and the caller's key is refused on call 5 (a budget
+    that ran out after call 4). Before the review fix the profile was cached
+    for the process as measured, with no host edge, and never measured
+    again."""
+    spent, fine = OneTestersModel(error=error, only="wide"), OneTestersModel()
+    mine = vision_probe.profile_for(spent)
+    assert "wide" in spent.calls
+    assert mine.failed is True and mine.key_refused == why
+    assert not vision_probe._CACHE and not vision_probe._FAILED
+    theirs = vision_probe.profile_for(fine)
+    assert theirs is not mine and "wide" in fine.calls
+    assert theirs.failed is False and theirs.key_refused is None
+    assert vision_probe._CACHE
+
+
+def test_a_waiter_on_a_refused_probe_is_not_handed_an_old_model_failure(
+        monkeypatch):
+    """An earlier failure about the model is still in the table, its hold
+    run out. A caller that waited on a refused probe must measure, not take
+    that old fallback."""
+    clock = [1000.0]
+    monkeypatch.setattr(vision_probe, "_now", lambda: clock[0])
+    old = vision_probe.profile_for(OneTestersModel(error=Busy409))
+    assert old.failed is True and vision_probe._FAILED
+    clock[0] += vision_probe.FAILED_HOLD_S + 1          # its hold has run out
+    gate = threading.Event()
+    spent, fine = OneTestersModel(error=Unauthorized401, gate=gate), \
+        OneTestersModel()
+    got = {}
+    first = threading.Thread(
+        target=lambda: got.update(spent=vision_probe.profile_for(spent)))
+    first.start()
+    assert spent.started.wait(10)
+    second = threading.Thread(
+        target=lambda: got.update(fine=vision_probe.profile_for(fine)))
+    second.start()
+    second.join(0.3)
+    assert second.is_alive() and fine.calls == []      # waiting, not probing
+    gate.set()
+    first.join(20)
+    second.join(20)
+    assert not first.is_alive() and not second.is_alive()
+    assert got["fine"] is not old and fine.calls
+    assert got["fine"].failed is False
+    assert got["fine"].detailed == "openai-original"
+
+
+def test_one_refused_look_makes_one_probe_and_holds_it_for_itself_alone():
+    """A look asks for the profile at several lookups. Before the review
+    fix each lookup by a refused caller was a whole probe (7 probes, 28
+    refused calls, for the three lookups below)."""
+    spent, other_spent, fine = (OneTestersModel(error=Unauthorized401),
+                                OneTestersModel(error=BudgetSpent429),
+                                OneTestersModel())
+    mine = vision_probe.profile_for(spent)
+    assert mine.key_refused == "sign-in refused"
+    eng = _Engine(spent)
+    vision_view.budget(eng)
+    vision_view.detail(eng)
+    assert "could not be measured" in \
+        vision_view.view_payload(dict(_VIEW), eng)["vision_probe"]
+    assert vision_probe.profile_for(spent) is mine
+    assert len(spent.calls) == 4                       # one probe in all
+    # the verdict is held for that model object, never for the model
+    assert not vision_probe._CACHE and not vision_probe._FAILED
+    assert vision_probe.cached_profile(fine) is None
+    # another refused tester is answered about their own key
+    theirs = vision_probe.profile_for(other_spent)
+    assert theirs is not mine and theirs.key_refused == "budget used up"
+    assert len(other_spent.calls) == 4
+    # and a tester whose key works measures the model at once
+    good = vision_probe.profile_for(fine)
+    assert fine.calls and good.failed is False
+    assert good.detailed == "openai-original"
+
+
+def test_a_refused_callers_own_waiting_calls_do_not_probe_again():
+    """Tiles of one look in flight at once, on one model object."""
+    gate = threading.Event()
+    spent = OneTestersModel(error=Forbidden403, gate=gate)
+    got = []
+    first = threading.Thread(
+        target=lambda: got.append(vision_probe.profile_for(spent)))
+    first.start()
+    assert spent.started.wait(10)
+    others = [threading.Thread(
+        target=lambda: got.append(vision_probe.profile_for(spent)))
+        for _ in range(3)]
+    for t in others:
+        t.start()
+    others[-1].join(0.3)
+    gate.set()
+    for t in [first] + others:
+        t.join(20)
+        assert not t.is_alive()
+    assert len(got) == 4 and all(p is got[0] for p in got)
+    assert got[0].key_refused == "no access"
+    assert len(spent.calls) == 4
+
+
+def test_a_refused_verdict_runs_out_and_the_key_is_tried_again(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(vision_probe, "_now", lambda: clock[0])
+    spent = OneTestersModel(error=BudgetSpent429)
+    mine = vision_probe.profile_for(spent)
+    clock[0] += vision_probe.REFUSED_HOLD_S / 2
+    assert vision_probe.profile_for(spent) is mine and len(spent.calls) == 4
+    # the budget is renewed; once the hold has run out the model is measured
+    spent.error = None
+    clock[0] += vision_probe.REFUSED_HOLD_S / 2 + 1
+    again = vision_probe.profile_for(spent)
+    assert again is not mine and again.failed is False
+    assert len(spent.calls) > 4
+    assert vision_probe._CACHE and not vision_probe._REFUSED
+
+
+def test_refused_verdicts_do_not_pile_up(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(vision_probe, "_now", lambda: clock[0])
+    monkeypatch.setattr(vision_probe, "REFUSED_MAX", 3)
+    models = [OneTestersModel(error=Unauthorized401) for _ in range(5)]
+    for m in models:
+        vision_probe.profile_for(m)
+        clock[0] += 1
+    assert len(vision_probe._REFUSED) == 3
+    assert id(models[-1]) in vision_probe._REFUSED
+    assert id(models[0]) not in vision_probe._REFUSED
+    # and every verdict leaves once its hold has run out
+    clock[0] += vision_probe.REFUSED_HOLD_S
+    assert vision_probe.profile_for(OneTestersModel()).failed is False
+    assert not vision_probe._REFUSED

@@ -59,13 +59,18 @@ have held for every conversation on that model until a restart.
 
 A probe that failed because the CALLER'S KEY was refused (its budget is
 used up, its sign-in was refused, it has no access: :func:`key_refusal`)
-says nothing about the model, so no verdict is kept for it at all (BACKLOG
+says nothing about the model, so no verdict is kept for the MODEL (BACKLOG
 TA-39). The profile is keyed by the model's class, name and address, not by
 the key, and on a shared host each tester's model object carries a key of
 their own: held like any failed probe, one tester's spent key lowered every
 tester's image size on that model for :data:`FAILED_HOLD_S`. That caller's
 own look uses the fallback and says so; the next caller measures the model
-with their own key. A verdict about the model (a measured budget, a
+with their own key. The refused verdict is held for the refused caller's
+own model object alone, for :data:`REFUSED_HOLD_S` (so one look does not
+probe again at each of its lookups, and a tester whose key is put right is
+measured again within that time), at most :data:`REFUSED_MAX` of them at
+once. A key refused on any probe call counts, the host-edge call 5
+included. A verdict about the model (a measured budget, a
 ``detail`` it refuses, a busy failure) is shared, as before. Turn it
 off with ``GEOTECH_VISION_PROBE=0``; ``GEOTECH_VISION_BUDGET`` /
 ``GEOTECH_CHART_BUDGET`` still override whatever it finds.
@@ -158,7 +163,8 @@ class VisionProfile:
     #: Why the caller's own key was refused (:func:`key_refusal`: ``budget
     #: used up``, ``sign-in refused``, ``no access``) when that is what
     #: failed the probe, else ``None``. Such a profile answers its caller
-    #: only: :func:`profile_for` neither caches nor holds it (TA-39).
+    #: only: :func:`profile_for` keeps it for that caller's own model object
+    #: (:data:`REFUSED_HOLD_S`) and never for the model (TA-39).
     key_refused: Optional[str] = None
 
     def fallback_note(self) -> Optional[str]:
@@ -254,6 +260,38 @@ def _blank_png(side: int, height: Optional[int] = None) -> str:
 def _monotonic() -> float:
     import time
     return (_now or time.monotonic)()
+
+
+#: Refused-key verdicts (TA-39), by the refused caller's OWN model object:
+#: ``id(model) -> (monotonic time, model, profile)``. Read for that object
+#: only, so it never reaches another tester's model. The entry keeps its
+#: model object alive, so the id cannot pass to another caller's model
+#: while the entry stands.
+_REFUSED: Dict[int, Tuple[float, Any, VisionProfile]] = {}
+#: Seconds a refused caller's verdict stands before that caller's key is
+#: tried again (a tester whose key is put right is measured within this).
+REFUSED_HOLD_S = 120.0
+#: Most refused verdicts kept at once; the oldest leaves first.
+REFUSED_MAX = 64
+
+
+def _own_refusal(model) -> Optional[VisionProfile]:
+    """The refused-key verdict held for THIS model object, inside its hold,
+    else ``None``. Verdicts whose hold has run out leave here. Call with
+    the lock held."""
+    now = _monotonic()
+    for k in [k for k, v in _REFUSED.items()
+              if now - v[0] >= REFUSED_HOLD_S]:
+        del _REFUSED[k]
+    held = _REFUSED.get(id(model))
+    return held[2] if held is not None and held[1] is model else None
+
+
+def _hold_refusal(model, prof: VisionProfile) -> None:
+    """Keep ``prof`` for this model object alone. Call with the lock held."""
+    _REFUSED[id(model)] = (_monotonic(), model, prof)
+    while len(_REFUSED) > REFUSED_MAX:
+        del _REFUSED[min(_REFUSED, key=lambda k: _REFUSED[k][0])]
 
 
 class _Busy(Exception):
@@ -495,6 +533,14 @@ def _probe_host_edge(model, prof: VisionProfile, base: int,
         prof.key_refused = key_refusal(exc)
         log.warning("vision probe: host edge not measured: %s", exc)
     except Exception as exc:     # the budget stands without it
+        refused = key_refusal(exc)
+        if refused:
+            # The caller's key refused on call 5 (a budget that ran out
+            # after call 4): failed like any refused call, so the profile
+            # is not cached as measured with no host edge (TA-39).
+            prof.failed = True
+            prof.error = f"{type(exc).__name__}: {exc}"[:300]
+            prof.key_refused = refused
         log.info("vision probe: host edge not measured: %s", exc)
 
 
@@ -510,21 +556,27 @@ def profile_for(model) -> Optional[VisionProfile]:
     whatever its model, queued behind one 23 s probe).
 
     A probe that failed because its caller's key was refused
-    (``VisionProfile.key_refused``) is handed to that caller and kept
-    nowhere (TA-39): a call that waited for it measures the model itself,
-    with its own key, and so does the next call.
+    (``VisionProfile.key_refused``) is handed to that caller and kept for
+    that caller's own model object alone, for :data:`REFUSED_HOLD_S`
+    (TA-39): a call that waited for it with another model object measures
+    the model itself, with its own key, and so does the next such call.
     """
     if model is None or not enabled():
         return None
     key = _cache_key(model)
     while True:
         with _LOCK:
+            # Read first so verdicts whose hold has run out leave at every
+            # call; a shared measurement or held failure still comes first.
+            refused = _own_refusal(model)
             cached = _CACHE.get(key)
             if cached is not None:
                 return cached
             held = _FAILED.get(key)
             if held is not None and _monotonic() - held[0] < FAILED_HOLD_S:
                 return held[1]
+            if refused is not None:
+                return refused
             running = _INFLIGHT.get(key)
             if running is None:
                 running = _INFLIGHT[key] = _Probing()
@@ -536,11 +588,18 @@ def profile_for(model) -> Optional[VisionProfile]:
         finished = running.wait(PROBE_WAIT_S)
         with _LOCK:
             got = _CACHE.get(key)
-            if got is None and key in _FAILED:
-                got = _FAILED[key][1]
+            if got is None:
+                # A failed probe's fallback only inside its hold: an older
+                # one, left by a failure before this probe, is not this
+                # probe's answer (TA-39).
+                held = _FAILED.get(key)
+                if held is not None and \
+                        _monotonic() - held[0] < FAILED_HOLD_S:
+                    got = held[1]
         if got is None and finished and running.key_refused:
             # That probe answered its own caller only: measure with this
             # caller's key (or wait for another caller already doing so).
+            # The refused caller's own waiting calls find its verdict held.
             continue
         return got
     prof = None
@@ -552,9 +611,11 @@ def profile_for(model) -> Optional[VisionProfile]:
     finally:
         with _LOCK:
             if prof is not None and prof.failed and prof.key_refused:
-                # About this caller's key, not the model: kept nowhere, so
-                # no other caller's look is made on it (TA-39).
+                # About this caller's key, not the model: kept for this
+                # caller's own model object only, so no other caller's
+                # look is made on it (TA-39).
                 running.key_refused = True
+                _hold_refusal(model, prof)
             elif prof is not None and prof.failed:
                 # Never cached for the process (DR-36): held, then re-probed.
                 _FAILED[key] = (_monotonic(), prof)
@@ -571,6 +632,7 @@ def clear_cache() -> None:
     with _LOCK:
         _CACHE.clear()
         _FAILED.clear()
+        _REFUSED.clear()
 
 
 def cached_profile(model) -> Optional[VisionProfile]:
