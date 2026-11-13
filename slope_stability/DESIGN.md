@@ -551,7 +551,13 @@ and `refused_lowest` only where the result has them (GM-125).
   drawdown solve can fail -- the result says it is the infinite-slope
   mechanism and gives no window-edge warnings; a deep circle scoring about
   the same is not called that. `infinite_slope_checks` carry both closed
-  forms (`FOS_dry_closed_form`, `FOS_seepage_closed_form`).
+  forms (`FOS_dry_closed_form`, `FOS_seepage_closed_form`). The second
+  follows the reading of the water line and `seepage_reading` names it
+  (GM-140 step 5a review): `'water_table'`, (γ'/γsat) tan φ' / tan β
+  (FHWA NHI-06-088 Eq. 6-10, p. 6-8); `'piezometric'` (the default), the
+  full head, (γsat cos² β − γw) tan φ' / (γsat sin β cos β); in a
+  rapid-drawdown search (`'rapid_drawdown'`, level pools), (γ'/γ) tan φ' /
+  tan β as before.
 - **Toe circles** (Taylor 1937; Duncan, Wright & Brandon 2014): for each
   slope face (`slope_faces`: maximal runs of segments steeper than 5 deg
   rising the same way; a flat stretch ends a face, so each bench has its own
@@ -1730,7 +1736,8 @@ rule holds for all of them (the list is in
     the factor γ'/γsat" (Eq. 6-10). A plane 390 m long, 0.5 m below a 2H:1V
     face with the water table at the surface, reproduces Eq. 6-10 with
     `'water_table'` (OMS 0.6704 against 0.6704) and the full-head statics
-    with `'piezometric'` (0.502); `tests/test_pore_pressure_as_printed.py`.
+    with `'piezometric'` (OMS 0.5007 against 0.5007);
+    `tests/test_pore_pressure_as_printed.py`.
 - **ru in a layered column (D3).** u = ru × the total overburden stress at
   the base: the weight of the soil column above it per unit width, each
   soil at its own unit weight (the column step 1 weighs). EM 1110-2-1902
@@ -1743,15 +1750,16 @@ rule holds for all of them (the list is in
   ru × γ(base layer) × the column's height.
 - **Total-stress layers (D4).** No pore pressure is subtracted on the base
   of a slice whose layer is analysed in total stresses: "For total stress
-  analyses, pore water pressures are set to zero" (EM 1110-2-1902 2-2c,
-  p. 2-4; Table 2-1, p. 2-2). Total-stress layers: Mohr-Coulomb with
+  analyses, pore water pressures are set to zero" (EM 1110-2-1902 Table
+  2-1, p. 2-2); "the pore water pressure should be set to zero" (2-2c,
+  p. 2-4). Total-stress layers: Mohr-Coulomb with
   `analysis_mode='undrained'`, `'shansep'` and `'anisotropic'`. These all
   have φ = 0 at the base, so no factor of safety moves; the slice table's
   u and the GLE's "base tension" note do. `Slice.water_pressure` keeps the
   water pressure at the base, which the SHANSEP and Hoek-Brown stresses
   still use (D40, not changed). A total-stress layer given φ > 0 that lies
   under water draws a warning citing Table 2-1's note 2 (total-stress
-  envelopes with φ > 0 apply only to partly saturated soils) and saying
+  envelopes with φ > 0 apply only to partially saturated soils) and saying
   that the φ given is not used.
 - **The pond's edge (D16).** Where the water line comes down to the ground
   is a slice boundary (`pore_pressure.pond_edges`, in `slice_breaks`), for
@@ -1774,6 +1782,24 @@ rule holds for all of them (the list is in
   at each slice's lower side, with a thrust into the slope. Found while
   pinning the correction to print: the long plane above read OMS 0.860
   (Spencer 1.103) as a piezometric line where statics gives 0.501.
+  - **Departure, declared (the step 5a review, ruling 1).** What the
+    step's brief allowed to move a value: ru in a layered column (D3),
+    total-stress bases (D4) and the pond's edge (D16). What this changes:
+    the thrust where a water line is at or just under a sloping ground,
+    which was a phantom pool pushing into the slope; where the pool covers
+    both sides of a slice the value is the old one. Why: it is arithmetic,
+    and the old value erred on the unsafe side. The closed form (made-up
+    values; `TestPondThrust` in `tests/test_pore_pressure_as_printed.py`):
+    a 2H:1V face, c' = 5 kPa, φ' = 34°, γ = γsat = 19.5 kN/m³, the water
+    line on the ground read as a piezometric line, a plane 2 m (vertical)
+    below the face. Per metre of plan W = γsat z, u = γw z, N' = W cos β −
+    u / cos β, and F = c' / (γsat z sin β cos β) + (γsat cos² β − γw)
+    tan φ' / (γsat sin β cos β) = 0.3205 + 0.5007 = 0.8212. OMS on the
+    finite plane (60 slices) gives 0.8253, which is the same statics
+    summed over the plane and its two 2 m end stretches; before this step
+    it gave 0.9140. Saved answers that move: such a face, −10 to −13 %
+    (OMS, Janbu, M-P); V-031, −0.005 % (`module_work/gm140/
+    STEP5A_CHECK.md`, "Fix round after review").
 - **A pore-pressure grid with a line** (unchanged): the grid governs the
   base pressure wherever it is given; the line gives the pond's loads and
   the saturated unit weights below it. The result says so.

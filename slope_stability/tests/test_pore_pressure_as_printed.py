@@ -223,7 +223,8 @@ class TestInfiniteSlopeWithParallelSeepage:
         """Read as a piezometric line the same input carries the full
         head, gamma_w h, on the plane: F = (gamma_sat cos^2(beta) -
         gamma_w) tan(phi') / (gamma_sat sin(beta) cos(beta)) by the same
-        statics, 0.5019 against Eq. 6-10's 0.6704 here."""
+        statics: (19.5 x 0.8 - 9.81) x tan 34 deg / (19.5 x 0.4) = 0.5007,
+        against Eq. 6-10's 0.6704 here."""
         geom, slip = self._long_plane("piezometric")
         res = analyze_slope(geom, slip_surface=slip, method="fellenius",
                             n_slices=60)
@@ -324,7 +325,8 @@ class TestRuInALayeredColumn:
 
 class TestTotalStressLayers:
     """"For total stress analyses, pore water pressures are set to zero"
-    (EM 1110-2-1902 2-2c, p. 2-4; Table 2-1, p. 2-2)."""
+    (EM 1110-2-1902 Table 2-1, p. 2-2); "the pore water pressure should be
+    set to zero" (2-2c, p. 2-4)."""
 
     LINE = [(0.0, 10.0), (20.0, 10.0), (40.0, 16.0), (70.0, 16.0)]
 
@@ -392,7 +394,7 @@ class TestTotalStressLayers:
 
     def test_phi_given_to_a_total_stress_layer_under_water_warns(self):
         """Table 2-1, note 2 (EM 1110-2-1902 p. 2-2): total-stress
-        envelopes with phi > 0 apply only to partly saturated soils."""
+        envelopes with phi > 0 apply only to partially saturated soils."""
         res = analyze_slope(self._geom(phi=12.0), **DEEP)
         w = [w for w in res.warnings if "Table" in w]
         assert len(w) == 1
@@ -645,3 +647,95 @@ class TestPondThrust:
         from slope_stability.slices import _pond_thrust
         assert _pond_thrust(0.0, 0.0, 10.0, 13.0)[0] == 0.0
         assert _pond_thrust(-0.5, -0.2, 10.0, 13.0)[0] == 0.0
+
+    def test_a_water_line_at_the_ground_closed_form(self):
+        """The thrust pinned as arithmetic (the step 5a review's case,
+        ruling 1). Made-up values: a 2H:1V face (beta = atan 0.5, so
+        sin(beta) cos(beta) = 0.4 and cos^2(beta) = 0.8), c' = 5 kPa,
+        phi' = 34 deg, gamma = gamma_sat = 19.5 kN/m3, the water line ON
+        the ground, read as a piezometric line (the default).
+
+        Infinite slope, per metre of plan, the plane z = 2 m (vertical)
+        below the ground: W = gamma_sat z; the base is 1 / cos(beta) long;
+        u = gamma_w z (the full head under a line at the ground); no pond,
+        as the line is nowhere above the ground. OMS (no interslice force):
+
+            N' = W cos(beta) - u / cos(beta)
+            F  = [c' / cos(beta) + N' tan(phi')] / (W sin(beta))
+               = c' / (gamma_sat z sin(beta) cos(beta))
+                 + (gamma_sat cos^2(beta) - gamma_w) tan(phi')
+                   / (gamma_sat sin(beta) cos(beta))
+               = 5 / 15.6 + (15.6 - 9.81) x 0.67451 / 7.8
+               = 0.32051 + 0.50069 = 0.82121
+
+        The finite plane runs 358 m in plan 2 m below the face, with a 2 m
+        stretch from the ground at each end. The same statics summed over
+        its three straight stretches (each exact by the trapezoid rule, the
+        ground and the base being straight there) is what OMS must give:
+        slices are cut at the surface's corners. The plane's own stretch is
+        the infinite slope; the end stretches add about 0.5 %. Before step
+        5a each slice took a thrust from the line at its middle, a pool
+        half the slice's rise deep at its lower side, and OMS read 0.914.
+        """
+        b = math.atan(0.5)
+        c, tphi, gs, z = 5.0, math.tan(math.radians(34.0)), 19.5, 2.0
+        sc = math.sin(b) * math.cos(b)
+        closed = (c / (gs * z * sc)
+                  + (gs * math.cos(b) ** 2 - GAMMA_W) * tphi / (gs * sc))
+        assert closed == pytest.approx(0.82121, abs=1e-5)
+
+        ground = [(-20.0, 0.0), (0.0, 0.0), (400.0, 200.0), (420.0, 200.0)]
+        plane = [(20.0, 10.0), (22.0, 9.0), (380.0, 188.0), (382.0, 191.0)]
+        face = SlopeSoilLayer(name="face", top_elevation=200.0,
+                              bottom_elevation=-50.0, gamma=gs,
+                              gamma_sat=gs, phi=34.0, c_prime=c)
+        geom = SlopeGeometry(surface_points=ground, soil_layers=[face],
+                             gwt_points=list(ground))
+        res = analyze_slope(geom, slip_surface=PolylineSlipSurface(
+            points=plane), method="fellenius", n_slices=60)
+
+        def stretch(xa, za, xb, zb):
+            # the ground (and the line) is z = x / 2 over the whole plane;
+            # h, the depth of the base below it, is straight on a stretch
+            dx = xb - xa
+            alpha = math.atan2(zb - za, dx)
+            h = 0.5 * ((0.5 * xa - za) + (0.5 * xb - zb))   # mean depth
+            w = gs * h * dx
+            length = dx / math.cos(alpha)
+            u_force = GAMMA_W * h * length                  # u = gamma_w h
+            # OMS holds N' at zero where it is negative (the steep head
+            # stretch, gamma cos^2(alpha) < gamma_w)
+            n_eff = max(w * math.cos(alpha) - u_force, 0.0)
+            return c * length + n_eff * tphi, w * math.sin(alpha)
+
+        parts = [stretch(*plane[i], *plane[i + 1]) for i in range(3)]
+        assert parts[1][0] / parts[1][1] == pytest.approx(closed, rel=1e-12)
+        by_hand = sum(p[0] for p in parts) / sum(p[1] for p in parts)
+        assert res.FOS == pytest.approx(by_hand, rel=1e-6)
+
+
+def test_the_planar_check_follows_the_reading():
+    """The infinite-slope check of a search reports the closed form with
+    the water at the face's surface for the reading the run used, and
+    names it (the step 5a review): 'water_table', (gamma'/gamma_sat)
+    tan(phi')/tan(beta) (FHWA NHI-06-088 Eq. 6-10, p. 6-8); 'piezometric'
+    (the default), the full head, (gamma_sat cos^2(beta) - gamma_w)
+    tan(phi') / (gamma_sat sin(beta) cos(beta)). Made-up 2H:1V sand face,
+    phi' = 34 deg, gamma_sat = 19.5: 1.3490 x 9.69 / 19.5 = 0.6704 and
+    1.3490 x 5.79 / 15.6 = 0.5007."""
+    from slope_stability.search_supplements import check_infinite_slope
+    sand = _sand(gamma_sat=19.5, phi=34.0, c_prime=0.0)
+    dry = math.tan(math.radians(34.0)) / 0.5
+    want = {"water_table": dry * (19.5 - GAMMA_W) / 19.5,
+            "piezometric": dry * (19.5 * COS2 - GAMMA_W) / (19.5 * COS2)}
+    assert want["water_table"] == pytest.approx(0.6704, abs=1e-4)
+    assert want["piezometric"] == pytest.approx(0.5007, abs=1e-4)
+    for kind, value in want.items():
+        g = _geom(line=list(SURFACE), layers=[sand], water_line_kind=kind)
+        # windows that exclude the face: the closed forms only, no solve
+        (chk,) = check_infinite_slope(
+            g, x_entry_range=(-90.0, -80.0))["checks"]
+        assert chk["seepage_reading"] == kind
+        assert chk["FOS_seepage_closed_form"] == pytest.approx(value,
+                                                               abs=1e-4)
+        assert chk["FOS_dry_closed_form"] == pytest.approx(dry, abs=1e-4)

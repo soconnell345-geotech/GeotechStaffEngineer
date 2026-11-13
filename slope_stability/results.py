@@ -674,8 +674,11 @@ class SearchResult:
     infinite_slope_checks : list of dict
         One entry per stretch of slope face where cohesionless soil is at
         the surface: x range, slope angle beta, layer, phi', the dry
-        closed-form tan(phi')/tan(beta) and the FOS of the shallow planar
-        surfaces evaluated there (None if not evaluated, with a note).
+        closed-form tan(phi')/tan(beta), the closed form with the water at
+        the surface for the reading used (``FOS_seepage_closed_form``,
+        named by ``seepage_reading``: 'piezometric', 'water_table' or
+        'rapid_drawdown') and the FOS of the shallow planar surfaces
+        evaluated there (None if not evaluated, with a note).
     search_ranges : dict
         The entry / exit windows and centre ranges the main search used
         (x_entry_range, x_exit_range, and x_range / y_range for a centre

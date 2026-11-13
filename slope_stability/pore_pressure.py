@@ -53,12 +53,13 @@ layer has:
 
 4. A layer analysed in total stresses carries no pore pressure on its
    base, whatever the water input: "For total stress analyses, pore water
-   pressures are set to zero" (EM 1110-2-1902 2-2c, p. 2-4; Table 2-1,
-   p. 2-2). Total-stress layers here: Mohr-Coulomb with
+   pressures are set to zero" (EM 1110-2-1902 Table 2-1, p. 2-2); "the
+   pore water pressure should be set to zero" (2-2c, p. 2-4). Total-stress
+   layers here: Mohr-Coulomb with
    ``analysis_mode='undrained'`` (cu), and the 'shansep' and 'anisotropic'
    undrained strengths. A Hoek-Brown layer is an effective-stress
    strength. Table 2-1's note 2 (p. 2-2): total-stress envelopes with
-   phi > 0 apply only to partly saturated soils; a total-stress layer
+   phi > 0 apply only to partially saturated soils; a total-stress layer
    given phi > 0 that lies under water is warned of
    (``water_statements``).
 
@@ -369,8 +370,9 @@ def water_statements(geom) -> Tuple[List[Dict[str, Any]], List[str]]:
         choices.append(choice(
             "pore pressure on bases in total-stress layers",
             f"none ({names})", MODULE,
-            "for total stress analyses pore water pressures are set to "
-            "zero (EM 1110-2-1902 2-2c, p. 2-4; Table 2-1, p. 2-2)"))
+            'for total stress analyses "pore water pressures are set to '
+            'zero" (EM 1110-2-1902 Table 2-1, p. 2-2), and "the pore water '
+            'pressure should be set to zero" (2-2c, p. 2-4)'))
         for L in wet:
             if L.phi > 0:
                 notes.append(
@@ -378,7 +380,8 @@ def water_statements(geom) -> Tuple[List[Dict[str, Any]], List[str]]:
                     f"(undrained strength) and was given phi = {L.phi:g} "
                     "deg, and it lies under water or was given a pore "
                     "pressure. Total-stress envelopes with phi > 0 apply "
-                    "only to partly saturated soils (EM 1110-2-1902 Table "
+                    "only to partially saturated soils (EM 1110-2-1902 "
+                    "Table "
                     "2-1, note 2, p. 2-2). This module takes a total-stress "
                     "layer's strength with phi = 0 and subtracts no pore "
                     "pressure on its base (EM 2-2c, p. 2-4): the phi given "

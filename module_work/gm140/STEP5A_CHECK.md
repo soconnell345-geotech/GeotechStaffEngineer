@@ -48,7 +48,7 @@ From the account's quotations (the owner's copy; not in a repository):
 
 - **EM 1110-2-1902 2-2c, p. 2-4; Table 2-1, p. 2-2.** Pore pressure is set
   to zero in total-stress analyses. Table 2-1 note 2: total-stress envelopes
-  with φ > 0 apply only to partly saturated soils.
+  with φ > 0 apply only to partially saturated soils.
 - **EM 1110-2-1902 C-7, p. C-29.** ru = u / (γ z), for a uniform slope.
 
 No printed rule for ru in a layered column was found (the account says the
@@ -195,8 +195,8 @@ the ground; (c) ru in a layered column; (d) total-stress bases (no row: φ =
 | B11 | V-028 ACADS 4, a piezometric surface: kept surface GLE; weak-layer search | 1.0095; 0.8301 | same | referee 0.78 | none: a piezometric line is never corrected |
 | B12 | V-032 search | 1.3149 | same | 1.366 | none |
 | B15 | V-030 Spencer / GLE / Janbu | 1.2181 / 1.2204 / 1.2070 | same | Slide2 1.157 / 1.160 / 1.168 | none |
-| B16 | V-031 (Slide2 #57) circle, 50 slices: Bishop / Spencer / GLE | 1.4205 / 1.4247 / 1.4091 | 1.4204 / 1.4246 / 1.4090 | 1.417 / 1.422 | (a): the line meets the ground at the toe |
-| B16 | V-031 Spencer search; Bishop search | 1.4174; 1.4163 | 1.4172; 1.4162 | 1.422; 1.417 | (a) |
+| B16 | V-031 (Slide2 #57) circle, 50 slices: Bishop / Spencer / GLE | 1.4205 / 1.4247 / 1.4091 | 1.4204 / 1.4246 / 1.4090 | 1.417 / 1.422 | (b), not (a): without the edge the value is the same, with the old thrust it is the before value (the review) |
+| B16 | V-031 Spencer search; Bishop search | 1.4174; 1.4163 | 1.4172; 1.4162 | 1.422; 1.417 | (b), as on the circle (not rerun with each part undone) |
 | B16/17 | V-043 circle, Spencer; refined search; noncircular | 1.2096; 1.1859; 1.2337 | same | 1.209; 1.188 | none |
 | B17 | V-042 Bishop entry/exit | 1.3335 | same | 1.334 | none |
 | V-044 | Slide2 #70 submerged: Bishop / Spencer / M-P | 1.5974 / 1.5962 / 1.5933 | same | 1.603 / 1.599 / 1.599 | none: the pond covers the whole surface, no edge inside it |
@@ -330,6 +330,56 @@ below takes its slices from `build_slices` (grep: `build_slices(` in
    Monte Carlo results get the entries in the adapter's output only (their
    library result classes are unchanged).
 
+## 7b. Calls made (at the review; for the owner's desk at the merge)
+
+Three calls the independent review put to the orchestrator, each with both
+forms and what moves. The orchestrator ruled; they go to the owner at the
+merge.
+
+1. **ru on soils of different unit weight (D3), as the branch builds it.**
+   - This form: u = ru × the soil column's weight per unit width above
+     the base, each soil at its own unit weight, without surcharge or
+     ponded water. EM 1110-2-1902 C-7 (p. C-29) defines ru = u / (γ z) for
+     a uniform slope; the sum over a layered column is the module's
+     reading, and the result says so.
+   - Other form: the reading before step 5a, ru × γ of the base's layer ×
+     the column's height.
+   - What moves, both to the higher side: +2.6 % on the review's made-up
+     two-soil case (Bishop 1.3268 to 1.3617, Spencer 1.3315 to 1.3656);
+     +1.0 % on `test_usability_features::test_multi_layer_different_ru`
+     (1.4447 to 1.4592; the test asserts a range). With one soil, or soils
+     of one weight (F&K, both 120 pcf), nothing moves.
+   - The branch does not keep the old reading as an option.
+2. **The pond thrust taken at each slice side** (a declared departure,
+   DESIGN.md "The pond's thrust on a slice").
+   - This form: γw × the mean depth × the ground's rise, over the stretch
+     where the line is above the ground, the depths taken from the line at
+     each side of the slice. Closed form on the review's plane (2H:1V,
+     c' = 5 kPa, φ' = 34°, γsat = 19.5 kN/m³, plane 2 m deep, line on the
+     ground, full head): F = c' / (γsat z sin β cos β) + (γsat cos² β −
+     γw) tan φ' / (γsat sin β cos β) = 0.8212; OMS 0.8253 (the plane's
+     two end stretches), pinned in `TestPondThrust`.
+   - Other form: both depths taken from the line's elevation at the
+     slice's middle (before step 5a). The same under a level pool and
+     wherever the line is above the ground at both sides; under a line at
+     or just under a sloping ground, a phantom pool at each slice's lower
+     side pushing into the slope (OMS 0.9140 on that plane).
+   - What moves: that face −9.7 % (OMS), −13.0 % (Janbu), −13.0 % (M-P);
+     V-031 −0.005 %. Not kept as an option (it is an arithmetic error on
+     the unsafe side).
+3. **A saved analysis that names no `water_line_kind`** reads its line as
+   a piezometric line, as before.
+   - This form: `'piezometric'`, the full vertical head, never corrected
+     (owner call OWN-104).
+   - Other form: `'water_table'`, u = hw γw cos² αw (FHWA NHI-06-088
+     Eq. 6-16, p. 6-14), offered as the option; it raises the factor of
+     safety under a sloping line (made-up circle: Bishop 1.3229 to
+     1.3397).
+   - What moves with the default: nothing from the reading. The pond's
+     edge (D16) moves a given surface by at most 0.2 % (V-037, V-038,
+     V-048, V-052's circles); a search can end on a neighbouring surface
+     (V-052's searches, up to 0.6 %).
+
 ## 8. Tests
 
 All by pytest's exit code, Python 3.12, the brief's venv (planlens and
@@ -393,7 +443,8 @@ in hand.
   coefficient, surcharge inertia, the Bishop-with-kh warning): not touched.
 - **A total-stress envelope with φ > 0** cannot be entered: an undrained
   layer is (cu, 0). The step warns and says so; building c-φ total-stress
-  envelopes for partly saturated soils (EM Table 2-1) is not in the brief.
+  envelopes for partially saturated soils (EM Table 2-1) is not in the
+  brief.
 - **A vertex of the water line is not a slice boundary.** A slice with a
   break of the line inside it takes u, and the pond's weight, from its
   mid-point. FHWA p. 6-14 does not ask for a boundary there. Small.
@@ -412,3 +463,118 @@ in hand.
 - **The local `master` ref in the session's clone was stale** (1d219c8); the
   branch was cut from the checked-out HEAD, aa0458b, which is origin's
   current master with steps 1 and 2. All "before" numbers are from aa0458b.
+
+## 11. Fix round after review (2026-11-13)
+
+Branch `fix/gm140-step5a-review`, cut from b97466c. The independent review
+(pass with defects) found five defects; the orchestrator ruled on each.
+Probes and logs: the review folder's `step5afix/` (outside the
+repository).
+
+**The merge of master (874c7da: GM-140 step 4, tension cracks, and other
+sessions' work).** Conflicts where both steps worked, each resolved by
+keeping both rules: the adapter's parameters (`tension_crack_depth_basis`
+and `water_line_kind`; step 4's default crack model `'truncation'` kept),
+a search's `choices` in `analysis.py` (the water statements, then the
+crack's), `SlopeGeometry`'s fields (both), `method_probes.json` (both
+probes), VALIDATION.md (B21, then B-5a). `slices.py`, `results.py`,
+`rapid_drawdown.py`, `DESIGN.md` merged without conflict. The manual
+rebuilt from the registry (1605 agent-callable methods: this step adds a
+parameter, no method). Every slope test file the merge touched passes
+(below); what the merges move is in ruling 5's table.
+
+**Ruling 1, the pond thrust: accepted as a declared fix.**
+- (a) Pinned as arithmetic: `TestPondThrust::
+  test_a_water_line_at_the_ground_closed_form`, the review's case (2H:1V,
+  c' = 5 kPa, φ' = 34°, γ = γsat = 19.5 kN/m³, a plane 2 m below the face,
+  the line on the ground, read as a piezometric line). The test writes the
+  inputs and the derivation: F = c' / (γsat z sin β cos β) + (γsat cos² β
+  − γw) tan φ' / (γsat sin β cos β) = 0.32051 + 0.50069 = 0.82121. OMS on
+  60 slices must equal the same statics summed over the plane and its two
+  end stretches (1e-6), whose middle term is the closed form exactly: OMS
+  0.8253. With the old thrust OMS read 0.9140. The c' = 0 case
+  (`test_piezometric_reading_is_lower`, 0.5007, before 0.8599) was already
+  pinned.
+- (b) The departure record: DESIGN.md, "The pond's thrust on a slice".
+- (c) Saved answers that move, by the thrust alone (the review's runs,
+  made-up values; "before" is aa0458b):
+
+| Case | Before | After | Change | Printed or closed form |
+|---|---|---|---|---|
+| 2:1 face, water line at the ground, c' = 5 kPa: OMS | 0.9140 | 0.8253 | −9.7 % | closed form 0.8212 |
+| same, Janbu | 0.9572 | 0.8326 | −13.0 % | 0.8212 |
+| same, M-P | 0.9559 | 0.8316 | −13.0 % | 0.8212 |
+| V-031 (Slide2 #57) circle: Bishop / Spencer / GLE | 1.42052 / 1.42474 / 1.40907 | 1.42045 / 1.42465 / 1.40900 | −0.005 % | 1.417 / 1.422 (Table 57.3, p. 205) |
+
+**Ruling 2, calls made:** section 7b (three calls for the owner's desk).
+
+**Ruling 3, V-052's 3:1 ordering stays a strict xfail** (the lead files
+the backlog item). One probe (`probe_v052.py`) at LK's centre (40.416,
+44.623), R = 33.998 and 33.999 m: no slice boundary and no edge moves
+(the pond edges stay at x = 33.8328 and 65.8368; the boundaries shift by
+at most 5 mm, the most the drawn-down pool's crossing of the circle,
+47.045 to 47.051). One slice changes: the sixth (x 40.44 to 42.09, just
+past the circle's lowest point), whose base angle passes 0.0250 rad.
+`rapid_drawdown._consolidation_Kc` takes the at-rest ratio 1/(1 − sin φ')
+where |sin 2α| < 0.05 and the ratio from the base stresses above that: at
+sin 2α = 0.04998 the slice has Kc = 3.41 (weight 0.5 between the
+envelopes, stage-2 strength 28.28 kPa), at 0.05018 Kc = Kf (weight 1, the
+drained 37.71 kPa). LK 1.5425 to 1.5674 (+1.6 %). The step at aa0458b
+(R 34.002 to 34.004) is the same switch with the slices placed where the
+pond's edge did not cut them. Not fixed here: `rapid_drawdown.py` is step
+9's.
+
+**Ruling 4, the review's own items.**
+- (a) V-031's move is the thrust, not the edge: VALIDATION.md B-5a's two
+  V-031 rows and section 5's two V-031 rows now say (b), with the review's
+  check (without the edge the same; with the old thrust the before value).
+- (b) The planar check's `FOS_seepage_closed_form` follows the reading and
+  `seepage_reading` names it: `'water_table'`, (γ'/γsat) tan φ' / tan β
+  (FHWA Eq. 6-10, p. 6-8); `'piezometric'` (default), the full head,
+  (γsat cos² β − γw) tan φ' / (γsat sin β cos β). The text that names a
+  governing shallow slide uses the same form. A rapid-drawdown search keeps
+  (γ'/γ) tan φ' / tan β, labelled `'rapid_drawdown'`: its pools are level,
+  and V-052b's governing sliver (1.075) is that form, unchanged.
+  `search_supplements.py`; test `test_the_planar_check_follows_the_reading`
+  (0.6704 and 0.5007 on a made-up face).
+- (c) "partially saturated", as Table 2-1's note 2 prints it, in
+  `pore_pressure.py` (module text and the warning), DESIGN.md, this file
+  and the test's docstring.
+- (d) "For total stress analyses, pore water pressures are set to zero" is
+  now cited to Table 2-1, p. 2-2, where it is printed, with p. 2-4's own
+  words, "the pore water pressure should be set to zero" (2-2c), as the
+  review read them (the EM is not in the repository): `pore_pressure.py`
+  (module text and the result's `choices`), DESIGN.md, the test's
+  docstring.
+- (e) `test_pore_pressure_as_printed.py`: 0.5019 corrected to 0.5007, the
+  closed form's arithmetic, (19.5 × 0.8 − 9.81) × tan 34° / (19.5 × 0.4);
+  DESIGN.md's 0.502 likewise.
+
+**Tests run** (single files, pytest exit code, the brief's venv):
+
+| File | After the merge | After rulings 1 to 4 |
+|---|---|---|
+| `slope_stability/tests/test_pore_pressure_as_printed.py` | 47 passed, 0 | 49 passed, 0 |
+| `slope_stability/tests/test_cracks_as_printed.py` | 41 passed, 0 | |
+| `slope_stability/tests/test_slope_stability.py` | 92 passed, 0 | |
+| `slope_stability/tests/test_usability_features.py` | 49 passed, 0 | |
+| `slope_stability/tests/test_rapid_drawdown.py` | 16 passed, 0 | |
+| `slope_stability/tests/test_search_supplements.py` | 18 passed, 0 | 18 passed, 0 |
+| `slope_stability/tests/test_search_reinforcement.py` | 33 passed, 0 | 33 passed, 0 |
+| `slope_stability/tests/test_circle_slicing.py`, `test_calc_steps_modern.py`, `test_m_alpha.py` | 9, 23, 17 passed (1 xfailed), 0 | |
+| `validation_examples/test_published_v052_drawdown_pilarcitos.py` | 5 passed, 1 xfailed (3:1), 0 | 5 passed, 1 xfailed, 0 |
+| `validation_examples` V-026 slope and E4, V-031, V-037, V-043, V-044, V-048, V-054 | all passed (V-043, V-054: 1 xfailed each), 0 | |
+| `funhouse_agent/tests/test_slope_stability_adapter.py` | 92 passed, 0 | |
+| `funhouse_agent/tests/test_allowed_values.py` | 307 passed, 0 | |
+| `funhouse_agent/tests/test_top_level_params.py` | 53 passed, 0 (with the library submodule on the path) | |
+| `funhouse_agent/tests/test_defaults_used.py -k "slope or em_1905 or table_db"` | 51 passed, 19 skipped, 0 | |
+| `webapp/tests/test_user_manual_current.py`; `module_work/doc10/check_manual.py` | 1 passed, 0; OK, 0 | |
+
+The whole of `test_defaults_used.py` on this machine, run without the
+library submodule on the path: 14 failed; those the log shows are gstools
+probes (its DLL blocked by the machine's application control). Its slope
+and reference cases pass with the submodule, as above. The lead runs the
+suite on GitHub.
+
+**Ruling 5's table** (branch against master after the final merge):
+waiting for steps 3 and 9 to reach master.

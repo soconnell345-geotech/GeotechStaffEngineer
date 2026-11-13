@@ -903,6 +903,17 @@ FS = (γ'/γsat) tan φ' / tan β. Made-up values: β = 26.57° (2H:1V), φ' = 3
 
 The last row is the defect found on the way: a sloping water line at the
 ground read as a pool at each slice's lower side (`slices._pond_thrust`).
+The review accepted the fix as a declared departure (DESIGN.md, "The
+pond's thrust on a slice") and it is pinned as arithmetic on the review's
+case, c' = 5 kPa and a plane 2 m deep: closed form 0.8212, OMS 0.8253
+(the same statics over the plane and its two end stretches), before
+0.9140 (`TestPondThrust`).
+
+The infinite-slope check of a search reports the closed form with the
+water at the surface for the reading used (`seepage_reading`): 0.5007
+under `'piezometric'` and 0.6704 under `'water_table'` for the face above
+(`test_the_planar_check_follows_the_reading`); a drawdown search keeps
+(γ'/γ) tan φ' / tan β.
 
 **What moves in the pinned set with the default** (the uncorrected head):
 only the pond's edge as a slice boundary, the pond thrust where a line is
@@ -913,8 +924,8 @@ in the set has φ > 0 at its base, so D4 moves no factor of safety.
 |---|---|---|---|---|
 | F&K (1977) circle, ru = 0.25: OMS / Bishop / Spencer / M-P | 1.6067 / 1.7590 / 1.7633 / 1.7651 | the same | 1.607 / 1.766 / 1.761 / 1.764 | nothing: one soil, so ru × the overburden is ru γ h |
 | F&K composite surface, ru = 0.25: Spencer / M-P | 1.1381 / 1.1322 | the same | 1.118 / 1.118 | nothing: both soils 120 pcf |
-| V-031 (Slide2 #57) circle, 50 slices: Bishop / Spencer / GLE | 1.4205 / 1.4247 / 1.4091 | 1.4204 / 1.4246 / 1.4090 | 1.417 / 1.422 | the pond's edge (the line meets the ground at the toe) |
-| V-031 Spencer search | 1.4174 | 1.4172 | 1.422 | the same |
+| V-031 (Slide2 #57) circle, 50 slices: Bishop / Spencer / GLE | 1.4205 / 1.4247 / 1.4091 | 1.4204 / 1.4246 / 1.4090 | 1.417 / 1.422 | the pond thrust, not the edge: without the edge the value is the same, with the old thrust it is the before value (the step 5a review) |
+| V-031 Spencer search | 1.4174 | 1.4172 | 1.422 | the pond thrust, as on the circle (the search was not rerun with each part undone) |
 | V-044 (Slide2 #70) submerged: Bishop / Spencer / M-P | 1.5974 / 1.5962 / 1.5933 | the same | 1.603 / 1.599 / 1.599 | nothing: the pond covers the whole surface |
 | V-029 pore-pressure grid against the line | 1.7630 / 1.7625 | the same | (not pinned to print) | nothing: the grid governs the base |
 | V-028 (ACADS 4), a piezometric surface | 1.0095 (kept surface), 0.8301 (search) | the same | referee 0.78 | nothing: a piezometric line is not corrected |
@@ -935,7 +946,13 @@ in the set has φ > 0 at its base, so D4 moves no factor of safety.
   1.5426, 1.5674 at R = 33.985, 33.990, 33.995, 34.000 m), and each method's
   radius search stops at a different lip. The cause is the search on a
   coarse slicing, not the pore-pressure rule; nothing is re-pinned and no
-  tolerance is widened.
+  tolerance is widened. The jump itself (one probe at the review's fix
+  round): between R = 33.998 and 33.999 m no slice boundary and no edge
+  moves; the base angle of the slice just past the circle's lowest point
+  crosses |sin 2α| = 0.05, where `rapid_drawdown._consolidation_Kc`
+  switches from the at-rest ratio 1/(1 − sin φ') to the ratio from the
+  base stresses (Kc 3.41 to Kf; that slice's stage-2 strength 28.3 to
+  37.7 kPa; LK 1.5425 to 1.5674). It belongs to the drawdown (step 9).
 
 ## Notes / known deviations
 
