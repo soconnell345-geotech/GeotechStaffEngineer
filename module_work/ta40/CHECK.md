@@ -22,6 +22,20 @@ Files changed (all within task D's list, plus new files of its own):
 All seven pieces are repairs; none sits behind an on/off setting. One
 tunable was added: `GEOTECH_SHAREPOINT_MAX_UPLOAD_MB`, default 2048 (piece 4).
 
+## Review fixes (2026-11-13)
+
+1. `graph_sharepoint._send`: a timeout, any other `OSError` or an
+   `http.client.HTTPException` becomes a `GraphError` with no status, so a
+   timed-out piece of a large upload is resumed from the session's position.
+2. `sharepoint_store._upload_changed`: a file held back for its size is
+   skipped only while it is above today's limit; when the limit is raised it
+   is sent and no longer named in the note.
+3. `sharepoint_store._mirror_files`: a `meta.json` that exists but does not
+   load as a JSON object is read again (three more times, 0.1 s apart); if
+   it still does not load the save ends with an error and sends nothing.
+4. `graph_sharepoint.upload_file`: the 404 fallback writes one `log.warning`
+   (no file, folder or person named).
+
 ## Piece by piece
 
 ### 1. Saves ran inside the turn under one process-wide lock
@@ -114,7 +128,8 @@ let the first failure end the upload.
 
 **Changed.** `GraphFileManager._upload_large` / `_session_next`: after a
 failed piece it asks the session where it stands (`GET uploadUrl`,
-`nextExpectedRanges`) and goes on from that byte, up to `RESUME_TRIES` (5)
+`nextExpectedRanges`) and goes on from that byte (for a cut connection, an
+HTTP 5xx and, since the review fixes, a timeout), up to `RESUME_TRIES` (5)
 times per upload, `RESUME_PAUSE_S` (2 s) before each. Not tried again: 401,
 403, 404, 409, 429 (and a 503/504 that `_send` has already waited out sets
 the hold, so the session cannot be asked and the piece's own error is
@@ -132,7 +147,8 @@ names the file, its size and the limit, before anything is asked of the
 service. In the mirror (`_upload_changed`, `_mirror_files`): the first sync
 reports it in `errors` (so it is counted, shown and logged once); the
 manifest records it under `not_sent` with its stamp; later syncs do not try
-it again until the file changes, do not count it as failed, and name it in
+it again until the file changes or the limit is raised, do not count it as
+failed, and name it in
 `summary["note"]` (which the sidebar shows) and `summary["not_sent"]`.
 
 Downloads are still read whole into memory (`download_file`); the item is
@@ -373,8 +389,11 @@ keep the old behaviour until they leave with INF-35.
 - A failed large upload leaves its upload session to expire by itself (no
   DELETE of the session).
 - A queued save is lost if the process is stopped more than a minute into
-  the exit flush; the files are not stamped, so the next sync sends them.
-  A conversation never opened again after that is not saved until then.
+  the exit flush, and a save still queued is lost at once when the process
+  is killed; the files are not stamped, so the next sync sends them. After
+  the restart the sidebar says only that mirroring is on, and that
+  conversation's next turn or "Sync now" sends it. A conversation never
+  opened again after that is not saved until then.
 - If a large upload's last piece arrives but its answer is lost, the upload
   is reported as failed and the file is sent again at the next sync.
 - A name SharePoint refuses for a reason outside the list above (a path

@@ -202,6 +202,8 @@ class FakeGraph:
                 raise urllib.error.URLError("connection reset")
             if what == "error":
                 raise _http(shown, 500)
+            if what == "timeout":              # taken, never answered
+                raise TimeoutError("timed out")
         if start != state["got"]:
             raise _http(shown, 416)
         state["sha"].update(req.data)
@@ -750,3 +752,85 @@ def test_a_conversation_with_plain_names_has_the_manifest_it_always_had(
     assert set(sp._load_manifest(conv)) == {"folder", "files"}
     assert sp.NAMES_NAME not in sp._load_manifest(conv)["files"]
     assert not any(p.endswith(sp.NAMES_NAME) for p in graph.files)
+
+
+# ------------------------------------------------ review fixes (2026-11-13)
+
+def test_a_timed_out_piece_is_resumed(tmp_path, graph, monkeypatch):
+    """The service takes the second piece and never answers: a bare
+    TimeoutError. It is a GraphError with no status, so the session is asked
+    where it stands and the upload goes on; the file arrives whole."""
+    _small_pieces(monkeypatch)
+    data = os.urandom(1000 * 1024)
+    local = tmp_path / "survey.dwg"
+    local.write_bytes(data)
+    fm = _store().file_manager()
+    original_session = graph._session
+
+    def session(req, shown):
+        state = graph.sessions[shown]
+        if req.get_method() == "PUT" and len(state["parts"]) == 1 \
+                and not state.get("armed"):
+            state["armed"] = True
+            state["fail"] = ["timeout"]
+        return original_session(req, shown)
+
+    graph._session = session
+    assert fm.upload_file(str(local), "Shared Documents/GSE/survey.dwg",
+                          overwrite=True) is True
+    assert graph.files["GSE/survey.dwg"] == data
+    assert graph.count("GET", r"upload\.example/session") == 1
+
+
+def test_a_file_held_for_its_size_is_sent_when_the_limit_is_raised(
+        tmp_path, graph, monkeypatch):
+    monkeypatch.setenv(MAX_MB, "1")
+    root = str(tmp_path)
+    _conversation(root, "CCCC3333", {
+        "files/point-cloud.las": b"p" * (2 * 1024 * 1024)})
+    store = _store()
+    first = store.mirror_conversation("CCCC3333", root)
+    assert "point-cloud.las" in first["errors"][0]
+    second = store.mirror_conversation("CCCC3333", root)
+    assert "point-cloud.las" in second["note"]
+    monkeypatch.setenv(MAX_MB, "100")
+    third = store.mirror_conversation("CCCC3333", root)
+    assert third["errors"] == [] and third["uploaded"] >= 1
+    assert "note" not in third and "not_sent" not in third
+    assert any(p.endswith("/files/point-cloud.las") for p in graph.files)
+
+
+def _blank_meta(root, tid, monkeypatch, heal):
+    conv = _conversation(root, tid, owner="corp-j-doe")
+    meta_path = os.path.join(conv, "meta.json")
+    good = open(meta_path, encoding="utf-8").read()
+    open(meta_path, "w", encoding="utf-8").close()        # empty: mid-write
+    monkeypatch.setattr(sp, "META_RETRY_PAUSE_S", 0.0)
+    real_sleep = sp.time.sleep
+
+    def sleep(seconds):
+        if heal:
+            with open(meta_path, "w", encoding="utf-8") as fh:
+                fh.write(good)
+        real_sleep(0)
+
+    monkeypatch.setattr(sp.time, "sleep", sleep)
+
+
+def test_a_record_empty_at_the_first_read_is_read_again(tmp_path, graph,
+                                                        monkeypatch):
+    root = str(tmp_path)
+    _blank_meta(root, "DDDD4444", monkeypatch, heal=True)
+    out = _store().mirror_conversation("DDDD4444", root)
+    assert out["errors"] == []
+    assert any("/conversations/corp-j-doe/" in p for p in graph.files)
+    assert not any("conversations/DDDD4444" in p for p in graph.files)
+
+
+def test_a_record_that_stays_empty_sends_nothing(tmp_path, graph, monkeypatch):
+    root = str(tmp_path)
+    _blank_meta(root, "EEEE5555", monkeypatch, heal=False)
+    out = _store().mirror_conversation("EEEE5555", root)
+    assert out["errors"] and "could not be read" in out["errors"][0]
+    assert not any(m in ("PUT", "POST") for m, _u in graph.calls)
+    assert graph.files == {}

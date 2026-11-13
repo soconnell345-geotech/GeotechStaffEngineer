@@ -105,6 +105,10 @@ import tempfile
 import threading
 import time
 import zlib
+
+#: how often a half-written ``meta.json`` is read, and the pause between reads
+META_READS = 4
+META_RETRY_PAUSE_S = 0.1
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from aec_document_review import core
@@ -995,8 +999,43 @@ class SharePointStore:
                 _end_batch(fm, commit=False)
             raise
 
+    @staticmethod
+    def _above_limit(local: str) -> bool:
+        """True while the file is above today's upload limit."""
+        try:
+            from aec_document_review.graph_sharepoint import max_upload_bytes
+            return os.path.getsize(local) > max_upload_bytes()
+        except Exception:                              # noqa: BLE001
+            return True
+
+    @staticmethod
+    def _meta_readable(thread_id: str, root: Optional[str]) -> bool:
+        """False when the conversation's ``meta.json`` exists but does not
+        load as a JSON object (the page writes it in place, so a save can
+        read it half written): read again up to ``META_READS - 1`` more
+        times, ``META_RETRY_PAUSE_S`` apart. No ``meta.json`` at all is
+        fine (True)."""
+        path = core._conv_path(thread_id, "meta.json", root)
+        for attempt in range(META_READS):
+            if not os.path.exists(path):
+                return True
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    if isinstance(json.load(fh), dict):
+                        return True
+            except (OSError, ValueError):
+                pass
+            if attempt + 1 < META_READS:
+                time.sleep(META_RETRY_PAUSE_S)
+        return False
+
     def _mirror_files(self, fm, thread_id: str, root: Optional[str],
                       conv_dir: str, summary: dict, batched: bool) -> None:
+        if not self._meta_readable(thread_id, root):
+            summary["errors"].append(
+                "the conversation's record (meta.json) could not be read, "
+                "so nothing was sent; the next save tries again")
+            return
         manifest = _load_manifest(conv_dir)
         files = _manifest_files(manifest)
         # TA-40: names kept under another name in SharePoint, and files not
@@ -1147,8 +1186,9 @@ class SharePointStore:
                     summary["skipped"] += 1
                     continue
                 held = not_sent.get(rel)
-                if isinstance(held, dict) and held.get("stamp") == stamp:
-                    continue                    # said before; unchanged since
+                if isinstance(held, dict) and held.get("stamp") == stamp \
+                        and self._above_limit(local):
+                    continue        # said before; unchanged, still too large
                 not_sent.pop(rel, None)
                 kept = remote_rel(rel) if sharepoint else rel
                 remote_path = f"{remote_base}/{kept}"

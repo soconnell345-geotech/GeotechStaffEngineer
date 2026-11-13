@@ -70,6 +70,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import http.client
 import json
 import logging
 import os
@@ -771,6 +772,12 @@ class GraphFileManager:
             except urllib.error.URLError as exc:
                 raise GraphError(f"{req.get_method()} {shown} failed: "
                                  f"{exc.reason}")
+            except (OSError, http.client.HTTPException) as exc:
+                # A timeout (the service took a piece and never answered),
+                # a dropped connection: no status, so an upload in pieces
+                # asks its session where it stands and goes on.
+                raise GraphError(f"{req.get_method()} {shown} failed: "
+                                 f"{type(exc).__name__}: {exc}") from exc
         raise GraphError(f"{req.get_method()} {shown} failed")  # not reached
 
     def _request(self, method: str, url: str, data: Optional[bytes] = None,
@@ -1107,6 +1114,8 @@ class GraphFileManager:
                 # The service did not make the folders (not seen on
                 # SharePoint Online, where it does): make them, once, and
                 # send the file again.
+                log.warning("SharePoint upload by path got a 404: making "
+                            "the folders and sending the file again")
                 self._ensure_folder(drive_id, rest.rpartition("/")[0])
                 self._upload_by_path(local_path, size, drive_id, rest,
                                      behaviour)
