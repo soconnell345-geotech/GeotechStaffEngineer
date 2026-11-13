@@ -1732,3 +1732,323 @@ declare_when_absent(METHOD_INFO, {
                        "rho_tested from interface direct shear tests"),
     },
 })
+
+
+# ── GM-312: the cantilever wall's structural design ─────────────────────
+# Added after the tables above so the wall's own parameters come over with
+# their conditions and left-out cases; the design runs cantilever_wall's
+# code path first (run_cantilever_wall), then the concrete on its result.
+
+_EM = "USACE EM 1110-2-2104 (1 November 2023)"
+_BAR_SIZES = ["No. 4", "No. 5", "No. 6", "No. 7", "No. 8", "No. 9",
+              "No. 10", "No. 11"]
+_STRUCTURAL_ALIASES = {
+    **_WALL_ALIASES, "fc": "fc_MPa", "f_c": "fc_MPa", "fc_prime": "fc_MPa",
+    "concrete_strength": "fc_MPa", "fy": "fy_MPa", "steel_yield": "fy_MPa",
+    "joint_spacing_m": "joint_spacing",
+    "control_joint_spacing": "joint_spacing", "n": "modular_ratio",
+    "max_aggregate": "max_aggregate_mm", "stem_cover": "stem_cover_mm",
+    "lap_length": "lap_length_mm"}
+
+
+def _bar_parameter(element, what, face):
+    return {
+        f"{element}_bar_size": {
+            "type": "str", "required": False, "allowed_values": _BAR_SIZES,
+            "description": (
+                f"The {what} main bar ({face}), where the engineer fixes "
+                "it: a US size 'No. 4' to 'No. 11' (areas from FHWA GEC-10 "
+                "Table 6-2, p. 6-3). Left out, the smallest bar that gives "
+                "the steel at 12 in. (300 mm); if No. 11 does not, the "
+                f"smallest at 6 in. (150 mm), as {_EM}'s examples choose "
+                "(D-3, p. 75; D-5, p. 85).")},
+        f"{element}_bar_spacing_mm": {
+            "type": "float", "required": False,
+            "description": (
+                f"The {what} main bars' spacing, centre to centre (mm), "
+                "where the engineer fixes it; at most 300 (the manual's "
+                "'12 in. (30 cm)', para. 2-6b, p. 5) or the spacing check "
+                "fails. 300, 150, 100 and 75 mm, the metric values the "
+                "manual prints beside 12, 6, 4 and 3 in., are taken as "
+                "those inch values. Left out: 12 in. (300 mm), or 6 in. "
+                "(150 mm) where 12 in. does not give the steel or fails "
+                "the crack-control spacing, the clear distance or the "
+                "clear cover.")},
+    }
+
+
+_STRUCTURAL_PARAMETERS = {
+    "fc_MPa": {
+        "type": "float", "required": True,
+        "description": (
+            "Concrete compressive strength f'c (MPa). Required: the manual "
+            "prints no default (its examples take 4,000 and 5,000 psi, "
+            "27.6 and 34.5 MPa).")},
+    "joint_spacing": {
+        "type": "float", "required": True,
+        "description": (
+            "Length between control joints along the wall (m). Required: "
+            "the temperature and shrinkage steel along the wall goes by it "
+            f"({_EM} Table 2-3, p. 7), banded on the metres the table "
+            "prints: 0.003 of the gross area below 9 m (30 ft), 0.004 "
+            "from 9 to 12 m (9 m and 12 m included), 0.005 above 12 m "
+            "(40 ft), half in each face.")},
+    "fy_MPa": {
+        "type": "float", "required": False, "default": 414.0,
+        "description": (
+            "Reinforcement yield strength (MPa). Default 414 (60,000 psi; "
+            f"{_EM} para. 3-5, p. 27: 'Design should normally be based on "
+            "60,000 psi (414 MPa)'); at most 552 (80,000 psi). The single "
+            "load factors that stand in for the service stress limits "
+            "(Table 3-4, p. 26) are printed for 60,000 psi only: another "
+            "fy is refused unless modular_ratio is given, and the design "
+            "is then by the strength load combinations with the service "
+            "steel stress checked against Table 3-3.")},
+    "stem_cover_mm": {
+        "type": "float", "required": False,
+        "description": (
+            "Clear cover to the stem's bars, both faces (mm). Left out: "
+            f"{_EM} Table 2-1 (p. 5) by the stem's thickness at its base: "
+            "100 mm (4 in.) at 24 in. (61 cm) or more, 75 mm (3 in.) over "
+            "12 in. (30 cm); a cover given is checked against that value. "
+            "REQUIRED for a stem 12 in. (305 mm) thick or "
+            "less at its base: the table then says 'According to ACI "
+            "318-19', which is not held (the manual's own 9 in. wall "
+            "example, D-3, p. 75, takes 2 in.).")},
+    "base_top_cover_mm": {
+        "type": "float", "required": False,
+        "description": (
+            "Clear cover to the base slab's top bars (mm). Left out: Table "
+            "2-1 (p. 5) by the base thickness, as for the stem, and a "
+            "cover given is checked against it; REQUIRED for a base 12 in. "
+            "(305 mm) thick or less.")},
+    "base_bottom_cover_mm": {
+        "type": "float", "required": False,
+        "description": (
+            "Clear cover to the base slab's bottom bars (mm). Left out: "
+            "100 mm (4 in.), Table 2-1 (p. 5): 'Unformed surfaces in "
+            "contact with foundation'; a cover given under 100 mm fails "
+            "that check.")},
+    **_bar_parameter("stem", "stem's", "back face, vertical"),
+    **_bar_parameter("toe", "toe's", "bottom of the base"),
+    **_bar_parameter("heel", "heel's", "top of the base"),
+    "beta1": {
+        "type": "float", "required": False,
+        "description": (
+            "The stress block factor beta1, 0.65 to 0.85. It enters only "
+            "the balanced steel ratio (the 0.50 rho_b limit of para. 3-6 "
+            "and the 0.25 rho_b recommendation, p. 27). Left out: ACI "
+            "318-19's value by the reference library, which the manual "
+            "names (para. 4-1d(4), p. 30) and does not print as a rule; "
+            "it prints only 0.85 at 4,000 psi (pp. 52, 75) and 0.80 at "
+            "5,000 psi (p. 86), which that value reproduces.")},
+    "modular_ratio": {
+        "type": "float", "required": False,
+        "description": (
+            "Modular ratio n = Es / Ec. Given, the service stress in the "
+            "main bars is worked out as the manual's examples do (D-5 "
+            "Step 5, p. 86) and checked against Table 3-3 (p. 26: 25 ksi "
+            "usual, 35 ksi unusual loads), and the crack-control spacing "
+            "is on that stress. The manual prints no rule for n (its "
+            "examples take Es = 29,000 ksi and Ec = 3,605 ksi at 4,000 "
+            "psi, n = 8.04, p. 75), so there is no default.")},
+    "max_aggregate_mm": {
+        "type": "float", "required": False,
+        "description": (
+            "Nominal maximum size of coarse aggregate (mm): the clear "
+            "distance between bars must be at least 1.5 times it (para. "
+            "2-6a, p. 4) and the cover at least 1.5 times it (Table 2-1 "
+            "Note, p. 5).")},
+    "lap_length_mm": {
+        "type": "float", "required": False,
+        "description": (
+            "A lap length the engineer supplies (mm). It is printed in "
+            "the reinforcement notes and NEVER checked: lap and straight "
+            "development lengths are not designed (the manual sends them "
+            "to ACI 318-19, para. 2-4, p. 4, which is not held).")},
+}
+_STRUCTURAL_KEYS = tuple(_STRUCTURAL_PARAMETERS)
+
+#: Review B5 (ii): in this tool only, a stem top left out is 0.305 m, the
+#: 12 in. (30.5 cm) that EM 1110-2-2104 para. 3-7 (p. 27) prints as the
+#: least thickness of a wall over 10 ft (3 m) high; cantilever_wall keeps
+#: its own 0.30 m. One wall: the stability run and the design take it.
+_STEM_TOP_DEFAULT = 0.305
+_STEM_TOP_PARAMETER = {
+    "type": "float", "required": False, "default": _STEM_TOP_DEFAULT,
+    "description": (
+        "Stem thickness at top (m). Left out: 0.305 m, the 12 in. (30.5 "
+        f"cm) that {_EM} para. 3-7 (p. 27) prints as the least thickness "
+        "of a wall over 10 ft (3 m) high, used for the stability run and "
+        "the design alike (one wall); the cantilever_wall tool's own "
+        "default, 0.30 m, is under it. A thickness given below the "
+        "minimum fails the minimum wall thickness check, which names the "
+        "value to give.")}
+
+
+def run_cantilever_wall_structural_design(
+        params, *, method="cantilever_wall_structural_design"):
+    """(result, inputs in force) of ``cantilever_wall_structural_design``:
+    the tool's own code path, also run by
+    ``calc_package.retaining_wall_package`` (wall_type
+    'cantilever_reinforced'). The wall's stability runs first, by
+    ``cantilever_wall``'s own code path, and the concrete is designed on
+    its result."""
+    from retaining_walls.structural import analyze_cantilever_wall_structure
+    params = apply_aliases(params, _STRUCTURAL_ALIASES)
+    # the wall tool's names and the structural design's own
+    reject_unknown_params(
+        params,
+        tuple(METHOD_INFO["cantilever_wall_structural_design"]["parameters"]),
+        method=method)
+    require_params(params, ["wall_height", "gamma_backfill", "phi_backfill",
+                            "fc_MPa", "joint_spacing"], method=method)
+    own = {k: params[k] for k in _STRUCTURAL_KEYS if k in params}
+    wall = {k: v for k, v in params.items() if k not in _STRUCTURAL_KEYS}
+    top_left_out = wall.get("stem_thickness_top") is None
+    if top_left_out:
+        wall["stem_thickness_top"] = _STEM_TOP_DEFAULT
+    stability, used = run_cantilever_wall(wall, method=method)
+    result = analyze_cantilever_wall_structure(
+        used["geom"], used["gamma_backfill"], used["phi_backfill"],
+        stability=stability, **own,
+        c_backfill=used["c_backfill"],
+        pressure_method=used["pressure_method"],
+        wall_friction_deg=used["wall_friction_deg"],
+        gamma_sat_backfill=used["gamma_sat_backfill"],
+        gamma_concrete=used["gamma_concrete"],
+        gamma_foundation=used["gamma_foundation"],
+        base_uplift=used["base_uplift"])
+    # the same entry whether the top was left out or given (only "how"
+    # follows the call), so giving the default back changes nothing
+    from geotech_common.choices import MODULE, choice, how_given
+    top = used["geom"].stem_thickness_top
+    entry = choice(
+        "stem thickness at the top", f"{top:g} m",
+        MODULE if top_left_out else how_given(
+            top, _STEM_TOP_DEFAULT, name="stem_thickness_top"),
+        f"{_EM} para. 3-7 (p. 27): 'Walls with height greater than 10 ft "
+        "(3 m) must be a minimum of 12 in. (30.5 cm) thick'. Left out, "
+        "this tool takes the manual's 12 in., 0.305 m, where the "
+        "cantilever_wall tool takes 0.30 m, for the stability run and the "
+        "design alike",
+        ["give stem_thickness_top"])
+    result.structural_choices.append(entry)
+    result.choices.append(entry)
+    used = {**used, **{k: own.get(k) for k in _STRUCTURAL_KEYS}}
+    used["fy_MPa"] = own.get("fy_MPa", 414.0)
+    return result, used
+
+
+def _run_cantilever_wall_structural_design(params):
+    result, _ = run_cantilever_wall_structural_design(params)
+    return result.to_dict()
+
+
+METHOD_REGISTRY["cantilever_wall_structural_design"] = \
+    _run_cantilever_wall_structural_design
+METHOD_INFO["cantilever_wall_structural_design"] = {
+    "category": "Cantilever Wall",
+    "brief": (
+        "Structural design of a cantilever retaining wall's concrete on "
+        "USACE EM 1110-2-2104 (2023): stem, toe and heel, each with its "
+        "factored moment and shear, the steel required, a bar size and "
+        "spacing, the printed checks and the cover, after the wall's "
+        "stability analysis (cantilever_wall) on the same inputs."),
+    "parameters": {
+        **{k: dict(v) for k, v in
+           METHOD_INFO["cantilever_wall"]["parameters"].items()},
+        "stem_thickness_top": dict(_STEM_TOP_PARAMETER),
+        **_STRUCTURAL_PARAMETERS},
+    "returns": {
+        "verdict": "The result in plain words: failed concrete checks "
+                   "first with their numbers, the main bars, the "
+                   "stability verdict, then what was NOT designed. Report "
+                   "it to the user, failures first.",
+        "checks_failed": "Stability checks and concrete checks that "
+                         "failed (the concrete's as 'stem: ...', 'toe: "
+                         "...', 'heel: ...', 'wall: ...'). Never leave one "
+                         "out of the answer.",
+        "checks_not_run": "Checks not run ('bearing' without q_allowable; "
+                          "the hook development length at f'c of 6,000 "
+                          "psi or more).",
+        "recommendations_not_met": "Recommended limits not met (the steel "
+                                   "ratio above 0.25 rho_b, para. "
+                                   "3-4b(2)); not failures.",
+        "stem, toe, heel": "Each element: its section and where it is "
+                           "printed, the governing load case, Mu and Vu, "
+                           "d, the steel required and provided, the bar, "
+                           "phi Mn, phi Vc, its load cases and each check "
+                           "with its page; every structural quantity in "
+                           "SI and US customary units.",
+        "temperature_shrinkage": "The temperature and shrinkage bar sets.",
+        "development": "The stem bars' standard hook into the base: ldh "
+                       "and the depth available.",
+        "reinforcement": "The reinforced wall section "
+                         "('reinforced_wall_section/1'): geometry, "
+                         "materials, the bar sets A to F (A to G when the "
+                         "base's top and bottom covers differ: F top, G "
+                         "bottom) with their callouts, notes and basis, as "
+                         "a drawing takes it.",
+        "not_designed": "What the design stops short of, each with why: "
+                        "earthquake, maximum hydrostatic and construction "
+                        "cases, lap and development lengths, bar "
+                        "cut-offs, a shear key's steel. Tell the user.",
+        "load_cases": "EM 1110-2-2104 Table E-2's cases and which were "
+                      "designed.",
+        "choices": "The basis of each step with its page, and the calls "
+                   "made where the manual prints nothing.",
+        "stability": "The cantilever_wall result on the same inputs.",
+    },
+}
+declare_aliases(METHOD_INFO, {
+    "cantilever_wall_structural_design": _STRUCTURAL_ALIASES})
+declare_when_absent(METHOD_INFO, {
+    "cantilever_wall_structural_design": {
+        "stem_cover_mm": (
+            "Table 2-1's cover for the stem's thickness at its base",
+            f"{_EM} Table 2-1 (p. 5): 100 mm (4 in.) for a section 24 in. "
+            "thick or more, 75 mm (3 in.) over 12 in.; required for 12 in. "
+            "or less"),
+        "base_top_cover_mm": (
+            "Table 2-1's cover for the base thickness",
+            f"{_EM} Table 2-1 (p. 5): 100 mm (4 in.) for a section 24 in. "
+            "thick or more, 75 mm (3 in.) over 12 in.; required for 12 in. "
+            "or less"),
+        "base_bottom_cover_mm": (
+            "100 mm (4 in.)",
+            f"{_EM} Table 2-1 (p. 5): unformed surfaces in contact with "
+            "the foundation"),
+        "stem_bar_size": ("chosen by the module",
+                          "the smallest bar that gives the steel, as the "
+                          "manual's examples choose (D-3, p. 75; D-5, "
+                          "p. 85)"),
+        "stem_bar_spacing_mm": ("12 in. (300 mm), or 6 in. (150 mm)",
+                                "the manual's examples (D-3, p. 75; D-5, "
+                                "p. 85); 12 in. is the most para. 2-6b "
+                                "(p. 5) allows"),
+        "toe_bar_size": ("chosen by the module",
+                         "the smallest bar that gives the steel"),
+        "toe_bar_spacing_mm": ("12 in. (300 mm), or 6 in. (150 mm)",
+                               "as for the stem"),
+        "heel_bar_size": ("chosen by the module",
+                          "the smallest bar that gives the steel"),
+        "heel_bar_spacing_mm": ("12 in. (300 mm), or 6 in. (150 mm)",
+                                "as for the stem"),
+        "beta1": ("ACI 318-19's value for f'c, by the reference library",
+                  f"{_EM} para. 4-1d(4) (p. 30) names ACI 318-19 and "
+                  "prints only 0.85 at 4,000 psi and 0.80 at 5,000 psi"),
+        "modular_ratio": (
+            "no service stress computed",
+            "the single load factors of Table 3-4 (p. 26) stand in for "
+            "the service stress limits, and the crack-control spacing for "
+            "unusual loads is on the 35 ksi limit (para. 2-6b(3), p. 5)"),
+        "max_aggregate_mm": (
+            "not checked against the aggregate",
+            "the clear distance between bars and the cover are checked "
+            "against the bar diameter alone (para. 2-6a, p. 4; Table 2-1 "
+            "Note, p. 5)"),
+        "lap_length_mm": ("no lap length noted",
+                          "lap lengths are not designed"),
+    },
+})
