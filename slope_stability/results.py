@@ -677,6 +677,91 @@ class SearchResult:
         ``{"n", "n_flagged"}``; ``n_flagged`` counts those the printed
         checks also flag (None for the two screens applied before any
         solve).
+    no_solution : list of dict
+        Trial surfaces left without a solution, by family and by method
+        (GM-140 step 2): ``{"family", "method", "n", "not_converged",
+        "no_driving", "below_0_05"}``. They are not scored: nothing stands
+        in for the method. ``not_converged``: the method's own solve did not
+        converge (Spencer / Morgenstern-Price / GLE: no lambda at which the
+        moment and force factors of safety agree; Bishop / Janbu: the
+        iteration does not converge or has no state). ``no_driving``: the
+        surface has no net driving moment or force (as where a support's
+        force exceeds it), so the ratio has no meaning. ``below_0_05``: the
+        method solved the surface with a value below 0.05, which a search
+        does not take as a factor of safety. ``n`` is their sum. ``family`` is
+        'circular' / 'noncircular' (the main search; 'main' when a search
+        was called directly), 'toe_circle', 'circle_above_toe' or
+        'infinite_slope'. ``n_no_solution`` is the total. ``warnings``
+        says so when the governing family lost trials to non-convergence
+        (UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as a
+        result of non-convergence. The engineer should be able to identify
+        when convergence issues are present.").
+    governing_surface : str
+        Which kind of surface governs ``critical`` (set by
+        ``search_critical_surface``): 'circular' / 'noncircular' (the main
+        search), 'toe_circle', 'circle_above_toe' (a circle passing above
+        the toe, its lower end on the face) or 'infinite_slope' (shallow
+        planar sliding in cohesionless soil). See ``search_supplements``.
+        ``search_ranges['faces_covered']`` gives the faces the two circle
+        families started from. Empty when the
+        search was called directly (grid_search etc.).
+    candidates : dict
+        Minimum FOS of each surface family tried, keyed as above.
+    layer_overlaps : list of dict
+        Where a soil layer was given ground that a layer listed before it
+        also covers (``SlopeGeometry.layer_overlaps``): the first listed
+        layer holds that ground, for weight and strength. Empty when no
+        two layers overlap. In ``to_dict()`` only when not empty.
+    warnings : list of str
+        Plain statements where the search cannot be sure of its answer
+        (a supplementary family undercut the main search, the critical
+        surface sits on the edge of the searched region, a cohesionless
+        face could not be checked, the governing circle is closed by a
+        reverse-curvature crack, has supports Bishop counts little of, or
+        the governing family lost trials the method has no solution on).
+    infinite_slope_checks : list of dict
+        One entry per stretch of slope face where cohesionless soil is at
+        the surface: x range, slope angle beta, layer, phi', the dry
+        closed-form tan(phi')/tan(beta) and the FOS of the shallow planar
+        surfaces evaluated there (None if not evaluated, with a note).
+    search_ranges : dict
+        The entry / exit windows and centre ranges the main search used
+        (x_entry_range, x_exit_range, and x_range / y_range for a centre
+        grid), ``automatic`` naming those it set itself, and for those how
+        (GM-57, ``search_ranges.py``): ``basis``, the ``slopes`` they were
+        set from (toe, crest, height, depth to the base, reach beyond the
+        toe and behind the crest) and ``clipped`` (a bound the model's end
+        cut short: where the slope called for it). ``time_budget`` when the
+        search's time budget stopped it (GM-123): the budget, the time it
+        ran, each stage ``stopped`` (what it scored, of how many, what it
+        covered and did not, the run time projected for all of it) and
+        what was ``not_run``.
+    governing_location : dict
+        Where the governing surface lies (GM-57): ``x_entry`` / ``x_exit``,
+        ``z_lowest``, the ``layers`` along its base in order, and ``slope``:
+        the tallest face's toe, crest and height H, and the surface's ends
+        and lowest point against them in multiples of H, and its greatest
+        ``depth`` below the ground.
+        With ``search_ranges`` it says what the search covered.
+    refused_lowest : dict or None
+        The lowest noncircular surface a search refused because its
+        rigorous solution did not hold (about one moment axis only, or at
+        one slicing only; `search._solution_fails`): ``FOS``, ``reason``,
+        ``x_entry`` / ``x_exit`` and ``points``. A warning says so when it
+        is below the reported FOS. None when nothing was refused.
+    choices : list of dict
+        What the search chose (GM-115, ``geotech_common.choices``;
+        ``search_supplements.search_choices``): the search, the method it
+        scored with, the surface families it scored and those it did not,
+        how its ranges were set (pointing at ``search_ranges``,
+        ``governing_location`` and ``refused_lowest`` where the result has
+        them), its time budget and any Bishop screen (GM-123).
+    families_scored : list of str
+        The surface families that gave an admissible surface (those in
+        ``candidates``; GM-125): the main search's kind, ``toe_circle``,
+        ``circle_above_toe``, ``infinite_slope``. ``families_not_scored``
+        gives, for each other family the search ran, why it gave none.
+        Neither is in ``to_dict()``: ``choices`` says both.
     """
     critical: Optional[SlopeStabilityResult] = None
     n_surfaces_evaluated: int = 0
