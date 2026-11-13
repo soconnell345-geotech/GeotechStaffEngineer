@@ -333,23 +333,52 @@ class TestReferenceCatchAll:
     DM7's plot_figure_5_16(tv=0.5) drew no query point and said nothing.
     One whose catch-all is never read is checked against its named
     parameters; one whose catch-all is read is open until its adapter
-    declares what it reads."""
+    declares what it reads. (DM7's plot functions are no longer offered:
+    they return a drawing, REF-22. A made-up lookup stands in.)"""
 
-    @pytest.mark.parametrize("method, given, meant", [
-        ("plot_figure_5_16", "tv", "Tv"),
-        ("plot_figure_5_6_mu0", "d_over_b", "D_over_B"),
-        ("plot_figure_8_46", "pi", "PI"),
-        ("plot_figure_5_18a", "h_over_b", "H_over_B"),
+    @staticmethod
+    def _made_up_adapter():
+        import types
+
+        from funhouse_agent.adapters._reference_common import (
+            build_lookup_registry)
+
+        mod = types.ModuleType("made_up_catch_all")
+
+        def made_up_lookup(Tv=None, D_over_B=1.0, show=True, **kwargs):
+            """A made-up lookup whose catch-all is never read.
+
+            Parameters
+            ----------
+            Tv : float, optional
+                Time factor.
+            D_over_B : float, optional
+                Depth over width.
+            show : bool, optional
+                Whether to show the query point.
+            **kwargs
+                Ignored.
+            """
+            return {"U": 0.5}
+
+        made_up_lookup.__module__ = mod.__name__
+        mod.made_up_lookup = made_up_lookup
+        registry, info = build_lookup_registry([(mod, "Made up", "M-1")])
+        return types.SimpleNamespace(METHOD_REGISTRY=registry,
+                                     METHOD_INFO=info)
+
+    @pytest.mark.parametrize("given, meant", [
+        ("tv", "Tv"), ("d_over_b", "D_over_B"),
     ])
-    def test_dm7_plot_catch_all_refuses_a_misspelt_name(self, method, given,
-                                                        meant):
-        err = _error("dm7", method, {given: 0.5})
-        assert f"{method}: unknown parameter(s) ['{given}']" in err
-        assert f"{given} -> {meant}" in err
+    def test_an_unread_catch_all_refuses_a_misspelt_name(self, given, meant):
+        mod = self._made_up_adapter()
+        with pytest.raises(ValueError) as err:
+            D._check_parameter_names(mod, "made_up_lookup", {given: 0.5})
+        assert f"unknown parameter(s) ['{given}']" in str(err.value)
+        assert f"{given} -> {meant}" in str(err.value)
 
-    def test_dm7_plot_named_parameters_pass(self):
-        mod = D._load_adapter("dm7")
-        D._check_parameter_names(mod, "plot_figure_5_16",
+    def test_an_unread_catch_all_passes_named_parameters(self):
+        D._check_parameter_names(self._made_up_adapter(), "made_up_lookup",
                                  {"Tv": 0.5, "show": False})
 
     def test_figure_search_reads_only_its_cap_aliases(self):
@@ -398,7 +427,9 @@ class TestReferenceCatchAll:
             if catch_all_is_read(fn):
                 assert (info.get("open_parameters")
                         or info.get("parameter_aliases")), (agent, method)
-        assert found >= 8
+        # figure_search; DM7's seven plot functions were the rest until
+        # they stopped being offered (they return a drawing, REF-22)
+        assert found >= 1
 
 
 # ---------------------------------------------------------------------------

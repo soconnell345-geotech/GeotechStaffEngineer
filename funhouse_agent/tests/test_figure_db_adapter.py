@@ -79,6 +79,58 @@ def test_tolerates_guessed_cap_parameter():
     assert isinstance(hits2, list)
 
 
+def _library_fits() -> bool:
+    from geotech_references import _figures_db
+    from funhouse_agent.adapters._reference_common import takes
+    return takes(_figures_db.figure_search, "max_chars")
+
+
+library_fit_required = pytest.mark.skipif(
+    not (_catalog_available() and _library_fits()),
+    reason="library figure_search does not fit its own results",
+)
+
+
+@library_fit_required
+def test_signpost_names_the_page_and_a_refused_scope_is_an_error():
+    from funhouse_agent.dispatch import call_agent
+    res = call_agent("figure_db", "figure_search", {
+        "query": "log spiral", "reference": "dm7_2", "limit": 3})
+    for hit in res["result"]:
+        assert f"pdf_page_index={hit['pdf_page_index']}" in hit["read_value"]
+    refused = call_agent("figure_db", "figure_search", {
+        "query": "log spiral", "reference": "dm7"})
+    [row] = refused["result"]
+    assert "dm7_1" in row["error"] and "read_value" not in row
+
+
+@library_fit_required
+def test_a_chapter_printed_as_a_label_scopes_the_search():
+    """AASHTO 1993 numbers its chapters "II-2": the label scopes a search
+    instead of being refused as not a number."""
+    from funhouse_agent.dispatch import call_agent
+    res = call_agent("figure_db", "figure_search", {
+        "query": "layer coefficient", "reference": "aashto_1993",
+        "chapter": "II-2", "limit": 3})
+    hits = res["result"]
+    assert hits and all(h.get("chapter") == "II-2" for h in hits)
+
+
+@library_fit_required
+def test_a_long_search_fills_one_result_and_says_where_to_go_on():
+    import json
+    from funhouse_agent.dispatch import call_agent
+    res = call_agent("figure_db", "figure_search", {"query": "pressure",
+                                                     "limit": 50})
+    size = len(json.dumps(res, default=str))
+    assert size <= figure_db_adapter.RESULT_BUDGET_CHARS
+    # more than the library's floor of 4,000 characters' worth of hits
+    assert res["shown"] > 9 and size > 0.8 * figure_db_adapter.RESULT_BUDGET_CHARS
+    assert res["next_offset"] == res["shown"]
+    assert f"{figure_db_adapter.RESULT_BUDGET_CHARS:,} characters" \
+        in res["note"]
+
+
 @catalog_required
 def test_error_hits_are_not_annotated():
     """A bad FTS query returns an error dict, which must not be signposted."""

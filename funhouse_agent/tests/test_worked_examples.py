@@ -121,6 +121,8 @@ def test_view_worked_example_source_renders_and_analyzes():
         eng, {}))
     assert out.get("analysis") == "STUB-ANALYSIS", out
     assert out["pdf_page"] == out["catalogued_pages"][0]
+    # review F5: the 0-based index is labelled, never a bare "page"
+    assert out["pdf_page_index"] == out["pdf_page"] - 1 and "page" not in out
     assert "WE-PAVE-3" in eng.last_prompt or "UFC" in eng.last_prompt
 
 
