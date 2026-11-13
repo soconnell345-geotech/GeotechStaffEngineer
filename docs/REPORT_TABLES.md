@@ -182,7 +182,11 @@ the report's own file, what the export did (`export`: `written` or `error`,
 how many rows of each table, and what the dataset got). The ingest never
 fails because of the export: a failure is logged and kept there. In code,
 `report_ingest.tables.export_outcome(out_dir)` reads it back; the cluster
-stage copies it into each report's `run.json` (`report_tables`).
+stage copies it into each report's `run.json` (`report_tables`). The app's
+ingest tool says it in one line (`report_tables` in its result: written or
+not, sent to the dataset or not, and why not, with the command that sends
+it again), and a folder run puts the outcome and that line in each report's
+row of `index.json` and a section of `INDEX.md`.
 
 The run file is always written after the record. One OLDER than its record
 belongs to an earlier ingest (a later one ran with the export off, on an

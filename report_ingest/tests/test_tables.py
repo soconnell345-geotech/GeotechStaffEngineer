@@ -1213,6 +1213,97 @@ class TestTheSwitch:
 # delivery to a Foundry dataset (the core's fake library)
 # ---------------------------------------------------------------------------
 
+class TestWhatTheAppIsTold:
+    """RI-209 review B4: the export's outcome reaches the app's tool result
+    and a folder run's index as one plain line."""
+
+    @pytest.mark.parametrize("outcome, said", [
+        (None, "not written (the export is off"),
+        ({"status": "off"}, "not written (the export is off"),
+        ({"status": "error", "detail": "OSError: made up"},
+         "NOT written (OSError: made up); the ingest itself is complete"),
+        ({"status": "written", "folder": "R/report_tables/v1",
+          "delivery": "sent 9 file(s)"},
+         "written under R/report_tables/v1, and sent to the Foundry dataset"),
+        ({"status": "written", "folder": "R/report_tables/v1",
+          "delivery": ""}, "not sent to a dataset "
+         "(GSE_REPORT_TABLES_DATASET is not set)"),
+        ({"status": "written", "folder": "R/report_tables/v1",
+          "delivery": "not a Foundry deployment"},
+         "not sent to a dataset (not a Foundry deployment)"),
+        ({"status": "written", "folder": "R/report_tables/v1",
+          "delivery": "busy: StorageBusy: made up"},
+         "NOT sent to the Foundry dataset, which was busy"),
+        ({"status": "written", "folder": "R/report_tables/v1",
+          "delivery": "failed: AliasNotDefined: made up"},
+         "NOT sent to the Foundry dataset (AliasNotDefined: made up); check "
+         "that GSE_REPORT_TABLES_DATASET names"),
+    ])
+    def test_one_line_says_what_happened_and_why_not(self, outcome, said):
+        line = tables.outcome_line(outcome)
+        assert line.startswith("Report tables: ") and "\n" not in line
+        assert said in line
+
+    def test_a_failed_send_says_how_to_send_again(self):
+        line = tables.outcome_line(
+            {"status": "written", "folder": os.path.join("lib", "report_tables",
+                                                         "v1"),
+             "delivery": "failed: AliasNotDefined: made up"},
+            report_dir=os.path.join("lib", "R1"))
+        assert line.endswith(
+            f"python -m report_ingest.tables \"{os.path.join('lib', 'R1')}\" "
+            "--root \"lib\" --deliver")
+
+    def test_the_tool_result_carries_the_line(self, tmp_path):
+        from report_ingest.subagent import run_ingest
+        from report_ingest.tests.fake_engine import FakeEngine
+
+        pdf = tmp_path / "made_up_report.pdf"
+        pdf.write_bytes(_pdf_bytes())
+        answer = run_ingest(str(pdf), [], out_dir=str(tmp_path / "out"),
+                            engine=FakeEngine([triage_turn("needs_person")]))
+
+        assert answer.report_tables == (
+            "Report tables: written under "
+            f"{tmp_path / 'out' / 'report_tables' / 'v1'}; not sent to a "
+            "dataset (GSE_REPORT_TABLES_DATASET is not set).")
+
+    def test_the_tool_result_says_when_the_export_is_off(self, monkeypatch,
+                                                         tmp_path):
+        from report_ingest.subagent import run_ingest
+        from report_ingest.tests.fake_engine import FakeEngine
+
+        monkeypatch.setenv(tables.ENV_ROOT, "0")
+        pdf = tmp_path / "made_up_report.pdf"
+        pdf.write_bytes(_pdf_bytes())
+        answer = run_ingest(str(pdf), [], out_dir=str(tmp_path / "out"),
+                            engine=FakeEngine([triage_turn("needs_person")]))
+
+        assert answer.report_tables == \
+            "Report tables: not written (the export is off, GSE_REPORT_TABLES)."
+
+    def test_a_folder_runs_index_carries_each_reports_outcome(self, tmp_path):
+        from report_ingest.run_folder import run_folder
+        from report_ingest.tests.fake_engine import FakeEngine
+
+        reports = tmp_path / "reports"
+        reports.mkdir()
+        (reports / "R1.pdf").write_bytes(_pdf_bytes())
+        out = tmp_path / "out"
+        run_folder(reports, lambda: FakeEngine([triage_turn("needs_person")]),
+                   out_dir=out, log=lambda *_: None)
+
+        index = json.loads((out / "index.json").read_text("utf-8"))
+        (row,) = index["reports"]
+        assert row["report_tables"]["status"] == "written"
+        assert row["report_tables"]["delivery"] == ""
+        assert row["report_tables_line"].startswith(
+            "Report tables: written under ")
+        text = (out / "INDEX.md").read_text("utf-8")
+        assert "## The report tables" in text
+        assert row["report_tables_line"] in text
+
+
 def _fake():
     if "foundry_fake" in sys.modules:
         return sys.modules["foundry_fake"]

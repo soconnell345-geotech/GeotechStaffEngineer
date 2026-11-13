@@ -79,7 +79,8 @@ __all__ = [
     "DOCUMENTS", "ExportOutcome", "schema", "columns_markdown", "make_row",
     "check_row",
     "export_root", "export_dir", "after_ingest", "export_report",
-    "export_folder", "export_outcome", "send_to_dataset", "dataset_alias",
+    "export_folder", "export_outcome", "outcome_line", "send_to_dataset",
+    "dataset_alias",
     "source_facts", "main",
 ]
 
@@ -1671,6 +1672,43 @@ def export_outcome(out_dir: Any) -> Optional[Dict[str, Any]]:
     earlier ingest's (older than the record, :func:`_run_of`)."""
     run, _stale = _run_of(str(out_dir))
     return run.get("export") if run else None
+
+
+def outcome_line(outcome: Optional[Mapping[str, Any]],
+                 report_dir: Any = None) -> str:
+    """:func:`export_outcome`'s facts as one plain line, for the app's tool
+    result and a folder run's index (BACKLOG RI-209 review B4): whether the
+    report tables were written, whether they went to the Foundry dataset,
+    and why not. ``report_dir`` (the report's folder) goes into the command
+    that sends them again."""
+    if not outcome or outcome.get("status") == "off":
+        return f"Report tables: not written (the export is off, {ENV_ROOT})."
+    if outcome.get("status") != "written":
+        detail = outcome.get("detail") or "no reason given"
+        return (f"Report tables: NOT written ({detail}); the ingest itself "
+                f"is complete.")
+    v1 = str(outcome.get("folder") or "")
+    head = f"Report tables: written under {v1 or 'the export folder'}"
+    delivery = str(outcome.get("delivery") or "")
+    if delivery.startswith("sent "):
+        return f"{head}, and sent to the Foundry dataset."
+    if delivery in ("", "not set"):
+        return f"{head}; not sent to a dataset ({ENV_DATASET} is not set)."
+    if delivery == "not a Foundry deployment":
+        return f"{head}; not sent to a dataset (not a Foundry deployment)."
+    again = "python -m report_ingest.tables <the report's folder> " \
+            "--root <the export's root> --deliver"
+    if report_dir is not None and v1:
+        root = os.path.dirname(os.path.dirname(os.path.normpath(v1)))
+        again = (f"python -m report_ingest.tables \"{report_dir}\" "
+                 f"--root \"{root}\" --deliver")
+    why = delivery.partition(":")[2].strip() or delivery
+    if delivery.startswith("busy"):
+        return (f"{head}; NOT sent to the Foundry dataset, which was busy "
+                f"({why}). To send them: {again}")
+    return (f"{head}; NOT sent to the Foundry dataset ({why}); check that "
+            f"{ENV_DATASET} names a dataset of this workspace. To send "
+            f"them: {again}")
 
 
 # ---------------------------------------------------------------------------

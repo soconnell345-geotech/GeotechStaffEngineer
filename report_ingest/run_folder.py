@@ -78,6 +78,12 @@ class ReportRun:
     #: resumed from its folder (left out of ``index.json`` otherwise).
     calls_this_run: Optional[int] = None
     dollars_this_run: Optional[float] = None
+    #: What this run's export of the report tables did (BACKLOG RI-209):
+    #: ``report_tables.export_outcome``'s status, folder, rows and what the
+    #: Foundry dataset got, and the same as one line. Empty for a report
+    #: this run skipped or that failed.
+    report_tables: Optional[Dict[str, Any]] = None
+    report_tables_line: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         out = dict(self.__dict__)
@@ -273,6 +279,9 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                 row.dollars
             row.model_calls, row.dollars = took.report_calls, \
                 took.report_dollars
+        from report_ingest.tables import export_outcome, outcome_line
+        row.report_tables = export_outcome(report_out)
+        row.report_tables_line = outcome_line(row.report_tables, report_out)
         keys.setdefault(key, stem)
         run.reports.append(row)
         if row.duplicate_of:
@@ -367,6 +376,18 @@ def _write_index(run: FolderRun, out: str) -> None:
         for row in copies:
             lines.append(f"- `{row.report_id}` is a copy of "
                          f"`{row.duplicate_of}`")
+    exported = [row for row in run.reports
+                if row.ok and row.report_tables_line]
+    if exported:
+        # What the report tables export did (BACKLOG RI-209): one line when
+        # every report came to the same, else one per report.
+        lines += ["", "## The report tables", ""]
+        said = sorted({row.report_tables_line for row in exported})
+        if len(said) == 1:
+            lines.append(f"Every report read this run: {said[0]}")
+        else:
+            lines += [f"- `{row.report_id}`: {row.report_tables_line}"
+                      for row in exported]
     if run.failures:
         lines += ["", "## What failed", ""]
         for row in run.failures:
