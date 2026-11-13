@@ -15,7 +15,10 @@ class SobolResult:
     Attributes
     ----------
     n_samples : int
-        Number of model evaluations.
+        Number of model evaluations (the length of Y).
+    n_base_samples : int
+        The base sample size N of the design: n_samples / (2D+2) with
+        second-order indices, n_samples / (D+2) without.
     n_vars : int
         Number of input variables.
     var_names : list of str
@@ -41,13 +44,16 @@ class SobolResult:
     S2: Optional[List] = None
     output_mean: Optional[float] = None
     output_std: Optional[float] = None
+    n_base_samples: int = 0
 
     def summary(self) -> str:
         lines = [
             "=" * 60,
             "  SOBOL SENSITIVITY ANALYSIS RESULTS",
             "=" * 60,
-            f"  Samples:    {self.n_samples}",
+            f"  Samples:    {self.n_samples}"
+            + (f"  (base sample size N = {self.n_base_samples})"
+               if self.n_base_samples else ""),
             f"  Variables:  {self.n_vars}",
             "",
             "  Variable        S1          ST",
@@ -63,6 +69,7 @@ class SobolResult:
     def to_dict(self) -> dict:
         d = {
             "n_samples": self.n_samples,
+            "n_base_samples": self.n_base_samples,
             "n_vars": self.n_vars,
             "var_names": list(self.var_names),
             "S1": [float(x) for x in self.S1],

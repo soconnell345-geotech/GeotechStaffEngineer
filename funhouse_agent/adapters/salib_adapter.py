@@ -371,7 +371,7 @@ def _run_sobol_analyze(params: dict) -> dict:
         var_names=params["var_names"],
         bounds=params["bounds"],
         Y=params["Y"],
-        n_samples=params.get("n_samples", 1024),
+        n_samples=params.get("n_samples"),
         calc_second_order=params.get("calc_second_order", True),
         seed=params.get("seed", 42),
     )
@@ -413,7 +413,7 @@ def _run_morris_analyze(params: dict) -> dict:
         bounds=params["bounds"],
         X=params["X"],
         Y=params["Y"],
-        n_trajectories=params.get("n_trajectories", 20),
+        n_trajectories=params.get("n_trajectories"),
         num_levels=params.get("num_levels", 4),
         seed=params.get("seed", 42),
     )
@@ -431,7 +431,9 @@ METHOD_REGISTRY = {
 
 _EXPRESSION_DOC = (
     "The model as a safe arithmetic expression of the variables (the "
-    "reliability engines' g_expression rules): +, -, *, /, **, %, "
+    "reliability engines' g_expression rules and limits: at most 10,000 "
+    "characters, a whole-number power above about 1e308 refused): "
+    "+, -, *, /, **, %, "
     "comparisons, 'a if cond else b', and sqrt/log/exp/sin/cos/tan/asin/"
     "acos/atan/atan2/sinh/cosh/tanh/log10/ceil/floor/radians/degrees/abs/"
     "min/max/pi; scientific notation (1e-3) is fine. E.g. "
@@ -494,6 +496,7 @@ METHOD_INFO = {
             "var_names": "Variable names.",
             "n_vars": "Number of variables.",
             "n_samples": "Number of model outputs analysed.",
+            "n_base_samples": "The base sample size N used.",
             "S1": "First-order Sobol indices (var_names order).",
             "S1_conf": "95% confidence intervals for S1.",
             "ST": "Total-order Sobol indices.",
@@ -591,12 +594,11 @@ METHOD_INFO = {
             },
             "n_samples": {
                 "type": "int",
-                "brief": "Ignored: not used by the analysis and not echoed; the result's n_samples is the length of Y, which must match the sobol_sample design's row count.",
-                "default": 1024,
+                "brief": "The base sample size N given to sobol_sample. Checked: Y must have N*(2D+2) values (N*(D+2) without second-order indices) or the call is refused. Left out, N is taken from the length of Y.",
             },
             "calc_second_order": {
                 "type": "bool",
-                "brief": "Whether second-order indices were computed.",
+                "brief": "Whether the sample was made for second-order indices; must match sobol_sample (it sets the design's row count, which Y is checked against).",
                 "default": True,
             },
             "seed": {
@@ -607,6 +609,7 @@ METHOD_INFO = {
         },
         "returns": {
             "n_samples": "Number of model outputs analysed (the length of Y).",
+            "n_base_samples": "The design's base sample size N, from the length of Y.",
             "n_vars": "Number of variables.",
             "var_names": "Variable names.",
             "S1": "First-order Sobol indices.",
@@ -673,8 +676,7 @@ METHOD_INFO = {
             },
             "n_trajectories": {
                 "type": "int",
-                "brief": "Recorded only (echoed in the result): not used by the analysis. The trajectories analysed are implied by the length of X and Y.",
-                "default": 20,
+                "brief": "The number of trajectories given to morris_sample. Checked: X must have n_trajectories*(D+1) rows or the call is refused. Left out, the trajectories are counted from X.",
             },
             "num_levels": {
                 "type": "int",
@@ -688,7 +690,7 @@ METHOD_INFO = {
             },
         },
         "returns": {
-            "n_trajectories": "The n_trajectories given, echoed; not counted from X.",
+            "n_trajectories": "Trajectories counted from X: rows / (D+1).",
             "n_vars": "Number of variables.",
             "var_names": "Variable names.",
             "mu_star": "Mean of absolute elementary effects (importance).",
@@ -712,3 +714,18 @@ mark_required(METHOD_INFO, {
 })
 declare_aliases(METHOD_INFO, {"sobol_analysis": _ONE_CALL_ALIASES,
                               "morris_analysis": _ONE_CALL_ALIASES})
+
+# What a left-out count stands for (GM-323): it is read off the data, and
+# the data is checked against the design either way.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+declare_when_absent(METHOD_INFO, {
+    "sobol_analyze": {
+        "n_samples": ("taken from the length of Y",
+                      "the base sample size N is the length of Y divided "
+                      "by the design's rows per base sample (2D+2, or D+2 "
+                      "without second-order indices)")},
+    "morris_analyze": {
+        "n_trajectories": ("counted from X",
+                           "the number of trajectories is the rows of X "
+                           "divided by D+1")},
+})
