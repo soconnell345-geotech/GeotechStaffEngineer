@@ -32,14 +32,6 @@ _TREATED = ("cement_treated_base", "bituminous_treated_base")
 # reference layer's three-point tables put a2 = 0.10 at 200 psi / 200 lb,
 # where the print gives about 0.126 (0.10 sits near 30 psi / 120 lb), and
 # hold 0.22 above 800 psi where the print rises to 0.25 at 1,000 psi.
-_A2_CEMENT_SCALE = ((200, 0.126), (400, 0.155), (600, 0.188), (800, 0.220),
-                    (1000, 0.250))
-_A2_CEMENT_REF = "AASHTO 1993 Guide, Figure 2.8 (pdf_page 112, printed II-23)"
-_A2_BITUMINOUS_SCALE = ((200, 0.126), (400, 0.161), (600, 0.180),
-                        (800, 0.204), (1000, 0.230), (1200, 0.250),
-                        (1400, 0.275), (1600, 0.300), (1800, 0.320))
-_A2_BITUMINOUS_REF = ("AASHTO 1993 Guide, Figure 2.9 (pdf_page 113, "
-                      "printed II-24)")
 _HIGH_MODULUS_REF = ("AASHTO 1993 Guide, Section 3.1.5 (pdf_page 126, "
                      "printed II-37)")
 
@@ -49,25 +41,17 @@ _HIGH_MODULUS_REF = ("AASHTO 1993 Guide, Section 3.1.5 (pdf_page 126, "
 HIGH_MODULUS_PSI = 40_000.0
 
 
-def _a2_from_scale(value, scale, what, unit, warnings):
-    """a2 read straight across a printed parallel scale (Figs 2.8/2.9)."""
-    lo, hi = scale[0][0], scale[-1][0]
-    if value < lo:
-        raise ValueError(
-            f"{what} {value} {unit} is below the lowest labelled tick of the "
-            f"printed scale ({lo} {unit}); give the layer coefficient 'a' "
-            "directly."
-        )
-    if value > hi:
-        warnings.append(
-            f"{what} {value} {unit} is above the printed scale's top tick "
-            f"({hi} {unit}); a2 = {scale[-1][1]} at {hi} {unit} used."
-        )
-        return scale[-1][1]
-    for (x0, a0), (x1, a1) in zip(scale, scale[1:]):
-        if x0 <= value <= x1:
-            return round(a0 + (a1 - a0) * (value - x0) / (x1 - x0), 4)
-    return scale[-1][1]  # pragma: no cover
+def _treated_a2(lookup, value, layer_type):
+    """a2 of a treated base off Figure 2.8 or 2.9 (the library's chart
+    read, to three decimals). Outside the scale's labelled ticks the lookup
+    refuses (above the top tick since refs REF-76; this module used to hold
+    the top tick's a2 with a warning): raised again naming the layer, with
+    the lookup's message whole."""
+    try:
+        return lookup(value)
+    except ValueError as exc:
+        raise ValueError(f"{layer_type} layer: {exc} The layer coefficient "
+                         "is the layer's 'a' input.") from exc
 
 
 def _is_high_modulus(layer):
@@ -164,21 +148,20 @@ def _resolve_a(layer: PavementLayer, references, warnings):
                 "cement_treated_base layer needs ucs_7day_psi (7-day UCS) "
                 "or a direct 'a'."
             )
-        a2 = _a2_from_scale(layer.ucs_7day_psi, _A2_CEMENT_SCALE,
-                            "7-day UCS", "psi", warnings)
-        add_ref(references, _A2_CEMENT_REF)
-        return a2, "Figure 2.8 read across from the 7-day UCS scale"
+        r = _treated_a2(_tb.layer_coefficient_a2_cement_treated,
+                        layer.ucs_7day_psi, "cement_treated_base")
+        add_ref(references, r["reference"])
+        return r["a2"], "Figure 2.8 read across from the 7-day UCS scale"
     if lt == "bituminous_treated_base":
         if layer.marshall_stability_lb is None:
             raise ValueError(
                 "bituminous_treated_base layer needs marshall_stability_lb "
                 "or a direct 'a'."
             )
-        a2 = _a2_from_scale(layer.marshall_stability_lb,
-                            _A2_BITUMINOUS_SCALE, "Marshall stability", "lb",
-                            warnings)
-        add_ref(references, _A2_BITUMINOUS_REF)
-        return a2, "Figure 2.9 read across from the Marshall stability scale"
+        r = _treated_a2(_tb.layer_coefficient_a2_bituminous_treated,
+                        layer.marshall_stability_lb, "bituminous_treated_base")
+        add_ref(references, r["reference"])
+        return r["a2"], "Figure 2.9 read across from the Marshall stability scale"
     raise ValueError(
         f"Unknown layer_type '{lt}'. Use one of: {', '.join(LAYER_TYPES)}"
     )
