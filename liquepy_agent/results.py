@@ -501,6 +501,8 @@ class FieldCorrelationsResult:
             "n_points": self.n_points,
             "gwl_m": round(self.gwl_m, 2),
             "vs_method": self.vs_method,
+            # the split the Dr and su/sigma'v ranges are taken on
+            "i_c_limit": float(self.i_c_limit),
         }
 
         def finite(a):

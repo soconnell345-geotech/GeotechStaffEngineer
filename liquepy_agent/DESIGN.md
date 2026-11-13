@@ -178,7 +178,8 @@ only.
   averages beyond that. The Dr range (`dr_min`, `dr_max`) is taken over
   the sand-like readings (Ic below `i_c_limit`, 2.6) and the su/sigma'v
   range over the clay-like ones (Ic at or above it), null when there is
-  none (GM-324 review). Permeability is computed and NOT returned: no
+  none (GM-324 review); the result gives that split as `i_c_limit`.
+  Permeability is computed and NOT returned: no
   reference in the library prints the Robertson and Cabal (2012) relation,
   so the unit in the attribute's name (`permeability_cm_per_s`) is
   unchecked.

@@ -135,6 +135,13 @@ def test_each_range_is_over_its_own_soil_type():
     d = r.to_dict()
     assert (d["dr_min"], d["dr_max"]) == (0.55, 0.70)       # Ic < 2.6
     assert (d["su_ratio_min"], d["su_ratio_max"]) == (0.30, 0.45)  # >= 2.6
+    # the result names the split the ranges are taken on (re-check C-b)
+    assert d["i_c_limit"] == 2.6
+    import dataclasses
+    d = dataclasses.replace(r, i_c_limit=3.0).to_dict()
+    assert d["i_c_limit"] == 3.0
+    assert (d["dr_min"], d["dr_max"]) == (-0.10, 0.70)      # Ic < 3.0
+    assert (d["su_ratio_min"], d["su_ratio_max"]) == (0.30, 0.30)
     # no clay-like reading: the su range is null, not a sand's value
     sand = FieldCorrelationsResult(
         depth=np.array([1.0, 2.0]), relative_density=np.array([0.5, 0.6]),

@@ -179,6 +179,7 @@ METHOD_INFO = {
             "n_points": "Number of data points.",
             "gwl_m": "Water table depth used (m).",
             "vs_method": "Vs correlation used.",
+            "i_c_limit": "The Ic (2.6) that splits the readings for the ranges: dr_min and dr_max are over the readings with Ic below it (sand-like), su_ratio_min and su_ratio_max over those at or above it (clay-like).",
             "vs_min_m_per_s": "Lowest Vs over the sounding (m/s).",
             "vs_max_m_per_s": "Highest Vs (m/s).",
             "vs_avg_m_per_s": "Average Vs over the readings (m/s).",
