@@ -156,17 +156,24 @@ def test_site_response(method):
     pytest.importorskip("pystrata")
     promised = _returns("pystrata_adapter", method)
     base = dict(layers=LAYERS, motion="synthetic_long", target_pga_g=0.1)
-    seen, (dry, wet) = _seen([
+    linear_only = [dict(thickness=10, Vs=200, unit_wt=18,
+                        soil_model="linear", damping=0.02), LAYERS[-1]]
+    seen, (dry, wet, lin) = _seen([
         ("pystrata", method, base),              # shows `warnings`
         ("pystrata", method, {**base, "water_table_depth": 2.0, "k0": 0.6}),
+        # no Darendeli or Menq layer: shows `stress_inputs_note`
+        ("pystrata", method, {**base, "layers": linear_only, "k0": 0.6}),
     ])
-    # depth_profile_note comes only with more than 20 sub-layers
-    # (pystrata_agent/tests/test_gm325.py shows it)
+    # depth_profile_note comes only with more than 20 sub-layers, or a
+    # profile the module cannot read (pystrata_agent/tests/test_gm325.py
+    # shows both)
     promised -= {"depth_profile_note"}
     assert promised <= seen, sorted(promised - seen)
-    assert promised - {"warnings"} <= set(wet)
+    assert promised - {"warnings", "stress_inputs_note"} <= set(wet)
     assert "warnings" in dry and "warnings" not in wet
-    assert wet["water_table_depth_m"] == 2.0 and wet["K0"] == 0.6
+    assert wet["water_table_depth_m"] == 2.0 and wet["k0"] == 0.6
+    assert lin["k0"] is None and lin["stress_inputs_note"]
+    assert lin["max_shear_strain_pct"] > 0
     assert len(wet["Sa_surface_g"]) == len(wet["periods_s"]) == 11
     assert all(v > 0 for v in wet["Sa_surface_g"])
     assert len(json.dumps(wet)) < 8000

@@ -164,7 +164,50 @@ def test_a_fine_profile_is_merged_and_says_so():
 def test_empty_result_has_no_profile_or_spectrum():
     d = EQLSiteResponseResult().to_dict()
     assert "depth_profile" not in d and "periods_s" not in d
-    assert d["water_table_depth_m"] is None and d["K0"] == 0.5
+    assert d["water_table_depth_m"] is None and d["k0"] is None
+    assert "no Darendeli or Menq layer" in d["stress_inputs_note"]
+
+
+def test_stress_inputs_echoed_only_when_used():
+    """GM-325 review: the water table and K0 were echoed as used on a
+    profile where nothing used them, and as 'K0', a name the guard on
+    unused inputs (test_defaults_used) cannot match to the input k0."""
+    computed = [{"layer": 1, "stress_mean_from": "computed"}]
+    given = [{"layer": 1, "stress_mean_from": "given"}]
+    used = EQLSiteResponseResult(water_table_depth_m=2.0, k0=0.7,
+                                 layer_stresses=computed).to_dict()
+    assert used["water_table_depth_m"] == 2.0 and used["k0"] == 0.7
+    assert "stress_inputs_note" not in used and "K0" not in used
+    for rows, why in ((given, "own stress_mean"),
+                      ([], "no Darendeli or Menq layer")):
+        d = EQLSiteResponseResult(water_table_depth_m=2.0, k0=0.7,
+                                  layer_stresses=rows).to_dict()
+        assert d["water_table_depth_m"] is None and d["k0"] is None
+        assert "not used" in d["stress_inputs_note"]
+        assert why in d["stress_inputs_note"]
+
+
+def test_a_profile_that_cannot_be_read_is_null_with_the_reason():
+    """GM-325 review: arrays not in the form the rows are read from left
+    depth_profile out with no word."""
+    r = _result(6)
+    r.initial_Vs = r.initial_Vs[1:]          # not in step-plot form
+    d = r.to_dict()
+    assert d["depth_profile"] is None
+    assert "not returned" in d["depth_profile_note"]
+    assert "Vs" in d["depth_profile_note"]
+
+
+def test_a_missing_strain_is_null_not_zero():
+    r = _result(6)
+    r.max_strain_pct = r.max_strain_pct.copy()
+    r.max_strain_pct[3] = np.nan              # sub-layer 3 (after the surface)
+    d = r.to_dict()
+    assert d["max_shear_strain_pct"] is None
+    assert d["depth_profile"][2]["max_strain_pct"] is None
+    assert d["depth_profile"][1]["max_strain_pct"] is not None
+    json.dumps(d, allow_nan=False)
+    assert "Max shear strain" not in r.summary()
 
 
 @needs_pystrata
@@ -189,7 +232,8 @@ class TestThroughPystrata:
     def test_default_is_unchanged_and_said(self):
         r = self._run()
         d = r.to_dict()
-        assert d["water_table_depth_m"] is None and d["K0"] == 0.5
+        assert d["water_table_depth_m"] is None and d["k0"] == 0.5
+        assert "stress_inputs_note" not in d
         assert [x["stress_mean_kPa"] for x in d["layer_stresses"]] == \
             pytest.approx([23.33, 97.33, 228.0])
         assert len(d["warnings"]) == 1
@@ -210,9 +254,87 @@ class TestThroughPystrata:
         r = analyze_linear_site_response(
             LAYERS, motion="synthetic_long", water_table_depth=2.0, k0=0.8)
         d = r.to_dict()
-        assert d["water_table_depth_m"] == 2.0 and d["K0"] == 0.8
+        assert d["water_table_depth_m"] == 2.0 and d["k0"] == 0.8
         assert d["layer_stresses"][1]["stress_mean_kPa"] == pytest.approx(
             87.14 * (1 + 1.6) / 3, abs=0.01)
+        # a linear run computes its strains now (they were 0.0)
+        assert d["max_shear_strain_pct"] > 0
+        assert all(row["max_strain_pct"] > 0 for row in d["depth_profile"])
+
+    @staticmethod
+    def _closed_form_peak_strains(accel, dt, H, vs1, g1, xi1, vs2, g2, xi2,
+                                  depths):
+        """Peak shear strain (decimal) at each depth of one uniform damped
+        layer (thickness H) on an elastic half-space, under a rock outcrop
+        motion ``accel`` (g): the closed-form wave solution,
+        strain / outcrop accel = g k sin(k z) / (w^2 (cos kH + i a sin kH)),
+        k = w / Vs*, Vs* = Vs sqrt(G*/G), a = gamma1 Vs1* / (gamma2 Vs2*),
+        with G*/G = sqrt(1 - 4 xi^2) + 2 i xi (pystrata's complex modulus),
+        on the motion's FFT padded to the next power of 2 as pystrata pads
+        it. Written out here, not read from pystrata."""
+        n = 1
+        while n < len(accel):
+            n <<= 1
+        fa = np.fft.rfft(np.asarray(accel, dtype=float), n)
+        w = 2.0 * np.pi * np.arange(n // 2 + 1) / (n * dt)
+
+        def vs_star(vs, xi):
+            return vs * np.sqrt(np.sqrt(1.0 - 4.0 * xi ** 2) + 2j * xi)
+
+        v1, v2 = vs_star(vs1, xi1), vs_star(vs2, xi2)
+        a = (g1 * v1) / (g2 * v2)
+        k = w / v1
+        peaks = []
+        for z in depths:
+            tf = np.zeros_like(fa)
+            tf[1:] = (9.80665 * k[1:] * np.sin(k[1:] * z)
+                      / (w[1:] ** 2 * (np.cos(k[1:] * H)
+                                       + 1j * a * np.sin(k[1:] * H))))
+            peaks.append(float(np.max(np.abs(np.fft.irfft(tf * fa, n)))))
+        return np.array(peaks)
+
+    def test_linear_strain_matches_the_closed_form(self):
+        """GM-325 review: a linear run reported a peak shear strain of
+        0.0 (pystrata's linear calculator computes none). One linear
+        layer and one 'custom' layer with flat curves (pystrata splits it
+        into sub-layers), each on rock, against the closed form."""
+        from opensees_agent.ground_motions import validate_motion_input
+        from pystrata_agent import (
+            analyze_eql_site_response, analyze_linear_site_response)
+        accel, dt = validate_motion_input("synthetic_pulse", None, None)
+        rock = dict(thickness=0, Vs=760, unit_wt=22, soil_model="linear",
+                    damping=0.01)
+        one = [dict(thickness=10, Vs=200, unit_wt=18, soil_model="linear",
+                    damping=0.02), rock]
+        flat = [dict(thickness=12, Vs=180, unit_wt=17, soil_model="custom",
+                     strains=[1e-6, 1e-4, 1e-2], mod_reduc=[1.0, 1.0, 1.0],
+                     damping_values=[0.03, 0.03, 0.03]), rock]
+        for layers, (H, vs1, g1, xi1) in ((one, (10, 200, 18, 0.02)),
+                                          (flat, (12, 180, 17, 0.03))):
+            r = analyze_linear_site_response(layers, motion="synthetic_pulse")
+            z = np.asarray(r.depths, dtype=float)[1:]     # sub-layer middles
+            assert np.all((z > 0) & (z < H))
+            want = self._closed_form_peak_strains(
+                accel, dt, H, vs1, g1, xi1, 760, 22, 0.01, z)
+            assert np.asarray(r.max_strain_pct)[1:] == pytest.approx(
+                100.0 * want, rel=1e-6)
+            d = r.to_dict()
+            assert d["max_shear_strain_pct"] == pytest.approx(
+                100.0 * want.max(), abs=1e-4)
+            assert d["max_shear_strain_pct"] > 0
+        assert len(np.asarray(r.depths)) > 2   # the flat layer was split
+        # a linear soil does not soften: the equivalent-linear method gives
+        # the same strain, from pystrata's own strain_max
+        lin = analyze_linear_site_response(one, motion="synthetic_pulse")
+        eql = analyze_eql_site_response(one, motion="synthetic_pulse")
+        assert np.asarray(lin.max_strain_pct) == pytest.approx(
+            np.asarray(eql.max_strain_pct), rel=1e-6)
+        # nothing on this profile uses the water table or K0
+        d = analyze_linear_site_response(
+            one, motion="synthetic_pulse", water_table_depth=2.0,
+            k0=0.7).to_dict()
+        assert d["water_table_depth_m"] is None and d["k0"] is None
+        assert "no Darendeli or Menq layer" in d["stress_inputs_note"]
 
     def test_bad_inputs_are_refused(self):
         with pytest.raises(ValueError, match="water_table_depth"):

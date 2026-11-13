@@ -527,7 +527,11 @@ def analyze_linear_site_response(
     """Run 1D linear elastic site response analysis using pystrata.
 
     Same as ``analyze_eql_site_response`` but with no strain-compatible
-    iteration. Uses initial (small-strain) properties throughout.
+    iteration. Uses initial (small-strain) properties throughout. The peak
+    shear strain at each sub-layer's middle is the peak of its strain
+    history (pystrata's ``StrainTSOutput``), the quantity the
+    equivalent-linear calculator stores as ``strain_max``; pystrata's
+    linear calculator computes none itself.
 
     Parameters
     ----------
@@ -664,6 +668,27 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
     # 7. Compute outputs
     outputs(calc)
 
+    # 7b. A linear run's peak shear strains. pystrata's
+    # LinearElasticCalculator never sets a layer's strain_max (only the
+    # equivalent-linear calculator does, after its last iteration), so
+    # MaxStrainProfile reads None for every sub-layer; until the GM-325
+    # review the module turned that into 0.0. pystrata's StrainTSOutput
+    # gives the strain history at a depth (the strain transfer function on
+    # the input motion); its peak at each sub-layer's middle is what the
+    # equivalent-linear calculator stores as strain_max.
+    linear_strain = None
+    if analysis_type == "linear_elastic":
+        z_mid = np.asarray(calc.profile.depth_mid, dtype=float)[:-1]
+        strain_ts = pystrata.output.OutputCollection([
+            pystrata.output.StrainTSOutput(
+                pystrata.output.OutputLocation("within", depth=float(z)))
+            for z in z_mid])
+        strain_ts(calc)
+        # the surface point first, as MaxStrainProfile writes it
+        linear_strain = np.r_[0.0, [
+            float(np.max(np.abs(np.asarray(o.values, dtype=float))))
+            for o in strain_ts]]
+
     # 8. Extract results
     # Surface acceleration time history
     accel_ts_output = outputs[0]
@@ -693,10 +718,14 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
     compat_vel_output = outputs[6]
 
     depths_strain = np.array(strain_output.refs).flatten()
-    # Linear elastic calculator returns None for strain values; replace with 0
-    raw_strain = strain_output.values
-    max_strain = np.array(
-        [0.0 if v is None else float(v) for v in raw_strain])
+    if linear_strain is not None:
+        max_strain = linear_strain
+    else:
+        # A sub-layer pystrata gave no strain for stays missing (NaN, null
+        # in the result), never 0.0.
+        max_strain = np.array(
+            [np.nan if v is None else float(v)
+             for v in strain_output.values])
 
     depths_accel = np.array(accel_output.refs).flatten()
     max_accel = np.array(accel_output.values).flatten()
