@@ -198,3 +198,91 @@ def test_a_held_out_record_has_its_boxes_taken_off():
                              "bbox": [1, 2, 3, 4]}}]})
     assert mp.strip_boxes("calc", calc) == [(3, [1.0, 2.0, 3.0, 4.0])]
     assert calc.inputs[0].prov.bbox is None
+
+
+# ---------------------------------------------------------------------------
+# RI-99 (3): a lab test's two boxes, in three groups
+# ---------------------------------------------------------------------------
+
+def _lab_page(tmp_path):
+    """A made-up sheet: a heading line naming the sample, its results on a
+    row of their own, and another sample's row below."""
+    import pymupdf
+    from planlens.document import open_document
+    from report_ingest.locate import PageWords
+
+    pdf = pymupdf.open()
+    page = pdf.new_page()
+    for x, y, text in [
+            (72, 90, "Sample:"), (130, 90, "S-2"), (220, 90, "Depth 5.0 ft"),
+            (72, 150, "LL"), (160, 150, "PL"), (250, 150, "PI"),
+            (72, 164, "41"), (160, 164, "19"), (250, 164, "22"),
+            (72, 240, "S-7"), (160, 240, "55"), (250, 240, "31")]:
+        page.insert_text((x, y), text, fontsize=10)
+    path = tmp_path / "made_lab.pdf"
+    pdf.save(str(path))
+    pdf.close()
+    doc = open_document(str(path))
+    return doc, PageWords(doc)(0)
+
+
+def _lab_test():
+    from report_ingest.model import LabTest
+
+    return LabTest.model_validate({
+        "kind": "atterberg", "investigation_id": "TB-4", "sample_id": "S-2",
+        "pages": [0], "result": {"kind": "atterberg", "ll": 41, "pl": 19,
+                                 "pi": 22},
+        "prov": [{"page": 0, "method": "model"}]})
+
+
+def test_a_lab_tests_two_boxes_are_put_in_three_groups(tmp_path):
+    doc, text = _lab_page(tmp_path)
+    try:
+        test = _lab_test()
+        results = [70, 155, 270, 167]          # the row of 41 19 22
+        label = [128, 81, 150, 93]             # "S-2" in the heading line
+        other = [70, 231, 270, 243]            # another sample's row
+        same = {"same_page": True, "same_line": True}
+        apart = {"same_page": True, "same_line": False}
+        assert mp.where_beside(same, text, results, results, test) \
+            == "same_line"
+        assert mp.where_beside(apart, text, results, label, test) \
+            == "same_block"
+        assert mp.where_beside(apart, text, label, results, test) \
+            == "same_block"
+        assert mp.where_beside(apart, text, results, other, test) \
+            == "elsewhere"
+        assert mp.where_beside({"same_page": False}, text, results, label,
+                               test) is None
+    finally:
+        doc.close()
+
+
+def _lab_row(where):
+    row = _row("placed", kind="test", same_line=(where == "same_line"))
+    row["pipeline"]["where"] = where
+    return row
+
+
+def test_the_lab_groups_are_reported_apart_and_only_elsewhere_is_listed(
+        tmp_path):
+    rows = [_lab_row("same_line")] * 2 + [_lab_row("same_block")] * 5 + [
+        _lab_row("elsewhere")]
+    summary = mp.stage_summary([_item(rows, name="lab__RXX_p2")])
+    assert [summary["compare"]["lab_" + w] for w in mp.BESIDE] == [2, 5, 1]
+    assert summary["compare"]["same_line"] == 2          # unchanged
+    mp.write_results(tmp_path, {"lab": [_item(rows, name="lab__RXX_p2")]})
+    text = (tmp_path / "RESULTS.md").read_text(encoding="utf-8")
+    assert "## Lab: where the two boxes sit" in text
+    assert "| lab | open | 8 | 2/8 (25.0 %) | 5/8 (62.5 %) | " \
+           "1/8 (12.5 %) |" in text
+    listed = text.split("### Same page, another line than the other box")[1]
+    assert listed.count("| lab__RXX_p2 |") == 1          # the one elsewhere
+
+
+def test_a_stage_with_no_lab_pairs_has_no_lab_table(tmp_path):
+    rows = [_row("placed", same_line=True)]
+    mp.write_results(tmp_path, {"calc": [_item(rows)]})
+    text = (tmp_path / "RESULTS.md").read_text(encoding="utf-8")
+    assert "## Lab: where the two boxes sit" not in text
