@@ -299,6 +299,7 @@ def analyze_slope(geom: SlopeGeometry,
         method_used=method_used,
         methods_without_solution=no_solution,
         warnings=warnings_out,
+        layer_overlaps=geom.layer_overlaps(),
         xc=r_xc,
         yc=r_yc,
         radius=r_radius,
@@ -566,11 +567,15 @@ def compare_methods_table(geom: SlopeGeometry,
              "-" * 52]
     for r in rows:
         lines.append(f"  {r['method']:<34s} {r['FOS']:>7.3f}  {r['detail']}")
+    for o in res.layer_overlaps:
+        lines.append(f"  LAYERS: {o['statement']}")
     for w in res.warnings:
         lines.append(f"  WARNING: {w}")
     summary = "\n".join(lines)
 
     out = {"rows": rows, "surface": surface, "summary": summary}
+    if res.layer_overlaps:
+        out["layer_overlaps"] = [dict(o) for o in res.layer_overlaps]
     if res.warnings:
         out["warnings"] = list(res.warnings)
     return out
@@ -772,6 +777,7 @@ def search_critical_surface(
         result.n_rejected_m_alpha = _m_alpha_refusals_so_far()
         confirm = m_alpha_confirmation(geom, result.critical, scored,
                                        n_slices, tol)
+        result.layer_overlaps = geom.layer_overlaps()
         result.choices = search_choices(
             result, surface_type=surface_type, method=method,
             scored_with=scored, toe_circles=toe_circles,

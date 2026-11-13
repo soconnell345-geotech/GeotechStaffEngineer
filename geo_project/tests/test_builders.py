@@ -272,3 +272,15 @@ def test_run_analyses_refuses_invalid():
     p.stratigraphy[0].material.phi = None
     with pytest.raises(ProjectValidationError):
         run_analyses(p)
+
+
+def test_to_slope_geometry_one_material_per_point():
+    """GM-140 step 1: under a layer with a polyline bottom the next layer
+    starts at that polyline, so no ground is held by two layers."""
+    geom = to_slope_geometry(make_project())
+    assert geom.soil_layers[1].top_boundary_points == [(0, 2.0), (45, 1.0)]
+    assert geom.layer_overlaps() == []
+    # at x = 9 the boundary is at 2 - 9/45 = 1.8: Sand above it, Clay below
+    col = {L.name: (zb, zt) for L, zb, zt in geom.column_at(9.0)}
+    assert col["Sand"] == (pytest.approx(1.8), pytest.approx(10.0))
+    assert col["Clay"] == (pytest.approx(-8.0), pytest.approx(1.8))

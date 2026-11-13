@@ -169,7 +169,17 @@ This repository builds three packages; the app also needs two more of the same p
   the Foundry dataset store is `aec_agent_core/foundry_dataset_store.py`
   (the old `webapp` name is an alias, so edit the core's file), and the
   coordination tasks carry a false-alarm check (EV-44; 101 scored checks
-  a set-up). Since 2026-11-13: after every ingest, report ingest writes
+  a set-up). Since 2026-11-13, from the Document Review round: every
+  vision reading is told it sees one image, and a tiled page read keeps
+  its small-lettering note (`turn_question.ONE_IMAGE_NOTE`; VIS-31
+  part 1, VIS-30); on a shared host two sign-in names never share an AI
+  key, a folder or a SharePoint owner folder (TA-39, TA-40:
+  `Identity.key`, `tinyapps_keys.resolve_for`,
+  `sharepoint_store.owner_folder`; a name that is not plain gets a new,
+  empty folder, OWN-147); and on the Graph route SharePoint saves run on
+  background workers, with a size limit
+  (`GEOTECH_SHAREPOINT_MAX_UPLOAD_MB`, 2048 MB; live checks TA-42).
+  Also since 2026-11-13: after every ingest, report ingest writes
   the report as five tables in JSON Lines with a `schema.json`
   (`report_ingest/tables.py`, `docs/REPORT_TABLES.md`; sent to the dataset
   `GSE_REPORT_TABLES_DATASET` names; `GSE_REPORT_TABLES=0` turns it off;

@@ -21,9 +21,9 @@ stabilizing piles in every method (`reinforcement.py`).
 - FHWA GEC-7, Lazarte et al. (2003) — Soil nail walls (nails.py)
 
 ## Files
-- `geometry.py` — SlopeSoilLayer (elevation-based), SlopeGeometry (polyline surface/GWT)
+- `geometry.py` — SlopeSoilLayer (flat or polyline top and bottom), SlopeGeometry (polyline surface/GWT); `column_at`, the one lookup of the layer at a point (GM-140 step 1)
 - `slip_surface.py` — CircularSlipSurface (center + radius), PolylineSlipSurface (polyline points); a surface below the ground over more than one stretch is refused (`GroundCrossingError`, GM-122)
-- `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure
+- `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure (the weight summed over `SlopeGeometry.column_at`)
 - `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`; the `*_legacy` approximate forms are the fallback), solve_rigorous()
 - `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
 - `reinforcement.py` — nails, anchors, geosynthetics and stabilizing piles as forces at the base of the slice each crosses, in every method (GM-53, GM-59)
@@ -41,6 +41,77 @@ stabilizing piles in every method (`reinforcement.py`).
 - `tests/test_duncan_verification.py` — 28 tests (Duncan §7.6-7.7 verification examples; Ex 1 against Taylor's chart, GM-63, and the default search on long profiles, GM-87)
 - `tests/test_nails.py` — 38 tests + 16 skipped (nail intersection/pullout/capacity; the skipped ones test the old nail path, replaced by `reinforcement.py`)
 - `tests/test_reinforcement.py`, `tests/test_search_reinforcement.py` — 22 + 33 tests (supports in each method; supports in searches, GM-53, GM-54, GM-59, GM-60)
+
+## Layers: one material per point (GM-140 step 1, 2026-11-13)
+
+Print: a slice that holds two soils is weighed in two portions, each
+soil's part of the slice at its own unit weight (EM 1110-2-1902 Appendix F,
+F-5d, p. F-19: slices containing both embankment and foundation soil "were
+divided into two portions for calculating the slice weights"; worked in
+Fig. F-11, p. F-21), with total unit weights for all soils (2-2d, p. 2-5);
+and the engineer checks "the weights of slices, shear strength properties,
+and pore water pressures at the bottoms of slices" (EM 4-2d(2), p. 4-2).
+2-2d and 4-2d(2) are as quoted in
+`module_work/slope_integral_review/ACCOUNT.md` section 2 (the EM is not in
+the repository).
+
+- **The rule.** At a point (x, z) below the ground, the layer is the first
+  one listed in `soil_layers` whose bottom and top at x contain z.
+  `SlopeGeometry.column_at(x, z_low, z_high)` gives a column as stretches,
+  each with its one layer; `layer_at_point(x, z)` is the same rule at a
+  point. The slice weight (`slices._compute_slice_weight`) is summed over
+  the column; the strength, ru, the drawdown envelope and the supports'
+  layer come from `layer_at_point` at the base; SHANSEP's sigma'v and the
+  seismic force come from that weight. The section drawings
+  (`plotting._draw_section_base`, `calc_package.interactive`) fill each
+  layer where it holds the ground (`layer_bands`).
+- **What an input means.** A layer's `top_elevation` / `bottom_elevation`,
+  or `top_boundary_points` / `bottom_boundary_points` (polylines sorted by
+  x, level beyond their ends), say where the layer MAY be. A polyline
+  bottom on one layer and a flat top on the next, at the boundary's highest
+  point, therefore means the lower layer starts at the boundary. Giving the
+  lower layer the same polyline as `top_boundary_points` says the same
+  with no overlap.
+- **Overlaps.** Where two layers cover the same ground the first listed
+  holds it. `SlopeGeometry.layer_overlaps()` lists each layer that loses
+  ground (the layers that hold it, the x range, the tallest shared stretch
+  below the ground). The results of `analyze_slope`,
+  `search_critical_surface`, `compare_methods_table` and
+  `rapid_drawdown_fos` carry it (`layer_overlaps`, in `to_dict()` when not
+  empty; a LAYERS line in the summaries of the first three), and the calc
+  package prints it as a table. The FOSM and Monte Carlo results, the
+  yield acceleration, the result of a search function called directly
+  (`grid_search`, `search_weak_layer_biased` and the others in `search.py`)
+  and the top level of the drawdown search's result do not carry it: read
+  it from the geometry there.
+- **Lenses.** A layer listed before the layer it sits in holds its own
+  ground and the host is weighed around it (two stretches in the column).
+  No closed-region input was added.
+- **Gaps.** Ground between the surface and the bottom of the deepest layer
+  that no layer covers is refused when the `SlopeGeometry` is built, with
+  the elevations and the x range. That includes ground above the first
+  layer's top. Below the bottom of the deepest layer is the model's base,
+  as before (GM-128).
+- **How it is found.** `SlopeGeometry._scan_layers`: the ground and every
+  top and bottom are straight between their vertices, so gaps and overlaps
+  open and close only where two of those lines cross; the column is checked
+  at the ends and middle of every stretch between such points. A stretch
+  shorter than 1e-6 m is neither.
+- **Before.** The weight summed every layer that overlapped the slice
+  height, each from its own flat top (a top could not slope), while the
+  strength used the rule above. With the usual layout the wedge between a
+  sloping boundary and the lower layer's flat top was weighed twice: V-028
+  weighed 8,768 kN/m against 3,003 from its area. Models whose layers do
+  not overlap are unchanged, slice for slice (VALIDATION.md B19).
+- **Not done here.** A layer boundary's vertices are not slice boundaries
+  (only its crossings with the slip surface are), so a slice with a kink
+  of the boundary inside it takes its weight from the mid-point column;
+  the su-with-depth law still reads a layer's flat `top_elevation` /
+  `bottom_elevation` (the weak-layer search aims at the ground a layer
+  holds at each x since the fix round, `search._layer_band_at`; its lower
+  limit is still the lowest flat `bottom_elevation`); `ru` still uses the base
+  layer's unit weight over the column (the account's D3). See
+  `module_work/gm140/STEP1_CHECK.md`.
 
 ## Public API
 ```python

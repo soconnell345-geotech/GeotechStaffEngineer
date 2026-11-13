@@ -148,6 +148,11 @@ class SlopeStabilityResult:
         field on this result holds no converged solution (the headline or a
         compare_methods value): the legacy approximate solver's value, or
         None.
+    layer_overlaps : list of dict
+        Where a soil layer was given ground that a layer listed before it
+        also covers (``SlopeGeometry.layer_overlaps``): the first listed
+        layer holds that ground, for weight and strength. Empty when no
+        two layers overlap. In ``to_dict()`` only when not empty.
     warnings : list of str
         Plain statements of what the engineer must check on this surface: a
         method with no equilibrium solution, a reverse-curvature circle
@@ -223,6 +228,7 @@ class SlopeStabilityResult:
     method_used: Optional[str] = ""
     methods_without_solution: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    layer_overlaps: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def is_circular(self) -> bool:
@@ -309,6 +315,8 @@ class SlopeStabilityResult:
         if self.FOS_janbu_uncorrected is not None:
             lines.append(f"  FOS (Janbu unc.): {self.FOS_janbu_uncorrected:.3f}"
                          + (f"  (f0={self.janbu_f0:.3f})" if self.janbu_f0 else ""))
+        for o in self.layer_overlaps:
+            lines.append(f"  LAYERS: {o['statement']}")
         for w in self.warnings:
             lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
@@ -413,6 +421,8 @@ class SlopeStabilityResult:
             ]
         if self.methods_without_solution:
             d["methods_without_solution"] = list(self.methods_without_solution)
+        if self.layer_overlaps:
+            d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d
@@ -617,6 +627,11 @@ class SearchResult:
         search was called directly (grid_search etc.).
     candidates : dict
         Minimum FOS of each surface family tried, keyed as above.
+    layer_overlaps : list of dict
+        Where a soil layer was given ground that a layer listed before it
+        also covers (``SlopeGeometry.layer_overlaps``): the first listed
+        layer holds that ground, for weight and strength. Empty when no
+        two layers overlap. In ``to_dict()`` only when not empty.
     warnings : list of str
         Plain statements where the search cannot be sure of its answer
         (a supplementary family undercut the main search, the critical
@@ -680,6 +695,7 @@ class SearchResult:
     governing_surface: str = ""
     candidates: Dict[str, float] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
+    layer_overlaps: List[Dict[str, Any]] = field(default_factory=list)
     infinite_slope_checks: List[Dict[str, Any]] = field(default_factory=list)
     search_ranges: Dict[str, Any] = field(default_factory=dict)
     governing_location: Dict[str, Any] = field(default_factory=dict)
@@ -742,6 +758,8 @@ class SearchResult:
                              f"(the slope's reach: x = {x:.2f})")
         from geotech_common.choices import choices_lines
         lines.extend(choices_lines(self.choices))
+        for o in self.layer_overlaps:
+            lines.append(f"  LAYERS: {o['statement']}")
         for w in self.warnings:
             lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
@@ -806,6 +824,8 @@ class SearchResult:
             d["refused_lowest"] = dict(self.refused_lowest)
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
+        if self.layer_overlaps:
+            d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d

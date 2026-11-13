@@ -62,19 +62,22 @@ def _draw_section_base(ax, geom, layer_alpha=0.75, show_legend_layers=True,
     xs = np.linspace(x_min, x_max, 400)
     zg = np.array([geom.ground_elevation_at(x) for x in xs])
 
+    # each layer where it holds the ground (one material per point,
+    # ``SlopeGeometry.layer_bands``; GM-140 step 1)
+    bands = geom.layer_bands([float(x) for x in xs])
     for i, layer in enumerate(geom.soil_layers):
         color = LAYER_COLORS[i % len(LAYER_COLORS)]
         hatch = LAYER_HATCHES[i % len(LAYER_HATCHES)]
-        top = np.array([min(geom.ground_elevation_at(x), layer.top_at(x))
-                        for x in xs])
-        bot = np.array([layer.bottom_at(x) for x in xs])
-        mask = top > bot
-        if np.any(mask):
+        for k, (tops, bots) in enumerate(bands[i]):
+            top = np.array([np.nan if v is None else v for v in tops])
+            bot = np.array([np.nan if v is None else v for v in bots])
+            mask = ~np.isnan(top)
             ax.fill_between(
                 xs, bot, top, where=mask, facecolor=color,
                 alpha=layer_alpha, hatch=hatch, edgecolor='#777777',
                 linewidth=0.4,
-                label=layer.name if show_legend_layers else None)
+                label=(layer.name if show_legend_layers and k == 0
+                       else None))
 
     # Ground surface
     sx = [p[0] for p in geom.surface_points]
