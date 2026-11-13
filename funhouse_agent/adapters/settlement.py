@@ -8,7 +8,8 @@ from geotech_common.choices import MODULE, choice, how_given
 from settlement.immediate import (
     GEC6_RIGID_SQUARE_NOTE, GEC6_TABLE_5_12_BASIS, SchmertmannLayer,
     elastic_settlement,
-    gec6_influence_factor, schmertmann_settlement,
+    gec6_influence_factor, schmertmann_below_choice,
+    schmertmann_below_warning, schmertmann_terms,
 )
 from settlement.consolidation import (
     ConsolidationLayer, consolidation_settlement_layer,
@@ -113,7 +114,7 @@ def _run_schmertmann_settlement(params: dict) -> dict:
     params = apply_aliases(params, _Q_ALIASES)
     reject_unknown_params(
         params, ("q_net", "q_overburden", "B", "L", "layers", "shape",
-                 "time_years", "gamma_soil"),
+                 "time_years", "gamma_soil", "below_profile"),
         method="schmertmann_settlement")
     require_params(params, ["q_net", "B", "layers", "gamma_soil"],
                    method="schmertmann_settlement")
@@ -123,14 +124,35 @@ def _run_schmertmann_settlement(params: dict) -> dict:
     for l in params["layers"]:
         require_keys(l, ["depth_top", "depth_bottom", "Es"], method="schmertmann_settlement")
     layers = [SchmertmannLayer(depth_top=l["depth_top"], depth_bottom=l["depth_bottom"], Es=l["Es"]) for l in params["layers"]]
-    Se = schmertmann_settlement(
+    out = {"schmertmann_settlement_m": 0.0, "schmertmann_settlement_mm": 0.0,
+           "method": "schmertmann"}
+    if params["q_net"] <= 0:
+        return out
+    terms = schmertmann_terms(
         q_net=params["q_net"], q0=params.get("q_overburden", 0.0),
         B=params["B"], L=params.get("L", params["B"]),
         layers=layers, footing_shape=params.get("shape", "square"),
         time_years=params.get("time_years", 0.0),
         gamma_soil=params.get("gamma_soil"),
+        below_profile=params.get("below_profile"),
     )
-    return {"schmertmann_settlement_m": round(Se, 6), "schmertmann_settlement_mm": round(Se * 1000, 2), "method": "schmertmann"}
+    Se = terms["Se"]
+    out.update({
+        "schmertmann_settlement_m": round(Se, 6),
+        "schmertmann_settlement_mm": round(Se * 1000, 2),
+        "influence_depth_m": round(terms["z_max"], 4),
+        "layers_bottom_m": round(terms["profile_bottom"], 4),
+    })
+    # layers that do not cover the diagram: the depth not covered and
+    # what was taken there, said in the result (GM-320)
+    below = schmertmann_below_choice(terms)
+    if below:
+        out["below_profile"] = terms["below_profile"]
+        out["depths_not_covered_m"] = [
+            [round(a, 4), round(b, 4)] for a, b in terms["uncovered"]]
+        out["choices"] = [below]
+        out["warnings"] = [schmertmann_below_warning(terms)]
+    return out
 
 
 def _run_consolidation_settlement(params: dict) -> dict:
@@ -156,6 +178,28 @@ def _run_consolidation_settlement(params: dict) -> dict:
     delta_sigmas = params.get("delta_sigmas")
     if delta_sigmas is None and "delta_sigma" in params:
         delta_sigmas = [params["delta_sigma"]] * len(layers)
+    elif delta_sigmas is not None:
+        # one stress increase per layer: a shorter or longer list was
+        # zipped, dropping layers (or stresses) from the total (GM-320)
+        if not isinstance(delta_sigmas, (list, tuple)):
+            raise ValueError(
+                "consolidation_settlement: delta_sigmas must be a list of "
+                "stress increases (kPa), one per layer; for one value for "
+                "every layer give delta_sigma")
+        if len(delta_sigmas) != len(layers):
+            raise ValueError(
+                f"consolidation_settlement: delta_sigmas has "
+                f"{len(delta_sigmas)} value(s) and layers has "
+                f"{len(layers)}: give one stress increase per layer, in "
+                "the layers' order (or delta_sigma, one value for every "
+                "layer)")
+        bad = [i for i, ds in enumerate(delta_sigmas)
+               if isinstance(ds, bool) or not isinstance(ds, (int, float))]
+        if bad:
+            raise ValueError(
+                f"consolidation_settlement: delta_sigmas[{bad[0]}] is "
+                f"{delta_sigmas[bad[0]]!r}: each entry is a stress increase "
+                "in kPa, a number")
 
     layer_results = []
     S_total = 0.0
@@ -231,7 +275,8 @@ def run_combined_settlement_analysis(
                  "immediate_method", "Es", "nu", "schmertmann_layers",
                  "consolidation_layers", "cv", "Hdr", "drainage", "C_alpha",
                  "e0_secondary", "t_secondary", "stress_method",
-                 "time_years_schmertmann", "Iw", "gamma_soil"),
+                 "time_years_schmertmann", "Iw", "gamma_soil",
+                 "schmertmann_below_profile"),
         method=method)
     require_params(params, ["q_applied", "B"], method=method)
     consol_layers = None
@@ -286,6 +331,7 @@ def run_combined_settlement_analysis(
         stress_method=params.get("stress_method", "2:1"),
         time_years_schmertmann=params.get("time_years_schmertmann", 0.0),
         gamma_soil=params.get("gamma_soil"),
+        schmertmann_below_profile=params.get("schmertmann_below_profile"),
     )
     return analysis.compute(), analysis
 
@@ -328,13 +374,20 @@ METHOD_INFO = {
             "q_net": {"type": "float", "required": True, "description": "Net bearing pressure (kPa)."},
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "L": {"type": "float", "required": False, "description": "Footing length (m). Default B. The strain influence diagram is the axisymmetric one at L/B = 1 and the plane-strain one at L/B >= 10, linearly interpolated between (NHI-06-089 Fig. 8-21a)."},
-            "layers": {"type": "array", "required": True, "description": "Array of {depth_top, depth_bottom, Es} dicts."},
+            "layers": {"type": "array", "required": True, "description": "Array of {depth_top, depth_bottom, Es} dicts, depths in m below the footing base, covering the strain influence diagram from the base down to its bottom (2B at L/B = 1, 4B at L/B >= 10); a depth not covered (a first layer that starts below the base, a gap between layers, or the depth below the deepest layer) is refused, with its ranges, unless below_profile is given."},
+            "below_profile": {"type": "str", "required": False, "allowed_values": ["settled_by_another_method", "incompressible", "last_layer_continued"], "description": "What lies in the depth of the strain influence diagram (from the base to 2B at L/B = 1, 4B at L/B >= 10, interpolated between) that the layers do not cover: 'settled_by_another_method' (not granular soil, a clay say, whose settlement is worked out by another method such as consolidation) or 'incompressible' (rock or other ground that does not compress): both count no strain there, on the same diagram, as NHI-06-089 App. A.7 (pp. A.7-10 to A.7-12) stops the sum at the bottom of a sand over clay; or 'last_layer_continued' (the deepest layer's Es down to the bottom of the diagram; only when the depth below the deepest layer is all that is not covered). Not given, a depth not covered is refused with its ranges. Depths within 10 mm count as covered. No effect when the layers cover the diagram."},
             "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
             "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip", "circular"], "any_case": True, "description": "Footing shape."},
             "time_years": {"type": "float", "required": False, "default": 0.0, "description": "Time for creep factor."},
             "gamma_soil": {"type": "float", "required": True, "description": "Effective unit weight (kN/m3) below the base, for sigma'_vp = q_overburden + gamma_soil * z_peak, the vertical effective stress at the depth of the peak, in Izp = 0.5 + 0.1*sqrt(dq/sigma'_vp) (NHI-06-089 Fig. 8-21b)."},
         },
-        "returns": {"schmertmann_settlement_mm": "Settlement in mm."},
+        "returns": {"schmertmann_settlement_mm": "Settlement in mm.",
+                    "influence_depth_m": "Depth below the base where the strain influence diagram ends (m).",
+                    "layers_bottom_m": "Bottom of the deepest layer given (m below the base).",
+                    "below_profile": "Only when the layers do not cover the diagram down to influence_depth_m: what was taken in the depth not covered.",
+                    "depths_not_covered_m": "Only then: the depth ranges [top, bottom] (m below the base) no layer covers.",
+                    "choices": "Only then: the same, with its basis and the alternatives. Tell the user.",
+                    "warnings": "Only then: the depths the layers did not cover and what the settlement takes there."},
     },
     "consolidation_settlement": {
         "category": "Consolidation",
@@ -342,7 +395,7 @@ METHOD_INFO = {
         "parameters": {
             "layers": {"type": "array", "required": True, "description": "Array of {thickness (m), depth_to_center (m), e0, Cc, Cr (recompression index; ~Cc/10 if unknown), sigma_v0 (initial effective stress at layer center, kPa, must be > 0), sigma_p (preconsolidation, kPa, optional)} dicts. All of thickness/depth_to_center/e0/Cc/Cr/sigma_v0 are required."},
             "delta_sigma": {"type": "float", "required": False, "description": "Uniform stress increase (kPa). Or use delta_sigmas array."},
-            "delta_sigmas": {"type": "array", "required": False, "description": "Per-layer stress increases (kPa), one per layer."},
+            "delta_sigmas": {"type": "array", "required": False, "description": "Per-layer stress increases (kPa), one per layer in the layers' order; a list of another length is refused."},
             "q_net": {"type": "float", "required": False, "description": "Net pressure for auto stress distribution; required without delta_sigma(s)."},
             "B": {"type": "float", "required": False, "description": "Footing width for stress distribution (m); required without delta_sigma(s)."},
             "L": {"type": "float", "required": False, "description": "Footing length for stress distribution (m). Defaults to B."},
@@ -369,7 +422,8 @@ METHOD_INFO = {
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "Es": {"type": "float", "required": False, "description": "Elastic modulus for immediate settlement (kPa), for the elastic method. Not given: no immediate settlement is computed (0)."},
             "consolidation_layers": {"type": "array", "required": False, "description": "Array of consolidation layer dicts."},
-            "schmertmann_layers": {"type": "array", "required": False, "description": "Array of Schmertmann layer dicts."},
+            "schmertmann_layers": {"type": "array", "required": False, "description": "Array of Schmertmann layer dicts {depth_top, depth_bottom, Es}, depths in m below the footing base, covering the strain influence diagram from the base down to its bottom (2B at L/B = 1, 4B at L/B >= 10); a depth not covered (a first layer that starts below the base, a gap between layers, or the depth below the deepest layer) is refused, with its ranges, unless schmertmann_below_profile is given."},
+            "schmertmann_below_profile": {"type": "str", "required": False, "allowed_values": ["settled_by_another_method", "incompressible", "last_layer_continued"], "description": "What lies in the depth of the strain influence diagram (from the base to 2B at L/B = 1, 4B at L/B >= 10, interpolated between) that the layers do not cover: 'settled_by_another_method' (not granular soil, a clay say, whose settlement is worked out by another method such as consolidation) or 'incompressible' (rock or other ground that does not compress): both count no strain there, on the same diagram, as NHI-06-089 App. A.7 (pp. A.7-10 to A.7-12) stops the sum at the bottom of a sand over clay; or 'last_layer_continued' (the deepest layer's Es down to the bottom of the diagram; only when the depth below the deepest layer is all that is not covered). Not given, a depth not covered is refused with its ranges. Depths within 10 mm count as covered. No effect when the layers cover the diagram. Where consolidation_layers lie in a depth not covered, only 'settled_by_another_method' is taken: they are settled by consolidation."},
             "cv": {"type": "float", "required": False, "description": "Coefficient of consolidation (m2/yr). With consolidation_layers, adds the time curve and t50/t90 to the result."},
             "Hdr": {"type": "float", "required": False, "description": "Drainage path length (m) for the time curve. Default: consolidating thickness / 2 (double drainage) or the whole thickness (single)."},
             "immediate_method": {"type": "str", "required": False, "default": "elastic", "allowed_values": ["elastic", "schmertmann"], "description": "Immediate settlement method."},
@@ -434,6 +488,7 @@ declare_applies_when(METHOD_INFO, {
         "Es": {"immediate_method": ["elastic"]},
         "time_years_schmertmann": {"immediate_method": ["schmertmann"]},
         "gamma_soil": {"immediate_method": ["schmertmann"]},
+        "schmertmann_below_profile": {"immediate_method": ["schmertmann"]},
         "stress_method": {"consolidation_layers": "set"},
         "drainage": {"cv": "set", "consolidation_layers": "set",
                      "Hdr": "unset"},
@@ -451,7 +506,13 @@ declare_when_absent(METHOD_INFO, {
         "Iw": ("GEC-6 Table 5-12's C_d for the shape, rigidity and point",
                "the result's Iw and choices give the value and the "
                "table's other points (GEC-6 Table 5-12, p. 97)")},
-    "schmertmann_settlement": {"L": "B"},
+    "schmertmann_settlement": {
+        "L": "B",
+        # GM-320
+        "below_profile": ("nothing assumed where the layers do not reach",
+                          "layers that do not cover the strain influence "
+                          "diagram are refused, with the depths not "
+                          "covered: nobody described that ground")},
     "consolidation_settlement": {"L": "B"},
     "hough_settlement": {"L": "B"},
     "combined_settlement_analysis": {
@@ -467,6 +528,11 @@ declare_when_absent(METHOD_INFO, {
         "e0_secondary": ("each layer's own e0",
                          "the secondary settlement of each consolidation "
                          "layer uses that layer's void ratio"),
+        "schmertmann_below_profile": (
+            "nothing assumed where the layers do not reach",
+            "Schmertmann layers that do not cover the strain influence "
+            "diagram are refused, with the depths not covered: nobody "
+            "described that ground"),
         # GM-184: the result's choices already said so
         "Es": ("no immediate settlement",
                "the elastic method needs Es, so the immediate settlement "

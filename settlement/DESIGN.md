@@ -120,6 +120,60 @@ Per item page, printed form, module form and verdict in
   `secondary_settlement` has no default e0 (it was 1.0). t2 = t1 +
   `t_secondary`: the print's t is counted from loading.
 
+## Layers that do not cover the diagram, and stress lists of another length (GM-320, 2026-11-13)
+
+- **Schmertmann.** Eq. 8-16 sums over "the soil layers within the zone of
+  strain influence" (NHI-06-089 p. 8-45); Example 8-2 takes its layers to
+  the bottom of the diagram (p. 8-50). App. A.7 (pp. A.7-10 to A.7-12)
+  prints the case of layers that stop above it: a 7 ft pier footing
+  (L/B 14.3, plane strain) on 11 ft of sand over clay, the diagram to 28 ft unchanged, the sum stopped at the
+  bottom of the sand ("The immediate settlement will occur only in the
+  sand layer"), the clay settled by consolidation (Step 4, p. A.7-13).
+  UFS 3-220-10 Sec. 5-4.1.2 (p. 231) gives the method for coarse-grained
+  soils. Until GM-320 any depth of the diagram (2B at L/B = 1, 4B at
+  L/B >= 10) the layers did not cover added nothing and nothing was said.
+  Now the layers must cover the diagram from the footing base down: a
+  first layer that starts below the base, a gap between layers, or the
+  depth below the deepest layer is refused, naming the depth ranges,
+  unless `below_profile` (`schmertmann_below_profile` on
+  `SettlementAnalysis` and its tools) says what lies there:
+  - `"settled_by_another_method"`: not granular soil, a clay say, whose
+    settlement is worked out by another method (App. A.7's case);
+  - `"incompressible"`: rock or other ground that does not compress;
+  - `"last_layer_continued"`: the deepest layer's Es to the bottom of the
+    diagram (only when the depth below the deepest layer is all that is
+    not covered).
+  The first two count nothing in the depth not covered, on the same
+  diagram, as App. A.7 does; they differ in what the result says. The
+  terms carry `profile_bottom`, `uncovered` (the ranges) and
+  `below_profile`; the result's `choices` and `warnings` say which was
+  taken and where, the tool returns `depths_not_covered_m`, and the
+  settlement package's sublayer table shows the continued layer and the
+  same note. In `SettlementAnalysis`, where a consolidation layer lies in a
+  depth not covered, only `"settled_by_another_method"` is taken (and the
+  refusal offers only it): the same result cannot call that clay
+  incompressible, or count it with the sand's Es, while consolidating it.
+  That refusal does not offer layers down to the bottom of the diagram
+  (Schmertmann layers over the clay would count its depth in both sums);
+  it names any depth in neither the Schmertmann nor the consolidation
+  layers, and asks for Schmertmann layers there if that ground is
+  granular. The terms carry `settled` (the depth not covered that the
+  consolidation layers settle) and `neither` (with
+  `"settled_by_another_method"` in `SettlementAnalysis`: the depth in
+  neither list, with or without consolidation layers). The choice then lists only what the call
+  takes, and the choice and the warning name the `neither` depth as not in
+  the total settlement. Every message names the caller's own parameter (`below_param`). The
+  diagram itself is not redrawn for a shallow rigid layer: no held page
+  prints that.
+- **Tolerance.** Depths within `COVER_TOL_M` = 10 mm count as covered: a
+  numerical tolerance, so that the depth the refusal prints (rounded up to
+  the centimetre) passes, and a bottom given to the centimetre under an
+  interpolated diagram (5.33 m for 5.3333 m) is not refused for the tip of
+  the triangle, of the order of 1e-5 of the strain.
+- **`consolidation_settlement` (the tool).** `delta_sigmas` must be a list
+  of numbers, one per layer; another length is refused (it was zipped,
+  dropping the extra layers or stresses from the total).
+
 ## The values the analysis used (GM-143)
 
 `SettlementResult` carries `B`, `L` (None for a strip), `footing_shape`,
