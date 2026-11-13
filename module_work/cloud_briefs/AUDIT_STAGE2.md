@@ -17,6 +17,7 @@ Read `COMMON_MODULES.md` (beside this file) first: its rules bind every task her
 - **Two things another task is building; do not build them yourself.** Branch `claude/gm-316-317-warnings-allowed-values` makes a Python warning raised inside a method reach the agent in the result's `warnings`, and refuses a value outside a parameter's `allowed_values`. So where a finding is only "this `warnings.warn` never reaches the agent", leave the warning as it is. Where the result must say something even with warnings delivered (a flag, a count, a refusal, an entry in `choices`), do that.
 - **A changed tool description:** hand-edit the matching rows of `docs/user_manual/manual.html`; re-record fingerprints in a commit of its own (COMMON_MODULES).
 - **Do not edit:** `BACKLOG.md`, `HANDOFF.md`, `CLAUDE.md`, `slope_stability/` (change hold), `packages/aec-document-review/`, `packages/aec-agent-core/` (the dispatch task owns the core this round), `geotech-references/`.
+- **Commit trailer.** End each commit message with the Co-Authored-By line of the model you are running as (for example `Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>`), not the one COMMON_MODULES prints.
 - **CHECK.md also carries:** a table of every finding you took (the audit's row, and what you did: fixed, refused, stated, wrong finding, or not done and why); "Calls made"; a release note if any returned value changes.
 
 ## DOC-24: quick fixes
@@ -82,6 +83,7 @@ Branch `claude/gm-326-327-subsurface-dxf`. CHECK at `module_work/gm326/CHECK.md`
 
 - `compute_trend`: fewer than two points is refused; the log fit reports how many points it dropped; the unknown trend type is the dispatch task's (leave it).
 - The GEF reader keeps a missing or non-finite reading missing (not 0.0) and reports the count per column; check what the readers of its output do with a missing value.
+- Another session (branch `claude/gm-140-step1-one-material-per-point`) is changing how `dxf_import` turns a drawing into slope geometry. Do not edit those functions; if a fix here needs one of them, say which in CHECK.md and stop short of it.
 - `dxf_import`: every default that stands in for a soil or nail property is listed in `defaults_used`; a missing strength is refused (the module's own documents say strengths come from the user); the drawing's own units are compared with `units`, and a mismatch is refused or converted, said either way; text annotations are converted like geometry.
 
 ## GM-310: the default changes from the 2026-11-12 judgement calls
