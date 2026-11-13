@@ -11,11 +11,12 @@ the app's own dispatch exactly as the helper calls it:
 
 * every ``"text"`` row's section is returned by ``reference_db.
   reference_get``;
-* every ``"lookup"`` row's function, and every function a row names in
-  ``implemented_in``, is a method of the app module serving that
-  reference, by that name; the library functions no app module offers are
-  listed below (:data:`NOT_OFFERED`) and their rows' next step falls back
-  to the page;
+* every ``"lookup"`` row's function is a method of the app module
+  serving that reference, by that name, and so is every function a row
+  names in ``implemented_in``, except one that takes Python functions as
+  inputs (the library marks it ``needs_python_callables``; no JSON call
+  can pass it, so the module leaves it out, and the library's own tests
+  keep it off every lookup row);
 * every ``"page"`` row's ``how_to_read`` is a call the helper has (the
   ``read_reference_table`` call, with a page the library resolves), or,
   where its page cannot be read on this host, the plain statement that the
@@ -24,12 +25,13 @@ the app's own dispatch exactly as the helper calls it:
   table reader, and its search and fetch results say the page cannot be
   read here;
 * a fetched section still carries ``figures_held``, ``tables_held`` and
-  ``not_held``, its note names only tools this app has, and it stays
-  within the reference cap.
+  ``not_held``, its note's lookup clause is followed by the tool of this
+  app that runs the function, and it stays within the reference cap.
 """
 
 from __future__ import annotations
 
+import importlib
 import json
 import re
 
@@ -43,14 +45,6 @@ from funhouse_agent.deep.tools import DEFAULT_REFERENCE_RESULT_CHARS  # noqa: E4
 
 CAP = DEFAULT_REFERENCE_RESULT_CHARS
 SCOPE = dispatch.REFERENCE_MODULES
-
-#: Library functions a catalog row names that no app module offers, as
-#: ``(reference, "module.function")``: each takes Python callables, which
-#: no JSON call can pass, so the module leaves it out by design (the
-#: lead decides whether anything more is wanted; none is built here).
-NOT_OFFERED = {
-    ("aashto_1993", "environmental.performance_period_iteration"),
-}
 
 #: Library sections that grew past 14,000 characters with the reach keys
 #: (brief, 2026-11-13): each must still fit the cap through the app.
@@ -162,22 +156,34 @@ def _named_functions():
             yield row, full
 
 
+def _takes_python_functions(reference: str, full: str) -> bool:
+    """Whether the library function ``full`` ("module.function") of
+    ``reference`` takes Python functions as inputs."""
+    mod, _, name = f"geotech_references.{reference}.{full}".rpartition(".")
+    fn = getattr(importlib.import_module(mod), name)
+    return bool(getattr(fn, "needs_python_callables", False))
+
+
 def test_every_named_function_is_a_method_of_the_reference_module():
-    """A lookup row's function and every implemented_in function can be
-    called through the app: the module serving the reference offers it by
-    its name. The ones it does not are exactly NOT_OFFERED."""
-    missing = set()
+    """A lookup row's function can be called through the app: the module
+    serving the reference offers it by its name. So can every
+    implemented_in function, except one that takes Python functions as
+    inputs (no JSON call can pass them; such a function is never a lookup
+    row's)."""
+    missing = []
     checked = 0
     for row, full in _named_functions():
         checked += 1
         module, method = table_db_adapter.lookup_target(row["reference"],
                                                         full)
-        if module is None:
-            missing.add((row["reference"], full))
-        else:
+        if module is not None:
             assert method in dispatch._load_adapter(module).METHOD_REGISTRY
+            continue
+        is_lookup = row["values"] == "lookup" and full == row["values_in"]
+        if is_lookup or not _takes_python_functions(row["reference"], full):
+            missing.append((row["reference"], row["table_number"], full))
     assert checked > 300
-    assert missing == NOT_OFFERED, sorted(missing ^ NOT_OFFERED)[:10]
+    assert not missing, missing[:10]
 
 
 def test_every_lookup_row_names_the_call_that_runs_it():
@@ -186,12 +192,7 @@ def test_every_lookup_row_names_the_call_that_runs_it():
         step = _get(row)["how_to_read"]
         module, method = table_db_adapter.lookup_target(row["reference"],
                                                         row["values_in"])
-        if module is None:
-            # the function no app module offers: the page, not a call
-            assert (row["reference"], row["values_in"]) in NOT_OFFERED
-            assert "call_agent" not in step and "cannot be called" in step
-            continue
-        if f"call_agent('{module}', '{method}'" not in step:
+        if module is None or f"call_agent('{module}', '{method}'" not in step:
             failed.append((row["reference"], row["table_number"], step[:90]))
     assert not failed, failed[:10]
 
@@ -229,13 +230,12 @@ def _check_page_step(row, step: str, readable_here: bool) -> str:
 
 
 def test_every_page_row_gets_a_next_step_the_helper_has():
-    """Over every page row (and every lookup row no module runs), the next
-    step from table_get is the read call, with a page of the table the
-    library resolves, where this host reads the page; else the plain
-    statement that the page cannot be read here."""
+    """Over every page row, the next step from table_get is the read
+    call, with a page of the table the library resolves, where this host
+    reads the page; else the plain statement that the page cannot be read
+    here."""
     charts = reference_docs.chart_reads_available()
-    rows = _rows("page") + [r for r in _rows("lookup")
-                            if (r["reference"], r["values_in"]) in NOT_OFFERED]
+    rows = _rows("page")
     failed = []
     for row in rows:
         step = _get(row)["how_to_read"]
@@ -356,9 +356,13 @@ def _sections_with_tables_held() -> list:
 
 def test_fetched_sections_carry_the_reach_keys_in_this_apps_words():
     from geotech_references import _reach
+    from funhouse_agent.adapters.reference_db_adapter import APP_LOOKUP_TOOL
+    clause = _reach.TABLE_ANSWERS["lookup"]
     sections = _sections_with_tables_held()
     assert len(sections) > 100
-    lookups = pages = 0
+    # a fetch near the size budget goes without the library's note (its
+    # keys kept); every note that has the lookup clause names the tool
+    lookups = pages = named = 0
     for ref, sid in sections:
         out = _call("reference_db", "reference_get",
                     {"reference": ref, "section_id": sid})
@@ -366,20 +370,21 @@ def test_fetched_sections_carry_the_reach_keys_in_this_apps_words():
         held = out.get("tables_held")
         assert held, (ref, sid)
         note = out.get("note") or ""
-        # the library's own tool name never reaches the helper
+        # no tool name this app lacks; the lookup clause names the app's
         assert "lookup_reference" not in json.dumps(out), (ref, sid)
-        assert _reach.TABLE_ANSWERS["lookup"] not in note
+        assert "table_get" not in note, (ref, sid)
+        assert note.count(clause) == note.count(clause + APP_LOOKUP_TOOL)
+        named += clause in note
         for answer in held.values():
             text = str(answer)
             if text.startswith("lookup: "):
                 lookups += 1
                 fn = text[len("lookup: "):].split(" ")[0]
                 module, _m = table_db_adapter.lookup_target(ref, fn)
-                assert module or "no tool of this app runs it" in text, \
-                    (ref, sid, text)
+                assert module, (ref, sid, text)
             elif text.startswith("page: "):
                 pages += 1
-    assert lookups and pages
+    assert lookups and pages and named
 
 
 def test_the_sections_that_grew_still_fit_and_keep_their_keys():
@@ -389,22 +394,6 @@ def test_the_sections_that_grew_still_fit_and_keep_their_keys():
         assert "error" not in out, (ref, sid, out.get("error"))
         assert {"figures_held", "tables_held", "not_held"} & set(out), \
             (ref, sid)
-
-
-def test_a_section_with_a_lookup_no_module_runs_says_so():
-    rows = [r for r in _rows("lookup")
-            if (r["reference"], r["values_in"]) in NOT_OFFERED]
-    assert rows
-    for row in rows:
-        if not row["section_id"]:
-            continue
-        out = _call("reference_db", "reference_get", {
-            "reference": row["reference"], "section_id": row["section_id"]})
-        held = out.get("tables_held") or {}
-        for answer in held.values():
-            if str(answer).startswith("lookup: ") and \
-                    row["values_in"].rsplit(".", 1)[-1] in str(answer):
-                assert "no tool of this app runs it" in str(answer)
 
 
 def test_a_no_pdf_host_is_told_no_page_can_be_read_in_the_note(no_pdf_host):

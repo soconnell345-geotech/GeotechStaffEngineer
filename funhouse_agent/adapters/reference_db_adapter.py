@@ -78,20 +78,10 @@ def close_ids(name: str, indexed) -> list:
     return [by_squash[n] for n in near]
 
 
-#: A ``tables_held`` answer that names a coded lookup (the library's
-#: ``_reach``: "lookup: <function>").
-_LOOKUP_ANSWER = re.compile(r"^lookup: ([A-Za-z_]\w*)\s*$")
-
-#: What the fetch's note says a lookup answer means, in this app's tools
-#: (the library names its own tool, ``lookup_reference``, which this app
-#: does not have: a lookup here is call_agent on the reference's module).
-APP_LOOKUP_ANSWER = ("'lookup: F': function F returns them (call_agent on "
-                     "this reference's own module, method F)")
-
-#: Said on a lookup answer whose function no tool of this app runs (one
-#: that takes Python callables, which no JSON call can pass).
-LOOKUP_NOT_HERE = (" (no tool of this app runs it: table_db.table_get gives "
-                   "the table's page)")
+#: Put after the note's lookup clause (the library's
+#: ``_reach.TABLE_ANSWERS["lookup"]``, which names no tool): the tool of
+#: this app that runs function F.
+APP_LOOKUP_TOOL = " (call_agent on this reference's own module, method F)"
 
 #: The note's sentence on pages where this host cannot read a page.
 NO_PAGE_READS = ("No page can be read on this host (the reference PDFs are "
@@ -100,12 +90,11 @@ NO_PAGE_READS = ("No page can be read on this host (the reference PDFs are "
 
 
 def app_reach_words(result, reference: str):
-    """A fetched section's reach keys and note (the library's ``_reach``)
-    in this app's terms: the note's lookup clause names call_agent, not
-    the library's own tool; a ``tables_held`` lookup whose function no
-    module of this app offers says so; and on a host that cannot read a
-    page the note says that, not only that pages are readable where the
-    PDF is. A result without the keys is returned as it is."""
+    """A fetched section's note (the library's ``_reach``) in this app's
+    terms: the lookup clause is followed by the tool that runs function F
+    here, and on a host that cannot read a page the note says that, not
+    only that pages are readable where the PDF is. A result without a note
+    is returned as it is."""
     if not isinstance(result, dict) or "error" in result:
         return result
     try:
@@ -115,28 +104,14 @@ def app_reach_words(result, reference: str):
     note = result.get("note")
     if isinstance(note, str):
         lookup = getattr(_reach, "TABLE_ANSWERS", {}).get("lookup")
-        if lookup and lookup in note:
-            note = note.replace(lookup, APP_LOOKUP_ANSWER)
+        if lookup and lookup in note and APP_LOOKUP_TOOL not in note:
+            note = note.replace(lookup, lookup + APP_LOOKUP_TOOL)
         page_note = getattr(_reach, "PAGE_NOTE", None)
         if page_note and page_note in note:
             from funhouse_agent import reference_docs
             if not reference_docs.chart_reads_available():
                 note = note.replace(page_note, NO_PAGE_READS)
         result["note"] = note
-    sections = [result] + [s for s in result.get("subsections") or []
-                           if isinstance(s, dict)]
-    for sec in sections:
-        held = sec.get("tables_held")
-        if not isinstance(held, dict):
-            continue
-        for key, answer in list(held.items()):
-            m = _LOOKUP_ANSWER.match(str(answer))
-            if not m:
-                continue
-            from funhouse_agent.adapters.table_db_adapter import lookup_target
-            module, _method = lookup_target(reference, m.group(1))
-            if module is None:
-                held[key] = str(answer) + LOOKUP_NOT_HERE
     return result
 
 

@@ -66,8 +66,7 @@ def lookup_target(reference: str, values_in: str):
     ``values_in`` (``"tables.table_5_3_alpha_bond"``) of ``reference``:
     the reference's own module (``dispatch.reference_module``) and the
     function's name, where that module offers a method by that name; else
-    ``(None, None)`` (a function that takes Python callables, which no
-    JSON call can pass, is left out of the module by design)."""
+    ``(None, None)``."""
     from funhouse_agent import dispatch
     method = str(values_in or "").rsplit(".", 1)[-1].strip()
     module = dispatch.reference_module(reference)
@@ -94,7 +93,6 @@ def how_to_read(row: dict, chart_reads=None) -> str:
         return (f"Its cells are typed in section {values_in} of {ref}: "
                 "call_agent('reference_db', 'reference_get', "
                 f"{{'reference': '{ref}', 'section_id': '{values_in}'}}).")
-    lead = ""
     if values == "lookup" and values_in:
         module, method = lookup_target(ref, values_in)
         if module:
@@ -102,12 +100,10 @@ def how_to_read(row: dict, chart_reads=None) -> str:
                     f"'{module}', '{method}', {{...}}); "
                     f"describe_method('{module}', '{method}') gives its "
                     "parameters.")
-        lead = (f"Its coded lookup ({values_in}) cannot be called from "
-                "here (no tool of this app runs it). ")
     page = row.get("pdf_page_index")
     printed = row.get("printed_page")
     if not reference_docs.table_readable(ref, number, page, chart_reads):
-        return lead + reference_docs.no_table_read(number, printed, ref)
+        return reference_docs.no_table_read(number, printed, ref)
     where = (f"printed page {printed} (pdf_page_index {page})"
              if printed not in (None, "") else f"pdf_page_index {page}")
     pages = [p for p in (row.get("pages") or []) if p is not None]
@@ -118,7 +114,7 @@ def how_to_read(row: dict, chart_reads=None) -> str:
                 f"{', '.join(str(p) for p in pages)}; one read sends up to "
                 f"{TABLE_PAGES_MAX} of them from the page given and says "
                 "which were left for a second read.")
-    return (lead + f"Its values are printed only on {where} of {ref}: "
+    return (f"Its values are printed only on {where} of {ref}: "
             "read them with read_reference_table("
             f"reference='{ref}', table_number='{number}', "
             f"pdf_page_index={page}, prompt='<value(s) needed>')." + runs
