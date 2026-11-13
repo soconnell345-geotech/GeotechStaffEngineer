@@ -350,7 +350,7 @@ MODULE_REGISTRY = {
     },
     "dxf_export": {
         "adapter": "funhouse_agent.adapters.dxf_export",
-        "brief": "Cross-section geometry to a DXF file",
+        "brief": "Cross-section geometry to a DXF file; drawing sheets (DXF + PDF + PNG) with dimensions, bars, callouts: reinforced wall section",
     },
     "calc_package": {
         "adapter": "funhouse_agent.adapters.calc_package",

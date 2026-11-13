@@ -282,3 +282,27 @@ two cannot drift.)
 - Green/red for pass/fail checks
 - Print-friendly: page-break-inside:avoid on steps and figures
 - 8.5" max-width body mimics US Letter paper
+
+## Drawing sheets at the end of a package (BACKLOG GM-313)
+
+`SheetData` (title, caption, the sheet's PDF page as bytes, its PNG as
+base64) is pure data, like `FigureData`; `CalcPackageData.sheets` and
+`generate_calc_package(sheets=...)` carry a list of them. `calc_package`
+imports nothing of the drawing layer: the caller draws the sheet
+(`dxf_export.render_sheet`) and hands over the two renderings.
+
+- **PDF, either leg**: the package is rendered without the sheets, then
+  each sheet's own page is appended after the last page with PyMuPDF's
+  `insert_pdf` (`latex_renderer.append_sheets`): a vector page at the
+  sheet's own size (a landscape tabloid sheet stays one), never a picture.
+  The Story leg re-encodes every PNG as a JPEG about 1,100 px wide, which
+  would ruin a drawing, so the sheet's PNG is kept out of the HTML that leg
+  prints. `render_pdf`'s report gains `"sheets"`: each one's page number
+  and size. A sheet whose PDF cannot be read is a warning, not a failure.
+- **HTML**: a last section "Drawings" (after the references, before the
+  footer) shows each PNG.
+- **LaTeX source**: a last `\section*{Drawings}` includes each PNG
+  (`sheet_<n>.png` in the figure folder).
+
+A package with no sheet is byte-for-byte what it was (HTML and LaTeX
+source compared against the code before this change).
