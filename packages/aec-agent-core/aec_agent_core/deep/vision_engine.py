@@ -46,8 +46,24 @@ log = logging.getLogger(__name__)
 #: call holds its slot (:func:`call_slot`), so queueing behind other calls is
 #: not counted. ``0`` = wait as long as the engine does. The primary agent's
 #: own calls never pass through here and keep the engine's timeout.
+#:
+#: The limit is set from the measured tail (BACKLOG VIS-31, 2026-11-13). It
+#: was 180 s. Foundry brief 7 (2026-11-12): 15,545 tile calls took 5 s at
+#: the median and under 22 s for 99 %, and each of 34 stalled tiles held
+#: its batch for the whole 180 s before a second ask that answered in 1 to
+#: 2 s (about 350 s of one 841 s run). Brief 5 (another deployment,
+#: 2026-10-08) had a 99th percentile of 74 s. 90 s is above both tails, so
+#: on neither deployment is a call that would have answered given up as a
+#: matter of course: about four times brief 7's 99th percentile and 1.2
+#: times brief 5's. The trace review suggested 60 s; that is under brief
+#: 5's 74 s, where more than one call in a hundred would be abandoned while
+#: still working, asked a second time on an endpoint already slow, and
+#: would keep its slot until it ended. Each timeout and each late end is
+#: now an event (:data:`TIMEOUT_EVENT`, :data:`LATE_END_EVENT`; the late
+#: end's ``held_s`` is how long the abandoned call really took), so the
+#: next suite run measures whether 60 s would have cost any answer.
 TIMEOUT_ENV = "GEOTECH_VISION_CALL_TIMEOUT_S"
-DEFAULT_TIMEOUT_S = 180.0
+DEFAULT_TIMEOUT_S = 90.0
 #: How many more times a side call that timed out is asked.
 TIMEOUT_RETRIES = 1
 
