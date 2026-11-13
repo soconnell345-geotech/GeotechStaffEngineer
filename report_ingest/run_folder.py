@@ -380,11 +380,13 @@ def _write_index(run: FolderRun, out: str) -> None:
                 if row.ok and row.report_tables_line]
     if exported:
         # What the report tables export did (BACKLOG RI-209): one line when
-        # every report came to the same, else one per report.
+        # every report came to the same, else one per report. The words
+        # "this run" stay out: a fresh run's index carries them only for a
+        # resumed report (BACKLOG RI-125, test_ri125.py's fresh-run test).
         lines += ["", "## The report tables", ""]
         said = sorted({row.report_tables_line for row in exported})
         if len(said) == 1:
-            lines.append(f"Every report read this run: {said[0]}")
+            lines.append(f"Every report read: {said[0]}")
         else:
             lines += [f"- `{row.report_id}`: {row.report_tables_line}"
                       for row in exported]
