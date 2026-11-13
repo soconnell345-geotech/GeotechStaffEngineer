@@ -660,8 +660,12 @@ def _layout(desc: dict, sheet: Sheet, title_block: TitleBlock,
     assumed = desc["geometry"]["key_assumed"]
     if wall.key and assumed:
         what = " and ".join(assumed)
-        note = (f"Shear key drawn under the stem, {wall.key[1]:.0f} mm "
-                f"wide: its {what} {'are' if len(assumed) > 1 else 'is'} "
+        # "under the stem" only where its place is assumed (GM-335 review)
+        size = f"{wall.key[1]:.0f} mm wide"
+        lead = (f"drawn under the stem, {size}" if "position" in assumed
+                else f"{size}, as wide as the stem's base")
+        note = (f"Shear key {lead}: its {what} "
+                f"{'are' if len(assumed) > 1 else 'is'} "
                 "assumed (the design gives its depth only).")
         notes.append(note)
         warnings.append(note)

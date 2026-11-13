@@ -357,7 +357,11 @@ METHOD_INFO.update({
                     "in_section stem bar), callout (the text printed "
                     "beside the mark), As_required_mm2_per_m, "
                     "As_provided_mm2_per_m}; notes: a list of lines; "
-                    "basis: one line naming the design manual.")},
+                    "basis: one line naming the design manual. With a "
+                    "shear key, key_width and key_distance_from_toe may "
+                    "be null (a null position draws the key under the "
+                    "stem, a null width as wide as the stem's base; the "
+                    "sheet says which); end.ldh_mm may be null.")},
             "output_path": {
                 "type": "str", "required": True,
                 "description": (

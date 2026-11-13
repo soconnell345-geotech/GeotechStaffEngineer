@@ -215,3 +215,17 @@ Layout rules (fixed; the sheet's notes state the first three):
 The layout depends on the scale (callouts and dimension lines are placed in
 sheet millimetres), so it is laid out at each standard scale in turn and
 the first that fits is taken.
+
+### At the end of a calc package (the join, 2026-11-13)
+
+A reinforced wall's calc package (`retaining_wall_package`,
+`cantilever_reinforced`) ends with this sheet. The agent layer
+(`funhouse_agent/adapters/calc_package.py`) draws it with
+`wall_section_drawing` on letter and asks the drawing which scale letter
+gave (`drawing.sheet.scale`, the code's own choice); smaller than 1:50, or
+not on letter at all, it draws the wall again on tabloid. No helper was
+added and nothing here changed: the title block's fields come from the
+package's header (project name and number, engineer as drawn by, checker,
+date), the stamp and the layout stay this code's, and `render_sheet`'s PDF
+page and PNG go to `calc_package` as a `SheetData`; the DXF and the PNG are
+written beside the package.
