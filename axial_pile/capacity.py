@@ -340,8 +340,8 @@ class AxialPileAnalysis:
                              f"{self.uplift_skin_fraction}")
         if self.head_depth + self.pile_length > self.soil.total_thickness:
             warnings.warn(
-                f"Pile tip (head_depth {self.head_depth}m + pile_length "
-                f"{self.pile_length}m) exceeds soil profile "
+                f"Pile tip (head_depth {self.head_depth:.4g}m + pile_length "
+                f"{self.pile_length:.4g}m) exceeds soil profile "
                 f"({self.soil.total_thickness}m); using full profile depth"
             )
 

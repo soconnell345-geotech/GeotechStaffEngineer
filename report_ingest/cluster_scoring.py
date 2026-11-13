@@ -3755,6 +3755,15 @@ def _score_logs(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "floor_alone": floor, "n_floor": n_floor,
             "model_alone": alone, "n_model": n_model,
         }
+        # Answer values the scorer set aside (log_scoring.SET_ASIDE): in no
+        # total above, so they are counted here. Absent when there are none.
+        aside: Dict[str, int] = {}
+        for r in group:
+            for key, entry in ((r.get("after") or {}).get("set_aside")
+                               or {}).items():
+                aside[key] = aside.get(key, 0) + int(entry.get("count") or 0)
+        if aside:
+            sets[name]["set_aside"] = aside
     cost = _cost_totals()
     visual = _visual_counts()
     for row in rows:
@@ -3857,6 +3866,10 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
             if row.get(key, 0) < row["n_logs"]:
                 out.append(f"`{label}` is over the {row.get(key, 0)} of "
                            f"{row['n_logs']} log(s) whose run file keeps it.")
+        for key, count in (row.get("set_aside") or {}).items():
+            from report_ingest.log_scoring import SET_ASIDE
+            out.append(f"Set aside from `after`, in no total: {count} -- "
+                       f"{SET_ASIDE.get(key, key)}.")
 
     out += ["", "## Per log", "", "```",
             f"{'log':<14}{'set':<7}{'before':>12}{'floor':>12}{'model':>12}"
