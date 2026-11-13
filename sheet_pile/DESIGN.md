@@ -14,16 +14,28 @@ anchor force.
 - `earth_pressure.py` — Ka, Kp, active/passive pressure distributions
 - `cantilever.py` — cantilever wall embedment + moment
 - `anchored.py` — free-earth support method
-- `results.py` — SheetPileResult with summary()/to_dict()
+- (result classes live beside their analysis: `CantileverWallResult` in `cantilever.py`, `AnchoredWallResult` in `anchored.py`, each with summary()/to_dict())
 
 ## Public API
 ```python
-analyze_sheet_pile(wall_type, excavation_depth, layers, ...) -> SheetPileResult
+# exports of sheet_pile/__init__.py
+analyze_cantilever(excavation_depth, soil_layers, gwt_depth_active=None,
+    gwt_depth_passive=None, surcharge=0.0, FOS_passive=1.5, gamma_w=GAMMA_W,
+    pressure_method="rankine", embedment_increase=1.2,
+    log_spiral_source="ufc_3_220_20") -> CantileverWallResult
+analyze_anchored(excavation_depth, anchor_depth, soil_layers, gwt_depth_active=None,
+    gwt_depth_passive=None, surcharge=0.0, FOS_passive=1.5, gamma_w=GAMMA_W,
+    pressure_method="rankine", log_spiral_source="ufc_3_220_20") -> AnchoredWallResult
+WallSoilLayer  # input layer dataclass
+rankine_Ka(phi_deg), rankine_Kp(phi_deg), coulomb_Ka(...), coulomb_Kp(...),
+caquot_kerisel_Kp(...), K0(phi_deg)
+active_pressure(gamma, z, Ka, c=0, q_surcharge=0), passive_pressure(gamma, z, Kp, c=0),
+tension_crack_depth(c, gamma, Ka, q_surcharge=0)
 ```
 
 ## Key Notes
 - earth_pressure module reused by retaining_walls/earth_pressure.py
-- Layers are dicts with phi, c, gamma, thickness
+- Layers are `WallSoilLayer` objects (the adapter builds them from dicts)
 
 ## Cantilever safety basis (SP-3 v5.1; GM-290)
 As printed, a factor of safety on the passive side AND D = 1.2 D0: the

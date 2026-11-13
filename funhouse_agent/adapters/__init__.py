@@ -354,7 +354,7 @@ MODULE_REGISTRY = {
     },
     "calc_package": {
         "adapter": "funhouse_agent.adapters.calc_package",
-        "brief": "HTML/LaTeX/PDF for 15 modules with CSV calculation tables, figures as PNGs; html_to_pdf for bespoke reports",
+        "brief": "HTML/LaTeX/PDF for every module that has a calc package (list_supported_modules) with CSV calculation tables, figures as PNGs; html_to_pdf for bespoke reports",
     },
     "profile_figure": {
         "adapter": "funhouse_agent.adapters.profile_figure_adapter",

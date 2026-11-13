@@ -30,12 +30,24 @@ output table (p. 190), not these values.
 - `time_integration.py` — explicit central difference time stepping
 - `bearing_graph.py` — capacity vs blow count analysis
 - `drivability.py` — blow count vs depth profile
-- `results.py` — WaveEqResult, BearingGraphResult, DrivabilityResult
+- `results.py` — plotting functions for a blow, the bearing graph and stress envelopes (no result classes; `BlowResult`, `BearingGraphResult` and `DrivabilityResult` live in `time_integration.py`, `bearing_graph.py` and `drivability.py`)
 
 ## Public API
 ```python
-analyze_bearing_graph(hammer, pile, soil, capacities, ...) -> BearingGraphResult
-analyze_drivability(hammer, pile, soil_profile, ...) -> DrivabilityResult
+# exports of wave_equation/__init__.py
+Hammer, get_hammer(name), list_hammers()
+Cushion, make_cushion_from_properties(...)
+DrivingSystem, PRINTED_DRIVING_SYSTEMS, get_driving_system(name)
+PileSegment, PileModel, discretize_pile(...)
+SmithSoilModel, SoilSetup
+BlowResult, simulate_blow(hammer, cushion, pile, soil, helmet_weight=None,
+                          max_time=0.10, dt=None, store_interval=10)
+BearingGraphResult, generate_bearing_graph(hammer, cushion, pile, skin_fraction=0.5,
+    quake_side, quake_toe, damping_side, damping_toe, R_min, R_max, R_step,
+    helmet_weight=None, max_time=0.10, damping_model="smith",
+    shaft_distribution="uniform", embedded_length=None)
+DrivabilityPoint, DrivabilityResult, drivability_study(hammer, cushion, pile_area,
+    pile_E, pile_unit_weight, depths, R_at_depth, skin_fractions=None, ...)
 ```
 
 ## Key Notes

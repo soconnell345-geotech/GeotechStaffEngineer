@@ -26,8 +26,10 @@ mechanically stabilized earth (MSE) walls per GEC-11.
 analyze_cantilever_wall(geometry, soil_params, ...) -> CantileverWallResult
 analyze_mse_wall(geometry, reinforcement, soil_params, ...) -> MSEWallResult
 check_external_stability_lrfd(geometry, soil_params, factors, ...) -> dict  # CDRs
-list_reinforcement() -> list of built-in reinforcement products
 ```
+There is no Python `list_reinforcement()`; the built-in products are listed by
+the agent adapter's `list_reinforcement` method
+(`funhouse_agent/adapters/retaining_walls.py`).
 
 ## MSE external stability: ASD FOS (default) vs LRFD CDRs (opt-in)
 Two external-stability paths are available; both are default-preserving.
