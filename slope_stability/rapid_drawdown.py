@@ -148,6 +148,10 @@ class RapidDrawdownResult:
     #: each slice's own drawdown strength (GM-127; `methods.m_alpha_values`).
     #: The search leaves out a surface below 0.2, as Slide2 does (-112).
     m_alpha_min: float = 1.0
+    #: What the stage-1 pore pressure on the bases was taken as (GM-140
+    #: step 5a; ``pore_pressure.water_statements``): the reading of a
+    #: sloping stage-1 seepage line, none on total-stress layers.
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         return "\n".join([
@@ -177,6 +181,8 @@ class RapidDrawdownResult:
         }
         if self.layer_overlaps:
             d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d
@@ -607,7 +613,17 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         if w:
             warnings.append("Drawn-down stage: " + w)
 
+    # The stage-1 pore pressures come from the same function as every
+    # other slice's (GM-140 step 5a): a sloping stage-1 seepage line is
+    # read as ``geom.water_line_kind`` says, and the result names it.
+    from slope_stability.pore_pressure import water_statements
+    _stage1 = "Stage 1 (before drawdown): "
+    _choices, _notes = water_statements(g_full)
+    _choices = [dict(c, what=_stage1 + c["what"]) for c in _choices]
+    warnings.extend(_stage1 + n for n in _notes)
+
     return RapidDrawdownResult(
+        choices=_choices,
         FOS=fos, method=method,
         drawdown_from=drawdown_from_elevation,
         drawdown_to=drawdown_to_elevation,

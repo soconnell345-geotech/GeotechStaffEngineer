@@ -229,6 +229,11 @@ class SlopeStabilityResult:
     methods_without_solution: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     layer_overlaps: List[Dict[str, Any]] = field(default_factory=list)
+    #: What the pore pressure on the slice bases was taken as (GM-140 step
+    #: 5a; ``pore_pressure.water_statements``, ``geotech_common.choices``):
+    #: the reading of a sloping water line, a pore-pressure grid, ru in a
+    #: layered column, none on total-stress layers. Empty when none applies.
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def is_circular(self) -> bool:
@@ -314,6 +319,9 @@ class SlopeStabilityResult:
                          + (f"  (f0={self.janbu_f0:.3f})" if self.janbu_f0 else ""))
         for o in self.layer_overlaps:
             lines.append(f"  LAYERS: {o['statement']}")
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
         for w in self.warnings:
             lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
@@ -420,6 +428,8 @@ class SlopeStabilityResult:
             d["methods_without_solution"] = list(self.methods_without_solution)
         if self.layer_overlaps:
             d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d
