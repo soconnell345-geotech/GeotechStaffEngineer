@@ -533,18 +533,30 @@ def _eval_fos(geom: SlopeGeometry, slip, method: str, n_slices: int,
     its m_alpha (GM-127) or its shape, whatever a realization's strengths
     make of it, and one touching the model's base is kept as build_slices
     keeps it (GM-128). Before, the search's scorer was used and its 999.9
-    "not scored" mark could be taken as a factor of safety (D49)."""
+    "not scored" mark could be taken as a factor of safety (D49).
+
+    Each realization takes its own crack as printed (GM-140 step 4,
+    ``cracks.solve_with_crack``): a Rankine depth at that realization's
+    own factor of safety; a surface the crack rule refuses has no value."""
+    from slope_stability import cracks
     from slope_stability.search import trial_reinforcement
     from slope_stability.slices import build_slices
     from slope_stability.solution import solve_method
+    scored_by = ("spencer" if method == "bishop"
+                 and not getattr(slip, "is_circular", True) else method)
+
+    def solve(g):
+        slices = build_slices(g, slip, n_slices)
+        reinf = trial_reinforcement(g, slip)
+        return solve_method(slices, slip, scored_by, "half_sine", tol, reinf)
+
     try:
-        slices = build_slices(geom, slip, n_slices)
-        reinf = trial_reinforcement(geom, slip)
-        scored_by = ("spencer" if method == "bishop"
-                     and not getattr(slip, "is_circular", True) else method)
-        sol = solve_method(slices, slip, scored_by, "half_sine", tol, reinf)
+        sol, crack = cracks.solve_with_crack(
+            geom, slip, solve, fos_of=lambda s: s.fos if s.solved else None)
     except (ValueError, ZeroDivisionError) as exc:
         return None, f"the surface cannot be analysed ({exc})"
+    if crack is not None and crack.discarded:
+        return None, crack.reason
     return (sol.fos, "") if sol.solved else (None, sol.reason)
 
 

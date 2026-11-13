@@ -114,6 +114,140 @@ the repository).
   layer's unit weight over the column (the account's D3). See
   `module_work/gm140/STEP1_CHECK.md`.
 
+## Tension cracks and reverse-curvature circles as printed (GM-140 step 4, 2026-11-13)
+
+The rule lives in `cracks.py`, one for every method, surface family and
+caller. Print: USACE EM 1110-2-1902 (31 Oct 2003) 2-2f, pp. 2-6 to 2-9, and
+C-10c, p. C-36; Slide v6 Tutorial 16, p. 16-1.
+
+**What a crack does** (`tension_crack_model`). `'truncation'` (default): the
+slip surface ends where it reaches the bottom of the crack, the soil upslope
+of the crack is left out, and the slices end at a vertical boundary there
+(EM 2-2f(3): "terminating the slices near the crest of the slope with a
+slice having a vertical boundary"; C-10c; Slide: "A tension crack
+essentially terminates the slip surface"). The mass that is kept is cut into
+the `n_slices` asked for. `'strength'` keeps the cracked soil as driving
+weight without strength: the default before this step, with no printed
+source, kept as a stated option. Either way the crack's water acts on the
+vertical boundary: 0.5 gamma_w z_w^2 at z_w / 3 above the crack's bottom; a
+`tension_crack_water_depth` above the crack's own depth fills it.
+
+**Where it is** (`tension_crack_side`). `'crest'` (default): the end of the
+slip surface where the ground is higher (EM 2-2f(3): near the crest),
+whichever way the slope faces (`cracks.crest_side`; ends at one level:
+low x). `'entry'` / `'exit'` give the end. The crack's bottom is the ground
+at that end of the surface less the depth. The crack stands where the
+surface reaches that bottom, which is where the slices end; the result
+reports it there (`tension_crack['x_m']`, the ground `ground_z_m` and the
+bottom `base_z_m` at that x) and the plot draws it there.
+
+**A surface wholly within the cracked depth.** A surface that nowhere passes
+below the crack's depth, measured below the ground above it
+(`cracks.depth_below_ground`), has no vertical boundary at the crack's
+bottom (EM 2-2f(3); C-10c): it is no slip surface. A search refuses and
+counts it (`crack_refused['within_cracked_depth']`); given to
+`analyze_slope` it raises `cracks.CrackRuleRefused` saying so. Without this,
+a search with a deep given crack settled on slivers on the face held wholly
+within the crack (ACADS 1(b) with its 3.81 m water-filled crack on Slide2's
+own centre grid: F 0.052 on a 0.6 m sliver; so did the module before
+step 4, 0.050 with the old default and 0.052 with the surface ended at the
+crack). A Rankine depth that would reach below the deepest point of the
+surface is solved again from F with no crack; the scan stops at that depth.
+
+**How deep** (`tension_crack_depth_basis`):
+
+| Basis | Depth | Print |
+|---|---|---|
+| `'given'` (default) | `tension_crack_depth`; 0 = no crack | the caller |
+| `'rankine'` | d = 2 c_D / (gamma tan(45 - phi_D / 2)), c_D = c / F, phi_D = arctan(tan(phi) / F) | Eq. C-36, p. C-36 ("for total stresses and homogeneous soil"); Eqs. 2-5, 2-6, p. 2-9 (Eq. 2-4 is the same depth) |
+| `'min_fos'` | the depth of minimum factor of safety from a scan | 2-2f(4), p. 2-6; C-10c(1), p. C-36 |
+
+* **Rankine.** F is the factor of safety of the surface itself, by the method
+  in use: the surface is solved, the depth recomputed, and so on from F = 1
+  until the depth changes by less than 1 mm (`DEPTH_TOL`; at most 25
+  solutions). c, phi and gamma are those of the soil at the ground at the
+  crack. A depth past that soil's bottom stops there (C-10c: the crack is as
+  deep as the embankment and does not extend into the foundation), and the
+  result says so. c = 0 gives no crack. Module's readings, each stated in the
+  result: a drained soil with pore water pressure inside the cracked depth
+  (the water table there, ru, or a pressure grid) is scanned instead, because
+  2-2f(6), p. 2-9, prints no equation for effective stresses; so is a SHANSEP
+  or Hoek-Brown soil (no c and phi); an `'anisotropic'` soil takes its active
+  strength with phi = 0 (Rankine's active pressures).
+* **Scan.** 21 depths in equal steps from 0 to the lowest point of the
+  surface's upper half, shallowest first; the first minimum met is taken
+  (past the depth that removes the tension a deeper crack removes
+  compression, and F rises: 2-2f(4), "tensile but not compressive stresses
+  are eliminated"). A factor of safety still falling at the last depth has
+  no minimum and the surface gets no number. On the made-up slope of
+  `test_cracks_as_printed.py` the scan's depth is 3.10 m and Rankine's
+  2.85 m, F within 0.001: the manual's two ways agree.
+
+**Reverse-curvature circles** (`reverse_curvature`; the owner's call
+OWN-103, as the orchestrator refined it on the step 4 review's F1). A circle
+whose centre is below the ground at its upper end would turn back over
+itself above its vertical tangent, at the centre's level. The tension crack
+is a condition of the analysis, set by the engineer and the same on every
+trial surface; a circle's shape never switches it on. `'tension_crack'`
+(default): with a crack asked for (`tension_crack_depth`, or
+`tension_crack_depth_basis` `'rankine'` or `'min_fos'`), such a circle is
+closed by that crack, its surface ending at the crack's bottom like any
+other, where its overhang (the centre's depth below the ground) lies within
+the crack's depth; a circle overhanging deeper is discarded (a crack is
+justified only to the depth the soil can be in tension, C-10c). With no
+crack asked for, every such circle is discarded: it is not an admissible
+surface, and naming a crack admits those within its depth. `'discard'`
+discards every such circle. A circle overhanging at its lower end is always
+discarded: a crack is at the upper end (EM 2-2f(3)) and no print closes the
+other. A search counts the surfaces the crack rule refuses by reason and
+locates them (`SearchResult.crack_refused`: `reverse_curvature_no_crack`,
+`reverse_curvature_deeper_than_crack`, `reverse_curvature_no_crack_at_end`,
+`reverse_curvature_discard_asked`, `within_cracked_depth`,
+`scan_no_minimum`; `n_discarded_reverse_curvature` sums the four
+reverse-curvature reasons), and its `choices` name each; a discarded circle
+given to `analyze_slope`, `rapid_drawdown_fos` or `yield_acceleration`
+raises `cracks.ReverseCurvatureDiscarded` (a `cracks.CrackRuleRefused`) with
+the reason and the depths. The crack from the centre's level to the ground,
+which no printed source gives, is removed. (As first built, step 4 closed a
+reverse-curvature circle with Rankine's crack whenever no crack was given,
+so a circle's shape switched the crack on: the search's minimum then jumped
+where the centre crossed the crest's level, and Slide2 #85 read 1.361 on such
+a circle. The review's F1 removed that; `reverse_curvature_crack_basis` is
+gone.)
+
+**How it is wired.** `cracks.plan_crack` says what a surface's crack needs;
+`cracks.solve_with_crack` hands the caller's solver copies of the geometry
+with the crack fixed (`fixed_geometry`), repeating as the basis requires.
+`slices.build_slices` reads the crack from there (`crack_for_slices`) and
+raises `cracks.CrackDepthNeeded` for a geometry whose crack still depends on
+the factor of safety, so nothing slices such a surface on a silent basis.
+The callers: `analyze_slope` (and `compare_methods`), the search scorer
+`search._compute_fos` (every family: grid and entry/exit circles, circles
+through and above the toe, planes, random, differential-evolution,
+particle-swarm and weak-layer polylines; a `fos_fn` such as the drawdown
+search's gets the fixed geometry), `rapid_drawdown_fos` (one crack for every
+stage, at the drawdown F), `yield_acceleration` (Rankine's depth at F = 1,
+the state it solves for; a scanned depth from the surface without kh), and
+through `_compute_fos` the FOSM and Monte Carlo runs (each run its own
+crack), so also `reliability/wrappers.py`, `geo_project`'s builder, the
+agent's adapter and the calc packages. A result carries the crack it was
+solved with (`tension_crack`, the depth used, one warning line); a search's
+`choices` say the crack's model, side and depth basis and what was done with
+reverse-curvature circles.
+
+**Measured** (VALIDATION.md B21): ACADS 1(b) 1.603 / 1.599 / 1.600 on
+Slide2's circle and, searched on Slide2's own grid, Bishop 1.590 / Spencer
+1.585, against the printed 1.596 / 1.592 / 1.592; V-031 with its dry crack
+1.417 / 1.422 printed; V-043's clay crest 0.964 against 0.975. With no crack
+asked for, the searches that read a reverse-curvature circle as first built
+read what they read before step 4, the overhanging circles discarded:
+Taylor's 45 deg slope 1.942 against 1.947, V-054's steep clay slope 2.346
+(printed 2.16 for the slope, whose profile ends at the toe), Slide2 #85 with
+its support Bishop 1.508 / passive 1.316 against 1.531 / 1.324 (D&W 1.51 /
+1.32). The vertical cut reads 0.935 against Taylor's 0.851, a strict xfail
+with the reason (before step 4, 0.842 on a circle closed at its centre's
+level; with Rankine's crack asked for, 0.605).
+
 ## Public API
 ```python
 # Circular analysis
@@ -599,18 +733,7 @@ Slide2 "Active/Passive Force Application"):
 Every method honours the choice (before GM-59 only Fellenius / Bishop, and
 only for piles; the GLE applied every support unfactored).
 
-**Reverse-curvature circles** (`SlopeGeometry.reverse_curvature`). A circle
-whose centre lies below the ground where it comes out rises past the
-centre's level and would turn back over itself. Slide2 calls these "reverse
-curvature" surfaces, which "cannot actually exist", and by default closes
-them with "a vertical tension crack where the slip surface begins to reverse
-direction (i.e. when the slip surface y-coordinate is equal to the slip
-center y-coordinate)", always dry; otherwise it discards them. The module has
-always done the former (`find_entry_exit` ends the circle where the arc is
-vertical, at the centre's level). Now: `'tension_crack'` (default, as
-Slide2 and as before) or `'discard'` (the searches drop such circles; a
-circle given to `analyze_slope` is still evaluated). A search whose
-governing circle is one says so in `warnings`, with the crack depth.
+**Reverse-curvature circles** (`SlopeGeometry.reverse_curvature`): see "Tension cracks and reverse-curvature circles as printed" above (GM-140 step 4). Before it such a circle was closed by a dry crack from its centre's level to the ground, as Slide2's default is quoted to do; the numbers in the table below marked "default" are from then.
 
 **Bishop / OMS critical circle with supports at a short arm.** When the
 supports crossing a Bishop or OMS critical circle act with an average arm
@@ -1872,24 +1995,7 @@ boundary, entry to exit, and `build_slices` cuts there.
     byte-identical. Implemented via `reinforcement.moment_resistance` /
     `horizontal_resistance` (passive forces) alongside the existing `*_reduction`
     (active forces), split on `ReinforcementForce.passive`.
-- **Tension crack — side + model (v5.4 E4)**: `geom.tension_crack_depth` opens a
-  vertical crack at the CREST end of the slip surface; `tension_crack_water_depth`
-  fills it (hydrostatic thrust `0.5·γw·z_w²` at `z_w/3` above the crack base,
-  treated downstream as an always-driving magnitude). Two selectors, both
-  DEFAULT-PRESERVING:
-  * `tension_crack_side` = `'entry'` (default, low-x) or `'exit'` (high-x) — the
-    crack forms on whichever side the crest is on. The exit-side option removes
-    the old need to MIRROR the slope so the crest landed on the entry side (the
-    exit-side crack on the un-mirrored slope is machine-precision identical to the
-    entry-side crack on the mirror, by symmetry).
-  * `tension_crack_model` = `'strength'` (default) keeps the cracked wedge as
-    zero-shear-strength DRIVING soil; `'truncation'` REMOVES it from the sliding
-    mass (the mass ends at the vertical crack face), matching Slide2/UTEXAS.
-    Truncation is LESS conservative (removes the driving wedge). On Slide2 #2 /
-    ACADS 1(b) the truncation model reproduces the published water-crack FOS
-    (Bishop 1.596/Spencer 1.592/GLE 1.592) to <0.1%, resolving the V-026
-    strength-model conservatism (documented there as a CONVENTION). See
-    VALIDATION.md B9 / RESULTS V-026.
+- **Tension crack**: see "Tension cracks and reverse-curvature circles as printed" above (GM-140 step 4). Since that step the surface ends at the crack by default (`tension_crack_model='truncation'`), the crack is at the crest end (`tension_crack_side='crest'`) and its depth can be Rankine's or scanned; `'strength'` is the earlier default.
 - **Empty-space slices**: slices where the slip surface is below all soil layers
   are skipped (zero weight, no contribution)
 - **Nails**: `SlopeGeometry.nails` (`nails.SoilNail`) reach every method

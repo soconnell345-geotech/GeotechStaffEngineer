@@ -834,6 +834,53 @@ solve: `FOS` None, never another solver's value (GM-139's kind of circle; V-054'
 circle by Spencer and GLE; a stabilizing-pile row whose force exceeds the driving
 moment, which returned 999.9).
 
+## B21 — Tension cracks and reverse-curvature circles as printed (GM-140 step 4, 2026-11-13)
+
+The rule and its print are in DESIGN.md ("Tension cracks and
+reverse-curvature circles as printed"); the record, with every reading and
+the tests run, is `module_work/gm140/STEP4_CHECK.md` (its last section is
+the fix round after the independent review). "Before" is master before
+step 4 (2cc2c45); "first built" is the step as built before the review;
+"after" is after the review's fixes, with the crack a condition of the
+analysis that the engineer sets and the same on every trial surface (the
+orchestrator's ruling on the review's F1). A given surface with no crack and
+no reverse curvature runs the same code throughout.
+
+| Benchmark | Before | First built | After | Printed | What moved it |
+|---|---|---|---|---|---|
+| ACADS 1(b), Slide2 #2 (V-026): given 3.81 m crack full of water, Slide2's circle, Bishop / Spencer / GLE | 1.485 / 1.486 / 1.482 | 1.603 / 1.599 / 1.600 | the same | 1.596 / 1.592 / 1.592 (Table 2.2, p. 25; referee 1.65) | the default model: the surface ends at the crack |
+| same, searched on Slide2's centre grid (x 31 to 47, z 34 to 49, 16 by 16, 40 slices), Bishop / Spencer | 0.050 (`'strength'`, then the default) / 0.052 with the surface ended at the crack: a 0.6 m sliver on the face | 0.052 (sliver) | 1.590 / 1.585 (toe circles; 456 surfaces wholly within the cracked depth refused) | 1.596 / 1.592 | a surface that nowhere passes below the crack's depth is no slip surface (the review's D1) |
+| same, `tension_crack_model='strength'` | 1.485 / 1.486 / 1.482 | the same | the same | | the stated option |
+| same, Eq. C-36 with the developed strengths, full of water (2.19 m) | not offered | 1.631 / 1.627 / 1.628 | the same | the problem uses the full strengths (3.81 m) | reported, not pinned |
+| V-031, Slide2 #57, its dry crack (the text prints no depth: Rankine's with the developed strengths, Eq. C-36), Bishop / Spencer, 50 slices | 1.421 / 1.425 (no crack) | not entered | 1.4170 / 1.4211 | 1.417 / 1.422 (Table 57.3, p. 205; crack in the text, p. 203) | the crack the problem has, now entered (the review's D4) |
+| V-043 clay embankment, water-filled crest crack, Spencer, recovered circle | 1.041 (no crack) | 0.964 (Eq. C-36, 2.14 m, full) | the same (the crack is asked for) | 0.975 (Table 39.2, pp. 147-150) | the Rankine depth, which the problem does not print |
+| V-054 steep phi = 0 slope from the toe, Bishop search | 2.346 | 2.113 | 2.346 (56 reverse-curvature circles discarded) | 2.16 (FLAC 2.18) for the slope; this profile ends at the toe | no crack asked for: the overhanging circles are discarded |
+| V-054 toe circle (2.5, 4.0), R 4.717 | 2.379 (closed at its centre's level) | 2.218 | no number without a crack; 2.218 with Rankine's asked for | 2.16 | a reverse-curvature circle; the centre-level crack, which no print gives, stays removed |
+| V-054 Bakklandet ratios on that circle, Rankine's crack asked for | 1.942 (-18.4 %) | 1.693 (-23.7 %) | the same | -24 % | the same, at the active strength |
+| V-054 Bakklandet ratios on circle (3, 3), Rankine's crack asked for | 1.886 (-20.7 %) | 1.848 (-16.7 %) | the same | -24 % | **away from print, strict xfail** |
+| Vertical cut in clay, Bishop search | 0.842 (toe circle closed at its centre's level, 2.30 m) | 0.752 | 0.935 (12 discarded); 0.605 with Rankine's crack asked for | Taylor 0.851 | no crack asked for: the overhanging toe circles are discarded; **away (+9.9 %, the unsafe side), strict xfail** |
+| Taylor 45 deg, D = 2.25, 4 H each side | 1.942 (base circle) | 1.835 | 1.942 (38 discarded); 1.811 with Rankine's crack asked for | Taylor 1.947 | no crack asked for |
+| Taylor 45 deg, short profile | 2.062 | 1.833 | 2.065 (89 discarded) | Taylor 1.947 | the same |
+| Slide2 #85, one support, active, Bishop search | 1.372 (closed at a centre's level, 5.89 ft) | 1.361 | 1.508 (28 discarded); 1.331 with Rankine's crack asked for | 1.531 (D&W 1.51) | no crack asked for; reported, not pinned (the step's brief sets no tolerance on #85) |
+| #85 passive, Bishop search | 1.254 | 1.206 | 1.316 (41 discarded); 1.188 with Rankine's crack asked for | 1.324 (D&W 1.32) | the same |
+| #85 active, Spencer / GLE search | 1.551 / 1.573 | 1.551 / 1.573 | the same | 1.884 / 1.575 | not moved |
+| #85 toe family, Spencer | 1.564 | 1.627 | 1.564 | spread 1.51 to 1.884 | no crack asked for |
+| Caltrans T&S Ex. 10-3 / 10-4 circle (worked example WE-SLOPE-1) | OMS 0.839, Bishop 0.977 | no number by default; the same with a 6.096 m crack given | the same | 0.87, 0.96 | the printed circle's centre is 20 ft below the crest: no surface without a crack deep enough |
+
+Every other benchmark of the published set reads as before (the
+`validation_examples` slope files and the benchmark files of
+`slope_stability/tests`: `module_work/gm140/step4_section11.py`).
+
+As first built, a reverse-curvature circle was closed by Rankine's crack
+whenever no crack was given, so a circle's shape switched the crack on: a
+circle whose centre was a hair below the crest took the whole crack and one
+a hair above took none, and on steep phi = 0 slopes the searches settled on
+barely reverse-curved circles, below the chart values. With the crack a
+condition of the analysis, F is continuous as the centre passes the
+ground's level (`test_cracks_as_printed.py`), and the cases with no crack
+read as before step 4. The vertical cut stays away: before step 4 its 0.842
+came from a circle closed at its centre's level, which no print gives.
+
 ## Notes / known deviations
 
 - Ordinary method with ru: formulation-sensitive (F&K 1.607 vs Slide2
