@@ -1562,27 +1562,6 @@
    "A": 10.0,
    "c": 5000.0
   },
-  "plot_figure_4_36": {
-   "show": false
-  },
-  "plot_figure_5_16": {
-   "show": false
-  },
-  "plot_figure_5_18a": {
-   "show": false
-  },
-  "plot_figure_5_18b": {
-   "show": false
-  },
-  "plot_figure_5_6_mu0": {
-   "show": false
-  },
-  "plot_figure_5_6_mu1": {
-   "show": false
-  },
-  "plot_figure_8_46": {
-   "show": false
-  },
   "point_load_strength_index": {
    "P": 5.0,
    "d": 50.0,

@@ -8,7 +8,9 @@ standing, against whatever reference library is on the path:
 
 * every lookup each reference module lists, and every alias of one, is
   called through dispatch with arguments sent as JSON (as a model sends
-  them) and must answer; no listed method asks for what JSON cannot carry;
+  them) and must answer with data a tool result carries, not an object's
+  repr (DM7's plot functions answered "Axes(...)", REF-22); no listed
+  method asks for what JSON cannot carry;
 * every figure catalog row resolves to its page (and, where its PDF is on
   this machine, to a page inside that PDF);
 * the helper's description names the references with no chapter text as
@@ -81,7 +83,26 @@ def _answered(result) -> bool:
     return bool(body) and body.get("result", body) not in (None, "", [], {})
 
 
-_RANGE = re.compile(r"(-?\d+(?:\.\d+)?)\s*(?:to|-|and)\s*(-?\d+(?:\.\d+)?)")
+#: An object's repr standing in for data: "<Axes: ...>", "Axes(0.1,...)".
+_REPR = re.compile(r"^\s*(?:<.*>|[A-Z][\w.]*\(.*\))\s*$", re.S)
+
+
+def _not_data(result) -> str:
+    """Why an answer is no data the helper can use: something a tool
+    result cannot carry as JSON, or only an object's repr; else ``""``."""
+    try:
+        json.dumps(result)
+    except (TypeError, ValueError) as exc:
+        return f"not JSON ({str(exc)[:80]})"
+    payload = (result.get("result", result) if isinstance(result, dict)
+               else result)
+    values = payload if isinstance(payload, list) else [payload]
+    if values and all(isinstance(v, str) and _REPR.match(v) for v in values):
+        return f"only an object's repr: {str(payload)[:80]}"
+    return ""
+
+
+_RANGE =re.compile(r"(-?\d+(?:\.\d+)?)\s*(?:to|-|and)\s*(-?\d+(?:\.\d+)?)")
 _QUOTED = re.compile(r"[`'\"]([A-Za-z0-9_\-+./ ]{1,40})[`'\"]")
 
 
@@ -142,6 +163,9 @@ def test_every_listed_lookup_answers(module):
         for params in tries:
             result = _call(module, method, params)
             if _answered(result):
+                why = _not_data(result)
+                if why:
+                    failed.append(f"{module}.{method}: {why}")
                 break
             last = str(result.get("error") if isinstance(result, dict)
                        else result)[:200]
@@ -164,8 +188,11 @@ def test_every_alias_answers(module):
         params = EXAMPLES.get(module, {}).get(canonical)
         if params is None:
             continue                      # the canonical's own test says so
-        if not _answered(_call(module, alias, params)):
+        result = _call(module, alias, params)
+        if not _answered(result):
             failed.append(f"{module}.{alias} (alias of {canonical})")
+        elif _not_data(result):
+            failed.append(f"{module}.{alias}: {_not_data(result)}")
     assert not failed, "\n".join(failed)
 
 
@@ -183,7 +210,7 @@ def test_no_listed_method_asks_for_what_json_cannot_carry():
     assert not found, "\n".join(found)
 
 
-def test_a_method_json_cannot_carry_is_left_out():
+def test_a_method_the_helper_cannot_use_is_left_out():
     import types
 
     mod = types.ModuleType("made_up_lookups")
@@ -232,13 +259,47 @@ def test_a_method_json_cannot_carry_is_left_out():
         """
         return {"value": 1.0}
 
+    def draws_a_chart(depth_m=1.0, ax=None, **kwargs):
+        """A made-up chart, drawn on an Axes.
+
+        Parameters
+        ----------
+        depth_m : float, optional
+            Depth, m.
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        return ax
+
+    def reads_a_figure(depth_m):
+        """A made-up value read off a figure.
+
+        Parameters
+        ----------
+        depth_m : float
+            Depth, m.
+
+        Returns
+        -------
+        float
+            The factor read off Figure 5-16.
+        """
+        return 0.5
+
     for fn in (takes_a_function, takes_number_keys,
-               takes_an_optional_function, takes_word_keys):
+               takes_an_optional_function, takes_word_keys, draws_a_chart,
+               reads_a_figure):
         fn.__module__ = mod.__name__
         setattr(mod, fn.__name__, fn)
     registry, info = build_lookup_registry([(mod, "Made up", "Made-up 1")])
     assert "takes_a_function" not in registry
     assert "takes_number_keys" not in registry
+    assert "draws_a_chart" not in registry
+    assert "reads_a_figure" in registry
     assert set(info["takes_an_optional_function"]["parameters"]) == {
         "depth_m"}
     assert "takes_word_keys" in registry
@@ -499,6 +560,15 @@ def test_every_designation_in_a_brief_or_manual_entry_resolves():
                     failed.append(f"{module} {where}: {kind} {number}")
     assert checked
     assert not failed, "\n".join(failed)
+
+
+def test_an_objects_repr_is_not_data():
+    assert _not_data({"result": "<Axes: title={'center': 'Fig'}>"})
+    assert _not_data({"result": "Axes(0.125,0.11;0.775x0.77)"})
+    assert _not_data({"result": object()})
+    assert not _not_data({"result": 0.5, "returns": "Factor"})
+    assert not _not_data({"result": "CL (lean clay)"})
+    assert not _not_data({"classification": "Axes(x)", "note": "a field"})
 
 
 def test_designations_are_read_as_engineers_write_them():

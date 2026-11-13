@@ -601,6 +601,38 @@ def carriable(func, info: dict) -> bool:
     return True
 
 
+#: A result type that is a drawing object (a matplotlib Axes or Figure).
+#: It reaches a tool call only as its repr ("Axes(0.125,0.11;0.775x0.77)"),
+#: which tells the helper nothing.
+_DRAWING_TYPE = re.compile(
+    r"\bmatplotlib\b|\bAxes(?:Subplot)?\b|^\s*(?:plt\.)?Figure\s*$")
+
+
+def returns_a_drawing(func, info: dict) -> bool:
+    """Whether ``func`` returns a drawing object rather than data, by its
+    return annotation or its documented Returns type (``info``: its
+    :func:`extract_method_info` entry)."""
+    heads = [str(info.get("returns") or "").split("\n")[0]]
+    try:
+        ann = inspect.signature(func).return_annotation
+        if ann is not inspect.Signature.empty:
+            heads.append(getattr(ann, "__name__", "") or str(ann))
+            heads.append(str(ann))
+    except (TypeError, ValueError):
+        pass
+    return any(_DRAWING_TYPE.search(h) for h in heads if h)
+
+
+def listable(func, info: dict) -> bool:
+    """Whether the references helper is offered ``func``: a tool call can
+    reach it (:func:`carriable`) and its answer is data a tool result can
+    carry, not a drawing object (:func:`returns_a_drawing`; 2026-11-12
+    reach audit, BACKLOG REF-22: DM7's seven ``plot_figure_*`` functions
+    draw on a matplotlib Axes and return it, which reached the helper as
+    the text "Axes(...)"; the calc packages import them directly)."""
+    return carriable(func, info) and not returns_a_drawing(func, info)
+
+
 def build_lookup_registry(lookup_modules, *, skip_callable=False):
     """Scan modules for public functions and build registries.
 
@@ -609,8 +641,9 @@ def build_lookup_registry(lookup_modules, *, skip_callable=False):
     lookup_modules : list of (module, category_str, reference_str)
     skip_callable : bool
         If True, skip functions with Callable-typed parameters (DM7).
-        Whatever it is, a function a tool call cannot reach (a required
-        parameter JSON cannot carry: :func:`carriable`) is left out.
+        Whatever it is, a function the helper cannot use is left out: one
+        a tool call cannot reach (a required parameter JSON cannot carry)
+        or one that returns a drawing object (:func:`listable`).
 
     Returns
     -------
@@ -628,7 +661,7 @@ def build_lookup_registry(lookup_modules, *, skip_callable=False):
             if skip_callable and has_callable_param(func):
                 continue
             entry = extract_method_info(func, category, reference)
-            if not carriable(func, entry):
+            if not listable(func, entry):
                 continue
             registry[name] = make_wrapper(func, reference)
             info[name] = entry
