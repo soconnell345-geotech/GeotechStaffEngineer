@@ -383,7 +383,7 @@ METHOD_INFO = {
             "highly_overconsolidated_su_ratio": {"type": "float", "required": False, "description": "alpha method: the su / sigma'vo at and above which a clay is highly overconsolidated, for adhesion_beyond_chart 'api_if_highly_overconsolidated'. GEC-12 gives no value; it is the engineer's judgment, so a run with a clay layer whose su is past the chart's curves is refused until this (or adhesion_beyond_chart 'chart_end' or 'api') is given. Ask the user, or state the value taken as a judgment call."},
             "displaced_volume": {"type": "float", "required": False, "description": "Nordlund displaced volume V per unit length (m3/m). Default: the steel area of an H-pile, the gross area of other piles (an open pipe as a closed pipe; its steel area, if it drives unplugged, is below GEC-12 Fig. 7-9)."},
         },
-        "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Skin friction.", "Q_tip_kN": "Tip resistance.", "Q_allowable_kN": "Allowable capacity.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
+        "returns": {"warnings": "Only when there is something the user must be told, for example the last layer carried on to the toe (extend_last_layer), a GEC-12 chart read past its end or a pile wider than the methods' database. Tell the user.", "Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Skin friction.", "Q_tip_kN": "Tip resistance.", "Q_allowable_kN": "Allowable capacity.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "capacity_vs_depth": {
         "category": "Axial Pile",

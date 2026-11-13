@@ -3454,7 +3454,7 @@ METHOD_INFO = {
     "lateral_pile_package": {
         "category": "Calculation Package",
         "brief": "Run lateral pile analysis and generate LPILE-style calc package, with tables (CSV + printed) of y, slope, M, V, p and Es at every node and each layer's p-y curve.",
-        "returns": {**_COMMON_RETURNS, "y_top_mm": "Top deflection (mm).", "max_moment_kNm": "Max moment (kN-m)."},
+        "returns": {**_COMMON_RETURNS, "y_top_mm": "Top deflection (mm).", "max_moment_kNm": "Max moment (kN-m).", "warnings": "What the engineer must know about the result (the last layer carried on to the toe, extend_last_layer; a cracked-section EI iteration that did not converge), then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "slope_stability_package": {
         "category": "Calculation Package",
@@ -3518,12 +3518,12 @@ METHOD_INFO = {
     "axial_pile_package": {
         "category": "Calculation Package",
         "brief": "Run axial pile capacity analysis and generate APILE-style calc package, with tables (CSV + printed) of side resistance per layer, load transfer at the ultimate load and capacity against pile length.",
-        "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity."},
+        "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity.", "warnings": "What the engineer must know about the result (for example the last layer carried on to the toe, extend_last_layer; a GEC-12 chart read past its end; a pile wider than the methods' database), then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "drilled_shaft_package": {
         "category": "Calculation Package",
         "brief": "Run drilled shaft capacity analysis and generate SHAFT-style calc package, with tables (CSV + printed) of side resistance per layer, load transfer at the ultimate load and capacity against shaft length.",
-        "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity."},
+        "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity.", "warnings": "What the engineer must know about the result (the last layer carried on to the base, extend_last_layer), then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "downdrag_package": {
         "category": "Calculation Package",
