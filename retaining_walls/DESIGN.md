@@ -2046,3 +2046,19 @@ and then 0.111, and Step 5 prints x as 9.96 and uses 10.09, and prints fs =
 - **D-5 Step 5(a).** The print gives fs = 34.7 ksi "< 35 ksi"; its own
   numbers give 35.5 ksi (35.47 on x = 9.96 in.). The module's 35.47 and its
   failed check are pinned (`test_d5_service_stress_is_the_arithmetic_not_the_printed_34_7`).
+
+### The reinforcement sheet at the end of the package (GM-313, the join, 2026-11-13)
+
+`retaining_wall_package` with `wall_type="cantilever_reinforced"` ends with
+the reinforcement sheet: the agent layer
+(`funhouse_agent/adapters/calc_package.py`, `_wall_sheet`) hands the
+design's `reinforcement` description to `dxf_export.wall_section_drawing`,
+appends the sheet with `generate_calc_package(sheets=...)` and writes
+`<package>_reinforcement.dxf` and `.png` beside the package; this module
+imports neither. The description is unchanged but for the shear key: the
+design gives its depth only, and where the package was given
+`key_distance_from_toe` and `key_width` (GM-216) they are put into the
+description, so the sheet draws the key where the package's wall figure
+does; left out, they stay null and the sheet draws the key under the stem
+and says so. A sheet that cannot be drawn costs the sheet, never the
+package (the result's `warnings` says why).
