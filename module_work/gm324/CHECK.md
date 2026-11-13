@@ -288,10 +288,12 @@ maximum.
 - pystrata's `plot_profile` and `plot_Vs_profile` draw acceleration and Vs
   against the strain profile's depths, which are the wrong depths for them
   (the trap above). No tool reaches the plots.
-- `depth_profile` on pystrata 0.6 is unchecked: 0.6 needs Python 3.13, and
-  this environment has 3.12. If 0.6 writes the Vs arrays differently the
-  profile is null with the reason, not shifted (review fix). Merge after
-  the Python 3.13 CI job is green.
+- `depth_profile` on pystrata 0.6: since the review fixes it has run on
+  0.6.0 (Python 3.13 in WSL, the touched test files and every test file
+  that names pystrata). 0.6 writes the strain profile with one more point
+  (the base of the soil column) and the Vs and acceleration profiles as
+  0.5 does. If a later version changes them, the profile is null with the
+  reason, not shifted.
 - `liquefaction_analysis` accepts `N` and `n_values` as spellings of (N1)60
   (audit liquepy 5): not in the functions this task changed.
 - Effective stress at or below zero is set to 1.0 kPa on both SPT routes
@@ -315,7 +317,7 @@ then this file.
 
 | # | Grade | Finding | What it became |
 |---|---|---|---|
-| 1 | A | `linear_site_response` gave peak strain 0.0 in the scalar and in every `depth_profile` row: pystrata's linear calculator never sets `strain_max` and the module turned None into 0.0 | **Fixed by computing it.** A linear run adds pystrata's documented `StrainTSOutput` at each sub-layer's middle and takes each history's peak, which is what the equivalent-linear calculator stores as `strain_max` (`motion.calc_peak(calc_strain_tf(input, layer middle))`, pystrata 0.5.4 `propagation.py`). Checked against the closed form for one damped layer on an elastic half-space. A strain pystrata does not give is null, never 0.0. The calls exist with the same signatures in pystrata 0.6.0's source (read, not run). |
+| 1 | A | `linear_site_response` gave peak strain 0.0 in the scalar and in every `depth_profile` row: pystrata's linear calculator never sets `strain_max` and the module turned None into 0.0 | **Fixed by computing it.** A linear run adds pystrata's documented `StrainTSOutput` at each sub-layer's middle and takes each history's peak, which is what the equivalent-linear calculator stores as `strain_max` (`motion.calc_peak(calc_strain_tf(input, layer middle))`, pystrata 0.5.4 `propagation.py`). Checked against the closed form for one damped layer on an elastic half-space. A strain pystrata does not give is null, never 0.0. The first build failed CI's Python 3.13 job (pystrata 0.6.0): 0.6's `MaxStrainProfile` adds a point at the base of the soil column, the linear strains were laid out for 0.5, the counts disagreed and the linear `depth_profile` came back null (`test_gm325`: `test_linear_analysis_takes_them_too`, `test_linear_strain_matches_the_closed_form`). Now each of `MaxStrainProfile`'s depths takes the strain of the sub-layer it lies in, on either version; run on 0.5.4 and on 0.6.0 (Python 3.13 in WSL). |
 | 2 | B | SPT `depth` said "layer mid-depths" while `gamma` sums from the previous depth down | **Fixed (text).** `depth` on `liquefaction_analysis`, `spt_liquefaction` and `liquefaction_evaluation`, and both docstrings: the depths are where (N1)60 was measured; give a depth at each change in unit weight (a layer's base, the water table where the unit weight changes there), or the change is taken at the depth above. The result's total-stress `choices` basis says the same (both copies of `TOTAL_STRESS_RULE`). No arithmetic change. |
 | 3 | B | Dr and su/sigma'v ranges over every reading | **Fixed.** Dr over Ic below `i_c_limit` (2.6), su/sigma'v over Ic at or above it, null when there is none; the `returns` text says so. The profile rows still carry every correlation at every reading (the profile text says to read them by Ic): not changed. |
 | 4 | B | `water_table_depth_m` and `K0` echoed as used on profiles that did not use them; `K0` hid k0 from the GM-160 guard | **Fixed.** Echoed only when a Darendeli or Menq layer had its stress computed; else null with `stress_inputs_note`. Echo renamed `k0`. `NOT_REACHED` and `ECHO_IS_NOT_THE_INPUT` entries for the two pystrata probes (the guard now sees that k0 does nothing there, and that the echo is null by design). |
