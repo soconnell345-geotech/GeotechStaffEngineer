@@ -1766,10 +1766,14 @@ def _bar_parameter(element, what, face):
             "type": "float", "required": False,
             "description": (
                 f"The {what} main bars' spacing, centre to centre (mm), "
-                "where the engineer fixes it; at most 305 (12 in., para. "
-                "2-6b, p. 5) or the spacing check fails. Left out: 12 in. "
-                "(300 mm), or 6 in. (150 mm) where 12 in. does not give "
-                "the steel or fails the crack-control spacing.")},
+                "where the engineer fixes it; at most 300 (the manual's "
+                "'12 in. (30 cm)', para. 2-6b, p. 5) or the spacing check "
+                "fails. 300, 150, 100 and 75 mm, the metric values the "
+                "manual prints beside 12, 6, 4 and 3 in., are taken as "
+                "those inch values. Left out: 12 in. (300 mm), or 6 in. "
+                "(150 mm) where 12 in. does not give the steel or fails "
+                "the crack-control spacing, the clear distance or the "
+                "clear cover.")},
     }
 
 
@@ -1785,9 +1789,10 @@ _STRUCTURAL_PARAMETERS = {
         "description": (
             "Length between control joints along the wall (m). Required: "
             "the temperature and shrinkage steel along the wall goes by it "
-            f"({_EM} Table 2-3, p. 7): 0.003 of the gross area below 9 m "
-            "(30 ft), 0.004 from 9 to 12 m, 0.005 above 12 m (40 ft), "
-            "half in each face.")},
+            f"({_EM} Table 2-3, p. 7), banded on the metres the table "
+            "prints: 0.003 of the gross area below 9 m (30 ft), 0.004 "
+            "from 9 to 12 m (9 m and 12 m included), 0.005 above 12 m "
+            "(40 ft), half in each face.")},
     "fy_MPa": {
         "type": "float", "required": False, "default": 414.0,
         "description": (
@@ -1805,7 +1810,8 @@ _STRUCTURAL_PARAMETERS = {
             "Clear cover to the stem's bars, both faces (mm). Left out: "
             f"{_EM} Table 2-1 (p. 5) by the stem's thickness at its base: "
             "100 mm (4 in.) at 24 in. (61 cm) or more, 75 mm (3 in.) over "
-            "12 in. (30 cm). REQUIRED for a stem 12 in. (305 mm) thick or "
+            "12 in. (30 cm); a cover given is checked against that value. "
+            "REQUIRED for a stem 12 in. (305 mm) thick or "
             "less at its base: the table then says 'According to ACI "
             "318-19', which is not held (the manual's own 9 in. wall "
             "example, D-3, p. 75, takes 2 in.).")},
@@ -1813,14 +1819,16 @@ _STRUCTURAL_PARAMETERS = {
         "type": "float", "required": False,
         "description": (
             "Clear cover to the base slab's top bars (mm). Left out: Table "
-            "2-1 (p. 5) by the base thickness, as for the stem; REQUIRED "
-            "for a base 12 in. (305 mm) thick or less.")},
+            "2-1 (p. 5) by the base thickness, as for the stem, and a "
+            "cover given is checked against it; REQUIRED for a base 12 in. "
+            "(305 mm) thick or less.")},
     "base_bottom_cover_mm": {
         "type": "float", "required": False,
         "description": (
             "Clear cover to the base slab's bottom bars (mm). Left out: "
             "100 mm (4 in.), Table 2-1 (p. 5): 'Unformed surfaces in "
-            "contact with foundation'.")},
+            "contact with foundation'; a cover given under 100 mm fails "
+            "that check.")},
     **_bar_parameter("stem", "stem's", "back face, vertical"),
     **_bar_parameter("toe", "toe's", "bottom of the base"),
     **_bar_parameter("heel", "heel's", "top of the base"),
@@ -1861,6 +1869,22 @@ _STRUCTURAL_PARAMETERS = {
 }
 _STRUCTURAL_KEYS = tuple(_STRUCTURAL_PARAMETERS)
 
+#: Review B5 (ii): in this tool only, a stem top left out is 0.305 m, the
+#: 12 in. (30.5 cm) that EM 1110-2-2104 para. 3-7 (p. 27) prints as the
+#: least thickness of a wall over 10 ft (3 m) high; cantilever_wall keeps
+#: its own 0.30 m. One wall: the stability run and the design take it.
+_STEM_TOP_DEFAULT = 0.305
+_STEM_TOP_PARAMETER = {
+    "type": "float", "required": False, "default": _STEM_TOP_DEFAULT,
+    "description": (
+        "Stem thickness at top (m). Left out: 0.305 m, the 12 in. (30.5 "
+        f"cm) that {_EM} para. 3-7 (p. 27) prints as the least thickness "
+        "of a wall over 10 ft (3 m) high, used for the stability run and "
+        "the design alike (one wall); the cantilever_wall tool's own "
+        "default, 0.30 m, is under it. A thickness given below the "
+        "minimum fails the minimum wall thickness check, which names the "
+        "value to give.")}
+
 
 def run_cantilever_wall_structural_design(
         params, *, method="cantilever_wall_structural_design"):
@@ -1881,6 +1905,9 @@ def run_cantilever_wall_structural_design(
                             "fc_MPa", "joint_spacing"], method=method)
     own = {k: params[k] for k in _STRUCTURAL_KEYS if k in params}
     wall = {k: v for k, v in params.items() if k not in _STRUCTURAL_KEYS}
+    top_left_out = wall.get("stem_thickness_top") is None
+    if top_left_out:
+        wall["stem_thickness_top"] = _STEM_TOP_DEFAULT
     stability, used = run_cantilever_wall(wall, method=method)
     result = analyze_cantilever_wall_structure(
         used["geom"], used["gamma_backfill"], used["phi_backfill"],
@@ -1892,6 +1919,22 @@ def run_cantilever_wall_structural_design(
         gamma_concrete=used["gamma_concrete"],
         gamma_foundation=used["gamma_foundation"],
         base_uplift=used["base_uplift"])
+    # the same entry whether the top was left out or given (only "how"
+    # follows the call), so giving the default back changes nothing
+    from geotech_common.choices import MODULE, choice, how_given
+    top = used["geom"].stem_thickness_top
+    entry = choice(
+        "stem thickness at the top", f"{top:g} m",
+        MODULE if top_left_out else how_given(
+            top, _STEM_TOP_DEFAULT, name="stem_thickness_top"),
+        f"{_EM} para. 3-7 (p. 27): 'Walls with height greater than 10 ft "
+        "(3 m) must be a minimum of 12 in. (30.5 cm) thick'. Left out, "
+        "this tool takes the manual's 12 in., 0.305 m, where the "
+        "cantilever_wall tool takes 0.30 m, for the stability run and the "
+        "design alike",
+        ["give stem_thickness_top"])
+    result.structural_choices.append(entry)
+    result.choices.append(entry)
     used = {**used, **{k: own.get(k) for k in _STRUCTURAL_KEYS}}
     used["fy_MPa"] = own.get("fy_MPa", 414.0)
     return result, used
@@ -1915,6 +1958,7 @@ METHOD_INFO["cantilever_wall_structural_design"] = {
     "parameters": {
         **{k: dict(v) for k, v in
            METHOD_INFO["cantilever_wall"]["parameters"].items()},
+        "stem_thickness_top": dict(_STEM_TOP_PARAMETER),
         **_STRUCTURAL_PARAMETERS},
     "returns": {
         "verdict": "The result in plain words: failed concrete checks "
@@ -1942,9 +1986,10 @@ METHOD_INFO["cantilever_wall_structural_design"] = {
                        "and the depth available.",
         "reinforcement": "The reinforced wall section "
                          "('reinforced_wall_section/1'): geometry, "
-                         "materials, the bar sets A to F with their "
-                         "callouts, notes and basis, as a drawing takes "
-                         "it.",
+                         "materials, the bar sets A to F (A to G when the "
+                         "base's top and bottom covers differ: F top, G "
+                         "bottom) with their callouts, notes and basis, as "
+                         "a drawing takes it.",
         "not_designed": "What the design stops short of, each with why: "
                         "earthquake, maximum hydrostatic and construction "
                         "cases, lap and development lengths, bar "

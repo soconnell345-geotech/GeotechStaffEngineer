@@ -46,7 +46,10 @@ def test_the_tool_designs_the_wall_the_stability_tool_checks():
                    for c in el["checks"])
     assert r["stem"]["Mu_kNm_per_m"] == pytest.approx(151.80, abs=0.01)
     assert r["reinforcement"]["schema"] == "reinforced_wall_section/1"
-    assert [b["mark"] for b in r["reinforcement"]["bars"]] == list("ABCDEF")
+    # base top cover 75 mm, bottom 100 mm: the base's bars along the wall
+    # are two sets, F top and G bottom (review C6)
+    assert [b["mark"] for b in r["reinforcement"]["bars"]] == list(
+        "ABCDEFG")
     assert r["checks_failed"] == ["sliding"]
     assert any("3A and 3B" in n["what"] for n in r["not_designed"])
     # the stability choices and the design's, in one list
@@ -58,6 +61,39 @@ def test_the_tool_designs_the_wall_the_stability_tool_checks():
     assert used["fy_MPa"] == 414.0
     assert used["base_bottom_cover_mm"].startswith("100 mm (4 in.)")
     assert "fc_MPa" not in used and "joint_spacing" not in used
+
+
+def test_a_stem_top_left_out_is_the_manuals_12_in():
+    """Review B5 (ii): in this tool only, a stem top left out is 0.305 m
+    (para. 3-7, p. 27: 12 in. (30.5 cm) for a wall over 3 m), for the
+    stability run and the design alike; cantilever_wall keeps 0.30 m."""
+    wall = {k: v for k, v in WALL.items() if k != "stem_thickness_top"}
+    r = D.call_agent("retaining_walls",
+                     "cantilever_wall_structural_design", wall)
+    assert "error" not in r, r
+    assert r["geometry"]["stem_thickness_top"] == 0.305
+    assert not any("stem thickness" in c for c in r["checks_failed"])
+    assert r["defaults_used"]["stem_thickness_top"] == 0.305
+    (c,) = [c for c in r["choices"]
+            if c["what"] == "stem thickness at the top"]
+    assert c["how"] == "module" and "para. 3-7 (p. 27)" in c["basis"]
+    assert c["chosen"] == "0.305 m"
+    assert c["alternatives"] == ["give stem_thickness_top"]
+    from funhouse_agent.adapters.retaining_walls import METHOD_INFO
+    spec = METHOD_INFO["cantilever_wall_structural_design"]["parameters"][
+        "stem_thickness_top"]
+    assert spec["default"] == 0.305 and "para. 3-7" in spec["description"]
+    assert METHOD_INFO["cantilever_wall"]["parameters"][
+        "stem_thickness_top"]["default"] == 0.30
+    # one wall: the stability run took the same top
+    alone = D.call_agent("retaining_walls", "cantilever_wall", {
+        **{k: v for k, v in wall.items()
+           if k not in ("fc_MPa", "joint_spacing")},
+        "stem_thickness_top": 0.305})
+    assert r["stability"]["FOS_sliding"] == alone["FOS_sliding"]
+    # given under the minimum, it still fails, naming the value to give
+    thin = _design(stem_thickness_top=0.30)
+    assert "give stem_thickness_top 0.305 or more" in thin["verdict"]
 
 
 def test_the_tool_takes_the_common_names_and_refuses_the_rest():
