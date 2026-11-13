@@ -75,7 +75,7 @@ __all__ = [
     "Citation", "Mention", "BearingValue", "Stratum",
     "DOCUMENT_TYPE_VALUES", "PROPERTY_TYPE_VALUES", "PROJECT_PHASE_VALUES",
     "LIQUEFACTION_VALUES", "EARTH_HAZARD_VALUES", "YES_NO_UNCLEAR",
-    "OUTSIDE_PROJECT_VALUES",
+    "OUTSIDE_PROJECT_VALUES", "SOIL_CORROSION_VALUES",
     "GENERAL_FIELDS", "NATURAL_HAZARD_FIELDS", "SUMMARY_FIELDS",
     "SUMMARY_WORD_LIMITS",
     # the typed laboratory results (WP3)
@@ -2567,6 +2567,12 @@ YES_NO_UNCLEAR: Tuple[str, ...] = ("yes", "no", "mixed", "unclear")
 #: report's whole narrative to a "mixed" the prompt had offered and this
 #: class then refused.
 OUTSIDE_PROJECT_VALUES: Tuple[str, ...] = ("yes", "no", "unclear")
+#: What ``soilCorrosion`` is answered with (BACKLOG OWN-125, the owner's
+#: answer of 2026-11-13): "yes" whenever anything is attacked, so "mixed"
+#: drops out of its answers and the prompt offers exactly these words. A
+#: "mixed" in a record saved before the ruling, or one a reader returns
+#: anyway, is still read as written (:class:`Mention` keeps the word).
+SOIL_CORROSION_VALUES: Tuple[str, ...] = ("yes", "no", "unclear")
 
 
 class Citation(BaseModel):

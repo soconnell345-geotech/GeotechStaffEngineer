@@ -41,7 +41,11 @@ class LayerMapping:
         DXF layer name for the ground surface polyline.
     soil_boundaries : dict
         {dxf_layer_name: soil_name} for each soil boundary.
-        Each boundary defines the bottom of the named soil layer.
+        Each boundary is the TOP of the soil it names (that soil lies
+        below it, down to the next boundary), and the soil between the
+        ground surface and the highest boundary takes the soil property
+        named "Surface", or else the first property that no boundary
+        names (``converter.build_slope_geometry``).
     water_table : str, optional
         DXF layer name for the groundwater table profile.
     nails : str, optional

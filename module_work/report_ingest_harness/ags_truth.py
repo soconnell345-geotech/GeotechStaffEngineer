@@ -19,9 +19,13 @@ WHAT GOES WHERE::
            file's own ABBR rows -- a code the file does not spell out is
            kept, unscored, as loca_type); remarks (LOCA_REM, LOCA_TERM)
     GEOL   layers: top, bottom, description
-    SAMP   samples: id (SAMP_REF), top, bottom, type, recovery (SAMP_RECV),
-           blows (SAMP_UBLO, the driven tube's blow count, as a ring
-           sample's blows are kept in the hand truth)
+    SAMP   samples: id (SAMP_TYPE and SAMP_REF together, as a log prints
+           a sample: ``D1``, ``U2``; the reference alone is kept as ``ref``),
+           top, bottom, type, recovery (SAMP_RECV), blows (SAMP_UBLO, the
+           driven tube's blow count, as a ring sample's blows are kept in
+           the hand truth; marked ``blows_kind: "sampler"``, so the scorer
+           looks for them on a drive record of their own at the sample's
+           depth, which is where the record keeps them, RI-79)
     ISPT   blows and N on the small disturbed sample taken from the spoon at
            that depth (same top, an interval no longer than the drive), else
            on an SPT row of its own; the blows are the counts of the seating
@@ -45,6 +49,14 @@ Laboratory density (LDEN) and strength groups are there: the schema's
 ``duw`` is a dry UNIT WEIGHT and ``qu`` an unconfined compressive strength,
 and turning a density or an undrained shear strength into either would be a
 conversion this file made, not a value AGS holds.
+
+HEADER FIELDS THE FORM MAY NOT PRINT. The header comes from the data
+whether or not the scanned form prints it. ``fields_from_data`` lists every
+scored header field taken from the data and ``fields_struck`` starts empty:
+a reviewer who may open the pages moves a field the form does not print
+into ``fields_struck``, and the scorer leaves it out of the total (it is
+counted under ``set_aside``). Nothing here strikes one. ``build`` keeps the
+strikes of the answer sheet it replaces.
 
 DATES are recorded but not scored unless asked (``score_dates``): AGS writes
 them ISO (2006-05-26), a log prints them its own way (26/05/06), and the
@@ -83,6 +95,8 @@ Run from the repo root (or a worktree) with the app venv::
     .venv/Scripts/python -m module_work.report_ingest_harness.ags_truth build
     .venv/Scripts/python -m module_work.report_ingest_harness.ags_truth build \\
         --ids P01,P02 --set-dir <the set's raw folder>
+    .venv/Scripts/python -m module_work.report_ingest_harness.ags_truth rescore \\
+        <the run's out dir> --truth-dir <the set's raw folder>/truth/logs
 """
 
 from __future__ import annotations
@@ -95,7 +109,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 __all__ = [
-    "SET_REL", "read_ags", "abbreviations", "parse_spt_report",
+    "SET_REL", "read_ags", "abbreviations", "parse_spt_report", "sample_id",
     "truth_for_hole", "counts", "assemble", "build",
 ]
 
@@ -388,6 +402,20 @@ def _layers(ags: Dict[str, Any], loca_id: str,
     return out
 
 
+def sample_id(kind: str, ref: str) -> str:
+    """A sample's id as a log prints it: its type and its reference
+    together (``D`` and ``1`` are ``D1``). A reference that already leads
+    with the type (``D1``) is the id as it stands; with no reference there
+    is no id, and with no type the reference alone."""
+    kind, ref = str(kind or "").strip(), str(ref or "").strip()
+    if not ref or not kind:
+        return ref
+    fold = lambda text: "".join(c for c in text.lower() if c.isalnum())
+    if fold(ref).startswith(fold(kind)) and not ref[:1].isdigit():
+        return ref
+    return f"{kind}{ref}"
+
+
 def _sample_row(sample_id: str, top: float, bottom: Optional[float],
                 kind: str, desc: str = "") -> Dict[str, Any]:
     row: Dict[str, Any] = {"id": sample_id, "top": top, "bottom": bottom,
@@ -408,9 +436,10 @@ def _samples(ags: Dict[str, Any], loca_id: str,
             unslotted.add("SAMP", row, why="no top depth")
             continue
         kind = row.get("SAMP_TYPE", "")
-        sample = _sample_row(row.get("SAMP_REF", ""), top,
+        sample = _sample_row(sample_id(kind, row.get("SAMP_REF", "")), top,
                              _num(row.get("SAMP_BASE")), kind,
                              abbr.get(("SAMP_TYPE", kind), ""))
+        sample["ref"] = row.get("SAMP_REF", "")
         used = {"SAMP_TOP", "SAMP_BASE", "SAMP_REF", "SAMP_TYPE"}
         recovery = _num(row.get("SAMP_RECV"))
         if recovery is not None:
@@ -420,6 +449,10 @@ def _samples(ags: Dict[str, Any], loca_id: str,
         blows = _num(row.get("SAMP_UBLO"))
         if blows is not None:
             sample["blows"] = [int(blows)]
+            # The blows that drove the sampler, not a penetration test's
+            # increments: the scorer finds them on a drive record of their
+            # own at this sample's depth.
+            sample["blows_kind"] = "sampler"
             used.add("SAMP_UBLO")
         if row.get("SAMP_REM"):
             sample["note"] = row["SAMP_REM"]
@@ -596,12 +629,13 @@ def _lab(ags: Dict[str, Any], loca_id: str, samples: List[Dict[str, Any]],
             # top. A reference SAMP does not list gets a row of its own
             # rather than another sample's.
             same_top = [s for s in samples if _same(s["top"], top)]
-            match = [s for s in same_top if s["id"] == ref] if ref \
-                else same_top
+            match = [s for s in same_top
+                     if s.get("ref", s["id"]) == ref] if ref else same_top
             sample = next((s for s in match if s["type"] == kind),
                           match[0] if match else None)
             if sample is None:
-                sample = _sample_row(ref, top, None, kind)
+                sample = _sample_row(sample_id(kind, ref), top, None, kind)
+                sample["ref"] = ref
                 samples.append(sample)
             used = set()
             for heading, key in slots.items():
@@ -631,6 +665,8 @@ def truth_for_hole(ags: Dict[str, Any], loca_id: str, *, item_id: str,
     others, and a code means the same across the project. The file's own
     rows win where both spell a code.
     """
+    from report_ingest.log_scoring import FIELD_MAP
+
     loca = next((r for r in (ags.get("LOCA") or {}).get("rows") or []
                  if r.get("LOCA_ID") == loca_id), None)
     if loca is None:
@@ -669,6 +705,10 @@ def truth_for_hole(ags: Dict[str, Any], loca_id: str, *, item_id: str,
         "source": "AGS4 data file (BGS export); not read off the page",
         "kind": "test_pit" if pit else "boring",
         "fields": fields,
+        # Every scored header field came from the data, printed on the
+        # form or not; a reviewer strikes the ones the form does not print.
+        "fields_from_data": [k for k in fields if k in FIELD_MAP],
+        "fields_struck": [],
         "layers": layers,
         "samples": samples,
         "water": water,
@@ -916,6 +956,16 @@ def build(set_dir: Path, ids: Sequence[str], *,
 
         truth_dir.mkdir(parents=True, exist_ok=True)
         for stale in truth_dir.glob(f"{pid}_p*.json"):
+            # A reviewer's strikes outlive a rebuild: they are the only
+            # part of an answer sheet this does not write.
+            try:
+                kept = json.loads(stale.read_text(encoding="utf-8")
+                                  ).get("fields_struck") or []
+            except ValueError:
+                kept = []
+            if kept and stale.stem in sheets:
+                sheets[stale.stem]["fields_struck"] = [
+                    k for k in kept if k in sheets[stale.stem]["fields"]]
             stale.unlink()
         for item_id, truth in sheets.items():
             (truth_dir / f"{item_id}.json").write_text(
@@ -984,7 +1034,35 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     b.add_argument("--ids", default="P01,P02,P03")
     b.add_argument("--score-dates", action="store_true",
                    help="put the AGS dates where the scorer reads them")
+    r = sub.add_parser("rescore", help="re-score a saved logs run with "
+                                       "the current scorer ($0, no model "
+                                       "call, no PDF)")
+    r.add_argument("out_dir", help="the run's folder (holds logs/)")
+    r.add_argument("--truth-dir", required=True,
+                   help="the folder of answer sheets (<log id>.json)")
+    r.add_argument("--write", action="store_true",
+                   help="replace each run file's score; what it held is "
+                        "kept beside it as after_as_run")
     args = ap.parse_args(argv)
+    if args.cmd == "rescore":
+        from report_ingest.log_scoring import METRICS, SET_ASIDE, rescore_run
+
+        if args.write:
+            _refuse_tracked([Path(args.out_dir) / "logs" / "x.json"])
+        got = rescore_run(Path(args.out_dir) / "logs", args.truth_dir,
+                          write=args.write)
+        print(f"{got['run_files']} run file(s) re-scored, "
+              f"{len(got['skipped'])} skipped")
+        for name in (*METRICS, "overall"):
+            was = got["saved"].get(name, [0, 0])
+            now = got["rescored"].get(name, [0, 0])
+            print(f"  {name:13s} saved {was[0]}/{was[1]}   "
+                  f"re-scored {now[0]}/{now[1]}")
+        for group, n in got["set_aside"].items():
+            print(f"  set aside, {SET_ASIDE.get(group, group)}: {n}")
+        for stem, why in got["skipped"].items():
+            print(f"  skipped {stem}: {why}")
+        return 0
     if args.set_dir:
         set_dir = Path(args.set_dir)
     else:

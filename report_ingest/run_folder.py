@@ -78,6 +78,12 @@ class ReportRun:
     #: resumed from its folder (left out of ``index.json`` otherwise).
     calls_this_run: Optional[int] = None
     dollars_this_run: Optional[float] = None
+    #: What this run's export of the report tables did (BACKLOG RI-209):
+    #: ``report_tables.export_outcome``'s status, folder, rows and what the
+    #: Foundry dataset got, and the same as one line. Empty for a report
+    #: this run skipped or that failed.
+    report_tables: Optional[Dict[str, Any]] = None
+    report_tables_line: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         out = dict(self.__dict__)
@@ -162,6 +168,7 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                trust_table: Any = None,
                templates: Any = None,
                ingest_bound: bool = True,
+               report_tables: Any = None,
                log: Callable[[str], None] = print) -> FolderRun:
     """Read every PDF in ``folder`` into one library under ``out_dir``.
 
@@ -183,6 +190,12 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
     ``parent`` pointing at the report it came out of. So a folder of 300
     files can make more than 300 rows, which is right and is why the index
     counts them. ``ingest_bound=False`` turns it off.
+
+    THE REPORT TABLES (BACKLOG RI-209) go beside the library by default:
+    each report, once written, is exported under ``<the folder holding the
+    library>/report_tables/v1/`` (``report_tables`` is the graph's own; a
+    report skipped as already done is not re-exported: ``python -m
+    report_ingest.tables <out_dir>`` exports a whole folder from disk).
     """
     from report_ingest.graph import ingest_report
 
@@ -228,7 +241,8 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                                if vision_engine_factory else None),
                 vision_mode=vision_mode, vision_detail=vision_detail,
                 trust_table=trust_table, templates=templates,
-                ingest_bound=ingest_bound)
+                ingest_bound=ingest_bound, report_tables=report_tables,
+                source_path=path)
         except KeyboardInterrupt:
             log("  interrupted; what is finished is on disk and a later call "
                 "resumes")
@@ -265,6 +279,9 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                 row.dollars
             row.model_calls, row.dollars = took.report_calls, \
                 took.report_dollars
+        from report_ingest.tables import export_outcome, outcome_line
+        row.report_tables = export_outcome(report_out)
+        row.report_tables_line = outcome_line(row.report_tables, report_out)
         keys.setdefault(key, stem)
         run.reports.append(row)
         if row.duplicate_of:
@@ -359,6 +376,20 @@ def _write_index(run: FolderRun, out: str) -> None:
         for row in copies:
             lines.append(f"- `{row.report_id}` is a copy of "
                          f"`{row.duplicate_of}`")
+    exported = [row for row in run.reports
+                if row.ok and row.report_tables_line]
+    if exported:
+        # What the report tables export did (BACKLOG RI-209): one line when
+        # every report came to the same, else one per report. The words
+        # "this run" stay out: a fresh run's index carries them only for a
+        # resumed report (BACKLOG RI-125, test_ri125.py's fresh-run test).
+        lines += ["", "## The report tables", ""]
+        said = sorted({row.report_tables_line for row in exported})
+        if len(said) == 1:
+            lines.append(f"Every report read: {said[0]}")
+        else:
+            lines += [f"- `{row.report_id}`: {row.report_tables_line}"
+                      for row in exported]
     if run.failures:
         lines += ["", "## What failed", ""]
         for row in run.failures:
