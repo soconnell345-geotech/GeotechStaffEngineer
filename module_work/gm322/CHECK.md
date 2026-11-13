@@ -96,12 +96,12 @@ Python 3.12 venv, pystra 2.0.0, SALib 1.6.0, numpy 2.5.4. Judged by pytest's exi
 | `pystra_agent/tests/test_gm322_results_say_what_they_are.py` on pystra 1.6.0 with numpy 1.26.4 (a second venv) | 21 passed |
 | `salib_agent` | 59 passed |
 | `funhouse_agent/tests/test_gm322_323_adapters.py`, `test_reliability_adapter.py` | 16 and 29 passed |
-| The wide run: `funhouse_agent/tests`, `funhouse_agent/deep/tests`, `validation_examples`, `calc_package`, the three modules, `webapp/tests/test_page_fingerprints.py`, `test_public_text.py`, `test_docs_currency.py`, `test_backlog.py` | see the last line of this file |
+| The wide run: `funhouse_agent/tests`, `funhouse_agent/deep/tests`, `validation_examples`, `calc_package`, the three modules, `webapp/tests/test_page_fingerprints.py`, `test_public_text.py`, `test_docs_currency.py`, `test_backlog.py` | 6,160 passed, 2 failed, 39 skipped, 1 xfailed. Both failures are on untouched master too (below) |
 | `module_work/doc10/check_manual.py` | OK |
 
 `webapp/tests/test_page_fingerprints.py` passed without a re-record, and `python -m webapp.tests.page_builds record` wrote no change: these tool descriptions are not part of the page fingerprints. So there is no fingerprint commit.
 
-One test fails on untouched master in this environment and is not from this branch: `funhouse_agent/tests/test_defaults_used.py::test_every_default_a_run_lists_changes_its_result[profile_figure|plot_data]` (checked with the branch's changes stashed).
+Two tests fail in this environment on untouched master (2feea3d, checked in a separate worktree) and are not from this branch. Both are figure tests in other modules: `funhouse_agent/tests/test_defaults_used.py::test_every_default_a_run_lists_changes_its_result[profile_figure|plot_data]` and `funhouse_agent/tests/test_calc_package_figure_conventions.py::test_large_pile_group_leaves_the_forces_to_the_table`. Not looked into further; most likely this container's matplotlib or fonts.
 
 ## Consumers checked
 
