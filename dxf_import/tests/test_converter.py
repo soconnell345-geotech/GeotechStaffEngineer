@@ -11,6 +11,8 @@ from dxf_import.results import DxfParseResult
 from slope_stability.geometry import SlopeGeometry
 
 
+# The fixture's DXF layer is named CLAY_BOTTOM, but a boundary is the TOP of
+# the soil it names: "Clay" lies BELOW that line (build_slope_geometry).
 class TestBuildTwoLayerSlope:
     """Tests for a simple 2-layer slope build."""
 
@@ -251,3 +253,48 @@ class TestBuildEdgeCases:
         geom = build_slope_geometry(parse, props)
         assert len(geom.soil_layers) == 1
         assert geom.soil_layers[0].name == "Soil"
+
+
+class TestOneMaterialPerPoint:
+    """GM-140 step 1: a boundary is the bottom of the layer above it and the
+    top of the layer named for it; every point has one layer. Made-up
+    values."""
+
+    @staticmethod
+    def _geom():
+        parse = DxfParseResult(
+            surface_points=[(0.0, 10.0), (10.0, 10.0), (30.0, 20.0),
+                            (40.0, 20.0)],
+            boundary_profiles={
+                "Clay": [(0.0, 6.0), (40.0, 14.0)],
+                "Rock": [(0.0, 0.0), (40.0, 4.0)],
+            })
+        props = [
+            SoilPropertyAssignment(name="Surface", gamma=20.0, phi=30.0),
+            SoilPropertyAssignment(name="Clay", gamma=16.0, cu=40.0,
+                                   analysis_mode="undrained"),
+            SoilPropertyAssignment(name="Rock", gamma=24.0, phi=40.0,
+                                   c_prime=100.0),
+        ]
+        return build_slope_geometry(parse, props)
+
+    def test_each_layer_between_its_boundaries(self):
+        geom = self._geom()
+        # at x = 20: ground 15, Clay boundary 10, Rock boundary 2, base -2
+        col = [(L.name, round(zb, 9), round(zt, 9))
+               for L, zb, zt in geom.column_at(20.0)]
+        assert col == [("Surface", 10.0, 15.0), ("Clay", 2.0, 10.0),
+                       ("Rock", -2.0, 2.0)]
+        assert geom.layer_at_point(20.0, 12.0).name == "Surface"
+        assert geom.layer_at_point(20.0, 5.0).name == "Clay"
+        assert geom.layer_at_point(20.0, 0.0).name == "Rock"
+
+    def test_no_overlap_and_no_gap(self):
+        assert self._geom().layer_overlaps() == []
+
+    def test_slice_weight_by_hand(self):
+        """A column at x = 20, base at el. 4: Surface 5 m at 20 = 100,
+        Clay 6 m at 16 = 96; 196 kN/m per metre of width."""
+        from slope_stability.slices import _compute_slice_weight
+        w = _compute_slice_weight(self._geom(), 20.0, 15.0, 4.0, 1.0, None)
+        assert w == pytest.approx(196.0)

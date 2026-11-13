@@ -3891,7 +3891,7 @@
     "ask_who": null,
     "question": "Do the lead's geotechnical judgement calls of 2026-11-12 stand?",
     "why": "You left these calls to the lead on 2026-11-12 (\"go with your recommendation but make a 'Later' backlog item with the decision for me to revisit in future rounds\"). Each sets a default or a rule in a module; if a call is wrong, every run that leaves the input out gets the same wrong answer.",
-    "background": "The lead applied one rule. (1) Where only one printed form exists, the module follows the print. (2) Where two held references print different values or rules and neither is named as governing, the default is the conservative one and the other is offered and stated. (3) Where the code already follows a printed source and states the alternatives, it stays as built. (4) A module never fills a missing input that the reference treats as a finding about the site (a rock quality, a tested value): it refuses and names the input. Two calls depart from the rule and say so: part 4 (OWN-104) and part 15 (OWN-131). Parts 1 to 6 unblock work (the slope build GM-140; the recompute check DR-11); parts 7 to 16 change defaults (one batch, GM-310, with tests and a release note; part 16 is the build GM-311); parts 17 to 27 confirm what is built and change no answer. Every call is a default or a rule the module states in its result, with the other reading offered. Two things stay yours: photographs of Duncan, Wright and Brandon (2014) section 6.5.3 and chapter 8 for slope step 8 (local only), and getting Jeanjean (2009, OTC 20158) so that p-y criterion can be checked. Not decided here: the report-question conventions (OWN-07, OWN-88, OWN-125, OWN-127) and every release, hosting, licensing and data item.",
+    "background": "The lead applied one rule. (1) Where only one printed form exists, the module follows the print. (2) Where two held references print different values or rules and neither is named as governing, the default is the conservative one and the other is offered and stated. (3) Where the code already follows a printed source and states the alternatives, it stays as built. (4) A module never fills a missing input that the reference treats as a finding about the site (a rock quality, a tested value): it refuses and names the input. Two calls depart from the rule and say so: part 4 (OWN-104) and part 15 (OWN-131). Parts 1 to 6 unblock work (the slope build GM-140; the recompute check DR-11); parts 7 to 16 change defaults (one batch, GM-310, with tests and a release note; part 16 is the build GM-311); parts 17 to 27 confirm what is built and change no answer. Part 28 was added on 2026-11-13 from the slope build (GM-140 step 1): two rules for layered input that no page held prints. Every call is a default or a rule the module states in its result, with the other reading offered. You supplied the Duncan, Wright and Brandon (2014) pages on 2026-11-13 (section 6.5.3, pp. 91 to 93, and all of chapter 8, pp. 159 to 168; kept local only), so slope step 8 no longer waits on you. One thing stays yours: getting Jeanjean (2009, OTC 20158) so that p-y criterion can be checked. Not decided here: the report-question conventions (OWN-07, OWN-88, OWN-125, OWN-127) and every release, hosting, licensing and data item.",
     "parts": [
       {
         "label": "1. OWN-101, the slope plan (GM-140): the ten steps of the slope account (section 12) agreed. Priority goes to the steps that change a factor of safety: 1 (one material per point), 2 (a method's own solution or no number), 3 (the printed acceptability checks), 4 (tension cracks and reverse curvature), 5 (water and loads), 6 (one method across the search) and 9 (rapid drawdown as EM 1110-2-1902 App. G prints it). Step 5 is split into 5a (the pore-pressure rules, this week) and 5b (new load types: line, inclined and varying loads, the vertical seismic coefficient; after). Step 10 (reporting) is small and is built alongside, its method-per-family part after step 6; steps 8 (supports) and 7 (search coverage) follow. Step 1 is built first and alone; then 2, 3, 6 and 7 in series; 4, 5a, 8, 9 and 10 in parallel once step 1 is merged. Step 1 is a weight error on every model with a sloping layer boundary (one slice 39.1 kN/m by hand against the module's 116.0).",
@@ -4338,6 +4338,20 @@
           }
         ],
         "multi": false
+      },
+      {
+        "label": "28. GM-140 step 1, layered slope sections (built 2026-11-13): where two layers are given covering the same ground, the first one listed holds it and the result lists the overlap; ground that no layer covers is refused. No page held prints a rule for either: the layers are the engineer's input.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Refuse an overlap as well",
+            "effect": "A section whose layers overlap is refused until the input is corrected, instead of being run with the first layer listed."
+          }
+        ],
+        "multi": false
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
@@ -4408,6 +4422,99 @@
       "BACKLOG GM-328",
       "BACKLOG OWN-41",
       "module_work/module_audit_2026-11-12/results/calc_examples.md"
+    ]
+  },
+  "OWN-146": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Do the calls made for the cantilever wall's concrete design stand, and should the unused ACI footing design be removed?",
+    "why": "You asked for a reinforced wall section at the end of a calc package, designed on USACE EM 1110-2-2104 with every rule traced to a printed page. The manual hands several rules to ACI 318-19, which the library does not hold. The build goes ahead on the calls below unless you stop one.",
+    "background": "What the held manual (the 1 November 2023 edition) prints: the load cases for an earth retaining wall (Table E-2, p. 93); the single load factors that stand in for the service-stress limits (2.2 usual, 1.6 unusual; Table 3-4, p. 26); steel not above half the balanced ratio (para 3-6, p. 27); steel for a moment (Eq. D-8 and D-9, p. 72); shear strength of walls and slabs (Eq. 5-1, p. 35); where shear is checked in the stem, toe and heel (para 5-3, pp. 35-36); cover for sections over 12 in. (Table 2-1, p. 5); bar spacing and temperature steel. What it hands to ACI 318-19 and prints only inside its worked examples: the strength reduction factors (0.90 bending, 0.75 shear, p. 84), beta1 (0.85 at 4,000 psi and 0.80 at 5,000 psi), a hooked bar's development length (p. 87) and the crack-spacing formula (p. 76). What no held reference prints: where the toe and heel are cut for moment (the manual sends the reader to EM 1110-2-2502, a public USACE manual the library does not hold), a straight bar's development length, a lap length, and the cover of a section 12 in. or thinner. Separately, bearing_capacity/concrete_design.py is an ACI 318-19 spread-footing design that cites section numbers and no page; no tool, calc package or manual page reaches it.",
+    "parts": [
+      {
+        "label": "1. Values the manual prints only in its examples (reduction factors, the hook's development length, the crack-spacing formula)",
+        "options": [
+          {
+            "label": "Use them, citing the manual's page",
+            "effect": "The design checks flexure, shear, the stem bar's hook and bar spacing. Each result names the page and says the manual takes the rule from ACI 318-19."
+          },
+          {
+            "label": "The engineer must give them",
+            "effect": "The reduction factors become required inputs; the hook and crack-spacing checks are left out."
+          }
+        ]
+      },
+      {
+        "label": "2. beta1 (it enters only the balanced steel ratio)",
+        "options": [
+          {
+            "label": "The library's ACI 318-19 value, labelled, unless given",
+            "effect": "Works for any concrete strength. The result says the value is ACI's and that the manual prints it only at 4,000 and 5,000 psi."
+          },
+          {
+            "label": "Required unless the strength is one the manual prints",
+            "effect": "For any other strength the engineer must give beta1."
+          }
+        ]
+      },
+      {
+        "label": "3. Toe and heel moment",
+        "options": [
+          {
+            "label": "At the face of the stem, by statics, labelled as not printed",
+            "effect": "Toe and heel get their bars now. The result and the calc package say no held reference prints the section."
+          },
+          {
+            "label": "Hold toe and heel until EM 1110-2-2502 is in the library",
+            "effect": "Only the stem is designed now; the drawing shows the base with no designed bars until the manual is added (REF-98) and read."
+          }
+        ]
+      },
+      {
+        "label": "4. Lap lengths, straight development lengths and bar cut-offs",
+        "options": [
+          {
+            "label": "Not computed; the result and the drawing say so",
+            "effect": "Bars are drawn full length with no laps. The engineer may type a lap length, which is printed and not checked."
+          },
+          {
+            "label": "Add ACI 318 to the library first",
+            "effect": "Needs a copy of ACI 318-19 from you (it is not public); these stay out until then."
+          }
+        ]
+      },
+      {
+        "label": "5. The unused ACI footing design (bearing_capacity/concrete_design.py)",
+        "options": [
+          {
+            "label": "Remove it",
+            "effect": "443 lines and their 21 tests go. Nothing a user can reach changes."
+          },
+          {
+            "label": "Rebuild it on EM 1110-2-2104 and give it a tool",
+            "effect": "One-way shear and flexure follow the manual; punching shear around a column cannot, because the manual hands it to ACI."
+          },
+          {
+            "label": "Leave it",
+            "effect": "It stays unreachable and uncited."
+          }
+        ]
+      }
+    ],
+    "recommendation": "The first option of each part: use the values the manual's examples print, with the page; the library's beta1, labelled; toe and heel at the stem face, labelled; laps and development not computed; remove the footing file. And add EM 1110-2-2502 to the library (REF-98) so part 3 can later cite a page.",
+    "if_no_answer": "The build follows the recommendation for parts 1 to 4. The footing file is left alone.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-312",
+      "GM-313",
+      "REF-98"
+    ],
+    "sources": [
+      "BACKLOG OWN-146",
+      "BACKLOG GM-312",
+      "BACKLOG REF-98",
+      "module_work/cloud_briefs/DRAWINGS_GM312_315.md"
     ]
   }
 }

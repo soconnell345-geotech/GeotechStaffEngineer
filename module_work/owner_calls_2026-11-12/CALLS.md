@@ -54,6 +54,9 @@ Steps 7, 8 and 10 widen coverage and reporting.
 **Still the owner's:** the parts of step 8 that need Duncan, Wright and
 Brandon (2014) section 6.5.3 and chapter 8 wait for the owner's photographs
 of those pages (local only). The rest of step 8 follows the references held.
+**2026-11-13:** the owner photographed those pages (section 6.5.3, pp. 91 to
+93, and chapter 8, pp. 159 to 168; kept local, cited by page and equation
+number), so step 8 no longer waits on the owner.
 
 ### OWN-102: surfaces with m_alpha below 0.2
 
@@ -64,6 +67,13 @@ Bishop's value is below the OMS value the OMS value is taken for that
 circle, as Duncan (1996, p. 580) prints. Today's refusal stays as a stated
 option. The exemption for phi' = 0 slices stays, stated as the module's own
 reasoning.
+
+**Limit, added 2026-11-13:** Duncan, Wright and Brandon (2014, p. 93) print
+no Ordinary Method of Slices equation with known forces; the book says the
+method is generally not used with seismic loading or reinforcement. So the
+comparison of Bishop's value with the OMS value applies only to circles
+without supports or a seismic coefficient, and the result says when the
+comparison was not made and why.
 
 **Basis:** Whitman and Bailey (1967, p. 487) print a warning and an
 instruction to examine the surface, not a rejection; EM 1110-2-1902 C-10b

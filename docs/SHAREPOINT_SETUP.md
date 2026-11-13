@@ -116,6 +116,7 @@ hyphens: `GRAPH-TENANT-ID`), or in `.env` for a local run.
 | `GRAPH_LOGIN_URL`, `GRAPH_API_URL` | only for a cloud not in that list: the sign-in and Graph addresses |
 | `GEOTECH_SHAREPOINT_ROOT` | optional: the folder the app works in on the first site (default `Shared Documents/GeotechStaffEngineer`) |
 | `GEOTECH_SHAREPOINT_LOG` | optional: `0` turns off the app's SharePoint log (step 7); on by default |
+| `GEOTECH_SHAREPOINT_MAX_UPLOAD_MB` | optional: the largest file the app sends to SharePoint, in MB (default 2048); see step 8 |
 
 **Which cloud.** Only the cloud of your SharePoint tenant matters; where the
 app itself is hosted (an Azure Government subscription or not) does not. With
@@ -215,3 +216,36 @@ offers it as a download instead. That download holds the connection test's
 report and the errors met in the downloader's own conversations, never
 another user's. Set `GEOTECH_SHAREPOINT_LOG=0` to turn the log off; like
 the other settings, it may go in Key Vault.
+
+## 8. How conversations are saved
+
+After each turn the app copies what changed in the conversation's folder to
+SharePoint. Nothing here needs setting up; this is what to expect.
+
+- **In the background.** The copy starts when the turn ends and does not
+  hold the turn or the page. Up to four conversations are copied at the same
+  time, each on its own; a fifth waits for a free place. The sidebar's
+  **Permanent storage** block says "saving the latest turn…" until the copy
+  is done, then how many files went up. If the app is stopped in that time,
+  what was left is sent at the conversation's next save.
+- **One request per file.** A file is sent by its full path and SharePoint
+  makes the folders. A file above 4 MB goes in pieces, read from disk one
+  piece at a time; a piece that fails is taken up again from where
+  SharePoint says it stopped, up to five times.
+- **A size limit.** A file above `GEOTECH_SHAREPOINT_MAX_UPLOAD_MB` (default
+  2048 MB) is not sent. The first save says so as an error that names the
+  file and the limit; later saves leave the file alone until it changes, and
+  keep naming it in the note under the save line.
+- **File names SharePoint refuses.** A name with one of `" * : < > ? / \ |`,
+  a space at either end, a dot at the end, or a reserved name (`CON`,
+  `desktop.ini` and the like) is kept in SharePoint under an accepted name:
+  each refused character becomes `_` and six characters are added before
+  the extension (`plan: rev 2.pdf` becomes `plan_ rev 2_xxxxxx.pdf`, the
+  same name every time). The conversation's folder then also holds
+  `sp_names.json`, which lists those files' own names; restoring the
+  conversation gives each file its own name back.
+- **A busy service.** When SharePoint asks the app to wait (HTTP 429 or
+  503), the conversation being saved waits, up to three times of at most
+  20 seconds; the other conversations are not held by that wait. If
+  SharePoint is still busy, the rest of that save fails, is reported in the
+  sidebar and the log (step 7), and is sent at the next save.
