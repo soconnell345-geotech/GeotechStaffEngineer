@@ -1232,6 +1232,12 @@ def _chunks(record: ReportRecord,
         words = [inv.investigation_id, inv.kind, _show(inv.total_depth),
                  inv.station, inv.remarks]
         words += [f"{layer.uscs} {layer.description}" for layer in inv.layers]
+        # RI-103 (set only under GEOTECH_INGEST_LOG_INTERVALS): an
+        # interval's written changes and its printed stratum label are
+        # words of the log too, and stay findable.
+        words += [text for layer in inv.layers
+                  for text in ([layer.stratum_label]
+                               + [note.text for note in layer.notes])]
         words += [f"N {drive.n}" for drive in inv.spt if drive.n is not None]
         words += [f"water at {_show(level.depth)} {level.when}"
                   for level in inv.water]

@@ -608,7 +608,7 @@ METHOD_INFO = {
                                 "section with a labelled leader."),
             },
             "axis": {"type": "str", "required": False, "default": "auto",
-                     "allowed_values": ["auto", "elevation", "depth"],
+                     "allowed_values": ["auto", "elevation", "depth"], "any_case": "strip",
                      "description": ("Vertical-axis labelling. 'auto' = depth "
                                      "for thickness-only input, elevation once "
                                      "any elevation is given. Presentation "

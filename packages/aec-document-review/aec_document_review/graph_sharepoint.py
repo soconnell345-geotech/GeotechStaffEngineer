@@ -70,10 +70,12 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import http.client
 import json
 import logging
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -111,11 +113,41 @@ BUSY_TRIES = 4
 BUSY_WAIT_MAX_S = 20.0
 #: After a throttled or busy call has failed, later calls are refused
 #: without being sent for as long as the service named, within these bounds
-#: (seconds). A conversation mirror holds the store's lock for all its
-#: files, and every other person's save waits behind it: it must not wait
-#: out each remaining file's sends behind one throttle.
+#: (seconds): the service throttles the app registration as a whole, so
+#: every remaining file of that mirror, and of any other, would only be
+#: refused again. The waits above are taken by the conversation whose call
+#: was throttled and by no other (TA-40: a mirror holds its own
+#: conversation's lock, not a process-wide one).
 BUSY_HOLD_MIN_S = 30.0
 BUSY_HOLD_MAX_S = 300.0
+#: TA-40: how many times one large upload is taken up again after a piece
+#: failed (from the place the service says it expects next), and the pause
+#: before each (seconds).
+RESUME_TRIES = 5
+RESUME_PAUSE_S = 2.0
+#: TA-40: the largest file sent to SharePoint, in MB, unless
+#: ``GEOTECH_SHAREPOINT_MAX_UPLOAD_MB`` names another. A larger file is
+#: not sent; the refusal names the file and the limit. (SharePoint's own
+#: limit is far higher; this one bounds how long one file can hold its
+#: conversation's save.)
+ENV_MAX_UPLOAD_MB = "GEOTECH_SHAREPOINT_MAX_UPLOAD_MB"
+DEFAULT_MAX_UPLOAD_MB = 2048.0
+
+
+def max_upload_bytes() -> int:
+    """The size limit of one upload, in bytes (read where it is used)."""
+    try:
+        mb = float(os.environ.get(ENV_MAX_UPLOAD_MB, "").strip()
+                   or DEFAULT_MAX_UPLOAD_MB)
+    except ValueError:
+        mb = DEFAULT_MAX_UPLOAD_MB
+    if mb <= 0:
+        mb = DEFAULT_MAX_UPLOAD_MB
+    return int(mb * 1024 * 1024)
+
+
+def _mb(size: float) -> str:
+    return f"{size / (1024 * 1024):,.0f} MB"
 
 
 def _retry_after(exc: Any) -> float:
@@ -150,6 +182,19 @@ class GraphError(RuntimeError):
     def __init__(self, message: str, status: Optional[int] = None):
         super().__init__(message)
         self.status = status
+
+
+class FileTooLarge(GraphError):
+    """TA-40: a file above the upload size limit; it was not sent.
+    ``status`` is None: nothing was asked of the service."""
+
+    def __init__(self, name: str, size: int, limit: int):
+        super().__init__(
+            f"'{name}' is {_mb(size)}, above the {_mb(limit)} limit for one "
+            f"file sent to SharePoint ({ENV_MAX_UPLOAD_MB}); it was not "
+            "sent.")
+        self.size = size
+        self.limit = limit
 
 
 class LibraryNotFound(GraphError):
@@ -578,7 +623,19 @@ class GraphFileManager:
 
     The first site is the default: a path with no ``name:`` prefix is on it,
     exactly as when there was only one.
+
+    One manager serves every conversation of the process, several at once
+    (TA-40): its calls keep no state between them but the token and the
+    looked-up site and library ids, which any thread may fill in.
     """
+
+    #: TA-40, read by :class:`aec_document_review.sharepoint_store.SharePointStore`:
+    #: conversations may be mirrored at the same time, each under its own
+    #: lock, and their saves after a turn run in the background.
+    PER_CONVERSATION = True
+    #: TA-40: an upload names its whole path and the service makes the
+    #: folders, so no caller needs to make them first.
+    MAKES_FOLDERS = True
 
     def __init__(self, site_url: Optional[str] = None,
                  tenant_id: Optional[str] = None,
@@ -619,6 +676,7 @@ class GraphFileManager:
         self._timeout = timeout
         self._token: Optional[str] = None
         self._token_expires = 0.0
+        self._token_lock = threading.Lock()
 
     @property
     def site_url(self) -> str:
@@ -638,7 +696,12 @@ class GraphFileManager:
 
     # ------------------------------------------------------------------ auth
     def _get_token(self) -> str:
-        """Client-credentials token for Graph (~1 h), renewed a minute early."""
+        """Client-credentials token for Graph (~1 h), renewed a minute early
+        (by one thread at a time; the others then read the new one)."""
+        with self._token_lock:
+            return self._get_token_locked()
+
+    def _get_token_locked(self) -> str:
         if self._token and time.time() < self._token_expires - 60:
             return self._token
         # Field order: grant type, client id, the credential, scope. With a
@@ -709,6 +772,12 @@ class GraphFileManager:
             except urllib.error.URLError as exc:
                 raise GraphError(f"{req.get_method()} {shown} failed: "
                                  f"{exc.reason}")
+            except (OSError, http.client.HTTPException) as exc:
+                # A timeout (the service took a piece and never answered),
+                # a dropped connection: no status, so an upload in pieces
+                # asks its session where it stands and goes on.
+                raise GraphError(f"{req.get_method()} {shown} failed: "
+                                 f"{type(exc).__name__}: {exc}") from exc
         raise GraphError(f"{req.get_method()} {shown} failed")  # not reached
 
     def _request(self, method: str, url: str, data: Optional[bytes] = None,
@@ -1019,23 +1088,37 @@ class GraphFileManager:
         exists and ``overwrite`` is False (the caller's retry-with-a-new-name
         relies on that). Any other failure raises :class:`GraphError`, as a
         missing local file raises: a caller that does not read the result
-        (the conversation mirror) must not count a refused upload as saved."""
-        with open(local_path, "rb") as fh:
-            content = fh.read()
+        (the conversation mirror) must not count a refused upload as saved.
+
+        TA-40: the upload names its whole path
+        (``PUT .../root:/{path}:/content``, or an upload session by path for
+        a file above ``SIMPLE_UPLOAD_MAX``) and the service makes the
+        missing folders, so no folder is looked up or listed first. A large
+        file is read from disk one piece at a time, and a failed piece is
+        taken up again from where the service says (:meth:`_upload_large`).
+        A file above the size limit (:func:`max_upload_bytes`) is not sent:
+        :class:`FileTooLarge` names it and the limit."""
+        size = os.path.getsize(local_path)
+        limit = max_upload_bytes()
+        if size > limit:
+            raise FileTooLarge(os.path.basename(local_path), size, limit)
         drive_id, rest = self._split_path(path)
-        folder, _, filename = rest.rpartition("/")
         behaviour = "replace" if overwrite else "fail"
         try:
-            parent_id = self._ensure_folder(drive_id, folder)
-            if len(content) <= SIMPLE_UPLOAD_MAX:
-                url = (f"drives/{drive_id}/items/{parent_id}:/"
-                       f"{urllib.parse.quote(filename)}:/content"
-                       f"?@microsoft.graph.conflictBehavior={behaviour}")
-                self._request("PUT", url, data=content,
-                              content_type="application/octet-stream")
-            else:
-                self._upload_large(drive_id, parent_id, filename, content,
-                                   behaviour)
+            try:
+                self._upload_by_path(local_path, size, drive_id, rest,
+                                     behaviour)
+            except GraphError as exc:
+                if exc.status != 404:
+                    raise
+                # The service did not make the folders (not seen on
+                # SharePoint Online, where it does): make them, once, and
+                # send the file again.
+                log.warning("SharePoint upload by path got a 404: making "
+                            "the folders and sending the file again")
+                self._ensure_folder(drive_id, rest.rpartition("/")[0])
+                self._upload_by_path(local_path, size, drive_id, rest,
+                                     behaviour)
             return True
         except GraphError as exc:
             if exc.status == 409 and not overwrite:
@@ -1043,6 +1126,19 @@ class GraphFileManager:
             log.error("SharePoint upload of %s -> %s failed: %s",
                       local_path, path, exc)
             raise
+
+    def _upload_by_path(self, local_path: str, size: int, drive_id: str,
+                        rest: str, behaviour: str) -> None:
+        target = f"drives/{drive_id}/root:/{urllib.parse.quote(rest)}"
+        if size <= SIMPLE_UPLOAD_MAX:
+            with open(local_path, "rb") as fh:
+                content = fh.read(SIMPLE_UPLOAD_MAX + 1)
+            self._request(
+                "PUT", f"{target}:/content"
+                       f"?@microsoft.graph.conflictBehavior={behaviour}",
+                data=content, content_type="application/octet-stream")
+        else:
+            self._upload_large(local_path, size, target, behaviour)
 
     def _ensure_folder(self, drive_id: str, folder: str) -> str:
         parent = self._request("GET", f"drives/{drive_id}/root")["id"]
@@ -1059,22 +1155,57 @@ class GraphFileManager:
             parent = match["id"]
         return parent
 
-    def _upload_large(self, drive_id: str, parent_id: str, filename: str,
-                      content: bytes, behaviour: str) -> None:
+    def _upload_large(self, local_path: str, total: int, target: str,
+                      behaviour: str) -> None:
+        """An upload session by path, the file read from disk one piece
+        (``CHUNK_SIZE``) at a time. A piece that fails is not the end of
+        the upload: the session is asked where it stands
+        (``nextExpectedRanges``) and the upload goes on from there, up to
+        ``RESUME_TRIES`` times; a conflict (409) and a throttled service
+        (whose wait :meth:`_send` has already taken) are not tried again."""
         session = self._request(
-            "POST", f"drives/{drive_id}/items/{parent_id}:/"
-                    f"{urllib.parse.quote(filename)}:/createUploadSession",
+            "POST", f"{target}:/createUploadSession",
             data=json.dumps({"item": {
                 "@microsoft.graph.conflictBehavior": behaviour}}).encode())
-        url, total = session["uploadUrl"], len(content)
-        for start in range(0, total, CHUNK_SIZE):
-            chunk = content[start:start + CHUNK_SIZE]
-            end = start + len(chunk) - 1
-            req = urllib.request.Request(
-                url, data=chunk, method="PUT",
-                headers={"Content-Range": f"bytes {start}-{end}/{total}",
-                         "Content-Length": str(len(chunk))})
-            self._send(req)
+        url = session["uploadUrl"]
+        start, resumes = 0, 0
+        with open(local_path, "rb") as fh:
+            while start < total:
+                fh.seek(start)
+                chunk = fh.read(min(CHUNK_SIZE, total - start))
+                if not chunk:
+                    raise GraphError(
+                        f"'{os.path.basename(local_path)}' changed while it "
+                        "was being sent; it is sent again at the next save")
+                end = start + len(chunk) - 1
+                req = urllib.request.Request(
+                    url, data=chunk, method="PUT",
+                    headers={"Content-Range": f"bytes {start}-{end}/{total}",
+                             "Content-Length": str(len(chunk))})
+                try:
+                    self._send(req)
+                    start = end + 1
+                except GraphError as exc:
+                    if exc.status in (401, 403, 404, 409, 429) \
+                            or resumes >= RESUME_TRIES:
+                        raise
+                    resumes += 1
+                    time.sleep(RESUME_PAUSE_S)
+                    start = self._session_next(url, total, exc)
+
+    def _session_next(self, url: str, total: int, failed: GraphError) -> int:
+        """Where an upload session expects its next byte. Raises ``failed``
+        (the piece's own error) when the session cannot say."""
+        try:
+            state = json.loads(self._send(urllib.request.Request(
+                url, method="GET")) or b"{}")
+            first = str((state.get("nextExpectedRanges") or [""])[0])
+            nxt = int(first.split("-", 1)[0])
+        except (GraphError, ValueError, TypeError, AttributeError):
+            raise failed from None
+        if not 0 <= nxt < total:
+            raise failed
+        return nxt
 
     def download_file(self, path: str, local_path: Optional[str] = None,
                       return_bytes: bool = True, overwrite: bool = False,

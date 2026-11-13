@@ -458,22 +458,39 @@ def describe_method(agent_name: str, method: str, allowed_agents=None) -> dict:
 #: (GM-165).
 _DEFAULTS_ONLY_KEYS = ("applies_when", "when_absent", "default_from")
 
+#: Parameter keys the value check reads (GM-317), given to the model in
+#: words as ``values_note`` (``method_call.values_note``: case and spaces
+#: ignored, "also read as", values not taken and why); the spellings read
+#: but never offered (``hidden_value_aliases``) are left out altogether.
+_VALUE_CHECK_KEYS = ("any_case", "value_aliases", "hidden_value_aliases",
+                     "refused_values")
+
 
 def _documented(info: dict) -> dict:
     """A method's documentation as the model reads it: each parameter's
     ``applies_when`` (GM-119), ``when_absent`` and ``default_from``
     (GM-165), read by ``defaults_used``, are left out, the descriptions
-    saying the same in words."""
+    saying the same in words; the value check's keys (GM-317) are given as
+    one ``values_note`` in words (GM-316 review B3, C14)."""
+    from aec_agent_core.method_call import values_note
     params = info.get("parameters")
+    dropped = _DEFAULTS_ONLY_KEYS + _VALUE_CHECK_KEYS
     if not isinstance(params, dict) or not any(
-            isinstance(s, dict) and set(s) & set(_DEFAULTS_ONLY_KEYS)
+            isinstance(s, dict) and set(s) & set(dropped)
             for s in params.values()):
         return info
-    return {**info, "parameters": {
-        name: ({k: v for k, v in spec.items()
-                if k not in _DEFAULTS_ONLY_KEYS}
-               if isinstance(spec, dict) else spec)
-        for name, spec in params.items()}}
+
+    def _doc(spec):
+        if not isinstance(spec, dict):
+            return spec
+        out = {k: v for k, v in spec.items() if k not in dropped}
+        note = values_note(spec)
+        if note:
+            out["values_note"] = note
+        return out
+
+    return {**info, "parameters": {name: _doc(spec)
+                                   for name, spec in params.items()}}
 
 
 def _unknown_method_error(mod, agent_name: str, method: str,
