@@ -34,6 +34,15 @@ Who is viewing: a Foundry app is not told, so the page runs as on a laptop
 open the app. ``docs/FOUNDRY.md`` in the project's repository says what
 that means for who may open it.
 
+Several people at once: the page still treats the process as shared
+(BACKLOG INF-80). :func:`aec_document_review.identity.current_identity`
+reads ``GEOTECH_DEPLOYMENT=foundry`` (so a Foundry run that starts the page
+another way gets it too) and binds each turn's tools to its own
+conversation's folder: the working folder is always the conversation's
+own, the **Working folder** box is not drawn, and a tool never falls back
+to the process-wide folder of whoever reran last. Nobody is named or
+refused for it.
+
 Plotting code written by the model is off here unless the workspace file
 sets ``GEOTECH_PLOT_CODE=1`` before ``main()``, as on Tiny Apps: one process
 holds every viewer's conversations and the app's settings, a document can ask
