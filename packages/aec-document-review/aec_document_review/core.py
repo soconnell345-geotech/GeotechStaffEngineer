@@ -223,7 +223,9 @@ def assemble_user_message(pending_notes: Iterable[str], user_text: str) -> str:
 ATTACHMENT_NOTE = (
     "This file is now ATTACHED to this conversation — it appears as a download "
     "card in the chat and in the sidebar file list, so the user can already "
-    "open it. Tell the user it is attached; do NOT say you cannot attach files."
+    "open it. Tell the user it is attached; do NOT say you cannot attach files. "
+    "Tell the user the file name; a /tmp path or a sandbox: link would not "
+    "reach them."
 )
 
 
