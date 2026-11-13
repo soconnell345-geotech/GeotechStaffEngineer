@@ -6,12 +6,15 @@ plots". These are those examples, two kinds:
 
 - :data:`EXAMPLES`: one per kind of figure a geotechnical answer or report
   usually needs, each a complete ``plot_data`` parameter set;
-- :data:`CODE_EXAMPLES`: figures ``plot_data`` cannot draw (a structure to
-  scale with its diagrams beside it, panels sharing one elevation axis),
-  each a complete matplotlib script for ``plot_code``'s locked box and the
+- :data:`CODE_EXAMPLES`: figures drawn in code (a structure to scale with
+  its diagrams beside it, panels sharing one elevation axis), each a
+  complete matplotlib script for ``plot_code``'s locked box and the
   ``data`` it reads (BACKLOG GM-97: the owner's conventions for profiles and
   design figures: elevation on the vertical axis, kPa and kN, the wall
-  drawn).
+  drawn). Since BACKLOG GM-315 ``plot_data`` draws the same three figures
+  from ``panels`` (the ``*_panels`` / ``wall_section_pressures`` entries of
+  :data:`EXAMPLES`, built from the scripts' own data), and contours; the
+  scripts stay as the starting point for what it still cannot draw.
 
 Each has what it shows and why it is drawn that way. The figure helper
 (``funhouse_agent/deep/figure_helper.py``) reads them through its
@@ -949,6 +952,398 @@ CODE_EXAMPLES: Dict[str, dict] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# The same figures drawn by plot_data alone (BACKLOG GM-315): ``panels``
+# side by side on one elevation axis, a section to scale, layer bands,
+# filled diagrams, dimension lines and arrows; and contours. Built from the
+# code examples' own made-up numbers, so the two renderings of a figure
+# show one set of values.
+# ---------------------------------------------------------------------------
+
+_BLUE, _RED, _GREEN, _GREY = "#1f4e79", "#c0504d", "#4f8f3a", "#595959"
+
+
+def _at(el: float, els: List[float], xs: List[float]) -> float:
+    """x on a curve given by falling elevations ``els``, at ``el``."""
+    for (e0, x0), (e1, x1) in zip(zip(els, xs), zip(els[1:], xs[1:])):
+        if e1 <= el <= e0 and e0 != e1:
+            return x0 + (x1 - x0) * (e0 - el) / (e0 - e1)
+    return xs[-1] if el < els[-1] else xs[0]
+
+
+def _water(gw: dict, x_line: List[float], x_symbol: float, x_text: float,
+           up: float, size: float = 6.0) -> tuple:
+    """The groundwater in a section or column: its line, the level symbol
+    on it, and its name in the same colour: ``(series, note)``."""
+    el = gw["elevation"]
+    series = [
+        {"x": x_line, "y": [el, el], "style": "line", "color": _BLUE,
+         "line_width": 0.8, "label": "Groundwater"},
+        {"x": [x_symbol], "y": [el + up], "style": "markers",
+         "marker": "triangle-down", "marker_size": size, "color": _BLUE,
+         "label": "Groundwater level symbol"}]
+    note = {"text": gw["label"], "x": x_text, "y": el + up * 1.2,
+            "align": "bottom left", "color": _BLUE, "font_size": 7.5}
+    return series, note
+
+
+def _wall_panels() -> dict:
+    d = CODE_EXAMPLES["wall_pressures"]["data"]
+    wall, hp, dim = d["wall"]["outline"], d["heel_plane"], \
+        d["base_dimension"]
+    water, water_note = _water(d["groundwater"], d["groundwater"]["x"],
+                               d["groundwater"]["symbol_x"],
+                               d["groundwater"]["symbol_x"] + 0.2, 0.12)
+    section = {
+        "kind": "section", "title": d["section_title"],
+        "xlim": d["section_x_range"],
+        "series": [
+            {"x": [p[0] for p in wall], "y": [p[1] for p in wall],
+             "style": "polygon", "color": "#262626", "fill": "#d9d9d9",
+             "fill_opacity": 1.0, "line_width": 1.0, "label": "Wall"},
+            {"x": d["retained_ground"]["x"], "y": d["retained_ground"]["y"],
+             "style": "line", "color": "#404040", "line_width": 1.0,
+             "label": "Retained ground"},
+            {"x": d["front_ground"]["x"], "y": d["front_ground"]["y"],
+             "style": "line", "color": "#404040", "line_width": 1.0,
+             "label": "Ground in front"},
+            *water,
+            {"x": [hp["x"], hp["x"]], "y": hp["elevation"], "style": "line",
+             "line_dash": "dash", "color": _GREY, "line_width": 0.8,
+             "label": "Vertical plane at the back of the heel"}],
+        "annotations": [
+            water_note,
+            {"text": hp["label"], "x": hp["x"] - 0.1,
+             "y": hp["label_elevation"], "rotation": 90, "align": "bottom",
+             "font_size": 7.5}],
+        "dimensions": [
+            {"from": [dim["x"][0], dim["from_elevation"] + 0.05],
+             "to": [dim["x"][1], dim["from_elevation"] + 0.05],
+             "offset": [0, dim["elevation"] - dim["from_elevation"] - 0.05],
+             "text": dim["label"]}]}
+    p_max = d["pressure_axis"]["max_kpa"]
+    panels = [section]
+    for dia in d["diagrams"]:
+        i = max(range(len(dia["kpa"])), key=lambda j: dia["kpa"][j])
+        zr = dia["resultant_elevation"]
+        panels.append({
+            "title": dia["title"], "xlabel": "Pressure (kPa)",
+            "share_x": "pressure", "xlim": [0, p_max],
+            "series": [
+                {"x": dia["kpa"], "y": dia["elevation"], "style": "line",
+                 "color": dia["color"], "line_width": 1.2, "fill_to_x": 0,
+                 "fill_opacity": 0.22,
+                 "label": dia["title"].replace("\n", " ")}],
+            "arrows": [{"from": [0.82 * p_max, zr], "to": [0, zr],
+                        "text": dia["symbol"]}],
+            "annotations": [
+                {"text": f"{dia['kpa'][i]:.1f}", "x": dia["kpa"][i] + 1.0,
+                 "y": dia["elevation"][i], "align": "left", "font_size": 7.5},
+                {"text": f"{dia['symbol']} = "
+                         f"{dia['resultant_kn_per_m']:.1f} kN/m\n"
+                         f"at El. {zr:.2f} m",
+                 "x": p_max / 2, "y": d["resultant_label_elevation"],
+                 "align": "top"}]})
+    return {"panels": panels, "title": d["title"],
+            "ylabel": d["elevation_label"], "ylim": d["elevation_range"],
+            "footnote": d["notes"]}
+
+
+def _bands(layers: List[dict], align: str) -> List[dict]:
+    return [{"top": lay["top"], "bottom": lay["bottom"],
+             "label": lay["name"], "color": lay["color"], "align": align,
+             **({"label_y": lay["label_elevation"]}
+                if "label_elevation" in lay else {})} for lay in layers]
+
+
+def _settlement_panels() -> dict:
+    d = CODE_EXAMPLES["settlement_stress_profile"]["data"]
+    el, s_max = d["elevation"], d["stress_axis"]["max_kpa"]
+    s0, ds, sf = d["initial_kpa"], d["increase_kpa"], d["final_kpa"]
+    tests, lab = d["preconsolidation"]["tests"], d["final_labels"]
+    water, water_note = _water(d["groundwater"], [0, 1], 0.12, 0.22, 0.25,
+                               5.5)
+    column = {
+        "kind": "column", "title": d["column_title"],
+        "bands": _bands(d["layers"], "center"),
+        "series": [
+            {"x": [0, 1], "y": [d["ground_elevation"]] * 2, "style": "line",
+             "color": "#262626", "line_width": 1.0,
+             "label": "Ground surface"}, *water],
+        "annotations": [dict(water_note, y=d["groundwater"]["elevation"]
+                             + 0.15)]}
+
+    def stress(title: str, series: list, notes: list = ()) -> dict:
+        return {"title": title, "xlabel": "Stress (kPa)",
+                "share_x": "stress", "xlim": [0, s_max], "series": series,
+                "annotations": list(notes)}
+
+    def points() -> dict:
+        # separate tests: points, never joined
+        return {"x": tests["kpa"], "y": tests["elevation"],
+                "style": "markers", "marker_open": True, "color": _RED,
+                "label": tests["label"].replace("\n", " ")}
+
+    low = min(range(len(tests["elevation"])),
+              key=lambda j: tests["elevation"][j])
+    titles = d["titles"]
+    panels = [
+        column,
+        stress(titles["initial"], [
+            {"x": s0, "y": el, "style": "line", "color": _GREY,
+             "line_width": 1.4, "label": "Initial vertical effective "
+                                         "stress"}]),
+        stress(titles["preconsolidation"], [points()], [
+            {"text": tests["label"], "x": tests["kpa"][low],
+             "y": tests["elevation"][low] - 0.5, "align": "top",
+             "color": _RED, "font_size": 7.5}]),
+        stress(titles["increase"], [
+            {"x": ds, "y": el, "style": "line", "color": _GREEN,
+             "line_width": 1.4, "label": "Stress increase"}]),
+        stress(titles["final"], [
+            {"x": s0, "y": el, "style": "line", "line_dash": "dash",
+             "color": _GREY, "line_width": 0.8,
+             "label": "Initial vertical effective stress"},
+            {"x": sf, "y": el, "style": "line", "color": _BLUE,
+             "line_width": 1.4, "label": "Final stress"},
+            points()], [
+            {"text": lab["initial"],
+             "x": _at(lab["initial_at"], el, s0) - 6,
+             "y": lab["initial_at"], "align": "right", "color": _GREY,
+             "font_size": 7.5},
+            {"text": lab["final"], "x": _at(lab["final_at"], el, sf) + 6,
+             "y": lab["final_at"], "align": "left", "color": _BLUE,
+             "font_size": 7.5},
+            {"text": lab["preconsolidation"],
+             "x": lab["preconsolidation_x"] + 10,
+             "y": lab["preconsolidation_at"], "align": "left",
+             "color": _RED, "font_size": 7.5}]),
+    ]
+    return {"panels": panels, "title": d["title"],
+            "ylabel": d["elevation_label"], "ylim": d["elevation_range"],
+            "footnote": d["notes"]}
+
+
+def _pile_panels() -> dict:
+    d = CODE_EXAMPLES["pile_design_profile"]["data"]
+    pile, npl, titles = d["pile"], d["neutral_plane"], d["titles"]
+    r, q, fs = d["resistance"], d["load"], d["unit_shaft"]
+    toe, head = pile["toe_elevation"], pile["head_elevation"]
+    water, water_note = _water(d["groundwater"], [0, 1], 0.1, 0.18, 0.3,
+                               5.5)
+    ratios = d["panel_width_ratios"]
+
+    def notes(labels: List[dict]) -> List[dict]:
+        return [{"text": lab["text"], "x": lab["x"], "y": lab["elevation"],
+                 "align": lab.get("ha", "left"), "font_size": 7.5,
+                 **({"color": lab["color"]} if "color" in lab else {})}
+                for lab in labels]
+
+    column = {
+        "kind": "column", "title": titles["column"], "width": 1.2,
+        "bands": _bands(d["layers"], "left"),
+        "series": [
+            {"x": [0, 1], "y": [d["ground_elevation"]] * 2, "style": "line",
+             "color": "#262626", "line_width": 1.0,
+             "label": "Ground surface"}, *water,
+            {"x": [pile["x"][0], pile["x"][1], pile["x"][1], pile["x"][0]],
+             "y": [toe, toe, head, head], "style": "polygon",
+             "color": "#262626", "fill": "#8c8c8c", "fill_opacity": 1.0,
+             "line_width": 0.8, "label": "Pile"}],
+        "annotations": [dict(water_note, y=d["groundwater"]["elevation"]
+                             + 0.18)]}
+    in_pile = [min(a, b) for a, b in zip(q["load_curve_kn"],
+                                         q["resistance_curve_kn"])]
+    force = {"share_x": "force", "xlim": [0, d["force_axis"]["max"]],
+             "xlabel": d["force_axis"]["label"]}
+    panels = [
+        column,
+        {"title": titles["unit_shaft"], "width": ratios[0],
+         "xlabel": d["stress_axis"]["label"],
+         "xlim": [0, d["stress_axis"]["max"]],
+         "series": [{"x": fs["kpa"], "y": fs["elevation"], "style": "line",
+                     "color": _GREY, "line_width": 1.4,
+                     "label": "Unit shaft resistance"}]},
+        {"title": titles["resistance"], "width": ratios[1], **force,
+         "series": [
+             {"x": r["shaft_kn"] + [r["nominal_kn"]],
+              "y": r["elevation"] + [toe], "style": "line", "color": _GREY,
+              "line_width": 1.4, "label": "Axial resistance"},
+             {"x": [r["nominal_kn"]], "y": [toe], "style": "markers",
+              "marker_size": 5, "color": _RED,
+              "label": "Nominal resistance"}],
+         "annotations": notes(r["labels"])},
+        {"title": titles["load"], "width": ratios[2], **force,
+         "series": [
+             {"x": q["load_curve_kn"], "y": q["elevation"], "style": "line",
+              "color": _BLUE, "line_width": 0.7, "label": "Load curve"},
+             {"x": q["resistance_curve_kn"], "y": q["elevation"],
+              "style": "line", "color": _RED, "line_width": 0.7,
+              "label": "Resistance curve"},
+             {"x": in_pile, "y": q["elevation"], "style": "line",
+              "color": "#1a1a1a", "line_width": 2.0,
+              "label": "Axial load in the pile"},
+             {"x": [npl["max_load_kn"]], "y": [npl["elevation"]],
+              "style": "markers", "marker_size": 5, "color": "#1a1a1a",
+              "label": "Largest load in the pile"}],
+         "annotations": notes(q["labels"])},
+    ]
+    return {"panels": panels, "title": d["title"],
+            "ylabel": d["elevation_label"], "ylim": d["elevation_range"],
+            "hlines": [{"value": npl["elevation"], "label": ""}],
+            "footnote": d["notes"]}
+
+
+#: The contour example's borings: name, x, y (m, local grid) and the
+#: elevation of the top of rock (m). Made up: rock falls to the south-east.
+_ROCK_BORINGS = [
+    ("B-1", 4, 34, 96.8), ("B-2", 20, 36, 96.1), ("B-3", 38, 35, 95.0),
+    ("B-4", 56, 36, 93.6), ("B-5", 6, 20, 96.2), ("B-6", 22, 21, 95.3),
+    ("B-7", 39, 19, 93.9), ("B-8", 55, 21, 92.4), ("B-9", 5, 5, 95.1),
+    ("B-10", 21, 4, 94.0), ("B-11", 40, 5, 92.3), ("B-12", 56, 4, 90.8),
+]
+
+#: A plot_data redraw of a plot_code script, by the script's name. Where the
+#: helper has no plot_code, a brief is matched to the redraw under the
+#: script's name too, so "a pile design profile" finds ``pile_design_panels``
+#: (GM-315; ``figure_helper.nearest_example``).
+REDRAWS = {
+    "wall_section_pressures": "wall_pressures",
+    "settlement_stress_panels": "settlement_stress_profile",
+    "pile_design_panels": "pile_design_profile",
+}
+
+EXAMPLES.update({
+    "wall_section_pressures": {
+        "shows": "A cantilever retaining wall drawn to scale with its "
+                 "active earth pressure, surcharge pressure and water "
+                 "pressure as separate diagrams beside it on one elevation "
+                 "axis, each resultant and its elevation marked: panels, "
+                 "with no plot code.",
+        "why": [
+            "panels: the first is kind 'section', drawn to scale (its "
+            "width follows from its metres across; the shared elevation "
+            "axis is its scale and it has no x axis); the wall is a filled "
+            "polygon, the ground and the groundwater are lines, and the "
+            "base width is a dimension line set off below the base "
+            "(dimensions, with its unit in the text).",
+            "Each pressure is its own chart panel sharing the elevation "
+            "axis and, through share_x, ONE pressure scale in kPa, so "
+            "their sizes compare truly (small multiples). fill_to_x: 0 "
+            "fills the diagram between its line and zero.",
+            "Each resultant is an arrow (arrows) at its elevation, from "
+            "its tail to the wall, the way the pressure acts, with its "
+            "symbol at the tail; its value in kN per metre run of wall and "
+            "its elevation are a note under the diagram, and the largest "
+            "ordinate is a note beside it.",
+            "The plane the pressures act on is a dashed line named along "
+            "its length (a note with rotation 90); the soil properties, "
+            "the surcharge and what was left out are in the footnote.",
+            "When the wall's configuration is not known, leave the section "
+            "panel out: the first diagram then carries the elevation axis; "
+            "mark the ground surface and the groundwater as hlines across "
+            "the diagrams and say in the title that the wall is not drawn.",
+        ],
+        "params": _wall_panels(),
+    },
+    "settlement_stress_panels": {
+        "shows": "A settlement profile: the soil column with the fill that "
+                 "loads it, then the initial vertical effective stress, the "
+                 "preconsolidation stress (consolidation tests), the stress "
+                 "increase, and the final stress against the "
+                 "preconsolidation stress, side by side on one elevation "
+                 "axis: panels, with no plot code.",
+        "why": [
+            "The first panel is kind 'column': layer bands (bands) named "
+            "inside, the ground surface and the groundwater; x runs 0 to 1 "
+            "across it and it has no x axis. Every panel shares its "
+            "elevation axis, so a layer boundary reads straight across.",
+            "The four stress panels share ONE scale in kPa (share_x): the "
+            "stress increase is honestly small beside the effective "
+            "stress.",
+            "Preconsolidation stress from tests is POINTS (style markers, "
+            "open), never joined, named by the test that gave it; an "
+            "assumed design profile would be a line named as assumed.",
+            "In the last panel each line is named on the line with a note "
+            "in the line's colour; no legend.",
+            "The symbols are defined in the panel titles and the footnote "
+            "gives the load, how the stress increase was found and the "
+            "unit weights.",
+        ],
+        "params": _settlement_panels(),
+    },
+    "pile_design_panels": {
+        "shows": "A pile design profile: the soil column with the pile "
+                 "drawn, then unit shaft resistance, the axial resistance "
+                 "accumulated down the pile, and the axial load in the pile "
+                 "with the neutral plane, on one elevation axis: panels, "
+                 "with no plot code.",
+        "why": [
+            "The column panel has the layer bands named at the left and "
+            "the pile as a filled polygon at its true head and toe "
+            "elevations (x in fractions of the column: its width is not to "
+            "scale, and the footnote says so).",
+            "The neutral plane is ONE reference line across every panel "
+            "(hlines), named once by a note with its elevation.",
+            "Unit shaft resistance is one line stepping at the layer "
+            "boundaries (each boundary elevation listed twice). The axial "
+            "resistance steps out by the toe resistance at the toe; the "
+            "nominal resistance the text quotes is a marked point with "
+            "its value.",
+            "The axial load in the pile is the heavy line, the lower of "
+            "the load curve and the resistance curve; the rest of each "
+            "curve is thin. The two force panels share one scale "
+            "(share_x) and get more width than the stress panel (width).",
+        ],
+        "params": _pile_panels(),
+    },
+    "contour_top_of_rock": {
+        "shows": "Contours of the top of rock under a building footprint, "
+                 "from the elevations found at twelve borings, drawn to "
+                 "scale as a plan.",
+        "why": [
+            "contour from scattered points: x, y and z are the borings' "
+            "own values, joined into triangles, so nothing is drawn "
+            "outside the borings and no grid of values is made up. Give a "
+            "grid (z as rows) only when an analysis produced one.",
+            "Lines, each labelled with its elevation on the line; the "
+            "levels are chosen round numbers (levels) and the quantity "
+            "and unit are named once (label), in the legend.",
+            "plan_view: a plan is a drawing, to scale, with a scale bar, "
+            "the coordinate system under it and a north arrow; the "
+            "footprint is an outline over the contours and each boring is "
+            "a named point with the elevation it found in its hover text.",
+            "The footnote says how the contours were drawn, so nobody "
+            "reads them as measured between the borings.",
+        ],
+        "params": {
+            "contour": {
+                "x": [b[1] for b in _ROCK_BORINGS],
+                "y": [b[2] for b in _ROCK_BORINGS],
+                "z": [b[3] for b in _ROCK_BORINGS],
+                "levels": [92, 93, 94, 95, 96],
+                "label": "Top of rock elevation (m, site datum)"},
+            "series": [
+                {"x": [14, 46, 46, 14], "y": [10, 10, 30, 30],
+                 "style": "polygon", "color": "#262626", "line_width": 1.2,
+                 "label": "Building footprint"},
+                {"x": [b[1] for b in _ROCK_BORINGS],
+                 "y": [b[2] for b in _ROCK_BORINGS], "style": "markers",
+                 "marker": "circle", "color": _BLUE, "label": "Boring",
+                 "labels": [b[0] for b in _ROCK_BORINGS],
+                 "hover": [f"{b[0]}<br>top of rock El. {b[3]:.1f} m"
+                           for b in _ROCK_BORINGS]}],
+            "plan_view": True, "north_deg": 0,
+            "title": "Top of rock under the building, from the borings",
+            "xlabel": "x and y in metres, local site grid",
+            "footnote": "Contours joined in straight lines between the "
+                        "twelve borings (triangulated); the rock surface "
+                        "between borings is not measured.",
+        },
+    },
+})
+
+
 def example_names() -> List[str]:
     """The ``plot_data`` examples."""
     return list(EXAMPLES)
@@ -982,7 +1377,9 @@ def render_examples(out_dir: str, names: Optional[List[str]] = None) -> dict:
     os.makedirs(out_dir, exist_ok=True)
     paths = {}
     for name in names or example_names():
-        res = render_data_plot(**example(name)["params"], interactive=False)
+        params = dict(example(name)["params"])
+        res = render_data_plot(params.pop("series", None), **params,
+                               interactive=False)
         path = os.path.join(out_dir, f"example_{name}.png")
         with open(path, "wb") as fh:
             fh.write(res.png_bytes)

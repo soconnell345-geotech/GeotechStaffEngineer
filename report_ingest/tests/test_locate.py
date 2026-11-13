@@ -926,6 +926,55 @@ def test_a_horizontal_tables_test_stays_on_its_samples_row(opened):
         assert placement.bbox[2] < 100          # the label, as today
 
 
+#: one test's sheet: its sample named in a heading line, its results on a
+#: row of their own further down (RI-99 (3))
+ATTERBERG_ONE = [
+    (72, 60, "ATTERBERG LIMITS TEST RESULTS"),
+    (72, 90, "Boring:"), (120, 90, "TB-4"), (200, 90, "Sample:"),
+    (250, 90, "S-2"), (320, 90, "Depth (ft):"), (390, 90, "5.0"),
+    (72, 150, "Liquid Limit"), (200, 150, "Plastic Limit"),
+    (330, 150, "Plasticity Index"),
+    (72, 164, "41"), (200, 164, "19"), (330, 164, "22"),
+]
+#: the same sheet with each result on a line of its own
+ATTERBERG_ONE_LINES = ATTERBERG_ONE[:7] + [
+    (72, 150, "Liquid Limit"), (200, 150, "41"),
+    (72, 164, "Plastic Limit"), (200, 164, "19"),
+    (72, 178, "Plasticity Index"), (200, 178, "22"),
+]
+
+
+def test_a_sample_named_apart_from_its_results_lands_on_the_results(opened):
+    """RI-99 (3): the box a reviewer sees is where the values are printed,
+    not the heading line that names the sample."""
+    doc, words = opened([ATTERBERG_ONE])
+    tests = [_lab("TB-4", 5.0, 41, 19, 22, sample="S-2")]
+    got = place_lab_tests(words, tests).items[0]
+    assert (got.status, got.anchor) == (PLACED, "sample results")
+    assert abs(_middle(got.bbox) - 161) < 5         # the row of 41 19 22
+    assert not got.page_level
+
+
+def test_a_sample_named_apart_moves_to_the_page_printing_it(opened):
+    """The anchor reads the test's own label, so the test still moves to
+    another page of its call by it, as it did by the label."""
+    doc, words = opened([[(72, 60, "MADE-UP COVER SHEET")], ATTERBERG_ONE])
+    tests = [_lab("TB-4", 5.0, 41, 19, 22, sample="S-2")]
+    got = place_lab_tests(words, tests, pages=[0, 1]).items[0]
+    assert (got.status, got.page, got.anchor) == (MOVED, 1, "sample results")
+    assert abs(_middle(got.bbox) - 161) < 5
+
+
+def test_results_on_no_one_row_keep_the_samples_label(opened):
+    """Each result on a line of its own: no one row is the test's, and the
+    label's line is its place, as today."""
+    doc, words = opened([ATTERBERG_ONE_LINES])
+    tests = [_lab("TB-4", 5.0, 41, 19, 22, sample="S-2")]
+    got = place_lab_tests(words, tests).items[0]
+    assert (got.status, got.anchor) == (PLACED, "sample label")
+    assert abs(_middle(got.bbox) - 87) < 5
+
+
 def test_a_table_of_unclear_orientation_keeps_todays_place(opened):
     # one other sample label across, one down: neither way is clear
     doc, words = opened([[

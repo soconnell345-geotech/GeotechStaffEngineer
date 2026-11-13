@@ -1257,9 +1257,20 @@ MODULE_NARRATIVE: dict[str, dict] = {
 
     "dxf_export": {
         "problems": "Send a cross-section built or checked in the toolkit back to CAD: write the surface, "
-            "soil boundaries, water table, soil nails, and annotations to a DXF.",
+            "soil boundaries, water table, soil nails, and annotations to a DXF. "
+            "Draw a sheet: a typed description of a drawing (outlines, bars, dimensions, callouts, notes, "
+            "a table) written by fixed code as a DXF with real dimension, hatch and leader objects, and "
+            "the same drawing as a PDF sheet and a PNG. The first drawing is the reinforced cantilever "
+            "retaining wall section.",
         "methods": [
             "Geometry-to-DXF export of surface, boundaries, GWT, soil nails, and text annotations.",
+            "Drawing sheets (<code>draw_sheet</code>, <code>draw_wall_section</code>): model space in "
+            "millimetres at true size, the sheet drawn round it at a standard scale the code chooses; "
+            "the PDF page and the PNG are drawn from the DXF itself. A dimension prints its own "
+            "measurement.",
+            "The wall section turns a hooked stem bar toward the opposite face of the stem, the correct "
+            "orientation of USACE EM 1110-2-2104 (2023) Figure 2-1; the hook&rsquo;s bend and tail are "
+            "schematic.",
             "References: the ezdxf library (installed with the app).",
         ],
         "limits": [],
