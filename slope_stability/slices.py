@@ -341,7 +341,9 @@ def slice_breaks(geom: SlopeGeometry, slip, x_entry: float,
             L.bottom_at(x) for L in geom.soil_layers) + 1e-9
 
     for layer in geom.soil_layers:
-        out += crossings_of([], layer.top_at)
+        tpts = layer.top_boundary_points
+        out += crossings_of([p[0] for p in tpts] if tpts else [],
+                            layer.top_at)
         bpts = layer.bottom_boundary_points
         out += [x for x in crossings_of([p[0] for p in bpts] if bpts else [],
                                         layer.bottom_at)
@@ -786,20 +788,17 @@ def _compute_slice_weight(geom: SlopeGeometry,
                           gwt_elev: Optional[float]) -> float:
     """Compute weight of a single slice through multiple soil layers.
 
-    Traverses layers from top to bottom within the slice height,
-    using gamma above GWT and gamma_sat below GWT.
+    Each stretch of the column at the slice's mid-point is weighed once,
+    with the layer that holds it (``SlopeGeometry.column_at``: where
+    layers overlap, the first listed), using gamma above GWT and gamma_sat
+    below GWT.
     """
     weight = 0.0
 
-    # Collect layers that overlap with (z_base, z_top)
-    for layer in geom.soil_layers:
-        # Clip layer to slice elevation range
-        lay_top = min(layer.top_at(x_mid), z_top)
-        lay_bot = max(layer.bottom_at(x_mid), z_base)
-
-        if lay_top <= lay_bot:
-            continue
-
+    # One material per point (GM-140 step 1): each stretch of the column
+    # with the one layer that holds it (``SlopeGeometry.column_at``), the
+    # lookup the strength at the base uses.
+    for layer, lay_bot, lay_top in geom.column_at(x_mid, z_base, z_top):
         layer_thickness = lay_top - lay_bot
 
         if gwt_elev is not None:

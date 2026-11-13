@@ -2726,7 +2726,7 @@
       "gwt_depth_m": 2.0,
       "amax_g": 0.3,
       "m_w": 7.0,
-      "min_fos": 0.435,
+      "min_fos": 0.426,
       "n_liquefiable": 4,
       "layer_results": [
         {
@@ -2764,14 +2764,14 @@
           "N1_60": 10.0,
           "N1_60cs": 10.4,
           "FC_pct": 8.0,
-          "sigma_v_kPa": 171.0,
-          "sigma_v_eff_kPa": 102.3,
+          "sigma_v_kPa": 165.0,
+          "sigma_v_eff_kPa": 96.3,
           "rd": 0.8804,
           "MSF": 1.035,
-          "K_sigma": 0.999,
-          "CSR": 0.2869,
-          "CRR": 0.1247,
-          "FOS_liq": 0.435,
+          "K_sigma": 1.004,
+          "CSR": 0.2941,
+          "CRR": 0.1254,
+          "FOS_liq": 0.426,
           "liquefiable": true
         },
         {
@@ -2779,14 +2779,14 @@
           "N1_60": 18.0,
           "N1_60cs": 22.5,
           "FC_pct": 20.0,
-          "sigma_v_kPa": 228.0,
-          "sigma_v_eff_kPa": 129.9,
+          "sigma_v_kPa": 222.0,
+          "sigma_v_eff_kPa": 123.9,
           "rd": 0.8261,
           "MSF": 1.106,
-          "K_sigma": 0.963,
-          "CSR": 0.2827,
-          "CRR": 0.2562,
-          "FOS_liq": 0.906,
+          "K_sigma": 0.97,
+          "CSR": 0.2886,
+          "CRR": 0.258,
+          "FOS_liq": 0.894,
           "liquefiable": true
         }
       ],
@@ -2808,9 +2808,9 @@
         },
         {
           "what": "total vertical stress",
-          "chosen": "gamma x depth, each depth's own gamma",
+          "chosen": "summed through the layers above",
           "how": "module",
-          "basis": "the unit weight given at a depth applies over the whole depth above it; layers above with another unit weight are not summed"
+          "basis": "each gamma applies from the previous evaluation depth (the ground surface for the first) down to its own depth: sigma_v(z_k) = sum of gamma_i x h_i. sigma_v is the total vertical overburden of the simplified procedure's CSR (FHWA GEC-13 Vol I Eq. 5-9). The same rule on both SPT procedures (bi2014 and nceer2001)"
         }
       ],
       "defaults_used": {

@@ -7,12 +7,15 @@ assumption. Includes group efficiency and p-multiplier corrections.
 ## References
 - FHWA GEC-12 (FHWA-NHI-16-009) Vol. I ch. 7: group efficiency (Sec.
   7.2.2, Eq. 7-35), block failure (Eqs. 7-36, 7-37, Fig. 7-31), group
-  settlement (Eqs. 7-50 to 7-52; Sec. 7.3.5.3), p-multipliers (Sec.
+  settlement (Meyerhof, Eqs. 7-50 to 7-52; the equivalent footing of Fig.
+  7-44 and Eq. 7-55; a group in cohesive soil settles by consolidation,
+  Sec. 7.3.5.3, not worked here), p-multipliers (Sec.
   7.3.7.6, AASHTO as printed pp. 367 and 370). Vol. III Appendix D works
   the North Abutment, Pier 2 and South Abutment (V-005, V-060).
 - UFC 3-220-20 (2025) ch. 6: Eq. 6-37, Table 6-26 (group efficiency
   factors by pile type), Eqs. 6-38, 6-39 (block failure), Sec. 6-5.8.4
-  (equivalent footing, to 10 % of the bearing stress; App. B-5.7, as
+  (equivalent footing, Eq. 6-54 for coarse-grained soil, pp. 448-449,
+  to 10 % of the bearing stress; App. B-5.7, as
   GEC-12 step 1c, to 10 % of the existing vertical effective stress), Table 6-38
   (AASHTO extended to 6b; Mokwa 1999). Appendix B-5.4 and Table B-32 (V-060).
 - USACE EM 1110-2-2906 and CPGA (ITL-89-4): the rigid-cap 6-DOF method.
@@ -71,13 +74,86 @@ stiffness assembly, and pile-force back-calc):
   the +y side; +Mz twists counterclockwise in plan (viewed from above).**
 - Simple method: `P_i = Vz/n + My*x_i/Sx2 - Mx*y_i/Sy2` (note the minus on
   Mx — pre-v5.1 the code used `+ Mx*y_i/Sy2`, which is not realizable in
-  any right-handed frame together with the +My term).
+  any right-handed frame together with the +My term). GEC-12 Vol I
+  Sec. 8.8 Step 3 prints it as Eq. 8-79 (p. 468), as the maximum pile
+  load with the terms added (signs here by the module's convention), the
+  vertical load including the cap's and the soil's weight (Wc, Ws: Vz
+  here is all of it; the tool adds none), x and y measured there from the
+  centre of the column, which carries the loads.
+- The product term (GM-319 re-check, the lead's call, for the owner to
+  revisit): Eq. 8-79 gives back Mx and My only where SUM dx dy = 0 about
+  the centroid (a layout symmetric about one of its centroidal axes). A
+  group that has lost a corner pile, or an L-shaped cap, is not: there the
+  general rigid-cap form is used, P = Vz/n + a dx + b dy with
+  a = (My Syy + Mx Sxy)/D, b = -(Mx Sxx + My Sxy)/D, D = Sxx Syy - Sxy^2
+  (Sxx = SUM dx^2, Syy = SUM dy^2, Sxy = SUM dx dy; `simple_load_plane`).
+  Eq. 8-79 is its case Sxy = 0, so every symmetric layout keeps its
+  numbers; |Sxy| at or below 1e-9 of sqrt(Sxx Syy) is taken as zero
+  (`PRODUCT_TOL`). Basis: statics, the equilibrium of a rigid cap on
+  pinned piles of equal axial stiffness; it equals the 6-DOF method with
+  equal ka. The result's notes and the calc package say when it is used.
+  Before: a 2 x 3 group at 1.5 m less a corner, Vz 2000 kN, Mx and My
+  300 kN-m, gave 409.5 / 481.0 / 552.4 / 242.9 / 314.3 kN (moments about
+  the centroid My 450 and Mx 364); now 426.7 / 466.7 / 506.7 / 280.0 /
+  320.0 kN. Piles on one line not along x or y carry the moment across
+  the line only; one about the line is refused.
+- Where the simple method takes the loads (GM-319 review): Vz, Mx and My
+  are taken to act at the centroid of the piles (xc, yc), each pile's x
+  and y measured from it; a load applied at another point (xa, ya) needs
+  its moment about the centroid added, Vz x (xa - xc) to My and
+  -Vz x (ya - yc) to Mx (+My compresses the +x side, +Mx uplifts the +y
+  side). A centroid more than 1 mm from the origin of the coordinates is
+  warned of, and the warning says `pile_group_6dof` takes its loads at the
+  origin. Basis: statics of the rigid cap (with distances from the
+  centroid SUM(x_i - xc) = 0, so the forces sum to Vz; with the product
+  term they give back Mx and My); no held reference prints the distances from the piles' centroid,
+  and Eq. 8-79's centre of the column is that point only when the column
+  stands over it. Before, x and y were measured from the origin: piles at
+  x = -1, 1, 3 m with Vz 900 kN and My 200 kN-m gave 281.8, 318.2 and
+  354.5 kN (sum 954.5); now 250, 300 and 350 kN. A layout centred on the
+  origin gives the same numbers as before. The result gives `centroid_m`,
+  a note, and `warnings` when off the origin; with equal stiffness, dz is
+  reported at the origin (the kinematics above), so the cap displacements
+  equal the 6-DOF method's for the same loads moved to the origin; a note
+  names the point dz is reported at and the settlement under the
+  centroid.
+- Where the 6-DOF method takes the loads (GM-319 re-check): Vx, Vy, Vz,
+  Mx, My and Mz act at the origin of the coordinates (x = 0, y = 0), at
+  the cap, the point the piles' x and y are measured from, not at the
+  piles' centroid (its kinematics use x and y as given); a load applied
+  at another point (xa, ya) needs its moment about the origin added,
+  Vz x xa to My, -Vz x ya to Mx and xa x Vy - ya x Vx to Mz. The tool's
+  description and loads say so, and its result's notes, naming the piles'
+  centroid (before, nothing did: an off-centre layout with Vz 1800 kN,
+  Mx 90 and My -120 kN-m gave a 341.7 kN maximum in the simple tool and
+  1091.7 kN in the 6-DOF tool).
 - 6-DOF: K = sum(B^T k B) with rigid-cap kinematics
   `ux = dx - rz*y`, `uy = dy + rz*x`, `s = dz - rx*y + ry*x`; the same B
   back-calculates pile forces, so they equilibrate the applied loads.
-  In-plane kxy and lateral-torsion couplings are assembled; the battered
-  kxz/kyz force<->rotation couplings remain out of scope (PG-1 limitation,
-  documented in the docstring).
+  Each pile is an axial spring ka along its axis and a lateral spring kl
+  across it, pinned to the cap; in the global axes its head stiffness is
+  k = kl*I + (ka - kl)*l*l^T, l the direction cosines (the pile's stiffness
+  "transformed to global coordinates", EM 1110-2-2906 para. 4-5b(2)). Since
+  GM-319 all of it is assembled, the kxz/kyz terms a batter gives included
+  (before, they were left at zero and a battered pile's axial force did not
+  balance the applied loads). With kl = 0 a statically determinate group
+  returns the forces statics gives (UFC 3-220-20 Sec. 6-6.3: batter piles
+  carrying axial load only). Still left out, and said in the result's
+  `notes`: any moment or torsional stiffness of a pile's own head.
+- Simple method (GM-319): equal vertical piles only. A battered pile or
+  unequal `axial_stiffness` is refused. Cap dz, rx, ry are worked out only
+  when every pile carries the same stiffness; otherwise
+  `cap_displacements` is empty and `notes` says so (never zeros).
+- Piles on one line (GM-319 review): a non-zero Mx with every pile on
+  y = 0, or My with every pile on x = 0, is refused by both methods:
+  piles pinned to the cap on one line carry no moment about it (before,
+  the simple method skipped the term without a word). The simple method
+  refuses it on any one line (a single row at y = 2 m cannot carry Mx
+  either); the 6-DOF method, whose loads act at the origin, finds a single
+  row off the origin singular and says so. A zero moment runs.
+- Batter: the direction cosines are (sin batter_x, sin batter_y, the
+  rest); sin²(batter_x) + sin²(batter_y) at or above 1 is refused (before,
+  lz was set to 0 and the vector was not of unit length).
 
 ## Group efficiency (GM-286)
 - eta_g is read from the printed rows, linear between the printed spacings;
@@ -140,10 +216,23 @@ stiffness assembly, and pile-force back-calc):
   App. B-5.7 (p. 641) take 10 % of the existing vertical effective stress;
   the function takes no effective-stress profile, so that depth is given
   as `influence_depth_m`, and the result's `choices` say so.
+- Equivalent-footing settlement, the soil (GM-319 review): UFC Eq. 6-54
+  is printed for the elastic compression of coarse-grained soil (pp.
+  448-449). The tool says so; a group in cohesive soil is sent to
+  consolidation (GEC-12 Sec. 7.3.5.3; `consolidation_settlement`). Poisson's
+  ratio is accepted from 0 to below 0.5 (no printed basis for a lower
+  limit); above 0.40, the top of GEC-5 Table 8-10's 0.2 to 0.4 for sands
+  and gravels (p. 8-26), the result warns. With Es and nu given, the
+  result's `choices` state M and M/Es. Spacing below the pile diameter
+  and a `num_sublayers` that is not a whole number of 1 or more are
+  refused.
 
 ## Failure modes / guards (PG-1, PG-3, v5.0-5.1)
 - `analyze_group_6dof` raises `ValueError` if a loaded DOF has no stiffness
-  (e.g. lateral load on vertical piles without `lateral_stiffness`);
+  (e.g. lateral load on vertical piles without `lateral_stiffness`, or a
+  moment about the one line every pile is on), saying for each load why;
   unloaded unsupported DOFs are statically condensed.
 - `analyze_vertical_group_simple` warns (`UserWarning`) if called with
-  nonzero Vx/Vy/Mz, which it ignores by design.
+  nonzero Vx/Vy/Mz, which it ignores by design (the agent's tool refuses
+  them), and raises on a battered pile or unequal stiffness (GM-319) and
+  on a moment about the one line every pile is on (GM-319 review).

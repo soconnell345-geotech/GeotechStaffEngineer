@@ -57,7 +57,7 @@ __all__ = [
     "UNITLESS_FIELDS", "STRESS_FIELDS", "KIND_FIELDS", "unit_printed", "G",
     "MASS_DENSITY_UNITS", "is_mass_density", "read_as_stress",
     "Provenance", "Alternative", "Quantity", "Project", "DrillingDetails",
-    "Layer", "Sample",
+    "Layer", "LayerNote", "LAYER_INTERVAL_FIELDS", "Sample",
     "PitDimensions", "CPTPoint", "CPTData", "DCPPoint", "DCPData",
     "SPT", "WaterLevel", "LabTest", "lab_hole", "Investigation",
     "hole_label", "NarrativeFacts",
@@ -75,7 +75,7 @@ __all__ = [
     "Citation", "Mention", "BearingValue", "Stratum",
     "DOCUMENT_TYPE_VALUES", "PROPERTY_TYPE_VALUES", "PROJECT_PHASE_VALUES",
     "LIQUEFACTION_VALUES", "EARTH_HAZARD_VALUES", "YES_NO_UNCLEAR",
-    "OUTSIDE_PROJECT_VALUES",
+    "OUTSIDE_PROJECT_VALUES", "SOIL_CORROSION_VALUES",
     "GENERAL_FIELDS", "NATURAL_HAZARD_FIELDS", "SUMMARY_FIELDS",
     "SUMMARY_WORD_LIMITS",
     # the typed laboratory results (WP3)
@@ -158,6 +158,13 @@ __all__ = [
 #:
 #: ``ResumedSteps.steps`` gaining ``question_list`` (BACKLOG RI-101's
 #: review) adds a value no older record holds, as ``not_measured`` did.
+#:
+#: ``Layer.top_elevation``, ``notes``, ``top_line``,
+#: ``top_line_full_width``, ``stratum_label``, ``stratum_label_source`` and
+#: ``stratum_label_carried`` (BACKLOG RI-103: every drawn line an interval)
+#: are NOT a bump: each is optional, set only by a model-first log reading
+#: under GEOTECH_INGEST_LOG_INTERVALS (off by default), and left out of the
+#: written record when empty.
 SCHEMA_VERSION = "4.0"
 
 
@@ -1102,6 +1109,34 @@ class DrillingDetails(BaseModel):
     prov: List[Provenance] = Field(default_factory=list)
 
 
+class LayerNote(BaseModel):
+    """A change a log WRITES inside an interval without drawing a line
+    across its soil column: "wet below 7 ft", "as above, but brown",
+    "becoming gray at 3.5 ft" (BACKLOG RI-103).
+
+    A note is never an interval of its own, and a drawn line is never a
+    note: the log's draughtsman chose which it was, and the record keeps
+    the choice.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    depth: Optional[Quantity] = Field(
+        default=None,
+        description="the depth the note is written for, in the log's depth "
+                    "unit; None when the note states none ('as above, but "
+                    "brown')")
+    text: str = Field(description="the note's words, as printed")
+    prov: Optional[Provenance] = None
+
+    @model_serializer(mode="wrap")
+    def _leave_out_unset_depth(self, handler):  # type: ignore[no-untyped-def]
+        out = handler(self)
+        if isinstance(out, dict) and out.get("depth") is None:
+            out.pop("depth", None)
+        return out
+
+
 class Layer(BaseModel):
     """One described stratum: its top, its bottom and what it is."""
 
@@ -1124,6 +1159,71 @@ class Layer(BaseModel):
     color: str = Field(default="", description="as printed")
     moisture: str = Field(default="", description="as printed")
     prov: Optional[Provenance] = None
+    #: BACKLOG RI-103, filled only by a model-first log reading made under
+    #: GEOTECH_INGEST_LOG_INTERVALS (:mod:`report_ingest.log_intervals`),
+    #: where a layer is one interval between two lines the log draws across
+    #: its soil column. Each is left out of the written record when empty,
+    #: so a record without them is written as it always was.
+    top_elevation: Optional[Quantity] = Field(
+        default=None,
+        description="the elevation the log prints for the top of this "
+                    "interval, in the unit it is printed in; None when the "
+                    "log prints none -- never worked out from the depth")
+    notes: List[LayerNote] = Field(
+        default_factory=list,
+        description="the changes the log writes inside this interval "
+                    "without drawing a line ('wet below 7 ft'), each with "
+                    "its depth where one is written; never an interval of "
+                    "their own")
+    top_line: str = Field(
+        default="",
+        description="the kind of line the log draws at the top of this "
+                    "interval, in the words of the log's legend or of the "
+                    "line's own label (solid, dashed, approximate, inferred, "
+                    "gradational); empty when the log says nothing of its "
+                    "lines -- never judged from the look of the line alone")
+    top_line_full_width: Optional[bool] = Field(
+        default=None,
+        description="whether the line at the top of this interval runs the "
+                    "full width of the soil column; None when not read")
+    stratum_label: str = Field(
+        default="",
+        description="the stratum or unit label the log PRINTS for this "
+                    "interval (a stratum column's entry, a geologic symbol "
+                    "or formation name, a model-layer number, a tag such as "
+                    "FILL set apart from the description), as printed; "
+                    "empty when the log prints none -- never worked out "
+                    "from the description")
+    stratum_label_source: str = Field(
+        default="",
+        description="where the label is printed: the heading of its "
+                    "column as printed, or 'in the description'")
+    stratum_label_carried: bool = Field(
+        default=False,
+        description="true when the label is printed once above and the log "
+                    "plainly runs it down over this interval (a bracket, an "
+                    "arrow, a merged cell); false when it is printed "
+                    "against this interval itself")
+
+    @model_serializer(mode="wrap")
+    def _leave_out_unset_interval_fields(self, handler):  # type: ignore[no-untyped-def]
+        """The RI-103 fields are written only when they are set: a layer
+        with none is written byte for byte as before them. A line read as
+        NOT running the full width (False) is set, and is written."""
+        out = handler(self)
+        for name in LAYER_INTERVAL_FIELDS:
+            if name == "top_line_full_width":
+                if isinstance(out, dict) and out.get(name) is None:
+                    out.pop(name, None)
+            else:
+                out = _without_empty(out, name)
+        return out
+
+
+#: The fields BACKLOG RI-103 adds to :class:`Layer`, in the order written.
+LAYER_INTERVAL_FIELDS: Tuple[str, ...] = (
+    "top_elevation", "notes", "top_line", "top_line_full_width",
+    "stratum_label", "stratum_label_source", "stratum_label_carried")
 
 
 #: What the sampler was. ``spt`` is a driven split spoon whose blows define an
@@ -2467,6 +2567,12 @@ YES_NO_UNCLEAR: Tuple[str, ...] = ("yes", "no", "mixed", "unclear")
 #: report's whole narrative to a "mixed" the prompt had offered and this
 #: class then refused.
 OUTSIDE_PROJECT_VALUES: Tuple[str, ...] = ("yes", "no", "unclear")
+#: What ``soilCorrosion`` is answered with (BACKLOG OWN-125, the owner's
+#: answer of 2026-11-13): "yes" whenever anything is attacked, so "mixed"
+#: drops out of its answers and the prompt offers exactly these words. A
+#: "mixed" in a record saved before the ruling, or one a reader returns
+#: anyway, is still read as written (:class:`Mention` keeps the word).
+SOIL_CORROSION_VALUES: Tuple[str, ...] = ("yes", "no", "unclear")
 
 
 class Citation(BaseModel):

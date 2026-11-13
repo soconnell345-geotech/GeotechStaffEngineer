@@ -69,6 +69,8 @@ def _run_eql_site_response(params: dict) -> dict:
         max_iterations=params.get("max_iterations", 15),
         max_freq_hz=params.get("max_freq_hz", 25.0),
         wave_frac=params.get("wave_frac", 0.2),
+        water_table_depth=params.get("water_table_depth"),
+        k0=params.get("k0", 0.5),
     )
     return clean_result(result.to_dict())
 
@@ -87,6 +89,8 @@ def _run_linear_site_response(params: dict) -> dict:
         target_pga_g=params.get("target_pga_g"),
         max_freq_hz=params.get("max_freq_hz", 25.0),
         wave_frac=params.get("wave_frac", 0.2),
+        water_table_depth=params.get("water_table_depth"),
+        k0=params.get("k0", 0.5),
     )
     return clean_result(result.to_dict())
 
@@ -101,8 +105,8 @@ METHOD_INFO = {
         "category": "Site Response",
         "brief": "1D equivalent-linear site response analysis (SHAKE-type, Darendeli/Menq/custom curves).",
         "parameters": {
-            "layers": {"type": "array", "required": True, "description": "Soil layers from surface to bedrock (required). Each dict: thickness (m; the LAST layer is the bedrock half-space, thickness 0), Vs (m/s), unit_wt (kN/m3) and soil_model, plus that model's own keys: 'darendeli' needs plas_index (PI, %; optional ocr, default 1, and stress_mean, kPa, default from depth); 'menq' optional uniformity_coeff (default 10), diam_mean (mm, default 5), stress_mean; 'linear' needs damping (ratio 0-1, e.g. 0.02); 'custom' needs strains, mod_reduc and damping_values (equal-length lists). At least 2 layers (1 soil + bedrock)."},
-            "motion": {"type": "str", "required": False, "description": "Built-in motion name (e.g. 'synthetic_pulse'). Give motion OR accel_history + dt.", "default": None},
+            "layers": {"type": "array", "required": True, "description": "Soil layers from surface to bedrock (required). Each dict: thickness (m; the LAST layer is the bedrock half-space, thickness 0), Vs (m/s), unit_wt (kN/m3) and soil_model, plus that model's own keys: 'darendeli' needs plas_index (PI, %; optional ocr, default 1, and stress_mean, the mean effective stress its curves are built for, kPa; left out, it is computed from water_table_depth and k0); 'menq' optional uniformity_coeff (default 10), diam_mean (mm, default 5), stress_mean (as for darendeli); 'linear' needs damping (ratio 0-1, e.g. 0.02); 'custom' needs strains, mod_reduc and damping_values (equal-length lists). At least 2 layers (1 soil + bedrock)."},
+            "motion": {"type": "str", "required": False, "description": "Built-in motion name (e.g. 'synthetic_pulse'). Give motion OR accel_history + dt. Either is taken as a rock outcrop motion at the top of the half-space.", "default": None},
             "accel_history": {"type": "array", "required": False, "description": "Custom acceleration time history (g); with dt, instead of motion.", "default": None},
             "dt": {"type": "float", "required": False, "description": "Time step of accel_history (s); required with it.", "default": None},
             "target_pga_g": {"type": "float", "required": False, "description": "Scale the input motion linearly so its PGA equals this value (g) before the analysis (the built-in motions have fixed PGAs: synthetic_pulse 0.30 g, synthetic_long 0.15 g). Frequency content and duration are kept.", "default": None},
@@ -111,6 +115,8 @@ METHOD_INFO = {
             "max_iterations": {"type": "int", "required": False, "description": "Maximum EQL iterations.", "default": 15},
             "max_freq_hz": {"type": "float", "required": False, "description": "Max frequency for auto-discretization (Hz).", "default": 25.0},
             "wave_frac": {"type": "float", "required": False, "description": "Wavelength fraction for auto-discretization.", "default": 0.2},
+            "water_table_depth": {"type": "float", "required": False, "description": "Depth to the water table (m below the ground surface). Used only for the mean effective stress behind the Darendeli and Menq curves of a layer with no stress_mean of its own: hydrostatic pore pressure below it. Left out, the profile is taken to have NO water table (effective stress = total stress) and the result's warnings say so; with the water table in the profile that overstates the confining stress and understates the modulus reduction.", "default": None},
+            "k0": {"type": "float", "required": False, "description": "At-rest earth pressure coefficient K0 in that mean effective stress, sigma'm = sigma'v (1 + 2 K0) / 3 (NAVFAC DM7.2 Eq. 6-22; 0.5 is Jaky's 1 - sin(phi') at 30 deg).", "default": 0.5},
         },
         "returns": {
             "analysis_type": "Analysis type (equivalent_linear).",
@@ -122,20 +128,35 @@ METHOD_INFO = {
             "amplification_factor": "PGA surface / PGA input.",
             "n_iterations": "EQL iterations run (wave solves counted), or null when they could not be counted.",
             "converged": "Whether the EQL iterations converged within tolerance.",
-            "max_shear_strain_pct": "Peak shear strain in the profile (%).",
+            "max_shear_strain_pct": "Peak shear strain in the profile (%): the largest of pystrata's sub-layer strains, which is the largest max_strain_pct of depth_profile when depth_profile is returned (it is still given when depth_profile is null); null where pystrata gave a sub-layer none.",
+            "periods_s": "Periods (s) of Sa_surface_g and Sa_input_g: 0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2, 3 and 5 s.",
+            "Sa_surface_g": "Surface (outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
+            "Sa_input_g": "Input (rock outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
+            "Sa_surface_max_g": "Largest surface spectral acceleration over 0.01 to 10 s (g).",
+            "period_at_Sa_surface_max_s": "The period of that peak (s).",
+            "depth_profile": "The response with depth: rows of top_m, bottom_m, max_strain_pct (peak shear strain at the sub-layer's middle; null where pystrata gave none), max_accel_g (peak acceleration at its top), initial_Vs_m_per_s and compatible_Vs_m_per_s (strain-compatible; equal to the initial value in a linear analysis). One row per sub-layer of the discretised profile (pystrata divides only layers with curves: darendeli, menq, custom; a 'linear' layer stays one sub-layer, so its strain is the one at its middle, and thinner layers resolve the peak inside a thick one), up to 20; more are merged (largest strain and acceleration, travel-time average Vs) and depth_profile_note says so.",
+            "water_table_depth_m": "The water table used for the Darendeli/Menq confining stress (null: none taken in the profile, or not used, and stress_inputs_note then says why).",
+            "k0": "The K0 used for it; null when not used (stress_inputs_note then says why).",
+            "stress_inputs_note": "Present when no Darendeli or Menq layer had its confining stress computed (the profile has none, or each gave stress_mean): water_table_depth and k0 were not used, and why.",
+            "depth_profile_note": "Present when sub-layers were merged (how), or when depth_profile is null (why: pystrata's profile arrays were not in the form the module reads).",
+            "layer_stresses": "Present when the profile has a Darendeli or Menq layer. One row per such layer (layer counts from 1 at the surface): mid_depth_m, sigma_v_kPa, u_kPa, sigma_v_eff_kPa, stress_mean_kPa (what its curves were built for) and stress_mean_from ('given' or 'computed').",
+            "warnings": "Present when there is something to say, e.g. a confining stress computed with no water table given.",
+            "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives.",
         },
     },
     "linear_site_response": {
         "category": "Site Response",
         "brief": "1D linear elastic site response analysis (constant small-strain properties).",
         "parameters": {
-            "layers": {"type": "array", "required": True, "description": "Soil layers from surface to bedrock (required). Each dict: thickness (m; the LAST layer is the bedrock half-space, thickness 0), Vs (m/s), unit_wt (kN/m3) and soil_model, plus that model's own keys: 'darendeli' needs plas_index (PI, %; optional ocr, default 1, and stress_mean, kPa, default from depth); 'menq' optional uniformity_coeff (default 10), diam_mean (mm, default 5), stress_mean; 'linear' needs damping (ratio 0-1, e.g. 0.02); 'custom' needs strains, mod_reduc and damping_values (equal-length lists). At least 2 layers (1 soil + bedrock)."},
-            "motion": {"type": "str", "required": False, "description": "Built-in motion name (e.g. 'synthetic_pulse'). Give motion OR accel_history + dt.", "default": None},
+            "layers": {"type": "array", "required": True, "description": "Soil layers from surface to bedrock (required). Each dict: thickness (m; the LAST layer is the bedrock half-space, thickness 0), Vs (m/s), unit_wt (kN/m3) and soil_model, plus that model's own keys: 'darendeli' needs plas_index (PI, %; optional ocr, default 1, and stress_mean, the mean effective stress its curves are built for, kPa; left out, it is computed from water_table_depth and k0); 'menq' optional uniformity_coeff (default 10), diam_mean (mm, default 5), stress_mean (as for darendeli); 'linear' needs damping (ratio 0-1, e.g. 0.02); 'custom' needs strains, mod_reduc and damping_values (equal-length lists). At least 2 layers (1 soil + bedrock)."},
+            "motion": {"type": "str", "required": False, "description": "Built-in motion name (e.g. 'synthetic_pulse'). Give motion OR accel_history + dt. Either is taken as a rock outcrop motion at the top of the half-space.", "default": None},
             "accel_history": {"type": "array", "required": False, "description": "Custom acceleration time history (g); with dt, instead of motion.", "default": None},
             "dt": {"type": "float", "required": False, "description": "Time step of accel_history (s); required with it.", "default": None},
             "target_pga_g": {"type": "float", "required": False, "description": "Scale the input motion linearly so its PGA equals this value (g) before the analysis (the built-in motions have fixed PGAs: synthetic_pulse 0.30 g, synthetic_long 0.15 g). Frequency content and duration are kept.", "default": None},
             "max_freq_hz": {"type": "float", "required": False, "description": "Max frequency for auto-discretization (Hz).", "default": 25.0},
             "wave_frac": {"type": "float", "required": False, "description": "Wavelength fraction for auto-discretization.", "default": 0.2},
+            "water_table_depth": {"type": "float", "required": False, "description": "Depth to the water table (m below the ground surface). Used only for the mean effective stress behind the Darendeli and Menq curves of a layer with no stress_mean of its own: hydrostatic pore pressure below it. Left out, the profile is taken to have NO water table (effective stress = total stress) and the result's warnings say so; with the water table in the profile that overstates the confining stress and understates the modulus reduction.", "default": None},
+            "k0": {"type": "float", "required": False, "description": "At-rest earth pressure coefficient K0 in that mean effective stress, sigma'm = sigma'v (1 + 2 K0) / 3 (NAVFAC DM7.2 Eq. 6-22; 0.5 is Jaky's 1 - sin(phi') at 30 deg).", "default": 0.5},
         },
         "returns": {
             "analysis_type": "Analysis type (linear_elastic).",
@@ -147,7 +168,20 @@ METHOD_INFO = {
             "amplification_factor": "PGA surface / PGA input.",
             "n_iterations": "0 for a linear analysis.",
             "converged": "Always true for a linear analysis.",
-            "max_shear_strain_pct": "Peak shear strain in the profile (%).",
+            "max_shear_strain_pct": "Peak shear strain in the profile (%): the largest of the sub-layer strains, which is the largest max_strain_pct of depth_profile when depth_profile is returned (it is still given when depth_profile is null). pystrata's linear calculator computes no strain; the module takes each sub-layer's from its strain history (pystrata's StrainTSOutput at the sub-layer's middle), as the equivalent-linear calculator computes its own. pystrata divides only layers with curves (darendeli, menq, custom), so a 'linear' layer has one strain, at its middle, and the peak inside a thick one can be higher; give thinner layers to resolve it.",
+            "periods_s": "Periods (s) of Sa_surface_g and Sa_input_g: 0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2, 3 and 5 s.",
+            "Sa_surface_g": "Surface (outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
+            "Sa_input_g": "Input (rock outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
+            "Sa_surface_max_g": "Largest surface spectral acceleration over 0.01 to 10 s (g).",
+            "period_at_Sa_surface_max_s": "The period of that peak (s).",
+            "depth_profile": "The response with depth: rows of top_m, bottom_m, max_strain_pct (peak shear strain at the sub-layer's middle; null where pystrata gave none), max_accel_g (peak acceleration at its top), initial_Vs_m_per_s and compatible_Vs_m_per_s (strain-compatible; equal to the initial value in a linear analysis). One row per sub-layer of the discretised profile (pystrata divides only layers with curves: darendeli, menq, custom; a 'linear' layer stays one sub-layer, so its strain is the one at its middle, and thinner layers resolve the peak inside a thick one), up to 20; more are merged (largest strain and acceleration, travel-time average Vs) and depth_profile_note says so.",
+            "water_table_depth_m": "The water table used for the Darendeli/Menq confining stress (null: none taken in the profile, or not used, and stress_inputs_note then says why).",
+            "k0": "The K0 used for it; null when not used (stress_inputs_note then says why).",
+            "stress_inputs_note": "Present when no Darendeli or Menq layer had its confining stress computed (the profile has none, or each gave stress_mean): water_table_depth and k0 were not used, and why.",
+            "depth_profile_note": "Present when sub-layers were merged (how), or when depth_profile is null (why: pystrata's profile arrays were not in the form the module reads).",
+            "layer_stresses": "Present when the profile has a Darendeli or Menq layer. One row per such layer (layer counts from 1 at the surface): mid_depth_m, sigma_v_kPa, u_kPa, sigma_v_eff_kPa, stress_mean_kPa (what its curves were built for) and stress_mean_from ('given' or 'computed').",
+            "warnings": "Present when there is something to say, e.g. a confining stress computed with no water table given.",
+            "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives.",
         },
     },
 }
@@ -158,10 +192,27 @@ METHOD_INFO = {
 from funhouse_agent.adapters import declare_when_absent  # noqa: E402
 _UNSCALED = ("the motion as given, not scaled",
              "the input motion's own peak ground acceleration")
+_NO_WATER = ("no water table in the profile",
+             "effective stress = total stress in the Darendeli/Menq "
+             "confining stress; the result's warnings say so")
 declare_when_absent(METHOD_INFO, {
-    "eql_site_response": {"target_pga_g": _UNSCALED},
-    "linear_site_response": {"target_pga_g": _UNSCALED},
+    "eql_site_response": {"target_pga_g": _UNSCALED,
+                          "water_table_depth": _NO_WATER},
+    "linear_site_response": {"target_pga_g": _UNSCALED,
+                             "water_table_depth": _NO_WATER},
 })
+
+# The water table and K0 set only the confining stress computed for a
+# Darendeli or Menq layer with no stress_mean of its own, which depends on
+# the layers' soil models (a key inside a list item, which applies_when
+# cannot read). So defaults_used never lists them from this table (False);
+# the module's own report lists them when a layer's stress was computed
+# (eql_site_response.stress_choices calls their how "default" then), and
+# _defaults_used keeps any name the choices report (GM-325 review, R1).
+from funhouse_agent.adapters import declare_applies_when  # noqa: E402
+declare_applies_when(METHOD_INFO, {
+    m: {"water_table_depth": False, "k0": False}
+    for m in ("eql_site_response", "linear_site_response")})
 
 # The keys each item of a list parameter carries, so a key given at the
 # top level is refused with a hint naming its list (BACKLOG GM-113).

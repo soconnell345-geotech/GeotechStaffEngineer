@@ -71,6 +71,9 @@ def extract_catalog() -> dict:
                         "required": bool(pi.get("required", False)),
                         "default": pi.get("default", None),
                         "allowed_values": pi.get("allowed_values") or [],
+                        # other spellings read as a listed value (GM-316
+                        # review B3); hidden_value_aliases never shown
+                        "value_aliases": pi.get("value_aliases") or {},
                     }
                 entry["methods"][mname] = {
                     "brief": info.get("brief", ""),
@@ -248,6 +251,11 @@ def method_param_table(params: dict) -> str:
         av = pi.get("allowed_values") or []
         if av:
             desc += ' <span class="allowed">allowed: ' + ", ".join(f"<code>{esc(v)}</code>" for v in av) + "</span>"
+        va = pi.get("value_aliases") or {}
+        if va:
+            desc += (' <span class="allowed">also read as: '
+                     + ", ".join(f"<code>{esc(a)}</code> = <code>{esc(c)}</code>"
+                                 for a, c in va.items()) + "</span>")
         dv = pi.get("default")
         if dv not in (None, "") and not pi.get("required"):
             desc += ' <span class="allowed">default: <code>' + esc(_default_text(dv)) + "</code></span>"

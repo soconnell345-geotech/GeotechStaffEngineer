@@ -370,15 +370,15 @@ METHOD_INFO = {
         "category": "Liquefaction",
         "brief": "Full liquefaction triggering evaluation (SPT-based, simplified method).",
         "parameters": {
-            "depths": {"type": "array", "required": True, "description": "Layer depths (m)."},
+            "depths": {"type": "array", "required": True, "description": "Depths (m below the ground surface) where (N1)60 was measured, increasing, the first below the surface; each is an evaluation point. The total vertical stress is summed down through them, the gamma given at a depth applying from the previous depth (the ground surface for the first) down to it. So give a depth at each change in unit weight (a layer's base, with that layer's N160, FC and gamma), the water table included where the unit weight changes there; otherwise the change is taken at the depth above it."},
             "N160": {"type": "array", "required": True, "description": "Corrected SPT blow counts."},
             "FC": {"type": "array", "required": True, "description": "Fines content (%)."},
-            "gamma": {"type": "array", "required": True, "description": "Unit weights (kN/m3)."},
+            "gamma": {"type": "array", "required": True, "description": "Total unit weight (kN/m3) at each depth. The value given at a depth applies from the previous depth (the ground surface for the first) down to that depth, and the total vertical stress is the sum of gamma x interval over the depths down to it (the same rule on the bi2014 and nceer2001 SPT procedures; see depths)."},
             "amax_g": {"type": "float", "required": True, "description": "Peak ground acceleration (g)."},
             "gwt_depth": {"type": "float", "required": True, "description": "Groundwater depth (m)."},
             "magnitude": {"type": "float", "required": False, "default": 7.5, "description": "Earthquake magnitude."},
         },
-        "returns": {"min_FOS_liq": "Minimum FOS against liquefaction.", "n_liquefiable": "Number of liquefiable layers.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
+        "returns": {"layer_results": "Per depth: depth_m, N160, N160cs, FC_pct, sigma_v_kPa, sigma_v_eff_kPa, rd, MSF, CSR, CRR, FOS_liq, liquefiable.", "min_FOS_liq": "Minimum FOS against liquefaction.", "n_liquefiable": "Number of depths with FOS below 1.0.", "magnitude": "Magnitude used.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "residual_strength": {
         "category": "Liquefaction",

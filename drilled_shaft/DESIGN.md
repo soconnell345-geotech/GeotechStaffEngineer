@@ -343,3 +343,38 @@ Layer 3 sand beta = 0.41 (RSN 470.7 kips) and Layer 4 clay alpha = 0.47
 - Chen & Kulhawy (1993) — UU/UC -> CIUC strength transforms (Eq 10-16/10-17)
 - Mayne & Kulhawy (1982) — Ko = (1 - sin phi')*OCR^(sin phi')
 - Mayne (2007) — sigma'p correlation to N60
+
+## A shaft longer than the soil profile (GM-318)
+
+GEC-10 takes the base resistance from the ground at and to 2B below the
+base (Eq. 10-14, p. 10-15; Eq. 10-19, p. 10-19), and no held manual prints
+carrying the last explored layer on below the profile. So a shaft longer
+than the profile is refused, naming the depth the layers do not cover.
+
+`extend_last_layer=True` is the one input that runs it: the last layer is
+taken to go on to the base (side and base resistance in it, the same
+numbers as a profile given to the base). `DrillShaftResult.warnings` (new;
+`warnings` in `to_dict()` when not empty) and the choice "soil below the
+profile" say so, and the calc package's soil layers table marks the last
+layer "(given to 12 m, assumed below)" (review C6). Before GM-318 the run
+went ahead with only a Python
+warning: no side resistance below the profile and the base in the last
+layer.
+
+A base at the profile's bottom is accepted; the 2B zone below it is then
+"the mean over what the profile gives", as the base choices already say.
+In an extended run the base steps give `su_profile_ends_m` (clay base) or
+`N60_profile_ends_m` (sand base) as the depth the layers given reach, with
+`su_last_layer_carried_to_m` / `N60_last_layer_carried_to_m` the base the
+last layer was carried on to, and the base choice says both (GM-318 review
+B1; it gave the carried-on depth as the end of the profile).
+`capacity_vs_depth` lists a trial length past the profile among its skipped
+depths. With `extend_last_layer` it runs those lengths instead, each on the
+layers as given (the run of that length alone; the profile carried on to
+the deepest base would otherwise reach into a shorter trial's 2B zone
+unsaid). A row past the profile carries its run's `warnings`; the tool's
+result says once at the top which lengths stand on the carried-on layer,
+with the choice "soil below the profile" (GM-318 review A1), whether the
+design shaft passes the profile or only the sweep does (`depth_max` past it
+with the design shaft inside; re-check N1: that case had only the rows'
+warnings).

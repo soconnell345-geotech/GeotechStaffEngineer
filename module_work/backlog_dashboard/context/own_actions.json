@@ -841,5 +841,60 @@
       "BACKLOG.md OWN-145, EV-43",
       "module_work/review_eval_results/2026-11-12_foundry_brief7/FIRST_PASS_AND_PLAN.md"
     ]
+  },
+  "OWN-147": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Before the next Document Review release: are all your testers' sign-in names plain? And one look in the key vault.",
+    "why": "The next release keeps two testers from ever sharing an AI key or a folder. The price: a tester whose sign-in name is not plain gets a new, empty folder, on the host and on SharePoint. Their earlier conversations stay in the old folder and nothing copies them, so their list of past conversations looks empty.",
+    "background": "Plain means letters, digits, dots and hyphens, with single underscores only inside the user name (CORP\\j_doe is plain). Not plain: an apostrophe, a space, an accented letter, an underscore in the domain part or at an end of the user name, a doubled underscore, a dot at either end, or a name longer than about 60 characters. Most directory names are plain, so the likely answer is that nobody moves. The change is on master, tested, and not released. The vault question is separate: a tester with punctuation in the name who has BOTH an entry in PROMPTER-KEYS and a secret of the old kind is served the PROMPTER-KEYS entry's key from this release on.",
+    "options": [],
+    "recommendation": "Look down the list of testers once. If all are plain, answer \"all plain\" and nothing else is needed.",
+    "if_no_answer": "The release goes out with a general sentence in its note, and a tester with an unusual name finds an empty list and has to ask.",
+    "message_to_send": null,
+    "steps": [
+      "Look at the testers' sign-in names as the host sees them: the domain, a backslash, the user name.",
+      "Answer \"all plain\", or how many are not. Do not type the names here: the backlog this answer is folded into is public.",
+      "If the vault's PROMPTER-KEYS setting is in use, ask whoever keeps it whether any tester with punctuation in the name has an entry there and also a secret of their own. Answer yes, no or not used."
+    ],
+    "unblocks": [
+      "INF-76",
+      "TA-42"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-147, TA-40, TA-42",
+      "module_work/ta39/CHECK.md",
+      "module_work/ta40/CHECK.md"
+    ]
+  },
+  "OWN-148": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Send build j to the AI FDE: the geotech app brought up to the current code, the first full report-ingest run with your question list, the report tables, and the blind measurement (about five minutes).",
+    "why": "The published geotech app is still the build of 2026-11-03, so it lacks two releases of answer fixes, and its restart-and-restore test was never finished. Report ingest has not yet run your question list with the list of posts, and the report tables you asked for on 2026-11-12 have never run on Foundry. Anything measured there takes a day or more, so the brief has to go out for the results to be read before the plan changes.",
+    "background": "One zip holds the FDE's brief, four program files and the private files the runs need. The app part installs the new files and finishes the open checks: restart and restore a saved conversation, the reference manuals, the app checklist with the plotting box, and two overnight checks (about 2.5 to 3 million tokens in). The ingest part reads seven reports afresh with your question list and the posts, in two waves (about 36 million tokens in, 5 million out), writes the report tables and asks the FDE to build the Ontology on them, and asks five questions about Foundry's own OCR. The last part is the blind measurement on a public set of scanned borehole records and four public reports (about 8 million in, 1.5 million out); it runs only if everything before it passed. Every job has a stop line. The program files are test builds; nothing is released. Two things in it follow your desk answers of 2026-11-13: soil corrosive to anything answers yes, and a summary of one test family is that family's sheet.",
+    "options": [],
+    "recommendation": "Send it with the defaults: the manuals in, both ingest waves, the blind measurement, and the FDE building the Ontology. Each default can be changed with one sentence to the FDE; README_OWNER.md in the zip lists them.",
+    "if_no_answer": "The app on Foundry stays two releases behind with its storage test unfinished, the question list stays unmeasured, and the report tables stay untried.",
+    "message_to_send": null,
+    "steps": [
+      "Say where the zip should live: it was built in the orchestrating session's scratch folder (brief_out, gse_app_2026-11-13.zip, 46 MB) and moves to the local hand-off folder (foundry_handoff, beside the repositories) on your word.",
+      "Read the top of README_OWNER.md in the zip: your decisions with their defaults (the reference manuals, one ingest wave or two, the blind measurement, the Ontology).",
+      "In the AI FDE session, attach the zip and paste the message at the bottom of README_OWNER.md. Hand over the 38 reference manuals when it asks, or tell it to skip part C.",
+      "Leave the app alone overnight (two of its checks need that), then send back the FDE's two hand-back zips. The second is private.",
+      "Answer done on this card, or say hold."
+    ],
+    "unblocks": [
+      "INF-40",
+      "RI-101",
+      "RI-79",
+      "RI-212",
+      "INF-38",
+      "INF-63"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-148, INF-40, RI-101, RI-79, RI-212, OWN-142",
+      "module_work/foundry_parity/FINDINGS.md"
+    ]
   }
 }

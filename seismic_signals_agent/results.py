@@ -8,7 +8,7 @@ Provides:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 import numpy as np
 
@@ -190,8 +190,15 @@ class IntensityMeasuresResult:
         Husid end fraction (e.g. 0.95 for D5-95).
     cav_m_per_s : float
         Cumulative Absolute Velocity (m/s).
-    bracketed_duration_s : float
-        Bracketed duration (s).
+    bracketed_duration_s : float or None
+        Bracketed duration (s): the time between the first and the last
+        exceedance of ``bracketed_threshold_g``. None when it could not be
+        computed; ``bracketed_duration_note`` says why (GM-325: it was 0.0
+        for every record before).
+    bracketed_threshold_g : float or None
+        The threshold acceleration (g) given for it.
+    bracketed_duration_note : str or None
+        Why ``bracketed_duration_s`` is None.
     arias_cumulative : numpy.ndarray
         Cumulative Arias intensity array (m/s).
     time : numpy.ndarray
@@ -211,7 +218,9 @@ class IntensityMeasuresResult:
     sig_dur_start: float = 0.05
     sig_dur_end: float = 0.95
     cav_m_per_s: float = 0.0
-    bracketed_duration_s: float = 0.0
+    bracketed_duration_s: Optional[float] = None
+    bracketed_threshold_g: Optional[float] = None
+    bracketed_duration_note: Optional[str] = None
     arias_cumulative: np.ndarray = field(default_factory=lambda: np.array([]))
     time: np.ndarray = field(default_factory=lambda: np.array([]))
     accel_g: np.ndarray = field(default_factory=lambda: np.array([]))
@@ -234,14 +243,19 @@ class IntensityMeasuresResult:
             f"  Arias Intensity:      {self.arias_intensity_m_per_s:.4f} m/s",
             f"  Significant Duration: {self.significant_duration_s:.2f} s  (D{start_pct}-{end_pct})",
             f"  CAV:                  {self.cav_m_per_s:.4f} m/s",
-            f"  Bracketed Duration:   {self.bracketed_duration_s:.2f} s",
+            ("  Bracketed Duration:   not computed (no threshold given, "
+             "or never exceeded)"
+             if self.bracketed_duration_s is None else
+             f"  Bracketed Duration:   {self.bracketed_duration_s:.2f} s"
+             + ("" if self.bracketed_threshold_g is None else
+                f"  (above {self.bracketed_threshold_g:g} g)")),
             "",
             "=" * 60,
         ]
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "motion_name": self.motion_name,
             "pga_g": round(self.pga_g, 4),
             "pgv_m_per_s": round(self.pgv_m_per_s, 4),
@@ -249,8 +263,14 @@ class IntensityMeasuresResult:
             "arias_intensity_m_per_s": round(self.arias_intensity_m_per_s, 4),
             "significant_duration_s": round(self.significant_duration_s, 2),
             "cav_m_per_s": round(self.cav_m_per_s, 4),
-            "bracketed_duration_s": round(self.bracketed_duration_s, 2),
+            "bracketed_duration_s": (
+                None if self.bracketed_duration_s is None
+                else round(self.bracketed_duration_s, 2)),
+            "bracketed_threshold_g": self.bracketed_threshold_g,
         }
+        if self.bracketed_duration_note:
+            d["bracketed_duration_note"] = self.bracketed_duration_note
+        return d
 
     def plot_arias(self, ax=None, show=True, **kwargs):
         """Plot cumulative Arias intensity vs time."""
