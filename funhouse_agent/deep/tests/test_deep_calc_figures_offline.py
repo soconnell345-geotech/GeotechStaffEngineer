@@ -45,6 +45,36 @@ def test_calc_prompt_carries_the_figure_rules_and_real_tool_names():
     assert "SOURCE DOCUMENTS" in prompt
 
 
+def test_calc_prompt_names_the_worked_examples():
+    """GM-328: the helper that builds every calc package could reach the
+    published worked examples and was never told of them (only the primary
+    was, and its prompt is not passed down)."""
+    from funhouse_agent.adapters.worked_examples_adapter import (
+        METHOD_REGISTRY as WE)
+    from funhouse_agent.deep.agent import _CALC_WORKED_EXAMPLES
+    prompt = build_calc_subagent()["system_prompt"]
+    assert prompt.count(_CALC_WORKED_EXAMPLES) == 1
+    assert prompt.count("WORKED EXAMPLES:") == 1
+    for name in ("find_worked_examples", "get_worked_example"):
+        assert name in WE and name in _CALC_WORKED_EXAMPLES
+    assert "report_notes" in _CALC_WORKED_EXAMPLES
+    assert "do NOT copy its numbers" in _CALC_WORKED_EXAMPLES
+    # the tool the helper does not hold is not promised
+    assert "view_worked_example_source" not in prompt
+    # one short instruction, before the budget and the switched additions
+    assert len(_CALC_WORKED_EXAMPLES) < 500
+    assert prompt.index("WORKED EXAMPLES:") < prompt.index("CALL BUDGET")
+
+
+def test_calc_prompt_leaves_the_examples_out_where_it_cannot_reach_them():
+    spec = build_calc_subagent(allowed_agents={"bearing_capacity",
+                                               "calc_package"})
+    assert "WORKED EXAMPLES" not in spec["system_prompt"]
+    spec = build_calc_subagent(allowed_agents={"bearing_capacity",
+                                               "worked_examples"})
+    assert "WORKED EXAMPLES:" in spec["system_prompt"]
+
+
 def test_figure_tool_names_in_prompts_are_real():
     """Every method the prompts promise must be registered, so the model is
     never told to call a plotting tool that does not exist (the old primary
