@@ -4380,6 +4380,20 @@
           }
         ],
         "multi": false
+      },
+      {
+        "label": "31. GM-140 step 2, slope runs where a method has no solution (built 2026-11-13): Monte Carlo counts such realisations, leaves them out and gives the probability of failure bounded both ways; FOSM gives no result and names the variable; the yield acceleration halves its largest trial kh until the method solves. No printed rule was found for any of the three; each is stated in the result as the module's own.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Give no result instead",
+            "effect": "A Monte Carlo, FOSM or yield-acceleration run in which any realisation or trial has no solution of the method gives no result and says which, instead of applying the module's own rule."
+          }
+        ],
+        "multi": false
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
