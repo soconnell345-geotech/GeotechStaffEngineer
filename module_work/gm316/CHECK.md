@@ -264,10 +264,49 @@ parameter given under an alias (`parameter_aliases`) is checked as the
 parameter it names; a method with `parameters_of` (render_figures,
 render_tables) is checked against the named package's lists too.
 
-**Case.** Exact, unless the parameter now says `"any_case": True` (the code
-strips and lower-cases before comparing) or `"any_case": "separators"`
-(the code also ignores spaces, hyphens and underscores). `any_case` was added
-only where the code does fold case (list below).
+**Case.** Exact, unless the parameter says `any_case`, which names how its
+handler normalises the string before comparing (`method_call.VALUE_FOLDS`;
+corrected by review fix B2, below): `True` lower-cases only, `"strip"` also
+strips surrounding spaces, `"no_spaces"` lower-cases and drops ASCII spaces,
+`"no_spaces_hyphens"` drops all whitespace and hyphens, and
+`"spaces_as_underscores"` strips, lower-cases and reads a space as an
+underscore. `any_case` was added only where the code does fold case (list
+below).
+
+### Review fix B2: the check folds exactly as each handler does
+
+The first version of `any_case: True` stripped as well as lower-cased, and
+`"separators"` dropped spaces, hyphens and underscores; several handlers do
+less, so a value passed dispatch and then was refused by the module or,
+worse, ran as something else: Schmertmann `shape=" strip "` ran as a square
+footing (39.67 mm in place of 60.84 mm). Each list marked `any_case` was
+traced to its handler again (made-up values, code read):
+
+| Parameter (method) | Handler | `any_case` |
+|---|---|---|
+| bearing_capacity_analysis `shape` | `Footing.shape.lower()` (footing.py:67) | True |
+| bearing_capacity_analysis `factor_method`, `ngamma_method`, `failure_mode`, `depth_factor_method` | `str(...).strip().lower()` (capacity.py:165-196) | "strip" |
+| bearing_capacity_factors `method`, `ngamma_method`, `failure_mode` | adapter `.strip().lower()` (the non-Terzaghi `failure_mode` check lower-cases only: a padded "general" is refused there by the module, harmlessly) | "strip" |
+| calc package selectors | `_selector_value` strip + lower | "strip" |
+| dxf_export `units` (both) | writer `units.lower().strip()` | "strip" |
+| fem2d_consolidation `reset_displacements_after` | `str(ref).strip().lower()` | "strip" |
+| liquefaction `method`, `input_type` | `_normalize_method`, `_detect_input_type` strip + lower | "strip" |
+| rigid pavement `pavement_type`, `shoulder_type` | AASHTO tables `.strip().lower()` | "strip" |
+| rigid pavement `drainage_quality` | `.strip().lower().replace(" ", "_")` | "spaces_as_underscores" ("very-poor", "verypoor" refused) |
+| subsurface_profile `axis` | `str(axis).strip().lower()` | "strip" |
+| elastic_settlement `shape`, `rigidity`, `point` | `gec6_influence_factor` strip + lower (the only reader) | "strip" |
+| schmertmann_settlement `shape` | `footing_shape.lower() == "strip"` | True |
+| combined_settlement_analysis `shape` | `(footing_shape or "").lower()` | True |
+| consolidation / combined `stress_method` | `method.lower().replace(" ", "")` | "no_spaces" |
+| wave_equation `driving_system` | `"".join(name.lower().split()).replace("-", "")` | "no_spaces_hyphens" |
+| pynite continuous_beam `support_types` | `str(sp["type"]).lower()` per item | True |
+| plot_data `legend_position` | `str(position).lower()` | True |
+
+A padded value the handler strips still passes (refusing it would refuse a
+call that runs today). Tests (`funhouse_agent/tests/test_allowed_values.py`):
+the reviewer's Schmertmann case refused with "Did you mean 'strip'?",
+"STRIP" still runs as a strip; every fold kind on made-up lists; every
+declared `any_case` names a known fold.
 
 ### How the lists were proved complete
 
@@ -284,10 +323,10 @@ others were corrected:
 | settlement elastic_settlement | shape | add circle, rectangle; any_case | immediate.py:95, 225 reads both |
 | settlement elastic_settlement | rigidity, point | any_case | lower-cased before lookup |
 | settlement schmertmann_settlement | shape | add circular; any_case | the module documents and runs "circular" (axisymmetric, immediate.py:295) |
-| settlement consolidation / combined | stress_method | add 2to1; any_case separators | stress_distribution.py:375, 434 lower-cases and drops spaces; "2to1" is its alias |
+| settlement consolidation / combined | stress_method | add 2to1; any_case ("no_spaces" since B2) | stress_distribution.py:375, 434 lower-cases and drops spaces; "2to1" is its alias |
 | settlement combined_settlement_analysis | shape | add circle; any_case | analysis.py:170-179 |
 | pavement_design rigid | pavement_type, shoulder_type | any_case | tables strip and lower-case |
-| pavement_design rigid | drainage_quality | any_case separators | spaces read as underscores ("Very Poor") |
+| pavement_design rigid | drainage_quality | any_case ("spaces_as_underscores" since B2) | spaces read as underscores ("Very Poor") |
 | liquefaction | method | add the ten spellings `_METHOD_NORMALIZE` reads (built from that table); any_case | liquefaction_adapter.py:41-54, 97 |
 | liquefaction | input_type | any_case | `_detect_input_type` strips and upper-cases |
 | fem2d fem2d_consolidation | reset_displacements_after | add first, none, "0"; any_case | fem2d/analysis.py:2911-2924 |
@@ -296,7 +335,7 @@ others were corrected:
 | soe braced/cantilever | passive_theory | add logspiral, log-spiral | soe.py:136-144 |
 | sheet_pile cantilever/anchored | pressure_method | add caquot_kerisel, logspiral | sheet_pile/cantilever.py:29, 820-826 |
 | dxf_export (both methods) | units | add meters, millimeters, centimeters, feet, inches; any_case | the export's unit table |
-| wave_equation (three methods) | driving_system | any_case separators | driving_systems.py:118-142 ignores case, spaces and hyphens |
+| wave_equation (three methods) | driving_system | any_case ("no_spaces_hyphens" since B2) | driving_systems.py:118-142 ignores case, spaces and hyphens |
 | pynite continuous_beam | support_types | any_case (each item) | lower-cased per item |
 | profile_figure subsurface_profile | axis | any_case | strip + lower |
 | core plot_data | legend_position | any_case | lower-cased |

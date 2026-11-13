@@ -59,10 +59,68 @@ def test_any_case_matches_as_the_code_does():
                      {**_probe("bearing_capacity|bearing_capacity_analysis"),
                       "shape": "Square"})
     assert "error" not in r, r
-    # "separators": drainage quality "Very Poor" is very_poor
+    # the AASHTO tables strip, lower-case and read a space as "_": drainage
+    # quality "Very Poor" is very_poor; "very-poor" is not
     mod = D._load_adapter("calc_package")
     _check_parameter_values(mod, "pavement_design_package",
-                            {"drainage_quality": "Very Poor"})
+                            {"drainage_quality": " Very Poor"})
+    with pytest.raises(ValueError, match=REFUSED):
+        _check_parameter_values(mod, "pavement_design_package",
+                                {"drainage_quality": "very-poor"})
+
+
+def test_a_padded_value_the_code_does_not_strip_is_refused():
+    """GM-316 review B2: Schmertmann lower-cases its shape without
+    stripping it, so " strip " ran as a square footing (39.67 mm in place
+    of 60.84 mm). It is refused now; "STRIP" still runs as a strip."""
+    params = {"q_net": 150.0, "B": 2.0, "gamma_soil": 18.0,
+              "layers": [{"depth_top": 0.0, "depth_bottom": 4.0,
+                          "Es": 12000.0},
+                         {"depth_top": 4.0, "depth_bottom": 8.0,
+                          "Es": 20000.0}]}
+    r = D.call_agent("settlement", "schmertmann_settlement",
+                     {**params, "shape": " strip "})
+    assert REFUSED in r.get("error", ""), r
+    assert "Did you mean 'strip'?" in r["error"]
+    upper = D.call_agent("settlement", "schmertmann_settlement",
+                         {**params, "shape": "STRIP"})
+    strip = D.call_agent("settlement", "schmertmann_settlement",
+                         {**params, "shape": "strip"})
+    square = D.call_agent("settlement", "schmertmann_settlement",
+                          {**params, "shape": "square"})
+    assert upper["schmertmann_settlement_mm"] == strip[
+        "schmertmann_settlement_mm"] != square["schmertmann_settlement_mm"]
+    # a handler that strips takes the padded value: bearing factor_method
+    mod = D._load_adapter("bearing_capacity")
+    _check_parameter_values(mod, "bearing_capacity_analysis",
+                            {"factor_method": " Meyerhof "})
+
+
+def _probed_lists():
+    """(agent, method, parameter, spec) of every declared list on a probed
+    method's adapter (calc packages included)."""
+    out, seen = [], set()
+    for key in sorted(MP.PROBES):
+        agent = key.split("#")[0].split("|")[0]
+        if agent in seen:
+            continue
+        seen.add(agent)
+        mod = D._load_adapter(agent)
+        for method, info in mod.METHOD_INFO.items():
+            for name, spec in (info.get("parameters") or {}).items():
+                if isinstance(spec, dict) and spec.get("allowed_values"):
+                    out.append((agent, method, name, spec))
+    return out
+
+
+def test_every_any_case_is_a_fold_the_check_knows():
+    """Each ``any_case`` names one of the folds in ``VALUE_FOLDS`` (each the
+    way one handler reads a string), never one the check would guess."""
+    from aec_agent_core.method_call import VALUE_FOLDS, VALUE_FOLD_WORDS
+    assert set(VALUE_FOLDS) == set(VALUE_FOLD_WORDS)
+    bad = [(a, m, n, s["any_case"]) for a, m, n, s in _probed_lists()
+           if s.get("any_case") and s["any_case"] not in VALUE_FOLDS]
+    assert bad == []
 
 
 class _Mod:
@@ -72,7 +130,11 @@ class _Mod:
         "flag": {"allowed_values": [False, True]},
         "n": {"type": "int", "allowed_values": [3, 6]},
         "fold": {"allowed_values": ["x_y"], "any_case": True},
-        "sep": {"allowed_values": ["x_y"], "any_case": "separators"},
+        "strip": {"allowed_values": ["x_y"], "any_case": "strip"},
+        "nosp": {"allowed_values": ["2:1"], "any_case": "no_spaces"},
+        "nosph": {"allowed_values": ["ab 1"], "any_case": "no_spaces_hyphens"},
+        "under": {"allowed_values": ["x_y"],
+                  "any_case": "spaces_as_underscores"},
     }, "parameter_aliases": {"k": "kind"}}}
 
 
@@ -90,11 +152,18 @@ class _Mod:
     ({"n": 6}, False),
     ({"n": 4}, True),
     ({"n": "3"}, False),                   # the adapter converts it
-    ({"fold": " X_Y "}, False),
-    ({"fold": "x y"}, True),
-    ({"sep": "X Y"}, False),
-    ({"sep": "x-y"}, False),
-    ({"sep": "xz"}, True),
+    ({"fold": "X_Y"}, False),              # case only
+    ({"fold": " X_Y "}, True),             # not stripped (review B2)
+    ({"strip": " X_Y "}, False),
+    ({"strip": "x y"}, True),
+    ({"nosp": " 2 : 1 "}, False),
+    ({"nosp": "2_:_1"}, True),
+    ({"nosph": "AB-1"}, False),
+    ({"nosph": "ab\t1"}, False),
+    ({"nosph": "ab_1"}, True),
+    ({"under": " X Y "}, False),
+    ({"under": "x-y"}, True),
+    ({"under": "xy"}, True),
     ({"other": "anything"}, False),        # no list declared
 ])
 def test_the_shapes_enforced(params, refused):

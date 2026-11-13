@@ -339,13 +339,13 @@ METHOD_INFO = {
                        "allowed_values": ["bi2014", "nceer2001"] + [
                            k for k in _METHOD_NORMALIZE
                            if k not in ("bi2014", "nceer2001")],
-                       "any_case": True,
+                       "any_case": "strip",
                        "description": (
                            "bi2014 = Boulanger & Idriss 2014 (DEFAULT, both SPT "
                            "and CPT). nceer2001 = NCEER / Youd et al. 2001 SPT "
                            "procedure (SPT input only).")},
             "input_type": {"type": "str", "required": False,
-                           "allowed_values": ["CPT", "SPT"], "any_case": True,
+                           "allowed_values": ["CPT", "SPT"], "any_case": "strip",
                            "description": (
                                "Optional override if both/neither CPT and SPT "
                                "keys are present.")},

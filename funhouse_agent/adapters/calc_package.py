@@ -1514,7 +1514,7 @@ def _package_parameters(package: str) -> dict:
                 v for v in spec.get("selector_values", {})
                 if v not in tools],
             # _selector_value strips and lower-cases a string (GM-317)
-            "any_case": True, "description": doc}
+            "any_case": "strip", "description": doc}
     entries = {}
     for value, tool in tools.items():
         for pname, pspec in info[tool]["parameters"].items():

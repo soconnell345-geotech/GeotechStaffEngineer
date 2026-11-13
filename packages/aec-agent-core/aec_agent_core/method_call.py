@@ -324,20 +324,49 @@ def _value_hint(value: str, allowed) -> str:
             if near else "")
 
 
+#: How a method that does not compare a string exactly reads it: a
+#: parameter's ``any_case``, each the normalisation one handler applies
+#: before comparing, so the value check accepts exactly what the code
+#: reads (GM-316 review B2: ``any_case`` stripped as well, and a padded
+#: Schmertmann shape " strip " passed dispatch and ran as a square).
+VALUE_FOLDS = {
+    # lower-cased only (bearing_capacity Footing.shape, the settlement
+    # shapes, pynite support types, plot_data legend_position)
+    True: lambda s: s.lower(),
+    # stripped and lower-cased (most selectors)
+    "strip": lambda s: s.strip().lower(),
+    # lower-cased, ASCII spaces dropped (settlement stress_method)
+    "no_spaces": lambda s: s.lower().replace(" ", ""),
+    # lower-cased, all whitespace and hyphens dropped (wave_equation
+    # driving systems)
+    "no_spaces_hyphens": lambda s: "".join(s.lower().split()).replace(
+        "-", ""),
+    # stripped, lower-cased, a space read as an underscore (the AASHTO
+    # 1993 drainage-quality tables)
+    "spaces_as_underscores": lambda s: s.strip().lower().replace(" ", "_"),
+}
+
+#: The same in words, for describe_method and the manual.
+VALUE_FOLD_WORDS = {
+    True: "case ignored",
+    "strip": "case and surrounding spaces ignored",
+    "no_spaces": "case and spaces ignored",
+    "no_spaces_hyphens": "case, spaces and hyphens ignored",
+    "spaces_as_underscores": ("case and surrounding spaces ignored; a "
+                              "space reads as an underscore"),
+}
+
+
 def _fold_value(value: str, any_case) -> str:
-    """A string as a method that ignores case compares it: stripped and
-    lower-cased; with ``any_case="separators"`` also without spaces,
-    hyphens and underscores (``"Very Poor"`` is ``very_poor``)."""
-    out = value.strip().lower()
-    if any_case == "separators":
-        out = re.sub(r"[\s_\-]+", "", out)
-    return out
+    """A string as the method reads it under ``any_case``
+    (:data:`VALUE_FOLDS`); an unknown kind folds case only."""
+    return VALUE_FOLDS.get(any_case, VALUE_FOLDS[True])(value)
 
 
 def _outside(value, allowed, any_case=False):
     """The values of ``value`` outside ``allowed`` (a string, or each string
-    of a list), compared as the method compares them (``any_case``: False,
-    True or "separators", :func:`_fold_value`); values of another kind than
+    of a list), compared as the method compares them (``any_case``, a kind
+    of :data:`VALUE_FOLDS`, or False: exactly); values of another kind than
     the list's are left to the method."""
     strings = all(isinstance(a, str) for a in allowed)
     if strings:
@@ -368,11 +397,12 @@ def _check_parameter_values(mod, method: str, parameters: dict) -> None:
     The list is the parameter's in the method's METHOD_INFO (or, for a
     method whose ``parameters_of`` names another, that one's), reached by
     the name the call gave or an alias of it (``parameter_aliases``).
-    Strings are compared exactly unless the parameter says ``any_case``
-    (the method folds case itself: True, stripped and lower-cased;
-    "separators", spaces, hyphens and underscores ignored too). Checked: a string against a
-    list of strings, each string of a list given for one, and a boolean or
-    a number against a list of that kind. Not checked: None (the method's
+    Strings are compared exactly unless the parameter says ``any_case``:
+    the method normalises the string itself, in the way
+    :data:`VALUE_FOLDS` names (True: case only; "strip": surrounding
+    spaces too; ...), each the way one handler does it. Checked: a string
+    against a list of strings, each string of a list given for one, and a
+    boolean or a number against a list of that kind. Not checked: None (the method's
     default), a value of another kind than the list's, and a parameter
     nested inside a dict or a list of dicts (no adapter declares a list
     there). A parameter's ``refused_values`` (value -> reason) gives the
