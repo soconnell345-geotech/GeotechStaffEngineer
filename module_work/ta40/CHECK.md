@@ -15,6 +15,7 @@ Files changed (all within task D's list, plus new files of its own):
 | `docs/SHAREPOINT_SETUP.md` | a new step 8 and one settings row |
 | `packages/aec-document-review/tests/test_ta40_sharepoint_off_turn.py` | new, 32 tests |
 | `packages/aec-document-review/tests/test_tinyapps_wiring.py` | one fake's address parsing (below) |
+| `packages/aec-document-review/tests/test_ta40_owner_folder.py` | new with the review fixes, 5 tests (fix 5 below) |
 
 `sharepoint_log.py` is not changed. GSE's copies (`webapp/sharepoint_store.py`,
 `webapp/graph_sharepoint.py`) are not changed.
@@ -30,11 +31,105 @@ tunable was added: `GEOTECH_SHAREPOINT_MAX_UPLOAD_MB`, default 2048 (piece 4).
 2. `sharepoint_store._upload_changed`: a file held back for its size is
    skipped only while it is above today's limit; when the limit is raised it
    is sent and no longer named in the note.
-3. `sharepoint_store._mirror_files`: a `meta.json` that exists but does not
-   load as a JSON object is read again (three more times, 0.1 s apart); if
-   it still does not load the save ends with an error and sends nothing.
+3. `sharepoint_store._steady_meta`, used by `folder_name`, `_pin_folder`,
+   `session_folder` and `_mirror_locked`: the page and the turn write
+   `meta.json` in place, and a save in the background can meet it half
+   written. EVERY read the save makes of it is made again while the file
+   exists but does not load (up to four reads, 0.1 s apart). The first form
+   of this fix checked once, at the start of the save; the reads that make
+   the folder came after the check and were still open, so one of them
+   taken as "no meta" still filed the conversation outside its owner's
+   folder (`test_a_record_half_written_at_any_one_read_keeps_its_folder`
+   fails on that form). If the file never loads, the save ends with an
+   error and sends nothing. That check runs in `_mirror_locked` before a
+   batch is opened: inside `_mirror_files` it left the Foundry dataset's
+   manager with a batch begun and never ended
+   (`test_a_record_that_stays_unreadable_opens_no_batch`).
 4. `graph_sharepoint.upload_file`: the 404 fallback writes one `log.warning`
    (no file, folder or person named).
+5. **One person, one owner folder** (`sharepoint_store.owner_folder`; found
+   by the review of TA-39).
+
+   **Confirmed.** `conversations_base` made a person's folder,
+   `<root>/conversations/<owner folder>/<page>/`, as
+   `sanitize_folder_name(key)` of their folder key (`Identity.key`,
+   `<domain>__<user>`). That function turns `__` into `_`, drops dots at
+   the ends and cuts at 64 characters, so these pairs of sign-in names
+   shared one folder, one listing and one restore: `corp_a\b` and
+   `corp\a_b` (keys `corp_a__b`, `corp__a_b`, both `corp_a_b`);
+   `corp\jdoe.` and `corp\jdoe`; two long names that differ after the
+   64th character; a key that carries a hash and a name made up to spell
+   it. Over about 11,000 made-up keys, 1,378 folders were shared.
+
+   **The rule.** A plain key keeps the folder it has today; every other
+   key gets its letters, digits and dots (`-` for the rest, at most 52
+   characters), then `__` and 10 hex digits of a SHA-256 of the exact key:
+   `corp_a__b` -> `corp-a-b__<hash>`.
+   - Plain: `<domain>__<user>` in lower case from `a-z 0-9 . -`, with no
+     underscore in the domain and only single underscores inside the user,
+     and nothing else lost by the old function (no dot at either end, 64
+     characters or fewer, no `_vti_`); or a key with no underscore at all.
+     `corp__j.doe` -> `corp_j.doe`, `corp__john_smith` -> `corp_john_smith`,
+     as before.
+   - Why no two keys share: a plain key's folder gives the key back (its
+     first `_` is the join), so two plain keys differ; every other folder
+     holds `__`, which a plain key's folder never does; and among those the
+     hash of the exact key tells them apart (40 bits). Names are compared
+     without case, as SharePoint does: a plain folder is all lower case.
+   - It reads the key only, whatever made it: it holds for the keys of
+     this branch's `identity.py` and for TA-39's.
+
+   **Every place that builds or reads the owner folder** goes through
+   `conversations_base`, so all agree: the save (`session_folder`), the
+   folder-name check (`_pin_folder`, `_unclaimed_remotely`), the listing,
+   the restore, the folder link, and the SharePoint tools' own-folder rule
+   (`sharepoint_tools._scope`). `listing_cache_key` (the sidebar's cache of
+   a listing and the store's record of a failed listing) used the old
+   function too and now uses the same one, so one person's listing failure
+   is not shown as another's. `_log_save_errors` reads whatever follows
+   `/conversations/`. `app.py` hands the key and spells no folder.
+
+   **Who moves.** Only a person whose key is not plain: an underscore in
+   the DOMAIN (`corp_a\b`); a doubled underscore in the user part, which
+   on the TA-39 branch is every name that carries a hash (an apostrophe, a
+   space, an accented letter; TA-39 moves those keys anyway) and before it
+   a name with `__` or with an odd character beside an underscore; a name
+   that ends in a dot; a key over 64 characters; `_vti_` in the name. A
+   name of letters, digits, dots and hyphens, with single underscores in
+   the user part, does not move.
+
+   **What a person who moves sees.** What the store already does when a
+   conversation's folder changes (a changed root or owner): at each of
+   their conversations' next save on this host the whole conversation is
+   sent to the new folder, MOVED.txt is left in the old one, the sidebar
+   says "Renamed — the folder before the rename keeps a copy and a
+   MOVED.txt pointing here", and the folder link is the new one. A
+   conversation of theirs that is only in SharePoint (not on the host's
+   disk) stays in the old folder: it is no longer in their "Find a past
+   conversation" list, and the SharePoint tools now treat the old folder
+   as another person's. The old folder is still the folder of the person
+   who shares the old name and whose key is plain, so that person still
+   lists what the mover left there until the host's administrator moves or
+   deletes it. Nothing is moved or deleted in SharePoint by the app.
+
+   **Tests** (`tests/test_ta40_owner_folder.py`; each fails before the
+   fix): the pairs get two folders, and a name made up to spell another
+   key's folder gets another; about 11,000 made-up keys get as many
+   folders, each a name SharePoint accepts, none over 64 characters; plain
+   keys keep `sanitize_folder_name`'s folder and the sidebar's cache key
+   (a guard: it fails before the fix only because `owner_folder` is not
+   there); for a pair, each one's listing holds their own conversation
+   only, a restore of the other's by name finds nothing, the tools' rule
+   calls the other's folder private, and a failed listing is one person's;
+   a mover's next save sends everything to the new folder with MOVED.txt
+   in the old one, and the plain key of the pair does not move.
+
+   **Runs** (this laptop, the package's tests from its folder, by pytest's
+   exit code): `tests/test_ta40_owner_folder.py`,
+   `test_ta40_sharepoint_off_turn.py`, `test_tinyapps_wiring.py`,
+   `test_sharepoint_store.py`, `test_sharepoint_tools.py`,
+   `test_sharepoint_privacy.py`: 162 passed, 1 skipped (the refused-name round trip, which Windows cannot hold), exit 0; and four more files that use what changed, `test_wave2a_bookkeeping.py`, `test_sharepoint_ta35.py`, `test_sharepoint_links_and_failures.py`, `test_foundry_host.py`: 79 passed, exit 0. The seven tests added with
+   fixes 3 and 5 all fail on the commit before them (021aac1's store).
 
 ## Piece by piece
 
@@ -337,7 +432,12 @@ requests where it was about 300. A large file is sent in pieces from disk and a 
 piece is taken up again. A file above 2048 MB
 (`GEOTECH_SHAREPOINT_MAX_UPLOAD_MB`) is not sent and is named. A file whose
 name SharePoint refuses (a colon, a question mark and the like) is now
-saved, under a nearby accepted name. A GSE user notices nothing: GSE's own
+saved, under a nearby accepted name. Two sign-in names can no longer share
+one SharePoint folder of conversations: a name with an underscore in its
+domain, a doubled underscore, a dot at its end or more than 64 characters
+gets a folder of its own (its conversations on the host are sent there at
+their next save, with MOVED.txt left in the old folder); every other
+tester's folder stays where it is. A GSE user notices nothing: GSE's own
 copies are unchanged.
 
 ## For the lead
@@ -380,10 +480,20 @@ sidebar; two out-of-date comments.
 G's files) do not list `GEOTECH_SHAREPOINT_MAX_UPLOAD_MB`.
 
 **GSE's copies** (`webapp/sharepoint_store.py`, `webapp/graph_sharepoint.py`)
-keep the old behaviour until they leave with INF-35.
+keep the old behaviour until they leave with INF-35, the shared owner
+folders included (review fix 5).
+
+**After TA-39 is merged with this branch:** run TA-39's pairs over
+`sharepoint_store.owner_folder(Identity.key)` once (the rule reads any key,
+but the two were never run together here).
 
 ## Noted, not fixed
 
+- A file held back for its size whose limit is changed but is still above
+  it keeps the note with the limit it was first refused under.
+- What a person who moves to a new owner folder (review fix 5) left in the
+  old one stays there, listed by the person who keeps that folder; the app
+  does not sort an old shared folder by each conversation's owner.
 - `GraphFileManager.download_file` reads a whole file into memory (a
   restore of a several-hundred-MB file, the download tool).
 - A failed large upload leaves its upload session to expire by itself (no

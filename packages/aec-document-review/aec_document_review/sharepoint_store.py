@@ -105,13 +105,33 @@ import tempfile
 import threading
 import time
 import zlib
-
-#: how often a half-written ``meta.json`` is read, and the pause between reads
-META_READS = 4
-META_RETRY_PAUSE_S = 0.1
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from aec_document_review import core
+
+#: TA-40: how often a ``meta.json`` that exists but does not load is read,
+#: and the pause between reads in seconds (:func:`_steady_meta`).
+META_READS = 4
+META_RETRY_PAUSE_S = 0.1
+
+
+def _steady_meta(thread_id: str, root: Optional[str] = None) -> Optional[dict]:
+    """``core.load_meta``, read again while ``meta.json`` exists but does
+    not load (up to :data:`META_READS` reads, :data:`META_RETRY_PAUSE_S`
+    apart). The page and the turn write that file in place, and a save in
+    the background can meet it half written; taken as "no meta", such a
+    read filed the whole conversation outside its owner's folder (TA-40).
+    ``None`` when there is no ``meta.json``, or it never loaded."""
+    meta = None
+    for attempt in range(META_READS):
+        meta = core.load_meta(thread_id, root)
+        if isinstance(meta, dict) or not os.path.exists(
+                core._conv_path(thread_id, "meta.json", root)):
+            break
+        meta = None
+        if attempt + 1 < META_READS:
+            time.sleep(META_RETRY_PAUSE_S)
+    return meta
 
 ENV_SITE = "GEOTECH_SHAREPOINT_SITE_URL"
 ENV_CLIENT_ID = "GEOTECH_SHAREPOINT_CLIENT_ID"
@@ -251,6 +271,49 @@ def sanitize_folder_name(name, max_len: int = MAX_NAME_CHARS) -> str:
     if cleaned.startswith("~$"):
         cleaned = cleaned[2:]
     return cleaned[:max_len].strip(" ._")
+
+
+#: TA-40: an owner key that its folder under :func:`sanitize_folder_name`
+#: gives back, so no other key can have that folder: ``<domain>__<user>``
+#: in lower case with no underscore in the domain and only single ones
+#: inside the user, or a key with no underscore at all.
+_PLAIN_OWNER = re.compile(r"[a-z0-9.-]+(?:__[a-z0-9.-]+(?:_[a-z0-9.-]+)*)?")
+#: Hex digits of the key's hash in every other owner's folder (40 bits).
+OWNER_HASH_LEN = 10
+
+
+def owner_folder(owner) -> str:
+    """The folder one person's conversations are kept under in SharePoint
+    (``<root>/conversations/<this>/...``), from their folder key (the
+    conversation's ``owner``); ``""`` for no owner. Two different keys
+    never get one folder, short of a clash of hashes (TA-40).
+
+    :func:`sanitize_folder_name` alone, the rule until then, loses what
+    tells some keys apart: it turns ``__`` into ``_``, drops dots at the
+    ends and cuts at 64 characters, so ``corp_a__b`` and ``corp__a_b``,
+    or ``corp__jdoe.`` and ``corp__jdoe``, shared one folder, one listing
+    and one restore.
+
+    - A plain key (:data:`_PLAIN_OWNER`, and nothing lost but the one
+      ``__``) keeps the folder it always had: ``corp__j.doe`` ->
+      ``corp_j.doe``. The first ``_`` of that folder is the join, so it
+      gives the key back.
+    - Any other key gets its letters, digits and dots, ``-`` for the rest,
+      cut short, then ``__`` and :data:`OWNER_HASH_LEN` hex digits of a
+      SHA-256 of the exact key: ``corp_a__b`` -> ``corp-a-b__<hash>``. A
+      plain key's folder never holds ``__``, so the two kinds never meet.
+    """
+    key = str(owner or "")
+    if not key.strip():
+        return ""
+    plain = sanitize_folder_name(key)
+    if _PLAIN_OWNER.fullmatch(key) and plain == key.replace("__", "_"):
+        return plain
+    tag = hashlib.sha256(
+        key.encode("utf-8", "surrogatepass")).hexdigest()[:OWNER_HASH_LEN]
+    room = MAX_NAME_CHARS - OWNER_HASH_LEN - 2
+    base = re.sub(r"[^a-z0-9.]+", "-", key.lower()).strip(".-")[:room]
+    return f"{base.strip('.-') or 'user'}__{tag}"
 
 
 def folder_date(meta: Optional[dict]) -> str:
@@ -679,7 +742,7 @@ class SharePointStore:
         Falls back to the thread id if the local metadata can't be read."""
         root = root or core.thread_root(thread_id)
         try:
-            meta = core.load_meta(thread_id, root)
+            meta = _steady_meta(thread_id, root)
             pinned = str((meta or {}).get(MIRROR_FOLDER_KEY) or "").strip()
             if pinned:
                 return pinned            # fixed at the first mirror
@@ -700,7 +763,7 @@ class SharePointStore:
         claim = None
         try:
             root = root or core.thread_root(thread_id)
-            meta = core.load_meta(thread_id, root)
+            meta = _steady_meta(thread_id, root)
             if not meta or str(meta.get(MIRROR_FOLDER_KEY) or "").strip():
                 return
             name = None
@@ -734,7 +797,7 @@ class SharePointStore:
             # Read again: the remote check takes seconds, and a save in the
             # background may run while the next turn retitles the
             # conversation; only the folder field is set here.
-            meta = core.load_meta(thread_id, root) or meta
+            meta = _steady_meta(thread_id, root) or meta
             if str(meta.get(MIRROR_FOLDER_KEY) or "").strip():
                 return
             meta[MIRROR_FOLDER_KEY] = name
@@ -804,7 +867,7 @@ class SharePointStore:
         ``<root>/conversations/[<owner>/][<page>/]<name>``.
         """
         root = root or core.thread_root(thread_id)
-        meta = core.load_meta(thread_id, root) or {}
+        meta = _steady_meta(thread_id, root) or {}
         return (self.conversations_base(meta.get("owner"), meta.get("page"))
                 + "/" + self.folder_name(thread_id, root))
 
@@ -814,7 +877,7 @@ class SharePointStore:
         ``<root>/conversations/[<owner>/][<page>/]`` — the page segment only
         for a page other than the geotech page (see :meth:`session_folder`)."""
         segments = [self.root(), "conversations"]
-        owner = sanitize_folder_name(str(owner or ""))
+        owner = owner_folder(owner)       # one person, one folder (TA-40)
         if owner:
             segments.append(owner)
         page = sanitize_folder_name(str(page or ""))
@@ -986,6 +1049,14 @@ class SharePointStore:
         conv_dir = core.conversation_dir(thread_id, root)
         if not os.path.isdir(conv_dir):
             return
+        # Before anything is sent, and before a batch is opened: the folder
+        # is made from the meta (owner, page, name), so a meta that stays
+        # unreadable ends this save; a half-written one is read again.
+        if not self._meta_readable(thread_id, root):
+            summary["errors"].append(
+                "the conversation's record (meta.json) could not be read, "
+                "so nothing was sent; the next save tries again")
+            return
         # A file manager with the batch hook (the Foundry dataset) lists
         # once for the whole sync (the folder-name check included) and gets
         # this sync's files in ONE save; they count as mirrored only once it
@@ -1011,31 +1082,13 @@ class SharePointStore:
     @staticmethod
     def _meta_readable(thread_id: str, root: Optional[str]) -> bool:
         """False when the conversation's ``meta.json`` exists but does not
-        load as a JSON object (the page writes it in place, so a save can
-        read it half written): read again up to ``META_READS - 1`` more
-        times, ``META_RETRY_PAUSE_S`` apart. No ``meta.json`` at all is
-        fine (True)."""
-        path = core._conv_path(thread_id, "meta.json", root)
-        for attempt in range(META_READS):
-            if not os.path.exists(path):
-                return True
-            try:
-                with open(path, encoding="utf-8") as fh:
-                    if isinstance(json.load(fh), dict):
-                        return True
-            except (OSError, ValueError):
-                pass
-            if attempt + 1 < META_READS:
-                time.sleep(META_RETRY_PAUSE_S)
-        return False
+        load as a JSON object, even read again (:func:`_steady_meta`). No
+        ``meta.json`` at all is fine (True)."""
+        return _steady_meta(thread_id, root) is not None or not os.path.exists(
+            core._conv_path(thread_id, "meta.json", root))
 
     def _mirror_files(self, fm, thread_id: str, root: Optional[str],
                       conv_dir: str, summary: dict, batched: bool) -> None:
-        if not self._meta_readable(thread_id, root):
-            summary["errors"].append(
-                "the conversation's record (meta.json) could not be read, "
-                "so nothing was sent; the next save tries again")
-            return
         manifest = _load_manifest(conv_dir)
         files = _manifest_files(manifest)
         # TA-40: names kept under another name in SharePoint, and files not
@@ -1594,7 +1647,7 @@ def listing_cache_key(owner: Optional[str] = None,
     conversations no longer show")."""
     page_key = DEFAULT_PAGE if _is_default_page(page) else \
         sanitize_folder_name(str(page))
-    owner_key = sanitize_folder_name(str(owner or ""))
+    owner_key = owner_folder(owner)
     return f"sp_remote_list:{owner_key}:{page_key}"
 
 
@@ -1733,4 +1786,5 @@ __all__ = ["SharePointStore", "get_store", "configured", "DEFAULT_ROOT",
            "MANIFEST_NAME", "MOVED_NAME", "conversation_folder",
            "sanitize_folder_name", "folder_date", "save_after_change",
            "sync_for_conversation", "remote_name", "remote_rel",
-           "mirrored_rel", "RemoteListing", "NAMES_NAME", "BG_WORKERS"]
+           "mirrored_rel", "RemoteListing", "NAMES_NAME", "BG_WORKERS",
+           "owner_folder"]

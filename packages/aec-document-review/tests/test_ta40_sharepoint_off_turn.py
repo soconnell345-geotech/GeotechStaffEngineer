@@ -834,3 +834,72 @@ def test_a_record_that_stays_empty_sends_nothing(tmp_path, graph, monkeypatch):
     assert out["errors"] and "could not be read" in out["errors"][0]
     assert not any(m in ("PUT", "POST") for m, _u in graph.calls)
     assert graph.files == {}
+
+
+def test_a_record_half_written_at_any_one_read_keeps_its_folder(
+        tmp_path, graph, monkeypatch):
+    """The turn writes meta.json in place while a save in the background
+    reads it, so ANY one read of the save may meet it half written (the
+    first check, or the reads that make the folder). Every read is made
+    again: the save stays in the owner's own folder. With only a check at
+    the start, a later read taken as "no meta" filed the conversation
+    outside the owner's folder and left MOVED.txt in the real one."""
+    root = str(tmp_path)
+    _conversation(root, "FFFF6666", title="Sheet A-101 review",
+                  owner="corp__j.doe")
+    store = _store()
+    first = store.mirror_conversation("FFFF6666", root)
+    assert first["errors"] == []
+    assert "/conversations/corp_j.doe/" in first["folder"]
+    monkeypatch.setattr(sp, "META_RETRY_PAUSE_S", 0.0)
+    real = core.load_meta
+    for unreadable in (0, 1):                # every second read, either way
+        reads = [0]
+
+        def load_meta(thread_id, root=None, _odd=unreadable):
+            reads[0] += 1
+            return None if reads[0] % 2 == _odd else real(thread_id, root)
+
+        monkeypatch.setattr(core, "load_meta", load_meta)
+        out = store.mirror_conversation("FFFF6666", root)
+        assert out["errors"] == [] and "renamed_from" not in out
+        assert out["folder"] == first["folder"]
+    assert all("/conversations/corp_j.doe/" in p for p in graph.files)
+    assert not any(p.endswith(sp.MOVED_NAME) for p in graph.files)
+
+
+def test_a_record_that_stays_unreadable_opens_no_batch(tmp_path,
+                                                       monkeypatch):
+    """A file manager that takes one save as a batch (the Foundry dataset):
+    when meta.json cannot be read the save ends before a batch is opened,
+    so none is left open for the next save to meet."""
+    class Batched:
+        BACKEND = "foundry"
+
+        def __init__(self):
+            self.begun = self.ended = 0
+            self.uploads = []
+
+        def begin_batch(self):
+            self.begun += 1
+
+        def end_batch(self, commit=True):
+            self.ended += 1
+
+        def create_folder(self, path):
+            pass
+
+        def upload_file(self, local, remote, overwrite=False):
+            self.uploads.append(remote)
+            return True
+
+        def get_web_url(self, path):
+            return f"https://store.example/{path}"
+
+    root = str(tmp_path)
+    _blank_meta(root, "GGGG7777", monkeypatch, heal=False)
+    fm = Batched()
+    out = sp.SharePointStore(file_manager=fm).mirror_conversation(
+        "GGGG7777", root)
+    assert out["errors"] and "could not be read" in out["errors"][0]
+    assert fm.begun == fm.ended == 0 and fm.uploads == []
