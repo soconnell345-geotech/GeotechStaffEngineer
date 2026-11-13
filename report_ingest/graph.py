@@ -704,6 +704,28 @@ def _is_document(source: Any) -> bool:
                for name in ("page_map", "render", "n_pages", "page"))
 
 
+def _source_file(source: Any, source_path: Any = None) -> Optional[str]:
+    """The PDF file the report was read from, when one is known (BACKLOG
+    RI-209): the caller's ``source_path``, else ``source`` itself when it is
+    a path, else, for an open document, the file planlens opened it from
+    (only a fallback: a document opened from bytes has none). It keys the
+    report and gives the report tables the file's name, size and SHA-256,
+    so one PDF has one key however it was handed in."""
+    candidates = [source_path]
+    if isinstance(source, (str, os.PathLike)):
+        candidates.append(source)
+    elif _is_document(source):
+        candidates.append(getattr(source, "path", None))
+        candidates.append(getattr(getattr(source, "_doc", None), "name",
+                                  None))
+    for candidate in candidates:
+        if not isinstance(candidate, (str, os.PathLike)) or not candidate:
+            continue
+        if os.path.isfile(os.fspath(candidate)):
+            return os.fspath(candidate)
+    return None
+
+
 def _open(source: Any, di_result: Any, report_id: str):
     from planlens.document import open_document
     if _is_document(source):
@@ -873,7 +895,9 @@ def ingest_report(source: Any, engine: Any, *,
                   range_engine: Any = None,
                   model_first: Any = None,
                   stage_engines: Any = None,
-                  page_route: Optional[str] = None) -> ReportRecord:
+                  page_route: Optional[str] = None,
+                  report_tables: Any = None,
+                  source_path: Any = None) -> ReportRecord:
     """Read one report end to end and write its record and its exports.
 
     ``source`` is a PDF path, its bytes, or an OPEN planlens document (the
@@ -986,6 +1010,29 @@ def ingest_report(source: Any, engine: Any, *,
         in a mapping does beside stages on; the soundings, the triage, the
         vision voter and the label review stay on their own engines.
         ``page_route`` is ignored with every reader stage off.
+    report_tables
+        The report tables (BACKLOG RI-209, :mod:`report_ingest.tables`):
+        after the outputs are written, the run's facts are saved beside
+        each record (``report.run.json``) and the report and the reports
+        bound inside it are exported as flat, keyed rows under
+        ``<root>/report_tables/v1/``, then sent to the Foundry dataset
+        ``GSE_REPORT_TABLES_DATASET`` names, on a Foundry deployment.
+        ``None`` follows ``GSE_REPORT_TABLES``: unset, on, the root being
+        the folder holding ``db_path``, else the app's shared report library
+        (``GEOTECH_REPORT_LIBRARY``) when ``out_dir`` is inside it, else
+        ``out_dir`` (:func:`report_ingest.tables.export_root`); ``False`` (or
+        ``"off"``) writes none of it; a folder names the root. Ignored with
+        ``write=False``. The export never changes the record and never
+        fails the run.
+    source_path
+        The PDF file ``source`` was read from, when ``source`` is an open
+        document or bytes and the caller knows the file (BACKLOG RI-209).
+        The report is keyed off that file, and the report tables name, size
+        and hash it, so a PDF has one key whether it came as a path, as
+        bytes or as a document. The cluster stage and ``run_folder`` pass
+        it. Without it, an open document's own file (the one planlens opened
+        it from) is used when it is readable; a document with no file keys
+        off ``report_id``, as before.
 
     The cost on ``record.document`` is the WHOLE run's, the children
     included; each child's own block says what that child cost. It is THIS
@@ -1065,9 +1112,10 @@ def ingest_report(source: Any, engine: Any, *,
                       report_id, spend, qa, unresolved, di_result, labelling,
                       children, ingest_bound, counts_from_logs,
                       narrative_skips_bound, first_run, readers)
+        questions_ran = False
         if os.environ.get(QUESTION_LIST_ENV, "").strip():
-            _question_list(record, doc, engine, out, resume, spend, qa,
-                           children)
+            questions_ran = _question_list(record, doc, engine, out, resume,
+                                           spend, qa, children)
     finally:
         for real in paced:
             real.pacer = None
@@ -1085,11 +1133,16 @@ def ingest_report(source: Any, engine: Any, *,
     record.document.resumed = spend.resumed()
 
     if write:
-        if _is_document(source):
-            key_source: Any = getattr(source, "path", None) or report_id \
-                or None
+        # One PDF, one key, however it was handed in (BACKLOG RI-209): the
+        # file when it is known, else the bytes (which key alike), else a
+        # document's report_id as before.
+        source_file = _source_file(source, source_path)
+        if source_file:
+            key_source: Any = source_file
         elif isinstance(source, (bytes, bytearray)):
-            key_source = None
+            key_source = bytes(source)
+        elif _is_document(source):
+            key_source = report_id or None
         else:
             key_source = source
         # The children FIRST: their records carry the DIGGS verdicts their
@@ -1111,18 +1164,25 @@ def ingest_report(source: Any, engine: Any, *,
             if child is not None:
                 row.counts = child.counts()
         write_outputs(record, out, source=key_source, db_path=db_path)
+        from report_ingest.tables import after_ingest
+
+        after_ingest(out, record=record, children=children,
+                     source=source_file or source, key_source=key_source, db_path=db_path,
+                     setting=report_tables, question_list=questions_ran)
     return record
 
 
 def _question_list(record: ReportRecord, doc: Any, engine: Any, out: str,
                    resume: bool, spend: _Spend, qa: List[QAEntry],
-                   children: Sequence[Tuple[ReportRecord, str]]) -> None:
+                   children: Sequence[Tuple[ReportRecord, str]]) -> bool:
     """The owner's question list asked of the finished record, its answer
     sheet written beside the record (BACKLOG RI-101 part 1); only with
     :data:`QUESTION_LIST_ENV` set. Its calls are counted in the run's
     cost, and the replies it took from the folder in the whole report's
     (BACKLOG RI-125); what it could not do is a QA entry, never a failed run
-    (:func:`report_ingest.question_list.ingest_sheet`)."""
+    (:func:`report_ingest.question_list.ingest_sheet`). Returns whether a
+    sheet was written, which the report tables need to tell this run's
+    sheet from an earlier one's."""
     from report_ingest.question_list import ingest_sheet
 
     bound = {child.parent.bound_id: child for child, _ in children
@@ -1130,13 +1190,14 @@ def _question_list(record: ReportRecord, doc: Any, engine: Any, out: str,
     mark = spend.mark()
     reused: List[Dict[str, Any]] = []
     try:
-        _path, notes = ingest_sheet(record, doc, engine, out, bound=bound,
-                                    resume=resume, reused=reused)
+        path, notes = ingest_sheet(record, doc, engine, out, bound=bound,
+                                   resume=resume, reused=reused)
     finally:
         spend.settle(mark)
     for cost in reused:
         spend.reuse("question_list", cost)
     qa.extend(notes)
+    return path is not None
 
 
 def _pace(budgets: Budgets, engine: Any, labelling: "_Labelling",
@@ -3762,6 +3823,7 @@ def _join_by_hole(record: ReportRecord, start: int,
                               "each later one's layers, samples, blow "
                               "counts and water readings are appended"),
                     pages=list(inv.pages)))
+                _recheck_carried_labels(inv, unresolved)
             out.append(inv)
     record.investigations[start:] = out
 
@@ -3780,6 +3842,33 @@ def _join_by_hole(record: ReportRecord, start: int,
                     f"separate logs, as a report can number two holes so"),
             pages=sorted({p for f in folds for inv in logs[f]
                           for p in inv.pages})))
+
+
+def _recheck_carried_labels(inv: Any,
+                            unresolved: List[Dict[str, Any]]) -> None:
+    """RI-103, under GEOTECH_INGEST_LOG_INTERVALS only: a log joined from
+    parts read apart is asked again for labels marked carried with none
+    printed above. An entry a part gave that the join has made untrue (the
+    label is printed above, on an earlier part) is dropped; one already
+    listed is not listed twice."""
+    from report_ingest.log_intervals import (carried_label_entries,
+                                             log_intervals_enabled)
+    if not log_intervals_enabled():
+        return
+
+    def key(row: Dict[str, Any]) -> Tuple[Any, Any, Any]:
+        return row.get("what"), row.get("page"), row.get("read")
+
+    now = carried_label_entries(inv)
+    true = {key(row) for row in now}
+    pages = set(inv.pages)
+    unresolved[:] = [row for row in unresolved
+                     if not (row.get("flag") == "label_carried"
+                             and row.get("page") in pages
+                             and key(row) not in true)]
+    listed = {key(row) for row in unresolved
+              if row.get("flag") == "label_carried"}
+    unresolved.extend(row for row in now if key(row) not in listed)
 
 
 def _continues_log(first: Any, later: Any, slack: float = 0.0) -> str:

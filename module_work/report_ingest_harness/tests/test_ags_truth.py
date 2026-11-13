@@ -217,7 +217,7 @@ def test_a_borehole_fills_the_logs_schema(ags):
 
     # The SPT sits on the small disturbed sample from its spoon ...
     spoon = _sample(truth, 1.0)
-    assert spoon["id"] == "1" and spoon["n"] == 9
+    assert spoon["id"] == "D1" and spoon["n"] == 9
     assert spoon["blows"] == [1, 1, 2, 2, 2, 3]
     assert spoon["spt_report"] == "N=9 (1,1/2,2,2,3)"
     # ... but never on a bulk sample at the same depth.
@@ -239,7 +239,7 @@ def test_a_borehole_fills_the_logs_schema(ags):
         24.0, 45.0, 20.0, 25.0)
     # A grading on a sample SAMP does not list gets a row of its own.
     graded = _sample(truth, 7.0)
-    assert graded["fines"] == 35.0 and graded["id"] == "9"
+    assert graded["fines"] == 35.0 and graded["id"] == "B9"
 
     # The strike, and the level it rose to at the LAST reading.
     assert [w["depth"] for w in truth["water"]] == [3.2, 4.0]
@@ -511,3 +511,89 @@ def test_the_logs_stage_runs_on_a_public_set_item(made_up_set, monkeypatch):
     assert blob["pages"] == [0]
     assert not (blob.get("after") or {}).get("error")
     assert sum(len(fake.calls) for fake in made) >= 1
+
+
+# -- RI-79: the conventions a paired public answer is scored by ----------------
+
+def test_a_sample_id_is_its_type_and_reference_together(ags):
+    """A log prints a sample as its type and its number (D1, U2). Built from
+    the reference alone ("1", "2"), nearly every id would miss."""
+    truth = at.truth_for_hole(ags, "BH1", item_id="P99_p0", pages=[0])
+    ids = {(s["type"], s["id"], s.get("ref")) for s in truth["samples"]
+           if s["type"] in ("D", "U", "B")}
+    assert ("D", "D1", "1") in ids and ("U", "U2", "2") in ids
+    assert ("B", "B3", "3") in ids
+    # The laboratory rows still find their sample by its reference.
+    assert _sample(truth, 2.0)["wc"] == 24.0
+
+
+@pytest.mark.parametrize("kind, ref, want", [
+    ("D", "1", "D1"), ("U", "12", "U12"), ("D", "D1", "D1"),
+    ("d", "D-1", "D-1"), ("", "7", "7"), ("B", "", ""), ("ES", "4", "ES4"),
+])
+def test_a_reference_that_already_leads_with_the_type_is_kept(kind, ref,
+                                                               want):
+    assert at.sample_id(kind, ref) == want
+
+
+def test_a_tubes_blows_are_marked_as_the_samplers(ags):
+    truth = at.truth_for_hole(ags, "BH1", item_id="P99_p0", pages=[0])
+    tube = _sample(truth, 2.0)
+    assert tube["blows"] == [40] and tube["blows_kind"] == "sampler"
+    # A penetration test's increments are not.
+    assert "blows_kind" not in _sample(truth, 1.0)
+
+
+def test_the_header_fields_taken_from_the_data_are_listed(ags):
+    from report_ingest.log_scoring import FIELD_MAP
+
+    truth = at.truth_for_hole(ags, "BH1", item_id="P99_p0", pages=[0])
+    listed = truth["fields_from_data"]
+    assert set(listed) == {k for k in truth["fields"] if k in FIELD_MAP}
+    assert {"project", "client", "contractor", "hammer",
+            "total_depth"} <= set(listed)
+    # Nothing is struck here: that is a reviewer's call.
+    assert truth["fields_struck"] == []
+
+
+def test_a_struck_header_field_is_left_out_of_the_total(ags):
+    from module_work.report_ingest_harness.truth_records import (
+        investigations_from_truth,
+    )
+    from report_ingest.log_scoring import score_record
+
+    truth = at.truth_for_hole(ags, "BH1", item_id="P99_p0", pages=[0])
+    record = investigations_from_truth(truth)
+    whole = score_record(truth, record).scores["fields"]
+    truth["fields_struck"] = ["client", "contractor"]
+    struck = score_record(truth, record)
+    assert struck.scores["fields"].total == whole.total - 2
+    assert len(struck.set_aside["fields_struck"]) == 2
+
+
+def test_a_rebuild_keeps_the_reviewers_strikes(tmp_path, monkeypatch):
+    import pymupdf
+
+    folder = tmp_path / "P99"
+    (folder / "ags").mkdir(parents=True)
+    _write(folder / "ags", MADE_UP, "1_111.ags")
+    doc = pymupdf.open()
+    doc.new_page()
+    doc.save(str(folder / "scan_1.pdf"))
+    doc.close()
+    (folder / "onshore_index_records.json").write_text(json.dumps([
+        {"bgs_id": 1, "name": "Made-up Bridge BH1",
+         "ags_log_url": "https://example.invalid/x?loca_id=111"}]),
+        encoding="utf-8")
+    monkeypatch.setattr(at, "_refuse_tracked", lambda paths: None)
+
+    at.build(tmp_path, ["P99"])
+    sheet = tmp_path / "truth" / "logs" / "P99_p0.json"
+    truth = json.loads(sheet.read_text(encoding="utf-8"))
+    assert truth["fields_struck"] == []
+    truth["fields_struck"] = ["client"]
+    sheet.write_text(json.dumps(truth), encoding="utf-8")
+
+    at.build(tmp_path, ["P99"])
+    again = json.loads(sheet.read_text(encoding="utf-8"))
+    assert again["fields_struck"] == ["client"]

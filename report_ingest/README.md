@@ -46,6 +46,7 @@ imported. See "Model-first reading" under the graph.
 | The DIGGS writer | `diggs_writer.py` | deterministic, with two gates |
 | The whole ingest | `graph.py` | a deterministic loop, resumable per item |
 | A folder of reports | `run_folder.py` | the same graph headless, into one library |
+| The report tables | `tables.py` | each ingest's results as flat, keyed tables for a pipeline (and a Foundry dataset); on by default, `GSE_REPORT_TABLES` |
 | The app's sub-agent | `subagent.py` | a `CompiledSubAgent` and one primary tool |
 | Scoring one log | `log_scoring.py` | the grid alone, then the reader |
 | Scoring one sheet | `lab_scoring.py` | the page's tables alone, then the reader |
@@ -1287,7 +1288,11 @@ With `GSE_REPORT_QUESTIONS` set, `ingest_report` asks the list of each
 report once its record is read, on the run's engine, over the pages and
 printed page numbers the harness reads (`pages_to_read`, `page_texts`,
 `doc.page_map()`), with the bound reports' records, and writes
-`report.questions.xlsx` beside `report.record.json`. The list's calls count
+`report.questions.xlsx` beside `report.record.json`, and the same answers
+as data in `report.questions.json` (each question's Key, Output, Category
+and Data Type with its typed answer, status, pages, note and From, and the
+Run tab's facts; `answer_json`), which the report tables read (BACKLOG
+RI-209). The list's calls count
 in the record's cost; each structured reply is kept in
 `items/question_list.calls.json` with its cost, so a resumed run that sends
 the same request pays nothing for it, and the record's
@@ -1419,6 +1424,54 @@ answer this pipeline produces and it is the one that has to stay comparable.
 makes the record `needs_ocr`; a conflict or a count mismatch makes it `medium`;
 a narrative that barely answered makes it `low`.
 
+## The report tables (`tables.py`)
+
+After the writers, every ingest exports the report as flat, keyed tables a
+pipeline reads one step per table, under `<root>/report_tables/v1/`
+(BACKLOG RI-209): `report` (one row), `report_page` (one per page: the
+label, each voter's label, the page's description), `report_answer` (the 38
+fields of the owner's two schemas every time, and the question list's rows
+when it ran), `report_file`, and `ingest_run` (one file per ingest, never
+overwritten), beside copies of the DIGGS file, the record, the summary and
+the answer sheet. Pages are PDF pages from 1; `report_key` is the library's
+own key. Every table's key is one string column, first in its rows
+(`report_key`, `page_id`, `answer_id`, `file_id`, `run_key`: its parts
+joined with `:`, `tables.make_id`). The tables are defined once in the
+module (`TABLES`); `schema.json`,
+the rows' checks and the column list in
+[`docs/REPORT_TABLES.md`](../docs/REPORT_TABLES.md) come from that
+definition. That document is the reference for the FDE and the owner: the
+layout, every column, the keys and links, what a re-ingest does, what to
+trust in a dataset, and a suggested Ontology.
+
+| Setting | What it gives | Unset |
+|---|---|---|
+| `GSE_REPORT_TABLES` | `0` / `off`: no export and nothing of it written (the question list's own `report.questions.json` still is, when the list runs); a folder: that root for every report; `on`: the default root | on; the root is the folder holding the ingest's `reports.db` (a folder run's or the cluster stage's library), else the app's shared report library (`GEOTECH_REPORT_LIBRARY`) for a report ingested into it, else the report's own folder |
+| `GSE_REPORT_TABLES_DATASET` | a Foundry workspace dataset alias: on a Foundry deployment, each report's export goes to it in one save, under the application's top folder (`aec_agent_core.foundry_dataset_store`, the conversation store's lock and outputs folder) | nothing is sent and nothing of Foundry's is imported |
+
+`ingest_report(report_tables=...)` wins over the setting (`False` off,
+`True` the default root, a folder that root); `run_folder` and
+`score_on_cluster` pass it through. The export is built from the files on
+disk, never from memory: the ingest first saves what the folder does not
+otherwise keep (the run id and time, the source file's name, size and
+SHA-256, the package versions) as `report.run.json` beside each record,
+then `export_report` reads the folder. The same code exports reports
+already ingested, with no model call: `python -m report_ingest.tables
+<run_root> [--root R] [--deliver]` (`export_folder`). It never changes the
+record and never fails the ingest: the outcome (`written` / `error`, rows,
+what the dataset got) is kept in `report.run.json`
+(`tables.export_outcome(out_dir)`), in the cluster stage's `run.json`, as
+one line in the app tool's result (`IngestSummary.report_tables`) and in a
+folder run's `index.json` and `INDEX.md`.
+
+**The key of an upload or an open document.** The graph now keys a report
+handed in as bytes off the bytes, and one handed in as an open document
+(the cluster stage's way) off its PDF (`ingest_report(source_path=...)`,
+else the file planlens opened), as it keys a path off the file (both fell
+back to the project's name and number before), so the same PDF gets the
+same `report_key` however it arrives; the page and the library record no
+source path for bytes.
+
 ## The graph (`graph.py`) and the folder run (`run_folder.py`)
 
 `ingest_report(source, engine, out_dir=…, budgets=…, questions=…,
@@ -1470,6 +1523,30 @@ written to `placement.json` beside `items/`. Each
 result is saved as `items/mf-<key>.json`; a group no answer came back for is not
 saved, so a resumed run asks again. Cone soundings and dynamic probes keep the
 sounding reader.
+
+**Every drawn line an interval** (BACKLOG RI-103 parts 1 and 2,
+`log_intervals.py`), behind `GEOTECH_INGEST_LOG_INTERVALS` (or
+`with use_log_intervals():`), off by default, on the model-first log reading
+only. On, the log instruction and answer schema ask for one layer for every
+line the log draws across its soil column, and the record never joins two of
+them, whatever their descriptions. A change the log writes inside an interval
+with no line ("wet below 7 ft") is a note on that interval (`Layer.notes`,
+each with its depth where one is written), never an interval of its own. An
+interval also keeps the elevation the log prints for its top
+(`top_elevation`), the kind of its top line where the log's legend or the line
+itself says it and whether the line runs the full width (`top_line`,
+`top_line_full_width`), and a stratum label only where the log prints one, as
+printed, with where it was printed and whether it was carried down from one
+printed above (`stratum_label`, `stratum_label_source`,
+`stratum_label_carried`). The new fields are left out of a saved record when
+empty and out of the DIGGS file, the summary and the library page; the
+library's search and the question list's soft-layer reading do read the
+notes' words. Off, the instruction and the schema are today's to the byte;
+on, a log answer is saved under `mf-<n>+li`, so a resumed run never mixes the
+two. The log scorer scores them as groups of their own, outside its totals,
+on the answer sheets that carry them (`log_scoring.INTERVAL_METRICS`). Not
+measured live yet. Mapping each interval to the narrative's units (part 3) is
+not built.
 
 **The narrative is read once** (BACKLOG RI-14). planlens starts a new work item
 wherever a run of narrative pages is broken by a figure, a table page or a tab,

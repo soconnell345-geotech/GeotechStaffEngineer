@@ -22,6 +22,14 @@ import inspect
 import os
 import re
 
+from aec_agent_core import call_warnings as _call_warnings
+
+# The warnings wrapper and hook go in when the call path is imported, not
+# on a call's first warning (GM-316; review C13: a hook installed lazily
+# while another thread's catch_warnings block was open was undone by it).
+_call_warnings.ensure_hook()
+
+
 def _method_params(mod, method: str) -> dict:
     """The documented parameters of ``method`` (``{}`` when undocumented)."""
     try:
@@ -296,6 +304,215 @@ def _check_parameter_names(mod, method: str, parameters: dict) -> None:
             + "." + also)
 
 
+def _value_hint(value: str, allowed, aliases=None) -> str:
+    """A did-you-mean for a value outside ``allowed``: the same value in
+    another case, else the closest one or two by spelling; a value close
+    to one of the other spellings the method reads (``aliases``, alias ->
+    listed value) suggests the listed value it stands for."""
+    import difflib
+    means = {a: a for a in allowed if isinstance(a, str)}
+    for a, canon in (aliases or {}).items():
+        if isinstance(a, str) and isinstance(canon, str):
+            means.setdefault(a, canon)
+
+    def norm(s: str) -> str:
+        return s.strip().lower().replace("-", "_").replace(" ", "_")
+
+    folded, by = {}, {}
+    for spelling, canon in means.items():
+        folded.setdefault(spelling.strip().lower(), canon)
+        by.setdefault(norm(spelling), canon)
+    key = value.strip().lower()
+    if key in folded:
+        return f" Did you mean {folded[key]!r}?"
+    near = difflib.get_close_matches(norm(value), list(by), n=4, cutoff=0.5)
+    near = list(dict.fromkeys(by[n] for n in near))[:2]
+    return (f" Did you mean {' or '.join(repr(n) for n in near)}?"
+            if near else "")
+
+
+def value_aliases(spec: dict) -> dict:
+    """The other spellings a parameter's method reads for its listed
+    values, alias -> listed value: ``value_aliases`` (shown in its
+    documentation as "also read as") and ``hidden_value_aliases`` (read,
+    never offered: a spelling whose meaning would mislead, kept so that a
+    call that ran before still runs). GM-316 review B3."""
+    out = {}
+    for key in ("value_aliases", "hidden_value_aliases"):
+        got = spec.get(key)
+        if isinstance(got, dict):
+            out.update(got)
+    return out
+
+
+def values_note(spec: dict) -> str:
+    """How a parameter's method reads its listed values, in words: case
+    and spaces (``any_case``), the other spellings it reads
+    (``value_aliases``) and the values it refuses with a reason
+    (``refused_values``); "" when there is nothing to say. describe_method
+    gives this in place of the raw keys (GM-316 review C14)."""
+    if not isinstance(spec, dict):
+        return ""
+    parts = []
+    fold = spec.get("any_case")
+    if fold:
+        words = VALUE_FOLD_WORDS.get(fold, VALUE_FOLD_WORDS[True])
+        parts.append(words[0].upper() + words[1:] + ".")
+    shown = spec.get("value_aliases")
+    if isinstance(shown, dict) and shown:
+        parts.append("Also read as: " + ", ".join(
+            f"{a!r} = {c!r}" for a, c in shown.items()) + ".")
+    refused = spec.get("refused_values")
+    if isinstance(refused, dict) and refused:
+        parts.append("Not taken: " + "; ".join(
+            f"{v!r} ({str(r).rstrip('.')})" for v, r in refused.items())
+            + ".")
+    return " ".join(parts)
+
+
+#: How a method that does not compare a string exactly reads it: a
+#: parameter's ``any_case``, each the normalisation one handler applies
+#: before comparing, so the value check accepts exactly what the code
+#: reads (GM-316 review B2: ``any_case`` stripped as well, and a padded
+#: Schmertmann shape " strip " passed dispatch and ran as a square).
+VALUE_FOLDS = {
+    # lower-cased only (bearing_capacity Footing.shape, the settlement
+    # shapes, pynite support types, plot_data legend_position)
+    True: lambda s: s.lower(),
+    # stripped and lower-cased (most selectors)
+    "strip": lambda s: s.strip().lower(),
+    # lower-cased, ASCII spaces dropped (settlement stress_method)
+    "no_spaces": lambda s: s.lower().replace(" ", ""),
+    # lower-cased, all whitespace and hyphens dropped (wave_equation
+    # driving systems)
+    "no_spaces_hyphens": lambda s: "".join(s.lower().split()).replace(
+        "-", ""),
+    # stripped, lower-cased, a space read as an underscore (the AASHTO
+    # 1993 drainage-quality tables)
+    "spaces_as_underscores": lambda s: s.strip().lower().replace(" ", "_"),
+}
+
+#: The same in words, for describe_method and the manual.
+VALUE_FOLD_WORDS = {
+    True: "case ignored",
+    "strip": "case and surrounding spaces ignored",
+    "no_spaces": "case and spaces ignored",
+    "no_spaces_hyphens": "case, spaces and hyphens ignored",
+    "spaces_as_underscores": ("case and surrounding spaces ignored; a "
+                              "space reads as an underscore"),
+}
+
+
+def _fold_value(value: str, any_case) -> str:
+    """A string as the method reads it under ``any_case``
+    (:data:`VALUE_FOLDS`); an unknown kind folds case only."""
+    return VALUE_FOLDS.get(any_case, VALUE_FOLDS[True])(value)
+
+
+def _outside(value, allowed, any_case=False, aliases=()):
+    """The values of ``value`` outside ``allowed`` and the other spellings
+    the method reads (``aliases``), a string or each string of a list,
+    compared as the method compares them (``any_case``, a kind of
+    :data:`VALUE_FOLDS`, or False: exactly); values of another kind than
+    the list's are left to the method."""
+    strings = all(isinstance(a, str) for a in allowed)
+    if strings:
+        items = value if isinstance(value, list) else [value]
+        if not all(isinstance(v, str) for v in items):
+            return []
+        taken = list(allowed) + [a for a in aliases if isinstance(a, str)]
+        if any_case:
+            folded = {_fold_value(a, any_case) for a in taken}
+            return [v for v in items
+                    if _fold_value(v, any_case) not in folded]
+        return [v for v in items if v not in taken]
+    # A list of booleans or numbers: a value of the same kind only (True
+    # is not 1 here).
+    kinds = {type(a) for a in allowed}
+    if type(value) not in kinds:
+        return []
+    return [] if any(value == a and type(value) is type(a)
+                     for a in allowed) else [value]
+
+
+def _check_parameter_values(mod, method: str, parameters: dict) -> None:
+    """Refuse a value outside a parameter's ``allowed_values`` (BACKLOG
+    GM-317): the ValueError names the parameter, the value, a did-you-mean
+    and the values it takes, in the voice of the name check (GM-110).
+    Without it a value outside the list ran as something else
+    (``trend_type="exponential"`` fitted a straight line).
+
+    The list is the parameter's in the method's METHOD_INFO (or, for a
+    method whose ``parameters_of`` names another, that one's), reached by
+    the name the call gave or an alias of it (``parameter_aliases``).
+    The other spellings the method reads for a listed value
+    (:func:`value_aliases`) are taken too; the refusal lists only the
+    listed values. Strings are compared exactly unless the parameter says
+    ``any_case``: the method normalises the string itself, in the way
+    :data:`VALUE_FOLDS` names (True: case only; "strip": surrounding
+    spaces too; ...), each the way one handler does it. Checked: a string
+    against a list of strings, each string of a list given for one, and a
+    boolean or a number against a list of that kind. Not checked: None
+    (the method's default), a value of another kind than the list's, and
+    a parameter nested inside a dict or a list of dicts (no adapter
+    declares a list there). A parameter's ``refused_values`` (value ->
+    reason) gives the reason for a value it deliberately does not take, in
+    place of the did-you-mean."""
+    info = mod.METHOD_INFO.get(method)
+    if not isinstance(info, dict):
+        return
+    declared = dict(info.get("parameters") or {})
+    aliases = dict(info.get("parameter_aliases") or {})
+    of = info.get("parameters_of")
+    if of:
+        names = [of] + [a for a, c in aliases.items() if c == of]
+        target = next((parameters[n] for n in names
+                       if isinstance(parameters.get(n), str)), None)
+        other = mod.METHOD_INFO.get(target) if target else None
+        if isinstance(other, dict) and target != method:
+            for name, spec in (other.get("parameters") or {}).items():
+                declared.setdefault(name, spec)
+            for a, c in (other.get("parameter_aliases") or {}).items():
+                aliases.setdefault(a, c)
+    for key, value in parameters.items():
+        spec = declared.get(key)
+        if spec is None:
+            spec = declared.get(aliases.get(key))
+        if not isinstance(spec, dict) or value is None:
+            continue
+        allowed = spec.get("allowed_values")
+        if not isinstance(allowed, (list, tuple)) or not allowed:
+            continue
+        # the value's other spellings; ``aliases`` stays the parameter
+        # NAMES' map for the next key (GM-316 re-check N1)
+        spellings = value_aliases(spec)
+        bad = _outside(value, list(allowed), spec.get("any_case"),
+                       spellings)
+        if not bad:
+            continue
+        first = bad[0]
+        what = (f"{key}={value!r}" if not isinstance(value, list)
+                else f"{key} item {first!r}")
+        # A value the method deliberately refuses says why and where to
+        # look instead (a removed table row), as the method itself did.
+        reasons = spec.get("refused_values") or {}
+        reason = reasons.get(first) if isinstance(first, str) else None
+        if reason is None and isinstance(first, str) and spec.get("any_case"):
+            folded = _fold_value(first, spec.get("any_case"))
+            reason = next((r for v, r in reasons.items()
+                           if _fold_value(v, spec.get("any_case")) == folded),
+                          None)
+        if reason:
+            hint = f" {str(reason).rstrip('.')}."
+        else:
+            hint = (_value_hint(first, allowed, spec.get("value_aliases"))
+                    if isinstance(first, str) else "")
+        raise ValueError(
+            f"{method}: {what} is not one of the values it takes.{hint} "
+            f"Valid values: {list(allowed)}. describe_method gives each "
+            f"one's meaning.")
+
+
 #: A calc package's header and file format: not engineering choices, so
 #: never listed in ``defaults_used``.
 _PACKAGE_HEADER_PARAMS = frozenset({
@@ -379,17 +596,48 @@ def absent_case(spec, declared=None) -> str:
     return f"{case['case']}: {case['basis']}"
 
 
+def listed_value(value, spec):
+    """The listed value a method reads ``value`` as: itself when listed,
+    else the listed value its fold (``any_case``, :data:`VALUE_FOLDS`) or
+    one of its other spellings (:func:`value_aliases`) names; each string
+    of a list likewise; anything else unchanged. GM-316 re-check N2: an
+    ``applies_when`` naming a listed value then holds for every spelling
+    the value check takes ("log-spiral" for log_spiral), so the default it
+    governs stays in ``defaults_used``."""
+    if isinstance(value, list):
+        return [listed_value(v, spec) for v in value]
+    allowed = spec.get("allowed_values") if isinstance(spec, dict) else None
+    if not isinstance(value, str) or not isinstance(allowed, (list, tuple)) \
+            or not all(isinstance(a, str) for a in allowed):
+        return value
+    any_case = spec.get("any_case")
+
+    def fold(s):
+        return _fold_value(s, any_case) if any_case else s
+
+    key = fold(value)
+    for a in allowed:
+        if fold(a) == key:
+            return a
+    for alias, to in value_aliases(spec).items():
+        if isinstance(alias, str) and fold(alias) == key:
+            return to
+    return value
+
+
 def _values_in_force(declared: dict, aliases: dict, parameters=None) -> dict:
     """Each declared parameter's value in force in a call: the call's
-    (under the name the method reads), else its default, a default that
+    (under the name the method reads, and as the listed value it reads a
+    string as, :func:`listed_value`), else its default, a default that
     depends on another input (:func:`default_in_force`) taken at that
     input's value in force."""
     values = {name: spec.get("default") for name, spec in declared.items()
               if isinstance(spec, dict)}
     named = set()
     for key, value in (parameters or {}).items():
-        values[aliases.get(key, key)] = value
-        named.add(aliases.get(key, key))
+        name = aliases.get(key, key)
+        values[name] = listed_value(value, declared.get(name))
+        named.add(name)
     for name, spec in declared.items():
         if isinstance(spec, dict) and spec.get("default_depends_on") \
                 and name not in named:
@@ -603,9 +851,28 @@ def run_method(mod, agent_name: str, method: str, parameters: dict,
     citations there).
     """
     from aec_agent_core._fileio import hide_working_folder
+    from aec_agent_core.call_warnings import add_to_result, collecting
+    # The Python warnings the method raises reach the agent with its result
+    # (BACKLOG GM-316; aec_agent_core.call_warnings), also with an error.
+    with collecting() as caught:
+        result = _run_checked(mod, agent_name, method, parameters,
+                              attachments, inputs, after)
+    texts = caught.texts
+    if isinstance(result, dict) and isinstance(result.get("error"), str):
+        # a warning made an error (``-W error``) is said once, in the error
+        # (GM-316 re-check N3)
+        texts = [t for t in texts if t not in result["error"]]
+    return hide_working_folder(add_to_result(result, texts))
+
+
+def _run_checked(mod, agent_name: str, method: str, parameters: dict,
+                 attachments, inputs, after):
+    """:func:`run_method`'s checks, the call and its notes; the result
+    before working-folder paths are hidden."""
     given = set(parameters)
     try:
         _check_parameter_names(mod, method, parameters)
+        _check_parameter_values(mod, method, parameters)
         if "attachment_key" in parameters:
             parameters = _resolve_attachment(
                 parameters, attachments, _method_params(mod, method))
@@ -623,15 +890,13 @@ def run_method(mod, agent_name: str, method: str, parameters: dict,
         except TypeError as e:
             if not _SIGNATURE_ERROR.search(str(e)):
                 raise
-            return hide_working_folder(
-                _parameter_error(mod, agent_name, method, parameters, e))
+            return _parameter_error(mod, agent_name, method, parameters, e)
         if named and isinstance(result, dict) and "error" not in result:
             result = dict(result)
             result["output_note"] = _output_note(named, parameters)
         if after is not None:
             result = after(parameters, result)
-        result = _with_defaults_used(mod, method, given, result, parameters,
-                                     recorded.reported, recorded.took)
-        return hide_working_folder(result)
+        return _with_defaults_used(mod, method, given, result, parameters,
+                                   recorded.reported, recorded.took)
     except Exception as e:
-        return hide_working_folder({"error": f"{type(e).__name__}: {e}"})
+        return {"error": f"{type(e).__name__}: {e}"}
