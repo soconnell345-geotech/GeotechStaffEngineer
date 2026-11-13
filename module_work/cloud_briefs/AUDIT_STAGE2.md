@@ -83,3 +83,14 @@ Branch `claude/gm-326-327-subsurface-dxf`. CHECK at `module_work/gm326/CHECK.md`
 - `compute_trend`: fewer than two points is refused; the log fit reports how many points it dropped; the unknown trend type is the dispatch task's (leave it).
 - The GEF reader keeps a missing or non-finite reading missing (not 0.0) and reports the count per column; check what the readers of its output do with a missing value.
 - `dxf_import`: every default that stands in for a soil or nail property is listed in `defaults_used`; a missing strength is refused (the module's own documents say strengths come from the user); the drawing's own units are compared with `units`, and a mismatch is refused or converted, said either way; text annotations are converted like geometry.
+
+## GM-310: the default changes from the 2026-11-12 judgement calls
+
+Branch `claude/gm-310-judgement-call-defaults`. CHECK at `module_work/gm310/CHECK.md`.
+
+The source, binding: `module_work/owner_calls_2026-11-12/CALLS.md` section B (the calls for OWN-84, OWN-85, OWN-82, OWN-68, OWN-108, OWN-112, OWN-114, OWN-118 and OWN-131) and, from its section A, the call for OWN-105 (the downdrag summary's wording). BACKLOG GM-310 lists the ten changes. Moment-curvature EI (OWN-19) is GM-311, not this task. Nothing in `slope_stability/`.
+
+- One commit per default: the code, its tests, true `choices` and `defaults_used`, the tool description, the manual row. The fingerprints commit comes last.
+- Every one of these moves answers. For each default, CHECK.md gives before and after on one made-up case, and a release note. List every probe, worked example, validation example and saved fixture whose answer moves or which is now refused; an example that is now refused gets the input it now needs, and you say so.
+- Where a call says "refuse without X", the message names X and what to give.
+- Other sessions are editing the same modules at the same time, in other functions (piles, pile groups, liquefaction outputs). Keep each change inside the function it belongs to and do not reformat or reorder a file.
