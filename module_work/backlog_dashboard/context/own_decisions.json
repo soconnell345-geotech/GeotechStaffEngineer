@@ -4394,6 +4394,20 @@
           }
         ],
         "multi": false
+      },
+      {
+        "label": "32. GM-322, reliability bounds (built 2026-11-13, the lead's call): FOSM and PEM refuse a normal or lognormal variable whose lower/upper bounds cut off more than 1e-6 of its probability (both tails together); at or below 1e-6 they run on the untruncated variable and the warnings say how much was cut. No printed tolerance was found; it is stated as the module's own.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Refuse any bound that cuts off probability",
+            "effect": "FOSM and PEM refuse a bounded variable whenever its bounds cut off any probability at all, however small; only bounds that cut off nothing (infinite, or a lognormal at 0) run."
+          }
+        ],
+        "multi": false
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
