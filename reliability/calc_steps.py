@@ -275,7 +275,19 @@ def _mc_steps(r, a) -> list:
         result_name="Pf", result_value=_sig(r.pf),
         reference="Baecher & Christian (2003)",
         notes=f"95 % confidence interval {r.pf_ci95[0]:.3g} to "
-              f"{r.pf_ci95[1]:.3g}.")]
+              f"{r.pf_ci95[1]:.3g}"
+              + (" (normal approximation)."
+                 if getattr(r, "pf_ci95_method", "normal_approximation")
+                 == "normal_approximation"
+                 else " (exact binomial bound: the count is at the edge, "
+                      "where the normal approximation collapses to a "
+                      "point).")
+              + (f" N is the {r.n} realizations kept: g was not finite at "
+                 f"{r.n_dropped} of the {r.n_requested} run "
+                 f"({100.0 * r.dropped_fraction:.2f} %). Pf would be "
+                 f"{r.pf_bounds_dropped[0]:.3g} if none of those had "
+                 f"failed and {r.pf_bounds_dropped[1]:.3g} if all had."
+                 if getattr(r, "n_dropped", 0) else ""))]
     items.append(TableData(
         title="Statistics of g over the realizations",
         headers=["Mean", "Std. dev.", "COV", "Min", "Median", "Max"],

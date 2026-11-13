@@ -118,13 +118,120 @@ class TestDiagnostics:
                           keep_samples=True, convention="margin")
         assert len(res.samples) == 500
 
-    def test_nonfinite_g_dropped(self):
+    def test_nonfinite_g_counted(self):
+        """A few non-finite realizations are left out and counted, with the
+        band pf can lie in (GM-322)."""
         def g(v):
-            return float("nan") if v["x"] > 10.0 else v["x"]
+            return float("nan") if v["x"] > 12.0 else v["x"] - 8.5
         res = monte_carlo(g, {"x": {"mean": 10.0, "std": 1.0}},
                           n=4000, seed=12, convention="margin")
-        assert res.n < 4000
-        assert res.g_max <= 10.0
+        assert res.n_requested == 4000
+        assert 0 < res.n_dropped < 200
+        assert res.n == 4000 - res.n_dropped
+        assert res.dropped_fraction == pytest.approx(res.n_dropped / 4000)
+        assert res.g_max <= 3.5
+        lo, hi = res.pf_bounds_dropped
+        assert lo == pytest.approx(res.n_failed / 4000)
+        assert hi == pytest.approx((res.n_failed + res.n_dropped) / 4000)
+        assert lo <= res.pf <= hi
+        assert any("not finite" in w and str(res.n_dropped) in w
+                   for w in res.warnings)
+        d = res.to_dict()
+        assert d["n_dropped"] == res.n_dropped
+        assert d["n_requested"] == 4000
+        assert d["pf_bounds_dropped"] == [pytest.approx(lo, abs=1e-8),
+                                          pytest.approx(hi, abs=1e-8)]
+        assert "Dropped" in res.summary()
+
+    def test_arithmetic_failures_of_g_are_counted(self):
+        """A domain error, a division by zero or a complex value at a
+        realization is a dropped realization, not the end of the run."""
+        import math
+
+        def g(v):
+            return math.sqrt(12.0 - v["x"])      # domain error above 12
+        res = monte_carlo(g, {"x": {"mean": 10.0, "std": 1.0}},
+                          n=4000, seed=12)
+        assert 0 < res.n_dropped < 200
+        res = monte_carlo(lambda v: (12.0 - v["x"]) ** 0.5,   # complex
+                          {"x": {"mean": 10.0, "std": 1.0}}, n=4000, seed=12)
+        assert 0 < res.n_dropped < 200
+        with pytest.raises(ValueError, match="no probability is reported"):
+            monte_carlo(lambda v: 1.0 / (v["x"] - v["x"]),
+                        {"x": {"mean": 10.0, "std": 1.0}}, n=100, seed=1)
+
+    def test_other_faults_in_g_still_raise(self):
+        with pytest.raises(KeyError):
+            monte_carlo(lambda v: v["nope"],
+                        {"x": {"mean": 10.0, "std": 1.0}}, n=10, seed=1)
+
+    def test_nothing_dropped_says_so(self):
+        res = monte_carlo(margin_RS, RS_SPEC, n=1000, seed=1,
+                          convention="margin")
+        assert res.n == res.n_requested == 1000
+        assert res.n_dropped == 0 and res.dropped_fraction == 0.0
+        assert res.pf_bounds_dropped is None
+        assert res.to_dict()["pf_bounds_dropped"] is None
+
+    def test_many_nonfinite_refused(self):
+        """Above 5 % dropped no probability is reported."""
+        def g(v):
+            return float("nan") if v["x"] > 10.0 else v["x"]
+        with pytest.raises(ValueError) as exc:
+            monte_carlo(g, {"x": {"mean": 10.0, "std": 1.0}},
+                        n=4000, seed=12, convention="margin")
+        msg = str(exc.value)
+        assert "of 4000 realizations" in msg and "5 % limit" in msg
+        assert "no probability is reported" in msg
+        assert "First such point" in msg
+
+    def test_threshold_is_five_percent(self):
+        from reliability.monte_carlo import MAX_DROPPED_FRACTION
+        assert MAX_DROPPED_FRACTION == 0.05
+        # exactly 5 % dropped is reported; one more is refused
+        calls = {"i": 0}
+
+        def g_at(k):
+            calls["i"] = 0
+
+            def g(v):
+                calls["i"] += 1
+                return float("inf") if calls["i"] <= k else 1.0 + v["x"]
+            return g
+        spec = {"x": {"mean": 1.0, "std": 0.1}}
+        res = monte_carlo(g_at(50), spec, n=1000, seed=3)
+        assert res.n_dropped == 50 and res.n == 950
+        with pytest.raises(ValueError, match="no probability is reported"):
+            monte_carlo(g_at(51), spec, n=1000, seed=3)
+
+    def test_zero_failures_interval_is_not_a_point(self):
+        """No failure in n: the upper bound is the exact binomial one,
+        1 - 0.025**(1/n), not 0 (GM-322)."""
+        res = monte_carlo(lambda v: 5.0 + 0.0 * v["x"],
+                          {"x": {"mean": 1.0, "std": 0.1}}, n=1000, seed=3)
+        assert res.n_failed == 0 and res.pf == 0.0
+        assert res.pf_ci95[0] == 0.0
+        assert res.pf_ci95[1] == pytest.approx(1.0 - 0.025 ** (1 / 1000))
+        assert res.pf_ci95[1] == pytest.approx(3.69 / 1000, rel=0.01)
+        assert res.pf_ci95_method == "exact_binomial_no_failures"
+        assert any("No realization failed" in w for w in res.warnings)
+
+    def test_all_failures_interval_is_not_a_point(self):
+        res = monte_carlo(lambda v: 0.5 + 0.0 * v["x"],
+                          {"x": {"mean": 1.0, "std": 0.1}}, n=1000, seed=3)
+        assert res.pf == 1.0
+        assert res.pf_ci95[1] == 1.0
+        assert res.pf_ci95[0] == pytest.approx(0.025 ** (1 / 1000))
+        assert res.pf_ci95_method == "exact_binomial_all_failures"
+
+    def test_interval_between_the_edges_unchanged(self):
+        import math
+        res = monte_carlo(margin_RS, RS_SPEC, n=10_000, seed=4,
+                          convention="margin")
+        assert 0 < res.n_failed < res.n
+        half = 1.96 * math.sqrt(res.pf * (1 - res.pf) / res.n)
+        assert res.pf_ci95 == pytest.approx((res.pf - half, res.pf + half))
+        assert res.pf_ci95_method == "normal_approximation"
 
     def test_to_dict_json_safe(self):
         import json

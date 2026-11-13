@@ -223,15 +223,29 @@ METHOD_REGISTRY = {
     "variance_reduction": _run_variance_reduction,
 }
 
-_VARIABLES_PARAM = {
-    "variables": {
+_TRUNCATION_READ = (
+    "lower/upper truncate a normal/lognormal variable (this engine samples "
+    "the truncated distribution; fosm and pem refuse one) or bound "
+    "uniform/triangular. ")
+_TRUNCATION_REFUSED = (
+    "lower/upper bound uniform/triangular. This engine takes no "
+    "truncation: lower/upper on a normal/lognormal variable is refused "
+    "(monte_carlo and form sample a truncated variable). ")
+
+
+def _variables_param(truncation: str) -> dict:
+    """The shared engine inputs; ``truncation`` is what this engine does
+    with lower/upper on a normal or lognormal variable (GM-322)."""
+    return {"variables": {
         "type": "object", "required": True,
         "description": "Random variables: {name: {mean, cov or std, dist, "
                        "lower, upper}}. dist one of "
-                       f"{_DISTS} (default normal). lower/upper truncate "
-                       "normal/lognormal or bound uniform/triangular. "
+                       f"{_DISTS} (default normal). " + truncation +
                        "Example: {'su': {'mean': 50, 'cov': 0.3, 'dist': "
-                       "'lognormal'}}."},
+                       "'lognormal'}}."}, **_SHARED_PARAMS}
+
+
+_SHARED_PARAMS = {
     "g_expression": {
         "type": "str", "required": True,
         "description": "Performance function of the variable names. With "
@@ -269,8 +283,9 @@ METHOD_INFO = {
                  "3-220-20): central differences at +/-1 sigma -> moments "
                  "of g, beta (normal+lognormal), pf, and the per-variable "
                  "variance-contribution table (which variable matters). "
-                 "2n+1 g-evaluations; supports correlation.",
-        "parameters": _VARIABLES_PARAM,
+                 "2n+1 g-evaluations; supports correlation. Takes no "
+                 "truncated variable (use monte_carlo or form).",
+        "parameters": _variables_param(_TRUNCATION_REFUSED),
         "returns": {**_RETURNS_MOMENTS,
                     "variance_contributions_pct":
                         "Per-variable share of Var[g] (%).",
@@ -281,9 +296,10 @@ METHOD_INFO = {
         "brief": "Rosenblueth point-estimate method (UFC 3-220-20 Eqs. "
                  "7-13/7-14): 2^n evaluations at mu+/-sigma (correlation-"
                  "adjusted weights), or the 2n+1 'multiplicative' reduced "
-                 "scheme for many variables.",
+                 "scheme for many variables. Takes no truncated variable "
+                 "(use monte_carlo or form).",
         "parameters": {
-            **_VARIABLES_PARAM,
+            **_variables_param(_TRUNCATION_REFUSED),
             "scheme": {"type": "str", "required": False, "default": "full",
                        "allowed_values": _SCHEMES,
                        "description": "'full' = 2^n points; "
@@ -297,12 +313,14 @@ METHOD_INFO = {
         "brief": "Monte Carlo simulation: seeded numpy sampling (optional "
                  "Latin Hypercube), correlation via Cholesky in normal "
                  "space, empirical pf with 95% CI + convergence trace, "
-                 "histogram, lognormal-fit beta. Its variables are "
+                 "histogram, lognormal-fit beta. Realizations where g is "
+                 "not finite are counted (n_dropped) and the run is "
+                 "refused above 5% of them. Its variables are "
                  "scalars; for a property that varies across a site and "
                  "must honour borings (e.g. a rock surface under a "
                  "footprint), use gstools.conditional_simulation.",
         "parameters": {
-            **_VARIABLES_PARAM,
+            **_variables_param(_TRUNCATION_READ),
             "n": {"type": "int", "required": False, "default": 10000,
                   "description": "Realizations. Aim n >= 10/pf."},
             "seed": {"type": "int", "required": False,
@@ -314,12 +332,35 @@ METHOD_INFO = {
             "n_bins": {"type": "int", "required": False, "default": 30,
                        "description": "Histogram bins."},
         },
-        "returns": {"pf": "Empirical probability of failure.",
-                    "pf_ci95": "95% binomial confidence interval on pf.",
+        "returns": {"pf": "Empirical probability of failure, over the "
+                          "realizations kept (n).",
+                    "pf_ci95": "95% confidence interval on pf (see "
+                               "pf_ci95_method).",
+                    "pf_ci95_method": "'normal_approximation' (pf +/- "
+                                      "1.96 sqrt(pf(1-pf)/n)); with no "
+                                      "failure, or only failures, the "
+                                      "exact binomial bound instead "
+                                      "(0 to about 3.7/n for no failure).",
+                    "n": "Realizations kept (finite g).",
+                    "n_requested": "Realizations asked for.",
+                    "n_dropped": "Realizations left out because g was NaN "
+                                 "or infinite. Above 5% of n_requested "
+                                 "the run is refused: no probability is "
+                                 "reported.",
+                    "dropped_fraction": "n_dropped / n_requested.",
+                    "pf_bounds_dropped": "[pf if no dropped realization "
+                                         "had failed, pf if all had]; null "
+                                         "when nothing was dropped.",
+                    "n_failed": "Realizations with g below the threshold.",
+                    "warnings": "What the run left out or could not "
+                                "resolve (dropped realizations, a count "
+                                "at the edge).",
                     "convergence": "[[n, running pf], ...] trace.",
                     "histogram_bins": "Bin edges.",
                     "histogram_counts": "Counts.",
-                    **_RETURNS_MOMENTS},
+                    # no pf_normal: the count is this engine's pf
+                    **{k: v for k, v in _RETURNS_MOMENTS.items()
+                       if k != "pf_normal"}},
     },
     "form": {
         "category": "Reliability",
@@ -329,7 +370,7 @@ METHOD_INFO = {
                  "cases. Returns beta, pf, design point x*, and alpha "
                  "sensitivity vector (alpha^2 = uncertainty share).",
         "parameters": {
-            **_VARIABLES_PARAM,
+            **_variables_param(_TRUNCATION_READ),
             "max_iterations": {"type": "int", "required": False,
                                "default": 100,
                                "description": "HL-RF iteration cap."},

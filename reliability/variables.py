@@ -64,8 +64,11 @@ class RandomVariable:
     -----
     For truncated normal/lognormal the ``mean``/``std`` attributes remain the
     parameters of the UNDERLYING (untruncated) distribution; truncation only
-    renormalizes pdf/cdf/ppf/sampling. Moment methods (FOSM, PEM) use the
-    underlying moments.
+    renormalizes pdf/cdf/ppf/sampling. Monte Carlo and FORM read the
+    truncated distribution. The moment methods (FOSM, PEM) evaluate g at
+    mean +/- std and have no step that takes a truncation, so they refuse a
+    truncated variable (:func:`refuse_truncated`, GM-322) instead of
+    answering for the untruncated one.
     """
 
     name: str
@@ -279,6 +282,35 @@ class RandomVariable:
 # ---------------------------------------------------------------------------
 # Spec parsing + correlation assembly
 # ---------------------------------------------------------------------------
+
+def refuse_truncated(variables: Sequence["RandomVariable"],
+                     engine: str) -> None:
+    """Refuse truncated normal/lognormal variables in a moment engine.
+
+    FOSM (Duncan 2000; UFC 3-220-20 Eqs. 7-8 to 7-11) and Rosenblueth's
+    point-estimate method (UFC 3-220-20 Eqs. 7-13/7-14) evaluate g at
+    ``mean +/- std`` only. Neither has a step that reads a truncation, and
+    ``mean``/``std`` here are the moments of the UNTRUNCATED distribution,
+    so running them would answer for a different variable than the one
+    Monte Carlo and FORM sample (GM-322). Uniform and triangular bounds are
+    the distribution itself (their mean and std follow from the bounds) and
+    are accepted.
+    """
+    cut = [v for v in variables if v._is_truncated()]
+    if not cut:
+        return
+    listed = ", ".join(
+        f"'{v.name}' ({v.dist}, lower={v.lower}, upper={v.upper})"
+        for v in cut)
+    raise ValueError(
+        f"{engine} takes no truncation: it evaluates g at mean +/- std of "
+        f"each variable and has no step that reads lower/upper on a normal "
+        f"or lognormal variable. Truncated variable(s): {listed}. Use "
+        f"monte_carlo or form, which sample the truncated distribution, or "
+        f"remove lower/upper to run {engine} on the untruncated variable "
+        f"(uniform and triangular bounds are accepted: they define the "
+        f"distribution).")
+
 
 def variables_from_spec(spec: Union[Dict[str, Dict], Sequence[RandomVariable]]
                         ) -> List[RandomVariable]:

@@ -163,6 +163,18 @@ class MonteCarloResult:
     histogram_bins: List[float] = field(default_factory=list)
     histogram_counts: List[int] = field(default_factory=list)
     samples: Optional[List[float]] = None
+    #: "normal_approximation" (Wald), or the exact binomial bound used when
+    #: no realization, or every realization, failed.
+    pf_ci95_method: str = "normal_approximation"
+    #: Realizations asked for; ``n`` is those kept (finite g).
+    n_requested: int = 0
+    #: Realizations left out because g was NaN or infinite.
+    n_dropped: int = 0
+    dropped_fraction: float = 0.0
+    #: (pf if no dropped realization had failed, pf if all had); None when
+    #: nothing was dropped.
+    pf_bounds_dropped: Optional[Tuple[float, float]] = None
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -182,8 +194,14 @@ class MonteCarloResult:
             f"  beta (moments):   {self.beta_normal:.3f}",
             f"  beta_LN (fit):    {_fmt(self.beta_lognormal)}  "
             f"(pf = {_fmt(self.pf_lognormal, '.3e')})",
-            "=" * 62,
         ]
+        if self.n_dropped:
+            lines.append(
+                f"  Dropped (g not finite): {self.n_dropped} of "
+                f"{self.n_requested} ({100.0 * self.dropped_fraction:.2f} %)")
+        for w in self.warnings:
+            lines.append(f"  WARNING: {w}")
+        lines.append("=" * 62)
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -191,9 +209,18 @@ class MonteCarloResult:
             "engine": "monte_carlo",
             "convention": self.convention,
             "n": self.n,
+            "n_requested": self.n_requested or self.n,
+            "n_dropped": self.n_dropped,
+            "dropped_fraction": _r(self.dropped_fraction, 6),
+            "pf_bounds_dropped": (
+                None if self.pf_bounds_dropped is None
+                else [_r(self.pf_bounds_dropped[0], 8),
+                      _r(self.pf_bounds_dropped[1], 8)]),
             "n_failed": self.n_failed,
             "pf": _r(self.pf, 8),
             "pf_ci95": [_r(self.pf_ci95[0], 8), _r(self.pf_ci95[1], 8)],
+            "pf_ci95_method": self.pf_ci95_method,
+            "warnings": list(self.warnings),
             "g_mean": _r(self.g_mean, 4),
             "g_std": _r(self.g_std, 4),
             "g_cov": _r(self.g_cov, 4),

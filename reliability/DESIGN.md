@@ -69,9 +69,24 @@ Implementation notes:
 - **Monte Carlo**: numpy `Generator(seed)`; optional Latin Hypercube via
   `scipy.stats.qmc`; correlation imposed on standard normals via Cholesky,
   then marginal transform `x = F⁻¹(Φ(z))` ("Nataf-lite", see below);
-  non-finite g realizations are dropped and reported via `n`. pf comes with
-  a 95% binomial CI and a 10-point convergence trace — if the CI is wide,
-  raise n (rule of thumb n ≥ 10/pf).
+  a realization whose g is not finite (NaN, infinite, or an arithmetic
+  failure of g there: a division by zero, an overflow, a `math` domain
+  error, a complex value) is left out and COUNTED: the result carries `n_requested`, `n` (kept), `n_dropped`,
+  `dropped_fraction`, `pf_bounds_dropped` (pf if none of the dropped had
+  failed, and if all had) and a line in `warnings`. Above
+  `MAX_DROPPED_FRACTION` = 5 % dropped the run is refused and no
+  probability is reported: each dropped realization is one whose outcome
+  is unknown, so the share dropped is the width of the band pf can lie in,
+  and past 5 % the samples kept describe only the part of the variables'
+  range where g evaluates. The 5 % is this module's choice; no held
+  reference prints a limit (GM-322). pf comes with a 95 % interval
+  (`pf_ci95_method`): the normal approximation
+  pf ± 1.96·sqrt(pf(1−pf)/n), and, when no realization or every
+  realization failed, the exact binomial bound instead (0 to
+  1 − 0.025^(1/n) ≈ 3.7/n for no failure), because the normal
+  approximation collapses to a point there. A 10-point convergence trace
+  is returned — if the interval is wide, raise n (rule of thumb
+  n ≥ 10/pf).
 - **FORM**: improved HL-RF in U-space with merit-based step halving;
   non-normal marginals handled by Rackwitz-Fiessler equivalent normals
   (closed-form-exact for lognormal); gradient by central differences in
@@ -86,9 +101,15 @@ Implementation notes:
 `normal | lognormal | uniform | triangular`. Lognormal moments are the
 ARITHMETIC mean/std (underlying mu_ln/sigma_ln derived internally).
 Uniform/triangular accept bounds (preferred) or symmetric mean/std.
-`lower`/`upper` on normal/lognormal truncate (renormalized CDF/PPF) —
-sampling and FORM honor truncation; moment engines (FOSM/PEM) use the
-underlying moments.
+`lower`/`upper` on normal/lognormal truncate (renormalized CDF/PPF).
+Monte Carlo and FORM read the truncated distribution. FOSM and PEM
+evaluate g at mean ± std (Duncan 2000; UFC 3-220-20 Eqs. 7-8 to 7-14) and
+have no step that takes a truncation, and `mean`/`std` are the moments of
+the UNTRUNCATED distribution, so they REFUSE a truncated variable
+(`variables.refuse_truncated`, GM-322) and name the engines that take one.
+Until GM-322 they ran on the untruncated moments without saying so.
+`reliability/tests/test_truncation_engines.py` runs one made-up truncated
+case through all four engines.
 
 ## Correlation handling ("Nataf-lite") — limitation
 
