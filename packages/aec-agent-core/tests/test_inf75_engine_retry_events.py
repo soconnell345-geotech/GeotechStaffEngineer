@@ -143,26 +143,35 @@ def test_the_event_arrives_from_inside_an_agents_step(fake_sdk, tmp_path):
     assert events[0]["agent"] == "primary"
 
 
-def test_a_call_that_answers_first_time_writes_no_event(fake_sdk, tmp_path):
-    model, handle = _model([])
+def test_only_a_retry_writes_an_event_and_the_policy_is_as_it_was(
+        fake_sdk, tmp_path, monkeypatch):
+    assert eng.RETRY_EVENT in activity_log.APP_EVENTS
     logger = ActivityLogger(str(tmp_path), turn=1)
+    # a call that answers first time: no event
+    model, handle = _model([])
     model.invoke([HumanMessage(content="hello")],
                  config={"callbacks": [logger]})
     assert handle.calls == 1
     assert _events(tmp_path, "engine_retry") == []
-
-
-def test_the_retry_policy_is_as_it_was(fake_sdk, tmp_path, monkeypatch):
-    """A failure that asking again would not fix is raised at once, with no
-    event; one that outlasts the wait budget is raised."""
+    # a failure that asking again would not fix: raised at once, no event
     model, handle = _model([ValueError("made-up: context too long")])
-    logger = ActivityLogger(str(tmp_path), turn=1)
     with pytest.raises(ValueError):
         model.invoke([HumanMessage(content="hello")],
                      config={"callbacks": [logger]})
     assert handle.calls == 1
     assert _events(tmp_path, "engine_retry") == []
+    # outside any run (a library caller): the retry happens, nothing is
+    # written and nothing fails
+    seen = []
 
+    def once():
+        seen.append(1)
+        if len(seen) == 1:
+            raise ConnectionResetError("reset")
+        return "ok"
+
+    assert eng.call_with_retries(once, sleep=lambda s: None) == "ok"
+    # a failure that outlasts the wait budget is still raised
     waits, calls = [], []
     monkeypatch.setattr(eng.random, "uniform", lambda a, b: b)
 
@@ -173,21 +182,3 @@ def test_the_retry_policy_is_as_it_was(fake_sdk, tmp_path, monkeypatch):
     with pytest.raises(ConnectionResetError):
         eng.call_with_retries(always_drops, total_s=5.0, sleep=waits.append)
     assert waits == [2.0] and len(calls) == 2     # 2 s, then 4 s is over 5
-
-
-def test_outside_a_run_a_retry_still_only_retries(fake_sdk):
-    """A library caller has no record: nothing is written and nothing
-    fails."""
-    seen = []
-
-    def once():
-        seen.append(1)
-        if len(seen) == 1:
-            raise ConnectionResetError("reset")
-        return "ok"
-
-    assert eng.call_with_retries(once, sleep=lambda s: None) == "ok"
-
-
-def test_the_event_is_an_app_event_of_the_activity_log():
-    assert eng.RETRY_EVENT in activity_log.APP_EVENTS

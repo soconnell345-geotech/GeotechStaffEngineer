@@ -91,9 +91,7 @@ def test_a_client_that_keeps_its_tools_uses_the_builds_fingerprint(tmp_path):
     assert rec["tools_offered_spec_sha"] == "0123456789abcdef"
     assert rec["tools_offered_spec_from"] == "build"
     assert rec["tools_offered_from"] == "build"
-
-
-def test_a_turn_with_no_tools_known_has_no_spec_hash(tmp_path):
-    rec = _turn_end(tmp_path)
-    assert "tools_offered_spec_sha" not in rec
-    assert "tools_offered_sha" not in rec
+    # and a turn with no tools known at all has neither hash
+    bare = _turn_end(tmp_path / "bare")
+    assert "tools_offered_spec_sha" not in bare
+    assert "tools_offered_sha" not in bare

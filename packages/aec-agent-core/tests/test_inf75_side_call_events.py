@@ -201,17 +201,14 @@ def test_a_call_that_answers_in_time_writes_no_event(short_limit, tmp_path):
     assert start["vision"]["ask"] == 1 and start["vision"]["ask_id"]
 
 
-def test_outside_a_run_a_timeout_still_only_raises(short_limit):
-    """A library caller has no record: the event is dropped, never an
-    error of its own."""
+def test_the_events_are_app_events_and_need_a_run_to_be_written(short_limit):
+    assert vision_engine.TIMEOUT_EVENT in activity_log.APP_EVENTS
+    assert vision_engine.LATE_END_EVENT in activity_log.APP_EVENTS
+    # A library caller has no record: the event is dropped, never an error
+    # of its own, and the timeout raises as it always has.
     model = _model(stall_on=(1, 2))
     try:
         with pytest.raises(VisionCallTimeout, match="NOT read"):
             LangChainVisionEngine(model, detail="").analyze_image(PNG, "x")
     finally:
         model.state["release"].set()
-
-
-def test_the_events_are_app_events_of_the_activity_log():
-    assert vision_engine.TIMEOUT_EVENT in activity_log.APP_EVENTS
-    assert vision_engine.LATE_END_EVENT in activity_log.APP_EVENTS

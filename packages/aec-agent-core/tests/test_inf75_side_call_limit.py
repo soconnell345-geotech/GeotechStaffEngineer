@@ -18,10 +18,18 @@ BRIEF_7_P99_S = 22.0
 BRIEF_5_P99_S = 74.0
 
 
-def test_the_default_limit_is_90_seconds(monkeypatch):
+def test_the_default_limit_is_90_seconds_and_the_setting_overrides_it(
+        monkeypatch):
     monkeypatch.delenv(vision_engine.TIMEOUT_ENV, raising=False)
     assert vision_engine.DEFAULT_TIMEOUT_S == 90.0
     assert vision_engine.call_timeout_s() == 90.0
+    assert vision_engine.TIMEOUT_RETRIES == 1          # still asked once more
+    monkeypatch.setenv(vision_engine.TIMEOUT_ENV, "180")
+    assert vision_engine.call_timeout_s() == 180.0
+    monkeypatch.setenv(vision_engine.TIMEOUT_ENV, "45.5")
+    assert vision_engine.call_timeout_s() == 45.5
+    monkeypatch.setenv(vision_engine.TIMEOUT_ENV, "0")
+    assert vision_engine.call_timeout_s() is None       # as long as the engine
 
 
 def test_the_limit_is_above_both_measured_tails_and_half_the_old_one():
@@ -30,19 +38,6 @@ def test_the_limit_is_above_both_measured_tails_and_half_the_old_one():
     its batch three minutes."""
     assert vision_engine.DEFAULT_TIMEOUT_S > BRIEF_5_P99_S > BRIEF_7_P99_S
     assert vision_engine.DEFAULT_TIMEOUT_S <= 180.0 / 2
-
-
-def test_a_timeout_is_still_asked_once_more():
-    assert vision_engine.TIMEOUT_RETRIES == 1
-
-
-def test_the_setting_still_overrides_the_default(monkeypatch):
-    monkeypatch.setenv(vision_engine.TIMEOUT_ENV, "180")
-    assert vision_engine.call_timeout_s() == 180.0
-    monkeypatch.setenv(vision_engine.TIMEOUT_ENV, "45.5")
-    assert vision_engine.call_timeout_s() == 45.5
-    monkeypatch.setenv(vision_engine.TIMEOUT_ENV, "0")
-    assert vision_engine.call_timeout_s() is None       # as long as the engine
 
 
 def test_the_limit_in_force_is_on_the_turns_record(monkeypatch):
