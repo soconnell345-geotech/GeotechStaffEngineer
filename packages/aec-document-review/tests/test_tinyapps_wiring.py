@@ -465,9 +465,10 @@ class _FakeGraph:
             name = json.loads(body)["name"]
             return _resp({"id": "NEW-" + name, "name": name, "folder": {}})
         if ":/content?@microsoft.graph.conflictBehavior=" in url and method == "PUT":
+            # TA-40: an upload names its whole path (root:/GSE/<name>).
             fname = urllib.parse.unquote(
-                url.split("/items/", 1)[1].split(":/", 1)[1]
-                .split(":/content", 1)[0])
+                url.split("/root:/", 1)[1].split(":/content", 1)[0]
+            ).rsplit("/", 1)[-1]
             behaviour = url.rsplit("=", 1)[1]
             if fname == "exists.txt" and behaviour == "fail":
                 raise _http_error(url, 409)
