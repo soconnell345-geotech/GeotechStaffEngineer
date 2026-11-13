@@ -12,7 +12,10 @@ hook is first asked for):
   ``aec_agent_core.deep.held_records`` finds in a stopped helper's words;
 - ``cited_documents.reference_modules`` -> :func:`reference_modules`: the
   dispatch's reference modules, whose ``call_agent`` answers are reference
-  sources for ``aec_agent_core.cited_documents``.
+  sources for ``aec_agent_core.cited_documents``;
+- ``method_call.warning_packages`` -> :func:`warning_packages`: GSE's
+  calculation packages, whose Python warnings raised during a method call
+  reach the agent (``aec_agent_core.call_warnings``, BACKLOG GM-316).
 
 The review suite's hooks (its tasks, documents and the page's turn) are
 filled by ``funhouse_agent/review_eval/__init__.py``.
@@ -43,3 +46,28 @@ def reference_modules() -> frozenset:
     REFERENCE_MODULES``)."""
     from funhouse_agent.dispatch import REFERENCE_MODULES
     return frozenset(REFERENCE_MODULES)
+
+
+#: GSE's calculation packages: the top-level packages of the distribution
+#: (pyproject's ``[tool.setuptools.packages.find]``) that a method handler
+#: runs, plus the dispatch's adapters and the reference library. Left out:
+#: the app (``funhouse_agent`` apart from its adapters, ``webapp``) and
+#: ``report_ingest``, which no ``call_agent`` method runs.
+WARNING_PACKAGES = (
+    "bearing_capacity", "settlement", "axial_pile", "sheet_pile", "soe",
+    "lateral_pile", "pile_group", "wave_equation", "drilled_shaft",
+    "seismic_geotech", "retaining_walls", "pavement_design",
+    "ground_improvement", "slope_stability", "reliability", "downdrag",
+    "geotech_common", "calc_package", "profile_figure", "opensees_agent",
+    "pystrata_agent", "section_props_agent", "concrete_props_agent",
+    "pynite_agent", "seismic_signals_agent", "liquepy_agent",
+    "gstools_agent", "salib_agent", "pystra_agent",
+    "subsurface_characterization", "dxf_import", "dxf_export", "fem2d",
+    "geo_project", "funhouse_agent.adapters", "geotech_references")
+
+
+def warning_packages() -> tuple:
+    """The module-name prefixes whose Python warnings, raised while a method
+    runs, reach the agent with its result (BACKLOG GM-316;
+    ``aec_agent_core.call_warnings``)."""
+    return WARNING_PACKAGES

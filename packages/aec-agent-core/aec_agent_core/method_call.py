@@ -603,6 +603,19 @@ def run_method(mod, agent_name: str, method: str, parameters: dict,
     citations there).
     """
     from aec_agent_core._fileio import hide_working_folder
+    from aec_agent_core.call_warnings import add_to_result, collecting
+    # The Python warnings the method raises reach the agent with its result
+    # (BACKLOG GM-316; aec_agent_core.call_warnings), also with an error.
+    with collecting() as caught:
+        result = _run_checked(mod, agent_name, method, parameters,
+                              attachments, inputs, after)
+    return hide_working_folder(add_to_result(result, caught.texts))
+
+
+def _run_checked(mod, agent_name: str, method: str, parameters: dict,
+                 attachments, inputs, after):
+    """:func:`run_method`'s checks, the call and its notes; the result
+    before working-folder paths are hidden."""
     given = set(parameters)
     try:
         _check_parameter_names(mod, method, parameters)
@@ -623,15 +636,13 @@ def run_method(mod, agent_name: str, method: str, parameters: dict,
         except TypeError as e:
             if not _SIGNATURE_ERROR.search(str(e)):
                 raise
-            return hide_working_folder(
-                _parameter_error(mod, agent_name, method, parameters, e))
+            return _parameter_error(mod, agent_name, method, parameters, e)
         if named and isinstance(result, dict) and "error" not in result:
             result = dict(result)
             result["output_note"] = _output_note(named, parameters)
         if after is not None:
             result = after(parameters, result)
-        result = _with_defaults_used(mod, method, given, result, parameters,
-                                     recorded.reported, recorded.took)
-        return hide_working_folder(result)
+        return _with_defaults_used(mod, method, given, result, parameters,
+                                   recorded.reported, recorded.took)
     except Exception as e:
-        return hide_working_folder({"error": f"{type(e).__name__}: {e}"})
+        return {"error": f"{type(e).__name__}: {e}"}

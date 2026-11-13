@@ -81,8 +81,11 @@ def test_empty_defaults_and_package_headers_are_left_out():
 def test_mo_without_a_solution_warns_in_the_result():
     r = D.call_agent("seismic_geotech", "seismic_earth_pressure",
                      {"phi": 20, "kh": 0.5, "kv": 0.0, "gamma": 19, "H": 6})
-    (w,) = r["warnings"]
+    # The module's own warning, then the Python warning it raised, which
+    # reaches the agent since GM-316.
+    w, raised = r["warnings"]
     assert "no solution" in w and "trial wedge" in w
+    assert "M-O not applicable" in raised
     assert r["choices"][0]["chosen"].startswith("Ka + 0.75 kh")
     kv = {c["what"]: c for c in r["choices"]}["kv"]
     assert kv["how"] == "given"          # typed, though it is 0

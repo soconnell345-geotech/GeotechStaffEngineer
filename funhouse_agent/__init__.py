@@ -121,6 +121,10 @@ _set_hook("held_records.record_fields",
           "funhouse_agent.core_hooks:record_fields")
 _set_hook("cited_documents.reference_modules",
           "funhouse_agent.core_hooks:reference_modules")
+# GM-316: the packages whose Python warnings, raised while a method runs,
+# reach the agent with its result (aec_agent_core.call_warnings).
+_set_hook("method_call.warning_packages",
+          "funhouse_agent.core_hooks:warning_packages")
 
 # Which application runs on the core (INF-33 step 13; aec_agent_core.
 # app_details): the run record's app version, the default Word and markup
