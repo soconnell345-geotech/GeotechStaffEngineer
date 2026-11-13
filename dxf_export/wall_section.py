@@ -43,7 +43,7 @@ from dxf_export.drawing import (
     SCALES, Bar, Callout, Dimension, Drawing, DrawingError, Line, Outline,
     Sheet, Table, TitleBlock, _choice, _keys, _list, _number, _text,
 )
-from dxf_export.sheet import _plan, callout_size, choose_scale
+from dxf_export.sheet import _dim_geometry, _plan, callout_size, choose_scale
 
 SCHEMA = "reinforced_wall_section/1"
 
@@ -65,6 +65,9 @@ BASE_FACES = ("top", "bottom", "both")
 RUNS = ("in_section", "along_wall")
 ROLES = ("flexure", "temperature_shrinkage")
 
+#: The most dots (bars along the wall, one dot each) a section draws.
+MAX_DOTS = 5000
+
 #: Callout text width on the sheet, mm.
 CALLOUT_W = 38.0
 #: The schematic hook's bend, as a radius on the sheet, mm.
@@ -72,11 +75,10 @@ HOOK_R = 2.0
 
 #: Notes the drawing adds after the description's own.
 DRAWING_NOTES = (
-    "All dimensions are in millimetres.",
-    "Bars are drawn full length: no bar is cut off or lapped in this "
-    "sketch. Bars along the wall are drawn end-on.",
+    "Dimensions in millimetres. Bars are drawn full length, none cut off "
+    "or lapped; bars along the wall are drawn end-on.",
     "Hooked stem bars are turned toward the opposite face of the stem "
-    "(EM 1110-2-2104 Fig. 2-1, correct orientation). The hook's bend and "
+    "(EM 1110-2-2104 Fig. 2-1, correct orientation); the hook's bend and "
     "tail are schematic, not detailed.",
 )
 
@@ -140,18 +142,31 @@ def validate_wall_description(description: Any) -> dict:
         raise DrawingError("geometry.has_shear_key: true or false, "
                            f"got {has_key!r}.")
     geo["has_shear_key"] = has_key
+    geo["key_assumed"] = []
     if has_key:
-        for key in ("key_depth", "key_width", "key_distance_from_toe"):
-            if g.get(key) is None:
-                raise DrawingError(f"geometry.{key}: needed with a shear "
-                                   "key.")
+        if g.get("key_depth") is None:
+            raise DrawingError("geometry.key_depth: needed with a shear "
+                               "key.")
         geo["key_depth"] = _number(g["key_depth"], "geometry.key_depth",
                                    low=0.0, high=20.0, strict_low=True)
-        geo["key_width"] = _number(g["key_width"], "geometry.key_width",
-                                   low=0.0, high=100.0, strict_low=True)
-        geo["key_distance_from_toe"] = _number(
-            g["key_distance_from_toe"], "geometry.key_distance_from_toe",
-            low=0.0, high=100.0)
+        # A design that sizes the key's depth only (GM-312 gives no width
+        # or position): the key is drawn under the stem, as wide as the
+        # stem's base, as the calc package's own wall figure draws it
+        # (retaining_walls/calc_steps.py), and the sheet says so (GM-313
+        # review A2).
+        if g.get("key_width") is None:
+            geo["key_assumed"].append("width")
+            geo["key_width"] = geo["stem_thickness_base"]
+        else:
+            geo["key_width"] = _number(g["key_width"], "geometry.key_width",
+                                       low=0.0, high=100.0, strict_low=True)
+        if g.get("key_distance_from_toe") is None:
+            geo["key_assumed"].append("position")
+            geo["key_distance_from_toe"] = geo["toe_length"]
+        else:
+            geo["key_distance_from_toe"] = _number(
+                g["key_distance_from_toe"],
+                "geometry.key_distance_from_toe", low=0.0, high=100.0)
         if (geo["key_distance_from_toe"] + geo["key_width"]
                 > geo["base_width"] + 1e-9):
             raise DrawingError("geometry: the shear key runs past the heel "
@@ -232,6 +247,20 @@ def validate_wall_description(description: Any) -> dict:
                              f"{what}.callout", 200),
             **area,
         })
+    # bars along the wall are drawn one dot per bar: bound them before any
+    # layout (GM-313 review B2)
+    dots = 0.0
+    for b in bars:
+        if b["runs"] == "along_wall":
+            span = (geo["wall_height"] - geo["base_thickness"]
+                    if b["element"] == "stem" else geo["base_width"])
+            faces = 2 if b["face"] == "both" else 1
+            dots += faces * (span * 1000.0 / b["spacing_mm"] + 1)
+    if dots > MAX_DOTS:
+        raise DrawingError(
+            f"bars: the bars along the wall would be drawn as about "
+            f"{dots:.0f} dots; at most {MAX_DOTS}. Check the spacings "
+            "(millimetres) and the wall's size (metres).")
     return {
         "schema": SCHEMA,
         "title": _text(d.get("title") or
@@ -370,8 +399,17 @@ def _layout(desc: dict, sheet: Sheet, title_block: TitleBlock,
             outer_edge[key] = s["cover_mm"]
         return inner + s["diameter_mm"] / 2.0
 
-    # the level of the base's bottom steel, for the stem bars to stand on
+    # the top of the base's bottom steel, for the stem bars to stand on:
+    # the in-section bars AND the bars along the wall that lie on them
+    # (standing on the in-section bars alone drew the hook's tail through
+    # the along-wall dots; GM-313 review A5)
     bottom_top = stack.get(("base", "bottom"))
+    for s in sets:
+        if (s["runs"] == "along_wall" and s["element"] != "stem"
+                and s["face"] in ("bottom", "both")):
+            top = (max(s["cover_mm"], stack.get(("base", "bottom"), 0.0))
+                   + s["diameter_mm"])
+            bottom_top = top if bottom_top is None else max(bottom_top, top)
 
     # callout attach points: mark -> (x, y), and the side it leaves by
     attach: Dict[str, Tuple[float, float]] = {}
@@ -527,20 +565,40 @@ def _layout(desc: dict, sheet: Sheet, title_block: TitleBlock,
     line = drop + 8.0
     if wall.key:
         kx, kw, kd = wall.key
-        if kx > 1e-6:
+        assumed = desc["geometry"]["key_assumed"]
+        # an assumed position or width is drawn, not dimensioned
+        if "position" not in assumed and kx > 1e-6:
             dims.append(Dimension(p1=(0.0, -kd), p2=(kx, -kd),
                                   offset_mm=-8.0))
-        dims.append(Dimension(p1=(kx, -kd), p2=(kx + kw, -kd),
-                              offset_mm=-8.0))
-        dims.append(Dimension(p1=(kx + kw, 0.0), p2=(kx + kw, -kd),
-                              offset_mm=6.0, direction="vertical"))
-        line += 8.0
+        if "width" not in assumed:
+            dims.append(Dimension(p1=(kx, -kd), p2=(kx + kw, -kd),
+                                  offset_mm=-8.0))
+        depth = Dimension(p1=(kx + kw, 0.0), p2=(kx + kw, -kd),
+                          offset_mm=6.0, direction="vertical")
+        dims.append(depth)
+        if len(assumed) < 2:
+            line += 8.0
+        if not _dim_geometry(depth, n).fits:
+            line += 7.0         # its number is set below the key
+    # the toe, the stem and the heel in a chain; a link whose number is
+    # too wide for it gets a row of its own under the chain, the toe's
+    # number set outward, so no number prints over another's (GM-313
+    # review A4)
     chain = [0.0, wall.toe, wall.xb_b, B]
+    own_rows = 0
     for a, b in zip(chain, chain[1:]):
-        if b - a > 1e-6:
-            dims.append(Dimension(p1=(a, 0.0), p2=(b, 0.0), offset_mm=-line))
+        if b - a <= 1e-6:
+            continue
+        link = Dimension(p1=(a, 0.0), p2=(b, 0.0), offset_mm=-line)
+        if not _dim_geometry(link, n).fits:
+            own_rows += 1
+            ends = ((b, 0.0), (a, 0.0)) if a == 0.0 else ((a, 0.0),
+                                                          (b, 0.0))
+            link = Dimension(p1=ends[0], p2=ends[1],
+                             offset_mm=-(line + 8.0 * own_rows))
+        dims.append(link)
     dims.append(Dimension(p1=(0.0, 0.0), p2=(B, 0.0),
-                          offset_mm=-(line + 8.0)))
+                          offset_mm=-(line + 8.0 * (own_rows + 1))))
     # the stem's top, above; its covers on the line below that
     top_line = 8.0
     stem_covers = []
@@ -592,9 +650,21 @@ def _layout(desc: dict, sheet: Sheet, title_block: TitleBlock,
                _area(s["As_required_mm2_per_m"]),
                _area(s["As_provided_mm2_per_m"])] for s in sets])
     notes = list(desc["notes"])
-    if desc["basis"]:
+    # the basis once: a description's notes often state it already
+    # (GM-312's do; GM-313 review B1)
+    if desc["basis"] and not any(
+            desc["basis"] in n or n.lower().startswith("design basis")
+            for n in notes):
         notes.append("Design basis: " + desc["basis"])
     notes.extend(DRAWING_NOTES)
+    assumed = desc["geometry"]["key_assumed"]
+    if wall.key and assumed:
+        what = " and ".join(assumed)
+        note = (f"Shear key drawn under the stem, {wall.key[1]:.0f} mm "
+                f"wide: its {what} {'are' if len(assumed) > 1 else 'is'} "
+                "assumed (the design gives its depth only).")
+        notes.append(note)
+        warnings.append(note)
 
     block = TitleBlock(**title_block.to_dict())
     if block.title == "Drawing":

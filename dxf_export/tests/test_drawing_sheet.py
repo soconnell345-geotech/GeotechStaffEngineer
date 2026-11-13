@@ -429,7 +429,9 @@ def test_walls_of_other_proportions_lay_out_with_no_callouts_overlapping(
      "hook"),
     (lambda d: d.update(bars=[]), "no bar set"),
     (lambda d: d.update(schema="reinforced_wall_section/2"), "schema"),
-    (lambda d: d["geometry"].update(has_shear_key=True), "key_width"),
+    # a key needs its depth; its width and position may be left out
+    # (GM-312 gives none: drawn under the stem, said to be assumed)
+    (lambda d: d["geometry"].update(has_shear_key=True), "key_depth"),
 ])
 def test_a_wall_description_is_checked(change, message):
     description = wall_description()
@@ -534,3 +536,136 @@ def test_a_number_too_wide_for_its_dimension_is_set_beyond_p2():
     narrow = _dim_geometry(Dimension(p1=(100, 0), p2=(25, 0), offset_mm=8),
                            50)
     assert not narrow.fits and narrow.location[0] < 25      # beyond p2
+
+
+# -- review fixes (2026-11-13) -------------------------------------------------
+
+REAL = Path(__file__).parent / "fixtures" / "gm312_real_descriptions.json"
+
+
+def real_descriptions() -> dict:
+    """Three descriptions as GM-312's structural design returns them, for
+    made-up walls: seven bar sets (the base's along-wall steel as F, top,
+    and G, bottom), a shear key given by its depth only, a hook with no
+    ldh, main bars at 150 mm."""
+    return json.loads(REAL.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("name", ["plain", "key_surcharge",
+                                  "front_batter_high_strength"])
+def test_a_real_description_validates_and_draws_with_a_clean_dxf(
+        name, tmp_path):
+    from dxf_export.sheet import _dim_geometry
+    description = real_descriptions()[name]
+    validate_wall_description(description)
+    drawing = wall_section_drawing(description)         # letter, by default
+    result = write_sheet(drawing, str(tmp_path / f"{name}.dxf"))
+    doc = ezdxf.readfile(result.filepath)
+    auditor = doc.audit()
+    assert auditor.errors == [] and auditor.fixes == []
+    assert result.sheet == "letter"
+    kinds = by_type(doc)
+    assert len(kinds["LEADER"]) == len(description["bars"]) == 7
+    texts = [t.dxf.text for t in kinds["TEXT"]]
+    assert texts.count(STAMP) == 1
+    assert not any("None" in t for t in texts)
+    # the design basis is said once (GM-312's notes already carry it)
+    assert sum(n.lower().startswith("design basis")
+               for n in drawing.notes) == 1
+    # no dimension's number prints over another's
+    n = drawing.sheet.scale
+    boxes = [_dim_geometry(d, n).text_box for d in drawing.dimensions]
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1:]:
+            assert not _boxes_overlap(a, b), (a, b)
+
+
+def test_a_key_given_by_its_depth_only_is_drawn_under_the_stem_and_said_to_be_assumed():  # noqa: E501
+    description = real_descriptions()["key_surcharge"]
+    g = description["geometry"]
+    assert g["key_width"] is None and g["key_distance_from_toe"] is None
+    drawing = wall_section_drawing(description)
+    depth = -g["key_depth"] * 1000.0
+    key_x = sorted({x for x, y in drawing.outlines[0].points
+                    if abs(y - depth) < 1e-6})
+    toe = g["toe_length"] * 1000.0
+    assert key_x == pytest.approx([toe, toe + g["stem_thickness_base"]
+                                   * 1000.0])
+    assert any(n.startswith("Shear key") and "assumed" in n
+               for n in drawing.notes)
+    assert any("assumed" in w for w in drawing.layout_warnings)
+    # its depth is dimensioned; its assumed width and position are not
+    assert not [d for d in drawing.dimensions if d.direction ==
+                "horizontal" and abs(d.p1[1] - depth) < 1e-6]
+    assert [d for d in drawing.dimensions if d.direction == "vertical"
+            and {round(d.p1[1]), round(d.p2[1])} == {0, round(depth)}]
+
+
+def test_stem_bars_stand_on_the_whole_bottom_mat():
+    """The hook rests on the base's bottom steel, the bars along the wall
+    included (it was drawn through them)."""
+    description = real_descriptions()["plain"]
+    drawing = wall_section_drawing(description)
+    hooked = next(b for b in drawing.bars
+                  if b.kind == "path" and len(b.points) == 3)
+    tail_y = hooked.points[-1][1]
+    lowest_dots = min(b.points[0][1] for b in drawing.bars
+                      if b.kind == "dots")
+    a, g = description["bars"][0], description["bars"][6]
+    assert (a["mark"], g["mark"]) == ("A", "G")
+    assert tail_y - lowest_dots >= (
+        a["diameter_mm"] + g["diameter_mm"]) / 2 - 1e-6
+    assert tail_y - lowest_dots < (a["diameter_mm"] + g["diameter_mm"])
+
+
+def test_an_over_long_word_neither_leaves_its_column_nor_moves_the_sheet():
+    """One long word in a note or the title used to run past the border,
+    and the page, centred on the content, slid the sheet and its stamp off
+    it. The page is now the sheet itself, and a long word is broken."""
+    from dxf_export._fonts import text_width, wrap
+    assert all(text_width(line, TEXT_H) <= 60.0
+               for line in wrap("X" * 290, 60.0, TEXT_H))
+    data = general()
+    data["notes"] = ["X" * 290]
+    data["title_block"]["title"] = "T" * 160
+    files = render_sheet(Drawing.from_dict(data))
+    page = pymupdf.open(stream=files["pdf"], filetype="pdf")[0]
+    # every path but the white page behind the sheet
+    rects = [d["rect"] for d in page.get_drawings()
+             if d["rect"].width < page.rect.width - 1.0]
+    margin = 10.0 / 25.4 * 72.0                 # the border, 10 mm in
+    assert min(r.x0 for r in rects) == pytest.approx(margin, abs=1.5)
+    assert min(r.y0 for r in rects) == pytest.approx(margin, abs=1.5)
+    assert max(r.x1 for r in rects) == pytest.approx(
+        page.rect.width - margin, abs=1.5)
+    assert max(r.y1 for r in rects) == pytest.approx(
+        page.rect.height - margin, abs=1.5)
+
+
+def test_the_total_number_of_points_is_bounded():
+    data = {"bars": [{"kind": "dots", "diameter_mm": 10,
+                      "points": [[k, 100 * j] for k in range(5000)]}
+                     for j in range(5)]}
+    with pytest.raises(DrawingError, match="at most 20000 points"):
+        Drawing.from_dict(data)
+    description = wall_description()
+    description["geometry"]["wall_height"] = 60.0
+    description["bars"][2]["spacing_mm"] = 10.0
+    with pytest.raises(DrawingError, match="dots"):
+        wall_section_drawing(description)
+
+
+def test_control_characters_are_dropped_from_text():
+    drawing = Drawing.from_dict({"lines": [{"points": [[0, 0], [500, 0]]}],
+                                 "notes": ["a\x00b\x07c"]})
+    assert drawing.notes == ["a b c"]
+
+
+def test_dimension_lines_are_the_thinnest_and_the_ground_is_stroked():
+    weights = [w for _, _, w, _ in LAYERS.values() if w > 0]
+    assert LAYERS["dims"][2] == min(weights)
+    assert LAYERS["ground"][2] > LAYERS["dims"][2]
+    doc, _ = build_dxf(wall_section_drawing(wall_description()))
+    ground = [e for e in doc.modelspace()
+              if e.dxf.layer == LAYERS["ground"][0]]
+    assert len(ground) > 2 + 20         # the two ground lines and strokes

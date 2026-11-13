@@ -60,6 +60,10 @@ SECOND_UNITS: Tuple[str, ...] = ("in", "ft", "ft-in", "m")
 #: opens quickly.
 MAX_ITEMS = 2000            # outlines + lines + bars + dimensions + callouts
 MAX_POINTS = 5000           # points in one outline, line or bar
+#: Points of every outline, line and bar together (each bar seen end-on
+#: is one point and one filled circle): 2,000 items of 5,000 points each
+#: would be ten million (GM-313 review B2).
+MAX_TOTAL_POINTS = 20000
 MAX_COORD = 1.0e7           # mm: 10 km either side of the origin
 MAX_TEXT = 300              # characters in one callout or note
 MAX_NOTES = 40
@@ -140,8 +144,10 @@ def _text(value: Any, what: str, limit: int, *, empty_ok: bool = True) -> str:
         value = ""
     if not isinstance(value, str):
         raise DrawingError(f"{what}: expected text, got {value!r}.")
-    # one line: a description lays out no text, the code does
-    value = " ".join(value.split())
+    # one line: a description lays out no text, the code does; control
+    # characters are dropped (a CAD program may refuse them)
+    value = " ".join("".join(c if c.isprintable() else " "
+                              for c in value).split())
     if len(value) > limit:
         raise DrawingError(f"{what}: at most {limit} characters, "
                            f"got {len(value)}.")
@@ -534,6 +540,14 @@ class Drawing:
             raise DrawingError(f"drawing: at most {MAX_ITEMS} outlines, "
                                f"lines, bars, dimensions and callouts in "
                                f"all, got {n}.")
+        points = sum(len(item.points) for group in
+                     (self.outlines, self.lines, self.bars)
+                     for item in group)
+        if points > MAX_TOTAL_POINTS:
+            raise DrawingError(
+                f"drawing: at most {MAX_TOTAL_POINTS} points in all "
+                f"(outlines, lines and bars, a bar seen end-on counting "
+                f"one), got {points}.")
         if not (self.outlines or self.lines or self.bars):
             raise DrawingError("drawing: nothing to draw; give at least one "
                                "outline, line or bar.")

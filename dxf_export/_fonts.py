@@ -82,11 +82,27 @@ def text_width(text: str, height: float, bold: bool = False) -> float:
 
 def wrap(text: str, width: float, height: float,
          bold: bool = False) -> List[str]:
-    """``text`` broken at spaces into lines no wider than ``width`` (a
-    single word wider than that keeps a line of its own)."""
+    """``text`` broken at spaces into lines no wider than ``width``; a
+    single word wider than that is broken where it reaches the width (it
+    used to keep a line of its own and run past its column, and a long
+    enough one slid the whole sheet off the page: GM-313 review A1)."""
     lines: List[str] = []
     line = ""
     for word in text.split():
+        while text_width(word, height, bold) > width and len(word) > 1:
+            if line:
+                lines.append(line)
+                line = ""
+            low, high = 1, len(word) - 1    # the longest head that fits
+            while low < high:
+                mid = (low + high + 1) // 2
+                if text_width(word[:mid], height, bold) <= width:
+                    low = mid
+                else:
+                    high = mid - 1
+            cut = low
+            lines.append(word[:cut])
+            word = word[cut:]
         trial = f"{line} {word}" if line else word
         if line and text_width(trial, height, bold) > width:
             lines.append(line)

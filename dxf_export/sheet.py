@@ -39,13 +39,13 @@ LAYERS: Dict[str, Tuple[str, int, int, str]] = {
     "soil": ("GSE-SOIL", 30, 35, "CONTINUOUS"),
     "structure": ("GSE-STRUCTURE", 7, 50, "CONTINUOUS"),
     "general": ("GSE-GENERAL", 7, 25, "CONTINUOUS"),
-    "ground": ("GSE-GROUND", 30, 35, "CONTINUOUS"),
+    "ground": ("GSE-GROUND", 30, 50, "CONTINUOUS"),
     "hidden": ("GSE-HIDDEN", 8, 18, "DASHED"),
     "centre": ("GSE-CENTRE", 8, 18, "CENTER"),
-    "hatch": ("GSE-HATCH", 8, 9, "CONTINUOUS"),
+    "hatch": ("GSE-HATCH", 8, 13, "CONTINUOUS"),
     "bars": ("GSE-BARS", 1, 0, "CONTINUOUS"),
-    "dims": ("GSE-DIMS", 3, 18, "CONTINUOUS"),
-    "callouts": ("GSE-CALLOUTS", 4, 18, "CONTINUOUS"),
+    "dims": ("GSE-DIMS", 3, 13, "CONTINUOUS"),
+    "callouts": ("GSE-CALLOUTS", 4, 13, "CONTINUOUS"),
     "notes": ("GSE-NOTES", 7, 18, "CONTINUOUS"),
     "table": ("GSE-TABLE", 7, 18, "CONTINUOUS"),
 }
@@ -64,7 +64,7 @@ DIM_STYLE = "GSE-MM"
 # Sizes on the sheet, mm.
 TEXT_H = 2.5                # lettering (cap height)
 TITLE_H = 3.5               # the title and the stamp
-PITCH = 4.2                 # line pitch of 2.5 mm lettering
+PITCH = 3.8                 # line pitch of 2.5 mm lettering (1.5 h)
 MARGIN = 10.0               # sheet edge to border
 PAD = 3.0
 STRIP_W = 80.0              # the right-hand strip: notes over title block
@@ -74,7 +74,9 @@ MIN_BAR_W = 0.5             # least printed width of a bar drawn as a line
 MIN_DOT_D = 0.9             # least printed diameter of a bar seen end-on
 MARK_R = 2.9                # a callout mark's circle
 LANDING = 2.0               # a leader's flat end
-ROW_H = 5.0                 # table row
+ROW_H = 4.5                 # table row (2.5 mm lettering, 1 mm clear)
+GROUND_TICK = 1.6           # a ground line's short strokes: length
+GROUND_STEP = 2.5           # and spacing along the line
 CELL_PAD = 1.5
 
 
@@ -86,6 +88,8 @@ class SheetInfo:
     sheet_height_mm: float = 0.0
     scale: int = 1
     scale_chosen_by: str = "code"       # or "given"
+    #: model-space point of the sheet's bottom-left corner (the page)
+    origin: Tuple[float, float] = (0.0, 0.0)
     counts: Dict[str, int] = field(default_factory=dict)
     layers: List[str] = field(default_factory=list)
     n_entities: int = 0
@@ -130,6 +134,8 @@ class _DimGeom:
     fits: bool
     location: Optional[Tuple[float, float]]     # the number, if moved
     box: Tuple[float, float, float, float]      # x0, y0, x1, y1 envelope
+    centre: Tuple[float, float] = (0.0, 0.0)    # the number's centre
+    text_box: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
 
 def _dim_geometry(dim: Dimension, n: int) -> _DimGeom:
@@ -161,8 +167,9 @@ def _dim_geometry(dim: Dimension, n: int) -> _DimGeom:
         text += extra
         printed += extra
     width = text_width(printed, TEXT_H) * n
-    # room for the number and, under it, the two arrowheads
-    fits = max(width + 2.0 * n, 3.5 * ARROW * n) <= measured
+    # room for the number (set above the line, half a millimetre clear
+    # of each extension line) and, under it, the two arrowheads
+    fits = max(width + 1.0 * n, 3.5 * ARROW * n) <= measured
     # the side the number sits on: above a horizontal line, left of a
     # vertical one (read from the right), as ezdxf sets it
     ux, uy = (b[0] - a[0]), (b[1] - a[1])
@@ -190,6 +197,8 @@ def _dim_geometry(dim: Dimension, n: int) -> _DimGeom:
     return _DimGeom(measured=measured, angle=angle, a=a, b=b, base=a,
                     p1=(x1, y1), p2=(x2, y2), distance=off,
                     text=text, printed=printed, fits=fits, location=location,
+                    centre=(tx, ty),
+                    text_box=(tx - ex, ty - ey, tx + ex, ty + ey),
                     box=(min(xs), min(ys), max(xs), max(ys)))
 
 
@@ -241,6 +250,34 @@ def _callout_geometry(c: Callout, n: int) -> _CalloutGeom:
                              max(xs), max(c.at[1], end[1] + half)))
 
 
+def ground_strokes(points, n: int):
+    """The short strokes drawn under a ground line (the plain ground
+    convention), as (start, end) pairs in model mm: GROUND_TICK long at
+    45 degrees, every GROUND_STEP along the line, on the side below it
+    (right of a vertical stretch). They tell the ground apart from a
+    dimension's extension line running level beside it."""
+    out = []
+    step, tick = GROUND_STEP * n, GROUND_TICK * n
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        length = math.hypot(x1 - x0, y1 - y0)
+        if length < step:
+            continue
+        ux, uy = (x1 - x0) / length, (y1 - y0) / length
+        nx, ny = uy, -ux                    # right of the direction
+        if ny > 1e-9 or (abs(ny) <= 1e-9 and nx < 0):
+            nx, ny = -nx, -ny               # below the line
+        ax, ay = (ux, uy) if ux < 0 else (-ux, -uy)   # toward -x
+        dx = (nx + ax) / math.sqrt(2.0) * tick
+        dy = (ny + ay) / math.sqrt(2.0) * tick
+        count = int(length // step)
+        start = (length - (count - 1) * step) / 2.0
+        for k in range(count):
+            t = start + k * step
+            px, py = x0 + ux * t, y0 + uy * t
+            out.append(((px, py), (px + dx, py + dy)))
+    return out
+
+
 def bar_width(bar: Bar, n: int) -> float:
     """The width (or dot diameter) a bar is drawn at, model mm."""
     least = (MIN_BAR_W if bar.kind == "path" else MIN_DOT_D) * n
@@ -256,6 +293,11 @@ def content_box(drawing: Drawing, n: int) -> Tuple[float, float, float, float]:
         for item in group:
             xs.extend(p[0] for p in item.points)
             ys.extend(p[1] for p in item.points)
+    for line in drawing.lines:
+        if line.layer == "ground":        # its strokes reach below it
+            tick = GROUND_TICK * n
+            xs.extend(p[0] - tick for p in line.points)
+            ys.extend(p[1] - tick for p in line.points)
     for bar in drawing.bars:
         half = bar_width(bar, n) / 2.0
         xs.extend(v for p in bar.points for v in (p[0] - half, p[0] + half))
@@ -283,34 +325,48 @@ class _Plan:
     title_lines: List[str]
     title_block_h: float
     area: Tuple[float, float, float, float]     # x0, y0, x1, y1
+    strip_w: float = STRIP_W            # the right-hand strip's width
+    title_cut: bool = False             # the title ran past three lines
 
 
 _TB_ROWS = 4                # the title block's rows under the title
 _TB_ROW_H = 5.5
 _NOTE_INDENT = 5.0
+_NOTE_GAP = 1.0             # between two notes
+#: The right-hand strip's widths, tried in turn until the notes fit (GM-313
+#: review A3: real wall descriptions carry more notes than 80 mm holds on
+#: a letter sheet). A wider strip narrows the drawing area.
+STRIP_WIDTHS: Tuple[float, ...] = (STRIP_W, 100.0, 120.0)
 
 
 def _plan(drawing: Drawing) -> _Plan:
     width, height = SHEETS[drawing.sheet.size]
-    inner_w = STRIP_W - 2.0 * PAD
+    for strip_w in STRIP_WIDTHS:
+        inner_w = strip_w - 2.0 * PAD
+        title_all = wrap(drawing.title_block.title, inner_w, TITLE_H, True)
+        title_lines = title_all[:3]
+        title_cut = len(title_all) > 3
+        if title_cut:
+            title_lines[2] = fit(" ".join(title_all[2:]), inner_w, TITLE_H,
+                                 True)
+        title_block_h = (len(title_lines) * (TITLE_H * 1.6) + 3.0
+                         + _TB_ROWS * _TB_ROW_H)
 
-    title_lines = wrap(drawing.title_block.title, inner_w, TITLE_H, True)[:3]
-    title_block_h = (len(title_lines) * (TITLE_H * 1.6) + 3.0
-                     + _TB_ROWS * _TB_ROW_H)
-
-    note_lines = [wrap(note, inner_w - _NOTE_INDENT, TEXT_H)
-                  for note in drawing.notes]
-    notes_h = 0.0
-    if note_lines:
-        notes_h = (PITCH + 2.0 + sum(len(ls) * PITCH + 1.5
-                                     for ls in note_lines))
-    strip_room = height - 2.0 * MARGIN - title_block_h - 2.0 * PAD
-    if notes_h > strip_room:
+        note_lines = [wrap(note, inner_w - _NOTE_INDENT, TEXT_H)
+                      for note in drawing.notes]
+        notes_h = 0.0
+        if note_lines:
+            notes_h = (PITCH + 2.0 + sum(len(ls) * PITCH + _NOTE_GAP
+                                         for ls in note_lines))
+        strip_room = height - 2.0 * MARGIN - title_block_h - 2.0 * PAD
+        if notes_h <= strip_room:
+            break
+    else:
         raise DrawingError(
             f"The notes need {notes_h:.0f} mm of the sheet's notes column "
             f"and it has {strip_room:.0f} mm on a {drawing.sheet.size} "
-            "sheet. Give fewer or shorter notes, or a larger sheet "
-            "(tabloid, a3).")
+            f"sheet, even {strip_w:.0f} mm wide. Give fewer or shorter "
+            "notes, or a larger sheet (tabloid, a3).")
 
     table_cols: List[float] = []
     table_h = 0.0
@@ -323,7 +379,7 @@ def _plan(drawing: Drawing) -> _Plan:
             table_cols.append(widest + 2.0 * CELL_PAD)
         table_h = (len(table.rows) + 1) * ROW_H + (PITCH + 1.5 if table.title
                                                     else 0.0)
-        room = width - 2.0 * MARGIN - STRIP_W - 2.0 * PAD - 55.0
+        room = width - 2.0 * MARGIN - strip_w - 2.0 * PAD - 55.0
         if sum(table_cols) > room:
             raise DrawingError(
                 f"The table is {sum(table_cols):.0f} mm wide and a "
@@ -333,12 +389,12 @@ def _plan(drawing: Drawing) -> _Plan:
 
     band_h = max(table_h, 13.0)
     area = (MARGIN + PAD, MARGIN + PAD + band_h + PAD,
-            width - MARGIN - STRIP_W - PAD,
+            width - MARGIN - strip_w - PAD,
             height - MARGIN - PAD - (TITLE_H + 3.0) - PAD)
     return _Plan(width=width, height=height, table_cols=table_cols,
                  table_h=table_h, note_lines=note_lines, notes_h=notes_h,
                  title_lines=title_lines, title_block_h=title_block_h,
-                 area=area)
+                 area=area, strip_w=strip_w, title_cut=title_cut)
 
 
 def choose_scale(drawing: Drawing) -> Tuple[int, str]:
@@ -444,6 +500,9 @@ class _Builder:
             "dimexo": 1.0, "dimexe": 1.5, "dimgap": DIM_GAP,
             "dimscale": float(n), "dimlfac": 1.0, "dimdec": 0, "dimrnd": 0,
             "dimtad": 1, "dimzin": 8, "dimlunit": 2, "dimtih": 0,
+            # the code's own fit test places every number; ezdxf never
+            # moves one on its own judgement (GM-313 review A4)
+            "dimtix": 1,
             "dimtoh": 0, "dimclrd": 256, "dimclre": 256, "dimclrt": 256,
             "dimblk": "", "dimtsz": 0.0,
         })
@@ -454,6 +513,7 @@ class _Builder:
         ax0, ay0, ax1, ay1 = self.plan.area
         self.ox = (x0 + x1) / 2.0 - n * (ax0 + ax1) / 2.0
         self.oy = (y0 + y1) / 2.0 - n * (ay0 + ay1) / 2.0
+        self.info.origin = (self.ox, self.oy)
         self.counts = {"outlines": 0, "hatches": 0, "lines": 0, "bars": 0,
                        "bar_dots": 0, "dimensions": 0, "callouts": 0,
                        "notes": 0, "table_rows": 0}
@@ -525,6 +585,10 @@ class _Builder:
                                   dxfattribs=attribs)
             else:
                 self.msp.add_lwpolyline(line.points, dxfattribs=attribs)
+            if line.layer == "ground":
+                for a, b in ground_strokes(line.points, self.n):
+                    self.msp.add_line(a, b, dxfattribs={
+                        "layer": attribs["layer"], "lineweight": 25})
             self.counts["lines"] += 1
 
     def _bars(self):
@@ -571,8 +635,10 @@ class _Builder:
                 style = self.msp.add_linear_dim(
                     base=g.base, p1=dim.p1, p2=dim.p2, angle=g.angle,
                     text=g.text, dimstyle=DIM_STYLE, dxfattribs=attribs)
-            if g.location is not None:
-                style.set_location(g.location, leader=False, relative=False)
+            # every number is placed where the code laid it out (ezdxf
+            # would choose its own side for a dimension given right to
+            # left or top to bottom)
+            style.set_location(g.centre, leader=False, relative=False)
             style.render()
             self.counts["dimensions"] += 1
 
@@ -600,7 +666,7 @@ class _Builder:
         p = self.plan
         self._paper_box(MARGIN, MARGIN, p.width - MARGIN, p.height - MARGIN,
                         "border")
-        x = p.width - MARGIN - STRIP_W
+        x = p.width - MARGIN - p.strip_w
         self._paper_line(x, MARGIN, x, p.height - MARGIN, "title")
         # the stamp, top left, boxed
         w = text_width(STAMP, TITLE_H, bold=True)
@@ -614,11 +680,15 @@ class _Builder:
     def _title_block(self):
         p = self.plan
         tb = self.drawing.title_block
-        x0 = p.width - MARGIN - STRIP_W
+        x0 = p.width - MARGIN - p.strip_w
         x1 = p.width - MARGIN
         y0 = MARGIN
         y1 = y0 + p.title_block_h
         self._paper_line(x0, y1, x1, y1, "title")
+        if p.title_cut:
+            self.info.warnings.append(
+                "Title block: the title is longer than its three lines and "
+                "is cut, ending in '...'.")
         y = y1 - 1.5
         for line in p.title_lines:
             y -= TITLE_H * 1.6
@@ -627,8 +697,8 @@ class _Builder:
         rows_top = y0 + _TB_ROWS * _TB_ROW_H
         self._paper_line(x0, rows_top, x1, rows_top, "title")
         mid = (x0 + x1) / 2.0
-        half = STRIP_W / 2.0 - 2.0 * 1.5
-        full = STRIP_W - 2.0 * 1.5
+        half = p.strip_w / 2.0 - 2.0 * 1.5
+        full = p.strip_w - 2.0 * 1.5
         rows = [
             [("PROJECT: " + tb.project, full)],
             [("NO.: " + tb.project_number, half),
@@ -659,7 +729,7 @@ class _Builder:
         p = self.plan
         if not p.note_lines:
             return
-        x = p.width - MARGIN - STRIP_W + PAD
+        x = p.width - MARGIN - p.strip_w + PAD
         y = p.height - MARGIN - PAD - TEXT_H
         self._paper_text("NOTES", x, y, TEXT_H, "notes", bold=True)
         y -= 2.0
@@ -669,7 +739,7 @@ class _Builder:
                 if i == 0:
                     self._paper_text(f"{k}.", x, y, TEXT_H, "notes")
                 self._paper_text(line, x + _NOTE_INDENT, y, TEXT_H, "notes")
-            y -= 1.5
+            y -= _NOTE_GAP
             self.counts["notes"] += 1
 
     def _table(self) -> float:

@@ -18,7 +18,7 @@ from typing import Optional
 from dxf_export._fonts import ensure_fonts
 from dxf_export.drawing import Drawing, DrawingError
 from dxf_export.results import DrawingSheetResult
-from dxf_export.sheet import MARGIN, SheetInfo, build_dxf
+from dxf_export.sheet import SheetInfo, build_dxf
 
 #: The PNG's resolution: a letter sheet is 2,200 x 1,700 px.
 PNG_DPI = 200
@@ -46,13 +46,21 @@ def pdf_page_bytes(doc, info: SheetInfo) -> bytes:
     )
     Frontend(RenderContext(doc), backend, config=cfg).draw_layout(
         doc.modelspace())
+    from ezdxf.math import BoundingBox2d
+
     page = layout.Page(info.sheet_width_mm, info.sheet_height_mm,
-                       layout.Units.mm, margins=layout.Margins.all(MARGIN))
-    # The border is the content's outermost box and sits MARGIN inside the
-    # sheet's edge, so centring the content at 1:N puts the sheet on the
-    # page exactly.
-    settings = layout.Settings(fit_page=False, scale=1.0 / info.scale)
-    return backend.get_pdf_bytes(page, settings=settings)
+                       layout.Units.mm, margins=layout.Margins.all(0.0))
+    # The page is the sheet's own rectangle in model space, whatever the
+    # content holds: centring on the content's box instead let one
+    # over-long word slide the whole sheet, stamp and all, off the page
+    # (GM-313 review A1). Anything outside the sheet is cut off.
+    x0, y0 = info.origin
+    n = info.scale
+    sheet_box = BoundingBox2d([(x0, y0), (x0 + n * info.sheet_width_mm,
+                                          y0 + n * info.sheet_height_mm)])
+    settings = layout.Settings(fit_page=False, scale=1.0 / n)
+    return backend.get_pdf_bytes(page, settings=settings,
+                                 render_box=sheet_box)
 
 
 def png_bytes(pdf: bytes, dpi: int = PNG_DPI) -> bytes:

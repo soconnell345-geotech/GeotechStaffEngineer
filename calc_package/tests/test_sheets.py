@@ -209,3 +209,29 @@ def test_a_real_sheet_from_the_drawing_layer_goes_in(tmp_path):
         for name in ("calc_package", "calc_package.data_model",
                      "calc_package.renderer", "calc_package.latex_renderer"))
     assert "dxf_export" not in source.replace("``dxf_export", "")
+
+
+def test_the_latex_leg_appends_the_sheet_with_the_compile_stood_in_for(
+        tmp_path, monkeypatch):
+    """The pdflatex leg's own path through render_pdf (GM-313 review B3):
+    pdflatex is on neither this machine nor CI, so the compile is stood in
+    for by the Story renderer; the append after it is the real one."""
+    from calc_package import latex_renderer
+
+    def compile_stand_in(data, filepath, keep_tex=False, compiler="pdflatex"):
+        html = latex_renderer.render_html(data, with_sheets=False)
+        return latex_renderer.render_html_pdf_story(html, filepath)["path"]
+
+    monkeypatch.setattr(latex_renderer, "_save_pdf_latex", compile_stand_in)
+    monkeypatch.setattr(latex_renderer.shutil, "which",
+                        lambda name, *a, **k: "/usr/bin/" + name)
+    plain = render_pdf(_data(), str(tmp_path / "plain.pdf"),
+                       renderer="pdflatex")
+    report = render_pdf(_data([_sheet()]), str(tmp_path / "p.pdf"),
+                        renderer="pdflatex")
+    assert report["renderer"] == "pdflatex"
+    pages = _pages(report["path"])
+    assert len(pages) == len(_pages(plain["path"])) + 1
+    assert pages[-1][:2] == (1224, 792) and pages[-1][3] == 0
+    assert report["sheets"][0]["title"] == "Wall section"
+    assert "sheets" not in plain
