@@ -44,3 +44,7 @@ docs/Duncan*
 # Chart-suite data folders (Chartography: gated, not for training; CharXiv: charts owned by their authors): never commit them or their zips
 chartography_data*
 charxiv_data*
+
+# Sample calc packages built by docs/examples/build_sample_packages.py
+# (GM-328): rebuilt on demand, never committed (OWN-144)
+docs/examples/out/
