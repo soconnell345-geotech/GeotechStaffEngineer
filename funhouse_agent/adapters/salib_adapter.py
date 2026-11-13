@@ -594,7 +594,7 @@ METHOD_INFO = {
             },
             "n_samples": {
                 "type": "int",
-                "brief": "The base sample size N given to sobol_sample. Checked: Y must have N*(2D+2) values (N*(D+2) without second-order indices) or the call is refused. Left out, N is taken from the length of Y.",
+                "brief": "The base sample size N given to sobol_sample. Checked: Y must have N*(2D+2) values (N*(D+2) without second-order indices) or the call is refused. Left out, N is taken from the length of Y; where that length fits both designs (with and without second-order indices), the design calc_second_order names is taken and warnings and choices say so.",
             },
             "calc_second_order": {
                 "type": "bool",
@@ -617,6 +617,8 @@ METHOD_INFO = {
             "ST": "Total-order Sobol indices.",
             "ST_conf": "95% confidence intervals for ST.",
             "S2": "Second-order interaction indices (if computed).",
+            "warnings": "Only when n_samples was left out and Y's length fits both designs: the design taken, the other, and that n_samples settles it. Tell the user.",
+            "choices": "Only with that warning: what, chosen, how (module), basis, alternatives for the design taken.",
         },
     },
     "morris_sample": {

@@ -45,6 +45,10 @@ class SobolResult:
     output_mean: Optional[float] = None
     output_std: Optional[float] = None
     n_base_samples: int = 0
+    #: Only when Y's length fits two designs (GM-323 review): which was
+    #: taken, and the other.
+    warnings: List[str] = field(default_factory=list)
+    choices: List[dict] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -63,6 +67,8 @@ class SobolResult:
             s1 = self.S1[i] if i < len(self.S1) else float('nan')
             st = self.ST[i] if i < len(self.ST) else float('nan')
             lines.append(f"  {name:16s}  {s1:8.4f}    {st:8.4f}")
+        for w in self.warnings:
+            lines.append(f"  WARNING: {w}")
         lines.append("=" * 60)
         return "\n".join(lines)
 
@@ -86,6 +92,10 @@ class SobolResult:
         if self.output_mean is not None:
             d["output_mean"] = self.output_mean
             d["output_std"] = self.output_std
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def plot_sensitivity(self, ax=None, show=True, **kwargs):

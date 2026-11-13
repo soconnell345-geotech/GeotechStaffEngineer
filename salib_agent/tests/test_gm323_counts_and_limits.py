@@ -68,6 +68,26 @@ class TestSobolCounts:
             sobol_analyze(NAMES, BOUNDS, model(X), calc_second_order=True)
         assert "calc_second_order=False" in str(exc.value)
 
+    def test_y_that_fits_both_designs_says_which_was_taken(self):
+        """GM-323 review: D=3, a first-order sample at N=64 (320 rows)
+        also fits the second-order design (N=40). Left without n_samples,
+        the run is not refused (it ran before) but says so."""
+        X = sobol_sample(NAMES, BOUNDS, n_samples=64,
+                         calc_second_order=False)
+        assert len(X) == 320
+        r = sobol_analyze(NAMES, BOUNDS, model(X), calc_second_order=True)
+        assert r.n_base_samples == 40
+        (w,) = r.warnings
+        assert "N=40" in w and "N=64" in w and "n_samples" in w
+        (c,) = r.to_dict()["choices"]
+        assert c["chosen"].startswith("N=40 with second-order")
+        assert c["alternatives"][0].startswith("N=64 without")
+        # n_samples settles it: no warning either way
+        for second, n in ((False, 64), (True, 40)):
+            r = sobol_analyze(NAMES, BOUNDS, model(X), n_samples=n,
+                              calc_second_order=second)
+            assert r.warnings == [] and "choices" not in r.to_dict()
+
     def test_y_must_be_flat(self):
         with pytest.raises(ValueError, match="flat list"):
             sobol_analyze(NAMES, BOUNDS, np.zeros((8, 2)))

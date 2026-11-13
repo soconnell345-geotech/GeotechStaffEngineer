@@ -78,6 +78,44 @@ def _sobol_base_samples(n_outputs, n_vars, calc_second_order, n_samples):
     return n_base
 
 
+def _sobol_design_ambiguity(n_outputs, n_vars, calc_second_order,
+                            n_samples):
+    """With ``n_samples`` left out, a Y whose length fits both designs (a
+    whole multiple of both 2D+2 and D+2; for D = 1, 3, 7 and 15 every
+    power-of-two N does) cannot say which design made it. The analysis
+    takes the one ``calc_second_order`` names; this says so, with the
+    other reading (GM-323 review). Returns (warning, choice) or None."""
+    if n_samples is not None or n_outputs == 0:
+        return None
+    per = sobol_rows_per_base_sample(n_vars, calc_second_order)
+    other = sobol_rows_per_base_sample(n_vars, not calc_second_order)
+    if n_outputs % per or n_outputs % other:
+        return None
+    with_2nd = "with second-order indices, N*(2D+2)"
+    without = "without second-order indices, N*(D+2)"
+    taken, not_taken = ((with_2nd, without) if calc_second_order
+                        else (without, with_2nd))
+    n_taken, n_other = n_outputs // per, n_outputs // other
+    warning = (
+        f"Y's {n_outputs} values fit two Sobol designs for {n_vars} "
+        f"variables: N={n_taken} {taken}, taken because "
+        f"calc_second_order={calc_second_order}, and N={n_other} "
+        f"{not_taken}. If the sample was made with "
+        f"calc_second_order={not calc_second_order}, these indices come "
+        f"from the wrong design. Give n_samples (or check "
+        f"calc_second_order against sobol_sample) to settle it.")
+    choice = {
+        "what": "The Sobol design Y came from",
+        "chosen": f"N={n_taken} {taken}",
+        "how": "module",
+        "basis": (f"calc_second_order={calc_second_order}; n_samples was "
+                  f"not given, and Y's length fits both designs"),
+        "alternatives": [f"N={n_other} {not_taken} "
+                         f"(calc_second_order={not calc_second_order})"],
+    }
+    return warning, choice
+
+
 def _morris_trajectories(X, Y, n_vars, n_trajectories):
     """The trajectories the sample matrix holds, checked against the
     design (GM-323): morris_sample gives T*(D+1) rows of D columns, one
@@ -151,6 +189,8 @@ def sobol_analyze(
             f"{tuple(Y_arr.shape)}.")
     n_base = _sobol_base_samples(len(Y_arr), len(var_names),
                                  calc_second_order, n_samples)
+    ambiguity = _sobol_design_ambiguity(len(Y_arr), len(var_names),
+                                        calc_second_order, n_samples)
 
     problem = {
         'num_vars': len(var_names),
@@ -179,6 +219,8 @@ def sobol_analyze(
         ST=list(Si['ST']),
         ST_conf=list(Si['ST_conf']),
         S2=s2,
+        warnings=[ambiguity[0]] if ambiguity else [],
+        choices=[ambiguity[1]] if ambiguity else [],
     )
 
 
