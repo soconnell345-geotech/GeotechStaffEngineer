@@ -178,22 +178,15 @@ def _dxf_result_from_params(params, method):
 
 def _run_build_slope_geometry(params):
     from dxf_import.converter import SoilPropertyAssignment, build_slope_geometry
-    from funhouse_agent.adapters.dxf_import_adapter import (
-        check_soil_properties,
-    )
+    from funhouse_agent.adapters.dxf_import_adapter import soil_assignments
 
     dxf_result = _dxf_result_from_params(params, "build_slope_geometry")
-    check_soil_properties(params.get("soil_properties"), "slope",
-                          method="build_slope_geometry")
-    soil_props = [
-        SoilPropertyAssignment(
-            name=sp.get("name", ""), gamma=sp.get("gamma", 18.0),
-            gamma_sat=sp.get("gamma_sat"), phi=sp.get("phi", 0.0),
-            c_prime=sp.get("c_prime", 0.0), cu=sp.get("cu", 0.0),
-            analysis_mode=sp.get("analysis_mode", "drained"),
-        )
-        for sp in params.get("soil_properties", [])
-    ]
+    # the dxf_import adapter's own rule: a missing unit weight or strength
+    # is refused and what stood in for the rest is listed (GM-327)
+    kwargs_list, used = soil_assignments(params.get("soil_properties"),
+                                         "slope",
+                                         method="build_slope_geometry")
+    soil_props = [SoilPropertyAssignment(**kw) for kw in kwargs_list]
     geom = build_slope_geometry(dxf_result, soil_props)
     return clean_result({
         "surface_points": [{"x": round(x, 4), "z": round(z, 4)} for x, z in geom.surface_points],
@@ -205,34 +198,25 @@ def _run_build_slope_geometry(params):
             for lyr in geom.soil_layers
         ],
         "has_gwt": geom.gwt_points is not None,
+        **({"defaults_used": used} if used else {}),
     })
 
 
 def _run_build_fem_inputs(params):
     from dxf_import.converter import FEMSoilPropertyAssignment, build_fem_inputs
-    from funhouse_agent.adapters.dxf_import_adapter import (
-        check_soil_properties,
-    )
+    from funhouse_agent.adapters.dxf_import_adapter import soil_assignments
 
     dxf_result = _dxf_result_from_params(params, "build_fem_inputs")
-    check_soil_properties(params.get("soil_properties"), "fem",
-                          method="build_fem_inputs")
-    soil_props = [
-        FEMSoilPropertyAssignment(
-            name=sp.get("name", ""), gamma=sp.get("gamma", 18.0),
-            phi=sp.get("phi", 0.0), c=sp.get("c", 0.0),
-            E=sp.get("E", 30000.0), nu=sp.get("nu", 0.3),
-            psi=sp.get("psi", 0.0), model=sp.get("model", "mc"),
-            hs_params=sp.get("hs_params"),
-        )
-        for sp in params.get("soil_properties", [])
-    ]
+    kwargs_list, used = soil_assignments(params.get("soil_properties"),
+                                         "fem", method="build_fem_inputs")
+    soil_props = [FEMSoilPropertyAssignment(**kw) for kw in kwargs_list]
     result = build_fem_inputs(dxf_result, soil_props)
     return clean_result({
         "surface_points": [{"x": round(x, 4), "z": round(z, 4)} for x, z in result["surface_points"]],
         "n_layers": len(result["soil_layers"]),
         "layers": result["soil_layers"],
         "has_gwt": result["gwt"] is not None,
+        **({"defaults_used": used} if used else {}),
     })
 
 
@@ -342,17 +326,17 @@ METHOD_INFO = {
         "brief": "Convert extracted PDF geometry to SlopeGeometry for slope stability analysis.",
         "parameters": {
             "parse_result": {"type": "dict", "required": True, "description": "Output from extract_vector_geometry."},
-            "soil_properties": {"type": "array", "required": True, "description": "List of {name, gamma, phi, c_prime, cu, analysis_mode} dicts."},
+            "soil_properties": {"type": "array", "required": True, "description": "List of {name, gamma, gamma_sat, phi, c_prime, cu, analysis_mode} dicts. A drawing gives geometry only, so no unit weight or strength is assumed: a drained layer must give gamma and phi, an undrained layer (analysis_mode='undrained') gamma and cu; a layer without them is refused. Left out and listed in defaults_used: c_prime 0, analysis_mode 'drained', gamma_sat = the layer's gamma."},
         },
-        "returns": {"surface_points": "Surface profile.", "n_layers": "Number of soil layers.", "layers": "Layer details."},
+        "returns": {"surface_points": "Surface profile.", "n_layers": "Number of soil layers.", "layers": "Layer details.", "defaults_used": "Only when a value stood in for an input left out: {'soil_properties[<name>].<input>': value}."},
     },
     "build_fem_inputs": {
         "category": "PDF Import",
         "brief": "Convert extracted PDF geometry to fem2d FEM input format.",
         "parameters": {
             "parse_result": {"type": "dict", "required": True, "description": "Output from extract_vector_geometry."},
-            "soil_properties": {"type": "array", "required": True, "description": "List of {name, gamma, phi, c, E, nu, model} dicts."},
+            "soil_properties": {"type": "array", "required": True, "description": "List of {name, gamma, phi, c, E, nu, psi, model, hs_params} dicts. A drawing gives geometry only, so no unit weight, stiffness or strength is assumed: every layer must give gamma, E and nu, and a layer with a strength model (mc or hs) phi; a layer without them is refused. Left out and listed in defaults_used: c 0, psi 0, model 'mc'."},
         },
-        "returns": {"surface_points": "Surface profile.", "n_layers": "Number of soil layers.", "layers": "Layer details with stiffness."},
+        "returns": {"surface_points": "Surface profile.", "n_layers": "Number of soil layers.", "layers": "Layer details with stiffness.", "defaults_used": "Only when a value stood in for an input left out: {'soil_properties[<name>].<input>': value}."},
     },
 }

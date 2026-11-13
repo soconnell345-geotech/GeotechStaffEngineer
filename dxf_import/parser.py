@@ -18,7 +18,9 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from dxf_import.results import DxfParseResult
-from dxf_import.units import UNIT_FACTORS, convert_coords
+from dxf_import.units import (
+    UNIT_FACTORS, convert_coords, detect_units_from_header,
+)
 
 try:
     import ezdxf
@@ -60,8 +62,9 @@ def parse_dxf_geometry(
     filepath: str = None,
     content: bytes = None,
     layer_mapping: LayerMapping = None,
-    units: str = "m",
+    units: Optional[str] = None,
     flip_y: bool = False,
+    ignore_header_units: bool = False,
 ) -> DxfParseResult:
     """Extract slope geometry from mapped DXF layers.
 
@@ -73,22 +76,35 @@ def parse_dxf_geometry(
         Raw DXF file content.
     layer_mapping : LayerMapping
         Mapping from DXF layers to geometric roles.
-    units : str
-        Drawing units ('m', 'mm', 'cm', 'ft', 'in'). Default 'm'.
+    units : str, optional
+        Drawing units ('m', 'mm', 'cm', 'ft', 'in'). Left out, the units
+        the drawing's own header states ($INSUNITS) are used; a drawing
+        whose header states none is refused until ``units`` is given.
+        Given, they are compared with the header: a difference is refused
+        unless ``ignore_header_units`` is True. There is no silent default.
     flip_y : bool
         If True, negate Y values (for drawings with downward-positive Y).
+    ignore_header_units : bool
+        If True, ``units`` is used even where the drawing's header states
+        other units (a header left at a template's value is common); the
+        result's warnings then name both.
 
     Returns
     -------
     DxfParseResult
-        Extracted coordinates in meters.
+        Extracted coordinates in meters: surface, boundaries, water table,
+        nails and text annotation positions alike. ``units_used`` is what
+        the coordinates were converted from, ``units_source`` where that
+        came from and ``header_units`` what the drawing's header states.
 
     Raises
     ------
     ImportError
         If ezdxf is not installed.
     ValueError
-        If layer_mapping is None, units unknown, or required layers missing.
+        If layer_mapping is None, units unknown, units not stated by the
+        caller or the drawing, units differing from the drawing's header
+        (without ``ignore_header_units``), or required layers missing.
     """
     if ezdxf is None:
         raise ImportError(_EZDXF_INSTALL_MSG)
@@ -99,7 +115,7 @@ def parse_dxf_geometry(
     if not layer_mapping.surface:
         raise ValueError("layer_mapping.surface must be specified")
 
-    if units not in UNIT_FACTORS:
+    if units is not None and units not in UNIT_FACTORS:
         raise ValueError(
             f"Unknown units '{units}'. Supported: {sorted(UNIT_FACTORS.keys())}"
         )
@@ -124,6 +140,10 @@ def parse_dxf_geometry(
 
     msp = doc.modelspace()
     warnings = []
+
+    # --- Units: the caller's against the drawing's own header ---
+    units, units_source, header_units = _resolve_units(
+        doc, units, ignore_header_units, warnings)
 
     # Index entities by layer
     layer_entities = {}
@@ -191,36 +211,49 @@ def parse_dxf_geometry(
                 f"Nail layer '{layer_mapping.nails}' not found in DXF — skipped"
             )
         else:
-            nail_lines = _extract_nail_lines(
-                layer_entities[layer_mapping.nails], flip_y, units
-            )
+            nail_entities = layer_entities[layer_mapping.nails]
+            nail_lines = _extract_nail_lines(nail_entities, flip_y, units)
+            not_lines = {}
+            for ent in nail_entities:
+                if ent.dxftype() != "LINE":
+                    not_lines[ent.dxftype()] = (
+                        not_lines.get(ent.dxftype(), 0) + 1)
+            if not_lines:
+                warnings.append(
+                    f"Nail layer '{layer_mapping.nails}': only LINE "
+                    f"entities are read as nails; left out: "
+                    + ", ".join(f"{n} {t}" for t, n in sorted(
+                        not_lines.items())))
 
     # --- Text annotations ---
+    # Positions are converted to metres like every other coordinate
+    # (GM-327: they were copied in drawing units beside geometry in m).
+    factor = UNIT_FACTORS[units] / UNIT_FACTORS["m"]
     text_annotations = []
     if layer_mapping.annotations:
         for ann_layer in layer_mapping.annotations:
             if ann_layer not in layer_entities:
+                warnings.append(
+                    f"Annotation layer '{ann_layer}' not found in DXF "
+                    f"— skipped"
+                )
                 continue
             for ent in layer_entities[ann_layer]:
                 etype = ent.dxftype()
                 if etype == "TEXT":
-                    ins = ent.dxf.insert
-                    y = -ins.y if flip_y else ins.y
-                    text_annotations.append({
-                        "text": ent.dxf.text,
-                        "x": ins.x,
-                        "y": y,
-                        "layer": ann_layer,
-                    })
+                    text = ent.dxf.text
                 elif etype == "MTEXT":
-                    ins = ent.dxf.insert
-                    y = -ins.y if flip_y else ins.y
-                    text_annotations.append({
-                        "text": ent.text,
-                        "x": ins.x,
-                        "y": y,
-                        "layer": ann_layer,
-                    })
+                    text = ent.text
+                else:
+                    continue
+                ins = ent.dxf.insert
+                y = -ins.y if flip_y else ins.y
+                text_annotations.append({
+                    "text": text,
+                    "x": ins.x * factor,
+                    "y": y * factor,
+                    "layer": ann_layer,
+                })
 
     return DxfParseResult(
         surface_points=surface_points,
@@ -229,8 +262,86 @@ def parse_dxf_geometry(
         nail_lines=nail_lines,
         text_annotations=text_annotations,
         units_used=units,
+        units_source=units_source,
+        header_units=header_units,
         warnings=warnings,
     )
+
+
+#: $INSUNITS codes the DXF reference gives that this importer does not
+#: convert (the supported ones are in dxf_import.units).
+_INSUNITS_UNSUPPORTED = {
+    3: "miles", 7: "kilometres", 8: "microinches", 9: "mils", 10: "yards",
+    11: "angstroms", 12: "nanometres", 13: "microns", 14: "decimetres",
+    15: "decametres", 16: "hectometres", 17: "gigametres",
+    18: "astronomical units", 19: "light years", 20: "parsecs",
+    21: "US survey feet", 22: "US survey inches", 23: "US survey yards",
+    24: "US survey miles",
+}
+
+
+def _resolve_units(doc, units, ignore_header_units, warnings):
+    """``(units, units_source, header_units)``: the units the coordinates
+    are converted from, where they came from, and what the drawing's own
+    $INSUNITS header states (None when unitless).
+
+    The caller's ``units`` and the header are compared; nothing is assumed:
+
+    * neither states units -> refused;
+    * only the header -> the header's, said in ``units_source``;
+    * only the caller (header unitless) -> the caller's;
+    * both and equal -> those;
+    * both and different -> refused, or the caller's with a warning that
+      names both when ``ignore_header_units`` is True.
+    """
+    supported = sorted(UNIT_FACTORS.keys())
+    try:
+        code = doc.header.get("$INSUNITS", 0)
+    except Exception:
+        code = 0
+    header_units = detect_units_from_header(doc)
+    header_label = header_units
+    if header_units is None and code in _INSUNITS_UNSUPPORTED:
+        header_label = _INSUNITS_UNSUPPORTED[code]
+
+    if units is None:
+        if header_units is not None:
+            return (header_units, "the drawing's header ($INSUNITS)",
+                    header_units)
+        if header_label is not None:
+            raise ValueError(
+                f"The drawing's header ($INSUNITS = {code}) states "
+                f"{header_label}, which this importer does not convert. "
+                f"Give units (one of {supported}) for the units the "
+                f"coordinates are really drawn in."
+            )
+        raise ValueError(
+            f"The drawing's header states no units ($INSUNITS is unitless) "
+            f"and no units were given, so the coordinates cannot be turned "
+            f"into metres. Give units (one of {supported}); a drawing in mm "
+            f"read as m is 1000 times too large."
+        )
+
+    if header_label is None:
+        return (units, "given (the drawing's header states no units)", None)
+    if header_units == units:
+        return (units, "given, and the drawing's header ($INSUNITS) agrees",
+                header_units)
+    if not ignore_header_units:
+        raise ValueError(
+            f"units='{units}' was given, and the drawing's own header "
+            f"($INSUNITS = {code}) states {header_label}. Leave units out "
+            f"to use the header's, or pass ignore_header_units=True if the "
+            f"header is wrong (one left at a template's value is common) "
+            f"and the coordinates really are in {units}."
+        )
+    warnings.append(
+        f"The coordinates were converted from {units} as given; the "
+        f"drawing's header ($INSUNITS = {code}) states {header_label} and "
+        f"was ignored (ignore_header_units)."
+    )
+    return (units, f"given; the drawing's header states {header_label} "
+                   f"and was ignored", header_units)
 
 
 def _extract_polyline_coords(

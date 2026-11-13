@@ -844,7 +844,7 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
             and (base, k) not in MP.SHOWN_ONLY_WHEN_GIVEN}
     if not back:
         return
-    r1 = _run(agent, method, {**params, **back})
+    r1 = _run(agent, method, _given_back(params, back))
     assert "error" not in r1, (key, r1["error"])
     where = str(tmp_path)
     moved = _diff(_norm(r0, where), _norm(r1, where))
@@ -961,6 +961,33 @@ def test_a_choice_made_from_an_input_follows_whether_it_was_stated(
     assert {w: by.get(w) for w in whats} == {w: "assumed" for w in whats}
 
 
+_NESTED = re.compile(r"^(\w+)(?:\[(.+)\])?\.(\w+)$")
+
+
+def _given_back(params: dict, back: dict) -> dict:
+    """``params`` with each of ``back`` given: a parameter by its name, and
+    a default an adapter lists for one item of a list parameter
+    (``soil_properties[Clay].c_prime``, the item by its name or index) or
+    one key of a dict parameter (``nail_defaults.fy``) put in that item or
+    dict (GM-327: dxf_import lists the per-layer values that stood in)."""
+    out = copy.deepcopy(params)
+    for name, value in back.items():
+        m = _NESTED.match(name)
+        if not m:
+            out[name] = value
+            continue
+        param, item, key = m.groups()
+        if item is None:
+            out[param] = {**(out.get(param) or {}), key: value}
+            continue
+        items = out[param]
+        target = next((it for it in items if it.get("name") == item), None)
+        if target is None:
+            target = items[int(item)]
+        target[key] = value
+    return out
+
+
 def _other_value(spec: dict, value):
     """A value other than ``value`` for an input declared by ``spec``: the
     next of its allowed values, the other boolean, a number moved by half
@@ -1068,7 +1095,13 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
         other = _other_value(info.get(name) or {}, value)
         if other is None:
             continue
-        if _moved_by(name, r0, run({**probe["params"], name: other}),
+        # a default listed for one item of a list or dict parameter
+        # (GM-327) is a property a build tool carries into that item of its
+        # output under the same name: there the value in the output is the
+        # effect, so only ``defaults_used`` itself is set aside
+        echo = "defaults_used" if _NESTED.match(name) else name
+        if _moved_by(echo, r0,
+                     run(_given_back(probe["params"], {name: other})),
                      where) is None:
             still.append(f"{name}: {value!r} -> {other!r}")
     assert still == [], (

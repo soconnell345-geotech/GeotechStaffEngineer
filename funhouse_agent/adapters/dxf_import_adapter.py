@@ -1,7 +1,7 @@
 """DXF import adapter — discover layers, parse geometry, build slope/FEM inputs."""
 
 from funhouse_agent.adapters import (
-    check_nested_keys, check_nested_list, clean_result,
+    check_nested_keys, check_nested_list, clean_result, declare_when_absent,
     reject_unknown_params, require_params,
 )
 
@@ -72,6 +72,111 @@ def check_soil_properties(items, kind, *, method):
                       label="soil_properties", hints=hints, notes=notes)
 
 
+#: What a soil_properties[] entry must carry, by kind and case, and what it
+#: may leave out with the value that then stands in (listed in the result's
+#: ``defaults_used``). A drawing gives geometry only: dxf_import's own
+#: documents say unit weight, strength and stiffness "must always come from
+#: the user", so none of those is assumed (GM-327; they were gamma 18,
+#: phi 0, c 0, cu 0, E 30000 and nu 0.3 with nothing said).
+_SOIL_REQUIRED_TEXT = {
+    "slope": ("a drained layer needs gamma and phi (c_prime is 0 when left "
+              "out, and listed); an undrained layer (analysis_mode="
+              "'undrained') needs gamma and cu"),
+    "fem": ("every layer needs gamma, E and nu; a layer with a strength "
+            "model (mc or hs) also needs phi (c and psi are 0 when left "
+            "out, and listed)"),
+}
+
+
+def soil_assignments(items, kind, *, method):
+    """``(kwargs_list, defaults_used)`` for the ``kind`` ('slope' or 'fem')
+    soil_properties ``items``: one dict of constructor arguments per layer
+    (SoilPropertyAssignment / FEMSoilPropertyAssignment), and every value
+    that stood in for an input a layer left out, keyed
+    ``soil_properties[<name>].<input>``.
+
+    A layer without its unit weight, its strength for its case, or (FEM)
+    its stiffness is refused in one message that names every missing input
+    of every layer. Shared with the pdf_import adapter."""
+    check_soil_properties(items, kind, method=method)
+    out, used, missing = [], {}, []
+    for i, sp in enumerate(items or []):
+        name = sp.get("name", "")
+        label = f"soil_properties[{name or i}]"
+        need = ["gamma"]
+        kw = {"name": name}
+
+        def default(key, value):
+            if sp.get(key) is None:
+                used[f"{label}.{key}"] = value
+                return value
+            return sp[key]
+
+        if kind == "slope":
+            mode = default("analysis_mode", "drained")
+            kw["analysis_mode"] = mode
+            if mode == "undrained":
+                need.append("cu")
+                kw["phi"] = sp.get("phi", 0.0)
+                kw["c_prime"] = sp.get("c_prime", 0.0)
+            else:
+                need.append("phi")
+                kw["c_prime"] = default("c_prime", 0.0)
+                kw["cu"] = sp.get("cu", 0.0)
+            # left out, the layer is weighed at gamma below the water
+            # table too (SlopeSoilLayer's own rule); the output carries that
+            # value as gamma_sat, so it is listed as the value it took
+            kw["gamma_sat"] = sp.get("gamma_sat")
+            if sp.get("gamma_sat") is None and sp.get("gamma") is not None:
+                used[f"{label}.gamma_sat"] = sp["gamma"]
+        else:
+            need += ["E", "nu"]
+            model = default("model", "mc")
+            kw["model"] = model
+            kw["hs_params"] = sp.get("hs_params")
+            if model == "elastic":
+                kw["phi"] = sp.get("phi", 0.0)
+                kw["c"] = sp.get("c", 0.0)
+                kw["psi"] = sp.get("psi", 0.0)
+            else:
+                need.append("phi")
+                kw["c"] = default("c", 0.0)
+                kw["psi"] = default("psi", 0.0)
+        lacking = [k for k in need if sp.get(k) is None]
+        if lacking:
+            missing.append(f"{label} has no {', '.join(lacking)}")
+            continue
+        for k in need:
+            kw[k] = sp[k]
+        out.append(kw)
+    if missing:
+        raise ValueError(
+            f"{method}: {'; '.join(missing)}. A drawing gives geometry "
+            f"only, so unit weight, strength and stiffness come from the "
+            f"user and nothing is assumed: {_SOIL_REQUIRED_TEXT[kind]}.")
+    return out, used
+
+
+def nail_defaults_used(nail_lines, nail_defaults) -> dict:
+    """The nail properties build_slope_geometry fills in for the drawing's
+    nails because ``nail_defaults`` left them out, keyed
+    ``nail_defaults.<input>`` (empty when the drawing has no nails)."""
+    if not nail_lines:
+        return {}
+    from dxf_import.converter import NAIL_PROPERTY_DEFAULTS
+    given = nail_defaults or {}
+    return {f"nail_defaults.{k}": v
+            for k, v in NAIL_PROPERTY_DEFAULTS.items()
+            if given.get(k) is None}
+
+
+def _with_defaults(result: dict, used: dict) -> dict:
+    """``result`` with ``defaults_used`` when anything stood in."""
+    if used:
+        result["defaults_used"] = used
+    return result
+
+
 def _run_discover_layers(params):
     from dxf_import import discover_layers
 
@@ -86,13 +191,16 @@ def _run_parse_dxf_geometry(params):
     from dxf_import import parse_dxf_geometry, LayerMapping
 
     reject_unknown_params(params, ("file_path", "layer_mapping", "units",
-                                   "flip_y"),
+                                   "flip_y", "ignore_header_units"),
                           method="parse_geometry")
     require_params(params, ["file_path", "layer_mapping"],
                    method="parse_geometry",
-                   valid=["file_path", "layer_mapping", "units", "flip_y"])
+                   valid=["file_path", "layer_mapping", "units", "flip_y",
+                          "ignore_header_units"])
     filepath = params.get("file_path")
-    units = params.get("units", "m")
+    # No default: left out, the drawing's own header units are used, and a
+    # drawing whose header states none is refused (GM-327).
+    units = params.get("units")
     flip_y = params.get("flip_y", False)
 
     # Build LayerMapping from flat dict params
@@ -117,6 +225,7 @@ def _run_parse_dxf_geometry(params):
         layer_mapping=mapping,
         units=units,
         flip_y=flip_y,
+        ignore_header_units=bool(params.get("ignore_header_units", False)),
     )
     return clean_result(result.to_dict())
 
@@ -162,33 +271,26 @@ def _run_build_slope_geometry(params):
         warnings=pr.get("warnings", []),
     )
 
-    # Build SoilPropertyAssignment list
-    check_soil_properties(params.get("soil_properties"), "slope",
-                          method="build_slope_geometry")
+    # Build SoilPropertyAssignment list: a missing unit weight or strength
+    # is refused, and what stood in for the rest is listed (GM-327)
     if params.get("nail_defaults") is not None:
         check_nested_keys(params["nail_defaults"], _NAIL_DEFAULT_KEYS,
                           method="build_slope_geometry",
                           label="nail_defaults")
-    soil_props = []
-    for sp_dict in params.get("soil_properties", []):
-        soil_props.append(SoilPropertyAssignment(
-            name=sp_dict.get("name", ""),
-            gamma=sp_dict.get("gamma", 18.0),
-            gamma_sat=sp_dict.get("gamma_sat"),
-            phi=sp_dict.get("phi", 0.0),
-            c_prime=sp_dict.get("c_prime", 0.0),
-            cu=sp_dict.get("cu", 0.0),
-            analysis_mode=sp_dict.get("analysis_mode", "drained"),
-        ))
+    kwargs_list, used = soil_assignments(params.get("soil_properties"),
+                                         "slope",
+                                         method="build_slope_geometry")
+    soil_props = [SoilPropertyAssignment(**kw) for kw in kwargs_list]
 
     nail_defaults = params.get("nail_defaults")
+    used.update(nail_defaults_used(nail_lines, nail_defaults))
 
     geom = build_slope_geometry(
         parse_result=parse_result,
         soil_properties=soil_props,
         nail_defaults=nail_defaults,
     )
-    return clean_result(_slope_params(geom))
+    return clean_result(_with_defaults(_slope_params(geom), used))
 
 
 def _run_build_fem_inputs(params):
@@ -229,28 +331,18 @@ def _run_build_fem_inputs(params):
         warnings=pr.get("warnings", []),
     )
 
-    # Build FEMSoilPropertyAssignment list
-    check_soil_properties(params.get("soil_properties"), "fem",
-                          method="build_fem_inputs")
-    soil_props = []
-    for sp_dict in params.get("soil_properties", []):
-        soil_props.append(FEMSoilPropertyAssignment(
-            name=sp_dict.get("name", ""),
-            gamma=sp_dict.get("gamma", 18.0),
-            phi=sp_dict.get("phi", 0.0),
-            c=sp_dict.get("c", 0.0),
-            E=sp_dict.get("E", 30000.0),
-            nu=sp_dict.get("nu", 0.3),
-            psi=sp_dict.get("psi", 0.0),
-            model=sp_dict.get("model", "mc"),
-            hs_params=sp_dict.get("hs_params"),
-        ))
+    # Build FEMSoilPropertyAssignment list: a missing unit weight,
+    # stiffness or strength is refused, and what stood in for the rest is
+    # listed (GM-327)
+    kwargs_list, used = soil_assignments(params.get("soil_properties"),
+                                         "fem", method="build_fem_inputs")
+    soil_props = [FEMSoilPropertyAssignment(**kw) for kw in kwargs_list]
 
     result = build_fem_inputs(
         parse_result=parse_result,
         soil_properties=soil_props,
     )
-    return clean_result(result)
+    return clean_result(_with_defaults(result, used))
 
 
 METHOD_REGISTRY = {
@@ -280,15 +372,20 @@ METHOD_INFO = {
         "parameters": {
             "file_path": {"type": "str", "required": True, "description": "Path to DXF file."},
             "layer_mapping": {"type": "dict", "required": True, "description": "Mapping with keys: surface (str), soil_boundaries ({layer: soil_name}), water_table (str), nails (str), annotations ([str])."},
-            "units": {"type": "str", "required": False, "default": "m", "allowed_values": ["m", "mm", "cm", "ft", "in"], "description": "Drawing units."},
+            "units": {"type": "str", "required": False, "allowed_values": ["m", "mm", "cm", "ft", "in"], "description": "Units the drawing is drawn in. Left out, the units the drawing's own header states ($INSUNITS, discover_layers' units_hint) are used; a drawing whose header states none is refused until units is given. Given, they are compared with the header, and a difference is refused unless ignore_header_units is true. Nothing is assumed."},
             "flip_y": {"type": "bool", "required": False, "default": False, "description": "Negate Y values for downward-positive drawings."},
+            "ignore_header_units": {"type": "bool", "required": False, "default": False, "description": "True: use units even though the drawing's header states other units (a header left at a template's value is common); the warnings then name both."},
         },
         "returns": {
-            "surface_points": "Ground surface as [{x, z}, ...].",
-            "boundary_profiles": "Soil boundaries: {name: [{x, z}, ...]}.",
+            "surface_points": "Ground surface as [{x, z}, ...], in metres.",
+            "boundary_profiles": "Soil boundaries: {name: [{x, z}, ...]}, in metres.",
             "gwt_points": "GWT profile or null.",
-            "nail_lines": "Nail geometry list.",
-            "warnings": "Any parsing warnings.",
+            "nail_lines": "Nail geometry list (only when the drawing has nails), in metres. Only LINE entities are read as nails; anything else on the nail layer is counted in warnings.",
+            "text_annotations": "Text labels (only when there are any): [{text, x, y, layer}], x and y in metres like the geometry.",
+            "units_used": "The units the coordinates were converted from.",
+            "units_source": "Where units_used came from: given, read from the drawing's header, or given against the header.",
+            "header_units": "The units the drawing's own header states, or null.",
+            "warnings": "Any parsing warnings: a mapped layer not found, a layer with no geometry, entities left out, a header ignored.",
         },
     },
     "build_slope_geometry": {
@@ -296,14 +393,15 @@ METHOD_INFO = {
         "brief": "Assemble SlopeGeometry from DXF parse result and soil properties.",
         "parameters": {
             "parse_result": {"type": "dict", "required": True, "description": "Output from parse_dxf_geometry (surface_points, boundary_profiles, etc.)."},
-            "soil_properties": {"type": "list", "required": True, "description": "List of dicts: {name, gamma, gamma_sat, phi, c_prime, cu, analysis_mode}."},
-            "nail_defaults": {"type": "dict", "required": False, "description": "Default nail params: {bar_diameter, drill_hole_diameter, fy, bond_stress, spacing_h}."},
+            "soil_properties": {"type": "list", "required": True, "description": "List of dicts: {name, gamma, gamma_sat, phi, c_prime, cu, analysis_mode}. A drawing gives geometry only, so no unit weight or strength is assumed: a drained layer must give gamma and phi, an undrained layer (analysis_mode='undrained') gamma and cu; a layer without them is refused. Left out and listed in defaults_used: c_prime 0, analysis_mode 'drained', gamma_sat = the layer's gamma (one unit weight above and below the water table)."},
+            "nail_defaults": {"type": "dict", "required": False, "description": "Properties for the nails the drawing has: {bar_diameter mm, drill_hole_diameter mm, fy MPa, bond_stress kPa, spacing_h m}. A drawing gives each nail's head, length and inclination only. A property left out takes slope_stability's own nail default (25, 150, 420, 100, 1.5) and is listed in defaults_used; the grout-ground bond_stress depends on the ground, so give it."},
         },
         "returns": {
             "surface_points": "Ground surface profile [[x, z], ...].",
             "soil_layers": "Assembled soil layers with geometry and properties, as slope_stability's soil_layers.",
             "gwt_points": "GWT profile [[x, z], ...] or null.",
             "nails": "Soil nails from the DXF nail lines, as slope_stability's nails (only when there are any). The whole result is slope_stability.analyze_slope / search_critical_surface input.",
+            "defaults_used": "Only when a value stood in for an input left out: {'soil_properties[<name>].<input>': value, 'nail_defaults.<input>': value}. Take it out before passing the result on to slope_stability.",
         },
     },
     "build_fem_inputs": {
@@ -311,13 +409,22 @@ METHOD_INFO = {
         "brief": "Convert DXF parse result to fem2d input format with FEM soil properties.",
         "parameters": {
             "parse_result": {"type": "dict", "required": True, "description": "Output from parse_dxf_geometry (surface_points, boundary_profiles, etc.)."},
-            "soil_properties": {"type": "list", "required": True, "description": "List of dicts: {name, gamma, phi, c, E, nu, psi, model, hs_params}."},
+            "soil_properties": {"type": "list", "required": True, "description": "List of dicts: {name, gamma, phi, c, E, nu, psi, model, hs_params}. A drawing gives geometry only, so no unit weight, stiffness or strength is assumed: every layer must give gamma, E and nu, and a layer with a strength model (mc or hs) phi; a layer without them is refused. Left out and listed in defaults_used: c 0, psi 0, model 'mc'."},
         },
         "returns": {
             "surface_points": "Ground surface profile.",
             "soil_layers": "FEM layer dicts with geometry and material properties.",
             "gwt": "GWT array or null.",
             "boundary_polylines": "Boundary polylines for layer assignment.",
+            "defaults_used": "Only when a value stood in for an input left out: {'soil_properties[<name>].<input>': value}.",
         },
     },
 }
+
+# A left-out ``units`` is a case, not a value (GM-165): the drawing's own.
+declare_when_absent(METHOD_INFO, {
+    "parse_geometry": {
+        "units": ("the units the drawing's header states ($INSUNITS)",
+                  "the result's units_used and units_source say which; a "
+                  "drawing whose header states none is refused")},
+})
