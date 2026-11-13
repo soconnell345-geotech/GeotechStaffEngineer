@@ -18,8 +18,11 @@ strength estimation.
   note: BACKLOG_DONE.md GM-293 (merge 0b36ef7, `module_work/gm293/CHECK.md`).
 - Mononobe-Okabe (1929) — seismic active/passive earth pressure. **Source basis:**
   the M-O closed form is coded as UFC 3-220-20 Eq. 4-15 and GEC-4 Eq. 44 print
-  it, with the KPE wall friction at 0.4 phi by default (phi/3 per NHI-06-089
-  p. 10-19 is offered). It is anchored to a published worked example, GEC-11
+  it, with the KPE wall friction at phi/3 by default (NHI-06-089 p. 10-19,
+  above which it finds a planar passive wedge unreliable; GM-310, the call
+  for OWN-114 of 2026-11-12) and UFC 3-220-20 Fig. 4-8's 0.4 phi offered; it
+  was 0.4 phi from GM-293's review until GM-310. At phi 30 deg and kh 0.2
+  KPE is 3.500 at phi/3 against 3.731 at 0.4 phi. It is anchored to a published worked example, GEC-11
   Example E7 (V-062), as well as to the internal trial-wedge cross-check, so
   the earlier "validation gap" is closed: BACKLOG_DONE.md GM-293. The static KA
   inside M-O is Rankine, a choice the result states (BACKLOG_DONE.md GM-142).
