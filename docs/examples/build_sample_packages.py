@@ -83,12 +83,34 @@ def _slug(text: str, limit: int = 48) -> str:
     return slug[:limit].rstrip("_") or "figure"
 
 
-def app_version() -> str:
+def version_and_source() -> tuple:
+    """(version, where it was read): the tree's own ``pyproject.toml``,
+    the tree the samples are built from; the installed metadata only if
+    that cannot be read (GM-328 review B3: the installed distribution can
+    be another release)."""
+    try:
+        import tomllib
+        with open(REPO / "pyproject.toml", "rb") as fh:
+            return tomllib.load(fh)["project"]["version"], "pyproject.toml"
+    except (OSError, KeyError, TypeError, ValueError, ImportError):
+        pass
     from importlib.metadata import PackageNotFoundError, version
     try:
-        return version("geotech-staff-engineer")
+        return version("geotech-staff-engineer"), "installed metadata"
     except PackageNotFoundError:
-        return "unknown"
+        return "unknown", "none found"
+
+
+def app_version() -> str:
+    return version_and_source()[0]
+
+
+def _version_said() -> str:
+    ver, source = version_and_source()
+    if source == "pyproject.toml":
+        return ver
+    return (f"{ver} (read from the {source}: the tree's pyproject.toml "
+            f"could not be read)")
 
 
 def call_package(row: dict, output_path: str, fmt: str = "html") -> dict:
@@ -225,7 +247,7 @@ def index_markdown(entries: list) -> str:
         "# Sample calc packages", "",
         f"Built by `docs/examples/build_sample_packages.py` from "
         f"`docs/examples/sample_packages.json`, app version "
-        f"{app_version()}. One package per `*_package` method, each through "
+        f"{_version_said()}. One package per `*_package` method, each through "
         f"the call the agent makes, from a published worked example's "
         f"inputs (made-up inputs where the table says so).", "",
         "| Module | Method | Example | Origin | Package | Figures | Tables |",
@@ -291,8 +313,9 @@ def build(out: Path = DEFAULT_OUT, only=None, pdf: bool = True,
     order = {r["method"]: i for i, r in enumerate(load_table())}
     listed = sorted(kept + entries, key=lambda e: order.get(e["method"], 1e9))
     with open(index_path, "w", encoding="utf-8") as fh:
-        json.dump({"app_version": app_version(), "packages": listed}, fh,
-                  indent=1)
+        json.dump({"app_version": app_version(),
+                   "app_version_source": version_and_source()[1],
+                   "packages": listed}, fh, indent=1)
         fh.write("\n")
     (out / "INDEX.md").write_text(index_markdown(listed), encoding="utf-8")
     return entries
@@ -325,7 +348,15 @@ def main(argv=None) -> int:
     failed = [e["method"] for e in entries if e["status"] != "success"]
     if failed:
         print("failed: " + ", ".join(failed), file=sys.stderr)
-    return 1 if failed or missing else 0
+    # a package built with a part missing fails the run too (GM-328 review
+    # C3); INDEX.md lists it under "Problems"
+    flawed = [e["method"] for e in entries if e["status"] == "success"
+              and (e.get("tables_error") or e.get("figures_error")
+                   or e.get("pdf_error"))]
+    if flawed:
+        print("built with a part missing (INDEX.md, Problems): "
+              + ", ".join(flawed), file=sys.stderr)
+    return 1 if failed or missing or flawed else 0
 
 
 if __name__ == "__main__":

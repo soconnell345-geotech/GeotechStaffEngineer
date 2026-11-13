@@ -145,3 +145,31 @@ def test_the_whole_set_builds_with_pdfs(tmp_path):
 def test_the_output_folder_is_ignored_by_git():
     lines = (REPO / ".gitignore").read_text("utf-8").splitlines()
     assert "docs/examples/out/" in lines
+
+
+def test_the_version_is_the_trees_own():
+    # GM-328 review B3: the tree's pyproject.toml, not the installed
+    # distribution's metadata
+    import tomllib
+    with open(REPO / "pyproject.toml", "rb") as fh:
+        version = tomllib.load(fh)["project"]["version"]
+    assert B.version_and_source() == (version, "pyproject.toml")
+    assert B.app_version() == version
+
+
+@pytest.mark.parametrize("key", ["tables_error", "figures_error",
+                                 "pdf_error"])
+def test_a_package_built_with_a_part_missing_fails_the_run(key, monkeypatch,
+                                                           tmp_path):
+    # GM-328 review C3: exit code 1, as for a package that failed
+    def built(out, only=None, pdf=True, error=None):
+        entry = {"method": ROWS[0]["method"], "status": "success"}
+        if error:
+            entry[error] = "made-up failure"
+        return [entry]
+    monkeypatch.setattr(B, "build", lambda out, only=None, pdf=True:
+                        built(out, only, pdf, key))
+    assert B.main([str(tmp_path)]) == 1
+    monkeypatch.setattr(B, "build", lambda out, only=None, pdf=True:
+                        built(out, only, pdf))
+    assert B.main([str(tmp_path)]) == 0
