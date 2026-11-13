@@ -54,7 +54,7 @@ When to prefer which index (Duncan 2000, USACE practice):
 | `fosm` | 2n+1 | moments only | cross terms in Var | cheap; Duncan variance-contribution table |
 | `pem` | 2^n (or 2n+1 reduced) | moments only | Rosenblueth weights | captures convexity of g; no derivatives |
 | `monte_carlo` | n | yes | Cholesky in Z space | empirical pf + CI; any g; histogram |
-| `form` | ~(2n+2)/iter | yes (R-F equivalent normals) | Cholesky in U space | design point + alphas; exact for linear/LN cases |
+| `form` | ~(2n+2)/iter | yes (R-F equivalent normals) | Cholesky in U space | design point + alphas; first-order beta, the assumed model's own for a linear g of normal variables |
 
 Implementation notes:
 
@@ -82,7 +82,7 @@ Implementation notes:
   reference prints a limit (GM-322). pf comes with a 95 % interval
   (`pf_ci95_method`): the normal approximation
   pf ± 1.96·sqrt(pf(1−pf)/n), and, when no realization or every
-  realization failed, the exact binomial bound instead (0 to
+  realization failed, the Clopper-Pearson (binomial) bound instead (0 to
   1 − 0.025^(1/n) ≈ 3.7/n for no failure), because the normal
   approximation collapses to a point there. A 10-point convergence trace
   is returned — if the interval is wide, raise n (rule of thumb

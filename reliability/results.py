@@ -170,7 +170,7 @@ class MonteCarloResult:
     histogram_bins: List[float] = field(default_factory=list)
     histogram_counts: List[int] = field(default_factory=list)
     samples: Optional[List[float]] = None
-    #: "normal_approximation" (Wald), or the exact binomial bound used when
+    #: "normal_approximation" (Wald), or the Clopper-Pearson bound used when
     #: no realization, or every realization, failed.
     pf_ci95_method: str = "normal_approximation"
     #: Realizations asked for; ``n`` is those kept (finite g).

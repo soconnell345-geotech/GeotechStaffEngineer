@@ -328,8 +328,8 @@ def analyze_monte_carlo(
     Perform Crude Monte Carlo reliability analysis.
 
     Monte Carlo estimates failure probability by sampling the joint distribution
-    and counting failures. Provides exact (asymptotic) results but requires many
-    samples for rare events (small failure probabilities).
+    and counting failures. Its pf is a count, with no approximation of g, but
+    it needs many samples for rare events (small failure probabilities).
 
     Args:
         variables: List of variable specification dicts (same as analyze_form)
@@ -409,7 +409,7 @@ def analyze_monte_carlo(
 
     # COV of the pf estimate, sqrt((1-pf)/(n*pf)) for binomial sampling.
     # With no failure it is undefined (not 0), and so is beta: pf = 0 is
-    # the count; the exact two-sided 95 % binomial interval for it runs up
+    # the count; the two-sided 95 % Clopper-Pearson interval for it runs up
     # to 1 - 0.025^(1/n), about 3.7/n.
     if n_failures > 0 and pf > 0:
         cov_pf = float(np.sqrt((1.0 - pf) / (n_run * pf)))
@@ -422,7 +422,7 @@ def analyze_monte_carlo(
         notes.append(
             f"No failure in {n_run} samples: pf = 0 is the count, not a "
             f"certainty. beta and cov_pf are undefined and not reported; "
-            f"the exact 95 % binomial interval on pf is 0 to "
+            f"the two-sided 95 % Clopper-Pearson interval on pf is 0 to "
             f"{pf_upper95:.3g} (1 - 0.025^(1/n)). Run more samples, or use "
             f"FORM/SORM for a small probability.")
     if beta is None and n_failures > 0:

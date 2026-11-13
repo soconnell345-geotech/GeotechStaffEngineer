@@ -364,7 +364,7 @@ class MonteCarloResult:
     """
     Results from Crude Monte Carlo simulation for reliability analysis.
 
-    Monte Carlo provides an exact (asymptotic) estimate of failure probability
+    Monte Carlo estimates the failure probability, with no approximation of g,
     by sampling the joint distribution of random variables and counting failures.
     Accuracy improves with number of samples but computational cost is high.
 
@@ -379,8 +379,9 @@ class MonteCarloResult:
         cov_pf: Coefficient of variation of pf estimate,
             sqrt((1 - pf) / (n pf)). None when no sample failed (it is
             undefined there, not zero)
-        pf_upper95_no_failures: With no failure, the upper end of the exact
-            95 % binomial interval on pf, 1 - 0.025^(1/n); None otherwise
+        pf_upper95_no_failures: With no failure, the upper end of the
+            two-sided 95 % Clopper-Pearson interval on pf, 1 - 0.025^(1/n);
+            None otherwise
         seed: The seed used; None means fresh entropy (not repeatable)
         warnings: What the run could not give (no failures, no seed)
 

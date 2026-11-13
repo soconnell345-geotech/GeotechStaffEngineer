@@ -80,15 +80,15 @@ def _pf_interval(n_failed: int, n: int):
 
     The normal-approximation (Wald) interval pf +/- 1.96 sqrt(pf(1-pf)/n)
     in general. With no failure, or nothing but failures, that interval
-    collapses to a single point (0 to 0 reads as certainty), so the exact
-    binomial (Clopper-Pearson) bound is given there instead:
+    collapses to a single point (0 to 0 reads as certainty), so the
+    Clopper-Pearson (binomial) bound is given there instead:
     0 to 1 - 0.025^(1/n) for no failure in n, about 3.7/n.
     """
     pf = n_failed / n
     if n_failed == 0:
-        return (0.0, 1.0 - 0.025 ** (1.0 / n)), "exact_binomial_no_failures"
+        return (0.0, 1.0 - 0.025 ** (1.0 / n)), "clopper_pearson_no_failures"
     if n_failed == n:
-        return (0.025 ** (1.0 / n), 1.0), "exact_binomial_all_failures"
+        return (0.025 ** (1.0 / n), 1.0), "clopper_pearson_all_failures"
     half = 1.96 * math.sqrt(max(pf * (1.0 - pf), 0.0) / n)
     return (max(0.0, pf - half), min(1.0, pf + half)), "normal_approximation"
 
@@ -207,7 +207,7 @@ def monte_carlo(g: Callable[[Dict[str, float]], float],
             ("No realization failed" if n_failed == 0
              else "Every realization failed")
             + f" in {n_ok}: pf = {pf:g} is the count, not a certainty. "
-            f"The 95 % interval given is the exact binomial bound "
+            f"The 95 % interval given is the Clopper-Pearson bound "
             f"({ci[0]:.3g} to {ci[1]:.3g}); the normal approximation "
             f"used otherwise collapses to a point here.")
 

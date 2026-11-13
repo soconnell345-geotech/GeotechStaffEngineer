@@ -279,7 +279,7 @@ def _mc_steps(r, a) -> list:
               + (" (normal approximation)."
                  if getattr(r, "pf_ci95_method", "normal_approximation")
                  == "normal_approximation"
-                 else " (exact binomial bound: the count is at the edge, "
+                 else " (Clopper-Pearson bound: the count is at the edge, "
                       "where the normal approximation collapses to a "
                       "point).")
               + (f" N is the {r.n} realizations kept: g was not finite at "

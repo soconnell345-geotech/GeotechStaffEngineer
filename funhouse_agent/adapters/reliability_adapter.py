@@ -348,7 +348,7 @@ METHOD_INFO = {
                     "pf_ci95_method": "'normal_approximation' (pf +/- "
                                       "1.96 sqrt(pf(1-pf)/n)); with no "
                                       "failure, or only failures, the "
-                                      "exact binomial bound instead "
+                                      "Clopper-Pearson bound instead "
                                       "(0 to about 3.7/n for no failure).",
                     "n": "Realizations kept (finite g).",
                     "n_requested": "Realizations asked for.",
@@ -375,8 +375,9 @@ METHOD_INFO = {
         "category": "Reliability",
         "brief": "Native FORM (Hasofer-Lind / Rackwitz-Fiessler): HL-RF "
                  "iteration with equivalent-normal transformation of "
-                 "non-normal variables; exact for the linear/lognormal "
-                 "cases. Returns beta, pf, design point x*, and alpha "
+                 "non-normal variables. beta is the first-order answer; it "
+                 "is the assumed model's own for a linear limit state of "
+                 "normal variables. Returns beta, pf, design point x*, and alpha "
                  "sensitivity vector (alpha^2 = uncertainty share).",
         "parameters": {
             **_variables_param(_TRUNCATION_READ),

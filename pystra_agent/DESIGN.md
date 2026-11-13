@@ -6,7 +6,7 @@ The pystra_agent module provides structural reliability analysis capabilities fo
 
 1. **FORM** (First Order Reliability Method): Linear approximation of failure surface
 2. **SORM** (Second Order Reliability Method): Quadratic approximation including curvature
-3. **Monte Carlo**: Direct simulation for exact probability estimates
+3. **Monte Carlo**: Direct simulation; pf is a count, with no approximation of g
 
 ## Theory
 
@@ -92,7 +92,7 @@ Pf_MC = (# failures) / (# samples)
 ```
 
 **Advantages**:
-- Exact (in the limit of infinite samples)
+- No approximation of g: the count settles on the assumed model's pf as samples grow
 - No assumptions about linearity or distribution
 
 **Limitations**:
@@ -237,8 +237,8 @@ All result classes provide:
   default stops once the COV of pf reaches 0.05, which used to leave the
   reported `n_samples` and `n_failures` above the count actually run. With
   no failure, `beta` and `cov_pf` are `None` (undefined, not 0) and
-  `pf_upper95_no_failures` gives the upper end of the exact 95 % binomial
-  interval, 1 - 0.025^(1/n).
+  `pf_upper95_no_failures` gives the upper end of the two-sided 95 %
+  Clopper-Pearson interval, 1 - 0.025^(1/n).
 - **Limit states with functions.** pystra evaluates the limit state on
   arrays of points. Plain arithmetic runs on them directly; an expression
   with a math function, a comparison or `a if c else b` is evaluated one

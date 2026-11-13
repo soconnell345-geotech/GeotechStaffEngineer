@@ -205,7 +205,7 @@ class TestDiagnostics:
             monte_carlo(g_at(51), spec, n=1000, seed=3)
 
     def test_zero_failures_interval_is_not_a_point(self):
-        """No failure in n: the upper bound is the exact binomial one,
+        """No failure in n: the upper bound is the Clopper-Pearson one,
         1 - 0.025**(1/n), not 0 (GM-322)."""
         res = monte_carlo(lambda v: 5.0 + 0.0 * v["x"],
                           {"x": {"mean": 1.0, "std": 0.1}}, n=1000, seed=3)
@@ -213,7 +213,7 @@ class TestDiagnostics:
         assert res.pf_ci95[0] == 0.0
         assert res.pf_ci95[1] == pytest.approx(1.0 - 0.025 ** (1 / 1000))
         assert res.pf_ci95[1] == pytest.approx(3.69 / 1000, rel=0.01)
-        assert res.pf_ci95_method == "exact_binomial_no_failures"
+        assert res.pf_ci95_method == "clopper_pearson_no_failures"
         assert any("No realization failed" in w for w in res.warnings)
 
     def test_all_failures_interval_is_not_a_point(self):
@@ -222,7 +222,7 @@ class TestDiagnostics:
         assert res.pf == 1.0
         assert res.pf_ci95[1] == 1.0
         assert res.pf_ci95[0] == pytest.approx(0.025 ** (1 / 1000))
-        assert res.pf_ci95_method == "exact_binomial_all_failures"
+        assert res.pf_ci95_method == "clopper_pearson_all_failures"
 
     def test_interval_between_the_edges_unchanged(self):
         import math

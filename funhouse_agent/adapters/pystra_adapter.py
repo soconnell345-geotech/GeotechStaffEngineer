@@ -184,7 +184,7 @@ METHOD_INFO = {
             "n_samples_requested": "Samples asked for.",
             "n_failures": "Number of failure samples.",
             "cov_pf": "Coefficient of variation of the pf estimate, sqrt((1-pf)/(n pf)). Null when no sample failed (undefined, not zero).",
-            "pf_upper95_no_failures": "With no failure: the upper end of the exact 95% binomial interval on pf, 1 - 0.025^(1/n) (about 3.7/n). Null otherwise.",
+            "pf_upper95_no_failures": "With no failure: the upper end of the two-sided 95% Clopper-Pearson interval on pf, 1 - 0.025^(1/n) (about 3.7/n). Null otherwise.",
             "seed": "The seed used; null = none given (the run is not repeatable).",
             "warnings": "No failure in the samples; no seed given.",
             "limit_state_expr": "Limit state expression used.",
