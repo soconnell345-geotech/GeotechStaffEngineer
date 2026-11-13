@@ -81,7 +81,7 @@
       "other_arguments": [],
       "subagents": [
        {
-        "description": "bb98acf4ffc08333",
+        "description": "094ceed3261a4f65",
         "middleware": [
          {
           "class": "ModelCallBudgetMiddleware",
@@ -132,7 +132,7 @@
          }
         ],
         "name": "references",
-        "system_prompt": "51ab4153e257e462",
+        "system_prompt": "23656e2a37b58b44",
         "tool_order": [
          "list_agents",
          "list_methods",
