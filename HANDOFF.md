@@ -8,6 +8,8 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-10-15, supersedes everything below)
 
+**This week (2026-11-12 to 2026-11-18, the owner's last week on the top plan):** the plan, by lead, is the first bullet of `BACKLOG.md` §0.
+
 ### Start here (written 2026-10-21 evening; work restarted 2026-10-22 after the weekly limit reset; updated 2026-10-23)
 
 - **Order of work (owner, 2026-10-21; BACKLOG §0 and its sections follow it):** report ingest and GSE on Foundry first, then the geotech calc modules, then Document Review and Tiny Apps last. Everything on master through ed929c7 (2026-11-10) is released as 5.35.0 with planlens 0.15.0, geotech-references 1.6.0 and the shared core `aec-agent-core` ("Where things stand", item 0); 5.34.0 (2026-11-04, through d57f28d) is item 0a.
