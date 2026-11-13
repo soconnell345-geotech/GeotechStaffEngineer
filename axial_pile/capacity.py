@@ -266,7 +266,8 @@ class AxialPileAnalysis:
         warnings and choices.
     profile_depth_given : float or None, optional
         Set by the analysis, not by a caller: the depth (m) the given layers
-        reached before ``extend_last_layer`` carried the last one on.
+        reached before ``extend_last_layer`` carried the last one on. A
+        value deeper than the profile is refused.
 
     Notes
     -----
@@ -366,6 +367,19 @@ class AxialPileAnalysis:
     def _cover_the_toe(self) -> None:
         """Refuse a toe below the soil profile, or with
         ``extend_last_layer`` carry the last layer on to it (GM-318)."""
+        if (self.profile_depth_given is not None
+                and self.profile_depth_given
+                > self.soil.total_thickness + 1e-9):
+            # GM-318 review C1: a caller's value here brought back the old
+            # silent basis (a toe below the layers, run as if covered)
+            raise ValueError(
+                f"profile_depth_given = {self.profile_depth_given:g} m is "
+                f"deeper than the soil profile, which ends at "
+                f"{self.soil.total_thickness:g} m. It is set by the "
+                f"analysis (the depth the layers given reach, before "
+                f"extend_last_layer carries the last one on), not by a "
+                f"caller: leave it out, and set extend_last_layer=true to "
+                f"run a toe below the profile.")
         given = (self.profile_depth_given
                  if self.profile_depth_given is not None
                  else self.soil.total_thickness)

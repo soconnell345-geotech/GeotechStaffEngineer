@@ -27,6 +27,12 @@ def test_shaft_longer_than_profile_refused_and_names_the_depth():
     assert "nobody explored" in msg and "extend_last_layer" in msg
 
 
+def test_profile_depth_given_deeper_than_the_profile_is_refused():
+    """Review C1."""
+    with pytest.raises(ValueError, match="profile_depth_given = 20 m"):
+        _analysis(15.0, profile_depth_given=20.0)
+
+
 def test_base_at_profile_bottom_runs_without_a_warning():
     r = _analysis(12.0).compute()
     assert r.warnings == [] and "warnings" not in r.to_dict()

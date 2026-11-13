@@ -35,6 +35,14 @@ def test_head_depth_counts_toward_the_toe():
                           head_depth=2.0)
 
 
+def test_profile_depth_given_deeper_than_the_profile_is_refused():
+    """Review C1: a library caller's profile_depth_given brought back the
+    old silent basis (12 m pile, 10 m profile, run with no warning)."""
+    with pytest.raises(ValueError, match="profile_depth_given = 20 m"):
+        AxialPileAnalysis(pile=_pile(), soil=_soil(), pile_length=12.0,
+                          profile_depth_given=20.0)
+
+
 def test_toe_at_profile_bottom_runs_without_a_note():
     r = AxialPileAnalysis(pile=_pile(), soil=_soil(),
                           pile_length=10.0).compute()
