@@ -170,5 +170,109 @@ for a pile inside its profile.
   it serialises as a number.
 - `docs/user_manual/manual.html` line 1594 differs from a rebuild on master
   (asterisks read as emphasis in a soe description); not this task's row.
-- `axial_pile_capacity`'s returns text does not list `warnings`, though the
-  result has carried them since before this task.
+- `axial_pile_capacity`'s returns text did not list `warnings`, though the
+  result has carried them since before this task: listed in the review
+  round (C3).
+
+## Review round (branch `fix/gm318-review`, 2026-11-13)
+
+The independent review (MERGE AFTER FIXES: A 1, B 2, C 8) and the merge of
+master (the dispatch fix, GM-316) were taken on `fix/gm318-review`, from
+6a8b64c (the cloud head 018d991 with master merged in). Made-up values
+throughout.
+
+### What each finding became
+
+| # | Finding | What it became | Commit |
+|---|---|---|---|
+| M1 | After the merge, master's `funhouse_agent/tests/test_probe_warnings.py` used the removed "exceeds soil profile" warning (4 tests failed) | The cases now raise warnings the modules still raise on allowed runs: drilled_shaft a casing deeper than the shaft (`shaft.py`), lateral_pile a Matlock clay with c above 100 kPa (`py_curves.py`). **axial_pile's case is out**: it raises no Python warning on an allowed tool run (its chart notes go to the result's `warnings`; the capacity-against-length note is passed back as `skipped`). The package test uses the drilled shaft package. New test: a returned warning (extend_last_layer) and a raised one are each said once in the result and the package (the returned one in its own section, not again under "Warnings Raised by the Calculation"). No module was given a warning to feed the test. | d67cc69 |
+| A1 | Drilled `capacity_vs_depth` with `extend_last_layer` said nothing of the lengths past the profile | Each row carries its run's `warnings`; the tool's result has one `warnings` entry naming the lengths past the profile and the choice "soil below the profile" (base at the deepest such length); returns text and the package table's note say it. Each trial length now runs on the layers as given, so it equals a run of that length alone (see Calls made). | b41e7ec |
+| B1 | Extended drilled run: the base choice and `base_steps` said the profile ends at the carried-on depth | `su_profile_ends_m` / `N60_profile_ends_m` give the depth the layers given reach; new `su_last_layer_carried_to_m` / `N60_last_layer_carried_to_m` give the base; the words read "as the profile ends at 12 m (its last layer carried on to the base at 15 m, extend_last_layer)". A run not extended reads as before. Tests for a clay and a sand base. | a42e088 |
+| B2 | The lateral refusal of layers that start below the ground offered only the scour model | One sentence added to the message, the tool's `extend_last_layer` text, DESIGN.md and the manual's three rows of that parameter: stickup or depths from the new surface take the soil as removed, as GEC 9 (FHWA-HIF-18-031) Sec. 6.7.5, p. 91 takes the scour zone ("the entire soil depth within the scour zone should be considered to be removed by scour"; page opened in the PDF, printed p. 91, Sec. 6.7.5 starting p. 90); soil that stays in place (its weight kept) but is to resist nothing is different, and is given as a top layer of negligible strength from the ground surface. Arithmetic unchanged. Call 3 above stays the owner's to revisit. | 48c35a0 |
+| C1 | A library caller's `profile_depth_given` deeper than the profile brought back the silent basis | Refused in `_cover_the_toe` and `_cover_the_base`. | f701ae3 |
+| C2 | The axial package's capacity-against-length table did not pass `skipped`; all refused raised | It passes `skipped` and names refused lengths in the table note; with every length refused the table is left out and a warning (printed in the package and returned) says why. | 46e59c9 |
+| C3 | Pile packages' and `axial_pile_capacity`'s returns texts did not list `warnings` | Listed in all four. | fe4f925 |
+| C4 | `max_ei_iterations=0` reported a change of nan | Refused below 1. | 024d9e3 |
+| C5 | The "toe friction angle" choice did not say the 3b zone's part below the profile is assumed | Added, for example "10.00-10.97 m is below the profile, which ends at 10 m: the last layer carried on there, assumed". | eb6768c |
+| C6 | Soil table rows and the lateral p-y choice showed the carried-on layer as given | The last layer is marked "(given to 10 m, assumed below)" in the axial and lateral printed soil tables, the three packages' soil-layer CSVs and the lateral p-y choice. | 881a40d |
+| C7 | Each skipped length repeated the whole refusal | "below the profile, which ends at 10 m" (with a buried head, "toe at 11 m, below the profile, ..."), axial and drilled curves. The warning for the review's 6-14 m case is now 171 characters. | 1f85a0a |
+| C8 | `_IN_TRIAL` in `drilled_shaft/capacity.py` had no reader after the merge | Removed with its import; `_alternative`'s docstring reworded. | 6455e10 |
+
+### Before and after (the review's made-up inputs, through `call_agent`)
+
+| Case | Before this round (018d991 / 6a8b64c) | After |
+|---|---|---|
+| A1: drilled `capacity_vs_depth`, shaft 15 m, clay to 12 m, extended, 6 m in 4 | rows 1153.9, 1570.7, 1987.6, 2404.4 kN; result keys `capacity_vs_depth`, `defaults_used` only | same four numbers; the 15 m row has `warnings`; top `warnings` names "(15 m)"; choice "last layer taken to go on from 12 m to the base at 15 m" |
+| B1 clay base, 15 m in 12 m, extended | Q_ult 2404.4 kN; "as the profile ends at 15 m"; `su_profile_ends_m` 15.0 | 2404.4 kN; "as the profile ends at 12 m (its last layer carried on to the base at 15 m, extend_last_layer)"; 12.0 and `su_last_layer_carried_to_m` 15.0 |
+| B1 sand base, 14 m in 12 m, extended | Q_ult 3659.4 kN; "as the profile ends at 14 m"; `N60_profile_ends_m` 14.0 | 3659.4 kN; "ends at 12 m (its last layer carried on to the base at 14 m, ...)"; 12.0 and 14.0 |
+| C7: axial `capacity_vs_depth` 6-14 m in 5 | two skipped lengths, each with the full refusal | same two lengths, reason "below the profile, which ends at 10 m" |
+| C5: axial 10 m pile in 10 m, `average_3b` | 685.9 kN; zone listed with no word on the profile | 685.9 kN; "10.00-10.97 m is below the profile ... assumed" |
+| C6: lateral 15 m pile, layers to 10 m, extended | 5.86 mm, 108.0 kN-m; "p-y curves 0-15 m" | 5.86 mm, 108.0 kN-m; "p-y curves 0-15 m (given to 10 m, assumed below)" |
+
+**Covered cases did not move.** The review's replay (`p2_replay.py`: 41
+calls, every `method_probes.json` entry of the three modules and three
+pile packages, the `dispatch_calls` of WE-PILE-1, WE-SHAFT-1 and WE-SF-2,
+the manual's three worked examples) was run on 6a8b64c before this round
+and on the head after it: every call is the same; the only differences are
+the packages' output folder names (two scratch folders).
+
+### Calls made in this round (for the owner to revisit)
+
+1. **A drilled capacity-against-length curve runs each length on the
+   layers as given.** Before, with `extend_last_layer`, every trial ran on
+   the profile carried on to the full shaft's base, so a shorter trial's 2B
+   zone below its base could reach into the carried-on layer with nothing
+   said. Now each row equals the run of that length alone. No covered case
+   changes (with the base inside the profile nothing is carried on).
+2. **All lengths refused in the axial package's table:** the table is left
+   out and a Python warning says why; it reaches the tool's `warnings` and
+   the package's "Warnings Raised by the Calculation" (GM-316). There is no
+   table left to carry the note.
+3. **C6 and C7 were done in both modules where the same text arises**
+   (drilled skipped reasons; the drilled and lateral CSV soil tables), so
+   the two curves and three packages read alike.
+4. **The negligible-strength layer is named, not sized.** B2's sentence
+   says what to give, not a strength value: no held page prints one.
+
+### Tests (venv Python 3.14, one file at a time, `-q -p no:cacheprovider`)
+
+| File | Result | Exit |
+|---|---|---|
+| `axial_pile/tests/test_gm318.py` | 14 passed | 0 |
+| `drilled_shaft/tests/test_gm318.py` | 11 passed | 0 |
+| `lateral_pile/tests/test_gm318.py` | 8 passed | 0 |
+| `funhouse_agent/tests/test_gm318_packages.py` | 3 passed | 0 |
+| `funhouse_agent/tests/test_probe_warnings.py` | 8 passed | 0 |
+| `funhouse_agent/tests/test_adapter_ergonomics.py` | 170 passed | 0 |
+| `funhouse_agent/tests/test_defaults_used.py -k "axial_pile or drilled_shaft or lateral_pile"` | 105 passed | 0 |
+| `webapp/tests/test_page_fingerprints.py` | 13 passed (no re-record needed) | 0 |
+| `webapp/tests/test_public_text.py` | 5 passed | 0 |
+| `module_work/doc10/check_manual.py` | OK | 0 |
+| `module_work/doc10/check_manual.py --rebuild` | differs only at line 1594 (the older soe line) | 1 |
+
+### Release note (lines to add)
+
+A drilled shaft capacity-against-length curve run with `extend_last_layer`
+now says which lengths stand on the last layer carried on below the
+profile: on each such row, once at the top of the result, and in a choice;
+each length is run on the layers as given. In such a run the base
+resistance choice names the depth the layers given reach (it gave the
+carried-on depth). A pile toe's averaged friction angle, the packages' soil
+tables and the lateral p-y choices mark the part of the ground that is
+carried on below the profile. A trial length below the profile is skipped
+with a short reason. A lateral run with layers that start below the ground
+is refused, not reshaped; the message now says that stickup takes the soil
+as removed (scour) and how to give soil that stays in place but resists
+nothing. No value changes for a pile inside its profile.
+
+### Follow-ups (each would change a saved report's output)
+
+- **drilled shaft package with `casing_depth`:** the capacity-against-length
+  table re-runs the shaft at each trial length, and every trial shorter
+  than the casing raises "Casing depth (X m) exceeds shaft length (Y m)"
+  (`drilled_shaft/shaft.py:106`). Since GM-316 each is a separate warning
+  in the tool's result and in the package's "Warnings Raised by the
+  Calculation": a 15 m shaft with a 5 m casing (allowed, ordinary) prints
+  three, at trial lengths 3.0, 3.89 and 4.79 m (the last two unrounded,
+  for example "3.8947368421052633m"). Found while writing M1's test; not
+  changed here.
