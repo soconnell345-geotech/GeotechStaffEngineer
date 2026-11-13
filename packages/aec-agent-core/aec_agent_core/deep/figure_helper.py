@@ -271,13 +271,16 @@ def make_figure_examples_tool(plot_code: bool = False) -> StructuredTool:
         "plot_data call on made-up data with why it is drawn that way: "
         "a plan of borings and a footprint, an SPT profile against "
         "elevation, sensitivity cases, settlement against time, a load "
-        "test, an exceedance curve. No name: the list. name=<example>: "
+        "test, an exceedance curve, a wall section with its pressure "
+        "diagrams, stress and pile profiles in panels, contours. No "
+        "name: the list. name=<example>: "
         "that one in full. Adapt the nearest one; never copy its made-up "
         "numbers.")
     if plot_code:
         description += (
             " The list also holds complete plot_code scripts (matplotlib, "
-            "with the data each reads) for figures plot_data cannot draw; "
+            "with the data each reads) to start from where plot_data "
+            "cannot draw the figure; "
             "each entry says which kind it is.")
     return strict_tool(StructuredTool.from_function(
         figure_examples, name="figure_examples", description=description))
@@ -300,10 +303,11 @@ PLOT_CODE_STEP = (
 #: diagrams with plot_data five times and ran out of steps, never knowing a
 #: helper could draw it in code.
 PLOT_CODE_DESCRIPTION_NOTE = (
-    " It also draws in code (plot_code) what plot_data cannot: a wall or "
-    "pile drawn to scale with its pressure or load diagrams beside it, "
-    "panels sharing one elevation axis, a section with its layers filled, "
-    "contours.")
+    " It also draws in code (plot_code) what plot_data cannot: panels "
+    "stacked one above another, two vertical axes, bars, a coloured grid, "
+    "arcs and angles, a layout of its own. (plot_data itself draws a wall "
+    "or pile to scale with its diagrams beside it, panels sharing one "
+    "elevation axis, layers filled, and contours.)")
 
 
 def _plot_code_tool():
