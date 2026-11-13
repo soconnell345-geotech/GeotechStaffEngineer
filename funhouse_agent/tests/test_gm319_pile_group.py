@@ -106,3 +106,41 @@ def test_descriptions_say_what_the_code_does():
     assert "refused" in METHOD_INFO["pile_group_simple"]["parameters"][
         "piles"]["description"]
     assert "equivalent_footing_settlement" in METHOD_INFO
+
+
+# --- the review's findings (GM-319 review) -------------------------------
+
+_ROW = {"n_rows": 1, "n_cols": 3, "spacing": 1.4, "Vz": 960}
+
+
+def test_simple_tool_refuses_a_moment_about_its_one_row():
+    r = _call("pile_group_simple", {**_ROW, "Mx": 240})
+    assert "Mx = 240 kN-m cannot be carried" in r["error"]
+    assert "every pile is on y = 0" in r["error"]
+    r = _call("pile_group_simple", {**_ROW, "n_rows": 3, "n_cols": 1,
+                                    "My": 240})
+    assert "My = 240 kN-m cannot be carried" in r["error"]
+
+
+def test_simple_tool_one_row_without_the_moment_runs():
+    r = _call("pile_group_simple", {**_ROW, "Mx": 0})
+    assert "error" not in r, r
+    assert [p["axial_kN"] for p in r["pile_forces"]] == pytest.approx(
+        [320.0] * 3)
+
+
+def test_6dof_tool_one_row_message_points_nowhere_it_cannot_go():
+    r = _call("pile_group_6dof", {**_ROW, "Mx": 240,
+                                  "axial_stiffness": 2e5,
+                                  "lateral_stiffness": 6e3})
+    assert "every pile is on y = 0" in r["error"]
+    assert "pile_group_simple" not in r["error"]
+
+
+def test_6dof_tool_refuses_batter_with_no_vertical_component():
+    r = _call("pile_group_6dof", {"Vz": 600, "piles": [
+        {"x": 0, "y": 0, "batter_x": 50, "batter_y": 50,
+         "axial_stiffness": 2e5},
+        {"x": 1, "y": 0, "axial_stiffness": 2e5},
+        {"x": 0, "y": 1, "axial_stiffness": 2e5}]})
+    assert "at or above 1" in r["error"]

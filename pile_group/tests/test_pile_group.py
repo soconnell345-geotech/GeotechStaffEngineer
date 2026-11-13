@@ -1021,3 +1021,149 @@ class TestSimpleRefusals:
         d = analyze_group_6dof(piles, load).cap_displacements
         for k in ("dz", "rx", "ry"):
             assert s[k] == pytest.approx(d[k], rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# GM-319 review: piles on one line, batter both ways, opposed batter
+# ---------------------------------------------------------------------------
+
+def _row(**kw):
+    """Three piles on y = 0, one row along x. Made-up values."""
+    return [GroupPile(x=x, y=0.0, **kw) for x in (-1.2, 0.0, 1.2)]
+
+
+def _column(**kw):
+    """Three piles on x = 0, one column along y. Made-up values."""
+    return [GroupPile(x=0.0, y=y, **kw) for y in (-1.2, 0.0, 1.2)]
+
+
+class TestOneLineOfPiles:
+    """A moment about the one line every pile is on has no lever arm: both
+    methods refuse it (the simple method dropped it before); a zero moment,
+    or a moment across the line, runs."""
+
+    def test_simple_refuses_mx_on_a_row(self):
+        with pytest.raises(ValueError, match=r"Mx = 240 kN-m cannot be "
+                           r"carried: every pile is on y = 0"):
+            analyze_vertical_group_simple(_row(), GroupLoad(Vz=960, Mx=240))
+
+    def test_simple_refuses_my_on_a_column(self):
+        with pytest.raises(ValueError, match=r"My = -180 kN-m cannot be "
+                           r"carried: every pile is on x = 0"):
+            analyze_vertical_group_simple(_column(),
+                                          GroupLoad(Vz=960, My=-180))
+
+    def test_simple_zero_moment_runs_as_before(self):
+        for piles, load in ((_row(), GroupLoad(Vz=960, Mx=0.0)),
+                            (_column(), GroupLoad(Vz=960, My=0.0))):
+            r = analyze_vertical_group_simple(piles, load)
+            assert [p["axial_kN"] for p in r.pile_forces] == pytest.approx(
+                [320.0] * 3)
+
+    def test_simple_moment_across_the_row_runs(self):
+        # My on a row along x: P = Vz/n + My x / SUM(x^2), 288 x 1.2 / 2.88
+        r = analyze_vertical_group_simple(_row(), GroupLoad(Vz=960, My=288))
+        assert [p["axial_kN"] for p in r.pile_forces] == pytest.approx(
+            [200.0, 320.0, 440.0])
+
+    def test_6dof_refuses_mx_on_a_row_and_says_why(self):
+        piles = _row(axial_stiffness=2e5, lateral_stiffness=6e3)
+        with pytest.raises(ValueError) as e:
+            analyze_group_6dof(piles, GroupLoad(Vz=960, Mx=240))
+        msg = str(e.value)
+        assert "Mx: every pile is on y = 0" in msg and "no lever arm" in msg
+        # no pointer to the simple method, which cannot carry it either
+        assert "simple" not in msg
+
+    def test_6dof_refuses_my_on_a_column(self):
+        piles = _column(axial_stiffness=2e5, lateral_stiffness=6e3)
+        with pytest.raises(ValueError, match="My: every pile is on x = 0"):
+            analyze_group_6dof(piles, GroupLoad(Vz=960, My=150))
+
+    def test_6dof_says_why_load_by_load(self):
+        with pytest.raises(ValueError) as e:
+            analyze_group_6dof(_row(axial_stiffness=2e5),
+                               GroupLoad(Vx=40, Vz=960, Mx=240))
+        msg = str(e.value)
+        assert "Vx: no pile has stiffness along x" in msg
+        assert "Mx: every pile is on y = 0" in msg
+
+    def test_6dof_row_without_mx_runs(self):
+        r = analyze_group_6dof(_row(axial_stiffness=2e5, lateral_stiffness=6e3),
+                               GroupLoad(Vz=960, My=288))
+        assert [p["axial_kN"] for p in r.pile_forces] == pytest.approx(
+            [200.0, 320.0, 440.0])
+
+
+class TestBatterBothWays:
+    """Direction cosines (sin bx, sin by, the rest): squared sines at or
+    above 1 leave no vertical component and are refused (before, lz was
+    clamped to 0 and the vector was not of unit length)."""
+
+    def test_squared_sines_at_or_above_one_refused(self):
+        p = GroupPile(batter_x=50, batter_y=50, axial_stiffness=2e5,
+                      label="B1")
+        with pytest.raises(ValueError, match="at or above 1"):
+            p.direction_cosines()
+        with pytest.raises(ValueError, match="at or above 1"):
+            GroupPile(batter_x=90).direction_cosines()
+        piles = [p, GroupPile(x=1.0, axial_stiffness=2e5),
+                 GroupPile(y=1.0, axial_stiffness=2e5)]
+        with pytest.raises(ValueError, match="B1"):
+            analyze_group_6dof(piles, GroupLoad(Vz=600))
+
+    def test_below_one_is_a_unit_vector(self):
+        l = np.array(GroupPile(batter_x=40, batter_y=40).direction_cosines())
+        assert float(np.linalg.norm(l)) == pytest.approx(1.0, rel=1e-12)
+
+
+class TestOpposedBatter:
+    """Two piles battered outward at x = +/-1.2 m (12 degrees, axial only),
+    whose axes meet h = 1.2 / tan 12 deg above the cap, and two vertical
+    piles on the y axis with lateral stiffness. Under Vz the result is
+    symmetric; under Vx the battered pair gives no stiffness to the cap's
+    turn about the point where their axes meet, so the vertical piles'
+    lateral springs carry Vx: dx = Vx / SUM(kl), ry = -dx / h, and the
+    battered piles' axial forces do not change. Made-up values."""
+
+    KA, KL, BATTER, A = 2.5e5, 4.0e3, 12.0, 1.2
+
+    def _piles(self):
+        ka, kl, b, a = self.KA, self.KL, self.BATTER, self.A
+        return [GroupPile(x=-a, y=0, batter_x=-b, axial_stiffness=ka,
+                          label="W"),
+                GroupPile(x=a, y=0, batter_x=b, axial_stiffness=ka,
+                          label="E"),
+                GroupPile(x=0, y=0.9, axial_stiffness=ka,
+                          lateral_stiffness=kl, label="N"),
+                GroupPile(x=0, y=-0.9, axial_stiffness=ka,
+                          lateral_stiffness=kl, label="S")]
+
+    @staticmethod
+    def _axial(r):
+        return {h["label"]: h["axial_kN"] for h in r.pile_head_response}
+
+    def test_vertical_load_is_symmetric(self):
+        r = analyze_group_6dof(self._piles(), GroupLoad(Vz=1600))
+        assert r.cap_displacements["dx"] == pytest.approx(0.0, abs=1e-12)
+        assert r.cap_displacements["ry"] == pytest.approx(0.0, abs=1e-12)
+        f = self._axial(r)
+        assert f["W"] == pytest.approx(f["E"], rel=1e-12)
+        assert f["N"] == pytest.approx(f["S"], rel=1e-12)
+
+    def test_lateral_load_goes_to_the_vertical_piles(self):
+        r = analyze_group_6dof(self._piles(), GroupLoad(Vx=120))
+        d = r.cap_displacements
+        h = self.A / math.tan(math.radians(self.BATTER))
+        assert d["dx"] == pytest.approx(120 / (2 * self.KL), rel=1e-9)
+        assert d["ry"] == pytest.approx(-d["dx"] / h, rel=1e-9)
+        f = self._axial(r)
+        assert f["W"] == pytest.approx(0.0, abs=1e-6)
+        assert f["E"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_lateral_load_leaves_the_battered_forces(self):
+        vz = self._axial(analyze_group_6dof(self._piles(), GroupLoad(Vz=1600)))
+        both = self._axial(analyze_group_6dof(self._piles(),
+                                              GroupLoad(Vx=120, Vz=1600)))
+        assert both["W"] == pytest.approx(vz["W"], rel=1e-9)
+        assert both["E"] == pytest.approx(vz["E"], rel=1e-9)

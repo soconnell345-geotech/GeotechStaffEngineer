@@ -311,6 +311,22 @@ class PileGroupResult:
         return tables
 
 
+#: SUM(x^2) or SUM(y^2) at or below this (m^2): every pile on that line.
+_ON_LINE_M2 = 1e-12
+
+
+def _moment_about_pile_line(name: str) -> str:
+    """Why a moment about the one line every pile stands on is refused
+    (GM-319 review): piles pinned to the cap along one line give no lever
+    arm about it, so the cap turns about that line freely."""
+    coord, axis = ("y", "x") if name == "Mx" else ("x", "y")
+    return (f"every pile is on {coord} = 0, one line along the {axis} axis, "
+            f"and piles pinned to the cap on one line cannot carry a moment "
+            f"about that line (SUM({coord}^2) = 0, no lever arm); give piles "
+            f"off that line, or leave {name} out if the cap is restrained "
+            "against that rotation another way")
+
+
 def analyze_vertical_group_simple(
     piles: List[GroupPile],
     load: GroupLoad,
@@ -337,6 +353,11 @@ def analyze_vertical_group_simple(
     rx = Mx/(ka SUM y^2), the displacements that give the forces above
     through P_i = ka (dz - rx y_i + ry x_i). Without stiffness
     ``cap_displacements`` is empty and ``notes`` says so.
+
+    A non-zero Mx with every pile on y = 0 (one row along x), or My with
+    every pile on x = 0, is refused (GM-319 review): piles on one line
+    carry no moment about it, and the formula's term would be dropped. A
+    zero moment runs.
 
     Parameters
     ----------
@@ -390,6 +411,13 @@ def analyze_vertical_group_simple(
     sum_x2 = np.sum(xs**2)
     sum_y2 = np.sum(ys**2)
 
+    # A moment about the line every pile is on has no lever arm: refused,
+    # never dropped (GM-319 review; before, its term was skipped).
+    for name, moment, s2 in (("Mx", load.Mx, sum_y2), ("My", load.My, sum_x2)):
+        if abs(moment) > 1e-12 and not s2 > _ON_LINE_M2:
+            raise ValueError(f"{name} = {moment:g} kN-m cannot be carried: "
+                             f"{_moment_about_pile_line(name)}.")
+
     # Axial force in each pile
     axial = np.full(n, load.Vz / n)
 
@@ -442,9 +470,9 @@ def analyze_vertical_group_simple(
         cap_disp = {}
         notes.append(
             "Cap displacements not calculated: the simplified method's "
-            "forces use no pile stiffness and none was given. The 6-DOF "
-            "analysis gives the cap's displacements from the piles' "
-            "stiffness.")
+            "forces use no pile stiffness (the pile_group_simple tool takes "
+            "none). The 6-DOF analysis (pile_group_6dof) gives the cap's "
+            "displacements from the piles' stiffness.")
 
     return PileGroupResult(
         notes=notes,
@@ -491,7 +519,9 @@ def analyze_group_6dof(
     so the cap's moments are carried by the piles' head forces at their
     lever arms only. If the group has no stiffness to resist an applied
     lateral force or torsion (e.g. vertical piles with no lateral_stiffness),
-    a ``ValueError`` is raised rather than silently dropping that load.
+    or a moment about the one line every pile is on (a single row), a
+    ``ValueError`` is raised rather than silently dropping that load, saying
+    for each load why.
 
     Parameters
     ----------
@@ -570,13 +600,32 @@ def analyze_group_6dof(
     unsupported_loaded = (~supported) & (np.abs(F) > tol)
     if np.any(unsupported_loaded):
         bad = [dof_names[i] for i in range(6) if unsupported_loaded[i]]
+        # Why, load by load (GM-319 review): a horizontal force or torsion
+        # needs horizontal stiffness; a moment about the line every pile is
+        # on has no lever arm, which no other tool can carry either.
+        why = []
+        for name in bad:
+            if name in ("Vx", "Vy"):
+                axis = name[1]
+                why.append(
+                    f"{name}: no pile has stiffness along {axis} (vertical "
+                    "piles with no lateral_stiffness carry no horizontal "
+                    f"force); give lateral_stiffness, or piles battered "
+                    f"toward {axis}")
+            elif name == "Mz":
+                why.append(
+                    "Mz: no pile has horizontal stiffness to resist torsion; "
+                    "give lateral_stiffness, or battered piles")
+            else:
+                coord = "y" if name == "Mx" else "x"
+                on_line = sum(getattr(p, coord) ** 2 for p in piles)
+                why.append(f"{name}: " + (
+                    _moment_about_pile_line(name) if on_line <= _ON_LINE_M2
+                    else "no pile has axial stiffness at a lever arm about "
+                         f"the {'x' if name == 'Mx' else 'y'} axis"))
         raise ValueError(
-            "The pile group has no stiffness to resist the applied "
-            f"{', '.join(bad)}: vertical piles with no lateral_stiffness cannot "
-            "carry lateral force or torsion. Provide lateral_stiffness and/or "
-            "battered piles (or use analyze_vertical_group_simple for "
-            "axial-only loading)."
-        )
+            f"The pile group cannot carry the applied {', '.join(bad)}. "
+            + "; ".join(why) + ".")
 
     U = np.zeros(6)
     idx = np.where(supported)[0]

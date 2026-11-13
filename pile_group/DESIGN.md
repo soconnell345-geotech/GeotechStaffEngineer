@@ -83,6 +83,13 @@ stiffness assembly, and pile-force back-calc):
   unequal `axial_stiffness` is refused. Cap dz, rx, ry are worked out only
   when every pile carries the same stiffness; otherwise
   `cap_displacements` is empty and `notes` says so (never zeros).
+- Piles on one line (GM-319 review): a non-zero Mx with every pile on
+  y = 0, or My with every pile on x = 0, is refused by both methods:
+  piles pinned to the cap on one line carry no moment about it (before,
+  the simple method skipped the term without a word). A zero moment runs.
+- Batter: the direction cosines are (sin batter_x, sin batter_y, the
+  rest); sin²(batter_x) + sin²(batter_y) at or above 1 is refused (before,
+  lz was set to 0 and the vector was not of unit length).
 
 ## Group efficiency (GM-286)
 - eta_g is read from the printed rows, linear between the printed spacings;
@@ -148,8 +155,10 @@ stiffness assembly, and pile-force back-calc):
 
 ## Failure modes / guards (PG-1, PG-3, v5.0-5.1)
 - `analyze_group_6dof` raises `ValueError` if a loaded DOF has no stiffness
-  (e.g. lateral load on vertical piles without `lateral_stiffness`);
+  (e.g. lateral load on vertical piles without `lateral_stiffness`, or a
+  moment about the one line every pile is on), saying for each load why;
   unloaded unsupported DOFs are statically condensed.
 - `analyze_vertical_group_simple` warns (`UserWarning`) if called with
   nonzero Vx/Vy/Mz, which it ignores by design (the agent's tool refuses
-  them), and raises on a battered pile or unequal stiffness (GM-319).
+  them), and raises on a battered pile or unequal stiffness (GM-319) and
+  on a moment about the one line every pile is on (GM-319 review).
