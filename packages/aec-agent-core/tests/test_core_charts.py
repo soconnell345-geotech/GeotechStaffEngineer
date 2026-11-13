@@ -114,9 +114,10 @@ def test_the_worked_examples_are_in_the_core():
     from aec_agent_core.charts import figure_examples
     from aec_agent_core.deep import figure_helper
     names = figure_examples.example_names()
-    # the nine geotech worked examples (plan 2.8): six plot_data calls and
-    # three plot_code scripts
-    assert len(names) + len(figure_examples.code_example_names()) == 9
+    # the geotech worked examples (plan 2.8): six plot_data calls and
+    # three plot_code scripts, and since GM-315 the same three figures and
+    # a contour map as plot_data calls
+    assert len(names) + len(figure_examples.code_example_names()) == 13
     assert figure_helper.nearest_example("a made-up plan of points") \
         in names + [None]
     full = figure_examples.example(names[0])

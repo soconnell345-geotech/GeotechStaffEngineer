@@ -57,9 +57,15 @@ def test_every_example_draws_cleanly_through_the_real_tool(tmp_path,
         params = dict(example(name)["params"], output_path=f"ex_{name}")
         out = json.loads(plot.invoke(params))
         assert out.get("status") == "success", (name, out)
-        assert not out.get("warnings"), (name, out.get("warnings"))
+        # GM-315: a figure Plotly cannot match (a section or column panel,
+        # contours from scattered points) has no interactive twin and says
+        # so; that is its one warning, and it has no .plotly.json
+        warned = out.get("warnings") or []
+        no_twin = [w for w in warned if w.startswith("no interactive chart")]
+        assert warned == no_twin, (name, warned)
         assert (tmp_path / f"ex_{name}.png").is_file()
-        assert (tmp_path / f"ex_{name}.plotly.json").is_file()
+        assert (tmp_path / f"ex_{name}.plotly.json").is_file() \
+            is not bool(no_twin), name
 
 
 def test_examples_follow_their_own_checklist():
@@ -99,7 +105,10 @@ def test_the_profile_example_is_against_elevation():
         ex = example(name)
         assert ex["shows"] and len(ex["why"]) >= 3, name
         p = ex["params"]
-        assert p.get("title") and p.get("xlabel"), name
+        # with panels (GM-315) each chart panel names its own x axis
+        assert p.get("title") and (p.get("xlabel") or all(
+            q.get("xlabel") for q in p["panels"]
+            if q.get("kind", "chart") == "chart")), name
         # a chart names both axes; a plan names its coordinate system
         assert p.get("plan_view") or p.get("ylabel"), name
 
@@ -242,10 +251,17 @@ def test_the_code_examples_come_with_plot_code():
         # whole in one result: no cap cuts a script in two (deepagents moves
         # a result aside only past 20,000 tokens)
         assert len(tool.invoke({"name": name})) < 12_000, name
+    # since GM-315 plot_data draws these three figures itself (panels), so
+    # a loose name finds the plot_data call; the script comes by its name
     for want, name in (("depth profile", "spt_profile"),
-                       ("settlement profile", "settlement_stress_profile"),
+                       ("settlement profile", "settlement_stress_panels"),
                        ("pile design profile", "pile_design_profile"),
-                       ("retaining wall pressures", "wall_pressures")):
+                       ("pile design", "pile_design_panels"),
+                       ("retaining wall pressures",
+                        "wall_section_pressures"),
+                       ("settlement_stress_profile",
+                        "settlement_stress_profile"),
+                       ("wall_pressures", "wall_pressures")):
         got = json.loads(tool.invoke({"name": want}))
         assert got["name"] == name, (want, got.get("name"))
 
