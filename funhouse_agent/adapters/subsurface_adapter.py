@@ -1219,7 +1219,7 @@ METHOD_INFO = {
         "returns": {
             "plot_type": "Type of plot.",
             "trend_results": "Only present when show_trend is on: the fitted trend(s), one dict per fit (per soil class when group_trends_by is given).",
-            "skipped": "Only present when something was left out: the investigations (or points) not drawn, each with the reason.",
+            "skipped": "Only present when something was left out: the investigations (or points) not drawn, and a trend line that was asked for and not fitted (fewer than 2 points) or not drawn, each with the reason.",
             "n_data_points": "Number of data points plotted.",
             "n_investigations": "Number of investigations shown.",
         },
@@ -1302,20 +1302,24 @@ METHOD_INFO = {
     },
     "compute_trend": {
         "category": "Subsurface Characterization",
-        "brief": "Fit linear or log-linear depth-value trend with statistics (R-squared, COV).",
+        "brief": "Fit linear or log-linear depth-value trend with statistics (R-squared, COV). Fewer than 2 points is refused.",
         "parameters": {
             "depths": {"type": "array", "required": True, "description": "Depth values (m)."},
-            "values": {"type": "array", "required": True, "description": "Measurement values."},
-            "trend_type": {"type": "str", "required": False, "default": "linear", "allowed_values": ["linear", "log_linear"], "description": "Trend type."},
+            "values": {"type": "array", "required": True, "description": "Measurement values, one per depth. Fewer than 2 points (log_linear: fewer than 2 with depth > 0 and value > 0) is refused: there is no line to fit."},
+            "trend_type": {"type": "str", "required": False, "default": "linear", "allowed_values": ["linear", "log_linear"], "description": "Trend type. log_linear fits ln(value) against ln(depth), so a point at depth <= 0 or with a value <= 0 cannot enter it: such points are left out and counted in n_dropped."},
             "parameter": {"type": "str", "required": False, "default": "", "description": "Parameter name for labeling."},
             "group_label": {"type": "str", "required": False, "default": "", "description": "Group label (e.g., USCS class)."},
         },
         "returns": {
+            "n_points": "Number of points the fit used.",
+            "n_dropped": "Points given and left out of the fit (log_linear only: depth <= 0 or value <= 0).",
+            "fitted": "True (a result is returned only when a line was fitted).",
             "slope": "Regression slope.",
             "intercept": "Regression intercept.",
-            "r_squared": "Coefficient of determination.",
-            "std_residual": "Standard deviation of residuals.",
-            "cov": "Coefficient of variation.",
+            "r_squared": "Coefficient of determination (1 by construction when only 2 points were used).",
+            "std_residual": "Standard deviation of residuals; null when the fit used exactly 2 points (not defined).",
+            "cov": "Coefficient of variation; null when the fit used exactly 2 points.",
+            "notes": "Only when there is something to say: points left out, or a 2-point fit.",
         },
     },
     # -----------------------------------------------------------------------
@@ -1323,7 +1327,7 @@ METHOD_INFO = {
     # -----------------------------------------------------------------------
     "parse_cpt": {
         "category": "File Import",
-        "brief": "Parse a CPT file (GEF or BRO-XML, via pygef) into depth/qc/fs/u2 arrays (kPa).",
+        "brief": "Parse a CPT file (GEF or BRO-XML, via pygef) into depth/qc/fs/u2 arrays (kPa); missing readings stay null and are counted.",
         "parameters": {
             "file_path": {"type": "str", "required": True, "description": "Path to CPT file (.gef or .xml)."},
             "engine": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "gef", "xml"], "description": "Parser engine."},
@@ -1335,10 +1339,12 @@ METHOD_INFO = {
             "final_depth_m": "Final penetration depth (m).",
             "gwl_m": "Groundwater level (m below surface) or null.",
             "depth_m": "Depth array (m).",
-            "q_c_kPa": "Cone tip resistance array (kPa).",
-            "f_s_kPa": "Sleeve friction array (kPa).",
-            "u_2_kPa": "Pore pressure u2 array (kPa).",
-            "Rf_pct": "Friction ratio array (%).",
+            "q_c_kPa": "Cone tip resistance array (kPa). A reading the file does not have (a GEF void value) is null: never 0 and never interpolated from its neighbours.",
+            "f_s_kPa": "Sleeve friction array (kPa), null where missing.",
+            "u_2_kPa": "Pore pressure u2 array (kPa), null where missing.",
+            "Rf_pct": "Friction ratio array (%), null where missing or where q_c or f_s is.",
+            "missing_values": "Count of missing readings per column: {q_c_kPa, f_s_kPa, u_2_kPa, Rf_pct} for the columns the file has. Report it; a tool given a null reading (liquefaction) refuses it, so leave those depths out and say so.",
+            "warnings": "Only when a reading is missing: the counts in words.",
         },
     },
     "parse_bore": {

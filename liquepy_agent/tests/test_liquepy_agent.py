@@ -239,6 +239,28 @@ class TestInputValidation:
         with pytest.raises(ValueError, match="vs_method"):
             _validate_correlation_inputs([1], [1], [1], [1], 1.0, "invalid")
 
+    def test_cpt_liq_missing_reading_refused(self):
+        """A null or NaN reading (a parsed CPT file's void value) is
+        refused: it made every result NaN, and a NaN factor of safety read
+        as 'does not liquefy' (GM-326)."""
+        from liquepy_agent.cpt_liquefaction import _validate_cpt_inputs
+        with pytest.raises(ValueError, match=r"q_c has 1 missing.*index 1"):
+            _validate_cpt_inputs([1.0, 2.0, 3.0], [5000.0, None, 7000.0],
+                                 [50.0, 60.0, 70.0], None, 1.0, 0.3, 7.5)
+        with pytest.raises(ValueError, match=r"f_s has 1 missing.*index 2"):
+            _validate_cpt_inputs([1.0, 2.0, 3.0], [5000.0, 6000.0, 7000.0],
+                                 [50.0, 60.0, float("nan")], None, 1.0, 0.3,
+                                 7.5)
+
+    def test_field_corr_missing_reading_refused(self):
+        from liquepy_agent.field_correlations import (
+            _validate_correlation_inputs,
+        )
+        with pytest.raises(ValueError, match=r"q_c has 1 missing"):
+            _validate_correlation_inputs(
+                [1.0, 2.0], [None, 6000.0], [50.0, 60.0], None, 1.0,
+                "mcgann2015")
+
     def test_field_corr_empty_depth(self):
         from liquepy_agent.field_correlations import _validate_correlation_inputs
         with pytest.raises(ValueError, match="depth"):
