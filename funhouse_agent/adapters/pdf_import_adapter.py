@@ -326,7 +326,7 @@ METHOD_INFO = {
         "brief": "Convert extracted PDF geometry to SlopeGeometry for slope stability analysis.",
         "parameters": {
             "parse_result": {"type": "dict", "required": True, "description": "Output from extract_vector_geometry."},
-            "soil_properties": {"type": "array", "required": True, "description": "List of {name, gamma, gamma_sat, phi, c_prime, cu, analysis_mode} dicts. A drawing gives geometry only, so no unit weight or strength is assumed: a drained layer must give gamma and phi, an undrained layer (analysis_mode='undrained') gamma and cu; a layer without them is refused. Left out and listed in defaults_used: c_prime 0, analysis_mode 'drained', gamma_sat = the layer's gamma."},
+            "soil_properties": {"type": "array", "required": True, "description": "List of {name, gamma, gamma_sat, phi, c_prime, cu, analysis_mode} dicts. A drawing gives geometry only, so no unit weight or strength is assumed: a drained layer must give gamma and phi, an undrained layer (analysis_mode='undrained') gamma and cu; a layer without them is refused. Left out and listed in defaults_used: c_prime 0 (refused when phi is 0, a layer with no strength), analysis_mode 'drained', gamma_sat = the layer's gamma."},
         },
         "returns": {"surface_points": "Surface profile.", "n_layers": "Number of soil layers.", "layers": "Layer details.", "defaults_used": "Only when a value stood in for an input left out: {'soil_properties[<name>].<input>': value}."},
     },
@@ -335,7 +335,7 @@ METHOD_INFO = {
         "brief": "Convert extracted PDF geometry to fem2d FEM input format.",
         "parameters": {
             "parse_result": {"type": "dict", "required": True, "description": "Output from extract_vector_geometry."},
-            "soil_properties": {"type": "array", "required": True, "description": "List of {name, gamma, phi, c, E, nu, psi, model, hs_params} dicts. A drawing gives geometry only, so no unit weight, stiffness or strength is assumed: every layer must give gamma, E and nu, and a layer with a strength model (mc or hs) phi; a layer without them is refused. Left out and listed in defaults_used: c 0, psi 0, model 'mc'."},
+            "soil_properties": {"type": "array", "required": True, "description": "List of {name, gamma, phi, c, E, nu, psi, model, hs_params} dicts. A drawing gives geometry only, so no unit weight, stiffness or strength is assumed: every layer must give gamma, E and nu, and a layer with a strength model (mc or hs) phi; a layer without them is refused. Left out and listed in defaults_used: c 0 (refused when phi is 0, a layer with no strength), psi 0, model 'mc'."},
         },
         "returns": {"surface_points": "Surface profile.", "n_layers": "Number of soil layers.", "layers": "Layer details with stiffness.", "defaults_used": "Only when a value stood in for an input left out: {'soil_properties[<name>].<input>': value}."},
     },
