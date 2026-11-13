@@ -566,9 +566,10 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   (corrected) 0.728, against the printed 0.760 / 0.720 / 0.734 (Table 9.4, no
   optimisation, manual p. 52): -0.9 %, +0.3 %, -0.8 %; asserted within 3 %
   (test_published_v028_e8.py). The weak-layer search (seed 3, 700 trials, 6
-  points), which now aims at the seam where its polylines put it, returns 0.515
-  on a short surface that leaves the seam at x = 60; the direct Spencer solution
-  does not confirm that value, and it is a strict xfail against print in
+  points), which now aims at the seam where its polylines put it, returns 0.830
+  on a surface along the seam, 9.2 % above print (GM-140 step 2: a search scores
+  with the single-surface solver; before, 0.515 on a short surface the direct
+  Spencer solution did not confirm); it is a strict xfail against print in
   test_published_v028_e8.py, with nothing pinned to it. The old search surface
   is kept in test_published_v028_slope.py as a record of the change in weight
   only (3,003 kN/m from its area, 8,768 before; Janbu corrected 0.819 before,

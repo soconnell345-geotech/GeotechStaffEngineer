@@ -190,6 +190,61 @@ class TestSlopeStabilityPackage:
         assert os.path.exists(outfile)
 
 
+class TestSlopePackageNoNumber:
+    """GM-140 step 2: where the method has no solution on the surface the
+    package prints no number (it used to print the old approximate solver's
+    value, or the solver's 999.9 marker). Made-up fill slope with a
+    cohesion of 40 kPa and a circle on which Spencer's method has no
+    solution: by the step 2 review's own Spencer (Spencer 1967 Eqs. 7 and
+    8, p. 15; 30 slices) the force and moment factors of safety stay at
+    least 0.043 apart for side-force inclinations from -30 to 60 degrees
+    (slope_stability/tests/test_own_solution_or_no_number.py,
+    _NO_SPENCER_CIRCLE)."""
+
+    _FILL = {
+        "surface_points": [[0, 0], [10, 0], [16, 10], [34, 10]],
+        "soil_layers": [{"name": "fill", "top_elevation": 10,
+                         "bottom_elevation": -6, "gamma": 19.0, "phi": 22.0,
+                         "c_prime": 40.0}],
+        "xc": 8.0, "yc": 12.0, "radius": 12.0,
+    }
+
+    def test_spencer_without_a_solution_prints_no_number(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_slope_stability_package)
+        outfile = str(tmp_path / "none.html")
+        result = _generate_slope_stability_package(dict(
+            self._FILL, method="spencer", compare_methods=True,
+            output_path=outfile))
+        assert result["status"] == "success"
+        assert result["FOS"] is None and result["is_stable"] is None
+        assert result["method_solved"] is False
+        assert "no equilibrium solution" in result["no_solution"]
+        html = open(outfile, encoding="utf-8").read()
+        assert "no solution" in html
+        assert "legacy" not in html and "999.9" not in html
+
+    def test_bishop_solves_the_same_circle(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_slope_stability_package)
+        result = _generate_slope_stability_package(dict(
+            self._FILL, method="bishop",
+            output_path=str(tmp_path / "b.html")))
+        # 1.7268 by the review's own Bishop (1955 Eq. 13, p. 10), 30 slices
+        assert result["FOS"] == pytest.approx(1.7268, rel=0.01)
+        assert "no_solution" not in result
+
+    def test_report_refuses_an_unknown_interslice_function(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_slope_report_package)
+        p = {k: v for k, v in self._FILL.items()
+             if k not in ("xc", "yc", "radius")}
+        with pytest.raises(ValueError, match="Unknown interslice function"):
+            _generate_slope_report_package(dict(
+                p, f_interslice="sine", nx=3, ny=3,
+                output_path=str(tmp_path / "r.html")))
+
+
 class TestSlopeReportPackage:
     """The one-call slope REPORT for a critical-surface SEARCH run (F7)."""
 

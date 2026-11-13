@@ -516,8 +516,10 @@ _CALC_FRAMING = (
 
 #: Added to the calc helper's prompt when ``plot_code`` is offered.
 _CALC_PLOT_CODE = (
-    "\nA FIGURE NONE OF THESE DRAW (a wall with its pressure diagrams, "
-    "panels sharing an elevation axis, a section with layers filled): "
+    "\nA FIGURE NONE OF THESE DRAW (plot_data's panels draw a wall with "
+    "its pressure diagrams, panels sharing an elevation axis and layers "
+    "filled; what is left is panels stacked one above another, two "
+    "vertical axes, bars, arcs and angles): "
     "write it "
     "with plot_code (see its description), look at the PNG with "
     "analyze_image (what it shows against the data, then the lettering), "
@@ -720,8 +722,8 @@ def build_calc_subagent(
         system_prompt = system_prompt + _CALC_PLOT_CODE
         description = description + (
             " It draws the package's figures too, in code (plot_code) where "
-            "plot_data cannot: a wall or pile to scale with its diagrams "
-            "beside it, panels sharing one elevation axis."
+            "plot_data cannot: panels stacked one above another, two "
+            "vertical axes, bars, arcs and angles."
             + CALC_REDRAW_NOTE)
     from funhouse_agent import review_flags as _flags
     figure_looks = _flags.figure_helper() or _flags.plot_code()

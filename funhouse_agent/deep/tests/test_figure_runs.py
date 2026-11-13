@@ -197,9 +197,15 @@ def test_the_nearest_example_is_picked_from_the_brief():
     assert nearest_example("the SPT N60 profile of B-1 to B-3") == \
         "spt_profile"
     # the code examples only where the helper has plot_code
+    # where it has none, the plot_data redraw of the same figure (GM-315)
     wall = "a cantilever wall with its earth pressures beside it"
-    assert nearest_example(wall) is None
+    assert nearest_example(wall) == "wall_section_pressures"
     assert nearest_example(wall, with_code=True) == "wall_pressures"
+    pile = "Draw the pile design profile with the neutral plane"
+    assert nearest_example(pile) == "pile_design_panels"
+    assert nearest_example(pile, with_code=True) == "pile_design_profile"
+    assert nearest_example("the settlement stress profile under the "
+                           "fill") == "settlement_stress_panels"
     assert nearest_example("factor of safety for the five cases of the "
                            "sensitivity study") == "cases"
     # a figure no example is like gets none, and a one-word name (a word

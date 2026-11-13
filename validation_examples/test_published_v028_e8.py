@@ -194,20 +194,21 @@ def test_v028_janbu_corrected_against_print(family_lowest):
 
 _SEARCH_SHORT_OF_PRINT = (
     "V-028's weak-layer search (seed 3, 700 trials, 6 points, Table 9.2's "
-    "loads on) returns Spencer 0.515 against the printed 0.760 (Slide2 "
-    "problem #9, Table 9.4, manual p. 52); a plain family of surfaces along "
-    "the seam reaches 0.753 (test_v028_spencer_against_print). Since the "
-    "GM-140 step 1 fix round the search aims at the seam, but the surface "
-    "it returns leaves the seam at x = 60 and comes out on the face at x = "
-    "64.2, and its 0.515 is a solution with the interslice force at -43.5 "
-    "deg and tension across the back wedge, accepted about the search's "
-    "second moment axis; on the same surface Janbu corrected reads 1.22 "
-    "and Spencer about the fitted axis does not converge. The search's "
-    "generator belongs to step 7 of the slope rebuild (the account's D12). "
-    "Which solutions a search accepts belongs to steps 2 and 3 (one solver "
-    "for a method in a search and on one surface; the printed "
-    "acceptability checks). Neither was changed in this round. "
-    "Nothing is pinned to the module's own number.")
+    "loads on) returns Spencer 0.830 against the printed 0.760 (Slide2 "
+    "problem #9, Table 9.4, manual p. 52), 9.2 % above; a plain family of "
+    "surfaces along the seam reaches 0.753 (test_v028_spencer_against_"
+    "print). Since GM-140 step 2 the search scores a surface with the "
+    "single-surface solver, so the 0.830 is Spencer's own solution on the "
+    "surface it reports (x = 41.59 to 77.19, along the seam; theta 8.0 "
+    "deg; Janbu corrected 0.830 and Morgenstern-Price 0.816 on the same "
+    "surface, analyze_slope the same 0.830). Before that step it returned "
+    "0.515, a state accepted about the search's second moment axis with "
+    "the interslice force at -43.5 deg, on a surface where the "
+    "single-surface solver had no solution. What is left is the search's "
+    "generator: 277 of the 700 trials have no Spencer solution and its "
+    "best surface is not the family's best. The generator belongs to step "
+    "7 of the slope rebuild (the account's D12); nothing was tuned here, "
+    "and nothing is pinned to the module's own number.")
 
 
 @pytest.mark.xfail(strict=True, reason=_SEARCH_SHORT_OF_PRINT)

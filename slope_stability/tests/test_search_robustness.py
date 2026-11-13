@@ -127,23 +127,24 @@ def test_reject_stats_counts_geometry():
 
 
 def test_reject_stats_counts_degenerate_jagged():
-    """The ACADS-4 zig-zag is tallied as a rejection (non-converged or, if it
-    converges to a spurious low FOS via the pinned-axis fallback, jagged) -- never
-    scored as a real surface."""
+    """The ACADS-4 zig-zag is tallied as a rejection, never scored as a
+    real surface. Since GM-140 step 2 it has no Spencer solution (it used
+    to "converge" to a spurious low FOS about the search's second, fixed
+    moment axis, and was then left out for its m_alpha, GM-127): it is
+    counted as not converged, with the m_alpha check on or off."""
     geom = _flat_geom()
     stats = _new_reject_stats()
     jag = PolylineSlipSurface(points=_JAGGED)
-    # since GM-127 its m_alpha < 0.2 leaves it out first (Slide2's -112)
     info = {}
     assert _compute_fos(geom, jag, "spencer", 40, reject_stats=stats,
                         info=info) == _FOS_MAX
-    assert info["m_alpha_min"] < 0.2
-    assert stats["nonconverged"] + stats["jagged"] == 0
-    # with that check off, the other gates still refuse it
+    assert "m_alpha_min" not in info            # no F to state m_alpha at
+    assert stats["geometry"] == 0 and stats["jagged"] == 0
+    assert stats["nonconverged"] == 1
     assert _compute_fos(geom, jag, "spencer", 40, reject_stats=stats,
                         m_alpha_check=False) == _FOS_MAX
     assert stats["geometry"] == 0
-    assert stats["nonconverged"] + stats["jagged"] == 1
+    assert stats["nonconverged"] + stats["jagged"] == 2
 
 
 def test_majority_rejection_warns():

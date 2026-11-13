@@ -28,14 +28,19 @@ Ledger: module_work/wiki_verification/le_method_originals.md.
 """
 
 import math
-import warnings
-from dataclasses import dataclass
 from typing import List, Tuple, Optional
 
 from slope_stability.slices import Slice
+from slope_stability.solution import NoSolution, gle_failure_reason
 
 
-_FOS_MAX = 999.9  # sentinel for zero or negative driving
+_FOS_MAX = 999.9  # internal marker; never returned as a factor of safety
+
+_NO_DRIVING = ("the surface has no net driving moment or force (the "
+               "driving sum is zero or negative), so the ratio of resisting "
+               "to driving has no meaning")
+_NO_RESISTANCE = ("the resisting sum is zero or negative at the trial "
+                  "factor of safety")
 
 
 # Morgenstern-Price interslice force functions
@@ -95,6 +100,10 @@ def fellenius_fos(slices: List[Slice],
     Conservative: typically 10-60% lower than rigorous methods.
     No iteration required (except with passive supports). Used as initial
     guess for Bishop.
+
+    Raises ``NoSolution`` where the surface has no driving moment or force
+    (the ratio has no meaning there), or where the iteration with passive
+    supports does not settle: there is no number (GM-140 step 2).
 
     Supports (reinf_forces), circular surfaces: each acts at the base of the
     slice it crosses — its component normal to that base adds to the slice's
@@ -188,22 +197,27 @@ def fellenius_fos(slices: List[Slice],
             resisting += horizontal_resistance(reinf_forces, slices)
 
     if driving <= 0:
-        return _FOS_MAX
+        # no number (GM-140 step 2): this used to return the 999.9 marker
+        raise NoSolution(_NO_DRIVING, kind="no_driving")
 
     if not passive_press:
         return resisting / driving
     # Passive supports press their slice bases with T / F: iterate on F.
     fos = resisting / driving
+    if fos <= 0:
+        raise NoSolution(_NO_RESISTANCE)
     for _ in range(100):
         extra = sum((max(n0 + p / fos, 0.0) - max(n0, 0.0)) * tp
                     for n0, tp, p in passive_press)
         fos_new = (resisting + extra) / driving
         if fos_new <= 0:
-            return _FOS_MAX
+            raise NoSolution(_NO_RESISTANCE)
         if abs(fos_new - fos) < 1e-9:
             return fos_new
         fos = fos_new
-    return fos
+    raise NoSolution(
+        "the iteration on F with the passive supports' forces divided by F "
+        f"did not settle in 100 iterations (last values {fos:.4f})")
 
 
 def bishop_fos(slices: List[Slice],
@@ -248,6 +262,10 @@ def bishop_fos(slices: List[Slice],
     ------
     ValueError
         If slip surface is not circular.
+    NoSolution
+        The surface has no driving moment, or the iteration is not within
+        ``tol`` after ``max_iter`` iterations: there is no number (GM-140
+        step 2, D27).
 
     Notes
     -----
@@ -275,8 +293,9 @@ def bishop_fos(slices: List[Slice],
         )
 
     if fos_initial is None:
-        fos_initial = fellenius_fos(slices, slip)
-        if fos_initial >= _FOS_MAX:
+        try:
+            fos_initial = fellenius_fos(slices, slip)
+        except NoSolution:
             fos_initial = 1.5
 
     # Precompute driving sum (denominator — independent of FOS)
@@ -326,7 +345,8 @@ def bishop_fos(slices: List[Slice],
             reinf_forces, slices, passive=True, d_sign=d_sign).items()}
 
     if driving <= 0:
-        return _FOS_MAX
+        # no number (GM-140 step 2): this used to return the 999.9 marker
+        raise NoSolution(_NO_DRIVING, kind="no_driving")
 
     fos = fos_initial
     for iteration in range(max_iter):
@@ -355,13 +375,15 @@ def bishop_fos(slices: List[Slice],
         fos_new = (resisting + passive_resistance) / driving
         if abs(fos_new - fos) < tol:
             return fos_new
-        fos = fos_new
+        fos, fos_prev = fos_new, fos
 
-    warnings.warn(
-        f"Bishop did not converge after {max_iter} iterations "
-        f"(last FOS={fos:.4f})"
-    )
-    return fos
+    # Not converged: no number (GM-140 step 2, D27; UFC 3-220-10 p. 362).
+    # Before, the last iterate was returned with a Python warning only, so
+    # it could be reported, or win a search, as Bishop's factor of safety.
+    raise NoSolution(
+        f"the iteration on F (Bishop 1955, Eq. 13) is not within {tol:g} "
+        f"after {max_iter} iterations (last two values {fos_prev:.4f} and "
+        f"{fos:.4f})")
 
 
 # ---------------------------------------------------------------------------
@@ -442,434 +464,6 @@ def m_alpha_min(slices: List[Slice], fos: float, slip=None,
                default=1.0)
 
 
-def spencer_fos_legacy(slices: List[Slice],
-                slip,
-                tol: float = 1e-4,
-                max_iter: int = 100) -> Tuple[float, float]:
-    """Spencer's Method factor of safety (LEGACY approximate formulation).
-
-    Superseded by the rigorous GLE engine (``spencer_fos`` now wraps
-    ``slope_stability.gle.gle_fos`` with f(x)=constant); kept as a
-    fallback for surfaces where the rigorous iteration fails to
-    converge, and for regression comparison.
-
-    Satisfies both force and moment equilibrium simultaneously.
-    Assumes interslice forces inclined at constant angle theta.
-
-    Works for both circular and noncircular slip surfaces.
-    For noncircular surfaces, this is the primary recommended method.
-
-    APPROXIMATION (SS-1): this is NOT the textbook-exact Spencer
-    interslice-force solution. The interslice inclination theta enters
-    through a shifted m_alpha = cos(alpha - theta)
-    + sin(alpha - theta)*tan(phi)/F and a force-equilibrium driving term
-    W*(sin(alpha) + cos(alpha)*tan(theta)), iterated until
-    FOS_moment = FOS_force — an engineering approximation of the full
-    general-limit-equilibrium (GLE) recursion of slice-by-slice
-    interslice forces. It has been validated against the Duncan, Wright
-    & Brandon published examples (see tests/test_duncan_verification.py)
-    but should not be treated as an exact GLE/Spencer implementation.
-
-    Parameters
-    ----------
-    slices : list of Slice
-        Slice data from build_slices().
-    slip : CircularSlipSurface or PolylineSlipSurface
-        Slip surface geometry (circular or noncircular).
-    tol : float
-        Convergence tolerance. Default 1e-4.
-    max_iter : int
-        Maximum iterations for outer theta loop. Default 100.
-
-    Returns
-    -------
-    (FOS, theta) : tuple of (float, float)
-        Factor of safety and interslice force angle (degrees).
-
-    Notes
-    -----
-    For circular surfaces: uses moment-arm formulation (same as existing code).
-    For noncircular surfaces: uses force-based formulation with W*sin(alpha)
-    for driving. The secant iteration on theta finds where FOS_moment = FOS_force.
-
-    References
-    ----------
-    Spencer (1967), Geotechnique, Vol. 17, pp. 11-26
-    Duncan, Wright & Brandon (2014), Chapter 7
-    """
-    is_circular = getattr(slip, 'is_circular', True)
-
-    # Get initial FOS guess from Fellenius
-    fos_guess = fellenius_fos(slices, slip)
-    if fos_guess >= _FOS_MAX:
-        fos_guess = 1.5
-
-    # Precompute driving moment
-    if is_circular:
-        gravity_moment = 0.0
-        seismic_moment = 0.0
-        crack_water_moment = 0.0
-        for s in slices:
-            W = s.weight + s.surcharge_force
-            gravity_moment += W * (s.x_mid - slip.xc) / slip.radius
-            if s.pond_hforce != 0:
-                gravity_moment += s.pond_hforce * (s.pond_z - slip.yc) / slip.radius
-            if s.seismic_force != 0:
-                seismic_moment += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
-            if s.crack_water_force != 0:
-                crack_water_moment += s.crack_water_force * (slip.yc - s.crack_water_z) / slip.radius
-        driving_moment = abs(gravity_moment) + abs(seismic_moment) + abs(crack_water_moment)
-    else:
-        # Noncircular: use W*sin(alpha) for driving
-        gravity_moment = 0.0
-        seismic_moment = 0.0
-        crack_water_moment = 0.0
-        for s in slices:
-            W = s.weight + s.surcharge_force
-            gravity_moment += W * math.sin(s.alpha)
-            if s.pond_hforce != 0:
-                gravity_moment += -s.pond_hforce * math.cos(s.alpha)
-            if s.seismic_force != 0:
-                seismic_moment += s.seismic_force * math.cos(s.alpha)
-            if s.crack_water_force != 0:
-                crack_water_moment += s.crack_water_force * math.cos(s.alpha)
-        driving_moment = abs(gravity_moment) + abs(seismic_moment) + abs(crack_water_moment)
-
-    if driving_moment <= 0:
-        return (_FOS_MAX, 0.0)
-
-    # Slope-direction sign (SS-4): evaluate with alpha measured positive in
-    # the sliding direction (mirror for crest-on-the-left slopes).
-    d_sign = 1.0 if gravity_moment >= 0 else -1.0
-
-    def _fos_moment(theta_rad, fos_est):
-        """Moment equilibrium FOS for given theta."""
-        fos_m = fos_est
-        for _ in range(50):
-            resisting = 0.0
-            for s in slices:
-                phi_rad = math.radians(s.phi)
-                tan_phi = math.tan(phi_rad)
-                W = s.weight + s.surcharge_force
-                b = s.width
-
-                # Spencer m_alpha: uses (alpha_n - theta)
-                diff = d_sign * s.alpha - theta_rad
-                m_alpha = math.cos(diff) + math.sin(diff) * tan_phi / fos_m
-                if abs(m_alpha) < 1e-10:
-                    m_alpha = 1e-10
-
-                resisting += (s.c * b + (W - s.pore_pressure * b) * tan_phi) / m_alpha
-
-            fos_new = resisting / driving_moment
-            if abs(fos_new - fos_m) < tol * 0.1:
-                return fos_new
-            fos_m = fos_new
-        return fos_m
-
-    def _fos_force(theta_rad, fos_est):
-        """Force equilibrium FOS for given theta."""
-        tan_theta = math.tan(theta_rad)
-
-        fos_f = fos_est
-        for _ in range(50):
-            total_resist = 0.0
-            total_drive = 0.0
-            for s in slices:
-                phi_rad = math.radians(s.phi)
-                tan_phi = math.tan(phi_rad)
-                W = s.weight + s.surcharge_force
-                b = s.width
-                sin_a = math.sin(d_sign * s.alpha)
-                cos_a = math.cos(s.alpha)
-
-                # Spencer m_alpha: uses (alpha_n - theta)
-                diff = d_sign * s.alpha - theta_rad
-                m_alpha = math.cos(diff) + math.sin(diff) * tan_phi / fos_f
-                if abs(m_alpha) < 1e-10:
-                    m_alpha = 1e-10
-
-                total_resist += (s.c * b + (W - s.pore_pressure * b) * tan_phi) / m_alpha
-
-                # Force driving: horizontal projection with interslice angle
-                d_alpha = sin_a + cos_a * tan_theta
-                total_drive += W * d_alpha
-                if s.seismic_force != 0:
-                    n_alpha = cos_a - sin_a * tan_theta
-                    total_drive += s.seismic_force * n_alpha
-                if s.crack_water_force != 0:
-                    n_alpha = cos_a - sin_a * tan_theta
-                    total_drive += s.crack_water_force * n_alpha
-
-            total_drive = abs(total_drive)
-            if total_drive <= 0:
-                return _FOS_MAX
-
-            fos_new = total_resist / total_drive
-            if abs(fos_new - fos_f) < tol * 0.1:
-                return fos_new
-            fos_f = fos_new
-
-        return fos_f
-
-    # Secant method on f(theta) = FOS_m(theta) - FOS_f(theta)
-    theta_a = 0.0
-    theta_b = math.radians(10.0)
-
-    fm_a = _fos_moment(theta_a, fos_guess)
-    ff_a = _fos_force(theta_a, fos_guess)
-    fa = fm_a - ff_a
-
-    for iteration in range(max_iter):
-        fm_b = _fos_moment(theta_b, fos_guess)
-        ff_b = _fos_force(theta_b, fos_guess)
-        fb = fm_b - ff_b
-
-        if abs(fb) < tol:
-            fos_final = 0.5 * (fm_b + ff_b)
-            return (fos_final, math.degrees(theta_b))
-
-        # Secant update
-        if abs(fb - fa) < 1e-12:
-            break
-        theta_c = theta_b - fb * (theta_b - theta_a) / (fb - fa)
-
-        # Clamp theta to reasonable range (-30 to +30 degrees)
-        theta_c = max(math.radians(-30), min(math.radians(30), theta_c))
-
-        theta_a, fa = theta_b, fb
-        theta_b = theta_c
-        fos_guess = 0.5 * (fm_b + ff_b)
-
-    # Return best estimate
-    fos_final = 0.5 * (_fos_moment(theta_b, fos_guess) +
-                        _fos_force(theta_b, fos_guess))
-    return (fos_final, math.degrees(theta_b))
-
-
-def morgenstern_price_fos_legacy(slices: List[Slice],
-                          slip,
-                          f_interslice: str = "half_sine",
-                          tol: float = 1e-4,
-                          max_iter: int = 100) -> Tuple[float, float]:
-    """Morgenstern-Price factor of safety (LEGACY approximate formulation).
-
-    Superseded by the rigorous GLE engine (``morgenstern_price_fos`` now
-    wraps ``slope_stability.gle.gle_fos``); kept as a fallback and for
-    regression comparison.
-
-    Generalizes Spencer by using a variable interslice force function f(x)
-    scaled by lambda. When f(x) = constant, this reduces to Spencer.
-
-    Solves for both FOS and lambda simultaneously using secant iteration:
-    find lambda where FOS_moment(lambda) = FOS_force(lambda).
-
-    Works for both circular and noncircular slip surfaces.
-
-    APPROXIMATION (SS-1): as with ``spencer_fos``, the interslice
-    inclination (here atan(lambda*f(x)) per slice) enters through a
-    shifted m_alpha = cos(alpha - theta_eff)
-    + sin(alpha - theta_eff)*tan(phi)/F rather than the textbook-exact
-    Morgenstern-Price interslice-force recursion. Validated against the
-    Duncan, Wright & Brandon examples; not an exact GLE implementation.
-
-    Parameters
-    ----------
-    slices : list of Slice
-        Slice data from build_slices().
-    slip : CircularSlipSurface or PolylineSlipSurface
-        Slip surface geometry.
-    f_interslice : str
-        Interslice force function: 'constant', 'half_sine', 'trapezoidal'.
-        Default 'half_sine'.
-    tol : float
-        Convergence tolerance. Default 1e-4.
-    max_iter : int
-        Maximum iterations for outer lambda loop. Default 100.
-
-    Returns
-    -------
-    (FOS, lambda) : tuple of (float, float)
-        Factor of safety and interslice force scaling factor.
-
-    References
-    ----------
-    Morgenstern & Price (1965), Geotechnique, Vol. 15, pp. 79-93
-    Duncan, Wright & Brandon (2014), Chapter 7
-    """
-    f_func = _MP_FUNCTIONS.get(f_interslice, _f_half_sine)
-    is_circular = getattr(slip, 'is_circular', True)
-    n = len(slices)
-
-    # Compute normalized x positions for f(x)
-    x_vals = [s.x_mid for s in slices]
-    x_lo = min(x_vals)
-    x_hi = max(x_vals)
-    x_span = x_hi - x_lo if x_hi > x_lo else 1.0
-    # f(x) evaluated at slice boundaries (between slices)
-    f_vals = []
-    for i in range(n - 1):
-        x_norm = ((x_vals[i] + x_vals[i + 1]) / 2.0 - x_lo) / x_span
-        f_vals.append(f_func(x_norm))
-
-    # Get initial FOS from Fellenius
-    fos_guess = fellenius_fos(slices, slip)
-    if fos_guess >= _FOS_MAX:
-        fos_guess = 1.5
-
-    # Precompute driving for moment equilibrium
-    if is_circular:
-        gravity_driving = 0.0
-        seismic_driving = 0.0
-        crack_water_driving = 0.0
-        for s in slices:
-            W = s.weight + s.surcharge_force
-            gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
-            if s.pond_hforce != 0:
-                gravity_driving += s.pond_hforce * (s.pond_z - slip.yc) / slip.radius
-            if s.seismic_force != 0:
-                seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
-            if s.crack_water_force != 0:
-                crack_water_driving += s.crack_water_force * (slip.yc - s.crack_water_z) / slip.radius
-        driving_moment = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
-    else:
-        gravity_driving = 0.0
-        seismic_driving = 0.0
-        crack_water_driving = 0.0
-        for s in slices:
-            W = s.weight + s.surcharge_force
-            gravity_driving += W * math.sin(s.alpha)
-            if s.pond_hforce != 0:
-                gravity_driving += -s.pond_hforce * math.cos(s.alpha)
-            if s.seismic_force != 0:
-                seismic_driving += s.seismic_force * math.cos(s.alpha)
-            if s.crack_water_force != 0:
-                crack_water_driving += s.crack_water_force * math.cos(s.alpha)
-        driving_moment = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
-
-    if driving_moment <= 0:
-        return (_FOS_MAX, 0.0)
-
-    # Slope-direction sign (SS-4) — see spencer_fos_legacy
-    d_sign = 1.0 if gravity_driving >= 0 else -1.0
-
-    def _fos_moment(lam, fos_est):
-        """Moment equilibrium FOS for given lambda."""
-        fos_m = fos_est
-        for _ in range(50):
-            resisting = 0.0
-            for i, s in enumerate(slices):
-                phi_rad = math.radians(s.phi)
-                tan_phi = math.tan(phi_rad)
-                W = s.weight + s.surcharge_force
-                b = s.width
-
-                # Effective theta for this slice via lambda * f(x)
-                # At slice boundaries: theta_i = atan(lambda * f_i)
-                # Average over left and right boundary
-                if i == 0:
-                    theta_eff = math.atan(lam * f_vals[0]) if f_vals else 0.0
-                elif i == n - 1:
-                    theta_eff = math.atan(lam * f_vals[-1]) if f_vals else 0.0
-                else:
-                    theta_eff = math.atan(lam * 0.5 * (f_vals[i - 1] + f_vals[i]))
-
-                diff = d_sign * s.alpha - theta_eff
-                m_alpha = math.cos(diff) + math.sin(diff) * tan_phi / fos_m
-                if abs(m_alpha) < 1e-10:
-                    m_alpha = 1e-10
-
-                resisting += (s.c * b + (W - s.pore_pressure * b) * tan_phi) / m_alpha
-
-            fos_new = resisting / driving_moment
-            if abs(fos_new - fos_m) < tol * 0.1:
-                return fos_new
-            fos_m = fos_new
-        return fos_m
-
-    def _fos_force(lam, fos_est):
-        """Force equilibrium FOS for given lambda."""
-        fos_f = fos_est
-        for _ in range(50):
-            total_resist = 0.0
-            total_drive = 0.0
-            for i, s in enumerate(slices):
-                phi_rad = math.radians(s.phi)
-                tan_phi = math.tan(phi_rad)
-                W = s.weight + s.surcharge_force
-                b = s.width
-                sin_a = math.sin(d_sign * s.alpha)
-                cos_a = math.cos(s.alpha)
-
-                if i == 0:
-                    theta_eff = math.atan(lam * f_vals[0]) if f_vals else 0.0
-                elif i == n - 1:
-                    theta_eff = math.atan(lam * f_vals[-1]) if f_vals else 0.0
-                else:
-                    theta_eff = math.atan(lam * 0.5 * (f_vals[i - 1] + f_vals[i]))
-
-                tan_theta = math.tan(theta_eff)
-
-                diff = d_sign * s.alpha - theta_eff
-                m_alpha = math.cos(diff) + math.sin(diff) * tan_phi / fos_f
-                if abs(m_alpha) < 1e-10:
-                    m_alpha = 1e-10
-
-                total_resist += (s.c * b + (W - s.pore_pressure * b) * tan_phi) / m_alpha
-
-                d_alpha = sin_a + cos_a * tan_theta
-                total_drive += W * d_alpha
-                if s.seismic_force != 0:
-                    n_alpha = cos_a - sin_a * tan_theta
-                    total_drive += s.seismic_force * n_alpha
-                if s.crack_water_force != 0:
-                    n_alpha = cos_a - sin_a * tan_theta
-                    total_drive += s.crack_water_force * n_alpha
-
-            total_drive = abs(total_drive)
-            if total_drive <= 0:
-                return _FOS_MAX
-
-            fos_new = total_resist / total_drive
-            if abs(fos_new - fos_f) < tol * 0.1:
-                return fos_new
-            fos_f = fos_new
-
-        return fos_f
-
-    # Secant method on g(lambda) = FOS_m(lambda) - FOS_f(lambda)
-    lam_a = 0.0
-    lam_b = 0.3
-
-    fm_a = _fos_moment(lam_a, fos_guess)
-    ff_a = _fos_force(lam_a, fos_guess)
-    ga = fm_a - ff_a
-
-    for _ in range(max_iter):
-        fm_b = _fos_moment(lam_b, fos_guess)
-        ff_b = _fos_force(lam_b, fos_guess)
-        gb = fm_b - ff_b
-
-        if abs(gb) < tol:
-            fos_final = 0.5 * (fm_b + ff_b)
-            return (fos_final, lam_b)
-
-        if abs(gb - ga) < 1e-12:
-            break
-        lam_c = lam_b - gb * (lam_b - lam_a) / (gb - ga)
-
-        # Clamp lambda to reasonable range
-        lam_c = max(-2.0, min(2.0, lam_c))
-
-        lam_a, ga = lam_b, gb
-        lam_b = lam_c
-        fos_guess = 0.5 * (fm_b + ff_b)
-
-    fos_final = 0.5 * (_fos_moment(lam_b, fos_guess) +
-                        _fos_force(lam_b, fos_guess))
-    return (fos_final, lam_b)
-
-
 # ---------------------------------------------------------------------------
 # Rigorous Spencer / Morgenstern-Price (GLE engine wrappers)
 # ---------------------------------------------------------------------------
@@ -887,9 +481,9 @@ def spencer_fos(slices: List[Slice],
     and lambda found where the moment- and force-equilibrium factors of
     safety cross. Works for circular and noncircular surfaces.
 
-    Falls back to the legacy approximate formulation
-    (``spencer_fos_legacy``) if the rigorous iteration fails — e.g. on
-    degenerate trial surfaces during searches.
+    Raises ``NoSolution`` where the rigorous solution does not converge:
+    there is no number (GM-140 step 2). Before, the old approximate solver
+    stood in, without saying so in a search.
 
     Returns
     -------
@@ -904,19 +498,16 @@ def spencer_fos(slices: List[Slice],
     """
     from slope_stability.gle import gle_fos
 
+    res, err = None, None
     try:
         res = gle_fos(slices, slip, f_interslice="constant",
                       tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
-        if res.converged and 0.0 < res.fos < _FOS_MAX:
-            return (res.fos, math.degrees(math.atan(res.lam)))
-    except (ValueError, ZeroDivisionError, OverflowError):
-        pass
-    if reinf_forces:
-        warnings.warn(
-            "Spencer GLE did not converge; falling back to the legacy "
-            "approximate solver, which IGNORES reinforcement. The reported FOS "
-            "is UNreinforced (conservative) — verify the surface or method.")
-    return spencer_fos_legacy(slices, slip, tol=tol, max_iter=max_iter)
+    except (ZeroDivisionError, OverflowError) as exc:
+        err = exc
+    if (res is not None and res.converged
+            and 0.0 < res.fos < _FOS_MAX):
+        return (res.fos, math.degrees(math.atan(res.lam)))
+    raise NoSolution(gle_failure_reason(res, err))
 
 
 def morgenstern_price_fos(slices: List[Slice],
@@ -932,7 +523,8 @@ def morgenstern_price_fos(slices: List[Slice],
     force-equilibrium factors of safety are equal. Supports f(x) in
     {'constant', 'half_sine', 'clipped_sine', 'trapezoidal'}.
 
-    Falls back to the legacy approximate formulation on non-convergence.
+    Raises ``NoSolution`` where the rigorous solution does not converge:
+    there is no number (GM-140 step 2).
 
     Returns
     -------
@@ -944,127 +536,13 @@ def morgenstern_price_fos(slices: List[Slice],
     """
     from slope_stability.gle import gle_fos
 
-    try:
-        res = gle_fos(slices, slip, f_interslice=f_interslice,
-                      tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
-        if res.converged and 0.0 < res.fos < _FOS_MAX:
-            return (res.fos, res.lam)
-    except (ValueError, ZeroDivisionError, OverflowError):
-        pass
-    if reinf_forces:
-        warnings.warn(
-            "Morgenstern-Price GLE did not converge; falling back to the legacy "
-            "approximate solver, which IGNORES reinforcement. The reported FOS "
-            "is UNreinforced (conservative) — verify the surface or method.")
-    legacy_f = f_interslice if f_interslice in _MP_FUNCTIONS else "half_sine"
-    return morgenstern_price_fos_legacy(slices, slip, f_interslice=legacy_f,
-                                        tol=tol, max_iter=max_iter)
-
-
-# ---------------------------------------------------------------------------
-# One surface, no silent fallback (GM-81)
-# ---------------------------------------------------------------------------
-
-@dataclass
-class RigorousSolution:
-    """Spencer / Morgenstern-Price / GLE on one slip surface, saying
-    whether the method's own (rigorous GLE) solution was found.
-
-    fos : float or None
-        The GLE factor of safety; when it does not converge, the legacy
-        approximate solver's value on a surface no support crosses, else
-        None (that solver ignores supports, so its value would be the
-        slope without them).
-    param : float or None
-        theta in degrees (Spencer) or lambda (Morgenstern-Price / GLE) of
-        ``fos``.
-    gle : GLEResult or None
-        The converged GLE state (per-slice and interslice forces).
-    solved : bool
-        The GLE converged: the method's own solution.
-    legacy : bool
-        ``fos`` is the legacy approximate solver's value.
-    reason : str
-        Why the GLE has no solution, in plain words ('' when solved).
-    """
-    fos: Optional[float]
-    param: Optional[float]
-    gle: Optional[object]
-    solved: bool
-    legacy: bool
-    reason: str = ""
-
-
-def _gle_failure_reason(res, err) -> str:
-    """Plain words for why ``gle_fos`` gave no solution."""
-    if err is not None:
-        return f"the solution stopped with an error ({err})"
-    if res is None:
-        return "no solution"
-    for w in res.warnings:
-        if w.startswith("no F_m = F_f crossing"):
-            return ("no lambda from -1.5 to 1.5 gives moment and force "
-                    "factors of safety that agree")
-        if w.startswith("no equilibrium state at any lambda"):
-            return "no lambda from -1.5 to 1.5 gives an equilibrium state"
-        if w.startswith("F_m - F_f residual"):
-            # gle_fos: "F_m - F_f residual {:.2e} at lambda={:.3f}"
-            parts = w.replace("=", " ").split()
-            try:
-                gap, lam = float(parts[4]), float(parts[-1])
-            except (IndexError, ValueError):
-                return ("the moment and force factors of safety do not "
-                        f"agree at any lambda found ({w})")
-            return ("the moment and force factors of safety still differ by "
-                    f"{gap:.3g} at the closest lambda found ({lam:.3f})")
-    if res.converged:
-        return f"no usable factor of safety (F = {res.fos:.4g})"
-    if res.fos >= _FOS_MAX:
-        return ("no equilibrium state at lambda = 0, where the search for "
-                "lambda starts")
-    return "the solution does not converge"
-
-
-def solve_rigorous(slices: List[Slice],
-                   slip,
-                   f_interslice: str = "constant",
-                   tol: float = 1e-4,
-                   reinf_forces=None,
-                   max_iter: int = 100) -> RigorousSolution:
-    """Spencer (``f_interslice='constant'``) or Morgenstern-Price / GLE on
-    one surface, reporting whether the method's own solution was found.
-
-    The same solves as ``spencer_fos`` / ``morgenstern_price_fos`` (the GLE,
-    then the legacy approximate solver), with the same values, except that
-    nothing falls back silently: when the GLE does not converge the result
-    says so and why, and with supports crossing the surface it gives no
-    value at all (the legacy solver ignores them). ``analyze_slope`` uses it
-    (GM-81).
-    """
-    from slope_stability.gle import gle_fos
-
-    spencer = f_interslice == "constant"
     res, err = None, None
     try:
         res = gle_fos(slices, slip, f_interslice=f_interslice,
                       tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
-    except (ValueError, ZeroDivisionError, OverflowError) as exc:
+    except (ZeroDivisionError, OverflowError) as exc:
         err = exc
-    if res is not None and res.converged and 0.0 < res.fos < _FOS_MAX:
-        param = math.degrees(math.atan(res.lam)) if spencer else res.lam
-        return RigorousSolution(fos=res.fos, param=param, gle=res,
-                                solved=True, legacy=False)
-    reason = _gle_failure_reason(res, err)
-    if reinf_forces:
-        return RigorousSolution(fos=None, param=None, gle=None, solved=False,
-                                legacy=False, reason=reason)
-    if spencer:
-        fos, param = spencer_fos_legacy(slices, slip, tol=tol,
-                                        max_iter=max_iter)
-    else:
-        legacy_f = (f_interslice if f_interslice in _MP_FUNCTIONS
-                    else "half_sine")
-        fos, param = morgenstern_price_fos_legacy(
-            slices, slip, f_interslice=legacy_f, tol=tol, max_iter=max_iter)
-    return RigorousSolution(fos=fos, param=param, gle=None, solved=False,
-                            legacy=True, reason=reason)
+    if (res is not None and res.converged
+            and 0.0 < res.fos < _FOS_MAX):
+        return (res.fos, res.lam)
+    raise NoSolution(gle_failure_reason(res, err))

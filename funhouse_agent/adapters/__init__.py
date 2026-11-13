@@ -435,11 +435,11 @@ MODULE_REGISTRY = {
     },
     "figure_db": {
         "adapter": "funhouse_agent.adapters.figure_db_adapter",
-        "brief": "Find a reference chart by meaning; read values off it with read_reference_figure where its hit says so",
+        "brief": "Reference charts by meaning; read values off it with read_reference_figure where a hit says so",
     },
     "table_db": {
         "adapter": "funhouse_agent.adapters.table_db_adapter",
-        "brief": "Find a printed reference table by number or caption; its how_to_read gives the call for its values",
+        "brief": "Printed reference tables by number or caption; how_to_read gives the call",
     },
     "dm7": {
         "adapter": "funhouse_agent.adapters.dm7_adapter",
@@ -448,7 +448,7 @@ MODULE_REGISTRY = {
     },
     "em_1905": {
         "adapter": "funhouse_agent.adapters.em_1905_adapter",
-        "brief": "EM 1110-1-1905 shallow foundations (USACE, 2025): bearing Eqs. 5-1 to 5-36, stress distribution, settlement (consolidation, Schmertmann, Burland-Burbidge, Menard), time rate (US)",
+        "brief": "EM 1110-1-1905 shallow foundations: bearing, stresses, settlement (consolidation, Schmertmann, Burland-Burbidge, Menard), time rate (US)",
         "title": "USACE EM 1110-1-1905 (shallow foundations on soils, 31 July 2025)",
     },
     "em_2104": {
@@ -523,12 +523,12 @@ MODULE_REGISTRY = {
     },
     "ufc_backfill": {
         "adapter": "funhouse_agent.adapters.ufc_backfill_adapter",
-        "brief": "UFC 3-220-04FA: backfill density, Table 5-1 compaction, materials, lifts, equipment, Fig 2-5 compaction-induced lateral pressure (US)",
+        "brief": "UFC 3-220-04FA: backfill materials, Table 5-1 compaction, lifts, equipment, Fig 2-5 lateral pressure (US)",
         "title": "UFC 3-220-04FA (backfill for subsurface structures)",
     },
     "ufc_expansive": {
         "adapter": "funhouse_agent.adapters.ufc_expansive_adapter",
-        "brief": "UFC 3-220-07: Table 4-1 swell potential, active zone, heave (Table 4-2, Eq 4-1, Eqs 5-2, 5-8), Table 6-1 foundations, grade-beam void (US)",
+        "brief": "UFC 3-220-07: swell potential (Table 4-1), active zone, heave (Eqs 4-1, 5-2, 5-8), foundation types, grade-beam void (US)",
         "title": "UFC 3-220-07 (expansive soils)",
     },
     "ufc_pavement": {
