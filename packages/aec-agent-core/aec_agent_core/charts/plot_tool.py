@@ -551,13 +551,25 @@ PLOT_DATA_INFO = {
     },
 }
 
+# What a call with panels does not use (GM-315): these single-plot inputs'
+# defaults are then left out of ``defaults_used``; a left-out ``series``
+# is listed only where panels or contour stands in for it.
+for _name in ("equal_aspect", "plan_view", "north_deg", "scale_units",
+              "x_on_top", "legend_position", "logx", "logy", "grid"):
+    PLOT_DATA_INFO["parameters"][_name]["applies_when"] = {"panels": "unset"}
+PLOT_DATA_INFO["parameters"]["series"]["applies_when"] = [
+    {"panels": "set"}, {"contour": "set"}]
+
 declare_aliases({"plot_data": PLOT_DATA_INFO}, {"plot_data": _PLOT_ALIASES})
 # What a left-out input with no default stands for (BACKLOG GM-165): north.
 declare_when_absent({"plot_data": PLOT_DATA_INFO}, {
     "plot_data": {
         "north_deg": ("north straight up",
                       "the source plan's north was not given; the result "
-                      "says so")},
+                      "says so"),
+        # left out only with panels or contour (GM-315); refused otherwise
+        "series": ("no series of the figure's own",
+                   "panels or contour gives what is drawn")},
 })
 
 

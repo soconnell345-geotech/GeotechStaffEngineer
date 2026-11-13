@@ -419,3 +419,28 @@ def test_the_full_layout_check_runs_on_panels(monkeypatch):
         interactive=False)
     assert any("overlaps" in w for w in res.warnings), res.warnings
     assert layout_check is not None
+
+
+def test_defaults_used_lists_only_what_a_panel_figure_used(tmp_path,
+                                                           monkeypatch):
+    """A call with panels leaves the single-plot defaults (grid, log axes,
+    the legend's place) out of ``defaults_used``, and says what the left-out
+    series stands for; a single plot lists them as before."""
+    from aec_agent_core.charts.plot_tool import call_plot_data
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    out = call_plot_data({"panels": [_chart("Made-up stress", [0, 1, 2])],
+                          "title": "Made-up panel figure",
+                          "ylabel": "Elevation (m)", "output_path": "p"})
+    assert out["status"] == "success", out
+    used = out["defaults_used"]
+    for name in ("grid", "logx", "logy", "equal_aspect", "plan_view",
+                 "legend_position", "north_deg"):
+        assert name not in used, name
+    assert "panels or contour" in used["series"]
+    assert used["depth_axis"] is False
+    one = call_plot_data({"series": [{"x": [0, 1], "y": [0, 1],
+                                      "label": "Made-up line"}],
+                          "title": "Made-up line figure", "xlabel": "x (m)",
+                          "ylabel": "y (m)", "output_path": "q"})
+    assert one["defaults_used"]["grid"] is True
+    assert "series" not in one["defaults_used"]
