@@ -91,6 +91,22 @@ def _normalize_gwt(gwt):
         return np.array(gwt)
     return gwt
 
+def _package_model(soil_layers, gwt) -> dict:
+    """What the fem2d calc package prints of a layered model beside its
+    result: the layers as given (its materials table) and the water table
+    in words. A layer value the call left out is left out here too."""
+    model = {"soil_layers": [dict(sl) for sl in soil_layers]}
+    if gwt is None:
+        model["gwt_description"] = "No water table (no pore water pressure)"
+    elif isinstance(gwt, (int, float)):
+        model["gwt_description"] = f"Water table at elevation {gwt:g} m"
+    else:
+        model["gwt_description"] = (
+            "Water table along the polyline "
+            + ", ".join(f"({float(x):g}, {float(z):g})" for x, z in gwt))
+    return model
+
+
 def _run_analyze_gravity(params: dict) -> dict:
     from fem2d import analyze_gravity
     _valid = ("width", "depth", "gamma", "E", "nu", "nx", "ny", "t")
@@ -196,32 +212,34 @@ def _run_analyze_footing_capacity(params: dict) -> dict:
     return clean_result(out)
 
 
-def _run_analyze_slope_srm(params: dict) -> dict:
+def run_fem2d_slope_srm(params: dict, *, method="fem2d_slope_srm"):
+    """The fem2d_slope_srm tool's run: (the result object, what the calc package
+    prints of the model beside it)."""
     from fem2d import analyze_slope_srm
     _valid = ("surface_points", "soil_layers", "nx", "ny", "srf_tol",
               "n_load_steps", "t", "gamma_w", "max_iter", "tol",
               "element_type", "srm_field", "blowup_factor", "srf_range",
               "n_gp", "depth", "x_extend", "gwt", "layer_polylines",
               "mesh_check")
-    reject_unknown_params(params, _valid, method="fem2d_slope_srm")
+    reject_unknown_params(params, _valid, method=method)
     require_params(params, ["surface_points", "soil_layers"],
-                   method="fem2d_slope_srm", valid=_valid)
-    _require_layer_elevations(params["soil_layers"], method="fem2d_slope_srm")
+                   method=method, valid=_valid)
+    _require_layer_elevations(params["soil_layers"], method=method)
     surface_points = [tuple(pt) for pt in params["surface_points"]]
     soil_layers = params["soil_layers"]
 
     element_type = params.get("element_type", "t6")
     _require_choice(element_type, ("t6", "cst"),
-                    name="element_type", method="fem2d_slope_srm")
+                    name="element_type", method=method)
     srm_field = params.get("srm_field", "c_phi")
     _require_choice(srm_field, ("c_phi", "c", "phi"),
-                    name="srm_field", method="fem2d_slope_srm")
+                    name="srm_field", method=method)
     n_gp = params.get("n_gp")
     if n_gp is not None:
         _require_choice(int(n_gp), (3, 6),
-                        name="n_gp", method="fem2d_slope_srm")
+                        name="n_gp", method=method)
     _require_positive(
-        params.get("depth"), name="depth", method="fem2d_slope_srm",
+        params.get("depth"), name="depth", method=method,
         hint=" Omit 'depth' for the 2*H default. To compare FOS across several "
              "meshes (a mesh-refinement / mesh-consistency study), use the "
              "fem2d_srm_mesh_refinement_study method instead of driving this per mesh.")
@@ -254,6 +272,11 @@ def _run_analyze_slope_srm(params: dict) -> dict:
         kwargs["layer_polylines"] = params["layer_polylines"]
 
     result = analyze_slope_srm(**kwargs)
+    return result, _package_model(soil_layers, params.get("gwt"))
+
+
+def _run_analyze_slope_srm(params: dict) -> dict:
+    result = run_fem2d_slope_srm(params)[0]
     out = clean_result(result.to_dict())
     out["fos_basis"] = getattr(result, "fos_basis", None)
     out["n_srf_trials"] = getattr(result, "n_srf_trials", None)
@@ -375,24 +398,26 @@ def _run_analyze_local_fos(params: dict) -> dict:
     return clean_result(out)
 
 
-def _run_analyze_excavation(params: dict) -> dict:
+def run_fem2d_excavation(params: dict, *, method="fem2d_excavation"):
+    """The fem2d_excavation tool's run: (the result object, what the calc package
+    prints of the model beside it)."""
     from fem2d import analyze_excavation
     _valid = ("width", "depth", "wall_depth", "soil_layers", "wall_EI",
               "wall_EA", "nx", "ny", "t", "n_steps", "gamma_w", "max_iter",
               "tol", "gwt", "struts", "layer_polylines", "lifts",
               "wall_contact", "excavation_water", "water_level_inside",
               "interface_delta", "interface_ratio", "interface_adhesion")
-    reject_unknown_params(params, _valid, method="fem2d_excavation")
+    reject_unknown_params(params, _valid, method=method)
     require_params(params, ["width", "depth", "wall_depth", "soil_layers",
                             "wall_EI", "wall_EA"],
-                   method="fem2d_excavation", valid=_valid)
-    _require_layer_elevations(params["soil_layers"], method="fem2d_excavation",
+                   method=method, valid=_valid)
+    _require_layer_elevations(params["soil_layers"], method=method,
                               valid=_EXCAVATION_LAYER_KEYS)
     check_nested_list(params.get("struts"), _STRUT_KEYS,
-                      method="fem2d_excavation", label="struts",
+                      method=method, label="struts",
                       hints=_LAYER_KEY_HINTS)
     _require_positive(params.get("depth"), name="depth",
-                      method="fem2d_excavation")
+                      method=method)
     kwargs = dict(
         width=params["width"],
         depth=params["depth"],
@@ -419,7 +444,7 @@ def _run_analyze_excavation(params: dict) -> dict:
     if "wall_contact" in params:
         _require_choice(params["wall_contact"],
                         ("smooth", "bonded", "interface"),
-                        name="wall_contact", method="fem2d_excavation")
+                        name="wall_contact", method=method)
         kwargs["wall_contact"] = params["wall_contact"]
     for name in ("interface_delta", "interface_ratio", "interface_adhesion"):
         if params.get(name) is not None:
@@ -427,21 +452,27 @@ def _run_analyze_excavation(params: dict) -> dict:
     if "excavation_water" in params:
         _require_choice(params["excavation_water"],
                         ("dewatered", "full", "level"),
-                        name="excavation_water", method="fem2d_excavation")
+                        name="excavation_water", method=method)
         kwargs["excavation_water"] = params["excavation_water"]
     if params.get("water_level_inside") is not None:
         kwargs["water_level_inside"] = params["water_level_inside"]
 
     result = analyze_excavation(**kwargs)
-    return clean_result(result.to_dict())
+    return result, _package_model(params["soil_layers"], params.get("gwt"))
 
 
-def _run_analyze_seepage(params: dict) -> dict:
+def _run_analyze_excavation(params: dict) -> dict:
+    return clean_result(run_fem2d_excavation(params)[0].to_dict())
+
+
+def run_fem2d_seepage(params: dict, *, method="fem2d_seepage"):
+    """The fem2d_seepage tool's run: (the result object, what the calc package
+    prints of the model beside it)."""
     from fem2d import analyze_seepage
     _valid = ("nodes", "elements", "k", "head_bcs", "t", "gamma_w")
-    reject_unknown_params(params, _valid, method="fem2d_seepage")
+    reject_unknown_params(params, _valid, method=method)
     require_params(params, ["nodes", "elements", "k", "head_bcs"],
-                   method="fem2d_seepage", valid=_valid)
+                   method=method, valid=_valid)
     nodes = np.array(params["nodes"])
     elements = np.array(params["elements"])
     k = params["k"]
@@ -457,27 +488,33 @@ def _run_analyze_seepage(params: dict) -> dict:
         t=params.get("t", 1.0),
         gamma_w=params.get("gamma_w", 9.81),
     )
-    return clean_result(result.to_dict())
+    return result, {}
 
 
-def _run_analyze_consolidation(params: dict) -> dict:
+def _run_analyze_seepage(params: dict) -> dict:
+    return clean_result(run_fem2d_seepage(params)[0].to_dict())
+
+
+def run_fem2d_consolidation(params: dict, *, method="fem2d_consolidation"):
+    """The fem2d_consolidation tool's run: (the result object, what the calc package
+    prints of the model beside it)."""
     from fem2d import analyze_consolidation
     _valid = ("width", "depth", "soil_layers", "k", "load_q", "time_points",
               "gwt", "gamma_w", "nx", "ny", "t", "n_w", "layer_polylines",
               "consolidation_scheme", "theta", "reset_displacements_after",
               "startup_steps")
-    reject_unknown_params(params, _valid, method="fem2d_consolidation")
+    reject_unknown_params(params, _valid, method=method)
     require_params(params, ["width", "depth", "soil_layers", "k", "load_q",
                             "time_points"],
-                   method="fem2d_consolidation", valid=_valid)
+                   method=method, valid=_valid)
     _require_layer_elevations(params["soil_layers"],
-                              method="fem2d_consolidation",
+                              method=method,
                               valid=_CONSOLIDATION_LAYER_KEYS)
     _require_positive(params.get("depth"), name="depth",
-                      method="fem2d_consolidation")
+                      method=method)
     scheme = params.get("consolidation_scheme", "staggered")
     _require_choice(scheme, ("staggered", "monolithic"),
-                    name="consolidation_scheme", method="fem2d_consolidation")
+                    name="consolidation_scheme", method=method)
     kwargs = dict(
         width=params["width"],
         depth=params["depth"],
@@ -501,10 +538,16 @@ def _run_analyze_consolidation(params: dict) -> dict:
         kwargs["reset_displacements_after"] = params["reset_displacements_after"]
 
     result = analyze_consolidation(**kwargs)
-    return clean_result(result.to_dict())
+    return result, _package_model(params["soil_layers"], kwargs["gwt"])
 
 
-def _run_analyze_staged(params: dict) -> dict:
+def _run_analyze_consolidation(params: dict) -> dict:
+    return clean_result(run_fem2d_consolidation(params)[0].to_dict())
+
+
+def run_fem2d_staged(params: dict, *, method="fem2d_staged"):
+    """The fem2d_staged tool's run: (the result object, what the calc package
+    prints of the model beside it)."""
     from fem2d import (
         analyze_staged, ConstructionPhase,
         generate_rect_mesh, detect_boundary_nodes,
@@ -514,17 +557,17 @@ def _run_analyze_staged(params: dict) -> dict:
     _valid = ("nodes", "elements", "material_props", "gamma",
               "element_groups", "phases", "t", "max_iter", "tol", "gamma_w",
               "beam_elements", "reset_displacements_after")
-    reject_unknown_params(params, _valid, method="fem2d_staged")
+    reject_unknown_params(params, _valid, method=method)
     require_params(params, ["nodes", "elements", "material_props", "gamma",
                             "element_groups", "phases"],
-                   method="fem2d_staged", valid=_valid)
+                   method=method, valid=_valid)
     check_nested_list(params["material_props"], _MATERIAL_KEYS,
-                      method="fem2d_staged", label="material_props",
+                      method=method, label="material_props",
                       hints=_LAYER_KEY_HINTS, notes=_LAYER_KEY_NOTES)
-    check_nested_list(params["phases"], _PHASE_KEYS, method="fem2d_staged",
+    check_nested_list(params["phases"], _PHASE_KEYS, method=method,
                       label="phases", hints=_LAYER_KEY_HINTS)
     check_nested_list(params.get("beam_elements"), _BEAM_KEYS,
-                      method="fem2d_staged", label="beam_elements",
+                      method=method, label="beam_elements",
                       hints=_LAYER_KEY_HINTS)
     nodes = np.array(params["nodes"])
     elements = np.array(params["elements"])
@@ -574,7 +617,7 @@ def _run_analyze_staged(params: dict) -> dict:
         beam_elems = []
         for bd in params["beam_elements"]:
             require_keys(bd, ["node_i", "node_j", "EA", "EI"],
-                         method="fem2d_staged", item_label="beam_elements[]")
+                         method=method, item_label="beam_elements[]")
             beam_elems.append(BeamElement(
                 node_i=bd["node_i"],
                 node_j=bd["node_j"],
@@ -585,7 +628,11 @@ def _run_analyze_staged(params: dict) -> dict:
         kwargs["beam_elements"] = beam_elems
 
     result = analyze_staged(**kwargs)
-    return clean_result(result.to_dict())
+    return result, {}
+
+
+def _run_analyze_staged(params: dict) -> dict:
+    return clean_result(run_fem2d_staged(params)[0].to_dict())
 
 
 def _run_hs_parameters(params: dict) -> dict:

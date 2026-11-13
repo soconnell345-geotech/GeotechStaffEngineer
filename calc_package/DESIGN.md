@@ -274,6 +274,30 @@ two cannot drift.)
 | lateral_pile | Yes | (existing plots captured) |
 | slope_stability | Yes | plot_slip_circle() |
 
+### The agent's package methods and fem2d (GM-328, 2026-11-13)
+
+A module in `_IMPORT_MAP` is reachable by the agent only through a
+`*_package` method of `funhouse_agent/adapters/calc_package.py`
+(`_PACKAGE_TOOLS`: the package runs one of its module's tools on the
+tool's own parameters, then renders). fem2d was in `_IMPORT_MAP` with steps,
+figures and tables and had no such method until GM-328: `fem2d_package`
+runs `fem2d_slope_srm` (default), `fem2d_excavation`, `fem2d_consolidation`,
+`fem2d_seepage` or `fem2d_staged` by `analysis_type`. The fem2d adapter's
+handlers for those five are split as the other adapters' are
+(`run_<tool>(params, method=)` returns the result object and what the
+package prints of the model; `_run_*` turns it into the tool's dict), so the
+package and the tool run one code path. `FOS_required` is the package's own
+input (the tool checks nothing): 1.5 when left out, this package's choice
+and not a printed requirement, listed in `defaults_used` and echoed with
+`meets_FOS_required`; refused for the analyses that compute no FOS.
+`fem2d_footing_capacity`, `fem2d_gravity`, `fem2d_foundation`,
+`fem2d_local_fos` and the mesh study have no package.
+
+One sample package per `*_package` method is built by
+`docs/examples/build_sample_packages.py` from a published worked example's
+inputs (the table `docs/examples/sample_packages.json`); a test fails when
+a package method has no row.
+
 ## CSS Design
 
 - Serif body font (Georgia) — professional engineering document feel

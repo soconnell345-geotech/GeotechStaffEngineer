@@ -116,6 +116,8 @@ SLOW = frozenset({"slope_stability|search_rapid_drawdown"})
 ECHO_IS_NOT_THE_INPUT = {
     ("calc_package|seismic_package", "analysis_type"):
         "the package's title",
+    ("calc_package|fem2d_package", "analysis_type"):
+        "the package's title",
     ("calc_package|downdrag_package", "neutral_plane_method"):
         "the method 'auto' chose",
     ("downdrag|downdrag_analysis", "neutral_plane_method"):
@@ -452,9 +454,30 @@ NOT_REACHED = {
         "the probe's blow counts stay below either refusal",
     ("worked_examples|find_worked_examples", "limit"):
         "the probe's topic matches one example",
+    ("calc_package|fem2d_package", "FOS_required"):
+        "the probe's FOS (1.48) is below both 1.5 and 2.25, so "
+        "meets_FOS_required reads the same; a FOS of 1.2 required passes "
+        "(funhouse_agent/tests/test_fem2d_package_gm328.py)",
     ("calc_package|html_to_pdf", "allow_unembeddable"):
         "the probe's HTML has no image to embed",
 }
+
+#: fem2d_package runs the fem2d tools (GM-328), so an input that does not
+#: show on a tool's probe does not show on the package's probe of the same
+#: tool either, for the tool's reason: its entries are the tools', one
+#: source.
+_FEM2D_PACKAGE_PROBES = {
+    "calc_package|fem2d_package": "fem2d|fem2d_slope_srm",
+    "calc_package|fem2d_package#consolidation": "fem2d|fem2d_consolidation",
+    "calc_package|fem2d_package#excavation": "fem2d|fem2d_excavation",
+    "calc_package|fem2d_package#seepage": "fem2d|fem2d_seepage",
+    "calc_package|fem2d_package#staged": "fem2d|fem2d_staged",
+}
+for _table in (LABEL_ONLY, NOT_REACHED):
+    for _package, _tool in _FEM2D_PACKAGE_PROBES.items():
+        _table.update({(_package, _n): _why
+                       for (_k, _n), _why in list(_table.items())
+                       if _k == _tool})
 
 #: Mismatches the guard finds and leaves, each with its BACKLOG item.
 #: slope_stability is frozen by the owner until the integral review.

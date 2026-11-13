@@ -834,6 +834,37 @@ _PACKAGE_TOOLS = {
         "selector_values": {"mc": "monte_carlo", "monte carlo": "monte_carlo",
                             "taylor": "fosm"},
     },
+    "fem2d_package": {
+        "adapter": "fem2d_adapter",
+        "selector": ("analysis_type", "slope_srm",
+                     "Which finite element analysis to run and report: "
+                     "'slope_srm' (the fem2d_slope_srm tool), 'excavation' "
+                     "(fem2d_excavation), 'consolidation' "
+                     "(fem2d_consolidation), 'seepage' (fem2d_seepage) or "
+                     "'staged' (fem2d_staged)."),
+        "tools": {"slope_srm": "fem2d_slope_srm",
+                  "excavation": "fem2d_excavation",
+                  "consolidation": "fem2d_consolidation",
+                  "seepage": "fem2d_seepage",
+                  "staged": "fem2d_staged"},
+        "selector_values": {"fem2d_slope_srm": "slope_srm", "srm": "slope_srm",
+                            "slope": "slope_srm",
+                            "fem2d_excavation": "excavation",
+                            "fem2d_consolidation": "consolidation",
+                            "fem2d_seepage": "seepage",
+                            "fem2d_staged": "staged"},
+        # The factor of safety the package's adequacy check sets the
+        # strength-reduction FOS against: the package's, not the tool's
+        # (the tool reports the FOS and checks nothing).
+        "own": {"FOS_required": {
+            "type": "float", "required": False, "default": 1.5,
+            "description": "The required factor of safety the package's "
+                           "check sets the strength-reduction FOS against "
+                           "(analysis_type 'slope_srm' only). The default "
+                           "1.5 is this package's choice, not a printed "
+                           "requirement: give the project's own.",
+            "applies_when": {"analysis_type": ["slope_srm"]}}},
+    },
     "pavement_design_package": {
         "adapter": "pavement_design_adapter",
         "selector": ("design_type", "flexible",
@@ -1385,7 +1416,12 @@ def _run_tool(package: str, params: dict) -> _ToolRun:
         used[spec["selector"][0]] = spec["selector"][1]
     used.update(_defaults_used(mod, tool, given, p, inputs.reported,
                                inputs.took))
-    used.update(_own_defaults_used(spec.get("own", {}), own, p, declared))
+    # the selector in force too, so a package's own input can apply to
+    # one of its tools only (fem2d_package's FOS_required, GM-328)
+    in_force = ({**p, spec["selector"][0]: value} if "selector" in spec
+                else p)
+    used.update(_own_defaults_used(spec.get("own", {}), own, in_force,
+                                   declared))
     return _ToolRun(value, tool, p, out, own, used,
                     declared=declared, package=package)
 
@@ -2552,6 +2588,54 @@ def _generate_reliability_package(params: dict) -> dict:
     )
 
 
+def _fem2d_numbers(result) -> dict:
+    """The single numbers of a fem2d result (its tool's own keys), the
+    notes and the warnings: what the package's response says beside the
+    file. Arrays and per-node tables stay in the package and its CSVs."""
+    from funhouse_agent.adapters import clean_result
+    d = clean_result(result.to_dict())
+    out = {k: v for k, v in d.items()
+           if k != "analysis_type"
+           and (v is None or isinstance(v, (bool, int, float, str)))}
+    for key in ("warnings", "notes"):
+        if d.get(key):
+            out[key] = d[key]
+    return out
+
+
+def _generate_fem2d_package(params: dict) -> dict:
+    run = _run_tool("fem2d_package", params)
+    result, model = run.out
+    analysis = dict(model)
+    if run.value == "slope_srm":
+        analysis["FOS_required"] = run.own.get(
+            "FOS_required",
+            _PACKAGE_TOOLS["fem2d_package"]["own"]["FOS_required"]["default"])
+    elif "FOS_required" in run.own:
+        raise ValueError(
+            f"fem2d_package: FOS_required is for analysis_type 'slope_srm' "
+            f"(the strength-reduction factor of safety); analysis_type "
+            f"{run.value!r} reports none.")
+    extra = _fem2d_numbers(result)
+    if run.value == "slope_srm":
+        # the package's own check, said beside the file as it is printed
+        extra["FOS_required"] = analysis["FOS_required"]
+        extra["meets_FOS_required"] = (
+            None if result.FOS is None
+            else bool(result.FOS >= analysis["FOS_required"]))
+    return _build_response(
+        "fem2d", result, analysis, params,
+        run=run,
+        analysis_type={
+            "slope_srm": "FEM Slope Stability (Strength Reduction)",
+            "excavation": "FEM Staged Excavation",
+            "consolidation": "FEM Coupled Consolidation",
+            "seepage": "FEM Steady-State Seepage",
+            "staged": "FEM Staged Construction"}[run.value],
+        extra=extra,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Generic HTML -> PDF report render (owner wall session 2026-07-14: no canned
 # package matched an atypical wall, and the agent had no way to turn its own
@@ -3125,6 +3209,7 @@ METHOD_REGISTRY = {
     "sheet_pile_package": _generate_sheet_pile_package,
     "soe_package": _generate_soe_package,
     "reliability_package": _generate_reliability_package,
+    "fem2d_package": _generate_fem2d_package,
 }
 
 
@@ -3544,6 +3629,29 @@ METHOD_INFO = {
         "category": "Calculation Package",
         "brief": "Run a reliability analysis (FOSM, point estimates, Monte Carlo or FORM) on a performance function of random variables and generate its calc package: the variables and their distributions, the moments of g, the reliability index beta and the probability of failure, and which variable matters.",
         "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure."},
+    },
+    "fem2d_package": {
+        "category": "Calculation Package",
+        "brief": ("Run a 2D plane-strain finite element analysis "
+                  "(strength-reduction slope stability, staged excavation "
+                  "with a wall, coupled consolidation, steady seepage or "
+                  "staged construction) and generate its calc package: "
+                  "the mesh and materials, the analysis's steps and "
+                  "results, the convergence check (and, for slope_srm, "
+                  "the FOS against FOS_required), mesh and contour "
+                  "figures, and tables (CSV + printed). The parameters of "
+                  "the fem2d tool analysis_type names."),
+        "returns": {**_COMMON_RETURNS,
+                    "extra": "The fem2d tool's own single-number results "
+                             "under its own keys (FOS, converged and the "
+                             "largest movements, as the analysis has "
+                             "them), with its notes and warnings. Report "
+                             "every warning.",
+                    "FOS_required": "slope_srm: the required factor of "
+                                    "safety the package's check used.",
+                    "meets_FOS_required": "slope_srm: whether the "
+                                          "strength-reduction FOS is at "
+                                          "least FOS_required."},
     },
 }
 
