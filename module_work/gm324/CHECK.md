@@ -76,13 +76,16 @@ Rows are the audit's (`module_work/module_audit_2026-11-12/results/seismic.md`).
   to 5 s), `Sa_surface_max_g`, `period_at_Sa_surface_max_s`,
   `depth_profile`, `water_table_depth_m`, `K0`, `layer_stresses`, `choices`,
   `warnings`. A result with a 20-row profile stays under 8,000 characters.
+  (Review fix: the echo is now `k0`, and it and `water_table_depth_m` are
+  null with `stress_inputs_note` when no Darendeli or Menq layer used them.)
 - **A trap in pystrata's arrays**, found by the new test before it reached a
   result: the strain profile has a leading point at the surface (so
   sub-layer i is entry i + 1 by position), and the two Vs profiles are in
   step-plot form (the first value twice). `depth_profile` matches strain by
-  depth and reads Vs from entry i + 1; a Vs array not of that form gives no
-  profile instead of a shifted one. Checked against pystrata 0.5.4's
-  `output.py`.
+  depth and reads Vs from entry i + 1; arrays not of that form give no
+  profile instead of a shifted one (review fix: `depth_profile` null with
+  the reason in `depth_profile_note`; it was left out without a word).
+  Checked against pystrata 0.5.4's `output.py`.
 
 ### Signals (commit b1458de)
 
@@ -99,9 +102,15 @@ Rows are the audit's (`module_work/module_audit_2026-11-12/results/seismic.md`).
   `intensity_measures`. A key present only in some cases is checked in the
   case that shows it.
 - `docs/user_manual/manual.html`: 15 lines, the rows of the changed tools
-  only. I built the manual in memory and copied across only those lines;
-  two other lines that differ on master today (the test count on line 335,
-  `gamma_soil` on line 1594) are not this task's and were left.
+  only. I built the manual in memory and copied across only those lines.
+  **Corrected by the review:** this said line 335 differed on master and
+  was not this task's. It is this task's: line 335 is the "documented
+  parameters" count, 5807 committed against 5812 rebuilt, and the five are
+  the inputs this branch adds (`water_table_depth` and `k0` on both
+  site-response tools, `bracketed_threshold_g`). On master it rebuilds the
+  same. The review fixes carry 5812 (commit ed5b5e8). Only line 1594
+  (`gamma_soil`) differs on master, and it was left. Whoever merges another
+  branch that adds parameters re-takes line 335.
 - `docs/user_manual/worked_examples.json`: the one liquefaction entry.
 
 ## Before and after
@@ -214,6 +223,11 @@ One run over `liquepy_agent`, `seismic_geotech`, `pystrata_agent`,
 5. **Reported periods for pystrata**: 0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75,
    1, 2, 3, 5 s. The OpenSees tool reports 0.1 to 3 s; I added the ends
    because pystrata computes 0.01 to 10 s.
+6. **`k0` above 3 is refused** (review finding 10). No held reference
+   prints that bound. It is a guard against a slip (a value in the wrong
+   unit or a passive coefficient), set near Kp for phi' 30 deg; a heavily
+   overconsolidated clay's K0 can approach it. If the owner wants it wider,
+   it is one number in `_validate_stress_inputs`.
 
 ## Stopped short
 
@@ -238,11 +252,29 @@ one unit weight is unchanged. A profile whose unit weight varies with depth
 gets different total and effective stresses, CSR, K_sigma and factor of
 safety at every depth below the first; in the manual's own example the
 minimum factor of safety moves from 0.435 to 0.426. Depths must now be
-positive and in increasing order. No other calculated value changes: the
+positive and in increasing order, on both SPT procedures. The SPT `depth`
+text now says the depths are where (N1)60 was measured, with a depth at
+each change in unit weight: given layer mid-depths, the sum takes each
+change half a layer too high. No other calculated value changes: the
 NCEER procedure, the CPT procedure, site response with no new input given,
 and every intensity measure except bracketed duration return what they did.
 Bracketed duration was 0.0 for every record and is now computed only when a
 threshold is given.
+
+**Linear site response (`pystrata.linear_site_response`) now reports its
+strains.** `max_shear_strain_pct` was 0.0 on every linear run, because
+pystrata's linear calculator computes no peak strain. It is now the peak of
+pystrata's strain history at each sub-layer's middle, the quantity the
+equivalent-linear run reports (on a linear soil the two now agree). The
+result echoes the water table and K0 as `water_table_depth_m` and `k0`
+(was `K0`) only when a Darendeli or Menq layer used them, else null with
+`stress_inputs_note`.
+
+**Field correlations (`liquepy.field_correlations`).** `dr_min`/`dr_max`
+are over the sand-like readings (Ic below 2.6) and `su_ratio_min`/
+`su_ratio_max` over the clay-like ones, null when there is none. Before,
+they were over every reading, so a sand reading could set the su ratio's
+maximum.
 
 ## Noted, not fixed
 
@@ -258,7 +290,8 @@ threshold is given.
   (the trap above). No tool reaches the plots.
 - `depth_profile` on pystrata 0.6 is unchecked: 0.6 needs Python 3.13, and
   this environment has 3.12. If 0.6 writes the Vs arrays differently the
-  profile is left out, not shifted.
+  profile is null with the reason, not shifted (review fix). Merge after
+  the Python 3.13 CI job is green.
 - `liquefaction_analysis` accepts `N` and `n_values` as spellings of (N1)60
   (audit liquepy 5): not in the functions this task changed.
 - Effective stress at or below zero is set to 1.0 kPa on both SPT routes
@@ -266,8 +299,71 @@ threshold is given.
   weight below water's to happen.
 - `k0` is listed in `defaults_used` for a profile with no Darendeli or Menq
   layer, where it does nothing: `applies_when` cannot read a key inside a
-  list item.
-- Manual lines 335 and 1594 differ from a rebuild on master today; not this
-  task's rows.
+  list item. Since the review fixes the result says so (`k0` null,
+  `stress_inputs_note`), and the probe lists record it (`NOT_REACHED`,
+  `ECHO_IS_NOT_THE_INPUT`).
+- Manual line 1594 differs from a rebuild on master today; not this task's
+  row. (Line 335 was this task's: see "Test and manual".)
 - `test_defaults_used.py::...[profile_figure|plot_data]` fails on master in
   this environment.
+
+## Review fixes (branch `fix/gm324-review`)
+
+An independent review of 2d028c3 found 12 things (one A, five B, six C).
+Commits: 90e638c (pystrata), 18b5d5b (liquefaction), ed5b5e8 (manual),
+then this file.
+
+| # | Grade | Finding | What it became |
+|---|---|---|---|
+| 1 | A | `linear_site_response` gave peak strain 0.0 in the scalar and in every `depth_profile` row: pystrata's linear calculator never sets `strain_max` and the module turned None into 0.0 | **Fixed by computing it.** A linear run adds pystrata's documented `StrainTSOutput` at each sub-layer's middle and takes each history's peak, which is what the equivalent-linear calculator stores as `strain_max` (`motion.calc_peak(calc_strain_tf(input, layer middle))`, pystrata 0.5.4 `propagation.py`). Checked against the closed form for one damped layer on an elastic half-space. A strain pystrata does not give is null, never 0.0. The calls exist with the same signatures in pystrata 0.6.0's source (read, not run). |
+| 2 | B | SPT `depth` said "layer mid-depths" while `gamma` sums from the previous depth down | **Fixed (text).** `depth` on `liquefaction_analysis`, `spt_liquefaction` and `liquefaction_evaluation`, and both docstrings: the depths are where (N1)60 was measured; give a depth at each change in unit weight (a layer's base, the water table where the unit weight changes there), or the change is taken at the depth above. The result's total-stress `choices` basis says the same (both copies of `TOTAL_STRESS_RULE`). No arithmetic change. |
+| 3 | B | Dr and su/sigma'v ranges over every reading | **Fixed.** Dr over Ic below `i_c_limit` (2.6), su/sigma'v over Ic at or above it, null when there is none; the `returns` text says so. The profile rows still carry every correlation at every reading (the profile text says to read them by Ic): not changed. |
+| 4 | B | `water_table_depth_m` and `K0` echoed as used on profiles that did not use them; `K0` hid k0 from the GM-160 guard | **Fixed.** Echoed only when a Darendeli or Menq layer had its stress computed; else null with `stress_inputs_note`. Echo renamed `k0`. `NOT_REACHED` and `ECHO_IS_NOT_THE_INPUT` entries for the two pystrata probes (the guard now sees that k0 does nothing there, and that the echo is null by design). |
+| 5 | B | CHECK.md wrong about manual line 335 | **Fixed.** Line 335 carries 5812; CHECK.md corrected ("Test and manual"). |
+| 6 | B | `depth_profile` left out with no word when pystrata's arrays are not in the expected form | **Fixed.** `depth_profile` null and `depth_profile_note` says which check failed. Merge after the Python 3.13 CI job (pystrata 0.6) is green. |
+| 7 | C | NCEER route took a first depth of 0 and returned FOS 99.9 | **Fixed.** Refused with the reason, as on B&I. |
+| 8 | C | Both SPT routes flag layers above the water table `liquefiable` | **Not fixed**: it changes saved output. Under "Follow-ups". |
+| 9 | C | The unified tool's `returns` left out `warnings` and five CPT keys | **Fixed.** Listed as "CPT only"; the promised-returns test now runs a dry CPT case to see `warnings`. |
+| 10 | C | `k0` above 3 refused with no printed basis | **Listed** under "Calls made" (6). |
+| 11 | C | The foundry wrappers describe the old results | **Not fixed**: INF-06 deletes `foundry/`. |
+| 12 | C | The bracketed threshold is checked after the other measures are computed | **Not fixed**: optional (the review's word); it changes no value, only when an invalid threshold is refused. |
+
+### Before and after (made-up inputs)
+
+| Case | Before (2d028c3) | After |
+|---|---|---|
+| 1: method_probes' linear profile (10 m, Vs 200, linear) through `linear_site_response` | `max_shear_strain_pct` 0.0, row 0.0 | 0.0352, row 0.0352 (`eql_site_response` on the same input: 0.0352; PGA 0.3022 both) |
+| 1: one 10 m linear layer (Vs 200, 18 kN/m3, 2 %) on rock (Vs 760, 22, 1 %), `synthetic_pulse`, strain at 5 m | 0.0 | 0.046341 % (closed form: 0.046341 %) |
+| 4: linear profile with water table 2.0 and k0 0.7 | `water_table_depth_m` 2.0, `K0` 0.7, no note | both null, `stress_inputs_note` says no Darendeli or Menq layer used them |
+| 3: CPT sand / clay band / sand (water 2.4 m) | Dr -0.193 to 0.554; su/sigma'v 0.617 to 11.83 | Dr 0.328 to 0.554; su/sigma'v 0.617 to 0.858 |
+| 2: 0-4 m at 16 kN/m3 over 20, water 1 m, depths 2 and 7 m | sigma_v at 7 m 132.0 kPa (true 124.0 with a depth at 4 m; FS 0.420 against 0.402) | the same numbers by design; the depth text and `choices` now say to give the 4 m depth |
+| 7: NCEER, first depth 0 | FOS 99.9 for that row | refused: "layer_depths must be positive" |
+| 5: manual line 335 | 5807 | 5812 |
+
+### Tests (fix branch)
+
+`C:\dev\GeotechStaffEngineer\.venv` (Python 3.12, pystrata 0.5.4), the
+worktree first on the path, one file at a time, judged by exit code; all 0:
+`pystrata_agent/tests/test_gm325.py` 21 passed;
+`pystrata_agent/tests/test_pystrata_agent.py` 62 passed, 1 skipped;
+`funhouse_agent/tests/test_gm324_promised_returns.py` 12 passed;
+`liquepy_agent/tests/test_gm324.py` 10; `liquepy_agent/tests/test_choices.py`
+6; `liquepy_agent/tests/test_liquepy_agent.py` 59;
+`seismic_geotech/tests/test_choices.py` 6;
+`seismic_geotech/tests/test_seismic_geotech.py` 84;
+`funhouse_agent/tests/test_module_followup_adapters.py` 48;
+`funhouse_agent/tests/test_defaults_used.py -k "pystrata or allow_lists or
+liquef or liquepy or seismic_geotech"` 53 (its first run failed 2: the
+pystrata probes' defaults list k0 = 0.5 and the result now echoes null;
+fixed with the `ECHO_IS_NOT_THE_INPUT` entries);
+`funhouse_agent/tests/test_adapter_ergonomics.py` 170;
+`webapp/tests/test_public_text.py` 5. `check_manual.py --rebuild`: only line
+1594 differs, as on master. Page fingerprints carry no tool text: no
+re-record.
+
+### Follow-ups that change a saved report's output
+
+- Review finding 8: both SPT routes mark layers above the water table
+  `liquefiable` and count them in `n_liquefiable` (p8: layers at 1 and 2 m
+  over a 3 m water table, FS 0.52 and 0.515, both True). The CPT count
+  already excludes them. For the backlog.
