@@ -347,10 +347,14 @@ class TestSlopeReportPackage:
     def test_v028_weak_seam_report(self, tmp_path):
         """The report on the V-028 (Slide2 #9 / ACADS 4) weak-seam search:
         it renders the search story with rejection diagnostics and the
-        overlapping-layers table. A record, not a validation: since GM-140
-        step 1 (each point weighed once) the search reads Spencer 1.43
-        against the referee's 0.78 (0.808 while the soil was weighed three
-        times); see validation_examples/test_published_v028_slope.py."""
+        overlapping-layers table. No factor of safety is pinned. The
+        search does not reach print (Spencer 0.515 against the printed
+        0.760: the strict xfail test_v028_weak_layer_search_against_print
+        in validation_examples/test_published_v028_e8.py, where surfaces
+        along the seam read within 1 % of print), and the report's own
+        figure, 1.16, is its re-analysis of the search's surface, on which
+        Spencer's method does not converge (the result says so:
+        method_solved is false)."""
         from funhouse_agent.adapters.calc_package import _generate_slope_report_package
         out = str(tmp_path / "v028.html")
         res = _generate_slope_report_package({
@@ -373,8 +377,6 @@ class TestSlopeReportPackage:
             "output_path": out,
         })
         assert res["status"] == "success"
-        assert res["FOS"] == pytest.approx(1.43, abs=0.03)
-        assert res["is_stable"] is False           # 1.43 < 1.5
         html = open(out, encoding="utf-8").read()
         assert "Overlapping layers" in html
         assert "Critical Surface Search" in html
