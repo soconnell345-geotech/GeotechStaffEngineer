@@ -198,41 +198,36 @@ CONVENTIONS: Tuple[Convention, ...] = (
             "siteResponseMention wrong on 7 of 8"),
     Convention(
         rule="soilCorrosion is the FINDING about corrosivity: yes when the "
-             "report finds the soils corrosive, no when it tested or "
-             "assessed them and found them not corrosive, mixed when "
-             "corrosive to some materials and not others (corrosive to "
-             "buried metal but not to concrete is mixed); then ' - ' and "
-             "the basis (the test values or the sentence). null when the "
-             "report does not address corrosivity.",
-        fields=("soilCorrosion",),
-        status="DRAFT",
-        why="the owner's answer keys (checked 2026-10-04): 'mixed - "
-            "non-corrosive to ductile-iron pipe, but high chloride'; null "
-            "where silent. Wrong on 4 of 6 in the Foundry run of "
-            "2026-10-02. The owner's ruling of 2026-10-29 (BACKLOG RI-182): "
-            "corrosive to metal and not to concrete is mixed; the draft "
-            "rule stands"),
-    Convention(
-        rule="soilCorrosion across samples and strata: the WORST governs. "
-             "One sample or stratum that tests corrosive makes the soil "
-             "corrosive, even when the others test not corrosive, and a "
-             "corrosive FILL sample above all, because fill touches the "
-             "basements, footings, slabs, pavements and utilities. So one "
-             "corrosive sample among non-corrosive ones answers yes, not no "
-             "and not mixed. mixed stays only for soil corrosive to some "
-             "materials and not to others, each material judged by its "
-             "worst sample (corrosive to buried metal but not to concrete "
-             "is mixed).",
+             "report finds the soils corrosive to anything buried in them, "
+             "no when it tested or assessed them and found them not "
+             "corrosive; then ' - ' and the basis (the test values or the "
+             "sentence, naming what is attacked and what is not). Corrosive "
+             "to one material and not to another is yes, never mixed: "
+             "corrosive to buried metal but not to concrete answers yes. "
+             "Across samples and strata the WORST governs. One sample or "
+             "stratum that tests corrosive makes the soil corrosive, even "
+             "when the others test not corrosive, and a corrosive FILL "
+             "sample above all, because fill touches the basements, "
+             "footings, slabs, pavements and utilities. So one corrosive "
+             "sample among non-corrosive ones answers yes, not no and not "
+             "mixed. null when the report does not address corrosivity.",
         fields=("soilCorrosion",),
         status="CONFIRMED",
-        why="owner's ruling of 2026-11-03 (OWN-119, desk): 'If any samples "
-            "come back corrosive, it should be yes'; the fill matters more "
-            "than deeper layers. MF-3 (build g TRACE_REVIEW section 10, "
-            "question 1): on R30 one fill sample tests corrosive and the "
-            "main strata do not, and both arms were wrong (no, mixed). "
-            "mixed for the material split is RI-182's ruling of 2026-10-29; "
-            "whether yes replaces it too is the owner's open question "
-            "(OWN-119, BACKLOG RI-204)"),
+        why="owner's ruling of 2026-11-13 (OWN-125, desk): 'yes' whenever "
+            "anything is attacked. It replaces RI-182's ruling of "
+            "2026-10-29, under which corrosive to metal and not to concrete "
+            "was mixed, and the answer keys' 'mixed - non-corrosive to "
+            "ductile-iron pipe, but high chloride' (checked 2026-10-04) is "
+            "yes under it. Owner's ruling of 2026-11-03 (OWN-119, desk): "
+            "'If any samples come back corrosive, it should be yes'; the "
+            "fill matters more than deeper layers. MF-3 (build g "
+            "TRACE_REVIEW section 10, question 1): on R30 one fill sample "
+            "tests corrosive and the main strata do not, and both arms were "
+            "wrong (no, mixed). The draft rule this merges was wrong on 4 "
+            "of 6 in the Foundry run of 2026-10-02. No convention asks for "
+            "mixed on this field now; the word stays in the verdict "
+            "questions' shared list and a saved answer that uses it is "
+            "still read"),
     Convention(
         rule="postName is the CITY of the diplomatic post, in the city's "
              "own name and nothing else: not the country, not the compound, "
