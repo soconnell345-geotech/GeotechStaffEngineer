@@ -514,7 +514,8 @@ class TestDrawings:
                                                  {"x": 20, "z": 10}],
                               "boundary_profiles": {}},
              "soil_properties": [{"name": "Surface", "gamma": 18, "phi": 30,
-                                  "c": 5, "E": 20000, "model": "mc"}]})
+                                  "c": 5, "E": 20000, "nu": 0.3,
+                                  "model": "mc"}]})
         assert r["soil_layers"][0]["c"] == 5
 
     def test_dxf_fem_output_with_an_hs_layer_runs_fem2d(self):

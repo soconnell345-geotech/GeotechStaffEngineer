@@ -21,6 +21,20 @@ from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.nails import SoilNail
 
 
+#: The value ``build_slope_geometry`` gives a nail property that
+#: ``nail_defaults`` leaves out. They are slope_stability.nails.SoilNail's
+#: own defaults (the slope tool declares the same five for its ``nails``).
+#: A caller that reports what was assumed (the agent adapter's
+#: ``defaults_used``) reads them from here; a test holds the two together.
+NAIL_PROPERTY_DEFAULTS = {
+    "bar_diameter": 25.0,          # mm
+    "drill_hole_diameter": 150.0,  # mm
+    "fy": 420.0,                   # MPa
+    "bond_stress": 100.0,          # kPa, grout-ground ultimate bond
+    "spacing_h": 1.5,              # m, horizontal
+}
+
+
 @dataclass
 class SoilPropertyAssignment:
     """User-supplied soil properties for a named layer.
