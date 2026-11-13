@@ -622,8 +622,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "GEC-10 gives 0.65, Eq. 10-22&rsquo;s value at &alpha;<sub>E</sub> = 1, and 1.9 for roughened "
             "sockets, a C above 1.0 to be verified by load tests or local experience; Eq. 10-22 for caving sockets), q<sub>u</sub> held no higher than the concrete&rsquo;s "
             "f&prime;<sub>c</sub> when it is given; base 2.5&nbsp;q<sub>u</sub> (Eq. 10-23) only where the "
-            "engineer states the conditions of p. 10-22 or the rock below the base is at RQD 100 (a rock layer given no RQD is taken at 100, so a profile "
-            "without RQD gets 2.5&nbsp;q<sub>u</sub>, and the result&rsquo;s choices say so), else the "
+            "engineer states the conditions of p. 10-22 or the rock below the base is given at RQD 100 (no RQD is assumed: a base on rock with no RQD, "
+            "no <code>rock_base_conditions_met</code> and no GSI with m<sub>i</sub> is refused, naming the three), else the "
             "Hoek&ndash;Brown base or a refusal. Permanent casing, fractured rock at the top of the socket, "
             "and a top exclusion zone in clay (1.5&nbsp;m by default; none in sand or rock unless given).",
             "LRFD resistance factors and capacity-vs-depth curves.",

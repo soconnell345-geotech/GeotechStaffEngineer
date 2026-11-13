@@ -262,8 +262,8 @@ NOT_REACHED = {
     # met) reaches it, and the #hoek_brown probe (RQD 40 with GSI and m_i,
     # the Hoek-Brown base, GM-251)
     ("drilled_shaft|drilled_shaft_capacity#rock", "rock_base_method"):
-        "the probe's rock has RQD 100 (the default), where the 'rqd' base "
-        "also takes q_b = 2.5 qu",
+        "the probe's rock has RQD 100 (given: GM-310 refuses a rock base "
+        "with no RQD), where the 'rqd' base also takes q_b = 2.5 qu",
     ("downdrag|downdrag_analysis", "n_sublayers"): _GRID,
     # GM-228: the warning when the two rules for the depth below the toe
     # disagree; the #toe_in_sand probe (26 % apart) reaches it

@@ -41,7 +41,11 @@ class ShaftSoilLayer:
     qu : float, optional
         Unconfined compressive strength for rock (kPa).
     RQD : float, optional
-        Rock Quality Designation (%). Default 100.
+        Rock Quality Designation (%). Left out, the arithmetic that reads
+        it takes 100 and ``RQD_given`` is false: a base in rock then needs
+        the RQD, ``rock_base_conditions_met`` or GSI with m_i (GM-310,
+        OWN-84), since GEC-10 (2018) p. 10-22's conditions are a finding
+        about the rock below the base.
     N1_60 : float, optional
         Overburden-corrected SPT blow count (N1)60. Only used by the GEC-10
         rational beta method (``beta_method="rational"``), for phi' =
@@ -82,7 +86,7 @@ class ShaftSoilLayer:
     phi: float = 0.0
     N60: float = 0.0
     qu: float = 0.0
-    RQD: float = 100.0
+    RQD: Optional[float] = None
     N1_60: float = 0.0
     sigma_v_ref: float = 0.0
     OCR: float = 0.0
@@ -90,9 +94,17 @@ class ShaftSoilLayer:
     description: str = ""
     GSI: Optional[float] = None
     m_i: Optional[float] = None
+    #: Whether the RQD was given (set here; carried through ``replace``).
+    RQD_given: Optional[bool] = None
 
     def __post_init__(self):
         self.soil_type = self.soil_type.lower()
+        # GM-310 (OWN-84): an RQD left out is not a finding that it is 100
+        if self.RQD is None:
+            self.RQD = 100.0
+            self.RQD_given = False
+        elif self.RQD_given is None:
+            self.RQD_given = True
         if self.soil_type not in ("cohesive", "cohesionless", "rock"):
             raise ValueError(
                 f"soil_type must be 'cohesive', 'cohesionless', or 'rock', "

@@ -1671,7 +1671,9 @@ class SoilProfile:
             phi = layer.phi if layer.phi is not None else 0.0
             N60 = layer.N60 if layer.N60 is not None else 0.0
             qu = layer.qu if layer.qu is not None else 0.0
-            RQD = layer.RQD if layer.RQD is not None else 100.0
+            # GM-310 (OWN-84): an RQD not given stays not given (None), so
+            # a base in rock is not taken to meet GEC-10 p. 10-22 by default
+            RQD = layer.RQD
 
             # Validate minimum requirements by soil type
             if soil_type == "cohesive" and cu <= 0:

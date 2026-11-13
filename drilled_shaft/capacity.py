@@ -849,9 +849,10 @@ class DrillShaftAnalysis:
         10-29), refused where the tip rock layer gives no GSI or m_i. Left
         out (None): 2.5 qu with the conditions taken as met, stated in the
         choices, where the layers within one base diameter below the base
-        show no RQD below 100 and no soil (the Hoek-Brown base beside it
-        where the tip rock layer gives GSI and m_i); where they show
-        either, the Hoek-Brown base on the tip rock layer's GSI and m_i,
+        are rock with RQD 100 as given, and no soil (the Hoek-Brown base
+        beside it where the tip rock layer gives GSI and m_i); where they
+        show a lower RQD, soil, or rock with no RQD given (GM-310,
+        OWN-84), the Hoek-Brown base on the tip rock layer's GSI and m_i,
         refused where it gives none (:data:`ROCK_BASE_REFUSAL`).
     large_base_reduction : bool, optional
         O'Neill and Reese's (1999) reduction of base resistance for a large
@@ -1423,6 +1424,14 @@ class DrillShaftAnalysis:
                 out.append(f"rock with RQD {layer.RQD:g} % at {where}")
         return out
 
+    def _rock_rqd_not_given(self, L: float, B: float) -> List[str]:
+        """Each rock layer within one base diameter ``B`` below the base at
+        ``L`` whose RQD the profile does not give, in words (GM-310,
+        OWN-84): an RQD left out is no finding that the rock is massive."""
+        return [f"rock at {a:g}-{b:g} m"
+                for _, layer, a, b in self._layers_below_base(L, B)
+                if layer.soil_type == "rock" and not layer.RQD_given]
+
     def _rock_base_equation(self, tip_layer, L: float, B: float) -> str:
         """Which of GEC-10's rock bases applies under ``rock_base_method``
         "gec10": "10-23" (N*cr = 2.5) where the call states the conditions
@@ -1449,6 +1458,25 @@ class DrillShaftAnalysis:
         below = self._rock_below_base(L, B)
         if below and not missing:
             return "10-29"
+        # GM-310 (OWN-84): rock below the base with no RQD given is not
+        # taken as massive. With GSI and m_i the base is Hoek-Brown; with
+        # none of the three inputs the call is refused.
+        no_rqd = self._rock_rqd_not_given(L, B)
+        if no_rqd and not below:
+            if not missing:
+                return "10-29"
+            raise ValueError(
+                f"the base at {L:g} m bears on rock, and the profile gives "
+                "no RQD for " + "; ".join(no_rqd) + ", within one base "
+                f"diameter ({B:g} m) below it. Whether that rock meets the "
+                "conditions of Eq. 10-23 (GEC-10 (FHWA-NHI-18-024) p. "
+                "10-22) is a finding about the rock, and nothing given "
+                "settles it. Give one of three: the rock layers' RQD from "
+                "the cores (100 only where the cores show it); "
+                "rock_base_conditions_met true or false, the engineer's "
+                "judgment of the three conditions; or the tip rock layer's "
+                "GSI and m_i, for the Hoek-Brown base of a fractured rock "
+                "mass (Eqs. 10-24 to 10-29, pp. 10-23, 10-24)")
         if below:
             raise ValueError(
                 f"the base at {L:g} m bears on rock, and within one "
@@ -1468,6 +1496,15 @@ class DrillShaftAnalysis:
         out = {"method": self.rock_base_method, "qu_kPa": tip_layer.qu,
                "RQD": tip_layer.RQD}
         if self.rock_base_method == "rqd":
+            if not tip_layer.RQD_given:
+                # GM-310 (OWN-84): this base is a function of the RQD
+                raise ValueError(
+                    "rock_base_method 'rqd' reduces q_b/q_u by the tip rock "
+                    "layer's RQD, and that layer gives none (an RQD left "
+                    "out is not a finding that it is 100). Give the layer's "
+                    "RQD from the cores, or use rock_base_method 'gec10' "
+                    "with rock_base_conditions_met or the layer's GSI and "
+                    "m_i (GEC-10 (FHWA-NHI-18-024) pp. 10-22 to 10-24)")
             factor = rock_base_factor(tip_layer.RQD, "rqd")
             return {**out, "factor": factor, "qb": factor * tip_layer.qu}
         eq = self._rock_base_equation(tip_layer, L, B)
@@ -1673,17 +1710,20 @@ class DrillShaftAnalysis:
             chosen = ("not met, as the call states: the base is " + hb
                       + below_words)
         elif equation == "10-29":
+            shown = below or [
+                "no RQD for " + "; ".join(self._rock_rqd_not_given(
+                    self.shaft.length, B))
+                + " (an RQD left out is not taken as 100)"]
             chosen = ("not taken as met, as the call does not say and the "
                       f"layers within one base diameter ({B:g} m) below "
-                      "the base give " + "; ".join(below) + ": the base is "
+                      "the base give " + "; ".join(shown) + ": the base is "
                       + hb + " on the tip rock layer's GSI and m_i, which "
                       "2.5 qu bounds above (p. 10-24)")
         else:
             chosen = ("taken as met, as the call does not say: the layers "
                       f"within one base diameter ({B:g} m) below the base "
-                      "give no RQD below 100 (a rock layer's RQD is 100 "
-                      "where none is given) and no soil; no cavities or "
-                      "voids and a clean base are assumed")
+                      "are rock with RQD 100 as given, and no soil; no "
+                      "cavities or voids and a clean base are assumed")
             if not hoek_brown_missing(tip):
                 chosen += (
                     f"; the tip rock layer's GSI {tip.GSI:g} and m_i "

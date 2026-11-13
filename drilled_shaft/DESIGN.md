@@ -139,7 +139,7 @@ local experience indicate the rock mass below the socket tip is
 competent"); false takes the Hoek-Brown base, refused where the tip rock
 layer gives no `GSI` or `m_i`; left out, the conditions are taken as met
 and said so when every layer within one base diameter below the base is
-rock with RQD 100 (the layer default), with the Hoek-Brown value beside
+rock with RQD 100 as given, with the Hoek-Brown value beside
 2.5 qu where the tip rock layer gives `GSI` and `m_i` (p. 10-22 recommends
 2.5 for rock that meets the conditions; the Hoek-Brown base is "For
 fractured rock mass", p. 10-23, so the lower value is not taken silently);
@@ -147,6 +147,20 @@ when any is soil or has a lower RQD, the Hoek-Brown base on the tip rock
 layer's `GSI` and `m_i`, and the call is refused, naming them, where it
 gives none, so 2.5 qu is never applied silently to fractured rock. No RQD
 or GSI threshold is built: GEC-10 prints none.
+
+A rock layer with no RQD given (GM-310, the call for OWN-84 of
+2026-11-12). The conditions of p. 10-22 are a finding about the rock below
+the base, so an RQD left out is not taken as 100 for the base: with rock
+within one base diameter below the base that gives no RQD and
+`rock_base_conditions_met` left out, the base is the Hoek-Brown base where
+the tip rock layer gives `GSI` and `m_i`, and otherwise the call is
+refused, naming the three inputs that settle it (the layers' RQD,
+`rock_base_conditions_met`, or `GSI` with `m_i`). `rock_base_method`
+"rqd" is refused the same way when the tip rock layer gives no RQD. Before
+this the layer default of 100 selected Eq. 10-23 (one probe: 89,722 kN
+against 47,378 kN by the Hoek-Brown base). The side resistance under
+`rock_side_method` "caving" still reads a left-out RQD as 100 and says so
+in its choice (not part of the call).
 
 The Hoek-Brown base (GM-251) is built as printed: Eq. 10-24 (p. 10-23),
 Eqs. 10-25 to 10-29 (p. 10-24), on the tip rock layer's `qu`, `GSI` and

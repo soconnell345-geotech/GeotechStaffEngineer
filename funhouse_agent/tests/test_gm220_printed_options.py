@@ -25,7 +25,7 @@ _SHAFT = {"diameter": 1.2, "shaft_length": 14.0, "gwt_depth": 2.0,
           "layers": [{"thickness": 8.0, "soil_type": "cohesive",
                       "unit_weight": 18.5, "cu": 75.0},
                      {"thickness": 10.0, "soil_type": "rock",
-                      "unit_weight": 23.0, "qu": 20000.0}]}
+                      "unit_weight": 23.0, "qu": 20000.0, "RQD": 100.0}]}
 
 
 @pytest.mark.parametrize("method", ["drilled_shaft_capacity",

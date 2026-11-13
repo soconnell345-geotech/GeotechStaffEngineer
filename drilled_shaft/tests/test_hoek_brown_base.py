@@ -196,20 +196,21 @@ def test_the_calc_steps_print_eqs_10_28_and_10_29():
 # GSI and m_i given do not make the lower value the base by themselves.
 
 def test_conditions_taken_as_met_keep_eq_10_23_with_hoek_brown_beside():
-    """RQD 100 (the default) within one diameter below the base, GSI and
+    """RQD 100 as given within one diameter below the base, GSI and
     m_i given, the conditions not stated: Eq. 10-23, 2.5 qu; the
     Hoek-Brown value is given beside it in both choices."""
-    r = _run(_soil(GSI=45.0, m_i=10.0))
+    r = _run(_soil(RQD=100.0, GSI=45.0, m_i=10.0))
     assert r.base_steps["equation"] == "10-23"
     assert r.base_steps["factor"] == 2.5
-    hb = _run(_soil(GSI=45.0, m_i=10.0), rock_base_conditions_met=False)
+    hb = _run(_soil(RQD=100.0, GSI=45.0, m_i=10.0),
+              rock_base_conditions_met=False)
     assert hb.base_steps["equation"] == "10-29"
     assert hb.Q_tip < r.Q_tip
     met = _choice(r, "rock below the base (the conditions of Eq. 10-23)")
     assert met["how"] == "default" and met["chosen"].startswith(
         "taken as met")
     assert "GSI 45 and m_i 10" in met["chosen"]
-    assert "RQD is 100 where none is given" in met["chosen"]
+    assert "rock with RQD 100 as given" in met["chosen"]
     (alt,) = [a for a in met["alternatives"]
               if a.startswith("rock_base_conditions_met false")]
     assert f"Q_b {hb.Q_tip:,.0f} kN" in alt
@@ -233,8 +234,8 @@ def test_rock_below_the_base_shown_where_eq_10_23_is_taken():
     and under the 'rqd' base."""
     soil = ShaftSoilProfile(layers=[
         ShaftSoilLayer(8.0, "cohesive", 18.5, cu=75.0),
-        ShaftSoilLayer(6.5, "rock", 23.0, qu=20000.0),
-        ShaftSoilLayer(5.0, "rock", 23.0, qu=8000.0, GSI=30.0, m_i=7.0)])
+        ShaftSoilLayer(6.5, "rock", 23.0, qu=20000.0, RQD=100.0),
+        ShaftSoilLayer(5.0, "rock", 23.0, qu=8000.0, RQD=100.0, GSI=30.0, m_i=7.0)])
     hb = hoek_brown_base(8000.0, 30.0, 7.0, 8 * 18.5 + 6 * 23.0)
     area = math.pi / 4 * 1.2 ** 2
     for options in ({}, {"rock_base_method": "rqd"}):
@@ -249,11 +250,11 @@ def test_rock_below_the_base_shown_where_eq_10_23_is_taken():
     # GSI and m_i on the socket rock above the base
     ([ShaftSoilLayer(8.0, "cohesive", 18.5, cu=75.0),
       ShaftSoilLayer(3.0, "rock", 23.0, qu=20000.0, GSI=30.0, m_i=7.0),
-      ShaftSoilLayer(7.0, "rock", 23.0, qu=20000.0)],
+      ShaftSoilLayer(7.0, "rock", 23.0, qu=20000.0, RQD=100.0)],
      "above the base at 14 m"),
     # on rock more than one base diameter below the base
     ([ShaftSoilLayer(8.0, "cohesive", 18.5, cu=75.0),
-      ShaftSoilLayer(8.0, "rock", 23.0, qu=20000.0),
+      ShaftSoilLayer(8.0, "rock", 23.0, qu=20000.0, RQD=100.0),
       ShaftSoilLayer(5.0, "rock", 23.0, qu=8000.0, GSI=30.0, m_i=7.0)],
      "more than one base diameter (1.2 m) below the base at 14 m"),
     # the base in clay
@@ -308,3 +309,55 @@ def test_rock_base_conditions_met_with_the_base_in_rock_still_works(flag):
         ShaftSoilLayer(10.0, "rock", 23.0, qu=20000.0, RQD=40.0, GSI=45.0,
                        m_i=10.0)])
     assert _run(soil, rock_base_conditions_met=flag).Q_tip > 0
+
+
+# GM-310 (the call for OWN-84, 2026-11-12): no RQD is assumed for a base in
+# rock. Made-up values throughout.
+
+def test_no_rqd_no_statement_no_gsi_is_refused_naming_the_three():
+    with pytest.raises(ValueError) as e:
+        _run(_soil())
+    msg = str(e.value)
+    assert "no RQD for rock at 14-15.2 m" in msg
+    for name in ("RQD", "rock_base_conditions_met", "GSI and m_i"):
+        assert name in msg
+    assert "p. 10-22" in msg
+
+
+def test_no_rqd_with_gsi_and_m_i_takes_the_hoek_brown_base():
+    """Before GM-310 the layer default of 100 selected Eq. 10-23."""
+    r = _run(_soil(GSI=45.0, m_i=10.0))
+    assert r.base_steps["equation"] == "10-29"
+    at_100 = _run(_soil(RQD=100.0, GSI=45.0, m_i=10.0))
+    assert at_100.base_steps["equation"] == "10-23"
+    assert r.Q_tip < at_100.Q_tip
+    met = _choice(r, "rock below the base (the conditions of Eq. 10-23)")
+    assert met["how"] == "default"
+    assert "no RQD for rock at 14-15.2 m" in met["chosen"]
+    assert "not taken as 100" in met["chosen"]
+    (alt,) = [a for a in met["alternatives"]
+              if a.startswith("rock_base_conditions_met true")]
+    assert f"Q_b {at_100.Q_tip:,.0f} kN" in alt
+
+
+@pytest.mark.parametrize("met", [True, False])
+def test_no_rqd_with_the_conditions_stated_runs(met):
+    rock = {"GSI": 45.0, "m_i": 10.0} if met is False else {}
+    r = _run(_soil(**rock), rock_base_conditions_met=met)
+    assert r.base_steps["equation"] == ("10-23" if met else "10-29")
+
+
+def test_the_rqd_base_needs_the_rqd():
+    with pytest.raises(ValueError, match="rock_base_method 'rqd'.*gives "
+                                         "none"):
+        _run(_soil(), rock_base_method="rqd")
+    assert _run(_soil(RQD=100.0), rock_base_method="rqd").Q_tip > 0
+
+
+def test_a_copied_layer_keeps_whether_its_rqd_was_given():
+    from dataclasses import replace
+    left_out = ShaftSoilLayer(10.0, "rock", 23.0, qu=20000.0)
+    assert left_out.RQD == 100.0 and left_out.RQD_given is False
+    assert replace(left_out, qu=9000.0).RQD_given is False
+    given = ShaftSoilLayer(10.0, "rock", 23.0, qu=20000.0, RQD=100.0)
+    assert replace(given, qu=9000.0).RQD_given is True
