@@ -106,14 +106,36 @@ earlier firm's report reproduced as an appendix, say) is a report of its
 own: its key comes from its parent's key and its handle inside the parent
 (`bound_id`: `bound1`, `bound2` in page order).
 
+Every table's primary key is ONE string column, first in its rows, so an
+object type and a link need no transform:
+
+| Table | Primary key | Its format | Built from |
+|---|---|---|---|
+| `report` | `report_key` | 16 hex digits | the PDF (above) |
+| `report_page` | `page_id` | `<report_key>:<pdf_page>` | `report_key`, `pdf_page` |
+| `report_answer` | `answer_id` | `<report_key>:<question_set>:<question_key>` | `report_key`, `question_set`, `question_key` |
+| `report_file` | `file_id` | `<report_key>:<kind>` | `report_key`, `kind` |
+| `ingest_run` | `run_key` | `<report_key>:<run_id>` | `report_key`, `run_id` |
+
+The parts are joined with `:`. A part is used as it is when it holds only
+letters, digits, `_` and `-`; any other part would be replaced by `~` and
+the first 16 hex digits of its SHA-256. None of today's parts needs that:
+report keys are hex, page numbers digits, the question sets and file kinds
+fixed words, the two schemas' keys the owner's field names, a question
+list's Keys are checked to be lower-case letters, digits and `_`, and a run
+id is `YYYYMMDDTHHMMSSZ-` and six hex digits. So an id holds only letters,
+digits, `_`, `-`, `:` and `~`. The parts stay columns of their own, and
+`schema.json` gives each table's key, its format and its parts
+(`primary_key`, `primary_key_format`, `primary_key_from`).
+
 How the tables join:
 
 ```
 report (report_key)
-  |-- report_page   (report_key, pdf_page)
-  |-- report_answer (report_key, question_set, question_key)
-  |-- report_file   (report_key, kind)
-  |-- ingest_run    (report_key, run_id)      report.latest_run_id names the latest
+  |-- report_page   (page_id)    report_key -> report
+  |-- report_answer (answer_id)  report_key -> report
+  |-- report_file   (file_id)    report_key -> report
+  |-- ingest_run    (run_key)    report_key -> report;  report.latest_run_key names the latest
   '-- report        parent_report_key -> report_key   (bound-in reports)
 report_page.file_report_key  -> report    the file pdf_page counts in
 report_page.bound_report_key -> report    the bound-in report that page belongs to
@@ -221,8 +243,8 @@ Files: `report/<report_key>.jsonl`. Primary key: `report_key`.
 
 | Column | Type | Null? | What it holds |
 |---|---|---|---|
-| `export_version` | string | no | The export's version (v1). |
 | `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte, whether the file came as a path, as bytes or as an open document (only a document with no known file keys off its report id, project number and name); for a report bound inside another one, from its parent's key and its bound_id. |
+| `export_version` | string | no | The export's version (v1). |
 | `parent_report_key` | string | yes | For a report bound inside another one, the parent's report_key; null for a report of its own. |
 | `bound_id` | string | yes | For a bound-in report, its handle inside the parent (bound1, bound2, in page order); null otherwise. It is a count, not a name: when the ingest finds the bound-in reports differently, they are renumbered and their report_keys change. |
 | `bound_report_keys` | array<string> | no | The report_keys of the reports bound inside this one, as of its latest ingest; empty when none. A report row whose parent_report_key does not list it any more is left over from an earlier ingest. |
@@ -251,16 +273,18 @@ Files: `report/<report_key>.jsonl`. Primary key: `report_key`.
 | `diggs_schema_valid` | boolean | yes | true: the DIGGS file passed the DIGGS 2.6 schema; false: it did not; null: no file, or the check could not run where the ingest ran. |
 | `diggs_roundtrip_ok` | boolean | yes | true: reading the DIGGS file back gives the record's own values; false: it does not; null: no file. |
 | `latest_run_id` | string | no | The ingest that wrote this row: an ingest_run row's run_id. |
+| `latest_run_key` | string | no | The same ingest as the ingest_run row's one-column key (run_key: <report_key>:<run_id>), for a link. |
 | `ingested_at` | timestamp | no | When the ingest wrote its outputs. For a folder ingested before this export, the record file's modified time. |
 
 ### `report_page`
 
 One row per page of a report: what the page is, and who said so. A report triage sent to a person (workflow needs_person) has none. A bound-in report's pages are numbered in its parent's file, and the parent's own rows for those pages name it.
 
-Files: `report_page/<report_key>.jsonl`. Primary key: `report_key`, `pdf_page`.
+Files: `report_page/<report_key>.jsonl`. Primary key: `page_id` (`<report_key>:<pdf_page>`).
 
 | Column | Type | Null? | What it holds |
 |---|---|---|---|
+| `page_id` | string | no | The row's key as one string: <report_key>:<pdf_page>, joined with ':' (BACKLOG RI-209). A part holding anything but letters, digits, '_' and '-' is '~' and 16 hex digits of its SHA-256 instead; none of today's parts does. |
 | `export_version` | string | no | The export's version (v1). |
 | `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte, whether the file came as a path, as bytes or as an open document (only a document with no known file keys off its report id, project number and name); for a report bound inside another one, from its parent's key and its bound_id. |
 | `pdf_page` | integer | no | The page as a PDF viewer numbers it, from 1 at the file's first page. For a bound-in report, the page of its parent's file (file_report_key). |
@@ -286,10 +310,11 @@ Files: `report_page/<report_key>.jsonl`. Primary key: `report_key`, `pdf_page`.
 
 One row per standard question asked of a report: the owner's two standing schemas (general, natural_hazards), every field every time, and the owner's question list (question_list) when it ran. The caller's own free-text questions are not here.
 
-Files: `report_answer/<report_key>.jsonl`. Primary key: `report_key`, `question_set`, `question_key`.
+Files: `report_answer/<report_key>.jsonl`. Primary key: `answer_id` (`<report_key>:<question_set>:<question_key>`).
 
 | Column | Type | Null? | What it holds |
 |---|---|---|---|
+| `answer_id` | string | no | The row's key as one string: <report_key>:<question_set>:<question_key>, joined with ':' (BACKLOG RI-209). A part holding anything but letters, digits, '_' and '-' is '~' and 16 hex digits of its SHA-256 instead; none of today's parts does. |
 | `export_version` | string | no | The export's version (v1). |
 | `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte, whether the file came as a path, as bytes or as an open document (only a document with no known file keys off its report id, project number and name); for a report bound inside another one, from its parent's key and its bound_id. |
 | `question_set` | string | no | general or natural_hazards (the owner's two schemas), or question_list (the owner's question list). |
@@ -318,10 +343,11 @@ Files: `report_answer/<report_key>.jsonl`. Primary key: `report_key`, `question_
 
 One row per file delivered for a report in the export's document folders. Trust these rows, not a folder listing: a dataset keeps a file an earlier ingest sent even when the latest ingest wrote none.
 
-Files: `report_file/<report_key>.jsonl`. Primary key: `report_key`, `kind`.
+Files: `report_file/<report_key>.jsonl`. Primary key: `file_id` (`<report_key>:<kind>`).
 
 | Column | Type | Null? | What it holds |
 |---|---|---|---|
+| `file_id` | string | no | The row's key as one string: <report_key>:<kind>, joined with ':' (BACKLOG RI-209). A part holding anything but letters, digits, '_' and '-' is '~' and 16 hex digits of its SHA-256 instead; none of today's parts does. |
 | `export_version` | string | no | The export's version (v1). |
 | `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte, whether the file came as a path, as bytes or as an open document (only a document with no known file keys off its report id, project number and name); for a report bound inside another one, from its parent's key and its bound_id. |
 | `kind` | string | no | diggs, record, summary or questions. |
@@ -334,10 +360,11 @@ Files: `report_file/<report_key>.jsonl`. Primary key: `report_key`, `kind`.
 
 One row per ingest of a report, never overwritten: the history, which is the ingest ledger BACKLOG RI-11 asked for. Each ingest adds one small file.
 
-Files: `ingest_run/<report_key>.<run_id>.jsonl`. Primary key: `report_key`, `run_id`.
+Files: `ingest_run/<report_key>.<run_id>.jsonl`. Primary key: `run_key` (`<report_key>:<run_id>`).
 
 | Column | Type | Null? | What it holds |
 |---|---|---|---|
+| `run_key` | string | no | The row's key as one string: <report_key>:<run_id>, joined with ':' (BACKLOG RI-209). A part holding anything but letters, digits, '_' and '-' is '~' and 16 hex digits of its SHA-256 instead; none of today's parts does. |
 | `export_version` | string | no | The export's version (v1). |
 | `report_key` | string | no | The report's key: the library key the ingest computes, the same as the library page's id and the reports.db row. For a report, it comes from its source file's size and first megabyte, whether the file came as a path, as bytes or as an open document (only a document with no known file keys off its report id, project number and name); for a report bound inside another one, from its parent's key and its bound_id. |
 | `run_id` | string | no | The ingest: its UTC time and a short random suffix. A bound-in report shares its parent's. For a folder ingested before this export, the record file's time and part of its hash. |
@@ -381,40 +408,40 @@ Each file carries every column; a few are shown here.
 
 `report/3f2a9c0d41b7e865.jsonl`
 
-| report_key | parent_report_key | bound_report_keys | source_name | n_pages | document_type | project_name | report_date | workflow | n_answers | n_answers_answered | diggs_written | latest_run_id |
+| report_key | parent_report_key | bound_report_keys | source_name | n_pages | document_type | project_name | report_date | workflow | n_answers | n_answers_answered | diggs_written | latest_run_key |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 3f2a9c0d41b7e865 | null | ["9b01c2d3e4f5a678"] | sample_report.pdf | 42 | geotechnical report | Example Warehouse Expansion | 2026-01-15 | standard | 38 | 21 | true | 20260202T101500Z-a1b2c3 |
+| 3f2a9c0d41b7e865 | null | ["9b01c2d3e4f5a678"] | sample_report.pdf | 42 | geotechnical report | Example Warehouse Expansion | 2026-01-15 | standard | 38 | 21 | true | 3f2a9c0d41b7e865:20260202T101500Z-a1b2c3 |
 
 `report_page/3f2a9c0d41b7e865.jsonl`
 
-| pdf_page | file_report_key | printed_page | label | label_confidence | agreed | settled_by | label_rules | label_ranges | bound_report_key | title | exploration |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 3f2a9c0d41b7e865 | null | cover | null | true | vote | cover | cover | null | Geotechnical Report | null |
-| 12 | 3f2a9c0d41b7e865 | 4 | boring_log | null | true | vote | boring_log | boring_log | null | Log of Boring B-2 | B-2 |
-| 31 | 3f2a9c0d41b7e865 | null | appended_report | null | true | vote | appended_report | appended_report | 9b01c2d3e4f5a678 | Earlier Site Study | null |
+| page_id | pdf_page | file_report_key | printed_page | label | label_confidence | agreed | settled_by | label_rules | label_ranges | bound_report_key | title | exploration |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 3f2a9c0d41b7e865:1 | 1 | 3f2a9c0d41b7e865 | null | cover | null | true | vote | cover | cover | null | Geotechnical Report | null |
+| 3f2a9c0d41b7e865:12 | 12 | 3f2a9c0d41b7e865 | 4 | boring_log | null | true | vote | boring_log | boring_log | null | Log of Boring B-2 | B-2 |
+| 3f2a9c0d41b7e865:31 | 31 | 3f2a9c0d41b7e865 | null | appended_report | null | true | vote | appended_report | appended_report | 9b01c2d3e4f5a678 | Earlier Site Study | null |
 
 `report_answer/3f2a9c0d41b7e865.jsonl`
 
-| question_set | question_key | position | status | value_text | value_number | value_boolean | value_date | value_json | pdf_pages | quotes |
-|---|---|---|---|---|---|---|---|---|---|---|
-| general | boringCount | 13 | answered | 6 | 6.0 | null | null | 6 | [5] | ["Six borings were drilled"] |
-| natural_hazards | siteClass | 9 | answered | Site Class C | null | null | null | "C" | [9] | ["Site Class C"] |
-| natural_hazards | soilCorrosion | 6 | answered | The soils are mildly corrosive. | null | true | null | "yes" | [10] | ["mildly corrosive"] |
-| general | primeContractor | 9 | not said | null | null | null | null | null | [] | [] |
-| question_list | site_fill | 4 | answered | yes | null | true | null | true | [6] | [] |
+| answer_id | question_set | question_key | position | status | value_text | value_number | value_boolean | value_date | value_json | pdf_pages | quotes |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 3f2a9c0d41b7e865:general:boringCount | general | boringCount | 13 | answered | 6 | 6.0 | null | null | 6 | [5] | ["Six borings were drilled"] |
+| 3f2a9c0d41b7e865:natural_hazards:siteClass | natural_hazards | siteClass | 9 | answered | Site Class C | null | null | null | "C" | [9] | ["Site Class C"] |
+| 3f2a9c0d41b7e865:natural_hazards:soilCorrosion | natural_hazards | soilCorrosion | 6 | answered | The soils are mildly corrosive. | null | true | null | "yes" | [10] | ["mildly corrosive"] |
+| 3f2a9c0d41b7e865:general:primeContractor | general | primeContractor | 9 | not said | null | null | null | null | null | [] | [] |
+| 3f2a9c0d41b7e865:question_list:site_fill | question_list | site_fill | 4 | answered | yes | null | true | null | true | [6] | [] |
 
 `report_file/3f2a9c0d41b7e865.jsonl`
 
-| kind | path | bytes | sha256 | media_type |
-|---|---|---|---|---|
-| diggs | diggs/3f2a9c0d41b7e865.diggs.xml | 81234 | 5e8f... | application/xml |
-| record | record/3f2a9c0d41b7e865.record.json | 76512 | 0c1d... | application/json |
+| file_id | kind | path | bytes | sha256 | media_type |
+|---|---|---|---|---|---|
+| 3f2a9c0d41b7e865:diggs | diggs | diggs/3f2a9c0d41b7e865.diggs.xml | 81234 | 5e8f... | application/xml |
+| 3f2a9c0d41b7e865:record | record | record/3f2a9c0d41b7e865.record.json | 76512 | 0c1d... | application/json |
 
 `ingest_run/3f2a9c0d41b7e865.20260202T101500Z-a1b2c3.jsonl`
 
-| run_id | ingested_at | source_sha256 | app_version | planlens_version | prompt_versions | models | model_calls | dollars | resumed |
-|---|---|---|---|---|---|---|---|---|---|
-| 20260202T101500Z-a1b2c3 | 2026-02-02T10:15:00Z | 9d4e... | 5.36.0 | 0.15.1 | ["mf-10", "ql-1"] | ["Opus 5.5"] | 31 | 4.12 | false |
+| run_key | run_id | ingested_at | source_sha256 | app_version | planlens_version | prompt_versions | models | model_calls | dollars | resumed |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 3f2a9c0d41b7e865:20260202T101500Z-a1b2c3 | 20260202T101500Z-a1b2c3 | 2026-02-02T10:15:00Z | 9d4e... | 5.36.0 | 0.15.1 | ["mf-10", "ql-1"] | ["Opus 5.5"] | 31 | 4.12 | false |
 
 ## A suggested Ontology
 
@@ -423,20 +450,22 @@ The FDE decides; this is the shape the tables were made for.
 | Object type | From | Primary key | Title |
 |---|---|---|---|
 | Report | `report` | `report_key` | `title` |
-| Report page | `report_page` | `report_key` + `pdf_page` (joined into one id, e.g. `3f2a...:12`) | `label` and `pdf_page` |
-| Report answer | `report_answer` | `report_key` + `question_set` + `question_key` | `question_key` |
-| Ingest run | `ingest_run` | `report_key` + `run_id` | `run_id` |
+| Report page | `report_page` | `page_id` (e.g. `3f2a...:12`) | `label` and `pdf_page` |
+| Report answer | `report_answer` | `answer_id` | `question_key` |
+| Report file | `report_file` | `file_id` | `kind` |
+| Ingest run | `ingest_run` | `run_key` | `run_id` |
 
-Links:
+Links (every one a single column on each side):
 
-- Report has many Report pages, Report answers and Ingest runs
-  (`report_key`); a Report's latest Ingest run is `report_key` +
-  `latest_run_id`.
+- Report has many Report pages, Report answers, Report files and Ingest
+  runs (`report_key` -> `report_key`); a Report's latest Ingest run is
+  `latest_run_key` -> `run_key`.
 - Report to its bound-in Reports: `parent_report_key` -> `report_key`, kept
   only while the parent's `bound_report_keys` lists the child (above).
 - Report page to the bound-in Report it belongs to: `bound_report_key`.
 - The files (`report_file`): the DIGGS file, the record and the summary as
-  properties or media of the Report, from the rows' `path`.
+  Report file objects, or as properties or media of the Report, from the
+  rows' `path`.
 - **Post.** The existing Post object links to a Report by the post's name.
   The report's own words are `post_name` on the report row. Where the
   owner's question list ran with a list of posts (`GSE_REPORT_POSTS`), its

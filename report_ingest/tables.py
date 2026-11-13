@@ -77,7 +77,7 @@ __all__ = [
     "LIBRARY_ENV", "TYPES", "Column", "Link", "Table", "Document", "TABLES",
     "TABLE",
     "DOCUMENTS", "ExportOutcome", "schema", "columns_markdown", "make_row",
-    "check_row",
+    "check_row", "make_id", "ID_SEP",
     "export_root", "export_dir", "after_ingest", "export_report",
     "export_folder", "export_outcome", "outcome_line", "send_to_dataset",
     "dataset_alias",
@@ -179,10 +179,40 @@ class Table:
     links: Tuple[Link, ...] = ()
     #: How a file in the table's folder is named.
     file_pattern: str = "<report_key>.jsonl"
+    #: The columns the table's one-column primary key is built from, in
+    #: order (:func:`make_id`); empty when the key is a column of its own
+    #: (BACKLOG RI-209 review B6).
+    id_from: Tuple[str, ...] = ()
 
     @property
     def column_names(self) -> Tuple[str, ...]:
         return tuple(c.name for c in self.columns)
+
+    @property
+    def id_format(self) -> str:
+        """The primary key's format, e.g. ``<report_key>:<pdf_page>``."""
+        return ID_SEP.join(f"<{c}>" for c in self.id_from) \
+            or f"<{self.primary_key[0]}>"
+
+
+#: How the parts of a table's id are joined, and the characters a part may
+#: hold as it is; any other part is replaced by ``~`` and the first 16 hex
+#: digits of its SHA-256 (RI-209 review B6). So an id holds only letters,
+#: digits, ``_``, ``-``, ``:`` and ``~``.
+ID_SEP = ":"
+_ID_PART = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def make_id(*parts: Any) -> str:
+    """One table id from its parts (:attr:`Table.id_from`'s values): each
+    part as it is when it holds only letters, digits, ``_`` and ``-``,
+    else ``~`` and 16 hex digits of its SHA-256; joined with ``:``."""
+    out = []
+    for part in parts:
+        text = str(part)
+        out.append(text if _ID_PART.match(text) else
+                   "~" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:16])
+    return ID_SEP.join(out)
 
 
 @dataclass(frozen=True)
@@ -284,6 +314,14 @@ LABELS_TEXT = ("narrative, figure, plan, profile, boring_log, test_pit_log, "
                "cpt_log, dcp_log, lab_test, field_test, calculation, "
                "appended_report, photos, divider, cover, letter, toc, other")
 
+def _id(name: str, fmt: str) -> Column:
+    return _c(name, "string",
+              f"The row's key as one string: {fmt}, joined with ':' "
+              "(BACKLOG RI-209). A part holding anything but letters, "
+              "digits, '_' and '-' is '~' and 16 hex digits of its SHA-256 "
+              "instead; none of today's parts does.", False)
+
+
 TABLES: Tuple[Table, ...] = (
     Table(
         name="report",
@@ -292,7 +330,7 @@ TABLES: Tuple[Table, ...] = (
                     "of its own, with parent_report_key set.",
         primary_key=("report_key",),
         columns=(
-            _VERSION, _KEY,
+            _KEY, _VERSION,
             _c("parent_report_key", "string",
                "For a report bound inside another one, the parent's "
                "report_key; null for a report of its own."),
@@ -331,12 +369,14 @@ TABLES: Tuple[Table, ...] = (
             _c("latest_run_id", "string",
                "The ingest that wrote this row: an ingest_run row's run_id.",
                False),
+            _c("latest_run_key", "string",
+               "The same ingest as the ingest_run row's one-column key "
+               "(run_key: <report_key>:<run_id>), for a link.", False),
             _INGESTED,
         ),
         links=(
             Link(("parent_report_key",), "report", ("report_key",)),
-            Link(("report_key", "latest_run_id"), "ingest_run",
-                 ("report_key", "run_id")),
+            Link(("latest_run_key",), "ingest_run", ("run_key",)),
         ),
     ),
     Table(
@@ -346,8 +386,10 @@ TABLES: Tuple[Table, ...] = (
                     "(workflow needs_person) has none. A bound-in report's "
                     "pages are numbered in its parent's file, and the "
                     "parent's own rows for those pages name it.",
-        primary_key=("report_key", "pdf_page"),
+        primary_key=("page_id",),
+        id_from=("report_key", "pdf_page"),
         columns=(
+            _id("page_id", "<report_key>:<pdf_page>"),
             _VERSION, _KEY,
             _c("pdf_page", "integer",
                "The page as a PDF viewer numbers it, from 1 at the file's "
@@ -421,8 +463,10 @@ TABLES: Tuple[Table, ...] = (
                     "natural_hazards), every field every time, and the "
                     "owner's question list (question_list) when it ran. "
                     "The caller's own free-text questions are not here.",
-        primary_key=("report_key", "question_set", "question_key"),
+        primary_key=("answer_id",),
+        id_from=("report_key", "question_set", "question_key"),
         columns=(
+            _id("answer_id", "<report_key>:<question_set>:<question_key>"),
             _VERSION, _KEY,
             _c("question_set", "string",
                "general or natural_hazards (the owner's two schemas), or "
@@ -509,8 +553,10 @@ TABLES: Tuple[Table, ...] = (
                     "export's document folders. Trust these rows, not a "
                     "folder listing: a dataset keeps a file an earlier "
                     "ingest sent even when the latest ingest wrote none.",
-        primary_key=("report_key", "kind"),
+        primary_key=("file_id",),
+        id_from=("report_key", "kind"),
         columns=(
+            _id("file_id", "<report_key>:<kind>"),
             _VERSION, _KEY,
             _c("kind", "string",
                "diggs, record, summary or questions.", False),
@@ -528,9 +574,11 @@ TABLES: Tuple[Table, ...] = (
         description="One row per ingest of a report, never overwritten: "
                     "the history, which is the ingest ledger BACKLOG RI-11 "
                     "asked for. Each ingest adds one small file.",
-        primary_key=("report_key", "run_id"),
+        primary_key=("run_key",),
+        id_from=("report_key", "run_id"),
         file_pattern="<report_key>.<run_id>.jsonl",
         columns=(
+            _id("run_key", "<report_key>:<run_id>"),
             _VERSION, _KEY,
             _c("run_id", "string",
                "The ingest: its UTC time and a short random suffix. A "
@@ -606,6 +654,8 @@ def schema() -> Dict[str, Any]:
             "name": t.name, "description": t.description,
             "files": f"{t.name}/{t.file_pattern}",
             "primary_key": list(t.primary_key),
+            "primary_key_format": t.id_format,
+            "primary_key_from": list(t.id_from or t.primary_key),
             "links": [{"columns": list(link.columns),
                        "references": {"table": link.table,
                                       "columns": list(link.references)}}
@@ -629,7 +679,9 @@ def columns_markdown() -> str:
     for table in TABLES:
         out += [f"### `{table.name}`", "", table.description, "",
                 f"Files: `{table.name}/{table.file_pattern}`. Primary key: "
-                + ", ".join(f"`{c}`" for c in table.primary_key) + ".", "",
+                + ", ".join(f"`{c}`" for c in table.primary_key)
+                + (f" (`{table.id_format}`)" if table.id_from else "")
+                + ".", "",
                 "| Column | Type | Null? | What it holds |",
                 "|---|---|---|---|"]
         out += [f"| `{c.name}` | {c.type} | {'yes' if c.nullable else 'no'} "
@@ -692,10 +744,15 @@ def make_row(table: Table, values: Mapping[str, Any]) -> Dict[str, Any]:
     """A row of ``table`` from ``values``: every column in order, a column
     not given written as null, a whole number in a double column as a
     float; checked (:func:`check_row`). A name the table does not have is
-    refused."""
+    refused. The table's id is built from its parts (:attr:`Table.id_from`,
+    :func:`make_id`) when not given."""
     unknown = set(values) - set(table.column_names)
     if unknown:
         raise ValueError(f"{table.name} has no column {sorted(unknown)}")
+    if table.id_from and values.get(table.primary_key[0]) is None \
+            and all(values.get(c) is not None for c in table.id_from):
+        values = {**values, table.primary_key[0]: make_id(
+            *(values[c] for c in table.id_from))}
     row: Dict[str, Any] = {}
     for column in table.columns:
         value = values.get(column.name)
@@ -1470,6 +1527,7 @@ def _build(report: _Report) -> _Built:
         "report_date": hazards.reportDateISO
         if _valid_date(hazards.reportDateISO) else None,
         "latest_run_id": run_id,
+        "latest_run_key": make_id(report.key, run_id),
     })
     document = record.document
     run_row = make_row(TABLE["ingest_run"], {

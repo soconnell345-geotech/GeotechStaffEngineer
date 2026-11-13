@@ -1423,7 +1423,10 @@ fields of the owner's two schemas every time, and the question list's rows
 when it ran), `report_file`, and `ingest_run` (one file per ingest, never
 overwritten), beside copies of the DIGGS file, the record, the summary and
 the answer sheet. Pages are PDF pages from 1; `report_key` is the library's
-own key. The tables are defined once in the module (`TABLES`); `schema.json`,
+own key. Every table's key is one string column, first in its rows
+(`report_key`, `page_id`, `answer_id`, `file_id`, `run_key`: its parts
+joined with `:`, `tables.make_id`). The tables are defined once in the
+module (`TABLES`); `schema.json`,
 the rows' checks and the column list in
 [`docs/REPORT_TABLES.md`](../docs/REPORT_TABLES.md) come from that
 definition. That document is the reference for the FDE and the owner: the
@@ -1446,12 +1449,17 @@ already ingested, with no model call: `python -m report_ingest.tables
 <run_root> [--root R] [--deliver]` (`export_folder`). It never changes the
 record and never fails the ingest: the outcome (`written` / `error`, rows,
 what the dataset got) is kept in `report.run.json`
-(`tables.export_outcome(out_dir)`) and in the cluster stage's `run.json`.
+(`tables.export_outcome(out_dir)`), in the cluster stage's `run.json`, as
+one line in the app tool's result (`IngestSummary.report_tables`) and in a
+folder run's `index.json` and `INDEX.md`.
 
-**The key of an upload.** The graph now keys a report handed in as bytes
-off the bytes, as it keys a path off the file (it fell back to the project's
-name and number before), so the same PDF gets the same `report_key` however
-it arrives; the page and the library record no source path for bytes.
+**The key of an upload or an open document.** The graph now keys a report
+handed in as bytes off the bytes, and one handed in as an open document
+(the cluster stage's way) off its PDF (`ingest_report(source_path=...)`,
+else the file planlens opened), as it keys a path off the file (both fell
+back to the project's name and number before), so the same PDF gets the
+same `report_key` however it arrives; the page and the library record no
+source path for bytes.
 
 ## The graph (`graph.py`) and the folder run (`run_folder.py`)
 

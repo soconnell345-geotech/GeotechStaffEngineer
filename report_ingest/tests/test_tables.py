@@ -199,7 +199,7 @@ class TestTheDefinitions:
         for table in tables.TABLES:
             names = [c.name for c in table.columns]
             assert len(names) == len(set(names)), table.name
-            assert names[:2] == ["export_version", "report_key"]
+            assert "export_version" in names[:2] and "report_key" in names
             for column in table.columns:
                 assert column.type in tables.TYPES, (table.name, column)
                 assert column.description.strip(), (table.name, column)
@@ -215,6 +215,39 @@ class TestTheDefinitions:
                 assert set(link.columns) <= set(table.column_names)
                 assert set(link.references) <= set(target.column_names)
 
+    def test_every_key_and_link_is_one_string_column_first(self):
+        """RI-209 review B6: an Ontology object type needs a one-property
+        key and a link a one-column foreign key."""
+        ids = {}
+        for table in tables.TABLES:
+            (key,) = table.primary_key
+            first = table.columns[0]
+            assert (first.name, first.type, first.nullable) == \
+                (key, "string", False), table.name
+            ids[table.name] = key
+            for link in table.links:
+                assert len(link.columns) == len(link.references) == 1
+                assert link.references[0] == ids.get(
+                    link.table, tables.TABLE[link.table].primary_key[0])
+        assert ids == {"report": "report_key", "report_page": "page_id",
+                       "report_answer": "answer_id", "report_file": "file_id",
+                       "ingest_run": "run_key"}
+        assert tables.TABLE["report_answer"].id_format == \
+            "<report_key>:<question_set>:<question_key>"
+
+    def test_an_id_is_its_parts_and_hashes_an_unsafe_one(self):
+        assert tables.make_id("3f2a9c0d41b7e865", 12) == "3f2a9c0d41b7e865:12"
+        assert tables.make_id("3f2a", "question_list", "site_fill") == \
+            "3f2a:question_list:site_fill"
+        odd = "a key: with spaces"
+        assert tables.make_id("3f2a", odd) == "3f2a:~" + hashlib.sha256(
+            odd.encode("utf-8")).hexdigest()[:16]
+        row = tables.make_row(tables.TABLE["report_file"], {
+            "report_key": "3f2a", "kind": "diggs", "path": "diggs/3f2a.x",
+            "bytes": 1, "sha256": "0" * 64, "media_type": "application/xml"})
+        assert row["file_id"] == "3f2a:diggs"
+        assert list(row)[0] == "file_id"
+
     def test_schema_json_is_the_definitions(self, ingested):
         written = json.loads((ingested.v1 / "schema.json")
                              .read_text("utf-8"))
@@ -225,6 +258,9 @@ class TestTheDefinitions:
             assert [(c["name"], c["type"]) for c in spec["columns"]] == \
                 [(c.name, c.type) for c in table.columns]
             assert spec["primary_key"] == list(table.primary_key)
+            assert spec["primary_key_format"] == table.id_format
+            assert spec["primary_key_from"] == \
+                list(table.id_from or table.primary_key)
 
     def test_a_row_is_every_column_in_order_with_its_nulls(self):
         row = tables.make_row(tables.TABLE["report_page"], {
@@ -430,6 +466,30 @@ class TestAnIngest:
         assert run["record_schema_version"] == \
             ingested.record.schema_version
         assert re.match(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$", run["run_id"])
+        assert run["run_key"] == f"{parent}:{run['run_id']}" == \
+            report["latest_run_key"]
+
+    def test_each_row_carries_its_one_string_id(self, ingested):
+        """RI-209 review B6: the ids, in their documented formats, unique,
+        and made of the safe characters only."""
+        safe = re.compile(r"^[A-Za-z0-9_:~-]+$")
+        for key in _keys(ingested):
+            pages = _rows(ingested.v1, "report_page", key)
+            answers = _rows(ingested.v1, "report_answer", key)
+            files = _rows(ingested.v1, "report_file", key)
+            assert pages and answers and files
+            assert [r["page_id"] for r in pages] == \
+                [f"{key}:{r['pdf_page']}" for r in pages]
+            assert [r["answer_id"] for r in answers] == \
+                [f"{key}:{r['question_set']}:{r['question_key']}"
+                 for r in answers]
+            assert [r["file_id"] for r in files] == \
+                [f"{key}:{r['kind']}" for r in files]
+            for rows, name in ((pages, "page_id"), (answers, "answer_id"),
+                               (files, "file_id")):
+                ids = [r[name] for r in rows]
+                assert len(ids) == len(set(ids)), name
+                assert all(safe.match(i) for i in ids), name
 
     def test_no_path_of_this_machine_is_in_any_row(self, ingested):
         # The run's own folders and this machine's user folder.
