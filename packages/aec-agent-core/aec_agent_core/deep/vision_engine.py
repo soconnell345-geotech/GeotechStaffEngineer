@@ -32,6 +32,7 @@ import random
 import re
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
@@ -465,7 +466,45 @@ def refused_detail(exc) -> bool:
     return bool(_DETAIL_WORD.search(str(exc)))
 
 
-def _invoke_once(model, messages, timeout: Optional[float]):
+#: The app events a side call writes to the run record (the activity log's
+#: ``APP_EVENTS``; BACKLOG INF-75). Foundry brief 7 (2026-11-12): 44 side
+#: calls in 84 records were given up at the limit with only a log line, so
+#: each left a ``model_start`` with no ``model_end`` and nothing said why.
+#:
+#: * ``side_call_timeout``: an ask got no answer within ``limit_s`` and was
+#:   given up: the look's ``kind``, ``page`` and ``tile``, which ``ask`` of
+#:   the side call it was and its ``ask_id`` (also on that ask's
+#:   ``model_start``, in ``vision``), ``attempt`` (the timeouts so far) and
+#:   ``asked_again`` (false: the image was reported as not read).
+#: * ``side_call_late_end``: an ask that was given up ended after all,
+#:   having held its vision slot ``held_s`` seconds: ``outcome``
+#:   (``answered`` or ``error``, with the error's class) and the same
+#:   ``ask_id``. An abandoned ask with no such event was still running, and
+#:   still holding its slot, when the record stopped.
+TIMEOUT_EVENT = "side_call_timeout"
+LATE_END_EVENT = "side_call_late_end"
+
+
+def _event(name: str, data: dict) -> None:
+    """Write one app event to the run record, as
+    :func:`aec_agent_core.deep.busy_retry._event` does. Never raises: a
+    caller outside a run (a library call) has no record to write to."""
+    try:
+        from langchain_core.callbacks.manager import dispatch_custom_event
+        dispatch_custom_event(name, data)
+    except Exception:  # noqa: BLE001 - the record never fails a call
+        pass
+
+
+def _look_facts() -> dict:
+    """What the look in this context is, for an event: ``kind``, ``page``
+    and ``tile`` off its label (:func:`current_side_call`)."""
+    info = _SIDE_CALL.get() or {}
+    return {k: info[k] for k in ("kind", "page", "tile") if k in info}
+
+
+def _invoke_once(model, messages, timeout: Optional[float],
+                 facts: Optional[dict] = None):
     """``model.invoke(messages)`` holding a call slot, given up after
     ``timeout`` seconds of running.
 
@@ -473,31 +512,53 @@ def _invoke_once(model, messages, timeout: Optional[float]):
     context, so the run's callbacks (the activity log, the token count) still
     see it. A call given up is left to finish on that thread — it still holds
     its slot, so a stalled connection keeps counting against the process's
-    cap rather than letting more calls pile onto the client's pool."""
+    cap rather than letting more calls pile onto the client's pool. When it
+    does end, a :data:`LATE_END_EVENT` says how long it held the slot
+    (``facts``: what the event says of the ask)."""
     if timeout is None:
         with call_slot():
             return model.invoke(messages)
     box: dict = {}
     started, done = threading.Event(), threading.Event()
+    # Whether the caller gave the call up is settled under this lock, so a
+    # call that ends as the limit passes is either returned or reported as
+    # a late end, never both and never neither.
+    settle = threading.Lock()
 
     def run():
         try:
             with call_slot():
+                box["t_slot"] = time.monotonic()
                 started.set()
                 box["value"] = model.invoke(messages)
         except BaseException as exc:  # noqa: BLE001 - handed to the caller
             box["error"] = exc
         finally:
             started.set()
-            done.set()
+            with settle:
+                done.set()
+                abandoned = bool(box.get("abandoned"))
+            if abandoned:
+                error = box.get("error")
+                t_slot = box.get("t_slot")
+                _event(LATE_END_EVENT, {
+                    **(facts or {}), "limit_s": timeout,
+                    "held_s": (round(time.monotonic() - t_slot, 3)
+                               if t_slot is not None else None),
+                    "outcome": "error" if error is not None else "answered",
+                    **({"error": type(error).__name__}
+                       if error is not None else {})})
 
     ctx = contextvars.copy_context()
     threading.Thread(target=ctx.run, args=(run,), daemon=True,
                      name="vision-side-call").start()
     started.wait()                      # queueing for a slot is not counted
     if not done.wait(timeout):
-        raise VisionCallTimeout(
-            f"the vision call gave no answer within {timeout:g} s")
+        with settle:
+            if not done.is_set():
+                box["abandoned"] = True
+                raise VisionCallTimeout(
+                    f"the vision call gave no answer within {timeout:g} s")
     if "error" in box:
         raise box["error"]
     return box["value"]
@@ -531,22 +592,35 @@ def invoke_side_call(model, messages):
     waits are spent holding no slot. Raises :class:`VisionCallTimeout` when
     no ask answered in time, and a busy error that outlasted its tries with
     ``vision_tries`` set on it — the caller reports that image as not read
-    (:func:`describe_error`) instead of waiting on it."""
+    (:func:`describe_error`) instead of waiting on it.
+
+    Each ask given up at the limit is a :data:`TIMEOUT_EVENT` in the run
+    record, and each ask carries its number and an id on its own
+    ``model_start`` (``vision.ask``, ``vision.ask_id``), so a start with no
+    end can be matched to the timeout that left it (BACKLOG INF-75)."""
     timeout = call_timeout_s()
     timeouts = 0
     busy = 0
     tries = busy_tries()
+    ask = 0
     while True:
         # Room on this key under the token pacer, when one is set
         # (funhouse_agent.deep.pacing; BACKLOG TA-22): waited for before
         # the slot, so a paced call holds none.
         pacer, ticket = _pace(model, messages)
+        ask += 1
+        ask_id = uuid.uuid4().hex[:12]
+        _note_side_call(ask=ask, ask_id=ask_id)
+        facts = {**_look_facts(), "ask": ask, "ask_id": ask_id}
         try:
-            response = _invoke_once(model, messages, timeout)
+            response = _invoke_once(model, messages, timeout, facts)
             _settle(pacer, ticket, response)
             return response
         except VisionCallTimeout:
             timeouts += 1
+            _event(TIMEOUT_EVENT, {
+                **facts, "limit_s": timeout, "attempt": timeouts,
+                "asked_again": timeouts <= TIMEOUT_RETRIES})
             if timeouts > TIMEOUT_RETRIES:
                 raise VisionCallTimeout(
                     f"the vision call gave no answer within {timeout:g} s, "
@@ -849,4 +923,4 @@ __all__ = ["LangChainVisionEngine", "call_slot", "INFLIGHT_ENV",
            "conversation_key", "busy_kind", "busy_tries", "describe_error",
            "refused_detail", "BUSY_TRIES_ENV", "DEFAULT_BUSY_TRIES",
            "VisionAnswer", "was_cut_off", "capped_model", "side_call",
-           "current_side_call"]
+           "current_side_call", "TIMEOUT_EVENT", "LATE_END_EVENT"]

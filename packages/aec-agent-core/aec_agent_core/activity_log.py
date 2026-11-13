@@ -40,7 +40,10 @@ whether it was sent back), and -- since 2026-10-09 (live smoke
 wave 1, G11) -- ``tool_delivered`` (what the model RECEIVED from a tool call,
 when the agent's middleware changed the tool's own output) and
 ``tool_refused`` (a call no tool ran: an unknown tool name, an
-interception). ``agent`` is ``primary`` or the sub-agent's name, attributed
+interception; also the error message the model is given for a tool that
+raised, which since 2026-11-13 carries ``raised: true`` and whose
+``tool_error`` carries the same ``tool_call_id``, so the pair counts as one
+call). ``agent`` is ``primary`` or the sub-agent's name, attributed
 by run ancestry: each event's parent-run chain is followed up to the ``task``
 call it ran inside (whose ``subagent_type`` names the sub-agent), or to the
 top of the turn (primary). Until 2026-09-15 this was a stack of open ``task``
@@ -105,6 +108,16 @@ Since 2026-10-21 (BACKLOG EV-06, EV-19) the record also says:
   the time of the restore;
 * ``page_error``, written at once by :func:`append_event`: a page rerun
   raised (``webapp.page_errors``).
+
+Since 2026-11-13 (BACKLOG INF-75; Foundry brief 7 left 44 ``model_start``
+records with no ``model_end`` and nothing to say why):
+
+* ``side_call_timeout`` and ``side_call_late_end`` (:data:`APP_EVENTS`): a
+  vision side call given up at its time limit, and the same call ending
+  after all. Each ask of a side call carries ``ask`` (1 for the first) and
+  ``ask_id`` in the ``vision`` label of its ``model_start`` and
+  ``model_end``; the events carry the same ``ask_id``, so a start with no
+  end is matched to the timeout that left it.
 
 Hashes and sizes, never file contents, images or keys.
 
@@ -173,10 +186,21 @@ TASK_TOOL = "task"
 #: documents the turn's answer, or a file a writer was given, cites,
 #: checked against what the conversation looked up: ``not_looked_up``,
 #: ``where`` (``answer`` or the writer), ``action``; ``funhouse_agent.
-#: cited_documents``, BACKLOG EV-21).
+#: cited_documents``, BACKLOG EV-21); ``side_call_timeout`` (one ask of a
+#: vision side call got no answer within ``limit_s`` and was given up: the
+#: look's ``kind``, ``page`` and ``tile``, the ``ask`` and its ``ask_id``,
+#: ``attempt`` and whether it was ``asked_again``) and
+#: ``side_call_late_end`` (an ask that was given up ended after all, having
+#: held its vision slot ``held_s`` seconds: ``outcome``, ``ask_id``;
+#: ``aec_agent_core.deep.vision_engine``, BACKLOG INF-75). The two carry
+#: the ``tool`` and ``tool_run_id`` of the tool call the look ran in.
 APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
                         "pacer_wait", "cited_pages", "cited_documents",
-                        "judgment_check"})
+                        "judgment_check", "side_call_timeout",
+                        "side_call_late_end"})
+
+#: App events of a vision look: written with the tool call they ran in.
+LOOK_EVENTS = frozenset({"side_call_timeout", "side_call_late_end"})
 
 PRIMARY = "primary"
 
@@ -787,6 +811,8 @@ class ActivityLogger(BaseCallbackHandler):
         self._vision: dict = {}           # tool run_id -> [calls, queued_s]
         self._lock_wait: dict = {}        # tool run_id -> document lock wait
         self._side: dict = {}             # model run_id -> side call facts
+        self._ask_tools: dict = {}        # side-call ask_id -> (tool, run_id)
+        self._raised: set = set()         # tool_call_ids of tools that raised
         self._seen: dict = {}             # tool_call_id -> text as delivered
         self._tool_nodes: set = set()     # run_ids of graph "tools" nodes
         self._passes: list = []           # highest primary step, per pass
@@ -1124,7 +1150,7 @@ class ActivityLogger(BaseCallbackHandler):
             self.last_error = f"{type(exc).__name__}: {exc}"
 
     def _tool_finish(self, event: str, run_id, payload_key: str, payload,
-                     parent_run_id=None) -> None:
+                     parent_run_id=None, tool_call_id=None) -> None:
         rid = str(run_id)
         name = self._names.pop(rid, "tool")
         t_start = self._starts.pop(rid, None)
@@ -1143,6 +1169,8 @@ class ActivityLogger(BaseCallbackHandler):
                "chars": full_len,
                "duration_s": (round(self._clock() - t_start, 3)
                               if t_start is not None else None)}
+        if tool_call_id:
+            rec["tool_call_id"] = tool_call_id
         if sidecar:
             rec["full"] = sidecar
         if sub:
@@ -1171,8 +1199,16 @@ class ActivityLogger(BaseCallbackHandler):
 
     def on_tool_error(self, error, *, run_id, parent_run_id=None, **kwargs):
         try:
+            # Which call raised (INF-75): the error message the model is
+            # then given arrives as a ``tool_refused`` for the same call,
+            # and a count of refused calls must not take the pair for two.
+            call_id = self._call_ids.pop(str(run_id), None)
+            if call_id:
+                with self._lock:
+                    self._raised.add(call_id)
             self._tool_finish("tool_error", run_id, "error",
-                              f"{type(error).__name__}: {error}", parent_run_id)
+                              f"{type(error).__name__}: {error}", parent_run_id,
+                              tool_call_id=call_id)
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
 
@@ -1337,6 +1373,24 @@ class ActivityLogger(BaseCallbackHandler):
                 if isinstance(data, dict):
                     rec.update({k: _json_safe(v) for k, v in data.items()
                                 if k not in ("agent", "event")})
+                if name in LOOK_EVENTS:
+                    # Which tool call the look was part of (INF-75): the
+                    # timeout is read beside that call's duration.
+                    rid = str(run_id) if run_id else None
+                    tool_rid = (rid if rid in self._names
+                                else self._tool_of(run_id))
+                    ask_id = rec.get("ask_id")
+                    with self._lock:
+                        if tool_rid:
+                            tied = (self._names.get(tool_rid), tool_rid)
+                            if ask_id:
+                                self._ask_tools[ask_id] = tied
+                        else:
+                            # a late end: its tool call is over by now
+                            tied = self._ask_tools.get(ask_id)
+                    if tied:
+                        rec.setdefault("tool", tied[0])
+                        rec.setdefault("tool_run_id", tied[1])
                 self._write(rec)
                 return
         except Exception as exc:                       # noqa: BLE001
@@ -1369,6 +1423,11 @@ class ActivityLogger(BaseCallbackHandler):
                "truncated": truncated, "chars": n}
         if whole:
             rec["full"] = whole
+        if refused and call_id:
+            with self._lock:
+                if call_id in self._raised:
+                    self._raised.discard(call_id)
+                    rec["raised"] = True     # its tool_error is the same call
         self._write(rec)
 
     def on_llm_error(self, error, *, run_id, parent_run_id=None, **kwargs):
