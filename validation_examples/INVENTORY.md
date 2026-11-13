@@ -557,6 +557,19 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   module still supports only ONE surcharge zone (problem has bench + crest — a
   separate B2 capability gap; the loads are secondary to the seam-governed FOS).
 - Confidence in extraction: high (label-confirmed geometry).
+- **GM-140 step 1 (2026-11-13): NOT VALIDATING.** The PASS above rested on the
+  soil being weighed three times (all three layers entered with a top at el. 40,
+  each weighed from it). With each point weighed once the seam surface reads
+  Janbu (corrected) 1.073 (Spencer and GLE have no solution on it) and the
+  weak-layer search 1.43, against the referee's 0.78. The repository's problem
+  text holds Tables 9.1 to 9.3 only; the ground, the seam and the slip surface
+  are in Figure 9.1, which is not in the repository, so the geometry above
+  cannot be checked from here. Table 9.2 puts the bench load at y = 27.75 and
+  Table 9.3 the water at 27.75 along the bench, where the ground is entered at
+  28. The piezometric line is now entered as Table 9.3 prints it (29.8, 34.0,
+  37.6; before 29.86, 34.06, 37.68). Tests: a record of the module's values and
+  a strict xfail against the referee (test_published_v028_slope.py, _e8.py).
+  `module_work/gm140/STEP1_CHECK.md`.
 
 ## V-034 Slide2 #63 — Loukidis (2003) ex 2, 3-layer seismic (geometry-limited)
 - Source: Slide2 Verification #63 (manual pp. 219-220); Loukidis et al. (2003).

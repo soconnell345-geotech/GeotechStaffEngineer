@@ -57,6 +57,14 @@ For multi-layer slopes:
 Layer elevations: `top_elevation = max(z)` along top profile,
 `bottom_elevation` from next boundary's `max(z)` or extended below.
 
+One material per point (slope_stability, GM-140 step 1, 2026-11-13): in
+`build_slope_geometry` the layer named for a boundary has that boundary as
+its `top_boundary_points` and the next boundary down as its
+`bottom_boundary_points` (the lowest layer ends 2 m below its boundary's
+lowest point), so no ground is held by two layers and none is left without
+one. Before, each such layer's bottom was its own boundary: the ground
+under a boundary had no layer and the model ended at the lowest boundary.
+
 ## DWG Support
 
 ezdxf reads DXF only. DWG requires the free ODA File Converter as an

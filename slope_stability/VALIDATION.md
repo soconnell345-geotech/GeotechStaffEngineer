@@ -248,12 +248,12 @@ external equilibrium force. Default (active) byte-identical to V-040. NOT tuned.
 (Since GM-131, B15; before, on 50 even slices across the surface's corners:
 0.792 / 0.786 and 0.788 / 0.782.)
 
-VERDICT: **PASS — capability built, small seam-governed movement.** The two ACADS-4
-zones lower the FOS by ~0.3% (Spencer 0.808 -> 0.806): the crest-side zone (x 70-80,
-~11 slices on the sliding mass) adds driving weight; the bench zone (x 23-43) barely
-overlaps the mass (~1 slice). The move is small because the weak seam (c'=0, phi'=10)
-governs the FOS, as expected. Default (no `surcharges`) byte-identical to V-028. The
-crest 20->40 kPa ramp is represented as a uniform 30 kPa (its mean). NOT tuned.
+VERDICT (GM-140 step 1, 2026-11-13): **capability built; B11 / V-028 does NOT
+validate the module.** The table above rested on the soil being weighed three
+times (B19). With each point weighed once the seam surface reads Janbu
+(corrected) 1.073, and 1.034 with both zones; Spencer and GLE have no solution on
+it; the weak-layer search returns 1.43 against the referee's 0.78. The crest
+20->40 kPa ramp is represented as a uniform 30 kPa (its mean). NOT tuned.
 
 ## B12 — Search: toe circles and the infinite slope (GM-13, GM-14, 2026-10-14)
 [`search_critical_surface` now scores circles through each slope toe and, on any
@@ -678,6 +678,55 @@ V-031 Spencer 1.4174 -> 1.4160, V-043 Spencer 1.1859 -> 1.1853, Slide2 #85
 support uncounted); they keep to the model instead.
 
 ---
+
+## B19 — One material per point (GM-140 step 1, 2026-11-13)
+[The account's departure D1 (`module_work/slope_integral_review/ACCOUNT.md`
+section 2). A slice's weight summed every layer overlapping its height, each
+from its own flat top; the strength came from the first listed layer
+containing the point. Now both come from one lookup, `SlopeGeometry.column_at`
+(DESIGN.md "Layers: one material per point"). Tests:
+`tests/test_one_material_per_point.py`. Full record:
+`module_work/gm140/STEP1_CHECK.md`.]
+
+**What moved.** Only models in which two layers were given the same ground.
+Across `slope_stability/tests`, `validation_examples`, `dxf_import`,
+`geo_project` and `calc_package/tests` (1,476 tests before), every call of
+the slice weight was computed by the old rule and the new one side by side:
+they differ in V-028 and its E8 variant and in one unit test with a sloping
+boundary (`test_polyline_layers`), and nowhere else beyond rounding (V-030's
+sub-layers, 2e-15). The solvers, the searches and the slicing are untouched,
+so every other pinned value in this file is the same number as before.
+
+| Case | Before | After | Printed |
+|------|-------:|------:|---------|
+| V-028 one slice, x = 47.97 to 48.53, weight (kN/m) | 116.0 | 39.13 | by hand 18.84 x 3.7073 x 0.5602 = 39.13 |
+| V-028 sliding mass, weight (kN/m) | 8,768 | 3,003 | 3,003 from its area |
+| V-028 seam surface, Janbu (corrected) | 0.819 | 1.073 | Slide2 0.734; referee 0.78 |
+| V-028 seam surface, Spencer | 0.808 | no solution (fallback 1.041) | Slide2 0.760; referee 0.78 |
+| V-028 seam surface, GLE half-sine | 0.802 | no solution (fallback 1.010) | Slide2 0.720; referee 0.78 |
+| V-028 weak-layer search, Spencer, 30 / 40 slices | 0.808 / 0.808 | 1.430 / 1.431 | referee 0.78 |
+| V-028 E8, both loads | Spencer 0.806 | Janbu 1.034 | none for the loads alone |
+| Two-layer test geometry of `test_polyline_layers`, Bishop | 2.488 | 2.849 | none (unit test) |
+
+(The piezometric line is now Table 9.3 as the problem text prints it; with the
+line as entered before, the after values are Janbu 1.070, fallback Spencer
+1.038, as the account measured.)
+
+**V-028 / B11 do not validate.** The agreement with the referee came from the
+tripled weight. The problem text gives the soils, the loads and the
+piezometric line; the ground, the seam and the slip surface are in Figure 9.1
+only, which is not in the repository, so the entered geometry cannot be
+checked (Table 9.2 puts the bench load at y = 27.75 where the ground is entered
+at 28.0). The tests keep the module's numbers as a record and the comparison
+with the referee as a strict xfail.
+
+**No published sloping-boundary benchmark.** No problem whose text is in the
+repository gives a sloping layer boundary with complete inputs (the Slide2
+text carries coordinates only in figures; the reference library's worked
+slope examples have level boundaries). The check added is a consistency test
+with made-up values: a fill over a clay on a 1-in-5 boundary, every slice's
+weight against a hand formula, one slice by hand (164.07 kN/m; 213.67 by the
+old rule) and the mass against its two areas (3,253.4 kN/m).
 
 ## Notes / known deviations
 
