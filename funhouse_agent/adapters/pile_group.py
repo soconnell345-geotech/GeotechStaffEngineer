@@ -621,23 +621,27 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
                  "phi_ug | Sand and Clay | 0.50'; UFC 3-220-20 Table 6-28 "
                  "(p. 434, AASHTO 2020), 'group block uplift, all soils': "
                  "driven piles 0.50, drilled shafts 0.45, micropiles 0.50")
-        basis += ("; GEC-12 Vol I p. 225: for a small group, 'less than 3 piles "
-                  "per substructure unit in this manual', AASHTO (2014) "
-                  "reduces the factors of Tables 7-1 and 7-2 by 20 %"
-                  if driven else
-                  "; UFC 3-220-20 Table 6-28 note A: reduced by 20 % for small "
+        basis += ("; UFC 3-220-20 Table 6-28 note A: reduced by 20 % for small "
                   "pile groups (<5 piles)")
+        if driven:
+            basis += (
+                "; GEC-12 Vol I p. 225 reads the small group as 'less than "
+                "3 piles per substructure unit in this manual' (AASHTO "
+                "2014). The two differ for 3 or 4 driven piles; the tool "
+                "takes UFC's, the lower factor")
         if pile_type == "micropile":
             basis += (", and for micropiles in marginal ground conditions, "
                       "not applied here")
         alternatives = []
-        if driven and small_group_reduction(group_piles, pile_type, "ufc") \
-                < r["reduction"]:
-            phi_ufc = GROUP_UPLIFT_PHI[pile_type] * 0.8
+        if driven and small_group_reduction(group_piles, pile_type,
+                                            "gec12") > r["reduction"]:
+            # GM-310 (OWN-118): 3 or 4 driven piles, where the two differ
+            phi_gec = GROUP_UPLIFT_PHI[pile_type]
             alternatives.append(
-                f"UFC 3-220-20 Table 6-28 note A's small group (fewer than "
-                f"{SMALL_GROUP_PILES['ufc']} piles): phi_ug {phi_ufc:.2f}, "
-                f"the block {phi_ufc * r['R_ug_kN']:.1f} kN")
+                f"GEC-12 Vol I p. 225's small group (fewer than "
+                f"{SMALL_GROUP_PILES['gec12']} piles), under which "
+                f"{group_piles} piles are not one: phi_ug {phi_gec:.2f}, "
+                f"the block {phi_gec * r['R_ug_kN']:.1f} kN")
         choices.append(choice(
             "resistance factor for group uplift", chosen,
             how_given(params.get("pile_type"), "driven", "pile_type"),
@@ -900,7 +904,7 @@ METHOD_INFO = {
             "layers": {"type": "array", "required": False, "description": "The soil from the top of the block down, [{thickness (m), unit_weight (effective, kN/m3)}, ...], to the toes at least, in place of one unit_weight (e.g. the water table inside the block). In cohesionless soil each layer's volume is taken between its bottom and top plan dimensions (UFC 3-220-20 p. 436; GEC-12 Vol. III Eq. D-1)."},
             "cu": {"type": "float", "required": False, "description": "soil_type 'cohesive': the weighted average undrained shear strength over the embedded length along the group's perimeter (kPa), GEC-12 Eq. 7-41's su."},
             "cap_weight": {"type": "float", "required": False, "default": 0.0, "description": "The pile cap's effective weight over the block (kN), part of the block (GEC-12 Eq. 7-41's W_g 'including pile cap weight'; UFC 3-220-20 p. 435); for the piles in tension of a group, the cap over them (GEC-12 Vol. III p. 207 takes the tributary area over the back row in tension). Leave it out (0, the safe side) where the uplift load already carries it."},
-            "pile_type": {"type": "str", "required": False, "default": "driven", "allowed_values": list(PILE_TYPES), "description": "The block's resistance factor phi_ug: 0.50 driven (GEC-12 Table 7-1, Vol I p. 224), 0.45 drilled shafts, 0.50 micropiles (UFC 3-220-20 Table 6-28, p. 434); none printed for 'cfa' or 'ddp' (nominal only). Reduced by 20 % for a small group: fewer than 3 driven piles (GEC-12 Vol I p. 225), fewer than 5 of the others (UFC 3-220-20 Table 6-28 note A)."},
+            "pile_type": {"type": "str", "required": False, "default": "driven", "allowed_values": list(PILE_TYPES), "description": "The block's resistance factor phi_ug: 0.50 driven (GEC-12 Table 7-1, Vol I p. 224), 0.45 drilled shafts, 0.50 micropiles (UFC 3-220-20 Table 6-28, p. 434); none printed for 'cfa' or 'ddp' (nominal only). Reduced by 20 % for a small group: fewer than 5 piles (UFC 3-220-20 Table 6-28 note A, AASHTO 2020), whatever the pile type. For driven piles GEC-12 Vol I p. 225 reads it as fewer than 3 (AASHTO 2014); for 3 or 4 driven piles the tool takes UFC's 0.40 and the result's choices give GEC-12's 0.50 and the block at it."},
             "axial_capacity_tension": {"type": "float", "required": False, "description": "One pile's factored tension resistance phi_up R_s (kN; GEC-12 Eq. 7-38, phi_up from Table 7-1 by the static method, 0.60 with a static load test or 0.50 dynamic testing with signal matching, Table 7-2; for a small group reduced by 20 %, GEC-12 Vol I p. 225). With it, the piles' sum n phi_up R_s (Eq. 7-40) and the governing resistance, the lesser."},
             "uplift_load": {"type": "float", "required": False, "description": "The factored uplift on the piles in the block (kN, positive): the net uplift on a group in tension, or the summed tension of the piles in tension; for the utilization, the load over the governing resistance."},
             "piles_under_cap": {"type": "int", "required": False, "description": "The piles under the cap when the block is part of the group (the piles in tension), for the small-group rule, which counts the piles per substructure unit (GEC-12 Vol I p. 225). At least n_rows x n_cols."},

@@ -361,10 +361,12 @@ def block_failure_capacity(n_rows: int, n_cols: int,
 #: drilled displacement piles.
 GROUP_UPLIFT_PHI = {"driven": 0.50, "drilled_shaft": 0.45, "micropile": 0.50}
 #: A group of fewer piles than this is a small group, whose resistance
-#: factors are reduced by 20 %: GEC-12 p. 225 for driven piles (AASHTO
-#: 2014, "less than 3 piles per substructure unit in this manual"), UFC
-#: 3-220-20 Table 6-28 note A for the others (AASHTO 2020, "small pile
-#: groups (<5 piles)").
+#: factors are reduced by 20 %: UFC 3-220-20 Table 6-28 note A (AASHTO
+#: 2020, "small pile groups (<5 piles)"), the default for every pile type
+#: since GM-310 (the call for OWN-118 of 2026-11-12: of two printed
+#: readings the conservative one); GEC-12 p. 225 for driven piles (AASHTO
+#: 2014, "less than 3 piles per substructure unit in this manual"), the
+#: driven piles' default before GM-310 and given beside it.
 SMALL_GROUP_PILES = {"gec12": 3, "ufc": 5}
 #: 1H:4V, the slope of the block's sides in cohesionless soil (GEC-12 p.
 #: 291, Fig. 7-33; UFC 3-220-20 Fig. 6-16a): each side spreads 1/4 of the
@@ -374,10 +376,11 @@ _UPLIFT_SPREAD = 0.25
 
 def small_group_reduction(n_piles: int, pile_type: str,
                           rule: Optional[str] = None) -> float:
-    """1.0, or 0.8 for a small group: fewer than 3 piles for driven piles
-    (GEC-12 Vol I p. 225), fewer than 5 for the others (UFC 3-220-20 Table 6-28
-    note A); ``rule`` 'gec12' or 'ufc' takes that threshold instead."""
-    rule = rule or ("gec12" if pile_type == "driven" else "ufc")
+    """1.0, or 0.8 for a small group: fewer than 5 piles (UFC 3-220-20
+    Table 6-28 note A), whatever the pile type (GM-310, OWN-118; a driven
+    group took GEC-12 Vol I p. 225's fewer than 3 before); ``rule``
+    'gec12' or 'ufc' takes that threshold instead."""
+    rule = rule or "ufc"
     return 0.8 if n_piles < SMALL_GROUP_PILES[rule] else 1.0
 
 
