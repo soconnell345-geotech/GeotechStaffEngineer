@@ -360,4 +360,7 @@ layers as given (the run of that length alone; the profile carried on to
 the deepest base would otherwise reach into a shorter trial's 2B zone
 unsaid). A row past the profile carries its run's `warnings`; the tool's
 result says once at the top which lengths stand on the carried-on layer,
-with the choice "soil below the profile" (GM-318 review A1).
+with the choice "soil below the profile" (GM-318 review A1), whether the
+design shaft passes the profile or only the sweep does (`depth_max` past it
+with the design shaft inside; re-check N1: that case had only the rows'
+warnings).

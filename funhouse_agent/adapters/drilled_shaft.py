@@ -121,10 +121,12 @@ def _run_capacity_vs_depth(params):
                                         skipped=skipped)
     # GM-318 review A1: the lengths past the profile stand on the last
     # layer carried on (extend_last_layer); said once here, with the
-    # choice, and on each of their rows
-    given = analysis.profile_depth_given
-    past = ([r["depth_m"] for r in curve if r["depth_m"] > given + 1e-9]
-            if given is not None else [])
+    # choice, and on each of their rows. The depth the layers given reach
+    # comes from the layers, not profile_depth_given, which is None when
+    # the design shaft ends inside the profile and only the sweep passes
+    # it (GM-318 re-check N1)
+    given = analysis._given_soil().total_thickness
+    past = [r["depth_m"] for r in curve if r["depth_m"] > given + 1e-9]
     out = ({"warnings": [extended_lengths_note(given, past)]} if past
            else {})
     out["capacity_vs_depth"] = curve

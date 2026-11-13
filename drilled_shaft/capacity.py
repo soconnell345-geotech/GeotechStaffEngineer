@@ -1094,12 +1094,16 @@ class DrillShaftAnalysis:
     def _extension_choice(self, base: Optional[float] = None) -> dict:
         """The choice "soil below the profile" of a run on an extended last
         layer; ``base`` the base depth (m), the shaft's when left out (a
-        capacity-against-length curve gives its deepest length)."""
+        capacity-against-length curve gives its deepest length). The depth
+        the layers given reach is read from them, so a curve whose design
+        shaft ends inside the profile (``profile_depth_given`` None) gets
+        the choice too (GM-318 re-check N1)."""
         from geotech_common.choices import choice, how_given
         base = self.shaft.length if base is None else base
+        given = self._given_soil().total_thickness
         return choice(
             "soil below the profile",
-            f"last layer taken to go on from {self.profile_depth_given:g} m "
+            f"last layer taken to go on from {given:g} m "
             f"to the base at {base:g} m",
             how_given(self.extend_last_layer, False,
                       name="extend_last_layer"),

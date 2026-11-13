@@ -139,6 +139,31 @@ def test_curve_with_the_extension_says_which_rows_are_assumed():
                                                    abs=0.06)
 
 
+def test_curve_swept_past_a_design_shaft_inside_the_profile_says_so():
+    """Re-check N1: a 10 m shaft in a 12 m profile, extended, the curve
+    swept to 15 m. The top warning once and the choice, as when the design
+    shaft passes the profile; the rows past 12 m marked; the rows inside
+    equal to a curve run without extend_last_layer."""
+    out = METHOD_REGISTRY["capacity_vs_depth"]({
+        **_PARAMS, "shaft_length": 10.0, "extend_last_layer": True,
+        "depth_min": 9.0, "depth_max": 15.0, "n_points": 7})
+    curve = out["capacity_vs_depth"]
+    assert [r["depth_m"] for r in curve] == [9.0, 10.0, 11.0, 12.0, 13.0,
+                                             14.0, 15.0]
+    assert [bool(r.get("warnings")) for r in curve] == [False] * 4 + [True] * 3
+    assert len(out["warnings"]) == 1
+    top = out["warnings"][0]
+    assert "ends at 12 m" in top and "(13, 14, 15 m)" in top
+    assert [c["what"] for c in out["choices"]] == ["soil below the profile"]
+    chosen = out["choices"][0]["chosen"]
+    assert "from 12 m" in chosen and "base at 15 m" in chosen
+    plain = METHOD_REGISTRY["capacity_vs_depth"]({
+        **_PARAMS, "shaft_length": 10.0, "depth_min": 9.0,
+        "depth_max": 12.0, "n_points": 4})
+    assert "warnings" not in plain and "choices" not in plain
+    assert curve[:4] == plain["capacity_vs_depth"]
+
+
 def test_curve_inside_the_profile_has_no_extension_words():
     out = METHOD_REGISTRY["capacity_vs_depth"]({
         **_PARAMS, "shaft_length": 12.0, "extend_last_layer": True,
