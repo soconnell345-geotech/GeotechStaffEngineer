@@ -304,15 +304,36 @@ def _wrap(text: str, chars: int) -> str:
 
 
 def _fit_text(artist, text: str, width_px: float, pt: float, dpi: float,
-              renderer) -> None:
-    """Break ``text`` so ``artist`` is no wider than ``width_px``."""
+              renderer, save_dpi: Optional[float] = None) -> None:
+    """Break ``text`` so ``artist`` is no wider than ``width_px`` (the
+    figure's pixels), measured as drawn and, given ``save_dpi``, as the PNG
+    is saved (``_text_width``)."""
     chars = int(width_px / (0.5 * pt * dpi / 72.0))
     for _ in range(6):
         artist.set_text(_wrap(text, chars))
-        wide = artist.get_window_extent(renderer).width
+        wide = _text_width(artist, renderer, save_dpi)
         if wide <= width_px or chars <= 20:
             return
         chars = max(20, int(chars * width_px / wide * 0.97))
+
+
+def _text_width(artist, renderer, save_dpi: Optional[float] = None) -> float:
+    """``artist``'s width in the figure's pixels: the wider of its width at
+    the figure's dpi and at ``save_dpi``. Matplotlib 3.11 sets small
+    lettering wider for its size at 150 dpi than at 100: a 7.5 pt footnote
+    fitted at 100 dpi ran 0.5 in past a 6.5 in figure saved at 150, and the
+    saved PNG widened by as much."""
+    wide = artist.get_window_extent(renderer).width
+    fig = artist.figure
+    if save_dpi and float(save_dpi) != float(fig.dpi):
+        old = fig.dpi
+        fig.set_dpi(float(save_dpi))
+        try:
+            saved = artist.get_window_extent(fig.canvas.get_renderer()).width
+        finally:
+            fig.set_dpi(old)
+        wide = max(wide, saved * old / float(save_dpi))
+    return wide
 
 
 def _thousands(v, _pos=None) -> str:
@@ -690,10 +711,12 @@ def render_panel_plot(panels, *, title: str = "", ylabel: str = "",
         text_w = (fig_w - left - _RIGHT) * px
         head_h = foot_h = 0.0
         if head is not None:
-            _fit_text(head, title, text_w, _TITLE_PT, px, renderer)
+            _fit_text(head, title, text_w, _TITLE_PT, px, renderer,
+                      save_dpi=dpi)
             head_h = head.get_window_extent(renderer).height / px + 0.14
         if foot is not None:
-            _fit_text(foot, footnote, text_w, _FOOT_PT, px, renderer)
+            _fit_text(foot, footnote, text_w, _FOOT_PT, px, renderer,
+                      save_dpi=dpi)
             foot_h = foot.get_window_extent(renderer).height / px + 0.16
         top = min(above / px + head_h + 0.06, 2.5)
         bottom = min(max(below / px, 0.08) + foot_h + 0.06, 3.0)

@@ -2311,7 +2311,7 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
         from aec_agent_core.charts.panel_plot import _fit_text
         _fit_text(foot, footnote,
                   (fig.get_figwidth() * (1.0 - x0) - 0.10) * fig.dpi, 7.5,
-                  fig.dpi, renderer)
+                  fig.dpi, renderer, save_dpi=dpi)
     contour_texts = (_contour_numbers(fig, ax, contour_art, warnings, drawn)
                      if contour_art else [])
     for t in contour_texts:
