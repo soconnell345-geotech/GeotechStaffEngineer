@@ -24,7 +24,8 @@ stabilizing piles in every method (`reinforcement.py`).
 - `geometry.py` — SlopeSoilLayer (flat or polyline top and bottom), SlopeGeometry (polyline surface/GWT); `column_at`, the one lookup of the layer at a point (GM-140 step 1)
 - `slip_surface.py` — CircularSlipSurface (center + radius), PolylineSlipSurface (polyline points); a surface below the ground over more than one stretch is refused (`GroundCrossingError`, GM-122)
 - `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure (the weight summed over `SlopeGeometry.column_at`)
-- `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`; the `*_legacy` approximate forms are the fallback), solve_rigorous()
+- `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`); each returns the method's own solution or raises `NoSolution` (GM-140 step 2: the `*_legacy` approximate forms and `solve_rigorous()` are removed)
+- `solution.py` — `solve_method()`, the one solver every caller uses for a method (a result, every search family, the yield acceleration, FOSM, Monte Carlo): a `MethodSolution` with the method's own FOS, or None and the reason; `NoSolution`; `check_method()` / `check_interslice()` (an unknown name is refused)
 - `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
 - `reinforcement.py` — nails, anchors, geosynthetics and stabilizing piles as forces at the base of the slice each crosses, in every method (GM-53, GM-59)
 - `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering; a rigorous noncircular solution must hold about a second axis and slicing (`_solution_fails`, GM-57 review); the search's time budget and the Bishop screen (`search_budget`, `bishop_screen`, GM-123)
@@ -203,7 +204,7 @@ solved with (`tension_crack`, the depth used, one warning line); a search's
 `choices` say the crack's model, side and depth basis and what was done with
 reverse-curvature circles.
 
-**Measured** (VALIDATION.md B20): ACADS 1(b) 1.603 / 1.599 / 1.600 against
+**Measured** (VALIDATION.md B21): ACADS 1(b) 1.603 / 1.599 / 1.600 against
 the printed 1.596 / 1.592 / 1.592; V-043's clay crest 0.964 against 0.975;
 V-054's steep clay slope 2.113 against 2.16. Circles closed by a Rankine
 crack lower the phi = 0 chart cases below Taylor (his chart has no crack):
@@ -785,7 +786,116 @@ missed a slice's horizontal equilibrium by up to 199 lb/ft. Runtime of the
 #85 default searches (once each, shared laptop): Spencer 40 -> 37 s, GLE
 62 -> 32 s; #86 unchanged (Bishop 1.612, Spencer 1.606, GLE 1.606).
 
+### A method's own solution, or no number (GM-140 step 2, 2026-11-13)
+**The rule.** A factor of safety reported under a method's name is that
+method's own converged solution on that surface. Where the method has no
+solution there is no number: `FOS` is None, `method_solved` is False and the
+result says why. One rule for every method (Ordinary Method of Slices,
+Bishop, Janbu, Spencer, Morgenstern-Price, GLE), every family of surfaces
+and every caller.
+
+**Print.** UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as
+a result of non-convergence. The engineer should be able to identify when
+convergence issues are present." EM 1110-2-1902 C-10d (pp. C-37 to C-38)
+lists the ways to avoid non-convergence (reject the unrealistic one of
+multiple solutions, a sensible starting F, a realistic initial surface).
+The methods' own equations: Bishop (1955) Eq. 13, p. 10; Spencer (1967)
+Eqs. 7 and 8, p. 15; Morgenstern and Price (1965) Eq. 18, p. 85.
+
+**What it replaces** (the account's D23, D27, D30 and parts of D49; GM-81's
+rest, GM-139). It supersedes the parts of the GM-81 section below that keep
+the approximate solver's value.
+
+- **One solver** (`solution.solve_method`). `analyze_slope`, the search
+  scorer `search._compute_fos` (every family), `newmark.yield_acceleration`,
+  `probabilistic.fosm_fos` / `monte_carlo_fos` (so
+  `reliability.wrappers.slope_reliability`) and the calc packages all take a
+  method's value from it. A search's score of a surface is the
+  single-surface FOS of that surface, to the last digit.
+- **No approximate solver.** `spencer_fos_legacy` and
+  `morgenstern_price_fos_legacy` are deleted (no consumer outside the
+  module). `spencer_fos`, `morgenstern_price_fos`, `bishop_fos`,
+  `fellenius_fos` and `janbu_fos` raise `NoSolution` (a ValueError, with
+  the reason) where they have no solution.
+- **Bishop and Janbu.** Bishop's iteration not within its tolerance after
+  50 iterations has no solution (it returned its last iterate with a Python
+  warning). Janbu's force-equilibrium iteration with no state has none.
+- **No driving.** A surface with no net driving moment or force has no
+  factor of safety. The solvers' internal 999.9 never leaves them as one;
+  `solve_method` also refuses a ratio at or above it (the driving sum zero
+  to rounding). 999.9 remains only as the searches' internal "not scored"
+  score (`search._FOS_MAX`) and inside `gle.GLEResult` beside
+  `converged=False`.
+- **The lambda search** (`gle.gle_fos`). GM-60's robust search (the scan
+  started from the nearest lambda with a state when lambda = 0 has none; a
+  lambda with no state stepped over; a bracket whose bisection does not
+  close passed over) ran only with supports. It is the one search for every
+  run. At a fixed lambda, an iteration on {N, E, X, F} that runs its 80
+  iterations without settling is solved by the direct march
+  (`_solve_marched`), and where that finds nothing there is no state: the
+  last iterate was returned as a state before, flagged by nobody.
+  *Not adopted:* the direct march as the fallback wherever the fixed-point
+  step cannot be taken (as with supports). Measured, it solves about half
+  of the otherwise unsolved random polylines of a noncircular search at 14
+  to 16 times the run time (111 s against 8 s; 297 s against 18 s) with the
+  same minimum in both cases tried. The step 2 review asked for it (D1);
+  tried in the fix round and not applied: it finds the Spencer solution of
+  a phi = 0 circle the module misses (2.9458 against an independent
+  2.9435), but it also gives "converged" states that rest on the m_alpha
+  clamp, with base tension, on two surfaces GM-131 found to have no
+  Spencer solution (1.56 at every slicing on w11; 1.19 at 30 and 41
+  slices only on the deep sandstone polyline), takes away the yield
+  coefficient of an ordinary slope (0.327 without it; with it Spencer has
+  no solution at a trial kh of 1.0 and no ky is given) and makes ACADS 4's
+  weak-layer search take 84.5 s against 22 s. A call for the owner; see
+  `module_work/gm140/STEP2_CHECK.md`.
+- **One moment axis.** On a polyline the GLE takes moments about its fitted
+  axis (`gle._fit_axis_point`) in a search and on one surface alike. The
+  search's second try about a fixed axis (`_noncircular_axis_point`) is
+  gone from scoring: with the lambda search above it rescued no surface in
+  four searches (about 2,100 trial solves), and it was how ACADS 4's weak-layer search
+  returned Spencer 0.515 on a surface `analyze_slope` had no solution on.
+  The fixed axes remain in the confirmation check of a would-be critical
+  surface (`_solution_fails`), which is a screen, not a score.
+- **Searches count.** `SearchResult.no_solution` lists the trials left
+  without a solution by family and by method (`n_no_solution` the total),
+  in `to_dict()` and `summary()`; `warnings` says so when the governing
+  family lost trials this way. Measured on Slide2 #85 without its support,
+  6 x 6 Spencer search: 267 circles went to the approximate solver before;
+  329 trials have no Spencer solution now (the search no longer stops its
+  families early on the approximate values) and the reported minimum is
+  1.047 on a toe circle where Bishop's simplified method gives 0.910: on a
+  steep phi = 0 slope Spencer's method has no solution on the circles that
+  govern (tension at the top; the force factor of safety approaches the
+  moment one from above and does not meet it for lambda up to 1.5), and the
+  result says a lower surface cannot be ruled out.
+- **Yield acceleration.** Every trial kh is the method's own solution. The
+  upper end of the kh bracket is halved until the method solves there.
+  Where a trial kh the bisection needs has no solution, `ky` is None with
+  the reason, the kh, and the bounds reached.
+- **FOSM and Monte Carlo.** FOSM with no solution at the mean values or at
+  a value one standard deviation off gives no result (a ValueError naming
+  the variable and the value). Monte Carlo counts realizations with no
+  solution (`n_no_solution`), leaves them out of the statistics and bounds
+  the probability of failure both ways (`pf_lower`, `pf_upper`). No printed
+  rule was found for either; the result says the rule is the module's own.
+  They solve the one given surface as `analyze_slope` does (before, through
+  the search scorer and its screens).
+- **Unknown names.** An unknown `method` is refused with the list of names
+  in every entry point (it ran Bishop's simplified method); an unknown
+  `f_interslice` likewise.
+- **Not changed** (other steps): which method scores which family, and a
+  polyline named for Bishop running Spencer (step 6); the m_alpha rule and
+  the acceptability checks (step 3); the rapid-drawdown stages and their
+  fall-back to Ordinary Method of Slices estimates (step 9;
+  `rapid_drawdown.py` is untouched, and its search does not yet count its
+  per-surface solves without a solution); the GLE's lambda range, tolerance
+  and m_alpha clamp (D29).
+
 ### A single surface: warnings, and no silent fallback (GM-81, 2026-10-15)
+*(Its two "what `FOS` holds when there is no solution" cases, the labelled
+approximate value and `_legacy_critical_warning`, are superseded by GM-140
+step 2 above: there is no number in either case.)*
 `analyze_slope` results (`SlopeStabilityResult`) now carry what the searches
 said only about their governing surface, and say when the method asked for
 has no solution:
@@ -804,39 +914,38 @@ has no solution:
 - **`method_solved`** False when Spencer / Morgenstern-Price / GLE finds no
   equilibrium solution on the surface (the GLE does not converge; the
   reason, e.g. "no lambda from -1.5 to 1.5 gives moment and force factors
-  of safety that agree", is in the warning). **`method_used`** names what
-  produced `FOS`: the method itself, the "legacy approximate ... solver",
-  or None. **`methods_without_solution`** lists the rigorous FOS fields
-  (headline or `compare_methods`) that hold no converged solution.
-- **What `FOS` holds when there is no solution** (decided here):
-  - *Supports cross the surface: `FOS` is None* (to_dict null,
-    `is_stable` None; the calc package prints no stability check). The
-    legacy approximate solver ignores supports, so its value is that of
-    the slope WITHOUT them: on #85's anchored toe circle 0.938 for a
-    surface Bishop puts at 1.372 (0.891 and 1.304 before GM-134). Before
-    GM-81 that number came back as
-    the Spencer FOS with only a Python warning. It is not returned at all.
-  - *No support crosses it: `FOS` is the legacy approximate solver's
-    value, labelled* (`method_solved` False, `method_used`, the warning
-    giving theta or lambda). That solver answers the same slope; on a
-    phi = 0 circle with theta = 0 it gives Bishop's value, which every
-    method satisfying moment equilibrium gives there. Values are unchanged
-    from before: `methods.solve_rigorous` makes the same solves as
-    `spencer_fos` / `morgenstern_price_fos`.
-  The same rule applies to the `compare_methods` Spencer / M-P values.
-- **Searches** never consume `analyze_slope`; they score with
-  `search._compute_fos`, which rejects a reinforced circle and any
-  noncircular surface with no GLE solution (GM-53, SS-6) and passes over
-  such toe circles in the rigorous re-scoring (GM-60). A circle no support
-  crosses is still scored by the legacy solver when the GLE fails (#85
-  without its support: every circle, see below), so when the governing
-  circle is one of those the search labels it
-  (`_legacy_critical_warning`: `critical.method_solved` False, a warning).
-- **Found on the way.** Without supports the GLE keeps the old lambda
+  of safety that agree", is in the warning). **`method_used`** is ''
+  when `FOS` is the method's own solution and None when the method has
+  none (it could name the "legacy approximate ... solver" until GM-140
+  step 2). **`methods_without_solution`** lists the FOS fields (headline
+  or `compare_methods`) that hold no converged solution.
+- **What `FOS` holds when there is no solution.** Since GM-140 step 2,
+  nothing, with or without supports: `FOS` is None (to_dict null,
+  `is_stable` None; the calc package prints no stability check), and the
+  same for the `compare_methods` values. What GM-81 decided here, now
+  superseded: with supports crossing the surface `FOS` was None, because
+  the legacy approximate solver ignored supports (on #85's anchored toe
+  circle 0.938 for a surface Bishop puts at 1.372; 0.891 and 1.304 before
+  GM-134; before GM-81 that number came back as the Spencer FOS with only
+  a Python warning); with no support crossing it `FOS` was that solver's
+  value, labelled (`method_solved` False, `method_used`, the warning
+  giving theta or lambda). That solver (`methods.solve_rigorous` and the
+  `*_legacy` functions) has been removed.
+- **Searches** never consume `analyze_slope`; since GM-140 step 2 they
+  score every surface by the method's own solution (`solution.solve_method`
+  through `search._compute_fos`, the solver `analyze_slope` uses too), and
+  a surface with no solution is not scored and is counted by family and
+  method (`no_solution`). Until then a circle no support crossed was scored
+  by the legacy solver when the GLE failed (#85 without its support: every
+  circle, see below), and the search labelled such a governing circle
+  (`_legacy_critical_warning`, removed).
+- **Found on the way.** Without supports the GLE kept the old lambda
   search (GM-60 made only the supported one robust), and on #85's clay
-  without its support it finds no solution on any circle tried (a 6 x 6
-  Spencer search called the legacy solver 415 times); the legacy value is
-  Bishop's there. Not changed here.
+  without its support it found no solution on any circle tried (a 6 x 6
+  Spencer search called the legacy solver 415 times); the legacy value was
+  Bishop's there. Changed in GM-140 step 2: the robust lambda search
+  serves every run (the direct march where the fixed-point step cannot be
+  taken is still used with supports only; see "The lambda search").
 
 ### One sliding mass per trial surface (GM-122, GM-124; 2026-10-16)
 **The rule.** Limit equilibrium takes the soil above the slip surface as one
@@ -1645,7 +1754,9 @@ boundary, entry to exit, and `build_slices` cuts there.
     rejects a MAJORITY of its trials emits a `warnings.warn` so an
     under-resolved / mis-windowed search is not silently reported as a clean
     result.
-  - **Convergence-gate moment axis has a robust fallback** (v5.3 review fix):
+  - **Convergence-gate moment axis has a robust fallback** (v5.3 review fix;
+    removed from scoring by GM-140 step 2, see "A method's own solution, or
+    no number"):
     `_rigorous_noncircular_fos` first tries gle's internal least-squares axis
     (byte-identical to before) and, only if that fails to converge, retries with
     an explicit pinned `axis_point` (`_noncircular_axis_point`: span midpoint,
@@ -1854,7 +1965,8 @@ boundary, entry to exit, and `build_slices` cuts there.
   through `reinforcement.py`, with anchors, geosynthetics and stabilizing
   piles (see "Support forces in each method" above). The old nail path in
   `nails.py`'s own FOS integration is not used; its tests stay skipped.
-- **The legacy Spencer / Morgenstern-Price are APPROXIMATE (SS-1)**:
+- **The legacy Spencer / Morgenstern-Price were APPROXIMATE (SS-1)**
+  (removed by GM-140 step 2; the rest of this entry is history):
   `spencer_fos_legacy` / `morgenstern_price_fos_legacy` use a shifted
   m_alpha = cos(alpha−theta) + sin(alpha−theta)·tanφ/F formulation (with
   theta = const for Spencer, atan(λ·f(x)) for M-P) and a force-equilibrium

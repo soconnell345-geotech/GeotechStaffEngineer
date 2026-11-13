@@ -375,7 +375,8 @@ def test_tiny_apps_sends_the_cap_and_retries_busy_calls(monkeypatch):
                              model="tinyapp-gpt-medium", api_key="k")
     model = te.build_chat_model(prompter=ps)
     assert model.max_tokens == 32000          # sent as max_completion_tokens
-    assert model.max_retries == te.DEFAULT_MAX_RETRIES == 4
+    # one since TA-24 (it was 4): the agent's ladder does the waiting
+    assert model.max_retries == te.DEFAULT_MAX_RETRIES == 1
     monkeypatch.setenv(te.MAX_RETRIES_ENV, "6")
     assert te.build_chat_model(prompter=ps).max_retries == 6
 

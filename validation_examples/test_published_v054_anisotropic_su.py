@@ -104,7 +104,15 @@ def test_v054_anisotropic_reduces_to_isotropic_exactly():
         f_mc = _fos(_geom("mohr_coulomb"), _ISO_CIRCLE, m)
         f_an = _fos(_geom("anisotropic", su_active=40.0, su_dss=40.0,
                           su_passive=40.0), _ISO_CIRCLE, m)
-        assert f_an == pytest.approx(f_mc, rel=1e-9)
+        if f_mc is None:
+            # GM-140 step 2: Spencer and GLE have no solution on this
+            # circle of a phi = 0 slope (before, the old approximate
+            # solver's value, Bishop's, stood in for both models). The two
+            # models still agree: neither has a number.
+            assert m != "bishop" and f_an is None
+        else:
+            assert f_an == pytest.approx(f_mc, rel=1e-9)
+    assert _fos(_geom("mohr_coulomb"), _ISO_CIRCLE, "bishop") is not None
 
 
 def test_v054_bakklandet_anisotropy_reduction():

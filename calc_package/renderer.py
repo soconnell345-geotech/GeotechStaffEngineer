@@ -129,7 +129,7 @@ def _item_type(item) -> str:
     return "unknown"
 
 
-def render_html(data: CalcPackageData) -> str:
+def render_html(data: CalcPackageData, *, with_sheets: bool = True) -> str:
     """Render a CalcPackageData object to a self-contained HTML string.
 
     All text fields (project_name, engineer, company, titles,
@@ -144,6 +144,11 @@ def render_html(data: CalcPackageData) -> str:
     ----------
     data : CalcPackageData
         Complete calculation package data.
+    with_sheets : bool
+        ``True`` (default): the drawing sheets (``data.sheets``, GM-313)
+        are shown as PNGs under a last section "Drawings". ``False``
+        leaves them out (the PDF legs, which append each sheet's own
+        vector page instead).
 
     Returns
     -------
@@ -152,7 +157,10 @@ def render_html(data: CalcPackageData) -> str:
     """
     if not data.date:
         data.date = date.today().strftime("%Y-%m-%d")
-    return _render(CALC_PACKAGE_TEMPLATE, data, heading="h2", numbered=True)
+    sheets = [s for s in (getattr(data, "sheets", None) or [])
+              if s.image_base64] if with_sheets else []
+    return _render(CALC_PACKAGE_TEMPLATE, data, heading="h2", numbered=True,
+                   sheets=sheets)
 
 
 def _render(template_text: str, data: CalcPackageData, **extra) -> str:

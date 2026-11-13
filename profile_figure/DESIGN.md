@@ -77,7 +77,7 @@ move.
 | `profile.py` | `render_profile_figure` — resolve, draw, PNG (file + base64). |
 | `results.py` | `ProfileFigureResult` (resolved geometry + image + `summary()`). |
 | `data_plot.py` | An alias of `packages/aec-agent-core/aec_agent_core/charts/data_plot.py` (moved at INF-31 step 6, in the shared core since INF-32 step 11 (b)). `plot_data`: `render_data_plot` (PNG) + `build_data_plot_figure` (its Plotly twin); see below. |
-| `figure_examples.py` | An alias of `packages/aec-agent-core/aec_agent_core/charts/figure_examples.py` (moved as `data_plot.py` was). Worked examples on made-up data for the figure helper: six `plot_data` calls and three `plot_code` scripts; see below. |
+| `figure_examples.py` | An alias of `packages/aec-agent-core/aec_agent_core/charts/figure_examples.py` (moved as `data_plot.py` was). Worked examples on made-up data for the figure helper: ten `plot_data` calls (four of them since GM-315: panels and contours) and three `plot_code` scripts; see below. |
 
 `build_profile_figure` is exported so a module can drop the section into a
 bigger figure or a calc package; `render_profile_figure` closes its own figure
@@ -245,7 +245,92 @@ diagram alone only when the wall's configuration is not known.
 three borings with different ground levels against elevation, each test's
 depth kept in its hover text.
 
-**Code examples** (`CODE_EXAMPLES`, GM-97): figures `plot_data` cannot draw,
+### Panels, sections to scale and contours (BACKLOG GM-315, 2026-11-13)
+
+Until GM-315 `plot_data` had one plot, and a wall with its pressure diagrams,
+a soil column beside stress panels, or a contour map came only from
+model-written plot code, which is off for Document Review on the shared
+hosts. Three top-level inputs draw them now, with no code.
+
+**`panels`** (`charts/panel_plot.py::render_panel_plot`; `render_data_plot`
+hands over when `panels` is given). One dict per panel, left to right, all
+on ONE vertical axis (the figure's `ylabel`, `ylim`, `depth_axis`):
+
+| Key | What it does |
+|---|---|
+| `kind` | `chart` (default: its own x axis), `section` (a drawing to scale: one unit across as long as one unit up, no x axis; the shared vertical axis is its scale) or `column` (a soil column: no x axis, x runs 0 to 1 across it). |
+| `series`, `annotations`, `vlines`, `title`, `xlabel`, `xlim` | As the figure's own, for this panel. |
+| `width` | A chart's width against the other charts; a column is 0.95 in times it; a section's width follows from its metres. |
+| `share_x` | A name: chart panels with one name are drawn on one x scale (the same quantity). |
+| `bands` | Layers across the panel: `[{top, bottom, label, color, hatch, align, label_y}]`; a hatched band's name gets a ring of the band's colour. |
+| `dimensions` | `[{from, to, text, offset}]`: two heads; `offset: [dx, dy]` (data units) sets the line off from the two points, with witness lines; the text runs along the line on the offset's side. |
+| `arrows` | `[{from, to, text, color}]`: tail to head (a resultant, pointing the way it acts), text at the tail. |
+| `grid` | A light grid in this chart panel (default none; the figure's own `grid` is not used with panels). |
+
+The figure's `hlines` cross every panel and are named once, in the last
+panel; `title` and `footnote` stand over and under the whole figure, broken
+to its width. The single-plot inputs (`series`, `xlabel`, `xlim`, `vlines`,
+`annotations`, `logx`, `logy`, `equal_aspect`, `plan_view`, `north_deg`,
+`x_on_top`, `contour`) are refused by name with where each goes instead.
+
+Two series keys came with it, for every `plot_data` figure: `fill_to_x` /
+`fill_to_y` (a number: the area between the line and that base line, the
+two ends closed: a pressure or moment diagram), and a note's `rotation`
+(degrees anticlockwise; a name along a plane).
+
+**Calls made in the layout** (stated here because no reference prints them):
+
+- A chart panel's x axis starts at zero when every value is of one sign and
+  `xlim` is not given (the checklist's item 4: magnitudes compare truly);
+  `xlim` overrides it.
+- The axes are 3.6 in high unless `height_in` is given. Sections take at
+  most 62 % of the room beside chart panels: past that the axes are made
+  lower, never the section off scale, and a `height_in` so reduced is said
+  in the warnings. A chart panel under 0.75 in wide is refused.
+- Axis numbers that would run together in a narrow panel are thinned, and a
+  panel's last number is left out where it would run into the next panel's
+  first ("40" beside "0").
+- No legend unless `legend: true` (names go on the data); no grid unless a
+  panel asks.
+- The whole figure goes through the plotting box's layout check
+  (`layout_ink.layout_check`, every piece of lettering), and what it finds
+  is in the warnings.
+
+**`contour`** (`data_plot.py`, on the single plot, under the series): `{x, y,
+z, label}` with `z` as rows over an x-y grid, or one value per scattered
+point (joined into triangles with matplotlib's `tri`; nothing is drawn
+outside the points). `levels` is a count (round numbers are chosen) or the
+levels themselves. Lines are numbered on the line at the middle of each
+stretch long enough to carry a number, after the layout has settled, each
+number on a ring of the background; `filled: true` draws colour bands with a
+colour scale named `label` (and no grid). Lines drawn alone are named in the
+legend. `equal_aspect` or `plan_view` draws it to scale; outlines, points
+and notes are drawn over it, and point names keep clear of the contour
+lines.
+
+**`footnote`**: small text under the figure, on any `plot_data` figure, in
+both renderings.
+
+**The interactive twin** is built only where Plotly draws the same figure:
+chart panels (subplots in one row sharing y, with fills, reference lines,
+notes and arrows), and contours on a grid at evenly spaced levels that span
+the data. A figure with a `section` or `column` panel, bands or dimension
+lines, contours from scattered points or at uneven levels has no twin; the
+warnings say so ("no interactive chart for this figure (...): the chat shows
+the PNG; nothing to fix") and no `.plotly.json` is written.
+
+**What `plot_data` still cannot draw** (plot code's, where a host has it):
+panels stacked one above another, two vertical axes on one plot, bars, a
+coloured grid of cells, arcs and angles, a layout of the caller's own.
+
+**Examples** (`EXAMPLES`, built from the code examples' own numbers):
+`wall_section_pressures`, `settlement_stress_panels`, `pile_design_panels`
+and `contour_top_of_rock`. Each pair is in `module_work/gm315/` with the
+checklist table in its `CHECK.md`. Tests: `tests/test_data_plot_panels.py`.
+
+**Code examples** (`CODE_EXAMPLES`, GM-97): figures drawn in code (since
+GM-315 `plot_data` draws the same three from `panels`; see "Panels, sections
+to scale and contours" below),
 each a complete matplotlib script for `plot_code`'s locked box with the
 `data` it reads, what it shows and why: `wall_pressures` (a cantilever wall
 to scale with its active earth, surcharge and water pressure diagrams beside

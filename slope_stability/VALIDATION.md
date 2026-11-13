@@ -267,17 +267,19 @@ y = 27.75; the crest load is entered as its mean. The piezometric line is Table
 9.3 as printed.
 
 **The module's weak-layer search does not reach these values.** As V-028 calls it
-(seed 3, 700 trials, 6 points, 30 slices, the loads on) it returns Spencer 0.515
-on (42.97, 28.0) ... (59.99, 29.41), (64.25, 38.20): a short surface that leaves
-the seam at x = 60 and comes out on the face. The 0.515 is a solution with the
-interslice force at -43.5 degrees and tension across the back wedge, accepted
-about the search's second moment axis; on the same surface Janbu (corrected)
-reads 1.22 and Spencer about the fitted axis does not converge. A strict xfail
-against the printed 0.760 (`test_v028_weak_layer_search_against_print`), nothing
-pinned to the module's own number. The search's generator is step 7 of the slope
-rebuild (the account's D12); which solutions a search accepts is steps 2 and 3
-(one solver for a method in a search and on one surface; the printed
-acceptability checks).
+(seed 3, 700 trials, 6 points, 30 slices, the loads on) it returns Spencer 0.830
+on a surface along the seam, x = 41.59 to 77.19, 9.2 % above the printed 0.760.
+Since GM-140 step 2 (B20) that is Spencer's own solution on the surface it
+reports: `analyze_slope` gives the same 0.830 (theta 8.0 degrees), Janbu
+(corrected) 0.830 and Morgenstern-Price 0.816. Before that step it returned
+0.515 on a short surface leaving the seam at x = 60, a state with the interslice
+force at -43.5 degrees and tension across the back wedge, accepted about the
+search's second moment axis where the single-surface solver had no solution. A
+strict xfail against the printed 0.760
+(`test_v028_weak_layer_search_against_print`), nothing pinned to the module's own
+number. What is left is the search's generator (277 of the 700 trials have no
+Spencer solution; its best surface is not the declared family's best, 0.753):
+step 7 of the slope rebuild (the account's D12).
 
 **The kept surface, a record only.** (41.987, 28.0) ... (77.528, 40.0) was the
 minimum of the weak-layer search while the soil was weighed three times (B19); it
@@ -794,7 +796,45 @@ text were searched). The sloping-boundary checks are:
   the printed slices end about 5 ft short of where the stated circle leaves the
   crest, and the page takes each area from the slice's mean height.
 
-## B20 — Tension cracks and reverse-curvature circles as printed (GM-140 step 4, 2026-11-13)
+## B20 — A method's own solution, or no number (GM-140 step 2, 2026-11-13)
+
+The rule, its print and what it replaced: DESIGN.md, "A method's own solution,
+or no number". The record with every count: `module_work/gm140/STEP2_CHECK.md`;
+the measurements are `module_work/gm140/step2_section11.py`, run on master and
+on the branch.
+
+**What moved.** Two benchmark values, and nothing that is pinned to print:
+
+| Case | Before | After | Printed | Why |
+|---|---|---|---|---|
+| Slide2 #85 without its support, Spencer search, 6 x 6 | 0.9095 (a toe circle scored by the old approximate solver; 267 circles went to it) | 1.047 (a toe circle, Spencer's own solution; 329 trials without one, counted and warned of) | none for this case (Bishop's simplified method: 0.9095, unchanged) | No circle is scored by another solver. On this steep phi = 0 slope Spencer's method has no solution on the circles that govern, so its search cannot reach them; the result says a lower surface cannot be ruled out. |
+| ACADS 4 (V-028), weak-layer search, Spencer, loads on | 0.515 | 0.830 | 0.760 (Slide2 Table 9.4) | One solver and one moment axis in a search and on one surface; an iteration that does not settle is no state (B11). |
+| ACADS 4, the calc-package report of that search (no loads) | 1.161 printed (the approximate solver on the search's 0.515 surface) | 0.879, the search's own value on its surface | none | The report's re-analysis and the search are the same solve. |
+
+**What did not move** (each measured before and after): #85 with its support
+(Bishop 1.372, Spencer 1.551, GLE 1.573, passive GLE 1.359), #86 with its
+tiebacks (1.613 / 1.607 / 1.607) and without (0.942), ACADS 1(a) (0.985 / 0.984 /
+0.984 / 0.983), V-043 (Spencer 1.1859, the pinned circles 1.2096 and 1.1858),
+V-031 (1.4205 / 1.4247 / 1.4091; Spencer search 1.4174), V-044 (1.5974 / 1.5962 /
+1.5933), the yield coefficient of V-039's demonstration (Spencer 0.565), the
+FOSM and Monte Carlo cases (B4, V-030, V-042, V-045) and ACADS 4's declared
+family (0.753 / 0.722 / 0.728). On none of them did the approximate solver, an
+unsettled iteration or the second moment axis supply the governing value. Over
+1,432 solves of made-up circles (three slopes, the constant and half-sine
+functions) no converged GLE value moved by more than 0.002; 3 circles gained a
+solution (the lambda search) and 2 lost one (their "solution" was an iteration
+that had not settled).
+
+**What a result says now.** #85 with its support, Spencer search: 357 circles of
+the main search have no Spencer solution (counted under `no_solution`); the
+governing circle is one Spencer solves. #85 with its support, Bishop: 178 + 28 +
+92 trials have no net driving moment left (the support's force exceeds it),
+counted as `no_driving` and not warned of. A single surface the method cannot
+solve: `FOS` None, never another solver's value (GM-139's kind of circle; V-054's
+circle by Spencer and GLE; a stabilizing-pile row whose force exceeds the driving
+moment, which returned 999.9).
+
+## B21 — Tension cracks and reverse-curvature circles as printed (GM-140 step 4, 2026-11-13)
 
 The rule and its print are in DESIGN.md ("Tension cracks and
 reverse-curvature circles as printed"); the record, with every reading and

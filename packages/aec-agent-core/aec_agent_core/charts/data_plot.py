@@ -66,6 +66,7 @@ LEGEND_POSITIONS = ("auto", "inside", "outside", "below")
 
 #: The keys an annotation (a note of free text) may carry.
 ANNOTATION_KEYS = ("text", "x", "y", "coords", "point", "align", "box",
+                   "rotation",
                    "color", "font_size", "halo")
 
 #: Where a note's x, y are measured: in the data's own units, or as
@@ -158,6 +159,14 @@ class DataPlotResult:
     annotations : list of dict
         The notes as drawn: ``text``, ``at`` ([x, y] as given), ``coords``
         and, for a note with a leader, ``point``.
+    contour : dict or None
+        The contours as drawn: ``label``, ``from`` (``grid`` or ``points``),
+        ``levels``, ``z_range`` and ``filled``.
+    panels : list of dict
+        The panels as drawn, left to right (``panels``): ``kind``,
+        ``title``, ``x_range`` and ``width_in``; empty for one plot.
+    footnote : str
+        The footnote under the figure, as drawn.
     warnings : list of str
         Non-fatal notes (a dropped non-finite point, an empty label, a note
         that overlaps other lettering or that a line runs through).
@@ -185,10 +194,23 @@ class DataPlotResult:
     x_on_top: bool = False
     reversed_axes: List[str] = field(default_factory=list)
     annotations: List[dict] = field(default_factory=list)
+    contour: Optional[dict] = None
+    panels: List[dict] = field(default_factory=list)
+    footnote: str = ""
 
     def summary(self) -> str:
         parts = [f"'{self.title}'" if self.title else "data plot",
                  f"{len(self.series)} series"]
+        if self.panels:
+            kinds = [p["kind"] for p in self.panels]
+            parts.insert(1, f"{len(kinds)} panels on one vertical axis ("
+                            + ", ".join(kinds) + ")")
+        if self.contour:
+            c = self.contour
+            parts.append(
+                f"{'filled ' if c['filled'] else ''}contours of "
+                f"{c['label']} at {len(c['levels'])} levels "
+                f"({c['levels'][0]:g} to {c['levels'][-1]:g})")
         for s in self.series:
             parts.append(f"{s['label']} ({s['n']} pts)")
         if self.annotations:
@@ -217,6 +239,8 @@ class DataPlotResult:
             "x_on_top": self.x_on_top,
             "reversed_axes": list(self.reversed_axes),
             "annotations": list(self.annotations),
+            "contour": self.contour, "panels": list(self.panels),
+            "footnote": self.footnote,
             "width_px": self.width_px, "height_px": self.height_px,
             "warnings": list(self.warnings),
         }
@@ -315,6 +339,24 @@ def _clean_series(raw, idx: int, warnings: list) -> dict:
                         "only; ignored")
         fill = None
 
+    fill_to = {}
+    for key in ("fill_to_x", "fill_to_y"):
+        base = raw.get(key)
+        if base is None:
+            continue
+        if not _is_number(base) or not math.isfinite(float(base)):
+            raise ValueError(f"series[{idx}] '{key}' must be a number: the "
+                             "base line the area under the curve is filled "
+                             "to")
+        if style == "polygon" or categorical:
+            warnings.append(f"series[{idx}]: '{key}' applies to a line "
+                            "with numeric x; ignored")
+            continue
+        fill_to[key] = float(base)
+    if len(fill_to) == 2:
+        raise ValueError(f"series[{idx}]: give fill_to_x or fill_to_y, not "
+                         "both")
+
     def _num(key, default, lo, hi):
         value = raw.get(key)
         if value is None:
@@ -349,6 +391,8 @@ def _clean_series(raw, idx: int, warnings: list) -> dict:
             "fill": fill,
             "hatch": hatch,
             "fill_opacity": _num("fill_opacity", _FILL_OPACITY, 0.0, 1.0),
+            "fill_to_x": fill_to.get("fill_to_x"),
+            "fill_to_y": fill_to.get("fill_to_y"),
             "labels": out_labels,
             "hover": out_hover,
             "in_legend": raw.get("in_legend", True) is not False,
@@ -389,6 +433,17 @@ def _note_lines(text, idx: int) -> List[str]:
         raise ValueError(f"annotations[{idx}] needs 'text': the words to "
                          "place")
     return lines
+
+
+def _note_text(text, what: str = "footnote") -> str:
+    """A title's or footnote's text with ``<br>`` as a line break; ``what``
+    names it in the refusal when it is not text."""
+    if text is None:
+        return ""
+    if not isinstance(text, str):
+        raise ValueError(f"{what} must be text")
+    return "\n".join(part.strip() for part in
+                     re.split(r"<br\s*/?>|\n", text)).strip()
 
 
 def _note_align(spec, idx: int) -> tuple:
@@ -441,12 +496,14 @@ def _note_coord(value, idx: int, what: str, categories, log: bool,
     return v
 
 
-def _note_colour(value, idx: int, what: str, default: str) -> str:
+def _note_colour(value, idx: int, what: str, default: str,
+                 where: Optional[str] = None) -> str:
     from matplotlib.colors import is_color_like
     if value is None:
         return default
     if not isinstance(value, str) or not is_color_like(value):
-        raise ValueError(f"annotations[{idx}] {what} {value!r} is not a "
+        raise ValueError(f"{where or f'annotations[{idx}]'} {what} "
+                         f"{value!r} is not a "
                          "colour (a name such as 'gray', or '#1f4e79')")
     return value
 
@@ -528,6 +585,14 @@ def _clean_notes(raw, categories, logx: bool, logy: bool,
             warnings.append(f"annotations[{idx}] font_size {size:g} pt drawn "
                             f"at {min(max(size, lo), hi):g} pt (a note is "
                             f"{lo:g} to {hi:g} pt)")
+        rotation = item.get("rotation")
+        if rotation is None:
+            rotation = 0.0
+        elif (not _is_number(rotation) or not math.isfinite(float(rotation))
+              or abs(float(rotation)) > 180):
+            raise ValueError(f"annotations[{idx}] rotation must be degrees "
+                             "anticlockwise, -180 to 180 (90 reads up the "
+                             "page)")
         echo = {"text": "\n".join(lines),
                 "at": [item["x"], item["y"]], "coords": coords}
         if point is not None:
@@ -538,8 +603,359 @@ def _clean_notes(raw, categories, logx: bool, logy: bool,
             "color": _note_colour(item.get("color"), idx, "color",
                                   _TEXT_COLOR),
             "font_size": min(max(size, lo), hi),
+            "rotation": float(rotation),
             "echo": echo})
     return notes
+
+
+#: A contour description's keys (``contour``).
+CONTOUR_KEYS = ("x", "y", "z", "levels", "filled", "line_labels", "label")
+#: The colour scale of filled contours, in both renderings.
+_CONTOUR_CMAP = ("viridis", "Viridis")
+_CONTOUR_LINE = "#3a3a3a"       #: contour lines drawn alone
+_CONTOUR_MAX_GRID = 250_000     #: grid values drawn (500 x 500)
+_CONTOUR_MAX_POINTS = 50_000    #: scattered points drawn
+_CONTOUR_MAX_LEVELS = 30        #: levels, counted or chosen
+_CONTOUR_NUMBERS_PER_LEVEL = 3  #: numbers on one level, longest lines first
+_CONTOUR_MAX_STRETCHES = 300    #: separate lines past which none is numbered
+
+
+def _clean_contour(raw, warnings: list) -> Optional[dict]:
+    """``contour`` checked: a grid (``x`` and ``y`` the grid lines, ``z``
+    one row of values per y) or scattered points (``x``, ``y`` and ``z``
+    three equal lists, triangulated). ``levels`` is a count or the levels
+    themselves; ``label`` names the quantity with its unit."""
+    import difflib
+    import numpy as np
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("contour must be a dict with 'x', 'y', 'z' and "
+                         "'label'")
+    unknown = sorted(str(k) for k in raw if k not in CONTOUR_KEYS)
+    if unknown:
+        near = [f"{k} -> {m[0]}" for k in unknown
+                for m in [difflib.get_close_matches(k, CONTOUR_KEYS, n=1,
+                                                    cutoff=0.6)] if m]
+        hint = f" Did you mean: {'; '.join(near)}?" if near else ""
+        raise ValueError(f"contour has unknown key(s) {unknown}.{hint} "
+                         f"Valid keys: {sorted(CONTOUR_KEYS)}.")
+    for key in ("x", "y", "z"):
+        if not isinstance(raw.get(key), (list, tuple)) or not raw[key]:
+            raise ValueError(f"contour needs '{key}' as a list")
+    # bounded before anything is read: a figure a page wide shows no more
+    if isinstance(raw["z"][0], (list, tuple)):
+        if len(raw["x"]) * len(raw["y"]) > _CONTOUR_MAX_GRID:
+            raise ValueError(
+                f"contour grid of {len(raw['y'])} rows of {len(raw['x'])} "
+                f"values: at most {_CONTOUR_MAX_GRID:,} are drawn; take "
+                "every second (or third) grid line")
+    elif max(len(raw["x"]), len(raw["z"])) > _CONTOUR_MAX_POINTS:
+        raise ValueError(
+            f"contour from {max(len(raw['x']), len(raw['z'])):,} scattered "
+            f"points: at most {_CONTOUR_MAX_POINTS:,} are drawn; thin them")
+    label = str(raw.get("label") or "").strip()
+    if not label:
+        raise ValueError("contour needs 'label': the quantity contoured "
+                         "with its unit, e.g. 'Depth to rock (m)'")
+
+    def numbers(values, what, gaps=False):
+        out = []
+        for v in values:
+            if v is None and gaps:
+                out.append(float("nan"))
+            elif _is_number(v):
+                out.append(float(v))
+            else:
+                raise ValueError(f"contour {what} has a value that is not "
+                                 f"a number: {v!r}")
+        return out
+
+    x, y = numbers(raw["x"], "x"), numbers(raw["y"], "y")
+    if not all(math.isfinite(v) for v in x + y):
+        raise ValueError("contour x and y must be finite numbers")
+    z_raw = raw["z"]
+    if all(isinstance(row, (list, tuple)) for row in z_raw):
+        kind = "grid"
+        if len(z_raw) != len(y) or any(len(row) != len(x) for row in z_raw):
+            raise ValueError(
+                f"contour z on a grid is one row per y value, each with "
+                f"one value per x value: {len(y)} rows of {len(x)}; got "
+                f"{len(z_raw)} rows of "
+                f"{sorted({len(row) for row in z_raw})}")
+        if len(x) < 2 or len(y) < 2:
+            raise ValueError("a contour grid needs at least 2 x and 2 y "
+                             "values")
+        for name, vals in (("x", x), ("y", y)):
+            if any(b <= a for a, b in zip(vals, vals[1:])):
+                raise ValueError(f"contour {name} must increase along the "
+                                 "grid")
+        z = np.array([numbers(row, "z", gaps=True) for row in z_raw],
+                     dtype=float)
+        z = np.where(np.isfinite(z), z, np.nan)
+        if np.isnan(z).any():
+            warnings.append(f"contour: {int(np.isnan(z).sum())} grid "
+                            "value(s) missing; nothing is contoured there")
+    elif any(isinstance(row, (list, tuple)) for row in z_raw):
+        raise ValueError("contour z is either a grid (a list of rows) or "
+                         "one value per point, not a mix")
+    else:
+        kind = "points"
+        z = numbers(z_raw, "z", gaps=True)
+        if not len(x) == len(y) == len(z):
+            raise ValueError(
+                f"contour from scattered points needs x, y and z of one "
+                f"length; got {len(x)}, {len(y)} and {len(z)} (for a grid, "
+                "give z as a list of rows)")
+        keep = [i for i, v in enumerate(z) if math.isfinite(v)]
+        if len(keep) < len(z):
+            warnings.append(f"contour: dropped {len(z) - len(keep)} point(s) "
+                            "with no value")
+        x, y = [x[i] for i in keep], [y[i] for i in keep]
+        z = np.array([z[i] for i in keep], dtype=float)
+        if len(set(zip(x, y))) < 3:
+            raise ValueError("a contour from scattered points needs at "
+                             "least 3 different points")
+    if not np.isfinite(z).any():
+        raise ValueError("contour z has no values: there is nothing to "
+                         "contour")
+    lo, hi = float(np.nanmin(z)), float(np.nanmax(z))
+    if not (math.isfinite(lo) and hi > lo):
+        raise ValueError("contour z holds one value only: there is nothing "
+                         "to contour")
+    levels = raw.get("levels")
+    chosen = isinstance(levels, (list, tuple))
+    if chosen:
+        levels = sorted(set(numbers(levels, "levels")))
+        if not levels or not all(math.isfinite(v) for v in levels):
+            raise ValueError("contour levels must be finite numbers")
+        if len(levels) > _CONTOUR_MAX_LEVELS:
+            raise ValueError(f"contour levels: {len(levels)} given, at most "
+                             f"{_CONTOUR_MAX_LEVELS} are drawn")
+    else:
+        if levels is None:
+            levels = 7
+        if (not _is_number(levels)
+                or not 2 <= float(levels) <= _CONTOUR_MAX_LEVELS):
+            raise ValueError("contour levels is how many (2 to "
+                             f"{_CONTOUR_MAX_LEVELS}) or the "
+                             "list of levels to draw")
+        from matplotlib.ticker import MaxNLocator
+        levels = [float(v) for v in MaxNLocator(
+            nbins=int(levels), steps=[1, 2, 2.5, 5, 10]).tick_values(lo, hi)]
+    filled = bool(raw.get("filled", False))
+    if filled and len(levels) < 2:
+        raise ValueError("filled contours need at least 2 levels")
+    if not any(lo <= v <= hi for v in levels):
+        raise ValueError(f"no contour level lies within the data "
+                         f"({lo:g} to {hi:g})")
+    line_labels = raw.get("line_labels")
+    return {"kind": kind, "x": x, "y": y, "z": z, "levels": levels,
+            "chosen_levels": chosen, "filled": filled,
+            "line_labels": (not filled if line_labels is None
+                            else bool(line_labels)),
+            "label": label, "z_range": [lo, hi]}
+
+
+def _contour_extent(contour) -> dict:
+    """The contoured area's corners as a stand-in series, for the sizing
+    of a drawing to scale and a plan's furniture."""
+    return {"x": [min(contour["x"]), max(contour["x"])],
+            "y": [min(contour["y"]), max(contour["y"])]}
+
+
+def _draw_contour(fig, ax, c) -> dict:
+    """Draw the contours under everything else: lines (each labelled on
+    the line) or filled bands with a colour scale named ``label``. Returns
+    ``{"texts": the line labels, "lines": the line artists, "bar": the
+    colour scale or None}``."""
+    kw = {"levels": c["levels"]}
+    if c["kind"] == "grid":
+        fill, line, args = ax.contourf, ax.contour, (c["x"], c["y"], c["z"])
+    else:
+        from matplotlib.tri import Triangulation
+        try:
+            tri = Triangulation(c["x"], c["y"])
+        except Exception:                               # noqa: BLE001
+            raise ValueError("contour: the points could not be joined into "
+                             "triangles; they may lie on one line") from None
+        fill, line, args = ax.tricontourf, ax.tricontour, (tri, c["z"])
+    bar = lines = None
+    if c["filled"]:
+        bands = fill(*args, cmap=_CONTOUR_CMAP[0], alpha=0.85, zorder=0.5,
+                     **kw)
+        if c["line_labels"]:    # lines only to carry their numbers
+            lines = line(*args, colors=_CONTOUR_LINE, linewidths=0.5,
+                         zorder=0.6, **kw)
+        bar = fig.colorbar(bands, ax=ax, pad=0.02, fraction=0.05,
+                           aspect=28)
+        bar.set_label(c["label"], fontsize=9, color=_TEXT_COLOR)
+        bar.ax.tick_params(labelsize=8, colors=_TEXT_COLOR, length=2)
+        bar.outline.set_visible(False)
+    else:
+        lines = line(*args, colors=_CONTOUR_LINE, linewidths=0.9,
+                     zorder=0.6, **kw)
+    return {"texts": [], "lines": lines, "bar": bar,
+            "number": c["line_labels"]}
+
+
+def _contour_numbers(fig, ax, contour_art, warnings: list,
+                     drawn=()) -> list:
+    """Number the contour lines, once the layout is settled (a number is
+    turned along its line as the line is drawn then): one at the middle of
+    each stretch of line long enough to carry it (the three longest of a
+    level; none when the lines break into more than 300 pieces, with a
+    warning), with a thin ring of the
+    background round it so whatever crosses it stops short; moved along
+    its line off a point drawn there (``drawn``: ``[(series, xs)]``). A
+    number the plot's edge would cut is taken off; a level left with no
+    number is said in the warnings."""
+    lines = contour_art.get("lines")
+    if lines is None or not contour_art.get("number"):
+        return []
+    import numpy as np
+    from matplotlib import patheffects
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    frame = ax.get_window_extent(renderer)
+    room = 4.0 * _LABEL_SIZE * fig.dpi / 72.0     # a number and its gap
+    points = [ax.transData.transform((x, y)) for s, xs in drawn
+              for x, y in zip(xs, s["y"])]
+
+    def clear(at) -> float:
+        """Pixels from ``at`` to the nearest drawn point."""
+        return min((float(np.hypot(*(at - q))) for q in points),
+                   default=room)
+
+    by_level = [(level, [p for p in path.to_polygons(closed_only=False)
+                         if len(p) >= 2])
+                for level, path in zip(lines.levels, lines.get_paths())]
+    stretches = sum(len(polys) for _level, polys in by_level)
+    if stretches > _CONTOUR_MAX_STRETCHES:
+        # a rough surface breaks into hundreds of small loops; numbering
+        # each would take minutes and bury the drawing
+        warnings.append(
+            f"contour: the lines break into {stretches} separate pieces, "
+            "too many to number; draw them filled (a colour scale) or "
+            "from a smoother or thinner grid")
+        return []
+    spots, short = [], set()
+    for level, polys in by_level:
+        found = seen = False
+        measured = []
+        for poly in polys:
+            px = ax.transData.transform(poly)
+            seg = np.hypot(*np.diff(px, axis=0).T)
+            along = np.concatenate([[0.0], np.cumsum(seg)])
+            seen = seen or along[-1] > 0.15 * fig.dpi   # a line one can see
+            if along[-1] >= room:
+                measured.append((poly, seg, along))
+        # the longest stretches of the level carry its numbers
+        measured.sort(key=lambda m: -m[2][-1])
+        for poly, seg, along in measured[:_CONTOUR_NUMBERS_PER_LEVEL]:
+            best = None
+            for part in (0.5, 0.4, 0.6, 0.3, 0.7):     # the middle first
+                at = part * along[-1]
+                k = min(int(np.searchsorted(along, at)), len(poly) - 1)
+                k = max(k, 1)
+                f = (at - along[k - 1]) / (seg[k - 1] or 1.0)
+                spot = poly[k - 1] + f * (poly[k] - poly[k - 1])
+                room_here = clear(ax.transData.transform(spot))
+                if best is None or room_here > best[0]:
+                    best = (room_here, spot)
+                if room_here >= 0.6 * room:
+                    break
+            spots.append(tuple(best[1]))
+            found = True
+        if seen and not found:
+            short.add(f"{level:g}")
+    texts = []
+    if spots:
+        texts = list(ax.clabel(lines, fmt="%g", fontsize=_LABEL_SIZE + 0.5,
+                               inline=True, inline_spacing=8,
+                               colors=_TEXT_COLOR, manual=spots))
+    for t in texts:
+        t.set_zorder(4.5)
+        t.set_path_effects([patheffects.withStroke(linewidth=2.5,
+                                                   foreground="white")])
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    kept, lost = [], set()
+    for t in texts:
+        bb = t.get_window_extent(renderer)
+        if (bb.x0 >= frame.x0 and bb.x1 <= frame.x1 and bb.y0 >= frame.y0
+                and bb.y1 <= frame.y1):
+            kept.append(t)
+        else:
+            lost.add(t.get_text())
+            t.remove()
+    gone = sorted((lost | short) - {t.get_text() for t in kept}, key=float)
+    if gone:
+        warnings.append("contour: no room inside the plot for the number "
+                        f"on level {', '.join(gone)}; name it with a note")
+    contour_art["texts"] = kept
+    return kept
+
+
+def _contour_strokes(contour_art) -> list:
+    """The contour lines as stand-in line series ``[(series, xs)]``, so a
+    point's name is placed clear of them as it is of any other line."""
+    lines = (contour_art or {}).get("lines")
+    if lines is None:
+        return []
+    out = []
+    for path in lines.get_paths():
+        for poly in path.to_polygons(closed_only=False):
+            if len(poly) < 2:
+                continue
+            out.append(({"y": [float(v) for v in poly[:, 1]],
+                         "style": "line", "line_width": 0.9,
+                         "marker_size": 0.5, "labels": None, "hatch": None,
+                         "fill": None},
+                        [float(v) for v in poly[:, 0]]))
+    return out
+
+
+def _plotly_contour(go, c):
+    """The contours as a Plotly trace drawn like the PNG, or ``(None,
+    why)`` where Plotly cannot draw the same thing: it contours a grid at
+    evenly spaced levels only."""
+    if c["kind"] != "grid":
+        return None, "contours from scattered points are in the PNG only"
+    lv = c["levels"]
+    if len(lv) < 2:
+        return None, "contours at a single level are in the PNG only"
+    steps = [b - a for a, b in zip(lv, lv[1:])]
+    if max(steps) - min(steps) > 1e-9 * max(abs(lv[-1]),
+                                                           abs(lv[0]), 1.0):
+        return None, ("contours at unevenly spaced levels are in the PNG "
+                      "only")
+    lo, hi = c["z_range"]
+    if c["filled"] and (lv[0] > lo or lv[-1] < hi):
+        return None, ("filled contours whose levels do not span the data "
+                      "are in the PNG only")
+    z = [[None if not math.isfinite(v) else float(v) for v in row]
+         for row in c["z"].tolist()]
+    kw = {"x": list(c["x"]), "y": list(c["y"]), "z": z, "name": c["label"],
+          "contours": {"start": lv[0], "end": lv[-1], "size": steps[0],
+                       "showlines": bool(c["line_labels"]
+                                         or not c["filled"]),
+                       "showlabels": bool(c["line_labels"]),
+                       "labelfont": {"size": 10, "color": _TEXT_COLOR}},
+          "hovertemplate": "x %{x:g}, y %{y:g}<br>" + c["label"]
+                           + " %{z:g}<extra></extra>",
+          "showlegend": False}
+    if c["filled"]:
+        kw.update(colorscale=_CONTOUR_CMAP[1], opacity=0.85, zmin=lv[0],
+                  zmax=lv[-1], showscale=True,
+                  colorbar={"title": {"text": c["label"], "side": "right"},
+                            "thickness": 14},
+                  line={"color": _CONTOUR_LINE, "width": 0.6})
+    else:
+        kw["contours"]["coloring"] = "lines"
+        kw.update(colorscale=[[0, _CONTOUR_LINE], [1, _CONTOUR_LINE]],
+                  showscale=False, line={"width": 1.2})
+    return go.Contour(**kw), None
 
 
 def _marker_size(s) -> float:
@@ -643,7 +1059,8 @@ def _fallback_view(cleaned, categories, xlim, ylim, logx, logy,
     return xv, yv
 
 
-def _plotly_notes(fig, notes, logx: bool, logy: bool, view) -> bool:
+def _plotly_notes(fig, notes, logx: bool, logy: bool, view,
+                  xref: str = "x", yref: str = "y") -> bool:
     """The notes on the Plotly twin, where the PNG has them: text at x, y in
     data units (log10 of them on a log axis, as Plotly takes positions
     there) or in fractions of the plot (the axis domain), anchored on the
@@ -665,26 +1082,52 @@ def _plotly_notes(fig, notes, logx: bool, logy: bool, view) -> bool:
         if n["box"]:
             kw.update(bgcolor=_rgba(n["box"], 1.0), borderpad=3,
                       borderwidth=0)
+        if n.get("rotation"):
+            kw["textangle"] = -n["rotation"]    # Plotly turns clockwise
         x, y = n["x"], n["y"]
         if n["coords"] == "axes":
             if n["point"] is None:
-                fig.add_annotation(xref="x domain", yref="y domain", x=x,
+                fig.add_annotation(xref=f"{xref} domain", yref=f"{yref} domain", x=x,
                                    y=y, **kw)
                 continue
             x, y = _axes_to_data(x, y, view, logx, logy)
             hold_view = True
         if n["point"] is None:
-            fig.add_annotation(xref="x", yref="y", x=pos(x, logx),
+            fig.add_annotation(xref=xref, yref=yref, x=pos(x, logx),
                                y=pos(y, logy), **kw)
             continue
         kw.update(showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1,
                   arrowcolor=n["color"], standoff=2, startstandoff=2)
-        fig.add_annotation(xref="x", yref="y",
+        fig.add_annotation(xref=xref, yref=yref,
                            x=pos(n["point"][0], logx),
                            y=pos(n["point"][1], logy),
-                           axref="x", ayref="y", ax=pos(x, logx),
+                           axref=xref, ayref=yref, ax=pos(x, logx),
                            ay=pos(y, logy), **kw)
     return hold_view
+
+
+def _plotly_fill_to(go, s, color) -> list:
+    """The area between a series and its base line (``fill_to_x`` /
+    ``fill_to_y``) as one closed, filled trace, as the PNG draws it."""
+    xs, ys = list(s["x"]), list(s["y"])
+    if s.get("fill_to_x") is not None:
+        b = s["fill_to_x"]
+        xs, ys = xs + [b, b, xs[0]], ys + [ys[-1], ys[0], ys[0]]
+    elif s.get("fill_to_y") is not None:
+        b = s["fill_to_y"]
+        xs, ys = xs + [xs[-1], xs[0], xs[0]], ys + [b, b, ys[0]]
+    else:
+        return []
+    line = {"color": color, "width": s["line_width"],
+            "dash": DASHES[s["line_dash"]][1]}
+    ends = [go.Scatter(x=xs[k:k + 2], y=ys[k:k + 2], mode="lines",
+                       line=line, showlegend=False, hoverinfo="skip")
+            for k in (len(s["x"]) - 1, len(s["x"]) + 1)]
+    return [go.Scatter(
+        x=xs, y=ys, mode="lines", fill="toself",
+        fillcolor=_rgba(color, s["fill_opacity"]),
+        line={"color": color, "width": 0},
+        showlegend=False, hoverinfo="skip")] + ends
 
 
 def build_data_plot_figure(cleaned_series, *, title: str = "",
@@ -699,7 +1142,8 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
                            north_deg: Optional[float] = None,
                            scale_units: str = "m", x_on_top: bool = False,
                            annotations=None, view=None, plan_layout=None,
-                           ref_spots=None):
+                           ref_spots=None, contour=None,
+                           footnote: str = ""):
     """Build the interactive Plotly twin of :func:`render_data_plot`'s PNG.
 
     ``cleaned_series`` is what :func:`_clean_series` produced for the
@@ -738,8 +1182,13 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
     except Exception:                       # noqa: BLE001 — plotly absent
         return None
 
-    categories = _categories(cleaned_series)
+    categories = _categories(cleaned_series) if cleaned_series else None
     fig = go.Figure()
+    if contour is not None:             # under everything, as in the PNG
+        trace, _why = _plotly_contour(go, contour)
+        if trace is None:
+            return None
+        fig.add_trace(trace)
     # outlines first, so points and lines stand on top of a filled zone
     order = sorted(range(len(cleaned_series)),
                    key=lambda i: cleaned_series[i]["style"] != "polygon")
@@ -760,6 +1209,8 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
         has_text = bool(s["labels"] and any(s["labels"]))
         if has_text:
             mode += "+text"
+        for area in _plotly_fill_to(go, s, color):
+            fig.add_trace(area)
         trace = go.Scatter(
             x=list(s["x"]), y=list(s["y"]), name=s["label"], mode=mode,
             line={"color": color, "width": s["line_width"], "shape": shape,
@@ -825,7 +1276,11 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
     # A reference line is named on the line itself (both renderings), so
     # the legend is for the series only.
     shown = [s for s in cleaned_series if s["in_legend"]]
-    show_legend = (legend if legend is not None else len(shown) > 1)
+    lines_only = contour is not None and not contour["filled"]
+    if lines_only:
+        fig.data[0].showlegend = True
+    show_legend = (legend if legend is not None
+                   else len(shown) + bool(lines_only) > 1)
     position = _resolve_legend_position(legend_position, equal_aspect)
     legend_kw = {"font": {"size": 11, "color": _TEXT_COLOR}}
     if position == "below":
@@ -883,8 +1338,18 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
         fig.update_yaxes(visible=False, constrain="domain")
         if title:
             fig.update_layout(title={"x": 0.0, "xanchor": "left"})
-        _plotly_plan_furniture(fig, cleaned_series, scale_units, north_deg,
-                               xlabel, plan_layout)
+        _plotly_plan_furniture(
+            fig, cleaned_series + ([_contour_extent(contour)]
+                                   if contour is not None else []),
+            scale_units, north_deg, xlabel, plan_layout)
+    if footnote:
+        lines = footnote.split("\n")
+        fig.update_layout(margin={"b": 78 + 14 * len(lines)})
+        fig.add_annotation(
+            xref="paper", yref="paper", x=0.0, y=0.0, yshift=-58,
+            xanchor="left", yanchor="top", align="left", showarrow=False,
+            text="<br>".join(lines),
+            font={"size": 10.5, "color": _TEXT_COLOR})
     if annotations:
         if view is None:
             view = _fallback_view(cleaned_series, categories, xlim, ylim,
@@ -1120,6 +1585,8 @@ def _draw_notes(ax, notes) -> list:
         kw = {"fontsize": n["font_size"], "color": n["color"],
               "ha": n["ha"], "va": n["va"], "multialignment": n["ha"],
               "zorder": 6, "annotation_clip": False}
+        if n.get("rotation"):
+            kw.update(rotation=n["rotation"], rotation_mode="anchor")
         if n["box"]:
             kw["bbox"] = {"boxstyle": "square,pad=0.25",
                           "facecolor": n["box"], "edgecolor": "none"}
@@ -1382,6 +1849,8 @@ _PLACED_HINTS = {
     "furniture": "move what runs into it off the band below the site",
     "point": "no spot beside the point was clear: name it with a note and "
              "a leader, or leave the name out",
+    "contour": "move what stands on it, or set the contour's line_labels "
+               "false and read the levels off the colour scale",
 }
 #: ... and on a piece whose one fault is the legend, which names are not
 #: placed round (a legend inside the plot takes its "best" place at the
@@ -1477,6 +1946,81 @@ def _check_lettering(fig, ax, notes, artists, dpi, lines_named=None,
     return found
 
 
+def _draw_series(ax, cleaned, categories=None) -> tuple:
+    """Draw the cleaned series on ``ax``, outlines first. Returns ``(drawn,
+    lines_named)``: ``drawn`` is ``[(series, xs_plotted)]`` and
+    ``lines_named`` names each named series' artists by ``id`` for the
+    lettering check."""
+    drawn = []
+    lines_named = {}            # the notes' check: artist id -> its line
+    order = sorted(range(len(cleaned)),
+                   key=lambda i: cleaned[i]["style"] != "polygon")
+    for i in order:
+        s = cleaned[i]
+        before = {id(a) for a in ax.get_children()}
+        xs = ([categories.index(v) for v in s["x"]] if categories is not None
+              else s["x"])
+        color = s["color"] or _PALETTE[i % len(_PALETTE)]
+        label = s["label"] if s["in_legend"] else "_nolegend_"
+        dash = DASHES[s["line_dash"]][0]
+        kw = {"color": color, "label": label, "linewidth": s["line_width"],
+              "zorder": 3}
+        mk = {"marker": MARKERS[s["marker"]][0],
+              "markersize": _marker_size(s)}
+        if s["marker_edge"]:
+            mk.update(markeredgecolor=s["marker_edge"], markeredgewidth=0.8)
+        if s["marker_open"]:
+            mk.update(markerfacecolor="none")
+        if s["style"] == "markers":
+            ax.plot(xs, s["y"], linestyle="none", **mk, **kw)
+        elif s["style"] == "line":
+            ax.plot(xs, s["y"], linestyle=dash, **kw)
+        elif s["style"] == "step":
+            ax.step(xs, s["y"], where="post", linestyle=dash, **kw)
+        elif s["style"] == "polygon":
+            if s["fill"]:
+                fill_color = color if s["fill"] is True else s["fill"]
+                ax.fill(xs, s["y"], facecolor=fill_color,
+                        alpha=s["fill_opacity"], edgecolor="none", zorder=1)
+            if s["hatch"]:
+                # the hatch takes the outline's colour (a zone drawn over
+                # what lies under it, as on a drawing); the legend shows a
+                # hatched swatch, not a line
+                ax.fill(xs, s["y"], facecolor="none", edgecolor=color,
+                        hatch=s["hatch"] * 3, linewidth=0.8, zorder=1.5,
+                        label=kw["label"])
+                kw["label"] = "_nolegend_"
+            kw["zorder"] = 2
+            ax.plot(xs, s["y"], linestyle=dash, **kw)
+        else:
+            ax.plot(xs, s["y"], linestyle=dash, **mk, **kw)
+        if s.get("fill_to_x") is not None or s.get("fill_to_y") is not None:
+            # a diagram: the area between the curve and its base line, and
+            # the two ends closed (a pressure diagram, a moment diagram)
+            if s.get("fill_to_x") is not None:
+                base = s["fill_to_x"]
+                ax.fill_betweenx(s["y"], base, xs, facecolor=color,
+                                 alpha=s["fill_opacity"], linewidth=0,
+                                 zorder=1)
+                ends = [([xs[k], base], [s["y"][k]] * 2) for k in (0, -1)]
+            else:
+                base = s["fill_to_y"]
+                ax.fill_between(xs, base, s["y"], facecolor=color,
+                                alpha=s["fill_opacity"], linewidth=0,
+                                zorder=1)
+                ends = [([xs[k]] * 2, [s["y"][k], base]) for k in (0, -1)]
+            for ex, ey in ends:
+                ax.plot(ex, ey, color=color, linewidth=s["line_width"],
+                        linestyle=dash, label="_nolegend_", zorder=3)
+        drawn.append((s, xs))
+        if s["label"]:
+            lines_named.update((id(a), f"'{_short(s['label'])}'")
+                               for a in ax.get_children()
+                               if id(a) not in before)
+
+    return drawn, lines_named
+
+
 def render_data_plot(series, *, title: str = "", xlabel: str = "",
                      ylabel: str = "", depth_axis: bool = False,
                      logx: bool = False, logy: bool = False,
@@ -1490,7 +2034,8 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                      north_deg: Optional[float] = None,
                      scale_units: str = "m",
                      x_on_top: bool = False,
-                     annotations=None) -> DataPlotResult:
+                     annotations=None, contour=None, panels=None,
+                     footnote: str = "") -> DataPlotResult:
     """Render ``series`` to a PNG (and its interactive twin).
 
     Each series is ``{x, y, label, style, color}`` plus, optionally,
@@ -1550,11 +2095,37 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     matplotlib.use("Agg", force=False)
     import matplotlib.pyplot as plt
 
-    if not isinstance(series, (list, tuple)) or not series:
-        raise ValueError("series must be a non-empty list of {x, y, ...} dicts")
+    if panels is not None:
+        from aec_agent_core.charts.panel_plot import render_panel_plot
+        given = {"series": series, "xlabel": xlabel, "logx": logx,
+                 "logy": logy, "vlines": vlines, "equal_aspect": equal_aspect,
+                 "xlim": xlim, "plan_view": plan_view,
+                 "north_deg": north_deg, "x_on_top": x_on_top,
+                 "annotations": annotations, "contour": contour,
+                 "legend_position": legend_position}
+        return render_panel_plot(
+            panels, title=title, ylabel=ylabel, depth_axis=depth_axis,
+            ylim=ylim, hlines=hlines, grid=grid, legend=legend, dpi=dpi,
+            width_in=width_in, height_in=height_in, interactive=interactive,
+            footnote=footnote, not_with_panels=given)
     warnings: List[str] = []
-    cleaned = [_clean_series(s, i, warnings) for i, s in enumerate(series)]
-    categories = _categories(cleaned)
+    contour = _clean_contour(contour, warnings)
+    if contour is None and (not isinstance(series, (list, tuple))
+                            or not series):
+        raise ValueError("series must be a non-empty list of {x, y, ...} dicts")
+    if series is not None and not isinstance(series, (list, tuple)):
+        raise ValueError("series must be a list of {x, y, ...} dicts")
+    cleaned = [_clean_series(s, i, warnings)
+               for i, s in enumerate(series or [])]
+    categories = _categories(cleaned) if cleaned else None
+    if contour is not None and (categories is not None or logx or logy):
+        raise ValueError("contour needs numeric x and y on linear axes")
+    footnote = _note_text(footnote)
+    if contour is not None and contour["filled"]:
+        grid = False            # the colour bands carry the reading
+    # what takes up room: the series and the contoured area
+    sized = cleaned + ([_contour_extent(contour)] if contour is not None
+                       else [])
     notes = _clean_notes(annotations, categories, bool(logx), bool(logy),
                          warnings)
     plan_view = bool(plan_view)
@@ -1581,62 +2152,25 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     x_on_top = bool(x_on_top) and not plan_view
     position = _resolve_legend_position(legend_position, equal_aspect)
     shown = [s for s in cleaned if s["in_legend"]]
-    show_legend = (legend if legend is not None else len(shown) > 1)
+    # contour lines drawn alone are named in the legend (filled contours
+    # by their colour scale)
+    lines_only = contour is not None and not contour["filled"]
+    show_legend = (legend if legend is not None
+                   else len(shown) + bool(lines_only) > 1)
     if height_in is None:
-        height_in = (_scale_height(cleaned, float(width_in),
+        height_in = (_scale_height(sized, float(width_in),
                                    show_legend and position == "outside",
                                    plan_view)
                      if equal_aspect else 4.5)
 
     fig, ax = plt.subplots(figsize=(float(width_in), float(height_in)))
-    drawn = []
-    lines_named = {}            # the notes' check: artist id -> its line
-    order = sorted(range(len(cleaned)),
-                   key=lambda i: cleaned[i]["style"] != "polygon")
-    for i in order:
-        s = cleaned[i]
-        before = {id(a) for a in ax.get_children()}
-        xs = ([categories.index(v) for v in s["x"]] if categories is not None
-              else s["x"])
-        color = s["color"] or _PALETTE[i % len(_PALETTE)]
-        label = s["label"] if s["in_legend"] else "_nolegend_"
-        dash = DASHES[s["line_dash"]][0]
-        kw = {"color": color, "label": label, "linewidth": s["line_width"],
-              "zorder": 3}
-        mk = {"marker": MARKERS[s["marker"]][0],
-              "markersize": _marker_size(s)}
-        if s["marker_edge"]:
-            mk.update(markeredgecolor=s["marker_edge"], markeredgewidth=0.8)
-        if s["marker_open"]:
-            mk.update(markerfacecolor="none")
-        if s["style"] == "markers":
-            ax.plot(xs, s["y"], linestyle="none", **mk, **kw)
-        elif s["style"] == "line":
-            ax.plot(xs, s["y"], linestyle=dash, **kw)
-        elif s["style"] == "step":
-            ax.step(xs, s["y"], where="post", linestyle=dash, **kw)
-        elif s["style"] == "polygon":
-            if s["fill"]:
-                fill_color = color if s["fill"] is True else s["fill"]
-                ax.fill(xs, s["y"], facecolor=fill_color,
-                        alpha=s["fill_opacity"], edgecolor="none", zorder=1)
-            if s["hatch"]:
-                # the hatch takes the outline's colour (a zone drawn over
-                # what lies under it, as on a drawing); the legend shows a
-                # hatched swatch, not a line
-                ax.fill(xs, s["y"], facecolor="none", edgecolor=color,
-                        hatch=s["hatch"] * 3, linewidth=0.8, zorder=1.5,
-                        label=kw["label"])
-                kw["label"] = "_nolegend_"
-            kw["zorder"] = 2
-            ax.plot(xs, s["y"], linestyle=dash, **kw)
-        else:
-            ax.plot(xs, s["y"], linestyle=dash, **mk, **kw)
-        drawn.append((s, xs))
-        if s["label"]:
-            lines_named.update((id(a), f"'{_short(s['label'])}'")
-                               for a in ax.get_children()
-                               if id(a) not in before)
+    contour_art = None
+    if contour is not None:
+        contour_art = _draw_contour(fig, ax, contour)
+        if lines_only:
+            ax.plot([], [], color=_CONTOUR_LINE, linewidth=0.9,
+                    label=contour["label"])
+    drawn, lines_named = _draw_series(ax, cleaned, categories)
 
     # Reference lines are named on the line itself (labels on the data,
     # not in a legend the reader has to match).
@@ -1741,11 +2275,11 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                                      [(a, n["point"]) for a, n in
                                       zip(note_artists, notes) if n["point"]],
                                      ref_lines)
-    plan_lay, furniture = None, []
+    plan_lay, furniture, plan_texts = None, [], []
     if plan_view:
         fig.canvas.draw()               # settle the layout
         plan_lay, plan_texts, furniture = _draw_plan_furniture(
-            ax, cleaned, scale_units, north_deg, xlabel)
+            ax, sized, scale_units, north_deg, xlabel)
         ref_texts += plan_texts
         for a in furniture:     # the bar's segments, the arrow
             lines_named[id(a)] = ("the north arrow"
@@ -1758,10 +2292,36 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                     else "the north arrow's N" if n == len(plan_texts) - 1
                     else f"the coordinate system '{_short(words)}'")
             placed.append((t, what, "furniture"))
+    if footnote:
+        # under everything the axes take up (the x axis, a legend below)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        low = ([t.get_window_extent(renderer).y0 for t in plan_texts]
+               if plan_view else [ax.get_tightbbox(renderer).y0])
+        low = min(low + ([ax.get_legend().get_window_extent(renderer).y0]
+                         if ax.get_legend() is not None else []))
+        x0 = ax.get_position().x0
+        foot = fig.text(x0, (low - 0.10 * fig.dpi)
+                        / (fig.get_figheight() * fig.dpi),
+                        footnote, fontsize=7.5, color=_TEXT_COLOR,
+                        ha="left", va="top")
+        # broken to the figure's width, as a panel figure's footnote is: a
+        # line run past the edge widens the saved PNG, and every letter
+        # then prints smaller at the report's width
+        from aec_agent_core.charts.panel_plot import _fit_text
+        _fit_text(foot, footnote,
+                  (fig.get_figwidth() * (1.0 - x0) - 0.10) * fig.dpi, 7.5,
+                  fig.dpi, renderer, save_dpi=dpi)
+    contour_texts = (_contour_numbers(fig, ax, contour_art, warnings, drawn)
+                     if contour_art else [])
+    for t in contour_texts:
+        placed.append((t, f"the contour's number '{t.get_text()}'",
+                       "contour"))
     if any(s["labels"] for s in cleaned):
         index_of = {id(s): i for i, s in enumerate(cleaned)}
         for t, s, text in _place_point_names(
-                fig, ax, drawn, ref_texts + note_artists,
+                fig, ax, drawn + _contour_strokes(contour_art),
+                ref_texts + note_artists + contour_texts,
                 [(a, n["point"]) for a, n in zip(note_artists, notes)
                  if n["point"]], furniture, ref_lines):
             placed.append((t, f"series[{index_of[id(s)]}] point name "
@@ -1792,7 +2352,18 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
         pass
 
     figure = None
-    if interactive:                 # the PNG is already safely in hand here
+    no_twin = None
+    if interactive and contour is not None:
+        try:
+            import plotly.graph_objects as go
+            no_twin = _plotly_contour(go, contour)[1]
+        except Exception:                               # noqa: BLE001
+            no_twin = None
+        if no_twin:
+            warnings.append(f"no interactive chart for this figure "
+                            f"({no_twin}): the chat shows the PNG; nothing "
+                            "to fix")
+    if interactive and not no_twin:  # the PNG is already safely in hand here
         try:
             figure = build_data_plot_figure(
                 cleaned, title=title or "", xlabel=xlabel or "",
@@ -1803,7 +2374,8 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                 legend_position=legend_position, plan_view=plan_view,
                 north_deg=north_deg, scale_units=scale_units,
                 x_on_top=x_on_top, annotations=notes, view=view,
-                plan_layout=plan_lay, ref_spots=ref_spots)
+                plan_layout=plan_lay, ref_spots=ref_spots, contour=contour,
+                footnote=footnote)
         except Exception as exc:                        # noqa: BLE001
             warnings.append("interactive chart not built "
                             f"({type(exc).__name__}: {exc}); the PNG is fine")
@@ -1828,7 +2400,13 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
         equal_aspect=equal_aspect, plan_view=plan_view,
         x_on_top=bool(depth_axis) or x_on_top,
         reversed_axes=reversed_axes,
-        annotations=[n["echo"] for n in notes])
+        annotations=[n["echo"] for n in notes],
+        contour=(None if contour is None else {
+            "label": contour["label"], "from": contour["kind"],
+            "levels": list(contour["levels"]),
+            "z_range": list(contour["z_range"]),
+            "filled": contour["filled"]}),
+        footnote=footnote)
 
 
 def _ref(spec) -> tuple:
@@ -1842,4 +2420,4 @@ def _ref(spec) -> tuple:
 
 __all__ = ["render_data_plot", "build_data_plot_figure", "DataPlotResult",
            "STYLES", "MARKERS", "DASHES", "HATCHES", "LEGEND_POSITIONS",
-           "ANNOTATION_KEYS", "ANNOTATION_COORDS"]
+           "ANNOTATION_KEYS", "ANNOTATION_COORDS", "CONTOUR_KEYS"]

@@ -230,17 +230,19 @@ def test_w11_surface_has_no_spencer_solution():
     """GM-131: sliced at its corners and where it crosses into the
     sandstone, the w11 surface has no Spencer solution at 30, 40, 41 or 60
     slices (1.44-1.57 before, by where even slices fell on its corners).
-    analyze_slope says so, and its m_alpha warning counts the slices below
-    0.2 at the legacy solver's FOS."""
+    analyze_slope says so and gives no number (GM-140 step 2: before, the
+    old approximate solver's value stood in, and the m_alpha warning was
+    counted at that value; with no factor of safety there is no F at which
+    m_alpha can be stated)."""
     geom = _w11()
     slip = PolylineSlipSurface(points=_W11_PTS)
     for n in (30, 40, 41, 60):
         assert _compute_fos(geom, slip, "spencer", n,
                             m_alpha_check=False) == _FOS_MAX
     r = analyze_slope(geom, slip_surface=slip, method="spencer", n_slices=40)
-    assert not r.method_solved
-    (w,) = [w for w in r.warnings if "m_alpha" in w]
-    assert "20 of 40 slices" in w and "81 deg against the sliding" in w
+    assert not r.method_solved and r.FOS is None
+    assert not any("m_alpha" in w for w in r.warnings)
+    assert any("finds no equilibrium solution" in w for w in r.warnings)
 
 
 def test_a_surface_with_m_alpha_above_the_limit_has_no_warning():

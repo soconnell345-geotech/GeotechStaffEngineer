@@ -7,7 +7,7 @@ from funhouse_agent.adapters import (
 )
 from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
 from drilled_shaft.lrfd import apply_lrfd, RESISTANCE_FACTORS
-from drilled_shaft.capacity import skipped_depths_note
+from drilled_shaft.capacity import extended_lengths_note, skipped_depths_note
 
 # Shaft + soil params shared by every method below.
 _SHAFT_PARAMS = ("diameter", "shaft_length", "socket_diameter",
@@ -25,7 +25,7 @@ _RATIONAL_PARAMS = ("beta_method", "alpha_method", "su_test_type", "pa",
                     "bottom_exclusion", "clay_base_method",
                     "rock_base_method", "rock_base_conditions_met",
                     "large_base_reduction", "rock_side_method",
-                    "rock_joints")
+                    "rock_joints", "extend_last_layer")
 # 'length' is a common guess for the shaft length.
 _SHAFT_ALIASES = {"length": "shaft_length", "pile_length": "shaft_length"}
 
@@ -119,11 +119,23 @@ def _run_capacity_vs_depth(params):
     curve = analysis.capacity_vs_depth(depth_min=params.get("depth_min", 3.0),
                                         depth_max=params.get("depth_max"), n_points=n_points,
                                         skipped=skipped)
-    out = {"capacity_vs_depth": curve}
+    # GM-318 review A1: the lengths past the profile stand on the last
+    # layer carried on (extend_last_layer); said once here, with the
+    # choice, and on each of their rows. The depth the layers given reach
+    # comes from the layers, not profile_depth_given, which is None when
+    # the design shaft ends inside the profile and only the sweep passes
+    # it (GM-318 re-check N1)
+    given = analysis._given_soil().total_thickness
+    past = [r["depth_m"] for r in curve if r["depth_m"] > given + 1e-9]
+    out = ({"warnings": [extended_lengths_note(given, past)]} if past
+           else {})
+    out["capacity_vs_depth"] = curve
     if skipped:
         # GM-203: a refused trial length was dropped without a word
         out["skipped_depths"] = skipped
         out["warning"] = skipped_depths_note(skipped, n_points)
+    if past:
+        out["choices"] = [analysis._extension_choice(base=past[-1])]
     return out
 
 
@@ -220,6 +232,7 @@ _INFO_RATIONAL = {
     "rock_side_C": {"type": "float", "required": False, "default": 1.0, "description": "C in the rock side resistance f_s = C*pa*sqrt(qu/pa) (GEC-10 Eq. 10-21, p. 10-20). Default 1.0, 'recommended for design of \"normal\" rock sockets' (pp. 10-20, 10-21; Example 10-4): conventional equipment, nominally clean sidewalls, no caving, no smearing. 0.65 = the value of Eq. 10-22 with alpha_E = 1.0 (rock_side_method 'caving' takes alpha_E from Table 10-3 by RQD). 1.9 for roughened sockets, verified by load tests or local experience (p. 10-22). For rock_side_method 'normal'; refused with 'caving', which takes no C. Needs a rock layer."},
     "rock_side_method": {"type": "str", "required": False, "default": "normal", "allowed_values": ["normal", "caving"], "description": "Rock side resistance. 'normal' (default) = GEC-10 Eq. 10-21, f_s = C*pa*sqrt(qu/pa) with rock_side_C, for a 'normal' socket: conventional equipment, nominally clean sidewalls (pp. 10-20, 10-21). 'caving' = Eq. 10-22 (O'Neill and Reese 1999), f_s = 0.65*alpha_E*pa*sqrt(qu/pa), alpha_E from Table 10-3 (p. 10-21) by each rock layer's RQD and rock_joints (closed joints 1.00, 0.85, 0.60, 0.50, 0.45; open or gouge-filled 0.85, 0.55, 0.55, 0.50, 0.45 at RQD 100, 70, 50, 30, 20 %; linear between the rows, held at 0.45 below RQD 20), for highly fractured or weathered rock that cannot be drilled without artificial support (casing, plug-ahead) or where caving is anticipated. Needs a rock layer."},
     "rock_joints": {"type": "str", "required": False, "default": "closed", "allowed_values": ["closed", "open"], "description": "For rock_side_method 'caving': the joint condition of GEC-10 Table 10-3, 'closed' (default) or 'open' (open or gouge-filled joints), from the cores."},
+    "extend_last_layer": {"type": "bool", "required": False, "default": False, "description": "A shaft longer than the soil profile. false (default): the run is refused, naming the depth the layers do not cover, because the base would bear in ground nobody explored (GEC-10 takes the base resistance from the ground at and to 2B below the base, Eqs. 10-14 and 10-19). true: the last layer is taken to go on to the base, with side resistance and base resistance in it; the result says so in its warnings and choices. Better: give layers down to the base."},
 }
 _INFO_SHAFT_GEOM = {
     "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter. One diameter for every rock layer: GEC-10 sizes a socket by one diameter B (Eq. 10-3, p. 10-9; Example 10-4) and gives none per rock layer. The rock side resistance and, with the tip in rock, the base (pi/4*B^2, GEC-10 Example 10-4, p. 10-28) take it."},
@@ -242,7 +255,7 @@ METHOD_INFO = {
             **_INFO_RATIONAL,
             **_INFO_SHAFT_GEOM,
         },
-        "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Side resistance.", "Q_tip_kN": "Tip resistance.", "base_diameter_m": "Diameter of the base the tip resistance acts on: the bell's, the rock socket's with the tip in rock, else the shaft's."},
+        "returns": {"warnings": "Only when there is something the user must be told: the last layer carried on to the base (extend_last_layer). Tell the user.", "Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Side resistance.", "Q_tip_kN": "Tip resistance.", "base_diameter_m": "Diameter of the base the tip resistance acts on: the bell's, the rock socket's with the tip in rock, else the shaft's."},
     },
     "capacity_vs_depth": {
         "category": "Drilled Shaft",
@@ -259,9 +272,11 @@ METHOD_INFO = {
             "depth_max": {"type": "float", "required": False, "description": "Maximum trial shaft length (m). Default: min(shaft_length, soil profile depth)."},
             "n_points": {"type": "int", "required": False, "default": 20, "description": "Number of trial lengths in the sweep."},
         },
-        "returns": {"capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN, Q_allowable_kN} dicts; Q_allowable_kN = Q_ultimate_kN / factor_of_safety.",
+        "returns": {"warnings": "Only when there is something the user must be told: with extend_last_layer, the trial lengths past the soil profile, run on the last layer carried on to their base. Tell the user.",
+                    "capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN, Q_allowable_kN} dicts, with warnings where that length's run had any (the last layer carried on to its base); Q_allowable_kN = Q_ultimate_kN / factor_of_safety. Each length is run on the layers as given.",
                     "skipped_depths": "Only when the analysis refused some trial lengths: {depth_m, reason} for each, left out of the curve.",
-                    "warning": "Only with skipped_depths: one sentence naming them. Tell the user."},
+                    "warning": "Only with skipped_depths: one sentence naming them. Tell the user.",
+                    "choices": "Only with extend_last_layer and lengths past the profile: the choice 'soil below the profile' (what, chosen, how, basis, alternatives)."},
     },
     "lrfd_capacity": {
         "category": "Drilled Shaft",
@@ -275,7 +290,7 @@ METHOD_INFO = {
             **_INFO_RATIONAL,
             **_INFO_SHAFT_GEOM,
         },
-        "returns": {"Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component (GEC-10 Table 8-4, p. 8-14: side 0.45 clay, 0.55 sand, 0.50 rock; base 0.40 clay, 0.50 sand and rock), the base factor by the soil the base is in. With the base in rock and concrete_fc given, phi_Qt_kN is the smaller of 0.50*Q_tip and the concrete's bearing 0.70*[0.85*f'c*A1*2.0] (GEC-10 p. 10-25, Eq. 12-7), phi_Qt_governed_by saying which."},
+        "returns": {"warnings": "Only when there is something the user must be told: the last layer carried on to the base (extend_last_layer). Tell the user.", "Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component (GEC-10 Table 8-4, p. 8-14: side 0.45 clay, 0.55 sand, 0.50 rock; base 0.40 clay, 0.50 sand and rock), the base factor by the soil the base is in. With the base in rock and concrete_fc given, phi_Qt_kN is the smaller of 0.50*Q_tip and the concrete's bearing 0.70*[0.85*f'c*A1*2.0] (GEC-10 p. 10-25, Eq. 12-7), phi_Qt_governed_by saying which."},
     },
     "get_resistance_factors": {
         "category": "Drilled Shaft",
@@ -316,7 +331,10 @@ _DS_APPLIES = {"su_test_type": {"alpha_method": ["rational"]},
                "rock_base_conditions_met": False,
                "large_base_reduction": False, "bottom_exclusion": False,
                "rock_joints": {"rock_side_method": ["caving"]},
-               "concrete_fc": False}
+               "concrete_fc": False,
+               # only a shaft longer than the profile reads it, and its
+               # default refuses that
+               "extend_last_layer": False}
 # The side resistance settings by soil (sand, clay, rock socket) apply by
 # the layers, which no other parameter says: listed where the run's
 # choices report them (capacity_vs_depth gives no choices, so keeps them).

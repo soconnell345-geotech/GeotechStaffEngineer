@@ -122,12 +122,13 @@ def test_slide86_tiebacks_reproduce_published():
 
 def test_reinforced_rigorous_nonconvergence_is_rejected():
     """On a reinforced circle where the rigorous GLE does not converge,
-    spencer_fos falls back to the legacy solver, which ignores the
-    reinforcement; a search must reject that surface, not score it
-    unreinforced. (Slide2 #85 anchored toe circle: spencer_fos falls back
-    to 0.938, the unreinforced value (0.891 before GM-134); analyze_slope
-    reports no FOS, GM-81.)"""
+    Spencer has no solution: a search does not score the surface, a single
+    surface reports no FOS, and spencer_fos raises (GM-140 step 2; before
+    it fell back to the old approximate solver, which ignored the
+    reinforcement: 0.938, the unreinforced value, on Slide2 #85's anchored
+    toe circle)."""
     from slope_stability.methods import spencer_fos
+    from slope_stability.solution import NoSolution
     from slope_stability.slices import build_slices
     # the circle's centre is 5.89 ft below the crest: closed here by a
     # given 5.89 ft crack (GM-140 step 4; Rankine's is shallower, and by
@@ -137,10 +138,9 @@ def test_reinforced_rigorous_nonconvergence_is_rejected():
     slip = CircularSlipSurface(15.012, 24.112, 14.112)
     forces = trial_reinforcement(g, slip)
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        fallback, _ = spencer_fos(build_slices(g, slip, 30), slip,
-                                  reinf_forces=forces)
-    assert fallback == pytest.approx(0.938, abs=0.01)
+        warnings.simplefilter("error")
+        with pytest.raises(NoSolution):
+            spencer_fos(build_slices(g, slip, 30), slip, reinf_forces=forces)
     assert analyze_slope(g, method="spencer", slip_surface=slip).FOS is None
     assert _compute_fos(g, slip, "spencer", 30) == _FOS_MAX
     assert _compute_fos(g, slip, "bishop", 30) < _FOS_MAX
@@ -494,9 +494,11 @@ _TOE_85 = dict(xc=15.012, yc=24.112, radius=14.112)
                                            ("gle", "GLE")])
 def test_no_solution_with_supports_reports_no_fos(method, label):
     """Anchored #85 toe circle: Spencer and GLE find no equilibrium solution.
-    Before GM-81 analyze_slope returned the legacy solver's 0.891 (Spencer),
-    the slope WITHOUT its 9,000 lb/ft support, with only a Python warning.
-    Now FOS is None, the result says so, and nothing is warned in Python."""
+    Before GM-81 analyze_slope returned the old approximate solver's 0.891
+    (Spencer), the slope WITHOUT its 9,000 lb/ft support, with only a Python
+    warning. Now FOS is None, the result says so, and nothing is warned in
+    Python. (GM-140 step 2: the same holds without supports, and the
+    statement no longer speaks of a solver that is gone.)"""
     with warnings.catch_warnings():
         warnings.simplefilter("error")          # no Python warning at all
         r = analyze_slope(_slide85c(tension_crack_depth=5.89),
@@ -507,7 +509,8 @@ def test_no_solution_with_supports_reports_no_fos(method, label):
     text = " ".join(r.warnings)
     assert "finds no equilibrium solution on this surface" in text
     assert "No factor of safety is reported" in text
-    assert "ignores the 1 support(s)" in text
+    assert "1 support(s) cross the surface" in text
+    assert "legacy" not in text
     d = r.to_dict()
     assert d["FOS"] is None and d["is_stable"] is None
     assert d["method_solved"] is False and d["method_used"] is None
@@ -528,30 +531,26 @@ def test_no_solution_in_compare_methods_is_left_out():
                for w in r.warnings) == 2
 
 
-def test_no_supports_labels_the_legacy_value():
-    """Without supports the legacy approximate solver's value stands in, and
-    is labelled: on #85's clay (phi = 0) the GLE finds no lambda where the
-    moment and force factors of safety agree on Slide2's circle; the legacy
-    solver gives theta = 0 (-0.01 deg since GM-134, each slice's base its
-    chord), Bishop's value (as every moment-equilibrium method gives on a
-    phi = 0 circle)."""
-    from slope_stability.methods import spencer_fos
-    from slope_stability.slices import build_slices
+def test_no_supports_and_no_solution_is_no_number():
+    """GM-140 step 2 (D30). Without supports the old approximate solver's
+    value stood in, labelled (GM-81): on #85's clay (phi = 0) the GLE finds
+    no lambda at which the moment and force factors of safety agree on
+    Slide2's circle, and the value shown was Bishop's (0.914), named
+    Spencer's by a search. Now there is no number, with or without
+    supports; Bishop's simplified method solves the circle and says so
+    under its own name."""
     g = _slide85(anchor=False)
     r = analyze_slope(g, method="spencer", **_SLIDE2_85_CIRCLE)
-    slip = CircularSlipSurface(**_SLIDE2_85_CIRCLE)
-    before, _ = spencer_fos(build_slices(g, slip, 30), slip)
-    assert r.FOS == before                          # the same value as before
-    assert r.FOS == pytest.approx(
-        analyze_slope(g, method="bishop", **_SLIDE2_85_CIRCLE).FOS, abs=1e-4)
-    assert r.method_solved is False
-    assert r.method_used == "legacy approximate Spencer solver"
+    assert r.FOS is None and r.is_stable is None
+    assert r.method_solved is False and r.method_used is None
     assert r.methods_without_solution == ["Spencer"]
     (w,) = r.warnings
     assert "finds no equilibrium solution on this surface" in w
-    assert f"FOS = {r.FOS:.3f} is the legacy approximate solver's value" in w
-    assert re.search(r"theta = -?0\.0[01] deg", w)
-    assert r.to_dict()["method_used"] == "legacy approximate Spencer solver"
+    assert "No factor of safety is reported" in w
+    assert "legacy" not in w
+    assert r.to_dict()["method_used"] is None
+    b = analyze_slope(g, method="bishop", **_SLIDE2_85_CIRCLE)
+    assert b.method_solved and b.FOS == pytest.approx(0.914, abs=0.002)
 
 
 def test_single_surface_reverse_curvature_and_short_arm():
@@ -628,17 +627,33 @@ def test_normal_case_unchanged(method):
     assert d["method_solved"] is True and d["method_used"] == r.method
 
 
-def test_search_labels_a_legacy_critical_circle():
-    """A rigorous search scores a circle no support crosses with the legacy
-    solver when the GLE has no solution (unchanged); the governing circle
-    now says so. #85 without its support, Spencer: every circle of the
-    main search (since GM-134 the best toe circle, centred left of the toe,
-    has a Spencer solution, 0.910, so the families are left off here)."""
-    res = search_critical_surface(_slide85(anchor=False), method="spencer",
-                                  nx=4, ny=4, toe_circles=False)
+def test_search_scores_no_circle_with_another_solver():
+    """GM-140 step 2 (D23). A rigorous search scored a circle no support
+    crosses with the old approximate solver when the GLE had no solution,
+    and labelled the governing circle when it was one of those. #85 without
+    its support, Spencer, the main search alone: every circle the search
+    reports is Spencer's own solution, the circles without one are counted
+    (51 of the 4 x 4 search), and the result warns that the governing
+    family lost trials (UFC 3-220-10 p. 362). The minimum it can report,
+    1.375, is far above Bishop's 0.911 for this clay slope: Spencer's
+    method has no solution on the circles that govern, and the warning is
+    what tells the engineer."""
+    g = _slide85(anchor=False)
+    res = search_critical_surface(g, method="spencer", nx=4, ny=4,
+                                  toe_circles=False)
     c = res.critical
-    assert c.method_solved is False
-    assert c.method_used == "legacy approximate Spencer solver"
-    assert any("finds no equilibrium solution on the critical circle" in w
-               and f"{c.FOS:.3f}" in w for w in res.warnings)
-    assert res.to_dict()["critical"]["method_solved"] is False
+    assert c.method_solved is True and c.method_used == ""
+    one = analyze_slope(g, method="spencer", xc=c.xc, yc=c.yc,
+                        radius=c.radius)
+    assert one.method_solved and one.FOS == pytest.approx(c.FOS, rel=1e-9)
+    (rec,) = res.no_solution
+    assert (rec["family"], rec["method"]) == ("circular", "spencer")
+    assert rec["n"] == rec["not_converged"] == res.n_no_solution > 0
+    assert rec["no_driving"] == 0
+    assert any("left" in w and "without a solution" in w
+               and "UFC 3-220-10 p. 362" in w for w in res.warnings)
+    assert not any("legacy" in w for w in res.warnings)
+    assert res.to_dict()["critical"]["method_solved"] is True
+    bishop = search_critical_surface(g, method="bishop", nx=4, ny=4,
+                                     toe_circles=False)
+    assert bishop.critical.FOS < c.FOS
