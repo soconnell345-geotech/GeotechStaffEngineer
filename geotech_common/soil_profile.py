@@ -34,9 +34,13 @@ from geotech_common.validation import (
 )
 
 #: The undrained shear strength (kPa) from which ``to_lateral_pile_input``
-#: gives a clay a stiff clay p-y criterion: this module's own value
-#: (GM-217; neither GEC 9 nor COM624P prints a boundary).
-STIFF_CLAY_CU = 100.0
+#: gives a clay a stiff clay p-y criterion: 1,000 psf (47.9 kPa), where
+#: GEC 9 p. 219's stiff clays and COM624P's stiff clay Tables 3.2 and 3.3
+#: start (GM-310, the call for OWN-68 of 2026-11-12: "48 kPa"). Neither
+#: prints a boundary as such (GM-217). Before GM-310 it was 100 kPa, this
+#: module's own value (:data:`STIFF_CLAY_CU_BEFORE_GM310`).
+STIFF_CLAY_CU = 47.9
+STIFF_CLAY_CU_BEFORE_GM310 = 100.0
 
 
 # ---------------------------------------------------------------------------
@@ -1114,7 +1118,7 @@ class SoilProfile:
 
         Selects a p-y criterion for each layer:
         - Rock: WeakRock
-        - Clay with cu below ``stiff_clay_cu`` (100 kPa): SoftClayMatlock
+        - Clay with cu below ``stiff_clay_cu`` (47.9 kPa): SoftClayMatlock
         - Stiff clay (cu ``stiff_clay_cu`` and up) with free water: StiffClayBelowWT,
           Reese et al. (1975), "stiff clay with free water" (GEC 9 App. A.2)
         - Other stiff clay: StiffClayAboveWT, Welch & Reese (1972), "stiff
@@ -1158,10 +1162,14 @@ class SoilProfile:
         stiff_clay_cu : float, optional
             The undrained shear strength (kPa) from which a clay layer
             takes a stiff clay criterion; below it, Matlock's (1970) soft
-            clay. Default 100, this module's own value (GM-217): GEC 9
-            prints soft clays as 250-500 psf (12.0-23.9 kPa, p. 216) and
-            stiff as 1,000-2,000 psf (47.9-95.8 kPa, p. 219), and neither
-            it nor COM624P prints a boundary.
+            clay. Default 47.9 (1,000 psf; GM-310, OWN-68): GEC 9 prints
+            soft clays as 250-500 psf (12.0-23.9 kPa, p. 216) and stiff
+            as 1,000-2,000 psf (47.9-95.8 kPa, p. 219), and COM624P's
+            stiff clay Tables 3.2 and 3.3 start at 0.5 ton/ft^2 (47.9
+            kPa); neither prints a boundary, and the default is where
+            the stiff clay criteria's own print begins. It was 100 kPa
+            before GM-310, under which a 48-100 kPa clay took the softer
+            Matlock curve (the larger deflection).
 
         Returns
         -------
@@ -2467,22 +2475,29 @@ def _stiff_clay_cu_choice(stiff_clay_cu: float, clays: List[tuple]) -> dict:
         return ", ".join(moved) + " would take " + side
 
     alternatives = []
-    if stiff_clay_cu != 47.9:
-        alternatives.append(
-            f"stiff_clay_cu 47.9 kPa (1,000 psf), where GEC 9's stiff clays "
-            f"and COM624P Tables 3.2 and 3.3 start: {changes(47.9)}")
     if stiff_clay_cu != STIFF_CLAY_CU:
         alternatives.append(
-            f"stiff_clay_cu {STIFF_CLAY_CU:g} kPa, this module's default: "
-            f"{changes(STIFF_CLAY_CU)}")
+            f"stiff_clay_cu {STIFF_CLAY_CU:g} kPa (1,000 psf), this "
+            "module's default, where GEC 9's stiff clays and COM624P "
+            f"Tables 3.2 and 3.3 start: {changes(STIFF_CLAY_CU)}")
+    before = STIFF_CLAY_CU_BEFORE_GM310
+    if stiff_clay_cu != before:
+        alternatives.append(
+            f"stiff_clay_cu {before:g} kPa, this module's default before "
+            "GM-310, above GEC 9's stiff range (Matlock's soft clay gives "
+            f"the larger deflection): {changes(before)}")
     return choice(
         "soft/stiff clay boundary",
         f"stiff clay from cu {stiff_clay_cu:g} kPa (stiff_clay_cu); below "
         "it Matlock (1970) soft clay",
         how_given(stiff_clay_cu, STIFF_CLAY_CU, name="stiff_clay_cu"),
-        _GEC9_CLAY_RANGES + f". {STIFF_CLAY_CU:g} kPa is this module's own "
-        "value, above GEC 9's stiff range; a clay between the two ranges "
-        "is in neither",
+        _GEC9_CLAY_RANGES + f". The default, {STIFF_CLAY_CU:g} kPa (1,000 "
+        "psf), is where the stiff clay criteria's own print begins; a clay "
+        "between GEC 9's two ranges (23.9 to 47.9 kPa) is in neither and "
+        "takes Matlock's soft clay. A stiff clay criterion gives a "
+        "stiffer response than Matlock's soft clay, so for a clay of 48 "
+        "to 100 kPa this default is the less conservative of the two "
+        "readings",
         alternatives)
 
 
