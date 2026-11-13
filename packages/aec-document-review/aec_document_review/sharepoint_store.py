@@ -65,6 +65,17 @@ Configuration (env vars; the launcher subprocess inherits the notebook env):
         run on the dataset. A save there takes seconds, so the turn's save
         runs after the turn, in the background (:func:`save_after_change`).
 
+TA-40 (deployment review 2026-11-10), on the Tiny Apps route (a file
+manager that says ``PER_CONVERSATION``, the Graph one): the save after a
+turn also runs in the background, several conversations at once
+(:data:`BG_WORKERS`), each mirror under its own conversation's lock, so
+one person's large first mirror, or the waits of a throttled service,
+never hold another person's turn or save. The Foundry dataset and the
+Funhouse SDK's manager keep one lock for the process, as before. On
+SharePoint a file whose name the service refuses is kept under an accepted
+name (:func:`remote_name`), and a file above the upload limit is said once
+as an error and named in every later summary's ``note``.
+
 A file manager may offer a batch hook, ``begin_batch()`` and
 ``end_batch(commit=True)``: the mirror then sends all of one sync's files
 between the two (the dataset's one transaction per save), and records them
@@ -86,12 +97,14 @@ from __future__ import annotations
 
 import atexit
 import collections
+import hashlib
 import json
 import os
 import re
 import tempfile
 import threading
 import time
+import zlib
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from aec_document_review import core
@@ -116,6 +129,72 @@ MANIFEST_NAME = "sp_manifest.json"
 
 #: Dropped into a conversation's PREVIOUS remote folder after a rename.
 MOVED_NAME = "MOVED.txt"
+
+#: TA-40: kept at the top of a conversation's remote folder when one of its
+#: files is stored under another name there (:func:`remote_name`):
+#: ``{"names": {<name in SharePoint>: <the file's own name>}}``, so a
+#: restore gives each file its own name back. Never restored as a file.
+NAMES_NAME = "sp_names.json"
+
+#: TA-40: workers saving conversations in the background where they may be
+#: mirrored at the same time (:attr:`SharePointStore.per_conversation`);
+#: elsewhere there is one, in order. A fifth conversation's save waits for
+#: a free worker; no turn waits for any of them.
+BG_WORKERS = 4
+
+#: TA-40: characters SharePoint refuses in a file or folder name, and the
+#: names it reserves (Microsoft, "Restrictions and limitations in OneDrive
+#: and SharePoint"). ``#`` and ``%`` are accepted in a file's name.
+_REFUSED_NAME_CHARS = '"*:<>?/\\|'
+_RESERVED_NAMES = ({"con", "prn", "aux", "nul", ".lock", "desktop.ini"}
+                   | {f"com{i}" for i in range(10)}
+                   | {f"lpt{i}" for i in range(10)})
+
+
+def remote_name(name: str) -> str:
+    """The name one file or folder is kept under in SharePoint: ``name``
+    itself when the service accepts it, else an accepted one, the same
+    every time and on every host (TA-40).
+
+    A refused name (one of ``" * : < > ? / \\ |`` or a control character
+    in it, a space at either end or a dot at the end, a reserved name such
+    as ``CON`` or ``desktop.ini``, a leading ``~$``, ``_vti_`` inside) has
+    each refused character replaced by ``_`` and six characters of a hash
+    of the ORIGINAL name put before the extension, so two refused names
+    never meet in one accepted name and none meets a file that already has
+    it: ``plan: rev 2.pdf`` -> ``plan_ rev 2_1a2b3c.pdf``."""
+    text = str(name)
+    stem = text.split(".", 1)[0] if not text.startswith(".") else text
+    refused = (
+        any(ch in _REFUSED_NAME_CHARS or ord(ch) < 32 for ch in text)
+        or text != text.strip(" ") or text.endswith(".")
+        or text.lower() in _RESERVED_NAMES or stem.lower() in _RESERVED_NAMES
+        or text.startswith("~$") or "_vti_" in text.lower())
+    if not refused or not text:
+        return text
+    cleaned = "".join(
+        "_" if (ch in _REFUSED_NAME_CHARS or ord(ch) < 32) else ch
+        for ch in text).strip(" ").rstrip(". ")
+    cleaned = re.sub(r"_vti_", "_vti-", cleaned, flags=re.IGNORECASE)
+    if cleaned.startswith("~$"):
+        cleaned = "_" + cleaned[2:]
+    base, ext = os.path.splitext(cleaned)
+    tag = hashlib.sha1(text.encode("utf-8", "surrogatepass")).hexdigest()[:6]
+    return f"{base or 'file'}_{tag}{ext}"
+
+
+def remote_rel(rel: str) -> str:
+    """:func:`remote_name` over each segment of a relative path."""
+    return "/".join(remote_name(part) for part in str(rel).split("/"))
+
+
+class RemoteListing(list):
+    """The list :meth:`SharePointStore.list_remote_conversations` returns.
+    ``error`` is ``None`` when the library was read (an empty list then
+    means nothing is mirrored yet), else why it could not be read (TA-40:
+    a listing that failed read as "nothing mirrored yet")."""
+
+    error: Optional[str] = None
 
 #: Characters SharePoint/OneDrive reject in a file or folder name, plus the two
 #: that survive the API but break the resulting URL (``#`` and ``%``).
@@ -377,12 +456,42 @@ def _manifest_files(manifest: Dict[str, Any]) -> Dict[str, List]:
 
 
 def _save_manifest(conv_dir: str, files: Dict[str, List],
-                   folder: Optional[str] = None) -> None:
+                   folder: Optional[str] = None,
+                   names: Optional[Dict[str, str]] = None,
+                   not_sent: Optional[Dict[str, dict]] = None) -> None:
+    """Write the manifest. ``names`` (a file's path -> the path it is kept
+    under in SharePoint, where they differ) and ``not_sent`` (files not
+    sent, with their stamp and the reason) are written only when they hold
+    something (TA-40), so every other manifest is as it always was; an
+    older version reads ``folder`` and ``files`` and leaves the rest."""
+    data: Dict[str, Any] = {"folder": folder, "files": files}
+    if names:
+        data["names"] = names
+    if not_sent:
+        data["not_sent"] = not_sent
     try:
         with open(_manifest_path(conv_dir), "w", encoding="utf-8") as fh:
-            json.dump({"folder": folder, "files": files}, fh)
+            json.dump(data, fh)
     except OSError:
         pass                                   # best-effort
+
+
+def _manifest_map(manifest: Dict[str, Any], key: str) -> Dict[str, Any]:
+    """The manifest's ``names`` or ``not_sent`` map (``{}`` when absent, and
+    for a manifest written before folder naming, whose top level is the
+    files themselves)."""
+    if not isinstance(manifest.get("files"), dict):
+        return {}
+    found = manifest.get(key)
+    return dict(found) if isinstance(found, dict) else {}
+
+
+def mirrored_rel(conv_dir: str, rel: str) -> str:
+    """The path, inside the conversation's SharePoint folder, that file
+    ``rel`` of the conversation is kept under (``rel`` itself unless its
+    name was one SharePoint refuses; TA-40)."""
+    kept = _manifest_map(_load_manifest(conv_dir), "names").get(rel)
+    return kept if isinstance(kept, str) and kept else rel
 
 
 def _stamp(path: str) -> List:
@@ -417,7 +526,18 @@ class SharePointStore:
     def __init__(self, file_manager: Any = None):
         self._fm = file_manager
         self._fm_error: Optional[str] = None
+        #: The one lock of a store whose file manager serves one mirror at
+        #: a time (the Foundry dataset, the Funhouse SDK's manager).
         self._lock = threading.Lock()
+        #: TA-40: one lock per conversation where the file manager serves
+        #: several mirrors at once (:attr:`per_conversation`).
+        self._conv_locks: Dict[str, threading.Lock] = {}
+        self._conv_locks_guard = threading.Lock()
+        #: TA-40: folder names being fixed right now, so two conversations
+        #: mirrored at once never take the same new name (_pin_folder).
+        self._pin_lock = threading.Lock()
+        self._claims: Dict[Tuple[str, str], str] = {}
+        self._listing_errors: Dict[str, str] = {}
         self._made_dirs: set = set()
         self._folder_urls: Dict[str, str] = {}
         #: The latest mirror of ANY conversation in this process -- kept for
@@ -427,12 +547,15 @@ class SharePointStore:
         self.last_sync: Optional[dict] = None
         self._syncs: Dict[str, dict] = {}
         # Saves after a turn, in the background (save_soon): one worker,
-        # in order.
+        # in order; BG_WORKERS of them where conversations may be mirrored
+        # at the same time (TA-40), never two on one conversation.
         self._bg_cv = threading.Condition()
         self._bg_queue: collections.deque = collections.deque()
         self._bg_waiting: set = set()
-        self._bg_saving: Optional[str] = None
-        self._bg_worker: Optional[threading.Thread] = None
+        self._bg_saving: set = set()
+        self._bg_workers: List[threading.Thread] = []
+        self._bg_idle = 0
+        self._bg_atexit = False
 
     def last_sync_for(self, thread_id: Optional[str]) -> Optional[dict]:
         """This conversation's own latest mirror summary in this process,
@@ -468,11 +591,35 @@ class SharePointStore:
         return "Foundry storage" if self.backend == "foundry" else "SharePoint"
 
     @property
+    def per_conversation(self) -> bool:
+        """True when conversations may be mirrored at the same time, each
+        under its own lock (TA-40): the file manager says so
+        (``PER_CONVERSATION``, the Graph one of the Tiny Apps route). The
+        Foundry dataset (one transaction per save) and the Funhouse SDK's
+        manager keep the one lock of the process."""
+        if self._fm is not None:
+            return getattr(self._fm, "PER_CONVERSATION", False) is True
+        return (not _foundry_selected()) and _graph_configured()
+
+    @property
     def background(self) -> bool:
         """True when the saves after a turn run in the background: on the
         Foundry dataset, where one takes 5-7 s and the chat must not wait
-        for it. SharePoint saves as before, at the end of the turn."""
-        return self.backend == "foundry"
+        for it, and (TA-40) on the Tiny Apps route, where one person's
+        first mirror of a large set took minutes inside their turn while
+        every other person's finished turn waited behind it. The Funhouse
+        SDK's SharePoint (one user) saves as before, at the end of the
+        turn."""
+        return self.backend == "foundry" or self.per_conversation
+
+    def _lock_for(self, thread_id: str) -> threading.Lock:
+        """The lock one conversation's mirror runs under: its own where
+        :attr:`per_conversation`, else the store's one lock."""
+        if not self.per_conversation:
+            return self._lock
+        with self._conv_locks_guard:
+            return self._conv_locks.setdefault(str(thread_id),
+                                               threading.Lock())
 
     def not_kept_reason(self) -> Optional[str]:
         """On a Foundry deployment, why conversations are NOT kept across
@@ -546,6 +693,7 @@ class SharePointStore:
         fixed yet: it mirrors under its thread id until it has a title.
         A NEW name is also checked against the remote library
         (:meth:`_unclaimed_remotely`). Best-effort."""
+        claim = None
         try:
             root = root or core.thread_root(thread_id)
             meta = core.load_meta(thread_id, root)
@@ -559,10 +707,25 @@ class SharePointStore:
                 if last and last != str(thread_id):
                     name = last
             if name is None:
-                name = conversation_folder(thread_id, meta,
-                                           core.list_conversations(root))
-                if name == str(thread_id):
-                    return
+                # Two conversations mirrored at once (TA-40) must not both
+                # take one new name: the choice is made under a lock and
+                # held as a claim until it is in this conversation's meta,
+                # where the other's choice then finds it. The remote check,
+                # which takes seconds, runs outside the lock.
+                with self._pin_lock:
+                    name = conversation_folder(thread_id, meta,
+                                               core.list_conversations(root))
+                    if name == str(thread_id):
+                        return
+                    key = (self.conversations_base(
+                        meta.get("owner"), meta.get("page")).lower(),
+                        name.lower())
+                    if self._claims.get(key, str(thread_id)) \
+                            != str(thread_id):
+                        name = f"{name}_{str(thread_id)[:6]}"
+                    else:
+                        self._claims[key] = str(thread_id)
+                        claim = key
                 name = self._unclaimed_remotely(fm, thread_id, meta, name)
             # Read again: the remote check takes seconds, and a save in the
             # background may run while the next turn retitles the
@@ -574,6 +737,10 @@ class SharePointStore:
             core.save_meta(thread_id, meta, root)
         except Exception:                              # noqa: BLE001
             pass
+        finally:
+            if claim is not None:
+                with self._pin_lock:
+                    self._claims.pop(claim, None)
 
     def _unclaimed_remotely(self, fm: Any, thread_id: str, meta: dict,
                             name: str) -> str:
@@ -668,7 +835,10 @@ class SharePointStore:
                          "web_url": self._folder_urls.get(thread_id),
                          "duration_s": 0.0, "folder": None,
                          "thread_id": str(thread_id)}
-        with self._lock:
+        # TA-40: its own conversation's lock where the file manager serves
+        # several at once, so neither a large first mirror nor the waits of
+        # a throttled service hold any other conversation.
+        with self._lock_for(thread_id):
             try:
                 self._mirror_locked(thread_id, root, summary)
             except Exception as exc:  # backstop — a sync must never crash a turn
@@ -719,10 +889,12 @@ class SharePointStore:
     # -- saving in the background ------------------------------------------
 
     def save_soon(self, thread_id: str, root: Optional[str] = None) -> None:
-        """Queue a mirror of this conversation, run by one background
-        worker, in order. A conversation already waiting is not queued
-        again: that save will send this change too. The worker outlives the
-        turn that asked, and at exit the queue is finished (up to a minute).
+        """Queue a mirror of this conversation, run in the background: by
+        one worker, in order, or (TA-40) by up to :data:`BG_WORKERS` where
+        conversations may be mirrored at the same time, never two on one
+        conversation. A conversation already waiting is not queued again:
+        that save will send this change too. The workers outlive the turn
+        that asked, and at exit the queue is finished (up to a minute).
         Never raises."""
         tid = str(thread_id)
         with self._bg_cv:
@@ -730,30 +902,51 @@ class SharePointStore:
                 return
             self._bg_waiting.add(tid)
             self._bg_queue.append((tid, root))
-            if self._bg_worker is None or not self._bg_worker.is_alive():
-                if self._bg_worker is None:
+            self._bg_workers = [w for w in self._bg_workers if w.is_alive()]
+            wanted = BG_WORKERS if self.per_conversation else 1
+            # one more worker when the idle ones cannot take all that waits
+            if len(self._bg_queue) > self._bg_idle \
+                    and len(self._bg_workers) < wanted:
+                if not self._bg_atexit:
+                    self._bg_atexit = True
                     atexit.register(self.flush, 60.0)
-                self._bg_worker = threading.Thread(
+                worker = threading.Thread(
                     target=self._bg_run, name="permanent-storage-save",
                     daemon=True)
-                self._bg_worker.start()
+                self._bg_workers.append(worker)
+                worker.start()
             self._bg_cv.notify_all()
+
+    def _bg_take(self) -> Optional[tuple]:
+        """The first queued save whose conversation no worker is saving
+        (called with the condition held)."""
+        for i, (tid, root) in enumerate(self._bg_queue):
+            if tid not in self._bg_saving:
+                del self._bg_queue[i]
+                return tid, root
+        return None
 
     def _bg_run(self) -> None:
         while True:
             with self._bg_cv:
-                while not self._bg_queue:
-                    self._bg_cv.wait()
-                tid, root = self._bg_queue.popleft()
+                taken = self._bg_take()
+                while taken is None:
+                    self._bg_idle += 1
+                    try:
+                        self._bg_cv.wait()
+                    finally:
+                        self._bg_idle -= 1
+                    taken = self._bg_take()
+                tid, root = taken
                 self._bg_waiting.discard(tid)
-                self._bg_saving = tid
+                self._bg_saving.add(tid)
             try:
                 self.mirror_conversation(tid, root=root)
             except Exception:                          # noqa: BLE001
                 pass                                   # it never raises
             finally:
                 with self._bg_cv:
-                    self._bg_saving = None
+                    self._bg_saving.discard(tid)
                     self._bg_cv.notify_all()
 
     def save_state(self, thread_id: Optional[str]) -> Optional[str]:
@@ -761,7 +954,7 @@ class SharePointStore:
         in the background, else ``None``."""
         tid = str(thread_id or "")
         with self._bg_cv:
-            if tid and tid == self._bg_saving:
+            if tid and tid in self._bg_saving:
                 return "saving"
             if tid in self._bg_waiting:
                 return "waiting"
@@ -771,7 +964,7 @@ class SharePointStore:
         """Wait until the background saves are done; True when they are."""
         end = None if timeout is None else time.time() + timeout
         with self._bg_cv:
-            while self._bg_queue or self._bg_saving is not None:
+            while self._bg_queue or self._bg_saving:
                 left = None if end is None else end - time.time()
                 if left is not None and left <= 0:
                     return False
@@ -806,6 +999,10 @@ class SharePointStore:
                       conv_dir: str, summary: dict, batched: bool) -> None:
         manifest = _load_manifest(conv_dir)
         files = _manifest_files(manifest)
+        # TA-40: names kept under another name in SharePoint, and files not
+        # sent (above the size limit), as the last mirror left them.
+        names = _manifest_map(manifest, "names")
+        not_sent = _manifest_map(manifest, "not_sent")
         self._pin_folder(thread_id, root, manifest, fm)
         remote_base = self.session_folder(thread_id, root)
         summary["folder"] = remote_base
@@ -821,6 +1018,7 @@ class SharePointStore:
             summary["renamed_from"] = previous
             self._leave_moved_pointer(fm, previous, remote_base, summary)
             files = {}
+            not_sent = {}
             self._folder_urls.pop(thread_id, None)
 
         # In-progress files (core.is_in_flight_file: the turn checkpoint
@@ -838,7 +1036,10 @@ class SharePointStore:
                     pass
 
         sent = {} if batched else files
-        self._upload_changed(fm, conv_dir, remote_base, files, sent, summary)
+        self._upload_changed(fm, conv_dir, remote_base, files, sent, summary,
+                             names, not_sent)
+        if names:
+            self._send_names(fm, remote_base, names, files, sent, summary)
         if batched:
             try:
                 fm.end_batch(commit=True)
@@ -853,7 +1054,17 @@ class SharePointStore:
             if note:
                 summary["note"] = note           # said once per process
 
-        _save_manifest(conv_dir, files, remote_base)
+        _save_manifest(conv_dir, files, remote_base, names, not_sent)
+        said = [str(v.get("why")) for v in not_sent.values()
+                if isinstance(v, dict) and v.get("why")]
+        if said:
+            # Every summary names what was not sent: the first one as an
+            # error too, the later ones here only (the sidebar shows it).
+            summary["not_sent"] = sorted(not_sent)
+            summary["note"] = " ".join(
+                x for x in (summary.get("note"),
+                            f"Not sent to {self.label}: " + " ".join(said))
+                if x)
         if thread_id not in self._folder_urls:
             try:
                 self._folder_urls[thread_id] = fix_web_url(
@@ -862,12 +1073,53 @@ class SharePointStore:
                 pass
         summary["web_url"] = self._folder_urls.get(thread_id)
 
+    def _send_names(self, fm, remote_base: str, names: Dict[str, str],
+                    files: Dict[str, List], sent: Dict[str, List],
+                    summary: dict) -> None:
+        """TA-40: write :data:`NAMES_NAME` into the conversation's folder
+        (the name in SharePoint -> the file's own name), so a restore on
+        another host gives each file its name back. Sent when it differs
+        from the one last sent: the manifest keeps its size and checksum
+        under its own name, as it keeps a file's size and time."""
+        text = json.dumps({"names": {kept: rel for rel, kept
+                                     in sorted(names.items())}})
+        stamp = [len(text), zlib.crc32(text.encode("utf-8"))]
+        if files.get(NAMES_NAME) == stamp:
+            return
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                local = os.path.join(td, NAMES_NAME)
+                with open(local, "w", encoding="utf-8") as fh:
+                    fh.write(text)
+                if fm.upload_file(local, f"{remote_base}/{NAMES_NAME}",
+                                  overwrite=True) is False:
+                    raise RuntimeError("the upload was refused")
+            sent[NAMES_NAME] = stamp
+        except Exception as exc:                       # noqa: BLE001
+            summary["errors"].append(
+                f"{NAMES_NAME}: {type(exc).__name__}: {exc}")
+
     def _upload_changed(self, fm, conv_dir: str, remote_base: str,
                         files: Dict[str, List], sent: Dict[str, List],
-                        summary: dict) -> None:
+                        summary: dict,
+                        names: Optional[Dict[str, str]] = None,
+                        not_sent: Optional[Dict[str, dict]] = None) -> None:
         """Upload each file whose stamp differs from ``files`` (the
         manifest), recording what went up in ``sent`` (the manifest itself
-        unless the sync is batched)."""
+        unless the sync is batched).
+
+        TA-40, on SharePoint: a file whose name the service refuses goes up
+        under :func:`remote_name` (``names`` records it, and the summary's
+        ``note`` says so the first time); a file above the upload limit is
+        an error once and is then left alone until it changes
+        (``not_sent``); and a file manager that makes an upload's folders
+        itself (``MAKES_FOLDERS``) is not asked to make them first."""
+        names = {} if names is None else names
+        not_sent = {} if not_sent is None else not_sent
+        sharepoint = self.backend == "sharepoint"
+        makes_folders = getattr(fm, "MAKES_FOLDERS", False) is True
+        newly_named: List[str] = []
+        seen: set = set()
         for dirpath, _dirnames, filenames in os.walk(conv_dir):
             rel_dir = os.path.relpath(dirpath, conv_dir).replace(os.sep, "/")
             # The working folder's tool scratch (files/.scratch, any dot-
@@ -880,6 +1132,8 @@ class SharePointStore:
             for name in sorted(filenames):
                 if name == MANIFEST_NAME:
                     continue
+                if name == NAMES_NAME and rel_dir == "." and sharepoint:
+                    continue                    # the mirror's own names file
                 local = os.path.join(dirpath, name)
                 rel = name if rel_dir == "." else f"{rel_dir}/{name}"
                 if core.is_in_flight_file(rel):
@@ -888,24 +1142,50 @@ class SharePointStore:
                     stamp = _stamp(local)
                 except OSError:
                     continue                    # vanished mid-walk
+                seen.add(rel)
                 if files.get(rel) == stamp:
                     summary["skipped"] += 1
                     continue
-                remote_dir = (remote_base if rel_dir == "."
-                              else f"{remote_base}/{rel_dir}")
+                held = not_sent.get(rel)
+                if isinstance(held, dict) and held.get("stamp") == stamp:
+                    continue                    # said before; unchanged since
+                not_sent.pop(rel, None)
+                kept = remote_rel(rel) if sharepoint else rel
+                remote_path = f"{remote_base}/{kept}"
                 try:
-                    self._ensure_folder(fm, remote_dir)
+                    if not makes_folders:
+                        self._ensure_folder(fm, remote_path.rsplit("/", 1)[0])
                     # A file manager that answers False refused the upload:
                     # the file is NOT stamped as saved, so the next sync
                     # sends it again.
-                    if fm.upload_file(local, f"{remote_dir}/{name}",
+                    if fm.upload_file(local, remote_path,
                                       overwrite=True) is False:
                         raise RuntimeError("the upload was refused")
                     sent[rel] = stamp
                     summary["uploaded"] += 1
+                    if kept != rel:
+                        if names.get(rel) != kept:
+                            newly_named.append(
+                                f"'{rel}' is kept as '{kept}'")
+                        names[rel] = kept
                 except Exception as exc:
+                    if _too_large(exc):
+                        not_sent[rel] = {"stamp": stamp, "why": str(exc)}
+                        summary["errors"].append(f"{rel}: {exc}")
+                        continue
                     summary["errors"].append(
                         f"{rel}: {type(exc).__name__}: {exc}")
+        for rel in [r for r in not_sent if r not in seen]:
+            not_sent.pop(rel, None)             # the file is gone
+        for rel in [r for r in names if r not in seen]:
+            names.pop(rel, None)
+        if newly_named:
+            summary["note"] = " ".join(x for x in (
+                summary.get("note"),
+                f"{self.label} does not accept some file names: "
+                + "; ".join(newly_named[:5])
+                + (f"; and {len(newly_named) - 5} more"
+                   if len(newly_named) > 5 else "") + ".") if x)
 
     # -- the mirror, backwards: list + restore ------------------------------
 
@@ -924,17 +1204,36 @@ class SharePointStore:
         Each entry: ``{"name": "<title>_<YYYY-MM-DD>", "path": <remote>}``.
         The folder name carries the title and the creation date, so it is
         the search key — no per-folder reads are made here.
+
+        The list is a :class:`RemoteListing`: when the library could not be
+        read it is empty and its ``error`` says why (TA-40), which
+        :meth:`listing_error` also returns until a listing succeeds.
         """
+        out = RemoteListing()
         if not self.configured:
-            return []
+            return out
+        key = listing_cache_key(owner, page)
         try:
             fm = self.file_manager()
             base = self.conversations_base(owner, page)
             entries = fm.ls(base) or []
-        except Exception:
-            return []
+            self._listing_errors.pop(key, None)
+        except Exception as exc:                       # noqa: BLE001
+            # TA-40: a library that could not be read is not an empty one.
+            out.error = (f"{self.label} could not be listed: "
+                         f"{type(exc).__name__}: {exc}")
+            self._listing_errors[key] = out.error
+            if self.backend == "sharepoint":
+                try:
+                    from aec_document_review import sharepoint_log
+                    sharepoint_log.record(
+                        "list conversations",
+                        f"{type(exc).__name__}: {exc}", "conversations",
+                        who=str(owner or ""))
+                except Exception:                      # noqa: BLE001
+                    pass
+            return out
         skip = (page_folder_names() if _is_default_page(page) else set())
-        out = []
         for e in entries:
             if not _is_folder(e):
                 continue
@@ -946,6 +1245,12 @@ class SharePointStore:
                         "date": _trailing_date(name)})
         out.sort(key=lambda d: (d["date"], d["name"]), reverse=True)
         return out
+
+    def listing_error(self, owner: Optional[str] = None,
+                      page: Optional[str] = None) -> Optional[str]:
+        """Why the latest listing of this person's page failed, or ``None``
+        when it was read (or never asked for)."""
+        return self._listing_errors.get(listing_cache_key(owner, page))
 
     def restore_conversation(self, folder_name: str,
                              root: Optional[str] = None,
@@ -1048,9 +1353,20 @@ class SharePointStore:
         stamps: Dict[str, List] = {}
         refused: List[str] = []
         wanted: List[Tuple[str, str, str]] = []      # rel, remote, local
+        # TA-40: files kept in SharePoint under another name get their own
+        # name back (the folder's names file says which).
+        own_names = (_read_names(fm, remote_base)
+                     if NAMES_NAME in names and self.backend == "sharepoint"
+                     else {})
+        kept_as: Dict[str, str] = {}
         for rel, remote_path in files:
             if rel == MANIFEST_NAME:
                 continue                     # never restore a stale manifest
+            if own_names and rel == NAMES_NAME:
+                continue                     # the mirror's own names file
+            if rel in own_names:
+                kept_as[own_names[rel]] = rel
+                rel = own_names[rel]
             if core.is_in_flight_file(rel):
                 # a turn checkpoint mirrored mid-turn would come back as a
                 # fake "interrupted" turn (live smoke wave 2a, B2)
@@ -1077,7 +1393,8 @@ class SharePointStore:
                 f"outside the conversation's folder: "
                 + ", ".join(repr(r) for r in refused[:5])
                 + (" …" if len(refused) > 5 else ""))
-        _save_manifest(conv_dir, stamps, remote_base)
+        _save_manifest(conv_dir, stamps, remote_base,
+                       {r: k for r, k in kept_as.items() if r in stamps})
         summary["status"] = "restored" if summary["downloaded"] else "error"
         if summary["downloaded"]:
             # The record says the folder came back from the mirror (BACKLOG
@@ -1175,6 +1492,38 @@ def _download_all(fm: Any, wanted: List[Tuple[str, str, str]]
             out.append(None)
         except Exception as exc:                       # noqa: BLE001
             out.append(exc)
+    return out
+
+
+def _too_large(exc: BaseException) -> bool:
+    """An upload refused for the file's size before anything was sent
+    (:class:`aec_document_review.graph_sharepoint.FileTooLarge`)."""
+    return type(exc).__name__ == "FileTooLarge"
+
+
+def _read_names(fm, base: str) -> Dict[str, str]:
+    """The folder's names file: the path a file is kept under in SharePoint
+    -> the file's own path (TA-40). ``{}`` when it cannot be read, and an
+    entry is left out when this host could not hold the file's own name
+    (Windows refuses the same characters SharePoint does)."""
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            local = os.path.join(td, NAMES_NAME)
+            fm.download_file(f"{base}/{NAMES_NAME}", local_path=local,
+                             return_bytes=False, overwrite=True)
+            with open(local, "r", encoding="utf-8") as fh:
+                found = json.load(fh).get("names")
+    except Exception:                                  # noqa: BLE001
+        return {}
+    out: Dict[str, str] = {}
+    for kept, own in (found.items() if isinstance(found, dict) else ()):
+        if not (isinstance(kept, str) and isinstance(own, str)):
+            continue
+        if remote_rel(own) != kept:
+            continue                         # not a name this app made
+        if os.name == "nt":
+            continue
+        out[kept] = own
     return out
 
 
@@ -1292,7 +1641,8 @@ def get_store(refresh: bool = False) -> SharePointStore:
 def save_after_change(store: Any, thread_id: str) -> Optional[dict]:
     """Save conversation ``thread_id`` to permanent storage after a turn or
     a feedback note: in the background where the store says so (the Foundry
-    dataset, :attr:`SharePointStore.background`), else at once. Returns the
+    dataset and, TA-40, SharePoint on the Tiny Apps route:
+    :attr:`SharePointStore.background`), else at once. Returns the
     summary of a save made at once, ``None`` for one queued (the sidebar
     reads its state from the store). Never raises."""
     try:
@@ -1342,4 +1692,5 @@ def sync_for_conversation(store: Any, thread_id: Optional[str],
 __all__ = ["SharePointStore", "get_store", "configured", "DEFAULT_ROOT",
            "MANIFEST_NAME", "MOVED_NAME", "conversation_folder",
            "sanitize_folder_name", "folder_date", "save_after_change",
-           "sync_for_conversation"]
+           "sync_for_conversation", "remote_name", "remote_rel",
+           "mirrored_rel", "RemoteListing", "NAMES_NAME", "BG_WORKERS"]
