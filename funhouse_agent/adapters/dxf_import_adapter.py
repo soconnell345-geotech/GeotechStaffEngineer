@@ -44,6 +44,8 @@ def _slope_params(geom) -> dict:
             d["gamma_sat"] = lyr.gamma_sat
         if lyr.bottom_boundary_points:
             d["bottom_boundary_points"] = _pts(lyr.bottom_boundary_points)
+        if lyr.top_boundary_points:
+            d["top_boundary_points"] = _pts(lyr.top_boundary_points)
         layers.append(d)
     out = {"surface_points": _pts(geom.surface_points),
            "soil_layers": layers,
@@ -371,7 +373,7 @@ METHOD_INFO = {
         "brief": "Extract slope geometry coordinates from mapped DXF layers.",
         "parameters": {
             "file_path": {"type": "str", "required": True, "description": "Path to DXF file."},
-            "layer_mapping": {"type": "dict", "required": True, "description": "Mapping with keys: surface (str), soil_boundaries ({layer: soil_name}), water_table (str), nails (str), annotations ([str])."},
+            "layer_mapping": {"type": "dict", "required": True, "description": "Mapping with keys: surface (str), soil_boundaries ({layer: soil_name}), water_table (str), nails (str), annotations ([str]). Each soil_boundaries layer is the TOP of the soil it names (that soil lies below it, down to the next boundary); in build_slope_geometry the soil between the ground surface and the highest boundary takes the soil property named 'Surface', or else the first soil property that no boundary names."},
             "units": {"type": "str", "required": False, "allowed_values": ["m", "mm", "cm", "ft", "in"], "description": "Units the drawing is drawn in. Left out, the units the drawing's own header states ($INSUNITS, discover_layers' units_hint) are used; a drawing whose header states none is refused until units is given. Given, they are compared with the header, and a difference is refused unless ignore_header_units is true. Nothing is assumed."},
             "flip_y": {"type": "bool", "required": False, "default": False, "description": "Negate Y values for downward-positive drawings."},
             "ignore_header_units": {"type": "bool", "required": False, "default": False, "description": "True: use units even though the drawing's header states other units (a header left at a template's value is common); the warnings then name both."},

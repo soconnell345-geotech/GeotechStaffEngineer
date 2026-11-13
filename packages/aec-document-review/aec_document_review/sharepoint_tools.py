@@ -1310,10 +1310,14 @@ def _upload(local_path: str, dest_folder: str, default_folder=None,
                 return scope.refusal(folder, "upload")
             if verdict == "container":
                 return scope.container_refusal(folder, "upload")
-        try:
-            fm.create_folder(folder)
-        except Exception:
-            pass                                    # may already exist
+        if getattr(fm, "MAKES_FOLDERS", False) is not True:
+            # TA-40: a file manager that names the whole path in an upload
+            # (the Graph one) has the service make the folders; looking
+            # them up first listed every level of the path.
+            try:
+                fm.create_folder(folder)
+            except Exception:
+                pass                                # may already exist
         name = os.path.basename(local)
         remote = f"{folder}/{name}"
         ok = fm.upload_file(local, remote, overwrite=False)
@@ -1373,7 +1377,9 @@ def _share_mirrored_copy(thread_id: str, record_dir: Optional[str],
                 f"({errors[0][:300]}).")
     if not folder or not _mirrored(conv_dir, rel, local):
         return None
-    remote = f"{folder}/{rel}"
+    # TA-40: under the name the mirror keeps it by (its own, unless
+    # SharePoint refuses that name).
+    remote = f"{folder}/{sharepoint_store.mirrored_rel(conv_dir, rel)}"
     try:
         url = sharepoint_store.fix_web_url(_fm().get_web_url(remote))
     except Exception:                                      # noqa: BLE001

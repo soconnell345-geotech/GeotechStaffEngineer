@@ -97,14 +97,28 @@ no unit weight, strength or stiffness:
 
 ## Layer Stacking
 
-For multi-layer slopes:
-- Surface profile = top of layer 1
-- Boundary 1 = bottom of layer 1 / top of layer 2
-- Boundary 2 = bottom of layer 2 / top of layer 3
+For multi-layer slopes (`build_slope_geometry`), each boundary is the TOP
+of the soil it names: that soil lies below the boundary, down to the next
+boundary. The soil between the ground surface and the highest boundary
+takes the soil property named "Surface", or else the first property that
+no boundary names.
+- Surface profile = top of the top soil ("Surface", or the first property
+  no boundary names)
+- Boundary 1 (the highest) = bottom of the top soil / top of the soil
+  boundary 1 names
+- Boundary 2 = bottom of that soil / top of the soil boundary 2 names
 - etc.
 
 Layer elevations: `top_elevation = max(z)` along top profile,
 `bottom_elevation` from next boundary's `max(z)` or extended below.
+
+One material per point (slope_stability, GM-140 step 1, 2026-11-13): in
+`build_slope_geometry` the layer named for a boundary has that boundary as
+its `top_boundary_points` and the next boundary down as its
+`bottom_boundary_points` (the lowest layer ends 2 m below its boundary's
+lowest point), so no ground is held by two layers and none is left without
+one. Before, each such layer's bottom was its own boundary: the ground
+under a boundary had no layer and the model ended at the lowest boundary.
 
 ## DWG Support
 

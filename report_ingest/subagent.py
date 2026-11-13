@@ -224,6 +224,12 @@ class IngestSummary(BaseModel):
                     "written, or when a gate could not run here (no schema "
                     "check installed), which is neither a pass nor a "
                     "failure -- the record's QA says which")
+    report_tables: str = Field(
+        default="",
+        description="one line: whether the report tables (the report as "
+                    "flat, keyed rows for a data pipeline, BACKLOG RI-209) "
+                    "were written, whether they were sent to the Foundry "
+                    "dataset, and why not")
     paths: Dict[str, str] = Field(
         default_factory=dict,
         description="where the record, the summary, the library page, the "
@@ -402,8 +408,10 @@ def run_ingest(source: str, questions: Sequence[str], *,
                                                       row.record_path))
                 bound_checked[row.bound_id] = run_checklist_on(
                     child, os.path.dirname(child))
+    from report_ingest.tables import export_outcome, outcome_line
     from report_ingest.writers import title_of
     return IngestSummary(
+        report_tables=outcome_line(export_outcome(out_dir), out_dir),
         report=title_of(record),
         workflow=record.document.workflow,
         n_pages=record.document.n_pages,
@@ -623,7 +631,8 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                f"entry); asking for the same report again reads those again "
                f"and reuses what was finished."
                if answer.ceiling_reached else "")
-            + _checklist_text(answer))
+            + _checklist_text(answer)
+            + (f" {answer.report_tables}" if answer.report_tables else ""))
         return {"messages": [AIMessage(content=text)],
                 "structured_response": answer}
 

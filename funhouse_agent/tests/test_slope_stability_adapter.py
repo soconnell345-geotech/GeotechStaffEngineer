@@ -843,3 +843,40 @@ class TestV54SearchRapidDrawdown:
             METHOD_REGISTRY["search_rapid_drawdown"](_dam(
                 drawdown_from_elevation=47 * _FT,
                 drawdown_to_elevation=15 * _FT, surface_type="pso"))
+
+
+class TestOneMaterialPerPoint:
+    """GM-140 step 1 through the adapter. Made-up values."""
+
+    _SURF = [[0, 0], [10, 0], [30, 10], [40, 10]]
+    _BOUNDARY = [[0, -2], [40, 6]]
+
+    def _params(self, **clay_over):
+        clay = {"name": "clay", "top_elevation": 6, "bottom_elevation": -10,
+                "gamma": 16, "cu": 30, "analysis_mode": "undrained"}
+        clay.update(clay_over)
+        return {
+            "surface_points": self._SURF,
+            "soil_layers": [
+                {"name": "fill", "top_elevation": 10, "bottom_elevation": 6,
+                 "gamma": 20, "phi": 30, "c_prime": 5,
+                 "bottom_boundary_points": self._BOUNDARY},
+                clay],
+            "xc": 18.0, "yc": 22.0, "radius": 24.0,
+        }
+
+    def test_flat_top_under_a_polyline_bottom_reports_the_overlap(self):
+        r = METHOD_REGISTRY["analyze_slope"](self._params())
+        assert r["layer_overlaps"][0]["layer"] == "clay"
+        assert r["layer_overlaps"][0]["held_by"] == ["fill"]
+
+    def test_top_boundary_points_is_the_same_ground(self):
+        flat = METHOD_REGISTRY["analyze_slope"](self._params())
+        poly = METHOD_REGISTRY["analyze_slope"](
+            self._params(top_boundary_points=self._BOUNDARY))
+        assert "layer_overlaps" not in poly
+        assert poly["FOS"] == pytest.approx(flat["FOS"], rel=1e-4)
+
+    def test_gap_refused_with_location(self):
+        with pytest.raises(ValueError, match=r"gap.*x = "):
+            METHOD_REGISTRY["analyze_slope"](self._params(top_elevation=-4))
