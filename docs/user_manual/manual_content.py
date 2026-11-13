@@ -586,7 +586,11 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "The simplified method takes V<sub>z</sub>, M<sub>x</sub> and M<sub>y</sub> at the centroid of "
             "the piles, each pile&rsquo;s x and y measured from it; a load applied elsewhere needs its "
             "moment about the centroid added, and a centroid more than 1&nbsp;mm from the origin of the "
-            "coordinates is warned of.",
+            "coordinates is warned of. Where the piles are not symmetric about their centroidal axes "
+            "(a group that has lost a corner pile), it includes the product term, so the forces give "
+            "back M<sub>x</sub> and M<sub>y</sub> (GEC-12 Eq. 8-79 is the symmetric case). The 6-DOF "
+            "tool (<code>pile_group_6dof</code>) takes all six loads at the origin of the coordinates, "
+            "not at the centroid, and says so in its result.",
             "**Group efficiency factor** &eta;<sub>g</sub> read from the printed rows by soil, the cap's "
             "contact with the ground and the spacing (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26 for "
             "drilled shafts, CFA, displacement piles and micropiles); **block failure** by GEC-12 "

@@ -69,17 +69,38 @@ stiffness assembly, and pile-force back-calc):
 - Simple method: `P_i = Vz/n + My*x_i/Sx2 - Mx*y_i/Sy2` (note the minus on
   Mx — pre-v5.1 the code used `+ Mx*y_i/Sy2`, which is not realizable in
   any right-handed frame together with the +My term). GEC-12 Vol I
-  Sec. 8.8 Step 3 prints it as Eq. 8-79 (p. 468), x and y measured there
-  from the centre of the column, which carries the loads.
+  Sec. 8.8 Step 3 prints it as Eq. 8-79 (p. 468), as the maximum pile
+  load with the terms added (signs here by the module's convention), the
+  vertical load including the cap's and the soil's weight (Wc, Ws: Vz
+  here is all of it; the tool adds none), x and y measured there from the
+  centre of the column, which carries the loads.
+- The product term (GM-319 re-check, the lead's call, for the owner to
+  revisit): Eq. 8-79 gives back Mx and My only where SUM dx dy = 0 about
+  the centroid (a layout symmetric about one of its centroidal axes). A
+  group that has lost a corner pile, or an L-shaped cap, is not: there the
+  general rigid-cap form is used, P = Vz/n + a dx + b dy with
+  a = (My Syy + Mx Sxy)/D, b = -(Mx Sxx + My Sxy)/D, D = Sxx Syy - Sxy^2
+  (Sxx = SUM dx^2, Syy = SUM dy^2, Sxy = SUM dx dy; `simple_load_plane`).
+  Eq. 8-79 is its case Sxy = 0, so every symmetric layout keeps its
+  numbers; |Sxy| at or below 1e-9 of sqrt(Sxx Syy) is taken as zero
+  (`PRODUCT_TOL`). Basis: statics, the equilibrium of a rigid cap on
+  pinned piles of equal axial stiffness; it equals the 6-DOF method with
+  equal ka. The result's notes and the calc package say when it is used.
+  Before: a 2 x 3 group at 1.5 m less a corner, Vz 2000 kN, Mx and My
+  300 kN-m, gave 409.5 / 481.0 / 552.4 / 242.9 / 314.3 kN (moments about
+  the centroid My 450 and Mx 364); now 426.7 / 466.7 / 506.7 / 280.0 /
+  320.0 kN. Piles on one line not along x or y carry the moment across
+  the line only; one about the line is refused.
 - Where the simple method takes the loads (GM-319 review): Vz, Mx and My
   are taken to act at the centroid of the piles (xc, yc), each pile's x
   and y measured from it; a load applied at another point (xa, ya) needs
   its moment about the centroid added, Vz x (xa - xc) to My and
   -Vz x (ya - yc) to Mx (+My compresses the +x side, +Mx uplifts the +y
   side). A centroid more than 1 mm from the origin of the coordinates is
-  warned of. Basis: statics of the rigid cap (with distances from the
-  centroid SUM(x_i - xc) = 0, so the forces sum to Vz and give back Mx and
-  My); no held reference prints the distances from the piles' centroid,
+  warned of, and the warning says `pile_group_6dof` takes its loads at the
+  origin. Basis: statics of the rigid cap (with distances from the
+  centroid SUM(x_i - xc) = 0, so the forces sum to Vz; with the product
+  term they give back Mx and My); no held reference prints the distances from the piles' centroid,
   and Eq. 8-79's centre of the column is that point only when the column
   stands over it. Before, x and y were measured from the origin: piles at
   x = -1, 1, 3 m with Vz 900 kN and My 200 kN-m gave 281.8, 318.2 and
@@ -87,10 +108,19 @@ stiffness assembly, and pile-force back-calc):
   origin gives the same numbers as before. The result gives `centroid_m`,
   a note, and `warnings` when off the origin; with equal stiffness, dz is
   reported at the origin (the kinematics above), so the cap displacements
-  equal the 6-DOF method's for the same loads moved to the origin. The
-  6-DOF method takes its loads at the origin of the coordinates (its
-  kinematics use x and y as given); its tool description does not say
-  where its loads act.
+  equal the 6-DOF method's for the same loads moved to the origin; a note
+  names the point dz is reported at and the settlement under the
+  centroid.
+- Where the 6-DOF method takes the loads (GM-319 re-check): Vx, Vy, Vz,
+  Mx, My and Mz act at the origin of the coordinates (x = 0, y = 0), at
+  the cap, the point the piles' x and y are measured from, not at the
+  piles' centroid (its kinematics use x and y as given); a load applied
+  at another point (xa, ya) needs its moment about the origin added,
+  Vz x xa to My, -Vz x ya to Mx and xa x Vy - ya x Vx to Mz. The tool's
+  description and loads say so, and its result's notes, naming the piles'
+  centroid (before, nothing did: an off-centre layout with Vz 1800 kN,
+  Mx 90 and My -120 kN-m gave a 341.7 kN maximum in the simple tool and
+  1091.7 kN in the 6-DOF tool).
 - 6-DOF: K = sum(B^T k B) with rigid-cap kinematics
   `ux = dx - rz*y`, `uy = dy + rz*x`, `s = dz - rx*y + ry*x`; the same B
   back-calculates pile forces, so they equilibrate the applied loads.

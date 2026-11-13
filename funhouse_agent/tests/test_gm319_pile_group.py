@@ -242,9 +242,10 @@ def test_simple_tool_off_centre_forces_sum_to_vz_and_it_warns():
     assert "taken at the centroid of the piles, (x, y) = (1.000, 0.000) m, " \
            "not at the origin of the coordinates given" in w
     assert "add 900 kN x (-1.000 m) = -900.0 kN-m to My" in w
-    # pile_group_6dof's description does not say where its loads act, so
-    # the warning does not send the load there
-    assert "pile_group_6dof" not in w
+    # pile_group_6dof's description now says its loads act at the origin
+    # (GM-319 re-check), and the warning names it so
+    assert w.endswith("pile_group_6dof takes its loads at the origin of the "
+                      "coordinates.")
     # the piles keep the coordinates given
     assert [p["x_m"] for p in r["pile_forces"]] == [-1.0, 1.0, 3.0]
 
@@ -282,3 +283,59 @@ def test_simple_tool_description_says_where_the_loads_act():
     assert "centroid_m" in info["returns"] and "warnings" in info["returns"]
     for m in ("Mx", "My"):
         assert "centroid" in info["parameters"][m]["description"]
+
+
+# --- the product term, and where the 6-DOF loads act (GM-319 re-check) --
+
+_LESS_A_CORNER = [{"x": x, "y": y} for x, y in
+                  ((0.0, 0.0), (1.5, 0.0), (3.0, 0.0), (0.0, 1.5), (1.5, 1.5))]
+
+
+def test_simple_tool_carries_the_product_term_as_6dof_does():
+    """2 x 3 at 1.5 m less a corner: SUM dx dy = -1.35 m^2 about the
+    centroid (1.2, 0.6). Before, 409.5 / 481.0 / 552.4 / 242.9 / 314.3 kN."""
+    r = _call("pile_group_simple", {"piles": _LESS_A_CORNER, "Vz": 2000,
+                                    "Mx": 300, "My": 300})
+    assert "error" not in r, r
+    f = [p["axial_kN"] for p in r["pile_forces"]]
+    r6 = _call("pile_group_6dof", {
+        "piles": [{**p, "axial_stiffness": 2e5} for p in _LESS_A_CORNER],
+        "Vz": 2000, "Mx": 300 - 2000 * 0.6, "My": 300 + 2000 * 1.2})
+    assert "error" not in r6, r6
+    assert f == pytest.approx([p["axial_kN"] for p in r6["pile_forces"]],
+                              abs=0.1)
+    assert f == pytest.approx([426.7, 466.7, 506.7, 280.0, 320.0], abs=0.051)
+    assert any("product term is included" in n for n in r["notes"])
+
+
+def test_6dof_tool_says_its_loads_act_at_the_origin():
+    from funhouse_agent.adapters.pile_group import METHOD_INFO
+    info = METHOD_INFO["pile_group_6dof"]
+    sentence = ("Vx, Vy, Vz, Mx, My and Mz act at the origin of the "
+                "coordinates (x = 0, y = 0), at the cap, the point the "
+                "piles' x and y are measured from, not at the piles' "
+                "centroid; a load applied at another point (xa, ya) needs "
+                "its moment about the origin added, Vz x xa to My, -Vz x ya "
+                "to Mx and xa x Vy - ya x Vx to Mz")
+    assert sentence in info["brief"]
+    for name in ("Vx", "Vy", "Vz", "Mx", "My", "Mz"):
+        assert "origin of the coordinates" in \
+            info["parameters"][name]["description"]
+    # the result says it too, naming the piles' centroid
+    piles = [{"x": x, "y": y, "axial_stiffness": 2e5} for x, y in
+             ((0.0, 0.0), (1.2, 0.0), (2.4, 0.0), (0.0, 1.8), (1.2, 1.8),
+              (2.4, 1.8))]
+    r = _call("pile_group_6dof", {"piles": piles, "Vz": 1800, "Mx": 90,
+                                  "My": -120})
+    assert "error" not in r, r
+    assert any("origin of the coordinates" in n and "(1.200, 0.900) m" in n
+               for n in r["notes"])
+    assert r["max_compression_kN"] == pytest.approx(1091.7, abs=0.05)
+
+
+def test_simple_tool_vz_and_brief_say_what_eq_8_79_prints():
+    from funhouse_agent.adapters.pile_group import METHOD_INFO
+    info = METHOD_INFO["pile_group_simple"]
+    assert "printed as the maximum with the terms added" in info["brief"]
+    assert "product term" in info["brief"]
+    assert "Wc and Ws" in info["parameters"]["Vz"]["description"]

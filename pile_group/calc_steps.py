@@ -261,16 +261,31 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                             "for all piles")
         sum_x2 = sum(x**2 for x in xs)
         sum_y2 = sum(y**2 for y in ys)
+        substitution = _sum_squares_substitution(xs, ys)
+        result_name = "\u03a3x\u00b2, \u03a3y\u00b2"
+        result_value = (f"\u03a3x\u00b2 = {sum_x2:.3f} m\u00b2, "
+                        f"\u03a3y\u00b2 = {sum_y2:.3f} m\u00b2")
+        notes = "Used in simplified elastic load distribution."
+        # the product term (GM-319 re-check): shown where it is not zero
+        sum_xy = sum(x * y for x, y in zip(xs, ys))
+        if simple and _has_product_term(sum_x2, sum_y2, sum_xy):
+            equation += ("\n\u03a3xy = sum of (x_i \u2212 x_c)(y_i \u2212 "
+                         "y_c) for all piles")
+            substitution += "\n" + _product_substitution(xs, ys)
+            result_name += ", \u03a3xy"
+            result_value += f", \u03a3xy = {sum_xy:.3f} m\u00b2"
+            notes += (" \u03a3xy is not 0: the piles are not symmetric "
+                      "about their centroidal axes, so the load "
+                      "distribution includes the product term.")
 
         layout_items.append(CalcStep(
             title="Sum of Squared Distances",
             equation=equation,
-            substitution=_sum_squares_substitution(xs, ys),
-            result_name="\u03a3x\u00b2, \u03a3y\u00b2",
-            result_value=f"\u03a3x\u00b2 = {sum_x2:.3f} m\u00b2, "
-                         f"\u03a3y\u00b2 = {sum_y2:.3f} m\u00b2",
+            substitution=substitution,
+            result_name=result_name,
+            result_value=result_value,
             reference="USACE EM 1110-2-2906, Ch. 4",
-            notes="Used in simplified elastic load distribution.",
+            notes=notes,
         ))
 
     sections.append(CalcSection(title="Pile Layout", items=layout_items))
@@ -433,7 +448,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 "it, pinned to the cap: k = kl·I + (ka − kl)·l·lᵀ in the "
                 "global axes, l the pile's direction cosines, so a batter "
                 "is carried in full. No moment or torsional stiffness of a "
-                "pile's own head is included."
+                "pile's own head is included. The loads act at the origin "
+                "of the coordinates (x = 0, y = 0), not at the piles' "
+                "centroid (GM-319 re-check)."
             ),
         ))
     else:
@@ -442,24 +459,45 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         My = _get(load, 'My', 0.0) if load else 0.0
         Mx = _get(load, 'Mx', 0.0) if load else 0.0
 
+        plane = _plane(piles, Mx, My)
+        product = bool(plane and plane["form"] != "eq_8_79")
+        equation = ("P_i = V_z/n + M_y\u00b7x_i/\u03a3x\u00b2 "
+                    "- M_x\u00b7y_i/\u03a3y\u00b2")
+        reference = ("GEC-12 Vol I Sec. 8.8 Step 3, Eq. 8-79 (p. 468), "
+                     "printed as the maximum with the terms added (signs "
+                     "here by this convention; V_z includes the cap's and "
+                     "the soil's weight, its W_c and W_s), x and y there "
+                     "measured from the centre of the column, which "
+                     "carries the loads; here from the piles' centroid, "
+                     "where the loads are taken (statics of the rigid cap)")
+        notes = ("Assumes vertical piles, rigid cap, and elastic behavior. "
+                 "Right-hand-rule convention (z up, V_z positive down): "
+                 "+M_y compresses the +x side; +M_x uplifts the +y side. "
+                 "V_z, M_x and M_y act at the piles' centroid (x_c, y_c).")
+        if product:
+            equation = ("P_i = V_z/n + a\u00b7(x_i \u2212 x_c) + "
+                        "b\u00b7(y_i \u2212 y_c)\n"
+                        "a = (M_y\u00b7\u03a3y\u00b2 + M_x\u00b7\u03a3xy)/D, "
+                        "b = \u2212(M_x\u00b7\u03a3x\u00b2 + "
+                        "M_y\u00b7\u03a3xy)/D, "
+                        "D = \u03a3x\u00b2\u00b7\u03a3y\u00b2 \u2212 "
+                        "(\u03a3xy)\u00b2")
+            reference += ("; with the product term \u03a3xy, of which "
+                          "Eq. 8-79 is the case \u03a3xy = 0: statics, the "
+                          "equilibrium of a rigid cap on pinned piles of "
+                          "equal axial stiffness")
+            notes += (" The piles are not symmetric about their centroidal "
+                      "axes, so the product term is included (the forces "
+                      "give back M_x and M_y).")
+
         load_items.append(CalcStep(
             title="Simplified Elastic Load Distribution",
-            equation="P_i = V_z/n + M_y\u00b7x_i/\u03a3x\u00b2 "
-                     "- M_x\u00b7y_i/\u03a3y\u00b2",
+            equation=equation,
             substitution=_simple_load_substitution(n_piles, Vz, My, Mx, piles),
             result_name="Method",
             result_value="Simplified Elastic",
-            reference=("GEC-12 Vol I Sec. 8.8 Step 3, Eq. 8-79 (p. 468), "
-                       "x and y there measured from the centre of the "
-                       "column, which carries the loads; here from the "
-                       "piles' centroid, where the loads are taken (statics "
-                       "of the rigid cap)"),
-            notes=(
-                "Assumes vertical piles, rigid cap, and elastic behavior. "
-                "Right-hand-rule convention (z up, V_z positive down): "
-                "+M_y compresses the +x side; +M_x uplifts the +y side. "
-                "V_z, M_x and M_y act at the piles' centroid (x_c, y_c)."
-            ),
+            reference=reference,
+            notes=notes,
         ))
 
     # Cap displacements
@@ -878,8 +916,32 @@ def _simple_load_substitution(n_piles, Vz, My, Mx, piles):
         sum_x2 = sum(x**2 for x in xs)
         sum_y2 = sum(y**2 for y in ys)
         off = _off_centre(xc, yc)
-        x_i = f"(x_i \u2212 {xc:.3f})" if off else "x_i"
-        y_i = f"(y_i \u2212 {yc:.3f})" if off else "y_i"
+        x_i = f"(x_i {_less(xc)})" if off else "x_i"
+        y_i = f"(y_i {_less(yc)})" if off else "y_i"
+        plane = _plane(piles, Mx, My)
+
+        if plane and plane["form"] != "eq_8_79":
+            # the product term (GM-319 re-check): a and b worked out
+            a, b = plane["a"], plane["b"]
+            sxy, det = plane["sxy"], plane["det"]
+            lines = []
+            if plane["form"] == "product_term":
+                lines = [
+                    f"D = {sum_x2:.3f}\u00b7{sum_y2:.3f} \u2212 "
+                    f"({sxy:.3f})\u00b2 = {det:.3f} m\u2074",
+                    f"a = ({My:,.1f}\u00b7{sum_y2:.3f} + {Mx:,.1f}\u00b7"
+                    f"({sxy:.3f}))/{det:.3f} = {a:,.3f} kN/m",
+                    f"b = \u2212({Mx:,.1f}\u00b7{sum_x2:.3f} + {My:,.1f}"
+                    f"\u00b7({sxy:.3f}))/{det:.3f} = {b:,.3f} kN/m"]
+            else:
+                lines = [f"one line of piles: a = {a:,.3f}, b = {b:,.3f} "
+                         "kN/m (the moment across the line)"]
+            x_i = f"(x_i {_less(xc)})" if xc else "x_i"
+            y_i = f"(y_i {_less(yc)})" if yc else "y_i"
+            sign = "+" if b >= 0 else "\u2212"
+            lines.append(f"P_i = {Vz:,.1f}/{n_piles} + {a:,.3f}\u00b7{x_i} "
+                         f"{sign} {abs(b):,.3f}\u00b7{y_i}")
+            return "\n".join(lines)
 
         if abs(My) > 0.01 and sum_x2 > 0:
             parts.append(f"+ {My:,.1f}\u00b7{x_i}/{sum_x2:.3f}")
@@ -887,6 +949,46 @@ def _simple_load_substitution(n_piles, Vz, My, Mx, piles):
             parts.append(f"- {Mx:,.1f}\u00b7{y_i}/{sum_y2:.3f}")
 
     return " ".join(parts)
+
+
+def _less(c):
+    """'- c' or '+ |c|', so a negative centroid never reads '- -0.188'."""
+    sign = "\u2212" if c >= 0 else "+"
+    return f"{sign} {abs(c):.3f}"
+
+
+def _plane(piles, Mx, My):
+    """The library's load plane for these piles (rigid_cap), or None where
+    there are no piles or the moment is one the method refuses."""
+    if not piles:
+        return None
+    from pile_group.rigid_cap import simple_load_plane
+    try:
+        return simple_load_plane([_get(p, 'x', 0.0) for p in piles],
+                                 [_get(p, 'y', 0.0) for p in piles], Mx, My)
+    except ValueError:
+        return None
+
+
+def _has_product_term(sxx, syy, sxy):
+    """Whether the simplified method carries the product term for these
+    sums about the centroid (as ``rigid_cap.simple_load_plane``)."""
+    import math
+    from pile_group.rigid_cap import _ON_LINE_M2, PRODUCT_TOL
+    if sxx <= _ON_LINE_M2 or syy <= _ON_LINE_M2:
+        return False
+    if abs(sxy) <= PRODUCT_TOL * math.sqrt(sxx * syy):
+        return False
+    lam = 0.5 * ((sxx + syy) - math.hypot(sxx - syy, 2.0 * sxy))
+    return lam > _ON_LINE_M2
+
+
+def _product_substitution(xs, ys):
+    """The substitution line for the product term."""
+    terms = [f"({x:.3f})({y:.3f})" for x, y in zip(xs, ys)]
+    if len(terms) > 8:
+        terms = terms[:4] + ["..."]
+    return "\u03a3xy = " + " + ".join(terms)
 
 
 def _centroid(piles):
