@@ -78,6 +78,68 @@ def close_ids(name: str, indexed) -> list:
     return [by_squash[n] for n in near]
 
 
+#: A ``tables_held`` answer that names a coded lookup (the library's
+#: ``_reach``: "lookup: <function>").
+_LOOKUP_ANSWER = re.compile(r"^lookup: ([A-Za-z_]\w*)\s*$")
+
+#: What the fetch's note says a lookup answer means, in this app's tools
+#: (the library names its own tool, ``lookup_reference``, which this app
+#: does not have: a lookup here is call_agent on the reference's module).
+APP_LOOKUP_ANSWER = ("'lookup: F': function F returns them (call_agent on "
+                     "this reference's own module, method F)")
+
+#: Said on a lookup answer whose function no tool of this app runs (one
+#: that takes Python callables, which no JSON call can pass).
+LOOKUP_NOT_HERE = (" (no tool of this app runs it: table_db.table_get gives "
+                   "the table's page)")
+
+#: The note's sentence on pages where this host cannot read a page.
+NO_PAGE_READS = ("No page can be read on this host (the reference PDFs are "
+                 "not here): a value printed only on a page or a chart can "
+                 "be cited by its page, not read.")
+
+
+def app_reach_words(result, reference: str):
+    """A fetched section's reach keys and note (the library's ``_reach``)
+    in this app's terms: the note's lookup clause names call_agent, not
+    the library's own tool; a ``tables_held`` lookup whose function no
+    module of this app offers says so; and on a host that cannot read a
+    page the note says that, not only that pages are readable where the
+    PDF is. A result without the keys is returned as it is."""
+    if not isinstance(result, dict) or "error" in result:
+        return result
+    try:
+        from geotech_references import _reach
+    except ImportError:
+        return result
+    note = result.get("note")
+    if isinstance(note, str):
+        lookup = getattr(_reach, "TABLE_ANSWERS", {}).get("lookup")
+        if lookup and lookup in note:
+            note = note.replace(lookup, APP_LOOKUP_ANSWER)
+        page_note = getattr(_reach, "PAGE_NOTE", None)
+        if page_note and page_note in note:
+            from funhouse_agent import reference_docs
+            if not reference_docs.chart_reads_available():
+                note = note.replace(page_note, NO_PAGE_READS)
+        result["note"] = note
+    sections = [result] + [s for s in result.get("subsections") or []
+                           if isinstance(s, dict)]
+    for sec in sections:
+        held = sec.get("tables_held")
+        if not isinstance(held, dict):
+            continue
+        for key, answer in list(held.items()):
+            m = _LOOKUP_ANSWER.match(str(answer))
+            if not m:
+                continue
+            from funhouse_agent.adapters.table_db_adapter import lookup_target
+            module, _method = lookup_target(reference, m.group(1))
+            if module is None:
+                held[key] = str(answer) + LOOKUP_NOT_HERE
+    return result
+
+
 def _unknown_reference(name: str, suggestions) -> dict:
     return {"error": f"no reference named {name!r} is indexed",
             "did_you_mean": suggestions,
@@ -252,7 +314,14 @@ def _build():
             equations (with implemented_in), figures, tables, plus
             ``under`` (the sections above it), ``parent_id`` and
             ``children`` (``section_id`` and ``title`` of each section
-            directly under it).
+            directly under it). Where the library says what the section
+            can reach: ``figures_held`` (figure_db.figure_get finds each
+            listed figure, or "not catalogued"), ``tables_held`` (where
+            each listed table's values are: "text: <section>" to fetch
+            here, "lookup: <function>" to call on the reference's module,
+            "page: ..." to find with table_db.table_get) and ``not_held``
+            (parts of the document the text points to that are not held),
+            explained in ``note``.
         """
         reference_in = reference
         reference, near = resolve_reference(reference, _indexed())
@@ -267,9 +336,10 @@ def _build():
         if reference is None:
             return _unknown_reference(reference_in, near)
         if takes_include and include_subsections:
-            return _retrieval_db.reference_get(
-                reference, section_id, include_subsections=True)
-        return _retrieval_db.reference_get(reference, section_id)
+            return app_reach_words(_retrieval_db.reference_get(
+                reference, section_id, include_subsections=True), reference)
+        return app_reach_words(
+            _retrieval_db.reference_get(reference, section_id), reference)
 
     def reference_query(sql: str) -> dict:
         """Run a read-only SELECT against the reference text database.

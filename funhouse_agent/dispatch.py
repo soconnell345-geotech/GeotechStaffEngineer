@@ -63,7 +63,7 @@ AGENT_NAMES = sorted(MODULE_REGISTRY.keys())
 # the consult_references tool). Add any NEW reference module here so it stays off
 # the primary agent's direct tool surface.
 REFERENCE_MODULES = frozenset({
-    "reference_db", "figure_db",
+    "reference_db", "figure_db", "table_db",
     "dm7",
     "em_1905", "em_2104", "em_2107",
     "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
@@ -86,8 +86,9 @@ def held_references() -> list:
     added to ``REFERENCE_MODULES`` with a title appears there by itself
     (2026-11-10 review, item 3: the hand-written list named a NOAA
     reference that does not exist and left out Eurocode 7, AASHTO 1993,
-    the USACE EMs and Caltrans). The two search modules, ``reference_db``
-    and ``figure_db``, search these and hold none of their own.
+    the USACE EMs and Caltrans). The three search modules,
+    ``reference_db``, ``figure_db`` and ``table_db``, search these and
+    hold none of their own.
     """
     return [spec["title"] for name, spec in MODULE_REGISTRY.items()
             if name in REFERENCE_MODULES and spec.get("title")]
@@ -100,7 +101,8 @@ def reference_module(reference_id: str) -> Optional[str]:
     rid = str(reference_id or "").strip().lower()
     for cand in (rid, rid.replace("_", ""), rid.rsplit("_", 1)[0]):
         if cand in REFERENCE_MODULES and cand not in ("reference_db",
-                                                      "figure_db"):
+                                                      "figure_db",
+                                                      "table_db"):
             return cand
     return None
 
@@ -114,7 +116,7 @@ def reference_coverage() -> dict:
     said every reference's chapter text was searched, and UFC 3-220-04FA
     and UFC 3-220-07 have no chapter text indexed)."""
     cov = {m: {"text": 0, "figures": 0} for m in REFERENCE_MODULES
-           if m not in ("reference_db", "figure_db")}
+           if m not in ("reference_db", "figure_db", "table_db")}
     try:
         from geotech_references import _figures_db, _retrieval_db
         texts = _retrieval_db.list_indexed_references()
@@ -176,10 +178,11 @@ SEISMIC_MODULES = frozenset({
 # the seismic earth-pressure / pseudo-static wall provisions; gec5 the seismic
 # site characterization + hazards; dm7 the general/dynamic soil-mechanics
 # anchor. The three UFC modules in the library (backfill/expansive/pavement) are
-# NOT seismic and are deliberately excluded. reference_db/figure_db search the
-# WHOLE library, so seismic content in any reference is still reachable.
+# NOT seismic and are deliberately excluded. reference_db/figure_db/table_db
+# search the WHOLE library, so seismic content in any reference is still
+# reachable.
 SEISMIC_REFERENCES = frozenset({
-    "reference_db", "figure_db",
+    "reference_db", "figure_db", "table_db",
     "fema_p2082",   # 2020 NEHRP: site class (+ BC/CD/DE), SDS/SD1, design spectrum, SDC
     "dm7",          # NAVFAC DM7 — general + dynamic soil properties, seismic settlement
     "gec5",         # site characterization: Vs/Gmax, seismic hazards, liquefaction screening
@@ -210,7 +213,7 @@ FOUNDATIONS_MODULES = frozenset({
     "ground_improvement",# aggregate piers, wick drains, surcharge (GEC-13)
 })
 FOUNDATIONS_REFERENCES = frozenset({
-    "reference_db", "figure_db",
+    "reference_db", "figure_db", "table_db",
     "dm7",          # NAVFAC DM7 — bearing, settlement, deep foundations
     "gec6",         # shallow foundations
     "em_1905",      # USACE EM 1110-1-1905 — shallow foundation bearing + settlement
@@ -231,7 +234,7 @@ EARTH_RETENTION_MODULES = frozenset({
     "seismic_geotech",  # Mononobe-Okabe seismic earth pressure ONLY (see checklist)
 })
 EARTH_RETENTION_REFERENCES = frozenset({
-    "reference_db", "figure_db",
+    "reference_db", "figure_db", "table_db",
     "dm7",                 # NAVFAC DM7 — earth pressures, retaining structures
     "gec4",                # ground anchors
     "gec7",                # soil nail walls
@@ -249,7 +252,7 @@ SLOPE_FEM_MODULES = frozenset({
     "drawing_ir",       # LLM-ready drawing digitization (geometry ingest)
 })
 SLOPE_FEM_REFERENCES = frozenset({
-    "reference_db", "figure_db",
+    "reference_db", "figure_db", "table_db",
     "dm7",     # NAVFAC DM7 — slope stability (Ch 7), general soil mechanics for FEM
     "gec7",    # soil nail walls — the library's soil-nail reference (slope nails)
     "gec11",   # reinforced soil slopes (geosynthetic-reinforced slopes)
@@ -263,7 +266,7 @@ PAVEMENT_MODULES = frozenset({
 })
 
 PAVEMENT_REFERENCES = frozenset({
-    "reference_db", "figure_db",
+    "reference_db", "figure_db", "table_db",
     "aashto_1993",      # AASHTO design basis: Figs 3.1/3.7, Appendix D LEFs, composite-k, Appendix G
     "ufc_pavement",     # UFC 3-250-01 roads/parking design (rebuilt 2026-07 from the real doc: CBR curves, overlays, frost, drainage)
     "fhwa_pavements",   # FHWA-NHI-05-037 — Mr/CBR correlations, drainage, frost, stabilization
@@ -292,7 +295,7 @@ STRUCTURAL_MODULES = frozenset({
 # civilian sibling), the USDA Wood Handbook, plus the one structural-
 # adjacent UFC practice module and the whole-library search DBs.
 STRUCTURAL_REFERENCES = frozenset({
-    "reference_db", "figure_db",
+    "reference_db", "figure_db", "table_db",
     "em_2104",                 # EM 1110-2-2104 — RC hydraulic structures: loads, flexure/axial, shear
     "em_2107",                 # EM 1110-2-2107 — hydraulic steel structures: LRFD loads, seismic amplification, Tainter-gate loads
     "ufc_structural",          # UFC 3-301-01 — DoD structural criteria: risk categories, live loads, Table 3-1 seismic systems

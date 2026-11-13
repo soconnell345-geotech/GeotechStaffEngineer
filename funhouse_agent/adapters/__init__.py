@@ -431,11 +431,15 @@ MODULE_REGISTRY = {
     # --- geotech-references agents (reference modules + cross-reference DB) ---
     "reference_db": {
         "adapter": "funhouse_agent.adapters.reference_db_adapter",
-        "brief": "Text search over the reference chapters (list_indexed_references names them); use first to scope, then reference_get",
+        "brief": "Text search over every reference's chapters; use first to scope, then reference_get",
     },
     "figure_db": {
         "adapter": "funhouse_agent.adapters.figure_db_adapter",
-        "brief": "Find a reference chart in the figure catalogs (list_indexed_figures) by meaning; read values off it with read_reference_figure where its hit says so",
+        "brief": "Find a reference chart by meaning; read values off it with read_reference_figure where its hit says so",
+    },
+    "table_db": {
+        "adapter": "funhouse_agent.adapters.table_db_adapter",
+        "brief": "Find a printed reference table by number or caption; its how_to_read gives the call for its values",
     },
     "dm7": {
         "adapter": "funhouse_agent.adapters.dm7_adapter",
@@ -444,7 +448,7 @@ MODULE_REGISTRY = {
     },
     "em_1905": {
         "adapter": "funhouse_agent.adapters.em_1905_adapter",
-        "brief": "EM 1110-1-1905 shallow foundations on soils (USACE, 2025): bearing capacity factors and Eqs. 5-1 to 5-36, stress distribution, settlement (consolidation, Schmertmann, Burland-Burbidge, Menard), time rate (US)",
+        "brief": "EM 1110-1-1905 shallow foundations (USACE, 2025): bearing Eqs. 5-1 to 5-36, stress distribution, settlement (consolidation, Schmertmann, Burland-Burbidge, Menard), time rate (US)",
         "title": "USACE EM 1110-1-1905 (shallow foundations on soils, 31 July 2025)",
     },
     "em_2104": {
@@ -519,12 +523,12 @@ MODULE_REGISTRY = {
     },
     "ufc_backfill": {
         "adapter": "funhouse_agent.adapters.ufc_backfill_adapter",
-        "brief": "UFC 3-220-04FA: backfill density requirements, Table 5-1 compaction criteria, backfill materials, lift thickness, compaction equipment, Fig 2-5 compaction-induced lateral pressure (US)",
+        "brief": "UFC 3-220-04FA: backfill density, Table 5-1 compaction, materials, lifts, equipment, Fig 2-5 compaction-induced lateral pressure (US)",
         "title": "UFC 3-220-04FA (backfill for subsurface structures)",
     },
     "ufc_expansive": {
         "adapter": "funhouse_agent.adapters.ufc_expansive_adapter",
-        "brief": "UFC 3-220-07: Table 4-1 swell potential, active zone depth, heave prediction (Table 4-2 swell relations, Van Der Merwe Eq 4-1, Eqs 5-2 and 5-8), Table 6-1 foundation systems, grade-beam void (US)",
+        "brief": "UFC 3-220-07: Table 4-1 swell potential, active zone, heave (Table 4-2, Eq 4-1, Eqs 5-2, 5-8), Table 6-1 foundations, grade-beam void (US)",
         "title": "UFC 3-220-07 (expansive soils)",
     },
     "ufc_pavement": {
@@ -584,7 +588,7 @@ MODULE_REGISTRY = {
     },
     "fhwa_soils_foundations": {
         "adapter": "funhouse_agent.adapters.fhwa_soils_foundations_adapter",
-        "brief": "FHWA NHI-06-088/089 Soils and Foundations manual text: soils, slopes (Taylor/Janbu charts), settlement, footings, piles, shafts, walls",
+        "brief": "FHWA NHI-06-088/089 Soils and Foundations: soils, slopes (Taylor/Janbu charts), settlement, footings, piles, shafts, walls",
         "title": "FHWA NHI-06-088/089 (Soils and Foundations)",
     },
     "eurocode_7_1": {
@@ -599,7 +603,7 @@ MODULE_REGISTRY = {
     },
     "aashto_1993": {
         "adapter": "funhouse_agent.adapters.aashto_1993_adapter",
-        "brief": "AASHTO 1993 Pavement Design Guide: flexible SN, rigid slab D, or W18 for either; layer coeffs, roadbed Mr, ZR/So, mi/Cd, ESALs (US)",
+        "brief": "AASHTO 1993 pavement guide: flexible SN, rigid slab D or W18; layer coeffs, roadbed Mr, ZR/So, mi/Cd, ESALs (US)",
         "title": "AASHTO 1993 Guide for Design of Pavement Structures",
     },
 }
