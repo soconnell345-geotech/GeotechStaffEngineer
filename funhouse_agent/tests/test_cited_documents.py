@@ -69,6 +69,7 @@ def test_one_document_by_any_of_its_names(text):
     ("DM7.2", "DM 7.2", "ufc-3-220-20"),
     ("DM7 §6-7.4", "DM 7 §6-7.4", "dm7"),
     ("EM 1110-2-1902", "EM 1110-2-1902", "em-1110-2-1902"),
+    ("EM 1110-1-1905", "EM 1110-1-1905", "em-1110-1-1905"),
     ("TM 5-818-1", "TM 5-818-1", "tm-5-818-1"),
     ("ASTM D1586-11", "ASTM D1586", "astm-d1586"),
     ("ASTM D 4318", "ASTM D4318", "astm-d4318"),
@@ -380,6 +381,24 @@ def test_a_reference_module_call_looks_up_its_document(tmp_path):
          "result": {"Ci": 0.67, "F_star": 1.2}}])
     res = cd.check_text(ANSWER, record_folder=str(conv), user_words=[USER])
     assert "GEC-11" not in _not_looked_up(res)
+
+
+def test_an_em_1905_lookup_looks_up_em_1110_1_1905_only(tmp_path):
+    """``call_agent`` on ``em_1905`` looks EM 1110-1-1905 (2025) up, keyed
+    as EM 1110-2-2104 and -2107 are; EM 1110-1-1904, which it supersedes,
+    stays a document of its own."""
+    assert cd.module_documents("em_1905") == {"em-1110-1-1905"}
+    conv = _conv(tmp_path)
+    _write_events(conv, [
+        {"name": "call_agent", "agent": "references",
+         "args": {"agent_name": "em_1905",
+                  "method": "equation_5_23_factor_of_safety",
+                  "parameters": {"q_ult": 15.0, "q_eq": 5.0}},
+         "result": {"FS": 3.0}}], prompt="Footing bearing check")
+    res = cd.check_text(
+        "Bearing FS 3.0 per EM 1110-1-1905; EM 1110-1-1904 gave the same.",
+        record_folder=str(conv), user_words=[])
+    assert _not_looked_up(res) == ["EM 1110-1-1904"]
 
 
 def test_the_users_own_words_are_never_flagged(tmp_path):
