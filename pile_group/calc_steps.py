@@ -415,7 +415,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             reference="CPGA User's Guide (ITL-89-4); EM 1110-2-2906, Ch. 4",
             notes=(
                 "Solves for 6 cap DOFs (dx, dy, dz, rx, ry, rz), then "
-                "back-calculates individual pile forces."
+                "back-calculates individual pile forces. Each pile is an "
+                "axial spring along its axis and a lateral spring across "
+                "it, pinned to the cap: k = kl·I + (ka − kl)·l·lᵀ in the "
+                "global axes, l the pile's direction cosines, so a batter "
+                "is carried in full. No moment or torsional stiffness of a "
+                "pile's own head is included."
             ),
         ))
     else:
@@ -465,6 +470,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             headers=["DOF", "Value", "Unit"],
             rows=disp_rows,
         ))
+    elif not (method == '6dof' or method == 'general'):
+        load_items.append(
+            "Cap displacements not calculated: the simplified method's "
+            "forces use no pile stiffness. The 6-DOF analysis gives the "
+            "cap's displacements from the piles' stiffness."
+        )
 
     sections.append(CalcSection(
         title="Load Distribution (Rigid Cap)", items=load_items,

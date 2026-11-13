@@ -141,7 +141,14 @@ class TestPileGroup:
     def test_correct_piles_run(self):
         r = _registry("pile_group")["pile_group_simple"](
             {"piles": [{"x": -1, "y": 0, "label": "P1"},
-                       {"x": 1, "y": 0, "batter_x": 5, "label": "P2"}],
+                       {"x": 1, "y": 0, "batter_x": 0, "label": "P2"}],
+             "Vz": 1000})
+        assert r["n_piles"] == 2
+        r = _registry("pile_group")["pile_group_6dof"](
+            {"piles": [{"x": -1, "y": 0, "label": "P1",
+                        "axial_stiffness": 2e5},
+                       {"x": 1, "y": 0, "batter_x": 5, "label": "P2",
+                        "axial_stiffness": 2e5}],
              "Vz": 1000})
         assert r["n_piles"] == 2
 

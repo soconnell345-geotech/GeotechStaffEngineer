@@ -69,9 +69,20 @@ stiffness assembly, and pile-force back-calc):
 - 6-DOF: K = sum(B^T k B) with rigid-cap kinematics
   `ux = dx - rz*y`, `uy = dy + rz*x`, `s = dz - rx*y + ry*x`; the same B
   back-calculates pile forces, so they equilibrate the applied loads.
-  In-plane kxy and lateral-torsion couplings are assembled; the battered
-  kxz/kyz force<->rotation couplings remain out of scope (PG-1 limitation,
-  documented in the docstring).
+  Each pile is an axial spring ka along its axis and a lateral spring kl
+  across it, pinned to the cap; in the global axes its head stiffness is
+  k = kl*I + (ka - kl)*l*l^T, l the direction cosines (the pile's stiffness
+  "transformed to global coordinates", EM 1110-2-2906 para. 4-5b(2)). Since
+  GM-319 all of it is assembled, the kxz/kyz terms a batter gives included
+  (before, they were left at zero and a battered pile's axial force did not
+  balance the applied loads). With kl = 0 a statically determinate group
+  returns the forces statics gives (UFC 3-220-20 Sec. 6-6.3: batter piles
+  carrying axial load only). Still left out, and said in the result's
+  `notes`: any moment or torsional stiffness of a pile's own head.
+- Simple method (GM-319): equal vertical piles only. A battered pile or
+  unequal `axial_stiffness` is refused. Cap dz, rx, ry are worked out only
+  when every pile carries the same stiffness; otherwise
+  `cap_displacements` is empty and `notes` says so (never zeros).
 
 ## Group efficiency (GM-286)
 - eta_g is read from the printed rows, linear between the printed spacings;
@@ -140,4 +151,5 @@ stiffness assembly, and pile-force back-calc):
   (e.g. lateral load on vertical piles without `lateral_stiffness`);
   unloaded unsupported DOFs are statically condensed.
 - `analyze_vertical_group_simple` warns (`UserWarning`) if called with
-  nonzero Vx/Vy/Mz, which it ignores by design.
+  nonzero Vx/Vy/Mz, which it ignores by design (the agent's tool refuses
+  them), and raises on a battered pile or unequal stiffness (GM-319).

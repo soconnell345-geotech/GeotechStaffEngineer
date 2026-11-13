@@ -8,7 +8,7 @@ from pile_group import (
     GroupPile, create_rectangular_layout, group_efficiency_factor,
     block_failure_resistance, group_plan_dimensions, p_multiplier,
     GroupLoad, analyze_vertical_group_simple, analyze_group_6dof,
-    meyerhof_group_settlement,
+    meyerhof_group_settlement, group_settlement_equivalent_raft,
 )
 from pile_group.group_efficiency import (
     P_MULTIPLIER_METHODS, PILE_TYPES, SOIL_TYPES, SU_LIMIT_KPA,
@@ -94,12 +94,39 @@ def _layout_used(params, piles, load):
     return used
 
 
+#: What a piles[] entry may not carry for the simple method (GM-319): its
+#: formula is for equal vertical piles, so a batter or a per-pile stiffness
+#: would be read and not used. A zero batter is no batter and passes.
+_SIMPLE_PILE_REFUSED = ("batter_x", "batter_y", "axial_stiffness",
+                        "lateral_stiffness")
+
+
+def _refuse_simple_pile_keys(params, method):
+    piles = params.get("piles")
+    if not isinstance(piles, list):
+        return
+    for i, pd in enumerate(piles):
+        if not isinstance(pd, dict):
+            continue
+        bad = [k for k in _SIMPLE_PILE_REFUSED if pd.get(k) is not None
+               and not (k.startswith("batter") and pd[k] == 0)]
+        if bad:
+            raise ValueError(
+                f"{method}: piles[{i}] carries {', '.join(bad)}, which this "
+                "method does not use: P = Vz/n + My*x/SUM(x^2) - "
+                "Mx*y/SUM(y^2) is for equal vertical piles under a rigid "
+                "cap and uses no pile stiffness. Use pile_group_6dof for "
+                "battered piles or piles of unequal stiffness, or leave "
+                f"{'it' if len(bad) == 1 else 'them'} out.")
+
+
 def run_pile_group_simple(params, *, method="pile_group_simple"):
     params = without_unused(
         params, METHOD_INFO["pile_group_simple"]["refused_parameters"])
     reject_unknown_params(
         params, [k for k in _GROUP_VALID_PARAMS if k not in _SIMPLE_IGNORES],
         method=method)
+    _refuse_simple_pile_keys(params, method)
     piles, load = _build_piles(params), _build_load(params)
     return (analyze_vertical_group_simple(piles, load),
             _layout_used(params, piles, load))
@@ -135,7 +162,12 @@ def _with_uplift_note(result, load):
 
 def _run_pile_group_simple(params):
     result, used = run_pile_group_simple(params)
-    return _with_uplift_note(result, used["load"])
+    out = _with_uplift_note(result, used["load"])
+    if not out["cap_displacements"]:
+        # The tool takes no stiffness, so it works out no displacement:
+        # null, never zeros that read as "no settlement" (GM-319).
+        out["cap_displacements"] = None
+    return out
 
 
 def _run_pile_group_6dof(params):
@@ -805,12 +837,116 @@ def _run_meyerhof_group_settlement(params):
     return out
 
 
+_FOOTING_ALIASES = {
+    "Q": "load_kN", "load": "load_kN", "load_permanent_kN": "load_kN",
+    "M": "constrained_modulus_kPa", "soil_modulus_kPa":
+    "constrained_modulus_kPa", "Es": "youngs_modulus_kPa",
+    "Es_kPa": "youngs_modulus_kPa", "nu": "poissons_ratio",
+    "D": "pile_length", "influence_depth": "influence_depth_m",
+}
+
+_FOOTING_VALID_PARAMS = (
+    "n_rows", "n_cols", "spacing", "pile_diameter", "pile_length", "load_kN",
+    "constrained_modulus_kPa", "youngs_modulus_kPa", "poissons_ratio",
+    "influence_depth_m", "num_sublayers",
+)
+
+
+def _run_equivalent_footing_settlement(params):
+    method = "equivalent_footing_settlement"
+    params = apply_aliases(params, _FOOTING_ALIASES)
+    reject_unknown_params(params, _FOOTING_VALID_PARAMS, method=method)
+    require_params(params, ["n_rows", "n_cols", "spacing", "pile_diameter",
+                            "pile_length", "load_kN"],
+                   method=method, valid=_FOOTING_VALID_PARAMS)
+    from geotech_common.choices import MODULE, choice, how_given
+    M = params.get("constrained_modulus_kPa")
+    Es = params.get("youngs_modulus_kPa")
+    nu = params.get("poissons_ratio")
+    if M is not None and (Es is not None or nu is not None):
+        raise ValueError(
+            f"{method}: give constrained_modulus_kPa, or youngs_modulus_kPa "
+            "with poissons_ratio, not both.")
+    if M is None:
+        if Es is None or nu is None:
+            raise ValueError(
+                f"{method}: give the soil's stiffness below the equivalent "
+                "footing: constrained_modulus_kPa (M), or youngs_modulus_kPa "
+                "(Es) with poissons_ratio (UFC 3-220-20 Eq. 6-54 turns them "
+                "into M = Es (1 - nu) / [(1 + nu)(1 - 2 nu)]). Neither has a "
+                "default.")
+        if not Es > 0:
+            raise ValueError(f"{method}: youngs_modulus_kPa must be "
+                             f"positive, got {Es}")
+        if not 0 <= nu < 0.5:
+            raise ValueError(
+                f"{method}: poissons_ratio must be from 0 to below 0.5, got "
+                f"{nu} (at 0.5 Eq. 6-54 gives no compression: an undrained "
+                "clay's settlement is consolidation, GEC-12 Eqs. 7-56 to "
+                "7-58, which this method does not work).")
+        M = Es * (1.0 - nu) / ((1.0 + nu) * (1.0 - 2.0 * nu))
+        modulus_choice = choice(
+            "constrained modulus M",
+            f"{M:,.0f} kPa = Es (1 - nu) / [(1 + nu)(1 - 2 nu)], Es = "
+            f"{Es:,.0f} kPa, nu = {nu:g}",
+            how_given(Es, None, "youngs_modulus_kPa"),
+            basis="UFC 3-220-20 Eq. 6-54 (Sec. 6-5.8.4.3)",
+            alternatives=["constrained_modulus_kPa given directly"])
+    else:
+        modulus_choice = choice(
+            "constrained modulus M", f"{M:,.0f} kPa, as given",
+            how_given(M, None, "constrained_modulus_kPa"),
+            basis=("one-dimensional compression of each sublayer, "
+                   "delta = dsigma dz / M (UFC 3-220-20 Eq. 6-54 with M = "
+                   "Es (1 - nu) / [(1 + nu)(1 - 2 nu)])"),
+            alternatives=["youngs_modulus_kPa with poissons_ratio"])
+    for name in ("n_rows", "n_cols"):
+        v = params[name]
+        if isinstance(v, bool) or int(v) != v or v < 1:
+            raise ValueError(f"{method}: {name} must be a whole number, 1 "
+                             f"or more; got {v!r}")
+    out = group_settlement_equivalent_raft(
+        n_rows=int(params["n_rows"]), n_cols=int(params["n_cols"]),
+        spacing=params["spacing"], pile_diameter=params["pile_diameter"],
+        pile_length=params["pile_length"], load_kN=params["load_kN"],
+        soil_modulus_kPa=M,
+        num_sublayers=int(params.get("num_sublayers", 10)),
+        influence_depth_m=params.get("influence_depth_m"),
+    )
+    out["constrained_modulus_kPa"] = round(float(M), 1)
+    out["choices"] = list(out["choices"]) + [
+        modulus_choice,
+        choice("equivalent footing",
+               f"{out['Bg_m']:g} m x {out['Lg_m']:g} m, at 2/3 of the "
+               f"embedded length ({out['raft_depth_m']:g} m below its top), "
+               "one modulus below it", MODULE,
+               basis=("Terzaghi and Peck's footing at 1/3 D above the toe "
+                      "(GEC-12 Vol I p. 320, Fig. 7-44; UFC 3-220-20 Table "
+                      "6-32, first row), plan to the outer pile faces "
+                      "(GEC-12 Fig. 7-31), vertical piles"),
+               alternatives=[
+                   "GEC-12 Figs. 7-45 and 7-46 and UFC 3-220-20 Table 6-32 "
+                   "place the footing elsewhere for toe-bearing groups, "
+                   "soft over firm clay, sand over clay and layered "
+                   "profiles, and at the neutral plane (UFC Sec. "
+                   "6-5.8.4.2); batter widens it (GEC-12 step 1b). Not "
+                   "worked here"]),
+    ]
+    out["not_included"] = (
+        "The piles' own elastic compression (GEC-12 Sec. 7.3.5.3 step 3 adds "
+        "it) and a clay's consolidation settlement (GEC-12 Eqs. 7-56 to "
+        "7-58; UFC 3-220-20 Eq. 6-53): this is the elastic one-dimensional "
+        "compression of the soil below the footing only.")
+    return out
+
+
 METHOD_REGISTRY = {
     "pile_group_simple": _run_pile_group_simple,
     "pile_group_6dof": _run_pile_group_6dof,
     "group_efficiency": _run_group_efficiency,
     "group_uplift": _run_group_uplift,
     "meyerhof_group_settlement": _run_meyerhof_group_settlement,
+    "equivalent_footing_settlement": _run_equivalent_footing_settlement,
 }
 
 _UPLIFT_NOTE_RETURN = (
@@ -822,32 +958,32 @@ _UPLIFT_NOTE_RETURN = (
 METHOD_INFO = {
     "pile_group_simple": {
         "category": "Pile Group",
-        "brief": "Simplified elastic vertical group analysis.",
+        "brief": "Simplified elastic vertical group analysis: equal vertical piles under a rigid cap, P = Vz/n + My*x/SUM(x^2) - Mx*y/SUM(y^2). Pile forces only; no stiffness is used and no cap displacement is worked out. Battered piles, unequal piles and lateral load go to pile_group_6dof.",
         "parameters": {
             "n_rows": {"type": "int", "required": False, "description": "Rows for rectangular layout."},
             "n_cols": {"type": "int", "required": False, "description": "Columns for rectangular layout."},
             "spacing_x": {"type": "float", "required": False, "description": "X spacing (m). Or give a single 'spacing' for both directions."},
             "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m). Or give a single 'spacing' for both directions."},
             "spacing": {"type": "float", "required": False, "description": "Uniform center-to-center spacing (m), used for both x and y."},
-            "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, batter_x, batter_y, ...}] instead of n_rows/n_cols."},
+            "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, label, axial_capacity_compression, axial_capacity_tension}] (m, kN) instead of n_rows/n_cols. All piles are vertical and equal: an entry with a batter_x or batter_y other than 0, or with axial_stiffness or lateral_stiffness, is refused (pile_group_6dof takes them)."},
             "Vz": {"type": "float", "required": True, "description": "Vertical load (kN)."},
             "Mx": {"type": "float", "required": False, "default": 0.0, "description": "Moment about x (kN-m)."},
             "My": {"type": "float", "required": False, "default": 0.0, "description": "Moment about y (kN-m)."},
             "axial_capacity_compression": {"type": "float", "required": False, "description": "Per-pile compression capacity (kN) for utilization checks (rectangular layout)."},
             "axial_capacity_tension": {"type": "float", "required": False, "description": "Per-pile tension capacity (kN) (rectangular layout)."},
         },
-        "returns": {"pile_forces": "Per-pile axial forces.", "max_compression_kN": "Max compression.", "group_uplift_note": _UPLIFT_NOTE_RETURN},
+        "returns": {"pile_forces": "Per-pile axial forces.", "max_compression_kN": "Max compression.", "cap_displacements": "null: not calculated (the method uses no pile stiffness).", "notes": "What the analysis left out; report it.", "group_uplift_note": _UPLIFT_NOTE_RETURN},
     },
     "pile_group_6dof": {
         "category": "Pile Group",
-        "brief": "General 6-DOF rigid cap analysis (axial + lateral + moments).",
+        "brief": "General 6-DOF rigid cap analysis (axial + lateral + moments) of vertical and battered piles by the stiffness method (EM 1110-2-2906 Ch. 4). Each pile is an axial spring along its own axis and a lateral spring across it, pinned to the cap; a batter turns both springs to the global axes in full (the horizontal-vertical terms included). Left out: any moment or torsional stiffness of a pile's own head, so no fixed-head moment is returned.",
         "parameters": {
             "n_rows": {"type": "int", "required": False, "description": "Rows for rectangular layout."},
             "n_cols": {"type": "int", "required": False, "description": "Columns."},
             "spacing_x": {"type": "float", "required": False, "description": "X spacing (m). Or give a single 'spacing' for both directions."},
             "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m). Or give a single 'spacing' for both directions."},
             "spacing": {"type": "float", "required": False, "description": "Uniform center-to-center spacing (m), used for both x and y."},
-            "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, batter_x, batter_y, axial_stiffness, lateral_stiffness, label}] instead of n_rows/n_cols."},
+            "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, batter_x, batter_y, axial_stiffness, lateral_stiffness, label}] instead of n_rows/n_cols. batter_x, batter_y: the pile's lean from vertical toward +x, +y (degrees), head to toe; the direction cosines are (sin batter_x, sin batter_y, the rest). With no lateral_stiffness a battered pile carries axial load only (UFC 3-220-20 Sec. 6-6.3)."},
             "axial_stiffness": {"type": "float", "required": True, "description": "Pile-head axial stiffness ka (kN/m), e.g. from a load test or E*A/L for an end-bearing pile. REQUIRED for every pile: give it here with n_rows/n_cols, or on each piles[] entry."},
             "lateral_stiffness": {"type": "float", "required": False, "description": "Pile-head lateral stiffness kl (kN/m), here with n_rows/n_cols or on each piles[] entry. Needed for vertical piles to carry Vx/Vy (0 if omitted)."},
             "Vx": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load x (kN)."},
@@ -859,7 +995,7 @@ METHOD_INFO = {
             "axial_capacity_compression": {"type": "float", "required": False, "description": "Per-pile compression capacity (kN) for utilization checks (rectangular layout)."},
             "axial_capacity_tension": {"type": "float", "required": False, "description": "Per-pile tension capacity (kN) (rectangular layout)."},
         },
-        "returns": {"pile_forces": "Per-pile forces.", "cap_displacement": "Cap displacement.", "group_uplift_note": _UPLIFT_NOTE_RETURN},
+        "returns": {"pile_forces": "Per-pile axial forces (along each pile's axis, compression positive).", "cap_displacements": "Cap displacements {dx, dy, dz, rx, ry, rz} (m, rad; dz positive down).", "notes": "What the analysis took and left out (pinned pile heads); report it.", "group_uplift_note": _UPLIFT_NOTE_RETURN},
     },
     "group_efficiency": {
         "category": "Pile Group",
@@ -921,9 +1057,28 @@ METHOD_INFO = {
         },
         "returns": {"settlement_mm": "Group settlement (mm).", "settlement_in": "Group settlement (inches).", "influence_factor": "Embedment factor If.", "pf_kPa": "Design foundation pressure used (kPa).", "equation": "'7-50' or '7-51'.", "choices": "The embedment and equation taken, with the print's alternatives."},
     },
+    "equivalent_footing_settlement": {
+        "category": "Pile Group",
+        "brief": "Pile-group settlement by the equivalent footing (GEC-12 Sec. 7.3.5.3; UFC 3-220-20 Sec. 6-5.8.4): a footing the size of the group at 2/3 of the embedded length, the load spread at 2V:1H (GEC-12 Eq. 7-55), and the elastic one-dimensional compression of the soil below it summed by sublayers (UFC Eq. 6-54). One modulus, vertical piles; the piles' elastic compression and a clay's consolidation settlement are not included.",
+        "parameters": {
+            "n_rows": {"type": "int", "required": True, "description": "Rows of the group."},
+            "n_cols": {"type": "int", "required": True, "description": "Columns."},
+            "spacing": {"type": "float", "required": True, "description": "Centre-to-centre pile spacing s (m), both directions."},
+            "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter or width b (m): the footing is (n_cols - 1)s + b by (n_rows - 1)s + b, to the outer pile faces (GEC-12 Fig. 7-31)."},
+            "pile_length": {"type": "float", "required": True, "description": "Pile embedded length D (m): the footing is at 2/3 D below its top (GEC-12 Vol I p. 320, Fig. 7-44; UFC 3-220-20 Table 6-32, first row). It sets the reported footing depth only; the settlement is of the soil below the footing."},
+            "load_kN": {"type": "float", "required": True, "description": "The unfactored permanent load on the group Q (kN) (GEC-12 Vol I p. 320)."},
+            "constrained_modulus_kPa": {"type": "float", "required": False, "description": "Constrained modulus M of the soil below the footing (kPa), a weighted average for layered soil. Required unless youngs_modulus_kPa and poissons_ratio are given instead of it."},
+            "youngs_modulus_kPa": {"type": "float", "required": False, "description": "Young's modulus Es of the soil below the footing (kPa), with poissons_ratio: M = Es (1 - nu) / [(1 + nu)(1 - 2 nu)] (UFC 3-220-20 Eq. 6-54)."},
+            "poissons_ratio": {"type": "float", "required": False, "description": "Poisson's ratio nu of the soil (0 to below 0.5), with youngs_modulus_kPa."},
+            "influence_depth_m": {"type": "float", "required": False, "description": "Depth below the footing to sum to (m), e.g. the compressible layer's base, or GEC-12 step 1c's depth where the stress increase is under 10 % of the existing vertical effective stress (Vol I p. 324), worked out from the effective-stress profile. Left out: to where the stress increase falls to 10 % of the footing's bearing stress (UFC 3-220-20 p. 449)."},
+            "num_sublayers": {"type": "int", "required": False, "default": 10, "description": "Sublayers the depth summed is divided into."},
+        },
+        "returns": {"settlement_mm": "Settlement of the soil below the footing (mm).", "settlement_m": "The same (m).", "Bg_m": "Footing width.", "Lg_m": "Footing length.", "raft_depth_m": "Footing depth below the top of the embedded length.", "influence_depth_m": "Depth below the footing summed to.", "max_stress_kPa": "The footing's bearing stress Q/(Bg Lg).", "constrained_modulus_kPa": "M used.", "not_included": "What the settlement leaves out; report it.", "choices": "The depth rule, modulus and footing taken, with the print's alternatives; report them."},
+    },
 }
 
-declare_aliases(METHOD_INFO, {"meyerhof_group_settlement": _MEYERHOF_ALIASES})
+declare_aliases(METHOD_INFO, {"meyerhof_group_settlement": _MEYERHOF_ALIASES,
+                              "equivalent_footing_settlement": _FOOTING_ALIASES})
 
 # What pile_group_simple ignores, refused with the reason (GM-110), so a
 # lateral load is never dropped without a word; a 0 carries none and passes.
@@ -973,6 +1128,12 @@ declare_applies_when(METHOD_INFO, {
         "unit_weight": {"layers": "unset"}},
 })
 declare_when_absent(METHOD_INFO, {
+    "equivalent_footing_settlement": {
+        "influence_depth_m": (
+            "the depth where the stress increase falls to 10 % of the "
+            "footing's bearing stress", "UFC 3-220-20 p. 449; GEC-12 step "
+            "1c takes 10 % of the existing vertical effective stress, "
+            "which needs the effective-stress profile: give that depth")},
     "group_uplift": {
         "piles_under_cap": (
             "n_rows x n_cols, the piles in the block", "the small-group rule "

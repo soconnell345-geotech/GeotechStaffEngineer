@@ -5,7 +5,9 @@ Assembles the group stiffness matrix from individual pile stiffnesses,
 solves for cap displacements under applied loads, and back-calculates
 individual pile forces.
 
-Supports vertical and battered piles under 6-DOF loading.
+Supports vertical and battered piles under 6-DOF loading. Each pile is an
+axial spring along its own axis and a lateral spring across it, pinned to
+the cap (no head moment or torsional stiffness of its own).
 
 All units are SI: kN, m, radians.
 
@@ -46,9 +48,19 @@ stiffness transformed to global coordinates (EM p. 4-29), rigid-body load
 distribution (p. 4-30), axial b33 = C33*AE/L (p. 4-31), torsional
 b66 = C66*JG/L (p. 4-38), plane-remains-plane cap kinematics (p. 4-45) — is
 the SAME formulation as this engine's K = sum(B^T k B) congruence-transform
-notation (EQUIVALENT-NOTATION). The documented PG-1 simplifications (no
-per-pile rotational stiffnesses / batter cross-couplings) are unchanged.
+notation (EQUIVALENT-NOTATION). One simplification stays: no per-pile
+rotational or torsional head stiffness (the EM's b44, b55, b66), so the
+piles are pinned to the cap.
 Ledger: module_work/wiki_verification/wave7_em2906_pti_mo.md.
+
+Batter (GM-319): each pile's two springs are carried to the global axes
+whole, k = kl*I + (ka - kl)*l*l^T with l the pile's direction cosines, so
+the terms between the horizontal and vertical head components (kxz, kyz)
+are assembled with the rest. Before GM-319 they were left out, and a
+battered pile's axial force did not balance the applied loads. With
+kl = 0 the piles carry axial load only, UFC 3-220-20 Sec. 6-6.3's
+assumption for batter piles (Fig. 6-20), and a statically determinate
+group returns the forces statics gives.
 """
 
 import math
@@ -104,7 +116,11 @@ class PileGroupResult:
     Attributes
     ----------
     cap_displacements : dict
-        Cap displacements {dx, dy, dz, rx, ry, rz} in m and radians.
+        Cap displacements {dx, dy, dz, rx, ry, rz} in m and radians. Empty
+        for the simplified vertical method run without pile stiffness: it
+        works out no displacement (``notes`` says so).
+    notes : list of str
+        What the analysis took or left out, in words.
     pile_forces : list of dict
         Per-pile forces and utilization ratios.
     max_compression : float
@@ -128,6 +144,7 @@ class PileGroupResult:
     max_utilization: float = 0.0
     n_piles: int = 0
     pile_head_response: List[Dict[str, Any]] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -140,7 +157,8 @@ class PileGroupResult:
             "  Cap Displacements:",
         ]
         d = self.cap_displacements
-        lines.extend([
+        lines.extend(["    not calculated (no pile stiffness given)"]
+                     if not d else [
             f"    dx = {d.get('dx', 0)*1000:.2f} mm",
             f"    dy = {d.get('dy', 0)*1000:.2f} mm",
             f"    dz = {d.get('dz', 0)*1000:.2f} mm",
@@ -162,6 +180,8 @@ class PileGroupResult:
                 f"    {pf['label']:>8}: axial={pf['axial_kN']:>8.1f} kN, "
                 f"util={util_str}"
             )
+        for note in self.notes:
+            lines.extend(["", f"  Note: {note}"])
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -205,6 +225,7 @@ class PileGroupResult:
             "max_tension_kN": round(self.max_tension, 1),
             "max_utilization": round(self.max_utilization, 3),
             "pile_forces": self.pile_forces,
+            "notes": list(self.notes),
         }
 
     def get_tables(self) -> list:
@@ -308,10 +329,19 @@ def analyze_vertical_group_simple(
     ``UserWarning`` is issued if any of them is nonzero (PG-3). Use the
     general 6-DOF method for battered piles or combined loading.
 
+    The formula is for equal vertical piles under a rigid cap, so (GM-319)
+    a battered pile is refused, and so are piles of unequal
+    ``axial_stiffness``. The forces use no stiffness. The cap's settlement
+    and tilt are worked out only when every pile carries the same
+    ``axial_stiffness`` ka: dz = Vz/(n ka), ry = My/(ka SUM x^2),
+    rx = Mx/(ka SUM y^2), the displacements that give the forces above
+    through P_i = ka (dz - rx y_i + ry x_i). Without stiffness
+    ``cap_displacements`` is empty and ``notes`` says so.
+
     Parameters
     ----------
     piles : list of GroupPile
-        Pile layout (all assumed vertical).
+        Pile layout, all vertical.
     load : GroupLoad
         Applied loads on the cap.
 
@@ -334,6 +364,25 @@ def analyze_vertical_group_simple(
             "(and/or battered piles) to carry them.",
             UserWarning,
         )
+
+    battered = [p.label or f"P{i+1}" for i, p in enumerate(piles)
+                if not p.is_vertical]
+    if battered:
+        raise ValueError(
+            "The simplified method is for vertical piles: "
+            f"{', '.join(battered[:6])}{' ...' if len(battered) > 6 else ''} "
+            "carry a batter, which P = Vz/n + My*x/SUM(x^2) - Mx*y/SUM(y^2) "
+            "does not use. Use analyze_group_6dof (the pile_group_6dof "
+            "tool) for battered piles, or leave the batter out.")
+    stiffs = [p.axial_stiffness for p in piles]
+    given = [k for k in stiffs if k is not None]
+    if given and (len(given) < n or min(given) <= 0
+                  or max(given) - min(given) > 1e-9 * max(given)):
+        raise ValueError(
+            "The simplified method is for equal piles: axial_stiffness "
+            "must be the same positive value on every pile, or on none "
+            "(the forces use no stiffness). Use analyze_group_6dof (the "
+            "pile_group_6dof tool) for piles of unequal stiffness.")
 
     xs = np.array([p.x for p in piles])
     ys = np.array([p.y for p in piles])
@@ -379,16 +428,26 @@ def analyze_vertical_group_simple(
             "utilization": round(util, 3),
         })
 
-    # Simple cap displacement estimate
-    if piles[0].axial_stiffness and piles[0].axial_stiffness > 0:
-        ka_total = n * piles[0].axial_stiffness
-        dz = load.Vz / ka_total
+    # Cap settlement and tilt: only with the piles' (equal) axial stiffness
+    notes = []
+    if given:
+        ka = float(given[0])
+        cap_disp = {
+            "dx": 0.0, "dy": 0.0, "dz": float(load.Vz / (n * ka)),
+            "rx": float(load.Mx / (ka * sum_y2)) if sum_y2 > 0 else 0.0,
+            "ry": float(load.My / (ka * sum_x2)) if sum_x2 > 0 else 0.0,
+            "rz": 0.0,
+        }
     else:
-        dz = 0.0
-
-    cap_disp = {"dx": 0.0, "dy": 0.0, "dz": dz, "rx": 0.0, "ry": 0.0, "rz": 0.0}
+        cap_disp = {}
+        notes.append(
+            "Cap displacements not calculated: the simplified method's "
+            "forces use no pile stiffness and none was given. The 6-DOF "
+            "analysis gives the cap's displacements from the piles' "
+            "stiffness.")
 
     return PileGroupResult(
+        notes=notes,
         cap_displacements=cap_disp,
         pile_forces=pile_forces,
         max_compression=max_comp,
@@ -418,13 +477,19 @@ def analyze_group_6dof(
     Mx -> tension on the +y side; positive Mz -> counterclockwise
     twist in plan viewed from above).
 
-    The formulation models axial pile springs with eccentricity-based moment
-    resistance plus in-plane lateral springs (including the in-plane kxy
-    coupling and the lateral-torsion coupling that the rigid-cap kinematics
-    produce). The force<->rotation coupling that batter introduces between
-    the translational and moment DOFs (kxz/kyz) is not assembled, so for
-    heavily battered groups under combined load a full CPGA-style coupled
-    analysis is preferred. If the group has no stiffness to resist an applied
+    Each pile is an axial spring ka along its own axis and a lateral
+    spring kl across it, pinned to the cap at its head. In the global axes
+    its head stiffness is k = kl*I + (ka - kl)*l*l^T, l = (lx, ly, lz) the
+    pile's direction cosines: the pile's stiffness "transformed to global
+    coordinates" of EM 1110-2-2906 para. 4-5b(2). All of it is assembled,
+    the terms a batter puts between the horizontal and vertical head
+    components (kxz, kyz) included (GM-319; left out before, when a
+    battered pile's axial force did not balance the applied loads). With
+    kl = 0 the piles carry axial load only (UFC 3-220-20 Sec. 6-6.3,
+    Fig. 6-20). Left out, and said in the result's ``notes``: any moment
+    or torsional stiffness of a pile's own head (the EM's b44, b55, b66),
+    so the cap's moments are carried by the piles' head forces at their
+    lever arms only. If the group has no stiffness to resist an applied
     lateral force or torsion (e.g. vertical piles with no lateral_stiffness),
     a ``ValueError`` is raised rather than silently dropping that load.
 
@@ -468,27 +533,14 @@ def analyze_group_6dof(
 
         lx, ly, lz = pile.direction_cosines()
 
-        # Pile-head stiffness in global (ux, uy, settlement) components:
-        # axial spring ka along the pile axis + isotropic lateral spring kl
-        # perpendicular to it.
-        kxx = ka * lx**2 + kl * (1 - lx**2)
-        kyy = ka * ly**2 + kl * (1 - ly**2)
-        kzz = ka * lz**2 + kl * (1 - lz**2)
-        kxy = (ka - kl) * lx * ly
-
-        # NOTE (PG-1 limitation, retained): the force<->rotation coupling
-        # that batter introduces between the translational DOFs and the
-        # moment DOFs (the kxz/kyz terms of the projected pile stiffness)
-        # is NOT assembled -- this formulation captures the
-        # axial-eccentricity moment resistance, in-plane translation
-        # (incl. kxy), and the rigid-cap lateral-torsion coupling. For
-        # heavily battered groups under combined load, a full CPGA-style
-        # coupled formulation is required.
-        k3 = np.array([
-            [kxx, kxy, 0.0],
-            [kxy, kyy, 0.0],
-            [0.0, 0.0, kzz],
-        ])
+        # Pile-head stiffness in the global (ux, uy, settlement)
+        # components: the axial spring ka along the pile axis l and the
+        # lateral spring kl across it, k = kl*I + (ka - kl)*l*l^T. The
+        # settlement component is positive down, as lz is, so the kxz and
+        # kyz terms a batter gives carry the same sign as kxy (GM-319:
+        # they were left at zero before).
+        l_vec = np.array([lx, ly, lz])
+        k3 = kl * np.eye(3) + (ka - kl) * np.outer(l_vec, l_vec)
 
         x = pile.x
         y = pile.y
@@ -606,4 +658,10 @@ def analyze_group_6dof(
         max_utilization=max_util,
         n_piles=n,
         pile_head_response=head_response,
+        notes=[
+            "Piles are pinned to the cap: each is an axial spring along "
+            "its axis and a lateral spring across it, with no head moment "
+            "or torsional stiffness of its own (EM 1110-2-2906's b44, b55, "
+            "b66 are left out). Batter is carried in full, the "
+            "horizontal-vertical terms included."],
     )

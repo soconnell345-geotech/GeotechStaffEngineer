@@ -926,3 +926,98 @@ class TestLateralLoadGuards:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# GM-319: batter carried in full; the simple method's refusals
+# ---------------------------------------------------------------------------
+
+class TestBatterInFull:
+    """A statically determinate group of axial-only piles (kl = 0) has pile
+    forces statics alone gives, whatever the stiffness (UFC 3-220-20
+    Sec. 6-6.3: batter piles taken to carry axial load only). Made-up
+    values."""
+
+    def _group(self, ka_c=2e5):
+        return [GroupPile(x=-1, y=0, axial_stiffness=2e5, label="A"),
+                GroupPile(x=1, y=0, axial_stiffness=2e5, label="B"),
+                GroupPile(x=0, y=0, batter_x=15, axial_stiffness=ka_c,
+                          label="C")]
+
+    @pytest.mark.parametrize("ka_c", [2e5, 5e4])
+    def test_matches_statics(self, ka_c):
+        r = analyze_group_6dof(self._group(ka_c),
+                               GroupLoad(Vx=100, Vz=1000, My=200))
+        s, c = math.sin(math.radians(15)), math.cos(math.radians(15))
+        Pc = 100 / s                      # only C has a horizontal component
+        Pa = (1000 - Pc * c - 200) / 2    # vertical and moment equilibrium
+        Pb = (1000 - Pc * c + 200) / 2
+        got = {h["label"]: h["axial_kN"] for h in r.pile_head_response}
+        assert got["C"] == pytest.approx(Pc, rel=1e-9)
+        assert got["A"] == pytest.approx(Pa, rel=1e-9)
+        assert got["B"] == pytest.approx(Pb, rel=1e-9)
+
+    def test_axial_forces_balance_the_loads(self):
+        piles = [GroupPile(x=-1.5, y=-1, batter_x=-10, axial_stiffness=3e5,
+                           lateral_stiffness=8e3, label="1"),
+                 GroupPile(x=1.5, y=-1, batter_x=10, axial_stiffness=3e5,
+                           lateral_stiffness=8e3, label="2"),
+                 GroupPile(x=-1.5, y=1, batter_y=8, axial_stiffness=2e5,
+                           lateral_stiffness=8e3, label="3"),
+                 GroupPile(x=1.5, y=1, axial_stiffness=2e5,
+                           lateral_stiffness=8e3, label="4")]
+        load = GroupLoad(Vx=120, Vy=-60, Vz=2400, Mx=150, My=-220, Mz=40)
+        r = analyze_group_6dof(piles, load)
+        F = np.zeros(6)
+        for p, h in zip(piles, r.pile_head_response):
+            f = np.array([h["Fx_kN"], h["Fy_kN"], h["Fz_kN"]])
+            F += np.array([f[0], f[1], f[2], -p.y * f[2], p.x * f[2],
+                           -p.y * f[0] + p.x * f[1]])
+            # the head force's component along the pile is its axial force
+            l = np.array(p.direction_cosines())
+            assert float(f @ l) == pytest.approx(h["axial_kN"], rel=1e-9)
+        assert F == pytest.approx(
+            [load.Vx, load.Vy, load.Vz, load.Mx, load.My, load.Mz], abs=1e-6)
+
+    def test_vertical_group_unchanged(self):
+        piles = create_rectangular_layout(2, 3, 1.2, 1.2, axial_stiffness=1e5,
+                                          lateral_stiffness=1e4)
+        r = analyze_group_6dof(piles, GroupLoad(Vx=50, Vz=1200, My=300))
+        s = analyze_vertical_group_simple(piles, GroupLoad(Vz=1200, My=300))
+        for a, b in zip(r.pile_forces, s.pile_forces):
+            assert a["axial_kN"] == pytest.approx(b["axial_kN"], abs=0.05)
+
+    def test_notes_say_pinned_heads(self):
+        r = analyze_group_6dof(self._group(), GroupLoad(Vz=500))
+        assert "pinned" in r.to_dict()["notes"][0]
+
+
+class TestSimpleRefusals:
+    def test_battered_pile_refused(self):
+        piles = [GroupPile(x=-1, y=0), GroupPile(x=1, y=0, batter_x=5)]
+        with pytest.raises(ValueError, match="vertical piles"):
+            analyze_vertical_group_simple(piles, GroupLoad(Vz=1000))
+
+    def test_unequal_stiffness_refused(self):
+        piles = [GroupPile(x=-1, y=0, axial_stiffness=1e5),
+                 GroupPile(x=1, y=0, axial_stiffness=2e5)]
+        with pytest.raises(ValueError, match="equal piles"):
+            analyze_vertical_group_simple(piles, GroupLoad(Vz=1000))
+        piles[1].axial_stiffness = None
+        with pytest.raises(ValueError, match="equal piles"):
+            analyze_vertical_group_simple(piles, GroupLoad(Vz=1000))
+
+    def test_no_stiffness_no_displacements(self):
+        piles = [GroupPile(x=-1, y=0), GroupPile(x=1, y=0)]
+        r = analyze_vertical_group_simple(piles, GroupLoad(Vz=1000))
+        assert r.cap_displacements == {}
+        assert "not calculated" in r.notes[0]
+        assert "not calculated" in r.summary()
+
+    def test_equal_stiffness_displacements_match_6dof(self):
+        piles = create_rectangular_layout(2, 2, 2.0, 1.5, axial_stiffness=1e5)
+        load = GroupLoad(Vz=1000, Mx=120, My=-80)
+        s = analyze_vertical_group_simple(piles, load).cap_displacements
+        d = analyze_group_6dof(piles, load).cap_displacements
+        for k in ("dz", "rx", "ry"):
+            assert s[k] == pytest.approx(d[k], rel=1e-9)

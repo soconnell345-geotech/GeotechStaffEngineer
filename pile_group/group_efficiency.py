@@ -29,7 +29,7 @@ All units are SI: meters, kPa, kN.
 import math
 from typing import Optional
 
-from geotech_common.choices import choice
+from geotech_common.choices import choice, how_given
 
 #: 1 ksf in kPa: GEC-12 and UFC set the eta_g rows at su = 2 ksf.
 _KPA_PER_KSF = 47.88
@@ -782,7 +782,7 @@ def group_settlement_equivalent_raft(
     choices = [choice(
         "depth below the equivalent footing summed to",
         f"{influence_depth:.2f} m, as given" if given else ufc_rule,
-        "given" if given else "default",
+        how_given(influence_depth_m, None, "influence_depth_m"),
         basis=("UFC 3-220-20's rule is the default. GEC-12's step 1c, the "
                "procedure this method follows, and UFC's own worked example "
                "(App. B-5.7, 'as recommended by FHWA (2016)') take 10 % of "
