@@ -110,11 +110,44 @@ def _float_env(name: str, default: float) -> float:
         return default
 
 
-class TurnScope:
-    """What one turn shares across its agents (see the module docstring)."""
+class TurnStopped(Exception):
+    """Raised before a model call, a wait or a pass of a turn the user has
+    asked to stop (BACKLOG TA-37). An ``Exception``, so a helper that meets
+    it has its work kept like any helper that stopped
+    (:class:`KeepWork`), and the primary's next model call raises it out of
+    the run, where the host keeps the turn's work as it keeps an
+    interrupted turn's."""
 
-    def __init__(self, busy_limit_s: Optional[float] = None):
+    def __init__(self, message: str = "the turn was stopped by the user"):
+        super().__init__(message)
+
+
+class TurnScope:
+    """What one turn shares across its agents (see the module docstring).
+
+    ``stop_event`` (a :class:`threading.Event`, optional): set by the host
+    when the user asks to stop the turn; every agent's next model call,
+    every wait for a busy model or a helper place, and the host's next pass
+    then raise :class:`TurnStopped` (BACKLOG TA-37). ``None`` (the default)
+    = no stop, and nothing here waits differently.
+
+    ``whole_turn_budget``: the primary agent's model-call budget is counted
+    over the whole turn, all its passes, with the continuations of a reply
+    cut off at the output limit counted too (BACKLOG TA-38). Off by default,
+    so a host that does not ask keeps the per-pass count."""
+
+    def __init__(self, busy_limit_s: Optional[float] = None,
+                 stop_event: Optional[threading.Event] = None,
+                 whole_turn_budget: bool = False):
         self.started = time.time()
+        self.stop_event = stop_event
+        self.whole_turn_budget = bool(whole_turn_budget)
+        # the primary's model calls this turn, all passes (whole_turn_budget)
+        self.primary_model_calls = 0
+        # continuation calls of the primary's cut-off replies (whole turn)
+        self.primary_extra_calls = 0
+        # the primary's budget, noted by its budget middleware
+        self.primary_budget: Optional[int] = None
         self.busy_limit_s = (_float_env(BUSY_TURN_MAX_ENV,
                                         DEFAULT_BUSY_TURN_MAX_S)
                              if busy_limit_s is None else float(busy_limit_s))
@@ -141,9 +174,26 @@ class TurnScope:
             if path not in self.kept_files:
                 self.kept_files.append(path)
 
+    @property
+    def stop_requested(self) -> bool:
+        """The user asked to stop this turn (TA-37)."""
+        ev = self.stop_event
+        return bool(ev is not None and ev.is_set())
+
+    def request_stop(self) -> None:
+        """Ask the turn to stop (a scope made without a ``stop_event`` gets
+        one)."""
+        with self._lock:
+            if self.stop_event is None:
+                self.stop_event = threading.Event()
+        self.stop_event.set()
+
     def spend_busy(self, seconds: float) -> bool:
         """Whether the turn may still spend ``seconds`` on a busy model; if
-        so, they are counted. ``busy_limit_s <= 0`` means no bound."""
+        so, they are counted. ``busy_limit_s <= 0`` means no bound. A turn
+        the user asked to stop may not wait at all (TA-37)."""
+        if self.stop_requested:
+            return False
         with self._lock:
             if self.busy_limit_s > 0 and \
                     self.busy_spent_s + seconds > self.busy_limit_s:
@@ -177,6 +227,21 @@ def turn_scope(scope: Optional[TurnScope] = None) -> Iterator[TurnScope]:
             pass
 
 
+def stop_requested() -> bool:
+    """Whether the user asked to stop the running turn (TA-37); ``False``
+    outside a turn or where the turn has no stop."""
+    scope = _TURN.get()
+    return bool(scope is not None and scope.stop_requested)
+
+
+def check_stop() -> None:
+    """Raise :class:`TurnStopped` when the user asked to stop the running
+    turn; nothing otherwise (TA-37). Called before each model call of every
+    agent and before each wait."""
+    if stop_requested():
+        raise TurnStopped()
+
+
 # ---------------------------------------------------------------------------
 # One helper
 # ---------------------------------------------------------------------------
@@ -194,6 +259,10 @@ class HelperRecord:
         self.read_chars = 0
         self.arg_chars = 0
         self.budget_reached = False
+        # its budget and the continuation calls of its cut-off replies,
+        # counted in a turn whose budget is the whole turn's (TA-38)
+        self.budget: Optional[int] = None
+        self.extra_model_calls = 0
         self.error: Optional[BaseException] = None
         # its figures' draws when no turn is open (BACKLOG GM-151)
         self.figures: dict = {}
@@ -260,6 +329,92 @@ def note_budget_reached() -> None:
         scope.budget_reached = True
 
 
+# ---------------------------------------------------------------------------
+# A budget counted over the whole turn (BACKLOG TA-38)
+# ---------------------------------------------------------------------------
+
+def _whole_turn() -> Optional[TurnScope]:
+    scope = _TURN.get()
+    return scope if scope is not None and scope.whole_turn_budget else None
+
+
+def note_budget(limit: Optional[int]) -> None:
+    """A model-call budget says its limit before a call: on the running
+    helper's record, or on the turn for the primary. Only in a turn whose
+    budget is the whole turn's."""
+    if _whole_turn() is None or not limit:
+        return
+    rec = _HELPER.get()
+    if rec is not None:
+        rec.budget = int(limit)
+    else:
+        _TURN.get().primary_budget = int(limit)
+
+
+def note_primary_model_call() -> None:
+    """The primary agent made a model call (its budget middleware counts it
+    once per call, after the call); counted on the turn so a later pass
+    goes on from it."""
+    scope = _whole_turn()
+    if scope is None or _HELPER.get() is not None:
+        return
+    with scope._lock:
+        scope.primary_model_calls += 1
+
+
+def turn_model_calls() -> Optional[int]:
+    """The primary's model calls over the whole turn so far, or ``None``
+    (a helper, or a turn that does not count over its passes)."""
+    scope = _whole_turn()
+    if scope is None or _HELPER.get() is not None:
+        return None
+    return scope.primary_model_calls
+
+
+def extra_model_calls() -> int:
+    """Continuation calls of cut-off replies counted against the running
+    agent's budget (0 where none are counted)."""
+    if _whole_turn() is None:
+        return 0
+    rec = _HELPER.get()
+    if rec is not None:
+        return rec.extra_model_calls
+    return _TURN.get().primary_extra_calls
+
+
+def take_extra_model_call() -> bool:
+    """Whether the running agent may make one more call to continue a reply
+    cut off at the output limit; if so, it is counted against its budget.
+    One call is always left for the forced last reply: a continuation is
+    refused when, after it, the next call would not fit. ``True`` where no
+    budget is known (nothing counted)."""
+    scope = _whole_turn()
+    if scope is None:
+        return True
+    rec = _HELPER.get()
+    if rec is not None:
+        if rec.budget is None:
+            return True
+        if rec.budget_reached:
+            return False
+        # this call is not on the record yet (HelperRecorder records it
+        # once it returns): done + this one + extra + next >= budget
+        if rec.model_calls + 1 + rec.extra_model_calls + 1 >= rec.budget:
+            return False
+        rec.extra_model_calls += 1
+        return True
+    if scope.primary_budget is None:
+        return True
+    with scope._lock:
+        if scope.budget_reached:
+            return False
+        if (scope.primary_model_calls + 1 + scope.primary_extra_calls + 1
+                >= scope.primary_budget):
+            return False
+        scope.primary_extra_calls += 1
+        return True
+
+
 def _json(obj: Any) -> str:
     try:
         return json.dumps(obj, ensure_ascii=False, default=str)
@@ -280,6 +435,7 @@ class HelperRecorder(AgentMiddleware):
 
     def wrap_model_call(self, request, handler):
         rec = _HELPER.get()
+        check_stop()                       # TA-37: a stopped turn
         try:
             response = handler(request)
         except GraphBubbleUp:
@@ -297,6 +453,7 @@ class HelperRecorder(AgentMiddleware):
 
     async def awrap_model_call(self, request, handler):
         rec = _HELPER.get()
+        check_stop()
         try:
             response = await handler(request)
         except GraphBubbleUp:
@@ -706,8 +863,10 @@ class _HelperPlaces:
         self._running = 0
         self._queue: list = []
 
-    def acquire(self) -> float:
-        """Wait for a place; the seconds waited."""
+    def acquire(self, stoppable: bool = False) -> float:
+        """Wait for a place; the seconds waited. ``stoppable``: the turn can
+        be stopped by the user, so the wait looks every half second and
+        raises :class:`TurnStopped` once asked (TA-37)."""
         t0 = time.monotonic()
         with self._cond:
             me = object()
@@ -715,7 +874,11 @@ class _HelperPlaces:
             try:
                 while not (self._running < self.limit
                            and self._queue[0] is me):
-                    self._cond.wait()
+                    if stoppable:
+                        check_stop()
+                        self._cond.wait(0.5)
+                    else:
+                        self._cond.wait()
             except BaseException:
                 self._queue.remove(me)
                 self._cond.notify_all()
@@ -864,7 +1027,12 @@ class KeepWork(AgentMiddleware):
         rec = HelperRecord(call.get("id") or "", args.get("subagent_type"),
                            args.get("description"))
         places = self._places_for()
-        waited = places.acquire() if places is not None else 0.0
+        scope = current_turn()
+        stoppable = scope is not None and scope.stop_event is not None
+        if stoppable:
+            check_stop()                   # TA-37: before the helper starts
+        waited = (places.acquire(stoppable=stoppable) if places is not None
+                  else 0.0)
         if waited >= 0.5:
             _event("helper_queued", {"task_id": rec.task_id,
                                      "subagent": rec.subagent,
@@ -948,6 +1116,9 @@ def _with_note(result, note: str):
 
 
 __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
+           "TurnStopped", "stop_requested", "check_stop", "note_budget",
+           "note_primary_model_call", "turn_model_calls",
+           "extra_model_calls", "take_extra_model_call",
            "current_helper", "HelperRecorder", "KeepWork",
            "note_budget_reached", "gave_up", "summary_paragraph",
            "saved_files", "saved_note", "save_held_records",
