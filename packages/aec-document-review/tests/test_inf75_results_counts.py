@@ -183,3 +183,42 @@ def test_rescoring_a_saved_run_fills_the_counts_its_record_can_give(tmp_path):
     assert out["tool_calls_refused"] == 1
     assert out["model_calls_unended"] == 0
     assert "side_call_timeouts" not in out
+
+
+# -- looks made with show_me (INF-75 (3)) ------------------------------------
+
+def test_looks_made_with_show_me_are_counted_from_the_calls_arguments(
+        tmp_path):
+    """Brief 7: an arm that offered ``show_me`` and never used it (0 of 70
+    runs) read as a measurement of it; nothing counted the looks."""
+    logger = ActivityLogger(str(tmp_path), turn=1)
+    _tool(logger, "analyze_pdf_page", {"pdf_page": 4, "show_me": True},
+          "call-1", result="shown")
+    _tool(logger, "render_region", {"pdf_page": 4, "show_me": "true"},
+          "call-2", result="shown")
+    _tool(logger, "analyze_pdf_page", {"pdf_page": 5, "show_me": False},
+          "call-3", result="read")
+    _tool(logger, "analyze_pdf_page", {"pdf_page": 6}, "call-4",
+          result="read")
+    assert record_counts(_record(tmp_path))["show_me_looks"] == 2
+
+
+def test_the_table_shows_an_arm_that_never_used_show_me_as_zero():
+    ok = {"score": {"passed": True, "checks_passed": 1, "checks_total": 1}}
+    runs = {"baseline": {"a": dict(ok, show_me_looks=0)},
+            "show_me": {"a": dict(ok, show_me_looks=0)},
+            "used": {"a": dict(ok, show_me_looks=4)}}
+    md = summarize(runs, ["baseline", "show_me", "used"], [_task("a")],
+                   {"model": "m", "versions": {}, "updated": "now"})
+    assert _row(md, "show_me")["show_me looks"] == "0"
+    assert _row(md, "used")["show_me looks"] == "4"
+
+
+def test_rescoring_counts_show_me_looks_on_a_saved_run(tmp_path):
+    logger = ActivityLogger(str(tmp_path), turn=1)
+    _tool(logger, "analyze_pdf_page", {"pdf_page": 4, "show_me": True},
+          "call-1", result="shown")
+    saved = {"answer": "", "files": [], "tool_calls": [],
+             "score": {"passed": True, "checks_passed": 0, "checks_total": 0}}
+    out = runner.rescore_saved(saved, _task("a"), str(tmp_path))
+    assert out["show_me_looks"] == 1

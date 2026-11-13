@@ -265,6 +265,24 @@ def _unknown_arguments(result: Any) -> bool:
     return isinstance(got, dict) and bool(got.get("unknown_arguments"))
 
 
+def _asked_to_be_shown(args: Any) -> bool:
+    """Whether a tool call's arguments carry ``show_me`` set true (the
+    image shown to the main model itself, ``GEOTECH_VISION_SHOW_ME``)."""
+    if isinstance(args, str):
+        if "show_me" not in args:
+            return False
+        try:
+            args = json.loads(args)
+        except ValueError:
+            return False
+    if not isinstance(args, dict):
+        return False
+    value = args.get("show_me")
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return value is True
+
+
 def record_counts(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     """What the results table counts off a run's record besides its model
     and tool calls (BACKLOG INF-75; Foundry brief 7 read "failed calls 0"
@@ -284,12 +302,15 @@ def record_counts(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     * ``model_calls_unended``: ``model_start`` records with neither a
       ``model_end`` nor a ``model_error``. Readable off any record, old
       ones included, where the timeout events are not.
+    * ``show_me_looks``: tool calls made with ``show_me`` set true. An arm
+      that offers the argument and never uses it reads 0, and is not a
+      measurement of it (brief 7: 0 of 70 runs).
 
     A tool that raises leaves a ``tool_error`` and a ``tool_refused``: the
     pair is one call. They are matched by ``raised`` on the refusal, and in
     a record written before that field by tool name and agent."""
     timeouts = not_read = late = 0
-    starts = ended = 0
+    starts = ended = shown = 0
     raised = unknown = 0
     unmatched: Dict[tuple, int] = {}      # (agent, name) -> old tool_errors
     refusals: List[Dict[str, Any]] = []
@@ -305,6 +326,9 @@ def record_counts(records: List[Dict[str, Any]]) -> Dict[str, Any]:
             starts += 1
         elif ev in ("model_end", "model_error"):
             ended += 1
+        elif ev == "tool_start":
+            if _asked_to_be_shown(rec.get("args")):
+                shown += 1
         elif ev == "tool_error":
             raised += 1
             if not rec.get("tool_call_id"):
@@ -329,7 +353,8 @@ def record_counts(records: List[Dict[str, Any]]) -> Dict[str, Any]:
             "tool_calls_refused_by": {"raised": raised,
                                       "no_tool_ran": no_tool,
                                       "unknown_arguments": unknown},
-            "model_calls_unended": max(0, starts - ended)}
+            "model_calls_unended": max(0, starts - ended),
+            "show_me_looks": shown}
 
 
 def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
@@ -718,10 +743,13 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
     # calls" are tool calls that raised, that no tool ran for, or that were
     # refused for an argument the tool does not take (INF-75). A "·" means
     # no run of the arm recorded the count (a run saved before it existed).
+    # "show_me looks" are tool calls made with show_me set true: 0 on an
+    # arm that offers the argument means the arm did not measure it.
     lines.append("| arm | tasks passed | checks passed | model calls | tool "
                  "calls | tokens (in/out) | minutes | errors | failed calls "
-                 "| step caps | side-call timeouts | refused tool calls |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+                 "| step caps | side-call timeouts | refused tool calls "
+                 "| show_me looks |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for arm in arms:
         rs = [r for r in runs.get(arm, {}).values() if not r.get("skipped")]
         tp = sum(1 for r in rs if (r.get("score") or {}).get("passed"))
@@ -738,7 +766,8 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
         lines.append(f"| {arm} | {tp}/{len(rs)} | {cp}/{ct} | {mc} | {tc} | "
                      f"{ti:,}/{to:,} | {mins:.1f} | {errs} | {failed} | "
                      f"{caps} | {_recorded(rs, 'side_call_timeouts')} | "
-                     f"{_recorded(rs, 'tool_calls_refused')} |")
+                     f"{_recorded(rs, 'tool_calls_refused')} | "
+                     f"{_recorded(rs, 'show_me_looks')} |")
     for title, key in (("By category", "category"),
                        ("By document type", "doc_type"),
                        ("By app page", "page")):

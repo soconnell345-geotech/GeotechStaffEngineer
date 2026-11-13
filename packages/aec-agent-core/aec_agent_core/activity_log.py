@@ -85,7 +85,16 @@ Since 2026-10-21 (BACKLOG EV-06, EV-19) the record also says:
   calls where the client shows them, ``tools_offered_from: "calls"``, else
   the build's list, ``"build"``); the names are written when the list
   changes (and once per process), the sha every turn: a turn without them
-  was offered the list of the latest ``turn_end`` with the same sha;
+  was offered the list of the latest ``turn_end`` with the same sha.
+  Since 2026-11-13 (BACKLOG INF-75) also ``tools_offered_spec_sha``: a
+  fingerprint of each offered tool's name, description and argument
+  schema, so two turns offered the same names with different arguments
+  differ. ``tools_offered_spec_from`` says what was hashed: ``calls`` (the
+  specifications the primary's model calls were sent) or ``build`` (the
+  page's own fingerprint of the built agent's tools, the ``tools_sha`` of
+  ``turn_start``'s ``engine``); two values are compared only where that
+  is the same. ``tools_offered_sha`` is unchanged, so older records and
+  their readers still work;
 * on the ``model_end`` (and ``model_error``) of a vision side call:
   ``vision``, its label (``kind``, ``page``, ``tile``, ``image_px``,
   ``detail``) with what was sent: ``prompt`` (whole up to
@@ -792,6 +801,32 @@ def _tool_name(spec: Any) -> Optional[str]:
     return str(name) if name else None
 
 
+def _tool_spec(spec: Any) -> Optional[list]:
+    """``[name, description, argument schema]`` of a tool as a model call
+    was sent it (OpenAI's ``{"function": {...}}``, the Responses and
+    Anthropic shapes with the name at the top, or a tool object); None
+    without a name. What :data:`tools_offered_spec_sha` hashes (INF-75)."""
+    if isinstance(spec, dict):
+        fn = spec.get("function")
+        src = fn if isinstance(fn, dict) and fn.get("name") else spec
+        if not src.get("name"):
+            return None
+        schema = src.get("parameters")
+        if schema is None:
+            schema = src.get("input_schema")
+        return [str(src["name"]), str(src.get("description") or ""),
+                _json_safe(schema)]
+    name = getattr(spec, "name", None)
+    if not name:
+        return None
+    try:
+        schema = spec.tool_call_schema.model_json_schema()
+    except Exception:                                  # noqa: BLE001
+        schema = None
+    return [str(name), str(getattr(spec, "description", "") or ""),
+            _json_safe(schema)]
+
+
 class ActivityLogger(BaseCallbackHandler):
     """Append every tool/model event of one turn to ``activity.jsonl``.
 
@@ -830,7 +865,9 @@ class ActivityLogger(BaseCallbackHandler):
         self._passes: list = []           # highest primary step, per pass
         self._system: dict = {}           # primary system prompt sha -> chars
         self._tools_sent: set = set()     # tool names the primary was sent
+        self._tool_specs: dict = {}       # name -> [name, description, schema]
         self._build_tools: Optional[list] = None
+        self._build_tools_sha: Optional[str] = None
         self.step_cap: Optional[int] = None
         self.step_allowance: Optional[int] = None
         self._usage_sum = dict.fromkeys(TURN_USAGE_KEYS, 0)
@@ -1029,6 +1066,8 @@ class ActivityLogger(BaseCallbackHandler):
                 if isinstance(engine.get("build"), dict) else None
             if isinstance(tools, list):
                 self._build_tools = [str(t) for t in tools]
+            if isinstance(engine.get("tools_sha"), str):
+                self._build_tools_sha = engine["tools_sha"]
         if note:
             rec["context_note"] = str(note)[:DEFAULT_MAX_CHARS]
         self._write(rec)
@@ -1114,6 +1153,18 @@ class ActivityLogger(BaseCallbackHandler):
                 same = _TOOLS_NOTED.get(_log_key(self.conv_dir)) == sha
             if not same:
                 out["tools_offered"] = names
+        # What each offered tool SAID, not only its name (INF-75): the
+        # names' hash was the same with and without an argument a setting
+        # adds, so the record could not show the argument was offered.
+        with self._lock:
+            specs = [self._tool_specs[n] for n in sorted(self._tool_specs)]
+        if specs:
+            out["tools_offered_spec_sha"] = fingerprint(
+                json.dumps(specs, sort_keys=True, default=str))
+            out["tools_offered_spec_from"] = "calls"
+        elif self._build_tools_sha:
+            out["tools_offered_spec_sha"] = self._build_tools_sha
+            out["tools_offered_spec_from"] = "build"
         return out
 
     def turn_files(self, files: list) -> None:
@@ -1296,8 +1347,11 @@ class ActivityLogger(BaseCallbackHandler):
             tools = params.get("tools") if isinstance(params, dict) else None
             if isinstance(tools, (list, tuple)):
                 names = {n for n in (_tool_name(t) for t in tools) if n}
+                specs = [sp for sp in (_tool_spec(t) for t in tools) if sp]
                 with self._lock:
                     self._tools_sent.update(names)
+                    for sp in specs:
+                        self._tool_specs[sp[0]] = sp
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
 
