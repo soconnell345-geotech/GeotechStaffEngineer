@@ -432,6 +432,14 @@ class MonteCarloResult:
     research_surface: bool = False
     #: Re-searches stopped by their time budget (GM-123; research_surface).
     n_searches_cut: int = 0
+    #: Realizations in which the method has no solution (GM-140 step 2):
+    #: counted, left out of the statistics. ``pf_lower`` / ``pf_upper`` bound
+    #: the probability of failure with none / all of them counted as
+    #: failures (both equal ``pf`` when there are none).
+    n_no_solution: int = 0
+    no_solution_reason: str = ""
+    pf_lower: Optional[float] = None
+    pf_upper: Optional[float] = None
     histogram_bins: List[float] = field(default_factory=list)
     histogram_counts: List[int] = field(default_factory=list)
     samples: Optional[List[float]] = None
@@ -451,9 +459,29 @@ class MonteCarloResult:
             f"  P(FOS < 1):       {self.pf:.2%}  ({self.n_failed}/{self.n})",
             f"  beta_LN (fit):    {self.beta_lognormal:.2f}  "
             f"(pf = {self.pf_lognormal:.2%})",
-            "=" * 60,
         ]
+        if self.n_no_solution:
+            lines.append(f"  NO SOLUTION:      {self.no_solution_note()}")
+        lines.append("=" * 60)
         return "\n".join(lines)
+
+    def no_solution_note(self) -> str:
+        """The statement about realizations with no solution ('' when
+        there are none)."""
+        if not self.n_no_solution:
+            return ""
+        total = self.n + self.n_no_solution
+        return (
+            f"In {self.n_no_solution} of {total} realizations the method "
+            f"has no solution on the surface"
+            + (f" (the first: {self.no_solution_reason})"
+               if self.no_solution_reason else "")
+            + f". They are counted and left out of the statistics: n, pf "
+            f"and the distribution are over the {self.n} with a solution. "
+            f"Counting none of them as a failure P(FOS < 1) is "
+            f"{self.pf_lower:.2%}, counting all of them {self.pf_upper:.2%}. "
+            f"This rule is the module's own; no printed rule was found for "
+            f"a realization without a solution.")
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
@@ -474,6 +502,11 @@ class MonteCarloResult:
             "histogram_bins": [round(b, 4) for b in self.histogram_bins],
             "histogram_counts": list(self.histogram_counts),
         }
+        if self.n_no_solution:
+            d["n_no_solution"] = self.n_no_solution
+            d["pf_bounds"] = [round(self.pf_lower, 6),
+                              round(self.pf_upper, 6)]
+            d["no_solution_note"] = self.no_solution_note()
         if self.n_searches_cut:
             d["n_searches_cut"] = self.n_searches_cut
             d["note"] = (
@@ -489,13 +522,53 @@ class MonteCarloResult:
 # ---------------------------------------------------------------------------
 
 def _eval_fos(geom: SlopeGeometry, slip, method: str, n_slices: int,
-              tol: float) -> float:
-    from slope_stability.search import _compute_fos
-    # one given surface, not a search: no surface is left out for its
-    # m_alpha (GM-127), whatever a realization's strengths make of it, and
-    # one touching the model's base is kept as build_slices keeps it (GM-128)
-    return _compute_fos(geom, slip, method, n_slices, tol=tol,
-                        m_alpha_check=False, inside_model=False)
+              tol: float):
+    """(FOS, '') of one given surface by the method's own solution, or
+    (None, reason) where the method has none (GM-140 step 2).
+
+    The solve ``analyze_slope`` makes (``solution.solve_method`` on the
+    surface's slices with its supports; a noncircular surface named for
+    Bishop is solved by Spencer; Morgenstern-Price / GLE with the half-sine
+    function). One given surface, not a search: no surface is left out for
+    its m_alpha (GM-127) or its shape, whatever a realization's strengths
+    make of it, and one touching the model's base is kept as build_slices
+    keeps it (GM-128). Before, the search's scorer was used and its 999.9
+    "not scored" mark could be taken as a factor of safety (D49).
+
+    Each realization takes its own crack as printed (GM-140 step 4,
+    ``cracks.solve_with_crack``): a Rankine depth at that realization's
+    own factor of safety; a surface the crack rule refuses has no value."""
+    from slope_stability import cracks
+    from slope_stability.search import trial_reinforcement
+    from slope_stability.slices import build_slices
+    from slope_stability.solution import solve_method
+    scored_by = ("spencer" if method == "bishop"
+                 and not getattr(slip, "is_circular", True) else method)
+
+    def solve(g):
+        slices = build_slices(g, slip, n_slices)
+        reinf = trial_reinforcement(g, slip)
+        return solve_method(slices, slip, scored_by, "half_sine", tol, reinf)
+
+    try:
+        sol, crack = cracks.solve_with_crack(
+            geom, slip, solve, fos_of=lambda s: s.fos if s.solved else None)
+    except (ValueError, ZeroDivisionError) as exc:
+        return None, f"the surface cannot be analysed ({exc})"
+    if crack is not None and crack.discarded:
+        return None, crack.reason
+    return (sol.fos, "") if sol.solved else (None, sol.reason)
+
+
+def _no_solution_error(method: str, what: str, reason: str) -> ValueError:
+    """FOSM has no result when one of its evaluations has no solution."""
+    from slope_stability.solution import METHOD_TEXT
+    return ValueError(
+        f"FOSM gives no result: {METHOD_TEXT.get(method, method)} has no "
+        f"solution on the surface {what}: {reason}. Every FOSM evaluation "
+        f"must be the method's own solution (a factor of safety under a "
+        f"method's name is its own converged solution, or there is no "
+        f"number). Use another method or another surface.")
 
 
 def _resolve_surface(geom, xc, yc, radius, slip_surface):
@@ -533,7 +606,14 @@ def fosm_fos(geom: SlopeGeometry,
     ``[("c_prime", "phi", -0.5)]``); see :func:`_parse_correlations`.
 
     Returns both beta_normal and beta_lognormal (+ pf for each).
+
+    Every evaluation is the method's own solution on the surface (GM-140
+    step 2). Where the method has no solution at the mean values or at a
+    perturbed value, FOSM gives no result: a ValueError names the variable,
+    the perturbed value and why. An unknown ``method`` is refused.
     """
+    from slope_stability.solution import check_method
+    check_method(method)
     scalar_specs, law_specs = _split_variables(variables)
     parsed = _parse_variables(geom, scalar_specs) if scalar_specs else []
     laws = _parse_su_laws(geom, law_specs)
@@ -544,11 +624,17 @@ def fosm_fos(geom: SlopeGeometry,
 
     means = [p[3] for p in parsed]
     law_means = [(law["a_mean"], law["b_mean"]) for law in laws]
-    f_mlv = _eval_fos(_build_geom(geom, parsed, means, laws, law_means), slip,
-                      method, n_slices, tol)
-    if f_mlv >= 900:
-        raise ValueError("FOS evaluation failed at mean values "
-                         "(invalid surface?)")
+    f_mlv, why = _eval_fos(_build_geom(geom, parsed, means, laws, law_means),
+                           slip, method, n_slices, tol)
+    if f_mlv is None:
+        raise _no_solution_error(method, "at the mean values", why)
+
+    def _f(g, what):
+        # one perturbed evaluation: the method's own solution, or no FOSM
+        f, why = _eval_fos(g, slip, method, n_slices, tol)
+        if f is None:
+            raise _no_solution_error(method, what, why)
+        return f
 
     deltas = {}
     contribs = {}          # per-variable variance contribution (dF/2)^2 (+cross)
@@ -559,10 +645,12 @@ def fosm_fos(geom: SlopeGeometry,
         dn = list(means)
         up[i] = mean + std
         dn[i] = max(mean - std, 1e-6)
-        f_up = _eval_fos(_build_geom(geom, parsed, up, laws, law_means), slip,
-                         method, n_slices, tol)
-        f_dn = _eval_fos(_build_geom(geom, parsed, dn, laws, law_means), slip,
-                         method, n_slices, tol)
+        f_up = _f(_build_geom(geom, parsed, up, laws, law_means),
+                  f"with {key} = {up[i]:g} (its mean {mean:g} plus one "
+                  f"standard deviation {std:g})")
+        f_dn = _f(_build_geom(geom, parsed, dn, laws, law_means),
+                  f"with {key} = {dn[i]:g} (its mean {mean:g} less one "
+                  f"standard deviation {std:g})")
         dF = (f_up - f_dn)
         deltas[key] = dF
         contribs[key] = (dF / 2.0) ** 2
@@ -575,19 +663,23 @@ def fosm_fos(geom: SlopeGeometry,
             ab_up = list(law_means); ab_dn = list(law_means)
             ab_up[j] = (law["a_mean"] + law["a_std"], law["b_mean"])
             ab_dn[j] = (max(law["a_mean"] - law["a_std"], 1e-9), law["b_mean"])
-            dFa = (_eval_fos(_build_geom(geom, parsed, means, laws, ab_up),
-                             slip, method, n_slices, tol)
-                   - _eval_fos(_build_geom(geom, parsed, means, laws, ab_dn),
-                               slip, method, n_slices, tol))
+            dFa = (_f(_build_geom(geom, parsed, means, laws, ab_up),
+                      f"with {law['key']} a = {ab_up[j][0]:g} (mean plus "
+                      f"one standard deviation)")
+                   - _f(_build_geom(geom, parsed, means, laws, ab_dn),
+                        f"with {law['key']} a = {ab_dn[j][0]:g} (mean less "
+                        f"one standard deviation)"))
         dFb = 0.0
         if law["b_std"] > 0:
             ab_up = list(law_means); ab_dn = list(law_means)
             ab_up[j] = (law["a_mean"], law["b_mean"] + law["b_std"])
             ab_dn[j] = (law["a_mean"], law["b_mean"] - law["b_std"])
-            dFb = (_eval_fos(_build_geom(geom, parsed, means, laws, ab_up),
-                             slip, method, n_slices, tol)
-                   - _eval_fos(_build_geom(geom, parsed, means, laws, ab_dn),
-                               slip, method, n_slices, tol))
+            dFb = (_f(_build_geom(geom, parsed, means, laws, ab_up),
+                      f"with {law['key']} b = {ab_up[j][1]:g} (mean plus "
+                      f"one standard deviation)")
+                   - _f(_build_geom(geom, parsed, means, laws, ab_dn),
+                        f"with {law['key']} b = {ab_dn[j][1]:g} (mean less "
+                        f"one standard deviation)"))
         ta, tb = dFa / 2.0, dFb / 2.0
         contribs[law["key"]] = ta * ta + tb * tb + 2.0 * law["rho_ab"] * ta * tb
         deltas[law["key"] + ":a"] = dFa
@@ -669,8 +761,19 @@ def monte_carlo_fos(geom: SlopeGeometry,
     MonteCarloResult
         pf (= fraction of FOS < 1), distribution stats, lognormal-fit
         beta, histogram data.
+
+    A realization in which the method has no solution on the surface is
+    never a sample (GM-140 step 2). It is counted (``n_no_solution``) and
+    left out of the statistics: ``n``, ``pf`` and the distribution are over
+    the realizations with a solution. The probability of failure is then
+    bounded both ways, ``pf_lower`` (none of those realizations counted as
+    a failure) and ``pf_upper`` (all of them). No printed rule was found
+    for this: it is the module's own, and the result says so. An unknown
+    ``method`` is refused.
     """
     import numpy as np
+    from slope_stability.solution import check_method
+    check_method(method)
 
     scalar_specs, law_specs = _split_variables(variables)
     parsed = _parse_variables(geom, scalar_specs) if scalar_specs else []
@@ -723,7 +826,8 @@ def monte_carlo_fos(geom: SlopeGeometry,
         law_samples.append((a, b))
 
     fos_vals = []
-    n_eval_failed = 0
+    n_eval_failed = 0       # realizations with no solution (GM-140 step 2)
+    first_reason = ""
     n_cut = 0
     for i in range(n):
         ab_i = [(law_samples[j][0][i], law_samples[j][1][i])
@@ -735,17 +839,24 @@ def monte_carlo_fos(geom: SlopeGeometry,
             kw.setdefault("method", method)
             kw.setdefault("n_slices", n_slices)
             res = search_critical_surface(g, **kw)
-            f = res.critical.FOS if res.critical else float("nan")
+            f = res.critical.FOS if res.critical else None
+            why = "the search found no surface with a solution"
             n_cut += "time_budget" in res.search_ranges
         else:
-            f = _eval_fos(g, slip, method, n_slices, tol)
+            f, why = _eval_fos(g, slip, method, n_slices, tol)
         if f is None or f >= 900 or math.isnan(f):
+            # No solution in this realization: counted, left out of the
+            # statistics, never taken as a sample.
             n_eval_failed += 1
+            first_reason = first_reason or why
             continue
         fos_vals.append(f)
 
     if not fos_vals:
-        raise ValueError("All Monte Carlo realizations failed to evaluate")
+        raise ValueError(
+            f"Monte Carlo gives no result: the method has no solution in "
+            f"any of the {n} realizations"
+            + (f" (the first: {first_reason})" if first_reason else "") + ".")
 
     arr = np.asarray(fos_vals)
     n_ok = len(arr)
@@ -772,6 +883,9 @@ def monte_carlo_fos(geom: SlopeGeometry,
         beta_lognormal=beta_ln, pf_lognormal=pf_ln,
         method=method, seed=seed, research_surface=research_surface,
         n_searches_cut=n_cut,
+        n_no_solution=n_eval_failed, no_solution_reason=first_reason,
+        pf_lower=n_failed / (n_ok + n_eval_failed),
+        pf_upper=(n_failed + n_eval_failed) / (n_ok + n_eval_failed),
         histogram_bins=[float(e) for e in edges],
         histogram_counts=[int(c) for c in counts],
         samples=[float(f) for f in arr] if keep_samples else None,

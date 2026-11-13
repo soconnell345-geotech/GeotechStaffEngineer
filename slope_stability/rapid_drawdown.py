@@ -104,6 +104,10 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from slope_stability.cracks import (
+    counts_reverse_discards as _counts_reverse_discards,
+    crack_choices as _crack_choices, discards_so_far as _discards_so_far,
+)
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
 from slope_stability.slices import build_slices, slice_breaks
@@ -915,6 +919,32 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                 "pp. G-1 to G-2): give R_c and R_phi, or use "
                 "'lowe_karafiath' or 'duncan_3stage'.")
 
+    # The surface's crack as printed (GM-140 step 4, ``cracks``): one crack
+    # for every stage, its depth, where it depends on the factor of safety,
+    # taken at the drawdown factor of safety itself. The geometry it fixes
+    # (``_crack_fixed``) is carried into both water conditions below, so
+    # every stage is cut on the one set of slices with the one crack.
+    from slope_stability import cracks
+    if cracks.may_need_solution(geom, slip):
+        plan = cracks.plan_crack(geom, slip)
+        if plan is not None and (plan.needs_solution or plan.discard):
+            res, crack = cracks.solve_with_crack(
+                geom, slip,
+                lambda g: rapid_drawdown_fos(
+                    g, drawdown_from_elevation, drawdown_to_elevation,
+                    slip_surface=slip, method=method,
+                    f_interslice=f_interslice, n_slices=n_slices, tol=tol,
+                    stage1_phreatic_points=stage1_phreatic_points,
+                    drawdown_phreatic_points=drawdown_phreatic_points,
+                    stage_solver=stage_solver,
+                    extra_boundaries=extra_boundaries),
+                fos_of=lambda r: r.FOS, plan=plan)
+            if crack.discarded:
+                raise cracks.refusal_error(crack)
+            if crack.depth > 0:
+                res.warnings.append(crack.statement())
+            return res
+
     # Reinforcement crossings on this surface, resolved as analyze_slope does
     # and applied at every stage (GM-53). None without reinforcement, which
     # leaves every stage solve unchanged.
@@ -1135,6 +1165,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
 
 
 @_counts_refusals
+@_counts_reverse_discards
 def search_rapid_drawdown(geom: SlopeGeometry,
                           drawdown_from_elevation: float,
                           drawdown_to_elevation: float,
@@ -1258,7 +1289,7 @@ def search_rapid_drawdown(geom: SlopeGeometry,
 
     from slope_stability.search import (
         grid_search, search_entry_exit, search_noncircular, search_de, _FOS_MAX,
-        search_budget,
+        search_budget, _count_no_solution,
     )
 
     def _dd_fos(g: SlopeGeometry, slip) -> float:
@@ -1273,7 +1304,11 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         except (ValueError, ZeroDivisionError, OverflowError, RuntimeError):
             return _FOS_MAX
         # A stage with no solution gives no number, so the trial is not
-        # scored (GM-140 step 9). Two further guards of the search, kept:
+        # scored (GM-140 step 9), and it is counted under the procedure's
+        # name in the search's ``no_solution``, as every search counts the
+        # trials its method has no solution on (GM-140 step 2; the search
+        # leaves a caller's own scoring to count its own). Two further
+        # guards of the search, kept:
         #   (1) a large near-flat circle self-clips to a handful of slices
         #       whose solution is physically meaningless (a full-dam-
         #       spanning arc with 6 slices gave stage-1 FOS 0.18);
@@ -1281,6 +1316,7 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         #       is stable at full pool, so stage-1 << 1 signals a degenerate
         #       consolidation solve, not a real drawdown mechanism.
         if r.FOS is None:
+            _count_no_solution(method)
             return _FOS_MAX
         if r.n_slices < max(8, n_slices // 2):
             return _FOS_MAX
@@ -1394,6 +1430,9 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
         infinite_slope=infinite_slope,
         surface_types=("circular", "entry_exit", "noncircular",
                        "noncircular_de"), budget=budget)
+    search.choices += _crack_choices(
+        geom, _discards_so_far(),
+        circles=surface_type in ("circular", "entry_exit") or toe_circles)
     if window_note:
         search.warnings.insert(0, window_note)
     note_budget(search, budget)     # a search cut short says so first

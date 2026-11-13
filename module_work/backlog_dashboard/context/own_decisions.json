@@ -3891,7 +3891,7 @@
     "ask_who": null,
     "question": "Do the lead's geotechnical judgement calls of 2026-11-12 stand?",
     "why": "You left these calls to the lead on 2026-11-12 (\"go with your recommendation but make a 'Later' backlog item with the decision for me to revisit in future rounds\"). Each sets a default or a rule in a module; if a call is wrong, every run that leaves the input out gets the same wrong answer.",
-    "background": "The lead applied one rule. (1) Where only one printed form exists, the module follows the print. (2) Where two held references print different values or rules and neither is named as governing, the default is the conservative one and the other is offered and stated. (3) Where the code already follows a printed source and states the alternatives, it stays as built. (4) A module never fills a missing input that the reference treats as a finding about the site (a rock quality, a tested value): it refuses and names the input. Two calls depart from the rule and say so: part 4 (OWN-104) and part 15 (OWN-131). Parts 1 to 6 unblock work (the slope build GM-140; the recompute check DR-11); parts 7 to 16 change defaults (one batch, GM-310, with tests and a release note; part 16 is the build GM-311); parts 17 to 27 confirm what is built and change no answer. Part 28 was added on 2026-11-13 from the slope build (GM-140 step 1): two rules for layered input that no page held prints. Every call is a default or a rule the module states in its result, with the other reading offered. You supplied the Duncan, Wright and Brandon (2014) pages on 2026-11-13 (section 6.5.3, pp. 91 to 93, and all of chapter 8, pp. 159 to 168; kept local only), so slope step 8 no longer waits on you. One thing stays yours: getting Jeanjean (2009, OTC 20158) so that p-y criterion can be checked. Not decided here: the report-question conventions (OWN-07, OWN-88, OWN-125, OWN-127) and every release, hosting, licensing and data item.",
+    "background": "The lead applied one rule. (1) Where only one printed form exists, the module follows the print. (2) Where two held references print different values or rules and neither is named as governing, the default is the conservative one and the other is offered and stated. (3) Where the code already follows a printed source and states the alternatives, it stays as built. (4) A module never fills a missing input that the reference treats as a finding about the site (a rock quality, a tested value): it refuses and names the input. Two calls depart from the rule and say so: part 4 (OWN-104) and part 15 (OWN-131). Parts 1 to 6 unblock work (the slope build GM-140; the recompute check DR-11); parts 7 to 16 change defaults (one batch, GM-310, with tests and a release note; part 16 is the build GM-311); parts 17 to 27 confirm what is built and change no answer. Part 28 was added on 2026-11-13 from the slope build (GM-140 step 1): two rules for layered input that no page held prints. Every call is a default or a rule the module states in its result, with the other reading offered. You supplied the Duncan, Wright and Brandon (2014) pages on 2026-11-13 (section 6.5.3, pp. 91 to 93, and all of chapter 8, pp. 159 to 168; kept local only), so slope step 8 no longer waits on you. One thing stays yours: getting Jeanjean (2009, OTC 20158) so that p-y criterion can be checked. Parts 29 and 30 were added on 2026-11-13 from the pile group fix (GM-319): one where no reference held prints the general form, one where the manual is not in the library. Not decided here: the report-question conventions (OWN-07, OWN-88, OWN-125, OWN-127) and every release, hosting, licensing and data item.",
     "parts": [
       {
         "label": "1. OWN-101, the slope plan (GM-140): the ten steps of the slope account (section 12) agreed. Priority goes to the steps that change a factor of safety: 1 (one material per point), 2 (a method's own solution or no number), 3 (the printed acceptability checks), 4 (tension cracks and reverse curvature), 5 (water and loads), 6 (one method across the search) and 9 (rapid drawdown as EM 1110-2-1902 App. G prints it). Step 5 is split into 5a (the pore-pressure rules, this week) and 5b (new load types: line, inclined and varying loads, the vertical seismic coefficient; after). Step 10 (reporting) is small and is built alongside, its method-per-family part after step 6; steps 8 (supports) and 7 (search coverage) follow. Step 1 is built first and alone; then 2, 3, 6 and 7 in series; 4, 5a, 8, 9 and 10 in parallel once step 1 is merged. Step 1 is a weight error on every model with a sloping layer boundary (one slice 39.1 kN/m by hand against the module's 116.0).",
@@ -4352,6 +4352,76 @@
           }
         ],
         "multi": false
+      },
+      {
+        "label": "29. pile_group, GM-319 (merged 2026-11-13): where the piles are not symmetric about their centroidal axes (a group that has lost a corner pile, an L-shaped cap), `pile_group_simple` adds the product term, the sum of dx times dy, to GEC-12 Eq. 8-79, so that the pile forces give back the applied moments (made-up 3 x 3 group less a corner: maximum 400.0 kN where the printed form gives 392.3). No reference held prints the general form; the basis is statics, and the result says when the term is used. A symmetric layout keeps its numbers.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Refuse such a layout",
+            "effect": "`pile_group_simple` refuses a layout that is not symmetric about its centroidal axes and names `pile_group_6dof`, so the simple tool runs only the case Eq. 8-79 prints."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "30. pile_group, GM-319 (merged 2026-11-13): `pile_group_6dof` turns each battered pile's stiffness to the global axes in full, so a battered pile's axial force balances the applied loads (made-up group: 386.4 kN, as statics gives, where the tool gave 715.7). EM 1110-2-2906 is not in the library, so its page was not opened; the basis is the repo's earlier reading of EM pp. 4-28 and 4-29 and statics. The CPGA benchmark (GM-28) is still open. Groups of vertical piles keep their numbers.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Refuse battered piles until the benchmark",
+            "effect": "`pile_group_6dof` refuses a battered pile until GM-28's CPGA benchmark has confirmed the numbers; vertical groups run as now."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "31. GM-140 step 2, slope runs where a method has no solution (built 2026-11-13): Monte Carlo counts such realisations, leaves them out and gives the probability of failure bounded both ways; FOSM gives no result and names the variable; the yield acceleration halves its largest trial kh until the method solves. No printed rule was found for any of the three; each is stated in the result as the module's own.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Give no result instead",
+            "effect": "A Monte Carlo, FOSM or yield-acceleration run in which any realisation or trial has no solution of the method gives no result and says which, instead of applying the module's own rule."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "32. GM-322, reliability bounds (built 2026-11-13, the lead's call): FOSM and PEM refuse a normal or lognormal variable whose lower/upper bounds cut off more than 1e-6 of its probability (both tails together); at or below 1e-6 they run on the untruncated variable and the warnings say how much was cut. No printed tolerance was found; it is stated as the module's own.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Refuse any bound that cuts off probability",
+            "effect": "FOSM and PEM refuse a bounded variable whenever its bounds cut off any probability at all, however small; only bounds that cut off nothing (infinite, or a lognormal at 0) run."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "33. Tension cracks and reverse-curvature circles (GM-140 step 4, built 2026-11-13; refines OWN-103): a crack is applied only when the engineer asks for one and then on every trial surface (EM 1110-2-1902 C-10c, p. C-36); with no crack, circles with reverse curvature are discarded and counted, not closed. As first built, a circle with any overhang took the full Rankine crack and its neighbour none (F 1.134 to 0.933 for a 2 cm move; Slide2 #85 read 1.361 against the printed 1.531). Removing the centre-level crack uncovered the vertical cut's reading, whose cause is the end rule, a step of its own (GM-343).",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Close each such circle at its own overhang depth",
+            "effect": "With no crack asked for, a circle with reverse curvature is closed by a vertical crack from its overhang's depth (the centre's level) to the ground instead of being discarded: continuous in F as the centre passes the ground's level, but found in no reference."
+          }
+        ],
+        "multi": false
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
@@ -4361,7 +4431,8 @@
     "sources": [
       "BACKLOG.md OWN-143",
       "module_work/owner_calls_2026-11-12/CALLS.md",
-      "module_work/slope_integral_review/ACCOUNT.md"
+      "module_work/slope_integral_review/ACCOUNT.md",
+      "module_work/gm319/CHECK.md"
     ]
   },
   "OWN-144": {

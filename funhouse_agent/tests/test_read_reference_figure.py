@@ -92,6 +92,53 @@ def test_reads_off_figure_4_12():
     assert "phi'=35" in prompt
 
 
+def _library_takes_page() -> bool:
+    from geotech_references import _figures_db
+    from funhouse_agent.adapters._reference_common import takes
+    return takes(_figures_db.figure_get, "pdf_page_index")
+
+
+def test_the_page_asked_for_reaches_the_library(monkeypatch):
+    """A figure number the catalog holds on several pages is read off the
+    page the search hit named (2026-11-10 review: the library refuses
+    such a number without its pdf_page_index)."""
+    if not _library_takes_page():
+        pytest.skip("library figure_get takes no pdf_page_index")
+    from geotech_references import _figures_db
+    asked = {}
+
+    def figure_get(reference, figure_number, max_chars=None,
+                   pdf_page_index=None):
+        asked.update(reference=reference, figure_number=figure_number,
+                     pdf_page_index=pdf_page_index)
+        raise KeyError("made-up stop")
+
+    monkeypatch.setattr(_figures_db, "figure_get", figure_get)
+    out = _call({"reference": "made_up", "figure_number": "D-9",
+                 "pdf_page_index": 36, "prompt": "x?"}, MockVisionEngine())
+    assert "error" in out
+    assert asked == {"reference": "made_up", "figure_number": "D-9",
+                     "pdf_page_index": 36}
+    asked.clear()
+    _call({"reference": "made_up", "figure_number": "D-9", "prompt": "x?"},
+          MockVisionEngine())
+    assert asked["pdf_page_index"] is None
+
+
+def test_a_figure_on_several_pages_without_a_page_says_which():
+    if not _library_takes_page():
+        pytest.skip("library figure_get takes no pdf_page_index")
+    from geotech_references import _figures_db
+    rows = [r for r in _figures_db.list_indexed_figures()
+            if r.get("reference") == "gec_12"]
+    if not rows:
+        pytest.skip("no gec_12 figure catalog")
+    out = _call({"reference": "gec_12", "figure_number": "D-1",
+                 "prompt": "x?"}, MockVisionEngine())
+    assert "error" in out
+    assert "pdf_page_index" in out["error"]
+
+
 @pdf_required
 def test_no_vision_engine_reports_gracefully():
     out = _call(

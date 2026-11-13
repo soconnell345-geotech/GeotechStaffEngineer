@@ -622,9 +622,12 @@ class TestPublishedBenchmarks:
 
     def test_taylor_undrained_nc(self):
         """With 4 H of level ground beyond the crest and the toe, the default
-        search finds Taylor's base circle: 1.935 at 30 slices, 0.6 % below
+        search finds Taylor's base circle: 1.942 at 30 slices, 0.3 % below
         the converged 1.947 (the slicing's own bias, as on Duncan Ex 1),
-        tangent to the base, out 1.8 H beyond the toe, no warning."""
+        tangent to the base, out 1.9 H beyond the toe, no warning. No crack
+        is asked for, so the reverse-curvature toe circles are discarded
+        (GM-140 step 4 and its review's F1; as first built, one closed by
+        Rankine's crack governed at 1.835)."""
         result = search_critical_surface(self._taylor_45(32.0, 32.0))
         c = result.critical
         assert result.governing_surface == "circular"
@@ -637,10 +640,11 @@ class TestPublishedBenchmarks:
     def test_taylor_short_profile_reads_high_and_warns(self):
         """The profile this test used to draw ends 0.6 H behind the crest and
         1.5 H beyond the toe, short of Taylor's circle: no circle it holds
-        reaches 1.947 (the best, a toe circle closed by a crack, 1.970; a
-        fine grid on the old centre box, 2.04-2.06). The search says the
-        profile's end held it back, with a lower circle past the end, and
-        records that both automatic windows were cut by the model."""
+        reaches 1.947 (2.065, a toe circle centred above the crest; no crack
+        is asked for, so the reverse-curvature ones are discarded, GM-140
+        step 4 and its review's F1). The search says the profile's end held
+        it back, with a lower circle past the end, and records that both
+        automatic windows were cut by the model."""
         result = search_critical_surface(self._taylor_45(5.0, 12.0))
         assert result.critical.FOS > self.TAYLOR_45_D225
         assert any("end of the ground surface" in w for w in result.warnings)

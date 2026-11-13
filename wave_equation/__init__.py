@@ -13,7 +13,7 @@ Methods:
 
 References:
     Smith, E.A.L. (1960) "Bearing Capacity of Piles"
-    FHWA GEC-12 (FHWA-NHI-16-009) Vol 2, Chapter 12
+    FHWA GEC-12 Vol 2 (FHWA-NHI-16-010), Chapter 12
     UFC 3-220-20 (2025), Sec. 6-9.2
 """
 

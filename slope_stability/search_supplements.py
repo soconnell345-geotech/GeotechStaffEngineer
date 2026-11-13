@@ -126,7 +126,8 @@ PLANAR_METHOD = "janbu"
 # Note on a face whose reinforcement leaves no shallow planar slide able to
 # fail (the solver caps the FOS); such a face needs no infinite-slope warning.
 HELD_NOTE = ("every shallow planar slide is held by the reinforcement "
-             "crossing the face (FOS above the 999.9 cap)")
+             "crossing the face (no net driving force is left, so there is "
+             "no factor of safety)")
 
 # Surface-family labels (the references' names).
 CIRCULAR = "circular"
@@ -295,6 +296,7 @@ def search_toe_circles(geom: SlopeGeometry,
     """
     from slope_stability.search import (
         _compute_fos, _check_entry_exit, _FOS_MAX, _time_up, _record_not_run,
+        _scoring_family,
     )
 
     scan_method = ("bishop" if method in _SCREENED_METHODS and fos_fn is None
@@ -336,9 +338,11 @@ def search_toe_circles(geom: SlopeGeometry,
             return _FOS_MAX
         counter[0] += 1
         scored[family] += 1
-        # (m_alpha < 0.2 on a slice: left out and counted there, GM-127)
-        return _compute_fos(geom, slip, fos_method, n_slices, tol=tol,
-                            fos_fn=fos_fn)
+        # (m_alpha < 0.2 on a slice: left out and counted there, GM-127;
+        # no solution: not scored, counted under this family, GM-140 step 2)
+        with _scoring_family(family):
+            return _compute_fos(geom, slip, fos_method, n_slices, tol=tol,
+                                fos_fn=fos_fn)
 
     def chord(toe, s, offset):
         """The chord from `toe` (the toe, or a point on the face above it)
@@ -695,7 +699,7 @@ def check_infinite_slope(geom: SlopeGeometry,
     `SearchResult.infinite_slope_checks`), ``n_evaluated``.
     """
     from slope_stability.search import (
-        _compute_fos, _FOS_MAX, trial_reinforcement,
+        _compute_fos, _FOS_MAX, trial_reinforcement, _scoring_family,
     )
 
     best_fos, best_slip = _FOS_MAX, None
@@ -749,8 +753,9 @@ def check_infinite_slope(geom: SlopeGeometry,
             if slip is None:
                 continue
             n_eval += 1
-            fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
-                               window_span=(b - a), fos_fn=fos_fn)
+            with _scoring_family(INFINITE_SLOPE):
+                fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
+                                   window_span=(b - a), fos_fn=fos_fn)
             if fos < run_best:
                 run_best, run_slip = fos, slip
             elif fos >= _FOS_MAX and trial_reinforcement(geom, slip):
@@ -776,8 +781,10 @@ def _make_result(geom, slip, fos, method_label, n_slices) -> Optional[
         SlopeStabilityResult]:
     from slope_stability.slices import build_slices
     try:
+        from slope_stability.cracks import geometry_at_fos
         x_entry, x_exit = slip.find_entry_exit(geom)
-        n = len(build_slices(geom, slip, n_slices))
+        n = len(build_slices(geometry_at_fos(geom, slip, fos), slip,
+                             n_slices))
     except ValueError:
         return None
     kw = {}
@@ -811,34 +818,36 @@ def _attach_reinforcement(geom, crit) -> None:
         for f in (forces or [])] or None
 
 
-def _reverse_curvature_warning(geom, crit, in_search: bool = True
-                               ) -> Optional[str]:
-    """Say so when the governing circle (``in_search``) or the circle given
-    to ``analyze_slope`` is a reverse-curvature surface closed by a crack
-    (``CircularSlipSurface.reverse_curvature_crack``)."""
-    if crit is None or not crit.is_circular or crit.radius <= 0:
+def _crack_statement(geom, crit, method: str, n_slices: int, tol: float,
+                     fos_fn=None) -> Optional[str]:
+    """The crack the governing surface was solved with (GM-140 step 4,
+    ``slope_stability.cracks``): put on the result (``tension_crack``, the
+    depth used) and returned as one sentence, or None without a crack. A
+    reverse-curvature circle closed by a crack says so there."""
+    if crit is None:
         return None
-    crack = CircularSlipSurface(crit.xc, crit.yc, crit.radius) \
-        .reverse_curvature_crack(geom, crit.x_entry, crit.x_exit)
-    if crack is None:
+    from slope_stability import cracks
+    from slope_stability.search import _compute_fos
+    slip = (CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+            if crit.is_circular else PolylineSlipSurface(crit.slip_points))
+    try:
+        if cracks.may_need_solution(geom, slip):
+            _, crack = cracks.solve_with_crack(
+                geom, slip,
+                lambda g: _compute_fos(g, slip, method, n_slices, tol=tol,
+                                       fos_fn=fos_fn, m_alpha_check=False,
+                                       inside_model=False))
+        else:
+            crack = cracks.given_outcome(geom, slip, crit.x_entry,
+                                         crit.x_exit)
+    except ValueError:
         return None
-    if in_search:
-        whose = "The critical circle's"
-        other = ("reverse_curvature='discard' drops such circles from the "
-                 "search (Slide2's other choice).")
-    else:
-        whose = "The circle's"
-        other = ("Slide2's other choice is to discard such circles: "
-                 "reverse_curvature='discard' does so in a search; a circle "
-                 "given to analyze_slope is evaluated either way.")
-    return (f"{whose} centre (z = {crit.yc:.2f}) lies below the "
-            f"ground where the circle ends (x = {crack['x']:.2f}, ground "
-            f"z = {crack['z_ground']:.2f}): the circle would turn back above "
-            f"its own centre there, so the surface is closed by a vertical, "
-            f"dry crack {crack['depth']:.2f} m deep that carries no shear. "
-            f"Slide2 calls this a reverse-curvature surface and closes it the "
-            f"same way by default; its factor of safety depends on that crack "
-            f"being able to open. {other}")
+    if crack is None or crack.discarded or crack.depth <= 0:
+        return None
+    had = list(crit.warnings)
+    cracks.apply_to_result(crit, crack)
+    crit.warnings[:] = had          # said once, in the search's warnings
+    return crack.statement()
 
 
 # Below this share of their force acting through the moment about the centre
@@ -874,8 +883,10 @@ def _support_arm_warning(geom, crit, method: str, n_slices: int,
     from slope_stability.reinforcement import support_moment
     slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
     try:
+        from slope_stability.cracks import geometry_at_fos
         forces = trial_reinforcement(geom, slip)
-        slices = build_slices(geom, slip, n_slices)
+        slices = build_slices(geometry_at_fos(geom, slip, crit.FOS), slip,
+                              n_slices)
     except ValueError:
         return None
     if not forces or not slices:
@@ -919,44 +930,63 @@ def _support_arm_warning(geom, crit, method: str, n_slices: int,
             f"the slope with method='spencer' or 'gle'.")
 
 
-def _legacy_critical_warning(geom, crit, method: str, n_slices: int,
-                             tol: float) -> Optional[str]:
-    """Label a critical circle a rigorous search scored with the legacy
-    approximate solver (GM-81).
+def no_solution_warning(result: SearchResult) -> Optional[str]:
+    """Say so when the governing family left trial surfaces without a
+    solution because the method did not converge on them (GM-140 step 2),
+    or None. UFC 3-220-10 p. 362: "Critical failure surfaces can be missed
+    as a result of non-convergence. The engineer should be able to identify
+    when convergence issues are present." EM 1110-2-1902 C-10d (pp. C-37 to
+    C-38) lists what to do about non-convergence. Trials with no net
+    driving moment or force are counted (``no_solution``) and not warned
+    of: such a surface is held, not a critical surface missed.
 
-    `_compute_fos` requires the GLE to converge on a noncircular surface
-    and on a circle supports cross, and rejects the surface otherwise; on
-    a circle no support crosses it takes `spencer_fos` /
-    `morgenstern_price_fos`, which fall back to the legacy approximate
-    solver. When the governing circle is one of those, its result says so
-    (``method_solved`` False, ``method_used``) and so does the search."""
-    if crit is None or not crit.is_circular or method not in _SCREENED_METHODS:
+    Where no trial surface had a solution the search could score (no
+    critical surface, so no governing family), it says that instead, with
+    the counts by family, method and reason (the step 2 review's D5)."""
+    from slope_stability.solution import METHOD_TEXT
+    if result.critical is None and result.no_solution:
+        n = sum(r["n"] for r in result.no_solution)
+
+        def reasons(r):
+            parts = [f"{r[k]} {text}" for k, text in (
+                ("not_converged", "did not converge"),
+                ("no_driving", "with no net driving moment or force"),
+                ("below_0_05", "solved below 0.05")) if r.get(k)]
+            return (f"{r['family']}, "
+                    f"{METHOD_TEXT.get(r['method'], r['method'])}: "
+                    f"{r['n']} ({', '.join(parts)})")
+
+        by = "; ".join(reasons(r) for r in result.no_solution)
+        return (f"No trial surface had a solution by the method that the "
+                f"search could score, so it reports no critical surface "
+                f"and no factor of safety: {n} trial surface(s) were left "
+                f"without one ({by}). Nothing stood in for the method "
+                f"(UFC 3-220-10 p. 362: critical failure surfaces can be "
+                f"missed as a result of non-convergence). Check with "
+                f"another method (Bishop's simplified method on circles), "
+                f"other search ranges, or a tension crack where the top of "
+                f"the surface is in tension (EM 1110-2-1902 C-10c, "
+                f"p. C-36).")
+    lost = [r for r in result.no_solution
+            if r["family"] == result.governing_surface
+            and r.get("not_converged")]
+    if not lost:
         return None
-    from slope_stability.search import trial_reinforcement
-    from slope_stability.slices import build_slices
-    from slope_stability.methods import solve_rigorous
-    slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
-    try:
-        if trial_reinforcement(geom, slip):
-            return None              # the search required convergence
-        slices = build_slices(geom, slip, n_slices)
-    except ValueError:
-        return None
-    spencer = method == "spencer"
-    sol = solve_rigorous(slices, slip, "constant" if spencer else "half_sine",
-                         tol)
-    if sol.solved:
-        return None
-    name = "Spencer" if spencer else "Morgenstern-Price"
-    crit.method_solved = False
-    crit.method_used = f"legacy approximate {name} solver"
-    crit.methods_without_solution = [name]
-    phrase = "Spencer's method" if spencer else "The Morgenstern-Price method"
-    return (f"{phrase} finds no equilibrium solution on the critical circle: "
-            f"{sol.reason}. The search scores a circle no support crosses "
-            f"with the legacy approximate solver when that happens, so the "
-            f"FOS reported, {crit.FOS:.3f}, is that solver's value, not a "
-            f"converged {name} solution.")
+    n = sum(r["not_converged"] for r in lost)
+    by = "; ".join(
+        f"{METHOD_TEXT.get(r['method'], r['method'])}: {r['not_converged']}"
+        for r in lost)
+    return (f"The governing family ("
+            f"{describe_surface_kind(result.governing_surface)}) left {n} "
+            f"trial surface(s) without a solution ({by}): the method did "
+            f"not converge on them, so they were not scored and nothing "
+            f"stood in for the method. A lower surface among them cannot "
+            f"be ruled out (UFC 3-220-10 p. 362: critical failure surfaces "
+            f"can be missed as a result of non-convergence). no_solution "
+            f"counts them for every family and method. Check with another "
+            f"method (Bishop's simplified method on circles), or a tension "
+            f"crack where the top of the surface is in tension "
+            f"(EM 1110-2-1902 C-10c, p. C-36).")
 
 
 def _near(a: float, b: float, tol: float) -> bool:
@@ -1447,15 +1477,11 @@ def apply_supplements(geom: SlopeGeometry,
     # The governing circle closed by a crack at its own centre's level, and
     # supports a moment-only method counts little of (GM-59).
     if best is not None and best_kind != INFINITE_SLOPE:
-        w = _reverse_curvature_warning(geom, best)
+        w = _crack_statement(geom, best, method, n_slices, tol, fos_fn)
         if w:
             warnings_out.append(w)
         if fos_fn is None:
             w = _support_arm_warning(geom, best, method, n_slices, tol)
-            if w:
-                warnings_out.append(w)
-            # A circle scored by the legacy approximate solver (GM-81)
-            w = _legacy_critical_warning(geom, best, method, n_slices, tol)
             if w:
                 warnings_out.append(w)
 
@@ -1590,7 +1616,8 @@ def m_alpha_confirmation(geom: SlopeGeometry, crit, method: str,
         info: Dict[str, Any] = {}
         refused = why = None
         try:
-            if len(build_slices(geom, slip, n)) < 3:
+            from slope_stability.cracks import geometry_at_fos
+            if len(build_slices(geometry_at_fos(geom, slip), slip, n)) < 3:
                 refused, why = "geometry", "fewer than three slices"
         except ValueError as exc:
             refused, why = "geometry", str(exc)

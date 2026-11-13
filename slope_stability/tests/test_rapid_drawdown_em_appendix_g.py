@@ -283,7 +283,8 @@ def test_a_first_stage_without_a_solution_gives_no_number(monkeypatch):
 
 def test_a_trial_without_a_solution_is_not_scored_by_the_search(monkeypatch):
     """The same procedure scores every trial of the drawdown search: a
-    trial on which a stage has no solution is left out."""
+    trial on which a stage has no solution is left out, and counted
+    (GM-140 step 2)."""
     from slope_stability.rapid_drawdown import search_rapid_drawdown
     monkeypatch.setattr(
         rd, "_spencer_solution",
@@ -292,6 +293,8 @@ def test_a_trial_without_a_solution_is_not_scored_by_the_search(monkeypatch):
                               n_slices=12, toe_circles=False,
                               infinite_slope=False, refine=False)
     assert r.no_surface_found and r.to_dict()["FOS"] is None
+    counted = [rec for rec in r.no_solution if rec["method"] == "duncan_3stage"]
+    assert counted and counted[0]["n"] > 0
 
 
 def test_the_search_scores_a_trial_as_the_single_surface_does():

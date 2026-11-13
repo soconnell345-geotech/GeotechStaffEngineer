@@ -24,7 +24,8 @@ stabilizing piles in every method (`reinforcement.py`).
 - `geometry.py` — SlopeSoilLayer (flat or polyline top and bottom), SlopeGeometry (polyline surface/GWT); `column_at`, the one lookup of the layer at a point (GM-140 step 1)
 - `slip_surface.py` — CircularSlipSurface (center + radius), PolylineSlipSurface (polyline points); a surface below the ground over more than one stretch is refused (`GroundCrossingError`, GM-122)
 - `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure (the weight summed over `SlopeGeometry.column_at`)
-- `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`; the `*_legacy` approximate forms are the fallback), solve_rigorous()
+- `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`); each returns the method's own solution or raises `NoSolution` (GM-140 step 2: the `*_legacy` approximate forms and `solve_rigorous()` are removed)
+- `solution.py` — `solve_method()`, the one solver every caller uses for a method (a result, every search family, the yield acceleration, FOSM, Monte Carlo): a `MethodSolution` with the method's own FOS, or None and the reason; `NoSolution`; `check_method()` / `check_interslice()` (an unknown name is refused)
 - `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
 - `reinforcement.py` — nails, anchors, geosynthetics and stabilizing piles as forces at the base of the slice each crosses, in every method (GM-53, GM-59)
 - `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering; a rigorous noncircular solution must hold about a second axis and slicing (`_solution_fails`, GM-57 review); the search's time budget and the Bishop screen (`search_budget`, `bishop_screen`, GM-123)
@@ -112,6 +113,140 @@ the repository).
   limit is still the lowest flat `bottom_elevation`); `ru` still uses the base
   layer's unit weight over the column (the account's D3). See
   `module_work/gm140/STEP1_CHECK.md`.
+
+## Tension cracks and reverse-curvature circles as printed (GM-140 step 4, 2026-11-13)
+
+The rule lives in `cracks.py`, one for every method, surface family and
+caller. Print: USACE EM 1110-2-1902 (31 Oct 2003) 2-2f, pp. 2-6 to 2-9, and
+C-10c, p. C-36; Slide v6 Tutorial 16, p. 16-1.
+
+**What a crack does** (`tension_crack_model`). `'truncation'` (default): the
+slip surface ends where it reaches the bottom of the crack, the soil upslope
+of the crack is left out, and the slices end at a vertical boundary there
+(EM 2-2f(3): "terminating the slices near the crest of the slope with a
+slice having a vertical boundary"; C-10c; Slide: "A tension crack
+essentially terminates the slip surface"). The mass that is kept is cut into
+the `n_slices` asked for. `'strength'` keeps the cracked soil as driving
+weight without strength: the default before this step, with no printed
+source, kept as a stated option. Either way the crack's water acts on the
+vertical boundary: 0.5 gamma_w z_w^2 at z_w / 3 above the crack's bottom; a
+`tension_crack_water_depth` above the crack's own depth fills it.
+
+**Where it is** (`tension_crack_side`). `'crest'` (default): the end of the
+slip surface where the ground is higher (EM 2-2f(3): near the crest),
+whichever way the slope faces (`cracks.crest_side`; ends at one level:
+low x). `'entry'` / `'exit'` give the end. The crack's bottom is the ground
+at that end of the surface less the depth. The crack stands where the
+surface reaches that bottom, which is where the slices end; the result
+reports it there (`tension_crack['x_m']`, the ground `ground_z_m` and the
+bottom `base_z_m` at that x) and the plot draws it there.
+
+**A surface wholly within the cracked depth.** A surface that nowhere passes
+below the crack's depth, measured below the ground above it
+(`cracks.depth_below_ground`), has no vertical boundary at the crack's
+bottom (EM 2-2f(3); C-10c): it is no slip surface. A search refuses and
+counts it (`crack_refused['within_cracked_depth']`); given to
+`analyze_slope` it raises `cracks.CrackRuleRefused` saying so. Without this,
+a search with a deep given crack settled on slivers on the face held wholly
+within the crack (ACADS 1(b) with its 3.81 m water-filled crack on Slide2's
+own centre grid: F 0.052 on a 0.6 m sliver; so did the module before
+step 4, 0.050 with the old default and 0.052 with the surface ended at the
+crack). A Rankine depth that would reach below the deepest point of the
+surface is solved again from F with no crack; the scan stops at that depth.
+
+**How deep** (`tension_crack_depth_basis`):
+
+| Basis | Depth | Print |
+|---|---|---|
+| `'given'` (default) | `tension_crack_depth`; 0 = no crack | the caller |
+| `'rankine'` | d = 2 c_D / (gamma tan(45 - phi_D / 2)), c_D = c / F, phi_D = arctan(tan(phi) / F) | Eq. C-36, p. C-36 ("for total stresses and homogeneous soil"); Eqs. 2-5, 2-6, p. 2-9 (Eq. 2-4 is the same depth) |
+| `'min_fos'` | the depth of minimum factor of safety from a scan | 2-2f(4), p. 2-6; C-10c(1), p. C-36 |
+
+* **Rankine.** F is the factor of safety of the surface itself, by the method
+  in use: the surface is solved, the depth recomputed, and so on from F = 1
+  until the depth changes by less than 1 mm (`DEPTH_TOL`; at most 25
+  solutions). c, phi and gamma are those of the soil at the ground at the
+  crack. A depth past that soil's bottom stops there (C-10c: the crack is as
+  deep as the embankment and does not extend into the foundation), and the
+  result says so. c = 0 gives no crack. Module's readings, each stated in the
+  result: a drained soil with pore water pressure inside the cracked depth
+  (the water table there, ru, or a pressure grid) is scanned instead, because
+  2-2f(6), p. 2-9, prints no equation for effective stresses; so is a SHANSEP
+  or Hoek-Brown soil (no c and phi); an `'anisotropic'` soil takes its active
+  strength with phi = 0 (Rankine's active pressures).
+* **Scan.** 21 depths in equal steps from 0 to the lowest point of the
+  surface's upper half, shallowest first; the first minimum met is taken
+  (past the depth that removes the tension a deeper crack removes
+  compression, and F rises: 2-2f(4), "tensile but not compressive stresses
+  are eliminated"). A factor of safety still falling at the last depth has
+  no minimum and the surface gets no number. On the made-up slope of
+  `test_cracks_as_printed.py` the scan's depth is 3.10 m and Rankine's
+  2.85 m, F within 0.001: the manual's two ways agree.
+
+**Reverse-curvature circles** (`reverse_curvature`; the owner's call
+OWN-103, as the orchestrator refined it on the step 4 review's F1). A circle
+whose centre is below the ground at its upper end would turn back over
+itself above its vertical tangent, at the centre's level. The tension crack
+is a condition of the analysis, set by the engineer and the same on every
+trial surface; a circle's shape never switches it on. `'tension_crack'`
+(default): with a crack asked for (`tension_crack_depth`, or
+`tension_crack_depth_basis` `'rankine'` or `'min_fos'`), such a circle is
+closed by that crack, its surface ending at the crack's bottom like any
+other, where its overhang (the centre's depth below the ground) lies within
+the crack's depth; a circle overhanging deeper is discarded (a crack is
+justified only to the depth the soil can be in tension, C-10c). With no
+crack asked for, every such circle is discarded: it is not an admissible
+surface, and naming a crack admits those within its depth. `'discard'`
+discards every such circle. A circle overhanging at its lower end is always
+discarded: a crack is at the upper end (EM 2-2f(3)) and no print closes the
+other. A search counts the surfaces the crack rule refuses by reason and
+locates them (`SearchResult.crack_refused`: `reverse_curvature_no_crack`,
+`reverse_curvature_deeper_than_crack`, `reverse_curvature_no_crack_at_end`,
+`reverse_curvature_discard_asked`, `within_cracked_depth`,
+`scan_no_minimum`; `n_discarded_reverse_curvature` sums the four
+reverse-curvature reasons), and its `choices` name each; a discarded circle
+given to `analyze_slope`, `rapid_drawdown_fos` or `yield_acceleration`
+raises `cracks.ReverseCurvatureDiscarded` (a `cracks.CrackRuleRefused`) with
+the reason and the depths. The crack from the centre's level to the ground,
+which no printed source gives, is removed. (As first built, step 4 closed a
+reverse-curvature circle with Rankine's crack whenever no crack was given,
+so a circle's shape switched the crack on: the search's minimum then jumped
+where the centre crossed the crest's level, and Slide2 #85 read 1.361 on such
+a circle. The review's F1 removed that; `reverse_curvature_crack_basis` is
+gone.)
+
+**How it is wired.** `cracks.plan_crack` says what a surface's crack needs;
+`cracks.solve_with_crack` hands the caller's solver copies of the geometry
+with the crack fixed (`fixed_geometry`), repeating as the basis requires.
+`slices.build_slices` reads the crack from there (`crack_for_slices`) and
+raises `cracks.CrackDepthNeeded` for a geometry whose crack still depends on
+the factor of safety, so nothing slices such a surface on a silent basis.
+The callers: `analyze_slope` (and `compare_methods`), the search scorer
+`search._compute_fos` (every family: grid and entry/exit circles, circles
+through and above the toe, planes, random, differential-evolution,
+particle-swarm and weak-layer polylines; a `fos_fn` such as the drawdown
+search's gets the fixed geometry), `rapid_drawdown_fos` (one crack for every
+stage, at the drawdown F), `yield_acceleration` (Rankine's depth at F = 1,
+the state it solves for; a scanned depth from the surface without kh), and
+through `_compute_fos` the FOSM and Monte Carlo runs (each run its own
+crack), so also `reliability/wrappers.py`, `geo_project`'s builder, the
+agent's adapter and the calc packages. A result carries the crack it was
+solved with (`tension_crack`, the depth used, one warning line); a search's
+`choices` say the crack's model, side and depth basis and what was done with
+reverse-curvature circles.
+
+**Measured** (VALIDATION.md B21): ACADS 1(b) 1.603 / 1.599 / 1.600 on
+Slide2's circle and, searched on Slide2's own grid, Bishop 1.590 / Spencer
+1.585, against the printed 1.596 / 1.592 / 1.592; V-031 with its dry crack
+1.417 / 1.422 printed; V-043's clay crest 0.964 against 0.975. With no crack
+asked for, the searches that read a reverse-curvature circle as first built
+read what they read before step 4, the overhanging circles discarded:
+Taylor's 45 deg slope 1.942 against 1.947, V-054's steep clay slope 2.346
+(printed 2.16 for the slope, whose profile ends at the toe), Slide2 #85 with
+its support Bishop 1.508 / passive 1.316 against 1.531 / 1.324 (D&W 1.51 /
+1.32). The vertical cut reads 0.935 against Taylor's 0.851, a strict xfail
+with the reason (before step 4, 0.842 on a circle closed at its centre's
+level; with Rankine's crack asked for, 0.605).
 
 ## Public API
 ```python
@@ -598,18 +733,7 @@ Slide2 "Active/Passive Force Application"):
 Every method honours the choice (before GM-59 only Fellenius / Bishop, and
 only for piles; the GLE applied every support unfactored).
 
-**Reverse-curvature circles** (`SlopeGeometry.reverse_curvature`). A circle
-whose centre lies below the ground where it comes out rises past the
-centre's level and would turn back over itself. Slide2 calls these "reverse
-curvature" surfaces, which "cannot actually exist", and by default closes
-them with "a vertical tension crack where the slip surface begins to reverse
-direction (i.e. when the slip surface y-coordinate is equal to the slip
-center y-coordinate)", always dry; otherwise it discards them. The module has
-always done the former (`find_entry_exit` ends the circle where the arc is
-vertical, at the centre's level). Now: `'tension_crack'` (default, as
-Slide2 and as before) or `'discard'` (the searches drop such circles; a
-circle given to `analyze_slope` is still evaluated). A search whose
-governing circle is one says so in `warnings`, with the crack depth.
+**Reverse-curvature circles** (`SlopeGeometry.reverse_curvature`): see "Tension cracks and reverse-curvature circles as printed" above (GM-140 step 4). Before it such a circle was closed by a dry crack from its centre's level to the ground, as Slide2's default is quoted to do; the numbers in the table below marked "default" are from then.
 
 **Bishop / OMS critical circle with supports at a short arm.** When the
 supports crossing a Bishop or OMS critical circle act with an average arm
@@ -699,7 +823,116 @@ missed a slice's horizontal equilibrium by up to 199 lb/ft. Runtime of the
 #85 default searches (once each, shared laptop): Spencer 40 -> 37 s, GLE
 62 -> 32 s; #86 unchanged (Bishop 1.612, Spencer 1.606, GLE 1.606).
 
+### A method's own solution, or no number (GM-140 step 2, 2026-11-13)
+**The rule.** A factor of safety reported under a method's name is that
+method's own converged solution on that surface. Where the method has no
+solution there is no number: `FOS` is None, `method_solved` is False and the
+result says why. One rule for every method (Ordinary Method of Slices,
+Bishop, Janbu, Spencer, Morgenstern-Price, GLE), every family of surfaces
+and every caller.
+
+**Print.** UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as
+a result of non-convergence. The engineer should be able to identify when
+convergence issues are present." EM 1110-2-1902 C-10d (pp. C-37 to C-38)
+lists the ways to avoid non-convergence (reject the unrealistic one of
+multiple solutions, a sensible starting F, a realistic initial surface).
+The methods' own equations: Bishop (1955) Eq. 13, p. 10; Spencer (1967)
+Eqs. 7 and 8, p. 15; Morgenstern and Price (1965) Eq. 18, p. 85.
+
+**What it replaces** (the account's D23, D27, D30 and parts of D49; GM-81's
+rest, GM-139). It supersedes the parts of the GM-81 section below that keep
+the approximate solver's value.
+
+- **One solver** (`solution.solve_method`). `analyze_slope`, the search
+  scorer `search._compute_fos` (every family), `newmark.yield_acceleration`,
+  `probabilistic.fosm_fos` / `monte_carlo_fos` (so
+  `reliability.wrappers.slope_reliability`) and the calc packages all take a
+  method's value from it. A search's score of a surface is the
+  single-surface FOS of that surface, to the last digit.
+- **No approximate solver.** `spencer_fos_legacy` and
+  `morgenstern_price_fos_legacy` are deleted (no consumer outside the
+  module). `spencer_fos`, `morgenstern_price_fos`, `bishop_fos`,
+  `fellenius_fos` and `janbu_fos` raise `NoSolution` (a ValueError, with
+  the reason) where they have no solution.
+- **Bishop and Janbu.** Bishop's iteration not within its tolerance after
+  50 iterations has no solution (it returned its last iterate with a Python
+  warning). Janbu's force-equilibrium iteration with no state has none.
+- **No driving.** A surface with no net driving moment or force has no
+  factor of safety. The solvers' internal 999.9 never leaves them as one;
+  `solve_method` also refuses a ratio at or above it (the driving sum zero
+  to rounding). 999.9 remains only as the searches' internal "not scored"
+  score (`search._FOS_MAX`) and inside `gle.GLEResult` beside
+  `converged=False`.
+- **The lambda search** (`gle.gle_fos`). GM-60's robust search (the scan
+  started from the nearest lambda with a state when lambda = 0 has none; a
+  lambda with no state stepped over; a bracket whose bisection does not
+  close passed over) ran only with supports. It is the one search for every
+  run. At a fixed lambda, an iteration on {N, E, X, F} that runs its 80
+  iterations without settling is solved by the direct march
+  (`_solve_marched`), and where that finds nothing there is no state: the
+  last iterate was returned as a state before, flagged by nobody.
+  *Not adopted:* the direct march as the fallback wherever the fixed-point
+  step cannot be taken (as with supports). Measured, it solves about half
+  of the otherwise unsolved random polylines of a noncircular search at 14
+  to 16 times the run time (111 s against 8 s; 297 s against 18 s) with the
+  same minimum in both cases tried. The step 2 review asked for it (D1);
+  tried in the fix round and not applied: it finds the Spencer solution of
+  a phi = 0 circle the module misses (2.9458 against an independent
+  2.9435), but it also gives "converged" states that rest on the m_alpha
+  clamp, with base tension, on two surfaces GM-131 found to have no
+  Spencer solution (1.56 at every slicing on w11; 1.19 at 30 and 41
+  slices only on the deep sandstone polyline), takes away the yield
+  coefficient of an ordinary slope (0.327 without it; with it Spencer has
+  no solution at a trial kh of 1.0 and no ky is given) and makes ACADS 4's
+  weak-layer search take 84.5 s against 22 s. A call for the owner; see
+  `module_work/gm140/STEP2_CHECK.md`.
+- **One moment axis.** On a polyline the GLE takes moments about its fitted
+  axis (`gle._fit_axis_point`) in a search and on one surface alike. The
+  search's second try about a fixed axis (`_noncircular_axis_point`) is
+  gone from scoring: with the lambda search above it rescued no surface in
+  four searches (about 2,100 trial solves), and it was how ACADS 4's weak-layer search
+  returned Spencer 0.515 on a surface `analyze_slope` had no solution on.
+  The fixed axes remain in the confirmation check of a would-be critical
+  surface (`_solution_fails`), which is a screen, not a score.
+- **Searches count.** `SearchResult.no_solution` lists the trials left
+  without a solution by family and by method (`n_no_solution` the total),
+  in `to_dict()` and `summary()`; `warnings` says so when the governing
+  family lost trials this way. Measured on Slide2 #85 without its support,
+  6 x 6 Spencer search: 267 circles went to the approximate solver before;
+  329 trials have no Spencer solution now (the search no longer stops its
+  families early on the approximate values) and the reported minimum is
+  1.047 on a toe circle where Bishop's simplified method gives 0.910: on a
+  steep phi = 0 slope Spencer's method has no solution on the circles that
+  govern (tension at the top; the force factor of safety approaches the
+  moment one from above and does not meet it for lambda up to 1.5), and the
+  result says a lower surface cannot be ruled out.
+- **Yield acceleration.** Every trial kh is the method's own solution. The
+  upper end of the kh bracket is halved until the method solves there.
+  Where a trial kh the bisection needs has no solution, `ky` is None with
+  the reason, the kh, and the bounds reached.
+- **FOSM and Monte Carlo.** FOSM with no solution at the mean values or at
+  a value one standard deviation off gives no result (a ValueError naming
+  the variable and the value). Monte Carlo counts realizations with no
+  solution (`n_no_solution`), leaves them out of the statistics and bounds
+  the probability of failure both ways (`pf_lower`, `pf_upper`). No printed
+  rule was found for either; the result says the rule is the module's own.
+  They solve the one given surface as `analyze_slope` does (before, through
+  the search scorer and its screens).
+- **Unknown names.** An unknown `method` is refused with the list of names
+  in every entry point (it ran Bishop's simplified method); an unknown
+  `f_interslice` likewise.
+- **Not changed** (other steps): which method scores which family, and a
+  polyline named for Bishop running Spencer (step 6); the m_alpha rule and
+  the acceptability checks (step 3); the rapid-drawdown stages and their
+  fall-back to Ordinary Method of Slices estimates (step 9;
+  `rapid_drawdown.py` is untouched, and its search does not yet count its
+  per-surface solves without a solution); the GLE's lambda range, tolerance
+  and m_alpha clamp (D29).
+
 ### A single surface: warnings, and no silent fallback (GM-81, 2026-10-15)
+*(Its two "what `FOS` holds when there is no solution" cases, the labelled
+approximate value and `_legacy_critical_warning`, are superseded by GM-140
+step 2 above: there is no number in either case.)*
 `analyze_slope` results (`SlopeStabilityResult`) now carry what the searches
 said only about their governing surface, and say when the method asked for
 has no solution:
@@ -718,39 +951,38 @@ has no solution:
 - **`method_solved`** False when Spencer / Morgenstern-Price / GLE finds no
   equilibrium solution on the surface (the GLE does not converge; the
   reason, e.g. "no lambda from -1.5 to 1.5 gives moment and force factors
-  of safety that agree", is in the warning). **`method_used`** names what
-  produced `FOS`: the method itself, the "legacy approximate ... solver",
-  or None. **`methods_without_solution`** lists the rigorous FOS fields
-  (headline or `compare_methods`) that hold no converged solution.
-- **What `FOS` holds when there is no solution** (decided here):
-  - *Supports cross the surface: `FOS` is None* (to_dict null,
-    `is_stable` None; the calc package prints no stability check). The
-    legacy approximate solver ignores supports, so its value is that of
-    the slope WITHOUT them: on #85's anchored toe circle 0.938 for a
-    surface Bishop puts at 1.372 (0.891 and 1.304 before GM-134). Before
-    GM-81 that number came back as
-    the Spencer FOS with only a Python warning. It is not returned at all.
-  - *No support crosses it: `FOS` is the legacy approximate solver's
-    value, labelled* (`method_solved` False, `method_used`, the warning
-    giving theta or lambda). That solver answers the same slope; on a
-    phi = 0 circle with theta = 0 it gives Bishop's value, which every
-    method satisfying moment equilibrium gives there. Values are unchanged
-    from before: `methods.solve_rigorous` makes the same solves as
-    `spencer_fos` / `morgenstern_price_fos`.
-  The same rule applies to the `compare_methods` Spencer / M-P values.
-- **Searches** never consume `analyze_slope`; they score with
-  `search._compute_fos`, which rejects a reinforced circle and any
-  noncircular surface with no GLE solution (GM-53, SS-6) and passes over
-  such toe circles in the rigorous re-scoring (GM-60). A circle no support
-  crosses is still scored by the legacy solver when the GLE fails (#85
-  without its support: every circle, see below), so when the governing
-  circle is one of those the search labels it
-  (`_legacy_critical_warning`: `critical.method_solved` False, a warning).
-- **Found on the way.** Without supports the GLE keeps the old lambda
+  of safety that agree", is in the warning). **`method_used`** is ''
+  when `FOS` is the method's own solution and None when the method has
+  none (it could name the "legacy approximate ... solver" until GM-140
+  step 2). **`methods_without_solution`** lists the FOS fields (headline
+  or `compare_methods`) that hold no converged solution.
+- **What `FOS` holds when there is no solution.** Since GM-140 step 2,
+  nothing, with or without supports: `FOS` is None (to_dict null,
+  `is_stable` None; the calc package prints no stability check), and the
+  same for the `compare_methods` values. What GM-81 decided here, now
+  superseded: with supports crossing the surface `FOS` was None, because
+  the legacy approximate solver ignored supports (on #85's anchored toe
+  circle 0.938 for a surface Bishop puts at 1.372; 0.891 and 1.304 before
+  GM-134; before GM-81 that number came back as the Spencer FOS with only
+  a Python warning); with no support crossing it `FOS` was that solver's
+  value, labelled (`method_solved` False, `method_used`, the warning
+  giving theta or lambda). That solver (`methods.solve_rigorous` and the
+  `*_legacy` functions) has been removed.
+- **Searches** never consume `analyze_slope`; since GM-140 step 2 they
+  score every surface by the method's own solution (`solution.solve_method`
+  through `search._compute_fos`, the solver `analyze_slope` uses too), and
+  a surface with no solution is not scored and is counted by family and
+  method (`no_solution`). Until then a circle no support crossed was scored
+  by the legacy solver when the GLE failed (#85 without its support: every
+  circle, see below), and the search labelled such a governing circle
+  (`_legacy_critical_warning`, removed).
+- **Found on the way.** Without supports the GLE kept the old lambda
   search (GM-60 made only the supported one robust), and on #85's clay
-  without its support it finds no solution on any circle tried (a 6 x 6
-  Spencer search called the legacy solver 415 times); the legacy value is
-  Bishop's there. Not changed here.
+  without its support it found no solution on any circle tried (a 6 x 6
+  Spencer search called the legacy solver 415 times); the legacy value was
+  Bishop's there. Changed in GM-140 step 2: the robust lambda search
+  serves every run (the direct march where the fixed-point step cannot be
+  taken is still used with supports only; see "The lambda search").
 
 ### One sliding mass per trial surface (GM-122, GM-124; 2026-10-16)
 **The rule.** Limit equilibrium takes the soil above the slip surface as one
@@ -1559,7 +1791,9 @@ boundary, entry to exit, and `build_slices` cuts there.
     rejects a MAJORITY of its trials emits a `warnings.warn` so an
     under-resolved / mis-windowed search is not silently reported as a clean
     result.
-  - **Convergence-gate moment axis has a robust fallback** (v5.3 review fix):
+  - **Convergence-gate moment axis has a robust fallback** (v5.3 review fix;
+    removed from scoring by GM-140 step 2, see "A method's own solution, or
+    no number"):
     `_rigorous_noncircular_fos` first tries gle's internal least-squares axis
     (byte-identical to before) and, only if that fails to converge, retries with
     an explicit pinned `axis_point` (`_noncircular_axis_point`: span midpoint,
@@ -1768,31 +2002,15 @@ boundary, entry to exit, and `build_slices` cuts there.
     byte-identical. Implemented via `reinforcement.moment_resistance` /
     `horizontal_resistance` (passive forces) alongside the existing `*_reduction`
     (active forces), split on `ReinforcementForce.passive`.
-- **Tension crack — side + model (v5.4 E4)**: `geom.tension_crack_depth` opens a
-  vertical crack at the CREST end of the slip surface; `tension_crack_water_depth`
-  fills it (hydrostatic thrust `0.5·γw·z_w²` at `z_w/3` above the crack base,
-  treated downstream as an always-driving magnitude). Two selectors, both
-  DEFAULT-PRESERVING:
-  * `tension_crack_side` = `'entry'` (default, low-x) or `'exit'` (high-x) — the
-    crack forms on whichever side the crest is on. The exit-side option removes
-    the old need to MIRROR the slope so the crest landed on the entry side (the
-    exit-side crack on the un-mirrored slope is machine-precision identical to the
-    entry-side crack on the mirror, by symmetry).
-  * `tension_crack_model` = `'strength'` (default) keeps the cracked wedge as
-    zero-shear-strength DRIVING soil; `'truncation'` REMOVES it from the sliding
-    mass (the mass ends at the vertical crack face), matching Slide2/UTEXAS.
-    Truncation is LESS conservative (removes the driving wedge). On Slide2 #2 /
-    ACADS 1(b) the truncation model reproduces the published water-crack FOS
-    (Bishop 1.596/Spencer 1.592/GLE 1.592) to <0.1%, resolving the V-026
-    strength-model conservatism (documented there as a CONVENTION). See
-    VALIDATION.md B9 / RESULTS V-026.
+- **Tension crack**: see "Tension cracks and reverse-curvature circles as printed" above (GM-140 step 4). Since that step the surface ends at the crack by default (`tension_crack_model='truncation'`), the crack is at the crest end (`tension_crack_side='crest'`) and its depth can be Rankine's or scanned; `'strength'` is the earlier default.
 - **Empty-space slices**: slices where the slip surface is below all soil layers
   are skipped (zero weight, no contribution)
 - **Nails**: `SlopeGeometry.nails` (`nails.SoilNail`) reach every method
   through `reinforcement.py`, with anchors, geosynthetics and stabilizing
   piles (see "Support forces in each method" above). The old nail path in
   `nails.py`'s own FOS integration is not used; its tests stay skipped.
-- **The legacy Spencer / Morgenstern-Price are APPROXIMATE (SS-1)**:
+- **The legacy Spencer / Morgenstern-Price were APPROXIMATE (SS-1)**
+  (removed by GM-140 step 2; the rest of this entry is history):
   `spencer_fos_legacy` / `morgenstern_price_fos_legacy` use a shifted
   m_alpha = cos(alpha−theta) + sin(alpha−theta)·tanφ/F formulation (with
   theta = const for Spencer, atan(λ·f(x)) for M-P) and a force-equilibrium

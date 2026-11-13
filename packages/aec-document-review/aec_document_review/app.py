@@ -341,6 +341,19 @@ def _follow_turn_job(job) -> None:
     """
     ss = st.session_state
     with st.chat_message("assistant"):
+        # The Stop button (BACKLOG TA-37, behind GEOTECH_STOP_BUTTON): only
+        # on a job started with the setting on, for this session's own
+        # conversation. The click reruns the page; its callback sets the
+        # job's flag first, and the turn ends at its next step.
+        if getattr(job, "stoppable", False) and not job.done:
+            if job.stop_requested:
+                st.caption("Stopping… the turn ends at its next step; a "
+                           "step already under way finishes first.")
+            else:
+                st.button("Stop", key=f"stop_turn_{job.thread_id}",
+                          on_click=job.request_stop,
+                          help="Stop this turn. What it has done so far is "
+                               "kept, and you can ask it to continue.")
         answer_box = st.empty()
         status = st.status("Working…", expanded=False)
         answer = ""
@@ -363,6 +376,8 @@ def _follow_turn_job(job) -> None:
         if res.get("error"):
             status.update(label="Error", state="error")
             st.error(res["error"])
+        elif res.get("stopped"):
+            status.update(label="Stopped", state="complete")
         else:
             status.update(label="Done", state="complete")
 
@@ -379,6 +394,7 @@ def _follow_turn_job(job) -> None:
     ss.last_turn_tokens = res.get("turn_tokens", 0)
     ss.total_tokens += res.get("turn_tokens", 0)
     ss.save_error = res.get("save_error")
+    ss.pop("spend_estimate", None)     # re-read after the turn (TA-05)
     if res.get("sp_sync") is not None:
         ss.sp_sync = res["sp_sync"]
     job.consumed = True
@@ -599,8 +615,9 @@ _STORAGE_POLL_S = 2.0
 
 def _storage_busy(store, thread_id) -> bool:
     """True while the Foundry dataset's first check, or a save of this
-    conversation, runs in the background. Never on SharePoint, which saves
-    within the turn."""
+    conversation, runs in the background: on Foundry, and on SharePoint by
+    the Tiny Apps route, which saves after the turn (TA-40). The Funhouse
+    SDK's SharePoint saves within the turn, so never there."""
     try:
         check = getattr(store, "check_state", None)
         state = getattr(store, "save_state", None)
@@ -692,8 +709,8 @@ def _storage_status(store, thread_id, drawn: Optional[float] = None) -> None:
 
 def _storage_panel(store, thread_id) -> None:
     """:func:`_storage_status`, as a fragment that looks again every
-    :data:`_STORAGE_POLL_S` while something runs in the background (Foundry
-    only, in practice); drawn once otherwise."""
+    :data:`_STORAGE_POLL_S` while something runs in the background (Foundry,
+    and SharePoint by the Tiny Apps route, TA-40); drawn once otherwise."""
     try:
         store.not_kept_reason()      # starts the dataset's first check
     except Exception:                                  # noqa: BLE001
@@ -1309,8 +1326,15 @@ with st.sidebar:
         # the first check or a save runs in the background (INF-65).
         _storage_panel(_sp, ss.thread_id)
         if st.button("Sync now", key=f"spsync_{ss.thread_id}"):
-            with st.spinner(f"Saving to {_sp_label}…"):
-                ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
+            # Where saves run in the background (Foundry, and SharePoint by
+            # the Tiny Apps route, TA-40) the sync is queued like a turn's
+            # save and the status lines above follow it; a large first
+            # mirror no longer holds the page under the spinner.
+            if getattr(_sp, "background", False) is True:
+                sharepoint_store.save_after_change(_sp, ss.thread_id)
+            else:
+                with st.spinner(f"Saving to {_sp_label}…"):
+                    ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
             # the list of past conversations is read again when next shown
             ss.pop(sharepoint_store.listing_cache_key(**_sp_where), None)
             st.rerun()
@@ -1367,9 +1391,13 @@ with st.sidebar:
             _q = _rq.strip().lower()
             _hits = [r for r in _remote
                      if not _q or _q in r["name"].lower()]
-            if _sp_listed and not _remote:
-                st.caption(f"Nothing mirrored yet (or {_sp_label} could not "
-                           "be listed — Connection diagnostics shows why).")
+            # A listing that failed says why (TA-40: it read as "nothing
+            # mirrored yet"); the store's RemoteListing carries the reason.
+            _sp_list_error = getattr(ss.get(_sp_list_key), "error", None)
+            if _sp_list_error:
+                st.warning(f"{_sp_list_error} Refresh to try again.")
+            elif _sp_listed and not _remote:
+                st.caption("Nothing mirrored yet.")
             elif _remote:
                 st.caption(f"{len(_hits)} of {len(_remote)} mirrored "
                            "conversations" + (" match" if _q else ""))
@@ -1515,6 +1543,23 @@ with st.sidebar:
                     st.caption(_bline)
             if st.button("Refresh budget", key="budget_refresh"):
                 ss.budget_status = budget_panel.get_budget_status()
+                st.rerun()
+        elif budget_panel.estimate_on():
+            # No SDK: an estimate from the caller's own conversations'
+            # records (BACKLOG TA-05, behind GEOTECH_SPEND_ESTIMATE). Read
+            # once, again after each turn and on the refresh button.
+            if "spend_estimate" not in ss:
+                ss.spend_estimate = budget_panel.estimate_status(_ROOT)
+            _es = ss.spend_estimate
+            if _es:
+                _eline = budget_panel.format_estimate_line(_es)
+                if _es.get("cap") and _es.get("spent") is not None \
+                        and _es["spent"] / _es["cap"] >= 0.9:
+                    st.warning(_eline + " — nearly at the monthly budget.")
+                else:
+                    st.caption(_eline)
+            if st.button("Refresh estimate", key="spend_estimate_refresh"):
+                ss.spend_estimate = budget_panel.estimate_status(_ROOT)
                 st.rerun()
     except Exception:
         pass

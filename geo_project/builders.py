@@ -269,7 +269,10 @@ def run_analyses(project: Project,
 
     Returns ``{analysis_name: {...}}``. LE entries carry the SearchResult's
     critical surface (FOS, method, xc/yc/R) plus optional 'probabilistic'
-    results (FOSMResult / MonteCarloResult fields). FEM entries carry the
+    results (FOSMResult / MonteCarloResult fields). A probabilistic run that
+    gives no result (FOSM where the method has no solution at a perturbed
+    value, GM-140 step 2) leaves ``{'kind', 'error'}`` with the reason in
+    that entry, and the other analyses still run. FEM entries carry the
     FEMResult summary (FOS, converged, mesh size).
 
     Raw result objects are returned under '_result' keys for downstream
@@ -310,8 +313,16 @@ def run_analyses(project: Project,
             if a.probabilistic is not None and crit is not None:
                 variables = _probabilistic_variables(project, a.probabilistic)
                 if variables:
-                    entry["probabilistic"] = _run_probabilistic(
-                        geom, a, crit, variables)
+                    try:
+                        entry["probabilistic"] = _run_probabilistic(
+                            geom, a, crit, variables)
+                    except ValueError as exc:
+                        # e.g. FOSM where the method has no solution at a
+                        # perturbed value: no result, and why (GM-140
+                        # step 2); the other analyses still run.
+                        entry["probabilistic"] = {
+                            "kind": a.probabilistic.kind,
+                            "error": str(exc)}
                 else:
                     entry["probabilistic"] = {
                         "error": "no probabilistic variables defined "
@@ -364,11 +375,16 @@ def _run_probabilistic(geom, a: LEAnalysis, crit, variables) -> Dict[str, Any]:
         from slope_stability.probabilistic import monte_carlo_fos
         mc = monte_carlo_fos(geom, variables, n=spec.n, seed=spec.seed,
                              keep_samples=False, **common)
+        # Realizations with no solution by the method are counted and left
+        # out; pf is bounded both ways (GM-140 step 2): carried with pf.
         return {
             "kind": "monte_carlo", "n": mc.n,
             "fos_mean": mc.fos_mean, "fos_cov": mc.fos_cov,
             "pf": mc.pf, "pf_lognormal": mc.pf_lognormal,
             "beta_lognormal": mc.beta_lognormal,
+            "n_no_solution": mc.n_no_solution,
+            "pf_lower": mc.pf_lower, "pf_upper": mc.pf_upper,
+            "no_solution_note": mc.no_solution_note(),
             "variables": variables,
             "_result": mc,
         }

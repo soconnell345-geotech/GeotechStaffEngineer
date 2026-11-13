@@ -512,3 +512,28 @@ but the two were never run together here).
 - `_unclaimed_remotely`: when the library cannot be listed for the
   folder-name check, the conversation takes the name with its thread-id
   shard, as before, and the summary does not say the check failed.
+
+## The page edits (2026-11-13)
+
+Applied on task C's fix branch (`fix/ta-37-review`, which holds `app.py`)
+after master, with this task's merge, was merged into it. DR `app.py`:
+
+- **"Sync now"** goes through `sharepoint_store.save_after_change` where
+  the store's `background` is True (Foundry, and SharePoint by the Tiny
+  Apps route): the sync is queued and the status lines follow it, as after
+  a turn. Elsewhere (the Funhouse SDK's SharePoint) it mirrors at once
+  under the spinner, as before. On Foundry this changes too: the click no
+  longer waits for the save.
+- **"Find a past conversation"**: a listing whose `RemoteListing.error` is
+  set shows that reason as a warning with "Refresh to try again."; an
+  empty listing that was read says "Nothing mirrored yet." (live check 6
+  above now sees the reason).
+- **The two comments** in `_storage_busy` and `_storage_panel` now say
+  saves run in the background on Foundry and on SharePoint by the Tiny Apps
+  route.
+
+Tests: `tests/test_ta40_page_edits.py` (new, 4 tests, the real page through
+AppTest over a stand-in store): a background store's "Sync now" is queued
+and not mirrored, a store that is not background mirrors at once, a failed
+listing shows its reason and not "Nothing mirrored yet", an empty one says
+"Nothing mirrored yet.". GSE's copy (`webapp/app.py`) is not changed.

@@ -137,6 +137,7 @@ This repository builds three packages; the app also needs two more of the same p
 
 ## CURRENT WORKING STATE (2026-11-10; release 5.35.0) — 5.35.0 with planlens 0.15.0 (pin >=0.15), geotech-references 1.6.0 (pin >=1.6.0) and the new shared core aec-agent-core 1.0.0 (pinned exactly, published first): the app split's core filled (model connections, vision calls, guards and records, Word and Excel, the figure helper and plotting box; old import paths kept), Document Review stripped to what earned its place and bound to planlens.review, the report recompute check, local reference packs, SharePoint set up by the host team on any Microsoft cloud, and answers moving in fem2d, sheet_pile, drilled_shaft, wave_equation, MSE walls and some GEC-13 reference lookups (release notes by module in HANDOFF §0a-current item 0); also a deployment's own instructions (`GEOTECH_INSTRUCTIONS`, under the built-in rules) and Document Review copied into its own public package `aec-document-review` 0.1.0 on the core 1.0.0 (GSE still carries both pages) with a Tiny Apps template that installs it alone; before it 5.34.0 RELEASED with planlens 0.14.0 (pin >=0.14) and geotech-references 1.5.0 (pin >=1.5.0): the geotech calc modules checked against their printed references (many answers move; release notes by module in HANDOFF §0a-current item 0a), report ingest model-first by default, GSE on Foundry (installs on numpy 1.26, conversations saved to a Foundry dataset); review switches still OFF; before it 5.33.0 RELEASED with planlens 0.13.0 (pin >=0.13) and geotech-references 1.4.1 (pin >=1.4.1): hardened for OTHER testers on Tiny Apps by live smoke waves (per-user isolation, per-tester Prompter keys, one final answer per turn, Word/Excel in and out, tool errors never end a turn, faster vision, rotated-sheet markups) plus the brief-5 fixes and engineering fixes (GEC-12 Fig 7-15, sheet-pile water table, fem2d consolidation, downdrag basis); all review switches still OFF; before it 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
+- **Reference library 1.7.0 and the helper's table tools (2026-11-13; app branch `fix/refs-helper-results`; unreleased on the app side):** geotech-references 1.7.0 is released (main e1bbc5b, tag `v1.7.0`, on PyPI); the app pins it (submodule e1bbc5b, `geotech-references>=1.7.0` in `pyproject.toml`) and the references helper has `table_db` (`table_search`, `table_get`, `list_indexed_tables`) and `read_reference_table`; on a host without the PDFs it finds a page-only table and cites its page but cannot read its values (OWN-142). The released 5.35.0 requires `>=1.6.0`, so a fresh install of it already takes 1.7.0. An app release is the owner's (OWN-154); the notes for it are in HANDOFF section 0a-current.
 - **Master since 5.35.0 (2026-11-10, unreleased):** the deployment review
   of Document Review (BACKLOG TA-36; `module_work/docreview_review_2026-11-10/
   REVIEW.md`): fixes in `aec-document-review`, `aec-agent-core` and the Tiny
@@ -179,11 +180,52 @@ This repository builds three packages; the app also needs two more of the same p
   empty folder, OWN-147); and on the Graph route SharePoint saves run on
   background workers, with a size limit
   (`GEOTECH_SHAREPOINT_MAX_UPLOAD_MB`, 2048 MB; live checks TA-42).
+  From the same round, also unreleased: a Stop button and a spend line
+  on the Document Review page, each behind a setting, off by default
+  (`GEOTECH_STOP_BUTTON`, `GEOTECH_SPEND_ESTIMATE`; `turn_jobs.py`),
+  and the page's model-call budget counted over the whole turn (40
+  calls, always on); `read_office` returns a Word file's comments,
+  notes, headers and text boxes and an Excel sheet's merged labels
+  (`docx_renderer._DocxReader`, `office_text.py`); the run record
+  keeps stalled, late and retried calls (`side_call_timeout`,
+  `side_call_late_end`, `engine_retry`, `vision_slot_timeout`), a
+  stalled page reading is given up at 90 s, the model client asks
+  again once, and the wait for a reading slot is bounded
+  (`GEOTECH_VISION_SLOT_WAIT_S`, 600 s; the gateway check is TA-24);
+  planlens main holds four tool-result repairs (BACKLOG Done PL-39,
+  unreleased: every page 11 x 17 in or larger is on `pages_to_view`,
+  and a search lists only the pages it could not read), and the
+  OpenCV probe's child leaves no core file on a FIPS host.
   Also since 2026-11-13: after every ingest, report ingest writes
   the report as five tables in JSON Lines with a `schema.json`
   (`report_ingest/tables.py`, `docs/REPORT_TABLES.md`; sent to the dataset
   `GSE_REPORT_TABLES_DATASET` names; `GSE_REPORT_TABLES=0` turns it off;
   not yet run on Foundry, RI-212).
+  Site data and drawing import since 2026-11-13: a GEF CPT keeps a missing
+  reading missing, a DXF is read in its header's units (warned when the
+  header alone decided), and the DXF and PDF build tools assume no soil
+  property: a layer without one is refused.
+  Reliability since 2026-11-13: FOSM and PEM refuse bounds that cut off
+  probability, Monte Carlo counts dropped realizations, pystra's Monte
+  Carlo runs every sample asked for with a local `seed`, and a failed SORM
+  returns no SORM numbers.
+  Piles and shafts since 2026-11-13: a driven pile, drilled shaft or
+  laterally loaded pile whose toe is below the soil layers given is
+  refused unless `extend_last_layer` is set (the result then says the last
+  layer was carried on), and lateral p-y layers start at the ground.
+  Pile groups since 2026-11-13: `pile_group_simple` measures the piles from
+  their centroid and includes the product term where the layout is not
+  symmetric, `pile_group_6dof` turns a battered pile's stiffness to the
+  global axes in full and says its loads act at the origin, and
+  `equivalent_footing_settlement` is a tool (calls on OWN-143).
+  Liquefaction and site response since 2026-11-13: both SPT procedures sum
+  unit weight times thickness for total stress (B&I results move where the
+  unit weight varies with depth), a linear site response run reports its
+  strain, and pystrata takes `water_table_depth` and `k0`.
+  Settlement and support of excavation since 2026-11-13: Schmertmann refuses
+  layers that do not cover the strain influence diagram unless
+  `below_profile` says what lies there, and a braced support's load comes
+  from its own `spacing` and `angle_deg` (no default spacing).
   In the shared core since 2026-11-13 (so it ships with a core release,
   INF-76): a Python warning raised inside a method reaches the agent under
   `warnings` (`aec_agent_core/call_warnings.py`), and a value outside a
