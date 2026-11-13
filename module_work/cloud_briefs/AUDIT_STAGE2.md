@@ -17,6 +17,7 @@ Read `COMMON_MODULES.md` (beside this file) first: its rules bind every task her
 - **Two things another task is building; do not build them yourself.** Branch `claude/gm-316-317-warnings-allowed-values` makes a Python warning raised inside a method reach the agent in the result's `warnings`, and refuses a value outside a parameter's `allowed_values`. So where a finding is only "this `warnings.warn` never reaches the agent", leave the warning as it is. Where the result must say something even with warnings delivered (a flag, a count, a refusal, an entry in `choices`), do that.
 - **A changed tool description:** hand-edit the matching rows of `docs/user_manual/manual.html`; re-record fingerprints in a commit of its own (COMMON_MODULES).
 - **Do not edit:** `BACKLOG.md`, `HANDOFF.md`, `CLAUDE.md`, `slope_stability/` (change hold), `packages/aec-document-review/`, `packages/aec-agent-core/` (the dispatch task owns the core this round), `geotech-references/`.
+- **Commit trailer.** End each commit message with the Co-Authored-By line of the model you are running as (for example `Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>`), not the one COMMON_MODULES prints.
 - **CHECK.md also carries:** a table of every finding you took (the audit's row, and what you did: fixed, refused, stated, wrong finding, or not done and why); "Calls made"; a release note if any returned value changes.
 
 ## DOC-24: quick fixes
@@ -82,4 +83,30 @@ Branch `claude/gm-326-327-subsurface-dxf`. CHECK at `module_work/gm326/CHECK.md`
 
 - `compute_trend`: fewer than two points is refused; the log fit reports how many points it dropped; the unknown trend type is the dispatch task's (leave it).
 - The GEF reader keeps a missing or non-finite reading missing (not 0.0) and reports the count per column; check what the readers of its output do with a missing value.
+- Another session (branch `claude/gm-140-step1-one-material-per-point`) is changing how `dxf_import` turns a drawing into slope geometry. Do not edit those functions; if a fix here needs one of them, say which in CHECK.md and stop short of it.
 - `dxf_import`: every default that stands in for a soil or nail property is listed in `defaults_used`; a missing strength is refused (the module's own documents say strengths come from the user); the drawing's own units are compared with `units`, and a mismatch is refused or converted, said either way; text annotations are converted like geometry.
+
+## GM-310: the default changes from the 2026-11-12 judgement calls
+
+Branch `claude/gm-310-judgement-call-defaults`. CHECK at `module_work/gm310/CHECK.md`.
+
+The source, binding: `module_work/owner_calls_2026-11-12/CALLS.md` section B (the calls for OWN-84, OWN-85, OWN-82, OWN-68, OWN-108, OWN-112, OWN-114, OWN-118 and OWN-131) and, from its section A, the call for OWN-105 (the downdrag summary's wording). BACKLOG GM-310 lists the ten changes. Moment-curvature EI (OWN-19) is GM-311, not this task. Nothing in `slope_stability/`.
+
+- One commit per default: the code, its tests, true `choices` and `defaults_used`, the tool description, the manual row. The fingerprints commit comes last.
+- Every one of these moves answers. For each default, CHECK.md gives before and after on one made-up case, and a release note. List every probe, worked example, validation example and saved fixture whose answer moves or which is now refused; an example that is now refused gets the input it now needs, and you say so.
+- Where a call says "refuse without X", the message names X and what to give.
+- Other sessions are editing the same modules at the same time, in other functions (piles, pile groups, liquefaction outputs). Keep each change inside the function it belongs to and do not reformat or reorder a file.
+
+## GM-328: sample calc packages rebuilt by script, the calc helper told of the worked examples, fem2d's package
+
+Branch `claude/gm-328-sample-calc-packages`. CHECK at `module_work/gm328/CHECK.md`. Read BACKLOG GM-328 and OWN-144, the audit's `results/calc_examples.md`, `calc_package/DESIGN.md`, and `module_work/harness_theory/` for the calc helper before touching its prompt.
+
+1. **The script**, `docs/examples/build_sample_packages.py`. For every `*_package` method in the calc_package adapter's registry it builds one sample package, through the same dispatch call the agent makes, from the inputs of a published worked example. Prefer an entry of `funhouse_agent/worked_examples.json` (it carries the dispatch calls and the printed source), then a `validation_examples` case; made-up inputs only where no published example fits, and say which.
+   - The inputs live in ONE data table beside the script (module, method, the example's id and printed source, the call's parameters), not scattered through code.
+   - Output goes to a folder named on the command line (default `docs/examples/out/`, which must be gitignored): one file per package named `<module>__<method>.html` (a PDF too where the host can render one), each figure the package draws as its own PNG in a `figures/` folder with a stable name, an `index.json` (per package: module, method, example id, source citation, the files written, the app version) and an `INDEX.md` a person can read. A later task builds a figure test set on these files, so keep the names stable.
+   - Commit NO output. Where samples live is the owner's open question (OWN-144), and the old committed samples (`docs/examples/*.html`, `sample_pdfs/`, `sample_calc_package.pdf`) are left alone.
+   - A standing test: every `*_package` method in the registry has a row in the table, and each row's call runs and returns a package. If the whole set takes more than about a minute, mark the full run slow the way this repo marks slow tests and keep a fast subset in every run.
+   - A package call that fails on its example, or a package that is visibly wrong on it (a missing section, an empty table, a figure that does not match the numbers), is a finding: list it in CHECK.md, and fix it only if the fix is a few lines in the package code.
+2. **fem2d.** It is registered in the renderer with its calculation steps and tables, and the agent has no `fem2d_package` method. Add one on the pattern of the existing package methods (description, probe, manual row, and a row in the sample table from the FEM worked example).
+3. **The calc helper and the worked examples.** The calc helper's prompt (`funhouse_agent/deep/agent.py`, the `_CALC_*` texts) never mentions the `worked_examples` module it can reach; only the main prompt does. Add ONE short instruction to the helper, in the main prompt's words: before a calc package that is not trivial, find the nearest worked example and follow its structure and its `report_notes`, never its numbers. Pin it offline the way the helper's other prompt lines are pinned, re-record fingerprints in a commit of its own, and add the live check to `module_work/LIVE_TEST_QUEUE.md` (what to run, what to look for). Change no other prompt text.
+4. Not this task: packages for settlement's separate methods, pystrata, signals or the structural engines.

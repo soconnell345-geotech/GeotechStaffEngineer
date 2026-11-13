@@ -93,7 +93,7 @@ METHOD_INFO = {
         "brief": "Linear-elastic 2D/3D frame: nodes/members/supports/loads -> reactions + member force/deflection envelopes. SI: m, kN, kPa.",
         "parameters": {
             "nodes": {"type": "array", "required": True, "description": "[{name, x, y[, z]}] coordinates in m."},
-            "members": {"type": "array", "required": True, "description": "[{name, i, j, E (kPa), A (m2), Iz (m4)[, Iy, J, G, nu]}]."},
+            "members": {"type": "array", "required": True, "description": "[{name, i, j, E (kPa), A (m2), Iz (m4)[, Iy, J, G, nu, rho]}]. rho (density) is stored on the material but NO self-weight is applied: add the member weight yourself as a member_dist_loads entry."},
             "supports": {"type": "array", "required": True, "description": "[{node, type: fixed|pinned|roller_y|roller_x}] or explicit dx..rz booleans."},
             "nodal_loads": {"type": "array", "required": False, "description": "[{node, direction: FX|FY|FZ|MX|MY|MZ, value (kN or kN*m)}]. -FY = downward."},
             "member_dist_loads": {"type": "array", "required": False, "description": "[{member, direction (default FY), w (kN/m) or w1/w2[, x1, x2]}]. Negative FY = downward."},
