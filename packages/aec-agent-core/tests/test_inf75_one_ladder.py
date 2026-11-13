@@ -69,9 +69,13 @@ def test_a_timeout_is_told_from_a_quick_refusal():
     named.error_name = "MadeUp:LlmSocketTimeout"
     wrapped = RuntimeError("the call failed")
     wrapped.__cause__ = APITimeoutError("no answer")
-    for exc in (APITimeoutError("no answer"), TimeoutError(), gateway,
+    for exc in (APITimeoutError("no answer"), TimeoutError(),
                 named, wrapped):
         assert vision_engine.is_timeout(exc), exc
+    # a 504 is a timeout only after a slow try (review, 2026-11-13)
+    assert not vision_engine.is_timeout(gateway)
+    assert vision_engine.is_timeout(gateway,
+                                    took_s=vision_engine.SLOW_TRY_S)
     busy = Exception("made-up: unavailable")
     busy.status_code = 503
     for exc in (RateLimitError(), busy, ConnectionResetError("reset"),

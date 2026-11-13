@@ -355,6 +355,9 @@ MAX_RETRY_AFTER_S = 30.0
 
 #: The wait between tries (tests replace it).
 _sleep = time.sleep
+#: The clock an ask's running time is read off, from its slot to its end
+#: (:data:`SLOW_TRY_S`, a late end's ``held_s``; tests replace it).
+_clock = time.monotonic
 
 _BUSY_TYPES = {
     "ratelimiterror", "internalservererror", "overloadederror",
@@ -452,14 +455,28 @@ _TIMEOUT_TYPES = {"apitimeouterror", "timeoutexception", "readtimeout",
                   "connecttimeout", "writetimeout", "pooltimeout", "timeout",
                   "readtimeouterror"}
 #: HTTP statuses that mean the same seen from a gateway: it gave up waiting.
+#: Only after a slow try (:data:`SLOW_TRY_S`): see :func:`is_timeout`.
 _TIMEOUT_STATUSES = (408, 504)
 
+#: How long a try must have lasted, in seconds, before a 408 or 504 counts
+#: as a timeout (review of BACKLOG TA-24, 2026-11-13). A gateway that
+#: answers 408 or 504 QUICKLY is refusing, not timing out, and keeps the
+#: whole busy ladder, as before TA-24; one that answers it after a long wait
+#: has cost about what a timeout costs. 20 s is a judgment, not a
+#: measurement: it is about the 99th percentile of a side call in Foundry
+#: brief 7 (under 22 s), so a try that lasted longer was waiting, not
+#: working. No gateway's own time limit has been measured.
+SLOW_TRY_S = 20.0
 
-def is_timeout(exc) -> bool:
+
+def is_timeout(exc, took_s: Optional[float] = None) -> bool:
     """Whether ``exc`` is a model request that got no answer IN TIME, as
     against one refused quickly (a rate limit, an overload): the client's
-    own timeout, a gateway's 408 or 504, or an error a service names a
-    timeout. Read off the error's type, status and name, never its text.
+    own timeout, an error a service names a timeout, or a gateway's 408 or
+    504 after a try that lasted at least :data:`SLOW_TRY_S` (``took_s``,
+    the seconds the try took; a 408 or 504 with ``took_s`` unknown or
+    shorter is a quick refusal). Read off the error's type, status and
+    name, never its text.
 
     A timeout is the slow way to fail: each ask costs the whole limit. So
     one is asked again at most once in all, by the client and the ladders
@@ -471,11 +488,11 @@ def is_timeout(exc) -> bool:
             return True
         if type(e).__name__.lower() in _TIMEOUT_TYPES:
             return True
-        if _status_of(e) in _TIMEOUT_STATUSES:
-            return True
         if "timeout" in str(getattr(e, "error_name", "") or "").lower():
             return True
-    return False
+    if took_s is None or took_s < SLOW_TRY_S:
+        return False
+    return any(_status_of(e) in _TIMEOUT_STATUSES for e in _chain(exc))
 
 
 def client_retries(model) -> int:
@@ -494,6 +511,18 @@ def may_ask_timeout_again(model, timeouts: int) -> bool:
     already asks again by itself (``max_retries`` of 1 or more) has used
     the one retry inside the try, so the ladder asks no more; with a
     client that does not, the ladder asks once.
+
+    What the rule bounds is the asks a ladder sees. A vision side call
+    given up at its own limit (:data:`TIMEOUT_ENV`, shorter than the
+    client's request timeout) is asked once more by
+    :func:`invoke_side_call` whatever the client's retries, and each ask
+    given up keeps running on its thread, where the client may still send
+    its request once more: with the client asking again once, up to four
+    requests reach the service for one look. Each ask given up is a
+    :data:`TIMEOUT_EVENT` and each that ends a :data:`LATE_END_EVENT`, but
+    the record cannot count the client's re-sends inside an ask: a request
+    that timed out got no response, so the Tiny Apps route's per-call HTTP
+    list (``http_tries``, :mod:`aec_agent_core.http_trace`) never sees it.
 
     Before (the deployment review of 2026-11-10): the Prompter client asked
     a timed-out request four more times at 180 s each inside every try of
@@ -641,7 +670,8 @@ def _look_facts() -> dict:
 
 
 def _invoke_once(model, messages, timeout: Optional[float],
-                 facts: Optional[dict] = None):
+                 facts: Optional[dict] = None,
+                 timing: Optional[dict] = None):
     """``model.invoke(messages)`` holding a call slot, given up after
     ``timeout`` seconds of running.
 
@@ -651,10 +681,16 @@ def _invoke_once(model, messages, timeout: Optional[float],
     its slot, so a stalled connection keeps counting against the process's
     cap rather than letting more calls pile onto the client's pool. When it
     does end, a :data:`LATE_END_EVENT` says how long it held the slot
-    (``facts``: what the event says of the ask)."""
+    (``facts``: what the event says of the ask). A call that ends in time
+    puts its running time, slot to end, in ``timing["ran_s"]``."""
     if timeout is None:
         with call_slot():
-            return model.invoke(messages)
+            t_run = _clock()
+            try:
+                return model.invoke(messages)
+            finally:
+                if timing is not None:
+                    timing["ran_s"] = _clock() - t_run
     box: dict = {}
     started, done = threading.Event(), threading.Event()
     # Whether the caller gave the call up is settled under this lock, so a
@@ -665,23 +701,24 @@ def _invoke_once(model, messages, timeout: Optional[float],
     def run():
         try:
             with call_slot():
-                box["t_slot"] = time.monotonic()
+                box["t_slot"] = _clock()
                 started.set()
                 box["value"] = model.invoke(messages)
         except BaseException as exc:  # noqa: BLE001 - handed to the caller
             box["error"] = exc
         finally:
             started.set()
+            if box.get("t_slot") is not None:
+                box["ran_s"] = _clock() - box["t_slot"]
             with settle:
                 done.set()
                 abandoned = bool(box.get("abandoned"))
             if abandoned:
                 error = box.get("error")
-                t_slot = box.get("t_slot")
+                ran = box.get("ran_s")
                 _event(LATE_END_EVENT, {
                     **(facts or {}), "limit_s": timeout,
-                    "held_s": (round(time.monotonic() - t_slot, 3)
-                               if t_slot is not None else None),
+                    "held_s": round(ran, 3) if ran is not None else None,
                     "outcome": "error" if error is not None else "answered",
                     **({"error": type(error).__name__}
                        if error is not None else {})})
@@ -696,6 +733,8 @@ def _invoke_once(model, messages, timeout: Optional[float],
                 box["abandoned"] = True
                 raise VisionCallTimeout(
                     f"the vision call gave no answer within {timeout:g} s")
+    if timing is not None and "ran_s" in box:
+        timing["ran_s"] = box["ran_s"]
     if "error" in box:
         raise box["error"]
     return box["value"]
@@ -726,9 +765,13 @@ def invoke_side_call(model, messages):
     (:func:`call_timeout_s`), asked once more if it times out, and asked
     again with backoff — up to :func:`busy_tries` times in all, honouring a
     ``retry-after`` — while the model answers busy (:func:`busy_kind`). A
-    timeout of either kind, the side-call limit or the client's own, is
-    asked again at most once in all (:func:`may_ask_timeout_again`). The
-    waits are spent holding no slot. Raises :class:`VisionCallTimeout` when
+    timeout of the client's own, or a 408 or 504 after a slow ask
+    (:func:`is_timeout`), is asked again at most once in all, client and
+    ladder together (:func:`may_ask_timeout_again`). An ask given up at the
+    side-call limit is asked once more whatever the client's retries, and
+    its client may still re-send it on its own thread: up to four requests
+    for one look with the client asking again once. The waits are spent
+    holding no slot. Raises :class:`VisionCallTimeout` when
     no ask answered in time, and a busy error that outlasted its tries with
     ``vision_tries`` set on it — the caller reports that image as not read
     (:func:`describe_error`) instead of waiting on it.
@@ -751,8 +794,9 @@ def invoke_side_call(model, messages):
         ask_id = uuid.uuid4().hex[:12]
         _note_side_call(ask=ask, ask_id=ask_id)
         facts = {**_look_facts(), "ask": ask, "ask_id": ask_id}
+        timing: dict = {}
         try:
-            response = _invoke_once(model, messages, timeout, facts)
+            response = _invoke_once(model, messages, timeout, facts, timing)
             _settle(pacer, ticket, response)
             return response
         except VisionSlotTimeout:
@@ -774,9 +818,10 @@ def invoke_side_call(model, messages):
                 raise
             busy += 1
             # The client's own timeout (reached where the side-call limit
-            # is off or longer): counted with the side-call timeouts, and
-            # asked again at most once in all (TA-24).
-            timed_out = is_timeout(exc)
+            # is off or longer), or a 408 or 504 after a slow ask: counted
+            # with the side-call timeouts, and asked again at most once in
+            # all (TA-24). A quick 408 or 504 keeps every try.
+            timed_out = is_timeout(exc, timing.get("ran_s"))
             if timed_out:
                 timeouts += 1
             if busy >= tries or (
@@ -1074,4 +1119,4 @@ __all__ = ["LangChainVisionEngine", "call_slot", "INFLIGHT_ENV",
            "current_side_call", "TIMEOUT_EVENT", "LATE_END_EVENT",
            "VisionSlotTimeout", "SLOT_WAIT_ENV", "DEFAULT_SLOT_WAIT_S",
            "SLOT_TIMEOUT_EVENT", "slot_wait_s", "is_timeout",
-           "client_retries", "may_ask_timeout_again"]
+           "SLOW_TRY_S", "client_retries", "may_ask_timeout_again"]

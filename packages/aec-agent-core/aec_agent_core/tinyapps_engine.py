@@ -133,11 +133,17 @@ _CHAT_SUFFIX = "/chat/completions"
 #: brief rate limit in under a second, where the agent's ladder would wait
 #: 15 s, and it keeps a rate-limited vision side call at six asks (the
 #: vision ladder's three tries are left as they are until the live check of
-#: the gateway's limits). The cost is bounded: a timed-out request is asked
-#: twice by the client and then NOT again by either ladder
-#: (:func:`aec_agent_core.deep.vision_engine.may_ask_timeout_again`), so a
-#: stuck call ends in at most two request timeouts. With 0 here the ladder
-#: asks a timeout again once itself. Override with the env var.
+#: the gateway's limits). The cost is bounded. An agent's model call that
+#: times out is asked twice by the client and then NOT again by the
+#: agent's ladder (:func:`aec_agent_core.deep.vision_engine.
+#: may_ask_timeout_again`): at most two request timeouts. A vision side
+#: call is given up at its own, shorter limit and asked once more, and the
+#: client may still send each abandoned request once more on its thread:
+#: up to four requests reach the service for one stuck look. Each ask given
+#: up and each late end is an event on the record (``side_call_timeout``,
+#: ``side_call_late_end``); the client's re-sends are not counted there.
+#: With 0 here the ladder asks a timeout again once itself. Override with
+#: the env var.
 MAX_RETRIES_ENV = "GEOTECH_PROMPTER_MAX_RETRIES"
 DEFAULT_MAX_RETRIES = 1
 

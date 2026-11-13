@@ -73,6 +73,8 @@ DEFAULT_TRIES = len(LADDER_S) + 1
 #: The wait (tests replace them).
 _sleep = time.sleep
 _asleep = asyncio.sleep
+#: The clock a try is timed by (tests replace it).
+_clock = time.monotonic
 
 
 def tries() -> int:
@@ -93,12 +95,14 @@ def busy(exc: BaseException) -> Optional[str]:
         return None
 
 
-def timed_out(exc: BaseException) -> bool:
+def timed_out(exc: BaseException, took_s: Optional[float] = None) -> bool:
     """Whether ``exc`` is a request that got no answer in time, as against
-    a quick refusal."""
+    a quick refusal; ``took_s`` is how long the try took (a 408 or 504
+    counts only after a slow try, :data:`funhouse_agent.deep.vision_engine.
+    SLOW_TRY_S`)."""
     try:
         from aec_agent_core.deep.vision_engine import is_timeout
-        return bool(is_timeout(exc))
+        return bool(is_timeout(exc, took_s))
     except Exception:  # noqa: BLE001 - unclassifiable: a refusal
         return False
 
@@ -218,7 +222,7 @@ class AgentBusyRetry(AgentMiddleware):
         if attempt >= n:
             _annotate(exc, attempt, waited, kind, "the ladder ran out")
             return None
-        if timeouts and timed_out(exc) and \
+        if timeouts and timed_out(exc, spent) and \
                 not timeout_may_be_asked_again(model, timeouts):
             _annotate(exc, attempt, waited, kind,
                       "the model gave no answer in time and had been "
@@ -234,7 +238,7 @@ class AgentBusyRetry(AgentMiddleware):
         _event("model_busy", {"kind": kind, "attempt": attempt,
                               "tries": n, "wait_s": round(wait, 1),
                               **({"timed_out": True} if timeouts
-                                 and timed_out(exc) else {}),
+                                 and timed_out(exc, spent) else {}),
                               **refusal_facts(exc)})
         return wait
 
@@ -245,16 +249,16 @@ class AgentBusyRetry(AgentMiddleware):
         while True:
             pacer, ticket = pace(getattr(request, "model", None),
                                  _estimate(request))
-            t0 = time.monotonic()
+            t0 = _clock()
             try:
                 response = handler(request)
             except GraphBubbleUp:
                 raise
             except Exception as exc:
                 attempt += 1
-                timeouts += 1 if timed_out(exc) else 0
-                wait = self._decide(exc, attempt, n,
-                                    time.monotonic() - t0, waited, timeouts,
+                spent = _clock() - t0
+                timeouts += 1 if timed_out(exc, spent) else 0
+                wait = self._decide(exc, attempt, n, spent, waited, timeouts,
                                     getattr(request, "model", None))
                 if wait is None:
                     raise
@@ -271,16 +275,16 @@ class AgentBusyRetry(AgentMiddleware):
         while True:
             pacer, ticket = await asyncio.to_thread(
                 pace, getattr(request, "model", None), _estimate(request))
-            t0 = time.monotonic()
+            t0 = _clock()
             try:
                 response = await handler(request)
             except GraphBubbleUp:
                 raise
             except Exception as exc:
                 attempt += 1
-                timeouts += 1 if timed_out(exc) else 0
-                wait = self._decide(exc, attempt, n,
-                                    time.monotonic() - t0, waited, timeouts,
+                spent = _clock() - t0
+                timeouts += 1 if timed_out(exc, spent) else 0
+                wait = self._decide(exc, attempt, n, spent, waited, timeouts,
                                     getattr(request, "model", None))
                 if wait is None:
                     raise

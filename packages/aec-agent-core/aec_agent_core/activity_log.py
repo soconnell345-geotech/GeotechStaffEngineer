@@ -1463,7 +1463,10 @@ class ActivityLogger(BaseCallbackHandler):
                                 else self._tool_of(run_id))
                     ask_id = rec.get("ask_id")
                     with self._lock:
-                        if tool_rid:
+                        # a late end keeps its ask's own tool, never an
+                        # open task call further up (review, 2026-11-13)
+                        if tool_rid and not (name == "side_call_late_end"
+                                             and ask_id in self._ask_tools):
                             tied = (self._names.get(tool_rid), tool_rid)
                             if ask_id:
                                 self._ask_tools[ask_id] = tied
