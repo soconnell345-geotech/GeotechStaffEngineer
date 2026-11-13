@@ -28,7 +28,9 @@ from typing import Callable, Dict, Optional
 
 from reliability.results import FOSMResult
 from reliability.stats import beta_lognormal, pf_from_beta
-from reliability.variables import build_correlation, variables_from_spec
+from reliability.variables import (
+    build_correlation, refuse_truncated, variables_from_spec,
+)
 
 _CONVENTIONS = ("fos", "margin")
 
@@ -56,6 +58,8 @@ def fosm(g: Callable[[Dict[str, float]], float],
         ``{"phi": {"mean": 33, "cov": 0.1, "dist": "lognormal"}, ...}``.
         FOSM uses only the first two moments — the distribution shape
         affects only the choice of reported index (normal vs lognormal).
+        A normal or lognormal variable with ``lower``/``upper`` truncation
+        is refused (FOSM takes no truncation; Monte Carlo and FORM do).
     correlation : optional
         Pairwise dict ``{("a","b"): rho}`` or full matrix.
     convention : str
@@ -76,6 +80,7 @@ def fosm(g: Callable[[Dict[str, float]], float],
     """
     thr = _threshold(convention)
     rvs = variables_from_spec(variables)
+    bound_notes = refuse_truncated(rvs, "FOSM")
     R = build_correlation(rvs, correlation)
     correlated = correlation is not None
 
@@ -139,4 +144,5 @@ def fosm(g: Callable[[Dict[str, float]], float],
         variance_contributions_pct=contributions,
         correlated=correlated,
         n_g_calls=n_calls,
+        warnings=bound_notes,
     )

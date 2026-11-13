@@ -2894,7 +2894,16 @@ def _generate_reliability_package(params: dict) -> dict:
         extra.update(beta=round(result.beta, 4), pf=result.pf,
                      converged=result.converged)
     elif run.value == "monte_carlo":
+        # what the package's note says, given to the agent too (GM-322
+        # review): N is the realizations kept, not the ones run
         extra.update(pf=result.pf, n_failed=result.n_failed, n=result.n,
+                     n_requested=result.n_requested or result.n,
+                     n_dropped=result.n_dropped,
+                     pf_bounds_dropped=(
+                         None if result.pf_bounds_dropped is None
+                         else list(result.pf_bounds_dropped)),
+                     pf_ci95=list(result.pf_ci95),
+                     pf_ci95_method=result.pf_ci95_method,
                      beta_normal=round(result.beta_normal, 3))
     else:
         extra.update(beta_normal=round(result.beta_normal, 3),
@@ -2902,6 +2911,8 @@ def _generate_reliability_package(params: dict) -> dict:
         if result.beta_lognormal is not None:
             extra.update(beta_lognormal=round(result.beta_lognormal, 3),
                          pf_lognormal=result.pf_lognormal)
+    if getattr(result, "warnings", None):
+        extra["warnings"] = list(result.warnings)
     return _build_response(
         "reliability", result, used, params,
         run=run,
@@ -3968,7 +3979,7 @@ METHOD_INFO = {
     "reliability_package": {
         "category": "Calculation Package",
         "brief": "Run a reliability analysis (FOSM, point estimates, Monte Carlo or FORM) on a performance function of random variables and generate its calc package: the variables and their distributions, the moments of g, the reliability index beta and the probability of failure, and which variable matters.",
-        "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure."},
+        "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure.", "n_failed": "Monte Carlo: realizations with g below the threshold.", "n": "Monte Carlo: realizations kept (finite g); pf is n_failed / n.", "n_requested": "Monte Carlo: realizations run.", "n_dropped": "Monte Carlo: realizations left out because g was not finite.", "pf_bounds_dropped": "Monte Carlo: [pf if no dropped realization had failed, pf if all had]; null when nothing was dropped.", "pf_ci95": "Monte Carlo: 95% interval on pf.", "pf_ci95_method": "Monte Carlo: 'normal_approximation', or the Clopper-Pearson bound with no failure or only failures.", "warnings": "What the engine could not resolve (dropped realizations, a count at the edge, bounds FOSM or PEM did not apply), then any warning the code raised while it ran. Report every one."},
     },
     "fem2d_package": {
         "category": "Calculation Package",
