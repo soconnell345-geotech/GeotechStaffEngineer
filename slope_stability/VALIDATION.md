@@ -275,7 +275,9 @@ about the search's second moment axis; on the same surface Janbu (corrected)
 reads 1.22 and Spencer about the fitted axis does not converge. A strict xfail
 against the printed 0.760 (`test_v028_weak_layer_search_against_print`), nothing
 pinned to the module's own number. The search's generator is step 7 of the slope
-rebuild (the account's D12).
+rebuild (the account's D12); which solutions a search accepts is steps 2 and 3
+(one solver for a method in a search and on one surface; the printed
+acceptability checks).
 
 **The kept surface, a record only.** (41.987, 28.0) ... (77.528, 40.0) was the
 minimum of the weak-layer search while the soil was weighed three times (B19); it

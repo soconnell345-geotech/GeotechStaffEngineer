@@ -203,8 +203,10 @@ _SEARCH_SHORT_OF_PRINT = (
     "deg and tension across the back wedge, accepted about the search's "
     "second moment axis; on the same surface Janbu corrected reads 1.22 "
     "and Spencer about the fitted axis does not converge. The search's "
-    "generator belongs to step 7 of the slope rebuild (the account's D12); "
-    "which solutions a search accepts was not changed in this round. "
+    "generator belongs to step 7 of the slope rebuild (the account's D12). "
+    "Which solutions a search accepts belongs to steps 2 and 3 (one solver "
+    "for a method in a search and on one surface; the printed "
+    "acceptability checks). Neither was changed in this round. "
     "Nothing is pinned to the module's own number.")
 
 
