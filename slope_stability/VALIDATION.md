@@ -834,6 +834,62 @@ solve: `FOS` None, never another solver's value (GM-139's kind of circle; V-054'
 circle by Spencer and GLE; a stabilizing-pile row whose force exceeds the driving
 moment, which returned 999.9).
 
+## B-5a — Pore pressure as printed (GM-140 step 5a, 2026-11-13)
+
+One function gives every slice base its pore pressure (DESIGN.md, "Pore
+pressure as printed"). Record: `module_work/gm140/STEP5A_CHECK.md`, with the
+whole of the validation set before and after
+(`module_work/gm140/step5a_section11.py`: of 37,043 factors of safety the
+pinned tests compute, 116 move).
+
+**The correction, against print.** FHWA NHI-06-088 Sec. 6.3 (pp. 6-7 to 6-8,
+Eqs. 6-6 to 6-10): an infinite slope with seepage parallel to it and the
+water table at the surface has u = γw h cos² β on the plane and, for c' = 0,
+FS = (γ'/γsat) tan φ' / tan β. Made-up values: β = 26.57° (2H:1V), φ' = 34°,
+γsat = 19.5 kN/m³; a plane 390 m long and 0.5 m deep, 60 slices.
+
+| Reading of the line at the ground surface | OMS | Janbu | Spencer | M-P | Closed form |
+|---|---|---|---|---|---|
+| `water_line_kind='water_table'` (Eq. 6-16) | 0.6704 | 0.6709 | 0.6710 | 0.6706 | 0.6704 (FHWA Eq. 6-10, p. 6-8) |
+| `'piezometric'` (default; the full head) | 0.5007 | 0.5012 | 0.5014 | 0.5009 | 0.5007 (the same statics with u = γw h) |
+| before this step (full head, with the pond thrust read off the slice's middle) | 0.8599 | 1.1025 | 1.1032 | none | 0.5007 |
+
+The last row is the defect found on the way: a sloping water line at the
+ground read as a pool at each slice's lower side (`slices._pond_thrust`).
+
+**What moves in the pinned set with the default** (the uncorrected head):
+only the pond's edge as a slice boundary, the pond thrust where a line is
+at or under the ground, and ru in a layered column. No total-stress layer
+in the set has φ > 0 at its base, so D4 moves no factor of safety.
+
+| Benchmark | Before | After | Printed | What moved it |
+|---|---|---|---|---|
+| F&K (1977) circle, ru = 0.25: OMS / Bishop / Spencer / M-P | 1.6067 / 1.7590 / 1.7633 / 1.7651 | the same | 1.607 / 1.766 / 1.761 / 1.764 | nothing: one soil, so ru × the overburden is ru γ h |
+| F&K composite surface, ru = 0.25: Spencer / M-P | 1.1381 / 1.1322 | the same | 1.118 / 1.118 | nothing: both soils 120 pcf |
+| V-031 (Slide2 #57) circle, 50 slices: Bishop / Spencer / GLE | 1.4205 / 1.4247 / 1.4091 | 1.4204 / 1.4246 / 1.4090 | 1.417 / 1.422 | the pond's edge (the line meets the ground at the toe) |
+| V-031 Spencer search | 1.4174 | 1.4172 | 1.422 | the same |
+| V-044 (Slide2 #70) submerged: Bishop / Spencer / M-P | 1.5974 / 1.5962 / 1.5933 | the same | 1.603 / 1.599 / 1.599 | nothing: the pond covers the whole surface |
+| V-029 pore-pressure grid against the line | 1.7630 / 1.7625 | the same | (not pinned to print) | nothing: the grid governs the base |
+| V-028 (ACADS 4), a piezometric surface | 1.0095 (kept surface), 0.8301 (search) | the same | referee 0.78 | nothing: a piezometric line is not corrected |
+| V-037 (#95) Corps, seepage stage 1 | 1.3392 | 1.3393 | 1.347 | the pond's edge |
+| V-038 (#96) DWW: flat / seepage / 'gle' flat / 'gle' seepage | 1.2349 / 1.2733 / 1.3061 / 1.3699 | 1.2351 / 1.2733 / 1.3064 / 1.3698 | 1.443 | the pond's edge |
+| V-041 (#98) search: Corps / DWW / LK | 0.8362 / 0.9350 / 0.9739 | 0.8364 / 0.9351 / 0.9742 | 0.931 / 1.039 / 1.075 | the pond's edge |
+| V-052 Pilarcitos, assumed 2.5:1: Corps / LK | 0.7861 / 1.3473 | 0.7866 / 1.3488 | 0.823 / 1.047 | the pond's edge; the search ends on a neighbouring circle |
+| V-052 assumed 3:1: LK / DWW | 1.5429 / 1.5416 | 1.5426 / 1.5441 | (1.047 / 1.043 on the real dam) | the same; DWW now 0.1 % above LK, a strict xfail (below) |
+| V-052b true section: Corps / DWW | 0.7218 / 1.2633 | 0.7223 / 1.2652 | 0.823 / 1.043 | the pond's edge |
+| Duncan Ex. 6 (submerged toe), searches | 1.5419 / 1.7977 / 1.6098 | 1.5418 / 1.7976 / 1.6097 | book not in hand | the pond's edge |
+
+- **V-052, 3:1, DWW against LK (strict xfail).** The test asserts
+  Corps < DWW < LK on three assumed sections. On the 3:1 section the two
+  searches now end on different circles: DWW 1.5441 on (41.605, 44.623,
+  R 33.510) against LK 1.5426 on (40.416, 44.623, R 33.995). On each circle
+  DWW is still below LK (1.5412 / 1.5426 and 1.5441 / 1.5461). At that
+  centre the 20-slice drawdown FOS jumps with the radius (LK 1.5429, 1.5446,
+  1.5426, 1.5674 at R = 33.985, 33.990, 33.995, 34.000 m), and each method's
+  radius search stops at a different lip. The cause is the search on a
+  coarse slicing, not the pore-pressure rule; nothing is re-pinned and no
+  tolerance is widened.
+
 ## Notes / known deviations
 
 - Ordinary method with ru: formulation-sensitive (F&K 1.607 vs Slide2
