@@ -169,7 +169,11 @@ This repository builds three packages; the app also needs two more of the same p
   the Foundry dataset store is `aec_agent_core/foundry_dataset_store.py`
   (the old `webapp` name is an alias, so edit the core's file), and the
   coordination tasks carry a false-alarm check (EV-44; 101 scored checks
-  a set-up).
+  a set-up). Since 2026-11-13: after every ingest, report ingest writes
+  the report as five tables in JSON Lines with a `schema.json`
+  (`report_ingest/tables.py`, `docs/REPORT_TABLES.md`; sent to the dataset
+  `GSE_REPORT_TABLES_DATASET` names; `GSE_REPORT_TABLES=0` turns it off;
+  not yet run on Foundry, RI-212).
   Before it, docs and tests only:
   field-session place names out of the current files (three field-feedback
   folders renamed; `test_public_text` guards the place words in every
