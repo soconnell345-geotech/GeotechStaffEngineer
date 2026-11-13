@@ -878,8 +878,9 @@ the approximate solver's value.
   to 16 times the run time (111 s against 8 s; 297 s against 18 s) with the
   same minimum in both cases tried. The step 2 review asked for it (D1);
   tried in the fix round and not applied: it finds the Spencer solution of
-  a phi = 0 circle the module misses (2.9458 against an independent
-  2.9435), but it also gives "converged" states that rest on the m_alpha
+  a phi = 0 circle the module misses (2.9458; the "independent" 2.9435
+  was wrong: the moment ratio is 3.08, GM-140 step 3's fix round), but it
+  also gives "converged" states that rest on the m_alpha
   clamp, with base tension, on two surfaces GM-131 found to have no
   Spencer solution (1.56 at every slicing on w11; 1.19 at 30 and 41
   slices only on the deep sandstone polyline), takes away the yield
@@ -982,7 +983,27 @@ scored, those flagged and each flag; `critical_flags` and
 carries a flag, `lowest_unflagged` gives the lowest factor of safety among
 the scored surfaces of the same method that carry none (among the trials
 the search happened to score: it is not a second search). The headline stays
-the lowest solved surface.
+the lowest solved surface. Every exported search that returns a
+`SearchResult` gets this from one place, `search_supplements.
+report_acceptability`: `search_critical_surface` calls it, and
+`search._reports_acceptability` calls it on a search called on its own
+(`search_noncircular`, `search_de`, `search_pso`, `search_weak_layer_biased`,
+`search_entry_exit`, `grid_search`; the step 3 review's defect 2).
+`search_rapid_drawdown` scores with its own staged solve, on which the checks
+are not made.
+
+Neither number alone is safe (ACADS 1(a) by Spencer: 0.633 flagged, 1.09
+with none, printed 1.00; ACADS 4's weak layer: 0.830 flagged, 1.667 with
+none, printed 0.760), so a headline that carries a flag is never given alone.
+The agent's tool result (the adapter) carries, as fields and in its
+one-sentence `summary` (`search_supplements.headline_report`): the headline,
+its flags (`critical_flags`), the lowest surface with no flag
+(`lowest_unflagged`, or that none was found) and the option that leaves
+flagged surfaces out (`refuse_option`). Only m_alpha has such an option
+(`low_m_alpha='refuse'`); no option leaves out surfaces with the other flags,
+and `refuse_option` says so. The other form of this call (the headline is the
+lowest surface with no flag) is on the owner's desk (`module_work/gm140/
+STEP3_CHECK.md`, "Calls made").
 
 **The noncircular screens (D22), measured** (`module_work/gm140/
 step3_screens.py`; table in `module_work/gm140/STEP3_CHECK.md`). On the
@@ -990,15 +1011,23 @@ noncircular cases of the validation set and the module's two rock-cut
 cases:
 
 - agreement between moment axes (38 refused), agreement between slicings (1)
-  and a FOS below 1.5 on a jagged surface (88): every surface refused
-  carried a flag of the printed checks. All three are removed for the
-  method's own solves (`search.REMOVED_SCREENS`); such a surface is scored,
-  kept and flagged. `SearchResult.refused_lowest` is no longer filled.
+  and a FOS below 1.5 on a jagged surface (88), all measured with Spencer's
+  method: every surface refused carried a flag of the printed checks. The
+  first two are removed for the method's own solves, the jagged screen for
+  Spencer, Morgenstern-Price and GLE (`search.REMOVED_SCREENS`); such a
+  surface is scored, kept and flagged. `SearchResult.refused_lowest` is no
+  longer filled.
+- the jagged screen stays, counted (`screen_refusals`) and named in
+  `choices` as the module's own, for Janbu's simplified method and the
+  Ordinary Method of Slices (`search._jagged_screen_applies`): no check of
+  C-10a covers them, so the surfaces it refuses there carry no flag. On
+  ACADS 1(a), 200 random trials, it refuses 29 Janbu and 42 Ordinary Method
+  of Slices surfaces no printed check flags (the step 3 review's defect 1).
 - span: of the surfaces it refused that have a Spencer solution, the printed
   checks pass 25 of 48. It stays, counted (`screen_refusals`) and named in
   `choices` as the module's own, not found in print.
 - slice count: it refused no trial in any measured case; kept as it was.
-- the jagged gate still applies to a caller's own per-surface solve (the
+- the jagged gate also applies to a caller's own per-surface solve (the
   rapid-drawdown search), on which the printed checks are not made here.
 
 Consequence to know: a random noncircular search can now end on a zig-zag
@@ -1011,11 +1040,17 @@ surface beside it (ACADS 1(a), 200 trials: 0.633 flagged, 1.096 unflagged;
 
 **The direct march (step 2's open question): not applied.** Measured again
 with the rule that a marched state resting on the m_alpha clamp or on a base
-in tension is no state: the reviewer's phi = 0 circle solves (2.9458 against
-2.9435) and the GM-131 surfaces no longer do, but a GLE solve loses the state
+in tension is no state: the reviewer's phi = 0 circle solves (2.9458) and
+the GM-131 surfaces no longer do, but a GLE solve loses the state
 the lambda search had, an ordinary slope loses its yield coefficient (no
 Spencer solution at kh = 1.0) and two searches change. The strict xfail in
-`test_own_solution_or_no_number.py` holds the case.
+`test_own_solution_or_no_number.py` holds the case. Its target is the moment
+ratio, not the 2.9435 the step 2 review gave: with phi = 0 on a circle,
+Spencer's F must equal cu R (arc length) / sum(W x), x the moment arm about
+the centre; the test works it out on 600 slices of the surface closed by a
+dry crack at x = 41 (3.0 m, given, since GM-140 step 4 discards the
+reverse-curvature circle with no crack asked for): 3.08, against Bishop's
+3.07 on 30 slices.
 
 ### A single surface: warnings, and no silent fallback (GM-81, 2026-10-15)
 *(Its two "what `FOS` holds when there is no solution" cases, the labelled

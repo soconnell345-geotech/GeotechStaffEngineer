@@ -1713,6 +1713,82 @@ def critical_acceptability(geom: SlopeGeometry, result: SearchResult,
         result.lowest_unflagged = best
 
 
+def report_acceptability(geom: SlopeGeometry, result: SearchResult,
+                         scored: str, n_slices: int, tol: float = 1e-4,
+                         m_alpha_rule: str = "frictional",
+                         family: Optional[str] = None) -> None:
+    """The one place a search's result gets the printed acceptability
+    checks' report (GM-140 step 3, item 4; its review's defect 2): the
+    governing surface's findings and flags, the lowest scored surface with
+    no flag beside it (`critical_acceptability`), the warning when the
+    governing surface carries a flag (`acceptability_warning`), and a
+    comparison with the Ordinary Method of Slices value that was not made
+    on the governing circle, and why. ``family`` names the search's own
+    trials in ``trial_flags`` (a search called on its own counts them as
+    'main')."""
+    if family is not None:
+        for rec in result.trial_flags:
+            if rec.get("family") == "main":
+                rec["family"] = family
+    critical_acceptability(geom, result, scored, n_slices, tol,
+                           m_alpha_rule=m_alpha_rule)
+    w = acceptability_warning(result)
+    if w:
+        result.warnings.append(w)
+    if result.critical is not None:
+        result.warnings.extend(
+            f["text"] for f in (result.critical.acceptability or [])
+            if f["check"] == "bishop_against_oms" and not f.get("compared"))
+
+
+def headline_report(result: SearchResult, low_m_alpha: str = "flag"
+                    ) -> Dict[str, Any]:
+    """What the agent's tool result says of the headline in one sentence
+    (``summary``) and, when the headline carries a flag, the option that
+    leaves flagged surfaces out of the search (``refuse_option``): the
+    headline (the lowest solved surface), its flags, and the lowest scored
+    surface with no flag, or that none was found. Neither number alone is
+    safe, so a flagged headline is never given alone (GM-140 step 3,
+    item 4; its review's ruling 5)."""
+    from slope_stability.acceptability import flags_text
+    crit = result.critical
+    if crit is None or crit.FOS is None:
+        return {"summary": ("No surface held, so the search reports no "
+                            "factor of safety; choices and warnings say "
+                            "why.")}
+    where = (_FAMILY_TEXT.get(result.governing_surface,
+                              result.governing_surface)
+             or ("circular" if getattr(crit, "is_circular", True)
+                 else "noncircular"))
+    head = (f"The lowest solved surface has FOS {crit.FOS:.3f} ({where}, "
+            f"{crit.method})")
+    names = list(result.critical_flags or [])
+    if not names:
+        return {"summary": head + " and meets every printed acceptability "
+                                  "check made on it."}
+    others = [n for n in names if n != "low_m_alpha"]
+    if "low_m_alpha" in names and low_m_alpha != "refuse":
+        option = ("low_m_alpha='refuse' leaves surfaces with m_alpha below "
+                  "0.2 out of the search")
+        if others:
+            option += (f"; no option leaves out surfaces with the other "
+                       f"flags ({flags_text(others)})")
+    else:
+        option = ("no option leaves surfaces with these flags out of the "
+                  "search (low_m_alpha='refuse' leaves out only surfaces "
+                  "with m_alpha below 0.2)")
+    low = result.lowest_unflagged or {}
+    if low.get("FOS") is not None:
+        beside = (f"the lowest surface the search scored with no flag has "
+                  f"FOS {low['FOS']:.3f}")
+    else:
+        beside = ("none found: no surface the search scored with this "
+                  "method is without a flag")
+    return {"summary": (f"{head} and is flagged ({flags_text(names)}); "
+                        f"{beside}; {option}; give the user both."),
+            "refuse_option": option}
+
+
 def acceptability_warning(result: SearchResult) -> Optional[str]:
     """What a search says when its governing surface carries a flag of the
     printed acceptability checks: the flags, that the surface is kept, the
@@ -1807,7 +1883,9 @@ def acceptability_choices(result: SearchResult, method: Optional[str],
     if result.screen_refusals:
         text = {"slice_count": "too few slices",
                 "span": "too short a span",
-                "jagged_below_1_5": "FOS below 1.5 on a jagged surface (a "
+                "jagged_below_1_5": "FOS below 1.5 on a jagged surface "
+                                    "(Janbu's simplified method, the "
+                                    "Ordinary Method of Slices, or a "
                                     "caller's own per-surface solve)"}
         parts = [f"{text.get(k, k)}: {rec['n']}"
                  for k, rec in result.screen_refusals.items()]
@@ -1820,10 +1898,17 @@ def acceptability_choices(result: SearchResult, method: Optional[str],
             "screen is kept because it refuses surfaces the printed checks "
             "pass (short surfaces confined to part of the window); each "
             "refusal is counted here (screen_refusals). The screens on "
-            "agreement between moment axes and between slicings, and on a "
-            "FOS below 1.5 on a jagged surface, were removed in GM-140 "
-            "step 3: every surface they refused carried a flag of the "
-            "printed checks, and is now scored, kept and flagged"))
+            "agreement between moment axes and between slicings were "
+            "removed in GM-140 step 3, and the screen on a FOS below 1.5 "
+            "on a jagged surface for Spencer, Morgenstern-Price and GLE: "
+            "every surface they refused in the measured Spencer searches "
+            "carried a flag of the printed checks, and is now scored, kept "
+            "and flagged. The jagged screen stays for Janbu's simplified "
+            "method and the Ordinary Method of Slices, which no check of "
+            "C-10a covers, so a jagged surface it refuses there would carry "
+            "no flag (ACADS 1(a), 200 random trials: 29 Janbu and 42 "
+            "Ordinary Method of Slices surfaces), and for a caller's own "
+            "per-surface solve (rapid drawdown)"))
     return out
 
 

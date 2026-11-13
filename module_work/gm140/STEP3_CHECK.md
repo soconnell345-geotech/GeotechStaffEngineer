@@ -37,6 +37,15 @@ polylines meet the same checks.
    PPG-1): 1.223 to 1.101, the frictional term as printed; the earlier value
    is kept as its stated alternative. It is a module value, not a printed
    one: the lead should confirm.
+4. **After the review (section 12).** Item 1's statement that every
+   surface the screens refused carried a flag held for Spencer,
+   Morgenstern-Price and GLE, not for Janbu's simplified method and the
+   Ordinary Method of Slices, which the checks do not cover: the jagged
+   screen stays for those two. Every exported search now reports the
+   governing surface's flags, and the agent's search result says, when the
+   headline is flagged, the lowest surface with no flag and the option in
+   one sentence. Master's step 4 was merged first; section 12 has what it
+   moved and the branch-against-master table.
 
 ## 1. What the print says
 
@@ -408,7 +417,9 @@ Calls made here:
     and it guards against three- and four-slice slivers.
 12. **The jagged gate stays for a caller's own per-surface solve** (the
     rapid-drawdown search): the printed checks are not made on those solves
-    here (step 9), so the measurement does not cover them.
+    here (step 9), so the measurement does not cover them. Since the fix
+    round it also stays for Janbu's simplified method and the Ordinary
+    Method of Slices (call (d) below).
 13. **The rapid-drawdown search follows the default** (a surface with
     m_alpha below 0.2 on a drawn-down slice is kept and counted as flagged)
     and takes `low_m_alpha`. Nothing else in `rapid_drawdown.py` changed.
@@ -416,6 +427,36 @@ Calls made here:
     its alternative (section 0).
 15. **The parameter names**: `low_m_alpha` ('flag', 'refuse') and
     `negative_friction_term` ('as_printed', 'zero').
+
+Calls made, as the orchestrator ruled them after the review (for the
+owner's desk at the merge), each with its other form:
+
+- **(a) The headline.** The headline stays the lowest solved surface,
+  flagged, with the lowest surface that carries no flag beside it (the
+  spec's item 4), and a flagged headline never comes alone: the agent's tool
+  result gives the headline, its flags, the lowest surface with no flag (or
+  "none found") and the option that leaves flagged surfaces out, as fields
+  and in one sentence (`summary`). Neither number alone is safe: ACADS 1(a)
+  by Spencer reads 0.633 flagged and 1.09 with none, printed 1.00; ACADS 4's
+  weak layer reads 0.830 flagged and 1.667 with none, printed 0.760. *Other
+  form:* the headline is the lowest surface with no flag.
+- **(b) Bishop's numerator as printed**, not held at zero (Bishop 1955
+  Eq. 13, p. 10): V-029's made-up grid 1.247 to 1.175, the agent suite's
+  PPG-1 1.223 to 1.101. *Other form:* `negative_friction_term='zero'` as the
+  default.
+- **(c) The Ordinary Method of Slices value taken where Bishop's is lower**,
+  as Duncan (1996, p. 580) prints. By construction this raises the reported
+  value wherever it applies: the hand circle of
+  `test_own_solution_or_no_number` 1.7268 to 1.750, +1.3 %. *Other form:*
+  report Bishop's value with a flag and the Ordinary Method of Slices value
+  beside it.
+- **(d) The jagged screen kept for Janbu's simplified method and the
+  Ordinary Method of Slices**, counted and named in `choices` as the
+  module's own, not found in print: no check of EM 1110-2-1902 C-10a covers
+  those methods, so the zig-zags it refuses there would be admitted with no
+  flag (ACADS 1(a), 200 random trials: 29 Janbu and 42 Ordinary Method of
+  Slices surfaces on step 3's head, as the review counted them). *Other form:* remove it for them as well and admit those
+  surfaces unflagged.
 
 ## 8. Where the rule now holds
 
@@ -568,3 +609,163 @@ common below-base test, which moves Slide2 #85's toe circle by 0.0002 to
 - GM-130's Janbu value for the circles above the toe of #85's clay face
   reads 1.033 on master and on the branch, under every rule and option (the
   1.138 the backlog item records was before GM-134).
+
+## 12. Fix round after review
+
+Branch `fix/gm140-step3-review`, cut from 677fce4. The review
+(`STEP3_REVIEW.md`, outside the repository) passed items 1 to 4 and 6 to 9
+and found three defects; the orchestrator ruled on them and on five more
+points. Master (GM-140 step 4 and unrelated work) was merged first.
+
+**The merge (bf2c600, 2ac03e8).** Both rules kept: step 4's discards
+(reverse-curvature circles with no crack asked for, surfaces the crack's
+bottom does not reach) stay refused and counted in `crack_refused`; step 3's
+checks flag and keep. Both sets of counts are in the same result. Step 3's
+`VALIDATION.md` entry became B22, after step 4's B21. The manual was rebuilt
+with `check_manual.py --rebuild --write` (exit 0). What the merge moved:
+
+- step 4's crack solve passed `confirm_below`, the parameter step 3 removed
+  with the moment-axis screen: a NameError on any search with a Rankine
+  crack (`test_cracks_as_printed`), fixed;
+- the vertical cut by every slice: 0.842 flagged (step 3 alone) to 0.935
+  with no flag. The 0.842 was a toe circle closed by a crack nobody asked
+  for, which step 4 discards; the circles flagged for m_alpha are kept and
+  counted, none below 0.935;
+- #85's default Bishop search: the 1.371 toe circle (step 3 alone, with the
+  "was not compared" warning) is discarded by step 4; the search reads what
+  'discard' reads, and the warning that Bishop's value was not compared with
+  the Ordinary Method of Slices value (a support crosses) stays;
+- two step 3 test circles are reverse-curvature circles, so each is now
+  given its crack: the phi = 0 exemption's circle (8 m crack) and the march
+  circle (3.0 m crack, ruling 4).
+
+**Per defect and ruling** (the fix commit; tests named).
+
+1. **Defect 1, the jagged screen.** It stays for every method the module has
+   no C-10a checks for, Janbu's simplified method and the Ordinary Method of
+   Slices (`search._jagged_screen_applies`, `acceptability.C10A_METHODS`),
+   counted in `screen_refusals` and named in `choices` as the module's own,
+   not found in print; removed only for Spencer, Morgenstern-Price and GLE
+   (Bishop's noncircular surfaces are scored by Spencer). The four
+   statements that every refused surface carried a flag now say which
+   methods (`search.REMOVED_SCREENS`, the `choices` text in
+   `search_supplements`, `DESIGN.md`, the adapter's `screen_refusals`), and
+   `results.py` and `analysis.py`'s docstrings with them. Re-measured on
+   ACADS 1(a), the reviewer's random search (200 trials, seed 42): no
+   surface jagged below 1.5 is admitted by Janbu or the Ordinary Method of
+   Slices, and every refusal is counted under the screen
+   (`test_search_robustness::test_jagged_screen_stays_for_methods_without_c10a_checks`,
+   both methods).
+2. **Defect 2, flags from every search function.** One place,
+   `search_supplements.report_acceptability` (the governing surface's
+   findings and flags, the lowest scored surface with no flag, the warning,
+   a comparison with the Ordinary Method of Slices not made and why).
+   `search_critical_surface` calls it; `search._reports_acceptability` calls
+   it on `grid_search`, `search_noncircular`, `search_pso`,
+   `search_weak_layer_biased`, `search_entry_exit` and `search_de` when
+   called on their own (a search inside another leaves it to the outer
+   one). `search_rapid_drawdown` scores with its own staged solve, on which
+   the checks are not made; the `critical_flags` docstring says so. Tests:
+   `test_acceptability::test_every_exported_search_reports_its_governing_surface_s_flags`
+   and `::test_search_noncircular_called_directly_reports_the_flags`
+   (ACADS 1(a) by Spencer called directly: 0.633 with base tension, side
+   tension and the line of thrust outside, the lowest with none beside it).
+   One existing test moved with it: `test_m_alpha::test_de_reports_the_seeding_search_when_it_has_no_surface`
+   (the direct DE call now also carries the acceptability warning).
+3. **Defect 3, `test_choices.py`.** Back to 100 trials:
+   `test_a_short_search_reports_its_flagged_surface` asserts what the code
+   says, 0.462 flagged low_m_alpha, base_tension, side_tension and
+   thrust_outside, none of the 2 scored surfaces without a flag. The "no
+   surface" message keeps `test_a_search_with_no_surface_says_none_and_points_at_nothing`,
+   now on level ground (made up), where no trial has anything driving it and
+   Spencer solves none (95 not converged).
+4. **The direct march's xfail target.** `_march_circle()` works out the
+   target as the moment ratio cu R (arc length) / sum(W x), on 600 equal
+   slices from the toe-side end (x 23.139, on the face) to x = 41 where the
+   arc turns vertical: 3.084 (the review's 3.084). Since step 4 the circle
+   needs a crack asked for (its centre is 3.0 m below the crest), so the
+   geometry gives a dry 3.0 m crack, which closes it at x = 41. The strict
+   xfail keeps `rel=0.01` and still fails because Spencer has no solution
+   (checked with `--runxfail`: `method_solved` False); a new passing test,
+   `test_the_march_circle_s_target_is_the_moment_ratio`, holds the target at
+   3.084 and Bishop's 30-slice value on the same closed surface within 1 %
+   (3.068). The march stays out. 2.9435 is gone from the test and from
+   `DESIGN.md` (both places).
+5. **The headline, and what the agent is told.** The headline stays the
+   lowest solved surface, flagged, with the lowest surface with no flag
+   beside it. The adapter's search result now carries, besides `critical`,
+   `critical_flags` and `lowest_unflagged` (FOS null and a note when none
+   was found), `refuse_option` (the option that leaves surfaces with the
+   headline's flags out, or that there is none) and `summary`, one
+   sentence with all four (`search_supplements.headline_report`). Before,
+   the option was only in the warning list. Only m_alpha has such an
+   option; for base tension, side tension and the line of thrust there is
+   none, and `refuse_option` says so (the step's section 11 already notes a
+   general refusal option was not built). Test:
+   `test_slope_stability_adapter::test_a_flagged_headline_never_comes_alone`
+   (ACADS 1(a) by Spencer through the adapter).
+6. **The table** is below.
+7. **Recorded, not pinned**: Duncan's Example 4 by Janbu, master 1.2033,
+   branch 0.8426 flagged (low_m_alpha), 1.2154 with none, 1.2033 with
+   `low_m_alpha='refuse'`; V-029's grid 1.2471 to 1.1752 (1.2471 with
+   `negative_friction_term='zero'`); PPG-1 1.2231 to 1.1007. No printed
+   value for any. In `VALIDATION.md` B22 as well.
+8. **Calls made**: section 7, (a) to (d).
+
+**The table (ruling 6)**, branch against `origin/master` (ee2e152; its
+`slope_stability` is the same at ddebb25), one probe
+(`review/step3fix/probe6.py`, outside the repository) run once on each.
+"Lowest with none" is given when the headline carries a flag.
+
+| Case | Master | Branch | Branch flags | Lowest with none | Step 4 discards (branch; master) | Step 3 flagged trials (branch) | Printed |
+|---|---|---|---|---|---|---|---|
+| Vertical cut, cu 20, Bishop search, default | 0.9353 | 0.9353 | none | - | reverse_curvature_no_crack 12; reverse_curvature_no_crack 12 | 0 of 2956 | Taylor 0.851 (3.83 cu / (gamma H), as DESIGN.md gives it) |
+| Vertical cut, `m_alpha_rule='every_slice'` | 0.9348 | 0.9353 | none | - | reverse_curvature_no_crack 12; reverse_curvature_no_crack 7 | 288 of 2956 (low_m_alpha 288) | the same |
+| ACADS 1(b), given 3.81 m crack full of water, Bishop, Slide2's grid | 1.5896 | 1.5896 | none | - | within_cracked_depth 456; within_cracked_depth 456 | 0 of 6287 | 1.596 (Slide2 Verification #2, Table 2.2, p. 25) |
+| ACADS 1(b), the same, Spencer | 1.5849 | 1.5849 | none | - | within_cracked_depth 456; within_cracked_depth 456 | 400 of 6415 (base_tension 296, thrust_outside 137) | 1.592 (the same) |
+| #85, reverse curvature discarded, Bishop, default | 1.5080 | 1.5080 | none | - | reverse_curvature_discard_asked 28; reverse_curvature_discard_asked 28 | 0 of 2135 | 1.531 (Slide2 Verification #85); Duncan and Wright (2005, Fig. 6.34) 1.51 |
+| #85, discarded, every slice | 1.5109 | 1.5080 | low_m_alpha | 1.5109 | reverse_curvature_discard_asked 28; reverse_curvature_discard_asked 26 | 421 of 2135 (low_m_alpha 421) | the same |
+| Taylor 45 deg, D = 2.25, default search | 1.9419 | 1.9419 | none | - | reverse_curvature_no_crack 38; reverse_curvature_no_crack 38 | 0 of 3270 | 1.947 (Taylor's chart, FHWA NHI-06-088 Fig. 6-15, p. 6-28) |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.0915 | 0.6332 | base_tension, side_tension, thrust_outside | 1.0959 | 0; 0 | 108 of 144 (side_tension 73, thrust_outside 106, base_tension 1) | 1.00 (Giam and Donald 1989; Slide2 Verification #1) |
+| ACADS 4, weak-layer search, 700 trials, Spencer | 0.8301 | 0.8301 | side_tension, thrust_outside | 1.6666 | 0; 0 | 288 of 344 (base_tension 124, side_tension 257, thrust_outside 268) | 0.760 (Slide2 manual p. 52) |
+
+Read: on master the vertical cut by every slice and #85 by every slice leave
+the m_alpha circles out (0.9348, 1.5109); the branch keeps and flags them,
+which moves #85 to 1.5080 flagged with 1.5109 beside it. The vertical cut
+reads 0.9353 with no flag on the branch, 0.0005 above master's 0.9348: no
+flagged circle is lower, and the grid refines around a different circle
+when the m_alpha circles are left out (the branch with
+`low_m_alpha='refuse'` reads 0.9348 as master does). Step 4's
+discards are the same on both trees wherever both score the same circles
+(the counts differ only where master leaves m_alpha circles out first).
+ACADS 1(a)'s 1.0915 to 0.6332 is the removal of the moment-axis screen for
+Spencer (step 3's item 5), unchanged by the fix round.
+
+**Factors of safety that moved, in the merge or in the fixes** (before is
+the step 3 branch at 677fce4 unless named):
+
+| Case | Before | After | Printed | Why |
+|---|---|---|---|---|
+| Vertical cut, every slice | 0.842 flagged | 0.9353, no flag | Taylor 0.851 | merge: step 4 discards the crack-closed toe circle |
+| #85, one support, default Bishop search | 1.3713 (toe circle) | 1.508 (what 'discard' reads) | 1.531 / D&W 1.51 | merge: step 4 |
+| W10 noncircular, 100 trials (`test_choices`) | 0.462 flagged (unpinned; the test ran 20 trials, no surface) | 0.462 flagged, pinned | none | defect 3 |
+| Janbu / OMS noncircular searches | jagged zig-zags below 1.5 admitted | refused, counted | none | defect 1; ACADS 1(a) headlines unchanged (1.0357, 0.9170 in the review) |
+| The march circle's target | 2.9435 | 3.084 (moment ratio, 600 slices) | none (arithmetic) | ruling 4 |
+
+No value pinned to print moved in the fix round.
+
+**Tests** (single files, judged by pytest's exit code; the full suites are
+the lead's gate on GitHub).
+
+| Run | Result |
+|---|---|
+| After the merge: `test_m_alpha.py` | 17 passed, 1 xfailed, after the every-slice case was updated to 0.935 with no flag (exit 0) |
+| After the merge: `test_search_reinforcement.py`, `test_slope_stability.py`, `test_calc_steps_modern.py` | 33, 93, 24 passed (exit 0 each) |
+| After the merge: `test_own_solution_or_no_number.py` | 26 passed, 1 xfailed (exit 0) |
+| After the merge: `test_cracks_as_printed.py`, `test_acceptability.py` | 41 and 21 passed after the `confirm_below` fix and the exemption circle's crack (exit 0 each) |
+| After the fixes: `test_own_solution_or_no_number.py` | 27 passed, 1 xfailed (exit 0); the xfail fails on `method_solved` False (`--runxfail`) |
+| After the fixes: `test_choices.py`, `test_acceptability.py`, `test_search_robustness.py`, `test_search_modern.py`, `test_slope_stability.py` | 7, 23, 28, 11, 93 passed (exit 0 each) |
+| After the fixes: `funhouse_agent/tests/test_slope_stability_adapter.py` | 93 passed (exit 0) |
+| After the fixes: `test_m_alpha.py` | 16 passed, 1 xfailed, 1 failed: the DE seeding test unpacked one warning and now gets the acceptability warning too; updated, that test passes (exit 0) |
+| After the fixes: `funhouse_agent/tests/test_defaults_used.py` (whole) | 856 passed, 17 skipped, 2 failed (exit 1): both `ModuleNotFoundError: geotech_references.em_1905`, master's EM 1110-1-1905 adapter against the venv's references 1.7.0; not slope tests |
+| `module_work/doc10/check_manual.py --rebuild` | OK (exit 0), manual unchanged by the fix round |

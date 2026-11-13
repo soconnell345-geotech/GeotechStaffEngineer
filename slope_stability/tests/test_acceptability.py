@@ -138,6 +138,49 @@ def test_a_steep_exit_polyline_is_analysed_and_names_em_c10b_remedies():
     assert res.slip_points == _STEEP_EXIT
 
 
+def test_every_exported_search_reports_its_governing_surface_s_flags():
+    """The step 3 review's defect 2: the governing surface's flags, the
+    warning and the lowest surface with no flag come from one place
+    (`search_supplements.report_acceptability`), for every exported search
+    that returns a SearchResult, not only `search_critical_surface`."""
+    import slope_stability as ss
+    for name in ("grid_search", "search_noncircular", "search_pso",
+                 "search_weak_layer_biased", "search_entry_exit",
+                 "search_de"):
+        assert getattr(getattr(ss, name), "reports_acceptability", False), \
+            name
+
+
+def test_search_noncircular_called_directly_reports_the_flags():
+    """ACADS 1(a) (printed 1.00), a 200-trial random Spencer search called
+    directly: its lowest solved surface (0.633 when measured) is a
+    zig-zag with a negative effective normal force on a base, tensile
+    interslice forces and the line of thrust outside the mass. The result
+    says so (``critical_flags``, the warning) and gives the lowest scored
+    surface with no flag beside it; before, a direct call returned it with
+    ``critical_flags == []``."""
+    from slope_stability.search import search_noncircular
+    g = SlopeGeometry(
+        surface_points=[(20.0, 25.0), (30.0, 25.0), (50.0, 35.0),
+                        (70.0, 35.0)],
+        soil_layers=[SlopeSoilLayer(name="soil", top_elevation=35.0,
+                                    bottom_elevation=20.0, gamma=20.0,
+                                    phi=19.6, c_prime=3.0)])
+    res = search_noncircular(
+        g, x_entry_range=(20.0, 32.0), x_exit_range=(46.0, 68.0),
+        n_trials=200, n_points=6, n_slices=25, seed=42, method="spencer")
+    assert {"base_tension", "side_tension", "thrust_outside"} <= set(
+        res.critical_flags)
+    assert res.critical.acceptability
+    low = res.lowest_unflagged
+    assert low["FOS"] is not None and low["FOS"] > res.critical.FOS
+    assert low["family"] == "noncircular"
+    (w,) = [w for w in res.warnings if "acceptability checks" in w]
+    assert f"FOS {res.critical.FOS:.3f}" in w
+    assert f"FOS {low['FOS']:.3f}" in w
+    assert [r["family"] for r in res.trial_flags] == ["noncircular"]
+
+
 def test_phi_zero_slices_are_exempt_by_the_modules_own_reasoning():
     """No printed source exempts phi' = 0 slices from the m_alpha check;
     the module's reasoning is that there m_alpha does not depend on F and

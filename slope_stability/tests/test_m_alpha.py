@@ -360,8 +360,11 @@ def test_de_reports_the_seeding_search_when_it_has_no_surface(monkeypatch):
                     n_points=5, method="spencer", seed=1, maxiter=2,
                     popsize=4, n_seed_trials=30)
     assert res.critical is not None and res.critical.FOS < _FOS_MAX
-    (w,) = res.warnings
+    (w,) = [w for w in res.warnings if "seeded it" in w]
     assert "random search that seeded it (30 trials)" in w
+    # (called on its own, the search also reports the printed checks on
+    # its governing surface: GM-140 step 3's review, defect 2)
+    assert len(res.warnings) == 1 + bool(res.critical_flags)
     assert f"{res.critical.FOS:.3f}" in w
 
 

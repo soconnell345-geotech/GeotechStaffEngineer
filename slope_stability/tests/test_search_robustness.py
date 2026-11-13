@@ -461,11 +461,15 @@ def test_the_axis_slicing_and_jagged_screens_are_removed():
     agreement between slicings and the refusal of a FOS below 1.5 on a
     jagged surface were numerical stand-ins not found in print (EM
     1110-2-1902 C-10a prints the checks on forces and the line of thrust).
-    Measured on the noncircular cases of the validation set, each refused
-    only surfaces the printed checks flag, so they are removed for the
-    method's own solves: such a surface is scored, kept and flagged. The
-    jagged gate stays for a caller's own per-surface solve (rapid
+    Measured on the noncircular cases of the validation set (Spencer),
+    each refused only surfaces the printed checks flag, so the first two
+    are removed for the method's own solves and the jagged screen for
+    Spencer, Morgenstern-Price and GLE: such a surface is scored, kept and
+    flagged. The jagged gate stays for Janbu's simplified method and the
+    Ordinary Method of Slices, which no C-10a check covers (the step 3
+    review's defect 1), and for a caller's own per-surface solve (rapid
     drawdown), on which the printed checks are not made."""
+    from slope_stability.search import _jagged_screen_applies
     from slope_stability import search as search_mod
     for name in ("_solution_fails", "_converged_about",
                  "_noncircular_axis_point", "_note_refused"):
@@ -486,6 +490,51 @@ def test_the_axis_slicing_and_jagged_screens_are_removed():
                         fos_fn=lambda g, s: 1.2) == _FOS_MAX
     assert stats["jagged"] == 1
     assert stats["screens"]["jagged_below_1_5"]["n"] == 1
+    for method in ("spencer", "morgenstern_price", "gle"):
+        assert not _jagged_screen_applies(method, None)
+        assert _jagged_screen_applies(method, lambda g, s: 1.2)
+    for method in ("janbu", "fellenius"):
+        assert _jagged_screen_applies(method, None)
+
+
+def _acads1a():
+    """ACADS 1(a) (Giam and Donald 1989): one soil, c' 3 kPa, phi' 19.6
+    deg, gamma 20 kN/m3; printed F 1.00."""
+    return SlopeGeometry(
+        surface_points=[(20.0, 25.0), (30.0, 25.0), (50.0, 35.0),
+                        (70.0, 35.0)],
+        soil_layers=[SlopeSoilLayer(name="soil", top_elevation=35.0,
+                                    bottom_elevation=20.0, gamma=20.0,
+                                    phi=19.6, c_prime=3.0)])
+
+
+@pytest.mark.parametrize("method", ["janbu", "fellenius"])
+def test_jagged_screen_stays_for_methods_without_c10a_checks(method,
+                                                             monkeypatch):
+    """The step 3 review's defect 1. On ACADS 1(a), a 200-trial random
+    search by Janbu's simplified method or the Ordinary Method of Slices
+    admitted 29 and 42 jagged surfaces below F 1.5 once the screen was
+    gone, none of them flagged: neither method has a check of EM
+    1110-2-1902 C-10a. With the screen kept for them no scored surface is
+    jagged below 1.5, and every refusal is counted under the screen."""
+    from slope_stability import search as search_mod
+    scored = []
+    real = search_mod._compute_fos
+
+    def recording(geom, slip, *a, **kw):
+        f = real(geom, slip, *a, **kw)
+        if f < _FOS_MAX and not kw.get("fos_fn"):
+            scored.append((f, slip))
+        return f
+
+    monkeypatch.setattr(search_mod, "_compute_fos", recording)
+    res = search_noncircular(
+        _acads1a(), x_entry_range=(20.0, 32.0), x_exit_range=(46.0, 68.0),
+        n_trials=200, n_points=6, n_slices=25, seed=42, method=method)
+    assert scored
+    assert not [f for f, s in scored if f < 1.5 and _is_jagged(s)]
+    jag = res.screen_refusals["jagged_below_1_5"]
+    assert jag["n"] == res.n_rejected_jagged > 0
 
 
 def test_valid_noncircular_solution_is_kept():

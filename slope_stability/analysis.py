@@ -802,18 +802,20 @@ def search_critical_surface(
     without supports or a seismic coefficient and taken where Bishop's is
     the lower (Duncan 1996, p. 580); ``critical.FOS_bishop`` and
     ``critical.FOS_fellenius`` give both. The noncircular screens that
-    are left (slice count and span, applied before any solve) are the
-    module's own, not found in print; ``screen_refusals`` counts each. A
-    low factor of safety on a jagged surface, or a solution that held about
-    one moment axis or one slicing only, is no longer refused
+    are left (slice count and span, applied before any solve, and with
+    Janbu's simplified method or the Ordinary Method of Slices a FOS below
+    1.5 on a jagged surface) are the module's own, not found in print;
+    ``screen_refusals`` counts each. With Spencer, Morgenstern-Price or GLE
+    (and Bishop, whose noncircular surfaces Spencer scores), a low factor
+    of safety on a jagged surface, or a solution that held about one moment
+    axis or one slicing only, is no longer refused
     (``search.REMOVED_SCREENS``): such a surface is scored, kept and
     flagged, and can be the headline.
     """
     from slope_stability.search_supplements import (
         apply_supplements, search_choices, note_budget, CIRCULAR,
         NONCIRCULAR, m_alpha_confirmation, finer_slices_warning,
-        m_alpha_none_warning, critical_acceptability,
-        acceptability_warning,
+        m_alpha_none_warning, report_acceptability,
     )
     from slope_stability.search import (
         _screen_method, _m_alpha_refusals_so_far, _no_solution_so_far,
@@ -894,18 +896,8 @@ def search_critical_surface(
         # and the lowest surface without a flag beside it.
         result.trial_flags = flag_records(
             _flag_tally_so_far(), rename={"main": search_kind})
-        critical_acceptability(geom, result, scored, n_slices, tol,
-                               m_alpha_rule=m_alpha_rule)
-        w = acceptability_warning(result)
-        if w:
-            result.warnings.append(w)
-        if result.critical is not None:
-            # (a comparison with the Ordinary Method of Slices value that
-            # was not made on the governing circle, and why)
-            result.warnings.extend(
-                f["text"] for f in result.critical.acceptability
-                if f["check"] == "bishop_against_oms"
-                and not f.get("compared"))
+        report_acceptability(geom, result, scored, n_slices, tol,
+                             m_alpha_rule=m_alpha_rule)
         confirm = m_alpha_confirmation(geom, result.critical, scored,
                                        n_slices, tol)
         result.layer_overlaps = geom.layer_overlaps()

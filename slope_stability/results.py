@@ -669,6 +669,10 @@ class SearchResult:
         The checks the governing surface does not meet
         (``critical.acceptability`` has each finding: which check, which
         slice or slice side, what value). Empty when it meets them all.
+        Every exported search that returns a ``SearchResult`` fills it
+        (`search._reports_acceptability`); `search_rapid_drawdown` scores
+        its surfaces with its own staged solve, on which the checks are not
+        made.
     lowest_unflagged : dict or None
         When the governing surface carries a flag: the lowest factor of
         safety among the surfaces the search scored by the same method
@@ -680,13 +684,14 @@ class SearchResult:
     screen_refusals : dict
         Noncircular trial surfaces refused by each of the module's own
         screens (not found in print): ``slice_count`` and ``span``, applied
-        before any solve, and ``jagged_below_1_5``, applied only to a
-        caller's own per-surface solve (rapid drawdown); each ``{"n",
-        "n_flagged"}`` (``n_flagged`` None: the printed checks were not
-        made on the refused surfaces). The screens on agreement between
-        moment axes and between slicings, and the jagged screen on the
-        method's own solves, were removed in GM-140 step 3
-        (``search.REMOVED_SCREENS``).
+        before any solve, and ``jagged_below_1_5``, applied to Janbu's
+        simplified method and the Ordinary Method of Slices, which no check
+        of EM 1110-2-1902 C-10a covers, and to a caller's own per-surface
+        solve (rapid drawdown); each ``{"n", "n_flagged"}`` (``n_flagged``
+        None: the printed checks were not made on the refused surfaces).
+        The screens on agreement between moment axes and between slicings,
+        and the jagged screen for Spencer, Morgenstern-Price and GLE, were
+        removed in GM-140 step 3 (``search.REMOVED_SCREENS``).
     no_solution : list of dict
         Trial surfaces left without a solution, by family and by method
         (GM-140 step 2): ``{"family", "method", "n", "not_converged",

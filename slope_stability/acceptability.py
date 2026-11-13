@@ -115,6 +115,11 @@ E_NEGLIGIBLE = 1e-3
 ROUNDING = 1e-9
 
 _RIGOROUS = ("spencer", "morgenstern_price", "gle")
+#: The methods the checks of EM 1110-2-1902 C-10a (pp. C-33 to C-34:
+#: the effective normal force on each base, the interslice forces, the
+#: line of thrust) are made for here: the GLE's. Janbu's simplified
+#: method and the Ordinary Method of Slices have none.
+C10A_METHODS = _RIGOROUS
 
 
 def _finding(check: str, flag: bool, text: str, **located) -> Dict[str, Any]:

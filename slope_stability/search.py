@@ -34,7 +34,8 @@ from slope_stability.methods import (
     M_ALPHA_MIN, M_ALPHA_RULES, m_alpha_checked, m_alpha_min,
     NEGATIVE_TERM_RULES, negative_term,
 )
-from slope_stability.acceptability import surface_findings, flags as _flags
+from slope_stability.acceptability import (surface_findings, C10A_METHODS,
+                                           flags as _flags)
 from slope_stability.solution import solve_method, check_method
 from slope_stability.results import SearchResult, SlopeStabilityResult
 
@@ -266,6 +267,43 @@ def _counts_refusals(fn):
             if not target.trial_flags:
                 target.trial_flags = flag_records(tally[3])
         return result
+    return wrapper
+
+
+def _reports_acceptability(fn):
+    """Put the printed acceptability checks' report on the result of a
+    search called on its own: the governing surface's flags
+    (``critical_flags``, ``critical.acceptability``), the warning, and the
+    lowest scored surface with no flag (``lowest_unflagged``), from the one
+    place `search_supplements.report_acceptability`, which
+    `search_critical_surface` calls too (GM-140 step 3, item 4; its
+    review's defect 2). A search run inside another leaves the report to
+    the outer one. Every exported search function that returns a
+    ``SearchResult`` carries it; `search_rapid_drawdown` scores with its own
+    staged solve, which the checks are not made on."""
+    sig = inspect.signature(fn)
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        outermost = _REFUSALS.get() is None
+        result = fn(*args, **kwargs)
+        if outermost and isinstance(result, SearchResult):
+            from slope_stability.search_supplements import (
+                report_acceptability, CIRCULAR, NONCIRCULAR)
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            a = bound.arguments
+            crit = result.critical
+            circular = crit is None or getattr(crit, "is_circular", True)
+            method = a.get("method") or "spencer"
+            if not circular and method == "bishop":
+                method = "spencer"      # (as `_compute_fos` scores it)
+            report_acceptability(
+                a["geom"], result, method, a["n_slices"], a["tol"],
+                m_alpha_rule=_M_ALPHA_RULE.get(),
+                family=CIRCULAR if circular else NONCIRCULAR)
+        return result
+    wrapper.reports_acceptability = True
     return wrapper
 
 
@@ -933,10 +971,30 @@ REMOVED_SCREENS = {
     "one_slicing": "and at one slice more or twice the slices within 50 % "
                    "(1 refused, 1 flagged)",
     "jagged_below_1_5": "a FOS below 1.5 on a jagged surface was refused "
-                        "(88 refused, 88 flagged); kept only for a "
-                        "caller's own per-surface solve (rapid drawdown), "
-                        "on which the printed checks are not made here",
+                        "(88 refused, 88 flagged, in the measured Spencer "
+                        "searches); removed for Spencer, Morgenstern-Price "
+                        "and GLE only (Bishop's noncircular surfaces are "
+                        "scored by Spencer). It stays, the module's own, "
+                        "for Janbu's simplified method and the Ordinary "
+                        "Method of Slices, which no C-10a check covers "
+                        "(ACADS 1(a), 200 random trials: it refuses 29 "
+                        "Janbu and 42 Ordinary Method of Slices surfaces "
+                        "that no printed check flags), and for a caller's "
+                        "own per-surface solve (rapid drawdown), on which "
+                        "the printed checks are not made here",
 }
+
+
+def _jagged_screen_applies(scored_by: str, fos_fn) -> bool:
+    """Whether the jagged screen (a FOS below 1.5 on a jagged surface is
+    refused; the module's own, not found in print) applies to a surface
+    scored by ``scored_by``: for a caller's own per-surface solve, and for
+    the methods no check of EM 1110-2-1902 C-10a covers (Janbu's
+    simplified method, the Ordinary Method of Slices); not for Spencer,
+    Morgenstern-Price and GLE (`C10A_METHODS`), whose checks flagged every
+    surface it refused in the measured cases (GM-140 step 3, item 5; its
+    review's defect 1)."""
+    return fos_fn is not None or scored_by not in C10A_METHODS
 
 
 def _compute_fos(geom: SlopeGeometry,
@@ -1066,15 +1124,19 @@ def _compute_fos(geom: SlopeGeometry,
                 if refuse:
                     _count_m_alpha_refusal()
                     return _FOS_MAX
-            # The agreement between moment axes and between slicings, and
-            # the refusal of a FOS below 1.5 on a jagged surface, are gone
-            # for the method's own solves (GM-140 step 3, item 5): measured
-            # on every noncircular case of the validation set, each refused
-            # only surfaces the printed checks flag, and those are kept and
-            # flagged now (`REMOVED_SCREENS`). A caller's own per-surface
-            # solve (rapid drawdown) is not put through the printed checks
-            # here, so its jagged gate stays.
-            if (fos_fn is not None and fos < _LOW_FOS_JAGGED_GATE
+            # The agreement between moment axes and between slicings is
+            # gone for the method's own solves, and the refusal of a FOS
+            # below 1.5 on a jagged surface for Spencer, Morgenstern-Price
+            # and GLE (GM-140 step 3, item 5): measured on every noncircular
+            # case of the validation set, each refused only surfaces the
+            # printed checks flag, and those are kept and flagged now
+            # (`REMOVED_SCREENS`). The jagged screen stays for Janbu's
+            # simplified method and the Ordinary Method of Slices, which no
+            # C-10a check covers, and for a caller's own per-surface solve
+            # (rapid drawdown), not put through the printed checks here
+            # (`_jagged_screen_applies`).
+            if (fos < _LOW_FOS_JAGGED_GATE
+                    and _jagged_screen_applies(scored_by, fos_fn)
                     and _is_jagged(slip)):
                 _bump(reject_stats, "jagged")
                 _bump_screen(reject_stats, "jagged_below_1_5", names)
@@ -1462,6 +1524,7 @@ def _refine_centre(score, start, steps, bounds,
     return best
 
 
+@_reports_acceptability
 @_counts_refusals
 @counts_reverse_discards
 def grid_search(geom: SlopeGeometry,
@@ -1726,6 +1789,7 @@ def grid_search(geom: SlopeGeometry,
     )
 
 
+@_reports_acceptability
 @_counts_refusals
 @counts_reverse_discards
 def search_noncircular(
@@ -1885,6 +1949,7 @@ def search_noncircular(
 
 # ── PSO Noncircular Search ────────────────────────────────────────────────
 
+@_reports_acceptability
 @_counts_refusals
 @counts_reverse_discards
 def search_pso(
@@ -2144,6 +2209,7 @@ def _layer_band_at(geom: SlopeGeometry, layer, x: float):
     return max(stretches, key=lambda s: s[1] - s[0])
 
 
+@_reports_acceptability
 @_counts_refusals
 @counts_reverse_discards
 def search_weak_layer_biased(
@@ -2339,6 +2405,7 @@ def _weighted_choice(weights):
 
 # ── Entry/Exit Region Search ─────────────────────────────────────────────
 
+@_reports_acceptability
 @_counts_refusals
 @counts_reverse_discards
 def search_entry_exit(
@@ -2615,6 +2682,7 @@ def search_entry_exit(
 
 # ── Differential-Evolution Noncircular Refinement ───────────────────────
 
+@_reports_acceptability
 @_counts_refusals
 @counts_reverse_discards
 def search_de(
