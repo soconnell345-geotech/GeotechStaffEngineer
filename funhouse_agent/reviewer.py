@@ -275,14 +275,15 @@ def needs_revision(review_text: str) -> bool:
 
 
 #: The librarian's chart sentence where values can be read off the charts
-#: (a fetcher or the PDFs on this host; ``reference_docs``), and where not.
+#: (a fetcher or the PDFs on this host; ``reference_docs``), and where not
+#: (no PDFs here, or a v1 native consult, which has no chart reader).
 _CHART_READS = (
     "If a value lives in a design chart, find it with figure_search and "
     "read it off with read_reference_figure (never infer chart values from "
     "memory). ")
 _NO_CHART_READS = (
-    "No value can be read off a reference chart here (the reference PDFs "
-    "are not on this host): if a value lives only in a design chart, find "
+    "No value can be read off a reference chart here (you have no "
+    "chart-reading tool): if a value lives only in a design chart, find "
     "the figure with figure_search, cite it, and say its value could not "
     "be read; never give a chart value from its caption or from memory. ")
 
@@ -368,5 +369,9 @@ def consult_references(
         temperature=temperature,
         verbose=verbose,
     )
-    result = sub.ask(consultant_framing() + question)
+    # A native-tools consultant has no read_reference_figure (OPENAI_TOOLS),
+    # so it is told no chart value can be read, whatever this host holds; a
+    # text-mode one has the tool where the host reaches the PDFs.
+    native = getattr(engine, "native_tool_calling", False)
+    result = sub.ask(consultant_framing(False if native else None) + question)
     return result.answer

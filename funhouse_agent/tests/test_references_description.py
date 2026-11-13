@@ -84,3 +84,33 @@ def test_the_v1_consult_descriptions_name_them_too(where):
         desc = CONSULT_REFERENCES_TOOL["function"]["description"]
     assert "NOAA" not in desc
     assert "Eurocode 7 Part 1 (EN 1997-1)" in desc
+    # neither promises a chart read (the native consultant has no reader;
+    # the text one has it only where the host reaches the PDFs)
+    assert "read off a design chart" not in desc
+    assert "figure charts" not in desc
+
+
+@pytest.mark.parametrize("native", [True, False])
+def test_the_v1_consultant_is_told_what_it_can_read(monkeypatch, native):
+    from funhouse_agent import reference_docs, reviewer
+
+    asked = {}
+
+    class _Agent:
+        def __init__(self, **kwargs):
+            pass
+
+        def ask(self, text):
+            asked["text"] = text
+            return type("R", (), {"answer": "ok"})()
+
+    monkeypatch.setattr("funhouse_agent.agent.GeotechAgent", _Agent)
+    reference_docs.pin_chart_reads(True)          # a host with the PDFs
+    engine = type("E", (), {"native_tool_calling": native})()
+    assert reviewer.consult_references(engine, "Q?") == "ok"
+    if native:
+        assert "No value can be read off a reference chart here" in \
+            asked["text"]
+        assert "read_reference_figure" not in asked["text"]
+    else:
+        assert "read it off with read_reference_figure" in asked["text"]

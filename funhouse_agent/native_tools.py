@@ -448,11 +448,12 @@ CONSULT_REFERENCES_TOOL = {
             "Ask the geotechnical reference librarian a question. It searches "
             "the design references (" + "; ".join(held_references())
             + " — chapter text, tables, equations, and "
-            "figure charts) and returns a cited answer. Use it whenever you "
-            "need a code provision, a recommended method, a parameter range, a "
-            "required factor of safety, or a value read off a design chart. You "
-            "do NOT have the reference modules directly — this tool is the only "
-            "way to reach them."
+            "figure catalogs) and returns a cited answer. Use it whenever you "
+            "need a code provision, a recommended method, a parameter range or "
+            "a required factor of safety. It finds and cites a design chart "
+            "but cannot read a value off one (it has no chart-reading tool). "
+            "You do NOT have the reference modules directly — this tool is "
+            "the only way to reach them."
         ),
         "parameters": {
             "type": "object",
