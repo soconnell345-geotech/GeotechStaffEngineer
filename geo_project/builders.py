@@ -58,7 +58,9 @@ def to_slope_geometry(project: Project, check: bool = True):
       ``analysis_mode='undrained'`` (+ cu); the other models map straight to
       the layer's ``strength_model``.
     * a layer's named ``bottom_boundary`` polyline →
-      ``bottom_boundary_points`` (position-dependent bottom).
+      ``bottom_boundary_points`` (position-dependent bottom), and the
+      ``top_boundary_points`` of the layer below it, so each point has
+      one layer.
     * ``water.ru`` is applied to every layer's ``ru``.
     * only the FIRST surcharge maps (SlopeGeometry carries one band) —
       validate() warns about extras.
@@ -110,6 +112,13 @@ def to_slope_geometry(project: Project, check: bool = True):
         bpts = project.boundary_points(i)
         if bpts:
             kwargs["bottom_boundary_points"] = bpts
+        # One material per point (slope_stability, GM-140 step 1): under a
+        # layer with a polyline bottom the next layer starts AT that
+        # polyline (its top polyline), not at the flat top_elevation, the
+        # polyline's highest point.
+        above = project.boundary_points(i - 1) if i > 0 else None
+        if above:
+            kwargs["top_boundary_points"] = above
         layers.append(SlopeSoilLayer(**kwargs))
 
     nails = [SoilNail(x_head=n.x_head, z_head=n.z_head, length=n.length,

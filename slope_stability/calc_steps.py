@@ -68,6 +68,15 @@ REFERENCES = [
 # Inputs
 # ---------------------------------------------------------------------------
 
+def _boundary_cell(points, flat) -> str:
+    """A layer top or bottom for the layer table: the flat elevation, or
+    the range of a sloping (polyline) boundary."""
+    if points:
+        zs = [z for _, z in points]
+        return f"{min(zs):.1f} to {max(zs):.1f} (sloping)"
+    return f"{flat:.1f}"
+
+
 def get_input_summary(result, analysis) -> List[InputItem]:
     """Build input parameter table for slope stability calc package.
 
@@ -226,8 +235,9 @@ def _geometry_section(geom) -> CalcSection:
         c, phi = layer.shear_strength_params
         row = [
             layer.name,
-            f"{layer.top_elevation:.1f}",
-            f"{layer.bottom_elevation:.1f}",
+            _boundary_cell(layer.top_boundary_points, layer.top_elevation),
+            _boundary_cell(layer.bottom_boundary_points,
+                           layer.bottom_elevation),
             f"{layer.gamma:.1f}",
             f"{c:.1f}",
             f"{phi:.1f}",
@@ -253,6 +263,19 @@ def _geometry_section(geom) -> CalcSection:
         headers=headers,
         rows=layer_rows,
     ))
+    # One material per point: where two layers were given the same ground,
+    # the first listed holds it (``SlopeGeometry.layer_overlaps``).
+    overlaps = geom.layer_overlaps()
+    if overlaps:
+        items.append(TableData(
+            title="Overlapping layers (the first listed layer holds the "
+                  "ground, for weight and strength)",
+            headers=["Layer", "Ground also given to", "x from (m)",
+                     "x to (m)", "Up to (m)"],
+            rows=[[o["layer"], ", ".join(o["held_by"]),
+                   f"{o['x_from']:.1f}", f"{o['x_to']:.1f}",
+                   f"{o['max_overlap_m']:.2f}"] for o in overlaps],
+        ))
 
     if geom.gwt_points is not None:
         gwt_rows = [[f"{x:.1f}", f"{z:.1f}"] for x, z in geom.gwt_points]
