@@ -221,3 +221,64 @@ def test_settlement_tool_says_its_soil():
         assert "coarse-grained" in info["parameters"][p]["description"]
     # GEC-12 Sec. 7.3.5.3 is the cohesive-soil method, not this equation's
     assert "7.3.5.3" not in info["brief"].split("cohesive soil")[0]
+
+
+# --- off-centre piles in the simple tool (GM-319 review, the lead's call) --
+
+_OFF = [{"x": -1.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 3.0, "y": 0.0}]
+
+
+def test_simple_tool_off_centre_forces_sum_to_vz_and_it_warns():
+    r = _call("pile_group_simple", {"piles": _OFF, "Vz": 900, "My": 200})
+    assert "error" not in r, r
+    # the re-centred layout's forces (x = -2, 0, 2); before, 281.8, 318.2
+    # and 354.5 kN, summing to 954.5
+    forces = [p["axial_kN"] for p in r["pile_forces"]]
+    assert forces == pytest.approx([250.0, 300.0, 350.0])
+    assert sum(forces) == pytest.approx(900.0)
+    assert r["centroid_m"] == {"x": 1.0, "y": 0.0}
+    assert len(r["warnings"]) == 1
+    w = r["warnings"][0]
+    assert "taken at the centroid of the piles, (x, y) = (1.000, 0.000) m, " \
+           "not at the origin of the coordinates given" in w
+    assert "add 900 kN x (-1.000 m) = -900.0 kN-m to My" in w
+    # pile_group_6dof's description does not say where its loads act, so
+    # the warning does not send the load there
+    assert "pile_group_6dof" not in w
+    # the piles keep the coordinates given
+    assert [p["x_m"] for p in r["pile_forces"]] == [-1.0, 1.0, 3.0]
+
+
+def test_simple_tool_centred_layout_has_no_warning():
+    r = _call("pile_group_simple", {"n_rows": 3, "n_cols": 3,
+                                    "spacing": 0.9, "Vz": 900, "Mx": 100})
+    assert "error" not in r, r
+    assert "warnings" not in r
+    assert r["centroid_m"] == {"x": 0.0, "y": 0.0}
+    assert any("taken to act at the centroid of the piles" in n
+               and "the origin of the coordinates" in n for n in r["notes"])
+    # as before: 100 + 100 x 0.9 / 4.86 on the -y row
+    assert [p["axial_kN"] for p in r["pile_forces"]][:3] == [118.5] * 3
+
+
+def test_simple_tool_single_row_off_the_origin_refuses_mx():
+    row = [{"x": x, "y": 2.0} for x in (-1.5, 0.0, 1.5)]
+    r = _call("pile_group_simple", {"piles": row, "Vz": 900, "Mx": 300})
+    assert "Mx = 300 kN-m cannot be carried: every pile is on y = 2" \
+        in r["error"]
+
+
+def test_simple_tool_description_says_where_the_loads_act():
+    from funhouse_agent.adapters.pile_group import METHOD_INFO
+    info = METHOD_INFO["pile_group_simple"]
+    sentence = ("Vz, Mx and My are taken to act at the centroid of the piles "
+                "(xc, yc), each pile's x and y measured from it; a load "
+                "applied at another point (xa, ya) needs its moment about "
+                "the centroid added, Vz x (xa - xc) to My and -Vz x "
+                "(ya - yc) to Mx (+My compresses the +x side, +Mx uplifts "
+                "the +y side).")
+    assert sentence in info["brief"]
+    assert "Eq. 8-79" in info["brief"]
+    assert "centroid_m" in info["returns"] and "warnings" in info["returns"]
+    for m in ("Mx", "My"):
+        assert "centroid" in info["parameters"][m]["description"]

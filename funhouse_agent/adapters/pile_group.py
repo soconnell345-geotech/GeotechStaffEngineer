@@ -987,7 +987,7 @@ _UPLIFT_NOTE_RETURN = (
 METHOD_INFO = {
     "pile_group_simple": {
         "category": "Pile Group",
-        "brief": "Simplified elastic vertical group analysis: equal vertical piles under a rigid cap, P = Vz/n + My*x/SUM(x^2) - Mx*y/SUM(y^2). Pile forces only; no stiffness is used and no cap displacement is worked out. Battered piles, unequal piles and lateral load go to pile_group_6dof.",
+        "brief": "Simplified elastic vertical group analysis: equal vertical piles under a rigid cap, P = Vz/n + My*x/SUM(x^2) - Mx*y/SUM(y^2) (GEC-12 Vol I Eq. 8-79, p. 468). Vz, Mx and My are taken to act at the centroid of the piles (xc, yc), each pile's x and y measured from it; a load applied at another point (xa, ya) needs its moment about the centroid added, Vz x (xa - xc) to My and -Vz x (ya - yc) to Mx (+My compresses the +x side, +Mx uplifts the +y side). A centroid more than 1 mm from the origin of the coordinates is warned of. Pile forces only; no stiffness is used and no cap displacement is worked out. Battered piles, unequal piles and lateral load go to pile_group_6dof.",
         "parameters": {
             "n_rows": {"type": "int", "required": False, "description": "Rows for rectangular layout."},
             "n_cols": {"type": "int", "required": False, "description": "Columns for rectangular layout."},
@@ -996,12 +996,12 @@ METHOD_INFO = {
             "spacing": {"type": "float", "required": False, "description": "Uniform center-to-center spacing (m), used for both x and y."},
             "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, label, axial_capacity_compression, axial_capacity_tension}] (m, kN) instead of n_rows/n_cols. All piles are vertical and equal: an entry with a batter_x or batter_y other than 0, or with axial_stiffness or lateral_stiffness, is refused (pile_group_6dof takes them)."},
             "Vz": {"type": "float", "required": True, "description": "Vertical load (kN)."},
-            "Mx": {"type": "float", "required": False, "default": 0.0, "description": "Moment about x (kN-m). Refused when every pile is on y = 0 (one row along x): piles on one line carry no moment about it."},
-            "My": {"type": "float", "required": False, "default": 0.0, "description": "Moment about y (kN-m). Refused when every pile is on x = 0 (one column along y): piles on one line carry no moment about it."},
+            "Mx": {"type": "float", "required": False, "default": 0.0, "description": "Moment about x (kN-m), at the piles' centroid. Refused when every pile is on one line along x (one y): piles on one line carry no moment about it."},
+            "My": {"type": "float", "required": False, "default": 0.0, "description": "Moment about y (kN-m), at the piles' centroid. Refused when every pile is on one line along y (one x): piles on one line carry no moment about it."},
             "axial_capacity_compression": {"type": "float", "required": False, "description": "Per-pile compression capacity (kN) for utilization checks (rectangular layout)."},
             "axial_capacity_tension": {"type": "float", "required": False, "description": "Per-pile tension capacity (kN) (rectangular layout)."},
         },
-        "returns": {"pile_forces": "Per-pile axial forces.", "max_compression_kN": "Max compression.", "cap_displacements": "null: not calculated (the method uses no pile stiffness).", "notes": "What the analysis left out; report it.", "group_uplift_note": _UPLIFT_NOTE_RETURN},
+        "returns": {"pile_forces": "Per-pile axial forces.", "max_compression_kN": "Max compression.", "centroid_m": "The piles' centroid {x, y} (m), where Vz, Mx and My are taken to act.", "warnings": "Present when the centroid is more than 1 mm from the origin of the coordinates: the loads are taken at the centroid, not at the origin; report it.", "cap_displacements": "null: not calculated (the method uses no pile stiffness).", "notes": "What the analysis left out; report it.", "group_uplift_note": _UPLIFT_NOTE_RETURN},
     },
     "pile_group_6dof": {
         "category": "Pile Group",

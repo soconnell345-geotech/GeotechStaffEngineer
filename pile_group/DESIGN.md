@@ -68,7 +68,29 @@ stiffness assembly, and pile-force back-calc):
   the +y side; +Mz twists counterclockwise in plan (viewed from above).**
 - Simple method: `P_i = Vz/n + My*x_i/Sx2 - Mx*y_i/Sy2` (note the minus on
   Mx — pre-v5.1 the code used `+ Mx*y_i/Sy2`, which is not realizable in
-  any right-handed frame together with the +My term).
+  any right-handed frame together with the +My term). GEC-12 Vol I
+  Sec. 8.8 Step 3 prints it as Eq. 8-79 (p. 468), x and y measured there
+  from the centre of the column, which carries the loads.
+- Where the simple method takes the loads (GM-319 review): Vz, Mx and My
+  are taken to act at the centroid of the piles (xc, yc), each pile's x
+  and y measured from it; a load applied at another point (xa, ya) needs
+  its moment about the centroid added, Vz x (xa - xc) to My and
+  -Vz x (ya - yc) to Mx (+My compresses the +x side, +Mx uplifts the +y
+  side). A centroid more than 1 mm from the origin of the coordinates is
+  warned of. Basis: statics of the rigid cap (with distances from the
+  centroid SUM(x_i - xc) = 0, so the forces sum to Vz and give back Mx and
+  My); no held reference prints the distances from the piles' centroid,
+  and Eq. 8-79's centre of the column is that point only when the column
+  stands over it. Before, x and y were measured from the origin: piles at
+  x = -1, 1, 3 m with Vz 900 kN and My 200 kN-m gave 281.8, 318.2 and
+  354.5 kN (sum 954.5); now 250, 300 and 350 kN. A layout centred on the
+  origin gives the same numbers as before. The result gives `centroid_m`,
+  a note, and `warnings` when off the origin; with equal stiffness, dz is
+  reported at the origin (the kinematics above), so the cap displacements
+  equal the 6-DOF method's for the same loads moved to the origin. The
+  6-DOF method takes its loads at the origin of the coordinates (its
+  kinematics use x and y as given); its tool description does not say
+  where its loads act.
 - 6-DOF: K = sum(B^T k B) with rigid-cap kinematics
   `ux = dx - rz*y`, `uy = dy + rz*x`, `s = dz - rx*y + ry*x`; the same B
   back-calculates pile forces, so they equilibrate the applied loads.
@@ -89,7 +111,10 @@ stiffness assembly, and pile-force back-calc):
 - Piles on one line (GM-319 review): a non-zero Mx with every pile on
   y = 0, or My with every pile on x = 0, is refused by both methods:
   piles pinned to the cap on one line carry no moment about it (before,
-  the simple method skipped the term without a word). A zero moment runs.
+  the simple method skipped the term without a word). The simple method
+  refuses it on any one line (a single row at y = 2 m cannot carry Mx
+  either); the 6-DOF method, whose loads act at the origin, finds a single
+  row off the origin singular and says so. A zero moment runs.
 - Batter: the direction cosines are (sin batter_x, sin batter_y, the
   rest); sin²(batter_x) + sin²(batter_y) at or above 1 is refused (before,
   lz was set to 0 and the vector was not of unit length).

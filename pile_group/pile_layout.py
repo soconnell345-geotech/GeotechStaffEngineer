@@ -26,9 +26,12 @@ class GroupPile:
     Parameters
     ----------
     x : float
-        X-coordinate of pile head relative to cap centroid (m).
+        X-coordinate of the pile head in the cap's plan axes (m). The
+        simplified method measures it from the piles' centroid, where it
+        takes the loads; the 6-DOF method from the origin (GM-319 review).
     y : float
-        Y-coordinate of pile head relative to cap centroid (m).
+        Y-coordinate of the pile head in the cap's plan axes (m), the
+        same way.
     batter_x : float, optional
         Batter angle in X-direction (degrees from vertical).
         Positive = pile leans in +X direction. Default 0 (vertical).

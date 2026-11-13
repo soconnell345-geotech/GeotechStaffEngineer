@@ -236,22 +236,35 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             ])
 
         layout_items.append(TableData(
-            title="Pile Coordinates (relative to cap centroid)",
+            title="Pile Coordinates",
             headers=["Pile", "X (m)", "Y (m)", "Vertical"],
             rows=layout_rows,
         ))
 
-    # Geometric sums for simplified method
+    # Geometric sums for simplified method: its distances are measured
+    # from the piles' centroid, where it takes the loads (GM-319 review)
+    simple = _get(analysis, 'method', None) not in ('6dof', 'general')
     if piles:
         xs = [_get(p, 'x', 0.0) for p in piles]
         ys = [_get(p, 'y', 0.0) for p in piles]
+        equation = ("\u03a3x\u00b2 = sum of x_i\u00b2 for all piles\n"
+                    "\u03a3y\u00b2 = sum of y_i\u00b2 for all piles")
+        if simple:
+            xc, yc = _centroid(piles)
+            layout_items.append(_centroid_step(xs, ys, xc, yc, load))
+            xs = [x - xc for x in xs]
+            ys = [y - yc for y in ys]
+            if _off_centre(xc, yc):
+                equation = ("\u03a3x\u00b2 = sum of (x_i \u2212 x_c)\u00b2 "
+                            "for all piles\n"
+                            "\u03a3y\u00b2 = sum of (y_i \u2212 y_c)\u00b2 "
+                            "for all piles")
         sum_x2 = sum(x**2 for x in xs)
         sum_y2 = sum(y**2 for y in ys)
 
         layout_items.append(CalcStep(
             title="Sum of Squared Distances",
-            equation="\u03a3x\u00b2 = sum of x_i\u00b2 for all piles\n"
-                     "\u03a3y\u00b2 = sum of y_i\u00b2 for all piles",
+            equation=equation,
             substitution=_sum_squares_substitution(xs, ys),
             result_name="\u03a3x\u00b2, \u03a3y\u00b2",
             result_value=f"\u03a3x\u00b2 = {sum_x2:.3f} m\u00b2, "
@@ -436,14 +449,16 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             substitution=_simple_load_substitution(n_piles, Vz, My, Mx, piles),
             result_name="Method",
             result_value="Simplified Elastic",
-            reference=("classical rigid-cap combined-stress formula (the EM "
-                       "1110-2-2906 Ch. 4 equations are unnumbered and this "
-                       "approximate method is described, not printed, there — "
-                       "citation corrected 2026-07-19, wiki-verification)"),
+            reference=("GEC-12 Vol I Sec. 8.8 Step 3, Eq. 8-79 (p. 468), "
+                       "x and y there measured from the centre of the "
+                       "column, which carries the loads; here from the "
+                       "piles' centroid, where the loads are taken (statics "
+                       "of the rigid cap)"),
             notes=(
                 "Assumes vertical piles, rigid cap, and elastic behavior. "
                 "Right-hand-rule convention (z up, V_z positive down): "
-                "+M_y compresses the +x side; +M_x uplifts the +y side."
+                "+M_y compresses the +x side; +M_x uplifts the +y side. "
+                "V_z, M_x and M_y act at the piles' centroid (x_c, y_c)."
             ),
         ))
 
@@ -852,21 +867,70 @@ def _sum_squares_substitution(xs, ys):
 
 
 def _simple_load_substitution(n_piles, Vz, My, Mx, piles):
-    """Build substitution string for simplified elastic formula."""
+    """Build substitution string for simplified elastic formula, the
+    distances from the piles' centroid (GM-319 review)."""
     parts = [f"P_i = {Vz:,.1f}/{n_piles}"]
 
     if piles:
-        xs = [_get(p, 'x', 0.0) for p in piles]
-        ys = [_get(p, 'y', 0.0) for p in piles]
+        xc, yc = _centroid(piles)
+        xs = [_get(p, 'x', 0.0) - xc for p in piles]
+        ys = [_get(p, 'y', 0.0) - yc for p in piles]
         sum_x2 = sum(x**2 for x in xs)
         sum_y2 = sum(y**2 for y in ys)
+        off = _off_centre(xc, yc)
+        x_i = f"(x_i \u2212 {xc:.3f})" if off else "x_i"
+        y_i = f"(y_i \u2212 {yc:.3f})" if off else "y_i"
 
         if abs(My) > 0.01 and sum_x2 > 0:
-            parts.append(f"+ {My:,.1f}\u00b7x_i/{sum_x2:.3f}")
+            parts.append(f"+ {My:,.1f}\u00b7{x_i}/{sum_x2:.3f}")
         if abs(Mx) > 0.01 and sum_y2 > 0:
-            parts.append(f"- {Mx:,.1f}\u00b7y_i/{sum_y2:.3f}")
+            parts.append(f"- {Mx:,.1f}\u00b7{y_i}/{sum_y2:.3f}")
 
     return " ".join(parts)
+
+
+def _centroid(piles):
+    """The piles' centroid (x_c, y_c), m, where the simplified method takes
+    the loads; rounded to the micrometre, never a -0.0."""
+    n = len(piles)
+    xc = sum(_get(p, 'x', 0.0) for p in piles) / n
+    yc = sum(_get(p, 'y', 0.0) for p in piles) / n
+    return round(xc, 6) + 0.0, round(yc, 6) + 0.0
+
+
+def _off_centre(xc, yc):
+    from pile_group.rigid_cap import CENTROID_TOL_M
+    return abs(xc) > CENTROID_TOL_M or abs(yc) > CENTROID_TOL_M
+
+
+def _centroid_step(xs, ys, xc, yc, load):
+    """The step that says where the simplified method takes the loads: the
+    piles' centroid, and the warning when it is off the origin (GM-319
+    review). Basis: statics of the rigid cap."""
+    from pile_group.rigid_cap import centroid_load_warning
+    n = len(xs)
+    if n <= 8:
+        sx = " + ".join(f"({x:.3f})" for x in xs)
+        sy = " + ".join(f"({y:.3f})" for y in ys)
+    else:
+        sx = " + ".join(f"({x:.3f})" for x in xs[:4]) + " + ..."
+        sy = " + ".join(f"({y:.3f})" for y in ys[:4]) + " + ..."
+    Vz = _get(load, 'Vz', 0.0) if load else 0.0
+    warning = centroid_load_warning(xc, yc, Vz)
+    notes = ("V_z, M_x and M_y are taken to act here; each pile's x and y "
+             "in the load distribution are measured from it, so the pile "
+             "forces sum to V_z.")
+    if warning:
+        notes += " WARNING: " + warning
+    return CalcStep(
+        title="Centroid of the Piles",
+        equation="x_c = \u03a3x_i / n\ny_c = \u03a3y_i / n",
+        substitution=f"x_c = [{sx}] / {n}\ny_c = [{sy}] / {n}",
+        result_name="x_c, y_c",
+        result_value=f"x_c = {xc:.3f} m, y_c = {yc:.3f} m",
+        reference="Statics of the rigid cap (equilibrium of the cap)",
+        notes=notes,
+    )
 
 
 #: The plan view, drawn at the width it prints at so that a size in

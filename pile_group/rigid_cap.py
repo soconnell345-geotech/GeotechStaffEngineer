@@ -75,11 +75,14 @@ from pile_group.pile_layout import GroupPile
 
 @dataclass
 class GroupLoad:
-    """Applied loads on the pile cap.
+    """Applied loads on the pile cap, at the cap elevation.
 
-    All loads/moments are at the centroid of the pile group at the
-    cap elevation. See the module docstring for the full sign
-    convention (right-handed axes, z up; Vz positive downward).
+    ``analyze_vertical_group_simple`` takes them at the centroid of the
+    piles and measures each pile's x and y from it (GM-319 review);
+    ``analyze_group_6dof`` takes them at the origin of the coordinates,
+    which its rigid-cap kinematics use as given. The two are one point
+    for a layout centred on the origin. See the module docstring for the
+    full sign convention (right-handed axes, z up; Vz positive downward).
 
     Parameters
     ----------
@@ -121,6 +124,14 @@ class PileGroupResult:
         works out no displacement (``notes`` says so).
     notes : list of str
         What the analysis took or left out, in words.
+    centroid : dict or None
+        Simplified vertical method only: the piles' centroid
+        ``{"x": .., "y": ..}`` (m), where it takes the loads to act.
+    warnings : list of str
+        What the caller must read before using the numbers: from the
+        simplified vertical method, a centroid more than 1 mm from the
+        origin of the coordinates (the loads are taken there, not at
+        the origin).
     pile_forces : list of dict
         Per-pile forces and utilization ratios.
     max_compression : float
@@ -145,6 +156,8 @@ class PileGroupResult:
     n_piles: int = 0
     pile_head_response: List[Dict[str, Any]] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    centroid: Optional[Dict[str, float]] = None
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -182,6 +195,8 @@ class PileGroupResult:
             )
         for note in self.notes:
             lines.extend(["", f"  Note: {note}"])
+        for warning in self.warnings:
+            lines.extend(["", f"  WARNING: {warning}"])
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -218,7 +233,7 @@ class PileGroupResult:
         return ax
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        out = {
             "n_piles": self.n_piles,
             "cap_displacements": self.cap_displacements,
             "max_compression_kN": round(self.max_compression, 1),
@@ -227,6 +242,11 @@ class PileGroupResult:
             "pile_forces": self.pile_forces,
             "notes": list(self.notes),
         }
+        if self.centroid is not None:
+            out["centroid_m"] = dict(self.centroid)
+        if self.warnings:
+            out["warnings"] = list(self.warnings)
+        return out
 
     def get_tables(self) -> list:
         """GROUP-style tables: the force at each pile head, the pile-head
@@ -314,17 +334,63 @@ class PileGroupResult:
 #: SUM(x^2) or SUM(y^2) at or below this (m^2): every pile on that line.
 _ON_LINE_M2 = 1e-12
 
+#: The simplified method warns when the piles' centroid, where it takes the
+#: loads, is more than this (m) from the origin in x or y (GM-319 review).
+CENTROID_TOL_M = 1e-3
 
-def _moment_about_pile_line(name: str) -> str:
+
+def _moment_about_pile_line(name: str, at: float = 0.0) -> str:
     """Why a moment about the one line every pile stands on is refused
     (GM-319 review): piles pinned to the cap along one line give no lever
-    arm about it, so the cap turns about that line freely."""
+    arm about it, so the cap turns about that line freely. ``at``: the
+    line's coordinate (the piles' centroid in the simplified method)."""
     coord, axis = ("y", "x") if name == "Mx" else ("x", "y")
-    return (f"every pile is on {coord} = 0, one line along the {axis} axis, "
-            f"and piles pinned to the cap on one line cannot carry a moment "
-            f"about that line (SUM({coord}^2) = 0, no lever arm); give piles "
+    at = at if abs(at) > CENTROID_TOL_M else 0.0
+    lever = (f"SUM({coord}^2) = 0" if at == 0.0 else
+             f"SUM(({coord} - {at:g})^2) = 0 about the piles' centroid")
+    return (f"every pile is on {coord} = {at:g}, one line along the {axis} "
+            f"axis, and piles pinned to the cap on one line cannot carry a "
+            f"moment about that line ({lever}, no lever arm); give piles "
             f"off that line, or leave {name} out if the cap is restrained "
             "against that rotation another way")
+
+
+def centroid_load_warning(xc: float, yc: float, Vz: float) -> Optional[str]:
+    """The simplified method's warning for piles whose centroid (xc, yc),
+    where it takes the loads, is more than ``CENTROID_TOL_M`` from the
+    origin in x or y; None when it is not (GM-319 review). Statics: a load
+    at (xa, ya) is the same load at the centroid with My + Vz (xa - xc)
+    and Mx - Vz (ya - yc), under the module's convention (+My compresses
+    the +x side, +Mx uplifts the +y side)."""
+    off_x, off_y = abs(xc) > CENTROID_TOL_M, abs(yc) > CENTROID_TOL_M
+    if not (off_x or off_y):
+        return None
+    # rounded to the micrometre, never a "-0.000"
+    xc, yc = round(xc, 6) + 0.0, round(yc, 6) + 0.0
+
+    def minus(c):
+        return f"{'-' if c >= 0 else '+'} {abs(c):.3f} m"
+
+    general, origin = [], []
+    if off_x:
+        general.append(f"Vz x (xa {minus(xc)}) to My (+My compresses the "
+                       "+x side)")
+        origin.append(f"{Vz:g} kN x ({-xc:.3f} m) = {-Vz * xc:,.1f} kN-m "
+                      "to My")
+    if off_y:
+        general.append(f"-Vz x (ya {minus(yc)}) to Mx (+Mx uplifts the +y "
+                       "side)")
+        origin.append(f"-({Vz:g} kN x {-yc:.3f} m) = {Vz * yc:,.1f} kN-m "
+                      "to Mx")
+    text = (f"The loads are taken at the centroid of the piles, (x, y) = "
+            f"({xc:.3f}, {yc:.3f}) m, not at the origin of the coordinates "
+            f"given (more than {CENTROID_TOL_M * 1000:g} mm from it). A load "
+            "applied at another point (xa, ya) needs its moment about the "
+            f"centroid added: {' and '.join(general)}.")
+    if abs(Vz) > 1e-12:
+        text += (f" For Vz = {Vz:g} kN applied at the origin, add "
+                 f"{' and '.join(origin)}.")
+    return text
 
 
 def analyze_vertical_group_simple(
@@ -339,7 +405,21 @@ def analyze_vertical_group_simple(
         Pi = Vz/n + My*xi/SUM(xi^2) - Mx*yi/SUM(yi^2)
 
     so positive My compresses the +x side and positive Mx uplifts the
-    +y side — consistent with ``analyze_group_6dof``.
+    +y side — consistent with ``analyze_group_6dof``. GEC-12 Vol I
+    Sec. 8.8 Step 3 prints it as Eq. 8-79 (p. 468), x and y measured from
+    the centre of the column, which carries the loads.
+
+    Vz, Mx and My are taken to act at the centroid of the piles (xc, yc),
+    each pile's xi and yi measured from it (GM-319 review: they were
+    measured from the origin of the coordinates, so a layout not centred
+    on it gave forces that did not sum to Vz). Statics of the rigid cap:
+    with SUM(xi - xc) = SUM(yi - yc) = 0 the forces sum to Vz and give
+    back Mx and My. A load applied at another point (xa, ya) needs its
+    moment about the centroid added, Vz (xa - xc) to My and
+    -Vz (ya - yc) to Mx. A centroid more than ``CENTROID_TOL_M`` (1 mm)
+    from the origin in x or y is warned of in ``warnings``; the result's
+    ``centroid`` and ``notes`` give it either way. A layout centred on
+    the origin gives the same forces as before.
 
     This method ignores lateral loads (Vx, Vy) and torsion (Mz); a
     ``UserWarning`` is issued if any of them is nonzero (PG-3). Use the
@@ -349,15 +429,18 @@ def analyze_vertical_group_simple(
     a battered pile is refused, and so are piles of unequal
     ``axial_stiffness``. The forces use no stiffness. The cap's settlement
     and tilt are worked out only when every pile carries the same
-    ``axial_stiffness`` ka: dz = Vz/(n ka), ry = My/(ka SUM x^2),
-    rx = Mx/(ka SUM y^2), the displacements that give the forces above
-    through P_i = ka (dz - rx y_i + ry x_i). Without stiffness
+    ``axial_stiffness`` ka: ry = My/(ka SUM (x - xc)^2),
+    rx = Mx/(ka SUM (y - yc)^2), and the settlement Vz/(n ka) at the
+    centroid, reported as dz at the origin of the coordinates
+    (dz = Vz/(n ka) + rx yc - ry xc) so that the module's kinematics
+    P_i = ka (dz - rx y_i + ry x_i), x_i and y_i as given, give the forces
+    above, as ``analyze_group_6dof`` does. Without stiffness
     ``cap_displacements`` is empty and ``notes`` says so.
 
-    A non-zero Mx with every pile on y = 0 (one row along x), or My with
-    every pile on x = 0, is refused (GM-319 review): piles on one line
-    carry no moment about it, and the formula's term would be dropped. A
-    zero moment runs.
+    A non-zero Mx with every pile on one line along x (one y), or My with
+    every pile on one line along y, is refused (GM-319 review): piles on
+    one line carry no moment about it, and the formula's term would be
+    dropped. A zero moment runs.
 
     Parameters
     ----------
@@ -405,28 +488,35 @@ def analyze_vertical_group_simple(
             "(the forces use no stiffness). Use analyze_group_6dof (the "
             "pile_group_6dof tool) for piles of unequal stiffness.")
 
-    xs = np.array([p.x for p in piles])
-    ys = np.array([p.y for p in piles])
+    xs = np.array([p.x for p in piles], dtype=float)
+    ys = np.array([p.y for p in piles], dtype=float)
 
-    sum_x2 = np.sum(xs**2)
-    sum_y2 = np.sum(ys**2)
+    # The loads act at the piles' centroid, and the formula's distances are
+    # measured from it (GM-319 review: from the origin before, so a layout
+    # not centred on it gave forces that did not sum to Vz). Statics of the
+    # rigid cap: SUM(x - xc) = 0, so the moment terms add no net force.
+    xc, yc = float(xs.mean()), float(ys.mean())
+    dxs, dys = xs - xc, ys - yc
+    sum_x2 = np.sum(dxs**2)
+    sum_y2 = np.sum(dys**2)
 
     # A moment about the line every pile is on has no lever arm: refused,
     # never dropped (GM-319 review; before, its term was skipped).
-    for name, moment, s2 in (("Mx", load.Mx, sum_y2), ("My", load.My, sum_x2)):
+    for name, moment, s2, at in (("Mx", load.Mx, sum_y2, yc),
+                                 ("My", load.My, sum_x2, xc)):
         if abs(moment) > 1e-12 and not s2 > _ON_LINE_M2:
             raise ValueError(f"{name} = {moment:g} kN-m cannot be carried: "
-                             f"{_moment_about_pile_line(name)}.")
+                             f"{_moment_about_pile_line(name, at)}.")
 
     # Axial force in each pile
     axial = np.full(n, load.Vz / n)
 
     # Moment contribution (right-hand rule, z up: +My compresses +x,
     # +Mx uplifts +y)
-    if sum_x2 > 0:
-        axial += load.My * xs / sum_x2
-    if sum_y2 > 0:
-        axial -= load.Mx * ys / sum_y2
+    if sum_x2 > _ON_LINE_M2:
+        axial += load.My * dxs / sum_x2
+    if sum_y2 > _ON_LINE_M2:
+        axial -= load.Mx * dys / sum_y2
 
     # Results
     pile_forces = []
@@ -460,11 +550,14 @@ def analyze_vertical_group_simple(
     notes = []
     if given:
         ka = float(given[0])
+        rx = float(load.Mx / (ka * sum_y2)) if sum_y2 > _ON_LINE_M2 else 0.0
+        ry = float(load.My / (ka * sum_x2)) if sum_x2 > _ON_LINE_M2 else 0.0
+        # Vz/(n ka) is the settlement at the centroid; dz is reported at
+        # the origin of the coordinates, the module's kinematics' point
         cap_disp = {
-            "dx": 0.0, "dy": 0.0, "dz": float(load.Vz / (n * ka)),
-            "rx": float(load.Mx / (ka * sum_y2)) if sum_y2 > 0 else 0.0,
-            "ry": float(load.My / (ka * sum_x2)) if sum_x2 > 0 else 0.0,
-            "rz": 0.0,
+            "dx": 0.0, "dy": 0.0,
+            "dz": float(load.Vz / (n * ka)) + rx * yc - ry * xc,
+            "rx": rx, "ry": ry, "rz": 0.0,
         }
     else:
         cap_disp = {}
@@ -473,6 +566,15 @@ def analyze_vertical_group_simple(
             "forces use no pile stiffness (the pile_group_simple tool takes "
             "none). The 6-DOF analysis (pile_group_6dof) gives the cap's "
             "displacements from the piles' stiffness.")
+    warning = centroid_load_warning(xc, yc, load.Vz)
+    # rounded to the micrometre, never a "-0.000"
+    xc, yc = round(xc, 6) + 0.0, round(yc, 6) + 0.0
+    notes.append(
+        "Vz, Mx and My are taken to act at the centroid of the piles, "
+        f"(x, y) = ({xc:.3f}, {yc:.3f}) m"
+        + ("" if warning else ", the origin of the coordinates")
+        + "; each pile's x and y are measured from it, so the pile forces "
+        "sum to Vz (statics of the rigid cap).")
 
     return PileGroupResult(
         notes=notes,
@@ -482,6 +584,8 @@ def analyze_vertical_group_simple(
         max_tension=max_tens,
         max_utilization=max_util,
         n_piles=n,
+        centroid={"x": xc, "y": yc},
+        warnings=[warning] if warning else [],
     )
 
 
