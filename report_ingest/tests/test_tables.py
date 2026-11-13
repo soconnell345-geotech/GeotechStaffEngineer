@@ -924,13 +924,54 @@ class TestAReingest:
         v1 = Path(outcome.folder)
 
         assert outcome.keys == [parent]
+        # RI-209 review B5: an EMPTY file in each keyed table, so the copy a
+        # dataset keeps is replaced by no rows; its documents go locally
+        assert outcome.dropped == [child]
         for table in ("report", "report_page", "report_answer",
                       "report_file"):
-            assert not (v1 / table / f"{child}.jsonl").exists(), table
+            assert (v1 / table / f"{child}.jsonl").read_bytes() == b"", table
+            assert f"{table}/{child}.jsonl" in outcome.files
         assert not (v1 / "record" / f"{child}.record.json").exists()
         assert list((v1 / "ingest_run").glob(f"{child}.*.jsonl"))
         (top,) = _rows(v1, "report", parent)
         assert top["bound_report_keys"] == []
+
+    def test_a_report_whose_key_changed_empties_its_old_key(self, tmp_path):
+        """RI-209 review B5: the report's own key moves (here: first keyed
+        without its file, then with it, as a cluster library made before
+        RI-209 does once). The old key's table files are emptied and sent in
+        the same save; its history stays."""
+        folder, pdf, _written = _write_folder(tmp_path)
+        record = ReportRecord.model_validate_json(
+            (folder / "report.record.json").read_text("utf-8"))
+        root = tmp_path / "root"
+        first = tables.after_ingest(folder, record=record, key_source=None,
+                                    setting=str(root))
+        lib = _fake().FakeLibrary(tmp_path / "fake")
+        with pytest.MonkeyPatch.context() as mp:
+            import aec_agent_core.foundry_dataset_store as fds
+
+            lib.install(mp)
+            mp.setenv("GEOTECH_DEPLOYMENT", "foundry")
+            mp.setenv(tables.ENV_DATASET, _fake().ALIAS)
+            mp.delenv(fds.ENV_ROOT, raising=False)
+            second = tables.after_ingest(folder, record=record, source=pdf,
+                                         key_source=pdf, setting=str(root))
+        v1 = Path(second.folder)
+        old, new = first.report_key, second.report_key
+
+        assert old != new and second.dropped == [old]
+        for table in ("report", "report_page", "report_answer",
+                      "report_file"):
+            assert (v1 / table / f"{old}.jsonl").read_bytes() == b""
+            assert _rows(v1, table, new)
+        assert not (v1 / "record" / f"{old}.record.json").exists()
+        assert list((v1 / "ingest_run").glob(f"{old}.*.jsonl"))
+        assert second.delivery.startswith("sent ")
+        (save,) = lib.ds.uploads()
+        top = "GeotechStaffEngineer/report_tables/v1/"
+        assert top + f"report/{old}.jsonl" in save[1]
+        assert top + f"report_page/{old}.jsonl" in save[1]
 
 
 # ---------------------------------------------------------------------------

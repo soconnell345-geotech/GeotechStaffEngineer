@@ -130,20 +130,29 @@ those pages carry `bound_report_key` = the bound-in report's key.
 - A file the new ingest did not write is removed locally (a DIGGS file from
   an earlier ingest when this one wrote none; the answer sheet when the
   question list did not run this time).
-- A bound-in report the new ingest no longer finds has its files removed
-  locally (its `ingest_run` rows stay, as history).
+- A key the report was exported under last time and is not now gets an
+  EMPTY file (no rows) in `report/`, `report_page/`, `report_answer/` and
+  `report_file/`, written locally and sent to the dataset in the same save,
+  and its document files are removed locally. That covers a bound-in report
+  the new ingest no longer finds (its key changes when the bound-in reports
+  are renumbered) and the report's own old key when its key changed. The
+  keys of the last export are read from the run file before the new one is
+  written, and from the old report row's `bound_report_keys`. The export's
+  outcome lists them (`dropped`). Their `ingest_run` rows stay, as history.
 - `ingest_run/` only gains files: one per ingest.
 
-**What to trust in a dataset.** A dataset keeps every file it was ever sent,
-so a file removed locally stays in the dataset. Build from the rows, not
-from a folder listing:
+**What to trust in a dataset.** A dataset keeps every file it was ever sent.
+The empty files above replace a dropped key's table files there, so a
+pipeline reading the tables sees no rows for it with no filter. Two things
+still stay in the dataset, and are why the rows, not a folder listing, are
+the truth:
 
-- the files of a report are the ones its `report_file` rows name;
-- a report row with a `parent_report_key` belongs only while its parent's
-  `bound_report_keys` lists it. A bound-in report's key changes when the
-  ingest finds the bound-in reports differently (they are renumbered), so
-  keep a bound-in report's rows only when its parent lists its key, and
-  drop the pages, answers and files of a report you drop.
+- a dropped key's document files (DIGGS, record, summary, sheet): the files
+  of a report are the ones its `report_file` rows name;
+- a key dropped by an export that never reached the dataset (an ingest with
+  the dataset busy, before `--deliver` re-sends it). As a second check, a
+  report row with a `parent_report_key` belongs only while its parent's
+  `bound_report_keys` lists it.
 
 ## Building them for reports already ingested
 

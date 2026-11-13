@@ -1522,7 +1522,9 @@ class ExportOutcome:
     files written, relative to the export's folder (``folder``, local);
     ``delivery`` says what the Foundry dataset got: ``sent N file(s)``,
     ``not set`` (no dataset named), ``not a Foundry deployment``,
-    ``busy: ...`` or ``failed: ...``; empty when no delivery was asked."""
+    ``busy: ...`` or ``failed: ...``; empty when no delivery was asked.
+    ``dropped`` are keys the report was exported under before and is not
+    now, each left with empty table files (:func:`_write_group`)."""
 
     status: str
     folder: str = ""
@@ -1532,12 +1534,14 @@ class ExportOutcome:
     rows: Dict[str, int] = field(default_factory=dict)
     delivery: str = ""
     detail: str = ""
+    dropped: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {"status": self.status, "folder": self.folder,
                 "report_key": self.report_key, "keys": list(self.keys),
                 "files": len(self.files), "rows": dict(self.rows),
-                "delivery": self.delivery, "detail": self.detail}
+                "delivery": self.delivery, "detail": self.detail,
+                "dropped": list(self.dropped)}
 
 
 def _doc_path(v1: str, kind: str, key: str) -> str:
@@ -1563,18 +1567,53 @@ def _old_children(v1: str, key: str) -> List[str]:
     return [str(k) for k in row.get("bound_report_keys") or []]
 
 
-def _write_group(built: Sequence[_Built], v1: str) -> List[str]:
-    """Each report's files, replacing what the export held for its key;
-    a document the report no longer has, and a bound-in report the parent
-    no longer lists, removed (their ingest_run files stay). An ingest_run
-    file already there is never overwritten: that run's row stands as it
-    was first written (RI-209 review B3)."""
+def _previous_keys(folder: str) -> List[str]:
+    """The keys a report's folder was exported under last time, its own
+    and its bound-in reports' (RI-209 review B5): the keys its run file's
+    export outcome lists, else the run file's report key. Read whatever
+    the run file's age, and before an ingest writes a new one."""
+    run = _read_json(os.path.join(folder, RUN_NAME))
+    if not isinstance(run, dict):
+        return []
+    export = run.get("export")
+    if isinstance(export, dict):
+        keys = [str(k) for k in export.get("keys") or []]
+    else:
+        keys = [str(run.get("report_key") or "")]
+    return [k for k in dict.fromkeys(keys) if k]
+
+
+#: The tables a report's key has one file in; a key that is gone gets an
+#: empty one in each (RI-209 review B5).
+_KEYED = ("report", "report_page", "report_answer", "report_file")
+
+
+def _write_group(built: Sequence[_Built], v1: str,
+                 previous_keys: Iterable[str] = ()
+                 ) -> Tuple[List[str], List[str]]:
+    """Each report's files, replacing what the export held for its key, and
+    a document the report no longer has removed. Returns the files written
+    and the keys dropped.
+
+    A key this report was exported under before and is not now (a bound-in
+    report the parent no longer lists, or the report's own key when it
+    changed: ``previous_keys`` and the old report row's
+    ``bound_report_keys``) gets an EMPTY file in each of :data:`_KEYED`,
+    written here and sent with the report's save, so a dataset that keeps
+    every file it was sent holds no rows for it (RI-209 review B5); its
+    document files are removed locally, and its ingest_run files stay, as
+    history. An ingest_run file already there is never overwritten: that
+    run's row stands as it was first written (RI-209 review B3)."""
     written: List[str] = []
     top = built[0]
-    for gone in set(_old_children(v1, top.key)) - {b.key for b in built}:
-        for table in ("report", "report_page", "report_answer",
-                      "report_file"):
-            _remove(os.path.join(v1, table, f"{gone}.jsonl"))
+    now = {b.key for b in built}
+    dropped = sorted((set(previous_keys) | set(_old_children(v1, top.key)))
+                     - now)
+    for gone in dropped:
+        for table in _KEYED:
+            target = os.path.join(v1, table, f"{gone}.jsonl")
+            _write_bytes(target, b"")
+            written.append(target)
         for doc in DOCUMENTS:
             _remove(_doc_path(v1, doc.kind, gone))
     for one in built:
@@ -1597,7 +1636,7 @@ def _write_group(built: Sequence[_Built], v1: str) -> List[str]:
     _write_bytes(target, (json.dumps(schema(), indent=1, ensure_ascii=False)
                           + "\n").encode("utf-8"))
     written.append(target)
-    return written
+    return written, dropped
 
 
 def _relative(v1: str, paths: Iterable[str]) -> List[str]:
@@ -1605,19 +1644,27 @@ def _relative(v1: str, paths: Iterable[str]) -> List[str]:
 
 
 def export_report(report_dir: Any, root: Any, *, deliver: bool = False,
-                  file_manager: Any = None) -> ExportOutcome:
+                  file_manager: Any = None,
+                  previous_keys: Optional[Iterable[str]] = None
+                  ) -> ExportOutcome:
     """Export one report's folder, and the reports bound inside it, into
     ``<root>/report_tables/v1/``; with ``deliver``, send its files (and
     ``schema.json``, and every ``ingest_run`` file of its keys) to the
     Foundry dataset :data:`ENV_DATASET` names (:func:`send_to_dataset`).
-    Never raises: a failure is the outcome's ``error``."""
+    ``previous_keys`` are the keys the folder was exported under last time
+    (the ingest reads them before it writes its new run file); by default
+    they are read from the folder's run file. A key no longer among the
+    report's gets empty table files, sent too (RI-209 review B5). Never
+    raises: a failure is the outcome's ``error``."""
     folder = str(report_dir)
     v1 = export_dir(root)
     try:
+        if previous_keys is None:
+            previous_keys = _previous_keys(folder)
         top = _with_children(_load(folder))
         group = [top] + top.children
         built = [_build(report) for report in group]
-        paths = _write_group(built, v1)
+        paths, dropped = _write_group(built, v1, previous_keys)
     except Exception as exc:                           # noqa: BLE001
         _log.warning("report tables: %s was not exported: %s: %s",
                      os.path.basename(os.path.normpath(folder)),
@@ -1627,7 +1674,8 @@ def export_report(report_dir: Any, root: Any, *, deliver: bool = False,
     rows = {t.name: sum(len(b.rows[t.name]) for b in built) for t in TABLES}
     outcome = ExportOutcome(status="written", folder=v1, report_key=top.key,
                             keys=[b.key for b in built],
-                            files=_relative(v1, paths), rows=rows)
+                            files=_relative(v1, paths), rows=rows,
+                            dropped=dropped)
     if deliver:
         sent = list(paths)
         for one in built:
@@ -1798,6 +1846,8 @@ def after_ingest(out_dir: Any, *, record: Any, children: Sequence[Any] = (),
             return ExportOutcome(status="off")
         from report_ingest.writers import record_key
 
+        # the keys of the last export, before this run's file replaces them
+        previous = _previous_keys(out)
         moment = now or datetime.now(timezone.utc)
         run_id = f"{_stamp(moment)}-{secrets.token_hex(3)}"
         base = record_key(record, key_source)
@@ -1814,7 +1864,8 @@ def after_ingest(out_dir: Any, *, record: Any, children: Sequence[Any] = (),
                 "parent_report_key": base, "question_list": False})
         _save_run(out, facts)
         outcome = export_report(out, root,
-                                deliver=bool(dataset_alias()))
+                                deliver=bool(dataset_alias()),
+                                previous_keys=previous)
     except Exception as exc:                           # noqa: BLE001
         _log.warning("report tables: the export did not run: %s: %s",
                      type(exc).__name__, exc)
