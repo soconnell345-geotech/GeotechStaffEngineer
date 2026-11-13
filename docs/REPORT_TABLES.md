@@ -181,9 +181,11 @@ the truth:
 
 - a dropped key's document files (DIGGS, record, summary, sheet): the files
   of a report are the ones its `report_file` rows name;
-- a key dropped by an export that never reached the dataset (an ingest with
-  the dataset busy, before `--deliver` re-sends it). As a second check, a
-  report row with a `parent_report_key` belongs only while its parent's
+- a key dropped by an export whose save did not reach the dataset (busy,
+  or failed), until a later save does: the run file keeps such keys, and
+  every later save of the report, an ingest's or `--deliver`'s, sends their
+  empty files again until an ingest's save goes through. As a second check,
+  a report row with a `parent_report_key` belongs only while its parent's
   `bound_report_keys` lists it.
 
 ## Building them for reports already ingested
@@ -198,7 +200,8 @@ reports bound inside it), writes the tables under `<root>/report_tables/v1/`
 (the root defaults to that folder) and calls no model. `--deliver` also
 sends each report to the dataset `GSE_REPORT_TABLES_DATASET` names, on
 Foundry; it is also how to re-send what an ingest could not send (a busy
-dataset).
+dataset): the report's files, its history, and the empty files of the keys
+that ingest dropped.
 
 A folder ingested before the tables existed has no run file, so:
 
@@ -218,10 +221,14 @@ A folder ingested before the tables existed has no run file, so:
 At the end of every ingest a small file, `report.run.json`, is written
 beside each record (the report's and each bound-in report's): the run id
 and time, the report's key and its parent's, the source file's name, size
-and SHA-256, the package versions, whether the question list ran, and, in
-the report's own file, what the export did (`export`: `written` or `error`,
-how many rows of each table, and what the dataset got). The ingest never
-fails because of the export: a failure is logged and kept there. In code,
+and SHA-256, the package versions, whether the question list ran, the
+SHA-256 of the record it was written for (`record_sha256`), and, in the
+report's own file, the keys the export may still hold from earlier ingests
+(`previous_keys`) and what the export did (`export`: `written` or `error`,
+how many rows of each table, the keys dropped, and what the dataset got).
+The ingest never fails because of the export: a failure is logged and kept
+there, in this ingest's own run file even when the export stopped before
+writing it. In code,
 `report_ingest.tables.export_outcome(out_dir)` reads it back; the cluster
 stage copies it into each report's `run.json` (`report_tables`). The app's
 ingest tool says it in one line (`report_tables` in its result: written or
@@ -229,13 +236,17 @@ not, sent to the dataset or not, and why not, with the command that sends
 it again), and a folder run puts the outcome and that line in each report's
 row of `index.json` and a section of `INDEX.md`.
 
-The run file is always written after the record. One OLDER than its record
-belongs to an earlier ingest (a later one ran with the export off, on an
-older version, or stopped before the export), so it is not used: the folder
-is read as one ingested before the tables existed (above), with a new run id
-and the record's time, and a question-list file written before that old run
-file is not shown as the latest ingest's. An `ingest_run` file already in
-the export is never overwritten.
+A run file belongs to the record whose SHA-256 it carries. One whose hash
+is not the record's belongs to an earlier ingest (a later one ran with the
+export off, on an older version, or stopped before the export), so it is not
+used: the folder is read as one ingested before the tables existed (above),
+with a new run id and the record's time, and a question-list file written
+before that old run file is not shown as the latest ingest's. The hash, not
+the files' times, decides, so a folder copied without its times (a job's
+folder copied into a dataset) reads the same as the original. A run file
+written before the hash existed is judged by its time: it is always written
+after its record, so one older than the record is an earlier ingest's. An
+`ingest_run` file already in the export is never overwritten.
 
 The question list's answers are now also saved as data beside the sheet,
 `report.questions.json` (the same answers, typed, with the Run tab's
@@ -335,14 +346,14 @@ Files: `report_answer/<report_key>.jsonl`. Primary key: `answer_id` (`<report_ke
 | `data_type` | string | yes | The answer's type in the question list's words: string, boolean, integer, date, list of strings, list of records, dictionary, integer or list of integers. For the two schemas, from the field's type. Null on every question-list row read back from an older answer sheet, which holds no type. |
 | `status` | string | yes | answered; not said (the report is silent); does not apply (the question has no bearing; question list only). Null where no answer came back at all (a question-list call that failed; the note says so). Read back from an older answer sheet, from its Answer cell: N/A is does not apply, empty is not said (null where the note says not run). |
 | `value_text` | string | yes | The answer as text: the schema's answer as printed (a list joined with '; '), or the question list's answer as its sheet shows it (a dictionary answer as JSON); 'none' for an empty list. An answer of many records read back from an older sheet is the sheet's own pointer to its tab. |
-| `value_number` | double | yes | The answer as a number, when it is one. |
+| `value_number` | double | yes | The answer as a number, when it is one and finite (else null, and the note says so). |
 | `value_boolean` | boolean | yes | The answer as true or false: a boolean answer of the question list, or for the schemas' yes/no questions their typed verdict (the ...Answer field beside the text) yes as true and no as false. Null for mixed or unclear, and where a field has no typed verdict: the text itself (e.g. 'no - not tested') is not parsed. |
 | `value_date` | date | yes | The answer as a date, when it is a full date (the schema's reportDate gives its reportDateISO). |
 | `value_list` | array<string> | yes | The answer as a list of text, when it is a list of plain values; null otherwise. |
 | `value_json` | string | yes | The answer's typed value as JSON. Where the schema keeps a typed twin beside the printed answer (reportDateISO, siteClassNormalized, asceSevenVersionNormalized, bearingCapacityValues, strataList, the yes/no answers' verdicts), the twin's value; the twins' own page references are in pdf_pages and quotes, not here. Null when there is no answer. |
 | `pdf_pages` | array<integer> | no | The pages the answer was read from, from 1 at the file's first page (a bound-in report's: its parent's file). |
 | `quotes` | array<string> | no | The page's own words for the answer, where saved (the schemas' citations; the question list keeps none). |
-| `note` | string | yes | What the answer comes with: the question list's note. |
+| `note` | string | yes | What the answer comes with: the question list's note. On any row, it also says when the answer was a number that is not finite (NaN, infinity, or too large for a double): value_number is then null, value_text keeps the text and value_json has null for it. |
 | `source` | string | yes | Who answered, the question list's From: code, report text, both: agree, both: disagree, both: compare by eye, screening; null for the two schemas. |
 | `code_value_text` | string | yes | On a question-list row answered by both code and the report text: code's reading, as text. |
 | `qa_kinds` | array<string> | no | The kinds of the record's QA entries about this answer (QA entries whose where is '<question_set>.<question_key>'). |

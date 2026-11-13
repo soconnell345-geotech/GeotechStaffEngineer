@@ -108,9 +108,10 @@ from aec_agent_core.app_details import hand_in as _hand_in_app
 # dataset under the application's top folder, and a process that loads only
 # report_ingest (the command line's --deliver, a notebook, the cluster)
 # would otherwise send them under the core's default name, a second tree in
-# the same dataset. The same values as funhouse_agent, webapp and
-# calc_package hand in, whichever loads first
-# (webapp/tests/test_app_details.py checks they agree).
+# the same dataset. funhouse_agent, webapp and calc_package hand in the
+# same values. Each hand-in replaces the one before, so the package
+# imported last sets them; since all four hand in the same values
+# (webapp/tests/test_app_details.py checks it), the order changes nothing.
 _hand_in_app(name="GeotechStaffEngineer", dist="geotech-staff-engineer",
              package="funhouse_agent.deep")
 

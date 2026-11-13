@@ -114,10 +114,12 @@ one commit:
 
 Calls made in the fixes:
 
-- B3: "older" is strictly older by modified time. A zip or copy that keeps
-  times keeps the order (the run file is written after the record); one
-  that resets them can make a good run file look stale, which only makes
-  the folder read as an old one.
+- B3: first by modified time. That was wrong for a copy that does not keep
+  times (the FDE's case: job folders copied into a dataset): a good run file
+  looked stale, and the rebuild dropped the question list's answers and made
+  up a second run id. Since the re-check (N1, below) the run file carries
+  the record's SHA-256 and that decides; the time rule is kept only for a
+  run file written before the hash.
 - B4: the line is also added at the end of the sub-agent's own text, so it
   reaches the primary agent on both routes.
 - B6: `report.latest_run_key` added beside `latest_run_id`, so the
@@ -130,7 +132,32 @@ Noted, not fixed (one line each):
 - C16: `export_folder(deliver=True)` sends one transaction per report and re-sends each key's whole `ingest_run` history; fine for tens of reports, slow for hundreds.
 - B5 limit: a key two folders share (the same file twice) and one of them drops would be emptied for both until the other is exported again; rare, and an export of that folder puts it back.
 
+## The re-check (REVIEW.md "Re-check on 3b0ce88")
+
+A1, A2, B4 and B6 closed; verdict MERGE. The new findings:
+
+| # | Sev | What changed | Covering test (`test_tables.py`) |
+|---|---|---|---|
+| N1 | B | The run file carries `record_sha256`, the SHA-256 of the record it was written for; `_run_of` calls it the record's own when the hashes agree, whatever the times. A run file without the field falls back to the time rule. | `TestAReingest::test_a_copy_that_loses_the_files_times_keeps_its_run`, `::test_a_run_file_for_another_record_is_not_used_whatever_its_time`; probe p12a now gives the copy the original's run id and answers |
+| N2 | C | An export that fails before the report's new run file is written now writes that run file with what is known and the error, never touching the earlier ingest's; the report's run file also carries `previous_keys` (what the export may still hold), which `_previous_keys` uses after a failed export | `::test_an_export_that_stops_before_its_run_file_writes_one` (p13's case); p13 now rebuilds with the second ingest's run id and time |
+| N3 | B | `_previous_keys` adds the last outcome's `dropped` keys while its delivery is not `sent ...`, so `--deliver` and every later ingest send their empty files until one ingest's save goes through; the two doc sentences say exactly that | `::test_a_drop_the_dataset_missed_is_sent_by_the_next_save` |
+| N4 | C | A non-finite or overflowing answer gives `value_number` null, `value_text` as it was, null inside `value_json`, and a note on the row; the export goes on. `make_row` still refuses a non-finite double (a definition error). | `TestFoldersIngestedBefore::test_a_number_that_is_not_finite_is_null_with_a_note`; p12b now exports |
+| N7 | C | The comment in `report_ingest/__init__.py` says each hand-in replaces the last, so the package imported last sets the values, and they agree | (wording) |
+
+Noted, not fixed:
+
+- N5: `source_path` wins over a document's own file and over bytes, unchecked; a wrong `source_path` (a caller error; the cluster passes the file it opened) keys the report as another file.
+- N6: a dropped key's `ingest_run` rows keep `report_key` pointing at a report with no row (history, by design); and the shared-key limit above (one file in two folders under one root, one re-keys, the other's rows are emptied until it is exported again).
+- After `--deliver` sends a missed drop, the run file still holds the unsent outcome, so later saves send the same empty files again until the next ingest's save goes through: harmless, and nothing in the report folder is written by a rebuild.
+
 ## What was measured
+
+After the re-check fixes (on 3b0ce88 plus those fixes), each run alone:
+`test_tables.py` 92 passed, `test_subagent.py` 17, `test_run_folder.py` 11,
+`test_cluster_scoring.py -k "IngestStage or ingest_stage or report_tables"`
+15, and `test_public_text.py` + `test_app_details.py` + `test_package.py`
+13, every exit 0. `graph.py` did not change, so `test_graph.py` was not run
+again.
 
 Each run alone, in the foreground, with at least 2 GB free, on e97c010
 (the review fixes):

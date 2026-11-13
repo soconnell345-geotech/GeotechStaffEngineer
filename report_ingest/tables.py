@@ -504,7 +504,8 @@ TABLES: Tuple[Table, ...] = (
                "empty list. An answer of many records read back from an "
                "older sheet is the sheet's own pointer to its tab."),
             _c("value_number", "double",
-               "The answer as a number, when it is one."),
+               "The answer as a number, when it is one and finite (else "
+               "null, and the note says so)."),
             _c("value_boolean", "boolean",
                "The answer as true or false: a boolean answer of the "
                "question list, or for the schemas' yes/no questions their "
@@ -534,7 +535,11 @@ TABLES: Tuple[Table, ...] = (
                "The page's own words for the answer, where saved (the "
                "schemas' citations; the question list keeps none).", False),
             _c("note", "string",
-               "What the answer comes with: the question list's note."),
+               "What the answer comes with: the question list's note. On "
+               "any row, it also says when the answer was a number that is "
+               "not finite (NaN, infinity, or too large for a double): "
+               "value_number is then null, value_text keeps the text and "
+               "value_json has null for it."),
             _c("source", "string",
                "Who answered, the question list's From: code, report text, "
                "both: agree, both: disagree, both: compare by eye, "
@@ -905,6 +910,38 @@ def _jsonl(rows: Sequence[Mapping[str, Any]]) -> bytes:
                    for row in rows).encode("utf-8")
 
 
+#: The note on an answer whose number is not finite (re-check N4).
+_NOT_FINITE = ("the answer is not a finite number (NaN, infinity, or too "
+               "large for a double), so value_number is null")
+
+
+def _number(value: Any) -> Optional[float]:
+    """A number as a finite double, or None: NaN, infinity, or an integer
+    too large for a double (strict JSON from a model can carry 1e400) is
+    written as null, never as a token no strict reader takes, and never
+    fails the report's export (RI-209 re-check N4)."""
+    try:
+        number = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _strict(value: Any) -> Any:
+    """``value`` with every non-finite float as None, for strict JSON."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {k: _strict(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_strict(v) for v in value]
+    return value
+
+
+def _noted(note: Optional[str], more: str) -> str:
+    return f"{note}; {more}" if note else more
+
+
 def _text(value: Any) -> Optional[str]:
     """A string column's value: None for None or an empty string."""
     if value is None:
@@ -957,30 +994,50 @@ def _page_key(folder: str) -> str:
     return found.group(1) if found else ""
 
 
-def _run_of(folder: str) -> Tuple[Dict[str, Any], Optional[float]]:
-    """A report folder's run file, and the time it was written when it is
-    OLDER than the folder's record (BACKLOG RI-209 review B3).
+def _record_sha(folder: str) -> Optional[str]:
+    """The SHA-256 of a report folder's record file, or None."""
+    try:
+        return _sha256_file(os.path.join(folder, _RECORD))
+    except OSError:
+        return None
 
-    The run file is always written after the record, so one older than its
-    record belongs to an earlier ingest: a later one ran with the export
-    off, on an older wheel, or stopped between the writers and the export.
-    Such a run file is not used (the first value is empty) and the folder
-    is read as one ingested before the export, its run id and time from
-    the record file; the second value lets a reader tell an earlier run's
-    side files (the question list's) from the latest ingest's."""
+
+def _run_of(folder: str) -> Tuple[Dict[str, Any], Optional[float]]:
+    """A report folder's run file, and the time it was written when it
+    belongs to an EARLIER ingest than the folder's record (BACKLOG RI-209
+    review B3).
+
+    An ingest since may have run with the export off, on an older wheel, or
+    stopped between the writers and the export, leaving the earlier run
+    file. The run file carries the SHA-256 of the record it was written
+    for (``record_sha256``, re-check N1), so it is the record's own exactly
+    when the two agree, whatever the files' times (a copy that does not
+    keep times, as a job folder copied into a dataset, keeps the hash). A
+    run file written before that field falls back to the times: it is
+    always written after its record, so one older than the record is an
+    earlier ingest's. Such a run file is not used (the first value is
+    empty) and the folder is read as one ingested before the export, its
+    run id and time from the record file; the second value lets a reader
+    tell an earlier run's side files (the question list's) from the latest
+    ingest's."""
     path = os.path.join(folder, RUN_NAME)
     run = _read_json(path)
     if not isinstance(run, dict):
         return {}, None
     try:
         written = os.path.getmtime(path)
-        if written < os.path.getmtime(os.path.join(folder, _RECORD)):
-            _log.info("report tables: %s's run file is older than its "
-                      "record (an ingest since ran without the export); "
-                      "not used", os.path.basename(os.path.normpath(folder)))
-            return {}, written
+        expected = run.get("record_sha256")
+        if isinstance(expected, str) and expected:
+            stale = expected != _sha256_file(os.path.join(folder, _RECORD))
+        else:
+            stale = written < os.path.getmtime(os.path.join(folder, _RECORD))
     except OSError:
-        pass
+        return run, None
+    if stale:
+        _log.info("report tables: %s's run file is an earlier ingest's "
+                  "(an ingest since ran without the export); not used",
+                  os.path.basename(os.path.normpath(folder)))
+        return {}, written
     return run, None
 
 
@@ -1382,7 +1439,9 @@ def _schema_rows(report: _Report, qa_where: Dict[str, List[str]],
                     values["value_list"] = [str(v) for v in value]
                 elif isinstance(value, (int, float)) and \
                         not isinstance(value, bool):
-                    values["value_number"] = float(value)
+                    values["value_number"] = _number(value)
+                    if values["value_number"] is None:
+                        values["note"] = _NOT_FINITE
                 typed: Any = value
                 if twin is not None:
                     typed = twin.model_dump(mode="json") if hasattr(
@@ -1398,7 +1457,8 @@ def _schema_rows(report: _Report, qa_where: Dict[str, List[str]],
                     values["value_boolean"] = _VERDICTS[verdict]
                 if twin_name == "reportDateISO" and _valid_date(twin):
                     values["value_date"] = twin
-                values["value_json"] = json.dumps(typed, ensure_ascii=False)
+                values["value_json"] = json.dumps(_strict(typed),
+                                                  ensure_ascii=False)
             rows.append(make_row(TABLE["report_answer"], values))
     return rows
 
@@ -1442,7 +1502,9 @@ def _list_rows(report: _Report, questions: Dict[str, Any],
         if isinstance(value, bool):
             values["value_boolean"] = value
         elif isinstance(value, (int, float)):
-            values["value_number"] = float(value)
+            values["value_number"] = _number(value)
+            if values["value_number"] is None:
+                values["note"] = _noted(values.get("note"), _NOT_FINITE)
         elif isinstance(value, str) and answer.get("data_type") == "date" \
                 and _valid_date(value):
             values["value_date"] = value
@@ -1450,8 +1512,8 @@ def _list_rows(report: _Report, questions: Dict[str, Any],
                 not isinstance(v, (dict, list)) for v in value):
             values["value_list"] = [str(v) for v in value]
         if value is not None:
-            values["value_json"] = json.dumps(value, ensure_ascii=False,
-                                              default=str)
+            values["value_json"] = json.dumps(_strict(value),
+                                              ensure_ascii=False, default=str)
         if isinstance(value, dict):
             # as JSON, not as the sheet's display (RI-209 review C12)
             values["value_text"] = values["value_json"]
@@ -1668,18 +1730,30 @@ def _old_children(v1: str, key: str) -> List[str]:
 
 
 def _previous_keys(folder: str) -> List[str]:
-    """The keys a report's folder was exported under last time, its own
-    and its bound-in reports' (RI-209 review B5): the keys its run file's
-    export outcome lists, else the run file's report key. Read whatever
-    the run file's age, and before an ingest writes a new one."""
+    """The keys the export may still hold for a report's folder, its own
+    and its bound-in reports' (RI-209 review B5), read off its run file
+    whatever its age, before an ingest writes a new one:
+
+    - after an export that was written, the keys it wrote, and the keys it
+      dropped as long as its save did not reach the dataset (its delivery
+      is not ``sent ...``), so the next save, an ingest's or
+      ``--deliver``'s, sends their empty files again (re-check N3);
+    - after an export that failed, the keys its ingest carried in
+      (``previous_keys``): what was there before still is;
+    - with no outcome saved, the run's report key and what it carried."""
     run = _read_json(os.path.join(folder, RUN_NAME))
     if not isinstance(run, dict):
         return []
     export = run.get("export")
-    if isinstance(export, dict):
+    carried = [str(k) for k in run.get("previous_keys") or []]
+    if isinstance(export, dict) and export.get("status") == "written":
         keys = [str(k) for k in export.get("keys") or []]
+        if not str(export.get("delivery") or "").startswith("sent "):
+            keys += [str(k) for k in export.get("dropped") or []]
+    elif isinstance(export, dict):
+        keys = carried
     else:
-        keys = [str(run.get("report_key") or "")]
+        keys = [str(run.get("report_key") or "")] + carried
     return [k for k in dict.fromkeys(keys) if k]
 
 
@@ -1937,9 +2011,18 @@ def after_ingest(out_dir: Any, *, record: Any, children: Sequence[Any] = (),
     outcome kept in the report's run file. ``children`` are the graph's
     ``(child record, its folder)`` pairs; ``key_source`` what the graph
     keyed the library row with. Off, nothing at all is written. Never
-    raises."""
+    raises.
+
+    Each run file carries the SHA-256 of the record it was written for
+    (``record_sha256``), and the report's own the keys the export may still
+    hold from earlier ingests (``previous_keys``). Should anything fail
+    before the report's new run file is written, it is written with what is
+    known and the error, so the earlier ingest's run file is never taken
+    for this one's (RI-209 re-check N1, N2)."""
     out = str(out_dir)
     root = None
+    facts: Dict[str, Any] = {}
+    run_saved = False
     try:
         root = export_root(setting, out, db_path)
         if root is None:
@@ -1950,6 +2033,12 @@ def after_ingest(out_dir: Any, *, record: Any, children: Sequence[Any] = (),
         previous = _previous_keys(out)
         moment = now or datetime.now(timezone.utc)
         run_id = f"{_stamp(moment)}-{secrets.token_hex(3)}"
+        # what is known so far, should the rest fail (re-check N2)
+        facts = {"format": RUN_FORMAT, "run_id": run_id,
+                 "ingested_at": _utc(moment),
+                 "question_list": bool(question_list),
+                 "record_sha256": _record_sha(out),
+                 "previous_keys": previous}
         base = record_key(record, key_source)
         facts = {"format": RUN_FORMAT, "run_id": run_id,
                  "ingested_at": _utc(moment), "report_key": base,
@@ -1957,12 +2046,17 @@ def after_ingest(out_dir: Any, *, record: Any, children: Sequence[Any] = (),
                  "app_version": _version(APP_DIST),
                  "core_version": _version(CORE_DIST),
                  "planlens_version": _version(PLANLENS_DIST),
-                 "question_list": bool(question_list)}
+                 "question_list": bool(question_list),
+                 "record_sha256": _record_sha(out),
+                 "previous_keys": previous}
         for child, child_dir in children:
             _save_run(str(child_dir), {
-                **facts, "report_key": record_key(child, key_source, base),
-                "parent_report_key": base, "question_list": False})
+                **{k: v for k, v in facts.items() if k != "previous_keys"},
+                "report_key": record_key(child, key_source, base),
+                "parent_report_key": base, "question_list": False,
+                "record_sha256": _record_sha(str(child_dir))})
         _save_run(out, facts)
+        run_saved = True
         outcome = export_report(out, root,
                                 deliver=bool(dataset_alias()),
                                 previous_keys=previous)
@@ -1973,10 +2067,16 @@ def after_ingest(out_dir: Any, *, record: Any, children: Sequence[Any] = (),
                                 folder=export_dir(root) if root else "",
                                 detail=f"{type(exc).__name__}: {exc}")
     try:
-        run = _read_json(os.path.join(out, RUN_NAME))
-        if isinstance(run, dict):
-            run["export"] = outcome.to_dict()
-            _save_run(out, run)
+        if run_saved:
+            run = _read_json(os.path.join(out, RUN_NAME))
+            if isinstance(run, dict):
+                run["export"] = outcome.to_dict()
+                _save_run(out, run)
+        elif facts:
+            # stopped before this run's file was written: write it now, so
+            # the earlier ingest's run file is replaced, never taken for
+            # this one's (re-check N2)
+            _save_run(out, {**facts, "export": outcome.to_dict()})
     except Exception as exc:                           # noqa: BLE001
         _log.warning("report tables: the outcome was not saved: %s", exc)
     return outcome

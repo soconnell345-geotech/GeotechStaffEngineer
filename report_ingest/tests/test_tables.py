@@ -954,6 +954,173 @@ class TestAReingest:
         assert len(runs) == 2 and old_run in runs
         assert old_run.read_bytes() == old_bytes
 
+    def test_a_copy_that_loses_the_files_times_keeps_its_run(self,
+                                                             tmp_path):
+        """RI-209 re-check N1: a folder copied without its times (a job's
+        folder copied into a dataset) can have its run file older than its
+        record. The record's SHA-256 in the run file, not the times, says
+        whose it is: the rebuild keeps the run id and the list's answers. A
+        run file from before the hash is judged by its time."""
+        folder, pdf, written = _write_folder(tmp_path)
+        record = ReportRecord.model_validate_json(
+            (folder / "report.record.json").read_text("utf-8"))
+        answers = folder / "report.questions.json"
+        answers.write_text(json.dumps({"answers": [{
+            "key": "made_up_key", "status": "answered",
+            "text": "a made-up answer", "value": "a made-up answer",
+            "pdf_pages": [1]}], "run": {}}), encoding="utf-8")
+        tables.after_ingest(
+            folder, record=record, source=pdf, key_source=pdf,
+            setting=str(tmp_path / "first"), question_list=True,
+            now=datetime(2026, 2, 3, tzinfo=timezone.utc))
+        run_file = folder / tables.RUN_NAME
+        run = json.loads(run_file.read_text("utf-8"))
+        assert run["record_sha256"] == hashlib.sha256(
+            (folder / "report.record.json").read_bytes()).hexdigest()
+        stamp = (folder / "report.record.json").stat().st_mtime
+        os.utime(run_file, (stamp - 60, stamp - 60))
+        os.utime(answers, (stamp - 61, stamp - 61))
+
+        (copy,) = tables.export_folder(tmp_path / "run", tmp_path / "copy")
+        v1 = Path(copy.folder)
+        (report,) = _rows(v1, "report", written.key)
+        assert report["latest_run_id"] == run["run_id"]
+        assert _answers(_rows(v1, "report_answer", written.key),
+                        "question_list")
+
+        del run["record_sha256"]
+        run_file.write_text(json.dumps(run), encoding="utf-8")
+        os.utime(run_file, (stamp - 60, stamp - 60))
+        (old,) = tables.export_folder(tmp_path / "run", tmp_path / "old")
+        (report,) = _rows(Path(old.folder), "report", written.key)
+        assert report["latest_run_id"] != run["run_id"]
+
+    def test_a_run_file_for_another_record_is_not_used_whatever_its_time(
+            self, tmp_path):
+        """RI-209 re-check N1: the record rewritten since (an ingest with
+        the export off), the run file is not its own even when its time is
+        later."""
+        folder, pdf, written = _write_folder(tmp_path)
+        record = ReportRecord.model_validate_json(
+            (folder / "report.record.json").read_text("utf-8"))
+        tables.after_ingest(
+            folder, record=record, source=pdf, key_source=pdf,
+            setting=str(tmp_path / "first"),
+            now=datetime(2026, 2, 3, tzinfo=timezone.utc))
+        record.general.projectName = "A second made-up reading"
+        write_outputs(record, folder, source=pdf,
+                      db_path=tmp_path / "run" / "reports.db")
+        stamp = (folder / "report.record.json").stat().st_mtime
+        os.utime(folder / tables.RUN_NAME, (stamp + 60, stamp + 60))
+
+        assert tables.export_outcome(folder) is None
+        (outcome,) = tables.export_folder(tmp_path / "run", tmp_path / "r")
+        (report,) = _rows(Path(outcome.folder), "report", written.key)
+        assert report["project_name"] == "A second made-up reading"
+        assert not report["latest_run_id"].startswith("20260203T000000Z")
+
+    def test_an_export_that_stops_before_its_run_file_writes_one(
+            self, tmp_path):
+        """RI-209 re-check N2 (the reviewer's p13): the export fails before
+        the report's new run file is written (here a bound report's folder
+        cannot be made). The new run file is written anyway, with the
+        error, so the earlier ingest's is never taken for this one's, and
+        the keys the export may hold are carried in it."""
+        folder, pdf, written = _write_folder(tmp_path)
+        record = ReportRecord.model_validate_json(
+            (folder / "report.record.json").read_text("utf-8"))
+        answers = folder / "report.questions.json"
+        answers.write_text(json.dumps({"answers": [{
+            "key": "made_up_key", "status": "answered",
+            "text": "an earlier answer", "value": "an earlier answer"}],
+            "run": {}}), encoding="utf-8")
+        root = tmp_path / "root"
+        tables.after_ingest(
+            folder, record=record, source=pdf, key_source=pdf,
+            setting=str(root), question_list=True,
+            now=datetime(2026, 1, 1, tzinfo=timezone.utc))
+        record.general.projectName = "A second made-up reading"
+        write_outputs(record, folder, source=pdf,
+                      db_path=tmp_path / "run" / "reports.db")
+        answers.unlink()                      # the list did not run
+        blocker = tmp_path / "not_a_folder"
+        blocker.write_text("made up", encoding="utf-8")
+
+        failed = tables.after_ingest(
+            folder, record=record, children=[(ReportRecord(), blocker)],
+            source=pdf, key_source=pdf, setting=str(root),
+            question_list=False)
+
+        assert failed.status == "error"
+        run = json.loads((folder / tables.RUN_NAME).read_text("utf-8"))
+        assert not run["run_id"].startswith("20260101T000000Z")
+        assert run["question_list"] is False
+        assert run["export"]["status"] == "error"
+        assert run["previous_keys"] == [written.key]
+        (rebuilt,) = tables.export_folder(tmp_path / "run",
+                                          tmp_path / "rebuilt")
+        v1 = Path(rebuilt.folder)
+        (report,) = _rows(v1, "report", written.key)
+        assert report["project_name"] == "A second made-up reading"
+        assert report["latest_run_id"] == run["run_id"]
+        assert report["ingested_at"] != "2026-01-01T00:00:00Z"
+        assert not _answers(_rows(v1, "report_answer", written.key),
+                            "question_list")
+
+    def test_a_drop_the_dataset_missed_is_sent_by_the_next_save(
+            self, ingested, tmp_path):
+        """RI-209 re-check N3: a bound report dropped while the dataset was
+        busy. The run file keeps the dropped key until a save goes
+        through: --deliver sends its empty files, and so does every later
+        ingest until one's save is sent."""
+        import functools
+
+        import aec_agent_core.foundry_dataset_store as fds
+
+        out = tmp_path / "out"
+        shutil.copytree(ingested.out, out)
+        parent, child = _keys(ingested)
+        blob = json.loads((out / "report.record.json").read_text("utf-8"))
+        blob["bound_documents"] = []
+        (out / "report.record.json").write_text(json.dumps(blob),
+                                                encoding="utf-8")
+        record = ReportRecord.model_validate(blob)
+        top = "GeotechStaffEngineer/report_tables/v1/"
+        lib = _fake().FakeLibrary(tmp_path / "fake")
+
+        def ingest():
+            return tables.after_ingest(out, record=record,
+                                       source=ingested.pdf,
+                                       key_source=ingested.pdf,
+                                       setting=str(out))
+
+        with pytest.MonkeyPatch.context() as mp:
+            lib.install(mp)
+            mp.setenv("GEOTECH_DEPLOYMENT", "foundry")
+            mp.setenv(tables.ENV_DATASET, _fake().ALIAS)
+            mp.delenv(fds.ENV_ROOT, raising=False)
+            mp.setattr(fds, "DatasetFileManager", functools.partial(
+                fds.DatasetFileManager, busy_pauses=(),
+                sleep=lambda _s: None))
+            lib.ds.busy = 100
+            busy = ingest()
+            assert busy.dropped == [child]
+            assert busy.delivery.startswith("busy")
+            assert top + f"report/{child}.jsonl" not in lib.ds.files_
+
+            lib.ds.busy = 0
+            assert tables.main([str(out), "--root", str(out),
+                                "--deliver"]) == 0
+            for table in ("report", "report_page", "report_answer",
+                          "report_file"):
+                assert lib.ds.files_[top + f"{table}/{child}.jsonl"] == b""
+
+            sent = ingest()
+            assert sent.delivery.startswith("sent ")
+            assert sent.dropped == [child]
+            assert ingest().dropped == []
+        assert parent not in busy.dropped
+
     def test_an_ingest_run_file_already_there_is_never_overwritten(
             self, tmp_path):
         """A run's history row stands as first written, whatever a later
@@ -1222,6 +1389,39 @@ class TestFoldersIngestedBefore:
                               written.key), "question_list")
         assert list(rows) == ["depths"]
         assert json.loads(rows["depths"]["value_text"]) == {"B-1": [30, 40]}
+
+    def test_a_number_that_is_not_finite_is_null_with_a_note(self,
+                                                             tmp_path):
+        """RI-209 re-check N4: one answer that is NaN, infinite or too
+        large for a double gives a null value_number and a note; its text
+        stays, and the rest of the report is exported."""
+        folder, _pdf, written = _write_folder(tmp_path)
+        (folder / "report.questions.json").write_text(json.dumps({
+            "answers": [
+                {"key": "made_up_nan", "status": "answered",
+                 "data_type": "integer", "value": float("nan"),
+                 "text": "NaN", "note": "a made-up note"},
+                {"key": "made_up_huge", "status": "answered",
+                 "data_type": "integer", "value": 10 ** 400,
+                 "text": "1e400"},
+                {"key": "made_up_text", "status": "answered",
+                 "value": "kept", "text": "kept"}], "run": {}}),
+            encoding="utf-8")
+
+        (outcome,) = tables.export_folder(tmp_path / "run")
+
+        assert outcome.status == "written", outcome.detail
+        rows = _answers(_rows(Path(outcome.folder), "report_answer",
+                              written.key), "question_list")
+        assert list(rows) == ["made_up_nan", "made_up_huge", "made_up_text"]
+        for key, text in (("made_up_nan", "NaN"), ("made_up_huge", "1e400")):
+            assert rows[key]["value_number"] is None, key
+            assert rows[key]["value_text"] == text
+            assert "not a finite number" in rows[key]["note"]
+        assert rows["made_up_nan"]["note"].startswith("a made-up note; ")
+        assert rows["made_up_nan"]["value_json"] == "null"
+        assert json.loads(rows["made_up_huge"]["value_json"]) == 10 ** 400
+        assert rows["made_up_text"]["value_text"] == "kept"
 
     def test_a_folder_of_reports_exports_each_with_its_bound_reports(
             self, ingested, tmp_path):
