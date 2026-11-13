@@ -290,3 +290,94 @@ the two differ.
   are drawn for delta = 0.66 phi' only, so with them every layer must now
   give `wall_friction_deg` (a left-out layer took 17 deg and was refused
   the same way before; the message's wording is updated).
+
+## Review round (2026-11-13)
+
+Branch `fix/gm310-review`, from 00b503c, after the independent review
+(findings 1 to 9 fixed here; 10, 11 and 12 not this round: the lead files
+the follow-ups).
+
+**Merge of `integ2`** (master with the GM-316, GM-318, GM-319, GM-320/321
+and GM-324/325 audit fixes), commit 868eb20. Three conflicts:
+- `funhouse_agent/adapters/bearing_capacity.py`, `depth_factor_method`:
+  both sides' keys kept: this branch's `default_depends_on` and integ2's
+  `"any_case": "strip"`.
+- `funhouse_agent/adapters/retaining_walls.py`: the hunk held two lines.
+  `Cu_backfill` takes this branch's description (integ2's was the merge
+  base's: it lacked the Cu below 4 refusal); `reinforcement_type` takes
+  integ2's (its `value_aliases` and `hidden_value_aliases`; this branch had
+  not changed it).
+- `docs/user_manual/manual.html`: the rebuilt lines taken
+  (`resolve_manual.py --take-rebuilt`); the old soe `* D_embed` line still
+  differs from a rebuild, as expected. `check_manual.py`: OK.
+
+The test loop after the merge alone: one failure,
+`report_ingest/tests/test_recompute.py::test_meyerhof_linear_depth_runs_beside_the_default_beyond_df_b_one`
+(finding 1, failing on the branch before the merge too). No standing test
+was stopped by one of the new refusals.
+
+**What each finding became**
+1. `report_ingest/recompute.py`: the default depth factors are read from
+   the result (`defaults_used["depth_factor_method"]`, 'hansen' where the
+   result gives none) and named in the recomputed label and in the
+   `depth_alt` "why" text. For Meyerhof beyond Df/B = 1 the form not taken
+   runs beside the default: Brinch Hansen's arctan(Df/B) (UFC 3-220-20
+   Table 5-8 note B, p. 296, checked). Probe (B 1.2 m, Df 3.0 m, phi 33,
+   gamma 19): before, recomputed 3,492 kPa labelled 'hansen' with 'linear'
+   3,492 beside it (0.01 %); now recomputed 3,492 labelled 'linear' with
+   'hansen' 2,915 beside it. The test is renamed
+   `test_meyerhof_hansen_depth_runs_beside_the_default_beyond_df_b_one`: a
+   printout at Hansen's value is within options, recomputed = linear, the
+   one alternative 'hansen' (tolerance unchanged).
+   `test_no_meyerhof_linear_option_up_to_df_b_one` now checks that neither
+   form runs up to Df/B = 1.
+2. `sheet_pile/cantilever.py` (`LOG_SPIRAL_FRICTION_LEFT_OUT`) and the
+   `TestWallFrictionDefault` docstring: before GM-310 such a layer took the
+   clean sand row on the passive side only; the clean_sand alternative
+   marks the layer, which applies the row on both sides, so its embedment
+   is not the earlier answer (the review's probe: 6.08 m before, 5.67 m
+   for the alternative).
+3. `ground_improvement`: where n is neither given nor used (a Fig. 5-21
+   settlement with no bearing) `stress_concentration_ratio` is None (was
+   0.0), a `column_type` takes no n, and the calc package's n row reads
+   "not used in this method" (was "0.0"). Where n is used, `column_type`
+   gives it as before; a given n is kept with the same settlement. Tests:
+   `test_a_fig_5_21_settlement_with_no_bearing_needs_no_n` (None, the
+   package row) and `test_a_column_type_takes_n_only_where_n_is_used`.
+   The adapter's `defaults_used` already listed n only where it is used.
+4. The `depth_factor_method` description, `bearing_capacity/DESIGN.md`
+   and the release note above: the gain over 'hansen' grows with Df/B,
+   with no upper limit. Worked pair, run here: a strip 1 m wide at Df
+   2.5 m, phi' 34, gamma 19: 2,491 against 2,074 kPa, 20 % above (14 % at
+   Df/B 2, 27 % at Df/B 3). Manual rows rebuilt (three bearing tables).
+5. After the merge the deep-Meyerhof Python warning reaches the agent
+   once under `warnings` (probe: Df/B 2.5, Meyerhof). The same text also
+   stands in the depth-factors choice's `chosen`, as the branch built it;
+   `warnings` itself does not repeat it.
+6. `geotech_common/soil_profile.py`: `STIFF_CLAY_CU = round(1000 * PSF,
+   2)` = 47.88 kPa, with `PSF` from `geotech_common.alpha_method`
+   (47.880259 kPa per 1,000 psf; rounded to 0.01 kPa so a clay entered as
+   47.88 kPa is stiff). The choices print 47.88. Test
+   `test_stiff_clay_starts_at_1000_psf_47_88_kpa`: 47.88 kPa stiff, 47.87
+   soft. This closes the 47.88 item under "Noted, not fixed".
+7. `pile_group` `axial_capacity_tension` description: reduced by 20 % for
+   a small group, fewer than 5 piles by UFC 3-220-20 Table 6-28 note A
+   (p. 434, checked: "small pile groups (<5 piles)"), the default, or
+   fewer than 3 by GEC-12 Vol I p. 225 (checked: "less than 3 piles per
+   substructure unit"), the other reading. Manual row rebuilt.
+8. `drilled_shaft/soil_profile.py`: the `RQD_given` field's doc says it is
+   set when the layer is built, so RQD is given at construction;
+   `replace(layer, RQD=...)` keeps the copied layer's `RQD_given`.
+9. `sheet_pile/DESIGN.md`: the GM-242 paragraph names
+   `smooth_where_left_out` and that GM-310 replaced it with
+   `clean_sand_where_left_out`.
+
+**Tests** (Python 3.14, one file at a time): the 88 test files of
+`git diff --name-only 2feea3d HEAD` (test files only) with the eight the
+lead named all pass, `report_ingest/tests/test_recompute.py` 57 and
+`funhouse_agent/tests/test_defaults_used.py` 837 among them; also
+`ground_improvement/tests/test_ground_improvement.py`,
+`foundry_test_harness/test_tier1_textbook.py` and
+`funhouse_agent/tests/test_calc_package_derived_inputs.py` (they read
+`stress_concentration_ratio`). Fingerprints and public text pass (no
+one-line summary changed). The suites run on GitHub.
