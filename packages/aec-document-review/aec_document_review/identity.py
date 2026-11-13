@@ -25,9 +25,11 @@ open the app at all.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
@@ -49,13 +51,21 @@ DEFAULT_MARKUP_AUTHOR = "Document Review (AI draft)"
 # DOMAIN\user — Windows account names cannot contain " / \ [ ] : ; | = , + * ? < >
 # (and no control character). Anything else is a name: an apostrophe, an
 # accented letter. Folder and secret names are made from it by rules of
-# their own (``Identity.key``, ``tinyapps_keys.tester_suffix``).
+# their own (``Identity.key``, ``tinyapps_keys.tester_secret_names``), which
+# add a hash of the exact name where its characters do not fit (TA-39).
 _PRINCIPAL = re.compile(
     r"^(?P<domain>[A-Za-z0-9._-]{1,64})\\"
     r"(?P<user>[^\"/\\\[\]:;|=,+*?<>\x00-\x1f]{1,256})$")
 _UPN = re.compile(
     r"^(?P<user>[A-Za-z0-9._-]{1,256})@(?P<domain>[A-Za-z0-9._-]{1,255})$")
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
+#: One part (domain or user) of a sign-in name whose folder key gives the
+#: part back: the folder alphabet only, in lower case.
+_PLAIN_PART = re.compile(r"[a-z0-9._-]+")
+#: Hex digits of the sign-in name's hash carried by a folder key or a
+#: per-tester secret name (40 bits: two names in a thousand share one with
+#: a chance of about one in two million).
+NAME_HASH_LEN = 10
 
 
 @dataclass(frozen=True)
@@ -96,16 +106,73 @@ class Identity:
         return self.username
 
     @property
+    def exact_name(self) -> str:
+        """The sign-in name as the one spelling its hash is taken of:
+        ``domain\\user``, case-folded (Windows account names are
+        case-insensitive) and in Unicode's composed form (NFC), so an
+        accented letter sent as one character or as a letter and a
+        combining accent is one name."""
+        return unicodedata.normalize("NFC", self.qualified_name.casefold())
+
+    @property
+    def name_hash(self) -> str:
+        """:data:`NAME_HASH_LEN` hex digits of SHA-256 over
+        :attr:`exact_name` in UTF-8: what tells two sign-in names apart
+        where a folder or secret name cannot hold their own characters
+        (BACKLOG TA-39)."""
+        return hashlib.sha256(
+            self.exact_name.encode("utf-8")).hexdigest()[:NAME_HASH_LEN]
+
+    @property
+    def legacy_key(self) -> str:
+        """The folder key as it was made before TA-39: lower case, every
+        run of characters outside ``A-Z a-z 0-9 . _ -`` turned into one
+        ``_``, underscores trimmed from each part's ends. Several names can
+        share one (``o'brien`` and ``o_brien``; any accented letter). Still
+        the base of :attr:`key`, and what the per-tester secret's first
+        name was made from (``tinyapps_keys.tester_suffix``)."""
+        parts = [p for p in (self.domain, self.username) if p]
+        return "__".join(_UNSAFE.sub("_", p.lower()).strip("_") for p in parts) \
+            or "anonymous"
+
+    @property
+    def key_is_exact(self) -> bool:
+        """Whether :attr:`legacy_key` gives this sign-in name back, so that
+        no other name can have it: each part holds only ``a-z 0-9 . _ -``
+        once in lower case, neither begins or ends with ``_`` (the old rule
+        trimmed those) and neither holds ``__`` (the join between domain
+        and user, and the mark before a hash)."""
+        parts = [p.lower() for p in (self.domain, self.username) if p]
+        return bool(parts) and all(
+            _PLAIN_PART.fullmatch(p) and not p.startswith("_")
+            and not p.endswith("_") and "__" not in p for p in parts)
+
+    @property
     def key(self) -> str:
-        """A folder-safe, case-insensitive key: ``corp__jdoe``.
+        """A folder-safe, case-insensitive key that no two sign-in names
+        share: ``corp__jdoe``.
 
         Windows account names are case-insensitive, so two spellings of one
         person must land in one folder; the domain rides along so two
         tenants' ``jdoe`` do not.
+
+        A name the folder alphabet can spell (:attr:`key_is_exact`: letters,
+        digits, ``.``, ``_`` and ``-``) keeps the key it always had,
+        ``corp__j.doe``. Any other name (an apostrophe, a space, an accented
+        letter) gets :attr:`name_hash` appended after ``__``:
+        ``corp__o_brien__3f9c1a2b7d``. Before TA-39 ``o'brien`` and
+        ``o_brien``, or two names differing in an accent, shared one folder
+        and one SharePoint mirror. An exact key holds ``__`` once at most
+        and a hashed one twice or more, so the two kinds never meet.
         """
-        parts = [p for p in (self.domain, self.username) if p]
-        return "__".join(_UNSAFE.sub("_", p.lower()).strip("_") for p in parts) \
-            or "anonymous"
+        if self.key_is_exact:
+            return self.legacy_key
+        # The readable part from the composed spelling the hash is taken
+        # of, so one name sent in either Unicode form is one folder.
+        parts = [unicodedata.normalize("NFC", p.casefold())
+                 for p in (self.domain, self.username) if p]
+        base = "__".join(_UNSAFE.sub("_", p).strip("_") for p in parts)
+        return f"{base or 'user'}__{self.name_hash}"
 
     @property
     def markup_author(self) -> str:
@@ -248,7 +315,7 @@ def current_identity() -> Identity:
     return ANONYMOUS
 
 
-__all__ = ["Identity", "ANONYMOUS", "UNIDENTIFIED", "UNIDENTIFIED_MESSAGE",
+__all__ = ["Identity", "NAME_HASH_LEN", "ANONYMOUS", "UNIDENTIFIED", "UNIDENTIFIED_MESSAGE",
            "current_identity", "parse_principal",
            "from_header_values", "header_name", "DEFAULT_HEADER",
            "DEV_IDENTITY_ENV", "USER_EMAIL_ENV", "MARKUP_AUTHOR_ENV",
