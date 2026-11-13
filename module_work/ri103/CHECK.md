@@ -15,11 +15,11 @@ and label in the tests is made up.
 | The switch: read from the environment by one function, a context manager for tests, the version suffix `+li` | `report_ingest/log_intervals.py:78`, `:84`, `:87`, `:98` |
 | The paragraph the model-first log instruction gains when on | `report_ingest/log_intervals.py:115` (`MODEL_FIRST_PARAGRAPH`); put in after "say which unit." at `report_ingest/model_first.py:678` |
 | The answer schema when on: today's `LogReading`, its `layers` retyped to a `ReadLayer` with seven more fields and a `ReadIntervalNote` | `report_ingest/log_intervals.py:141`, `:154`, `:200`; chosen at `report_ingest/model_first.py:461` |
-| `prompt_version("logs")` carries `+li` when on (`mf-10+li`; with the water switch too, `mf-10+wnm+li`) | `report_ingest/model_first.py:333` |
+| `prompt_version("logs")` carries the suffix `+li` when on, on whatever `READ_PROMPT_VERSION` is (mf-10 on this branch's base, mf-11 on master today: `mf-11+li`; with the water switch too, `mf-11+wnm+li`) | `report_ingest/model_first.py:333` |
 | The record: `LayerNote`, and seven optional fields on `Layer`, each left out of the saved record when empty | `report_ingest/model.py:1112` (`LayerNote`), `:1162` to `:1220` (fields and serializer), `:1224` (`LAYER_INTERVAL_FIELDS`), `:162` (why `SCHEMA_VERSION` stays 4.0) |
 | The new fields put onto the layers today's builder made | `report_ingest/log_intervals.py:270` (`apply_interval_additions`), called at `report_ingest/model_first_read.py:861` |
 | A label marked carried that no interval above has: listed, kept as read | `report_ingest/log_intervals.py:372` (`carried_label_entries`), called on the joined log at `report_ingest/model_first_read.py:922` |
-| A continuation sheet that prints an interval again keeps the new fields its second printing adds | `report_ingest/reconciler.py:878` to `:892` (`_fold_into`) |
+| A continuation sheet that prints an interval again keeps the new fields its second printing adds | `report_ingest/reconciler.py:846` (`_restated` leaves them out of its comparison), `:854` (`_same_note`), `:891` to `:917` (`_fold_into`) |
 | The library's search words hold a note's words and a stratum label | `report_ingest/library.py:1235` |
 | The question list's soft-layer reading sees "soft" written in a note | `report_ingest/question_list.py:1203` |
 | The log scorer's interval groups | `report_ingest/log_scoring.py:121` (`INTERVAL_METRICS`, the rules), `:771` (`_score_interval`); RESULTS table at `report_ingest/cluster_scoring.py:3841` to `:3868` |
@@ -57,7 +57,7 @@ I looked at every place on the model-first log path and in what it reuses.
 |---|---|---|
 | `log_reader._Builder.layers` (`report_ingest/log_reader.py:1397`) | One `Layer` per layer read, in order. No merge. Under `checks="flag"` it keeps a layer out only when its top is impossible (negative, past the depth bound), with an entry that keeps the whole layer as read. | Unchanged. The additions of the layers after a kept-out one are paired by description and top, so they do not shift (`log_intervals._pairs`). |
 | `model_first_read._join_logs` (a log read in several calls) and `graph._join_by_hole` (one hole logged in two places) | Append the later call's layers. No de-duplication. | Unchanged; tested. |
-| `reconciler._fold_into` (a continuation sheet of the same hole) | Leaves out a later sheet's layer when it is the first's printed again: the same top, a base that does not differ, the same description, and no other field that both set and that differs. | Kept: it is one interval printed twice, not two intervals. Two adjacent intervals have different tops and are never taken as one. Changed: the kept copy now takes the notes, line and label its second printing adds, which were lost with the dropped copy. |
+| `reconciler._fold_into` (a continuation sheet of the same hole) | Leaves out a later sheet's layer when it is the first's printed again: the same top, a base that does not differ, the same description, and no other field that both set and that differs. | Kept: it is one interval printed twice, not two intervals. Two adjacent intervals have different tops and are never taken as one. Changed: `_restated` leaves the RI-103 fields out of its comparison, so two printings that carry different notes, lines or label marks are still one interval; the kept copy then takes each note of the second printing it does not already hold (same words and depth), the second printing's label with its source and carried mark only where it has no label, its line kind with its width only where it has no line kind, and its top elevation where it has none. Before the review fixes the comparison included the new fields and a restated interval was kept twice. |
 | `checks.ground_investigation` | Drops a layer whose top is above the ground surface by more than the tolerance, with an entry. | Unchanged. |
 | `log_holes.drop_other_hole_rows`, `take_rows`, `sort_rows_by_hole` | Move a row to the hole it belongs to. No merge. | Unchanged. |
 | `diggs_writer.lithology` | Skips a layer whose top has no SI value; writes a ditto-mark description as the one above (the interval is kept). | Unchanged. |
@@ -144,7 +144,7 @@ sheet's layer top, within the layer-top tolerance (0.30 m).
 
 | Group | Sheet key on a layer | Found when |
 |---|---|---|
-| `interval_note` | `notes`: `[{"depth": 7, "text": "..."}, {"text": "..."}]` | that interval holds a note with those words (`_same_text`, the scorer's description comparison) and, where the sheet gives a depth, a depth within 0.30 m. A sheet note with no depth is found only in a record note with no depth. |
+| `interval_note` | `notes`: `[{"depth": 7, "text": "..."}, {"text": "..."}]` | that interval holds a note with those words, equal after case, spacing and punctuation are set aside (`_same_words`; not `_same_text`, the comparison `log_scoring` uses for USCS symbols and header fields, which also credits one text inside the other) and, where the sheet gives a depth, a depth within 0.30 m. A sheet note with no depth is found only in a record note with no depth. |
 | `line_kind` | `line` (`""` = the log says nothing of its lines) | `Layer.top_line` is the same after whitespace and case; with `""`, the record must be empty too. |
 | `line_width` | `line_full_width` (true or false) | `Layer.top_line_full_width` is the same. |
 | `stratum_label` | `label` (`""` = the log prints none here) | `Layer.stratum_label` is the same after whitespace and case, whatever the carried marks say. |
@@ -203,22 +203,59 @@ The 23 skips in the first run are the `pydiggs` tests (not installed here);
 the DIGGS schema gate the new consumer test uses did run and pass. The graph
 snapshot tests are in the first run and pass unchanged.
 
+## Review fixes (2026-11-13)
+
+From the review of 0248175 (verdict merge). Each does nothing with the
+switch off and no record carrying the new fields.
+
+1. **A restated interval folds once.** `reconciler._restated` leaves the
+   names in `LAYER_INTERVAL_FIELDS` out of its comparison; `_fold_into`
+   copies a label with its source and carried mark only where the first
+   printing has no label, a line kind with its width only where it has no
+   line kind, and appends each later note whose words and depth it does not
+   hold (`_same_note`).
+2. **The instruction counts intervals:** "Give one layer for every interval,
+   from one drawn line to the next, with its depths, ...". The default (off)
+   digests in `test_model_first_schema.py` pass unchanged.
+3. **A carried-label entry the join makes untrue is dropped.** After
+   `graph._join_by_hole` joins a hole's parts, `_recheck_carried_labels`
+   asks `carried_label_entries` again of the joined log (switch on only),
+   drops a part's entry whose label is printed above on an earlier part and
+   lists none twice. Reproduced first with a made-up two-part hole. The
+   reconciler's fold of continuation sheets and `sort_rows_by_hole` are not
+   re-checked.
+4. **Note text is scored by equality** after case, spacing and punctuation
+   are set aside (`log_scoring._same_words`), not by one text inside the
+   other: "wet" against "wet below 7 ft" is a miss. `_same_text` is
+   unchanged.
+
+Six new tests in `test_log_intervals.py` (three for fix 1, two for fix 3,
+one for fix 4), now 57; one words check gained the new sentence.
+
 ## Prompt versions
 
 `READ_PROMPT_VERSION` did not move (`mf-10`). With the switch off the log
 instruction and every answer schema are byte for byte master's; the digest
 tests in `report_ingest/tests/test_model_first_schema.py` pass unchanged.
-With the switch on, `prompt_version("logs")` is `mf-10+li`. No page
+With the switch on, `prompt_version("logs")` is `READ_PROMPT_VERSION` with
+the suffix `+li` (`mf-10+li` on this branch's base, `mf-11+li` on master
+today). No page
 fingerprint changed (`webapp/tests/test_page_fingerprints.py` passes; nothing
 re-recorded).
 
 ## Release note
 
 None with the switch off: no saved record's values change, and no default
-prompt changes. Two code paths run whatever the switch says, and neither
+prompt changes. Several code paths run whatever the switch says, and none
 changes a value on a record made without it: the library's search words and
 the question list's soft-layer reading add words only from fields that are
-empty unless the switch was on.
+empty unless the switch was on; the reconciler's `_restated` leaves the new
+fields out of its comparison and its fold loop copies them only where a
+later printing sets them; the `Layer` serializer leaves the empty new fields
+out; the log scorer's interval hook returns at once for a sheet without the
+new keys; the results table's OVERALL filter keeps every metric the base
+scores; and the carried-label re-check after `graph._join_by_hole` returns at
+once with the switch off.
 
 With the switch on (not a default, not measured): a log's `layers` become one
 per drawn line, so a record has more, shorter layers than the same log read
@@ -229,7 +266,8 @@ the log prints them.
 
 Nothing below was run. Each needs the switch on
 (`GEOTECH_INGEST_LOG_INTERVALS=1`) in a fresh output folder (the answers save
-under `mf-10+li` and are never mixed with `mf-10` ones).
+under `READ_PROMPT_VERSION` plus `+li`, `mf-11+li` on master today, and are
+never mixed with the plain version's).
 
 1. **Today's totals, switch on against off**, on the open logs first (R04,
    R21), then the rest: `layer_top`, `uscs` and OVERALL from the logs stage,
@@ -353,7 +391,8 @@ Each is a choice between two defensible readings, for the lead to revisit.
     word written as a note stops being findable and "soft below 12 ft" stops
     answering the soft-layer row when the switch goes on.
 12. **The paragraph's examples** are the brief's own ("wet below 7 ft", "as
-    above, but brown"). The paragraph is 1,250 characters on an instruction of
+    above, but brown"). The paragraph is 1,279 characters (after the review
+    fixes) on an instruction of
     1,660; I could not say what a line is, what a written change is, the line
     kind and the label rule in fewer.
 13. **Commit trailer**: the round's brief says to use the model I run as, so

@@ -115,7 +115,8 @@ def use_log_intervals(on: bool = True) -> Iterator[None]:
 MODEL_FIRST_PARAGRAPH = (
     "A layer in this answer is an INTERVAL: the stretch of the soil column "
     "between two lines the log draws across it. Give one layer for every "
-    "drawn line, with its depths, the elevation of its top where the log "
+    "interval, from one drawn line to the next, with its depths, the "
+    "elevation of its top where the log "
     "prints one, and its description and classification as printed; never "
     "join two intervals, even where their descriptions or symbols are the "
     "same. A change the log WRITES inside an interval without drawing a "

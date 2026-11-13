@@ -175,6 +175,8 @@ class TestTheSwitch:
     def test_the_paragraph_says_what_a_line_and_a_written_change_are(self):
         said = " ".join(li.MODEL_FIRST_PARAGRAPH.split())
         for words in ("between two lines the log draws",
+                      "one layer for every interval, from one drawn line "
+                      "to the next,",
                       "never join two intervals",
                       "a written change is never a layer",
                       "a drawn line is never a note",
@@ -533,6 +535,141 @@ class TestAContinuationSheet:
         # The next interval has the same words and is still its own.
         assert first.layers[2].description == again.description
 
+    def test_two_printings_with_different_notes_fold_to_one_layer(self):
+        """Review finding 1: each printing's own notes made the two copies
+        differ, so the hole got two layers at one top."""
+        from report_ingest.reconciler import _fold_into
+
+        first = Investigation(
+            investigation_id="QX-7", depth_unit="ft", pages=[1],
+            layers=[Layer(top=_ft(4), bottom=_ft(9),
+                          description="MADE-UP CLAY, gray",
+                          notes=[LayerNote(depth=_ft(7),
+                                           text="wet below 7 ft")])])
+        later = Investigation(
+            investigation_id="QX-7", depth_unit="ft", pages=[2],
+            layers=[Layer(top=_ft(4, 2), bottom=_ft(9, 2),
+                          description="MADE-UP CLAY, gray",
+                          notes=[LayerNote(depth=_ft(7, 2),
+                                           text="wet below 7 ft"),
+                                 LayerNote(text="as above, but brown")])])
+        _fold_into(first, later)
+        assert [ly.top.value for ly in first.layers] == [4.0]
+        assert [(n.depth.value if n.depth else None, n.text)
+                for n in first.layers[0].notes] == [
+            (7.0, "wet below 7 ft"), (None, "as above, but brown")]
+
+    def test_a_label_printed_on_the_first_printing_keeps_its_mark(self):
+        """Review finding 1: the label, its source and its carried mark go
+        together, and only where the first printing has no label."""
+        from report_ingest.reconciler import _fold_into
+
+        first = Investigation(
+            investigation_id="QX-7", depth_unit="ft", pages=[1],
+            layers=[Layer(top=_ft(4), bottom=_ft(9),
+                          description="MADE-UP CLAY, gray",
+                          stratum_label="Unit 2",
+                          stratum_label_source="STRATUM")])
+        later = Investigation(
+            investigation_id="QX-7", depth_unit="ft", pages=[2],
+            layers=[Layer(top=_ft(4, 2), bottom=_ft(9, 2),
+                          description="MADE-UP CLAY, gray",
+                          stratum_label="Unit 2", stratum_label_source="UNIT",
+                          stratum_label_carried=True)])
+        _fold_into(first, later)
+        assert len(first.layers) == 1
+        kept = first.layers[0]
+        assert (kept.stratum_label, kept.stratum_label_source,
+                kept.stratum_label_carried) == ("Unit 2", "STRATUM", False)
+
+    def test_a_record_with_none_of_the_fields_folds_as_before(self):
+        """Pinned on the base commit's reconciler (50ef609), run on the same
+        two sheets: the same layers, the same samples, the same count."""
+        from report_ingest.model import Sample
+        from report_ingest.reconciler import _fold_into
+
+        first = Investigation(
+            investigation_id="QX-7", depth_unit="ft", pages=[1],
+            layers=[Layer(top=_ft(0), bottom=_ft(4),
+                          description="MADE-UP SAND", uscs="SP"),
+                    Layer(top=_ft(4), description="MADE-UP CLAY, gray",
+                          uscs="CL")],
+            samples=[Sample(sample_id="S-2", top=_ft(5), bottom=_ft(6.5))])
+        later = Investigation(
+            investigation_id="QX-7", depth_unit="ft", pages=[2],
+            layers=[Layer(top=_ft(4, 2), bottom=_ft(9, 2),
+                          description="MADE-UP CLAY, gray", uscs="CL",
+                          consistency="stiff"),
+                    Layer(top=_ft(4, 2), bottom=_ft(9, 2),
+                          description="MADE-UP CLAY, gray", uscs="CH"),
+                    Layer(top=_ft(9, 2), bottom=_ft(14, 2),
+                          description="MADE-UP CLAY, gray", uscs="CL")],
+            samples=[Sample(sample_id="S-2", top=_ft(5, 2),
+                            bottom=_ft(6.5, 2)),
+                     Sample(sample_id="S-3", top=_ft(10, 2),
+                            bottom=_ft(11.5, 2))])
+        said = _fold_into(first, later)
+        assert said == {"restated": 1, "total_depth": None}
+        assert [(ly.top.value, ly.bottom.value if ly.bottom else None,
+                 ly.description, ly.uscs, ly.consistency, ly.top.prov.page)
+                for ly in first.layers] == [
+            (0.0, 4.0, "MADE-UP SAND", "SP", "", 1),
+            (4.0, None, "MADE-UP CLAY, gray", "CL", "", 1),
+            (4.0, 9.0, "MADE-UP CLAY, gray", "CH", "", 2),
+            (9.0, 14.0, "MADE-UP CLAY, gray", "CL", "", 2)]
+        assert [s.sample_id for s in first.samples] == ["S-2", "S-3"]
+
+
+class TestAHoleJoinedAfterReading:
+    @staticmethod
+    def _parts():
+        def layer(top, bottom, page, **more):
+            return Layer(top=_ft(top, page), bottom=_ft(bottom, page),
+                         description="MADE-UP CLAY",
+                         prov=Provenance(page=page, method="model"), **more)
+
+        upper = Investigation(
+            investigation_id="QX-5", depth_unit="ft", pages=[4],
+            layers=[layer(0, 6, 4, stratum_label="Unit B",
+                          stratum_label_source="STRATUM")])
+        lower = Investigation(
+            investigation_id="QX-5", depth_unit="ft", pages=[5],
+            layers=[layer(6, 12, 5, stratum_label="Unit B",
+                          stratum_label_source="STRATUM",
+                          stratum_label_carried=True),
+                    layer(12, 18, 5, stratum_label="Qal",
+                          stratum_label_source="STRATUM",
+                          stratum_label_carried=True)])
+        return upper, lower
+
+    def _joined_entries(self):
+        from report_ingest.graph import _join_by_hole
+        from report_ingest.tests.record_fixtures import build_record
+
+        upper, lower = self._parts()
+        # What the reader lists for each part, read apart.
+        unresolved = (li.carried_label_entries(upper)
+                      + li.carried_label_entries(lower))
+        record = build_record(investigations=[upper, lower])
+        _join_by_hole(record, 0, unresolved, [], None)
+        assert [ly.top.value for ly in record.investigations[0].layers] == [
+            0.0, 6.0, 12.0]
+        return [(row["what"], row["read"]) for row in unresolved
+                if row.get("flag") == "label_carried"]
+
+    def test_a_carried_entry_the_join_makes_untrue_is_dropped(self):
+        """Review finding 3: the label printed on the part above is found
+        once the parts are one log; the entry with nothing above stays."""
+        with use_log_intervals():
+            got = self._joined_entries()
+        assert got == [("interval at 12 ft: stratum label", "Qal")]
+
+    def test_off_the_entries_are_left_as_they_were(self, monkeypatch):
+        monkeypatch.delenv(li.LOG_INTERVALS_ENV, raising=False)
+        assert self._joined_entries() == [
+            ("interval at 6 ft: stratum label", "Unit B"),
+            ("interval at 12 ft: stratum label", "Qal")]
+
 
 # ---------------------------------------------------------------------------
 # the consumers, with a switched-on record
@@ -719,6 +856,19 @@ class TestTheScorer:
                                  description="wet below 7 ft"))
         got = score_record(sheet, [hole]).scores["interval_note"]
         assert (got.found, got.total) == (0, 1)
+
+    def test_a_note_s_words_are_equal_not_one_inside_the_other(self):
+        """Review finding 4: equal after case, spacing and punctuation."""
+        from report_ingest.log_scoring import score_record
+
+        sheet = _sheet(notes=[{"text": "wet below 7 ft"}])
+        short = score_record(sheet, [_scored_hole(
+            notes=[LayerNote(text="wet")])]).scores["interval_note"]
+        assert (short.found, short.total) == (0, 1)
+        same = score_record(sheet, [_scored_hole(
+            notes=[LayerNote(text="Wet below 7 ft.")])]).scores[
+            "interval_note"]
+        assert (same.found, same.total) == (1, 1)
 
     def test_a_label_is_exact_after_whitespace_and_case(self):
         from report_ingest.log_scoring import score_record

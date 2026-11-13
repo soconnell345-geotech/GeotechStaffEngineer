@@ -3762,6 +3762,7 @@ def _join_by_hole(record: ReportRecord, start: int,
                               "each later one's layers, samples, blow "
                               "counts and water readings are appended"),
                     pages=list(inv.pages)))
+                _recheck_carried_labels(inv, unresolved)
             out.append(inv)
     record.investigations[start:] = out
 
@@ -3780,6 +3781,33 @@ def _join_by_hole(record: ReportRecord, start: int,
                     f"separate logs, as a report can number two holes so"),
             pages=sorted({p for f in folds for inv in logs[f]
                           for p in inv.pages})))
+
+
+def _recheck_carried_labels(inv: Any,
+                            unresolved: List[Dict[str, Any]]) -> None:
+    """RI-103, under GEOTECH_INGEST_LOG_INTERVALS only: a log joined from
+    parts read apart is asked again for labels marked carried with none
+    printed above. An entry a part gave that the join has made untrue (the
+    label is printed above, on an earlier part) is dropped; one already
+    listed is not listed twice."""
+    from report_ingest.log_intervals import (carried_label_entries,
+                                             log_intervals_enabled)
+    if not log_intervals_enabled():
+        return
+
+    def key(row: Dict[str, Any]) -> Tuple[Any, Any, Any]:
+        return row.get("what"), row.get("page"), row.get("read")
+
+    now = carried_label_entries(inv)
+    true = {key(row) for row in now}
+    pages = set(inv.pages)
+    unresolved[:] = [row for row in unresolved
+                     if not (row.get("flag") == "label_carried"
+                             and row.get("page") in pages
+                             and key(row) not in true)]
+    listed = {key(row) for row in unresolved
+              if row.get("flag") == "label_carried"}
+    unresolved.extend(row for row in now if key(row) not in listed)
 
 
 def _continues_log(first: Any, later: Any, slack: float = 0.0) -> str:

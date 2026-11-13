@@ -125,8 +125,8 @@ METRICS: Tuple[str, ...] = ("n_value", "blows", "sample_depth", "layer_top",
 #: * ``interval_note``: each of a layer's ``notes`` (``{"depth": 7, "text":
 #:   "wet below 7 ft"}``, ``depth`` left out where the log writes none) is
 #:   found when the record's interval at that top holds a note with those
-#:   words (:func:`_same_text`, the comparison descriptions and header
-#:   fields get) and, where the sheet gives a depth, a depth within
+#:   words (:func:`_same_words`: equal after case, spacing and punctuation
+#:   are set aside) and, where the sheet gives a depth, a depth within
 #:   :data:`LAYER_TOL_M`; a sheet note with no depth is found only in a
 #:   record note with none, as a depth the log never wrote is not a reading;
 #: * ``line_kind``: ``line`` (the kind of the interval's top line as the
@@ -224,6 +224,15 @@ def _same_text(a: str, b: str) -> bool:
     left = "".join(ch.lower() for ch in str(a or "") if ch.isalnum())
     right = "".join(ch.lower() for ch in str(b or "") if ch.isalnum())
     return bool(left) and (left in right or right in left)
+
+
+def _same_words(a: str, b: str) -> bool:
+    """Equal after the normalising :func:`_same_text` applies (case,
+    spacing, punctuation): one holding the other is not enough, so "wet"
+    is not "wet below 7 ft" (a note's words, RI-103)."""
+    left = "".join(ch.lower() for ch in str(a or "") if ch.isalnum())
+    right = "".join(ch.lower() for ch in str(b or "") if ch.isalnum())
+    return bool(left) and left == right
 
 
 # ---------------------------------------------------------------------------
@@ -788,7 +797,7 @@ def _score_interval(out: LogScore, layer: Dict[str, Any],
         depth = note.get("depth")
         ok = False
         for got in (getattr(found, "notes", None) or []):
-            if not _same_text(got.text, words):
+            if not _same_words(got.text, words):
                 continue
             got_m = q_m(got.depth)
             if depth is None:
