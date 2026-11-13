@@ -473,6 +473,7 @@ PLOT_DATA_INFO = {
         "legend_position": {
             "type": "str", "required": False, "default": "auto",
             "allowed_values": ["auto", "inside", "outside", "below"],
+            "any_case": True,
             "description": ("Where the legend goes; auto = outside a "
                             "drawing to scale, inside otherwise.")},
         "title": {"type": "str", "required": False, "default": "",

@@ -361,6 +361,19 @@ _TABLES_FILE_NOTE = (
     "the user.")
 
 
+def _raised_warnings(result) -> list:
+    """The warnings the analysis code raised so far in this call (GM-316:
+    the same texts the result's ``warnings`` gets), less the module's own
+    ``warnings`` its sections print, cut as the result cuts them: printed
+    in the package (GM-316 review B4)."""
+    from aec_agent_core.call_warnings import capped, so_far
+    own = (result.get("warnings") if isinstance(result, dict)
+           else getattr(result, "warnings", None))
+    own = ({str(w).strip() for w in own}
+           if isinstance(own, (list, tuple)) else set())
+    return capped([t for t in so_far() if t.strip() not in own])
+
+
 def _build_response(module: str, result, analysis, params: dict,
                     analysis_type: str, extra: dict = None,
                     run: "_ToolRun" = None, package: str = None) -> dict:
@@ -440,6 +453,7 @@ def _build_response(module: str, result, analysis, params: dict,
         table_files=table_names,
         given_inputs=given,
         assumed_inputs=assumed,
+        raised_warnings=_raised_warnings(result),
         **meta,
     )
     tables_out = _save_tables(calc_tables, table_names, table_dir)
@@ -609,12 +623,22 @@ _PACKAGE_TOOLS = {
                      "'mse_lrfd' (the mse_lrfd_external_stability tool, "
                      "LRFD capacity:demand ratios under Strength I max and "
                      "min, the critical combination and Service I, "
-                     "external stability only; GM-307)."),
+                     "external stability only; GM-307) or "
+                     "'cantilever_reinforced' (the "
+                     "cantilever_wall_structural_design tool: the "
+                     "cantilever wall's stability sections, then the "
+                     "structural design of its stem, toe and heel on "
+                     "USACE EM 1110-2-2104 (2023), with the bar schedule; "
+                     "no reinforcement drawing; GM-312)."),
         "tools": {"cantilever": "cantilever_wall", "mse": "mse_wall",
-                  "mse_lrfd": "mse_lrfd_external_stability"},
+                  "mse_lrfd": "mse_lrfd_external_stability",
+                  "cantilever_reinforced":
+                      "cantilever_wall_structural_design"},
         "selector_values": {"cantilever_wall": "cantilever",
                             "mse_wall": "mse",
-                            "mse_lrfd_external_stability": "mse_lrfd"},
+                            "mse_lrfd_external_stability": "mse_lrfd",
+                            "cantilever_wall_structural_design":
+                                "cantilever_reinforced"},
         # Where the shear key is drawn (GM-216): the sliding check takes
         # its passive on the plane below the toe over the key's depth,
         # wherever the key is, so its place is the figure's only
@@ -1474,6 +1498,15 @@ def _union_spec(selector: str, entries, n_tools: int) -> dict:
             {repr(a) for a in allowed}) > 1:
         out["allowed_values"] = sorted({v for a in allowed if a
                                         for v in a}, key=str)
+    for key in ("value_aliases", "hidden_value_aliases", "refused_values"):
+        # the other spellings and refusals of every tool, not the first
+        # one's (GM-316 review C20); any_case must agree across the tools
+        # (test_allowed_values checks it)
+        merged = {}
+        for s in specs:
+            merged.update(s.get(key) or {})
+        if merged:
+            out[key] = merged
     if every and len({repr(s.get("applies_when")) for s in specs}) == 1:
         # every tool takes it on the same condition: the selector adds
         # nothing
@@ -1510,7 +1543,14 @@ def _package_parameters(package: str) -> dict:
         params[name] = {
             "type": "bool" if isinstance(default, bool) else "str",
             "required": False, "default": default,
-            "allowed_values": list(tools), "description": doc}
+            "allowed_values": list(tools),
+            # the older spellings _selector_value puts under a value
+            # (GM-317; review B3: aliases, not values of their own)
+            "value_aliases": {v: t for v, t in
+                              spec.get("selector_values", {}).items()
+                              if v not in tools},
+            # _selector_value strips and lower-cases a string (GM-317)
+            "any_case": "strip", "description": doc}
     entries = {}
     for value, tool in tools.items():
         for pname, pspec in info[tool]["parameters"].items():
@@ -1984,6 +2024,22 @@ def _generate_retaining_wall_package(params: dict) -> dict:
     def _r2(x):
         return None if x is None else round(x, 2)
 
+    if run.value == "cantilever_reinforced":
+        # GM-312: the stability sections and the structural design
+        st = result.stability
+        return _build_response(
+            "retaining_walls", result, analysis, params, run=run,
+            analysis_type="Retaining Wall (stability and structural "
+                          "design)",
+            extra={
+                "verdict": result.verdict,
+                "checks_failed": result.checks_failed,
+                "checks_not_run": result.checks_not_run,
+                "FOS_sliding": _r2(st.FOS_sliding),
+                "FOS_overturning": _r2(st.FOS_overturning),
+                "FOS_bearing": _r2(st.FOS_bearing),
+                **_reinforced_numbers(result)})
+
     # The verdict travels with the package (GM-100): a failed check or a
     # check not run must reach the user, not only the file.
     extra = {
@@ -2003,6 +2059,28 @@ def _generate_retaining_wall_package(params: dict) -> dict:
         analysis_type="MSE Wall" if run.value == "mse" else "Retaining Wall",
         extra=extra,
     )
+
+
+def _reinforced_numbers(result) -> dict:
+    """The structural design's numbers beside the file (GM-312), as the
+    cantilever_wall_structural_design tool returned them: each element's
+    factored moment and shear, its bar and its capacities, what was not
+    designed and the reinforcement description."""
+    d = result.to_dict()
+    keep = ("Mu_kNm_per_m", "Mu_kipft_per_ft", "Vu_kN_per_m",
+            "Vu_kip_per_ft", "d_mm", "As_required_mm2_per_m",
+            "As_provided_mm2_per_m", "bar", "phi_Mn_kNm_per_m",
+            "phi_Vc_kN_per_m", "passes")
+    return {
+        "basis": d["basis"],
+        "recommendations_not_met": d["recommendations_not_met"],
+        **{name: ({k: d[name][k] for k in keep} if d[name] else None)
+           for name in ("stem", "toe", "heel")},
+        "development": {k: d["development"][k] for k in
+                        ("computed", "ldh_mm", "available_mm")},
+        "not_designed": [n["what"] for n in d["not_designed"]],
+        "reinforcement": d["reinforcement"],
+    }
 
 
 def _mse_lrfd_numbers(result: dict) -> dict:
@@ -3422,11 +3500,11 @@ METHOD_INFO = {
         "brief": "Run slope stability analysis and generate calc package with cross-section plot, and tables (CSV) of the stresses on the slip surface, the forces on every slice, FOS by method and the line of thrust.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "List of [x, z] ground surface coordinates."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode)."},
+            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' and 'top_boundary_points' ([[x,z],...]) define a non-horizontal layer base or top (e.g. a weak seam). One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
             "xc": {"type": "float", "required": True, "description": "Circle center x (m)."},
             "yc": {"type": "float", "required": True, "description": "Circle center y (m)."},
             "radius": {"type": "float", "required": True, "description": "Circle radius (m)."},
-            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": ["bishop", "fellenius", "spencer"], "description": "Limit-equilibrium method."},
+            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": ["bishop", "fellenius", "spencer", "janbu", "morgenstern_price", "gle"], "description": "Limit-equilibrium method."},
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
             "gwt_points": {"type": "array", "required": False, "description": "List of [x, z] GWT coordinates."},
             "kh": {"type": "float", "required": False, "default": 0.0, "description": "Seismic coefficient."},
@@ -3442,7 +3520,7 @@ METHOD_INFO = {
         "brief": "One-call slope stability REPORT for a critical-surface SEARCH: input echo, search story (surfaces tried + rejection diagnostics + critical surface/FOS), FOS-by-method table, slice-force + interslice/thrust-line figures, reinforcement summary, a probabilistic annex (FOSM/Monte Carlo) when 'variables' is supplied, and CSV tables (every slice, every trial surface). No fixed circle needed — the search finds the critical surface.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "List of [x, z] ground surface coordinates."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' ([[x,z],...]) defines a non-horizontal layer base (e.g. a weak seam)."},
+            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' and 'top_boundary_points' ([[x,z],...]) define a non-horizontal layer base or top (e.g. a weak seam). One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
             "method": {"type": "str", "required": False, "default": "spencer", "allowed_values": ["spencer", "morgenstern_price", "gle", "bishop", "janbu", "fellenius"], "description": "Limit-equilibrium method the search minimizes and the report highlights. Default 'spencer' (rigorous — populates the interslice-force / line-of-thrust figure)."},
             "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": ["circular", "entry_exit", "noncircular", "noncircular_de", "pso", "weak_layer"], "description": "Trial-surface family for the search. 'circular' grids circle centres over x_range/y_range and keeps only circles whose ends fall in x_entry_range/x_exit_range; the others draw their surfaces between x_entry_range and x_exit_range. Ranges not given are set from the slope (toe, crest, height, depth to the base). 'weak_layer' biases trials toward a defined weak seam."},
             "x_range": {"type": "array", "required": False, "description": "[min, max] circle-center x for the search grid (circular)."},
@@ -3469,7 +3547,7 @@ METHOD_INFO = {
             "f_interslice": {"type": "str", "required": False, "default": "half_sine", "description": "Interslice force function for the rigorous re-analysis of the critical surface."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of (also printed in the package). Report every one."},
+        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "settlement_package": {
         "category": "Calculation Package",
@@ -3500,7 +3578,7 @@ METHOD_INFO = {
                     "pile_weight_basis": "One sentence saying whether the pile's own weight is in the load curve, naming the references; also printed in the package.",
                     "below_toe_basis": "How deep the settlement below the toe was counted and why it stopped (the toe load per influence_depth_criterion, the fill / drawdown to the bottom of the soil profile); also printed in the package.",
                     "neutral_plane_comparison": "Every method on the same inputs, each with its source (also tabulated in the package).",
-                    "warnings": "What the engineer must know about the result; also printed in the package. Report every one.",
+                    "warnings": "What the engineer must know about the result, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one.",
                     "dragload_kN": "Dragload (kN).",
                     "max_pile_load_kN": "Maximum pile load at the neutral plane (kN).",
                     "pile_settlement_mm": "Pile settlement (mm)."},
@@ -3512,8 +3590,8 @@ METHOD_INFO = {
     },
     "retaining_wall_package": {
         "category": "Calculation Package",
-        "brief": "Run a cantilever retaining wall (cantilever_wall), MSE wall (mse_wall, ASD) or MSE LRFD external stability (mse_lrfd_external_stability) analysis and generate its calc package.",
-        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user.", "(MSE LRFD numbers)": "wall_type 'mse_lrfd' only, in place of verdict and the FOS: passes, checks_failed, checks_not_run, sliding_CDR_governing and sliding_CDR_strength_min, eL_governing_m, eL_strength_min_m and e_limit_m, bearing_CDR_governing, bearing_CDR_strength_min and sigma_v_strength_min_kPa, as the mse_lrfd_external_stability tool works them out (null: not checked). Report them to the user."},
+        "brief": "Run a cantilever retaining wall (cantilever_wall), MSE wall (mse_wall, ASD) or MSE LRFD external stability (mse_lrfd_external_stability) analysis, or a cantilever wall's stability with the structural design of its concrete (cantilever_wall_structural_design), and generate its calc package.",
+        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(structural design numbers)": "wall_type 'cantilever_reinforced' only: basis, stem, toe and heel (each Mu, Vu, d, the steel required and provided, the bar, phi Mn, phi Vc, passes), development (the stem bars' hook), recommendations_not_met, not_designed and reinforcement (the reinforced wall section a drawing takes), as the cantilever_wall_structural_design tool works them out; checks_failed then lists the concrete's failed checks too. Report them to the user, with what was not designed.", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user.", "(MSE LRFD numbers)": "wall_type 'mse_lrfd' only, in place of verdict and the FOS: passes, checks_failed, checks_not_run, sliding_CDR_governing and sliding_CDR_strength_min, eL_governing_m, eL_strength_min_m and e_limit_m, bearing_CDR_governing, bearing_CDR_strength_min and sigma_v_strength_min_kPa, as the mse_lrfd_external_stability tool works them out (null: not checked). Report them to the user."},
     },
     "ground_improvement_package": {
         "category": "Calculation Package",

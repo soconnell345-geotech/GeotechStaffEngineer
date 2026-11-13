@@ -55,6 +55,12 @@ _METHOD_NORMALIZE = {
 }
 
 
+#: Spellings ``_normalize_method`` reads that describe_method never offers:
+#: "simplified" runs NCEER 2001, but Boulanger and Idriss (2014) is a
+#: simplified procedure too (GM-316 review B3).
+_HIDDEN_METHOD_SPELLINGS = ("simplified",)
+
+
 def _check_liquepy():
     from liquepy_agent import has_liquepy, liquepy_import_error
     if not has_liquepy():
@@ -334,13 +340,25 @@ METHOD_INFO = {
             "m_w": {"type": "float", "required": False, "default": 7.5,
                     "description": "Moment magnitude (alias magnitude)."},
             "method": {"type": "str", "required": False, "default": "bi2014",
+                       # the two ids; the other spellings
+                       # _normalize_method reads are aliases (GM-317, review
+                       # B3); "simplified" names both procedures, so it is
+                       # read but never offered
                        "allowed_values": ["bi2014", "nceer2001"],
+                       "value_aliases": {
+                           k: v for k, v in _METHOD_NORMALIZE.items()
+                           if k not in ("bi2014", "nceer2001")
+                           and k not in _HIDDEN_METHOD_SPELLINGS},
+                       "hidden_value_aliases": {
+                           k: _METHOD_NORMALIZE[k]
+                           for k in _HIDDEN_METHOD_SPELLINGS},
+                       "any_case": "strip",
                        "description": (
                            "bi2014 = Boulanger & Idriss 2014 (DEFAULT, both SPT "
                            "and CPT). nceer2001 = NCEER / Youd et al. 2001 SPT "
                            "procedure (SPT input only).")},
             "input_type": {"type": "str", "required": False,
-                           "allowed_values": ["CPT", "SPT"],
+                           "allowed_values": ["CPT", "SPT"], "any_case": "strip",
                            "description": (
                                "Optional override if both/neither CPT and SPT "
                                "keys are present.")},
