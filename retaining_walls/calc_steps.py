@@ -119,6 +119,11 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     """
     wtype = _wall_type(result, analysis)
 
+    if wtype == "cantilever_reinforced":
+        # GM-312: the stability inputs, then the structural design's
+        from retaining_walls import structural_steps
+        return (_input_summary_cantilever(result.stability, analysis)
+                + structural_steps.input_items(result, analysis))
     if wtype == "mse_lrfd":
         return _input_summary_mse_lrfd(result, analysis)
     if wtype == "mse":
@@ -428,6 +433,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     """
     wtype = _wall_type(result, analysis)
 
+    if wtype == "cantilever_reinforced":
+        # GM-312: the stability sections as for 'cantilever', then the
+        # structural sections
+        from retaining_walls import structural_steps
+        return (_calc_steps_cantilever(result.stability, analysis)
+                + structural_steps.sections(result, analysis))
     if wtype == "mse_lrfd":
         return _calc_steps_mse_lrfd(result, analysis)
     if wtype == "mse":
@@ -2657,6 +2668,11 @@ def get_figures(result, analysis) -> List[FigureData]:
     """
     wtype = _wall_type(result, analysis)
     figures = []
+    if wtype == "cantilever_reinforced":
+        # GM-312: the stability figures; the reinforcement drawing is not
+        # part of this package
+        result = result.stability
+        wtype = "cantilever"
     if wtype == "mse_lrfd":
         # GM-307: the LRFD package reports external stability; its section
         # is the ASD package's (wall_type 'mse')
