@@ -895,27 +895,27 @@
       "values": [
         {
           "name": "FOS",
-          "value": 1.385,
+          "value": 1.528,
           "rtol": 0.08
         }
       ],
-      "source": "v5.3/v5.4 worktree ground truth, 2026-07-07 (recomputed by the E10 offline test)"
+      "source": "module ground truth, 2026-11-13 (GM-140 step 9: the stages as EM 1110-2-1902 Appendix G prints them; recomputed by the E10 offline test)"
     }
   },
   {
     "id": "RDD-3",
     "module": "slope_stability",
     "complexity": "high",
-    "question": "A homogeneous 20 m earth-fill dam (ground surface (0,0)-(60,20)-(90,20) m, fill gamma=20 kN/m3, c'=0/phi'=32 deg, total-stress R-envelope cR=25 kPa/phiR=18 deg), trial circle centre (35,42) radius 40 m, reservoir drawn down from el 18 m to 3 m: compute the Duncan-Wright-Wong 3-stage rapid-drawdown FOS using the RIGOROUS ('gle') stage-3 effective-normal option instead of the default Fellenius estimate.",
+    "question": "A homogeneous 20 m earth-fill dam (ground surface (0,0)-(60,20)-(90,20) m, fill gamma=20 kN/m3, c'=0/phi'=32 deg, total-stress R-envelope cR=25 kPa/phiR=18 deg), trial circle centre (35,42) radius 40 m, reservoir drawn down from el 18 m to 3 m: compute the rapid-drawdown FOS by Lowe and Karafiath's two-stage procedure (the second stage of the improved procedure of EM 1110-2-1902 Appendix G, with no drained check).",
     "expected": {
       "values": [
         {
           "name": "FOS",
-          "value": 1.428,
+          "value": 1.588,
           "rtol": 0.08
         }
       ],
-      "source": "v5.3/v5.4 worktree ground truth, 2026-07-07 (recomputed by the E10 offline test)"
+      "source": "module ground truth, 2026-11-13 (GM-140 step 9: the stages as EM 1110-2-1902 Appendix G prints them; recomputed by the E10 offline test)"
     }
   },
   {

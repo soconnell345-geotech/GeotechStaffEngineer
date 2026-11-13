@@ -192,6 +192,8 @@ def build_soil_layer(d, i: int, *, method: str,
         su_passive=d.get("su_passive", 0.0),
         R_c=d.get("R_c", 0.0),
         R_phi=d.get("R_phi"),
+        R_d=d.get("R_d", 0.0),
+        R_psi=d.get("R_psi"),
     )
 
 
@@ -469,7 +471,6 @@ def _run_infinite_slope(params: dict) -> dict:
 
 
 _RD_METHODS = ["corps_2stage", "duncan_3stage", "lowe_karafiath"]
-_RD_STAGE3_NORMAL = ["fellenius", "gle"]
 _RD_SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de"]
 
 
@@ -480,7 +481,7 @@ def _run_rapid_drawdown(params: dict) -> dict:
         _GEOM_PARAMS + _SURFACE_PARAMS + (
             "drawdown_from_elevation", "drawdown_to_elevation", "method",
             "f_interslice", "n_slices", "tol", "stage1_phreatic_points",
-            "stage3_effective_normal"),
+            "drawdown_phreatic_points"),
         method="rapid_drawdown_fos")
     geom = _build_geometry(params, method="rapid_drawdown_fos")
     require_params(params, ["drawdown_from_elevation", "drawdown_to_elevation"],
@@ -489,9 +490,6 @@ def _run_rapid_drawdown(params: dict) -> dict:
                            name="method", method="rapid_drawdown_fos")
     f_int = _check_choice(params.get("f_interslice", "constant"), _F_INTERSLICE,
                           name="f_interslice", method="rapid_drawdown_fos")
-    stage3 = _check_choice(
-        params.get("stage3_effective_normal", "fellenius"), _RD_STAGE3_NORMAL,
-        name="stage3_effective_normal", method="rapid_drawdown_fos")
     result = rapid_drawdown_fos(
         geom, params["drawdown_from_elevation"], params["drawdown_to_elevation"],
         xc=params.get("xc"), yc=params.get("yc"), radius=params.get("radius"),
@@ -499,7 +497,7 @@ def _run_rapid_drawdown(params: dict) -> dict:
         method=method, f_interslice=f_int,
         n_slices=params.get("n_slices", 50), tol=params.get("tol", 1e-4),
         stage1_phreatic_points=params.get("stage1_phreatic_points"),
-        stage3_effective_normal=stage3,
+        drawdown_phreatic_points=params.get("drawdown_phreatic_points"),
     )
     return result.to_dict()
 
@@ -513,7 +511,7 @@ def _run_search_rapid_drawdown(params: dict) -> dict:
             "surface_type", "x_range", "y_range", "x_entry_range",
             "x_exit_range", "nx", "ny", "n_trials", "n_points", "seed",
             "n_slices", "tol", "f_interslice", "stage1_phreatic_points",
-            "stage3_effective_normal", "time_budget_s"),
+            "drawdown_phreatic_points", "time_budget_s"),
         method="search_rapid_drawdown")
     geom = _build_geometry(params, method="search_rapid_drawdown")
     require_params(params, ["drawdown_from_elevation", "drawdown_to_elevation"],
@@ -525,9 +523,6 @@ def _run_search_rapid_drawdown(params: dict) -> dict:
         name="surface_type", method="search_rapid_drawdown")
     f_int = _check_choice(params.get("f_interslice", "constant"), _F_INTERSLICE,
                           name="f_interslice", method="search_rapid_drawdown")
-    stage3 = _check_choice(
-        params.get("stage3_effective_normal", "fellenius"), _RD_STAGE3_NORMAL,
-        name="stage3_effective_normal", method="search_rapid_drawdown")
     x_range = tuple(params["x_range"]) if params.get("x_range") else None
     y_range = tuple(params["y_range"]) if params.get("y_range") else None
     x_entry_range = tuple(params["x_entry_range"]) if params.get("x_entry_range") else None
@@ -542,7 +537,7 @@ def _run_search_rapid_drawdown(params: dict) -> dict:
         seed=params.get("seed"), n_slices=params.get("n_slices", 50),
         tol=params.get("tol", 1e-4), f_interslice=f_int,
         stage1_phreatic_points=params.get("stage1_phreatic_points"),
-        stage3_effective_normal=stage3,
+        drawdown_phreatic_points=params.get("drawdown_phreatic_points"),
         time_budget_s=_time_budget(params, "search_rapid_drawdown"),
     )
     if result.search is not None:
@@ -624,7 +619,7 @@ METHOD_REGISTRY = {
 
 _GEOMETRY_PARAMS = {
     "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,y], ...] array (x increasing)."},
-    "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru optional; bottom_boundary_points and top_boundary_points ([[x,z],...], sorted by x) optional, a sloping bottom or top in place of the flat elevation}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D) or 'anisotropic' (undrained su varies with the slice-base inclination alpha; fields su_active [kPa, ACTIVE/crest zone, alpha>=+45deg], su_dss [direct simple shear, alpha=0], su_passive [PASSIVE/toe zone, alpha<=-45deg] — su_active>=su_dss>=su_passive for K>1 clays; Casagrande-Carrillo sin(2alpha) interpolation; standard toe-at-low-x slope). For rapid_drawdown_fos, low-permeability layers also take the total-stress R-envelope R_c (kPa) and R_phi (deg); R_phi omitted/null => free-draining. One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
+    "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru optional; bottom_boundary_points and top_boundary_points ([[x,z],...], sorted by x) optional, a sloping bottom or top in place of the flat elevation}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D) or 'anisotropic' (undrained su varies with the slice-base inclination alpha; fields su_active [kPa, ACTIVE/crest zone, alpha>=+45deg], su_dss [direct simple shear, alpha=0], su_passive [PASSIVE/toe zone, alpha<=-45deg] — su_active>=su_dss>=su_passive for K>1 clays; Casagrande-Carrillo sin(2alpha) interpolation; standard toe-at-low-x slope). For rapid_drawdown_fos and search_rapid_drawdown, a layer that does not drain freely also takes the total-stress R envelope R_c (kPa) and R_phi (deg), from which the strength of soil consolidated at K_c = 1 is derived by EM 1110-2-1902 Eqs. G-5 and G-6, or that envelope as measured, R_d (kPa) and R_psi (deg): tau_ff = R_d + sigma'_c tan(R_psi) (not for 'corps_2stage', which needs R_c and R_phi); a layer with neither R_phi nor R_psi is free-draining. One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
     "gwt_points": {"type": "array", "required": False, "description": "Groundwater table [[x,y],...]. If above the ground surface, ponded water is auto-detected (water weight + horizontal hydrostatic thrust applied as external loads)."},
     "kh": {"type": "float", "required": False, "default": 0.0, "description": "Horizontal pseudo-static seismic coefficient (acts on soil weight only)."},
     "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Vertical surcharge (kPa). A single loaded zone; use 'surcharges' for several distinct loaded areas."},
@@ -703,23 +698,23 @@ METHOD_INFO = {
     },
     "rapid_drawdown_fos": {
         "category": "Slope Stability",
-        "brief": "Rapid-drawdown FOS on a SPECIFIED slip surface: USACE/Army-Corps 2-stage, Lowe-Karafiath 2-stage, or Duncan-Wright-Wong 3-stage. Low-permeability layers respond undrained after fast reservoir drawdown; give them the total-stress R-envelope (soil_layers[].R_c, R_phi) alongside c_prime/phi (R_phi=null => free-draining). Stage 1 = full-pool effective stresses; stage 2 = undrained strength from the R and effective envelopes (Kc-interpolated for Lowe-Karafiath and 3-stage); stage 3 (3-stage only) substitutes the drained strength where lower; final FOS is solved at the drawn-down pool.",
+        "brief": "Rapid drawdown on a SPECIFIED slip surface, as EM 1110-2-1902 Appendix G prints it: the improved three-stage procedure (Duncan, Wright and Wong), Lowe and Karafiath's two-stage procedure, or the Corps of Engineers' 1970 two-stage procedure. Layers that do not drain freely respond undrained after a fast drawdown; give them the R envelope (soil_layers[].R_c, R_phi) or the measured R_d, R_psi beside c_prime and phi (neither => free-draining). Stage 1: effective stresses before drawdown give sigma'_c and tau_c on each slice base (Eqs. G-1, G-2). Stage 2: solved after drawdown with the undrained strength tau_ff as cohesion and phi = 0 (Eq. G-12 between the K_c = 1 strength of Eqs. G-5, G-6, G-9 and the effective-stress strength, K_c by Eq. G-11; the Corps procedure uses the lower of the R envelope as entered and the effective-stress envelope). Three-stage only: the drained strength from the second stage's normal force (Eqs. G-13 to G-15) is compared slice by slice, and a third stage is solved only if a slice's drained strength is lower. Every stage's factor of safety is returned; FOS is that of the last stage computed, and null where a stage has no solution. Every stage is solved by Spencer's method (the GLE engine).",
         "parameters": {
             **_GEOMETRY_PARAMS,
             **_SURFACE_SPEC_PARAMS,
             "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
             "drawdown_to_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation AFTER drawdown (m); must be below drawdown_from_elevation."},
-            "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (Duncan-Wright-Wong, Kc-interpolated undrained strength + stage-3 drained substitution), 'lowe_karafiath' (the SAME Kc-interpolated stage-2 strength but NO stage 3, so >= duncan_3stage), or 'corps_2stage' (USACE combined min(R, effective) envelope, no stage 3)."},
+            "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (the improved procedure, EM G-3: the answer is the third stage's factor of safety, or the second's where no slice's drained strength is lower), 'lowe_karafiath' (the same first and second stages without the drained check: the answer is the second stage's, so never below duncan_3stage), or 'corps_2stage' (the Corps 1970 procedure, EM G-2: the lower of the R envelope with R_c and R_phi as entered and the effective-stress envelope; no third stage). The manual's own example of the 1970 procedure was computed by the Modified Swedish Method at a fixed side-force inclination (3.49, then 1.35); Spencer's method, used here, gives 1.24 on it, and the result says so."},
             "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function ('constant' = Spencer)."},
             "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices."},
-            "stage1_phreatic_points": {"type": "array", "required": False, "description": "Optional steady-seepage phreatic surface [[x,z],...] for the STAGE-1 consolidation stresses only. Default (omitted) uses a flat full-pool phreatic (hydrostatic to the reservoir) -- the conservative no-through-seepage bound. Supply the flow-net/Casagrande phreatic line (declining from the pool level at the upstream face through the dam) to reproduce the steady-seepage condition Slide2/EM 1110-2-1902 use, which raises the mobilized undrained strengths and the FOS."},
-            "stage3_effective_normal": {"type": "str", "required": False, "default": "fellenius", "allowed_values": _RD_STAGE3_NORMAL, "description": "3-stage only: basis for the STAGE-3 drained-substitution effective normal stress. 'fellenius' (default) uses the W*cos(a)/l - u estimate (historical); 'gle' uses the rigorous GLE drawn-down normal (consistent with stage 1), which removes spurious drained substitutions and raises the FOS toward the published Duncan-Wright-Wong value (e.g. Slide2 #96: 1.27 -> 1.37). Inert for the 2-stage method."},
+            "stage1_phreatic_points": {"type": "array", "required": False, "description": "The seepage (phreatic) line BEFORE drawdown, [[x,z],...], for the first stage's pore pressures (EM 1110-2-1902 Table 2-1: steady seepage). Omitted: a level pool at drawdown_from_elevation with hydrostatic pressures below it, the assumption of the manual's own example (G-4b, p. G-9), which the result names as assumed. The line should start at the pool level on the upstream face so the pool still loads the face."},
+            "drawdown_phreatic_points": {"type": "array", "required": False, "description": "The piezometric line AFTER drawdown, [[x,z],...]: the pore pressures on free-draining slices in the second stage, in the drained check (Eq. G-14) and on the drained slices of the third stage. Omitted: a level pool at drawdown_to_elevation, as in the manual's example, which the result names as assumed."},
         },
-        "returns": {"FOS": "Drawdown factor of safety.", "stage1_FOS": "Full-pool (pre-drawdown) FOS.", "n_undrained_slices": "Slices treated undrained.", "n_drained_substituted": "Stage-3 drained substitutions (3-stage).", "layer_overlaps": "Where a layer loses ground to one listed before it (present when any does): layer, held_by, x_from, x_to, max_overlap_m, statement."},
+        "returns": {"FOS": "Drawdown factor of safety: that of the last stage computed (answer_stage); null where a stage has no solution (no_solution says which and why).", "answer_stage": "2 or 3: the stage FOS is from.", "stage1_FOS": "First stage (before drawdown).", "stage2_FOS": "Second stage (after drawdown, undrained strengths).", "stage3_FOS": "Third stage; null when not computed (two-stage procedures, or no slice's drained strength lower).", "stage_method": "The method of slices that solved every stage.", "water_before": "The water before drawdown: the line given, or the level pool assumed.", "water_after": "The water after drawdown: the line given, or the level lowered pool assumed.", "n_undrained_slices": "Slices that do not drain freely.", "m_alpha_min_stage1": "Least m_alpha of the first stage at its own FOS (a warning says so below 0.2).", "m_alpha_min": "Least m_alpha of the last stage computed at its FOS.", "n_drained_substituted": "Slices on c', phi' and the after-drawdown pore pressure in the third stage.", "slices": "Per slice, low x to high x, the columns of EM Figs. G-10b and G-11b (kPa; N in kN/m): x_left, x_right, sigma_c, tau_c, Kc, Kf, tau_ff_Kc1, tau_ff_Kcf, tau_ff, N_stage2, u_after, sigma_d, s_d, strength_used; 'columns' explains each.", "choices": "The procedure, the method of slices, the strength rules and the water assumed, each with its printed basis.", "layer_overlaps": "Where a layer loses ground to one listed before it (present when any does): layer, held_by, x_from, x_to, max_overlap_m, statement."},
     },
     "search_rapid_drawdown": {
         "category": "Slope Stability",
-        "brief": "SEARCH for the critical (minimum-FOS) slip surface under RAPID-DRAWDOWN strengths (Corps 2-stage / Lowe-Karafiath 2-stage / Duncan-Wright-Wong 3-stage). Like search_critical_surface but the per-trial FOS is the rapid-drawdown solve; supports circular and noncircular searches. Use this (not rapid_drawdown_fos) when you do NOT already have a specific trial surface. Low-permeability layers need the R-envelope (soil_layers[].R_c, R_phi).",
+        "brief": "SEARCH for the critical (minimum-FOS) slip surface under RAPID DRAWDOWN (Corps 1970 two-stage / Lowe and Karafiath two-stage / improved three-stage, EM 1110-2-1902 Appendix G). Like search_critical_surface, but every trial is scored by the same stage-by-stage procedure as rapid_drawdown_fos, and a trial on which a stage has no solution is not scored; supports circular and noncircular searches. Use this (not rapid_drawdown_fos) when you do NOT already have a specific trial surface. Layers that do not drain freely need the R envelope (soil_layers[].R_c, R_phi) or the measured R_d, R_psi.",
         "parameters": {
             **_GEOMETRY_PARAMS,
             "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
@@ -737,11 +732,11 @@ METHOD_INFO = {
             "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices per trial."},
             "seed": {"type": "int", "required": False, "description": "Random seed for reproducible noncircular searches."},
             "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function ('constant' = Spencer)."},
-            "stage1_phreatic_points": {"type": "array", "required": False, "description": "Optional steady-seepage stage-1 phreatic surface [[x,z],...] (see rapid_drawdown_fos)."},
-            "stage3_effective_normal": {"type": "str", "required": False, "default": "fellenius", "allowed_values": _RD_STAGE3_NORMAL, "description": "3-stage stage-3 drained-substitution normal basis: 'fellenius' (default) or 'gle' (rigorous). See rapid_drawdown_fos."},
+            "stage1_phreatic_points": {"type": "array", "required": False, "description": "The seepage line before drawdown, [[x,z],...]; omitted, a level pool at drawdown_from_elevation, named in the result as assumed (see rapid_drawdown_fos)."},
+            "drawdown_phreatic_points": {"type": "array", "required": False, "description": "The piezometric line after drawdown, [[x,z],...]; omitted, a level pool at drawdown_to_elevation, named in the result as assumed (see rapid_drawdown_fos)."},
             "time_budget_s": {"type": "float", "required": False, "default": SEARCH_TIME_BUDGET_S, "description": "Time budget of the whole search in seconds (at most 600), as search_critical_surface: each trial is two or three GLE solves, so the main search scores coarse first and stops at 80 % of the budget, and search.warnings and search.search_ranges.time_budget say what was covered."},
         },
-        "returns": {"FOS": "Minimum drawdown factor of safety found.", "method": "Stage method used.", "surface_type": "Search strategy.", "n_surfaces_evaluated": "Number of surfaces checked.", "search": "Rich search result (critical surface geometry + diagnostics), with search_ranges, governing_location, refused_lowest and choices as search_critical_surface returns them.", "drawdown_detail": "Stage-level detail on the winning surface (stage-1 FOS, drained substitutions; layer_overlaps where a layer loses ground to one listed before it)."},
+        "returns": {"FOS": "Minimum drawdown factor of safety found.", "method": "Stage method used.", "surface_type": "Search strategy.", "n_surfaces_evaluated": "Number of surfaces checked.", "search": "Rich search result (critical surface geometry + diagnostics), with search_ranges, governing_location, refused_lowest and choices as search_critical_surface returns them.", "drawdown_detail": "The winning surface stage by stage, as rapid_drawdown_fos returns it: each stage's factor of safety, the stage the answer is from, the water assumed, the per-slice columns and the choices (layer_overlaps where a layer loses ground to one listed before it)."},
     },
     "yield_acceleration": {
         "category": "Slope Stability",
@@ -858,8 +853,8 @@ for _m in ("analyze_slope", "compare_methods_table", "rapid_drawdown_fos",
 # (nx and ny the centre grid, the entry/exit pairs and the swarm; n_trials
 # the random polylines, the swarm and the weak-layer search; n_points every
 # noncircular search; the Bishop screen circles with a rigorous method);
-# the M-P/GLE interslice function to those methods; the 3-stage normal to
-# the 3-stage method; a Monte Carlo search budget to re-searched surfaces.
+# the M-P/GLE interslice function to those methods; a Monte Carlo search
+# budget to re-searched surfaces.
 _CRACK = {"tension_crack_depth": "set"}
 _CIRCLE_GIVEN = {"xc": "set"}
 _SEARCH_CIRCLES = {"surface_type": ["circular", "entry_exit"]}
@@ -886,6 +881,15 @@ YIELD_REFUSED = {"kh": {
 METHOD_INFO["yield_acceleration"]["parameters"].pop("kh")
 METHOD_INFO["yield_acceleration"]["refused_parameters"] = YIELD_REFUSED
 
+#: The three-stage drained check has one printed basis (GM-140 step 9, EM
+#: 1110-2-1902 Eqs. G-13 to G-15); a caller who still names the removed
+#: input is told the rule.
+from slope_stability.rapid_drawdown import STAGE3_NORMAL_RULE  # noqa: E402
+RD_REFUSED = {"stage3_effective_normal": {"reason": STAGE3_NORMAL_RULE,
+                                          "accepts": []}}
+for _m in ("rapid_drawdown_fos", "search_rapid_drawdown"):
+    METHOD_INFO[_m]["refused_parameters"] = RD_REFUSED
+
 declare_applies_when(METHOD_INFO, {
     "analyze_slope": _crack_and({
         "reverse_curvature": _CIRCLE_GIVEN,
@@ -894,14 +898,12 @@ declare_applies_when(METHOD_INFO, {
     "compare_methods_table": _crack_and({
         "reverse_curvature": _CIRCLE_GIVEN}),
     "rapid_drawdown_fos": _crack_and({
-        "reverse_curvature": _CIRCLE_GIVEN,
-        "stage3_effective_normal": {"method": ["duncan_3stage"]}}),
+        "reverse_curvature": _CIRCLE_GIVEN}),
     "search_rapid_drawdown": _crack_and({
         "reverse_curvature": _SEARCH_CIRCLES,
         "nx": _SEARCH_CIRCLES, "ny": _SEARCH_CIRCLES,
         "n_trials": {"surface_type": ["noncircular"]},
-        "n_points": {"surface_type": ["noncircular", "noncircular_de"]},
-        "stage3_effective_normal": {"method": ["duncan_3stage"]}}),
+        "n_points": {"surface_type": ["noncircular", "noncircular_de"]}}),
     "yield_acceleration": _crack_and({
         "reverse_curvature": _CIRCLE_GIVEN}),
     "search_critical_surface": _crack_and({
@@ -947,9 +949,13 @@ _NOT_SEEDED = ("not seeded", "the trial surfaces are random and can differ "
                "from run to run; give seed to repeat a run")
 _INDEPENDENT = ("independent variables",
                 "no correlation between the random variables")
-_POOL = ("a flat full-pool phreatic surface",
-         "hydrostatic to the reservoir for the stage-1 consolidation "
-         "stresses: the conservative no-through-seepage bound")
+_POOL = ("a level pool at drawdown_from_elevation",
+         "hydrostatic below the pool before drawdown: the assumption of "
+         "the manual's own example (EM 1110-2-1902 G-4b, p. G-9); seepage "
+         "analyses would often be appropriate")
+_LOW_POOL = ("a level pool at drawdown_to_elevation",
+             "hydrostatic below the lowered pool after drawdown, as in the "
+             "manual's example (EM 1110-2-1902 G-4b, p. G-9)")
 _LOADS = {"surcharge_x_range": _WHOLE_SURFACE, "surcharges": _NO_ZONES,
           "reinforcement_elevation": _NOT_APPLIED}
 _GROUND = {"gwt_points": _NO_WATER, "pore_pressure_points": _FROM_WATER,
@@ -964,9 +970,11 @@ declare_when_absent(METHOD_INFO, {
     "fosm_fos": {**_GROUND, "correlations": _INDEPENDENT},
     "monte_carlo_fos": {**_GROUND, "correlations": _INDEPENDENT,
                         "seed": _NOT_SEEDED},
-    "rapid_drawdown_fos": {**_LOADS, "stage1_phreatic_points": _POOL},
+    "rapid_drawdown_fos": {**_LOADS, "stage1_phreatic_points": _POOL,
+                           "drawdown_phreatic_points": _LOW_POOL},
     "search_rapid_drawdown": {
         **_LOADS, "stage1_phreatic_points": _POOL,
+        "drawdown_phreatic_points": _LOW_POOL,
         "x_entry_range": _WINDOW, "x_exit_range": _WINDOW,
         "x_range": _GRID, "y_range": _GRID, "seed": _NOT_SEEDED},
     "bray_travasarou_2007": {
