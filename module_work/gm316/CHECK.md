@@ -15,16 +15,29 @@ coefficient changes.
   handler, notes) runs inside `call_warnings.collecting()`, and the
   warnings collected are added to the result before working-folder paths
   are hidden. The old body of `run_method` is `_run_checked`, unchanged.
-- One `warnings.showwarning` hook, installed on the first call. It
-  appends to a `contextvars.ContextVar` list that `collecting()` sets, so
-  calls running at once in threads keep their own; outside a call it hands
-  each warning to the hook it replaced, unchanged. `catch_warnings` is not
-  used round the call. When a `catch_warnings(record=True)` block (pytest
-  puts one round every test) has swapped the hook out, the next call puts a
-  new hook on top of whatever is there (the block puts its own back when it
-  ends, so a hook installed earlier, e.g. `logging.captureWarnings`, is not
-  lost). A hook that hands on to another of these hooks does not record
-  twice.
+- Two pieces, installed when `aec_agent_core.method_call` is imported
+  (and again by a call if something replaced them), both appending to a
+  `contextvars.ContextVar` list that `collecting()` sets, so calls
+  running at once in threads keep their own (changed by the review fix
+  A1, below):
+  - a thin wrapper round `warnings.warn`: while a call collects, a
+    warning the app's packages raise is recorded for the call BEFORE the
+    process's filters and once-per-location registry act, then handed to
+    the original `warn` unchanged (its `stacklevel` one deeper for the
+    wrapper's frame, so it is attributed, filtered and shown as before);
+    outside a call it only hands on;
+  - one `warnings.showwarning` hook, for what does not pass through the
+    Python `warn` (numpy's floating-point warnings, raised from C; code
+    that bound `warn` to its own name first). Outside a call, or for a
+    warning the wrapper recorded, it hands on to the hook it replaced,
+    unchanged. When a `catch_warnings(record=True)` block (pytest puts one
+    round every test) has swapped the hook out, the next call puts a new
+    hook on top of whatever is there (the block puts its own back when it
+    ends, so a hook installed earlier, e.g. `logging.captureWarnings`, is
+    not lost). A hook that hands on to another of these hooks does not
+    record twice.
+
+  `catch_warnings` is not used round the call.
 - The core names no application: GSE hands in its calculation packages
   through the new hook `method_call.warning_packages`
   (`funhouse_agent/core_hooks.py: WARNING_PACKAGES`, filled in
@@ -60,13 +73,16 @@ covariance) does reach the agent (it is about our calculation), while
 matplotlib's, attributed the same way, does not.
 
 **Repeats.** Python's default action shows a warning once per location
-(`__warningregistry__`). For a warning that reaches the agent, the hook takes
-its key `(text, category, lineno)` back out of the registry of the module it
-is attributed to, so the next call raising it reaches the hook again. No
-filter is added and no other registry is touched, so third-party warnings
-keep their once-per-location behaviour. Within one call, a warning goes on
-to the replaced hook (stderr) once per location; on a later call it is shown
-there again (before: once per process until the filters next changed).
+(`__warningregistry__`). The wrapper records a package's warning on every
+call that raises it whatever the registry holds, and leaves the registry
+alone: on stderr such a warning is shown once per location for the life of
+the process, as before GM-316, and an "always" recorder (`pytest.warns`)
+sees every occurrence. For a warning only the hook sees (numpy's), the hook
+takes its key `(text, category, lineno)` back out of the registry of the
+module it is attributed to, so the next call raising it reaches the hook
+again; within one call it goes on to the replaced hook (stderr) once per
+location. No filter is added and no other registry is touched, so
+third-party warnings keep their once-per-location behaviour.
 
 **What the agent gets.** The message text only (no file path, no line
 number); at most 20 a call, then "and N more". A dict result gets them under
@@ -121,29 +137,95 @@ Each of these is a module defect the audit lists for wave 2 (a profile
 shorter than the pile should be refused or stated, not extended); they are
 not fixed here.
 
+### Review fix A1: delivery no longer depends on the process's filters
+
+The review (2026-11-12, finding A1) showed GM-316 could be switched off for
+the life of the process. Three blocks on the tool-call path used
+`warnings.catch_warnings()` + `simplefilter("ignore")`:
+`drilled_shaft/capacity.py` `_alternative` (several times in every
+cohesionless `drilled_shaft_capacity` call), `lateral_pile/solver.py`'s
+capacity search, and `aec_agent_core/charts/layout_ink.py`'s two (under a
+lock of their own). `catch_warnings` swaps process-wide state: when two
+blocks interleave across threads (A enters, B enters, A exits, B exits), B
+puts back A's copy of the filters, so `('ignore', None, Warning, None, 0)`
+stays at the front for good, and from then on no warning reached the hook.
+The review's `p2_leak` probe showed it with two threads of drilled-shaft
+calls: after the leak, the axial-pile call's "exceeds soil profile" warning
+was gone from every result. Third-party libraries use `catch_warnings` too,
+so it could happen with none of our blocks.
+
+The fix, in two parts:
+
+1. **Delivery of the packages' own warnings is independent of the filter
+   list and the registry**: the `warnings.warn` wrapper above records them
+   before any filter acts. `catch_warnings` never swaps `warn`, so the
+   wrapper, once installed, stays; it is installed at import of
+   `method_call`. The `showwarning` hook stays for warnings raised from C
+   (numpy's floating-point ones), which never pass through the Python
+   `warn`; those still depend on the filters, so an "ignore" filter left
+   in front drops them (and everything on stderr), as it would in any
+   Python process. Chosen over the review's two suggestions: a shared lock
+   round every filter swap stops only OUR blocks from interleaving (not a
+   library's) and still drops a call's warnings while a block is open; a
+   context-local `quiet()` would mean the analysis modules importing the
+   core, which they must not. The wrapper costs one Python frame per
+   `warnings.warn` in the process; outside a call it changes nothing
+   (same attribution, same filters, same registry: test
+   `test_outside_a_call_a_warning_is_shown_as_before`, and
+   `skip_file_prefixes` on 3.12+).
+   Tests (`packages/aec-agent-core/tests/test_call_warnings.py`): an
+   ignore-everything filter put at the front, 100 calls each still carry
+   their warning; the p2_leak interleaving reproduced with two threads
+   and events (the blanket filter is left at the front), then 100 calls
+   each carry theirs.
+2. **The hazard we own is removed** where it was safe, the numbers
+   unchanged (every drilled_shaft and lateral_pile probe plus four made-up
+   calls, before and after: identical results and warnings):
+   - drilled_shaft `_alternative` silenced the warning the trial copy of
+     the analysis raises again in `__post_init__` (the shaft longer than
+     the profile, already raised by the analysis it was copied from) and
+     any numpy notice. Now a `ContextVar` (`_IN_TRIAL`, per thread and per
+     context) keeps the copy from raising it, and `np.errstate(all=
+     "ignore")` (per thread in numpy 2) quiets numpy's notices in the
+     trial.
+   - lateral_pile's capacity search silenced the solver's own "Singular
+     matrix in solver" warning in its trial solves (a factor of 0
+     follows) and any numpy notice. Now the trial calls `_solve_system`,
+     which returns None on a singular system without warning (the zeros
+     follow as before), under `np.errstate(all="ignore")`;
+     `_assemble_and_solve` still warns for a real solve.
+   - layout_ink's two blocks are left under their lock: they silence
+     matplotlib's layout warnings, which the rule never delivers anyway,
+     and they are the only filter swaps left on the path among ours.
+     They can still interleave with a library's own block, which part 1
+     covers.
+
+   Neither analysis module imports the core or the other. A standing test
+   (`funhouse_agent/tests/test_probe_warnings.py::
+   test_no_calculation_package_swaps_the_warning_filters`) fails if a
+   calculation package's code calls `catch_warnings`, `simplefilter`,
+   `filterwarnings` or `resetwarnings`: such a block would no longer hide
+   the package's own warnings from the agent, and it swaps the filters for
+   every thread.
+
 ### Noted, not fixed
 
-- `lateral_pile/solver.py:376` and `drilled_shaft/capacity.py:1867` put
-  `catch_warnings()` + `simplefilter("ignore")` round code inside a
-  handler, and `aec_agent_core/charts/layout_ink.py:1196, 1211` does the
-  same round matplotlib's layout (under a lock that only orders the
-  layout_ink callers). While any of those blocks is open, the "ignore" filter
-  is process-wide, so a warning another thread's call raises in that window
-  is dropped before any hook sees it (as it already was from stderr). The
-  layout_ink catch still works as before (test
-  `test_the_lock_based_catch_in_layout_ink_still_works`).
-- A handler that starts worker threads of its own (a thread pool inside a
-  module) runs them without the call's context, so their warnings stay on
-  stderr only. No module does that through a probe today.
-- If a warning was raised OUTSIDE any call earlier in the process (a
-  library caller using a module directly) with the same text at the same
-  line, Python's registry suppresses the next occurrence before the hook
-  sees it, until the filters next change (any `catch_warnings` or
-  `filterwarnings` clears every registry; the layout_ink catch does so on
-  every figure).
-- The very first installation of the hook, if it happens while another
-  thread is inside a `catch_warnings` block, is undone when that block
-  ends; the next call installs it again.
+- A handler that starts worker threads of its own: a worker started with
+  `contextvars.copy_context().run` (the core's vision tools do this) runs
+  in the call's context, so its warnings are recorded while the call runs;
+  one that finishes after the call has returned loses them to the agent
+  (stderr keeps them). A plain `threading.Thread` or pool worker has no
+  context of the call, so its warnings stay on stderr only (on a
+  free-threaded 3.14 build, whose threads inherit the context, they are
+  recorded too). No module does either through a probe today. (Corrected
+  after review C7.)
+- numpy's floating-point warnings (the hook's path) still depend on the
+  filters and, across calls, on taking the registry key out: a warning
+  raised OUTSIDE any call earlier at the same line with the same text is
+  suppressed by the registry until the filters next change, and an
+  "ignore" filter left in front drops them. A package's own
+  `warnings.warn` no longer has either limit (before review fixes C6 and
+  A1, it had both).
 
 ## Piece 2, GM-317: a value outside a parameter's `allowed_values` is refused
 

@@ -1,6 +1,7 @@
 """A Python warning raised inside a method reaches the agent (BACKLOG GM-316;
 ``aec_agent_core.call_warnings``). Made-up modules and values only."""
 
+import sys
 import threading
 import types
 import warnings
@@ -66,6 +67,11 @@ def call_plotting(params):
 def overshoot(params):
     warnings.warn("stacklevel too high", stacklevel=3)
     return {"value": 6.0}
+
+def warn_same(params):
+    for _ in range(params["n"]):
+        warnings.warn("the same note")
+    return {"value": 9.0}
 """)
 
 OTHER_MOD = _code("gm316thirdparty.lib", """
@@ -119,6 +125,16 @@ def test_two_calls_in_a_row_both_carry_it():
     # second call must still get it.
     assert _run("warn_once")["warnings"] == ["tip below the profile: 1"]
     assert _run("warn_once")["warnings"] == ["tip below the profile: 1"]
+
+
+def test_a_numpy_warning_repeated_in_later_calls_still_reaches_them():
+    """The hook's path (raised from C): the registry key is taken out so
+    the next call sees it again."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("default")
+        for _ in range(3):
+            assert _run("overflow")["warnings"] == [
+                "overflow encountered in exp"]
 
 
 def test_calls_at_once_in_threads_do_not_see_each_others():
@@ -210,14 +226,18 @@ def test_no_file_path_or_line_number_in_the_text():
     assert "<gm316calc" not in text and "line" not in text
 
 
-def test_the_lock_based_catch_in_layout_ink_still_works():
+def test_a_catch_warnings_block_does_not_hide_a_packages_own_warning():
+    """An app package's warning is recorded before any filter acts (review
+    A1), so a package cannot silence its own warning with catch_warnings:
+    a trial calculation must not raise it (drilled_shaft, lateral_pile).
+    The layout_ink lock block still runs, and the hook is still there."""
     from aec_agent_core.charts import layout_ink
     src = _code(f"{PKG}.ink", """
 def both(params):
     with LOCK, warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        warnings.warn("hidden by the catch")
-    warnings.warn("shown after it")
+        warnings.warn("inside the catch")
+    warnings.warn("after it")
     return {"value": 8.0}
 """)
     src["LOCK"] = layout_ink._WARNINGS_LOCK
@@ -225,8 +245,154 @@ def both(params):
         METHOD_REGISTRY={"both": src["both"]},
         METHOD_INFO={"both": {"parameters": {}, "open_parameters": True}})
     r = run_method(m, "fake", "both", {})
-    assert r["warnings"] == ["shown after it"]
+    assert r["warnings"] == ["inside the catch", "after it"]
     assert getattr(warnings.showwarning, "_aec_call_warnings", False)
+
+
+#: The filter two interleaved ``catch_warnings`` blocks leave behind.
+BLANKET = ("ignore", None, Warning, None, 0)
+
+
+def test_an_ignore_everything_filter_in_front_does_not_stop_it():
+    """Review A1: with an "ignore" filter for every warning at the front of
+    warnings.filters, a package's warning is still in each call's result,
+    on the first call and the hundredth."""
+    with warnings.catch_warnings():        # puts the filters back after
+        warnings.simplefilter("ignore")
+        assert warnings.filters[0] == BLANKET
+        for i in range(100):
+            r = _run("warn_once", {"x": i % 3})
+            assert r["warnings"] == [f"tip below the profile: {i % 3}"], i
+        r = _run("warn_then_fail")
+        assert r["warnings"] == ["layers stop short"]
+
+
+def test_the_filter_two_interleaved_blocks_leave_does_not_stop_it():
+    """Review A1, p2_leak: thread A enters catch_warnings, B enters, A
+    exits, B exits; B puts back A's copy, the blanket ignore filter left at
+    the front for good. Calls made after still carry their warnings."""
+    a_in, b_in, a_out = (threading.Event() for _ in range(3))
+
+    def a():
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            a_in.set()
+            b_in.wait(10)
+        a_out.set()
+
+    def b():
+        a_in.wait(10)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            b_in.set()
+            a_out.wait(10)
+
+    with warnings.catch_warnings():        # puts the filters back after
+        ts = [threading.Thread(target=a), threading.Thread(target=b)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join(20)
+        assert warnings.filters[0] == BLANKET   # left behind
+        for i in range(100):
+            assert _run("warn_once")["warnings"] == [
+                "tip below the profile: 1"], i
+
+
+def test_outside_a_call_a_warning_is_shown_as_before():
+    """Outside a call the wrapper only hands on: shown once per location
+    under the default action, at the line it names (stacklevel too)."""
+    src = _code("gm316outside.mod", """
+def plain():
+    warnings.warn("plain")
+
+def up():
+    warnings.warn("attributed to the caller", stacklevel=2)
+
+def twice():
+    for _ in range(2):
+        plain()
+    up()
+""")
+    shown = []
+
+    def recorder(message, category, filename, lineno, file=None,
+                 line=None):
+        shown.append((str(message), filename, lineno))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("default")
+        warnings.showwarning = recorder
+        CW.ensure_hook()                   # our hook over the recorder
+        assert getattr(warnings.warn, "_aec_call_warnings", False)
+        src["twice"]()
+    assert shown == [("plain", "<gm316outside.mod>", 3),
+                     ("attributed to the caller", "<gm316outside.mod>", 11)]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12),
+                    reason="skip_file_prefixes is new in Python 3.12")
+def test_skip_file_prefixes_still_names_the_same_frame():
+    lib = _code("gm316skip.lib", """
+def warn_here():
+    warnings.warn("skipped over", skip_file_prefixes=("<gm316skip",))
+""")
+    caller = _code("gm316outside.caller", """
+def go():
+    LIB()
+""")
+    caller["LIB"] = lib["warn_here"]
+    shown = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("always")
+        warnings.showwarning = (
+            lambda m, c, f, n, file=None, line=None: shown.append((f, n)))
+        CW.ensure_hook()
+        caller["go"]()
+        with CW.collecting():
+            caller["go"]()
+    assert shown == [("<gm316outside.caller>", 3)] * 2
+
+
+def test_within_a_call_a_recorder_sees_every_occurrence():
+    """Review C11: a package's warning repeated in one call reaches an
+    "always" recorder each time (pytest.warns), and the result once."""
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter("always")
+        r = _run("warn_same", {"n": 4})
+    assert r["warnings"] == ["the same note"]
+    assert [str(w.message) for w in rec].count("the same note") == 4
+
+
+def test_a_warning_seen_outside_a_call_first_still_reaches_the_next_call():
+    """Review C6: the registry has the same text at the same line from a
+    direct call; a call through run_method still records it."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("default")
+        CALC["warn_once"]({"x": 4})        # outside any call
+        assert _run("warn_once", {"x": 4})["warnings"] == [
+            "tip below the profile: 4"]
+
+
+def test_logging_capture_warnings_round_trip(caplog):
+    """Review C17: logging.captureWarnings over the hook; the result and
+    logging both get the warning; captureWarnings(False) puts back what
+    was there."""
+    import logging
+    with warnings.catch_warnings():
+        warnings.simplefilter("always")
+        CW.ensure_hook()
+        before = warnings.showwarning
+        logging.captureWarnings(True)
+        try:
+            with caplog.at_level(logging.WARNING, logger="py.warnings"):
+                r = _run("warn_once", {"x": 7})
+            assert r["warnings"] == ["tip below the profile: 7"]
+            assert any("tip below the profile: 7" in m
+                       for m in caplog.messages)
+        finally:
+            logging.captureWarnings(False)
+        assert warnings.showwarning is before
 
 
 def test_a_call_inside_a_call_passes_its_warnings_up():

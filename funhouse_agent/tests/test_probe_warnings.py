@@ -9,6 +9,7 @@ are the smallest inputs each method runs on and raise none today."""
 import copy
 import importlib.util
 import os
+import re
 import warnings
 from pathlib import Path
 
@@ -61,6 +62,35 @@ def _check(agent, method, params, before=()):
             and not any(g.startswith("and ") and g.endswith(" more")
                         for g in got)]
     return raised, lost, result
+
+
+#: A call that swaps the process's warning filters.
+_SWAPS_FILTERS = re.compile(
+    r"\b(catch_warnings|simplefilter|filterwarnings|resetwarnings)\s*\(")
+
+
+def test_no_calculation_package_swaps_the_warning_filters():
+    """GM-316 review A1. ``warnings.catch_warnings`` swaps process-wide
+    state: two calls in threads whose blocks interleaved left an "ignore
+    everything" filter in front for the life of the process. And a
+    package's own warning raised inside such a block is recorded for the
+    call anyway (``aec_agent_core.call_warnings``), so the block hides
+    nothing from the agent. A trial calculation raises no warning instead
+    (drilled_shaft ``_alternative``, lateral_pile's capacity search), and
+    numpy's floating-point notices go off with ``np.errstate``, which is
+    per thread. Test modules are left out."""
+    hits = []
+    for d in DIRS:
+        for path in sorted(Path(d).rglob("*.py")):
+            parts = path.relative_to(d).parts
+            if "tests" in parts or path.name.startswith("test_"):
+                continue
+            text = path.read_text("utf-8", errors="replace")
+            if re.search(r"^(import pytest|from pytest)", text, re.M):
+                continue                   # a test module by another name
+            if _SWAPS_FILTERS.search(text):
+                hits.append(str(path))
+    assert hits == []
 
 
 def test_the_package_list_is_the_distributions():

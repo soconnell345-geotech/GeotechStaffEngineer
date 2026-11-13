@@ -22,6 +22,14 @@ import inspect
 import os
 import re
 
+from aec_agent_core import call_warnings as _call_warnings
+
+# The warnings wrapper and hook go in when the call path is imported, not
+# on a call's first warning (GM-316; review C13: a hook installed lazily
+# while another thread's catch_warnings block was open was undone by it).
+_call_warnings.ensure_hook()
+
+
 def _method_params(mod, method: str) -> dict:
     """The documented parameters of ``method`` (``{}`` when undocumented)."""
     try:
