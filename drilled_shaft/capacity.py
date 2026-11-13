@@ -17,7 +17,6 @@ References:
     FHWA GEC-10 (FHWA-NHI-18-024), Chapter 10, Sec. 10.3.5
 """
 
-import contextvars
 import math
 import warnings
 from dataclasses import dataclass, replace
@@ -44,16 +43,6 @@ from drilled_shaft.end_bearing import (
 )
 from drilled_shaft.results import DrillShaftResult
 from drilled_shaft.lrfd import RESISTANCE_FACTORS
-
-#: True while :meth:`DrillShaftAnalysis._alternative` runs a trial copy of
-#: an analysis: the copy does not raise the warnings the analysis it was
-#: copied from has raised already (a shaft longer than the profile). Per
-#: thread and per context, so a trial in one call never quiets another
-#: call (GM-316 review A1: the trial used ``warnings.catch_warnings``,
-#: which swaps the process's warning filters for every thread).
-_IN_TRIAL: contextvars.ContextVar = contextvars.ContextVar(
-    "drilled_shaft_in_trial", default=False)
-
 
 def require_tip_N60(tip_layer: ShaftSoilLayer, depth: float) -> float:
     """The N60 a cohesionless tip layer's end bearing uses (GM-142).
@@ -1998,28 +1987,28 @@ class DrillShaftAnalysis:
         from N60 that ``sigma_p_correlation``; ``soil`` replaces the
         profile.
 
-        The trial raises no warning (:data:`_IN_TRIAL`; numpy's
-        floating-point notices off through ``np.errstate``, which is per
-        thread): the analysis it was copied from has raised the
-        profile's. No ``warnings.catch_warnings`` here: it swaps the
-        process's filters, and two calls in threads whose blocks
-        interleaved left every warning silenced for good (GM-316 review
-        A1)."""
+        Numpy's floating-point notices are off in the trial through
+        ``np.errstate``, which is per thread. A warning the copy raises
+        again (a casing deeper than the shaft, when ``changes`` rebuild
+        the shaft) is one the analysis raised already, and the call lists
+        each text once. The shaft-longer-than-the-profile warning this
+        once quieted is gone: that case is refused, or run with
+        ``extend_last_layer`` and said in the result (GM-318). No
+        ``warnings.catch_warnings`` here: it swaps the process's filters,
+        and two calls in threads whose blocks interleaved left every
+        warning silenced for good (GM-316 review A1)."""
         soil = self.soil if soil is None else soil
         if correlation is not None:
             soil = replace(soil, layers=[
                 replace(lay, sigma_p_correlation=correlation)
                 if lay.soil_type == "cohesionless" and not lay.OCR > 0
                 else lay for lay in soil.layers])
-        token = _IN_TRIAL.set(True)
         try:
             with np.errstate(all="ignore"):
                 r = replace(self, soil=soil, **changes)._compute(
                     sublayer=sublayer, report=False)
         except ValueError as exc:
             return f"refused: {exc}"
-        finally:
-            _IN_TRIAL.reset(token)
         return _values(r, part)
 
     def _top_zone_choice(self, layer_results) -> Optional[dict]:
