@@ -367,6 +367,17 @@ label, in whatever layout the form uses, names that hole. It changes what the
 model is asked, so it stays off until a Foundry pair of runs measures it; a run
 file says which arm it ran in.
 
+**A summary row's sample as printed (RI-99), off by default, model first
+only.** Today's lab answer schema describes a test's own `sample_id` ("as
+printed") and gives a summary row's `sample_id` no description.
+`GEOTECH_INGEST_LAB_SAMPLE_ID_AS_PRINTED=1` (or
+`with model_first.use_lab_sample_id_as_printed():`) gives the row's the same
+description on the model-first lab schema. It changes what the model is sent,
+so it stays off until it is measured; on, lab answers are saved and resumed
+under `prompt_version("lab")` = the read version with `+sid`, so a run never
+takes an answer read with the switch the other way as current. Today's lab
+reader is not changed.
+
 **The per-page floor in the brief (RI-56), off by default.**
 `GEOTECH_INGEST_LAB_FLOOR_PER_PAGE=1` (or `with use_floor_per_page():`) shows
 the model THE STARTING RECORD as the merge takes it: the corrected kind, and,
