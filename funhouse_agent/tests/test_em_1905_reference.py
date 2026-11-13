@@ -13,6 +13,7 @@ manual's own (the table printed on Figure 7-16) or made up.
 
 import inspect
 import json
+import re
 
 import pytest
 
@@ -136,6 +137,101 @@ def test_aliases_name_the_method_they_reach():
     assert out["C3"] == pytest.approx(1.5)
     assert _ok(REF, "bearing_factor_of_safety",
                {"q_ult": 15.0, "q_eq": 5.0})["FS"] == pytest.approx(3.0)
+
+
+#: A call with null for each required parameter the library takes as None
+#: (a continuous footing's L or L', the given one of U and Tv, sigma'_p of a
+#: normally consolidated sand, theta and d_g where nothing needs them).
+#: Required on purpose: a helper that leaves L_eff out gets an error, not a
+#: continuous footing by silence. Made-up values.
+NULL_CALLS = {
+    "equation_5_2_equivalent_bearing_pressure":
+        {"Q": 1.2, "Wf": 0.6, "B_eff": 2, "L_eff": None, "u_d": 0},
+    "equation_5_4_effective_dimensions":
+        {"B": 8, "L": None, "V": 200, "M_B": 100, "M_L": 0},
+    "equation_5_17_punching_capacity":
+        {"q_ult_1": 20.0, "q_ult_2": 8.0, "H_s": 3.0, "B_eff": 6.0,
+         "L_eff": None, "B": 6.0, "L": None},
+    "equation_6_8_influence_factor":
+        {"shape": "square", "B": 8.0, "z": 14.0, "L": None},
+    "equation_6_12_two_to_one_influence_factor":
+        {"shape": "circle", "B": 6.0, "z": 6.0, "L": None},
+    "equation_7_19_strain_influence_factor":
+        {"footing": "axisymmetric", "z": 2.0, "B": 6.0, "I_zp": 0.6,
+         "L": None},
+    "equation_7_29_burland_burbidge_settlement":
+        {"state": "normally consolidated", "q": 3.0, "sigma_zo_mean": 0.35,
+         "sigma_p": None, "Z_I": 6.0, "I_c": 0.01, "C1": 1.0, "C2": 1.0,
+         "C3": 1.0},
+    "equation_7_32_shape_factor": {"footing": "strip", "L": None, "B": None},
+    "figure_7_16_time_factor:U": {"U_percent": None, "T_v": 0.2},
+    "figure_7_16_time_factor:T": {"U_percent": 70, "T_v": None},
+    "table_5_2_aashto_shape_depth_factors":
+        {"phi_deg": 30, "B_eff": 2, "L_eff": None, "Df": 40},
+    "table_5_2_usace_shape_depth_factors":
+        {"flow_number": 3, "B_eff": 8, "L_eff": None, "Df": 2.5},
+    "table_5_3_aashto_load_inclination_factors":
+        {"H": 10, "V": 100, "B_eff": 5, "L_eff": None, "c": 0,
+         "phi_deg": 30, "theta_deg": 0},
+    "table_5_4_undrained_factors":
+        {"method": "usace", "B_eff": 2, "L_eff": None, "Df": 6, "H": 0,
+         "V": 10, "su": 1, "theta_deg": None, "alpha_b_deg": 0,
+         "alpha_g_deg": 0, "d_g": None},
+    "ultimate_bearing_capacity_drained":
+        {"method": "aashto", "phi_deg": 30, "c": 0, "q0": 4.0,
+         "gamma_eff": 0.06, "B_eff": 2, "L_eff": None, "Df": 40, "H": 0,
+         "V": 100, "theta_deg": None, "alpha_b_deg": 0, "alpha_g_deg": 0,
+         "d_g": None},
+    "ultimate_bearing_capacity_undrained":
+        {"method": "usace", "su": 1.0, "q0": 0.5, "B_eff": 2, "L_eff": None,
+         "Df": 6, "H": 0, "V": 10, "theta_deg": None, "alpha_b_deg": 0,
+         "alpha_g_deg": 0, "d_g": None},
+}
+
+#: Parameters whose library docstring says when they are needed but not, in
+#: words, to pass None otherwise; the docstrings are to be changed in the
+#: library (the lead's call, 2026-11-12). The test below allows these only.
+SAYS_ONLY_WHEN_NEEDED = {
+    ("table_5_4_undrained_factors", "theta_deg"),
+    ("table_5_4_undrained_factors", "d_g"),
+    ("ultimate_bearing_capacity_drained", "theta_deg"),
+    ("ultimate_bearing_capacity_drained", "d_g"),
+    ("ultimate_bearing_capacity_undrained", "theta_deg"),
+    ("ultimate_bearing_capacity_undrained", "d_g"),
+}
+
+
+def _nullable_required():
+    """(method, parameter) for every listed lookup's required parameter
+    that may be null, as describe shows it."""
+    out = set()
+    for group in dispatch.list_methods(REF).values():
+        for method in (group if isinstance(group, (list, dict)) else []):
+            d = dispatch.describe_method(REF, method)
+            for p, spec in (d.get("parameters") or {}).items():
+                if spec.get("required") and "None" in str(spec.get("type")):
+                    out.add((method, p))
+    return out
+
+
+def test_a_required_parameter_that_may_be_null_says_when():
+    """Each required parameter the library takes as None says in words,
+    as describe shows it, when to pass null; each answers a call with it
+    null."""
+    nullable = _nullable_required()
+    assert len(nullable) == 24
+    called = {(m.split(":")[0], p) for m, c in NULL_CALLS.items()
+              for p, v in c.items() if v is None}
+    assert nullable == called, sorted(nullable ^ called)
+    for key, params in NULL_CALLS.items():
+        _ok(REF, key.split(":")[0], params)
+    silent = set()
+    for method, p in nullable:
+        desc = dispatch.describe_method(REF, method)["parameters"][p]
+        if not re.search(r"\b(None|null)\b", desc.get("description", "")):
+            silent.add((method, p))
+    assert silent <= SAYS_ONLY_WHEN_NEEDED, sorted(
+        silent - SAYS_ONLY_WHEN_NEEDED)
 
 
 def test_its_figures_are_in_the_catalog():
