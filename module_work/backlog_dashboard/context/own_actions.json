@@ -896,5 +896,28 @@
       "BACKLOG.md OWN-148, INF-40, RI-101, RI-79, RI-212, OWN-142",
       "module_work/foundry_parity/FINDINGS.md"
     ]
+  },
+  "OWN-149": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Make every publish to PyPI wait for your click on GitHub?",
+    "why": "Today a release publishes the moment its tag is pushed, and the old publish workflow can also be started by hand. A Claude session that pushed a tag by mistake would publish a package nobody can take back. With you as the required reviewer of the pypi environment, every publish stops and waits until you approve it on GitHub.",
+    "background": "The publish workflows run in a GitHub environment named pypi. It has no protection rule in the app's repository. The reviewer of the new release workflows (INF-76) found this; nothing has gone wrong, and the new workflows already stop when a tag does not match the version. A required reviewer is a GitHub setting only you can change. It costs you one click per release.",
+    "options": [],
+    "recommendation": "Add yourself as required reviewer of the pypi environment in the app's repository and in planlens. Then let me remove the hand start of the old publish workflow when the new workflows merge.",
+    "if_no_answer": "Releases work as today: a pushed tag publishes at once. The new workflows still check that the tag matches the version.",
+    "message_to_send": null,
+    "steps": [
+      "On GitHub open the GeotechStaffEngineer repository, then Settings, Environments, pypi.",
+      "Tick Required reviewers, add yourself, and save. Do the same in the planlens repository.",
+      "Answer \"done\", and say yes or no to removing the hand start of the old publish workflow."
+    ],
+    "unblocks": [
+      "INF-76"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-149, INF-76",
+      ".github/workflows/publish.yml"
+    ]
   }
 }
