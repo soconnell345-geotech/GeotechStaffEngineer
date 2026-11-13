@@ -143,11 +143,13 @@ def _run_schmertmann_settlement(params: dict) -> dict:
         "influence_depth_m": round(terms["z_max"], 4),
         "layers_bottom_m": round(terms["profile_bottom"], 4),
     })
-    # layers that stop above the bottom of the diagram: what was taken
-    # below them, said in the result (GM-320)
+    # layers that do not cover the diagram: the depth not covered and
+    # what was taken there, said in the result (GM-320)
     below = schmertmann_below_choice(terms)
     if below:
         out["below_profile"] = terms["below_profile"]
+        out["depths_not_covered_m"] = [
+            [round(a, 4), round(b, 4)] for a, b in terms["uncovered"]]
         out["choices"] = [below]
         out["warnings"] = [schmertmann_below_warning(terms)]
     return out
@@ -179,8 +181,7 @@ def _run_consolidation_settlement(params: dict) -> dict:
     elif delta_sigmas is not None:
         # one stress increase per layer: a shorter or longer list was
         # zipped, dropping layers (or stresses) from the total (GM-320)
-        if isinstance(delta_sigmas, (str, bytes)) or not hasattr(
-                delta_sigmas, "__len__"):
+        if not isinstance(delta_sigmas, (list, tuple)):
             raise ValueError(
                 "consolidation_settlement: delta_sigmas must be a list of "
                 "stress increases (kPa), one per layer; for one value for "
@@ -192,6 +193,13 @@ def _run_consolidation_settlement(params: dict) -> dict:
                 f"{len(layers)}: give one stress increase per layer, in "
                 "the layers' order (or delta_sigma, one value for every "
                 "layer)")
+        bad = [i for i, ds in enumerate(delta_sigmas)
+               if isinstance(ds, bool) or not isinstance(ds, (int, float))]
+        if bad:
+            raise ValueError(
+                f"consolidation_settlement: delta_sigmas[{bad[0]}] is "
+                f"{delta_sigmas[bad[0]]!r}: each entry is a stress increase "
+                "in kPa, a number")
 
     layer_results = []
     S_total = 0.0
@@ -366,8 +374,8 @@ METHOD_INFO = {
             "q_net": {"type": "float", "required": True, "description": "Net bearing pressure (kPa)."},
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "L": {"type": "float", "required": False, "description": "Footing length (m). Default B. The strain influence diagram is the axisymmetric one at L/B = 1 and the plane-strain one at L/B >= 10, linearly interpolated between (NHI-06-089 Fig. 8-21a)."},
-            "layers": {"type": "array", "required": True, "description": "Array of {depth_top, depth_bottom, Es} dicts, depths in m below the footing base, down to the bottom of the strain influence diagram (2B at L/B = 1, 4B at L/B >= 10); layers that stop short are refused unless below_profile is given."},
-            "below_profile": {"type": "str", "required": False, "allowed_values": ["last_layer_continued", "incompressible"], "description": "What lies below the layers when the deepest one stops above the bottom of the strain influence diagram (2B below the base at L/B = 1, 4B at L/B >= 10, interpolated between): 'last_layer_continued' (the deepest layer's Es down to the bottom of the diagram) or 'incompressible' (rock or a layer that does not strain: nothing counted below the layers). Not given, layers that stop short are refused with the depth not covered; the printed method (NHI-06-089 Sec. 8.5.1) gives no rule. No effect when the layers reach the bottom of the diagram."},
+            "layers": {"type": "array", "required": True, "description": "Array of {depth_top, depth_bottom, Es} dicts, depths in m below the footing base, covering the strain influence diagram from the base down to its bottom (2B at L/B = 1, 4B at L/B >= 10); a depth not covered (a first layer that starts below the base, a gap between layers, or the depth below the deepest layer) is refused, with its ranges, unless below_profile is given."},
+            "below_profile": {"type": "str", "required": False, "allowed_values": ["settled_by_another_method", "incompressible", "last_layer_continued"], "description": "What lies in the depth of the strain influence diagram (from the base to 2B at L/B = 1, 4B at L/B >= 10, interpolated between) that the layers do not cover: 'settled_by_another_method' (not granular soil, a clay say, whose settlement is worked out by another method such as consolidation) or 'incompressible' (rock or other ground that does not compress): both count no strain there, on the same diagram, as NHI-06-089 App. A.7 (pp. A.7-10 to A.7-12) stops the sum at the bottom of a sand over clay; or 'last_layer_continued' (the deepest layer's Es down to the bottom of the diagram; only when the depth below the deepest layer is all that is not covered). Not given, a depth not covered is refused with its ranges. Depths within 10 mm count as covered. No effect when the layers cover the diagram."},
             "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
             "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip"], "description": "Footing shape."},
             "time_years": {"type": "float", "required": False, "default": 0.0, "description": "Time for creep factor."},
@@ -376,9 +384,10 @@ METHOD_INFO = {
         "returns": {"schmertmann_settlement_mm": "Settlement in mm.",
                     "influence_depth_m": "Depth below the base where the strain influence diagram ends (m).",
                     "layers_bottom_m": "Bottom of the deepest layer given (m below the base).",
-                    "below_profile": "Only when the layers stop above influence_depth_m: what was taken below them.",
-                    "choices": "Only then: the same, with its basis and the alternative. Tell the user.",
-                    "warnings": "Only then: the depth the layers did not cover and what the settlement takes there."},
+                    "below_profile": "Only when the layers do not cover the diagram down to influence_depth_m: what was taken in the depth not covered.",
+                    "depths_not_covered_m": "Only then: the depth ranges [top, bottom] (m below the base) no layer covers.",
+                    "choices": "Only then: the same, with its basis and the alternatives. Tell the user.",
+                    "warnings": "Only then: the depths the layers did not cover and what the settlement takes there."},
     },
     "consolidation_settlement": {
         "category": "Consolidation",
@@ -413,8 +422,8 @@ METHOD_INFO = {
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "Es": {"type": "float", "required": False, "description": "Elastic modulus for immediate settlement (kPa), for the elastic method. Not given: no immediate settlement is computed (0)."},
             "consolidation_layers": {"type": "array", "required": False, "description": "Array of consolidation layer dicts."},
-            "schmertmann_layers": {"type": "array", "required": False, "description": "Array of Schmertmann layer dicts {depth_top, depth_bottom, Es}, depths in m below the footing base, down to the bottom of the strain influence diagram (2B at L/B = 1, 4B at L/B >= 10); layers that stop short are refused unless schmertmann_below_profile is given."},
-            "schmertmann_below_profile": {"type": "str", "required": False, "allowed_values": ["last_layer_continued", "incompressible"], "description": "What lies below the layers when the deepest one stops above the bottom of the strain influence diagram (2B below the base at L/B = 1, 4B at L/B >= 10, interpolated between): 'last_layer_continued' (the deepest layer's Es down to the bottom of the diagram) or 'incompressible' (rock or a layer that does not strain: nothing counted below the layers). Not given, layers that stop short are refused with the depth not covered; the printed method (NHI-06-089 Sec. 8.5.1) gives no rule. No effect when the layers reach the bottom of the diagram."},
+            "schmertmann_layers": {"type": "array", "required": False, "description": "Array of Schmertmann layer dicts {depth_top, depth_bottom, Es}, depths in m below the footing base, covering the strain influence diagram from the base down to its bottom (2B at L/B = 1, 4B at L/B >= 10); a depth not covered (a first layer that starts below the base, a gap between layers, or the depth below the deepest layer) is refused, with its ranges, unless schmertmann_below_profile is given."},
+            "schmertmann_below_profile": {"type": "str", "required": False, "allowed_values": ["settled_by_another_method", "incompressible", "last_layer_continued"], "description": "What lies in the depth of the strain influence diagram (from the base to 2B at L/B = 1, 4B at L/B >= 10, interpolated between) that the layers do not cover: 'settled_by_another_method' (not granular soil, a clay say, whose settlement is worked out by another method such as consolidation) or 'incompressible' (rock or other ground that does not compress): both count no strain there, on the same diagram, as NHI-06-089 App. A.7 (pp. A.7-10 to A.7-12) stops the sum at the bottom of a sand over clay; or 'last_layer_continued' (the deepest layer's Es down to the bottom of the diagram; only when the depth below the deepest layer is all that is not covered). Not given, a depth not covered is refused with its ranges. Depths within 10 mm count as covered. No effect when the layers cover the diagram. Where consolidation_layers lie in a depth not covered, only 'settled_by_another_method' is taken: they are settled by consolidation."},
             "cv": {"type": "float", "required": False, "description": "Coefficient of consolidation (m2/yr). With consolidation_layers, adds the time curve and t50/t90 to the result."},
             "Hdr": {"type": "float", "required": False, "description": "Drainage path length (m) for the time curve. Default: consolidating thickness / 2 (double drainage) or the whole thickness (single)."},
             "immediate_method": {"type": "str", "required": False, "default": "elastic", "allowed_values": ["elastic", "schmertmann"], "description": "Immediate settlement method."},
@@ -500,10 +509,10 @@ declare_when_absent(METHOD_INFO, {
     "schmertmann_settlement": {
         "L": "B",
         # GM-320
-        "below_profile": ("nothing assumed below the layers",
-                          "layers that stop above the bottom of the strain "
-                          "influence diagram are refused, with the depth not "
-                          "covered (NHI-06-089 Sec. 8.5.1 prints no rule)")},
+        "below_profile": ("nothing assumed where the layers do not reach",
+                          "layers that do not cover the strain influence "
+                          "diagram are refused, with the depths not "
+                          "covered: nobody described that ground")},
     "consolidation_settlement": {"L": "B"},
     "hough_settlement": {"L": "B"},
     "combined_settlement_analysis": {
@@ -519,10 +528,11 @@ declare_when_absent(METHOD_INFO, {
         "e0_secondary": ("each layer's own e0",
                          "the secondary settlement of each consolidation "
                          "layer uses that layer's void ratio"),
-        "schmertmann_below_profile": ("nothing assumed below the layers",
-                          "layers that stop above the bottom of the strain "
-                          "influence diagram are refused, with the depth not "
-                          "covered (NHI-06-089 Sec. 8.5.1 prints no rule)"),
+        "schmertmann_below_profile": (
+            "nothing assumed where the layers do not reach",
+            "Schmertmann layers that do not cover the strain influence "
+            "diagram are refused, with the depths not covered: nobody "
+            "described that ground"),
         # GM-184: the result's choices already said so
         "Es": ("no immediate settlement",
                "the elastic method needs Es, so the immediate settlement "

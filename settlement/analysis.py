@@ -144,9 +144,10 @@ class SettlementAnalysis:
     schmertmann_layers: Optional[List[SchmertmannLayer]] = None
     time_years_schmertmann: float = 0.0
     gamma_soil: Optional[float] = None  # for Schmertmann Izp sigma'_vp at peak depth
-    # What lies below Schmertmann layers that stop above the bottom of the
-    # strain influence diagram: "last_layer_continued" or "incompressible";
-    # None refuses a short profile (GM-320)
+    # What lies in the depth of the strain influence diagram the
+    # Schmertmann layers do not cover: "settled_by_another_method",
+    # "incompressible" or "last_layer_continued"; None refuses a depth not
+    # covered (GM-320)
     schmertmann_below_profile: Optional[str] = None
     Iw_immediate: Optional[float] = None  # elastic influence factor override
 
@@ -306,7 +307,8 @@ class SettlementAnalysis:
                    "no creep factor (time_years_schmertmann = 0)")
                 + diagram,
                 ["elastic (immediate_method 'elastic')"]))
-            below = schmertmann_below_choice(terms)
+            below = schmertmann_below_choice(
+                terms, param="schmertmann_below_profile")
             if below:
                 out.append(below)
         length = self._length_choice()
@@ -409,7 +411,8 @@ class SettlementAnalysis:
     def _warnings(self, result: SettlementResult) -> list:
         """What the user must be told about the result (GM-115)."""
         out = []
-        note = schmertmann_below_warning(result.schmertmann_terms)
+        note = schmertmann_below_warning(
+            result.schmertmann_terms, param="schmertmann_below_profile")
         if note:
             out.append(note)
         if result.secondary and self.cv is None:
@@ -464,6 +467,14 @@ class SettlementAnalysis:
                 L=self.L,
                 gamma_soil=self.gamma_soil,
                 below_profile=self.schmertmann_below_profile,
+                below_param="schmertmann_below_profile",
+                # the consolidation layers this analysis settles: in a
+                # depth the Schmertmann layers do not cover, only
+                # 'settled_by_another_method' is taken (GM-320)
+                settled_elsewhere=[
+                    (c.depth_to_center - c.thickness / 2.0,
+                     c.depth_to_center + c.thickness / 2.0)
+                    for c in self.consolidation_layers or []],
             )
             if result is not None:
                 result.schmertmann_terms = terms
