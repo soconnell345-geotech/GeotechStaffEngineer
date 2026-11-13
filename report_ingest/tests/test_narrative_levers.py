@@ -235,8 +235,6 @@ class TestTheGlossaryReachesThePrompt:
         corrosion = ruled["soilCorrosion"].rule
         assert "the WORST governs" in corrosion
         assert "answers yes, not no and not mixed" in corrosion
-        assert ("mixed stays only for soil corrosive to some materials and "
-                "not to others") in corrosion
         landslide = ruled["earthHazardsExposed"].rule
         assert "landslide only for an actual landslide" in landslide
         assert "A slope-stability analysis" in landslide
@@ -248,6 +246,35 @@ class TestTheGlossaryReachesThePrompt:
         for row in ruled.values():
             assert row.line() in today
             assert row.line() in first
+
+    def test_soil_corrosive_to_one_material_is_yes_in_both_readers(self, doc):
+        # OWN-125 (the owner's answer of 2026-11-13): "yes" whenever
+        # anything is attacked. One CONFIRMED rule governs soilCorrosion;
+        # the draft rule that called the material split mixed is merged
+        # into it, and both readers carry the one rule.
+        from report_ingest import model_first as mf
+        from report_ingest.narrative_glossary import CONVENTIONS
+
+        rows = [row for row in CONVENTIONS if "soilCorrosion" in row.fields]
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.status == "CONFIRMED"
+        assert "of 2026-11-13 (OWN-125" in row.why
+        assert ("Corrosive to one material and not to another is yes, never "
+                "mixed") in row.rule
+        assert ("corrosive to buried metal but not to concrete answers yes"
+                ) in row.rule
+        assert "is mixed" not in row.rule
+        assert "null when the report does not address corrosivity" in row.rule
+        assert "(DRAFT)" not in row.line()
+
+        engine = FakeEngine([{"final": a_reading()}])
+        read(doc, engine, front_pages=0, roles=[])
+        today = brief_of(engine)
+        first = mf.instruction("narrative", "R00", [0, 1])
+        for said in (today, first):
+            assert row.line() in said
+            assert "but not to concrete is mixed" not in said
 
     def test_the_hazard_list_is_offered_as_the_only_phrases(self):
         from report_ingest.narrative_reader import _vocabulary_block

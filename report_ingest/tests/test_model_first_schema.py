@@ -80,6 +80,11 @@ MODEL_FIRST_ASKS = {
     # mf-10 (RI-208): the calc instruction asks for every row of a printed
     # table, each value labelled by its column heading and its row.
     "mf-10": "10f863c6f26241492876a1e217a2246459e1c9f341516f7e2944572898beadde",
+    # mf-11 (OWN-125, OWN-88; the owner's answers of 2026-11-13): one
+    # confirmed soilCorrosion convention (yes whenever anything is attacked,
+    # so its "(DRAFT)" twin is gone); the lab instruction reads a table of
+    # one kind of test for several samples as that kind's sheet.
+    "mf-11": "eff8b72ff00d0d314577684b8a37e0af90c30b0b337fc6420d75bbdfd0c5b115",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,
@@ -223,8 +228,9 @@ def test_each_stage_has_its_answer_schema():
 
 def test_the_model_first_instructions_add_to_the_plain_ones():
     """Calc adds one sentence (RI-208: every row of a printed table); lab
-    adds one sentence and the narrative today's conventions (RI-175); logs
-    name what the log schema adds."""
+    adds two sentences (RI-175: two tests on one sheet; OWN-88: a table of
+    one kind of test is that kind's sheet) and the narrative today's
+    conventions (RI-175); logs name what the log schema adds."""
     assert set(mf.INSTRUCTIONS) == set(mf.PLAIN_INSTRUCTIONS)
     calc = mf.INSTRUCTIONS["calc"]
     assert calc.count(mf.CALC_TABLE_ROWS) == 1
@@ -232,8 +238,9 @@ def test_the_model_first_instructions_add_to_the_plain_ones():
         mf.PLAIN_INSTRUCTIONS["calc"]
     lab = mf.INSTRUCTIONS["lab"]
     assert lab.count(mf.LAB_TWO_TESTS) == 1
-    assert lab.replace(f" {mf.LAB_TWO_TESTS}", "") == \
-        mf.PLAIN_INSTRUCTIONS["lab"]
+    assert lab.count(mf.LAB_ONE_KIND_SUMMARY) == 1               # OWN-88
+    assert lab.replace(f" {mf.LAB_TWO_TESTS}", "").replace(
+        f" {mf.LAB_ONE_KIND_SUMMARY}", "") == mf.PLAIN_INSTRUCTIONS["lab"]
     narrative = mf.INSTRUCTIONS["narrative"]
     assert narrative.count(mf.NARRATIVE_OTHER_CLIENT) == 1
     assert narrative.replace("{glossary}\n\n", "").replace(

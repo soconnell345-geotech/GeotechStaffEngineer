@@ -313,7 +313,13 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: mf-10 (RI-208): the calc instruction asks for every row of a printed
 #: table, each value labelled by its column and its row
 #: (``CALC_TABLE_ROWS``).
-READ_PROMPT_VERSION = "mf-10"
+#: mf-11 (OWN-125, OWN-88; the owner's answers of 2026-11-13): the
+#: narrative's soilCorrosion convention is one confirmed rule, yes whenever
+#: anything is attacked (corrosive to buried metal and not to concrete is
+#: yes, no longer mixed); the lab instruction reads a table of one kind of
+#: test for several samples as that kind's sheet, not as a summary table
+#: (``LAB_ONE_KIND_SUMMARY``).
+READ_PROMPT_VERSION = "mf-11"
 
 
 def prompt_version(stage: str) -> str:
@@ -530,6 +536,20 @@ LAB_TWO_TESTS = (
     "a gradation sheet are an atterberg entry of their own, beside the "
     "gradation entry.")
 
+#: The sentence the model-first lab instruction adds from mf-11 (OWN-88, the
+#: owner's answer of 2026-11-13): a summary of one test family is that
+#: family's sheet. A sheet titled as a summary of corrosion testing had been
+#: read as a summary table, so its results were not chemical tests on the
+#: record and nothing that reads chemical tests saw them. Today's lab reader
+#: carries the same rule (``LAB_READER_SYSTEM``, "A SUMMARY TABLE IS ONE
+#: ENTRY").
+LAB_ONE_KIND_SUMMARY = (
+    "A table that gives ONE kind of test for several samples (a summary of "
+    "corrosion testing, a table of Atterberg limits alone) is that kind's "
+    "sheet: one entry of that kind for each sample, not a summary_table. "
+    "summary_table is only for a table that sets several kinds of test side "
+    "by side.")
+
 #: The sentence the model-first log instruction adds (RI-197): MF-3's log
 #: reader, handed one group with several one-page test pits, read the first
 #: and said in prose that the others were other logs, so they were never
@@ -589,7 +609,8 @@ INSTRUCTIONS: Dict[str, str] = {
         f"each with its label and unit as printed. {CALC_TABLE_ROWS} "),
     "lab": PLAIN_INSTRUCTIONS["lab"].replace(
         " Give depths in the sheet's own unit",
-        f" {LAB_TWO_TESTS} Give depths in the sheet's own unit"),
+        f" {LAB_TWO_TESTS} {LAB_ONE_KIND_SUMMARY} Give depths in the "
+        f"sheet's own unit"),
     # Today's house conventions, filled in by instruction() from
     # narrative_glossary.glossary_block, the text today's reader is given,
     # and today's rule for another client's report.
