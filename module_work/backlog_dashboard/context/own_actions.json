@@ -818,5 +818,28 @@
       "BACKLOG.md OWN-140, EV-40",
       "module_work/review_eval_results/2026-11-10_coordination_tasks_blind/README.md"
     ]
+  },
+  "OWN-145": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Send Foundry brief 8 to the AI FDE: stand Document Review up on Foundry, find out how a Google model is reached, and build the standing tests (about five minutes).",
+    "why": "It does the three things you asked for on 2026-11-12. A second host for Document Review in case Tiny Apps is withdrawn. The facts needed before any code is written for a Google model such as Argon 4. And a fixed, repeated set of tasks to run on each new model: brief 7 showed that the model matters far more than our settings, and that one run cannot tell two set-ups apart.",
+    "background": "Part A publishes Document Review on Foundry from test wheels and checks it end to end: an upload, a review answer, a Word file back, the conversation saved to a dataset and restored. It has never run there. On Foundry nothing separates one viewer from another, so the trial is for one person at a time, and the brief asks the FDE whether a published app can know who is viewing. Part B is questions and a few small calls. Part C is the paid part: eight of the fourteen coordination tasks, five once and three repeated three times, on GPT-5.6 Sol as shipped (about 35 million input tokens); then with the sheet tools on the three repeated tasks (about 30 million); then, optionally, on the newest Claude model the workspace has (about 35 million). Brief 7 used 134 million. The brief has pause lines. The wheels are test builds; nothing is released.",
+    "options": [],
+    "recommendation": "Send it. Every run comes back whole and is read in full.",
+    "if_no_answer": "Document Review stays untried on Foundry, the Google model route stays unknown, and the sheet tools stay unmeasured.",
+    "message_to_send": null,
+    "steps": [
+      "In the local hand-off folder (foundry_handoff, beside the repositories), take brief8_2026-11-12.zip. It holds the brief (AI_FDE_BRIEF_8.md) and three wheel files.",
+      "Upload the zip to Foundry and ask the AI FDE to follow the brief inside it. Its three parts can be done in any order; part C is the one that costs tokens.",
+      "Answer done on this card, or say hold. When the answers and run folders come back, put them where you put brief 7's and say so here."
+    ],
+    "unblocks": [
+      "EV-43"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-145, EV-43",
+      "module_work/review_eval_results/2026-11-12_foundry_brief7/FIRST_PASS_AND_PLAN.md"
+    ]
   }
 }
