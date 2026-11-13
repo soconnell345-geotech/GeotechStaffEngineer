@@ -439,8 +439,8 @@ MODULE_REGISTRY = {
     },
     "dm7": {
         "adapter": "funhouse_agent.adapters.dm7_adapter",
-        "brief": "NAVFAC DM7 equations (340+): soil classification, stresses, settlement, seepage, foundations",
-        "title": "NAVFAC DM7.1 and DM7.2 (UFS 3-220-10, UFC 3-220-20)",
+        "brief": "DM 7.1 / 7.2 equations (340+): soil classification, stresses, settlement, seepage, foundations",
+        "title": "UFS 3-220-10 (DM 7.1, 16 January 2026) and UFC 3-220-20 (DM 7.2, 16 January 2025)",
     },
     "em_2104": {
         "adapter": "funhouse_agent.adapters.em_2104_adapter",

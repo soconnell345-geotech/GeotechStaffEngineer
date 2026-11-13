@@ -162,8 +162,8 @@ provisions that ARE available:
 - **`gec7`** — pseudo-static seismic design of soil nail walls.
 - **`gec5`** — seismic site characterization, Vs/Gmax, and seismic hazards
   (liquefaction screening).
-- **`dm7`** — NAVFAC DM7 general soil mechanics, dynamic soil properties, and
-  seismic settlement anchors.
+- **`dm7`** — DM 7.1 / 7.2 (UFS 3-220-10, UFC 3-220-20) general soil
+  mechanics, dynamic soil properties, and seismic settlement anchors.
 - **`reference_db` / `figure_db`** — full-text and figure search across the
   WHOLE library (not just the seismic subset), so you can find a seismic
   provision or chart wherever it lives. When a value lives on a design chart,
@@ -386,8 +386,8 @@ FOUNDATIONS_REVIEWER_PREAMBLE = _reviewer_preamble(
         "gec12, gec13, micropile, ufc_expansive, and reference_db / figure_db)."),
     checklist=FOUNDATIONS_CHECKLIST,
     anchors="""\
-- **`dm7`** — NAVFAC DM7: bearing capacity, settlement, deep-foundation design,
-  soil property correlations.
+- **`dm7`** — DM 7.1 / 7.2 (UFS 3-220-10, UFC 3-220-20): bearing capacity,
+  settlement, deep-foundation design, soil property correlations.
 - **`gec6`** — shallow foundations (Vesic bearing, Hough settlement).
 - **`gec8`** — CFA (continuous flight auger) pile design.
 - **`gec9`** — laterally loaded piles (p-multipliers, lateral resistance).
@@ -496,7 +496,7 @@ EARTH_RETENTION_REVIEWER_PREAMBLE = _reviewer_preamble(
         "reference_db / figure_db)."),
     checklist=EARTH_RETENTION_CHECKLIST,
     anchors="""\
-- **`dm7`** — NAVFAC DM7.2: excavations and retained cuts (Ch 2), rigid
+- **`dm7`** — DM 7.2 (UFC 3-220-20): excavations and retained cuts (Ch 2), rigid
   retaining structures and their earth pressures (Ch 4), Rankine/Coulomb
   coefficients and the log-spiral passive charts (Figs 4-12, 4-13).
 - **`gec4`** — ground anchors (bond stress, load transfer, corrosion, testing).
@@ -611,8 +611,9 @@ SLOPE_FEM_REVIEWER_PREAMBLE = _reviewer_preamble(
         "reference_db / figure_db)."),
     checklist=SLOPE_FEM_CHECKLIST,
     anchors="""\
-- **`dm7`** — NAVFAC DM7: slope stability (DM7.1 Ch 7), shear strength, seepage and the
-  general soil mechanics behind the FEM constitutive inputs.
+- **`dm7`** — DM 7.1 / 7.2 (UFS 3-220-10, UFC 3-220-20): slope stability
+  (DM 7.1 Ch 7), shear strength, seepage and the general soil mechanics
+  behind the FEM constitutive inputs.
 - **`gec7`** — soil nail walls: the library's soil-nail reference (bond / pullout
   for nailed slopes). (There is no standalone slope-stability GEC; gec5 is site
   characterization, not soil-nail, so it is deliberately not in scope.)

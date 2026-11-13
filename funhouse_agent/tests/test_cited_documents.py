@@ -63,9 +63,11 @@ def test_one_document_by_any_of_its_names(text):
     ("AASHTO T 99", "AASHTO T 99", "aashto-t99"),
     ("UFC 3-220-10N", "UFC 3-220-10N", "ufc-3-220-10"),
     ("UFS 3-220-10", "UFS 3-220-10", "ufc-3-220-10"),
+    ("UFC 3-220-04FA", "UFC 3-220-04FA", "ufc-3-220-04"),
     ("NAVFAC DM 7.01", "NAVFAC DM 7.01", "ufc-3-220-10"),
-    ("DM7.2", "NAVFAC DM 7.02", "ufc-3-220-20"),
-    ("DM7 §6-7.4", "NAVFAC DM 7 §6-7.4", "dm7"),
+    ("DM 7.1", "DM 7.1", "ufc-3-220-10"),
+    ("DM7.2", "DM 7.2", "ufc-3-220-20"),
+    ("DM7 §6-7.4", "DM 7 §6-7.4", "dm7"),
     ("EM 1110-2-1902", "EM 1110-2-1902", "em-1110-2-1902"),
     ("TM 5-818-1", "TM 5-818-1", "tm-5-818-1"),
     ("ASTM D1586-11", "ASTM D1586", "astm-d1586"),
@@ -93,6 +95,21 @@ def test_one_document_by_any_of_its_names(text):
 ])
 def test_designations(text, shown, key):
     assert _found(text) == [(shown, key)]
+
+
+def test_each_reference_module_serves_what_its_title_names():
+    """A lookup on a reference module counts for the documents its title
+    names (UFC 3-220-04FA for ufc_backfill; DM 7.1 / 7.2 for dm7)."""
+    from funhouse_agent import dispatch
+    from funhouse_agent.adapters import MODULE_REGISTRY
+    missing, named = [], 0
+    for name in sorted(dispatch.REFERENCE_MODULES):
+        for shown, key in _found(MODULE_REGISTRY[name].get("title", "")):
+            named += 1
+            if not cd.covered(key, cd.module_documents(name)):
+                missing.append(f"{name}: {shown} ({key})")
+    assert named
+    assert not missing, missing
 
 
 @pytest.mark.parametrize("text,shown,key", [

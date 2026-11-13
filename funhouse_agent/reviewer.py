@@ -314,7 +314,8 @@ def consultant_framing(chart_reads: Optional[bool] = None) -> str:
 #: reference PDFs (2026-11-10 reach audit).
 CONSULTANT_ROLE = (
     "You are acting as a geotechnical REFERENCE LIBRARIAN. Using ONLY the "
-    "reference lookup tools available to you (NAVFAC DM7, the FHWA GEC series, "
+    "reference lookup tools available to you (DM 7.1 and 7.2 (UFS 3-220-10, "
+    "UFC 3-220-20), the FHWA GEC series, "
     "UFC, Eurocode 7, micropile, FEMA and the others that list_agents names — "
     "via "
     "chapter-text search, table/equation lookups, and figure search), answer "
