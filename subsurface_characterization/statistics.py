@@ -48,8 +48,8 @@ class TrendAnalysisResult:
         Why a group was not fitted ("" when it was).
     scatter_defined : bool
         False when the fit used exactly two points: a line through two
-        points fits both exactly, so R-squared is 1 by construction and the
-        residual scatter and COV are not defined (None in ``to_dict``).
+        points has no scatter, so R-squared says nothing about the fit and
+        the residual scatter and COV are not defined (None in ``to_dict``).
     trend_type : str
         'linear' or 'log_linear'.
     slope : float
@@ -145,7 +145,7 @@ class TrendAnalysisResult:
             "group_label": self.group_label,
         }
         notes = []
-        if self.n_dropped:
+        if self.n_dropped and self.fitted:
             notes.append(
                 f"{self.n_dropped} of {self.n_points + self.n_dropped} "
                 f"points left out of the fit: {self.dropped_reason}")
@@ -153,9 +153,9 @@ class TrendAnalysisResult:
             notes.append(f"Not fitted: {self.not_fitted_reason}")
         elif not self.scatter_defined:
             notes.append(
-                "The fit used exactly 2 points: the line passes through "
-                "both, so R-squared is 1 by construction and the residual "
-                "scatter and COV are not defined (null).")
+                "The fit used exactly 2 points: a line through 2 points has "
+                "no scatter, so R-squared says nothing about the fit, and "
+                "the residual scatter and COV are not defined (null).")
         if notes:
             d["notes"] = notes
         return d
@@ -358,9 +358,12 @@ def compute_grouped_trends(
                 group_label=label,
             )
         except ValueError as exc:
+            # not fitted: the fit used no point and every point given was
+            # left out, as n_points and n_dropped are documented
             results[label] = TrendAnalysisResult(
                 parameter=parameter,
-                n_points=len(depths),
+                n_points=0,
+                n_dropped=len(depths),
                 trend_type=trend_type,
                 group_label=label,
                 fitted=False,

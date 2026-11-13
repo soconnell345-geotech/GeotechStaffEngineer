@@ -55,13 +55,19 @@ class TestComputeTrend:
             compute_trend([1.0, 2.0, 3.0], [10.0, 12.0])
 
     def test_two_points_say_scatter_is_not_defined(self):
-        """A line through 2 points fits both: R-squared is 1 by
-        construction, and the scatter and COV are null with a note."""
+        """A line through 2 points has no scatter: R-squared says nothing
+        about the fit, and the scatter and COV are null with a note."""
         d = compute_trend([1.0, 3.0], [10.0, 20.0]).to_dict()
         assert d["n_points"] == 2 and d["fitted"] is True
         assert d["r_squared"] == 1.0
         assert d["std_residual"] is None and d["cov"] is None
         assert "exactly 2 points" in d["notes"][0]
+        assert "says nothing about the fit" in d["notes"][0]
+        # two equal values: R-squared is 0 by the no-variation rule, and
+        # the note no longer claims it is 1 (GM-326 review C1)
+        flat = compute_trend([1.0, 3.0], [10.0, 10.0]).to_dict()
+        assert flat["r_squared"] == 0.0
+        assert "by construction" not in flat["notes"][0]
 
     def test_log_fit_counts_what_it_dropped(self):
         """ln(depth) and ln(value) need positive numbers: the points that
@@ -154,7 +160,10 @@ class TestComputeGroupedTrends:
         assert len(results) > 0
         for label, trend in results.items():
             assert trend.group_label == label
-            assert trend.n_points > 0
+            # every group had points; an unfitted one used none and counts
+            # them as left out (GM-326 review C2)
+            assert trend.n_points + trend.n_dropped > 0
+            assert trend.n_points > 0 or not trend.fitted
 
     def test_group_by_investigation(self, simple_site):
         results = compute_grouped_trends(simple_site, "N_spt", group_by="investigation")
@@ -185,7 +194,10 @@ class TestGroupsThatCannotBeFitted:
                                          group_by="investigation")
         assert results["B-1"].fitted and results["B-1"].slope == pytest.approx(4.0)
         lone = results["B-2"]
-        assert lone.fitted is False and lone.n_points == 1
+        # the fit used no point; the one given is counted as left out, as
+        # the fields are documented (GM-326 review C2)
+        assert lone.fitted is False and lone.n_points == 0
+        assert lone.n_dropped == 1
         d = lone.to_dict()
         assert d["slope"] is None and d["r_squared"] is None
         assert d["cov"] is None and "at least 2 points" in d["notes"][0]
