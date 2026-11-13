@@ -251,8 +251,22 @@ class TestReinforcement:
         r = METHOD_REGISTRY["analyze_slope"](_base(
             method="bishop",
             stabilizing_piles=[{"x": 35.0, "ito_matsui": True,
+                                "diameter": 0.6, "spacing": 3.0}]))
+        assert r["FOS"] > 2.03 and r["reinforcements"]    # 2.03 without
+
+    def test_pile_row_that_leaves_no_driving_moment_gives_no_number(self):
+        """GM-140 step 2. At a spacing of 1.5 the row's Ito-Matsui force
+        exceeds the circle's driving moment: there is no ratio to report.
+        This used to come back as FOS 999.9, the solver's marker."""
+        r = METHOD_REGISTRY["analyze_slope"](_base(
+            method="bishop",
+            stabilizing_piles=[{"x": 35.0, "ito_matsui": True,
                                 "diameter": 0.6, "spacing": 1.5}]))
-        assert r["FOS"] > 0 and r["reinforcements"]
+        assert r["FOS"] is None and r["is_stable"] is None
+        assert r["method_solved"] is False and r["method_used"] is None
+        assert r["methods_without_solution"] == ["Bishop"]
+        assert any("no net driving moment" in w for w in r["warnings"])
+        assert r["reinforcements"]
 
     def test_stabilizing_pile_missing_x(self):
         with pytest.raises(ValueError, match=r"stabilizing_piles\[\].*x"):
@@ -880,3 +894,68 @@ class TestOneMaterialPerPoint:
     def test_gap_refused_with_location(self):
         with pytest.raises(ValueError, match=r"gap.*x = "):
             METHOD_REGISTRY["analyze_slope"](self._params(top_elevation=-4))
+
+
+class TestOwnSolutionOrNoNumber:
+    """GM-140 step 2: a method's own solution, or no number, through the
+    agent's tools (UFC 3-220-10 p. 362)."""
+
+    # a made-up clay slope and a circle with its centre below the crest,
+    # on which Spencer's method has no solution
+    _CLAY = {
+        "surface_points": [[0, 0], [12, 0], [24, 8], [40, 8]],
+        "soil_layers": [{"name": "clay", "top_elevation": 8,
+                         "bottom_elevation": -10, "gamma": 18, "cu": 30,
+                         "analysis_mode": "undrained"}],
+        "xc": 30.0, "yc": 4.0, "radius": 9.0,
+    }
+
+    def test_single_surface_without_supports_gives_no_number(self):
+        r = METHOD_REGISTRY["analyze_slope"](dict(self._CLAY,
+                                                  method="spencer"))
+        assert r["FOS"] is None and r["method_solved"] is False
+        assert r["method_used"] is None
+        assert not any("legacy" in w for w in r["warnings"])
+        t = METHOD_REGISTRY["compare_methods_table"](dict(self._CLAY))
+        assert "Spencer" in t["methods_without_solution"]
+        assert not any(row["method"] == "Spencer" for row in t["rows"])
+
+    def test_search_counts_trials_without_a_solution(self):
+        p = {k: v for k, v in self._CLAY.items()
+             if k not in ("xc", "yc", "radius")}
+        r = METHOD_REGISTRY["search_critical_surface"](
+            dict(p, method="spencer", nx=4, ny=4))
+        assert r["critical"]["method_solved"] is True
+        assert r["no_solution"] and all(
+            set(rec) == {"family", "method", "n", "not_converged",
+                         "no_driving"} for rec in r["no_solution"])
+
+    def test_yield_acceleration_gives_no_number(self):
+        r = METHOD_REGISTRY["yield_acceleration"](dict(self._CLAY,
+                                                       method="spencer"))
+        assert r["ky"] is None and r["ay_m_s2"] is None
+        assert "No yield coefficient is reported" in r["reason"]
+
+    def test_monte_carlo_reports_the_count_and_the_bounds(self):
+        p = {"surface_points": [[0, 0], [10, 0], [16, 10], [34, 10]],
+             "soil_layers": [{"name": "fill", "top_elevation": 10,
+                              "bottom_elevation": -6, "gamma": 19,
+                              "phi": 22, "c_prime": 38}],
+             "xc": 9.5, "yc": 11.0, "radius": 11.2, "method": "spencer",
+             "variables": {"c_prime": {"mean": 38.0, "std": 12.0}}}
+        mc = METHOD_REGISTRY["monte_carlo_fos"](dict(p, n=80, seed=7))
+        assert mc["n_no_solution"] > 0
+        assert mc["n_realizations"] + mc["n_no_solution"] == 80
+        lo, hi = mc["pf_bounds"]
+        assert lo <= mc["pf"] <= hi
+        assert "module's own" in mc["no_solution_note"]
+        with pytest.raises(ValueError, match="FOSM gives no result"):
+            METHOD_REGISTRY["fosm_fos"](p)
+
+    def test_method_text_says_what_the_code_does(self):
+        info = METHOD_INFO["analyze_slope"]["returns"]
+        assert "own converged solution" in info["FOS"]
+        assert "legacy" not in str(METHOD_INFO)
+        assert "no_solution" in METHOD_INFO["search_critical_surface"][
+            "returns"]
+

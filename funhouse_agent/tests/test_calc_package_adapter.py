@@ -190,6 +190,55 @@ class TestSlopeStabilityPackage:
         assert os.path.exists(outfile)
 
 
+class TestSlopePackageNoNumber:
+    """GM-140 step 2: where the method has no solution on the surface the
+    package prints no number (it used to print the old approximate solver's
+    value, or the solver's 999.9 marker). Made-up clay slope, a circle with
+    its centre below the crest."""
+
+    _CLAY = {
+        "surface_points": [[0, 0], [12, 0], [24, 8], [40, 8]],
+        "soil_layers": [{"name": "clay", "top_elevation": 8,
+                         "bottom_elevation": -10, "gamma": 18.0, "cu": 30.0,
+                         "analysis_mode": "undrained"}],
+        "xc": 30.0, "yc": 4.0, "radius": 9.0,
+    }
+
+    def test_spencer_without_a_solution_prints_no_number(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_slope_stability_package)
+        outfile = str(tmp_path / "none.html")
+        result = _generate_slope_stability_package(dict(
+            self._CLAY, method="spencer", compare_methods=True,
+            output_path=outfile))
+        assert result["status"] == "success"
+        assert result["FOS"] is None and result["is_stable"] is None
+        assert result["method_solved"] is False
+        assert "no equilibrium solution" in result["no_solution"]
+        html = open(outfile, encoding="utf-8").read()
+        assert "no solution" in html
+        assert "legacy" not in html and "999.9" not in html
+
+    def test_bishop_solves_the_same_circle(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_slope_stability_package)
+        result = _generate_slope_stability_package(dict(
+            self._CLAY, method="bishop",
+            output_path=str(tmp_path / "b.html")))
+        assert result["FOS"] == pytest.approx(17.684, abs=0.01)
+        assert "no_solution" not in result
+
+    def test_report_refuses_an_unknown_interslice_function(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_slope_report_package)
+        p = {k: v for k, v in self._CLAY.items()
+             if k not in ("xc", "yc", "radius")}
+        with pytest.raises(ValueError, match="Unknown interslice function"):
+            _generate_slope_report_package(dict(
+                p, f_interslice="sine", nx=3, ny=3,
+                output_path=str(tmp_path / "r.html")))
+
+
 class TestSlopeReportPackage:
     """The one-call slope REPORT for a critical-surface SEARCH run (F7)."""
 
