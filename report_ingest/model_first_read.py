@@ -92,14 +92,20 @@ the entries those return name the page as that answer's pages are read.
   counts and water readings of each later answer appended; and one entry
   that names the join.
 * **Lab**: one result per window; the tests of two halves are listed
-  together.
+  together. Entries of one answer alike in everything on one page, whose
+  results the page prints on fewer rows than there are entries, are one
+  printed test read more than once: the extra ones are kept out and listed
+  (RI-99).
 * **Calc**: one result per printout. A printout longer than one call is
   read in the two windows of today's reader (``calc_calls``); the answers
   are put on the report's pages first, each against its own call's pages
   (an answer from a call of one page on that page, whatever it cites: the
   RI-74 rule), then folded by today's rule (``calc_reader._fold_readings``,
-  two rows with no box one value only when they read the same value) and
-  built once over the printout.
+  two rows with no box one value only when they read the same value; where
+  two calls read one label on one page as different numbers and the page
+  prints it once, the reading that matches the print is kept and the other
+  recorded beside it with an entry, RI-99) and built once over the
+  printout.
 * **Narrative**: the groups are its consecutive parts. Each answer's
   citations are put on the report's pages against its own call's pages,
   then the answer is added to one builder, whose own rule merges the parts
@@ -143,6 +149,7 @@ measurement plumbing (pieces 8 and 9) to build those engines from.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (Any, Callable, Dict, List, Mapping, Optional, Sequence,
@@ -674,21 +681,54 @@ def _join_slots(out: Any, later: Any, skip: Sequence[str], what: str,
             "refused_by": "python"})
 
 
-def _join_logs(built: Sequence[Any]) -> Tuple[Any, List[Dict[str, Any]]]:
+def _printed_apart(doc: Any) -> Callable[[str, Sequence[int],
+                                            Sequence[int]], bool]:
+    """Whether a later answer's remark, whose words an earlier answer's
+    remarks already hold, is printed separately (BACKLOG RI-99 (4a)): the
+    page search placement uses (:func:`report_ingest.locate.text_hits`)
+    finds it on a page only the later call was shown, or in two places over
+    the pages of both. Found once on a page the earlier call read, it is one
+    printed text read twice; found nowhere (a scan with no words to
+    search), nothing can be told and it is not called separate."""
+    from report_ingest.locate import PageWords, text_hits
+
+    words = PageWords(doc)
+
+    def apart(remark: str, seen: Sequence[int], own: Sequence[int]) -> bool:
+        earlier = {int(p) for p in seen}
+        places = 0
+        for page in sorted(earlier | {int(p) for p in own}):
+            found = len(text_hits(words, page, remark))
+            if found and page not in earlier:
+                return True
+            places += found
+        return places >= 2
+
+    return apart
+
+
+def _join_logs(built: Sequence[Any],
+               apart: Optional[Callable[[str, Sequence[int], Sequence[int]],
+                                        bool]] = None
+               ) -> Tuple[Any, List[Dict[str, Any]]]:
     """One log from the records of its answers, in page order.
 
     The first answer's header, kind and depth unit; a header slot it left at
     its default takes the first later answer's that has one, and a slot a
     later answer gives otherwise is kept as the first gives it, with the
     later value listed as read (one entry each). Each answer's remarks are
-    appended; its header fields added (one printed under a label already
-    there with another value is kept beside it, numbered); its layers,
-    samples, blow counts, water readings and provenance appended; the pages
+    appended, a later one whose words the earlier remarks already hold only
+    where ``apart`` (:func:`_printed_apart`) says the pages print it
+    separately (without ``apart``, never), and one with the same words
+    (spacing aside) as a remark already joined never; its header fields
+    added (one printed under a label already there with another value is
+    kept beside it, numbered); its layers, samples, blow counts, water readings and provenance appended; the pages
     joined. Returns the log and the entries: those above, one when two
     answers give depths in different units, and one naming the join."""
     out = built[0].model_copy(deep=True)
     rows: List[Dict[str, Any]] = []
     what = f"log {out.investigation_id}".strip()
+    joined = [" ".join(out.remarks.split())]
     for later in built[1:]:
         later = later.model_copy(deep=True)
         if later.depth_unit and out.depth_unit \
@@ -708,9 +748,13 @@ def _join_logs(built: Sequence[Any]) -> Tuple[Any, List[Dict[str, Any]]]:
             _put_field(fields, label, value)
         out.fields = fields
         remarks = later.remarks.strip()
-        if remarks and remarks not in out.remarks:
+        if remarks and " ".join(remarks.split()) not in joined and (
+                remarks not in out.remarks or (
+                    apart is not None
+                    and apart(remarks, out.pages, later.pages))):
             out.remarks = "; ".join(r for r in (out.remarks.strip(), remarks)
                                     if r)
+            joined.append(" ".join(remarks.split()))
         _join_slots(out, later, _JOINED_APART, what, later.pages, rows)
         out.pages = sorted(set(out.pages) | set(later.pages))
     parts = "; ".join(_span(b.pages) for b in built)
@@ -795,6 +839,9 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     again on resume), never "did not get to this page within its model-call
     budget": model first makes one call a group. So a page goes back once,
     and a call that hands back every page it was sent gives no log."""
+    from report_ingest.log_intervals import (apply_interval_additions,
+                                             carried_label_entries,
+                                             log_intervals_enabled)
     from report_ingest.log_reader import (LogReadResult, _Builder,
                                           _depth_slack, _depth_window,
                                           _hole_total, _ruled_windows,
@@ -855,6 +902,13 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
             investigation, extra = apply_log_additions(reading,
                                                        builder.build())
             extra = _entries_on_pages(extra, builder)
+            if log_intervals_enabled():
+                # RI-103: each interval's notes, line kind and stratum
+                # label, onto the layers the builder made (their pages are
+                # the builder's already).
+                investigation, more = apply_interval_additions(
+                    reading, investigation)
+                extra = extra + more
             read_off = _read_off(investigation)
             back = [p for p in back if p not in read_off]
             why = {p: _why_back(p, other, builder.unresolved) for p in back}
@@ -896,7 +950,7 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
             continue
         investigation = built[0]
         if len(built) > 1:
-            investigation, joined = _join_logs(built)
+            investigation, joined = _join_logs(built, _printed_apart(doc))
             unresolved.extend(joined)
         # The log's last gate (RI-123): each builder checked its own depths
         # against the ground surface, so this finds what the additions or
@@ -909,6 +963,10 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                 "why": f"{near} joined depth(s) above the ground surface by "
                        f"no more than {SURFACE_TOL_M:g} m were recorded as 0",
                 "flag": "surface_snap"})
+        if log_intervals_enabled():
+            # RI-103: asked of the joined log, as a label printed on one
+            # sheet can run down onto the next.
+            unresolved.extend(carried_label_entries(investigation))
         result = LogReadResult(
             investigation=investigation, changes=changes,
             unresolved=unresolved + skipped, pages=pages,
@@ -972,6 +1030,8 @@ def read_lab(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                                checks="flag")
             built, extra = apply_lab_additions(reading, builder.build())
             extra = _entries_on_pages(extra, builder)
+            built, twice = _tests_read_twice(built, doc)
+            extra = extra + twice
             if place is not None:
                 placement.append(place("lab", built, call_pages, doc))
             tests.extend(built)
@@ -995,6 +1055,60 @@ def read_lab(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
             blob["carried_link"] = {**carried, "tests": took}
         out.append(blob)
     return out
+
+
+def _tests_read_twice(tests: Sequence[Any], doc: Any
+                      ) -> Tuple[List[Any], List[Dict[str, Any]]]:
+    """One answer's tests less those that are one printed test read twice
+    (BACKLOG RI-99 (6), a merge defect like (4)): ``(the tests kept, one
+    entry per test kept out)``.
+
+    Today's builder keeps every entry of an answer, so two entries alike in
+    everything (kind, boring, sample, depth, every result) on one page stood
+    as two tests with nothing said. Here such entries are set against the
+    page with placement's own test (:func:`report_ingest.locate._values_row`,
+    the rows printing the most of a test's own results, two or more): where
+    the page prints those results on fewer rows than the answer has entries,
+    the entries past that count are kept out and listed. Entries the page
+    prints as often as the answer gives them (one test printed on two
+    sheets of a page) stay, and so do entries nothing can be told about: a
+    test with fewer than two result numbers, or a page that prints them on
+    no row (a scan)."""
+    from report_ingest.locate import PageWords, _values_row, result_numbers
+
+    alike: Dict[str, List[int]] = {}
+    for n, test in enumerate(tests):
+        if not test.prov:
+            continue
+        key = f"{int(test.prov[0].page)} " + json.dumps(
+            test.model_dump(mode="json", exclude={"prov"}), sort_keys=True,
+            default=str)
+        alike.setdefault(key, []).append(n)
+    out_of: Dict[int, str] = {}
+    words = None
+    for entries in alike.values():
+        if len(entries) < 2:
+            continue
+        test = tests[entries[0]]
+        numbers = result_numbers(test.result)
+        if len(numbers) < 2:
+            continue
+        words = words or PageWords(doc)
+        page = int(test.prov[0].page)
+        printed = len(_values_row(numbers)[1](words, page))
+        if not 1 <= printed < len(entries):
+            continue
+        for n in entries[printed:]:
+            out_of[n] = (
+                f"{len(entries)} entries read alike on page {page}, whose "
+                f"results the page prints on {printed} row(s): one printed "
+                f"test read more than once, so this entry is {LISTED}")
+    rows = [{"what": f"{tests[n].kind} "
+                     f"({tests[n].sample_id or 'no sample label'})",
+             "page": int(tests[n].prov[0].page), "read": as_read(tests[n]),
+             "why": why, "refused_by": "python"}
+            for n, why in sorted(out_of.items())]
+    return [t for n, t in enumerate(tests) if n not in out_of], rows
 
 
 def _carried(doc: Any, group: PageGroup,
@@ -1051,6 +1165,106 @@ def _narrative_on_report_pages(reading: Any, pages: Sequence[int],
     return out, rows, said
 
 
+def _printed_once(first: Any, later: Any, doc: Any
+                  ) -> List[Tuple[Any, Any]]:
+    """Two answers' misreadings of one printed value settled by the print
+    (BACKLOG RI-99 (4b)): ``[(the reading kept, the one taken out)]``.
+
+    With no boxes, :func:`report_ingest.calc_reader._fold_readings` takes
+    two rows for one printed value only when they read the same value
+    (``same_value``), so where the later call misreads a value the first
+    read, both would stand as two values with nothing said. Here a row of
+    ``later`` and a row of ``first`` under one label on one page, with
+    different numbers, neither with a twin in the other answer and no other
+    such pairing for either, are set against the page with placement's own
+    test (:func:`report_ingest.locate._labelled_cells`, the number where the
+    printout around it carries the label): where the page prints one of the
+    two numbers at that label, in one place, and the other nowhere at it,
+    the row that does not match the print is taken out of its answer (in
+    place). Anything else is left as it is: both printed (a label printed
+    once per load case), neither found (a scan, or a number the search
+    cannot see), or more than two readings."""
+    from report_ingest.calc_reader import _read_twice, _same_label
+    from report_ingest.locate import PageWords, _labelled_cells
+
+    words = PageWords(doc)
+    settled: List[Tuple[Any, Any]] = []
+
+    def differs(a: Any, b: Any) -> bool:
+        return (a.value is not None and b.value is not None
+                and float(a.value) != float(b.value)
+                and int(a.prov.page) == int(b.prov.page)
+                and not (a.prov.bbox and b.prov.bbox)
+                and _same_label(a.name, b.name))
+
+    for name in ("inputs", "results"):
+        ours, theirs = list(getattr(first, name)), list(getattr(later, name))
+        drop_ours: List[int] = []
+        drop_theirs: List[int] = []
+        for j, row in enumerate(theirs):
+            if any(_read_twice(e, row, True) for e in ours):
+                continue
+            rivals = [i for i, e in enumerate(ours) if differs(e, row)]
+            if len(rivals) != 1:
+                continue
+            i = rivals[0]
+            earlier = ours[i]
+            if any(_read_twice(earlier, r, True) for r in theirs) or sum(
+                    differs(earlier, r) for r in theirs) != 1:
+                continue
+            text = words(int(row.prov.page))
+            at_first = _labelled_cells(earlier.name, float(earlier.value),
+                                       text)
+            at_later = _labelled_cells(row.name, float(row.value), text)
+            if len(at_first) == 1 and not at_later:
+                drop_theirs.append(j)
+                settled.append((earlier, row))
+            elif len(at_later) == 1 and not at_first:
+                drop_ours.append(i)
+                settled.append((row, earlier))
+        if drop_ours:
+            setattr(first, name, [e for i, e in enumerate(ours)
+                                  if i not in drop_ours])
+        if drop_theirs:
+            setattr(later, name, [r for j, r in enumerate(theirs)
+                                  if j not in drop_theirs])
+    return settled
+
+
+def _beside(calculation: Any, settled: Sequence[Tuple[Any, Any]]
+            ) -> List[Dict[str, Any]]:
+    """Each reading :func:`_printed_once` took out, recorded beside the one
+    kept (an alternative on its provenance) with one entry each."""
+    from report_ingest.calc_reader import _clean_name
+    from report_ingest.model import Alternative
+
+    rows: List[Dict[str, Any]] = []
+    values = list(calculation.inputs) + list(calculation.results)
+    for kept, other in settled:
+        page = int(kept.prov.page)
+        read = f"{float(other.value):g} {other.unit}".strip()
+        said = (f"another call read this label on page {page} as {read}; "
+                f"the page prints it once, as {float(kept.value):g}")
+        for value in values:
+            if value.value is not None and value.prov is not None \
+                    and value.name == _clean_name(kept.name) \
+                    and float(value.value.value) == float(kept.value) \
+                    and int(value.prov.page) == page:
+                value.prov.alternatives.append(Alternative(
+                    field="value", value=f"{float(other.value):g}",
+                    unit=str(other.unit or "").strip(), method="model",
+                    note=said))
+                break
+        rows.append({
+            "what": f"{_clean_name(kept.name)}", "page": page, "read": read,
+            "why": f"two calls read this label on page {page} as "
+                   f"{float(kept.value):g} and {float(other.value):g}; the "
+                   f"page prints it once, as {float(kept.value):g}, which "
+                   f"the record keeps with the other reading beside it",
+            "refused_by": "python"})
+    return rows
+
+
 def read_calcs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                report_id: str = "", route: Optional[str] = None,
                pdf: Source = None, place: Optional[Place] = None,
@@ -1095,6 +1309,7 @@ def read_calcs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         # Otherwise each answer is read against its own call's pages first,
         # and the builder is told so.
         mapped = not (len(answers) == 1 and answers[0][0] == pages)
+        settled: List[Tuple[Any, Any]] = []
         if not mapped:
             reading = answers[0][1]
         else:
@@ -1108,6 +1323,7 @@ def read_calcs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
             reading = readings[0]
             seen = set(answers[0][0])
             for (call_pages, _a), later in zip(answers[1:], readings[1:]):
+                settled.extend(_printed_once(reading, later, doc))
                 reading = _fold_readings(
                     reading, later, fresh=True, same_value=True,
                     later_pages=[p for p in call_pages if p not in seen])
@@ -1118,6 +1334,7 @@ def read_calcs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         placement = ([place("calc", calculation, pages, doc)]
                      if place is not None else [])
         unresolved.extend(builder.unresolved)
+        unresolved.extend(_beside(calculation, settled))
         result = CalcReadResult(
             calculation=calculation, changes=builder.changes,
             unresolved=unresolved + skipped, pages=pages,

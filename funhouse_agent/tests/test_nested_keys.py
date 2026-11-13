@@ -141,7 +141,14 @@ class TestPileGroup:
     def test_correct_piles_run(self):
         r = _registry("pile_group")["pile_group_simple"](
             {"piles": [{"x": -1, "y": 0, "label": "P1"},
-                       {"x": 1, "y": 0, "batter_x": 5, "label": "P2"}],
+                       {"x": 1, "y": 0, "batter_x": 0, "label": "P2"}],
+             "Vz": 1000})
+        assert r["n_piles"] == 2
+        r = _registry("pile_group")["pile_group_6dof"](
+            {"piles": [{"x": -1, "y": 0, "label": "P1",
+                        "axial_stiffness": 2e5},
+                       {"x": 1, "y": 0, "batter_x": 5, "label": "P2",
+                        "axial_stiffness": 2e5}],
              "Vz": 1000})
         assert r["n_piles"] == 2
 
@@ -180,9 +187,17 @@ class TestSoe:
     def test_misspelt_support_key_refused(self):
         _refused("soe", "braced_excavation",
                  {"excavation_depth": 6, "layers": _SOE_LAYERS,
-                  "supports": [{"depth": 1.5, "preload": 50}]},
-                 r"supports\[0\].*\['preload'\]",
-                 r"preload -> preload_kN_per_m")
+                  "supports": [{"depth": 1.5, "inclination": 15}]},
+                 r"supports\[0\].*\['inclination'\]",
+                 r"inclination -> angle_deg")
+
+    def test_support_preload_refused(self):
+        # GM-321: a preload was stored and never read; it is not an input
+        for key in ("preload", "preload_kN_per_m"):
+            _refused("soe", "braced_excavation",
+                     {"excavation_depth": 6, "layers": _SOE_LAYERS,
+                      "supports": [{"depth": 1.5, key: 50}]},
+                     r"supports\[0\]", r"preload .*is not an input")
 
     def test_correct_call_runs(self):
         r = _registry("soe")["braced_excavation"](

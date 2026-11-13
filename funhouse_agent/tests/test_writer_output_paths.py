@@ -113,6 +113,32 @@ def test_the_description_no_longer_suggests_tmp():
         assert "/tmp" not in desc, (agent, method)
 
 
+def test_a_drawing_sheet_writes_its_three_files_into_the_folder(folder,
+                                                                elsewhere):
+    """GM-313: the DXF, the PDF page and the PNG of one drawing all land
+    in the conversation's folder, whatever directory was named."""
+    pytest.importorskip("ezdxf")
+    pytest.importorskip("pymupdf")
+    res = _j(call_agent("dxf_export", "draw_sheet", {
+        "drawing": {"outlines": [{"points": [[0, 0], [900, 0], [900, 300],
+                                             [0, 300]]}],
+                    "dimensions": [{"p1": [0, 0], "p2": [900, 0],
+                                    "offset_mm": -8}]},
+        "output_path": str(elsewhere / "detail.dxf")}))
+    assert "error" not in res, res
+    assert res["output_path"] == res["filepath"] == "detail.dxf"
+    assert (res["pdf_path"], res["png_path"]) == ("detail.pdf", "detail.png")
+    assert res["file_exists"] is True
+    for name in ("detail.dxf", "detail.pdf", "detail.png"):
+        assert (folder / name).is_file() and not (elsewhere / name).exists()
+    assert "NOT FOR CONSTRUCTION" in res["stamp"]
+    # a name that is not the DXF's is refused before anything is drawn
+    bad = _j(call_agent("dxf_export", "draw_sheet", {
+        "drawing": {"lines": [{"points": [[0, 0], [1, 1]]}]},
+        "output_path": "detail.py"}))
+    assert "error" in bad and not (folder / "detail.py").exists()
+
+
 def test_dxf_export_lands_in_the_folder_and_reports_output_path(folder,
                                                                   elsewhere):
     pytest.importorskip("ezdxf")

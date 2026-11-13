@@ -1,7 +1,7 @@
 # Live checks — what to run on Funhouse, and why
 
 > **This file is the RUNBOOK for live checks; the list of what is open is
-> `BACKLOG.md`** (OWN-32, EV-02, EV-13, EV-15, TA-03, TA-04, and the live
+> `BACKLOG.md`** (OWN-32, EV-07, EV-15, TA-03, TA-04, TA-42, and the live
 > halves of VIS-26, TA-28, RI-31, GM-96). A new check is written up here AND added
 > to the backlog by ID.
 
@@ -37,8 +37,8 @@ thousand input tokens, and check 6 runs it six times.
 
 Checks 1, 2, 3, 4 and 6 are done, and check 9 on Claude (see "Done").
 Check 7 and check 8 (steps 1, 2 and 4) ran on Foundry in brief 5
-(5.33.0rc1, 2026-10-08); check 7's repeats and check 8 step 3 are open
-(BACKLOG EV-02, for Foundry brief 6).
+(5.33.0rc1, 2026-10-08); check 7 is retired with its switch (DR-40), and
+check 8 step 3 is open (BACKLOG EV-07, for the next geotech eval on Foundry).
 
 ---
 
@@ -231,7 +231,8 @@ can see exactly what is still wrong.
 > strip what never measured a gain). Kept as history; `module_work/dr40/CHECK.md`.
 
 **Status (2026-10-19).** Run once on Foundry in brief 5 (part F, one sample
-per look; `TRACE_REVIEW_B_AEFG.md`). The repeats are open: BACKLOG EV-02.
+per look; `TRACE_REVIEW_B_AEFG.md`). The repeats were never run; retired
+with the switch (above).
 
 **Why.** In brief 4 (part A) GPT-5.4's pixel boxes came back stretched in y
 by 1.4–1.7 % and not at all in x. Each stretch matched the image's height
@@ -409,7 +410,7 @@ count (BACKLOG GM-96: your own call) and say so in the question.
 
 **Status (2026-10-19).** Steps 1, 2 and 4 ran on Foundry in brief 5
 (5.33.0rc1; see "Done"), and its part E read GEC-12 Fig 7-15. Step 3's
-DM7.2 Fig 4-12 question is open: BACKLOG EV-02.
+DM7.2 Fig 4-12 question is open: BACKLOG EV-07.
 The text below is as written before brief 5.
 
 **Why.** W3's app side (`module_work/VISUAL_SCALES_DESIGN.md` §12) has only
@@ -524,6 +525,40 @@ two RESULTS.md (step 4). Every run is read in full.
 
 **Send:** the connection test's output, the replies to steps 1-4, and the log file.
 
+## Check 14 — Testers told apart, and SharePoint saves in the background (BACKLOG TA-42; the testers' host, with the release that carries the two changes; a few short turns)
+
+- Before: OWN-147 is answered (whether any tester's sign-in name is not plain). The detail behind every step is in `module_work/ta39/CHECK.md` and `module_work/ta40/CHECK.md`, "For the lead".
+- Two look-alike sign-in names (a test account `x.y` and one `x_y`, or the sign-in header set by hand on the test host's proxy):
+  1. with only the old secret (`PROMPTER-API-KEY--<DOMAIN>-X-Y`) in the vault, both are served, and Connection diagnostics shows each one's exact secret name;
+  2. add the exact secret for the second, with a different key: diagnostics shows a per-tester key source for both, and the second's budget is its own;
+  3. each has its own folder under `users/` and its own SharePoint folder under `conversations/`, and each one's past-conversations list shows only their own;
+  4. Key Vault accepts the exact name (letters, digits, hyphens, at most 127 characters).
+- A refused key beside a good one: tester A looks at a page on a revoked or spent key; tester B, on a good key, looks within two minutes. B's look should carry no "could not be measured" line. Read the probe entries (`kind: probe`) in both conversations' `activity.jsonl`, and note what the service really answers for a spent budget and for a key with no access: the app recognises a 401, a 403 and the known budget wordings only.
+- A sign-in name with an accent, if there is one: compare the secret name the app shows for that tester with what `python -m aec_document_review.tinyapps_keys` prints for the name typed by hand. If they differ, provision by the name the app shows.
+- SharePoint (settings as `docs/SHAREPOINT_SETUP.md`; watch the sidebar's Permanent storage block and `_app_log/sharepoint-YYYY-MM.log`):
+  1. attach a 40-sheet set in a new conversation and ask one question: the turn ends without waiting for the save, and the sidebar goes from "saving the latest turn…" to "N uploaded, 0 failed". The conversation's folder and its subfolders exist in SharePoint though the app never made them. **This settles whether the service makes folders on a path upload**; if the log shows the 404 fallback instead, say so;
+  2. attach a file of several hundred MB: it arrives whole (compare sizes), and the host's memory does not rise by the file's size;
+  3. set `GEOTECH_SHAREPOINT_MAX_UPLOAD_MB=1` and attach a 2 MB file: the first save shows one failure naming the file and the 1 MB limit; the next turn's save shows no failure and the note still names the file;
+  4. have the agent save a file with a colon or a question mark in its name: it appears as `<name>_<six characters>.<ext>` with `sp_names.json` beside `meta.json`, and a restore on a clean host gives the file its own name;
+  5. two testers at once: A starts a first mirror of a large set, B finishes a short turn meanwhile. B's turn ends at once, and B's save line appears while A's still says "saving";
+  6. with the site grant removed, open "Find a past conversation": the log has a "list conversations" line (the caption on the page changes with TA-40's two `app.py` edits).
+
+**Send:** what you saw at each step, the two `activity.jsonl` files and the SharePoint log. They carry sign-in names: keep them out of the repository.
+
+## Check 15 — Stop, the whole-turn budget, the spend line, real Word and Excel files, the gateway's refusals (BACKLOG TA-42 and TA-24; the testers' host, or a local run with a real model, with the release that carries them; a few turns)
+
+- The detail behind every step is in `module_work/ta37/CHECK.md` ("For the lead"), `module_work/dr41/CHECK.md`, `module_work/inf75/CHECK.md` and `module_work/pl39/CHECK.md`.
+- Stop (`GEOTECH_STOP_BUTTON=1`):
+  1. press Stop during a multi-sheet read: time the click, "Stopping…" (up to 15 s) and "Stopped"; count the `model_end` events after `turn_stop_requested` in `activity.jsonl` (a page look already under way finishes its side calls); then ask to continue: it picks up from the kept results and does not read the same sheets again. Also press Stop while a turn waits on a busy model;
+  2. two testers at once: A stops; B's turn finishes normally, with no stop event in B's `activity.jsonl`.
+- The budget: a long question that continues by itself. The main agent's `model_end` events in the turn are 40 or fewer.
+- The spend line (`GEOTECH_SPEND_ESTIMATE=1` and the prices): set the estimate beside the key's own meter after a few turns, and time the sidebar after a turn for a tester with many conversations.
+- Word and Excel: attach a Word file made in Word, with comments, a footnote and a text box, and a workbook made in Excel with merged cells. Ask what the comments say and for one row of the schedule: the comments, the note and the merged labels are in the answer.
+- The gateway: what a 429 carries (`retry-after`, `x-ratelimit-*`; the `model_busy` event and `model_error`'s `http` record them), which wait clears its window, and whether page readings come back "not read" more often now that the model client asks again once.
+- After the planlens release that carries the four tool-result repairs: on the 40-sheet coordination set, `pages_to_view` holds every sheet. Note the vision calls per turn; the look count goes up by design.
+
+**Send:** what you saw at each step and the `activity.jsonl` files. They carry sign-in names: keep them out of the repository.
+
 ## Done
 
 - **2026-10-14, check 9 on Claude Sonnet (about 18 calls, $0.11 of API
@@ -537,7 +572,8 @@ two RESULTS.md (step 4). Every run is read in full.
   `module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/`
   (`TRACE_REVIEW_B_AEFG.md`: part A label crops, E the chart's second
   reading, F patch alignment, G report ingest with visual scales off and
-  on). Check 8 step 3 and check 7's repeats are still open (BACKLOG EV-02).
+  on). Check 8 step 3 is still open (BACKLOG EV-07); check 7's repeats were
+  retired with its switch (DR-40).
 
 - **2026-10-07, checks 6 and 3 on Foundry (brief 4, 5.32.1rc3; GPT-5.4 and Sol).**
   - **The location fix held:** whole-page pixel boxes were a median 3.5–19 pt off on GPT-5.4 and 1–1.5 pt on Sol. Every ring was placed from a zoom.

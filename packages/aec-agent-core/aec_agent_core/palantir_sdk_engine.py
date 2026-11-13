@@ -110,6 +110,7 @@ modules in ``sys.modules`` (``webapp/tests/test_palantir_sdk_engine.py``,
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -243,11 +244,63 @@ def _raise_read_timeout(handle, read_timeout_s: Optional[float]) -> None:
             pass
 
 
+#: The app event one retry inside a model call writes to the run record
+#: (the activity log's ``APP_EVENTS``; BACKLOG INF-75). Foundry brief 7
+#: (2026-11-12): a helper's model call took 904 s for 324 tokens out, half
+#: of its run, and the record could not say why: a timed-out or dropped
+#: call was retried here with only a log line. The event carries
+#: ``engine`` (``foundry``), ``kind`` (:func:`transient_kind`), ``attempt``
+#: (1 for the first retry), ``wait_s`` (the wait before asking again),
+#: ``waited_s`` (the waits before this one), ``error`` (the failure's
+#: class) and its HTTP ``status`` where it has one. Never the error's text.
+RETRY_EVENT = "engine_retry"
+
+#: The model call running in this context: the run manager LangChain gave
+#: ``_generate``, so a retry's event is written to that call's own handlers
+#: under its own run id (and reaches the record whether the call was made
+#: by an agent's graph, by a tool's vision side call or directly).
+_MODEL_RUN: "contextvars.ContextVar[Any]" = contextvars.ContextVar(
+    "geotech_foundry_model_run", default=None)
+
+
+def _status_of(exc: BaseException) -> Optional[int]:
+    """The HTTP status a failure carries, where it has one."""
+    for e in (exc, getattr(exc, "__cause__", None)):
+        if e is None:
+            continue
+        response = (getattr(e, "response", None)
+                    or getattr(getattr(e, "_cause", None), "response", None))
+        status = getattr(response, "status_code", None)
+        if isinstance(status, int) and not isinstance(status, bool):
+            return status
+    return None
+
+
+def _retry_event(data: dict) -> None:
+    """Write one :data:`RETRY_EVENT` to the run record. Never raises: a
+    call outside any run has no record to write to."""
+    try:
+        run = _MODEL_RUN.get()
+        handlers = getattr(run, "handlers", None)
+        if run is not None and handlers:
+            from langchain_core.callbacks.manager import handle_event
+            handle_event(handlers, "on_custom_event", "ignore_custom_event",
+                         RETRY_EVENT, data, run_id=run.run_id,
+                         tags=getattr(run, "tags", None),
+                         metadata=getattr(run, "metadata", None))
+            return
+        from langchain_core.callbacks.manager import dispatch_custom_event
+        dispatch_custom_event(RETRY_EVENT, data)
+    except Exception:  # noqa: BLE001 - the record never fails a call
+        pass
+
+
 def call_with_retries(fn: Callable[[], Any], *, total_s: float = 300.0,
                       max_sleep_s: float = 60.0,
                       sleep: Callable[[float], None] = time.sleep) -> Any:
     """``fn()``, retried on :func:`transient_kind` failures with full-jitter
-    exponential backoff until ``total_s`` of waiting is spent."""
+    exponential backoff until ``total_s`` of waiting is spent. Each retry
+    is a :data:`RETRY_EVENT` in the run record."""
     attempt, waited = 0, 0.0
     while True:
         try:
@@ -264,6 +317,13 @@ def call_with_retries(fn: Callable[[], Any], *, total_s: float = 300.0,
                 raise
             log.info("Foundry call failed (%s, attempt %d): %s; retrying in "
                      "%.1f s", kind, attempt, str(exc)[:200], wait)
+            status = _status_of(exc)
+            _retry_event({"engine": "foundry", "kind": kind,
+                          "attempt": attempt, "wait_s": round(wait, 3),
+                          "waited_s": round(waited, 3),
+                          "error": type(exc).__name__,
+                          **({"status": status} if status is not None
+                             else {})})
             sleep(wait)
             waited += wait
 
@@ -905,6 +965,20 @@ class PalantirSdkChatModel(BaseChatModel):
         return self.model_copy(update={"openai_tools": openai_tools})
 
     def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: Optional[list[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        # The call's run, for the events its retries write (INF-75).
+        token = _MODEL_RUN.set(run_manager)
+        try:
+            return self._generate_call(messages, stop, run_manager, **kwargs)
+        finally:
+            _MODEL_RUN.reset(token)
+
+    def _generate_call(
         self,
         messages: list[BaseMessage],
         stop: Optional[list[str]] = None,
@@ -1616,6 +1690,20 @@ class PalantirClaudeChatModel(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
+        # The call's run, for the events its retries write (INF-75).
+        token = _MODEL_RUN.set(run_manager)
+        try:
+            return self._generate_call(messages, stop, run_manager, **kwargs)
+        finally:
+            _MODEL_RUN.reset(token)
+
+    def _generate_call(
+        self,
+        messages: list[BaseMessage],
+        stop: Optional[list[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
         _, v3 = _claude_sdk()
         max_tokens = kwargs.get("max_tokens") or self.max_tokens
         temperature = kwargs.get("temperature", self.temperature)
@@ -1675,5 +1763,6 @@ __all__ = ["PalantirSdkChatModel", "PalantirClaudeChatModel",
            "FoundryModelNotImported", "UnsendableBlock", "sdk_available",
            "claude_sdk_available",
            "responses_available", "call_with_retries", "transient_kind",
+           "RETRY_EVENT",
            "model_not_imported", "ROUTES", "REASONING_SUMMARY_ENV",
            "reasoning_summary_level"]

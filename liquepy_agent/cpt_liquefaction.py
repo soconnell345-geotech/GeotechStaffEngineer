@@ -371,12 +371,27 @@ def analyze_cpt_liquefaction(
     # LDI (Lateral Displacement Index) — use safe version (trapezoid rule)
     ldi_val = _calc_ldi_safe(shear_strain, depth)
 
-    # Min FoS in liquefiable zone (below GWL, Ic < limit)
-    liquefiable = (depth >= gwl) & (i_c_arr < i_c_limit)
-    if np.any(liquefiable):
-        min_fos = float(np.min(fos[liquefiable]))
+    # Min FoS over the susceptible readings (below the water table, Ic
+    # under the limit). With none, the minimum is over every reading and
+    # the result says so (GM-324: it used to come back with no flag).
+    susceptible = (depth >= gwl) & (i_c_arr < i_c_limit)
+    n_susceptible = int(np.sum(susceptible))
+    n_liquefiable = int(np.sum(susceptible & (fos < 1.0)))
+    result_warnings = []
+    if n_susceptible:
+        min_fos = float(np.min(fos[susceptible]))
+        min_fos_basis = ("readings below the water table with Ic under "
+                         f"{i_c_limit:g}")
     else:
         min_fos = float(np.min(fos)) if len(fos) > 0 else 0.0
+        min_fos_basis = "all readings"
+        result_warnings.append(
+            "No reading is below the water table with Ic under "
+            f"{i_c_limit:g}, so none is susceptible to liquefaction by "
+            "this procedure. min_fos is the lowest factor of safety "
+            "liquepy gives over ALL readings, soil the procedure itself "
+            "takes as non-liquefiable; do not read it as a triggering "
+            "result.")
 
     # Max settlement (sum of volumetric strain * layer thickness)
     if len(depth) > 1:
@@ -398,7 +413,11 @@ def analyze_cpt_liquefaction(
         lsn=lsn_val,
         ldi_m=ldi_val,
         min_fos=min_fos,
+        min_fos_basis=min_fos_basis,
+        n_susceptible=n_susceptible,
+        n_liquefiable=n_liquefiable,
         max_settlement_mm=max_settlement_mm,
+        warnings=result_warnings,
         depth=depth,
         factor_of_safety=fos,
         csr=csr_arr,

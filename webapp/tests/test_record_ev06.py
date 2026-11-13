@@ -266,9 +266,15 @@ def test_a_side_calls_model_end_says_what_it_was_asked(tmp_path):
     assert (v["kind"], v["page"]) == ("region", 7)
     assert v["image_px"] == [64, 48]
     assert v["detail"] == "original" and v["detail_sent"] == "original"
-    assert v["prompt"] == "Read the boring number."
-    assert v["prompt_chars"] == len("Read the boring number.")
-    assert v["images"] == 1 and "prompt_sha" not in v
+    # every region reading is also told it sees one image (VIS-31)
+    from aec_agent_core.turn_question import ONE_IMAGE_NOTE
+    full = "Read the boring number." + ONE_IMAGE_NOTE
+    assert v["prompt"] == full[:al.SIDE_PROMPT_CHARS]
+    assert v["prompt_chars"] == len(full)
+    assert ("prompt_sha" in v) == (len(full) > al.SIDE_PROMPT_CHARS)
+    if "prompt_sha" in v:
+        assert v["prompt_sha"] == al.fingerprint(full)
+    assert v["images"] == 1
     assert "base64" not in json.dumps(end)             # never the image
 
 
@@ -276,9 +282,11 @@ def test_a_long_side_prompt_keeps_its_start_and_a_hash(tmp_path):
     prompt = ("Find every callout on this sheet. " * 30).strip()  # 1,019
     end = _look(tmp_path, prompt, "")
     v = end["vision"]
-    assert v["prompt"] == prompt[:al.SIDE_PROMPT_CHARS]
-    assert v["prompt_chars"] == len(prompt)
-    assert v["prompt_sha"] == al.fingerprint(prompt)
+    from aec_agent_core.turn_question import ONE_IMAGE_NOTE
+    full = prompt + ONE_IMAGE_NOTE         # the note is part of the prompt
+    assert v["prompt"] == full[:al.SIDE_PROMPT_CHARS]
+    assert v["prompt_chars"] == len(full)
+    assert v["prompt_sha"] == al.fingerprint(full)
     assert "detail_sent" not in v                      # none was sent
 
 

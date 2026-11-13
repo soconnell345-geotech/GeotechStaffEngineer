@@ -238,6 +238,19 @@ class TestTheLibraryPage:
         assert set(tags["materials"]) == {"Clay", "Sand"}  # from the USCS
         assert "ASTM" in tags["standards_referenced"]
 
+    def test_a_corrosive_soil_is_tagged_whatever_follows_the_verdict(self):
+        # OWN-125: the answer is "yes - <basis>"; the tag reads the verdict.
+        # A "mixed" saved before the ruling meant corrosive to something.
+        for said, tagged in (("yes - resistivity 900 ohm-cm", True),
+                             ("yes", True),
+                             ("mixed - corrosive to steel only", True),
+                             ("no - sulfate below the reporting limit", False),
+                             ("unclear", False), (None, False)):
+            record = build_record(
+                natural_hazards=NaturalHazardFacts(soilCorrosion=said))
+            topics = tags_for(record)["topics"]
+            assert ("Corrosion/Durability" in topics) is tagged, said
+
     def test_a_record_with_no_hazards_is_not_tagged_seismic(self):
         record = build_record(natural_hazards=NaturalHazardFacts())
 

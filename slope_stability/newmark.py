@@ -63,22 +63,43 @@ _G = 9.80665   # standard gravity, m/s^2
 
 @dataclass
 class YieldAccelerationResult:
-    """Yield (critical) seismic coefficient for a specified surface."""
-    ky: float = 0.0                # yield seismic coefficient (fraction of g)
-    ay: float = 0.0                # yield acceleration = ky*g (m/s^2)
-    fos_static: float = 0.0        # pseudo-static FOS at kh = 0
+    """Yield (critical) seismic coefficient for a specified surface.
+
+    ``ky`` and ``ay`` are None when the method has no solution on the
+    surface at a trial kh the bisection needs (GM-140 step 2): there is no
+    number. ``reason`` then says why and at which kh, ``no_solution_kh`` is
+    that kh, and ``ky_bounds`` the last (lower, upper) kh at which the
+    method did solve with F above and below 1 (None where there is none;
+    an upper bound of None: the method never solved with F <= 1).
+    ``fos_static`` is None when the method has no solution at kh = 0.
+    """
+    ky: Optional[float] = 0.0      # yield seismic coefficient (fraction of g)
+    ay: Optional[float] = 0.0      # yield acceleration = ky*g (m/s^2)
+    fos_static: Optional[float] = 0.0   # pseudo-static FOS at kh = 0
     method: str = "spencer"
     converged: bool = False
     n_iter: int = 0
+    reason: str = ""
+    no_solution_kh: Optional[float] = None
+    ky_bounds: Optional[tuple] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "ky": round(self.ky, 5),
-            "ay_m_s2": round(self.ay, 5),
-            "FOS_static": round(self.fos_static, 4),
+        d = {
+            "ky": None if self.ky is None else round(self.ky, 5),
+            "ay_m_s2": None if self.ay is None else round(self.ay, 5),
+            "FOS_static": (None if self.fos_static is None
+                           else round(self.fos_static, 4)),
             "method": self.method,
             "converged": self.converged,
         }
+        if self.reason:
+            d["reason"] = self.reason
+            d["no_solution_kh"] = (None if self.no_solution_kh is None
+                                   else round(self.no_solution_kh, 5))
+            if self.ky_bounds is not None:
+                d["ky_bounds"] = [None if b is None else round(b, 5)
+                                  for b in self.ky_bounds]
+        return d
 
 
 @dataclass
@@ -145,30 +166,28 @@ class NewmarkResult:
         return d
 
 
-def _method_fos(slices, slip, method: str, tol: float, reinf) -> float:
-    """FOS on pre-built slices, dispatched EXACTLY as ``analyze_slope`` does.
+class _NoSolutionAt(Exception):
+    """The method has no solution at a trial kh of the bisection."""
 
-    Verified bit-identical to ``analyze_slope(...).FOS`` for every method across
-    kh (see E9 timing/exactness note): the spencer/M-P wrappers already run the
-    rigorous GLE with the same legacy fallback ``analyze_slope`` uses, and janbu
-    uses the same tightened tolerance. Lets ``yield_acceleration`` reuse one
-    discretization across the bisection instead of rebuilding the slices per FOS.
+    def __init__(self, kh: float, reason: str):
+        super().__init__(reason)
+        self.kh, self.reason = kh, reason
+
+
+def _method_fos(slices, slip, method: str, tol: float, reinf):
+    """The method's own solution on pre-built slices (a
+    ``solution.MethodSolution``), from the solver ``analyze_slope`` uses
+    (``solution.solve_method``; Morgenstern-Price / GLE with the half-sine
+    function). Lets ``yield_acceleration`` reuse one discretization across
+    the bisection instead of rebuilding the slices per FOS.
+
+    Before GM-140 step 2 Spencer and Morgenstern-Price took the old
+    approximate solver's value at any trial kh where the rigorous solution
+    did not converge, so a yield coefficient named for Spencer could rest
+    on another solver's factor of safety.
     """
-    from slope_stability.methods import (
-        fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
-    )
-    from slope_stability.gle import janbu_fos
-    if method == "fellenius":
-        return fellenius_fos(slices, slip, reinf_forces=reinf)
-    if method == "janbu":
-        return janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1,
-                         reinf_forces=reinf)[0]
-    if method == "spencer":
-        return spencer_fos(slices, slip, tol=tol, reinf_forces=reinf)[0]
-    if method in ("morgenstern_price", "gle"):
-        return morgenstern_price_fos(slices, slip, f_interslice="half_sine",
-                                     tol=tol, reinf_forces=reinf)[0]
-    return bishop_fos(slices, slip, tol=tol, reinf_forces=reinf)
+    from slope_stability.solution import solve_method
+    return solve_method(slices, slip, method, "half_sine", tol, reinf)
 
 
 def yield_acceleration(geom: SlopeGeometry,
@@ -194,11 +213,18 @@ def yield_acceleration(geom: SlopeGeometry,
     kh_max : float
         Upper bound on the kh bracket (default 2.0). If the surface is still
         stable at kh_max the result is returned non-converged with ky=kh_max.
+        Where the method has no solution at kh_max, the upper end is halved
+        until it has one.
 
     Returns
     -------
     YieldAccelerationResult
+        ``ky`` None, with the ``reason``, where the method has no solution
+        at a trial kh (GM-140 step 2): every trial kh is solved by the
+        method itself. An unknown ``method`` is refused.
     """
+    from slope_stability.solution import check_method
+    check_method(method)
     if slip_surface is not None:
         slip = slip_surface
     else:
@@ -224,32 +250,80 @@ def yield_acceleration(geom: SlopeGeometry,
     def _fos(kh: float) -> float:
         for s, sw in zip(ref_slices, soil_weights):
             s.seismic_force = kh * sw
-        return _method_fos(ref_slices, slip, method, tol, reinf)
+        sol = _method_fos(ref_slices, slip, method, tol, reinf)
+        if not sol.solved:
+            raise _NoSolutionAt(kh, sol.reason)
+        return sol.fos
 
-    fos_static = _fos(0.0)
-    if fos_static <= 1.0:
-        # already at/over the limit with no seismic load -> ky = 0
-        return YieldAccelerationResult(
-            ky=0.0, ay=0.0, fos_static=fos_static, method=method,
-            converged=True, n_iter=0)
-
-    lo, hi = 0.0, kh_max
-    fos_hi = _fos(hi)
-    if fos_hi > 1.0:
-        # surface never yields within the bracket
-        return YieldAccelerationResult(
-            ky=kh_max, ay=kh_max * _G, fos_static=fos_static, method=method,
-            converged=False, n_iter=0)
-
+    from slope_stability.solution import METHOD_TEXT
+    fos_static = None
+    lo = hi = None          # kh with a solution and F > 1 / F <= 1
     n = 0
-    while hi - lo > bisection_tol and n < 100:
-        mid = 0.5 * (lo + hi)
-        f = _fos(mid)
-        if f > 1.0:
-            lo = mid
+    try:
+        fos_static = _fos(0.0)
+        if fos_static <= 1.0:
+            # already at/over the limit with no seismic load -> ky = 0
+            return YieldAccelerationResult(
+                ky=0.0, ay=0.0, fos_static=fos_static, method=method,
+                converged=True, n_iter=0)
+
+        lo = 0.0
+        # The upper end of the bracket. kh_max (2.0 by default) is a
+        # numerical device, far above any yield coefficient, and a method
+        # may have no solution there; it is then halved until the method
+        # solves (down to the bisection tolerance), so the bracket's ends
+        # are both the method's own solutions.
+        top, first = kh_max, None
+        while True:
+            try:
+                fos_hi = _fos(top)
+                break
+            except _NoSolutionAt as exc:
+                first = first or exc
+                top *= 0.5
+                if top <= bisection_tol:
+                    raise first
+        if fos_hi > 1.0:
+            if first is None:
+                # surface never yields within the bracket
+                return YieldAccelerationResult(
+                    ky=kh_max, ay=kh_max * _G, fos_static=fos_static,
+                    method=method, converged=False, n_iter=0)
+            # still stable at the highest kh the method solves: the yield
+            # point lies above it, where the method has no solution
+            lo = top
+            raise _NoSolutionAt(2.0 * top, first.reason)
+        hi = top
+
+        while hi - lo > bisection_tol and n < 100:
+            mid = 0.5 * (lo + hi)
+            f = _fos(mid)
+            if f > 1.0:
+                lo = mid
+            else:
+                hi = mid
+            n += 1
+    except _NoSolutionAt as exc:
+        # A method's own solution at every trial kh, or no number (GM-140
+        # step 2; UFC 3-220-10 p. 362): the bisection cannot tell which
+        # side of F = 1 this kh lies on, and no other solver is asked.
+        bounds = (lo, hi) if lo is not None else None
+        if bounds and hi is not None:
+            where = (f" The method solved with F > 1 at kh = {lo:.4f} and "
+                     f"F <= 1 at kh = {hi:.4f}, so ky lies between them.")
+        elif bounds and lo > 0:
+            where = (f" The method solved with F > 1 at kh = {lo:.4f}, so "
+                     f"ky is above it.")
         else:
-            hi = mid
-        n += 1
+            where = ""
+        return YieldAccelerationResult(
+            ky=None, ay=None, fos_static=fos_static, method=method,
+            converged=False, n_iter=n, no_solution_kh=exc.kh,
+            ky_bounds=bounds,
+            reason=(f"{METHOD_TEXT.get(method, method)} has no solution on "
+                    f"this surface at kh = {exc.kh:.4f}: {exc.reason}. No "
+                    f"yield coefficient is reported: every trial kh is "
+                    f"solved by the method itself.{where}"))
     ky = 0.5 * (lo + hi)
     return YieldAccelerationResult(
         ky=ky, ay=ky * _G, fos_static=fos_static, method=method,

@@ -124,6 +124,8 @@ set environment variables for the workspace/app:
 | `GEOTECH_WEBAPP_DATA` | a writable folder, e.g. a path under the workspace files | Where saved conversations are kept. In a published app that folder is inside the app's own container, so they are lost when it is rebuilt (Notes below; BACKLOG INF-38) |
 | `GEOTECH_REFERENCES_DOCS` | folder of reference PDFs (optional; §3d) | Enables figure read-off and worked-example pages, same as Databricks |
 | `GEOTECH_HELPER_MODELS` | optional, e.g. `references=Sonnet 5.5,calc=main` | A helper's own model (§3a); on Foundry the references helper defaults to `Sonnet 5.5` |
+| `GSE_REPORT_TABLES_DATASET` | optional: a workspace dataset alias (same kind of value as `GEOTECH_FOUNDRY_CONVERSATION_DATASET`) | Each report the ingest reads is also sent to it as flat tables plus its DIGGS file, record and summary, in one save, under the app's own folder ([REPORT_TABLES.md](REPORT_TABLES.md)); unset, nothing is sent |
+| `GSE_REPORT_TABLES` | optional: `0` turns the report tables off; a folder moves them | Where the ingest writes those tables on disk (on by default, beside the report's library) |
 
 Any model id starting with `ri.` routes through the Foundry LLM proxy
 automatically, by **model family**: a Claude model uses the

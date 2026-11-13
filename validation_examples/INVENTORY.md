@@ -557,6 +557,30 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   module still supports only ONE surcharge zone (problem has bench + crest — a
   separate B2 capability gap; the loads are secondary to the seam-governed FOS).
 - Confidence in extraction: high (label-confirmed geometry).
+- **GM-140 step 1 and its fix round (2026-11-13): VALIDATES on surfaces along
+  the seam; the module's weak-layer search does not.** The PASS above rested on
+  the soil being weighed three times (all three layers entered with a top at el.
+  40, each weighed from it). With each point weighed once and Table 9.2's loads
+  on, the lowest of a declared family of 81 three-part surfaces along the seam's
+  mid-line reads Spencer 0.753, Morgenstern-Price (half-sine) 0.722 and Janbu
+  (corrected) 0.728, against the printed 0.760 / 0.720 / 0.734 (Table 9.4, no
+  optimisation, manual p. 52): -0.9 %, +0.3 %, -0.8 %; asserted within 3 %
+  (test_published_v028_e8.py). The weak-layer search (seed 3, 700 trials, 6
+  points), which now aims at the seam where its polylines put it, returns 0.830
+  on a surface along the seam, 9.2 % above print (GM-140 step 2: a search scores
+  with the single-surface solver; before, 0.515 on a short surface the direct
+  Spencer solution did not confirm); it is a strict xfail against print in
+  test_published_v028_e8.py, with nothing pinned to it. The old search surface
+  is kept in test_published_v028_slope.py as a record of the change in weight
+  only (3,003 kN/m from its area, 8,768 before; Janbu corrected 0.819 before,
+  1.073 after): it was the minimum of a search on the tripled weights, not a
+  critical surface. Not checkable from the repository: the ground, the seam and
+  the base are read off Figure 9.1, and the printed critical surfaces are in
+  Figures 9.2 to 9.4; the bench is entered at el. 28.0 where Table 9.2 puts the
+  bench load at y = 27.75; the crest load, 20 rising to 40 kPa, is entered as
+  its mean, 30 kPa. The piezometric line is entered as Table 9.3 prints it
+  (29.8, 34.0, 37.6; before 29.86, 34.06, 37.68).
+  `module_work/gm140/STEP1_CHECK.md`.
 
 ## V-034 Slide2 #63 — Loukidis (2003) ex 2, 3-layer seismic (geometry-limited)
 - Source: Slide2 Verification #63 (manual pp. 219-220); Loukidis et al. (2003).

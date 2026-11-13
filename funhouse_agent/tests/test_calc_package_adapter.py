@@ -190,6 +190,61 @@ class TestSlopeStabilityPackage:
         assert os.path.exists(outfile)
 
 
+class TestSlopePackageNoNumber:
+    """GM-140 step 2: where the method has no solution on the surface the
+    package prints no number (it used to print the old approximate solver's
+    value, or the solver's 999.9 marker). Made-up fill slope with a
+    cohesion of 40 kPa and a circle on which Spencer's method has no
+    solution: by the step 2 review's own Spencer (Spencer 1967 Eqs. 7 and
+    8, p. 15; 30 slices) the force and moment factors of safety stay at
+    least 0.043 apart for side-force inclinations from -30 to 60 degrees
+    (slope_stability/tests/test_own_solution_or_no_number.py,
+    _NO_SPENCER_CIRCLE)."""
+
+    _FILL = {
+        "surface_points": [[0, 0], [10, 0], [16, 10], [34, 10]],
+        "soil_layers": [{"name": "fill", "top_elevation": 10,
+                         "bottom_elevation": -6, "gamma": 19.0, "phi": 22.0,
+                         "c_prime": 40.0}],
+        "xc": 8.0, "yc": 12.0, "radius": 12.0,
+    }
+
+    def test_spencer_without_a_solution_prints_no_number(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_slope_stability_package)
+        outfile = str(tmp_path / "none.html")
+        result = _generate_slope_stability_package(dict(
+            self._FILL, method="spencer", compare_methods=True,
+            output_path=outfile))
+        assert result["status"] == "success"
+        assert result["FOS"] is None and result["is_stable"] is None
+        assert result["method_solved"] is False
+        assert "no equilibrium solution" in result["no_solution"]
+        html = open(outfile, encoding="utf-8").read()
+        assert "no solution" in html
+        assert "legacy" not in html and "999.9" not in html
+
+    def test_bishop_solves_the_same_circle(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_slope_stability_package)
+        result = _generate_slope_stability_package(dict(
+            self._FILL, method="bishop",
+            output_path=str(tmp_path / "b.html")))
+        # 1.7268 by the review's own Bishop (1955 Eq. 13, p. 10), 30 slices
+        assert result["FOS"] == pytest.approx(1.7268, rel=0.01)
+        assert "no_solution" not in result
+
+    def test_report_refuses_an_unknown_interslice_function(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_slope_report_package)
+        p = {k: v for k, v in self._FILL.items()
+             if k not in ("xc", "yc", "radius")}
+        with pytest.raises(ValueError, match="Unknown interslice function"):
+            _generate_slope_report_package(dict(
+                p, f_interslice="sine", nx=3, ny=3,
+                output_path=str(tmp_path / "r.html")))
+
+
 class TestSlopeReportPackage:
     """The one-call slope REPORT for a critical-surface SEARCH run (F7)."""
 
@@ -344,10 +399,17 @@ class TestSlopeReportPackage:
         finally:
             doc.close()
 
-    def test_v028_weak_seam_report_matches_referee(self, tmp_path):
-        """Validate the report against the V-028 (Slide2 #9 / ACADS 4) weak-seam
-        search: the critical Spencer FOS is ~0.808 (referee 0.78), and the
-        report renders the search story with rejection diagnostics."""
+    def test_v028_weak_seam_report(self, tmp_path):
+        """The report on the V-028 (Slide2 #9 / ACADS 4) weak-seam search:
+        it renders the search story with rejection diagnostics and the
+        overlapping-layers table. No factor of safety is pinned. The
+        search does not reach print (Spencer 0.515 against the printed
+        0.760: the strict xfail test_v028_weak_layer_search_against_print
+        in validation_examples/test_published_v028_e8.py, where surfaces
+        along the seam read within 1 % of print), and the report's own
+        figure, 1.16, is its re-analysis of the search's surface, on which
+        Spencer's method does not converge (the result says so:
+        method_solved is false)."""
         from funhouse_agent.adapters.calc_package import _generate_slope_report_package
         out = str(tmp_path / "v028.html")
         res = _generate_slope_report_package({
@@ -362,19 +424,16 @@ class TestSlopeReportPackage:
                 {"name": "lower", "top_elevation": 40, "bottom_elevation": 15,
                  "gamma": 18.84, "phi": 20, "c_prime": 28.5},
             ],
-            "gwt_points": [[20, 27.75], [43, 27.75], [49, 29.86], [60, 34.06],
-                           [66, 35.80], [74, 37.68], [80, 38.4], [84, 38.4]],
+            "gwt_points": [[20, 27.75], [43, 27.75], [49, 29.8], [60, 34.0],
+                           [66, 35.8], [74, 37.6], [80, 38.4], [84, 38.4]],
             "surface_type": "weak_layer", "method": "spencer",
             "n_trials": 700, "n_points": 6, "n_slices": 30, "seed": 3,
             "x_entry_range": [20, 50], "x_exit_range": [58, 84],
             "output_path": out,
         })
         assert res["status"] == "success"
-        # module Spencer 0.808; referee 0.78 (+3.6%); 0.792 before GM-131
-        assert res["FOS"] == pytest.approx(0.808, abs=0.005)
-        assert res["FOS"] == pytest.approx(0.78, rel=0.05)
-        assert res["is_stable"] is False           # 0.81 < 1.5
         html = open(out, encoding="utf-8").read()
+        assert "Overlapping layers" in html
         assert "Critical Surface Search" in html
         assert "rejected" in html.lower()          # rejection diagnostics
         assert "Method Comparison" in html
