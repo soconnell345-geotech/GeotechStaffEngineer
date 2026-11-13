@@ -169,6 +169,18 @@ def run_plot_data(params: dict, overlay=_REGISTERED) -> dict:
     _scale_units(params.get("scale_units"))
     n_added, chart_said = 0, None
     if params.get("reference_chart"):
+        # the chart is drawn under the series it is read against, on one
+        # plot (GM-315 review: with panels, or a contour alone, the overlay
+        # had no series to fit and failed with a KeyError)
+        if params.get("panels") is not None:
+            raise ValueError(
+                "plot_data: reference_chart is drawn on one plot, not in "
+                "panels: draw the chart with the data read against it as a "
+                "figure of its own.")
+        if not params.get("series"):
+            raise ValueError(
+                "plot_data: reference_chart is drawn under the series read "
+                "against it: give those series.")
         params, n_added, chart_said = overlay(params)
 
     # Every figure saved reaches the user: one that only holds a place is
@@ -495,7 +507,8 @@ PLOT_DATA_INFO = {
         "legend": {"type": "bool", "required": False,
                    "description": ("Show the legend. Default: when more "
                                    "than one series is in it (reference "
-                                   "lines are named on the line).")},
+                                   "lines are named on the line); with "
+                                   "panels, only when true.")},
         "output_path": {"type": "str", "required": False,
                         "description": ("PNG path. A bare filename lands in "
                                         "the working folder. "

@@ -186,9 +186,10 @@ def _clean_panel(raw, k: int, warnings: list) -> dict:
         label_y = b.get("label_y")
         bands.append({
             "top": max(top, bottom), "bottom": min(top, bottom),
-            "label": _dp._note_text(b.get("label")),
+            "label": _dp._note_text(b.get("label"), f"{at} label"),
             "color": (_dp._note_colour(b.get("color"), i, "color",
-                                       _BAND_TINTS[i % len(_BAND_TINTS)])),
+                                       _BAND_TINTS[i % len(_BAND_TINTS)],
+                                       where=at)),
             "hatch": None if hatch is None else str(hatch),
             "align": align,
             "label_y": (None if label_y is None
@@ -205,7 +206,7 @@ def _clean_panel(raw, k: int, warnings: list) -> dict:
         off = (0.0, 0.0) if d.get("offset") is None else \
             _point(d["offset"], f"{at} offset")
         dims.append({"from": p0, "to": p1, "offset": off,
-                     "text": _dp._note_text(d.get("text"))})
+                     "text": _dp._note_text(d.get("text"), f"{at} text")})
     arrows = []
     for i, a in enumerate(_list_of_dicts(raw.get("arrows"),
                                          f"{where} arrows", ARROW_KEYS)):
@@ -215,9 +216,9 @@ def _clean_panel(raw, k: int, warnings: list) -> dict:
         if p0 == p1:
             raise ValueError(f"{at}: 'from' and 'to' are one point")
         arrows.append({"from": p0, "to": p1,
-                       "text": _dp._note_text(a.get("text")),
+                       "text": _dp._note_text(a.get("text"), f"{at} text"),
                        "color": _dp._note_colour(a.get("color"), i, "color",
-                                                 "#1a1a1a")})
+                                                 "#1a1a1a", where=at)})
     vlines = [_dp._ref(v) for v in (raw.get("vlines") or [])]
     if kind != "chart" and vlines:
         warnings.append(f"{where}: 'vlines' applies to a chart panel; "
@@ -242,8 +243,9 @@ def _clean_panel(raw, k: int, warnings: list) -> dict:
         raise ValueError(f"{where} is empty: give it series, bands, "
                          "dimensions, arrows or annotations")
     return {"index": k, "kind": kind, "title": _dp._note_text(
-                raw.get("title")),
-            "xlabel": _dp._note_text(raw.get("xlabel")), "xlim": xl,
+                raw.get("title"), f"{where} title"),
+            "xlabel": _dp._note_text(raw.get("xlabel"), f"{where} xlabel"),
+            "xlim": xl,
             "width": width, "share_x": None if share is None else str(share),
             "series": series, "notes": notes, "bands": bands, "dims": dims,
             "arrows": arrows, "vlines": vlines,
@@ -521,8 +523,9 @@ def render_panel_plot(panels, *, title: str = "", ylabel: str = "",
                          "side by side; draw two figures")
     warnings: List[str] = []
     cleaned = [_clean_panel(p, k, warnings) for k, p in enumerate(panels)]
-    title, footnote = _dp._note_text(title), _dp._note_text(footnote)
-    ylabel = _dp._note_text(ylabel)
+    title, footnote = _dp._note_text(title, "title"), \
+        _dp._note_text(footnote)
+    ylabel = _dp._note_text(ylabel, "ylabel")
     refs = [_dp._ref(spec) for spec in (hlines or [])]
 
     # the shared vertical axis
@@ -777,7 +780,7 @@ def render_panel_plot(panels, *, title: str = "", ylabel: str = "",
     w_px, h_px = int(fig_w * dpi), int(fig_h * dpi)
     panel_rows = [{"kind": p["kind"], "title": p["title"],
                    "x_range": [float(v) for v in ax.get_xlim()],
-                   "width_in": round(w, 2)}
+                   "width_in": round(float(w), 2)}
                   for p, ax, w in zip(cleaned, axes, widths)]
     plt.close(fig)
     try:

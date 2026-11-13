@@ -152,7 +152,10 @@ def test_fill_bands_dimension_and_arrow_are_drawn(tmp_path):
                         {"top": 4, "bottom": 0, "label": "Clay"}],
                  dimensions=[{"from": [0, 0], "to": [4, 0],
                               "offset": [0, -0.8], "text": "B = 4.0 m"}]),
-        _diagram(arrows=[{"from": [25, 2.7], "to": [0, 2.7],
+        # the arrow's text runs back over it from the tail, so the tail
+        # stands clear of the diagram by the text's length (from 25 kPa the
+        # line at 19.9 kPa crossed it, and the layout check said so)
+        _diagram(arrows=[{"from": [34, 2.7], "to": [0, 2.7],
                           "text": "P = 120 kN/m"}])],
         ylim=[-2, 9], interactive=False)
     assert not [w for w in full.warnings if "no interactive" not in w], \
@@ -224,6 +227,18 @@ def test_a_drawing_panel_has_no_twin_and_says_so():
     ([_chart(str(k), [0, 1, 2]) for k in range(8)], {"width_in": 4.0},
      "too narrow"),
     ("not a list", {}, "non-empty list"),
+    # review 2026-11-13: refused under their own place, not as a footnote
+    # or a note
+    ([_chart("A", [0, 1, 2], bands=[{"top": 1, "bottom": 0, "label": 5}])],
+     {}, r"panels\[0\] bands\[0\] label must be text"),
+    ([_chart("A", [0, 1, 2], bands=[{"top": 1, "bottom": 0,
+                                     "color": "notacolour"}])],
+     {}, r"panels\[0\] bands\[0\] color"),
+    ([_chart("A", [0, 1, 2], arrows=[{"from": [0, 0], "to": [1, 0],
+                                      "text": 12}])],
+     {}, r"panels\[0\] arrows\[0\] text must be text"),
+    ([dict(_chart("A", [0, 1, 2]), title=3)], {},
+     r"panels\[0\] title must be text"),
 ])
 def test_bad_panels_are_refused_by_name(panels, more, words):
     with pytest.raises(ValueError, match=words):
@@ -337,6 +352,62 @@ def test_a_footnote_on_one_plot_is_in_both_renderings():
                for a in res.figure.layout.annotations)
     bare = render_data_plot([{"x": [0, 1], "y": [0, 1], "label": "A"}])
     assert _size(res.png_bytes)[1] > _size(bare.png_bytes)[1]
+
+
+def test_a_long_footnote_is_broken_to_the_figures_width():
+    """Review 2026-11-13: one line past the edge widened the saved PNG."""
+    long = " ".join(["Made-up words for a long footnote."] * 8)
+    res = render_data_plot([{"x": [0, 1], "y": [0, 1], "label": "A"}],
+                           footnote=long, interactive=False)
+    bare = render_data_plot([{"x": [0, 1], "y": [0, 1], "label": "A"}],
+                            interactive=False)
+    assert _size(res.png_bytes)[0] <= _size(bare.png_bytes)[0] + 2
+
+
+# --- bounds (review 2026-11-13) ---------------------------------------------
+
+@pytest.mark.parametrize("contour, words", [
+    ({"x": list(range(600)), "y": list(range(600)),
+      "z": [[0.0] * 600] * 600}, "at most 250,000"),
+    ({"x": [0.0] * 50_001, "y": [0.0] * 50_001, "z": [0.0] * 50_001},
+     "at most 50,000"),
+    (dict(GRID, levels=[1 + k / 100 for k in range(31)]), "at most 30"),
+    (dict(GRID, z=[[None] * 4] * 3), "no values"),
+])
+def test_a_contour_too_large_is_refused_in_plain_words(contour, words):
+    with pytest.raises(ValueError, match=words):
+        render_data_plot(None, contour=dict(contour, label="Z (m)"),
+                         interactive=False)
+
+
+def test_a_rough_contour_is_drawn_without_numbers_and_says_so():
+    """Hundreds of small loops: numbering each took minutes."""
+    import random
+    import time
+    rng = random.Random(7)
+    xs = [float(k) for k in range(60)]
+    z = [[rng.random() for _ in xs] for _ in xs]
+    t0 = time.time()
+    res = render_data_plot(None, contour={"x": xs, "y": xs, "z": z,
+                                          "label": "Z (m)"},
+                           interactive=False)
+    assert time.time() - t0 < 20
+    assert any("too many to number" in w for w in res.warnings)
+
+
+def test_reference_chart_is_refused_with_panels_or_no_series(tmp_path,
+                                                             monkeypatch):
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+
+    def overlay(params):                # never reached
+        raise AssertionError("overlay called")
+    with pytest.raises(ValueError, match="not in panels"):
+        run_plot_data({"panels": [_chart("A", [0, 1, 2])],
+                       "reference_chart": "made_up", "title": "Made-up"},
+                      overlay=overlay)
+    with pytest.raises(ValueError, match="give those series"):
+        run_plot_data({"contour": GRID, "reference_chart": "made_up",
+                       "title": "Made-up"}, overlay=overlay)
 
 
 # --- the tool ---------------------------------------------------------------

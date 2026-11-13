@@ -435,12 +435,13 @@ def _note_lines(text, idx: int) -> List[str]:
     return lines
 
 
-def _note_text(text) -> str:
-    """A title's or footnote's text with ``<br>`` as a line break."""
+def _note_text(text, what: str = "footnote") -> str:
+    """A title's or footnote's text with ``<br>`` as a line break; ``what``
+    names it in the refusal when it is not text."""
     if text is None:
         return ""
     if not isinstance(text, str):
-        raise ValueError("footnote must be text")
+        raise ValueError(f"{what} must be text")
     return "\n".join(part.strip() for part in
                      re.split(r"<br\s*/?>|\n", text)).strip()
 
@@ -495,12 +496,14 @@ def _note_coord(value, idx: int, what: str, categories, log: bool,
     return v
 
 
-def _note_colour(value, idx: int, what: str, default: str) -> str:
+def _note_colour(value, idx: int, what: str, default: str,
+                 where: Optional[str] = None) -> str:
     from matplotlib.colors import is_color_like
     if value is None:
         return default
     if not isinstance(value, str) or not is_color_like(value):
-        raise ValueError(f"annotations[{idx}] {what} {value!r} is not a "
+        raise ValueError(f"{where or f'annotations[{idx}]'} {what} "
+                         f"{value!r} is not a "
                          "colour (a name such as 'gray', or '#1f4e79')")
     return value
 
@@ -610,6 +613,11 @@ CONTOUR_KEYS = ("x", "y", "z", "levels", "filled", "line_labels", "label")
 #: The colour scale of filled contours, in both renderings.
 _CONTOUR_CMAP = ("viridis", "Viridis")
 _CONTOUR_LINE = "#3a3a3a"       #: contour lines drawn alone
+_CONTOUR_MAX_GRID = 250_000     #: grid values drawn (500 x 500)
+_CONTOUR_MAX_POINTS = 50_000    #: scattered points drawn
+_CONTOUR_MAX_LEVELS = 30        #: levels, counted or chosen
+_CONTOUR_NUMBERS_PER_LEVEL = 3  #: numbers on one level, longest lines first
+_CONTOUR_MAX_STRETCHES = 300    #: separate lines past which none is numbered
 
 
 def _clean_contour(raw, warnings: list) -> Optional[dict]:
@@ -635,6 +643,17 @@ def _clean_contour(raw, warnings: list) -> Optional[dict]:
     for key in ("x", "y", "z"):
         if not isinstance(raw.get(key), (list, tuple)) or not raw[key]:
             raise ValueError(f"contour needs '{key}' as a list")
+    # bounded before anything is read: a figure a page wide shows no more
+    if isinstance(raw["z"][0], (list, tuple)):
+        if len(raw["x"]) * len(raw["y"]) > _CONTOUR_MAX_GRID:
+            raise ValueError(
+                f"contour grid of {len(raw['y'])} rows of {len(raw['x'])} "
+                f"values: at most {_CONTOUR_MAX_GRID:,} are drawn; take "
+                "every second (or third) grid line")
+    elif max(len(raw["x"]), len(raw["z"])) > _CONTOUR_MAX_POINTS:
+        raise ValueError(
+            f"contour from {max(len(raw['x']), len(raw['z'])):,} scattered "
+            f"points: at most {_CONTOUR_MAX_POINTS:,} are drawn; thin them")
     label = str(raw.get("label") or "").strip()
     if not label:
         raise ValueError("contour needs 'label': the quantity contoured "
@@ -697,6 +716,9 @@ def _clean_contour(raw, warnings: list) -> Optional[dict]:
         if len(set(zip(x, y))) < 3:
             raise ValueError("a contour from scattered points needs at "
                              "least 3 different points")
+    if not np.isfinite(z).any():
+        raise ValueError("contour z has no values: there is nothing to "
+                         "contour")
     lo, hi = float(np.nanmin(z)), float(np.nanmax(z))
     if not (math.isfinite(lo) and hi > lo):
         raise ValueError("contour z holds one value only: there is nothing "
@@ -707,11 +729,16 @@ def _clean_contour(raw, warnings: list) -> Optional[dict]:
         levels = sorted(set(numbers(levels, "levels")))
         if not levels or not all(math.isfinite(v) for v in levels):
             raise ValueError("contour levels must be finite numbers")
+        if len(levels) > _CONTOUR_MAX_LEVELS:
+            raise ValueError(f"contour levels: {len(levels)} given, at most "
+                             f"{_CONTOUR_MAX_LEVELS} are drawn")
     else:
         if levels is None:
             levels = 7
-        if not _is_number(levels) or not 2 <= float(levels) <= 30:
-            raise ValueError("contour levels is how many (2 to 30) or the "
+        if (not _is_number(levels)
+                or not 2 <= float(levels) <= _CONTOUR_MAX_LEVELS):
+            raise ValueError("contour levels is how many (2 to "
+                             f"{_CONTOUR_MAX_LEVELS}) or the "
                              "list of levels to draw")
         from matplotlib.ticker import MaxNLocator
         levels = [float(v) for v in MaxNLocator(
@@ -749,9 +776,9 @@ def _draw_contour(fig, ax, c) -> dict:
         from matplotlib.tri import Triangulation
         try:
             tri = Triangulation(c["x"], c["y"])
-        except Exception as exc:                        # noqa: BLE001
+        except Exception:                               # noqa: BLE001
             raise ValueError("contour: the points could not be joined into "
-                             f"triangles ({exc}); they may lie on one line")
+                             "triangles; they may lie on one line") from None
         fill, line, args = ax.tricontourf, ax.tricontour, (tri, c["z"])
     bar = lines = None
     if c["filled"]:
@@ -776,7 +803,9 @@ def _contour_numbers(fig, ax, contour_art, warnings: list,
                      drawn=()) -> list:
     """Number the contour lines, once the layout is settled (a number is
     turned along its line as the line is drawn then): one at the middle of
-    each stretch of line long enough to carry it, with a thin ring of the
+    each stretch of line long enough to carry it (the three longest of a
+    level; none when the lines break into more than 300 pieces, with a
+    warning), with a thin ring of the
     background round it so whatever crosses it stops short; moved along
     its line off a point drawn there (``drawn``: ``[(series, xs)]``). A
     number the plot's edge would cut is taken off; a level left with no
@@ -798,18 +827,32 @@ def _contour_numbers(fig, ax, contour_art, warnings: list,
         return min((float(np.hypot(*(at - q))) for q in points),
                    default=room)
 
+    by_level = [(level, [p for p in path.to_polygons(closed_only=False)
+                         if len(p) >= 2])
+                for level, path in zip(lines.levels, lines.get_paths())]
+    stretches = sum(len(polys) for _level, polys in by_level)
+    if stretches > _CONTOUR_MAX_STRETCHES:
+        # a rough surface breaks into hundreds of small loops; numbering
+        # each would take minutes and bury the drawing
+        warnings.append(
+            f"contour: the lines break into {stretches} separate pieces, "
+            "too many to number; draw them filled (a colour scale) or "
+            "from a smoother or thinner grid")
+        return []
     spots, short = [], set()
-    for level, path in zip(lines.levels, lines.get_paths()):
+    for level, polys in by_level:
         found = seen = False
-        for poly in path.to_polygons(closed_only=False):
-            if len(poly) < 2:
-                continue
+        measured = []
+        for poly in polys:
             px = ax.transData.transform(poly)
             seg = np.hypot(*np.diff(px, axis=0).T)
             along = np.concatenate([[0.0], np.cumsum(seg)])
             seen = seen or along[-1] > 0.15 * fig.dpi   # a line one can see
-            if along[-1] < room:
-                continue
+            if along[-1] >= room:
+                measured.append((poly, seg, along))
+        # the longest stretches of the level carry its numbers
+        measured.sort(key=lambda m: -m[2][-1])
+        for poly, seg, along in measured[:_CONTOUR_NUMBERS_PER_LEVEL]:
             best = None
             for part in (0.5, 0.4, 0.6, 0.3, 0.7):     # the middle first
                 at = part * along[-1]
@@ -880,8 +923,10 @@ def _plotly_contour(go, c):
     if c["kind"] != "grid":
         return None, "contours from scattered points are in the PNG only"
     lv = c["levels"]
+    if len(lv) < 2:
+        return None, "contours at a single level are in the PNG only"
     steps = [b - a for a, b in zip(lv, lv[1:])]
-    if len(lv) < 2 or max(steps) - min(steps) > 1e-9 * max(abs(lv[-1]),
+    if max(steps) - min(steps) > 1e-9 * max(abs(lv[-1]),
                                                            abs(lv[0]), 1.0):
         return None, ("contours at unevenly spaced levels are in the PNG "
                       "only")
@@ -2255,10 +2300,18 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                if plan_view else [ax.get_tightbbox(renderer).y0])
         low = min(low + ([ax.get_legend().get_window_extent(renderer).y0]
                          if ax.get_legend() is not None else []))
-        fig.text(ax.get_position().x0,
-                 (low - 0.10 * fig.dpi) / (fig.get_figheight() * fig.dpi),
-                 footnote, fontsize=7.5, color=_TEXT_COLOR, ha="left",
-                 va="top")
+        x0 = ax.get_position().x0
+        foot = fig.text(x0, (low - 0.10 * fig.dpi)
+                        / (fig.get_figheight() * fig.dpi),
+                        footnote, fontsize=7.5, color=_TEXT_COLOR,
+                        ha="left", va="top")
+        # broken to the figure's width, as a panel figure's footnote is: a
+        # line run past the edge widens the saved PNG, and every letter
+        # then prints smaller at the report's width
+        from aec_agent_core.charts.panel_plot import _fit_text
+        _fit_text(foot, footnote,
+                  (fig.get_figwidth() * (1.0 - x0) - 0.10) * fig.dpi, 7.5,
+                  fig.dpi, renderer)
     contour_texts = (_contour_numbers(fig, ax, contour_art, warnings, drawn)
                      if contour_art else [])
     for t in contour_texts:
