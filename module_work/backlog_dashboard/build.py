@@ -126,10 +126,44 @@ def archive_summary(path=ARCHIVE) -> dict:
                 r"^- \*\*([A-Z]{2,3}-\d{2,3})\b", text, re.M)))}
 
 
+#: Card fields the page walks as lists (template.html maps over them). A
+#: string there stops the card from opening, with nothing shown: OWN-141's
+#: card, 2026-11-12, had 'unblocks' as one sentence.
+CARD_LISTS = ("options", "parts", "steps", "unblocks", "sources")
+
+
+def card_shape_errors(card) -> list:
+    """What is wrong with one card's shape, as the page reads it."""
+    if not isinstance(card, dict):
+        return ["the card must be an object"]
+    out = []
+    for name in CARD_LISTS:
+        value = card.get(name)
+        if value is not None and not isinstance(value, list):
+            out.append(f"'{name}' must be a list, not "
+                       f"{type(value).__name__}")
+    parts = card.get("parts")
+    groups = [card] + [g for g in (parts if isinstance(parts, list) else [])]
+    for group in groups:
+        if not isinstance(group, dict):
+            out.append("each part must be an object")
+            continue
+        options = group.get("options")
+        for opt in options if isinstance(options, list) else []:
+            if not isinstance(opt, dict) or not opt.get("label"):
+                out.append("each option needs a 'label'")
+                break
+    return out
+
+
 def load_context() -> dict:
     ctx = {}
     for p in sorted((HERE / "context").glob("*.json")):
         part = json.loads(p.read_text(encoding="utf-8"))
+        for card_id, card in part.items():
+            bad = card_shape_errors(card)
+            if bad:
+                raise SystemExit(f"{p.name}: {card_id}: {'; '.join(bad)}")
         overlap = set(ctx) & set(part)
         if overlap:
             raise SystemExit(f"{p.name}: IDs already carded elsewhere: {sorted(overlap)}")
