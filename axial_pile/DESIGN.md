@@ -254,4 +254,8 @@ above); it is an option, not the default.
 (`skipped`, the tool's `skipped_depths` and `warning`), as drilled_shaft's
 does since GM-203; with every length refused the call is refused. Before,
 `except Exception: pass` dropped them. Its default deepest length is the
-profile's depth below the pile head.
+profile's depth below the pile head. A length below the profile is named
+with a short reason ("below the profile, which ends at 10 m"; review C7).
+The calc package's "capacity against pile length" table names refused
+lengths in its note, as drilled_shaft's does; with every length refused the
+table is left out and a warning says why (review C2).

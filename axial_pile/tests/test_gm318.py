@@ -101,6 +101,36 @@ def test_extended_curve_marks_only_the_lengths_past_the_profile():
     assert noted == [False, False, True]
 
 
+def test_package_table_names_refused_lengths(monkeypatch):
+    """Review C2: the package's capacity against pile length table names a
+    refused length in its note, as the drilled shaft's does; with every
+    length refused the table is left out with a warning, not an error."""
+    from axial_pile.calc_steps import get_tables
+    a = AxialPileAnalysis(pile=_pile(), soil=_soil(), pile_length=10.0)
+    r = a.compute()
+    real = AxialPileAnalysis.capacity_vs_depth
+
+    def one_refused(self, *args, skipped=None, **kw):
+        rows = real(self, *args, skipped=skipped, **kw)
+        skipped.append({"depth_m": 5.0, "reason": "a made-up refusal"})
+        return rows[:-1]
+
+    monkeypatch.setattr(AxialPileAnalysis, "capacity_vs_depth", one_refused)
+    t = next(t for t in get_tables(r, a) if t.name == "capacity_vs_length")
+    assert "refused 1 of the 20" in t.note
+    assert "5 m (a made-up refusal)" in t.note
+
+    def all_refused(self, *args, **kw):
+        raise ValueError("The analysis refused 20 of the 20 trial pile "
+                         "lengths")
+
+    monkeypatch.setattr(AxialPileAnalysis, "capacity_vs_depth", all_refused)
+    with pytest.warns(UserWarning, match="table is left out: The analysis "
+                                         "refused 20 of the 20"):
+        tables = get_tables(r, a)
+    assert not any(t.name == "capacity_vs_length" for t in tables)
+
+
 _PARAMS = {
     "pile_type": "pipe_closed", "diameter": 0.3239, "wall_thickness": 0.00953,
     "layers": [

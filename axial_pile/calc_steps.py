@@ -11,6 +11,7 @@ References:
     Burland, J.B. (1973) — Beta (effective stress) method
 """
 
+import warnings
 from typing import List
 
 from calc_package.data_model import (
@@ -476,10 +477,22 @@ def get_tables(result, analysis) -> list:
     top = max(analysis.pile_length, profile_depth)
     low = min(3.0, analysis.pile_length)
     if top > low:
-        rows, warned = [], False
-        for r in analysis.capacity_vs_depth(
+        from axial_pile.capacity import JudgmentNeeded, skipped_depths_note
+        rows, warned, skipped = [], False, []
+        try:
+            curve = analysis.capacity_vs_depth(
                 depth_min=low, depth_max=top,
-                n_points=CAPACITY_TABLE_POINTS):
+                n_points=CAPACITY_TABLE_POINTS, skipped=skipped)
+        except JudgmentNeeded:
+            raise
+        except ValueError as exc:
+            # every length refused (GM-318 review C2): the table is left
+            # out and the package says why, under the warnings the
+            # calculation raised
+            warnings.warn("The capacity against pile length table is left "
+                          f"out: {exc}")
+            curve = []
+        for r in curve:
             rows.append([r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
                          r["Q_ultimate_kN"]])
             warned = warned or bool(r.get("warnings"))
@@ -490,6 +503,10 @@ def get_tables(result, analysis) -> list:
             if warned:
                 note += ("; some lengths carry the toe warnings the "
                          "design length's result lists")
+            if skipped:
+                # named, as the drilled shaft table does (review C2)
+                note += ". " + skipped_depths_note(skipped,
+                                                   CAPACITY_TABLE_POINTS)
             tables.append(CalcTable(
                 title="Ultimate capacity against pile length",
                 columns=[("Pile length L", "m", ".2f"),
