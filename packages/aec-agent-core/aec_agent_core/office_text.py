@@ -206,11 +206,6 @@ def _header_index(grid) -> Tuple[int, bool]:
     return 0, False
 
 
-#: Columns a merged range is filled across at most (a range merged over a
-#: whole row would otherwise pad to Excel's last column).
-MERGE_MAX_COLUMNS = 1000
-
-
 def _merged_ranges(path) -> Dict[str, list]:
     """``{sheet name: [(row1, col1, row2, col2), ...]}`` of each sheet's
     merged ranges (1-based), read from the workbook's XML because openpyxl's
@@ -279,7 +274,7 @@ def _xlsx(path):
             f_rows = wf.iter_rows(values_only=True) if wf is not None else None
             grid, cut = [], False
             ranges = merged.get(ws.title, [])
-            anchors = {}          # (row, col) of a merged range's corner -> value
+            stored = {}           # row number -> its values as stored
             for r_no, row in enumerate(ws.iter_rows(values_only=True), 1):
                 f_row = next(f_rows, None) if f_rows is not None else None
                 vals = []
@@ -289,31 +284,44 @@ def _xlsx(path):
                             and f_row[j].startswith("="):
                         v = f_row[j]
                     vals.append(v)
-                # A merged cell holds its value in the corner only; every
-                # row and column of the range gets it (DR-41).
-                for r1, c1, r2, c2 in ranges:
-                    if not r1 <= r_no <= r2:
-                        continue
-                    if r_no == r1:
-                        anchors[(r1, c1)] = (vals[c1 - 1]
-                                             if c1 - 1 < len(vals) else None)
-                    top = anchors.get((r1, c1))
-                    if top is None:
-                        continue
-                    last = min(c2, MERGE_MAX_COLUMNS)
-                    if len(vals) < last:
-                        vals += [None] * (last - len(vals))
-                    for c in range(c1, last + 1):
-                        if vals[c - 1] is None:
-                            vals[c - 1] = top
                 cells = [_cell_text(v) for v in vals]
                 words = [_is_words(v) for v in vals]
                 grid.append((r_no, cells, words))
+                if ranges:
+                    stored[r_no] = vals
                 budget -= max(1, len(cells))
                 if budget <= 0:
                     cut = True
                     break
             grid = [(n, c, w) for n, c, w in grid if any(c)]
+            # A merged cell holds its value in the corner only: in the table
+            # every row and column of the range gets it (DR-41). The header
+            # and the rows above it are still found on the cells as stored
+            # (a title merged across the top stays a line above the table),
+            # and a range is filled no wider than the widest row's own cells
+            # (a range merged over a whole row would pad to Excel's last
+            # column).
+            filled = {}
+            if ranges:
+                widest = max((max((k + 1 for k, v in enumerate(c) if v),
+                                  default=0) for _n, c, _w in grid),
+                             default=0)
+                for n, c, _w in grid:
+                    vals = list(stored.get(n, []))
+                    for r1, c1, r2, c2 in ranges:
+                        if not r1 <= n <= r2:
+                            continue
+                        top_row = stored.get(r1) or []
+                        top = top_row[c1 - 1] if c1 - 1 < len(top_row) \
+                            else None
+                        if top is None:
+                            continue
+                        last = min(c2, widest)
+                        vals += [None] * (last - len(vals))
+                        for col in range(c1, last + 1):
+                            if vals[col - 1] is None:
+                                vals[col - 1] = top
+                    filled[n] = [_cell_text(v) for v in vals]
             hidden = getattr(ws, "sheet_state", "visible") != "visible"
             title = f"## Sheet: {ws.title}" + (" (hidden)" if hidden else "")
             if not grid:
@@ -325,7 +333,8 @@ def _xlsx(path):
             # above it is kept as text above the table.
             head_i, found = _header_index(grid)
             above, table = grid[:head_i], grid[head_i:]
-            used = [k for _n, c, _w in table for k, v in enumerate(c) if v]
+            table = [(n, filled.get(n, c), w) for n, c, w in table]
+            used =[k for _n, c, _w in table for k, v in enumerate(c) if v]
             c0, c1 = min(used), max(used) + 1
             width = c1 - c0
             rows = [(n, (c + [""] * c1)[c0:c1]) for n, c, _w in table]
@@ -346,8 +355,8 @@ def _xlsx(path):
                 more = (f" and {len(ranges) - 20} more"
                         if len(ranges) > 20 else "")
                 lines += [f"Merged ranges in this sheet: {shown}{more}; "
-                          f"every cell of a merged range shows the merged "
-                          f"cell's value.", ""]
+                          f"in the table every cell of a merged range shows "
+                          f"the merged cell's value.", ""]
             lines += [f"Excel rows {head_no}-{rows[-1][0]}, "
                       f"columns {get_column_letter(c0 + 1)}-"
                       f"{get_column_letter(c1)}; row {head_no} is the header "

@@ -800,16 +800,50 @@ class _DocxReader:
         self._comment_text = {}            # comment id -> text it is on
         self.textboxes = []                # text boxes' text, in order
         self.unread = {}                   # kind -> count, there, not read
+        self._comment_seen = set()         # comment ranges met in the text
+        # The part being read (a header, footer, comments or notes part):
+        # its pictures' and links' r:ids are its own, not the body's.
+        self._part = None
+
+    def _rels_part(self):
+        """The part whose relationships the r:ids being read name."""
+        return self._part if self._part is not None else self.doc.part
+
+    def _range_mark(self, el):
+        """A comment range opening or closing (inside a paragraph, or
+        between paragraphs, tables, rows and cells)."""
+        cid = el.get(_qn("w:id"))
+        if el.tag == _qn("w:commentRangeStart"):
+            self._open_comments.add(cid)
+            self._comment_seen.add(cid)
+        else:
+            self._open_comments.discard(cid)
+
+    def _with_ranges(self, el, tag):
+        """``el``'s children with ``tag``, looking through content controls
+        and noting the comment ranges that open and close between them."""
+        marks = (_qn("w:commentRangeStart"), _qn("w:commentRangeEnd"))
+        wrap = (_qn("w:sdt"), _qn("w:sdtContent"), _qn("w:customXml"))
+        for child in el.iterchildren():
+            if child.tag == tag:
+                yield child
+            elif child.tag in marks:
+                self._range_mark(child)
+            elif child.tag in wrap:
+                yield from self._with_ranges(child, tag)
 
     # -- containers ------------------------------------------------------
     def read_container(self, el):
         p_tag, tbl_tag = _qn("w:p"), _qn("w:tbl")
         wrap = (_qn("w:sdt"), _qn("w:sdtContent"), _qn("w:customXml"))
+        marks = (_qn("w:commentRangeStart"), _qn("w:commentRangeEnd"))
         for child in el.iterchildren():
             if child.tag == p_tag:
                 self.paragraph(child)
             elif child.tag == tbl_tag:
                 self.table(child)
+            elif child.tag in marks:
+                self._range_mark(child)
             elif child.tag in wrap:
                 self.read_container(child)
 
@@ -832,7 +866,7 @@ class _DocxReader:
         if not rid:
             return None
         try:
-            rel = self.doc.part.rels[rid]
+            rel = self._rels_part().rels[rid]
             return rel.target_ref if rel.is_external else None
         except Exception:  # noqa: BLE001
             return None
@@ -850,7 +884,7 @@ class _DocxReader:
         name = None
         if rid and self.image_dir:
             try:
-                part = self.doc.part.related_parts[rid]
+                part = self._rels_part().related_parts[rid]
                 ext = os.path.splitext(str(part.partname))[1] or ".png"
                 fname = f"{self.prefix}fig{n}{ext}"
                 os.makedirs(self.image_dir, exist_ok=True)
@@ -890,9 +924,16 @@ class _DocxReader:
             if uri.endswith("/diagram"):
                 self._not_read("SmartArt diagram")
                 return
-        if el.find(".//" + _qn("w:object")) is not None \
-                or el.tag == _qn("w:object"):
-            self._not_read("embedded object")
+        obj = el if el.tag == _qn("w:object") \
+            else el.find(".//" + _qn("w:object"))
+        if obj is not None:
+            # An OLE object (an Equation 3.0 or MathType equation, an
+            # embedded workbook or drawing): named by its program, not read.
+            prog = next((o.get("ProgID") for o in obj.iter(
+                "{urn:schemas-microsoft-com:office:office}OLEObject")
+                if o.get("ProgID")), "")
+            self._not_read(f"embedded object ({prog})" if prog
+                           else "embedded object")
             return
         segs.append(self._image(el))
 
@@ -923,7 +964,9 @@ class _DocxReader:
                 _qn("w:sdtContent"))
         t_tag, tab_tag, br_tag, cr_tag = (_qn("w:t"), _qn("w:tab"),
                                           _qn("w:br"), _qn("w:cr"))
-        pics = (_qn("w:drawing"), _qn("w:pict"))
+        # w:object (an embedded OLE object) is a run child of its own, beside
+        # w:drawing and w:pict: counted as not read (DR-41 review).
+        pics = (_qn("w:drawing"), _qn("w:pict"), _qn("w:object"))
         hyphen = _qn("w:noBreakHyphen")
         mc = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
         alt_tag = mc + "AlternateContent"
@@ -969,10 +1012,8 @@ class _DocxReader:
 
         def walk(el, link):
             for ch in el.iterchildren():
-                if ch.tag == cr_start:
-                    self._open_comments.add(ch.get(_qn("w:id")))
-                elif ch.tag == cr_end:
-                    self._open_comments.discard(ch.get(_qn("w:id")))
+                if ch.tag in (cr_start, cr_end):
+                    self._range_mark(ch)
                 elif ch.tag == r_tag:
                     run(ch, link)
                 elif ch.tag == link_tag:
@@ -993,15 +1034,16 @@ class _DocxReader:
 
     # -- what is in the file besides the body --------------------------------
     def _part_roots(self, tail):
-        """The parsed XML of each related part whose type ends ``tail``."""
+        """``(parsed XML, part)`` of each related part whose type ends
+        ``tail``, and the error names of the parts that would not parse."""
         from lxml import etree
         roots, failed = [], []
         for rel in self.doc.part.rels.values():
             if rel.is_external or not rel.reltype.endswith(tail):
                 continue
             try:
-                blob = rel.target_part.blob
-                roots.append(etree.fromstring(blob))
+                part = rel.target_part
+                roots.append((etree.fromstring(part.blob), part))
             except Exception as exc:  # noqa: BLE001
                 failed.append(type(exc).__name__)
         return roots, failed
@@ -1018,10 +1060,63 @@ class _DocxReader:
                 self._add("p", "\n".join(lines))
                 added.append(title)
 
-        # Comments: author, date, the text each is on, its words.
+        # Notes, headers and footers are read first (a comment can sit on
+        # their text), each with its own part's relationships, so a picture
+        # or link in it is its own and not the body's (DR-41 review).
+        notes = []
+        for tail, title in (("/footnotes", "Footnotes in the Word file"),
+                            ("/endnotes", "Endnotes in the Word file")):
+            lines = []
+            roots, failed = self._part_roots(tail)
+            kind = "footnote" if tail == "/footnotes" else "endnote"
+            for root, part in roots:
+                tag = _qn("w:footnote" if kind == "footnote"
+                          else "w:endnote")
+                self._part = part
+                try:
+                    for n in root.iter(tag):
+                        if n.get(_qn("w:type")) in ("separator",
+                                                    "continuationSeparator",
+                                                    "continuationNotice"):
+                            continue
+                        text = self._paragraphs_text(n)
+                        if text:
+                            lines.append(f"- {kind} {n.get(_qn('w:id'))}: "
+                                         f"{text}")
+                finally:
+                    self._part = None
+            if failed:
+                self._not_read(f"{kind}s part (unparsable)")
+            notes.append((title, lines))
+
+        # Headers and footers: each distinct text once.
+        heads, seen = [], set()
+        try:
+            for sec in self.doc.sections:
+                for label, hf in (
+                        ("header", sec.header), ("first-page header",
+                                                 sec.first_page_header),
+                        ("even-page header", sec.even_page_header),
+                        ("footer", sec.footer), ("first-page footer",
+                                                 sec.first_page_footer),
+                        ("even-page footer", sec.even_page_footer)):
+                    if hf.is_linked_to_previous:
+                        continue
+                    self._part = hf.part
+                    try:
+                        text = self._paragraphs_text(hf._element)
+                    finally:
+                        self._part = None
+                    if text and (label, text) not in seen:
+                        seen.add((label, text))
+                        heads.append(f"- {label}: {text}")
+        except Exception:  # noqa: BLE001
+            self._not_read("headers and footers (unparsable)")
+
+        # Comments: author, date, what each is attached to, its words.
         lines = []
         roots, failed = self._part_roots("/comments")
-        for root in roots:
+        for root, part in roots:
             for c in root.iter(_qn("w:comment")):
                 cid = c.get(_qn("w:id"))
                 who = c.get(_qn("w:author")) or "unknown author"
@@ -1030,55 +1125,26 @@ class _DocxReader:
                     self._comment_text.get(cid, [])).split())
                 if len(on) > 120:
                     on = on[:117] + "..."
-                text = self._paragraphs_text(c) or "(empty)"
+                self._part = part
+                try:
+                    text = self._paragraphs_text(c) or "(empty)"
+                finally:
+                    self._part = None
                 head = who + (f", {when}" if when else "")
-                where = f' on "{on}"' if on else " (on no text)"
+                if on:
+                    where = f' on "{on}"'
+                elif cid in self._comment_seen:
+                    where = (" (attached to a place with no text, such as "
+                             "a picture)")
+                else:
+                    where = " (the text it is attached to was not found)"
                 lines.append(f"- {head}{where}: {text}")
         if failed:
             self._not_read("comments part (unparsable)")
         section("Comments in the Word file", lines)
-
-        for tail, title in (("/footnotes", "Footnotes in the Word file"),
-                            ("/endnotes", "Endnotes in the Word file")):
-            lines = []
-            roots, failed = self._part_roots(tail)
-            kind = "footnote" if tail == "/footnotes" else "endnote"
-            for root in roots:
-                tag = _qn("w:footnote" if kind == "footnote"
-                          else "w:endnote")
-                for n in root.iter(tag):
-                    if n.get(_qn("w:type")) in ("separator",
-                                                "continuationSeparator",
-                                                "continuationNotice"):
-                        continue
-                    text = self._paragraphs_text(n)
-                    if text:
-                        lines.append(f"- {kind} {n.get(_qn('w:id'))}: "
-                                     f"{text}")
-            if failed:
-                self._not_read(f"{kind}s part (unparsable)")
-            section(title, lines)
-
-        # Headers and footers: each distinct text once.
-        lines, seen = [], set()
-        try:
-            for sec in self.doc.sections:
-                for label, part in (
-                        ("header", sec.header), ("first-page header",
-                                                 sec.first_page_header),
-                        ("even-page header", sec.even_page_header),
-                        ("footer", sec.footer), ("first-page footer",
-                                                 sec.first_page_footer),
-                        ("even-page footer", sec.even_page_footer)):
-                    if part.is_linked_to_previous:
-                        continue
-                    text = self._paragraphs_text(part._element)
-                    if text and (label, text) not in seen:
-                        seen.add((label, text))
-                        lines.append(f"- {label}: {text}")
-        except Exception:  # noqa: BLE001
-            self._not_read("headers and footers (unparsable)")
-        section("Headers and footers in the Word file", lines)
+        for title, note_lines in notes:
+            section(title, note_lines)
+        section("Headers and footers in the Word file", heads)
 
         section("Text boxes in the Word file",
                 [f"- {t}" for t in self.textboxes])
@@ -1233,9 +1299,9 @@ class _DocxReader:
     def table(self, tbl_el):
         self._pending_caption_for = None
         rows = []
-        for tr in _children(tbl_el, _qn("w:tr")):
+        for tr in self._with_ranges(tbl_el, _qn("w:tr")):
             cells = []
-            for tc in _children(tr, _qn("w:tc")):
+            for tc in self._with_ranges(tr, _qn("w:tc")):
                 span = 1
                 tcpr = tc.tcPr if hasattr(tc, "tcPr") else None
                 try:
@@ -1245,7 +1311,7 @@ class _DocxReader:
                     span = 1
                 header = not rows
                 parts = [self.inline(p, drop_bold=header)
-                         for p in _children(tc, _qn("w:p"))]
+                         for p in self._with_ranges(tc, _qn("w:p"))]
                 cell = "<br>".join(p for p in parts if p)
                 cell = cell.replace("\n", "<br>").replace("|", r"\|")
                 cells.append(cell)
