@@ -109,13 +109,30 @@ finding it wrapped.
 - `funhouse_agent/tests/test_defaults_used.py` leaves `warnings` out of its
   comparisons (`_VOLATILE`), so a warning does not make an input look
   moved.
-- The calc packages' METHOD_INFO says their `warnings` are "also printed in
-  the package": a Python warning raised while a package runs is now added
-  to that list but is not printed in the PDF. Noted, not fixed (the
-  package's own list is still printed; no probe raises one).
+- The calc packages: a Python warning raised while a package runs is added
+  to the result's `warnings` and, since review fix B4 (below), printed in
+  the package too.
 - `funhouse_agent/deep/prompt.py` and the core's prompts say nothing about
   warnings, so no prompt text changed (page fingerprints unchanged).
 - The webapp reads no tool result's `warnings`.
+
+### Review fix B4: a package prints the warnings its calculation raised
+
+Two package descriptions (slope_report_package, downdrag_package) said
+their `warnings` were "also printed in the package"; the Python warnings
+GM-316 adds to that list were not. Now the package adapter
+(`_build_response`) reads the warnings recorded so far in the call
+(`call_warnings.so_far()`, new), less the module's own `warnings` its
+sections already print, cut at 20 like the result, and
+`generate_calc_package(raised_warnings=...)` prints them as "Warnings
+Raised by the Calculation", after Method Choices and before the steps, in
+every package and format (HTML, LaTeX, PDF: one section list). The
+calculation packages take the texts as an argument and import nothing from
+the core. A warning raised while the package itself is being drawn (a
+figure, after the list is read) is in the result only; both descriptions
+say so. Test: the axial-pile package with the pile 40 m in a 30 m profile
+prints the "exceeds soil profile" warnings in its HTML; a core test for
+`so_far`.
 
 ### Probes that now carry warnings
 

@@ -420,6 +420,15 @@ def collecting():
                 bucket.parent.add(text)
 
 
+def so_far() -> List[str]:
+    """The warnings recorded so far in the call this code runs in (the
+    innermost :func:`collecting` block, with what the blocks inside it that
+    have ended passed on), in order; empty outside a call. A calc package
+    prints them before it is written (GM-316 review B4)."""
+    bucket = _BUCKET.get()
+    return list(bucket.texts) if bucket is not None else []
+
+
 def capped(texts: List[str]) -> List[str]:
     """``texts`` cut to :data:`MAX_WARNINGS`, the rest counted."""
     if len(texts) <= MAX_WARNINGS:

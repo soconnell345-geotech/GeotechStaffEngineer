@@ -361,6 +361,19 @@ _TABLES_FILE_NOTE = (
     "the user.")
 
 
+def _raised_warnings(result) -> list:
+    """The warnings the analysis code raised so far in this call (GM-316:
+    the same texts the result's ``warnings`` gets), less the module's own
+    ``warnings`` its sections print, cut as the result cuts them: printed
+    in the package (GM-316 review B4)."""
+    from aec_agent_core.call_warnings import capped, so_far
+    own = (result.get("warnings") if isinstance(result, dict)
+           else getattr(result, "warnings", None))
+    own = ({str(w).strip() for w in own}
+           if isinstance(own, (list, tuple)) else set())
+    return capped([t for t in so_far() if t.strip() not in own])
+
+
 def _build_response(module: str, result, analysis, params: dict,
                     analysis_type: str, extra: dict = None,
                     run: "_ToolRun" = None, package: str = None) -> dict:
@@ -440,6 +453,7 @@ def _build_response(module: str, result, analysis, params: dict,
         table_files=table_names,
         given_inputs=given,
         assumed_inputs=assumed,
+        raised_warnings=_raised_warnings(result),
         **meta,
     )
     tables_out = _save_tables(calc_tables, table_names, table_dir)
@@ -3485,7 +3499,7 @@ METHOD_INFO = {
             "f_interslice": {"type": "str", "required": False, "default": "half_sine", "description": "Interslice force function for the rigorous re-analysis of the critical surface."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of (also printed in the package). Report every one."},
+        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "settlement_package": {
         "category": "Calculation Package",
@@ -3516,7 +3530,7 @@ METHOD_INFO = {
                     "pile_weight_basis": "One sentence saying whether the pile's own weight is in the load curve, naming the references; also printed in the package.",
                     "below_toe_basis": "How deep the settlement below the toe was counted and why it stopped (the toe load per influence_depth_criterion, the fill / drawdown to the bottom of the soil profile); also printed in the package.",
                     "neutral_plane_comparison": "Every method on the same inputs, each with its source (also tabulated in the package).",
-                    "warnings": "What the engineer must know about the result; also printed in the package. Report every one.",
+                    "warnings": "What the engineer must know about the result, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one.",
                     "dragload_kN": "Dragload (kN).",
                     "max_pile_load_kN": "Maximum pile load at the neutral plane (kN).",
                     "pile_settlement_mm": "Pile settlement (mm)."},

@@ -120,6 +120,24 @@ def test_a_warning_raised_in_a_handler_is_in_the_result():
     assert list(r)[0] == "warnings"      # first: kept by a cut for size
 
 
+def test_so_far_gives_the_calls_warnings_while_it_runs():
+    """Review B4: a calc package reads the warnings raised so far in its
+    call, to print them before it is written; outside a call, none."""
+    g = _code(f"{PKG}.package", """
+def package(params):
+    warnings.warn("pile below the profile")
+    return {"printed": SO_FAR()}
+""")
+    g["SO_FAR"] = CW.so_far
+    m = types.SimpleNamespace(
+        METHOD_REGISTRY={"package": g["package"]},
+        METHOD_INFO={"package": {"parameters": {}, "open_parameters": True}})
+    r = run_method(m, "fake", "package", {})
+    assert r["printed"] == ["pile below the profile"]
+    assert r["warnings"] == ["pile below the profile"]
+    assert CW.so_far() == []
+
+
 def test_two_calls_in_a_row_both_carry_it():
     # pytest's own default action shows a warning once per location; the
     # second call must still get it.

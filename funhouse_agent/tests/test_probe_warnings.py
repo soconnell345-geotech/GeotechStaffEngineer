@@ -164,3 +164,22 @@ def test_a_module_warning_reaches_the_agent_on_every_call(
     for r in (first, again):
         assert any(text in w for w in r.get("warnings") or []), r.get(
             "warnings")
+
+def test_a_warning_raised_by_a_packages_calculation_is_printed_in_it(
+        tmp_path, monkeypatch):
+    """GM-316 review B4: a calc package's result lists the warnings the
+    code raised, and the package prints them too ("Warnings Raised by the
+    Calculation", before the steps), so what the agent reports is in the
+    document the engineer reads."""
+    monkeypatch.chdir(tmp_path)
+    agent, method, params, text = RAISING[0]          # pile below profile
+    out = tmp_path / "package.html"
+    result = D.call_agent("calc_package", "axial_pile_package", {
+        **copy.deepcopy(params), "format": "html", "output_path": str(out)})
+    assert result["status"] == "success", result
+    raised = [w for w in result["warnings"] if text in w]
+    assert raised, result["warnings"]
+    page = out.read_text("utf-8")
+    section = page.index("Warnings Raised by the Calculation")
+    for w in raised:
+        assert w in page[section:]
