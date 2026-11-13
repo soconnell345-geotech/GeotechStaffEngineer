@@ -1417,10 +1417,29 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                                prefix=_log_prefix(model_first),
                                descriptions=_log_descriptions(model_first)))
     qa.extend(_inside_dividers(own, model_first))           # RI-197
-    texts = page_texts(doc)
-    qa.extend(completeness_qa(texts, labels))               # RI-184
-    qa.extend(named_not_held_qa(texts, labels, record,      # RI-185
-                                sorted(bound)))
+    # The completeness checks read text only; one that fails is a note, not
+    # the end of a paid ingest.
+    texts: Optional[List[str]] = None
+    try:
+        texts = page_texts(doc)
+        qa.extend(completeness_qa(texts, labels))           # RI-184
+    except Exception as exc:              # one check, not the report
+        qa.append(QAEntry(
+            kind="note", where="document.completeness",
+            detail=f"the completeness check did not run "
+                   f"({type(exc).__name__}: {exc}), so this copy's page "
+                   f"numbering and citations were not checked"))
+    if texts is not None:
+        try:
+            qa.extend(named_not_held_qa(texts, labels, record,  # RI-185
+                                        sorted(bound), doc=doc))
+        except Exception as exc:          # one check, not the report
+            qa.append(QAEntry(
+                kind="note", where="document.completeness",
+                detail=f"the completeness check of what the text names "
+                       f"did not run ({type(exc).__name__}: {exc}), so "
+                       f"this copy's logs, laboratory results and listed "
+                       f"appendices were not checked"))
     # A volume or data report of THIS investigation bound in (RI-94) holds
     # this report's own holes, read into its own record below: the counts
     # wait for it. Without one, nothing moves.

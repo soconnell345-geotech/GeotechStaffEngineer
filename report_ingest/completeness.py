@@ -40,18 +40,21 @@ caution (a whole report flagged is worse than a partial copy missed):
    B-8", "TP-3") that no log in the record carries
    (:func:`report_ingest.log_holes.names_match`) and no log page or bound
    document prints. A name is a hole's only in a series the record's own
-   holes have or an exploration word introduces. One the text says was not
-   drilled, was abandoned, was by others or is an earlier investigation's
-   is not missing.
+   holes have; with no hole in the record, in a series an exploration word
+   introduces, and then only where the text says the logs are in this
+   document. One the text says was not drilled, was abandoned, was by
+   others, is an earlier investigation's or is still to be drilled is not
+   missing.
 4. LABORATORY RESULTS NAMED, WITH NONE HELD (:func:`lab_said_not_held`).
    The record holds no laboratory test and the file no laboratory page,
    and the text says twice over that the results are in an appendix or
-   attached to THIS document.
+   attached to THIS document (not on the logs).
 5. APPENDICES IN THE CONTENTS WITH NO PAGES
    (:func:`listed_appendices_not_held`). A contents page lists appendices
    by letter and title, the file holds some, and for another no page leads
    with its letter or its title and no page labelled for its content
-   follows the last one held.
+   follows the last one held, and the text does not say it is under
+   separate cover, not used or still to come.
 
 :func:`named_not_held_qa` makes one ``partial`` entry, ranked ``open``, that
 names all three in the report's own words with the pages that name them.
@@ -62,6 +65,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+
+from report_ingest.checklist import LOG_LABELS
 
 __all__ = [
     "MAX_CAPTIONS_ON_A_PAGE", "PICTURE_LABELS", "CITING_LABELS",
@@ -356,9 +361,8 @@ def cited_not_held(texts: Sequence[str],
 #: How many times the report's own pages must name a thing before its
 #: absence is flagged: a single mention is thin evidence (RI-201).
 MIN_MENTIONS = 2
-#: The page labels that are one exploration's own record.
-LOG_LABELS: Tuple[str, ...] = ("boring_log", "test_pit_log", "cpt_log",
-                               "dcp_log")
+#: The page labels that are one exploration's own record are
+#: :data:`report_ingest.checklist.LOG_LABELS`, imported above.
 #: Labels whose pages may print a hole's record besides the logs.
 _MAY_HOLD_LOGS: Tuple[str, ...] = LOG_LABELS + ("field_test",
                                                 "appended_report")
@@ -371,18 +375,26 @@ _LEAD_LINES = 8
 _QUOTE = 160
 
 #: A hole's name as a report writes one: a series of letters and a number,
-#: "B-1", "TP-3", "CPT-2", "MW-02A", "B1".
-_HOLE = r"(?<![A-Za-z0-9\-–])([A-Z]{1,4})([-–]?)(\d{1,3}[A-Z]?)(?![A-Za-z0-9])"
+#: "B-1", "TP-3", "CPT-2", "MW-02A", "B1". Not the first part of a longer
+#: code: an AASHTO class "A-2-4" or "A-7-6" is not hole A-2.
+_HOLE = (r"(?<![A-Za-z0-9\-–])([A-Z]{1,4})([-–]?)(\d{1,3}[A-Z]?)"
+         r"(?![A-Za-z0-9]|[-–]\d|[-–][a-z]\b)")
 _RE_HOLE = re.compile(_HOLE)
 _RE_HOLE_RANGE = re.compile(
     _HOLE + r"\s*(?:through|thru|to|–|-)\s*" + _HOLE)
 #: A word that introduces an exploration's name: "borings B-1, ...",
-#: "test pits (TP-1 through TP-6)", "soundings designated CPT-1".
+#: "test pits (TP-1 through TP-6)", "soundings designated CPT-1". Read only
+#: when the record holds no hole and the text says the logs are in this
+#: document (:data:`_RE_LOGS_WORD`); wells and piezometers are not
+#: explorations with a log of their own.
 _RE_HOLE_WORD = re.compile(
     r"\b(?:borings?|bore\s?holes?|test\s?pits?|test\s?holes?|soundings?|"
-    r"cone penetration tests?|CPTs?|probes?|hand augers?|auger holes?|"
-    r"(?:monitoring |observation )?wells?|piezometers?)\b[^.;:]{0,25}?$",
+    r"cone penetration tests?|CPTs?|probes?|hand augers?|auger holes?)"
+    r"\b[^.;:]{0,25}?$",
     re.I)
+#: A sentence about the logs, for the "in this document" wordings of the
+#: laboratory check (:data:`_RE_LAB_INCLUDED`).
+_RE_LOGS_WORD = re.compile(r"\blogs?\b", re.I)
 #: What a name follows when it is not a hole's ("Figure B-1", "Sample S-3").
 _RE_NOT_A_HOLE_HEAD = re.compile(
     r"(?:Figures?|Figs?\.?|Tables?|Appendi(?:x|ces)|Plates?|Sheets?|"
@@ -394,7 +406,8 @@ _RE_LISTED_BEFORE = re.compile(
     r"(?:[A-Z]{1,4}[-–]?\d{1,3}[A-Z]?\s*(?:,|and|&|through|thru|to|,\s*and)"
     r"\s*)+$")
 #: Words in a mention's sentence that make the hole one this report's
-#: investigation did not drill, or another investigation's.
+#: investigation did not drill, another investigation's, or one still to
+#: be drilled; a year in the sentence makes it a dated, earlier one.
 _RE_HOLE_NOT_MISSING = re.compile(
     r"\bnot\s+(?:be\s+|been\s+)?(?:drilled|performed|advanced|completed|"
     r"excavated|made|accessible|possible)|could not|unable to|abandon|"
@@ -402,7 +415,8 @@ _RE_HOLE_NOT_MISSING = re.compile(
     r"by others|\bprevious|\bprior\b|\bearlier\b|\bformer|historic|"
     r"\bpreliminary\b|\bproposed (?:boring|test pit|sounding|exploration)|"
     r"\bplanned\b|\bfuture\b|recommend|"
-    r"(?:19|20)\d\d\s+(?:investigation|study|exploration|report)", re.I)
+    r"\bwill\b|\bshould\b|\bto be\b|\bwould\b|additional|supplement|"
+    r"existing|original|\b(?:19|20)\d\d\b", re.I)
 #: The text saying the logs are in another document, not this one.
 _RE_ELSEWHERE_VOLUME = re.compile(
     r"under separate cover|separate(?:ly bound)? (?:volume|report|"
@@ -454,32 +468,54 @@ def _hole_mentions(flat: str):
                [match.group(0)])
 
 
+def _logs_said_here(citing: Sequence[Tuple[int, str]]) -> bool:
+    """Do the report's own pages say its logs are in this document: a
+    sentence about the logs in the laboratory check's "in this document"
+    wordings (:data:`_RE_LAB_INCLUDED`: presented, included or attached in
+    an appendix, an attachment or an enclosure), not one about logs still
+    to come or another document's (:data:`_LAB_NOT_HERE_WORDS`)?"""
+    for _page, flat in citing:
+        for match in _RE_LAB_INCLUDED.finditer(flat):
+            sentence = _sentence(flat, match.start(), match.end())
+            if (_RE_LOGS_WORD.search(sentence)
+                    and not _RE_LAB_NOT_HERE_BASE.search(sentence)):
+                return True
+    return False
+
+
 def named_not_logged(texts: Sequence[str], labels: Mapping[int, str],
-                     record: Any, bound: Sequence[int] = ()
-                     ) -> Dict[str, List[int]]:
+                     record: Any, bound: Sequence[int] = (),
+                     doc: Any = None) -> Dict[str, List[int]]:
     """``name -> the pages naming it`` for each exploration the report's
     own pages name at least :data:`MIN_MENTIONS` times that the record
     holds no log, sounding or pit record for.
 
     A name is a hole's only in a series (its letters, written with or
-    without a hyphen as the series is) that the record's own holes have or
-    that an exploration word introduces on these pages; "D50" beside
-    borings named "D-1" is not one. Names after "Figure", "Sample" and the
+    without a hyphen as the series is) that the record's own holes have;
+    a monitoring well "MW-1" or a hand auger "HA-2" beside a record of
+    borings "B-1" is not one, nor "D50" beside borings named "D-1". With
+    no hole in the record, a series an exploration word introduces on
+    these pages counts, and only where a sentence there says the logs are
+    in this document (:func:`_logs_said_here`). Names after "Figure", "Sample" and the
     like are not holes'. A hole is held when a log in the record carries
     its name (:func:`report_ingest.log_holes.names_match`), or a log page,
     an appended report's page or a bound document's page prints it: the
     reader may have read it under another name, which
     ``log_holes.missing_holes_qa`` says, and a bound document's holes are
     its own record's. A hole whose sentence says it was not drilled, was
-    abandoned, was by others or is a previous investigation's
-    (:data:`_RE_HOLE_NOT_MISSING`) is not missing, and nothing is where
-    the text says the logs are under separate cover. Nothing is flagged
-    either while the holes missing are no more than the record's holes
-    under names the text does not use plus the log pages with no text to
-    read that no hole in the record was read from: they may be the same
-    holes.
+    abandoned, was by others, is a previous or a dated investigation's or
+    is still to be drilled (:data:`_RE_HOLE_NOT_MISSING`) is not missing,
+    and nothing is where the text says the logs are under separate cover.
+    Nothing is flagged either while the holes missing are no more than the
+    record's holes under names the text does not use plus the pages that
+    may hold logs and print no recorded hole's name, less those the
+    record's unprinted holes may be on: they may be the same holes. With
+    ``doc`` (the open document), whether such a page prints a recorded
+    hole's name is what its header names by the log reader's own rule
+    (:func:`report_ingest.log_holes.item_holes`), and the names the
+    headers print count as printed; without it, the page's text.
     """
-    from report_ingest.log_holes import names_match
+    from report_ingest.log_holes import item_holes, names_match
 
     bound = {int(p) for p in bound}
     recorded = [str(inv.investigation_id) for inv in
@@ -497,10 +533,13 @@ def named_not_logged(texts: Sequence[str], labels: Mapping[int, str],
         return {}
     found = [(page, flat, list(_hole_mentions(flat)))
              for page, flat in citing]
-    for _page, flat, mentions in found:
-        for start, _end, letters, hyphen, _names in mentions:
-            if _RE_HOLE_WORD.search(_head(flat, start)):
-                series.add((letters, hyphen))
+    if not recorded and _logs_said_here(citing):
+        for _page, flat, mentions in found:
+            for start, _end, letters, hyphen, _names in mentions:
+                if _RE_HOLE_WORD.search(_head(flat, start)):
+                    series.add((letters, hyphen))
+    if not series:
+        return {}
 
     named: Dict[str, List[int]] = {}          # name -> a page per mention
     excused: set = set()
@@ -519,11 +558,15 @@ def named_not_logged(texts: Sequence[str], labels: Mapping[int, str],
         _flat(text).upper() for page, text in enumerate(texts)
         if page in bound or labels.get(page) in _MAY_HOLD_LOGS)
     printed = [m.group(0) for m in _RE_HOLE.finditer(elsewhere)]
-    lacking = {
-        name: sorted(set(pages)) for name, pages in named.items()
-        if len(pages) >= MIN_MENTIONS and name not in excused
-        and not any(names_match(name, other) for other in recorded)
-        and not any(names_match(name, other) for other in printed)}
+
+    def lacking_given(printed: Sequence[str]) -> Dict[str, List[int]]:
+        return {
+            name: sorted(set(pages)) for name, pages in named.items()
+            if len(pages) >= MIN_MENTIONS and name not in excused
+            and not any(names_match(name, other) for other in recorded)
+            and not any(names_match(name, other) for other in printed)}
+
+    lacking = lacking_given(printed)
     if not lacking:
         return {}
     def unread(page: int) -> bool:
@@ -531,10 +574,30 @@ def named_not_logged(texts: Sequence[str], labels: Mapping[int, str],
 
     if any(unread(page) for page in bound if 0 <= page < len(texts)):
         return {}                   # a scanned bound document may hold them
+    log_pages = [page for page in range(len(texts))
+                 if labels.get(page) in _MAY_HOLD_LOGS]
+    headers: Dict[int, str] = {}
+    if doc is not None and log_pages:
+        headers = {page: hole.text for page, hole in
+                   item_holes(doc, log_pages).items() if hole is not None}
+        printed = printed + list(headers.values())
+        lacking = lacking_given(printed)
+        if not lacking:
+            return {}
+
+    def names_a_recorded_hole(page: int) -> bool:
+        if doc is not None:
+            shown = [headers[page]] if page in headers else []
+        else:
+            shown = [m.group(0) for m in
+                     _RE_HOLE.finditer(_flat(texts[page]).upper())]
+        return any(names_match(name, other)
+                   for name in shown for other in recorded)
+
     unnamed = sum(1 for other in recorded
                   if not any(names_match(name, other) for name in named))
-    scans = sum(1 for page in range(len(texts))
-                if labels.get(page) in _MAY_HOLD_LOGS and unread(page))
+    scans = sum(1 for page in log_pages
+                if unread(page) or not names_a_recorded_hole(page))
     from_scans = sum(1 for other in recorded
                      if not any(names_match(other, name) for name in printed))
     if len(lacking) <= unnamed + max(0, scans - from_scans):
@@ -558,14 +621,21 @@ _RE_LAB_INCLUDED = re.compile(
     r"|\b(?:are|is)\s+(?:also\s+)?(?:attached|enclosed|appended)\b"
     r"|\b(?:Appendi(?:x|ces)|Attachments?|Enclosures?)\s+\S{1,4}\s+"
     r"(?:presents?|contains?|includes?|provides?)\b", re.I)
-#: Words that make a sentence about results that are NOT in this document.
-_RE_LAB_NOT_HERE = re.compile(
+#: Words that make a sentence about results, logs or an appendix one that
+#: is NOT in this document: still to come, elsewhere or another's.
+_LAB_NOT_HERE_WORDS = (
     r"\bwill\b|\bto be\b|should be|\bshall\b|recommend|\bplanned\b|"
     r"\bproposed\b|pending|forthcoming|in progress|under separate cover|"
     r"separate (?:report|volume|letter|document)|"
     r"\bnot\s+(?:been\s+|yet\s+)?(?:performed|conducted|included|"
     r"available|completed)|\bno laboratory|by others|\bprevious|"
-    r"\bprior\b|\bearlier\b|upon request|on file|\bif\b", re.I)
+    r"\bprior\b|\bearlier\b|upon request|on file|\bif\b")
+_RE_LAB_NOT_HERE_BASE = re.compile(_LAB_NOT_HERE_WORDS, re.I)
+#: ... and, for laboratory results, results on the logs: those are the
+#: logs' ("presented in Appendix A on the boring logs"; a contents line
+#: "Boring Logs and Laboratory Test Results").
+_RE_LAB_NOT_HERE = re.compile(
+    _LAB_NOT_HERE_WORDS + r"|\blogs?\b|\bboring|test pit", re.I)
 #: A contents line, or an appendix's title, that names laboratory results.
 _RE_LAB_TITLE = re.compile(
     r"^\s*(?:APPENDIX|Appendix|ATTACHMENT|Attachment)\s+\S{1,4}\s*"
@@ -607,10 +677,14 @@ def lab_said_not_held(texts: Sequence[str], labels: Mapping[int, str],
     them (:data:`_RE_LAB_TITLE`). Results that will be, should be or are
     recommended to be done, that are under separate cover, by others or a
     previous investigation's (:data:`_RE_LAB_NOT_HERE`) are not, and a
-    test the text only describes is not. The file holds a laboratory page
-    when any page is labelled ``lab_test``, a bound document's included,
-    when a page that is not the report's own text leads with a laboratory
-    sheet's words, or when a bound page has no text to read.
+    test the text only describes is not, nor are results on the logs. The
+    file holds a laboratory page when any page is labelled ``lab_test``, a
+    bound document's included; when a page labelled neither the report's
+    own text nor a log prints a laboratory sheet's words anywhere (a
+    sheet's letterhead may fill its first lines); when a log page or a
+    bound page leads with them; when a bound page has no text to read; or
+    when a page labelled ``other`` or ``divider`` prints no letter or digit
+    (a scan).
     """
     if getattr(record, "lab_tests", None):
         return []
@@ -621,9 +695,18 @@ def lab_said_not_held(texts: Sequence[str], labels: Mapping[int, str],
             return []
         if page in bound and len((text or "").strip()) < _NO_TEXT:
             return []
+        # A scan labelled other or divider may be a sheet. Not a short
+        # divider that prints its title ("APPENDIX B / BORING LOGS" is 22
+        # characters): unreadable here is no letter or digit at all.
+        if label in ("other", "divider") and \
+                not re.search(r"[A-Za-z0-9]", text or ""):
+            return []
         if label not in CITING_LABELS or page in bound:
-            lead = "\n".join(_lead_lines(text))
-            if _RE_LAB_SHEET.search(lead):
+            if label in CITING_LABELS or label in LOG_LABELS:
+                probe = "\n".join(_lead_lines(text))
+            else:
+                probe = text or ""
+            if _RE_LAB_SHEET.search(probe):
                 return []
     said: List[Tuple[int, str]] = []
     for page, text in enumerate(texts):
@@ -665,16 +748,27 @@ def _lab_kinds(texts: Sequence[str], labels: Mapping[int, str],
     return [name for name, _pattern in _LAB_KINDS if name in found]
 
 
-#: A contents line listing an appendix by letter and title; a dotted
-#: leader and its page number are left off the title.
+#: A contents line listing an appendix by letter, and the rest of its line
+#: (:func:`_listed_title` takes the title from it). One greedy group and
+#: nothing after it: linear on a long line of dots, where a pattern taking
+#: the leader off as well took seconds.
 _RE_LISTED = re.compile(
-    r"^\s*(?:APPENDIX|Appendix)\s+([A-Z]|\d{1,2})\b\s*[-–—:.]?\s*(.*?)"
-    r"\s*(?:[.\s]{3,}\s*\S{1,6}|\s{2,}\S{1,6})?\s*$")
+    r"^\s*(?:APPENDIX|Appendix)\s+([A-Z]|\d{1,2})\b\s*[-–—:.]?\s*(.*)")
 #: A listed appendix that is not in this document by its own line.
 _RE_LISTED_NOT_HERE = re.compile(
     r"not used|not included|not applicable|reserved|omitted|"
     r"separate cover|separate(?:ly)? (?:bound|volume|report)|by others|"
     r"\bfuture\b|to be (?:provided|submitted)", re.I)
+#: A sentence that says an appendix it names is not in this document:
+#: the contents line's own words or the laboratory check's (under separate
+#: cover, not used, will be sent, pending, a previous report's). Not the
+#: words about logs: "the boring logs are in Appendix B" says B is here.
+_RE_APPENDIX_NOT_HERE = re.compile(
+    _RE_LISTED_NOT_HERE.pattern + "|" + _LAB_NOT_HERE_WORDS, re.I)
+#: An appendix a sentence names: "Appendix C", "Appendices C and D".
+_RE_APPENDIX_NAMED = re.compile(
+    r"\b(?:APPENDI(?:X|CES)|Appendi(?:x|ces))\s+((?:[A-Z]|\d{1,2})\b"
+    r"(?:\s*(?:,|and|&|through|to|thru|-|–)\s*(?:[A-Z]|\d{1,2})\b)*)")
 #: The page labels an appendix's title says its pages carry; the first
 #: match is taken. A title that matches none is one the code cannot check
 #: by content, and is never flagged.
@@ -694,6 +788,33 @@ _SMALL_WORDS = frozenset(("of", "the", "and", "for", "a", "an", "to", "in",
 def _lead_lines(text: str) -> List[str]:
     return [line for line in (text or "").splitlines()
             if line.strip()][:_LEAD_LINES]
+
+
+def _listed_title(rest: str) -> str:
+    """The title in the rest of a contents line, with a dotted leader and
+    the page it gives ("Boring Logs ...... A-1"), or a page set off by two
+    spaces or more ("Boring Logs   A-1"), left off. String work, linear in
+    the line: the page is the last run of six characters or fewer that are
+    neither spaces nor dots, the leader the dots and spaces before it."""
+    text = rest.rstrip()
+    stem = text.rstrip(". \t")
+    if not stem.strip():
+        return ""
+    if len(text) - len(stem) >= 3 and "." in text[len(stem):]:
+        return stem                              # a leader with no page
+    end = start = len(text)
+    while start > 0 and text[start - 1] not in ". \t" \
+            and end - start < 7:
+        start -= 1
+    if end - start > 6 or start == 0:
+        return text                              # no page at the end
+    lead = start
+    while lead > 0 and text[lead - 1] in ". \t":
+        lead -= 1
+    leader = text[lead:start]
+    if len(leader) >= 3 or (len(leader) >= 2 and not leader.strip()):
+        return text[:lead]
+    return text
 
 
 def _title_words(title: str) -> set:
@@ -739,8 +860,11 @@ def listed_appendices_not_held(texts: Sequence[str],
     Logs", ``lab_test`` for "Laboratory Test Results") follows the last
     appendix held before it in the list. One whose title names no content
     the labels know is never flagged, nor one its own line says is not
-    used or under separate cover. With no listed appendix held nothing is
-    returned: that is :func:`cited_not_held`'s to say.
+    used or under separate cover, nor one a sentence of the report's own
+    text naming it says is not here (:data:`_RE_APPENDIX_NOT_HERE`: "will
+    be sent under separate cover", "not used", "pending"). With no listed
+    appendix held nothing is returned: that is :func:`cited_not_held`'s to
+    say.
     """
     bound = {int(p) for p in bound}
     listed: List[Tuple[str, str, int]] = []
@@ -754,11 +878,11 @@ def listed_appendices_not_held(texts: Sequence[str],
             match = _RE_LISTED.match(line)
             if not match:
                 continue
-            letter, title = match.group(1).upper(), match.group(2).strip()
+            letter = match.group(1).upper()
+            title = _listed_title(match.group(2)).strip()
             if not title and at + 1 < len(lines) and \
                     not _RE_LISTED.match(lines[at + 1]):
-                title = re.sub(r"\s*[.\s]{3,}\s*\S{1,6}\s*$", "",
-                               lines[at + 1]).strip()
+                title = _listed_title(lines[at + 1]).strip()
             if title and not any(letter == other for other, _t, _p in listed):
                 listed.append((letter, title, page))
     if len(listed) < 2:
@@ -788,13 +912,31 @@ def listed_appendices_not_held(texts: Sequence[str],
     if not held:
         return []
 
+    # The appendices a sentence of the report's own text says are not here
+    # ("Appendix C will be sent under separate cover"); on a contents page
+    # the line naming it is its sentence.
+    not_here: set = set()
+    for page, text in enumerate(texts):
+        label = labels.get(page)
+        if page in bound or label not in CITING_LABELS:
+            continue
+        pieces = ((text or "").splitlines() if label == "toc"
+                  else [_flat(text)])
+        for piece in pieces:
+            for match in _RE_APPENDIX_NAMED.finditer(piece):
+                said = piece if label == "toc" else \
+                    _sentence(piece, match.start(), match.end())
+                if _RE_APPENDIX_NOT_HERE.search(said):
+                    not_here |= {_norm(name)
+                                 for name in _expand(match.group(1))}
+
     out: List[Tuple[str, str, int]] = []
     after = last_toc
     for letter, title, page in listed:
         if letter in held:
             after = max(after, held[letter])
             continue
-        if _RE_LISTED_NOT_HERE.search(title):
+        if _RE_LISTED_NOT_HERE.search(title) or _norm(letter) in not_here:
             continue
         content = next((found for pattern, found in _TITLE_CONTENT
                         if re.search(pattern, title, re.I)), None)
@@ -813,7 +955,7 @@ def _clip(text: str, n: int = _QUOTE) -> str:
 
 def named_not_held_qa(texts: Sequence[str],
                       labels: Optional[Mapping[int, str]], record: Any,
-                      bound: Sequence[int] = ()) -> list:
+                      bound: Sequence[int] = (), doc: Any = None) -> list:
     """The one ``partial`` QA entry, ranked ``open``, for what the report
     names that the record and the file do not hold (RI-185): explorations
     with no log, laboratory results, and appendices its contents list.
@@ -823,12 +965,14 @@ def named_not_held_qa(texts: Sequence[str],
     ``texts`` and ``labels`` as :func:`completeness_qa` takes them;
     ``record`` is the report's own record after its readers; ``bound`` are
     the pages of the documents bound into the file, whose holes and sheets
-    are their own records' and are not this report's to lack."""
+    are their own records' and are not this report's to lack; ``doc``, the
+    open document when there is one, lets the log pages' headers be read
+    by the log reader's own rule (:func:`named_not_logged`)."""
     from report_ingest.model import QAEntry
 
     if not labels or record is None:
         return []
-    holes = named_not_logged(texts, labels, record, bound)
+    holes = named_not_logged(texts, labels, record, bound, doc=doc)
     lab = lab_said_not_held(texts, labels, record, bound)
     appendices = listed_appendices_not_held(texts, labels, bound)
     if not (holes or lab or appendices):
@@ -880,11 +1024,16 @@ def named_not_held_qa(texts: Sequence[str],
 # ---------------------------------------------------------------------------
 
 def _span(pages: Sequence[int]) -> str:
-    """0-based pages as the report's 1-based span: "pages 3-6"."""
+    """0-based pages as the report's 1-based span: "pages 3-6"; two pages
+    that are not a run as "pages 3 and 40"."""
     if not pages:
         return ""
     first, last = min(pages) + 1, max(pages) + 1
-    return f"page {first}" if first == last else f"pages {first}-{last}"
+    if first == last:
+        return f"page {first}"
+    if len(set(pages)) == 2 and last - first > 1:
+        return f"pages {first} and {last}"
+    return f"pages {first}-{last}"
 
 
 def _and(parts: Sequence[str]) -> str:
