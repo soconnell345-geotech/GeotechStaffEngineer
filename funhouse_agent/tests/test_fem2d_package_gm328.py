@@ -96,7 +96,10 @@ def test_an_unknown_analysis_type_is_refused(tmp_path):
     out = D.call_agent("calc_package", "fem2d_package", {
         **_SLOPE, "analysis_type": "footing",
         "output_path": str(tmp_path / "x.html")})
-    assert "error" in out and "analysis_type must be one of" in out["error"]
+    # master's refusal of a value outside allowed_values (its wording)
+    assert "error" in out and (
+        "analysis_type='footing' is not one of the values it takes"
+        in out["error"]) and "slope_srm" in out["error"]
 
 
 def test_a_misspelt_input_gets_the_tools_refusal(tmp_path):
@@ -115,3 +118,111 @@ def test_figures_and_tables_alone(tmp_path):
         "package": "fem2d_package", **_SLOPE,
         "output_path": str(tmp_path / "calc.html")})
     assert "error" not in tables, tables
+
+
+# --- GM-328 review round -------------------------------------------------
+# A made-up 1:1 slope 10 m high, small mesh: the SRM brackets its FOS on
+# the default srf_range; a narrowed range gives the bounds.
+_PROBE = {
+    "surface_points": [[0, 10], [10, 10], [20, 0], [30, 0]],
+    "soil_layers": [{"name": "clay", "bottom_elevation": -5, "E": 20000,
+                     "nu": 0.3, "c": 18, "phi": 22, "psi": 0, "gamma": 19}],
+    "nx": 10, "ny": 5,
+}
+
+
+def _bound(fos, converged=True, basis="nonconvergence"):
+    from types import SimpleNamespace
+    return SimpleNamespace(FOS=fos, converged=converged, fos_basis=basis)
+
+
+def test_the_check_is_true_to_the_bound_the_srm_gives():
+    # A1: an upper bound fails only at or below FOS_required, a lower
+    # bound passes only at or above it, anything else is not determined
+    from fem2d.calc_steps import srm_fos_said, srm_meets
+    upper = _bound(2.0, converged=False)
+    assert srm_meets(upper, 2.0) == (False, "")
+    meets, note = srm_meets(upper, 1.5)
+    assert meets is None and "srf_range starting at or below 1.5" in note
+    lower = _bound(1.2, basis="range_exhausted")
+    assert srm_meets(lower, 1.2) == (True, "")
+    meets, note = srm_meets(lower, 1.5)
+    assert meets is None and "srf_range reaching above 1.5" in note
+    assert srm_meets(_bound(1.456), 1.5) == (False, "")
+    assert srm_meets(_bound(1.6, basis="blowup"), 1.5) == (True, "")
+    assert srm_fos_said(upper).startswith("FOS < 2.000: ")
+    assert srm_fos_said(lower).startswith("FOS >= 1.200: ")
+    assert srm_fos_said(_bound(1.456)) == "FOS = 1.456"
+
+
+def test_a_fos_below_the_lowest_srf_tried_is_not_a_pass(tmp_path):
+    # A1, the reviewer's probe: the slope fails at srf 2.0, the lowest tried
+    path = str(tmp_path / "upper.html")
+    out = D.call_agent("calc_package", "fem2d_package", {
+        **_PROBE, "srf_range": [2.0, 3.0], "output_path": path})
+    assert out.get("status") == "success", out
+    assert out["converged"] is False and out["fos_basis"] == "nonconvergence"
+    assert out["meets_FOS_required"] is None
+    assert "srf_range starting at or below 1.5" in out["FOS_required_note"]
+    assert any("upper bound" in w for w in out["warnings"])
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    assert "NOT DETERMINED" in html and "FOS &lt; 2.000" in html
+    assert "FOS_computed" not in html
+    failed = D.call_agent("calc_package", "fem2d_package", {
+        **_PROBE, "srf_range": [2.0, 3.0], "FOS_required": 2.0,
+        "output_path": str(tmp_path / "upper2.html")})
+    assert failed["meets_FOS_required"] is False
+
+
+def test_a_fos_above_the_highest_srf_tried_is_a_lower_bound(tmp_path):
+    # A1: no failure up to srf 1.2, so FOS >= 1.2
+    path = str(tmp_path / "lower.html")
+    out = D.call_agent("calc_package", "fem2d_package", {
+        **_PROBE, "srf_range": [0.5, 1.2], "FOS_required": 1.0,
+        "output_path": path})
+    assert out.get("status") == "success", out
+    assert out["fos_basis"] == "range_exhausted"
+    assert out["meets_FOS_required"] is True
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    assert "FOS_lower_bound" in html and "FOS &gt;= 1.200" in html
+
+
+def test_the_package_says_every_number_the_tool_returns(slope, tmp_path):
+    # B1: every single-number key of the tool, under its own key
+    out, _ = slope
+    tool = D.call_agent("fem2d", "fem2d_slope_srm", dict(_SLOPE))
+    column = D.call_agent("calc_package", "fem2d_package", {
+        **_COLUMN, "output_path": str(tmp_path / "c.html")})
+    column_tool = D.call_agent("fem2d", "fem2d_consolidation",
+                               {k: v for k, v in _COLUMN.items()
+                                if k != "analysis_type"})
+    for pkg, own in ((out, tool), (column, column_tool)):
+        for key, value in own.items():
+            if key == "analysis_type" or not (
+                    value is None or isinstance(value, (bool, int, float,
+                                                        str))):
+                continue
+            assert key in pkg and pkg[key] == value, key
+
+
+@pytest.mark.parametrize("bad", [-1, 0.9, "abc", float("nan"), True, None])
+def test_a_required_fos_that_is_no_factor_of_safety_is_refused(bad,
+                                                               tmp_path):
+    # B2: refused before the FEM run, naming the parameter
+    out = D.call_agent("calc_package", "fem2d_package", {
+        **_SLOPE, "FOS_required": bad,
+        "output_path": str(tmp_path / "x.html")})
+    assert "error" in out and "FOS_required takes a finite number" in (
+        out["error"])
+    assert not os.path.exists(tmp_path / "x.html")
+
+
+def test_the_assumed_required_fos_says_it_is_the_packages_choice(slope):
+    # C2: the label is whole
+    _, html = slope
+    assert ("Required factor of safety, this package&#39;s choice, not a "
+            "printed requirement") in html or (
+        "Required factor of safety, this package's choice, not a printed "
+        "requirement") in html

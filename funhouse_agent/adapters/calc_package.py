@@ -351,7 +351,8 @@ def _tables_response(module: str, result, analysis, path: str, calc_tables,
     tables_out = _save_tables(calc_tables, table_names, os.path.dirname(path))
     if tables_out:
         response["tables"] = tables_out
-        response["tables_note"] = _TABLES_FILE_NOTE
+        response["tables_note"] = (_TABLES_FILE_NOTE
+                                   + _tables_left_out(calc_tables))
         failed = [t["title"] for t in tables_out if not t["file_exists"]]
         if failed:
             table_error = ("these table CSVs did not save: "
@@ -552,7 +553,7 @@ def _build_response(module: str, result, analysis, params: dict,
             response["error"] += rescue_note(rescue)
     if tables_out:
         response["tables"] = tables_out
-        response["tables_note"] = _TABLES_NOTE
+        response["tables_note"] = _TABLES_NOTE + _tables_left_out(calc_tables)
         failed = [t["title"] for t in tables_out if not t["file_exists"]]
         if failed:
             table_error = ("these table CSVs did not save: "
@@ -576,6 +577,14 @@ _TABLES_NOTE = (
     "echo is the *_inputs.csv) and printed in the package's Calculation "
     "Tables section. They show as downloads under your reply; name them to "
     "the user.")
+
+
+def _tables_left_out(tables) -> str:
+    """The sentences the tables carry for the agent's response: rows a
+    table leaves out, or a table the module could not build (GM-328
+    review C1); "" when none."""
+    said = [t.left_out for t in tables if getattr(t, "left_out", "")]
+    return (" " + " ".join(said)) if said else ""
 
 
 def _save_tables(tables, names, out_dir) -> list:
@@ -938,11 +947,12 @@ _PACKAGE_TOOLS = {
         # (the tool reports the FOS and checks nothing).
         "own": {"FOS_required": {
             "type": "float", "required": False, "default": 1.5,
-            "description": "The required factor of safety the package's "
-                           "check sets the strength-reduction FOS against "
-                           "(analysis_type 'slope_srm' only). The default "
-                           "1.5 is this package's choice, not a printed "
-                           "requirement: give the project's own.",
+            "description": "Required factor of safety, this package's "
+                           "choice, not a printed requirement; the "
+                           "package's check sets the strength-reduction "
+                           "FOS against it (analysis_type 'slope_srm' "
+                           "only). A finite number at or above 1.0; the "
+                           "default 1.5: give the project's own.",
             "applies_when": {"analysis_type": ["slope_srm"]}}},
     },
     "pavement_design_package": {
@@ -2906,6 +2916,10 @@ def _fem2d_numbers(result) -> dict:
     file. Arrays and per-node tables stay in the package and its CSVs."""
     from funhouse_agent.adapters import clean_result
     d = clean_result(result.to_dict())
+    if getattr(result, "analysis_type", None) == "srm":
+        # the slope tool adds the failure basis beside to_dict (GM-328
+        # review B1): which bound, if any, the FOS is
+        d.setdefault("fos_basis", getattr(result, "fos_basis", None))
     out = {k: v for k, v in d.items()
            if k != "analysis_type"
            and (v is None or isinstance(v, (bool, int, float, str)))}
@@ -2916,6 +2930,16 @@ def _fem2d_numbers(result) -> dict:
 
 
 def _generate_fem2d_package(params: dict) -> dict:
+    if "FOS_required" in params:
+        # refused before the FEM run, not after it (GM-328 review B2)
+        req = params["FOS_required"]
+        if (isinstance(req, bool) or not isinstance(req, (int, float))
+                or not math.isfinite(req) or req < 1.0):
+            raise ValueError(
+                f"fem2d_package: FOS_required takes a finite number at or "
+                f"above 1.0 (the factor of safety the package's check sets "
+                f"the strength-reduction FOS against; default 1.5); got "
+                f"{req!r}.")
     run = _run_tool("fem2d_package", params)
     result, model = run.out
     analysis = dict(model)
@@ -2931,10 +2955,14 @@ def _generate_fem2d_package(params: dict) -> dict:
     extra = _fem2d_numbers(result)
     if run.value == "slope_srm":
         # the package's own check, said beside the file as it is printed
+        # true to the bound a run that did not bracket the failure gives
+        # (GM-328 review A1)
+        from fem2d.calc_steps import srm_meets
         extra["FOS_required"] = analysis["FOS_required"]
-        extra["meets_FOS_required"] = (
-            None if result.FOS is None
-            else bool(result.FOS >= analysis["FOS_required"]))
+        meets, note = srm_meets(result, analysis["FOS_required"])
+        extra["meets_FOS_required"] = meets
+        if note:
+            extra["FOS_required_note"] = note
     return _build_response(
         "fem2d", result, analysis, params,
         run=run,
