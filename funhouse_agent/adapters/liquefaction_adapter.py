@@ -293,7 +293,22 @@ METHOD_INFO = {
         ),
         "parameters": {
             "depth": {"type": "array", "required": True,
-                      "description": "Layer mid-depths / CPT depths (m)."},
+                      "description": "Depths (m below the ground surface). "
+                                     "CPT: the readings' depths. SPT: the "
+                                     "depths where (N1)60 was measured, "
+                                     "increasing, the first below the "
+                                     "surface; each is an evaluation "
+                                     "point. The total vertical stress is "
+                                     "summed down through them, the gamma "
+                                     "given at a depth applying from the "
+                                     "previous depth (the ground surface "
+                                     "for the first) down to it. So give a "
+                                     "depth at each change in unit weight "
+                                     "(a layer's base, with that layer's "
+                                     "N160, FC and gamma), the water table "
+                                     "included where the unit weight "
+                                     "changes there; otherwise the change "
+                                     "is taken at the depth above it."},
             # SPT inputs
             # Required for SPT input (live smoke wave 1, G7: FC was
             # described as optional and the SPT route refused the call).
@@ -308,7 +323,14 @@ METHOD_INFO = {
             "gamma": {"type": "array", "required": False,
                       "required_for": "SPT input",
                       "description": "REQUIRED for SPT input: total unit "
-                                     "weight (kN/m3) per layer."},
+                                     "weight (kN/m3) at each depth. The "
+                                     "value given at a depth applies from "
+                                     "the previous depth (the ground "
+                                     "surface for the first) down to that "
+                                     "depth, and the total vertical stress "
+                                     "is the sum of gamma x interval over "
+                                     "the depths down to it, on both SPT "
+                                     "methods (see depth)."},
             # Required for CPT input too (GM-133: it took 1.0 m and 0.25 g).
             "gwt_depth": {"type": "float", "required": True,
                           "description": "REQUIRED: depth to the water table "
@@ -391,7 +413,15 @@ METHOD_INFO = {
             "input_type": "Detected input type ('CPT' or 'SPT').",
             "method": "Triggering method used ('bi2014' or 'nceer2001').",
             "min_fos": "Minimum factor of safety against liquefaction.",
-            "n_liquefiable": "Number of liquefiable layers/points.",
+            "n_liquefiable": "SPT: number of layers with a factor of safety below 1.0. CPT: number of readings below the water table with Ic under the limit and a factor of safety below 1.0 (n_susceptible counts those readings whatever their factor of safety).",
+            "min_fos_basis": "CPT only: the readings min_fos is taken over (the susceptible ones, or 'all readings' when there is none; warnings then says so).",
+            "n_susceptible": "CPT only: number of readings below the water table with Ic under i_c_limit.",
+            "warnings": "CPT only, present when there is something to say, e.g. no susceptible reading.",
+            "n_points": "CPT only: number of readings.",
+            "gwl_m": "CPT only: the water table depth used (m).",
+            "pga_g": "CPT only: the peak ground acceleration used (g).",
+            "i_c_limit": "CPT only: the Ic limit used.",
+            "max_settlement_mm": "CPT only: post-liquefaction reconsolidation settlement (mm), Zhang et al. (2002) volumetric strain summed over the sounding.",
             "layer_results": "Per-layer CSR/CRR/FoS (SPT). The SPT routes compute no post-liquefaction volumetric strain: no reference in the library prints an SPT method (GEC-10 10.7 names Ishihara and Yoshimine 1992 without printing it), so post_liquefaction_downdrag then needs volumetric_strain given.",
             "depth_profile": "CPT only: rows of top_m, bottom_m, FOS_liq and volumetric_strain (post-liquefaction reconsolidation strain, decimal; Zhang et al. 2002 from FS and qc1Ncs, as liquepy computes it). One row per reading, or depth bands for a long CPT that never put a reading with FS <= 1.0 in a band above 1.0, however thin its layer; depth_profile_note then says how. post_liquefaction_downdrag takes the whole result as liquefaction_result.",
             "lpi": "Liquefaction Potential Index (CPT only).",
