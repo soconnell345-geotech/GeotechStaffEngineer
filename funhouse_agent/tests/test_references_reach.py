@@ -501,18 +501,109 @@ def test_a_host_with_one_pdf_reads_only_its_charts(host):
     assert reference_docs.figure_readable(*elsewhere[:3]) is True
 
 
-def test_a_fetcher_makes_every_chart_readable(host):
+def _lister(names, calls=None):
+    """A fake fetcher (it never supplies a file) whose folder listing is
+    ``names``: a set, None (the listing failed) or an exception to raise."""
+    def fetcher(name, dest):
+        return None
+
+    def available():
+        if calls is not None:
+            calls.append(1)
+        if isinstance(names, Exception):
+            raise names
+        return names
+
+    fetcher.description = "SharePoint primary_references/"
+    fetcher.available = available
+    return fetcher
+
+
+def _two_pdfs():
     rows = reference_docs._catalog_pdfs()
-    assert reference_docs.chart_reads_available() is False
-    reference_docs.register_fetcher(lambda name, dest: None)
+    here = rows[0]
+    return here, next(r for r in rows if r[3] != here[3])
+
+
+def test_a_listed_pdf_makes_only_its_charts_readable(host):
+    listed = {os.path.basename(reference_docs._catalog_pdfs()[0][3]),
+              _worked_example_sources()[0]}
+    here = reference_docs._catalog_pdfs()[0]
+    elsewhere = next(r for r in reference_docs._catalog_pdfs()
+                     if os.path.basename(r[3]) not in listed)
+    calls = []
+    fetcher = _lister(listed, calls)
+    reference_docs.register_fetcher(fetcher)
     assert reference_docs.chart_reads_available() is True
+    assert reference_docs.figure_readable(*here[:3]) is True
+    assert reference_docs.figure_readable(*elsewhere[:3]) is False
     assert reference_docs.worked_example_pages_available() is True
-    assert reference_docs.figure_readable(*rows[0][:3]) is True
     from funhouse_agent.deep.agent import build_references_subagent
     spec = build_references_subagent()
     assert "read_reference_figure" in {getattr(t, "name", None)
                                        for t in spec["tools"]}
     assert "reads chart values off the actual figures" in spec["description"]
+    # one listing a session, even when the host registers the fetcher again
+    reference_docs.register_fetcher(fetcher)
+    reference_docs.figure_readable(*elsewhere[:3])
+    assert len(calls) == 1
+    # a PDF not in the folder: the tool's error says so
+    msg = reference_docs.missing_message("source PDF not found.",
+                                         elsewhere[3])
+    assert "is not in SharePoint primary_references/" in msg
+    assert os.path.basename(elsewhere[3]) in msg
+
+
+@pytest.mark.parametrize("listing", [set(), None, OSError("no folder")],
+                         ids=["empty", "failed", "raised"])
+def test_an_empty_or_failed_listing_promises_nothing(host, listing):
+    from funhouse_agent.deep.agent import (build_primary_tools,
+                                           build_references_subagent)
+    from funhouse_agent.deep.prompt import build_domain_prompt
+
+    here, _ = _two_pdfs()
+    reference_docs.register_fetcher(_lister(listing))
+    assert reference_docs.chart_reads_available() is False
+    assert reference_docs.figure_readable(*here[:3]) is False
+    assert reference_docs.worked_example_pages_available() is False
+    spec = build_references_subagent()
+    assert "read_reference_figure" not in {getattr(t, "name", None)
+                                           for t in spec["tools"]}
+    assert "cannot read a value off a chart here" in spec["description"]
+    assert "view_worked_example_source" not in {
+        getattr(t, "name", None) for t in build_primary_tools()}
+    assert "cannot be shown on this host" in build_domain_prompt()
+    hits = _search("log spiral passive earth pressure")
+    assert hits
+    for hit in hits:
+        assert hit["read_value"] == reference_docs.NO_CHART_READ
+
+
+def test_a_cached_copy_counts_whatever_the_listing_says(host):
+    here, _ = _two_pdfs()
+    reference_docs.register_fetcher(_lister(set()))
+    (host["cache"] / os.path.basename(here[3])).write_bytes(b"%PDF")
+    assert reference_docs.figure_readable(*here[:3]) is True
+    assert reference_docs.chart_reads_available() is True
+    (host["cache"] / _worked_example_sources()[0]).write_bytes(b"%PDF")
+    assert reference_docs.worked_example_pages_available() is True
+
+
+def test_a_failed_fetch_withdraws_the_promise(host):
+    here, elsewhere = _two_pdfs()
+    # a listed name whose fetch fails is not promised again this session
+    reference_docs.register_fetcher(_lister({os.path.basename(here[3])}))
+    assert reference_docs.figure_readable(*here[:3]) is True
+    assert reference_docs.fetch(here[3]) is None
+    assert reference_docs.figure_readable(*here[:3]) is False
+    # a fetcher that cannot list is trusted until its first failed fetch
+    reference_docs.register_fetcher(lambda name, dest: None)
+    assert reference_docs.chart_reads_available() is True
+    assert reference_docs.figure_readable(*elsewhere[:3]) is True
+    assert reference_docs.fetch(elsewhere[3]) is None
+    assert reference_docs.chart_reads_available() is False
+    assert reference_docs.figure_readable(*here[:3]) is False
+    assert reference_docs.worked_example_pages_available() is False
 
 
 # ---------------------------------------------------------------------------
