@@ -149,15 +149,21 @@ def test_phi_zero_slices_are_not_checked_by_default():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.xfail(strict=True, reason=(
-    "GM-140 step 4 and its review's F1: with no crack asked for, the "
-    "reverse-curvature toe circles are discarded and the default search "
-    "reads 0.935 on a circle centred above the crest, 9.9 % above "
-    "Taylor's 0.851 (Ns 3.83), on the unsafe side; before step 4 it read "
-    "0.842 on a toe circle closed by a crack from its centre's level "
-    "(2.30 m), which no print gives. With Rankine's crack asked for "
-    "(EM 1110-2-1902 Eq. C-36 with the developed strengths, 3.67 m in "
-    "this 5 m cut) it reads 0.605. Taylor's chart has no crack. "
-    "module_work/gm140/STEP4_CHECK.md"))
+    "GM-343: the default search reads 0.935 against Taylor's 0.851 (Ns "
+    "3.83), 9.9 % high, on the unsafe side. The cause is the rule for "
+    "where a circle ends (CircularSlipSurface.find_entry_exit), older "
+    "than GM-140 step 4: Taylor's circle (centre (13.02, 10.96), R "
+    "13.00) ended at the toe reads 0.8514, but the module carries it on "
+    "under the floor in front of the toe to x 6.04 and reads 2.676; "
+    "circles leaving the face just above the toe are refused as two "
+    "masses, and the search's 0.935 is a circle dipping 0.048 m under "
+    "the floor, inside the 1 % touch allowance. Before step 4 the "
+    "search read 0.842 on a toe circle closed by a crack from its "
+    "centre's level, which no print gives. With Rankine's crack asked "
+    "for (EM 1110-2-1902 Eq. C-36 with the developed strengths, 3.67 m "
+    "in this 5 m cut) it reads 0.605. Taylor's chart has no crack. The "
+    "step 'Where a circle ends' "
+    "(module_work/cloud_briefs/SLOPE_GM140.md) removes this mark."))
 def test_vertical_cut_in_undrained_clay_against_taylor():
     """Taylor's stability number for a vertical face, 3.83, gives F = 3.83
     x 20 / (18 x 5) = 0.851."""

@@ -4408,6 +4408,20 @@
           }
         ],
         "multi": false
+      },
+      {
+        "label": "33. Tension cracks and reverse-curvature circles (GM-140 step 4, built 2026-11-13; refines OWN-103): a crack is applied only when the engineer asks for one and then on every trial surface (EM 1110-2-1902 C-10c, p. C-36); with no crack, circles with reverse curvature are discarded and counted, not closed. As first built, a circle with any overhang took the full Rankine crack and its neighbour none (F 1.134 to 0.933 for a 2 cm move; Slide2 #85 read 1.361 against the printed 1.531). Removing the centre-level crack uncovered the vertical cut's reading, whose cause is the end rule, a step of its own (GM-343).",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Close each such circle at its own overhang depth",
+            "effect": "With no crack asked for, a circle with reverse curvature is closed by a vertical crack from its overhang's depth (the centre's level) to the ground instead of being discarded: continuous in F as the centre passes the ground's level, but found in no reference."
+          }
+        ],
+        "multi": false
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
