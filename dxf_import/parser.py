@@ -82,8 +82,12 @@ def parse_dxf_geometry(
         Mapping from DXF layers to geometric roles.
     units : str, optional
         Drawing units ('m', 'mm', 'cm', 'ft', 'in'). Left out, the units
-        the drawing's own header states ($INSUNITS) are used; a drawing
-        whose header states none is refused until ``units`` is given.
+        the drawing's own header states ($INSUNITS) are used, and a
+        warning names them with the section's width and height in metres
+        as read (a header left at a template's value is common); a drawing
+        whose header states none is refused until ``units`` is given. A
+        header in US survey feet or inches ($INSUNITS 21, 22) is read as
+        such, and 'ft' or 'in' agrees with it.
         Given, they are compared with the header: a difference is refused
         unless ``ignore_header_units`` is True. There is no silent default.
     flip_y : bool
@@ -146,6 +150,7 @@ def parse_dxf_geometry(
     warnings = []
 
     # --- Units: the caller's against the drawing's own header ---
+    units_given = units
     units, units_source, header_units = _resolve_units(
         doc, units, ignore_header_units, warnings)
 
@@ -171,7 +176,7 @@ def parse_dxf_geometry(
             f"No polyline/line geometry found on surface layer "
             f"'{layer_mapping.surface}'"
         )
-    surface_points = convert_coords(surface_raw, units, "m")
+    surface_points = _to_m(surface_raw, units)
 
     # --- Soil boundaries ---
     boundary_profiles = {}
@@ -188,7 +193,7 @@ def parse_dxf_geometry(
                 f"No geometry on boundary layer '{dxf_layer}' — skipped"
             )
             continue
-        boundary_profiles[soil_name] = convert_coords(raw, units, "m")
+        boundary_profiles[soil_name] = _to_m(raw, units)
 
     # --- GWT ---
     gwt_points = None
@@ -203,7 +208,7 @@ def parse_dxf_geometry(
                 layer_entities[layer_mapping.water_table], flip_y
             )
             if raw:
-                gwt_points = convert_coords(raw, units, "m")
+                gwt_points = _to_m(raw, units)
             else:
                 warnings.append("No geometry on water table layer — skipped")
 
@@ -232,7 +237,7 @@ def parse_dxf_geometry(
     # --- Text annotations ---
     # Positions are converted to metres like every other coordinate
     # (GM-327: they were copied in drawing units beside geometry in m).
-    factor = UNIT_FACTORS[units] / UNIT_FACTORS["m"]
+    factor = _FACTORS[units]
     text_annotations = []
     if layer_mapping.annotations:
         for ann_layer in layer_mapping.annotations:
@@ -259,6 +264,12 @@ def parse_dxf_geometry(
                     "layer": ann_layer,
                 })
 
+    if units_given is None:
+        # GM-327 review B1: the header alone decided the units, so the
+        # section's size as read is said for the agent to check
+        warnings.append(_header_decided_warning(
+            doc, units, surface_points, boundary_profiles))
+
     return DxfParseResult(
         surface_points=surface_points,
         boundary_profiles=boundary_profiles,
@@ -279,9 +290,81 @@ _INSUNITS_UNSUPPORTED = {
     11: "angstroms", 12: "nanometres", 13: "microns", 14: "decimetres",
     15: "decametres", 16: "hectometres", 17: "gigametres",
     18: "astronomical units", 19: "light years", 20: "parsecs",
-    21: "US survey feet", 22: "US survey inches", 23: "US survey yards",
-    24: "US survey miles",
+    23: "US survey yards", 24: "US survey miles",
 }
+
+#: $INSUNITS 21 and 22, the US survey foot (1200/3937 m) and inch
+#: (100/3937 m), are read as such (GM-327 review B3). Each is 2 parts per
+#: million longer than the international foot or inch, so units='ft' (or
+#: 'in') agrees with it: (factor to m, agreeing unit, words, exact length).
+_SURVEY_UNITS = {21: "us_survey_ft", 22: "us_survey_in"}
+_SURVEY_FACTORS = {
+    "us_survey_ft": (1200 / 3937, "ft", "US survey feet", "1200/3937 m"),
+    "us_survey_in": (100 / 3937, "in", "US survey inches", "100/3937 m"),
+}
+#: Every unit the coordinates can be converted from, to metres.
+_FACTORS = dict(UNIT_FACTORS,
+                **{k: v[0] for k, v in _SURVEY_FACTORS.items()})
+_UNIT_WORDS = {"m": "metres", "mm": "millimetres", "cm": "centimetres",
+               "ft": "feet", "in": "inches",
+               "us_survey_ft": "US survey feet",
+               "us_survey_in": "US survey inches"}
+
+
+def _to_m(points, units):
+    """``points`` (x, y) in ``units`` converted to metres."""
+    f = _FACTORS[units]
+    return [(x * f, y * f) for x, y in points]
+
+
+def _survey_note(unit):
+    """What a US survey header was read as, for ``units_source``."""
+    _, intl, words, exact = _SURVEY_FACTORS[unit]
+    name = "foot" if intl == "ft" else "inch"
+    return (f"{words}, read as such ({exact} each, 2 parts per million "
+            f"longer than the international {name})")
+
+
+def _measurement_hint(doc):
+    """The header's $MEASUREMENT (0 English, 1 metric) named as a hint for a
+    drawing whose $INSUNITS states no units (GM-327 review C3); it says
+    English or metric, not which unit, so it decides nothing."""
+    try:
+        meas = doc.header.get("$MEASUREMENT")
+    except Exception:
+        meas = None
+    if meas not in (0, 1):
+        return ""
+    kind = ("English (feet or inches)" if meas == 0
+            else "metric (m, cm or mm)")
+    return (f" A hint only: the header's $MEASUREMENT is {meas}, {kind}; "
+            f"it does not say which unit.")
+
+
+def _header_decided_warning(doc, units, surface_points, boundary_profiles):
+    """The warning for units the header alone decided (GM-327 review B1): the
+    header's units and the section's width and height in metres as read,
+    for the agent to check against the drawing."""
+    try:
+        code = doc.header.get("$INSUNITS", 0)
+    except Exception:
+        code = 0
+    pts = list(surface_points)
+    for prof in boundary_profiles.values():
+        pts.extend(prof)
+    size = ""
+    if pts:
+        xs = [p[0] for p in pts]
+        zs = [p[1] for p in pts]
+        size = (f" Read in those units, the section is "
+                f"{max(xs) - min(xs):.2f} m wide and "
+                f"{max(zs) - min(zs):.2f} m high.")
+    return (f"units was left out, so the drawing's header decided them: "
+            f"$INSUNITS = {code}, {_UNIT_WORDS.get(units, units)}.{size} A "
+            f"header left at a template's value is common (feet drawn under "
+            f"an inch header come out 12 times too small, metres under a mm "
+            f"header 1000 times): check that size against the drawing and "
+            f"give units to confirm or correct it.")
 
 
 def _resolve_units(doc, units, ignore_header_units, warnings):
@@ -292,7 +375,8 @@ def _resolve_units(doc, units, ignore_header_units, warnings):
     The caller's ``units`` and the header are compared; nothing is assumed:
 
     * neither states units -> refused;
-    * only the header -> the header's, said in ``units_source``;
+    * only the header -> the header's, said in ``units_source`` and in a
+      warning with the section's size as read (parse_dxf_geometry);
     * only the caller (header unitless) -> the caller's;
     * both and equal -> those;
     * both and different -> refused, or the caller's with a warning that
@@ -304,26 +388,36 @@ def _resolve_units(doc, units, ignore_header_units, warnings):
     except Exception:
         code = 0
     header_units = detect_units_from_header(doc)
+    if header_units is None and code in _SURVEY_UNITS:
+        header_units = _SURVEY_UNITS[code]
     header_label = header_units
     if header_units is None and code in _INSUNITS_UNSUPPORTED:
         header_label = _INSUNITS_UNSUPPORTED[code]
+    survey = header_units in _SURVEY_FACTORS
+    if survey:
+        header_label = _SURVEY_FACTORS[header_units][2]
 
     if units is None:
         if header_units is not None:
-            return (header_units, "the drawing's header ($INSUNITS)",
-                    header_units)
+            source = "the drawing's header ($INSUNITS)"
+            if survey:
+                source = (f"the drawing's header ($INSUNITS = {code}): "
+                          f"{_survey_note(header_units)}")
+            return (header_units, source, header_units)
         if header_label is not None:
             raise ValueError(
                 f"The drawing's header ($INSUNITS = {code}) states "
                 f"{header_label}, which this importer does not convert. "
                 f"Give units (one of {supported}) for the units the "
-                f"coordinates are really drawn in."
+                f"coordinates are really drawn in, with "
+                f"ignore_header_units=True so the header is set aside."
             )
         raise ValueError(
-            f"The drawing's header states no units ($INSUNITS is unitless) "
-            f"and no units were given, so the coordinates cannot be turned "
-            f"into metres. Give units (one of {supported}); a drawing in mm "
-            f"read as m is 1000 times too large."
+            f"The drawing's header states no units ($INSUNITS is unitless "
+            f"or absent) and no units were given, so the coordinates cannot "
+            f"be turned into metres. Give units (one of {supported}); a "
+            f"drawing in mm read as m is 1000 times too large."
+            + _measurement_hint(doc)
         )
 
     if header_label is None:
@@ -331,6 +425,18 @@ def _resolve_units(doc, units, ignore_header_units, warnings):
     if header_units == units:
         return (units, "given, and the drawing's header ($INSUNITS) agrees",
                 header_units)
+    if survey and _SURVEY_FACTORS[header_units][1] == units:
+        return (header_units,
+                f"given as {units}; the drawing's header ($INSUNITS = "
+                f"{code}) agrees: {_survey_note(header_units)}",
+                header_units)
+    if not ignore_header_units and header_units is None:
+        raise ValueError(
+            f"units='{units}' was given, and the drawing's own header "
+            f"($INSUNITS = {code}) states {header_label}, which this "
+            f"importer does not convert. If the coordinates really are in "
+            f"{units}, pass ignore_header_units=True with units='{units}'."
+        )
     if not ignore_header_units:
         raise ValueError(
             f"units='{units}' was given, and the drawing's own header "
@@ -432,7 +538,7 @@ def _extract_nail_lines(
     list of dict
         Each dict has {x_head, z_head, x_tip, z_tip} in meters.
     """
-    factor = UNIT_FACTORS[units] / UNIT_FACTORS["m"]
+    factor = _FACTORS[units]
     nails = []
     for ent in entities:
         if ent.dxftype() != "LINE":

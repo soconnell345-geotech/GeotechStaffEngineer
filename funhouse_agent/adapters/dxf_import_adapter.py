@@ -82,12 +82,43 @@ def check_soil_properties(items, kind, *, method):
 #: phi 0, c 0, cu 0, E 30000 and nu 0.3 with nothing said).
 _SOIL_REQUIRED_TEXT = {
     "slope": ("a drained layer needs gamma and phi (c_prime is 0 when left "
-              "out, and listed); an undrained layer (analysis_mode="
-              "'undrained') needs gamma and cu"),
+              "out, and listed, unless phi is 0); an undrained layer "
+              "(analysis_mode='undrained') needs gamma and cu"),
     "fem": ("every layer needs gamma, E and nu; a layer with a strength "
             "model (mc or hs) also needs phi (c and psi are 0 when left "
-            "out, and listed)"),
+            "out, and listed, but c is needed when phi is 0)"),
 }
+
+#: The cohesion that is a drained layer's only strength when its phi is 0,
+#: by kind, and what to say about it (GM-327 review B2).
+_COHESION = {
+    "slope": ("c_prime", "give c_prime, or analysis_mode='undrained' with "
+                         "cu for an undrained clay"),
+    "fem": ("c", "give c (cu for an undrained clay)"),
+}
+
+
+def _zero_strength(sp, kind, kw, label):
+    """For a layer whose strength model uses phi and c: the refusal text
+    when phi is 0 and the cohesion was left out (a layer with no strength;
+    0 would stand in), else None. An explicit cohesion of 0 with phi 0 is
+    the engineer's input: it runs, with a warning that reaches the agent."""
+    if kind == "slope" and kw.get("analysis_mode") == "undrained":
+        return None
+    if kind == "fem" and kw.get("model") == "elastic":
+        return None
+    phi = sp.get("phi")
+    if phi is None or isinstance(phi, bool) or phi != 0:
+        return None
+    key, advice = _COHESION[kind]
+    if sp.get(key) is None:
+        return (f"{label} has phi 0 and no {key}, so it would have no "
+                f"strength: {advice}")
+    if sp[key] == 0:
+        import warnings
+        warnings.warn(f"{label} has phi 0 and {key} 0 as given: the layer "
+                      f"has no strength.", stacklevel=3)
+    return None
 
 
 def soil_assignments(items, kind, *, method):
@@ -145,8 +176,12 @@ def soil_assignments(items, kind, *, method):
                 kw["c"] = default("c", 0.0)
                 kw["psi"] = default("psi", 0.0)
         lacking = [k for k in need if sp.get(k) is None]
-        if lacking:
-            missing.append(f"{label} has no {', '.join(lacking)}")
+        no_strength = _zero_strength(sp, kind, kw, label)
+        if lacking or no_strength:
+            if lacking:
+                missing.append(f"{label} has no {', '.join(lacking)}")
+            if no_strength:
+                missing.append(no_strength)
             continue
         for k in need:
             kw[k] = sp[k]
@@ -374,7 +409,7 @@ METHOD_INFO = {
         "parameters": {
             "file_path": {"type": "str", "required": True, "description": "Path to DXF file."},
             "layer_mapping": {"type": "dict", "required": True, "description": "Mapping with keys: surface (str), soil_boundaries ({layer: soil_name}), water_table (str), nails (str), annotations ([str]). Each soil_boundaries layer is the TOP of the soil it names (that soil lies below it, down to the next boundary); in build_slope_geometry the soil between the ground surface and the highest boundary takes the soil property named 'Surface', or else the first soil property that no boundary names."},
-            "units": {"type": "str", "required": False, "allowed_values": ["m", "mm", "cm", "ft", "in"], "description": "Units the drawing is drawn in. Left out, the units the drawing's own header states ($INSUNITS, discover_layers' units_hint) are used; a drawing whose header states none is refused until units is given. Given, they are compared with the header, and a difference is refused unless ignore_header_units is true. Nothing is assumed."},
+            "units": {"type": "str", "required": False, "allowed_values": ["m", "mm", "cm", "ft", "in"], "description": "Units the drawing is drawn in. Left out, the units the drawing's own header states ($INSUNITS, discover_layers' units_hint) are used, and the warnings name them with the section's width and height in metres as read: a header left at a template's value is common, so check that size against the drawing and give units to confirm or correct it. A drawing whose header states none is refused until units is given. A header in US survey feet or inches ($INSUNITS 21, 22) is read as such, and 'ft' or 'in' agrees with it. Given, they are compared with the header, and a difference is refused unless ignore_header_units is true. Nothing is assumed."},
             "flip_y": {"type": "bool", "required": False, "default": False, "description": "Negate Y values for downward-positive drawings."},
             "ignore_header_units": {"type": "bool", "required": False, "default": False, "description": "True: use units even though the drawing's header states other units (a header left at a template's value is common); the warnings then name both."},
         },
@@ -384,7 +419,7 @@ METHOD_INFO = {
             "gwt_points": "GWT profile or null.",
             "nail_lines": "Nail geometry list (only when the drawing has nails), in metres. Only LINE entities are read as nails; anything else on the nail layer is counted in warnings.",
             "text_annotations": "Text labels (only when there are any): [{text, x, y, layer}], x and y in metres like the geometry.",
-            "units_used": "The units the coordinates were converted from.",
+            "units_used": "The units the coordinates were converted from ('us_survey_ft' or 'us_survey_in' for a header in US survey units).",
             "units_source": "Where units_used came from: given, read from the drawing's header, or given against the header.",
             "header_units": "The units the drawing's own header states, or null.",
             "warnings": "Any parsing warnings: a mapped layer not found, a layer with no geometry, entities left out, a header ignored.",
@@ -395,15 +430,15 @@ METHOD_INFO = {
         "brief": "Assemble SlopeGeometry from DXF parse result and soil properties.",
         "parameters": {
             "parse_result": {"type": "dict", "required": True, "description": "Output from parse_dxf_geometry (surface_points, boundary_profiles, etc.)."},
-            "soil_properties": {"type": "list", "required": True, "description": "List of dicts: {name, gamma, gamma_sat, phi, c_prime, cu, analysis_mode}. A drawing gives geometry only, so no unit weight or strength is assumed: a drained layer must give gamma and phi, an undrained layer (analysis_mode='undrained') gamma and cu; a layer without them is refused. Left out and listed in defaults_used: c_prime 0, analysis_mode 'drained', gamma_sat = the layer's gamma (one unit weight above and below the water table)."},
+            "soil_properties": {"type": "list", "required": True, "description": "List of dicts: {name, gamma, gamma_sat, phi, c_prime, cu, analysis_mode}. A drawing gives geometry only, so no unit weight or strength is assumed: a drained layer must give gamma and phi, an undrained layer (analysis_mode='undrained') gamma and cu; a layer without them is refused. Left out and listed in defaults_used: c_prime 0 (refused when phi is 0, a layer with no strength), analysis_mode 'drained', gamma_sat = the layer's gamma (one unit weight above and below the water table)."},
             "nail_defaults": {"type": "dict", "required": False, "description": "Properties for the nails the drawing has: {bar_diameter mm, drill_hole_diameter mm, fy MPa, bond_stress kPa, spacing_h m}. A drawing gives each nail's head, length and inclination only. A property left out takes slope_stability's own nail default (25, 150, 420, 100, 1.5) and is listed in defaults_used; the grout-ground bond_stress depends on the ground, so give it."},
         },
         "returns": {
             "surface_points": "Ground surface profile [[x, z], ...].",
             "soil_layers": "Assembled soil layers with geometry and properties, as slope_stability's soil_layers.",
             "gwt_points": "GWT profile [[x, z], ...] or null.",
-            "nails": "Soil nails from the DXF nail lines, as slope_stability's nails (only when there are any). The whole result is slope_stability.analyze_slope / search_critical_surface input.",
-            "defaults_used": "Only when a value stood in for an input left out: {'soil_properties[<name>].<input>': value, 'nail_defaults.<input>': value}. Take it out before passing the result on to slope_stability.",
+            "nails": "Soil nails from the DXF nail lines, as slope_stability's nails (only when there are any). Pass surface_points, soil_layers, gwt_points and nails (when there are any) on to slope_stability.analyze_slope / search_critical_surface; defaults_used and warnings are a record for the report, not inputs, and analyze_slope refuses them.",
+            "defaults_used": "Only when a value stood in for an input left out: {'soil_properties[<name>].<input>': value, 'nail_defaults.<input>': value}. A record, not a slope_stability input: do not pass it on.",
         },
     },
     "build_fem_inputs": {
@@ -411,7 +446,7 @@ METHOD_INFO = {
         "brief": "Convert DXF parse result to fem2d input format with FEM soil properties.",
         "parameters": {
             "parse_result": {"type": "dict", "required": True, "description": "Output from parse_dxf_geometry (surface_points, boundary_profiles, etc.)."},
-            "soil_properties": {"type": "list", "required": True, "description": "List of dicts: {name, gamma, phi, c, E, nu, psi, model, hs_params}. A drawing gives geometry only, so no unit weight, stiffness or strength is assumed: every layer must give gamma, E and nu, and a layer with a strength model (mc or hs) phi; a layer without them is refused. Left out and listed in defaults_used: c 0, psi 0, model 'mc'."},
+            "soil_properties": {"type": "list", "required": True, "description": "List of dicts: {name, gamma, phi, c, E, nu, psi, model, hs_params}. A drawing gives geometry only, so no unit weight, stiffness or strength is assumed: every layer must give gamma, E and nu, and a layer with a strength model (mc or hs) phi; a layer without them is refused. Left out and listed in defaults_used: c 0 (refused when phi is 0, a layer with no strength), psi 0, model 'mc'."},
         },
         "returns": {
             "surface_points": "Ground surface profile.",

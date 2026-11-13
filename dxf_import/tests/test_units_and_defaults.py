@@ -290,3 +290,145 @@ class TestAgentParseGeometry:
                         {"file_path": path, "layer_mapping": mapping,
                          "units": "m"})
         assert "states mm" in refused["error"]
+
+
+class TestReviewRound:
+    """GM-327 review B1-B4 and C3. Made-up drawings and soil values."""
+
+    def test_header_units_alone_are_warned_with_the_section_size(
+            self, tmp_path):
+        # a 20 m by 6 m section drawn in feet under an inch header (B1):
+        # the numbers stay the header's, the warning gives the size as read
+        path = _drawing(tmp_path, insunits=1, scale=1 / 0.3048)
+        r = parse_dxf_geometry(filepath=path, layer_mapping=_MAPPING)
+        assert r.units_used == "in"
+        assert r.surface_points[-1] == pytest.approx(
+            (20.0 / 12, 4.0 / 12))
+        said = [w for w in r.warnings if "header decided" in w]
+        assert len(said) == 1
+        assert "$INSUNITS = 1, inches" in said[0]
+        assert "1.67 m wide and 0.50 m high" in said[0]
+        assert "give units to confirm or correct it" in said[0]
+        # units given: no such warning
+        r = parse_dxf_geometry(filepath=path, layer_mapping=_MAPPING,
+                               units="in")
+        assert not any("header decided" in w for w in r.warnings)
+
+    def test_us_survey_feet_are_read_and_ft_agrees(self, tmp_path):
+        path = _drawing(tmp_path, insunits=21, scale=1 / 0.3048)
+        r = parse_dxf_geometry(filepath=path, layer_mapping=_MAPPING)
+        assert r.units_used == "us_survey_ft"
+        assert r.header_units == "us_survey_ft"
+        assert "US survey feet" in r.units_source
+        assert "2 parts per million" in r.units_source
+        x = 20.0 / 0.3048 * 1200 / 3937
+        assert r.surface_points[-1][0] == pytest.approx(x, rel=1e-12)
+        assert any("header decided" in w for w in r.warnings)
+        given = parse_dxf_geometry(filepath=path, layer_mapping=_MAPPING,
+                                   units="ft")
+        assert given.units_used == "us_survey_ft"
+        assert "given as ft" in given.units_source
+        assert "agrees" in given.units_source
+        assert given.surface_points[-1][0] == pytest.approx(x, rel=1e-12)
+        assert not any("header" in w for w in given.warnings)
+        with pytest.raises(ValueError, match="Leave units out"):
+            parse_dxf_geometry(filepath=path, layer_mapping=_MAPPING,
+                               units="m")
+
+    def test_us_survey_inches_are_read_and_in_agrees(self, tmp_path):
+        path = _drawing(tmp_path, insunits=22, scale=1 / 0.0254)
+        r = parse_dxf_geometry(filepath=path, layer_mapping=_MAPPING,
+                               units="in")
+        assert r.units_used == "us_survey_in"
+        assert "US survey inches" in r.units_source
+        x = 20.0 / 0.0254 * 100 / 3937
+        assert r.surface_points[-1][0] == pytest.approx(x, rel=1e-12)
+        assert r.text_annotations[0]["x"] == pytest.approx(
+            5.0 / 0.0254 * 100 / 3937, rel=1e-12)
+
+    @pytest.mark.parametrize("code,words", [(23, "US survey yards"),
+                                            (24, "US survey miles")])
+    def test_other_survey_units_stay_refused_without_a_loop(
+            self, tmp_path, code, words):
+        path = _drawing(tmp_path, insunits=code)
+        with pytest.raises(ValueError, match=words) as left_out:
+            parse_dxf_geometry(filepath=path, layer_mapping=_MAPPING)
+        assert "ignore_header_units=True" in str(left_out.value)
+        with pytest.raises(ValueError) as given:
+            parse_dxf_geometry(filepath=path, layer_mapping=_MAPPING,
+                               units="m")
+        assert "Leave units out" not in str(given.value)
+        assert "ignore_header_units=True" in str(given.value)
+        # the advice given is a call that runs
+        r = parse_dxf_geometry(filepath=path, layer_mapping=_MAPPING,
+                               units="m", ignore_header_units=True)
+        assert r.units_used == "m"
+        assert any(words in w and "ignored" in w for w in r.warnings)
+
+    def test_unitless_refusal_names_measurement_as_a_hint(self, tmp_path):
+        path = _drawing(tmp_path, insunits=0)
+        doc = ezdxf.readfile(path)
+        doc.header["$MEASUREMENT"] = 0
+        doc.saveas(path)
+        with pytest.raises(ValueError, match=r"\$MEASUREMENT is 0") as e:
+            parse_dxf_geometry(filepath=path, layer_mapping=_MAPPING)
+        assert "English (feet or inches)" in str(e.value)
+        assert "hint only" in str(e.value)
+
+    def test_phi_zero_with_no_cohesion_is_refused(self):
+        r = _call("build_slope_geometry", {
+            "parse_result": _parse_result(),
+            "soil_properties": [
+                {"name": "Surface", "gamma": 18.0, "phi": 30.0},
+                {"name": "Clay", "gamma": 19.0, "phi": 0.0}]})
+        assert "soil_properties[Clay] has phi 0 and no c_prime" in r["error"]
+        assert "undrained" in r["error"]
+        r = _call("build_fem_inputs", {
+            "parse_result": _parse_result(),
+            "soil_properties": [
+                {"name": "Surface", "gamma": 18.0, "E": 30000.0, "nu": 0.3,
+                 "phi": 30.0},
+                {"name": "Clay", "gamma": 18.0, "E": 15000.0, "nu": 0.45,
+                 "phi": 0.0}]})
+        assert "soil_properties[Clay] has phi 0 and no c," in r["error"]
+
+    def test_phi_zero_with_cohesion_zero_given_runs_with_a_warning(self):
+        r = _call("build_slope_geometry", {
+            "parse_result": _parse_result(),
+            "soil_properties": [
+                {"name": "Surface", "gamma": 18.0, "phi": 30.0},
+                {"name": "Clay", "gamma": 19.0, "phi": 0.0,
+                 "c_prime": 0.0}]})
+        assert "error" not in r, r
+        assert any("soil_properties[Clay] has phi 0 and c_prime 0" in w
+                   and "no strength" in w for w in r["warnings"])
+        r = _call("build_fem_inputs", {
+            "parse_result": _parse_result(),
+            "soil_properties": [
+                {"name": "Surface", "gamma": 18.0, "E": 30000.0, "nu": 0.3,
+                 "phi": 30.0, "c": 2.0},
+                {"name": "Clay", "gamma": 18.0, "E": 15000.0, "nu": 0.45,
+                 "phi": 0.0, "c": 0.0}]})
+        assert "error" not in r, r
+        assert any("has phi 0 and c 0" in w for w in r["warnings"])
+
+    def test_the_keys_the_text_names_run_in_analyze_slope(self):
+        from funhouse_agent.dispatch import call_agent
+        from funhouse_agent.adapters.dxf_import_adapter import (
+            METHOD_INFO,
+        )
+        text = METHOD_INFO["build_slope_geometry"]["returns"]["nails"]
+        keys = ("surface_points", "soil_layers", "gwt_points", "nails")
+        assert all(k in text for k in keys)
+        geom = _call("build_slope_geometry", {
+            "parse_result": _parse_result(),
+            "soil_properties": [
+                {"name": "Surface", "gamma": 18.0, "phi": 30.0},
+                {"name": "Clay", "gamma": 19.0, "phi": 25.0,
+                 "c_prime": 5.0}]})
+        assert "defaults_used" in geom
+        handed = {k: geom[k] for k in keys if geom.get(k) is not None}
+        handed.update(xc=10.0, yc=18.0, radius=12.0)
+        out = call_agent("slope_stability", "analyze_slope", handed)
+        assert "error" not in out, out
+        assert out["FOS"] > 0
