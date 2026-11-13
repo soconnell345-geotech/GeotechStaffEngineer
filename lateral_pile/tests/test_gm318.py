@@ -27,6 +27,11 @@ def test_layers_starting_below_the_ground_are_refused():
         LateralPileAnalysis(_pile(), [SoilLayer(2.0, 15.0, _clay())])
     msg = str(e.value)
     assert "start at 2 m" in msg and "stickup" in msg
+    # review B2: stickup is the scour model (soil removed); soil that stays
+    # in place but resists nothing is a weak top layer, and the two differ
+    assert "Sec. 6.7.5, p. 91" in msg and "differs" in msg
+    assert "top 2 m from the ground surface as its own layer of " \
+           "negligible strength" in msg
     # the extension is of the last layer only
     with pytest.raises(ValueError, match="start at 2 m"):
         LateralPileAnalysis(_pile(), [SoilLayer(2.0, 15.0, _clay())],

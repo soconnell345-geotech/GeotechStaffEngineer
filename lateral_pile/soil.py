@@ -167,7 +167,14 @@ def validate_layers(layers: list, pile_length: float,
             f"surface (depths are measured from it). For a pile length "
             f"standing free above the ground give stickup; for soil that "
             f"is gone (scour, an excavation) measure depths from the new "
-            f"ground surface and add the lost length to stickup.")
+            f"ground surface and add the lost length to stickup: the p-y "
+            f"depths then start at the new surface, soil removed, as GEC 9 "
+            f"(FHWA-HIF-18-031) Sec. 6.7.5, p. 91 takes the whole scour "
+            f"zone. That differs from soil that stays in place, keeping "
+            f"its weight on the soil below, and is to give no resistance "
+            f"over the top {top_depth:g} m: for that, give the top "
+            f"{top_depth:g} m from the ground surface as its own layer of "
+            f"negligible strength.")
 
     if bottom_depth < pile_length - tol and not extend_last_layer:
         raise ValueError(

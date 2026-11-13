@@ -353,7 +353,14 @@ manual (GEC 9, COM624P) prints a rule for either case, so:
 
 - layers that start below the ground surface are refused. The message
   points to `stickup` for a free length and to measuring depths from the
-  new ground surface where soil is gone;
+  new ground surface where soil is gone. That is the scour model: GEC 9
+  (FHWA-HIF-18-031) Sec. 6.7.5, p. 91, "the entire soil depth within the
+  scour zone should be considered to be removed by scour". The other case,
+  soil that stays in place (its weight on the soil below, the p-y depths
+  from the old surface) but is to give no resistance over a top zone, is
+  different, and the message says so: give that zone as a top layer of
+  negligible strength from the ground surface (GM-318 review B2; the
+  arithmetic is unchanged);
 - layers that stop above the toe are refused, naming the depth not covered.
   `LateralPileAnalysis(..., extend_last_layer=True)` (the tool's
   `extend_last_layer`) takes the last layer's p-y model on to the toe; the
