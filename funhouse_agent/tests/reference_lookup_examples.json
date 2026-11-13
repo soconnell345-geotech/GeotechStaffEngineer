@@ -134,10 +134,10 @@
    "eac_psi": 500000
   },
   "layer_coefficient_a2_bituminous_treated": {
-   "marshall_stability_lb": 2000
+   "marshall_stability_lb": 1500
   },
   "layer_coefficient_a2_cement_treated": {
-   "ucs_7day_psi": 1200
+   "ucs_7day_psi": 700
   },
   "layer_coefficient_a2_granular_base": {
    "ebs_psi": 30000
@@ -2723,8 +2723,8 @@
    "beta1": 1.0
   },
   "compression_steel_stress_at_ku": {
-   "ku": 30,
-   "dprime_over_d": 30,
+   "ku": 0.3,
+   "dprime_over_d": 0.15,
    "beta1": 1.0,
    "fy": 30
   },
@@ -5347,8 +5347,8 @@
   "built_up_column_capacity": {
    "fc": 30,
    "fe": 17.0,
-   "c": 1.0,
-   "k_f": 30
+   "c": 0.85,
+   "k_f": 0.7
   },
   "combined_bending_axial_deflection": {
    "delta_0": 0.01,
