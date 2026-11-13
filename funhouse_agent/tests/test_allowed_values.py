@@ -177,8 +177,8 @@ def _probed_lists():
     out, seen = [], set()
     for key in sorted(MP.PROBES):
         agent = key.split("#")[0].split("|")[0]
-        if agent in seen:
-            continue
+        if agent in seen or agent not in D.MODULE_REGISTRY:
+            continue                    # an optional package not installed
         seen.add(agent)
         mod = D._load_adapter(agent)
         for method, info in mod.METHOD_INFO.items():
