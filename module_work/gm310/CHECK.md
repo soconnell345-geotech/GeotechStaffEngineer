@@ -266,7 +266,8 @@ phi/3 when none is given, not 0.4 phi (3.731 to 3.500 at phi 30, kh 0.2).
 Pile group uplift: groups of 3 or 4 driven piles take the 20 % cut (phi_ug
 0.50 to 0.40). Bearing capacity by Meyerhof: his own depth factors at
 every depth, so footings deeper than they are wide gain capacity (the
-call's range is 6 to 16 %; 20 % at D_f/B 2.5 on the probe), with a warning
+gain grows with D_f/B, with no upper limit: 20 % at D_f/B 2.5 and 27 % at
+D_f/B 3, a strip at phi' 34), with a warning
 and Brinch Hansen's value beside it. Downdrag: no number changes; the
 summary gives the settlement-compatible plane beside the headline where
 the two differ.

@@ -77,8 +77,10 @@ wraps it).
   factors grow without limit: the analysis warns (a Python warning and in
   the depth choice) and gives Brinch Hansen's factors and q_ult beside
   them. This follows the print although it is the less conservative
-  reading: answers for footings deeper than they are wide rise by 6 to
-  16 %. Vesic's default stays "hansen" (`default_depth_factor_method`).
+  reading: answers for footings deeper than they are wide rise, more the
+  deeper the footing, with no upper limit (a strip 1 m wide at Df 2.5 m,
+  phi' 34, gamma 19: 2,491 against 2,074 kPa, 20 % above; 27 % at Df/B 3).
+  Vesic's default stays "hansen" (`default_depth_factor_method`).
 - Depth factors (GM-197), `depth_factor_method`: "hansen" (the default
   except with Meyerhof's factors) takes Brinch Hansen's k = Df/B for Df/B < 1 and arctan(Df/B) from 1
   (UFC 3-220-20 Tables 5-7 and 5-8 note B, pp. 295-296; GEC-6 Table 5-4
