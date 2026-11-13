@@ -68,6 +68,8 @@ def __getattr__(attr):
     raise AttributeError(f"module {__name__!r} has no attribute {attr!r}")
 
 _BR_TAG = re.compile(r"^<br\s*/?>$", re.IGNORECASE)
+#: ``<sup>`` / ``<sub>`` and their closers, as inline HTML (DR-41).
+_SCRIPT_TAG = re.compile(r"^<(/?)(sup|sub)\s*>$", re.IGNORECASE)
 #: Characters XML 1.0 does not allow (tab, line feed and carriage return are).
 _CONTROL_CHARS = re.compile(
     r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
@@ -134,10 +136,13 @@ def markdown_to_docx(markdown: str, output_path: str, *,
     doc = docx.Document()
     section = doc.sections[0]
     text_width = section.page_width - section.left_margin - section.right_margin
+    text_height = (section.page_height - section.top_margin
+                   - section.bottom_margin)
     ctx = _Context(doc=doc, base_dir=base_dir, text_width=text_width,
-                   warnings=notes, Inches=Inches, page_break=WD_BREAK.PAGE)
+                   text_height=text_height, warnings=notes, Inches=Inches, page_break=WD_BREAK.PAGE)
 
-    tokens = MarkdownIt("commonmark").enable("table").parse(markdown or "")
+    tokens = MarkdownIt("commonmark").enable("table").enable(
+        "strikethrough").parse(markdown or "")
     if title:
         doc.add_heading(str(title), 0)
         tokens = _drop_restated_title(tokens, str(title))
@@ -231,10 +236,11 @@ class _Context:
     """Everything the block and inline writers share for one document."""
 
     def __init__(self, doc, base_dir, text_width, warnings, Inches,
-                 page_break):
+                 page_break, text_height=None):
         self.doc = doc
         self.base_dir = base_dir
         self.text_width = text_width
+        self.text_height = text_height
         self.warnings = warnings
         self.Inches = Inches
         self.page_break = page_break
@@ -438,9 +444,19 @@ def _code_block(content, ctx):
 def _add_inline(par, children, ctx, bold=False, italic=False):
     """Runs for one inline token stream: bold, italic, code, images, links."""
     href = ""
+    strike = False
+    script = None                       # "sup", "sub" or None
     for child in children or ():
         kind = child.type
-        if kind == "strong_open":
+        if kind == "s_open":
+            strike = True
+        elif kind == "s_close":
+            strike = False
+        elif kind == "html_inline" and _SCRIPT_TAG.match(
+                child.content.strip()):
+            m = _SCRIPT_TAG.match(child.content.strip())
+            script = None if m.group(1) else m.group(2).lower()
+        elif kind == "strong_open":
             bold = True
         elif kind == "strong_close":
             bold = False
@@ -451,9 +467,11 @@ def _add_inline(par, children, ctx, bold=False, italic=False):
         elif kind == "code_inline":
             run = par.add_run(child.content)
             run.font.name = MONO_FONT
+            _mark(run, strike, script)
         elif kind == "text":
             run = par.add_run(child.content)
             run.bold, run.italic = bold, italic
+            _mark(run, strike, script)
         elif kind in ("softbreak", "hardbreak"):
             # A line break the author typed is a line break in Word too
             # (B4: "June 2026" and "Status: DRAFT" ran into one line).
@@ -479,6 +497,16 @@ def _add_inline(par, children, ctx, bold=False, italic=False):
             _add_inline(par, child.children, ctx, bold, italic)
 
 
+def _mark(run, strike, script):
+    """Struck-through, superscript and subscript formatting on one run."""
+    if strike:
+        run.font.strike = True
+    if script == "sup":
+        run.font.superscript = True
+    elif script == "sub":
+        run.font.subscript = True
+
+
 def _picture(par, token, ctx, block=False):
     """Place an image, scaled down to the text width, or say why it is not there."""
     attrs = dict(token.attrs or {})
@@ -499,9 +527,16 @@ def _picture(par, token, ctx, block=False):
             f"({type(exc).__name__})")
         par.add_run(f"[image not found: {src}]").italic = True
         return
+    # Fit inside the text width AND the page's text height (a tall picture
+    # scaled on width alone ran off the page); never enlarge.
+    scale = 1.0
     if shape.width > ctx.text_width:
-        shape.height = int(shape.height * ctx.text_width / shape.width)
-        shape.width = ctx.text_width
+        scale = ctx.text_width / shape.width
+    if ctx.text_height and shape.height * scale > ctx.text_height:
+        scale = ctx.text_height / shape.height
+    if scale < 1.0:
+        shape.width = max(1, int(shape.width * scale))
+        shape.height = max(1, int(shape.height * scale))
     if block and alt:
         caption = ctx.doc.add_paragraph()
         ctx.style(caption, "Caption")
@@ -642,16 +677,21 @@ def docx_to_markdown(source, *, image_dir: str = None, image_ref: str = None,
     dict
         ``markdown``; ``title`` (the Title paragraph's text, or ``None``);
         ``images`` (the names the pictures were saved under, or a
-        ``picture N`` placeholder each); ``properties`` (title, author).
+        ``picture N`` placeholder each); ``properties`` (title, author);
+        ``extras`` (the headings of what was read besides the body and
+        written after it: comments, footnotes, endnotes, headers and
+        footers, text boxes, and what was there but not read).
     """
     import docx
 
     doc = docx.Document(source)
     reader = _DocxReader(doc, image_dir, image_ref, image_prefix)
     reader.read_container(doc.element.body)
+    extras = reader.read_extras()
     cp = doc.core_properties
     return {
         "markdown": _assemble(reader.blocks),
+        "extras": extras,
         "title": reader.title,
         "images": reader.images,
         "properties": {"title": cp.title or "", "author": cp.author or ""},
@@ -756,6 +796,10 @@ class _DocxReader:
         self.title = None
         self.images = []
         self._pending_caption_for = None   # index of an image block
+        self._open_comments = set()        # comment ranges open right now
+        self._comment_text = {}            # comment id -> text it is on
+        self.textboxes = []                # text boxes' text, in order
+        self.unread = {}                   # kind -> count, there, not read
 
     # -- containers ------------------------------------------------------
     def read_container(self, el):
@@ -823,6 +867,47 @@ class _DocxReader:
             md = f"[picture {n}{': ' + alt if alt else ''} — not extracted]"
         return {"t": "img", "md": md, "name": name, "alt": alt}
 
+    def _picture_or_box(self, el, segs):
+        """A drawing or picture run child: a text box is read as text (kept
+        for the "Text boxes" section), a chart, diagram or embedded object
+        is counted as not read, anything else is a picture."""
+        tb = _qn("w:txbxContent")
+        if el.find(".//" + tb) is not None \
+                and el.find(".//" + _qn("a:blip")) is None \
+                and el.find(".//" + _VML + "imagedata") is None:
+            boxes = [b for b in el.iter(tb)
+                     if not any(a.tag == tb for a in b.iterancestors())]
+            for box in boxes:
+                text = self._paragraphs_text(box)
+                if text:
+                    self.textboxes.append(text)
+            return
+        for gd in el.iter(_qn("a:graphicData")):
+            uri = (gd.get("uri") or "").lower()
+            if uri.endswith("/chart"):
+                self._not_read("chart")
+                return
+            if uri.endswith("/diagram"):
+                self._not_read("SmartArt diagram")
+                return
+        if el.find(".//" + _qn("w:object")) is not None \
+                or el.tag == _qn("w:object"):
+            self._not_read("embedded object")
+            return
+        segs.append(self._image(el))
+
+    def _not_read(self, what):
+        self.unread[what] = self.unread.get(what, 0) + 1
+
+    def _paragraphs_text(self, container, sep=" / "):
+        """The text of every paragraph under ``container``, joined."""
+        parts = []
+        for p in container.iter(_qn("w:p")):
+            t = " ".join(self.inline(p).split())
+            if t:
+                parts.append(t)
+        return sep.join(parts)
+
     def segments(self, p_el):
         """The pieces of one paragraph: text runs with their formatting,
         line and page breaks, pictures — tracked insertions in, deletions
@@ -840,6 +925,9 @@ class _DocxReader:
                                           _qn("w:br"), _qn("w:cr"))
         pics = (_qn("w:drawing"), _qn("w:pict"))
         hyphen = _qn("w:noBreakHyphen")
+        mc = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
+        alt_tag = mc + "AlternateContent"
+        cr_start, cr_end = _qn("w:commentRangeStart"), _qn("w:commentRangeEnd")
 
         def run(r_el, link):
             r = Run(r_el, par)
@@ -852,6 +940,9 @@ class _DocxReader:
                 if ch.tag == t_tag:
                     segs.append({"t": "text", "s": ch.text or "", "b": b,
                                  "i": i, "c": c, "link": link})
+                    for cid in self._open_comments:
+                        self._comment_text.setdefault(cid, []).append(
+                            ch.text or "")
                 elif ch.tag == tab_tag:
                     segs.append({"t": "text", "s": " ", "b": b, "i": i,
                                  "c": c, "link": link})
@@ -864,11 +955,25 @@ class _DocxReader:
                 elif ch.tag == cr_tag:
                     segs.append({"t": "br"})
                 elif ch.tag in pics:
-                    segs.append(self._image(ch))
+                    self._picture_or_box(ch, segs)
+                elif ch.tag == alt_tag:
+                    # mc:AlternateContent holds the same drawing twice (the
+                    # modern form and a fallback): read the first only.
+                    pick = ch.find(mc + "Choice")
+                    if pick is None:
+                        pick = ch.find(mc + "Fallback")
+                    for inner in (pick.iterchildren() if pick is not None
+                                  else ()):
+                        if inner.tag in pics:
+                            self._picture_or_box(inner, segs)
 
         def walk(el, link):
             for ch in el.iterchildren():
-                if ch.tag == r_tag:
+                if ch.tag == cr_start:
+                    self._open_comments.add(ch.get(_qn("w:id")))
+                elif ch.tag == cr_end:
+                    self._open_comments.discard(ch.get(_qn("w:id")))
+                elif ch.tag == r_tag:
                     run(ch, link)
                 elif ch.tag == link_tag:
                     walk(ch, self._link_url(ch) or link)
@@ -885,6 +990,102 @@ class _DocxReader:
         segs, _par = self.segments(p_el)
         segs = [s for s in segs if s["t"] != "page"]
         return _segments_md(segs, drop_bold=drop_bold).strip()
+
+    # -- what is in the file besides the body --------------------------------
+    def _part_roots(self, tail):
+        """The parsed XML of each related part whose type ends ``tail``."""
+        from lxml import etree
+        roots, failed = [], []
+        for rel in self.doc.part.rels.values():
+            if rel.is_external or not rel.reltype.endswith(tail):
+                continue
+            try:
+                blob = rel.target_part.blob
+                roots.append(etree.fromstring(blob))
+            except Exception as exc:  # noqa: BLE001
+                failed.append(type(exc).__name__)
+        return roots, failed
+
+    def read_extras(self):
+        """Comments, footnotes, endnotes, headers and footers and text
+        boxes, added to the blocks under headings of their own, and what
+        was there but could not be read. Returns the headings added."""
+        added = []
+
+        def section(title, lines):
+            if lines:
+                self._add("h", "## " + title)
+                self._add("p", "\n".join(lines))
+                added.append(title)
+
+        # Comments: author, date, the text each is on, its words.
+        lines = []
+        roots, failed = self._part_roots("/comments")
+        for root in roots:
+            for c in root.iter(_qn("w:comment")):
+                cid = c.get(_qn("w:id"))
+                who = c.get(_qn("w:author")) or "unknown author"
+                when = (c.get(_qn("w:date")) or "")[:10]
+                on = " ".join("".join(
+                    self._comment_text.get(cid, [])).split())
+                if len(on) > 120:
+                    on = on[:117] + "..."
+                text = self._paragraphs_text(c) or "(empty)"
+                head = who + (f", {when}" if when else "")
+                where = f' on "{on}"' if on else " (on no text)"
+                lines.append(f"- {head}{where}: {text}")
+        if failed:
+            self._not_read("comments part (unparsable)")
+        section("Comments in the Word file", lines)
+
+        for tail, title in (("/footnotes", "Footnotes in the Word file"),
+                            ("/endnotes", "Endnotes in the Word file")):
+            lines = []
+            roots, failed = self._part_roots(tail)
+            kind = "footnote" if tail == "/footnotes" else "endnote"
+            for root in roots:
+                tag = _qn("w:footnote" if kind == "footnote"
+                          else "w:endnote")
+                for n in root.iter(tag):
+                    if n.get(_qn("w:type")) in ("separator",
+                                                "continuationSeparator",
+                                                "continuationNotice"):
+                        continue
+                    text = self._paragraphs_text(n)
+                    if text:
+                        lines.append(f"- {kind} {n.get(_qn('w:id'))}: "
+                                     f"{text}")
+            if failed:
+                self._not_read(f"{kind}s part (unparsable)")
+            section(title, lines)
+
+        # Headers and footers: each distinct text once.
+        lines, seen = [], set()
+        try:
+            for sec in self.doc.sections:
+                for label, part in (
+                        ("header", sec.header), ("first-page header",
+                                                 sec.first_page_header),
+                        ("even-page header", sec.even_page_header),
+                        ("footer", sec.footer), ("first-page footer",
+                                                 sec.first_page_footer),
+                        ("even-page footer", sec.even_page_footer)):
+                    if part.is_linked_to_previous:
+                        continue
+                    text = self._paragraphs_text(part._element)
+                    if text and (label, text) not in seen:
+                        seen.add((label, text))
+                        lines.append(f"- {label}: {text}")
+        except Exception:  # noqa: BLE001
+            self._not_read("headers and footers (unparsable)")
+        section("Headers and footers in the Word file", lines)
+
+        section("Text boxes in the Word file",
+                [f"- {t}" for t in self.textboxes])
+        section("Not read in the Word file",
+                [f"- {n} x {what}: present in the file, not read"
+                 for what, n in self.unread.items()])
+        return added
 
     # -- paragraphs ------------------------------------------------------
     def _style_name(self, par) -> str:
