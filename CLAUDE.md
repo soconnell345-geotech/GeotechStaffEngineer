@@ -184,6 +184,10 @@ This repository builds three packages; the app also needs two more of the same p
   (`report_ingest/tables.py`, `docs/REPORT_TABLES.md`; sent to the dataset
   `GSE_REPORT_TABLES_DATASET` names; `GSE_REPORT_TABLES=0` turns it off;
   not yet run on Foundry, RI-212).
+  Settlement and support of excavation since 2026-11-13: Schmertmann refuses
+  layers that do not cover the strain influence diagram unless
+  `below_profile` says what lies there, and a braced support's load comes
+  from its own `spacing` and `angle_deg` (no default spacing).
   In the shared core since 2026-11-13 (so it ships with a core release,
   INF-76): a Python warning raised inside a method reaches the agent under
   `warnings` (`aec_agent_core/call_warnings.py`), and a value outside a
