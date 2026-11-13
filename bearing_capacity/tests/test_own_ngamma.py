@@ -150,11 +150,12 @@ def test_meyerhof_states_the_depth_parameter():
     assert k["chosen"].startswith("k = Df/B = 0.500")
     r = _analysis("meyerhof", footing=dict(depth=3.0)).compute()
     k = _choice(r, "depth factors")
-    assert "arctan(Df/B)" in k["chosen"] and k["how"] == "default"
+    # GM-310: Table 5-6's k = Df/B at any depth is Meyerhof's default;
+    # Brinch Hansen's arctan is the option, listed with what it gives
+    assert k["chosen"].startswith("k = Df/B = ") and k["how"] == "default"
+    assert "arctan(Df/B)" in k["chosen"]          # the warning beside it
     assert "Table 5-6" in k["basis"]
-    # GM-309: Table 5-6's k = Df/B at any depth is now an option, listed
-    # with what it gives
-    assert any("depth_factor_method 'linear'" in a for a in k["alternatives"])
+    assert any("depth_factor_method 'hansen'" in a for a in k["alternatives"])
     # GEC-6's d_q goes with GEC-6's own (Vesic) factors only
     assert not [a for a in k["alternatives"] if "'gec6'" in a]
 

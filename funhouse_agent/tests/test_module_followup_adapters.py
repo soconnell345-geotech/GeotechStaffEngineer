@@ -392,7 +392,8 @@ class TestDowndragBasis:
         # Ahead of the depth profiles, so a size-capped result keeps them.
         assert keys.index("warnings") < keys.index("z_m")
         _assert_documented("downdrag", "downdrag_analysis", r,
-                           conditional=("structural_ok",))
+                           conditional=("structural_ok",
+                                        "settlement_compatible_beside"))
 
     def test_mobilized_nt_gives_force_equilibrium(self):
         r = call_agent("downdrag", "downdrag_analysis",

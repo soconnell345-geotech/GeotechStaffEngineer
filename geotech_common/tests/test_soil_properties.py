@@ -68,9 +68,13 @@ class TestOverburdenCorrection:
         r = spt_overburden_correction(30.0, 200.0)
         assert r["N1"] == pytest.approx(21.21320, rel=1e-5)
 
-    def test_liao_whitman_youd_cap(self):
-        # sigma_v'=25 kPa gives raw CN=2.0 -> capped at 1.7 (Youd 2001)
-        assert spt_overburden_correction(10.0, 25.0)["CN"] == pytest.approx(1.7)
+    def test_liao_whitman_cap(self):
+        # capped at 2.0 (GEC-6 Fig. 5-18, GM-310); sigma_v'=25 kPa gives
+        # raw CN=2.0, 16 kPa raw 2.5 -> 2.0; Youd's 1.7 by CN_cap
+        assert spt_overburden_correction(10.0, 25.0)["CN"] == pytest.approx(2.0)
+        assert spt_overburden_correction(10.0, 16.0)["CN"] == pytest.approx(2.0)
+        assert spt_overburden_correction(
+            10.0, 25.0, CN_cap=1.7)["CN"] == pytest.approx(1.7)
 
     def test_iso_pins(self):
         # groundhog oracle: sqrt(98/50)=1.4; sqrt(98/100)=0.98995

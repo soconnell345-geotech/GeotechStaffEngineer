@@ -86,6 +86,19 @@ _NOTE_I_WITHIN = ("at least 4, within the fill for which GEC-11 Table 3-6 "
 _NOTE_I_OUTSIDE = ("below 4, outside the fill for which GEC-11 Table 3-6 "
                    "note (i) accepts the empirical F*: 'For fill outside "
                    "these limits, tests must be run'")
+#: GM-310 (the call for OWN-85, 2026-11-12): a backfill with Cu below 4 and
+#: no tested F* is refused, whatever the reinforcement.
+CU_BELOW_4_REFUSAL = (
+    "Cu_backfill {Cu:g} is below 4, and no F_star_tested is given. "
+    "GEC-11 Vol I (FHWA-NHI-10-024) Table 3-6 note (i) (p. 3-17) accepts "
+    "the empirical pullout factors F* only for Table 3-1 granular fill "
+    "with Cu >= 4: 'For fill outside these limits, tests must be run.' "
+    "Give F_star_tested, the pullout resistance factor from pullout tests "
+    "on this reinforcement in the wall's backfill (one value, or [[depth_m, "
+    "F*], ...]; GEC-11 Vol I p. 3-20, the procedures in Appendix B), with "
+    "alpha_tested if the tests give it; or leave Cu_backfill out only "
+    "where the backfill's Cu is not yet known and it will meet GEC-11 Sec. "
+    "3.1 (p. 3-20 then says to assume Cu = 4)")
 _NOTE_I_TESTS = ("pullout test data for this reinforcement in the wall's "
                  "backfill in place of the empirical F*, which note (i) "
                  "requires outside these limits (GEC-11 Vol I p. 3-20: the "
@@ -1835,6 +1848,12 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
         if any(r.is_grid and r.t_over_St is None for r in rs):
             # GM-297: a grid's empirical F* needs its t/St (Eqs. 3-6, 3-7)
             empirical_run = (", not worked out here: " + GRID_NEEDS_T_ST)
+        elif Cu_backfill is not None and Cu_backfill < CU_UNKNOWN:
+            # GM-310 (OWN-85): below Cu 4 there is no empirical F* to run
+            empirical_run = (
+                ", not worked out here: at Cu below 4 GEC-11 Table 3-6 "
+                "note (i) accepts no empirical F* ('tests must be run'), "
+                "and without F_star_tested the call is refused")
         else:
             empirical_run = against(check_internal_stability(
                 *args, Cu_backfill=Cu_backfill, alpha_tested=alpha_tested))
@@ -1963,7 +1982,8 @@ def check_internal_stability(
         reinforcement whose F* takes none (:func:`uses_strip_F_star`)
         keeps its F*; the Cu is then only checked against GEC-11 Table 3-6
         note (i), which accepts every empirical F* only for Cu >= 4
-        (:func:`pullout_factor_choices`).
+        (:func:`pullout_factor_choices`). A Cu below 4 with no
+        ``F_star_tested`` is refused (:data:`CU_BELOW_4_REFUSAL`, GM-310).
     F_star_tested : float or list of [depth_m, F*], optional
         The pullout resistance factor F* from pullout tests on the product
         in the wall's backfill (GEC-11 Vol I Table 3-6 note (i), Appendix
@@ -2084,8 +2104,12 @@ def check_internal_stability(
     if Cu_backfill is not None:
         # a grid with t/St or a geosynthetic takes no Cu in its F*; GEC-11
         # Table 3-6 note (i) still asks Cu >= 4 of every empirical F*
-        # (pullout_factor_choices), so the value is checked, not refused
+        # (pullout_factor_choices)
         F_star_strip_top(Cu_backfill)
+        if Cu_backfill < CU_UNKNOWN and F_star_tested is None:
+            # GM-310 (OWN-85): note (i), "For fill outside these limits,
+            # tests must be run": no empirical F* below Cu 4
+            raise ValueError(CU_BELOW_4_REFUSAL.format(Cu=Cu_backfill))
 
     results = []
     for i, (z, Rc, r, alpha) in enumerate(zip(geom.reinforcement_depths, Rcs,

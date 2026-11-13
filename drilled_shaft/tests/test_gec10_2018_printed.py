@@ -209,14 +209,14 @@ def test_rock_from_the_top_and_its_base_choice():
 
 def test_rock_below_the_base_at_rqd_100_is_taken_as_met_and_said():
     soil = ShaftSoilProfile(layers=[
-        ShaftSoilLayer(10.0, "rock", 23.0, qu=20000.0)])
+        ShaftSoilLayer(10.0, "rock", 23.0, qu=20000.0, RQD=100.0)])
     r = DrillShaftAnalysis(shaft=DrillShaft(diameter=1.2, length=6.0),
                            soil=soil).compute()
     met = _choice(r, "rock below the base (the conditions of Eq. 10-23)")
     assert met["how"] == "default" and met["chosen"].startswith("taken as met")
     # soil within one base diameter below the base is refused the same way
     soil = ShaftSoilProfile(layers=[
-        ShaftSoilLayer(6.5, "rock", 23.0, qu=20000.0),
+        ShaftSoilLayer(6.5, "rock", 23.0, qu=20000.0, RQD=100.0),
         ShaftSoilLayer(5.0, "cohesive", 18.0, cu=50.0)])
     with pytest.raises(ValueError, match="cohesive soil at 6.5-7.2 m"):
         DrillShaftAnalysis(shaft=DrillShaft(diameter=1.2, length=6.0),

@@ -672,7 +672,7 @@ class TestGroundImprovementPackage:
         result = _generate_ground_improvement_package({
             "method": "aggregate_piers",
             "column_diameter": 0.76, "spacing": 2.0,
-            "E_soil": 5000,
+            "E_soil": 5000, "column_type": "stone_column",
             "S_unreinforced": 0.05, "q_unreinforced": 150,
             "output_path": outfile,
         })
@@ -681,6 +681,7 @@ class TestGroundImprovementPackage:
         # Pre-GEC-13 aliases keep working.
         result2 = _generate_ground_improvement_package({
             "method": "aggregate_piers", "diameter": 0.76, "spacing": 2.0,
+            "column_type": "rammed_aggregate_pier",
             "output_path": str(tmp_path / "gi_ap2.html"),
         })
         assert result2["status"] == "success"
@@ -719,7 +720,7 @@ class TestGroundImprovementPackage:
         assert wick["drain_spacing_m"] == 1.5 and "U_total_percent" in wick
         ap = gen({"method": "aggregate_piers", "column_diameter": 0.76,
                   "spacing": 2.0, "E_soil": 5000, "S_unreinforced": 0.05,
-                  "q_unreinforced": 150,
+                  "q_unreinforced": 150, "column_type": "stone_column",
                   "output_path": str(tmp_path / "a.html")})
         assert ap["area_replacement_ratio"] > 0 and "composite_modulus_kPa" in ap
         su = gen({"method": "surcharge", "S_ultimate": 0.30, "surcharge": 50,

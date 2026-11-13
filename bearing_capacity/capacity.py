@@ -26,7 +26,7 @@ from bearing_capacity.factors import (
     depth_factors,
     depth_parameter_k,
     ufc_table_5_8_printed_dc,
-    DEPTH_FACTOR_METHODS,
+    DEPTH_FACTOR_METHODS, default_depth_factor_method,
     DEPTH_FACTOR_BASIS, DEPTH_K_BASIS,
     inclination_factors,
     vesic_inclination_needs_V,
@@ -125,13 +125,18 @@ class BearingCapacityAnalysis:
         Terzaghi's local-shear reduction c* = 2/3 c, tan(phi*) = 2/3 tan(phi).
     depth_factor_method : str, optional
         How the depth factors are worked out (GM-197;
-        ``factors.DEPTH_FACTOR_BASIS``): "hansen" (default), Brinch
+        ``factors.DEPTH_FACTOR_BASIS``). Default None: "linear" with
+        ``factor_method="meyerhof"`` and "hansen" otherwise (GM-310, the
+        call for OWN-131: Meyerhof's method takes his own Table 5-6 at
+        every depth; "hansen" for every method before). "hansen", Brinch
         Hansen's depth parameter k in the method's factors; "gec6"
         (``factor_method="vesic"`` only), GEC-6's d_q of Table 5-4 on the
         surcharge term alone, 1.0 below Df/B = 1; "linear"
         (``factor_method="meyerhof"`` only, GM-309), Meyerhof's factors
         with k = Df/B at every depth as UFC 3-220-20 Table 5-6 (p. 294)
-        prints them; "none", no depth factors.
+        prints them; "none", no depth factors. With Meyerhof's "linear"
+        factors beyond Df/B = 1 the analysis warns that they grow without
+        limit and gives Brinch Hansen's value beside them.
 
     Examples
     --------
@@ -153,7 +158,7 @@ class BearingCapacityAnalysis:
     ngamma_method: Optional[str] = None
     factor_method: str = "vesic"
     failure_mode: str = "general"
-    depth_factor_method: str = "hansen"
+    depth_factor_method: Optional[str] = None
 
     def __post_init__(self):
         if self.footing is None:
@@ -192,6 +197,10 @@ class BearingCapacityAnalysis:
                 "failure_mode='local' is Terzaghi's local-shear reduction "
                 "(c* = 2/3 c, tan phi* = 2/3 tan phi); use it with "
                 "factor_method='terzaghi'.")
+        if self.depth_factor_method is None:
+            # GM-310 (OWN-131): each method's own depth factors
+            self.depth_factor_method = default_depth_factor_method(
+                str(self.factor_method).strip().lower())
         self.depth_factor_method = str(
             self.depth_factor_method).strip().lower()
         if self.depth_factor_method not in DEPTH_FACTOR_METHODS:
@@ -269,7 +278,35 @@ class BearingCapacityAnalysis:
             f.width if result.is_strip else math.pi / 4.0 * f.width ** 2
             if f.shape == "circular" else f.width * f.length)
         result.choices = self._choices(result)
+        deep = self._deep_meyerhof_note(result)
+        if deep:
+            warnings.warn(deep)
         return result
+
+    def _deep_meyerhof_note(self, r: BearingCapacityResult) -> Optional[str]:
+        """Meyerhof's Table 5-6 depth factors beyond Df/B = 1 (GM-310,
+        OWN-131): that they grow without limit, and Brinch Hansen's value
+        beside them; None where it does not apply. The result's depth
+        factor choice carries it and :meth:`compute` warns with it."""
+        if not (self.factor_method == "meyerhof"
+                and self.depth_factor_method == "linear"
+                and self.footing.depth > 0):
+            return None
+        Df, B = self.footing.depth, self.footing.B_for_factors
+        if Df / B <= 1.0:
+            return None
+        from dataclasses import replace
+        hansen = replace(self, depth_factor_method="hansen").compute()
+        return (
+            f"Df/B = {Df / B:.2f} is beyond 1: Meyerhof's depth factors as "
+            "UFC 3-220-20 Table 5-6 (p. 294) prints them are linear in "
+            "Df/B and grow without limit as the footing deepens (the table "
+            "prints no limit). With Brinch Hansen's k = arctan(Df/B) "
+            "beyond Df/B = 1 (depth_factor_method 'hansen'; Table 5-8 "
+            f"note B, p. 295) d_c, d_q, d_gamma = {hansen.dc:.3f}, "
+            f"{hansen.dq:.3f}, {hansen.dgamma:.3f} and q_ult = "
+            f"{hansen.q_ultimate:,.0f} kPa, against {r.dc:.3f}, "
+            f"{r.dq:.3f}, {r.dgamma:.3f} and {r.q_ultimate:,.0f} kPa here")
 
     def _choices(self, r: BearingCapacityResult) -> list:
         """What the analysis chose (GM-188, ``geotech_common.choices``):
@@ -400,11 +437,17 @@ class BearingCapacityAnalysis:
                       f"d_q, d_gamma = {r.dc:.3f}, {r.dq:.3f}, "
                       f"{r.dgamma:.3f}")
         chosen += f" (depth_factor_method '{dm}')"
+        deep = self._deep_meyerhof_note(r)
+        if deep:
+            chosen += ". " + deep
         if fm == "meyerhof" and dm == "hansen":
             basis = ("Meyerhof's depth factors, UFC 3-220-20 Table 5-6 (p. "
                      "294), with k = Df/B as that table prints it up to "
                      "Df/B = 1 and Brinch Hansen's k = arctan(Df/B) beyond "
-                     "it (Tables 5-7 and 5-8 note B), the smaller factors")
+                     "it (Tables 5-7 and 5-8 note B), the smaller factors; "
+                     "the manual prints the arctangent form for Brinch "
+                     "Hansen's method only, so with Meyerhof's it is this "
+                     "tool's option, not his print")
         elif dm == "hansen" and phi == 0:
             # Table 5-7's d_c at phi = 0, added as Eq. 5-21 adds it
             # (GM-281); the note C formula and the printed Table 5-8 d_c do
@@ -443,7 +486,8 @@ class BearingCapacityAnalysis:
                 "its note C names gives (not an option of this tool)")
         return choice(
             "depth factors", chosen,
-            how_given(dm, "hansen", name="depth_factor_method"), basis,
+            how_given(dm, default_depth_factor_method(fm),
+                      name="depth_factor_method"), basis,
             alternatives)
 
     def _inclination_choice(self, r: BearingCapacityResult) -> dict:

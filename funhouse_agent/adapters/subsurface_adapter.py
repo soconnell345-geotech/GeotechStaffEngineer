@@ -1051,7 +1051,10 @@ def _run_compute_trend(params: dict) -> dict:
 #: Each overburden correction spt_correction offers, as a choice names it.
 _CN_TEXT = {
     "liao_whitman": ("Liao & Whitman (1986), C_N = (100 kPa / sigma'v)^0.5, "
-                     "at most 1.7 (overburden_method 'liao_whitman')"),
+                     "at most 2.0 as GEC-6 Fig. 5-18 (p. 90) draws it "
+                     "(overburden_method 'liao_whitman'; the cap binds "
+                     "below sigma'v = 25 kPa, and was 1.7, after Youd et "
+                     "al. 2001, before GM-310)"),
     "peck": ("Peck et al. (1974), C_N = 0.77 log10(20 / sigma'v in tsf), at "
              "most 2.0 (overburden_method 'peck')"),
     "iso": ("EN ISO 22476-3, C_N = (98 kPa / sigma'v)^0.5, at most 2.0 "
@@ -1089,7 +1092,10 @@ def _run_spt_correction(params: dict) -> dict:
                how_given(method, "liao_whitman", name="overburden_method"),
                basis=("GEC-12 (Vol I p. 108) gives Peck et al. (1974), Eq. 5-3, as "
                       "the recommended correction in AASHTO specifications, "
-                      "and Liao & Whitman, Eq. 5-4, as an alternate"),
+                      "and Liao & Whitman, Eq. 5-4, as an alternate; GEC-6 "
+                      "Fig. 5-18 (p. 90) draws Liao & Whitman's to '2.0 "
+                      "max.'. The liquefaction tools keep the correction "
+                      "their own procedures print"),
                alternatives=[t for m, t in _CN_TEXT.items() if m != method]),
     ]
     return out
@@ -1149,7 +1155,7 @@ METHOD_INFO = {
             "rod_length_m": {"type": "float", "required": False, "default": 10.0, "description": "Rod length (m); sets CR band (0.75 below 3 m up to 1.0 beyond 10 m; Youd et al. 2001 Table 2)."},
             "borehole_diameter_mm": {"type": "float", "required": False, "default": 100.0, "description": "Borehole diameter (mm); CB = 1.0/1.05/1.15 (Youd et al. 2001 Table 2)."},
             "sampler_correction": {"type": "float", "required": False, "default": 1.0, "description": "CS: 1.0 standard sampler, 1.1-1.3 without liners (Youd et al. 2001 Table 2)."},
-            "overburden_method": {"type": "str", "required": False, "default": "liao_whitman", "allowed_values": ["liao_whitman", "peck", "iso"], "description": "C_N: 'liao_whitman' (100 kPa/sigma'v)^0.5, at most 1.7 (Youd et al. 2001); 'peck' 0.77 log10(20/sigma'v in tsf), at most 2.0, the correction GEC-12 (Eq. 5-3) and NHI-06-088 (Eq 3-3) give as AASHTO's; 'iso' EN ISO 22476-3, (98 kPa/sigma'v)^0.5, at most 2.0."},
+            "overburden_method": {"type": "str", "required": False, "default": "liao_whitman", "allowed_values": ["liao_whitman", "peck", "iso"], "description": "C_N: 'liao_whitman' (100 kPa/sigma'v)^0.5, at most 2.0 as GEC-6 Fig. 5-18 (p. 90) draws it (the cap binds below sigma'v = 25 kPa; it was 1.7, after Youd et al. 2001, a paper the reference library does not hold); 'peck' 0.77 log10(20/sigma'v in tsf), at most 2.0, the correction GEC-12 (Eq. 5-3) and NHI-06-088 (Eq 3-3) give as AASHTO's; 'iso' EN ISO 22476-3, (98 kPa/sigma'v)^0.5, at most 2.0."},
         },
         "returns": {"N60": "Energy-corrected blow count.", "N1_60": "Fully corrected (N1)60.", "CN": "Overburden factor.", "choices": "The energy ratio and overburden correction used, with the alternatives."},
     },

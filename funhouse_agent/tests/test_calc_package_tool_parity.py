@@ -142,10 +142,12 @@ CASES = [
                                     "ch": 2.0, "cv": 0.8, "Hdr": 6.0,
                                     "time": 0.5, "pattern": "square"}),
     ("ground_improvement_package", {"method": "aggregate_piers",
-                                    "column_diameter": 0.76, "spacing": 2.0}),
+                                    "column_diameter": 0.76, "spacing": 2.0,
+                                    "column_type": "stone_column"}),
     ("ground_improvement_package", {"method": "aggregate_piers",
                                     "column_diameter": 0.76, "spacing": 2.0,
-                                    "pattern": "square", "E_soil": 4000}),
+                                    "pattern": "square", "E_soil": 4000,
+                                    "column_type": "rammed_aggregate_pier"}),
     ("ground_improvement_package", {"method": "surcharge",
                                     "S_ultimate": 0.3, "surcharge_kPa": 50,
                                     "cv": 3.0, "Hdr": 4.0}),
@@ -510,8 +512,8 @@ def _mononobe_okabe():
     KA = math.tan(math.radians(45.0 - phi / 2.0)) ** 2
     # PAE carries (1 - kv), UFC 3-220-20 Eq. 4-16 (GM-149)
     f = seismic_earth_pressure(19.0, 5.0, KAE, KA, kv=kv)
-    # KPE takes its own wall friction, 0.4 phi when not given (GM-293)
-    delta_p = 0.4 * phi
+    # KPE takes its own wall friction, phi / 3 when not given (GM-310)
+    delta_p = phi / 3.0
     return SeismicEarthPressureResult(
         KAE=KAE, KPE=mononobe_okabe_KPE(phi, delta_p, kh, kv),
         PAE_total=f["PAE_total_kN_per_m"],
@@ -684,8 +686,10 @@ MODULE_CASES = [
      _ground("analyze_wick_drains", spacing=1.5, ch=3.0, cv=1.0, Hdr=5.0,
              time=1.0)),
     ("ground_improvement_package", {"method": "aggregate_piers",
-                                    "column_diameter": 0.76, "spacing": 2.0},
-     _ground("analyze_aggregate_piers", column_diameter=0.76, spacing=2.0)),
+                                    "column_diameter": 0.76, "spacing": 2.0,
+                                    "column_type": "stone_column"},
+     _ground("analyze_aggregate_piers", column_diameter=0.76, spacing=2.0,
+             column_type="stone_column")),
     ("ground_improvement_package", {"method": "surcharge",
                                     "S_ultimate": 0.3, "surcharge_kPa": 50,
                                     "cv": 3.0, "Hdr": 4.0},

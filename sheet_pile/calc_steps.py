@@ -223,12 +223,11 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             "the soil against steel sheet piles (UFC 3-220-20 Table 4-1, "
             "p. 184; EM 1110-2-2504 Table 3-3, p. 3-4; USS Steel Sheet "
             "Piling Design Manual Table 4, p. 13), at most φ'. "
-            + ("Otherwise the clean sand row, 17°, on the passive side "
-               "of a layer without cohesion and none on the active side "
-               "(UFC 3-220-20 Fig. 4-37 step 1, p. 237: 'Passive pressures "
-               "for clean coarse grained soils include wall friction (see "
-               "Table 4-1)'), a layer with no cohesion being taken as a "
-               "clean coarse-grained soil." if source else
+            + ("Otherwise none (δ = 0): UFC 3-220-20 Fig. 4-37 step 1 "
+               "(p. 237) includes wall friction on the passive side only "
+               "for clean coarse grained soils (Table 4-1), and a layer "
+               "is taken as one only where it is marked clean sand or "
+               "clean gravel (interface_soil)." if source else
                "Otherwise none (δ = 0), Coulomb's passive pressure growing "
                "too large with wall friction (UFC 3-220-20 p. 190).")
         )
