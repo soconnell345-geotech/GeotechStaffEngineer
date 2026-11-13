@@ -596,17 +596,48 @@ def absent_case(spec, declared=None) -> str:
     return f"{case['case']}: {case['basis']}"
 
 
+def listed_value(value, spec):
+    """The listed value a method reads ``value`` as: itself when listed,
+    else the listed value its fold (``any_case``, :data:`VALUE_FOLDS`) or
+    one of its other spellings (:func:`value_aliases`) names; each string
+    of a list likewise; anything else unchanged. GM-316 re-check N2: an
+    ``applies_when`` naming a listed value then holds for every spelling
+    the value check takes ("log-spiral" for log_spiral), so the default it
+    governs stays in ``defaults_used``."""
+    if isinstance(value, list):
+        return [listed_value(v, spec) for v in value]
+    allowed = spec.get("allowed_values") if isinstance(spec, dict) else None
+    if not isinstance(value, str) or not isinstance(allowed, (list, tuple)) \
+            or not all(isinstance(a, str) for a in allowed):
+        return value
+    any_case = spec.get("any_case")
+
+    def fold(s):
+        return _fold_value(s, any_case) if any_case else s
+
+    key = fold(value)
+    for a in allowed:
+        if fold(a) == key:
+            return a
+    for alias, to in value_aliases(spec).items():
+        if isinstance(alias, str) and fold(alias) == key:
+            return to
+    return value
+
+
 def _values_in_force(declared: dict, aliases: dict, parameters=None) -> dict:
     """Each declared parameter's value in force in a call: the call's
-    (under the name the method reads), else its default, a default that
+    (under the name the method reads, and as the listed value it reads a
+    string as, :func:`listed_value`), else its default, a default that
     depends on another input (:func:`default_in_force`) taken at that
     input's value in force."""
     values = {name: spec.get("default") for name, spec in declared.items()
               if isinstance(spec, dict)}
     named = set()
     for key, value in (parameters or {}).items():
-        values[aliases.get(key, key)] = value
-        named.add(aliases.get(key, key))
+        name = aliases.get(key, key)
+        values[name] = listed_value(value, declared.get(name))
+        named.add(name)
     for name, spec in declared.items():
         if isinstance(spec, dict) and spec.get("default_depends_on") \
                 and name not in named:

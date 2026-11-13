@@ -269,6 +269,48 @@ def test_a_parameter_named_by_its_alias_after_a_listed_one_is_checked():
             "immediate_method": "elastic", "footing_shape": shape, "L": 3})
 
 
+class _Applies:
+    METHOD_INFO = {"m": {"parameters": {
+        "theory": {"allowed_values": ["rankine", "log_spiral"],
+                   "default": "rankine", "any_case": "strip",
+                   "value_aliases": {"log-spiral": "log_spiral"},
+                   "hidden_value_aliases": {"spiral": "log_spiral"}},
+        "delta": {"default": 0.66,
+                  "applies_when": {"theory": ["log_spiral"]}},
+    }}}
+
+
+@pytest.mark.parametrize("theory,listed", [
+    ("log_spiral", True), ("log-spiral", True), ("spiral", True),
+    (" Log_Spiral ", True), ("rankine", False)])
+def test_a_default_that_applies_to_a_value_applies_to_its_spellings(
+        theory, listed):
+    """GM-316 re-check N2: an ``applies_when`` naming a listed value holds
+    for every spelling the value check takes (a shown or hidden alias, the
+    parameter's fold), so the default it governs stays in defaults_used
+    (and a package's Assumed Inputs)."""
+    from aec_agent_core.method_call import _defaults_used
+    used = _defaults_used(_Applies, "m", {"theory"}, {"theory": theory})
+    assert ("delta" in used) is listed, used
+
+
+def test_the_soe_wall_friction_default_is_listed_for_log_spiral_aliases(
+        tmp_path, monkeypatch):
+    """The reviewer's case: soe cantilever_excavation with passive_theory
+    'log-spiral' or 'logspiral' lists passive_wall_friction_deg as for
+    'log_spiral'."""
+    monkeypatch.chdir(tmp_path)
+    got = {}
+    for theory in ("log_spiral", "log-spiral", "logspiral"):
+        r = D.call_agent("soe", "cantilever_excavation", {
+            **_probe("soe|cantilever_excavation"),
+            "passive_theory": theory})
+        assert "error" not in r, r
+        got[theory] = r["defaults_used"].get("passive_wall_friction_deg")
+    assert got["log_spiral"] is not None
+    assert got["log-spiral"] == got["logspiral"] == got["log_spiral"]
+
+
 def _made_up(spec):
     """A value outside the parameter's list, of the list's kind, or None
     where none can be made (a list of the two booleans)."""
