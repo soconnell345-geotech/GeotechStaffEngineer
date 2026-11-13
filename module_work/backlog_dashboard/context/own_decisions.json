@@ -3732,6 +3732,470 @@
       "BACKLOG OWN-142"
     ]
   },
+  "OWN-143": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Do the lead's geotechnical judgement calls of 2026-11-12 stand?",
+    "why": "You left these calls to the lead on 2026-11-12 (\"go with your recommendation but make a 'Later' backlog item with the decision for me to revisit in future rounds\"). Each sets a default or a rule in a module; if a call is wrong, every run that leaves the input out gets the same wrong answer.",
+    "background": "The lead applied one rule. (1) Where only one printed form exists, the module follows the print. (2) Where two held references print different values or rules and neither is named as governing, the default is the conservative one and the other is offered and stated. (3) Where the code already follows a printed source and states the alternatives, it stays as built. (4) A module never fills a missing input that the reference treats as a finding about the site (a rock quality, a tested value): it refuses and names the input. Two calls depart from the rule and say so: part 4 (OWN-104) and part 15 (OWN-131). Parts 1 to 6 unblock work (the slope build GM-140; the recompute check DR-11); parts 7 to 16 change defaults (one batch, GM-310, with tests and a release note; part 16 is the build GM-311); parts 17 to 27 confirm what is built and change no answer. Every call is a default or a rule the module states in its result, with the other reading offered. Two things stay yours: photographs of Duncan, Wright and Brandon (2014) section 6.5.3 and chapter 8 for slope step 8 (local only), and getting Jeanjean (2009, OTC 20158) so that p-y criterion can be checked. Not decided here: the report-question conventions (OWN-07, OWN-88, OWN-125, OWN-127) and every release, hosting, licensing and data item.",
+    "parts": [
+      {
+        "label": "1. OWN-101, the slope plan (GM-140): the ten steps of the slope account (section 12) agreed. Priority goes to the steps that change a factor of safety: 1 (one material per point), 2 (a method's own solution or no number), 3 (the printed acceptability checks), 4 (tension cracks and reverse curvature), 5 (water and loads), 6 (one method across the search) and 9 (rapid drawdown as EM 1110-2-1902 App. G prints it). Step 5 is split into 5a (the pore-pressure rules, this week) and 5b (new load types: line, inclined and varying loads, the vertical seismic coefficient; after). Step 10 (reporting) is small and is built alongside, its method-per-family part after step 6; steps 8 (supports) and 7 (search coverage) follow. Step 1 is built first and alone; then 2, 3, 6 and 7 in series; 4, 5a, 8, 9 and 10 in parallel once step 1 is merged. Step 1 is a weight error on every model with a sloping layer boundary (one slice 39.1 kN/m by hand against the module's 116.0).",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Agree with changes: reorder or cut steps",
+            "effect": "Say which in the notes; the plan is rewritten before the next step is built."
+          },
+          {
+            "label": "Not yet: ask about specific findings first",
+            "effect": "The slope build stops after the step in hand; the account answers the questions you raise."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "2. OWN-102, slope surfaces with m_alpha below 0.2: option (b). The search keeps such a surface, flags it and says where the low m_alpha was (surface and slice), with Bishop's factor of safety beside the Ordinary Method of Slices value for the same circle; where Bishop's is below the OMS value the OMS value is taken, as Duncan (1996, p. 580) prints. Whitman and Bailey (1967, p. 487) print a warning and an instruction to examine the surface, not a rejection. The exemption for phi' = 0 slices stays, stated as the module's own reasoning (no printed source for it was found). It changes which circles a search counts (on #85, 1.508 against 1.511).",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(a) Keep refusing them, and report where the low m_alpha was",
+            "effect": "The numbers stay as they are; the engineer sees the location and can examine it."
+          },
+          {
+            "label": "Keep (b), but drop the exemption for phi' = 0 slices",
+            "effect": "Those slices are held to the 0.2 check like any other."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "3. OWN-103, reverse-curvature circles: option (b) with a limit. Such a circle is closed by a vertical crack of the depth EM 1110-2-1902 C-10c (p. C-36) prints (Rankine's depth with the developed strengths, or the depth of minimum F); a circle whose overhang runs deeper than that crack is discarded, counted and located. Today's crack runs from the centre's level to the ground, a depth no printed source gives. On #85 today 1.372 against the printed 1.531 (with all such circles discarded, 1.508); the value under this call is measured when step 4 is built.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(a) Discard them all",
+            "effect": "Matches the printed answer most closely (1.508 against 1.531 on #85); a few unusual surfaces are no longer searched."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "4. OWN-104, the cos-squared correction for a sloping water table: built (plan step 5), off by default. The module keeps the full vertical head below the water table, offers u = h_w gamma_w cos^2(alpha_w) as a stated choice, and names in every result with a sloping water table which it used. FHWA NHI-06-088 Eq. 6-16 (p. 6-14) and UFC 3-220-10 p. 355 print the correction; it holds for seepage parallel to a straight water table, a line entered as measured heads must not be corrected at all, and the full head is the lower factor of safety. This departs from the lead's rule: two held manuals print the correction and the default does not apply it.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "On by default",
+            "effect": "Matches the printed equation; factors of safety rise under steep water tables. A line entered as measured heads must then be marked so it is not corrected."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "5. OWN-105, downdrag's headline neutral plane: the intersection of the load and resistance curves stays the headline (UFC 3-220-20 Sec. 6-7.4 step 3, p. 477). Where the curves meet below the depth at which the soil stops settling more than the pile, the summary gives the settlement-compatibility plane and drag (Sec. 6-5.8.4.3, p. 449) beside it, not only in the comparison table. Shaft resistance is mobilised by a few millimetres of relative movement, and a settlement profile is not known to that precision. It changes the summary text only.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Take settlement compatibility as the headline in that case",
+            "effect": "The headline counts drag only where the soil settles past the pile; the full-resistance intersection sits beside it."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "6. OWN-130, the recompute check on a printout that gives only gamma': option (a), run as the submerged case (water at or above the footing base), and the row says so. A printout that gives only an effective unit weight is describing the submerged case. On the saved reports (a) reproduces 167 of 183 claimed values within 10 %; refusing recomputes 1.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Keep refusing",
+            "effect": "The calculation is listed as 'water level not printed' and not recomputed."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "7. OWN-84, a drilled shaft's base in rock with no RQD given: refused, naming the three inputs that settle it (RQD, rock_base_conditions_met, or GSI with m_i). GEC-10 (2018) p. 10-22's conditions are a finding about the rock below the base; the old default RQD of 100 selected Eq. 10-23 and could double the base resistance (89,722 kN against 47,378 kN in the probe).",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Keep RQD 100 by default",
+            "effect": "Eq. 10-23 is taken; the default is stated in the result."
+          },
+          {
+            "label": "Hoek-Brown where GSI and m_i are given",
+            "effect": "The smaller base unless the conditions are stated; still RQD 100 where GSI is not given."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "8. OWN-85, MSE backfill with Cu below 4 and no tested F*: refused, asking for F_star_tested. GEC-11 Vol. I Table 3-6 note (i), p. 3-17: \"For fill outside these limits, tests must be run.\"",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Compute and flag",
+            "effect": "A number comes back with a note that the fill is outside note (i)."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "9. OWN-82, passive wall friction when the user gives none: (a) sheet_pile under log-spiral takes 17 degrees only for a layer the user marks clean sand or gravel, otherwise 0, and says so; (b) delta stays 0 under Coulomb; (c) soe keeps Rankine; (d) the coefficient tool keeps refusing a log-spiral Kp with no wall friction given. UFC 3-220-20 Fig. 4-37 step 1 (p. 237) includes wall friction only for clean coarse-grained soil; Coulomb's passive coefficient with wall friction is warned against at UFC 3-220-20 p. 190, USS p. 9 and Caltrans p. 4-16. (a) lowers the passive resistance of layers without cohesion that are not marked clean. Tick any part you would change.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(a) Keep 17 deg for every layer without cohesion",
+            "effect": "Silty sand and silt also get clean sand's 17 deg."
+          },
+          {
+            "label": "(b) Take Table 4-1's delta under Coulomb, as EM 2504 and USS do",
+            "effect": "Coulomb Kp up and embedment down for sands, matching the Corps and USS."
+          },
+          {
+            "label": "(c) soe: log-spiral with a stated wall friction",
+            "effect": "Shorter embedment; needs a delta default too."
+          },
+          {
+            "label": "(d) Take delta = phi'/2 in the coefficient tool and say so",
+            "effect": "NHI-06-089 p. 10-17 gives phi'/2 as the maximum passive wall friction suggested for design; Kp is lower than the old delta = phi."
+          }
+        ],
+        "multi": true
+      },
+      {
+        "label": "10. OWN-68, from what undrained strength a clay takes the stiff-clay p-y curve: 48 kPa (was 100 kPa); stiff_clay_cu stays a caller setting. GEC-9 calls 1,000 to 2,000 psf (48 to 96 kPa) stiff (p. 219), and COM624P's stiff-clay tables start at 47.9 kPa. Clays of 48 to 100 kPa get a stiffer response, off the conservative side (the soft-clay curves gave the larger deflection); the print is followed because the criterion's own tables begin at 48 kPa.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Keep 100 kPa",
+            "effect": "No result changes; 48-100 kPa clays keep the soft-clay curve."
+          },
+          {
+            "label": "No default; ask each time",
+            "effect": "The shortcut refuses until a boundary is named."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "11. OWN-108, the aggregate-pier stress ratio n: when n is not given the tool asks for the column type; a stone column takes 2.5 and a rammed aggregate pier 5 (was 5.0 for both). GEC-13 prints 2.0 to 5.0 measured for stone columns and 2.5 \"often conservatively used\" for preliminary design (pp. 5-31, 5-32), and 5 to 10 for rammed aggregate piers (p. 5-43). At an area ratio of 0.2 a stone column's settlement reduction factor goes from 0.56 to 0.77.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Keep 5.0",
+            "effect": "The top of the stone-column range and the bottom of the rammed-pier range, for both."
+          },
+          {
+            "label": "2.5 by default, whatever the column",
+            "effect": "GEC-13's conservative preliminary value for stone columns; more predicted settlement for every run that leaves n out."
+          },
+          {
+            "label": "Rammed piers at 6, as GEC-13's Example 1 uses (p. 5-47)",
+            "effect": "Stone columns stay at 2.5; rammed piers take the example's value, inside the printed 5 to 10."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "12. OWN-112, the SPT overburden correction: Liao and Whitman stays the default form, capped at 2.0 as GEC-6 Fig. 5-18 draws it (was 1.7, a cap from Youd et al. (2001), which the library does not hold). Peck's correction (GEC-12 p. 108, NHI-06-088 Eq. 3-3), capped at 2.0, is offered and stated. The liquefaction procedures keep the correction their own source prints. Values change only where the effective overburden is below about 35 kPa.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Liao & Whitman, cap 1.7 (as before)",
+            "effect": "Results as before; the cap's source is not one we hold."
+          },
+          {
+            "label": "Peck, cap 2.0 (AASHTO per GEC-12 and NHI)",
+            "effect": "Shallow (N1)60 about 10-15 % lower, deep about 5 % higher than before."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "13. OWN-114, seismic passive wall friction when none is given: phi/3 (was 0.4 phi). NHI-06-089 p. 10-19 finds a planar passive wedge unreliable above phi/3; UFC 3-220-20 Fig. 4-8 allows up to 0.4 phi. The lower friction gives the lower passive resistance (KPE at phi 30 degrees and kh 0.2: 3.500 against 3.731).",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "0.4 phi (UFC, as before)",
+            "effect": "KPE about 6 % higher by default, as before."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "14. OWN-118, the small-group cut for driven piles in uplift: UFC 3-220-20's reading (fewer than 5 piles) is the default; GEC-12's (fewer than 3, p. 225) is given beside it. Where two held references differ and neither is named as governing, the default is the conservative one. It matters only for groups of 3 or 4 driven piles (resistance factor 0.40 against 0.50). The lead recalls AASHTO LRFD 10.5.5.2.3 as cutting by 20 % for groups of fewer than five piles; that specification is not held, so it is a recollection to check, not a cited basis.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Below 3 driven piles (GEC-12, as before)",
+            "effect": "3- and 4-pile driven groups use 0.50 again; UFC's reading stays beside it."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "15. OWN-131, Meyerhof's depth factors beyond D_f/B = 1: option (b). With Meyerhof's method the depth factors follow his own Table 5-6 (UFC 3-220-20 p. 294, k = D_f/B at any depth); the arctangent form stays with Brinch Hansen's method, where the manual prints it (p. 295, Table 5-8 note B). Beyond D_f/B = 1 the result warns that the factor grows without limit and gives Brinch Hansen's value beside it. All 24 saved Meyerhof claims beyond D_f/B = 1 match the linear form to 0.25 % or better. This departs from the rule's safe side: bearing answers for footings deeper than they are wide rise by 6 to 16 %.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Keep the old default",
+            "effect": "The smaller (Hansen-style) factors stay the default; Meyerhof's own form is a stated option the engineer can pick."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "16. OWN-19, moment-curvature EI for lateral piles: build it as GEC-9 Sec. 11.3.10 prints it (GM-311); a build item, not a question. For a reinforced concrete shaft the cracked stiffness sets the deflection; the two fixed choices offered today bracket LPILE's answer on GEC-9 Example B.1 (735.6 and 691.5 kip-ft against 727).",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Close: Branson's cracked stiffness is enough",
+            "effect": "No build; the engineer picks uncracked or Branson's, and the result says which."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "17. OWN-73, cantilever wall sliding on soil with cohesion (as built): GEC-6 (p. 100, Eqs. 5-38, 5-39), friction for drained loading and adhesion for undrained, not both; UFC's rule offered.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "UFC friction plus adhesion",
+            "effect": "A higher factor of safety where c' > 0, as UFC 3-220-20 draws it. GEC-6's rule becomes the option."
+          },
+          {
+            "label": "Ask for the rule whenever the base has cohesion",
+            "effect": "The tool stops until the rule is given; its message lists the three rules with their sources."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "18. OWN-79, the step between UFC's Eq. 4-12 and its charts (as built): accepted, since UFC 3-220-20 prints both; each result names its route.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Scale the chart so the route is continuous",
+            "effect": "No step, but the charted values are no longer as printed."
+          },
+          {
+            "label": "Use the charts' level, vertical curve at 0.66 too",
+            "effect": "Continuous at delta/phi' 0.66; Eq. 4-12 then only for other delta."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "19. OWN-83, a clay's alpha in downdrag (as built): from UFC 3-220-20 Table 6-16 and Fig. 6-14, which reproduces UFC's own drag example (App. B-5.4), with the drag at alpha 1.0 beside it.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Alpha 1.0, the chart's value shown beside it",
+            "effect": "The conservative drag UFC p. 476 mentions; the example's printed numbers are not reproduced by default."
+          },
+          {
+            "label": "Ask the user every time",
+            "effect": "The tool refuses a clay layer with no alpha and names both choices."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "20. OWN-106, Jeanjean (2009) soft clay in lateral_pile (as built): stays offered and marked unchecked; no document held prints it. Getting the paper (OTC 20158) so it can be checked stays yours.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "I will get the paper (or API RP 2GEO)",
+            "effect": "Add it to the library and check the criterion against it the way the others were."
+          },
+          {
+            "label": "Remove the criterion",
+            "effect": "Soft clay uses Matlock's curves as GEC-9 prints them; a saved run that named Jeanjean is refused with that note."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "21. OWN-107, an underconsolidated clay layer in settlement (as built): runs as given, with the warning citing UFS 3-220-10 Sec. 5-2.3.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Refuse it",
+            "effect": "The engineer must give the layer's sigma'_v0 from pore pressures (or a sigma'_p at or above it) before settlement runs."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "22. OWN-109, braced excavation support loads (as built): Caltrans T&S Fig. 8-7's hinge method by default; GEC-4's method with a subgrade reaction and UFC's simple spans offered.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "GEC-4 with subgrade reaction",
+            "effect": "The FHWA manual's method by default."
+          },
+          {
+            "label": "UFC simple spans",
+            "effect": "The simplest; the UFC's 80 % inner-span moment reduction is not applied (noted)."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "23. OWN-110, allowable bending stress for wall sections (as built): 0.60 Fy, the Caltrans T&S examples' value; 0.55 Fy (GEC-4 p. 81) and 0.66 Fy (Caltrans p. 9-20) stated.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "0.55 Fy for permanent or critical walls",
+            "effect": "GEC-4's value; would need the wall to be marked permanent or critical."
+          },
+          {
+            "label": "0.66 Fy",
+            "effect": "The compact-section value Caltrans p. 9-20 compares against; smaller sections."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "24. OWN-111, cantilever wall moment basis (as built): soe keeps Caltrans Example 7-3's FS = 1.0 moment and sheet_pile UFC Fig. 4-41 step 5's factored diagram; each gives the other.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Both at FS = 1.0 (Caltrans)",
+            "effect": "sheet_pile's default moment drops to match soe."
+          },
+          {
+            "label": "Both on the factored diagram (UFC)",
+            "effect": "soe's default moment rises back to the factored value."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "25. OWN-113, Idriss and Boulanger residual strength (as built): the lower curve of GEC-12 Fig. 7-78 ('void redistribution effects could be significant').",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "'Negligible' curve",
+            "effect": "About twice the residual strength at mid-range blow counts; flow-slide checks less severe."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "26. OWN-115, AASHTO 1993 rigid slab rounding (as built): rounded up to the next 1/2 inch; the Guide's own rule (p. II-44: the nearest inch, 1/2 inch with slip-form pavers) stated.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Nearest inch, as II-44 prints",
+            "effect": "Some slabs come out up to 1/2 inch thinner, some up to 1/2 inch thicker."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "27. OWN-117, retaining walls with a water table (as built): the base uplift's moment counts as overturning; no page held prints it, and it gives the lower factor of safety.",
+        "options": [
+          {
+            "label": "Let it stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Off the resisting moment",
+            "effect": "A higher overturning FOS where there is water (2.20 on the made-up wall); dry walls unchanged."
+          }
+        ],
+        "multi": false
+      }
+    ],
+    "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
+    "if_no_answer": "Every call stands as decided, and each module keeps stating the call and offering the other reading.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-143",
+      "module_work/owner_calls_2026-11-12/CALLS.md",
+      "module_work/slope_integral_review/ACCOUNT.md"
+    ]
+  },
   "OWN-144": {
     "kind": "decision",
     "ask_who": null,
