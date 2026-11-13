@@ -348,3 +348,241 @@ For the later steps of GM-140 or the lead; none was changed here.
     change nothing). Checked by running both on f108ae8.
 12. **`layer_at_point` does not look at the ground**: a point above the
     ground still reads a layer. Nothing calls it there.
+
+## Fix round after review (2026-11-13)
+
+Two independent reviews and the lead's arithmetic found the rule itself
+right (weights exact, nothing fitted) and seven things around it wrong.
+What changed, item by item; section 5's verdict on V-028 and section 1's
+citation are corrected here, and sections 5, 6, 9 and item 4 of section 10
+are superseded by what follows.
+
+### 1. ACADS 4 (Slide2 #9; V-028, B11, E8) validates
+
+Section 5 called V-028 "not validating". That reading came from the kept
+surface: the minimum of a search run while the soil was weighed three
+times, which is not a critical surface once each point is weighed once,
+scored without the problem's loads. A family of 81 three-part surfaces is
+now declared in `validation_examples/test_published_v028_e8.py` (the
+seam's mid-line reached at x = 45, 47, 49 by a wedge from the bench side
+at 25, 30, 35 degrees and left at x = 72, 76, 80 by a wedge to the crest
+at 50, 57.5, 65 degrees; 30 slices; no search routine of the module), and
+scored with Table 9.2's loads on. All 81 solve by all three methods.
+
+| Method | Lowest of the family, loads on | Printed, Table 9.4 (no optimisation), manual p. 52 | Difference |
+|---|---:|---:|---:|
+| Spencer | 0.753 | 0.760 | -0.9 % |
+| Morgenstern-Price, half-sine | 0.722 | 0.720 (GLE) | +0.3 % |
+| Janbu, corrected | 0.728 | 0.734 | -0.8 % |
+
+Each lowest is on (42.91, 28.0), (47.0, 26.09), (76.0, 34.25), (79.66,
+40.0). Without the loads the same family reads 0.787 / 0.753 / 0.752 (on
+the surface leaving the seam at x = 80). The tests assert each within 3 %
+of print. The family was declared before it was scored and was not
+changed.
+
+Not checkable from the repository, and said so in the test: the ground,
+the seam and the base are read off Figure 9.1; the printed critical
+surfaces are in Figures 9.2 to 9.4; the bench is entered at el. 28.0
+where Table 9.2 puts the bench load at y = 27.75; the crest load, 20
+rising to 40 kPa, is entered as its mean, 30 kPa.
+
+`test_published_v028_slope.py` no longer says "not validating" and has no
+xfail against the referee. It keeps the weights (3,003 kN/m from the
+area), the kept surface as a record of the weight change only (Janbu
+corrected 0.819 before, 1.073 after; Spencer and Morgenstern-Price
+asserted not converged, no value pinned from them) and the SS-6
+regression of the search without a pinned value. `VALIDATION.md` B11, the
+GM-131 table's V-028 rows and B19, `validation_examples/RESULTS.md` and
+`INVENTORY.md` say the same.
+
+### 2. The weak-layer search aims at a layer where it is
+
+`search_weak_layer_biased` centred its trial points on the target layer's
+flat `top_elevation` and `bottom_elevation`. It now takes the ground the
+layer holds at each x (`search._layer_band_at`: `column_at` with the top
+not cut at the ground, so `top_at` and `bottom_at` less what the layers
+listed before it hold; the thicker stretch where an earlier layer cuts it
+in two; a point where the layer holds nothing is placed as the points not
+aimed at a layer are). No seed, trial count, window, slice count,
+tolerance or screen was changed; the lower limit of a trial point is
+still the lowest flat `bottom_elevation`.
+
+| Case | Before | After |
+|---|---:|---:|
+| Flat layers: the two-layer section of `tests/test_new_search.py`, seed 42, 200 trials, FOS | 1.125632861657882 | 1.125632861657882 (the same surface to the last digit) |
+| Flat layers: the same through `search_critical_surface`, seed 7, 100 trials, 20 slices | 1.0754411851702903 | 1.0754411851702903 |
+| Made-up section, a 1 m weak layer between two sloping polylines, seed 1, 300 trials, 8 points: share of the critical surface's length in the layer; FOS | 0.205; 2.871 | 0.7525; 1.231 |
+| V-028, seed 3, 700 trials, 6 points, no loads, 30 / 40 slices | 1.4345 / 1.4349 | 0.5151 / 0.5148 |
+| V-028, the same with Table 9.2's loads | 1.3764 / 1.3759 | 0.5151 / 0.5148 |
+
+V-028 after the change does not come within 3 % of the printed Spencer
+0.760, so nothing is pinned to it:
+`test_v028_weak_layer_search_against_print` is a strict xfail. What the
+search returns is (42.97, 28.0), (47.23, 26.15), (51.48, 27.58), (55.74,
+28.55), (59.99, 29.41), (64.25, 38.20): the trials now run in the seam,
+but this one leaves it at x = 60 and comes out on the face. Its 0.515 is
+a solution with the interslice force at -43.5 degrees (lambda -0.95),
+interslice tension to 1,700 kN/m across the back wedge and a negative
+effective normal on 11 of 30 slices, accepted about the search's second
+(pinned) moment axis. On the same surface the direct solvers read Janbu
+corrected 1.22, and Spencer about the fitted axis does not converge
+(1.106 at lambda -0.05, residual 0.004). So the generator is no longer
+what keeps the search from print; which solutions a search accepts is.
+That was not changed here (step 7, the account's D12, for the generator;
+the brief allowed no other change to the search).
+
+The calc package's report on the same search
+(`test_calc_package_adapter.py::test_v028_weak_seam_report`) prints 1.161
+as its factor of safety: it re-analyses the search's surface with
+`analyze_slope`, where Spencer does not converge and the value is the old
+approximate solver's (the result says `method_solved` false). The test
+pins no factor of safety now.
+
+### 3. `dxf_import`: documents and code agree
+
+The converter is unchanged. `parser.LayerMapping`'s docstring,
+`dxf_import/DESIGN.md` and the agent's `layer_mapping` description now say
+what it does: each boundary is the TOP of the soil it names (that soil
+lies below it, down to the next boundary), and the soil between the
+ground surface and the highest boundary takes the soil property named
+"Surface", or else the first property that no boundary names. A comment
+on the `CLAY_BOTTOM` fixture says the same; nothing was renamed.
+
+### 4. What the agent is told
+
+- `layer_overlaps` is in the `returns` of `analyze_slope`,
+  `compare_methods_table`, `rapid_drawdown_fos` and
+  `search_critical_surface`, and named in `search_rapid_drawdown`'s
+  `drawdown_detail` (where that result carries it).
+- `soil_layers`: the sentences on overlaps and the refusal are out of the
+  middle of the description and, shortened to one, at its end;
+  `top_boundary_points` stays with the other layer keys. The strength
+  model fields no longer start about 500 characters later.
+- `calc_package`: the fixed-circle package's `soil_layers` description is
+  the search package's (both go through the same geometry builder), each
+  with the same short sentence.
+- The user manual's twelve rows were matched by hand, and an in-memory
+  rebuild (`module_work/doc10/check_manual.py --rebuild`) agrees with them
+  (the one line it still reports, a `D_embed` row at line 1594, is not
+  from this work). No page fingerprint moved.
+
+### 5. The refusal of a gap
+
+Kept. The message now gives the gap's thickness and prints elevations
+with as many decimals as show a thin gap ("a gap 0.0040 m thick ...
+between elevation 10.0000 and 10.0040 m"), and says how to close it:
+raise the top of the layer below it or give that layer its top polyline.
+
+### 6. Citations and notes
+
+- Section 1 above cites EM 1110-2-1902 2-2d (p. 2-5) for "one weight per
+  point". 2-2d prints that total unit weights are used for all soils; the
+  passage that prints how a slice in two soils is weighed is Appendix F,
+  F-5d (p. F-19): slices containing both embankment and foundation soil
+  "were divided into two portions for calculating the slice weights".
+  `geometry.py`, `DESIGN.md` and the test file now cite F-5d for the
+  weighing and keep 4-2d(2) (p. 4-2) for the engineer's check.
+- `DESIGN.md` names the results that carry `layer_overlaps`
+  (`analyze_slope`, `search_critical_surface`, `compare_methods_table`,
+  `rapid_drawdown_fos`) and those that do not (FOSM, Monte Carlo, the
+  yield acceleration, a search function called directly, the top level of
+  the drawdown search's result). The key was added to no result.
+- "The mid-point column is exact" is said of that section and surface
+  only.
+
+### 7. Two printed or hand checks added
+
+| Check | Before the step | Now | Printed or by hand |
+|---|---:|---:|---|
+| EM 1110-2-1902 Figs. F-10 and F-11 (pp. F-20, F-21), two soils on a level boundary, Simplified Bishop, 30 slices (300) | not re-measured (a level boundary with no overlap: the step does not change it) | 1.3286 (1.3294) | 1.33, Fig. F-11, p. F-21 (-0.1 %) |
+| The same, weight in the embankment, kips (30 slices) | unchanged | 1,724.8 | 1,724.1 from the exact area, 12,771.3 ft2 at 135 pcf (+0.04 %) |
+| The same, weight in the foundation, kips (30 slices) | unchanged | 327.7 | 327.3 from the exact area, 2,576.9 ft2 at 127 pcf (+0.13 %) |
+| Sand over clay on a sloping boundary (`test_polyline_layers`), circle (15, 20) R 18, Bishop, 30 slices | 2.488 | 2.849 | none; three independent calculations agree on 2.849 |
+| The same, mass, kN/m | 2,017 | 1,758.0 (1,757.2 on 300 slices) | 1,757 by hand areas: 37.763 m2 of sand at 18 and 63.379 m2 of clay at 17 |
+
+The EM example's inputs were read off pp. F-20 and F-21 again for this
+round. It does not exercise a sloping boundary. Its printed total weight
+(2,022 kips) is not asserted: column 3 of Fig. F-11 prints the widths
+against the slice numbers in reverse order, the printed slices end about
+5 ft short of where the stated circle leaves the crest (the widths add to
+318 ft; the circle leaves the crest 322.5 ft from the toe), and the page
+takes each area from the slice's mean height.
+
+No printed benchmark with different unit weights across a sloping
+boundary was found in the references held (EM 1110-2-1902 Appendix F,
+FHWA NHI-06-088 chapter 6, UFS 3-220-10 and the Slide2 text were
+searched). The sloping-boundary checks are ACADS 4 (a sloping seam, equal
+unit weights, within 1 % of print), the made-up sections checked by hand,
+and EM Fig. F-11 for two soils on a level boundary (`VALIDATION.md` B19).
+
+### Tests run in the fix round (one file at a time)
+
+| File | Result |
+|---|---|
+| `slope_stability/tests/test_one_material_per_point.py` | 24 passed |
+| `slope_stability/tests/test_polyline_layers.py` | 15 passed |
+| `slope_stability/tests/test_new_search.py` | 19 passed |
+| `slope_stability/tests/test_ground_crossings.py` | 21 passed |
+| `slope_stability/tests/test_search_modern.py` | 11 passed |
+| `slope_stability/tests/test_search_ranges.py` | 23 passed |
+| `slope_stability/tests/test_slope_stability.py` | 92 passed |
+| `validation_examples/test_published_v028_slope.py` | 3 passed |
+| `validation_examples/test_published_v028_e8.py` | 8 passed, 1 xfailed (the search against print) |
+| `funhouse_agent/tests/test_calc_package_adapter.py -k v028` | 1 passed |
+| `funhouse_agent/tests/test_slope_stability_adapter.py` | 86 passed |
+| `dxf_import/tests/test_converter.py` | 18 passed |
+| `funhouse_agent/tests/test_defaults_used.py -k slope` | 41 passed, 14 skipped |
+| `funhouse_agent/tests/test_defaults_used.py -k dxf` | 18 passed |
+| `webapp/tests/test_public_text.py` | 5 passed |
+| `webapp/tests/test_page_fingerprints.py` | 13 passed (nothing to re-record) |
+
+The three new weak-layer tests failed before the change to the search
+(share 0.205 against the required 0.5, twice; `_layer_band_at` missing)
+and pass after it.
+
+### Release note, corrected (replaces section 9)
+
+- Every slope model with a sloping layer boundary changes: where a layer
+  with a polyline bottom was followed by a layer with a flat top, the
+  ground between the boundary and that flat top was weighed twice, and is
+  now weighed once (V-028's mass 8,768 to 3,003 kN/m; the two-layer test
+  section's Bishop 2.488 to 2.849).
+- Every DXF-imported or project-built section with more than one layer
+  changes: the soil named for a boundary now runs from that boundary down
+  to the next (it ended at its own boundary before, leaving the ground
+  under a boundary without a layer).
+- The weak-layer search now follows a sloping layer: its trial surfaces
+  are drawn toward the ground the target layer holds at each x, not
+  toward the layer's flat elevations. For layers with flat tops and
+  bottoms nothing changes.
+- ACADS 4 (Slide2 #9) is validated against print on a declared family of
+  surfaces along the seam, loads on, within 1 %; the weak-layer search on
+  that problem does not reach print and is marked so.
+- A model with ground that no layer covers is refused, with the gap's
+  thickness and location; a result lists any overlap of layers
+  (`layer_overlaps`).
+
+### Noted, not fixed
+
+1. No slice edge where a layer boundary meets the ground (0.28 % on one
+   slice, 0.004 % of a mass on 30 slices).
+2. The order of listing decides which layer holds an overlap.
+3. The fall-backs at `slices.py` 674 to 681 and 812 to 815 and
+   `rapid_drawdown.py` 312.
+4. `ru` over the column (step 5a).
+5. The seismic force at mid-height (step 5b).
+6. The su-with-depth law's flat elevations in `probabilistic.py`.
+7. The stabilizing pile's one layer at mid-depth.
+8. `pdf_import`'s flat-layer output.
+9. The retired Foundry wrappers.
+10. The weak-layer search's lower limit for a trial point is still the
+    lowest flat `bottom_elevation`, and the search accepts the 0.515
+    solution on V-028 described in item 2 above (not changed: the brief
+    allowed no other change to the search).
+11. The calc package's report re-analyses a search's surface and can
+    print a factor of safety from the old approximate solver where the
+    search's own solution is not reproduced (1.161 against the search's
+    0.515 on V-028; flagged `method_solved` false).
+12. V-028's `noncircular_de` values in `VALIDATION.md` (0.715 / 0.714)
+    were measured on the tripled weights and have not been re-measured.
