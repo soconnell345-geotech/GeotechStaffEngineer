@@ -448,34 +448,44 @@ def test_spurious_rigorous_states_were_slicing_artefacts(make, pts, spurious):
     if make is _v043_sand:
         assert fos == pytest.approx([1.715] * 4, abs=0.003)
         stats = _new_reject_stats()
-        assert _compute_fos(geom, slip, "spencer", 30, reject_stats=stats,
-                            confirm_below=float("inf")) == fos[1]
+        assert _compute_fos(geom, slip, "spencer", 30,
+                            reject_stats=stats) == fos[1]
         assert stats.get("refused") is None
     else:
         assert fos == [_FOS_MAX] * 4
     assert all(f > spurious for f in fos)
 
 
-def test_a_state_at_one_slicing_only_is_refused(monkeypatch):
-    """`_solution_fails`'s second test, a solution at one slicing only and
-    not at one slice more or twice as many. Since GM-131 no surface pinned
-    here has one (even slices across corners made them), so the solver
-    about each axis is stood in for."""
+def test_the_axis_slicing_and_jagged_screens_are_removed():
+    """GM-140 step 3, item 5 (D22). The agreement between moment axes, the
+    agreement between slicings and the refusal of a FOS below 1.5 on a
+    jagged surface were numerical stand-ins not found in print (EM
+    1110-2-1902 C-10a prints the checks on forces and the line of thrust).
+    Measured on the noncircular cases of the validation set, each refused
+    only surfaces the printed checks flag, so they are removed for the
+    method's own solves: such a surface is scored, kept and flagged. The
+    jagged gate stays for a caller's own per-surface solve (rapid
+    drawdown), on which the printed checks are not made."""
     from slope_stability import search as search_mod
+    for name in ("_solution_fails", "_converged_about",
+                 "_noncircular_axis_point", "_note_refused"):
+        assert not hasattr(search_mod, name)
+    assert set(search_mod.REMOVED_SCREENS) == {
+        "one_moment_axis", "one_slicing", "jagged_below_1_5"}
+    assert search_mod.NONCIRCULAR_SCREENS == ("slice_count", "span",
+                                              "jagged_below_1_5")
+    # a jagged surface with a FOS below 1.5: scored by the method itself,
+    # refused when the FOS is a caller's own solve
     geom = _v043_sand()
-    slip = PolylineSlipSurface(points=_SPURIOUS[1][1])
-    slices = build_slices(geom, slip, 30)
-    counts = []
-
-    def solved_about(s, *args, **kwargs):
-        counts.append(len(s))
-        return [0.9, 0.9] if len(counts) == 1 else []
-
-    monkeypatch.setattr(search_mod, "_converged_about", solved_about)
-    why = search_mod._solution_fails(geom, slip, "constant", 1e-4, 30,
-                                     slices, 0.9)
-    assert why == "it solved at 30 slices only, not at 31 or 60"
-    assert counts == [30, 31, 60]
+    slip = PolylineSlipSurface(points=[
+        (4.8, 9.0), (9.22, 2.04), (13.64, 0.37), (15.0, 1.4), (18.05, 0.23),
+        (22.47, geom.ground_elevation_at(22.47))])
+    assert _is_jagged(slip)
+    stats = _new_reject_stats()
+    assert _compute_fos(geom, slip, "spencer", 30, reject_stats=stats,
+                        fos_fn=lambda g, s: 1.2) == _FOS_MAX
+    assert stats["jagged"] == 1
+    assert stats["screens"]["jagged_below_1_5"]["n"] == 1
 
 
 def test_valid_noncircular_solution_is_kept():
@@ -487,8 +497,11 @@ def test_valid_noncircular_solution_is_kept():
                                        (22.47, geom.ground_elevation_at(22.47))])
     plain = _compute_fos(geom, slip, "spencer", 30)
     assert plain < 2.0
-    assert _compute_fos(geom, slip, "spencer", 30,
-                        confirm_below=float("inf")) == pytest.approx(plain)
+    # (it was "confirmed" about three moment axes and at two more slicings
+    # before GM-140 step 3; the solve is the single-surface solver's)
+    from slope_stability.analysis import analyze_slope
+    assert analyze_slope(geom, slip_surface=slip, method="spencer",
+                         n_slices=30).FOS == pytest.approx(plain)
 
 
 @pytest.mark.parametrize("seed", [1, 2])
@@ -509,26 +522,30 @@ def test_noncircular_search_reports_a_reproducible_surface(seed):
     assert again.FOS == pytest.approx(c.FOS, rel=1e-3)
 
 
-def test_a_refused_lowest_surface_is_reported(monkeypatch):
-    """GM-57 re-review: when the check refuses the lowest surface a search
-    found, the result says so (FOS, where, why) instead of only counting
-    it. Directed DE on the weak layer over rock: every surface it reaches
-    below the rock outcrop solves about one moment axis only; none holds,
-    so no surface is reported, and the warning says why. Those surfaces
-    also have m_alpha < 0.2, which since GM-127 leaves them out first
-    (`test_m_alpha.py` has that search as it runs); the solution check is
-    measured here with the m_alpha check off, as Slide2 allows."""
-    from slope_stability import search as search_mod
+def test_a_flagged_lowest_surface_is_reported_flagged():
+    """GM-140 step 3 (items 4 and 5). Directed DE on the weak layer over
+    rock: every surface it reaches below the rock outcrop is one the
+    printed acceptability checks flag (m_alpha below 0.2, Whitman and
+    Bailey 1967 p. 487; tension on slice bases and the line of thrust
+    outside the mass, EM 1110-2-1902 C-10a). Before, the moment-axis screen
+    refused them and no surface was reported (``refused_lowest`` gave the
+    lowest). That screen is removed: the lowest solved surface is reported
+    with its flags, and the result says no scored surface is without one.
+    No printed answer exists for this made-up cut, so the value is not
+    pinned."""
     from slope_stability.analysis import search_critical_surface
-    monkeypatch.setattr(search_mod, "M_ALPHA_MIN", -float("inf"))
     res = search_critical_surface(_weak_over_rock(), method="spencer",
                                   surface_type="noncircular_de", seed=1,
                                   x_entry_range=(25.5, 28.0),
                                   x_exit_range=(29.0, 40.0))
-    ref = res.refused_lowest
-    assert ref is not None and "one moment axis only" in ref["reason"]
-    assert res.critical is None
-    w = [w for w in res.warnings if w.startswith("The lowest surface found")]
-    assert len(w) == 1 and "No other surface held" in w[0]
-    assert res.to_dict()["refused_lowest"]["FOS"] == ref["FOS"]
-
+    assert res.refused_lowest is None
+    assert "refused_lowest" not in res.to_dict()
+    assert res.critical is not None
+    assert "low_m_alpha" in res.critical_flags
+    assert "base_tension" in res.critical_flags
+    low = res.lowest_unflagged
+    assert low["FOS"] is None and "without a flag" in low["note"]
+    (rec,) = [r for r in res.trial_flags if r["family"] == "noncircular"]
+    assert rec["n_flagged"] == rec["n_scored"] > 0
+    w = [w for w in res.warnings if "printed acceptability checks" in w]
+    assert len(w) == 1 and "kept and reported, flagged" in w[0]

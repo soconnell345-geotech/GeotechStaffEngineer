@@ -747,9 +747,9 @@ def _window_span(x_entry_range, x_exit_range) -> Optional[float]:
 
 def _new_reject_stats() -> Dict[str, Any]:
     """Fresh per-search rejection tally (see ``_compute_fos``). ``refused``
-    keeps the lowest surface whose solution did not hold (`_solution_fails`)
-    so the result can say so; ``screens`` counts the refusals of each
-    noncircular screen by name (`NONCIRCULAR_SCREENS`)."""
+    is no longer filled (it kept the lowest surface the moment-axis and
+    slicing screens refused, removed in GM-140 step 3); ``screens`` counts
+    the refusals of each screen that is left, by name."""
     return {"geometry": 0, "nonconverged": 0, "jagged": 0, "refused": None,
             "screens": {}}
 
@@ -763,8 +763,7 @@ def _bump(stats: Optional[Dict[str, int]], key: str) -> None:
 #: not found in print. A refusal by each is counted
 #: (``SearchResult.screen_refusals``), with how many of the surfaces it
 #: refused after solving them carried a flag of the printed checks.
-NONCIRCULAR_SCREENS = ("slice_count", "span", "one_moment_axis",
-                       "one_slicing", "jagged_below_1_5")
+NONCIRCULAR_SCREENS = ("slice_count", "span", "jagged_below_1_5")
 
 
 def _bump_screen(stats, screen: str, names) -> None:
@@ -798,21 +797,6 @@ def _rejection_kwargs(stats: Dict[str, int], n_evaluated: int) -> Dict[str, int]
         "screen_refusals": {k: dict(v) for k, v in
                             (stats.get("screens") or {}).items()},
     }
-
-
-def _note_refused(stats, slip, fos: float, reason: str) -> None:
-    """Keep the lowest refused surface in the tally (see
-    ``SearchResult.refused_lowest``)."""
-    if stats is None:
-        return
-    old = stats.get("refused")
-    if old is not None and old["FOS"] <= fos:
-        return
-    pts = slip.points
-    stats["refused"] = {
-        "FOS": round(fos, 4), "reason": reason,
-        "x_entry": round(pts[0][0], 3), "x_exit": round(pts[-1][0], 3),
-        "points": [(round(x, 3), round(z, 3)) for x, z in pts]}
 
 
 def _noncircular_admissible(slip, slices, geom, n_slices_requested: int,
@@ -889,28 +873,6 @@ def _is_jagged(slip) -> bool:
     return False
 
 
-def _noncircular_axis_point(slices, geom) -> Optional[Tuple[float, float]]:
-    """A deterministic, robust moment axis for the noncircular convergence gate.
-
-    Midpoint of the surviving span, half a span above the highest ground point —
-    the same centroid-above-surface heuristic the validated composite-surface
-    path passes explicitly (test_validation uses the parent circle centre). This
-    pins the axis for the convergence check instead of leaving it to gle's
-    internal least-squares fit, which can land absurdly far away on a
-    near-straight surface and spuriously fail convergence. A converged GLE FOS is
-    axis-independent (both moment and force equilibrium are enforced), so this
-    does not move the reported FOS of valid surfaces.
-    """
-    if not slices:
-        return None
-    x_lo = slices[0].x_left
-    x_hi = slices[-1].x_right
-    span = max(x_hi - x_lo, 1.0)
-    z_top = max(p[1] for p in geom.surface_points) if geom is not None else \
-        max(s.z_base for s in slices)
-    return (0.5 * (x_lo + x_hi), z_top + 0.5 * span)
-
-
 def _has_reinforcement(geom) -> bool:
     """True when the geometry carries any reinforcement that
     `compute_reinforcement_forces` resolves (nails, anchors, geosynthetics,
@@ -954,83 +916,23 @@ def _method_solution(slices, slip, method: str, tol: float, reinf_forces):
     return solve_method(slices, slip, method, "half_sine", tol, reinf_forces)
 
 
-# A rigorous noncircular solution is confirmed when a second moment axis
-# gives a converged solution within this fraction of its FOS, and the
-# surface cut into one slice more, or twice as many, still has one within
-# the second fraction (loose: a jagged random surface's FOS can move by a
-# third between 30 and 31 slices and still be an equilibrium solution at
-# each; and GLE finds no solution at some slice counts of valid surfaces).
-_AXIS_AGREE = 0.02
-_SLICE_AGREE = 0.5
-
-
-def _converged_about(slices, slip, f_interslice: str, tol: float, geom,
-                     reinf_forces=None) -> List[float]:
-    """FOS of every converged rigorous solution of the slices about three
-    moment axes: gle's least-squares fit, the pinned axis
-    (`_noncircular_axis_point`) and the pinned axis raised by the span."""
-    from slope_stability.gle import gle_fos
-    axes = [None]
-    pinned = _noncircular_axis_point(slices, geom) if geom is not None \
-        else None
-    if pinned is not None:
-        span = max(slices[-1].x_right - slices[0].x_left, 1.0)
-        axes += [pinned, (pinned[0], pinned[1] + span)]
-    out = []
-    for axis_point in axes:
-        try:
-            res = gle_fos(slices, slip, f_interslice=f_interslice,
-                          tol=min(tol, 1e-4) * 0.1, axis_point=axis_point,
-                          reinf_forces=reinf_forces)
-        except (ValueError, ZeroDivisionError, OverflowError):
-            continue
-        if res.converged and 0.05 < res.fos < _FOS_MAX:
-            out.append(res.fos)
-    return out
-
-
-def _solution_fails(geom, slip, f_interslice: str, tol: float,
-                    n_slices: int, slices, fos: float,
-                    reinf_forces=None) -> Optional[str]:
-    """Why the rigorous solution of FOS ``fos`` on a noncircular surface
-    is not an equilibrium solution of the surface but of one moment axis or
-    one slicing; None when it holds.
-
-    Spencer and GLE satisfy force and moment equilibrium, so their solution
-    is the same about any moment axis (`_noncircular_axis_point` relies on
-    that), and a surface's FOS does not hang on the number of slices. A
-    "converged" state that fails either test is a solver artefact, and
-    searches had been reporting them as critical: the least-squares axis of
-    a surface with a near-vertical segment can make F_m and F_f meet where
-    no other axis balances (a 10 m 1:1 cut, weak clay over sandstone: 1.06
-    on a surface 13 m deep in the sandstone, no solution about any other
-    axis, Fellenius 21.7); the pinned axis can catch a second, spurious root
-    (V-043's sand fill: 0.717 at lambda -0.35 at 30 slices, where 29 and 31
-    slices give 1.90 and 1.55 at lambda +0.2 about every axis); and a
-    surface diving at 75 deg into rock converged about two axes at 30
-    slices only (0.73, with Janbu 0.42 and Fellenius 8.5). So: two of the
-    three axes agree within ``_AXIS_AGREE``, and with one slice more or
-    twice as many some axis still converges, within ``_SLICE_AGREE`` of the
-    FOS. All three came from even slices that took one segment's angle
-    across a corner; sliced at its corners (GM-131) none has such a state
-    (two have no solution, V-043's solves at 1.715 at any count), and the
-    check stays as the guard.
-    """
-    here = _converged_about(slices, slip, f_interslice, tol, geom,
-                            reinf_forces)
-    if sum(abs(f - fos) <= _AXIS_AGREE * fos for f in here) < 2:
-        return "it solved about one moment axis only"
-    for n in (n_slices + 1, 2 * n_slices):
-        try:
-            more = build_slices(geom, slip, n)
-        except ValueError:
-            continue
-        there = _converged_about(more, slip, f_interslice, tol, geom,
-                                 reinf_forces)
-        if any(abs(f - fos) <= _SLICE_AGREE * fos for f in there):
-            return None
-    return (f"it solved at {n_slices} slices only, not at "
-            f"{n_slices + 1} or {2 * n_slices}")
+#: Noncircular screens removed in GM-140 step 3 (item 5), with what was
+#: measured on the noncircular cases of the validation set and on the
+#: module's own two rock-cut cases (`module_work/gm140/step3_screens.py`,
+#: STEP3_CHECK.md): every surface each refused carried a flag of the
+#: printed acceptability checks (EM 1110-2-1902 C-10a; Whitman and Bailey
+#: 1967, p. 487). Such a surface is now scored, kept and flagged.
+REMOVED_SCREENS = {
+    "one_moment_axis": "a would-be critical surface had to solve about two "
+                       "of three moment axes within 2 % (38 refused in the "
+                       "measured cases, 38 flagged)",
+    "one_slicing": "and at one slice more or twice the slices within 50 % "
+                   "(1 refused, 1 flagged)",
+    "jagged_below_1_5": "a FOS below 1.5 on a jagged surface was refused "
+                        "(88 refused, 88 flagged); kept only for a "
+                        "caller's own per-surface solve (rapid drawdown), "
+                        "on which the printed checks are not made here",
+}
 
 
 def _compute_fos(geom: SlopeGeometry,
@@ -1041,7 +943,6 @@ def _compute_fos(geom: SlopeGeometry,
                  window_span: Optional[float] = None,
                  reject_stats: Optional[Dict[str, int]] = None,
                  fos_fn: Optional[Callable] = None,
-                 confirm_below: Optional[float] = None,
                  m_alpha_check: bool = True,
                  info: Optional[Dict[str, Any]] = None,
                  inside_model: bool = True) -> float:
@@ -1065,15 +966,6 @@ def _compute_fos(geom: SlopeGeometry,
     analyses of a fixed surface). A ``fos_fn`` makes its own check.
     ``info`` (optional dict) receives ``m_alpha_min``, the least m_alpha of
     a scored surface (None for the OMS), whether or not it is checked.
-
-    ``confirm_below``: a noncircular surface scored by Spencer /
-    Morgenstern-Price / GLE at a FOS below this (a search's best so far) is
-    kept only if its solution holds about a second moment axis and at
-    another slicing (`_solution_fails`); otherwise it is rejected as not
-    converged and, if the lowest so refused, kept in
-    ``reject_stats['refused']`` so the result says so. Searches
-    pass their running best, so the check runs only when a surface would
-    become the critical one.
 
     ``window_span`` anchors the noncircular span floor to the caller's entry/exit
     window (see ``_noncircular_admissible``). ``reject_stats`` (optional) is a
@@ -1149,23 +1041,16 @@ def _compute_fos(geom: SlopeGeometry,
                 if refuse:
                     _count_m_alpha_refusal()
                     return _FOS_MAX
-            if (confirm_below is not None and fos < confirm_below
-                    and fos_fn is None
-                    and method not in ("fellenius", "janbu")):
-                why = _solution_fails(
-                    geom, slip,
-                    "half_sine" if method in ("morgenstern_price", "gle")
-                    else "constant", tol, n_slices, slices, fos, reinf)
-                if why:
-                    _bump(reject_stats, "nonconverged")
-                    _bump_screen(reject_stats,
-                                 "one_moment_axis" if "axis" in why
-                                 else "one_slicing", names)
-                    _note_refused(reject_stats, slip, fos, why)
-                    return _FOS_MAX
-            # Spurious-low-FOS guard: a low FOS on a jagged surface is a solver
-            # artifact (SS-6), not a real critical surface — reject it.
-            if fos < _LOW_FOS_JAGGED_GATE and _is_jagged(slip):
+            # The agreement between moment axes and between slicings, and
+            # the refusal of a FOS below 1.5 on a jagged surface, are gone
+            # for the method's own solves (GM-140 step 3, item 5): measured
+            # on every noncircular case of the validation set, each refused
+            # only surfaces the printed checks flag, and those are kept and
+            # flagged now (`REMOVED_SCREENS`). A caller's own per-surface
+            # solve (rapid drawdown) is not put through the printed checks
+            # here, so its jagged gate stays.
+            if (fos_fn is not None and fos < _LOW_FOS_JAGGED_GATE
+                    and _is_jagged(slip)):
                 _bump(reject_stats, "jagged")
                 _bump_screen(reject_stats, "jagged_below_1_5", names)
                 return _FOS_MAX
@@ -1895,8 +1780,7 @@ def search_noncircular(
             slip = PolylineSlipSurface(points=points)
             fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
                                window_span=window_span,
-                               reject_stats=reject_stats, fos_fn=fos_fn,
-                               confirm_below=best_fos)
+                               reject_stats=reject_stats, fos_fn=fos_fn)
             n_evaluated += 1
 
             grid_fos.append({
@@ -2057,8 +1941,7 @@ def search_pso(
         if slip is None:
             return _FOS_MAX
         fos = _compute_fos(geom, slip, "spencer", n_slices, tol=tol,
-                           window_span=window_span, reject_stats=reject_stats,
-                           confirm_below=best_seen[0])
+                           window_span=window_span, reject_stats=reject_stats)
         best_seen[0] = min(best_seen[0], fos)
         return fos
 
@@ -2335,8 +2218,7 @@ def search_weak_layer_biased(
             slip = PolylineSlipSurface(points=points)
             fos = _compute_fos(geom, slip, "spencer", n_slices, tol=tol,
                                window_span=window_span,
-                               reject_stats=reject_stats,
-                               confirm_below=best_fos)
+                               reject_stats=reject_stats)
             n_evaluated += 1
 
             grid_fos.append({
@@ -2775,7 +2657,7 @@ def search_de(
         info: Dict[str, Any] = {}
         fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
                            window_span=window_span, reject_stats=reject_stats,
-                           fos_fn=fos_fn, confirm_below=best_seen[0],
+                           fos_fn=fos_fn,
                            info=info)
         best_seen[0] = min(best_seen[0], fos)
         m = info.get("m_alpha_min")
@@ -2870,8 +2752,7 @@ def search_de(
         # objective may include penalty; recompute clean FOS
         clean = _compute_fos(geom, best_slip, method, n_slices, tol=tol,
                              window_span=window_span, fos_fn=fos_fn,
-                             reject_stats=reject_stats,
-                             confirm_below=math.inf)
+                             reject_stats=reject_stats)
         try:
             if clean >= _FOS_MAX:     # its solution did not hold (above)
                 raise ValueError("no confirmed solution")

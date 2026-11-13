@@ -1800,24 +1800,23 @@ def acceptability_choices(result: SearchResult, method: Optional[str],
     if result.screen_refusals:
         text = {"slice_count": "too few slices",
                 "span": "too short a span",
-                "one_moment_axis": "solved about one moment axis only",
-                "one_slicing": "solved at one slice count only",
-                "jagged_below_1_5": "FOS below 1.5 on a jagged surface"}
-        parts = []
-        for k, rec in result.screen_refusals.items():
-            p = f"{text.get(k, k)}: {rec['n']}"
-            if rec.get("n_flagged") is not None:
-                p += (f" ({rec['n_flagged']} of them flagged by a printed "
-                      f"check)")
-            parts.append(p)
+                "jagged_below_1_5": "FOS below 1.5 on a jagged surface (a "
+                                    "caller's own per-surface solve)"}
+        parts = [f"{text.get(k, k)}: {rec['n']}"
+                 for k, rec in result.screen_refusals.items()]
         out.append(choice(
             "noncircular trial surfaces refused by the module's screens",
             "; ".join(parts), MODULE,
             "numerical stand-ins of the module's own, not found in print "
             "(EM 1110-2-1902 C-10a prints the checks on forces and the "
-            "line of thrust instead); each refusal is counted here "
-            "(screen_refusals), with how many of the surfaces refused "
-            "after solving the printed checks also flag"))
+            "line of thrust instead), applied before any solve. The span "
+            "screen is kept because it refuses surfaces the printed checks "
+            "pass (short surfaces confined to part of the window); each "
+            "refusal is counted here (screen_refusals). The screens on "
+            "agreement between moment axes and between slicings, and on a "
+            "FOS below 1.5 on a jagged surface, were removed in GM-140 "
+            "step 3: every surface they refused carried a flag of the "
+            "printed checks, and is now scored, kept and flagged"))
     return out
 
 

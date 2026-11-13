@@ -94,9 +94,11 @@ def test_a_cohesionless_face_lists_the_infinite_slope_as_scored():
 def test_a_search_with_no_surface_says_none_and_points_at_nothing():
     """A short noncircular search with automatic windows on the live-run
     slope finds no admissible surface: the entry says none was scored and
-    why, and the ranges point at no location."""
+    why, and the ranges point at no location. (20 trials: with 100 the
+    search now reports a surface the moment-axis screen used to refuse,
+    kept and flagged since that screen was removed in GM-140 step 3.)"""
     r = search_critical_surface(_w10(), surface_type="noncircular",
-                                n_trials=100, seed=1, n_slices=30)
+                                n_trials=20, seed=1, n_slices=30)
     assert r.critical is None
     c = _by_what(r)
     fam = c["surface families scored"]
@@ -107,11 +109,8 @@ def test_a_search_with_no_surface_says_none_and_points_at_nothing():
     assert r.families_scored == []
     ranges = c["search ranges"]["basis"]
     assert "governing_location" not in ranges
-    # GM-140 step 3: a trial with m_alpha below 0.2 is no longer left out
-    # before the moment-axis check, so the lowest surface that check
-    # refused is on the result and the entry points at it
-    assert "no surface is reported" in ranges
-    assert (r.refused_lowest is not None) == ("refused_lowest" in ranges)
+    assert ranges.endswith("no surface is reported")
+    assert r.refused_lowest is None
     assert "governing_location" not in r.to_dict()
 
 

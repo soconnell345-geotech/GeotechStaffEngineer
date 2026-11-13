@@ -672,11 +672,14 @@ class SearchResult:
         unflagged surface.
     screen_refusals : dict
         Noncircular trial surfaces refused by each of the module's own
-        screens (not found in print): ``slice_count``, ``span``,
-        ``one_moment_axis``, ``one_slicing``, ``jagged_below_1_5``, each
-        ``{"n", "n_flagged"}``; ``n_flagged`` counts those the printed
-        checks also flag (None for the two screens applied before any
-        solve).
+        screens (not found in print): ``slice_count`` and ``span``, applied
+        before any solve, and ``jagged_below_1_5``, applied only to a
+        caller's own per-surface solve (rapid drawdown); each ``{"n",
+        "n_flagged"}`` (``n_flagged`` None: the printed checks were not
+        made on the refused surfaces). The screens on agreement between
+        moment axes and between slicings, and the jagged screen on the
+        method's own solves, were removed in GM-140 step 3
+        (``search.REMOVED_SCREENS``).
     no_solution : list of dict
         Trial surfaces left without a solution, by family and by method
         (GM-140 step 2): ``{"family", "method", "n", "not_converged",
@@ -744,11 +747,12 @@ class SearchResult:
         ``depth`` below the ground.
         With ``search_ranges`` it says what the search covered.
     refused_lowest : dict or None
-        The lowest noncircular surface a search refused because its
-        rigorous solution did not hold (about one moment axis only, or at
-        one slicing only; `search._solution_fails`): ``FOS``, ``reason``,
-        ``x_entry`` / ``x_exit`` and ``points``. A warning says so when it
-        is below the reported FOS. None when nothing was refused.
+        None since GM-140 step 3. It held the lowest noncircular surface a
+        search refused because its rigorous solution held about one moment
+        axis only, or at one slicing only; those two screens were removed
+        (every surface they refused carried a flag of the printed
+        acceptability checks), and such a surface is now scored, kept and
+        flagged (``trial_flags``, ``critical_flags``).
     choices : list of dict
         What the search chose (GM-115, ``geotech_common.choices``;
         ``search_supplements.search_choices``): the search, the method it

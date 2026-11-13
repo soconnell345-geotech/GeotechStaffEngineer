@@ -773,10 +773,13 @@ def search_critical_surface(
     the Ordinary Method of Slices value is computed for every circle
     without supports or a seismic coefficient and taken where Bishop's is
     the lower (Duncan 1996, p. 580); ``critical.FOS_bishop`` and
-    ``critical.FOS_fellenius`` give both. The noncircular screens (slice
-    count, span, moment-axis and slicing agreement, a FOS below 1.5 on a
-    jagged surface) are the module's own, not found in print;
-    ``screen_refusals`` counts each.
+    ``critical.FOS_fellenius`` give both. The noncircular screens that
+    are left (slice count and span, applied before any solve) are the
+    module's own, not found in print; ``screen_refusals`` counts each. A
+    low factor of safety on a jagged surface, or a solution that held about
+    one moment axis or one slicing only, is no longer refused
+    (``search.REMOVED_SCREENS``): such a surface is scored, kept and
+    flagged, and can be the headline.
     """
     from slope_stability.search_supplements import (
         apply_supplements, search_choices, note_budget, CIRCULAR,

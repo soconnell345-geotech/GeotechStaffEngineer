@@ -861,12 +861,27 @@ the scored surfaces of the same method that carry none (among the trials
 the search happened to score: it is not a second search). The headline stays
 the lowest solved surface.
 
-**The noncircular screens (D22).** Slice count, span, agreement between
-moment axes, agreement between slicings and the refusal of a FOS below 1.5
-on a jagged surface are numerical stand-ins of the module's own, not found
-in print. Each refusal is counted by screen (`SearchResult.screen_refusals`),
-with how many of the surfaces refused after solving the printed checks also
-flag, and `choices` names them as the module's own.
+**The noncircular screens (D22), measured** (`module_work/gm140/
+step3_screens.py`; table in `module_work/gm140/STEP3_CHECK.md`). On the
+noncircular cases of the validation set and the module's two rock-cut
+cases:
+
+- agreement between moment axes (38 refused), agreement between slicings (1)
+  and a FOS below 1.5 on a jagged surface (88): every surface refused
+  carried a flag of the printed checks. All three are removed for the
+  method's own solves (`search.REMOVED_SCREENS`); such a surface is scored,
+  kept and flagged. `SearchResult.refused_lowest` is no longer filled.
+- span: of the surfaces it refused that have a Spencer solution, the printed
+  checks pass 25 of 48. It stays, counted (`screen_refusals`) and named in
+  `choices` as the module's own, not found in print.
+- slice count: it refused no trial in any measured case; kept as it was.
+- the jagged gate still applies to a caller's own per-surface solve (the
+  rapid-drawdown search), on which the printed checks are not made here.
+
+Consequence to know: a random noncircular search can now end on a zig-zag
+surface with a low factor of safety, flagged, with the lowest unflagged
+surface beside it (ACADS 1(a), 200 trials: 0.633 flagged, 1.096 unflagged;
+1.092 before; printed 1.00).
 
 **One below-base test (D19).** The toe-circle family asks
 `search._dips_below_base`, as every family does.
