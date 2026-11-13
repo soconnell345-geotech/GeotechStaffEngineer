@@ -581,7 +581,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "**Rigid-cap 6-DOF** stiffness analysis &mdash; per-pile axial and lateral stiffness, batter "
             "carried in full (each pile&rsquo;s springs turned to the global axes), and one right-hand "
             "sign convention carried end to end. The simplified method (<code>pile_group_simple</code>) is "
-            "for equal vertical piles and refuses a batter or a per-pile stiffness.",
+            "for equal vertical piles and refuses a batter or a per-pile stiffness. Both tools refuse a "
+            "moment about the one line every pile is on (a single row carries none about its own axis).",
             "**Group efficiency factor** &eta;<sub>g</sub> read from the printed rows by soil, the cap's "
             "contact with the ground and the spacing (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26 for "
             "drilled shafts, CFA, displacement piles and micropiles); **block failure** by GEC-12 "
@@ -592,12 +593,15 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "rigid-cap tools flag every pile in tension and say to run it, and the pile-group calc package "
             "checks the piles in tension when it has the block&rsquo;s inputs).",
             "**Meyerhof (1976)** SPT group settlement as GEC-12 Eqs. 7-50 to 7-52 print it, and an "
-            "elastic equivalent-footing settlement (the <code>equivalent_footing_settlement</code> tool; "
-            "GEC-12 Sec. 7.3.5.3, Eq. 7-55, 2V:1H spread; UFC 3-220-20 Eq. 6-54) summed to "
+            "elastic equivalent-footing settlement in coarse-grained soil (the "
+            "<code>equivalent_footing_settlement</code> tool; GEC-12 Fig. 7-44 and Eq. 7-55, 2V:1H spread; "
+            "UFC 3-220-20 Eq. 6-54, printed for coarse-grained soil) summed to "
             "where the stress falls to 10&nbsp;% of the footing&rsquo;s bearing stress (UFC 3-220-20 p. 449; "
             "GEC-12 step 1c&rsquo;s 10&nbsp;% of the existing effective stress as "
             "<code>influence_depth_m</code>). It gives the compression of the soil below the footing; the "
-            "piles&rsquo; elastic compression and a clay&rsquo;s consolidation settlement are not included.",
+            "piles&rsquo; elastic compression is not included. A group in cohesive soil settles by "
+            "consolidation (GEC-12 Sec. 7.3.5.3; the settlement module&rsquo;s "
+            "<code>consolidation_settlement</code>).",
             "References: FHWA GEC-12 Vol. I ch. 7; UFC 3-220-20 ch. 6; validated against GEC-12 "
             "Vol. III Tables D-13, D-14 and D-23 and UFC 3-220-20 Appendix B-5.4 (V-005, V-060).",
         ],
