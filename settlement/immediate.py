@@ -355,6 +355,23 @@ def _overlaps(ranges, others) -> List[Tuple[float, float]]:
     return sorted(out)
 
 
+def _less(ranges, others) -> List[Tuple[float, float]]:
+    """The parts of ``ranges`` that ``others`` do not cover; a part of
+    ``COVER_TOL_M`` or less is left out."""
+    out = []
+    for a, b in ranges:
+        z = a
+        for c, d in sorted(others):
+            if d <= z or c >= b:
+                continue
+            if c - z > COVER_TOL_M:
+                out.append((z, c))
+            z = max(z, d)
+        if b - z > COVER_TOL_M:
+            out.append((z, b))
+    return out
+
+
 def schmertmann_settlement(q_net: float, q0: float, B: float,
                            layers: List[SchmertmannLayer],
                            footing_shape: str = "square",
@@ -444,7 +461,8 @@ def schmertmann_terms(q_net: float, q0: float, B: float,
                       gamma_soil: Optional[float] = None,
                       below_profile: Optional[str] = None,
                       below_param: str = "below_profile",
-                      settled_elsewhere: Sequence[Tuple[float, float]] = ()
+                      settled_elsewhere: Optional[
+                          Sequence[Tuple[float, float]]] = None
                       ) -> dict:
     """The terms of :func:`schmertmann_settlement` as it works them out
     (it returns this ``Se``): ``strip`` (the plane-strain diagram),
@@ -454,15 +472,20 @@ def schmertmann_terms(q_net: float, q0: float, B: float,
     ``sigma_vp`` (kPa), ``Iz_peak``, ``sum_Iz_dz_over_Es`` (m/kPa),
     ``Se`` (m), ``profile_bottom`` (m, the bottom of the deepest layer),
     ``uncovered`` (the depth ranges of the diagram no layer covers, m
-    below the base; empty when covered) and ``below_profile`` (None when
-    the layers cover the diagram; else what was taken in ``uncovered``).
+    below the base; empty when covered), ``below_profile`` (None when
+    the layers cover the diagram; else what was taken in ``uncovered``),
+    ``settled`` (the parts of ``uncovered`` that ``settled_elsewhere``
+    covers) and ``neither`` (with ``"settled_by_another_method"`` in a
+    call that gives ``settled_elsewhere``: the parts of ``uncovered`` in
+    neither list, whose settlement is in neither sum).
     Same parameters; ``q_net`` must be positive. Two more, for a caller
     with its own names (GM-320): ``below_param``, the name of
     ``below_profile`` in the messages, and ``settled_elsewhere``, depth
     ranges (m below the base) the same call settles by another method
-    (the consolidation layers of a combined analysis): where they lie in
-    a depth not covered, only ``"settled_by_another_method"`` is taken
-    and offered."""
+    (the consolidation layers of a combined analysis; None for a call
+    that settles nothing else): where they lie in a depth not covered,
+    only ``"settled_by_another_method"`` is taken and offered, and the
+    refusal asks for Schmertmann layers over the rest only."""
     if below_profile is not None and below_profile not in BELOW_PROFILE:
         raise ValueError(
             f"{below_param} must be one of {list(BELOW_PROFILE)}, "
@@ -554,23 +577,40 @@ def schmertmann_terms(q_net: float, q0: float, B: float,
     # the sum at the bottom of a sand over clay on the same diagram.
     profile_bottom = max(layer.depth_bottom for layer in layers)
     gaps = schmertmann_uncovered(layers, z_max)
-    settled = _overlaps(gaps, settled_elsewhere)
+    settled = _overlaps(gaps, settled_elsewhere or ())
+    # the depth not covered that this call settles by neither method
+    rest = (_less(gaps, settled_elsewhere)
+            if settled_elsewhere is not None else [])
     if gaps and below_profile is None:
-        offer = ("settled_by_another_method",) if settled else BELOW_PROFILE
+        head = ("the Schmertmann layers do not cover the strain influence "
+                "diagram, which runs from the footing base to "
+                f"{_z(z_max)} m ({z_max / B:.3g} B, NHI-06-089 Fig. 8-21a): "
+                f"{_ranges_text(gaps)} below the footing base "
+                + ("is" if len(gaps) == 1 else "are")
+                + " not covered, and the strain there would be left out of "
+                "the settlement. ")
+        if not settled:
+            raise ValueError(
+                head + "Give layers from the footing base down to "
+                f"{_depth_up(z_max):g} m with no gaps, or say what lies "
+                f"there with {below_param}: "
+                + "; ".join(f"'{v}' ({_BELOW_HELP[v]})"
+                            for v in BELOW_PROFILE))
+        # Schmertmann layers over a consolidated clay would count its
+        # depth in both sums (GM-320 re-check, N3)
         raise ValueError(
-            "the Schmertmann layers do not cover the strain influence "
-            "diagram, which runs from the footing base to "
-            f"{_z(z_max)} m ({z_max / B:.3g} B, NHI-06-089 Fig. 8-21a): "
-            f"{_ranges_text(gaps)} below the footing base "
-            + ("is" if len(gaps) == 1 else "are")
-            + " not covered, and the strain there would be left out of "
-            "the settlement. Give layers from the footing base down to "
-            f"{_depth_up(z_max):g} m with no gaps, or say what lies there "
-            f"with {below_param}: "
-            + (f"the consolidation layers of this call lie at "
-               f"{_ranges_text(settled)} and are settled by consolidation, "
-               "so " if settled else "")
-            + "; ".join(f"'{v}' ({_BELOW_HELP[v]})" for v in offer))
+            head + "The consolidation layers of this call lie at "
+            f"{_ranges_text(settled)} and are settled by consolidation: "
+            f"give {below_param} 'settled_by_another_method' ("
+            + _BELOW_HELP["settled_by_another_method"] + "), not "
+            "Schmertmann layers there, which would count that depth twice"
+            + (f". {_ranges_text(rest)} "
+               + ("is" if len(rest) == 1 else "are")
+               + " in neither the Schmertmann nor the consolidation layers "
+               "of this call: give Schmertmann layers there if that ground "
+               "is granular, or consolidation layers if it is a clay; "
+               "left so, its settlement is in neither sum"
+               if rest else ""))
     if gaps and settled and below_profile != "settled_by_another_method":
         raise ValueError(
             f"{below_param} '{below_profile}' "
@@ -622,7 +662,11 @@ def schmertmann_terms(q_net: float, q0: float, B: float,
             "sum_Iz_dz_over_Es": total, "Se": Se,
             "profile_bottom": profile_bottom,
             "uncovered": [list(g) for g in gaps] if used_below else [],
-            "below_profile": used_below}
+            "below_profile": used_below,
+            "settled": [list(r) for r in settled] if used_below else [],
+            "neither": ([list(r) for r in rest]
+                        if used_below == "settled_by_another_method"
+                        else [])}
 
 
 def _below_text(terms: dict) -> str:
@@ -639,6 +683,18 @@ def _below_text(terms: dict) -> str:
                 "strain influence diagram")
     return ("the ground at " + where + " as incompressible (rock): no "
             "strain counted there, on the same strain influence diagram")
+
+
+def _neither_text(terms: dict) -> str:
+    """The depth not covered that a combined call settles by neither
+    method, in words; "" when there is none (GM-320 re-check, N1)."""
+    rest = terms.get("neither") or []
+    if not rest:
+        return ""
+    return (_ranges_text(rest) + " below the footing base "
+            + ("is" if len(rest) == 1 else "are")
+            + " in neither the Schmertmann nor the consolidation layers of "
+            "this call: its settlement is not in the total settlement")
 
 
 _BELOW_BASIS = {
@@ -668,16 +724,32 @@ def schmertmann_below_choice(terms: Optional[dict],
     from geotech_common.choices import GIVEN, choice
     kind = terms["below_profile"]
     gaps = terms["uncovered"]
-    below_only = (len(gaps) == 1 and abs(gaps[0][0] - terms["profile_bottom"])
-                  <= COVER_TOL_M)
-    others = [b for b in BELOW_PROFILE if b != kind
-              and (b != "last_layer_continued" or below_only)]
+    settled = terms.get("settled") or []
+    rest = terms.get("neither") or []
+    chosen = _below_text(terms)
+    if settled:
+        chosen += ("; the consolidation layers of this call settle "
+                   + _ranges_text(settled))
+    if rest:
+        chosen += "; " + _neither_text(terms)
+    if settled:
+        # where the call consolidates a layer in the depth not covered, it
+        # takes 'settled_by_another_method' only (GM-320 re-check, N2)
+        alternatives = ([f"Schmertmann layers given over "
+                         f"{_ranges_text(rest)} if that ground is "
+                         "granular, or consolidation layers if it is a "
+                         "clay"] if rest else [])
+    else:
+        below_only = (len(gaps) == 1 and abs(
+            gaps[0][0] - terms["profile_bottom"]) <= COVER_TOL_M)
+        others = [b for b in BELOW_PROFILE if b != kind
+                  and (b != "last_layer_continued" or below_only)]
+        alternatives = ([f"{param} '{b}'" for b in others]
+                        + [f"layers given from the footing base down to "
+                           f"{_depth_up(terms['z_max']):g} m with no gaps"])
     return choice(
-        "ground the Schmertmann layers do not cover", _below_text(terms),
-        GIVEN, f"stated ({param}): " + _BELOW_BASIS[kind],
-        [f"{param} '{b}'" for b in others]
-        + [f"layers given from the footing base down to "
-           f"{_depth_up(terms['z_max']):g} m with no gaps"])
+        "ground the Schmertmann layers do not cover", chosen,
+        GIVEN, f"stated ({param}): " + _BELOW_BASIS[kind], alternatives)
 
 
 def schmertmann_below_warning(terms: Optional[dict],
@@ -692,6 +764,17 @@ def schmertmann_below_warning(terms: Optional[dict],
             "footing base: the settlement takes " + _below_text(terms)
             + f", as given ({param}), not as explored.")
     if terms["below_profile"] == "settled_by_another_method":
-        text += (" Its settlement comes from its own method "
-                 "(consolidation, for a clay), not from this one.")
+        settled = terms.get("settled") or []
+        rest = terms.get("neither") or []
+        if settled:
+            text += (" The consolidation layers of this call settle "
+                     + _ranges_text(settled) + ".")
+        elif not rest:
+            text += (" Its settlement comes from its own method "
+                     "(consolidation, for a clay), not from this one.")
+        if rest:
+            # GM-320 re-check, N1: named, not taken as settled elsewhere
+            text += (" " + _neither_text(terms) + ". Give Schmertmann "
+                     "layers there if that ground is granular, or "
+                     "consolidation layers if it is a clay.")
     return text

@@ -217,6 +217,91 @@ def test_with_consolidation_below_only_settled_by_another_method():
     assert "App. A.7" in entry["basis"]
     assert not any("incompressible" in w for w in r.warnings)
     assert r.consolidation > 0
+    # the clay covers the whole depth not covered: nothing else is
+    # offered, and nothing is in neither list (re-check N2)
+    assert "alternatives" not in entry
+    assert r.schmertmann_terms["settled"] == [[2.0, 4.0]]
+    assert r.schmertmann_terms["neither"] == []
+    w = [w for w in r.warnings if "do not cover" in w][0]
+    assert "The consolidation layers of this call settle 2 to 4 m." in w
+    assert "in neither" not in w
+    assert "with no gaps" not in msg and "count that depth twice" in msg
+
+
+# -- consolidation layers over part of the depth not covered (re-check
+#    N1 to N3) -----------------------------------------------------------------
+
+_PART_CLAY = [ConsolidationLayer(thickness=1.0, depth_to_center=3.5, **_CLAY)]
+_NEITHER = ("2 to 3 m below the footing base is in neither the Schmertmann "
+            "nor the consolidation layers of this call: its settlement is "
+            "not in the total settlement")
+
+
+def test_refusal_over_part_clay_asks_for_granular_layers_only():
+    """Sand 0 to 2 m, clay consolidated from 3 to 4 m only; the diagram
+    runs to 4 m. The refusal does not offer layers down to 4 m (over the
+    clay they would count it twice) and names 2 to 3 m, in neither list."""
+    with pytest.raises(ValueError) as e:
+        _analysis(schmertmann_layers=SHORT,
+                  consolidation_layers=_PART_CLAY).compute()
+    msg = str(e.value)
+    assert "2 to 4 m below the footing base is not covered" in msg
+    assert "with no gaps" not in msg
+    assert "lie at 3 to 4 m" in msg and "count that depth twice" in msg
+    assert ("2 to 3 m is in neither the Schmertmann nor the consolidation "
+            "layers of this call") in msg
+    assert "'incompressible'" not in msg
+    assert "'last_layer_continued'" not in msg
+
+
+def test_part_clay_names_the_depth_in_neither_sum():
+    r = _analysis(schmertmann_layers=SHORT, consolidation_layers=_PART_CLAY,
+                  schmertmann_below_profile="settled_by_another_method"
+                  ).compute()
+    t = r.schmertmann_terms
+    assert t["uncovered"] == [[2.0, 4.0]]
+    assert t["settled"] == [[3.0, 4.0]] and t["neither"] == [[2.0, 3.0]]
+    entry = [c for c in r.choices if c["what"] == CHOICE][0]
+    assert _NEITHER in entry["chosen"]
+    assert "the consolidation layers of this call settle 3 to 4 m" in \
+        entry["chosen"]
+    # only what this call takes: no 'incompressible' or
+    # 'last_layer_continued', no layers over the clay (re-check N2)
+    assert entry["alternatives"] == [
+        "Schmertmann layers given over 2 to 3 m if that ground is granular, "
+        "or consolidation layers if it is a clay"]
+    w = [w for w in r.warnings if "do not cover" in w][0]
+    assert _NEITHER in w
+    assert "The consolidation layers of this call settle 3 to 4 m." in w
+    assert "Its settlement comes from its own method" not in w
+    # no number moves: the immediate part is the Schmertmann layers alone
+    assert r.immediate == pytest.approx(schmertmann_settlement(
+        layers=SHORT, below_profile="settled_by_another_method", **KW),
+        rel=1e-12)
+    assert r.total == pytest.approx(r.immediate + r.consolidation
+                                    + r.secondary)
+
+
+def test_neither_is_for_the_combined_call_only():
+    # the Schmertmann method on its own settles nothing else: as before
+    t = schmertmann_terms(layers=SHORT,
+                          below_profile="settled_by_another_method", **KW)
+    assert t["settled"] == [] and t["neither"] == []
+    from settlement.immediate import (schmertmann_below_choice,
+                                      schmertmann_below_warning)
+    assert "Its settlement comes from its own method" in \
+        schmertmann_below_warning(t)
+    alts = schmertmann_below_choice(t)["alternatives"]
+    assert "below_profile 'incompressible'" in alts
+    assert any("with no gaps" in a for a in alts)
+    # the combined analysis with no consolidation layers: the depth is in
+    # neither list, and its settlement is not in the total
+    r = _analysis(schmertmann_layers=SHORT,
+                  schmertmann_below_profile="settled_by_another_method"
+                  ).compute()
+    assert r.schmertmann_terms["neither"] == [[2.0, 4.0]]
+    w = [w for w in r.warnings if "do not cover" in w][0]
+    assert "2 to 4 m below the footing base is in neither" in w
 
 
 def test_app_a7_arrangement_by_hand():

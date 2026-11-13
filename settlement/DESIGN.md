@@ -153,7 +153,16 @@ Per item page, printed form, module form and verdict in
   depth not covered, only `"settled_by_another_method"` is taken (and the
   refusal offers only it): the same result cannot call that clay
   incompressible, or count it with the sand's Es, while consolidating it.
-  Every message names the caller's own parameter (`below_param`). The
+  That refusal does not offer layers down to the bottom of the diagram
+  (Schmertmann layers over the clay would count its depth in both sums);
+  it names any depth in neither the Schmertmann nor the consolidation
+  layers, and asks for Schmertmann layers there if that ground is
+  granular. The terms carry `settled` (the depth not covered that the
+  consolidation layers settle) and `neither` (with
+  `"settled_by_another_method"` in `SettlementAnalysis`: the depth in
+  neither list, with or without consolidation layers). The choice then lists only what the call
+  takes, and the choice and the warning name the `neither` depth as not in
+  the total settlement. Every message names the caller's own parameter (`below_param`). The
   diagram itself is not redrawn for a shallow rigid layer: no held page
   prints that.
 - **Tolerance.** Depths within `COVER_TOL_M` = 10 mm count as covered: a
