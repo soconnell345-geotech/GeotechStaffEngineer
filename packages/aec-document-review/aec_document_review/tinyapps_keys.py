@@ -20,7 +20,7 @@ first that applies:
 1. the per-tester secret ``PROMPTER-API-KEY--<SUFFIX>`` (optionally
    ``PROMPTER-MODEL--<SUFFIX>`` and ``PROMPTER-URL--<SUFFIX>``, else the
    shared ``PROMPTER-MODEL`` / ``PROMPTER-URL``). ``<SUFFIX>`` is the
-   identity key in Key Vault's alphabet (:func:`tester_suffix`):
+   sign-in name in Key Vault's alphabet (:func:`tester_suffix`):
    ``CORP\\jdoe`` -> ``CORP-JDOE``, every run of characters other than a
    letter or digit -> one hyphen. As an App Service setting or a ``.env``
    line the same name is spelt with underscores
@@ -31,6 +31,33 @@ first that applies:
    bare string value taken as the key;
 3. the shared ``PROMPTER-API-KEY``, ONLY when
    ``PROMPTER_SHARED_KEY_FALLBACK`` is on (``1``/``true``/``yes``/``on``).
+
+**Names that differ only in punctuation or accents** (BACKLOG TA-39).
+``<SUFFIX>`` cannot tell ``corp\\j.doe``, ``corp\\j-doe`` and ``corp\\j_doe``
+apart (all ``CORP-J-DOE``), nor ``o'brien`` from ``o_brien``, nor a name
+from the same name with an accent. So a sign-in name that holds anything
+other than the letters A-Z and digits, in its domain or its user part, has
+an EXACT secret name as well, and that one is looked up first::
+
+    PROMPTER-API-KEY--<SUFFIX>--<HASH>      (PROMPTER_API_KEY__<SUFFIX>__<HASH>)
+
+``<HASH>`` is the first ten hex digits, in upper case, of SHA-256 over the
+sign-in name spelt ``domain\\user``, case-folded, in UTF-8
+(``Identity.name_hash``). For such a name the order is: the exact secret
+(with ``PROMPTER-MODEL--<SUFFIX>--<HASH>`` / ``PROMPTER-URL--...`` beside
+it), then the ``PROMPTER-KEYS`` entry, which is matched on the exact name
+too, then the secret named by ``<SUFFIX>`` alone, so a tester who had a key
+before TA-39 still has it. A name of letters and digits only has one secret
+name and the order above, unchanged.
+
+To give two such testers different keys: give EACH an exact secret (or a
+``PROMPTER-KEYS`` entry), and delete the secret named by ``<SUFFIX>`` alone
+once both are served; while it exists, whoever of them has no exact secret
+and no mapping entry is served by it. The exact name is shown, never a key:
+in the refusal a tester without a key sees ("this person's key goes in the
+Key Vault secret ..."), in the sidebar's Connection diagnostics, and by::
+
+    python -m aec_document_review.tinyapps_keys "CORP\\j.doe"
 
 Nothing found is a polite refusal (:class:`NoPrompterKey`, shown as written:
 "No AI key is set up for <name> yet — ask the app owner"), so the key list
@@ -67,6 +94,8 @@ log = logging.getLogger(__name__)
 ENV_KEYS = "PROMPTER_KEYS"
 #: Between a setting's name and the tester suffix: ``PROMPTER-API-KEY--CORP-JDOE``.
 #: The suffix never holds two hyphens in a row, so this split is unambiguous.
+#: It also stands before the hash of an exact name (TA-39):
+#: ``PROMPTER-API-KEY--CORP-J-DOE--<HASH>``.
 TESTER_SEPARATOR = "--"
 #: Key Vault secret names: 1-127 letters, digits and hyphens.
 KEY_VAULT_NAME_MAX = 127
@@ -85,26 +114,80 @@ def shared_fallback_allowed() -> bool:
 
 
 def tester_suffix(ident) -> str:
-    """The identity key in Key Vault's alphabet: ``corp__j.doe`` ->
-    ``CORP-J-DOE``. Every run of characters other than a letter or a digit
-    becomes ONE hyphen, ends trimmed; upper case, the spelling
-    :func:`aec_document_review.tinyapps_settings.get_setting` asks the vault for. Two
-    names that differ only in punctuation (``j.doe`` / ``j_doe``) share a
-    suffix: give such testers a ``PROMPTER-KEYS`` entry instead."""
-    key = str(getattr(ident, "key", "") or "")
-    return re.sub(r"[^A-Za-z0-9]+", "-", key).strip("-").upper()
+    """The sign-in name in Key Vault's alphabet: ``corp\\j.doe`` (folder key
+    ``corp__j.doe``) -> ``CORP-J-DOE``. Every run of characters other than a
+    letter or a digit becomes ONE hyphen, ends trimmed; upper case, the
+    spelling :func:`aec_document_review.tinyapps_settings.get_setting` asks
+    the vault for. Made from the folder key as it was before TA-39
+    (``Identity.legacy_key``), so no secret name that resolved then has
+    moved. Two names that differ only in punctuation or accents (``j.doe``
+    / ``j_doe``) share a suffix: :func:`tester_exact_secret_name` tells
+    them apart."""
+    key = getattr(ident, "legacy_key", None)
+    if key is None:
+        key = getattr(ident, "key", "")
+    return re.sub(r"[^A-Za-z0-9]+", "-", str(key or "")).strip("-").upper()
 
 
 def tester_secret_name(setting: str, ident) -> Optional[str]:
     """``PROMPTER-API-KEY--CORP-JDOE`` for ``setting="PROMPTER_API_KEY"`` and
     ``CORP\\jdoe``; None when the identity gives no suffix or the name would
-    pass Key Vault's 127-character limit (then only ``PROMPTER-KEYS`` can
-    serve that person)."""
+    pass Key Vault's 127-character limit (then the exact secret name or
+    ``PROMPTER-KEYS`` serves that person)."""
     suffix = tester_suffix(ident)
     if not suffix:
         return None
     name = (setting.replace("_", "-").upper() + TESTER_SEPARATOR + suffix)
     return name if len(name) <= KEY_VAULT_NAME_MAX else None
+
+
+def suffix_is_exact(ident) -> bool:
+    """Whether :func:`tester_suffix` belongs to this sign-in name alone: its
+    domain and user part hold only the letters A-Z and digits (case apart),
+    so the suffix is ``DOMAIN-USER`` and reads back one way. Any other
+    character became a hyphen that another name's character also becomes."""
+    parts = [str(p) for p in (getattr(ident, "domain", None),
+                              getattr(ident, "username", None)) if p]
+    return bool(parts) and all(
+        re.fullmatch(r"[A-Za-z0-9]+", p) for p in parts)
+
+
+def tester_exact_secret_name(setting: str, ident) -> Optional[str]:
+    """``PROMPTER-API-KEY--CORP-J-DOE--<HASH>``: the secret name only this
+    sign-in name has (BACKLOG TA-39), for a name :func:`tester_suffix`
+    cannot tell from another; None for a name of letters and digits only
+    (its one name is :func:`tester_secret_name`) and for an identity with
+    no name hash. ``<HASH>`` is ``Identity.name_hash`` in upper case. The
+    readable part is cut where the whole would pass Key Vault's 127
+    characters: the hash carries the identity."""
+    if suffix_is_exact(ident):
+        return None
+    digest = str(getattr(ident, "name_hash", "") or "").upper()
+    if not digest:
+        return None
+    head = setting.replace("_", "-").upper() + TESTER_SEPARATOR
+    tail = TESTER_SEPARATOR + digest
+    room = KEY_VAULT_NAME_MAX - len(head) - len(tail)
+    suffix = tester_suffix(ident)[:max(room, 0)].strip("-") or "X"
+    name = head + suffix + tail
+    return name if len(name) <= KEY_VAULT_NAME_MAX else None
+
+
+def tester_secret_names(setting: str, ident) -> list:
+    """Every secret name ``setting`` is looked up under for ``ident``, in
+    the order tried: the exact name first where there is one, then the
+    name by suffix alone."""
+    names = [tester_exact_secret_name(setting, ident),
+             tester_secret_name(setting, ident)]
+    return [n for n in names if n]
+
+
+def advertised_secret_name(ident) -> Optional[str]:
+    """The key secret's name the app owner is TOLD for ``ident`` (the
+    refusal, the diagnostics): the exact name where there is one, so a new
+    tester is never provisioned under a name another tester shares."""
+    names = tester_secret_names(ENV_KEY, ident)
+    return names[0] if names else None
 
 
 def _normal_principal(text: str) -> str:
@@ -196,21 +279,39 @@ def resolve_for(ident=None) -> ResolvedPrompter:
         return ResolvedPrompter(ps, SOURCE_SHARED)
 
     shared_url, shared_model = _text(ENV_URL), _text(ENV_MODEL)
-    key_name = tester_secret_name(ENV_KEY, ident)
-    # 1) this tester's own secret
-    key = _text(key_name)
-    if key:
-        own_url = _text(tester_secret_name(ENV_URL, ident))
-        own_model = _text(tester_secret_name(ENV_MODEL, ident))
+    key_name = advertised_secret_name(ident)
+
+    def _own_secret(make_name):
+        name = make_name(ENV_KEY, ident)
+        key = _text(name)
+        if not key:
+            return None
+        own_url = _text(make_name(ENV_URL, ident))
+        own_model = _text(make_name(ENV_MODEL, ident))
         return _complete(ident, SOURCE_TESTER, key, own_url or shared_url,
-                         own_model or shared_model, bool(own_model), key_name)
-    # 2) the JSON mapping
-    entry = key_mapping().get(_normal_principal(ident.qualified_name))
-    if entry:
+                         own_model or shared_model, bool(own_model), name)
+
+    def _mapped():
+        entry = key_mapping().get(_normal_principal(ident.qualified_name))
+        if not entry:
+            return None
         return _complete(ident, SOURCE_MAPPING, entry["key"],
                          entry["url"] or shared_url,
                          entry["model"] or shared_model, bool(entry["model"]),
                          key_name)
+
+    # 1) this tester's own secret, 2) the JSON mapping. A name the suffix
+    # cannot tell from another's (TA-39) is asked for by its exact secret
+    # name and its exact mapping entry BEFORE the secret it may share.
+    if tester_exact_secret_name(ENV_KEY, ident):
+        steps = (lambda: _own_secret(tester_exact_secret_name), _mapped,
+                 lambda: _own_secret(tester_secret_name))
+    else:
+        steps = (lambda: _own_secret(tester_secret_name), _mapped)
+    for step in steps:
+        found = step()
+        if found is not None:
+            return found
     # 3) the shared key, only when the deployment allows it
     if shared_fallback_allowed():
         ps = settings()
@@ -229,9 +330,13 @@ def key_source_report(ident=None) -> tuple:
     who = getattr(ident, "qualified_name", "") or "nobody"
     mode = ("multi-user (identity header)"
             if getattr(ident, "multi_user", False) else "single-user")
-    name = (tester_secret_name(ENV_KEY, ident)
-            if getattr(ident, "multi_user", False) else None)
-    tail = f"; per-tester secret name: {name}" if name else ""
+    names = (tester_secret_names(ENV_KEY, ident)
+             if getattr(ident, "multi_user", False) else [])
+    tail = f"; per-tester secret name: {names[0]}" if names else ""
+    if len(names) > 1:
+        tail += (f" (this sign-in name's own; {names[1]} can be shared with "
+                 "a name that differs only in punctuation or accents, and "
+                 "is tried last)")
     try:
         rp = resolve_for(ident)
     except EngineUnavailable as exc:
@@ -254,5 +359,37 @@ def tester_keys_possible() -> bool:
 __all__ = ["ENV_KEYS", "SHARED_FALLBACK_ENV", "TESTER_SEPARATOR",
            "KEY_VAULT_NAME_MAX", "NoPrompterKey", "ResolvedPrompter",
            "resolve_for", "tester_suffix", "tester_secret_name",
+           "tester_exact_secret_name", "tester_secret_names",
+           "suffix_is_exact", "advertised_secret_name",
            "key_mapping", "shared_fallback_allowed", "no_key_message",
            "key_source_report", "tester_keys_possible", "get_setting"]
+
+
+def _main(argv=None) -> int:
+    """``python -m aec_document_review.tinyapps_keys "CORP\\j.doe" ...``:
+    print, for each sign-in name, its folder and the secret names its key
+    is looked up under, in order. Reads no setting and prints no key."""
+    import sys
+    from aec_document_review.identity import parse_principal
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args:
+        print('usage: python -m aec_document_review.tinyapps_keys '
+              '"DOMAIN\\user" [...]')
+        return 2
+    bad = 0
+    for raw in args:
+        ident = parse_principal(raw, "header")
+        if ident is None:
+            print(f"{raw}: not a sign-in name (DOMAIN\\user or user@domain)")
+            bad = 1
+            continue
+        print(f"{ident.qualified_name}")
+        print(f"  folder: users/{ident.key}/")
+        for n in tester_secret_names(ENV_KEY, ident):
+            print(f"  key secret: {n}")
+        print(f"  {ENV_KEYS} entry: {_normal_principal(ident.qualified_name)}")
+    return bad
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
