@@ -1079,6 +1079,16 @@ class AxialPileAnalysis:
                                       f"{z['depth_top_m']:.2f}-"
                                       f"{z['depth_bottom_m']:.2f} m"
                                       for z in zone["layers"]))
+                # the part of the zone below the layers given takes the
+                # last layer carried on (GM-318 review C5)
+                given = (self.profile_depth_given
+                         if self.profile_depth_given is not None
+                         else self.soil.total_thickness)
+                if zone["to_m"] > given + 1e-9:
+                    chosen += (f"; {max(given, zone['from_m']):.2f}-"
+                               f"{zone['to_m']:.2f} m is below the profile, "
+                               f"which ends at {given:g} m: the last layer "
+                               f"carried on there, assumed")
             else:
                 chosen = (f"{phi:g} deg, the toe layer's "
                           + ("toe_friction_angle"

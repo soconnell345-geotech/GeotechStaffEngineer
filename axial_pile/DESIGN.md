@@ -248,7 +248,9 @@ stress.
 
 A toe at the profile's bottom is accepted. `toe_phi_zone` "average_3b"
 still takes the last layer as continuing through its 3b zone (Step 7c
-above); it is an option, not the default.
+above); it is an option, not the default. Its "toe friction angle" choice
+names the part of the zone below the profile as the last layer carried on,
+assumed (review C5).
 
 `capacity_vs_depth` names each trial length the analysis refused
 (`skipped`, the tool's `skipped_depths` and `warning`), as drilled_shaft's

@@ -50,6 +50,27 @@ def test_toe_at_profile_bottom_runs_without_a_note():
     assert not any(c["what"] == "soil below the profile" for c in r.choices)
 
 
+def _toe_phi_choice(pile_length, **kw):
+    r = AxialPileAnalysis(pile=_pile(), soil=_soil(), pile_length=pile_length,
+                          toe_phi_zone="average_3b", **kw).compute()
+    return next(c["chosen"] for c in r.choices
+                if c["what"] == "toe friction angle (Nordlund)")
+
+
+def test_toe_phi_zone_names_its_part_below_the_profile():
+    """Review C5: Step 7c's zone (toe to 3b below) past the profile's
+    bottom takes the last layer carried on; the choice now says so."""
+    at_bottom = _toe_phi_choice(10.0)
+    assert ("10.00-10.97 m is below the profile, which ends at 10 m: the "
+            "last layer carried on there, assumed") in at_bottom
+    assert "below the profile" in _toe_phi_choice(9.5)
+    assert "9.50-10.47 m" in _toe_phi_choice(9.5)
+    assert "10.00-10.47 m is below the profile" in _toe_phi_choice(9.5)
+    assert "below the profile" not in _toe_phi_choice(8.0)
+    ext = _toe_phi_choice(12.0, extend_last_layer=True)
+    assert "12.00-12.97 m is below the profile, which ends at 10 m" in ext
+
+
 def test_extension_equals_a_profile_given_to_the_toe():
     ext = AxialPileAnalysis(pile=_pile(), soil=_soil(10.0), pile_length=12.0,
                             extend_last_layer=True).compute()
