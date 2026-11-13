@@ -1993,7 +1993,8 @@ here was read from the PDF.
 - **Agent and package.** `retaining_walls.cantilever_wall_structural_design`
   takes `cantilever_wall`'s inputs and the structural ones;
   `retaining_wall_package` with `wall_type="cantilever_reinforced"` prints the
-  stability sections and then the structural ones. No drawing.
+  stability sections and then the structural ones, and ends with the
+  reinforcement sheet (GM-335, below).
 
 Pinned against the print in `tests/test_gm312_structural.py`: D-3 (Mu 11
 k-ft, As 0.43 sq in, No. 6 at 12 in., rho 0.0061 against 0.0071, fs 24.96
@@ -2055,7 +2056,8 @@ the reinforcement sheet: the agent layer
 design's `reinforcement` description to `dxf_export.wall_section_drawing`,
 appends the sheet with `generate_calc_package(sheets=...)` and writes
 `<package>_reinforcement.dxf` and `.png` beside the package; this module
-imports neither. The description is unchanged but for the shear key: the
+imports nothing of `dxf_export`, and of `calc_package` only its sections'
+data model, as before. The description is unchanged but for the shear key: the
 design gives its depth only, and where the package was given
 `key_distance_from_toe` and `key_width` (GM-216) they are put into the
 description, so the sheet draws the key where the package's wall figure

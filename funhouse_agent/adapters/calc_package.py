@@ -698,7 +698,8 @@ _PACKAGE_TOOLS = {
             "type": "float", "required": False,
             "description": "Distance from the toe to the front face of the "
                            "shear key (m), for the wall section figure "
-                           "only: the sliding check takes the passive "
+                           "and the reinforcement sheet only: the sliding "
+                           "check takes the passive "
                            "resistance on the plane below the toe over the "
                            "key's depth, wherever the key is. Not given: "
                            "the key is drawn under the stem, an "
@@ -709,16 +710,18 @@ _PACKAGE_TOOLS = {
             "applies_when": {"has_shear_key": [True], "key_depth": "set"},
             "when_absent": {
                 "case": "under the stem",
-                "basis": "no key position given: the wall section draws "
+                "basis": "no key position given: the wall section and "
+                         "the sheet draw "
                          "the key's front face under the stem's, an "
                          "assumption with no printed basis (UFC 3-220-20 "
                          "Fig. 4-29 draws a gravity wall, GEC-6 Fig. 5-22 "
                          "a footing, neither a cantilever wall's key "
-                         "position), and says so"}},
+                         "position), and say so"}},
             "key_width": {
                 "type": "float", "required": False,
                 "description": "Width of the shear key (m), for the wall "
-                               "section figure only. Not given: the "
+                               "section figure and the reinforcement sheet "
+                               "only. Not given: the "
                                "stem's thickness at its base, an "
                                "assumption: no printed basis for a "
                                "cantilever wall's key width.",
@@ -726,7 +729,8 @@ _PACKAGE_TOOLS = {
                                  "key_depth": "set"},
                 "when_absent": {
                     "case": "the stem's thickness at its base",
-                    "basis": "no key width given: the wall section draws "
+                    "basis": "no key width given: the wall section and "
+                             "the sheet draw "
                              "the key as wide as the stem, an "
                              "assumption with no printed basis"}}},
         "older": {"cantilever": {

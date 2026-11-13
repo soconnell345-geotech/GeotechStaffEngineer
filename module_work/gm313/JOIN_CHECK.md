@@ -112,10 +112,28 @@ Every file exited 0; the page fingerprint test passed with no re-record.
 | 10 | `webapp/tests/test_page_fingerprints.py` | 13 passed |
 | 11 | `webapp/tests/test_public_text.py` | 5 passed |
 
+## Review (independent, Opus, 2026-11-13)
+
+PASS WITH FIXES, nothing that had to be fixed for the numbers. The reviewer
+ran the structural design for the same 5 m wall itself and compared every
+bar set (A to G: mark, size, spacing, place, steel required and provided)
+with the DXF's schedule and callouts and with both PNGs: they agree, and
+the package's `reinforcement` equals the design tool's. Dimensions, the
+title block, the tabloid sheet at 1:50, the failure path (the drawing made
+to raise: the package written, `warnings` says why, no sheet files), the
+html package's PNG and the data-only promise all held. Fixed after it:
+texts the join had made untrue (`retaining_walls/DESIGN.md` twice, the key
+parameters' descriptions and their manual rows, a code comment), and with
+the key's place given and its width not, the sheet and the package's own
+wall figure no longer name the stem as the key's place: they say its width
+is assumed (`dxf_export/wall_section.py`, `retaining_walls/calc_steps.py`,
+with a test each).
+
 ## Noted, not fixed
 
-- With the key's place given and its width not, the sheet's note still says
-  "drawn under the stem" (the package's own figure words it the same way).
 - The title block's DWG field is left blank.
 - A wall that also draws at 1:100 on tabloid still goes to tabloid (the rule
   as written: letter when the wall fits at 1:50, else tabloid).
+- Callout D (toe, bottom) has its leader on the bottom bar under the heel:
+  correct, as that bar is drawn full length (note 8), but an engineer looks
+  for the toe steel at the toe (the drawing layer's layout, GM-313).

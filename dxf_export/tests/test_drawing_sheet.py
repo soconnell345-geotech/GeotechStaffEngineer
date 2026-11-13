@@ -580,6 +580,21 @@ def test_a_real_description_validates_and_draws_with_a_clean_dxf(
             assert not _boxes_overlap(a, b), (a, b)
 
 
+def test_a_key_placed_but_not_sized_is_not_said_to_be_under_the_stem():
+    """GM-335 review: with the key's place given and its width not, the
+    note still named the stem as its place."""
+    description = real_descriptions()["key_surcharge"]
+    g = description["geometry"]
+    g["key_distance_from_toe"] = round(g["toe_length"] + 0.2, 3)
+    drawing = wall_section_drawing(description)
+    note = [n for n in drawing.notes if n.startswith("Shear key")]
+    assert len(note) == 1, drawing.notes
+    assert "under the stem" not in note[0]
+    assert "as wide as the stem's base" in note[0]
+    assert "its width is assumed" in note[0]
+    assert any(note[0] in w for w in drawing.layout_warnings)
+
+
 def test_a_key_given_by_its_depth_only_is_drawn_under_the_stem_and_said_to_be_assumed():  # noqa: E501
     description = real_descriptions()["key_surcharge"]
     g = description["geometry"]

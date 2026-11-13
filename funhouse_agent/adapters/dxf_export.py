@@ -359,8 +359,9 @@ METHOD_INFO.update({
                     "As_provided_mm2_per_m}; notes: a list of lines; "
                     "basis: one line naming the design manual. With a "
                     "shear key, key_width and key_distance_from_toe may "
-                    "be null (the key is then drawn under the stem and "
-                    "the sheet says so); end.ldh_mm may be null.")},
+                    "be null (a null position draws the key under the "
+                    "stem, a null width as wide as the stem's base; the "
+                    "sheet says which); end.ldh_mm may be null.")},
             "output_path": {
                 "type": "str", "required": True,
                 "description": (
