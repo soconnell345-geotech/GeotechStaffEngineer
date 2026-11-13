@@ -102,7 +102,11 @@ def test_publish_builds_the_root_only():
         encoding="utf-8")
     builds = re.findall(r"python -m build[^\n]*", wf)
     assert builds and all(b.rstrip().endswith(" .") for b in builds), builds
-    assert "packages/" not in wf.replace("packages/aec-agent-core is NOT", "")
+    # INF-76: the pinned-core guard names the core's folder to diff it
+    # against the core's tag; it builds nothing there.
+    assert "packages/" not in wf.replace(
+        "packages/aec-agent-core is NOT", "").replace(
+        'CORE = "packages/aec-agent-core/"', "")
 
 
 def test_ci_installs_the_core_before_the_app():
