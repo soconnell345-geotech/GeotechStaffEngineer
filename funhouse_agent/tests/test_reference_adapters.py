@@ -19,7 +19,7 @@ from funhouse_agent.adapters import MODULE_REGISTRY
 
 REFERENCE_MODULES = [
     "dm7",
-    "em_2104", "em_2107",
+    "em_1905", "em_2104", "em_2107",
     "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
     "gec10", "gec11", "gec12", "gec13", "gec14",
     "micropile",
@@ -30,7 +30,7 @@ REFERENCE_MODULES = [
 
 # Modules with text retrieval (retrieve_section, search_sections, etc.)
 TEXT_MODULES = [
-    "em_2104", "em_2107", "ufc_structural", "ufc_collapse", "gsa_collapse",
+    "em_1905", "em_2104", "em_2107", "ufc_structural", "ufc_collapse", "gsa_collapse",
     "wood_handbook",
     "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
     "gec10", "gec11", "gec12", "gec13", "gec14",

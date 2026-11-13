@@ -2217,6 +2217,458 @@
    "kh": 0.2
   }
  },
+ "em_1905": {
+  "equation_5_17_punching_capacity": {
+   "q_ult_1": 20.0,
+   "q_ult_2": 8.0,
+   "H_s": 3.0,
+   "B_eff": 6.0,
+   "L_eff": 6.0,
+   "B": 6.0,
+   "L": 6.0
+  },
+  "equation_5_19_effective_unit_weight": {
+   "gamma_t": 0.12,
+   "D_w": 2.5,
+   "D_f": 2.5,
+   "B": 8,
+   "method": "usace"
+  },
+  "equation_5_1_vertical_load": {
+   "Q": 200.0,
+   "Wf": 30.0
+  },
+  "equation_5_22_ultimate_bearing_capacity": {
+   "c": 0.0,
+   "q0": 0.5,
+   "gamma_eff": 0.06,
+   "B_eff": 6.0,
+   "Nc": 30.14,
+   "Nq": 18.4,
+   "N_gamma": 15.67,
+   "sc": 1.0,
+   "dc": 1.0,
+   "ic": 1.0,
+   "bc": 1.0,
+   "gc": 1.0,
+   "sq": 1.0,
+   "dq": 1.0,
+   "iq": 1.0,
+   "bq": 1.0,
+   "gq": 1.0,
+   "s_gamma": 1.0,
+   "d_gamma": 1.0,
+   "i_gamma": 1.0,
+   "b_gamma": 1.0,
+   "g_gamma": 1.0
+  },
+  "equation_5_23_factor_of_safety": {
+   "q_ult": 15.0,
+   "q_eq": 5.0
+  },
+  "equation_5_24_geometric_mean": {
+   "values": [
+    2.2,
+    3.1,
+    4.0
+   ]
+  },
+  "equation_5_25_in_situ_bearing_capacity": {
+   "drainage": "drained",
+   "k": 0.3,
+   "s": 40.0,
+   "q0": 0.5,
+   "s_factor": 1.0,
+   "d_factor": 1.0,
+   "i_factor": 1.0,
+   "b_factor": 1.0,
+   "g_factor": 1.0
+  },
+  "equation_5_27_in_situ_inclination_factor": {
+   "Df": 3.0,
+   "B_eff": 6.0,
+   "iq": 0.8,
+   "i_gamma": 0.7
+  },
+  "equation_5_29_sliding_factor_of_safety_drained": {
+   "N": 100,
+   "U": 10,
+   "delta_deg": 25,
+   "ca_over_c": 0,
+   "c_eff": 0,
+   "A": 50,
+   "H": 20,
+   "P_ad": 0,
+   "P_pd": 0
+  },
+  "equation_5_2_equivalent_bearing_pressure": {
+   "Q": 1.2,
+   "Wf": 0.6,
+   "B_eff": 2,
+   "L_eff": null,
+   "u_d": 0
+  },
+  "equation_5_30_sliding_factor_of_safety_undrained": {
+   "ca_over_su": 0.5,
+   "su": 1.0,
+   "A": 40,
+   "H": 5,
+   "P_ad": 0,
+   "P_pd": 0
+  },
+  "equation_5_31_developed_strength": {
+   "fs_slide": 2.0,
+   "phi_deg": 30,
+   "c_eff": 0.4
+  },
+  "equation_5_34_developed_earth_forces": {
+   "gamma_eff": 0.12,
+   "Df": 3,
+   "Kp_d": 2.0,
+   "Ka_d": 0.5,
+   "c_d": 0.0,
+   "L": 1
+  },
+  "equation_5_36_uplift_factor_of_safety": {
+   "Wf": 30,
+   "Ws": 20,
+   "Wc": 0,
+   "U": 40
+  },
+  "equation_5_4_effective_dimensions": {
+   "B": 8,
+   "L": 10,
+   "V": 200,
+   "M_B": 100,
+   "M_L": 0
+  },
+  "equation_5_9_circular_effective_footing": {
+   "A": 28.27,
+   "e": 0.5
+  },
+  "equation_6_12_two_to_one_influence_factor": {
+   "shape": "rectangle",
+   "B": 6.0,
+   "z": 6.0,
+   "L": 9.0
+  },
+  "equation_6_1_total_vertical_stress": {
+   "thicknesses": [
+    8,
+    8.0
+   ],
+   "unit_weights": [
+    0.05,
+    0.0565
+   ]
+  },
+  "equation_6_2_effective_vertical_stress": {
+   "sigma_z": 1.0,
+   "u": 0.3
+  },
+  "equation_6_3_overconsolidation": {
+   "sigma_p": 1.0,
+   "sigma_zo": 0.36
+  },
+  "equation_6_5_net_bearing_pressure": {
+   "q": 0.3,
+   "sigma_zD": 0.5
+  },
+  "equation_6_6_induced_vertical_stress": {
+   "I_sigma": 0.5,
+   "q": 0.3,
+   "sigma_zD": 0.5
+  },
+  "equation_6_7_embankment_stress": {
+   "I_sigma": 0.5,
+   "q": 0.54
+  },
+  "equation_6_8_influence_factor": {
+   "shape": "square",
+   "B": 8.0,
+   "z": 14.0,
+   "L": null
+  },
+  "equation_7_10_constrained_modulus_settlement": {
+   "layers": [
+    [
+     1.0,
+     1.0,
+     100.0
+    ]
+   ]
+  },
+  "equation_7_11_menard_settlement": {
+   "q": 3.31,
+   "sigma_zD": 0.156,
+   "B": 8.0,
+   "E_d": 152,
+   "E_c": 78,
+   "alpha_d": 0.5,
+   "alpha_c": 0.33,
+   "lambda_d": 1.1,
+   "lambda_c": 1.1,
+   "soft_layers": []
+  },
+  "equation_7_13_harmonic_mean": {
+   "moduli": [
+    100.0,
+    200.0,
+    400.0
+   ]
+  },
+  "equation_7_14_equivalent_distortion_modulus": {
+   "E1": 225,
+   "E2": 254,
+   "E345": 69,
+   "E678": 509,
+   "E916": 1429
+  },
+  "equation_7_16_cpt_modulus": {
+   "qc": 100,
+   "footing": "axisymmetric"
+  },
+  "equation_7_18_peak_strain_influence": {
+   "q": 2.0,
+   "sigma_zD": 0.2,
+   "sigma_zp": 0.4
+  },
+  "equation_7_19_strain_influence_factor": {
+   "footing": "axisymmetric",
+   "z": 2.0,
+   "B": 6.0,
+   "I_zp": 0.6,
+   "L": null
+  },
+  "equation_7_1_total_settlement": {
+   "delta_i": 0.2,
+   "delta_c": 1.0,
+   "delta_s": 0.3
+  },
+  "equation_7_24_embedment_factor": {
+   "q": 3.31,
+   "sigma_zD": 0.156
+  },
+  "equation_7_25_creep_factor": {
+   "t_years": 50
+  },
+  "equation_7_26_schmertmann_settlement": {
+   "C1": 0.95,
+   "C2": 1.2,
+   "q": 2.0,
+   "sigma_zD": 0.2,
+   "layers": [
+    [
+     0.3,
+     3.0,
+     200.0
+    ],
+    [
+     0.5,
+     3.0,
+     300.0
+    ]
+   ]
+  },
+  "equation_7_27_depth_of_influence": {
+   "B": 8.0
+  },
+  "equation_7_28_compressibility_index": {
+   "N60_mean": 14
+  },
+  "equation_7_29_burland_burbidge_settlement": {
+   "state": "overconsolidated",
+   "q": 3.31,
+   "sigma_zo_mean": 0.35,
+   "sigma_p": 3.88,
+   "Z_I": 6.13,
+   "I_c": 0.0087,
+   "C1": 1.0,
+   "C2": 1.0,
+   "C3": 1.54
+  },
+  "equation_7_32_shape_factor": {
+   "footing": "rectangular",
+   "L": 8.0,
+   "B": 8.0
+  },
+  "equation_7_33_thickness_factor": {
+   "H_s": 3.0,
+   "Z_I": 6.0
+  },
+  "equation_7_34_time_factor": {
+   "R3": 0.3,
+   "Rt": 0.2,
+   "t_years": 50
+  },
+  "equation_7_35_excavation_unloading": {
+   "gamma_t": 0.06,
+   "D": 10.0,
+   "I_sigma": 0.8,
+   "sigma_zgw": 1.2
+  },
+  "equation_7_38_void_ratio_change_settlement": {
+   "H": 10.0,
+   "delta_e": 0.02,
+   "e": 0.8,
+   "kind": "rebound"
+  },
+  "equation_7_3_constrained_modulus": {
+   "e0": 0.9,
+   "sigma_z": 1.0,
+   "sigma_f": 2.0,
+   "sigma_p": 1.5,
+   "Cc": 0.3,
+   "Cr": 0.05
+  },
+  "equation_7_41_settlement_at_time": {
+   "U_percent": 50.0,
+   "delta_c": 4.0
+  },
+  "equation_7_42_time_for_consolidation": {
+   "T_v": 0.403,
+   "H_dr": 12.5,
+   "cv_ft2_per_day": 0.412
+  },
+  "equation_7_43_coefficient_of_consolidation": {
+   "method": "log time",
+   "H_dr": 0.5,
+   "t": 0.01
+  },
+  "equation_7_45_void_ratio_from_dial": {
+   "H0": 1.0,
+   "e0": 1.0,
+   "d0": 0.0,
+   "dt": -0.1
+  },
+  "equation_7_46_secondary_compression_index": {
+   "e1": 0.8,
+   "e2": 0.79,
+   "t1": 100,
+   "t2": 1000
+  },
+  "equation_7_47_secondary_settlement": {
+   "C_alpha": 0.01,
+   "e_p": 1.0,
+   "H": 10.0,
+   "t1": 1000.0,
+   "t2": 100000.0
+  },
+  "equation_7_5_compression_indices": {
+   "e_1": 0.8,
+   "e_2": 0.77,
+   "sigma_1": 1.0,
+   "sigma_2": 10.0,
+   "index": "Cr"
+  },
+  "equation_7_7_consolidation_settlement": {
+   "H": 2.0,
+   "e0": 1.0,
+   "Cc": 0.3,
+   "Cr": 0.03,
+   "sigma_zo": 1.0,
+   "sigma_zf": 2.0,
+   "sigma_p": 1.0
+  },
+  "figure_7_16_time_factor": {
+   "U_percent": 70,
+   "T_v": null
+  },
+  "table_2_1_minimum_factor_of_safety": {
+   "failure_mode": "overturning"
+  },
+  "table_5_2_aashto_shape_depth_factors": {
+   "phi_deg": 30,
+   "B_eff": 2,
+   "L_eff": 2,
+   "Df": 40
+  },
+  "table_5_2_bearing_capacity_factors": {
+   "phi_deg": 30.0,
+   "method": "usace"
+  },
+  "table_5_2_usace_shape_depth_factors": {
+   "flow_number": 3,
+   "B_eff": 8,
+   "L_eff": 8,
+   "Df": 2.5
+  },
+  "table_5_3_aashto_load_inclination_factors": {
+   "H": 10,
+   "V": 100,
+   "B_eff": 5,
+   "L_eff": 10,
+   "c": 0,
+   "phi_deg": 30,
+   "theta_deg": 0
+  },
+  "table_5_3_base_inclination_factors": {
+   "alpha_b_deg": 10,
+   "phi_deg": 30
+  },
+  "table_5_3_usace_ground_inclination_factors": {
+   "alpha_g_deg": 20,
+   "d_g": 0,
+   "B_eff": 5,
+   "phi_deg": 30
+  },
+  "table_5_3_usace_load_inclination_factors": {
+   "H": 10,
+   "V": 100,
+   "phi_deg": 30
+  },
+  "table_5_4_undrained_factors": {
+   "method": "usace",
+   "B_eff": 2,
+   "L_eff": 2,
+   "Df": 6,
+   "H": 0,
+   "V": 10,
+   "su": 1,
+   "theta_deg": null,
+   "alpha_b_deg": 0,
+   "alpha_g_deg": 0,
+   "d_g": null
+  },
+  "table_5_5_in_situ_bearing_factor": {
+   "test": "PMT",
+   "drainage": "undrained"
+  },
+  "table_7_6_menard_rheological_factor": {
+   "soil": "sand",
+   "state": "overconsolidated"
+  },
+  "ultimate_bearing_capacity_drained": {
+   "method": "aashto",
+   "phi_deg": 30,
+   "c": 0,
+   "q0": 4.0,
+   "gamma_eff": 0.06,
+   "B_eff": 2,
+   "L_eff": 2,
+   "Df": 40,
+   "H": 0,
+   "V": 100,
+   "theta_deg": null,
+   "alpha_b_deg": 0,
+   "alpha_g_deg": 0,
+   "d_g": null
+  },
+  "ultimate_bearing_capacity_undrained": {
+   "method": "usace",
+   "su": 1.0,
+   "q0": 0.5,
+   "B_eff": 2,
+   "L_eff": 2,
+   "Df": 6,
+   "H": 0,
+   "V": 10,
+   "theta_deg": null,
+   "alpha_b_deg": 0,
+   "alpha_g_deg": 0,
+   "d_g": null
+  }
+ },
  "em_2104": {
   "aci_beta1": {
    "fc_prime": 4.0

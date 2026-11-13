@@ -382,13 +382,18 @@ FOUNDATIONS_REVIEWER_PREAMBLE = _reviewer_preamble(
         "Your direct tools are scoped to the foundations domain: the ANALYSIS "
         "modules bearing_capacity, settlement, axial_pile, drilled_shaft, "
         "pile_group, lateral_pile, wave_equation, downdrag, ground_improvement, "
-        "plus the foundation REFERENCE modules (dm7, gec6, gec8, gec9, gec10, "
-        "gec12, gec13, micropile, ufc_expansive, and reference_db / figure_db)."),
+        "plus the foundation REFERENCE modules (dm7, gec6, em_1905, gec8, gec9, "
+        "gec10, gec12, gec13, micropile, ufc_expansive, and reference_db / "
+        "figure_db)."),
     checklist=FOUNDATIONS_CHECKLIST,
     anchors="""\
 - **`dm7`** — DM 7.1 / 7.2 (UFS 3-220-10, UFC 3-220-20): bearing capacity,
   settlement, deep-foundation design, soil property correlations.
 - **`gec6`** — shallow foundations (Vesic bearing, Hough settlement).
+- **`em_1905`** — USACE EM 1110-1-1905 (2025), shallow foundations on soils:
+  bearing capacity (Tables 5-2 to 5-5, Eqs. 5-1 to 5-36) and settlement
+  (stress distribution, consolidation, Schmertmann, Burland and Burbidge,
+  time rate; Eqs. 6-1 to 6-13 and 7-1 to 7-47), in US units.
 - **`gec8`** — CFA (continuous flight auger) pile design.
 - **`gec9`** — laterally loaded piles (p-multipliers, lateral resistance).
 - **`gec10`** — drilled shafts (α/β/rock socket, N*c end bearing).

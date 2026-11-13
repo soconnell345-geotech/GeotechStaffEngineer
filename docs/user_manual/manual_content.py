@@ -388,6 +388,18 @@ REFERENCE_INFO = {
                     "Flexible structural number and rigid slab design equations, layer coefficients, "
                     "reliability, Appendix D load-equivalency factors, the composite k worksheet and "
                     "Appendix G swelling and frost-heave loss (US units)."),
+    "em_1905": ("USACE EM 1110-1-1905", "EM 1110-1-1905, Geotechnical Design of Shallow Foundations "
+                "on Soils, 31 July 2025",
+                "Shallow foundations on soils (it supersedes EM 1110-1-1904 and the 1992 EM "
+                "1110-1-1905) &mdash; minimum factors of safety (Table 2-1), bearing capacity "
+                "factors and the shape, depth, inclination and undrained factors (Tables 5-2 to "
+                "5-4), in-situ bearing factors (Table 5-5), the ultimate limit state equations "
+                "(Eqs. 5-1 to 5-36: effective dimensions, drained and undrained bearing capacity, "
+                "punching, sliding, uplift), stress distribution (Eqs. 6-1 to 6-13), settlement "
+                "(Eqs. 7-1 to 7-47: consolidation, constrained modulus, Menard, Schmertmann, "
+                "Burland and Burbidge, time rate, secondary compression) and the table printed on "
+                "Figure 7-16; chapter text by the printed paragraph numbers (5-5a(2), B-1b) and a "
+                "figure catalog (US units)."),
     "em_2104": ("USACE EM 1110-2-2104", "EM 1110-2-2104, 1 November 2023",
                 "Strength design for reinforced concrete hydraulic structures &mdash; load factors and "
                 "combinations, flexure and axial load, shear, serviceability, detailing (US units)."),

@@ -505,6 +505,13 @@ _CURATED_ALIASES = {
     "table_5_57_permeability_highway_materials": ["highway_material_permeability"],
     "table_7_17_swell_potential_ll_pi": ["swell_potential_from_atterberg"],
     "table_5_18_compaction_aashto": ["compaction_by_aashto_class"],
+    # em_1905 (EM 1110-1-1905): stripped, these names would mislead (the
+    # adapter drops "time_factor", "shape_factor" and "factor_of_safety")
+    "equation_7_34_time_factor": ["burland_burbidge_time_factor"],
+    "figure_7_16_time_factor": ["consolidation_time_factor"],
+    "equation_7_32_shape_factor": ["burland_burbidge_shape_factor"],
+    "equation_7_33_thickness_factor": ["burland_burbidge_thickness_factor"],
+    "equation_5_23_factor_of_safety": ["bearing_factor_of_safety"],
 }
 
 
@@ -700,6 +707,15 @@ def as_result(shaped: dict, key: str) -> dict:
     return out
 
 
+def _section_depth(sid: str) -> int:
+    """How deep a section number sits: one level for each '.' or '-', and
+    for an Army paragraph number ('5-5a(2)(c)1', EM 1110-1-1905) one for a
+    letter after a number, each parenthesis and a number after one."""
+    return (len(re.findall(r"[.-]", sid)) + sid.count("(")
+            + len(re.findall(r"(?<=\d)[a-z]", sid))
+            + len(re.findall(r"(?<=\))\d", sid)))
+
+
 def example_section_ids(ref_package_name: str, n: int = 3) -> list[str]:
     """Up to ``n`` section numbers this reference holds, one per level from
     the top (``['D', '3.2.1', '5.2.3.1.1']`` for GEC-12, whose Appendix D
@@ -723,7 +739,7 @@ def example_section_ids(ref_package_name: str, n: int = 3) -> list[str]:
                 # numbered section sits at that level (EN 1997-2 lists its
                 # annexes first)
                 target = by_depth if re.match(r"\d|P-", sid) else lettered
-                target.setdefault(len(re.findall(r"[.-]", sid)), sid)
+                target.setdefault(_section_depth(sid), sid)
     for depth, sid in lettered.items():
         by_depth.setdefault(depth, sid)
     depths = sorted(by_depth)

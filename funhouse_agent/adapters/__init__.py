@@ -442,6 +442,11 @@ MODULE_REGISTRY = {
         "brief": "DM 7.1 / 7.2 equations (340+): soil classification, stresses, settlement, seepage, foundations",
         "title": "UFS 3-220-10 (DM 7.1, 16 January 2026) and UFC 3-220-20 (DM 7.2, 16 January 2025)",
     },
+    "em_1905": {
+        "adapter": "funhouse_agent.adapters.em_1905_adapter",
+        "brief": "EM 1110-1-1905 shallow foundations on soils (USACE, 2025): bearing capacity factors and Eqs. 5-1 to 5-36, stress distribution, settlement (consolidation, Schmertmann, Burland-Burbidge, Menard), time rate (US)",
+        "title": "USACE EM 1110-1-1905 (shallow foundations on soils, 31 July 2025)",
+    },
     "em_2104": {
         "adapter": "funhouse_agent.adapters.em_2104_adapter",
         "brief": "EM 1110-2-2104 RC hydraulic structures (USACE): loads, service limits, flexure-axial, shear",

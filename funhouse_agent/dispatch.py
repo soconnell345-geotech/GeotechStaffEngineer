@@ -65,7 +65,7 @@ AGENT_NAMES = sorted(MODULE_REGISTRY.keys())
 REFERENCE_MODULES = frozenset({
     "reference_db", "figure_db",
     "dm7",
-    "em_2104", "em_2107",
+    "em_1905", "em_2104", "em_2107",
     "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
     "gec10", "gec11", "gec12", "gec13", "gec14",
     "micropile",
@@ -213,6 +213,7 @@ FOUNDATIONS_REFERENCES = frozenset({
     "reference_db", "figure_db",
     "dm7",          # NAVFAC DM7 — bearing, settlement, deep foundations
     "gec6",         # shallow foundations
+    "em_1905",      # USACE EM 1110-1-1905 — shallow foundation bearing + settlement
     "gec8",         # CFA pile design
     "gec9",         # laterally loaded piles
     "gec10",        # drilled shafts
