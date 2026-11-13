@@ -184,6 +184,10 @@ This repository builds three packages; the app also needs two more of the same p
   (`report_ingest/tables.py`, `docs/REPORT_TABLES.md`; sent to the dataset
   `GSE_REPORT_TABLES_DATASET` names; `GSE_REPORT_TABLES=0` turns it off;
   not yet run on Foundry, RI-212).
+  Piles and shafts since 2026-11-13: a driven pile, drilled shaft or
+  laterally loaded pile whose toe is below the soil layers given is
+  refused unless `extend_last_layer` is set (the result then says the last
+  layer was carried on), and lateral p-y layers start at the ground.
   Pile groups since 2026-11-13: `pile_group_simple` measures the piles from
   their centroid and includes the product term where the layout is not
   symmetric, `pile_group_6dof` turns a battered pile's stiffness to the
