@@ -2249,11 +2249,16 @@ def ask_vision(engine, image, prompt, kind, where=None):
     from aec_agent_core import turn_question
     from aec_agent_core.deep.vision_engine import side_call
     cap = vision_output_cap(kind)
+    # The question check must not see the note; the order stays the agent's
+    # prompt, the note, then the user's question block.
     asked = turn_question.with_question(prompt, kind)
     label = dict(where or {})
     if asked is not prompt:
         label["user_question_chars"] = len(turn_question.current() or "")
-        prompt = asked
+        block = asked[len(prompt):]
+        prompt = turn_question.with_one_image(prompt, kind) + block
+    else:
+        prompt = turn_question.with_one_image(prompt, kind)
     with side_call(kind=kind, **label):
         if cap and getattr(engine, "accepts_output_cap", False):
             return engine.analyze_image(image, prompt, max_output_tokens=cap)
@@ -3767,7 +3772,7 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
             f"tile's own 0-999 grid: pass them with the TILE's view, to zoom "
             f"with render_region or, once the thing is legible in a view of "
             f"{vision_view.MARK_VIEW_PT:.0f} pt or less, to place a mark.")
-        out.pop("legibility", None)
+        _tile_legibility(out, tile_rows)
         turned = [t["tile"] for t in tile_rows
                   if isinstance(t, dict) and t.get("turned")]
         if turned:
@@ -3903,6 +3908,59 @@ _TURNED_WHY = {"text_layer": "the text layer shows its lettering turned",
                "asked": "as asked"}
 
 
+def _tile_lettering_px(tinfo):
+    """How tall the page's small lettering is in one tile's image: the text
+    layer's measure (``text_px``), or, on a sheet whose lettering is not in
+    its text layer, :data:`vision_view.ASSUMED_CAD_LETTERING_PT` at the
+    tile's scale (as ``vision_view.tile_grid`` assumes); ``None`` for a page
+    of prose with no measure."""
+    from aec_agent_core import vision_view
+    px = tinfo.get("text_px")
+    if px:
+        return float(px)
+    if tinfo.get("text_chars", 1 << 30) >= 40:
+        return None
+    try:
+        x0, _y0, x1, _y1 = tinfo["clip"]
+        across = (tinfo["height_px"] if (tinfo.get("turn") or 0) % 180
+                  else tinfo["width_px"])
+        return (vision_view.ASSUMED_CAD_LETTERING_PT * across
+                / max(x1 - x0, 1e-6))
+    except Exception:  # noqa: BLE001 - no measure, no note
+        return None
+
+
+def _tile_legibility(out, tile_rows) -> None:
+    """Keep the ``legibility`` note on a tiled read while any tile's small
+    lettering is still under ``vision_view.LEGIBLE_TEXT_PX`` (VIS-30): the
+    note names those tiles; it is dropped only when every tile reads. The
+    private ``_lettering_px`` of each tile row is taken off here."""
+    from aec_agent_core import vision_view
+    low = []
+    for t in tile_rows or ():
+        if not isinstance(t, dict):
+            continue
+        px = t.pop("_lettering_px", None)
+        assumed = t.pop("_lettering_assumed", False)
+        if px is not None and px < vision_view.LEGIBLE_TEXT_PX:
+            low.append((t.get("tile"), px, assumed))
+    if not low:
+        out.pop("legibility", None)
+        return
+    inches = vision_view.ASSUMED_CAD_LETTERING_PT / 72.0
+    names = ", ".join(
+        f"{n} (about {px:.0f} px if the lettering is the usual "
+        f"{inches:.2f} in; the page has no text to measure)" if assumed
+        else f"{n} (~{px:.0f} px)"
+        for n, px, assumed in low)
+    out["legibility"] = (
+        f"! the small lettering is still under "
+        f"{vision_view.LEGIBLE_TEXT_PX:g} px tall in tile(s) {names}, so it "
+        f"may be misread there. Before taking a dimension or keynote from "
+        f"one of those tiles, zoom on it with render_region and read the "
+        f"words from the text layer where there is one.")
+
+
 def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
                turn_arg=None):
     """One job per tile of an ``n`` x ``n`` overlapping split, in tile
@@ -3941,6 +3999,11 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
                       if tinfo.get("text_px") else {}),
                    "analysis": text,
                    **({"cut_off": True} if _is_cut_off(text) else {})}
+            small = _tile_lettering_px(tinfo)
+            if small is not None:
+                row["_lettering_px"] = small
+                if not tinfo.get("text_px"):
+                    row["_lettering_assumed"] = True
             _finish_answer(row, tinfo, note=False)
             return row
         except Exception as exc:                  # one tile, not the page
