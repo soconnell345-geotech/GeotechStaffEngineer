@@ -601,11 +601,10 @@ def _comparison_section(result, analysis):
         rows.append([f"Morgenstern-Price ({f_name})",
                      f"{result.FOS_morgenstern_price:.3f}", det])
     # A method with no solution on the surface has no number (GM-140 step
-    # 2): its row says so instead of carrying another solver's value.
+    # 2): its row says so, and why, instead of carrying another solver's
+    # value.
     for name in getattr(result, "methods_without_solution", None) or []:
-        rows.append([name, "no solution",
-                     "no number: the method does not converge on this "
-                     "surface (see Warnings)"])
+        rows.append([name, "no solution", _no_solution_detail(result, name)])
 
     if len(rows) < 2:
         return None
@@ -623,6 +622,27 @@ def _comparison_section(result, analysis):
                   "design.",
         )],
     )
+
+
+def _no_solution_detail(result, name: str) -> str:
+    """Why a method of ``methods_without_solution`` has no number, from
+    the result's own warning for it: no net driving moment or force, or a
+    solve that does not converge."""
+    from slope_stability.solution import METHOD_TEXT
+    keys = (("morgenstern_price", "gle") if name == "Morgenstern-Price"
+            else (name.lower(),))
+    heads = tuple(METHOD_TEXT[k] for k in keys if k in METHOD_TEXT)
+    for w in getattr(result, "warnings", None) or []:
+        if heads and w.startswith(heads) and (
+                "no solution on this surface" in w
+                or "no equilibrium solution on this surface" in w):
+            if "no net driving moment or force" in w:
+                return ("no number: the surface has no net driving moment "
+                        "or force (see Warnings)")
+            return ("no number: the method does not converge on this "
+                    "surface (see Warnings)")
+    return ("no number: the method has no solution on this surface "
+            "(see Warnings)")
 
 
 def _slice_table_section(result) -> CalcSection:
@@ -720,7 +740,9 @@ def _search_section(search) -> CalcSection:
             f"({rec['family']}, {rec['method']})",
             str(rec["n"]) + (f" ({rec['no_driving']} with no net driving "
                              f"moment or force)" if rec.get("no_driving")
-                             else "")])
+                             else "")
+            + (f" ({rec['below_0_05']} solved below 0.05)"
+               if rec.get("below_0_05") else "")])
     # Scored surfaces left out for m_alpha < 0.2 on a slice (GM-127)
     n_rej_ma = getattr(search, "n_rejected_m_alpha", 0)
     if n_rej_ma:

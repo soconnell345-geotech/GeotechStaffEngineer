@@ -109,8 +109,7 @@ def analyze_slope(geom: SlopeGeometry,
     not used).
     """
     check_method(method)
-    if compare_methods or method in ("morgenstern_price", "gle"):
-        check_interslice(f_interslice)
+    check_interslice(f_interslice)      # whatever the method (item 7)
     # Build slip surface from either explicit object or xc/yc/radius
     if slip_surface is not None:
         slip = slip_surface

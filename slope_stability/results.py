@@ -615,13 +615,15 @@ class SearchResult:
     no_solution : list of dict
         Trial surfaces left without a solution, by family and by method
         (GM-140 step 2): ``{"family", "method", "n", "not_converged",
-        "no_driving"}``. They are not scored: nothing stands in for the
-        method. ``not_converged``: the method's own solve did not converge
-        (Spencer / Morgenstern-Price / GLE: no lambda at which the moment
-        and force factors of safety agree; Bishop / Janbu: the iteration
-        does not converge or has no state). ``no_driving``: the surface has
-        no net driving moment or force (as where a support's force exceeds
-        it), so the ratio has no meaning. ``n`` is their sum. ``family`` is
+        "no_driving", "below_0_05"}``. They are not scored: nothing stands
+        in for the method. ``not_converged``: the method's own solve did not
+        converge (Spencer / Morgenstern-Price / GLE: no lambda at which the
+        moment and force factors of safety agree; Bishop / Janbu: the
+        iteration does not converge or has no state). ``no_driving``: the
+        surface has no net driving moment or force (as where a support's
+        force exceeds it), so the ratio has no meaning. ``below_0_05``: the
+        method solved the surface with a value below 0.05, which a search
+        does not take as a factor of safety. ``n`` is their sum. ``family`` is
         'circular' / 'noncircular' (the main search; 'main' when a search
         was called directly), 'toe_circle', 'circle_above_toe' or
         'infinite_slope'. ``n_no_solution`` is the total. ``warnings``
@@ -747,6 +749,8 @@ class SearchResult:
                              + (f" ({r['no_driving']} with no net driving "
                                 f"moment or force)" if r.get("no_driving")
                                 else "")
+                             + (f" ({r['below_0_05']} solved below 0.05)"
+                                if r.get("below_0_05") else "")
                              for r in self.no_solution)
                          + ")")
         if self.critical:

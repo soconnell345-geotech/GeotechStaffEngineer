@@ -63,9 +63,18 @@ def _fill_slope(c=12.0, phi=22.0):
 # force factors of safety agree).
 _FILL_CIRCLE = dict(xc=9.5, yc=11.0, radius=11.2)
 
-# An odd circle of the clay slope: its centre (el. 4) is below the crest
-# (el. 8), as GM-139's was.
-_ODD_CIRCLE = dict(xc=30.0, yc=4.0, radius=9.0)
+# A circle of the fill slope with a cohesion of 40 kPa on which Spencer's
+# method has no solution. The step 2 review's own Spencer (Spencer 1967
+# Eqs. 7 and 8, p. 15; 30 slices; nothing from this module) finds the force
+# and moment factors of safety apart by at least 0.043 for every side-force
+# inclination from -30 to 60 degrees: they never meet. Master reported
+# 1.766 here, from the old approximate solver. Not used: GM-139's kind of
+# circle, its centre below the crest of a phi = 0 slope. One such circle,
+# (30, 4, 9) of the clay slope, does have a Spencer solution, with a very
+# high factor of safety (theta 0.65 degrees, F 16.47 on 30 slices by the
+# review's own Spencer); the module's solver finds none there
+# (module_work/gm140/STEP2_CHECK.md, "noted, not fixed").
+_NO_SPENCER_CIRCLE = dict(xc=8.0, yc=12.0, radius=12.0)
 
 
 # ---------------------------------------------------------------------------
@@ -73,16 +82,23 @@ _ODD_CIRCLE = dict(xc=30.0, yc=4.0, radius=9.0)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("method", ["spencer", "morgenstern_price", "gle"])
-def test_odd_circle_the_rigorous_methods_cannot_solve_has_no_number(method):
-    """GM-139, D23/D30. On a circle with its centre below the ground of a
-    phi = 0 slope the rigorous methods find no lambda at which the moment
-    and force factors of safety agree (Spencer 1967 Eqs. 7 and 8, p. 15).
-    The old approximate solver's value was reported in its place (17.68
-    here, labelled; about 0.05 on GM-139's circle). There is no number
-    (UFC 3-220-10 p. 362)."""
+def test_a_circle_with_no_spencer_solution_has_no_number(method):
+    """D23/D30. On this circle no side-force inclination makes Spencer's
+    moment and force factors of safety agree (Spencer 1967 Eqs. 7 and 8,
+    p. 15; checked independently, see _NO_SPENCER_CIRCLE). The old
+    approximate solver's value was reported in its place (1.766 on
+    master). There is no number (UFC 3-220-10 p. 362). Whether
+    Morgenstern-Price (half-sine) has a solution here was not checked
+    independently, so for it and the GLE the test holds the rule only:
+    their own solution, or no number with the reason. (The module's solver
+    finds none.)"""
+    g = _fill_slope(c=40.0)
     with warnings.catch_warnings():
         warnings.simplefilter("error")          # and no Python warning
-        r = analyze_slope(_clay_slope(), method=method, **_ODD_CIRCLE)
+        r = analyze_slope(g, method=method, **_NO_SPENCER_CIRCLE)
+    if method != "spencer" and r.method_solved:
+        assert r.FOS is not None and not r.methods_without_solution
+        return
     assert r.FOS is None and r.is_stable is None
     assert r.method_solved is False and r.method_used is None
     assert r.methods_without_solution == [
@@ -93,9 +109,10 @@ def test_odd_circle_the_rigorous_methods_cannot_solve_has_no_number(method):
     d = r.to_dict()
     assert d["FOS"] is None and d["method_solved"] is False
     assert d["method_used"] is None
-    # Bishop's simplified method solves the same circle: its own number
-    b = analyze_slope(_clay_slope(), method="bishop", **_ODD_CIRCLE)
-    assert b.method_solved and b.FOS == pytest.approx(17.684, abs=0.01)
+    # Bishop's simplified method solves the same circle: its own number,
+    # 1.7268 by the review's own Bishop (1955 Eq. 13, p. 10) on 30 slices
+    b = analyze_slope(g, method="bishop", **_NO_SPENCER_CIRCLE)
+    assert b.method_solved and b.FOS == pytest.approx(1.7268, rel=0.01)
 
 
 def test_no_approximate_solver_is_left_in_the_package():
@@ -113,30 +130,37 @@ def test_no_approximate_solver_is_left_in_the_package():
 def test_solver_functions_raise_where_they_have_no_solution():
     """The method functions give their own solution or raise NoSolution
     with the reason: none returns another solver's value or the 999.9
-    marker (D30, D49)."""
-    g = _clay_slope()
-    slip = CircularSlipSurface(**_ODD_CIRCLE)
+    marker (D30, D49). Spencer has no solution on this circle; for
+    Morgenstern-Price (not checked independently here) the test holds the
+    rule only."""
+    g = _fill_slope(c=40.0)
+    slip = CircularSlipSurface(**_NO_SPENCER_CIRCLE)
     slices = build_slices(g, slip, 30)
-    for fn in (spencer_fos, morgenstern_price_fos):
-        with pytest.raises(NoSolution) as exc:
-            fn(slices, slip)
-        assert exc.value.reason
+    with pytest.raises(NoSolution) as exc:
+        spencer_fos(slices, slip)
+    assert exc.value.reason
+    try:
+        f_mp = morgenstern_price_fos(slices, slip)
+    except NoSolution as e:
+        assert e.reason
+    else:
+        assert 0.0 < f_mp < 100.0
     assert isinstance(NoSolution("x"), ValueError)
 
 
 def test_compare_methods_gives_no_number_for_a_method_without_solution():
     """A comparison table carries each method's own solution; a method
-    with none has no row and is named (D30)."""
-    r = analyze_slope(_clay_slope(), method="bishop", compare_methods=True,
-                      **_ODD_CIRCLE)
+    with none has no row and is named (D30). Spencer has none on this
+    circle."""
+    g = _fill_slope(c=40.0)
+    r = analyze_slope(g, method="bishop", compare_methods=True,
+                      **_NO_SPENCER_CIRCLE)
     assert r.method_solved and r.FOS is not None
-    assert r.FOS_spencer is None and r.FOS_morgenstern_price is None
-    assert r.theta_spencer is None and r.lambda_mp is None
-    assert {"Spencer", "Morgenstern-Price"} <= set(
-        r.methods_without_solution)
-    t = compare_methods_table(_clay_slope(), **_ODD_CIRCLE)
+    assert r.FOS_spencer is None and r.theta_spencer is None
+    assert "Spencer" in r.methods_without_solution
+    t = compare_methods_table(g, **_NO_SPENCER_CIRCLE)
     names = [row["method"] for row in t["rows"]]
-    assert not any(n.startswith(("Spencer", "Morgenstern")) for n in names)
+    assert not any(n.startswith("Spencer") for n in names)
     assert t["methods_without_solution"] == r.methods_without_solution
     assert all(isinstance(row["FOS"], float) for row in t["rows"])
     assert "legacy" not in t["summary"]
@@ -279,6 +303,43 @@ def test_unknown_interslice_function_is_refused():
         assert "'half_sine'" in str(exc.value)
 
 
+def test_unknown_interslice_function_is_refused_whatever_the_method():
+    """Item 7 (the step 2 review's D4). An unknown f_interslice was
+    accepted, and not used, unless the method was Morgenstern-Price or the
+    GLE (or a comparison was asked for). It is refused with the list of
+    names whatever the method, on one surface and by the solver. The
+    searches, the yield acceleration, FOSM and Monte Carlo take no
+    f_interslice (their Morgenstern-Price and GLE solves use the half-sine
+    function), so none of them can accept an unknown one."""
+    g = _fill_slope()
+    slip = CircularSlipSurface(**_FILL_CIRCLE)
+    slices = build_slices(g, slip, 30)
+    calls = [lambda m=m: analyze_slope(g, method=m, f_interslice="sine",
+                                       **_FILL_CIRCLE) for m in METHODS]
+    calls += [lambda m=m: solve_method(slices, slip, m,
+                                       f_interslice="sine")
+              for m in METHODS]
+    for call in calls:
+        with pytest.raises(ValueError) as exc:
+            call()
+        assert "Unknown interslice function 'sine'" in str(exc.value)
+        for name in ("'constant'", "'half_sine'", "'clipped_sine'",
+                     "'trapezoidal'"):
+            assert name in str(exc.value)
+    variables = {"c_prime": {"mean": 12.0, "std": 2.0}}
+    for call in (
+            lambda: search_critical_surface(g, f_interslice="sine", nx=3,
+                                            ny=3),
+            lambda: yield_acceleration(g, f_interslice="sine",
+                                       **_FILL_CIRCLE),
+            lambda: fosm_fos(g, variables, f_interslice="sine",
+                             **_FILL_CIRCLE),
+            lambda: monte_carlo_fos(g, variables, n=3, seed=1,
+                                    f_interslice="sine", **_FILL_CIRCLE)):
+        with pytest.raises(TypeError, match="f_interslice"):
+            call()
+
+
 # ---------------------------------------------------------------------------
 # Searches
 # ---------------------------------------------------------------------------
@@ -303,8 +364,9 @@ def test_spencer_circular_search_scores_no_circle_by_another_solver():
     assert res.n_no_solution == sum(r["n"] for r in res.no_solution)
     for rec in res.no_solution:
         assert set(rec) == {"family", "method", "n", "not_converged",
-                            "no_driving"}
-        assert rec["n"] == rec["not_converged"] + rec["no_driving"]
+                            "no_driving", "below_0_05"}
+        assert rec["n"] == (rec["not_converged"] + rec["no_driving"]
+                            + rec["below_0_05"])
         assert rec["family"] in ("circular", "toe_circle",
                                  "circle_above_toe", "infinite_slope")
         assert rec["method"] in METHODS
@@ -318,6 +380,79 @@ def test_spencer_circular_search_scores_no_circle_by_another_solver():
     if warned:
         assert "UFC 3-220-10 p. 362" in warned[0]
         assert "cannot be ruled out" in warned[0]
+
+
+def test_a_search_in_which_no_trial_solves_says_so(monkeypatch):
+    """The step 2 review's D5. Where no trial surface solves there is no
+    critical surface, so no governing family, and the search's warnings
+    said nothing. They now say that no trial surface had a solution by the
+    method, with the counts by family, method and reason. Every solve is
+    withheld here (the solver itself is tested above)."""
+    import slope_stability.search as search_mod
+
+    def withheld(slices, slip, method, *a, **k):
+        return MethodSolution(method=method, fos=None, solved=False,
+                              reason="withheld", kind="not_converged")
+
+    monkeypatch.setattr(search_mod, "_method_solution", withheld)
+    for kw in (dict(nx=3, ny=3),
+               dict(surface_type="noncircular", n_trials=20, seed=1)):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")     # the noncircular summary
+            res = search_critical_surface(_fill_slope(), method="spencer",
+                                          **kw)
+        assert res.critical is None and res.n_no_solution > 0
+        (w,) = [w for w in res.warnings if w.startswith(
+            "No trial surface had a solution by the method")]
+        assert f"{res.n_no_solution} trial surface(s)" in w
+        for r in res.no_solution:
+            assert (f"{r['family']}, " in w
+                    and f"{r['n']} ({r['not_converged']} did not converge)"
+                    in w)
+        assert "UFC 3-220-10 p. 362" in w
+
+
+def test_a_value_below_0_05_is_counted_under_its_own_reason(monkeypatch):
+    """The step 2 review's D6. A search does not take a solved value below
+    0.05 as a factor of safety (the existing screen). Such a surface was
+    counted as not converged; it has its own reason in the count. Every
+    solve gives 0.01 here."""
+    import slope_stability.search as search_mod
+
+    def tiny(slices, slip, method, *a, **k):
+        return MethodSolution(method=method, fos=0.01, solved=True)
+
+    monkeypatch.setattr(search_mod, "_method_solution", tiny)
+    res = slope_stability.grid_search(_fill_slope(), (0.0, 20.0),
+                                      (11.0, 25.0), 3, 3, "spencer", 30)
+    assert res.critical is None and res.no_solution
+    for r in res.no_solution:
+        assert r["below_0_05"] == r["n"] > 0
+        assert r["not_converged"] == r["no_driving"] == 0
+    assert "solved below 0.05" in res.summary()
+
+
+def test_no_number_row_says_why_in_the_calc_package():
+    """The step 2 review's D6. The method-comparison row of a method with
+    no number said "does not converge" also where the surface has no net
+    driving moment: it says which."""
+    from slope_stability.calc_steps import _comparison_section
+    level = SlopeGeometry(
+        surface_points=[(0, 5), (40, 5)],
+        soil_layers=[SlopeSoilLayer(name="s", top_elevation=5.0,
+                                    bottom_elevation=-10.0, gamma=18.0,
+                                    phi=30.0, c_prime=5.0)])
+    r = analyze_slope(level, xc=20.0, yc=9.0, radius=8.0, method="bishop",
+                      compare_methods=True)
+    rows = _comparison_section(r, {}).items[0].rows
+    held = [row for row in rows if row[0] in ("Fellenius", "Bishop")]
+    assert held and all("no net driving moment or force" in row[2]
+                        for row in held)
+    r = analyze_slope(_fill_slope(c=40.0), method="bishop",
+                      compare_methods=True, **_NO_SPENCER_CIRCLE)
+    rows = _comparison_section(r, {}).items[0].rows
+    (sp,) = [row for row in rows if row[0] == "Spencer"]
+    assert sp[1] == "no solution" and "does not converge" in sp[2]
 
 
 def test_search_and_single_surface_use_one_solver_on_a_polyline():
@@ -406,7 +541,8 @@ def test_yield_acceleration_without_a_solution_gives_no_number():
     """Where the method has no solution at a trial kh the bisection needs,
     there is no yield coefficient: ky is None and the result says at which
     kh and why. No other solver is asked."""
-    ya = yield_acceleration(_clay_slope(), method="spencer", **_ODD_CIRCLE)
+    ya = yield_acceleration(_fill_slope(c=40.0), method="spencer",
+                            **_NO_SPENCER_CIRCLE)
     assert ya.ky is None and ya.ay is None and not ya.converged
     assert "has no solution on this surface at kh = " in ya.reason
     assert "No yield coefficient is reported" in ya.reason
@@ -511,6 +647,39 @@ def test_the_robust_lambda_search_runs_without_supports():
                             "started from") for w in res.warnings)
     r = analyze_slope(g, xc=6.0, yc=15.0, radius=12.0, method="spencer")
     assert r.method_solved and r.FOS == pytest.approx(res.fos, rel=1e-9)
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "The step 2 review's D1, not applied: the module finds no Spencer "
+    "solution on this circle, which has one (2.9435 by the review's own "
+    "Spencer). Making the direct march the fallback on every run where the "
+    "fixed-point step cannot be taken finds it (2.9458) but also gives "
+    "states resting on the m_alpha clamp, with base tension, on surfaces "
+    "GM-131 found to have no Spencer solution (test_search_robustness, "
+    "test_m_alpha), loses the yield coefficient of an ordinary slope "
+    "(test_slope_stability_adapter::TestNewmark) and quadruples a "
+    "noncircular search's run time (module_work/gm140/STEP2_CHECK.md, "
+    "section 11). Left for the lead."))
+def test_the_march_is_tried_where_the_lagged_iteration_cannot_step():
+    """Item 3 (the step 2 review's D1). Where the lagged iteration at a
+    fixed lambda cannot take a step (a denominator at or below 1e-9), the
+    direct march is tried only with supports. On this made-up phi = 0
+    circle Spencer's method gives no number ("no lambda from -1.5 to 1.5
+    gives an equilibrium state"). It has a solution: with phi = 0 the
+    moment about the centre does not depend on the side-force inclination,
+    so Spencer's F is sum(c l) / sum(W sin alpha), 2.9435 on 30 slices
+    (theta 2.16 degrees) by the review's own Spencer (Spencer 1967 Eqs. 7
+    and 8, p. 15; nothing from this module). The circle's centre is below
+    the ground at its upper end, which is closed by a vertical crack, as
+    there."""
+    g = SlopeGeometry(
+        surface_points=[(0, 0), (15, 0), (30, 10), (50, 10)],
+        soil_layers=[SlopeSoilLayer(name="clay", top_elevation=10.0,
+                                    bottom_elevation=-12.0, gamma=18.0,
+                                    cu=25.0, analysis_mode="undrained")])
+    r = analyze_slope(g, xc=32.0, yc=7.0, radius=9.0, method="spencer",
+                      n_slices=30)
+    assert r.method_solved and r.FOS == pytest.approx(2.9435, rel=0.01)
 
 
 def test_an_iteration_that_does_not_settle_is_not_a_state():

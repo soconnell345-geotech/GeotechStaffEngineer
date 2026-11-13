@@ -900,38 +900,49 @@ class TestOwnSolutionOrNoNumber:
     """GM-140 step 2: a method's own solution, or no number, through the
     agent's tools (UFC 3-220-10 p. 362)."""
 
-    # a made-up clay slope and a circle with its centre below the crest,
-    # on which Spencer's method has no solution
+    # a made-up clay slope, phi = 0 (its searches leave trials without a
+    # Spencer solution)
     _CLAY = {
         "surface_points": [[0, 0], [12, 0], [24, 8], [40, 8]],
         "soil_layers": [{"name": "clay", "top_elevation": 8,
                          "bottom_elevation": -10, "gamma": 18, "cu": 30,
                          "analysis_mode": "undrained"}],
-        "xc": 30.0, "yc": 4.0, "radius": 9.0,
+    }
+    # a made-up fill slope, c' = 40 kPa, and a circle on which Spencer's
+    # method has no solution: by the step 2 review's own Spencer (Spencer
+    # 1967 Eqs. 7 and 8, p. 15; 30 slices) the force and moment factors of
+    # safety stay at least 0.043 apart for side-force inclinations from -30
+    # to 60 degrees (slope_stability/tests/test_own_solution_or_no_number.py,
+    # _NO_SPENCER_CIRCLE)
+    _NO_SPENCER = {
+        "surface_points": [[0, 0], [10, 0], [16, 10], [34, 10]],
+        "soil_layers": [{"name": "fill", "top_elevation": 10,
+                         "bottom_elevation": -6, "gamma": 19, "phi": 22,
+                         "c_prime": 40}],
+        "xc": 8.0, "yc": 12.0, "radius": 12.0,
     }
 
     def test_single_surface_without_supports_gives_no_number(self):
-        r = METHOD_REGISTRY["analyze_slope"](dict(self._CLAY,
+        r = METHOD_REGISTRY["analyze_slope"](dict(self._NO_SPENCER,
                                                   method="spencer"))
         assert r["FOS"] is None and r["method_solved"] is False
         assert r["method_used"] is None
         assert not any("legacy" in w for w in r["warnings"])
-        t = METHOD_REGISTRY["compare_methods_table"](dict(self._CLAY))
+        t = METHOD_REGISTRY["compare_methods_table"](dict(self._NO_SPENCER))
         assert "Spencer" in t["methods_without_solution"]
         assert not any(row["method"] == "Spencer" for row in t["rows"])
 
     def test_search_counts_trials_without_a_solution(self):
-        p = {k: v for k, v in self._CLAY.items()
-             if k not in ("xc", "yc", "radius")}
         r = METHOD_REGISTRY["search_critical_surface"](
-            dict(p, method="spencer", nx=4, ny=4))
+            dict(self._CLAY, method="spencer", nx=4, ny=4))
         assert r["critical"]["method_solved"] is True
         assert r["no_solution"] and all(
             set(rec) == {"family", "method", "n", "not_converged",
-                         "no_driving"} for rec in r["no_solution"])
+                         "no_driving", "below_0_05"}
+            for rec in r["no_solution"])
 
     def test_yield_acceleration_gives_no_number(self):
-        r = METHOD_REGISTRY["yield_acceleration"](dict(self._CLAY,
+        r = METHOD_REGISTRY["yield_acceleration"](dict(self._NO_SPENCER,
                                                        method="spencer"))
         assert r["ky"] is None and r["ay_m_s2"] is None
         assert "No yield coefficient is reported" in r["reason"]

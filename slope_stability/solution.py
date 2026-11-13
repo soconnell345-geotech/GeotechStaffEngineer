@@ -193,8 +193,7 @@ def solve_method(slices: List, slip, method: str,
     ``analyze_slope`` reported as having no solution.
     """
     check_method(method)
-    if method in ("morgenstern_price", "gle"):
-        check_interslice(f_interslice)
+    check_interslice(f_interslice)      # whatever the method (item 7)
     from slope_stability.methods import fellenius_fos, bishop_fos
     from slope_stability.gle import janbu_fos, gle_fos
     try:

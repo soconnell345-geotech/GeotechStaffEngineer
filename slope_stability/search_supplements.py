@@ -932,8 +932,35 @@ def no_solution_warning(result: SearchResult) -> Optional[str]:
     when convergence issues are present." EM 1110-2-1902 C-10d (pp. C-37 to
     C-38) lists what to do about non-convergence. Trials with no net
     driving moment or force are counted (``no_solution``) and not warned
-    of: such a surface is held, not a critical surface missed."""
+    of: such a surface is held, not a critical surface missed.
+
+    Where no trial surface had a solution the search could score (no
+    critical surface, so no governing family), it says that instead, with
+    the counts by family, method and reason (the step 2 review's D5)."""
     from slope_stability.solution import METHOD_TEXT
+    if result.critical is None and result.no_solution:
+        n = sum(r["n"] for r in result.no_solution)
+
+        def reasons(r):
+            parts = [f"{r[k]} {text}" for k, text in (
+                ("not_converged", "did not converge"),
+                ("no_driving", "with no net driving moment or force"),
+                ("below_0_05", "solved below 0.05")) if r.get(k)]
+            return (f"{r['family']}, "
+                    f"{METHOD_TEXT.get(r['method'], r['method'])}: "
+                    f"{r['n']} ({', '.join(parts)})")
+
+        by = "; ".join(reasons(r) for r in result.no_solution)
+        return (f"No trial surface had a solution by the method that the "
+                f"search could score, so it reports no critical surface "
+                f"and no factor of safety: {n} trial surface(s) were left "
+                f"without one ({by}). Nothing stood in for the method "
+                f"(UFC 3-220-10 p. 362: critical failure surfaces can be "
+                f"missed as a result of non-convergence). Check with "
+                f"another method (Bishop's simplified method on circles), "
+                f"other search ranges, or a tension crack where the top of "
+                f"the surface is in tension (EM 1110-2-1902 C-10c, "
+                f"p. C-36).")
     lost = [r for r in result.no_solution
             if r["family"] == result.governing_surface
             and r.get("not_converged")]

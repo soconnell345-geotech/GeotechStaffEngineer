@@ -88,19 +88,35 @@ def _no_solution_so_far() -> Dict[Tuple[str, str, str], int]:
     return dict(tally[2]) if tally is not None else {}
 
 
+# The count's own reason for a surface the method solved with a factor of
+# safety below 0.05: the searches do not take such a value as a factor of
+# safety (the existing screen), and it is not a solve that failed to
+# converge (GM-140 step 2 review).
+BELOW_0_05 = "below_0_05"
+
+
+def _not_scored_kind(sol) -> str:
+    """The count's reason for a surface not scored: the solution's own kind
+    (`solution.NO_SOLUTION_KINDS`), or `BELOW_0_05` where the method solved
+    it with a value below 0.05."""
+    if sol.solved and sol.fos is not None and sol.fos < 0.05:
+        return BELOW_0_05
+    return sol.kind
+
+
 def no_solution_records(counts: Dict[Tuple[str, str, str], int],
                         rename: Optional[Dict[str, str]] = None
                         ) -> List[Dict[str, Any]]:
     """``SearchResult.no_solution`` from the tally: one record per family
     and method, in the order met: ``{"family", "method", "n",
-    "not_converged", "no_driving"}``, ``n`` the sum of the two kinds
-    (`solution.NO_SOLUTION_KINDS`)."""
+    "not_converged", "no_driving", "below_0_05"}``, ``n`` the sum of the
+    three reasons (`solution.NO_SOLUTION_KINDS` and `BELOW_0_05`)."""
     out: Dict[Tuple[str, str], Dict[str, Any]] = {}
     for (family, method, kind), n in counts.items():
         family = (rename or {}).get(family, family)
         rec = out.setdefault((family, method), {
             "family": family, "method": method, "n": 0,
-            "not_converged": 0, "no_driving": 0})
+            "not_converged": 0, "no_driving": 0, BELOW_0_05: 0})
         rec["n"] += n
         rec[kind] = rec.get(kind, 0) + n
     return list(out.values())
@@ -927,10 +943,11 @@ def _compute_fos(geom: SlopeGeometry,
                 fos, fos_u = sol.fos, sol.fos_uncorrected
             if fos is None or fos < 0.05 or math.isnan(fos) \
                     or math.isinf(fos) or fos >= _FOS_MAX:
-                # no solution: not scored, and counted (GM-140 step 2)
+                # no solution, or a value below 0.05: not scored, and
+                # counted, each under its own reason (GM-140 step 2)
                 _bump(reject_stats, "nonconverged")
                 if fos_fn is None:      # (a caller's solve counts its own)
-                    _count_no_solution(scored_by, sol.kind)
+                    _count_no_solution(scored_by, _not_scored_kind(sol))
                 return _FOS_MAX
             if (fos_fn is None and fos < _FOS_MAX
                     and (m_alpha_check or info is not None)
@@ -973,12 +990,13 @@ def _compute_fos(geom: SlopeGeometry,
             fos, fos_u = sol.fos, sol.fos_uncorrected
 
         # No solution (the method's own solve does not converge, a
-        # per-surface solve returns none, or a value below 0.05, which is
-        # no factor of safety): not scored, and counted (GM-140 step 2).
+        # per-surface solve returns none), or a value below 0.05, which is
+        # no factor of safety: not scored, and counted, each under its own
+        # reason (GM-140 step 2).
         if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos) \
                 or fos >= _FOS_MAX:
             if fos_fn is None:          # (a caller's solve counts its own)
-                _count_no_solution(scored_by, sol.kind)
+                _count_no_solution(scored_by, _not_scored_kind(sol))
             return _FOS_MAX
         if (fos_fn is None and fos < _FOS_MAX
                 and (m_alpha_check or info is not None)
