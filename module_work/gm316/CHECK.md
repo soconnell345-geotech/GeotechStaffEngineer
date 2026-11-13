@@ -65,9 +65,38 @@ report's output).
     the package (B4). No value changes.
 13. Cost: about 19 us per repeated warning inside a call (C8). No value
     changes.
+14. LaTeX and PDF packages set text tables in a `c` column, which does not
+    wrap: a warning longer than about 85 characters in "Warnings Raised by
+    the Calculation" (and a long "Basis" in Assumed Inputs, as before) runs
+    past the right margin (`calc_package/latex_renderer.py` `col_spec`).
+    Give text tables `p{}` columns. **Changes a saved PDF** (layout, not a
+    number). HTML, the default, wraps.
+15. The axial package's depth sweep prints one "exceeds soil profile" line
+    per trial depth past the profile (8 for a pile 40 m in 25 m), now with
+    rounded lengths (N5). One line per location with a count would be
+    shorter. No value changes.
+16. layout_ink's two locked `catch_warnings` blocks still swap the filters
+    (they quiet matplotlib's layout warnings, so `np.errstate` cannot
+    replace them) and numpy's warnings still follow the filters (N6). No
+    value changes.
 
-Only 1 to 5 change a saved report's output; by the owner's rule 6 to 13
-need no backlog item unless the lead decides otherwise.
+Only 1 to 5 and 14 change a saved report's output; by the owner's rule the
+others need no backlog item unless the lead decides otherwise.
+
+### Re-check of 2026-11-13 (on 1056ac6)
+
+The re-check closed A1 and B2 to B5 and found:
+
+| # | What | Became |
+|---|---|---|
+| N1 (A) | the value check reused `aliases` (parameter names) for value aliases, so a parameter given under its alias name after a listed one went unchecked (settlement_package `footing_shape: 'circle footing'` ran rectangular) | Fixed: own variable; tests with a listed parameter first and an aliased one second, and the reviewer's case |
+| N2 (B) | `applies_when` compared the raw value, so an alias or a folded spelling dropped the dependent default from `defaults_used` and Assumed Inputs (soe `passive_theory: 'log-spiral'` lost `passive_wall_friction_deg`) | Fixed: `_values_in_force` reads each given string as its listed value (`listed_value`: fold, then aliases); all 505 conditions on a method's own parameters name the listed value of any alias they name; tests made-up (shown, hidden, padded) and the reviewer's soe case |
+| N3 | under `-W error` the text was in `error` and in `warnings` | Fixed: a text the error holds is not added (test) |
+| N4 | LaTeX warnings table does not wrap | Follow-up 14 |
+| N5 | axial sweep lengths unrounded ("26.36842105263158m") | Lengths to 4 figures ("26.37m"); the repetition is follow-up 15 |
+| N6 | numpy path and layout_ink's blocks still follow the filters | Follow-up 16 |
+| N7 | `warnings.warn` about 1 us slower outside a call | Nothing to do |
+| CI | the GitHub run on 1056ac6 failed in the main test jobs (3.12, 3.13): `webapp/tests/test_review_boundary.py::test_review_page_reaches_into_gse_only_where_known` found the new coupling `aec_agent_core.hooks -> funhouse_agent.core_hooks` (the door filled `method_call.warning_packages` with a `"module:attribute"` string; every method call asks for it, the review page's first call too) | Fixed since piece 1's commit 95930f8: the door holds the list and fills the hook with a function of its own; `core_hooks` re-exports it. Reproduced on Windows 3.14 and Linux 3.12 before, passing after |
 
 ## Piece 1, GM-316: a Python warning raised inside a method reaches the agent
 
@@ -213,7 +242,7 @@ do raise the module warnings the audit named, each twice and under both the
 
 | Call (made-up inputs) | Warning the agent now sees |
 |---|---|
-| axial_pile `axial_pile_capacity`, pile 40 m in a 30 m profile | "Pile tip (head_depth 0.0m + pile_length 40m) exceeds soil profile (30m); using full profile depth" |
+| axial_pile `axial_pile_capacity`, pile 40 m in a 30 m profile | "Pile tip (head_depth 0m + pile_length 40m) exceeds soil profile (30m); using full profile depth" |
 | drilled_shaft `drilled_shaft_capacity`, length 20 m in 15 m | "Shaft length (20.0m) exceeds soil profile (15m); using full profile depth" |
 | lateral_pile `lateral_pile_analysis`, soil to 10 m, pile 15 m | "Soil layers extend to 10 m but pile length is 15.0 m. No soil resistance will be applied below 10 m." |
 | settlement `consolidation_settlement`, Cr 0.3 > Cc 0.05 | "Cr (0.3) > Cc (0.05); typically Cr < Cc" |
@@ -588,6 +617,25 @@ aliases back out of 33 of those rows and added an "also read as:" span
   `test_page_fingerprints.py` 13 (fingerprints unchanged, none
   re-recorded);
   `test_public_text.py` 5. Full suites not run here (they run on GitHub).
+- Re-check round (on 1056ac6), each file alone, exit 0, Windows 3.14:
+  core `test_call_warnings.py` 25; `test_allowed_values.py` 295;
+  `test_probe_warnings.py` 8; the whole of `test_defaults_used.py` (the
+  per-probe guard 250 passed; the rest 328 passed, 13 skipped); the settlement,
+  soe, axial pile, drilled shaft, pile group, bearing capacity and calc package
+  test files the round touched; `test_page_fingerprints.py` 13 (unchanged);
+  `test_docs_currency.py` 6; `test_public_text.py` 5; `test_backlog.py` 11.
+  To find the CI failure (logs need a login): every test file in the
+  pyproject testpaths that imports `funhouse_agent`, `aec_agent_core`,
+  `calc_package`, `soe`, `axial_pile`, `drilled_shaft` or `lateral_pile` (348
+  files, funhouse_agent/tests whole) and the other 35 webapp test files, one
+  process a file, on Linux Python 3.12 with the latest numpy 2.5.4, scipy
+  1.18.1 and matplotlib 3.11.2 (as CI installs): all exit 0 but
+  `test_review_boundary.py` (fixed, above) and two that fail only in that
+  setup (`test_public_text.py`: git cannot read a Windows worktree from WSL,
+  passes on Windows; `test_databricks_launcher.py`: reads PYTHONPATH's first
+  entry, nothing of the branch).
+  `test_allowed_values.py`'s any_case check now skips an adapter whose
+  optional package is missing (it raised KeyError without PyNite).
 
 ## Release note
 
