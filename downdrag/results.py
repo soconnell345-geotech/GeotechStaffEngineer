@@ -483,9 +483,14 @@ class DowndragResult:
         beside = self.settlement_compatible_beside()
         if beside:
             # GM-310 (OWN-105): the same words the summary carries
+            import re
+            # the summary's lines as one sentence: its label and value
+            # columns closed up, each number line ended with a semicolon
             d['settlement_compatible_beside'] = " ".join(
-                line.replace("    ", " ").replace("  ", " ")
-                for line in beside[2:])
+                re.sub(r"\s+", " ", line)
+                + (";" if line.endswith((" m", " kN")) else "")
+                for line in beside[2:]).replace("kN; The headline",
+                                                "kN. The headline")
         return d
 
     def get_tables(self) -> list:
