@@ -241,7 +241,9 @@ layer is refused, naming the depth the layers do not cover.
 `extend_last_layer=True` is the one input that runs it: the last layer is
 taken to go on to the toe, with side resistance and toe resistance in it
 (the same numbers as a profile given to the toe), and the result says so in
-its first warning and in the choice "soil below the profile". Before GM-318
+its first warning and in the choice "soil below the profile"; the calc
+package's soil tables mark the last layer "(given to 10 m, assumed below)"
+(review C6). Before GM-318
 such a run went ahead with only a Python warning: no side resistance below
 the profile, and the toe in the last layer at the toe's own effective
 stress.

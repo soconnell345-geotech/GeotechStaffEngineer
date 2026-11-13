@@ -136,7 +136,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     for i, layer in enumerate(analysis.soil.layers, 1):
         top = depth_acc
         bot = depth_acc + layer.thickness
-        desc = layer.description or layer.soil_type.capitalize()
+        desc = _carried_on(
+            layer.description or layer.soil_type.capitalize(), _given, bot)
         params = _layer_params_str(layer)
         layer_rows.append([
             str(i),
@@ -517,10 +518,12 @@ def get_tables(result, analysis) -> list:
             ))
 
     layer_rows, depth = [], 0.0
+    given = getattr(analysis, "profile_depth_given", None)
     for i, layer in enumerate(analysis.soil.layers, 1):
         layer_rows.append([
             i, depth, depth + layer.thickness, layer.soil_type,
-            layer.description, layer.unit_weight, layer.friction_angle,
+            _carried_on(layer.description, given, depth + layer.thickness),
+            layer.unit_weight, layer.friction_angle,
             layer.cohesion, layer.delta_phi_ratio])
         depth += layer.thickness
     if layer_rows:
@@ -541,6 +544,16 @@ def get_tables(result, analysis) -> list:
 
 
 # -- Helper functions --------------------------------------------------------
+
+
+def _carried_on(description: str, given, bottom: float) -> str:
+    """A layer's description, marked where ``extend_last_layer`` carried
+    it on below the depth the layers given reach (GM-318 review C6)."""
+    if given is None or bottom <= given + 1e-9:
+        return description
+    return ((f"{description} " if description else "")
+            + f"(given to {given:g} m, assumed below)")
+
 
 def _method_display_name(method: str) -> str:
     """Convert method code to display name."""

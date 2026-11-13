@@ -364,7 +364,9 @@ manual (GEC 9, COM624P) prints a rule for either case, so:
 - layers that stop above the toe are refused, naming the depth not covered.
   `LateralPileAnalysis(..., extend_last_layer=True)` (the tool's
   `extend_last_layer`) takes the last layer's p-y model on to the toe; the
-  result's `warnings` and the choice "soil below the layers given" say so.
+  result's `warnings` and the choice "soil below the layers given" say so;
+  the last layer's p-y choice and the calc package's soil tables mark it
+  "(given to 10 m, assumed below)" (review C6).
   This is not the old behaviour (p = 0 below the layers), which no input
   reproduces.
 

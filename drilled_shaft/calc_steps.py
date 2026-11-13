@@ -1171,10 +1171,12 @@ def get_tables(result, analysis) -> list:
             ))
 
     layer_rows, depth = [], 0.0
+    given = getattr(analysis, "profile_depth_given", None)
     for i, layer in enumerate(analysis.soil.layers, 1):
         layer_rows.append([
             i, depth, depth + layer.thickness, layer.soil_type,
-            layer.description, layer.unit_weight, layer.cu, layer.phi,
+            _carried_on(layer.description, given, depth + layer.thickness),
+            layer.unit_weight, layer.cu, layer.phi,
             layer.N60, layer.qu, layer.RQD])
         depth += layer.thickness
     if layer_rows:
@@ -1197,6 +1199,16 @@ def get_tables(result, analysis) -> list:
 
 
 # ── Helper functions ──────────────────────────────────────────────
+
+
+def _carried_on(description: str, given, bottom: float) -> str:
+    """A layer's description, marked where ``extend_last_layer`` carried
+    it on below the depth the layers given reach (GM-318 review C6)."""
+    if given is None or bottom <= given + 1e-9:
+        return description
+    return ((f"{description} " if description else "")
+            + f"(given to {given:g} m, assumed below)")
+
 
 def _base(shaft, soil):
     """(name, diameter m, area m\u00b2) of the base the end bearing acts on,

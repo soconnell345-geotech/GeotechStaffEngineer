@@ -111,7 +111,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     for i, layer in enumerate(analysis.layers, 1):
         model = layer.py_model
         model_name = type(model).__name__
-        desc = layer.description or model_name
+        desc = _carried_on(layer.description or model_name, _given,
+                           layer.bottom)
         # Extract key parameters from the model
         params = _extract_model_params(model)
         layer_rows.append([
@@ -328,10 +329,13 @@ def get_tables(result, analysis) -> list:
         ))
 
     layer_rows = []
+    given = getattr(analysis, "profile_depth_given", None)
     for i, layer in enumerate(analysis.layers, 1):
         model = layer.py_model
         layer_rows.append([i, float(layer.top), float(layer.bottom),
-                           layer.description or type(model).__name__,
+                           _carried_on(layer.description
+                                       or type(model).__name__, given,
+                                       layer.bottom),
                            type(model).__name__,
                            _extract_model_params(model)])
     if layer_rows:
@@ -344,6 +348,15 @@ def get_tables(result, analysis) -> list:
             name="soil_layers", printed=False,
         ))
     return tables
+
+
+def _carried_on(description: str, given, bottom: float) -> str:
+    """A layer's description, marked where ``extend_last_layer`` carried
+    it on below the depth the layers given reach (GM-318 review C6)."""
+    if given is None or bottom <= given + 1e-9:
+        return description
+    return ((f"{description} " if description else "")
+            + f"(given to {given:g} m, assumed below)")
 
 
 def _extract_model_params(model) -> str:

@@ -57,6 +57,10 @@ def test_extension_equals_layers_given_to_the_toe():
     assert next(iter(d)) == "warnings"
     assert "last layer's p-y model was taken to go on" in d["warnings"][0]
     assert d["choices"][0]["what"] == "soil below the layers given"
+    # review C6: the p-y line marks the carried-on part
+    assert "p-y curves 0-15 m (given to 10 m, assumed below)" in [
+        c["what"] for c in d["choices"]]
+    assert "p-y curves 0-15 m" in [c["what"] for c in full.choices]
     assert full.warnings == [] and "warnings" not in full.to_dict()
     assert "WARNING" in ext.summary()
 

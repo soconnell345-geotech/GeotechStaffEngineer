@@ -91,12 +91,15 @@ def _field_default(obj, name):
     return None
 
 
-def py_choices(layers, within: str = "layers") -> list:
+def py_choices(layers, within: str = "layers",
+               given_to: Optional[float] = None) -> list:
     """What a lateral analysis used (GM-115): each layer's p-y model with
     its source and any option left at its default, and the loading (static
     or cyclic) over the layers. ``within`` is the input the layers came in,
     so a calc package's call that says it is not the user's makes each
-    model and loading read "assumed" (GM-180)."""
+    model and loading read "assumed" (GM-180). ``given_to``: the depth the
+    layers given reach where ``extend_last_layer`` carried the last one
+    on, marked on its line (GM-318 review C6)."""
     from geotech_common.choices import DEFAULT, choice, how_given
     out, loading, all_default = [], [], True
     for layer in layers:
@@ -120,7 +123,10 @@ def py_choices(layers, within: str = "layers") -> list:
         if isinstance(model, WeakRock):
             basis += _weak_rock_note(model)
         family = next((f for f in _PY_FAMILIES if name in f), ())
-        out.append(choice(f"p-y curves {layer.top:g}-{layer.bottom:g} m",
+        span = f"{layer.top:g}-{layer.bottom:g} m"
+        if given_to is not None and layer.bottom > given_to + 1e-9:
+            span += f" (given to {given_to:g} m, assumed below)"
+        out.append(choice(f"p-y curves {span}",
                           name, how_given(name, None, within=within),
                           basis, family))
         if isinstance(model, (SandReese, SandAPI)):
@@ -521,7 +527,8 @@ class LateralPileAnalysis:
                 pile_diameter=self.pile.diameter,
                 Vt=Vt, Mt=Mt, Q=Q,
                 stickup=stickup,
-                choices=ext_choices + py_choices(self.layers),
+                choices=ext_choices + py_choices(
+                    self.layers, given_to=self.profile_depth_given),
                 warnings=ext_notes,
             )
 
@@ -611,7 +618,8 @@ class LateralPileAnalysis:
             ei_last_change=float(ei_diff),
             ei_tolerance=ei_tolerance,
             stickup=stickup,
-            choices=ext_choices + py_choices(self.layers),
+            choices=ext_choices + py_choices(
+                self.layers, given_to=self.profile_depth_given),
             warnings=ext_notes + ei_notes,
         )
 

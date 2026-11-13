@@ -39,3 +39,14 @@ def test_package_refuses_then_says_the_layer_was_carried_on(method, tmp_path):
     html = out.read_text(encoding="utf-8")
     assert "Soil Below the Profile (Assumed)" in html
     assert "nobody explored" in html
+    # review C6: the soil tables mark the carried-on part of the last layer
+    mark = f"(given to {_GIVEN[method]} m, assumed below)"
+    csv = "".join(p.read_text(encoding="utf-8-sig")
+                  for p in tmp_path.glob("*soil_layers*.csv"))
+    assert mark in csv
+    if method != "drilled_shaft_package":    # its soil table is CSV only
+        assert mark in html
+
+
+_GIVEN = {"axial_pile_package": 10, "drilled_shaft_package": 12,
+          "lateral_pile_package": 10}

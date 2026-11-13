@@ -341,7 +341,9 @@ than the profile is refused, naming the depth the layers do not cover.
 taken to go on to the base (side and base resistance in it, the same
 numbers as a profile given to the base). `DrillShaftResult.warnings` (new;
 `warnings` in `to_dict()` when not empty) and the choice "soil below the
-profile" say so. Before GM-318 the run went ahead with only a Python
+profile" say so, and the calc package's soil layers table marks the last
+layer "(given to 12 m, assumed below)" (review C6). Before GM-318 the run
+went ahead with only a Python
 warning: no side resistance below the profile and the base in the last
 layer.
 
