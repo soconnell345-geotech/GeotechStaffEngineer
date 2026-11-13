@@ -292,7 +292,22 @@ def assumed_section(assumed) -> Optional[CalcSection]:
         rows=rows)])
 
 
+def raised_warnings_section(texts) -> Optional[CalcSection]:
+    """The calc package's "Warnings Raised by the Calculation" section, or
+    ``None`` when there are none: the warnings the analysis code raised
+    while it ran (the caller collects them; GM-316), apart from the
+    module's own warnings its sections print. One row each, as raised."""
+    rows = [[str(t)] for t in texts or () if str(t).strip()]
+    if not rows:
+        return None
+    intro = ("Warnings the calculation code raised while it ran, as "
+             "raised. Each is the engineer's to check against the result.")
+    return CalcSection(title="Warnings Raised by the Calculation", items=[
+        intro, TableData(title="Warnings raised", headers=["Warning"],
+                         rows=rows)])
+
+
 __all__ = ["MAX_PRINTED_ROWS", "INPUTS_NAME", "input_table", "module_tables",
            "csv_file_names", "export_tables", "csv_bytes", "to_table_data",
            "tables_section", "package_choices", "choices_section",
-           "assumed_section", "given_section"]
+           "assumed_section", "given_section", "raised_warnings_section"]
