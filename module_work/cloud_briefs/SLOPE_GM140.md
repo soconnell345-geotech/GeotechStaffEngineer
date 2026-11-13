@@ -2,7 +2,7 @@
 
 Read `COMMON_MODULES.md` (beside this file) first: its rules bind every task here. This file adds what is common to the rebuild's steps, then has one section per cloud session. Your routine's prompt names your section; do that section only.
 
-The rebuild has ten steps (the account's section 12). Step 1 (one material per point) was started on 2026-11-13 from its own prompt and is not in this file. Sections here: steps 2, 3, 4, 5a, 6, 8, 9 and 10. Steps 5b and 7 are a short note at the end.
+The rebuild has ten steps (the account's section 12). Step 1 (one material per point) is merged (6cb96ec, 2026-11-13); its record, with the fix round after review, is `module_work/gm140/STEP1_CHECK.md`. Sections here: steps 2, 3, 4, 5a, 6, 8, 9 and 10. Steps 5b and 7 are a short note at the end.
 
 ## Common to every step
 
@@ -67,10 +67,11 @@ Branch `claude/gm-140-step2-own-solution-or-no-number`. Requires on master: step
 6. A probabilistic run that meets a realisation with no solution: FOSM gives no result and names the variable and the perturbed value; Monte Carlo counts such realisations, leaves them out of the statistics and reports the count with the probability of failure bounded both ways (all of them counted as failures, none of them). No printed rule was found for this; state it in the result as the module's own. List it under "Calls made".
 7. An unknown method name is refused with the list of names, in every entry point and the adapter (D49). An unknown `f_interslice` likewise.
 8. Every search result counts the trials left without a solution, by family and by method, and warns when the governing family lost trials this way (UFC p. 362).
+9. **One solver for a method, in a search and on one surface.** A search's own scorer and the single-surface solver must return the same solution for the same surface: the same rule for the moment axis, the same tolerance, the same test of convergence. Today a noncircular search can accept a solution about a second, fixed moment axis that the single-surface solver does not confirm. The case found in step 1: ACADS 4's weak-layer search (`validation_examples/test_published_v028_e8.py::test_v028_weak_layer_search_against_print`, a strict xfail) returns Spencer 0.515 on a surface where `gle_fos` does not converge and Janbu's corrected value is 1.22, with the interslice force at -43.5 degrees; a plain family of surfaces along the seam reads 0.753 against the printed 0.760. Report what that search returns after your change. If it comes within the test's 3 % of print, remove the mark; do not tune the search to get there.
 
 **Out of scope.** The m_alpha rule and the acceptability checks (step 3). Which method scores which family, and a polyline named for Bishop running Spencer (step 6). Cracks and reverse curvature (step 4). Inside `rapid_drawdown.py`, change only the calls that the removed solvers break; the stages themselves, and the fall-back to Ordinary Method of Slices estimates when stage 1 does not converge, belong to step 9. The settings of the GLE solver that the account could not find in print (D29) stay as they are, apart from item 3.
 
-**Benchmarks.** All of section 11. Expect movement, and explain each, on: #85 with and without its support (Spencer 1.551, GLE 1.573; printed GLE 1.575, Bishop 1.531); #86 with tiebacks (1.612 / 1.606 / 1.606; printed 1.629 / 1.620 / 1.622); ACADS 1(a) (0.985; printed 1.00, Slide2 0.986); V-043 Spencer (1.1859; Slide2 1.209 circle); V-031; V-044 (the account notes a degenerate free Spencer solution on this ponded slope; printed 1.603 / 1.599 / 1.599); the Newmark case V-039 (Ky 0.139); the FOSM and Monte Carlo cases (B4, V-030, V-042, V-045).
+**Benchmarks.** All of section 11. Expect movement, and explain each, on: #85 with and without its support (Spencer 1.551, GLE 1.573; printed GLE 1.575, Bishop 1.531); #86 with tiebacks (1.612 / 1.606 / 1.606; printed 1.629 / 1.620 / 1.622); ACADS 1(a) (0.985; printed 1.00, Slide2 0.986); V-043 Spencer (1.1859; Slide2 1.209 circle); V-031; V-044 (the account notes a degenerate free Spencer solution on this ponded slope; printed 1.603 / 1.599 / 1.599); the Newmark case V-039 (Ky 0.139); the FOSM and Monte Carlo cases (B4, V-030, V-042, V-045). ACADS 4 since step 1 (V-028, B11): on its declared family of surfaces along the seam, with the printed loads, Spencer 0.753, Morgenstern-Price 0.722, Janbu corrected 0.728 against the printed 0.760, 0.720, 0.734; its weak-layer search is item 9's case; its calc-package report prints 1.161 from the old approximate solver on the search's surface, which must become "no number".
 
 **Tests (failing first).** A circle the rigorous methods cannot solve (GM-139's odd circle: a centre below the ground on a phi = 0 slope) returns no number where today it returns about 0.05. A Spencer circular search scores no circle by another solver and counts those without a solution. A Bishop solution stopped at its iteration limit gives no number. A Monte Carlo run and a FOSM run each meeting a surface with no solution. An unknown method name. The yield acceleration by Spencer uses Spencer's own solution at every trial kh.
 
@@ -97,7 +98,7 @@ Branch `claude/gm-140-step3-acceptability-checks`. Requires on master: steps 1 a
 
 **Out of scope.** Which method scores which family (step 6). New generators of noncircular surfaces (step 7). Tension cracks as the remedy for tension at the crest (step 4): report the tension, do not add a crack. The search's ranges.
 
-**Benchmarks.** All of section 11. Expect movement on every search that refused surfaces for m_alpha: #85 (Bishop with its support 1.372, discard 1.508 against 1.511 with every slice checked; printed 1.531, Duncan and Wright 1.51); #85 passive (1.254; printed 1.324); #86; ACADS 1(a) (printed 1.00); V-054 toe circle (2.346; printed 2.16); V-032 (1.315; printed 1.366); V-042 (1.3334; printed 1.334); Duncan's Example 1 (0.703 and 0.676; Taylor 0.706 and 0.679); the vertical cut (0.842; Taylor 0.851); and the noncircular cases V-028 (after step 1), V-043 (1.234; Slide2 1.188) and the weak layer over rock (B14). GM-130 records the circle-above-toe family's Janbu value moving from 1.033 to 1.138 under the old screen: re-measure it.
+**Benchmarks.** All of section 11. Expect movement on every search that refused surfaces for m_alpha: #85 (Bishop with its support 1.372, discard 1.508 against 1.511 with every slice checked; printed 1.531, Duncan and Wright 1.51); #85 passive (1.254; printed 1.324); #86; ACADS 1(a) (printed 1.00); V-054 toe circle (2.346; printed 2.16); V-032 (1.315; printed 1.366); V-042 (1.3334; printed 1.334); Duncan's Example 1 (0.703 and 0.676; Taylor 0.706 and 0.679); the vertical cut (0.842; Taylor 0.851); and the noncircular cases V-028 (after step 1), V-043 (1.234; Slide2 1.188) and the weak layer over rock (B14). ACADS 4's weak-layer search is the test case for items 3 and 4: if step 2 left its 0.515 (print 0.760), that solution has tensile interslice forces across the back wedge and a negative effective normal force on 11 of 30 slices, so the result must flag it and show the lowest surface without a flag beside it. GM-130 records the circle-above-toe family's Janbu value moving from 1.033 to 1.138 under the old screen: re-measure it.
 
 **Tests (failing first).** A Bishop search on a slope with a steep-exit circle keeps and flags it, with the slice named and both values reported; the same search with the refusal option reproduces today's count. A circle with supports says the comparison was not made. A slice with ub above W is named, and the as-printed and clamped values differ as arithmetic says. A Spencer surface with tension at the crest reports the slices and sides. A surface whose line of thrust leaves the mass says so.
 
@@ -238,37 +239,92 @@ Also expect movement on #85 (one support: active GLE 1.573, Bishop 1.372; passiv
 
 ## Step 9: rapid drawdown as EM 1110-2-1902 Appendix G prints it
 
-Branch `claude/gm-140-step9-rapid-drawdown`. Requires on master: step 1. Runs in parallel with the series and with steps 4, 5a, 8 and 10.
-
-**NOT READY TO START.** A local check is comparing the module slice by slice with the EM's worked example (Figs. G-10 and G-11). It will say why the module's second stage reads 1.372 against the printed 1.52, and so what must change in the second-stage strengths. Two parts of this section are open until the lead writes that in: "What the worked example shows" and the per-slice printed values to pin. Do not start from the rest alone.
+Branch `claude/gm-140-step9-rapid-drawdown`. Requires on master: step 1. Runs in parallel with the series and with steps 4, 5a, 8 and 10. Your edits belong in `slope_stability/rapid_drawdown.py` and its result class; step 2 changes the same file only where a removed solver is called.
 
 **The rule.** Each stage is computed as Appendix G prints it, each stage's factor of safety is reported, and the answer is the factor of safety of the last stage computed.
 
-**Departures and print.** D38; OWN-17; GM-15; GM-130's drawdown item; GM-135; D16's drawdown half. EM 1110-2-1902 Appendix G, section G-3, pp. G-2 to G-9, and Table 2-1, p. 2-2:
+**Departures and print.** D38; OWN-17; GM-15; GM-130's drawdown item; GM-135; D16's drawdown half. EM 1110-2-1902 Appendix G, pp. G-1 to G-23, and Table 2-1, p. 2-2. The manual is not in the repository; the equations and the worked example's values below were read from the page and checked by hand, and are all you need.
 
-- First stage: steady-state seepage pore pressures before drawdown; sigma'_c = N / l and tau_c = S / l on each base (Eqs. G-1, G-2).
-- Second-stage strengths, for materials that do not drain freely: tau_ff from the two envelopes at sigma'_c (Eqs. G-9, G-10), interpolated by the consolidation stress ratio K_c of the slice (Eq. G-11) between K_c = 1 and K_c = K_f (Eq. G-12); K_f from Eq. G-7 where c' = 0 and Eq. G-8 where it is not. These strengths enter as cohesion with phi = 0 and zero pore pressure. Free-draining materials keep c' and phi' with the pore pressures after drawdown; water left against the slope is an external load.
-- The second stage is solved.
-- The drained check: sigma = N / l from the second-stage computation (Eq. G-13); the pore pressure after drawdown (Eq. G-14); s_d = c' + sigma'_d tan(phi') (Eq. G-15).
-- The third stage is computed only if the drained strength is lower on some slice, "using the same conditions as for the second-stage computations" except on those slices (p. G-9). The factor of safety of the last stage computed is the answer.
-- The EM's example assumes, for simplicity, a horizontal piezometric line at the maximum pool and another at the drawn-down pool, and says seepage analyses would often be appropriate (G-4b, p. G-9).
+- First stage (G-3a, p. G-2): pore pressures before drawdown; on each base sigma'_c = N / dl (Eq. G-1) and tau_c = S / dl (Eq. G-2).
+- The strength of a soil consolidated isotropically (K_c = 1), from the R envelope's c_R and phi_R (p. G-6):
 
-**What changes (the settled part).**
+      d = c_R cos(phi_R) cos(phi') / (1 - sin(phi_R))                 (Eq. G-5)
+      psi = arctan[ sin(phi_R) cos(phi') / (1 - sin(phi_R)) ]         (Eq. G-6)
+      tau_ff(K_c = 1) = d + sigma'_c tan(psi)                         (Eq. G-9, p. G-7)
 
-1. The second and third stages are separate: the second is solved and its factor of safety reported; the drained check uses the second stage's N (Eqs. G-13 to G-15); the third is solved only when a slice needs it. The result gives the factor of safety of each stage computed, which slices took the drained strength, and which stage the answer comes from.
-2. The drained check's two present bases (an Ordinary Method of Slices normal, and a drained GLE solution) are not the EM's. The printed rule replaces them; a caller who names an old value is told the rule. This settles OWN-17.
-3. Stage 1 uses the seepage line when one is given; otherwise the level pool of the EM's own example, named in the result as that assumption.
-4. A stage that has no solution gives no number (step 2's rule): no estimates from the Ordinary Method of Slices in its place.
-5. All stages share one set of slice boundaries (both pool levels' crossings included), so a slice's quantities pass from stage to stage without matching by the nearest mid-point (GM-135).
-6. The same procedure scores every trial of the drawdown search.
+  or d and psi measured directly from consolidated-undrained tests (G-3b(1)(a) and (b), pp. G-4 to G-5).
+- The strength of a soil consolidated at failure (K_c = K_f): tau_ff(K_c = K_f) = c' + sigma'_c tan(phi') (Eq. G-10, p. G-7); K_f = (1 + sin(phi')) / (1 - sin(phi')) where c' = 0 (Eq. G-7), and Eq. G-8 where it is not (already in the module and checked).
+- The consolidation stress ratio of the slice (Eq. G-11, p. G-7; repeated as G-24, p. G-17), held between 1 and K_f (G-3b(2)(c), p. G-7):
 
-**What the worked example shows.** OPEN (from the local check).
+      K_c = [ sigma'_c + tau_c (sin(phi') + 1) / cos(phi') ] / [ sigma'_c + tau_c (sin(phi') - 1) / cos(phi') ]
 
-**Benchmarks.** All of section 11's drawdown rows, each stage beside print: the EM's example of this dam at its 103 ft pool (stage 1 = 2.20, p. G-15; stage 2 = 1.52, p. G-18; stage 3 = 1.44 with the drained strength on 3 of 12 slices, p. G-20; Bishop's method, 12 slices); Slide2 #95 (Corps two-stage: 1.34; printed 1.347); #96 (three-stage: 1.235 with the level pool, 1.273 with a seepage line that is not printed; printed 1.443; note the Slide2 text gives the pool as 110 ft and the EM 103 ft); #98 (search: 0.837 and 0.938; printed 0.931 and 1.039, on a recovered section about 10 % low); V-048; V-052 (Pilarcitos: Corps 0.823, Lowe and Karafiath 1.047, three-stage 1.043) and its search (0.7236); V-041's planar case (0.783; infinite slope 0.772); GM-15's steep case (V-052b). The per-slice printed values of Figs. G-10 and G-11 to pin: OPEN.
+- The second-stage strength (Eq. G-12, p. G-8):
 
-**Out of scope.** The Corps two-stage procedure's own steps (G-2), unless the local check shows a departure. Seepage analysis. The pore-pressure function itself (step 5a).
+      tau_ff = [ (K_f - K_c) tau_ff(K_c = 1) + (K_c - 1) tau_ff(K_c = K_f) ] / (K_f - 1)
 
-**Tests (failing first).** The second stage is reported on its own and matches a hand table on a three-slice case. The drained check takes the second stage's N. No third stage when no slice needs it. Stage 1 without a solution gives no number. The EM's example, stage by stage.
+- Second stage (G-3c, p. G-8): solved with tau_ff as cohesion, phi = 0 and zero pore pressure on the slices that do not drain freely; c', phi' and the pore pressures after drawdown on free-draining ones; water left against the slope is an external load.
+- The drained check (G-3d, p. G-8): sigma = N / dl with N from the second-stage computation (Eq. G-13); sigma'_d = sigma - u with u after drawdown (Eq. G-14); s_d = c' + sigma'_d tan(phi') (Eq. G-15). Where s_d is not below tau_ff on any slice the second stage's factor of safety is the answer.
+- Third stage (G-3e, pp. G-8 to G-9): "the same conditions as for the second-stage computations" except that the slices whose drained strength is lower take c', phi' and the pore pressure after drawdown. Its factor of safety is the answer.
+- The Corps of Engineers' 1970 procedure (G-2, pp. G-1 to G-2) uses the R envelope's c_R and phi_R as entered, in a composite envelope with the effective-stress one; it has no third stage.
+- The example's water (G-4b, p. G-9): a horizontal piezometric line at the maximum pool, and another at the lowered pool, "for simplicity"; seepage analyses would often be appropriate.
+
+**What the worked example shows.** A local check on 2026-11-13 ran the module slice by slice against the manual's example (Figs. G-10 to G-13). Stage 1 is sound (Spencer 2.200, Bishop 2.195; printed 2.20). Stage 2 reads 1.375 against the printed 1.52, for two reasons, both in how tau_ff is built:
+
+1. The K_c = 1 strength uses c_R and phi_R as entered. The manual converts them by Eqs. G-5 and G-6 (1,200 psf and 16 deg become 1,379 psf and 18.2 deg; Fig. G-5 prints both pairs). The module's strength is 13 % low on every slice.
+2. K_c is not Eq. G-11. The manual has 1.70 or 1.71 on all twelve slices; the module's own rule (with the base inclination and two special branches) gives 1.68 to 3.00.
+
+With both printed rules put in, the module's own solver gives 2.200 / 1.513 / 1.434 (Spencer, 50 slices) against the printed 2.20 / 1.52 / 1.44, with tau_ff within 0.02 ksf of Fig. G-12b on every slice and the same three slices drained. Either rule alone: 1.444 (the envelope), 1.375 (K_c). GM-15's steep case is cause 2.
+
+**What changes.**
+
+1. **The K_c = 1 strength** of the Lowe and Karafiath and the three-stage procedures follows Eqs. G-5, G-6 and G-9. A layer may give d and psi directly instead. The Corps two-stage procedure keeps c_R and phi_R as entered.
+2. **K_c** follows Eq. G-11, held between 1 and K_f. The base inclination and the special branches go.
+3. **The second stage is solved and kept**: its factor of safety and its N on every slice. For Lowe and Karafiath it is the answer.
+4. **The drained check uses the second stage's N** (Eqs. G-13 to G-15). A negative sigma'_d gives s_d = c' (the manual prints s_d = 0.00 for slice 1, where sigma'_d = -0.41 and c' = 0; for c' above zero this is a reading: list it under "Calls made"). The two present bases (an Ordinary Method of Slices normal, and a drained GLE solution) are not the EM's and go; a caller who names an old value is told the rule. This settles OWN-17.
+5. **The third stage is solved only if a slice needs it**, with c', phi' and the after-drawdown pore pressure on those slices (not the drained strength entered as a cohesion) and the second stage's strengths on the rest.
+6. **Water, stated.** Before drawdown: the seepage line when one is given, otherwise the level pool of the manual's own example, named in the result as that assumption. After drawdown: add the matching input for a line; without it, the level lowered pool, named.
+7. **The result carries each stage**: the factor of safety of stages 1, 2 and 3 (where computed), which stage the answer is from, and per slice sigma'_c, tau_c, K_c, K_f, the two envelope strengths, tau_ff, the second stage's N, the after-drawdown u, sigma'_d, s_d and which strength was used (the columns of Figs. G-10b and G-11b).
+8. **One set of slices for all stages**: pair slices by index, and refuse a surface where the stages' slice counts differ (GM-135).
+9. **A stage with no solution gives no number**: no estimates from the Ordinary Method of Slices in place of a first stage that did not converge.
+10. The same procedure scores every trial of the drawdown search.
+
+**The manual's example, to pin (EM G-4, pp. G-9 to G-11; Figs. G-5, G-6).** Convert to SI in the test and say so.
+
+- Section: toe at El. 0; 3 horizontal to 1 vertical up to El. 74; 2.5 to 1 up to the crest at El. 110; one soil, 135 pcf above and below water. c' = 0, phi' = 30 deg; c_R = 1,200 psf, phi_R = 16 deg (d = 1,379 psf, psi = 18.2 deg). Pool from El. 103 to El. 24, level piezometric lines.
+- Slip surface: a circle of radius 210 ft, centre 169.5 ft from the toe and 210 ft above El. 0 (tangent to El. 0; it meets the face at (72.0, 24.0) and the crest at x = 354.2 ft). Twelve slices, numbered from the crest; their edges, recovered from the printed widths, in feet from the toe: 354.2, 350.2, 330, 312, 294.5, 267.0, 245, 222, 200, 169.5, 135, 105, 72.0.
+- Printed factors of safety. Improved procedure by the Simplified Bishop Method: 2.20, 1.52, 1.44 (pp. G-15, G-18, G-20); by the Modified Swedish Method at Spencer's side-force inclinations (6.0, 12.2, 13.7 deg): 2.23, 1.52, 1.44 (pp. G-20 to G-22). Corps 1970 procedure by the Modified Swedish Method with side forces at 19.4 deg: 3.49, then 1.35 (pp. G-9 to G-15).
+- Fig. G-10b (p. G-16), the Bishop example's strengths for the second stage, and Fig. G-11b (p. G-19), its drained check (ksf; N in kips):
+
+| Slice | sigma'_c | tau_c | K_c | tau_ff (K_c = 1) | tau_ff (K_c = K_f) | tau_ff | N, stage 2 | u after | sigma'_d | s_d | Used in stage 3 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 1 | 0.32 | 0.08 | 1.71 | 1.49 | 0.19 | 1.02 | -6 | 0 | -0.72 | 0 | drained |
+| 2 | 1.44 | 0.38 | 1.71 | 1.85 | 0.83 | 1.49 | 52 | 0 | 1.48 | 0.86 | drained |
+| 3 | 2.90 | 0.76 | 1.71 | 2.33 | 1.67 | 2.10 | 120 | 0 | 4.61 | 2.66 | undrained |
+| 4 | 3.64 | 0.95 | 1.71 | 2.58 | 2.10 | 2.41 | 148 | 0 | 6.52 | 3.76 | undrained |
+| 5 | 4.05 | 1.06 | 1.71 | 2.71 | 2.34 | 2.58 | 250 | 0 | 7.69 | 4.44 | undrained |
+| 6 | 4.45 | 1.17 | 1.71 | 2.84 | 2.57 | 2.75 | 204 | 0.31 | 8.13 | 4.69 | undrained |
+| 7 | 4.57 | 1.20 | 1.71 | 2.88 | 2.64 | 2.80 | 208 | 0.85 | 7.77 | 4.49 | undrained |
+| 8 | 4.54 | 1.19 | 1.71 | 2.87 | 2.62 | 2.78 | 191 | 1.22 | 7.30 | 4.22 | undrained |
+| 9 | 4.31 | 1.13 | 1.71 | 2.80 | 2.49 | 2.69 | 246 | 1.43 | 6.61 | 3.81 | undrained |
+| 10 | 3.66 | 0.96 | 1.71 | 2.58 | 2.11 | 2.42 | 235 | 1.41 | 5.38 | 3.11 | undrained |
+| 11 | 2.60 | 0.68 | 1.71 | 2.23 | 1.50 | 1.97 | 149 | 1.09 | 3.75 | 2.16 | undrained |
+| 12 | 1.01 | 0.27 | 1.71 | 1.71 | 0.59 | 1.31 | 73 | 0.43 | 1.61 | 0.93 | drained |
+
+  K_f = 3.00 on every slice. The printed areas are those of slices with straight bases, 0.9 % less than the area down to the arc, so pin strengths and stages, not the printed weights. Pin on the manual's twelve slices: tau_ff of every slice within the table's rounding, the three drained slices, and the three stages by Bishop within 1 %; and the stages by Spencer on the module's usual slicing within 1 % of 2.20 (the check explains the manual's 2.23 by its whole-degree base angles), 1.52 and 1.44.
+
+**The Corps 1970 procedure and Slide2 #95: the lead's call (list it under "Calls made").** The manual's 1.35 (Slide2 prints 1.347) was computed by the Modified Swedish Method with the side forces at a fixed 19.4 deg, "for consistency with the original procedure ... although Spencer's Method is currently recommended" (G-5, p. G-9). The local check reproduces 3.49 and 1.34 that way; Spencer's method on the same stages gives 1.24. So:
+
+- The module's two-stage procedure keeps Spencer's method and its answer (1.24 here). The result names the method and says that the manual's example of this procedure used the Modified Swedish Method at a fixed side-force inclination.
+- The printed 3.49 and 1.35 are pinned through a force-equilibrium solution at the printed inclination of 19.4 deg (the GLE engine's force-equilibrium factor of safety at a fixed, constant side-force inclination: its march already does this arithmetic). Make it a library function used by the test and described in `DESIGN.md` as the manual's check method (EM C-4); do not add it to the agent's tools or to `method` names this week.
+- Remove the pins that rest on a seepage line no page prints (1.34 for #95; 1.273, 1.370 and 1.450 for #96) and the conclusions drawn from them.
+
+**Benchmarks.** All of section 11's drawdown rows, each stage beside print: the manual's example as above; Slide2 #96 at its 110 ft pool (printed 1.443; the check's scratch run under the printed rules gives 1.427, and cannot tell a 103 ft from a 110 ft pool by the final value); #98 (search: 0.837 and 0.938 today; printed 0.931 and 1.039, on a recovered section; the scratch run stays about 10 % low in every method, so report, do not tune); V-048; V-052 and its search (Pilarcitos: Corps 0.823, Lowe and Karafiath 1.047, three-stage 1.043; the scratch run moves Lowe and Karafiath from 1.279 to 0.944 under Eq. G-11, so GM-15's steep case is cause 2: re-measure V-052b); V-041's planar case (0.783; infinite slope 0.772).
+
+**Not settled, to state in the CHECK file, not to guess.** Which method of slices Slide2 used for #95 and #96. A base in tension at the first stage (sigma'_c below zero): the manual prints no rule; state the one you use. Soils with c' above zero exercise Eq. G-8 with Eq. G-11 only on #98's recovered section. The after-drawdown line has no printed benchmark.
+
+**Out of scope.** Seepage analysis. The pore-pressure function itself (step 5a). A Modified Swedish method for the agent's tools.
+
+**Tests (failing first).** K_c by Eq. G-11 and the K_c = 1 strength by Eqs. G-5, G-6 and G-9 against the table's slices. The second stage reported on its own. The drained check from the second stage's N. No third stage when no slice needs it. A first stage without a solution gives no number. The manual's example, stage by stage, by Bishop and by Spencer. The 1970 procedure's 3.49 and 1.35 at 19.4 deg.
 
 ---
 

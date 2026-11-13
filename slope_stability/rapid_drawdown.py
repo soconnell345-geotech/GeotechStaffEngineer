@@ -141,6 +141,9 @@ class RapidDrawdownResult:
     stage1_converged: bool = True
     stage3_converged: bool = True
     warnings: List[str] = field(default_factory=list)
+    #: Where a layer was given ground a layer listed before it also covers
+    #: (`SlopeGeometry.layer_overlaps`; the first listed holds it).
+    layer_overlaps: List[Dict[str, Any]] = field(default_factory=list)
     #: The least m_alpha over the drawn-down slices at the drawdown FOS, with
     #: each slice's own drawdown strength (GM-127; `methods.m_alpha_values`).
     #: The search leaves out a surface below 0.2, as Slide2 does (-112).
@@ -172,6 +175,8 @@ class RapidDrawdownResult:
             "stage1_converged": self.stage1_converged,
             "stage3_converged": self.stage3_converged,
         }
+        if self.layer_overlaps:
+            d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d
@@ -614,6 +619,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         stage1_converged=stage1_converged,
         stage3_converged=stage3_converged,
         warnings=warnings,
+        layer_overlaps=geom.layer_overlaps(),
         m_alpha_min=m_min,
     )
 

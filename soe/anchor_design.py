@@ -138,33 +138,33 @@ GROUNDS = ("soil", "rock")
 
 #: The rows GM-191 removed, with what each was and where to look instead.
 _REMOVED_TYPES = {
-    "gravel": "'gravel' (sand-gravel mixtures, 310 kPa) was removed (GM-191): "
+    "gravel": "'gravel' (sand-gravel mixtures, 310 kPa) was removed: "
               "no printed row has it. GEC-4 Table 6 (p. 71) prints sand and "
               "gravel by density: 'sand_gravel_loose' 145, "
               "'sand_gravel_medium' 220, 'sand_gravel_dense' 290 kN/m",
     "clay_stiff": "'clay_stiff' (50 kPa, the middle of GEC-4 Table 7's "
-                  "gravity-grouted range for cohesive soil) was removed "
-                  "(GM-191). Table 6 (p. 71) prints only silt-clay mixtures "
+                  "gravity-grouted range for cohesive soil) was removed. "
+                  "Table 6 (p. 71) prints only silt-clay mixtures "
                   "with low plasticity: 'silt_clay_stiff' 30 kN/m; for a "
                   "clay give bond_stress_kPa from Table 7 (p. 73; "
                   "gravity-grouted 30-70 kPa, pressure-grouted by clay)",
     "clay_hard": "'clay_hard' (100 kPa; its 70-130 is Table 6's sand-and-silt "
-                 "row in kN/m) was removed (GM-191). Table 6 (p. 71) prints "
+                 "row in kN/m) was removed. Table 6 (p. 71) prints "
                  "'silt_clay_hard' 60 kN/m (silt-clay mixture with low "
                  "plasticity, hard); for a clay give bond_stress_kPa from "
                  "Table 7 (p. 73)",
     "rock_soft": "'rock_soft' (soft shale, sandstone, marl, 700 kPa) was "
-                 "removed (GM-191): no printed row has it. GEC-4 Table 8 "
+                 "removed: no printed row has it. GEC-4 Table 8 "
                  "(p. 74) prints 'soft_shales' 150 and 'sandstone' 440 kN/m; "
                  "Table 7 (p. 73) prints bond stresses for bond_stress_kPa",
     "rock_medium": "'rock_medium' (medium limestone, schist, 1050 kPa) was "
-                   "removed (GM-191): no printed row has it. GEC-4 Table 8 "
+                   "removed: no printed row has it. GEC-4 Table 8 "
                    "(p. 74) prints 'soft_limestone' 440, "
                    "'dolomitic_limestone' 580 and 'slates_hard_shales' "
                    "360 kN/m",
     "rock_hard": "'rock_hard' (hard granite, basalt, gneiss, 1750 kPa: the "
-                 "middle of Table 7's dolomitic limestone range) was removed "
-                 "(GM-191). GEC-4 Table 8 (p. 74) prints 'granite_basalt' "
+                 "middle of Table 7's dolomitic limestone range) was removed. "
+                 "GEC-4 Table 8 (p. 74) prints 'granite_basalt' "
                  "730 kN/m; Table 7 (p. 73) prints granite and basalt "
                  "1.7-3.1 MPa as a bond stress",
 }
