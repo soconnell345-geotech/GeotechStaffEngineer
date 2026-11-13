@@ -127,11 +127,14 @@ def _figure_file_name(out_dir: str, prefix: str, index: int, title: str,
 
 
 def _figures_response(module: str, result, analysis, opts: dict,
-                      analysis_type: str, extra: dict = None) -> dict:
+                      analysis_type: str, extra: dict = None,
+                      drawing: dict = None, params: dict = None) -> dict:
     """Save the module's calc-package figures as standalone PNGs.
 
     ``opts`` is the ``_RENDER_MODE`` payload (``output_dir``/``name_prefix``),
-    not the package's own params.
+    not the package's own params. ``drawing``: the package's reinforced
+    wall section (GM-313, the join), whose sheet's PNG is saved with the
+    figures; ``params``, the package's own (its title block).
 
     Owner feedback 2026-09-11: ~25 ready matplotlib figures (slope sections,
     trial-surface maps, p-y curves, settlement plots, pavement charts, FEM
@@ -146,6 +149,17 @@ def _figures_response(module: str, result, analysis, opts: dict,
 
     reg = _ensure_registered(module)
     figures = reg["get_figures"](result, analysis) or []
+    drawn = sheet_problem = None
+    if drawing is not None:
+        # the reinforcement sheet's PNG goes with the figures; one that
+        # cannot be drawn costs the sheet, never the figures
+        try:
+            drawn = _wall_sheet(drawing, params or {})
+            figures = list(figures) + [drawn["sheet"]]
+        except Exception as exc:                           # noqa: BLE001
+            sheet_problem = (f"The reinforcement sheet could not be drawn "
+                             f"({type(exc).__name__}: {exc}); the other "
+                             "figures are saved.")
     out_dir = opts.get("output_dir")
     out_dir = (resolve_output_path(str(out_dir)) if out_dir
                else default_output_dir())
@@ -213,6 +227,8 @@ def _figures_response(module: str, result, analysis, opts: dict,
         response["error"] = "; ".join(problems)
     if extra:
         response.update(extra)
+    if drawing is not None:
+        _add_sheet_keys(response, _sheet_response(drawn, sheet_problem))
     return response
 
 
@@ -376,10 +392,16 @@ def _raised_warnings(result) -> list:
 
 def _build_response(module: str, result, analysis, params: dict,
                     analysis_type: str, extra: dict = None,
-                    run: "_ToolRun" = None, package: str = None) -> dict:
+                    run: "_ToolRun" = None, package: str = None,
+                    drawing: dict = None) -> dict:
     """Run generate_calc_package and return a summary response dict.
 
     Always saves to disk.  Auto-generates output_path if not provided.
+
+    ``drawing``: a ``reinforced_wall_section/1`` description (GM-313, the
+    join): the package ends with its sheet, and the sheet's DXF and PNG
+    are written beside the package (``_wall_sheet``); one that cannot be
+    drawn costs the sheet, never the package.
 
     Inside a ``render_figures`` call (``_RENDER_MODE`` kind ``figures``), the
     package is NOT generated: the module's ``get_figures`` runs on the same
@@ -393,7 +415,8 @@ def _build_response(module: str, result, analysis, params: dict,
     mode = _RENDER_MODE.get()
     if mode is not None and mode.get("kind") == "figures":
         return _figures_response(module, result, analysis, mode,
-                                 analysis_type=analysis_type, extra=extra)
+                                 analysis_type=analysis_type, extra=extra,
+                                 drawing=drawing, params=params)
     tables_only = mode is not None and mode.get("kind") == "tables"
 
     meta = _extract_metadata(params)
@@ -441,14 +464,12 @@ def _build_response(module: str, result, analysis, params: dict,
             response["defaults_used"] = dict(run.defaults_used)
         return response
 
-    render_report = {}
-    content = generate_calc_package(
+    package_args = dict(
         module=module,
         result=result,
         analysis=analysis,
         output_path=output_path,
         format=fmt,
-        render_report=render_report,
         tables=calc_tables,
         table_files=table_names,
         given_inputs=given,
@@ -456,6 +477,29 @@ def _build_response(module: str, result, analysis, params: dict,
         raised_warnings=_raised_warnings(result),
         **meta,
     )
+    # The sheet is drawn after the calculation's warnings are taken, so a
+    # warning the drawing raises is not printed as the calculation's
+    drawn = sheet_problem = None
+    if drawing is not None:
+        try:
+            drawn = _wall_sheet(drawing, params, dxf_name=os.path.basename(
+                _sheet_stem(output_path)) + ".dxf")
+        except Exception as exc:                           # noqa: BLE001
+            sheet_problem = _sheet_failed(exc)
+    render_report = {}
+    try:
+        content = generate_calc_package(
+            **package_args, render_report=render_report,
+            sheets=[drawn["sheet"]] if drawn else None)
+    except Exception as exc:                               # noqa: BLE001
+        if not drawn:
+            raise
+        # the package could not take the sheet: written without it
+        drawn, sheet_problem = None, _sheet_failed(exc, "added to the "
+                                                   "package")
+        render_report = {}
+        content = generate_calc_package(**package_args,
+                                        render_report=render_report)
     tables_out = _save_tables(calc_tables, table_names, table_dir)
 
     # Verify the write on the REAL filesystem so callers (LLM agents) never
@@ -517,6 +561,9 @@ def _build_response(module: str, result, analysis, params: dict,
         response["tables_error"] = table_error
     if extra:
         response.update(extra)
+    if drawing is not None:
+        _add_sheet_keys(response, _sheet_response(drawn, sheet_problem,
+                                                  abs_path))
     if run is not None and run.defaults_used:
         # the defaults the tool's run left in force (GM-141)
         response["defaults_used"] = dict(run.defaults_used)
@@ -629,7 +676,12 @@ _PACKAGE_TOOLS = {
                      "cantilever wall's stability sections, then the "
                      "structural design of its stem, toe and heel on "
                      "USACE EM 1110-2-2104 (2023), with the bar schedule; "
-                     "no reinforcement drawing; GM-312)."),
+                     "the package ends with the reinforcement sheet (the "
+                     "section with its bars, dimensions and callouts: "
+                     "letter, or tabloid for a wall that letter would "
+                     "draw smaller than 1:50) and writes it beside the "
+                     "package as <name>_reinforcement.dxf and "
+                     "<name>_reinforcement.png; GM-312, GM-313)."),
         "tools": {"cantilever": "cantilever_wall", "mse": "mse_wall",
                   "mse_lrfd": "mse_lrfd_external_stability",
                   "cantilever_reinforced":
@@ -646,7 +698,8 @@ _PACKAGE_TOOLS = {
             "type": "float", "required": False,
             "description": "Distance from the toe to the front face of the "
                            "shear key (m), for the wall section figure "
-                           "only: the sliding check takes the passive "
+                           "and the reinforcement sheet only: the sliding "
+                           "check takes the passive "
                            "resistance on the plane below the toe over the "
                            "key's depth, wherever the key is. Not given: "
                            "the key is drawn under the stem, an "
@@ -657,16 +710,18 @@ _PACKAGE_TOOLS = {
             "applies_when": {"has_shear_key": [True], "key_depth": "set"},
             "when_absent": {
                 "case": "under the stem",
-                "basis": "no key position given: the wall section draws "
+                "basis": "no key position given: the wall section and "
+                         "the sheet draw "
                          "the key's front face under the stem's, an "
                          "assumption with no printed basis (UFC 3-220-20 "
                          "Fig. 4-29 draws a gravity wall, GEC-6 Fig. 5-22 "
                          "a footing, neither a cantilever wall's key "
-                         "position), and says so"}},
+                         "position), and say so"}},
             "key_width": {
                 "type": "float", "required": False,
                 "description": "Width of the shear key (m), for the wall "
-                               "section figure only. Not given: the "
+                               "section figure and the reinforcement sheet "
+                               "only. Not given: the "
                                "stem's thickness at its base, an "
                                "assumption: no printed basis for a "
                                "cantilever wall's key width.",
@@ -674,7 +729,8 @@ _PACKAGE_TOOLS = {
                                  "key_depth": "set"},
                 "when_absent": {
                     "case": "the stem's thickness at its base",
-                    "basis": "no key width given: the wall section draws "
+                    "basis": "no key width given: the wall section and "
+                             "the sheet draw "
                              "the key as wide as the stem, an "
                              "assumption with no printed basis"}}},
         "older": {"cantilever": {
@@ -2066,7 +2122,8 @@ def _generate_retaining_wall_package(params: dict) -> dict:
         return None if x is None else round(x, 2)
 
     if run.value == "cantilever_reinforced":
-        # GM-312: the stability sections and the structural design
+        # GM-312: the stability sections and the structural design; the
+        # package ends with the reinforcement sheet (GM-313, the join)
         st = result.stability
         return _build_response(
             "retaining_walls", result, analysis, params, run=run,
@@ -2079,7 +2136,8 @@ def _generate_retaining_wall_package(params: dict) -> dict:
                 "FOS_sliding": _r2(st.FOS_sliding),
                 "FOS_overturning": _r2(st.FOS_overturning),
                 "FOS_bearing": _r2(st.FOS_bearing),
-                **_reinforced_numbers(result)})
+                **_reinforced_numbers(result)},
+            drawing=_wall_drawing_description(result, analysis))
 
     # The verdict travels with the package (GM-100): a failed check or a
     # check not run must reach the user, not only the file.
@@ -2204,6 +2262,152 @@ def _shear_key_place(own: dict, geom) -> dict:
             f"base (B = {geom.base_width:g} m); give key_distance_from_toe "
             f"+ key_width up to B.")
     return out
+
+
+# ---------------------------------------------------------------------------
+# The reinforced wall's sheet at the end of its package (GM-313, the join):
+# the structural design's reinforcement description (GM-312), drawn by
+# dxf_export, handed to generate_calc_package(sheets=...) and written
+# beside the package as a DXF and a PNG. Neither module imports the other;
+# this layer joins them.
+# ---------------------------------------------------------------------------
+
+#: A wall that fits a letter sheet at 1:50 or larger is drawn on letter (the
+#: package's own page size); a taller one goes to tabloid, so it is not drawn
+#: at 1:100 where a larger sheet avoids it.
+_LETTER_LEAST_SCALE = 50
+
+
+def _wall_drawing_description(result, analysis: dict) -> dict:
+    """The design's ``reinforcement`` description for the sheet, with the
+    shear key's place and width the package was given (its own
+    ``key_distance_from_toe`` and ``key_width``, GM-216), so the sheet
+    draws the key where the package's wall section figure draws it. One
+    not given stays null: the sheet then draws it as the figure does (its
+    front face under the stem's, as wide as the stem) and says so."""
+    import copy
+    desc = copy.deepcopy(getattr(result, "reinforcement", None))
+    geometry = desc.get("geometry") if isinstance(desc, dict) else None
+    if isinstance(geometry, dict) and geometry.get("has_shear_key"):
+        for name in ("key_distance_from_toe", "key_width"):
+            if analysis.get(name) is not None:
+                geometry[name] = analysis[name]
+    return desc
+
+
+def _sheet_title_block(params: dict):
+    """The sheet's title block from the package's own header inputs:
+    project name and number, engineer (drawn by), checker (checked by) and
+    the date the package prints (today's when none is given). Each is cut
+    to the title block's field length. ``(fields, warnings)``; the title,
+    the stamp and the layout stay the drawing code's."""
+    from dxf_export.drawing import MAX_FIELD
+    meta = _extract_metadata(params)
+    fields = {"project": meta["project_name"],
+              "project_number": meta["project_number"],
+              "drawn_by": meta["engineer"], "checked_by": meta["checker"],
+              "date": meta["date"] or datetime.now().strftime("%Y-%m-%d")}
+    warnings = []
+    for name, value in fields.items():
+        text = " ".join(str("" if value is None else value).split())
+        if len(text) > MAX_FIELD:
+            text = text[:MAX_FIELD - 3].rstrip() + "..."
+            warnings.append(f"The sheet's title block: {name} cut to "
+                            f"{MAX_FIELD} characters.")
+        fields[name] = text
+    return fields, warnings
+
+
+def _wall_sheet(description: dict, params: dict, dxf_name: str = None):
+    """The reinforced wall section drawn for the package's end.
+
+    Letter when the wall fits it at 1:50 or larger, else tabloid; the
+    scale each sheet gives is ``wall_section_drawing``'s own choice (the
+    largest standard scale at which the section, its dimensions and its
+    callouts fit). Returns ``{"sheet": SheetData, "files": {"dxf", "pdf",
+    "png", ...}, "size", "scale", "warnings"}``; raises whatever the
+    drawing raises."""
+    import base64
+
+    from calc_package import SheetData
+    from dxf_export import DrawingError, render_sheet, wall_section_drawing
+
+    block, warnings = _sheet_title_block(params)
+    try:
+        drawing = wall_section_drawing(description, sheet={"size": "letter"},
+                                       title_block=block)
+    except DrawingError:
+        drawing = None          # letter takes it at no standard scale
+    if drawing is None or drawing.sheet.scale > _LETTER_LEAST_SCALE:
+        drawing = wall_section_drawing(description,
+                                       sheet={"size": "tabloid"},
+                                       title_block=block)
+    files = render_sheet(drawing)
+    info = files["info"]
+    scale = f"1:{info.scale}"
+    caption = (f"{drawing.title_block.title}: {info.sheet} sheet at "
+               f"{scale}" + (f"; the same drawing is {dxf_name}, beside "
+                             "this package" if dxf_name else "") + ".")
+    return {
+        "sheet": SheetData(
+            title="Reinforcement sheet", caption=caption,
+            pdf_bytes=files["pdf"],
+            image_base64=base64.b64encode(files["png"]).decode("ascii")),
+        "files": files, "size": info.sheet, "scale": scale,
+        # the title block's, then the layout's, then the sheet's own
+        "warnings": (warnings + list(getattr(drawing, "layout_warnings",
+                                             []))
+                     + list(info.warnings)),
+    }
+
+
+def _sheet_failed(exc: Exception, what: str = "drawn") -> str:
+    return (f"The reinforcement sheet could not be {what} "
+            f"({type(exc).__name__}: {exc}); the package was written "
+            "without it.")
+
+
+def _sheet_stem(package_path: str) -> str:
+    """``<package stem>_reinforcement``, in the package's folder."""
+    return (os.path.splitext(os.path.abspath(package_path))[0]
+            + "_reinforcement")
+
+
+def _sheet_response(drawn, problem, package_path: str = None) -> dict:
+    """The result's drawing keys. With ``package_path``, the sheet's DXF
+    and PNG are written beside the package (verified saves). A sheet that
+    failed leaves them null and says why under ``warnings``."""
+    out = {"drawing_sheet": drawn["size"] if drawn else None,
+           "drawing_scale": drawn["scale"] if drawn else None,
+           "drawing_warnings": list(drawn["warnings"]) if drawn else []}
+    if package_path is not None:
+        out["drawing_dxf_path"] = out["drawing_png_path"] = None
+        stem = _sheet_stem(package_path)
+        for ext in ("dxf", "png") if drawn else ():
+            path = f"{stem}.{ext}"
+            saved = save_verified(path, drawn["files"][ext])
+            if saved.get("file_exists"):
+                out[f"drawing_{ext}_path"] = saved.get(
+                    "saved", os.path.abspath(path))
+            else:
+                problem = ((problem + " ") if problem else "") + (
+                    f"The reinforcement sheet's {os.path.basename(path)} "
+                    f"did not save ({saved.get('error')}).")
+    if problem:
+        out["warnings"] = [problem]
+    return out
+
+
+def _add_sheet_keys(response: dict, keys: dict) -> None:
+    """``keys`` into ``response``, a ``warnings`` list added to any the
+    response already has."""
+    keys = dict(keys)
+    extra = keys.pop("warnings", None)
+    response.update(keys)
+    if extra:
+        have = response.get("warnings")
+        response["warnings"] = (list(have) if isinstance(have, list)
+                                else [have] if have else []) + extra
 
 
 # ---------------------------------------------------------------------------
@@ -2655,7 +2859,16 @@ def _generate_reliability_package(params: dict) -> dict:
         extra.update(beta=round(result.beta, 4), pf=result.pf,
                      converged=result.converged)
     elif run.value == "monte_carlo":
+        # what the package's note says, given to the agent too (GM-322
+        # review): N is the realizations kept, not the ones run
         extra.update(pf=result.pf, n_failed=result.n_failed, n=result.n,
+                     n_requested=result.n_requested or result.n,
+                     n_dropped=result.n_dropped,
+                     pf_bounds_dropped=(
+                         None if result.pf_bounds_dropped is None
+                         else list(result.pf_bounds_dropped)),
+                     pf_ci95=list(result.pf_ci95),
+                     pf_ci95_method=result.pf_ci95_method,
                      beta_normal=round(result.beta_normal, 3))
     else:
         extra.update(beta_normal=round(result.beta_normal, 3),
@@ -2663,6 +2876,8 @@ def _generate_reliability_package(params: dict) -> dict:
         if result.beta_lognormal is not None:
             extra.update(beta_lognormal=round(result.beta_lognormal, 3),
                          pf_lognormal=result.pf_lognormal)
+    if getattr(result, "warnings", None):
+        extra["warnings"] = list(result.warnings)
     return _build_response(
         "reliability", result, used, params,
         run=run,
@@ -3632,7 +3847,7 @@ METHOD_INFO = {
     "retaining_wall_package": {
         "category": "Calculation Package",
         "brief": "Run a cantilever retaining wall (cantilever_wall), MSE wall (mse_wall, ASD) or MSE LRFD external stability (mse_lrfd_external_stability) analysis, or a cantilever wall's stability with the structural design of its concrete (cantilever_wall_structural_design), and generate its calc package.",
-        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(structural design numbers)": "wall_type 'cantilever_reinforced' only: basis, stem, toe and heel (each Mu, Vu, d, the steel required and provided, the bar, phi Mn, phi Vc, passes), development (the stem bars' hook), recommendations_not_met, not_designed and reinforcement (the reinforced wall section a drawing takes), as the cantilever_wall_structural_design tool works them out; checks_failed then lists the concrete's failed checks too. Report them to the user, with what was not designed.", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user.", "(MSE LRFD numbers)": "wall_type 'mse_lrfd' only, in place of verdict and the FOS: passes, checks_failed, checks_not_run, sliding_CDR_governing and sliding_CDR_strength_min, eL_governing_m, eL_strength_min_m and e_limit_m, bearing_CDR_governing, bearing_CDR_strength_min and sigma_v_strength_min_kPa, as the mse_lrfd_external_stability tool works them out (null: not checked). Report them to the user."},
+        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(structural design numbers)": "wall_type 'cantilever_reinforced' only: basis, stem, toe and heel (each Mu, Vu, d, the steel required and provided, the bar, phi Mn, phi Vc, passes), development (the stem bars' hook), recommendations_not_met, not_designed and reinforcement (the reinforced wall section a drawing takes), as the cantilever_wall_structural_design tool works them out; checks_failed then lists the concrete's failed checks too. Report them to the user, with what was not designed.", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user.", "(MSE LRFD numbers)": "wall_type 'mse_lrfd' only, in place of verdict and the FOS: passes, checks_failed, checks_not_run, sliding_CDR_governing and sliding_CDR_strength_min, eL_governing_m, eL_strength_min_m and e_limit_m, bearing_CDR_governing, bearing_CDR_strength_min and sigma_v_strength_min_kPa, as the mse_lrfd_external_stability tool works them out (null: not checked). Report them to the user.", "drawing_dxf_path": "wall_type 'cantilever_reinforced' only: the reinforcement sheet as a DXF, written beside the package as <name>_reinforcement.dxf (null: not drawn, warnings says why). The package's last page (pdf) or its Drawings section (html, latex) is the same sheet.", "drawing_png_path": "wall_type 'cantilever_reinforced' only: the same sheet as a PNG, <name>_reinforcement.png beside the package (null: not drawn).", "drawing_sheet": "The sheet's size: 'letter', or 'tabloid' for a wall letter would draw smaller than 1:50.", "drawing_scale": "The sheet's scale, '1:N', the largest standard scale at which the section fits the sheet.", "drawing_warnings": "What the reader of the sheet should know (an assumed shear key place, a hook that does not fit, a bar drawn wider than to scale). Tell the user.", "warnings": "wall_type 'cantilever_reinforced': why the reinforcement sheet is missing, when it could not be drawn (the package is written without it); and any warning the code raised while it ran."},
     },
     "ground_improvement_package": {
         "category": "Calculation Package",
@@ -3662,7 +3877,7 @@ METHOD_INFO = {
     "reliability_package": {
         "category": "Calculation Package",
         "brief": "Run a reliability analysis (FOSM, point estimates, Monte Carlo or FORM) on a performance function of random variables and generate its calc package: the variables and their distributions, the moments of g, the reliability index beta and the probability of failure, and which variable matters.",
-        "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure."},
+        "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure.", "n_failed": "Monte Carlo: realizations with g below the threshold.", "n": "Monte Carlo: realizations kept (finite g); pf is n_failed / n.", "n_requested": "Monte Carlo: realizations run.", "n_dropped": "Monte Carlo: realizations left out because g was not finite.", "pf_bounds_dropped": "Monte Carlo: [pf if no dropped realization had failed, pf if all had]; null when nothing was dropped.", "pf_ci95": "Monte Carlo: 95% interval on pf.", "pf_ci95_method": "Monte Carlo: 'normal_approximation', or the Clopper-Pearson bound with no failure or only failures.", "warnings": "What the engine could not resolve (dropped realizations, a count at the edge, bounds FOSM or PEM did not apply), then any warning the code raised while it ran. Report every one."},
     },
 }
 

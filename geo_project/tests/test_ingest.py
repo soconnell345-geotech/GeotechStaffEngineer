@@ -100,7 +100,17 @@ def test_from_dxf_units_conversion(tmp_path):
     msp.add_lwpolyline([(0, 10000), (45000, 0)], dxfattribs={"layer": "TOPO"})
     path = tmp_path / "mm.dxf"
     doc.saveas(path)
-    p = from_dxf(str(path), layer_mapping={"surface": "TOPO"}, units="mm")
+    # ezdxf writes a new drawing's header as metres: units that differ from
+    # the header are refused unless the caller says the header is wrong
+    with pytest.raises(ValueError, match="states m"):
+        from_dxf(str(path), layer_mapping={"surface": "TOPO"}, units="mm")
+    p = from_dxf(str(path), layer_mapping={"surface": "TOPO"}, units="mm",
+                 ignore_header_units=True)
+    assert p.geometry.surface_points == [(0.0, 10.0), (45.0, 0.0)]
+    # with the header saying mm, nothing need be given
+    doc.header["$INSUNITS"] = 4
+    doc.saveas(path)
+    p = from_dxf(str(path), layer_mapping={"surface": "TOPO"})
     assert p.geometry.surface_points == [(0.0, 10.0), (45.0, 0.0)]
 
 

@@ -127,8 +127,10 @@ class TestSormResult:
         """SormResult should initialize with default values."""
         result = SormResult()
         assert result.beta_form == 0.0
-        assert result.beta_breitung == 0.0
-        assert result.pf_breitung == 1.0
+        # no second-order result until one is computed (GM-322)
+        assert result.beta_breitung is None
+        assert result.pf_breitung is None
+        assert result.sorm_failed is True
         assert result.kappa == []
         assert result.pf_form == 1.0
 

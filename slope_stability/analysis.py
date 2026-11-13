@@ -12,6 +12,10 @@ References:
 import math
 from typing import Optional, Tuple
 
+from slope_stability.cracks import (
+    counts_reverse_discards as _counts_reverse_discards,
+    crack_choices as _crack_choices, discards_so_far as _discards_so_far,
+)
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.slices import build_slices, compute_slice_forces
@@ -170,6 +174,33 @@ def analyze_slope(geom: SlopeGeometry,
 
     is_circular = getattr(slip, 'is_circular', True)
     x_entry, x_exit = slip.find_entry_exit(geom)
+
+    # The surface's crack as printed (GM-140 step 4, ``cracks``). A depth
+    # that depends on the surface's own factor of safety (Rankine's with
+    # the developed strengths, the depth of minimum F, or the crack closing
+    # a reverse-curvature circle) is solved for on copies of the geometry
+    # with the crack fixed; a circle the printed crack does not close has
+    # no factor of safety.
+    from slope_stability import cracks
+    crack_out = None
+    if cracks.may_need_solution(geom, slip):
+        plan = cracks.plan_crack(geom, slip, x_entry, x_exit)
+        if plan is not None and (plan.needs_solution or plan.discard):
+            result, crack_out = cracks.solve_with_crack(
+                geom, slip,
+                lambda g: analyze_slope(
+                    g, slip_surface=slip, method=method, n_slices=n_slices,
+                    tol=tol, f_interslice=f_interslice,
+                    include_slice_data=include_slice_data,
+                    compare_methods=compare_methods,
+                    m_alpha_rule=m_alpha_rule),
+                fos_of=lambda r: r.FOS, plan=plan)
+            if crack_out.discarded:
+                raise cracks.refusal_error(crack_out)
+            cracks.apply_to_result(result, crack_out)
+            return result
+    if getattr(geom, "_crack_fixed", None) is None:
+        crack_out = cracks.given_outcome(geom, slip, x_entry, x_exit)
     slices = build_slices(geom, slip, n_slices)
 
     # Reinforcement crossings (nails / anchors / geosynthetics)
@@ -399,13 +430,9 @@ def analyze_slope(geom: SlopeGeometry,
     # What the searches say about their governing circle, said about this
     # one too (GM-59, GM-81): a reverse-curvature circle closed by a crack,
     # and supports Bishop / the OMS count little of.
+    cracks.apply_to_result(result, crack_out)
     if is_circular:
-        from slope_stability.search_supplements import (
-            _reverse_curvature_warning, _support_arm_warning,
-        )
-        w = _reverse_curvature_warning(geom, result, in_search=False)
-        if w:
-            result.warnings.append(w)
+        from slope_stability.search_supplements import _support_arm_warning
         if reinf_forces and method in ("bishop", "fellenius"):
             def _spencer_here():
                 return _sol("spencer").fos
@@ -611,6 +638,7 @@ def compare_methods_table(geom: SlopeGeometry,
 
 
 @_counts_refusals
+@_counts_reverse_discards
 @_applies_m_alpha_rule
 def search_critical_surface(
     geom: SlopeGeometry,
@@ -889,6 +917,12 @@ def search_critical_surface(
             m_alpha=confirm, m_alpha_rule=m_alpha_rule,
             low_m_alpha=low_m_alpha,
             negative_friction_term=negative_friction_term)
+        # the crack rule (GM-140 step 4): the crack asked for, and what
+        # was done with reverse-curvature circles
+        result.choices += _crack_choices(
+            geom, _discards_so_far(),
+            circles=surface_type in ("circular", "entry_exit")
+            or toe_circles)
         w = finer_slices_warning(confirm) or m_alpha_none_warning(result)
         if w:
             result.warnings.append(w)

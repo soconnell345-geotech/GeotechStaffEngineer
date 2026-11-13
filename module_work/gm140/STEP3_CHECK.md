@@ -26,7 +26,7 @@ polylines meet the same checks.
    0.633 flagged (1.096 unflagged) where it read 1.092. If the lead does not
    want that, revert the third commit: the first two stand alone and their
    tests pass (section 9). `DESIGN.md`'s paragraph on the screens goes back
-   with it; `VALIDATION.md` B21's last table and this file's sections 4 and
+   with it; `VALIDATION.md` B22's last table and this file's sections 4 and
    5 would then need their "all three" values taken out.
 2. **Bishop below the Ordinary Method of Slices value happens on ordinary
    circles**, not only on odd ones: step 2's made-up fill slope (c' 40 kPa,

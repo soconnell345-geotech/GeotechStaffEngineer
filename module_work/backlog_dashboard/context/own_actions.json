@@ -919,5 +919,26 @@
       "BACKLOG.md OWN-149, INF-76",
       ".github/workflows/publish.yml"
     ]
+  },
+  "OWN-154": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Release the app with the corrected reference library (geotech-references 1.7.0)?",
+    "why": "The reference library was released on 2026-11-13 as 1.7.0: several hundred lookups and stored equations now give what the manuals print, a lookup outside its printed range refuses instead of guessing, and the references helper can find and read printed tables. The app on master already pins it, but no app release carries the change to users until you say so.",
+    "background": "The released app 5.35.0 asks for geotech-references 1.6.0 or later, so a fresh install of it already picks up 1.7.0 and its corrected values. An app release would add the pin as a floor of 1.7.0 (so an install that still has 1.6.0 cannot keep the uncorrected values), the references helper's table tools, EM 1110-1-1905 as a reference, and everything else on master since 5.35.0. On a host without the reference PDFs (Foundry today) the helper finds a table and cites its page but cannot read its values; that is OWN-142.",
+    "options": [],
+    "recommendation": "Release when the other things waiting on master are ready, and answer OWN-142 first so the release notes can say what the helper does on Foundry.",
+    "if_no_answer": "No app release. Users who install the released 5.35.0 fresh still get geotech-references 1.7.0.",
+    "message_to_send": null,
+    "steps": [
+      "Say yes or no to an app release, and whether it waits for OWN-142."
+    ],
+    "unblocks": [
+      "OWN-142"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-154, OWN-142",
+      "HANDOFF.md section 0a-current (the record on the reference library 1.7.0)"
+    ]
   }
 }

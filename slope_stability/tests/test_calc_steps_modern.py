@@ -313,7 +313,12 @@ class TestWarningsAndNoSolution:
                                         bottom_elevation=10, gamma=98.0,
                                         cu=350.0, analysis_mode="undrained")],
             anchors=[Anchor(x_head=20.0, z_head=20.0, length=37.0,
-                            T_allow=9000.0, inclination=0.0)])
+                            T_allow=9000.0, inclination=0.0)],
+            # the circle below has its centre 5.89 below the crest: a
+            # reverse-curvature circle, admitted only by a crack asked for
+            # at least that deep (GM-140 step 4 and its review's F1); this
+            # test is about the package's sections, so a 6 m crack is given
+            tension_crack_depth=6.0)
 
     def test_no_solution_sections(self):
         g = self._slide85()

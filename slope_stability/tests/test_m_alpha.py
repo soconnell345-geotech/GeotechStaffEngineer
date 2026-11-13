@@ -148,25 +148,45 @@ def test_phi_zero_slices_are_not_checked_by_default():
 # phi' = 0: a vertical cut in undrained clay, against Taylor
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=(
+    "GM-343: the default search reads 0.935 against Taylor's 0.851 (Ns "
+    "3.83), 9.9 % high, on the unsafe side. The cause is the rule for "
+    "where a circle ends (CircularSlipSurface.find_entry_exit), older "
+    "than GM-140 step 4: Taylor's circle (centre (13.02, 10.96), R "
+    "13.00) ended at the toe reads 0.8514, but the module carries it on "
+    "under the floor in front of the toe to x 6.04 and reads 2.676; "
+    "circles leaving the face just above the toe are refused as two "
+    "masses, and the search's 0.935 is a circle dipping 0.048 m under "
+    "the floor, inside the 1 % touch allowance. Before step 4 the "
+    "search read 0.842 on a toe circle closed by a crack from its "
+    "centre's level, which no print gives. With Rankine's crack asked "
+    "for (EM 1110-2-1902 Eq. C-36 with the developed strengths, 3.67 m "
+    "in this 5 m cut) it reads 0.605. Taylor's chart has no crack. The "
+    "step 'Where a circle ends' "
+    "(module_work/cloud_briefs/SLOPE_GM140.md) removes this mark."))
 def test_vertical_cut_in_undrained_clay_against_taylor():
     """Taylor's stability number for a vertical face, 3.83, gives F = 3.83
-    x 20 / (18 x 5) = 0.851. The default search finds 0.842 on a toe
-    circle closed by a crack (0.843 on 960 slices), whose steep last slice
-    has m_alpha = cos(a) 0.13 (phi = 0): not looked at, so the circle
-    carries no flag. Looking at every slice flags it; since GM-140 step 3
-    (OWN-102) a flagged circle is kept, so the search still reads 0.842,
-    says the circle is flagged and gives the lowest circle without a flag
-    beside it, 0.935. Leaving flagged circles out (``low_m_alpha=
-    'refuse'``, the rule before step 3) with every slice looked at reads
-    0.935, 9.9 % above Taylor on the unsafe side. The choice says which
-    was used.
-    Before GM-134 the default read 0.800: the slice next to the crack took
-    the circle's angle at its midpoint, and its base, width / cos(a), fell
-    short of the arc rising to the vertical (0.839 on 3,840 slices)."""
+    x 20 / (18 x 5) = 0.851."""
     taylor = 3.83 * 20.0 / (18.0 * 5.0)
     res = search_critical_surface(_vertical_cut(), method="bishop")
-    assert res.critical.FOS == pytest.approx(0.842, abs=0.005)
-    assert res.critical.FOS <= taylor
+    assert res.critical.FOS == pytest.approx(taylor, rel=0.02)
+
+
+def test_vertical_cut_m_alpha_rule_on_phi_zero_slices():
+    """The default search (no crack asked for) reads 0.935 (module's own;
+    Taylor 0.851, the test above), with nothing left out for m_alpha:
+    slices with phi = 0 are not checked (GM-127). Checking every slice, as
+    Slide2 does, leaves surfaces out and reads 0.935 too; the choice says
+    which was used. A toe circle with its centre 2.3 m below the crest,
+    closed by a given 2.3 m crack, rises to the vertical at the crack: its
+    last slice's m_alpha = cos(a) is below 0.2 (phi = 0), warned of only
+    when every slice is checked. (Before GM-134 the slice next to a crack
+    took the circle's angle at its midpoint, and its base, width / cos(a),
+    fell short of the arc rising to the vertical.)"""
+    res = search_critical_surface(_vertical_cut(), method="bishop")
+    assert res.critical.FOS == pytest.approx(0.935, abs=0.005)
+    assert res.critical.tension_crack is None
+    assert res.n_discarded_reverse_curvature > 0
     assert res.n_rejected_m_alpha == 0
     assert "low_m_alpha" not in res.critical_flags
     (ch,) = [c for c in res.choices
@@ -196,13 +216,14 @@ def test_vertical_cut_in_undrained_clay_against_taylor():
     (ch,) = [c for c in out.choices
              if c["what"] == "slip surfaces left out for m_alpha"]
     assert ch["how"] == "given" and "any slice" in ch["chosen"]
-    c = res.critical
-    one = analyze_slope(_vertical_cut(), method="bishop", xc=c.xc, yc=c.yc,
-                        radius=c.radius)
+    cut = _vertical_cut()
+    cut.tension_crack_depth = 2.3
+    circle = dict(xc=21.0, yc=2.7, radius=3.3)
+    one = analyze_slope(cut, method="bishop", **circle)
     assert not any("m_alpha" in w for w in one.warnings)
-    one = analyze_slope(_vertical_cut(), method="bishop", xc=c.xc, yc=c.yc,
-                        radius=c.radius, m_alpha_rule="every_slice")
-    assert any("least 0.13 on slice" in w for w in one.warnings)
+    one = analyze_slope(cut, method="bishop", m_alpha_rule="every_slice",
+                        **circle)
+    assert any("m_alpha" in w and "on slice" in w for w in one.warnings)
     with pytest.raises(ValueError, match="m_alpha_rule"):
         search_critical_surface(_vertical_cut(), m_alpha_rule="all")
 

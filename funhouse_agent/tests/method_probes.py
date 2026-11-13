@@ -209,6 +209,9 @@ NOT_REACHED = {
     ("slope_stability|analyze_slope", "m_alpha_rule"):
         "the probe's surface has m_alpha above 0.2 on every slice, so "
         "which slices the check looks at changes nothing (GM-140 step 3)",
+    ("dxf_import|parse_geometry", "ignore_header_units"):
+        "the probe gives no units, so there is no difference from the "
+        "drawing's header to ignore",
     ("axial_pile|axial_pile_capacity#clay", "adhesion_curve"): _ADHESION,
     ("axial_pile|axial_pile_capacity#clay", "adhesion_chart"):
         "the probe gives no fig_7_18_case, so no Fig. 7-18 chart is read",

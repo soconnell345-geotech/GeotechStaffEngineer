@@ -239,7 +239,9 @@ class TestThePlots:
         nowhere = SiteModel(investigations=[_inv("B-8"), _inv("B-9")])
         alone = plot_parameter_vs_depth(nowhere, "N_spt",
                                         use_elevation=True, show_trend=True)
-        assert alone.n_data_points == 0 and len(alone.skipped) == 2
+        # ... and the trend that was asked for and not fitted is said too
+        assert alone.n_data_points == 0 and len(alone.skipped) == 3
+        assert "no trend fitted" in alone.skipped[-1]
         assert not [t for t in alone.figure.data if t.mode == "lines"]
 
     def test_atterberg_and_multi_parameter_by_elevation(self, site):

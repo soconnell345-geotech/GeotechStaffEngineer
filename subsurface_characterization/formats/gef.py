@@ -90,12 +90,33 @@ def parse_cpt_file(
     Returns
     -------
     CPTParseResult
-        Parsed CPT data with arrays in kPa.
+        Parsed CPT data with arrays in kPa. A reading the file does not
+        have (a GEF void value) is NaN in its array, never 0.0 and never a
+        value interpolated from its neighbours, and ``missing_values``
+        counts them per column.
     """
     _validate_cpt_parse_inputs(file_path, engine)
 
     pygef = import_pygef()
-    cpt = pygef.read_cpt(file_path, index=index, engine=engine)
+    # pygef's default (replace_column_voids=True) turns a GEF void reading
+    # into a value INTERPOLATED from its neighbours, and a void at either
+    # end of a column into null; the caller cannot tell an interpolated
+    # value from a measured one. So the voids are left as the file has them
+    # and marked missing here (GM-326).
+    notes = []
+    try:
+        cpt = pygef.read_cpt(file_path, index=index, engine=engine,
+                             replace_column_voids=False)
+        void_map = dict(getattr(cpt, "column_void_mapping", None) or {})
+    except TypeError:
+        # a pygef too old to take the switch: its own replacement stands
+        cpt = pygef.read_cpt(file_path, index=index, engine=engine)
+        void_map = {}
+        notes.append(
+            "The installed pygef fills a void (missing) GEF reading with a "
+            "value interpolated from its neighbours and gives no way to "
+            "turn that off, so interpolated readings cannot be told from "
+            "measured ones in this result.")
 
     # Extract metadata
     alias = cpt.alias or str(file_path)
@@ -133,35 +154,50 @@ def parse_cpt_file(
     # Depth (always present as penetrationLength)
     depth_m = np.asarray(df["penetrationLength"].to_list(), dtype=float)
 
+    def _column(name, scale=1.0):
+        """The file's column as floats, its void value made NaN."""
+        arr = np.asarray(df[name].to_list(), dtype=float)
+        void = void_map.get(name)
+        if void is not None:
+            arr[arr == float(void)] = np.nan
+        return arr * scale
+
     # Cone resistance (always present, in MPa → kPa)
-    q_c_kPa = np.asarray(df["coneResistance"].to_list(), dtype=float) * 1000
+    q_c_kPa = _column("coneResistance", 1000)
 
     # Sleeve friction (optional, MPa → kPa)
     f_s_kPa = np.array([])
     if "localFriction" in available_columns:
-        vals = df["localFriction"].to_list()
-        f_s_kPa = np.asarray(vals, dtype=float) * 1000
+        f_s_kPa = _column("localFriction", 1000)
 
     # Pore pressure u2 (optional, MPa → kPa)
     u_2_kPa = np.array([])
     if "porePressureU2" in available_columns:
-        vals = df["porePressureU2"].to_list()
-        u_2_kPa = np.asarray(vals, dtype=float) * 1000
+        u_2_kPa = _column("porePressureU2", 1000)
 
-    # Friction ratio (optional, already in %)
+    # Friction ratio (optional, already in %): the file's own column, else
+    # the one pygef computes as fs/qc, which has no reading where either of
+    # the two is missing (pygef computes it from the void numbers).
     Rf_pct = np.array([])
     if "frictionRatio" in available_columns:
-        vals = df["frictionRatio"].to_list()
-        Rf_pct = np.asarray(vals, dtype=float)
+        Rf_pct = _column("frictionRatio")
     elif "frictionRatioComputed" in available_columns:
-        vals = df["frictionRatioComputed"].to_list()
-        Rf_pct = np.asarray(vals, dtype=float)
+        Rf_pct = _column("frictionRatioComputed")
+        if len(f_s_kPa) == len(Rf_pct):
+            Rf_pct[~(np.isfinite(q_c_kPa) & np.isfinite(f_s_kPa))] = np.nan
 
-    # Handle NaN values from null polars values
-    for arr_name in ('q_c_kPa', 'f_s_kPa', 'u_2_kPa', 'Rf_pct'):
-        arr = locals()[arr_name]
+    # A reading the file does not have (a GEF void value, a null from
+    # pygef, an infinite number) stays MISSING: NaN in the array, null in
+    # the dict. It is never 0.0, which would read as a measured zero cone
+    # resistance, and never interpolated. The count per column travels with
+    # the result (GM-326).
+    missing_values = {}
+    for arr_name, arr in (('q_c_kPa', q_c_kPa), ('f_s_kPa', f_s_kPa),
+                          ('u_2_kPa', u_2_kPa), ('Rf_pct', Rf_pct)):
         if len(arr) > 0:
-            arr[~np.isfinite(arr)] = 0.0
+            bad = ~np.isfinite(arr)
+            arr[bad] = np.nan
+            missing_values[arr_name] = int(bad.sum())
 
     n_points = len(depth_m)
 
@@ -180,6 +216,8 @@ def parse_cpt_file(
         u_2_kPa=u_2_kPa,
         Rf_pct=Rf_pct,
         available_columns=available_columns,
+        missing_values=missing_values,
+        notes=notes,
     )
 
 

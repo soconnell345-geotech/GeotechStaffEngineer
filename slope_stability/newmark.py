@@ -242,10 +242,29 @@ def yield_acceleration(geom: SlopeGeometry,
     from slope_stability.reinforcement import compute_reinforcement_forces
     g_ref = copy.copy(geom)
     g_ref.kh = 1.0
-    ref_slices = build_slices(g_ref, slip, n_slices)
-    soil_weights = [s.seismic_force for s in ref_slices]
     x_entry, x_exit = slip.find_entry_exit(g_ref)
     reinf = compute_reinforcement_forces(g_ref, slip, x_entry, x_exit) or None
+    # The surface's crack as printed (GM-140 step 4, ``cracks``), one crack
+    # through the bisection. Rankine's depth with the developed strengths
+    # is taken at F = 1, the state the yield coefficient is solved for
+    # (c_D = c, phi_D = phi); the depth of minimum factor of safety is
+    # scanned on the surface without a seismic coefficient.
+    from slope_stability import cracks
+    if cracks.may_need_solution(g_ref, slip):
+        def _static(g):
+            sl = build_slices(g, slip, n_slices)
+            for s in sl:
+                s.seismic_force = 0.0
+            return _method_fos(sl, slip, method, tol, reinf)
+        _, crack = cracks.solve_with_crack(g_ref, slip, _static,
+                                           fos_for_depth=1.0)
+        if crack is not None and crack.discarded:
+            err = cracks.refusal_error(crack)
+            raise type(err)("No yield coefficient: " + crack.reason + ".",
+                            crack)
+        g_ref = cracks.geometry_of(g_ref, crack)
+    ref_slices = build_slices(g_ref, slip, n_slices)
+    soil_weights = [s.seismic_force for s in ref_slices]
 
     def _fos(kh: float) -> float:
         for s, sw in zip(ref_slices, soil_weights):
