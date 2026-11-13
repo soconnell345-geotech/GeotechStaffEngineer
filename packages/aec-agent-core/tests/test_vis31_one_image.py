@@ -11,7 +11,7 @@ pymupdf = pytest.importorskip("pymupdf")
 from aec_agent_core import turn_question, vision_tools  # noqa: E402
 from aec_agent_core.vision_tools import dispatch_extended_tool  # noqa: E402
 
-PHRASE = "ONE image only"
+PHRASE = turn_question.ONE_IMAGE_NOTE.strip()
 
 
 class Recorder:
@@ -43,7 +43,7 @@ def test_every_question_kind_is_told(kind):
     eng = Recorder()
     vision_tools.ask_vision(eng, b"x", "What changed?", kind)
     assert PHRASE in eng.prompts[0]
-    assert "comparison needs the other image" in eng.prompts[0]
+    assert "the comparison needs the other image" in eng.prompts[0]
 
 
 @pytest.mark.parametrize("kind", ["check", "find"])
@@ -61,6 +61,16 @@ def test_with_and_without_a_bound_question():
     assert all(PHRASE in p for p in eng.prompts)
     assert "earlier issue" not in eng.prompts[0]
     assert "earlier issue" in eng.prompts[1]
+
+
+def test_the_users_question_still_reaches_the_reading_when_the_note_has_its_words():
+    eng = Recorder()
+    with turn_question.bound("another sheet"):
+        vision_tools.ask_vision(eng, b"x", "p", "page")
+    sent = eng.prompts[0]
+    assert "another sheet" in turn_question.ONE_IMAGE_NOTE
+    assert "User's message: <<<another sheet>>>" in sent
+    assert sent.index(PHRASE) < sent.index("User's message:")
 
 
 def test_a_page_read_through_the_tool_is_told():

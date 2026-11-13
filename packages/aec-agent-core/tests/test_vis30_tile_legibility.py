@@ -64,3 +64,18 @@ def test_assumed_lettering_when_not_in_text_layer():
     assert px == pytest.approx(vision_view.ASSUMED_CAD_LETTERING_PT * 6)
     assert vision_tools._tile_lettering_px(
         {**info, "text_chars": 500}) is None
+
+
+def test_an_assumed_size_is_a_whole_number_and_called_assumed():
+    out = {}
+    rows = [{"tile": "r1c1", "_lettering_px": 8.4, "_lettering_assumed": True},
+            {"tile": "r1c2", "_lettering_px": 9.6}]
+    vision_tools._tile_legibility(out, rows)
+    note = out["legibility"]
+    assert "r1c1 (about 8 px if the lettering is the usual" in note
+    assert "the page has no text to measure" in note
+    assert "r1c2 (~10 px)" in note and note.count("no text to measure") == 1
+    import re
+    assert not re.search(r"\d\.\d+ px", note)
+    assert "a box a few tens" not in note
+    assert all("_lettering" not in t for t in rows)

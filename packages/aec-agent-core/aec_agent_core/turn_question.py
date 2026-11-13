@@ -37,13 +37,16 @@ QUESTION_KINDS = frozenset({"image", "page", "overview", "region", "tile",
                             "reference_figure", "worked_example_page"})
 
 #: Said to every reading in :data:`QUESTION_KINDS`, with or without a bound
-#: question (VIS-31): the call is shown one image and nothing else.
+#: question (VIS-31): the call is shown one image and nothing else. A
+#: comparison with something not in the image is answered with what the
+#: image shows, as the request sets out, plus a statement that the
+#: comparison needs the other image.
 ONE_IMAGE_NOTE = (
-    "\n\nYou are shown ONE image only (one page, region or tile). You "
-    "cannot see any other issue, sheet or image. If the request asks you to "
-    "compare this with another issue, sheet or image, transcribe what is in "
-    "this one and say that the comparison needs the other image; do not "
-    "report differences or no differences.")
+    "\n\nYou are shown one image and nothing else. Anything that is not in "
+    "it (another issue, another sheet, another file) you cannot see. If the "
+    "request asks you to compare with something that is not in this image, "
+    "report what this image shows, as the request above sets out, and say "
+    "that the comparison needs the other image.")
 
 _HEAD = (
     "\n\nFor context only -- the user's own latest message in this "

@@ -2249,12 +2249,16 @@ def ask_vision(engine, image, prompt, kind, where=None):
     from aec_agent_core import turn_question
     from aec_agent_core.deep.vision_engine import side_call
     cap = vision_output_cap(kind)
-    prompt = turn_question.with_one_image(prompt, kind)
+    # The question check must not see the note; the order stays the agent's
+    # prompt, the note, then the user's question block.
     asked = turn_question.with_question(prompt, kind)
     label = dict(where or {})
     if asked is not prompt:
         label["user_question_chars"] = len(turn_question.current() or "")
-        prompt = asked
+        block = asked[len(prompt):]
+        prompt = turn_question.with_one_image(prompt, kind) + block
+    else:
+        prompt = turn_question.with_one_image(prompt, kind)
     with side_call(kind=kind, **label):
         if cap and getattr(engine, "accepts_output_cap", False):
             return engine.analyze_image(image, prompt, max_output_tokens=cap)
@@ -3937,19 +3941,24 @@ def _tile_legibility(out, tile_rows) -> None:
         if not isinstance(t, dict):
             continue
         px = t.pop("_lettering_px", None)
+        assumed = t.pop("_lettering_assumed", False)
         if px is not None and px < vision_view.LEGIBLE_TEXT_PX:
-            low.append((t.get("tile"), px))
+            low.append((t.get("tile"), px, assumed))
     if not low:
         out.pop("legibility", None)
         return
-    names = ", ".join(f"{n} (~{px:g} px)" for n, px in low)
+    inches = vision_view.ASSUMED_CAD_LETTERING_PT / 72.0
+    names = ", ".join(
+        f"{n} (about {px:.0f} px if the lettering is the usual "
+        f"{inches:.2f} in; the page has no text to measure)" if assumed
+        else f"{n} (~{px:.0f} px)"
+        for n, px, assumed in low)
     out["legibility"] = (
         f"! the small lettering is still under "
         f"{vision_view.LEGIBLE_TEXT_PX:g} px tall in tile(s) {names}, so it "
         f"may be misread there. Before taking a dimension or keynote from "
-        f"one of those tiles, zoom on it with render_region (a box a few "
-        f"tens of points across) and read the words from the text layer "
-        f"where there is one.")
+        f"one of those tiles, zoom on it with render_region and read the "
+        f"words from the text layer where there is one.")
 
 
 def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
@@ -3993,6 +4002,8 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
             small = _tile_lettering_px(tinfo)
             if small is not None:
                 row["_lettering_px"] = small
+                if not tinfo.get("text_px"):
+                    row["_lettering_assumed"] = True
             _finish_answer(row, tinfo, note=False)
             return row
         except Exception as exc:                  # one tile, not the page
