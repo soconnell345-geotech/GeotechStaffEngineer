@@ -376,3 +376,5 @@ for a pile with an RC section; `to_dict()` gives them beside
 `EI_profile_kNm2`. When the loop runs out of passes, `ei_converged` is
 False and `warnings` says the deflections and moments are from an EI
 profile that had not settled (before: a Python warning only).
+`max_ei_iterations` below 1 is refused (0 gave a last change of nan;
+review C4).

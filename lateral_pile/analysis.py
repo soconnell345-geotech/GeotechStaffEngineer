@@ -435,7 +435,8 @@ class LateralPileAnalysis:
             Convergence tolerance on EI for cracked concrete sections.
             Default 1e-3.
         max_ei_iterations : int
-            Maximum number of outer EI iterations. Default 20.
+            Maximum number of outer EI iterations. Default 20; at least 1,
+            else refused.
         stickup : float
             Above-ground free (unsupported) pile length (m). Default 0
             (head at the ground surface — identical to previous behavior).
@@ -457,6 +458,12 @@ class LateralPileAnalysis:
         """
         if stickup < 0:
             raise ValueError(f"stickup must be >= 0, got {stickup}")
+        if not max_ei_iterations >= 1:
+            # GM-318 review C4: 0 gave "after 0 passes the last change in
+            # EI was nan"
+            raise ValueError(
+                f"max_ei_iterations must be 1 or more (the passes of the "
+                f"cracked-section EI iteration), got {max_ei_iterations}")
 
         n_nodes = n_elements + 1
         z_top = -stickup if stickup > 0 else 0.0

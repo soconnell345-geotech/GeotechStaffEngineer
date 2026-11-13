@@ -96,6 +96,12 @@ def test_cracked_ei_that_does_not_converge_is_flagged():
     assert "EI converged:         False" in r.summary()
 
 
+def test_no_ei_passes_is_refused():
+    """Review C4: 0 passes gave a last change in EI of nan."""
+    with pytest.raises(ValueError, match="max_ei_iterations must be 1"):
+        _rc_analysis().solve(Vt=400.0, max_ei_iterations=0)
+
+
 def test_cracked_ei_that_converges_says_so():
     r = _rc_analysis().solve(Vt=400.0)
     assert r.ei_converged is True and r.warnings == []
