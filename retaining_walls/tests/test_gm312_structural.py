@@ -124,10 +124,31 @@ def test_d5_hook_development_length_as_printed():
     assert none["ldh_in"] is None and "6,000" in none["why"]
 
 
+def test_d5_service_stress_is_the_arithmetic_not_the_printed_34_7():
+    """Review B6. D-5 Step 5(a) (p. 86) prints fs = 34.7 ksi '< 35 ksi'
+    for M = 306 k-ft, As = 3.12 sq in, d = 36.5 in., n = 29,000 / 4,031.
+    The print's own numbers give 35.5 ksi (35.47 on its x = 9.96 in.,
+    35.52 on the 10.09 it then uses), over Table 3-3's 35 ksi. The module
+    gives 35.47 and FAILS the check: correct arithmetic. Do not
+    "correct" it to 34.7 (module_work/gm312/CHECK.md lists the slip)."""
+    r = S.design_section(
+        428.0, 36.9, 42.0, 4.0, 5000.0, d_in=36.5, bar_size="No. 11",
+        spacing_in=6.0,
+        service_moments=[{"case": "FS", "category": "unusual",
+                          "M_kipft": 306.0}],
+        modular_ratio=29000.0 / 4031.0)
+    (svc,) = r["service"]
+    assert svc["x_in"] == pytest.approx(9.96, abs=0.005)
+    assert svc["fs_psi"] / 1000.0 == pytest.approx(35.47, abs=0.005)
+    stress = [c for c in r["checks"]
+              if c["name"].startswith("service steel stress")]
+    assert len(stress) == 1 and not stress[0]["passes"]
+
+
 def test_d5_temperature_steel_as_printed():
-    # Step 7 (p. 87): monolith over 40 ft, 0.005 x 42 x 12 / 2 = 1.26,
-    # held to No. 9 at 12 in. (1.00 sq in/ft)
-    assert S.temperature_shrinkage_ratio(45.0) == 0.005
+    # Step 7 (p. 87): monolith over 40 ft (12 m), 0.005 x 42 x 12 / 2 =
+    # 1.26, held to No. 9 at 12 in. (1.00 sq in/ft)
+    assert S.temperature_shrinkage_ratio(13.7) == 0.005
     assert 0.005 * 42.0 * 12.0 / 2.0 == pytest.approx(1.26)
     assert S.temperature_shrinkage_area(0.005, 42.0) == 1.00
     # with a joint at mid-length, 0.003: "#8 bars"
@@ -136,9 +157,10 @@ def test_d5_temperature_steel_as_printed():
 
 
 def test_the_printed_tables():
-    # Table 2-3 (p. 7)
-    assert [S.temperature_shrinkage_ratio(x) for x in (29.9, 30, 40, 40.1)
-            ] == [0.003, 0.004, 0.004, 0.005]
+    # Table 2-3 (p. 7), on the metres it prints: "Less than 30 ft (9 m)",
+    # "30-40 ft (9-12 m)", "Greater than 40 ft (12 m)" (review A1)
+    assert [S.temperature_shrinkage_ratio(x)
+            for x in (8.9, 9.0, 12.0, 12.1)] == [0.003, 0.004, 0.004, 0.005]
     # para. 2-9a: not less than No. 4 at 12 in.
     assert S.temperature_shrinkage_area(0.003, 9.0) == 0.20
     # Table 2-1 (p. 5)
@@ -400,7 +422,10 @@ def test_the_reinforcement_description_keeps_its_contract(wall):
             "As_required_mm2_per_m", "As_provided_mm2_per_m"]
     assert all(list(b) == keys for b in r["bars"])
     by = {b["mark"]: b for b in r["bars"]}
-    assert list(by) == ["A", "B", "C", "D", "E", "F"]
+    # the base's top cover (75 mm) and bottom cover (100 mm) differ, so
+    # the base's bars along the wall are two sets, F top and G bottom
+    # (review C6); the drawing must not assume six marks
+    assert list(by) == ["A", "B", "C", "D", "E", "F", "G"]
     assert [(b["element"], b["face"], b["runs"], b["role"])
             for b in r["bars"]] == [
         ("stem", "back", "in_section", "flexure"),
@@ -408,7 +433,15 @@ def test_the_reinforcement_description_keeps_its_contract(wall):
         ("stem", "both", "along_wall", "temperature_shrinkage"),
         ("toe", "bottom", "in_section", "flexure"),
         ("heel", "top", "in_section", "flexure"),
-        ("base", "both", "along_wall", "temperature_shrinkage")]
+        ("base", "top", "along_wall", "temperature_shrinkage"),
+        ("base", "bottom", "along_wall", "temperature_shrinkage")]
+    assert (by["F"]["cover_mm"], by["G"]["cover_mm"]) == (75.0, 100.0)
+    assert by["F"]["size"] == by["G"]["size"]
+    assert by["G"]["callout"].endswith("bottom, along the wall")
+    # equal covers: one set, both faces
+    same = _wall(base_top_cover_mm=100.0).reinforcement["bars"]
+    assert [b["mark"] for b in same] == list("ABCDEF")
+    assert (same[-1]["face"], same[-1]["cover_mm"]) == ("both", 100.0)
     assert by["A"]["end"] == {"type": "standard_hook_90", "into": "base",
                               "ldh_mm": 187.0}
     assert by["A"]["callout"] == "No. 5 @ 150 mm (6 in.), back face"
@@ -434,6 +467,24 @@ def test_choices_and_not_designed_name_their_pages(wall):
     assert "not printed in a held reference" in by[
         "toe and heel moment sections"]["basis"]
     assert "p. 84" in by["strength reduction factors"]["basis"]
+    # review B2: the active state is an assumption, the at-rest basis named
+    lf = by["strength load factors"]
+    assert "active" in lf["chosen"]
+    assert "Table E-2 note b (p. 93)" in lf["basis"]
+    assert any("at-rest" in a and "1.35" in a and "p. 22" in a
+               and "not built" in a for a in lf["alternatives"])
+    # review C2: the live surcharge by para. 3-2f(7)
+    assert "para. 3-2f(7) (p. 19)" in by["which loads are which"]["basis"]
+    # review B4: the hook's factors are the example's; confirm against ACI
+    assert "confirmed against ACI 318-19" in by[
+        "stem bars' anchorage"]["basis"]
+    assert "ACI 318-19" in wall.development["confirm"]
+    assert any("confirm the hook against ACI 318-19" in n
+               for n in wall.reinforcement["notes"])
+    # review B5 (i): the wall's height, read conservatively, and said
+    th = by["minimum wall thickness"]
+    assert th["chosen"].startswith("305 mm") and "conservative" in th[
+        "basis"]
     # the stability analysis's choices are carried too
     assert len(wall.choices) > len(wall.structural_choices)
     whats = " | ".join(n["what"] for n in wall.not_designed)
@@ -518,11 +569,99 @@ def test_the_engineers_bar_and_spacing_are_taken():
 
 def test_the_minimum_wall_thickness_is_checked():
     # 300 mm is under the 12 in. (30.5 cm) of para. 3-7 for a wall over
-    # 10 ft high
+    # 10 ft (3 m) high; compared in the metric the print gives, with the
+    # value to give named (review B5, C1)
     r = _wall(stem_thickness_top=0.30)
     assert ("wall: stem thickness at its top >= the minimum wall "
             "thickness") in r.structural_checks_failed
-    assert r.verdict.startswith("CONCRETE FAILS: wall: stem thickness")
+    assert r.verdict.startswith(
+        "CONCRETE FAILS: wall: stem thickness at its top >= the minimum "
+        "wall thickness (needs 305 mm, has 300 mm): the wall is 4.5 m "
+        "high")
+    assert "give stem_thickness_top 0.305 or more" in r.verdict
+    # the WALL's height, base included, against the printed 3 m: a 3.2 m
+    # wall with a 0.45 m base has a stem under 3 m and still needs 305 mm
+    low = _wall(wall_height=3.2, base_width=2.2, stem_thickness_top=0.30,
+                stem_thickness_base=0.40)
+    assert low.geometry["stem_height"] < 3.0
+    assert any(c.startswith("wall: stem thickness") for c in
+               low.structural_checks_failed)
+    ok = _wall(wall_height=2.9, base_width=2.0, stem_thickness_top=0.25,
+               stem_thickness_base=0.40)
+    (thick,) = [c for c in ok.checks if c["name"].startswith("stem thick")]
+    assert (thick["demand"], thick["capacity"], thick["passes"]) == (
+        200.0, 250.0, True)
+
+
+def test_temperature_steel_bands_on_the_metres_printed():
+    # review A1: Table 2-3 (p. 7) prints 9 m and 12 m; 9.0 m is in the
+    # 0.004 band and 12.1 m in the 0.005 band; the stem is 450 mm thick,
+    # half the steel in each face
+    def along(joints):
+        r = _wall(joint_spacing=joints)
+        (c,) = [b for b in r.reinforcement["bars"] if b["mark"] == "C"]
+        chosen = {x["what"]: x for x in r.structural_choices}[
+            "temperature and shrinkage steel"]["chosen"]
+        return c["As_required_mm2_per_m"], chosen
+    for joints, ratio in ((8.9, 0.003), (9.0, 0.004), (12.0, 0.004),
+                          (12.1, 0.005)):
+        As, chosen = along(joints)
+        assert As == pytest.approx(ratio * 450.0 * 1000.0 / 2.0, rel=2e-3)
+        assert chosen.startswith(f"along the wall {ratio:g} of the gross "
+                                 f"area for joints {joints:g} m apart")
+
+
+def test_a_given_cover_is_checked_against_table_2_1():
+    # review B1: 50 mm against the foundation, where Table 2-1 (p. 5)
+    # prints 4 in. (10 cm); 50 mm on a 450 mm stem, where it prints 3 in.
+    # (7.5 cm)
+    r = _wall(base_bottom_cover_mm=50.0, stem_cover_mm=50.0)
+    failed = r.structural_checks_failed
+    assert "wall: clear cover >= Table 2-1 (base bottom)" in failed
+    assert "wall: clear cover >= Table 2-1 (stem)" in failed
+    assert ("clear cover >= Table 2-1 (base bottom) (needs 100 mm, has 50 "
+            "mm): Table 2-1 prints 4 in. (10 cm) for unformed surfaces in "
+            "contact with foundation: give base_bottom_cover_mm 100 or "
+            "more") in r.verdict
+    # the printed metric values pass; a thin section keeps today's rule
+    fine = _wall(base_bottom_cover_mm=100.0, stem_cover_mm=75.0)
+    assert not any("Table 2-1" in c for c in fine.structural_checks_failed)
+    assert fine.elements["stem"]["cover_in"] == 3.0
+    thin = _wall(base_thickness=0.30, base_top_cover_mm=50.0)
+    assert not any("(base top)" in c["name"] for c in thin.checks)
+
+
+def test_the_bar_choice_meets_the_cover_and_the_clear_distance():
+    """Review B3: H 6.6 m, stem 550 mm (3 in. cover by Table 2-1), no
+    surcharge. No. 11 at 12 in. gives the steel but needs 2.5 x 1.41 =
+    3.53 in. of cover; the search moves on to 6 in. and No. 8 (1.58 sq
+    in/ft) passes every check."""
+    geom = CantileverWallGeometry(
+        wall_height=6.6, base_width=0.62 * 6.6, toe_length=0.9,
+        stem_thickness_top=0.31, stem_thickness_base=0.55,
+        base_thickness=0.62)
+    r = analyze_cantilever_wall_structure(
+        geom, 19.0, 30.0, fc_MPa=28.0, joint_spacing=8.0,
+        phi_foundation=32.0, q_allowable=400.0)
+    stem = r.elements["stem"]
+    assert stem["passes"], [c["name"] for c in stem["checks"]
+                            if c["required"] and not c["passes"]]
+    assert (stem["bar"]["size"], stem["bar"]["spacing_mm"]) == (
+        "No. 8", 150.0)
+    # the verdict of a failed cover check reads needed first (review C1)
+    forced = _wall(stem_bar_size="No. 11", stem_bar_spacing_mm=300.0)
+    assert ("stem: clear cover >= 2.5 bar diameters (needs 3.53 in., has "
+            "3.00 in.)") in forced.verdict
+
+
+def test_a_printed_metric_spacing_is_the_inch_value():
+    # review C3: 300 mm is the manual's "12 in. (30 cm)"
+    r = _wall(heel_bar_spacing_mm=300.0)
+    bar = r.elements["heel"]["bar"]
+    assert (bar["spacing_mm"], bar["spacing_in"]) == (300.0, 12.0)
+    assert "heel: bar spacing <= 12 in." not in r.structural_checks_failed
+    (E,) = [b for b in r.reinforcement["bars"] if b["mark"] == "E"]
+    assert "@ 300 mm (12 in.)" in E["callout"]
 
 
 def test_a_water_table_loads_the_stem_and_lifts_the_base():

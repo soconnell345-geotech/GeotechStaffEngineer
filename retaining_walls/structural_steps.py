@@ -28,6 +28,8 @@ REFERENCES = [
     "2006: Sec. 10.5.3 (p. 10-41) and Fig. 10-17 (p. 10-39).",
     "FHWA GEC-10 (FHWA-NHI-18-024), Drilled Shafts, 2018: Table 6-2 "
     "(p. 6-3), weights and dimensions of deformed bars.",
+    "FHWA GEC-6 (FHWA-SA-02-054), Shallow Foundations: Sec. 6.6 "
+    "(pp. 121-122), the base pressure.",
 ]
 
 
@@ -268,8 +270,7 @@ def sec_fc_fy(el):
 def _check_item(c) -> CheckItem:
     def num(v):
         return float(v) if isinstance(v, (int, float)) else 0.0
-    lower_is_capacity = c["name"].startswith(
-        ("clear distance", "clear cover", "stem thickness"))
+    lower_is_capacity = c["name"].startswith(S.LEAST_ALLOWED_CHECKS)
     unit = c["unit"]
     label = c["name"]
     if lower_is_capacity:
@@ -470,7 +471,14 @@ def sections(result, analysis) -> List[CalcSection]:
                       "the toe and a dead-load surcharge on the heel. EH: "
                       "the active thrust without the live load. ES: the "
                       "live-load surcharge. Hs: the water's thrust and "
-                      "the uplift."),
+                      "the uplift. The strength factor 1.5 on EH assumes "
+                      "the active state: Table E-2 note b (p. 93): 'The "
+                      "load factors shown for EH assume that sufficient "
+                      "movement occurs for a design condition using "
+                      "active and passive earth pressures. This depends "
+                      "on the expected movement of the structure.' The "
+                      "at-rest basis the manual also prints (EH driving "
+                      "1.35, para. 3-3d, p. 22) is not built."),
             CalcStep(
                 title="Strength reduction factors",
                 equation="&phi; = 0.90 (bending), 0.75 (shear)",
@@ -530,7 +538,7 @@ def sections(result, analysis) -> List[CalcSection]:
             reference=d["reference"],
             notes="Uncoated bars, no confining reinforcement, side cover "
                   "of 6 bar diameters or more, normal weight concrete, as "
-                  "the example takes them. Available: "
+                  "the example takes them. " + d["confirm"] + " Available: "
                   + d["available_basis"] + "."))
     else:
         steel.append("Stem bars' hook development length: not computed. "

@@ -100,6 +100,17 @@ def _mm(inches: float) -> float:
     return _PRINTED_MM.get(inches, round(inches * _MM_PER_IN, 1))
 
 
+#: The other way (review C3): a spacing or cover the engineer gives at a
+#: metric value the manual prints beside an inch value ("12 in. (30 cm)",
+#: "6 in. (15 cm)", "4 in. (10 cm)", "3 in. (7.5 cm)", pp. 5-7) is taken as
+#: that inch value, so 300 mm meets the 12 in. limit and reads "(12 in.)".
+_PRINTED_IN = {mm: inches for inches, mm in _PRINTED_MM.items()}
+
+
+def _inches(mm: float) -> float:
+    return _PRINTED_IN.get(float(mm), mm / _MM_PER_IN)
+
+
 def _segment_force(seg: Optional[Tuple[float, float, float, float]],
                    x0: float, x1: float) -> Tuple[float, float]:
     """(force, its first moment about x = 0) of a pressure that runs in a
@@ -519,7 +530,7 @@ def _design_element(name: str, actions, *, h_m: float, cover_in: float,
     """One of stem, toe and heel: its load cases, its governing moment and
     shear and its section design."""
     h_in = h_m * 1000.0 / _MM_PER_IN
-    spacing_in = None if spacing_mm is None else spacing_mm / _MM_PER_IN
+    spacing_in = None if spacing_mm is None else _inches(spacing_mm)
 
     def design(rows, service):
         gm, gv = _governing(rows, "M"), _governing(rows, "V")
@@ -702,8 +713,22 @@ class CantileverWallStructuralResult:
         def n(v):
             return f"{v:.4g}" if isinstance(v, (int, float)) else str(v)
         unit = f" {c['unit']}" if c["unit"] else ""
+        note = f": {c['note']}" if c.get("note") else ""
+        if c["name"].startswith(S.LEAST_ALLOWED_CHECKS):
+            # the least allowed first, then what the wall has (review C1)
+            def m(v, up=False):
+                if not isinstance(v, (int, float)):
+                    return str(v)
+                if c["unit"] != "in.":
+                    return f"{v:g}"
+                # a least value is rounded up, so it is never understated
+                return (f"{math.ceil(v * 100.0 - 1e-6) / 100.0:.2f}" if up
+                        else f"{v:.2f}")
+            return (f"{where}: {c['name']} (needs "
+                    f"{m(c['demand'], up=True)}{unit}, has "
+                    f"{m(c['capacity'])}{unit}){note}")
         return (f"{where}: {c['name']} ({n(c['demand'])} against "
-                f"{n(c['capacity'])}{unit})")
+                f"{n(c['capacity'])}{unit}){note}")
 
     @property
     def verdict(self) -> str:
@@ -763,7 +788,8 @@ class CantileverWallStructuralResult:
         if d.get("computed"):
             lines += ["", f"  Stem bars' standard hook into the base: ldh = "
                           f"{d['ldh_mm']:.0f} mm ({d['ldh_in']:.1f} in.), "
-                          f"{d['available_mm']:.0f} mm available"]
+                          f"{d['available_mm']:.0f} mm available",
+                      f"    ({d['confirm']})"]
         failed = self.structural_checks_failed
         lines += ["", "  Failed concrete checks: "
                   + ("; ".join(failed) if failed else "none"),
@@ -808,15 +834,17 @@ class CantileverWallStructuralResult:
 
 def _cover(name: str, given_mm: Optional[float], thickness_in: float,
            against_ground: bool, input_name: str, what: str
-           ) -> Tuple[float, float, bool]:
-    """(cover in., the mm reported, given?) for one face: the engineer's,
-    else Table 2-1's (p. 5); required where the table prints none."""
+           ) -> Tuple[float, float, bool, Optional[float]]:
+    """(cover in., the mm reported, given?, Table 2-1's cover in. or None)
+    for one face: the engineer's, else Table 2-1's (p. 5); required where
+    the table prints none."""
+    cover = S.table_2_1_cover_in(thickness_in, against_ground)
     if given_mm is not None:
         if given_mm <= 0:
             raise ValueError(f"{input_name} must be positive (mm), got "
                              f"{given_mm:g}")
-        return given_mm / _MM_PER_IN, round(float(given_mm), 1), True
-    cover = S.table_2_1_cover_in(thickness_in, against_ground)
+        return (_inches(given_mm), round(float(given_mm), 1), True,
+                cover)
     if cover is None:
         raise ValueError(
             f"{input_name} is required: the {what} is "
@@ -826,7 +854,29 @@ def _cover(name: str, given_mm: Optional[float], thickness_in: float,
             "318-19', which is not held. Give the clear cover in mm (the "
             "manual's own 9 in. wall example, D-3, p. 75, takes 2 in., "
             "about 50 mm), or make the section thicker than 305 mm.")
-    return cover, _mm(cover), False
+    return cover, _mm(cover), False, cover
+
+
+def _cover_check(face: str, given_mm: float, table_in: float,
+                 against_ground: bool, input_name: str) -> Dict[str, Any]:
+    """Review B1: a cover the engineer gave, against the cover Table 2-1
+    (p. 5) prints for the section, compared in the metric the table prints
+    beside its inches (10 cm, 7.5 cm), as the cover is given in mm."""
+    least_mm = _mm(table_in)
+    row = ("unformed surfaces in contact with foundation" if against_ground
+           else "formed and screeded surfaces "
+           + ("24 in. (61 cm) thick or more" if table_in >= 4.0
+              else "over 12 in. (30 cm) and under 24 in. thick"))
+    passes = given_mm >= least_mm - 1e-9
+    return S._check(
+        f"clear cover >= Table 2-1 ({face})", least_mm, float(given_mm),
+        "mm", passes,
+        f"{EM} para. 2-7 and Table 2-1 (p. 5): 'The minimum cover for "
+        "reinforcement must conform to the limits shown'; "
+        f"{table_in:g} in. ({least_mm / 10.0:g} cm) for {row}",
+        note=("" if passes else
+              f"Table 2-1 prints {table_in:g} in. ({least_mm / 10.0:g} cm) "
+              f"for {row}: give {input_name} {least_mm:g} or more"))
 
 
 def _ts_set(mark: str, element: str, face: str, runs: str, bar: dict,
@@ -996,15 +1046,26 @@ def analyze_cantilever_wall_structure(
     beta1_used = S.beta1_default(fc_psi) if beta1 is None else beta1
     t_stem_in = geom.stem_thickness_base * 1000.0 / _MM_PER_IN
     t_base_in = geom.base_thickness * 1000.0 / _MM_PER_IN
-    c_stem, c_stem_mm, c_stem_given = _cover(
+    c_stem, c_stem_mm, c_stem_given, t21_stem = _cover(
         "stem", stem_cover_mm, t_stem_in, False, "stem_cover_mm",
         "stem at its base")
-    c_top, c_top_mm, c_top_given = _cover(
+    c_top, c_top_mm, c_top_given, t21_top = _cover(
         "heel", base_top_cover_mm, t_base_in, False, "base_top_cover_mm",
         "base slab")
-    c_bot, c_bot_mm, c_bot_given = _cover(
+    c_bot, c_bot_mm, c_bot_given, t21_bot = _cover(
         "toe", base_bottom_cover_mm, t_base_in, True,
         "base_bottom_cover_mm", "base slab")
+    # review B1: a given cover against Table 2-1 wherever the table prints
+    # a value for the section (none for a formed face 12 in. or thinner)
+    cover_checks = [
+        _cover_check(face, given, table_in, ground, input_name)
+        for face, given, table_in, ground, input_name in (
+            ("stem", stem_cover_mm, t21_stem, False, "stem_cover_mm"),
+            ("base top", base_top_cover_mm, t21_top, False,
+             "base_top_cover_mm"),
+            ("base bottom", base_bottom_cover_mm, t21_bot, True,
+             "base_bottom_cover_mm"))
+        if given is not None and table_in is not None]
     mat = {"fc_psi": fc_psi, "fy_psi": fy_psi, "beta1": beta1_used,
            "modular_ratio": modular_ratio,
            "max_aggregate_in": (None if max_aggregate_mm is None
@@ -1013,8 +1074,8 @@ def analyze_cantilever_wall_structure(
                         "heel": c_top_mm}}
 
     # 2. temperature and shrinkage steel (para. 2-9, pp. 6-8)
-    joint_ft = joint_spacing / 0.3048
-    ratio_along = S.temperature_shrinkage_ratio(joint_ft)
+    # Table 2-3 (p. 7) banded on the metres given (review A1)
+    ratio_along = S.temperature_shrinkage_ratio(joint_spacing)
     ts = {
         "stem_vertical": S.temperature_shrinkage_area(0.003, t_stem_in),
         "stem_along": S.temperature_shrinkage_area(ratio_along, t_stem_in),
@@ -1064,7 +1125,7 @@ def analyze_cantilever_wall_structure(
                      if "toe" in elements else bar_base["bar_diameter_in"])
     available_in = (t_base_in - c_bot - bottom_bar_in
                     - bar_F["bar_diameter_in"])
-    wall_checks = []
+    wall_checks = list(cover_checks)
     development = {
         "bars": "the stem's main bars (mark A), hooked into the base",
         "computed": hook["computed"],
@@ -1079,6 +1140,8 @@ def analyze_cantilever_wall_structure(
                     "sqrt(f'c))] db^1.5, psi_e = psi_r = psi_o = lambda = "
                     "1.0, psi_c = f'c/15,000 + 0.6"),
         "reference": f"{EM} D-5 Step 6 (pp. 86-87), 'From ACI 318-19'",
+        # review B4: words only, no number
+        "confirm": S.HOOK_CONFIRM[0].upper() + S.HOOK_CONFIRM[1:] + ".",
     }
     end_A = None
     if hook["computed"]:
@@ -1099,15 +1162,31 @@ def analyze_cantilever_wall_structure(
         development["why_not"] = hook["why"]
         end_A = {"type": "standard_hook_90", "into": "base", "ldh_mm": None}
 
-    # minimum wall thickness (para. 3-7, p. 27)
-    top_in = geom.stem_thickness_top * 1000.0 / _MM_PER_IN
-    least = 12.0 if geom.stem_height > 3.048 else 8.0
+    # minimum wall thickness (para. 3-7, p. 27), in the metric the print
+    # gives beside its feet and inches, as the wall is given in metres
+    # (review B5): the WALL's height, underside of the base to the top of
+    # the stem, against the printed 3 m (the conservative reading: the
+    # stem alone is shorter); the thinnest part of the stem, its top,
+    # against 30.5 cm over 3 m and 20 cm under
+    top_mm = round(geom.stem_thickness_top * 1000.0, 1)
+    tall = geom.wall_height > 3.0
+    least_mm = 305.0 if tall else 200.0
+    thick_ok = top_mm >= least_mm - 1e-9
     wall_checks.append(S._check(
         "stem thickness at its top >= the minimum wall thickness",
-        least, round(top_in, 2), "in.", top_in >= least - 1e-9,
+        least_mm, top_mm, "mm", thick_ok,
         f"{EM} para. 3-7 (p. 27): 'Walls with height greater than 10 ft "
-        "(3 m) must be a minimum of 12 in. (30.5 cm) thick ... Walls must "
-        "not be less than 8 in. (20 cm) thick'"))
+        "(3 m) must be a minimum of 12 in. (30.5 cm) thick. Walls 10 in. "
+        "(25 cm) or greater in thickness must have reinforcement in both "
+        "faces. Walls must not be less than 8 in. (20 cm) thick'; the "
+        "wall's height from the underside of the base to the top of the "
+        "stem",
+        note=("" if thick_ok else
+              (f"the wall is {geom.wall_height:g} m high, over the 10 ft "
+               "(3 m) of para. 3-7, which then prints 12 in. (30.5 cm): "
+               "give stem_thickness_top 0.305 or more" if tall else
+               "para. 3-7 prints 8 in. (20 cm) for any wall: give "
+               "stem_thickness_top 0.20 or more"))))
 
     stem_el = elements["stem"]
     bars = [_flexure_set("A", stem_el, "back face", end_A),
@@ -1125,8 +1204,15 @@ def analyze_cantilever_wall_structure(
     else:
         bars.append(_ts_set("E", "base", "top", "in_section", bar_base,
                             c_top_mm, "top"))
-    bars.append(_ts_set("F", "base", "both", "along_wall", bar_F,
-                        c_top_mm, "top and bottom, along the wall"))
+    if c_top_mm == c_bot_mm:
+        bars.append(_ts_set("F", "base", "both", "along_wall", bar_F,
+                            c_top_mm, "top and bottom, along the wall"))
+    else:
+        # review C6: one set per face, each at its own cover
+        bars += [_ts_set("F", "base", "top", "along_wall", bar_F,
+                         c_top_mm, "top, along the wall"),
+                 _ts_set("G", "base", "bottom", "along_wall", bar_F,
+                         c_bot_mm, "bottom, along the wall")]
     secondary = [b for b in bars if b["role"] == "temperature_shrinkage"]
 
     # 5. what was not designed, and why
@@ -1193,7 +1279,9 @@ def analyze_cantilever_wall_structure(
         notes.insert(3, (
             f"Bars A end in a standard 90-degree hook in the base, hook "
             f"development length {development['ldh_mm']:.0f} mm "
-            f"({development['ldh_in']:.1f} in.)."))
+            f"({development['ldh_in']:.1f} in.), with the factors of the "
+            f"manual's example ({EM} D-5 Step 6); confirm the hook against "
+            "ACI 318-19."))
     if lap_length_mm is not None:
         notes.append(f"Lap length {lap_length_mm:g} mm, as supplied by the "
                      "engineer; not checked.")
@@ -1248,14 +1336,24 @@ def analyze_cantilever_wall_structure(
                "serviceability requirements'"),
         choice("strength load factors",
                "(1.2 or 0.9) D + 1.5 EH + (1.35 or 1.0) EV + 1.0 Hs"
-               + (" + 1.6 ES" if has_live else ""), MODULE,
+               + (" + 1.6 ES" if has_live else "")
+               + ", EH the active pressure (an assumption: the wall moves "
+               "enough)", MODULE,
                f"{EM} Table E-2 (p. 93); para. 3-3d (p. 22): 'EH, active "
                "pressure, 1.5', and 'Maximum and minimum load factors "
                "must be applied to provide the greatest effect' (each of "
                "the four D and EV pairs is worked on the whole wall); "
                "Table 3-2 (pp. 24-25): Hs as a companion load 1.0, ES 1.6. "
                "Para. 3-1f (pp. 13-14): the base pressure is found from "
-               "the factored loads"),
+               "the factored loads. The factor on EH assumes the ACTIVE "
+               "state: Table E-2 note b (p. 93): 'The load factors shown "
+               "for EH assume that sufficient movement occurs for a design "
+               "condition using active and passive earth pressures. This "
+               "depends on the expected movement of the structure'",
+               ["at-rest earth pressure for a wall that cannot move enough, "
+                "with the factors para. 3-3d (p. 22) prints for 'EH, "
+                "at-rest pressure': driving 1.35, resisting 0.9; not "
+                "built"]),
         choice("serviceability", serviceability,
                MODULE if modular_ratio is None
                else how_given(modular_ratio, None, name="modular_ratio"),
@@ -1282,11 +1380,15 @@ def analyze_cantilever_wall_structure(
                f"{EM} Table E-1 (p. 92) names the loads; para. 3-3d (p. "
                "22): 'Permanent loads ... consist of dead loads, vertical "
                "and lateral earth loads'; Table E-2 note b (p. 93): case "
-               "2 is case 1 with 'a temporary surcharge'. That the "
-               "permanent (dead-load) surcharge is an earth load and the "
-               "live load the temporary surcharge ES is this module's "
-               "reading: the manual prints no rule for a permanent "
-               "surcharge"),
+               "2 is case 1 with 'a temporary surcharge'; para. 3-2f(7) "
+               "(p. 19): 'Surcharge loads should be considered temporary, "
+               "principal loads in load combinations unless the surcharge "
+               "is permanent. Typical surcharge forces used for design "
+               "accounting for nominal vehicle or fill loading should be "
+               "considered unusual loads', so the live-load surcharge is "
+               "ES. That a permanent (dead-load) surcharge is an earth "
+               "load is this module's reading: the manual prints no rule "
+               "for a permanent surcharge"),
         choice("strength reduction factors",
                "phi = 0.90 for bending, 0.75 for shear", MODULE,
                S.PHI_BASIS),
@@ -1353,13 +1455,18 @@ def analyze_cantilever_wall_structure(
                "other minimum"),
         choice("temperature and shrinkage steel",
                f"along the wall {ratio_along:g} of the gross area for "
-               f"joints {joint_spacing:g} m ({joint_ft:.0f} ft) apart, "
+               f"joints {joint_spacing:g} m apart (Table 2-3 on the metres "
+               "it prints: below 9 m 0.003, 9 to 12 m 0.004, above 12 m "
+               "0.005), "
                "half in each face; up the stem and across the base 0.003; "
                "each face not less than No. 4 at 12 in. nor more than No. "
                "9 at 12 in.; a tapered stem on its thickness at the base",
                how_given(joint_spacing, None, name="joint_spacing"),
-               f"{EM} para. 2-9a, 2-9b and Table 2-3 (pp. 6-7); para. "
-               "2-9d (p. 7): 'Shrinkage and temperature reinforcement in "
+               f"{EM} para. 2-9a, 2-9b and Table 2-3 (pp. 6-7): 'Less "
+               "than 30 ft (9 m) 0.003; 30-40 ft (9-12 m) 0.004; Greater "
+               "than 40 ft (12 m) 0.005', banded on the metres given; "
+               "para. 2-9d (p. 7): 'Shrinkage and temperature "
+               "reinforcement in "
                "the transverse (shorter) direction must be according to "
                "paragraph 2-9a'. The stem's thickness at its base for the "
                "whole stem is this module's reading, the larger steel"),
@@ -1416,9 +1523,25 @@ def analyze_cantilever_wall_structure(
                "development length of a standard hook as D-5 Step 6 "
                "prints it (pp. 86-87), with its factors: uncoated bars, "
                "no confining reinforcement, side cover of 6 bar diameters "
-               "or more, normal weight concrete"
+               "or more, normal weight concrete; "
+               + S.HOOK_CONFIRM
                + ("" if development["computed"]
-                  else ". " + development["why_not"])),
+                  else ". " + development["why_not"]),
+               ["confirm the hook against ACI 318-19"]
+               if development["computed"] else []),
+        choice("minimum wall thickness",
+               f"{least_mm:g} mm at the top of the stem, the wall being "
+               f"{geom.wall_height:g} m high from the underside of the base "
+               "to the top of the stem ("
+               + ("over" if tall else "not over") + " 3 m); the stem has "
+               "steel in both faces whatever its thickness", MODULE,
+               f"{EM} para. 3-7 (p. 27): 'Walls with height greater than "
+               "10 ft (3 m) must be a minimum of 12 in. (30.5 cm) thick. "
+               "Walls 10 in. (25 cm) or greater in thickness must have "
+               "reinforcement in both faces. Walls must not be less than 8 "
+               "in. (20 cm) thick', compared in the metric it prints. "
+               "'Height' is read as the wall's, base included: the "
+               "conservative reading, as the stem alone is shorter"),
     ]
 
     load_case_table = [

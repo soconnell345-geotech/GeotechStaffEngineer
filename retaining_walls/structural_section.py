@@ -119,14 +119,28 @@ def hook_development_length(db_in: float, fc_psi: float,
     return {"ldh_in": ldh, "psi_c": psi_c, "computed": True, "why": ""}
 
 
-def temperature_shrinkage_ratio(joint_spacing_ft: float) -> float:
+#: What the hook development length rests on (GM-312 review B4): words
+#: only, no ACI value.
+HOOK_CONFIRM = (
+    "the factors are those of the manual's example, D-5 Step 6 (pp. "
+    "86-87); ACI 318-19, which is not held, sets the conditions under "
+    "which each factor applies and its own minimum lengths, so the hook "
+    "must be confirmed against ACI 318-19")
+
+#: The checks whose demand is the least value allowed and whose capacity
+#: is what the section has (GM-312 review C1).
+LEAST_ALLOWED_CHECKS = ("clear distance", "clear cover", "stem thickness")
+
+
+def temperature_shrinkage_ratio(joint_spacing_m: float) -> float:
     """Table 2-3, p. 7: the minimum temperature and shrinkage
-    reinforcement ratio (Grade 60) by the length between control joints:
-    0.003 below 30 ft (9 m), 0.004 from 30 to 40 ft (9 to 12 m), 0.005
-    above 40 ft (12 m)."""
-    if joint_spacing_ft < 30.0:
+    reinforcement ratio (Grade 60) by the length between control joints,
+    banded on the metres the table prints beside its feet: "Less than 30
+    ft (9 m) 0.003; 30-40 ft (9-12 m) 0.004; Greater than 40 ft (12 m)
+    0.005". 9 m and 12 m themselves take 0.004."""
+    if joint_spacing_m < 9.0:
         return 0.003
-    if joint_spacing_ft <= 40.0:
+    if joint_spacing_m <= 12.0:
         return 0.004
     return 0.005
 
@@ -316,11 +330,18 @@ def _trial(size: str, spacing_in: float, *, Mu_kipft: float, Vu_kip: float,
                 f"2.5 cc as printed in D-3 Step 5(b) (p. 76), on {how}"))
         service.append(row)
 
-    selectable = all(c["passes"] for c in checks
-                     if c["required"] and (
-                         c["name"].startswith(("steel provided",
-                                               "service steel stress",
-                                               "crack-control"))))
+    # a trial is chosen only when its steel, its service stress, its
+    # crack-control spacing, its clear distance (para. 2-6a, p. 4) and its
+    # clear cover (Table 2-1 Note, p. 5) all pass (review B3)
+    steel_ok = all(c["passes"] for c in checks
+                   if c["required"] and (
+                       c["name"].startswith(("steel provided",
+                                             "service steel stress",
+                                             "crack-control"))))
+    selectable = steel_ok and all(
+        c["passes"] for c in checks
+        if c["required"] and c["name"].startswith(("clear distance",
+                                                   "clear cover")))
     return {
         "bar_size": size, "bar_diameter_in": db, "bar_area_in2": Ab,
         "spacing_in": spacing_in, "d_in": d, "h_in": h_in,
@@ -334,7 +355,7 @@ def _trial(size: str, spacing_in: float, *, Mu_kipft: float, Vu_kip: float,
         "Vc_kip": Vc, "phi_Vc_kip": phi_Vc,
         "phi_Vc_SI_form_kip": phi_Vc_si_form,
         "service": service, "checks": checks, "too_thin": too_thin,
-        "selectable": selectable,
+        "selectable": selectable, "steel_ok": steel_ok,
         "passes": all(c["passes"] for c in checks if c["required"]),
     }
 
@@ -371,8 +392,10 @@ def design_section(Mu_kipft: float, Vu_kip: float, h_in: float,
         The bar ("No. 4" to "No. 11") and its spacing (in.) where the
         engineer fixes them. Left out, the choice follows the manual's
         examples: the smallest bar that gives the steel at 12 in.; if No.
-        11 does not, the smallest at 6 in. A spacing that fails the
-        crack-control spacing or a service stress is passed over.
+        11 does not, the smallest at 6 in. A bar or spacing that fails the
+        crack-control spacing, a service stress, the clear distance
+        (para. 2-6a, p. 4) or the clear cover (Table 2-1 Note, p. 5) is
+        passed over.
     d_in : float, optional
         The effective depth (in.) where it is fixed (the examples round
         it); None: h - cover - bar diameter / 2, the primary steel in the
@@ -411,17 +434,21 @@ def design_section(Mu_kipft: float, Vu_kip: float, h_in: float,
               service_moments=service_moments,
               modular_ratio=modular_ratio,
               max_aggregate_in=max_aggregate_in)
-    chosen = last = None
+    chosen = last = steel_only = None
     for s in spacings:
         for size in sizes:
             last = _trial(size, s, **kw)
+            if steel_only is None and last["steel_ok"]:
+                steel_only = last
             if last["selectable"]:
                 chosen = last
                 break
         if chosen is not None:
             break
     if chosen is None:
-        chosen = last
+        # no trial passes everything: the first that gives the steel,
+        # else the last tried; its failed checks are reported
+        chosen = steel_only if steel_only is not None else last
     given = [n for n, v in (("size", bar_size), ("spacing", spacing_in))
              if v is not None]
     chosen["chosen_by"] = (
@@ -429,7 +456,9 @@ def design_section(Mu_kipft: float, Vu_kip: float, h_in: float,
         f"the engineer's bar {given[0]}; the other by the manual's "
         "examples" if given else
         "the manual's examples: the smallest bar that gives the steel at "
-        "12 in.; if No. 11 does not, at 6 in. (D-3, p. 75; D-5, p. 85)")
+        "12 in.; if No. 11 does not, at 6 in. (D-3, p. 75; D-5, p. 85); "
+        "a bar that fails the clear cover, the clear distance or the "
+        "crack-control spacing is passed over")
     return chosen
 
 
