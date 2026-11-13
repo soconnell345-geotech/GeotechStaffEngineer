@@ -516,8 +516,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "fdca9679dea81810",
-      "system_prompt_chars": 26400,
+      "system_prompt": "6aec30e93fd52dcb",
+      "system_prompt_chars": 26493,
       "tool_order": [
        "list_agents",
        "list_methods",
@@ -1245,7 +1245,7 @@
      }
     ]
    },
-   "planlens": "0.14.0"
+   "planlens": "0.15.1"
   },
   "f440beafcd9dfd89": {
    "builds": {
