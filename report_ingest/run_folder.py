@@ -162,6 +162,7 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                trust_table: Any = None,
                templates: Any = None,
                ingest_bound: bool = True,
+               report_tables: Any = None,
                log: Callable[[str], None] = print) -> FolderRun:
     """Read every PDF in ``folder`` into one library under ``out_dir``.
 
@@ -183,6 +184,12 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
     ``parent`` pointing at the report it came out of. So a folder of 300
     files can make more than 300 rows, which is right and is why the index
     counts them. ``ingest_bound=False`` turns it off.
+
+    THE REPORT TABLES (BACKLOG RI-11) go beside the library by default:
+    each report, once written, is exported under ``<the folder holding the
+    library>/report_tables/v1/`` (``report_tables`` is the graph's own; a
+    report skipped as already done is not re-exported: ``python -m
+    report_ingest.tables <out_dir>`` exports a whole folder from disk).
     """
     from report_ingest.graph import ingest_report
 
@@ -228,7 +235,7 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                                if vision_engine_factory else None),
                 vision_mode=vision_mode, vision_detail=vision_detail,
                 trust_table=trust_table, templates=templates,
-                ingest_bound=ingest_bound)
+                ingest_bound=ingest_bound, report_tables=report_tables)
         except KeyboardInterrupt:
             log("  interrupted; what is finished is on disk and a later call "
                 "resumes")

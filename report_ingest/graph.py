@@ -873,7 +873,8 @@ def ingest_report(source: Any, engine: Any, *,
                   range_engine: Any = None,
                   model_first: Any = None,
                   stage_engines: Any = None,
-                  page_route: Optional[str] = None) -> ReportRecord:
+                  page_route: Optional[str] = None,
+                  report_tables: Any = None) -> ReportRecord:
     """Read one report end to end and write its record and its exports.
 
     ``source`` is a PDF path, its bytes, or an OPEN planlens document (the
@@ -986,6 +987,18 @@ def ingest_report(source: Any, engine: Any, *,
         in a mapping does beside stages on; the soundings, the triage, the
         vision voter and the label review stay on their own engines.
         ``page_route`` is ignored with every reader stage off.
+    report_tables
+        The report tables (BACKLOG RI-11, :mod:`report_ingest.tables`):
+        after the outputs are written, the run's facts are saved beside
+        each record (``report.run.json``) and the report and the reports
+        bound inside it are exported as flat, keyed rows under
+        ``<root>/report_tables/v1/``, then sent to the Foundry dataset
+        ``GSE_REPORT_TABLES_DATASET`` names, on a Foundry deployment.
+        ``None`` follows ``GSE_REPORT_TABLES``: unset, on, the root being
+        the folder holding ``db_path`` (else ``out_dir``); ``False`` (or
+        ``"off"``) writes none of it; a folder names the root. Ignored with
+        ``write=False``. The export never changes the record and never
+        fails the run.
 
     The cost on ``record.document`` is the WHOLE run's, the children
     included; each child's own block says what that child cost. It is THIS
@@ -1065,9 +1078,10 @@ def ingest_report(source: Any, engine: Any, *,
                       report_id, spend, qa, unresolved, di_result, labelling,
                       children, ingest_bound, counts_from_logs,
                       narrative_skips_bound, first_run, readers)
+        questions_ran = False
         if os.environ.get(QUESTION_LIST_ENV, "").strip():
-            _question_list(record, doc, engine, out, resume, spend, qa,
-                           children)
+            questions_ran = _question_list(record, doc, engine, out, resume,
+                                           spend, qa, children)
     finally:
         for real in paced:
             real.pacer = None
@@ -1089,7 +1103,9 @@ def ingest_report(source: Any, engine: Any, *,
             key_source: Any = getattr(source, "path", None) or report_id \
                 or None
         elif isinstance(source, (bytes, bytearray)):
-            key_source = None
+            # The bytes key the row as a path does (BACKLOG RI-11): the
+            # same file, the same key, however it was handed in.
+            key_source = bytes(source)
         else:
             key_source = source
         # The children FIRST: their records carry the DIGGS verdicts their
@@ -1111,18 +1127,25 @@ def ingest_report(source: Any, engine: Any, *,
             if child is not None:
                 row.counts = child.counts()
         write_outputs(record, out, source=key_source, db_path=db_path)
+        from report_ingest.tables import after_ingest
+
+        after_ingest(out, record=record, children=children, source=source,
+                     key_source=key_source, db_path=db_path,
+                     setting=report_tables, question_list=questions_ran)
     return record
 
 
 def _question_list(record: ReportRecord, doc: Any, engine: Any, out: str,
                    resume: bool, spend: _Spend, qa: List[QAEntry],
-                   children: Sequence[Tuple[ReportRecord, str]]) -> None:
+                   children: Sequence[Tuple[ReportRecord, str]]) -> bool:
     """The owner's question list asked of the finished record, its answer
     sheet written beside the record (BACKLOG RI-101 part 1); only with
     :data:`QUESTION_LIST_ENV` set. Its calls are counted in the run's
     cost, and the replies it took from the folder in the whole report's
     (BACKLOG RI-125); what it could not do is a QA entry, never a failed run
-    (:func:`report_ingest.question_list.ingest_sheet`)."""
+    (:func:`report_ingest.question_list.ingest_sheet`). Returns whether a
+    sheet was written, which the report tables need to tell this run's
+    sheet from an earlier one's."""
     from report_ingest.question_list import ingest_sheet
 
     bound = {child.parent.bound_id: child for child, _ in children
@@ -1130,13 +1153,14 @@ def _question_list(record: ReportRecord, doc: Any, engine: Any, out: str,
     mark = spend.mark()
     reused: List[Dict[str, Any]] = []
     try:
-        _path, notes = ingest_sheet(record, doc, engine, out, bound=bound,
-                                    resume=resume, reused=reused)
+        path, notes = ingest_sheet(record, doc, engine, out, bound=bound,
+                                   resume=resume, reused=reused)
     finally:
         spend.settle(mark)
     for cost in reused:
         spend.reuse("question_list", cost)
     qa.extend(notes)
+    return path is not None
 
 
 def _pace(budgets: Budgets, engine: Any, labelling: "_Labelling",

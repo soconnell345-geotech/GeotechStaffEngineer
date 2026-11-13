@@ -92,8 +92,8 @@ __all__ = [
     "pages_to_read", "page_texts", "page_list_text", "run_questions",
     "answer_sheet",
     "POSTS_ENV", "POST_SIMILARITY", "POST_COLUMNS", "SHEET_NAME",
-    "CALLS_NAME", "Post", "PostMatch", "load_posts", "match_post",
-    "apply_posts", "ingest_sheet",
+    "ANSWERS_NAME", "CALLS_NAME", "Post", "PostMatch", "load_posts",
+    "match_post", "apply_posts", "answer_json", "ingest_sheet",
 ]
 
 #: The variable that names the list's path when no path is given.
@@ -2137,6 +2137,77 @@ def answer_sheet(questions: Sequence[Question], answers: Mapping[str, Answer],
     return path
 
 
+def _json_ready(value: Any) -> Any:
+    """A value as JSON holds it: a record or a list of them as plain data,
+    anything else that JSON cannot hold as text."""
+    value = _plain(value)
+    if isinstance(value, Mapping):
+        return {str(k): _json_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(v) for v in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def answer_json(questions: Sequence[Question], answers: Mapping[str, Answer],
+                path: Union[str, Path], *, report_id: str = "",
+                calls: Sequence[Mapping[str, Any]] = (),
+                prompt_version: str = PROMPT_VERSION,
+                posts_name: str = "") -> Path:
+    """The answers :func:`answer_sheet` writes, as data, to ``path``
+    (:data:`ANSWERS_NAME`): one entry per question in the list's order,
+    each with the question's Key, Output, Category, Data Type and
+    answered_by, the answer's typed ``value``, ``status``, ``pdf_pages``
+    (from 1), ``note``, ``source`` (the From column), ``code_value``,
+    ``printed`` and ``matched_by``, and the Answer cell's text (``text``,
+    with ``code_value_text`` for code's reading); and a ``run`` block with
+    what the sheet's Run tab says (the date in UTC). Nothing is asked: it
+    is the same run, so the report tables need not read a spreadsheet
+    back (BACKLOG RI-11)."""
+    import json
+    from datetime import timezone
+
+    modified = getattr(questions, "modified", None)
+    rows = []
+    for q in questions:
+        answer = answers.get(q.key) or Answer(status="", note="not run")
+        rows.append({
+            "key": q.key, "output": q.output, "category": q.category,
+            "data_type": q.data_type, "answered_by": q.answered_by,
+            "value": _json_ready(answer.value), "status": answer.status,
+            "pdf_pages": sorted({int(p) for p in answer.pdf_pages}),
+            "note": answer.note, "source": answer.source,
+            "code_value": _json_ready(answer.code_value),
+            "printed": _json_ready(answer.printed),
+            "matched_by": answer.matched_by,
+            "text": _answer_cell(q, answer),
+            "code_value_text": _shown(q, _plain(answer.code_value)),
+        })
+    blob = {
+        "format": 1, "report_id": report_id,
+        "answers": rows,
+        "run": {
+            "date": datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"),
+            "question_list": getattr(questions, "name", ""),
+            "list_modified": modified.strftime("%Y-%m-%d %H:%M")
+            if modified else "",
+            "code_map": getattr(questions, "map_name", ""),
+            "prompt_version": prompt_version,
+            "posts": posts_name,
+            "calls": [_json_ready(dict(call)) for call in calls],
+        },
+    }
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + ".part")
+    temp.write_text(json.dumps(blob, indent=1, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
+    os.replace(temp, path)
+    return path
+
+
 # ---------------------------------------------------------------------------
 # the list of posts (BACKLOG RI-170)
 # ---------------------------------------------------------------------------
@@ -2313,6 +2384,10 @@ def apply_posts(questions: Sequence[Question], answers: Mapping[str, Answer],
 #: The answer sheet's name, beside ``report.record.json``.
 SHEET_NAME = "report.questions.xlsx"
 
+#: The same answers as data, beside the sheet (:func:`answer_json`): what
+#: the report tables read (:mod:`report_ingest.tables`, BACKLOG RI-11).
+ANSWERS_NAME = "report.questions.json"
+
 #: The calls' replies, under the run's ``items/`` folder, so a resumed run
 #: that sends the same request does not pay for it again.
 CALLS_NAME = "question_list.calls.json"
@@ -2480,6 +2555,9 @@ def ingest_sheet(record: Any, doc: Any, engine: Any, out_dir: Union[str, Path],
                             report_id=rid, calls=run.calls,
                             prompt_version=run.prompt_version,
                             posts_name=posts_name)
+        answer_json(qlist, run.answers, out / ANSWERS_NAME, report_id=rid,
+                    calls=run.calls, prompt_version=run.prompt_version,
+                    posts_name=posts_name)
         if reused is not None:
             reused.extend(replay.reused)
     except Exception as exc:                            # noqa: BLE001
