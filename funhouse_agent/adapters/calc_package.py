@@ -1474,6 +1474,15 @@ def _union_spec(selector: str, entries, n_tools: int) -> dict:
             {repr(a) for a in allowed}) > 1:
         out["allowed_values"] = sorted({v for a in allowed if a
                                         for v in a}, key=str)
+    for key in ("value_aliases", "hidden_value_aliases", "refused_values"):
+        # the other spellings and refusals of every tool, not the first
+        # one's (GM-316 review C20); any_case must agree across the tools
+        # (test_allowed_values checks it)
+        merged = {}
+        for s in specs:
+            merged.update(s.get(key) or {})
+        if merged:
+            out[key] = merged
     if every and len({repr(s.get("applies_when")) for s in specs}) == 1:
         # every tool takes it on the same condition: the selector adds
         # nothing
@@ -1510,9 +1519,12 @@ def _package_parameters(package: str) -> dict:
         params[name] = {
             "type": "bool" if isinstance(default, bool) else "str",
             "required": False, "default": default,
-            "allowed_values": list(tools) + [
-                v for v in spec.get("selector_values", {})
-                if v not in tools],
+            "allowed_values": list(tools),
+            # the older spellings _selector_value puts under a value
+            # (GM-317; review B3: aliases, not values of their own)
+            "value_aliases": {v: t for v, t in
+                              spec.get("selector_values", {}).items()
+                              if v not in tools},
             # _selector_value strips and lower-cases a string (GM-317)
             "any_case": "strip", "description": doc}
     entries = {}

@@ -504,10 +504,12 @@ class TestEarthPressureCoefficient:
         assert set(METHOD_INFO) == set(METHOD_REGISTRY)
         info = METHOD_INFO["earth_pressure_coefficient"]
         # log_spiral by name since GM-242 (the same route as caquot_kerisel)
-        # with the adapter's other spellings of log_spiral (GM-317)
         assert info["parameters"]["theory"]["allowed_values"] == [
-            "rankine", "coulomb", "caquot_kerisel", "log_spiral",
-            "logspiral", "log-spiral"]
+            "rankine", "coulomb", "caquot_kerisel", "log_spiral"]
+        # the adapter's other spellings of log_spiral, read as it (GM-317;
+        # review B3: aliases, not values of their own)
+        assert info["parameters"]["theory"]["value_aliases"] == {
+            "logspiral": "log_spiral", "log-spiral": "log_spiral"}
         assert info["parameters"]["state"]["allowed_values"] == [
             "active", "passive", "at_rest"]
 
@@ -975,11 +977,17 @@ class TestMseCustomReinforcement:
         # ribbed strip + steel bar-mat/welded-grid (+ aliases) + geogrid,
         # geotextile (GEC-11 Table 3-6's alpha 0.8, 0.6) + a geosynthetic of
         # no stated kind, which needs alpha_tested (GM-256)
-        # and the adapter's other spellings, now enforced (GM-317)
         assert av == ["metallic_strip", "metallic_grid", "bar_mat",
-                      "welded_grid", "geogrid", "geotextile", "geosynthetic",
-                      "barmat", "welded_wire_grid", "steel_grid", "grid",
-                      "strip", "ribbed_strip"]
+                      "welded_grid", "geogrid", "geotextile", "geosynthetic"]
+        # the adapter's other spellings, read as the type each names
+        # (GM-317; review B3); "grid" and "strip" are read but never
+        # offered: an agent would pick "grid" for a geogrid
+        spec = METHOD_INFO["mse_wall"]["parameters"]["reinforcement_type"]
+        assert spec["value_aliases"] == {
+            "barmat": "metallic_grid", "welded_wire_grid": "metallic_grid",
+            "steel_grid": "metallic_grid", "ribbed_strip": "metallic_strip"}
+        assert spec["hidden_value_aliases"] == {
+            "grid": "metallic_grid", "strip": "metallic_strip"}
         # GM-256: no default type; it sets the alpha a custom one takes
         assert "default" not in METHOD_INFO["mse_wall"]["parameters"][
             "reinforcement_type"]

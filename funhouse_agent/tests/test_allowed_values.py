@@ -96,6 +96,81 @@ def test_a_padded_value_the_code_does_not_strip_is_refused():
                             {"factor_method": " Meyerhof "})
 
 
+def test_an_alias_is_read_but_listed_apart_from_the_values():
+    """GM-316 review B3: the other spellings a method reads are aliases of
+    a listed value, never values of their own. describe_method gives them
+    as "also read as"; a misleading one ("grid" for a steel grid, which an
+    agent would pick for a geogrid) is read but never offered; the refusal
+    lists and suggests listed values only."""
+    mod = D._load_adapter("retaining_walls")
+    spec = mod.METHOD_INFO["mse_wall"]["parameters"]["reinforcement_type"]
+    for alias in ("barmat", "steel_grid", "grid", "strip"):
+        _check_parameter_values(mod, "mse_wall",
+                                {"reinforcement_type": alias})
+    with pytest.raises(ValueError, match=REFUSED) as err:
+        _check_parameter_values(mod, "mse_wall",
+                                {"reinforcement_type": "steel-grid"})
+    text = str(err.value)
+    assert "Did you mean 'metallic_grid'" in text
+    assert f"Valid values: {spec['allowed_values']}." in text
+    assert "barmat" not in text and "'grid'" not in text
+    doc = D.describe_method("retaining_walls", "mse_wall")
+    shown = doc["parameters"]["reinforcement_type"]
+    assert "'barmat' = 'metallic_grid'" in shown["values_note"]
+    assert "'grid'" not in shown["values_note"]
+    for key in ("value_aliases", "hidden_value_aliases", "any_case",
+                "refused_values"):
+        assert key not in shown
+    # a calc package's older selector spellings are its aliases too
+    pkg = D._load_adapter("calc_package")
+    engine = pkg.METHOD_INFO["reliability_package"]["parameters"]["engine"]
+    assert engine["allowed_values"] == ["fosm", "pem", "monte_carlo",
+                                        "form"]
+    assert engine["value_aliases"]["monte carlo"] == "monte_carlo"
+    _check_parameter_values(pkg, "reliability_package",
+                            {"engine": " Monte Carlo"})
+
+
+def test_describe_method_gives_the_value_rules_in_words():
+    """Review C14: any_case and refused_values are given in words, not as
+    raw keys; a refusal reason carries no backlog ID."""
+    doc = D.describe_method("bearing_capacity", "bearing_capacity_analysis")
+    fm = doc["parameters"]["factor_method"]
+    assert "any_case" not in fm and "refused_values" not in fm
+    assert fm["values_note"].startswith(
+        "Case and surrounding spaces ignored. Not taken: 'hansen' (")
+    doc = D.describe_method("soe", "design_ground_anchor")
+    note = doc["parameters"]["soil_type"]["values_note"]
+    assert "'gravel' (" in note and "GM-" not in note
+
+
+def test_a_package_whose_tools_share_a_list_reads_it_one_way():
+    """Review C20: in a package that runs several tools, a parameter's
+    any_case agrees across the tools that list it, and its aliases and
+    refusals are every tool's, not the first one's."""
+    pkg = D._load_adapter("calc_package")
+    from funhouse_agent.adapters.calc_package import (
+        _PACKAGE_TOOLS, _tool_adapter)
+    from aec_agent_core.method_call import value_aliases
+    for package, spec in _PACKAGE_TOOLS.items():
+        if len(spec["tools"]) < 2:
+            continue
+        info = _tool_adapter(package).METHOD_INFO
+        merged = pkg.METHOD_INFO[package]["parameters"]
+        by = {}
+        for tool in spec["tools"].values():
+            for name, p in info[tool]["parameters"].items():
+                if isinstance(p, dict) and p.get("allowed_values"):
+                    by.setdefault(name, []).append(p)
+        for name, specs in by.items():
+            assert len({repr(p.get("any_case")) for p in specs}) == 1, (
+                package, name)
+            want = {}
+            for p in specs:
+                want.update(value_aliases(p))
+            assert value_aliases(merged[name]) == want, (package, name)
+
+
 def _probed_lists():
     """(agent, method, parameter, spec) of every declared list on a probed
     method's adapter (calc packages included)."""

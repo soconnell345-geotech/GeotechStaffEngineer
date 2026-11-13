@@ -304,24 +304,70 @@ def _check_parameter_names(mod, method: str, parameters: dict) -> None:
             + "." + also)
 
 
-def _value_hint(value: str, allowed) -> str:
+def _value_hint(value: str, allowed, aliases=None) -> str:
     """A did-you-mean for a value outside ``allowed``: the same value in
-    another case, else the closest one or two by spelling."""
+    another case, else the closest one or two by spelling; a value close
+    to one of the other spellings the method reads (``aliases``, alias ->
+    listed value) suggests the listed value it stands for."""
     import difflib
-    words = [a for a in allowed if isinstance(a, str)]
-    folded = {a.strip().lower(): a for a in words}
+    means = {a: a for a in allowed if isinstance(a, str)}
+    for a, canon in (aliases or {}).items():
+        if isinstance(a, str) and isinstance(canon, str):
+            means.setdefault(a, canon)
+
+    def norm(s: str) -> str:
+        return s.strip().lower().replace("-", "_").replace(" ", "_")
+
+    folded, by = {}, {}
+    for spelling, canon in means.items():
+        folded.setdefault(spelling.strip().lower(), canon)
+        by.setdefault(norm(spelling), canon)
     key = value.strip().lower()
     if key in folded:
         return f" Did you mean {folded[key]!r}?"
-    near = difflib.get_close_matches(
-        key.replace("-", "_").replace(" ", "_"),
-        [a.strip().lower().replace("-", "_").replace(" ", "_")
-         for a in words], n=2, cutoff=0.5)
-    by = {a.strip().lower().replace("-", "_").replace(" ", "_"): a
-          for a in words}
-    near = [by[n] for n in near]
+    near = difflib.get_close_matches(norm(value), list(by), n=4, cutoff=0.5)
+    near = list(dict.fromkeys(by[n] for n in near))[:2]
     return (f" Did you mean {' or '.join(repr(n) for n in near)}?"
             if near else "")
+
+
+def value_aliases(spec: dict) -> dict:
+    """The other spellings a parameter's method reads for its listed
+    values, alias -> listed value: ``value_aliases`` (shown in its
+    documentation as "also read as") and ``hidden_value_aliases`` (read,
+    never offered: a spelling whose meaning would mislead, kept so that a
+    call that ran before still runs). GM-316 review B3."""
+    out = {}
+    for key in ("value_aliases", "hidden_value_aliases"):
+        got = spec.get(key)
+        if isinstance(got, dict):
+            out.update(got)
+    return out
+
+
+def values_note(spec: dict) -> str:
+    """How a parameter's method reads its listed values, in words: case
+    and spaces (``any_case``), the other spellings it reads
+    (``value_aliases``) and the values it refuses with a reason
+    (``refused_values``); "" when there is nothing to say. describe_method
+    gives this in place of the raw keys (GM-316 review C14)."""
+    if not isinstance(spec, dict):
+        return ""
+    parts = []
+    fold = spec.get("any_case")
+    if fold:
+        words = VALUE_FOLD_WORDS.get(fold, VALUE_FOLD_WORDS[True])
+        parts.append(words[0].upper() + words[1:] + ".")
+    shown = spec.get("value_aliases")
+    if isinstance(shown, dict) and shown:
+        parts.append("Also read as: " + ", ".join(
+            f"{a!r} = {c!r}" for a, c in shown.items()) + ".")
+    refused = spec.get("refused_values")
+    if isinstance(refused, dict) and refused:
+        parts.append("Not taken: " + "; ".join(
+            f"{v!r} ({str(r).rstrip('.')})" for v, r in refused.items())
+            + ".")
+    return " ".join(parts)
 
 
 #: How a method that does not compare a string exactly reads it: a
@@ -363,21 +409,23 @@ def _fold_value(value: str, any_case) -> str:
     return VALUE_FOLDS.get(any_case, VALUE_FOLDS[True])(value)
 
 
-def _outside(value, allowed, any_case=False):
-    """The values of ``value`` outside ``allowed`` (a string, or each string
-    of a list), compared as the method compares them (``any_case``, a kind
-    of :data:`VALUE_FOLDS`, or False: exactly); values of another kind than
+def _outside(value, allowed, any_case=False, aliases=()):
+    """The values of ``value`` outside ``allowed`` and the other spellings
+    the method reads (``aliases``), a string or each string of a list,
+    compared as the method compares them (``any_case``, a kind of
+    :data:`VALUE_FOLDS`, or False: exactly); values of another kind than
     the list's are left to the method."""
     strings = all(isinstance(a, str) for a in allowed)
     if strings:
         items = value if isinstance(value, list) else [value]
         if not all(isinstance(v, str) for v in items):
             return []
+        taken = list(allowed) + [a for a in aliases if isinstance(a, str)]
         if any_case:
-            folded = {_fold_value(a, any_case) for a in allowed}
+            folded = {_fold_value(a, any_case) for a in taken}
             return [v for v in items
                     if _fold_value(v, any_case) not in folded]
-        return [v for v in items if v not in allowed]
+        return [v for v in items if v not in taken]
     # A list of booleans or numbers: a value of the same kind only (True
     # is not 1 here).
     kinds = {type(a) for a in allowed}
@@ -397,17 +445,19 @@ def _check_parameter_values(mod, method: str, parameters: dict) -> None:
     The list is the parameter's in the method's METHOD_INFO (or, for a
     method whose ``parameters_of`` names another, that one's), reached by
     the name the call gave or an alias of it (``parameter_aliases``).
-    Strings are compared exactly unless the parameter says ``any_case``:
-    the method normalises the string itself, in the way
+    The other spellings the method reads for a listed value
+    (:func:`value_aliases`) are taken too; the refusal lists only the
+    listed values. Strings are compared exactly unless the parameter says
+    ``any_case``: the method normalises the string itself, in the way
     :data:`VALUE_FOLDS` names (True: case only; "strip": surrounding
     spaces too; ...), each the way one handler does it. Checked: a string
     against a list of strings, each string of a list given for one, and a
-    boolean or a number against a list of that kind. Not checked: None (the method's
-    default), a value of another kind than the list's, and a parameter
-    nested inside a dict or a list of dicts (no adapter declares a list
-    there). A parameter's ``refused_values`` (value -> reason) gives the
-    reason for a value it deliberately does not take, in place of the
-    did-you-mean."""
+    boolean or a number against a list of that kind. Not checked: None
+    (the method's default), a value of another kind than the list's, and
+    a parameter nested inside a dict or a list of dicts (no adapter
+    declares a list there). A parameter's ``refused_values`` (value ->
+    reason) gives the reason for a value it deliberately does not take, in
+    place of the did-you-mean."""
     info = mod.METHOD_INFO.get(method)
     if not isinstance(info, dict):
         return
@@ -433,7 +483,8 @@ def _check_parameter_values(mod, method: str, parameters: dict) -> None:
         allowed = spec.get("allowed_values")
         if not isinstance(allowed, (list, tuple)) or not allowed:
             continue
-        bad = _outside(value, list(allowed), spec.get("any_case"))
+        aliases = value_aliases(spec)
+        bad = _outside(value, list(allowed), spec.get("any_case"), aliases)
         if not bad:
             continue
         first = bad[0]
@@ -451,8 +502,8 @@ def _check_parameter_values(mod, method: str, parameters: dict) -> None:
         if reason:
             hint = f" {str(reason).rstrip('.')}."
         else:
-            hint = (_value_hint(first, allowed) if isinstance(first, str)
-                    else "")
+            hint = (_value_hint(first, allowed, spec.get("value_aliases"))
+                    if isinstance(first, str) else "")
         raise ValueError(
             f"{method}: {what} is not one of the values it takes.{hint} "
             f"Valid values: {list(allowed)}. describe_method gives each "

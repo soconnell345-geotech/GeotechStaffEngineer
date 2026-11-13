@@ -308,6 +308,53 @@ the reviewer's Schmertmann case refused with "Did you mean 'strip'?",
 "STRIP" still runs as a strip; every fold kind on made-up lists; every
 declared `any_case` names a known fold.
 
+### Review fix B3: aliases are read, not advertised as values
+
+The first version put the other spellings a handler reads into
+`allowed_values`, so describe_method and the manual offered them as
+choices of their own with no meaning given: an agent choosing MSE
+`reinforcement_type="grid"` for a geogrid would get steel bar-mat factors
+(Kr/Ka 2.5 to 1.2, F* 20 t/St). Now `allowed_values` holds the listed values
+only, and a parameter declares `value_aliases` (alias -> listed value),
+which the check takes and describe_method gives in words ("Also read as:
+'barmat' = 'metallic_grid', ..." in the parameter's `values_note`, with the
+case rule and the refused values, in place of the raw `any_case`,
+`value_aliases`, `refused_values` keys: review C14). The manual builder
+prints them as "also read as:" and the 33 manual rows the first version
+had widened were hand-edited to match. A refusal lists and suggests listed
+values only (a value close to an alias suggests the value it stands for).
+
+Aliases moved out of the lists (each added by GM-317; lists as they were
+before GM-317 are unchanged, e.g. `caquot_kerisel` and `bar_mat` stay,
+their descriptions explaining them): retaining walls `passive_theory` and
+`theory` and soe `passive_theory` (`logspiral`, `log-spiral`); sheet pile
+`pressure_method` (`caquot_kerisel`, `logspiral`); MSE
+`reinforcement_type` (`barmat`, `welded_wire_grid`, `steel_grid`,
+`ribbed_strip`); liquefaction `method` (nine spellings of `bi2014` and
+`nceer2001`); fem2d `reset_displacements_after` (`first`, `0`, `none`);
+settlement `stress_method` (`2to1`) and the elastic and combined
+`shape`s (`circle`, `rectangle`); dxf_export `units` (`meters`, ...); the
+calc packages' older selector spellings (`mc`, `monte carlo`, `taylor`,
+...). A package that runs several tools now takes every tool's aliases and
+refused values, not the first tool's (review C20; a test checks that
+`any_case` agrees across the tools).
+
+**Calls made** (owner may revisit):
+- MSE `reinforcement_type` `"grid"` and `"strip"` (mse_wall,
+  retaining_wall_package) and liquefaction `method` `"simplified"` are
+  misleading enough not to be offered: "grid" reads as a geogrid but runs
+  the steel bar-mat curves, "strip" can read as a polymer strip but runs
+  the steel ribbed-strip curves, and "simplified" names both liquefaction
+  procedures (Boulanger and Idriss 2014 is a simplified procedure too) but
+  runs NCEER 2001. They are kept as `hidden_value_aliases` (read, never
+  shown) only because removing them would refuse calls that run today:
+  `mse_wall` / `retaining_wall_package` with `reinforcement_type="grid"`
+  (runs as `metallic_grid`) or `"strip"` (as `metallic_strip`), and
+  `liquefaction_analysis` with `method="simplified"` (as `nceer2001`).
+- `seed_idriss` stays offered as an alias of `nceer2001` (the NCEER 2001
+  procedure is the consensus update of Seed and Idriss's), with its
+  meaning shown.
+
 ### How the lists were proved complete
 
 Each of the 220 distinct lists was traced from the adapter through to the

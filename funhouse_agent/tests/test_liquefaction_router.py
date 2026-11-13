@@ -82,11 +82,16 @@ class TestLiquefactionAdapterMetadata:
 
     def test_method_allows_both_flags(self):
         allowed = METHOD_INFO["liquefaction_analysis"]["parameters"]["method"]["allowed_values"]
-        # the two ids first, then the spellings the adapter reads (GM-317)
+        assert allowed == ["bi2014", "nceer2001"]
+        # every other spelling the adapter reads is taken as the id it
+        # names (GM-317; review B3), "simplified" without being offered
+        from aec_agent_core.method_call import value_aliases
+        spec = METHOD_INFO["liquefaction_analysis"]["parameters"]["method"]
         from funhouse_agent.adapters.liquefaction_adapter import (
             _METHOD_NORMALIZE)
-        assert allowed[:2] == ["bi2014", "nceer2001"]
-        assert set(allowed) == set(_METHOD_NORMALIZE)
+        assert value_aliases(spec) == {
+            k: v for k, v in _METHOD_NORMALIZE.items() if k not in allowed}
+        assert spec["hidden_value_aliases"] == {"simplified": "nceer2001"}
 
 
 # ============================================================================
