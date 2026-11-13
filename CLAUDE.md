@@ -193,7 +193,8 @@ This repository builds three packages; the app also needs two more of the same p
   (`GEOTECH_VISION_SLOT_WAIT_S`, 600 s; the gateway check is TA-24);
   planlens main holds four tool-result repairs (BACKLOG Done PL-39,
   unreleased: every page 11 x 17 in or larger is on `pages_to_view`,
-  and a search lists only the pages it could not read).
+  and a search lists only the pages it could not read), and the
+  OpenCV probe's child leaves no core file on a FIPS host.
   Also since 2026-11-13: after every ingest, report ingest writes
   the report as five tables in JSON Lines with a `schema.json`
   (`report_ingest/tables.py`, `docs/REPORT_TABLES.md`; sent to the dataset
