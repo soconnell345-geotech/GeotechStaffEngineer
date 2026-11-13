@@ -31,9 +31,11 @@ _log = logging.getLogger(__name__)
 #: librarian and the reviewer, which both look references up.
 CONSULT_HELPERS = frozenset({"references", "reviewer"})
 
-#: The tools whose calls are lookups: a reference module's method and a
-#: chart read. Listing modules or describing a method is not a lookup.
-LOOKUP_TOOLS = frozenset({"call_agent", "read_reference_figure"})
+#: The tools whose calls are lookups: a reference module's method, a
+#: chart read and a table page read. Listing modules or describing a
+#: method is not a lookup.
+LOOKUP_TOOLS = frozenset({"call_agent", "read_reference_figure",
+                          "read_reference_table"})
 
 #: The first words of the block, which the primary's note names.
 BLOCK_HEAD = "Lookups, as counted by the app"
@@ -155,13 +157,21 @@ def _no_whole_match(data) -> bool:
 
 def _read_not_on_page(data, args) -> bool:
     """Whether a chart read's answer says the figure is not on the page it
-    was shown (the read tool's own test, ``said_not_on_page``)."""
-    if not isinstance(data, dict) or not data.get("analysis"):
+    was shown (the read tool's own test, ``said_not_on_page``), or every
+    page a table read was shown says the table is not on it."""
+    if not isinstance(data, dict):
         return False
     args = args if isinstance(args, dict) else {}
     try:
         from funhouse_agent.reference_vision import said_not_on_page
     except Exception:                                      # noqa: BLE001
+        return False
+    pages = [p for p in data.get("pages_read") or []
+             if isinstance(p, dict) and p.get("analysis")]
+    if pages:
+        number = data.get("table_number") or args.get("table_number") or ""
+        return all(said_not_on_page(p["analysis"], number) for p in pages)
+    if not data.get("analysis"):
         return False
     return said_not_on_page(data["analysis"], data.get("figure_number")
                             or args.get("figure_number") or "")
@@ -210,6 +220,9 @@ def _lookup_key(tool: str, args) -> str:
     if tool == "read_reference_figure":
         return f"{tool} {args.get('reference') or ''} " \
                f"{args.get('figure_number') or ''}".strip()
+    if tool == "read_reference_table":
+        return f"{tool} {args.get('reference') or ''} " \
+               f"{args.get('table_number') or ''}".strip()
     key = ".".join(str(p) for p in (args.get("agent_name"),
                                     args.get("method")) if p) or tool
     query = " ".join(_query(args).lower().split())
@@ -225,6 +238,11 @@ def _lookup_name(tool: str, args) -> str:
             tool, args.get("reference") or "",
             ("figure " + str(args["figure_number"]))
             if args.get("figure_number") else "") if p)
+    if tool == "read_reference_table":
+        return " ".join(str(p) for p in (
+            tool, args.get("reference") or "",
+            ("table " + str(args["table_number"]))
+            if args.get("table_number") else "") if p)
     name = ".".join(str(p) for p in (args.get("agent_name"),
                                      args.get("method")) if p) or tool
     query = _query(args)
@@ -267,7 +285,8 @@ def lookup_outcomes(rec) -> list:
             # hits holding only some of the words are no match for the
             # query (2026-11-10 review, core-05)
             row.update(outcome="empty", reason=NO_WHOLE_MATCH)
-        elif step["name"] == "read_reference_figure" and _read_not_on_page(
+        elif step["name"] in ("read_reference_figure",
+                              "read_reference_table") and _read_not_on_page(
                 data, args):
             # no value was read off a page the figure is not on
             row.update(outcome="empty", reason=NOT_ON_THE_PAGE)

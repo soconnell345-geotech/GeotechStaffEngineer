@@ -21,8 +21,9 @@ Design goals (mirrors v1):
 The vision / file-output tools are built by the vision kit
 (:mod:`funhouse_agent.deep.vision_kit`, which both pages use; its names are
 re-exported here). This module's :func:`make_vision_tools` adds the geotech
-page's two reference readers, ``read_reference_figure`` and
-``view_worked_example_source``, to the kit's tools.
+page's reference readers, ``read_reference_figure``,
+``read_reference_table`` and ``view_worked_example_source``, to the kit's
+tools.
 """
 
 import json
@@ -624,7 +625,7 @@ def make_core_tools(
 
 
 # ---------------------------------------------------------------------------
-# The vision kit with the geotech page's two reference readers added
+# The vision kit with the geotech page's reference readers added
 # ---------------------------------------------------------------------------
 
 def _read_reference_figure_tool(dispatch):
@@ -668,6 +669,49 @@ def _read_reference_figure_tool(dispatch):
     )
 
 
+def _read_reference_table_tool(dispatch):
+    """``read_reference_table`` over the vision kit's ``dispatch``: it goes
+    under the figure reader's name, the one app reader the core hands on
+    for references (``reference_vision._dispatch_read_reference_figure``
+    sends a call naming a ``table_number`` to the table reader), so it
+    shares that reader's rendering, side calls and result cap."""
+    def read_reference_table(
+        reference: str,
+        table_number: str,
+        prompt: str = "",
+        pdf_page_index: Optional[int] = None,
+    ) -> str:
+        """Render the printed page(s) of a reference table and read
+        value(s) off them with vision. Use this when a table's values are
+        printed only on its page: find the table first with ``call_agent``
+        -> ``table_db.table_search`` / ``table_get`` (each hit's
+        ``how_to_read`` says where its values are and gives this call),
+        then pass its ``reference`` + ``table_number`` and its
+        ``pdf_page_index`` with a ``prompt`` naming the value(s) you need.
+        A table printed over several pages is read page by page from the
+        page given (a few pages a call; the result names any left).
+        Returns each page's reading with the row and column heads; do not
+        give a table value from its caption or from memory.
+        """
+        args = {
+            "reference": reference,
+            "table_number": table_number,
+            "prompt": prompt,
+        }
+        if pdf_page_index is not None:
+            args["pdf_page_index"] = pdf_page_index
+        return dispatch("read_reference_figure", args)
+    return read_reference_table, (
+        "Render the printed page(s) of a reference table and read value(s) "
+        "off them with vision, for a table whose values are printed only "
+        "on its page. Find it first via table_db.table_search / table_get "
+        "(its how_to_read gives this call), then pass its reference, "
+        "table_number and pdf_page_index with a prompt naming the value(s) "
+        "needed. Returns each page's reading with the row and column heads "
+        "quoted."
+    )
+
+
 def _view_worked_example_source_tool(dispatch):
     """``view_worked_example_source`` over the vision kit's ``dispatch``."""
     def view_worked_example_source(
@@ -699,21 +743,44 @@ def _view_worked_example_source_tool(dispatch):
 
 
 #: The geotech page's reference readers, added to the vision kit: they
-#: render a reference library figure and a worked example's printed
-#: source page, which the Document Review page does not have (DR-04).
+#: render a reference library figure, a reference table's printed page
+#: and a worked example's printed source page, which the Document Review
+#: page does not have (DR-04).
 GEOTECH_VISION_TOOLS = {
     "read_reference_figure": _read_reference_figure_tool,
+    "read_reference_table": _read_reference_table_tool,
     "view_worked_example_source": _view_worked_example_source_tool,
 }
 
+#: The two page readers of the reference library, offered and left out
+#: together: where this host cannot reach the reference PDFs
+#: (``reference_docs.chart_reads_available``) neither is built.
+REFERENCE_PAGE_READERS = ("read_reference_figure", "read_reference_table")
+
+
+def reference_page_readers() -> set:
+    """The page readers of :data:`REFERENCE_PAGE_READERS` this library
+    serves: ``read_reference_table`` only where it has table catalogs
+    (``reference_docs.table_catalogs_available``)."""
+    from funhouse_agent import reference_docs
+    names = set(REFERENCE_PAGE_READERS)
+    if not reference_docs.table_catalogs_available():
+        names.discard("read_reference_table")
+    return names
+
 
 def make_vision_tools(*args, **kwargs) -> list:
-    """The vision kit's tools with the geotech page's two reference readers
+    """The vision kit's tools with the geotech page's reference readers
     (:data:`GEOTECH_VISION_TOOLS`) added: the arguments of
     :func:`funhouse_agent.deep.vision_kit.make_vision_tools`, whose
-    ``added_tools`` defaults here to those readers. The Document Review
-    page builds the kit's own."""
-    kwargs.setdefault("added_tools", GEOTECH_VISION_TOOLS)
+    ``added_tools`` defaults here to those readers (without
+    ``read_reference_table`` where the library has no table catalogs).
+    The Document Review page builds the kit's own."""
+    if "added_tools" not in kwargs:
+        kwargs["added_tools"] = {
+            name: build for name, build in GEOTECH_VISION_TOOLS.items()
+            if name not in REFERENCE_PAGE_READERS
+            or name in reference_page_readers()}
     register_reference_charts()
     return _kit.make_vision_tools(*args, **kwargs)
 

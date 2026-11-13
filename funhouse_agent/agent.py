@@ -27,7 +27,8 @@ from funhouse_agent.react_support import (
 )
 
 from funhouse_agent.dispatch import dispatch_tool, held_references
-from funhouse_agent.system_prompt import (build_system_prompt,
+from funhouse_agent.system_prompt import (TABLE_READ_SECTION,
+                                          build_system_prompt,
                                           without_chart_reads)
 from funhouse_agent.reviewer import run_review, needs_revision
 
@@ -68,11 +69,15 @@ def _build_agent_system_prompt(allowed_agents=None) -> str:
     Uses the funhouse-specific module catalog (optionally scoped to
     ``allowed_agents``) plus vision tool descriptions.
     """
-    from funhouse_agent.reference_docs import chart_reads_available
+    from funhouse_agent.reference_docs import (chart_reads_available,
+                                               table_catalogs_available)
     charts = chart_reads_available()
     base = build_system_prompt(allowed_agents, chart_reads=charts)
     tools = (VISION_TOOL_DESCRIPTIONS if charts
              else without_chart_reads(VISION_TOOL_DESCRIPTIONS))
+    if charts and table_catalogs_available():
+        # the table page reader, which the core's tool text does not have
+        tools += TABLE_READ_SECTION
     return base + "\n\n" + tools
 
 
@@ -216,7 +221,8 @@ class GeotechAgent:
 
     def _result_cap_for(self, tool_name: str) -> int:
         """Truncation cap for a tool result: larger for text-payload tools."""
-        if tool_name in ("read_pdf_text", "read_reference_figure", "list_files"):
+        if tool_name in ("read_pdf_text", "read_reference_figure",
+                         "read_reference_table", "list_files"):
             return self._large_result_chars
         return self._max_result_chars
 
@@ -323,6 +329,15 @@ class GeotechAgent:
             # Dispatch: consult sub-agent, extended tools (vision/save), or standard
             if tc.tool_name == "consult_references":
                 result_str = self._dispatch_consult(tc.arguments)
+            elif tc.tool_name == "read_reference_table":
+                # the core hands its app's readers on only by the names it
+                # lists: the table reader goes under the figure reader's,
+                # whose hook sends a call naming a table_number to it
+                result_str = dispatch_extended_tool(
+                    "read_reference_figure", dict(tc.arguments or {}),
+                    self._engine, self._attachments,
+                    save_fn=self._save_fn,
+                )
             elif tc.tool_name in ("list_files", "read_pdf_text", "analyze_image",
                                   "analyze_pdf_page", "read_reference_figure",
                                   "save_file"):

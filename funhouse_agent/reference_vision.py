@@ -16,7 +16,9 @@ in ``funhouse_agent/__init__.py``:
 - ``vision_tools.reference_read_roots`` -> :func:`reference_read_roots`
   (the folders the read tools may also read);
 - ``vision_tools.read_reference_figure`` ->
-  :func:`_dispatch_read_reference_figure`;
+  :func:`_dispatch_read_reference_figure` (which also serves
+  ``read_reference_table``, a call naming a ``table_number``:
+  :func:`_dispatch_read_reference_table`);
 - ``vision_tools.view_worked_example_source`` ->
   :func:`_dispatch_view_worked_example`.
 """
@@ -362,10 +364,244 @@ def _not_on_page(figure_number, pdf_page, estimated: bool) -> str:
 
 def _dispatch_read_reference_figure(arguments, engine):
     """Chart read-off: rendered and sent at the chart budget
-    (``vision_view.chart_reading``) — see ``_dispatch_read_reference_figure_at_budget``."""
+    (``vision_view.chart_reading``) — see ``_dispatch_read_reference_figure_at_budget``.
+
+    A call that names a ``table_number`` and no ``figure_number`` is the
+    table reader's (:func:`_dispatch_read_reference_table`): the core hands
+    its app's readers on only by the names it lists
+    (``aec_agent_core.vision_tools.APP_READER_TOOLS``, which has no table
+    reader), so ``read_reference_table`` reaches this hook under the
+    figure reader's name and shares its rendering and side-call path."""
+    if arguments.get("table_number") and not arguments.get("figure_number"):
+        return _dispatch_read_reference_table(arguments, engine)
     from aec_agent_core import vision_view
     with vision_view.chart_reading():
         return _dispatch_read_reference_figure_at_budget(arguments, engine)
+
+
+#: The most pages of one table a read sends (one vision call each, at
+#: once, as the tiles of a page are read): a table's answer per page runs
+#: to about 3,000 characters, and the whole result must fit the reference
+#: cap of 16,000 (``deep.tools.DEFAULT_REFERENCE_RESULT_CHARS``) as valid
+#: JSON. A table running over more pages is read from the page asked for,
+#: and the result names the pages left for another read.
+TABLE_PAGES_MAX = 4
+
+#: The whole table read stays under this, so the reference cap never cuts
+#: it mid-JSON; each page's answer is shortened evenly to fit, and says so.
+TABLE_RESULT_CHARS = 15000
+
+#: Said beside every table read.
+_TABLE_READ_NOTE = (
+    "Values read off the rendered page by vision: check each against the "
+    "row and column heads quoted with it, and say they were read off the "
+    "page.")
+
+#: The step every table read starts with.
+_TABLE_CONFIRM_STEP = (
+    "1. FIRST confirm you are looking at Table {tab}: give the table number "
+    "and caption as printed (or the \"continued\" heading of a sheet that "
+    "carries it on). If Table {tab} is not on this page, begin your answer "
+    "with \"{not_here}\", say what the page shows instead and do not read "
+    "a value{estimated}. Ignore other tables, figures and body text.\n")
+
+
+def _dispatch_read_reference_table(arguments, engine):
+    """Table read: rendered and sent at the chart budget, as a figure is
+    (``vision_view.chart_reading``); see
+    :func:`_dispatch_read_reference_table_at_budget`."""
+    from aec_agent_core import vision_view
+    with vision_view.chart_reading():
+        return _dispatch_read_reference_table_at_budget(arguments, engine)
+
+
+def _table_pages(rec: dict, start: int) -> List[int]:
+    """The pages of a table to read, from ``start`` (one of its pages) on."""
+    pages = [int(p) for p in (rec.get("pages") or []) if p is not None]
+    if not pages:
+        pages = [int(rec["pdf_page_index"])]
+    if start in pages:
+        pages = pages[pages.index(start):]
+    return pages
+
+
+def _fit_table_read(out: dict) -> None:
+    """Shorten each page's answer evenly until the result fits
+    :data:`TABLE_RESULT_CHARS`, saying so."""
+    rows = [r for r in out.get("pages_read") or []
+            if isinstance(r.get("analysis"), str)]
+    size = len(json.dumps(out, default=str))
+    if size <= TABLE_RESULT_CHARS or not rows:
+        return
+    over = size - TABLE_RESULT_CHARS + 200
+    longest = max(len(r["analysis"]) for r in rows)
+    keep = max(400, longest - over)
+    for _ in range(8):
+        for r in rows:
+            if len(r["analysis"]) > keep:
+                r["analysis"] = r["analysis"][:keep].rstrip() + " [cut to fit]"
+        if len(json.dumps(out, default=str)) <= TABLE_RESULT_CHARS \
+                or keep <= 400:
+            break
+        keep = max(400, int(keep * 0.8))
+    out["cut"] = (f"Each page's answer was shortened to fit one result of "
+                  f"{TABLE_RESULT_CHARS:,} characters: read fewer values at "
+                  "a time, or one page at a time with pdf_page_index.")
+
+
+def _dispatch_read_reference_table_at_budget(arguments, engine):
+    """Render the page(s) of a catalogued reference table and read
+    value(s) off them via vision, one side call per page."""
+    reference = arguments.get("reference", "")
+    table_number = arguments.get("table_number", "")
+    question = (arguments.get("prompt", "")
+                or "Read the relevant value(s) from this table.")
+    if not reference or not table_number:
+        return json.dumps({
+            "error": "Both 'reference' and 'table_number' are required "
+                     "(find them via table_db.table_search)."})
+    page_kw = {}
+    asked_page = arguments.get("pdf_page_index")
+    try:
+        from geotech_references import _tables_db
+        if asked_page not in (None, ""):
+            page_kw["pdf_page_index"] = int(asked_page)
+        rec = _tables_db.table_get(reference, table_number, **page_kw)
+        pdf_abs, start = _tables_db.resolve_table_pdf(
+            reference, table_number, **page_kw)
+    except ImportError:
+        return json.dumps({"error": "The installed reference library has "
+                                    "no table catalogs."})
+    except KeyError as e:
+        return json.dumps({"error": f"Table not found: {e}"})
+    except FileNotFoundError as e:
+        # Not in the local docs folder: a host-registered source fetches
+        # it on first use, as for a figure.
+        from funhouse_agent import reference_docs
+        pdf_abs = reference_docs.fetch(rec.get("pdf_path", ""))
+        if not pdf_abs:
+            return json.dumps({"error": reference_docs.missing_message(
+                str(e), rec.get("pdf_path", ""))})
+        start = int(page_kw.get("pdf_page_index", rec["pdf_page_index"]))
+        if start not in (rec.get("pages") or [start]):
+            start = int(rec["pdf_page_index"])
+    except Exception as e:
+        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+    pages = _table_pages(rec, int(start))
+    sent, left = pages[:TABLE_PAGES_MAX], pages[TABLE_PAGES_MAX:]
+    from aec_agent_core import vision_view
+    renders = []
+    for page in sent:
+        try:
+            renders.append(vision_view.render_view(
+                str(pdf_abs), page=page,
+                allow_jpeg=getattr(engine, "accepts_jpeg", False),
+                engine=engine))
+        except ImportError:
+            return json.dumps({"error": "PyMuPDF required for PDF "
+                                        "rendering. pip install PyMuPDF"})
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+    estimated = bool(rec.get("page_estimated"))
+    number = rec["table_number"]
+    all_pages = rec.get("pages") or [rec["pdf_page_index"]]
+    step_one = _TABLE_CONFIRM_STEP.format(
+        tab=number, not_here=NOT_ON_PAGE,
+        estimated=_CONFIRM_ESTIMATED if estimated else "")
+
+    def prompt_for(i: int, page: int) -> str:
+        where = ("" if len(all_pages) == 1 else
+                 f" The table is printed over {len(all_pages)} pages (PDF "
+                 f"pages {', '.join(str(p + 1) for p in all_pages)}); this "
+                 f"is PDF page {page + 1}: a sheet after the first may "
+                 "carry the column heads only on the first sheet, so name "
+                 "each column by what it holds.")
+        return (
+            f"This image is a rendered page from {reference} "
+            f"{'that should contain' if estimated else 'containing'} "
+            f"Table {number}: \"{rec.get('caption') or ''}\".{where}\n\n"
+            "Read the requested value(s) from this printed table:\n"
+            + step_one +
+            "2. Find the row(s) and column(s) the request needs, by their "
+            "heads as printed.\n"
+            "3. Report each value exactly as printed, with its row and "
+            "column heads and the unit printed in the heads, the caption or "
+            "a note; give any footnote or note that applies to it. Do not "
+            "interpolate between rows unless asked, and say so if you do.\n\n"
+            + _PRINTED_ONLY +
+            f"Request: {question}")
+
+    def job(i, page, image_bytes, info):
+        return lambda: _vt.ask_vision(
+            engine, image_bytes,
+            vision_view.with_location(prompt_for(i, page),
+                                      _vt._sent_size(info)),
+            "reference_figure")
+
+    try:
+        answers = _vt._run_together([
+            job(i, page, image_bytes, info)
+            for i, (page, (image_bytes, info)) in enumerate(
+                zip(sent, renders))])
+    except Exception as e:  # noqa: BLE001
+        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+    read = []
+    for page, (image_bytes, info), answer in zip(sent, renders, answers):
+        row = {"pdf_page": page + 1, "pdf_page_index": page,
+               # render_region(view=, image_box=) zooms on what it found
+               "view": [round(float(v), 1) for v in info["clip"]],
+               "view_px": [info["width_px"], info["height_px"]]}
+        if isinstance(answer, _vt._Failed):
+            exc = answer.exc
+            if isinstance(exc, (NotImplementedError, AttributeError)):
+                return json.dumps({"error": "Vision not available on this "
+                                            f"engine: {exc}"})
+            row["error"] = _vt._vision_error(exc)
+        else:
+            row["analysis"] = answer
+            _vt._finish_answer(row, info, tagged_only=True)
+        read.append(row)
+    out = {
+        "reference": reference,
+        "table_number": number,
+        "caption": rec.get("caption"),
+        "printed_page": rec.get("printed_page"),
+        "page_estimated": estimated,
+        "pages_read": read,
+        "note": _TABLE_READ_NOTE,
+        # render_region zooms on a page by this file name and the page's
+        # pdf_page_index
+        "source": _vt.display_path(str(pdf_abs)),
+        **{k: v for k, v in vision_view.view_payload(
+            renders[0][1], engine).items()
+           if k not in ("view", "view_px", "precision")},
+    }
+    if left:
+        out["pages_not_read"] = left
+        out["pages_left_note"] = (
+            f"Table {number} runs on over pdf_page_index "
+            f"{', '.join(str(p) for p in left)}, which this read did not "
+            f"send (at most {TABLE_PAGES_MAX} pages a read): call "
+            f"read_reference_table again with pdf_page_index={left[0]} for "
+            "them.")
+    if rec.get("values") in ("text", "lookup") and rec.get("values_in"):
+        out["values_also_in"] = (
+            f"The catalog says this table's values are also "
+            f"{'typed in section ' if rec['values'] == 'text' else 'returned by the lookup '}"
+            f"{rec['values_in']} (table_db.table_get's how_to_read gives "
+            "the call); compare where they differ.")
+    if all(said_not_on_page(r.get("analysis"), number) for r in read
+           if "analysis" in r) and any("analysis" in r for r in read):
+        out["second_reading"] = (
+            f"The vision reader said Table {number} is not on the page(s) "
+            "it was shown: no value was read off them."
+            + (" The page was located by estimate; read the adjacent pages."
+               if estimated else ""))
+    _fit_table_read(out)
+    return json.dumps(out, default=str)
 
 
 def _dispatch_read_reference_figure_at_budget(arguments, engine):

@@ -1,7 +1,8 @@
 """Where the agent gets a reference PDF it needs to look at.
 
-``read_reference_figure`` and ``view_worked_example_source`` render pages of
-published PDFs that are not in the wheel. The local folder named by
+``read_reference_figure``, ``read_reference_table`` and
+``view_worked_example_source`` render pages of published PDFs that are not
+in the wheel. The local folder named by
 ``GEOTECH_REFERENCES_DOCS`` (or a source checkout's ``docs/``) is tried first.
 When the PDF is not there, a fetcher registered by the host may supply it: the
 web app registers one that downloads the file from the team SharePoint the
@@ -232,6 +233,62 @@ def figure_readable(reference: str, figure_number: str,
     return _resolves(reference, figure_number, pdf_page_index)
 
 
+def table_catalogs_available() -> bool:
+    """Whether the reference library on the path has table catalogs
+    (``geotech_references._tables_db``, REF-86). An older library has
+    none: then no table tool is offered and no prompt names one."""
+    import importlib.util
+    try:
+        return importlib.util.find_spec(
+            "geotech_references._tables_db") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _resolves_table(reference: str, table_number: str,
+                    pdf_page_index=None) -> bool:
+    """Whether the library's ``resolve_table_pdf`` finds this table's PDF,
+    a fetched copy is in the cache, or the registered fetcher is shown to
+    hold it (as :func:`_resolves` for a figure). Never fetches."""
+    try:
+        from geotech_references import _tables_db
+    except Exception:  # noqa: BLE001 - a library with no table catalogs
+        return False
+    page = ({} if pdf_page_index in (None, "")
+            else {"pdf_page_index": int(pdf_page_index)})
+    try:
+        _tables_db.resolve_table_pdf(reference, table_number, **page)
+        return True
+    except FileNotFoundError:
+        pass
+    except Exception:  # noqa: BLE001 - an unknown table is not readable
+        return False
+    try:
+        pdf_path = _tables_db.table_get(reference, table_number,
+                                        **page).get("pdf_path", "")
+    except Exception:  # noqa: BLE001
+        return False
+    name = os.path.basename(pdf_path or "")
+    return bool(name) and (_cached(name) is not None
+                           or _fetcher_offers(name))
+
+
+def table_readable(reference: str, table_number: str,
+                   pdf_page_index=None, chart_reads=None) -> bool:
+    """Whether this one table's printed page can be read on this host with
+    ``read_reference_table``: that tool is offered (the switch
+    :func:`chart_reads_available` that offers ``read_reference_figure``;
+    ``chart_reads`` passes its answer when the caller already has it) and
+    the table's own PDF is found, cached or shown to be held by the
+    registered fetcher. Pinned (:func:`pin_chart_reads`): the pin."""
+    if _PINNED is not None:
+        return _PINNED
+    if chart_reads is None:
+        chart_reads = chart_reads_available()
+    return bool(chart_reads) and _resolves_table(reference, table_number,
+                                                 pdf_page_index)
+
+
 def worked_example_pages_available() -> bool:
     """Whether a worked example's printed source page can be shown on this
     host (``view_worked_example_source``), by the same rule as
@@ -272,6 +329,19 @@ NO_CHART_READ = (
     "caption or from memory; say that the chart could not be read.")
 
 
+def no_table_read(table_number, printed_page, reference) -> str:
+    """What a page-only table's next step says where its page cannot be
+    read on this host: the values are only on that printed page, the page
+    cannot be read here, and no reading tool is named."""
+    page = (f"printed page {printed_page}" if printed_page not in (None, "")
+            else "its printed page")
+    return (f"The values of Table {table_number} are printed only on {page} "
+            f"of {reference}, and this host cannot read that page (the "
+            "reference PDF is not here), so they are not available here. "
+            "Cite the table and its printed page; do NOT give a value of it "
+            "from its caption or from memory.")
+
+
 def missing_message(original: str, filename: str) -> str:
     """The not-found error, saying where else was tried."""
     desc = fetcher_description()
@@ -289,4 +359,5 @@ def missing_message(original: str, filename: str) -> str:
 __all__ = ["register_fetcher", "fetch", "cache_dir", "fetcher_description",
            "missing_message", "CACHE_ENV", "chart_reads_available",
            "figure_readable", "pin_chart_reads", "NO_CHART_READ",
-           "worked_example_pages_available"]
+           "worked_example_pages_available", "table_catalogs_available",
+           "table_readable", "no_table_read"]

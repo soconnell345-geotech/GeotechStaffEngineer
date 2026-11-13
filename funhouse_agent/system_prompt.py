@@ -253,6 +253,28 @@ _READ_FIGURE_SECTION = re.compile(
     r"### \d+\. read_reference_figure\n.*?(?=### \d+\. |\Z)", re.DOTALL)
 
 
+#: The v1 tool text for the table page reader, appended after the vision
+#: tool descriptions where the reference PDFs reach this host and the
+#: library has table catalogs (the core's text has no table reader).
+TABLE_READ_SECTION = """
+
+### 13. read_reference_table
+Render the printed page(s) of a reference table and read value(s) off them
+with vision, for a table whose values are printed only on its page. Find the
+table first with `call_agent` -> `table_db` (`table_search` / `table_get`):
+each hit's `how_to_read` says where its values are (a section to fetch, a
+lookup to call, or this call with its `pdf_page_index`). A table printed over
+several pages is read page by page from the page given; the result names any
+pages left for another read. Never give a table value from its caption or
+from memory.
+```
+<tool_call>
+{"tool_name": "read_reference_table", "reference": "dm7_2", "table_number": "6-24", "pdf_page_index": 465, "prompt": "Read the bond strength range for the soil type named"}
+</tool_call>
+```
+"""
+
+
 def without_chart_reads(tool_text: str) -> str:
     """``tool_text`` (the v1 vision tool descriptions) without its
     ``read_reference_figure`` section."""
