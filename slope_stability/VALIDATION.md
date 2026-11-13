@@ -834,6 +834,55 @@ solve: `FOS` None, never another solver's value (GM-139's kind of circle; V-054'
 circle by Spencer and GLE; a stabilizing-pile row whose force exceeds the driving
 moment, which returned 999.9).
 
+## B21 — The printed acceptability checks (GM-140 step 3, 2026-11-13)
+
+The rule, its print and what it replaced: DESIGN.md, "The printed
+acceptability checks". The record, with the whole of section 11 before and
+after: `module_work/gm140/STEP3_CHECK.md`; the measurements are
+`module_work/gm140/step2_section11.py` (unchanged), `step3_section11.py` and
+`step3_screens.py`, run on master and on the branch.
+
+**Against print.** No value pinned to a printed answer moved outside its
+tolerance.
+
+| Case | Before | After | Printed | Why |
+|---|---|---|---|---|
+| Slide2 #85, one support, GLE search | 1.5726 | 1.5732 | 1.575 | the toe-circle family uses the common below-base test (D19) |
+| Slide2 #85, one support, Bishop, active / passive | 1.3715 / 1.2538 | 1.3713 / 1.2534 | 1.531 / 1.324 | the same; both are the reverse-curvature toe circles of D24 |
+| #85, reverse curvature discarded, Bishop, every slice looked at | 1.511 (157 circles left out) | 1.508, flagged for m_alpha, with 1.511 as the lowest circle without a flag | 1.531 (Duncan and Wright 1.51) | a circle with m_alpha below 0.2 is kept and flagged (OWN-102) |
+| Vertical cut in undrained clay, Bishop, every slice looked at | 0.935 | 0.842, flagged, with 0.935 as the lowest unflagged | Taylor 0.851 | the same |
+
+Unchanged, each measured before and after: ACADS 1(a) (0.985 / 0.984 / 0.984 /
+0.983), #86 (1.613 / 1.607 / 1.607; 0.942), #85 Spencer (1.551), V-054's toe
+circle (2.346), V-032 (1.315), V-042 (1.3335; FOSM and Monte Carlo), Duncan's
+Example 1 (0.7049, 0.6774), V-043 (1.2096, 1.1859; DE 1.234), V-031, V-044,
+V-039's yield coefficients, ACADS 4's declared family (0.753 / 0.722 / 0.728)
+and the weak layer over rock's default search (0.886). On each the circles
+formerly left out for m_alpha are now kept and flagged, far above the
+minimum.
+
+**What a result says now.** ACADS 4's weak-layer search (0.830 against the
+printed 0.760; strict xfail): the surface carries tensile interslice forces
+and a line of thrust outside the mass; the lowest scored surface without a
+flag is 1.667. V-042's Bishop search: on 537 of 3,942 scored circles Bishop's
+value is below the Ordinary Method of Slices value, which is taken there
+(Duncan 1996, p. 580); none governs.
+
+**Not pinned to print, and moved.** Each is flagged, with the lowest
+unflagged surface beside it:
+
+| Case | Before | After | Printed |
+|---|---|---|---|
+| Duncan's Example 4 by Janbu, 30 slices | 1.203 (78 circles left out) | 0.843 flagged; 1.215 unflagged; 1.203 with `low_m_alpha='refuse'` | none in hand for Janbu |
+| A made-up pore-pressure grid on the ACADS 5 slope (V-029's demonstration), Bishop | 1.247 | 1.175, the frictional term as printed where u b exceeds W; 1.247 with `negative_friction_term='zero'` | none |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.092 | 0.633 flagged; 1.096 unflagged | 1.00 |
+| Weak layer over rock, DE directed | no surface | 0.612 flagged; no scored trial unflagged | none |
+
+The last two follow from removing the noncircular screens on a jagged surface
+and on agreement between moment axes and slicings: every surface those
+screens refused in the measured cases carried a flag of the printed checks
+(88, 38 and 1), so the surfaces are now scored and flagged.
+
 ## Notes / known deviations
 
 - Ordinary method with ru: formulation-sensitive (F&K 1.607 vs Slide2
