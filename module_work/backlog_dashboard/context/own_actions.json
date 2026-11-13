@@ -841,5 +841,30 @@
       "BACKLOG.md OWN-145, EV-43",
       "module_work/review_eval_results/2026-11-12_foundry_brief7/FIRST_PASS_AND_PLAN.md"
     ]
+  },
+  "OWN-147": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Before the next Document Review release: are all your testers' sign-in names plain? And one look in the key vault.",
+    "why": "The next release keeps two testers from ever sharing an AI key or a folder. The price: a tester whose sign-in name is not plain gets a new, empty folder, on the host and on SharePoint. Their earlier conversations stay in the old folder and nothing copies them, so their list of past conversations looks empty.",
+    "background": "Plain means letters, digits, dots and hyphens, with single underscores only inside the user name (CORP\\j_doe is plain). Not plain: an apostrophe, a space, an accented letter, an underscore in the domain part or at an end of the user name, a doubled underscore, a dot at either end, or a name longer than about 60 characters. Most directory names are plain, so the likely answer is that nobody moves. The change is on master, tested, and not released. The vault question is separate: a tester with punctuation in the name who has BOTH an entry in PROMPTER-KEYS and a secret of the old kind is served the PROMPTER-KEYS entry's key from this release on.",
+    "options": [],
+    "recommendation": "Look down the list of testers once. If all are plain, answer \"all plain\" and nothing else is needed.",
+    "if_no_answer": "The release goes out with a general sentence in its note, and a tester with an unusual name finds an empty list and has to ask.",
+    "message_to_send": null,
+    "steps": [
+      "Look at the testers' sign-in names as the host sees them: the domain, a backslash, the user name.",
+      "Answer \"all plain\", or how many are not. Do not type the names here: the backlog this answer is folded into is public.",
+      "If the vault's PROMPTER-KEYS setting is in use, ask whoever keeps it whether any tester with punctuation in the name has an entry there and also a secret of their own. Answer yes, no or not used."
+    ],
+    "unblocks": [
+      "INF-76",
+      "TA-42"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-147, TA-40, TA-42",
+      "module_work/ta39/CHECK.md",
+      "module_work/ta40/CHECK.md"
+    ]
   }
 }
