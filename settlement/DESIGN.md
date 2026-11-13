@@ -120,6 +120,26 @@ Per item page, printed form, module form and verdict in
   `secondary_settlement` has no default e0 (it was 1.0). t2 = t1 +
   `t_secondary`: the print's t is counted from loading.
 
+## Layers that stop short, and stress lists of another length (GM-320, 2026-11-13)
+
+- **Schmertmann.** Eq. 8-16 sums over "the soil layers within the zone of
+  strain influence" (NHI-06-089 p. 8-45); Example 8-2 takes its layers to
+  the bottom of the diagram (p. 8-50). Neither it nor UFS 3-220-10 Sec. 5-3
+  prints a rule for layers that stop above the bottom of the diagram
+  (2B at L/B = 1, 4B at L/B >= 10). Until GM-320 the missing depth added
+  nothing and nothing was said. Now it is refused, naming the depth not
+  covered, unless `below_profile` (`schmertmann_below_profile` on
+  `SettlementAnalysis`) says what lies below: `"last_layer_continued"`
+  (the deepest layer's Es to the bottom of the diagram) or
+  `"incompressible"` (nothing counted below the layers, on the same
+  diagram: the old silent answer, now stated). The terms carry
+  `profile_bottom` and `below_profile`; the result's `choices` and
+  `warnings` say which was taken. The diagram itself is not redrawn for a
+  shallow rigid layer: no held page prints that.
+- **`consolidation_settlement` (the tool).** `delta_sigmas` must have one
+  value per layer; another length is refused (it was zipped, dropping the
+  extra layers or stresses from the total).
+
 ## The values the analysis used (GM-143)
 
 `SettlementResult` carries `B`, `L` (None for a strip), `footing_shape`,

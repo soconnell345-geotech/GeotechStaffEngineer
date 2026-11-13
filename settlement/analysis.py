@@ -20,6 +20,7 @@ import numpy as np
 
 from settlement.immediate import (
     elastic_settlement, schmertmann_terms, SchmertmannLayer,
+    schmertmann_below_choice, schmertmann_below_warning,
     elastic_influence_factor,
 )
 from settlement.consolidation import (
@@ -143,6 +144,10 @@ class SettlementAnalysis:
     schmertmann_layers: Optional[List[SchmertmannLayer]] = None
     time_years_schmertmann: float = 0.0
     gamma_soil: Optional[float] = None  # for Schmertmann Izp sigma'_vp at peak depth
+    # What lies below Schmertmann layers that stop above the bottom of the
+    # strain influence diagram: "last_layer_continued" or "incompressible";
+    # None refuses a short profile (GM-320)
+    schmertmann_below_profile: Optional[str] = None
     Iw_immediate: Optional[float] = None  # elastic influence factor override
 
     # Consolidation parameters
@@ -301,6 +306,9 @@ class SettlementAnalysis:
                    "no creep factor (time_years_schmertmann = 0)")
                 + diagram,
                 ["elastic (immediate_method 'elastic')"]))
+            below = schmertmann_below_choice(terms)
+            if below:
+                out.append(below)
         length = self._length_choice()
         if length:
             out.append(length)
@@ -401,6 +409,9 @@ class SettlementAnalysis:
     def _warnings(self, result: SettlementResult) -> list:
         """What the user must be told about the result (GM-115)."""
         out = []
+        note = schmertmann_below_warning(result.schmertmann_terms)
+        if note:
+            out.append(note)
         if result.secondary and self.cv is None:
             out.append(
                 "Secondary settlement starts at an assumed t1 = 1 year (the "
@@ -452,6 +463,7 @@ class SettlementAnalysis:
                 time_years=self.time_years_schmertmann,
                 L=self.L,
                 gamma_soil=self.gamma_soil,
+                below_profile=self.schmertmann_below_profile,
             )
             if result is not None:
                 result.schmertmann_terms = terms

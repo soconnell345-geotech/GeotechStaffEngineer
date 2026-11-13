@@ -269,12 +269,18 @@ class SchmertmannLayer:
         return (self.depth_top + self.depth_bottom) / 2.0
 
 
+#: What may be said to lie below Schmertmann layers that stop above the
+#: bottom of the strain influence diagram (``below_profile``, GM-320).
+BELOW_PROFILE = ("last_layer_continued", "incompressible")
+
+
 def schmertmann_settlement(q_net: float, q0: float, B: float,
                            layers: List[SchmertmannLayer],
                            footing_shape: str = "square",
                            time_years: float = 0.0,
                            L: Optional[float] = None,
-                           gamma_soil: Optional[float] = None) -> float:
+                           gamma_soil: Optional[float] = None,
+                           below_profile: Optional[str] = None) -> float:
     """Schmertmann's improved method (1978) for immediate settlement.
 
     Se = C1 * C2 * C3 * delta_q * SUM(Iz/Es * dz)
@@ -289,8 +295,10 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
     B : float
         Footing width (m).
     layers : list of SchmertmannLayer
-        Soil sublayers below the footing base, extending to at least
-        2B (square) or 4B (strip) depth.
+        Soil sublayers below the footing base, to the bottom of the
+        strain influence diagram (2B at L/B = 1, 4B at L/B >= 10). If
+        the deepest layer stops above that depth the run is refused
+        unless ``below_profile`` says what lies below.
     footing_shape : str, optional
         "square" or "circular" (peak Iz at 0.5B, influence to 2B) or
         "strip" (peak Iz at B, influence to 4B). Default "square".
@@ -310,6 +318,16 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
         Izp = 0.5 + 0.1 sqrt(delta_q / sigma'_vp) (NHI-06-089 Fig. 8-21b;
         UFS Fig. 5-7). Required (GM-285: without it sigma'_vp was taken as
         q0, printed nowhere, and Izp as 0.5 when q0 = 0).
+    below_profile : str, optional
+        What lies between the bottom of the deepest layer and the bottom
+        of the diagram, when the layers stop short of it (GM-320):
+        ``"last_layer_continued"`` (the deepest layer's Es down to the
+        bottom of the diagram) or ``"incompressible"`` (no strain below
+        the layers: the sum of Eq. 8-16 stops there, on the same
+        diagram). Not given, a profile that stops short is refused:
+        neither NHI-06-089 Sec. 8.5.1 nor UFS 3-220-10 Sec. 5-3 prints a
+        rule for it. It changes nothing when the layers reach the bottom
+        of the diagram.
 
     Returns
     -------
@@ -328,7 +346,8 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
     if q_net <= 0:
         return 0.0
     return schmertmann_terms(q_net, q0, B, layers, footing_shape,
-                             time_years, L, gamma_soil)["Se"]
+                             time_years, L, gamma_soil,
+                             below_profile)["Se"]
 
 
 def schmertmann_terms(q_net: float, q0: float, B: float,
@@ -336,14 +355,23 @@ def schmertmann_terms(q_net: float, q0: float, B: float,
                       footing_shape: str = "square",
                       time_years: float = 0.0,
                       L: Optional[float] = None,
-                      gamma_soil: Optional[float] = None) -> dict:
+                      gamma_soil: Optional[float] = None,
+                      below_profile: Optional[str] = None) -> dict:
     """The terms of :func:`schmertmann_settlement` as it works them out
     (it returns this ``Se``): ``strip`` (the plane-strain diagram),
     ``L_over_B`` (infinite for a strip), ``plane_strain_share`` (0 for the
     axisymmetric diagram, 1 for the plane-strain one, linear between),
     ``C1``, ``C2``, ``C3``, ``z_peak``, ``z_max``, ``Iz_0``,
-    ``sigma_vp`` (kPa), ``Iz_peak``, ``sum_Iz_dz_over_Es`` (m/kPa) and
-    ``Se`` (m). Same parameters; ``q_net`` must be positive."""
+    ``sigma_vp`` (kPa), ``Iz_peak``, ``sum_Iz_dz_over_Es`` (m/kPa),
+    ``Se`` (m), ``profile_bottom`` (m, the bottom of the deepest layer)
+    and ``below_profile`` (None when the layers reach ``z_max``; else
+    "last_layer_continued" or "incompressible", what was taken between
+    ``profile_bottom`` and ``z_max``). Same parameters; ``q_net`` must be
+    positive."""
+    if below_profile is not None and below_profile not in BELOW_PROFILE:
+        raise ValueError(
+            f"below_profile must be one of {list(BELOW_PROFILE)}, "
+            f"got {below_profile!r}")
     if gamma_soil is None:
         raise ValueError(
             "Schmertmann's peak strain influence factor Izp = 0.5 + 0.1 "
@@ -419,8 +447,36 @@ def schmertmann_terms(q_net: float, q0: float, B: float,
     # coarse user layering can no longer clip the peak (Das-sweep ergonomics
     # note 2026-07: 4- vs 3-layer encodings of the same profile differed by
     # ~1 % from the lost kink; now both integrate the diagram exactly).
+    # The layers must reach the bottom of the diagram (GM-320). The sum
+    # of Eq. 8-16 is over "the soil layers within the zone of strain
+    # influence" (NHI-06-089 p. 8-45) and neither it nor UFS 3-220-10
+    # prints what to do when the explored profile stops above z_max, so
+    # a short profile is refused unless the caller says what lies below.
+    profile_bottom = max((layer.depth_bottom for layer in layers),
+                         default=0.0)
+    short = profile_bottom < z_max - 1e-6
+    if short and below_profile is None:
+        raise ValueError(
+            "the Schmertmann layers stop at "
+            f"{profile_bottom:g} m below the footing base and the strain "
+            f"influence diagram runs to {z_max:g} m "
+            f"({z_max / B:.3g} B, NHI-06-089 Fig. 8-21a): the "
+            f"{z_max - profile_bottom:g} m from {profile_bottom:g} to "
+            f"{z_max:g} m is not covered, and its strain would be left "
+            "out of the settlement. Give layers down to "
+            f"{z_max:g} m, or say what lies below them with "
+            "below_profile: 'last_layer_continued' (the deepest layer's "
+            "Es down to the bottom of the diagram) or 'incompressible' "
+            "(rock or another layer that does not strain)")
+    used_below = below_profile if short else None
+    sum_layers = list(layers)
+    if used_below == "last_layer_continued":
+        deepest = max(layers, key=lambda layer: layer.depth_bottom)
+        sum_layers.append(SchmertmannLayer(
+            depth_top=profile_bottom, depth_bottom=z_max, Es=deepest.Es))
+
     total = 0.0
-    for layer in layers:
+    for layer in sum_layers:
         if layer.depth_top >= z_max:
             continue
         # Clip layer to influence zone
@@ -439,4 +495,44 @@ def schmertmann_terms(q_net: float, q0: float, B: float,
             "C1": C1, "C2": C2, "C3": C3,
             "z_peak": z_peak, "z_max": z_max, "Iz_0": Iz_0,
             "sigma_vp": sigma_vp, "Iz_peak": Iz_peak,
-            "sum_Iz_dz_over_Es": total, "Se": Se}
+            "sum_Iz_dz_over_Es": total, "Se": Se,
+            "profile_bottom": profile_bottom, "below_profile": used_below}
+
+
+def _below_text(terms: dict) -> str:
+    bottom, z_max = terms["profile_bottom"], terms["z_max"]
+    span = f"from {bottom:g} m to {z_max:g} m below the footing base"
+    if terms["below_profile"] == "last_layer_continued":
+        return ("the deepest layer's Es continued " + span
+                + " (the bottom of the strain influence diagram)")
+    return ("incompressible " + span + ": no strain counted there, on "
+            "the same strain influence diagram")
+
+
+def schmertmann_below_choice(terms: Optional[dict]) -> Optional[dict]:
+    """The ``choices`` entry for what was taken below Schmertmann layers
+    that stop above the bottom of the diagram; None when they reach it
+    (GM-320)."""
+    if not terms or not terms.get("below_profile"):
+        return None
+    from geotech_common.choices import GIVEN, choice
+    other = [b for b in BELOW_PROFILE if b != terms["below_profile"]][0]
+    return choice(
+        "soil below the Schmertmann layers", _below_text(terms), GIVEN,
+        "the layers given stop above the bottom of the diagram; "
+        "NHI-06-089 Sec. 8.5.1 and UFS 3-220-10 Sec. 5-3 print no rule "
+        "for that, so the caller says what lies below",
+        [f"below_profile '{other}'",
+         f"layers given down to {terms['z_max']:g} m"])
+
+
+def schmertmann_below_warning(terms: Optional[dict]) -> Optional[str]:
+    """The warning for the same case; None when the layers reach the
+    bottom of the diagram."""
+    if not terms or not terms.get("below_profile"):
+        return None
+    return ("The Schmertmann layers stop at "
+            f"{terms['profile_bottom']:g} m and the strain influence "
+            f"diagram runs to {terms['z_max']:g} m: the settlement takes "
+            + _below_text(terms) + ", as given (below_profile), not as "
+            "explored.")
