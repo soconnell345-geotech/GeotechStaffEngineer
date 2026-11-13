@@ -370,6 +370,36 @@ m (Kp 3.39) with Rankine, 3.78 m (Kp 6.39 at delta 21.8) with the log
 spiral; 8 m braced wall, struts at 2 and 5 m: D 2.87 m and 1.72 m. The
 active side stays Rankine.
 
+## A support's own load: spacing and inclination (GM-321, 2026-11-13)
+
+The braced analysis works per metre of wall. Each `SupportLevel` may give
+its horizontal `spacing` (m) and its inclination `angle_deg`; the result's
+`support_reactions` then carry, beside `load_kN_per_m` (horizontal, per
+metre of wall):
+
+- `axial_load_kN_per_m` = load / cos(angle);
+- `horizontal_load_kN_per_support` = load x spacing (GEC-4 Eq. 19, p. 66:
+  Th = Thi s);
+- `axial_load_kN_per_support` = that / cos(angle) (GEC-4 Eq. 20, p. 67:
+  T = Th / cos theta);
+- `vertical_load_kN_per_support` = axial x sin(angle) (GEC-4 Eq. 21).
+
+GEC-4 prints these for ground anchors; for an inclined strut or raker they
+are the same statics. The held text of the Caltrans Trenching and Shoring
+Manual prints no spacing or inclination rule for struts that could be
+found. `spacing` has no default (it was 3.0, and never read): without it
+the per-support loads are None and the notes and `choices` say so. The
+vertical component is reported, not applied to the wall (no axial wall
+check here). The wall's moment, shear and embedment do not depend on
+either input.
+
+**Preload is not an input.** `preload_kN_per_m` was stored and never read.
+No held page prints how a preload or lock-off load changes the support
+loads of an apparent pressure analysis (GEC-4 Sec. 7.5, pp. 154-155,
+gives the lock-off load as 75 to 100 percent of the design load; UFC
+3-220-20 leaves the choice of diagram for preloaded struts to judgement),
+so the field was removed and the tool refuses it with that message.
+
 ## Calc package (GM-41)
 `soe/calc_steps.py` renders the three wall tools through
 `calc_package(soe_package, wall_type=cantilever|braced|fhwa_anchored)`. The

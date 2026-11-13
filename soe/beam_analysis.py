@@ -30,6 +30,7 @@ References:
     Terzaghi & Peck (1967) Soil Mechanics in Engineering Practice
 """
 
+import math
 from typing import List
 
 import numpy as np
@@ -263,6 +264,73 @@ def _supports(p, depths, H: float, breaks, method: str, fe_load) -> dict:
     return {"upper": upper, "lower": lower, "spans": rows,
             "z": dz, "p": dp, "V": dV, "M": dM, "M_max": peak["M"],
             "z_max": peak["z"], "V_max": peak["V"], "subgrade": subgrade}
+
+
+_OWN_LOAD_BASIS = (
+    "GEC-4 Eqs. 19 to 21 (pp. 66, 67), printed for ground anchors: "
+    "Th = Thi s (Thi the horizontal load per unit width of wall, s the "
+    "horizontal spacing), T = Th / cos(theta) (theta the inclination "
+    "below the horizontal), Tv = T sin(theta); the same statics for an "
+    "inclined strut or raker")
+
+
+def support_own_loads(per_m, spacing, angle_deg: float) -> dict:
+    """One support's loads from the horizontal load per metre of wall
+    (GM-321; GEC-4 Eqs. 19 to 21, pp. 66 and 67): the axial load per
+    metre of wall, load / cos(angle), and, with a spacing, the
+    horizontal, axial and vertical load of one support. A value is None
+    when the load per metre is not found or no spacing was given."""
+    theta = math.radians(angle_deg)
+
+    def _r(x):
+        return None if x is None else round(x, 2)
+    axial_m = None if per_m is None else per_m / math.cos(theta)
+    th = None if per_m is None or spacing is None else per_m * spacing
+    t = None if th is None else th / math.cos(theta)
+    return {
+        "spacing_m": spacing,
+        "angle_deg": angle_deg,
+        "axial_load_kN_per_m": _r(axial_m),
+        "horizontal_load_kN_per_support": _r(th),
+        "axial_load_kN_per_support": _r(t),
+        "vertical_load_kN_per_support":
+            None if t is None else round(t * math.sin(theta), 2),
+    }
+
+
+def _support_loads_note(supports) -> str:
+    """What the support loads are, in a line (GM-321)."""
+    no_spacing = [i + 1 for i, s in enumerate(supports) if s.spacing is None]
+    text = ("Support loads: load_kN_per_m is the horizontal load per metre "
+            "of wall; a support's own loads are load x spacing "
+            "(horizontal) and load x spacing / cos(angle_deg) (axial) "
+            "(GEC-4 Eqs. 19 and 20, pp. 66, 67).")
+    if no_spacing:
+        text += (" No spacing given for support(s) "
+                 + ", ".join(str(i) for i in no_spacing)
+                 + ": no load per support worked out there.")
+    return text
+
+
+def _support_loads_choice(supports) -> dict:
+    """The spacing and inclination each support's own load used, as a
+    choice (GM-321)."""
+    from geotech_common.choices import DEFAULT, GIVEN, choice
+    parts = []
+    for i, s in enumerate(supports, 1):
+        parts.append(
+            f"support {i}: "
+            + ("no spacing, per metre of wall only" if s.spacing is None
+               else f"spacing {s.spacing:g} m")
+            + (", horizontal" if s.angle_deg == 0
+               else f", inclined {s.angle_deg:g} deg"))
+    given = any(s.spacing is not None or s.angle_deg != 0 for s in supports)
+    return choice(
+        "each support's own load (supports[].spacing, angle_deg)",
+        "; ".join(parts), GIVEN if given else DEFAULT,
+        _OWN_LOAD_BASIS + ". No spacing given: no load per support; "
+        "angle_deg not given: horizontal (0)",
+        ["a spacing (m) and an inclination (deg) given for each support"])
 
 
 def _loads_text(s) -> str:
@@ -502,15 +570,22 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
     def _r(x, nd):
         return None if x is None else round(x, nd)
 
+    # geometry.validate() requires the supports sorted by depth, the
+    # order of s["upper"] / s["lower"]. Each support's own load from the load per
+    # metre of wall: Th = Thi s, T = Th / cos(theta), Tv = T sin(theta)
+    # (GEC-4 Eqs. 19 to 21, pp. 66 and 67; GM-321).
     support_reactions = []
     for i, sup in enumerate(geometry.support_levels):
         up, lo = s["upper"][i], s["lower"][i]
+        per_m = None if lo is None else up + lo
         support_reactions.append({
             "depth_m": round(sup.depth, 3),
-            "load_kN_per_m": None if lo is None else round(up + lo, 2),
+            "load_kN_per_m": _r(per_m, 2),
             "from_above_kN_per_m": round(up, 2),
             "from_below_kN_per_m": _r(lo, 2),
-            "type": sup.support_type})
+            "type": sup.support_type,
+            **support_own_loads(per_m, sup.spacing, sup.angle_deg)})
+    notes.append(_support_loads_note(geometry.support_levels))
 
     return BracedExcavationResult(
         excavation_depth=H,
@@ -551,6 +626,7 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
         choices=passive_choices(geometry, passive, embedment, embedment_with)
         + _braced_choices(ap, H, support_load_method, loads,
                           stiff_clay_coefficient)
+        + [_support_loads_choice(geometry.support_levels)]
         + [_fb_choice(Fb_ratio, Fy, max_moment)],
     )
 

@@ -467,6 +467,27 @@ def _braced_steps(r, analysis) -> List[CalcSection]:
             result_unit="kN/m", reference=_SPAN_REFS[method],
             notes="" if rx["load_kN_per_m"] is not None else
             "Not found: free earth support found no balance at FS = 1."))
+        # the support's own load, from its spacing and inclination (GM-321)
+        own = rx.get("axial_load_kN_per_support")
+        if own is not None:
+            ang = rx.get("angle_deg") or 0.0
+            loads.append(CalcStep(
+                title=f"Support {k} design load, one support",
+                equation="T = T<sub>i</sub> s / cos θ",
+                substitution=(f"T = {rx['load_kN_per_m']:.2f} × "
+                              f"{rx['spacing_m']:g} / cos {ang:g}°"),
+                result_name=f"T{k}, per support", result_value=own,
+                result_unit="kN",
+                reference="GEC-4 Eqs. 19 and 20 (pp. 66, 67)",
+                notes=(f"Horizontal {rx['horizontal_load_kN_per_support']:.2f}"
+                       f" kN, vertical "
+                       f"{rx['vertical_load_kN_per_support']:.2f} kN "
+                       "(Eq. 21)." if ang else
+                       "Horizontal support: the axial load is the "
+                       "horizontal load.")))
+        elif rx["load_kN_per_m"] is not None and rx.get("spacing_m") is None:
+            loads[-1].notes = ("Per metre of wall; no spacing given, so no "
+                               "load per support.")
     if getattr(r, "subgrade_reaction_kN_per_m", None) is not None:
         loads.append(CalcStep(
             title="Subgrade reaction at the excavation base",
