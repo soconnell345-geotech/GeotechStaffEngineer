@@ -70,10 +70,15 @@ def test_the_two_slopes_agree_and_a_given_side_is_kept():
     b = analyze_slope(_geom(True, tension_crack_depth=2.0),
                       **_mirrored(_CIRCLE)).FOS
     assert a == pytest.approx(b, rel=1e-9)
-    r = analyze_slope(_geom(tension_crack_depth=2.0,
+    # At the toe end this circle never passes below a 2 m crack's bottom
+    # between its middle and that end: the given side is kept, and the
+    # surface is refused rather than cut at its middle into a stub
+    # carrying the crack's full water force (crack_bottom_not_reached).
+    with pytest.raises(cracks.CrackRuleRefused) as err:
+        analyze_slope(_geom(tension_crack_depth=2.0,
                             tension_crack_side="exit"), **_CIRCLE)
-    assert r.tension_crack["side"] == "exit"
-    assert r.FOS != pytest.approx(a, abs=1e-3)
+    assert err.value.outcome.side == "exit"
+    assert err.value.outcome.refusal == cracks.BOTTOM_NOT_REACHED
     with pytest.raises(ValueError, match="tension_crack_side"):
         _geom(tension_crack_side="toe")
 
@@ -664,3 +669,34 @@ def test_rapid_drawdown_takes_the_crack_through_its_stages():
                                  **kw)
     assert cracked.FOS != pytest.approx(plain.FOS, abs=1e-4)
     assert cracked.n_slices < plain.n_slices or cracked.FOS > 0
+
+
+def test_a_crack_bottom_the_crest_half_never_reaches_refuses_the_surface(
+        monkeypatch):
+    """Where the surface, from its middle to its crest end, never passes
+    below the crack's bottom, the slices could only end at the middle: a
+    stub carrying the crack's full water force, which is how the review's
+    D1 search read F = 0.052. Such a surface is refused and counted
+    (``crack_bottom_not_reached``), never solved; where the crest half does
+    pass below the crack's bottom the surface ends at the crack as before.
+    Made-up geometry: a surface 3 m deep in its lower half and shallow in
+    its crest half, under ground rising at 1 in 20, with a 2 m crack."""
+    import types
+    from slope_stability import slices
+    crack = {"side": "exit", "depth": 2.0, "truncate": True,
+             "water_depth": 2.0, "base": -1.0}
+    monkeypatch.setattr(cracks, "crack_for_slices",
+                        lambda *a, **k: dict(crack))
+    geom = types.SimpleNamespace(tension_crack_model="truncation",
+                                 ground_elevation_at=lambda x: 0.05 * x)
+    bounds = [0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]
+    shallow_crest = types.SimpleNamespace(
+        slip_elevation_at=lambda x: -3.0 if x < 8.0 else 0.2 + 0.08 * (x - 10))
+    with pytest.raises(cracks.CrackRuleRefused) as err:
+        slices._kept_span(geom, shallow_crest, bounds, 0.0, 20.0)
+    assert err.value.outcome.refusal == cracks.BOTTOM_NOT_REACHED
+    assert err.value.outcome.x_end == 20.0
+    assert "not reached at the upper end" in str(err.value)
+    deep_crest = types.SimpleNamespace(
+        slip_elevation_at=lambda x: -3.0 if x < 16.0 else 0.0)
+    assert slices._kept_span(geom, deep_crest, bounds, 0.0, 20.0) == (0.0, 16.0)

@@ -114,6 +114,7 @@ NO_CRACK_AT_END = "reverse_curvature_no_crack_at_end"
 DISCARD_ASKED = "reverse_curvature_discard_asked"
 WITHIN_CRACK = "within_cracked_depth"
 SCAN_NO_MINIMUM = "scan_no_minimum"
+BOTTOM_NOT_REACHED = "crack_bottom_not_reached"
 REFUSAL_TEXT = {
     NO_CRACK_ASKED: (
         "reverse-curvature circles with no tension crack asked for: not "
@@ -136,6 +137,12 @@ REFUSAL_TEXT = {
     SCAN_NO_MINIMUM: (
         "surfaces on which the scan for the crack depth of minimum factor "
         "of safety found no minimum"),
+    BOTTOM_NOT_REACHED: (
+        "surfaces on which the crack's bottom is not reached at the upper "
+        "end: from the middle of the surface to its crest end the surface "
+        "does not pass below the crack's bottom, so it has no vertical "
+        "boundary at the crack (EM 1110-2-1902 C-10c, p. C-36: the slip "
+        "surface is terminated where it reaches the bottom of the crack)"),
 }
 #: The refusals of reverse-curvature circles.
 REVERSE_REFUSALS = (NO_CRACK_ASKED, DEEPER_THAN_CRACK, NO_CRACK_AT_END,
@@ -162,6 +169,28 @@ def refusal_error(outcome: "CrackOutcome") -> CrackRuleRefused:
     cls = (ReverseCurvatureDiscarded if outcome.refusal in REVERSE_REFUSALS
            else CrackRuleRefused)
     return cls("No factor of safety: " + outcome.reason + ".", outcome)
+
+
+def bottom_not_reached_error(geom, crack: Dict[str, Any], x_entry: float,
+                             x_exit: float) -> CrackRuleRefused:
+    """The error ``slices`` raises where the surface, from its middle to
+    its crest end, never passes below the crack's bottom: there the slices
+    could only end at the middle of the surface, a stub carrying the
+    crack's full water force, which no printed method describes (the
+    step 4 review's D1 found a search reading F = 0.052 on such stubs).
+    Refused and counted, never solved."""
+    x_end = x_entry if crack["side"] == ENTRY else x_exit
+    reason = ("the crack's bottom (el. %.3f, %.3f m below the ground at the "
+              "surface's upper end, x = %.3f) is not reached at the upper "
+              "end: between the middle of the surface and that end it does "
+              "not pass below the crack's bottom, so it has no vertical "
+              "boundary at the crack" % (crack["base"], crack["depth"], x_end))
+    outcome = CrackOutcome(
+        depth=crack["depth"], side=crack["side"],
+        model=geom.tension_crack_model, x_end=x_end,
+        z_ground=geom.ground_elevation_at(x_end), discarded=True,
+        reason=reason, refusal=BOTTOM_NOT_REACHED)
+    return CrackRuleRefused("No factor of safety: " + reason + ".", outcome)
 
 
 def rankine_crack_depth(c: float, phi_deg: float, gamma: float,

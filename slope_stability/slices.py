@@ -366,12 +366,22 @@ def _kept_span(geom: SlopeGeometry, slip, bounds: List[float],
     the crack. Walking from the middle of the surface towards its crest
     end over the stretches between ``bounds`` (the crack's base is one of
     them), the surface ends at the first stretch whose base lies above the
-    crack's bottom."""
-    from slope_stability.cracks import crack_for_slices
+    crack's bottom. Where that is already the stretch next to the middle,
+    the crack's bottom is not reached at the upper end and the surface is
+    refused (``cracks.bottom_not_reached_error``), never cut at its middle
+    into a stub carrying the crack's full water force."""
+    from slope_stability.cracks import (bottom_not_reached_error,
+                                        crack_for_slices)
     crack = crack_for_slices(geom, slip, x_entry, x_exit)
     if crack is None or not crack["truncate"]:
         return None
     x_half = 0.5 * (x_entry + x_exit)
+    # the walk below would end the surface at its middle (a boundary
+    # ``slice_breaks`` puts there exactly when the surface at the middle is
+    # not below the crack's bottom): refused instead of solved
+    z_half = slip.slip_elevation_at(x_half)
+    if z_half is None or z_half >= crack["base"]:
+        raise bottom_not_reached_error(geom, crack, x_entry, x_exit)
     pairs = list(zip(bounds[:-1], bounds[1:]))
     if crack["side"] == "entry":
         for a, b in reversed(pairs):

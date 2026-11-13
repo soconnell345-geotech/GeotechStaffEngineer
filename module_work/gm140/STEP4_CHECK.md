@@ -509,3 +509,14 @@ A surface that lies wholly within a given crack's depth is no longer a slip
 surface (ACADS 1(b) searched with its crack: 0.05 on a sliver before, 1.590
 now against 1.596). A search counts the surfaces the crack rule refused, by
 reason (`crack_refused`).
+
+### Follow-up by the lead, 2026-11-13: no stub survives
+
+The fix round left one fallback: where the surface at its middle is not below the crack's bottom,
+the slices ended at the middle, a stub carrying the crack's full water force (the mechanism of the
+review's D1). On the orchestrator's word such a surface is now refused and counted
+(`crack_bottom_not_reached`: the crack's bottom is not reached at the upper end), never solved
+(`slices._kept_span`, `cracks.bottom_not_reached_error`). Not built: placing the crack at the first
+point from the upper end where the surface reaches the crack's depth. Test: `test_cracks_as_printed.py`
+(41 passed); `test_usability_features.py`, `test_search_reinforcement.py` and `test_slope_stability.py` pass.
+One test changed: a crack forced to the toe end of `_CIRCLE` (2 m) is now refused there instead of solved on a stub.
