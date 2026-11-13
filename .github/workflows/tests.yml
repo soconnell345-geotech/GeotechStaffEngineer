@@ -87,6 +87,8 @@ jobs:
         # and rebalances, so a few multi-minute slope and FEM tests do not
         # leave the other workers idle at the end. The root conftest gives
         # each worker its own temp dir.
+        env:
+          GSE_PUBLIC_TEXT_KEY: ${{ secrets.GSE_PUBLIC_TEXT_KEY }}
         run: pytest -n auto --dist worksteal -q --tb=short --durations=20
 
   wheels:
@@ -121,6 +123,7 @@ jobs:
       - name: Build, install and check both wheels
         env:
           GEOTECH_REQUIRE_WHEEL_TEST: "1"
+          GSE_PUBLIC_TEXT_KEY: ${{ secrets.GSE_PUBLIC_TEXT_KEY }}
         run: pytest -q --tb=short webapp/tests/test_wheels.py
 
   numpy126:

@@ -84,4 +84,6 @@ jobs:
         # and rebalances, so a few multi-minute slope and FEM tests do not
         # leave the other workers idle at the end. The root conftest gives
         # each worker its own temp dir.
+        env:
+          GSE_PUBLIC_TEXT_KEY: ${{ secrets.GSE_PUBLIC_TEXT_KEY }}
         run: pytest -n auto --dist worksteal -q --tb=short --durations=20

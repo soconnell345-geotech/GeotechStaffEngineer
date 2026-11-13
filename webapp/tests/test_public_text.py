@@ -19,10 +19,20 @@ Azure resource host that is not one of the placeholders listed below by
 exact name. Place names are not guarded there: whether docs may name them
 is OWN-26.
 
-The guarded words are stored only as SHA-256 prefixes, so this public file
-does not repeat them. To guard a new word, add
-``hashlib.sha256(word.lower().encode()).hexdigest()[:16]`` to the right set
-below.
+The fifteen guarded words and hosts below are stored only as unsalted
+SHA-256 prefixes, so this public file does not repeat them. They are already
+public in this repository's history, so keeping them hides nothing new, and
+they keep the guard working on machines that hold no key (cloud sessions).
+
+Words added from now on go in the KEYED sets only (``KEYED_WORDS``,
+``KEYED_PLACE_WORDS``, ``KEYED_HOSTS``), as the first 16 hex characters of
+``hmac.new(key, word.lower().encode(), "sha256").hexdigest()``, run locally
+with the key. The key is the environment variable ``GSE_PUBLIC_TEXT_KEY`` or,
+when that is unset or empty, the first line of ``~/.gse_public_text_key``;
+it is never kept in the repository and never printed. With a keyed set that is
+not empty and no key present, the check fails on GitHub (``GITHUB_ACTIONS``
+set: a guard must not go blind where every push is checked) and is skipped
+elsewhere, after the fifteen have been checked.
 Not guarded here: the report-ingest answer vocabulary (owner decision
 OWN-25) and generic words such as "Department".
 """
@@ -31,10 +41,14 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import hmac
+import os
 import re
 import subprocess
 import tomllib
 from pathlib import Path
+
+import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -55,6 +69,14 @@ GUARDED_WORDS = PLACE_WORDS | ADDRESS_WORDS
 #: Host names (any dotted name or e-mail domain ending in one of these):
 #: the Department's domain, its SharePoint host and the Foundry enclave.
 GUARDED_HOSTS = {"57d0525215903582", "b6b8caa18084c17c", "3eadf5dd85bce17f"}
+
+#: Keyed (HMAC) sets, empty until a word is added; see the docstring.
+#: Place and project names (shipped files only):
+KEYED_PLACE_WORDS: set[str] = set()
+#: Single words guarded in every tracked file:
+KEYED_WORDS: set[str] = set()
+#: Host names, as GUARDED_HOSTS:
+KEYED_HOSTS: set[str] = set()
 
 #: A host that names one real deployment: a Foundry enclave, a Databricks
 #: workspace, a SharePoint tenant or an Azure resource. Docs write
@@ -89,6 +111,51 @@ _HOST = re.compile(r"(?<![a-z0-9-])[a-z0-9-]+(?:\.[a-z0-9-]+)+")
 
 def _h(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()[:16]
+
+
+def _key() -> bytes | None:
+    """The keyed guard's key, or None. Empty counts as unset (a missing CI
+    secret arrives as an empty string). Never printed."""
+    k = os.environ.get("GSE_PUBLIC_TEXT_KEY", "").strip()
+    if not k:
+        try:
+            f = Path.home() / ".gse_public_text_key"
+            if f.is_file():
+                lines = f.read_text(encoding="utf-8").splitlines()
+                k = lines[0].strip() if lines else ""
+        except OSError:
+            k = ""
+    return k.encode() if k else None
+
+
+def _kh(s: str, key: bytes) -> str:
+    return hmac.new(key, s.lower().encode(), "sha256").hexdigest()[:16]
+
+
+def _keyed_sets_used() -> bool:
+    return bool(KEYED_WORDS or KEYED_PLACE_WORDS or KEYED_HOSTS)
+
+
+def _keyed_key_or_none() -> bytes | None:
+    """The key when the keyed sets need one. Fails on GitHub if it is
+    missing; returns None elsewhere (the caller skips the keyed check)."""
+    if not _keyed_sets_used():
+        return None
+    key = _key()
+    if key is None and os.environ.get("GITHUB_ACTIONS"):
+        raise AssertionError(
+            "the keyed guard has words but the GSE_PUBLIC_TEXT_KEY secret "
+            "is missing or empty; set the repository secret")
+    return key
+
+
+def _skip_if_keyed_blind() -> None:
+    """Call after the unkeyed asserts: skip, with a reason, when keyed words
+    exist and this machine has no key."""
+    if _keyed_key_or_none() is None and _keyed_sets_used():
+        pytest.skip("keyed guard words exist but no GSE_PUBLIC_TEXT_KEY "
+                    "or ~/.gse_public_text_key here; the fifteen were "
+                    "checked, the keyed words were not")
 
 
 def _project_roots() -> list[Path]:
@@ -136,14 +203,29 @@ def _tracked_files() -> list[Path]:
     return out
 
 
-def _findings(text: str, words: set[str] = GUARDED_WORDS) -> set[str]:
+def _findings(text: str, words: set[str] = GUARDED_WORDS,
+              keyed_words: set[str] | None = None) -> set[str]:
+    """Guarded words and hosts in ``text``. ``keyed_words`` defaults to
+    every keyed word set (``words`` is the unkeyed set to match)."""
     low = text.lower()
     found = {w for w in set(_WORD.findall(low)) if _h(w) in words}
-    for host in set(_HOST.findall(low)):
+    hosts = set(_HOST.findall(low))
+    for host in hosts:
         labels = host.split(".")
         for i in range(len(labels) - 1):
             if _h(".".join(labels[i:])) in GUARDED_HOSTS:
                 found.add(host)
+    kw = (KEYED_WORDS | KEYED_PLACE_WORDS) if keyed_words is None \
+        else keyed_words
+    if kw or KEYED_HOSTS:
+        key = _keyed_key_or_none()
+        if key is not None:
+            found |= {w for w in set(_WORD.findall(low)) if _kh(w, key) in kw}
+            for host in hosts:
+                labels = host.split(".")
+                for i in range(len(labels) - 1):
+                    if _kh(".".join(labels[i:]), key) in KEYED_HOSTS:
+                        found.add(host)
     return found
 
 
@@ -187,6 +269,7 @@ def test_shipped_packages_carry_no_guarded_names():
     # Report paths and counts only: printing the words would put them in
     # CI logs.
     assert not bad, f"guarded names in shipped files (path: count): {bad}"
+    _skip_if_keyed_blind()
 
 
 def test_the_package_walk_covers_the_core():
@@ -207,9 +290,100 @@ def test_public_repo_carries_no_department_or_deployment_addresses():
         if b"\0" in raw[:8192]:
             continue  # binary
         text = raw.decode("utf-8", errors="ignore")
-        hits = _findings(text, ADDRESS_WORDS) | _deployment_hosts(text)
+        hits = (_findings(text, ADDRESS_WORDS, KEYED_WORDS)
+                | _deployment_hosts(text))
         if hits:
             bad[f.relative_to(REPO).as_posix()] = len(hits)
     # Paths and counts only, as above.
     assert not bad, (f"Department or deployment addresses in tracked files "
                      f"(path: count): {bad}")
+    _skip_if_keyed_blind()
+
+
+# --- the keyed guard (INF-52): made-up key and words only ------------------
+
+_TEST_KEY = "made-up-key-for-tests"
+
+
+def _kw(word: str, key: str = _TEST_KEY) -> str:
+    return _kh(word, key.encode())
+
+
+@pytest.fixture
+def _no_key(monkeypatch, tmp_path):
+    monkeypatch.delenv("GSE_PUBLIC_TEXT_KEY", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+
+
+def test_a_keyed_word_is_found(monkeypatch, _no_key):
+    monkeypatch.setenv("GSE_PUBLIC_TEXT_KEY", _TEST_KEY)
+    monkeypatch.setitem(globals(), "KEYED_WORDS", {_kw("zorblax")})
+    assert _findings("see the Zorblax site") == {"zorblax"}
+    assert _findings("nothing here") == set()
+
+
+def test_a_keyed_place_word_is_found_by_default_only(monkeypatch, _no_key):
+    monkeypatch.setenv("GSE_PUBLIC_TEXT_KEY", _TEST_KEY)
+    monkeypatch.setitem(globals(), "KEYED_PLACE_WORDS", {_kw("quuxville")})
+    assert _findings("in quuxville") == {"quuxville"}
+    # the tracked-files walk passes the address-level keyed set only
+    assert _findings("in quuxville", ADDRESS_WORDS, KEYED_WORDS) == set()
+
+
+def test_a_keyed_host_is_found(monkeypatch, _no_key):
+    monkeypatch.setenv("GSE_PUBLIC_TEXT_KEY", _TEST_KEY)
+    monkeypatch.setitem(globals(), "KEYED_HOSTS", {_kw("example-guarded.test")})
+    assert _findings("mail me@sub.example-guarded.test now") == {
+        "sub.example-guarded.test"}
+    assert _findings("mail me@other.test now") == set()
+
+
+def test_another_key_finds_nothing(monkeypatch, _no_key):
+    monkeypatch.setenv("GSE_PUBLIC_TEXT_KEY", "a-different-made-up-key")
+    monkeypatch.setitem(globals(), "KEYED_WORDS", {_kw("zorblax")})
+    assert _findings("see the zorblax site") == set()
+
+
+def test_the_key_file_is_read_when_the_variable_is_unset(
+        monkeypatch, _no_key, tmp_path):
+    (tmp_path / ".gse_public_text_key").write_text(_TEST_KEY + "\nignored\n")
+    monkeypatch.setitem(globals(), "KEYED_WORDS", {_kw("zorblax")})
+    assert _findings("zorblax") == {"zorblax"}
+    # an empty variable (a missing CI secret) counts as unset
+    monkeypatch.setenv("GSE_PUBLIC_TEXT_KEY", "")
+    assert _findings("zorblax") == {"zorblax"}
+
+
+def test_keyed_words_without_a_key_skip_off_github(monkeypatch, _no_key):
+    monkeypatch.setitem(globals(), "KEYED_WORDS", {_kw("zorblax")})
+    assert _findings("zorblax") == set()  # the fifteen still run
+    with pytest.raises(pytest.skip.Exception):
+        _skip_if_keyed_blind()
+
+
+def test_keyed_words_without_a_key_fail_on_github(monkeypatch, _no_key):
+    monkeypatch.setitem(globals(), "KEYED_WORDS", {_kw("zorblax")})
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GSE_PUBLIC_TEXT_KEY", "")
+    with pytest.raises(AssertionError, match="secret"):
+        _findings("zorblax")
+    with pytest.raises(AssertionError, match="secret"):
+        _skip_if_keyed_blind()
+
+
+def test_empty_keyed_sets_need_no_key(monkeypatch, _no_key):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert not _keyed_sets_used()
+    assert _findings("plain text") == set()
+    _skip_if_keyed_blind()  # neither skips nor fails
+
+
+def test_the_key_never_appears_in_a_failure_message(monkeypatch, _no_key):
+    monkeypatch.setitem(globals(), "KEYED_WORDS", {_kw("zorblax")})
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    with pytest.raises(AssertionError) as e:
+        _findings("zorblax")
+    assert _TEST_KEY not in str(e.value)
+    monkeypatch.setenv("GSE_PUBLIC_TEXT_KEY", _TEST_KEY)
+    assert _TEST_KEY not in repr(_findings("zorblax"))
