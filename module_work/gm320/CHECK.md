@@ -174,8 +174,8 @@ fails the same way on master without this branch (checked with the changes
 stashed); it is not from this work and was not looked into.
 
 New tests: `settlement/tests/test_gm320_short_profile.py` (7),
-`soe/tests/test_gm321_support_loads.py` (10),
-`funhouse_agent/tests/test_gm320_321_tools.py` (15, with a check that every
+`soe/tests/test_gm321_support_loads.py` (9),
+`funhouse_agent/tests/test_gm320_321_tools.py` (13, with a check that every
 support key the tool promises is returned); `test_nested_keys.py` now
 checks the preload refusal. No probe, worked example or validation example
 relied on a short Schmertmann profile, an unequal `delta_sigmas` or a
