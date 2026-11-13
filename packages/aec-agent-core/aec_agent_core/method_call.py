@@ -296,6 +296,131 @@ def _check_parameter_names(mod, method: str, parameters: dict) -> None:
             + "." + also)
 
 
+def _value_hint(value: str, allowed) -> str:
+    """A did-you-mean for a value outside ``allowed``: the same value in
+    another case, else the closest one or two by spelling."""
+    import difflib
+    words = [a for a in allowed if isinstance(a, str)]
+    folded = {a.strip().lower(): a for a in words}
+    key = value.strip().lower()
+    if key in folded:
+        return f" Did you mean {folded[key]!r}?"
+    near = difflib.get_close_matches(
+        key.replace("-", "_").replace(" ", "_"),
+        [a.strip().lower().replace("-", "_").replace(" ", "_")
+         for a in words], n=2, cutoff=0.5)
+    by = {a.strip().lower().replace("-", "_").replace(" ", "_"): a
+          for a in words}
+    near = [by[n] for n in near]
+    return (f" Did you mean {' or '.join(repr(n) for n in near)}?"
+            if near else "")
+
+
+def _fold_value(value: str, any_case) -> str:
+    """A string as a method that ignores case compares it: stripped and
+    lower-cased; with ``any_case="separators"`` also without spaces,
+    hyphens and underscores (``"Very Poor"`` is ``very_poor``)."""
+    out = value.strip().lower()
+    if any_case == "separators":
+        out = re.sub(r"[\s_\-]+", "", out)
+    return out
+
+
+def _outside(value, allowed, any_case=False):
+    """The values of ``value`` outside ``allowed`` (a string, or each string
+    of a list), compared as the method compares them (``any_case``: False,
+    True or "separators", :func:`_fold_value`); values of another kind than
+    the list's are left to the method."""
+    strings = all(isinstance(a, str) for a in allowed)
+    if strings:
+        items = value if isinstance(value, list) else [value]
+        if not all(isinstance(v, str) for v in items):
+            return []
+        if any_case:
+            folded = {_fold_value(a, any_case) for a in allowed}
+            return [v for v in items
+                    if _fold_value(v, any_case) not in folded]
+        return [v for v in items if v not in allowed]
+    # A list of booleans or numbers: a value of the same kind only (True
+    # is not 1 here).
+    kinds = {type(a) for a in allowed}
+    if type(value) not in kinds:
+        return []
+    return [] if any(value == a and type(value) is type(a)
+                     for a in allowed) else [value]
+
+
+def _check_parameter_values(mod, method: str, parameters: dict) -> None:
+    """Refuse a value outside a parameter's ``allowed_values`` (BACKLOG
+    GM-317): the ValueError names the parameter, the value, a did-you-mean
+    and the values it takes, in the voice of the name check (GM-110).
+    Without it a value outside the list ran as something else
+    (``trend_type="exponential"`` fitted a straight line).
+
+    The list is the parameter's in the method's METHOD_INFO (or, for a
+    method whose ``parameters_of`` names another, that one's), reached by
+    the name the call gave or an alias of it (``parameter_aliases``).
+    Strings are compared exactly unless the parameter says ``any_case``
+    (the method folds case itself: True, stripped and lower-cased;
+    "separators", spaces, hyphens and underscores ignored too). Checked: a string against a
+    list of strings, each string of a list given for one, and a boolean or
+    a number against a list of that kind. Not checked: None (the method's
+    default), a value of another kind than the list's, and a parameter
+    nested inside a dict or a list of dicts (no adapter declares a list
+    there). A parameter's ``refused_values`` (value -> reason) gives the
+    reason for a value it deliberately does not take, in place of the
+    did-you-mean."""
+    info = mod.METHOD_INFO.get(method)
+    if not isinstance(info, dict):
+        return
+    declared = dict(info.get("parameters") or {})
+    aliases = dict(info.get("parameter_aliases") or {})
+    of = info.get("parameters_of")
+    if of:
+        names = [of] + [a for a, c in aliases.items() if c == of]
+        target = next((parameters[n] for n in names
+                       if isinstance(parameters.get(n), str)), None)
+        other = mod.METHOD_INFO.get(target) if target else None
+        if isinstance(other, dict) and target != method:
+            for name, spec in (other.get("parameters") or {}).items():
+                declared.setdefault(name, spec)
+            for a, c in (other.get("parameter_aliases") or {}).items():
+                aliases.setdefault(a, c)
+    for key, value in parameters.items():
+        spec = declared.get(key)
+        if spec is None:
+            spec = declared.get(aliases.get(key))
+        if not isinstance(spec, dict) or value is None:
+            continue
+        allowed = spec.get("allowed_values")
+        if not isinstance(allowed, (list, tuple)) or not allowed:
+            continue
+        bad = _outside(value, list(allowed), spec.get("any_case"))
+        if not bad:
+            continue
+        first = bad[0]
+        what = (f"{key}={value!r}" if not isinstance(value, list)
+                else f"{key} item {first!r}")
+        # A value the method deliberately refuses says why and where to
+        # look instead (a removed table row), as the method itself did.
+        reasons = spec.get("refused_values") or {}
+        reason = reasons.get(first) if isinstance(first, str) else None
+        if reason is None and isinstance(first, str) and spec.get("any_case"):
+            folded = _fold_value(first, spec.get("any_case"))
+            reason = next((r for v, r in reasons.items()
+                           if _fold_value(v, spec.get("any_case")) == folded),
+                          None)
+        if reason:
+            hint = f" {str(reason).rstrip('.')}."
+        else:
+            hint = (_value_hint(first, allowed) if isinstance(first, str)
+                    else "")
+        raise ValueError(
+            f"{method}: {what} is not one of the values it takes.{hint} "
+            f"Valid values: {list(allowed)}. describe_method gives each "
+            f"one's meaning.")
+
+
 #: A calc package's header and file format: not engineering choices, so
 #: never listed in ``defaults_used``.
 _PACKAGE_HEADER_PARAMS = frozenset({
@@ -619,6 +744,7 @@ def _run_checked(mod, agent_name: str, method: str, parameters: dict,
     given = set(parameters)
     try:
         _check_parameter_names(mod, method, parameters)
+        _check_parameter_values(mod, method, parameters)
         if "attachment_key" in parameters:
             parameters = _resolve_attachment(
                 parameters, attachments, _method_params(mod, method))

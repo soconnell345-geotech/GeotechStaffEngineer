@@ -334,13 +334,18 @@ METHOD_INFO = {
             "m_w": {"type": "float", "required": False, "default": 7.5,
                     "description": "Moment magnitude (alias magnitude)."},
             "method": {"type": "str", "required": False, "default": "bi2014",
-                       "allowed_values": ["bi2014", "nceer2001"],
+                       # the canonical ids, then the other spellings
+                       # _normalize_method reads (GM-317)
+                       "allowed_values": ["bi2014", "nceer2001"] + [
+                           k for k in _METHOD_NORMALIZE
+                           if k not in ("bi2014", "nceer2001")],
+                       "any_case": True,
                        "description": (
                            "bi2014 = Boulanger & Idriss 2014 (DEFAULT, both SPT "
                            "and CPT). nceer2001 = NCEER / Youd et al. 2001 SPT "
                            "procedure (SPT input only).")},
             "input_type": {"type": "str", "required": False,
-                           "allowed_values": ["CPT", "SPT"],
+                           "allowed_values": ["CPT", "SPT"], "any_case": True,
                            "description": (
                                "Optional override if both/neither CPT and SPT "
                                "keys are present.")},

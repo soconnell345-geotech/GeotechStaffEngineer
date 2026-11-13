@@ -504,8 +504,10 @@ class TestEarthPressureCoefficient:
         assert set(METHOD_INFO) == set(METHOD_REGISTRY)
         info = METHOD_INFO["earth_pressure_coefficient"]
         # log_spiral by name since GM-242 (the same route as caquot_kerisel)
+        # with the adapter's other spellings of log_spiral (GM-317)
         assert info["parameters"]["theory"]["allowed_values"] == [
-            "rankine", "coulomb", "caquot_kerisel", "log_spiral"]
+            "rankine", "coulomb", "caquot_kerisel", "log_spiral",
+            "logspiral", "log-spiral"]
         assert info["parameters"]["state"]["allowed_values"] == [
             "active", "passive", "at_rest"]
 
@@ -973,8 +975,11 @@ class TestMseCustomReinforcement:
         # ribbed strip + steel bar-mat/welded-grid (+ aliases) + geogrid,
         # geotextile (GEC-11 Table 3-6's alpha 0.8, 0.6) + a geosynthetic of
         # no stated kind, which needs alpha_tested (GM-256)
+        # and the adapter's other spellings, now enforced (GM-317)
         assert av == ["metallic_strip", "metallic_grid", "bar_mat",
-                      "welded_grid", "geogrid", "geotextile", "geosynthetic"]
+                      "welded_grid", "geogrid", "geotextile", "geosynthetic",
+                      "barmat", "welded_wire_grid", "steel_grid", "grid",
+                      "strip", "ribbed_strip"]
         # GM-256: no default type; it sets the alpha a custom one takes
         assert "default" not in METHOD_INFO["mse_wall"]["parameters"][
             "reinforcement_type"]

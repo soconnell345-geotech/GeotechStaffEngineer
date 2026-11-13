@@ -1510,7 +1510,11 @@ def _package_parameters(package: str) -> dict:
         params[name] = {
             "type": "bool" if isinstance(default, bool) else "str",
             "required": False, "default": default,
-            "allowed_values": list(tools), "description": doc}
+            "allowed_values": list(tools) + [
+                v for v in spec.get("selector_values", {})
+                if v not in tools],
+            # _selector_value strips and lower-cases a string (GM-317)
+            "any_case": True, "description": doc}
     entries = {}
     for value, tool in tools.items():
         for pname, pspec in info[tool]["parameters"].items():
@@ -3426,7 +3430,7 @@ METHOD_INFO = {
             "xc": {"type": "float", "required": True, "description": "Circle center x (m)."},
             "yc": {"type": "float", "required": True, "description": "Circle center y (m)."},
             "radius": {"type": "float", "required": True, "description": "Circle radius (m)."},
-            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": ["bishop", "fellenius", "spencer"], "description": "Limit-equilibrium method."},
+            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": ["bishop", "fellenius", "spencer", "janbu", "morgenstern_price", "gle"], "description": "Limit-equilibrium method."},
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
             "gwt_points": {"type": "array", "required": False, "description": "List of [x, z] GWT coordinates."},
             "kh": {"type": "float", "required": False, "default": 0.0, "description": "Seismic coefficient."},

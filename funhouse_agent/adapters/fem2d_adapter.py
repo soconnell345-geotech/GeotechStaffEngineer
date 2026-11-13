@@ -875,7 +875,7 @@ METHOD_INFO = {
             "startup_steps": {"type": "int", "required": False, "default": 2,
                               "description": "Monolithic scheme with theta < 1: the first startup_steps time steps are each taken as two fully implicit half-steps (Rannacher start-up), so Crank-Nicolson does not ring at the drained boundary. 0 = plain theta-stepping from the first step."},
             "reset_displacements_after": {"type": "string", "required": False,
-                                          "allowed_values": ["initial", "start"],
+                                          "allowed_values": ["initial", "start", "first", "none", "0"], "any_case": True,
                                           "description": "Which stage the reported settlements are measured from. The analysis has two stages: 0 'initial' (self-weight of the soil in place, drained, with the hydrostatic water table and any ponded water) and 1 'load' (load_q + any 'fill' layers, then consolidation). 'initial' = from the end of the initial stage, i.e. the load stage alone (common FE practice; the DEFAULT when omitted). 'start' = cumulative, self-weight settlement included. Omitting it lets the default apply and the result then carries a 'judgment' record if the choice matters."},
         },
         "returns": {

@@ -82,7 +82,11 @@ class TestLiquefactionAdapterMetadata:
 
     def test_method_allows_both_flags(self):
         allowed = METHOD_INFO["liquefaction_analysis"]["parameters"]["method"]["allowed_values"]
-        assert set(allowed) == {"bi2014", "nceer2001"}
+        # the two ids first, then the spellings the adapter reads (GM-317)
+        from funhouse_agent.adapters.liquefaction_adapter import (
+            _METHOD_NORMALIZE)
+        assert allowed[:2] == ["bi2014", "nceer2001"]
+        assert set(allowed) == set(_METHOD_NORMALIZE)
 
 
 # ============================================================================
