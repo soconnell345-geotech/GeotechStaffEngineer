@@ -4422,6 +4422,32 @@
           }
         ],
         "multi": false
+      },
+      {
+        "label": "34. The printed acceptability checks (GM-140 step 3, built 2026-11-13), four calls: (a) a search's headline is the lowest solved surface, flagged, never given alone: its flags, the lowest surface with no flag (or none found) and the option that refuses stand beside it, because neither number alone is safe (ACADS 1(a) by Spencer: 0.633 flagged, 1.096 with none, printed 1.00; ACADS 4's weak layer: 0.830 flagged, 1.667 with none, printed 0.760); (b) Bishop's numerator as printed (Eq. 13), W - ub not held at zero where ub exceeds W (V-029's grid 1.247 to 1.175, the agent suite's PPG-1 1.223 to 1.101); (c) the Ordinary Method of Slices value taken where Bishop's is lower, on circles with no supports or seismic coefficient, as Duncan (1996, p. 580) prints, which by construction raises the reported value wherever it applies (a hand circle 1.7268 to 1.750, +1.3 %); (d) the screen that refuses a factor of safety below 1.5 on a jagged noncircular surface kept for Janbu's simplified method and the Ordinary Method of Slices, which no printed check covers, as the module's own (removed for Spencer, Morgenstern-Price and GLE, whose printed checks flag those surfaces).",
+        "options": [
+          {
+            "label": "Let all four stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(a) Headline the lowest surface with no flag",
+            "effect": "A search reports as its headline the lowest surface that carries no flag, with the lowest flagged surface beside it."
+          },
+          {
+            "label": "(b) Hold Bishop's numerator at zero by default",
+            "effect": "`zero` becomes the default again: W - ub is set to zero where ub exceeds W (V-029 back to 1.247, PPG-1 to 1.223); the as-printed form stays an option."
+          },
+          {
+            "label": "(c) Report Bishop's value, flagged",
+            "effect": "Where Bishop's value is below the Ordinary Method of Slices value, report Bishop's with a flag and the OMS value beside it, instead of taking the OMS value."
+          },
+          {
+            "label": "(d) No jagged screen for any method",
+            "effect": "The jagged screen goes for Janbu and the OMS too; their jagged surfaces below 1.5 are scored, unflagged, since no printed check covers those methods."
+          }
+        ],
+        "multi": true
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
