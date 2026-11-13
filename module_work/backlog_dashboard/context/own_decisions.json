@@ -4195,5 +4195,65 @@
       "module_work/owner_calls_2026-11-12/CALLS.md",
       "module_work/slope_integral_review/ACCOUNT.md"
     ]
+  },
+  "OWN-144": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Where should rebuilt sample calc packages live, and will you supply real sample calcs for the calc helper?",
+    "why": "You asked whether the calc helper is handed a set of sample calcs. It is not, and the sample packages on GitHub are months old. A script will rebuild them; where they go and whether your own calcs join them are your calls.",
+    "background": "The calc helper fills each module's fixed package template (16 modules have one) or writes its own page. No finished sample package is shown to it. It can reach the 28 published worked examples (FHWA, Caltrans, AASHTO and UFC design examples with their printed pages) but is never told they exist; only the main agent is. On GitHub, docs/examples holds two packages from June (slope and FEM) and sample_pdfs holds 13 from February; none shows today's layout (given and assumed inputs, choices, calculation tables), and pavement, support of excavation and reliability have none. Your July ask for real calcs from real reports was parked on 2026-11-04 with nothing built (OWN-41). The lead is building a script that rebuilds one sample package per module from a published worked example, and telling the calc helper about the worked examples. Rebuilt samples are about 0.5 to 1.5 MB each, so committing a new set at every release grows the public repository; the manual's PDF was taken out of the repository for that reason.",
+    "parts": [
+      {
+        "label": "Rebuilt samples",
+        "options": [
+          {
+            "label": "Attach to each GitHub release, build on demand",
+            "effect": "Nothing large is committed. The script and a short index stay in the repository; each release carries the current set. The stale June and February files are removed."
+          },
+          {
+            "label": "Commit them in docs/examples",
+            "effect": "Anyone browsing GitHub sees them in the folder. The repository grows by roughly 10 to 20 MB at each release that rebuilds them. The stale files are replaced."
+          },
+          {
+            "label": "No sample packages",
+            "effect": "The stale files are removed and nothing replaces them; the worked examples and the manual stay as the only examples."
+          },
+          {
+            "label": "Leave the old files as they are",
+            "effect": "Nothing changes on GitHub; the script still exists for use on demand."
+          }
+        ]
+      },
+      {
+        "label": "Real sample calcs",
+        "options": [
+          {
+            "label": "Published examples now, my own calcs later",
+            "effect": "The helper is pointed at the published worked examples now. A private folder for your own calc packages is built when you have a set to give; it stays on Foundry or your machine, never in the public repository."
+          },
+          {
+            "label": "I have a set to give now (say which kinds in the notes)",
+            "effect": "The private folder is built next: the helper can list and read your sample calcs by kind of calculation. Say in the notes which kinds, and roughly how many."
+          },
+          {
+            "label": "Published examples only",
+            "effect": "OWN-41 is closed; the helper uses the published worked examples and nothing private."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Attach to each GitHub release and build on demand; published examples now, your own calcs later.",
+    "if_no_answer": "The lead builds the script and tells the calc helper about the worked examples. The committed files are left alone and no private folder is built.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-328"
+    ],
+    "sources": [
+      "BACKLOG OWN-144",
+      "BACKLOG GM-328",
+      "BACKLOG OWN-41",
+      "module_work/module_audit_2026-11-12/results/calc_examples.md"
+    ]
   }
 }

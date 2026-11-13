@@ -58,7 +58,8 @@ Configuration (env vars; the launcher subprocess inherits the notebook env):
         Foundry (INF-38): on a Foundry deployment with this set (the
         dataset's workspace alias), the conversations go to that Foundry
         dataset of raw files instead, through
-        :class:`aec_document_review.foundry_dataset_store.DatasetFileManager`; the sidebar
+        :class:`aec_agent_core.foundry_dataset_store.DatasetFileManager` (the
+        shared core's, INF-74); the sidebar
         names it "Foundry storage". The module-level :func:`configured`, the
         gate of the agent's SharePoint tools, is then False: those tools never
         run on the dataset. A save there takes seconds, so the turn's save
@@ -253,7 +254,7 @@ def _graph_configured() -> bool:
 def _foundry_selected() -> bool:
     """Foundry with the conversation dataset set (INF-38)."""
     try:
-        from aec_document_review import foundry_dataset_store
+        from aec_agent_core import foundry_dataset_store
         return foundry_dataset_store.selected()
     except Exception:                                  # noqa: BLE001
         return False
@@ -294,7 +295,7 @@ def _build_file_manager():
     something it needs is missing.
     """
     if _foundry_selected():
-        from aec_document_review import foundry_dataset_store
+        from aec_agent_core import foundry_dataset_store
         reason = foundry_dataset_store.unconfigured_reason()
         if reason:
             raise RuntimeError(reason)
@@ -448,7 +449,7 @@ class SharePointStore:
         if self._fm is not None:
             return True
         if _foundry_selected():
-            from aec_document_review import foundry_dataset_store
+            from aec_agent_core import foundry_dataset_store
             return foundry_dataset_store.configured()
         return configured()
 
@@ -484,7 +485,7 @@ class SharePointStore:
         if self._fm is not None and self.backend != "foundry":
             return None
         try:
-            from aec_document_review import foundry_dataset_store
+            from aec_agent_core import foundry_dataset_store
             fm = self.file_manager() if self.backend == "foundry" \
                 and self.configured else None
             return foundry_dataset_store.not_kept_reason(fm)
@@ -518,7 +519,7 @@ class SharePointStore:
         own default (the Foundry dataset's has no document library)."""
         default = DEFAULT_ROOT
         if self.backend == "foundry":
-            from aec_document_review import foundry_dataset_store
+            from aec_agent_core import foundry_dataset_store
             default = foundry_dataset_store.DEFAULT_ROOT
         return (os.environ.get(ENV_ROOT, "").strip() or default).strip("/")
 

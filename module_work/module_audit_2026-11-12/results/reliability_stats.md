@@ -1,0 +1,95 @@
+# reliability_stats
+
+Scout for: reliability, pystra_agent, salib_agent, gstools_agent, geotech_common, DM7Eqs. Read only; nothing run. Paths are under C:\dev\GeotechStaffEngineer.
+
+## reliability
+Size: 11 python files plus `__init__`, 35 public names exported, 7 adapter methods (fosm, pem, monte_carlo, form, cov_guidance, combined_cov, variance_reduction). The best-validated module of the group: `VALIDATION.md` pins ten published anchors (Duncan 2000, UFC 3-220-20 ch. 7, ETL 1110-2-547) to tests, every exported function appears in a test, and a calc package exists. The gaps are in what the engines do with bounds, dropped samples and zero failures, and in what the agent cannot reach.
+
+| # | Check | Sev | Finding | Evidence | Known? |
+|---|---|---|---|---|---|
+| 1 | 1, 3 | A | The adapter tells the agent that `lower`/`upper` truncate normal and lognormal variables, but FOSM and PEM never read the bounds: they evaluate at `mean ± std` of the untruncated variable, while Monte Carlo and FORM sample the truncated distribution. The same input gives engines that disagree, and nothing says so. | funhouse_agent/adapters/reliability_adapter.py:229-234; reliability/fosm.py:91-92; reliability/pem.py:136; reliability/variables.py:126-137,234 | new |
+| 2 | 3 | A | Monte Carlo silently drops every realization where g is NaN or infinite. The result's `n` becomes the number kept, and no dropped count is stored in the result or `to_dict()`, so pf is computed on a smaller sample than the one asked for. | reliability/monte_carlo.py:103-106,141; reliability/results.py:142-213 | new |
+| 3 | 3 | B | With zero failures Monte Carlo reports pf = 0 and a 95% interval of exactly (0, 0). That is a Wald interval, which collapses at the edge, yet the adapter calls it a "95% binomial confidence interval". Zero failures reads as certainty. | reliability/monte_carlo.py:112-116; adapter:318 | new |
+| 4 | 1 | B | The pre-canned wrappers `bearing_capacity_reliability`, `axial_pile_reliability`, `slope_reliability` and `run_engine` are exported but no adapter method reaches them. The engines take only a `g_expression` string, so the agent cannot run FOSM/PEM/MC/FORM on a calculation module's own FOS. SALib can (its `model` spec, salib_adapter.py:116) and the engines cannot. | reliability/wrappers.py:31,67,138,224; adapter registry :216-224 | LT-01 open covers "FORM/SORM on any module's limit state"; wrappers not named |
+| 5 | 1 | C | Exported but not reachable by the agent: `beta_from_pf` (target-beta design), `rate_of_exceedance*` (UFC Eq. 7-16, validated as anchor 6), `std_from_range`, `averaged_cov/averaged_std`, `list_properties`, the `sample_*` statistics. | reliability/__init__.py:6-9,23-30; adapter registry :216-224 | new |
+| 6 | 3 | C | A correlation given for lognormal or other non-normal variables is applied in normal space by Monte Carlo and FORM but as the product-moment coefficient by FOSM and PEM. The adapter text says only "pairwise correlations", so the same rho means different things in different engines. | reliability/monte_carlo.py:91-95; reliability/fosm.py:102-106; adapter:249-253 | new |
+| 7 | 3 | C | FOSM evaluates g at `mean - std`. For a lognormal or positive property with COV near or over 1 that point is zero or negative (negative cohesion, say) and g is called there with no warning. | reliability/fosm.py:91-92 | new |
+| 8 | 3 | C | `variance_reduction` with only `soil_type` takes the first matching guidance row (`rows[0]`) as the scale of fluctuation; the other rows are listed and the source is named, but the choice of the first is not stated. | adapter:196-201 | new |
+| 9 | 5 | C | Outputs are complete for the four engines: every result class has `summary()` and `to_dict()`, and `calc_package` registers `reliability.calc_steps` (inputs table, steps, figures, tables). `cov_guidance`, `combined_cov` and `variance_reduction` have no package. | calc_package/__init__.py:132; reliability/results.py:47,70,106,124,167,189,231,254 | GM-41 done; agrees with the code |
+| 10 | 6 | C | Tests are pinned to published examples (VALIDATION.md rows 1-10, tests in `test_validation.py`) and to a pystra cross-check. Every exported function name appears under `reliability/tests`. | reliability/VALIDATION.md:12-23; reliability/tests/ | none needed |
+
+Not checked: DESIGN.md and UPGRADE_PLAN.md claims, `docs/user_manual/manual_content.py` entry (lines 136, 293, 1156) and `deep/prompt.py` wording against the code; `cov_database.py` values (a later stage checks values against print); whether the slope adapter (`fosm_fos`) duplicates this module's job.
+
+## pystra_agent
+Size: 4 python files (incl. `__init__`), 8 public names exported, 3 adapter methods (form_analysis, sorm_analysis, monte_carlo_analysis). A thin wrapper over pystra 1.x/2.x. It is the least checked of the group: results carry flags and counts that are made up or inferred, and the adapter's own variable description is wrong for one distribution.
+
+| # | Check | Sev | Finding | Evidence | Known? |
+|---|---|---|---|---|---|
+| 1 | 1 | A | The adapter says every variable takes `mean` and `stdv` ("same as FORM") and lists `uniform` among the distributions. The code requires `a` and `b` for uniform and refuses mean/stdv. A uniform variable written as the agent was told fails, and `a`/`b` appear nowhere in METHOD_INFO. | funhouse_agent/adapters/pystra_adapter.py:71,105; pystra_agent/pystra_utils.py:438-446 | new |
+| 2 | 3 | A | When SORM returns nothing, `beta_breitung` and `pf_breitung` are filled with the FORM values, under the SORM names, with no flag. A FORM answer is reported as a SORM answer. | pystra_agent/reliability.py:246-249 | new |
+| 3 | 3 | A | `n_function_calls` is computed as iterations × number of variables (an estimate), and the adapter describes it as "Number of limit state evaluations". | pystra_agent/reliability.py:136-137,259; adapter:92,129 | new |
+| 4 | 3 | A | `converged` is not pystra's convergence flag. It is `beta > 0 and pf > 0` (FORM) or both betas positive (SORM). A converged run whose mean point is already in the failure domain (beta < 0) says False; an unconverged run with a positive beta says True. | pystra_agent/reliability.py:139-140,261-265 | new |
+| 5 | 3 | A | Alpha, design point (x and u) and curvatures are each read in a `try / except Exception` that returns an empty dict or list. A failed extraction returns `{}` with no warning, and the result still looks complete. | pystra_agent/reliability.py:104-132,228-255 | new |
+| 6 | 3 | A | The adapter does not call `reject_unknown_params` (the reliability, gstools and one-call salib adapters do). A misspelt top-level name such as `n_sample` is dropped and the default 100,000 runs. | adapter:10-54 (compare reliability_adapter.py:60,73,91,115) | new; CLAUDE.md states every tool refuses misspelt names |
+| 7 | 3 | B | Monte Carlo has no seed input and seeds from numpy's global generator, so a run differs from the last and the adapter does not declare it (no `declare_when_absent`, unlike reliability's monte_carlo). `n_failures` is rebuilt as `round(pf*n)`, and `cov_pf` is 0.0 when pf is 0, so zero failures reads as a perfectly estimated pf. | pystra_agent/pystra_utils.py:99-103; pystra_agent/reliability.py:355-362; adapter:149-153 | new |
+| 8 | 4 | C | The three methods cover FORM, SORM and crude Monte Carlo only. There is no variable truncation or bounds, no `fos` convention (g must be written as a margin), and no FOS-type lognormal index, all of which the native `reliability` module has. Which of the two to use is not said to the agent. Input names also differ (`stdv` here, `std`/`cov` in reliability). | adapter:71-76; reliability_adapter.py:226-253 | new |
+| 9 | 5 | B | No calc package, no figure and no calculation table for pystra results. `reliability` has all three. Result classes have `summary()` and `to_dict()`. | calc_package/__init__.py:116-134; pystra_agent/results.py:56,93,222,272,330,366 | new |
+| 10 | 6 | B | The 45 tests are mostly structural (dataclass defaults, describe/dispatch). The only numeric check is the FORM-versus-`reliability.form` comparison in reliability/VALIDATION.md section 2. I found no numeric SORM test by grep (only `test_describe_sorm_analysis` and dataclass tests), and no published example. | pystra_agent/tests/test_pystra_agent.py:123-140,354; reliability/VALIDATION.md:25-36 | new |
+
+Not checked: DESIGN.md claims in detail; the numpy-2 monkeypatches in `_apply_numpy2_patches` (pystra_utils.py:120-235); behaviour on pystra 1.x versus 2.x.
+
+## salib_agent
+Size: 4 python files plus `__init__`, 11 public names exported, 6 adapter methods (sobol_analysis, morris_analysis, sobol_sample, sobol_analyze, morris_sample, morris_analyze). The one-call methods are well built and carefully guarded (evaluation caps, time budget, trial run, module allowlist). The two-step methods and the library underneath have inputs that nothing reads.
+
+| # | Check | Sev | Finding | Evidence | Known? |
+|---|---|---|---|---|---|
+| 1 | 3 | A | `sobol_analyze` takes `n_samples` and the adapter describes it as "Base number of samples used in sobol_sample()", but the body never reads it. The result's `n_samples` is `len(Y)`, the total number of evaluations, and the adapter's returns text calls it "Number of model evaluations". The same name means the base N on input and the total on output. | salib_agent/sensitivity.py:36-41,60-100; adapter (sobol_analyze METHOD_INFO) lines ~576-612 | new |
+| 2 | 3 | A | `morris_analyze` takes `n_trajectories` and only copies it into the result. SALib is never told it, and `X` is not checked against it, so a mismatched value is printed as the trajectory count of the run. | salib_agent/sensitivity.py:187-206 | new |
+| 3 | 3 | B | `_validate_model_output` (Y length against sample count) is defined and never called. A Y of the wrong length goes straight to SALib. | salib_agent/sensitivity.py:32-36 (no call in the package) | new |
+| 4 | 1, 3 | A | The four two-step adapter methods do not call `reject_unknown_params` (the one-call methods do), so a misspelt `seed`, `num_levels` or `calc_second_order` is silently ignored. Their `calc_second_order` default is True, against False in the one-call methods, so a sample matrix is 2D+2 per N unless told. | funhouse_agent/adapters/salib_adapter.py:341-420 vs :264; defaults :352,375 vs :288 | new |
+| 5 | 1 | A | The adapter says the expression follows "the reliability engines' g_expression rules" and the reliability adapter bounds powers and nesting (`safe_expr`: `_bounded_pow`, `_MAX_POW_BITS`). `salib_agent/expression.py` is a separate compiler: it allows `Pow` and I found no power-size or nesting limit in it (grep for pow, bits, nest, depth). An expression like `2**10**10` or a deep nest is not stopped by the stated rule. | funhouse_agent/adapters/salib_adapter.py:433-434; salib_agent/expression.py:26-31; reliability_adapter.py:11-20 | new; CLAUDE.md: "expressions nested past 200 levels refused on every route" |
+| 6 | 3 | C | Results carry no warnings field (no `warn` anywhere in `results.py` or `sensitivity.py`). SALib's own cautions (N not a power of 2, negative indices, a constant output) are not passed on. | salib_agent/results.py, sensitivity.py (grep) | new |
+| 7 | 4 | C | Inputs are uniform over `[min, max]` only. The reliability variable specs (mean, COV, distribution) cannot be used, so a ranking by this module is a ranking over the stated ranges, which the adapter does say. | adapter:471 (bounds description) | new |
+| 8 | 5 | B | No calc package, figure or calculation table for sensitivity results; `summary()` and `to_dict()` exist on both result classes. | calc_package/__init__.py:116-134; salib_agent/results.py:45,63,135,153 | new |
+| 9 | 6 | C | Tests include the Ishigami function, which has known analytic Sobol indices (`test_salib_agent.py:25`), so this one is pinned to a published benchmark. 43 tests. | salib_agent/tests/test_salib_agent.py:25 | none needed |
+
+Not checked: `_MODEL_DOC` and the `model` spec path beyond reading it (trial run, allowlist, time budget looked sound); results.py `to_dict` keys against `_ONE_CALL_RETURNS` line by line; test coverage of each exported function by name.
+
+## gstools_agent
+Size: 11 python files plus `__init__`, 10 public names exported, 4 adapter methods (kriging, variogram, random_field, conditional_simulation); all four `analyze_*`/`generate_*` functions are reached. The adapter is the most carefully documented of the group (given-or-default notes, `choices`, `assumptions`, aliases, figure and file handling) and I found no dropped parameters in it. The gaps are in what the model offers but cannot be set.
+
+| # | Check | Sev | Finding | Evidence | Known? |
+|---|---|---|---|---|---|
+| 1 | 1, 3 | B | `Matern` and `Stable` are offered as covariance models, but their shape parameters (Matern smoothness nu, Stable alpha) are not an input anywhere. I found no `nu` or `alpha` in the four analysis files. The run uses whatever GSTools defaults to (or fits), and the result and `choices` do not report it. Unverified whether the fit moves them. | funhouse_agent/adapters/gstools_adapter.py:28-29; gstools_agent/kriging.py:19-22,64-80; variogram.py:114-121; random_field.py:36-48; conditional.py:64-67 | new |
+| 2 | 4 | B | Anisotropy (`anis`, `angle_deg`) exists only in `conditional_simulation`. `kriging`, `variogram` and `random_field` are isotropic and the variogram is omnidirectional, with nothing saying so. A kriged map of a layered or dipping surface ignores direction. | adapter:569-570; gstools_agent/kriging.py:64-80; variogram.py:114-121; random_field.py:36-48 | new |
+| 3 | 4 | C | Plan view (2D) only; depth is "handled by separate analyses". Declared in the module's own limits. | gstools_agent/DESIGN.md:289 | new |
+| 4 | 5 | B | No calc package for kriging or conditional simulation. Figures (plan maps, exceedance curve) and CSV files exist, and result classes have `summary()` and `to_dict()`. | calc_package/__init__.py:116-134; gstools_agent/results.py:88,108,202,219,316,335,487,580 | new |
+| 5 | 6 | C | 164 tests, including one that checks conditioning against its definition. No printed published example is cited; the `kriging_residual` method cites Journel & Huijbregts (1978) in prose only. | gstools_agent/tests/test_conditioning_by_definition.py; adapter:576 | LT-01 mentions random-field FEM only |
+| 6 | 3 | C | A missing plotly is swallowed: the interactive twin is silently not drawn (PNG still is). | gstools_agent/plan_map.py:593-598; conditional_figures.py:141-146 | new |
+
+Not checked: the numerical behaviour of kriging and the `kriging_residual` algorithm (a later stage), the Exponential-model fix in `models.py` against GSTools versions, `regions.py` polygon handling.
+
+## geotech_common
+Size: 16 python files, 92 public functions and classes, no adapter (shared library). Two of the files, `layout_ink.py` and `plan_furniture.py`, are only aliases to `funhouse_agent.charts` (INF-35 removal at step 16). The correlation code is recent and checked against prints (GM-295); the library has two large pieces that nothing calls.
+
+| # | Check | Sev | Finding | Evidence | Known? |
+|---|---|---|---|---|---|
+| 1 | 1 | B | `engineering_checks.py` (1,116 lines, ten `check_*` functions) is called by nothing but its own tests and the `__init__` re-export. Its docstring says it returns warnings "the LLM agent can include in its response", but no adapter, module, prompt or calc package calls any of them (repo-wide grep finds only `__init__.py`, the file and its test). | geotech_common/engineering_checks.py:3-5; geotech_common/__init__.py:25-29 | new |
+| 2 | 1 | B | The checked SPT correlations are not reachable: `spt_to_phi` (7 methods), `spt_to_cu`, `spt_to_relative_density`, `phi_to_Ka/Kp/K0`, `spt_energy_correction` and `spt_overburden_correction` are called by no module or adapter outside `geotech_common`. Only `spt_n1_60` and `stress_dilatancy_bolton` are reached, through the subsurface adapter. The agent may get the same correlations through reference-library tools (unverified). | geotech_common/soil_properties.py:68,181,250,304,325,345,390,471; funhouse_agent/adapters/subsurface_adapter.py:1064,1099 | GM-295 done (values checked); reachability not mentioned |
+| 3 | 1 | C | `geotech_common/DESIGN.md` says "9 check functions" and 93 tests; the file has ten (`check_slope_stability` at line 1024). | geotech_common/DESIGN.md:11,21; engineering_checks.py:1024 | new |
+| 4 | 3 | C | `spt_to_phi` past N1,60 = 60 holds the angle at 60's value and signals it with `warnings.warn`, a Python warning that does not appear in any result dict. `spt_to_relative_density` with the Skempton method caps at 100% with no flag. Both are moot while the functions are unreachable (finding 2). | geotech_common/soil_properties.py:128-134,295 | new |
+| 5 | 1 | C | Two alias shims carry the old import path to `funhouse_agent.charts` until step 16. | geotech_common/layout_ink.py; geotech_common/plan_furniture.py | INF-35 |
+| 6 | 6 | C | Every public function I listed has a test or a production caller except through the unreachable pieces above. Seventeen test files, including `test_gm295_correlations.py`; I did not open them for published-page pins. | geotech_common/tests/ | none needed |
+
+Not checked: `soil_profile.py` (2,588 lines, the SoilProfile adapters), `log_spiral.py` values, `response_spectrum.py`, `alpha_method.py` and `tables.py` beyond their callers, `units.py` completeness.
+
+## DM7Eqs
+Size: 0 python files. What it is: the retired legacy equation layer (about 354 LLM-callable functions from UFC 3-220-10 and UFC 3-220-20) deleted in commit 450320b ("Phase 2a #11: migrate DM7Eqs figure consumers to geotech_references, delete DM7Eqs"); `CONSOLIDATION_PLAN.md` SA-11 judged its equations a byte-identical subset of `geotech_references`. Only an empty directory skeleton is left on disk. Nothing imports it, and the agent cannot reach it; the equations are reached through `dm7_adapter.py` and the references library.
+
+| # | Check | Sev | Finding | Evidence | Known? |
+|---|---|---|---|---|---|
+| 1 | 1 | C | The folder `DM7Eqs/` still exists with `geotech/dm7_1`, `geotech/dm7_2` and `tests` as empty directories (0 files). Git does not track empty folders, so this is local leftover only. | DM7Eqs/ (find: 0 files) | new; CONSOLIDATION_CHANGES.md:226 says it was deleted in full |
+| 2 | 1 | C | Nothing imports it. Remaining mentions are history only: `reliability/stats.py:4` ("resurrected" toolkit), `reliability/UPGRADE_PLAN.md:55-56,86`, `reliability/VALIDATION.md:17`, and CONSOLIDATION_*.md. CLAUDE.md does not mention it. | grep of the repo | none needed |
+| 3 | 1 | C | `reliability/UPGRADE_PLAN.md:56` and `VALIDATION.md:17` point at the recoverable tests with `git show 450320b~1:DM7Eqs/tests/...`; the file is retrievable only from history. | reliability/UPGRADE_PLAN.md:55-56 | none needed |
+
+Not checked: that every DM7Eqs function really is in `geotech_references` (SA-11 said so; I did not recheck).
