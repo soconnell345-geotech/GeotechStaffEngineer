@@ -93,6 +93,8 @@ def _off_run(name: str, folder: Path
         kwargs = {"label_policy": "rules", "review_mode": "all"}
     env = {k: v for k, v in os.environ.items()
            if not k.startswith("GEOTECH_INGEST_")}
+    # The report tables are a separate output, tested in test_tables.py.
+    env["GSE_REPORT_TABLES"] = "0"
     pictures: Dict[bytes, str] = {}
     drawn = Document.render
     signature = inspect.signature(drawn)
