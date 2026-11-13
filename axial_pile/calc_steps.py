@@ -111,6 +111,23 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     """
     sections = []
 
+    # the last layer carried on below the profile (GM-318): said first
+    _given = getattr(analysis, "profile_depth_given", None)
+    _notes = [w for w in (getattr(result, "warnings", None) or [])
+              if "extend_last_layer" in w]
+    if _given is not None and _notes:
+        sections.append(CalcSection(
+            title="Soil Below the Profile (Assumed)",
+            items=[CalcStep(
+                title="Last layer carried on to the toe",
+                equation="", substitution="",
+                result_name="Profile given to",
+                result_value=f"{_given:g}",
+                result_unit="m",
+                notes=f"The toe is at {analysis.head_depth + analysis.pile_length:g} m. WARNING: "
+                      + " ".join(_notes),
+            )]))
+
     # == Section 1: Soil Profile Summary ==
     soil_items = []
     layer_rows = []

@@ -1572,6 +1572,9 @@ def _generate_lateral_pile_package(params: dict) -> dict:
             "y_top_mm": round(result.y_top * 1000, 2),
             "max_moment_kNm": round(result.max_moment, 1),
             "converged": result.converged,
+            # what the user must be told (GM-318)
+            **({"warnings": list(result.warnings)}
+               if getattr(result, "warnings", None) else {}),
         },
     )
 
@@ -1827,6 +1830,9 @@ def _generate_axial_pile_package(params: dict) -> dict:
             "Q_allowable_kN": round(result.Q_allowable, 1),
             "Q_skin_kN": round(result.Q_skin, 1),
             "Q_tip_kN": round(result.Q_tip, 1),
+            # what the user must be told (GM-318)
+            **({"warnings": list(result.warnings)}
+               if getattr(result, "warnings", None) else {}),
         },
     )
 
@@ -1847,6 +1853,9 @@ def _generate_drilled_shaft_package(params: dict) -> dict:
             "Q_allowable_kN": round(result.Q_allowable, 1),
             "Q_skin_kN": round(result.Q_skin, 1),
             "Q_tip_kN": round(result.Q_tip, 1),
+            # what the user must be told (GM-318)
+            **({"warnings": list(result.warnings)}
+               if getattr(result, "warnings", None) else {}),
         },
     )
 

@@ -243,7 +243,7 @@ METHOD_INFO = {
             **_INFO_RATIONAL,
             **_INFO_SHAFT_GEOM,
         },
-        "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Side resistance.", "Q_tip_kN": "Tip resistance.", "base_diameter_m": "Diameter of the base the tip resistance acts on: the bell's, the rock socket's with the tip in rock, else the shaft's."},
+        "returns": {"warnings": "Only when there is something the user must be told: the last layer carried on to the base (extend_last_layer). Tell the user.", "Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Side resistance.", "Q_tip_kN": "Tip resistance.", "base_diameter_m": "Diameter of the base the tip resistance acts on: the bell's, the rock socket's with the tip in rock, else the shaft's."},
     },
     "capacity_vs_depth": {
         "category": "Drilled Shaft",
@@ -276,7 +276,7 @@ METHOD_INFO = {
             **_INFO_RATIONAL,
             **_INFO_SHAFT_GEOM,
         },
-        "returns": {"Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component (GEC-10 Table 8-4, p. 8-14: side 0.45 clay, 0.55 sand, 0.50 rock; base 0.40 clay, 0.50 sand and rock), the base factor by the soil the base is in. With the base in rock and concrete_fc given, phi_Qt_kN is the smaller of 0.50*Q_tip and the concrete's bearing 0.70*[0.85*f'c*A1*2.0] (GEC-10 p. 10-25, Eq. 12-7), phi_Qt_governed_by saying which."},
+        "returns": {"warnings": "Only when there is something the user must be told: the last layer carried on to the base (extend_last_layer). Tell the user.", "Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component (GEC-10 Table 8-4, p. 8-14: side 0.45 clay, 0.55 sand, 0.50 rock; base 0.40 clay, 0.50 sand and rock), the base factor by the soil the base is in. With the base in rock and concrete_fc given, phi_Qt_kN is the smaller of 0.50*Q_tip and the concrete's bearing 0.70*[0.85*f'c*A1*2.0] (GEC-10 p. 10-25, Eq. 12-7), phi_Qt_governed_by saying which."},
     },
     "get_resistance_factors": {
         "category": "Drilled Shaft",

@@ -89,6 +89,23 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     """
     sections = []
 
+    # the last layer carried on below the profile (GM-318): said first
+    _given = getattr(analysis, "profile_depth_given", None)
+    _notes = [w for w in (getattr(result, "warnings", None) or [])
+              if "extend_last_layer" in w]
+    if _given is not None and _notes:
+        sections.append(CalcSection(
+            title="Soil Below the Profile (Assumed)",
+            items=[CalcStep(
+                title="Last layer carried on to the toe",
+                equation="", substitution="",
+                result_name="Profile given to",
+                result_value=f"{_given:g}",
+                result_unit="m",
+                notes=f"The toe is at {analysis.pile.length:g} m. WARNING: "
+                      + " ".join(_notes),
+            )]))
+
     # ── Soil Layer Summary ─────────────────────────────────────
     layer_rows = []
     for i, layer in enumerate(analysis.layers, 1):
@@ -171,6 +188,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             substitution="",
             result_name="EI iterations",
             result_value=str(result.ei_iterations),
+            notes=("" if result.ei_converged is None else
+                   (f"Converged: last change in EI "
+                    f"{result.ei_last_change:.2e} of the largest EI, "
+                    f"tolerance {result.ei_tolerance:g}."
+                    if result.ei_converged else
+                    "WARNING: " + " ".join(
+                        w for w in result.warnings
+                        if "did not converge" in w))),
         ))
 
     sections.append(CalcSection(title="Solver Performance", items=solver_items))
