@@ -268,13 +268,15 @@ pystrata's strain history at each sub-layer's middle, the quantity the
 equivalent-linear run reports (on a linear soil the two now agree). The
 result echoes the water table and K0 as `water_table_depth_m` and `k0`
 (was `K0`) only when a Darendeli or Menq layer used them, else null with
-`stress_inputs_note`.
+`stress_inputs_note`; `defaults_used` lists them only on those runs too.
+A 'linear' layer is not divided, so its strain is the one at its middle
+(the text says so; thinner layers resolve the peak in a thick one).
 
 **Field correlations (`liquepy.field_correlations`).** `dr_min`/`dr_max`
 are over the sand-like readings (Ic below 2.6) and `su_ratio_min`/
-`su_ratio_max` over the clay-like ones, null when there is none. Before,
-they were over every reading, so a sand reading could set the su ratio's
-maximum.
+`su_ratio_max` over the clay-like ones, null when there is none, and the
+result gives the split as `i_c_limit`. Before, they were over every
+reading, so a sand reading could set the su ratio's maximum.
 
 ## Noted, not fixed
 
@@ -299,11 +301,12 @@ maximum.
 - Effective stress at or below zero is set to 1.0 kPa on both SPT routes
   without a word (audit seismic_geotech 2, liquepy 7). It needs a unit
   weight below water's to happen.
-- `k0` is listed in `defaults_used` for a profile with no Darendeli or Menq
-  layer, where it does nothing: `applies_when` cannot read a key inside a
-  list item. Since the review fixes the result says so (`k0` null,
-  `stress_inputs_note`), and the probe lists record it (`NOT_REACHED`,
-  `ECHO_IS_NOT_THE_INPUT`).
+- `k0` was listed in `defaults_used` for a profile with no Darendeli or
+  Menq layer, where it does nothing (`applies_when` cannot read a key
+  inside a list item). **Fixed in the re-check round (R1):** both stress
+  inputs are `applies_when: False`, and the module's own report lists
+  them exactly when a layer's stress was computed; the two probe-list
+  entries that hid it are gone.
 - Manual line 1594 differs from a rebuild on master today; not this task's
   row. (Line 335 was this task's: see "Test and manual".)
 - `test_defaults_used.py::...[profile_figure|plot_data]` fails on master in
@@ -320,7 +323,7 @@ then this file.
 | 1 | A | `linear_site_response` gave peak strain 0.0 in the scalar and in every `depth_profile` row: pystrata's linear calculator never sets `strain_max` and the module turned None into 0.0 | **Fixed by computing it.** A linear run adds pystrata's documented `StrainTSOutput` at each sub-layer's middle and takes each history's peak, which is what the equivalent-linear calculator stores as `strain_max` (`motion.calc_peak(calc_strain_tf(input, layer middle))`, pystrata 0.5.4 `propagation.py`). Checked against the closed form for one damped layer on an elastic half-space. A strain pystrata does not give is null, never 0.0. The first build failed CI's Python 3.13 job (pystrata 0.6.0): 0.6's `MaxStrainProfile` adds a point at the base of the soil column, the linear strains were laid out for 0.5, the counts disagreed and the linear `depth_profile` came back null (`test_gm325`: `test_linear_analysis_takes_them_too`, `test_linear_strain_matches_the_closed_form`). Now each of `MaxStrainProfile`'s depths takes the strain of the sub-layer it lies in, on either version; run on 0.5.4 and on 0.6.0 (Python 3.13 in WSL). |
 | 2 | B | SPT `depth` said "layer mid-depths" while `gamma` sums from the previous depth down | **Fixed (text).** `depth` on `liquefaction_analysis`, `spt_liquefaction` and `liquefaction_evaluation`, and both docstrings: the depths are where (N1)60 was measured; give a depth at each change in unit weight (a layer's base, the water table where the unit weight changes there), or the change is taken at the depth above. The result's total-stress `choices` basis says the same (both copies of `TOTAL_STRESS_RULE`). No arithmetic change. |
 | 3 | B | Dr and su/sigma'v ranges over every reading | **Fixed.** Dr over Ic below `i_c_limit` (2.6), su/sigma'v over Ic at or above it, null when there is none; the `returns` text says so. The profile rows still carry every correlation at every reading (the profile text says to read them by Ic): not changed. |
-| 4 | B | `water_table_depth_m` and `K0` echoed as used on profiles that did not use them; `K0` hid k0 from the GM-160 guard | **Fixed.** Echoed only when a Darendeli or Menq layer had its stress computed; else null with `stress_inputs_note`. Echo renamed `k0`. `NOT_REACHED` and `ECHO_IS_NOT_THE_INPUT` entries for the two pystrata probes (the guard now sees that k0 does nothing there, and that the echo is null by design). |
+| 4 | B | `water_table_depth_m` and `K0` echoed as used on profiles that did not use them; `K0` hid k0 from the GM-160 guard | **Fixed.** Echoed only when a Darendeli or Menq layer had its stress computed; else null with `stress_inputs_note`. Echo renamed `k0`. (This round first added `NOT_REACHED` and `ECHO_IS_NOT_THE_INPUT` entries for the two pystrata probes; the re-check showed they hid `defaults_used` listing k0 where it was unused, and R1 below replaced them.) |
 | 5 | B | CHECK.md wrong about manual line 335 | **Fixed.** Line 335 carries 5812; CHECK.md corrected ("Test and manual"). |
 | 6 | B | `depth_profile` left out with no word when pystrata's arrays are not in the expected form | **Fixed.** `depth_profile` null and `depth_profile_note` says which check failed. Merge after the Python 3.13 CI job (pystrata 0.6) is green. |
 | 7 | C | NCEER route took a first depth of 0 and returned FOS 99.9 | **Fixed.** Refused with the reason, as on B&I. |
@@ -344,7 +347,7 @@ then this file.
 
 ### Tests (fix branch)
 
-`C:\dev\GeotechStaffEngineer\.venv` (Python 3.12, pystrata 0.5.4), the
+`C:\dev\GeotechStaffEngineer\.venv` (Python 3.14, pystrata 0.5.4), the
 worktree first on the path, one file at a time, judged by exit code; all 0:
 `pystrata_agent/tests/test_gm325.py` 21 passed;
 `pystrata_agent/tests/test_pystrata_agent.py` 62 passed, 1 skipped;
@@ -369,3 +372,23 @@ re-record.
   `liquefiable` and count them in `n_liquefiable` (p8: layers at 1 and 2 m
   over a 3 m water table, FS 0.52 and 0.515, both True). The CPT count
   already excludes them. For the backlog.
+- Re-check C-a: pystrata divides only layers with curves, so a 'linear'
+  layer has one strain, at its middle, and the peak inside a thick one is
+  missed (the re-check's made-up two-layer case: 0.0283 % with 'linear'
+  layers, 0.0497 % with the same soils divided). The tool text now says
+  so; dividing linear layers in the module would change saved strains.
+  For the backlog if wanted.
+
+## Re-check fixes
+
+An independent re-check of 0f7f717 closed A1, B2, B3, B5, B6, C7 and C9
+with its own numbers, confirmed the Python 3.13 fix from pystrata 0.6's
+source, and asked for one fix and four small ones.
+
+| # | Grade | Finding | What it became |
+|---|---|---|---|
+| R1 | B | `defaults_used` listed `k0` 0.5 and the "no water table" case on runs whose result said neither was used (a linear-only profile, or every curve layer with its own `stress_mean`); the two probe-list entries hid it from the GM-158 and GM-160 guards | **Fixed.** `applies_when: False` on `water_table_depth` and `k0` in both pystrata methods, with a comment: `stress_choices` reports both as "default" exactly when a layer's stress was computed, and `_defaults_used` keeps a reported name. Both probe-list entries deleted (`method_probes.py` is master's again). New test through the tool: a Darendeli run that computes the stress lists both; a linear-only run and a `stress_mean` run list neither. |
+| C-a | C | A 'linear' layer is not divided, so its strain is the one at its middle | **Stated** in `max_shear_strain_pct` (linear) and `depth_profile` (both methods), and in DESIGN.md; dividing is a follow-up (above). |
+| C-b | C | The ranges' split was in the `returns` text only | **Fixed.** `field_correlations` returns `i_c_limit`; listed in `returns` and the manual row; tested with a moved limit. |
+| C-c | C | The notes named Python 3.12 for the local runs | **Fixed.** The Windows venv is Python 3.14 (CHECK.md "Tests (fix branch)", pystrata DESIGN.md). |
+| C-d | C | `max_shear_strain_pct`'s text said "the largest max_strain_pct of depth_profile", though it is given when the profile is null | **Fixed.** It is the largest of pystrata's sub-layer strains, and the text says it is still given when `depth_profile` is null. |
