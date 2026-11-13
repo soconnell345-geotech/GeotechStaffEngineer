@@ -218,6 +218,8 @@ class _Mod:
     ({"kind": "c"}, True),
     ({"kind": "A"}, True),                 # exact unless any_case
     ({"k": "c"}, True),                    # an alias is checked as its name
+    ({"n": 3, "k": "c"}, True),            # ... after a listed one too (N1)
+    ({"n": 3, "k": "a"}, False),
     ({"kind": None}, False),               # None: the method's default
     ({"kind": 3}, False),                  # another kind: left to the method
     ({"kinds": ["a", "b"]}, False),        # each item of a list
@@ -247,6 +249,24 @@ def test_the_shapes_enforced(params, refused):
             _check_parameter_values(_Mod, "m", params)
     else:
         _check_parameter_values(_Mod, "m", params)
+
+
+def test_a_parameter_named_by_its_alias_after_a_listed_one_is_checked():
+    """GM-316 re-check N1: the value check kept the parameter-name aliases
+    in a variable it then reused for the value aliases, so after the first
+    listed parameter a parameter given under its alias name went
+    unchecked. The reviewer's case: footing_shape (the settlement
+    package's alias of shape) after immediate_method ran "circle footing"
+    as a rectangular footing."""
+    pkg = D._load_adapter("calc_package")
+    for shape in ("circle footing", NOT_A_VALUE):
+        with pytest.raises(ValueError, match=REFUSED):
+            _check_parameter_values(pkg, "settlement_package", {
+                "immediate_method": "elastic", "footing_shape": shape,
+                "L": 3})
+    for shape in ("circular", "circle", "Square"):
+        _check_parameter_values(pkg, "settlement_package", {
+            "immediate_method": "elastic", "footing_shape": shape, "L": 3})
 
 
 def _made_up(spec):

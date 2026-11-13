@@ -483,8 +483,11 @@ def _check_parameter_values(mod, method: str, parameters: dict) -> None:
         allowed = spec.get("allowed_values")
         if not isinstance(allowed, (list, tuple)) or not allowed:
             continue
-        aliases = value_aliases(spec)
-        bad = _outside(value, list(allowed), spec.get("any_case"), aliases)
+        # the value's other spellings; ``aliases`` stays the parameter
+        # NAMES' map for the next key (GM-316 re-check N1)
+        spellings = value_aliases(spec)
+        bad = _outside(value, list(allowed), spec.get("any_case"),
+                       spellings)
         if not bad:
             continue
         first = bad[0]
