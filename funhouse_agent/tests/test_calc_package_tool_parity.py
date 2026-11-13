@@ -805,7 +805,7 @@ def test_soe_package_prints_the_results_numbers(tmp_path):
     assert "36.328" in html and "102.93" in html   # pe and DL1
     out = D.call_agent("calc_package", "soe_package", {
         "wall_type": "anchored", "H": 8.0})
-    assert "wall_type must be one of" in out["error"]
+    assert "wall_type='anchored' is not one of the values" in out["error"]
 
 
 def test_reliability_package_prints_the_engines_numbers(tmp_path):
