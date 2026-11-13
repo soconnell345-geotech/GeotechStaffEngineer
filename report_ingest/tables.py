@@ -879,10 +879,37 @@ def _page_key(folder: str) -> str:
     return found.group(1) if found else ""
 
 
+def _run_of(folder: str) -> Tuple[Dict[str, Any], Optional[float]]:
+    """A report folder's run file, and the time it was written when it is
+    OLDER than the folder's record (BACKLOG RI-209 review B3).
+
+    The run file is always written after the record, so one older than its
+    record belongs to an earlier ingest: a later one ran with the export
+    off, on an older wheel, or stopped between the writers and the export.
+    Such a run file is not used (the first value is empty) and the folder
+    is read as one ingested before the export, its run id and time from
+    the record file; the second value lets a reader tell an earlier run's
+    side files (the question list's) from the latest ingest's."""
+    path = os.path.join(folder, RUN_NAME)
+    run = _read_json(path)
+    if not isinstance(run, dict):
+        return {}, None
+    try:
+        written = os.path.getmtime(path)
+        if written < os.path.getmtime(os.path.join(folder, _RECORD)):
+            _log.info("report tables: %s's run file is older than its "
+                      "record (an ingest since ran without the export); "
+                      "not used", os.path.basename(os.path.normpath(folder)))
+            return {}, written
+    except OSError:
+        pass
+    return run, None
+
+
 def _key_in(folder: str, record: Any = None, parent_key: str = "") -> str:
     """A report folder's key: its run file's, else its library page's, else
     recomputed from the record (as the library does)."""
-    run = _read_json(os.path.join(folder, RUN_NAME)) or {}
+    run, _stale = _run_of(folder)
     key = str(run.get("report_key") or "") or _page_key(folder)
     if key or record is None:
         return key
@@ -901,6 +928,9 @@ class _Report:
     parent: Optional["_Report"] = None
     parent_key: Optional[str] = None
     children: List["_Report"] = field(default_factory=list)
+    #: When the run file was written, if it is older than the record and
+    #: so not used (:func:`_run_of`); None otherwise.
+    stale_run: Optional[float] = None
 
     @property
     def file_key(self) -> str:
@@ -924,7 +954,7 @@ def _load_record(folder: str) -> Any:
 
 def _load(folder: str, parent: Optional[_Report] = None) -> _Report:
     record = _load_record(folder)
-    run = _read_json(os.path.join(folder, RUN_NAME)) or {}
+    run, stale_run = _run_of(folder)
     parent_key: Optional[str] = None
     if record.parent is not None:
         if parent is not None:
@@ -937,7 +967,8 @@ def _load(folder: str, parent: Optional[_Report] = None) -> _Report:
                 or _key_in(up) or None
     key = _key_in(folder, record, parent_key or "")
     return _Report(folder=folder, record=record, key=key, run=run,
-                   parent=parent, parent_key=parent_key)
+                   parent=parent, parent_key=parent_key,
+                   stale_run=stale_run)
 
 
 def _with_children(top: _Report) -> _Report:
@@ -973,12 +1004,24 @@ def _questions(report: _Report) -> Tuple[Optional[Dict[str, Any]],
     """The question list's answers (``report.questions.json``, else the
     sheet read back) and the sheet to deliver, when they belong to the
     latest ingest: a run file that says the list did not run hides an
-    earlier run's files."""
+    earlier run's files. Where the run file was not used because it is
+    older than the record (:func:`_run_of`), only files written after it
+    are the latest ingest's (RI-209 review B3)."""
     if report.run and not report.run.get("question_list", False):
         return None, None
-    sheet = os.path.join(report.folder, _SHEET)
-    sheet = sheet if os.path.isfile(sheet) else None
-    blob = _read_json(os.path.join(report.folder, _ANSWERS))
+
+    def latest(name: str) -> Optional[str]:
+        path = os.path.join(report.folder, name)
+        if not os.path.isfile(path):
+            return None
+        if report.stale_run is not None and \
+                os.path.getmtime(path) <= report.stale_run:
+            return None
+        return path
+
+    sheet = latest(_SHEET)
+    answers = latest(_ANSWERS)
+    blob = _read_json(answers) if answers else None
     if isinstance(blob, dict) and isinstance(blob.get("answers"), list):
         return blob, sheet
     if sheet is not None:
@@ -1522,7 +1565,9 @@ def _old_children(v1: str, key: str) -> List[str]:
 def _write_group(built: Sequence[_Built], v1: str) -> List[str]:
     """Each report's files, replacing what the export held for its key;
     a document the report no longer has, and a bound-in report the parent
-    no longer lists, removed (their ingest_run files stay)."""
+    no longer lists, removed (their ingest_run files stay). An ingest_run
+    file already there is never overwritten: that run's row stands as it
+    was first written (RI-209 review B3)."""
     written: List[str] = []
     top = built[0]
     for gone in set(_old_children(v1, top.key)) - {b.key for b in built}:
@@ -1543,6 +1588,8 @@ def _write_group(built: Sequence[_Built], v1: str) -> List[str]:
             name = (f"{one.key}.{one.run_id}.jsonl"
                     if table.name == "ingest_run" else f"{one.key}.jsonl")
             target = os.path.join(v1, table.name, name)
+            if table.name == "ingest_run" and os.path.exists(target):
+                continue
             _write_bytes(target, _jsonl(one.rows[table.name]))
             written.append(target)
     target = os.path.join(v1, "schema.json")
@@ -1620,9 +1667,10 @@ def export_folder(run_root: Any, root: Any = None, *, deliver: bool = False,
 def export_outcome(out_dir: Any) -> Optional[Dict[str, Any]]:
     """What the latest ingest's export of the report in ``out_dir`` did, as
     it saved it in :data:`RUN_NAME`; None when it saved nothing (the export
-    off, or a folder older than this module)."""
-    run = _read_json(os.path.join(str(out_dir), RUN_NAME))
-    return run.get("export") if isinstance(run, dict) else None
+    off, or a folder older than this module), and when the run file is an
+    earlier ingest's (older than the record, :func:`_run_of`)."""
+    run, _stale = _run_of(str(out_dir))
+    return run.get("export") if run else None
 
 
 # ---------------------------------------------------------------------------

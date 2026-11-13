@@ -184,6 +184,14 @@ fails because of the export: a failure is logged and kept there. In code,
 `report_ingest.tables.export_outcome(out_dir)` reads it back; the cluster
 stage copies it into each report's `run.json` (`report_tables`).
 
+The run file is always written after the record. One OLDER than its record
+belongs to an earlier ingest (a later one ran with the export off, on an
+older version, or stopped before the export), so it is not used: the folder
+is read as one ingested before the tables existed (above), with a new run id
+and the record's time, and a question-list file written before that old run
+file is not shown as the latest ingest's. An `ingest_run` file already in
+the export is never overwritten.
+
 The question list's answers are now also saved as data beside the sheet,
 `report.questions.json` (the same answers, typed, with the Run tab's
 facts), which is what the tables are built from.

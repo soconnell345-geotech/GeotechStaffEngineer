@@ -824,6 +824,70 @@ class TestAReingest:
         assert report["ingested_at"] == "2026-01-03T03:04:05Z"
         assert len(_rows(v1, "report_answer", written.key)) == 38
 
+    def test_a_run_file_older_than_its_record_is_not_used(self, tmp_path):
+        """RI-209 review B3: a re-ingest with the export off leaves the
+        earlier run's run file behind. A later export reads the folder as
+        one ingested before the export: a new run id and the record's own
+        time; the earlier run's history row is left as it was and its
+        question-list answers are not shown as this ingest's."""
+        folder, pdf, written = _write_folder(tmp_path)
+        record = ReportRecord.model_validate_json(
+            (folder / "report.record.json").read_text("utf-8"))
+        answers = folder / "report.questions.json"
+        answers.write_text(json.dumps({"answers": [{
+            "key": "made_up_key", "status": "answered",
+            "text": "an earlier answer", "value": "an earlier answer",
+            "pdf_pages": [1]}], "run": {}}), encoding="utf-8")
+        root = tmp_path / "root"
+        first = tables.after_ingest(
+            folder, record=record, source=pdf, key_source=pdf,
+            setting=str(root), question_list=True,
+            now=datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc))
+        v1 = Path(first.folder)
+        (old_run,) = (v1 / "ingest_run").glob(f"{written.key}.*.jsonl")
+        old_bytes = old_run.read_bytes()
+        assert _answers(_rows(v1, "report_answer", written.key),
+                        "question_list")
+
+        # the re-ingest, export off: the writers run, no run file is written
+        record.general.projectName = "A second made-up reading"
+        write_outputs(record, folder, source=pdf,
+                      db_path=tmp_path / "run" / "reports.db")
+        stamp = (folder / "report.record.json").stat().st_mtime
+        os.utime(folder / tables.RUN_NAME, (stamp - 60, stamp - 60))
+        os.utime(answers, (stamp - 61, stamp - 61))
+        assert tables.export_outcome(folder) is None
+        (outcome,) = tables.export_folder(tmp_path / "run", root)
+
+        assert outcome.status == "written"
+        (report,) = _rows(v1, "report", written.key)
+        assert report["project_name"] == "A second made-up reading"
+        assert report["ingested_at"] == datetime.fromtimestamp(
+            stamp, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        assert not report["latest_run_id"].startswith("20260102T030405Z")
+        assert report["source_sha256"] is None
+        assert not _answers(_rows(v1, "report_answer", written.key),
+                            "question_list")
+        runs = sorted((v1 / "ingest_run").glob(f"{written.key}.*.jsonl"))
+        assert len(runs) == 2 and old_run in runs
+        assert old_run.read_bytes() == old_bytes
+
+    def test_an_ingest_run_file_already_there_is_never_overwritten(
+            self, tmp_path):
+        """A run's history row stands as first written, whatever a later
+        export of the same run makes of it (RI-209 review B3)."""
+        folder, _pdf, written = _write_folder(tmp_path)
+        root = tmp_path / "root"
+        v1 = Path(tables.export_report(folder, root).folder)
+        (history,) = (v1 / "ingest_run").glob(f"{written.key}.*.jsonl")
+        history.write_bytes(b'{"made_up": "as first written"}\n')
+
+        again = tables.export_report(folder, root)
+
+        assert again.status == "written"
+        assert history.read_bytes() == b'{"made_up": "as first written"}\n'
+        assert not any(f.startswith("ingest_run/") for f in again.files)
+
     def test_a_diggs_file_from_an_earlier_run_is_removed(self, tmp_path):
         folder, pdf, written = _write_folder(tmp_path)
         root = tmp_path / "root"
