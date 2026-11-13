@@ -10,15 +10,16 @@ E8 adds ``SlopeGeometry.surcharges`` (a list of (pressure, x_start, x_end) zones
 summed on top of the single ``surcharge``/``surcharge_x_range`` pair). No change to
 slices/search -- both go through ``surcharge_at``.
 
-VERDICT: **PASS (capability built; small, seam-governed FOS movement).** On the
-V-028 weak-seam critical surface the two zones lower the Spencer FOS from 0.808 to
-0.806 (~0.3%) and GLE 0.802 -> 0.799 (0.792 -> 0.788 and 0.786 -> 0.782 on even
-slices across the surface's corners, before GM-131) -- the crest-side zone (x=70-80, 11 slices on
-the sliding mass) adds driving weight; the bench zone (x=23-43) barely overlaps the
-mass (~1 slice). The movement is small because the weak seam (c'=0, phi'=10)
-governs the FOS, exactly as expected. Default (no ``surcharges``) is byte-identical
-to V-028. The crest zone's published 20->40 kPa ramp is represented as a uniform
-30 kPa (the mean); NOT tuned.
+VERDICT: **capability built; V-028 itself does NOT validate** (GM-140 step 1,
+2026-11-13: see test_published_v028_slope.py). With each point weighed once,
+Spencer and GLE have no solution on the V-028 seam surface, so the loads are
+measured with Janbu's simplified method (corrected), which solves: the two zones
+lower it from 1.073 to 1.034 (3.7 %); the crest zone alone gives 1.023, and the
+bench zone alone, over the toe, raises it to 1.085. (While the soil was weighed
+three times the loads looked small beside it: Spencer 0.808 -> 0.806.) Default (no
+``surcharges``) is identical to V-028. The crest zone's published 20->40 kPa ramp
+is represented as a uniform 30 kPa (the mean); NOT tuned. The piezometric line is
+Table 9.3 as printed.
 
 See slope_stability/geometry.py (surcharges / surcharge_at), VALIDATION.md B11,
 and test_published_v028_slope.py (the no-surcharge V-028 record).
@@ -29,14 +30,13 @@ import pytest
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.slip_surface import PolylineSlipSurface
 from slope_stability.slices import build_slices
-from slope_stability.methods import spencer_fos
-from slope_stability.gle import gle_fos
+from slope_stability.gle import janbu_fos
 
 _SURF = [(20.0, 28.0), (43.0, 28.0), (68.0, 40.0), (84.0, 40.0)]
 _SEAM_TOP = [(20.0, 19.0), (84.0, 37.0)]
 _SEAM_BOT = [(20.0, 18.0), (84.0, 36.0)]
-_PIEZO = [(20.0, 27.75), (43.0, 27.75), (49.0, 29.86), (60.0, 34.06),
-          (66.0, 35.80), (74.0, 37.68), (80.0, 38.4), (84.0, 38.4)]
+_PIEZO = [(20.0, 27.75), (43.0, 27.75), (49.0, 29.8), (60.0, 34.0),
+          (66.0, 35.8), (74.0, 37.6), (80.0, 38.4), (84.0, 38.4)]
 # Table 9.2 external loads: bench 20 kPa (x 23-43); crest 20->40 kPa (x 70-80),
 # represented as a uniform 30 kPa (the mean of the published ramp).
 _ZONES = [(20.0, 23.0, 43.0), (30.0, 70.0, 80.0)]
@@ -61,45 +61,42 @@ def _geom(surcharges=None):
         gwt_points=_PIEZO, surcharges=surcharges)
 
 
-def _fos(surcharges=None):
+def _fos(surcharges=None, single=0.0):
+    """Janbu's simplified method with the f0 correction (Spencer and GLE
+    do not converge on this surface since GM-140 step 1)."""
     slip = PolylineSlipSurface(points=_SURFACE)
-    sl = build_slices(_geom(surcharges), slip, 50)
-    return (spencer_fos(sl, slip)[0],
-            gle_fos(sl, slip, f_interslice="half_sine").fos)
+    g = _geom(surcharges)
+    if single:
+        g.surcharge = single
+        g.surcharge_x_range = (70.0, 80.0)
+    return janbu_fos(build_slices(g, slip, 50), slip)[0]
 
 
 def test_v028e8_no_surcharge_matches_v028():
-    """Default (no surcharges) reproduces the V-028 seam FOS byte-for-byte."""
-    fs, fg = _fos()
-    assert fs == pytest.approx(0.808, abs=0.005)
-    assert fg == pytest.approx(0.802, abs=0.005)
+    """Default (no surcharges) reproduces the V-028 seam record."""
+    assert _fos() == pytest.approx(1.073, abs=0.005)
 
 
-def test_v028e8_two_zones_lower_fos_slightly():
-    """The two ACADS-4 surcharge zones lower the FOS a little (the crest-side zone
-    adds driving weight); the weak seam still governs, so the move is small."""
-    fs0, fg0 = _fos()
-    fs2, fg2 = _fos(_ZONES)
-    assert fs2 == pytest.approx(0.806, abs=0.005)    # ours (pinned)
-    assert fs2 < fs0                                  # loads reduce the FOS
-    assert fg2 < fg0
-    # small movement (< 2%) -- seam-governed
-    assert abs(fs2 - fs0) / fs0 < 0.02
+def test_v028e8_two_zones_lower_fos():
+    """The two ACADS-4 surcharge zones lower the FOS (the crest-side zone
+    adds driving weight; the bench zone sits over the toe and resists)."""
+    f0, f2 = _fos(), _fos(_ZONES)
+    assert f2 == pytest.approx(1.034, abs=0.005)     # ours (a record)
+    assert f2 < f0
+    assert _fos([_ZONES[1]]) == pytest.approx(1.023, abs=0.005)
+    assert _fos([_ZONES[0]]) > f0
 
 
 def test_v028e8_zones_and_single_surcharge_coexist():
     """The zones sum on TOP of the legacy single surcharge; a zone the surface
     does not cross does not change the FOS (no slices under it)."""
     # a zone entirely upslope of the sliding mass (x 10-18) is inert
-    inert = _fos([(50.0, 10.0, 18.0)])
-    assert inert[0] == pytest.approx(_fos()[0], abs=1e-9)
-    # single surcharge + a zone both apply (sum): heavier load, lower FOS
-    slip = PolylineSlipSurface(points=_SURFACE)
-    g = _geom([(30.0, 70.0, 80.0)])
-    g.surcharge = 15.0
-    g.surcharge_x_range = (70.0, 80.0)
-    both = spencer_fos(build_slices(g, slip, 50), slip)[0]
-    assert both < _fos([(30.0, 70.0, 80.0)])[0]      # single adds on top
+    assert _fos([(50.0, 10.0, 18.0)]) == pytest.approx(_fos(), abs=1e-9)
+    # single surcharge + a zone both apply (sum): heavier load, lower FOS,
+    # the same as one zone of the summed pressure
+    both = _fos([(30.0, 70.0, 80.0)], single=15.0)
+    assert both < _fos([(30.0, 70.0, 80.0)])
+    assert both == pytest.approx(_fos([(45.0, 70.0, 80.0)]), abs=1e-9)
 
 
 def test_v028e8_bad_zone_rejected():

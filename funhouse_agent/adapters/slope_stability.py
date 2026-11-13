@@ -168,6 +168,7 @@ def build_soil_layer(d, i: int, *, method: str,
     _check_choice(strength_model, _STRENGTH_MODELS,
                   name="soil_layers[].strength_model", method=method)
     bbp = d.get("bottom_boundary_points")
+    tbp = d.get("top_boundary_points")
     return SlopeSoilLayer(
         name=d.get("name", f"layer_{i + 1}"), top_elevation=d["top_elevation"],
         bottom_elevation=d["bottom_elevation"], gamma=d["gamma"],
@@ -176,6 +177,7 @@ def build_soil_layer(d, i: int, *, method: str,
         analysis_mode=d.get("analysis_mode", "drained"),
         ru=d.get("ru", 0.0),
         bottom_boundary_points=[tuple(p) for p in bbp] if bbp else None,
+        top_boundary_points=[tuple(p) for p in tbp] if tbp else None,
         strength_model=strength_model,
         shansep_S=d.get("shansep_S", 0.22),
         shansep_m=d.get("shansep_m", 0.8),
@@ -622,7 +624,7 @@ METHOD_REGISTRY = {
 
 _GEOMETRY_PARAMS = {
     "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,y], ...] array (x increasing)."},
-    "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru, bottom_boundary_points optional}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D) or 'anisotropic' (undrained su varies with the slice-base inclination alpha; fields su_active [kPa, ACTIVE/crest zone, alpha>=+45deg], su_dss [direct simple shear, alpha=0], su_passive [PASSIVE/toe zone, alpha<=-45deg] — su_active>=su_dss>=su_passive for K>1 clays; Casagrande-Carrillo sin(2alpha) interpolation; standard toe-at-low-x slope). For rapid_drawdown_fos, low-permeability layers also take the total-stress R-envelope R_c (kPa) and R_phi (deg); R_phi omitted/null => free-draining."},
+    "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru optional; bottom_boundary_points and top_boundary_points ([[x,z],...], sorted by x) optional, a sloping bottom or top in place of the flat elevation}. ONE MATERIAL PER POINT: where two layers both cover a point, the one listed FIRST holds it, for weight and strength, so a layer with a flat top_elevation listed after a layer with bottom_boundary_points starts at that boundary; the result lists such overlaps in layer_overlaps. Ground between the surface and the deepest layer's bottom that no layer covers is refused, with its location. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D) or 'anisotropic' (undrained su varies with the slice-base inclination alpha; fields su_active [kPa, ACTIVE/crest zone, alpha>=+45deg], su_dss [direct simple shear, alpha=0], su_passive [PASSIVE/toe zone, alpha<=-45deg] — su_active>=su_dss>=su_passive for K>1 clays; Casagrande-Carrillo sin(2alpha) interpolation; standard toe-at-low-x slope). For rapid_drawdown_fos, low-permeability layers also take the total-stress R-envelope R_c (kPa) and R_phi (deg); R_phi omitted/null => free-draining."},
     "gwt_points": {"type": "array", "required": False, "description": "Groundwater table [[x,y],...]. If above the ground surface, ponded water is auto-detected (water weight + horizontal hydrostatic thrust applied as external loads)."},
     "kh": {"type": "float", "required": False, "default": 0.0, "description": "Horizontal pseudo-static seismic coefficient (acts on soil weight only)."},
     "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Vertical surcharge (kPa). A single loaded zone; use 'surcharges' for several distinct loaded areas."},

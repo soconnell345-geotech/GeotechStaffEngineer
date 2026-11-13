@@ -44,6 +44,8 @@ def _slope_params(geom) -> dict:
             d["gamma_sat"] = lyr.gamma_sat
         if lyr.bottom_boundary_points:
             d["bottom_boundary_points"] = _pts(lyr.bottom_boundary_points)
+        if lyr.top_boundary_points:
+            d["top_boundary_points"] = _pts(lyr.top_boundary_points)
         layers.append(d)
     out = {"surface_points": _pts(geom.surface_points),
            "soil_layers": layers,

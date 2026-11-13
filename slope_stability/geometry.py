@@ -20,6 +20,34 @@ if TYPE_CHECKING:
     from slope_stability.nails import SoilNail
 
 
+# A stretch of a column shorter than this (m) is neither a gap between
+# layers nor an overlap of two (``SlopeGeometry._scan_layers``).
+_COVER_TOL = 1e-6
+
+
+def _unclaimed(lo, hi, claimed):
+    """The parts of [lo, hi] outside every interval in ``claimed``, bottom
+    to top. With nothing claimed inside it, [(lo, hi)] itself, the same
+    floats."""
+    pieces = [(lo, hi)]
+    for c0, c1 in claimed:
+        if c1 <= pieces[0][0] or c0 >= pieces[-1][1]:
+            continue
+        cut = []
+        for a, b in pieces:
+            if c1 <= a or c0 >= b:
+                cut.append((a, b))
+                continue
+            if a < c0:
+                cut.append((a, c0))
+            if c1 < b:
+                cut.append((c1, b))
+        pieces = cut
+        if not pieces:
+            break
+    return pieces
+
+
 def _interp_polyline(points, x):
     """Linearly interpolate a polyline at x with constant extrapolation.
 
@@ -79,6 +107,16 @@ class SlopeSoilLayer:
         Non-horizontal bottom boundary as (x, z) polyline, sorted by x.
         When set, bottom_at(x) interpolates this polyline instead of
         using the flat bottom_elevation.
+    top_boundary_points : list of (float, float), optional
+        Non-horizontal top boundary as (x, z) polyline, sorted by x (level
+        beyond its ends). When set, top_at(x) interpolates this polyline
+        instead of using the flat top_elevation.
+
+    A layer's top and bottom say where it MAY be. Where two layers both
+    cover a point, the one listed first in ``SlopeGeometry.soil_layers``
+    holds it (``SlopeGeometry.column_at``): a layer with a flat top listed
+    after a layer with a polyline bottom starts at that polyline, not at
+    its flat top (GM-140 step 1).
     """
     name: str
     top_elevation: float
@@ -127,9 +165,12 @@ class SlopeSoilLayer:
     # See slope_stability/rapid_drawdown.py.
     R_c: float = 0.0            # R-envelope cohesion intercept (kPa)
     R_phi: Optional[float] = None   # R-envelope friction angle (deg); None = free-draining
+    # Non-horizontal top (GM-140 step 1); last so positional calls keep.
+    top_boundary_points: Optional[List[Tuple[float, float]]] = None
 
     def __post_init__(self):
-        if self.bottom_boundary_points is None:
+        if (self.bottom_boundary_points is None
+                and self.top_boundary_points is None):
             if self.bottom_elevation >= self.top_elevation:
                 raise ValueError(
                     f"Layer '{self.name}': bottom_elevation ({self.bottom_elevation}) "
@@ -287,7 +328,11 @@ class SlopeSoilLayer:
         return self.bottom_elevation
 
     def top_at(self, x):
-        """Top elevation at x. Returns flat top_elevation (surface clipping done in slices)."""
+        """Top elevation at x. Uses the top polyline if set, else the flat
+        top_elevation (not clipped to the ground, nor to the layers listed
+        before this one: ``SlopeGeometry.column_at`` does both)."""
+        if self.top_boundary_points is not None:
+            return _interp_polyline(self.top_boundary_points, x)
         return self.top_elevation
 
 
@@ -301,7 +346,14 @@ class SlopeGeometry:
         Ground surface profile as (x, z) coordinates, left to right.
         z = elevation. Must have at least 2 points.
     soil_layers : list of SlopeSoilLayer
-        Soil layers sorted by decreasing top_elevation.
+        Soil layers, usually top to bottom. ONE MATERIAL PER POINT
+        (GM-140 step 1; EM 1110-2-1902 2-2d, p. 2-5): at a point below the
+        ground the first listed layer whose top and bottom contain it holds
+        it, for the weight as for the strength (``column_at``,
+        ``layer_at_point``). Where two layers overlap the later one loses
+        the shared ground, and ``layer_overlaps()`` says where. Ground
+        between the surface and the bottom of the deepest layer that no
+        layer covers is refused here, with its location.
     gwt_points : list of (float, float), optional
         Groundwater table as (x, z_gwt) points. None = no water.
     surcharge : float
@@ -369,6 +421,10 @@ class SlopeGeometry:
     # searches drop them (Slide2's other choice). ``analyze_slope`` always
     # evaluates a circle it is given. GM-59.
     reverse_curvature: str = "tension_crack"
+    # Where a layer loses ground to a layer listed before it
+    # (``layer_overlaps``); found once, when the model is built.
+    _overlaps: Optional[list] = field(default=None, init=False, repr=False,
+                                      compare=False)
 
     def __post_init__(self):
         if self.reverse_curvature not in ("tension_crack", "discard"):
@@ -419,6 +475,188 @@ class SlopeGeometry:
                     raise ValueError(
                         "each pore_pressure_points entry must be an "
                         f"(x, z, u) triple, got {p!r}")
+        self._overlaps, gap = self._scan_layers()
+        if gap is not None:
+            raise ValueError(
+                "Soil layers leave a gap: no layer covers the ground "
+                f"between elevation {gap['z_low']:.2f} and "
+                f"{gap['z_high']:.2f} m at x = {gap['x']:.2f} m (uncovered "
+                f"from x = {gap['x_from']:.2f} to {gap['x_to']:.2f} m). "
+                "Every point between the ground surface and the bottom of "
+                "the deepest layer needs one layer: raise a layer's top "
+                "(top_elevation or top_boundary_points) or lower the one "
+                "above it to close the gap.")
+
+    # -- one material per point (GM-140 step 1) --------------------------
+
+    def column_at(self, x: float, z_low: Optional[float] = None,
+                  z_high: Optional[float] = None):
+        """The soil column at x as [(layer, z_bottom, z_top), ...]: each
+        stretch of it with the ONE layer that holds it, in the order the
+        layers are listed (a layer cut in two by one listed before it gives
+        two stretches, bottom first).
+
+        A layer's stretch is what lies between its bottom and its top
+        (``bottom_at``, ``top_at``), below ``z_high`` (default: the ground)
+        and above ``z_low`` (default: no limit), less what the layers
+        listed before it hold. So where two layers overlap, the first
+        listed holds the shared ground. ``layer_at_point`` is the same
+        rule at one point; the slice weight is summed over this column."""
+        if z_high is None:
+            z_high = self.ground_elevation_at(x)
+        out = []
+        claimed = []
+        for layer in self.soil_layers:
+            lay_top = min(layer.top_at(x), z_high)
+            lay_bot = layer.bottom_at(x)
+            if z_low is not None:
+                lay_bot = max(lay_bot, z_low)
+            if lay_top <= lay_bot:
+                continue
+            if claimed:
+                for a, b in _unclaimed(lay_bot, lay_top, claimed):
+                    out.append((layer, a, b))
+            else:
+                out.append((layer, lay_bot, lay_top))
+            claimed.append((lay_bot, lay_top))
+        return out
+
+    def layer_bands(self, xs) -> list:
+        """For drawing: the ground each layer HOLDS along ``xs``, one list
+        per layer of bands ``(tops, bottoms)``, each as long as ``xs``
+        with ``None`` where the layer has nothing there. A layer cut in
+        two by one listed before it has two bands (the lower first)."""
+        bands = [[] for _ in self.soil_layers]
+        index = {id(L): i for i, L in enumerate(self.soil_layers)}
+        for j, x in enumerate(xs):
+            seen = {}
+            for layer, zb, zt in self.column_at(x):
+                i = index[id(layer)]
+                k = seen.get(i, 0)
+                seen[i] = k + 1
+                while len(bands[i]) <= k:
+                    bands[i].append(([None] * len(xs), [None] * len(xs)))
+                bands[i][k][0][j] = zt
+                bands[i][k][1][j] = zb
+        return bands
+
+    def layer_overlaps(self) -> list:
+        """Where a layer's top and bottom take in ground that a layer
+        listed before it holds (the first listed layer wins,
+        ``column_at``). One dict per layer that loses ground: ``layer``,
+        ``held_by`` (the earlier layers' names), ``x_from``, ``x_to`` and
+        ``max_overlap_m`` (the tallest shared stretch below the ground),
+        with a ``statement`` in words. Empty when no two layers share
+        ground. As found when the model was built."""
+        return [dict(o) for o in (self._overlaps or [])]
+
+    def _scan_layers(self):
+        """(overlaps, gap) over the whole section: the overlaps
+        ``layer_overlaps`` reports, and the first stretch of ground between
+        the surface and the bottom of the deepest layer that no layer
+        covers (None when there is none).
+
+        The ground and every layer top and bottom are straight between
+        their vertices, so between two neighbouring vertices each is one
+        line, and a gap or an overlap can only open or close where two of
+        those lines cross. The column is checked at each end and the middle
+        of every stretch between such points."""
+        layers = self.soil_layers
+        x0, x1 = self.x_range
+        xs = {x0, x1}
+        xs.update(p[0] for p in self.surface_points)
+        for L in layers:
+            for pts in (L.top_boundary_points, L.bottom_boundary_points):
+                xs.update(p[0] for p in (pts or ()) if x0 < p[0] < x1)
+        xs = sorted(xs)
+        found = {}
+        gap = None
+        n = len(layers)
+        for a, b in zip(xs[:-1], xs[1:]):
+            if b <= a:
+                continue
+            # each line from two points inside the stretch: at a vertical
+            # step the stretch's own ends would read the wrong side
+            qa, qb = a + 0.25 * (b - a), a + 0.75 * (b - a)
+            lines = []
+            for f in ([self.ground_elevation_at]
+                      + [L.top_at for L in layers]
+                      + [L.bottom_at for L in layers]):
+                za, zb = f(qa), f(qb)
+                m = (zb - za) / (qb - qa)
+                lines.append((za - m * (qa - a), m))
+            cuts = {a, b}
+            for i, (z1, m1) in enumerate(lines):
+                for z2, m2 in lines[i + 1:]:
+                    if m1 != m2:
+                        x = a + (z2 - z1) / (m1 - m2)
+                        if a < x < b:
+                            cuts.add(x)
+            cuts = sorted(cuts)
+            for c0, c1 in zip(cuts[:-1], cuts[1:]):
+                for x in (c0, 0.5 * (c0 + c1), c1):
+                    z = [z0 + m * (x - a) for z0, m in lines]
+                    ground = z[0]
+                    own = [(z[1 + n + i], min(z[1 + i], ground))
+                           for i in range(n)]
+                    base = min(lo for lo, _ in own)
+                    if ground - base <= _COVER_TOL:
+                        continue
+                    claimed = []
+                    covered = 0.0
+                    for i, (lo, hi) in enumerate(own):
+                        lo = max(lo, base)
+                        if hi <= lo:
+                            continue
+                        free = sum(q - p for p, q in
+                                   _unclaimed(lo, hi, claimed))
+                        covered += free
+                        shared = (hi - lo) - free
+                        if shared > _COVER_TOL:
+                            by = [layers[k].name for k in range(i)
+                                  if min(hi, own[k][1])
+                                  - max(lo, own[k][0], base) > _COVER_TOL]
+                            o = found.setdefault(i, {
+                                "layer": layers[i].name, "held_by": [],
+                                "x_from": c0, "x_to": c1,
+                                "max_overlap_m": 0.0})
+                            o["x_from"] = min(o["x_from"], c0)
+                            o["x_to"] = max(o["x_to"], c1)
+                            o["max_overlap_m"] = max(o["max_overlap_m"],
+                                                     shared)
+                            for nm in by:
+                                if nm not in o["held_by"]:
+                                    o["held_by"].append(nm)
+                        claimed.append((lo, hi))
+                    if gap is None and ground - base - covered > _COVER_TOL:
+                        z_high = ground
+                        for lo, hi in sorted(claimed, key=lambda t: -t[1]):
+                            if hi < z_high - _COVER_TOL:
+                                break
+                            z_high = min(z_high, lo)
+                        below = [hi for lo, hi in claimed
+                                 if hi < z_high - _COVER_TOL]
+                        gap = {"x": x, "z_high": z_high,
+                               "z_low": max(below) if below else base,
+                               "x_from": c0, "x_to": c1}
+                    elif (gap is not None and gap["x_to"] == c0
+                          and x == c1
+                          and ground - base - covered > _COVER_TOL):
+                        gap["x_to"] = c1
+        overlaps = []
+        for i in sorted(found):
+            o = found[i]
+            o["max_overlap_m"] = round(o["max_overlap_m"], 3)
+            o["statement"] = (
+                f"Layer '{o['layer']}' is given ground that "
+                + " and ".join(f"'{nm}'" for nm in o["held_by"])
+                + f", listed before it, also covers (x = {o['x_from']:.2f} "
+                f"to {o['x_to']:.2f} m, up to {o['max_overlap_m']:.2f} m "
+                "deep). The first listed layer holds that ground, for "
+                f"weight and for strength; '{o['layer']}' starts at its "
+                "boundary.")
+            overlaps.append(o)
+        return overlaps, gap
 
     def ground_elevation_at(self, x: float) -> float:
         """Linearly interpolate ground surface elevation at x.
@@ -469,11 +707,11 @@ class SlopeGeometry:
         return None
 
     def layer_at_point(self, x: float, z: float) -> Optional[SlopeSoilLayer]:
-        """Return the soil layer containing point (x, z).
-
-        Uses position-dependent boundaries when layers have
-        bottom_boundary_points set. Falls back to flat elevations.
-        Returns None if outside all layers.
+        """Return the soil layer that holds point (x, z): the first listed
+        layer whose bottom and top at x contain z (one material per point,
+        the rule of ``column_at``; GM-140 step 1). None if no layer
+        contains it. The ground is not looked at: a point above it still
+        reads the layer whose elevations contain it.
         """
         for layer in self.soil_layers:
             top_z = layer.top_at(x)
