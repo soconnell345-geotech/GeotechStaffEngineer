@@ -69,6 +69,11 @@ METHOD_INFO = {
             "mn_neg_kNm": "Nominal hogging capacity (if top steel).",
             "m_cr_kNm": "Cracking moment.",
             "ixx_cracked_mm4": "Cracked transformed Ixx.",
+            "ixx_gross_mm4": "Gross-section Ixx.",
+            "d_eff_mm": "Effective depth to the bottom steel.",
+            "interaction_n_kN": "Only with include_interaction: axial force of each N-M point (kN).",
+            "interaction_m_kNm": "Only with include_interaction: moment of each N-M point (kN*m), same order as interaction_n_kN.",
+            "note": "States that the capacities are nominal (no phi).",
         },
     },
 }

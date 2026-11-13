@@ -354,7 +354,7 @@ MODULE_REGISTRY = {
     },
     "calc_package": {
         "adapter": "funhouse_agent.adapters.calc_package",
-        "brief": "HTML/LaTeX/PDF for 15 modules with CSV calculation tables, figures as PNGs; html_to_pdf for bespoke reports",
+        "brief": "HTML/LaTeX/PDF calc packages (the *_package methods) with CSV calculation tables, figures as PNGs; html_to_pdf for bespoke reports",
     },
     "profile_figure": {
         "adapter": "funhouse_agent.adapters.profile_figure_adapter",
@@ -398,7 +398,7 @@ MODULE_REGISTRY = {
     },
     "liquepy": {
         "adapter": "funhouse_agent.adapters.liquepy_adapter",
-        "brief": "B&I 2014 CPT/SPT triggering, LPI/LSN/LDI, CPT correlations (Vs/Dr/su/k); routine triggering: 'liquefaction'",
+        "brief": "B&I 2014 CPT/SPT triggering; LPI/LSN/LDI for CPT only (the SPT route returns none); CPT correlations (Vs/Dr/su/k); routine triggering: 'liquefaction'",
     },
     "seismic_signals": {
         "adapter": "funhouse_agent.adapters.seismic_signals_adapter",

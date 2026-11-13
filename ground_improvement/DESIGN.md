@@ -23,10 +23,18 @@ wick drains, surcharge preloading, and vibro-compaction.
 
 ## Public API
 ```python
-analyze_aggregate_piers(B, L, q_applied, ...) -> AggregatePierResult
-analyze_wick_drains(cv, ch, drain_spacing, ...) -> WickDrainResult
-analyze_surcharge_preloading(target_consolidation, ...) -> SurchargeResult
-analyze_vibro_compaction(fines_content, initial_N_spt, target_relative_density=None, ...) -> VibroResult
+analyze_aggregate_piers(column_diameter, spacing, pattern="triangular", E_column=None,
+    E_soil=5000.0, n=5.0, q_unreinforced=0.0, S_unreinforced=0.0,
+    settlement_method="stress_ratio") -> AggregatePierResult
+analyze_wick_drains(spacing, ch, cv, Hdr, time, dw=DW_DEFAULT_M, pattern="triangular",
+    smear_ratio=1.0, kh_ks_ratio=1.0, n_time_points=50) -> WickDrainResult
+analyze_surcharge_preloading(S_ultimate, surcharge_kPa, cv, Hdr, target_U=90.0, ch=None,
+    drain_spacing=None, dw=DW_DEFAULT_M, pattern="triangular", smear_ratio=1.0,
+    kh_ks_ratio=1.0, sigma_v0=0.0, n_time_points=50) -> SurchargeResult
+analyze_vibro_compaction(fines_content, initial_N_spt, target_relative_density=None,
+    pattern="triangular") -> VibroResult
+design_drain_spacing(target_U, target_time, ch, cv, Hdr, dw=DW_DEFAULT_M, pattern="triangular",
+    smear_ratio=1.0, kh_ks_ratio=1.0, spacing_range=(1.0, 3.5)) -> WickDrainResult
 evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
 ```
 
