@@ -281,7 +281,7 @@ METHOD_INFO = {
         "brief": "Extract slope geometry coordinates from mapped DXF layers.",
         "parameters": {
             "file_path": {"type": "str", "required": True, "description": "Path to DXF file."},
-            "layer_mapping": {"type": "dict", "required": True, "description": "Mapping with keys: surface (str), soil_boundaries ({layer: soil_name}), water_table (str), nails (str), annotations ([str])."},
+            "layer_mapping": {"type": "dict", "required": True, "description": "Mapping with keys: surface (str), soil_boundaries ({layer: soil_name}), water_table (str), nails (str), annotations ([str]). Each soil_boundaries layer is the TOP of the soil it names (that soil lies below it, down to the next boundary); in build_slope_geometry the soil between the ground surface and the highest boundary takes the soil property named 'Surface', or else the first soil property that no boundary names."},
             "units": {"type": "str", "required": False, "default": "m", "allowed_values": ["m", "mm", "cm", "ft", "in"], "description": "Drawing units."},
             "flip_y": {"type": "bool", "required": False, "default": False, "description": "Negate Y values for downward-positive drawings."},
         },

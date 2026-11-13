@@ -11,6 +11,8 @@ from dxf_import.results import DxfParseResult
 from slope_stability.geometry import SlopeGeometry
 
 
+# The fixture's DXF layer is named CLAY_BOTTOM, but a boundary is the TOP of
+# the soil it names: "Clay" lies BELOW that line (build_slope_geometry).
 class TestBuildTwoLayerSlope:
     """Tests for a simple 2-layer slope build."""
 
