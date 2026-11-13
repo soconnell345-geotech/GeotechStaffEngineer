@@ -15,7 +15,10 @@ class SobolResult:
     Attributes
     ----------
     n_samples : int
-        Number of model evaluations.
+        Number of model evaluations (the length of Y).
+    n_base_samples : int
+        The base sample size N of the design: n_samples / (2D+2) with
+        second-order indices, n_samples / (D+2) without.
     n_vars : int
         Number of input variables.
     var_names : list of str
@@ -41,13 +44,20 @@ class SobolResult:
     S2: Optional[List] = None
     output_mean: Optional[float] = None
     output_std: Optional[float] = None
+    n_base_samples: int = 0
+    #: Only when Y's length fits two designs (GM-323 review): which was
+    #: taken, and the other.
+    warnings: List[str] = field(default_factory=list)
+    choices: List[dict] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
             "=" * 60,
             "  SOBOL SENSITIVITY ANALYSIS RESULTS",
             "=" * 60,
-            f"  Samples:    {self.n_samples}",
+            f"  Samples:    {self.n_samples}"
+            + (f"  (base sample size N = {self.n_base_samples})"
+               if self.n_base_samples else ""),
             f"  Variables:  {self.n_vars}",
             "",
             "  Variable        S1          ST",
@@ -57,12 +67,15 @@ class SobolResult:
             s1 = self.S1[i] if i < len(self.S1) else float('nan')
             st = self.ST[i] if i < len(self.ST) else float('nan')
             lines.append(f"  {name:16s}  {s1:8.4f}    {st:8.4f}")
+        for w in self.warnings:
+            lines.append(f"  WARNING: {w}")
         lines.append("=" * 60)
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
         d = {
             "n_samples": self.n_samples,
+            "n_base_samples": self.n_base_samples,
             "n_vars": self.n_vars,
             "var_names": list(self.var_names),
             "S1": [float(x) for x in self.S1],
@@ -79,6 +92,10 @@ class SobolResult:
         if self.output_mean is not None:
             d["output_mean"] = self.output_mean
             d["output_std"] = self.output_std
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def plot_sensitivity(self, ax=None, show=True, **kwargs):

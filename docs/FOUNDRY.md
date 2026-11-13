@@ -625,9 +625,21 @@ instead of four: `aec-document-review`, `aec-agent-core` and `planlens`
    with, and Streamlit. For Claude models also install `langchain-anthropic`
    (the core's `anthropic` extra); GPT models need nothing more. It needs
    Python 3.11 or newer. If the panel reports a conflict with Foundry's own
-   libraries, the pins in section 1, step 3.1 apply here too.
-2. **Create the app file.** Create `app.py` at the root of the workspace
-   repository, with these two lines:
+   libraries, the pins in section 1, step 3.1 apply here too. Two more
+   from the first trial (2026-11-13): pin `streamlit<1.67` in the
+   workspace environment until a release raises the tested range
+   (Connection diagnostics warn "version drift" on 1.67); and with test
+   wheels installed with `--no-deps`, also install `ezdxf`, which planlens
+   needs. On these hosts OpenCV cannot load (FIPS mode): planlens tests
+   the import in a child process and works without it, and until the
+   planlens release after 0.15.1 each test leaves a `core.<number>` file
+   in the working directory (add `core.[0-9]*` to the repository's
+   `.gitignore`).
+2. **Create the app file.** The workspace's **Publish application** step
+   creates the app file itself and fails if a file of that name already
+   exists ("FileExists"). So publish first, naming a new file (for example
+   `review_app.py`), then replace the stub it creates with these two
+   lines:
    ```python
    from aec_document_review.foundry_entry import main
    main()
@@ -637,9 +649,10 @@ instead of four: `aec-document-review`, `aec-agent-core` and `planlens`
    app, the page then offers only Foundry model RIDs and never reads or
    mentions a personal API key.
 3. **Set the models.** Set `GEOTECH_FOUNDRY_MODELS` to the model RIDs, as
-   in section 3 (`Label=RID`, comma-separated; the first one is the
-   default). Choose models that accept images: the page looks at drawing
-   pages. The Foundry token and the proxy address are found as for the
+   in section 3 (`Label=RID`, comma-separated). The page's default is
+   the entry labelled `Opus 5.5` when the list has one (BACKLOG INF-41),
+   otherwise the first; a viewer picks another in the sidebar. Choose
+   models that accept images: the page looks at drawing pages. The Foundry token and the proxy address are found as for the
    geotech app (section 3); a Code Workspace provides them.
 4. **Keep the conversations (recommended).** Follow section 4c, steps 1 to
    4, with a dataset used only for Document Review (for example
@@ -659,7 +672,7 @@ instead of four: `aec-document-review`, `aec-agent-core` and `planlens`
    diagnostics say so. SharePoint (`GRAPH_*` and `SHAREPOINT_SITE_URL`, as
    on Tiny Apps) is used only when the alias is not set, as for the geotech
    app.
-5. **Preview, then publish** as in section 5, naming `app.py`. To upgrade
+5. **Preview, then publish** as in section 5, naming the app file. To upgrade
    later, bump `aec-document-review` in the Libraries panel and republish.
 
 Other settings it reads, all optional: `GEOTECH_WEBAPP_DATA` (the folder in
@@ -681,9 +694,15 @@ conversations, can open, rename or delete any of them and download their
 files, and **Find a past conversation** lists and restores every
 conversation in the dataset. The **Working folder** box is shown, as for the
 geotech app, so a viewer can point the agent's saves at another folder in
-the app's container. Dataset writes run as the publisher's account (as far
-as the AI FDE's test could tell), and whoever can open the dataset can read
-every conversation in it. So share the published app only with people who
+the app's container. Dataset writes run as the publisher's account, and
+whoever can open the dataset can read every conversation in it. The first
+trial (2026-11-13) confirmed it: no request header reaching the app names
+the viewer, the platform's own check of the request found no sign-in token
+on it, the user named in the app's container is the publisher's, and every
+save was made by the publisher's account. Telling viewers apart needs
+Foundry to pass the viewer's identity into the app; it is a platform
+question, not a change to the page (BACKLOG INF-79). The owner accepts a
+shared list for a small group (2026-11-13, OWN-152). So share the published app only with people who
 may see each other's documents, and keep the dataset in a project only they
 can see (section 4c, "One user"). The page refuses no one on Foundry: its
 refusal of a caller it cannot name applies only on the Tiny Apps App
@@ -703,7 +722,13 @@ switch on when a sign-in header names the viewer, so on Foundry they are
 off, as for the geotech app. With two people using the published app at the
 same moment, a file one of them asks for can be saved into the other's
 conversation, and the agent may read files outside the conversation's own
-folder. For a trial, one person uses it at a time. Do not set
+folder; BACKLOG INF-80 turns the per-turn protections on for Foundry. Until
+then, one person runs a turn at a time. Saves do not collide: in one
+published app they are made one at a time (a few seconds each), and a save
+that finds the dataset held by another process (the workspace's own preview
+on the same dataset, for example) waits about 30 seconds and is then made
+with the next save; the next Foundry brief checks two viewers saving at
+once (EV-45). Do not set
 `WEBSITE_SITE_NAME`, `APP_ENV=azure` or `IDENTITY_ENDPOINT` in the workspace
 file: each makes the page take the host for the Tiny Apps App Service and
 refuse every viewer it cannot name.

@@ -920,7 +920,7 @@
       ".github/workflows/publish.yml"
     ]
   },
-  "OWN-150": {
+  "OWN-154": {
     "kind": "action",
     "ask_who": null,
     "question": "Release the app with the corrected reference library (geotech-references 1.7.0)?",
@@ -937,7 +937,7 @@
       "OWN-142"
     ],
     "sources": [
-      "BACKLOG.md OWN-150, OWN-142",
+      "BACKLOG.md OWN-154, OWN-142",
       "HANDOFF.md section 0a-current (the record on the reference library 1.7.0)"
     ]
   }

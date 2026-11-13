@@ -231,13 +231,20 @@ def plot_parameter_vs_depth(
 
     # Trend line and bands
     trend_results = []
-    if show_trend and n_points >= 2:
+    if show_trend and n_points < 2:
+        skipped.append(f"Trend line: {n_points} point(s) drawn and a line "
+                       f"needs at least 2; no trend fitted")
+    elif show_trend:
         from subsurface_characterization.statistics import compute_trend, compute_grouped_trends
 
         if group_trends_by == "uscs":
             grouped = compute_grouped_trends(site, parameter, group_by="uscs")
             for label, trend in grouped.items():
-                if trend.n_points < 2:
+                if not trend.fitted:
+                    # A group with too few points for a line: said, not
+                    # drawn (it used to be dropped without a word).
+                    skipped.append(f"{label} trend line: "
+                                   f"{trend.not_fitted_reason}")
                     continue
                 trend_results.append(trend)
                 _add_trend_to_fig(fig, trend, site, parameter, use_elevation,
@@ -246,10 +253,14 @@ def plot_parameter_vs_depth(
             all_data = site.all_measurements(parameter)
             depths = np.array([m.depth_m for _, m in all_data])
             values = np.array([m.value for _, m in all_data])
-            trend = compute_trend(depths, values, parameter=parameter)
-            trend_results.append(trend)
-            _add_trend_to_fig(fig, trend, site, parameter, use_elevation,
-                              show_bands, band_sigma, "Trend", skipped)
+            try:
+                trend = compute_trend(depths, values, parameter=parameter)
+            except ValueError as exc:
+                skipped.append(f"Trend line: {exc}")
+            else:
+                trend_results.append(trend)
+                _add_trend_to_fig(fig, trend, site, parameter, use_elevation,
+                                  show_bands, band_sigma, "Trend", skipped)
 
     y_label = "Elevation (m)" if use_elevation else "Depth (m)"
     fig.update_layout(

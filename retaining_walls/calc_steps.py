@@ -2669,8 +2669,8 @@ def get_figures(result, analysis) -> List[FigureData]:
     wtype = _wall_type(result, analysis)
     figures = []
     if wtype == "cantilever_reinforced":
-        # GM-312: the stability figures; the reinforcement drawing is not
-        # part of this package
+        # GM-312: the stability figures; the reinforcement sheet is added
+        # by the agent layer as the package's last page (GM-335), not here
         result = result.stability
         wtype = "cantilever"
     if wtype == "mse_lrfd":
@@ -3010,9 +3010,13 @@ def _plot_cantilever_section(result, analysis):
             missing = ("position or width" if key_x is None
                        and key_w is None else
                        "position" if key_x is None else "width")
+            # "under the stem" only where its place is assumed (GM-335
+            # review)
             key_lines += [("Shear key drawn under the stem: an assumption, no "
                            "printed basis (UFC 3-220-20 Fig. 4-29 draws a "
-                           "gravity wall);"),
+                           "gravity wall);") if key_x is None else
+                          ("Shear key as wide as the stem's base: an "
+                           "assumption, no printed basis;"),
                           f"no key {missing} given."]
         key_x = t_toe if key_x is None else float(key_x)
         key_w = t_stem_b if key_w is None else float(key_w)

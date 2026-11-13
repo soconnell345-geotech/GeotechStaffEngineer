@@ -181,6 +181,30 @@ def depth_profile(depth, factor_of_safety, volumetric_strain,
     return rows, note
 
 
+def refuse_missing_readings(**columns):
+    """Refuse a CPT profile with a missing or non-finite reading.
+
+    A reading that is not there (None or NaN, as a parsed CPT file gives a
+    void value) makes every result NaN, and a NaN factor of safety reads
+    downstream as "does not liquefy". So the profile is refused, naming
+    the column, the count and the first index; the caller leaves those
+    depths out of every array.
+    """
+    for name, column in columns.items():
+        if column is None:
+            continue
+        bad = ~np.isfinite(np.asarray(
+            [np.nan if v is None else v for v in column], dtype=float))
+        if bad.any():
+            raise ValueError(
+                f"{name} has {int(bad.sum())} missing or non-finite "
+                f"reading(s) of {len(bad)} (the first at index "
+                f"{int(np.argmax(bad))}). A reading that is not there "
+                f"cannot be analysed, and a zero in its place would read "
+                f"as very loose ground: leave those depths out of depth, "
+                f"q_c, f_s and u_2 alike and say which were left out.")
+
+
 def _validate_cpt_inputs(depth, q_c, f_s, u_2, gwl, pga, m_w):
     """Validate CPT liquefaction analysis inputs.
 
@@ -203,6 +227,7 @@ def _validate_cpt_inputs(depth, q_c, f_s, u_2, gwl, pga, m_w):
         raise ValueError(f"f_s length ({len(f_s)}) must match depth length ({n})")
     if u_2 is not None and len(u_2) != n:
         raise ValueError(f"u_2 length ({len(u_2)}) must match depth length ({n})")
+    refuse_missing_readings(depth=depth, q_c=q_c, f_s=f_s, u_2=u_2)
 
     if gwl is None:
         raise ValueError(WATER_TABLE_REQUIRED)
