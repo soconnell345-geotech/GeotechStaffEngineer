@@ -397,15 +397,18 @@ load x spacing / cos(angle), is the same; a made-up hand check is in
 notes and `choices` say so. The wall's moment, shear and embedment do not
 depend on either input.
 
-**The vertical component is reported, not applied.** The print says the
-wall must carry it: "the vertical component of the ground anchor force
-must be resisted by the vertical member through skin friction on the
-embedded length of the piling in contact with the soil and by end
-bearing" (Caltrans Sec. 11-3.04, p. 11-12), and GEC-4 App. A (p. A-13)
-adds 435 kN x sin 15 deg = 113 kN to the soldier beam's axial load. This
-analysis has no axial check of the wall or its toe; the tool description
-and, when a support is inclined, a note in the result say so with these
-cites.
+**The vertical component is reported, not applied.** It acts on the wall
+along the wall's axis, in the support's direction: an anchor inclined
+below the horizontal pulls the wall down, a raker braced from below pushes
+it up. For a ground anchor the print says the wall must carry it: "the
+vertical component of the ground anchor force must be resisted by the
+vertical member through skin friction on the embedded length of the piling
+in contact with the soil and by end bearing" (Caltrans Sec. 11-3.04,
+p. 11-12), and GEC-4 App. A (p. A-13) adds 435 kN x sin 15 deg = 113 kN to
+the soldier beam's axial load. This analysis has no axial check of the
+wall, down or up; the tool description, the calc package's "design load,
+one support" step and, when a support is inclined, a note in the result
+say so with these cites (`VERTICAL_NOTE` in `beam_analysis.py`).
 
 **Preload is not an input.** `preload_kN_per_m` was stored and never read.
 No held page prints how a preload or lock-off load changes the support

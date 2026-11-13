@@ -236,7 +236,16 @@ def test_spacing_written_as_a_string_is_read_as_the_number():
      r"supports\[0\]: spacing must be a number, got True"),
     ({"depth": 2.0, "angle_deg": [15]},
      r"supports\[0\]: angle_deg must be a number, got \[15\]"),
+    # read as a float, then refused: an infinite spacing gave infinite
+    # loads (re-check C2)
+    ({"depth": 2.0, "spacing": "inf"},
+     r"supports\[0\]: .*spacing must be positive and finite"),
+    ({"depth": 2.0, "spacing": "nan"},
+     r"supports\[0\]: .*spacing must be positive and finite"),
 ])
 def test_bad_support_inputs_refused(support, text):
-    with pytest.raises(ValueError, match=text):
+    with pytest.raises(ValueError, match=text) as e:
         SOE["braced_excavation"](dict(_WALL, supports=[support]))
+    # the method and the support are named once (re-check C1)
+    assert str(e.value).count("supports[0]") == 1
+    assert str(e.value).count("braced_excavation") <= 1

@@ -279,10 +279,21 @@ _OWN_LOAD_BASIS = (
 #: Where the print says the vertical component of an inclined support
 #: must be carried by the wall (GM-321 review).
 _VERTICAL_CITES = (
-    "Caltrans Trenching and Shoring Manual Sec. 11-3.04, p. 11-12: the "
-    "vertical component 'must be resisted by the vertical member through "
-    "skin friction on the embedded length ... and by end bearing'; GEC-4 "
-    "App. A, p. A-13, adds it to the soldier beam's axial load")
+    "Caltrans Trenching and Shoring Manual Sec. 11-3.04, p. 11-12, for a "
+    "ground anchor: the vertical component 'must be resisted by the "
+    "vertical member through skin friction on the embedded length ... and "
+    "by end bearing'; GEC-4 App. A, p. A-13, adds it to the soldier "
+    "beam's axial load")
+
+#: What the vertical component of an inclined support is and is not, in
+#: the result's note and in the calc package (GM-321 re-check, N4 and
+#: C3): its direction on the wall is the support's.
+VERTICAL_NOTE = (
+    "The vertical component is reported, not applied: it acts on the "
+    "wall along the wall's axis, down or up by the support's direction "
+    "(an anchor inclined below the horizontal pulls the wall down; a "
+    "raker braced from below pushes it up), and this analysis does not "
+    "check the wall for it (" + _VERTICAL_CITES + ").")
 
 
 def support_own_loads(per_m, spacing, angle_deg: float) -> dict:
@@ -323,11 +334,8 @@ def _support_loads_note(supports) -> str:
     inclined = [i + 1 for i, s in enumerate(supports) if s.angle_deg]
     if inclined:
         text += (" Support(s) " + ", ".join(str(i) for i in inclined)
-                 + " inclined: the vertical component (vertical_load_kN_"
-                 "per_support, axial x sin(angle_deg), GEC-4 Eq. 21) is "
-                 "reported, not applied. The wall and its toe must carry "
-                 "it, and this analysis does not check that ("
-                 + _VERTICAL_CITES + ").")
+                 + " inclined: vertical_load_kN_per_support is axial x "
+                 "sin(angle_deg) (GEC-4 Eq. 21). " + VERTICAL_NOTE)
     return text
 
 

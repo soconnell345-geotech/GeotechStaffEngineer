@@ -27,6 +27,7 @@ from calc_package.data_model import (
 )
 from calc_package.renderer import figure_to_base64
 from geotech_common.log_spiral import source_label
+from soe.beam_analysis import VERTICAL_NOTE
 
 DISPLAY_NAME = "Support of Excavation Wall Analysis"
 
@@ -482,7 +483,7 @@ def _braced_steps(r, analysis) -> List[CalcSection]:
                 notes=(f"Horizontal {rx['horizontal_load_kN_per_support']:.2f}"
                        f" kN, vertical "
                        f"{rx['vertical_load_kN_per_support']:.2f} kN "
-                       "(Eq. 21)." if ang else
+                       "(Eq. 21). " + VERTICAL_NOTE if ang else
                        "Horizontal support: the axial load is the "
                        "horizontal load.")))
         elif rx["load_kN_per_m"] is not None and rx.get("spacing_m") is None:

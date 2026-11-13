@@ -61,6 +61,32 @@ def test_inclined_support_note_says_the_wall_must_carry_the_vertical():
     assert "reported, not applied" in note
     assert "does not check" in note
     assert "Sec. 11-3.04" in note and "A-13" in note
+    # the direction is the support's: an anchor pulls the wall down, a
+    # raker pushes it up (re-check C3)
+    assert "down or up by the support's direction" in note
+    assert "toe must carry" not in note
+
+
+def test_calc_package_says_the_vertical_is_not_applied():
+    """The package's "design load, one support" step carries the same
+    sentence and cites as the result's note (re-check N4)."""
+    from soe.beam_analysis import VERTICAL_NOTE
+    from soe.calc_steps import get_calc_steps
+    g = _geometry([SupportLevel(depth=2.0, spacing=3.0),
+                   SupportLevel(depth=5.0, support_type="anchor",
+                                spacing=2.7, angle_deg=18.0)])
+    r = analyze_braced_excavation(g)
+    sections = get_calc_steps(r, {"geometry": g, "Fy": 345.0})
+    loads = next(s for s in sections if s.title == "Support Loads")
+    own = {i.title: i.notes for i in loads.items
+           if getattr(i, "title", "").endswith("design load, one support")}
+    flat, tilted = own["Support 1 design load, one support"], \
+        own["Support 2 design load, one support"]
+    assert VERTICAL_NOTE not in flat
+    assert tilted.startswith("Horizontal ") and tilted.endswith(VERTICAL_NOTE)
+    for words in ("reported, not applied", "does not check the wall",
+                  "Sec. 11-3.04, p. 11-12", "App. A, p. A-13"):
+        assert words in tilted
 
 
 def test_spacing_and_angle_reach_the_result():
@@ -120,6 +146,10 @@ def test_load_not_found_gives_no_support_load():
     ({"spacing": -2.0}, "spacing must be positive"),
     ({"angle_deg": 90.0}, "less than 90"),
     ({"angle_deg": -5.0}, "less than 90"),
+    # inf passed "> 0" and gave infinite loads (re-check C2)
+    ({"spacing": math.inf}, "spacing must be positive and finite"),
+    ({"spacing": math.nan}, "spacing must be positive and finite"),
+    ({"angle_deg": math.nan}, "less than 90"),
 ])
 def test_bad_spacing_or_angle_refused(kw, text):
     with pytest.raises(ValueError, match=text):
