@@ -316,9 +316,9 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: mf-11 (OWN-125, OWN-88; the owner's answers of 2026-11-13): the
 #: narrative's soilCorrosion convention is one confirmed rule, yes whenever
 #: anything is attacked (corrosive to buried metal and not to concrete is
-#: yes, no longer mixed); the lab instruction reads a table of one kind of
-#: test for several samples as that kind's sheet, not as a summary table
-#: (``LAB_ONE_KIND_SUMMARY``).
+#: yes, and mixed is no longer offered for it); the lab instruction reads
+#: a table of one kind of test for several samples as that kind's sheet,
+#: not as a summary table (``LAB_ONE_KIND_SUMMARY``).
 READ_PROMPT_VERSION = "mf-11"
 
 
@@ -540,9 +540,10 @@ LAB_TWO_TESTS = (
 #: owner's answer of 2026-11-13): a summary of one test family is that
 #: family's sheet. A sheet titled as a summary of corrosion testing had been
 #: read as a summary table, so its results were not chemical tests on the
-#: record and nothing that reads chemical tests saw them. Today's lab reader
-#: carries the same rule (``LAB_READER_SYSTEM``, "A SUMMARY TABLE IS ONE
-#: ENTRY").
+#: record and nothing that reads chemical tests saw them. Model first only:
+#: today's lab reader starts from a floor that seeds such a sheet as one
+#: summary table and never drops it, so the same sentence there would record
+#: each sample twice.
 LAB_ONE_KIND_SUMMARY = (
     "A table that gives ONE kind of test for several samples (a summary of "
     "corrosion testing, a table of Atterberg limits alone) is that kind's "

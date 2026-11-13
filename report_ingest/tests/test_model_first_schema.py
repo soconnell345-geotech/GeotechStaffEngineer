@@ -82,9 +82,10 @@ MODEL_FIRST_ASKS = {
     "mf-10": "10f863c6f26241492876a1e217a2246459e1c9f341516f7e2944572898beadde",
     # mf-11 (OWN-125, OWN-88; the owner's answers of 2026-11-13): one
     # confirmed soilCorrosion convention (yes whenever anything is attacked,
-    # so its "(DRAFT)" twin is gone); the lab instruction reads a table of
-    # one kind of test for several samples as that kind's sheet.
-    "mf-11": "eff8b72ff00d0d314577684b8a37e0af90c30b0b337fc6420d75bbdfd0c5b115",
+    # so its "(DRAFT)" twin is gone) and soilCorrosion offered yes, no or
+    # unclear, no longer mixed; the lab instruction reads a table of one
+    # kind of test for several samples as that kind's sheet.
+    "mf-11": "4c661c79338d0a3a0971fc87793be04a20c71566993a80ea0ff490519e8a4b33",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,

@@ -182,14 +182,13 @@ class TestWhatTheModelIsShown:
 
     def test_a_table_of_one_kind_of_test_is_that_kinds_sheet(self):
         """OWN-88 (the owner's answer of 2026-11-13): a summary of one test
-        family is that family's sheet, not a summary table. Both lab
-        prompts say so; a page with no results stays kind other."""
+        family is that family's sheet, not a summary table. The model-first
+        lab instruction says so; today's reader does not, because its floor
+        seeds such a sheet as a summary table and never drops it. A page
+        with no results stays kind other."""
         from report_ingest import model_first as mf
 
-        today = " ".join(LAB_READER_SYSTEM.split())
-        assert ("A table that gives ONE kind of test for several specimens"
-                ) in today
-        assert "is not a summary table: it is that kind's sheet" in today
+        assert "ONE kind of test" not in LAB_READER_SYSTEM
         first = mf.instruction("lab", "R00", [0])
         assert mf.LAB_ONE_KIND_SUMMARY in first
         assert "not a summary_table" in mf.LAB_ONE_KIND_SUMMARY

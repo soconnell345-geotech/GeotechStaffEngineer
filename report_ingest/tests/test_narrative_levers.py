@@ -268,6 +268,19 @@ class TestTheGlossaryReachesThePrompt:
         assert "null when the report does not address corrosivity" in row.rule
         assert "(DRAFT)" not in row.line()
 
+        # "mixed" drops out of the words offered for this field; the other
+        # three verdict questions keep their list.
+        from report_ingest.model import SOIL_CORROSION_VALUES
+        from report_ingest.narrative_reader import (
+            VOCABULARIES, _vocabulary_block,
+        )
+        assert VOCABULARIES["soilCorrosion"] == SOIL_CORROSION_VALUES
+        assert "mixed" not in SOIL_CORROSION_VALUES
+        assert "mixed" in VOCABULARIES["siteResponseMention"]
+        offered = [line for line in _vocabulary_block().splitlines()
+                   if "soilCorrosion" in line]
+        assert offered and not any("mixed" in line for line in offered)
+
         engine = FakeEngine([{"final": a_reading()}])
         read(doc, engine, front_pages=0, roles=[])
         today = brief_of(engine)

@@ -328,7 +328,11 @@ def tags_for(record: ReportRecord) -> Dict[str, List[str]]:
     if hazards.liquefactionPotential and \
             hazards.liquefactionPotential not in ("none", "not evaluated"):
         _add(topics, "Liquefaction")
-    if hazards.soilCorrosion == "yes":
+    # The verdict, not the whole answer: "yes - <basis>" is a yes. A
+    # "mixed" saved before the owner's answer of 2026-11-13 (OWN-125) meant
+    # corrosive to something, which is a yes under it.
+    corrosion = str(hazards.soilCorrosion or "").strip().lower()
+    if corrosion.split(" ", 1)[0].rstrip("-:;,") in ("yes", "mixed"):
         _add(topics, "Corrosion/Durability")
     for hazard in (hazards.earthHazardsExposed or ()):
         if hazard == "landslide":

@@ -866,10 +866,7 @@ Laboratory Test Results", with one row per specimen and a column per kind of
 result, is a single entry of kind summary_table with one row per specimen --
 not one entry per row and not one entry per column. Keep every column: a
 column with no field of its own goes in that row's other list, under the
-heading the table prints. A table that gives ONE kind of test for several
-specimens (a summary of corrosion testing, a table of Atterberg limits alone)
-is not a summary table: it is that kind's sheet, one entry of that kind for
-each specimen.
+heading the table prints.
 
 A PAGE WITH NO RESULTS IS STILL AN ANSWER. A laboratory certificate that
 lists which samples were received, a chain of custody, a cover sheet: one
