@@ -118,6 +118,10 @@ records with no ``model_end`` and nothing to say why):
   ``ask_id`` in the ``vision`` label of its ``model_start`` and
   ``model_end``; the events carry the same ``ask_id``, so a start with no
   end is matched to the timeout that left it.
+* ``engine_retry`` (:data:`APP_EVENTS`): a retry made inside one model
+  call by the engine itself (the Foundry engine's
+  ``call_with_retries``), with the ``run_id`` of that call. A long
+  ``model_end`` with such events before it was waiting on retries.
 
 Hashes and sizes, never file contents, images or keys.
 
@@ -194,10 +198,18 @@ TASK_TOOL = "task"
 #: held its vision slot ``held_s`` seconds: ``outcome``, ``ask_id``;
 #: ``aec_agent_core.deep.vision_engine``, BACKLOG INF-75). The two carry
 #: the ``tool`` and ``tool_run_id`` of the tool call the look ran in.
+#: ``engine_retry`` (a model call's own client asked again after a timeout,
+#: a dropped connection, a rate limit or a 503: ``engine``, ``kind``,
+#: ``attempt``, ``wait_s``, ``waited_s``, the ``error`` class and HTTP
+#: ``status`` where known, and the ``run_id`` of the model call it happened
+#: inside; ``aec_agent_core.palantir_sdk_engine``, BACKLOG INF-75).
 APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
                         "pacer_wait", "cited_pages", "cited_documents",
                         "judgment_check", "side_call_timeout",
-                        "side_call_late_end"})
+                        "side_call_late_end", "engine_retry"})
+
+#: App events written from inside one model call, under that call's run id.
+MODEL_CALL_EVENTS = frozenset({"engine_retry"})
 
 #: App events of a vision look: written with the tool call they ran in.
 LOOK_EVENTS = frozenset({"side_call_timeout", "side_call_late_end"})
@@ -1373,6 +1385,12 @@ class ActivityLogger(BaseCallbackHandler):
                 if isinstance(data, dict):
                     rec.update({k: _json_safe(v) for k, v in data.items()
                                 if k not in ("agent", "event")})
+                if name in MODEL_CALL_EVENTS:
+                    # The model call the retry happened inside (INF-75):
+                    # its model_start and model_end carry the same run_id.
+                    rid = str(run_id) if run_id else None
+                    if rid in self._starts and rid not in self._names:
+                        rec.setdefault("run_id", rid)
                 if name in LOOK_EVENTS:
                     # Which tool call the look was part of (INF-75): the
                     # timeout is read beside that call's duration.
