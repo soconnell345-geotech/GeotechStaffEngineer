@@ -7,7 +7,7 @@ from funhouse_agent.adapters import (
 )
 from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
 from drilled_shaft.lrfd import apply_lrfd, RESISTANCE_FACTORS
-from drilled_shaft.capacity import skipped_depths_note
+from drilled_shaft.capacity import extended_lengths_note, skipped_depths_note
 
 # Shaft + soil params shared by every method below.
 _SHAFT_PARAMS = ("diameter", "shaft_length", "socket_diameter",
@@ -119,11 +119,21 @@ def _run_capacity_vs_depth(params):
     curve = analysis.capacity_vs_depth(depth_min=params.get("depth_min", 3.0),
                                         depth_max=params.get("depth_max"), n_points=n_points,
                                         skipped=skipped)
-    out = {"capacity_vs_depth": curve}
+    # GM-318 review A1: the lengths past the profile stand on the last
+    # layer carried on (extend_last_layer); said once here, with the
+    # choice, and on each of their rows
+    given = analysis.profile_depth_given
+    past = ([r["depth_m"] for r in curve if r["depth_m"] > given + 1e-9]
+            if given is not None else [])
+    out = ({"warnings": [extended_lengths_note(given, past)]} if past
+           else {})
+    out["capacity_vs_depth"] = curve
     if skipped:
         # GM-203: a refused trial length was dropped without a word
         out["skipped_depths"] = skipped
         out["warning"] = skipped_depths_note(skipped, n_points)
+    if past:
+        out["choices"] = [analysis._extension_choice(base=past[-1])]
     return out
 
 
@@ -260,9 +270,11 @@ METHOD_INFO = {
             "depth_max": {"type": "float", "required": False, "description": "Maximum trial shaft length (m). Default: min(shaft_length, soil profile depth)."},
             "n_points": {"type": "int", "required": False, "default": 20, "description": "Number of trial lengths in the sweep."},
         },
-        "returns": {"capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN, Q_allowable_kN} dicts; Q_allowable_kN = Q_ultimate_kN / factor_of_safety.",
+        "returns": {"warnings": "Only when there is something the user must be told: with extend_last_layer, the trial lengths past the soil profile, run on the last layer carried on to their base. Tell the user.",
+                    "capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN, Q_allowable_kN} dicts, with warnings where that length's run had any (the last layer carried on to its base); Q_allowable_kN = Q_ultimate_kN / factor_of_safety. Each length is run on the layers as given.",
                     "skipped_depths": "Only when the analysis refused some trial lengths: {depth_m, reason} for each, left out of the curve.",
-                    "warning": "Only with skipped_depths: one sentence naming them. Tell the user."},
+                    "warning": "Only with skipped_depths: one sentence naming them. Tell the user.",
+                    "choices": "Only with extend_last_layer and lengths past the profile: the choice 'soil below the profile' (what, chosen, how, basis, alternatives)."},
     },
     "lrfd_capacity": {
         "category": "Drilled Shaft",

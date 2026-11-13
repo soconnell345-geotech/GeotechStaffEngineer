@@ -62,6 +62,39 @@ _PARAMS = {
 }
 
 
+def test_curve_with_the_extension_says_which_rows_are_assumed():
+    """Review A1: a 15 m shaft in a 12 m profile, extended. The rows past
+    12 m carry the warning, the result carries it once at the top with the
+    choice, and each row is the run of that length alone."""
+    out = METHOD_REGISTRY["capacity_vs_depth"]({
+        **_PARAMS, "shaft_length": 15.0, "extend_last_layer": True,
+        "depth_min": 6.0, "n_points": 4})
+    curve = out["capacity_vs_depth"]
+    assert [r["depth_m"] for r in curve] == [6.0, 9.0, 12.0, 15.0]
+    assert [bool(r.get("warnings")) for r in curve] == [False] * 3 + [True]
+    assert "go on to the base" in curve[-1]["warnings"][0]
+    assert len(out["warnings"]) == 1
+    top = out["warnings"][0]
+    assert "ends at 12 m" in top and "(15 m)" in top
+    assert "extend_last_layer" in top
+    assert [c["what"] for c in out["choices"]] == ["soil below the profile"]
+    assert "base at 15 m" in out["choices"][0]["chosen"]
+    run = METHOD_REGISTRY["drilled_shaft_capacity"]
+    for r in curve:
+        alone = run({**_PARAMS, "shaft_length": float(r["depth_m"]),
+                     "extend_last_layer": True})
+        assert r["Q_ultimate_kN"] == pytest.approx(alone["Q_ultimate_kN"],
+                                                   abs=0.06)
+
+
+def test_curve_inside_the_profile_has_no_extension_words():
+    out = METHOD_REGISTRY["capacity_vs_depth"]({
+        **_PARAMS, "shaft_length": 12.0, "extend_last_layer": True,
+        "depth_min": 6.0, "n_points": 3})
+    assert "warnings" not in out and "choices" not in out
+    assert not any(r.get("warnings") for r in out["capacity_vs_depth"])
+
+
 @pytest.mark.parametrize("method", ["drilled_shaft_capacity",
                                     "lrfd_capacity"])
 def test_tools_refuse_and_extend(method):

@@ -1141,14 +1141,19 @@ def get_tables(result, analysis) -> list:
     low = min(3.0, length)
     if top > low:
         skipped = []
+        curve = analysis.capacity_vs_depth(
+            depth_min=low, depth_max=top,
+            n_points=CAPACITY_TABLE_POINTS, skipped=skipped)
         rows = [[r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
-                 r["Q_ultimate_kN"]]
-                for r in analysis.capacity_vs_depth(
-                    depth_min=low, depth_max=top,
-                    n_points=CAPACITY_TABLE_POINTS, skipped=skipped)]
+                 r["Q_ultimate_kN"]] for r in curve]
         note = ("The same analysis re-run with the shaft length set to "
                 "each value (SHAFT's capacity against depth); FS is not "
                 "applied")
+        if any(r.get("warnings") for r in curve):
+            # GM-318 review A1
+            note += ("; the lengths past the soil profile take its last "
+                     "layer carried on to their base (extend_last_layer), "
+                     "ground nobody explored")
         if skipped:
             from drilled_shaft.capacity import skipped_depths_note
             note += ". " + skipped_depths_note(skipped,

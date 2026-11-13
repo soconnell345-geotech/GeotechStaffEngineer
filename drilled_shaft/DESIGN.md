@@ -348,4 +348,9 @@ layer.
 A base at the profile's bottom is accepted; the 2B zone below it is then
 "the mean over what the profile gives", as the base choices already say.
 `capacity_vs_depth` lists a trial length past the profile among its skipped
-depths.
+depths. With `extend_last_layer` it runs those lengths instead, each on the
+layers as given (the run of that length alone; the profile carried on to
+the deepest base would otherwise reach into a shorter trial's 2B zone
+unsaid). A row past the profile carries its run's `warnings`; the tool's
+result says once at the top which lengths stand on the carried-on layer,
+with the choice "soil below the profile" (GM-318 review A1).
