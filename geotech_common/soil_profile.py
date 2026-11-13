@@ -826,8 +826,8 @@ class SoilProfile:
             phi_est = spt_to_phi(N1_60)
             layer.phi = phi_est
             corr = (f"Peck et al. (1974) from N1,60 = {N1_60:.1f} (N60 = "
-                    f"{layer.N60:g}, C_N by Liao & Whitman at sigma'v = "
-                    f"{sv:.0f} kPa)")
+                    f"{layer.N60:g}, C_N by Liao & Whitman, at most 2.0 "
+                    f"(GEC-6 Fig. 5-18), at sigma'v = {sv:.0f} kPa)")
             layer.mark_estimated("phi", corr)
             log.append(f"{prefix}: estimated phi={phi_est:.1f}deg ({corr})")
 
