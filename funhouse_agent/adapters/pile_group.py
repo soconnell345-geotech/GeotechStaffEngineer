@@ -928,7 +928,7 @@ def _run_equivalent_footing_settlement(params):
                    "GEC-12 Figs. 7-45 and 7-46 and UFC 3-220-20 Table 6-32 "
                    "place the footing elsewhere for toe-bearing groups, "
                    "soft over firm clay, sand over clay and layered "
-                   "profiles, and at the neutral plane (UFC Sec. "
+                   "profiles, and at the neutral plane (UFC 3-220-20 Sec. "
                    "6-5.8.4.2); batter widens it (GEC-12 step 1b). Not "
                    "worked here"]),
     ]
@@ -1059,7 +1059,7 @@ METHOD_INFO = {
     },
     "equivalent_footing_settlement": {
         "category": "Pile Group",
-        "brief": "Pile-group settlement by the equivalent footing (GEC-12 Sec. 7.3.5.3; UFC 3-220-20 Sec. 6-5.8.4): a footing the size of the group at 2/3 of the embedded length, the load spread at 2V:1H (GEC-12 Eq. 7-55), and the elastic one-dimensional compression of the soil below it summed by sublayers (UFC Eq. 6-54). One modulus, vertical piles; the piles' elastic compression and a clay's consolidation settlement are not included.",
+        "brief": "Pile-group settlement by the equivalent footing (GEC-12 Sec. 7.3.5.3; UFC 3-220-20 Sec. 6-5.8.4): a footing the size of the group at 2/3 of the embedded length, the load spread at 2V:1H (GEC-12 Eq. 7-55), and the elastic one-dimensional compression of the soil below it summed by sublayers (UFC 3-220-20 Eq. 6-54). One modulus, vertical piles; the piles' elastic compression and a clay's consolidation settlement are not included.",
         "parameters": {
             "n_rows": {"type": "int", "required": True, "description": "Rows of the group."},
             "n_cols": {"type": "int", "required": True, "description": "Columns."},
