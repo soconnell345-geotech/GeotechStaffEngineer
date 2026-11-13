@@ -881,6 +881,98 @@ ground's level (`test_cracks_as_printed.py`), and the cases with no crack
 read as before step 4. The vertical cut stays away: before step 4 its 0.842
 came from a circle closed at its centre's level, which no print gives.
 
+## B22 — The printed acceptability checks (GM-140 step 3, 2026-11-13)
+
+The rule, its print and what it replaced: DESIGN.md, "The printed
+acceptability checks". The record, with the whole of section 11 before and
+after: `module_work/gm140/STEP3_CHECK.md`; the measurements are
+`module_work/gm140/step2_section11.py` (unchanged), `step3_section11.py` and
+`step3_screens.py`, run on master and on the branch.
+
+**Against print.** No value pinned to a printed answer moved outside its
+tolerance.
+
+| Case | Before | After | Printed | Why |
+|---|---|---|---|---|
+| Slide2 #85, one support, GLE search | 1.5726 | 1.5732 | 1.575 | the toe-circle family uses the common below-base test (D19) |
+| Slide2 #85, one support, Bishop, active / passive | 1.3715 / 1.2538 | 1.3713 / 1.2534 | 1.531 / 1.324 | the same; both are the reverse-curvature toe circles of D24 |
+| #85, reverse curvature discarded, Bishop, every slice looked at | 1.511 (157 circles left out) | 1.508, flagged for m_alpha, with 1.511 as the lowest circle without a flag | 1.531 (Duncan and Wright 1.51) | a circle with m_alpha below 0.2 is kept and flagged (OWN-102) |
+| Vertical cut in undrained clay, Bishop, every slice looked at | 0.935 | 0.842, flagged, with 0.935 as the lowest unflagged; since the merge with step 4, 0.935 with no flag (the 0.842 circle was closed by a crack nobody asked for, now discarded) | Taylor 0.851 | the same |
+
+Unchanged, each measured before and after: ACADS 1(a) (0.985 / 0.984 / 0.984 /
+0.983), #86 (1.613 / 1.607 / 1.607; 0.942), #85 Spencer (1.551), V-054's toe
+circle (2.346), V-032 (1.315), V-042 (1.3335; FOSM and Monte Carlo), Duncan's
+Example 1 (0.7049, 0.6774), V-043 (1.2096, 1.1859; DE 1.234), V-031, V-044,
+V-039's yield coefficients, ACADS 4's declared family (0.753 / 0.722 / 0.728)
+and the weak layer over rock's default search (0.886). On each the circles
+formerly left out for m_alpha are now kept and flagged, far above the
+minimum.
+
+**What a result says now.** ACADS 4's weak-layer search (0.830 against the
+printed 0.760; strict xfail): the surface carries tensile interslice forces
+and a line of thrust outside the mass; the lowest scored surface without a
+flag is 1.667. V-042's Bishop search: on 537 of 3,942 scored circles Bishop's
+value is below the Ordinary Method of Slices value, which is taken there
+(Duncan 1996, p. 580); none governs.
+
+**Not pinned to print, and moved.** Each is flagged, with the lowest
+unflagged surface beside it:
+
+| Case | Before | After | Printed |
+|---|---|---|---|
+| Duncan's Example 4 by Janbu, 30 slices | 1.203 (78 circles left out) | 0.843 flagged; 1.215 unflagged; 1.203 with `low_m_alpha='refuse'` | none in hand for Janbu |
+| A made-up pore-pressure grid on the ACADS 5 slope (V-029's demonstration), Bishop | 1.247 | 1.175, the frictional term as printed where u b exceeds W; 1.247 with `negative_friction_term='zero'` | none |
+| The agent suite's PPG-1 (a hydrostatic grid on a made-up slope, one circle), Bishop | 1.223 | 1.101, the same; the answer key keeps 1.223 as its alternative | none |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.092 | 0.633 flagged; 1.096 unflagged | 1.00 |
+| Weak layer over rock, DE directed | no surface | 0.612 flagged; no scored trial unflagged | none |
+
+The last two follow from removing the noncircular screens on a jagged surface
+and on agreement between moment axes and slicings: every surface those
+screens refused in the measured cases carried a flag of the printed checks
+(88, 38 and 1), so the surfaces are now scored and flagged. That held
+for Spencer, Morgenstern-Price and GLE, which the checks cover; for
+Janbu's simplified method and the Ordinary Method of Slices it did not
+(the fix round below). None of the
+values in this table is pinned; each is recorded here and in
+`module_work/gm140/STEP3_CHECK.md` (re-measured after the merge with step 4
+by the fix round's probe: 0.8426 / 1.2154 / 1.2033; 1.1752 / 1.2471;
+1.1007; 0.6332 / 1.0959).
+
+**Fix round after review (2026-11-13).** Merged with step 4 (B21) first:
+step 4's discards stay refused and counted (`crack_refused`), step 3's
+checks flag and keep, and both counts are in the same result. Then:
+
+- the jagged screen (a FOS below 1.5 on a jagged surface) stays, the
+  module's own, for Janbu's simplified method and the Ordinary Method of
+  Slices, which no check of EM 1110-2-1902 C-10a covers: on ACADS 1(a), 200
+  random trials, the zig-zags below 1.5 that step 3's head admitted with no
+  flag (29 by Janbu, 42 by the Ordinary Method of Slices, as the review
+  counted them) are refused again and counted. Removed only for Spencer,
+  Morgenstern-Price and GLE;
+- every exported search returns the governing surface's flags and the
+  lowest surface with no flag, not only `search_critical_surface`;
+- the direct march's strict xfail now holds the moment ratio cu R L /
+  sum(W x) on 600 slices of its circle closed by a given 3.0 m dry crack,
+  3.084 (Bishop 3.068 on 30 slices), not 2.9435;
+- the agent's search result gives, when the headline carries a flag, the
+  headline, its flags, the lowest surface with no flag (or none found) and
+  `refuse_option`, as fields and in a one-sentence `summary`.
+
+Branch against master (master = step 4 with step 3 not merged; the
+probe `step3fix/probe6.py` of the fix round, run once on each):
+
+| Case | Master | Branch | Branch flags | Lowest with none | Step 4 discards (branch; master) | Step 3 flagged trials (branch) | Printed |
+|---|---|---|---|---|---|---|---|
+| Vertical cut, cu 20, Bishop search, default | 0.9353 | 0.9353 | none | - | reverse_curvature_no_crack 12; reverse_curvature_no_crack 12 | 0 of 2956 | Taylor 0.851 (3.83 cu / (gamma H), as DESIGN.md gives it) |
+| Vertical cut, `m_alpha_rule='every_slice'` | 0.9348 | 0.9353 | none | - | reverse_curvature_no_crack 12; reverse_curvature_no_crack 7 | 288 of 2956 (low_m_alpha 288) | the same |
+| ACADS 1(b), given 3.81 m crack full of water, Bishop, Slide2's grid | 1.5896 | 1.5896 | none | - | within_cracked_depth 456; within_cracked_depth 456 | 0 of 6287 | 1.596 (Slide2 Verification #2, Table 2.2, p. 25) |
+| ACADS 1(b), the same, Spencer | 1.5849 | 1.5849 | none | - | within_cracked_depth 456; within_cracked_depth 456 | 400 of 6415 (base_tension 296, thrust_outside 137) | 1.592 (the same) |
+| #85, reverse curvature discarded, Bishop, default | 1.5080 | 1.5080 | none | - | reverse_curvature_discard_asked 28; reverse_curvature_discard_asked 28 | 0 of 2135 | 1.531 (Slide2 Verification #85); Duncan and Wright (2005, Fig. 6.34) 1.51 |
+| #85, discarded, every slice | 1.5109 | 1.5080 | low_m_alpha | 1.5109 | reverse_curvature_discard_asked 28; reverse_curvature_discard_asked 26 | 421 of 2135 (low_m_alpha 421) | the same |
+| Taylor 45 deg, D = 2.25, default search | 1.9419 | 1.9419 | none | - | reverse_curvature_no_crack 38; reverse_curvature_no_crack 38 | 0 of 3270 | 1.947 (Taylor's chart, FHWA NHI-06-088 Fig. 6-15, p. 6-28) |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.0915 | 0.6332 | base_tension, side_tension, thrust_outside | 1.0959 | 0; 0 | 108 of 144 (side_tension 73, thrust_outside 106, base_tension 1) | 1.00 (Giam and Donald 1989; Slide2 Verification #1) |
+| ACADS 4, weak-layer search, 700 trials, Spencer | 0.8301 | 0.8301 | side_tension, thrust_outside | 1.6666 | 0; 0 | 288 of 344 (base_tension 124, side_tension 257, thrust_outside 268) | 0.760 (Slide2 manual p. 52) |
+
 ## Notes / known deviations
 
 - Ordinary method with ru: formulation-sensitive (F&K 1.607 vs Slide2

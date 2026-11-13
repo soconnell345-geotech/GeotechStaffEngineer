@@ -1724,11 +1724,22 @@ def _slope_fos_extra(result, analysis_dict) -> dict:
                             f"{result.method} has no solution on this "
                             f"surface, so no factor of safety is reported."),
         }
-    return {
+    out = {
         "FOS": round(result.FOS, 3),
         "method": result.method,
         "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
     }
+    # The printed acceptability checks (GM-140 step 3): the checks the
+    # surface does not meet, and Bishop's own value where the Ordinary
+    # Method of Slices value was taken for the circle (Duncan 1996, p. 580).
+    flags = list(getattr(result, "flags", None) or [])
+    if flags:
+        out["flags"] = flags
+    if getattr(result, "method_used", ""):
+        out["method_used"] = result.method_used
+        if result.FOS_bishop is not None:
+            out["FOS_bishop"] = round(result.FOS_bishop, 3)
+    return out
 
 
 def _generate_slope_stability_package(params: dict) -> dict:
@@ -3758,7 +3769,7 @@ METHOD_INFO = {
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Factor of safety: the method's own converged solution on the circle; null where the method has none (no_solution says why, and the package prints no number).", "method": "Method used.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on this surface."},
+        "returns": {**_COMMON_RETURNS, "FOS": "Factor of safety: the method's own converged solution on the circle; null where the method has none (no_solution says why, and the package prints no number).", "method": "Method used.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on this surface.", "flags": "Present when the surface does not meet a printed acceptability check (low_m_alpha, bishop_below_oms, negative_frictional_term, base_tension, side_tension, thrust_outside): the package's Printed Acceptability Checks table names the slices and values. Report the flags with the factor of safety.", "method_used": "Present when FOS is not the method's own value: with Bishop's method on a circle with no supports and no seismic coefficient, where Bishop's value (FOS_bishop) is below the Ordinary Method of Slices value, FOS is the Ordinary Method of Slices value (Duncan 1996, p. 580)."},
     },
     "slope_report_package": {
         "category": "Calculation Package",
