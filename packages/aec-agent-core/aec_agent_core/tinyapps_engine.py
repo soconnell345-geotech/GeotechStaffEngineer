@@ -112,16 +112,34 @@ NOT_CONFIGURED_MESSAGE = (
 REQUEST_TIMEOUT_S = 180.0
 _CHAT_SUFFIX = "/chat/completions"
 
-#: Retries of one model request that the provider refused as busy (429 rate
-#: limit, 5xx, a dropped connection). Several testers may share ONE Prompter
-#: key (the shared key, or one deployment's limits behind per-tester keys),
-#: so a burst of rate limits is normal: the OpenAI client waits
-#: as the provider's ``retry-after`` header asks (else an exponential backoff
-#: from half a second) and tries again -- 4 retries, 5 tries in all. A turn
-#: still refused after that ends with the plain-words message
-#: (``webapp.core.friendly_turn_error``). Override with the env var.
+#: Retries of one model request by the OpenAI client itself (a 429 rate
+#: limit, a 5xx, a dropped connection, a timeout): it waits as the
+#: provider's ``retry-after`` header asks, else about half a second, and
+#: tries again.
+#:
+#: ONE, since BACKLOG TA-24 (2026-11-13; it was 4). The waiting for a busy
+#: model belongs to one ladder, the agent's
+#: (:mod:`aec_agent_core.deep.busy_retry`: five tries at 15, 30, 60 and
+#: 120 s, honouring ``retry-after``, bounded per turn, each wait on the
+#: record) and the vision side calls' (:func:`aec_agent_core.deep.
+#: vision_engine.invoke_side_call`). The client's four retries ran INSIDE
+#: each try of those ladders, and the client retries a timed-out request
+#: like any other: one stuck call was asked five times at
+#: :data:`REQUEST_TIMEOUT_S` each, 15 minutes, before the ladder or the
+#: tester saw anything (the deployment review of 2026-11-10), and held a
+#: vision slot as long.
+#:
+#: One and not none: a single quick retry absorbs a dropped connection or a
+#: brief rate limit in under a second, where the agent's ladder would wait
+#: 15 s, and it keeps a rate-limited vision side call at six asks (the
+#: vision ladder's three tries are left as they are until the live check of
+#: the gateway's limits). The cost is bounded: a timed-out request is asked
+#: twice by the client and then NOT again by either ladder
+#: (:func:`aec_agent_core.deep.vision_engine.may_ask_timeout_again`), so a
+#: stuck call ends in at most two request timeouts. With 0 here the ladder
+#: asks a timeout again once itself. Override with the env var.
 MAX_RETRIES_ENV = "GEOTECH_PROMPTER_MAX_RETRIES"
-DEFAULT_MAX_RETRIES = 4
+DEFAULT_MAX_RETRIES = 1
 
 
 def max_retries() -> int:
@@ -413,7 +431,8 @@ def build_chat_model(model_id: Optional[str] = None, *,
     langchain-openai no hint. Its value is the app's output cap
     (``engine_config.DEFAULT_MAX_TOKENS``, 32,000 since live smoke wave 2b:
     on GPT-5.1 it holds the reasoning tokens as well as the reply). Busy
-    refusals are retried :func:`max_retries` times, honouring retry-after;
+    refusals are retried by the client :func:`max_retries` times (once by
+    default: the agent's ladder does the waiting), honouring retry-after;
     a refusal that says the budget is spent is not
     (:func:`no_retry_when_budget_spent`). A streamed reply carries its
     token count (:func:`stream_usage`; an endpoint that refuses the option

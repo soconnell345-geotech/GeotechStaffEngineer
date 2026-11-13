@@ -127,6 +127,10 @@ records with no ``model_end`` and nothing to say why):
   ``ask_id`` in the ``vision`` label of its ``model_start`` and
   ``model_end``; the events carry the same ``ask_id``, so a start with no
   end is matched to the timeout that left it.
+* ``vision_slot_timeout`` (:data:`APP_EVENTS`; BACKLOG TA-24): a look that
+  waited for a vision call slot up to the bound and was not read;
+* ``model_busy`` carries ``timed_out: true`` when the refusal was a call
+  that got no answer in time (asked again at most once in all);
 * ``engine_retry`` (:data:`APP_EVENTS`): a retry made inside one model
   call by the engine itself (the Foundry engine's
   ``call_with_retries``), with the ``run_id`` of that call. A long
@@ -211,17 +215,23 @@ TASK_TOOL = "task"
 #: a dropped connection, a rate limit or a 503: ``engine``, ``kind``,
 #: ``attempt``, ``wait_s``, ``waited_s``, the ``error`` class and HTTP
 #: ``status`` where known, and the ``run_id`` of the model call it happened
-#: inside; ``aec_agent_core.palantir_sdk_engine``, BACKLOG INF-75).
+#: inside; ``aec_agent_core.palantir_sdk_engine``, BACKLOG INF-75);
+#: ``vision_slot_timeout`` (a look waited ``waited_s`` for a vision call
+#: slot, reached the bound ``limit_s`` and was reported as not read:
+#: ``in_flight``, and the look's ``kind``, ``page``, ``tile`` and tool
+#: call; ``aec_agent_core.deep.vision_engine``, BACKLOG TA-24).
 APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
                         "pacer_wait", "cited_pages", "cited_documents",
                         "judgment_check", "side_call_timeout",
-                        "side_call_late_end", "engine_retry"})
+                        "side_call_late_end", "engine_retry",
+                        "vision_slot_timeout"})
 
 #: App events written from inside one model call, under that call's run id.
 MODEL_CALL_EVENTS = frozenset({"engine_retry"})
 
 #: App events of a vision look: written with the tool call they ran in.
-LOOK_EVENTS = frozenset({"side_call_timeout", "side_call_late_end"})
+LOOK_EVENTS = frozenset({"side_call_timeout", "side_call_late_end",
+                         "vision_slot_timeout"})
 
 PRIMARY = "primary"
 

@@ -73,6 +73,44 @@ class VisionCallTimeout(TimeoutError):
     was asked: the image was not read."""
 
 
+class VisionSlotTimeout(VisionCallTimeout):
+    """No vision call slot came free within the wait bound
+    (:func:`slot_wait_s`): the image was not read, and the call was never
+    sent. Its text is the one plain line a tool result gives
+    (:func:`describe_error`). Never asked again by the ladders here: the
+    wait it reports is already the bound."""
+
+
+#: The longest one look waits for a vision call slot (BACKLOG TA-24, a
+#: repair: the wait had no bound). The process has :data:`INFLIGHT_ENV`
+#: slots, and a call given up at its time limit keeps its slot until its
+#: connection ends, so with every slot held by a stuck call the looks of
+#: every tester queued with no end and no word. After this many seconds
+#: the look is reported as not read, because the vision model is busy with
+#: other looks. 600 s: at the measured 5 s median a side call takes (brief
+#: 7), eight slots serve about 960 calls in that time, more than fifty
+#: whole-page looks of 17 calls queued ahead, so a queue that is only long
+#: does not reach it; a queue behind stuck calls does. ``0`` = no bound.
+SLOT_WAIT_ENV = "GEOTECH_VISION_SLOT_WAIT_S"
+DEFAULT_SLOT_WAIT_S = 600.0
+
+#: The app event of a look that gave up waiting for a slot: ``waited_s``,
+#: ``limit_s``, the calls ``in_flight`` then, and the look's ``kind``,
+#: ``page`` and ``tile``.
+SLOT_TIMEOUT_EVENT = "vision_slot_timeout"
+
+
+def slot_wait_s() -> Optional[float]:
+    """The bound on one look's wait for a vision slot in seconds
+    (:data:`SLOT_WAIT_ENV`), or ``None`` for none."""
+    raw = (os.environ.get(SLOT_WAIT_ENV) or "").strip()
+    try:
+        limit = float(raw) if raw else DEFAULT_SLOT_WAIT_S
+    except ValueError:
+        limit = DEFAULT_SLOT_WAIT_S
+    return limit if limit > 0 else None
+
+
 def call_timeout_s() -> Optional[float]:
     """The side-call time limit in seconds (:data:`TIMEOUT_ENV`), or
     ``None`` for none."""
@@ -140,13 +178,27 @@ class FairSlots:
             return None
         return min(ready, key=lambda w: (self._by_conv.get(w[1], 0), w[0]))
 
-    def acquire(self, conversation="") -> None:
+    def acquire(self, conversation="", timeout: Optional[float] = None
+                ) -> bool:
+        """Take a slot, waiting for one. With ``timeout`` (seconds) the
+        wait is bounded: ``False`` when no slot came in that time, and the
+        caller holds none (BACKLOG TA-24). ``True`` otherwise."""
+        deadline = (None if timeout is None
+                    else time.monotonic() + max(0.0, float(timeout)))
         with self._cond:
             me = (next(self._tickets), conversation)
             self._waiting.append(me)
             try:
                 while not (self._in_use < self.limit and self._next() is me):
-                    self._cond.wait()
+                    if deadline is None:
+                        self._cond.wait()
+                        continue
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        self._waiting.remove(me)
+                        self._cond.notify_all()   # the next may be served
+                        return False
+                    self._cond.wait(left)
             except BaseException:
                 self._waiting.remove(me)
                 self._cond.notify_all()      # the next in line may be served
@@ -157,6 +209,7 @@ class FairSlots:
                 self._by_conv.get(conversation, 0) + 1
             # Another slot may still be free for the next waiter in line.
             self._cond.notify_all()
+            return True
 
     def release(self, conversation="") -> None:
         with self._cond:
@@ -254,7 +307,9 @@ def call_slot(conversation: Optional[str] = None) -> Iterator[None]:
     Wrap only the request itself, never work that makes further calls, so a
     holder never waits on a slot it needs to finish. ``conversation``
     defaults to this context's (:func:`conversation_key`); slots are shared
-    fairly between conversations (:class:`FairSlots`)."""
+    fairly between conversations (:class:`FairSlots`). The wait is bounded
+    (:func:`slot_wait_s`): past it :class:`VisionSlotTimeout` is raised,
+    with a :data:`SLOT_TIMEOUT_EVENT` in the run record."""
     slots = _semaphore()
     if slots is None:
         _note_side_call(queued_s=0.0)
@@ -262,7 +317,17 @@ def call_slot(conversation: Optional[str] = None) -> Iterator[None]:
         return
     conv = conversation_key() if conversation is None else conversation
     t0 = time.monotonic()
-    slots.acquire(conv)
+    bound = slot_wait_s()
+    if not slots.acquire(conv, timeout=bound):
+        waited = round(time.monotonic() - t0, 3)
+        _note_side_call(queued_s=waited)
+        _event(SLOT_TIMEOUT_EVENT, {
+            **_look_facts(), "waited_s": waited, "limit_s": bound,
+            "in_flight": slots.in_flight()})
+        raise VisionSlotTimeout(
+            f"the vision model is busy with other looks: no vision call "
+            f"could start within {bound:g} s; this image was NOT read — "
+            f"try again in a minute")
     # The wait for the slot, on the call's record (EV-14): a slow tool is
     # told apart from a queued one.
     _note_side_call(queued_s=round(time.monotonic() - t0, 3))
@@ -378,6 +443,62 @@ def busy_kind(exc) -> Optional[str]:
         if isinstance(e, (ConnectionError, TimeoutError)):
             return "connection"
     return None
+
+
+#: Error classes that mean "the request got no answer in time": the OpenAI
+#: and Anthropic clients' ``APITimeoutError``, httpx's and requests'
+#: timeouts.
+_TIMEOUT_TYPES = {"apitimeouterror", "timeoutexception", "readtimeout",
+                  "connecttimeout", "writetimeout", "pooltimeout", "timeout",
+                  "readtimeouterror"}
+#: HTTP statuses that mean the same seen from a gateway: it gave up waiting.
+_TIMEOUT_STATUSES = (408, 504)
+
+
+def is_timeout(exc) -> bool:
+    """Whether ``exc`` is a model request that got no answer IN TIME, as
+    against one refused quickly (a rate limit, an overload): the client's
+    own timeout, a gateway's 408 or 504, or an error a service names a
+    timeout. Read off the error's type, status and name, never its text.
+
+    A timeout is the slow way to fail: each ask costs the whole limit. So
+    one is asked again at most once in all, by the client and the ladders
+    together (:func:`may_ask_timeout_again`; BACKLOG TA-24)."""
+    if isinstance(exc, VisionSlotTimeout):
+        return False
+    for e in _chain(exc):
+        if isinstance(e, TimeoutError):
+            return True
+        if type(e).__name__.lower() in _TIMEOUT_TYPES:
+            return True
+        if _status_of(e) in _TIMEOUT_STATUSES:
+            return True
+        if "timeout" in str(getattr(e, "error_name", "") or "").lower():
+            return True
+    return False
+
+
+def client_retries(model) -> int:
+    """How many times ``model``'s own client asks a failed request again
+    (its ``max_retries``); 0 for a model that keeps no such count."""
+    value = getattr(model, "max_retries", None)
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return 0
+
+
+def may_ask_timeout_again(model, timeouts: int) -> bool:
+    """Whether a ladder may ask again after its ``timeouts``-th timed-out
+    try of one call: only while the client's own retries and the ladder's
+    come to at most :data:`TIMEOUT_RETRIES` (one) in all. A client that
+    already asks again by itself (``max_retries`` of 1 or more) has used
+    the one retry inside the try, so the ladder asks no more; with a
+    client that does not, the ladder asks once.
+
+    Before (the deployment review of 2026-11-10): the Prompter client asked
+    a timed-out request four more times at 180 s each inside every try of
+    the agent's ladder, 15 minutes before the tester saw a word."""
+    return int(timeouts) + client_retries(model) <= TIMEOUT_RETRIES
 
 
 def _budget_spent(exc):
@@ -604,7 +725,9 @@ def invoke_side_call(model, messages):
     """One vision side call: :func:`_invoke_once` under the side-call limit
     (:func:`call_timeout_s`), asked once more if it times out, and asked
     again with backoff — up to :func:`busy_tries` times in all, honouring a
-    ``retry-after`` — while the model answers busy (:func:`busy_kind`). The
+    ``retry-after`` — while the model answers busy (:func:`busy_kind`). A
+    timeout of either kind, the side-call limit or the client's own, is
+    asked again at most once in all (:func:`may_ask_timeout_again`). The
     waits are spent holding no slot. Raises :class:`VisionCallTimeout` when
     no ask answered in time, and a busy error that outlasted its tries with
     ``vision_tries`` set on it — the caller reports that image as not read
@@ -632,6 +755,8 @@ def invoke_side_call(model, messages):
             response = _invoke_once(model, messages, timeout, facts)
             _settle(pacer, ticket, response)
             return response
+        except VisionSlotTimeout:
+            raise                         # the wait was the bound: not asked
         except VisionCallTimeout:
             timeouts += 1
             _event(TIMEOUT_EVENT, {
@@ -648,7 +773,14 @@ def invoke_side_call(model, messages):
             if kind is None:
                 raise
             busy += 1
-            if busy >= tries:
+            # The client's own timeout (reached where the side-call limit
+            # is off or longer): counted with the side-call timeouts, and
+            # asked again at most once in all (TA-24).
+            timed_out = is_timeout(exc)
+            if timed_out:
+                timeouts += 1
+            if busy >= tries or (
+                    timed_out and not may_ask_timeout_again(model, timeouts)):
                 try:
                     exc.vision_tries = busy
                 except Exception:  # noqa: BLE001 - a frozen exception type
@@ -939,4 +1071,7 @@ __all__ = ["LangChainVisionEngine", "call_slot", "INFLIGHT_ENV",
            "conversation_key", "busy_kind", "busy_tries", "describe_error",
            "refused_detail", "BUSY_TRIES_ENV", "DEFAULT_BUSY_TRIES",
            "VisionAnswer", "was_cut_off", "capped_model", "side_call",
-           "current_side_call", "TIMEOUT_EVENT", "LATE_END_EVENT"]
+           "current_side_call", "TIMEOUT_EVENT", "LATE_END_EVENT",
+           "VisionSlotTimeout", "SLOT_WAIT_ENV", "DEFAULT_SLOT_WAIT_S",
+           "SLOT_TIMEOUT_EVENT", "slot_wait_s", "is_timeout",
+           "client_retries", "may_ask_timeout_again"]
