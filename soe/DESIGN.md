@@ -6,8 +6,7 @@ Multi-level braced and cantilever excavation support walls including:
 - Soldier pile walls (HP sections + lagging)
 - Sheet pile walls (Z-type and U-type sections)
 
-**Excluded:** Secant/tangent pile walls and diaphragm (slurry) walls (the
-code has no section or demand routine for them), soil nail walls (separate `soil_nail/` module), full ACI/AISC
+**Excluded:** secant/tangent pile and diaphragm (slurry) walls: the module selects only steel sections (HP, W, sheet pile); its pressures, moments and support loads per metre do not depend on the wall type, but nothing here models these walls or designs their concrete. Also soil nail walls (separate `soil_nail/` module), full ACI/AISC
 structural design (future work), beam-spring SSI analysis (future work).
 
 ## Theory
@@ -559,7 +558,7 @@ given, default or the module's, with its basis and alternatives.
 
 ## Future Work
 
-- Secant/tangent pile and diaphragm walls (structural demands; not in the module) and their ACI 318 concrete design
+- Secant/tangent pile and diaphragm wall sections and their ACI 318 concrete design
 - Full AISC connection design for wales, struts, bracing
 - Beam-spring (FD) SSI analysis (adapt from lateral_pile/solver.py)
 - Lagging design between soldier piles

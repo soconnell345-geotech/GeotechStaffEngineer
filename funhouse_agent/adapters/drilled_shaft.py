@@ -281,7 +281,7 @@ METHOD_INFO = {
         "category": "Drilled Shaft",
         "brief": "GEC-10 Table 8-4 resistance factors for drilled shaft design. The table includes uplift factors (uplift_cohesive, uplift_cohesionless, uplift_rock); the module has NO uplift capacity analysis, so those are for hand calculation only and no tool here uses them.",
         "parameters": {},
-        "returns": {"resistance_factors": "Dict of component → phi factor (side, base and uplift entries)."},
+        "returns": {"resistance_factors": "Dict of component → phi factor: side_cohesive/side_cohesionless/side_rock, tip_cohesive/tip_cohesionless/tip_rock (the base) and uplift_cohesive/uplift_cohesionless/uplift_rock."},
     },
 }
 

@@ -85,6 +85,6 @@ declare_when_absent(METHOD_INFO, {
     "section_properties": {
         "r_out": ("2 t", "the outer corner radius of a rectangular hollow "
                   "section"),
-        "mesh_size": _GRID},
+        "mesh_size": ("not used", "parametric shapes ignore it")},
     "polygon_section": {"mesh_size": _GRID},
 })

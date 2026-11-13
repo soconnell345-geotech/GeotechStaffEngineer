@@ -26,7 +26,7 @@ assumption. Includes group efficiency and p-multiplier corrections.
   GM-286: Converse-Labarre, printed in no held document.
 
 ## Files
-- `pile_layout.py` — GroupPile dataclass, rectangular_layout() generator
+- `pile_layout.py` — GroupPile dataclass, create_rectangular_layout() generator
 - `group_efficiency.py` — group_efficiency_factor() (the printed eta_g
   rows), block_failure_resistance() / block_failure_capacity(),
   group_uplift_resistance(),

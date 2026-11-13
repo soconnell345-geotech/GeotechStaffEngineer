@@ -33,6 +33,8 @@ analyze_surcharge_preloading(S_ultimate, surcharge_kPa, cv, Hdr, target_U=90.0, 
     kh_ks_ratio=1.0, sigma_v0=0.0, n_time_points=50) -> SurchargeResult
 analyze_vibro_compaction(fines_content, initial_N_spt, target_relative_density=None,
     pattern="triangular") -> VibroResult
+design_drain_spacing(target_U, target_time, ch, cv, Hdr, dw=DW_DEFAULT_M, pattern="triangular",
+    smear_ratio=1.0, kh_ks_ratio=1.0, spacing_range=(1.0, 3.5)) -> WickDrainResult
 evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
 ```
 

@@ -23,9 +23,13 @@ mechanically stabilized earth (MSE) walls per GEC-11.
 
 ## Public API
 ```python
-analyze_cantilever_wall(geometry, soil_params, ...) -> CantileverWallResult
-analyze_mse_wall(geometry, reinforcement, soil_params, ...) -> MSEWallResult
-check_external_stability_lrfd(geometry, soil_params, factors, ...) -> dict  # CDRs
+# exports of retaining_walls/__init__.py
+CantileverWallGeometry, MSEWallGeometry, Reinforcement, CantileverWallResult, MSEWallResult
+analyze_cantilever_wall(geom, gamma_backfill, phi_backfill, c_backfill=0.0,
+    phi_foundation=None, c_foundation=0.0, q_allowable=None, ...) -> CantileverWallResult
+analyze_mse_wall(geom, gamma_backfill, phi_backfill, reinforcement, ...) -> MSEWallResult
+check_external_stability_lrfd(geom, gamma_backfill, phi_backfill, phi_foundation=None,
+    *, ...) -> Dict[str, Any]  # CDRs
 ```
 There is no Python `list_reinforcement()`; the built-in products are listed by
 the agent adapter's `list_reinforcement` method

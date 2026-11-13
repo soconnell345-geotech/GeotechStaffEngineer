@@ -591,7 +591,7 @@ METHOD_INFO = {
             },
             "n_samples": {
                 "type": "int",
-                "brief": "Recorded only: not used by the analysis. The count analysed is the length of Y (which must equal the sample design's row count).",
+                "brief": "Ignored: not used by the analysis and not echoed; the result's n_samples is the length of Y, which must match the sobol_sample design's row count.",
                 "default": 1024,
             },
             "calc_second_order": {
@@ -688,7 +688,7 @@ METHOD_INFO = {
             },
         },
         "returns": {
-            "n_trajectories": "Number of trajectories.",
+            "n_trajectories": "The n_trajectories given, echoed; not counted from X.",
             "n_vars": "Number of variables.",
             "var_names": "Variable names.",
             "mu_star": "Mean of absolute elementary effects (importance).",

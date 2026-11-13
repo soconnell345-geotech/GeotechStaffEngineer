@@ -16,7 +16,7 @@ Branch `claude/doc-24-audit-quick-fixes`. Wording and document changes only; no 
 | Q10 | Skipped | The lead does it. |
 | Q11 | Skipped | Local folders, not in git. |
 | Q12 | Done | `ground_improvement` adapter `feasibility` returns: the six keys `to_dict()` gives. |
-| Q13 | Done | salib adapter: `sobol_analyze` `n_samples` and `morris_analyze` `n_trajectories` say "recorded only"; the count analysed is the length of Y (X and Y for Morris). The returns line for `n_samples` says the length of Y. The sample and one-call methods really use these counts and are unchanged. |
+| Q13 | Done | salib adapter: `sobol_analyze` `n_samples` (ignored, not echoed) and `morris_analyze` `n_trajectories` (echoed, not used) are described; see Review fixes; the count analysed is the length of Y (X and Y for Morris). The returns line for `n_samples` says the length of Y. The sample and one-call methods really use these counts and are unchanged. |
 | Q14 | Done | `section_props` adapter: parametric `section_properties` says `mesh_size` is ignored (confirmed in `sections.py`: only the polygon torsion solve reads it); `polygon_section` says what it does. |
 | Q15 | Done | pystra adapter: uniform takes `a` and `b` (checked in `pystra_utils.py`); `n_function_calls` says it is an estimate, iterations times variables (`reliability.py:137, 259`). |
 | Q16 | Done | soe adapter `check_bottom_blowout`: `gamma_soil` is the submerged (buoyant) unit weight (`soe/stability.py`). |
@@ -47,5 +47,23 @@ None; every fix states what the code already does.
 
 ## Noted, not fixed
 
-- `retaining_walls/DESIGN.md` still lists `results.py` in Files (not part of Q5).
 - The manual's extras table text in `manual_content.py` still has other empty extras (`groundhog` etc.); only the two named in Q9 were removed.
+
+## Fingerprint note
+
+The planlens label in `webapp/tests/page_fingerprints.json` moved from "0.14.0" to "0.15.1" because that is the planlens version installed in the venv used to record. It sits under the same tool-spec hash key, so the comparison is unaffected. The system prompt grew by 93 characters (+51 calc_package brief, +42 liquepy brief), and moved again with the Review fixes below.
+
+## Review fixes
+
+Applied after the review of this branch (wording and documents only):
+
+- salib adapter: sobol `n_samples` is ignored and not echoed (the result's `n_samples` is the length of Y); the morris `n_trajectories` return is the value given, echoed, not counted from X.
+- ground_improvement adapter: feasibility `recommendations` are notes in screening order, not ranked.
+- calc_package brief: names the `*_package` methods instead of a Python function the agent cannot call.
+- `docs/user_manual/manual.html`: eleven generated cells hand-edited to the adapters' new words (get_resistance_factors, check_bottom_blowout `gamma_soil`, sobol and morris inputs, pystra `variables` x3, `mesh_size` x2, frame_analysis `members`). No manual rebuild was run.
+- `retaining_walls/DESIGN.md`: the three false signatures replaced by the real ones. `ground_improvement/DESIGN.md`: `design_drain_spacing` added.
+- `wave_equation/DESIGN.md`: `results.py` described as two plotting functions; `generate_bearing_graph` defaults shown. `soe/DESIGN.md`: the Excluded and Future Work wording no longer says the code has no demand routine. `pile_group/DESIGN.md`: `create_rectangular_layout()`.
+- drilled_shaft adapter: `get_resistance_factors` returns name the real keys. section_props adapter: the `mesh_size` "when absent" text now says parametric shapes ignore it.
+- Removed the bullet saying `retaining_walls/DESIGN.md` still lists `results.py` (the file exists).
+- Not done: the liquepy returns (another task owns that module); `foundry/` copies (INF-06).
+- Fingerprints re-recorded in a commit of their own.
