@@ -86,6 +86,10 @@ serves every tester there, and it serves nobody it cannot name.
 On route C, bump the three pins in `packages.txt` to a release tested on
 the test machine (the new `aec-document-review` release names its core and
 planlens versions exactly; copy those); on route B, replace the wheels.
+Document Review and the core release together and carry one version
+number (from the release after 0.1.1 and 1.0.1), so their two pins, and
+their two wheels' names, always show the same number; planlens has its
+own.
 Push, and ask the App Services team to sync.
 
 ## Settings

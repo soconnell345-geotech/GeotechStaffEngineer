@@ -18,10 +18,17 @@ build-backend = "setuptools.build_meta"
 # 1.0.0 since step 13 (INF-33): the first real release, published by the
 # lead (tag core-v1.0.0) before GSE's release that pins it and before
 # aec-document-review, which requires it exactly.
+# Since INF-76 the core and aec-document-review release as ONE unit: one
+# version, one tag `aec-v<version>` that publishes both (publish-core.yml
+# first, publish-document-review.yml waits for it). Both workflows refuse a
+# tag unless both packages carry its version and Document Review pins this
+# one exactly at it.
 [project]
 name = "aec-agent-core"
-# Kept equal to geotech-staff-engineer's exact pin on it (its pyproject) and
-# to aec_agent_core.__version__; webapp/tests/test_wheels.py checks all three.
+# Kept equal to geotech-staff-engineer's exact pin on it (its pyproject), to
+# aec_agent_core.__version__ and to aec-document-review's version and its
+# pin on this package (INF-76: one version); webapp/tests/test_wheels.py and
+# webapp/tests/test_inf76_release_unit.py check them.
 version = "1.0.1"
 description = "The shared core of LLM agents that review and produce architecture, engineering and construction documents: model connections, vision calls, guards and records, Word and Excel, and a figure helper. No user interface of its own."
 readme = "README.md"

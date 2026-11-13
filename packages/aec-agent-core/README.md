@@ -108,6 +108,16 @@ the core beside it. Its "core-only" CI job installs this package with
 planlens and nothing geotech, imports every module, runs these tests and
 builds the document review page on it.
 
+**Releases.** Since BACKLOG INF-76 this package and Document Review
+(`aec-document-review`) release as one unit: one version number, and one
+tag in GeotechStaffEngineer's repository, `aec-v<version>`, which publishes
+both wheels, this one first (`publish-core.yml` and
+`publish-document-review.yml`). Document Review pins this package at its
+own version. GeotechStaffEngineer pins it exactly too, and its own release
+(a `v<version>` tag) refuses while this package's folder has changed since
+the tag of the version it pins: release the core first, then pin it. The
+releases before (1.0.0, 1.0.1) had their own `core-v<version>` tags.
+
 ## Install
 
 ```

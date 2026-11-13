@@ -6,12 +6,16 @@ build-backend = "setuptools.build_meta"
 # plan module_work/APP_SPLIT_PLAN.md in GeotechStaffEngineer's repository).
 # 0.1.0.dev0 was EMPTY and only held the name. 0.1.0 is the page itself,
 # copied out of GeotechStaffEngineer at step 13; it imports nothing
-# geotechnical. Published by publish-document-review.yml on a
-# `document-review-v<version>` tag, AFTER aec-agent-core at the version
-# pinned below (the workflow refuses otherwise).
+# geotechnical. Since INF-76 it releases with aec-agent-core as ONE unit:
+# one version, and one tag `aec-v<version>` that starts publish-core.yml
+# and publish-document-review.yml; this package's workflow waits until the
+# core of its version is on PyPI, and refuses unless the pin below names
+# exactly that version. (0.1.0 and 0.1.1 went out on their own
+# `document-review-v<version>` tags.)
 [project]
 name = "aec-document-review"
-# Kept equal to aec_document_review.__version__ (tests/test_package.py).
+# Kept equal to aec_document_review.__version__ (tests/test_package.py) and
+# to aec-agent-core's version (webapp/tests/test_inf76_release_unit.py).
 version = "0.1.1"
 description = "An LLM agent that reviews architecture, engineering and construction documents (drawings, specifications, reports, calculations) as a Streamlit page: it looks at the pages, not only the text, and hands back Word memos and marked-up PDFs."
 readme = "README.md"
@@ -27,7 +31,8 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 # Exact pins on our own two packages (plan Step 13): the page is tested
-# against exactly these. Everything else the copied code imports comes
+# against exactly these. The core's pin is this package's own version
+# (INF-76). Everything else the copied code imports comes
 # through the core (numpy, the agent stack, matplotlib, plotly, python-docx,
 # openpyxl, PyMuPDF, Pillow) or is listed here.
 dependencies = [

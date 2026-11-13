@@ -20,6 +20,13 @@ It runs on two packages of the same project:
 It imports nothing geotechnical. The geotechnical agent it was split from,
 GeotechStaffEngineer, is a separate package.
 
+**Releases.** This package and `aec-agent-core` release as one unit: they
+carry one version number, and one tag in GeotechStaffEngineer's repository,
+`aec-v<version>`, publishes both, the core first. A release of this package
+always pins the core of its own version (`aec-document-review==X` requires
+`aec-agent-core==X`); planlens keeps its own versions. Until 0.1.1 and 1.0.1
+the two had separate versions and tags.
+
 ## Install
 
 ```

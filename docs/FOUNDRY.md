@@ -612,7 +612,9 @@ Streamlit page the testers use on Tiny Apps, with the geotech app's Foundry
 behaviour: the models are Foundry model RIDs, and the conversations can be
 saved to a Foundry dataset. It needs the first `aec-document-review`
 release after 0.1.1, which has the Foundry entry, with the core release it
-pins; 0.1.1 and earlier cannot save to a Foundry dataset. Until that
+pins; 0.1.1 and earlier cannot save to a Foundry dataset. From that release
+on the two packages carry one version number and are published together
+(BACKLOG INF-76), so `aec-document-review==X` installs `aec-agent-core==X`. Until that
 release, use test wheels as in section 1, step 3, with three wheels
 instead of four: `aec-document-review`, `aec-agent-core` and `planlens`
 (nothing geotechnical).

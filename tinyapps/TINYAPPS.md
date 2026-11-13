@@ -10,7 +10,11 @@ exactly (`packages/aec-document-review/`; built at step 13,
 since 2026-11-10: they carry the fixes of the deployment review of that
 day, `module_work/docreview_review_2026-11-10/REVIEW.md`, and replace the
 first releases 0.1.0, 1.0.0 and 0.15.0);
-the company's Nexus mirror carries a release a day or two later. The wrapper
+the company's Nexus mirror carries a release a day or two later. From the
+next release on (BACKLOG INF-76) Document Review and the core carry ONE
+version number and go out together on one tag (`aec-v<version>`, the core
+first), so an update moves both pins to the same number; planlens keeps
+its own. The wrapper
 template in `tinyapps/wrapper_repo/` installs them from Nexus, or from two
 wheels in the repo as the backup. Next: the owner's first round on the test
 machine (dosdev), with the checklist below. The end-to-end check of the
@@ -141,7 +145,7 @@ its commands without installing or starting anything.
 | Route | Put in the repo | Setting |
 | --- | --- | --- |
 | **C. Nexus** (the normal one; owner, 2026-11-09) | Only the template: `packages.txt` pins the three packages and includes the third-party pins. | `APP_SOURCE=nexus` |
-| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.0.1-py3-none-any.whl` and `wheels/aec_document_review-0.1.1-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.15.0, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
+| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.0.1-py3-none-any.whl` and `wheels/aec_document_review-0.1.1-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.15.1, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
 | **A. Source folder** (development copies) | `app_src/aec_document_review/` (copied from `packages/aec-document-review/`) and `app_src/requirements.txt` holding `aec-agent-core==1.0.1`, `planlens==0.15.1` and `websockets>=14,<16`. It goes first on `PYTHONPATH` (`app.py` also adds it for a plain `streamlit run app.py`). For an unreleased core as well, add `app_src/aec_agent_core/` and list the core's own dependencies in place of its pin. | `APP_SOURCE=source` |
 
 Tests: `webapp/tests/test_tinyapps_wrapper.py` (each route's dry run, the
