@@ -91,7 +91,7 @@ _V026_PUB = {"bishop": 1.596, "spencer": 1.592, "gle": 1.592, "janbu": 1.489}
 _V026_REFEREE = 1.65
 
 
-def _v026_geom(tc_depth=0.0, tc_water=0.0):
+def _v026_geom(tc_depth=0.0, tc_water=0.0, model="strength"):
     layer = SlopeSoilLayer(
         name="soil", top_elevation=35.0, bottom_elevation=10.0,
         gamma=_V026_GAMMA, phi=_V026_PHI, c_prime=_V026_C,
@@ -99,7 +99,34 @@ def _v026_geom(tc_depth=0.0, tc_water=0.0):
     return SlopeGeometry(
         surface_points=_V026_SURFACE, soil_layers=[layer],
         tension_crack_depth=tc_depth, tension_crack_water_depth=tc_water,
+        tension_crack_model=model,
     )
+
+
+def test_v026_default_ends_the_surface_at_the_crack():
+    """GM-140 step 4: the default model ends the slip surface at the crack
+    (EM 1110-2-1902 2-2f(3), p. 2-6; C-10c, p. C-36; Slide v6 Tutorial 16,
+    p. 16-1), and the crack is at the crest end with no side given. With
+    the problem's own depth (Craig's Rankine expression with the full
+    strengths, 3.81 m, entered as the given depth) and the crack full of
+    water, as the Slide2 problem text has it."""
+    fos = _v026_methods(_v026_geom(_V026_ZC, _V026_ZC, model="truncation"))
+    # GM-140 step 4: 1.485 -> 1.603; printed 1.596 (Slide2 #2, Bishop), +0.4 %
+    assert fos["bishop"] == pytest.approx(1.603, abs=0.005)
+    # GM-140 step 4: 1.486 -> 1.599; printed 1.592 (Spencer), +0.4 %
+    assert fos["spencer"] == pytest.approx(1.599, abs=0.005)
+    # GM-140 step 4: 1.482 -> 1.600; printed 1.592 (GLE), +0.5 %
+    assert fos["gle"] == pytest.approx(1.600, abs=0.005)
+    for m in ("bishop", "spencer", "gle"):
+        assert fos[m] == pytest.approx(_V026_PUB[m], rel=0.006)
+        assert fos[m] < _V026_REFEREE
+    default = SlopeGeometry(
+        surface_points=_V026_SURFACE,
+        soil_layers=_v026_geom().soil_layers,
+        tension_crack_depth=_V026_ZC, tension_crack_water_depth=_V026_ZC)
+    assert default.tension_crack_model == "truncation"
+    assert default.tension_crack_side == "crest"
+    assert _v026_methods(default) == fos
 
 
 def test_v026_tension_crack_depth_matches_rankine():
@@ -202,7 +229,7 @@ def test_v026_water_thrust_and_cracked_arc_mechanics():
     hydrostatic crack-water force = 0.5*gamma_w*zc^2 ~ 71 kN/m applied at zc/3
     above the crack base (el 35 - zc = 31.19 m)."""
     slip = CircularSlipSurface(_V026_XC, _V026_YC, _V026_R)
-    slices = build_slices(_v026_geom(_V026_ZC, _V026_ZC), slip, 60)
+    slices = build_slices(_v026_geom(_V026_ZC, _V026_ZC), slip, 60)  # 'strength'
     n_crack = sum(1 for s in slices if s.in_tension_crack)
     assert n_crack == 5
     crack_arc = sum(s.base_length for s in slices if s.in_tension_crack)

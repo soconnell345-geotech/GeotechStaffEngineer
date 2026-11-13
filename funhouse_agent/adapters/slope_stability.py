@@ -24,9 +24,11 @@ _SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de",
                   "pso", "weak_layer"]
 _STRENGTH_MODELS = ["mohr_coulomb", "shansep", "hoek_brown", "anisotropic"]
 _NEWMARK_POLARITY = ["downslope", "rectified"]
-_CRACK_SIDES = ["entry", "exit"]
-_CRACK_MODELS = ["strength", "truncation"]
+_CRACK_SIDES = ["crest", "entry", "exit"]
+_CRACK_MODELS = ["truncation", "strength"]
+_CRACK_DEPTH_BASES = ["given", "rankine", "min_fos"]
 _REVERSE_CURVATURE = ["tension_crack", "discard"]
+_REVERSE_CRACK_BASES = ["rankine", "min_fos"]
 
 
 # Top-level geometry params consumed by _build_geometry, and the trial-surface
@@ -37,7 +39,8 @@ _GEOM_PARAMS = (
     "kh", "nails", "anchors", "geosynthetics", "stabilizing_piles",
     "tension_crack_depth", "tension_crack_water_depth",
     "tension_crack_side", "tension_crack_model", "pore_pressure_points",
-    "surcharges", "reverse_curvature",
+    "surcharges", "reverse_curvature", "tension_crack_depth_basis",
+    "reverse_curvature_crack_basis",
 )
 _SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points")
 
@@ -202,15 +205,23 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     surface_points = [tuple(pt) for pt in params["surface_points"]]
     gwt_points = [tuple(pt) for pt in params["gwt_points"]] if params.get("gwt_points") else None
     surcharge_x_range = tuple(params["surcharge_x_range"]) if params.get("surcharge_x_range") else None
-    crack_side = _check_choice(params.get("tension_crack_side", "entry"),
+    crack_side = _check_choice(params.get("tension_crack_side", "crest"),
                                _CRACK_SIDES, name="tension_crack_side",
                                method=method)
     reverse_curvature = _check_choice(
         params.get("reverse_curvature", "tension_crack"), _REVERSE_CURVATURE,
         name="reverse_curvature", method=method)
-    crack_model = _check_choice(params.get("tension_crack_model", "strength"),
+    crack_model = _check_choice(params.get("tension_crack_model",
+                                           "truncation"),
                                 _CRACK_MODELS, name="tension_crack_model",
                                 method=method)
+    crack_basis = _check_choice(
+        params.get("tension_crack_depth_basis", "given"), _CRACK_DEPTH_BASES,
+        name="tension_crack_depth_basis", method=method)
+    reverse_basis = _check_choice(
+        params.get("reverse_curvature_crack_basis", "rankine"),
+        _REVERSE_CRACK_BASES, name="reverse_curvature_crack_basis",
+        method=method)
     pore_pressure_points = (
         [tuple(p) for p in params["pore_pressure_points"]]
         if params.get("pore_pressure_points") else None)
@@ -305,7 +316,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         tension_crack_depth=params.get("tension_crack_depth", 0.0),
         tension_crack_water_depth=params.get("tension_crack_water_depth", 0.0),
         tension_crack_side=crack_side, tension_crack_model=crack_model,
+        tension_crack_depth_basis=crack_basis,
         reverse_curvature=reverse_curvature,
+        reverse_curvature_crack_basis=reverse_basis,
         pore_pressure_points=pore_pressure_points, surcharges=surcharges,
     )
 
@@ -630,11 +643,13 @@ _GEOMETRY_PARAMS = {
     "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Vertical surcharge (kPa). A single loaded zone; use 'surcharges' for several distinct loaded areas."},
     "surcharge_x_range": {"type": "array", "required": False, "description": "[x_start, x_end] extent of the single 'surcharge'."},
     "surcharges": {"type": "array", "required": False, "description": "Several distinct surcharge zones (bench + crest loads, etc.): [{pressure kPa, x_start, x_end}, ...]. Each zone's pressure is summed at any x it covers, ON TOP OF the single 'surcharge'/'surcharge_x_range'. Represent a linearly-varying (trapezoidal) load as its mean uniform pressure or as several thin zones."},
-    "tension_crack_depth": {"type": "float", "required": False, "default": 0.0, "description": "Tension crack depth at the crest (m)."},
-    "tension_crack_water_depth": {"type": "float", "required": False, "default": 0.0, "description": "Water depth in the tension crack (m)."},
-    "tension_crack_side": {"type": "str", "required": False, "default": "entry", "allowed_values": _CRACK_SIDES, "description": "Which crest end the tension crack is on: 'entry' (default, low-x / slip-surface entry) or 'exit' (high-x). Put it on whichever side the crest is on; no need to mirror the slope."},
-    "tension_crack_model": {"type": "str", "required": False, "default": "strength", "allowed_values": _CRACK_MODELS, "description": "Tension-crack mechanism: 'strength' (default) keeps the cracked wedge as zero-shear-strength driving soil; 'truncation' removes it from the sliding mass (mass ends at the vertical crack face, as Slide2/UTEXAS do). Truncation is less conservative."},
-    "reverse_curvature": {"type": "str", "required": False, "default": "tension_crack", "allowed_values": _REVERSE_CURVATURE, "description": "A circle whose centre is below the ground where it comes out would turn back above its centre (Slide2: reverse curvature). 'tension_crack' (default, as Slide2) closes it with a dry vertical crack; 'discard' drops such circles from searches."},
+    "tension_crack_depth": {"type": "float", "required": False, "default": 0.0, "description": "Given depth of a tension crack at the upper end of the slip surface (m); 0 = no crack. Leave at 0 when tension_crack_depth_basis is 'rankine' or 'min_fos'."},
+    "tension_crack_depth_basis": {"type": "str", "required": False, "default": "given", "allowed_values": _CRACK_DEPTH_BASES, "description": "How the crack's depth is set. 'given' (default): tension_crack_depth. 'rankine': the depth over which Rankine's active pressures are negative with the developed strengths, d = 2 c_D / (gamma tan(45 - phi_D/2)), c_D = c/F, tan(phi_D) = tan(phi)/F (EM 1110-2-1902 Eq. C-36, p. C-36; Eqs. 2-5, 2-6), F the surface's own factor of safety, the solution repeated until the depth stops changing; printed for total stresses and one soil, so it stops at the bottom of the soil at the crack, and the scan is used instead where that soil is drained with water in the cracked depth or has no c and phi. 'min_fos': the depth of minimum factor of safety from a scan of depths (EM 2-2f(4), p. 2-6; C-10c(1)): the first minimum going down in 20 equal steps to the lowest point of the surface's upper half; a surface whose factor of safety is still falling at the last depth gets no number."},
+    "tension_crack_water_depth": {"type": "float", "required": False, "default": 0.0, "description": "Water depth in the tension crack (m); a depth above the crack's own fills it. Its thrust, 0.5 gamma_w z_w^2 at a third of its depth, acts on the vertical boundary at the crack."},
+    "tension_crack_side": {"type": "str", "required": False, "default": "crest", "allowed_values": _CRACK_SIDES, "description": "Which end of the slip surface the crack is at: 'crest' (default) the end where the ground is higher (EM 1110-2-1902 2-2f(3), p. 2-6: near the crest of the slope), whichever way the slope faces; 'entry' (low x) or 'exit' (high x) gives the end."},
+    "tension_crack_model": {"type": "str", "required": False, "default": "truncation", "allowed_values": _CRACK_MODELS, "description": "What the crack does: 'truncation' (default, as printed) ends the slip surface at the bottom of the crack, leaves out the soil upslope of it and ends the slices at a vertical boundary there (EM 1110-2-1902 2-2f(3), p. 2-6; C-10c, p. C-36; Slide v6 Tutorial 16); 'strength' keeps the cracked soil as driving weight without strength (the default before GM-140; no printed source; a lower factor of safety)."},
+    "reverse_curvature": {"type": "str", "required": False, "default": "tension_crack", "allowed_values": _REVERSE_CURVATURE, "description": "A circle whose centre is below the ground at its upper end would turn back over itself (reverse curvature). 'tension_crack' (default) closes it with a vertical crack of the printed depth (reverse_curvature_crack_basis; a given tension crack, when there is one, is that crack) and discards it where its overhanging part runs deeper than the crack; 'discard' discards every such circle. A search counts and locates the circles discarded (reverse_curvature_discarded); a discarded circle given to a single-surface method gets no factor of safety (an error saying why). A circle overhanging at its lower end is always discarded."},
+    "reverse_curvature_crack_basis": {"type": "str", "required": False, "default": "rankine", "allowed_values": _REVERSE_CRACK_BASES, "description": "Depth of the crack that closes a reverse-curvature circle when no tension crack is given: 'rankine' (default) EM 1110-2-1902 Eq. C-36 with the developed strengths at the circle's own factor of safety; 'min_fos' the depth of minimum factor of safety from a scan (EM C-10c(1)). See tension_crack_depth_basis."},
     "pore_pressure_points": {"type": "array", "required": False, "description": "Discrete pore-pressure field as [[x, z, u], ...] triples (u in kPa) -- a flow-net / TIN sampling. When given, the base pore pressure at each slice is interpolated from this field (linear on the Delaunay triangulation, nearest-node fallback outside the hull, suction clamped to 0), OVERRIDING the gwt_points piezometric line and per-layer ru. The ponded-water buttress still comes from gwt_points, so set BOTH for a reservoir over a flow-net field."},
     "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5, support_convention}]. Capacity = min(pullout behind slip surface, bar tensile)/spacing_h (FHWA GEC-7)."},
     "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15, support_convention}]. Full T_allow applied when the bond zone crosses the slip surface."},
@@ -860,7 +875,8 @@ for _m in ("analyze_slope", "compare_methods_table", "rapid_drawdown_fos",
 # noncircular search; the Bishop screen circles with a rigorous method);
 # the M-P/GLE interslice function to those methods; the 3-stage normal to
 # the 3-stage method; a Monte Carlo search budget to re-searched surfaces.
-_CRACK = {"tension_crack_depth": "set"}
+_CRACK = [{"tension_crack_depth": "set"},
+          {"tension_crack_depth_basis": ["rankine", "min_fos"]}]
 _CIRCLE_GIVEN = {"xc": "set"}
 _SEARCH_CIRCLES = {"surface_type": ["circular", "entry_exit"]}
 _WATER = {"water_condition": ["seepage_parallel"]}
@@ -869,7 +885,10 @@ _WATER = {"water_condition": ["seepage_parallel"]}
 def _crack_and(extra):
     out = {k: _CRACK for k in ("tension_crack_water_depth",
                                "tension_crack_side", "tension_crack_model")}
+    out["tension_crack_depth_basis"] = {"tension_crack_depth": "set"}
     out.update(extra)
+    if "reverse_curvature" in out:
+        out["reverse_curvature_crack_basis"] = out["reverse_curvature"]
     return out
 
 

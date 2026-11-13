@@ -38,6 +38,8 @@ from slope_stability.gle import janbu_fos
 from slope_stability.results import SearchResult, SlopeStabilityResult
 
 
+from slope_stability.cracks import counts_reverse_discards
+
 _FOS_MAX = 999.9
 # The differential evolution's score for a surface left out for m_alpha
 # (GM-127): above any admissible FOS, below _FOS_MAX (`search_de`).
@@ -874,6 +876,27 @@ def _compute_fos(geom: SlopeGeometry,
     try:
         if inside_model and _dips_below_base(geom, slip):
             return _FOS_MAX         # as build_slices' refusal (ValueError)
+        # The surface's crack as printed (GM-140 step 4, `cracks`): a
+        # Rankine or minimum-FOS depth, or a reverse-curvature circle, is
+        # solved for on copies of the geometry with the crack fixed; a
+        # circle the printed crack does not close is discarded and counted.
+        from slope_stability import cracks
+        if cracks.may_need_solution(geom, slip):
+            plan = cracks.plan_crack(geom, slip)
+            if plan is not None and (plan.needs_solution or plan.discard):
+                fos, crack = cracks.solve_with_crack(
+                    geom, slip,
+                    lambda g: _compute_fos(
+                        g, slip, method, n_slices, tol=tol,
+                        window_span=window_span, reject_stats=reject_stats,
+                        fos_fn=fos_fn, confirm_below=confirm_below,
+                        m_alpha_check=m_alpha_check, info=info,
+                        inside_model=inside_model),
+                    plan=plan)
+                if crack.discarded:
+                    cracks.count_discard(slip, crack)
+                    return _FOS_MAX
+                return _FOS_MAX if fos is None else fos
         slices = build_slices(geom, slip, n_slices)
         if len(slices) < 3:
             _bump(reject_stats, "geometry")
@@ -939,13 +962,6 @@ def _compute_fos(geom: SlopeGeometry,
                 return _FOS_MAX
             return fos
 
-        # A reverse-curvature circle (its centre below the ground where it
-        # comes out) is closed by a dry crack unless the geometry asks for
-        # such circles to be discarded (Slide2's two choices; GM-59).
-        if (getattr(geom, "reverse_curvature", "tension_crack") == "discard"
-                and slip.reverse_curvature_crack(geom) is not None):
-            return _FOS_MAX
-
         fos_u = None                # Janbu's uncorrected F, for m_alpha
         scored_by = method
         if fos_fn is not None:
@@ -990,6 +1006,27 @@ def _compute_fos(geom: SlopeGeometry,
         return _FOS_MAX
     except (ValueError, ZeroDivisionError, RuntimeError):
         return _FOS_MAX
+
+
+def _report_geometry(geom, slip, method: str, n_slices: int, tol: float,
+                     fos_fn: Optional[Callable] = None):
+    """The geometry to slice a search's reported surface with: its crack
+    fixed as the scoring fixed it (`cracks.solve_with_crack`; GM-140
+    step 4). The crack is noted for the result (`cracks.note_report`)."""
+    from slope_stability import cracks
+    if not cracks.may_need_solution(geom, slip):
+        crack = cracks.given_outcome(geom, slip)
+        cracks.note_report(crack)
+        return geom
+    _, crack = cracks.solve_with_crack(
+        geom, slip,
+        lambda g: _compute_fos(g, slip, method, n_slices, tol=tol,
+                               fos_fn=fos_fn, m_alpha_check=False,
+                               inside_model=False))
+    if crack is not None and crack.discarded:
+        raise ValueError(crack.reason)
+    cracks.note_report(crack)
+    return cracks.geometry_of(geom, crack)
 
 
 def _check_entry_exit(geom, slip, x_entry_range, x_exit_range):
@@ -1311,6 +1348,7 @@ def _refine_centre(score, start, steps, bounds,
 
 
 @_counts_refusals
+@counts_reverse_discards
 def grid_search(geom: SlopeGeometry,
                 x_range: Tuple[float, float],
                 y_range: Tuple[float, float],
@@ -1547,7 +1585,9 @@ def grid_search(geom: SlopeGeometry,
         slip = CircularSlipSurface(best_xc, best_yc, best_r)
         try:
             x_entry, x_exit = slip.find_entry_exit(geom)
-            slices = build_slices(geom, slip, n_slices)
+            slices = build_slices(
+                _report_geometry(geom, slip, method, n_slices, tol, fos_fn),
+                slip, n_slices)
             critical = SlopeStabilityResult(
                 FOS=best_fos,
                 method=method.capitalize(),
@@ -1572,6 +1612,7 @@ def grid_search(geom: SlopeGeometry,
 
 
 @_counts_refusals
+@counts_reverse_discards
 def search_noncircular(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1700,7 +1741,9 @@ def search_noncircular(
     if best_fos < _FOS_MAX and best_slip is not None:
         try:
             x_entry, x_exit = best_slip.find_entry_exit(geom)
-            slices = build_slices(geom, best_slip, n_slices)
+            slices = build_slices(
+                _report_geometry(geom, best_slip, method, n_slices, tol, fos_fn),
+                best_slip, n_slices)
             critical = SlopeStabilityResult(
                 FOS=best_fos,
                 method=method.replace("_", "-").title(),
@@ -1729,6 +1772,7 @@ def search_noncircular(
 # ── PSO Noncircular Search ────────────────────────────────────────────────
 
 @_counts_refusals
+@counts_reverse_discards
 def search_pso(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1935,7 +1979,9 @@ def search_pso(
         if best_slip is not None:
             try:
                 x_entry, x_exit = best_slip.find_entry_exit(geom)
-                slices = build_slices(geom, best_slip, n_slices)
+                slices = build_slices(
+                    _report_geometry(geom, best_slip, "spencer", n_slices, tol, None),
+                    best_slip, n_slices)
                 critical = SlopeStabilityResult(
                     FOS=gbest_fit,
                     method="Spencer",
@@ -1986,6 +2032,7 @@ def _layer_band_at(geom: SlopeGeometry, layer, x: float):
 
 
 @_counts_refusals
+@counts_reverse_discards
 def search_weak_layer_biased(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2139,7 +2186,9 @@ def search_weak_layer_biased(
     if best_fos < _FOS_MAX and best_slip is not None:
         try:
             x_entry, x_exit = best_slip.find_entry_exit(geom)
-            slices = build_slices(geom, best_slip, n_slices)
+            slices = build_slices(
+                _report_geometry(geom, best_slip, "spencer", n_slices, tol, None),
+                best_slip, n_slices)
             critical = SlopeStabilityResult(
                 FOS=best_fos,
                 method="Spencer",
@@ -2179,6 +2228,7 @@ def _weighted_choice(weights):
 # ── Entry/Exit Region Search ─────────────────────────────────────────────
 
 @_counts_refusals
+@counts_reverse_discards
 def search_entry_exit(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2418,7 +2468,9 @@ def search_entry_exit(
         slip = CircularSlipSurface(best_xc, best_yc, best_r)
         try:
             x_entry, x_exit = slip.find_entry_exit(geom)
-            slices = build_slices(geom, slip, n_slices)
+            slices = build_slices(
+                _report_geometry(geom, slip, method, n_slices, tol, fos_fn),
+                slip, n_slices)
             critical = SlopeStabilityResult(
                 FOS=best_fos,
                 method=method.capitalize(),
@@ -2452,6 +2504,7 @@ def search_entry_exit(
 # ── Differential-Evolution Noncircular Refinement ───────────────────────
 
 @_counts_refusals
+@counts_reverse_discards
 def search_de(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2653,7 +2706,9 @@ def search_de(
             if clean >= _FOS_MAX:     # its solution did not hold (above)
                 raise ValueError("no confirmed solution")
             x_entry, x_exit = best_slip.find_entry_exit(geom)
-            slices = build_slices(geom, best_slip, n_slices)
+            slices = build_slices(
+                _report_geometry(geom, best_slip, method, n_slices, tol, fos_fn),
+                best_slip, n_slices)
             critical = SlopeStabilityResult(
                 FOS=clean,
                 method=method.replace("_", "-").title(),

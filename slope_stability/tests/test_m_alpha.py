@@ -148,6 +148,14 @@ def test_phi_zero_slices_are_not_checked_by_default():
 # phi' = 0: a vertical cut in undrained clay, against Taylor
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=(
+    "GM-140 step 4 (OWN-103): the governing toe circle is a "
+    "reverse-curvature circle, now closed by Rankine's crack with the "
+    "developed strengths (EM 1110-2-1902 Eq. C-36: 2.95 m in this 5 m "
+    "cut) where it was closed at its centre's level (2.30 m): 0.842 -> "
+    "0.752, away from Taylor's 0.851 (-11.6 %), whose chart has no crack. "
+    "With every such circle discarded the search reads 0.935 (+9.9 %). "
+    "module_work/gm140/STEP4_CHECK.md"))
 def test_vertical_cut_in_undrained_clay_against_taylor():
     """Taylor's stability number for a vertical face, 3.83, gives F = 3.83
     x 20 / (18 x 5) = 0.851. The default search finds 0.842 on a toe

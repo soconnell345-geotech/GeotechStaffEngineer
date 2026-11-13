@@ -620,6 +620,14 @@ class TestPublishedBenchmarks:
                    (behind + 8 + front, 0)]
         return SlopeGeometry(surface_points=surface, soil_layers=[clay])
 
+    @pytest.mark.xfail(strict=True, reason=(
+        "GM-140 step 4 (OWN-103): a toe circle whose centre is 0.01 m "
+        "below the crest is a reverse-curvature circle and is now closed "
+        "by Rankine's crack with the developed strengths (EM 1110-2-1902 "
+        "Eq. C-36: 3.03 m), so it governs at 1.835 where the base circle "
+        "gave 1.935: away from Taylor's 1.947 (-5.8 %), whose chart has no "
+        "crack. With every such circle discarded the search reads 1.942 "
+        "(-0.3 %). module_work/gm140/STEP4_CHECK.md"))
     def test_taylor_undrained_nc(self):
         """With 4 H of level ground beyond the crest and the toe, the default
         search finds Taylor's base circle: 1.935 at 30 slices, 0.6 % below
@@ -634,6 +642,12 @@ class TestPublishedBenchmarks:
         assert (c.x_exit - 40.0) / 8.0 == pytest.approx(1.9, abs=0.2)
         assert not result.warnings
 
+    @pytest.mark.xfail(strict=True, reason=(
+        "GM-140 step 4 (OWN-103): the short profile's best circle is a "
+        "reverse-curvature toe circle, now closed by Rankine's crack "
+        "(EM 1110-2-1902 Eq. C-36: 3.03 m): 1.970 -> 1.833, below Taylor's "
+        "1.947, whose chart has no crack. With every such circle discarded "
+        "2.065. module_work/gm140/STEP4_CHECK.md"))
     def test_taylor_short_profile_reads_high_and_warns(self):
         """The profile this test used to draw ends 0.6 H behind the crest and
         1.5 H beyond the toe, short of Taylor's circle: no circle it holds

@@ -275,18 +275,6 @@ def _circle_crossings(slip, xs: List[float], z_line) -> List[float]:
     return out
 
 
-def _crack_base(geom: SlopeGeometry, x_entry: float,
-                x_exit: float) -> Optional[float]:
-    """Elevation of the tension crack's base at the crest end of the
-    surface (the entry, or the exit with ``tension_crack_side='exit'``),
-    or None without a crack. A slice on that half of the surface whose
-    base lies above it is in the crack (``build_slices``)."""
-    if geom.tension_crack_depth <= 0:
-        return None
-    x_crest = x_entry if geom.tension_crack_side == "entry" else x_exit
-    return geom.ground_elevation_at(x_crest) - geom.tension_crack_depth
-
-
 def _surcharge_edges(geom: SlopeGeometry) -> List[float]:
     """The x of each end of each loaded surcharge zone."""
     xs = []
@@ -354,10 +342,12 @@ def slice_breaks(geom: SlopeGeometry, slip, x_entry: float,
     # The tension crack: slices on the crest half whose base is above its
     # base are in it, so it ends where the surface crosses that level on
     # the crest half, or at the middle of the surface.
-    z_crack = _crack_base(geom, x_entry, x_exit)
+    from slope_stability.cracks import crack_for_slices
+    crack = crack_for_slices(geom, slip, x_entry, x_exit)
+    z_crack = None if crack is None else crack["base"]
     if z_crack is not None:
         x_half = 0.5 * (x_entry + x_exit)
-        entry_side = geom.tension_crack_side == "entry"
+        entry_side = crack["side"] == "entry"
         out += [x for x in crossings_of([], lambda x: z_crack)
                 if (x <= x_half if entry_side else x >= x_half)]
         z_half = slip.slip_elevation_at(x_half)
@@ -600,9 +590,12 @@ def build_slices(geom: SlopeGeometry,
     # slip surface (entry = low-x by default, or exit = high-x). Only slices on
     # that half of the surface can be in the crack.
     x_midpoint = (x_entry + x_exit) / 2.0
-    crack_side = geom.tension_crack_side
-    crack_truncate = geom.tension_crack_model == "truncation"
-    crack_base_elev = _crack_base(geom, x_entry, x_exit)
+    from slope_stability.cracks import crack_for_slices
+    crack = crack_for_slices(geom, slip, x_entry, x_exit)
+    crack_side = crack["side"] if crack else "entry"
+    crack_truncate = bool(crack and crack["truncate"])
+    crack_base_elev = crack["base"] if crack else None
+    crack_water_depth = crack["water_depth"] if crack else 0.0
 
     slices = []
     for x_left, x_right, width in cuts:
@@ -762,8 +755,8 @@ def build_slices(geom: SlopeGeometry,
     # adjacent to the crack face: the first non-cracked slice for an entry-side
     # crack, the last non-cracked for an exit-side crack (for truncation the
     # cracked slices are already gone, so this is the boundary retained slice).
-    if crack_base_elev is not None and geom.tension_crack_water_depth > 0 and slices:
-        z_w = geom.tension_crack_water_depth
+    if crack_base_elev is not None and crack_water_depth > 0 and slices:
+        z_w = crack_water_depth
         crack_water_f = 0.5 * GAMMA_W * z_w ** 2
         crack_water_elev = crack_base_elev + z_w / 3.0
         target = None

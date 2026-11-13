@@ -776,8 +776,10 @@ def _make_result(geom, slip, fos, method_label, n_slices) -> Optional[
         SlopeStabilityResult]:
     from slope_stability.slices import build_slices
     try:
+        from slope_stability.cracks import geometry_at_fos
         x_entry, x_exit = slip.find_entry_exit(geom)
-        n = len(build_slices(geom, slip, n_slices))
+        n = len(build_slices(geometry_at_fos(geom, slip, fos), slip,
+                             n_slices))
     except ValueError:
         return None
     kw = {}
@@ -811,34 +813,36 @@ def _attach_reinforcement(geom, crit) -> None:
         for f in (forces or [])] or None
 
 
-def _reverse_curvature_warning(geom, crit, in_search: bool = True
-                               ) -> Optional[str]:
-    """Say so when the governing circle (``in_search``) or the circle given
-    to ``analyze_slope`` is a reverse-curvature surface closed by a crack
-    (``CircularSlipSurface.reverse_curvature_crack``)."""
-    if crit is None or not crit.is_circular or crit.radius <= 0:
+def _crack_statement(geom, crit, method: str, n_slices: int, tol: float,
+                     fos_fn=None) -> Optional[str]:
+    """The crack the governing surface was solved with (GM-140 step 4,
+    ``slope_stability.cracks``): put on the result (``tension_crack``, the
+    depth used) and returned as one sentence, or None without a crack. A
+    reverse-curvature circle closed by a crack says so there."""
+    if crit is None:
         return None
-    crack = CircularSlipSurface(crit.xc, crit.yc, crit.radius) \
-        .reverse_curvature_crack(geom, crit.x_entry, crit.x_exit)
-    if crack is None:
+    from slope_stability import cracks
+    from slope_stability.search import _compute_fos
+    slip = (CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+            if crit.is_circular else PolylineSlipSurface(crit.slip_points))
+    try:
+        if cracks.may_need_solution(geom, slip):
+            _, crack = cracks.solve_with_crack(
+                geom, slip,
+                lambda g: _compute_fos(g, slip, method, n_slices, tol=tol,
+                                       fos_fn=fos_fn, m_alpha_check=False,
+                                       inside_model=False))
+        else:
+            crack = cracks.given_outcome(geom, slip, crit.x_entry,
+                                         crit.x_exit)
+    except ValueError:
         return None
-    if in_search:
-        whose = "The critical circle's"
-        other = ("reverse_curvature='discard' drops such circles from the "
-                 "search (Slide2's other choice).")
-    else:
-        whose = "The circle's"
-        other = ("Slide2's other choice is to discard such circles: "
-                 "reverse_curvature='discard' does so in a search; a circle "
-                 "given to analyze_slope is evaluated either way.")
-    return (f"{whose} centre (z = {crit.yc:.2f}) lies below the "
-            f"ground where the circle ends (x = {crack['x']:.2f}, ground "
-            f"z = {crack['z_ground']:.2f}): the circle would turn back above "
-            f"its own centre there, so the surface is closed by a vertical, "
-            f"dry crack {crack['depth']:.2f} m deep that carries no shear. "
-            f"Slide2 calls this a reverse-curvature surface and closes it the "
-            f"same way by default; its factor of safety depends on that crack "
-            f"being able to open. {other}")
+    if crack is None or crack.discarded or crack.depth <= 0:
+        return None
+    had = list(crit.warnings)
+    cracks.apply_to_result(crit, crack)
+    crit.warnings[:] = had          # said once, in the search's warnings
+    return crack.statement()
 
 
 # Below this share of their force acting through the moment about the centre
@@ -874,8 +878,10 @@ def _support_arm_warning(geom, crit, method: str, n_slices: int,
     from slope_stability.reinforcement import support_moment
     slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
     try:
+        from slope_stability.cracks import geometry_at_fos
         forces = trial_reinforcement(geom, slip)
-        slices = build_slices(geom, slip, n_slices)
+        slices = build_slices(geometry_at_fos(geom, slip, crit.FOS), slip,
+                              n_slices)
     except ValueError:
         return None
     if not forces or not slices:
@@ -939,7 +945,9 @@ def _legacy_critical_warning(geom, crit, method: str, n_slices: int,
     try:
         if trial_reinforcement(geom, slip):
             return None              # the search required convergence
-        slices = build_slices(geom, slip, n_slices)
+        from slope_stability.cracks import geometry_at_fos
+        slices = build_slices(geometry_at_fos(geom, slip, crit.FOS), slip,
+                              n_slices)
     except ValueError:
         return None
     spencer = method == "spencer"
@@ -1447,7 +1455,7 @@ def apply_supplements(geom: SlopeGeometry,
     # The governing circle closed by a crack at its own centre's level, and
     # supports a moment-only method counts little of (GM-59).
     if best is not None and best_kind != INFINITE_SLOPE:
-        w = _reverse_curvature_warning(geom, best)
+        w = _crack_statement(geom, best, method, n_slices, tol, fos_fn)
         if w:
             warnings_out.append(w)
         if fos_fn is None:
@@ -1590,7 +1598,8 @@ def m_alpha_confirmation(geom: SlopeGeometry, crit, method: str,
         info: Dict[str, Any] = {}
         refused = why = None
         try:
-            if len(build_slices(geom, slip, n)) < 3:
+            from slope_stability.cracks import geometry_at_fos
+            if len(build_slices(geometry_at_fos(geom, slip), slip, n)) < 3:
                 refused, why = "geometry", "fewer than three slices"
         except ValueError as exc:
             refused, why = "geometry", str(exc)

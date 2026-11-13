@@ -300,7 +300,10 @@ class TestWarningsAndNoSolution:
                                         bottom_elevation=10, gamma=98.0,
                                         cu=350.0, analysis_mode="undrained")],
             anchors=[Anchor(x_head=20.0, z_head=20.0, length=37.0,
-                            T_allow=9000.0, inclination=0.0)])
+                            T_allow=9000.0, inclination=0.0)],
+            # the circle below has its centre 5.89 below the crest: closed
+            # by a given crack (GM-140 step 4)
+            tension_crack_depth=5.89)
 
     def test_no_solution_sections(self):
         g = self._slide85()

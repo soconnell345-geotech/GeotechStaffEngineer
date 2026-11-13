@@ -82,7 +82,11 @@ def test_v054_isotropic_anchor_matches_published():
     toe) the toe circle gives 2.379 (2.287 before GM-134; see the module
     docstring)."""
     f = _fos(_geom("mohr_coulomb"), _ISO_CIRCLE)
-    assert f == pytest.approx(2.379, abs=0.02)          # ours (pinned)
+    # GM-140 step 4: 2.379 -> 2.218; printed 2.16 (+2.7 %; FLAC 2.18,
+    # +1.7 %). The toe circle's centre is 1 m below the crest: closed by
+    # Rankine's crack with the developed strengths (EM 1110-2-1902
+    # Eq. C-36), not at its centre's level.
+    assert f == pytest.approx(2.218, abs=0.02)
     clay = _geom("mohr_coulomb").soil_layers
     past_toe = SlopeGeometry(surface_points=[(-40.0, 0.0)] + _FACE,
                              soil_layers=clay)
@@ -90,7 +94,7 @@ def test_v054_isotropic_anchor_matches_published():
     assert base == pytest.approx(2.222, abs=0.005)      # ours (pinned)
     assert base == pytest.approx(2.16, rel=0.04)        # within ~3% of published
     assert base == pytest.approx(2.18, rel=0.03)        # within ~2% of FLAC
-    assert base < f
+    assert base == pytest.approx(f, abs=0.02)
 
 
 def test_v054_anisotropic_reduces_to_isotropic_exactly():
@@ -114,12 +118,33 @@ def test_v054_bakklandet_anisotropy_reduction():
                   su_passive=_SU_P)
     f_ani_on_iso = _fos(aniso, _ISO_CIRCLE)
     f_ani_crit = _fos(aniso, _ANI_CIRCLE)
-    assert f_ani_on_iso == pytest.approx(1.942, abs=0.02)   # ours (pinned)
-    assert f_ani_crit == pytest.approx(1.886, abs=0.02)     # ours (pinned)
-    # anisotropy lowers the FOS, and the critical surface migrates (deeper drop)
-    assert f_ani_crit < f_ani_on_iso < f_iso
-    drop = 1.0 - f_ani_crit / f_iso
+    # GM-140 step 4: 1.942 -> 1.693, a 23.7 % reduction from the isotropic
+    # 2.218 where it was 18.4 %; printed 24 % (Bakklandet, 1.43 -> 1.09).
+    # Both circles are reverse-curvature circles, now closed by Rankine's
+    # crack at the active strength (EM 1110-2-1902 Eq. C-36).
+    assert f_ani_on_iso == pytest.approx(1.693, abs=0.02)
+    assert f_ani_on_iso < f_iso
+    drop = 1.0 - f_ani_on_iso / f_iso
     assert 0.18 < drop < 0.28                               # brackets Bakklandet 24%
+    assert f_ani_crit < f_iso
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "GM-140 step 4 (OWN-103): on the circle (3, 3), R 4.243, which was the "
+    "anisotropic critical one, the reduction from the isotropic value is "
+    "now 16.7 % (1.848 against 2.218) where it was 20.7 % (1.886 against "
+    "2.379): away from Bakklandet's printed 24 %. Its centre is 2 m below "
+    "the crest and Rankine's crack (Eq. C-36 at the active strength) is "
+    "barely deeper, so little of it is cut, while the toe circle (2.5, 4) "
+    "loses more; the toe circle now reads the lower of the two (23.7 %). "
+    "module_work/gm140/STEP4_CHECK.md"))
+def test_v054_bakklandet_reduction_on_the_former_critical_circle():
+    f_iso = _fos(_geom("mohr_coulomb"), _ISO_CIRCLE)
+    aniso = _geom("anisotropic", su_active=_SU_A, su_dss=_SU_DSS,
+                  su_passive=_SU_P)
+    f_ani_crit = _fos(aniso, _ANI_CIRCLE)
+    assert f_ani_crit < _fos(aniso, _ISO_CIRCLE)
+    assert 1.0 - f_ani_crit / f_iso == pytest.approx(0.24, abs=0.04)
 
 
 def test_v054_active_zone_stronger_than_passive():

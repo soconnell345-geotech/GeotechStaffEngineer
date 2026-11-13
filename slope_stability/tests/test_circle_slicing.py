@@ -116,13 +116,16 @@ def test_a_circle_is_cut_at_a_surcharge_edge():
 
 def test_a_circle_is_cut_at_the_tension_crack():
     """A 2 m crack in the crest: its base, el 8, meets the circle at
-    x = 7.056, a slice boundary; the slices before it are in the crack and
-    none after it."""
+    x = 7.056, a slice boundary. By default the surface ends there (GM-140
+    step 4; EM 1110-2-1902 2-2f(3), p. 2-6); with the 'strength' option the
+    slices before it are in the crack and none after it."""
     g = _geom(tension_crack_depth=2.0)
     slip = CircularSlipSurface(*_CIRCLE)
     x8 = _left_crossing(8.0)
     assert x8 == pytest.approx(7.056, abs=1e-3)
     assert _has(slice_boundaries(g, slip, 30), x8)
+    assert build_slices(g, slip, 30)[0].x_left == pytest.approx(x8)
+    g = _geom(tension_crack_depth=2.0, tension_crack_model="strength")
     sl = build_slices(g, slip, 30)
     assert any(s.in_tension_crack for s in sl)
     for s in sl:

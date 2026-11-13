@@ -224,6 +224,11 @@ class SlopeStabilityResult:
     slip_points: Optional[List[Tuple[float, float]]] = None
     tension_crack_depth: float = 0.0
     tension_crack_water_depth: float = 0.0
+    # The crack the surface was solved with (GM-140 step 4,
+    # ``cracks.CrackOutcome.to_dict``): its depth and how it was set, its
+    # side and model, where it is, and for a Rankine depth the F it was
+    # taken at. None without a crack.
+    tension_crack: Optional[Dict[str, Any]] = None
     method_solved: bool = True
     method_used: Optional[str] = ""
     methods_without_solution: List[str] = field(default_factory=list)
@@ -386,6 +391,8 @@ class SlopeStabilityResult:
         if self.tension_crack_depth > 0:
             d["tension_crack_depth_m"] = round(self.tension_crack_depth, 2)
             d["tension_crack_water_depth_m"] = round(self.tension_crack_water_depth, 2)
+            if self.tension_crack:
+                d["tension_crack"] = dict(self.tension_crack)
         if self.slip_points is not None:
             d["slip_points"] = [
                 (round(x, 3), round(z, 3)) for x, z in self.slip_points
@@ -692,6 +699,12 @@ class SearchResult:
     n_rejected_jagged: int = 0
     n_rejected_ground_crossings: int = 0
     n_rejected_m_alpha: int = 0
+    # Reverse-curvature circles the printed crack does not close (GM-140
+    # step 4, OWN-103): how many were discarded, and where
+    # ({'n', 'x_end_range_m', 'first': the first few with centre, radius,
+    # overhang depth, crack depth and why}). None when none was.
+    n_discarded_reverse_curvature: int = 0
+    reverse_curvature_discarded: Optional[Dict[str, Any]] = None
     governing_surface: str = ""
     candidates: Dict[str, float] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
@@ -822,6 +835,9 @@ class SearchResult:
             d["governing_location"] = dict(self.governing_location)
         if self.refused_lowest:
             d["refused_lowest"] = dict(self.refused_lowest)
+        if self.reverse_curvature_discarded:
+            d["reverse_curvature_discarded"] = dict(
+                self.reverse_curvature_discarded)
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
         if self.layer_overlaps:
