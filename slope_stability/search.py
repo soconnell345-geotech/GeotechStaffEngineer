@@ -31,10 +31,9 @@ from slope_stability.slip_surface import (
 from slope_stability.slices import (base_clearance, base_depth, build_slices,
                                     model_height)
 from slope_stability.methods import (
-    fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
     M_ALPHA_MIN, M_ALPHA_RULES, m_alpha_checked, m_alpha_min,
 )
-from slope_stability.gle import janbu_fos
+from slope_stability.solution import solve_method, check_method
 from slope_stability.results import SearchResult, SlopeStabilityResult
 
 
@@ -51,6 +50,60 @@ _DE_REFUSED = 100.0
 # rapid-drawdown search's per-surface solve).
 _REFUSALS: contextvars.ContextVar = contextvars.ContextVar(
     "slope_refusals", default=None)
+
+
+# Trial surfaces left without a solution (GM-140 step 2), counted by family
+# and by method into the tally of the search running in this context
+# ([2] of the tally, a dict {(family, method, kind): n};
+# `_count_no_solution`; kind as `solution.NO_SOLUTION_KINDS`).
+# The family is the one being scored in this context (`_scoring_family`):
+# 'main' for a search's own trials unless `search_critical_surface` names
+# it, the supplementary families' own names, None for the checks made on a
+# governing surface after the search (not trials: not counted).
+_FAMILY: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_scoring_family", default="main")
+
+
+@contextlib.contextmanager
+def _scoring_family(family: Optional[str]):
+    token = _FAMILY.set(family)
+    try:
+        yield
+    finally:
+        _FAMILY.reset(token)
+
+
+def _count_no_solution(method: str, kind: str = "not_converged") -> None:
+    tally = _REFUSALS.get()
+    family = _FAMILY.get()
+    if tally is not None and family is not None:
+        key = (family, method, kind or "not_converged")
+        tally[2][key] = tally[2].get(key, 0) + 1
+
+
+def _no_solution_so_far() -> Dict[Tuple[str, str, str], int]:
+    """The trials left without a solution so far by the search running in
+    this context, the searches run inside it included."""
+    tally = _REFUSALS.get()
+    return dict(tally[2]) if tally is not None else {}
+
+
+def no_solution_records(counts: Dict[Tuple[str, str, str], int],
+                        rename: Optional[Dict[str, str]] = None
+                        ) -> List[Dict[str, Any]]:
+    """``SearchResult.no_solution`` from the tally: one record per family
+    and method, in the order met: ``{"family", "method", "n",
+    "not_converged", "no_driving"}``, ``n`` the sum of the two kinds
+    (`solution.NO_SOLUTION_KINDS`)."""
+    out: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for (family, method, kind), n in counts.items():
+        family = (rename or {}).get(family, family)
+        rec = out.setdefault((family, method), {
+            "family": family, "method": method, "n": 0,
+            "not_converged": 0, "no_driving": 0})
+        rec["n"] += n
+        rec[kind] = rec.get(kind, 0) + n
+    return list(out.values())
 
 
 def _count_ground_refusal() -> None:
@@ -76,15 +129,16 @@ def _m_alpha_refusals_so_far() -> int:
 def _counts_refusals(fn):
     """Count the trial surfaces a search refuses because they leave the
     ground and come back into it (GM-122) or have m_alpha < 0.2 on a slice
-    (GM-127), and put the counts on the ``SearchResult`` it returns (or on
-    that result's ``search``) as ``n_rejected_ground_crossings`` and
-    ``n_rejected_m_alpha``. A search run inside another adds its counts to
+    (GM-127), and those the method has no solution on (GM-140 step 2), and
+    put the counts on the ``SearchResult`` it returns (or on that result's
+    ``search``) as ``n_rejected_ground_crossings``, ``n_rejected_m_alpha``
+    and ``no_solution``. A search run inside another adds its counts to
     the outer one, so the outermost result counts every refusal, its
     supplementary families' included."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         outer = _REFUSALS.get()
-        tally = [0, 0]
+        tally = [0, 0, {}]
         token = _REFUSALS.set(tally)
         try:
             result = fn(*args, **kwargs)
@@ -93,11 +147,16 @@ def _counts_refusals(fn):
             if outer is not None:
                 outer[0] += tally[0]
                 outer[1] += tally[1]
+                for key, n in tally[2].items():
+                    outer[2][key] = outer[2].get(key, 0) + n
         target = (result if isinstance(result, SearchResult)
                   else getattr(result, "search", None))
         if isinstance(target, SearchResult):
             target.n_rejected_ground_crossings = tally[0]
             target.n_rejected_m_alpha = tally[1]
+            if not target.no_solution:
+                # (search_critical_surface names the families itself)
+                target.no_solution = no_solution_records(tally[2])
         return result
     return wrapper
 
@@ -560,7 +619,7 @@ def _noncircular_admissible(slip, slices, geom, n_slices_requested: int,
     out sliver / non-spanning surfaces before the (more expensive) rigorous
     solve. The *jagged-but-spanning* zig-zags that used to win searches with a
     spurious low FOS are caught separately and more reliably by REQUIRING the
-    rigorous GLE to converge (see ``_rigorous_noncircular_fos``): the GLE
+    rigorous GLE to converge (see ``_method_solution``): the GLE
     reports ``converged=False`` on those, whereas valid smooth surfaces
     converge. This geometric check is deliberately lenient so the random /
     weak-layer generators keep exploring.
@@ -672,65 +731,23 @@ def trial_reinforcement(geom, slip):
     return compute_reinforcement_forces(geom, slip, x_entry, x_exit) or None
 
 
-def _reinforced_rigorous_fos(slices, slip, f_interslice: str, tol: float,
-                             reinf_forces) -> Optional[float]:
-    """Rigorous GLE FOS of a REINFORCED circular trial surface, or None when
-    the GLE does not converge. `spencer_fos` / `morgenstern_price_fos` fall
-    back to the legacy solver on non-convergence, and that solver ignores
-    reinforcement: in a search the unreinforced value of a heavily anchored
-    surface then wins (Slide2 #85, Spencer: 0.86 against Bishop 1.26). A
-    search rejects such a surface instead."""
-    from slope_stability.gle import gle_fos
-    try:
-        res = gle_fos(slices, slip, f_interslice=f_interslice,
-                      tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
-        if res.converged and 0.05 < res.fos < _FOS_MAX:
-            return res.fos
-    except (ValueError, ZeroDivisionError, OverflowError):
-        pass
-    return None
+def _method_solution(slices, slip, method: str, tol: float, reinf_forces):
+    """A trial surface scored by the search's method: the single-surface
+    solver's own solution (`solution.solve_method`), so a search and
+    `analyze_slope` return the same solution for the same surface (GM-140
+    step 2): the same moment axis, tolerance and test of convergence.
+    Morgenstern-Price and GLE take the half-sine function in a search (the
+    choice of function in a search belongs to step 6 of the rebuild).
 
-
-def _rigorous_noncircular_fos(slices, slip, f_interslice: str,
-                              tol: float, geom=None,
-                              reinf_forces=None) -> Optional[float]:
-    """Rigorous GLE FOS for a noncircular surface, REQUIRING convergence.
-
-    Returns None when the GLE does not converge, so the caller REJECTS the
-    surface instead of silently accepting the legacy Spencer approximation —
-    which returns a spurious low FOS (~0.05-0.2) on jagged/degenerate surfaces
-    that a search would then wrongly pick as critical. The rigorous GLE reports
-    ``converged=False`` on those surfaces at every slice count (verified on the
-    ACADS-4 zig-zag: GLE constant 0.15 / half-sine 0.22, both non-converged,
-    vs a Fellenius 8.2 — the methods disagree because the surface is
-    kinematically inadmissible). Valid smooth surfaces converge and return the
-    same value as before.
-
-    The moment axis for the convergence check is tried in two steps: first gle's
-    internal least-squares fit (``axis_point=None`` — byte-identical to the
-    historical behaviour, so a surface that already converged is unchanged), and
-    only if THAT fails to converge, a robust pinned axis
-    (``_noncircular_axis_point``, when ``geom`` is supplied). The second pass
-    rescues a valid surface whose least-squares centre lands absurdly far away
-    (spuriously failing convergence) without ever removing a convergence the
-    first pass already found.
-    """
-    from slope_stability.gle import gle_fos
-    axes = [None]
-    if geom is not None:
-        pinned = _noncircular_axis_point(slices, geom)
-        if pinned is not None:
-            axes.append(pinned)
-    for axis_point in axes:
-        try:
-            res = gle_fos(slices, slip, f_interslice=f_interslice,
-                          tol=min(tol, 1e-4) * 0.1, axis_point=axis_point,
-                          reinf_forces=reinf_forces)
-            if res.converged and 0.05 < res.fos < _FOS_MAX:
-                return res.fos
-        except (ValueError, ZeroDivisionError, OverflowError):
-            pass
-    return None
+    Before, a circle no support crosses was scored by the old approximate
+    Spencer / Morgenstern-Price solver where the rigorous solution did not
+    converge (267 circles of a 6 x 6 Spencer search of Slide2 #85 without
+    its support), and a noncircular surface whose solution did not converge
+    about the GLE's fitted moment axis was solved again about a second,
+    fixed axis, which the single-surface solver does not use (ACADS 4's
+    weak-layer search returned Spencer 0.515 that way, on a surface where
+    `analyze_slope` found no Spencer solution)."""
+    return solve_method(slices, slip, method, "half_sine", tol, reinf_forces)
 
 
 # A rigorous noncircular solution is confirmed when a second moment axis
@@ -824,7 +841,9 @@ def _compute_fos(geom: SlopeGeometry,
                  m_alpha_check: bool = True,
                  info: Optional[Dict[str, Any]] = None,
                  inside_model: bool = True) -> float:
-    """Safely compute FOS, returning _FOS_MAX on any error.
+    """The search's score of a trial surface: the method's own factor of
+    safety, or _FOS_MAX (not scored) where the surface is refused or the
+    method has no solution on it.
 
     ``inside_model`` (GM-128): a surface reaching below the bottom of the
     deepest layer is left out (_FOS_MAX; ``_dips_below_base``), so every
@@ -866,11 +885,19 @@ def _compute_fos(geom: SlopeGeometry,
     leaves the method dispatch byte-identical.
 
     Reinforcement crossing the trial surface is resolved and applied exactly
-    as ``analyze_slope`` applies it (GM-53; ``trial_reinforcement``). A
-    reinforced circle scored by Spencer / M-P / GLE must converge in the
-    rigorous GLE (``_reinforced_rigorous_fos``): the legacy fallback ignores
-    reinforcement, so the surface is rejected instead.
+    as ``analyze_slope`` applies it (GM-53; ``trial_reinforcement``).
+
+    A method's own solution, or no score (GM-140 step 2; UFC 3-220-10
+    p. 362). Every surface, circular or not, with supports or without, is
+    scored by the single-surface solver (`_method_solution`). Where the
+    method has no solution the surface is not scored (_FOS_MAX, the
+    searches' "not scored" mark, which is not a factor of safety) and is
+    counted by family and method (`_count_no_solution`,
+    ``SearchResult.no_solution``; a caller's own ``fos_fn`` is not counted
+    here). An unknown ``method`` is refused.
     """
+    if fos_fn is None:
+        check_method(method)
     try:
         if inside_model and _dips_below_base(geom, slip):
             return _FOS_MAX         # as build_slices' refusal (ValueError)
@@ -883,36 +910,27 @@ def _compute_fos(geom: SlopeGeometry,
         reinf = trial_reinforcement(geom, slip) if fos_fn is None else None
 
         # Noncircular guard (SS-6): reject kinematically-degenerate trial
-        # surfaces and REQUIRE the rigorous GLE to converge. This kills the
-        # weak-layer/random-polyline search pathology where a jagged surface
-        # makes the rigorous solver diverge, the legacy Spencer fallback
-        # returns a spurious low FOS (~0.05-0.2), and the search wrongly picks
-        # it as critical. Circular surfaces are untouched (their GLE converges;
-        # bishop/grid/entry-exit paths are byte-identical below).
+        # surfaces. (A surface the method has no solution on is not scored,
+        # circular or not: GM-140 step 2.)
         if not getattr(slip, 'is_circular', True):
             if not _noncircular_admissible(slip, slices, geom, n_slices,
                                            window_span):
                 _bump(reject_stats, "geometry")
                 return _FOS_MAX
             fos_u = None            # Janbu's uncorrected F, for m_alpha
-            scored_by = method
+            # (a noncircular surface named for Bishop is scored by Spencer)
+            scored_by = "spencer" if method == "bishop" else method
             if fos_fn is not None:
                 fos = fos_fn(geom, slip)
-            elif method in ("morgenstern_price", "gle"):
-                fos = _rigorous_noncircular_fos(slices, slip, "half_sine", tol,
-                                                geom, reinf_forces=reinf)
-            elif method == "fellenius":
-                fos = fellenius_fos(slices, slip, reinf_forces=reinf)
-            elif method == "janbu":
-                fos, fos_u, _f0 = janbu_fos(slices, slip,
-                                            tol=min(tol, 1e-4) * 0.1,
-                                            reinf_forces=reinf)
-            else:  # spencer / bishop-fallback / default
-                scored_by = "spencer"
-                fos = _rigorous_noncircular_fos(slices, slip, "constant", tol,
-                                                geom, reinf_forces=reinf)
-            if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
+            else:
+                sol = _method_solution(slices, slip, scored_by, tol, reinf)
+                fos, fos_u = sol.fos, sol.fos_uncorrected
+            if fos is None or fos < 0.05 or math.isnan(fos) \
+                    or math.isinf(fos) or fos >= _FOS_MAX:
+                # no solution: not scored, and counted (GM-140 step 2)
                 _bump(reject_stats, "nonconverged")
+                if fos_fn is None:      # (a caller's solve counts its own)
+                    _count_no_solution(scored_by, sol.kind)
                 return _FOS_MAX
             if (fos_fn is None and fos < _FOS_MAX
                     and (m_alpha_check or info is not None)
@@ -950,32 +968,17 @@ def _compute_fos(geom: SlopeGeometry,
         scored_by = method
         if fos_fn is not None:
             fos = fos_fn(geom, slip)
-        elif method == "fellenius":
-            fos = fellenius_fos(slices, slip, reinf_forces=reinf)
-        elif method == "bishop":
-            fos = bishop_fos(slices, slip, tol=tol, reinf_forces=reinf)
-        elif method == "spencer":
-            if reinf:
-                fos = _reinforced_rigorous_fos(slices, slip, "constant", tol,
-                                               reinf)
-            else:
-                fos, _ = spencer_fos(slices, slip, tol=tol)
-        elif method in ("morgenstern_price", "gle"):
-            if reinf:
-                fos = _reinforced_rigorous_fos(slices, slip, "half_sine", tol,
-                                               reinf)
-            else:
-                fos, _ = morgenstern_price_fos(slices, slip, tol=tol)
-        elif method == "janbu":
-            fos, fos_u, _ = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1,
-                                      reinf_forces=reinf)
         else:
-            scored_by = "bishop"
-            fos = bishop_fos(slices, slip, tol=tol, reinf_forces=reinf)
+            sol = _method_solution(slices, slip, method, tol, reinf)
+            fos, fos_u = sol.fos, sol.fos_uncorrected
 
-        # Guard against non-convergence producing negative or absurd values
-        # FOS < 0.05 is physically meaningless and indicates numerical issues
-        if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
+        # No solution (the method's own solve does not converge, a
+        # per-surface solve returns none, or a value below 0.05, which is
+        # no factor of safety): not scored, and counted (GM-140 step 2).
+        if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos) \
+                or fos >= _FOS_MAX:
+            if fos_fn is None:          # (a caller's solve counts its own)
+                _count_no_solution(scored_by, sol.kind)
             return _FOS_MAX
         if (fos_fn is None and fos < _FOS_MAX
                 and (m_alpha_check or info is not None)

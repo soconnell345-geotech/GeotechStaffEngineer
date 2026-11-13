@@ -20,7 +20,9 @@ from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurfac
 from slope_stability.slices import Slice, build_slices
 from slope_stability.methods import (
     fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
-    spencer_fos_legacy, morgenstern_price_fos_legacy,
+)
+from slope_stability.solution import (
+    solve_method, MethodSolution, NoSolution, METHODS,
 )
 from slope_stability.gle import (
     gle_fos, GLEResult, INTERSLICE_FUNCTIONS, janbu_fos, janbu_f0,
@@ -61,7 +63,7 @@ __all__ = [
     'CircularSlipSurface', 'PolylineSlipSurface',
     'Slice', 'build_slices',
     'fellenius_fos', 'bishop_fos', 'spencer_fos', 'morgenstern_price_fos',
-    'spencer_fos_legacy', 'morgenstern_price_fos_legacy',
+    'solve_method', 'MethodSolution', 'NoSolution', 'METHODS',
     'gle_fos', 'GLEResult', 'INTERSLICE_FUNCTIONS',
     'janbu_fos', 'janbu_f0',
     'fosm_fos', 'monte_carlo_fos', 'FOSMResult', 'MonteCarloResult',

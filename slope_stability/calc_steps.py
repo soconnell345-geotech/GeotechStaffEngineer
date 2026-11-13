@@ -339,11 +339,13 @@ def _method_section(result, analysis) -> CalcSection:
             ),
             substitution="",
             result_name="FOS",
-            result_value=f"{result.FOS:.3f}",
+            result_value=fos_text(result.FOS),
             reference="Fellenius (1927)",
-            notes="Satisfies moment equilibrium only. Effective normal "
-                  "clamped at zero (no negative friction under high "
-                  "pore pressure).",
+            notes=_rigorous_note(
+                result,
+                "Satisfies moment equilibrium only. Effective normal "
+                "clamped at zero (no negative friction under high "
+                "pore pressure)."),
         ))
 
     elif m == "Bishop":
@@ -355,11 +357,13 @@ def _method_section(result, analysis) -> CalcSection:
             ),
             substitution="m_α = cos(α) + sin(α)·tan(φ)/FOS",
             result_name="FOS",
-            result_value=f"{result.FOS:.3f}",
+            result_value=fos_text(result.FOS),
             reference="Bishop (1955)",
-            notes="Iterative — satisfies moment equilibrium; assumes "
-                  "zero interslice shear. Frictional term clamped at "
-                  "zero where u·b > W (SS-2).",
+            notes=_rigorous_note(
+                result,
+                "Iterative — satisfies moment equilibrium; assumes "
+                "zero interslice shear. Frictional term clamped at "
+                "zero where u·b > W (SS-2)."),
         ))
 
     elif m == "Janbu":
@@ -375,7 +379,9 @@ def _method_section(result, analysis) -> CalcSection:
                           if result.FOS_janbu_uncorrected is not None
                           else "-"),
             reference="Janbu (1973)",
-            notes="Horizontal force equilibrium; zero interslice shear.",
+            notes=_rigorous_note(
+                result,
+                "Horizontal force equilibrium; zero interslice shear."),
         ))
         if result.janbu_f0 is not None:
             items.append(CalcStep(
@@ -386,7 +392,7 @@ def _method_section(result, analysis) -> CalcSection:
                              f"{result.janbu_f0:.3f} × "
                              f"{result.FOS_janbu_uncorrected:.3f}",
                 result_name="FOS",
-                result_value=f"{result.FOS:.3f}",
+                result_value=fos_text(result.FOS),
                 reference="Janbu (1973)",
                 notes="Correction compensates for the neglected "
                       "interslice shear forces.",
@@ -492,15 +498,14 @@ def _method_section(result, analysis) -> CalcSection:
 
 
 def _rigorous_note(result, solved_note: str) -> str:
-    """The Spencer / M-P step's note: the solved one, or what stands in
-    when the method has no equilibrium solution on the surface (GM-81)."""
+    """A method step's note: the solved one, or that the method has no
+    solution on the surface, so there is no number (GM-81, GM-140 step
+    2)."""
     if getattr(result, "method_solved", True):
         return solved_note
-    if result.FOS is None:
-        return ("No equilibrium solution on this surface, so no factor of "
-                "safety (see Warnings).")
-    return (f"No converged rigorous GLE solution on this surface: the value "
-            f"shown is the {result.produced_by}'s (see Warnings).")
+    # A method's own solution, or no number (GM-140 step 2)
+    return ("No equilibrium solution on this surface, so no factor of "
+            "safety (see Warnings).")
 
 
 def _reinforcement_section(result, geom):
@@ -585,27 +590,22 @@ def _comparison_section(result, analysis):
               if result.janbu_f0 else "")
         rows.append(["Janbu simplified (corrected)",
                      f"{result.FOS_janbu:.3f}", f0])
-    unsolved = getattr(result, "methods_without_solution", None) or []
-
-    def _legacy(name, det):
-        # No converged rigorous solution: the legacy solver's value (GM-81)
-        if name not in unsolved:
-            return det
-        return (det + "; " if det else "") + \
-            "legacy approximate solver, no converged solution"
-
     if result.FOS_spencer is not None:
         det = (f"θ = {result.theta_spencer:.2f} deg"
                if result.theta_spencer is not None else "")
-        rows.append(["Spencer", f"{result.FOS_spencer:.3f}",
-                     _legacy("Spencer", det)])
+        rows.append(["Spencer", f"{result.FOS_spencer:.3f}", det])
     if result.FOS_morgenstern_price is not None:
         det = (f"λ = {result.lambda_mp:.3f}"
                if result.lambda_mp is not None else "")
         f_name = analysis.get("f_interslice", "half_sine")
         rows.append([f"Morgenstern-Price ({f_name})",
-                     f"{result.FOS_morgenstern_price:.3f}",
-                     _legacy("Morgenstern-Price", det)])
+                     f"{result.FOS_morgenstern_price:.3f}", det])
+    # A method with no solution on the surface has no number (GM-140 step
+    # 2): its row says so instead of carrying another solver's value.
+    for name in getattr(result, "methods_without_solution", None) or []:
+        rows.append([name, "no solution",
+                     "no number: the method does not converge on this "
+                     "surface (see Warnings)"])
 
     if len(rows) < 2:
         return None
@@ -712,6 +712,15 @@ def _search_section(search) -> CalcSection:
             rows.append(["  — non-converged rigorous GLE", str(n_rej_nonconv)])
         if n_rej_jagged:
             rows.append(["  — jagged low-FOS artifact", str(n_rej_jagged)])
+    # Trial surfaces the method has no solution on, by family and method
+    # (GM-140 step 2): not scored, and nothing stood in for the method.
+    for rec in getattr(search, "no_solution", None) or []:
+        rows.append([
+            f"Trial surfaces not scored, no solution "
+            f"({rec['family']}, {rec['method']})",
+            str(rec["n"]) + (f" ({rec['no_driving']} with no net driving "
+                             f"moment or force)" if rec.get("no_driving")
+                             else "")])
     # Scored surfaces left out for m_alpha < 0.2 on a slice (GM-127)
     n_rej_ma = getattr(search, "n_rejected_m_alpha", 0)
     if n_rej_ma:
@@ -892,6 +901,15 @@ def _probabilistic_section(analysis):
             ["β_LN (lognormal fit)", f"{mc.beta_lognormal:.2f}"],
             ["pf (lognormal fit)", f"{mc.pf_lognormal:.2%}"],
         ]
+        if getattr(mc, "n_no_solution", 0):
+            # realizations without a solution: counted, never a sample
+            # (GM-140 step 2; the module's own rule)
+            mc_rows.append([
+                "Realizations with no solution (left out)",
+                f"{mc.n_no_solution} of {mc.n + mc.n_no_solution}"])
+            mc_rows.append([
+                "P(FOS < 1), none / all of them counted as failures",
+                f"{mc.pf_lower:.2%} / {mc.pf_upper:.2%}"])
         if mc.seed is not None:
             mc_rows.append(["Random seed", str(mc.seed)])
         items.append(TableData(
