@@ -72,13 +72,16 @@
         ]
        },
        {
+        "class": "LookupReport"
+       },
+       {
         "class": "OutputLimitGuard"
        }
       ],
       "other_arguments": [],
       "subagents": [
        {
-        "description": "6ee4188a4e519b98",
+        "description": "0f3dd8765261b9f3",
         "middleware": [
          {
           "class": "ModelCallBudgetMiddleware",
@@ -129,13 +132,14 @@
          }
         ],
         "name": "references",
-        "system_prompt": "cafd8f2dc17535a2",
+        "system_prompt": "11649f412a5ea925",
         "tool_order": [
          "list_agents",
          "list_methods",
          "describe_method",
          "call_agent",
          "read_reference_figure",
+         "read_reference_table",
          "calculate",
          "record_feedback"
         ],
@@ -145,8 +149,8 @@
           "description": "27b0304d9d7dd690"
          },
          "call_agent": {
-          "args": "5bf326e50affd832",
-          "description": "a3c45983c2070af0"
+          "args": "b48f8177ee3c92fb",
+          "description": "f5392db875034283"
          },
          "describe_method": {
           "args": "d69ec7c20ff033aa",
@@ -161,8 +165,12 @@
           "description": "4bf41a9b372e5f12"
          },
          "read_reference_figure": {
-          "args": "0072a67ff0ecbd0f",
-          "description": "9cd9290f04110375"
+          "args": "829597cd62930f11",
+          "description": "669146ab88b9ce26"
+         },
+         "read_reference_table": {
+          "args": "52672a82d3ac65c7",
+          "description": "45ad1979fd9a0729"
          },
          "record_feedback": {
           "args": "42af7e94a16912e9",
@@ -217,7 +225,7 @@
          }
         ],
         "name": "reviewer",
-        "system_prompt": "195594fc21772abf",
+        "system_prompt": "b27ab1c83ad2dec4",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -227,8 +235,8 @@
         ],
         "tools": {
          "call_agent": {
-          "args": "5bf326e50affd832",
-          "description": "a3c45983c2070af0"
+          "args": "b48f8177ee3c92fb",
+          "description": "f5392db875034283"
          },
          "describe_method": {
           "args": "d69ec7c20ff033aa",
@@ -516,8 +524,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "7a1a322c643b1897",
-      "system_prompt_chars": 26465,
+      "system_prompt": "fc06942fcf85aff4",
+      "system_prompt_chars": 27202,
       "tool_order": [
        "list_agents",
        "list_methods",
@@ -532,6 +540,7 @@
        "render_region",
        "kept_readings",
        "read_reference_figure",
+       "read_reference_table",
        "view_worked_example_source",
        "save_file",
        "write_docx",
@@ -595,8 +604,12 @@
         "description": "cdffb03f6cc25eea"
        },
        "read_reference_figure": {
-        "args": "0072a67ff0ecbd0f",
-        "description": "9cd9290f04110375"
+        "args": "829597cd62930f11",
+        "description": "669146ab88b9ce26"
+       },
+       "read_reference_table": {
+        "args": "52672a82d3ac65c7",
+        "description": "45ad1979fd9a0729"
        },
        "read_text_file": {
         "args": "38bb764f5dde0d41",
