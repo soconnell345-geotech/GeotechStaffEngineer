@@ -237,10 +237,12 @@ def test_v043_clay_with_the_printed_crack_rule():
     g.tension_crack_depth_basis = "rankine"
     g.tension_crack_water_depth = 99.0          # full
     res = analyze_slope(g, xc=xc, yc=yc, radius=r, method="spencer")
-    # GM-140 step 4: 1.041 (no crack) -> 0.964; printed 0.975 (Slide2 #39, V-043,
-    # clay fill, no reinforcement), -1.1 % where it was +6.8 %
-    assert res.FOS == pytest.approx(0.964, abs=0.005)
-    assert res.FOS == pytest.approx(0.975, rel=0.02)
+    # GM-140 step 4: 1.041 (no crack) -> 0.964; printed 0.975 (Slide2
+    # Verification #39, Table 39.2 "Circular - Clay embankment with no
+    # reinforcement", manual pp. 147-150), -1.1 % where it was +6.8 %. The
+    # crack is asked for, so the step 4 review's F1 does not move it.
+    assert res.FOS == pytest.approx(0.964, abs=0.005)    # module's own
+    assert res.FOS == pytest.approx(0.975, rel=0.02)     # the print
     assert res.tension_crack["depth_basis"] == "rankine"
     assert res.tension_crack["depth_m"] == pytest.approx(2.14, abs=0.02)
 

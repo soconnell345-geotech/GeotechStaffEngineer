@@ -37,7 +37,9 @@ from slope_stability.solution import solve_method, check_method
 from slope_stability.results import SearchResult, SlopeStabilityResult
 
 
-from slope_stability.cracks import counts_reverse_discards
+from slope_stability.cracks import (
+    counts_reverse_discards, CrackRuleRefused,
+    count_discard as _count_crack_refusal)
 
 _FOS_MAX = 999.9
 # The differential evolution's score for a surface left out for m_alpha
@@ -1021,6 +1023,11 @@ def _compute_fos(geom: SlopeGeometry,
             _count_m_alpha_refusal()            # Slide2's -112 (GM-127)
             return _FOS_MAX
         return fos
+    except CrackRuleRefused as exc:
+        # a given crack the crack rule refuses (GM-140 step 4's review,
+        # D1/F1), found when the slices are cut: refused, and counted
+        _count_crack_refusal(slip, exc.outcome)
+        return _FOS_MAX
     except GroundCrossingError:
         # not one sliding mass (GM-122): refused, and counted
         _count_ground_refusal()

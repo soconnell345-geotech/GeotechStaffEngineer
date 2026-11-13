@@ -251,8 +251,6 @@ def test_a_given_depth_and_a_basis_are_not_mixed():
         _geom(tension_crack_depth=2.0, tension_crack_depth_basis="rankine")
     with pytest.raises(ValueError, match="tension_crack_depth_basis"):
         _geom(tension_crack_depth_basis="craig")
-    with pytest.raises(ValueError, match="reverse_curvature_crack_basis"):
-        _geom(reverse_curvature_crack_basis="given")
 
 
 def test_slices_are_not_cut_on_a_silent_basis():
@@ -307,13 +305,15 @@ _DEEP = dict(xc=20.0, yc=5.0, radius=12.5)
 
 
 def test_shallow_overhang_is_closed_at_the_printed_depth():
-    """OWN-103 with EM C-10c, p. C-36: a reverse-curvature circle is closed
-    by a vertical crack of the printed depth. The centre is 0.5 m below
-    the crest; Rankine's depth with the developed strengths is deeper, so
-    the circle is closed there, at 2 (c / F) / gamma, not at the centre's
-    level."""
-    r = analyze_slope(_geom(), method="bishop", include_slice_data=True,
-                      **_SHALLOW)
+    """OWN-103 with EM C-10c, p. C-36: with a crack asked for (here
+    Rankine's), a reverse-curvature circle whose overhang lies within the
+    crack's depth is closed by that crack. The centre is 0.5 m below the
+    crest; Rankine's depth with the developed strengths is deeper, so the
+    circle is closed there, at 2 (c / F) / gamma, not at the centre's
+    level. The crack is reported where the slices end (the step 4 review's
+    D3)."""
+    r = analyze_slope(_geom(tension_crack_depth_basis="rankine"),
+                      method="bishop", include_slice_data=True, **_SHALLOW)
     t = r.tension_crack
     assert t["reverse_curvature"] is True
     assert t["overhang_depth_m"] == pytest.approx(0.5, abs=1e-6)
@@ -324,6 +324,11 @@ def test_shallow_overhang_is_closed_at_the_printed_depth():
     # the mass ends where the arc reaches the bottom of the crack
     x_crack = 20.0 - math.sqrt(14.0 ** 2 - (9.5 - t["base_z_m"]) ** 2)
     assert r.slice_data[0].x_mid > x_crack
+    assert t["x_m"] == pytest.approx(x_crack, abs=1e-3)
+    first = r.slice_data[0]
+    assert first.x_mid - 0.5 * first.width == pytest.approx(x_crack,
+                                                            abs=1e-3)
+    assert t["ground_z_m"] == pytest.approx(10.0)
     assert "reverse-curvature" in " ".join(r.warnings)
 
 
@@ -332,12 +337,14 @@ def test_deep_overhang_is_discarded_with_the_reason():
     is discarded. The centre is 5 m below the crest and Rankine's depth is
     under 5 m: no factor of safety, and the error says both depths."""
     with pytest.raises(cracks.ReverseCurvatureDiscarded) as exc:
-        analyze_slope(_geom(), method="bishop", **_DEEP)
+        analyze_slope(_geom(tension_crack_depth_basis="rankine"),
+                      method="bishop", **_DEEP)
     msg = str(exc.value)
     assert "5.00 m below the ground" in msg and "Eq. C-36" in msg
     out = exc.value.outcome
     assert out.discarded and out.overhang == pytest.approx(5.0, abs=1e-6)
     assert out.depth < 5.0
+    assert out.refusal == cracks.DEEPER_THAN_CRACK
     # 'discard' discards the shallow one too
     with pytest.raises(cracks.ReverseCurvatureDiscarded, match="as asked"):
         analyze_slope(_geom(reverse_curvature="discard"), **_SHALLOW)
@@ -381,10 +388,11 @@ def _steep():
 
 @pytest.mark.parametrize("method", ["bishop", "spencer"])
 def test_search_counts_and_locates_the_circles_it_discards(method):
-    """OWN-103: the circles discarded are counted and located in the
-    result; the governing circle, when it is a reverse-curvature circle,
-    is closed at the printed depth; 'discard all' is the stated option and
-    reads no lower."""
+    """F1 (the orchestrator's ruling on the step 4 review): with no crack
+    asked for, every reverse-curvature circle is discarded, counted under
+    its own reason and located; no crack appears in the result, and the
+    choices say that naming a crack admits those within its depth.
+    'discard all' is the stated option and reads the same here."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         res = search_critical_surface(SlopeGeometry(**_steep()),
@@ -393,37 +401,191 @@ def test_search_counts_and_locates_the_circles_it_discards(method):
             SlopeGeometry(reverse_curvature="discard", **_steep()),
             method=method)
     assert res.n_discarded_reverse_curvature > 0
-    where = res.reverse_curvature_discarded
-    assert where["n"] == res.n_discarded_reverse_curvature
-    assert where["x_end_range_m"][0] >= 10.0            # above the toe
-    first = where["first"][0]
-    assert first["overhang_depth_m"] > first["crack_depth_m"] - 1e-6
-    assert res.to_dict()["reverse_curvature_discarded"]["n"] == where["n"]
-    what = {c["what"]: c for c in res.choices}
-    assert "reverse-curvature circles" in what
-    assert "C-10c" in what["reverse-curvature circles"]["basis"]
-    crack = res.critical.tension_crack
-    if crack and crack.get("reverse_curvature"):
-        assert crack["depth_m"] >= crack["overhang_depth_m"] - 1e-6
-        assert any("reverse-curvature" in w for w in res.warnings)
-    assert all_out.n_discarded_reverse_curvature >= \
+    where = res.crack_refused[cracks.NO_CRACK_ASKED]
+    assert set(res.crack_refused) <= set(cracks.REVERSE_REFUSALS)
+    assert sum(v["n"] for v in res.crack_refused.values()) == \
         res.n_discarded_reverse_curvature
-    assert all_out.critical.FOS >= res.critical.FOS - 1e-6
+    assert where["x_end_range_m"][0] >= 10.0            # above the toe
+    assert where["first"][0]["overhang_depth_m"] > 0
+    assert "naming a crack" in where["what"]
+    assert res.to_dict()["crack_refused"][cracks.NO_CRACK_ASKED]["n"] == \
+        where["n"]
+    what = {c["what"]: c for c in res.choices}
+    rc = what["reverse-curvature circles"]
+    assert f"({res.n_discarded_reverse_curvature} discarded)" in \
+        rc["chosen"]
+    assert "no tension crack was asked for" in rc["chosen"]
+    assert "naming a crack admits" in rc["basis"]
+    assert "tension crack" not in what
+    crit = res.critical
+    assert crit.tension_crack is None and crit.tension_crack_depth == 0
+    assert not any(w.startswith("Tension crack")
+                   for w in res.warnings + crit.warnings)
+    assert set(all_out.crack_refused) == {cracks.DISCARD_ASKED}
+    assert all_out.n_discarded_reverse_curvature == \
+        res.n_discarded_reverse_curvature
+    assert all_out.critical.FOS == pytest.approx(res.critical.FOS, abs=1e-9)
     assert all_out.critical.tension_crack is None
 
 
 def test_scan_option_for_a_reverse_curvature_circle():
-    """The scan as the option (EM C-10c(1)): the shallow circle is closed
-    at the depth of minimum F, the first minimum going down."""
-    r = analyze_slope(_geom(reverse_curvature_crack_basis="min_fos"),
+    """The scan as the crack asked for (EM C-10c(1)): the shallow circle is
+    closed at the depth of minimum F, the first minimum going down."""
+    r = analyze_slope(_geom(tension_crack_depth_basis="min_fos"),
                       **_SHALLOW)
-    rk = analyze_slope(_geom(), **_SHALLOW)
+    rk = analyze_slope(_geom(tension_crack_depth_basis="rankine"),
+                       **_SHALLOW)
     assert r.tension_crack["depth_basis"] == "min_fos"
     assert r.tension_crack["depth_m"] > r.tension_crack["overhang_depth_m"]
     scan = r.tension_crack["scan"]
     assert r.FOS == pytest.approx(min(row["FOS"] for row in scan), abs=1e-4)
     assert scan[-1]["FOS"] > r.FOS          # it rises past the minimum
     assert r.FOS <= rk.FOS + 1e-6
+
+
+# ---------------------------------------------------------------------------
+# The crack is a condition of the analysis (the step 4 review's F1)
+# ---------------------------------------------------------------------------
+
+def _f1_clay(**kw):
+    """The reviewer's made-up clay: a 2V:1H face 8 m high, cu 30 kPa,
+    gamma 18 kN/m3."""
+    lay = SlopeSoilLayer("clay", top_elevation=8.0, bottom_elevation=-10.0,
+                         gamma=18.0, cu=30.0, analysis_mode="undrained")
+    return SlopeGeometry(surface_points=[(0.0, 0.0), (10.0, 0.0),
+                                         (14.0, 8.0), (40.0, 8.0)],
+                         soil_layers=[lay], **kw)
+
+
+def _through_toe(yc, xc=12.0):
+    return dict(xc=xc, yc=yc, radius=math.hypot(xc - 10.0, yc))
+
+
+@pytest.mark.parametrize("kw", [dict(tension_crack_depth=3.0),
+                                dict(tension_crack_depth_basis="rankine"),
+                                dict(tension_crack_depth_basis="min_fos")],
+                         ids=["given", "rankine", "min_fos"])
+def test_f_is_continuous_across_the_crests_level_with_a_crack(kw):
+    """With a crack asked for, every surface ends at the crack's bottom,
+    and a circle whose centre passes the crest's level does not change
+    its crack: two toe circles with their centres 2 cm above and 2 cm
+    below the crest's level read within 1 %; the lower one is a
+    reverse-curvature circle closed by the same crack."""
+    up = analyze_slope(_f1_clay(**kw), method="bishop", **_through_toe(8.02))
+    low = analyze_slope(_f1_clay(**kw), method="bishop",
+                        **_through_toe(7.98))
+    assert low.FOS == pytest.approx(up.FOS, rel=0.01)
+    assert up.tension_crack and not up.tension_crack.get("reverse_curvature")
+    assert low.tension_crack["reverse_curvature"] is True
+    assert low.tension_crack["depth_basis"] == up.tension_crack["depth_basis"]
+    assert low.tension_crack["depth_m"] == pytest.approx(
+        up.tension_crack["depth_m"], rel=0.01)
+
+
+def test_no_crack_asked_the_reverse_circle_is_no_surface():
+    """With no crack asked for, the circle 2 cm above the crest's level has
+    its factor of safety and no crack; the one 2 cm below is a
+    reverse-curvature circle, not an admissible surface: refused, and the
+    error says that naming a crack admits it. Before the fix it was given
+    a 3.57 m Rankine crack and read 18 % lower than its neighbour."""
+    up = analyze_slope(_f1_clay(), method="bishop", **_through_toe(8.02))
+    assert up.FOS > 1.0 and up.tension_crack is None
+    assert up.tension_crack_depth == 0
+    assert not any("ension crack" in w for w in up.warnings)
+    with pytest.raises(cracks.ReverseCurvatureDiscarded) as exc:
+        analyze_slope(_f1_clay(), method="bishop", **_through_toe(7.98))
+    assert exc.value.outcome.refusal == cracks.NO_CRACK_ASKED
+    assert "naming a crack" in str(exc.value)
+    assert "0.02 m below the ground" in str(exc.value)
+
+
+def test_no_crack_search_on_the_reviewers_clay_counts_the_discards():
+    """The default search on that clay, no crack asked for: the
+    reverse-curvature circles are discarded and counted under their
+    reason, and no crack appears in the result."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        res = search_critical_surface(_f1_clay(), method="bishop")
+    assert res.crack_refused[cracks.NO_CRACK_ASKED]["n"] > 0
+    assert res.critical.tension_crack is None
+    assert res.critical.tension_crack_depth == 0
+    assert not any("ension crack" in w for w in res.warnings)
+
+
+# ---------------------------------------------------------------------------
+# A surface wholly within the cracked depth (D1); counts by reason (D5)
+# ---------------------------------------------------------------------------
+
+def test_a_surface_wholly_within_the_crack_is_no_surface():
+    """D1: a surface that nowhere passes below the crack's depth, measured
+    below the ground above it, lies wholly within the cracked depth: no
+    slip surface, whatever the crack model. A small circle on the face, at
+    most about 1.3 m below the ground, with a 2 m crack given."""
+    small = dict(xc=21.0, yc=8.0, radius=4.0)
+    slip = CircularSlipSurface(**small)
+    g = _geom(tension_crack_depth=2.0, tension_crack_water_depth=2.0)
+    d_max = cracks.depth_below_ground(g, slip, *slip.find_entry_exit(g))
+    assert 0.5 < d_max < 2.0
+    for model in ("truncation", "strength"):
+        with pytest.raises(cracks.CrackRuleRefused) as exc:
+            analyze_slope(_geom(tension_crack_depth=2.0,
+                                tension_crack_water_depth=2.0,
+                                tension_crack_model=model), **small)
+        assert exc.value.outcome.refusal == cracks.WITHIN_CRACK
+        assert "wholly within the cracked depth" in str(exc.value)
+    # a crack shallower than the surface's depth keeps it
+    r = analyze_slope(_geom(tension_crack_depth=0.5 * d_max), **small)
+    assert r.FOS > 0 and r.tension_crack["depth_m"] == pytest.approx(
+        0.5 * d_max, abs=1e-3)
+
+
+def test_depth_below_ground_by_hand():
+    """The greatest depth of a circle below straight ground: where the arc
+    runs parallel to the ground, R - (perpendicular distance from the
+    centre to the ground line), on a 2H:1V face."""
+    g = _geom()
+    slip = CircularSlipSurface(xc=21.0, yc=8.0, radius=4.0)
+    # the face z = 10 - (x - 10) / 2 -> x + 2 z - 30 = 0
+    dist = abs(21.0 + 2 * 8.0 - 30.0) / math.sqrt(5.0)
+    vertical = (4.0 - dist) * math.sqrt(5.0) / 2.0   # depth, not distance
+    assert cracks.depth_below_ground(g, slip, *slip.find_entry_exit(g)) \
+        == pytest.approx(vertical, rel=1e-9)
+
+
+def test_refusals_are_counted_by_reason():
+    """D5: each reason the crack rule refuses a surface is counted on its
+    own, in the result and in the choices, and only the reverse-curvature
+    reasons count as reverse-curvature discards."""
+    from slope_stability.results import SearchResult
+
+    plan = cracks.CrackPlan(side="entry", x_end=5.0, z_ground=10.0,
+                            basis="given")
+
+    @cracks.counts_reverse_discards
+    def run():
+        for key, n in ((cracks.WITHIN_CRACK, 3), (cracks.SCAN_NO_MINIMUM, 1),
+                       (cracks.DEEPER_THAN_CRACK, 2),
+                       (cracks.NO_CRACK_ASKED, 4)):
+            for _ in range(n):
+                cracks.count_discard(
+                    None, cracks._discarded(_geom(), plan, refusal=key,
+                                            reason=key))
+        res = SearchResult()
+        res.choices = cracks.crack_choices(_geom(), cracks.discards_so_far())
+        return res
+
+    res = run()
+    assert {k: v["n"] for k, v in res.crack_refused.items()} == {
+        cracks.WITHIN_CRACK: 3, cracks.SCAN_NO_MINIMUM: 1,
+        cracks.DEEPER_THAN_CRACK: 2, cracks.NO_CRACK_ASKED: 4}
+    assert res.n_discarded_reverse_curvature == 6
+    for k, v in res.crack_refused.items():
+        assert v["what"] == cracks.REFUSAL_TEXT[k]
+    what = {c["what"]: c for c in res.choices}
+    assert "(6 discarded)" in what["reverse-curvature circles"]["chosen"]
+    other = what["surfaces the crack rule refused"]["chosen"]
+    assert other.startswith("3 surfaces that nowhere pass below")
+    assert "1 surfaces on which the scan" in other
 
 
 # ---------------------------------------------------------------------------

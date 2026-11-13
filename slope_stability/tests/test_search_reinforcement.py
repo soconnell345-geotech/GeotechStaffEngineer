@@ -130,11 +130,13 @@ def test_reinforced_rigorous_nonconvergence_is_rejected():
     from slope_stability.methods import spencer_fos
     from slope_stability.solution import NoSolution
     from slope_stability.slices import build_slices
-    # the circle's centre is 5.89 ft below the crest: closed here by a
-    # given 5.89 ft crack (GM-140 step 4; Rankine's is shallower, and by
-    # default the circle is discarded)
+    # The circle's centre is 5.89 ft below the crest: a reverse-curvature
+    # circle, no surface without a crack asked for and admitted only by a
+    # crack at least as deep as its overhang (GM-140 step 4 and its
+    # review's F1). This test is about Spencer's solution, not the crack:
+    # a 6 ft crack is given so that the circle exists.
     g = _slide85()
-    g.tension_crack_depth = 5.89
+    g.tension_crack_depth = _CRACK_85
     slip = CircularSlipSurface(15.012, 24.112, 14.112)
     forces = trial_reinforcement(g, slip)
     with warnings.catch_warnings():
@@ -228,6 +230,11 @@ def test_rapid_drawdown_search_runs_the_families():
 _SLIDE2_85_CIRCLE = dict(xc=15.446, yc=37.624, radius=27.594)
 
 
+#: A given crack deeper than the #85 toe circle's 5.89 ft overhang, so
+#: that tests about other things can use that circle (step 4 review, F1).
+_CRACK_85 = 6.0
+
+
 def _slide85c(convention="active", **geom_kw):
     """`_slide85` with the support's convention and geometry options."""
     return SlopeGeometry(
@@ -298,30 +305,17 @@ def test_slide85_passive_bishop_matches_published():
     assert passive == pytest.approx(1.32, rel=0.01)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "GM-140 step 4 (OWN-103): the default Bishop search governs on a "
-    "reverse-curvature toe circle (centre 0.89 ft below the crest) closed "
-    "by Rankine's crack with the developed strengths (EM 1110-2-1902 "
-    "Eq. C-36, 5.25 ft): 1.372 -> 1.361, away from the printed 1.531 "
-    "(Slide2; D&W 1.51), -11.1 %. Passive: 1.254 -> 1.206 against 1.324. "
-    "With every such circle discarded 1.508 / 1.316 (the test below). "
-    "How much of the support Bishop counts on such a circle is step 8's. "
-    "module_work/gm140/STEP4_CHECK.md"))
-def test_slide85_bishop_search_against_the_printed_answer():
-    res = search_critical_surface(_slide85c(), method="bishop")
-    assert res.critical.FOS == pytest.approx(1.531, rel=0.02)
-
-
 def test_slide85_bishop_search_reverse_curvature_and_short_arm():
-    """The default Bishop search reads 1.361 on a reverse-curvature toe
-    circle (centre 0.89 ft below the crest), closed by Rankine's crack with
-    the developed strengths (EM 1110-2-1902 Eq. C-36: 5.25 ft at its own
-    F), where before GM-140 step 4 it read 1.372 on a circle closed at its
-    centre's level, 5.89 ft down: that one is now discarded, its overhang
-    deeper than its crack (5.21 ft). The result says the crack, counts and
-    locates the circles discarded, and says how little of the support
-    Bishop counts. The printed answers are 1.531 (Slide2) and 1.51 (D&W):
-    the test above.
+    """#85 has no tension crack, so no crack is asked for: every
+    reverse-curvature circle is discarded and counted (GM-140 step 4, the
+    orchestrator's ruling on its review's F1), and the default Bishop
+    search reads what 'discard all' reads. Before step 4 it read 1.372 on
+    a toe circle closed by a crack from its centre's level, which no print
+    gives; as first built, 1.361 on one closed by Rankine's crack that
+    nobody asked for. The value against the printed 1.531 (Slide2) and
+    1.51 (D&W) is reported in module_work/gm140/STEP4_CHECK.md, with the
+    discarded count beside it, not pinned (the step's brief sets no
+    tolerance on #85).
 
     Discarding
     reverse-curvature circles ('discard') gives 1.511 active /
@@ -334,19 +328,20 @@ def test_slide85_bishop_search_reverse_curvature_and_short_arm():
     (``m_alpha_rule='every_slice'``). By default slices with phi' = 0 are
     not checked (GM-127): 1.508 / 1.316 at 30 slices, 1.512 / 1.318 at 240."""
     res = search_critical_surface(_slide85c(), method="bishop")
-    crack = res.critical.tension_crack
-    assert crack["reverse_curvature"] and crack["depth_basis"] == "rankine"
-    assert crack["depth_m"] == pytest.approx(
-        2.0 * 350.0 / (98.0 * res.critical.FOS), abs=0.01)
-    assert crack["depth_m"] > crack["overhang_depth_m"]
-    assert res.n_discarded_reverse_curvature > 0
-    text = " ".join(res.warnings)
-    assert "reverse-curvature" in text and "Eq. C-36" in text
-    assert "of their force counts" in text
+    assert res.critical.tension_crack is None
+    assert res.critical.tension_crack_depth == 0
+    assert res.crack_refused["reverse_curvature_no_crack"]["n"] == \
+        res.n_discarded_reverse_curvature > 0
+    assert not any("ension crack" in w for w in res.warnings)
+    all_out = search_critical_surface(
+        _slide85c(reverse_curvature="discard"), method="bishop")
+    assert res.critical.FOS == pytest.approx(all_out.critical.FOS, abs=1e-9)
     assert res.n_rejected_m_alpha == 0
+    # module's own values (before GM-140 step 4 as well); the printed
+    # D&W 1.51 / 1.32 and Slide2 1.531 / 1.324 are beside them
     for convention, rule, fos, fine_fos in (
-            ("active", "every_slice", 1.511, 1.51),     # D&W 1.51
-            ("passive", "every_slice", 1.316, 1.32),    # D&W 1.32
+            ("active", "every_slice", 1.511, 1.51),
+            ("passive", "every_slice", 1.316, 1.32),
             ("active", "frictional", 1.508, 1.512),
             ("passive", "frictional", 1.316, 1.318)):
         g = _slide85c(convention, reverse_curvature="discard")
@@ -379,9 +374,12 @@ def test_slide85_toe_family_rescoring_finds_spencer_circles():
     from slope_stability.search_supplements import search_toe_circles
     out = search_toe_circles(_slide85c(), method="spencer")
     assert out["FOS"] < _FOS_MAX
-    # GM-140 step 4: 1.564 -> 1.627; printed GLE 1.575, Spencer 1.884,
-    # D&W 1.51 (Slide2 #85): inside the published spread as before
-    assert out["FOS"] == pytest.approx(1.627, abs=0.01)
+    # GM-140 step 4 as first built 1.627 (its reverse-curvature circles
+    # closed by Rankine's crack nobody asked for); with no crack asked for
+    # they are discarded (the step 4 review's F1) and it reads 1.564 again
+    # (module's own); printed GLE 1.575, Spencer 1.884, D&W 1.51 (Slide2
+    # #85): inside the published spread
+    assert out["FOS"] == pytest.approx(1.564, abs=0.01)
     assert 1.51 <= out["FOS"] <= 1.884               # the published spread
 
 
@@ -501,7 +499,9 @@ def test_no_solution_with_supports_reports_no_fos(method, label):
     statement no longer speaks of a solver that is gone.)"""
     with warnings.catch_warnings():
         warnings.simplefilter("error")          # no Python warning at all
-        r = analyze_slope(_slide85c(tension_crack_depth=5.89),
+        # a reverse-curvature circle: admitted by a crack deeper than
+        # its overhang (_CRACK_85); the test is about the solution
+        r = analyze_slope(_slide85c(tension_crack_depth=_CRACK_85),
                           method=method, **_TOE_85)
     assert r.FOS is None and r.is_stable is None
     assert r.method == label
@@ -519,12 +519,13 @@ def test_no_solution_with_supports_reports_no_fos(method, label):
 
 
 def test_no_solution_in_compare_methods_is_left_out():
-    """compare_methods on the same circle: Bishop solves (1.372); Spencer and
-    Morgenstern-Price have no solution, so their fields stay None (before:
-    the unreinforced legacy values), named in methods_without_solution."""
-    r = analyze_slope(_slide85c(tension_crack_depth=5.89), method="bishop",
-                      compare_methods=True, **_TOE_85)
-    assert r.FOS == pytest.approx(1.372, abs=0.002) and r.method_solved
+    """compare_methods on the same circle (admitted by a crack deeper than
+    its overhang, _CRACK_85): Bishop solves; Spencer and Morgenstern-Price
+    have no solution, so their fields stay None (before: the unreinforced
+    legacy values), named in methods_without_solution."""
+    r = analyze_slope(_slide85c(tension_crack_depth=_CRACK_85),
+                      method="bishop", compare_methods=True, **_TOE_85)
+    assert r.FOS > 1.0 and r.method_solved
     assert r.FOS_spencer is None and r.FOS_morgenstern_price is None
     assert r.methods_without_solution == ["Spencer", "Morgenstern-Price"]
     assert sum("(method comparison) finds no equilibrium solution" in w
@@ -554,28 +555,34 @@ def test_no_supports_and_no_solution_is_no_number():
 
 
 def test_single_surface_reverse_curvature_and_short_arm():
-    """The #85 toe circle's centre is 5.89 ft below the crest. Rankine's
-    crack with the developed strengths (EM 1110-2-1902 Eq. C-36) is 5.21 ft
-    at Bishop's F, shallower than the overhang, so the circle has no factor
-    of safety (GM-140 step 4, OWN-103), with or without 'discard'. With a
-    5.89 ft crack given it is closed there (Bishop 1.372, as it read when
-    every such circle was closed at its centre's level), and Bishop counts
-    29 % of the support; Spencer has no solution there."""
+    """The #85 toe circle's centre is 5.89 ft below the crest. With no
+    crack asked for it is no surface (GM-140 step 4's review, F1); with
+    Rankine's crack asked for (EM 1110-2-1902 Eq. C-36: 5.21 ft at Bishop's
+    F, shallower than the overhang) it is discarded (OWN-103); 'discard'
+    discards it. With a crack given deeper than its overhang (_CRACK_85)
+    it is closed by that crack, and Bishop counts 29 % of the support;
+    Spencer has no solution there."""
+    from slope_stability import cracks
     from slope_stability.cracks import ReverseCurvatureDiscarded
     with pytest.raises(ReverseCurvatureDiscarded) as exc:
         analyze_slope(_slide85c(), method="bishop", **_TOE_85)
+    assert exc.value.outcome.refusal == cracks.NO_CRACK_ASKED
     assert "5.89 m below the ground" in str(exc.value)
+    with pytest.raises(ReverseCurvatureDiscarded) as exc:
+        analyze_slope(_slide85c(tension_crack_depth_basis="rankine"),
+                      method="bishop", **_TOE_85)
+    assert exc.value.outcome.refusal == cracks.DEEPER_THAN_CRACK
     assert "Eq. C-36" in str(exc.value) and "5.21 m" in str(exc.value)
     with pytest.raises(ReverseCurvatureDiscarded, match="as asked"):
         analyze_slope(_slide85c(reverse_curvature="discard"),
                       method="bishop", **_TOE_85)
-    r = analyze_slope(_slide85c(tension_crack_depth=5.89), method="bishop",
-                      **_TOE_85)
-    assert r.FOS == pytest.approx(1.372, abs=0.002)
+    r = analyze_slope(_slide85c(tension_crack_depth=_CRACK_85),
+                      method="bishop", **_TOE_85)
+    assert r.FOS > 1.0
     assert r.method_solved and r.method_used == "" and r.produced_by == \
         "Bishop"
     rc, arm = r.warnings
-    assert "reverse-curvature" in rc and "5.89 m deep" in rc
+    assert "reverse-curvature" in rc and "6.00 m deep" in rc
     assert r.tension_crack["overhang_depth_m"] == pytest.approx(5.888,
                                                                 abs=0.01)
     assert "crossing this circle" in arm

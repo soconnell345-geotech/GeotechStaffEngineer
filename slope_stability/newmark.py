@@ -259,8 +259,9 @@ def yield_acceleration(geom: SlopeGeometry,
         _, crack = cracks.solve_with_crack(g_ref, slip, _static,
                                            fos_for_depth=1.0)
         if crack is not None and crack.discarded:
-            raise cracks.ReverseCurvatureDiscarded(
-                "No yield coefficient: " + crack.reason + ".", crack)
+            err = cracks.refusal_error(crack)
+            raise type(err)("No yield coefficient: " + crack.reason + ".",
+                            crack)
         g_ref = cracks.geometry_of(g_ref, crack)
     ref_slices = build_slices(g_ref, slip, n_slices)
     soil_weights = [s.seismic_force for s in ref_slices]

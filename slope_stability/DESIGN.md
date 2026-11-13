@@ -136,7 +136,23 @@ vertical boundary: 0.5 gamma_w z_w^2 at z_w / 3 above the crack's bottom; a
 slip surface where the ground is higher (EM 2-2f(3): near the crest),
 whichever way the slope faces (`cracks.crest_side`; ends at one level:
 low x). `'entry'` / `'exit'` give the end. The crack's bottom is the ground
-at that end of the surface less the depth.
+at that end of the surface less the depth. The crack stands where the
+surface reaches that bottom, which is where the slices end; the result
+reports it there (`tension_crack['x_m']`, the ground `ground_z_m` and the
+bottom `base_z_m` at that x) and the plot draws it there.
+
+**A surface wholly within the cracked depth.** A surface that nowhere passes
+below the crack's depth, measured below the ground above it
+(`cracks.depth_below_ground`), has no vertical boundary at the crack's
+bottom (EM 2-2f(3); C-10c): it is no slip surface. A search refuses and
+counts it (`crack_refused['within_cracked_depth']`); given to
+`analyze_slope` it raises `cracks.CrackRuleRefused` saying so. Without this,
+a search with a deep given crack settled on slivers on the face held wholly
+within the crack (ACADS 1(b) with its 3.81 m water-filled crack on Slide2's
+own centre grid: F 0.052 on a 0.6 m sliver; so did the module before
+step 4, 0.050 with the old default and 0.052 with the surface ended at the
+crack). A Rankine depth that would reach below the deepest point of the
+surface is solved again from F with no crack; the scan stops at that depth.
 
 **How deep** (`tension_crack_depth_basis`):
 
@@ -168,21 +184,36 @@ at that end of the surface less the depth.
   2.85 m, F within 0.001: the manual's two ways agree.
 
 **Reverse-curvature circles** (`reverse_curvature`; the owner's call
-OWN-103). A circle whose centre is below the ground at its upper end is cut
-at its vertical tangent, at the centre's level; the arc above would turn back
-over itself. `'tension_crack'` (default): the circle is closed by a vertical
-crack of the printed depth (`reverse_curvature_crack_basis`: `'rankine'`,
-the default, or `'min_fos'`; a given tension crack, when there is one, is
-that crack), and the surface ends at the crack's bottom like any other. A
-circle whose overhang (the centre's depth below the ground) is deeper than
-that crack is discarded. `'discard'` discards every such circle. A circle
-overhanging at its lower end is always discarded: a crack is at the upper
-end (EM 2-2f(3)) and no print closes the other. A search counts the circles
-discarded and locates them (`SearchResult.n_discarded_reverse_curvature`,
-`reverse_curvature_discarded`); a discarded circle given to `analyze_slope`,
-`rapid_drawdown_fos` or `yield_acceleration` raises
-`cracks.ReverseCurvatureDiscarded` with both depths. The crack from the
-centre's level to the ground, which no printed source gives, is removed.
+OWN-103, as the orchestrator refined it on the step 4 review's F1). A circle
+whose centre is below the ground at its upper end would turn back over
+itself above its vertical tangent, at the centre's level. The tension crack
+is a condition of the analysis, set by the engineer and the same on every
+trial surface; a circle's shape never switches it on. `'tension_crack'`
+(default): with a crack asked for (`tension_crack_depth`, or
+`tension_crack_depth_basis` `'rankine'` or `'min_fos'`), such a circle is
+closed by that crack, its surface ending at the crack's bottom like any
+other, where its overhang (the centre's depth below the ground) lies within
+the crack's depth; a circle overhanging deeper is discarded (a crack is
+justified only to the depth the soil can be in tension, C-10c). With no
+crack asked for, every such circle is discarded: it is not an admissible
+surface, and naming a crack admits those within its depth. `'discard'`
+discards every such circle. A circle overhanging at its lower end is always
+discarded: a crack is at the upper end (EM 2-2f(3)) and no print closes the
+other. A search counts the surfaces the crack rule refuses by reason and
+locates them (`SearchResult.crack_refused`: `reverse_curvature_no_crack`,
+`reverse_curvature_deeper_than_crack`, `reverse_curvature_no_crack_at_end`,
+`reverse_curvature_discard_asked`, `within_cracked_depth`,
+`scan_no_minimum`; `n_discarded_reverse_curvature` sums the four
+reverse-curvature reasons), and its `choices` name each; a discarded circle
+given to `analyze_slope`, `rapid_drawdown_fos` or `yield_acceleration`
+raises `cracks.ReverseCurvatureDiscarded` (a `cracks.CrackRuleRefused`) with
+the reason and the depths. The crack from the centre's level to the ground,
+which no printed source gives, is removed. (As first built, step 4 closed a
+reverse-curvature circle with Rankine's crack whenever no crack was given,
+so a circle's shape switched the crack on: the search's minimum then jumped
+where the centre crossed the crest's level, and Slide2 #85 read 1.361 on such
+a circle. The review's F1 removed that; `reverse_curvature_crack_basis` is
+gone.)
 
 **How it is wired.** `cracks.plan_crack` says what a surface's crack needs;
 `cracks.solve_with_crack` hands the caller's solver copies of the geometry
@@ -204,12 +235,18 @@ solved with (`tension_crack`, the depth used, one warning line); a search's
 `choices` say the crack's model, side and depth basis and what was done with
 reverse-curvature circles.
 
-**Measured** (VALIDATION.md B21): ACADS 1(b) 1.603 / 1.599 / 1.600 against
-the printed 1.596 / 1.592 / 1.592; V-043's clay crest 0.964 against 0.975;
-V-054's steep clay slope 2.113 against 2.16. Circles closed by a Rankine
-crack lower the phi = 0 chart cases below Taylor (his chart has no crack):
-the vertical cut 0.752 against 0.851, and Slide2 #85 with its support reads
-Bishop 1.361 against 1.531; those tests are strict xfails with the reason.
+**Measured** (VALIDATION.md B21): ACADS 1(b) 1.603 / 1.599 / 1.600 on
+Slide2's circle and, searched on Slide2's own grid, Bishop 1.590 / Spencer
+1.585, against the printed 1.596 / 1.592 / 1.592; V-031 with its dry crack
+1.417 / 1.422 printed; V-043's clay crest 0.964 against 0.975. With no crack
+asked for, the searches that read a reverse-curvature circle as first built
+read what they read before step 4, the overhanging circles discarded:
+Taylor's 45 deg slope 1.942 against 1.947, V-054's steep clay slope 2.346
+(printed 2.16 for the slope, whose profile ends at the toe), Slide2 #85 with
+its support Bishop 1.508 / passive 1.316 against 1.531 / 1.324 (D&W 1.51 /
+1.32). The vertical cut reads 0.935 against Taylor's 0.851, a strict xfail
+with the reason (before step 4, 0.842 on a circle closed at its centre's
+level; with Rankine's crack asked for, 0.605).
 
 ## Public API
 ```python

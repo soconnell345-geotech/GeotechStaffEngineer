@@ -65,13 +65,22 @@ def test_brute_force_toe_circle_value():
     angle at its midpoint, and the base of the last one, width / cos(a),
     fell short of the arc rising to the vertical (2.378 on 10,240 slices,
     the error falling as one over the square root of the count)."""
-    f = analyze_slope(_toe_geom(), method="bishop", n_slices=40, xc=2.5,
-                      yc=4.0, radius=math.hypot(2.5, 4.0)).FOS
-    # GM-140 step 4: 2.379 -> 2.218; printed 2.16 (Frontiers Earth Sci
-    # 13:1581457; FLAC 2.18), +2.7 % where it was +10.1 %. The circle's
-    # centre is 1 m below the crest: closed by Rankine's crack with the
-    # developed strengths (EM 1110-2-1902 Eq. C-36, 1.80 m), not at the
-    # centre's level.
+    # GM-140 step 4 and its review's F1: the circle's centre is 1 m below
+    # the crest, a reverse-curvature circle. With no crack asked for it is
+    # no admissible surface (before step 4 it was closed by a crack from
+    # its centre's level, 2.379, which no print gives).
+    from slope_stability import cracks
+    circle = dict(xc=2.5, yc=4.0, radius=math.hypot(2.5, 4.0))
+    with pytest.raises(cracks.ReverseCurvatureDiscarded) as exc:
+        analyze_slope(_toe_geom(), method="bishop", n_slices=40, **circle)
+    assert exc.value.outcome.refusal == cracks.NO_CRACK_ASKED
+    # With Rankine's crack asked for (EM 1110-2-1902 Eq. C-36 with the
+    # developed strengths, 1.80 m) it is closed there: 2.218 (module's
+    # own; printed 2.16 for the slope, Frontiers Earth Sci 13:1581457,
+    # FLAC 2.18).
+    g = _toe_geom()
+    g.tension_crack_depth_basis = "rankine"
+    f = analyze_slope(g, method="bishop", n_slices=40, **circle).FOS
     assert f == pytest.approx(2.218, abs=0.002)
 
 
@@ -85,17 +94,20 @@ def test_search_finds_toe_circle():
     slices (2.316), which the search said; now 2.348 on 80 slices."""
     res = search_critical_surface(_toe_geom(), method="bishop", n_slices=40)
     c = res.critical
-    # GM-140 step 4: 2.346 -> 2.113; printed 2.16 (FLAC 2.18), -2.2 %
-    # where it was +8.6 %: a toe circle with its centre just below the
-    # crest, closed by Rankine's crack (Eq. C-36, 1.89 m)
-    assert c.FOS == pytest.approx(2.113, abs=0.005)
-    anchor = analyze_slope(_toe_geom(), method="bishop", n_slices=40, xc=2.5,
-                           yc=4.0, radius=math.hypot(2.5, 4.0)).FOS
-    assert c.FOS < anchor - 0.02             # a lower toe circle than 2.218
+    # GM-140 step 4 and its review's F1: no crack is asked for, so the
+    # reverse-curvature toe circles are discarded and counted; the critical
+    # one has its centre above the crest, as before step 4 (as first built,
+    # 2.113 on a circle closed by Rankine's crack nobody asked for).
+    # Printed 2.16 (FLAC 2.18) for the slope; the profile ends at the toe.
+    assert c.FOS == pytest.approx(2.346, abs=0.005)
+    assert c.yc > 5.0
+    assert c.tension_crack is None
+    assert res.crack_refused["reverse_curvature_no_crack"]["n"] == \
+        res.n_discarded_reverse_curvature > 0
     assert res.governing_surface == TOE_CIRCLE
     assert c.is_circular
     assert c.x_entry == pytest.approx(0.0, abs=0.05)       # through the toe
-    assert c.x_exit == pytest.approx(7.6, abs=0.6)     # 9.3 before step 4
+    assert c.x_exit == pytest.approx(9.3, abs=0.6)
     assert res.candidates[CIRCULAR] == pytest.approx(2.348, abs=0.01)
     assert res.candidates[TOE_CIRCLE] == pytest.approx(c.FOS, abs=1e-4)
     assert any("toe circle governs" in w for w in res.warnings)
@@ -109,8 +121,7 @@ def test_toe_circle_mirrored_slope():
     """Same slope falling toward +x: the same toe circle and FOS."""
     res = search_critical_surface(_toe_geom(mirror=True), method="bishop",
                                   n_slices=40)
-    # GM-140 step 4: 2.346 -> 2.113; printed 2.16, -2.2 % (see above)
-    assert res.critical.FOS == pytest.approx(2.113, abs=0.005)
+    assert res.critical.FOS == pytest.approx(2.346, abs=0.005)
     assert res.governing_surface == TOE_CIRCLE
     assert res.critical.x_exit == pytest.approx(0.0, abs=0.05)
 

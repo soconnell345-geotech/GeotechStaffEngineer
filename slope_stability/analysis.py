@@ -148,9 +148,7 @@ def analyze_slope(geom: SlopeGeometry,
                     m_alpha_rule=m_alpha_rule),
                 fos_of=lambda r: r.FOS, plan=plan)
             if crack_out.discarded:
-                raise cracks.ReverseCurvatureDiscarded(
-                    "No factor of safety: " + crack_out.reason + ".",
-                    crack_out)
+                raise cracks.refusal_error(crack_out)
             cracks.apply_to_result(result, crack_out)
             return result
     if getattr(geom, "_crack_fixed", None) is None:

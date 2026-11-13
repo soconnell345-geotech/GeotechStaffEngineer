@@ -620,19 +620,14 @@ class TestPublishedBenchmarks:
                    (behind + 8 + front, 0)]
         return SlopeGeometry(surface_points=surface, soil_layers=[clay])
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "GM-140 step 4 (OWN-103): a toe circle whose centre is 0.01 m "
-        "below the crest is a reverse-curvature circle and is now closed "
-        "by Rankine's crack with the developed strengths (EM 1110-2-1902 "
-        "Eq. C-36: 3.03 m), so it governs at 1.835 where the base circle "
-        "gave 1.942: away from Taylor's 1.947 (-5.8 %), whose chart has no "
-        "crack. With every such circle discarded the search reads 1.942 "
-        "(-0.3 %). module_work/gm140/STEP4_CHECK.md"))
     def test_taylor_undrained_nc(self):
         """With 4 H of level ground beyond the crest and the toe, the default
-        search finds Taylor's base circle: 1.935 at 30 slices, 0.6 % below
+        search finds Taylor's base circle: 1.942 at 30 slices, 0.3 % below
         the converged 1.947 (the slicing's own bias, as on Duncan Ex 1),
-        tangent to the base, out 1.8 H beyond the toe, no warning."""
+        tangent to the base, out 1.9 H beyond the toe, no warning. No crack
+        is asked for, so the reverse-curvature toe circles are discarded
+        (GM-140 step 4 and its review's F1; as first built, one closed by
+        Rankine's crack governed at 1.835)."""
         result = search_critical_surface(self._taylor_45(32.0, 32.0))
         c = result.critical
         assert result.governing_surface == "circular"
@@ -642,19 +637,14 @@ class TestPublishedBenchmarks:
         assert (c.x_exit - 40.0) / 8.0 == pytest.approx(1.9, abs=0.2)
         assert not result.warnings
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "GM-140 step 4 (OWN-103): the short profile's best circle is a "
-        "reverse-curvature toe circle, now closed by Rankine's crack "
-        "(EM 1110-2-1902 Eq. C-36: 3.03 m): 2.062 -> 1.833, below Taylor's "
-        "1.947, whose chart has no crack. With every such circle discarded "
-        "2.065. module_work/gm140/STEP4_CHECK.md"))
     def test_taylor_short_profile_reads_high_and_warns(self):
         """The profile this test used to draw ends 0.6 H behind the crest and
         1.5 H beyond the toe, short of Taylor's circle: no circle it holds
-        reaches 1.947 (the best, a toe circle closed by a crack, 1.970; a
-        fine grid on the old centre box, 2.04-2.06). The search says the
-        profile's end held it back, with a lower circle past the end, and
-        records that both automatic windows were cut by the model."""
+        reaches 1.947 (2.065, a toe circle centred above the crest; no crack
+        is asked for, so the reverse-curvature ones are discarded, GM-140
+        step 4 and its review's F1). The search says the profile's end held
+        it back, with a lower circle past the end, and records that both
+        automatic windows were cut by the model."""
         result = search_critical_surface(self._taylor_45(5.0, 12.0))
         assert result.critical.FOS > self.TAYLOR_45_D225
         assert any("end of the ground surface" in w for w in result.warnings)

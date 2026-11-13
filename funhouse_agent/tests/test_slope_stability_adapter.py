@@ -778,7 +778,10 @@ class TestV54TensionCrack:
         assert gp["tension_crack_model"]["default"] == "truncation"
         assert gp["tension_crack_depth_basis"]["allowed_values"] == \
             ["given", "rankine", "min_fos"]
-        assert gp["reverse_curvature_crack_basis"]["default"] == "rankine"
+        # GM-140 step 4's review, F1: no crack basis of their own for
+        # reverse-curvature circles; the crack is the analysis's
+        assert "reverse_curvature_crack_basis" not in gp
+        assert gp["reverse_curvature"]["default"] == "tension_crack"
         with pytest.raises(ValueError,
                            match="tension_crack_depth_basis 'bogus'"):
             METHOD_REGISTRY["analyze_slope"](self._acads1b(

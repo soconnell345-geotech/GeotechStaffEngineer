@@ -425,16 +425,16 @@ class SlopeGeometry:
     pore_pressure_points: Optional[List[Tuple[float, float, float]]] = None
     # A circle whose centre lies below the ground at its upper end would
     # turn back over itself ("reverse curvature"). 'tension_crack' (default)
-    # closes it with a vertical crack of the printed depth
-    # (``reverse_curvature_crack_basis``: 'rankine', EM 1110-2-1902 Eq. C-36
-    # with the developed strengths, the default; or 'min_fos', the scan) and
-    # discards it where its overhanging part runs deeper than that crack
-    # (owner's call OWN-103); 'discard' discards every such circle. A given
-    # tension crack, when there is one, is the crack that closes it. The
-    # circles discarded are counted and located in a search's result; one
-    # given to ``analyze_slope`` raises ``cracks.ReverseCurvatureDiscarded``.
+    # closes it with the tension crack asked for (tension_crack_depth, or
+    # tension_crack_depth_basis 'rankine' / 'min_fos') where its overhang
+    # lies within that crack's depth, and discards it where the overhang
+    # runs deeper (owner's call OWN-103) or no crack was asked for (the
+    # crack is a condition of the analysis, never switched on by a circle's
+    # shape: the step 4 review's F1); 'discard' discards every such circle.
+    # The circles discarded are counted by reason and located in a search's
+    # result (``crack_refused``); one given to ``analyze_slope`` raises
+    # ``cracks.ReverseCurvatureDiscarded``.
     reverse_curvature: str = "tension_crack"
-    reverse_curvature_crack_basis: str = "rankine"
     # This surface's crack, fixed by ``cracks.solve_with_crack`` on a copy.
     _crack_fixed: Optional[dict] = field(default=None, init=False,
                                          repr=False, compare=False)
@@ -489,10 +489,6 @@ class SlopeGeometry:
         if (self.tension_crack_depth_basis == "given"
                 and self.tension_crack_water_depth > self.tension_crack_depth):
             self.tension_crack_water_depth = self.tension_crack_depth
-        if self.reverse_curvature_crack_basis not in ("rankine", "min_fos"):
-            raise ValueError(
-                "reverse_curvature_crack_basis must be 'rankine' or "
-                f"'min_fos', got '{self.reverse_curvature_crack_basis}'")
         if self.tension_crack_side not in ("crest", "entry", "exit"):
             raise ValueError("tension_crack_side must be 'crest', 'entry' or "
                              f"'exit', got '{self.tension_crack_side}'")

@@ -33,13 +33,22 @@ The rule, one for every method, surface family and caller:
   - ``min_fos``: the depth giving the minimum factor of safety, from a scan
     of depths (EM 2-2f(4), p. 2-6; C-10c(1), p. C-36).
 
-* A reverse-curvature circle (its centre below the ground at its upper
-  end, so that the arc would turn back over itself) is closed by a vertical
-  crack of the printed depth, Rankine's by default and the scan as the
-  option. Where the overhanging part of the arc runs deeper than that
-  crack, the circle is discarded, counted and located (the owner's call
-  OWN-103). No printed source gives a crack at the lower end of a surface,
-  so a circle that overhangs there is discarded as well.
+* The crack is a condition of the analysis, set by the engineer and the
+  same on every trial surface; a circle's shape never switches it on (the
+  orchestrator's ruling on the step 4 review's F1, refining OWN-103). A
+  reverse-curvature circle (its centre below the ground at its upper end,
+  so that the arc would turn back over itself) is closed by the crack asked
+  for where its overhang lies within that crack's depth; where the overhang
+  runs deeper, the circle is discarded, counted and located (OWN-103's
+  limit). With no crack asked for, a reverse-curvature circle is not an
+  admissible surface: it is discarded, counted and located, and naming a
+  crack admits those within its depth. No printed source gives a crack at
+  the lower end of a surface, so a circle that overhangs there is
+  discarded as well.
+* A surface that nowhere passes below the crack's depth (measured below
+  the ground above it) lies wholly within the cracked depth and is no
+  surface: it is refused and counted (the step 4 review's D1). The rule is
+  geometric; no threshold on F or on the size of the mass.
 
 Every solve of one surface goes through ``solve_with_crack``: it hands the
 solver a copy of the geometry with the crack fixed (``fixed_geometry``),
@@ -63,9 +72,6 @@ RANKINE = "rankine"
 MIN_FOS = "min_fos"
 #: How a tension crack's depth is set (``SlopeGeometry.tension_crack_depth_basis``).
 DEPTH_BASES = (GIVEN, RANKINE, MIN_FOS)
-#: The depth of the crack closing a reverse-curvature circle
-#: (``SlopeGeometry.reverse_curvature_crack_basis``).
-REVERSE_BASES = (RANKINE, MIN_FOS)
 
 CREST = "crest"
 ENTRY = "entry"
@@ -99,14 +105,63 @@ class CrackDepthNeeded(ValueError):
     ``solve_with_crack`` (``analyze_slope`` and the searches do)."""
 
 
-class ReverseCurvatureDiscarded(ValueError):
-    """A surface with no crack of the printed depth: a reverse-curvature
-    circle whose overhanging part runs deeper than the crack (OWN-103), or
-    a scan that finds no depth of minimum factor of safety."""
+#: Why the crack rule refuses a surface, each counted on its own in a
+#: search's result (``SearchResult.crack_refused``; the step 4 review's
+#: D5), with the words the result and the search's choices use.
+NO_CRACK_ASKED = "reverse_curvature_no_crack"
+DEEPER_THAN_CRACK = "reverse_curvature_deeper_than_crack"
+NO_CRACK_AT_END = "reverse_curvature_no_crack_at_end"
+DISCARD_ASKED = "reverse_curvature_discard_asked"
+WITHIN_CRACK = "within_cracked_depth"
+SCAN_NO_MINIMUM = "scan_no_minimum"
+REFUSAL_TEXT = {
+    NO_CRACK_ASKED: (
+        "reverse-curvature circles with no tension crack asked for: not "
+        "admissible surfaces; naming a crack (tension_crack_depth, or "
+        "tension_crack_depth_basis 'rankine' or 'min_fos') admits those "
+        "whose overhang lies within its depth"),
+    DEEPER_THAN_CRACK: (
+        "reverse-curvature circles whose overhang runs deeper than the "
+        "crack asked for, which would close them (OWN-103)"),
+    NO_CRACK_AT_END: (
+        "circles with reverse curvature at an end where no crack is (the "
+        "lower end, or the end away from a crack put at the other one)"),
+    DISCARD_ASKED: (
+        "reverse-curvature circles discarded as asked "
+        "(reverse_curvature='discard')"),
+    WITHIN_CRACK: (
+        "surfaces that nowhere pass below the crack's depth, measured below "
+        "the ground above them: they lie wholly within the cracked depth "
+        "and are no slip surface"),
+    SCAN_NO_MINIMUM: (
+        "surfaces on which the scan for the crack depth of minimum factor "
+        "of safety found no minimum"),
+}
+#: The refusals of reverse-curvature circles.
+REVERSE_REFUSALS = (NO_CRACK_ASKED, DEEPER_THAN_CRACK, NO_CRACK_AT_END,
+                    DISCARD_ASKED)
+
+
+class CrackRuleRefused(ValueError):
+    """A surface the crack rule refuses (``REFUSAL_TEXT``): it has no
+    factor of safety. ``outcome.refusal`` says why."""
 
     def __init__(self, message: str, outcome: "CrackOutcome"):
         super().__init__(message)
         self.outcome = outcome
+
+
+class ReverseCurvatureDiscarded(CrackRuleRefused):
+    """A reverse-curvature circle the crack rule discards: no crack asked
+    for, an overhang deeper than the crack (OWN-103), an overhang at an end
+    no crack is at, or every such circle discarded as asked."""
+
+
+def refusal_error(outcome: "CrackOutcome") -> CrackRuleRefused:
+    """The error a single-surface caller raises for a refused surface."""
+    cls = (ReverseCurvatureDiscarded if outcome.refusal in REVERSE_REFUSALS
+           else CrackRuleRefused)
+    return cls("No factor of safety: " + outcome.reason + ".", outcome)
 
 
 def rankine_crack_depth(c: float, phi_deg: float, gamma: float,
@@ -174,8 +229,14 @@ class CrackPlan:
     basis: str                         # GIVEN / RANKINE / MIN_FOS
     depth: float = 0.0                 # the given depth (GIVEN)
     overhang: Optional[float] = None   # reverse curvature: its depth
-    discard: Optional[str] = None      # why the circle is discarded, now
+    discard: Optional[str] = None      # why the surface is refused, now
+    refusal: str = ""                  # that reason's key (REFUSAL_TEXT)
     scan_limit: float = 0.0            # deepest depth a scan tries
+    x_other: float = 0.0               # the surface's other end
+    # the greatest depth of the surface below the ground above it
+    # (``depth_below_ground``): a crack this deep or deeper holds it whole
+    d_max: float = math.inf
+    slip: Any = None
     # Rankine's soil: the one at the ground at the crack
     c: float = 0.0
     phi: float = 0.0
@@ -203,6 +264,11 @@ class CrackOutcome:
     overhang: Optional[float] = None
     discarded: bool = False
     reason: str = ""
+    refusal: str = ""                  # why refused (REFUSAL_TEXT key)
+    # where the crack is: the x at which the slices end (the surface
+    # reaches the crack's bottom), and the ground there
+    x_crack: Optional[float] = None
+    z_ground_crack: Optional[float] = None
     fos: Optional[float] = None        # the F the Rankine depth was taken at
     iterations: int = 0
     converged: bool = True
@@ -213,13 +279,18 @@ class CrackOutcome:
     fixed: Optional[Dict[str, Any]] = None   # for ``geometry_of``
 
     def to_dict(self) -> Dict[str, Any]:
+        # The crack is where the slices end (the step 4 review's D3), its
+        # bottom the depth below the ground at the surface's end on its side.
+        x = self.x_end if self.x_crack is None else self.x_crack
+        z_top = (self.z_ground if self.z_ground_crack is None
+                 else self.z_ground_crack)
         d: Dict[str, Any] = {
             "depth_m": round(self.depth, 3),
             "depth_basis": self.basis,
             "side": self.side,
             "model": self.model,
-            "x_m": round(self.x_end, 3),
-            "ground_z_m": round(self.z_ground, 3),
+            "x_m": round(x, 3),
+            "ground_z_m": round(z_top, 3),
             "base_z_m": round(self.z_ground - self.depth, 3),
             "water_depth_m": round(self.water_depth, 3),
         }
@@ -228,6 +299,7 @@ class CrackOutcome:
             d["overhang_depth_m"] = round(self.overhang or 0.0, 3)
         if self.discarded:
             d["discarded"] = True
+            d["refusal"] = self.refusal
         if self.reason:
             d["note"] = self.reason
         if self.basis == RANKINE:
@@ -258,9 +330,13 @@ class CrackOutcome:
                 MIN_FOS: (f"the depth of minimum factor of safety from a "
                           f"scan of {len(self.scan)} depths ({_EM_SCAN})"),
                 }[self.basis]
-        s = (f"Tension crack {self.depth:.2f} m deep at the "
-             f"{'low-x' if self.side == ENTRY else 'high-x'} end of the "
-             f"surface (ground z = {self.z_ground:.2f}), depth {what}")
+        x = self.x_end if self.x_crack is None else self.x_crack
+        s = (f"Tension crack {self.depth:.2f} m deep on the "
+             f"{'low-x' if self.side == ENTRY else 'high-x'} side of the "
+             f"surface, at x = {x:.2f} where the surface reaches its bottom "
+             f"(z = {self.z_ground - self.depth:.2f}, the ground at the "
+             f"surface's end there, z = {self.z_ground:.2f}, less the "
+             f"depth), depth {what}")
         if self.capped:
             s += (f"; Eq. C-36's depth passes the bottom of the soil it was "
                   f"computed for ({self.soil}), so the crack stops there "
@@ -282,10 +358,10 @@ class CrackOutcome:
                   "the surface at the crack)")
         if self.reverse_curvature:
             s += (f". The circle is a reverse-curvature circle (its centre "
-                  f"is {self.overhang:.2f} m below the ground there, so "
-                  f"the arc would turn back over itself) and the crack "
-                  f"closes it; a circle overhanging deeper than its crack "
-                  f"is discarded")
+                  f"is {self.overhang:.2f} m below the ground at its end, "
+                  f"so the arc would turn back over itself) and the crack "
+                  f"asked for closes it; a circle overhanging deeper than "
+                  f"the crack is discarded")
         return s + "."
 
 
@@ -301,6 +377,63 @@ def _crest_half_low(slip, x_entry: float, x_exit: float, side: str
            if a <= p[0] <= b]
     zs = [z for z in (slip.slip_elevation_at(x) for x in xs) if z is not None]
     return min(zs) if zs else None
+
+
+def depth_below_ground(geom, slip, x_entry: float, x_exit: float) -> float:
+    """The greatest depth of the slip surface below the ground above it,
+    between its ends. The ground is straight between its vertices: a
+    polyline's depth is then greatest at a vertex of either, and a
+    circle's on each straight piece at an end or where the arc runs
+    parallel to the ground (x = xc + s R / sqrt(1 + s^2), s the piece's
+    slope)."""
+    xs = {x_entry, x_exit}
+    xs.update(p[0] for p in geom.surface_points if x_entry < p[0] < x_exit)
+    xs.update(p[0] for p in (getattr(slip, "points", None) or ())
+              if x_entry < p[0] < x_exit)
+    if getattr(slip, "is_circular", False):
+        bounds = sorted(xs)
+        for a, b in zip(bounds[:-1], bounds[1:]):
+            s = ((geom.ground_elevation_at(b) - geom.ground_elevation_at(a))
+                 / (b - a))
+            x = slip.xc + s * slip.radius / math.sqrt(1.0 + s * s)
+            if a < x < b:
+                xs.add(x)
+    best = 0.0
+    for x in xs:
+        z = slip.slip_elevation_at(x)
+        if z is not None:
+            best = max(best, geom.ground_elevation_at(x) - z)
+    return best
+
+
+def _crack_x(slip, plan: "CrackPlan", depth: float) -> Optional[float]:
+    """Where the crack is: the x at which the slip surface, walked from the
+    middle of the surface towards the crack's end, first rises to the
+    crack's bottom, which is where the slices end (``slices._kept_span``);
+    the middle of the surface where its crack half is all above it."""
+    if slip is None:
+        return None
+    z_base = plan.z_ground - depth
+    x_half = 0.5 * (plan.x_end + plan.x_other)
+
+    def above(x):
+        z = slip.slip_elevation_at(x)
+        return z is None or z >= z_base
+
+    if above(x_half):
+        return x_half
+    n = 400
+    prev = x_half
+    for i in range(1, n + 1):
+        x = x_half + (plan.x_end - x_half) * i / n
+        if above(x):
+            a, b = prev, x
+            for _ in range(60):
+                m = 0.5 * (a + b)
+                a, b = (a, m) if above(m) else (m, b)
+            return b
+        prev = x
+    return plan.x_end
 
 
 def _rankine_soil(geom, plan: CrackPlan) -> None:
@@ -393,26 +526,45 @@ def plan_crack(geom, slip, x_entry: Optional[float] = None,
     rev = reverse_ends(geom, slip, x_entry, x_exit)
     overhang = None
     discard = None
+    refusal = ""
     if rev:
         upper = crest_side(geom, x_entry, x_exit)
         low = [e for e in rev if e["side"] != upper]
         at_crest = [e for e in rev if e["side"] == upper]
         if geom.reverse_curvature == "discard":
             e = rev[0]
+            refusal = DISCARD_ASKED
             discard = (f"a reverse-curvature circle (its centre "
                        f"{e['depth']:.2f} m below the ground at x = "
                        f"{e['x']:.2f}), discarded as asked "
                        f"(reverse_curvature='discard')")
         elif low:
             e = low[0]
+            refusal = NO_CRACK_AT_END
             discard = (f"the circle has reverse curvature at its lower end "
                        f"(x = {e['x']:.2f}, its centre {e['depth']:.2f} m "
                        f"below the ground there); a tension crack is at the "
                        f"upper end of a slip surface (EM 1110-2-1902 "
                        f"2-2f(3), p. 2-6) and no printed crack closes this "
                        f"one")
-        elif has_crack and side != upper:
+        elif not has_crack:
+            # The crack is a condition of the analysis, set by the engineer;
+            # a circle's shape never switches it on (the step 4 review's
+            # F1, the orchestrator's ruling).
             e = at_crest[0]
+            refusal = NO_CRACK_ASKED
+            discard = (f"a reverse-curvature circle: its centre is "
+                       f"{e['depth']:.2f} m below the ground where it ends "
+                       f"(x = {e['x']:.2f}), so the arc would turn back "
+                       f"over itself, and no tension crack was asked for "
+                       f"to close it, so it is not an admissible surface; "
+                       f"naming a crack (tension_crack_depth, or "
+                       f"tension_crack_depth_basis 'rankine' or 'min_fos') "
+                       f"admits such circles whose overhang lies within "
+                       f"the crack's depth")
+        elif side != upper:
+            e = at_crest[0]
+            refusal = NO_CRACK_AT_END
             discard = (f"the circle has reverse curvature at its upper end "
                        f"(x = {e['x']:.2f}) and the tension crack was put "
                        f"at the other end (tension_crack_side="
@@ -420,21 +572,25 @@ def plan_crack(geom, slip, x_entry: Optional[float] = None,
                        f"it")
         else:
             e = at_crest[0]
-            overhang = e["depth"]
             side = upper
-            if not has_crack:
-                basis = geom.reverse_curvature_crack_basis
+        overhang = e["depth"]       # discarded or closed, it is located
     elif not has_crack:
         return None
-    x_end = x_entry if side == ENTRY else x_exit
+    x_end, x_other = (x_entry, x_exit) if side == ENTRY else (x_exit, x_entry)
     z_g = geom.ground_elevation_at(x_end)
     plan = CrackPlan(side=side, x_end=x_end, z_ground=z_g, basis=basis,
-                     depth=depth, overhang=overhang, discard=discard)
+                     depth=depth, overhang=overhang, discard=discard,
+                     refusal=refusal, x_other=x_other, slip=slip)
     if discard is not None:
         return plan
+    plan.d_max = depth_below_ground(geom, slip, x_entry, x_exit)
     if basis == GIVEN:
         if overhang is not None and depth < overhang - 1e-9:
             plan.discard = _too_deep(plan, depth, "the given crack depth")
+            plan.refusal = DEEPER_THAN_CRACK
+        elif depth > 0 and plan.d_max <= depth + 1e-9:
+            plan.discard = _within(plan, depth, "the given crack depth")
+            plan.refusal = WITHIN_CRACK
         return plan
     low = _crest_half_low(slip, x_entry, x_exit, side)
     plan.scan_limit = max(z_g - low, 0.0) if low is not None else 0.0
@@ -446,6 +602,7 @@ def plan_crack(geom, slip, x_entry: Optional[float] = None,
                 plan.discard = _too_deep(
                     plan, 0.0, f"Eq. C-36's crack depth in {plan.soil} "
                     f"(c = 0)")
+                plan.refusal = DEEPER_THAN_CRACK
             else:
                 plan.basis, plan.depth = GIVEN, 0.0
     return plan
@@ -459,6 +616,14 @@ def _too_deep(plan: CrackPlan, depth: float, what: str) -> str:
             f"a crack is justified only to the depth the soil can be in "
             f"tension (EM 1110-2-1902 C-10c, p. C-36), so the circle is "
             f"discarded")
+
+
+def _within(plan: CrackPlan, depth: float, what: str) -> str:
+    return (f"the surface nowhere passes below {what}, {depth:.2f} m: it "
+            f"is at most {plan.d_max:.2f} m below the ground above it, so "
+            f"it lies wholly within the cracked depth and is no slip "
+            f"surface (EM 1110-2-1902 2-2f(3), p. 2-6, and C-10c, p. C-36: "
+            f"the slip surface ends at the bottom of the crack)")
 
 
 def fixed_geometry(geom, plan: CrackPlan, depth: float):
@@ -491,9 +656,7 @@ def crack_for_slices(geom, slip, x_entry: float, x_exit: float
         if plan is None:
             return None
         if plan.discard is not None:
-            raise ReverseCurvatureDiscarded(
-                "No factor of safety: " + plan.discard + ".",
-                _discarded(geom, plan))
+            raise refusal_error(_discarded(geom, plan))
         if plan.basis != GIVEN:
             raise CrackDepthNeeded(
                 "The tension crack on this surface depends on the surface's "
@@ -517,23 +680,29 @@ def crack_for_slices(geom, slip, x_entry: float, x_exit: float
 
 
 def _discarded(geom, plan: CrackPlan, depth: float = 0.0,
-               reason: Optional[str] = None, **kw) -> CrackOutcome:
+               reason: Optional[str] = None, refusal: Optional[str] = None,
+               **kw) -> CrackOutcome:
     return CrackOutcome(
         depth=depth, basis=plan.basis, side=plan.side,
         model=geom.tension_crack_model, x_end=plan.x_end,
         z_ground=plan.z_ground, reverse_curvature=bool(plan.overhang),
         overhang=plan.overhang, discarded=True,
-        reason=(reason or plan.discard or ""), **kw)
+        reason=(reason or plan.discard or ""),
+        refusal=(refusal or plan.refusal), **kw)
 
 
 def _outcome(geom, plan: CrackPlan, depth: float, basis: str, **kw
              ) -> CrackOutcome:
     d = depth if plan.overhang is None else max(depth, plan.overhang)
+    x_c = _crack_x(plan.slip, plan, d)
     return CrackOutcome(
         depth=d, basis=basis, side=plan.side,
         model=(TRUNCATION if plan.overhang is not None
                else geom.tension_crack_model),
         x_end=plan.x_end, z_ground=plan.z_ground,
+        x_crack=x_c,
+        z_ground_crack=(None if x_c is None
+                        else geom.ground_elevation_at(x_c)),
         water_depth=min(geom.tension_crack_water_depth, d),
         reverse_curvature=plan.overhang is not None,
         overhang=plan.overhang,
@@ -620,12 +789,36 @@ def solve_with_crack(geom, slip, solve: Callable[[Any], Any],
             d = rankine_crack_depth(plan.c, plan.phi, plan.gamma, f)
             return min(d, plan.soil_thickness), d > plan.soil_thickness
 
+        def within(f_at, n_done):
+            # a crack holding the whole surface (the step 4 review's D1)
+            return None, _discarded(
+                geom, plan, depth,
+                _within(plan, depth,
+                        f"Rankine's crack depth with the developed strengths "
+                        f"at F = {f_at:.3f} ({_EM_RANKINE})"),
+                refusal=WITHIN_CRACK, fos=f_at, iterations=n_done,
+                capped=capped, soil=plan.soil)
+
         f_k = 1.0 if fos_for_depth is None else fos_for_depth
         depth, capped = depth_at(f_k)
         r = f = None
         n = 0
+        if depth >= plan.d_max - 1e-9 and fos_for_depth is None:
+            # Eq. C-36 with the full strengths (F = 1, the first solution's
+            # depth) holds the whole surface: start instead from the
+            # surface's own F without a crack.
+            r, f = run(0.0)
+            n = 1
+            if f is None:
+                return r, _outcome(geom, plan, 0.0, RANKINE, fos=None,
+                                   iterations=n, converged=False,
+                                   capped=False, soil=plan.soil)
+            f_k = f
+            depth, capped = depth_at(f_k)
         converged = fos_for_depth is not None
         while n < MAX_ITERATIONS:
+            if depth >= plan.d_max - 1e-9:
+                return within(f_k, n)
             r, f = run(depth)
             n += 1
             if f is None:
@@ -648,6 +841,7 @@ def solve_with_crack(geom, slip, solve: Callable[[Any], Any],
                     _too_deep(plan, depth,
                               f"Rankine's crack depth with the developed "
                               f"strengths at F = {f:.3f} ({_EM_RANKINE})"),
+                    refusal=DEEPER_THAN_CRACK,
                     fos=f, iterations=n, converged=converged, capped=capped,
                     soil=plan.soil)
             return r, _outcome(geom, plan, depth, RANKINE, fos=f_k,
@@ -672,6 +866,8 @@ def solve_with_crack(geom, slip, solve: Callable[[Any], Any],
         if hi <= lo:
             break
         d = lo + (hi - lo) * i / SCAN_STEPS
+        if d >= plan.d_max - 1e-9:
+            break                   # a crack this deep holds the surface (D1)
         try:
             r, f = run(d)
         except (ValueError, ZeroDivisionError, RuntimeError):
@@ -693,7 +889,8 @@ def solve_with_crack(geom, slip, solve: Callable[[Any], Any],
         if refused:
             why += f" (Rankine's depth was not used: {refused})"
         return None, _discarded(geom, plan, table[-1][0] if table else lo,
-                                why, scan=table, rankine_refused=refused)
+                                why, refusal=SCAN_NO_MINIMUM, scan=table,
+                                rankine_refused=refused)
     d_min, f_min = found
     if plan.overhang is not None and d_min <= lo + 1e-12:
         # F rises with depth from the overhang's own depth down: the depth
@@ -704,61 +901,76 @@ def solve_with_crack(geom, slip, solve: Callable[[Any], Any],
             _too_deep(plan, d_min,
                       f"the crack depth of minimum factor of safety "
                       f"({_EM_SCAN}), which is no more than"),
-            scan=table, rankine_refused=refused)
+            refusal=DEEPER_THAN_CRACK, scan=table, rankine_refused=refused)
     return kept[d_min], _outcome(geom, plan, d_min, MIN_FOS, fos=f_min,
                                  scan=table, rankine_refused=refused)
 
 
 # ---------------------------------------------------------------------------
-# Reverse-curvature circles a search discards: counted and located
+# Surfaces a search's crack rule refuses: counted by reason and located
 # ---------------------------------------------------------------------------
 
-#: The reverse-curvature circles discarded by the search running in this
-#: context: {'n': count, 'x': [x of each circle's end], 'kept': [the first
-#: few, located]}.
+#: The surfaces the crack rule refused in the search running in this
+#: context, by reason (``REFUSAL_TEXT``): {reason: {'n', 'x_min', 'x_max',
+#: 'kept': the first few, located}}.
 _DISCARDS: contextvars.ContextVar = contextvars.ContextVar(
-    "slope_reverse_discards", default=None)
+    "slope_crack_refusals", default=None)
 _KEEP = 5
 
 
-def count_discard(slip, outcome: CrackOutcome) -> None:
-    tally = _DISCARDS.get()
-    if tally is None:
-        return
-    tally["n"] += 1
-    tally["x_min"] = min(tally["x_min"], outcome.x_end)
-    tally["x_max"] = max(tally["x_max"], outcome.x_end)
-    if len(tally["kept"]) < _KEEP and getattr(slip, "is_circular", False):
-        tally["kept"].append({
-            "xc": round(slip.xc, 3), "yc": round(slip.yc, 3),
-            "radius": round(slip.radius, 3),
-            "x_end_m": round(outcome.x_end, 3),
-            "overhang_depth_m": round(outcome.overhang or 0.0, 3),
-            "crack_depth_m": round(outcome.depth, 3),
-            "why": outcome.reason})
-
-
-def discards_so_far() -> int:
-    """The circles discarded so far by the search running in this
-    context, the searches run inside it included."""
-    tally = _DISCARDS.get()
-    return tally["n"] if tally is not None else 0
-
-
-def _new_tally() -> Dict[str, Any]:
+def _new_entry() -> Dict[str, Any]:
     return {"n": 0, "x_min": math.inf, "x_max": -math.inf, "kept": []}
 
 
+def count_discard(slip, outcome: CrackOutcome) -> None:
+    """Count a surface the crack rule refused, under its own reason."""
+    tally = _DISCARDS.get()
+    if tally is None:
+        return
+    e = tally.setdefault(outcome.refusal or DEEPER_THAN_CRACK, _new_entry())
+    e["n"] += 1
+    e["x_min"] = min(e["x_min"], outcome.x_end)
+    e["x_max"] = max(e["x_max"], outcome.x_end)
+    if len(e["kept"]) < _KEEP:
+        rec: Dict[str, Any] = {"x_end_m": round(outcome.x_end, 3)}
+        if getattr(slip, "is_circular", False):
+            rec.update(xc=round(slip.xc, 3), yc=round(slip.yc, 3),
+                       radius=round(slip.radius, 3))
+        if outcome.overhang:
+            rec["overhang_depth_m"] = round(outcome.overhang, 3)
+        rec["crack_depth_m"] = round(outcome.depth, 3)
+        rec["why"] = outcome.reason
+        e["kept"].append(rec)
+
+
+def discards_so_far() -> Dict[str, int]:
+    """The surfaces refused so far by the crack rule in the search running
+    in this context (the searches run inside it included), by reason."""
+    tally = _DISCARDS.get()
+    return {k: e["n"] for k, e in (tally or {}).items() if e["n"]}
+
+
+def refusal_records(tally: Dict[str, Dict[str, Any]]
+                    ) -> Dict[str, Dict[str, Any]]:
+    """``SearchResult.crack_refused``: for each reason, how many, what it
+    means, where their ends are and the first few."""
+    return {k: {"n": e["n"], "what": REFUSAL_TEXT.get(k, k),
+                "x_end_range_m": [round(e["x_min"], 3),
+                                  round(e["x_max"], 3)],
+                "first": list(e["kept"])}
+            for k, e in tally.items() if e["n"]}
+
+
 def counts_reverse_discards(fn):
-    """Count and locate the reverse-curvature circles a search discards,
-    and put them on the ``SearchResult`` it returns (or on that result's
-    ``search``) as ``n_discarded_reverse_curvature`` and
-    ``reverse_curvature_discarded``. A search run inside another adds its
-    circles to the outer one."""
+    """Count, by reason, and locate the surfaces the crack rule refuses in
+    a search, and put them on the ``SearchResult`` it returns (or on that
+    result's ``search``) as ``crack_refused`` and, for the reverse-curvature
+    circles, ``n_discarded_reverse_curvature``. A search run inside another
+    adds its surfaces to the outer one."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         outer = _DISCARDS.get()
-        tally = _new_tally()
+        tally: Dict[str, Dict[str, Any]] = {}
         token = _DISCARDS.set(tally)
         box: Dict[str, Any] = {}
         token_r = _REPORT.set(box)
@@ -768,20 +980,18 @@ def counts_reverse_discards(fn):
             _REPORT.reset(token_r)
             _DISCARDS.reset(token)
             if outer is not None:
-                outer["n"] += tally["n"]
-                outer["x_min"] = min(outer["x_min"], tally["x_min"])
-                outer["x_max"] = max(outer["x_max"], tally["x_max"])
-                outer["kept"] += tally["kept"][:_KEEP - len(outer["kept"])]
-        target = (result if hasattr(result, "n_discarded_reverse_curvature")
+                for k, e in tally.items():
+                    o = outer.setdefault(k, _new_entry())
+                    o["n"] += e["n"]
+                    o["x_min"] = min(o["x_min"], e["x_min"])
+                    o["x_max"] = max(o["x_max"], e["x_max"])
+                    o["kept"] += e["kept"][:_KEEP - len(o["kept"])]
+        target = (result if hasattr(result, "crack_refused")
                   else getattr(result, "search", None))
-        if target is not None and hasattr(
-                target, "n_discarded_reverse_curvature"):
-            target.n_discarded_reverse_curvature = tally["n"]
-            target.reverse_curvature_discarded = (
-                {"n": tally["n"],
-                 "x_end_range_m": [round(tally["x_min"], 3),
-                                   round(tally["x_max"], 3)],
-                 "first": list(tally["kept"])} if tally["n"] else None)
+        if target is not None and hasattr(target, "crack_refused"):
+            target.n_discarded_reverse_curvature = sum(
+                tally[k]["n"] for k in REVERSE_REFUSALS if k in tally)
+            target.crack_refused = refusal_records(tally)
             crit = getattr(target, "critical", None)
             if crit is not None and not getattr(crit, "tension_crack", None):
                 apply_to_result(crit, box.get("outcome"))
@@ -819,11 +1029,12 @@ def _first_given(*hows: str) -> str:
     return next((h for h in hows if h != "default"), "default")
 
 
-def crack_choices(geom, n_discarded: int = 0,
+def crack_choices(geom, refused: Optional[Dict[str, int]] = None,
                   circles: bool = True) -> List[Dict[str, Any]]:
     """The ``choices`` entries for the crack rule (``geotech_common.choices``):
-    the crack's model, side and depth when one is asked for, and what is
-    done with reverse-curvature circles."""
+    the crack's model, side and depth when one is asked for, what is done
+    with reverse-curvature circles, and the surfaces the rule refused, by
+    reason (``refused``, from ``discards_so_far``)."""
     from geotech_common.choices import choice, how_given
     out = []
     basis = geom.tension_crack_depth_basis
@@ -875,38 +1086,54 @@ def crack_choices(geom, n_discarded: int = 0,
                        "upper half")}[basis],
             [f"tension_crack_depth_basis='{b}'" for b in DEPTH_BASES
              if b != basis]))
+    refused = dict(refused or {})
     if circles:
         discard = geom.reverse_curvature == "discard"
-        rb = geom.reverse_curvature_crack_basis
+        crack = geom.tension_crack_depth > 0 or basis != GIVEN
+        n_rev = sum(refused.get(k, 0) for k in REVERSE_REFUSALS)
         out.append(choice(
             "reverse-curvature circles",
             ("discarded" if discard else
-             "closed by a vertical crack of "
-             + ("Rankine's depth with the developed strengths"
-                if rb == RANKINE else
-                "the depth of minimum factor of safety")
-             + "; discarded where the overhang is deeper")
-            + f" ({n_discarded} discarded)",
-            _first_given(
-                how_given(geom.reverse_curvature, "tension_crack",
-                          name="reverse_curvature"),
-                how_given(rb, RANKINE,
-                          name="reverse_curvature_crack_basis")),
+             "closed by the tension crack asked for; discarded where the "
+             "overhang is deeper" if crack else
+             "discarded: no tension crack was asked for")
+            + f" ({n_rev} discarded)",
+            how_given(geom.reverse_curvature, "tension_crack",
+                      name="reverse_curvature"),
             "a circle whose centre is below the ground at its upper end "
-            "would turn back over itself; a crack is justified only to the "
-            "depth the soil can be in tension (EM 1110-2-1902 (2003) "
-            "C-10c, p. C-36: " + ("Eq. C-36" if rb == RANKINE
-                                  else "the minimum-F depth")
-            + "), so a circle overhanging deeper is not a mechanism the "
-            "method describes; the circles discarded are counted and "
-            "located in the result (reverse_curvature_discarded). A given "
-            "tension crack, when there is one, is the crack that closes "
-            "the circle. A circle overhanging at its lower end is "
-            "discarded: no printed crack is there",
+            "would turn back over itself. The tension crack is a condition "
+            "of the analysis, set by the engineer and the same on every "
+            "trial surface; a circle's shape never switches it on. With a "
+            "crack asked for, every surface ends at the crack's bottom, and "
+            "a reverse-curvature circle whose overhang lies within the "
+            "crack's depth is closed by that crack; one overhanging deeper "
+            "is not a mechanism the method describes (a crack is justified "
+            "only to the depth the soil can be in tension, EM 1110-2-1902 "
+            "(2003) C-10c, p. C-36; OWN-103). With no crack asked for, such "
+            "a circle is not an admissible surface; naming a crack admits "
+            "those within its depth. A circle overhanging at its lower end "
+            "is discarded: no printed crack is there. The circles discarded "
+            "are counted by reason and located in the result "
+            "(crack_refused)",
             ["discard every such circle (reverse_curvature='discard')",
-             "the crack's depth from the scan for minimum factor of safety "
-             "(reverse_curvature_crack_basis='min_fos')"
-             if rb == RANKINE else
-             "the crack's depth from Eq. C-36 "
-             "(reverse_curvature_crack_basis='rankine', the default)"]))
+             "name a crack (tension_crack_depth, or "
+             "tension_crack_depth_basis 'rankine' or 'min_fos') to admit "
+             "the circles whose overhang lies within its depth"
+             if not crack else
+             "no crack (tension_crack_depth 0): every such circle "
+             "discarded"]))
+    others = {k: n for k, n in refused.items()
+              if k not in REVERSE_REFUSALS and n}
+    if others:
+        out.append(choice(
+            "surfaces the crack rule refused",
+            "; ".join(f"{n} {REFUSAL_TEXT.get(k, k)}"
+                      for k, n in others.items()),
+            "module",
+            "a surface wholly within the cracked depth has no vertical "
+            "boundary at the crack's bottom, so it is no slip surface "
+            "(EM 1110-2-1902 2-2f(3), p. 2-6; C-10c, p. C-36); a scan with "
+            "no minimum gives no depth (" + _EM_SCAN + "). Counted and "
+            "located in the result (crack_refused)",
+            ["give the crack's depth (tension_crack_depth)"]))
     return out

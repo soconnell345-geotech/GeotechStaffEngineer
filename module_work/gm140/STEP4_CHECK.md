@@ -304,3 +304,208 @@ counts the circles a search left out.
 
 Nothing in the section. The manual's rows are hand-edited, not rebuilt.
 `BACKLOG.md`, `HANDOFF.md` and `CLAUDE.md` are not edited.
+
+## 10. Fix round after review
+
+2026-11-13. Branch `fix/gm140-step4-review`, cut from the step's branch at
+5d63dec, with master merged first (decec33, step 2; merge 5c65f6c). It acts
+on an independent review of the step (outside the repository) and on the
+orchestrator's rulings on its two calls (F1, D1). Sections 2 to 9 above are
+the record as first built; where they disagree with this section, this one
+holds.
+
+**The merge with step 2.** Both rules kept: a trial with no solution of the
+method is no number and is counted as such (step 2), and the crack rule
+(step 4); the counts stay apart by reason. Step 2's
+`probabilistic._eval_fos` sliced its surface directly, which raises
+`CrackDepthNeeded` under a Rankine or scanned crack: it now solves through
+`cracks.solve_with_crack`, each run with its own crack.
+
+**F1 (the orchestrator's ruling, option 4; refines OWN-103).** The tension
+crack is a condition of the analysis, set by the engineer, and the same on
+every trial surface; a circle's shape never switches it on. As first built,
+a reverse-curvature circle was closed by Rankine's crack whenever no crack
+was given (`reverse_curvature_crack_basis`), so the factor of safety jumped
+as a circle's centre crossed the crest's level, and the searches on steep
+phi = 0 slopes settled on barely reverse-curved circles (section 4's
+"discontinuity").
+
+* No crack asked for: a reverse-curvature circle is not an admissible
+  surface. It is discarded, counted under `reverse_curvature_no_crack` and
+  located; the search's `choices` say how many and that naming a crack
+  (given depth, Rankine, scan) admits those within its depth. No crack
+  appears in such a result.
+* A crack asked for: every surface ends at the crack's bottom; a
+  reverse-curvature circle whose overhang lies within the crack's depth is
+  closed by that crack, nothing deeper; one overhanging deeper is discarded
+  (`reverse_curvature_deeper_than_crack`, OWN-103's limit).
+* `reverse_curvature='discard'` stays; the centre-level crack stays removed;
+  `reverse_curvature_crack_basis` is gone (geometry, adapter, cracks).
+* Files: `cracks.py` (`plan_crack`, the refusal reasons and their words,
+  `crack_choices`), `geometry.py`, the adapter's `reverse_curvature`
+  description.
+* Continuity, on the review's made-up clay (ground (0, 0), (10, 0), (14, 8),
+  (40, 8); cu 30 kPa, gamma 18 kN/m3), two circles through the toe with
+  their centres 2 cm above and below the crest's level, Bishop: a given 3 m
+  crack 0.9489 / 0.9491; Rankine's 0.9328 / 0.9327 (3.57 m); the scan
+  0.9272 / 0.9269; no crack: the upper one 1.1312 with no crack, the lower
+  one refused (`reverse_curvature_no_crack`). The default search there
+  discards 27 circles and reads 1.0625 with no crack in the result.
+  (`test_cracks_as_printed.py`.)
+* The benchmarks with no crack read as before step 4 (VALIDATION.md B21):
+  Taylor 45 deg 1.942 and the short profile 2.065 (the two strict xfails
+  removed); V-054's toe search 2.346; #85 toe family 1.564; Slide2 #85 with
+  its support, Bishop, 1.508 with 28 circles discarded (printed 1.531, D&W
+  1.51) and passive 1.316 with 41 discarded (printed 1.324, D&W 1.32),
+  reported and not pinned (the step's brief sets no tolerance on #85; the
+  strict xfail against 1.531 removed). With Rankine's crack asked for on
+  every surface #85 reads 1.331 / 1.188. Those that used the centre-level
+  crack do not come back: the vertical cut reads 0.935 against Taylor's
+  0.851 (+9.9 %, the unsafe side; before step 4 0.842 on a circle closed at
+  its centre's level; 0.605 with Rankine's crack asked for), a strict xfail
+  with the reason; V-054's toe circle (2.5, 4) and circle (3, 3) are no
+  surfaces without a crack, so those tests ask for Rankine's crack and read
+  as first built (2.218; Bakklandet 1.693 and 1.848, the latter still a
+  strict xfail against 24 %).
+* The 5.89 ft crack that four tests gave only to keep #85's old 1.372
+  (`test_search_reinforcement.py` three times, `test_calc_steps_modern.py`
+  once) is gone. Where a test needs the toe circle for something else
+  (Spencer's lack of solution, the calc package's no-solution sections, the
+  short-arm warning) it gives a 6 ft crack, deeper than that circle's
+  5.89 ft overhang, with the reason stated (Bishop 1.372; 29 % of the
+  support counts); the default search and the single circle with no crack
+  assert the discard.
+
+**D1 (agreed by the orchestrator).** A surface that nowhere passes below
+the crack's depth, measured below the ground above it, lies wholly within
+the cracked depth and is no slip surface (EM 2-2f(3), p. 2-6; C-10c,
+p. C-36: the slices end at a vertical boundary at the crack's bottom, which
+such a surface never reaches). The rule is geometry only: no threshold on F
+or on the mass's size. `cracks.depth_below_ground` gives the surface's
+greatest depth below the ground between its ends (exact at the ground's
+vertices and the circle's lowest point); a given crack at least that deep
+refuses the surface (`within_cracked_depth`); a Rankine iteration that
+reaches it starts again from F with no crack and refuses the surface if it
+reaches it again; the scan stops short of it. A search counts the refusals;
+`analyze_slope` raises `cracks.CrackRuleRefused`.
+
+* **It predates step 4.** On master before step 4 (the tree at decec33),
+  ACADS 1(b) searched with the given 3.81 m water-filled crack on Slide2's
+  centre grid (x 31 to 47, z 34 to 49, 16 by 16, 40 slices, no entry or
+  exit windows), Bishop, reads 0.0503 with master's default
+  (`'strength'`: circle (37.267, 34.938), R 5.652, from x 39.44 to 40.14)
+  and 0.0520 with the surface ended at the crack (circle (35.133, 40.375),
+  R 11.461, x 39.95 to 40.56): slivers on the face. As first built, 0.052.
+* After: Bishop 1.5896 (circle (37.560, 43.165), R 19.676, through the toe)
+  and Spencer 1.5849 (circle (37.533, 42.875), R 19.399), against the
+  printed 1.596 / 1.592 (Slide2 #2, Table 2.2, p. 25): -0.4 % each, inside
+  the step's 1 %; 456 surfaces refused as wholly within the cracked depth.
+  (`validation_examples/test_published_v026_slope.py`; the Spencer search is
+  marked slow, 4 minutes.) A unit test refuses a 2 m crack on a circle
+  shallower than 2 m in both crack models and keeps a crack half as deep.
+
+**D3.** The crack is reported and drawn where it is: where the surface
+reaches the crack's bottom and the slices end (`tension_crack['x_m']`,
+with `ground_z_m` and `base_z_m` there, and the warning's "at x = ..."),
+not at the surface's ground end. ACADS 1(b)'s toe circle: x 53.169 (the
+surface's end 55.461). Files: `cracks.py` (`_crack_x`, `to_dict`,
+`statement`), `plotting.py`. Tests: V-026, `test_cracks_as_printed.py`.
+
+**D4.** V-031 (Slide2 #57) has a dry crack in the problem (p. 203) and the
+text prints no depth: the test now enters Rankine's with the developed
+strengths (Eq. C-36, p. C-36), the module's printed basis, dry, 50 slices,
+and reads Bishop 1.4170 / Spencer 1.4211 against the printed 1.417 /
+1.422 (Table 57.3, p. 205), pinned to the print at the file's tolerance
+(rel 0.005). The test without a crack keeps its values, labelled the
+module's own.
+
+**D5.** A search counts the crack rule's refusals by reason
+(`SearchResult.crack_refused`, in `to_dict` too: for each reason its count,
+its words, where the surfaces end and the first few):
+`reverse_curvature_no_crack`, `reverse_curvature_deeper_than_crack`,
+`reverse_curvature_no_crack_at_end`, `reverse_curvature_discard_asked`,
+`within_cracked_depth`, `scan_no_minimum`. `n_discarded_reverse_curvature`
+sums the four reverse-curvature reasons; the search's `choices` give the
+reverse-curvature count and, apart, "surfaces the crack rule refused" for
+the others; the adapter's returns text names `crack_refused`. The scorer
+catches `cracks.CrackRuleRefused` (whose subclass is
+`ReverseCurvatureDiscarded`) and counts it under its reason, where before
+every refusal counted as a reverse-curvature discard. Files: `cracks.py`,
+`search.py`, `results.py`, the adapter; `analysis.py`, `rapid_drawdown.py`
+and `newmark.py` raise through `cracks.refusal_error`.
+
+**Pins changed** (every one a printed value with its page, or labelled the
+module's own):
+
+| File | Pin | Before this round | Now |
+|---|---|---|---|
+| `validation_examples/test_published_v026_slope.py` | grid search with the 3.81 m wet crack, Bishop / Spencer (new) | none | the printed 1.596 / 1.592 at rel 0.01 (Table 2.2, p. 25) |
+| same | the crack's place (new) | none | x 53.169, the slices' end (module's own geometry) |
+| `validation_examples/test_published_v031_slope.py` | no crack, Bishop / Spencer / GLE 1.421 / 1.425 / 1.409 | beside the printed values | labelled the module's own |
+| same | with its dry crack, Rankine's (new) | none | the printed 1.417 / 1.422 at rel 0.005 (Table 57.3, p. 205) |
+| `validation_examples/test_published_v043_slope_reinforced.py` | clay with the Rankine crack, Spencer 0.964 | unlabelled | labelled the module's own; printed 0.975 with its table and pages |
+| `validation_examples/test_published_v054_anisotropic_su.py` | toe circle (2.5, 4) 2.218 | Rankine on reverse circles by default | Rankine's crack asked for, labelled the module's own; refused with none |
+| same | Bakklandet 1.693; circle (3, 3) strict xfail | the same default | the same values, Rankine's crack asked for |
+| `slope_stability/tests/test_search_supplements.py` | anchor (2.5, 4) 2.218 | by default | Rankine's crack asked for (module's own); refused with none |
+| same | toe search 2.113, exit 7.6; mirrored 2.113 | first built | 2.346, exit 9.3 (the pre-step-4 pins); discards counted |
+| `slope_stability/tests/test_slope_stability.py` | Taylor 1.947 rel 0.01; short profile > 1.947 | strict xfails | passing, xfails removed |
+| `slope_stability/tests/test_m_alpha.py` | vertical cut 0.842 | strict xfail | strict xfail against Taylor's 0.851 rel 0.02; new test pins 0.935 (module's own); the phi = 0 m_alpha warning on circle (21, 2.7), R 3.3, with a given 2.3 m crack |
+| `slope_stability/tests/test_search_reinforcement.py` | #85 Bishop search against 1.531 | strict xfail | removed: reported in this file, not pinned; the default asserted equal to 'discard' |
+| same | first-built 1.361 / Rankine checks | pinned | replaced by the discard assertions (no crack) |
+| same | toe family Spencer 1.627 | first built | 1.564 (module's own, the pre-step-4 pin) |
+| same | 1.372 on the toe circle (two tests) with a 5.89 ft crack | pinned | a 6 ft crack, F > 1 (the tests are about Spencer's lack of solution and the short arm) |
+| `slope_stability/tests/test_calc_steps_modern.py` | the toe circle's 5.89 crack | 5.89 | 6.0, reason stated |
+| `funhouse_agent/tests/test_slope_stability_adapter.py` | `reverse_curvature_crack_basis` default `'rankine'` | asserted | asserted absent; `reverse_curvature` default `'tension_crack'` |
+| `funhouse_agent/tests/method_probes.json` | the reverse-curvature probe | no crack | Rankine's crack asked for |
+
+**Noted, not fixed.** A surface that passes below the crack's depth
+somewhere, but whose crest half stays above the crack's bottom, still gets
+the crack at mid-surface as first built (`slices.py`, the stub at the
+upper half's lowest point); D1 refuses only the surfaces wholly within the
+cracked depth. With Rankine's crack asked for, V-054's toe search reads
+2.087 (every surface now has the crack; first built 2.113 with it on the
+reverse-curvature circles only); not a test.
+
+**Tests run** (pytest's exit code, one file at a time):
+
+| File | Exit | Count |
+|---|---|---|
+| `slope_stability/tests/test_cracks_as_printed.py` | 0 | 40 passed |
+| `slope_stability/tests/test_search_reinforcement.py` | 0 | 33 passed |
+| `slope_stability/tests/test_calc_steps_modern.py` | 0 | 23 passed |
+| `slope_stability/tests/test_slope_stability.py` | 0 | 92 passed |
+| `slope_stability/tests/test_search_supplements.py` | 0 | 18 passed |
+| `slope_stability/tests/test_m_alpha.py` | 0 | 17 passed, 1 xfailed |
+| `slope_stability/tests/test_circle_slicing.py` | 0 | 9 passed |
+| `slope_stability/tests/test_usability_features.py` | 0 | 49 passed |
+| `slope_stability/tests/test_own_solution_or_no_number.py` | 0 | 26 passed, 1 xfailed |
+| `validation_examples/test_published_v026_slope.py` | 0 | 13 passed (the Spencer search, 4 minutes, in the first run; 12 rerun after the last code change) |
+| `validation_examples/test_published_v031_slope.py` | 0 | passed |
+| `validation_examples/test_published_v043_slope_reinforced.py` | 0 | 8 passed, 1 xfailed |
+| `validation_examples/test_published_v054_anisotropic_su.py` | 0 | 4 passed, 1 xfailed |
+| `funhouse_agent/tests/test_slope_stability_adapter.py` | 0 | 92 passed |
+| `funhouse_agent/tests/test_worked_examples.py` | 0 | 38 passed, 2 skipped |
+| `funhouse_agent/tests/test_defaults_used.py -k slope` | 0 | 47 passed, 17 skipped |
+| `funhouse_agent/tests/test_allowed_values.py -k slope` | 0 | 20 passed |
+| `funhouse_agent/tests/test_top_level_params.py -k slope` | 0 | 3 passed |
+| `module_work/doc10/check_manual.py --rebuild --write`, then the check | 0 | OK (manual.html rebuilt: the slope rows and the parameter counts) |
+
+**Release note** (replaces section 7's): Slope stability: a tension crack
+now ends the slip surface at the crack by default, as EM 1110-2-1902 and
+Slide print it, and sits at the end of the surface where the ground is
+higher; the result reports and the plot draws it where the surface reaches
+its bottom. A crack given without a model reads higher than before (ACADS
+1(b): 1.485 to 1.603 against the printed 1.596);
+`tension_crack_model='strength'` gives the earlier value. The depth can now
+be Rankine's with the developed strengths (EM Eq. C-36) or the depth of
+minimum factor of safety. A circle whose centre is below the ground at its
+upper end (reverse curvature) is no longer closed by a crack from its
+centre's level: with no crack asked for it is left out of a search and gets
+no number on its own; with a crack asked for it is closed by that crack
+where its overhang lies within the crack's depth. Searches on steep clay
+slopes can read higher than before where they settled on such a circle (a
+vertical cut 0.842 to 0.935); give a tension crack to admit those circles.
+A surface that lies wholly within a given crack's depth is no longer a slip
+surface (ACADS 1(b) searched with its crack: 0.05 on a sliver before, 1.590
+now against 1.596). A search counts the surfaces the crack rule refused, by
+reason (`crack_refused`).

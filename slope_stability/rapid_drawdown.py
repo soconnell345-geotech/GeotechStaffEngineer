@@ -480,8 +480,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                     stage3_effective_normal=stage3_effective_normal),
                 fos_of=lambda r: r.FOS, plan=plan)
             if crack.discarded:
-                raise cracks.ReverseCurvatureDiscarded(
-                    "No factor of safety: " + crack.reason + ".", crack)
+                raise cracks.refusal_error(crack)
             if crack.depth > 0:
                 res.warnings.append(crack.statement())
             return res
