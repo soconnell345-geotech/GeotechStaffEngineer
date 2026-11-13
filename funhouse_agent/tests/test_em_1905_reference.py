@@ -62,8 +62,11 @@ def test_every_lookup_of_the_package_is_listed():
 
 
 def test_a_printed_value_comes_back_with_its_page():
+    # the value is the library's, read at run time (no printed cell here)
+    from geotech_references.em_1905 import figures
+    lib = figures.figure_7_16_time_factor(U_percent=50.0, T_v=None)
     out = _ok(REF, "figure_7_16_time_factor", {"U_percent": 50.0, "T_v": None})
-    assert out["T_v"] == pytest.approx(0.197)
+    assert out["T_v"] == pytest.approx(lib["T_v"])
     assert out["interpolated"] is False
     assert "Figure 7-16, p. 185" in out["source"]
 
@@ -73,9 +76,9 @@ def test_a_refusal_reaches_the_helper_whole():
     library's reading; the helper gets the library's whole message."""
     from geotech_references.em_1905 import settlement
     with pytest.raises(ValueError) as raised:
-        settlement.equation_7_34_time_factor(R3=0.3, Rt=0.2, t_years=1.0)
+        settlement.equation_7_34_time_factor(R3=0.25, Rt=0.15, t_years=1.0)
     out = _call(REF, "equation_7_34_time_factor",
-                {"R3": 0.3, "Rt": 0.2, "t_years": 1.0})
+                {"R3": 0.25, "Rt": 0.15, "t_years": 1.0})
     assert str(raised.value) in out["error"]
     assert "the library's reading, not a condition the page prints" \
         in out["error"]
@@ -129,12 +132,17 @@ def test_aliases_name_the_method_they_reach():
     # stripped of their numbers these would mislead; curated names stand in
     for gone in ("time_factor", "shape_factor", "factor_of_safety"):
         assert "Unknown method" in _call(REF, gone, {})["error"]
+    # each alias returns what the library's function does (made-up
+    # inputs; the values are read from the library at run time)
+    from geotech_references.em_1905 import figures, settlement
     out = _ok(REF, "consolidation_time_factor",
               {"U_percent": 50.0, "T_v": None})
-    assert out["T_v"] == pytest.approx(0.197)
+    assert out["T_v"] == pytest.approx(figures.figure_7_16_time_factor(
+        U_percent=50.0, T_v=None)["T_v"])
     out = _ok(REF, "burland_burbidge_time_factor",
-              {"R3": 0.3, "Rt": 0.2, "t_years": 30.0})
-    assert out["C3"] == pytest.approx(1.5)
+              {"R3": 0.25, "Rt": 0.15, "t_years": 12.0})
+    assert out["C3"] == pytest.approx(settlement.equation_7_34_time_factor(
+        R3=0.25, Rt=0.15, t_years=12.0)["C3"])
     assert _ok(REF, "bearing_factor_of_safety",
                {"q_ult": 15.0, "q_eq": 5.0})["FS"] == pytest.approx(3.0)
 
