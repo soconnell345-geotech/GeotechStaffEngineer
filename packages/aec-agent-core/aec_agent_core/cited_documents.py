@@ -44,12 +44,10 @@ found, precise in how it is named:
   GEC, as the reference modules' own briefs and chapter files name them:
   GEC-11 = FHWA-NHI-10-024 / -025), AASHTO LRFD with or without an article
   number, the AASHTO 1993 pavement guide and AASHTO test standards, UFC
-  n-nnn-nn and UFS n-nnn-nn (one key, a letter suffix left out: UFS
-  3-220-10, 2026, supersedes UFC 3-220-10; UFC 3-220-04FA is
-  ``ufc-3-220-04``), DM 7.1 and DM 7.2 (UFS 3-220-10, 16 January 2026, and
-  UFC 3-220-20, 16 January 2025, which the app's ``dm7`` module serves) and
-  the NAVFAC DM 7.01 / 7.02 they replaced (keyed to them, shown as
-  written), USACE EM / ETL / ER / EP and TM numbers, ASTM, ACI, ASCE 7, AISC, API RP, IBC,
+  n-nnn-nn and UFS n-nnn-nn (one key: UFS 3-220-10, 2026, supersedes UFC
+  3-220-10), NAVFAC DM 7 / 7.01 / 7.02 (the same documents as UFS 3-220-10 /
+  UFC 3-220-20, which replaced them and which the app's ``dm7`` module
+  serves), USACE EM / ETL / ER / EP and TM numbers, ASTM, ACI, ASCE 7, AISC, API RP, IBC,
   the Caltrans manuals, NCHRP and CGPR reports, Eurocodes and EN 1997, FEMA
   P- numbers and NEHRP, ISO / BS standards, PTI DC35.1, the GSA Alternate
   Path guidelines and the Wood Handbook;
@@ -211,9 +209,7 @@ FAMILIES: Dict[str, Set[str]] = {
 
 #: The documents each reference module serves (``dispatch.
 #: REFERENCE_MODULES``; the reference library's own ids too, as a references
-#: result may name them). ``call_agent`` on one looks up its documents. A
-#: UFC's letter suffix is not part of its key: ``ufc_backfill`` serves UFC
-#: 3-220-04FA, keyed ``ufc-3-220-04`` (``_UFC``).
+#: result may name them). ``call_agent`` on one looks up its documents.
 MODULE_DOCUMENTS: Dict[str, Set[str]] = {
     "dm7": {"dm7", "ufc-3-220-10", "ufc-3-220-20"},
     "dm7_1": {"ufc-3-220-10"},
@@ -513,15 +509,10 @@ def _documents(t: str, internal: bool = False) -> List[_Found]:
             sec)
     for m in _DM.finditer(t):
         v = m.group("v")
-        # "DM 7.1" / "DM 7.2" are UFS 3-220-10 (2026) and UFC 3-220-20
-        # (2025), as they print themselves; "NAVFAC DM 7.01" / "7.02" the
-        # manuals they replaced, keyed to them and shown as written
-        old = bool(re.search(r"7\.0\d", m.group(0)))
-        key, shown = {
-            "1": ("ufc-3-220-10", "NAVFAC DM 7.01" if old else "DM 7.1"),
-            "2": ("ufc-3-220-20", "NAVFAC DM 7.02" if old else "DM 7.2"),
-            "3": ("navfac-dm-7.03", "NAVFAC DM 7.3")}.get(
-                v or "", ("dm7", "DM 7"))
+        key, shown = {"1": ("ufc-3-220-10", "NAVFAC DM 7.01"),
+                      "2": ("ufc-3-220-20", "NAVFAC DM 7.02"),
+                      "3": ("navfac-dm-7.03", "NAVFAC DM 7.3")}.get(
+                          v or "", ("dm7", "NAVFAC DM 7"))
         sec, end = _section(t, m.end())
         add(m.start(), end, key, shown, sec)
     for m in _USACE.finditer(t):
