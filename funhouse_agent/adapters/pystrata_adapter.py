@@ -128,13 +128,13 @@ METHOD_INFO = {
             "amplification_factor": "PGA surface / PGA input.",
             "n_iterations": "EQL iterations run (wave solves counted), or null when they could not be counted.",
             "converged": "Whether the EQL iterations converged within tolerance.",
-            "max_shear_strain_pct": "Peak shear strain in the profile (%): the largest max_strain_pct of depth_profile.",
+            "max_shear_strain_pct": "Peak shear strain in the profile (%): the largest of pystrata's sub-layer strains, which is the largest max_strain_pct of depth_profile when depth_profile is returned (it is still given when depth_profile is null); null where pystrata gave a sub-layer none.",
             "periods_s": "Periods (s) of Sa_surface_g and Sa_input_g: 0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2, 3 and 5 s.",
             "Sa_surface_g": "Surface (outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
             "Sa_input_g": "Input (rock outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
             "Sa_surface_max_g": "Largest surface spectral acceleration over 0.01 to 10 s (g).",
             "period_at_Sa_surface_max_s": "The period of that peak (s).",
-            "depth_profile": "The response with depth: rows of top_m, bottom_m, max_strain_pct (peak shear strain at the sub-layer's middle; null where pystrata gave none), max_accel_g (peak acceleration at its top), initial_Vs_m_per_s and compatible_Vs_m_per_s (strain-compatible; equal to the initial value in a linear analysis). One row per sub-layer of the discretised profile, up to 20; more are merged (largest strain and acceleration, travel-time average Vs) and depth_profile_note says so.",
+            "depth_profile": "The response with depth: rows of top_m, bottom_m, max_strain_pct (peak shear strain at the sub-layer's middle; null where pystrata gave none), max_accel_g (peak acceleration at its top), initial_Vs_m_per_s and compatible_Vs_m_per_s (strain-compatible; equal to the initial value in a linear analysis). One row per sub-layer of the discretised profile (pystrata divides only layers with curves: darendeli, menq, custom; a 'linear' layer stays one sub-layer, so its strain is the one at its middle, and thinner layers resolve the peak inside a thick one), up to 20; more are merged (largest strain and acceleration, travel-time average Vs) and depth_profile_note says so.",
             "water_table_depth_m": "The water table used for the Darendeli/Menq confining stress (null: none taken in the profile, or not used, and stress_inputs_note then says why).",
             "k0": "The K0 used for it; null when not used (stress_inputs_note then says why).",
             "stress_inputs_note": "Present when no Darendeli or Menq layer had its confining stress computed (the profile has none, or each gave stress_mean): water_table_depth and k0 were not used, and why.",
@@ -168,13 +168,13 @@ METHOD_INFO = {
             "amplification_factor": "PGA surface / PGA input.",
             "n_iterations": "0 for a linear analysis.",
             "converged": "Always true for a linear analysis.",
-            "max_shear_strain_pct": "Peak shear strain in the profile (%): the largest max_strain_pct of depth_profile. pystrata's linear calculator computes no strain; the module takes each sub-layer's from its strain history (pystrata's StrainTSOutput at the sub-layer's middle), as the equivalent-linear calculator computes its own.",
+            "max_shear_strain_pct": "Peak shear strain in the profile (%): the largest of the sub-layer strains, which is the largest max_strain_pct of depth_profile when depth_profile is returned (it is still given when depth_profile is null). pystrata's linear calculator computes no strain; the module takes each sub-layer's from its strain history (pystrata's StrainTSOutput at the sub-layer's middle), as the equivalent-linear calculator computes its own. pystrata divides only layers with curves (darendeli, menq, custom), so a 'linear' layer has one strain, at its middle, and the peak inside a thick one can be higher; give thinner layers to resolve it.",
             "periods_s": "Periods (s) of Sa_surface_g and Sa_input_g: 0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2, 3 and 5 s.",
             "Sa_surface_g": "Surface (outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
             "Sa_input_g": "Input (rock outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
             "Sa_surface_max_g": "Largest surface spectral acceleration over 0.01 to 10 s (g).",
             "period_at_Sa_surface_max_s": "The period of that peak (s).",
-            "depth_profile": "The response with depth: rows of top_m, bottom_m, max_strain_pct (peak shear strain at the sub-layer's middle; null where pystrata gave none), max_accel_g (peak acceleration at its top), initial_Vs_m_per_s and compatible_Vs_m_per_s (strain-compatible; equal to the initial value in a linear analysis). One row per sub-layer of the discretised profile, up to 20; more are merged (largest strain and acceleration, travel-time average Vs) and depth_profile_note says so.",
+            "depth_profile": "The response with depth: rows of top_m, bottom_m, max_strain_pct (peak shear strain at the sub-layer's middle; null where pystrata gave none), max_accel_g (peak acceleration at its top), initial_Vs_m_per_s and compatible_Vs_m_per_s (strain-compatible; equal to the initial value in a linear analysis). One row per sub-layer of the discretised profile (pystrata divides only layers with curves: darendeli, menq, custom; a 'linear' layer stays one sub-layer, so its strain is the one at its middle, and thinner layers resolve the peak inside a thick one), up to 20; more are merged (largest strain and acceleration, travel-time average Vs) and depth_profile_note says so.",
             "water_table_depth_m": "The water table used for the Darendeli/Menq confining stress (null: none taken in the profile, or not used, and stress_inputs_note then says why).",
             "k0": "The K0 used for it; null when not used (stress_inputs_note then says why).",
             "stress_inputs_note": "Present when no Darendeli or Menq layer had its confining stress computed (the profile has none, or each gave stress_mean): water_table_depth and k0 were not used, and why.",
@@ -201,6 +201,18 @@ declare_when_absent(METHOD_INFO, {
     "linear_site_response": {"target_pga_g": _UNSCALED,
                              "water_table_depth": _NO_WATER},
 })
+
+# The water table and K0 set only the confining stress computed for a
+# Darendeli or Menq layer with no stress_mean of its own, which depends on
+# the layers' soil models (a key inside a list item, which applies_when
+# cannot read). So defaults_used never lists them from this table (False);
+# the module's own report lists them when a layer's stress was computed
+# (eql_site_response.stress_choices calls their how "default" then), and
+# _defaults_used keeps any name the choices report (GM-325 review, R1).
+from funhouse_agent.adapters import declare_applies_when  # noqa: E402
+declare_applies_when(METHOD_INFO, {
+    m: {"water_table_depth": False, "k0": False}
+    for m in ("eql_site_response", "linear_site_response")})
 
 # The keys each item of a list parameter carries, so a key given at the
 # top level is refused with a hint naming its list (BACKLOG GM-113).

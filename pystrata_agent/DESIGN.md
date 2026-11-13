@@ -136,8 +136,10 @@ step-plot form (the first value twice, pystrata 0.5.4
 strain by depth and reads Vs from entry i + 1; arrays not of that form
 give `depth_profile` null with the reason in `depth_profile_note`, instead
 of a shifted profile (until the GM-325 review it was left out without a
-word). Run on pystrata 0.5.4 (Python 3.12) and 0.6.0 (Python 3.13, in
-WSL).
+word). Run on pystrata 0.5.4 (Python 3.14, the Windows venv) and 0.6.0
+(Python 3.13, in WSL). `max_shear_strain_pct` is the largest of
+pystrata's sub-layer strains, so it is still given when `depth_profile`
+is null.
 
 The input motion is applied as a rock outcrop motion at the top of the
 half-space; the tool text and `choices` say so.
@@ -155,8 +157,19 @@ installed (each depth takes the strain of the sub-layer it lies in; the
 first build assumed 0.5's layout, and on 0.6 the counts disagreed and
 `depth_profile` came back null). Checked against the closed-form
 solution for one uniform damped layer on an elastic half-space
-(`tests/test_gm325.py`), and on a linear soil it equals the equivalent-linear run's strain. A sub-layer pystrata
-gives no strain for is null, never 0.0.
+(`tests/test_gm325.py`), and on a linear soil it equals the
+equivalent-linear run's strain. A sub-layer pystrata gives no strain for
+is null, never 0.0.
+
+pystrata's `auto_discretize` divides only layers with curves (Darendeli,
+Menq, custom: `nonlinear_only=True`), so a `soil_model: 'linear'` layer
+stays one sub-layer and its strain is the one at its middle, however
+thick it is. The peak inside a thick linear layer can be higher (the
+GM-325 re-check's made-up two-layer case: 0.0283 % with 'linear' layers,
+0.0497 % with the same soils as flat 'custom' curves, which pystrata
+divides). The tool text says so and that thinner layers resolve it; the
+module does not divide them itself (it would change saved strains: a
+follow-up in `module_work/gm324/CHECK.md`).
 
 **The water table and K0 in the result.** They enter only the confining
 stress computed for a Darendeli or Menq layer. The result echoes them as
@@ -164,4 +177,9 @@ stress computed for a Darendeli or Menq layer. The result echoes them as
 unused inputs in `funhouse_agent/tests/test_defaults_used.py` can see the
 echo) only when such a layer used them; otherwise both are null and
 `stress_inputs_note` says why (no Darendeli or Menq layer, or each gave
-`stress_mean`).
+`stress_mean`). `defaults_used` follows the same rule: the adapter marks
+both inputs `applies_when: False`, so the table never lists them, and the
+module's own report (`stress_choices`, which calls their how "default"
+when a layer's stress was computed) puts them back on exactly those runs
+(GM-325 re-check, R1; before it a linear-only run listed `k0` 0.5 and the
+"no water table" case while the result said neither was used).

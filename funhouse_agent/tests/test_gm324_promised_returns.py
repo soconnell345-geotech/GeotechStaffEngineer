@@ -212,6 +212,35 @@ def test_site_response(method):
     assert len(json.dumps(wet)) < 8000
 
 
+@pytest.mark.parametrize("method", ["eql_site_response",
+                                    "linear_site_response"])
+def test_defaults_used_lists_the_stress_inputs_only_when_used(method):
+    """GM-325 re-check (R1): defaults_used listed k0 0.5 and the 'no water
+    table' case on runs whose result said neither was used. Now both are
+    listed only on a run that computed a Darendeli or Menq layer's
+    confining stress."""
+    pytest.importorskip("pystrata")
+    rock = LAYERS[-1]
+    runs = {
+        "computed": [LAYERS[0], rock],
+        "linear only": [dict(thickness=10, Vs=200, unit_wt=18,
+                             soil_model="linear", damping=0.02), rock],
+        "stress_mean given": [dict(LAYERS[0], stress_mean=60.0), rock],
+    }
+    used = {}
+    for name, layers in runs.items():
+        out = _call("pystrata", method,
+                    dict(layers=layers, motion="synthetic_long",
+                         target_pga_g=0.1))
+        used[name] = out.get("defaults_used") or {}
+        assert ("stress_inputs_note" in out) == (name != "computed"), name
+    assert used["computed"]["k0"] == 0.5
+    assert "no water table" in str(used["computed"]["water_table_depth"])
+    for name in ("linear only", "stress_mean given"):
+        assert not {"k0", "water_table_depth"} & set(used[name]), (
+            name, used[name])
+
+
 def test_intensity_measures():
     pytest.importorskip("eqsig")
     promised = _returns("seismic_signals_adapter", "intensity_measures")

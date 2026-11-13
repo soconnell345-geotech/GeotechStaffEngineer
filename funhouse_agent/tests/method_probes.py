@@ -121,13 +121,6 @@ ECHO_IS_NOT_THE_INPUT = {
     ("downdrag|downdrag_analysis", "neutral_plane_method"):
         "the method 'auto' chose",
     ("gstools|variogram", "n_bins"): "the lag classes that hold pairs",
-    # GM-325 review: defaults_used lists k0 whenever it is not given (its
-    # use depends on the layers' soil models, which applies_when cannot
-    # read); the echo is null where no layer used it
-    **{(k, "k0"): "the K0 a Darendeli or Menq layer's computed confining "
-                  "stress used: null when none did (stress_inputs_note)"
-       for k in ("pystrata|eql_site_response",
-                 "pystrata|linear_site_response")},
     ("reliability|pem", "scheme"): "the scheme's full name",
     ("salib|sobol_analysis", "n_samples"): "the model outputs analysed",
 }
@@ -392,13 +385,6 @@ NOT_REACHED = {
     **{(k, n): _SUBLAYERS for k in (
         "pystrata|eql_site_response", "pystrata|linear_site_response")
        for n in ("max_freq_hz", "wave_frac")},
-    # GM-325 review: k0 sets only a Darendeli or Menq layer's computed
-    # confining stress; the result echoes it as null with
-    # stress_inputs_note on these probes (the #darendeli probe moves).
-    **{(k, "k0"): ("the probe's profile has no Darendeli or Menq layer, "
-                   "and k0 sets only those curves' confining stress")
-       for k in ("pystrata|eql_site_response",
-                 "pystrata|linear_site_response")},
     ("reliability|form", "max_iterations"): _CONVERGES,
     ("calc_package|reliability_package#form", "max_iterations"):
         _CONVERGES,
