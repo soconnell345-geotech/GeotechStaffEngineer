@@ -207,6 +207,44 @@ All result classes provide:
 2. **to_dict()**: JSON-serializable dict for API/storage
 3. **Plot methods**: Engineering-quality plots (FORM only has importance plot)
 
+## What a result says about itself (GM-322)
+
+- **`converged` is pystra's own flag.** On pystra 2.x it is the result
+  record's `converged`; an unconverged FORM there has no index, probability
+  or design point, and the result carries `None` / empty values with a line
+  in `warnings` for each. pystra 1.x keeps no flag: its loop ends at the
+  tolerances or at the iteration limit, so `converged` is "stopped before
+  the limit" and `converged_source` says so. It is never inferred from the
+  sign of beta: a converged run whose mean point is in the failure domain
+  has beta < 0.
+- **A failed SORM returns no SORM numbers.** `beta_breitung` and
+  `pf_breitung` are `None`, `sorm_failed` is true and `sorm_message` holds
+  pystra's reason (Breitung's formula is undefined when 1 + beta*kappa <= 0
+  for a fitted curvature, which includes every case with beta < 0). The
+  FORM values are never reported under the SORM names. pystra 1.x marks
+  this case by printing a line and setting both values to exactly 0; the
+  wrapper reads that marker.
+- **Nothing falls back to an empty value in silence.** Alpha, the design
+  point and the curvatures are taken as pystra returns them; a quantity
+  pystra did not return, or returned at the wrong length, is named in
+  `warnings`.
+- **`n_function_calls`** is pystra's count on 2.x
+  (`n_function_calls_counted` true) and the old estimate, iterations x
+  variables, on 1.x (false, with a warning).
+- **Monte Carlo.** `seed` is local to the call: numpy's global generator is
+  neither read nor left changed (1.x samples from it, so its state is saved
+  and restored around the run). Every sample asked for is run: pystra's own
+  default stops once the COV of pf reaches 0.05, which used to leave the
+  reported `n_samples` and `n_failures` above the count actually run. With
+  no failure, `beta` and `cov_pf` are `None` (undefined, not 0) and
+  `pf_upper95_no_failures` gives the upper end of the exact 95 % binomial
+  interval, 1 - 0.025^(1/n).
+- **Limit states with functions.** pystra evaluates the limit state on
+  arrays of points. Plain arithmetic runs on them directly; an expression
+  with a math function, a comparison or `a if c else b` is evaluated one
+  point at a time (`_compile_limit_state`), since `math.sqrt` and a
+  conditional take one number.
+
 ## Workflow Example
 
 ```python

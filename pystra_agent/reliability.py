@@ -19,6 +19,43 @@ from pystra_agent.pystra_utils import (
 )
 
 
+def _named(values, names, what, notes) -> dict:
+    """pystra's array ``values`` keyed by variable name.
+
+    pystra gives no array for a run that did not converge, and a length
+    that does not match the random variables would pair values with the
+    wrong names. Either is said in ``notes`` and nothing is returned for
+    that quantity; no exception is swallowed (GM-322).
+    """
+    if values is None:
+        notes.append(f"pystra returned no {what} for this run.")
+        return {}
+    flat = np.ravel(np.asarray(values, dtype=float))
+    if flat.size != len(names):
+        notes.append(
+            f"pystra returned {flat.size} value(s) of {what} for "
+            f"{len(names)} random variable(s) {list(names)}; they cannot "
+            f"be matched to the variables and are not reported.")
+        return {}
+    return {name: float(v) for name, v in zip(names, flat)}
+
+
+def _function_calls(run, n_variables, notes):
+    """(count, counted?) of limit-state evaluations.
+
+    pystra 2.x counts them; 1.x does not, and the figure is then the old
+    estimate iterations x variables, flagged as such.
+    """
+    if run.n_evaluations is not None:
+        return int(run.n_evaluations), True
+    n = run.iterations * n_variables if run.iterations > 0 else 0
+    notes.append(
+        "n_function_calls is an estimate (iterations x number of "
+        "variables): this pystra version does not count limit-state "
+        "evaluations.")
+    return n, False
+
+
 def analyze_form(
     variables: list,
     limit_state: str,
@@ -90,8 +127,19 @@ def analyze_form(
     except Exception as e:
         raise ValueError(f"FORM analysis failed: {str(e)}")
 
+    notes = []
     beta = run.beta
     pf = run.pf
+    converged = bool(run.converged)
+    if not converged:
+        notes.append(
+            f"FORM did not converge ({run.message}; "
+            f"{run.iterations} iterations)."
+            + (" pystra reports no reliability index, probability or "
+               "design point for an unconverged run."
+               if beta is None else
+               " beta, pf, alpha and the design point are the last "
+               "iterate's, not a solution."))
 
     # Identify random (non-constant) variable names — pystra excludes constants
     # from alpha and design point arrays
@@ -100,44 +148,20 @@ def analyze_form(
         if v.get("dist", "").lower() != "constant"
     ]
 
-    # Extract sensitivity factors
-    try:
-        alpha = {
-            name: float(np.asarray(run.alpha[i]).flat[0])
-            for i, name in enumerate(random_names)
-        }
-    except Exception:
-        alpha = {}
-
-    # Extract design point in physical space
-    try:
-        design_point_x = {
-            name: float(np.asarray(run.x[i]).flat[0])
-            for i, name in enumerate(random_names)
-        }
+    alpha = _named(run.alpha, random_names, "sensitivity factors (alpha)",
+                   notes)
+    design_point_x = _named(run.x, random_names,
+                            "design point (physical space)", notes)
+    if design_point_x:
         # Add constants at their fixed values
         for v in variables:
             if v.get("dist", "").lower() == "constant":
                 design_point_x[v["name"]] = float(v["value"])
-    except Exception:
-        design_point_x = {}
-
-    # Extract design point in standard normal space
-    try:
-        design_point_u = {
-            name: float(np.asarray(run.u[i]).flat[0])
-            for i, name in enumerate(random_names)
-        }
-    except Exception:
-        design_point_u = {}
+    design_point_u = _named(run.u, random_names,
+                            "design point (standard normal space)", notes)
 
     n_iterations = run.iterations
-
-    # Function calls not directly available in pystra, estimate conservatively
-    n_function_calls = n_iterations * len(var_names) if n_iterations > 0 else 0
-
-    # Check convergence (beta should be positive and finite)
-    converged = np.isfinite(beta) and beta > 0 and pf > 0
+    n_function_calls, counted = _function_calls(run, len(var_names), notes)
 
     return FormResult(
         beta=beta,
@@ -147,7 +171,11 @@ def analyze_form(
         design_point_u=design_point_u,
         n_iterations=n_iterations,
         n_function_calls=n_function_calls,
+        n_function_calls_counted=counted,
         converged=converged,
+        converged_source=run.converged_source,
+        message=run.message,
+        warnings=notes,
         limit_state_expr=limit_state,
         n_variables=len(var_names),
     )
@@ -215,8 +243,18 @@ def analyze_sorm(
     except Exception as e:
         raise ValueError(f"SORM analysis failed: {str(e)}")
 
+    notes = []
     beta_form = run.beta
     pf_form = run.pf
+    form_converged = bool(run.converged)
+    if not form_converged:
+        notes.append(
+            f"FORM did not converge ({run.message}; "
+            f"{run.iterations} iterations)."
+            + (" pystra reports no reliability index, probability or "
+               "design point for an unconverged run."
+               if beta_form is None else
+               " The FORM values are the last iterate's, not a solution."))
 
     # pystra leaves constants out of alpha and the design point arrays
     random_names = [
@@ -224,45 +262,35 @@ def analyze_sorm(
         if v.get("dist", "").lower() != "constant"
     ]
 
-    # Extract sensitivity factors from FORM
-    try:
-        alpha = {name: float(run.alpha[i]) for i, name in enumerate(random_names)}
-    except Exception:
-        alpha = {}
+    alpha = _named(run.alpha, random_names, "sensitivity factors (alpha)",
+                   notes)
+    design_point_x = _named(run.x, random_names,
+                            "design point (physical space)", notes)
+    design_point_u = _named(run.u, random_names,
+                            "design point (standard normal space)", notes)
 
-    # Extract design point
-    try:
-        design_point_x = {
-            name: float(run.x[i]) for i, name in enumerate(random_names)}
-    except Exception:
-        design_point_x = {}
-
-    try:
-        design_point_u = {
-            name: float(run.u[i]) for i, name in enumerate(random_names)}
-    except Exception:
-        design_point_u = {}
-
-    # SORM results (Breitung approximation); FORM's if SORM gave none
-    beta_breitung = (
-        run.beta_breitung if run.beta_breitung is not None else beta_form)
-    pf_breitung = run.pf_breitung if run.pf_breitung is not None else pf_form
-
-    # Extract principal curvatures
-    try:
-        kappa = [float(k) for k in np.ravel(run.kappa)]
-    except Exception:
+    # SORM (Breitung). A failed second-order stage returns NO second-order
+    # numbers: the FORM values are never reported under the SORM names.
+    sorm_converged = bool(run.sorm_converged)
+    beta_breitung = run.beta_breitung if sorm_converged else None
+    pf_breitung = run.pf_breitung if sorm_converged else None
+    if beta_breitung is None or pf_breitung is None:
+        sorm_converged = False
+        beta_breitung = pf_breitung = None
+    if not sorm_converged:
+        notes.append(
+            f"SORM FAILED: {run.sorm_message or 'pystra gave no value'}. "
+            f"beta_breitung and pf_breitung are not reported (null); "
+            f"beta_form and pf_form are FORM's first-order values only.")
+    if run.kappa is None:
         kappa = []
+        if sorm_converged:
+            notes.append("pystra returned no principal curvatures.")
+    else:
+        kappa = [float(k) for k in np.ravel(run.kappa)]
 
     n_iterations = run.iterations
-
-    n_function_calls = n_iterations * len(var_names) if n_iterations > 0 else 0
-
-    # Check convergence
-    converged = (
-        np.isfinite(beta_form) and beta_form > 0 and
-        np.isfinite(beta_breitung) and beta_breitung > 0
-    )
+    n_function_calls, counted = _function_calls(run, len(var_names), notes)
 
     return SormResult(
         beta_form=beta_form,
@@ -275,7 +303,15 @@ def analyze_sorm(
         design_point_u=design_point_u,
         n_iterations=n_iterations,
         n_function_calls=n_function_calls,
-        converged=converged,
+        n_function_calls_counted=counted,
+        converged=form_converged and sorm_converged,
+        form_converged=form_converged,
+        sorm_converged=sorm_converged,
+        sorm_failed=not sorm_converged,
+        converged_source=run.converged_source,
+        message=run.message,
+        sorm_message=run.sorm_message,
+        warnings=notes,
         limit_state_expr=limit_state,
         n_variables=len(var_names),
     )
@@ -286,6 +322,7 @@ def analyze_monte_carlo(
     limit_state: str,
     n_samples: int = 100000,
     correlation: Optional[list] = None,
+    seed: Optional[int] = None,
 ) -> MonteCarloResult:
     """
     Perform Crude Monte Carlo reliability analysis.
@@ -297,8 +334,13 @@ def analyze_monte_carlo(
     Args:
         variables: List of variable specification dicts (same as analyze_form)
         limit_state: Limit state function expression string
-        n_samples: Number of Monte Carlo samples (default 100,000)
+        n_samples: Number of Monte Carlo samples (default 100,000). All
+            of them are run (pystra's own early stop at a 5 % coefficient
+            of variation of pf is switched off).
         correlation: Optional correlation matrix
+        seed: Optional integer seed, local to this call (numpy's global
+            generator is neither read nor changed). None: fresh entropy,
+            so the result differs from run to run.
 
     Returns:
         MonteCarloResult with reliability index, failure probability, and
@@ -343,30 +385,65 @@ def analyze_monte_carlo(
     lsf = pystra.LimitState(lsf_func)
 
     # Run Monte Carlo
+    if seed is not None:
+        if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)) \
+                or seed < 0:
+            raise ValueError(
+                f"seed must be a non-negative integer, got {seed!r}")
+        seed = int(seed)
     try:
-        run = run_monte_carlo(sm, lsf, n_samples)
+        run = run_monte_carlo(sm, lsf, n_samples, seed=seed)
     except Exception as e:
         raise ValueError(f"Monte Carlo analysis failed: {str(e)}")
 
-    beta = run.beta
+    notes = []
     pf = run.pf
+    n_run = run.n_samples if run.n_samples is not None else n_samples
+    if n_run != n_samples:
+        notes.append(
+            f"pystra ran {n_run} samples of the {n_samples} asked for; "
+            f"n_samples, n_failures and cov_pf are for the {n_run} run.")
 
-    # Compute number of failures
-    n_failures = int(round(pf * n_samples))
+    # pf is the count over the samples run, so the count is pf x n
+    n_failures = int(round(pf * n_run))
 
-    # Compute coefficient of variation of Pf estimate
-    # COV_pf = sqrt((1-pf)/(n*pf)) for binomial sampling
-    if pf > 0 and n_samples > 0:
-        cov_pf = np.sqrt((1.0 - pf) / (n_samples * pf))
+    # COV of the pf estimate, sqrt((1-pf)/(n*pf)) for binomial sampling.
+    # With no failure it is undefined (not 0), and so is beta: pf = 0 is
+    # the count; the exact two-sided 95 % binomial interval for it runs up
+    # to 1 - 0.025^(1/n), about 3.7/n.
+    if n_failures > 0 and pf > 0:
+        cov_pf = float(np.sqrt((1.0 - pf) / (n_run * pf)))
+        beta = run.beta if np.isfinite(run.beta) else None
+        pf_upper95 = None
     else:
-        cov_pf = 0.0
+        cov_pf = None
+        beta = None
+        pf_upper95 = float(1.0 - 0.025 ** (1.0 / n_run))
+        notes.append(
+            f"No failure in {n_run} samples: pf = 0 is the count, not a "
+            f"certainty. beta and cov_pf are undefined and not reported; "
+            f"the exact 95 % binomial interval on pf is 0 to "
+            f"{pf_upper95:.3g} (1 - 0.025^(1/n)). Run more samples, or use "
+            f"FORM/SORM for a small probability.")
+    if beta is None and n_failures > 0:
+        notes.append(
+            "Every sample failed (pf = 1): beta is not finite and is not "
+            "reported.")
+    if seed is None:
+        notes.append(
+            "No seed was given: the samples, and so pf, differ from run "
+            "to run. Give seed to repeat a run.")
 
     return MonteCarloResult(
         beta=beta,
         pf=pf,
-        n_samples=n_samples,
+        n_samples=n_run,
+        n_samples_requested=n_samples,
         n_failures=n_failures,
         cov_pf=cov_pf,
+        pf_upper95_no_failures=pf_upper95,
+        seed=seed,
+        warnings=notes,
         limit_state_expr=limit_state,
         n_variables=len(var_names),
     )

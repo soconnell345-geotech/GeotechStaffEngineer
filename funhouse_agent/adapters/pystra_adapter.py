@@ -50,6 +50,7 @@ def _run_monte_carlo_reliability(params: dict) -> dict:
         limit_state=params["limit_state"],
         n_samples=params.get("n_samples", 100000),
         correlation=params.get("correlation"),
+        seed=params.get("seed"),
     )
     return clean_result(result.to_dict())
 
@@ -88,9 +89,13 @@ METHOD_INFO = {
             "alpha": "Sensitivity factors per variable.",
             "design_point_x": "Design point in physical space.",
             "design_point_u": "Design point in standard normal space.",
-            "n_iterations": "Number of iterations to convergence.",
-            "n_function_calls": "An estimate, not a count: iterations x number of variables.",
-            "converged": "Whether analysis converged.",
+            "n_iterations": "Number of iterations run.",
+            "n_function_calls": "Limit state evaluations: pystra's own count (2.x), or on 1.x an estimate (iterations x number of variables); n_function_calls_counted says which.",
+            "n_function_calls_counted": "True: n_function_calls is pystra's count. False: the estimate.",
+            "converged": "pystra's own convergence flag (pystra 2.x); on 1.x, which keeps none, whether it stopped before its iteration limit. Not inferred from beta: a converged run can have beta < 0 (mean point in the failure domain). When false on 2.x, beta, pf, alpha and the design point are null/empty (pystra gives none).",
+            "converged_source": "Which of the two the converged flag is.",
+            "message": "pystra's status message.",
+            "warnings": "What the run could not give (not converged, a quantity pystra did not return, an estimated count). Empty for a clean run.",
             "limit_state_expr": "Limit state expression used.",
             "n_variables": "Number of random variables.",
         },
@@ -118,16 +123,24 @@ METHOD_INFO = {
         },
         "returns": {
             "beta_form": "FORM reliability index.",
-            "beta_breitung": "SORM reliability index (Breitung approximation).",
-            "pf_breitung": "SORM probability of failure.",
+            "beta_breitung": "SORM reliability index (Breitung approximation). Null when the second-order stage failed (sorm_failed): never FORM's value.",
+            "pf_breitung": "SORM probability of failure. Null when sorm_failed.",
+            "sorm_failed": "True when there is no second-order result (Breitung's formula undefined for the fitted curvatures, e.g. beta < 0, or FORM did not converge); sorm_message says why.",
+            "sorm_message": "pystra's message for the second-order stage.",
+            "form_converged": "FORM's convergence flag (as form_analysis's converged).",
+            "sorm_converged": "Whether the second-order fit gave a value.",
             "pf_form": "FORM probability of failure.",
             "kappa": "Principal curvatures at design point.",
             "alpha": "Sensitivity factors per variable.",
             "design_point_x": "Design point in physical space.",
             "design_point_u": "Design point in standard normal space.",
-            "n_iterations": "Number of iterations.",
-            "n_function_calls": "An estimate, not a count: iterations x number of variables.",
-            "converged": "Whether analysis converged.",
+            "n_iterations": "Number of FORM iterations.",
+            "n_function_calls": "Limit state evaluations: pystra's own count (2.x), or on 1.x an estimate (iterations x number of variables); n_function_calls_counted says which. FORM and SORM together.",
+            "n_function_calls_counted": "True: n_function_calls is pystra's count. False: the estimate.",
+            "converged": "form_converged and sorm_converged, both pystra's own flags (not inferred from beta).",
+            "converged_source": "Where form_converged comes from (pystra 2.x's flag, or 1.x's stopping rule).",
+            "message": "pystra's FORM status message.",
+            "warnings": "What the run could not give (a failed SORM, FORM not converged, an estimated count). Empty for a clean run.",
             "limit_state_expr": "Limit state expression used.",
             "n_variables": "Number of random variables.",
         },
@@ -149,8 +162,13 @@ METHOD_INFO = {
             "n_samples": {
                 "type": "int",
                 "required": False,
-                "description": "Number of Monte Carlo samples.",
+                "description": "Number of Monte Carlo samples. All of them are run (pystra's own early stop at a 5% COV of pf is off).",
                 "default": 100000,
+            },
+            "seed": {
+                "type": "int",
+                "required": False,
+                "description": "Seed for the sampling (a non-negative integer), local to this call. Give it to repeat a run.",
             },
             "correlation": {
                 "type": "array",
@@ -160,13 +178,27 @@ METHOD_INFO = {
             },
         },
         "returns": {
-            "beta": "Reliability index.",
-            "pf": "Probability of failure.",
-            "n_samples": "Total Monte Carlo samples.",
+            "beta": "Reliability index, -PHI^-1(pf). Null when no sample (or every sample) failed.",
+            "pf": "Probability of failure: n_failures / n_samples.",
+            "n_samples": "Monte Carlo samples run.",
+            "n_samples_requested": "Samples asked for.",
             "n_failures": "Number of failure samples.",
-            "cov_pf": "Coefficient of variation of Pf estimate.",
+            "cov_pf": "Coefficient of variation of the pf estimate, sqrt((1-pf)/(n pf)). Null when no sample failed (undefined, not zero).",
+            "pf_upper95_no_failures": "With no failure: the upper end of the exact 95% binomial interval on pf, 1 - 0.025^(1/n) (about 3.7/n). Null otherwise.",
+            "seed": "The seed used; null = none given (the run is not repeatable).",
+            "warnings": "No failure in the samples; no seed given.",
             "limit_state_expr": "Limit state expression used.",
             "n_variables": "Number of random variables.",
         },
     },
 }
+
+
+# What a left-out seed stands for (GM-322; as reliability.monte_carlo's).
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+declare_when_absent(METHOD_INFO, {
+    "monte_carlo_analysis": {
+        "seed": ("a fresh random seed",
+                 "the samples, and so the result, differ from run to run; "
+                 "give seed to repeat a run")},
+})

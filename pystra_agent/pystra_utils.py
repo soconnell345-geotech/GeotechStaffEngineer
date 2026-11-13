@@ -38,37 +38,74 @@ class _Run:
     """Plain record of one analysis, the same whichever pystra ran it.
 
     Arrays are in pystra's own order (random variables only, constants left
-    out); ``None`` where the pystra version does not report the quantity.
+    out); ``None`` where pystra reports no value (a quantity its version
+    does not give, or a run that did not converge).
     """
 
     beta = pf = alpha = x = u = kappa = None
     iterations = 0
     beta_breitung = pf_breitung = None
+    #: FORM: pystra's own convergence flag (2.x), or its stopping rule read
+    #: back (1.x has no flag: it stops at the tolerances or at the
+    #: iteration limit, so "stopped below the limit" is its convergence).
+    converged = None
+    converged_source = ""
+    message = ""
+    #: pystra's own count of limit-state evaluations (2.x); None on 1.x.
+    n_evaluations = None
+    #: SORM stage: whether it was run, pystra's flag and message.
+    sorm_converged = None
+    sorm_message = ""
+    #: Monte Carlo: samples actually run, and the seed used (None = fresh).
+    n_samples = None
+    seed = None
 
 
 def run_form(sm, lsf, with_sorm: bool = False) -> _Run:
-    """Run FORM (and SORM when asked) on pystra 1.x or 2.x."""
+    """Run FORM (and SORM when asked) on pystra 1.x or 2.x.
+
+    Nothing is filled in for a stage that failed: an unconverged FORM on
+    2.x has no index, probability or design point (pystra gives none), and a
+    failed SORM leaves ``beta_breitung``/``pf_breitung``/``kappa`` at None
+    with pystra's message in ``sorm_message`` (GM-322).
+    """
     import pystra
 
     out = _Run()
     if _is_v2():
-        # on_failure="return" keeps 1.x's behaviour of reporting an
-        # unconverged result instead of raising.
+        # on_failure="return" hands back pystra's record of an unconverged
+        # run (status, message, residuals) instead of raising.
         form = pystra.FORM(sm, lsf, on_failure="return")
         res = form.run()
-        out.beta = float(res.beta)
-        out.pf = float(res.failure_probability)
+        out.converged = bool(res.converged)
+        out.converged_source = "pystra's own flag (FORMResult.converged)"
+        out.message = str(res.message)
+        out.n_evaluations = int(res.n_limit_state_evaluations)
+        out.beta = None if res.beta is None else float(res.beta)
+        out.pf = (None if res.failure_probability is None
+                  else float(res.failure_probability))
         out.alpha = None if res.alpha is None else np.asarray(res.alpha)
         out.x = None if res.design_point_x is None else np.asarray(res.design_point_x)
         out.u = None if res.design_point_u is None else np.asarray(res.design_point_u)
         out.iterations = int(res.iterations)
         if with_sorm:
+            if not out.converged:
+                out.sorm_converged = False
+                out.sorm_message = (
+                    "SORM was not run: it is fitted at FORM's design point, "
+                    "and FORM did not converge")
+                return out
             sres = pystra.SORM(sm, lsf, form=form, on_failure="return").run()
+            out.sorm_converged = bool(sres.converged)
+            out.sorm_message = str(sres.message)
+            out.n_evaluations += int(sres.n_limit_state_evaluations)
             out.beta_breitung = None if sres.beta is None else float(sres.beta)
             out.pf_breitung = (
                 None if sres.failure_probability is None
                 else float(sres.failure_probability))
-            out.kappa = np.atleast_1d(np.asarray(sres.curvatures, dtype=float))
+            out.kappa = (
+                None if sres.curvatures is None
+                else np.atleast_1d(np.asarray(sres.curvatures, dtype=float)))
         return out
 
     options = pystra.AnalysisOptions()
@@ -81,39 +118,89 @@ def run_form(sm, lsf, with_sorm: bool = False) -> _Run:
     out.x = np.asarray(form.getDesignPoint(uspace=False))
     out.u = np.asarray(form.getDesignPoint(uspace=True))
     out.iterations = int(form.i)
+    # 1.x keeps no flag. Its loop ends when both tolerances are met OR at
+    # the iteration limit, so a run that used every iteration is reported
+    # as not converged (it may have met the tolerances on its last pass;
+    # pystra 1.x does not say).
+    out.converged = out.iterations < int(options.getImax())
+    out.converged_source = (
+        "pystra 1.x keeps no flag: read from its stopping rule (stopped "
+        "before the iteration limit)")
+    out.message = ("Converged" if out.converged
+                   else f"FORM iteration limit ({int(options.getImax())}) "
+                        f"reached")
     if with_sorm:
-        sorm = pystra.Sorm(sm, lsf, options, form)
-        sorm.run()
-        out.beta_breitung = float(np.ravel(sorm.betag_breitung)[0])
-        out.pf_breitung = float(np.ravel(sorm.pf2_breitung)[0])
-        out.kappa = np.atleast_1d(np.asarray(sorm.kappa, dtype=float))
+        try:
+            sorm = pystra.Sorm(sm, lsf, options, form)
+            sorm.run()
+            out.beta_breitung = float(np.ravel(sorm.betag_breitung)[0])
+            out.pf_breitung = float(np.ravel(sorm.pf2_breitung)[0])
+            out.kappa = np.atleast_1d(np.asarray(sorm.kappa, dtype=float))
+        except Exception as exc:  # the failure is reported, not hidden
+            out.beta_breitung = out.pf_breitung = out.kappa = None
+            out.sorm_converged = False
+            out.sorm_message = f"{type(exc).__name__}: {exc}"
+        else:
+            # 1.x marks an undefined Breitung formula (1 + beta*kappa <= 0
+            # for a curvature) by printing a line and setting both values
+            # to exactly 0; a real result never has pf = 0 with beta = 0.
+            ok = (np.isfinite(out.beta_breitung)
+                  and np.isfinite(out.pf_breitung)
+                  and not (out.pf_breitung == 0.0
+                           and out.beta_breitung == 0.0))
+            out.sorm_converged = bool(ok)
+            out.sorm_message = (
+                "Fitted" if ok
+                else "The Breitung formula is undefined for the fitted "
+                     "curvatures")
+            if not ok:
+                out.beta_breitung = out.pf_breitung = None
     return out
 
 
-def run_monte_carlo(sm, lsf, n_samples: int) -> _Run:
-    """Run crude Monte Carlo on pystra 1.x or 2.x; fills ``beta`` and ``pf``."""
+def run_monte_carlo(sm, lsf, n_samples: int, seed=None) -> _Run:
+    """Run crude Monte Carlo on pystra 1.x or 2.x.
+
+    Every one of the ``n_samples`` asked for is run: pystra's own default
+    stops as soon as the coefficient of variation of pf reaches 0.05, which
+    left the count run below the count reported (GM-322). ``seed`` is local
+    to the call: numpy's global generator is neither read nor left changed.
+    With ``seed=None`` the run is seeded from fresh entropy and differs
+    from run to run.
+    """
     import pystra
 
     out = _Run()
+    out.seed = seed
     if _is_v2():
-        # 2.x does not use numpy's global generator; seed it from there so
-        # np.random.seed still makes a run repeatable, as it did in 1.x.
-        seed = int(np.random.randint(0, 2**31 - 1))
         mc = pystra.CrudeMonteCarlo(
-            sm, lsf, options=pystra.SimulationOptions(n_samples=n_samples),
+            sm, lsf,
+            options=pystra.SimulationOptions(n_samples=n_samples,
+                                             target_cov=0.0),
             rng=seed)
         res = mc.run()
         out.beta = float(res.beta)
         out.pf = float(res.failure_probability)
+        out.n_samples = int(res.n_samples)
+        out.n_evaluations = int(res.n_limit_state_evaluations)
         return out
 
     options = pystra.AnalysisOptions()
     options.setPrintOutput(False)
     options.setSamples(n_samples)
+    options.target_cov = -1.0  # 1.x has no setter; never reached, so no early stop
     mc = pystra.CrudeMonteCarlo(options, lsf, sm)
-    mc.run()
-    out.beta = float(mc.getBeta())
-    out.pf = float(mc.getFailure().flat[0])
+    # 1.x samples from numpy's global generator. Give it this call's seed
+    # (or fresh entropy) and put the caller's generator state back after.
+    state = np.random.get_state()
+    try:
+        np.random.seed(seed)
+        mc.run()
+    finally:
+        np.random.set_state(state)
+    out.beta = float(np.ravel(mc.getBeta())[0])
+    out.pf = float(np.ravel(mc.getFailure())[0])
+    out.n_samples = int(mc.k)
     return out
 
 
@@ -339,6 +426,14 @@ def _compile_limit_state(expr_str: str, var_names: list) -> callable:
                 not isinstance(node.value, (int, float)):
             raise ValueError("Limit state constants must be numbers")
 
+    # pystra hands the limit state whole arrays of sample points. Plain
+    # arithmetic works on them as it stands; a math function (math.sqrt
+    # takes one number), a comparison or ``a if c else b`` does not, so an
+    # expression with any of those is evaluated one point at a time.
+    pointwise = any(isinstance(node, (ast.Call, ast.IfExp, ast.BoolOp,
+                                      ast.Compare))
+                    for node in ast.walk(tree))
+
     # Every ``a ** b`` becomes a call to _bounded_pow (after the checks, so
     # the name is not one an expression can write), under a name no variable
     # shadows.
@@ -378,7 +473,15 @@ def _compile_limit_state(expr_str: str, var_names: list) -> callable:
 
     def lsf(**kwargs):
         local = {k: kwargs[k] for k in var_names}
-        return eval(code, namespace, local)  # nosec B307 — AST-whitelisted
+        if not pointwise or all(np.ndim(v) == 0 for v in local.values()):
+            return eval(code, namespace, local)  # nosec B307 — AST-whitelisted
+        columns = np.broadcast_arrays(
+            *[np.asarray(local[k], dtype=float) for k in var_names])
+        out = np.empty(columns[0].shape, dtype=float)
+        for idx in np.ndindex(out.shape):
+            point = {k: float(c[idx]) for k, c in zip(var_names, columns)}
+            out[idx] = eval(code, namespace, point)  # nosec B307
+        return out
 
     return lsf
 
