@@ -29,6 +29,7 @@ stabilizing piles in every method (`reinforcement.py`).
 - `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
 - `reinforcement.py` — nails, anchors, geosynthetics and stabilizing piles as forces at the base of the slice each crosses, in every method (GM-53, GM-59)
 - `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering; a rigorous noncircular solution must hold about a second axis and slicing (`_solution_fails`, GM-57 review); the search's time budget and the Bishop screen (`search_budget`, `bishop_screen`, GM-123)
+- `acceptability.py` — the printed acceptability checks on a solved surface (GM-140 step 3): `surface_findings()` gives each finding with its check, source, slices or slice sides and values (m_alpha below 0.2, Bishop against the Ordinary Method of Slices, a negative frictional term, tension on bases and sides, the line of thrust outside the mass); a flagged surface is kept, in a result and in a search
 - `search_supplements.py` — toe-circle, circle-passing-above-the-toe and infinite-slope (shallow planar) families scored after every `search_critical_surface` (GM-13, GM-14, GM-122)
 - `search_ranges.py` — the automatic entry / exit windows and centre ranges, set from the slope's toe, crest, height and depth to the base (GM-57)
 - `analysis.py` — analyze_slope(), search_critical_surface() orchestrators
@@ -806,6 +807,78 @@ the approximate solver's value.
   per-surface solves without a solution); the GLE's lambda range, tolerance
   and m_alpha clamp (D29).
 
+### The printed acceptability checks (GM-140 step 3, 2026-11-13)
+
+**The rule.** Once a method has solved a surface (step 2) and the surface is
+one sliding mass (GM-122), every further test is a printed acceptability
+check whose finding is reported with the surface: which check, which slice,
+what value. A search keeps a flagged surface by default and says so;
+refusing on a check is a stated option. Nothing is left out silently, and
+circles and polylines meet the same checks. Code: `acceptability.py`
+(`surface_findings`), called by `analyze_slope`, by every search's scorer
+(`search._compute_fos`, `_trial_checks`) and by `search_critical_surface` on
+its governing surface (`search_supplements.critical_acceptability`).
+
+| Check (`flags`) | Printed source | What is reported |
+|---|---|---|
+| `low_m_alpha` | Whitman and Bailey (1967, p. 487, Eq. 5): warn if cos(theta) + tan(phi) sin(theta) / F < 0.2 on any slice; "the user must examine the result in detail" | the slices, their m_alpha, base angle and whether the base is inclined against the sliding; EM 1110-2-1902 C-10b's four remedies (pp. C-34 to C-36) where it is, named and not applied |
+| `bishop_below_oms` | Duncan (1996, p. 580): compute the Ordinary Method of Slices value for each circle when Bishop's method is used; where Bishop's is the lower, the Ordinary Method of Slices value is the better answer | both values; the Ordinary Method of Slices value is taken (`FOS`, with `method_used`), Bishop's own stays in `FOS_bishop` |
+| `negative_frictional_term` | Bishop (1955) Eqs. 9 and 13, p. 10, no lower limit; Whitman and Bailey (1967, p. 487) ask for a warning | the slices where u b exceeds W (Bishop) or u l exceeds W cos(alpha) (Ordinary Method of Slices), and the rule in force |
+| `base_tension`, `side_tension`, `thrust_outside` | EM 1110-2-1902 C-10a (pp. C-33 to C-34): forces examined, no tension on the sides or bottom of slices, the line of thrust within the sliding mass; UFC 3-220-10 pp. 361 to 362 | Spencer, Morgenstern-Price and GLE: the slices with a negative effective normal force, the slice sides with a tensile interslice force, and the sides where the line of thrust as solved (not clipped) is outside the mass |
+
+**m_alpha below 0.2 (OWN-102).** A search keeps such a surface, flags it and
+counts it by family (`SearchResult.trial_flags`); `low_m_alpha='refuse'`
+leaves it out and counts it, the rule before this step (GM-127; the section
+below describes that rule and its history). The exemption of phi' = 0
+slices stays the default and is stated in the result as the module's own
+reasoning, with no printed source; `m_alpha_rule='every_slice'` is the
+option.
+
+**Bishop against the Ordinary Method of Slices.** Made in the one solver
+(`solution.bishop_against_oms`), so it holds for a given circle, every
+search family, FOSM and Monte Carlo. It is made only on circles with no
+supports and no seismic coefficient (the limit the owner added to OWN-102 on
+2026-11-13: Duncan, Wright and Brandon 2014, p. 93, print no Ordinary
+Method of Slices equation with known forces); otherwise the result says it
+was not made and why. "Below" means below by more than the tolerance
+Bishop's iteration is solved to: on a phi = 0 circle the two are the same
+sum (EM C-2b, p. C-16).
+
+**The frictional term (D21).** `methods.NEGATIVE_TERM_RULES`: `as_printed`
+(default) uses W - u b and W cos(alpha) - u l as printed; `zero` sets the
+term to zero where negative (the rule before this step, no printed source).
+Parameter `negative_friction_term` of `analyze_slope` and
+`search_critical_surface`; the rule is held in a context variable so every
+solve inside the call follows it. The GLE solver's own settings (no
+friction on a base in tension, the 0.05 m_alpha clamp; D29) are not
+changed: `base_tension` names the slices the first applies to.
+
+**In a search.** `trial_flags` gives, by family and method, the trials
+scored, those flagged and each flag; `critical_flags` and
+`critical.acceptability` what the governing surface carries; and when it
+carries a flag, `lowest_unflagged` gives the lowest factor of safety among
+the scored surfaces of the same method that carry none (among the trials
+the search happened to score: it is not a second search). The headline stays
+the lowest solved surface.
+
+**The noncircular screens (D22).** Slice count, span, agreement between
+moment axes, agreement between slicings and the refusal of a FOS below 1.5
+on a jagged surface are numerical stand-ins of the module's own, not found
+in print. Each refusal is counted by screen (`SearchResult.screen_refusals`),
+with how many of the surfaces refused after solving the printed checks also
+flag, and `choices` names them as the module's own.
+
+**One below-base test (D19).** The toe-circle family asks
+`search._dips_below_base`, as every family does.
+
+**The direct march (step 2's open question): not applied.** Measured again
+with the rule that a marched state resting on the m_alpha clamp or on a base
+in tension is no state: the reviewer's phi = 0 circle solves (2.9458 against
+2.9435) and the GM-131 surfaces no longer do, but a GLE solve loses the state
+the lambda search had, an ordinary slope loses its yield coefficient (no
+Spencer solution at kh = 1.0) and two searches change. The strict xfail in
+`test_own_solution_or_no_number.py` holds the case.
+
 ### A single surface: warnings, and no silent fallback (GM-81, 2026-10-15)
 *(Its two "what `FOS` holds when there is no solution" cases, the labelled
 approximate value and `_legacy_critical_warning`, are superseded by GM-140
@@ -1149,6 +1222,12 @@ and the rigorous methods can rank circles differently where interslice
 forces matter.
 
 ### m_alpha below 0.2: Slide2's check on every scored surface (GM-127, 2026-10-17)
+
+> **Since GM-140 step 3 (2026-11-13)** a surface with m_alpha below 0.2 is
+> kept and flagged by default (OWN-102; see "The printed acceptability
+> checks" above). What this section describes, leaving such a surface out
+> and counting it, is the stated option `low_m_alpha='refuse'`. The values
+> below were measured under that rule.
 
 m_alpha = cos(a) + sin(a) tan(phi') / F, with the base angle a positive in
 the sliding direction, divides the normal force on a slice base in Bishop's

@@ -296,7 +296,7 @@ def search_toe_circles(geom: SlopeGeometry,
     """
     from slope_stability.search import (
         _compute_fos, _check_entry_exit, _FOS_MAX, _time_up, _record_not_run,
-        _scoring_family,
+        _scoring_family, _dips_below_base,
     )
 
     scan_method = ("bishop" if method in _SCREENED_METHODS and fos_fn is None
@@ -360,19 +360,17 @@ def search_toe_circles(geom: SlopeGeometry,
                 "xl": xl, "xr": xr}
 
     def below_base(ch, xc, yc, r):
-        """True when the arc between the chord ends dips below the bottom of
-        the deepest layer. The critical toe circle can at most touch the
-        base, as every search's circle does (`_compute_fos`, GM-128): where
-        the toe sits on the base, a circle through it that dips under the
-        base pivots about the toe into ground the model does not have
-        (Slide2 #85: 0.83 against the base-tangent 0.91 when, before
-        GM-128, such a circle shed its toe slices; 1.01 when, granted
-        `build_slices`' tolerance for a given surface, its centre moved
-        0.64 ft beyond the toe and its anchor went uncounted)."""
-        x_low = min(max(xc, ch["xl"]), ch["xr"])
-        z_low = yc - math.sqrt(max(r * r - (x_low - xc) ** 2, 0.0))
-        base = min(L.bottom_at(x_low) for L in geom.soil_layers)
-        return z_low < base - 1e-6 * max(ch["c"], 1.0)
+        """True when the circle reaches below the bottom of the deepest
+        layer: the one test every family uses (`search._dips_below_base`,
+        GM-128's rule, measured on the surface between its ends), on the
+        circle as `circle_fos` builds it (GM-140 step 3, D19). Before, this
+        family had a test of its own, on the arc between the chord ends
+        with a tolerance of a millionth of the chord, so the families
+        admitted slightly different circles. Where the toe sits on the
+        base, a circle through it that dips under the base pivots about the
+        toe into ground the model does not have (Slide2 #85)."""
+        return _dips_below_base(
+            geom, CircularSlipSurface(xc, yc, r * (1.0 - 1e-6)))
 
     def circ(ch, u):
         """Circle through both chord ends, its centre a distance
@@ -1630,19 +1628,217 @@ def m_alpha_confirmation(geom: SlopeGeometry, crit, method: str,
     return out
 
 
+# ---------------------------------------------------------------------------
+# The printed acceptability checks in a search (GM-140 step 3)
+# ---------------------------------------------------------------------------
+
+def _method_key(label: str, default: str) -> str:
+    """The method a result's label names ('Bishop', 'Morgenstern-Price',
+    'Gle', ...), as `solution.METHODS` spells it."""
+    from slope_stability.solution import METHODS
+    key = (label or "").lower().replace("-", "_").replace(" ", "_")
+    return key if key in METHODS else default
+
+
+def critical_acceptability(geom: SlopeGeometry, result: SearchResult,
+                           scored: str, n_slices: int, tol: float = 1e-4,
+                           m_alpha_rule: str = "frictional") -> None:
+    """Put on a search's result what the printed acceptability checks find
+    (GM-140 step 3, item 4):
+
+    * ``critical.acceptability`` and ``critical_flags``: the findings on
+      the governing surface, solved again by the method that scored it at
+      the search's slice count (which check, which slice, what value);
+    * for a Bishop circle on which the Ordinary Method of Slices value was
+      taken (Duncan 1996, p. 580), both values and ``method_used`` on
+      ``critical``;
+    * ``lowest_unflagged``: when the governing surface carries a flag, the
+      lowest factor of safety among the surfaces the search scored by the
+      same method that carry none, with the family and the surface; or the
+      statement that it scored none.
+
+    The headline stays the lowest solved surface."""
+    from slope_stability.acceptability import surface_findings, flags
+    from slope_stability.search import trial_reinforcement
+    from slope_stability.slices import build_slices
+    from slope_stability.solution import solve_method
+    crit = result.critical
+    if crit is None or crit.FOS is None:
+        return
+    method = _method_key(crit.method, scored)
+    try:
+        slip = _surface_of(crit)
+        if slip is None:
+            return
+        slices = build_slices(geom, slip, n_slices)
+        sol = solve_method(slices, slip, method, "half_sine", tol,
+                           trial_reinforcement(geom, slip))
+    except (ValueError, ZeroDivisionError, RuntimeError):
+        return
+    if not sol.solved:
+        return
+    crit.acceptability = surface_findings(geom, slip, slices, sol,
+                                          rule=m_alpha_rule)
+    if method == "bishop":
+        crit.FOS_bishop = sol.fos_bishop
+        crit.FOS_fellenius = sol.fos_oms
+        if sol.oms_taken:
+            crit.method_used = ("Ordinary Method of Slices value (Bishop's "
+                                "value is below it; Duncan 1996, p. 580)")
+    result.critical_flags = flags(crit.acceptability)
+    if not result.critical_flags:
+        return
+    best = None
+    for rec in result.trial_flags:
+        low = rec.get("lowest_unflagged")
+        if rec["method"] != method or not low:
+            continue
+        if best is None or low["FOS"] < best["FOS"]:
+            best = dict(low, family=rec["family"], method=method)
+    n_scored = sum(r["n_scored"] for r in result.trial_flags
+                   if r["method"] == method)
+    if best is None:
+        result.lowest_unflagged = {
+            "FOS": None, "method": method,
+            "note": (f"none of the {n_scored} surfaces the search scored "
+                     f"with this method is without a flag")}
+    else:
+        result.lowest_unflagged = best
+
+
+def acceptability_warning(result: SearchResult) -> Optional[str]:
+    """What a search says when its governing surface carries a flag of the
+    printed acceptability checks: the flags, that the surface is kept, the
+    lowest surface without a flag beside it, and where the detail is."""
+    from slope_stability.acceptability import flags_text
+    names = result.critical_flags
+    if not names or result.critical is None:
+        return None
+    low = result.lowest_unflagged or {}
+    text = (f"The governing surface (FOS {result.critical.FOS:.3f}) does "
+            f"not meet {len(names)} of the printed acceptability checks: "
+            f"{flags_text(names)}. It is kept and reported, flagged; "
+            f"critical.acceptability names the slices and the values. ")
+    if low.get("FOS") is not None:
+        text += (f"The lowest surface the search scored that carries no "
+                 f"flag has FOS {low['FOS']:.3f} ("
+                 f"{_FAMILY_TEXT.get(low.get('family'), low.get('family'))}"
+                 f"; lowest_unflagged). ")
+    elif low.get("note"):
+        text += low["note"][0].upper() + low["note"][1:] + ". "
+    text += ("Examine the surface before using its factor of safety "
+             "(Whitman and Bailey 1967, p. 487; EM 1110-2-1902 C-10a, "
+             "pp. C-33 to C-34).")
+    if "low_m_alpha" in names:
+        rem = next((f.get("remedies") for f in result.critical.acceptability
+                    if f["check"] == "low_m_alpha"), "")
+        text += ((" " + rem if rem else "")
+                 + " low_m_alpha='refuse' leaves surfaces with m_alpha "
+                   "below 0.2 out of the search instead.")
+    return text
+
+
+def acceptability_choices(result: SearchResult, method: Optional[str],
+                          low_m_alpha: str, negative_friction_term: str
+                          ) -> List[Dict[str, Any]]:
+    """The ``choices`` entries of the printed acceptability checks in a
+    search: how flagged surfaces were treated, the Bishop against Ordinary
+    Method of Slices comparison, the negative frictional term, and the
+    noncircular screens (the module's own)."""
+    from geotech_common.choices import MODULE, choice, how_given
+    from slope_stability.acceptability import CHECK_TEXT
+    out = []
+    n_scored = sum(r["n_scored"] for r in result.trial_flags)
+    n_flagged = sum(r["n_flagged"] for r in result.trial_flags)
+    by = {}
+    for r in result.trial_flags:
+        for c, n in r["by_check"].items():
+            by[c] = by.get(c, 0) + n
+    counts = "; ".join(f"{CHECK_TEXT.get(c, c)}: {n}" for c, n in by.items())
+    out.append(choice(
+        "surfaces that do not meet a printed acceptability check",
+        f"kept and flagged: {n_flagged} of {n_scored} scored trials"
+        + (f" ({counts})" if counts else ""), MODULE,
+        "every solved surface that is one sliding mass is scored; the "
+        "checks' findings are reported, not acted on (Whitman and Bailey "
+        "1967, p. 487: the user is warned and must examine the result; EM "
+        "1110-2-1902 C-10a, pp. C-33 to C-34: forces examined, no tension "
+        "on slice sides or bases, the line of thrust within the mass). "
+        "trial_flags counts them by family; critical_flags and "
+        "lowest_unflagged say what the governing surface carries and the "
+        "lowest surface without a flag"))
+    if (method or "").lower() == "bishop":
+        n_taken = by.get("bishop_below_oms", 0)
+        out.append(choice(
+            "Bishop's value against the Ordinary Method of Slices value",
+            f"the Ordinary Method of Slices value taken on {n_taken} "
+            f"scored circle(s)" if n_taken else
+            "computed for every circle; Bishop's value was never the lower",
+            MODULE,
+            "Duncan (1996, p. 580): calculate the Ordinary Method of "
+            "Slices value for each circle when Bishop's method is used; "
+            "where Bishop's is below it, the Ordinary Method of Slices "
+            "value is the better answer. Not made on circles with "
+            "supports or under a seismic coefficient (Duncan, Wright and "
+            "Brandon 2014, p. 93, print no Ordinary Method of Slices "
+            "equation with known forces)"))
+    if (method or "").lower() in ("bishop", "fellenius"):
+        out.append(choice(
+            "frictional term where the pore-water force exceeds the weight",
+            "as printed, negative" if negative_friction_term == "as_printed"
+            else "set to zero",
+            how_given(negative_friction_term, "as_printed",
+                      name="negative_friction_term"),
+            "Bishop (1955) Eqs. 9 and 13, p. 10 write W cos(alpha) - u l "
+            "and W - u b with no lower limit; Whitman and Bailey (1967, "
+            "p. 487) ask for a warning, and the result names the slices",
+            ["set to zero where negative, the module's earlier rule, no "
+             "printed source (negative_friction_term='zero')"
+             if negative_friction_term == "as_printed" else
+             "as printed (negative_friction_term='as_printed', the "
+             "default)"]))
+    if result.screen_refusals:
+        text = {"slice_count": "too few slices",
+                "span": "too short a span",
+                "one_moment_axis": "solved about one moment axis only",
+                "one_slicing": "solved at one slice count only",
+                "jagged_below_1_5": "FOS below 1.5 on a jagged surface"}
+        parts = []
+        for k, rec in result.screen_refusals.items():
+            p = f"{text.get(k, k)}: {rec['n']}"
+            if rec.get("n_flagged") is not None:
+                p += (f" ({rec['n_flagged']} of them flagged by a printed "
+                      f"check)")
+            parts.append(p)
+        out.append(choice(
+            "noncircular trial surfaces refused by the module's screens",
+            "; ".join(parts), MODULE,
+            "numerical stand-ins of the module's own, not found in print "
+            "(EM 1110-2-1902 C-10a prints the checks on forces and the "
+            "line of thrust instead); each refusal is counted here "
+            "(screen_refusals), with how many of the surfaces refused "
+            "after solving the printed checks also flag"))
+    return out
+
+
 _SLIDE2_CHECK = ("Slide2 reports such a surface as invalid with its 'Check "
                  "malpha < 0.2' setting on (its error -112)")
 
 
 def m_alpha_choice(n_left_out: int, method: Optional[str],
                    confirm: Optional[Dict[str, Any]] = None,
-                   rule: str = "frictional") -> Dict[str, Any]:
-    """The ``choices`` entry for the surfaces a search left out for m_alpha
-    (GM-127), which slices it looked at (``rule``,
-    `methods.M_ALPHA_RULES`) and the governing surface on twice the
-    slices."""
+                   rule: str = "frictional", action: str = "refuse",
+                   n_flagged: int = 0) -> Dict[str, Any]:
+    """The ``choices`` entry for the surfaces with m_alpha < 0.2 on a
+    slice: kept and flagged (``action`` 'flag', the default of a search
+    since GM-140 step 3; ``n_flagged`` of the scored trials) or left out
+    (``action`` 'refuse', GM-127; ``n_left_out``), which slices the check
+    looked at (``rule``, `methods.M_ALPHA_RULES`) and the governing surface
+    on twice the slices."""
     from geotech_common.choices import choice, how_given
     how = how_given(rule, "frictional", name="m_alpha_rule")
+    if action == "flag" and (method or "").lower() != "fellenius":
+        return _m_alpha_flag_choice(method, confirm, rule, n_flagged)
     if (method or "").lower() == "fellenius":
         return choice(
             "slip surfaces left out for m_alpha", "none", how,
@@ -1691,6 +1887,57 @@ def m_alpha_choice(n_left_out: int, method: Optional[str],
          if n_left_out else f"none (m_alpha < 0.2 on {where} leaves a "
                             f"surface out)"),
         how, basis, alternatives)
+
+
+def _m_alpha_flag_choice(method, confirm, rule: str,
+                         n_flagged: int) -> Dict[str, Any]:
+    """`m_alpha_choice` for a search that keeps and flags (OWN-102)."""
+    from geotech_common.choices import choice, how_given
+    where = ("any slice" if rule == "every_slice"
+             else "a slice with phi' > 0")
+    basis = ("m_alpha = cos(a) + sin(a) tan(phi') / F, at the method's own "
+             "F, is the denominator of the normal force on a slice base. "
+             "Whitman and Bailey (1967, p. 487, Eq. 5) print a warning and "
+             "an instruction to examine the result where it is below 0.2 "
+             "on any slice, not a rejection, so the surface is scored and "
+             "the result says which surface and slice (trial_flags, "
+             "critical.acceptability)")
+    if rule == "every_slice":
+        basis += "; every slice is looked at"
+    else:
+        basis += ("; slices with phi' = 0 are not looked at: there m_alpha "
+                  "= cos(a) does not depend on F and the shear strength is "
+                  "c l whatever the normal force (the module's own "
+                  "reasoning, no printed source)")
+    c = confirm or {}
+    if c.get("fos") is not None:
+        basis += (f"; on {c['n_slices']} slices the governing surface's FOS "
+                  f"is {c['fos']:.3f}"
+                  + (f" and its least m_alpha {c['m_alpha_min']:.2f}"
+                     if c.get("m_alpha_min") is not None else ""))
+        if c.get("fos_fine") is not None:
+            basis += (f"; on {c['n_slices_fine']} slices, {c['fos_fine']:.3f}"
+                      + (f" and {c['m_alpha_min_fine']:.2f}"
+                         if c.get("m_alpha_min_fine") is not None else ""))
+        elif c.get("refused_fine") == "geometry":
+            basis += (f"; on {c['n_slices_fine']} slices it is not "
+                      f"admissible ({c.get('why_fine') or 'its geometry'})")
+        else:
+            basis += (f"; on {c['n_slices_fine']} slices its method has no "
+                      f"solution")
+    alternatives = [
+        "left out of the search and counted, as the module did before "
+        "GM-140 step 3 and as Slide2 does with its 'Check malpha < 0.2' "
+        "setting on (low_m_alpha='refuse')",
+        "slices with phi' > 0 only (m_alpha_rule='frictional', the default)"
+        if rule == "every_slice" else
+        "every slice, phi' = 0 ones included (m_alpha_rule='every_slice')"]
+    return choice(
+        "slip surfaces with m_alpha below 0.2",
+        f"kept and flagged: {n_flagged} scored trial(s) with m_alpha < 0.2 "
+        f"on {where}",
+        how_given(rule, "frictional", name="m_alpha_rule"), basis,
+        alternatives)
 
 
 def finer_slices_warning(confirm: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -1763,6 +2010,8 @@ def search_choices(result: SearchResult, *, surface_type: str,
                    screen_not_applied: Optional[str] = None,
                    m_alpha: Optional[Dict[str, Any]] = None,
                    m_alpha_rule: str = "frictional",
+                   low_m_alpha: str = "flag",
+                   negative_friction_term: str = "as_printed",
                    ) -> List[Dict[str, Any]]:
     """What a critical-surface search chose (GM-115), as its ``choices``
     (``geotech_common.choices``): the search, the method it scored with
@@ -1878,9 +2127,14 @@ def search_choices(result: SearchResult, *, surface_type: str,
              "slope (x_entry_range, x_exit_range)"]))
     elif sr:
         out.append(choice("search ranges", "given", GIVEN, where))
+    n_low = sum(r["by_check"].get("low_m_alpha", 0)
+                for r in result.trial_flags)
     out.append(m_alpha_choice(result.n_rejected_m_alpha,
                               scored_with or method, m_alpha,
-                              m_alpha_rule))
+                              m_alpha_rule, action=low_m_alpha,
+                              n_flagged=n_low))
+    out.extend(acceptability_choices(result, scored_with or method,
+                                     low_m_alpha, negative_friction_term))
     if budget is not None:
         out.append(budget_choice(budget))
     return out

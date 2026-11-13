@@ -317,25 +317,51 @@ def test_slide85_bishop_search_reverse_curvature_and_short_arm():
     width / cos(a), fell short of the arc: the toe circle read 1.304 on 30
     slices (1.325 on 60, 1.362 on 960), the 'discard' searches 1.467 /
     1.296, and by default a circle centred at the crest's level whose last
-    slice had m_alpha 0.195 kept 1.432 / 1.274."""
+    slice had m_alpha 0.195 kept 1.432 / 1.274.
+
+    GM-140 step 3. (1) A circle with m_alpha below 0.2 is kept and flagged
+    by default (OWN-102), so with every slice looked at the 'discard'
+    active search keeps the 1.508 circle, flags it and gives 1.511 as the
+    lowest circle without a flag; ``low_m_alpha='refuse'`` leaves it out
+    and reads 1.511 as before. (2) The toe-circle family uses the one
+    below-base test (D19): its circle here, whose toe sits on the base,
+    moves by a hair (1.3715 to 1.3713, its crack 5.89 to 5.85 m deep).
+    (3) With a support crossing, Bishop's value is not compared with the
+    Ordinary Method of Slices value, and the result says so."""
     res = search_critical_surface(_slide85c(), method="bishop")
+    # printed 1.531 (Slide2 #85), Duncan and Wright 1.51: the 1.37 is the
+    # reverse-curvature circle of D24, step 4's
     assert res.critical.FOS == pytest.approx(1.372, abs=0.005)
     text = " ".join(res.warnings)
-    assert "reverse-curvature" in text and "5.89 m deep" in text
+    assert "reverse-curvature" in text
+    assert re.search(r"5\.8\d m deep", text)
+    assert "was not compared with the Ordinary Method of Slices" in text
     assert "29 % of their force counts" in text
     assert "finds no equilibrium solution" in text
     # its slices are phi = 0, so m_alpha is not checked (GM-127); its FOS
     # is 1.373 on 60 slices, within 1 %, so nothing is warned of
     assert res.n_rejected_m_alpha == 0
     assert "On 60 slices" not in text
-    for convention, rule, fos, fine_fos in (
-            ("active", "every_slice", 1.511, 1.51),     # D&W 1.51
-            ("passive", "every_slice", 1.316, 1.32),    # D&W 1.32
-            ("active", "frictional", 1.508, 1.512),
-            ("passive", "frictional", 1.316, 1.318)):
+    for convention, rule, action, fos, fine_fos in (
+            # (flagged circles left out, as before step 3)
+            ("active", "every_slice", "refuse", 1.511, 1.51),   # D&W 1.51
+            ("passive", "every_slice", "refuse", 1.316, 1.32),  # D&W 1.32
+            # GM-140 step 3: 1.511 -> 1.508, the flagged circle kept;
+            # printed 1.531 (Slide2 #85; Duncan and Wright 1.51), -1.5 %
+            ("active", "every_slice", "flag", 1.508, 1.512),
+            ("passive", "every_slice", "flag", 1.316, 1.318),
+            ("active", "frictional", "flag", 1.508, 1.512),
+            ("passive", "frictional", "flag", 1.316, 1.318)):
         g = _slide85c(convention, reverse_curvature="discard")
-        r = search_critical_surface(g, method="bishop", m_alpha_rule=rule)
+        r = search_critical_surface(g, method="bishop", m_alpha_rule=rule,
+                                    low_m_alpha=action)
         c = r.critical
+        if (convention, rule, action) == ("active", "every_slice", "flag"):
+            assert r.critical_flags == ["low_m_alpha"]
+            assert r.lowest_unflagged["FOS"] == pytest.approx(1.511,
+                                                              abs=0.005)
+        else:
+            assert r.critical_flags == []
         assert c.FOS == pytest.approx(fos, abs=0.005)
         assert c.yc >= 30.0 - 0.02                   # centre above the crest
         fine = analyze_slope(g, method="bishop", n_slices=240, xc=c.xc,
@@ -543,7 +569,11 @@ def test_single_surface_reverse_curvature_and_short_arm():
         assert r.FOS == pytest.approx(1.372, abs=0.002)
         assert r.method_solved and r.method_used == "" and r.produced_by == \
             "Bishop"
-        rc, arm = r.warnings
+        oms, rc, arm = r.warnings
+        # (GM-140 step 3, OWN-102's limit: with a support the comparison
+        # with the Ordinary Method of Slices value is not made, and said)
+        assert "was not compared with the Ordinary Method of Slices" in oms
+        assert "supports cross the circle" in oms
         assert "reverse-curvature" in rc and "5.89 m deep" in rc
         assert "a circle given to analyze_slope is evaluated either way" in rc
         assert "crossing this circle" in arm
@@ -564,7 +594,8 @@ def test_short_arm_gives_spencer_when_it_solves():
     r = analyze_slope(g, method="bishop", **circle)
     spencer = analyze_slope(g, method="spencer", **circle)
     assert spencer.method_solved
-    (w,) = r.warnings
+    oms, w = r.warnings
+    assert "was not compared with the Ordinary Method of Slices" in oms
     assert "21 % of their force counts" in w
     assert f"gives {spencer.FOS:.3f} on this circle" in w
 

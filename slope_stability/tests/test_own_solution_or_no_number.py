@@ -112,7 +112,14 @@ def test_a_circle_with_no_spencer_solution_has_no_number(method):
     # Bishop's simplified method solves the same circle: its own number,
     # 1.7268 by the review's own Bishop (1955 Eq. 13, p. 10) on 30 slices
     b = analyze_slope(g, method="bishop", **_NO_SPENCER_CIRCLE)
-    assert b.method_solved and b.FOS == pytest.approx(1.7268, rel=0.01)
+    assert b.method_solved
+    assert b.FOS_bishop == pytest.approx(1.7268, rel=0.01)
+    # GM-140 step 3 (OWN-102; Duncan 1996, p. 580): on this circle Bishop's
+    # value is below the Ordinary Method of Slices value (1.750), so the
+    # latter is the factor of safety reported, and the result says so.
+    assert b.FOS == pytest.approx(b.FOS_fellenius)
+    assert b.FOS_fellenius > b.FOS_bishop
+    assert "Ordinary Method of Slices" in b.method_used
 
 
 def test_no_approximate_solver_is_left_in_the_package():
@@ -659,7 +666,15 @@ def test_the_robust_lambda_search_runs_without_supports():
     "test_m_alpha), loses the yield coefficient of an ordinary slope "
     "(test_slope_stability_adapter::TestNewmark) and quadruples a "
     "noncircular search's run time (module_work/gm140/STEP2_CHECK.md, "
-    "section 11). Left for the lead."))
+    "section 11). Decided in GM-140 step 3 (item 7): not applied. With "
+    "the rule added that a marched state resting on the m_alpha clamp or "
+    "on a base in tension is no state, the march finds this circle "
+    "(2.9458) and no longer solves the GM-131 surfaces, but it still "
+    "takes away a state the lambda search had "
+    "(test_the_robust_lambda_search_runs_without_supports), an ordinary "
+    "slope's yield coefficient (test_newmark::"
+    "test_yield_acceleration_self_consistent: no solution at kh = 1.0) "
+    "and changes two searches (module_work/gm140/STEP3_CHECK.md)."))
 def test_the_march_is_tried_where_the_lagged_iteration_cannot_step():
     """Item 3 (the step 2 review's D1). Where the lagged iteration at a
     fixed lambda cannot take a step (a denominator at or below 1e-9), the

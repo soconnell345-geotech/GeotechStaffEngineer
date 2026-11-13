@@ -198,6 +198,21 @@ class SlopeStabilityResult:
         Depth of tension crack (m). 0 = no crack.
     tension_crack_water_depth : float
         Depth of water in tension crack (m). 0 = dry.
+    acceptability : list of dict
+        The findings of the printed acceptability checks on this surface
+        (GM-140 step 3, ``slope_stability.acceptability``): each with its
+        ``check``, ``flag`` (True: the check is not met), ``source``, a
+        plain ``text`` and the slices or slice sides with their values.
+        Checks: ``low_m_alpha`` (Whitman and Bailey 1967, p. 487),
+        ``bishop_below_oms`` / ``bishop_against_oms`` (Duncan 1996,
+        p. 580), ``negative_frictional_term`` (Bishop 1955 Eqs. 9 and 13),
+        ``base_tension``, ``side_tension`` and ``thrust_outside`` (EM
+        1110-2-1902 C-10a). ``flags`` names the checks not met. The
+        surface is analysed whatever they find.
+    thrust_line_unclipped : list of (float, float) or None
+        The line of thrust as the rigorous solution gives it, not clipped
+        to the sliding mass (``thrust_line`` is clipped for display; the
+        ``thrust_outside`` finding says where the line left the mass).
     """
     FOS: float = 0.0
     method: str = ""
@@ -229,6 +244,15 @@ class SlopeStabilityResult:
     methods_without_solution: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     layer_overlaps: List[Dict[str, Any]] = field(default_factory=list)
+    acceptability: List[Dict[str, Any]] = field(default_factory=list)
+    thrust_line_unclipped: Optional[List[Tuple[float, float]]] = None
+
+    @property
+    def flags(self) -> List[str]:
+        """The printed acceptability checks this surface does not meet
+        (``acceptability``), by name."""
+        from slope_stability.acceptability import flags
+        return flags(self.acceptability)
 
     @property
     def is_circular(self) -> bool:
@@ -295,8 +319,17 @@ class SlopeStabilityResult:
                 lines.append(f"  Crack water:      {self.tension_crack_water_depth:.2f} m")
         if self.FOS_fellenius is not None:
             lines.append(f"  FOS (Fellenius):  {self.FOS_fellenius:.3f}")
-        if self.FOS_bishop is not None and self.method != "Bishop":
+        if self.FOS_bishop is not None and (self.method != "Bishop"
+                                            or self.method_used):
+            # (also Bishop's own value where the Ordinary Method of Slices
+            # value was taken for the circle, Duncan 1996 p. 580)
             lines.append(f"  FOS (Bishop):     {self.FOS_bishop:.3f}")
+        if self.method_used:
+            lines.append(f"  FOS reported is:  {self.method_used}")
+        if self.flags:
+            from slope_stability.acceptability import flags_text
+            lines.append(f"  Acceptability:    not met: "
+                         f"{flags_text(self.flags)}")
         if self.FOS_spencer is not None and self.method != "Spencer":
             lines.append(f"  FOS (Spencer):    {self.FOS_spencer:.3f}"
                          + self._no_solution_mark("Spencer"))
@@ -420,6 +453,10 @@ class SlopeStabilityResult:
             d["methods_without_solution"] = list(self.methods_without_solution)
         if self.layer_overlaps:
             d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
+        if self.acceptability:
+            # the printed acceptability checks (GM-140 step 3)
+            d["flags"] = self.flags
+            d["acceptability"] = [dict(f) for f in self.acceptability]
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d
@@ -610,93 +647,36 @@ class SearchResult:
     n_rejected_m_alpha : int
         Trial surfaces, circular or not, the search left out because m_alpha
         = cos(a) (1 + tan(a) tan(phi) / F) fell below 0.2 on a slice at the
-        method's own F (GM-127; Slide2's check, its error -112). Counted as
-        ``n_rejected_ground_crossings`` is.
-    no_solution : list of dict
-        Trial surfaces left without a solution, by family and by method
-        (GM-140 step 2): ``{"family", "method", "n", "not_converged",
-        "no_driving", "below_0_05"}``. They are not scored: nothing stands
-        in for the method. ``not_converged``: the method's own solve did not
-        converge (Spencer / Morgenstern-Price / GLE: no lambda at which the
-        moment and force factors of safety agree; Bishop / Janbu: the
-        iteration does not converge or has no state). ``no_driving``: the
-        surface has no net driving moment or force (as where a support's
-        force exceeds it), so the ratio has no meaning. ``below_0_05``: the
-        method solved the surface with a value below 0.05, which a search
-        does not take as a factor of safety. ``n`` is their sum. ``family`` is
-        'circular' / 'noncircular' (the main search; 'main' when a search
-        was called directly), 'toe_circle', 'circle_above_toe' or
-        'infinite_slope'. ``n_no_solution`` is the total. ``warnings``
-        says so when the governing family lost trials to non-convergence
-        (UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as a
-        result of non-convergence. The engineer should be able to identify
-        when convergence issues are present.").
-    governing_surface : str
-        Which kind of surface governs ``critical`` (set by
-        ``search_critical_surface``): 'circular' / 'noncircular' (the main
-        search), 'toe_circle', 'circle_above_toe' (a circle passing above
-        the toe, its lower end on the face) or 'infinite_slope' (shallow
-        planar sliding in cohesionless soil). See ``search_supplements``.
-        ``search_ranges['faces_covered']`` gives the faces the two circle
-        families started from. Empty when the
-        search was called directly (grid_search etc.).
-    candidates : dict
-        Minimum FOS of each surface family tried, keyed as above.
-    layer_overlaps : list of dict
-        Where a soil layer was given ground that a layer listed before it
-        also covers (``SlopeGeometry.layer_overlaps``): the first listed
-        layer holds that ground, for weight and strength. Empty when no
-        two layers overlap. In ``to_dict()`` only when not empty.
-    warnings : list of str
-        Plain statements where the search cannot be sure of its answer
-        (a supplementary family undercut the main search, the critical
-        surface sits on the edge of the searched region, a cohesionless
-        face could not be checked, the governing circle is closed by a
-        reverse-curvature crack, has supports Bishop counts little of, or
-        the governing family lost trials the method has no solution on).
-    infinite_slope_checks : list of dict
-        One entry per stretch of slope face where cohesionless soil is at
-        the surface: x range, slope angle beta, layer, phi', the dry
-        closed-form tan(phi')/tan(beta) and the FOS of the shallow planar
-        surfaces evaluated there (None if not evaluated, with a note).
-    search_ranges : dict
-        The entry / exit windows and centre ranges the main search used
-        (x_entry_range, x_exit_range, and x_range / y_range for a centre
-        grid), ``automatic`` naming those it set itself, and for those how
-        (GM-57, ``search_ranges.py``): ``basis``, the ``slopes`` they were
-        set from (toe, crest, height, depth to the base, reach beyond the
-        toe and behind the crest) and ``clipped`` (a bound the model's end
-        cut short: where the slope called for it). ``time_budget`` when the
-        search's time budget stopped it (GM-123): the budget, the time it
-        ran, each stage ``stopped`` (what it scored, of how many, what it
-        covered and did not, the run time projected for all of it) and
-        what was ``not_run``.
-    governing_location : dict
-        Where the governing surface lies (GM-57): ``x_entry`` / ``x_exit``,
-        ``z_lowest``, the ``layers`` along its base in order, and ``slope``:
-        the tallest face's toe, crest and height H, and the surface's ends
-        and lowest point against them in multiples of H, and its greatest
-        ``depth`` below the ground.
-        With ``search_ranges`` it says what the search covered.
-    refused_lowest : dict or None
-        The lowest noncircular surface a search refused because its
-        rigorous solution did not hold (about one moment axis only, or at
-        one slicing only; `search._solution_fails`): ``FOS``, ``reason``,
-        ``x_entry`` / ``x_exit`` and ``points``. A warning says so when it
-        is below the reported FOS. None when nothing was refused.
-    choices : list of dict
-        What the search chose (GM-115, ``geotech_common.choices``;
-        ``search_supplements.search_choices``): the search, the method it
-        scored with, the surface families it scored and those it did not,
-        how its ranges were set (pointing at ``search_ranges``,
-        ``governing_location`` and ``refused_lowest`` where the result has
-        them), its time budget and any Bishop screen (GM-123).
-    families_scored : list of str
-        The surface families that gave an admissible surface (those in
-        ``candidates``; GM-125): the main search's kind, ``toe_circle``,
-        ``circle_above_toe``, ``infinite_slope``. ``families_not_scored``
-        gives, for each other family the search ran, why it gave none.
-        Neither is in ``to_dict()``: ``choices`` says both.
+        method's own F. Zero unless the search was given
+        ``low_m_alpha='refuse'`` (GM-127's rule, a stated option since
+        GM-140 step 3): by default such a surface is kept and flagged
+        (``trial_flags``). Counted as ``n_rejected_ground_crossings`` is.
+    trial_flags : list of dict
+        The printed acceptability checks on the scored trials (GM-140 step
+        3, ``slope_stability.acceptability``), by family and method:
+        ``{"family", "method", "n_scored", "n_flagged", "by_check": {check:
+        n}, "lowest_unflagged": {"FOS", and the surface} or None}``. A
+        flagged trial is kept and scored; nothing is left out for a check
+        unless ``low_m_alpha='refuse'`` was given.
+    critical_flags : list of str
+        The checks the governing surface does not meet
+        (``critical.acceptability`` has each finding: which check, which
+        slice or slice side, what value). Empty when it meets them all.
+    lowest_unflagged : dict or None
+        When the governing surface carries a flag: the lowest factor of
+        safety among the surfaces the search scored by the same method
+        that carry none (``FOS``, ``family``, ``method`` and the surface),
+        or ``FOS`` None with a ``note`` when it scored none. The headline
+        (``critical``) stays the lowest solved surface. Among the trials
+        the search happened to score, not a search for the lowest
+        unflagged surface.
+    screen_refusals : dict
+        Noncircular trial surfaces refused by each of the module's own
+        screens (not found in print): ``slice_count``, ``span``,
+        ``one_moment_axis``, ``one_slicing``, ``jagged_below_1_5``, each
+        ``{"n", "n_flagged"}``; ``n_flagged`` counts those the printed
+        checks also flag (None for the two screens applied before any
+        solve).
     """
     critical: Optional[SlopeStabilityResult] = None
     n_surfaces_evaluated: int = 0
@@ -719,6 +699,10 @@ class SearchResult:
     choices: List[Dict[str, Any]] = field(default_factory=list)
     families_scored: List[str] = field(default_factory=list)
     families_not_scored: Dict[str, str] = field(default_factory=dict)
+    trial_flags: List[Dict[str, Any]] = field(default_factory=list)
+    critical_flags: List[str] = field(default_factory=list)
+    lowest_unflagged: Optional[Dict[str, Any]] = None
+    screen_refusals: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     @property
     def n_no_solution(self) -> int:
@@ -739,8 +723,26 @@ class SearchResult:
                          f"and come back into it): "
                          f"{self.n_rejected_ground_crossings}")
         if self.n_rejected_m_alpha:
-            lines.append(f"  Left out, m_alpha < 0.2 on a slice (Slide2's "
-                         f"check): {self.n_rejected_m_alpha}")
+            lines.append(f"  Left out, m_alpha < 0.2 on a slice "
+                         f"(low_m_alpha='refuse'): "
+                         f"{self.n_rejected_m_alpha}")
+        n_flag = sum(r["n_flagged"] for r in self.trial_flags)
+        if n_flag:
+            lines.append(
+                f"  Scored trials that do not meet a printed acceptability "
+                f"check (kept, flagged): {n_flag} of "
+                f"{sum(r['n_scored'] for r in self.trial_flags)}")
+        if self.critical_flags:
+            from slope_stability.acceptability import flags_text
+            lines.append(f"  The governing surface is flagged: "
+                         f"{flags_text(self.critical_flags)}")
+            low = self.lowest_unflagged or {}
+            if low.get("FOS") is not None:
+                lines.append(f"  Lowest scored surface without a flag: "
+                             f"{low['FOS']:.3f} ({low.get('family')})")
+            elif low.get("note"):
+                lines.append(f"  Lowest scored surface without a flag: "
+                             f"{low['note']}")
         if self.n_no_solution:
             lines.append(f"  Not scored, the method has no solution on "
                          f"them: {self.n_no_solution} ("
@@ -845,6 +847,21 @@ class SearchResult:
         if self.no_solution:
             # trials the method has no solution on, by family and method
             d["no_solution"] = [dict(r) for r in self.no_solution]
+        if self.trial_flags:
+            # the printed acceptability checks (GM-140 step 3): the scored
+            # trials by family, without each family's lowest unflagged
+            # surface (the result's own ``lowest_unflagged`` has the one
+            # that matters)
+            d["trial_flags"] = [
+                {k: (dict(v) if isinstance(v, dict) else v)
+                 for k, v in r.items() if k != "lowest_unflagged"}
+                for r in self.trial_flags]
+            d["critical_flags"] = list(self.critical_flags)
+        if self.lowest_unflagged:
+            d["lowest_unflagged"] = dict(self.lowest_unflagged)
+        if self.screen_refusals:
+            d["screen_refusals"] = {k: dict(v) for k, v in
+                                    self.screen_refusals.items()}
         if self.critical:
             d["critical"] = self.critical.to_dict()
         if self.governing_surface:

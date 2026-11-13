@@ -175,9 +175,22 @@ class TestComparisonSection:
         assert "Morgenstern-Price" in text
 
     def test_absent_without_compare(self, geom):
-        res = analyze_slope(geom, xc=22, yc=28, radius=20, method="bishop")
+        # (a method without a second value to set beside its own)
+        res = analyze_slope(geom, xc=22, yc=28, radius=20,
+                            method="fellenius")
         sections = cs.get_calc_steps(res, {"geom": geom})
         assert "Method Comparison" not in _titles(sections)
+
+    def test_bishop_is_set_beside_the_oms_value(self, geom):
+        """GM-140 step 3 (Duncan 1996, p. 580): Bishop's value on a circle
+        is reported beside the Ordinary Method of Slices value for the
+        same circle, compare_methods or not."""
+        res = analyze_slope(geom, xc=22, yc=28, radius=20, method="bishop")
+        sections = cs.get_calc_steps(res, {"geom": geom})
+        text = _flat_text(_section(sections, "Method Comparison"))
+        assert "Fellenius" in text and "Bishop" in text
+        assert "Duncan (1996, p. 580)" in text
+        assert "Spencer" not in text
 
 
 class TestSearchSection:

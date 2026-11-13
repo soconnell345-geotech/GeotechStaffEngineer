@@ -107,7 +107,11 @@ def test_a_search_with_no_surface_says_none_and_points_at_nothing():
     assert r.families_scored == []
     ranges = c["search ranges"]["basis"]
     assert "governing_location" not in ranges
-    assert ranges.endswith("no surface is reported")
+    # GM-140 step 3: a trial with m_alpha below 0.2 is no longer left out
+    # before the moment-axis check, so the lowest surface that check
+    # refused is on the result and the entry points at it
+    assert "no surface is reported" in ranges
+    assert (r.refused_lowest is not None) == ("refused_lowest" in ranges)
     assert "governing_location" not in r.to_dict()
 
 

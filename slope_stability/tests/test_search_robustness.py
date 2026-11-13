@@ -122,8 +122,10 @@ def test_reject_stats_counts_geometry():
     stats = _new_reject_stats()
     sliver = PolylineSlipSurface(points=[(50.0, 28.0), (52.0, 25.0), (54.0, 28.0)])
     assert _compute_fos(geom, sliver, "spencer", 30, reject_stats=stats) == _FOS_MAX
+    # (GM-140 step 3: and under the screen that refused it, by name)
     assert stats == {"geometry": 1, "nonconverged": 0, "jagged": 0,
-                     "refused": None}
+                     "refused": None,
+                     "screens": {"span": {"n": 1, "n_flagged": None}}}
 
 
 def test_reject_stats_counts_degenerate_jagged():

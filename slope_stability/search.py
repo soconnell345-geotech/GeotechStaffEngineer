@@ -32,7 +32,9 @@ from slope_stability.slices import (base_clearance, base_depth, build_slices,
                                     model_height)
 from slope_stability.methods import (
     M_ALPHA_MIN, M_ALPHA_RULES, m_alpha_checked, m_alpha_min,
+    NEGATIVE_TERM_RULES, negative_term,
 )
+from slope_stability.acceptability import surface_findings, flags as _flags
 from slope_stability.solution import solve_method, check_method
 from slope_stability.results import SearchResult, SlopeStabilityResult
 
@@ -122,6 +124,89 @@ def no_solution_records(counts: Dict[Tuple[str, str, str], int],
     return list(out.values())
 
 
+# The printed acceptability checks on every scored trial (GM-140 step 3),
+# into [3] of the tally: how many trials each family scored by each method
+# ("scored"), how many of those carried a flag ("flagged") and each flag
+# ("by_check"), how many took the Ordinary Method of Slices value because
+# Bishop's was below it (in "by_check" as 'bishop_below_oms'), and the
+# lowest scored trial that carries no flag ("lowest_unflagged": its factor
+# of safety and the surface).
+def _new_flag_tally() -> Dict[str, Dict]:
+    return {"scored": {}, "flagged": {}, "by_check": {},
+            "lowest_unflagged": {}}
+
+
+def _surface_record(slip) -> Dict[str, Any]:
+    if getattr(slip, "is_circular", True):
+        return {"xc": round(slip.xc, 3), "yc": round(slip.yc, 3),
+                "radius": round(slip.radius, 3)}
+    return {"points": [(round(x, 3), round(z, 3)) for x, z in slip.points]}
+
+
+def _note_trial_flags(method: str, fos: float, names, slip) -> None:
+    """Count a scored trial and the flags it carries into the tally of the
+    search running in this context (not the checks made on a governing
+    surface after the search: family None)."""
+    tally = _REFUSALS.get()
+    family = _FAMILY.get()
+    if tally is None or family is None:
+        return
+    t = tally[3]
+    key = (family, method)
+    t["scored"][key] = t["scored"].get(key, 0) + 1
+    if names:
+        t["flagged"][key] = t["flagged"].get(key, 0) + 1
+        for name in names:
+            k3 = (family, method, name)
+            t["by_check"][k3] = t["by_check"].get(k3, 0) + 1
+    else:
+        old = t["lowest_unflagged"].get(key)
+        if old is None or fos < old[0]:
+            t["lowest_unflagged"][key] = (fos, _surface_record(slip))
+
+
+def _merge_flag_tally(into: Dict[str, Dict], frm: Dict[str, Dict]) -> None:
+    for name in ("scored", "flagged", "by_check"):
+        for key, n in frm[name].items():
+            into[name][key] = into[name].get(key, 0) + n
+    for key, rec in frm["lowest_unflagged"].items():
+        old = into["lowest_unflagged"].get(key)
+        if old is None or rec[0] < old[0]:
+            into["lowest_unflagged"][key] = rec
+
+
+def _flag_tally_so_far() -> Dict[str, Dict]:
+    """The flag tally so far of the search running in this context, the
+    searches run inside it included."""
+    tally = _REFUSALS.get()
+    out = _new_flag_tally()
+    if tally is not None:
+        _merge_flag_tally(out, tally[3])
+    return out
+
+
+def flag_records(t: Dict[str, Dict],
+                 rename: Optional[Dict[str, str]] = None
+                 ) -> List[Dict[str, Any]]:
+    """``SearchResult.trial_flags`` from the tally: one record per family
+    and method, in the order met: ``{"family", "method", "n_scored",
+    "n_flagged", "by_check": {check: n}, "lowest_unflagged": {"FOS", and
+    the surface} or None}``."""
+    out = []
+    for (family, method), n in t["scored"].items():
+        low = t["lowest_unflagged"].get((family, method))
+        rec = {"family": (rename or {}).get(family, family),
+               "method": method, "n_scored": n,
+               "n_flagged": t["flagged"].get((family, method), 0),
+               "by_check": {c: k for (f, m, c), k in t["by_check"].items()
+                            if (f, m) == (family, method)},
+               "lowest_unflagged": None}
+        if low is not None:
+            rec["lowest_unflagged"] = dict(FOS=round(low[0], 4), **low[1])
+        out.append(rec)
+    return out
+
+
 def _count_ground_refusal() -> None:
     tally = _REFUSALS.get()
     if tally is not None:
@@ -154,7 +239,7 @@ def _counts_refusals(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         outer = _REFUSALS.get()
-        tally = [0, 0, {}]
+        tally = [0, 0, {}, _new_flag_tally()]
         token = _REFUSALS.set(tally)
         try:
             result = fn(*args, **kwargs)
@@ -165,6 +250,7 @@ def _counts_refusals(fn):
                 outer[1] += tally[1]
                 for key, n in tally[2].items():
                     outer[2][key] = outer[2].get(key, 0) + n
+                _merge_flag_tally(outer[3], tally[3])
         target = (result if isinstance(result, SearchResult)
                   else getattr(result, "search", None))
         if isinstance(target, SearchResult):
@@ -173,6 +259,8 @@ def _counts_refusals(fn):
             if not target.no_solution:
                 # (search_critical_surface names the families itself)
                 target.no_solution = no_solution_records(tally[2])
+            if not target.trial_flags:
+                target.trial_flags = flag_records(tally[3])
         return result
     return wrapper
 
@@ -189,22 +277,71 @@ def m_alpha_rule_in_force() -> str:
     return _M_ALPHA_RULE.get()
 
 
+#: What a search does with a surface that has m_alpha < 0.2 on a slice
+#: (GM-140 step 3, OWN-102). "flag" (the default): the surface is kept and
+#: scored, and the result says which surface and slice (Whitman and Bailey
+#: 1967, p. 487, print a warning and an instruction to examine the result,
+#: not a rejection). "refuse": it is left out and counted, as the module
+#: did before this step (GM-127; Slide2's 'Check malpha < 0.2').
+LOW_M_ALPHA_ACTIONS = ("flag", "refuse")
+
+_LOW_M_ALPHA: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_low_m_alpha", default="flag")
+
+
+def low_m_alpha_in_force() -> str:
+    """The `LOW_M_ALPHA_ACTIONS` action of the search running in this
+    context."""
+    return _LOW_M_ALPHA.get()
+
+
+@contextlib.contextmanager
+def low_m_alpha(action: str):
+    """Run a block with ``action`` (`LOW_M_ALPHA_ACTIONS`) in force."""
+    if action not in LOW_M_ALPHA_ACTIONS:
+        raise ValueError(f"low_m_alpha must be one of "
+                         f"{LOW_M_ALPHA_ACTIONS}, not {action!r}")
+    token = _LOW_M_ALPHA.set(action)
+    try:
+        yield
+    finally:
+        _LOW_M_ALPHA.reset(token)
+
+
 def _applies_m_alpha_rule(fn):
     """Run ``fn`` with its ``m_alpha_rule`` argument in force for every
-    surface it scores, the searches run inside it included."""
+    surface it scores, the searches run inside it included; and, where
+    ``fn`` takes them, its ``low_m_alpha`` (`LOW_M_ALPHA_ACTIONS`) and
+    ``negative_friction_term`` (`methods.NEGATIVE_TERM_RULES`) arguments
+    (GM-140 step 3)."""
     sig = inspect.signature(fn)
-    default = sig.parameters["m_alpha_rule"].default
+    # (a search without the parameter keeps the rule already in force)
+    default = (sig.parameters["m_alpha_rule"].default
+               if "m_alpha_rule" in sig.parameters else None)
+    extra = {name: sig.parameters[name].default
+             for name in ("low_m_alpha", "negative_friction_term")
+             if name in sig.parameters}
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        rule = sig.bind_partial(*args, **kwargs).arguments.get(
-            "m_alpha_rule", default)
+        given = sig.bind_partial(*args, **kwargs).arguments
+        rule = given.get("m_alpha_rule", default)
+        if rule is None:
+            rule = _M_ALPHA_RULE.get()
         if rule not in M_ALPHA_RULES:
             raise ValueError(f"m_alpha_rule must be one of {M_ALPHA_RULES}, "
                              f"not {rule!r}")
         token = _M_ALPHA_RULE.set(rule)
         try:
-            return fn(*args, **kwargs)
+            with contextlib.ExitStack() as stack:
+                if "low_m_alpha" in extra:
+                    stack.enter_context(low_m_alpha(
+                        given.get("low_m_alpha", extra["low_m_alpha"])))
+                if "negative_friction_term" in extra:
+                    stack.enter_context(negative_term(given.get(
+                        "negative_friction_term",
+                        extra["negative_friction_term"])))
+                return fn(*args, **kwargs)
         finally:
             _M_ALPHA_RULE.reset(token)
     return wrapper
@@ -241,6 +378,33 @@ def _m_alpha_fails(slices, slip, method: str, fos: float,
     if info is not None:
         info["m_alpha_min"] = least
     return least is not None and least < M_ALPHA_MIN
+
+
+def _trial_checks(geom, slip, slices, sol, m_alpha_check: bool,
+                  info: Optional[Dict[str, Any]]):
+    """The printed acceptability checks on a trial surface its method
+    solved (GM-140 step 3; `acceptability.surface_findings`).
+
+    Returns ``(refuse, names)``: ``names`` the checks not met, ``refuse``
+    True when the surface is to be left out, which happens only for m_alpha
+    < 0.2 on a slice under ``low_m_alpha='refuse'`` (`LOW_M_ALPHA_ACTIONS`;
+    the stated option, the module's rule before this step) and where the
+    caller checks m_alpha at all (``m_alpha_check``). By default a flagged
+    surface is kept. ``info`` receives ``m_alpha_min`` (the least m_alpha
+    over the slices the rule looks at, None for the Ordinary Method of
+    Slices), ``flags`` and ``findings``."""
+    findings = surface_findings(geom, slip, slices, sol,
+                                rule=_M_ALPHA_RULE.get())
+    names = _flags(findings)
+    if info is not None:
+        f_own = sol.fos_bishop if sol.fos_bishop else sol.fos
+        info["m_alpha_min"] = _m_alpha_least(slices, slip, sol.method, f_own,
+                                             sol.fos_uncorrected)
+        info["flags"] = names
+        info["findings"] = findings
+    refuse = (m_alpha_check and "low_m_alpha" in names
+              and _LOW_M_ALPHA.get() == "refuse")
+    return refuse, names
 
 
 # ── Time budget (GM-123) ─────────────────────────────────────────────────
@@ -584,13 +748,35 @@ def _window_span(x_entry_range, x_exit_range) -> Optional[float]:
 def _new_reject_stats() -> Dict[str, Any]:
     """Fresh per-search rejection tally (see ``_compute_fos``). ``refused``
     keeps the lowest surface whose solution did not hold (`_solution_fails`)
-    so the result can say so."""
-    return {"geometry": 0, "nonconverged": 0, "jagged": 0, "refused": None}
+    so the result can say so; ``screens`` counts the refusals of each
+    noncircular screen by name (`NONCIRCULAR_SCREENS`)."""
+    return {"geometry": 0, "nonconverged": 0, "jagged": 0, "refused": None,
+            "screens": {}}
 
 
 def _bump(stats: Optional[Dict[str, int]], key: str) -> None:
     if stats is not None:
         stats[key] += 1
+
+
+#: The noncircular screens (D22): the module's own numerical stand-ins,
+#: not found in print. A refusal by each is counted
+#: (``SearchResult.screen_refusals``), with how many of the surfaces it
+#: refused after solving them carried a flag of the printed checks.
+NONCIRCULAR_SCREENS = ("slice_count", "span", "one_moment_axis",
+                       "one_slicing", "jagged_below_1_5")
+
+
+def _bump_screen(stats, screen: str, names) -> None:
+    """Count a refusal by a noncircular screen; ``names`` the printed
+    checks' flags of the solved surface (None: refused before any solve)."""
+    if stats is None:
+        return
+    rec = stats.setdefault("screens", {}).setdefault(
+        screen, {"n": 0, "n_flagged": 0 if names is not None else None})
+    rec["n"] += 1
+    if names:
+        rec["n_flagged"] = (rec["n_flagged"] or 0) + 1
 
 
 def _rejection_kwargs(stats: Dict[str, int], n_evaluated: int) -> Dict[str, int]:
@@ -609,6 +795,8 @@ def _rejection_kwargs(stats: Dict[str, int], n_evaluated: int) -> Dict[str, int]
         "n_rejected_nonconverged": stats["nonconverged"],
         "n_rejected_jagged": stats["jagged"],
         "refused_lowest": stats.get("refused"),
+        "screen_refusals": {k: dict(v) for k, v in
+                            (stats.get("screens") or {}).items()},
     }
 
 
@@ -932,6 +1120,9 @@ def _compute_fos(geom: SlopeGeometry,
             if not _noncircular_admissible(slip, slices, geom, n_slices,
                                            window_span):
                 _bump(reject_stats, "geometry")
+                _bump_screen(
+                    reject_stats, "slice_count"
+                    if len(slices) < max(5, n_slices // 3) else "span", None)
                 return _FOS_MAX
             fos_u = None            # Janbu's uncorrected F, for m_alpha
             # (a noncircular surface named for Bishop is scored by Spencer)
@@ -949,13 +1140,15 @@ def _compute_fos(geom: SlopeGeometry,
                 if fos_fn is None:      # (a caller's solve counts its own)
                     _count_no_solution(scored_by, _not_scored_kind(sol))
                 return _FOS_MAX
-            if (fos_fn is None and fos < _FOS_MAX
-                    and (m_alpha_check or info is not None)
-                    and _m_alpha_fails(slices, slip, scored_by, fos, fos_u,
-                                       info)
-                    and m_alpha_check):
-                _count_m_alpha_refusal()        # Slide2's -112 (GM-127)
-                return _FOS_MAX
+            names = None
+            if fos_fn is None:
+                # the printed acceptability checks: kept and flagged, or
+                # (the stated option) left out for m_alpha (GM-140 step 3)
+                refuse, names = _trial_checks(geom, slip, slices, sol,
+                                              m_alpha_check, info)
+                if refuse:
+                    _count_m_alpha_refusal()
+                    return _FOS_MAX
             if (confirm_below is not None and fos < confirm_below
                     and fos_fn is None
                     and method not in ("fellenius", "janbu")):
@@ -965,13 +1158,19 @@ def _compute_fos(geom: SlopeGeometry,
                     else "constant", tol, n_slices, slices, fos, reinf)
                 if why:
                     _bump(reject_stats, "nonconverged")
+                    _bump_screen(reject_stats,
+                                 "one_moment_axis" if "axis" in why
+                                 else "one_slicing", names)
                     _note_refused(reject_stats, slip, fos, why)
                     return _FOS_MAX
             # Spurious-low-FOS guard: a low FOS on a jagged surface is a solver
             # artifact (SS-6), not a real critical surface — reject it.
             if fos < _LOW_FOS_JAGGED_GATE and _is_jagged(slip):
                 _bump(reject_stats, "jagged")
+                _bump_screen(reject_stats, "jagged_below_1_5", names)
                 return _FOS_MAX
+            if names is not None:
+                _note_trial_flags(scored_by, fos, names, slip)
             return fos
 
         # A reverse-curvature circle (its centre below the ground where it
@@ -998,12 +1197,15 @@ def _compute_fos(geom: SlopeGeometry,
             if fos_fn is None:          # (a caller's solve counts its own)
                 _count_no_solution(scored_by, _not_scored_kind(sol))
             return _FOS_MAX
-        if (fos_fn is None and fos < _FOS_MAX
-                and (m_alpha_check or info is not None)
-                and _m_alpha_fails(slices, slip, scored_by, fos, fos_u, info)
-                and m_alpha_check):
-            _count_m_alpha_refusal()            # Slide2's -112 (GM-127)
-            return _FOS_MAX
+        if fos_fn is None:
+            # the printed acceptability checks: kept and flagged, or (the
+            # stated option) left out for m_alpha (GM-140 step 3)
+            refuse, names = _trial_checks(geom, slip, slices, sol,
+                                          m_alpha_check, info)
+            if refuse:
+                _count_m_alpha_refusal()
+                return _FOS_MAX
+            _note_trial_flags(scored_by, fos, names, slip)
         return fos
     except GroundCrossingError:
         # not one sliding mass (GM-122): refused, and counted

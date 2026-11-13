@@ -152,9 +152,14 @@ def test_vertical_cut_in_undrained_clay_against_taylor():
     """Taylor's stability number for a vertical face, 3.83, gives F = 3.83
     x 20 / (18 x 5) = 0.851. The default search finds 0.842 on a toe
     circle closed by a crack (0.843 on 960 slices), whose steep last slice
-    has m_alpha = cos(a) 0.13 (phi = 0): not checked, so the circle stays.
-    Checking every slice, as Slide2 does, leaves it out and reads 0.935,
-    9.9 % above Taylor on the unsafe side; the choice says which was used.
+    has m_alpha = cos(a) 0.13 (phi = 0): not looked at, so the circle
+    carries no flag. Looking at every slice flags it; since GM-140 step 3
+    (OWN-102) a flagged circle is kept, so the search still reads 0.842,
+    says the circle is flagged and gives the lowest circle without a flag
+    beside it, 0.935. Leaving flagged circles out (``low_m_alpha=
+    'refuse'``, the rule before step 3) with every slice looked at reads
+    0.935, 9.9 % above Taylor on the unsafe side. The choice says which
+    was used.
     Before GM-134 the default read 0.800: the slice next to the crack took
     the circle's angle at its midpoint, and its base, width / cos(a), fell
     short of the arc rising to the vertical (0.839 on 3,840 slices)."""
@@ -163,15 +168,32 @@ def test_vertical_cut_in_undrained_clay_against_taylor():
     assert res.critical.FOS == pytest.approx(0.842, abs=0.005)
     assert res.critical.FOS <= taylor
     assert res.n_rejected_m_alpha == 0
+    assert "low_m_alpha" not in res.critical_flags
     (ch,) = [c for c in res.choices
-             if c["what"] == "slip surfaces left out for m_alpha"]
+             if c["what"] == "slip surfaces with m_alpha below 0.2"]
     assert ch["how"] == "default" and "phi' > 0" in ch["chosen"]
     assert any("every_slice" in a for a in ch["alternatives"])
+    assert any("low_m_alpha='refuse'" in a for a in ch["alternatives"])
+    # every slice looked at: the same circle, kept and flagged, with the
+    # lowest circle without a flag beside it
     every = search_critical_surface(_vertical_cut(), method="bishop",
                                     m_alpha_rule="every_slice")
-    assert every.critical.FOS == pytest.approx(0.935, abs=0.005)
-    assert every.n_rejected_m_alpha > 0
+    # GM-140 step 3: 0.935 -> 0.842; Taylor 0.851 (stability number 3.83),
+    # -1.1 %
+    assert every.critical.FOS == pytest.approx(0.842, abs=0.005)
+    assert every.n_rejected_m_alpha == 0
+    assert "low_m_alpha" in every.critical_flags
+    assert every.lowest_unflagged["FOS"] == pytest.approx(0.935, abs=0.005)
     (ch,) = [c for c in every.choices
+             if c["what"] == "slip surfaces with m_alpha below 0.2"]
+    assert ch["how"] == "given" and "any slice" in ch["chosen"]
+    # the stated option: flagged circles left out, as before step 3
+    out = search_critical_surface(_vertical_cut(), method="bishop",
+                                  m_alpha_rule="every_slice",
+                                  low_m_alpha="refuse")
+    assert out.critical.FOS == pytest.approx(0.935, abs=0.005)
+    assert out.n_rejected_m_alpha > 0
+    (ch,) = [c for c in out.choices
              if c["what"] == "slip surfaces left out for m_alpha"]
     assert ch["how"] == "given" and "any slice" in ch["chosen"]
     c = res.critical
@@ -180,42 +202,55 @@ def test_vertical_cut_in_undrained_clay_against_taylor():
     assert not any("m_alpha" in w for w in one.warnings)
     one = analyze_slope(_vertical_cut(), method="bishop", xc=c.xc, yc=c.yc,
                         radius=c.radius, m_alpha_rule="every_slice")
-    assert any("is 0.13 on the slice" in w for w in one.warnings)
+    assert any("least 0.13 on slice" in w for w in one.warnings)
     with pytest.raises(ValueError, match="m_alpha_rule"):
         search_critical_surface(_vertical_cut(), m_alpha_rule="all")
 
 
 # ---------------------------------------------------------------------------
-# a surface with m_alpha below 0.2: left out of a search, warned on alone
+# a surface with m_alpha below 0.2: kept and flagged in a search (left out
+# under low_m_alpha='refuse'), warned on alone
 # ---------------------------------------------------------------------------
 
-def test_steep_exit_surface_is_left_out_of_a_search():
-    """`_compute_fos`, every search's scorer, leaves the surface out; with
-    the check off (a fixed surface) it scores 3.358."""
+def test_steep_exit_surface_is_kept_and_flagged_in_a_search():
+    """`_compute_fos`, every search's scorer, keeps the surface and flags
+    it (GM-140 step 3, OWN-102; Whitman and Bailey 1967, p. 487, print a
+    warning): it scores 3.358. Under ``low_m_alpha='refuse'`` it is left
+    out, as before step 3."""
+    from slope_stability.search import low_m_alpha
     geom = _duncan_ex4()
     slip = PolylineSlipSurface(points=_STEEP_EXIT_PTS)
     info = {}
-    assert _compute_fos(geom, slip, "spencer", 40, info=info) == _FOS_MAX
-    assert info["m_alpha_min"] == pytest.approx(0.176, abs=0.005)
     assert _compute_fos(geom, slip, "spencer", 40,
-                        m_alpha_check=False) == pytest.approx(3.358,
-                                                              abs=0.005)
+                        info=info) == pytest.approx(3.358, abs=0.005)
+    assert info["m_alpha_min"] == pytest.approx(0.176, abs=0.005)
+    assert "low_m_alpha" in info["flags"]
+    with low_m_alpha("refuse"):
+        info = {}
+        assert _compute_fos(geom, slip, "spencer", 40,
+                            info=info) == _FOS_MAX
+        assert info["m_alpha_min"] == pytest.approx(0.176, abs=0.005)
+        assert _compute_fos(geom, slip, "spencer", 40,
+                            m_alpha_check=False) == pytest.approx(
+                                3.358, abs=0.005)
 
 
 def test_steep_exit_surface_given_to_analyze_slope_is_analysed_with_a_warning():
-    """A single surface is analysed and said to be one a search leaves out:
-    where m_alpha is lowest and why it matters."""
+    """A single surface is analysed and flagged: where m_alpha is lowest,
+    what Whitman and Bailey (1967, p. 487) ask, and EM 1110-2-1902 C-10b's
+    remedies for the steep exit (named, not applied)."""
     r = analyze_slope(_duncan_ex4(), slip_surface=PolylineSlipSurface(
         points=_STEEP_EXIT_PTS), method="spencer", n_slices=40)
     assert r.method_solved
     assert r.FOS == pytest.approx(3.358, abs=0.005)
     (w,) = [w for w in r.warnings if "m_alpha" in w]
-    assert "is 0.18 on the slice" in w
-    assert "67 deg against the sliding" in w and "passive zone" in w
-    assert "Whitman & Bailey 1967" in w and "error -112" in w
-    assert "'Check malpha < 0.2' setting on" in w
-    assert "given to analyze_slope, is analysed" in w
-    assert "Rankine passive angle, 45 deg - phi'/2" in w
+    assert "least 0.18 on slice" in w
+    assert "67 deg against the sliding" in w
+    assert "Whitman and Bailey 1967, p. 487" in w
+    assert "must be examined in detail" in w
+    assert "EM 1110-2-1902 C-10b" in w and "Eq. C-32" in w
+    assert "the surface is analysed as given" in w
+    assert "low_m_alpha" in r.flags
 
 
 def test_w11_surface_has_no_spencer_solution():
@@ -254,12 +289,19 @@ def test_ordinary_method_of_slices_has_no_m_alpha():
 
 def test_de_search_leaves_out_and_counts_negative_m_alpha_surfaces():
     """Differential evolution on the weak layer over rock, its windows on
-    the face: the surfaces diving into the rock have m_alpha < 0.2 and are
-    left out and counted; any surface reported has m_alpha >= 0.2."""
+    the face, with flagged surfaces left out (``low_m_alpha='refuse'``,
+    the rule before GM-140 step 3): the surfaces diving into the rock have
+    m_alpha < 0.2 and are left out and counted; any surface reported has
+    m_alpha >= 0.2. By default they are kept and none is left out for
+    m_alpha."""
+    from slope_stability.search import low_m_alpha
     geom = _weak_over_rock()
-    res = search_de(geom, x_entry_range=(25.5, 28.0),
-                    x_exit_range=(29.0, 40.0), n_points=7, method="spencer",
-                    seed=1, maxiter=4, popsize=6, n_seed_trials=40)
+    kw = dict(x_entry_range=(25.5, 28.0), x_exit_range=(29.0, 40.0),
+              n_points=7, method="spencer", seed=1, maxiter=4, popsize=6,
+              n_seed_trials=40)
+    assert search_de(geom, **kw).n_rejected_m_alpha == 0
+    with low_m_alpha("refuse"):
+        res = search_de(geom, **kw)
     assert res.n_rejected_m_alpha > 0
     assert res.to_dict()["n_rejected"]["m_alpha"] == res.n_rejected_m_alpha
     c = res.critical
@@ -313,10 +355,12 @@ def test_w11_de_search_runs_its_whole_budget():
     the whole budget, the m_alpha refusals counted, and a surface, if one
     is reported, far above the 0.935 circle in the clay and admissible."""
     geom = _w11()
+    # (with flagged surfaces left out, the rule before GM-140 step 3: the
+    # graded score is for surfaces left out for m_alpha)
     res = search_critical_surface(
         geom, surface_type="noncircular_de", method="spencer",
         x_entry_range=(20, 30), x_exit_range=(28, 60), n_slices=40,
-        n_points=5, seed=3)
+        n_points=5, seed=3, low_m_alpha="refuse")
     assert res.n_surfaces_evaluated == 2325
     assert res.n_rejected_m_alpha > 0
     c = res.critical
@@ -342,7 +386,21 @@ def test_duncan_ex4_janbu_search_on_30_slices():
     and the two slicings are in the result. Before GM-134 it read 1.199
     and 1.238 (+3.3 %, which a warning said): a slice across the sand's
     base took one material."""
-    res = search_critical_surface(_duncan_ex4(), method="janbu", n_slices=30)
+    # GM-140 step 3 (OWN-102): by default the circle is kept and flagged.
+    # The search then ends on a circle Janbu's solve gives a low value on
+    # (m_alpha below 0.2 on a slice), says so, and gives the lowest circle
+    # without a flag beside it. No printed answer is in hand for this
+    # example with Janbu, so the flagged value is not pinned.
+    kept = search_critical_surface(_duncan_ex4(), method="janbu",
+                                   n_slices=30)
+    assert kept.n_rejected_m_alpha == 0
+    assert "low_m_alpha" in kept.critical_flags
+    assert kept.critical.FOS < kept.lowest_unflagged["FOS"]
+    assert kept.lowest_unflagged["FOS"] == pytest.approx(1.21, abs=0.02)
+    assert any("kept and reported, flagged" in w for w in kept.warnings)
+    # the stated option: such circles left out, as before step 3
+    res = search_critical_surface(_duncan_ex4(), method="janbu", n_slices=30,
+                                  low_m_alpha="refuse")
     assert res.critical.FOS == pytest.approx(1.203, abs=0.01)
     assert res.n_rejected_m_alpha > 0
     d = res.to_dict()
@@ -354,6 +412,9 @@ def test_duncan_ex4_janbu_search_on_30_slices():
     assert "on 30 slices" in ch["basis"] and "on 60 slices" in ch["basis"]
     assert "phi' = 0 are not checked" in ch["basis"]
     assert "Left out, m_alpha < 0.2" in res.summary()
+    (kc,) = [c for c in kept.choices
+             if c["what"] == "slip surfaces with m_alpha below 0.2"]
+    assert kc["chosen"].startswith("kept and flagged")
     assert "on 60 slices, 1.212" in ch["basis"]
     assert not any(w.startswith("On 60 slices") for w in res.warnings)
 
@@ -429,7 +490,7 @@ def test_twice_the_slices_keeps_the_reason():
                                     analysis_mode="undrained")])
     res = search_critical_surface(taylor, method="bishop")
     (ch,) = [c for c in res.choices
-             if c["what"] == "slip surfaces left out for m_alpha"]
+             if c["what"] == "slip surfaces with m_alpha below 0.2"]
     assert ("on 30 slices the governing surface's FOS is 0.705; on 60 "
             "slices, 0.706") in ch["basis"]
     assert not any("On 60 slices" in w for w in res.warnings)
@@ -438,6 +499,8 @@ def test_twice_the_slices_keeps_the_reason():
                 refused_fine="geometry",
                 why_fine="Slip surface passes below the bottom of the "
                          "deepest soil layer: 0.050 m below it at x = 9.30")
+    basis = m_alpha_choice(0, "bishop", conf, action="flag")["basis"]
+    assert "on 60 slices it is not admissible" in basis
     basis = m_alpha_choice(0, "bishop", conf)["basis"]
     assert "on 60 slices it is not admissible" in basis
     assert "below the bottom of the deepest soil layer" in basis
