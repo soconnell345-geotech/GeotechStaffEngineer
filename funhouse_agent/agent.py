@@ -203,6 +203,11 @@ class GeotechAgent:
             self._system_prompt = _build_agent_system_prompt(allowed_agents)
             if self._reference_mode != "off":
                 self._system_prompt += CONSULT_TEXT_DESCRIPTION
+        # The table page reader is a tool name the core's EXTENDED_TOOLS
+        # lacks: a text call to it is accepted exactly where the prompt
+        # offers it (TABLE_READ_SECTION).
+        self._table_reads = (not self._is_native
+                             and TABLE_READ_SECTION in self._system_prompt)
         # Optional extra system-prompt block appended AFTER the module catalog
         # (and any consult-tool description). Used by the narrow reviewer agents
         # to re-cast the agent into "review mode" with a domain checklist — see
@@ -274,7 +279,7 @@ class GeotechAgent:
                 valid = EXTENDED_TOOLS | (
                     {"consult_references"}
                     if self._reference_mode != "off" else set()
-                )
+                ) | ({"read_reference_table"} if self._table_reads else set())
                 parsed = parse_response(response, valid_tools=valid)
             except ValueError as e:
                 err = {"round": rounds, "type": "parse",

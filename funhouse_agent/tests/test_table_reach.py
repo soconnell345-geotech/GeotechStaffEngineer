@@ -409,3 +409,62 @@ def test_a_no_pdf_host_is_told_no_page_can_be_read_in_the_note(no_pdf_host):
             assert NO_PAGE_READS in note
             return
     pytest.fail("no fetched section with a page answer and a note")
+
+
+# ---------------------------------------------------------------------------
+# The v1 text agent: a table read is a tool it accepts where it is told of it
+# ---------------------------------------------------------------------------
+
+_V1_CALL = ('The table is printed only on its page.\n<tool_call>\n'
+            '{"tool_name": "read_reference_table", "reference": "dm7_2", '
+            '"table_number": "6-24", "pdf_page_index": 465, '
+            '"prompt": "Read the first row"}\n</tool_call>')
+
+
+class _Scripted:
+    """A text engine that asks for one table read, then answers."""
+    native_tool_calling = False
+
+    def __init__(self):
+        self.replies = [_V1_CALL, "Final answer."]
+
+    def chat(self, user, system="", temperature=0):
+        return self.replies.pop(0) if self.replies else "Final answer."
+
+
+def _v1_ask(monkeypatch):
+    """The v1 text agent's turn, its page reads recorded, not sent."""
+    from funhouse_agent import agent as v1
+    sent = []
+
+    def fake_dispatch(name, args, engine, attachments, save_fn=None):
+        sent.append((name, dict(args)))
+        return json.dumps({"table_number": args.get("table_number"),
+                           "answer": "a made-up read"})
+
+    monkeypatch.setattr(v1, "dispatch_extended_tool", fake_dispatch)
+    agent = v1.GeotechAgent(genai_engine=_Scripted(), reference_mode="off",
+                            max_rounds=3)
+    return agent, agent.ask("What does the table hold?"), sent
+
+
+def test_the_v1_text_agent_reads_a_table_page_where_pdfs_are(monkeypatch):
+    reference_docs.pin_chart_reads(True)
+    agent, result, sent = _v1_ask(monkeypatch)
+    assert "### 13. read_reference_table" in agent._system_prompt
+    assert not [e for e in result.errors if e["type"] == "parse"], \
+        result.errors
+    assert [c["tool_name"] for c in result.tool_calls] == \
+        ["read_reference_table"]
+    # sent on under the figure reader's name, whose hook reads the table
+    assert [(n, a.get("table_number")) for n, a in sent] == \
+        [("read_reference_figure", "6-24")]
+
+
+def test_the_v1_text_agent_has_no_table_reader_without_pdfs(monkeypatch,
+                                                            no_pdf_host):
+    agent, result, sent = _v1_ask(monkeypatch)
+    assert "read_reference_table" not in agent._system_prompt
+    assert any("Invalid tool_name 'read_reference_table'" in e["message"]
+               for e in result.errors if e["type"] == "parse"), result.errors
+    assert sent == [] and result.tool_calls == []
