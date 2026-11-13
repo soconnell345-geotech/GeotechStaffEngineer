@@ -1203,6 +1203,16 @@ _ROCK_BORINGS = [
     ("B-10", 21, 4, 94.0), ("B-11", 40, 5, 92.3), ("B-12", 56, 4, 90.8),
 ]
 
+#: A plot_data redraw of a plot_code script, by the script's name. Where the
+#: helper has no plot_code, a brief is matched to the redraw under the
+#: script's name too, so "a pile design profile" finds ``pile_design_panels``
+#: (GM-315; ``figure_helper.nearest_example``).
+REDRAWS = {
+    "wall_section_pressures": "wall_pressures",
+    "settlement_stress_panels": "settlement_stress_profile",
+    "pile_design_panels": "pile_design_profile",
+}
+
 EXAMPLES.update({
     "wall_section_pressures": {
         "shows": "A cantilever retaining wall drawn to scale with its "

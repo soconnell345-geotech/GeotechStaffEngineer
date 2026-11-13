@@ -425,13 +425,19 @@ def nearest_example(brief: str, with_code: bool = False) -> Optional[str]:
     brief as ``cases``), at least two more words of what it shows; the
     candidate sharing the most telling words wins, a word of its name or
     what it shows counting twice one of its reasons. ``None`` when there is
-    no candidate: a figure no example is like gets none."""
-    from aec_agent_core.charts.figure_examples import CODE_EXAMPLES, EXAMPLES
+    no candidate: a figure no example is like gets none. Without plot_code,
+    a plot_data redraw of a script (``figure_examples.REDRAWS``) is also a
+    candidate under the script's name, so a host with plot code off is
+    handed the redraw where one with it on is handed the script (GM-315)."""
+    from aec_agent_core.charts.figure_examples import (CODE_EXAMPLES,
+                                                       EXAMPLES, REDRAWS)
     want = _words(brief)
     best, best_score = None, 0
     for name in _example_names(with_code):
         ex = EXAMPLES.get(name) or CODE_EXAMPLES[name]
         named = _words(name.replace("_", " "))
+        if not with_code and name in REDRAWS and not named <= want:
+            named = _words(REDRAWS[name].replace("_", " "))
         shown = len(want & (_words(ex["shows"]) - named))
         if not named or not named <= want:
             continue
