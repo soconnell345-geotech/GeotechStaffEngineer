@@ -42,7 +42,7 @@ behaviour of each departure was measured by script
 
 | Departure | Master | Branch |
 |---|---|---|
-| D23/D30, GM-139. A circle with its centre below the crest of a made-up phi = 0 slope, Spencer / M-P / GLE | 17.68 from the old approximate solver, labelled (about 0.05 on GM-139's circle) | no number; Bishop's simplified method solves it, 17.68 under its own name |
+| D23/D30. A circle of a made-up fill slope (c' = 40 kPa, phi' = 22 deg; circle (8, 12), R 12) on which Spencer's method has no solution (the review's own Spencer: F_f and F_m at least 0.043 apart for theta from -30 to 60 deg) | 1.766 from the old approximate solver | no number; Bishop's simplified method solves it, 1.729 under its own name (the review's own Bishop 1.7268). (Until the fix round the test used the clay slope's circle (30, 4, 9), which does have a Spencer solution: see section 10.) |
 | D23. A Spencer circular search (Slide2 #85 without its support, 6 x 6) | 267 circles scored by the old solver, no warning | none; 329 trials counted without a solution, warned |
 | D27. Bishop's iteration stopped at its limit | the last iterate, with a Python warning | `NoSolution`; `FOS` None in a result; not scored in a search |
 | D49. No driving moment (a stabilizing-pile row whose force exceeds it) | `FOS` 999.9 | no number, "no net driving moment" |
@@ -90,7 +90,8 @@ behaviour of each departure was measured by script
    `solve_method`, `yield_acceleration`, `fosm_fos`, `monte_carlo_fos` and the
    report package (before its search). The adapter already refused both.
 8. **Searches count.** `SearchResult.no_solution`: `{family, method, n,
-   not_converged, no_driving}` per family and method; `n_no_solution`; in
+   not_converged, no_driving, below_0_05}` per family and method (the third
+   reason since the fix round); `n_no_solution`; in
    `to_dict()`, `summary()` and the calc package's search table.
    `search_supplements.no_solution_warning` warns when the governing family
    lost trials to non-convergence.
@@ -245,15 +246,14 @@ value under Spencer's name.
 
 ## 6. Calls made (for the owner to revisit)
 
-1. **The direct march as a fallback: only where the iteration ran and did
-   not settle.** With supports the march also takes over where the
-   fixed-point step cannot be taken (GM-60). Doing the same without supports
-   was measured and not adopted: a 300-trial noncircular Spencer search of
-   ACADS 1(a) took 111 s against 8 s (39 trials without a solution against
-   67), ACADS 4's weak-layer search 297 s against 18 s (145 against 277), with
    the same minimum in both (1.114; 0.830). Circular searches cost the same
    either way. So a difference remains between runs with and without
    supports in how a fixed-lambda state is solved, not in the lambda search.
+   The review asked for the march on every run (D1, brief item 3). Tried in
+   the fix round and not applied, for the lead to decide: it gives states
+   resting on the m_alpha clamp, with base tension, on surfaces GM-131
+   found to have no Spencer solution, and takes away an ordinary slope's
+   yield coefficient (section 11).
 2. **An iteration that does not settle is no state.** No print for the 80
    iterations (D29). It removed 2 of 1,432 converged values on made-up
    circles, and the 0.515 above.
@@ -289,9 +289,11 @@ value under Spencer's name.
    reached. The upper end of the kh bracket (2.0 by default, a numerical
    device) is halved until the method solves there; without that a rigorous
    method with no solution at kh = 2 would give no ky for an ordinary slope.
-   No printed rule for either.
-10. **A value below 0.05 in a search** is counted with the trials without a
-    solution (`not_converged`). The 0.05 floor is the existing screen.
+   No printed rule for either: the halving of `kh_max` (`newmark.py`) is a
+   new search rule of the module's own.
+10. **A value below 0.05 in a search** is not scored (the existing screen)
+    and is counted with the trials without a solution, under its own reason
+    `below_0_05` since the fix round (it was counted as `not_converged`).
 11. **`compare_methods_table`** has no row for a method without a solution
     and lists it in `methods_without_solution`, which now names any method
     (Fellenius, Bishop, Janbu, Spencer, Morgenstern-Price).
@@ -314,8 +316,11 @@ value under Spencer's name.
 - `newmark.yield_acceleration` (every trial kh).
 - `probabilistic.fosm_fos`, `monte_carlo_fos` (fixed surface and
   re-searched), so `reliability.wrappers.slope_reliability`.
-- `geo_project.builders` (unchanged code): its searches and probabilistic
-  runs call the functions above; a FOSM without a solution raises there.
+- `geo_project.builders`: its searches and probabilistic runs call the
+  functions above. Since the fix round its Monte Carlo summary carries
+  `n_no_solution`, `pf_lower`, `pf_upper` and the note, and a FOSM without
+  a result leaves `{kind, error}` in that analysis's entry while the other
+  analyses run.
 - `funhouse_agent/adapters/slope_stability.py` (result descriptions; it
   already refused unknown names) and `adapters/calc_package.py`
   (`slope_stability_package`, `slope_report_package`: `FOS` None with
@@ -386,10 +391,8 @@ moved.
   solves it refuses for a stage that did not converge, and
   `RapidDrawdownSearchResult.FOS` still holds 999.9 when no surface is found
   (`no_surface_found` says so). Step 9.
-- `geo_project/` is not edited (the brief). Its JSON summary of a Monte Carlo
-  run does not carry `n_no_solution` or the pf bounds; the result object it
-  keeps (`_result`) does. A FOSM without a solution raises through
-  `run_analyses`.
+- `geo_project/` was not edited in the build; done in the fix round
+  (review D3).
 - `gle.GLEResult` still holds `fos = 999.9` beside `converged = False` in two
   early returns. It is the engine's state, read by `rapid_drawdown.py`; no
   caller of the method functions or of `solve_method` can receive it.
@@ -416,3 +419,189 @@ moved.
   fails on master too in this environment (`logx` / `logy` change nothing in
   its result). Not a slope test.
 - Janbu's "no state" is not split into no driving and not converged (call 6).
+- (Fix round, review D2.) On the made-up clay slope's circle (30, 4, 9),
+  centre below the crest, phi = 0, the module's Spencer solver finds no
+  solution, but one exists: the review's own Spencer gives theta 0.65 deg
+  and F 16.47 on 30 slices (0.36 deg, 17.33 on 400). The build's headline
+  test asserted "no number" there and was moved to a circle verified to
+  have none. No saved report depends on a factor of safety of 16 on an odd
+  circle, so the solver's miss is noted, not fixed.
+
+## 11. Fix round after review (2026-11-13)
+
+An independent review found the rule in place and six defects (D1 to D6).
+D2 to D6 are fixed here and nothing else was changed. D1 was built, measured
+and not applied: it moved checks that guard against false solutions (below).
+The branch was first brought up to date with master. There was one
+conflict, in the slope package's result descriptions in
+`funhouse_agent/adapters/calc_package.py`; the branch's `FOS` /
+`is_stable` / `no_solution` / `search_no_solution` were kept with master's
+new `warnings` text.
+
+**D1, the direct march on every run: not applied.** The review asked that
+`gle._GLESystem.solve_for_lambda` go to the direct march wherever the lagged
+iteration cannot take a step (a denominator at or below 1e-9). Today it does
+so only with supports (brief item 3). Built as asked (the patch is kept
+outside the repository), it finds the Spencer solution of the review's
+made-up phi = 0 circle. That circle has ground (0, 0), (15, 0), (30, 10),
+(50, 10), cu 25 kPa, gamma 18, and centre (32, 7), R 9. The patched module
+gives 2.9458 (theta 2.08 deg); the review's own Spencer gives 2.9435 on 30
+slices. The change also did the following:
+
+- `test_search_robustness`, `test_m_alpha` (GM-131): it gives "converged"
+  Spencer states on two polylines that GM-131 found to have no solution.
+  Each state carries the solver's own "m_alpha clamped" and "base tension
+  (N' < 0)" warnings, so it rests on the clamp, not on the method's
+  equations. On w11 it gives 1.56 at 29, 30, 31, 40, 41 and 60 slices
+  (Fellenius 15.26); the build gave no solution at any of them. On the deep
+  sandstone polyline it gives 1.192 at 30 and 41 slices only (Fellenius
+  28.8; none at 29, 31, 40 or 60). With the m_alpha check off, the directed
+  DE search of the weak layer over rock then reports 0.710 where no
+  surface held. The w11 DE search stops after 465 surfaces where it ran
+  2,325.
+- `test_slope_stability_adapter::TestNewmark` (the adapter tests' ordinary
+  slope): the yield coefficient by Spencer was 0.327; with the change
+  Spencer has no solution at a trial kh of 1.0, so no ky is given.
+- ACADS 4's weak-layer search (seed 3, 700 trials): the same 0.8301 on the
+  same surface. Trials left without a solution fall from 277 to 177, and the
+  run takes 84.5 s against 21.5 s and 23.2 s (on one machine, one process).
+  The review's what-if expected 160. Its patch also changed
+  `solve_for_lambda`'s default start from F = 1.3 to 1.0, and the patched
+  module with only that default changed gives 160.
+- #85 without its support, Spencer 6 x 6: the same 1.0468. Trials without a
+  solution rise from 329 to 343 (115, 87 and 141 by family); every one ends
+  on a bracket that does not close.
+
+Re-pinning those checks would accept false solutions, so the change was
+reverted. The review's case is kept as a strict xfail
+(`test_the_march_is_tried_where_the_lagged_iteration_cannot_step`) that
+records the module's miss and why D1 is not applied. `gle.py` is as built,
+and its docstring is true of it. `DESIGN.md`'s note on the march says the
+same. Section 6, call 1, records it for the lead.
+
+**D2, the headline test's circle.** The clay slope's circle (30, 4, 9) has a
+Spencer solution: the review's own Spencer gives theta 0.65 deg and F 16.47
+on 30 slices. The module's solver does not find it. Some tests asserted "no
+number" there: the headline test, the solver functions, the comparison, the
+yield acceleration and the two adapters' tests. They now use the review's
+first verified circle: the fill slope with c' = 40 kPa (phi' 22 deg, gamma
+19), circle (8, 12), R 12, where master reported 1.766. On it the review's
+own Spencer finds the force and moment factors of safety at least 0.043
+apart for theta from -30 to 60 deg (0.0435 at the closest; 30 slices), so
+they never meet. Spencer is asserted to have no number there.
+
+No one checked independently whether Morgenstern-Price (half-sine) has a
+solution on this circle. So for it and the GLE the tests hold the rule
+only: their own solution, or no number with the reason. The module finds
+none.
+
+Bishop on this circle: the module gives 1.729; an independent Bishop on 30
+slices gives 1.7268. The tests assert within 1 % of 1.7268. On the old
+circle they pinned the module's own 17.684. Section 10 records the solver's
+miss on (30, 4, 9) as noted, not fixed.
+
+**D3, `geo_project/builders.py`.** The Monte Carlo summary carries
+`n_no_solution`, `pf_lower`, `pf_upper` and `no_solution_note` beside `pf`.
+A probabilistic run that raises a ValueError (FOSM with no solution at a
+perturbed value) leaves `{kind, error}` in that analysis's entry, as the
+builder does for a missing variable, and the other analyses run.
+
+**D4, an unknown `f_interslice`.** `analyze_slope` and `solve_method` now
+refuse an unknown name with the list of names, whatever the method. Before,
+they checked it only for Morgenstern-Price or GLE, or when a comparison was
+asked for. The searches, the yield acceleration, FOSM and Monte Carlo take
+no `f_interslice` (their M-P and GLE solves use half-sine). Passing one is a
+TypeError, so none of them accepts an unknown name, and the test says so.
+The adapters already refused it. Section 3's item 7 listed
+`check_interslice` as called by those four, but only `check_method` is.
+
+**D5, a search in which no trial solves.** There is then no critical
+surface, so no governing family, and `warnings` said nothing.
+`search_supplements.no_solution_warning` now says that no trial surface had
+a solution by the method that the search could score. It gives the counts
+by family, method and reason.
+
+**D6, wording and the count.**
+- `DESIGN.md`'s GM-81 section no longer says, in the present tense, that
+  `FOS` is the old solver's value when no support crosses the surface. That
+  part is now in the past tense and marked superseded.
+- In the calc package's comparison, the row of a method with no number now
+  says "no net driving moment or force" or "does not converge". It takes
+  the reason from the result's own warning; before, it always said "does
+  not converge".
+- A search's solved value below 0.05 is counted under its own reason,
+  `below_0_05`, not as `not_converged`. This shows in the records,
+  `summary()`, the calc package's search table and the adapters'
+  descriptions.
+
+**Calls made.** Section 6 already listed three of the calls asked about:
+- Monte Carlo's rule for realizations without a solution (call 7).
+- The yield acceleration halving `kh_max` until the method solves (call 9).
+  It now says this is a new search rule of the module's own.
+- FOSM and Monte Carlo solving the given surface as `analyze_slope` does,
+  without the searches' shape screens (call 8).
+
+Call 1 (the march; D1 tried and not applied) and call 10 (the 0.05 floor's
+own reason) are updated.
+
+**Section 11 re-run.** `step2_section11.py` was run with D1 in. The
+`prob`, `acads4` and `where85` parts ran through a wrapper that writes the
+report under the review folder instead of `/tmp`. Every row was compared
+with section 4's "after" column. No factor of safety moved. Only the
+counts and run times given under D1 moved.
+
+With D1 reverted, a spot check on the final code gives the build's values
+again:
+- ACADS 4: 0.8301, x = 41.59 to 77.19, 277 trials without a solution.
+- #85 without its support: 1.0468 on a toe circle, 2,143 surfaces, 329
+  trials without a solution (100, 87, 142).
+
+D2 to D6 change no factor of safety. D6 only moves a value below 0.05 from
+one reason to another within the same count. So sections 4 and 5 stand as
+written. These values were unchanged with D1 in, to the digits printed:
+- #85 with its support: Bishop 1.3715, Spencer 1.5505, GLE 1.5726; passive
+  GLE 1.3594.
+- #86: 1.6131 / 1.6065 / 1.6070, and 0.9420 without supports.
+- ACADS 1(a): 0.9851 / 0.9840 / 0.9840 / 0.9830.
+- V-043: 1.2096 / 1.1858 / 1.1859.
+- V-031: 1.4205 / 1.4247 / 1.4091; its search 1.4174.
+- V-044: 1.5974 / 1.5962 / 1.5933.
+- V-039 ky: 0.56491 / 0.53519 / 0.55899 / 0.46921.
+- V-030, V-042 and V-045: their pinned tests pass.
+- V-042: search 1.3335; FOSM cov 0.1228, beta 2.312; Monte Carlo pf
+  0.0165.
+- ACADS 4's declared family: 0.7532 / 0.7225 / 0.7284.
+- The calc-package report: 0.879.
+
+**Tests.** Each file was run on its own, and pass or fail is pytest's exit
+code.
+
+| File | Result |
+|---|---|
+| `slope_stability/tests/test_own_solution_or_no_number.py` | 26 passed, 1 xfailed (D1's case, strict) |
+| `slope_stability/tests/test_gle.py` | 25 passed |
+| `slope_stability/tests/test_search_robustness.py` | 26 passed |
+| `slope_stability/tests/test_reinforcement.py` | 22 passed |
+| `slope_stability/tests/test_search_reinforcement.py` | 33 passed |
+| `slope_stability/tests/test_m_alpha.py` | 17 passed |
+| `slope_stability/tests/test_rapid_drawdown.py` | 16 passed |
+| `slope_stability/tests/test_newmark.py` | 16 passed |
+| `slope_stability/tests/test_probabilistic.py` | 10 passed |
+| `validation_examples/test_published_v028_e8.py` | 8 passed, 1 xfailed (strict, as before) |
+| `validation_examples/test_published_v054_anisotropic_su.py` | 4 passed |
+| `validation_examples/test_published_v037_slope.py` | 5 passed |
+| `geo_project/tests/test_builders.py` | 15 passed |
+| `funhouse_agent/tests/test_slope_stability_adapter.py` | 92 passed |
+| `funhouse_agent/tests/test_calc_package_adapter.py` | 87 passed |
+| `funhouse_agent/tests/test_defaults_used.py -k slope` | 41 passed, 14 skipped |
+| `webapp/tests/test_public_text.py` | 5 passed (run with this section in place) |
+| `webapp/tests/test_page_fingerprints.py` | 13 passed: no fingerprint commit |
+
+Changed: the headline, solver-function, comparison and
+yield-acceleration tests and both adapters' no-number tests (D2's circle);
+the record keys in two tests (D6). New: D3, two in `test_builders.py`; D4,
+one; D5, one; D6, two (the 0.05 reason, the calc-package row); D1's case
+as a strict xfail. With D1 applied the same files gave 2 failures in
+`test_search_robustness.py`, 2 in `test_m_alpha.py` and 1 in
+`test_slope_stability_adapter.py`, the checks named under D1; none was
+edited.
