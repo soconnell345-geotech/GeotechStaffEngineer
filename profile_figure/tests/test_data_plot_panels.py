@@ -388,7 +388,7 @@ def test_the_examples_draw_with_nothing_on_the_layout_check(name):
     # printed at the calc package's 6.5 in text width
     printed = lettering["smallest_pt"] * min(
         1.0, 6.5 / lettering["saved_width_in"])
-    assert printed >= MIN_PRINT_PT - 0.3, lettering
+    assert printed >= MIN_PRINT_PT, lettering
     assert json.dumps(params)                       # plain JSON throughout
 
 

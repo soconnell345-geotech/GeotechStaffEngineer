@@ -983,7 +983,7 @@ def _water(gw: dict, x_line: List[float], x_symbol: float, x_text: float,
          "marker": "triangle-down", "marker_size": size, "color": _BLUE,
          "label": "Groundwater level symbol"}]
     note = {"text": gw["label"], "x": x_text, "y": el + up * 1.2,
-            "align": "bottom left", "color": _BLUE, "font_size": 7}
+            "align": "bottom left", "color": _BLUE, "font_size": 7.5}
     return series, note
 
 
@@ -1015,7 +1015,7 @@ def _wall_panels() -> dict:
             water_note,
             {"text": hp["label"], "x": hp["x"] - 0.1,
              "y": hp["label_elevation"], "rotation": 90, "align": "bottom",
-             "font_size": 7}],
+             "font_size": 7.5}],
         "dimensions": [
             {"from": [dim["x"][0], dim["from_elevation"] + 0.05],
              "to": [dim["x"][1], dim["from_elevation"] + 0.05],
@@ -1038,7 +1038,7 @@ def _wall_panels() -> dict:
                         "text": dia["symbol"]}],
             "annotations": [
                 {"text": f"{dia['kpa'][i]:.1f}", "x": dia["kpa"][i] + 1.0,
-                 "y": dia["elevation"][i], "align": "left", "font_size": 7},
+                 "y": dia["elevation"][i], "align": "left", "font_size": 7.5},
                 {"text": f"{dia['symbol']} = "
                          f"{dia['resultant_kn_per_m']:.1f} kN/m\n"
                          f"at El. {zr:.2f} m",
@@ -1096,7 +1096,7 @@ def _settlement_panels() -> dict:
         stress(titles["preconsolidation"], [points()], [
             {"text": tests["label"], "x": tests["kpa"][low],
              "y": tests["elevation"][low] - 0.5, "align": "top",
-             "color": _RED, "font_size": 7}]),
+             "color": _RED, "font_size": 7.5}]),
         stress(titles["increase"], [
             {"x": ds, "y": el, "style": "line", "color": _GREEN,
              "line_width": 1.4, "label": "Stress increase"}]),
@@ -1110,14 +1110,14 @@ def _settlement_panels() -> dict:
             {"text": lab["initial"],
              "x": _at(lab["initial_at"], el, s0) - 6,
              "y": lab["initial_at"], "align": "right", "color": _GREY,
-             "font_size": 7},
+             "font_size": 7.5},
             {"text": lab["final"], "x": _at(lab["final_at"], el, sf) + 6,
              "y": lab["final_at"], "align": "left", "color": _BLUE,
-             "font_size": 7},
+             "font_size": 7.5},
             {"text": lab["preconsolidation"],
              "x": lab["preconsolidation_x"] + 10,
              "y": lab["preconsolidation_at"], "align": "left",
-             "color": _RED, "font_size": 7}]),
+             "color": _RED, "font_size": 7.5}]),
     ]
     return {"panels": panels, "title": d["title"],
             "ylabel": d["elevation_label"], "ylim": d["elevation_range"],
@@ -1135,7 +1135,7 @@ def _pile_panels() -> dict:
 
     def notes(labels: List[dict]) -> List[dict]:
         return [{"text": lab["text"], "x": lab["x"], "y": lab["elevation"],
-                 "align": lab.get("ha", "left"), "font_size": 7,
+                 "align": lab.get("ha", "left"), "font_size": 7.5,
                  **({"color": lab["color"]} if "color" in lab else {})}
                 for lab in labels]
 

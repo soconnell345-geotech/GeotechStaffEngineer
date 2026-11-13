@@ -2257,7 +2257,7 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                          if ax.get_legend() is not None else []))
         fig.text(ax.get_position().x0,
                  (low - 0.10 * fig.dpi) / (fig.get_figheight() * fig.dpi),
-                 footnote, fontsize=7.0, color=_TEXT_COLOR, ha="left",
+                 footnote, fontsize=7.5, color=_TEXT_COLOR, ha="left",
                  va="top")
     contour_texts = (_contour_numbers(fig, ax, contour_art, warnings, drawn)
                      if contour_art else [])

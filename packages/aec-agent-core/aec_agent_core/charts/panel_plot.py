@@ -75,7 +75,7 @@ _PANEL_TITLE_PT = 8.0   #: a panel's title
 _AXIS_PT = 8.0          #: axis titles
 _TICK_PT = 7.5          #: axis numbers
 _TEXT_PT = 7.5          #: band names, dimension and arrow text
-_FOOT_PT = 7.0          #: the footnote
+_FOOT_PT = 7.5          #: the footnote
 
 _AXES_H = 3.6           #: default height of the axes (inches)
 _GAP = 0.16             #: between panels (inches)
@@ -339,7 +339,7 @@ def _draw_bands(ax, p) -> list:
              else (b["top"] + b["bottom"]) / 2.0)
         t = ax.text(x, y, b["label"], transform=across, ha=b["align"],
                     va="center", multialignment=b["align"],
-                    fontsize=_TEXT_PT - 0.5, color=_dp._TEXT_COLOR, zorder=6)
+                    fontsize=_TEXT_PT, color=_dp._TEXT_COLOR, zorder=6)
         if b["hatch"]:              # the hatch stops short of the letters
             t.set_path_effects([patheffects.withStroke(
                 linewidth=2.5, foreground=b["color"])])
