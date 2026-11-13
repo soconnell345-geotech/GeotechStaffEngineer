@@ -18,6 +18,8 @@ What each engine does with the truncation:
   used to return, unmarked, for the truncated case.
 """
 
+import math
+
 import pytest
 
 from reliability import form, fosm, monte_carlo, pem
@@ -85,3 +87,39 @@ class TestTruncatedCase:
                       "dist": "triangular"}}
         assert fosm(g, spec).g_mean == pytest.approx(2.0)
         assert pem(g, spec).n_points == 4
+
+
+class TestBoundsThatCutNothing:
+    """GM-322 review: bounds that cut off no probability are no truncation,
+    and a cut-off of at most 1e-6 runs, untruncated, with a note."""
+
+    INF = {"R": {"mean": 200.0, "std": 40.0, "lower": -math.inf,
+                 "upper": math.inf}, "S": S}
+    LN0 = {"R": PLAIN["R"], "S": {**S, "lower": 0.0}}
+    # normal 200/40 with lower=0: Phi(-5), about 2.9e-7, cut off
+    FAR = {"R": {"mean": 200.0, "std": 40.0, "lower": 0.0}, "S": S}
+
+    @pytest.mark.parametrize("engine,pf_ln", [(fosm, 0.01051361),
+                                              (pem, 0.00655827)])
+    @pytest.mark.parametrize("spec", ["INF", "LN0"])
+    def test_no_cut_runs_as_untruncated(self, engine, pf_ln, spec):
+        res = engine(g, getattr(self, spec))
+        assert res.pf_lognormal == pytest.approx(pf_ln, rel=1e-5)
+        # the same result as with no bounds, and no warning
+        assert res.to_dict() == engine(g, PLAIN).to_dict()
+
+    @pytest.mark.parametrize("engine,name", [(fosm, "FOSM"), (pem, "PEM")])
+    def test_far_tail_runs_with_the_cut_off_stated(self, engine, name):
+        res = engine(g, self.FAR)
+        assert res.pf_lognormal == pytest.approx(
+            engine(g, PLAIN).pf_lognormal)
+        (note,) = res.to_dict()["warnings"]
+        assert "'R'" in note and "2.9e-07" in note
+        assert "not applied" in note and name in note
+
+    def test_a_cut_above_1e_6_is_refused(self):
+        # lower at mean - 4.5 std cuts off about 3.4e-6
+        spec = {"R": {"mean": 200.0, "std": 40.0, "lower": 20.0}, "S": S}
+        with pytest.raises(ValueError, match="takes no truncation") as exc:
+            fosm(g, spec)
+        assert "3.4e-06" in str(exc.value)

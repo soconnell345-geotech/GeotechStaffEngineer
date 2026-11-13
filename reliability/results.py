@@ -43,6 +43,8 @@ class FOSMResult:
     variance_contributions_pct: Dict[str, float] = field(default_factory=dict)
     correlated: bool = False
     n_g_calls: int = 0
+    #: Bounds read as no truncation (GM-322 review): how much they cut off.
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -64,6 +66,8 @@ class FOSMResult:
         for k, pct in sorted(self.variance_contributions_pct.items(),
                              key=lambda kv: -kv[1]):
             lines.append(f"    {k:<18s} {pct:6.1f}%")
+        for w in self.warnings:
+            lines.append(f"  WARNING: {w}")
         lines.append("=" * 62)
         return "\n".join(lines)
 
@@ -85,6 +89,7 @@ class FOSMResult:
                 for k, v in self.variance_contributions_pct.items()},
             "correlated": self.correlated,
             "n_g_calls": self.n_g_calls,
+            **({"warnings": list(self.warnings)} if self.warnings else {}),
         }
 
 
@@ -102,6 +107,8 @@ class PEMResult:
     scheme: str = "full_2n"
     n_points: int = 0
     correlated: bool = False
+    #: Bounds read as no truncation (GM-322 review): how much they cut off.
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         return "\n".join([
@@ -118,8 +125,7 @@ class PEMResult:
             f"(pf = {self.pf_normal:.3e})",
             f"  beta (lognormal):  {_fmt(self.beta_lognormal)}  "
             f"(pf = {_fmt(self.pf_lognormal, '.3e')})",
-            "=" * 62,
-        ])
+        ] + [f"  WARNING: {w}" for w in self.warnings] + ["=" * 62])
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -135,6 +141,7 @@ class PEMResult:
             "pf_normal": _r(self.pf_normal, 8),
             "pf_lognormal": _r(self.pf_lognormal, 8),
             "correlated": self.correlated,
+            **({"warnings": list(self.warnings)} if self.warnings else {}),
         }
 
 

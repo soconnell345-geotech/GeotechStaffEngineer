@@ -73,7 +73,7 @@ def pem(g: Callable[[Dict[str, float]], float],
         raise ValueError(
             f"scheme must be 'full' or 'multiplicative', got '{scheme}'.")
     rvs = variables_from_spec(variables)
-    refuse_truncated(rvs, "PEM")
+    bound_notes = refuse_truncated(rvs, "PEM")
     R = build_correlation(rvs, correlation)
     correlated = correlation is not None
     n = len(rvs)
@@ -114,6 +114,7 @@ def pem(g: Callable[[Dict[str, float]], float],
         scheme="full_2n" if scheme == "full" else "multiplicative_2n_plus_1",
         n_points=n_points,
         correlated=correlated,
+        warnings=bound_notes,
     )
 
 

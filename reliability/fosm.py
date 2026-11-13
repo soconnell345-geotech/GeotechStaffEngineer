@@ -80,7 +80,7 @@ def fosm(g: Callable[[Dict[str, float]], float],
     """
     thr = _threshold(convention)
     rvs = variables_from_spec(variables)
-    refuse_truncated(rvs, "FOSM")
+    bound_notes = refuse_truncated(rvs, "FOSM")
     R = build_correlation(rvs, correlation)
     correlated = correlation is not None
 
@@ -144,4 +144,5 @@ def fosm(g: Callable[[Dict[str, float]], float],
         variance_contributions_pct=contributions,
         correlated=correlated,
         n_g_calls=n_calls,
+        warnings=bound_notes,
     )

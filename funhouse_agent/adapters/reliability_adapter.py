@@ -224,13 +224,15 @@ METHOD_REGISTRY = {
 }
 
 _TRUNCATION_READ = (
-    "lower/upper truncate a normal/lognormal variable (this engine samples "
+    "lower/upper truncate a normal/lognormal variable (this engine reads "
     "the truncated distribution; fosm and pem refuse one) or bound "
     "uniform/triangular. ")
 _TRUNCATION_REFUSED = (
     "lower/upper bound uniform/triangular. This engine takes no "
     "truncation: lower/upper on a normal/lognormal variable is refused "
-    "(monte_carlo and form sample a truncated variable). ")
+    "when it cuts off more than 1e-6 of the probability (monte_carlo and "
+    "form read a truncated variable); bounds that cut off less run on the "
+    "untruncated variable, with a warning if they cut off any. ")
 
 
 def _variables_param(truncation: str) -> dict:
@@ -275,6 +277,11 @@ _RETURNS_MOMENTS = {
     "pf_normal": "PHI(-beta_normal).",
     "pf_lognormal": "PHI(-beta_lognormal).",
 }
+_RETURNS_BOUNDS_NOTE = {
+    "warnings": "Only when lower/upper on a normal/lognormal variable cut "
+                "off some probability, at most 1e-6: how much, and that "
+                "the bounds were not applied. Tell the user.",
+}
 
 METHOD_INFO = {
     "fosm": {
@@ -289,7 +296,8 @@ METHOD_INFO = {
         "returns": {**_RETURNS_MOMENTS,
                     "variance_contributions_pct":
                         "Per-variable share of Var[g] (%).",
-                    "variable_deltas": "g(+1sigma)-g(-1sigma) per variable."},
+                    "variable_deltas": "g(+1sigma)-g(-1sigma) per variable.",
+                    **_RETURNS_BOUNDS_NOTE},
     },
     "pem": {
         "category": "Reliability",
@@ -306,7 +314,8 @@ METHOD_INFO = {
                                       "'multiplicative' = Rosenblueth 2n+1 "
                                       "(uncorrelated only)."},
         },
-        "returns": {**_RETURNS_MOMENTS, "n_points": "g evaluations used."},
+        "returns": {**_RETURNS_MOMENTS, "n_points": "g evaluations used.",
+                    **_RETURNS_BOUNDS_NOTE},
     },
     "monte_carlo": {
         "category": "Reliability",

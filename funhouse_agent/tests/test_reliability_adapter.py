@@ -119,7 +119,7 @@ class TestTruncationAndDropped:
             assert "takes no truncation" in d and "refused" in d
         for method in ("monte_carlo", "form"):
             d = METHOD_INFO[method]["parameters"]["variables"]["description"]
-            assert "samples the truncated distribution" in d
+            assert "reads the truncated distribution" in d
 
     def test_monte_carlo_reports_dropped(self):
         r = call_agent("reliability", "monte_carlo", {
