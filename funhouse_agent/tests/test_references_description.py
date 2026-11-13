@@ -15,7 +15,7 @@ from funhouse_agent.adapters import MODULE_REGISTRY
 
 #: The reference modules that search the others and hold no reference of
 #: their own.
-SEARCH_MODULES = {"reference_db", "figure_db"}
+SEARCH_MODULES = {"reference_db", "figure_db", "table_db"}
 
 
 def _module_for(reference_id: str):

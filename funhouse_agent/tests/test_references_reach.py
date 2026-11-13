@@ -51,7 +51,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 EXAMPLES = json.loads((HERE / "reference_lookup_examples.json").read_text(
     encoding="utf-8"))
-SEARCH = {"reference_db", "figure_db"}
+SEARCH = {"reference_db", "figure_db", "table_db"}
 LOOKUP_MODULES = sorted(dispatch.REFERENCE_MODULES - SEARCH)
 TEXT_RETRIEVAL = "Text Retrieval"
 

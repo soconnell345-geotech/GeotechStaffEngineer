@@ -185,7 +185,8 @@ def test_every_reference_module_names_its_own_documents():
     names a document the module serves (``MODULE_DOCUMENTS``)."""
     from funhouse_agent.adapters import MODULE_REGISTRY
     from funhouse_agent.dispatch import REFERENCE_MODULES
-    for module in sorted(REFERENCE_MODULES - {"reference_db", "figure_db"}):
+    for module in sorted(REFERENCE_MODULES - {"reference_db", "figure_db",
+                                              "table_db"}):
         served = cd.module_documents(module)
         assert served, module
         brief = MODULE_REGISTRY[module]["brief"]
