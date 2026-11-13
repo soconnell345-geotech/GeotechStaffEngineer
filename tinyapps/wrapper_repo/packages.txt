@@ -9,8 +9,8 @@
 # (all three lines, to the versions the new release's metadata names) plus
 # an App Services sync. Pin only a release that was tested on the test
 # machine first.
-aec-document-review==0.1.1
-aec-agent-core==1.0.1
+aec-document-review==1.1.0
+aec-agent-core==1.1.0
 planlens==0.15.1
 
 # The third-party pins (CfA's fleet pins and the Key Vault libraries) live in

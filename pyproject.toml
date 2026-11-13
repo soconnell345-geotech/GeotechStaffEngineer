@@ -57,7 +57,9 @@ dependencies = [
     # (one version, tag aec-v<version>, which v* never matches), and
     # publish.yml also refuses while packages/aec-agent-core has changed
     # since the tag of the pinned version: release the core, then pin it.
-    "aec-agent-core==1.0.1",
+    # 1.1.0 on master (INF-76's first one-unit version; not on PyPI until
+    # the lead releases it with Document Review 1.1.0).
+    "aec-agent-core==1.1.0",
     # -- agent stack (formerly the [deep] extra) --
     # Agent-stack UPPER BOUNDS (5.10.2): unpinned drift has broken deployed
     # clusters twice (Pygments via pydiggs; then deepagents 0.7.11 dropping the

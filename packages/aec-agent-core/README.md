@@ -16,7 +16,7 @@ Two applications are built on it:
 
 ## Status
 
-**Since 1.0.1 (not released yet).** One more module moved in:
+**1.1.0 (not released yet; the first release with Document Review as one unit, BACKLOG INF-76).** One more module moved in:
 `foundry_dataset_store`, the Foundry dataset store, from
 GeotechStaffEngineer's `webapp` (BACKLOG INF-74), so that Document Review
 can keep its conversations on Palantir Foundry the way the geotech page

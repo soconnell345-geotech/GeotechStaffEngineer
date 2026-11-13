@@ -29,7 +29,7 @@ name = "aec-agent-core"
 # aec_agent_core.__version__ and to aec-document-review's version and its
 # pin on this package (INF-76: one version); webapp/tests/test_wheels.py and
 # webapp/tests/test_inf76_release_unit.py check them.
-version = "1.0.1"
+version = "1.1.0"
 description = "The shared core of LLM agents that review and produce architecture, engineering and construction documents: model connections, vision calls, guards and records, Word and Excel, and a figure helper. No user interface of its own."
 readme = "README.md"
 license = "MIT"
