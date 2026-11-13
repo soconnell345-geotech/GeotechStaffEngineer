@@ -143,12 +143,16 @@ def test_phi_zero_slices_are_exempt_by_the_modules_own_reasoning():
     the module's reasoning is that there m_alpha does not depend on F and
     the strength does not depend on the normal force. The exemption stays
     the default, stated as the module's own; 'every_slice' is the option
-    (OWN-102)."""
+    (OWN-102). The circle's centre is 8 m below the crest where it ends, a
+    reverse-curvature circle: since GM-140 step 4 it is a surface only with
+    a crack asked for at least that deep, so an 8 m crack is given, and the
+    surface ends where its arc turns vertical."""
     geom = SlopeGeometry(
         surface_points=[(0, 0), (20, 0), (30, 10), (60, 10)],
         soil_layers=[SlopeSoilLayer("clay", top_elevation=10,
                                     bottom_elevation=-10, gamma=18,
-                                    cu=40.0, analysis_mode="undrained")])
+                                    cu=40.0, analysis_mode="undrained")],
+        tension_crack_depth=8.0)
     kw = dict(xc=20.0, yc=2.0, radius=10.0, method="bishop")
     default = analyze_slope(geom, **kw)
     every = analyze_slope(geom, m_alpha_rule="every_slice", **kw)

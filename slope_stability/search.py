@@ -1014,7 +1014,7 @@ def _compute_fos(geom: SlopeGeometry,
                     lambda g: _compute_fos(
                         g, slip, method, n_slices, tol=tol,
                         window_span=window_span, reject_stats=reject_stats,
-                        fos_fn=fos_fn, confirm_below=confirm_below,
+                        fos_fn=fos_fn,
                         m_alpha_check=m_alpha_check, info=info,
                         inside_model=inside_model),
                     plan=plan)

@@ -175,9 +175,12 @@ def test_vertical_cut_in_undrained_clay_against_taylor():
 def test_vertical_cut_m_alpha_rule_on_phi_zero_slices():
     """The default search (no crack asked for) reads 0.935 (module's own;
     Taylor 0.851, the test above), with nothing left out for m_alpha:
-    slices with phi = 0 are not checked (GM-127). Checking every slice, as
-    Slide2 does, leaves surfaces out and reads 0.935 too; the choice says
-    which was used. A toe circle with its centre 2.3 m below the crest,
+    slices with phi = 0 are not checked (GM-127). Checking every slice
+    flags circles (GM-140 step 3, OWN-102: kept and flagged); the lowest of
+    them lies above the lowest unflagged circle, so the headline is 0.935
+    again and carries no flag. Leaving flagged circles out, as Slide2 does
+    (``low_m_alpha='refuse'``), reads 0.935 too; the choice says which was
+    used. A toe circle with its centre 2.3 m below the crest,
     closed by a given 2.3 m crack, rises to the vertical at the crack: its
     last slice's m_alpha = cos(a) is below 0.2 (phi = 0), warned of only
     when every slice is checked. (Before GM-134 the slice next to a crack
@@ -194,16 +197,18 @@ def test_vertical_cut_m_alpha_rule_on_phi_zero_slices():
     assert ch["how"] == "default" and "phi' > 0" in ch["chosen"]
     assert any("every_slice" in a for a in ch["alternatives"])
     assert any("low_m_alpha='refuse'" in a for a in ch["alternatives"])
-    # every slice looked at: the same circle, kept and flagged, with the
-    # lowest circle without a flag beside it
+    # every slice looked at: the flagged circles are kept and counted;
+    # none is lower than the headline, which carries no flag (module's
+    # own; before step 4 the headline was 0.842 on a toe circle closed by
+    # a crack nobody asked for, now discarded)
     every = search_critical_surface(_vertical_cut(), method="bishop",
                                     m_alpha_rule="every_slice")
-    # GM-140 step 3: 0.935 -> 0.842; Taylor 0.851 (stability number 3.83),
-    # -1.1 %
-    assert every.critical.FOS == pytest.approx(0.842, abs=0.005)
+    assert every.critical.FOS == pytest.approx(0.935, abs=0.005)
     assert every.n_rejected_m_alpha == 0
-    assert "low_m_alpha" in every.critical_flags
-    assert every.lowest_unflagged["FOS"] == pytest.approx(0.935, abs=0.005)
+    assert every.critical_flags == []
+    assert every.lowest_unflagged is None
+    assert sum(t["by_check"].get("low_m_alpha", 0)
+               for t in every.trial_flags) > 0
     (ch,) = [c for c in every.choices
              if c["what"] == "slip surfaces with m_alpha below 0.2"]
     assert ch["how"] == "given" and "any slice" in ch["chosen"]
