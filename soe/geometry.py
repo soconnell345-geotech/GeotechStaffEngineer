@@ -4,6 +4,7 @@ Input geometry dataclasses for support of excavation design.
 All units SI: meters, kPa, kN/m³, degrees.
 """
 
+import numbers
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -71,6 +72,16 @@ class SupportLevel:
     angle_deg: float = 0.0
 
     def __post_init__(self):
+        # None: not given, as for spacing; anything else must be a number
+        # (a string or a bool was compared raw before)
+        if self.angle_deg is None:
+            self.angle_deg = 0.0
+        for key in ("spacing", "angle_deg"):
+            value = getattr(self, key)
+            if value is not None and (isinstance(value, bool) or not
+                                      isinstance(value, numbers.Real)):
+                raise ValueError(
+                    f"a support's {key} must be a number, got {value!r}")
         if self.spacing is not None and not self.spacing > 0:
             raise ValueError(
                 f"a support's spacing must be positive (m), got "

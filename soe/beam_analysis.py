@@ -270,8 +270,19 @@ _OWN_LOAD_BASIS = (
     "GEC-4 Eqs. 19 to 21 (pp. 66, 67), printed for ground anchors: "
     "Th = Thi s (Thi the horizontal load per unit width of wall, s the "
     "horizontal spacing), T = Th / cos(theta) (theta the inclination "
-    "below the horizontal), Tv = T sin(theta); the same statics for an "
+    "below the horizontal), Tv = T sin(theta); the Caltrans Trenching and "
+    "Shoring Manual's Example 8-1 does the same two steps (Eq. 8-4-21, "
+    "p. 8-15: the load per foot of wall x the 10 ft anchor spacing = T_H; "
+    "Eq. 8-4-22, p. 8-16: T = T_H / cos 15 deg); the same statics for an "
     "inclined strut or raker")
+
+#: Where the print says the vertical component of an inclined support
+#: must be carried by the wall (GM-321 review).
+_VERTICAL_CITES = (
+    "Caltrans Trenching and Shoring Manual Sec. 11-3.04, p. 11-12: the "
+    "vertical component 'must be resisted by the vertical member through "
+    "skin friction on the embedded length ... and by end bearing'; GEC-4 "
+    "App. A, p. A-13, adds it to the soldier beam's axial load")
 
 
 def support_own_loads(per_m, spacing, angle_deg: float) -> dict:
@@ -309,6 +320,14 @@ def _support_loads_note(supports) -> str:
         text += (" No spacing given for support(s) "
                  + ", ".join(str(i) for i in no_spacing)
                  + ": no load per support worked out there.")
+    inclined = [i + 1 for i, s in enumerate(supports) if s.angle_deg]
+    if inclined:
+        text += (" Support(s) " + ", ".join(str(i) for i in inclined)
+                 + " inclined: the vertical component (vertical_load_kN_"
+                 "per_support, axial x sin(angle_deg), GEC-4 Eq. 21) is "
+                 "reported, not applied. The wall and its toe must carry "
+                 "it, and this analysis does not check that ("
+                 + _VERTICAL_CITES + ").")
     return text
 
 
@@ -325,12 +344,17 @@ def _support_loads_choice(supports) -> dict:
             + (", horizontal" if s.angle_deg == 0
                else f", inclined {s.angle_deg:g} deg"))
     given = any(s.spacing is not None or s.angle_deg != 0 for s in supports)
+    other = []
+    if any(s.spacing is None for s in supports):
+        other.append("a spacing (m) and an inclination (deg) given for "
+                     "each support")
+    if any(s.spacing is not None for s in supports):
+        other.append("no spacing: loads per metre of wall only")
     return choice(
         "each support's own load (supports[].spacing, angle_deg)",
         "; ".join(parts), GIVEN if given else DEFAULT,
         _OWN_LOAD_BASIS + ". No spacing given: no load per support; "
-        "angle_deg not given: horizontal (0)",
-        ["a spacing (m) and an inclination (deg) given for each support"])
+        "angle_deg not given: horizontal (0)", other)
 
 
 def _loads_text(s) -> str:

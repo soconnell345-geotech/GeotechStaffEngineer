@@ -385,13 +385,27 @@ metre of wall):
 - `vertical_load_kN_per_support` = axial x sin(angle) (GEC-4 Eq. 21).
 
 GEC-4 prints these for ground anchors; for an inclined strut or raker they
-are the same statics. The held text of the Caltrans Trenching and Shoring
-Manual prints no spacing or inclination rule for struts that could be
-found. `spacing` has no default (it was 3.0, and never read): without it
-the per-support loads are None and the notes and `choices` say so. The
-vertical component is reported, not applied to the wall (no axial wall
-check here). The wall's moment, shear and embedment do not depend on
-either input.
+are the same statics. The Caltrans Trenching and Shoring Manual does the
+same two steps in its Example 8-1 (a single ground anchor sheet pile wall,
+anchors every 10 ft, 15 deg): Eq. 8-4-21 (p. 8-15) multiplies the load per
+foot of wall by the 10 ft spacing to get T_H = 143.87 kips, and Eq. 8-4-22
+(p. 8-16) gives T = T_H / cos 15 deg = 148.95 kips. (The held text of that
+manual is a summary and did not show it; the PDF does.) The code's form,
+load x spacing / cos(angle), is the same; a made-up hand check is in
+`soe/tests/test_gm321_support_loads.py`. `spacing` has no default (it was
+3.0, and never read): without it the per-support loads are None and the
+notes and `choices` say so. The wall's moment, shear and embedment do not
+depend on either input.
+
+**The vertical component is reported, not applied.** The print says the
+wall must carry it: "the vertical component of the ground anchor force
+must be resisted by the vertical member through skin friction on the
+embedded length of the piling in contact with the soil and by end
+bearing" (Caltrans Sec. 11-3.04, p. 11-12), and GEC-4 App. A (p. A-13)
+adds 435 kN x sin 15 deg = 113 kN to the soldier beam's axial load. This
+analysis has no axial check of the wall or its toe; the tool description
+and, when a support is inclined, a note in the result say so with these
+cites.
 
 **Preload is not an input.** `preload_kN_per_m` was stored and never read.
 No held page prints how a preload or lock-off load changes the support

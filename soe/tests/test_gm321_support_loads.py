@@ -1,7 +1,10 @@
 """GM-321: a braced wall's supports use their spacing and inclination.
 
 GEC-4 (FHWA-IF-99-015) Eqs. 19 to 21, pp. 66 and 67: Th = Thi s,
-T = Th / cos(theta), Tv = T sin(theta). Made-up values throughout.
+T = Th / cos(theta), Tv = T sin(theta); the Caltrans Trenching and Shoring
+Manual's Example 8-1 does the same two steps (Eqs. 8-4-21 and 8-4-22,
+pp. 8-15, 8-16). Made-up values, except the first test, which is GEC-4
+App. A Design Example 1's printed numbers (p. A-7).
 """
 
 import math
@@ -29,6 +32,35 @@ def test_gec4_example_1_design_loads():
     assert own["axial_load_kN_per_support"] == pytest.approx(434.8, abs=0.1)
     assert own["vertical_load_kN_per_support"] == pytest.approx(
         434.82 * math.sin(math.radians(15.0)), abs=0.05)
+
+
+def test_caltrans_example_8_1_form_by_hand():
+    # Caltrans Eq. 8-4-21 (p. 8-15): the horizontal load per foot of wall
+    # x the anchor spacing = T_H; Eq. 8-4-22 (p. 8-16): T = T_H / cos 15.
+    # Made-up values: 50 kN/m, supports at 3 m, 15 deg.
+    #   T_H = 50 x 3 = 150 kN
+    #   T   = 150 / cos 15 = 150 / 0.965926 = 155.29 kN
+    #   T_v = 155.29 x sin 15 = 155.29 x 0.258819 = 40.19 kN
+    own = support_own_loads(50.0, 3.0, 15.0)
+    assert own["horizontal_load_kN_per_support"] == 150.0
+    assert own["axial_load_kN_per_support"] == pytest.approx(155.29, abs=0.005)
+    assert own["vertical_load_kN_per_support"] == pytest.approx(40.19,
+                                                                abs=0.005)
+    assert own["axial_load_kN_per_m"] == pytest.approx(51.76, abs=0.005)
+
+
+def test_inclined_support_note_says_the_wall_must_carry_the_vertical():
+    flat = analyze_braced_excavation(_geometry(
+        [SupportLevel(depth=2.0, spacing=3.0)]))
+    assert not any("vertical component" in n for n in flat.notes)
+    tilted = analyze_braced_excavation(_geometry(
+        [SupportLevel(depth=2.0, spacing=3.0),
+         SupportLevel(depth=5.0, spacing=3.0, angle_deg=15.0)]))
+    note = [n for n in tilted.notes if "vertical component" in n][0]
+    assert "Support(s) 2 inclined" in note
+    assert "reported, not applied" in note
+    assert "does not check" in note
+    assert "Sec. 11-3.04" in note and "A-13" in note
 
 
 def test_spacing_and_angle_reach_the_result():
@@ -92,6 +124,20 @@ def test_load_not_found_gives_no_support_load():
 def test_bad_spacing_or_angle_refused(kw, text):
     with pytest.raises(ValueError, match=text):
         SupportLevel(depth=2.0, **kw)
+
+
+@pytest.mark.parametrize("kw, text", [
+    ({"angle_deg": "15"}, "angle_deg must be a number, got '15'"),
+    ({"spacing": "3"}, "spacing must be a number, got '3'"),
+    ({"spacing": True}, "spacing must be a number, got True"),
+])
+def test_spacing_or_angle_not_a_number_refused(kw, text):
+    with pytest.raises(ValueError, match=text):
+        SupportLevel(depth=2.0, **kw)
+
+
+def test_null_angle_is_horizontal():
+    assert SupportLevel(depth=2.0, angle_deg=None).angle_deg == 0.0
 
 
 def test_preload_is_not_a_support_input():
