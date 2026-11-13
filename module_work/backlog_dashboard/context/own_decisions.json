@@ -3228,7 +3228,7 @@
     "ask_who": null,
     "question": "Do the lead's calls stand where a printed equation, table or chart looked wrong?",
     "why": "You left these calls to the lead on 2026-11-10 and asked for a later item to revisit them. Each sets a number the references helper returns; if a call is wrong, the helper's answer is wrong the same way every time.",
-    "background": "Each call is one of three kinds: the print contradicts itself or its own worked example; a unit or symbol is missing; or a table or chart gives no rule between its printed values. In every case the function's description and result state the printed form, the coded form and the page, so a reader sees the departure. The calls are on the fix branches (REF-65 to REF-71) and reach the library when they merge; a branch still running may add one, which goes on this card. Two were settled from public prints and are not on it: FHWA-NHI-05-037 Table 5-34's DCP index is in mm per blow (TM 3-34.48-2 Figure G-11; WES Instruction Report GL-92-3, p. 17), and UFC 3-250-11 Table 2-3 note (c) is PI <= 20 + (50 - percent passing No. 200)/4 (the 2004 edition's Table 2-1 note b; at 10 % passing the limit is 30, not 60). Pages are 'PDF page, printed page'. The full table is findings/RULINGS.md.",
+    "background": "Each call is one of three kinds: the print contradicts itself or its own worked example; a unit or symbol is missing; or a table or chart gives no rule between its printed values. In every case the function's description and result state the printed form, the coded form and the page, so a reader sees the departure. The calls are on the fix branches (REF-65 to REF-71) and reach the library when they merge; a branch still running may add one, which goes on this card (parts 32 to 42 were added 2026-11-12). Two were settled from public prints and are not on it: FHWA-NHI-05-037 Table 5-34's DCP index is in mm per blow (TM 3-34.48-2 Figure G-11; WES Instruction Report GL-92-3, p. 17), and UFC 3-250-11 Table 2-3 note (c) is PI <= 20 + (50 - percent passing No. 200)/4 (the 2004 edition's Table 2-1 note b; at 10 % passing the limit is 30, not 60). Pages are 'PDF page, printed page'. The full table is findings/RULINGS.md.",
     "parts": [
       {
         "label": "1. DM 7.1 Eq. 3-2, relative density from dry density (PDF 169, printed 141): the typeset second form has gamma_d-max in the numerator's bracket, negative for any soil looser than its densest state. Kept the code (gamma_d-min), the only form that makes the print's two forms equal.",
@@ -3663,6 +3663,160 @@
           }
         ],
         "multi": false
+      },
+      {
+        "label": "32. GEC-10 Table 8-4 against the text (printed p. 10-21): the table prints a resistance factor of 0.50 for rock side resistance by Eq. 10-21; the text says 0.55 \"as presented in Table 8-4\". Returns the table's 0.50, with a note quoting the text: the table is the cited source, and 0.50 is the lower value.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "33. GEC-10 printed p. 10-22, the coefficient C for roughened sockets: the page prints \"C = 1.9 with use of Equation 10-22\", but C appears only in Eq. 10-21. C stays on Eq. 10-21, default 1.0; the page's sentence and its recommendation to verify a C above 1.0 by load tests are quoted. A cross-reference slip in the print; the lead saw the page.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "34. GEC-10 Figure 10-6 / Eq. 10-18, alpha for clay (printed p. 10-17): the curve is drawn from su/pa about 0.25 (alpha about 1.0) to 5. Refused outside the drawn curve, by the rule of part 8; at su/pa 0.1 the equation gives alpha 2.0. The lead saw the page; no app calculation calls it.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "35. EM 1110-1-1905 limits printed as part of a relation (dc <= 1.5, dq <= 1.4, C1 >= 0.5, Pa,d >= 0): the printed limit is applied and the result says when it governs; only inputs the page's conditions exclude are refused (beta above phi', preconsolidation stress below the present stress). The print's own rule.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "36. EM 1110-1-1905 Eqs. 5-34 and 5-35 (printed p. 121): the cohesion term is 2 c'd with no square root of the earth pressure coefficient. Kept as printed, with a note: it gives less passive resistance and a smaller active force than the form with the square root. The lead saw the page.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "37. EM 1110-1-1905 Eqs. 7-7 to 7-10: the symbol list says settlement in inches; the formula with the listed units gives feet. Returns feet and inches, with a note, as the worked example does.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "38. EM 1110-1-1905 Example C-7d (printed p. 385): layer 7 is printed 0.008 where its inputs give 0.0008, carried into the printed 0.125 ft. The tests pin what the inputs give (0.092 ft); the slip is recorded.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "39. EM 1110-1-1905 Eq. 9-5 symbol list (printed p. 227): gamma_eff is defined as \"effective vertical stress (psf)\", Table 9-3 calls it the effective shear strain, and rD is written against rd. Kept as printed, with a note: it cannot be settled beyond the table's use.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "40. GEC-11 Table 4-6, bearing capacity factors (pp. 4-28 to 4-30): Nc at phi = 39 prints 37.9 while the column runs 61.35 at 38 and 75.31 at 40, so 37.9 is a misprint; N-gamma at 31 prints 25.9. The pages print no equations for the factors, only the AASHTO source line. The lookup returns the page's one-decimal cells (all 138) and N-gamma at 31 as printed (25.9). Nc at 39 returns 67.9, which is not printed and is not the neighbours' midpoint (68.35): its note says so and gives the basis (the relation Nc = (Nq - 1) cot phi with the Reissner Nq, not printed in the manual, shown by script to reproduce the column's other printed cells to the printed decimal, giving 67.87) and the straight-line alternative (68.4). You may prefer the print-only 68.4.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "41. UFC 3-250-01 Figures E-2 to E-31 (`figure_e_vehicle_thickness`), design passes below a vehicle chart's lowest curve: the chart has no curve there (for example 10,000 passes). The lowest curve's thickness is held, with `out_of_range` and a note naming that curve: thickness rises with passes on these charts, so the hold is on the safe side, and a refusal would leave a lightly trafficked design with no answer. The reverse lookup (allowable passes for a thickness under the lowest curve) stays refused.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
+      },
+      {
+        "label": "42. UFC 3-220-20 (DM 7.2) Appendix B, the manual's own slips in its worked examples, each stored as printed with a note beside it: Example 2 (Table B-12 row 12, printed p. 617) prints 10.1 - 4 = 7.1 and carries 7.1 forward (resultant at 3.93 ft, 'about 14 inches'; with 6.1 the resultant is about 3.54 ft, about 19 in.); Example 6 (pp. 646 to 650) cites Table 6-29, Table 6-31 and Equation 6-71 where the content is in Table 6-34, Table 6-36 and Eq. 6-70; Example 7 prints a reliability index of 1.64 where the full derivative gives about 1.75 (Table B-41's 1.45 against 1.48 recomputed). Nothing was corrected silently; an independent check re-derived each.",
+        "options": [
+          {
+            "label": "Keep the lead's call",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "Change it",
+            "effect": "Say how in the notes; the lead changes the function, its tests and its stated basis."
+          }
+        ],
+        "multi": false
       }
     ],
     "recommendation": "Let them stand. Look first at 4 and 5 (Eqs. 8-43 and 8-44) and 9 (Caltrans): those are the ones a source could still settle (the public source being sought for Eqs. 8-43 and 8-44; the 1997 ASCE paper Caltrans cites). Part 8 is a preference more than a reading: a refusal outside the drawn range, or an answer at the edge with a note.",
@@ -3709,7 +3863,7 @@
     "ask_who": null,
     "question": "Should the reference PDFs be installed on Foundry with this release, so the references helper can read charts and table pages there?",
     "why": "The installed library ships the text and catalogs but no PDFs, so on Foundry every chart or table-page read fails (REF-92, failure (a)).",
-    "background": "The installed library ships the text and catalogs but no PDFs, so on Foundry the references helper cannot read a chart or a table page (REF-92, failure (a)). Options: (1) the AI FDE installs the PDFs beside the wheel (the library reads a folder named by GEOTECH_REFERENCES_DOCS), so chart and table reads work there; (2) no PDFs there, and the helper says it has captions only. The lead recommends (1) and is building both; the answer is needed when the Foundry brief for this release is written. Asked in chat 2026-11-12.",
+    "background": "The installed library ships the text and catalogs but no PDFs, so on Foundry the references helper cannot read a chart or a table page (REF-92, failure (a)). Options: (1) the AI FDE installs the PDFs beside the wheel (the library reads a folder named by GEOTECH_REFERENCES_DOCS), so chart and table reads work there; (2) no PDFs there, and the helper says it has captions only. The lead recommends (1) and is building both; the answer is needed when the Foundry brief for this release is written. Asked in chat 2026-11-12. 2026-11-13: the table catalog makes this sharper: 1,334 of the 1,991 printed tables have their values only on the printed page, so on a host without the PDFs the helper can find each and cite its page but cannot give its values.",
     "options": [
       {
         "label": "Yes, install the PDFs beside the wheel",
