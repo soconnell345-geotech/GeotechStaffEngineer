@@ -148,6 +148,63 @@ def pcf_to_kNm3(pcf: float) -> float:
     return pcf * _KNM3_PER_PCF
 
 
+# ── Reinforced concrete (GM-312) ───────────────────────────────────────
+# Structural quantities per unit length of wall, for a design worked in US
+# customary units on a US manual and reported in both systems. The factors
+# are built from EM 1110-2-2104 (1 November 2023) Glossary Section III,
+# "Unit conversion factors" (p. 129): feet x 0.3048 = meters, inches x
+# 0.0254 = meters, pounds (force) x 4.448222 = newtons, pounds (force) per
+# square inch x 6.894757 = kilopascals.
+
+_N_PER_LB = 4.448222
+_KPA_PER_PSI_EM = 6.894757
+_PSI_PER_MPA = 1000.0 / _KPA_PER_PSI_EM
+# kip-ft per ft of wall is kips; kN-m per m of wall is kN
+_KIPFT_PER_FT_PER_KNM_PER_M = 1.0 / _N_PER_LB
+_KIP_PER_FT_PER_KN_PER_M = _M_PER_FT / _N_PER_LB
+_IN2_PER_FT_PER_MM2_PER_M = _M_PER_FT / _MM_PER_IN ** 2
+
+
+def MPa_to_psi(MPa: float) -> float:
+    """Convert megapascals to pounds per square inch."""
+    return MPa * _PSI_PER_MPA
+
+
+def psi_to_MPa(psi: float) -> float:
+    """Convert pounds per square inch to megapascals."""
+    return psi / _PSI_PER_MPA
+
+
+def kNm_per_m_to_kipft_per_ft(kNm_per_m: float) -> float:
+    """Convert a moment per unit length, kN-m/m to kip-ft/ft."""
+    return kNm_per_m * _KIPFT_PER_FT_PER_KNM_PER_M
+
+
+def kipft_per_ft_to_kNm_per_m(kipft_per_ft: float) -> float:
+    """Convert a moment per unit length, kip-ft/ft to kN-m/m."""
+    return kipft_per_ft / _KIPFT_PER_FT_PER_KNM_PER_M
+
+
+def kN_per_m_to_kip_per_ft(kN_per_m: float) -> float:
+    """Convert a force per unit length, kN/m to kips/ft."""
+    return kN_per_m * _KIP_PER_FT_PER_KN_PER_M
+
+
+def kip_per_ft_to_kN_per_m(kip_per_ft: float) -> float:
+    """Convert a force per unit length, kips/ft to kN/m."""
+    return kip_per_ft / _KIP_PER_FT_PER_KN_PER_M
+
+
+def mm2_per_m_to_in2_per_ft(mm2_per_m: float) -> float:
+    """Convert a steel area per unit length, mm2/m to sq in/ft."""
+    return mm2_per_m * _IN2_PER_FT_PER_MM2_PER_M
+
+
+def in2_per_ft_to_mm2_per_m(in2_per_ft: float) -> float:
+    """Convert a steel area per unit length, sq in/ft to mm2/m."""
+    return in2_per_ft / _IN2_PER_FT_PER_MM2_PER_M
+
+
 # ── Conversion Decorator ──────────────────────────────────────────────
 
 # Mapping of unit system names to SI conversion functions for common quantities
