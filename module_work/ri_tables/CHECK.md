@@ -30,7 +30,7 @@ and the owner: `docs/REPORT_TABLES.md`.
 - `report_ingest/run_folder.py`, `report_ingest/cluster_scoring.py`:
   `report_tables` passed through; the cluster stage's `run.json` gains
   `report_tables` (the outcome) when the export ran.
-- `report_ingest/tests/test_tables.py` (new, 58 tests), `docs/REPORT_TABLES.md`
+- `report_ingest/tests/test_tables.py` (new, 60 tests), `docs/REPORT_TABLES.md`
   (new), a README section, two rows in `docs/FOUNDRY.md` §3 (nothing else
   there touched).
 
@@ -83,13 +83,13 @@ Each run alone, in the foreground, with at least 2 GB free:
 
 | Test file | Result | Exit |
 |---|---|---|
-| `report_ingest/tests/test_tables.py` | 58 passed | 0 |
+| `report_ingest/tests/test_tables.py` | 60 passed | 0 |
 | `report_ingest/tests/test_question_list.py` | 35 passed | 0 |
 | `report_ingest/tests/test_ri101_question_list_run.py` | 31 passed | 0 |
 | `report_ingest/tests/test_writers.py` | 48 passed | 0 |
 | `report_ingest/tests/test_run_folder.py` | 11 passed | 0 |
 | `report_ingest/tests/test_graph.py` | 85 passed | 0 |
-| `report_ingest/tests/test_graph_model_first.py::TestOffIsToday` | 2 failed (below) | 1 |
+| `report_ingest/tests/test_graph_model_first.py` | 63 passed (with the export off in its off runs, below) | 0 |
 | `webapp/tests/test_public_text.py` | 5 passed | 0 |
 
 Not run here (left to the suites on GitHub): `test_cluster_scoring.py`,
@@ -98,12 +98,17 @@ changed).
 
 ## For the lead
 
-- `TestOffIsToday` in `test_graph_model_first.py` compares every file a lone
-  ingest leaves with `graph_off_snapshot.json`; the export adds
-  `report.run.json` and `report_tables/v1/...`, and the second comparison
-  fails because the run id differs between two runs. Proposed: its
-  `_off_run` sets `GSE_REPORT_TABLES=0` with a comment, the snapshot stays.
-  Not changed until you decide.
+- Settled by the lead (2026-11-12): `TestOffIsToday` in
+  `test_graph_model_first.py` compares every file a lone ingest leaves with
+  `graph_off_snapshot.json`, which the export's files would break. Its
+  `_off_run` now sets `GSE_REPORT_TABLES=0` (one comment line); the snapshot
+  is untouched. The guard is kept by two tests in `test_tables.py`
+  (`TestTheIngestsOwnFiles`): with the export off nothing of it is written
+  (no `report.run.json`, no `report_tables/`, the bound report's folder
+  included), and two runs with the export on leave the ingest's own files
+  byte for byte the same as an export-off run (the run's folder, the clock
+  and the DIGGS creation date taken out), adding only the export's folder
+  and the run files.
 - In the app the default root is each report's own folder, which sits in the
   conversation's folder unless `GEOTECH_REPORT_LIBRARY` is set; on Foundry
   that folder is mirrored to the conversation dataset, so the export files

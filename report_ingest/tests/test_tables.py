@@ -451,6 +451,105 @@ class TestAnIngest:
 
 
 # ---------------------------------------------------------------------------
+# the export adds files and changes none of the ingest's own
+# ---------------------------------------------------------------------------
+
+class _StandingClock:
+    """``time`` for the graph, standing still: a run's seconds are 0."""
+
+    @staticmethod
+    def time() -> float:
+        return 1000.0
+
+
+_TIME = re.compile(
+    rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?")
+_CREATION_DATE = re.compile(rb"<creationDate>\d{4}-\d{2}-\d{2}</creationDate>")
+
+
+def _folder_files(out: Path) -> Dict[str, bytes]:
+    """Every file under ``out`` by its path there, with what two runs of
+    one graph cannot share taken out: the run's own folder, the library's
+    clock and the DIGGS file's creation date (and a library database as
+    its SQL dump, not its pages)."""
+    files: Dict[str, bytes] = {}
+    names = {str(out), out.as_posix()}
+    for path in sorted(out.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.suffix == ".db":
+            connection = sqlite3.connect(path)
+            blob = "\n".join(connection.iterdump()).encode("utf-8")
+            connection.close()
+        else:
+            blob = path.read_bytes()
+        for text in sorted(names | {json.dumps(n)[1:-1] for n in names},
+                           key=len, reverse=True):
+            blob = blob.replace(text.encode("utf-8"), b"<RUN>")
+        blob = _CREATION_DATE.sub(b"<DATE>", blob.replace(b"\r\n", b"\n"))
+        files[path.relative_to(out).as_posix()] = _TIME.sub(b"<TIME>", blob)
+    return files
+
+
+def _of_the_export(rel: str) -> bool:
+    return rel.startswith("report_tables/") or \
+        rel.rsplit("/", 1)[-1] == tables.RUN_NAME
+
+
+@pytest.fixture(scope="module")
+def three_runs(tmp_path_factory) -> Dict[str, Dict[str, bytes]]:
+    """The synthetic report (a report bound inside it) ingested three times
+    off ONE file, on a standing clock: twice with the export on, once with
+    ``GSE_REPORT_TABLES=0``."""
+    from report_ingest import graph
+    from report_ingest.tests.fake_engine import FakeEngine
+
+    base = tmp_path_factory.mktemp("three_runs")
+    pdf = base / "made_up_report.pdf"
+    pdf.write_bytes(_pdf_bytes())       # once: the bytes carry their time
+    runs: Dict[str, Dict[str, bytes]] = {}
+    for name, setting in (("on_a", None), ("on_b", None), ("off", "0")):
+        with pytest.MonkeyPatch.context() as mp:
+            _plain(mp)
+            if setting is not None:
+                mp.setenv(tables.ENV_ROOT, setting)
+            mp.setattr(graph, "time", _StandingClock)
+            graph.ingest_report(pdf, FakeEngine(full_script()),
+                                out_dir=base / name, report_id="SYN")
+        runs[name] = _folder_files(base / name)
+    return runs
+
+
+class TestTheIngestsOwnFiles:
+
+    def test_with_the_export_off_nothing_of_it_is_written(self, three_runs):
+        off = three_runs["off"]
+
+        assert not [rel for rel in off if _of_the_export(rel)]
+        assert "report.record.json" in off
+        assert "bound/bound1/report.record.json" in off
+
+    def test_two_runs_with_the_export_on_leave_the_same_files_as_off(
+            self, three_runs):
+        on_a, on_b, off = (three_runs[n] for n in ("on_a", "on_b", "off"))
+        own_a = {rel: blob for rel, blob in on_a.items()
+                 if not _of_the_export(rel)}
+        own_b = {rel: blob for rel, blob in on_b.items()
+                 if not _of_the_export(rel)}
+
+        assert sorted(own_a) == sorted(off)
+        assert own_a == off
+        assert own_b == off
+        # What the export adds, and nothing else: its folder and a run
+        # file beside each record; the run files differ between runs.
+        added = set(on_a) - set(off)
+        assert added == {rel for rel in on_a if _of_the_export(rel)}
+        assert {tables.RUN_NAME, f"bound/bound1/{tables.RUN_NAME}",
+                "report_tables/v1/schema.json"} <= added
+        assert on_a[tables.RUN_NAME] != on_b[tables.RUN_NAME]
+
+
+# ---------------------------------------------------------------------------
 # a made-up record: each column from what the folder holds
 # ---------------------------------------------------------------------------
 
