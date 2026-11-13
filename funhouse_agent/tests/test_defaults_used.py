@@ -7,6 +7,7 @@ import math
 import os
 import random
 import re
+import warnings
 
 import pytest
 
@@ -814,7 +815,9 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
                                                          monkeypatch):
     """GM-158: give a run its own defaults_used by name and the result
     does not move; where the result echoes a listed default, it echoes
-    the same value."""
+    the same value. GM-316: every warning the first run raises that must
+    reach the agent is in its result (``MP.lost_warnings``, checked on the
+    run this guard makes anyway)."""
     if MP.skip_reason(key):
         pytest.skip(MP.skip_reason(key))
     monkeypatch.chdir(tmp_path)
@@ -824,8 +827,12 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
     for before in probe.get("before", ()):
         D.call_agent(before[0], before[1], copy.deepcopy(before[2]))
     params = probe["params"]
-    r0 = _run(agent, method, params)
+    with warnings.catch_warnings(record=True) as raised:
+        warnings.simplefilter("always")
+        r0 = _run(agent, method, params)
     assert isinstance(r0, dict) and "error" not in r0, (key, r0)
+    lost = MP.lost_warnings(raised, r0)
+    assert lost == [], (key, "raised but not in the result", lost)
     used = r0.get("defaults_used") or {}
     # a left-out input listed as the case it stands for (GM-165) is not a
     # value to give back: the run had none

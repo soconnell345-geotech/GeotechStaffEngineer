@@ -138,10 +138,15 @@ prints the "exceeds soil profile" warnings in its HTML; a core test for
 
 None. All 251 probes in `method_probes.json` were run with every warning
 recorded (`simplefilter("always")`) before and after the change: they raise
-no Python warning at all (they are the smallest happy-path inputs). So the
-standing test (T2, `funhouse_agent/tests/test_probe_warnings.py`) also runs
-four made-up calls that do raise the module warnings the audit named, each
-twice and under both the "always" and the default filter:
+no Python warning at all (they are the smallest happy-path inputs). Each
+probe stays checked, inside the run the defaults guard makes anyway
+(`test_defaults_used.py::test_the_defaults_a_run_lists_are_the_values_it_used`
+records the run's warnings; `method_probes.lost_warnings`): review fix B5
+dropped the second pass over the probes in `test_probe_warnings.py`, which
+cost 209 s per CI job and could not fail. The standing test (T2,
+`funhouse_agent/tests/test_probe_warnings.py`) runs four made-up calls that
+do raise the module warnings the audit named, each twice and under both the
+"always" and the default filter, plus the axial-pile package (B4):
 
 | Call (made-up inputs) | Warning the agent now sees |
 |---|---|

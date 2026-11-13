@@ -1,51 +1,27 @@
 """T2: no warning a method raises is lost (BACKLOG GM-316; module audit
-2026-11-12 §6). Every probe in ``method_probes.json`` runs with every Python
-warning recorded; each warning attributed to one of GSE's calculation
+2026-11-12 §6). Each warning attributed to one of GSE's calculation
 packages (``funhouse_agent.core_hooks.WARNING_PACKAGES``), and each numpy
-floating-point warning, must be in that call's result. A few made-up calls
-that do raise a module warning are checked the same way, since the probes
-are the smallest inputs each method runs on and raise none today."""
+floating-point warning, must be in that call's result
+(``method_probes.lost_warnings``). Every probe in ``method_probes.json`` is
+checked so inside the defaults guard's own run
+(``test_defaults_used.test_the_defaults_a_run_lists_are_the_values_it_used``;
+review B5: a second pass here cost 209 s and the probes, the smallest
+inputs each method runs on, raise none today). The made-up calls below do
+raise the module warnings the audit named; they are the behaviour test."""
 
 import copy
-import importlib.util
-import os
 import re
 import warnings
 from pathlib import Path
 
 import pytest
 
-from aec_agent_core.call_warnings import _NOISE, _NUMPY_FP
 from funhouse_agent import dispatch as D
 from funhouse_agent.core_hooks import WARNING_PACKAGES
 from funhouse_agent.tests import method_probes as MP
 
 REPO = Path(__file__).resolve().parents[2]
-
-
-def _package_dirs() -> tuple:
-    out = []
-    for name in WARNING_PACKAGES:
-        try:
-            spec = importlib.util.find_spec(name)
-        except (ImportError, ValueError):
-            spec = None
-        for loc in (getattr(spec, "submodule_search_locations", None)
-                    or ()):
-            out.append(os.path.normcase(os.path.abspath(loc)) + os.sep)
-    return tuple(out)
-
-
-DIRS = _package_dirs()
-
-
-def _must_reach(w) -> bool:
-    if issubclass(w.category, _NOISE):
-        return False
-    if issubclass(w.category, RuntimeWarning) and _NUMPY_FP.match(
-            str(w.message)):
-        return True
-    return os.path.normcase(os.path.abspath(w.filename)).startswith(DIRS)
+DIRS = MP.WARNING_DIRS
 
 
 def _check(agent, method, params, before=()):
@@ -55,13 +31,8 @@ def _check(agent, method, params, before=()):
             D.call_agent(b[0], b[1], copy.deepcopy(b[2]))
         start = len(rec)
         result = D.call_agent(agent, method, copy.deepcopy(params))
-        raised = [w for w in rec[start:] if _must_reach(w)]
-    got = result.get("warnings") if isinstance(result, dict) else None
-    got = [str(g) for g in (got or [])]
-    lost = [str(w.message) for w in raised if str(w.message) not in got
-            and not any(g.startswith("and ") and g.endswith(" more")
-                        for g in got)]
-    return raised, lost, result
+        raised = [w for w in rec[start:] if MP.must_reach(w)]
+    return raised, MP.lost_warnings(raised, result), result
 
 
 #: A call that swaps the process's warning filters.
@@ -107,19 +78,13 @@ def test_the_package_list_is_the_distributions():
     assert shipped - app <= listed, sorted(shipped - app - listed)
 
 
-@pytest.mark.parametrize("key", [
-    pytest.param(k, marks=pytest.mark.slow) if k in MP.SLOW else k
-    for k in sorted(MP.PROBES)])
-def test_every_warning_a_probe_raises_is_in_its_result(key, tmp_path,
-                                                       monkeypatch):
-    if MP.skip_reason(key):
-        pytest.skip(MP.skip_reason(key))
-    monkeypatch.chdir(tmp_path)
-    agent, method = key.split("#")[0].split("|")
-    probe = MP.PROBES[key]
-    _, lost, _ = _check(agent, method, probe["params"],
-                        probe.get("before", ()))
-    assert lost == [], (key, lost)
+def test_every_probe_is_checked_in_the_defaults_guards_run():
+    """Review B5: the per-probe check lives in the defaults guard's run;
+    if that run stops recording warnings, this says so."""
+    guard = Path(__file__).with_name("test_defaults_used.py").read_text(
+        "utf-8")
+    assert "MP.lost_warnings(raised, r0)" in guard
+    assert 'warnings.simplefilter("always")' in guard
 
 
 #: Made-up calls that raise a module warning (the ones the audit named).
