@@ -117,7 +117,9 @@ passive earth pressure". `choices` carry the wall friction per layer with
 its basis and each layer's Kp at delta 0, at each row, at 0.66 phi' (UFC p.
 191, Fig. 4-43 p. 245) and at 0.54 phi (EM 1110-2-2504 Table 3-2, steel),
 and where a layer took the clean sand row by default the embedment with no
-wall friction there (`smooth_where_left_out`). The probe, 4 m cantilever in
+wall friction there (`smooth_where_left_out`; GM-310 replaced it with
+`clean_sand_where_left_out`, the embedment with such layers marked clean
+sand, the row then on both sides). The probe, 4 m cantilever in
 sand, phi' 32, water at the excavation level: Rankine's Kp 3.25, D 7.21 m,
 M 252 kN-m/m before; the clean sand row, Kp 5.26, D 5.06 m, M 174 kN-m/m
 now. The chart sources (Figs. 4-12, 4-13) still refuse a delta other than

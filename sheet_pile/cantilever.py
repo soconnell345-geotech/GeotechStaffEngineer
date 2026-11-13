@@ -82,8 +82,9 @@ LOG_SPIRAL_FRICTION_LEFT_OUT = (
     "passive side with the log-spiral Kp. A row named (interface_soil) or "
     "a wall_friction_deg given is used on both sides, as EM 1110-2-2504 "
     "and the USS manual do. Before GM-310 a layer without cohesion that "
-    "named none took the clean sand row on the passive side; the "
-    "alternatives give the embedment that way")
+    "named none took the clean sand row on the passive side only. The "
+    "clean_sand alternative marks the layer, which applies the row on "
+    "both sides, so its embedment is not the earlier answer")
 #: What a layer naming no wall friction takes with Coulomb's theory, and
 #: why (GM-242).
 COULOMB_FRICTION_LEFT_OUT = (

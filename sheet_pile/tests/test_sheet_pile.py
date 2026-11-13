@@ -528,8 +528,9 @@ class TestWallFrictionDefault:
     Table 4-1) only where the caller marks the layer, since UFC 3-220-20
     Fig. 4-37 step 1 (p. 237) includes wall friction on the passive side
     for clean coarse-grained soils only. GM-242 took the clean sand row,
-    17 deg, for any layer without cohesion; the choice gives the
-    embedment that way beside the one taken. Made-up walls."""
+    17 deg, on the passive side only, for any layer without cohesion. The
+    choice's clean_sand alternative marks the layer, which applies the
+    row on both sides, so its embedment is not GM-242's. Made-up walls."""
 
     def _sand(self, **kw):
         return [WallSoilLayer(20.0, 18.0, friction_angle=32.0, **kw)]
