@@ -300,12 +300,25 @@ class TestStabilizingPile:
         geom, slip = _drained_slope()
         res0 = analyze_slope(geom, xc=30.0, yc=32.0, radius=26.0,
                              method="bishop", n_slices=40)
+        fos = []
+        for spacing in (4.0, 2.4):
+            geom.stabilizing_piles = [StabilizingPile(
+                x=30.0, spacing=spacing, ito_matsui=True, diameter=0.8)]
+            res1 = analyze_slope(geom, xc=30.0, yc=32.0, radius=26.0,
+                                 method="bishop", n_slices=40)
+            assert res1.reinforcements
+            fos.append(res1.FOS)
+        assert res0.FOS < fos[0] < fos[1]       # closer piles, higher FOS
+        # At a spacing of 1.6 the row's force (an active support, taken
+        # off the driving moment) exceeds the driving moment: there is no
+        # ratio left to report, and the result says so (GM-140 step 2:
+        # this returned the solver's 999.9 marker as the FOS).
         geom.stabilizing_piles = [StabilizingPile(
             x=30.0, spacing=1.6, ito_matsui=True, diameter=0.8)]
-        res1 = analyze_slope(geom, xc=30.0, yc=32.0, radius=26.0,
+        res2 = analyze_slope(geom, xc=30.0, yc=32.0, radius=26.0,
                              method="bishop", n_slices=40)
-        assert res1.FOS > res0.FOS
-        assert res1.reinforcements
+        assert res2.FOS is None and res2.method_solved is False
+        assert any("no net driving moment" in w for w in res2.warnings)
         # per-metre Ito-Matsui force decreases as spacing widens
         f = [ito_matsui_lateral_force(8.0, 25.0, 19.0, D1, D1 - 0.8,
                                       z_top=6.0, z_bot=0.0) / D1
@@ -408,10 +421,12 @@ class TestOMSNoncircularDirZ:
         assert d_fell > 0 and d_bish > 0
 
 
-class TestLegacyFallbackWarnsOnReinforcement:
-    """Finding #5: when the rigorous GLE fails and spencer/MP fall back to the
-    legacy solvers (which take no reinforcement), warn that the reported FOS is
-    unreinforced instead of silently dropping the reinforcement."""
+class TestNoFallbackWhenTheRigorousSolveFails:
+    """GM-140 step 2 (before: finding #5, a warning). When the rigorous GLE
+    does not converge, spencer_fos / morgenstern_price_fos gave the old
+    approximate solver's value, which took no reinforcement, with a Python
+    warning. There is no such value now: they raise NoSolution with the
+    reason, with supports or without, and warn of nothing."""
 
     def _reinforced(self):
         geom, slip = _drained_slope()
@@ -424,29 +439,28 @@ class TestLegacyFallbackWarnsOnReinforcement:
         assert forces
         return slip, slices, forces
 
-    def test_fallback_warns_with_reinforcement(self, monkeypatch):
-        import slope_stability.gle as gle_mod
-
-        def _boom(*a, **k):
-            raise ValueError("forced non-convergence")
-
-        monkeypatch.setattr(gle_mod, "gle_fos", _boom)
-        slip, slices, forces = self._reinforced()
-        with pytest.warns(UserWarning, match="IGNORES reinforcement"):
-            spencer_fos(slices, slip, reinf_forces=forces)
-        with pytest.warns(UserWarning, match="IGNORES reinforcement"):
-            morgenstern_price_fos(slices, slip, reinf_forces=forces)
-
-    def test_fallback_silent_without_reinforcement(self, monkeypatch):
+    @pytest.mark.parametrize("with_supports", [True, False])
+    def test_no_value_and_no_warning(self, monkeypatch, with_supports):
         import warnings as _w
         import slope_stability.gle as gle_mod
+        from slope_stability.solution import NoSolution, solve_method
 
-        def _boom(*a, **k):
-            raise ValueError("forced non-convergence")
+        def _not_converged(*a, **k):
+            return gle_mod.GLEResult(
+                fos=1.234, converged=False,
+                warnings=["no F_m = F_f crossing found in lambda range"])
 
-        monkeypatch.setattr(gle_mod, "gle_fos", _boom)
-        slip, slices, _ = self._reinforced()
-        with _w.catch_warnings(record=True) as rec:
-            _w.simplefilter("always")
-            spencer_fos(slices, slip)                     # no reinf_forces
-        assert not any("IGNORES reinforcement" in str(w.message) for w in rec)
+        monkeypatch.setattr(gle_mod, "gle_fos", _not_converged)
+        slip, slices, forces = self._reinforced()
+        forces = forces if with_supports else None
+        with _w.catch_warnings():
+            _w.simplefilter("error")
+            for fn in (spencer_fos, morgenstern_price_fos):
+                with pytest.raises(NoSolution, match="no lambda from"):
+                    fn(slices, slip, reinf_forces=forces)
+            for method in ("spencer", "morgenstern_price", "gle"):
+                sol = solve_method(slices, slip, method,
+                                   reinf_forces=forces)
+                assert sol.fos is None and not sol.solved and sol.reason
+
+

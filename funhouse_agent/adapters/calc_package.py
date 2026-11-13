@@ -1710,6 +1710,27 @@ def _build_slope_geom(params: dict, method: str):
     )
 
 
+def _slope_fos_extra(result, analysis_dict) -> dict:
+    """The slope packages' headline: the method's own factor of safety, or
+    no number where the method has no solution on the surface (GM-140 step
+    2): FOS and is_stable are then None and ``no_solution`` says why."""
+    if result.FOS is None:
+        why = [w for w in result.warnings if "no solution" in w
+               or "no equilibrium solution" in w]
+        return {
+            "FOS": None, "method": result.method, "is_stable": None,
+            "method_solved": False,
+            "no_solution": (why[0] if why else
+                            f"{result.method} has no solution on this "
+                            f"surface, so no factor of safety is reported."),
+        }
+    return {
+        "FOS": round(result.FOS, 3),
+        "method": result.method,
+        "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
+    }
+
+
 def _generate_slope_stability_package(params: dict) -> dict:
     from slope_stability.analysis import analyze_slope
 
@@ -1736,11 +1757,7 @@ def _generate_slope_stability_package(params: dict) -> dict:
     return _build_response(
         "slope_stability", result, analysis_dict, params,
         analysis_type="Slope Stability", package="slope_stability_package",
-        extra={
-            "FOS": round(result.FOS, 3),
-            "method": result.method,
-            "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
-        },
+        extra=_slope_fos_extra(result, analysis_dict),
     )
 
 
@@ -1794,6 +1811,11 @@ def _generate_slope_report_package(params: dict) -> dict:
     surface_type = params.get("surface_type", "circular")
     n_slices = params.get("n_slices", 30)
     tol = params.get("tol", 1e-4)
+    # An unknown method or interslice function is refused before the search
+    # (GM-140 step 2; f_interslice used to accept any string, D45).
+    from slope_stability.solution import check_method, check_interslice
+    check_method(method)
+    check_interslice(params.get("f_interslice", "half_sine"))
 
     def _range(key):
         return tuple(params[key]) if params.get(key) else None
@@ -1870,12 +1892,11 @@ def _generate_slope_report_package(params: dict) -> dict:
                                if params.get("research_surface") else None),
                 **prob_surf)
 
-    extra = {
-        "FOS": round(result.FOS, 3),
-        "method": result.method,
-        "n_surfaces_evaluated": search.n_surfaces_evaluated,
-        "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
-    }
+    extra = _slope_fos_extra(result, analysis_dict)
+    extra["n_surfaces_evaluated"] = search.n_surfaces_evaluated
+    if search.no_solution:
+        # trials the method has no solution on, by family and method
+        extra["search_no_solution"] = [dict(r) for r in search.no_solution]
     # Which kind of surface governs and what the search could not be sure
     # of -- also printed in the package's search section.
     if search.governing_surface:
@@ -3726,7 +3747,7 @@ METHOD_INFO = {
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Factor of safety.", "method": "Method used.", "is_stable": "Whether FOS >= required."},
+        "returns": {**_COMMON_RETURNS, "FOS": "Factor of safety: the method's own converged solution on the circle; null where the method has none (no_solution says why, and the package prints no number).", "method": "Method used.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on this surface."},
     },
     "slope_report_package": {
         "category": "Calculation Package",
@@ -3757,10 +3778,10 @@ METHOD_INFO = {
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
             "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance for the iterative methods."},
-            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "description": "Interslice force function for the rigorous re-analysis of the critical surface."},
+            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": ["constant", "half_sine", "clipped_sine", "trapezoidal"], "description": "Interslice force function for the rigorous re-analysis of the critical surface. Another name is refused."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
+        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety: the method's own converged solution on the governing surface. Null where the method has no solution on it (a family scored by another method governs, for example the shallow planar family, scored by Janbu's simplified method): no_solution says why and the package prints no number. Tell the user, and give the search's own value (candidates) with the method that scored it.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on the governing surface.", "search_no_solution": "The search's trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any; they were not scored; below_0_05: solved with a value below 0.05, which a search does not take as a factor of safety).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "settlement_package": {
         "category": "Calculation Package",

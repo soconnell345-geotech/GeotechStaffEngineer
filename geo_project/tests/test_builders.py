@@ -267,6 +267,81 @@ def test_critical_surface_dict_planar_not_zero_circle():
     assert _critical_surface_dict(None) is None
 
 
+def _fill_project(method="spencer", probabilistic=None) -> Project:
+    """A made-up 10 m fill slope, c' = 38 kPa, phi' = 22 deg."""
+    return Project(
+        geometry=Geometry(
+            surface_points=[(0.0, 0.0), (10.0, 0.0), (16.0, 10.0),
+                            (34.0, 10.0)]),
+        stratigraphy=[Layer(name="Fill",
+                            material=Material(gamma=19.0, phi=22.0,
+                                              c_prime=38.0),
+                            bottom_elevation=-6.0)],
+        analyses=[LEAnalysis(name="LE", method=method, n_slices=30,
+                             search=LESearch(nx=4, ny=4),
+                             probabilistic=probabilistic)],
+    )
+
+
+def test_monte_carlo_summary_carries_the_realizations_with_no_solution():
+    """GM-140 step 2: a Monte Carlo realization with no solution by the
+    method is counted and left out, and pf is bounded both ways. The
+    builder's summary carried pf only; it now carries the count, both
+    bounds and the note. The circle and spread are those of
+    slope_stability/tests/test_own_solution_or_no_number.py, where some
+    realizations have no Spencer solution."""
+    from geo_project.builders import _run_probabilistic
+    from slope_stability.results import SlopeStabilityResult
+    p = _fill_project(probabilistic=LEProbabilistic(kind="monte_carlo",
+                                                    n=120, seed=7))
+    geom = to_slope_geometry(p, check=False)
+    crit = SlopeStabilityResult(FOS=1.0, xc=9.5, yc=11.0, radius=11.2)
+    variables = {"c_prime": {"mean": 38.0, "std": 12.0}}
+    s = _run_probabilistic(geom, p.analyses[0], crit, variables)
+    mc = s["_result"]
+    assert s["n_no_solution"] == mc.n_no_solution > 0
+    assert s["n"] + s["n_no_solution"] == 120
+    assert s["pf_lower"] == mc.pf_lower and s["pf_upper"] == mc.pf_upper
+    assert s["pf_lower"] <= s["pf"] <= s["pf_upper"]
+    assert s["no_solution_note"] == mc.no_solution_note()
+    assert "module's own" in s["no_solution_note"]
+
+
+def test_fosm_with_no_result_does_not_abort_the_other_analyses(
+        monkeypatch):
+    """GM-140 step 2: FOSM raises where the method has no solution at a
+    perturbed value. That aborted run_analyses; now the entry carries the
+    error text and the other analyses complete."""
+    import slope_stability.probabilistic as prob
+    real = prob.fosm_fos
+    calls = []
+
+    def first_has_no_result(*args, **kwargs):
+        calls.append(kwargs.get("method"))
+        if len(calls) == 1:
+            raise ValueError("FOSM gives no result: Spencer's method has "
+                             "no solution at c_prime = 50")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(prob, "fosm_fos", first_has_no_result)
+    p = _small_le_project()
+    second = LEAnalysis(name="LE-bishop-2", method="bishop", n_slices=20,
+                        search=LESearch(nx=4, ny=4),
+                        probabilistic=LEProbabilistic(kind="fosm"))
+    p.analyses.append(second)
+    results = run_analyses(p)
+    first = results["LE-bishop"]
+    assert first["FOS"] is not None
+    assert first["probabilistic"] == {
+        "kind": "fosm",
+        "error": "FOSM gives no result: Spencer's method has no solution "
+                 "at c_prime = 50"}
+    other = results["LE-bishop-2"]["probabilistic"]
+    assert other["kind"] == "fosm" and "error" not in other
+    assert other["fos_mlv"] == pytest.approx(
+        results["LE-bishop-2"]["FOS"], rel=1e-6)
+
+
 def test_run_analyses_refuses_invalid():
     p = _small_le_project()
     p.stratigraphy[0].material.phi = None
