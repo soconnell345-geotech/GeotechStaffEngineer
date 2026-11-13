@@ -119,5 +119,5 @@ Both need only Python and git; `--noconftest` keeps out the root conftest, which
    - **Release note**: one paragraph if a tester or a GSE user would notice anything; "None" otherwise;
    - **For the lead**: live checks, owner questions and work left, each with what it needs;
    - **Noted, not fixed**.
-2. **Commit messages** that say what changed and why, each ending with the trailer of the model that runs the task: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` or `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
+2. **Commit messages** that say what changed and why, each ending with the trailer of the model that runs the task (your section names it): `Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>`, `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` or `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
 3. **A final message** of under 150 words: the branch, its commits, the tests and their counts, anything you stopped short of, and what the lead must do or check live.

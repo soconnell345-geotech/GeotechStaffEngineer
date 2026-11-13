@@ -8,7 +8,8 @@ The owner approved the next round of Document Review builds and wants them run i
 
 - **Confirm first.** Names and line numbers are from app master 1b9b499 and planlens main 0f87fa6 and may have moved. Open each cited function and confirm the defect before changing anything. If it is already fixed, or the item is wrong, say so in CHECK.md and leave the code.
 - **Repairs and settings.** Each section says which pieces are repairs (no setting) and which are new behaviour (behind a setting that is off unless set): COMMON_DOCREVIEW, "No switch on by default".
-- **Two waves.** Tasks A to G and P1 run at the same time. P2 starts after P1 is merged into planlens main.
+- **Two waves.** Tasks A to G and P1 run at the same time. P2 starts after P1 is merged into planlens main; H after B and C are merged into master.
+- **Models.** Each section names its model. Fable for the builds where a wrong call costs most (the owner's choice for TA-39, TA-24, PL-37 and PL-38; task D by the lead's judgment, reason in the Routines table), Sonnet for wording and mechanical changes, Opus for the rest.
 - **Releases.** Nothing here reaches testers until the lead releases the core and Document Review (one unit, once task G's work is in) and, for P1 and P2, planlens with a raised pin. Write each release note for that release.
 
 ### Who edits what
@@ -28,6 +29,7 @@ DR = `packages/aec-document-review/aec_document_review/`; core = `packages/aec-a
 | G | app | `.github/workflows/publish.yml`, `publish-core.yml`, `publish-document-review.yml` (and a new workflow file only if your design needs one); both packages' `pyproject.toml`, their `README.md` and the version line of their `__init__.py`; the root `pyproject.toml` (the core pin and its comment only); `tinyapps/TINYAPPS.md` and `tinyapps/wrapper_repo/`; `docs/FOUNDRY.md` |
 | P1 | planlens | `planlens/tools/toolkit.py`, `planlens/tools/specs.py`, `planlens/review/specs.py`, `planlens/document/document.py`, `planlens/document/quantities.py`, `planlens/review/tests/app_tool_specs.json`, `CHANGELOG.md` (its Unreleased section), the `DESIGN.md` of what you change |
 | P2, after P1 | planlens | P1's files, plus `planlens/tools/formatting.py`, `planlens/document/structure.py`, `planlens/document/sheets.py`, `planlens/review/marked_copy.py`, `planlens/review/tools.py`, `planlens/review/host.py` |
+| H, after B and C | app | core `review_flags.py`, `review_eval/runner.py` (B's this round); DR `review_prompt.py`, `review_build.py` (C's this round); the switch guard tests named in its section |
 
 Existing test files are not split between tasks: edit one only where your change makes one of its assertions untrue (COMMON_DOCREVIEW, "Tests"). If two branches touch the same test file in different places, the lead merges them.
 
@@ -40,7 +42,7 @@ Existing test files are not split between tasks: edit one only where your change
 
 ## Task A: testers told apart (TA-39)
 
-Branch `claude/ta-39-testers-apart`. CHECK at `module_work/ta39/CHECK.md`. App repository. Model: Opus. Venvs (a) and (b).
+Branch `claude/ta-39-testers-apart`. CHECK at `module_work/ta39/CHECK.md`. App repository. Model: Fable (`claude-fable-5-2`), the owner's choice for TA-39. Venvs (a) and (b).
 
 Closes BACKLOG TA-39, except keying the running-turn table and the conversation-folder lookup by folder and id, which stays with INF-71 (it waits on the owner). Evidence: REVIEW.md section 2.2.
 
@@ -62,7 +64,7 @@ Closes BACKLOG TA-39, except keying the running-turn table and the conversation-
 
 ## Task B: model calls, one ladder and every retry on the record (INF-75, VIS-31 part 2, TA-24)
 
-Branch `claude/inf-75-model-call-record`. CHECK at `module_work/inf75/CHECK.md`. App repository. Model: Opus. Venvs (a) and (b).
+Branch `claude/inf-75-model-call-record`. CHECK at `module_work/inf75/CHECK.md`. App repository. Model: Fable (`claude-fable-5-2`), the owner's choice for TA-24. Venvs (a) and (b).
 
 Closes INF-75; VIS-31's part 2 (VIS-31 closes once task E's part 1 is merged too); and TA-24's structural part (what stays: the live check of the rollout gateway). Evidence: TRACE_REVIEW F-12 to F-15 (section 10) and sections 7 and 8; REVIEW.md section 2.1.
 
@@ -91,9 +93,9 @@ Closes INF-75; VIS-31's part 2 (VIS-31 closes once task E's part 1 is merged too
 
 ## Task C: a turn the tester can stop, ceilings over the whole turn, a spend line (TA-37, TA-38, TA-05, DR-43 part 1)
 
-Branch `claude/ta-37-stop-and-turn-ceilings`. CHECK at `module_work/ta37/CHECK.md`. App repository. Model: Opus. Venvs (a) and (b).
+Branch `claude/ta-37-stop-and-turn-ceilings`. CHECK at `module_work/ta37/CHECK.md`. App repository. Model: Opus (`claude-opus-5-5`). Venvs (a) and (b).
 
-Closes TA-37; TA-38 except the count and ceiling of image calls (below); TA-05; and DR-43's part 1 (its part 2 is a measurement the lead makes). Evidence: REVIEW.md section 2.1; TRACE_REVIEW F-11.
+Closes TA-37; TA-38 except the count and ceiling of image calls (below); TA-05; and DR-43's part 1 (its part 2 is task H's, after this task is merged). Evidence: REVIEW.md section 2.1; TRACE_REVIEW F-11.
 
 **Why together.** All of it lives in the turn: the pass loop in DR `core.stream_turn`, the turn job in `turn_jobs.py`, the page's sidebar in `app.py`, and DR-43's constant sits in the same `core.py`.
 
@@ -121,7 +123,7 @@ Closes TA-37; TA-38 except the count and ceiling of image calls (below); TA-05; 
 
 ## Task D: SharePoint saves off the turn and off the page (TA-40)
 
-Branch `claude/ta-40-sharepoint-off-turn`. CHECK at `module_work/ta40/CHECK.md`. App repository. Model: Opus. Venv (a).
+Branch `claude/ta-40-sharepoint-off-turn`. CHECK at `module_work/ta40/CHECK.md`. App repository. Model: Fable (`claude-fable-5-2`) (why: the Routines table). Venv (a).
 
 Closes TA-40, except its live check. Evidence: REVIEW.md section 2.3; BACKLOG TA-40 says what TA-36 already fixed. All seven pieces are repairs (one tester holding up the others; files failing or lost without a word); no setting. Build against a fake Graph, as the existing SharePoint tests do.
 
@@ -142,7 +144,7 @@ Closes TA-40, except its live check. Evidence: REVIEW.md section 2.3; BACKLOG TA
 
 ## Task E: what a page reading is told (VIS-31 part 1, VIS-30 part 1)
 
-Branch `claude/vis-31-one-image-readings`. CHECK at `module_work/vis31/CHECK.md`. App repository. Model: Sonnet. Venvs (a) and (b).
+Branch `claude/vis-31-one-image-readings`. CHECK at `module_work/vis31/CHECK.md`. App repository. Model: Sonnet (`claude-sonnet-5-5`). Venvs (a) and (b).
 
 Closes VIS-31's part 1 (VIS-31 closes once task B's part 2 is merged too) and VIS-30's first part (what stays: tiling by the sheet's own regions). Evidence: TRACE_REVIEW F-8 (section 10) and section 7; REVIEW.md section 2.5. Both pieces are repairs (a wrong reading, a warning dropped wrongly); no setting.
 
@@ -162,7 +164,7 @@ Closes VIS-31's part 1 (VIS-31 closes once task B's part 2 is merged too) and VI
 
 ## Task F: what the file tools lose (DR-41)
 
-Branch `claude/dr-41-file-tools-say`. CHECK at `module_work/dr41/CHECK.md`. App repository. Model: Sonnet. Venv (b), and (a) for the Document Review tests.
+Branch `claude/dr-41-file-tools-say`. CHECK at `module_work/dr41/CHECK.md`. App repository. Model: Sonnet (`claude-sonnet-5-5`). Venv (b), and (a) for the Document Review tests.
 
 Closes DR-41 except Excel-out formulas. Evidence: REVIEW.md section 2.5. All repairs (a file's content printed wrong or lost without a word); no setting.
 
@@ -178,7 +180,7 @@ Closes DR-41 except Excel-out formulas. Evidence: REVIEW.md section 2.5. All rep
 
 ## Task G: one release unit, prepared (INF-76)
 
-Branch `claude/inf-76-one-release-unit`. CHECK at `module_work/inf76/CHECK.md`. App repository. Model: Opus. Venvs (a) and (b).
+Branch `claude/inf-76-one-release-unit`. CHECK at `module_work/inf76/CHECK.md`. App repository. Model: Opus (`claude-opus-5-5`). Venvs (a) and (b).
 
 Prepares INF-76; the item stays open until the owner's word and the release itself. No code moves, and nothing changes for testers.
 
@@ -198,7 +200,7 @@ Prepares INF-76; the item stays open until the owner's word and the release itse
 
 ## Task P1: planlens, four results that mislead (PL-39)
 
-Repository planlens. Branch `claude/pl-39-misleading-results`, from main. CHECK at `CHECK_PL39.md` in the repository root, in a last commit of its own. Model: Opus. Setup: COMMON_DOCREVIEW, "Setup: the planlens repository", with the app clone at `/tmp/gse-src`.
+Repository planlens. Branch `claude/pl-39-misleading-results`, from main. CHECK at `CHECK_PL39.md` in the repository root, in a last commit of its own. Model: Opus (`claude-opus-5-5`). Setup: COMMON_DOCREVIEW, "Setup: the planlens repository", with the app clone at `/tmp/gse-src`.
 
 Closes PL-39. Evidence, read from the clone: TRACE_REVIEW F-6, F-7, F-9 and F-10 (section 10) and section 7. All four are repairs (a tool result that misleads any model that trusts it; (1) and (2) changed answers in brief 7), so no option gates them.
 
@@ -217,7 +219,7 @@ Closes PL-39. Evidence, read from the clone: TRACE_REVIEW F-6, F-7, F-9 and F-10
 
 ## Task P2: planlens, sheet numbers as addresses and large files (PL-37 rest, PL-38)
 
-Repository planlens. Starts after P1 is merged into planlens main; branch `claude/pl-37-38-sheets-and-large-files` from main at that point. CHECK at `CHECK_PL37.md` in the repository root, in a last commit of its own. Model: Opus. Setup as P1.
+Repository planlens. Starts after P1 is merged into planlens main; branch `claude/pl-37-38-sheets-and-large-files` from main at that point. CHECK at `CHECK_PL37.md` in the repository root, in a last commit of its own. Model: Fable (`claude-fable-5-2`), the owner's choice for PL-37 and PL-38. Setup as P1.
 
 Closes PL-37's remaining parts, except a look at sheets that have no text layer (it needs a model: the host's job), and PL-38. Read, from the clone: BACKLOG PL-37 in full (its 2026-11-10 note lists what is built and what is open), PL-27 and PL-38; REVIEW.md section 2.5. In planlens: `planlens/document/DESIGN.md`, "Sheet index and cross-references".
 
@@ -237,18 +239,42 @@ Closes PL-37's remaining parts, except a look at sheets that have no text layer 
 
 **For the lead:** the planlens release and the app's pin; whether the app's `GEOTECH_REVIEW_SHEET_TOOLS` passes the new parts through once the pin is raised.
 
+## Task H: to-do updates beside the next call, behind a setting (DR-43 part 2)
+
+Branch `claude/dr-43-todos-with-calls`. CHECK at `module_work/dr43/CHECK.md`. App repository. Model: Sonnet (`claude-sonnet-5-5`). Venvs (a) and (b). Starts after tasks B and C are merged into master (C changes the page's build, B the suite's runner), from master at that point.
+
+Builds DR-43's part 2 so the next standing run can measure it; the item stays open, because whether the page changes its default is the owner's call after that run (EV-43). Part 1 is task C's. Evidence: TRACE_REVIEW F-17 (section 10), and the lead's count over brief 7's 84 saved runs: steps whose only tool call is `write_todos` took 13 % of all input tokens on GPT-5.6 Sol and 25 % on GPT-5.4, a fixed four to five such steps a run whatever the task's size, because each step sends the whole conversation again.
+
+**Confirm first:**
+- The page's rule: DR `review_prompt.py`, the bullet "Plan multi-step work with `write_todos` ... and keep it updated. Skip it for a single question.", in the prompt `build_document_review_prompt` returns. Check whether the reading helper's prompt (`DOCUMENT_REVIEW_READER_PROMPT`) or the general-purpose helper says anything about a to-do list, and whether helpers have the tool at all (core `deep/assembly.py`, where `TodoListMiddleware` is attached).
+- The framework's texts: the to-do tool's description, and the section the middleware adds to the system prompt, come from LangChain's `TodoListMiddleware` (read them in the installed version, `langchain.agents.middleware.todo`). Among other things they say to mark a task complete immediately and not to batch completions, never to call `write_todos` more than once in one step, and to write the final answer in the message after the last `write_todos` call. The page does not edit them, and neither does this task: they are the framework's, and overriding them in `deep/assembly.py` would change the geotech page too.
+- That a step holding `write_todos` beside another tool call is accepted: by the middleware (it refuses only several `write_todos` calls in one step), by the page's guards (`deep/tool_guards.py`, `deep/limits.py`, `deep/keep_work.py`) and by the record (`activity_log.py`). Check it with a fake model that returns both calls in one reply.
+
+**Change.** New behaviour, behind a setting that is off unless set:
+1. **The switch**, declared as the existing ones are, in core `review_flags.py`: a `..._ENV` constant, its place in `ALL_ENVS`, a reader function, an entry in the module docstring and in `__all__`, and an arm of the same name in `ARMS`. `GEOTECH_VISION_SHOW_ME` and its `show_me` arm (commit ecb3329) are the pattern. A name such as `GEOTECH_REVIEW_TODOS_WITH_CALLS`, arm `todos_with_calls`; the name is a call.
+2. **The rule.** With the setting on, the page's rule tells the agent to update its to-do list in the same step as its next tool call, not in a step of its own, because each step sends the whole conversation again, and keeps the rest of today's rule (when to plan; skip it for a single question). Plain words about what a step costs, for every model; not a correction of one model's habit. Read the flag where the prompt is built (`build_document_review_prompt`), or pass it from `review_build.py` if the build needs it. The reading helper gets the same line only if it has the tool. With the setting unset, the prompt is byte-identical and no fingerprint moves.
+3. **The count**, so the arm can be measured: per run in `RESULTS.md` and `results.json` (core `review_eval/runner.py`), for every arm, the steps whose only tool call is `write_todos` and their share of the run's input tokens, from what the record holds.
+4. **How the texts sit together**, in CHECK.md, with the setting on: where the page's rule and the framework's agree and where they pull apart (for example, marking a task in progress before starting it can be done in the same step as that work; the final answer still comes after the last `write_todos` call, which can share its step with the last tool call); what the page can change (its own rule) and what it cannot (the framework's description and section). If you judge that an override of the framework's text is needed, write it under "For the lead"; do not make it.
+
+**Must not change:** with the setting unset, the page's prompt, tools and fingerprints; the to-do tool and the framework's texts; the geotech page; GSE's frozen copy of the prompt (`funhouse_agent/review_prompt.py`).
+
+**Tests.** New `packages/aec-document-review/tests/test_dr43_todos_with_calls.py`: unset, the prompt is byte-identical to master's; set, the rule says to update the list beside the next call; a fake model's step with `write_todos` beside another tool call runs and is recorded; the runner counts to-do-only steps and their share of input tokens on a made-up record. The guard tests that pin the switches and arms must name the new one: DR `tests/test_review_switches_offline.py`, GSE `funhouse_agent/deep/tests/test_review_switches_offline.py` and `funhouse_agent/deep/tests/test_judgment_calls.py` (its table of readers must cover every switch in `ALL_ENVS`). Run those, DR `tests/test_review_show_me_offline.py`, `test_review_eval_offline.py` and `test_review_harness_offline.py` (venv a), `funhouse_agent/review_eval/tests/test_review_eval_offline.py` (venv b), and both fingerprint tests, which must pass unchanged.
+
+**For the lead:** the arm beside baseline in the next standing run (EV-43); the default, the owner's call after it; `CLAUDE.md`'s line for the new switch (write the proposed text in CHECK.md).
+
 ## Routines
 
-One routine per task. A to G and P1 start at the same time; P2 starts once P1 is merged into planlens main. The lead merges this file to master before starting any of them, since each session reads it from its own clone.
+One routine per task, on the model id in its row. A to G and P1 start at the same time; P2 starts once P1 is merged into planlens main, and H once B and C are merged into master. The lead merges this file to master before starting any of them, since each session reads it from its own clone.
 
 | Section | Repository | Branch | Model | Must not run beside | One-line prompt |
 |---|---|---|---|---|---|
-| Task A: testers told apart (TA-39) | GeotechStaffEngineer | `claude/ta-39-testers-apart` | Opus | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task A: testers told apart (TA-39)". Both are binding. Do that section and nothing else. Branch `claude/ta-39-testers-apart`; push after each piece. |
-| Task B: model calls, one ladder and every retry on the record (INF-75, VIS-31 part 2, TA-24) | GeotechStaffEngineer | `claude/inf-75-model-call-record` | Opus | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task B: model calls, one ladder and every retry on the record (INF-75, VIS-31 part 2, TA-24)". Both are binding. Do that section and nothing else. Branch `claude/inf-75-model-call-record`; push after each piece. |
-| Task C: a turn the tester can stop, ceilings over the whole turn, a spend line (TA-37, TA-38, TA-05, DR-43 part 1) | GeotechStaffEngineer | `claude/ta-37-stop-and-turn-ceilings` | Opus | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task C: a turn the tester can stop, ceilings over the whole turn, a spend line (TA-37, TA-38, TA-05, DR-43 part 1)". Both are binding. Do that section and nothing else. Branch `claude/ta-37-stop-and-turn-ceilings`; push after each piece. |
-| Task D: SharePoint saves off the turn and off the page (TA-40) | GeotechStaffEngineer | `claude/ta-40-sharepoint-off-turn` | Opus | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task D: SharePoint saves off the turn and off the page (TA-40)". Both are binding. Do that section and nothing else. Branch `claude/ta-40-sharepoint-off-turn`; push after each piece. |
-| Task E: what a page reading is told (VIS-31 part 1, VIS-30 part 1) | GeotechStaffEngineer | `claude/vis-31-one-image-readings` | Sonnet | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task E: what a page reading is told (VIS-31 part 1, VIS-30 part 1)". Both are binding. Do that section and nothing else. Branch `claude/vis-31-one-image-readings`; push after each piece. |
-| Task F: what the file tools lose (DR-41) | GeotechStaffEngineer | `claude/dr-41-file-tools-say` | Sonnet | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task F: what the file tools lose (DR-41)". Both are binding. Do that section and nothing else. Branch `claude/dr-41-file-tools-say`; push after each piece. |
-| Task G: one release unit, prepared (INF-76) | GeotechStaffEngineer | `claude/inf-76-one-release-unit` | Opus | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task G: one release unit, prepared (INF-76)". Both are binding. Do that section and nothing else. Branch `claude/inf-76-one-release-unit`; push after each piece. |
-| Task P1: planlens, four results that mislead (PL-39) | planlens | `claude/pl-39-misleading-results` | Opus | P2 | Clone the app repository read-only: `git clone --depth 1 https://github.com/soconnell345-geotech/GeotechStaffEngineer /tmp/gse-src`. Read `/tmp/gse-src/module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `/tmp/gse-src/module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task P1: planlens, four results that mislead (PL-39)". Both are binding. Do that section and nothing else, in this planlens repository. Branch `claude/pl-39-misleading-results`; push after each piece. |
-| Task P2: planlens, sheet numbers as addresses and large files (PL-37 rest, PL-38) | planlens | `claude/pl-37-38-sheets-and-large-files` | Opus | P1 (start after P1 is merged into main) | Clone the app repository read-only: `git clone --depth 1 https://github.com/soconnell345-geotech/GeotechStaffEngineer /tmp/gse-src`. Read `/tmp/gse-src/module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `/tmp/gse-src/module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task P2: planlens, sheet numbers as addresses and large files (PL-37 rest, PL-38)". Both are binding. Do that section and nothing else, in this planlens repository. Branch `claude/pl-37-38-sheets-and-large-files`; push after each piece. |
+| Task A: testers told apart (TA-39) | GeotechStaffEngineer | `claude/ta-39-testers-apart` | Fable (`claude-fable-5-2`): the owner's choice for TA-39 | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task A: testers told apart (TA-39)". Both are binding. Do that section and nothing else. Branch `claude/ta-39-testers-apart`; push after each piece. |
+| Task B: model calls, one ladder and every retry on the record (INF-75, VIS-31 part 2, TA-24) | GeotechStaffEngineer | `claude/inf-75-model-call-record` | Fable (`claude-fable-5-2`): the owner's choice for TA-24 | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task B: model calls, one ladder and every retry on the record (INF-75, VIS-31 part 2, TA-24)". Both are binding. Do that section and nothing else. Branch `claude/inf-75-model-call-record`; push after each piece. |
+| Task C: a turn the tester can stop, ceilings over the whole turn, a spend line (TA-37, TA-38, TA-05, DR-43 part 1) | GeotechStaffEngineer | `claude/ta-37-stop-and-turn-ceilings` | Opus (`claude-opus-5-5`) | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task C: a turn the tester can stop, ceilings over the whole turn, a spend line (TA-37, TA-38, TA-05, DR-43 part 1)". Both are binding. Do that section and nothing else. Branch `claude/ta-37-stop-and-turn-ceilings`; push after each piece. |
+| Task D: SharePoint saves off the turn and off the page (TA-40) | GeotechStaffEngineer | `claude/ta-40-sharepoint-off-turn` | Fable (`claude-fable-5-2`): the lead's judgment. Locks and background saves in a process the testers share, resumed uploads and a name map kept in the manifest: a wrong call loses or misfiles testers' files or holds every tester's turn, and none of it can be checked live from the session | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task D: SharePoint saves off the turn and off the page (TA-40)". Both are binding. Do that section and nothing else. Branch `claude/ta-40-sharepoint-off-turn`; push after each piece. |
+| Task E: what a page reading is told (VIS-31 part 1, VIS-30 part 1) | GeotechStaffEngineer | `claude/vis-31-one-image-readings` | Sonnet (`claude-sonnet-5-5`) | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task E: what a page reading is told (VIS-31 part 1, VIS-30 part 1)". Both are binding. Do that section and nothing else. Branch `claude/vis-31-one-image-readings`; push after each piece. |
+| Task F: what the file tools lose (DR-41) | GeotechStaffEngineer | `claude/dr-41-file-tools-say` | Sonnet (`claude-sonnet-5-5`) | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task F: what the file tools lose (DR-41)". Both are binding. Do that section and nothing else. Branch `claude/dr-41-file-tools-say`; push after each piece. |
+| Task G: one release unit, prepared (INF-76) | GeotechStaffEngineer | `claude/inf-76-one-release-unit` | Opus (`claude-opus-5-5`) | none | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task G: one release unit, prepared (INF-76)". Both are binding. Do that section and nothing else. Branch `claude/inf-76-one-release-unit`; push after each piece. |
+| Task P1: planlens, four results that mislead (PL-39) | planlens | `claude/pl-39-misleading-results` | Opus (`claude-opus-5-5`) | P2 | Clone the app repository read-only: `git clone --depth 1 https://github.com/soconnell345-geotech/GeotechStaffEngineer /tmp/gse-src`. Read `/tmp/gse-src/module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `/tmp/gse-src/module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task P1: planlens, four results that mislead (PL-39)". Both are binding. Do that section and nothing else, in this planlens repository. Branch `claude/pl-39-misleading-results`; push after each piece. |
+| Task P2: planlens, sheet numbers as addresses and large files (PL-37 rest, PL-38) | planlens | `claude/pl-37-38-sheets-and-large-files` | Fable (`claude-fable-5-2`): the owner's choice for PL-37 and PL-38 | P1 (start after P1 is merged into main) | Clone the app repository read-only: `git clone --depth 1 https://github.com/soconnell345-geotech/GeotechStaffEngineer /tmp/gse-src`. Read `/tmp/gse-src/module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `/tmp/gse-src/module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task P2: planlens, sheet numbers as addresses and large files (PL-37 rest, PL-38)". Both are binding. Do that section and nothing else, in this planlens repository. Branch `claude/pl-37-38-sheets-and-large-files`; push after each piece. |
+| Task H: to-do updates beside the next call, behind a setting (DR-43 part 2) | GeotechStaffEngineer | `claude/dr-43-todos-with-calls` | Sonnet (`claude-sonnet-5-5`): an off-by-default switch on the `show_me` pattern, mostly wording | B and C (start after both are merged) | Read `module_work/cloud_briefs/COMMON_DOCREVIEW.md`, then `module_work/cloud_briefs/DOCREVIEW_2026-11-13.md`: its top part and the section "Task H: to-do updates beside the next call, behind a setting (DR-43 part 2)". Both are binding. Do that section and nothing else. Branch `claude/dr-43-todos-with-calls`; push after each piece. |
