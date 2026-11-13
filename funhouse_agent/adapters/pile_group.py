@@ -837,13 +837,20 @@ def _run_meyerhof_group_settlement(params):
     return out
 
 
+#: No "soil_modulus_kPa" (a "soil modulus" may be Young's, which read as M
+#: changes the number) and no "D" (usually a diameter): GM-319 review.
 _FOOTING_ALIASES = {
     "Q": "load_kN", "load": "load_kN", "load_permanent_kN": "load_kN",
-    "M": "constrained_modulus_kPa", "soil_modulus_kPa":
-    "constrained_modulus_kPa", "Es": "youngs_modulus_kPa",
+    "M": "constrained_modulus_kPa", "Es": "youngs_modulus_kPa",
     "Es_kPa": "youngs_modulus_kPa", "nu": "poissons_ratio",
-    "D": "pile_length", "influence_depth": "influence_depth_m",
+    "influence_depth": "influence_depth_m",
 }
+
+#: Above this Poisson's ratio the result warns: GEC-5 (FHWA-NHI-16-072)
+#: Table 8-10 (p. 8-26) lists 0.2 to 0.4 for sands and gravels, the top of
+#: what the held references print for coarse-grained soil, for which UFC
+#: 3-220-20 Eq. 6-54 is printed (GM-319 review).
+_NU_COARSE_MAX = 0.40
 
 _FOOTING_VALID_PARAMS = (
     "n_rows", "n_cols", "spacing", "pile_diameter", "pile_length", "load_kN",
@@ -881,28 +888,36 @@ def _run_equivalent_footing_settlement(params):
         if not 0 <= nu < 0.5:
             raise ValueError(
                 f"{method}: poissons_ratio must be from 0 to below 0.5, got "
-                f"{nu} (at 0.5 Eq. 6-54 gives no compression: an undrained "
-                "clay's settlement is consolidation, GEC-12 Eqs. 7-56 to "
-                "7-58, which this method does not work).")
+                f"{nu} (at 0.5 UFC 3-220-20 Eq. 6-54 gives no compression; "
+                "the equation is for coarse-grained (drained) soil, and a "
+                "group in cohesive soil settles by consolidation, GEC-12 "
+                "Sec. 7.3.5.3: the settlement module's "
+                "consolidation_settlement).")
         M = Es * (1.0 - nu) / ((1.0 + nu) * (1.0 - 2.0 * nu))
         modulus_choice = choice(
             "constrained modulus M",
-            f"{M:,.0f} kPa = Es (1 - nu) / [(1 + nu)(1 - 2 nu)], Es = "
-            f"{Es:,.0f} kPa, nu = {nu:g}",
+            f"{M:,.0f} kPa = {M / Es:.2f} Es: M = Es (1 - nu) / [(1 + nu)"
+            f"(1 - 2 nu)], Es = {Es:,.0f} kPa, nu = {nu:g}",
             how_given(Es, None, "youngs_modulus_kPa"),
-            basis="UFC 3-220-20 Eq. 6-54 (Sec. 6-5.8.4.3)",
+            basis=("UFC 3-220-20 Eq. 6-54 (Sec. 6-5.8.4.3, pp. 448-449), "
+                   "printed for the elastic compression of coarse-grained "
+                   "soil"),
             alternatives=["constrained_modulus_kPa given directly"])
     else:
         modulus_choice = choice(
             "constrained modulus M", f"{M:,.0f} kPa, as given",
             how_given(M, None, "constrained_modulus_kPa"),
             basis=("one-dimensional compression of each sublayer, "
-                   "delta = dsigma dz / M (UFC 3-220-20 Eq. 6-54 with M = "
-                   "Es (1 - nu) / [(1 + nu)(1 - 2 nu)])"),
+                   "delta = dsigma dz / M (UFC 3-220-20 Eq. 6-54, printed "
+                   "for coarse-grained soil, with M = Es (1 - nu) / "
+                   "[(1 + nu)(1 - 2 nu)])"),
             alternatives=["youngs_modulus_kPa with poissons_ratio"])
-    for name in ("n_rows", "n_cols"):
-        v = params[name]
-        if isinstance(v, bool) or int(v) != v or v < 1:
+    for name in ("n_rows", "n_cols", "num_sublayers"):
+        v = params.get(name)
+        if v is None and name == "num_sublayers":
+            continue
+        if (isinstance(v, bool) or not isinstance(v, (int, float))
+                or int(v) != v or v < 1):
             raise ValueError(f"{method}: {name} must be a whole number, 1 "
                              f"or more; got {v!r}")
     out = group_settlement_equivalent_raft(
@@ -910,10 +925,20 @@ def _run_equivalent_footing_settlement(params):
         spacing=params["spacing"], pile_diameter=params["pile_diameter"],
         pile_length=params["pile_length"], load_kN=params["load_kN"],
         soil_modulus_kPa=M,
-        num_sublayers=int(params.get("num_sublayers", 10)),
+        num_sublayers=int(params.get("num_sublayers") or 10),
         influence_depth_m=params.get("influence_depth_m"),
     )
     out["constrained_modulus_kPa"] = round(float(M), 1)
+    if nu is not None and nu > _NU_COARSE_MAX:
+        out["warnings"] = [
+            f"poissons_ratio {nu:g} is above the 0.2 to 0.4 that GEC-5 "
+            "Table 8-10 (p. 8-26) lists for sands and gravels (and about "
+            "0.1 to 0.2 for their drained loading, p. 8-26). UFC 3-220-20 "
+            "Eq. 6-54 is for the elastic compression of coarse-grained "
+            f"(drained) soil; here it makes M {M / Es:.1f} times Es and the "
+            "settlement small. A group in cohesive soil settles by "
+            "consolidation (GEC-12 Sec. 7.3.5.3): work it with the "
+            "settlement module's consolidation_settlement."]
     out["choices"] = list(out["choices"]) + [
         modulus_choice,
         choice("equivalent footing",
@@ -933,10 +958,14 @@ def _run_equivalent_footing_settlement(params):
                    "worked here"]),
     ]
     out["not_included"] = (
-        "The piles' own elastic compression (GEC-12 Sec. 7.3.5.3 step 3 adds "
-        "it) and a clay's consolidation settlement (GEC-12 Eqs. 7-56 to "
-        "7-58; UFC 3-220-20 Eq. 6-53): this is the elastic one-dimensional "
-        "compression of the soil below the footing only.")
+        "The piles' own elastic compression (GEC-12 Sec. 7.3.5.1, Eq. 7-48, "
+        "to be added) and any consolidation: this is the elastic "
+        "one-dimensional compression of coarse-grained soil below the "
+        "footing only (UFC 3-220-20 Eq. 6-54). A group in cohesive soil "
+        "settles by consolidation (GEC-12 Sec. 7.3.5.3, Eqs. 7-56 to 7-58; "
+        "UFC 3-220-20 Eq. 6-53): the settlement module's "
+        "consolidation_settlement, the footing's stress Q/[(B + z)(Z + z)] "
+        "as each layer's delta_sigmas.")
     return out
 
 
@@ -1059,21 +1088,21 @@ METHOD_INFO = {
     },
     "equivalent_footing_settlement": {
         "category": "Pile Group",
-        "brief": "Pile-group settlement by the equivalent footing (GEC-12 Sec. 7.3.5.3; UFC 3-220-20 Sec. 6-5.8.4): a footing the size of the group at 2/3 of the embedded length, the load spread at 2V:1H (GEC-12 Eq. 7-55), and the elastic one-dimensional compression of the soil below it summed by sublayers (UFC 3-220-20 Eq. 6-54). One modulus, vertical piles; the piles' elastic compression and a clay's consolidation settlement are not included.",
+        "brief": "Pile-group settlement in coarse-grained (drained) soil by the equivalent footing (UFC 3-220-20 Sec. 6-5.8.4): a footing the size of the group at 2/3 of the embedded length (GEC-12 Fig. 7-44), the load spread at 2V:1H (GEC-12 Eq. 7-55; UFC 3-220-20 Eq. 6-51), and the elastic one-dimensional compression of the soil below it summed by sublayers (UFC 3-220-20 Eq. 6-54, printed for coarse-grained soil). A group in cohesive soil settles by consolidation (GEC-12 Sec. 7.3.5.3): the settlement module's consolidation_settlement, the footing's stress as each layer's delta_sigmas. One modulus, vertical piles; the piles' elastic compression is not included.",
         "parameters": {
             "n_rows": {"type": "int", "required": True, "description": "Rows of the group."},
             "n_cols": {"type": "int", "required": True, "description": "Columns."},
-            "spacing": {"type": "float", "required": True, "description": "Centre-to-centre pile spacing s (m), both directions."},
+            "spacing": {"type": "float", "required": True, "description": "Centre-to-centre pile spacing s (m), both directions; not less than pile_diameter."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter or width b (m): the footing is (n_cols - 1)s + b by (n_rows - 1)s + b, to the outer pile faces (GEC-12 Fig. 7-31)."},
             "pile_length": {"type": "float", "required": True, "description": "Pile embedded length D (m): the footing is at 2/3 D below its top (GEC-12 Vol I p. 320, Fig. 7-44; UFC 3-220-20 Table 6-32, first row). It sets the reported footing depth only; the settlement is of the soil below the footing."},
             "load_kN": {"type": "float", "required": True, "description": "The unfactored permanent load on the group Q (kN) (GEC-12 Vol I p. 320)."},
-            "constrained_modulus_kPa": {"type": "float", "required": False, "description": "Constrained modulus M of the soil below the footing (kPa), a weighted average for layered soil. Required unless youngs_modulus_kPa and poissons_ratio are given instead of it."},
-            "youngs_modulus_kPa": {"type": "float", "required": False, "description": "Young's modulus Es of the soil below the footing (kPa), with poissons_ratio: M = Es (1 - nu) / [(1 + nu)(1 - 2 nu)] (UFC 3-220-20 Eq. 6-54)."},
-            "poissons_ratio": {"type": "float", "required": False, "description": "Poisson's ratio nu of the soil (0 to below 0.5), with youngs_modulus_kPa."},
+            "constrained_modulus_kPa": {"type": "float", "required": False, "description": "Constrained (one-dimensional, drained) modulus M of the coarse-grained soil below the footing (kPa), a weighted average for layered soil: UFC 3-220-20 Eq. 6-54 is printed for coarse-grained soil; a group in cohesive soil settles by consolidation (consolidation_settlement). Required unless youngs_modulus_kPa and poissons_ratio are given instead of it."},
+            "youngs_modulus_kPa": {"type": "float", "required": False, "description": "Young's modulus Es of the coarse-grained (drained) soil below the footing (kPa), with poissons_ratio: M = Es (1 - nu) / [(1 + nu)(1 - 2 nu)] (UFC 3-220-20 Eq. 6-54, printed for the elastic compression of coarse-grained soil, pp. 448-449). The result's choices give M and M/Es."},
+            "poissons_ratio": {"type": "float", "required": False, "description": "Poisson's ratio nu of the coarse-grained (drained) soil, from 0 to below 0.5, with youngs_modulus_kPa. GEC-5 Table 8-10 (p. 8-26) lists 0.2 to 0.4 for sands and gravels, and about 0.1 to 0.2 for their drained loading; above 0.40 the result warns. A clay's undrained value near 0.5 does not belong here: a group in cohesive soil settles by consolidation (consolidation_settlement)."},
             "influence_depth_m": {"type": "float", "required": False, "description": "Depth below the footing to sum to (m), e.g. the compressible layer's base, or GEC-12 step 1c's depth where the stress increase is under 10 % of the existing vertical effective stress (Vol I p. 324), worked out from the effective-stress profile. Left out: to where the stress increase falls to 10 % of the footing's bearing stress (UFC 3-220-20 p. 449)."},
-            "num_sublayers": {"type": "int", "required": False, "default": 10, "description": "Sublayers the depth summed is divided into."},
+            "num_sublayers": {"type": "int", "required": False, "default": 10, "description": "Sublayers the depth summed is divided into: a whole number, 1 or more."},
         },
-        "returns": {"settlement_mm": "Settlement of the soil below the footing (mm).", "settlement_m": "The same (m).", "Bg_m": "Footing width.", "Lg_m": "Footing length.", "raft_depth_m": "Footing depth below the top of the embedded length.", "influence_depth_m": "Depth below the footing summed to.", "max_stress_kPa": "The footing's bearing stress Q/(Bg Lg).", "constrained_modulus_kPa": "M used.", "not_included": "What the settlement leaves out; report it.", "choices": "The depth rule, modulus and footing taken, with the print's alternatives; report them."},
+        "returns": {"settlement_mm": "Settlement of the soil below the footing (mm).", "settlement_m": "The same (m).", "Bg_m": "Footing width.", "Lg_m": "Footing length.", "raft_depth_m": "Footing depth below the top of the embedded length.", "influence_depth_m": "Depth below the footing summed to.", "max_stress_kPa": "The footing's bearing stress Q/(Bg Lg).", "constrained_modulus_kPa": "M used.", "not_included": "What the settlement leaves out; report it.", "choices": "The depth rule, modulus (with M/Es when worked out from Es and nu) and footing taken, with the print's alternatives; report them.", "warnings": "Only when poissons_ratio is above 0.40: above what the held references print for coarse-grained soil, for which the equation is; report it."},
     },
 }
 

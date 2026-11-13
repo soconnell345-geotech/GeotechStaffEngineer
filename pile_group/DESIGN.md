@@ -7,12 +7,15 @@ assumption. Includes group efficiency and p-multiplier corrections.
 ## References
 - FHWA GEC-12 (FHWA-NHI-16-009) Vol. I ch. 7: group efficiency (Sec.
   7.2.2, Eq. 7-35), block failure (Eqs. 7-36, 7-37, Fig. 7-31), group
-  settlement (Eqs. 7-50 to 7-52; Sec. 7.3.5.3), p-multipliers (Sec.
+  settlement (Meyerhof, Eqs. 7-50 to 7-52; the equivalent footing of Fig.
+  7-44 and Eq. 7-55; a group in cohesive soil settles by consolidation,
+  Sec. 7.3.5.3, not worked here), p-multipliers (Sec.
   7.3.7.6, AASHTO as printed pp. 367 and 370). Vol. III Appendix D works
   the North Abutment, Pier 2 and South Abutment (V-005, V-060).
 - UFC 3-220-20 (2025) ch. 6: Eq. 6-37, Table 6-26 (group efficiency
   factors by pile type), Eqs. 6-38, 6-39 (block failure), Sec. 6-5.8.4
-  (equivalent footing, to 10 % of the bearing stress; App. B-5.7, as
+  (equivalent footing, Eq. 6-54 for coarse-grained soil, pp. 448-449,
+  to 10 % of the bearing stress; App. B-5.7, as
   GEC-12 step 1c, to 10 % of the existing vertical effective stress), Table 6-38
   (AASHTO extended to 6b; Mokwa 1999). Appendix B-5.4 and Table B-32 (V-060).
 - USACE EM 1110-2-2906 and CPGA (ITL-89-4): the rigid-cap 6-DOF method.
@@ -152,6 +155,16 @@ stiffness assembly, and pile-force back-calc):
   App. B-5.7 (p. 641) take 10 % of the existing vertical effective stress;
   the function takes no effective-stress profile, so that depth is given
   as `influence_depth_m`, and the result's `choices` say so.
+- Equivalent-footing settlement, the soil (GM-319 review): UFC Eq. 6-54
+  is printed for the elastic compression of coarse-grained soil (pp.
+  448-449). The tool says so; a group in cohesive soil is sent to
+  consolidation (GEC-12 Sec. 7.3.5.3; `consolidation_settlement`). Poisson's
+  ratio is accepted from 0 to below 0.5 (no printed basis for a lower
+  limit); above 0.40, the top of GEC-5 Table 8-10's 0.2 to 0.4 for sands
+  and gravels (p. 8-26), the result warns. With Es and nu given, the
+  result's `choices` state M and M/Es. Spacing below the pile diameter
+  and a `num_sublayers` that is not a whole number of 1 or more are
+  refused.
 
 ## Failure modes / guards (PG-1, PG-3, v5.0-5.1)
 - `analyze_group_6dof` raises `ValueError` if a loaded DOF has no stiffness

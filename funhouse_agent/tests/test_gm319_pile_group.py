@@ -144,3 +144,80 @@ def test_6dof_tool_refuses_batter_with_no_vertical_component():
         {"x": 1, "y": 0, "axial_stiffness": 2e5},
         {"x": 0, "y": 1, "axial_stiffness": 2e5}]})
     assert "at or above 1" in r["error"]
+
+
+_M40 = {**_FOOTING, "constrained_modulus_kPa": 40000.0}
+
+
+@pytest.mark.parametrize("value", [2.7, 0, -3, True, "4"])
+def test_num_sublayers_must_be_a_whole_number(value):
+    r = _call("equivalent_footing_settlement", {**_M40,
+                                                "num_sublayers": value})
+    assert "num_sublayers must be a whole number" in r["error"]
+
+
+def test_num_sublayers_whole_float_runs_as_the_int():
+    a = _call("equivalent_footing_settlement", {**_M40, "num_sublayers": 4.0})
+    b = _call("equivalent_footing_settlement", {**_M40, "num_sublayers": 4})
+    assert a["settlement_mm"] == b["settlement_mm"]
+
+
+def test_spacing_below_the_diameter_is_refused():
+    r = _call("equivalent_footing_settlement", {**_M40, "spacing": 0.25})
+    assert "less than the pile diameter" in r["error"]
+    # touching piles (s = b) run
+    assert "error" not in _call("equivalent_footing_settlement",
+                                {**_M40, "spacing": 0.3})
+
+
+@pytest.mark.parametrize("alias, value", [("soil_modulus_kPa", 40000.0),
+                                          ("D", 12.0)])
+def test_dropped_aliases_are_not_read(alias, value):
+    params = {**_FOOTING, "constrained_modulus_kPa": 40000.0}
+    if alias == "D":
+        params.pop("pile_length")
+    else:
+        params.pop("constrained_modulus_kPa")
+    params[alias] = value
+    r = _call("equivalent_footing_settlement", params)
+    assert "error" in r and alias in r["error"]
+
+
+def test_poissons_ratio_above_coarse_grained_range_warns():
+    """The review's case: Es 20,000 kPa at nu 0.49 makes M 17 Es and 2.8 mm,
+    against about 36 mm at nu 0.3. The result warns that the equation is
+    for coarse-grained soil and states M/Es."""
+    hi = _call("equivalent_footing_settlement",
+               {**_FOOTING, "youngs_modulus_kPa": 20000.0,
+                "poissons_ratio": 0.49})
+    assert "error" not in hi, hi
+    assert hi["settlement_mm"] == pytest.approx(2.84, abs=0.01)
+    (w,) = hi["warnings"]
+    assert "GEC-5 Table 8-10" in w and "coarse-grained" in w
+    assert "consolidation_settlement" in w
+    m = next(c for c in hi["choices"] if c["what"] == "constrained modulus M")
+    assert "= 17.11 Es" in m["chosen"]
+
+    lo = _call("equivalent_footing_settlement",
+               {**_FOOTING, "youngs_modulus_kPa": 20000.0,
+                "poissons_ratio": 0.3})
+    assert lo["settlement_mm"] == pytest.approx(36.09, abs=0.01)
+    assert "warnings" not in lo
+    m = next(c for c in lo["choices"] if c["what"] == "constrained modulus M")
+    assert "= 1.35 Es" in m["chosen"]
+    # at the top of the printed range: no warning
+    assert "warnings" not in _call(
+        "equivalent_footing_settlement",
+        {**_FOOTING, "youngs_modulus_kPa": 20000.0, "poissons_ratio": 0.40})
+
+
+def test_settlement_tool_says_its_soil():
+    from funhouse_agent.adapters.pile_group import METHOD_INFO
+    info = METHOD_INFO["equivalent_footing_settlement"]
+    assert "coarse-grained" in info["brief"]
+    assert "consolidation_settlement" in info["brief"]
+    for p in ("constrained_modulus_kPa", "youngs_modulus_kPa",
+              "poissons_ratio"):
+        assert "coarse-grained" in info["parameters"][p]["description"]
+    # GEC-12 Sec. 7.3.5.3 is the cohesive-soil method, not this equation's
+    assert "7.3.5.3" not in info["brief"].split("cohesive soil")[0]
