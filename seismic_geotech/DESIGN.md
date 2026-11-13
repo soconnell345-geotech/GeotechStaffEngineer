@@ -54,6 +54,10 @@ analyze_liquefaction(N160, FC, sigma_v, sigma_v_eff, amax, M, ...) -> Liquefacti
   through the overlying layers (Σγᵢhᵢ; each point's γ applies from the
   previous evaluation depth down to its own) instead of γ(z)·z; depths must
   be increasing. Uniform profiles are unchanged.
+  Since GM-324 (2026-11-13) the B&I (2014) SPT route in `liquepy_agent`
+  uses the same rule (`TOTAL_STRESS_RULE`, the same text in both modules),
+  the result's `choices` states it, and the K_sigma entry names the depths
+  with sigma'v above 100 kPa, where leaving K_sigma out matters.
 - Site coefficients (SG-2): `site_coefficients(..., pga=)` interpolates Fpga
   against PGA per AASHTO Table 3.10.3.2-1. Without `pga`, Fpga ≈ Fa(Ss) — a
   documented approximation (same table values, wrong abscissa; exact only

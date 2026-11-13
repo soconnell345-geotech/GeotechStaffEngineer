@@ -302,7 +302,13 @@ METHOD_INFO = {
             "gamma": {"type": "array", "required": False,
                       "required_for": "SPT input",
                       "description": "REQUIRED for SPT input: total unit "
-                                     "weight (kN/m3) per layer."},
+                                     "weight (kN/m3) at each depth. Each "
+                                     "value applies from the previous "
+                                     "depth (the ground surface for the "
+                                     "first) down to its own depth, and "
+                                     "the total vertical stress is the "
+                                     "sum over the layers above, on both "
+                                     "SPT methods. Depths must increase."},
             # Required for CPT input too (GM-133: it took 1.0 m and 0.25 g).
             "gwt_depth": {"type": "float", "required": True,
                           "description": "REQUIRED: depth to the water table "
@@ -373,7 +379,9 @@ METHOD_INFO = {
             "input_type": "Detected input type ('CPT' or 'SPT').",
             "method": "Triggering method used ('bi2014' or 'nceer2001').",
             "min_fos": "Minimum factor of safety against liquefaction.",
-            "n_liquefiable": "Number of liquefiable layers/points.",
+            "n_liquefiable": "SPT: number of layers with a factor of safety below 1.0. CPT: number of readings below the water table with Ic under the limit and a factor of safety below 1.0 (n_susceptible counts those readings whatever their factor of safety).",
+            "min_fos_basis": "CPT only: the readings min_fos is taken over (the susceptible ones, or 'all readings' when there is none; warnings then says so).",
+            "max_settlement_mm": "CPT only: post-liquefaction reconsolidation settlement (mm), Zhang et al. (2002) volumetric strain summed over the sounding.",
             "layer_results": "Per-layer CSR/CRR/FoS (SPT). The SPT routes compute no post-liquefaction volumetric strain: no reference in the library prints an SPT method (GEC-10 10.7 names Ishihara and Yoshimine 1992 without printing it), so post_liquefaction_downdrag then needs volumetric_strain given.",
             "depth_profile": "CPT only: rows of top_m, bottom_m, FOS_liq and volumetric_strain (post-liquefaction reconsolidation strain, decimal; Zhang et al. 2002 from FS and qc1Ncs, as liquepy computes it). One row per reading, or depth bands for a long CPT that never put a reading with FS <= 1.0 in a band above 1.0, however thin its layer; depth_profile_note then says how. post_liquefaction_downdrag takes the whole result as liquefaction_result.",
             "lpi": "Liquefaction Potential Index (CPT only).",

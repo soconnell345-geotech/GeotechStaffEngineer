@@ -147,3 +147,26 @@ only.
 | Post-triggering | Zhang strains, LPI, LSN, LDI | Residual strength only |
 | Field correlations | Vs, Dr, su, permeability | None |
 | Continuous profile | Yes (every CPT reading) | No (discrete SPT values) |
+
+## Total stress on the SPT route, and what the CPT tools return (GM-324, 2026-11-13)
+
+- **SPT total stress.** `analyze_spt_liquefaction` sums the total vertical
+  stress through the layers above: each `gamma` applies from the previous
+  evaluation depth (the ground surface for the first) to its own depth.
+  This is the rule `seismic_geotech.evaluate_liquefaction` has used since
+  v5.1, so one `gamma` input gives one overburden on both SPT procedures
+  (`TOTAL_STRESS_RULE`, the same text in both modules; a test in
+  `funhouse_agent/tests` compares them). Until GM-324 this route took
+  `gamma[i] * z`, the depth's own unit weight over everything above it.
+  Depths must increase and be positive.
+- **CPT result.** `n_susceptible` (readings below the water table with Ic
+  under the limit), `n_liquefiable` (those with FS < 1.0) and
+  `min_fos_basis`. With no susceptible reading `min_fos` is still the
+  minimum over all readings, and `warnings` says it is not a triggering
+  result.
+- **Field correlations.** `to_dict()` carries `profile`: Vs, Dr, su ratio
+  and Ic by depth, one row per reading up to 40, depth bands of band
+  averages beyond that. Permeability is computed and NOT returned: no
+  reference in the library prints the Robertson and Cabal (2012) relation,
+  so the unit in the attribute's name (`permeability_cm_per_s`) is
+  unchecked.
