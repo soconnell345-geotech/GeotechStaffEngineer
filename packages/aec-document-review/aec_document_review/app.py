@@ -341,6 +341,19 @@ def _follow_turn_job(job) -> None:
     """
     ss = st.session_state
     with st.chat_message("assistant"):
+        # The Stop button (BACKLOG TA-37, behind GEOTECH_STOP_BUTTON): only
+        # on a job started with the setting on, for this session's own
+        # conversation. The click reruns the page; its callback sets the
+        # job's flag first, and the turn ends at its next step.
+        if getattr(job, "stoppable", False) and not job.done:
+            if job.stop_requested:
+                st.caption("Stopping… the turn ends at its next step; a "
+                           "step already under way finishes first.")
+            else:
+                st.button("Stop", key=f"stop_turn_{job.thread_id}",
+                          on_click=job.request_stop,
+                          help="Stop this turn. What it has done so far is "
+                               "kept, and you can ask it to continue.")
         answer_box = st.empty()
         status = st.status("Working…", expanded=False)
         answer = ""
@@ -363,6 +376,8 @@ def _follow_turn_job(job) -> None:
         if res.get("error"):
             status.update(label="Error", state="error")
             st.error(res["error"])
+        elif res.get("stopped"):
+            status.update(label="Stopped", state="complete")
         else:
             status.update(label="Done", state="complete")
 
