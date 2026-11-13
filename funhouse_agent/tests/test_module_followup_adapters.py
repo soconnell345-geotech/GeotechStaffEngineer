@@ -255,7 +255,11 @@ class TestTargetPga:
             "target_pga_g": 0.2})
         assert r["pga_input_g"] == pytest.approx(0.2, abs=1e-4)
         _assert_documented("pystrata", "linear_site_response", r,
-                           conditional=("max_shear_strain_pct",))
+                           conditional=("max_shear_strain_pct",
+                                        # a linear-only profile, few
+                                        # sub-layers (GM-325)
+                                        "layer_stresses", "warnings",
+                                        "depth_profile_note"))
 
     def test_opensees_passes_it_through(self):
         fake = MagicMock()

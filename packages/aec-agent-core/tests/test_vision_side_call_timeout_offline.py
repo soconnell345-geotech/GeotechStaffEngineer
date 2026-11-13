@@ -5,7 +5,7 @@ contact-sheet reads) went through the same engine as the primary model and so
 inherited its 900 s read timeout, set for long reasoning. One stalled tile
 held a turn for 907 s, another for 343 s (903 s in brief 4), while the p99
 side call took 74 s. Now a side call is given up after
-``GEOTECH_VISION_CALL_TIMEOUT_S`` (default 180 s), asked once more, and if
+``GEOTECH_VISION_CALL_TIMEOUT_S`` (default 90 s since VIS-31, 180 s before), asked once more, and if
 that stalls too the image is reported as not read. The primary agent's own
 calls never pass through the vision engine.
 """

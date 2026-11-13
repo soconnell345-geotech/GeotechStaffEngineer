@@ -7,7 +7,7 @@ checked so inside the defaults guard's own run
 (``test_defaults_used.test_the_defaults_a_run_lists_are_the_values_it_used``;
 review B5: a second pass here cost 209 s and the probes, the smallest
 inputs each method runs on, raise none today). The made-up calls below do
-raise the module warnings the audit named; they are the behaviour test."""
+raise module warnings on allowed runs; they are the behaviour test."""
 
 import copy
 import re
@@ -87,23 +87,24 @@ def test_every_probe_is_checked_in_the_defaults_guards_run():
     assert 'warnings.simplefilter("always")' in guard
 
 
-#: Made-up calls that raise a module warning (the ones the audit named).
+#: Made-up calls of allowed runs that raise a module warning. The audit's
+#: three pile cases (a pile longer than its soil profile) are refused
+#: since GM-318, or run on the last layer carried on with the warning in
+#: the result itself, so these are warnings the modules still raise:
+#: drilled_shaft a casing deeper than the shaft, lateral_pile a soft clay
+#: strength above Matlock's range. axial_pile raises none on an allowed
+#: run through its tools (its chart notes go to the result's warnings).
 RAISING = [
-    ("axial_pile", "axial_pile_capacity",
-     {"designation": "HP12x74", "pile_type": "h_pile", "pile_length": 40,
-      "layers": [{"friction_angle": 38, "soil_type": "cohesionless",
-                  "thickness": 30, "unit_weight": 19}]},
-     "exceeds soil profile"),
     ("drilled_shaft", "drilled_shaft_capacity",
-     {"diameter": 1.0, "length": 20.0,
+     {"diameter": 1.0, "length": 10.0, "casing_depth": 12.0,
       "layers": [{"cu": 50, "soil_type": "cohesive", "thickness": 15,
                   "unit_weight": 18}]},
-     "exceeds soil profile"),
+     "exceeds shaft length"),
     ("lateral_pile", "lateral_pile_analysis",
-     {"layers": [{"bottom": 10, "gamma": 19, "k": 8150, "model": "SandAPI",
-                  "phi": 32, "top": 0}],
+     {"layers": [{"bottom": 15, "c": 120, "eps50": 0.01, "gamma": 18,
+                  "model": "SoftClayMatlock", "top": 0}],
       "pile_diameter": 0.8, "pile_length": 15.0, "Vt": 100},
-     "No soil resistance will be applied below"),
+     "is high for soft clay"),
     ("settlement", "consolidation_settlement",
      {"delta_sigma": 50,
       "layers": [{"Cc": 0.05, "Cr": 0.3, "depth_to_center": 4.0, "e0": 0.9,
@@ -137,9 +138,9 @@ def test_a_warning_raised_by_a_packages_calculation_is_printed_in_it(
     Calculation", before the steps), so what the agent reports is in the
     document the engineer reads."""
     monkeypatch.chdir(tmp_path)
-    agent, method, params, text = RAISING[0]          # pile below profile
+    agent, method, params, text = RAISING[0]       # casing deeper than shaft
     out = tmp_path / "package.html"
-    result = D.call_agent("calc_package", "axial_pile_package", {
+    result = D.call_agent("calc_package", "drilled_shaft_package", {
         **copy.deepcopy(params), "format": "html", "output_path": str(out)})
     assert result["status"] == "success", result
     raised = [w for w in result["warnings"] if text in w]
@@ -148,3 +149,35 @@ def test_a_warning_raised_by_a_packages_calculation_is_printed_in_it(
     section = page.index("Warnings Raised by the Calculation")
     for w in raised:
         assert w in page[section:]
+
+
+def test_a_returned_warning_and_a_raised_one_are_each_said_once(
+        tmp_path, monkeypatch):
+    """GM-318 review, after the merge with GM-316: a warning the module
+    returns in its result (the last layer carried on, extend_last_layer)
+    and a Python warning the dispatch catches (a soft clay strength above
+    Matlock's range) are each listed once in the result, and the package
+    prints the returned one in its own section, not again under "Warnings
+    Raised by the Calculation"."""
+    monkeypatch.chdir(tmp_path)
+    params = {"layers": [{"bottom": 10, "c": 120, "eps50": 0.01,
+                          "gamma": 18, "model": "SoftClayMatlock",
+                          "top": 0}],
+              "extend_last_layer": True,
+              "pile_diameter": 0.8, "pile_length": 15.0, "Vt": 100}
+    result = D.call_agent("lateral_pile", "lateral_pile_analysis",
+                          copy.deepcopy(params))
+    ws = result["warnings"]
+    assert len(ws) == len(set(ws)) == 2, ws
+    assert "extend_last_layer" in ws[0] and "high for soft clay" in ws[1]
+    out = tmp_path / "package.html"
+    pkg = D.call_agent("calc_package", "lateral_pile_package", {
+        **copy.deepcopy(params), "format": "html", "output_path": str(out)})
+    assert pkg["status"] == "success", pkg
+    assert pkg["warnings"] == ws, pkg["warnings"]
+    page = out.read_text("utf-8")
+    raised = page[page.index("Warnings Raised by the Calculation"):]
+    raised = raised[:raised.index("</table>")]
+    assert "high for soft clay" in raised
+    assert "extend_last_layer" not in raised
+    assert "Soil Below the Profile (Assumed)" in page
