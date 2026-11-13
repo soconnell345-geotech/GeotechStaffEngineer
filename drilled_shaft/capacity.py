@@ -875,6 +875,17 @@ class DrillShaftAnalysis:
     rock_joints : str, optional
         For rock_side_method "caving": the joint condition of Table 10-3,
         "closed" (default) or "open" (open or gouge-filled joints).
+    extend_last_layer : bool, optional
+        What to do with a shaft longer than the soil profile (GM-318).
+        False (default): the run is refused, naming the depth not covered;
+        GEC-10 takes the base resistance from the soil at and to 2B below
+        the base (Eq. 10-14, p. 10-15; Eq. 10-19, p. 10-19) and no held
+        manual prints carrying the last layer on. True: the last layer is
+        taken to go on to the base (side resistance and base in it), and
+        the result says so in its warnings and choices.
+    profile_depth_given : float or None, optional
+        Set by the analysis, not by a caller: the depth (m) the given layers
+        reached before ``extend_last_layer`` carried the last one on.
 
     The rock side resistance takes qu no higher than the shaft's
     ``concrete_fc`` where it is given (GEC-10 p. 10-21,
@@ -908,6 +919,8 @@ class DrillShaftAnalysis:
     large_base_reduction: bool = False
     rock_side_method: str = "normal"
     rock_joints: str = "closed"
+    extend_last_layer: bool = False
+    profile_depth_given: Optional[float] = None
 
     def __post_init__(self):
         if self.shaft is None:
@@ -978,11 +991,64 @@ class DrillShaftAnalysis:
             raise ValueError(
                 f"su_test_type must be 'ciuc', 'uc', or 'uu', got '{self.su_test_type}'"
             )
-        if self.shaft.length > self.soil.total_thickness:
-            warnings.warn(
-                f"Shaft length ({self.shaft.length}m) exceeds soil profile "
-                f"({self.soil.total_thickness}m); using full profile depth"
-            )
+        self._cover_the_base()
+
+    def _cover_the_base(self) -> None:
+        """Refuse a base below the soil profile, or with
+        ``extend_last_layer`` carry the last layer on to it (GM-318)."""
+        given = (self.profile_depth_given
+                 if self.profile_depth_given is not None
+                 else self.soil.total_thickness)
+        L = self.shaft.length
+        if L <= given + 1e-9:
+            return
+        if not self.extend_last_layer:
+            raise ValueError(
+                f"The soil profile ends at {given:g} m below the ground "
+                f"surface and the shaft is {L:g} m long: the soil from "
+                f"{given:g} m to the base and below it is not in the "
+                f"profile, so the base resistance would be end bearing in "
+                f"soil or rock nobody explored (GEC-10 takes it from the "
+                f"ground at and to 2B below the base: Eq. 10-14, p. 10-15; "
+                f"Eq. 10-19, p. 10-19). Give layers down to the base, or "
+                f"set extend_last_layer=true to take the last layer as "
+                f"going on to the base; the result then says so.")
+        self.profile_depth_given = given
+        short = L - self.soil.total_thickness
+        if short > 0:
+            layers = list(self.soil.layers)
+            layers[-1] = replace(layers[-1],
+                                 thickness=layers[-1].thickness + short)
+            self.soil = replace(self.soil, layers=layers)
+
+    def _extension_note(self) -> Optional[str]:
+        """The warning of a run on an extended last layer, or None."""
+        given = self.profile_depth_given
+        L = self.shaft.length
+        if given is None or L <= given + 1e-9:
+            return None
+        return (f"The soil profile ends at {given:g} m and the shaft base "
+                f"is at {L:g} m: the last layer was taken to go on to the "
+                f"base (extend_last_layer). The side resistance from "
+                f"{given:g} m to {L:g} m and the whole base resistance are "
+                f"in ground nobody explored; confirm it before relying on "
+                f"this capacity.")
+
+    def _extension_choice(self) -> dict:
+        from geotech_common.choices import choice, how_given
+        return choice(
+            "soil below the profile",
+            f"last layer taken to go on from {self.profile_depth_given:g} m "
+            f"to the base at {self.shaft.length:g} m",
+            how_given(self.extend_last_layer, False,
+                      name="extend_last_layer"),
+            "extend_last_layer: the side resistance below the profile and "
+            "the base resistance are in ground that was not explored "
+            "(GEC-10 takes the base resistance from the ground at and to "
+            "2B below the base, Eqs. 10-14 and 10-19); no held manual "
+            "prints this extension",
+            ["layers given down to the base (the default refuses a shaft "
+             "longer than the profile)"])
 
     def _gec10_beta(self, layer, sigma_v: float, where: str) -> dict:
         """GEC-10 (2018) Sec. 10.3.5.1 beta of a cohesionless layer, each
@@ -1349,9 +1415,11 @@ class DrillShaftAnalysis:
         Q_allowable = Q_ultimate / self.factor_of_safety
 
         choices = []
+        extended = self._extension_note()
         if report:
             choices = (
-                self._side_choices(layer_results, Qs_sand, Q_ultimate)
+                ([self._extension_choice()] if extended else [])
+                + self._side_choices(layer_results, Qs_sand, Q_ultimate)
                 + self._clay_side_choices(layer_results, Qs_clay,
                                           Q_ultimate)
                 + ([side_n60_choice(no_n60)] if no_n60 else [])
@@ -1379,6 +1447,7 @@ class DrillShaftAnalysis:
             sigma_v_tip=sigma_v_tip,
             base_steps=_rounded(base_steps, sig=("s",)),
             choices=choices,
+            warnings=[extended] if extended else [],
         )
 
     def _tip_index(self, L: float) -> int:

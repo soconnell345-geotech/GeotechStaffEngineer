@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from axial_pile import PileSection, make_pipe_pile, make_concrete_pile, make_h_pile
 from axial_pile import AxialSoilLayer, AxialSoilProfile, AxialPileAnalysis
+from axial_pile.capacity import skipped_depths_note
 from axial_pile.capacity import (
     API_IF_HIGHLY_OC, COHESIVE_NT, INSIDE_FRICTION_RATIO, OPEN_PIPE_TOE_LIMIT,
     UPLIFT_SKIN_FRACTION, _TOE_STRESS_LIMIT,
@@ -49,6 +50,8 @@ _GEC12_OPTIONS = {
     "shrink_swell_depth": None,
     "beta_coefficients": "table_7_9",
     "toe_phi_zone": "toe_layer",
+    # GM-318: a toe below the profile is refused unless this is set
+    "extend_last_layer": False,
 }
 
 # Keys a layer dict may carry: AxialSoilLayer's fields plus the 'toe_phi'
@@ -265,21 +268,34 @@ def _run_capacity_vs_depth(params):
     pile = _build_pile(params)
     soil = _build_soil_profile(params, method="capacity_vs_depth")
     # GM-144: the same GEC-12 options as axial_pile_capacity
-    analysis = AxialPileAnalysis(pile=pile, soil=soil, pile_length=params.get("pile_length", soil.total_thickness),
+    analysis = AxialPileAnalysis(pile=pile, soil=soil, pile_length=params.get(
+                                      "pile_length",
+                                      soil.total_thickness - params.get("head_depth", 0.0)),
                                   method=params.get("method", "auto"),
                                   head_depth=params.get("head_depth", 0.0),
                                   cohesive_phi=params.get("cohesive_phi", 25.0),
                                   **{k: params.get(k, v)
                                      for k, v in _GEC12_OPTIONS.items()})
+    skipped = []
+    n_points = params.get("n_points", 20)
     curve = analysis.capacity_vs_depth(depth_min=params.get("depth_min", 3.0),
-                                        depth_max=params.get("depth_max"), n_points=params.get("n_points", 20))
+                                        depth_max=params.get("depth_max"), n_points=n_points,
+                                        skipped=skipped)
     out = {"capacity_vs_depth": curve}
+    if skipped:
+        # GM-318: a refused trial length is named, not dropped
+        out["skipped_depths"] = skipped
+        out["warning"] = skipped_depths_note(skipped, n_points)
     if curve:
         # what the deepest run chose (the toe's choices change with depth;
         # each depth's warnings ride on its row)
         deepest = params.get("depth_max")
         if deepest is None:
-            deepest = min(analysis.pile_length, soil.total_thickness)
+            deepest = min(analysis.pile_length,
+                          analysis.soil.total_thickness - analysis.head_depth)
+        if skipped:
+            # the deepest length that ran
+            deepest = curve[-1]["depth_m"]
         # the curve gives no allowable capacity, so no factor of safety
         out["choices"] = [
             c for c in replace(analysis,
@@ -328,6 +344,7 @@ _GM144_INFO = {
     "shrink_swell_depth": {"type": "float", "required": False, "description": "Depth (m below the ground surface) of a shrink-swell zone: no shaft resistance in cohesive soil above it (GEC-12 Vol I p. 247). Default none."},
     "beta_coefficients": {"type": "str", "required": False, "default": "table_7_9", "allowed_values": ["table_7_9"], "description": "method='beta': beta and Nt where a layer gives none: GEC-12 Table 7-9 by the layer's soil_class (clay 0.15-0.35, silt 0.25-0.50, sand 0.30-0.90, gravel 0.35-0.80; Steps 2b/5b), a straight line in phi' between Table 7-9's range ends (the module's reading; the table prints only the ends). A clay toe takes cohesive_Nt. GEC-12 prints no beta formula from phi' alone; give a layer's beta and Nt for other values (local experience, Steps 2a/5a)."},
     "toe_phi_zone": {"type": "str", "required": False, "default": "toe_layer", "allowed_values": ["toe_layer", "average_3b"], "description": "Nordlund toe: the phi near the toe. 'toe_layer' (the toe layer's toe_friction_angle or friction_angle) or 'average_3b' (averaged over the cohesionless soil from the toe to 3b below, GEC-12 Step 7c's zone)."},
+    "extend_last_layer": {"type": "bool", "required": False, "default": False, "description": "A pile toe (head_depth + pile_length) below the soil profile. false (default): the run is refused, naming the depth the layers do not cover, because the toe would bear in soil nobody explored (GEC-12 Vol I Sec. 4.2.3.2: explorations reach at least 20 ft below the expected toe). true: the last layer is taken to go on to the toe, with side resistance and toe resistance in it; the result says so in its warnings and choices. Better: give layers down to the toe."},
 }
 
 _LAYERS_DOC = ("Array of soil-layer dicts (measured from the GROUND SURFACE): {thickness (m), soil_type, unit_weight (kN/m3), friction_angle (deg, for cohesionless), cohesion (kPa, for cohesive), toe_friction_angle (deg, OPTIONAL: separate end-bearing phi if the pile tip is in this layer; defaults to friction_angle), delta_phi_ratio (OPTIONAL Nordlund delta/phi; default from GEC-12 Fig. 7-9 by pile type and displaced volume), beta and Nt (OPTIONAL, beta method: the layer's beta and toe Nt from local experience, GEC-12 Steps 2a/5a), fig_7_18_case (OPTIONAL, a cohesive layer: "
@@ -380,13 +397,13 @@ METHOD_INFO = {
             "layers": {"type": "array", "required": True, "description": _LAYERS_DOC},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
             "head_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the pile head below the ground surface (m). Default 0 = head at the ground surface (see axial_pile_capacity)."},
-            "pile_length": {"type": "float", "required": False, "description": "Reference pile length (m). Defaults to total soil thickness."},
+            "pile_length": {"type": "float", "required": False, "description": "Reference pile length (m), the longest trial length when depth_max is not given. Defaults to the soil profile's depth below the pile head."},
             "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "Capacity method (see axial_pile_capacity)."},
             "depth_min": {"type": "float", "required": False, "default": 3.0, "description": "Min depth (m)."},
             "depth_max": {"type": "float", "required": False, "description": "Max depth (m)."},
             "n_points": {"type": "int", "required": False, "default": 20, "description": "Points on the curve."},
         },
-        "returns": {"capacity_vs_depth": "List of {depth, Q_ult, Q_skin, Q_tip} dicts.", "choices": "What the run at the deepest point chose and how (as axial_pile_capacity's choices)."},
+        "returns": {"capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN} dicts, with Q_factored_kN where GEC-12 Table 7-1 gives the factors and warnings where that length's run had any.", "skipped_depths": "Only when the analysis refused some trial lengths: {depth_m, reason} for each, left out of the curve. With every length refused the call is refused.", "warning": "Only with skipped_depths: one sentence naming them. Tell the user.", "choices": "What the run at the deepest point chose and how (as axial_pile_capacity's choices)."},
     },
     "make_pile_section": {
         "category": "Axial Pile",
@@ -435,6 +452,8 @@ _APPLIES_WHEN = {
     "open_pipe_toe_limit": False,
     "adhesion_chart": False,
     "toe_phi_zone": False,
+    # only a toe below the profile reads it, and its default refuses that
+    "extend_last_layer": False,
 }
 declare_applies_when(METHOD_INFO, {
     "axial_pile_capacity": {
@@ -469,9 +488,9 @@ declare_when_absent(METHOD_INFO, {
     "capacity_vs_depth": {
         "gwt_depth": _NO_WATER, "displaced_volume": _DISPLACED,
         "shrink_swell_depth": _NO_SHRINK_SWELL,
-        "pile_length": ("the total soil thickness",
+        "pile_length": ("the soil profile's depth below the pile head",
                         "the reference pile length is the depth of the "
-                        "soil profile given")},
+                        "soil profile given, less head_depth")},
     "make_pile_section": {"E": _E},
 })
 # The modulus was taken and not used by the capacity methods (GM-184);

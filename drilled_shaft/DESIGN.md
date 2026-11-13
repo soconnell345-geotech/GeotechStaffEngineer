@@ -329,3 +329,23 @@ Layer 3 sand beta = 0.41 (RSN 470.7 kips) and Layer 4 clay alpha = 0.47
 - Chen & Kulhawy (1993) — UU/UC -> CIUC strength transforms (Eq 10-16/10-17)
 - Mayne & Kulhawy (1982) — Ko = (1 - sin phi')*OCR^(sin phi')
 - Mayne (2007) — sigma'p correlation to N60
+
+## A shaft longer than the soil profile (GM-318)
+
+GEC-10 takes the base resistance from the ground at and to 2B below the
+base (Eq. 10-14, p. 10-15; Eq. 10-19, p. 10-19), and no held manual prints
+carrying the last explored layer on below the profile. So a shaft longer
+than the profile is refused, naming the depth the layers do not cover.
+
+`extend_last_layer=True` is the one input that runs it: the last layer is
+taken to go on to the base (side and base resistance in it, the same
+numbers as a profile given to the base). `DrillShaftResult.warnings` (new;
+`warnings` in `to_dict()` when not empty) and the choice "soil below the
+profile" say so. Before GM-318 the run went ahead with only a Python
+warning: no side resistance below the profile and the base in the last
+layer.
+
+A base at the profile's bottom is accepted; the 2B zone below it is then
+"the mean over what the profile gives", as the base choices already say.
+`capacity_vs_depth` lists a trial length past the profile among its skipped
+depths.

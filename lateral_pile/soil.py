@@ -109,7 +109,8 @@ def get_layer_at_depth(layers: list, z: float) -> 'SoilLayer':
     )
 
 
-def validate_layers(layers: list, pile_length: float) -> None:
+def validate_layers(layers: list, pile_length: float,
+                    extend_last_layer: bool = False) -> None:
     """Validate that soil layers are consistent and cover the pile length.
 
     Parameters
@@ -118,11 +119,18 @@ def validate_layers(layers: list, pile_length: float) -> None:
         Soil layer definitions.
     pile_length : float
         Embedded pile length (m).
+    extend_last_layer : bool, optional
+        True accepts layers that stop above the pile toe; the caller then
+        carries the last layer on to the toe (``LateralPileAnalysis``).
+        Default False: refused (GM-318).
 
     Raises
     ------
     ValueError
-        If layers overlap, have gaps, or don't cover pile length.
+        If layers overlap, have gaps, start below the ground surface, or
+        stop above the pile toe (unless ``extend_last_layer``). Before
+        GM-318 the last two only raised a Python warning and the run went
+        on with no soil resistance there.
     """
     if not layers:
         raise ValueError("At least one soil layer must be defined")
@@ -149,14 +157,24 @@ def validate_layers(layers: list, pile_length: float) -> None:
     top_depth = sorted_layers[0].top
     bottom_depth = sorted_layers[-1].bottom
 
-    if top_depth > 0:
-        warnings.warn(
-            f"Soil layers start at {top_depth} m, not at ground surface (0 m). "
-            f"No soil resistance will be applied above {top_depth} m."
-        )
+    tol = 1e-9 * max(pile_length, 1.0)
+    if top_depth > tol:
+        raise ValueError(
+            f"The soil layers start at {top_depth:g} m, not at the ground "
+            f"surface (0 m): no p-y curve is given for the pile from 0 to "
+            f"{top_depth:g} m, and the run would give it no soil "
+            f"resistance without saying so. Give layers from the ground "
+            f"surface (depths are measured from it). For a pile length "
+            f"standing free above the ground give stickup; for soil that "
+            f"is gone (scour, an excavation) measure depths from the new "
+            f"ground surface and add the lost length to stickup.")
 
-    if bottom_depth < pile_length:
-        warnings.warn(
-            f"Soil layers extend to {bottom_depth} m but pile length is {pile_length} m. "
-            f"No soil resistance will be applied below {bottom_depth} m."
-        )
+    if bottom_depth < pile_length - tol and not extend_last_layer:
+        raise ValueError(
+            f"The soil layers stop at {bottom_depth:g} m and the pile toe "
+            f"is at {pile_length:g} m: no p-y curve is given for the pile "
+            f"from {bottom_depth:g} m to the toe, in soil nobody explored, "
+            f"and the run would give it no soil resistance without saying "
+            f"so. Give layers down to the toe, or set "
+            f"extend_last_layer=true to take the last layer as going on to "
+            f"the toe; the result then says so.")

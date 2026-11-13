@@ -25,7 +25,7 @@ _RATIONAL_PARAMS = ("beta_method", "alpha_method", "su_test_type", "pa",
                     "bottom_exclusion", "clay_base_method",
                     "rock_base_method", "rock_base_conditions_met",
                     "large_base_reduction", "rock_side_method",
-                    "rock_joints")
+                    "rock_joints", "extend_last_layer")
 # 'length' is a common guess for the shaft length.
 _SHAFT_ALIASES = {"length": "shaft_length", "pile_length": "shaft_length"}
 
@@ -220,6 +220,7 @@ _INFO_RATIONAL = {
     "rock_side_C": {"type": "float", "required": False, "default": 1.0, "description": "C in the rock side resistance f_s = C*pa*sqrt(qu/pa) (GEC-10 Eq. 10-21, p. 10-20). Default 1.0, 'recommended for design of \"normal\" rock sockets' (pp. 10-20, 10-21; Example 10-4): conventional equipment, nominally clean sidewalls, no caving, no smearing. 0.65 = the value of Eq. 10-22 with alpha_E = 1.0 (rock_side_method 'caving' takes alpha_E from Table 10-3 by RQD). 1.9 for roughened sockets, verified by load tests or local experience (p. 10-22). For rock_side_method 'normal'; refused with 'caving', which takes no C. Needs a rock layer."},
     "rock_side_method": {"type": "str", "required": False, "default": "normal", "allowed_values": ["normal", "caving"], "description": "Rock side resistance. 'normal' (default) = GEC-10 Eq. 10-21, f_s = C*pa*sqrt(qu/pa) with rock_side_C, for a 'normal' socket: conventional equipment, nominally clean sidewalls (pp. 10-20, 10-21). 'caving' = Eq. 10-22 (O'Neill and Reese 1999), f_s = 0.65*alpha_E*pa*sqrt(qu/pa), alpha_E from Table 10-3 (p. 10-21) by each rock layer's RQD and rock_joints (closed joints 1.00, 0.85, 0.60, 0.50, 0.45; open or gouge-filled 0.85, 0.55, 0.55, 0.50, 0.45 at RQD 100, 70, 50, 30, 20 %; linear between the rows, held at 0.45 below RQD 20), for highly fractured or weathered rock that cannot be drilled without artificial support (casing, plug-ahead) or where caving is anticipated. Needs a rock layer."},
     "rock_joints": {"type": "str", "required": False, "default": "closed", "allowed_values": ["closed", "open"], "description": "For rock_side_method 'caving': the joint condition of GEC-10 Table 10-3, 'closed' (default) or 'open' (open or gouge-filled joints), from the cores."},
+    "extend_last_layer": {"type": "bool", "required": False, "default": False, "description": "A shaft longer than the soil profile. false (default): the run is refused, naming the depth the layers do not cover, because the base would bear in ground nobody explored (GEC-10 takes the base resistance from the ground at and to 2B below the base, Eqs. 10-14 and 10-19). true: the last layer is taken to go on to the base, with side resistance and base resistance in it; the result says so in its warnings and choices. Better: give layers down to the base."},
 }
 _INFO_SHAFT_GEOM = {
     "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter. One diameter for every rock layer: GEC-10 sizes a socket by one diameter B (Eq. 10-3, p. 10-9; Example 10-4) and gives none per rock layer. The rock side resistance and, with the tip in rock, the base (pi/4*B^2, GEC-10 Example 10-4, p. 10-28) take it."},
@@ -316,7 +317,10 @@ _DS_APPLIES = {"su_test_type": {"alpha_method": ["rational"]},
                "rock_base_conditions_met": False,
                "large_base_reduction": False, "bottom_exclusion": False,
                "rock_joints": {"rock_side_method": ["caving"]},
-               "concrete_fc": False}
+               "concrete_fc": False,
+               # only a shaft longer than the profile reads it, and its
+               # default refuses that
+               "extend_last_layer": False}
 # The side resistance settings by soil (sand, clay, rock socket) apply by
 # the layers, which no other parameter says: listed where the run's
 # choices report them (capacity_vs_depth gives no choices, so keeps them).

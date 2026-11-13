@@ -131,7 +131,7 @@ _ANALYSIS_VALID_PARAMS = (
     "pile_type", "pile_diameter", "pile_length", "pile_E", "pile_thickness",
     "moment_of_inertia", "designation", "axis", "fc", "layers",
     "Vt", "Mt", "Q", "head_condition", "n_elements", "tolerance",
-    "max_iterations", "stickup", "free_length",
+    "max_iterations", "stickup", "free_length", "extend_last_layer",
 )
 
 
@@ -147,7 +147,9 @@ def run_lateral_pile_analysis(params, *, method="lateral_pile_analysis"):
         require_keys(l, ["top", "bottom", "model"], method=method)
     layers = [SoilLayer(top=l["top"], bottom=l["bottom"], py_model=_build_py_model(l),
                          description=l.get("description")) for l in params["layers"]]
-    analysis = LateralPileAnalysis(pile, layers)
+    analysis = LateralPileAnalysis(
+        pile, layers,
+        extend_last_layer=params.get("extend_last_layer", False))
     # 'free_length' is a common name for the above-ground stickup.
     stickup = params.get("stickup", params.get("free_length", 0.0))
     result = analysis.solve(
@@ -244,17 +246,18 @@ METHOD_INFO = {
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g. 'HP360x132') — required for pile_type 'h_pile'."},
             "axis": {"type": "str", "required": False, "default": "strong", "allowed_values": ["strong", "weak"], "description": "Bending axis — pile_type 'h_pile' only."},
             "fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa) — pile_type 'filled_pipe' only."},
-            "layers": {"type": "array", "required": True, "description": "Array of {top, bottom, model, ...model params}. Required model params: SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50} with ks for loading='static' or kc for 'cyclic' (kN/m3, the k of the initial line p = (k x) y; Reese, Cox & Koop, COM624P Table 3.2 / GEC 9 Table A-1: ks 135,700 / 271,400 / 542,900 and kc 54,300 / 108,600 / 217,200 for an average c to five diameters of 48-96 / 96-192 / 192-383 kPa); StiffClayBelowWT is Reese et al. (1975), stiff clay with free water: GEC 9 p. 219 keeps it for stiff clay exposed to free water at or near the ground surface, and with the groundwater at depth prefers StiffClayAboveWT (Welch & Reese) even below the water table, gamma then submerged; it does not say how near is near, so which of the two a stiff clay below the water table takes is the engineer's call: state it and why, or ask; SoftClayJeanjean {su, gamma, Gmax} (not checked against a print: neither Jeanjean 2009 nor API RP 2GEO is in the reference library; GEC 9's soft clay criterion is SoftClayMatlock); SandReese/SandAPI {phi, gamma, k} where k (kN/m3) is the k of the initial line p = (k z) y: for SandReese GEC 9 Table A-3 gives it by relative density only, loose / medium / dense 5,429 / 16,287 / 33,931 submerged and 6,786 / 24,430 / 61,076 above the water (20 / 60 / 125 and 25 / 90 / 225 lb/in3); for SandAPI API RP 2A Fig. 6.8.7-1 by phi', e.g. phi' 30 / 35 / 40: 9,260 / 22,260 / 42,510 below the water table and 12,650 / 36,970 / 75,270 above; WeakRock {qu, Er}. SandReese also takes optional construction='reese1974' (default: GEC 9 App. A.4's four-segment curve, linear -> parabola -> straight line -> p_u, A and B from Figs. A-10 and A-11) | 'simplified' (the module's own three-part curve, which no held page prints). StiffClayAboveWT with loading='cyclic' also needs n_cycles, N, the number of times the design lateral load is applied (>= 1; the references give no number to assume; Welch & Reese, COM624P Eq. 3.29, y_c = y_s + y50 C log N, so y50 times 1 + 0.6 log10 N). WeakRock (Reese 1997, FHWA GEC 9 App. A.5) also takes optional RQD (%, default 100: alpha_r = 1/3, the printed lower bound; alpha_r rises linearly to 1.0 at RQD 0), krm (default 0.0005, the softer end of 0.00005-0.0005) and rock_top (depth of the rock surface, m; default the top of the weak-rock layers that hold the layer); its gamma_r is accepted and not used (the criterion does not use the unit weight)."},
+            "layers": {"type": "array", "required": True, "description": "Array of {top, bottom, model, ...model params}, depths in m from the ground surface; the layers start at 0 and reach the pile toe, or the run is refused (extend_last_layer). Required model params: SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50} with ks for loading='static' or kc for 'cyclic' (kN/m3, the k of the initial line p = (k x) y; Reese, Cox & Koop, COM624P Table 3.2 / GEC 9 Table A-1: ks 135,700 / 271,400 / 542,900 and kc 54,300 / 108,600 / 217,200 for an average c to five diameters of 48-96 / 96-192 / 192-383 kPa); StiffClayBelowWT is Reese et al. (1975), stiff clay with free water: GEC 9 p. 219 keeps it for stiff clay exposed to free water at or near the ground surface, and with the groundwater at depth prefers StiffClayAboveWT (Welch & Reese) even below the water table, gamma then submerged; it does not say how near is near, so which of the two a stiff clay below the water table takes is the engineer's call: state it and why, or ask; SoftClayJeanjean {su, gamma, Gmax} (not checked against a print: neither Jeanjean 2009 nor API RP 2GEO is in the reference library; GEC 9's soft clay criterion is SoftClayMatlock); SandReese/SandAPI {phi, gamma, k} where k (kN/m3) is the k of the initial line p = (k z) y: for SandReese GEC 9 Table A-3 gives it by relative density only, loose / medium / dense 5,429 / 16,287 / 33,931 submerged and 6,786 / 24,430 / 61,076 above the water (20 / 60 / 125 and 25 / 90 / 225 lb/in3); for SandAPI API RP 2A Fig. 6.8.7-1 by phi', e.g. phi' 30 / 35 / 40: 9,260 / 22,260 / 42,510 below the water table and 12,650 / 36,970 / 75,270 above; WeakRock {qu, Er}. SandReese also takes optional construction='reese1974' (default: GEC 9 App. A.4's four-segment curve, linear -> parabola -> straight line -> p_u, A and B from Figs. A-10 and A-11) | 'simplified' (the module's own three-part curve, which no held page prints). StiffClayAboveWT with loading='cyclic' also needs n_cycles, N, the number of times the design lateral load is applied (>= 1; the references give no number to assume; Welch & Reese, COM624P Eq. 3.29, y_c = y_s + y50 C log N, so y50 times 1 + 0.6 log10 N). WeakRock (Reese 1997, FHWA GEC 9 App. A.5) also takes optional RQD (%, default 100: alpha_r = 1/3, the printed lower bound; alpha_r rises linearly to 1.0 at RQD 0), krm (default 0.0005, the softer end of 0.00005-0.0005) and rock_top (depth of the rock surface, m; default the top of the weak-rock layers that hold the layer); its gamma_r is accepted and not used (the criterion does not use the unit weight)."},
             "Vt": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load at pile top (kN)."},
             "Mt": {"type": "float", "required": False, "default": 0.0, "description": "Moment at pile top (kN-m)."},
             "head_condition": {"type": "str", "required": False, "default": "free", "allowed_values": ["free", "fixed"], "description": "Pile head condition."},
             "Q": {"type": "float", "required": False, "default": 0.0, "description": "Axial load at pile top (kN), for P-delta."},
             "stickup": {"type": "float", "required": False, "default": 0.0, "description": "Above-ground free length (m): head loads/BCs act at the top of the stickup; no soil resistance over it. pile_length stays the EMBEDDED length. Alias: free_length."},
+            "extend_last_layer": {"type": "bool", "required": False, "default": False, "description": "Layers that stop above the pile toe. false (default): the run is refused, naming the depth not covered (layers that start below the ground surface are always refused: give them from 0, with stickup for a free length). true: the last layer's p-y model is taken to go on to the toe; the result says so in its warnings and choices. Better: give layers down to the toe."},
             "n_elements": {"type": "int", "required": False, "default": 100, "description": "Finite-difference elements along the pile."},
             "tolerance": {"type": "float", "required": False, "default": 1e-5, "description": "Convergence tolerance on deflection (m)."},
             "max_iterations": {"type": "int", "required": False, "default": 500, "description": "Most p-y iterations. If they run out, a push of the pile head decides: when the soil cannot resist the load the call fails with 'No solution: the soil cannot resist this load' and the most the pile and soil carry; otherwise the result says converged false with a message (raise max_iterations)."},
         },
-        "returns": {"max_deflection_m": "Maximum deflection (m).", "y_top_m": "Deflection at loaded head (m).", "max_moment_kNm": "Maximum bending moment.", "max_moment_depth_m": "Depth of max moment (m).", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
+        "returns": {"max_deflection_m": "Maximum deflection (m).", "y_top_m": "Deflection at loaded head (m).", "max_moment_kNm": "Maximum bending moment.", "max_moment_depth_m": "Depth of max moment (m).", "warnings": "Only when there is something the user must be told: the last layer carried on to the toe (extend_last_layer). Tell the user.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "get_py_curve": {
         "category": "Lateral Pile",
@@ -320,6 +323,9 @@ declare_applies_when(METHOD_INFO, {
     "lateral_pile_analysis": {
         "axis": {"pile_type": ["h_pile"]},
         "fc": {"pile_type": ["filled_pipe"]},
+        # only layers that stop above the toe read it, and its default
+        # refuses them
+        "extend_last_layer": False,
     },
     # since GM-184 the bars to the sections that take them: a ring to a
     # casing or a circular section, layers to a rectangular one; a bar

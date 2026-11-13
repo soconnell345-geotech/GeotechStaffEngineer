@@ -115,6 +115,16 @@ _UNPRINTED_BETA = "from_phi"
 _TOE_PHI_ZONES = ("toe_layer", "average_3b")
 
 
+def skipped_depths_note(skipped, n_points: int) -> str:
+    """The trial lengths a capacity-vs-depth curve left out, with the
+    reason each was refused (GM-318)."""
+    shown = "; ".join(f"{m['depth_m']:g} m ({m['reason']})"
+                      for m in skipped[:3])
+    more = (f"; and {len(skipped) - 3} more" if len(skipped) > 3 else "")
+    return (f"The analysis refused {len(skipped)} of the {n_points} trial "
+            f"pile lengths, which the curve leaves out: {shown}{more}.")
+
+
 class JudgmentNeeded(ValueError):
     """A step of the manual leaves a call to the engineer, the run needs
     it and no input gives it: the analysis is refused, saying which call
@@ -246,6 +256,17 @@ class AxialPileAnalysis:
         friction_angle) or "average_3b" (the thickness-weighted average of
         the cohesionless layers' toe phi from the toe to 3b below, the zone
         of Step 7c).
+    extend_last_layer : bool, optional
+        What to do with a pile toe below the soil profile (GM-318). False
+        (default): the run is refused, naming the depth not covered; no
+        held manual prints carrying the last layer on, and GEC-12 Vol I
+        Sec. 4.2.3.2 (p. 87) has explorations reach at least 20 ft below
+        the expected toe. True: the last layer is taken to go on to the
+        toe (side resistance and toe in it), and the result says so in its
+        warnings and choices.
+    profile_depth_given : float or None, optional
+        Set by the analysis, not by a caller: the depth (m) the given layers
+        reached before ``extend_last_layer`` carried the last one on.
 
     Notes
     -----
@@ -293,6 +314,8 @@ class AxialPileAnalysis:
     shrink_swell_depth: Optional[float] = None
     beta_coefficients: str = "table_7_9"
     toe_phi_zone: str = "toe_layer"
+    extend_last_layer: bool = False
+    profile_depth_given: Optional[float] = None
 
     def __post_init__(self):
         if self.pile is None:
@@ -338,12 +361,49 @@ class AxialPileAnalysis:
         if self.uplift_skin_fraction < 0:
             raise ValueError("uplift_skin_fraction must be >= 0, got "
                              f"{self.uplift_skin_fraction}")
-        if self.head_depth + self.pile_length > self.soil.total_thickness:
-            warnings.warn(
-                f"Pile tip (head_depth {self.head_depth}m + pile_length "
-                f"{self.pile_length}m) exceeds soil profile "
-                f"({self.soil.total_thickness}m); using full profile depth"
-            )
+        self._cover_the_toe()
+
+    def _cover_the_toe(self) -> None:
+        """Refuse a toe below the soil profile, or with
+        ``extend_last_layer`` carry the last layer on to it (GM-318)."""
+        given = (self.profile_depth_given
+                 if self.profile_depth_given is not None
+                 else self.soil.total_thickness)
+        tip = self._tip_depth
+        if tip <= given + 1e-9:
+            return
+        if not self.extend_last_layer:
+            raise ValueError(
+                f"The soil profile ends at {given:g} m below the ground "
+                f"surface and the pile toe is at {tip:g} m (head_depth "
+                f"{self.head_depth:g} m + pile_length {self.pile_length:g} "
+                f"m): the soil from {given:g} m to the toe and below it is "
+                f"not in the profile, so the toe resistance would be end "
+                f"bearing in soil nobody explored (GEC-12 Vol I Sec. "
+                f"4.2.3.2, p. 87: explorations should reach at least 20 ft "
+                f"below the expected pile toe). Give layers down to the "
+                f"toe, or set extend_last_layer=true to take the last "
+                f"layer as going on to the toe; the result then says so.")
+        self.profile_depth_given = given
+        short = tip - self.soil.total_thickness
+        if short > 0:
+            layers = list(self.soil.layers)
+            layers[-1] = replace(layers[-1],
+                                 thickness=layers[-1].thickness + short)
+            self.soil = replace(self.soil, layers=layers)
+
+    def _extension_note(self) -> Optional[str]:
+        """The warning of a run on an extended last layer, or None."""
+        given = self.profile_depth_given
+        tip = self._tip_depth
+        if given is None or tip <= given + 1e-9:
+            return None
+        return (f"The soil profile ends at {given:g} m and the pile toe is "
+                f"at {tip:g} m: the last layer was taken to go on to the "
+                f"toe (extend_last_layer). The side resistance from "
+                f"{given:g} m to {tip:g} m and the whole toe resistance are "
+                f"in soil nobody explored; confirm the ground there before "
+                f"relying on this capacity.")
 
     def _check_layer_alpha_inputs(self) -> None:
         """A layer's site-specific adhesion and highly overconsolidated flag
@@ -570,6 +630,9 @@ class AxialPileAnalysis:
             open_pipe_info["Qs_inside"] if plug_case == "unplugged" else 0.0,
             Qs_outside)
 
+        extended = self._extension_note()
+        if extended:
+            notes.insert(0, extended)
         return AxialPileResult(
             Q_ultimate=Q_ultimate,
             Q_skin=total_Qs,
@@ -892,6 +955,20 @@ class AxialPileAnalysis:
         from geotech_common.choices import MODULE, choice, how_given
         # Citations are to the printed GEC-12 (FHWA-NHI-16-009, 2016).
         out = []
+        if self._extension_note():
+            out.append(choice(
+                "soil below the profile",
+                f"last layer taken to go on from {self.profile_depth_given:g}"
+                f" m to the toe at {self._tip_depth:g} m",
+                how_given(self.extend_last_layer, False,
+                          name="extend_last_layer"),
+                "extend_last_layer: the side resistance below the profile "
+                "and the toe resistance are in soil that was not explored "
+                "(GEC-12 Vol I Sec. 4.2.3.2, p. 87: explorations should "
+                "reach at least 20 ft below the expected pile toe); no held "
+                "manual prints this extension",
+                ["layers given down to the toe (the default refuses a toe "
+                 "below the profile)"]))
         beta = self.method == "beta"
         # the beta method as the call named it, or as a calc package's call
         # says it is assumed (GM-180)
@@ -1969,7 +2046,8 @@ class AxialPileAnalysis:
 
     def capacity_vs_depth(self, depth_min: float = 3.0,
                           depth_max: Optional[float] = None,
-                          n_points: int = 20) -> List[dict]:
+                          n_points: int = 20,
+                          skipped: Optional[list] = None) -> List[dict]:
         """Compute capacity at multiple pile lengths for optimization.
 
         Parameters
@@ -1977,9 +2055,15 @@ class AxialPileAnalysis:
         depth_min : float, optional
             Minimum pile length to evaluate (m). Default 3.0.
         depth_max : float, optional
-            Maximum pile length. Default: soil profile depth.
+            Maximum pile length. Default: pile_length, or the soil
+            profile's depth below the pile head if less.
         n_points : int, optional
             Number of evaluation points. Default 20.
+        skipped : list, optional
+            Receives a ``{'depth_m', 'reason'}`` dict for each trial length
+            the analysis refused, which the curve leaves out (GM-318: they
+            were dropped without a word). Not given, a warning names them.
+            With every length refused the call is refused.
 
         Returns
         -------
@@ -1990,12 +2074,14 @@ class AxialPileAnalysis:
             Vol 3 Fig. D-54).
         """
         if depth_max is None:
-            depth_max = min(self.pile_length, self.soil.total_thickness)
+            depth_max = min(self.pile_length,
+                            self.soil.total_thickness - self.head_depth)
 
         depths = np.linspace(depth_min, depth_max, n_points)
         results = []
         # the deepest refusal names every layer down to it (GM-229)
         wanted: Optional[JudgmentNeeded] = None
+        missed = []
 
         # Use a copy per trial depth rather than temporarily mutating
         # self.pile_length (re-entrant / thread-safe).
@@ -2014,8 +2100,18 @@ class AxialPileAnalysis:
                 })
             except JudgmentNeeded as e:
                 wanted = e
-            except Exception:
-                pass
+            except Exception as exc:
+                # a length the analysis refused is named, not dropped
+                # without a word (GM-318, as drilled_shaft's GM-203)
+                missed.append({"depth_m": round(float(d), 2),
+                               "reason": f"{type(exc).__name__}: {exc}"})
         if wanted is not None:
             raise wanted
+        if missed and not results:
+            raise ValueError(skipped_depths_note(missed, len(depths)))
+        if missed:
+            if skipped is not None:
+                skipped.extend(missed)
+            else:
+                warnings.warn(skipped_depths_note(missed, len(depths)))
         return results
