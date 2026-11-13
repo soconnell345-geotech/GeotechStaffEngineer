@@ -224,7 +224,8 @@ dropped count, 2-point fit, unfitted group, the plot's `skipped`),
 `test_formats_gef.py` (`TestMissingReadingsInAResult`, `TestCPTVoidReadings`
 on the new made-up fixture `sample_cpt_void.gef`),
 `liquepy_agent/tests/test_liquepy_agent.py` (two refusals),
-`dxf_import/tests/test_units_and_defaults.py` (27 tests: the five units
+`dxf_import/tests/test_units_and_defaults.py` (23 tests as built; the
+review round in section 8 adds 9, so 32: the five units
 cases, annotations, the nail layer, the slope and FEM refusals and lists, the
 nail constant held to the function, the agent tool).
 
@@ -304,3 +305,46 @@ values gets a refusal that names the input to give.
 - `funhouse_agent/tests/test_defaults_used.py::test_every_default_a_run_lists_changes_its_result[profile_figure|plot_data]`
   fails on master in this environment too (logx, logy "changed nothing");
   not this branch's.
+
+## 8. Review round (2026-11-13)
+
+An independent review found B1 to B4 and C1 to C6; the lead ruled on each.
+C4 (pygef fallback by signature) and C6 (scope, no change) are not this
+round. Branch `fix/gm326-review`.
+
+**Master merged first** (merge commit d7e9775). One conflict:
+`docs/user_manual/manual.html` (generated), taken from the rebuild;
+`check_manual.py` exit 0 (only the old soe line with `* D_embed` still
+differs from a rebuild, as before). The merge alone broke nothing in the
+test loop below.
+
+| Finding | Before | After |
+|---|---|---|
+| B1 units from the header alone | Used with no warning; a drawing in feet under an inch header (`in1_coords_ft.dxf`) came out 12 times too small, said only in `units_source`. | Same numbers, plus a warning: "units was left out, so the drawing's header decided them: $INSUNITS = 1, inches. Read in those units, the section is W m wide and H m high. A header left at a template's value is common (...): check that size against the drawing and give units to confirm or correct it." `parse_geometry`'s `units` text says the same. geo_project's DXF ingest carries it as an `ingest.warning` assumption. |
+| B2 phi 0, cohesion left out | c (FEM) or c_prime (slope) 0 stood in and was listed: a layer with no strength. | Refused: "soil_properties[Clay] has phi 0 and no c_prime, so it would have no strength: give c_prime, or analysis_mode='undrained' with cu for an undrained clay" (FEM: "give c (cu for an undrained clay)"). c 0 given with phi 0 runs, with the warning "has phi 0 and c_prime 0 as given: the layer has no strength". pdf_import's two build tools share `soil_assignments`, so they do the same; their soil_properties text now says so too. |
+| B3 US survey units | $INSUNITS 21 refused with units left out and again with 'ft', whose message advised the refused call. | 21 and 22 converted (1200/3937 m and 100/3937 m; `units_used` 'us_survey_ft' / 'us_survey_in'); 'ft' or 'in' agrees with them and `units_source` says the survey unit was read, 2 ppm from the international one. Another unit against 21 is refused, and its advice (leave units out) now runs. 23 and 24 stay refused; both refusals point to units with `ignore_header_units=True`, a call that runs. |
+| B4 handing the slope result on | Text: "the whole result is analyze_slope input"; `defaults_used` refused there. | The result is flat, so the text names the keys to pass (surface_points, soil_layers, gwt_points, nails) and calls defaults_used and warnings a record, not inputs. slope_stability untouched. `test_the_keys_the_text_names_run_in_analyze_slope` hands them on by dispatch and gets a FOS. The slope part was not nested: that would change the output shape the pdf_import tools and existing tests read. |
+| C1 2-point note | "R-squared is 1 by construction", while equal values report 0. | "a line through 2 points has no scatter, so R-squared says nothing about the fit"; values unchanged. |
+| C2 unfitted group | `n_points` the count given, `n_dropped` 0. | `n_points` 0, `n_dropped` the count given, as documented; the "left out of the fit" note is for fitted results only (the "Not fitted" note says why). |
+| C3 unitless refusal | "$INSUNITS is unitless". | "unitless or absent", plus "A hint only: the header's $MEASUREMENT is 0, English (feet or inches); it does not say which unit." when the header has it. |
+| C5 | Section 5 said 27 tests. | 23 as built (corrected above). |
+
+Tests changed by the rulings: `test_statistics.py::test_grouped_trends_flag_the_group`
+(n_points 0, n_dropped 1), `::test_group_by_uscs` (every group has
+n_points + n_dropped > 0, and n_points > 0 when fitted),
+`::test_two_points_say_scatter_is_not_defined` (gains the equal-values
+case). New: nine tests in `TestReviewRound` of
+`dxf_import/tests/test_units_and_defaults.py`.
+
+Checks: the test loop (the branch's own test files against master, plus
+test_probe_warnings, test_allowed_values, test_adapter_ergonomics,
+test_defaults_used -k "dxf or subsurface or geo_project or pdf",
+test_page_fingerprints, test_public_text) all pass; `check_manual.py` exit
+0 with the rebuilt rows copied in. The reviewer's probes, rerun on this
+head: 84 of 116 cases unchanged; the rest are the findings above (B1
+warning, B2 refusals of the phi-only and FEM no-c cases, B3 survey cases,
+C3 wording), master's liquefaction fields (GM-324; WE_liq_spt min_fos 0.435
+to 0.426 comes from master, not this round), and the discover_layers file
+path (the probe was given a relative path).
+
+Calls made: about 45 tool calls.
