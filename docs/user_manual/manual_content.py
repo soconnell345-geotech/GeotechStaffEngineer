@@ -446,6 +446,13 @@ REFERENCE_INFO = {
                   "the <code>read_reference_figure</code> vision tool to render a chart and read a "
                   "value off it where the reference PDFs reach the host (a docs folder or the "
                   "SharePoint fetcher); without them a figure is found and cited, not read."),
+    "table_db": ("Table catalog + printed-page read", "&mdash;",
+                 "A searchable catalog of the printed tables in the references that have a "
+                 "table catalog. Each row says where the table's values are: in a stored "
+                 "section of text, in a lookup function, or only on the printed page. Pairs "
+                 "with the <code>read_reference_table</code> vision tool to read a table "
+                 "that is only on its page where the reference PDFs reach the host; without "
+                 "them the table is found and its printed page cited, not read."),
 }
 
 
