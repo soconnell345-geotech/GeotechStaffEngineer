@@ -45,6 +45,7 @@ from calc_package.data_model import (
     InputItem,
     CheckItem,
     FigureData,
+    SheetData,
     TableData,
 )
 from calc_package.renderer import render_html, save_html, figure_to_base64
@@ -281,6 +282,7 @@ def generate_calc_package(
     table_files: list = None,
     assumed_inputs: list = None,
     given_inputs: list = None,
+    sheets: list = None,
 ) -> str:
     """Generate a Mathcad-style calculation package.
 
@@ -341,6 +343,15 @@ def generate_calc_package(
         (GM-155, GM-167; ``words``: the user's own, when known). Printed
         first, as "Given Inputs"; an empty list says no input was named as
         the user's. ``None``: no such section.
+    sheets : list of SheetData, optional
+        Drawing sheets to end the package with (GM-313), each the PDF
+        page and the PNG of one drawing (``dxf_export.render`` draws
+        them; this package imports nothing of the drawing layer). PDF:
+        each sheet's own vector page is appended after the last page, at
+        the sheet's size, on either PDF leg, and ``render_report`` gains
+        ``"sheets"`` (each one's page number and size). HTML and LaTeX
+        source: a last section "Drawings" shows each PNG. ``None`` or
+        empty: the package is exactly as without this argument.
 
     Returns
     -------
@@ -370,7 +381,12 @@ def generate_calc_package(
         company=company,
         sections=sections,
         references=reg["references"],
+        sheets=list(sheets or []),
     )
+    for sheet in data.sheets:
+        if not isinstance(sheet, SheetData):
+            raise TypeError("sheets: each entry must be a "
+                            "calc_package.SheetData.")
 
     # ── Dispatch by format ──
     if format == "pdf":
