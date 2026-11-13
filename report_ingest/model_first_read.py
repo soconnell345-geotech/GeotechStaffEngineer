@@ -795,6 +795,9 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     again on resume), never "did not get to this page within its model-call
     budget": model first makes one call a group. So a page goes back once,
     and a call that hands back every page it was sent gives no log."""
+    from report_ingest.log_intervals import (apply_interval_additions,
+                                             carried_label_entries,
+                                             log_intervals_enabled)
     from report_ingest.log_reader import (LogReadResult, _Builder,
                                           _depth_slack, _depth_window,
                                           _hole_total, _ruled_windows,
@@ -855,6 +858,13 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
             investigation, extra = apply_log_additions(reading,
                                                        builder.build())
             extra = _entries_on_pages(extra, builder)
+            if log_intervals_enabled():
+                # RI-103: each interval's notes, line kind and stratum
+                # label, onto the layers the builder made (their pages are
+                # the builder's already).
+                investigation, more = apply_interval_additions(
+                    reading, investigation)
+                extra = extra + more
             read_off = _read_off(investigation)
             back = [p for p in back if p not in read_off]
             why = {p: _why_back(p, other, builder.unresolved) for p in back}
@@ -909,6 +919,10 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                 "why": f"{near} joined depth(s) above the ground surface by "
                        f"no more than {SURFACE_TOL_M:g} m were recorded as 0",
                 "flag": "surface_snap"})
+        if log_intervals_enabled():
+            # RI-103: asked of the joined log, as a label printed on one
+            # sheet can run down onto the next.
+            unresolved.extend(carried_label_entries(investigation))
         result = LogReadResult(
             investigation=investigation, changes=changes,
             unresolved=unresolved + skipped, pages=pages,

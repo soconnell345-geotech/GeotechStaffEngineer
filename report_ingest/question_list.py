@@ -1200,8 +1200,12 @@ def _soft(src: _Source, q: Question) -> Answer:
     holes: List[str] = []
     pages: List[int] = []
     for inv in _logs(src):
+        # An interval's written changes (RI-103, "soft below 12 ft": set
+        # only under GEOTECH_INGEST_LOG_INTERVALS) describe it too.
         layers = [lay for lay in inv.layers
-                  if _RE_SOFT.search(f"{lay.consistency} {lay.description}")]
+                  if _RE_SOFT.search(" ".join(
+                      [f"{lay.consistency} {lay.description}"]
+                      + [note.text for note in lay.notes]))]
         if layers:
             holes.append(inv.investigation_id or "a log with no id")
             pages.extend(lay.prov.page + 1 if lay.prov else
