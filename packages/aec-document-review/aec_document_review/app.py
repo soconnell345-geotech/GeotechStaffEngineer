@@ -615,8 +615,9 @@ _STORAGE_POLL_S = 2.0
 
 def _storage_busy(store, thread_id) -> bool:
     """True while the Foundry dataset's first check, or a save of this
-    conversation, runs in the background. Never on SharePoint, which saves
-    within the turn."""
+    conversation, runs in the background: on Foundry, and on SharePoint by
+    the Tiny Apps route, which saves after the turn (TA-40). The Funhouse
+    SDK's SharePoint saves within the turn, so never there."""
     try:
         check = getattr(store, "check_state", None)
         state = getattr(store, "save_state", None)
@@ -708,8 +709,8 @@ def _storage_status(store, thread_id, drawn: Optional[float] = None) -> None:
 
 def _storage_panel(store, thread_id) -> None:
     """:func:`_storage_status`, as a fragment that looks again every
-    :data:`_STORAGE_POLL_S` while something runs in the background (Foundry
-    only, in practice); drawn once otherwise."""
+    :data:`_STORAGE_POLL_S` while something runs in the background (Foundry,
+    and SharePoint by the Tiny Apps route, TA-40); drawn once otherwise."""
     try:
         store.not_kept_reason()      # starts the dataset's first check
     except Exception:                                  # noqa: BLE001
@@ -1325,8 +1326,15 @@ with st.sidebar:
         # the first check or a save runs in the background (INF-65).
         _storage_panel(_sp, ss.thread_id)
         if st.button("Sync now", key=f"spsync_{ss.thread_id}"):
-            with st.spinner(f"Saving to {_sp_label}…"):
-                ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
+            # Where saves run in the background (Foundry, and SharePoint by
+            # the Tiny Apps route, TA-40) the sync is queued like a turn's
+            # save and the status lines above follow it; a large first
+            # mirror no longer holds the page under the spinner.
+            if getattr(_sp, "background", False) is True:
+                sharepoint_store.save_after_change(_sp, ss.thread_id)
+            else:
+                with st.spinner(f"Saving to {_sp_label}…"):
+                    ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
             # the list of past conversations is read again when next shown
             ss.pop(sharepoint_store.listing_cache_key(**_sp_where), None)
             st.rerun()
@@ -1383,9 +1391,13 @@ with st.sidebar:
             _q = _rq.strip().lower()
             _hits = [r for r in _remote
                      if not _q or _q in r["name"].lower()]
-            if _sp_listed and not _remote:
-                st.caption(f"Nothing mirrored yet (or {_sp_label} could not "
-                           "be listed — Connection diagnostics shows why).")
+            # A listing that failed says why (TA-40: it read as "nothing
+            # mirrored yet"); the store's RemoteListing carries the reason.
+            _sp_list_error = getattr(ss.get(_sp_list_key), "error", None)
+            if _sp_list_error:
+                st.warning(f"{_sp_list_error} Refresh to try again.")
+            elif _sp_listed and not _remote:
+                st.caption("Nothing mirrored yet.")
             elif _remote:
                 st.caption(f"{len(_hits)} of {len(_remote)} mirrored "
                            "conversations" + (" match" if _q else ""))
