@@ -28,15 +28,13 @@ Silty Sand 51-60 ft), with the real pinch-outs simplified and the riprap face
 veneer omitted; the exact figure is Rocscience's.
 
 VERDICT (#98): **CONVENTION (search validated; geometry approximate).** With the
-recovered section the search minima are Corps 0.837 and DWW 0.938 — both ~10%
-BELOW the published 0.931 / 1.039, with the correct method ordering (DWW > Corps).
-Being consistently ~10% low across two independent search types (grid + entry-
-exit both land ~0.85 Corps) is a coherent geometry effect (the simplified flat
-layers + omitted riprap make the recovered section marginally weaker/differently
-shaped), NOT a wrapper defect — the wrapper mechanics are exact on the #95/#96
-section above. The E2 stage-3 rigorous-normal option
-(``stage3_effective_normal='gle'``) lifts the DWW minimum to 0.959, toward the
-published 1.039. NOT tuned; the recovered geometry is left as-is.
+recovered section the search minima are Corps 0.836 and DWW 0.951 (0.935
+before GM-140 step 9 put every stage as EM 1110-2-1902 Appendix G prints it),
+10 % and 8.5 % BELOW the published 0.931 / 1.039, with the correct method
+ordering (DWW > Corps). Being low in every procedure and across two search
+types is consistent with the recovered section (flat layers, no riprap
+veneer) and not with the wrapper, whose mechanics are exact on the #95/#96
+section above. NOT tuned; the recovered geometry is left as-is.
 
 See slope_stability/rapid_drawdown.py::search_rapid_drawdown, VALIDATION.md
 (V-041), and validation_examples/INVENTORY.md (#98).
@@ -91,11 +89,11 @@ def _dam_98():
         ])
 
 
-def _search_98(method, stage3="fellenius"):
+def _search_98(method):
     return search_rapid_drawdown(
         _dam_98(), 47 * FT, 15 * FT, method=method, surface_type="circular",
         nx=6, ny=5, x_range=(30 * FT, 140 * FT), y_range=(60 * FT, 150 * FT),
-        n_slices=20, stage3_effective_normal=stage3)
+        n_slices=20)
 
 
 # ── WRAPPER MECHANICS (exact #95/#96 geometry) ──────────────────────────────
@@ -160,22 +158,15 @@ def test_v041_98_corps_2stage_search_minimum():
 
 
 def test_v041_98_duncan_3stage_and_ordering():
-    """#98 DWW 3-stage search minimum = 0.938 vs published 1.039 (~10% low), and
+    """#98 DWW 3-stage search minimum = 0.951 vs published 1.039 (8.5 % low), and
     stays ABOVE the Corps 2-stage minimum (published ordering DWW > Corps)."""
     r_c = _search_98("corps_2stage")
     r_d = _search_98("duncan_3stage")
-    assert r_d.FOS == pytest.approx(0.938, abs=0.03)     # ours (pinned)
+    # GM-140 step 9: 0.935 -> 0.951; printed 1.039 (Slide2 #98; Duncan,
+    # Wright and Wong 1990), -8.5 %, on a recovered section
+    assert r_d.FOS == pytest.approx(0.951, abs=0.03)
     assert r_d.FOS == pytest.approx(1.039, rel=0.15)     # within 15% of published
     assert r_d.FOS > r_c.FOS                             # DWW > Corps (published)
-
-
-def test_v041_98_gle_stage3_lifts_duncan_toward_published():
-    """E1 x E2: the stage-3 rigorous-normal option raises the #98 DWW search
-    minimum from 0.938 (default) to 0.959, toward the published 1.039."""
-    r_def = _search_98("duncan_3stage", stage3="fellenius")
-    r_gle = _search_98("duncan_3stage", stage3="gle")
-    assert r_gle.FOS == pytest.approx(0.959, abs=0.03)   # ours (pinned)
-    assert r_gle.FOS >= r_def.FOS - 1e-6                 # rigorous normal >= default
 
 
 # ── API / robustness ────────────────────────────────────────────────────────

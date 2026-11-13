@@ -167,6 +167,13 @@ class SlopeSoilLayer:
     R_phi: Optional[float] = None   # R-envelope friction angle (deg); None = free-draining
     # Non-horizontal top (GM-140 step 1); last so positional calls keep.
     top_boundary_points: Optional[List[Tuple[float, float]]] = None
+    # Rapid drawdown, the K_c = 1 strength envelope as measured (GM-140
+    # step 9; EM 1110-2-1902 G-3b(1)(a) and (b), pp. G-4 to G-5): tau_ff =
+    # R_d + sigma'_c tan(R_psi). Given in place of R_c and R_phi, from which
+    # Eqs. G-5 and G-6 otherwise derive them. A layer with R_psi set does
+    # not drain freely. Not used by the Corps 1970 procedure.
+    R_d: float = 0.0                # intercept d (kPa)
+    R_psi: Optional[float] = None   # slope angle psi (deg)
 
     def __post_init__(self):
         if (self.bottom_boundary_points is None

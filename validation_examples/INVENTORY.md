@@ -618,6 +618,8 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Notes: PASS — `infinite_slope_fos` gives FOS = tan(30)/0.5 = 1.155.
 
 ## V-037 Slide2 #95 — USACE 2-stage rapid drawdown (EM 1110-2-1902 App. G)
+
+**2026-11-13 (GM-140 step 9):** the values quoted in this entry are those of its day; rapid drawdown now follows EM 1110-2-1902 Appendix G stage by stage. Current values beside print: `RESULTS.md` and `slope_stability/VALIDATION.md` B7.
 - Source: Slide2 Verification #95 (manual pp. 307-308); USACE EM 1110-2-1902 (1970).
 - Target: `slope_stability.rapid_drawdown_fos` (`method='corps_2stage'`).
 - Geometry (feet, Fig 95.1 — EXACT two-segment face, calibrated to the published
@@ -637,6 +639,8 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Confidence in extraction: soil + circle + water + geometry exact.
 
 ## V-038 Slide2 #96 — Duncan-Wright-Wong 3-stage rapid drawdown (same dam)
+
+**2026-11-13 (GM-140 step 9):** the values quoted in this entry are those of its day; rapid drawdown now follows EM 1110-2-1902 Appendix G stage by stage. Current values beside print: `RESULTS.md` and `slope_stability/VALIDATION.md` B7.
 - Source: Slide2 Verification #96 (manual pp. 309-310); Duncan, Wright, Wong (1990).
 - Target: `slope_stability.rapid_drawdown_fos` (`method='duncan_3stage'`).
 - Geometry/inputs: identical to V-037 (only the method differs).
@@ -661,6 +665,8 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   VALIDATION.md §B7 (authoritative) and test_published_v038.
 
 ## V-041 Slide2 #98 (Walter Bouldin Dam, 5-material rapid drawdown) — was DEFERRED, now VALIDATED (geometry-limited)
+
+**2026-11-13 (GM-140 step 9):** the values quoted in this entry are those of its day; rapid drawdown now follows EM 1110-2-1902 Appendix G stage by stage. Current values beside print: `RESULTS.md` and `slope_stability/VALIDATION.md` B7.
 - Source: Slide2 Verification #98 (manual pp. 313-314); Duncan, Wright, Wong (1990).
 - Published answers (SEARCH minima): Corps 2-stage 0.931, Lowe-Karafiath 1.075,
   DWW 3-stage 1.039. Water: initial 47 ft -> drawdown 15 ft.
@@ -890,6 +896,8 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   all unlabeled in Fig 51.1. Cannot recover honestly without the missing parameters.
 
 ## V-052 Slide2 #97 — Pilarcitos Dam rapid-drawdown method ordering (F4)
+
+**2026-11-13 (GM-140 step 9):** the values quoted in this entry are those of its day; rapid drawdown now follows EM 1110-2-1902 Appendix G stage by stage. Current values beside print: `RESULTS.md` and `slope_stability/VALIDATION.md` B7.
 - Source: Slide2 Verification #97 (Tables 97.1/97.2); Duncan, Wright & Wong (1990);
   GEO-SLOPE "Rapid Drawdown – Multi-Stage" Ex 3.
 - Recovered (all published): homogeneous rolled earth-fill γ=135 pcf, effective

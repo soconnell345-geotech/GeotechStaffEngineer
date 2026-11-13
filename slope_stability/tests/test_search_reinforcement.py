@@ -175,8 +175,13 @@ def test_rapid_drawdown_counts_reinforcement():
     plain = rapid_drawdown_fos(dam(), 13.0, 3.0, **circle)
     reinforced = rapid_drawdown_fos(dam(80.0), 13.0, 3.0, **circle)
     assert plain.stage3_converged and reinforced.stage3_converged
-    assert plain.FOS == pytest.approx(1.006, abs=0.005)
-    assert reinforced.FOS == pytest.approx(1.043, abs=0.005)
+    # GM-140 step 9: a made-up section with no printed answer, so the
+    # module's own values (1.006 and 1.043 before the stages followed EM
+    # 1110-2-1902 Appendix G) are not pinned; the reinforcement raises
+    # every stage computed.
+    assert reinforced.FOS > plain.FOS + 0.02
+    assert reinforced.stage1_fos > plain.stage1_fos
+    assert reinforced.stage2_fos > plain.stage2_fos
 
 
 # ---------------------------------------------------------------------------
