@@ -218,6 +218,20 @@ with the toe penetration (§6-5.8.4.3, Fig 6-19). `neutral_plane_basis` starts
 caller who names a method gets that row as the headline, and
 `neutral_plane_basis` starts with its name and source.
 
+**The settlement-compatible plane beside the headline (GM-310, the call for
+OWN-105 of 2026-11-12).** The intersection of the load and resistance curves
+stays the headline (UFC 3-220-20 Sec. 6-7.4 step 3, p. 477). Where the curves
+meet below the depth at which the soil stops settling more than the pile, the
+result's `summary()` gives, under the headline numbers, the plane where the two
+settle equally with its drag load, maximum load and drag force (Sec.
+6-5.8.4.3, p. 449), and `to_dict()` carries the same words as
+`settlement_compatible_beside`; before, that row was only in the comparison
+table. Shaft resistance is mobilised by a few millimetres of relative movement
+and a settlement profile is not known to that precision, so the printed
+conservative step stays the headline and the compatible value is in view for
+the engineer who can defend the settlement profile. No number changes.
+`DowndragResult.settlement_compatible_beside()`.
+
 DD-1 (8 m of clay over dense sand, 0.4 m pile, 15 m, 40 kPa fill, Q_dead 0,
 final stress, the pile's own weight left out), the summary table:
 
