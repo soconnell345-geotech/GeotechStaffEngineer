@@ -303,6 +303,24 @@ def test_reference_docs_unlistable_sharepoint_folder_is_reported(monkeypatch,
     assert c["status"] == diag.FAIL and "could not list" in c["detail"]
 
 
+def test_the_sharepoint_fetcher_promises_only_what_its_folder_lists(
+        monkeypatch):
+    """2026-11-11 reference review, closure f: the fetcher carries the
+    folder's listing, so a chart is promised only where its PDF is there."""
+    from funhouse_agent import reference_docs
+    from webapp import reference_fetch, sharepoint_store
+    monkeypatch.setattr(sharepoint_store, "configured", lambda: True)
+    monkeypatch.setattr(reference_fetch, "available_names",
+                        lambda: {"A Doc.pdf"})
+    saved = reference_docs._FETCHER
+    try:
+        assert reference_fetch.register_if_configured() is True
+        assert reference_docs._fetcher_offers("A Doc.pdf") is True
+        assert reference_docs._fetcher_offers("b.pdf") is False
+    finally:
+        reference_docs.register_fetcher(saved)
+
+
 # ---------------------------------------------------------------------------
 # Optional analysis packages (BACKLOG INF-54): one that is installed but will
 # not import is reported with its import's error, not as "not installed".

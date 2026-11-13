@@ -8,7 +8,7 @@ the logic in geotech-references/agents/dm7_agent.py.
 import inspect
 
 from funhouse_agent.adapters._reference_common import (
-    has_callable_param, extract_method_info, make_wrapper,
+    has_callable_param, extract_method_info, listable, make_wrapper,
     register_semantic_aliases,
 )
 
@@ -119,6 +119,12 @@ def _build():
                 continue
             if has_callable_param(func):
                 continue
+            # the chapter's plot_figure_* functions draw on a matplotlib
+            # Axes and return it: nothing a tool result can carry
+            # (_reference_common.listable); calc_package imports them
+            entry = extract_method_info(func, cat, ref)
+            if not listable(func, entry):
+                continue
 
             if name in registry:
                 # Name collision — prefix both entries with chapter key
@@ -144,8 +150,8 @@ def _build():
             else:
                 qualified = name
 
-            registry[qualified] = make_wrapper(func)
-            info[qualified] = extract_method_info(func, cat, ref)
+            registry[qualified] = make_wrapper(func, ref)
+            info[qualified] = entry
 
     register_semantic_aliases(registry, info)
     return registry, info

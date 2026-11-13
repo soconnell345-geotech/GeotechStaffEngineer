@@ -312,7 +312,7 @@ REFERENCE_INFO = {
             "catalogs."),
     "gec4": ("FHWA GEC-4", "FHWA-IF-99-015, June 1999",
              "Ground anchors and anchored systems &mdash; chapter text and figures, with lookups for "
-             "anchor bond stress and load transfer (Tables 6-8) and corrosion protection (Table 20)."),
+             "anchor bond stress and load transfer (Tables 6 to 8) and corrosion protection (Table 20)."),
     "gec5": ("FHWA GEC-5", "FHWA NHI-16-072, April 2017",
              "Geotechnical site characterization &mdash; chapter text and figure catalog."),
     "gec6": ("FHWA GEC-6", "FHWA-SA-02-054, September 2002",
@@ -347,10 +347,14 @@ REFERENCE_INFO = {
     "micropile": ("FHWA Micropile Manual", "FHWA NHI-05-039, December 2005",
                   "Micropile design and construction &mdash; bond stress, structural capacity, the "
                   "LPILE benchmark the lateral-pile module checks against."),
-    "ufc_backfill": ("UFC 3-220-04N", "UFC 3-220-04N, Backfill for Subsurface Structures (the copy held, UFC 3-220-04FA of 16 January 2004, lacks the compaction table and filter ratios the module uses)",
-                     "Backfill design &mdash; compaction, filter criteria, drainage."),
+    "ufc_backfill": ("UFC 3-220-04FA", "UFC 3-220-04FA, Backfill for Subsurface Structures, 16 January 2004",
+                     "Backfill for subsurface structures &mdash; density requirements, Table 5-1 compaction "
+                     "criteria, backfill materials, lift thickness, compaction equipment and Fig. 2-5's "
+                     "compaction-induced lateral pressures."),
     "ufc_expansive": ("UFC 3-220-07", "UFC 3-220-07, Foundations in Expansive Soils, 16 January 2004",
-                      "Expansive soils &mdash; swell potential, heave, pier design."),
+                      "Expansive soils &mdash; swell potential, the active zone, heave prediction (Table "
+                      "4-2's swell relations, Van Der Merwe's Eq. 4-1, Eqs. 5-2 and 5-8), Table 6-1's "
+                      "foundation systems and the grade-beam void."),
     "ufc_pavement": ("UFC 3-250-01",
                      "UFC 3-250-01, Pavement Design for Roads and Parking Areas, 14 November 2016",
                      "Road and parking-area pavement design (not airfields) &mdash; CBR flexible design "
@@ -384,6 +388,18 @@ REFERENCE_INFO = {
                     "Flexible structural number and rigid slab design equations, layer coefficients, "
                     "reliability, Appendix D load-equivalency factors, the composite k worksheet and "
                     "Appendix G swelling and frost-heave loss (US units)."),
+    "em_1905": ("USACE EM 1110-1-1905", "EM 1110-1-1905, Geotechnical Design of Shallow Foundations "
+                "on Soils, 31 July 2025",
+                "Shallow foundations on soils (it supersedes EM 1110-1-1904 and the 1992 EM "
+                "1110-1-1905) &mdash; minimum factors of safety (Table 2-1), bearing capacity "
+                "factors and the shape, depth, inclination and undrained factors (Tables 5-2 to "
+                "5-4), in-situ bearing factors (Table 5-5), the ultimate limit state equations "
+                "(Eqs. 5-1 to 5-36: effective dimensions, drained and undrained bearing capacity, "
+                "punching, sliding, uplift), stress distribution (Eqs. 6-1 to 6-13), settlement "
+                "(Eqs. 7-1 to 7-47: consolidation, constrained modulus, Menard, Schmertmann, "
+                "Burland and Burbidge, time rate, secondary compression) and the table printed on "
+                "Figure 7-16; chapter text by the printed paragraph numbers (5-5a(2), B-1b) and a "
+                "figure catalog (US units)."),
     "em_2104": ("USACE EM 1110-2-2104", "EM 1110-2-2104, 1 November 2023",
                 "Strength design for reinforced concrete hydraulic structures &mdash; load factors and "
                 "combinations, flexure and axial load, shear, serviceability, detailing (US units)."),
@@ -422,12 +438,21 @@ REFERENCE_INFO = {
                       "properties, fastenings and structural analysis equations (chapters 4, 5, 8 "
                       "and 9)."),
     "reference_db": ("Cross-reference text search", "&mdash;",
-                     "A full-text (SQLite FTS5) search DB over the chapter text of every reference, "
-                     "with synonym query expansion."),
+                     "A full-text (SQLite FTS5) search DB over the chapter text of the references "
+                     "that have it indexed (all but UFC 3-220-04FA and UFC 3-220-07, which are "
+                     "lookups and figures only), with synonym query expansion."),
     "figure_db": ("Figure catalog + vision read-off", "&mdash;",
-                  "A searchable catalog of every figure across the references; pairs with the "
-                  "<code>read_reference_figure</code> vision tool to render a chart and read a value "
-                  "off it."),
+                  "A searchable catalog of the figures the references' catalogs list; pairs with "
+                  "the <code>read_reference_figure</code> vision tool to render a chart and read a "
+                  "value off it where the reference PDFs reach the host (a docs folder or the "
+                  "SharePoint fetcher); without them a figure is found and cited, not read."),
+    "table_db": ("Table catalog + printed-page read", "&mdash;",
+                 "A searchable catalog of the printed tables in the references that have a "
+                 "table catalog. Each row says where the table's values are: in a stored "
+                 "section of text, in a lookup function, or only on the printed page. Pairs "
+                 "with the <code>read_reference_table</code> vision tool to read a table "
+                 "that is only on its page where the reference PDFs reach the host; without "
+                 "them the table is found and its printed page cited, not read."),
 }
 
 

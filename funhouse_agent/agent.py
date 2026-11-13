@@ -26,8 +26,10 @@ from funhouse_agent.react_support import (
     AgentResult, ConversationHistory, _truncate, parse_response,
 )
 
-from funhouse_agent.dispatch import dispatch_tool
-from funhouse_agent.system_prompt import build_system_prompt
+from funhouse_agent.dispatch import dispatch_tool, held_references
+from funhouse_agent.system_prompt import (TABLE_READ_SECTION,
+                                          build_system_prompt,
+                                          without_chart_reads)
 from funhouse_agent.reviewer import run_review, needs_revision
 
 from funhouse_agent.vision_tools import (
@@ -67,8 +69,16 @@ def _build_agent_system_prompt(allowed_agents=None) -> str:
     Uses the funhouse-specific module catalog (optionally scoped to
     ``allowed_agents``) plus vision tool descriptions.
     """
-    base = build_system_prompt(allowed_agents)
-    return base + "\n\n" + VISION_TOOL_DESCRIPTIONS
+    from funhouse_agent.reference_docs import (chart_reads_available,
+                                               table_catalogs_available)
+    charts = chart_reads_available()
+    base = build_system_prompt(allowed_agents, chart_reads=charts)
+    tools = (VISION_TOOL_DESCRIPTIONS if charts
+             else without_chart_reads(VISION_TOOL_DESCRIPTIONS))
+    if charts and table_catalogs_available():
+        # the table page reader, which the core's tool text does not have
+        tools += TABLE_READ_SECTION
+    return base + "\n\n" + tools
 
 
 def _build_native_system_prompt(allowed_agents=None) -> str:
@@ -79,7 +89,7 @@ def _build_native_system_prompt(allowed_agents=None) -> str:
     OpenAI-native ``tools`` parameter.  Keeps domain guidance, DIGGS
     workflow, and module catalog.
     """
-    base = build_system_prompt(allowed_agents)
+    base = build_system_prompt(allowed_agents, chart_reads=True)
     # Remove "## ReAct Protocol" through "## Rules" (inclusive of Rules body)
     base = re.sub(
         r"## ReAct Protocol.*?(?=## Available Modules|\Z)",
@@ -97,8 +107,9 @@ def _build_native_system_prompt(allowed_agents=None) -> str:
 # tool via the OpenAI tools parameter instead (CONSULT_REFERENCES_TOOL).
 CONSULT_TEXT_DESCRIPTION = (
     "\n\n### consult_references\n"
-    "Ask the reference librarian a question (NAVFAC DM7, FHWA GEC series, UFC, "
-    "micropile, FEMA, NOAA — text, tables, figures). Returns a cited answer. You "
+    "Ask the reference librarian a question ("
+    + "; ".join(held_references())
+    + " — text, tables, figures). Returns a cited answer. You "
     "do NOT have the reference modules directly; this is the only way to reach "
     "them.\n"
     "```\n"
@@ -192,6 +203,11 @@ class GeotechAgent:
             self._system_prompt = _build_agent_system_prompt(allowed_agents)
             if self._reference_mode != "off":
                 self._system_prompt += CONSULT_TEXT_DESCRIPTION
+        # The table page reader is a tool name the core's EXTENDED_TOOLS
+        # lacks: a text call to it is accepted exactly where the prompt
+        # offers it (TABLE_READ_SECTION).
+        self._table_reads = (not self._is_native
+                             and TABLE_READ_SECTION in self._system_prompt)
         # Optional extra system-prompt block appended AFTER the module catalog
         # (and any consult-tool description). Used by the narrow reviewer agents
         # to re-cast the agent into "review mode" with a domain checklist — see
@@ -210,7 +226,8 @@ class GeotechAgent:
 
     def _result_cap_for(self, tool_name: str) -> int:
         """Truncation cap for a tool result: larger for text-payload tools."""
-        if tool_name in ("read_pdf_text", "read_reference_figure", "list_files"):
+        if tool_name in ("read_pdf_text", "read_reference_figure",
+                         "read_reference_table", "list_files"):
             return self._large_result_chars
         return self._max_result_chars
 
@@ -262,7 +279,7 @@ class GeotechAgent:
                 valid = EXTENDED_TOOLS | (
                     {"consult_references"}
                     if self._reference_mode != "off" else set()
-                )
+                ) | ({"read_reference_table"} if self._table_reads else set())
                 parsed = parse_response(response, valid_tools=valid)
             except ValueError as e:
                 err = {"round": rounds, "type": "parse",
@@ -317,6 +334,15 @@ class GeotechAgent:
             # Dispatch: consult sub-agent, extended tools (vision/save), or standard
             if tc.tool_name == "consult_references":
                 result_str = self._dispatch_consult(tc.arguments)
+            elif tc.tool_name == "read_reference_table":
+                # the core hands its app's readers on only by the names it
+                # lists: the table reader goes under the figure reader's,
+                # whose hook sends a call naming a table_number to it
+                result_str = dispatch_extended_tool(
+                    "read_reference_figure", dict(tc.arguments or {}),
+                    self._engine, self._attachments,
+                    save_fn=self._save_fn,
+                )
             elif tc.tool_name in ("list_files", "read_pdf_text", "analyze_image",
                                   "analyze_pdf_page", "read_reference_figure",
                                   "save_file"):

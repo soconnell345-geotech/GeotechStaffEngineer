@@ -194,20 +194,32 @@ def test_pack_figure_without_bbox_or_notes_renders_whole_page(
     assert reference_vision.READ_NOTES_HEADING not in fake.prompts[0]
 
 
-#: dm7_2 Figure 4-12's read prompt as the reader built it before REF-64
-#: (the code voter off). A change here changes every built-in chart read.
+#: dm7_2 Figure 4-12's read prompt (the code voter off), as the reader
+#: builds it with no pack set. A change here changes every built-in chart
+#: read. Changed on purpose once since REF-64: the 2026-11-10 reference
+#: review (item 6) has every read confirm the figure and its axes, give
+#: the axis unit and mark what is not printed; review F9 has a figure not
+#: on the page open with a fixed phrase.
 _BUILTIN_PROMPT = (
     'This image is a rendered page from dm7_2 containing Figure 4-12: '
     '"{caption}".\n\n'
     "Read the requested value(s) off this engineering chart:\n"
-    "1. Locate Figure 4-12 on the page; ignore other figures and body text.\n"
+    "1. FIRST confirm you are looking at Figure 4-12: give the figure "
+    "number and caption as printed on the page, and the quantity and unit "
+    "printed on each axis. If Figure 4-12 is not on this page, begin your "
+    "answer with \"NOT ON THIS PAGE:\", say what the page shows instead and "
+    "do not read a value. Ignore other figures and body text.\n"
     "2. Identify the axes (note any logarithmic scales) and the family of "
     "curves and what parameter distinguishes them.\n"
     "3. For the requested inputs, select the correct curve (interpolating "
     "between curves where needed) and read the value at the right axis "
     "position.\n"
-    "4. Report the value(s) clearly, state which curve/axis you used, and "
-    "flag that this is a chart read-off estimate.\n\n"
+    "4. Report the value(s) clearly with the unit printed on the axis, "
+    "state which curve/axis you used, and flag that this is a chart "
+    "read-off estimate.\n\n"
+    "Report only what is printed on this page. Mark anything else as your "
+    "own and say what it rests on: a value from memory, a unit conversion, "
+    "a curve extended past its printed end.\n\n"
     "Request: Read Kp for phi'=35 deg."
 )
 
@@ -323,14 +335,14 @@ def test_packs_line_only_with_packs(no_packs, pack_root, monkeypatch):
 def test_references_spec_carries_line_only_with_packs(
         no_packs, pack_root, monkeypatch):
     from funhouse_agent.deep.agent import (
-        _REFERENCES_DESCRIPTION, build_references_subagent)
+        build_references_subagent, references_description)
     plain = build_references_subagent()
-    assert plain["description"] == _REFERENCES_DESCRIPTION
+    assert plain["description"] == references_description()
     assert "This deployment adds" not in plain["system_prompt"]
     monkeypatch.setenv(_packs.PACKS_ENV, str(pack_root))
     spec = build_references_subagent()
     line = f"This deployment adds: {TITLE} (`{PID}`)."
-    assert spec["description"] == _REFERENCES_DESCRIPTION + " " + line
+    assert spec["description"] == references_description() + " " + line
     assert spec["system_prompt"] == plain["system_prompt"] + "\n\n" + line
 
 
