@@ -203,7 +203,20 @@ _DRAINED = ("the probe's soil is elastic and the reported movements are "
 _ITERATIONS = "the probe converges in fewer iterations"
 _BLOWUP = ("the probe's strength reduction fails by non-convergence "
            "before either blow-up factor")
+_NO_ARTESIAN = ("the probe has no water, so no slice's pore-water force "
+                "exceeds its weight and the frictional term is never "
+                "negative (GM-140 step 3)")
+_NO_LOW_M_ALPHA = ("no trial surface of the probe's search has m_alpha "
+                   "below 0.2 on a slice, so keeping and leaving out such "
+                   "surfaces give the same search (GM-140 step 3)")
 NOT_REACHED = {
+    **{(f"slope_stability|{m}", "negative_friction_term"): _NO_ARTESIAN
+       for m in ("analyze_slope", "search_critical_surface")},
+    **{(f"slope_stability|{m}", "low_m_alpha"): _NO_LOW_M_ALPHA
+       for m in ("search_critical_surface", "search_rapid_drawdown")},
+    ("slope_stability|analyze_slope", "m_alpha_rule"):
+        "the probe's surface has m_alpha above 0.2 on every slice, so "
+        "which slices the check looks at changes nothing (GM-140 step 3)",
     ("dxf_import|parse_geometry", "ignore_header_units"):
         "the probe gives no units, so there is no difference from the "
         "drawing's header to ignore",

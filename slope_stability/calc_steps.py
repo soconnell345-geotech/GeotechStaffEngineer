@@ -190,6 +190,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             rows=[[w] for w in surface_warnings],
         )]))
 
+    checks = _acceptability_section(result)
+    if checks is not None:
+        sections.append(checks)
+
     reinf = _reinforcement_section(result, geom)
     if reinf is not None:
         sections.append(reinf)
@@ -348,37 +352,56 @@ def _method_section(result, analysis) -> CalcSection:
             title="Ordinary Method of Slices (Fellenius)",
             equation=(
                 "FOS = Σ[c_i × b_i / cos(α_i) + "
-                "max(W_i × cos(α_i) - u_i × b_i / cos(α_i), 0) "
+                "(W_i × cos(α_i) - u_i × b_i / cos(α_i)) "
                 "× tan(φ_i)] / Σ[W_i × sin(α_i)]"
             ),
             substitution="",
             result_name="FOS",
             result_value=fos_text(result.FOS),
-            reference="Fellenius (1927)",
+            reference="Fellenius (1927); Bishop (1955), Eq. 9, p. 10",
             notes=_rigorous_note(
                 result,
-                "Satisfies moment equilibrium only. Effective normal "
-                "clamped at zero (no negative friction under high "
-                "pore pressure)."),
+                "Satisfies moment equilibrium only. "
+                + _negative_term_note(
+                    result, "The effective normal force W cos(α) - u l")),
         ))
 
     elif m == "Bishop":
         items.append(CalcStep(
             title="Bishop's Simplified Method",
             equation=(
-                "FOS = Σ[(c_i·b_i + max(W_i - u_i·b_i, 0)·tan(φ_i)) "
+                "FOS = Σ[(c_i·b_i + (W_i - u_i·b_i)·tan(φ_i)) "
                 "/ m_α_i] / Σ[W_i × sin(α_i)]"
             ),
             substitution="m_α = cos(α) + sin(α)·tan(φ)/FOS",
             result_name="FOS",
-            result_value=fos_text(result.FOS),
-            reference="Bishop (1955)",
+            result_value=fos_text(
+                result.FOS_bishop if result.FOS_bishop is not None
+                else result.FOS),
+            reference="Bishop (1955), Eq. 13, p. 10",
             notes=_rigorous_note(
                 result,
                 "Iterative — satisfies moment equilibrium; assumes "
-                "zero interslice shear. Frictional term clamped at "
-                "zero where u·b > W (SS-2)."),
+                "zero interslice shear. "
+                + _negative_term_note(result,
+                                      "The frictional term W - u b")),
         ))
+        if result.FOS is not None and result.method_used:
+            # Bishop's value below the Ordinary Method of Slices value for
+            # the circle: the latter is reported (GM-140 step 3).
+            items.append(CalcStep(
+                title="Factor of Safety Reported",
+                equation="Bishop's value is below the Ordinary Method of "
+                         "Slices value for this circle, so Bishop's "
+                         "solution has numerical problems and the "
+                         "Ordinary Method of Slices value is taken",
+                substitution=(f"Bishop {result.FOS_bishop:.3f} < Ordinary "
+                              f"Method of Slices "
+                              f"{result.FOS_fellenius:.3f}"),
+                result_name="FOS",
+                result_value=fos_text(result.FOS),
+                reference="Duncan (1996), p. 580",
+            ))
 
     elif m == "Janbu":
         items.append(CalcStep(
@@ -484,17 +507,26 @@ def _method_section(result, analysis) -> CalcSection:
                           f"{max(X_all):.1f} kN/m"),
         ))
     if result.thrust_line:
-        z_thrust = [z for _, z in result.thrust_line]
+        # The line as solved, not the one clipped for the figure (GM-140
+        # step 3, D50): the check is made on it.
+        z_thrust = [z for _, z in (getattr(result, "thrust_line_unclipped",
+                                           None) or result.thrust_line)]
+        outside = next((f for f in getattr(result, "acceptability", None)
+                        or [] if f.get("check") == "thrust_outside"), None)
         items.append(CalcStep(
             title="Line of Thrust",
             equation="Elevation of the point of application of E at "
-                     "each slice boundary (acceptability check: "
-                     "thrust line within the sliding mass, typically "
-                     "near the lower third)",
+                     "each slice boundary, as solved (acceptability "
+                     "check, EM 1110-2-1902 C-10a: the line of thrust "
+                     "within the sliding mass)",
             substitution="",
             result_name="z_thrust range",
             result_value=(f"{min(z_thrust):.2f} to "
-                          f"{max(z_thrust):.2f} m"),
+                          f"{max(z_thrust):.2f} m"
+                          + (f"; outside the sliding mass at "
+                             f"{len(outside['sides'])} slice side(s), "
+                             f"see Printed Acceptability Checks"
+                             if outside else "; within the sliding mass")),
         ))
 
     if result.has_seismic:
@@ -509,6 +541,24 @@ def _method_section(result, analysis) -> CalcSection:
 
     return CalcSection(title="Analysis Method & Factor of Safety",
                        items=items)
+
+
+def _negative_term_note(result, what: str) -> str:
+    """How a negative frictional term was treated on this surface (GM-140
+    step 3, D21): as printed, or set to zero under the stated option; the
+    finding of the acceptability checks says which slices."""
+    f = next((f for f in getattr(result, "acceptability", None) or []
+              if f.get("check") == "negative_frictional_term"), None)
+    if f is None:
+        return (f"{what} is positive on every slice, so it is used as "
+                f"printed.")
+    n = len(f.get("slices") or [])
+    if f.get("rule") == "zero":
+        return (f"{what} is negative on {n} slice(s) and was set to zero "
+                f"there (negative_friction_term='zero'; no printed "
+                f"source). See Printed Acceptability Checks.")
+    return (f"{what} is negative on {n} slice(s) and is used as printed, "
+            f"with no lower limit. See Printed Acceptability Checks.")
 
 
 def _rigorous_note(result, solved_note: str) -> str:
@@ -587,6 +637,40 @@ def _reinforcement_section(result, geom):
     return CalcSection(title="Reinforcement", items=items)
 
 
+def _acceptability_section(result):
+    """The findings of the printed acceptability checks on the analysed
+    surface (GM-140 step 3): one row a finding, with its source and the
+    slices or slice sides it names."""
+    findings = list(getattr(result, "acceptability", None) or [])
+    if not findings:
+        return None
+    from slope_stability.acceptability import CHECK_TEXT
+    rows = []
+    for f in findings:
+        where = ""
+        if f.get("slices"):
+            where = "slices " + ", ".join(
+                str(s["slice"]) for s in f["slices"])
+        elif f.get("sides"):
+            where = "slice sides " + ", ".join(
+                str(s["side"]) for s in f["sides"])
+        rows.append([
+            CHECK_TEXT.get(f["check"], "Bishop's value against the "
+                           "Ordinary Method of Slices value"),
+            "not met" if f.get("flag") else "noted",
+            where, f["text"], f.get("source", "")])
+    return CalcSection(title="Printed Acceptability Checks", items=[
+        TableData(
+            title="Findings on the Analyzed Surface",
+            headers=["Check", "Finding", "Where", "Statement", "Source"],
+            rows=rows,
+            notes="The surface is analysed whatever the checks find; a "
+                  "check not met is for the engineer to examine (Whitman "
+                  "and Bailey 1967, p. 487; EM 1110-2-1902 C-10a, "
+                  "pp. C-33 to C-34).",
+        )])
+
+
 def _comparison_section(result, analysis):
     rows = []
     if result.FOS_fellenius is not None:
@@ -622,6 +706,32 @@ def _comparison_section(result, analysis):
 
     if len(rows) < 2:
         return None
+
+    if (result.method == "Bishop"
+            and [r[0] for r in rows] == ["Fellenius (OMS)",
+                                         "Bishop simplified"]):
+        # Bishop's method on a circle: the Ordinary Method of Slices value
+        # computed for the same circle (GM-140 step 3).
+        return CalcSection(
+            title="Method Comparison",
+            items=[TableData(
+                title="Bishop's Value Beside the Ordinary Method of "
+                      "Slices Value",
+                headers=["Method", "FOS", "Detail"],
+                rows=rows,
+                notes="Duncan (1996, p. 580): calculate the Ordinary "
+                      "Method of Slices value for each circle when "
+                      "Bishop's method is used; where Bishop's value is "
+                      "below it, Bishop's solution has numerical problems "
+                      "and the Ordinary Method of Slices value is the "
+                      "better answer. "
+                      + ("Bishop's value is the lower here: the factor of "
+                         "safety reported is the Ordinary Method of Slices "
+                         "value." if result.method_used else
+                         "Bishop's value is not the lower here: it "
+                         "stands."),
+            )],
+        )
 
     return CalcSection(
         title="Method Comparison",
@@ -762,6 +872,33 @@ def _search_section(search) -> CalcSection:
     if n_rej_ma:
         rows.append(["Trial surfaces left out, m_alpha < 0.2 on a slice",
                      str(n_rej_ma)])
+    # The printed acceptability checks (GM-140 step 3): scored trials that
+    # carry a flag, what the governing surface carries, and the lowest
+    # scored surface without a flag.
+    flag_recs = getattr(search, "trial_flags", None) or []
+    n_flagged = sum(r["n_flagged"] for r in flag_recs)
+    crit_flags = list(getattr(search, "critical_flags", None) or [])
+    if n_flagged:
+        from slope_stability.acceptability import CHECK_TEXT
+        rows.append(["Scored trials not meeting a printed acceptability "
+                     "check (kept, flagged)",
+                     f"{n_flagged} of "
+                     f"{sum(r['n_scored'] for r in flag_recs)}"])
+        by = {}
+        for r in flag_recs:
+            for c, n in r["by_check"].items():
+                by[c] = by.get(c, 0) + n
+        for c, n in by.items():
+            rows.append([f"  — {CHECK_TEXT.get(c, c)}", str(n)])
+    if crit_flags:
+        from slope_stability.acceptability import flags_text
+        rows.append(["Governing surface: checks not met",
+                     flags_text(crit_flags)])
+        low = getattr(search, "lowest_unflagged", None) or {}
+        rows.append(["Lowest scored surface without a flag",
+                     f"{low['FOS']:.3f} ({low.get('family')})"
+                     if low.get("FOS") is not None
+                     else low.get("note", "none")])
     if crit is not None:
         rows.append(["Method", crit.method])
         rows.append(["Minimum FOS", f"{crit.FOS:.3f}"])
@@ -802,9 +939,21 @@ def _search_section(search) -> CalcSection:
             " m_alpha = cos(a) (1 + tan(a) tan(phi) / F) is the denominator "
             "of the normal force on a slice base; below 0.2 on a slice the "
             "FOS may be incorrect or misleading (Whitman & Bailey 1967), "
-            "and Slide2 reports such a surface as invalid (its error -112). "
+            "and this search was asked to leave such surfaces out "
+            "(low_m_alpha='refuse'). "
             "Slices with phi' = 0, where m_alpha = cos(a) does not change "
             "the FOS, are not checked unless every slice is asked for.")
+    if n_flagged or crit_flags:
+        search_notes += (
+            " A surface that does not meet a printed acceptability check "
+            "is kept and flagged, not left out: m_alpha below 0.2 on a "
+            "slice (Whitman and Bailey 1967, p. 487: the result must be "
+            "examined in detail); Bishop's value below the Ordinary "
+            "Method of Slices value, which is then taken (Duncan 1996, "
+            "p. 580); a negative frictional term (Bishop 1955, Eqs. 9 and "
+            "13); and, for Spencer, Morgenstern-Price and GLE, tension on "
+            "a slice base or side and the line of thrust outside the "
+            "sliding mass (EM 1110-2-1902 C-10a, pp. C-33 to C-34).")
     items.append(TableData(
         title="Critical Surface Search Summary",
         headers=["Item", "Value"],

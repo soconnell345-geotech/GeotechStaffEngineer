@@ -27,6 +27,8 @@ equation-by-equation against the ORIGINAL papers in the owner's library.
 Ledger: module_work/wiki_verification/le_method_originals.md.
 """
 
+import contextlib
+import contextvars
 import math
 from typing import List, Tuple, Optional
 
@@ -41,6 +43,58 @@ _NO_DRIVING = ("the surface has no net driving moment or force (the "
                "to driving has no meaning")
 _NO_RESISTANCE = ("the resisting sum is zero or negative at the trial "
                   "factor of safety")
+
+
+# ---------------------------------------------------------------------------
+# A negative frictional term on a slice (GM-140 step 3, D21)
+# ---------------------------------------------------------------------------
+
+#: What Bishop's simplified method and the Ordinary Method of Slices do
+#: with a slice whose frictional term is negative (u b above W in Bishop's
+#: Eq. 13; u l above W cos(alpha) in Eq. 9; Bishop 1955, p. 10).
+#: "as_printed" (the default): the term is used as the equation prints it,
+#: negative. Bishop (1955) Eq. 13 writes it W(1 - B) = W - u b and Eq. 9
+#: W cos(alpha) - u l, with no lower limit; Whitman and Bailey (1967,
+#: p. 487) ask that the user be warned when the numerator becomes negative
+#: for any slice, and the result names the slices (`acceptability`).
+#: "zero": the term is set to zero where negative, as the module did before
+#: this step (no printed source).
+NEGATIVE_TERM_RULES = ("as_printed", "zero")
+
+_NEGATIVE_TERM: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_negative_friction_term", default="as_printed")
+
+
+def negative_term_in_force() -> str:
+    """The rule of `NEGATIVE_TERM_RULES` in force in this context."""
+    return _NEGATIVE_TERM.get()
+
+
+def check_negative_term(rule) -> str:
+    if rule not in NEGATIVE_TERM_RULES:
+        raise ValueError(
+            f"negative_friction_term must be one of {NEGATIVE_TERM_RULES}, "
+            f"not {rule!r}")
+    return rule
+
+
+@contextlib.contextmanager
+def negative_term(rule: str):
+    """Run a block with ``rule`` (`NEGATIVE_TERM_RULES`) in force for every
+    Bishop and Ordinary Method of Slices solve made inside it."""
+    token = _NEGATIVE_TERM.set(check_negative_term(rule))
+    try:
+        yield
+    finally:
+        _NEGATIVE_TERM.reset(token)
+
+
+def _friction_term(value: float) -> float:
+    """A slice's frictional term under the rule in force: as printed, or
+    zero where negative."""
+    if value < 0.0 and _NEGATIVE_TERM.get() == "zero":
+        return 0.0
+    return value
 
 
 # Morgenstern-Price interslice force functions
@@ -127,8 +181,11 @@ def fellenius_fos(slices: List[Slice],
         W = s.weight + s.surcharge_force
 
         # Resisting: shear strength along base
+        # N' = W cos(alpha) - u l as Bishop (1955) Eq. 9, p. 10 prints it:
+        # not set to zero where negative unless the "zero" rule is in
+        # force (GM-140 step 3, D21; `NEGATIVE_TERM_RULES`).
         N_prime = W * math.cos(s.alpha) - s.pore_pressure * dl
-        resisting += s.c * dl + max(N_prime, 0.0) * math.tan(phi_rad)
+        resisting += s.c * dl + _friction_term(N_prime) * math.tan(phi_rad)
 
         if is_circular:
             # Circular: moment-arm formulation W*(x_mid - xc)/R
@@ -190,8 +247,8 @@ def fellenius_fos(slices: List[Slice],
                             (n0 + active_press.get(i, 0.0), tan_phi, press))
                     else:
                         active_press[i] = press
-                        resisting += (max(n0 + press, 0.0)
-                                      - max(n0, 0.0)) * tan_phi
+                        resisting += (_friction_term(n0 + press)
+                                      - _friction_term(n0)) * tan_phi
         else:
             driving -= horizontal_reduction(reinf_forces, slices)
             resisting += horizontal_resistance(reinf_forces, slices)
@@ -207,8 +264,8 @@ def fellenius_fos(slices: List[Slice],
     if fos <= 0:
         raise NoSolution(_NO_RESISTANCE)
     for _ in range(100):
-        extra = sum((max(n0 + p / fos, 0.0) - max(n0, 0.0)) * tp
-                    for n0, tp, p in passive_press)
+        extra = sum((_friction_term(n0 + p / fos) - _friction_term(n0))
+                    * tp for n0, tp, p in passive_press)
         fos_new = (resisting + extra) / driving
         if fos_new <= 0:
             raise NoSolution(_NO_RESISTANCE)
@@ -231,14 +288,17 @@ def bishop_fos(slices: List[Slice],
     Requires circular slip surfaces only (moment equilibrium about
     circle center).
 
-    FOS = sum[(c'*b + max(W - u*b, 0)*tan(phi')) / m_alpha] /
+    FOS = sum[(c'*b + (W - u*b)*tan(phi')) / m_alpha] /
           sum[W*sin(alpha)]
 
     where m_alpha = cos(alpha) + sin(alpha)*tan(phi')/FOS.
-    The effective-weight term (W - u*b) is clamped to >= 0 so that
-    artesian/perched pore pressures (u*b > W) cannot contribute
-    negative frictional resistance (consistent with the Fellenius
-    effective-normal clamp).
+    The effective-weight term (W - u*b) is used as Bishop (1955) Eq. 13,
+    p. 10 prints it, W(1 - B) with no lower limit: where u*b exceeds W
+    (artesian or perched pore pressure) the slice's frictional term is
+    negative (GM-140 step 3, D21). The result names such slices, as
+    Whitman and Bailey (1967, p. 487) ask (`acceptability`). With the
+    "zero" rule in force (`NEGATIVE_TERM_RULES`, `negative_term`) the term
+    is set to zero where negative, as before this step.
 
     Parameters
     ----------
@@ -365,11 +425,10 @@ def bishop_fos(slices: List[Slice],
             if abs(m_alpha) < 1e-10:
                 m_alpha = 1e-10
 
-            # Clamp the effective-weight term to >= 0 (SS-2): with artesian/
-            # perched pore pressure u*b can exceed W, and a negative frictional
-            # term would subtract resistance. Fellenius clamps the effective
-            # normal the same way.
-            numerator = s.c * b + max(W - s.pore_pressure * b, 0.0) * tan_phi
+            # W - u b as Bishop (1955) Eq. 13 prints it; zero where
+            # negative only under the "zero" rule (GM-140 step 3, D21).
+            numerator = (s.c * b
+                         + _friction_term(W - s.pore_pressure * b) * tan_phi)
             resisting += numerator / m_alpha
 
         fos_new = (resisting + passive_resistance) / driving
@@ -390,12 +449,14 @@ def bishop_fos(slices: List[Slice],
 # m_alpha on the slice bases (GM-127)
 # ---------------------------------------------------------------------------
 
-#: Slide2 reports a slip surface as invalid when m_alpha = cos(a) (1 + tan(a)
-#: tan(phi) / F) is below this on any slice on the final iteration (its
-#: error -112; the "Check malpha < 0.2" project setting). Its documentation
-#: (iteration parameters) gives the reason, after Whitman & Bailey (1967):
-#: below 0.2 on any slice the factor of safety may be incorrect or
-#: misleading, though it is not necessarily wrong.
+#: Whitman and Bailey (1967, p. 487, Eq. 5): the user is warned if, for any
+#: slice, the denominator becomes negative or small, "for example, if
+#: cos(theta) + tan(phi) sin(theta) / F < 0.2 ... the user must examine the
+#: result in detail". A warning and an instruction, so a surface below it
+#: is analysed, and kept and flagged in a search (GM-140 step 3, OWN-102;
+#: `acceptability`). Slide2 reports such a surface as invalid (its error
+#: -112; the "Check malpha < 0.2" project setting): leaving it out of a
+#: search is the stated option (`search.LOW_M_ALPHA_ACTIONS`).
 M_ALPHA_MIN = 0.2
 
 #: Which slices the check looks at. "frictional" (the default): the slices

@@ -230,10 +230,11 @@ def test_the_default_search_covers_circles_passing_above_the_toe():
                 if ch["what"] == "surface families scored")
     assert "circle passing above the toe" in fams["chosen"]
     assert "faces_covered" in fams["basis"]
-    # every family leaves out m_alpha < 0.2 (GM-127): said once, for all
+    # every family keeps and flags m_alpha < 0.2 (GM-140 step 3; GM-127
+    # left such circles out): said once, for all
     ma = next(ch for ch in r.choices
-              if ch["what"] == "slip surfaces left out for m_alpha")
-    assert "-112" in ma["basis"]
+              if ch["what"] == "slip surfaces with m_alpha below 0.2")
+    assert "Whitman and Bailey (1967, p. 487" in ma["basis"]
     d = r.to_dict()
     assert d["governing_surface"] == "circle_above_toe"
     assert "faces_covered" in d["search_ranges"]

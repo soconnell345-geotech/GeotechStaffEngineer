@@ -2,6 +2,8 @@
 search, the method it scored with, the surface families it did and did not
 try, and how its ranges were set (pointing at ``search_ranges``)."""
 
+import pytest
+
 from slope_stability import SlopeGeometry, SlopeSoilLayer
 from slope_stability.analysis import search_critical_surface
 
@@ -91,11 +93,39 @@ def test_a_cohesionless_face_lists_the_infinite_slope_as_scored():
     assert "infinite_slope" in r.families_scored
 
 
-def test_a_search_with_no_surface_says_none_and_points_at_nothing():
-    """A short noncircular search with automatic windows on the live-run
-    slope finds no admissible surface: the entry says none was scored and
-    why, and the ranges point at no location."""
+def test_a_short_search_reports_its_flagged_surface():
+    """A short noncircular search (100 trials) with automatic windows on
+    the live-run slope. The moment-axis screen used to refuse every
+    surface it solved, so it reported none; since GM-140 step 3 removed
+    that screen the lowest solved surface is reported, flagged with what
+    it does not meet, and the result says no scored surface is without a
+    flag (module's own value; nothing printed for this slope)."""
     r = search_critical_surface(_w10(), surface_type="noncircular",
+                                n_trials=100, seed=1, n_slices=30)
+    assert r.critical.FOS == pytest.approx(0.462, abs=0.005)
+    assert r.critical_flags == ["low_m_alpha", "base_tension",
+                                "side_tension", "thrust_outside"]
+    assert r.lowest_unflagged["FOS"] is None
+    assert "is without a flag" in r.lowest_unflagged["note"]
+    assert any("does not meet 4 of the printed acceptability checks" in w
+               for w in r.warnings)
+    c = _by_what(r)
+    assert c["surface families scored"]["chosen"] == "noncircular"
+    assert r.families_scored == ["noncircular"]
+    assert c["search ranges"]["basis"].endswith("(governing_location)")
+    assert r.to_dict()["governing_location"]
+
+
+def test_a_search_with_no_surface_says_none_and_points_at_nothing():
+    """Level ground (made up): no trial surface has anything driving it,
+    so Spencer's method solves none and the search finds no surface. The
+    entry says none was scored and why, and the ranges point at no
+    location."""
+    level = SlopeGeometry(
+        surface_points=[(0, 10), (60, 10)],
+        soil_layers=[SlopeSoilLayer("clay", 10, -10, 18, phi=0, c_prime=0,
+                                    cu=30, analysis_mode="undrained")])
+    r = search_critical_surface(level, surface_type="noncircular",
                                 n_trials=100, seed=1, n_slices=30)
     assert r.critical is None
     c = _by_what(r)
@@ -108,6 +138,7 @@ def test_a_search_with_no_surface_says_none_and_points_at_nothing():
     ranges = c["search ranges"]["basis"]
     assert "governing_location" not in ranges
     assert ranges.endswith("no surface is reported")
+    assert r.refused_lowest is None
     assert "governing_location" not in r.to_dict()
 
 
