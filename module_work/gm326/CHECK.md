@@ -347,4 +347,11 @@ C3 wording), master's liquefaction fields (GM-324; WE_liq_spt min_fos 0.435
 to 0.426 comes from master, not this round), and the discover_layers file
 path (the probe was given a relative path).
 
-Calls made: about 45 tool calls.
+Catalog cap (lead, later in the round): the build had grown two one-line
+briefs (compute_trend, parse_cpt) by about 70 characters, against the
+module catalog's 7,500-character cap. Both are master's again; the added
+clauses were already in the `values` parameter text and in parse_cpt's
+returns (`q_c_kPa`, `missing_values`). test_catalog_routing_hints and
+test_calc_package_adapter pass.
+
+Calls made: about 52 tool calls.

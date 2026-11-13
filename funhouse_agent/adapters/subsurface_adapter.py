@@ -1302,7 +1302,7 @@ METHOD_INFO = {
     },
     "compute_trend": {
         "category": "Subsurface Characterization",
-        "brief": "Fit linear or log-linear depth-value trend with statistics (R-squared, COV). Fewer than 2 points is refused.",
+        "brief": "Fit linear or log-linear depth-value trend with statistics (R-squared, COV).",
         "parameters": {
             "depths": {"type": "array", "required": True, "description": "Depth values (m)."},
             "values": {"type": "array", "required": True, "description": "Measurement values, one per depth. Fewer than 2 points (log_linear: fewer than 2 with depth > 0 and value > 0) is refused: there is no line to fit."},
@@ -1327,7 +1327,7 @@ METHOD_INFO = {
     # -----------------------------------------------------------------------
     "parse_cpt": {
         "category": "File Import",
-        "brief": "Parse a CPT file (GEF or BRO-XML, via pygef) into depth/qc/fs/u2 arrays (kPa); missing readings stay null and are counted.",
+        "brief": "Parse a CPT file (GEF or BRO-XML, via pygef) into depth/qc/fs/u2 arrays (kPa).",
         "parameters": {
             "file_path": {"type": "str", "required": True, "description": "Path to CPT file (.gef or .xml)."},
             "engine": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "gef", "xml"], "description": "Parser engine."},
