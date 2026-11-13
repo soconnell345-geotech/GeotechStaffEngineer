@@ -236,3 +236,7 @@ re-run: covered cases unchanged apart from the fixes above. Sample script into t
 folder: exit 0, no Problems.
 
 **Calls made:** about 60 (one merge, one test-loop run before and one after the fixes).
+
+## Merge with GM-140 step 4 (2026-11-13, the lead)
+
+Slope step 4 gave WE-SLOPE-1 its printed 6.096 m tension crack, and without one the module now refuses that circle (its centre is below the crest: reverse curvature). `slope_stability_package` takes no `tension_crack_depth`, so the sample row could no longer match the example or build. The row now takes WE-SLOPE-4 (Slide2 Verification Problem #39, a circle with no crack) call 0 as it stands; `test_sample_packages.py` passes (28). The package's missing crack input is filed in BACKLOG for the slope work.

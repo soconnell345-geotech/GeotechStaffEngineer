@@ -73,52 +73,60 @@
    "module": "slope_stability",
    "method": "slope_stability_package",
    "origin": "worked_example",
-   "example_id": "WE-SLOPE-1",
+   "example_id": "WE-SLOPE-4",
    "example_call": 0,
    "example_tool": "slope_stability.analyze_slope",
-   "source": "California Department of Transportation (Caltrans), California Trenching & Shoring Manual, July 2025 edition, Chapter 10, Examples 10-3 (Ordinary Method of Slices) and 10-4 (Simplified Bishop), pp. 240-243.",
+   "source": "Rocscience Slide2 Verification Manual, Verification Problem #39, pp. 147-150; after Tandjiria, V., Teh, C.I. & Low, B.K. (2002), sand-fill case (Table 39.2).",
    "params": {
     "project_name": "Sample calc package",
-    "project_number": "WE-SLOPE-1",
+    "project_number": "WE-SLOPE-4",
     "surface_points": [
      [
-      -6.096,
-      0.0
+      0,
+      9
      ],
      [
-      0.0,
-      0.0
+      10,
+      9
      ],
      [
-      18.288,
-      24.384
+      20,
+      3
      ],
      [
-      36.576,
-      24.384
+      30,
+      3
      ]
     ],
     "soil_layers": [
      {
       "name": "fill",
-      "top_elevation": 24.384,
-      "bottom_elevation": -3.0,
-      "gamma": 18.065,
-      "phi": 30.0,
-      "c_prime": 9.576,
+      "top_elevation": 9.0,
+      "bottom_elevation": 3.0,
+      "gamma": 17.0,
+      "gamma_sat": 17.0,
+      "phi": 37.0,
+      "c_prime": 0.0,
       "analysis_mode": "drained"
+     },
+     {
+      "name": "softclay",
+      "top_elevation": 3.0,
+      "bottom_elevation": 0.0,
+      "gamma": 20.0,
+      "gamma_sat": 20.0,
+      "phi": 0.0,
+      "c_prime": 20.0,
+      "cu": 20.0,
+      "analysis_mode": "undrained"
      }
     ],
-    "xc": 0.0,
-    "yc": 18.288,
-    "radius": 18.2885,
-    "method": "fellenius",
-    "n_slices": 30,
-    "compare_methods": true,
+    "xc": 15.193905105454997,
+    "yc": 10.242328996634253,
+    "radius": 9.938523884815131,
+    "method": "spencer",
     "given": [
-     "compare_methods",
      "method",
-     "n_slices",
      "radius",
      "soil_layers",
      "surface_points",
