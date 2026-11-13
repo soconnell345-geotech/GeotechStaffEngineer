@@ -38,7 +38,11 @@ dependencies = [
     # numpy 1.26 install are in constraints/foundry-numpy126.txt.
     "numpy>=1.26",
     "scipy>=1.13",
-    "geotech-references>=1.6.0",
+    # 1.7.0 (2026-11-13) is the library after the review against the printed
+    # manuals: corrected lookups and stored text, refusals outside a printed
+    # range, the table catalogs the references helper's table tools read.
+    # An install that already has 1.6.0 must not keep it.
+    "geotech-references>=1.7.0",
     # The shared core of the app split (INF-26 / INF-32; built from
     # packages/aec-agent-core in this repository), pinned EXACTLY: the two
     # move together. REQUIRED FROM 5.35.0 (2026-11-10): 1.0.0 is the core's
