@@ -695,6 +695,11 @@ class Answer:
     #: post was matched.
     printed: Any = None
     matched_by: str = ""
+    #: Code's list may be short (BACKLOG RI-207): what it lists is on the
+    #: record, and the report may describe more that the record cannot
+    #: show. :func:`compare` then asks only that each record code lists has
+    #: a match in the model's list.
+    lower_bound: bool = False
 
     def noted(self, said: str) -> "Answer":
         if said:
@@ -789,19 +794,46 @@ def _closest(options: Sequence[str], said: str) -> Optional[str]:
     return scored[0][1]
 
 
+def _singular(word: str) -> str:
+    return word[:-1] if len(word) > 3 and word.endswith("s") else word
+
+
+def _part_field(part: Part, known: Any,
+                words: Optional[Mapping[str, Sequence[str]]] = None
+                ) -> Optional[str]:
+    """The field of ``known`` a part takes. Without ``words``: the field of
+    its name, else of the last or first word of its name ("sheet_class"
+    takes "class"). With ``words`` (field -> the words a part may name it
+    by): the field of its name, else the ONE field a word of its name names,
+    singular or plural, in any order ("number_of_test_pits" and "pit_count"
+    both take the field whose words hold "pit"); a part whose words name
+    two fields, or none, takes nothing."""
+    said = part.name.split("_")
+    if words is None:
+        return next((n for n in (part.name, said[-1], said[0])
+                     if n in known), None)
+    if part.name in known:
+        return part.name
+    mine = {_singular(w) for w in said} | {_singular(part.name.replace(
+        "_", ""))}
+    hits = [name for name, also in words.items()
+            if mine & {_singular(w) for w in also}]
+    return hits[0] if len(hits) == 1 and hits[0] in known else None
+
+
 def _fill(question: Question, known: Mapping[str, Any],
-          notes: List[str]) -> Dict[str, Any]:
+          notes: List[str],
+          words: Optional[Mapping[str, Sequence[str]]] = None
+          ) -> Dict[str, Any]:
     """One record in the row's parts, from what code read (``known``, by
-    the record's own field names). A part takes the field of its name, else
-    of the last or first word of its name ("sheet_class" takes "class"); a
-    closed-list part takes the option nearest code's word (:func:`_closest`),
-    and says so in ``notes`` when none is near; a part code has nothing for
-    is left empty."""
+    the record's own field names). A part takes the field
+    :func:`_part_field` gives it (``words`` widens that to parts named in
+    other words and another order); a closed-list part takes the option
+    nearest code's word (:func:`_closest`), and says so in ``notes`` when
+    none is near; a part code has nothing for is left empty."""
     out: Dict[str, Any] = {}
     for part in question.parts:
-        words = part.name.split("_")
-        name = next((n for n in (part.name, words[-1], words[0])
-                     if n in known), None)
+        name = _part_field(part, known, words)
         value = known.get(name) if name else None
         kind = _part_type(part)
         if part.options:
@@ -1134,27 +1166,10 @@ def _appendix_list(src: _Source, q: Question) -> Answer:
 def _field_work(src: _Source) -> Tuple[Any, str]:
     """The record's own field work (:class:`FieldWork`) with its bound
     volumes', and where it came from."""
-    from report_ingest.record_facts import field_work
-
     records, _missing = _bound_of(src, ("volume",))
-    logs = []
-    for rec in [src.record] + records:
-        work = rec.field_work
-        if work is None and rec.investigations:
-            # A record saved before the field: the same reading of its logs.
-            work = field_work(rec)
-        if work is not None:
-            logs.append(work)
-    if not logs:
+    merged = _work_of([src.record] + records)
+    if merged is None:
         return None, ""
-    from report_ingest.model import FieldWork
-
-    merged = FieldWork(
-        years=sorted({y for w in logs for y in w.years}),
-        dates=list(dict.fromkeys(d for w in logs for d in w.dates)),
-        firms=list(dict.fromkeys(f for w in logs for f in w.firms)),
-        holes=sum(w.holes for w in logs),
-        pages=sorted({p for w in logs for p in w.pages}))
     return merged, (" (with its bound volumes)" if records else "")
 
 
@@ -1186,6 +1201,346 @@ def _investigation_firm(src: _Source, q: Question) -> Answer:
                   [p + 1 for p in work.pages],
                   f"the firms the headers of the logs of this "
                   f"investigation{where} name, as printed")
+
+
+# -- one record per investigation (BACKLOG RI-207) ---------------------------
+
+#: The three counts an investigation's record carries, each with the log
+#: kinds it counts by default (the code map may give others,
+#: ``investigations:borings=boring,well``).
+_COUNT_KINDS: Dict[str, Tuple[str, ...]] = {
+    "borings": ("boring",), "test_pits": ("test_pit",), "cones": ("cpt",)}
+
+#: The words a part of the row may name each field by; matched singular or
+#: plural, anywhere in the part's name (:func:`_part_field`).
+_INVESTIGATION_WORDS: Dict[str, Tuple[str, ...]] = {
+    "year": ("year", "yr"),
+    "consultant": ("consultant", "firm", "company", "engineer"),
+    "borings": ("boring", "borehole", "bh", "drillhole"),
+    "test_pits": ("pit", "testpit", "tp"),
+    "cones": ("cone", "cpt", "cptu", "sounding"),
+    "pdf_pages": (), "pdf_page": (),
+}
+
+#: Code's two words for whether an investigation is this report's own, each
+#: with the other words a row's pick list may use for it: the part is found
+#: by its options, whatever it is named.
+_CURRENT = "current present this new subject latest"
+_PRIOR = "prior previous earlier past old historic historical former"
+
+#: Where the completeness check (BACKLOG RI-184) puts its entries.
+_PARTIAL_WHERE = "document.completeness"
+
+_RE_A_YEAR = re.compile(r"(?<!\d)(?:19|20)\d\d(?!\d)")
+_RE_A_NUMBER = re.compile(r"(?<![\d.])\d+(?![\d.])")
+_NO_WORDS = {"none", "no", "zero", "nil"}
+
+
+def _status_part(question: Question) -> Optional[Part]:
+    """The row's part that picks current or prior: the one closed-list part
+    whose options hold a word for each."""
+    found = [p for p in question.parts if p.options
+             and _closest(p.options, _CURRENT)
+             and _closest(p.options, _PRIOR)
+             and _closest(p.options, _CURRENT) != _closest(p.options, _PRIOR)]
+    return found[0] if len(found) == 1 else None
+
+
+def _investigation_fields(question: Question) -> Dict[str, str]:
+    """``{field: the row's part that holds it}`` for an investigations row:
+    year, consultant, the three counts and status, whatever the parts are
+    named and in whatever order. A field no part holds is left out."""
+    status = _status_part(question)
+    out: Dict[str, str] = {}
+    for part in question.parts:
+        if status is not None and part.name == status.name:
+            out["status"] = part.name
+        elif not part.options:
+            name = _part_field(part, _INVESTIGATION_WORDS,
+                               _INVESTIGATION_WORDS)
+            if name and name not in out:
+                out[name] = part.name
+    return out
+
+
+def _partial(record: Any) -> bool:
+    """Whether the record's copy is flagged as looking incomplete."""
+    return any(e.kind == "partial"
+               and str(e.where).startswith(_PARTIAL_WHERE)
+               for e in record.qa)
+
+
+def _work_of(records: Sequence[Any]) -> Any:
+    """The field work of these records, merged (None when no log of theirs
+    prints a date or a firm); a record saved before the field is read off
+    its logs the same way."""
+    from report_ingest.model import FieldWork
+    from report_ingest.record_facts import field_work
+
+    found = []
+    for rec in records:
+        work = rec.field_work
+        if work is None and rec.investigations:
+            work = field_work(rec)
+        if work is not None:
+            found.append(work)
+    if not found:
+        return None
+    return FieldWork(
+        years=sorted({y for w in found for y in w.years}),
+        dates=list(dict.fromkeys(d for w in found for d in w.dates)),
+        firms=list(dict.fromkeys(f for w in found for f in w.firms)),
+        holes=sum(w.holes for w in found),
+        pages=sorted({p for w in found for p in w.pages}))
+
+
+def _printed_years(inv: Any) -> Tuple[Tuple[int, ...], bool]:
+    """The four-digit years a log's printed dates hold, and whether it
+    prints a date with digits but no four-digit year ('3/8/99')."""
+    said = [" ".join(str(d or "").split())
+            for d in (inv.date_started, inv.date_finished)]
+    years = tuple(sorted({int(y) for d in said
+                          for y in _RE_A_YEAR.findall(d)}))
+    return years, not years and any(c.isdigit() for d in said for c in d)
+
+
+def _holes_in_words(logs: Sequence[Any],
+                    kinds: Mapping[str, Sequence[str]]) -> str:
+    """How many holes of each count's kinds these logs are, in words ("4
+    borings, 1 test pit"), holes of no count's kind as "other"."""
+    said: List[str] = []
+    counted: set = set()
+    for name, of in kinds.items():
+        counted.update(of)
+        n = _holes([i for i in logs if i.kind in of])[0]
+        if n:
+            word = name.replace("_", " ")
+            said.append(f"{n} {word[:-1] if n == 1 else word}")
+    other = _holes([i for i in logs if i.kind not in counted])[0]
+    if other:
+        said.append(f"{other} other hole{'' if other == 1 else 's'}")
+    return ", ".join(said) or "no hole"
+
+
+def _several_years(who: str, logs: Sequence[Any], printed: Sequence[int],
+                   kinds: Mapping[str, Sequence[str]]) -> str:
+    """The note for an investigation whose logs print more than one year,
+    or a four-digit year beside dates with none: the years, the holes of
+    each kind under each, and why code gives no year and no count."""
+    groups: Dict[Any, List[Any]] = {}
+    short = False
+    for inv in logs:
+        years, no_four = _printed_years(inv)
+        short = short or no_four
+        groups.setdefault(years or ("short" if no_four else "none"),
+                          []).append(inv)
+    by_year = [f"{'/'.join(map(str, key))} ({_holes_in_words(g, kinds)})"
+               for key, g in sorted(((k, g) for k, g in groups.items()
+                                     if isinstance(k, tuple)),
+                                    key=lambda kg: kg[0])]
+
+    def holes(key: str) -> str:
+        group = groups.get(key, [])
+        n = _holes(group)[0]
+        return str(n) + (f" ({_holes_in_words(group, kinds)})" if n else "")
+    return (f"{who}: year and counts left empty: its logs print "
+            f"{', '.join(map(str, printed))}"
+            + (" and dates with no four-digit year" if short else "")
+            + f"; holes by the year their logs print: "
+            f"{', '.join(by_year) or 'none'}; holes whose logs print a date "
+            f"with no four-digit year: {holes('short')}; holes whose logs "
+            f"print no date: {holes('none')}; code cannot tell field "
+            f"campaigns of one investigation from an earlier investigation's "
+            f"logs reproduced in the report")
+
+
+def _investigation(who: str, status: str, logs: Sequence[Any], work: Any,
+                   partial: bool, kinds: Mapping[str, Sequence[str]],
+                   unread: Sequence[str], printed_date: str,
+                   notes: List[str]) -> Dict[str, Any]:
+    """One investigation's fields from what its record holds. A part code
+    cannot settle stays out, with the reason in ``notes``: never a guess.
+    Logs that print more than one year, or a four-digit year beside dates
+    with none, give no year and no counts (the lead's call, 2026-11-13)."""
+    known: Dict[str, Any] = {"status": status}
+    pages = sorted({i.pages[0] + 1 for i in logs if i.pages}
+                   | {p + 1 for p in (work.pages if work else ())})
+    if pages:
+        known["pdf_pages"], known["pdf_page"] = pages, pages[0]
+    years = list(work.years) if work is not None else []
+    dated = [_printed_years(i) for i in logs]
+    printed = sorted(set(years) | {y for ys, _short in dated for y in ys})
+    several = len(printed) > 1 or bool(
+        printed and any(short for _ys, short in dated))
+    if several:
+        # Field campaigns of one investigation, or an earlier one's logs
+        # reproduced in the report: code cannot tell, so neither the year
+        # nor the counts, and what the logs print in the note.
+        notes.append(_several_years(who, logs, printed, kinds))
+    elif years:
+        known["year"] = years[0]
+    elif status == _PRIOR:
+        notes.append(f"{who}: year left empty: its logs print no date with "
+                     f"a four-digit year"
+                     + (f"; the date the report prints for itself "
+                        f"({printed_date}) is not the year the field work "
+                        f"was done" if printed_date else ""))
+    else:
+        notes.append(f"{who}: year left empty: no log of it prints a date "
+                     f"with a four-digit year")
+    firms = list(work.firms) if work is not None else []
+    if len(firms) == 1:
+        known["consultant"] = firms[0]
+    elif firms:
+        notes.append(f"{who}: consultant left empty: its logs name "
+                     f"{len(firms)} firms ({'; '.join(firms)})")
+    else:
+        notes.append(f"{who}: consultant left empty: no log of it names a "
+                     f"firm (a firm, company or consultant field; the "
+                     f"driller is not counted)")
+    if unread:
+        notes.append(f"{who}: counts left empty: " + "; ".join(unread))
+    if several or unread:
+        return known
+    counted = {name: _holes([i for i in logs if i.kind in of])[0]
+               for name, of in kinds.items()}
+    for name, n in counted.items():
+        words = name.replace("_", " ")
+        if n:
+            known[name] = n
+        elif partial:
+            notes.append(f"{who}: {words} left empty: the copy is flagged "
+                         f"as incomplete and the record holds none")
+        elif any(counted.values()):
+            known[name] = 0
+        else:
+            notes.append(f"{who}: {words} left empty: the record holds no "
+                         f"log of these kinds to count beside")
+    if partial and any(counted.values()):
+        notes.append(f"{who}: the copy is flagged as incomplete, so a count "
+                     f"may be short")
+    augers = sum(1 for i in logs if i.kind == "hand_auger")
+    if augers and not any("hand_auger" in of for of in kinds.values()):
+        notes.append(f"{who}: {augers} hand-auger log(s) not counted; the "
+                     f"report decides whether they are borings")
+    return known
+
+
+def _investigations(arg: str) -> Callable[[_Source, Question], Answer]:
+    """One record per investigation the record can stand behind (BACKLOG
+    RI-207): the report's own, from its own logs and field work (with its
+    bound volumes'), and one for each prior report bound into the file,
+    from that report's own record. ``arg`` may name the log kinds each
+    count takes: "borings=boring,well;test_pits=test_pit;cones=cpt".
+
+    The list is a LOWER BOUND: a report often describes an earlier
+    investigation it does not bind in, which no record shows. The answer is
+    marked so (``lower_bound``) and :func:`compare` treats it so."""
+    from report_ingest.model import InvestigationKind
+    from report_ingest.record_facts import field_work
+
+    kinds = dict(_COUNT_KINDS)
+    for piece in (p.strip() for p in arg.split(";")):
+        if not piece:
+            continue
+        name, eq, said = piece.partition("=")
+        name = name.strip()
+        if not eq or name not in kinds:
+            raise ValueError("give each count's log kinds as "
+                             "'<count>=<kind,kind>', the counts from: "
+                             + ", ".join(_COUNT_KINDS) + f" (not {piece!r})")
+        kinds[name] = _kinds(said, get_args(InvestigationKind))
+
+    def read(src: _Source, q: Question) -> Answer:
+        if q.data_type not in ("list of records", "dictionary"):
+            return _not_given("this reading answers a row that is a list of "
+                              "records, one per investigation")
+        fields = _investigation_fields(q)
+        notes: List[str] = []
+        out: List[Dict[str, Any]] = []
+        pages: List[int] = []
+        if "status" not in fields:
+            notes.append("the row has no part that picks current or prior "
+                         "from two listed words, so that part is left empty")
+
+        def add(known: Dict[str, Any]) -> None:
+            for name in ("year", "borings", "test_pits", "cones"):
+                if name in known:
+                    known[name] = str(known[name])
+            pages.extend(known.get("pdf_pages", ())[:1])
+            status = known.pop("status")
+            if "status" in fields:
+                known[fields["status"]] = status
+            out.append(_fill(q, known, notes, _INVESTIGATION_WORDS))
+
+        # -- the report's own investigation ---------------------------------
+        this, _before, left = _placed(src)
+        volumes, missing = _bound_of(src, ("volume",))
+        logs = this + [i for r in volumes for i in r.investigations]
+        work = _work_of([src.record] + volumes)
+        if logs or work is not None:
+            add(_investigation(
+                "the current investigation", _CURRENT, logs, work,
+                _partial(src.record) or any(_partial(r) for r in volumes),
+                kinds, missing, "", notes))
+            other = Counter(kind for kind, _inv in left)
+            notes.extend(
+                f"{n} log(s) on the pages of a bound "
+                f"{kind.replace('_', ' ')} left out: whether they are this "
+                f"investigation's is not on the record"
+                for kind, n in sorted(other.items()))
+        else:
+            notes.append("the current investigation is not listed: the "
+                         "record holds no log of it")
+
+        # -- each prior report bound in -------------------------------------
+        for doc in src.record.bound_documents:
+            if doc.kind != "appended_prior_report":
+                continue
+            where = (f"the prior report bound on PDF pages "
+                     f"{doc.first_page + 1}-{doc.last_page + 1}")
+            mine = [i for i in src.record.investigations if i.pages
+                    and doc.first_page <= i.pages[0] <= doc.last_page]
+            child = src.bound.get(doc.bound_id)
+            unread: List[str] = []
+            if child is None:
+                held = int(doc.counts.get("investigations", 0) or 0)
+                if not held and not mine:
+                    notes.append(f"{where} is not listed: no log of it is "
+                                 f"on the record")
+                    continue
+                if held:
+                    unread.append(f"its record holds {held} log(s) and was "
+                                  f"not given")
+                child_logs, partial = [], False
+            else:
+                child = _as_record(child)
+                child_logs = list(child.investigations)
+                partial = _partial(child)
+                if not child_logs and not mine:
+                    notes.append(f"{where} is not listed: its record holds "
+                                 f"no log")
+                    continue
+            # Its year and firm off every log of it: its own record's and
+            # the parent's placed on its pages.
+            work = field_work(src.record, logs=mine + child_logs)
+            known = _investigation(where, _PRIOR, mine + child_logs, work,
+                                   partial, kinds, unread, doc.date, notes)
+            known.setdefault("pdf_pages", [doc.first_page + 1])
+            known.setdefault("pdf_page", doc.first_page + 1)
+            add(known)
+
+        if not out:
+            return _not_given("; ".join(
+                notes + ["investigations the text only describes are not on "
+                         "any record"]))
+        answer = _given(out, pages, "; ".join(
+            ["code's list may be short (a lower bound): the investigations "
+             "the record holds logs of; one the report only describes is "
+             "not on any record"] + notes))
+        answer.lower_bound = True
+        return answer
+    return read
 
 
 def _logs(src: _Source) -> List[Any]:
@@ -1461,6 +1816,10 @@ def _no_argument(read: Callable[[_Source, Question], Answer]
 #: * ``investigation_year``: the four-digit years in the dates the logs of
 #:   this investigation (and its bound volumes) print;
 #:   ``investigation_firm``: the firms their headers name.
+#: * ``investigations``: one record per investigation the record holds logs
+#:   of: the report's own and each prior report bound in (year, consultant,
+#:   counts of borings, test pits and cone soundings, current or prior).
+#:   A lower bound: see :func:`_investigations`.
 #:
 #: A yes-or-nothing reading never answers no: no log or no calculation on
 #: the record is not a no, because a report can describe what it does not
@@ -1487,6 +1846,8 @@ READINGS: Dict[str, Callable[[str], Callable[[_Source, Question], Answer]]] = {
     "appendix_list": _no_argument(_appendix_list),
     "investigation_year": _no_argument(_investigation_year),
     "investigation_firm": _no_argument(_investigation_firm),
+    # BACKLOG RI-207.
+    "investigations": _investigations,
 }
 
 
@@ -1597,6 +1958,98 @@ def _same(question: Question, a: Any, b: Any) -> Optional[bool]:
     return None
 
 
+def _a_number(value: Any, year: bool = False) -> Optional[int]:
+    """The whole number a part's text gives ("3", "3 borings", "none" as
+    0; a year as its four digits); None when it gives none, or more than
+    one."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    text = " ".join(str(value).lower().split())
+    found = (_RE_A_YEAR if year else _RE_A_NUMBER).findall(text)
+    if len(set(found)) == 1:
+        return int(found[0])
+    if not found and not year and text.strip(" .") in _NO_WORDS:
+        return 0
+    return None
+
+
+def _investigation_match(fields: Mapping[str, str], mine: Mapping[str, Any],
+                         theirs: Mapping[str, Any]) -> bool:
+    """Whether the model's record ``theirs`` can be the investigation code
+    lists as ``mine``: the same current-or-prior, the year equal where both
+    give one, each count equal where both give one."""
+    part = fields.get("status")
+    if part and mine.get(part) and theirs.get(part) \
+            and _norm(mine[part]) != _norm(theirs[part]):
+        return False
+    if part and mine.get(part) and not theirs.get(part):
+        return False
+    for name in ("year", "borings", "test_pits", "cones"):
+        part = fields.get(name)
+        if not part:
+            continue
+        a = _a_number(mine.get(part), year=name == "year")
+        b = _a_number(theirs.get(part), year=name == "year")
+        if a is not None and b is not None and a != b:
+            return False
+    return True
+
+
+def _unmatched(question: Question, model: Any, code: Any) -> List[int]:
+    """The indexes of code's investigations with no record of their own in
+    the model's list (each of the model's records matches one of code's at
+    most). The fewest that can be left over, tried in every order: the
+    lists are a handful long."""
+    fields = _investigation_fields(question)
+    code = [r for r in code or () if isinstance(r, Mapping)]
+    model = [r for r in model or () if isinstance(r, Mapping)]
+    can = [[j for j, theirs in enumerate(model)
+            if _investigation_match(fields, mine, theirs)] for mine in code]
+    best: List[int] = list(range(len(code)))
+
+    def place(i: int, used: frozenset, left: Tuple[int, ...]) -> None:
+        nonlocal best
+        if len(left) >= len(best):
+            return
+        if i == len(code):
+            best = list(left)
+            return
+        for j in can[i]:
+            if j not in used:
+                place(i + 1, used | {j}, left)
+        place(i + 1, used, left + (i,))
+
+    place(0, frozenset(), ())
+    return best
+
+
+def _compare_lower_bound(question: Question, out: Answer, model: Answer,
+                         code: Answer) -> Answer:
+    """A "Both" row whose code list is a lower bound (BACKLOG RI-207): the
+    two agree when every investigation code lists has a match in the
+    model's list; one only the model lists is not a disagreement."""
+    left = _unmatched(question, model.value, code.value)
+    n_code = len(code.value or ())
+    extra = len(model.value or ()) - (n_code - len(left))
+    if left:
+        out.source = FROM_DISAGREE
+        out.noted("; ".join(
+            f"no investigation in the report text's list matches code's "
+            f"({_record_text(question, code.value[i])})" for i in left))
+    else:
+        out.source = FROM_AGREE
+        if extra > 0:
+            out.noted(f"{extra} investigation(s) only the report text lists "
+                      f"are not a disagreement: code's list is a lower "
+                      f"bound")
+    return out.noted(f"code (may be short): "
+                     f"{_shown(question, code.value)}; code's note: "
+                     f"{code.note}")
+
+
+
 def compare(question: Question, model: Optional[Answer],
             code: Optional[Answer]) -> Answer:
     """A "Both" row: the model's answer, with code's reading kept beside it
@@ -1604,7 +2057,9 @@ def compare(question: Question, model: Optional[Answer],
     two agree. Counts compare as whole numbers, lists as sets of normalised
     text, a closed-list or date answer as normalised text; a written
     description is compared by eye. Code with no reading leaves the model's
-    answer as it is, with code's reason in the note."""
+    answer as it is, with code's reason in the note. A code list marked
+    a lower bound (``lower_bound``, the ``investigations`` reading) is
+    compared by :func:`_compare_lower_bound` instead."""
     model = model or Answer(status="", note="no answer came back")
     out = Answer(value=model.value, status=model.status,
                  pdf_pages=list(model.pdf_pages), note=model.note,
@@ -1619,6 +2074,9 @@ def compare(question: Question, model: Optional[Answer],
     if model.status != "answered":
         out.source = FROM_DISAGREE
         return out.noted(f"code: {shown}")
+    if code.lower_bound and isinstance(code.value, list) \
+            and isinstance(model.value, list):
+        return _compare_lower_bound(question, out, model, code)
     same = _same(question, model.value, code.value)
     out.source = (FROM_BY_EYE if same is None
                   else FROM_AGREE if same else FROM_DISAGREE)
