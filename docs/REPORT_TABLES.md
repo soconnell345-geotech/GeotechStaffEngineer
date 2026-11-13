@@ -38,7 +38,7 @@ its output dataset as it carries everything else.
 
 | Setting | What it does | Unset |
 |---|---|---|
-| `GSE_REPORT_TABLES` | `0`, `off`, `false` or `no`: no export, and nothing at all is written (not even the run file below). A folder: the root is that folder for every report. `1`, `on`: the default root | on, at the default root |
+| `GSE_REPORT_TABLES` | `0`, `off`, `false` or `no`: no export, and nothing of it is written (not even the run file below); the question list, when it runs, still saves its answers as `report.questions.json` beside its sheet, which is the list's own file. A folder: the root is that folder for every report. `1`, `on`: the default root | on, at the default root |
 | `GSE_REPORT_TABLES_DATASET` | a Foundry workspace dataset alias (the same kind of value as `GEOTECH_FOUNDRY_CONVERSATION_DATASET`). On a Foundry deployment, each report's export files go to it in one save | nothing is sent, and nothing of Foundry's is loaded |
 
 In code, `ingest_report(..., report_tables=...)` wins over the setting:
@@ -81,14 +81,20 @@ report_tables/v1/
   (UTC, `2026-01-02T03:04:05Z`), date (`2026-01-02`), list of text, list of
   whole numbers. A structured value is a JSON string in a column whose name
   ends `_json`.
+- Read the tables with `schema.json`'s types; do not let a reader guess
+  them. A column that is null in every file seen so far (`label_vision` on
+  the default path, often `value_date`) would be guessed as text.
 - **Pages are PDF pages counted from 1**, as a PDF viewer shows them
   (`pdf_page`, `pdf_pages`). The page number printed on the page is a
   separate column (`printed_page`). The record itself counts pages from 0;
   the tables do not.
 - `schema.json` is written from the same definitions as the rows. So is the
   column list below (a test holds this document to them).
-- Files are written whole and then put in place, so a reader never sees half
-  a file.
+- Each file is written whole and then put in place, so a reader never sees
+  half a file. A report's set of files is not replaced at one instant: a
+  reader during an export can meet a new `report` row beside the old
+  `report_page` rows, and an export that fails part-way can leave some of a
+  report's files replaced and others not, until the next export.
 
 ## Keys and links
 
@@ -143,7 +149,11 @@ report_page.bound_report_key -> report    the bound-in report that page belongs 
 
 A bound-in report's pages are numbered in its parent's file: its page rows
 carry `file_report_key` = the parent's key, and the parent's own rows for
-those pages carry `bound_report_key` = the bound-in report's key.
+those pages carry `bound_report_key` = the bound-in report's key. So those
+physical pages have two rows, the parent's and the bound-in report's, and
+the two may carry different labels (the bound-in report's own rules run
+again). To count physical pages, count the rows whose report has no
+`parent_report_key`.
 
 ## What a re-ingest does
 
@@ -322,11 +332,11 @@ Files: `report_answer/<report_key>.jsonl`. Primary key: `answer_id` (`<report_ke
 | `position` | integer | no | The question's place in its set, from 1, in the owner's order. |
 | `question_label` | string | yes | The list's Output; null for the two schemas, whose key is the owner's own field name. |
 | `category` | string | yes | The list's Category; null for the two schemas. |
-| `data_type` | string | yes | The answer's type in the question list's words: string, boolean, integer, date, list of strings, list of records, dictionary, integer or list of integers. For the two schemas, from the field's type; null for a list answer read back from an older answer sheet. |
-| `status` | string | yes | answered; not said (the report is silent); does not apply (the question has no bearing; question list only). Null where no answer came back at all (a question-list call that failed; the note says so). |
-| `value_text` | string | yes | The answer as text: the schema's answer as printed (a list joined with '; '), or the question list's answer as its sheet shows it; 'none' for an empty list. |
+| `data_type` | string | yes | The answer's type in the question list's words: string, boolean, integer, date, list of strings, list of records, dictionary, integer or list of integers. For the two schemas, from the field's type. Null on every question-list row read back from an older answer sheet, which holds no type. |
+| `status` | string | yes | answered; not said (the report is silent); does not apply (the question has no bearing; question list only). Null where no answer came back at all (a question-list call that failed; the note says so). Read back from an older answer sheet, from its Answer cell: N/A is does not apply, empty is not said (null where the note says not run). |
+| `value_text` | string | yes | The answer as text: the schema's answer as printed (a list joined with '; '), or the question list's answer as its sheet shows it (a dictionary answer as JSON); 'none' for an empty list. An answer of many records read back from an older sheet is the sheet's own pointer to its tab. |
 | `value_number` | double | yes | The answer as a number, when it is one. |
-| `value_boolean` | boolean | yes | The answer as true or false: a boolean answer, or for the schemas' yes/no questions yes as true and no as false (mixed and unclear stay null). |
+| `value_boolean` | boolean | yes | The answer as true or false: a boolean answer of the question list, or for the schemas' yes/no questions their typed verdict (the ...Answer field beside the text) yes as true and no as false. Null for mixed or unclear, and where a field has no typed verdict: the text itself (e.g. 'no - not tested') is not parsed. |
 | `value_date` | date | yes | The answer as a date, when it is a full date (the schema's reportDate gives its reportDateISO). |
 | `value_list` | array<string> | yes | The answer as a list of text, when it is a list of plain values; null otherwise. |
 | `value_json` | string | yes | The answer's typed value as JSON. Where the schema keeps a typed twin beside the printed answer (reportDateISO, siteClassNormalized, asceSevenVersionNormalized, bearingCapacityValues, strataList, the yes/no answers' verdicts), the twin's value; the twins' own page references are in pdf_pages and quotes, not here. Null when there is no answer. |

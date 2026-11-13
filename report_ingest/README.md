@@ -1435,7 +1435,7 @@ trust in a dataset, and a suggested Ontology.
 
 | Setting | What it gives | Unset |
 |---|---|---|
-| `GSE_REPORT_TABLES` | `0` / `off`: no export and nothing written; a folder: that root for every report; `on`: the default root | on; the root is the folder holding the ingest's `reports.db` (a folder run's or the cluster stage's library), else the app's shared report library (`GEOTECH_REPORT_LIBRARY`) for a report ingested into it, else the report's own folder |
+| `GSE_REPORT_TABLES` | `0` / `off`: no export and nothing of it written (the question list's own `report.questions.json` still is, when the list runs); a folder: that root for every report; `on`: the default root | on; the root is the folder holding the ingest's `reports.db` (a folder run's or the cluster stage's library), else the app's shared report library (`GEOTECH_REPORT_LIBRARY`) for a report ingested into it, else the report's own folder |
 | `GSE_REPORT_TABLES_DATASET` | a Foundry workspace dataset alias: on a Foundry deployment, each report's export goes to it in one save, under the application's top folder (`aec_agent_core.foundry_dataset_store`, the conversation store's lock and outputs folder) | nothing is sent and nothing of Foundry's is imported |
 
 `ingest_report(report_tables=...)` wins over the setting (`False` off,

@@ -235,6 +235,28 @@ class TestTheDefinitions:
         assert tables.TABLE["report_answer"].id_format == \
             "<report_key>:<question_set>:<question_key>"
 
+    def test_a_number_that_is_not_finite_is_refused(self):
+        """RI-209 review C7: NaN or infinity would be written as a bare
+        token no strict JSON reader takes."""
+        for bad in (float("nan"), float("inf")):
+            with pytest.raises(ValueError):
+                tables.make_row(tables.TABLE["report_answer"], {
+                    "report_key": "3f2a", "question_set": "general",
+                    "question_key": "boringCount", "position": 1,
+                    "value_number": bad})
+        with pytest.raises(ValueError):
+            tables._jsonl([{"x": float("nan")}])
+
+    def test_a_line_break_other_than_newline_is_escaped(self):
+        """RI-209 review C8: NEL, LINE SEPARATOR and PARAGRAPH SEPARATOR
+        inside text are written escaped, so a row is one line to any
+        splitter, and read back the same."""
+        text = "one" + chr(0x2028) + "two" + chr(0x2029) + "three" + \
+            chr(0x85) + "four"
+        data = tables._jsonl([{"value_text": text}]).decode("utf-8")
+        assert len(data.splitlines()) == 1
+        assert json.loads(data) == {"value_text": text}
+
     def test_an_id_is_its_parts_and_hashes_an_unsafe_one(self):
         assert tables.make_id("3f2a9c0d41b7e865", 12) == "3f2a9c0d41b7e865:12"
         assert tables.make_id("3f2a", "question_list", "site_fill") == \
@@ -1172,9 +1194,34 @@ class TestFoldersIngestedBefore:
         assert rows["has_fill"]["note"] == "fill to 2 ft"
         assert rows["pile_type"]["status"] == "does not apply"
         assert rows["rock_cored"]["status"] == "not said"
+        # a failed call (empty, noted "not run"): no status, as from the
+        # JSON (RI-209 review C11)
+        assert rows["lost_row"]["status"] is None
         assert rows["site_name"]["data_type"] is None   # the sheet has none
         assert rows["site_name"]["question_list"].startswith(
             "made_up_list.xlsx")
+
+    def test_side_files_of_an_odd_shape_do_not_stop_the_export(
+            self, tmp_path):
+        """RI-209 review C10 and C12: a labels.json that is a list is read
+        as no reasons, a question-list answer that is not a dict is
+        skipped, and a dictionary answer's text is JSON."""
+        folder, _pdf, written = _write_folder(tmp_path)
+        (folder / "labels.json").write_text("[1, 2]", encoding="utf-8")
+        (folder / "report.questions.json").write_text(json.dumps({
+            "answers": ["not a dict", {
+                "key": "depths", "status": "answered",
+                "data_type": "dictionary", "value": {"B-1": [30, 40]},
+                "text": "{'B-1': [30, 40]}"}], "run": ["not a dict"]}),
+            encoding="utf-8")
+
+        (outcome,) = tables.export_folder(tmp_path / "run")
+
+        assert outcome.status == "written", outcome.detail
+        rows = _answers(_rows(Path(outcome.folder), "report_answer",
+                              written.key), "question_list")
+        assert list(rows) == ["depths"]
+        assert json.loads(rows["depths"]["value_text"]) == {"B-1": [30, 40]}
 
     def test_a_folder_of_reports_exports_each_with_its_bound_reports(
             self, ingested, tmp_path):

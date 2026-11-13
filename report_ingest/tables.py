@@ -61,6 +61,7 @@ import argparse
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -486,23 +487,31 @@ TABLES: Tuple[Table, ...] = (
                "The answer's type in the question list's words: string, "
                "boolean, integer, date, list of strings, list of records, "
                "dictionary, integer or list of integers. For the two "
-               "schemas, from the field's type; null for a list answer read "
-               "back from an older answer sheet."),
+               "schemas, from the field's type. Null on every question-list "
+               "row read back from an older answer sheet, which holds no "
+               "type."),
             _c("status", "string",
                "answered; not said (the report is silent); does not apply "
                "(the question has no bearing; question list only). Null "
                "where no answer came back at all (a question-list call that "
-               "failed; the note says so)."),
+               "failed; the note says so). Read back from an older answer "
+               "sheet, from its Answer cell: N/A is does not apply, empty "
+               "is not said (null where the note says not run)."),
             _c("value_text", "string",
                "The answer as text: the schema's answer as printed (a list "
                "joined with '; '), or the question list's answer as its "
-               "sheet shows it; 'none' for an empty list."),
+               "sheet shows it (a dictionary answer as JSON); 'none' for an "
+               "empty list. An answer of many records read back from an "
+               "older sheet is the sheet's own pointer to its tab."),
             _c("value_number", "double",
                "The answer as a number, when it is one."),
             _c("value_boolean", "boolean",
-               "The answer as true or false: a boolean answer, or for the "
-               "schemas' yes/no questions yes as true and no as false "
-               "(mixed and unclear stay null)."),
+               "The answer as true or false: a boolean answer of the "
+               "question list, or for the schemas' yes/no questions their "
+               "typed verdict (the ...Answer field beside the text) yes as "
+               "true and no as false. Null for mixed or unclear, and where "
+               "a field has no typed verdict: the text itself (e.g. 'no - "
+               "not tested') is not parsed."),
             _c("value_date", "date",
                "The answer as a date, when it is a full date (the schema's "
                "reportDate gives its reportDateISO)."),
@@ -706,7 +715,7 @@ def _fits(type_: str, value: Any) -> bool:
     if type_ == "integer":
         return isinstance(value, int) and not isinstance(value, bool)
     if type_ == "double":
-        return isinstance(value, float)
+        return isinstance(value, float) and math.isfinite(value)
     if type_ == "boolean":
         return isinstance(value, bool)
     if type_ == "timestamp":
@@ -879,9 +888,20 @@ def _copy(source: str, path: str) -> None:
         raise
 
 
+#: The characters a line splitter other than "\n" breaks a line at (NEL,
+#: LINE SEPARATOR, PARAGRAPH SEPARATOR), written escaped so one row is one
+#: line by any reader (RI-209 review C8). JSON allows the escape anywhere
+#: in a string, and they occur only inside strings.
+_ESCAPED_BREAKS = {code: chr(92) + f"u{code:04x}"
+                   for code in (0x85, 0x2028, 0x2029)}
+
+
 def _jsonl(rows: Sequence[Mapping[str, Any]]) -> bytes:
-    return "".join(json.dumps(row, ensure_ascii=False,
-                              separators=(",", ":")) + "\n"
+    """Rows as JSON Lines: strict JSON (a non-finite number is refused,
+    RI-209 review C7), one line per row."""
+    return "".join(json.dumps(row, ensure_ascii=False, allow_nan=False,
+                              separators=(",", ":"))
+                   .translate(_ESCAPED_BREAKS) + "\n"
                    for row in rows).encode("utf-8")
 
 
@@ -972,7 +992,15 @@ def _key_in(folder: str, record: Any = None, parent_key: str = "") -> str:
     if key or record is None:
         return key
     from report_ingest.writers import record_key
-    return record_key(record, None, parent_key)
+    key = record_key(record, None, parent_key)
+    # neither a run file nor a library page: the key is made up from what
+    # the record says it is, and may not be the reports.db row's (RI-209
+    # review C17)
+    _log.warning("report tables: %s has no run file and no library page; "
+                 "its key %s is computed from the record and may differ "
+                 "from its library row's",
+                 os.path.basename(os.path.normpath(folder)), key)
+    return key
 
 
 @dataclass
@@ -1139,14 +1167,18 @@ def _sheet_answers(path: str) -> Optional[Dict[str, Any]]:
             continue
         shown = cell(row, "Answer")
         shown = "" if shown is None else str(shown)
+        note = cell(row, "Note") or ""
+        # a call that failed: an empty Answer cell noted "not run", which
+        # the JSON path gives as no status (RI-209 review C11)
         status = ("does not apply" if shown == "N/A"
+                  else "" if not shown and str(note).strip() == "not run"
                   else "not said" if not shown else "answered")
         answers.append({
             "key": str(key), "output": cell(row, "Output"),
             "category": cell(row, "Category"), "data_type": None,
             "value": None, "status": status,
             "pdf_pages": _pages_from(cell(row, "PDF pages")),
-            "note": cell(row, "Note") or "", "source": cell(row, "From"),
+            "note": note, "source": cell(row, "From"),
             "text": shown if status == "answered" else "",
             "code_value_text": ""})
     return {"format": 0, "answers": answers,
@@ -1173,9 +1205,10 @@ def _descriptions(report: _Report) -> Dict[int, Dict[str, Any]]:
 
 
 def _reasons(report: _Report) -> Dict[int, str]:
-    blob = _read_json(os.path.join(report.folder, "labels.json")) or {}
+    blob = _read_json(os.path.join(report.folder, "labels.json"))
+    pages = blob.get("pages") if isinstance(blob, dict) else None
     out: Dict[int, str] = {}
-    for row in blob.get("pages") or []:
+    for row in pages if isinstance(pages, list) else []:
         if isinstance(row, dict) and isinstance(row.get("page"), int) \
                 and row.get("why"):
             out[row["page"]] = str(row["why"])
@@ -1218,7 +1251,8 @@ def _saved_runs(report: _Report, questions: Optional[Dict[str, Any]]
             if blob.get("prompt"):
                 prompts.add(str(blob["prompt"]))
     if questions is not None:
-        run = questions.get("run") or {}
+        run = questions.get("run")
+        run = run if isinstance(run, dict) else {}
         if run.get("prompt_version"):
             prompts.add(str(run["prompt_version"]))
         models.update(str(c.get("model")) for c in run.get("calls") or []
@@ -1371,7 +1405,8 @@ def _schema_rows(report: _Report, qa_where: Dict[str, List[str]],
 
 def _list_rows(report: _Report, questions: Dict[str, Any],
                qa_where: Dict[str, List[str]]) -> List[Dict[str, Any]]:
-    run = questions.get("run") or {}
+    run = questions.get("run")
+    run = run if isinstance(run, dict) else {}
     name = str(run.get("question_list") or "")
     modified = str(run.get("list_modified") or "")
     listed = (f"{name} (modified {modified})" if name and modified
@@ -1379,6 +1414,8 @@ def _list_rows(report: _Report, questions: Dict[str, Any],
     rows: List[Dict[str, Any]] = []
     for position, answer in enumerate(questions.get("answers") or [],
                                       start=1):
+        if not isinstance(answer, dict):
+            continue
         key = str(answer.get("key") or "")
         if not key:
             continue
@@ -1415,6 +1452,9 @@ def _list_rows(report: _Report, questions: Dict[str, Any],
         if value is not None:
             values["value_json"] = json.dumps(value, ensure_ascii=False,
                                               default=str)
+        if isinstance(value, dict):
+            # as JSON, not as the sheet's display (RI-209 review C12)
+            values["value_text"] = values["value_json"]
         rows.append(make_row(TABLE["report_answer"], values))
     return rows
 
@@ -1575,8 +1615,10 @@ def _build(report: _Report) -> _Built:
 
 @dataclass
 class ExportOutcome:
-    """What one export did: ``written``, ``off``, or ``error`` (nothing
-    of that report was written; ``detail`` says why). ``files`` are the
+    """What one export did: ``written``, ``off``, or ``error`` (``detail``
+    says why; an error before the writing wrote nothing of the report, one
+    part-way through can leave some of its files replaced and others not:
+    each file is written whole, a report's set is not). ``files`` are the
     files written, relative to the export's folder (``folder``, local);
     ``delivery`` says what the Foundry dataset got: ``sent N file(s)``,
     ``not set`` (no dataset named), ``not a Foundry deployment``,
