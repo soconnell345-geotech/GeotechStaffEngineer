@@ -68,7 +68,7 @@ METHOD_INFO = {
             "variables": {
                 "type": "array",
                 "required": True,
-                "description": "List of dicts with keys: name (str), dist (normal/lognormal/gumbel/uniform/constant/weibull/gamma_dist/beta), mean (float), stdv (float), value (float, for constant).",
+                "description": "List of dicts with keys: name (str), dist (normal/lognormal/gumbel/uniform/constant/weibull/gamma_dist/beta), mean (float), stdv (float), value (float, for constant). uniform takes a (lower) and b (upper) instead of mean/stdv.",
             },
             "limit_state": {
                 "type": "str",
@@ -89,7 +89,7 @@ METHOD_INFO = {
             "design_point_x": "Design point in physical space.",
             "design_point_u": "Design point in standard normal space.",
             "n_iterations": "Number of iterations to convergence.",
-            "n_function_calls": "Number of limit state evaluations.",
+            "n_function_calls": "An estimate, not a count: iterations x number of variables.",
             "converged": "Whether analysis converged.",
             "limit_state_expr": "Limit state expression used.",
             "n_variables": "Number of random variables.",
@@ -102,7 +102,7 @@ METHOD_INFO = {
             "variables": {
                 "type": "array",
                 "required": True,
-                "description": "List of dicts with keys: name, dist, mean, stdv (same as FORM).",
+                "description": "List of dicts with keys: name, dist, mean, stdv (same as FORM); uniform takes a and b, constant takes value.",
             },
             "limit_state": {
                 "type": "str",
@@ -126,7 +126,7 @@ METHOD_INFO = {
             "design_point_x": "Design point in physical space.",
             "design_point_u": "Design point in standard normal space.",
             "n_iterations": "Number of iterations.",
-            "n_function_calls": "Number of limit state evaluations.",
+            "n_function_calls": "An estimate, not a count: iterations x number of variables.",
             "converged": "Whether analysis converged.",
             "limit_state_expr": "Limit state expression used.",
             "n_variables": "Number of random variables.",
@@ -139,7 +139,7 @@ METHOD_INFO = {
             "variables": {
                 "type": "array",
                 "required": True,
-                "description": "List of dicts with keys: name, dist, mean, stdv (same as FORM).",
+                "description": "List of dicts with keys: name, dist, mean, stdv (same as FORM); uniform takes a and b, constant takes value.",
             },
             "limit_state": {
                 "type": "str",

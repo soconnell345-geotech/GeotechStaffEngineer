@@ -1218,6 +1218,8 @@ METHOD_INFO = {
         },
         "returns": {
             "plot_type": "Type of plot.",
+            "trend_results": "Only present when show_trend is on: the fitted trend(s), one dict per fit (per soil class when group_trends_by is given).",
+            "skipped": "Only present when something was left out: the investigations (or points) not drawn, each with the reason.",
             "n_data_points": "Number of data points plotted.",
             "n_investigations": "Number of investigations shown.",
         },
@@ -1235,6 +1237,7 @@ METHOD_INFO = {
         },
         "returns": {
             "plot_type": "Type of plot.",
+            "skipped": "Only present when something was left out: the investigations (or points) not drawn, each with the reason.",
             "n_data_points": "Number of data points plotted.",
         },
     },
@@ -1252,6 +1255,7 @@ METHOD_INFO = {
         },
         "returns": {
             "plot_type": "Type of plot.",
+            "skipped": "Only present when something was left out: the investigations (or points) not drawn, each with the reason.",
             "n_data_points": "Total data points across all panels.",
             "parameters": "Parameters plotted.",
         },
@@ -1271,6 +1275,7 @@ METHOD_INFO = {
         },
         "returns": {
             "plot_type": "Type of plot.",
+            "skipped": "Only present when something was left out: the investigations (or points) not drawn, each with the reason.",
             "n_investigations": "Number of investigation locations shown.",
         },
     },
@@ -1291,6 +1296,7 @@ METHOD_INFO = {
         },
         "returns": {
             "plot_type": "Type of plot.",
+            "skipped": "Only present when something was left out: the investigations (or points) not drawn, each with the reason.",
             "n_investigations": "Number of investigations in the cross-section.",
         },
     },
