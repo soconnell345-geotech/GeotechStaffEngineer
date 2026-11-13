@@ -95,6 +95,8 @@ class ShaftSoilLayer:
     GSI: Optional[float] = None
     m_i: Optional[float] = None
     #: Whether the RQD was given (set here; carried through ``replace``).
+    #: It is set when the layer is built, so give RQD at construction:
+    #: ``replace(layer, RQD=...)`` keeps the RQD_given of the layer it copies.
     RQD_given: Optional[bool] = None
 
     def __post_init__(self):
