@@ -168,8 +168,10 @@ EXHAUSTED = (
     "findings. Ask me to continue and I will pick up from the pages already "
     "read.")
 READER_NUDGE = (
-    "[Step budget reached] Last step, no tools: return the findings you have, "
-    "each with its citation, and one line on what you did not get to check.")
+    "[Step budget reached] Last step, no tools: return what you have, each "
+    "item with its citation - the findings; what you read that must be "
+    "compared with pages outside your job; and the open items, with what you "
+    "did not get to check.")
 READER_EXHAUSTED = (
     "The reading helper ran out of steps before it could report. Hand it a "
     "narrower job (fewer pages, one question).")
