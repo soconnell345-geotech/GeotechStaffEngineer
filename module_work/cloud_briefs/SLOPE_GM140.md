@@ -227,6 +227,8 @@ Branch `claude/gm-140-step8-supports`. Requires on master: step 1. Runs in paral
 8. **The legacy single force** without an elevation is refused (D37).
 9. **The crossing** of a support and a slip surface is found exactly (a line with a circle, a line with each segment of a polyline), not by sampling 200 points.
 
+**A support on a slice boundary (GM-353, from GM-343's review).** A support that meets the slip surface exactly on a slice boundary acts on whichever slice a rounding gives it: V-043's geosynthetic (x 8.388) reads 40.88 kN/m at the radius and 45.22 at the radius + 1e-8 m (printed 44 to 45). Give such a support to one slice by a stated rule, or cut the slice at the crossing; then both radii give one force, and V-043's pin (45.2, noted as one of the tie's two outcomes) is re-pinned with its page.
+
 **Out of scope.** Stabilizing piles' Ito-Matsui force as its own method (OWN-13). Reverse-curvature circles (step 4). New support types.
 
 **Benchmarks.** All of section 11, and two printed ones to add:

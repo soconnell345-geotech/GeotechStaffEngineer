@@ -4488,6 +4488,24 @@
           }
         ],
         "multi": true
+      },
+      {
+        "label": "37. Where a circle ends (GM-343, a step of GM-140, built 2026-11-13), two calls: (1) a circle that meets the ground at more than two points (crossing it, or touching it within the touch allowance) is split at those points, and each arc with ground above it is a trial surface of its own, solved, screened and scored like any other, the result naming the arc; nothing is refused for being one of two masses and no arc is carried under the ground in front of the toe (GM-122's ruling; it replaces the refusal of a surface below the ground in more than one stretch); (2) a circle that passes under a corner within the touch allowance is NOT split there, so the allowance does not change the answer: the vertical cut reads 0.851 (Taylor's stability number 3.83) whatever the allowance, where splitting there reads 0.844, the allowance acting as about 1 % more height.",
+        "options": [
+          {
+            "label": "Let both stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) Only the arc that holds the crest",
+            "effect": "A circle that meets the ground at more than two points is scored on the arc under the crest only; an arc in front of the toe is never a trial surface of its own."
+          },
+          {
+            "label": "(2) Split at a touched corner",
+            "effect": "A circle that passes under a corner within the touch allowance is split there: the vertical cut reads 0.844 against Taylor's 0.851, and the reported minimum moves with the allowance."
+          }
+        ],
+        "multi": true
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
