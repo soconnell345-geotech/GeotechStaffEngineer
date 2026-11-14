@@ -356,6 +356,37 @@ def test_the_figures_marked_are_the_reply_s_final_figures(tmp_path):
     assert rec["figures"] == [os.path.join("agent", "files", "a.png")]
 
 
+def test_a_run_that_leaves_a_draft_and_a_final_sends_only_the_final(
+        tmp_path):
+    data = tmp_path / "data"
+    freq.prepare(data, ["R01"], references=False, say=lambda s: None)
+
+    def run_fn(model, req, arm, agent_dir, recursion_limit=None):
+        os.makedirs(os.path.join(agent_dir, "files"), exist_ok=True)
+        for name in ("draft_width.png", "bearing_width.png"):
+            _png(os.path.join(agent_dir, "files", name))
+        return {"started": "t", "answer": "The figure bearing_width.png "
+                "shows q_ult against B.",
+                "files": ["files/bearing_width.png", "files/draft_width.png"]}
+
+    eyes = _Eyes("gpt-5.4")
+    out = tmp_path / "out"
+    res = runner.score_figure_set(object(), vision_model=eyes, data_dir=data,
+                                  out_dir=out, run_fn=run_fn,
+                                  say=lambda s: None)
+    run = res["runs"]["R01-bearing-width"]["on"]
+    final = os.path.join("runs", "R01-bearing-width", "on", "agent", "files",
+                         "bearing_width.png")
+    assert run["figures"] == [final] and run["figures_by"] == "reply"
+    assert len(run["files"]) == 2                      # the draft is kept
+    for sent in eyes.sent:
+        assert len([c for c in sent if c["type"] == "image_url"]) == 1
+    chk = res["checks"]["R01-bearing-width"]["on"]
+    assert chk["figures"] == ["bearing_width.png"] and not chk["dropped"]
+    page = (out / "side_by_side.html").read_text("utf-8")
+    assert "draft_width" not in page
+
+
 def test_an_unreadable_reply_is_asked_once_more_then_kept_apart(tmp_path):
     data = tmp_path / "data"
     freq.prepare(data, ["R01", "R17"], references=False, say=lambda s: None)

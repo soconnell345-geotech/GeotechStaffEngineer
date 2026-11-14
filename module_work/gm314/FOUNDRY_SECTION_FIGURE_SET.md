@@ -103,7 +103,10 @@ compare its `figures` and `picked_by` with the PNGs in `agent/files/` and
 with the figure the reply presents. If a draft was marked, or `picked_by`
 is `newest` while `files/` holds more PNGs than the reply presents, stop
 and report it with that folder before running the rest. `RESULTS.md` also
-notes every run whose marks came from the newest PNGs.
+notes every run whose marks came from the newest PNGs. The hand-back keeps
+every PNG a run wrote (`files` in `run.json`, and `agent/files/`); only the
+presented ones (`figures` in `run.json`) are marked and shown on the
+side-by-side page.
 
 Then the whole set, in the same folder (R01 is not asked again):
 

@@ -104,13 +104,20 @@ def _record(request: Dict[str, Any], arm: str, res: Dict[str, Any],
     ``out_dir``."""
     files = [os.path.join(agent_dir, f) for f in res.get("files") or []]
     rel = [os.path.relpath(p, out_dir) for p in files]
+    # the figures the final reply presents (cited by file name); when it
+    # cites none, every PNG left (a redraw under the same name overwrites
+    # its file and a draft retired with replaces= is deleted, so each is
+    # the last draw of its figure). Look copies never; all files kept.
+    pngs = [p for p in rel if p.lower().endswith(".png")
+            and not is_look_copy(p)]
+    answer = (res.get("answer") or "").lower()
+    cited = [p for p in pngs if os.path.basename(p).lower() in answer]
     return {
         "request": request["id"], "arm": arm, "env": ARM_ENV[arm],
         "prompt": request["prompt"], "started": res.get("started"),
         "answer": res.get("answer") or "",
         "error": res.get("error") or res.get("outcome_error"),
-        "figures": [p for p in rel if p.lower().endswith(".png")
-                    and not is_look_copy(p)],
+        "figures": cited or pngs, "figures_by": "reply" if cited else "all",
         "files": rel, "tool_calls": res.get("tool_calls") or [],
         "tool_counts": res.get("tool_counts") or {},
         "model_calls": res.get("model_calls", 0),
