@@ -64,10 +64,19 @@ def test_a_cohesionless_tip_needs_its_N60():
 def test_aggregate_piers_state_n_and_the_moduli():
     r = D.call_agent("ground_improvement", "aggregate_piers",
                      {"column_diameter": 0.6, "spacing": 1.8,
-                      "S_unreinforced": 100.0})
+                      "S_unreinforced": 100.0,
+                      "column_type": "rammed_aggregate_pier"})
     c = _by_what(r["choices"])
     n = c["stress concentration ratio n"]
-    assert n["chosen"] == "5" and n["how"] == "default"
+    # GM-310: n by the column type when it is not given
+    assert n["chosen"].startswith("5, taken for column_type "
+                                  "'rammed_aggregate_pier'")
+    assert n["how"] == "default"
+    assert r["defaults_used"]["n"].startswith("by column_type: 2.5 for")
+    err = D.call_agent("ground_improvement", "aggregate_piers",
+                       {"column_diameter": 0.6, "spacing": 1.8,
+                        "S_unreinforced": 100.0})["error"]
+    assert "Give column_type" in err
     assert "GEC-13" in n["basis"]
     assert "column modulus E_c" not in c            # GM-179: refused
     assert c["soil modulus E_s"]["how"] == "default"

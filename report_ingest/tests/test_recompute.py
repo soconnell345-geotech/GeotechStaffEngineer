@@ -203,28 +203,36 @@ MEYERHOF_DEEP_INPUTS = [nq("Footing width B", 1.2, "m"),
                         nq("Factor of safety", 3.0)]
 
 
-def test_meyerhof_linear_depth_runs_beside_the_default_beyond_df_b_one():
+def test_meyerhof_hansen_depth_runs_beside_the_default_beyond_df_b_one():
+    # GM-310 (OWN-131): Meyerhof's default is his own Table 5-6 at every
+    # depth; Brinch Hansen's arctan(Df/B) is the option beside it
     deep = {**BEARING_PARAMS, "width": 1.2, "depth": 3.0,
             "friction_angle": 33, "unit_weight": 19.0,
             "factor_method": "meyerhof"}
-    hansen = call_agent("bearing_capacity", "bearing_capacity_analysis",
-                        deep)["q_ultimate_kPa"]
+    default = call_agent("bearing_capacity", "bearing_capacity_analysis",
+                         deep)
     linear = call_agent("bearing_capacity", "bearing_capacity_analysis",
                         {**deep, "depth_factor_method": "linear"}
                         )["q_ultimate_kPa"]
+    hansen = call_agent("bearing_capacity", "bearing_capacity_analysis",
+                        {**deep, "depth_factor_method": "hansen"}
+                        )["q_ultimate_kPa"]
+    assert default["defaults_used"]["depth_factor_method"] == "linear"
+    assert default["q_ultimate_kPa"] == pytest.approx(linear)
     assert (linear - hansen) / hansen > TOLERANCE
-    # a printed depth factor keeps 'none' out, so 'linear' runs alone
+    # a printed depth factor keeps 'none' out, so 'hansen' runs alone
     (row,) = recompute_calculation(bearing_calc(
-        [nq("Ultimate bearing capacity", round(linear), "kPa"),
-         nq("Depth factor dq", 1.4)], inputs=MEYERHOF_DEEP_INPUTS,
+        [nq("Ultimate bearing capacity", round(hansen), "kPa"),
+         nq("Depth factor dq", 1.2)], inputs=MEYERHOF_DEEP_INPUTS,
         method="Meyerhof (1963)"))
-    assert row["recomputed_si"] == pytest.approx(hansen)
+    assert row["recomputed_si"] == pytest.approx(linear)
     assert row["flag"] == "within_options"
     (alt,) = row["alternatives"]
-    assert alt["depth_factor_method"] == "linear"
+    assert alt["depth_factor_method"] == "hansen"
     assert abs(alt["difference_pct"]) < 0.5
-    assert "Table 5-6" in alt["basis"]
-    assert "depth_factor_method 'hansen'" in row["flag_basis"]
+    assert "5-8 note B" in alt["basis"]
+    assert "Table 5-8 note B" in alt["why"]
+    assert "depth_factor_method 'linear'" in row["flag_basis"]
 
 
 def test_no_meyerhof_linear_option_up_to_df_b_one():
@@ -233,7 +241,7 @@ def test_no_meyerhof_linear_option_up_to_df_b_one():
         [nq("Ultimate bearing capacity", 1000, "kPa")],
         method="Meyerhof (1963)"))
     assert not [a for a in row["alternatives"]
-                if a.get("depth_factor_method") == "linear"]
+                if a.get("depth_factor_method") in ("linear", "hansen")]
 
 
 def test_an_undrained_and_a_drained_strength_are_not_run_together():

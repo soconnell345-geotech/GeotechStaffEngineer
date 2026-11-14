@@ -40,6 +40,36 @@ def _no_circle(p):
     return {k: v for k, v in p.items() if k not in ("xc", "yc", "radius")}
 
 
+def test_a_flagged_headline_never_comes_alone():
+    """GM-140 step 3, the review's ruling 5. ACADS 1(a) (printed 1.00), a
+    200-trial random Spencer search: the lowest solved surface (0.633 when
+    measured) is flagged and the lowest with no flag is higher (1.09).
+    Neither alone is safe, so the tool result gives the headline, its
+    flags, the lowest surface with no flag and the option that refuses
+    flagged surfaces, as fields and in its one-sentence summary."""
+    r = METHOD_REGISTRY["search_critical_surface"]({
+        "surface_points": [[20, 25], [30, 25], [50, 35], [70, 35]],
+        "soil_layers": [{"name": "soil", "top_elevation": 35,
+                         "bottom_elevation": 20, "gamma": 20, "phi": 19.6,
+                         "c_prime": 3}],
+        "surface_type": "noncircular", "method": "spencer",
+        "n_trials": 200, "n_points": 6, "n_slices": 25, "seed": 42,
+        "x_entry_range": [20, 32], "x_exit_range": [46, 68]})
+    fos = r["critical"]["FOS"]
+    flags = r["critical_flags"]
+    low = r["lowest_unflagged"]["FOS"]
+    assert {"base_tension", "side_tension", "thrust_outside"} <= set(flags)
+    assert low > fos
+    assert "low_m_alpha='refuse'" in r["refuse_option"]
+    s = r["summary"]
+    assert s.endswith(".") and ". " not in s          # one sentence
+    assert f"FOS {fos:.3f}" in s and f"FOS {low:.3f}" in s
+    assert "a tensile interslice force" in s
+    assert r["refuse_option"] in s
+    for key in ("summary", "refuse_option"):
+        assert key in METHOD_INFO["search_critical_surface"]["returns"]
+
+
 # ----------------------------------------------------------------------------
 # METHOD_INFO contract
 # ----------------------------------------------------------------------------
@@ -795,9 +825,10 @@ class TestV54TensionCrack:
 
 
 class TestV54RapidDrawdown:
-    def test_stage3_effective_normal_raises_fos(self):
-        """The 3-stage 'gle' stage-3 normal option raises the FOS above the
-        Fellenius default on a specified circle (Slide2 #96 dam)."""
+    def test_every_stage_is_returned(self):
+        """GM-140 step 9: each stage's factor of safety, the stage the answer
+        is from, the water assumed and the per-slice columns of EM
+        1110-2-1902 Figs. G-10b and G-11b (Slide2 #96 dam; printed 1.443)."""
         _FACE = [[0, 0], [220 * _FT, 73 * _FT], [312 * _FT, 110 * _FT],
                  [380 * _FT, 110 * _FT]]
         base = {
@@ -811,12 +842,42 @@ class TestV54RapidDrawdown:
             "drawdown_to_elevation": 24 * _FT,
             "method": "duncan_3stage", "n_slices": 50,
         }
-        fell = METHOD_REGISTRY["rapid_drawdown_fos"](base)["FOS"]
-        gle = METHOD_REGISTRY["rapid_drawdown_fos"](
-            {**base, "stage3_effective_normal": "gle"})["FOS"]
-        assert gle > fell
-        assert METHOD_INFO["rapid_drawdown_fos"]["parameters"][
-            "stage3_effective_normal"]["allowed_values"] == ["fellenius", "gle"]
+        r = METHOD_REGISTRY["rapid_drawdown_fos"](base)
+        assert r["FOS"] == pytest.approx(1.443, rel=0.02)     # Slide2 #96
+        assert r["answer_stage"] == 3 and r["FOS"] == r["stage3_FOS"]
+        assert r["stage1_FOS"] > r["stage2_FOS"] > r["stage3_FOS"]
+        assert "level pool" in r["water_before"]
+        assert "level pool" in r["water_after"]
+        sl = r["slices"]
+        assert set(sl["columns"]) == set(sl) - {"columns"}
+        assert len(sl["tau_ff"]) == r["n_slices"] == len(sl["s_d"])
+        assert sl["strength_used"].count("drained") == \
+            r["n_drained_substituted"]
+        assert any(c["what"] == "water before drawdown" for c in r["choices"])
+        line = [[-10.0, 24 * _FT], [200.0, 24 * _FT]]
+        given = METHOD_REGISTRY["rapid_drawdown_fos"](
+            {**base, "drawdown_phreatic_points": line})
+        assert "given" in given["water_after"]
+        assert given["FOS"] == pytest.approx(r["FOS"], abs=1e-3)
+
+    def test_measured_d_and_psi_reach_the_layer(self):
+        from slope_stability.rapid_drawdown import r_envelope_d_psi
+        d, psi = r_envelope_d_psi(1200 * _PSF, 16.0, 30.0)
+        _FACE = [[0, 0], [220 * _FT, 73 * _FT], [312 * _FT, 110 * _FT],
+                 [380 * _FT, 110 * _FT]]
+
+        def run(**layer):
+            return METHOD_REGISTRY["rapid_drawdown_fos"]({
+                "surface_points": _FACE,
+                "soil_layers": [{"top_elevation": 110 * _FT,
+                                 "bottom_elevation": -1.0 * _FT,
+                                 "gamma": 135 * _PCF, "phi": 30.0,
+                                 "c_prime": 0.0, **layer}],
+                "xc": 169.5 * _FT, "yc": 210 * _FT, "radius": 210 * _FT,
+                "drawdown_from_elevation": 110 * _FT,
+                "drawdown_to_elevation": 24 * _FT})
+        assert run(R_d=d, R_psi=psi)["FOS"] == pytest.approx(
+            run(R_c=1200 * _PSF, R_phi=16.0)["FOS"], abs=1e-4)
 
     def test_lowe_karafiath_routes_and_is_ge_duncan(self):
         """'lowe_karafiath' is exposed and routes through; it uses the Duncan
@@ -845,12 +906,19 @@ class TestV54RapidDrawdown:
             METHOD_INFO["rapid_drawdown_fos"]["parameters"]["method"][
                 "allowed_values"]
 
-    def test_bad_stage3_normal_rejected(self):
+    def test_the_removed_stage3_basis_is_refused_with_the_rule(self):
+        """OWN-17 settled (GM-140 step 9): the drained check takes N from the
+        second stage (EM Eq. G-13); the old input is refused with the rule,
+        by the adapter's handler and by the tool's declaration."""
+        for m in ("rapid_drawdown_fos", "search_rapid_drawdown"):
+            refused = METHOD_INFO[m]["refused_parameters"]
+            assert "G-13" in refused["stage3_effective_normal"]["reason"]
+            assert "stage3_effective_normal" not in METHOD_INFO[m]["parameters"]
         with pytest.raises(ValueError, match="stage3_effective_normal"):
             METHOD_REGISTRY["rapid_drawdown_fos"](_dam(
                 drawdown_from_elevation=47 * _FT,
                 drawdown_to_elevation=15 * _FT,
-                stage3_effective_normal="bogus"))
+                stage3_effective_normal="gle"))
 
 
 class TestV54SearchRapidDrawdown:

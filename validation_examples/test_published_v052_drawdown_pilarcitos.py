@@ -19,27 +19,23 @@ paper IS in the owner's library; its record gives the real upstream face as a
 TWO-SLOPE section — 2H:1V for the lower 58 ft, then 3H:1V to the crest (paper
 p. 262 Fig. 3) — vs the uniform 2.5H:1V assumed historically (which sits
 between the two real inclinations; kept below for the slope-invariance test).
-V-052b now runs the TRUE section: Corps 0.722 (published 0.823; < 1.0, failure
-reproduced), LK 1.279 / DWW 1.266 (published ~1.05) — the true geometry shrinks
-the LK/DWW overshoot from ~29% to ~22%, isolating the residual to the steep
-published phi'=45 Kc-interpolation gain documented below.
 
-VERDICT: **CONVENTION (ordering validated; magnitudes geometry/phi'-limited).**
-* The three-method ORDERING Corps < DWW < LK (the strength-rule signature) is
-  reproduced, with DWW ~ LK (the stage-3 drained check barely fires here, exactly
-  as published where DWW 1.043 ~ LK 1.047).
-* The Corps 2-stage magnitude lands near published and BELOW 1.0 (reproducing the
-  observed failure): ~0.79 at 2.5:1 vs published 0.823.
-* The Lowe-Karafiath / DWW magnitudes OVERSHOOT published (~1.35 vs ~1.05). Two
-  honest reasons, neither tuned away: (a) the upstream slope is assumed, and (b)
-  the published effective phi'=45 deg is very steep (the scout flagged it as high
-  for a clayey fill) -> a large Kf=(1+sin45)/(1-sin45)=5.83 -> the Kc interpolation
-  between the R (Kc=1) and drained (Kc=Kf) envelopes gains more strength than
-  Slide2's narrow LK-vs-Corps spread implies. On the moderate-phi' #98 dam our
-  spacing matched published to ~10% (V-048); the wide spread is specific to this
-  steep-phi' case. Recorded, ordering pinned, magnitudes documented not tuned.
+VERDICT (GM-140 step 9, every stage as EM 1110-2-1902 Appendix G prints it):
+* The three-method ORDERING Corps < DWW <= LK is reproduced, with DWW ~ LK (the
+  drained check barely fires here, as published: DWW 1.043 ~ LK 1.047).
+* TRUE section, deep slide: Corps 0.722 (published 0.823, -12 %; below 1.0,
+  the failure reproduced), LK 0.944 (1.047, -10 %), DWW 0.943 (1.043, -10 %).
+  The three procedures are now low by about the same amount, which points at
+  the recovered section and windows, not at one procedure's strength rule.
+* 2.5:1 section: Corps 0.786, LK 1.008, DWW 1.004 (-4.5 %, -3.7 %, -3.7 %).
+* GM-15, the "steep-phi' K_c overshoot" (LK 1.279 and DWW 1.263 on the true
+  section, 22 % above print), was the module's own K_c rule: from the base
+  inclination, with special branches, it reached K_f on many slices and took
+  the drained envelope's strength. Eq. G-11 (p. G-7) gives K_c from sigma'_c
+  and tau_c alone; with it the overshoot is gone. Not tuned.
 
-See INVENTORY.md (#97), RESULTS.md (V-052), and V-048 (#98 Lowe-Karafiath).
+See INVENTORY.md (#97), RESULTS.md (V-052), V-048 (#98 Lowe-Karafiath) and
+module_work/gm140/STEP9_CHECK.md.
 """
 
 import math
@@ -73,19 +69,9 @@ def _deep_windows(geom):
     slide, as they did before GM-57.
 
     The windows the search now sets from the slope (GM-57) also take
-    circles that come out on the face, and under drawdown the
-    Lowe-Karafiath / DWW search then finds the rapid-drawdown infinite
-    slope: a sliver of a circle on the lower face, about an inch deep, at
-    (gamma'/gamma) tan(phi')/tan(beta) = 1.075 (true section; deep slide
-    1.279 / 1.266) and 1.076 on the 2:1 section; Corps stays on a deep
-    circle, 0.718 (0.726). That answer is pinned in
-    test_v052b_automatic_windows_find_the_circle_above_the_pool. (A DWW
-    0.955 on the 2:1 section, seen while GM-57 was built, was the stage-3
-    Fellenius normal under the remaining pool, which counted the pond's
-    pressure on a slice base in full and its weight at cos^2(alpha); with
-    the pond taken out of both terms (rapid_drawdown.
-    _fellenius_effective_normal) DWW ~ LK again. The default stage-3 normal
-    stays 'fellenius', the owner's ruling.)
+    circles that come out on the face; what the automatic search finds
+    there is pinned in
+    test_v052b_automatic_windows_find_the_circle_above_the_pool.
 
     Whether the published 0.82 / 1.05 / 1.05 belong to a deep slide cannot
     be checked from the reference library (geotech-references): neither the
@@ -153,15 +139,15 @@ def test_v052_pilarcitos_method_ordering_is_slope_invariant(slope):
 def test_v052_pilarcitos_corps_reproduces_failure():
     """Corps 2-stage (R-envelope-governed here) lands near the published 0.823 and
     BELOW 1.0 on the representative 2.5:1 section, reproducing the observed upstream
-    failure. (Lowe-Karafiath / DWW overshoot published — see the module docstring:
-    assumed slope + steep published phi'=45 inflates the Kc-interpolation gain.)"""
+    failure; Lowe-Karafiath lands near its published 1.047."""
     corps = _search(2.5, "corps_2stage")
     assert corps < 1.0                              # predicts the failure (as published)
     assert corps == pytest.approx(0.823, abs=0.12)  # near published (ours ~0.79)
-    # Lowe-Karafiath is above Corps (ordering) but overshoots published 1.047
     lk = _search(2.5, "lowe_karafiath")
     assert lk > corps
-    assert lk > 1.0                                 # ours ~1.35; documented overshoot
+    # GM-140 step 9: 1.347 -> 1.008; printed 1.047 (Slide2 #97), -3.7 %, on
+    # an assumed 2.5:1 face
+    assert lk == pytest.approx(1.047, rel=0.06)
 
 
 # ---------------------------------------------------------------------------
@@ -192,18 +178,16 @@ def _search_true(method):
 
 def test_v052b_automatic_windows_find_the_circle_above_the_pool():
     """GM-57: with the windows set from the slope (the test's own centre
-    grid) the Lowe-Karafiath and DWW searches of the true section govern on
-    the rapid-drawdown infinite slope: a sliver of a circle on the lower 2:1
-    face, about an inch deep, at (gamma'/gamma) tan(phi')/tan(beta) = 1.075
-    (the same anywhere on the face above the pool; Corps = LK = DWW there),
-    reported as that mechanism and with no window-edge warning. Corps stays
-    on a deep circle (85 ft long, entering below the remaining pool) at
-    0.718. (Before the pond fix to the Fellenius normal a fully automatic
-    DWW search read 0.052 on a toe circle under the pool.)
+    grid) every procedure governs on a real circle, not a sliver. Corps
+    stays on a deep circle (85 ft long, entering below the remaining pool)
+    at 0.718. Lowe-Karafiath and DWW govern on a circle 66 ft long and
+    about 3 m deep across the lower 2:1 face, at 0.929 (no slice's drained
+    strength is lower there, so the two agree and no third stage is
+    computed). Before GM-140 step 9 the module's own K_c rule gave these
+    two the rapid-drawdown infinite slope instead, a sliver about an inch
+    deep at (gamma'/gamma) tan(phi')/tan(beta) = 1.075.
     """
     geom = _pilarcitos_true()
-    gamma = 135 * PCF
-    closed = (gamma - 9.81) / gamma * math.tan(math.radians(45.0)) / 0.5
     out = {}
     for method in ("corps_2stage", "lowe_karafiath", "duncan_3stage"):
         out[method] = search_rapid_drawdown(
@@ -215,24 +199,29 @@ def test_v052b_automatic_windows_find_the_circle_above_the_pool():
     assert corps.FOS == pytest.approx(0.72, abs=0.01)
     assert (c.x_exit - c.x_entry) / FT > 80.0                 # deep
     assert corps.search.governing_location["depth"] > 1.0
-    for method in ("lowe_karafiath", "duncan_3stage"):
+    for method, printed in (("lowe_karafiath", 1.047),
+                            ("duncan_3stage", 1.043)):
         r = out[method]
         s = r.search
-        assert r.FOS == pytest.approx(closed, rel=0.005)
-        assert s.governing_location["depth"] < 0.1             # a sliver
-        assert any("infinite slope mechanism" in w and "rapid drawdown" in w
-                   for w in s.warnings)
+        # GM-140 step 9: 1.075 (a sliver) -> 0.929 (a 3 m deep circle);
+        # printed 1.047 / 1.043 (Slide2 #97), -11 %, on the recovered
+        # section; Corps on the same section is 12 % below its print
+        assert r.FOS == pytest.approx(printed, rel=0.13)
+        assert r.FOS == pytest.approx(0.929, abs=0.02)
+        assert s.governing_location["depth"] > 1.0             # not a sliver
         assert not any("edge of the" in w for w in s.warnings)
+    dww = out["duncan_3stage"].drawdown
+    assert dww.answer_stage == 2 and dww.stage3_fos is None
+    assert out["duncan_3stage"].FOS == pytest.approx(
+        out["lowe_karafiath"].FOS, abs=1e-6)
 
 
 def test_v052b_true_geometry_failure_and_ordering():
-    """On the REAL two-slope section: Corps 2-stage = 0.722 — below 1.0
-    (failure reproduced) and within ~0.1 of the published 0.823; the ordering
-    Corps < DWW <= LK holds. LK/DWW land ~1.27-1.28 vs published ~1.05: the
-    true geometry SHRINKS the overshoot from ~29% (assumed 2.5:1 section) to
-    ~22%, isolating the residual to the steep published phi'=45 Kc gain (the
-    same code matches the moderate-phi' Slide2 #98 dam to ~10%) — documented,
-    not tuned."""
+    """On the REAL two-slope section, deep slide: Corps 2-stage = 0.722, below
+    1.0 (failure reproduced) and within ~0.1 of the published 0.823; the
+    ordering Corps < DWW <= LK holds; LK 0.944 and DWW 0.943 against the
+    published 1.047 and 1.043. This is GM-15's case: before Eq. G-11 gave
+    K_c the two read 1.279 and 1.263, 22 % above print."""
     corps = _search_true("corps_2stage")
     lk = _search_true("lowe_karafiath")
     dww = _search_true("duncan_3stage")
@@ -240,6 +229,7 @@ def test_v052b_true_geometry_failure_and_ordering():
     assert corps == pytest.approx(0.823, abs=0.11)  # ours 0.722 vs published 0.823
     assert corps < dww <= lk + 1e-9                 # published ordering
     assert dww == pytest.approx(lk, rel=0.05)       # DWW ~ LK (stage 3 barely fires)
-    # magnitudes recorded (regression-pinned loosely, NOT pinned to published):
-    assert lk == pytest.approx(1.28, abs=0.08)
-    assert dww == pytest.approx(1.27, abs=0.08)
+    # GM-140 step 9: 1.279 -> 0.944; printed 1.047 (Slide2 #97), -9.8 %
+    assert lk == pytest.approx(1.047, rel=0.12)
+    # GM-140 step 9: 1.263 -> 0.943; printed 1.043 (Slide2 #97), -9.6 %
+    assert dww == pytest.approx(1.043, rel=0.12)

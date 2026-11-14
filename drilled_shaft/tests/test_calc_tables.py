@@ -17,7 +17,7 @@ def solved():
         ShaftSoilLayer(thickness=10.0, soil_type="cohesionless",
                        unit_weight=19.5, phi=34.0, N60=25),
         ShaftSoilLayer(thickness=6.0, soil_type="rock", unit_weight=22.0,
-                       qu=5000.0),
+                       qu=5000.0, RQD=100.0),
     ], gwt_depth=3.0)
     analysis = DrillShaftAnalysis(shaft=shaft, soil=soil)
     return analysis.compute(), analysis
@@ -73,3 +73,36 @@ def test_layer_echo(solved):
     assert not t.printed
     assert t.column("Soil type") == ["cohesive", "cohesionless", "rock"]
     assert t.column("Bottom") == [8.0, 18.0, 24.0]
+
+
+_CASED = {
+    "diameter": 1.2, "shaft_length": 9.0, "casing_depth": 3.0,
+    "layers": [
+        {"thickness": 3.0, "soil_type": "cohesionless",
+         "unit_weight": 18.0, "phi": 30},
+        {"thickness": 8.0, "soil_type": "cohesionless",
+         "unit_weight": 19.0, "phi": 36, "N60": 28}]}
+
+
+def test_a_length_that_tips_in_the_cased_cover_costs_only_its_row(tmp_path):
+    """GM-328 review C1: the shortest length tried (3.0 m) would tip in a
+    cased sand with no N60 (the design shaft only passes through it). That
+    length is left out of the capacity-against-length table, named in its
+    note and in the agent's response; the other lengths are kept."""
+    from drilled_shaft.calc_steps import get_tables
+    from funhouse_agent import dispatch as D
+    from funhouse_agent.adapters.drilled_shaft import (
+        run_drilled_shaft_capacity)
+    result, analysis = run_drilled_shaft_capacity(dict(_CASED))
+    tables = _by_name(get_tables(result, analysis))
+    assert "Side resistance per layer" in [t.title for t in tables.values()]
+    curve = tables["capacity_vs_length"]
+    assert len(curve.rows) == CAPACITY_TABLE_POINTS - 1
+    assert curve.rows[0][0] > 3.0
+    assert "L = 3 m" in curve.note and "N60" in curve.note
+    assert "L = 3 m" in curve.left_out
+    out = D.call_agent("calc_package", "drilled_shaft_package", {
+        **_CASED, "output_path": str(tmp_path / "shaft.html")})
+    assert out.get("status") == "success", out
+    assert "L = 3 m" in out["tables_note"]
+

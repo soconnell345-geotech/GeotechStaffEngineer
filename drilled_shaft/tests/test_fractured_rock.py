@@ -27,7 +27,7 @@ def _soil(*rock):
     rock = rock or (10.0,)
     return ShaftSoilProfile(layers=[
         ShaftSoilLayer(8.0, "cohesive", 18.5, cu=75.0),
-        *[ShaftSoilLayer(t, "rock", 23.0, qu=QU) for t in rock],
+        *[ShaftSoilLayer(t, "rock", 23.0, qu=QU, RQD=100.0) for t in rock],
     ], gwt_depth=2.0)
 
 

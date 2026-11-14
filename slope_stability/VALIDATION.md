@@ -108,30 +108,61 @@ meshes bias SRM high). The cross-check test is `-m slow` (~6 min).
 
 ## B7 — Rapid drawdown (Corps 2-stage / Duncan-Wright-Wong 3-stage) + search
 [`rapid_drawdown_fos` (single specified surface) and `search_rapid_drawdown`
-(critical-surface search under drawdown strengths, v5.4 E1). Low-permeability
-layers carry the R-envelope (`R_c`/`R_phi`); the FOS is a GLE/Spencer solve at the
-drawn-down pool with each undrained slice's base overridden to `c = tau_ff, phi =
-0`. Feet inputs converted to SI. Full theory in DESIGN.md.]
+(critical-surface search under drawdown strengths). Since GM-140 step 9
+(2026-11-13) every stage follows EM 1110-2-1902 Appendix G as printed, each
+stage's factor of safety is reported and the answer is that of the last stage
+computed. Feet inputs converted to SI. Theory, with each equation's page, in
+DESIGN.md; record in `module_work/gm140/STEP9_CHECK.md`.]
+
+### The manual's worked example (EM G-4, pp. G-9 to G-22; `tests/test_rapid_drawdown_em_appendix_g.py`)
+
+Pool El. 103 to El. 24, level piezometric lines; circle of radius 210 ft.
+
+| Run | Stage 1 | Stage 2 | Stage 3 | Printed |
+|-----|--------:|--------:|--------:|---------|
+| Improved procedure, Simplified Bishop, the manual's 12 slices | 2.192 | 1.514 | 1.438 | 2.20 / 1.52 / 1.44 (pp. G-15, G-18, G-20) |
+| Improved procedure, Spencer, 50 slices (the module's answer) | 2.200 | 1.513 | 1.434 | 2.20 / 1.52 / 1.44 (2.23 by the Modified Swedish Method on whole-degree base angles) |
+| Before step 9, Spencer, 50 slices | 2.200 | not reported (Lowe-Karafiath 1.375) | 1.241 | the same |
+| Corps 1970, force equilibrium at 19.4 deg, 50 slices | 3.486 | 1.341 | none | 3.49 / 1.35 (pp. G-9 to G-15) |
+| Corps 1970, the same on the manual's 12 slices | 3.455 | 1.348 | none | 3.49 / 1.35 |
+| Corps 1970, Spencer, 50 slices (the module's answer; unchanged) | 2.200 | 1.239 | none | printed by another method of slices |
+
+On the manual's twelve slices K_c is 1.72 on every slice (printed 1.71), the
+second-stage strength is within 0.03 ksf of Fig. G-10b on every slice, and the
+same three slices (1, 2 and 12) take the drained strength in the third stage.
+The printed weights are those of slices with straight bases; the module weighs
+down to the arc at each slice's middle, 5.9 and 6.7 % more on the two thin
+end slices (1.3 % more in all), which is the 0.03 ksf: the slicing differs,
+not the strength rule. From the printed inputs the strength rule itself is
+within 0.011 ksf of Fig. G-10b on every slice
+(`test_strengths_are_eqs_g9_g10_g12_on_every_slice_of_the_table`).
 
 ### Single specified surface (validation_examples V-037 / V-038)
 
-| Problem | Method | Ours | Published | vs pub |
-|---------|--------|-----:|----------:|-------:|
-| #95 EM 1110-2-1902 dam (seepage stage-1) | Corps 2-stage | 1.34  | 1.347 | -0.5% |
-| #95 (flat full-pool stage-1, conservative bound) | Corps 2-stage | 1.21 | — | — |
-| #96 same dam (seepage stage-1), default stage-3 | DWW 3-stage | 1.273 | 1.443 | -12% |
-| #96 same dam (seepage stage-1), `stage3_effective_normal='gle'` | DWW 3-stage | 1.370 | 1.443 | -5% |
+The tests' section (Fig 95.1, recovered); pool El. 110 as Slide2's text gives
+it, El. 103 as the manual has it. Slide2's text and its figure disagree on
+the pool: the text of #95 and #96 gives 110 ft, Fig 95.1 draws it at about
+103 ft. Each pin is a printed value on its own source's printed inputs: the
+EM's 1.35 (p. G-15) at the EM's 103 ft pool is pinned to 1 %; Slide2's 1.347
+at the 110 ft its text gives reads 1.304 by the same method of slices
+(-3.2 %), a strict xfail at 1 %, reported and not tuned.
 
-**#96 3-stage refinement (v5.4 E2).** The default (Fellenius stage-3 effective
-normal) is preserved byte-for-byte (flat 1.235 / seepage 1.273). The residual to
-the published 1.443 was traced NOT to the Kc interpolation (which alone yields
-~1.45) but to the stage-3 drained substitution: the Fellenius `W*cos(a)/l - u`
-normal under-predicts N' and fires the substitution on 17/50 slices. The optional
-`stage3_effective_normal='gle'` uses the rigorous GLE normal (consistent with
-stage 1; 9 genuine substitutions) → 1.306 flat / 1.370 seepage, closing most of
-the gap. Gated behind the new parameter; the lead decides whether to flip the
-default. ~5% residual left, within the representative-flow-net + LE-N'-at-FOS
-sensitivity band (cf. the +0.6% Corps residual on #95).
+| Problem | Procedure, method of slices | Before step 9 | Now | Printed | vs print |
+|---------|-----------------------------|--------------:|----:|--------:|---------:|
+| #96, pool 110 | three-stage, Spencer | 1.235 | 1.427 | 1.443 | -1.1 % |
+| #96, pool 103 | three-stage, Spencer | 1.237 | 1.431 | 1.443 (EM 1.44) | -0.8 % |
+| #95, pool 103 | Corps 1970, force equilibrium at 19.4 deg | not offered | 1.338 | EM 1.35 (p. G-15; its own pool) | -0.9 % (pinned) |
+| #95, pool 110 | Corps 1970, force equilibrium at 19.4 deg | not offered | 1.304 | Slide2 1.347 (its text's pool) | -3.2 % (strict xfail) |
+| #95, pool 110 | Corps 1970, Spencer (the module's answer) | 1.207 | 1.207 | 1.347 | -10.4 % |
+
+The final value cannot tell a 103 ft pool from a 110 ft pool. Which method of
+slices Slide2 used for #95 and #96 is not settled; the manual computed its
+example of the 1970 procedure by the Modified Swedish Method at 19.4 degrees
+and says Spencer's Method is the one recommended (G-5, p. G-9), and a Corps
+result of the module says so. Removed in step 9: the values pinned on a
+"representative" seepage line that no page prints (1.34 for #95; 1.273, 1.370
+and 1.450 for #96) and the conclusions drawn from them, and the
+`stage3_effective_normal` option with its 'fellenius' and 'gle' rows.
 
 ### Critical-surface search (validation_examples V-041, v5.4 E1)
 
@@ -143,9 +174,9 @@ slivers a circular search would otherwise pick with a spurious low FOS).
 
 | Problem | Method | Ours (search min) | Published (search min) | vs pub |
 |---------|--------|------------------:|-----------------------:|-------:|
-| #98 Walter Bouldin (approx geom) | Corps 2-stage | 0.837 | 0.931 | -10% |
-| #98 (approx geom) | DWW 3-stage (default) | 0.938 | 1.039 | -10% |
-| #98 (approx geom) | DWW 3-stage (`gle` stage-3) | 0.959 | 1.039 | -8% |
+| #98 Walter Bouldin (approx geom) | Corps 2-stage | 0.836 | 0.931 | -10% |
+| #98 (approx geom) | DWW 3-stage | 0.951 (0.935 before GM-140 step 9) | 1.039 | -8.5% |
+| #98 (approx geom) | Lowe-Karafiath | 0.988 (0.974 before) | 1.075 | -8.1% |
 
 (Since GM-87, 2026-10-15, the drawdown search also refines its lowest grid centre;
 #98 moved by up to 0.3 % further down, e.g. Corps 0.8370 -> 0.8341, B13. The pinned
@@ -417,6 +448,9 @@ What moved in the suites (every published-benchmark test still passes):
 | Pilarcitos true section, drawdown, automatic windows: Corps / LK / DWW | 0.726 / 1.279 / 1.266 | 0.718 / 1.075 / 1.075 | LK / DWW: the rapid-drawdown infinite slope, a sliver of a circle about an inch deep on the lower face at (gamma'/gamma) tan(phi')/tan(beta) = 1.075, reported as that mechanism (the planar family's own drawdown solve fails on that face); not the observed deep slide, so the other V-052 tests give the deep slide's windows (the old automatic ones) and are unchanged |
 
 ### Rapid drawdown: the Fellenius normal under the remaining pool
+(History. Since GM-140 step 9 the drained check takes the second stage's N, EM
+Eq. G-13, and there is no Fellenius normal; the values of this note are those of
+its day.)
 The fully automatic DWW search of the true Pilarcitos section reported 0.052 on a
 toe circle wholly under the remaining pool: the stage-3 Fellenius normal counted
 the pond's pressure on a slice base in full and its weight only at cos^2(alpha),
@@ -880,6 +914,98 @@ condition of the analysis, F is continuous as the centre passes the
 ground's level (`test_cracks_as_printed.py`), and the cases with no crack
 read as before step 4. The vertical cut stays away: before step 4 its 0.842
 came from a circle closed at its centre's level, which no print gives.
+
+## B22 — The printed acceptability checks (GM-140 step 3, 2026-11-13)
+
+The rule, its print and what it replaced: DESIGN.md, "The printed
+acceptability checks". The record, with the whole of section 11 before and
+after: `module_work/gm140/STEP3_CHECK.md`; the measurements are
+`module_work/gm140/step2_section11.py` (unchanged), `step3_section11.py` and
+`step3_screens.py`, run on master and on the branch.
+
+**Against print.** No value pinned to a printed answer moved outside its
+tolerance.
+
+| Case | Before | After | Printed | Why |
+|---|---|---|---|---|
+| Slide2 #85, one support, GLE search | 1.5726 | 1.5732 | 1.575 | the toe-circle family uses the common below-base test (D19) |
+| Slide2 #85, one support, Bishop, active / passive | 1.3715 / 1.2538 | 1.3713 / 1.2534 | 1.531 / 1.324 | the same; both are the reverse-curvature toe circles of D24 |
+| #85, reverse curvature discarded, Bishop, every slice looked at | 1.511 (157 circles left out) | 1.508, flagged for m_alpha, with 1.511 as the lowest circle without a flag | 1.531 (Duncan and Wright 1.51) | a circle with m_alpha below 0.2 is kept and flagged (OWN-102) |
+| Vertical cut in undrained clay, Bishop, every slice looked at | 0.935 | 0.842, flagged, with 0.935 as the lowest unflagged; since the merge with step 4, 0.935 with no flag (the 0.842 circle was closed by a crack nobody asked for, now discarded) | Taylor 0.851 | the same |
+
+Unchanged, each measured before and after: ACADS 1(a) (0.985 / 0.984 / 0.984 /
+0.983), #86 (1.613 / 1.607 / 1.607; 0.942), #85 Spencer (1.551), V-054's toe
+circle (2.346), V-032 (1.315), V-042 (1.3335; FOSM and Monte Carlo), Duncan's
+Example 1 (0.7049, 0.6774), V-043 (1.2096, 1.1859; DE 1.234), V-031, V-044,
+V-039's yield coefficients, ACADS 4's declared family (0.753 / 0.722 / 0.728)
+and the weak layer over rock's default search (0.886). On each the circles
+formerly left out for m_alpha are now kept and flagged, far above the
+minimum.
+
+**What a result says now.** ACADS 4's weak-layer search (0.830 against the
+printed 0.760; strict xfail): the surface carries tensile interslice forces
+and a line of thrust outside the mass; the lowest scored surface without a
+flag is 1.667. V-042's Bishop search: on 537 of 3,942 scored circles Bishop's
+value is below the Ordinary Method of Slices value, which is taken there
+(Duncan 1996, p. 580); none governs.
+
+**Not pinned to print, and moved.** Each is flagged, with the lowest
+unflagged surface beside it:
+
+| Case | Before | After | Printed |
+|---|---|---|---|
+| Duncan's Example 4 by Janbu, 30 slices | 1.203 (78 circles left out) | 0.843 flagged; 1.215 unflagged; 1.203 with `low_m_alpha='refuse'` | none in hand for Janbu |
+| A made-up pore-pressure grid on the ACADS 5 slope (V-029's demonstration), Bishop | 1.247 | 1.175, the frictional term as printed where u b exceeds W; 1.247 with `negative_friction_term='zero'` | none |
+| The agent suite's PPG-1 (a hydrostatic grid on a made-up slope, one circle), Bishop | 1.223 | 1.101, the same; the answer key keeps 1.223 as its alternative | none |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.092 | 0.633 flagged; 1.096 unflagged | 1.00 |
+| Weak layer over rock, DE directed | no surface | 0.612 flagged; no scored trial unflagged | none |
+
+The last two follow from removing the noncircular screens on a jagged surface
+and on agreement between moment axes and slicings: every surface those
+screens refused in the measured cases carried a flag of the printed checks
+(88, 38 and 1), so the surfaces are now scored and flagged. That held
+for Spencer, Morgenstern-Price and GLE, which the checks cover; for
+Janbu's simplified method and the Ordinary Method of Slices it did not
+(the fix round below). None of the
+values in this table is pinned; each is recorded here and in
+`module_work/gm140/STEP3_CHECK.md` (re-measured after the merge with step 4
+by the fix round's probe: 0.8426 / 1.2154 / 1.2033; 1.1752 / 1.2471;
+1.1007; 0.6332 / 1.0959).
+
+**Fix round after review (2026-11-13).** Merged with step 4 (B21) first:
+step 4's discards stay refused and counted (`crack_refused`), step 3's
+checks flag and keep, and both counts are in the same result. Then:
+
+- the jagged screen (a FOS below 1.5 on a jagged surface) stays, the
+  module's own, for Janbu's simplified method and the Ordinary Method of
+  Slices, which no check of EM 1110-2-1902 C-10a covers: on ACADS 1(a), 200
+  random trials, the zig-zags below 1.5 that step 3's head admitted with no
+  flag (29 by Janbu, 42 by the Ordinary Method of Slices, as the review
+  counted them) are refused again and counted. Removed only for Spencer,
+  Morgenstern-Price and GLE;
+- every exported search returns the governing surface's flags and the
+  lowest surface with no flag, not only `search_critical_surface`;
+- the direct march's strict xfail now holds the moment ratio cu R L /
+  sum(W x) on 600 slices of its circle closed by a given 3.0 m dry crack,
+  3.084 (Bishop 3.068 on 30 slices), not 2.9435;
+- the agent's search result gives, when the headline carries a flag, the
+  headline, its flags, the lowest surface with no flag (or none found) and
+  `refuse_option`, as fields and in a one-sentence `summary`.
+
+Branch against master (master = step 4 with step 3 not merged; the
+probe `step3fix/probe6.py` of the fix round, run once on each):
+
+| Case | Master | Branch | Branch flags | Lowest with none | Step 4 discards (branch; master) | Step 3 flagged trials (branch) | Printed |
+|---|---|---|---|---|---|---|---|
+| Vertical cut, cu 20, Bishop search, default | 0.9353 | 0.9353 | none | - | reverse_curvature_no_crack 12; reverse_curvature_no_crack 12 | 0 of 2956 | Taylor 0.851 (3.83 cu / (gamma H), as DESIGN.md gives it) |
+| Vertical cut, `m_alpha_rule='every_slice'` | 0.9348 | 0.9353 | none | - | reverse_curvature_no_crack 12; reverse_curvature_no_crack 7 | 288 of 2956 (low_m_alpha 288) | the same |
+| ACADS 1(b), given 3.81 m crack full of water, Bishop, Slide2's grid | 1.5896 | 1.5896 | none | - | within_cracked_depth 456; within_cracked_depth 456 | 0 of 6287 | 1.596 (Slide2 Verification #2, Table 2.2, p. 25) |
+| ACADS 1(b), the same, Spencer | 1.5849 | 1.5849 | none | - | within_cracked_depth 456; within_cracked_depth 456 | 400 of 6415 (base_tension 296, thrust_outside 137) | 1.592 (the same) |
+| #85, reverse curvature discarded, Bishop, default | 1.5080 | 1.5080 | none | - | reverse_curvature_discard_asked 28; reverse_curvature_discard_asked 28 | 0 of 2135 | 1.531 (Slide2 Verification #85); Duncan and Wright (2005, Fig. 6.34) 1.51 |
+| #85, discarded, every slice | 1.5109 | 1.5080 | low_m_alpha | 1.5109 | reverse_curvature_discard_asked 28; reverse_curvature_discard_asked 26 | 421 of 2135 (low_m_alpha 421) | the same |
+| Taylor 45 deg, D = 2.25, default search | 1.9419 | 1.9419 | none | - | reverse_curvature_no_crack 38; reverse_curvature_no_crack 38 | 0 of 3270 | 1.947 (Taylor's chart, FHWA NHI-06-088 Fig. 6-15, p. 6-28) |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.0915 | 0.6332 | base_tension, side_tension, thrust_outside | 1.0959 | 0; 0 | 108 of 144 (side_tension 73, thrust_outside 106, base_tension 1) | 1.00 (Giam and Donald 1989; Slide2 Verification #1) |
+| ACADS 4, weak-layer search, 700 trials, Spencer | 0.8301 | 0.8301 | side_tension, thrust_outside | 1.6666 | 0; 0 | 288 of 344 (base_tension 124, side_tension 257, thrust_outside 268) | 0.760 (Slide2 manual p. 52) |
 
 ## B-5a — Pore pressure as printed (GM-140 step 5a, 2026-11-13)
 

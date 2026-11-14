@@ -21,6 +21,7 @@ from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.slices import build_slices, compute_slice_forces
 from slope_stability.methods import (
     M_ALPHA_MIN, m_alpha_values, m_alpha_checked, sliding_sign,
+    check_negative_term, negative_term, negative_term_in_force,
 )
 from slope_stability.solution import (
     solve_method, check_method, check_interslice, METHOD_TEXT,
@@ -30,6 +31,9 @@ from slope_stability.search import (
     search_pso, search_weak_layer_biased, search_entry_exit, search_de,
     _counts_refusals, _ordered_windows, _applies_m_alpha_rule,
     m_alpha_rule_in_force, search_budget,
+)
+from slope_stability.acceptability import (
+    surface_findings, findings_warnings, C10B_REMEDIES,
 )
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult, InfiniteSlopeResult,
@@ -48,6 +52,7 @@ def analyze_slope(geom: SlopeGeometry,
                   include_slice_data: bool = False,
                   compare_methods: bool = False,
                   m_alpha_rule: str = "frictional",
+                  negative_friction_term: Optional[str] = None,
                   ) -> SlopeStabilityResult:
     """Run slope stability analysis for a specified slip surface.
 
@@ -83,9 +88,20 @@ def analyze_slope(geom: SlopeGeometry,
         Spencer, Morgenstern-Price). For noncircular surfaces, Bishop
         is skipped (requires circular).
     m_alpha_rule : str
-        Which slices the m_alpha < 0.2 warning looks at (GM-127):
-        'frictional' (default), those with phi' > 0; 'every_slice', every
-        slice, as Slide2 checks.
+        Which slices the m_alpha < 0.2 check looks at (Whitman and Bailey
+        1967, p. 487): 'frictional' (default), those with phi' > 0 (the
+        module's own reasoning, no printed source: on a phi' = 0 slice
+        m_alpha does not depend on F and the strength does not depend on
+        the normal force); 'every_slice', every slice.
+    negative_friction_term : str, optional
+        Bishop's simplified method and the Ordinary Method of Slices, on a
+        slice where the pore-water force exceeds the weight: 'as_printed'
+        (default), W - u b (Bishop 1955 Eq. 13, p. 10) and W cos(alpha) -
+        u l (Eq. 9) used as printed, negative; 'zero', the term set to zero
+        there (the module's rule before GM-140 step 3; no printed source).
+        Either way the result names the slices
+        (``methods.NEGATIVE_TERM_RULES``). None (default) takes the rule in
+        force, which is 'as_printed' unless a search was given another.
 
     Returns
     -------
@@ -94,7 +110,28 @@ def analyze_slope(geom: SlopeGeometry,
         (GM-81): a reverse-curvature circle closed by a crack, with the
         crack's depth; supports crossing a Bishop / OMS circle with a short
         arm, with Spencer's FOS on the circle; a method with no solution;
-        m_alpha below 0.2 on a slice (GM-127).
+        and each printed acceptability check the surface does not meet
+        (``acceptability``, below).
+
+    The printed acceptability checks (GM-140 step 3;
+    ``slope_stability.acceptability``). The surface is analysed whatever
+    they find, and ``acceptability`` lists each finding with its check, its
+    source, the slices or slice sides and the values; ``flags`` names the
+    checks not met: m_alpha below 0.2 on a slice (Whitman and Bailey 1967,
+    p. 487; the warning names EM 1110-2-1902 C-10b's remedies, none is
+    applied); a negative frictional term in Bishop's method or the
+    Ordinary Method of Slices; and, for Spencer, Morgenstern-Price and GLE,
+    a negative effective normal force on a slice base, a tensile
+    interslice force on a slice side and the line of thrust outside the
+    sliding mass (EM 1110-2-1902 C-10a, pp. C-33 to C-34). For Bishop's
+    method on a circle with no supports and no seismic coefficient the
+    Ordinary Method of Slices value for the same circle is computed
+    (``FOS_fellenius``; Bishop's own value in ``FOS_bishop``); where
+    Bishop's is the lower, ``FOS`` is the Ordinary Method of Slices value
+    and ``method_used`` says so (Duncan 1996, p. 580). With supports or a
+    seismic coefficient the comparison is not made and the result says
+    why. ``thrust_line`` is clipped to the sliding mass for display;
+    ``thrust_line_unclipped`` is the line as solved.
 
     A method's own solution, or no number (GM-140 step 2; UFC 3-220-10
     p. 362). ``FOS`` is the named method's own converged solution on the
@@ -114,6 +151,17 @@ def analyze_slope(geom: SlopeGeometry,
     """
     check_method(method)
     check_interslice(f_interslice)      # whatever the method (item 7)
+    if negative_friction_term is not None:
+        check_negative_term(negative_friction_term)
+        if negative_friction_term != negative_term_in_force():
+            with negative_term(negative_friction_term):
+                return analyze_slope(
+                    geom, xc=xc, yc=yc, radius=radius,
+                    slip_surface=slip_surface, method=method,
+                    n_slices=n_slices, tol=tol, f_interslice=f_interslice,
+                    include_slice_data=include_slice_data,
+                    compare_methods=compare_methods,
+                    m_alpha_rule=m_alpha_rule)
     # Build slip surface from either explicit object or xc/yc/radius
     if slip_surface is not None:
         slip = slip_surface
@@ -221,12 +269,23 @@ def analyze_slope(geom: SlopeGeometry,
     # Comparison FOS values (each its method's own solution, or None)
     fos_fellenius = None
     fos_bishop = None
+    if method == "bishop" and primary.solved:
+        # Bishop's own value beside the Ordinary Method of Slices value for
+        # the same circle (Duncan 1996, p. 580; GM-140 step 3). Where
+        # Bishop's is the lower, ``fos`` is already the latter.
+        fos_bishop = primary.fos_bishop
+        fos_fellenius = primary.fos_oms
+        if primary.oms_taken:
+            method_used = ("Ordinary Method of Slices value (Bishop's "
+                           "value is below it; Duncan 1996, p. 580)")
     if compare_methods:
         fos_fellenius = _sol("fellenius").fos
         if not _sol("fellenius").solved and method != "fellenius":
             _missing("fellenius", "FOS_fellenius")
         if is_circular:
-            fos_bishop = _sol("bishop").fos
+            # (Bishop's own value: the comparison column is each method's)
+            fos_bishop = (_sol("bishop").fos_bishop
+                          if _sol("bishop").solved else None)
             if not _sol("bishop").solved and method != "bishop":
                 _missing("bishop", "FOS_bishop")
         if method != "spencer":
@@ -249,6 +308,11 @@ def analyze_slope(geom: SlopeGeometry,
     # Slice data (per-slice force table) and thrust line
     slice_data = None
     thrust_line = None
+    thrust_raw = None
+    if gle_result is not None and gle_result.boundary_x:
+        # the line as solved, not clipped (EM 1110-2-1902 C-10a; D50)
+        thrust_raw = [(bx, tz) for bx, tz in zip(
+            gle_result.boundary_x, gle_result.thrust_elevation)]
     if include_slice_data:
         slice_data = []
         rich = gle_result  # rigorous per-slice/boundary forces, if any
@@ -300,9 +364,10 @@ def analyze_slope(geom: SlopeGeometry,
             # Clamp the line of thrust to the physical section (between the slip
             # surface and the ground) for display. Near the slip exit the
             # interslice normal E -> 0, so the point of application
-            # z = z_base - m/E (gle.py) can spike to a non-physical elevation;
-            # the thrust must lie within the slice height. The engine's raw
-            # GLEResult.thrust_elevation is left unchanged (diagnostic).
+            # z = z_base - m/E (gle.py) can spike to a non-physical elevation.
+            # The line as solved is ``thrust_line_unclipped``, and the
+            # ``thrust_outside`` finding says where it left the sliding
+            # mass (GM-140 step 3, D50).
             thrust_line = []
             for bx, tz in zip(rich.boundary_x, rich.thrust_elevation):
                 z_slip = slip.slip_elevation_at(bx)
@@ -349,18 +414,18 @@ def analyze_slope(geom: SlopeGeometry,
         kh=geom.kh,
         slice_data=slice_data,
         thrust_line=thrust_line,
+        thrust_line_unclipped=thrust_raw,
         slip_points=r_slip_points,
         tension_crack_depth=geom.tension_crack_depth,
         tension_crack_water_depth=geom.tension_crack_water_depth,
     )
 
-    # m_alpha below 0.2 on a slice (GM-127): a search leaves such a surface
-    # out, as Slide2 does (its error -112); one given here is analysed, and
-    # the result says so.
-    w = m_alpha_statement(slices, slip, method, fos, fos_janbu_uncorr,
-                          rule=m_alpha_rule)
-    if w:
-        result.warnings.append(w)
+    # The printed acceptability checks (GM-140 step 3): every finding goes
+    # on the result, with the slice or side and the value; a check not met
+    # is a warning. The surface is analysed whatever they find.
+    result.acceptability = surface_findings(geom, slip, slices, primary,
+                                            rule=m_alpha_rule)
+    result.warnings.extend(findings_warnings(result.acceptability))
 
     # What the searches say about their governing circle, said about this
     # one too (GM-59, GM-81): a reverse-curvature circle closed by a crack,
@@ -406,10 +471,13 @@ def m_alpha_statement(slices, slip, method: str, fos,
     behind Spencer, Morgenstern-Price and GLE (`methods.m_alpha_values`);
     the Ordinary Method of Slices has none. Only the slices ``rule`` looks
     at count (`methods.m_alpha_checked`; default the rule in force, which
-    leaves out slices with phi' = 0). Slide2 reports such a surface as
-    invalid (its error -112) and the searches leave it out; a surface
+    leaves out slices with phi' = 0). Whitman and Bailey (1967, p. 487)
+    print a warning for such a surface; a search keeps it and flags it, or
+    leaves it out under ``low_m_alpha='refuse'`` (GM-140 step 3). A surface
     given to a single-surface analysis (``given``, its name) is analysed
-    and this says so.
+    and this says so. `acceptability.low_m_alpha_finding` is the finding
+    `analyze_slope` reports; this statement is the rapid-drawdown
+    result's.
     """
     if method == "fellenius" or fos is None or not (0.0 < fos < 900.0):
         return None
@@ -435,22 +503,19 @@ def m_alpha_statement(slices, slip, method: str, fos,
     if rule != "every_slice" and len(checked) < len(vals):
         where += " (slices with phi = 0 are not checked)"
     zone = ("there the surface comes up to the ground steeply in the "
-            "passive zone, where Slide2's documentation says such slices "
-            "usually are" if passive else
+            "passive zone" if passive else
             "there the base is nearly vertical where the surface enters")
     what = (f"This surface, given to {given}, is analysed and its factor "
-            f"of safety reported; the searches leave such surfaces out."
-            if given else "A search leaves such surfaces out.")
-    return (f"m_alpha = cos(a) (1 + tan(a) tan(phi) / F), the denominator "
+            f"of safety reported."
+            if given else "A search keeps such a surface and flags it.")
+    return (f"m_alpha = cos(a) + sin(a) tan(phi) / F, the denominator "
             f"of the normal force on a slice base, is {where} at F = "
-            f"{f:.3f}: {zone}. Below 0.2 the factor of safety may be "
-            f"incorrect or misleading (Whitman & Bailey 1967), though not "
-            f"necessarily wrong; Slide2 reports such a surface as invalid "
-            f"with its 'Check malpha < 0.2' setting on (its error -112). "
-            f"{what} Finer slices lower m_alpha at a steep end rather than "
-            f"clear it; check a surface that comes out no steeper than the "
-            f"Rankine passive angle, 45 deg - phi'/2 (Duncan, Wright & "
-            f"Brandon 2014).")
+            f"{f:.3f}: {zone}. Where it is below 0.2 on any slice the user "
+            f"must examine the result in detail (Whitman and Bailey 1967, "
+            f"p. 487). {what} A search keeps such surfaces and flags them, "
+            f"or leaves them out under low_m_alpha='refuse'. Finer slices "
+            f"lower m_alpha at a steep end rather than clear it. "
+            + C10B_REMEDIES + ".")
 
 
 def _no_solution_warning(method_name: str, sol, reinf_forces,
@@ -604,6 +669,8 @@ def search_critical_surface(
     time_budget_s: Optional[float] = None,
     bishop_screen: bool = False,
     m_alpha_rule: str = "frictional",
+    low_m_alpha: str = "flag",
+    negative_friction_term: str = "as_printed",
 ) -> SearchResult:
     """Search for the critical slip surface (minimum FOS).
 
@@ -705,24 +772,63 @@ def search_critical_surface(
         reported FOS is the method's own. Not applied where supports are
         modelled. Default False (GM-123).
     m_alpha_rule : str
-        Every family leaves out a surface with m_alpha < 0.2 on a slice
-        (GM-127; Slide2's 'Check malpha < 0.2', error -112) and counts it
-        (``n_rejected_m_alpha``). 'frictional' (default): the slices with
-        phi' > 0, since on a phi' = 0 slice m_alpha = cos(a) does not
-        change the FOS; 'every_slice': every slice, as Slide2 checks.
+        Which slices the m_alpha < 0.2 check looks at, in every family.
+        'frictional' (default): the slices with phi' > 0, since on a
+        phi' = 0 slice m_alpha = cos(a) does not change the FOS (the
+        module's own reasoning, no printed source); 'every_slice': every
+        slice.
+    low_m_alpha : str
+        What every family does with a surface that has m_alpha < 0.2 on a
+        slice (GM-140 step 3, OWN-102). 'flag' (default): the surface is
+        kept and scored, and the result says so, with the surface and the
+        slice (Whitman and Bailey 1967, p. 487, print a warning and an
+        instruction to examine the result, not a rejection). 'refuse': it
+        is left out and counted (``n_rejected_m_alpha``), as the module did
+        before (GM-127; Slide2's 'Check malpha < 0.2').
+    negative_friction_term : str
+        Bishop's simplified method and the Ordinary Method of Slices on a
+        slice where the pore-water force exceeds the weight: 'as_printed'
+        (default; Bishop 1955 Eqs. 9 and 13, p. 10, no lower limit) or
+        'zero' (the module's earlier rule, no printed source). See
+        ``analyze_slope``.
 
     Returns
     -------
     SearchResult
+
+    The printed acceptability checks (GM-140 step 3,
+    ``slope_stability.acceptability``). Every surface the method solves
+    that is one sliding mass is scored, whatever the checks find; nothing
+    is left out silently. ``trial_flags`` counts, by family and method, the
+    trials scored, those that carried a flag and each flag;
+    ``critical_flags`` and ``critical.acceptability`` give what the
+    governing surface carries (which check, which slice, what value); and
+    when it carries a flag, ``lowest_unflagged`` gives the lowest factor of
+    safety among the scored surfaces of the same method that carry none.
+    The headline stays the lowest solved surface. With Bishop's method,
+    the Ordinary Method of Slices value is computed for every circle
+    without supports or a seismic coefficient and taken where Bishop's is
+    the lower (Duncan 1996, p. 580); ``critical.FOS_bishop`` and
+    ``critical.FOS_fellenius`` give both. The noncircular screens that
+    are left (slice count and span, applied before any solve, and with
+    Janbu's simplified method or the Ordinary Method of Slices a FOS below
+    1.5 on a jagged surface) are the module's own, not found in print;
+    ``screen_refusals`` counts each. With Spencer, Morgenstern-Price or GLE
+    (and Bishop, whose noncircular surfaces Spencer scores), a low factor
+    of safety on a jagged surface, or a solution that held about one moment
+    axis or one slicing only, is no longer refused
+    (``search.REMOVED_SCREENS``): such a surface is scored, kept and
+    flagged, and can be the headline.
     """
     from slope_stability.search_supplements import (
         apply_supplements, search_choices, note_budget, CIRCULAR,
         NONCIRCULAR, m_alpha_confirmation, finer_slices_warning,
-        m_alpha_none_warning,
+        m_alpha_none_warning, report_acceptability,
     )
     from slope_stability.search import (
         _screen_method, _m_alpha_refusals_so_far, _no_solution_so_far,
-        no_solution_records, _scoring_family,
+        no_solution_records, _scoring_family, _flag_tally_so_far,
+        flag_records,
     )
     from slope_stability.search_supplements import no_solution_warning
     check_method(method)
@@ -793,6 +899,13 @@ def search_critical_surface(
         w = no_solution_warning(result)
         if w:
             result.warnings.append(w)
+        # The printed acceptability checks (GM-140 step 3): the flags of
+        # the scored trials by family, what the governing surface carries,
+        # and the lowest surface without a flag beside it.
+        result.trial_flags = flag_records(
+            _flag_tally_so_far(), rename={"main": search_kind})
+        report_acceptability(geom, result, scored, n_slices, tol,
+                             m_alpha_rule=m_alpha_rule)
         confirm = m_alpha_confirmation(geom, result.critical, scored,
                                        n_slices, tol)
         result.layer_overlaps = geom.layer_overlaps()
@@ -801,7 +914,9 @@ def search_critical_surface(
             scored_with=scored, toe_circles=toe_circles,
             infinite_slope=infinite_slope, budget=budget,
             screened=screened, screen_not_applied=screen_not_applied,
-            m_alpha=confirm, m_alpha_rule=m_alpha_rule)
+            m_alpha=confirm, m_alpha_rule=m_alpha_rule,
+            low_m_alpha=low_m_alpha,
+            negative_friction_term=negative_friction_term)
         # The pore pressure every trial surface's bases took (GM-140 step
         # 5a), said once, by the search.
         from slope_stability.pore_pressure import add_water_statements
@@ -918,35 +1033,22 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                        n_slices: int = 50,
                        tol: float = 1e-4,
                        stage1_phreatic_points=None,
-                       stage3_effective_normal: str = "fellenius"):
-    """Rapid-drawdown factor of safety (USACE 2-stage / Duncan-Wright-Wong
-    3-stage) on a specified slip surface.
+                       stage3_effective_normal=None,
+                       drawdown_phreatic_points=None,
+                       **check_arguments):
+    """Rapid drawdown on a specified slip surface, as EM 1110-2-1902
+    Appendix G prints it: the improved three-stage procedure
+    ('duncan_3stage', the default), Lowe and Karafiath's two-stage procedure
+    ('lowe_karafiath') or the Corps of Engineers' 1970 two-stage procedure
+    ('corps_2stage'). Each stage's factor of safety is reported and the
+    answer is the factor of safety of the last stage computed.
 
-    Low-permeability layers must carry the R-envelope (`R_c`, `R_phi`) in
-    addition to the effective `c_prime`/`phi`; `R_phi is None` marks a
-    free-draining layer. See `slope_stability.rapid_drawdown` for the full
-    theory and `RapidDrawdownResult`.
-
-    Parameters
-    ----------
-    geom : SlopeGeometry
-    drawdown_from_elevation, drawdown_to_elevation : float
-        Reservoir surface elevation before / after drawdown (m).
-    xc, yc, radius / slip_surface :
-        The specified slip surface (circle or explicit surface).
-    method : str
-        'duncan_3stage' (default) or 'corps_2stage'.
-    f_interslice : str
-        Interslice function ('constant' = Spencer). Default 'constant'.
-    n_slices, tol : usual meanings.
-    stage1_phreatic_points : list of (x, z), optional
-        Steady-seepage phreatic surface for the stage-1 consolidation stresses
-        only (default None = flat full-pool, the conservative no-through-seepage
-        bound). See `slope_stability.rapid_drawdown` for details.
-    stage3_effective_normal : str, optional
-        Stage-3 (3-stage) drained-substitution effective-normal basis:
-        'fellenius' (default, preserved) or 'gle' (rigorous). See
-        `slope_stability.rapid_drawdown` for details.
+    A layer that does not drain freely carries the R envelope (`R_c`,
+    `R_phi`) or the measured `R_d` and `R_psi` beside its effective
+    `c_prime` and `phi`; a layer with neither is free-draining. This is
+    `slope_stability.rapid_drawdown.rapid_drawdown_fos`: its docstring has
+    every parameter, and the module's docstring every equation with its
+    page.
 
     Returns
     -------
@@ -957,7 +1059,9 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                xc=xc, yc=yc, radius=radius, slip_surface=slip_surface,
                method=method, f_interslice=f_interslice, n_slices=n_slices,
                tol=tol, stage1_phreatic_points=stage1_phreatic_points,
-               stage3_effective_normal=stage3_effective_normal)
+               stage3_effective_normal=stage3_effective_normal,
+               drawdown_phreatic_points=drawdown_phreatic_points,
+               **check_arguments)
 
 
 # Re-export the rapid-drawdown critical-surface search (defined in
