@@ -957,7 +957,7 @@ unflagged surface beside it:
 | Duncan's Example 4 by Janbu, 30 slices | 1.203 (78 circles left out) | 0.843 flagged; 1.215 unflagged; 1.203 with `low_m_alpha='refuse'` | none in hand for Janbu |
 | A made-up pore-pressure grid on the ACADS 5 slope (V-029's demonstration), Bishop | 1.247 | 1.175, the frictional term as printed where u b exceeds W; 1.247 with `negative_friction_term='zero'` | none |
 | The agent suite's PPG-1 (a hydrostatic grid on a made-up slope, one circle), Bishop | 1.223 | 1.101, the same; the answer key keeps 1.223 as its alternative | none |
-| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.092 | 0.633 flagged; 1.096 unflagged | 1.00 |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.092 | 0.633 flagged; 1.096 unflagged | 1.00 for the circle (Spencer 0.9838 on it); 1.092 is a 200-trial sample's minimum |
 | Weak layer over rock, DE directed | no surface | 0.612 flagged; no scored trial unflagged | none |
 
 The last two follow from removing the noncircular screens on a jagged surface
@@ -1167,8 +1167,10 @@ friction term as printed on bases in tension; with the option they are
 within 0.001 of before). ACADS 4's declared family moves away from print by
 0.005 (Spencer 0.7532 to 0.7480; referee 0.78) and 0.007 (Morgenstern-Price
 0.7225 to 0.7157; Slide2 0.720), inside the pinned tolerances. ACADS 1(a)'s
-random noncircular search moves toward print (0.633 flagged to 1.092;
-printed 1.00). V-043's differential evolution from seed 1 ends at 1.237 in
+random noncircular search reads 1.092 in place of 0.633 flagged: the minimum of a 200-trial
+random polyline sample, a pin on the search's repeatability, not a benchmark value.
+ACADS 1(a)'s benchmark is the circle: Spencer 0.9838 against the printed 1.00 (Bishop
+0.9849); GM-140 step 6 brings the noncircular search to the circle. V-043's differential evolution from seed 1 ends at 1.237 in
 place of 1.234 (printed 1.188): a strict xfail, not re-pinned.
 
 **Printed benchmarks that move under the default** (ruling 3: the

@@ -727,6 +727,9 @@ def test_a_search_makes_no_scan_below_0(monkeypatch):
         _acads1a(), x_entry_range=(20.0, 32.0), x_exit_range=(46.0, 68.0),
         surface_type="noncircular", n_trials=200, n_points=6, n_slices=25,
         seed=42, method="spencer")
+    # The minimum of a 200-trial random polyline sample: a pin on the search's repeatability,
+    # not a benchmark value. ACADS 1(a)'s benchmark is the circle: Spencer 0.9838 against the
+    # printed 1.00 (Bishop 0.9849).
     assert r.critical.FOS == pytest.approx(1.0916, abs=5e-4)
     assert r.no_solution[0]["not_converged"] > 0
     assert calls == []
