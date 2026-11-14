@@ -385,6 +385,44 @@ Branch `claude/gm-140-circle-ends`. Requires on master: steps 1, 2, 3 and 4. It 
 
 ---
 
+## The GLE solver: a root, or no number (after step 3)
+
+Branch `claude/gm-140-gle-root`. CHECK file `module_work/gm140/GLE_ROOT_CHECK.md`. Requires on master: steps 1, 2, 3 and 4. It changes the solver behind Spencer's method, Morgenstern-Price and GLE (`slope_stability/gle.py`). "Where a circle ends" may run beside it; that step changes the search files, which this one does not touch. Merge master before you push. BACKLOG GM-344, which blocks any app release.
+
+**What is wrong today (a probe on master with step 3, 2026-11-13; a second computation, not print).** The case, all values made up: ground (-20, 0), (0, 0), (400, 200), (420, 200), a 2H:1V face (beta = 26.565 deg); one soil, gamma = gamma_sat = 19.5 kN/m3, phi' = 34 deg, c' = 0; slip surface the polyline (20, 10), (22, 9), (380, 188), (382, 191), a plane 2 m (vertically) below the face with steep end ramps; 60 slices. With the water line on the ground read as a water table (u = gamma_w z cos^2 beta), the infinite slope with seepage parallel to the face gives F = (gamma'/gamma_sat) tan(phi')/tan(beta) = 0.6704 (FHWA NHI-06-088 Sec. 6.3.2, Eq. 6-10, p. 6-8). The Ordinary Method of Slices reads 0.6706, Janbu 0.6782, Morgenstern-Price 0.6779; Spencer reads 1.0887 at theta 31.13 deg and reports it as converged.
+
+- The scan of lambda starts at 0 with F 1.3 and steps up by 0.1. Up to lambda 0.6 it holds the lower branch (F 0.677 to 0.72; from 0.4 the lagged iteration does not settle and the direct march takes over). At lambda 0.7 the lagged iteration lands on another branch (Fm 1.265), set by the toe slice's pole, F = tan(phi') tan(theta - alpha_toe): a jump between branches, not a crossing. The bisection on [0.6, 0.7] alternates between the two branches down to lambda 0.6039 (31.13 deg), and the point is accepted because |Fm - Ff| = 6.5e-4 is under `conv_tol` = max(50 tol, 1e-3); the factor reported is the mean of the two.
+- Spencer's equations as printed (the interslice force through the base midpoint, no rule for tension) cross at 26.20 deg, F 0.6505 (slice 1's N' about -111 kN/m, side 1's E about -144 kN/m) and at 56.96 deg, F 0.6674. With slice 1 taken frictionless while its base is in tension, in BOTH equations (the module's device, D29), the crossing is at 26.563 deg, F 0.6704: theta = beta and the closed form. `gle.py` applies the device in the horizontal and moment terms (about lines 461, 480, 553, 624 to 631) but keeps the friction in `_normal`'s m_alpha and in `_march`'s vertical equation (about 433 to 452, 611 to 616), so its own equations have no root near 0.67; their one crossing is 26.32 deg, F 0.918, with the toe wedge locked (Q on slice 1 -1710 kN/m, E 1533 kN/m at side 1).
+- Step 3's checks flag only a line of thrust outside the mass near the crest. With the default reading (the full head) the same case reads Spencer 0.904 against 0.501. The particle-swarm search scores by Spencer whatever method is asked.
+
+**Rulings** (the orchestrator's, 2026-11-13, under the owner's standing word for judgement calls).
+
+1. A reported factor of safety is a root: both equations met to the solver's own `tol` at ONE lambda in ONE state. A sign change of Fm - Ff between two states on different branches (a different start, or a switch between the lagged iteration and the march) is not a bracket: the scan goes on. The acceptance test is no longer max(50 tol, 1e-3), and the factor reported is that state's, not a mean of two. No crossing in the lambda range: no number (step 2's rule), with the reason and the lambda of any jump met.
+2. Several roots: the first true crossing met from lambda = 0 upward, on the branch that starts at lambda = 0. `choices` says so. Finding every root is not built.
+3. Friction on a base in tension is one of D29's settings and is not found in print. As for Bishop's numerator in step 3 (D21), the DEFAULT is the equations as printed, with no such rule; step 3's base-tension and side-tension flags name the slices, and a result flagged that way names the option. The module's device (the slice taken frictionless) stays as a stated option and is then applied in EVERY equation: the normal force's m_alpha, the march's vertical equation, the horizontal and the moment terms.
+
+Rulings 2 and 3 go on OWN-143 as one part when this step merges. List them under "Calls made" with their other forms: for 2, the lowest of all the roots in the range (which needs every root found); for 3, the device as the default.
+
+**Scope.** `gle.py` and its tests; the option's passage through `analysis.py` and the adapter only as far as an option needs (the common rule for a new option); DESIGN.md's D29 record; the CHECK file. NOT the search files, NOT which method scores which family (step 6). If another file must change, the CHECK file's first line says which and why.
+
+**The check (the step passes only on these).**
+
+(a) The case above with the pore pressure given as r_u = (gamma_w / gamma) cos^2(beta) on every slice, so there is no water line and no pond thrust: the infinite-slope form with r_u gives the closed form above, 0.6704 (cite where the r_u form is printed; if you find none, show in the test that this r_u gives the u of Eq. 6-10). First show what master reports for it (failing first); if r_u does not reproduce the 1.089, say so and build the failing test from a case that does. With the option: Spencer within 0.5 % of the closed form, theta within 0.1 deg of beta, no flag. As printed (the default): the root on the branch from lambda = 0 (the probe's 26.20 deg, 0.6505, slice 1's N' about -111 kN/m, side 1 in tension), flagged for base and side tension. Never 1.089; 0.918 only if it is a true root AND carries its thrust flag AND is not the one ruling 2 picks.
+
+(b) The probe's numbers are a second computation, not print. Write your OWN script of Spencer's two equations from the print, not from `gle.py`; the solver agrees with it to 0.1 % at every root it reports. Where your script differs from the probe's numbers above, the CHECK file says so.
+
+(c) The same case dry: the closed form tan(phi')/tan(beta) = 1.349, under both settings.
+
+(d) All of section 11 for Spencer, Morgenstern-Price and GLE, before and after, under the default and under the option; list every pinned value that moves. A value pinned to a PRINTED number that moves away from the print: stop, say so in the CHECK file's first lines, and do not re-pin.
+
+(e) The run time of a default search, before and after.
+
+**Tests (failing first).** (a) to (c) above; a sign change between two branches is not taken as a bracket; no crossing in the range gives no number, with its reason.
+
+**The user manual.** `docs/user_manual/manual.html` is generated: never hand-edit it (for this step this replaces the common brief's item on the manual). After your last merge of master: `git submodule update --init geotech-references` and check it is at the commit master pins; then, with `geotech-references` FIRST on PYTHONPATH, `python module_work/doc10/check_manual.py --rebuild --write`, then `python module_work/doc10/check_manual.py` and `pytest webapp/tests/test_user_manual_current.py`; all must exit 0.
+
+---
+
 ## Later, not this week: steps 5b and 7
 
 - **Step 5b, loads as printed (D5, D6, D7).** Line, inclined and varying loads; an optional vertical seismic coefficient; a stated choice on whether a surcharge carries inertia; a warning for Bishop's method with a seismic coefficient (EM C-3b, p. C-18). Duncan, Wright and Brandon (2014) Eqs. 6.74 to 6.78, pp. 92 to 93, give Bishop's method with a load P normal to the top of a slice (F_v = -P cos(beta) + T sin(psi)) and say a vertical seismic force would enter the vertical equilibrium. After step 5a.
