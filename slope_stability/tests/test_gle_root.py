@@ -87,7 +87,7 @@ def _circle_case():
 # ---------------------------------------------------------------------------
 
 def test_the_r_u_of_the_case_is_the_pore_pressure_of_eq_6_10(own):
-    """FHWA NHI-06-088 Eq. 6-10 (p. 6-8) is the infinite slope with seepage
+    """FHWA NHI-06-088 Sec. 6.3.2 (p. 6-8) is the infinite slope with seepage
     parallel to the face, where the pore pressure at depth z (vertical) is
     gamma_w z cos^2(beta). The case gives it as r_u = (gamma_w / gamma)
     cos^2(beta), so there is no water line and no pond: on every slice of
@@ -265,7 +265,7 @@ def test_the_branch_from_lambda_0_ends_at_the_locked_toe_wedge(own):
 def test_check_a_spencer_is_reported_with_the_finding_on_slice_1(own):
     """Check (a) as the orchestrator's R6 rewrites it. Spencer 0.918 at
     26.32 deg is reported under both settings, 37 % above the closed form
-    0.6704 (FHWA NHI-06-088 Eq. 6-10, p. 6-8), and never without a
+    0.6704 (FHWA NHI-06-088 Sec. 6.3.2, p. 6-8), and never without a
     finding: the denominator of the toe slice's own equations,
     cos(alpha - theta) + sin(alpha - theta) tan(phi') / F, is 0.0176,
     below Whitman and Bailey's 0.2 (1967, p. 487). The finding gives the
