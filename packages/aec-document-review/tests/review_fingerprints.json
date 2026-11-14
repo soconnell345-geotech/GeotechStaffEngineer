@@ -205,7 +205,7 @@
          }
         ],
         "name": "general-purpose",
-        "system_prompt": "144115e76ee38e32",
+        "system_prompt": "9cdb122f1284721c",
         "tool_order": [
          "list_files",
          "read_text_file",
