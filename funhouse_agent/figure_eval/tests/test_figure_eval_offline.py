@@ -56,10 +56,13 @@ def test_requests_pass_the_sample_rows_own_numbers():
             assert r["inputs"] == want, r["id"]
             assert r["sample_row"]["params"] == rows[r["method"]]["params"]
         else:
-            probe = probes[rep["probe"]]["params"]
+            key = rep.get("probe")
+            probe = probes[key]["params"] if key else {}
             extra = {k: v for k, v in rep.items() if k != "probe"}
             assert r["inputs"] == {**probe, **extra}, r["id"]
-            assert r["sample_row"]["origin"] == "method_probe"
+            assert r["sample_row"]["origin"] == (
+                "method_probe" if key else "made_up"), r["id"]
+            assert "note" not in r["sample_row"], r["id"]
     assert [r["id"] for r in freq.select(freq.resolve(), ["R01"])] == [
         "R01-bearing-width"]
     with pytest.raises(KeyError):
@@ -85,11 +88,16 @@ def test_parse_marks_reads_fenced_json_and_lists_what_is_missing():
     assert len(m) == len(ITEM_IDS) + 1
     assert (m["axes_units"]["mark"], m["kpa_kn"]["mark"],
             m["x1"]["mark"]) == ("yes", "na", "no")
-    assert m["data_ink"]["mark"] == "na"
+    assert m["data_ink"]["mark"] == checklist.UNMARKED
     assert "data_ink" in out["unmarked"] and "quantity_axes" in out[
         "unmarked"] and "axes_units" not in out["unmarked"]
     bad = checklist.parse_marks("I cannot see a figure.", REQ)
     assert bad["unmarked"] == [i["id"] for i in checklist.items_for(REQ)]
+    assert bad["not_scored"] and out["not_scored"]     # 3 items marked
+    full = checklist.parse_marks(json.dumps({"marks": [
+        {"id": i["id"], "mark": "yes", "reason": "r"}
+        for i in checklist.items_for(REQ)][1:]}), REQ)
+    assert not full.get("not_scored") and full["unmarked"] == [ITEM_IDS[0]]
 
 
 def _check(marks, req=REQ, no_figure=False):
@@ -124,7 +132,8 @@ def test_equal_marks_compare_same_on_every_item_and_overall():
     assert res["requests"] == {"better": [], "same": ["R1-a", "R2-b"],
                                "worse": []}
     assert res["items"] == {"better": 0, "same": 2 * len(ITEM_IDS) + 1,
-                            "worse": 0, "one_na": 0}
+                            "worse": 0, "one_na": 0, "unmarked": 0}
+    assert not any(res["apart"].values()) and not res["drew_none"]
     assert all(not row["better"] and not row["worse"] and not row["one_na"]
                for row in res["per_item"].values())
     assert res["marks"]["off"] == res["marks"]["on"]
@@ -148,7 +157,7 @@ def test_different_marks_give_the_right_better_and_worse_counts():
                                "worse": ["R2-x"]}
     n = len(ITEM_IDS)
     assert res["items"] == {"better": 2, "worse": 2, "one_na": 1,
-                            "same": 3 * n - 5}
+                            "same": 3 * n - 5, "unmarked": 0}
     pi = res["per_item"]
     assert pi["axes_units"]["better"] == ["R1-x"]
     assert pi["axes_units"]["worse"] == ["R2-x"]
@@ -156,7 +165,7 @@ def test_different_marks_give_the_right_better_and_worse_counts():
     assert pi["data_ink"]["worse"] == ["R1-x"]
     assert pi["plan_drawing"]["one_na"] == ["R2-x"]
     assert res["per_request"]["R1-x"]["counts"] == {
-        "better": 2, "same": n - 3, "worse": 1, "one_na": 0}
+        "better": 2, "same": n - 3, "worse": 1, "one_na": 0, "unmarked": 0}
 
 
 def test_a_figure_that_did_not_appear_fails_every_item():
@@ -168,11 +177,13 @@ def test_a_figure_that_did_not_appear_fails_every_item():
     assert {m["mark"] for m in none["marks"].values()} == {"no"}
     failed = checklist.check_run(Eyes(), REQ, {"error": "Timeout"}, [])
     assert failed["marks"]["x1"]["reason"].startswith("the run failed")
+    assert failed["run_failed"] and not none.get("run_failed")
     res = compare([REQ], {REQ["id"]: {"off": none,
                                       "on": _check({"to_scale": "na"})}})
     assert res["requests"]["better"] == [REQ["id"]]
-    assert res["items"]["better"] == len(ITEM_IDS)       # 12 + x1 - 1 n/a
+    assert res["items"]["better"] == len(ITEM_IDS)   # the items + x1 - 1 n/a
     assert res["items"]["one_na"] == 1
+    assert res["drew_none"] == {REQ["id"]: "off"}
 
 
 def _png(path, label="x"):
@@ -268,7 +279,8 @@ def test_the_runner_writes_results_and_the_page_and_resumes(tmp_path):
         assert (out / name).is_file()
     cmp_ = res["comparison"]
     assert cmp_["requests"] == {"better": [], "same": ["R01-bearing-width"],
-                                "worse": ["R17-pile-group-plan"]}
+                                "worse": []}
+    assert cmp_["apart"]["run_failed"] == {"R17-pile-group-plan": ["on"]}
     run = json.loads((out / "runs" / "R01-bearing-width" / "on" /
                       "run.json").read_text("utf-8"))
     assert run["figures"] == [os.path.join("runs", "R01-bearing-width", "on",
@@ -281,6 +293,7 @@ def test_the_runner_writes_results_and_the_page_and_resumes(tmp_path):
     assert page.index("Plot code OFF") < page.index("Plot code ON")
     md = (out / "RESULTS.md").read_text("utf-8")
     assert "R17-pile-group-plan on: the run failed" in md
+    assert "| run failed, not compared | 1 | R17 (ON) |" in md
     assert res["totals"]["off"]["tokens_in"] == 200
     # resumed: finished runs and their checks are kept; the failed run is
     # asked again
@@ -310,3 +323,112 @@ def test_the_dry_run_goes_through_the_real_page_agent(tmp_path):
     assert pr["verdict"] == "worse" and pr["counts"]["worse"] == 1
     assert pr["counts"]["one_na"] == 1
     assert (tmp_path / "results" / "side_by_side.html").is_file()
+
+
+def test_an_unreadable_reply_is_asked_once_more_then_kept_apart(tmp_path):
+    data = tmp_path / "data"
+    freq.prepare(data, ["R01", "R17"], references=False, say=lambda s: None)
+
+    def run_fn(model, req, arm, agent_dir, recursion_limit=None):
+        os.makedirs(os.path.join(agent_dir, "files"), exist_ok=True)
+        _png(os.path.join(agent_dir, "files", f"{arm}.png"))
+        return {"started": "t", "answer": f"drew {req['id']} {arm}",
+                "files": [f"files/{arm}.png"]}
+
+    bad = {"R01-bearing-width on": 1, "R17-pile-group-plan off": 9}
+
+    class Eyes(_Eyes):
+        def invoke(self, messages):
+            text = messages[0].content[0]["text"]
+            key = next((k for k in bad if f"drew {k}" in text), None)
+            if key and bad[key]:
+                bad[key] -= 1
+                self.sent.append(messages[0].content)
+
+                class R:
+                    content = "I'm sorry, the image is too small to judge."
+                    usage_metadata = {}
+                return R()
+            return super().invoke(messages)
+
+    eyes = Eyes("gpt-5.4")
+    out = tmp_path / "out"
+    res = runner.score_figure_set(object(), vision_model=eyes,
+                                  data_dir=data, out_dir=out,
+                                  run_fn=run_fn, say=lambda s: None)
+    assert len(eyes.sent) == 6        # R01 on and R17 off asked twice
+    cmp_ = res["comparison"]
+    assert cmp_["requests"] == {"better": [], "same": ["R01-bearing-width"],
+                                "worse": []}
+    assert cmp_["apart"]["not_scored"] == {"R17-pile-group-plan": ["off"]}
+    chk = json.loads((out / "runs" / "R17-pile-group-plan" / "off" /
+                      "check.json").read_text("utf-8"))
+    assert chk["not_scored"] and chk["tries"] == 2
+    md = (out / "RESULTS.md").read_text("utf-8")
+    assert "| vision reply unreadable, not scored | 1 | R17 (OFF) |" in md
+    assert "| same | 1 | R01 |" in md
+    runner.score_figure_set(object(), vision_model=eyes, data_dir=data,
+                            out_dir=out, run_fn=run_fn, say=lambda s: None)
+    assert len(eyes.sent) == 6        # asked twice already: kept
+    # an item unmarked in both arms is counted apart, never same
+    one = _check({"x1": checklist.UNMARKED})
+    res = compare([REQ], {REQ["id"]: {"off": one, "on": one}})
+    assert res["items"]["unmarked"] == 1
+    assert res["items"]["same"] == len(ITEM_IDS)
+    assert res["requests"]["same"] == [REQ["id"]]
+
+
+def test_failed_runs_and_figures_drawn_by_neither_arm_are_kept_apart():
+    class Eyes:
+        def invoke(self, messages):
+            raise AssertionError("nothing to look at")
+    reqs = [{"id": f"R{n}-x", "extra": []} for n in (1, 2, 3)]
+    failed = checklist.check_run(Eyes(), reqs[0],
+                                 {"error": "RateLimitError: 429"}, [])
+    assert failed["run_failed"]
+    drew_none = [checklist.check_run(Eyes(), r, {"answer": "x"}, [])
+                 for r in reqs]
+    checks = {"R1-x": {"off": failed, "on": _check({}, reqs[0])},
+              "R2-x": {"off": drew_none[1], "on": drew_none[1]},
+              "R3-x": {"off": drew_none[2], "on": _check({}, reqs[2])}}
+    res = compare(reqs, checks)
+    assert res["requests"] == {"better": ["R3-x"], "same": [], "worse": []}
+    assert res["apart"] == {"run_failed": {"R1-x": ["off"]},
+                            "not_scored": {},
+                            "neither_drew": {"R2-x": ["off", "on"]}}
+    assert res["drew_none"] == {"R3-x": "off"}
+    md = report.render_markdown(_results(reqs, checks, res))
+    assert "| run failed, not compared | 1 | R1 (OFF) |" in md
+    assert ("| neither arm drew a figure, not compared | 1 | R2 (OFF, ON) |"
+            in md)
+    assert "| same | 0 | - |" in md and "R3 (OFF drew none)" in md
+    assert "Name each run that still fails" in md
+    page = report.render_html(_results(reqs, checks, res))
+    assert "vision: not compared (run failed)" in page
+
+
+def test_the_on_arm_builds_the_plot_code_tool_and_the_off_arm_does_not(
+        monkeypatch, tmp_path):
+    pytest.importorskip("deepagents")
+    monkeypatch.setenv("GEOTECH_NO_DISCLAIMER", "1")
+    import funhouse_agent.review_eval  # noqa: F401 - hands in the pages
+    from aec_agent_core import plot_box, review_flags
+    from aec_agent_core.review_eval import runner as page_runner
+    made = []
+    real = plot_box.make_plot_code_tool
+
+    def counting():
+        made.append(1)
+        return real()
+    monkeypatch.setattr(plot_box, "make_plot_code_tool", counting)
+    built = []
+    for k, arm in enumerate(("off", "on", "off", "on")):
+        made.clear()
+        run_dir = tmp_path / str(k)
+        run_dir.mkdir()
+        with review_flags.switches(runner.ARM_ENV[arm]):
+            page_runner.build_page_agent(runner._dry_agent(), {},
+                                         str(run_dir), [], page="geotech")
+        built.append((arm, len(made)))
+    assert [n for a, n in built if a == "off"] == [0, 0], built
+    assert all(n > 0 for a, n in built if a == "on"), built

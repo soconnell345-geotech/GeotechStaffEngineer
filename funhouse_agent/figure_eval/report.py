@@ -17,6 +17,12 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from funhouse_agent.figure_eval.checklist import ITEM_IDS, items_for
 
+#: The headline's rows for requests kept out of better / same / worse
+#: (``compare.APART``).
+APART_TITLES = {"run_failed": "run failed, not compared",
+                "not_scored": "vision reply unreadable, not scored",
+                "neither_drew": "neither arm drew a figure, not compared"}
+
 ARM_TITLES = {"off": "Plot code OFF (baseline)", "on": "Plot code ON"}
 
 
@@ -27,10 +33,16 @@ def _ids(xs: Sequence[str]) -> str:
 def _marks_count(check: Optional[Dict[str, Any]]) -> str:
     if not check:
         return "not checked"
-    c = {"yes": 0, "no": 0, "na": 0}
+    if check.get("run_failed"):
+        return "run failed"
+    if check.get("not_scored"):
+        return "not scored"
+    c = {"yes": 0, "no": 0, "na": 0, "unmarked": 0}
     for m in check["marks"].values():
-        c[m["mark"]] += 1
+        c[m["mark"]] = c.get(m["mark"], 0) + 1
     s = f"{c['yes']}/{c['no']}/{c['na']}"
+    if c["unmarked"]:
+        s += f" + {c['unmarked']} unmarked"
     return s + (" (no figure)" if check.get("no_figure") else "")
 
 
@@ -40,6 +52,20 @@ def _run_cell(run: Optional[Dict[str, Any]]) -> str:
     if run.get("error"):
         return "failed"
     return f"{len(run.get('figures') or [])} fig"
+
+
+def _apart_ids(rows: Dict[str, List[str]]) -> str:
+    return ", ".join(f"{rid.split('-')[0]} ("
+                     + ", ".join(a.upper() for a in arms) + ")"
+                     for rid, arms in rows.items()) or "-"
+
+
+def _apart_of(cmp_: Dict[str, Any], rid: str) -> Optional[str]:
+    """Why ``rid`` is kept apart, in the headline's words, if it is."""
+    for key, rows in (cmp_.get("apart") or {}).items():
+        if rid in rows:
+            return APART_TITLES.get(key, key).split(",")[0]
+    return None
 
 
 def render_markdown(res: Dict[str, Any]) -> str:
@@ -67,6 +93,20 @@ def render_markdown(res: Dict[str, Any]) -> str:
         "| ON against OFF | requests | which |", "|---|---|---|"]
     for o in ("better", "same", "worse"):
         lines.append(f"| {o} | {len(r[o])} | {_ids(r[o])} |")
+    apart = cmp_.get("apart") or {}
+    for key, title in APART_TITLES.items():
+        rows = apart.get(key) or {}
+        lines.append(f"| {title} | {len(rows)} | {_apart_ids(rows)} |")
+    drew = cmp_.get("drew_none") or {}
+    if drew:
+        lines += ["", "Decided against an arm that finished and drew no "
+                  "figure (every item counted no): " + ", ".join(
+                      f"{rid.split('-')[0]} ({arm.upper()} drew none)"
+                      for rid, arm in drew.items()) + "."]
+    if apart.get("run_failed"):
+        lines += ["", "A failed run is asked again by the next call of "
+                  "`score_figure_set` with the same folders. Name each run "
+                  "that still fails in the hand-back."]
     on_runs = {rid: arms[other] for rid, arms in res["runs"].items()
                if arms.get(other) and not arms[other].get("error")}
     coded = [rid for rid, run in on_runs.items()
@@ -80,14 +120,16 @@ def render_markdown(res: Dict[str, Any]) -> str:
     it = cmp_["items"]
     lines += ["", "Items over all compared requests: "
               f"better {it['better']}, same {it['same']}, worse "
-              f"{it['worse']}, one arm n/a {it['one_na']}.", "",
-              "| Arm | yes | no | n/a |", "|---|---|---|---|"]
+              f"{it['worse']}, one arm n/a {it['one_na']}, unmarked "
+              f"{it.get('unmarked', 0)}.", "",
+              "| Arm | yes | no | n/a | unmarked |", "|---|---|---|---|---|"]
     for a in (base, other):
         m = cmp_["marks"][a]
-        lines.append(f"| {a} | {m['yes']} | {m['no']} | {m['na']} |")
+        lines.append(f"| {a} | {m['yes']} | {m['no']} | {m['na']} | "
+                     f"{m.get('unmarked', 0)} |")
     lines += ["", "## By item", "",
-              "| Item | better | same | worse | one arm n/a |",
-              "|---|---|---|---|---|"]
+              "| Item | better | same | worse | one arm n/a | unmarked |",
+              "|---|---|---|---|---|---|"]
     order = list(ITEM_IDS) + ["request's own items"]
     for iid in order:
         row = cmp_["per_item"].get(iid)
@@ -96,12 +138,14 @@ def render_markdown(res: Dict[str, Any]) -> str:
         lines.append(
             f"| {iid} | {len(row['better'])} ({_ids(row['better'])}) | "
             f"{len(row['same'])} | {len(row['worse'])} "
-            f"({_ids(row['worse'])}) | {len(row['one_na'])} |")
+            f"({_ids(row['worse'])}) | {len(row['one_na'])} | "
+            f"{len(row.get('unmarked') or [])} |")
     lines += ["", "## By request", "",
               f"Marks are yes/no/n/a counts. Tokens are the agent's input + "
               "output.", "",
               "| Request | kind | OFF run | ON run | OFF marks | ON marks | "
-              "better/same/worse/one n/a | verdict | tokens OFF / ON | "
+              "better/same/worse/one n/a/unmarked | verdict | "
+              "tokens OFF / ON | "
               "seconds OFF / ON |", "|---|---|---|---|---|---|---|---|---|---|"]
     for req in reqs:
         rid = req["id"]
@@ -109,8 +153,8 @@ def render_markdown(res: Dict[str, Any]) -> str:
         checks = res["checks"].get(rid, {})
         pr = cmp_["per_request"].get(rid)
         c = pr["counts"] if pr else None
-        cnt = (f"{c['better']}/{c['same']}/{c['worse']}/{c['one_na']}"
-               if c else "-")
+        cnt = (f"{c['better']}/{c['same']}/{c['worse']}/{c['one_na']}/"
+               f"{c.get('unmarked', 0)}" if c else "-")
 
         def tok(a):
             run = runs.get(a) or {}
@@ -126,7 +170,8 @@ def render_markdown(res: Dict[str, Any]) -> str:
             f"{_run_cell(runs.get(base))} | {_run_cell(runs.get(other))} | "
             f"{_marks_count(checks.get(base))} | "
             f"{_marks_count(checks.get(other))} | {cnt} | "
-            f"{pr['verdict'] if pr else '-'} | {tok(base)} / {tok(other)} | "
+            f"{pr['verdict'] if pr else (_apart_of(cmp_, rid) or '-')} | "
+            f"{tok(base)} / {tok(other)} | "
             f"{sec(base)} / {sec(other)} |")
     notes = []
     for req in reqs:
@@ -142,10 +187,15 @@ def render_markdown(res: Dict[str, Any]) -> str:
             elif run and not run.get("figures"):
                 notes.append(f"- {req['id']} {a}: no figure appeared "
                              "(every item counted no).")
-            if chk and chk.get("unmarked"):
+            if chk and chk.get("not_scored"):
+                notes.append(f"- {req['id']} {a}: the vision reply could "
+                             f"not be read, asked {chk.get('tries', 1)} "
+                             "time(s); not scored (reply: "
+                             f"{str(chk.get('reply', ''))[:200]!r}).")
+            elif chk and chk.get("unmarked"):
                 notes.append(f"- {req['id']} {a}: the checker left "
                              f"{', '.join(chk['unmarked'])} unmarked "
-                             "(counted n/a).")
+                             "(counted apart, never same).")
             if chk and chk.get("dropped"):
                 notes.append(f"- {req['id']} {a}: {chk['dropped']} older "
                              "figure(s) not shown to the checker.")
@@ -176,7 +226,7 @@ h1{font-size:22px}h2{font-size:18px;margin:0 0 4px}
 .none{color:var(--no);font-weight:600}
 table{border-collapse:collapse;width:100%;font-size:13px}
 td{border-top:1px solid var(--line);padding:3px 4px;vertical-align:top}
-.yes{color:var(--yes);font-weight:600}.no{color:var(--no);font-weight:600}.na{color:var(--na)}
+.yes{color:var(--yes);font-weight:600}.no{color:var(--no);font-weight:600}.na{color:var(--na)}.unmarked{color:var(--na);font-style:italic}
 .owner{margin-top:10px}.owner textarea{width:100%;min-height:54px;box-sizing:border-box;background:var(--bg);color:var(--fg);border:1px solid var(--line)}
 button{font:inherit;padding:6px 12px}
 """
@@ -234,8 +284,10 @@ def render_html(res: Dict[str, Any]) -> str:
         verdict = (f"vision: ON {pr['verdict']} "
                    f"({pr['counts']['better']} better, "
                    f"{pr['counts']['same']} same, {pr['counts']['worse']} "
-                   f"worse, {pr['counts']['one_na']} one arm n/a)"
-                   if pr else "vision: not compared yet")
+                   f"worse, {pr['counts']['one_na']} one arm n/a, "
+                   f"{pr['counts'].get('unmarked', 0)} unmarked)"
+                   if pr else "vision: not compared ("
+                   + (_apart_of(cmp_, rid) or "not yet both checked") + ")")
         parts.append(
             f"<section class='req' data-id='{e(rid)}'><h2>{e(rid)}</h2>"
             f"<p class='ask'>{e(req['ask'])}</p><p>{e(verdict)}</p>"

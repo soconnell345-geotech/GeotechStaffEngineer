@@ -10,7 +10,11 @@ not applicable, each with a one-line reason. A request adds its own items
 :data:`MAX_FIGURES`, newest kept) with the request, the agent's reply and
 the numbers GM-328's build of the same inputs returned, and reads the marks
 back. A run that drew nothing is not sent: every item is marked ``no``,
-"no figure appeared" (:func:`no_figure_marks`).
+"no figure appeared" (:func:`no_figure_marks`). A run that failed (an
+error, a rate limit, a timeout, a crash) is marked the same way and flagged
+``run_failed``: the comparison keeps it apart. An item the reply leaves out
+is ``unmarked``, never ``na``; a reply that marks fewer than half the items
+is flagged ``not_scored`` (the runner asks once more).
 """
 
 from __future__ import annotations
@@ -47,6 +51,11 @@ ITEMS = (
      "text, names inside the frame) and use the request's and the "
      "references' own terms (layer names as given, standard symbols), no "
      "coined jargon."),
+    ("lines_named", "Lines and points are named on the figure itself, "
+     "beside the line or point, with a legend only for a group of lines; "
+     "a reference line (a limit, a design value, a water level) is named "
+     "on the line. 'na' when the figure has a single line or set of "
+     "points and no reference line."),
     ("defined_words", "Every plotted quantity is defined in words (an axis "
      "title, a label or a note), not only by a bare symbol."),
     ("data_ink", "No unnecessary ink: no background fill, heavy frame, 3-D, "
@@ -54,7 +63,8 @@ ITEMS = (
      "series."),
     ("plan_drawing", "A plan is drawn as a drawing: no axes, axis numbers, "
      "grid or frame; a scale bar; a north arrow (straight up only when no "
-     "plan shows north, and the figure says so); a property line dash-dot; "
+     "plan shows north, and the figure says so); a property line dash-dot "
+     "where the plan shows one; "
      "the coordinate system named once. 'na' when the figure is not a "
      "plan."),
     ("cases_markers", "Separate cases, scenarios or tests are markers on a "
@@ -68,6 +78,8 @@ ITEMS = (
 
 ITEM_IDS = tuple(i for i, _ in ITEMS)
 MARKS = ("yes", "no", "na")
+#: An item the checker left without a readable mark.
+UNMARKED = "unmarked"
 MAX_FIGURES = 4
 NO_FIGURE = "no figure appeared"
 
@@ -108,8 +120,9 @@ def no_figure_marks(request: Dict[str, Any], why: str = NO_FIGURE
 
 
 def parse_marks(text: str, request: Dict[str, Any]) -> Dict[str, Any]:
-    """The marks in a reply; an item the reply leaves out or marks with
-    another word is ``na`` and listed under ``unmarked``."""
+    """The marks in a reply. An item the reply leaves out or marks with
+    another word is ``unmarked`` (never ``na``) and listed; a reply that
+    marks fewer than half the items is ``not_scored``."""
     try:
         obj = _outer_object(text)
     except Exception:  # noqa: BLE001 - an unreadable reply marks nothing
@@ -130,10 +143,14 @@ def parse_marks(text: str, request: Dict[str, Any]) -> Dict[str, Any]:
             marks[it["id"]] = got[it["id"]]
         else:
             unmarked.append(it["id"])
-            marks[it["id"]] = {"mark": "na",
+            marks[it["id"]] = {"mark": UNMARKED,
                                "reason": "the checker gave no mark"}
-    return {"marks": marks, "note": str(obj.get("note", ""))[:400],
-            "no_figure": False, "unmarked": unmarked}
+    out = {"marks": marks, "note": str(obj.get("note", ""))[:400],
+           "no_figure": False, "unmarked": unmarked}
+    if 2 * len(unmarked) > len(marks):
+        out.update(not_scored=True, reply=str(text)[:500],
+                   note="the vision reply could not be read: not scored")
+    return out
 
 
 def build_prompt(request: Dict[str, Any], reply: str,
@@ -170,8 +187,9 @@ def check_run(vision_model: Any, request: Dict[str, Any], run: Dict[str, Any],
     """The vision model's marks for one run's figures."""
     from langchain_core.messages import HumanMessage
     if run.get("error"):
-        return no_figure_marks(request, f"the run failed: {run['error']}"
-                               [:300])
+        return dict(no_figure_marks(request, f"the run failed: "
+                                    f"{run['error']}"[:300]),
+                    run_failed=True)
     shown = pick_figures(figure_paths)
     if not shown:
         return no_figure_marks(request)

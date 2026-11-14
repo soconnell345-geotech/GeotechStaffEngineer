@@ -6,7 +6,8 @@ numbers of its own: its inputs are a sample calc package's
 (``docs/examples/sample_packages.json``, BACKLOG GM-328), named by the
 package method in ``row``; ``replace`` swaps in a method probe's made-up
 inputs (``funhouse_agent/tests/method_probes.json``) where the sample table
-has none for the figure, and ``patch`` changes single inputs.
+has none for the figure (without a probe, the request's own made-up
+inputs), and ``patch`` changes single inputs.
 
 Neither table ships in the app's wheel, so the set travels as a DATA FOLDER,
 made where the repository is checked out (``python -m
@@ -90,6 +91,12 @@ def sample_row(req: Dict[str, Any], rows: Dict[str, Dict[str, Any]],
             row["source"] = (f"Made-up inputs (the {key} probe of "
                              "funhouse_agent/tests/method_probes.json)")
             row["example_id"] = f"PROBE-{key}"
+        else:
+            row["origin"] = "made_up"
+            row["source"] = (f"Made-up inputs (figure request {req['id']}, "
+                             "funhouse_agent/figure_eval/requests.json)")
+            row["example_id"] = f"MADE-UP-{req['id'].split('-')[0]}"
+        row.pop("note", None)
         params.update(rep)
         row["params"] = params
     if req.get("patch"):

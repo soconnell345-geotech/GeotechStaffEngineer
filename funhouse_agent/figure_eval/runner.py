@@ -16,7 +16,8 @@ conversation, through the review suite's own runner
 the arm's switches set exactly (:data:`ARM_ENV`): the figure helper and the
 tool figures in both, plot code OFF in the baseline and ON in the other.
 Resumable: a finished run is never asked again (a failed one is), a check is
-redone only when its run was. ``results.json``, ``RESULTS.md`` and
+redone only when its run was. A vision reply that cannot be read is asked
+once more at once; still unreadable, the check is saved as not scored. ``results.json``, ``RESULTS.md`` and
 ``side_by_side.html`` are rewritten after every run and every check.
 
 Output, in ``out_dir``::
@@ -203,6 +204,13 @@ def score_figure_set(model: Any = None, *, vision_model: Any = None,
                 try:
                     check = check_fn(vision_model, req, run, paths,
                                      detail=detail)
+                    if check and check.get("not_scored"):
+                        say(f"check unreadable {req['id']} {arm}: asked "
+                            "once more")
+                        check = check_fn(vision_model, req, run, paths,
+                                         detail=detail)
+                        if check:
+                            check["tries"] = 2
                 except Exception as exc:  # noqa: BLE001 - retried next time
                     say(f"check failed {req['id']} {arm}: {exc}")
                     check = None
