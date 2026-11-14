@@ -401,7 +401,7 @@ METHOD_INFO = {
             "L": {"type": "float", "required": False, "description": "Footing length for stress distribution (m). Defaults to B."},
             "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "value_aliases": {"2to1": "2:1"}, "any_case": "no_spaces", "description": "Stress distribution method."},
         },
-        "returns": {"consolidation_settlement_mm": "Total consolidation settlement in mm.", "layer_breakdown": "Per-layer results.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
+        "returns": {"consolidation_settlement_mm": "Total consolidation settlement in mm.", "layer_breakdown": "Per-layer results.", "choices": "Only when the stress increase is worked out here (without delta_sigmas): what the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "hough_settlement": {
         "category": "Granular Settlement",

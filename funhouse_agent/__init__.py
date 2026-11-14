@@ -2,7 +2,8 @@
 Funhouse Agent — Engine-agnostic geotechnical agent with vision.
 
 Self-contained dispatch: routes tool calls through internal adapters
-directly to 50 modules (~901 methods). No dependency on foundry/ files.
+directly to every module of ``funhouse_agent.adapters.MODULE_REGISTRY``.
+No dependency on foundry/ files.
 
 Works with any AI backend satisfying the GenAIEngine protocol:
     - PrompterAPI (Databricks/Funhouse) — works natively

@@ -301,7 +301,7 @@ METHOD_INFO = {
             "kh_ks_ratio": {"type": "float", "required": False, "default": 1.0, "description": "Permeability ratio kh/ks, used only with smear_ratio above 1 (UFC 3-220-10 Eq. 5-25)."},
             "spacing_range": {"type": "array", "required": False, "default": [1.0, 3.5], "description": "Spacing search range [min, max] (m)."},
         },
-        "returns": {"spacing_m": "Designed drain spacing.", "U_total_percent": "Consolidation achieved at target time."},
+        "returns": {"drain_spacing_m": "Designed drain spacing.", "U_total_percent": "Consolidation achieved at target time."},
     },
     "surcharge_preloading": {
         "category": "Surcharge",

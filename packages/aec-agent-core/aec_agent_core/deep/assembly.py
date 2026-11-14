@@ -392,13 +392,15 @@ def create_kwargs_for(kwargs: dict, *, model, store=None, checkpointer=None,
                       summarization_keep=_DEFAULT_SUMMARIZATION_KEEP,
                       figure_tasks=None, allowed_agents=None,
                       unknown_tool_hint: Optional[Callable] = None,
-                      page_middleware=()) -> dict:
+                      page_middleware=(), keep_readers=()) -> dict:
     """``create_deep_agent``'s keyword arguments for a build's main agent:
     ``kwargs`` (the caller's own), the persistent memory, and the
     middleware chain. ``page_middleware`` is the page's own, after the
     unknown-tool hint (the review page hides the
     scratch filesystem and keeps its model-call budget there; the geotech
-    page hides the shell and delete)."""
+    page hides the shell and delete). ``keep_readers``: the names of the
+    page's reading helpers, whose every return keeps its record and adds
+    its open items (:class:`KeepWork`, BACKLOG DR-46); none by default."""
     # ----- Phase-3: persistent /memories/ backend + memory= source -----
     create_kwargs = dict(kwargs)
     backend = None
@@ -444,7 +446,7 @@ def create_kwargs_for(kwargs: dict, *, model, store=None, checkpointer=None,
     # a file, at most GEOTECH_MAX_HELPERS helpers run at once, and very
     # large results are kept whole for a turn that errors (TA-19, TA-21,
     # TA-22; field session 2026-10-14).
-    middleware.append(KeepWork())
+    middleware.append(KeepWork(readers=keep_readers))
     if figure_tasks is not None:
         # Inside KeepWork, whose record of the figure helper it reads.
         middleware.append(figure_tasks)

@@ -122,6 +122,8 @@ Branch `claude/gm-140-step6-one-method`. Requires on master: steps 1, 2 and 3. T
 5. The headline. The reported factor of safety is the lowest over all families. When the governing family was scored by a method other than the one named, `method_used` and a warning say so, and the result also gives the named method's own lowest value. The lead made this call (the lower value governs; both are stated): list it under "Calls made".
 6. Each entry of `candidates` carries the method and the interslice function that scored it, truthfully (today toe-circle and planar results are labelled "Gle" or "Morgenstern_price").
 
+**Surfaces the method could not solve.** Where surfaces the named method could not solve have a lower value by the screen than the minimum reported, the result says so, with their count and the lowest screen value (UFC 3-220-10 p. 362: critical surfaces can be missed through non-convergence; the engineer should be able to tell).
+
 **Out of scope.** New families or generators (step 7). The correction factor of Janbu's simplified method (D28: not found in print; leave it, say so). Cracks, water, supports.
 
 **Benchmarks.** All of section 11. Expect movement on: #86 without supports, c' = 0 (planes 0.942; printed tan 37 deg / tan 38.66 deg = 0.942); the planar family against its closed forms (#86, Duncan and Wright's Examples 3 and 4: +0.11 to +0.15 %); V-035 and V-036 (Slide2 #79 and #81: referee 1.44 and 1.15); V-054 (2.346; printed 2.16); #85 and #86 with supports; V-043; V-028 (after step 1); B14. GM-56 records that Spencer and GLE refuse thin planes: measure, for each plane family in section 11, how many of its surfaces the named method solves, and report it. If a rigorous method named loses the infinite-slope mechanism on a cohesionless face, item 4's order must still report the family: show that it does.
@@ -224,6 +226,8 @@ Branch `claude/gm-140-step8-supports`. Requires on master: step 1. Runs in paral
 7. **A support whose pull assists sliding (OWN-59).** Both readings offered; slack (the support counts nothing) is the stated default.
 8. **The legacy single force** without an elevation is refused (D37).
 9. **The crossing** of a support and a slip surface is found exactly (a line with a circle, a line with each segment of a polyline), not by sampling 200 points.
+
+**A support on a slice boundary (GM-353, from GM-343's review).** A support that meets the slip surface exactly on a slice boundary acts on whichever slice a rounding gives it: V-043's geosynthetic (x 8.388) reads 40.88 kN/m at the radius and 45.22 at the radius + 1e-8 m (printed 44 to 45). Give such a support to one slice by a stated rule, or cut the slice at the crossing; then both radii give one force, and V-043's pin (45.2, noted as one of the tie's two outcomes) is re-pinned with its page.
 
 **Out of scope.** Stabilizing piles' Ito-Matsui force as its own method (OWN-13). Reverse-curvature circles (step 4). New support types.
 
