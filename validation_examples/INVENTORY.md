@@ -619,6 +619,19 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Notes: PASS — `infinite_slope_fos` gives FOS = tan(30)/0.5 = 1.155.
 
 ## V-037 Slide2 #95 — USACE 2-stage rapid drawdown (EM 1110-2-1902 App. G)
+
+**2026-11-13 (GM-140 step 9): the verdict below is WITHDRAWN.** Its 1.34
+against 1.347, and its finding that "the residual was the stage-1 flow net",
+rest on a stage-1 seepage line that no page prints (`stage1_phreatic_points`
+at about a 0.08 gradient, chosen here); that pin was removed and its
+conclusions go with it. The gap between the module's 1.21 and the printed
+1.347 is the method of slices: the EM computed this example by the Modified
+Swedish Method with the side forces at a fixed 19.4 deg (G-5, pp. G-9 to
+G-15), and force equilibrium at that inclination gives 1.338 at the EM's
+103 ft pool against its 1.35, on level pools. Slide2's text gives the pool as
+110 ft, its Fig 95.1 draws about 103 ft. Current values beside print, and
+why: `slope_stability/VALIDATION.md` (V-037 / V-038) and `RESULTS.md`. The
+values quoted below are those of their day.
 - Source: Slide2 Verification #95 (manual pp. 307-308); USACE EM 1110-2-1902 (1970).
 - Target: `slope_stability.rapid_drawdown_fos` (`method='corps_2stage'`).
 - Geometry (feet, Fig 95.1 — EXACT two-segment face, calibrated to the published
@@ -629,7 +642,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   the initial level at ~103; the TEXT says 110 — 110 matches the published FOS.)
 - Inputs: gamma=135 pcf; effective c'=0/phi'=30; R-envelope cR=1200 psf/phiR=16.
 - Published answer: Army-Corps 2-stage FOS 1.347; referee 1.35.
-- Verdict: **PASS (under steady-seepage stage-1)** — with the declined stage-1
+- Verdict (withdrawn 2026-11-13, see above): PASS (under steady-seepage stage-1) — with the declined stage-1
   phreatic (`stage1_phreatic_points`, ~0.08 gradient) FOS = 1.34 vs 1.347 (~0.6%).
   The combined R/effective (`min`) envelope is confirmed correct (pure R -> ~1.42).
   The flat-phreatic DEFAULT gives the conservative bound 1.21. The exact geometry
@@ -638,11 +651,24 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Confidence in extraction: soil + circle + water + geometry exact.
 
 ## V-038 Slide2 #96 — Duncan-Wright-Wong 3-stage rapid drawdown (same dam)
+
+**2026-11-13 (GM-140 step 9): both verdicts below are WITHDRAWN.** "Seepage
+stage-1 1.273" and "flat 1.306 / seepage 1.370" rest on a stage-1 seepage
+line that no page prints and, for 1.306 / 1.370, on the removed
+`stage3_effective_normal` option; those pins were removed and their
+conclusions go with them. "The Kc interpolation is sound" and the residual
+placed in the stage-3 substitution were drawn while the stages were not
+Appendix G's: the K_c = 1 strength used c_R and phi_R without Eqs. G-5 and
+G-6 (13 % low on every slice) and K_c was not Eq. G-11. With every stage as
+printed, #96 reads 1.427 at 110 ft (-1.1 % on 1.443) and the EM's example
+2.20 / 1.52 / 1.44 is reproduced stage by stage, on level pools. Current
+values beside print: `slope_stability/VALIDATION.md` (V-037 / V-038) and
+`RESULTS.md`. The values quoted below are those of their day.
 - Source: Slide2 Verification #96 (manual pp. 309-310); Duncan, Wright, Wong (1990).
 - Target: `slope_stability.rapid_drawdown_fos` (`method='duncan_3stage'`).
 - Geometry/inputs: identical to V-037 (only the method differs).
 - Published answer: Duncan-Wright-Wong 3-stage FOS 1.443; referee 1.44.
-- Verdict: **CONVENTION (approximate)** — flat 1.235, seepage stage-1 1.273; the
+- Verdict (withdrawn 2026-11-13, see above): CONVENTION (approximate) — flat 1.235, seepage stage-1 1.273; the
   published ORDERING holds (3-stage >= 2-stage at the default) and seepage raises
   it, but a ~12% residual to 1.443 remains at the SAME phreatic that validates the
   2-stage. Isolated to the Duncan-Wright-Wong Kc (anisotropic-consolidation)
@@ -651,7 +677,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   published 3-stage above the 2-stage is under-captured. NOT geometry/seepage;
   documented follow-up (see DESIGN.md). Stage-3 substitution left per Duncan-
   Wright-Brandon (2014) Ch. 9.
-- **v5.4 update (E2):** re-diagnosed — the Kc interpolation is sound (yields ~1.45
+- v5.4 update (E2), withdrawn 2026-11-13 (see above): re-diagnosed — the Kc interpolation is sound (yields ~1.45
   in isolation); the residual sits in the STAGE-3 drained substitution, whose
   Fellenius estimate of the drawn-down effective normal is inconsistent with the
   rigorous GLE normal used in stage 1 and over-fires the substitution (17/50
@@ -662,6 +688,8 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   VALIDATION.md §B7 (authoritative) and test_published_v038.
 
 ## V-041 Slide2 #98 (Walter Bouldin Dam, 5-material rapid drawdown) — was DEFERRED, now VALIDATED (geometry-limited)
+
+**2026-11-13 (GM-140 step 9):** the values quoted in this entry are those of its day; rapid drawdown now follows EM 1110-2-1902 Appendix G stage by stage. Current values beside print: `RESULTS.md` and `slope_stability/VALIDATION.md` B7.
 - Source: Slide2 Verification #98 (manual pp. 313-314); Duncan, Wright, Wong (1990).
 - Published answers (SEARCH minima): Corps 2-stage 0.931, Lowe-Karafiath 1.075,
   DWW 3-stage 1.039. Water: initial 47 ft -> drawdown 15 ft.
@@ -891,6 +919,8 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   all unlabeled in Fig 51.1. Cannot recover honestly without the missing parameters.
 
 ## V-052 Slide2 #97 — Pilarcitos Dam rapid-drawdown method ordering (F4)
+
+**2026-11-13 (GM-140 step 9):** the values quoted in this entry are those of its day; rapid drawdown now follows EM 1110-2-1902 Appendix G stage by stage. Current values beside print: `RESULTS.md` and `slope_stability/VALIDATION.md` B7.
 - Source: Slide2 Verification #97 (Tables 97.1/97.2); Duncan, Wright & Wong (1990);
   GEO-SLOPE "Rapid Drawdown – Multi-Stage" Ex 3.
 - Recovered (all published): homogeneous rolled earth-fill γ=135 pcf, effective
