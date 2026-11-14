@@ -334,8 +334,10 @@ the lowest (DESIGN.md "Supplementary families"). Tests:
 | V-032 (Slide2 #61) entry/exit 10x10, Bishop | 1.320 | 1.315 | Slide2 1.366 / Baker 1.35 (see below) | toe circle |
 | V-029 grid wiring check (6x6 grid, given windows) | 1.209 | 1.130 | (wiring test, 0.5-2.5) | toe circle |
 
-The planar surfaces are real LE surfaces scored by Janbu's simplified method (force
-equilibrium, as the infinite slope is). Against the closed form
+The planar surfaces are real LE surfaces. The values below are Janbu's simplified
+method's (force equilibrium, as the infinite slope is), which scored them in every
+search until GM-140 step 6; since then the method named scores them (B25 has every
+method's column). Against the closed form
 F = tan phi' (cos b - kh sin b - ru/cos b)/(sin b + kh cos b):
 
 | Face | Load | Planar (30 slices) | Closed form | Diff |
@@ -1232,6 +1234,61 @@ says the scan went upward from lambda = 0 on that branch, and names EM
 (`tension_crack_depth`). At 10, 20 and 28 kPa as printed the branch reads
 0.9620, 1.2877 and 1.5481 (before 0.9698, 1.3070, 1.5772), each the
 review's script's root to 0.000 %.
+
+## B25 — One method across the search (GM-140 step 6, 2026-11-14)
+
+Record: `module_work/gm140/STEP6_CHECK.md`. Tests:
+`slope_stability/tests/test_one_method.py`. Measured by
+`module_work/gm140/step6_section11.py` on master 2d3c1a9 and on the branch
+(with `step2_section11.py`, `step3_section11.py` and
+`circle_ends_section11.py` unchanged for their own rows).
+
+**The planar family by every method** (30 slices; the family's six planes;
+closed form F = tan phi' (cos b - kh sin b - ru/cos b)/(sin b + kh cos b),
+Duncan, Wright and Brandon 2014, Ch. 14). Every method that applies to a
+plane solves all six planes of every family measured (GM-56).
+
+| Face | Load | Closed form | Janbu | Spencer | M-P / GLE, half-sine | Solved |
+|------|------|------------:|------:|--------:|---------------------:|:------:|
+| #86, 1.25H:1V, phi' 37 | dry | 0.9419 | 0.9430 (+0.11 %) | 0.9442 (+0.24 %) | 0.9427 (+0.08 %) | 6 of 6 |
+| #86 | ru 0.2 | 0.6330 | 0.6338 (+0.13 %) | 0.6366 (+0.57 %) | 0.6336 (+0.10 %) | 6 of 6 |
+| #86 | kh 0.1 | 0.7703 | 0.7712 (+0.12 %) | 0.7730 (+0.35 %) | 0.7710 (+0.09 %) | 6 of 6 |
+| Duncan Ex. 3 geometry, 2H:1V, phi' 40 | dry | 1.6782 | 1.6804 (+0.13 %) | 1.6824 (+0.25 %) | 1.6798 (+0.10 %) | 6 of 6 |
+| Duncan Ex. 3 | kh 0.15 | 1.1941 | 1.1959 (+0.15 %) | 1.1987 (+0.38 %) | 1.1955 (+0.11 %) | 6 of 6 |
+| Duncan Ex. 4, sand face 3H:1V, phi' 38 | dry | 2.3439 | 2.3471 (+0.14 %) | 2.3494 (+0.24 %) | 2.3463 (+0.11 %) | 6 of 6 |
+
+The planes are now scored by the method named. Bishop's simplified method
+and the Ordinary Method of Slices named: Spencer's column, reported apart.
+(Before, a search scored them by Janbu's column whatever was named; the
+Ordinary Method of Slices on a plane with kh read +8.2 % and +8.8 %.)
+
+**Searches** (module before -> now; printed).
+
+| Case | Before | Now | Printed | What moved it |
+|------|-------:|----:|--------:|---------------|
+| #86 without supports, c' = 0, Bishop: headline | 0.942 (circular) | 0.942 | tan 37 / tan 38.66 = 0.942 | not moved |
+| the same: planar family | 0.9430 (Janbu) | 0.9442 (Spencer, apart) | 0.9419 | the planes by Spencer's method, Bishop's being for circles |
+| #86 without supports, Bishop, circles kept off the face | 0.9430, labelled Janbu | 0.9442, Spencer; `method_used`; Bishop's own lowest 0.9515 (toe circle) beside it | 0.9419 | the same |
+| #86 without supports, Spencer, the same windows | 0.9430 (Janbu) | 0.9442 (Spencer) | 0.9419 | the planes by the method named |
+| #86 without supports, Morgenstern-Price: planar family | 0.9430 (Janbu) | 0.9427 | 0.9419 | the same |
+| #86, five tiebacks, Bishop / Spencer / GLE | 1.6131 / 1.6065 / 1.6070 | the same | 1.629 / 1.620 / 1.622 (D&W 1.61) | not moved (the face's planes, held by the tiebacks, are counted under Spencer or GLE, no longer Janbu) |
+| #85, one support, active: Bishop / Spencer / GLE | as STEP3 and the circle-ends record | the same | 1.531 / 1.884 / 1.575 | not moved |
+| #85 without its support, Spencer, 6 x 6 | 1.0468 (toe circle) | 1.0330 by Janbu's simplified method (circle above the toe), stated; Spencer's own lowest 1.0468 beside it; 8 circles Bishop scored down to 0.9095 that Spencer has no solution on, reported | no printed value (Bishop 0.9095 on this section) | item 4: Spencer's method solved none of the circles above the toe (142 without a solution), so the family is scored by Janbu's simplified method; item 5: the lower value governs, both stated |
+| V-054 steep phi = 0 slope, Bishop, 40 slices | 2.346 (toe circle) | 2.346 | 2.16 (FLAC 2.18) | not moved |
+| V-054, Spencer, 40 slices | 2.4448 | 2.4448, with `screen_unsolved`: 12 circles Bishop scored below it, down to 2.3464, that Spencer has no solution on | 2.16 | the value is not moved; the report is new |
+| V-043 sand, Spencer, default circular | 1.1859 | 1.1859 (planar family 1.2575 -> 1.2591) | Slide2 1.209 (circle) | the planes by Spencer's method |
+| V-043 sand, DE, seeds 1 to 3, Spencer | 1.237 / 1.234 / 1.233 | 1.194 from each (the critical circle, 1.186, as the polyline of its 30 slice bases); the evolution's own polylines 1.237 / 1.234 / 1.233 in `circle_check` | Slide2 1.188, Tandjiria 1.192 | the critical circle is one of the trials; the strict xfail of GM-117 passes and its mark is removed |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.0916 | 0.9844 (circle 0.9838; its polyline of 25 slice bases +0.06 %); own polylines 1.0916 in `circle_check` | 1.00 (Spencer 0.9838 on the circle; Slide2 0.986) | the critical circle is one of the trials |
+| the same, Morgenstern-Price / Janbu named | 1.0794 / 1.0357 | 0.9844 / 0.9832 | 1.00 | the same |
+| ACADS 1(a), particle swarm, Morgenstern-Price named | 0.9931, by Spencer | 0.9844 (own polylines 0.9917, by Morgenstern-Price) | 1.00 | the method named scores the swarm; the circle is a trial |
+| ACADS 1(a), DE, Spencer | 0.9907 | 0.9844 | 1.00 | the circle is a trial |
+| V-028 ACADS 4, weak-layer search, Spencer | 0.8301 | 0.8301 (the circle, 0.9765, is above it) | 0.760 | not moved (the strict xfail at 3 % stays: step 7) |
+| B14 weak layer over rock, Spencer | 0.8822 | 0.8822 | none | not moved |
+| Duncan Ex. 4, Bishop / Spencer | 1.2709 / 1.2584 | the same (planar family 2.3471 -> 2.3494) | closed form 2.3439 for the face | the planes by Spencer's method |
+| V-035 / V-036 (Slide2 #79, #81) | closed form (`infinite_slope_fos`) | the same | referee 1.44, 1.15 | no search in these tests |
+
+Every other row of section 11 measured by the four scripts is unchanged to
+the digits printed (the list is in STEP6_CHECK.md).
 
 ## Notes / known deviations
 

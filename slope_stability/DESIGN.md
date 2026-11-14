@@ -516,8 +516,13 @@ guard (`test_a_state_at_one_slicing_only_is_refused`).
 - `search_noncircular(geom, n_trials, n_points, x_entry_range, x_exit_range, ...)` — random polylines
 - Generates random polyline surfaces between entry and exit x-ranges
 - Intermediate points at random depths below ground surface
-- Uses Spencer's method for each trial
-- Returns best (minimum FOS) surface found
+- Scores each trial by the method named, with the interslice function
+  named (GM-140 step 6; Spencer's method where a method for circles only
+  is named). The particle swarm and the weak-layer search do the same;
+  before step 6 both always used Spencer's method.
+- Returns best (minimum FOS) surface found. Through
+  `search_critical_surface` the critical circle of a circular search by the
+  same method is one of the trials ("One method across the search" below).
 
 ### Supplementary families: toe circles and the infinite slope (GM-13, GM-14)
 `search_critical_surface` scores two more surface families after the main
@@ -589,14 +594,17 @@ and `refused_lowest` only where the result has them (GM-125).
   across a ramp's corner swung the FOS 5 % either side of the closed form;
   at a fortieth, the stage-1 solve of a face under a full pool drifts up.)
   They are REAL surfaces, so pore pressure, ponding, surcharge and kh act
-  on them as on any other. They are scored by **Janbu's simplified method
-  whatever method the search uses**: the infinite slope is a
-  force-equilibrium result (the interslice forces on a slice of an infinite
-  slope are equal and opposite), Janbu's force equilibrium with no
-  interslice shear reproduces it, and moment equilibrium says nothing on a
-  thin planar slide -- the rigorous GLE often finds no F_m = F_f crossing
-  there (the surface is rejected) and Spencer at 1 % depth ran 6 % above
-  the closed form on a 2:1 sand face. Measured against the closed form
+  on them as on any other. They are scored by **the method the search was
+  given** (GM-140 step 6; "One method across the search" below), and by
+  Spencer's method where Bishop's simplified method or the Ordinary Method
+  of Slices is named. *(Until step 6 they were scored by Janbu's
+  simplified method whatever method the search used, on the reasoning that
+  the infinite slope is a force-equilibrium result and that the rigorous
+  GLE often found no F_m = F_f crossing on a thin plane. Since the GLE
+  solver reports a root or no number (GM-344), Spencer's method,
+  Morgenstern-Price and the GLE solve all six planes of every planar
+  family of the validation set; STEP6_CHECK.md has the counts.)* Measured
+  by Janbu's simplified method against the closed form
   F = tan phi' (cos b - kh sin b - ru / cos b) / (sin b + kh cos b), dry,
   with ru 0.2, with kh 0.1-0.15, both face directions: +0.11 % to +0.15 %
   on 30 slices (Janbu's f0 and the end ramps; VALIDATION.md B12). The
@@ -1258,6 +1266,113 @@ dry crack at x = 41 (3.0 m, given, since GM-140 step 4 discards the
 reverse-curvature circle with no crack asked for): 3.08, against Bishop's
 3.07 on 30 slices.
 
+### One method across the search (GM-140 step 6, 2026-11-14)
+
+**The rule.** Every family of surfaces in a search is scored by the method
+named, with the interslice function named, so the reported minimum compares
+like with like. A family the named method cannot score is reported under
+the method that did score it, apart from the others.
+
+**Print.** EM 1110-2-1902 4-3b(9)(a), p. 4-8: state the method used. EM
+C-2b, p. C-16: the Ordinary Method of Slices "can only be used with
+circular slip surfaces". EM C-5a, p. C-26: Spencer's method extended to
+noncircular surfaces. FHWA NHI-06-088 Table 6-1, p. 6-21: Bishop's the
+minimum method, Spencer's where available. UFC 3-220-10 Table 7-7 step 5,
+p. 374. UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as a
+result of non-convergence. The engineer should be able to identify when
+convergence issues are present." EM 4-2e(2), p. 4-7: for a noncircular
+search the initial surface should correspond to the estimated critical
+surface. **No printed rule on comparing surfaces solved by different
+methods was found** (the account's D42); the case is that a search
+minimises the factor of safety of the method it reports (GM-138).
+
+**What was wrong (D13, D42, D26, D49's labels).** Planes were scored by
+Janbu's simplified method whatever method was named; the particle swarm
+and the weak-layer search always used Spencer's method; Morgenstern-Price
+and GLE always took the half-sine function in a search, and the search had
+no choice of function; the Ordinary Method of Slices scored polylines; a
+toe-circle result was labelled 'Morgenstern_price' or 'Gle', and
+`search_noncircular` named for Bishop labelled its Spencer result 'Bishop'.
+
+**What the code does.**
+
+- *The function.* `search_critical_surface(f_interslice=...)` (default
+  'half_sine'; an unknown name is refused) puts the function in force for
+  every solve made inside it (`search._applies_interslice`,
+  `search.interslice_in_force`; `search._method_solution` reads it): the
+  grid, entry and exit, toe circles, circles above the toe, planes, random,
+  differential evolution, particle swarm and weak layer. The search
+  functions take `f_interslice` too (None: the function in force).
+  `search_rapid_drawdown` already passed its `f_interslice` to every
+  family's staged solve; it now refuses an unknown name.
+- *The method.* `search_pso` and `search_weak_layer_biased` take `method`.
+  `check_infinite_slope` scores each face's planes by the method named.
+- *A family the method cannot score* (`search.scoring_order`,
+  `search.CIRCLES_ONLY`, `search.STAND_INS`). Bishop's simplified method
+  and the Ordinary Method of Slices do not apply to a plane or a polyline;
+  any method can solve none of a family's surfaces (it lost trials to
+  non-convergence and scored none). Such a family is scored by Spencer's
+  method; where Spencer's solves none, by Janbu's simplified method. For
+  the planes the order is applied face by face, so a face the method
+  solves keeps the method. The main search does the same
+  (`analysis.search_critical_surface`, `_main_search`), and the toe-circle
+  families (`search_supplements._toe_families`).
+- *The record.* `SearchResult.candidate_methods`: one entry per family and
+  scoring method, `{family, method, f_interslice, FOS, named, reason}`,
+  with `screen` where another method picked the circles. `candidates`
+  keeps its form (family: FOS). `named_method` and `f_interslice` say what
+  was asked for. The governing surface's `method` label is the method that
+  scored it (`search.method_label`: 'Morgenstern-Price', 'GLE').
+- *The headline.* The reported factor of safety is the lowest over all
+  families. Where the governing family was scored by another method than
+  the one named: `method_used`, a warning placed first, and
+  `named_method_lowest` (the named method's own lowest value, or FOS None
+  with a note when it scored no family).
+- *Screens by another method* are run-time devices only: the optional
+  Bishop screen of the main search (`bishop_screen`), the Bishop scan of
+  the toe-circle families under Spencer / Morgenstern-Price / GLE (and of
+  the circles above the toe under Janbu), and the refinement walk's radius
+  by Bishop. Every value a family reports, and every comparison between
+  families, is the scoring method's own factor of safety on the surface
+  reported; `choices` names the screens ("screens by another method").
+- *Surfaces the method could not solve.* Where a screen scored surfaces
+  below the minimum reported and the named method had no solution on them,
+  `screen_unsolved` gives their count and the lowest screen value, by
+  family, and a warning says so (`search._note_screen_unsolved`,
+  `search_supplements.screen_unsolved_warning`; UFC p. 362).
+- *The planar family's findings.* Each `infinite_slope_checks` entry and
+  the family's `candidate_methods` entry carry `flags`: what the printed
+  acceptability checks find on the lowest plane (the low m_alpha of
+  Spencer's solution on a steep end among them, EM C-10b; GM-344), with
+  `n_planes` and `n_solved_by_named` (GM-56).
+- *A noncircular minimum checked against the circle.* A noncircular search
+  through `search_critical_surface` first runs the circular search (centre
+  grid and toe-circle families, the same windows, apart from this search's
+  counts) by the method that scores the polylines, and takes its critical
+  circle, as the polyline of its slice-base points
+  (`search.circle_as_polyline`), as one of its trials
+  (`search.add_circle_trial`). `circle_check` gives the circle, its value
+  as a circle and as a polyline, the search's own lowest polyline and which
+  governs; a warning says so when the search's own polylines stayed above
+  the circle. `circle_check=False`, a search function called on its own,
+  and a rapid-drawdown search run no circular search, and the result says
+  the minimum was not checked against a circle. Under a time budget the
+  circular search may use a quarter of it.
+
+**Calls made (for the owner; STEP6_CHECK.md has the other forms).** The
+order Spencer's method, then Janbu's simplified method; the lower value
+governs and both are stated; the order applied face by face for the planes;
+`candidates` kept as it was with the methods beside it; the circular search
+run by default before a noncircular one; the Ordinary Method of Slices on a
+polyline left available on ONE given surface (`analyze_slope`,
+`compare_methods_table`: Fredlund and Krahn 1977 print it on a composite
+surface), refused only as a search's scoring method.
+
+**Not changed.** Janbu's correction factor f0 (D28: not found in print).
+New families or generators (step 7). The yield acceleration, FOSM and
+Monte Carlo take no `f_interslice` (their Morgenstern-Price and GLE solves
+use the half-sine function, as their documents say).
+
 ### A single surface: warnings, and no silent fallback (GM-81, 2026-10-15)
 *(Its two "what `FOS` holds when there is no solution" cases, the labelled
 approximate value and `_legacy_critical_warning`, are superseded by GM-140
@@ -1717,8 +1832,10 @@ times at 30 slices; at 60 slices Spencer 42-56, Morgenstern-Price 42-68 and
 GLE 41-72 times. A whole search costs less than the ratio where it already
 scans with Bishop (the refinement walk, GM-87; the toe-circle families,
 GM-13): the default centre grid 5-13 times, an entry/exit grid 28-46 times.
-The noncircular searches score with Spencer whatever method is named for
-Bishop (PSO and weak_layer always). Measured on the same four slopes at 30
+The noncircular searches score with the method named (Spencer's method
+where Bishop's simplified method or the Ordinary Method of Slices is named;
+before GM-140 step 6, PSO and weak_layer always with Spencer's). Measured
+before step 6, which adds the circular search of `circle_check` to each, on the same four slopes at 30
 slices, at the tool's defaults (500 trials, 5 points), no budget, the
 supplementary families included (GM-129, 2026-10-17): `noncircular` 6.0-7.2 s,
 `weak_layer` 2.7-7.1 s, `noncircular_de` 9.9-11.8 s on three slopes and
