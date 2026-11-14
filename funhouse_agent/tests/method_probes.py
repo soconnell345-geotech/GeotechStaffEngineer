@@ -212,9 +212,10 @@ _NO_LOW_M_ALPHA = ("no trial surface of the probe's search has m_alpha "
                    "below 0.2 on a slice, so keeping and leaving out such "
                    "surfaces give the same search (GM-140 step 3)")
 # INF-77 T1 (b): why a parameter a probe gives does not move its run
-_ONE_LAYER = ("the probe has one layer, taken to go on below the toe, the "
-              "wall or the excavation, so its thickness (or bottom) moves "
-              "nothing")
+_ONE_LAYER = ("the probe's one layer reaches below the toe (or the wall); "
+              "a thicker one changes nothing")
+_NODE_INDEX = ("a doubled node index is out of range and raises IndexError, "
+               "not a worded refusal")
 _ONE_FEM_LAYER = ("the probe's one layer fills the mesh, so a bottom below "
                   "the mesh's base moves nothing")
 _TOP_CUT = ("the top layer's top_elevation above the ground surface is cut "
@@ -552,6 +553,9 @@ NOT_REACHED = {
         "which does not read gamma",
     **{("fem2d|fem2d_staged", f"material_props[0].{n}"): _STRONG
        for n in ("c", "phi", "psi")},
+    ("fem2d|fem2d_seepage", "elements"): _NODE_INDEX,
+    ("fem2d|fem2d_seepage", "head_bcs"): _NODE_INDEX,
+    ("fem2d|fem2d_staged", "elements"): _NODE_INDEX,
     ("fem2d|fem2d_consolidation", "k"): _STAGGERED,
     ("fem2d|fem2d_consolidation#monolithic", "k"):
         "the probe reports t = 0 and 1e8 s only: the loading instant and "
@@ -688,8 +692,9 @@ GIVEN_LEFT_OUT = {k: _SLOW_RUN for k in (
 #: or notes key (there only when there is something to say).
 _BY_METHOD = ("the result of the method it names; a run of another method "
               "leaves it out")
-_BLOCK = ("the block-failure keys come with pile_length (the block check); "
-          "the probe asks eta_g only")
+_BLOCK = ("the block-failure keys come with pile_length and su1 and su2 "
+          "(or one cu), the cohesive block check; the probe asks eta_g "
+          "only")
 RETURNED_SOMETIMES = {
     ("calc_package|fem2d_package", "extra"):
         "names the fem2d tool's own keys, not one key",
@@ -721,8 +726,10 @@ RETURNED_SOMETIMES = {
        "with soil_type (eta_g read off the printed table); the #block "
        "probe asks block failure only"
        for k in ("s_over_b", "group_efficiency_row")},
-    **{("pile_group|group_uplift", k): "with uplift_load; the probes give "
-       "none" for k in ("group_uplift_utilization", "group_uplift_adequate")},
+    **{("pile_group|group_uplift", k): "with uplift_load and "
+       "axial_capacity_tension (the governing resistance); the probes give "
+       "no uplift_load" for k in ("group_uplift_utilization",
+                                  "group_uplift_adequate")},
     ("retaining_walls|earth_pressure_coefficient", "choices"):
         "for the log-spiral passive coefficient only",
     ("seismic_geotech|seismic_earth_pressure", "delta_passive_deg"):

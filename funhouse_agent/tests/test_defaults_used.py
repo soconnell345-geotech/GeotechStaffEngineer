@@ -648,6 +648,11 @@ _VOLATILE = frozenset({
     "seconds_per_evaluation",
     "dxf_base64", "notes", "warnings", "note"})
 _STAMP = re.compile(r"\d{8}_\d{6}(_\d+)?|\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d")
+#: What two identical runs in one session differ in (INF-77 review #5): a
+#: figure written again takes a number ('..._2.png'), and the session
+#: store renames a second load of a site ('Test', 'Test_1'; ``site_key``).
+_RENAMED = re.compile(r"_\d+(?=\.(?:png|svg|jpe?g|pdf)\b)")
+_SITE_COPY = re.compile(r"_\d+$")
 
 
 def _analysis_methods() -> set:
@@ -671,10 +676,11 @@ def _run(agent: str, method: str, params: dict):
 
 def _norm(x, where: str):
     if isinstance(x, str):
-        return _STAMP.sub("<t>", x.replace(where, "<cwd>"))
+        return _RENAMED.sub("", _STAMP.sub("<t>", x.replace(where, "<cwd>")))
     if isinstance(x, dict):
-        return {k: _norm(v, where) for k, v in x.items()
-                if k not in _VOLATILE}
+        return {k: _SITE_COPY.sub("", v) if k == "site_key"
+                and isinstance(v, str) else _norm(v, where)
+                for k, v in x.items() if k not in _VOLATILE}
     if isinstance(x, list):
         return [_norm({k: w for k, w in v.items() if k != "how"}
                       if isinstance(v, dict) and "what" in v and "how" in v
@@ -763,12 +769,13 @@ def _cases(agent: str, method: str, params: dict = None) -> dict:
 
 
 #: How a ``returns`` text says when its key comes back (INF-77 T1 a): a
-#: condition word, a case label ("Cohesive: ...", "Monte Carlo: ..."), a
-#: text that starts "For a ...", or "with" a declared parameter.
-_SAYS_WHEN = re.compile(
-    r"\b(when|if|only|unless|where|without|absent|omitted|otherwise)\b"
-    r"|^[^.:]{1,40}:\s|^for an? ", re.I)
-_WITH = re.compile(r"\bwith (\w+)")
+#: condition word (when, if, only, unless, without), a text that starts
+#: "For a ...", or "with" a declared parameter. A label and a colon
+#: ("Per strut: ...") or a loose word ("where") states no condition
+#: (review #3).
+_SAYS_WHEN = re.compile(r"\b(when|if|only|unless|without)\b|^for an? ",
+                        re.I)
+_WITH = re.compile(r"\bwith (\w+)", re.I)
 #: Keys a result carries only when there is something to say.
 _SAID_WHEN_ANY = re.compile(r"^(warnings|notes)$|_(notes?|warnings)$")
 
@@ -799,10 +806,13 @@ def _promised_not_returned(agent: str, method: str, params: dict,
 
 
 def test_the_returns_check_reads_conditions_and_pairs():
-    assert _SAYS_WHEN.search("Cohesive: 2D(B+Z)su.")
     assert _SAYS_WHEN.search("Present when FOS is null.")
+    assert _SAYS_WHEN.search("Cohesive soil only: 2D(B+Z)su.")
     assert _SAYS_WHEN.search("For a steel grid: the largest St.")
-    assert not _SAYS_WHEN.search("Designed drain spacing.")
+    for plain in ("Designed drain spacing.", "Cohesive: 2D(B+Z)su.",
+                  "Factor where the flow exits.", "Gradient: the exit value.",
+                  "Per strut: the force."):
+        assert not _SAYS_WHEN.search(plain), plain
     assert _SAID_WHEN_ANY.search("drawing_warnings")
     assert not _SAID_WHEN_ANY.search("warnings_count")
 
@@ -1086,11 +1096,24 @@ def _without(x, name: str):
     return x
 
 
+#: A run that ends in one of these failed in Python, which the agent cannot
+#: act on, rather than refusing in words (INF-77 review #9). A ValueError,
+#: an adapter's own worded error, a module's error class, a missing file
+#: and a KeyError that says what is missing are refusals; a KeyError that
+#: names a bare key is not.
+_CRASH = re.compile(
+    r"^(IndexError|TypeError|AttributeError|ZeroDivisionError|NameError|"
+    r"UnboundLocalError|AssertionError|RecursionError|LinAlgError): "
+    r"|^KeyError: '[^' ]*'$")
+
+
 def _moved_by(name: str, r0, r1, where: str = ""):
     """Where the result moved when ``name`` took another value, or None.
-    A run the other value refuses has moved."""
+    A run the other value refuses in words has moved; one that crashes
+    (:data:`_CRASH`) has not."""
     if isinstance(r1, dict) and "error" in r1:
-        return "refused: " + str(r1["error"])[:80]
+        error = str(r1["error"])
+        return None if _CRASH.match(error) else "refused: " + error[:80]
     return _diff(_without(_norm(r0, where), name),
                  _without(_norm(r1, where), name))
 
@@ -1218,7 +1241,13 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
     INF-77 T1 (b): each parameter the probe gives is changed too
     (:func:`_given_changes`, one change each, on the run above), set
     aside by the same tables; the probes :data:`MP.GIVEN_LEFT_OUT` names
-    (slow runs) only for their defaults."""
+    (slow runs) only for their defaults. Coverage (INF-77 review #4): of
+    the 2,227 parameters the probed methods declare, 814 (in 111 methods)
+    are neither given by a probe nor listed in its run's defaults_used,
+    so nothing here changes them; e.g. axial_pile_capacity's
+    extend_last_layer, inside_friction_ratio, open_pipe_method,
+    open_pipe_toe_limit, pile_area, pile_perimeter, pile_tip_area,
+    pile_weight and uplift_skin_fraction."""
     if MP.skip_reason(key):
         pytest.skip(MP.skip_reason(key))
     base = key.split("#")[0]
@@ -1271,18 +1300,39 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
         f"described, or say what they do and stop advertising them: {still}")
 
 
+def _label_in(params: dict, label: str) -> bool:
+    """Whether a probe's ``params`` give the field a nested label names
+    (``layers[0].thickness``, ``swelling.theta``); a plain name, True."""
+    m = _NESTED.match(label)
+    if not m:
+        return True
+    head, index, field = m.groups()
+    value = params.get(head)
+    if index is not None:
+        if not (isinstance(value, list) and index.isdigit()
+                and int(index) < len(value)):
+            return False
+        value = value[int(index)]
+    return isinstance(value, dict) and field in value
+
+
 def test_the_allow_lists_name_declared_inputs_of_probed_methods():
+    """Each entry names a declared input of a probed method, and a nested
+    label a field the probe gives, so a stale entry fails (review #11)."""
     for table in (MP.LABEL_ONLY, MP.NOT_REACHED, MP.KNOWN):
         for (key, name), why in table.items():
             if not MP.listed([key]):
                 continue
-            assert key in MP.PROBES or key in {
-                k.split("#")[0] for k in MP.PROBES}, key
+            probes = [p for k, p in MP.PROBES.items()
+                      if key in (k, k.split("#")[0])]
+            assert probes, key
             agent, method = key.split("#")[0].split("|")
             params = D._load_adapter(agent).METHOD_INFO[method][
                 "parameters"]
             assert name.split("[")[0].split(".")[0] in params and why, (
                 key, name)
+            assert any(_label_in(p["params"], name) for p in probes), (
+                key, name, "no probe gives this field")
 
 
 def test_the_inf77_tables_name_probes_and_promised_keys():

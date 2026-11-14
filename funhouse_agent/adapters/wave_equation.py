@@ -427,7 +427,7 @@ METHOD_INFO = {
             **_SOIL_DOC,
             **_HAMMER_CUSHION_DOC,
         },
-        "returns": {"can_drive": "Whether pile can be driven.", "refusal_depth_m": "First depth whose blow count passed the refusal blow count (0: none).", "refusal_blow_count_per_m": "The refusal blow count used.", "points": "Per-depth drivability data.", "pile_length_m": "The pile's length at every depth: pile_length, else the deepest depth.", "shaft_distribution": "With 'triangular': the shaft distribution used.", "choices": "The quake weights (when the quakes differ); the pile length analysed (the deepest depth when pile_length is left out).", "warnings": "A diesel hammer's (it is run at its rated energy)."},
+        "returns": {"can_drive": "Whether pile can be driven.", "refusal_depth_m": "First depth whose blow count passed the refusal blow count (0: none).", "refusal_blow_count_per_m": "The refusal blow count used.", "points": "Per-depth drivability data.", "pile_length_m": "The pile's length at every depth: pile_length, else the deepest depth.", "shaft_distribution": "Only with shaft_distribution 'triangular': the shaft distribution used.", "choices": "The quake weights (when the quakes differ); the pile length analysed (the deepest depth when pile_length is left out).", "warnings": "A diesel hammer's (it is run at its rated energy)."},
     },
     "list_available_hammers": {
         "category": "Wave Equation",

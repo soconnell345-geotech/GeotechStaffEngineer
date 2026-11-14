@@ -1347,7 +1347,7 @@ METHOD_INFO = {
             "depth_m": "Depth array (m).",
             "q_c_kPa": "Cone tip resistance array (kPa). A reading the file does not have (a GEF void value) is null: never 0 and never interpolated from its neighbours.",
             "f_s_kPa": "Sleeve friction array (kPa), null where missing.",
-            "u_2_kPa": "Pore pressure u2 array (kPa), null where missing.",
+            "u_2_kPa": "Pore pressure u2 array (kPa), only when the file has a u2 column; null where a reading is missing.",
             "Rf_pct": "Friction ratio array (%), null where missing or where q_c or f_s is.",
             "missing_values": "Count of missing readings per column: {q_c_kPa, f_s_kPa, u_2_kPa, Rf_pct} for the columns the file has. Report it; a tool given a null reading (liquefaction) refuses it, so leave those depths out and say so.",
             "warnings": "Only when a reading is missing: the counts in words.",
@@ -1487,7 +1487,7 @@ METHOD_INFO = {
                             "cites, in pages or a prov, that no tool or helper read or looked at in this conversation. Each entry "
                             "gives what disagrees, both values and the pages; nothing is changed or resolved. Tell the user "
                             "about every entry.",
-            "cited_pages": "{checked, pages_cited, not_read}: the records' pages against the pages read in this "
+            "cited_pages": "Only when a record cites a page: {checked, pages_cited, not_read}: the records' pages against the pages read in this "
                            "conversation, or why they could not be checked.",
             "written": "Counts written, and anything the writer had to leave out, assume (assumed; position_unknown) or record "
                        "differently from how it was given (normalised). Tell the user about each.",

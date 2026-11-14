@@ -193,7 +193,7 @@ METHOD_INFO = {
             "q_allowable_kPa": "Allowable bearing capacity (q_ult / FOS), the gross allowable pressure (UFC 3-220-20 Eq. 5-13).",
             "q_allowable_net_kPa": "Net allowable bearing pressure q_ult/FS - q (UFC 3-220-20 Eq. 5-14).", "allowable_load": "The allowable loads on the footing (per metre for a strip): structural_load_kN, the column or structure load Q_DL+LL = q_all,net x A' (Eq. 5-3; under an eccentric load q_all x A' - q x A), and gross_load_kN = q_all x A', the total load on the base with the footing and the soil over it (Eq. 5-1), with their basis. Quote the structural load as the allowable column load, never the gross load.",
             "Nc": "Cohesion factor.", "Nq": "Overburden factor.", "Ngamma": "Unit weight factor.",
-            "Ngamma_alternatives": "Terzaghi: N-gamma from the other cited source.",
+            "Ngamma_alternatives": "Terzaghi only: N-gamma from the other cited source.",
             "notes": "Terzaghi: method basis, N-gamma source, shape interpolation, Df/B and local-shear notes.",
             "choices": "What the analysis chose, each with its basis and the alternatives: the method, its N-gamma, the shear mode, gross or net allowable pressure, the depth factors for an embedded footing, and under an inclined load Vesic's inclination factors (what they took) or Meyerhof's shape factors. Tell the user.",
         },
