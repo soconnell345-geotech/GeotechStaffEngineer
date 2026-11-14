@@ -159,15 +159,20 @@ def fellenius_fos(slices: List[Slice],
     (the ratio has no meaning there), or where the iteration with passive
     supports does not settle: there is no number (GM-140 step 2).
 
-    Supports (reinf_forces), circular surfaces: each acts at the base of the
-    slice it crosses — its component normal to that base adds to the slice's
-    normal force (so to its shear strength where phi > 0), and its signed
-    moment about the centre reduces the driving moment (ACTIVE, Method A)
-    or, divided by F with the soil strength, adds to the resisting moment
-    (PASSIVE, Method B). See ``slope_stability.reinforcement``.
-    Noncircular: the force projected on the base direction reduces the
-    driving force (active) or adds to the resistance (passive).
+    Supports (reinf_forces): where any support crosses the surface the
+    method gives no number (``NoSolution``, kind 'with_supports'; GM-140
+    step 8). No reference held prints the Ordinary Method of Slices with
+    known forces: Duncan, Wright and Brandon (2014, p. 93) give Bishop's
+    simplified method with them (Eq. 6.78) and no such equation for this
+    method. Until that step the module added the support's normal
+    component to the slice's normal force and its moment to the moment
+    sum on a circle, and its projection on the base on a polyline: forms
+    of its own. The code below the refusal is unreachable with supports
+    and is left as it was.
     """
+    if reinf_forces:
+        from slope_stability.solution import OMS_WITH_SUPPORTS
+        raise NoSolution(OMS_WITH_SUPPORTS, kind="with_supports")
     resisting = 0.0
     is_circular = getattr(slip, 'is_circular', True)
 

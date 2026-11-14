@@ -249,7 +249,7 @@ scored every family before and after).
 ### GM-56: how many planes the named method solves
 
 Every method that applies to a plane solves all six planes of every planar
-family measured (six families; the table is VALIDATION.md B25): Janbu's
+family measured (six families; the table is VALIDATION.md B26): Janbu's
 simplified method, Spencer's method, Morgenstern-Price and GLE, 6 of 6
 each. So no rigorous method loses the infinite-slope mechanism on these
 faces since the GLE step. That item 4's order still reports the family

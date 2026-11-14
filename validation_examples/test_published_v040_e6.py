@@ -82,10 +82,16 @@ def test_v040e6_passive_still_helps_vs_no_pile():
     assert _fos(_pile("passive")) > _fos()
 
 
-def test_v040e6_fellenius_passive_lower_than_active():
-    """The active/passive split also applies to the Fellenius (OMS) circular
-    method (passive adds to resisting; active reduces driving)."""
-    assert _fos(_pile("passive"), "fellenius") < _fos(_pile("active"), "fellenius")
+def test_v040e6_oms_has_no_number_with_the_pile():
+    """GM-140 step 8: the Ordinary Method of Slices is refused where a
+    support crosses the surface: no reference held prints it with known
+    forces (Duncan, Wright and Brandon 2014, p. 93). Before, this test
+    pinned the module's own form of it (passive below active). The split
+    holds in Spencer's method, which the print does give."""
+    for convention in ("active", "passive"):
+        assert _fos(_pile(convention), "fellenius") is None
+    assert _fos(_pile("passive"), "spencer") < _fos(_pile("active"),
+                                                    "spencer")
 
 
 def test_v040e6_bad_convention_rejected():

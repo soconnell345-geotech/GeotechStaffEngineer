@@ -1236,27 +1236,29 @@ def _assign_reinforcement(ns, reinf_forces, mirrored):
     """
     if not reinf_forces:
         return None
+    from slope_stability.supports import slice_index_for
     sgn = -1.0 if mirrored else 1.0
     out = []
+    bounds = [(s.x_left, s.x_right) for s in ns]
     for f in reinf_forces:
         x_n = sgn * f.x
         tx_n = sgn * f.dir_x * f.T
         tz = f.dir_z * f.T  # up-positive
         passive = bool(getattr(f, "passive", False))
-        # In the normalized frame the resisting direction is +x; a
-        # reinforcement resists by construction, but guard the sign for
-        # odd geometries by taking the stabilizing magnitude.
-        if tx_n < 0:
-            tx_n = abs(tx_n)
-        for s in ns:
-            if s.x_left <= x_n <= s.x_right:
-                if passive:
-                    s.rh_p += tx_n
-                    s.rv_p += -tz
-                else:
-                    s.rh += tx_n
-                    s.rv_down += -tz
-                break
+        # In the normalized frame the resisting direction is +x. The
+        # force keeps the direction it was resolved with (GM-140 step 8:
+        # the magnitude was taken until then, whatever the direction).
+        # The slice: the one whose base holds the crossing; on a slice
+        # boundary, by the rule of supports.slice_index_for (GM-353).
+        i = slice_index_for(bounds, x_n, sgn * getattr(f, "side", 0.0))
+        if i is not None:
+            s = ns[i]
+            if passive:
+                s.rh_p += tx_n
+                s.rv_p += -tz
+            else:
+                s.rh += tx_n
+                s.rv_down += -tz
         out.append((x_n, f.z, tx_n, tz, passive))
     return out
 
