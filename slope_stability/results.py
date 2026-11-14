@@ -231,6 +231,11 @@ class SlopeStabilityResult:
     FOS_janbu_uncorrected: Optional[float] = None
     janbu_f0: Optional[float] = None
     reinforcements: Optional[List[Dict[str, Any]]] = None
+    #: Supports that cross the surface and count nothing (GM-140 step 8;
+    #: ``supports.resolve_supports``): a pull that assists the sliding
+    #: taken as slack (OWN-59), or no capacity at the crossing. Each
+    #: ``{"kind", "index", "x_m", "z_m", "T_kN_per_m", "reason"}``.
+    supports_not_counted: Optional[List[Dict[str, Any]]] = None
     n_slices: int = 0
     has_seismic: bool = False
     kh: float = 0.0
@@ -332,6 +337,10 @@ class SlopeStabilityResult:
             lines.append(f"  Reinforcement:    {len(self.reinforcements)} "
                          f"element(s) crossing, total "
                          f"{sum(r['T_kN_per_m'] for r in self.reinforcements):.1f} kN/m")
+        if self.supports_not_counted:
+            lines.append(f"  Not counted:      "
+                         f"{len(self.supports_not_counted)} support(s) "
+                         f"crossing the surface (see WARNING)")
         if self.tension_crack_depth > 0:
             lines.append(f"  Tension crack:    {self.tension_crack_depth:.2f} m deep")
             if self.tension_crack_water_depth > 0:
@@ -469,6 +478,8 @@ class SlopeStabilityResult:
             d["n_reinforcements_active"] = len(self.reinforcements)
             d["total_reinforcement_kN_per_m"] = round(
                 sum(r["T_kN_per_m"] for r in self.reinforcements), 2)
+        if self.supports_not_counted:
+            d["supports_not_counted"] = self.supports_not_counted
         if self.slice_data is not None:
             d["slice_data"] = [s.to_dict() for s in self.slice_data]
         if self.thrust_line is not None:
@@ -920,6 +931,10 @@ class SearchResult:
                                 else "")
                              + (f" ({r['below_0_05']} solved below 0.05)"
                                 if r.get("below_0_05") else "")
+                             + (f" ({r['with_supports']} crossed by "
+                                f"supports: the Ordinary Method of Slices "
+                                f"has no printed form with known forces)"
+                                if r.get("with_supports") else "")
                              for r in self.no_solution)
                          + ")")
         if self.critical:

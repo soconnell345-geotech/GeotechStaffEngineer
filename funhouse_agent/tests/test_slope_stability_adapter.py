@@ -412,8 +412,14 @@ class TestSingleSurfaceWarnings:
     def test_compare_methods_table_passes_warnings(self):
         p = {k: v for k, v in _slide85().items() if k != "method"}
         tab = METHOD_REGISTRY["compare_methods_table"](p)
-        assert [row["method"] for row in tab["rows"]][:2] == [
-            "Fellenius (OMS)", "Bishop simplified"]
+        # GM-140 step 8: the Ordinary Method of Slices is left out where a
+        # support crosses the surface (no printed form with known forces),
+        # and the table says why
+        assert [row["method"] for row in tab["rows"]][:1] == [
+            "Bishop simplified"]
+        assert "Fellenius" in tab["methods_without_solution"]
+        assert any("no reference held prints the Ordinary Method of Slices"
+                   in w for w in tab["warnings"])
         assert not any(row["method"].startswith("Spencer")
                        for row in tab["rows"])
         assert any("(method comparison) finds no equilibrium solution" in w

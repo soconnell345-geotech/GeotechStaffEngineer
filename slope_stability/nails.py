@@ -48,6 +48,17 @@ class SoilNail:
         the nail force is divided by the factor of safety like the soil
         strength, so give an ULTIMATE capacity. See
         ``slope_stability.reinforcement``.
+    facing_capacity : float, optional
+        Facing resistance R_F of one nail (kN), in the same measure as
+        the bar and the bond (allowable when active, ultimate when
+        passive). Given, the nail's load is also limited in front of the
+        slip surface by the facing with the pullout of the length between
+        the facing and the surface (GEC 7 Eq. 5.2, p. 105; Fig. 5.7). Left
+        out, that term is not checked and the result says so.
+    force_direction : str
+        'along_reinforcement' (default: along the nail) or
+        'along_slip_surface' (Duncan, Wright and Brandon 2014, Sec. 8.6,
+        pp. 163 to 164).
     """
     x_head: float
     z_head: float
@@ -59,8 +70,18 @@ class SoilNail:
     bond_stress: float = 100.0
     spacing_h: float = 1.5
     support_convention: str = "active"
+    facing_capacity: Optional[float] = None
+    force_direction: str = "along_reinforcement"
 
     def __post_init__(self):
+        if self.force_direction not in ("along_reinforcement",
+                                        "along_slip_surface"):
+            raise ValueError(
+                "force_direction must be 'along_reinforcement' or "
+                f"'along_slip_surface', got {self.force_direction!r}")
+        if self.facing_capacity is not None and self.facing_capacity < 0:
+            raise ValueError("facing_capacity must not be negative, got "
+                             f"{self.facing_capacity}")
         if self.support_convention not in ("active", "passive"):
             raise ValueError("support_convention must be 'active' or "
                              f"'passive', got '{self.support_convention}'")
