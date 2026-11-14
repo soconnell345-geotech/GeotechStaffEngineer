@@ -173,6 +173,28 @@ def analyze_slope(geom: SlopeGeometry,
         slip = CircularSlipSurface(xc, yc, radius)
 
     is_circular = getattr(slip, 'is_circular', True)
+    # Where a circle ends (GM-343): a circle that meets the ground at more
+    # than two points is split there, and each arc below the ground is
+    # analysed as a surface of its own; the result is the arc with the
+    # lowest factor of safety and says which arc it is.
+    arc_info = None
+    if is_circular:
+        from slope_stability.slip_surface import describe_arc, given_arc
+        if slip.is_bound:
+            slip = given_arc(slip, geom)
+            arc_info = describe_arc(slip, slip.meetings(geom))
+        else:
+            arcs = split_arcs(geom, slip)
+            if arcs:
+                return lowest_arc(
+                    geom, slip, arcs,
+                    lambda arc: analyze_slope(
+                        geom, slip_surface=arc, method=method,
+                        n_slices=n_slices, tol=tol,
+                        f_interslice=f_interslice,
+                        include_slice_data=include_slice_data,
+                        compare_methods=compare_methods,
+                        m_alpha_rule=m_alpha_rule))
     x_entry, x_exit = slip.find_entry_exit(geom)
 
     # The surface's crack as printed (GM-140 step 4, ``cracks``). A depth
@@ -198,6 +220,8 @@ def analyze_slope(geom: SlopeGeometry,
             if crack_out.discarded:
                 raise cracks.refusal_error(crack_out)
             cracks.apply_to_result(result, crack_out)
+            if arc_info is not None:
+                result.arc = arc_info
             return result
     if getattr(geom, "_crack_fixed", None) is None:
         crack_out = cracks.given_outcome(geom, slip, x_entry, x_exit)
@@ -431,6 +455,8 @@ def analyze_slope(geom: SlopeGeometry,
     # one too (GM-59, GM-81): a reverse-curvature circle closed by a crack,
     # and supports Bishop / the OMS count little of.
     cracks.apply_to_result(result, crack_out)
+    result.arc = arc_info
+    result._no_solution_kind = primary.kind if not primary.solved else ""
     if is_circular:
         from slope_stability.search_supplements import _support_arm_warning
         if reinf_forces and method in ("bishop", "fellenius"):
@@ -441,6 +467,120 @@ def analyze_slope(geom: SlopeGeometry,
                                      in_search=False)
             if w:
                 result.warnings.append(w)
+    return result
+
+
+#: Why an arc of a split circle has no factor of safety, in plain words
+#: (`_lowest_arc`; the keys are the counts of ``arc['not_scored']``).
+ARC_NOT_SCORED = {
+    "no_driving": "no net driving moment or force",
+    "not_converged": "the method has no solution on it",
+    "refused": "refused",
+}
+
+
+def split_arcs(geom, slip):
+    """The arcs to analyse where ``slip`` is a circle given without its
+    ends that meets the ground at more than two points (GM-343): one
+    circle per arc, each carrying its two ends. Empty for any other
+    surface (it is analysed as it is)."""
+    if not getattr(slip, "is_circular", False) or slip.is_bound:
+        return []
+    arcs = slip.arcs(geom)
+    return arcs if len(arcs) > 1 else []
+
+
+def checked_surface(geom, slip):
+    """``slip`` as an analysis takes it: a circle given with its arc's two
+    ends has them set on the points where it meets the ground, or is
+    refused where they are not the ends of one of its arcs
+    (`slip_surface.given_arc`, GM-343). Any other surface as it is."""
+    if getattr(slip, "is_circular", False) and slip.is_bound:
+        from slope_stability.slip_surface import given_arc
+        return given_arc(slip, geom)
+    return slip
+
+
+def lowest_arc(geom, slip, arcs, analyse, value=lambda r: r.FOS,
+               what: str = "factor of safety"):
+    """A circle that meets the ground at more than two points, given
+    without its ends: each arc below the ground analysed as a surface of
+    its own (``analyse(arc)``), and the result of the arc with the lowest
+    ``value`` (GM-343, "Where a circle ends").
+
+    Each arc is solved and screened like any other surface. An arc with no
+    net driving moment or force is refused, as any such surface is
+    (GM-140 step 2), and one the method has no solution on has no number;
+    both are listed with their reason in ``arc['others']`` and counted in
+    ``arc['not_scored']``. Nothing is refused for being one of two masses.
+    Where no arc has a value the result is the first arc's own "no
+    solution" result, with every arc listed. The result's ``arc`` says
+    which arc it is, and its warnings (where it has any) say so first.
+    The ruling is the module's (2026-11-13); the other form, to give the
+    arc meant, is ``CircularSlipSurface(xc, yc, radius, x_start, x_end)``.
+    Used by `analyze_slope`, `rapid_drawdown_fos`, `yield_acceleration`
+    and the probabilistic analyses of a given circle."""
+    from slope_stability.slip_surface import describe_arc
+    outcomes = []
+    for arc in arcs:
+        try:
+            res = analyse(arc)
+            kind = ("" if value(res) is not None else
+                    getattr(res, "_no_solution_kind", "") or "not_converged")
+            outcomes.append((arc, res, kind, ""))
+        except ValueError as exc:
+            outcomes.append((arc, None, "refused", str(exc)))
+    solved = [o for o in outcomes if not o[2]]
+    if solved:
+        chosen = min(solved, key=lambda o: value(o[1]))
+    else:
+        with_result = [o for o in outcomes if o[1] is not None]
+        if not with_result:
+            raise ValueError(
+                f"Circle (xc={slip.xc:.2f}, yc={slip.yc:.2f}, "
+                f"R={slip.radius:.2f}) bounds {len(arcs)} arcs below the "
+                f"ground and none can be analysed: " + " ".join(
+                    f"x {o[0].x_start:.2f} to {o[0].x_end:.2f}: {o[3]}"
+                    for o in outcomes))
+        chosen = with_result[0]
+    result = chosen[1]
+    others, counts = [], {}
+    for arc, res, kind, why in outcomes:
+        if arc is chosen[0]:
+            continue
+        rec = {"x_start": arc.x_start, "x_end": arc.x_end,
+               "value": None if res is None else value(res)}
+        if kind:
+            rec["not_scored"] = kind
+            rec["reason"] = why or ARC_NOT_SCORED[kind]
+            counts[kind] = counts.get(kind, 0) + 1
+        others.append(rec)
+    info = describe_arc(chosen[0], slip.meetings(geom))
+    info["governs"] = (
+        f"the lowest {what} of the circle's arcs (each analysed as a "
+        f"surface of its own)" if solved else
+        f"no arc of the circle has a {what}; this is the first")
+    info["others"] = others
+    info["not_scored"] = counts
+    result.arc = info
+
+    def _said(rec):
+        where = f"x {rec['x_start']:.2f} to {rec['x_end']:.2f}"
+        if rec.get("not_scored"):
+            return f"{where}: no {what} ({rec['reason']})"
+        return f"{where}: {rec['value']:.3f}"
+
+    text = (
+        f"This circle meets the ground at more than two points and bounds "
+        f"{len(arcs)} arcs below it. Each was analysed as a slip surface "
+        f"of its own; this result is {info['description']}"
+        + (f", the lowest {what}. " if solved else ". ")
+        + "The other" + (" arcs: " if len(others) > 1 else " arc: ")
+        + "; ".join(_said(r) for r in others)
+        + ". To analyse one arc, give its two ends.")
+    info["statement"] = text
+    if isinstance(getattr(result, "warnings", None), list):
+        result.warnings.insert(0, text)
     return result
 
 

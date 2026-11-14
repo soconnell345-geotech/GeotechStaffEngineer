@@ -146,6 +146,9 @@ class RapidDrawdownResult:
     stage1_converged: bool = True
     stage3_converged: bool = True
     warnings: List[str] = field(default_factory=list)
+    #: Which arc of its circle the surface is, where the circle meets the
+    #: ground at more than two points (GM-343; `analysis.lowest_arc`).
+    arc: Optional[Dict[str, Any]] = None
     #: Where a layer was given ground a layer listed before it also covers
     #: (`SlopeGeometry.layer_overlaps`; the first listed holds it).
     layer_overlaps: List[Dict[str, Any]] = field(default_factory=list)
@@ -182,6 +185,8 @@ class RapidDrawdownResult:
         }
         if self.layer_overlaps:
             d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
+        if self.arc:
+            d["arc"] = dict(self.arc)
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d
@@ -463,6 +468,25 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         if xc is None or yc is None or radius is None:
             raise ValueError("provide slip_surface or all of xc, yc, radius")
         slip = CircularSlipSurface(xc, yc, radius)
+
+    # Where a circle ends (GM-343): a circle that meets the ground at more
+    # than two points is split there; each arc is put through the stages
+    # as a surface of its own and the result is the lowest, named in
+    # ``arc`` and the warnings.
+    from slope_stability.analysis import (split_arcs, lowest_arc,
+                                          checked_surface)
+    slip = checked_surface(geom, slip)
+    arcs = split_arcs(geom, slip)
+    if arcs:
+        return lowest_arc(
+            geom, slip, arcs,
+            lambda arc: rapid_drawdown_fos(
+                geom, drawdown_from_elevation, drawdown_to_elevation,
+                slip_surface=arc, method=method,
+                f_interslice=f_interslice, n_slices=n_slices, tol=tol,
+                stage1_phreatic_points=stage1_phreatic_points,
+                stage3_effective_normal=stage3_effective_normal),
+            what="drawdown factor of safety")
 
     # The surface's crack as printed (GM-140 step 4, ``cracks``): one crack
     # for every stage, its depth, where it depends on the factor of safety,
@@ -847,7 +871,8 @@ def search_rapid_drawdown(geom: SlopeGeometry,
     crit = search.critical
     if crit is not None:
         if crit.is_circular:
-            crit_slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+            from slope_stability.slip_surface import circle_of
+            crit_slip = circle_of(crit)     # the governing arc's two ends
         else:
             crit_slip = PolylineSlipSurface(points=list(crit.slip_points))
         dd = rapid_drawdown_fos(

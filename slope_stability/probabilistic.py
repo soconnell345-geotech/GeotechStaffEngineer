@@ -571,13 +571,33 @@ def _no_solution_error(method: str, what: str, reason: str) -> ValueError:
         f"number). Use another method or another surface.")
 
 
-def _resolve_surface(geom, xc, yc, radius, slip_surface):
+def _resolve_surface(geom, xc, yc, radius, slip_surface, method="bishop",
+                     n_slices=30, tol=1e-4):
+    """The one surface the probabilistic analysis is made on.
+
+    Where a circle ends (GM-343): a circle given without its ends that
+    meets the ground at more than two points is split there, and the
+    analysis is made on the arc with the lowest factor of safety at the
+    values given (`analysis.lowest_arc`), held for every evaluation: one
+    sliding mass throughout. Give the arc's two ends
+    (``slip_surface=CircularSlipSurface(xc, yc, radius, x_start, x_end)``)
+    to name another."""
     if slip_surface is not None:
-        return slip_surface
-    if xc is None or yc is None or radius is None:
+        slip = slip_surface
+    elif xc is None or yc is None or radius is None:
         raise ValueError("Provide slip_surface or all of xc, yc, radius "
                          "(run search_critical_surface first)")
-    return CircularSlipSurface(xc, yc, radius)
+    else:
+        slip = CircularSlipSurface(xc, yc, radius)
+    from slope_stability.analysis import (split_arcs, analyze_slope,
+                                          checked_surface)
+    slip = checked_surface(geom, slip)
+    if split_arcs(geom, slip):
+        from slope_stability.slip_surface import circle_of
+        slip = circle_of(analyze_slope(geom, slip_surface=slip,
+                                       method=method, n_slices=n_slices,
+                                       tol=tol))
+    return slip
 
 
 # ---------------------------------------------------------------------------
@@ -620,7 +640,8 @@ def fosm_fos(geom: SlopeGeometry,
     corr = _parse_correlations(parsed, correlations)
     if not parsed and not laws:
         raise ValueError("variables dict is empty")
-    slip = _resolve_surface(geom, xc, yc, radius, slip_surface)
+    slip = _resolve_surface(geom, xc, yc, radius, slip_surface, method,
+                            n_slices, tol)
 
     means = [p[3] for p in parsed]
     law_means = [(law["a_mean"], law["b_mean"]) for law in laws]
@@ -781,7 +802,8 @@ def monte_carlo_fos(geom: SlopeGeometry,
     if not parsed and not laws:
         raise ValueError("variables dict is empty")
     if not research_surface:
-        slip = _resolve_surface(geom, xc, yc, radius, slip_surface)
+        slip = _resolve_surface(geom, xc, yc, radius, slip_surface, method,
+                                n_slices, tol)
     else:
         slip = None
 

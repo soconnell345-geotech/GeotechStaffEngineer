@@ -22,7 +22,7 @@ stabilizing piles in every method (`reinforcement.py`).
 
 ## Files
 - `geometry.py` — SlopeSoilLayer (flat or polyline top and bottom), SlopeGeometry (polyline surface/GWT); `column_at`, the one lookup of the layer at a point (GM-140 step 1)
-- `slip_surface.py` — CircularSlipSurface (center + radius), PolylineSlipSurface (polyline points); a surface below the ground over more than one stretch is refused (`GroundCrossingError`, GM-122)
+- `slip_surface.py` — CircularSlipSurface (center + radius, and the two ends of the arc it stands for), PolylineSlipSurface (polyline points); `circle_ground_meetings`, where a circle meets the ground, from the ground's segments and corners: a circle that meets it at more than two points is split there and each arc is a trial surface (GM-343); a polyline below the ground over more than one stretch is refused (`GroundCrossingError`, GM-122)
 - `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure (the weight summed over `SlopeGeometry.column_at`)
 - `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`); each returns the method's own solution or raises `NoSolution` (GM-140 step 2: the `*_legacy` approximate forms and `solve_rigorous()` are removed)
 - `solution.py` — `solve_method()`, the one solver every caller uses for a method (a result, every search family, the yield acceleration, FOSM, Monte Carlo): a `MethodSolution` with the method's own FOS, or None and the reason; `NoSolution`; `check_method()` / `check_interslice()` (an unknown name is refused)
@@ -273,7 +273,9 @@ search_critical_surface(geom, surface_type="noncircular",
 
 ### Circular (CircularSlipSurface)
 - Defined by center (xc, yc) and radius
-- Entry/exit found by bisection against ground surface
+- Entry/exit: the two ends of its arc, found from the ground's segments
+  and corners (GM-343, "Where a circle ends" below); a circle that meets
+  the ground at more than two points is split there, each arc a surface
 - Sliced at the ground's breaks, its layer, water-table and crack-base
   crossings and the surcharge edges, each slice's base its chord (GM-134;
   "Where a circle is sliced" below)
@@ -1107,7 +1109,123 @@ has no solution:
   serves every run (the direct march where the fixed-point step cannot be
   taken is still used with supports only; see "The lambda search").
 
+### Where a circle ends (GM-343; GM-140 after step 3, 2026-11-13)
+**The rule.** A circle's trial surface is an arc below the ground between
+two points where the circle meets the ground. A circle that meets the
+ground at more than two points (crossing it, or touching it within the
+touch allowance) is split at those points. Each arc with ground above it is
+a trial surface of its own, solved and screened like any other (steps 2 to
+4 apply to it unchanged), and a search scores each one. A mass with no
+driving moment is refused, as any such surface is (step 2). Nothing is
+refused merely for being one of two masses, and no arc is carried under the
+ground in front of the toe. The result says which arc it is.
+
+**Print, and what is not printed.** The family of circles with their lower
+end on the face: FHWA NHI-06-088 p. 6-38. A search that covers face exits
+at every height: GEC 11 p. 9-6. No held reference prints a rule for a
+circle that meets the ground more than twice. Slide2 refuses it (its error
+-105; GM-122 below followed it). The split is the module's ruling of
+2026-11-13 (the orchestrator's, under the owner's standing word for
+judgement calls; OWN-143). The other form, for the owner: keep only the arc
+that holds the crest.
+
+**Why.** Taylor's stability number for a vertical face in a phi = 0 soil is
+3.83. For a 5 m cut, cu 20 kPa, 18 kN/m3, F = 3.83 x 20 / (18 x 5) =
+0.851, on a toe circle (centre (13.02, 10.96), R 13.00, from the toe to
+the crest at x 24.57; 0.8514 by hand). That circle's centre lies beyond the
+toe, so the circle goes on descending past the toe and runs under the level
+ground in front of it for 14 m before it comes out. That lens is symmetric
+about the centre: it adds arc and no driving moment. Before this step the
+module read the circle as one surface from the far floor crossing (2.676);
+circles leaving the face just above the toe were refused as two masses
+(GM-122); and the default search's answer, 0.935, was a circle that dipped
+0.048 m under the floor, inside the touch allowance, so the reported
+minimum moved with that constant. The toe-circle searches shrank each
+radius by a millionth so that the arc passed just above the toe, and the
+200-point sampling of `find_entry_exit` (a step of about 0.13 m) stepped
+over the gap of about 2e-5 m that this left.
+
+**How.**
+
+- *The meeting points* (`slip_surface.circle_ground_meetings`) come from the
+  ground's own segments and corners, not from sampling. On a ground segment
+  of slope m through (x0, z0) the circle meets the line where (1 + m^2) u^2
+  + 2 k m u + k^2 - R^2 = 0, with u = x - xc and k = z0 - yc + m (xc - x0);
+  the roots on the lower arc inside the segment are meeting points. The
+  depth of the arc below the ground is concave along a segment (the lower
+  arc is convex), so between neighbouring meeting points the arc is wholly
+  below the ground or wholly above it, and the depth can have a local
+  minimum only at a ground corner. A toe, or any other corner, therefore
+  divides the arc exactly.
+- *The touch allowance* is `_TOUCH_FRACTION` (1 %, the module's own value,
+  older than this step; no printed source) of the circle's greatest depth
+  below the ground. Its value is unchanged; its role is now: (1) a stretch
+  below the ground whose greatest depth is under it touches the ground,
+  carries no mass and is no arc (as before); (2) a ground corner the arc
+  passes under by less than it, where the depth has a local minimum, is a
+  touch and a meeting point: the arc is split there. Taylor's circle to two
+  decimals passes 0.007 m under the toe; it meets the ground at the toe.
+- *A circle carries its arc's two ends*: `CircularSlipSurface(xc, yc,
+  radius, x_start, x_end)`. `find_entry_exit` returns them, so the slices,
+  the supports, the crack and every check are cut between them. `arcs(geom)`
+  gives one such circle per arc. A circle given without ends that bounds one
+  arc is that arc, as before. One that bounds several has no single entry
+  and exit: `find_entry_exit` raises `SeveralArcsError` (a `ValueError`),
+  which is not a refusal of the circle: the callers below score each arc.
+- *A stretch that runs out of the profile* below the ground at one of its
+  ends is not between two meeting points and is no arc. A circle's side (its
+  vertical tangent) with the ground above the centre's level ends an arc
+  there: the reverse-curvature circle of step 4, which its crack rule
+  closes or discards as before.
+- *One surface* (`analysis.lowest_arc`). `analyze_slope`,
+  `rapid_drawdown_fos` and `yield_acceleration` on a circle that bounds
+  several arcs analyse each arc as a surface of its own and return the
+  lowest; `arc` on the result names it (its two ends, its number among the
+  circle's arcs in x order, every arc of the circle), lists the others with
+  their value or the reason they have none, and counts those by reason
+  (`not_scored`: `no_driving`, `not_converged`, `refused`); the first
+  warning says the same in a sentence. FOSM and Monte Carlo on a given
+  circle take the arc with the lowest factor of safety at the values given
+  and hold it for every evaluation. Ends given by the caller must be the
+  two ends of one of the circle's arcs (within a thousandth of the radius;
+  they are set on the meeting points), or the surface is refused with the
+  circle's arcs listed.
+- *The searches* (`search._compute_fos`, every family's scorer). A split
+  circle's score is the lowest of its arcs' scores; each arc goes through
+  the same solve, the same counts (`no_solution` by family, method and
+  reason, where an arc with no driving moment is counted under
+  `no_driving`) and the same flags. With entry / exit windows, the arcs
+  inside the windows are scored. `SearchResult.circles_split` counts the
+  circles split by the number of arcs each gave (it replaces the count of
+  circles refused; `n_rejected_ground_crossings` now counts polylines
+  only). The search remembers the arc that scored lowest on each split
+  circle, so the reported surface, its crack, its supports, the
+  acceptability report and every later analysis (`slip_surface.circle_of`:
+  the refinement walk's report, the calc package, the drawdown stages, the
+  probabilistic annex) keep its two ends, and `critical.arc` names it.
+- *The toe circles and the circles above the toe*
+  (`search_supplements.search_toe_circles`) take, on the circle through
+  each chord's two ends, the arc whose downslope end is the chord's start
+  (the toe, or the point on the face). The radius is the circle's own. A
+  circle with no such arc is not one of the family's surfaces.
+
+**A polyline** that leaves the ground and comes back into it is still
+refused (`GroundCrossingError`, GM-122 below): the rule above is for
+circles, and the noncircular generators place their ends on the ground.
+
+**Measured** (`module_work/gm140/CIRCLE_ENDS_CHECK.md`). The vertical cut:
+the default Bishop search 0.935 -> 0.844 (Taylor 0.851, -0.9 %); Taylor's
+circle, 120 slices, 2.676 -> 0.850 (0.8514 by hand, -0.1 %). Spencer's
+method has no solution on that arc (no lambda from -1.5 to 1.5 at which the
+moment and force factors of safety agree) and says so: a Spencer or GLE
+search of such a cut can leave Taylor's surface unscored, and counts it.
+
 ### One sliding mass per trial surface (GM-122, GM-124; 2026-10-16)
+**Since GM-343 (2026-11-13) this section's refusal holds for polylines
+only.** A circle that meets the ground at more than two points is split
+there and each arc is scored ("Where a circle ends", above); what follows
+is the record of the rule as it stood for circles until then.
+
 **The rule.** Limit equilibrium takes the soil above the slip surface as one
 free body, divided into slices (Duncan, Wright & Brandon 2014, Ch. 6). A
 trial surface that is below the ground over more than one stretch leaves

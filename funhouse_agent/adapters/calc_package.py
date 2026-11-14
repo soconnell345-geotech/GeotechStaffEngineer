@@ -1864,7 +1864,9 @@ def _generate_slope_report_package(params: dict) -> dict:
     # interslice-force / line-of-thrust figure. Uses the SAME method the search
     # minimized, so the reported critical FOS stays consistent with the search.
     if crit.is_circular:
-        surf_kwargs = dict(xc=crit.xc, yc=crit.yc, radius=crit.radius)
+        # the governing arc's two ends kept (GM-343)
+        from slope_stability.slip_surface import circle_of
+        surf_kwargs = dict(slip_surface=circle_of(crit))
     else:
         from slope_stability.slip_surface import PolylineSlipSurface
         surf_kwargs = dict(slip_surface=PolylineSlipSurface(crit.slip_points))
@@ -1885,7 +1887,7 @@ def _generate_slope_report_package(params: dict) -> dict:
     variables = params.get("variables")
     if variables:
         analysis_dict["variables"] = variables
-        prob_surf = (dict(xc=crit.xc, yc=crit.yc, radius=crit.radius)
+        prob_surf = (dict(slip_surface=circle_of(crit))
                      if crit.is_circular
                      else dict(slip_surface=PolylineSlipSurface(crit.slip_points)))
         if params.get("fosm", True):
