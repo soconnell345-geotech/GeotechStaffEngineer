@@ -2174,6 +2174,9 @@ def grid_search(geom: SlopeGeometry,
                 "yc": round(yc, 2),
                 "R": round(r_opt, 2),
                 "FOS": round(fos_opt, 4),
+                # the centre's place on the grid, for the contours of the
+                # minimum FOS over the centres (GM-140 step 10, D46)
+                "node": (ix, iy),
             }
             if rescored is not None:
                 if (ix, iy) not in rescored:
@@ -2311,6 +2314,8 @@ def grid_search(geom: SlopeGeometry,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
         warnings=[window_note] if window_note else [],
+        centre_grid={"x_range": (x_lo, x_hi), "y_range": (y_lo, y_hi),
+                     "nx": nx, "ny": ny},
     )
 
 

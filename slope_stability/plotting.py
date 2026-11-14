@@ -11,6 +11,8 @@ plot_cross_section        - annotated section: layers, GWT, slip
                             surface, slices, reinforcement, thrust line
 plot_trial_surface_map    - all trial surfaces colored by FOS,
                             critical surface highlighted
+plot_centre_contours      - contours of the minimum FOS over the circle
+                            centres and the ten lowest surfaces
 plot_slice_forces         - per-slice W / N' / S_mob distribution
 plot_interslice_forces    - interslice E/X distribution + line of
                             thrust (rigorous methods)
@@ -461,6 +463,94 @@ def plot_trial_surface_map(search, geom, max_surfaces: int = 200,
 
     _style_section_axes(ax, title)
     ax.legend(loc='lower right', fontsize=7.5, framealpha=0.9)
+    fig.tight_layout()
+    return fig
+
+
+def plot_centre_contours(search, geom,
+                         title: str = "Minimum FOS over the Circle Centres "
+                                      "and the Ten Lowest Surfaces",
+                         figsize=(10, 7)):
+    """The contours of the minimum factor of safety over the circle
+    centres of a grid search, with the critical centre marked, and the ten
+    lowest surfaces drawn on the section (GM-140 step 10, D46 and D47;
+    FHWA NHI-06-088 Fig. 6-13, p. 6-23, and p. 6-49; GEC 11 Vol. II
+    p. 9-24). Without a centre grid (an entry/exit or noncircular search)
+    only the ten lowest surfaces are drawn. Values are the search's own
+    (``report_views``)."""
+    from slope_stability.report_views import (centre_contours,
+                                              lowest_surfaces)
+    plt = _get_plt()
+    contours = centre_contours(search)
+    lowest = lowest_surfaces(search)
+    if not lowest and not (contours and contours["n_scored"]):
+        raise ValueError("the search kept no surface to draw")
+    fig, ax = plt.subplots(figsize=figsize)
+    _draw_section_base(ax, geom, layer_alpha=0.35, show_legend_layers=False)
+
+    handles = []
+    if contours and contours["n_scored"]:
+        X, Y = np.meshgrid(contours["x"], contours["y"])
+        Z = np.array([[np.nan if v is None else v for v in row]
+                      for row in contours["fos"]], dtype=float)
+        # the grid's outline: whether the lowest contour closes inside it
+        gx, gy = contours["x"], contours["y"]
+        ax.plot([gx[0], gx[-1], gx[-1], gx[0], gx[0]],
+                [gy[0], gy[0], gy[-1], gy[-1], gy[0]], '--',
+                color='#666666', linewidth=0.8, zorder=5)
+        handles.append(ax.plot([], [], '--', color='#666666',
+                               linewidth=0.8, label="Centre grid")[0])
+        finite = Z[np.isfinite(Z)]
+        if finite.size >= 4 and Z.shape[0] > 1 and Z.shape[1] > 1 \
+                and finite.max() > finite.min():
+            lo = float(finite.min())
+            hi = float(min(finite.max(), lo * 1.3))
+            levels = np.linspace(lo, hi, 5)[1:]
+            cs = ax.contour(X, Y, np.ma.masked_invalid(Z), levels=levels,
+                            colors='#1f4e79', linewidths=0.9, zorder=6)
+            # every other level labelled, so close contours keep clear
+            # labels
+            ax.clabel(cs, cs.levels[::2], fmt='%.2f', fontsize=8,
+                      inline=True)
+        m = contours["minimum"]
+        ax.plot([m["xc"]], [m["yc"]], 's', color='#1f4e79', markersize=6,
+                zorder=8)
+        handles.append(ax.plot([], [], 's', color='#1f4e79',
+                               label=f"Lowest grid centre "
+                                     f"({m['FOS']:.3f})")[0])
+        cc = contours.get("critical_centre")
+        if cc:
+            ax.plot([cc["xc"]], [cc["yc"]], '*', color=_CRIT_COLOR,
+                    markersize=13, markeredgecolor='black',
+                    markeredgewidth=0.6, zorder=9)
+            handles.append(ax.plot([], [], '*', color=_CRIT_COLOR,
+                                   markeredgecolor='black',
+                                   label="Critical centre")[0])
+    for s in reversed(lowest):
+        if "radius" in s:
+            arc = _circle_arc(geom, s["xc"], s["yc"], s["radius"])
+            if arc is None:
+                continue
+            xs, zs = arc
+        else:
+            pts = np.asarray(s["points"], dtype=float)
+            xs, zs = pts[:, 0], pts[:, 1]
+        crit = s["rank"] == 1
+        ax.plot(xs, zs, '-', color=_CRIT_COLOR if crit else '#e07b00',
+                linewidth=2.0 if crit else 0.8, zorder=7 if crit else 6)
+    if lowest:
+        handles.append(ax.plot([], [], '-', color=_CRIT_COLOR, linewidth=2,
+                               label=f"Lowest surface "
+                                     f"({lowest[0]['FOS']:.3f})")[0])
+        if len(lowest) > 1:
+            handles.append(ax.plot(
+                [], [], '-', color='#e07b00', linewidth=0.8,
+                label=f"Surfaces 2 to {len(lowest)} "
+                      f"({lowest[1]['FOS']:.3f} to "
+                      f"{lowest[-1]['FOS']:.3f})")[0])
+    _style_section_axes(ax, title)
+    ax.legend(handles=handles, loc='upper center', fontsize=8,
+              bbox_to_anchor=(0.5, -0.12), ncol=2, framealpha=0.9)
     fig.tight_layout()
     return fig
 

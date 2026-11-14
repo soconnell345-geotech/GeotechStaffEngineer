@@ -177,6 +177,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     geom = analysis["geom"]
     sections = []
 
+    # The slice table first: the engineer checks slice weights, strengths
+    # and pore pressures at the bottoms of slices (EM 1110-2-1902 4-2d(2),
+    # p. 4-2; GM-140 step 10).
+    if result.slice_data:
+        sections.append(_slice_table_section(result))
+
     sections.append(_geometry_section(geom))
     sections.append(_slip_surface_section(result))
     sections.append(_method_section(result, analysis))
@@ -201,9 +207,6 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     comparison = _comparison_section(result, analysis)
     if comparison is not None:
         sections.append(comparison)
-
-    if result.slice_data:
-        sections.append(_slice_table_section(result))
 
     search = analysis.get("search")
     if search is not None:
@@ -1049,6 +1052,41 @@ def _search_section(search) -> CalcSection:
         notes=search_notes,
     ))
 
+    # The contours of the minimum FOS over the centres, and whether the
+    # lowest closes inside the grid (D46), and the ten lowest surfaces in
+    # order (D47) (GM-140 step 10)
+    from slope_stability.report_views import (
+        centre_contours, lowest_surfaces, lowest_surfaces_rows,
+        LOWEST_SOURCE)
+    contours = centre_contours(search)
+    if contours is not None:
+        items.append(TableData(
+            title="Minimum FOS over the Circle Centres",
+            headers=["Item", "Value"],
+            rows=[["Centres in the grid",
+                   f"{contours['n_centres']} ({len(contours['x'])} x "
+                   f"{len(contours['y'])})"],
+                  ["Centres with a FOS by the method",
+                   str(contours["n_scored"])],
+                  ["Lowest contour closes inside the grid",
+                   "yes" if contours["closed"] else "no"],
+                  ["Statement", contours["statement"]]],
+            notes="The contours are drawn in the figure 'Minimum FOS over "
+                  "the Circle Centres and the Ten Lowest Surfaces'.",
+        ))
+    lowest = lowest_surfaces(search)
+    if lowest:
+        items.append(TableData(
+            title=f"The {len(lowest)} Lowest Surfaces",
+            headers=["Rank", "FOS", "Family", "Method", "Geometry"],
+            rows=lowest_surfaces_rows(lowest),
+            notes=(f"In order of factor of safety ({LOWEST_SOURCE}). The "
+                   "main search's trials scored by the method, and the "
+                   "lowest surface of each other family (those families "
+                   "keep only their lowest); values a screen alone gave "
+                   "are not listed."),
+        ))
+
     checks = getattr(search, "infinite_slope_checks", None) or []
     if checks:
         items.append(TableData(
@@ -1260,6 +1298,19 @@ def get_figures(result, analysis) -> List[FigureData]:
              f"Critical surface search: "
              f"{search.n_surfaces_evaluated} trial surfaces colored "
              f"by FOS; critical surface highlighted.")
+        try:
+            from slope_stability.report_views import centre_contours
+            _cc = centre_contours(search)
+        except (KeyError, TypeError, ValueError):
+            _cc = None
+        _add(lambda: _plots.plot_centre_contours(search, geom),
+             "Minimum FOS over the Circle Centres and the Ten Lowest "
+             "Surfaces",
+             ("Contours of the minimum FOS over the circle centres "
+              "(FHWA NHI-06-088 Fig. 6-13, p. 6-23), the critical centre "
+              "marked; " + (_cc["statement"].split(" (FHWA")[0] + "; "
+                            if _cc else "")
+              + "the ten lowest surfaces drawn (FHWA NHI-06-088 p. 6-49)."))
 
     if result.slice_data:
         _add(lambda: _plots.plot_slice_forces(result),

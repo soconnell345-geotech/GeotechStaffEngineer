@@ -1814,6 +1814,9 @@ def apply_supplements(geom: SlopeGeometry,
     # lowest over all families governs; where another method scored it,
     # both are stated.
     result.candidate_methods = records
+    # each family's reported surface, for the ordered list of the lowest
+    # surfaces (GM-140 step 10, D47; FHWA NHI-06-088 p. 6-49)
+    result.family_surfaces = _family_surfaces(records, surfaces)
     result.named_method = (solve_name or method) if fos_fn is not None \
         else method
     result.f_interslice = (solve_interslice if fos_fn is not None
@@ -2961,3 +2964,30 @@ def _clipped_range_warning(geom, crit, windows, windows_auto,
         f"the ground carried on level past the end are no lower; if the "
         f"ground beyond the profile rises, falls or is a different soil, "
         f"extend the profile and search again.")
+
+
+def _family_surfaces(records, surfaces) -> Dict[str, Dict[str, Any]]:
+    """``SearchResult.family_surfaces``: each family's reported surface
+    (the lowest over the methods that scored it), with its factor of
+    safety and the method that scored it (GM-140 step 10, D47). A circle
+    is given by its centre and radius, a plane or polyline by its points.
+    A family whose surface was not kept is left out."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for rec in records:
+        surf = surfaces.get((rec["family"], rec["method"]))
+        if surf is None:
+            continue
+        have = out.get(rec["family"])
+        if have is not None and have["FOS"] <= rec["FOS"]:
+            continue
+        entry: Dict[str, Any] = {"FOS": rec["FOS"], "method": rec["method"]}
+        if isinstance(surf, CircularSlipSurface):
+            entry.update(xc=round(surf.xc, 3), yc=round(surf.yc, 3),
+                         radius=round(surf.radius, 3))
+        elif getattr(surf, "points", None):
+            entry["points"] = [(round(float(x), 3), round(float(z), 3))
+                               for x, z in surf.points]
+        else:
+            continue
+        out[rec["family"]] = entry
+    return out

@@ -762,6 +762,18 @@ class SearchResult:
         (UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as a
         result of non-convergence. The engineer should be able to identify
         when convergence issues are present.").
+    centre_grid : dict
+        The circle-centre grid of a grid search (GM-140 step 10, D46):
+        ``{"x_range", "y_range", "nx", "ny"}``; each of its centres in
+        ``grid_fos`` carries ``node`` = (ix, iy). Empty for other searches.
+        ``slope_stability.report_views.centre_contours`` contours the
+        minimum FOS over it (FHWA NHI-06-088 Fig. 6-13, p. 6-23).
+    family_surfaces : dict
+        Each family's reported (lowest) surface, by family (GM-140 step
+        10, D47): ``{"FOS", "method", "xc", "yc", "radius"}`` for a circle
+        or ``{"FOS", "method", "points"}`` for a plane or polyline; for
+        the ordered list of the lowest surfaces
+        (``report_views.lowest_surfaces``, FHWA NHI-06-088 p. 6-49).
     governing_surface : str
         Which kind of surface governs ``critical`` (set by
         ``search_critical_surface``): 'circular' / 'noncircular' (the main
@@ -917,6 +929,8 @@ class SearchResult:
     named_method_lowest: Optional[Dict[str, Any]] = None
     screen_unsolved: Dict[str, Any] = field(default_factory=dict)
     circle_check: Dict[str, Any] = field(default_factory=dict)
+    centre_grid: Dict[str, Any] = field(default_factory=dict)
+    family_surfaces: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     @property
     def n_no_solution(self) -> int:
@@ -1043,6 +1057,15 @@ class SearchResult:
                     f"method could not solve: {su['n']} of {su.get('k')} "
                     f"re-scored ({su.get('N')} scored by the screen), "
                     f"lowest {su['lowest_screen_FOS']:.3f}")
+        from slope_stability.report_views import (centre_contours,
+                                                  lowest_surfaces)
+        contours = centre_contours(self)
+        if contours is not None:
+            lines.append(f"  Centre grid: {contours['statement']}")
+        lowest = lowest_surfaces(self)
+        if lowest:
+            lines.append(f"  The {len(lowest)} lowest surfaces: "
+                         + ", ".join(f"{s['FOS']:.3f}" for s in lowest))
         gl = self.governing_location
         if gl.get("layers"):
             lines.append(f"  Governing surface: x {gl['x_entry']:.2f} to "
@@ -1155,6 +1178,18 @@ class SearchResult:
             d["screen_unsolved"] = dict(self.screen_unsolved)
         if self.circle_check:
             d["circle_check"] = dict(self.circle_check)
+        # what the print asks a search's output to show (GM-140 step 10):
+        # the contours of the minimum FOS over the centres and whether the
+        # lowest closes inside the grid (D46), and the ten lowest surfaces
+        # in order (D47)
+        from slope_stability.report_views import (centre_contours,
+                                                  lowest_surfaces)
+        contours = centre_contours(self)
+        if contours is not None:
+            d["centre_contours"] = contours
+        lowest = lowest_surfaces(self)
+        if lowest:
+            d["lowest_surfaces"] = lowest
         if self.infinite_slope_checks:
             d["infinite_slope_checks"] = [dict(c) for c in
                                           self.infinite_slope_checks]
