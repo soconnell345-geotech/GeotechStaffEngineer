@@ -34,10 +34,12 @@ helper did:
   It also caps the helpers that run at once in one conversation
   (:func:`max_helpers`; BACKLOG TA-22).
   A page can name its READING helpers (``KeepWork(readers=...)``; BACKLOG
-  DR-46). Each of their returns keeps the whole record in ``kept/`` too,
-  gave up or not, names the file in the result, and adds the open items
-  the helper's own tools flagged (:func:`open_items`: what was not read,
-  not legible or left to confirm), whether or not its answer named them.
+  DR-46). Each of their returns keeps the whole record in ``kept/`` too, as
+  ``reader_<what>_<id>.md`` (gave up: ``helper_...`` as above), names the
+  file in the result, and adds the open items the helper's own tools
+  flagged (:func:`open_items`: what was not read), whether or not its
+  answer named them. Only a helper that stopped or gave up is noted on the
+  turn (:attr:`TurnScope.kept_files`).
   Document Review names its reader; the geotech page names none, so its
   helpers get what they always got.
 
@@ -668,14 +670,15 @@ def _relative(path: str) -> str:
     return path
 
 
-def _stem(rec: HelperRecord) -> str:
-    """The kept files' common name for this helper, ``helper_<what>_<id>``
-    (made once, so its ``.md`` and its records file match)."""
+def _stem(rec: HelperRecord, kind: str = "helper") -> str:
+    """The kept files' common name for this helper, ``<kind>_<what>_<id>``
+    (made once, so its ``.md`` and its records file match). ``kind`` is
+    ``helper`` (it stopped or gave up) or :data:`READER_STEM`."""
     stem = getattr(rec, "_kept_stem", None)
     if not stem:
         tail = re.sub(r"[^A-Za-z0-9]", "", rec.task_id)[-6:] or \
             str(int(time.time()))[-6:]
-        stem = f"helper_{_slug(rec.brief)}_{tail}"
+        stem = f"{kind}_{_slug(rec.brief)}_{tail}"
         rec._kept_stem = stem
     return stem
 
@@ -766,13 +769,15 @@ def helper_file_text(rec: HelperRecord, why: str,
     return head_text + index(offset) + body_text
 
 
-def _write_kept(path: str, text: str) -> str:
+def _write_kept(path: str, text: str, note: bool = True) -> str:
+    """Write a kept file; ``note``: count it on the turn as the work of a
+    helper that stopped (a reader's record kept every time is not)."""
     tmp = path + ".part"
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(text)
     os.replace(tmp, path)
     scope = current_turn()
-    if scope is not None:
+    if scope is not None and note:
         scope.note_kept_file(path)
     return path
 
@@ -781,15 +786,19 @@ def write_helper_file(rec: HelperRecord, why: str,
                       answer: Optional[str] = None,
                       records: Optional[dict] = None,
                       items: Optional[List[str]] = None,
-                      title: Optional[str] = None) -> Optional[str]:
+                      title: Optional[str] = None,
+                      reader: bool = False) -> Optional[str]:
     """Write the kept file; its absolute path, or ``None`` if it could not
-    be written."""
+    be written. ``reader``: a reader's record kept every time
+    (:data:`READER_STEM`, not noted on the turn)."""
     try:
         folder = kept_folder()
         os.makedirs(folder, exist_ok=True)
-        path = os.path.join(folder, f"{_stem(rec)}.md")
+        stem = _stem(rec, READER_STEM if reader else "helper")
+        path = os.path.join(folder, f"{stem}.md")
         return _write_kept(path, helper_file_text(rec, why, answer, records,
-                                                  items, title))
+                                                  items, title),
+                           note=not reader)
     except Exception:  # noqa: BLE001 - keeping never fails the call
         return None
 
@@ -886,14 +895,15 @@ _SOURCE_KEYS = ("attachment_key", "path", "file_path", "source", "document",
 _LOOK_TOOLS = frozenset({"analyze_pdf_page", "render_region"})
 _ZOOM_TOOLS = frozenset({"render_region"})
 
-#: Flags a later zoom on the same page settles: both say "zoom before
-#: relying on it".
-_ZOOM_SETTLES = frozenset({"legibility", "tiles_only"})
+#: The stem of a reader's record kept every time (a helper that stopped or
+#: gave up keeps ``helper_``), so the page can tell them apart: the files
+#: note labels it, and it makes no card under the reply.
+READER_STEM = "reader"
 
 #: The order open items are listed in, most serious first, so the cap of
-#: :data:`OPEN_ITEMS_MAX_WORDS` cuts the cautions before the holes.
+#: :data:`OPEN_ITEMS_MAX_WORDS` cuts the least serious.
 _FLAG_ORDER = ("error", "overview_not_read", "tiles_not_read", "cut_off",
-               "scanned", "edge_note", "tiles_only", "legibility")
+               "scanned", "edge_note")
 
 
 def _clause(text: Any, room: int = 140) -> str:
@@ -955,8 +965,13 @@ def _page_of(data: Optional[dict], args: dict) -> Optional[int]:
 
 
 def _look_flags(data: dict) -> dict:
-    """``{flag: short words}`` for what one look says it did not see, could
-    not read or left to confirm -- its own fields, never its prose."""
+    """``{flag: short words}`` for what one look says it did not read -- its
+    own fields, never its prose. Left out: things found only in the tiles
+    (``found`` rows marked ``tiles_only``; the normal result of tiling, which
+    the tool says to treat as found) and the ``legibility`` caution. In the
+    saved runs of the 40-sheet review the first were on 87-97 % of the
+    readers' looks and the second on about 30 % of zooms, so they would
+    bury the holes; the kept file holds both."""
     out = {}
     if data.get("overview_not_read"):
         out["overview_not_read"] = "the whole-page view was not read"
@@ -971,19 +986,6 @@ def _look_flags(data: dict) -> dict:
                           "missing")
     if data.get("edge_note"):
         out["edge_note"] = _clause(data["edge_note"])
-    if data.get("legibility"):
-        out["legibility"] = ("small lettering may not read reliably in this "
-                             "view (zoom before relying on it or concluding "
-                             "that something is absent)")
-    only = [r for r in data.get("found") or ()
-            if isinstance(r, dict) and r.get("tiles_only")]
-    if only:
-        names = [f"'{_clause(r.get('what') or '?', 40)}'" for r in only[:6]]
-        more = len(only) - len(names)
-        out["tiles_only"] = (
-            "seen only in close-up tiles, not in the whole-page view, so "
-            "not yet confirmed: " + ", ".join(names)
-            + (f" and {more} more" if more > 0 else ""))
     return out
 
 
@@ -992,14 +994,13 @@ def open_items(rec: HelperRecord) -> List[str]:
     page, the most serious first: a call that failed; a look whose
     whole-page view or tiles were not read, or whose answer was cut off;
     pages a text read found with no text layer; lettering that ran past a
-    zoom's edges; things found only in tiles; small lettering that may not
-    read reliably. Made from the record's tool results (the same results
-    the page readings keep), never from the helper's words.
+    zoom's edges (:func:`_look_flags`). Made from the record's tool results
+    (the same results the page readings keep), never from the helper's
+    words: how well pages were read, not what a reading asked to check.
 
     A flag is dropped when the helper read the thing again: a later result
     of the same tool on the same file and page (for a zoom, the same box)
-    without it; for the two flags that say "zoom first", a later zoom on
-    that page; for a page with no text layer, a later look at it. The
+    without it; for a page with no text layer, a later look at it. The
     helper may still have settled an item in its own words; its kept file
     shows everything."""
     calls = _calls_by_id(rec)
@@ -1027,12 +1028,9 @@ def open_items(rec: HelperRecord) -> List[str]:
             flags = _look_flags(data) if data else {}
             if tool in _LOOK_TOOLS and page is not None:
                 for k in list(flagged):
-                    (k_tool, k_source, k_page, _b), flag = k
-                    if k_source != source or k_page != page:
-                        continue
-                    if k_tool == "(text layer)" or (
-                            tool in _ZOOM_TOOLS and flag in _ZOOM_SETTLES
-                            and k_tool not in _ZOOM_TOOLS):
+                    (k_tool, k_source, k_page, _b), _flag = k
+                    if (k_tool == "(text layer)" and k_source == source
+                            and k_page == page):
                         flagged.pop(k)
         for k in [k for k in flagged if k[0] == key and k[1] not in flags]:
             flagged.pop(k)
@@ -1301,7 +1299,7 @@ class KeepWork(AgentMiddleware):
         records = save_held_records(rec, answer) if why else None
         path = write_helper_file(
             rec, why or READER_KEPT_WHY, answer, records, items,
-            None if why else READER_KEPT_TITLE)
+            None if why else READER_KEPT_TITLE, reader=not why)
         notes: List[str] = []
         if path:
             _event("helper_kept", {"task_id": rec.task_id,
@@ -1427,6 +1425,7 @@ __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
            "helper_file_text", "write_helper_file", "kept_note",
            "kept_folder", "max_helpers", "open_items",
            "open_items_note", "reader_note", "READER_KEPT_WHY",
+           "READER_STEM",
            "OPEN_ITEMS_HEADING", "OPEN_ITEMS_MAX_WORDS", "KEPT_DIR",
            "KEEP_ON_GIVE_UP",
            "KEEP_MIN_READ_CHARS", "SHORT_ANSWER_CHARS",

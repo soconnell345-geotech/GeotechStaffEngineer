@@ -587,6 +587,22 @@ def is_cache_path(path, files_dir: str) -> bool:
                             or any(p.startswith(".") for p in parts))
 
 
+def is_reader_record(path, files_dir: str) -> bool:
+    """True for a reading helper's record kept every time
+    (``kept/reader_*``, ``aec_agent_core.deep.keep_work.READER_STEM``;
+    BACKLOG DR-46): the agent opens it by the name its helper's result
+    gives, and it makes no card under the reply. It is mirrored like the
+    rest of the conversation, so a reopened conversation still has it."""
+    try:
+        rel = os.path.relpath(os.path.abspath(str(path)),
+                              os.path.abspath(files_dir))
+    except (TypeError, ValueError):
+        return False
+    parts = rel.replace(os.sep, "/").split("/")
+    return (len(parts) == 2 and parts[0] == KEPT_FOLDER
+            and parts[1].startswith(_READER_STEM + "_"))
+
+
 def mirror_skips_dir(rel_dir: str) -> bool:
     """Whether the SharePoint mirror leaves out a conversation sub-folder,
     given relative to the CONVERSATION folder with '/' separators: the
@@ -3416,6 +3432,10 @@ UNNAMED_FILES_NOTE_MAX = 10
 #: kept in the working folder (``aec_document_review.turn_record.KEPT_DIR``).
 KEPT_FOLDER = "kept"
 
+#: The stem of a reading helper's record kept every time
+#: (``aec_agent_core.deep.keep_work.READER_STEM``, BACKLOG DR-46).
+_READER_STEM = "reader"
+
 
 def load_downloads(conv_dir: str) -> List[dict]:
     """The conversation's download ledger, ``[]`` when there is none.
@@ -3773,6 +3793,8 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
         rel = _note_name(ap, fd)
         if rel.startswith(KEPT_FOLDER + "/helper_"):
             origin = "what a helper that stopped had gathered, kept"
+        elif rel.startswith(f"{KEPT_FOLDER}/{_READER_STEM}_"):
+            origin = "what a reading helper read, kept whole"
         elif rel.startswith(KEPT_FOLDER + "/"):
             origin = "a tool result kept whole from a turn that stopped"
         else:

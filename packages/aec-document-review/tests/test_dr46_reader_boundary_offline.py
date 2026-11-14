@@ -183,7 +183,7 @@ def _turn(gt, folder, answers):
     return model, got["task_P"], got["task_S"]
 
 
-KEPT = re.compile(r"'(kept/helper_[^']+\.md)'")
+KEPT = re.compile(r"'(kept/reader_[^']+\.md)'")
 
 
 def _kept(folder, result) -> str:
@@ -241,6 +241,49 @@ def test_a_reader_that_answers_findings_only_still_leaves_both_sides(
     assert "QX-14" in _kept(tmp_path, plan)
     assert "QX-13" in _kept(tmp_path, schedule)
     assert _open_item_of_page_2(plan), plan
+
+
+def test_a_reader_s_record_makes_no_card_and_is_labelled_for_what_it_is(
+        tmp_path, monkeypatch):
+    """A reading helper's record is opened by the agent by name; it is no
+    card under the reply. A stopped helper's kept work still is, as before.
+    The files note of a later turn says which is which."""
+    import aec_document_review.core as core
+    import aec_document_review.sharepoint_store as sp
+    import aec_document_review.turn_jobs as tj
+    from tests.test_titles_cards_scratch import _mk_conv, _run_turn
+    # as that module's own fixture: a data folder of its own, no SharePoint
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "data"))
+    for env in (sp.ENV_SITE, sp.ENV_CLIENT_ID, sp.ENV_CLIENT_SECRET,
+                sp.ENV_TOKEN, sp.ENV_TOKEN_FILE, sp.ENV_DRIVE, sp.ENV_ROOT):
+        monkeypatch.delenv(env, raising=False)
+    tj._JOBS.clear()
+    tid, files = _mk_conv("DR46")
+    names = {"reader": "kept/reader_read-pages-1-13_abc123.md",
+             "stopped": "kept/helper_read-pages-14-20_def456.md",
+             "memo": "memo.docx"}
+
+    def write():
+        for rel in names.values():
+            path = os.path.join(files, *rel.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("made up")
+    transcript = []
+    _run_turn(monkeypatch, tid, files, transcript, "review the set",
+              during=write)
+    cards = sorted(os.path.relpath(p, files).replace(os.sep, "/")
+                   for p in transcript[-1]["artifacts"])
+    assert cards == sorted([names["stopped"], names["memo"]])
+    assert core.is_reader_record(os.path.join(files, "kept", "reader_x.md"),
+                                 files)
+    assert not core.is_reader_record(
+        os.path.join(files, "kept", "helper_x.md"), files)
+    assert not core.is_reader_record(os.path.join(files, "reader_x.md"),
+                                     files)
+    note = core.working_files_note(files, [])
+    assert "what a reading helper read, kept whole" in note
+    assert "what a helper that stopped had gathered, kept" in note
 
 
 def test_the_reader_contract_names_no_task_words():

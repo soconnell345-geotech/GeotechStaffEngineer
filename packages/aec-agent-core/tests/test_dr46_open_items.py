@@ -54,7 +54,7 @@ def test_open_items_come_from_the_tools_own_fields():
                       "seen_in": ["r1c2"], "tiles_only": True},
                      {"what": "QZ-8", "bbox": [5, 6, 7, 8],
                       "seen_in": ["page", "r1c2"]}]),
-        ("read_pdf_text", {"attachment_key": DOC, "pdf_pages": "5-6"},
+        ("read_pdf_text", {"source": DOC, "pdf_pages": "5-6"},
          {"text": "", "scanned_pages": [4, 5]}, None),
         _look(4),                               # page 5 looked at after
         ("render_region", {"attachment_key": DOC, "page": 0,
@@ -71,18 +71,29 @@ def test_open_items_come_from_the_tools_own_fields():
     assert "part not read in close-up: tile r2c3 failed: made-up timeout" \
         in page4
     assert "cut off at its output limit (tile r1c1)" in page4
-    assert "'QZ-7'" in page4 and "QZ-8" not in page4
-    assert "may not read reliably" in page4
-    assert page4.index("part not read") < page4.index("cut off") \
-        < page4.index("QZ-7") < page4.index("may not read")
+    assert page4.index("part not read") < page4.index("cut off")
+    # things found only in the tiles and the legibility caution are left out
+    assert "QZ-7" not in page4 and "QZ-8" not in page4
+    assert "lettering" not in page4
     assert items[2] == (f"- {DOC} page 6: no text layer, so a text read saw "
                         "nothing there (only a look reads it)")
+
+
+def test_a_routine_tiled_read_flags_nothing():
+    """Brief 8's saved runs: 87-97 % of the readers' looks had tiles-only
+    rows and about 30 % of zooms a legibility note; neither is an open
+    item, so a reader that read every page whole adds nothing."""
+    rows = [{"what": f"QZ-{i}", "bbox": [i, i, i + 1, i + 1],
+             "seen_in": ["r1c1"], "tiles_only": True} for i in range(9)]
+    assert keep_work.open_items(_rec([
+        _look(p, found=rows, legibility="! small lettering",
+              found_note="made up") for p in range(13)])) == []
 
 
 def test_a_flag_read_again_is_settled():
     # the same look again without the flag
     assert keep_work.open_items(_rec([_look(2, cut_off=CUT), _look(2)])) == []
-    # a zoom on that page settles "zoom first", not a cut-off answer
+    # a zoom on that page does not settle a cut-off answer
     zoom = ("render_region", {"attachment_key": DOC, "page": 2,
                               "bbox": [0, 0, 9, 9]},
             {"page": 2, "pdf_page": 3, "analysis": "made up"}, None)
@@ -133,18 +144,22 @@ def _run(keep, steps, answer=ANSWER, subagent="general-purpose"):
 
 def _named(folder, content):
     name = content.split("the file '", 1)[1].split("'", 1)[0]
-    assert name.startswith("kept/helper_") and name.endswith(".md")
+    assert name.startswith(("kept/helper_", "kept/reader_"))
+    assert name.endswith(".md")
     with open(os.path.join(folder, *name.split("/")), encoding="utf-8") as fh:
         return name, fh.read()
 
 
 def test_a_reader_s_record_is_kept_named_and_its_open_items_carried(
         tmp_path):
-    with working_dir_bound(str(tmp_path)):
+    with working_dir_bound(str(tmp_path)), keep_work.turn_scope() as scope:
         out = _run(keep_work.KeepWork(readers={"general-purpose"}),
                    [_look(0), _look(1, cut_off=CUT)])
     assert out.startswith(ANSWER)
     name, text = _named(str(tmp_path), out)
+    assert name.startswith(f"kept/{keep_work.READER_STEM}_")
+    # a reader that finished is not counted as a helper that stopped
+    assert scope.kept_files == []
     assert text.startswith("# What a reading helper read and wrote")
     assert keep_work.READER_KEPT_WHY in text
     assert f"## {keep_work.OPEN_ITEMS_HEADING}\n- {DOC} page 2: " in text
@@ -173,12 +188,15 @@ def test_past_the_cap_the_rest_are_counted_and_left_in_the_file(tmp_path):
 def test_a_reader_that_gave_up_is_kept_as_before_plus_its_open_items(
         tmp_path):
     big = "x" * keep_work.KEEP_MIN_READ_CHARS
-    with working_dir_bound(str(tmp_path)):
+    with working_dir_bound(str(tmp_path)), keep_work.turn_scope() as scope:
         out = _run(keep_work.KeepWork(readers={"general-purpose"}),
                    [_look(0, analysis=big, cut_off=CUT)], answer="Sorry.")
     assert out.startswith("Sorry.\n\n[Kept: its answer (6 characters)")
     assert keep_work.OPEN_ITEMS_HEADING in out
-    _name, text = _named(str(tmp_path), out)
+    name, text = _named(str(tmp_path), out)
+    assert name.startswith("kept/helper_")
+    assert [os.path.basename(p) for p in scope.kept_files] == [
+        name.split("/")[1]]
     assert text.startswith("# What a helper read and wrote before it stopped")
 
 

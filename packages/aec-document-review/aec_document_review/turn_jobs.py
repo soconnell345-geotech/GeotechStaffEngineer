@@ -488,9 +488,11 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         for p in dir_new:
             if p not in artifacts:
                 artifacts.append(p)
-        # Tool scratch and caches (files/.scratch, digest/) never make cards.
+        # Tool scratch and caches (files/.scratch, digest/) never make
+        # cards, nor a reading helper's record (kept/reader_*, DR-46).
         turn_paths = [p for p in core.collect_turn_artifacts(save_new, dir_new)
-                      if not core.is_cache_path(p, ctx["temp_dir"])]
+                      if not core.is_cache_path(p, ctx["temp_dir"])
+                      and not core.is_reader_record(p, ctx["temp_dir"])]
         if activity is not None:
             _record_turn_files(activity, thread_id, turn_paths, dir_new,
                                rewritten)

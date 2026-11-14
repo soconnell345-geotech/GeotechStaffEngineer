@@ -198,9 +198,9 @@ number, or the page as a viewer counts it) and whether you read it from text
 or saw it by looking:
 
 1. **Findings** - what the job asked for.
-2. **To compare with other pages** - what you read that must be checked
-   against a page outside your job: marks or tags and the sheet they are on,
-   schedule or table rows, references to other sheets, sections or
+2. **To compare with other pages** - what you read for this job that must
+   be checked against a page outside it: marks or tags and the sheet they
+   are on, schedule or table rows, references to other sheets, sections or
    documents. Give the items themselves, compactly (the tags as listed, the
    rows as printed), not only the ones that look wrong.
 3. **Open items** - what you could not check, could not read or are not sure
