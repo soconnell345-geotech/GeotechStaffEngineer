@@ -42,6 +42,8 @@ and boundary conditions as M-P's differential formulation). Ledger:
 module_work/wiki_verification/le_method_originals.md.
 """
 
+import contextlib
+import contextvars
 import math
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
@@ -50,6 +52,95 @@ from slope_stability.slices import Slice
 from slope_stability.solution import NoSolution
 
 _FOS_MAX = 999.9
+
+
+# ---------------------------------------------------------------------------
+# Friction on a base in tension (GM-140, the GLE solver; GM-344; D29)
+# ---------------------------------------------------------------------------
+
+#: What the solver behind Spencer's method, Morgenstern-Price, GLE and
+#: Janbu's simplified method does with a slice whose effective normal force
+#: N' = N - u l comes out negative (a base in tension).
+#: "as_printed" (the default): the equations as printed, on every slice.
+#: Spencer (1967, pp. 14 to 15) and Morgenstern and Price (1965, p. 85)
+#: write the mobilised shear as (c' l + N' tan(phi')) / F with no rule for a
+#: negative N'; EM 1110-2-1902 C-10a (pp. C-33 to C-34) and UFC 3-220-10
+#: pp. 361 to 362 ask that such a base be examined, and the result names
+#: the slices (`acceptability`, ``base_tension``).
+#: "no_friction": a slice whose base is in tension is taken frictionless
+#: (tan(phi') = 0 on that slice) in EVERY equation: its normal force (the
+#: m_alpha of vertical equilibrium), the march of the interslice forces,
+#: horizontal equilibrium and the moment sum. The module's own device, not
+#: found in print. Before this step it was the only behaviour and was
+#: applied in the horizontal and moment terms only, so the solver's
+#: equations were neither the printed ones nor the device's.
+BASE_TENSION_RULES = ("as_printed", "no_friction")
+
+_BASE_TENSION: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_base_in_tension", default="as_printed")
+
+
+def base_tension_in_force() -> str:
+    """The rule of `BASE_TENSION_RULES` in force in this context."""
+    return _BASE_TENSION.get()
+
+
+def check_base_tension(rule) -> str:
+    if rule not in BASE_TENSION_RULES:
+        raise ValueError(
+            f"base_in_tension must be one of {BASE_TENSION_RULES}, "
+            f"not {rule!r}")
+    return rule
+
+
+@contextlib.contextmanager
+def base_tension(rule: str):
+    """Run a block with ``rule`` (`BASE_TENSION_RULES`) in force for every
+    Spencer, Morgenstern-Price, GLE and Janbu solve made inside it."""
+    token = _BASE_TENSION.set(check_base_tension(rule))
+    try:
+        yield
+    finally:
+        _BASE_TENSION.reset(token)
+
+
+#: A lambda bracket narrower than this that still holds a sign change of
+#: the moment residual without the two factors of safety agreeing is a
+#: jump between two branches of solutions, not a crossing (floating-point
+#: resolution of lambda, not a setting of the method).
+_LAMBDA_CLOSED = 1e-12
+#: The march closes (E at the far end is zero) to this fraction of the
+#: forces on the mass; a sign change of the closing force across a pole of
+#: the slice equations is far above it and is not a state.
+_CLOSES = 1e-7
+#: Where a step of the lambda scan meets no state, the step is bisected
+#: until the last lambda with a state and the first without are closer
+#: than this (`_GLESystem.first_crossing`; GM-344 fix round 2). A
+#: resolution of where the branch ends, not a setting of the method.
+_BRANCH_END_TOL = 1e-4
+
+#: Where ONE surface is analysed (`single_surface`, which `analyze_slope`
+#: turns on around its solves) and no crossing is met upward from
+#: lambda = 0, the branch is also scanned DOWNWARD from 0 to the lower
+#: bound of ``lambda_bounds`` (-1.5, D29's former range), and the first
+#: crossing met there is named in the no-number reason with its flags. It
+#: is never reported: below lambda = 0 the interslice shear acts against
+#: the sense the sliding gives it (the orchestrator's ruling 2, GM-344).
+#: Off by default, so never inside a search's trials (run time).
+_SCAN_BELOW: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_gle_scan_below", default=False)
+
+
+@contextlib.contextmanager
+def single_surface():
+    """Run a block in which every Spencer, Morgenstern-Price and GLE
+    solve with no crossing upward from lambda = 0 also scans below 0 for
+    its reason (`_SCAN_BELOW`). `analyze_slope` uses it; no search does."""
+    token = _SCAN_BELOW.set(True)
+    try:
+        yield
+    finally:
+        _SCAN_BELOW.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +227,27 @@ class GLEResult:
         F_f at lambda=0 (Janbu's simplified, uncorrected).
     warnings : list of str
         Numerical warnings (m_alpha clamps, base tension, fallbacks).
+    base_tension_rule : str
+        The rule of `BASE_TENSION_RULES` the state was solved under.
+    frictionless : list of bool
+        Per slice: taken frictionless because its base is in tension
+        (only under "no_friction").
+    jumps : list of float
+        Each lambda at which F_m - F_f changed sign by a jump between two
+        branches of solutions (not a crossing; the scan went on).
+    slice_denominator : list of float
+        Per slice, the denominator of the slice's own two equations at the
+        reported state: cos(alpha - theta_i) + sin(alpha - theta_i)
+        tan(phi') / F, theta_i = atan(lambda f(x)) the inclination of the
+        side force on its upslope side (the side the march solves for;
+        zero at the end of the mass) and tan(phi') as in force (zero on a
+        slice taken frictionless). With horizontal side forces it is
+        m_alpha. ``acceptability.low_m_alpha_finding`` reads it (GM-344).
+    side_force_theta_deg : list of float
+        theta_i of each slice, degrees (the normalized frame's sign, as
+        Spencer's theta is reported).
+    side_force_E : list of float
+        The interslice normal force on that side of each slice, kN/m.
     """
     fos: float = 0.0
     lam: float = 0.0
@@ -153,6 +265,12 @@ class GLEResult:
     bishop_fos: float = 0.0
     janbu_fos: float = 0.0
     warnings: List[str] = field(default_factory=list)
+    base_tension_rule: str = "as_printed"
+    frictionless: List[bool] = field(default_factory=list)
+    jumps: List[float] = field(default_factory=list)
+    slice_denominator: List[float] = field(default_factory=list)
+    side_force_theta_deg: List[float] = field(default_factory=list)
+    side_force_E: List[float] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -268,11 +386,30 @@ def _solve3(A, B):
     return out
 
 
+#: Which root is reported where the two equations have more than one in
+#: the lambda range (the orchestrator's ruling 2, 2026-11-13; OWN-143).
+ROOT_CHOICE = (
+    "the first crossing of the moment and force factors of safety met "
+    "from lambda = 0 upward (steps of 0.1 to the upper bound, 1.5), on "
+    "the branch of solutions on which every slice stays above the pole "
+    "of its own two equations, F = tan(phi') tan(theta - alpha), each "
+    "state found from its neighbour's F. Where that branch has no state "
+    "at a lambda it ends there, and with no crossing met before it there "
+    "is no number. Spencer (1967, p. 15) finds F "
+    "where the two curves of F against theta cross; which crossing, "
+    "where there are several, is not found in print. Other forms: the "
+    "lowest of every root in the range (that needs every root found, "
+    "which is not built, and on an ordinary circle the roots include "
+    "many with slices below their poles, bases and sides in tension, at "
+    "very low F); or, where no crossing is met upward, a scan downward "
+    "from lambda = 0 (D29's former range, -1.5 to 1.5)")
+
+
 # ---------------------------------------------------------------------------
 # Scalar root finding (GM-60)
 # ---------------------------------------------------------------------------
 
-def _refine_root(fun, a, fa, b, fb, max_iter: int = 100) -> Optional[float]:
+def _refine_root(fun, a, fa, b, fb, max_iter: int = 200) -> Optional[float]:
     """Root of ``fun`` inside the bracket [a, b] (fa * fb <= 0) by the
     Illinois variant of regula falsi; bisection where ``fun`` has no value."""
     if fa == 0.0:
@@ -280,9 +417,11 @@ def _refine_root(fun, a, fa, b, fb, max_iter: int = 100) -> Optional[float]:
     if fb == 0.0:
         return b
     c = b
-    for _ in range(max_iter):
+    for k in range(max_iter):
         c = b - fb * (b - a) / (fb - fa)
-        if not (min(a, b) < c < max(a, b)):
+        if not (min(a, b) < c < max(a, b)) or k % 3 == 2:
+            # (every third step a bisection: beside a pole one end's value
+            # is very large and false position alone creeps, GM-344)
             c = 0.5 * (a + b)
         fc = fun(c)
         if fc is None:
@@ -303,7 +442,8 @@ def _refine_root(fun, a, fa, b, fb, max_iter: int = 100) -> Optional[float]:
 
 
 def _nearest_root(fun, x0: float, lo: float = 0.02, hi: float = 100.0,
-                  factor: float = 1.15, accept=None) -> Optional[float]:
+                  factor: float = 1.15, accept=None,
+                  cuts=None) -> Optional[float]:
     """The root of ``fun`` (None where it has no value) in [lo, hi] nearest
     ``x0`` on a log scale, or None.
 
@@ -311,7 +451,14 @@ def _nearest_root(fun, x0: float, lo: float = 0.02, hi: float = 100.0,
     refines the first sign change met on each side; ``accept(root)`` can
     reject a root (the search on that side then goes on). Stops as soon as
     a root is found closer than anything left unexplored on the other side.
+
+    ``cuts`` are points where ``fun`` has a pole (GM-344): a step that
+    would pass one stops just short of it, and the next starts just beyond
+    it, so a root beside a pole is not stepped over with it (two sign
+    changes in one step show as none).
     """
+    if cuts:
+        return _nearest_root_cut(fun, x0, lo, hi, factor, accept, cuts)
     x0 = min(max(x0, lo), hi)
     f0 = fun(x0)
     if f0 == 0.0 and (accept is None or accept(x0)):
@@ -347,6 +494,79 @@ def _nearest_root(fun, x0: float, lo: float = 0.02, hi: float = 100.0,
     return min(found.values(), key=lambda r: abs(math.log(r / x0)))
 
 
+def _nearest_root_cut(fun, x0, lo, hi, factor, accept, cuts
+                      ) -> Optional[float]:
+    """`_nearest_root` with poles of ``fun`` at ``cuts``."""
+    # (the march gives no value where a slice's determinant is below 1e-9)
+    eps = 1e-6
+    x0 = min(max(x0, lo), hi)
+
+    def points(d):
+        """The points looked at on side d of x0, nearest first; a pair
+        with None between them straddles a pole."""
+        seq = []
+        x = x0
+        mine = sorted((c for c in cuts
+                       if (c > x0 if d > 0 else c < x0) and lo < c < hi),
+                      reverse=d < 0)
+        k = 0
+        while True:
+            nxt = x * factor if d > 0 else x / factor
+            if k < len(mine) and (mine[k] <= nxt if d > 0
+                                  else mine[k] >= nxt):
+                c = mine[k]
+                k += 1
+                near = c * (1 - eps) if d > 0 else c * (1 + eps)
+                far = c * (1 + eps) if d > 0 else c * (1 - eps)
+                if (near > x if d > 0 else near < x):
+                    seq.append(near)
+                seq.append(None)
+                seq.append(far)
+                x = far
+                continue
+            if nxt > hi * (1 + 1e-12) or nxt < lo / (1 + 1e-12):
+                break
+            seq.append(nxt)
+            x = nxt
+        return seq
+
+    f0 = fun(x0)
+    if f0 == 0.0 and (accept is None or accept(x0)):
+        return x0
+    # last x, its f, the points still to look at, live
+    sides = {d: [x0, f0, points(d), True] for d in (+1, -1)}
+    found = {}
+    while any(st[3] for st in sides.values()):
+        for d in (+1, -1):
+            st = sides[d]
+            if not st[3]:
+                continue
+            if not st[2]:
+                st[3] = False
+                continue
+            x = st[2].pop(0)
+            if x is None:               # a pole: start again beyond it
+                x = st[2].pop(0)
+                st[0], st[1] = x, fun(x)
+                continue
+            xa, fa = st[0], st[1]
+            fx = fun(x)
+            if fa is not None and fx is not None and fa * fx <= 0:
+                r = _refine_root(fun, xa, fa, x, fx)
+                if r is not None and (accept is None or accept(r)):
+                    found.setdefault(d, r)
+            st[0], st[1] = x, fx
+        if found:
+            dist = min(abs(math.log(r / x0)) for r in found.values())
+            for d, st in sides.items():
+                if st[3] and (d in found
+                              or abs(math.log(st[0] / x0)) >= dist):
+                    st[3] = False
+    if not found:
+        return None
+    return min(found.values(), key=lambda r: abs(math.log(r / x0)))
+
+
 # ---------------------------------------------------------------------------
 # Core solver
 # ---------------------------------------------------------------------------
@@ -365,6 +585,9 @@ class _GLESystem:
         self.x0, self.y0 = axis
         self.tol = tol
         self.warnings: List[str] = []
+        # the rule for a base in tension, fixed for this solve
+        self.rule = base_tension_in_force()
+        self.device = self.rule == "no_friction"
         f_func = INTERSLICE_FUNCTIONS[f_name]
 
         n = len(ns)
@@ -423,6 +646,16 @@ class _GLESystem:
 
         # Horizontal external driving forces (for F_f denominator);
         # resisting reinforcement components subtract.
+        # the size of the forces on the mass, for "zero to rounding"
+        self.force_scale = max(
+            sum(abs(s.W) + abs(s.kW) + abs(s.Fc) + abs(s.Ph) + abs(s.rh)
+                + abs(s.rh_p) + s.c * s.length for s in ns), 1.0)
+        # ... and of their moments about a point of the mass itself (the
+        # axis can lie far off; a couple does not depend on it)
+        self.moment_scale = self.force_scale * max(
+            math.hypot(x_hi - x_lo,
+                       max(s.z_base for s in ns) - min(s.z_base for s in ns)),
+            1.0)
         self.force_driving_ext = (sum(s.kW for s in ns)
                                   + sum(s.Fc for s in ns)
                                   - sum(s.Ph for s in ns)
@@ -430,24 +663,42 @@ class _GLESystem:
 
     # -- N for one slice ----------------------------------------------------
 
-    def _normal(self, s: "_NSlice", F: float, dV: float) -> float:
-        """Base normal from vertical slice equilibrium.
-
-        N = [W - dV - (c*l - u*l*tan_phi) * sin(a)/F] / m_alpha
-        where dV = V_left - V_right (interslice shear difference).
-        """
-        m_alpha = math.cos(s.alpha) + math.sin(s.alpha) * s.tan_phi / F
+    def _m_alpha(self, s: "_NSlice", F: float, tp: float) -> float:
+        m_alpha = math.cos(s.alpha) + math.sin(s.alpha) * tp / F
         if abs(m_alpha) < 0.05:
             m_alpha = math.copysign(0.05, m_alpha)
             w = "m_alpha clamped (|m_a| < 0.05) on at least one slice"
             if w not in self.warnings:      # (said once; it used to repeat)
                 self.warnings.append(w)
-        num = (s.W + s.rv_down - dV
-               - (s.c * s.length - s.u * s.length * s.tan_phi)
-               * math.sin(s.alpha) / F)
+        return m_alpha
+
+    def _normal_eff(self, s: "_NSlice", F: float, dV: float
+                    ) -> Tuple[float, float]:
+        """(N, tan(phi') in force) of one slice from vertical equilibrium.
+
+        N = [W - dV - (c*l - u*l*tan_phi) * sin(a)/F] / m_alpha
+        where dV = V_left - V_right (interslice shear difference).
+
+        As printed, on every slice. Under "no_friction"
+        (`BASE_TENSION_RULES`) a slice whose N - u l is negative is solved
+        again with tan(phi') = 0, and that zero is returned for the
+        slice's other equations."""
+        tp = s.tan_phi
+        base = s.W + s.rv_down - dV
         if s.rv_p:
-            num += s.rv_p / F
-        return num / m_alpha
+            base += s.rv_p / F
+        num = base - (s.c * s.length - s.u * s.length * tp) \
+            * math.sin(s.alpha) / F
+        N = num / self._m_alpha(s, F, tp)
+        if self.device and tp > 0.0 and N - s.u * s.length < 0.0:
+            tp = 0.0
+            N = (base - s.c * s.length * math.sin(s.alpha) / F) \
+                / self._m_alpha(s, F, 0.0)
+        return N, tp
+
+    def _normal(self, s: "_NSlice", F: float, dV: float) -> float:
+        """Base normal from vertical slice equilibrium (`_normal_eff`)."""
+        return self._normal_eff(s, F, dV)[0]
 
     # -- the two factor-of-safety equations for a fixed interslice state ---
 
@@ -456,9 +707,9 @@ class _GLESystem:
         resist_m = 0.0
         normal_m_term = 0.0
         for i, s in enumerate(self.ns):
-            N = self._normal(s, F, V[i] - V[i + 1])
+            N, tp = self._normal_eff(s, F, V[i] - V[i + 1])
             resist_m += self.arm_S[i] * (
-                s.c * s.length + max(N - s.u * s.length, 0.0) * s.tan_phi)
+                s.c * s.length + (N - s.u * s.length) * tp)
             normal_m_term += N * self.arm_N[i]
         den_m = self.moment_driving - normal_m_term
         if self.m_p:
@@ -466,21 +717,23 @@ class _GLESystem:
         return resist_m, den_m
 
     def _force_terms(self, F: float, V: List[float]):
-        """(resisting, driving, base normals) of horizontal force
-        equilibrium at trial F."""
+        """(resisting, driving, base normals, tan(phi') in force on each
+        slice) of horizontal force equilibrium at trial F."""
         resist_f = 0.0
         den_f = self.force_driving_ext
         if self.tx_p:
             den_f -= self.tx_p / F
         N_f = []
+        tps = []
         for i, s in enumerate(self.ns):
-            N = self._normal(s, F, V[i] - V[i + 1])
+            N, tp = self._normal_eff(s, F, V[i] - V[i + 1])
             N_f.append(N)
+            tps.append(tp)
             resist_f += (s.c * s.length
-                         + max(N - s.u * s.length, 0.0) * s.tan_phi) \
+                         + (N - s.u * s.length) * tp) \
                 * math.cos(s.alpha)
             den_f += N * math.sin(s.alpha)
-        return resist_f, den_f, N_f
+        return resist_f, den_f, N_f, tps
 
     @staticmethod
     def _root_of(terms, F_near: float) -> Optional[float]:
@@ -522,7 +775,7 @@ class _GLESystem:
         state (GM-140 step 2).
         """
         if self.point_loads and lam != 0.0:
-            return self._solve_marched(lam, f0)
+            return self._solve_marched(lam, f0, above_poles=False)
         ns = self.ns
         n = len(ns)
         E = [0.0] * (n + 1)
@@ -536,21 +789,21 @@ class _GLESystem:
                 # No fixed-point step from this estimate. With support
                 # forces, solve the equations by the direct march instead
                 # (GM-60); without them, as before, no state.
-                return (self._solve_marched(lam, f0) if self.point_loads
-                        else None)
+                return (self._solve_marched(lam, f0, above_poles=False)
+                        if self.point_loads else None)
             Fm_new = resist_m / den_m
 
             # --- force equilibrium with current V state
-            resist_f, den_f, N_f = self._force_terms(Ff, V)
+            resist_f, den_f, N_f, tps = self._force_terms(Ff, V)
             if den_f <= 1e-9:
-                return (self._solve_marched(lam, f0) if self.point_loads
-                        else None)
+                return (self._solve_marched(lam, f0, above_poles=False)
+                        if self.point_loads else None)
             Ff_new = resist_f / den_f
 
             # --- march interslice normals E with force-equilibrium state
             for i, s in enumerate(ns):
                 Sm = (s.c * s.length
-                      + max(N_f[i] - s.u * s.length, 0.0) * s.tan_phi) / Ff_new
+                      + (N_f[i] - s.u * s.length) * tps[i]) / Ff_new
                 E[i + 1] = (E[i] - N_f[i] * math.sin(s.alpha)
                             + Sm * math.cos(s.alpha) - s.kW - s.Fc + s.rh
                             + s.Ph)
@@ -579,7 +832,7 @@ class _GLESystem:
         # factor of safety is a method's own converged solution or no
         # number (GM-140 step 2; UFC 3-220-10 p. 362); before, it was
         # returned as a state and nothing flagged it.
-        return self._solve_marched(lam, f0)
+        return self._solve_marched(lam, f0, above_poles=False)
 
     # -- direct solution for a fixed lambda (GM-60) ---------------------------
 
@@ -595,47 +848,324 @@ class _GLESystem:
         form of Zhu, Lee, Qian & Chen 2005); it needs no under-relaxation,
         so a large point load cannot set the iteration swinging.
 
-        Returns (E, V, N) or None when a slice's equations are singular.
+        Returns (E, V, N, tan(phi') in force on each slice, the sign of
+        each slice's determinant) or None when a slice's equations are
+        singular. As printed, on every slice; under
+        "no_friction" (`BASE_TENSION_RULES`) a slice whose N - u l comes
+        out negative is solved again with tan(phi') = 0 in both of its
+        equations.
         """
         ns = self.ns
         n = len(ns)
         E = [0.0] * (n + 1)
         V = [0.0] * (n + 1)
         N_list = []
+        tps = []
+        side = []           # per slice: below its pole (`_poles`)
         for i, s in enumerate(ns):
             sa, ca = math.sin(s.alpha), math.cos(s.alpha)
             lf = lam * self.fb[i + 1] if i + 1 < n else 0.0
             rv = s.rv_down + (s.rv_p / F if s.rv_p else 0.0)
             rh = s.rh + (s.rh_p / F if s.rh_p else 0.0)
-            K = s.c * s.length - s.u * s.length * s.tan_phi
-            m_alpha = ca + sa * s.tan_phi / F
-            if abs(m_alpha) < 0.05:
-                m_alpha = math.copysign(0.05, m_alpha)
-            # vertical: N*m_alpha - lf*E' = W + rv - X_i - K sin(a)/F
-            r0 = s.W + rv - V[i] - K * sa / F
             ext = -s.kW - s.Fc + rh + s.Ph
-            # horizontal: E' = a*N + b0, with N' >= 0 assumed first
-            a = -sa + s.tan_phi * ca / F
-            b0 = E[i] + K * ca / F + ext
-            det = m_alpha - lf * a
-            if abs(det) < 1e-9:
-                return None
-            N = (r0 + lf * b0) / det
-            if N - s.u * s.length < 0.0 and s.tan_phi > 0.0:
-                # no friction on a base in tension (as the E march does)
-                a = -sa
-                b0 = E[i] + s.c * s.length * ca / F + ext
+            tp = s.tan_phi
+            N = None
+            below = None        # the slice's own (frictional) determinant < 0
+            while True:
+                K = s.c * s.length - s.u * s.length * tp
+                m_alpha = ca + sa * tp / F
+                if abs(m_alpha) < 0.05:
+                    m_alpha = math.copysign(0.05, m_alpha)
+                # vertical: N*m_alpha - lf*E' = W + rv - X_i - K sin(a)/F
+                r0 = s.W + rv - V[i] - K * sa / F
+                # horizontal: E' = a*N + b0
+                a = -sa + tp * ca / F
+                b0 = E[i] + K * ca / F + ext
                 det = m_alpha - lf * a
                 if abs(det) < 1e-9:
                     return None
+                if below is None:
+                    below = det < 0.0
                 N = (r0 + lf * b0) / det
+                if (self.device and tp > 0.0
+                        and N - s.u * s.length < 0.0):
+                    tp = 0.0            # frictionless, in both equations
+                    continue
+                break
             E[i + 1] = a * N + b0
             V[i + 1] = lf * E[i + 1]
             N_list.append(N)
+            tps.append(tp)
+            side.append(below)
         V[n] = 0.0
-        return E, V, N_list
+        return E, V, N_list, tps, tuple(side)
 
-    def _solve_marched(self, lam: float, f0: float):
+    # -- one state at a fixed lambda (GM-344) --------------------------------
+
+    def _poles(self, lam: float) -> List[float]:
+        """The factors of safety F > 0 at which a slice's two equations
+        are singular at ``lam`` (ascending).
+
+        For slice i the determinant of `_march` is
+        (cos a + lf sin a) + tan(phi') (sin a - lf cos a) / F with
+        lf = lam f(x) on its upslope side: zero at
+        F = tan(phi') tan(theta_i - a), theta_i = atan(lf). The closing
+        force changes sign there without being zero, and a root can lie
+        close beside it, so the search for a state looks on each side of
+        every pole."""
+        ns = self.ns
+        n = len(ns)
+        out = []
+        for i, s in enumerate(ns):
+            if s.tan_phi <= 0.0:
+                continue
+            sa, ca = math.sin(s.alpha), math.cos(s.alpha)
+            lf = lam * self.fb[i + 1] if i + 1 < n else 0.0
+            A = ca + lf * sa
+            B = s.tan_phi * (sa - lf * ca)
+            if A != 0.0 and -B / A > 0.0:
+                out.append(-B / A)
+        out.sort()
+        return out
+
+    def _state(self, lam: float, F_near: float, side=None):
+        """The equilibrium state at ``lam`` whose factor of safety is
+        nearest ``F_near``, by the direct march, or None.
+
+        Returns (F_m, F_f, E, V, N, tps, R, side, driven). F_f closes the
+        march
+        (the interslice force at the far end is zero: horizontal and
+        vertical equilibrium of every slice). R is the net moment on the
+        mass in THAT state (its own N, E and X), written as resisting
+        moment / F_f - driving moment about the axis: with the forces in
+        equilibrium it is a couple, the same about any point, and R = 0 is
+        moment equilibrium. So a state with R = 0 meets both equations at
+        one lambda. F_m = resisting / driving moment of the state (None
+        where the driving moment is not positive); F_m = F_f exactly where
+        R = 0. ``driven``: the state's net driving moment and net driving
+        horizontal force are both positive, as the ratio of resisting to
+        driving needs (`first_crossing`).
+
+        One solver for every lambda of the scan, each state found from its
+        neighbour's: its F and its ``side`` (for each slice, whether the
+        state lies below that slice's pole, `_poles`). The closing force
+        is infinite at a pole, so a branch of solutions cannot pass one:
+        the state with the neighbour's ``side`` nearest its F is the
+        neighbour's own branch, and with ``side`` given no other state is
+        returned (None where that branch has no state at ``lam``). Before,
+        a scan mixed the lagged iteration and this march, each started
+        from a mean of two factors, and passed from one branch to another
+        unnoticed (GM-344).
+
+        A sign change of the closing force across a pole (it does not
+        close to `_CLOSES` of the forces on the mass) is not a state.
+        """
+        def residual(F):
+            out = self._march(lam, F)
+            return None if out is None else out[0][-1]
+
+        def closes(F):
+            r = residual(F)
+            return r is not None and abs(r) <= _CLOSES * self.force_scale
+
+        def same_side(F):
+            return closes(F) and self._march(lam, F)[4] == side
+
+        poles = self._poles(lam)
+        x0 = max(F_near, 0.02)
+        Ff = _nearest_root(residual, x0, cuts=poles,
+                           accept=closes if side is None else same_side)
+        if Ff is None:
+            return None
+        out = self._march(lam, Ff)
+        if out is None:
+            return None
+        E, V, N, tps, side_now = out
+        resist_m = 0.0
+        normal_m = 0.0
+        den_f = self.force_driving_ext
+        if self.tx_p:
+            den_f -= self.tx_p / Ff
+        for i, s in enumerate(self.ns):
+            resist_m += self.arm_S[i] * (
+                s.c * s.length + (N[i] - s.u * s.length) * tps[i])
+            normal_m += N[i] * self.arm_N[i]
+            den_f += N[i] * math.sin(s.alpha)
+        den_m = self.moment_driving - normal_m
+        if self.m_p:
+            den_m -= self.m_p / Ff
+        R = resist_m / Ff - den_m
+        Fm = resist_m / den_m if den_m > 1e-9 else None
+        return (Fm, Ff, E, V, N, tps, R, side_now,
+                den_m > 1e-9 and den_f > 1e-9)
+
+    # -- the crossing of the two factors of safety (GM-344) ------------------
+
+    def agrees(self, st) -> bool:
+        """The state is in moment equilibrium, to rounding (so F_m = F_f
+        far inside ``tol``). With a moment axis far from the mass
+        F_m - F_f is small at every lambda and cannot tell a root from a
+        jump; the net moment can."""
+        return (abs(st[6]) <= _CLOSES * self.moment_scale
+                and (st[0] is None or abs(st[0] - st[1]) < self.tol))
+
+    def refine(self, lam_a, st_a, lam_b, st_b):
+        """The crossing inside a bracket whose net moments differ in
+        sign, as (lambda, state), or (lambda of the jump, None).
+
+        Each trial state is found from an end's own F and branch (the end
+        the scan came from first), so the bracket closes either on a
+        state in moment equilibrium (a crossing) or, in lambda, on the
+        end of a branch (a jump: the two ends lie on different branches
+        of solutions, and their sign change is not a bracket). Bisection
+        and false position by turns."""
+        ra, rb = st_a[6], st_b[6]
+        for k in range(400):
+            if abs(lam_b - lam_a) < _LAMBDA_CLOSED:
+                break
+            mid = 0.5 * (lam_a + lam_b)
+            if k % 2 and rb != ra:
+                fp = lam_b - rb * (lam_b - lam_a) / (rb - ra)
+                if min(lam_a, lam_b) < fp < max(lam_a, lam_b):
+                    mid = fp
+            st = self._state(mid, st_a[1], st_a[7])
+            if st is None:
+                st = self._state(mid, st_b[1], st_b[7])
+            if st is None:
+                # no state inside the bracket: nothing to close on
+                return 0.5 * (lam_a + lam_b), None
+            if self.agrees(st):
+                return mid, st
+            if st[6] * ra > 0:
+                lam_a, st_a, ra = mid, st, st[6]
+            else:
+                lam_b, st_b, rb = mid, st, st[6]
+        return 0.5 * (lam_a + lam_b), None
+
+    def first_crossing(self, lam0: float, st0, lo_b: float, hi_b: float):
+        """The first crossing met from the state ``st0`` at ``lam0``, on
+        its branch of solutions: ((lambda, state) or None, the lambdas of
+        the jumps met, the lambdas at which the branch has no state).
+
+        Scans lambda upward from ``lam0`` in steps of 0.1 to ``hi_b``
+        (the bound itself is tried too: fifteen steps of 0.1 overshoot 1.5
+        by a rounding error). The scan stops where the branch has no
+        state: the branch ends there, and with no crossing met before it
+        there is no number. Where a step meets no state, the step is
+        bisected between the last lambda with a state and that lambda,
+        each trial state found from the branch's last state (its F and
+        side, as the steps are), until the two lambdas are less than
+        1e-4 apart (`_BRANCH_END_TOL`); every state found on the way is
+        tested as a step's state is (agreement, then a sign change of the
+        net moment against the state before it, refined by `refine`), so
+        a crossing inside the last step before the branch ends is found
+        (fix round 2: two trial surfaces of ACADS 1(a)'s search lost
+        theirs there). ``self.branch_end`` holds the narrowed pair, the
+        last lambda with a state and the first without. Before (GM-60),
+        that lambda was stepped over, and the next state found could lie
+        on another branch with the same pole signature, which ruling 2
+        excludes (the review's question 4). Lambda below ``lam0`` is not
+        scanned for the root: there
+        the interslice shear acts against the sense the sliding gives it,
+        and the crossings found there on made-up and benchmark surfaces
+        were all states with bases and sides in tension (before, the scan
+        went down too, after or before going up; ``lo_b`` is kept in the
+        signature and not used here: `crossing_below` scans down, for the
+        reason only).
+
+        A crossing whose state has no net driving moment or no net
+        driving force is not taken (``self.undriven`` counts them): a
+        factor of safety is resisting over driving, and where the driving
+        sum is zero or negative the ratio has no meaning (the rule of
+        GM-140 step 2 for every method, `solution.NoSolution` kind
+        'no_driving'; the lagged iteration this scan replaces could not
+        take a step from such a state)."""
+        self.undriven = 0
+        self.branch_end = None
+        if self.agrees(st0):
+            if st0[8]:
+                return (lam0, st0), [], []
+            self.undriven += 1
+        found, jumps, no_state, self.branch_end, undriven = self._scan(
+            lam0, st0, hi_b, 0.1)
+        self.undriven += undriven
+        no_state.sort(key=abs)
+        return found, jumps, no_state
+
+    def crossing_below(self, st0, lo_b: float):
+        """The first crossing met DOWNWARD from the state ``st0`` at
+        lambda = 0, on its branch of solutions, to ``lo_b``: (lambda,
+        state) or None. The steps of 0.1, the end of the branch narrowed
+        to 1e-4 and the test of each state are `first_crossing`'s. Never
+        a factor of safety (ruling 2: below lambda = 0 the interslice
+        shear acts against the sense the sliding gives it); `gle_fos`
+        names it in the no-number reason, on a single surface only
+        (`single_surface`; fix round 2)."""
+        return self._scan(0.0, st0, lo_b, -0.1)[0]
+
+    def _scan(self, lam0: float, st0, bound: float, step: float):
+        """The scan of `first_crossing` (``step`` 0.1) and
+        `crossing_below` (``step`` -0.1) from ``st0`` at ``lam0`` to
+        ``bound``: (the crossing (lambda, state) or None, the lambdas of
+        the jumps met, the lambdas at which the branch has no state, the
+        branch end (last lambda with a state, first without; None where
+        the scan met a crossing or reached ``bound``), the number of
+        crossings met with no net driving moment or force)."""
+        jumps: List[float] = []
+        no_state: List[float] = []
+        undriven = [0]
+
+        def test(lam, st, prev_lam, prev):
+            # a state of the branch, against the one before it
+            if self.agrees(st):
+                if st[8]:
+                    return (lam, st)
+                undriven[0] += 1
+            elif prev[6] * st[6] < 0:
+                lam_c, st_c = self.refine(prev_lam, prev, lam, st)
+                if st_c is not None and st_c[8]:
+                    return (lam_c, st_c)
+                if st_c is not None:
+                    undriven[0] += 1
+                else:
+                    jumps.append(lam_c)
+            return None
+
+        b_tol = 1e-9
+        lam_try = lam0
+        prev_lam, prev = lam0, st0
+        for _ in range(40):
+            lam_try += step
+            if (lam_try > bound + b_tol if step > 0
+                    else lam_try < bound - b_tol):
+                break
+            st = self._state(lam_try, prev[1], prev[7])
+            if st is not None:
+                hit = test(lam_try, st, prev_lam, prev)
+                if hit is not None:
+                    return hit, jumps, no_state, None, undriven[0]
+                prev_lam, prev = lam_try, st
+                continue
+            # The branch ends inside this step: narrow the end, following
+            # the branch from its last state, and test each state met.
+            gone = lam_try
+            while abs(gone - prev_lam) >= _BRANCH_END_TOL:
+                mid = 0.5 * (prev_lam + gone)
+                st = self._state(mid, prev[1], prev[7])
+                if st is None:
+                    gone = mid
+                    continue
+                hit = test(mid, st, prev_lam, prev)
+                if hit is not None:
+                    return hit, jumps, no_state, None, undriven[0]
+                prev_lam, prev = mid, st
+            # no crossing on the branch from lam0 before it ends
+            no_state.append(gone)
+            return None, jumps, no_state, (prev_lam, gone), undriven[0]
+        return None, jumps, no_state, None, undriven[0]
+
+    def _solve_marched(self, lam: float, f0: float,
+                       above_poles: bool = True):
         """(F_m, F_f, E, V, N) for a fixed lambda by the direct march, or
         None when the equations have no solution with F > 0.
 
@@ -646,13 +1176,33 @@ class _GLESystem:
             out = self._march(lam, F)
             return None if out is None else out[0][-1]
 
-        Ff = _nearest_root(residual, max(f0, 0.2))
+        # The F nearest ``f0`` that closes the march with every slice
+        # above its pole (GM-344, `_state`): a sign change of the closing
+        # force across a pole is not a solution, and a solution with a
+        # slice below its pole has that slice's response reversed. The
+        # lagged iteration's fallback (Janbu's simplified method, and the
+        # record of F at lambda = 0) asks with ``above_poles`` False and
+        # gets the nearest sign change, as before: Janbu's solve is not
+        # this step's.
+        if above_poles:
+            above = (False,) * len(self.ns)
+
+            def closes_above(F):
+                out = self._march(lam, F)
+                return (out is not None
+                        and abs(out[0][-1]) <= _CLOSES * self.force_scale
+                        and out[4] == above)
+
+            Ff = _nearest_root(residual, max(f0, 0.2), accept=closes_above,
+                               cuts=self._poles(lam))
+        else:
+            Ff = _nearest_root(residual, max(f0, 0.2))
         if Ff is None:
             return None
         out = self._march(lam, Ff)
         if out is None:
             return None
-        E, V, N_f = out
+        E, V, N_f = out[:3]
 
         # moment equilibrium with this interslice state
         Fm = max(f0, 0.2)
@@ -713,6 +1263,55 @@ def _assign_reinforcement(ns, reinf_forces, mirrored):
     return out
 
 
+def _numbered(nums: List[int]) -> str:
+    """'3, 4 and 7'."""
+    s = [str(k) for k in nums]
+    return s[0] if len(s) == 1 else ", ".join(s[:-1]) + " and " + s[-1]
+
+
+def _below_zero_text(sys_: "_GLESystem", found, mirrored: bool) -> str:
+    """The reason's words for the crossing met below lambda = 0 on a
+    single surface (`_GLESystem.crossing_below`): its F and lambda, the
+    slices with a base in tension and the slice sides in tension (the
+    zeros of `acceptability`'s ``base_tension`` and ``side_tension``
+    findings), and the least denominator of a slice's own two equations
+    (`GLEResult.slice_denominator`), numbered as the slices are given."""
+    lam, st = found
+    ns = sys_.ns
+    n = len(ns)
+    F, E, N, tps = st[1], st[2], st[4], st[5]
+
+    def slice_no(i):
+        return n - i if mirrored else i + 1
+
+    def side_no(j):                 # side j lies between slices j, j + 1
+        return n - j if mirrored else j
+
+    n_ref = max((abs(v) for v in N), default=0.0)
+    bases = sorted(slice_no(i) for i, s in enumerate(ns)
+                   if N[i] - s.u * s.length < -1e-9 * max(n_ref, 1.0))
+    e_ref = max((abs(e) for e in E), default=0.0)
+    sides = sorted(side_no(j) for j in range(1, n)
+                   if E[j] < -max(1e-6, 1e-3 * e_ref))
+    den = []
+    for i, s in enumerate(ns):
+        t = math.atan(lam * sys_.fb[i + 1]) if i + 1 < n else 0.0
+        den.append(math.cos(s.alpha - t)
+                   + math.sin(s.alpha - t) * tps[i] / F)
+    k = min(range(n), key=den.__getitem__)
+    return (f"; below lambda = 0 the same branch meets a crossing, at "
+            f"lambda = {lam:.4f} with F = {F:.4f}, where "
+            f"{len(bases)} slice base(s)"
+            + (f" (slice {_numbered(bases)})" if bases else "")
+            + f" and {len(sides)} slice side(s)"
+            + (f" (side {_numbered(sides)})" if sides else "")
+            + f" are in tension and the least denominator of a slice's own "
+            f"equations, cos(alpha - theta) + sin(alpha - theta) tan(phi') "
+            f"/ F, is {den[k]:.4f} on slice {slice_no(k)}: it is not "
+            f"reported, because below lambda = 0 the interslice shear acts "
+            f"against the sense the sliding gives it")
+
+
 def gle_fos(slices: List[Slice],
             slip,
             f_interslice: str = "half_sine",
@@ -742,7 +1341,15 @@ def gle_fos(slices: List[Slice],
         parent circle of a composite surface). Default: least-squares
         circle fit through the slice base midpoints.
     lambda_bounds : (float, float)
-        Bracketing range for lambda. Default (-1.5, 1.5).
+        Range for lambda. Default (-1.5, 1.5). The scan runs from
+        lambda = 0 (or the lowest lambda above it that has a state) up
+        to the upper bound, on the branch of solutions that starts there,
+        and stops where that branch ends (narrowed to 1e-4 in lambda).
+        The lower bound is used only where one surface is analysed
+        (`single_surface`, `analyze_slope`) and no crossing is met
+        upward: the branch is scanned down from 0 to it and the first
+        crossing met there is named in the reason, never reported
+        (GM-344; D29's former range was scanned both ways).
     reinf_forces : list of ReinforcementForce, optional
         Resolved reinforcement crossings (see
         slope_stability.reinforcement). Applied as external point forces
@@ -781,31 +1388,46 @@ def gle_fos(slices: List[Slice],
     result = GLEResult(f_interslice=f_interslice)
     result.warnings = sys_.warnings
 
-    # Initial estimate from lambda = 0 (Bishop / Janbu values, free of charge)
-    st0 = sys_.solve_for_lambda(0.0)
+    result.base_tension_rule = sys_.rule
     lo_b, hi_b = lambda_bounds
+
+    # Bishop's and Janbu's values (F_m and F_f at lambda = 0), for the
+    # record; the scan below does not start from their mean.
+    st_l = sys_.solve_for_lambda(0.0, max_iter=max_iter)
+    f_start = 1.3
+    if st_l is not None:
+        result.bishop_fos, result.janbu_fos = st_l[0], st_l[1]
+        f_start = st_l[1]
+
+    # A reported factor of safety is a ROOT (GM-344): both equations met
+    # to ``tol`` at one lambda in one state. Every state of the scan is
+    # `_GLESystem._state`, found from its neighbour's F. A sign change of
+    # the moment residual between two states is refined until the two
+    # factors agree within ``tol`` (a crossing: that state is the answer,
+    # and its own F is reported, not a mean of two) or until the bracket
+    # is closed in lambda without that (a jump between two branches of
+    # solutions: not a bracket, and the scan goes on). The root reported
+    # is the first crossing met from lambda = 0 upward; finding every
+    # root is not built (`ROOT_CHOICE`).
+    # The scan starts from the lowest lambda above 0 that has a state
+    # when lambda = 0 has none (GM-60), and stops where the branch it
+    # follows has no state (`_GLESystem.first_crossing`).
+    # The branch followed is the one on which every slice lies above its
+    # pole (`_GLESystem._poles`): the side a slice is on for a large F,
+    # where its determinant has the sign of cos(alpha - theta). A state
+    # with a slice below its pole has that slice's response reversed (the
+    # generalised m_alpha negative; Whitman and Bailey 1967, p. 487, on a
+    # negative denominator) and is not a start: without this, a surface
+    # on which Janbu's simplified method has no solution would start from
+    # whichever such state lay nearest and report its nonsense root.
+    above = (False,) * len(ns)
     lam0 = 0.0
-    # The lambda search below is the robust one of GM-60 for every run,
-    # with or without support forces (GM-140 step 2): the scan starts from
-    # the nearest lambda that has a state when lambda = 0 has none, steps
-    # over a lambda with no equilibrium state, and passes over a bracket
-    # whose bisection does not close. Before, a run without supports
-    # stopped at the first of these and the surface was left to an
-    # approximate solver (EM 1110-2-1902 C-10d, pp. C-37 to C-38, on
-    # avoiding non-convergence; UFC 3-220-10 p. 362).
-    robust = True
-    if st0 is None and not robust:
-        result.fos = _FOS_MAX
-        return result
+    st0 = sys_._state(0.0, f_start, above)
     if st0 is None:
-        # No equilibrium state at lambda = 0 (e.g. a large support force
-        # leaves no horizontal thrust with horizontal interslice forces).
-        # Start the bracket from the nearest lambda that has one instead of
-        # giving up (GM-60).
         for k in range(1, 16):
-            for lam_s in (0.1 * k, -0.1 * k):
-                if lo_b <= lam_s <= hi_b:
-                    st0 = sys_.solve_for_lambda(lam_s)
+            for lam_s in (0.1 * k,):
+                if lam_s <= hi_b + 1e-9:
+                    st0 = sys_._state(lam_s, f_start, above)
                     if st0 is not None:
                         lam0 = lam_s
                         break
@@ -819,122 +1441,119 @@ def gle_fos(slices: List[Slice],
         result.warnings.append(
             f"no equilibrium state at lambda = 0; bracket started from "
             f"lambda = {lam0:+.1f}")
-    Fm0, Ff0, _, _, _ = st0
-    if lam0 == 0.0:
-        result.bishop_fos = Fm0
-        result.janbu_fos = Ff0
-    f_est = Fm0
 
-    def g(lam, f_start):
-        st = sys_.solve_for_lambda(lam, f0=f_start)
-        if st is None:
-            return None
-        return st
+    found, result.jumps, no_state = sys_.first_crossing(
+        lam0, st0, lo_b, hi_b)
 
-    # Bracket the root of g(lam) = Fm - Ff starting from lam0. With support
-    # forces a lambda with no equilibrium state is stepped over, not taken
-    # as the end of the range: with large point loads the states can be
-    # broken up (GM-60).
-    ga = Fm0 - Ff0
-    first = 1.0 if ga >= 0 else -1.0
-    conv_tol = max(50 * tol, 1e-3)
-
-    def bisect(bracket):
-        """Bisection on a bracket (robust; g is cheap). Returns
-        (lambda*, state)."""
-        nonlocal f_est
-        a, b, ga_, gb_, st_b = bracket
-        st_best = st_b
-        for _ in range(60):
-            mid = 0.5 * (a + b)
-            st = g(mid, f_est)
-            if st is None:
-                break
-            gm = st[0] - st[1]
-            f_est = 0.5 * (st[0] + st[1])
-            st_best = st
-            if abs(gm) < tol or (b - a) < 1e-6:
-                a = b = mid
-                break
-            if ga_ * gm <= 0:
-                b, gb_ = mid, gm
-            else:
-                a, ga_ = mid, gm
-        return 0.5 * (a + b), st_best
-
-    # Scan from lam0 in the likelier direction first, then the other. With
-    # support forces a bracket whose bisection does not close (F_m - F_f
-    # jumps instead of crossing, as it can when a large point load gives
-    # F_f more than one root) is passed over and the scan goes on (GM-60);
-    # the bound itself is tried too (fifteen steps of 0.1 overshoot 1.5 by
-    # a rounding error). Without them the first bracket is taken, as before.
-    found = None            # (lambda*, state) of a closed crossing
-    fallback = None         # the least-bad unclosed one
-    b_tol = 1e-9 if robust else 0.0
-    for direction in ((first, -first) if ga != 0 else (first,)):
-        step = 0.1 * direction
-        lam_try = lam0
-        prev_lam, prev_g = lam0, ga
-        for _ in range(40):
-            lam_try += step
-            if lam_try > hi_b + b_tol or lam_try < lo_b - b_tol:
-                break
-            st = g(lam_try, f_est)
-            if st is None:
-                if robust:
-                    continue
-                break
-            gt = st[0] - st[1]
-            f_est = 0.5 * (st[0] + st[1])
-            if prev_g * gt <= 0:
-                lam_c, st_c = bisect((prev_lam, lam_try, prev_g, gt, st))
-                if abs(st_c[0] - st_c[1]) < conv_tol or not robust:
-                    found = (lam_c, st_c)
-                    break
-                if fallback is None or (abs(st_c[0] - st_c[1])
-                                        < abs(fallback[1][0]
-                                              - fallback[1][1])):
-                    fallback = (lam_c, st_c)
-            prev_lam, prev_g = lam_try, gt
-        if found is not None:
-            break
-
-    if found is None and fallback is None:
-        # No crossing found in range: the starting moment solution, flagged
-        # as not converged (no factor of safety: the callers give no number).
-        result.fos = Fm0
-        result.fos_moment = Fm0
-        result.fos_force = Ff0
+    if found is None:
+        # No crossing in range: no factor of safety (the callers give no
+        # number). The starting state is left for the record.
+        result.fos = st0[0] if st0[0] is not None else st0[1]
+        result.fos_moment = result.fos
+        result.fos_force = st0[1]
         result.lam = lam0
         result.converged = False
-        result.warnings.append("no F_m = F_f crossing found in lambda range")
+        w = "no F_m = F_f crossing found in lambda range"
+        end = sys_.branch_end
+        w += (f"; the scan went upward from lambda = {lam0:g} on the "
+              f"branch of solutions that starts there"
+              + (f" and stopped where that branch ends, between lambda = "
+                 f"{end[0]:.4f} and {end[1]:.4f} (no state at "
+                 f"{end[1]:.4f})" if end else
+                 f" to lambda = {hi_b:g}"))
+        # EM 1110-2-1902 C-10c (p. C-36): with cohesion at the crest the
+        # normal and side forces there are often negative, and such
+        # tensile forces should be eliminated, by a tension crack near
+        # the upper end of the surface (step 4's tension_crack_depth).
+        # Named where the branch's starting state has a base or a side in
+        # tension on a slice with cohesion (the same zero as the
+        # ``side_tension`` finding: `acceptability.E_NEGLIGIBLE`).
+        E0, N0 = st0[2], st0[4]
+        e_ref0 = max((abs(e) for e in E0), default=0.0)
+        n_base = sum(1 for i, s in enumerate(ns)
+                     if s.c > 0.0 and N0[i] - s.u * s.length < 0.0)
+        n_side = sum(1 for j in range(1, len(ns))
+                     if E0[j] < -max(1e-6, 1e-3 * e_ref0)
+                     and (ns[j - 1].c > 0.0 or ns[j].c > 0.0))
+        if n_base or n_side:
+            w += (f"; the state at lambda = {lam0:g} has tension on "
+                  f"{n_base} slice base(s) and {n_side} slice side(s) "
+                  f"where the soil has cohesion: EM 1110-2-1902 C-10c "
+                  f"(p. C-36) asks that such tensile forces be eliminated "
+                  f"by a tension crack near the upper end of the surface "
+                  f"(tension_crack_depth, or tension_crack_depth_basis="
+                  f"'rankine' for the depth of Eq. C-36)")
+        if sys_.undriven:
+            w += (f"; {sys_.undriven} crossing(s) met have no net driving "
+                  f"moment or force, where the ratio of resisting to "
+                  f"driving has no meaning")
+        if result.jumps:
+            w += ("; F_m - F_f changes sign by a jump between two "
+                  "branches of solutions (not a crossing) at lambda = "
+                  + ", ".join(f"{j:.4f}" for j in result.jumps))
+        # One surface analysed (`single_surface`): the branch from
+        # lambda = 0 scanned DOWN too, and a crossing met there named with
+        # its flags, not reported (fix round 2, the orchestrator's
+        # ruling 2). Never in a search's trials: off by default.
+        if lam0 == 0.0 and _SCAN_BELOW.get():
+            below = sys_.crossing_below(st0, lo_b)
+            if below is not None:
+                w += _below_zero_text(sys_, below, mirrored)
+        result.warnings.append(w)
         return result
 
-    lam_star, st_best = found if found is not None else fallback
-    Fm, Ff, E, V, N_f = st_best
-    result.fos = 0.5 * (Fm + Ff)
-    result.fos_moment = Fm
+    lam_star, st_best = found
+    Fm, Ff, E, V, N_f, tps = st_best[:6]
+    result.fos = Ff
+    result.fos_moment = Fm if Fm is not None else Ff
     result.fos_force = Ff
     result.lam = lam_star
-    result.converged = abs(Fm - Ff) < max(50 * tol, 1e-3)
-    if not result.converged:
+    result.converged = True
+    if result.jumps:
         result.warnings.append(
-            f"F_m - F_f residual {abs(Fm - Ff):.2e} at lambda={lam_star:.3f}")
+            "F_m - F_f changed sign by a jump between two branches of "
+            "solutions (not a crossing) at lambda = "
+            + ", ".join(f"{j:.4f}" for j in result.jumps)
+            + " before the crossing reported")
 
     # ---- per-slice / per-boundary reporting (original orientation) --------
+    # The state's own forces: nothing is worked out again at a mean F.
     n = len(ns)
     F = result.fos
     base_N, base_Neff, shear_m = [], [], []
+    frictionless = []
     for i, s in enumerate(ns):
-        dV = V[i] - V[i + 1]
-        N = sys_._normal(s, F, dV)
+        N = N_f[i]
         Neff = N - s.u * s.length
-        Sm = (s.c * s.length + max(Neff, 0.0) * s.tan_phi) / F
+        Sm = (s.c * s.length + Neff * tps[i]) / F
         base_N.append(N)
         base_Neff.append(Neff)
         shear_m.append(Sm)
+        frictionless.append(tps[i] != s.tan_phi)
         if Neff < 0 and "base tension (N' < 0)" not in result.warnings:
             result.warnings.append("base tension (N' < 0)")
+    result.frictionless = (list(reversed(frictionless)) if mirrored
+                           else frictionless)
+
+    # The denominator of each slice's own two equations in this state
+    # (`_GLESystem._poles`, divided through by cos(theta_i)):
+    # cos(alpha - theta_i) + sin(alpha - theta_i) tan(phi') / F, theta_i
+    # the inclination of the side force on the slice's upslope side, the
+    # one the march solves for (zero at the end of the mass). With
+    # horizontal side forces it is m_alpha (Whitman and Bailey 1967,
+    # p. 487, Eq. 5). `acceptability.low_m_alpha_finding` reads it.
+    den, theta_s, e_side = [], [], []
+    for i, s in enumerate(ns):
+        t = math.atan(lam_star * sys_.fb[i + 1]) if i + 1 < n else 0.0
+        den.append(math.cos(s.alpha - t)
+                   + math.sin(s.alpha - t) * tps[i] / F)
+        theta_s.append(math.degrees(t))
+        e_side.append(E[i + 1])
+    if mirrored:
+        den, theta_s, e_side = den[::-1], theta_s[::-1], e_side[::-1]
+    result.slice_denominator = den
+    result.side_force_theta_deg = theta_s
+    result.side_force_E = e_side
 
     # Thrust line: moments about each slice base midpoint to locate E
     thrust = [0.0] * (n + 1)

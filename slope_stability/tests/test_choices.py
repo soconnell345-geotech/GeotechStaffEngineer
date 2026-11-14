@@ -97,18 +97,25 @@ def test_a_short_search_reports_its_flagged_surface():
     """A short noncircular search (100 trials) with automatic windows on
     the live-run slope. The moment-axis screen used to refuse every
     surface it solved, so it reported none; since GM-140 step 3 removed
-    that screen the lowest solved surface is reported, flagged with what
-    it does not meet, and the result says no scored surface is without a
-    flag (module's own value; nothing printed for this slope)."""
+    that screen the lowest solved surface is reported with what it does
+    not meet (module's own value; nothing printed for this slope).
+
+    GM-344: the surface it reported at 0.462, flagged four ways, was a
+    crossing at a negative lambda, which the scan no longer looks for;
+    Spencer's method now has no solution on 83 of its 100 trials (said in
+    ``no_solution`` and a warning), and the lowest it solves reads 9.49,
+    with no flag. A search this short on this slope finds nothing
+    useful, and says so."""
     r = search_critical_surface(_w10(), surface_type="noncircular",
                                 n_trials=100, seed=1, n_slices=30)
-    assert r.critical.FOS == pytest.approx(0.462, abs=0.005)
-    assert r.critical_flags == ["low_m_alpha", "base_tension",
-                                "side_tension", "thrust_outside"]
-    assert r.lowest_unflagged["FOS"] is None
-    assert "is without a flag" in r.lowest_unflagged["note"]
-    assert any("does not meet 4 of the printed acceptability checks" in w
-               for w in r.warnings)
+    # GM-344: 0.462 (flagged) -> 9.49; made-up slope, nothing printed
+    assert r.critical.FOS == pytest.approx(9.493, abs=0.01)
+    assert r.critical_flags == []
+    assert r.lowest_unflagged is None
+    # GM-344 fix round 2: 84 -> 83, a crossing in the last step before
+    # its branch ends found (the step is narrowed to 1e-4); 9.49 stands
+    assert r.no_solution[0]["not_converged"] == 83
+    assert any("without a solution" in w for w in r.warnings)
     c = _by_what(r)
     assert c["surface families scored"]["chosen"] == "noncircular"
     assert r.families_scored == ["noncircular"]

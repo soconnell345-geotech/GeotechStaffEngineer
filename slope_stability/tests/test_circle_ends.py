@@ -191,17 +191,21 @@ def test_vertical_cut_default_search_reads_taylor():
     assert sum(res.circles_split.values()) > 0
 
 
-def test_spencer_on_taylors_arc_has_no_solution_and_says_so():
-    """Check (c): on the arc ended at the toe, solved on the circle,
-    Spencer's method finds no lambda at which the moment and force factors
-    of safety agree. It reports no solution with step 2's reason, never a
-    forced value."""
+def test_spencer_on_taylors_arc_is_a_root_near_taylor():
+    """Check (c), with GM-344's solver merged: on the arc ended at the
+    toe, solved on the circle, Spencer's method now has its own solution,
+    one state meeting both the moment and the force equation, 0.8515
+    against Taylor's 0.851 (3.83 cu / (gamma H); FHWA NHI-06-088 Fig. 6-14,
+    p. 6-27). Before GM-344 the scan found no lambda at which the two
+    factors agreed, and there was no number (this test held that)."""
     geom = _vertical_cut()
     arc = CircularSlipSurface(**_TAYLOR_CIRCLE).arcs(geom)[1]
     res = analyze_slope(geom, slip_surface=arc, method="spencer",
                         n_slices=60)
-    assert res.FOS is None and not res.method_solved
-    assert any("no equilibrium solution" in w for w in res.warnings)
+    assert res.method_solved
+    # GM-344 (merge): no solution -> 0.8515; Taylor 0.8511, +0.04 %
+    assert res.FOS == pytest.approx(_TAYLOR, rel=0.02)
+    assert not any("no equilibrium solution" in w for w in res.warnings)
 
 
 # ---------------------------------------------------------------------------

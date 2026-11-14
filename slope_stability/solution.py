@@ -27,9 +27,10 @@ What "no solution" covers:
 * Janbu's simplified method: no state of horizontal force equilibrium with
   horizontal interslice forces (the iteration cannot take a step, or does
   not settle).
-* Spencer, Morgenstern-Price and GLE: no lambda in range at which the
-  moment and force factors of safety agree within the solver's tolerance
-  (``gle.gle_fos``: ``converged`` False).
+* Spencer, Morgenstern-Price and GLE: no lambda in range at which one
+  state meets both the moment and the force equation (``gle.gle_fos``:
+  ``converged`` False). A change of order of the two factors of safety
+  between two branches of solutions is a jump, not a crossing (GM-344).
 
 No approximate solver stands in for a method anywhere (the old approximate
 Spencer and Morgenstern-Price solvers are removed), and the solvers'
@@ -341,10 +342,17 @@ def gle_failure_reason(res, err) -> str:
         return "no solution"
     for w in res.warnings:
         if w.startswith("no F_m = F_f crossing"):
-            return ("no lambda from -1.5 to 1.5 gives moment and force "
-                    "factors of safety that agree")
+            # gle_fos adds, after a ';', how the scan went (upward from
+            # lambda = 0 on the branch that starts there, to 1.5 or to
+            # where that branch ends), each lambda at which the two
+            # factors changed order by a jump, and EM C-10c where the
+            # starting state has tension on a slice with cohesion (GM-344)
+            more = w.partition(";")[2].strip()
+            return ("no lambda from 0 to 1.5 gives moment and force "
+                    "factors of safety that agree"
+                    + (f" ({more})" if more else ""))
         if w.startswith("no equilibrium state at any lambda"):
-            return "no lambda from -1.5 to 1.5 gives an equilibrium state"
+            return "no lambda from 0 to 1.5 gives an equilibrium state"
         if w.startswith("F_m - F_f residual"):
             # gle_fos: "F_m - F_f residual {:.2e} at lambda={:.3f}"
             parts = w.replace("=", " ").split()
