@@ -244,6 +244,15 @@ class SlopeStabilityResult:
     # side and model, where it is, and for a Rankine depth the F it was
     # taken at. None without a crack.
     tension_crack: Optional[Dict[str, Any]] = None
+    # Which arc of its circle the surface is (GM-343, "Where a circle
+    # ends"; ``slip_surface.describe_arc``): 'x_start', 'x_end', 'index'
+    # (1-based, in x order), 'n_arcs', 'arcs', 'description', and, where
+    # the circle was given without its ends and bounds several arcs,
+    # 'governs' (how this arc was chosen), 'others' (each other arc with
+    # its factor of safety, or why it has none) and 'not_scored' (the
+    # count of those, by reason). None for a circle with one arc given
+    # without its ends, and for a noncircular surface.
+    arc: Optional[Dict[str, Any]] = None
     method_solved: bool = True
     method_used: Optional[str] = ""
     methods_without_solution: List[str] = field(default_factory=list)
@@ -431,6 +440,8 @@ class SlopeStabilityResult:
             d["tension_crack_water_depth_m"] = round(self.tension_crack_water_depth, 2)
             if self.tension_crack:
                 d["tension_crack"] = dict(self.tension_crack)
+        if self.arc:
+            d["arc"] = dict(self.arc)
         if self.slip_points is not None:
             d["slip_points"] = [
                 (round(x, 3), round(z, 3)) for x, z in self.slip_points
@@ -655,12 +666,31 @@ class SearchResult:
         artifact). Zero for circular searches. A majority-rejected search also
         emits a ``warnings.warn`` — see ``search._rejection_kwargs``.
     n_rejected_ground_crossings : int
-        Trial surfaces, circular or not, the search refused because they
-        are below the ground over more than one stretch: they leave the
-        ground and come back into it, so the soil above them is not one
-        sliding mass (GM-122, ``slip_surface.GroundCrossingError``). A
-        search that runs others (``search_critical_surface``) counts theirs
-        and its supplementary families' too.
+        Noncircular trial surfaces the search refused because they are
+        below the ground over more than one stretch: they leave the ground
+        and come back into it, so the soil above them is not one sliding
+        mass (GM-122, ``slip_surface.GroundCrossingError``). A search that
+        runs others (``search_critical_surface``) counts theirs and its
+        supplementary families' too. (A circle is not refused for it:
+        ``circles_split``.)
+    circles_split : dict
+        Trial circles that meet the ground at more than two points
+        (GM-343, "Where a circle ends"): ``{arcs: circles}``, the number of
+        such circles by the number of arcs below the ground each gave.
+        Each arc inside the search's entry / exit windows was scored as a
+        trial surface of its own, and the circle's score is its lowest
+        arc's; an arc with no driving moment, or one the method has no
+        solution on, is counted in ``no_solution`` under its reason. Counted
+        as ``n_rejected_ground_crossings`` is. ``critical.arc`` says which
+        arc the governing surface is.
+    arcs_outside_windows : dict
+        The arcs of those split circles that lie outside the entry / exit
+        windows (given, or the main family's automatic ones) and so were
+        not scored (GM-343 review): ``{family: arcs}``, the families named
+        as in ``no_solution``; counted per trial evaluation, as
+        ``circles_split``. Empty where no window left an arc out. The
+        toe-circle and circle-above-the-toe families score only the arc
+        that ends at the toe or face point and count nothing here.
     n_rejected_m_alpha : int
         Trial surfaces, circular or not, the search left out because m_alpha
         = cos(a) (1 + tan(a) tan(phi) / F) fell below 0.2 on a slice at the
@@ -800,6 +830,8 @@ class SearchResult:
     n_rejected_nonconverged: int = 0
     n_rejected_jagged: int = 0
     n_rejected_ground_crossings: int = 0
+    circles_split: Dict[int, int] = field(default_factory=dict)
+    arcs_outside_windows: Dict[str, int] = field(default_factory=dict)
     n_rejected_m_alpha: int = 0
     # Surfaces the crack rule refused (GM-140 step 4 and its review's D5),
     # by reason (``cracks.REFUSAL_TEXT``): {reason: {'n', 'what',
@@ -843,6 +875,20 @@ class SearchResult:
             lines.append(f"  Refused, not one sliding mass (leave the ground "
                          f"and come back into it): "
                          f"{self.n_rejected_ground_crossings}")
+        if self.circles_split:
+            n = sum(self.circles_split.values())
+            by = ", ".join(f"{k} with {a} arcs"
+                           for a, k in sorted(self.circles_split.items()))
+            lines.append(f"  Circles meeting the ground at more than two "
+                         f"points, split there and each arc inside the "
+                         f"windows scored as a trial surface of its own: "
+                         f"{n} ({by})")
+        if self.arcs_outside_windows:
+            n_out = sum(self.arcs_outside_windows.values())
+            by_f = ", ".join(f"{f}: {k}" for f, k
+                             in self.arcs_outside_windows.items())
+            lines.append(f"  Arcs of those circles outside the windows, not "
+                         f"scored: {n_out} ({by_f})")
         if self.n_rejected_m_alpha:
             lines.append(f"  Left out, m_alpha < 0.2 on a slice "
                          f"(low_m_alpha='refuse'): "
@@ -965,6 +1011,13 @@ class SearchResult:
                 "ground_crossings": self.n_rejected_ground_crossings,
                 "m_alpha": self.n_rejected_m_alpha,
             }
+        if self.circles_split:
+            # circles split where they meet the ground (GM-343)
+            d["circles_split"] = {str(a): n for a, n
+                                  in sorted(self.circles_split.items())}
+        if self.arcs_outside_windows:
+            # their arcs outside the windows, not scored, by family
+            d["arcs_outside_windows"] = dict(self.arcs_outside_windows)
         if self.no_solution:
             # trials the method has no solution on, by family and method
             d["no_solution"] = [dict(r) for r in self.no_solution]

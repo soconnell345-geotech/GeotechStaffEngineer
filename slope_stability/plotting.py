@@ -137,11 +137,18 @@ def _circle_arc(geom, xc, yc, R, n=80):
     """Ground-clipped lower arc for a stored trial circle, or None."""
     from slope_stability.slip_surface import CircularSlipSurface
     try:
-        slip = CircularSlipSurface(xc, yc, R)
-        x_en, x_ex = slip.find_entry_exit(geom)
+        # every arc of the circle below the ground (GM-343), a gap between
+        arcs = CircularSlipSurface(xc, yc, R).arcs(geom)
     except ValueError:
         return None
-    xs = np.linspace(x_en, x_ex, n)
+    if not arcs:
+        return None
+    parts = []
+    for k, arc in enumerate(arcs):
+        if k:
+            parts.append(np.array([np.nan]))
+        parts.append(np.linspace(arc.x_start, arc.x_end, n))
+    xs = np.concatenate(parts)
     dx = np.clip(xs - xc, -R, R)
     zs = yc - np.sqrt(np.maximum(R**2 - dx**2, 0.0))
     return xs, zs

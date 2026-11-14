@@ -51,8 +51,9 @@ _DE_REFUSED = 100.0
 
 
 # Trial surfaces refused, counted into the tally of the search running in
-# this context: [0] those that leave the ground and come back into it
-# (GM-122, ``GroundCrossingError``; `_compute_fos` and `_check_entry_exit`),
+# this context: [0] polylines that leave the ground and come back into it
+# (GM-122, ``GroundCrossingError``; `_compute_fos` and `_check_entry_exit`;
+# a circle is split there instead, GM-343: `_ARCS`),
 # [1] those with m_alpha < 0.2 on a slice (GM-127; `_compute_fos` and the
 # rapid-drawdown search's per-surface solve).
 _REFUSALS: contextvars.ContextVar = contextvars.ContextVar(
@@ -218,6 +219,131 @@ def _count_ground_refusal() -> None:
         tally[0] += 1
 
 
+# Where a circle ends (GM-343). Circles that meet the ground at more than
+# two points are split there and each arc is scored as a trial surface of
+# its own (`_compute_fos`). The search running in this context counts the
+# circles split, by the number of arcs each gave ("split": {n_arcs: n}),
+# and the arcs of those circles that lie outside its entry / exit windows
+# and so are not scored, by family ("outside": {family: n};
+# `_check_entry_exit`, review of GM-343, ruling 2), and remembers the arc
+# that scored lowest on each split circle ("arc": {(xc, yc, R): (x_start,
+# x_end)}), so that the surface it reports, and every later analysis of
+# it, keeps that arc's two ends (`_governing_circle`).
+_ARCS: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_split_circles", default=None)
+
+
+def _count_split(n_arcs: int) -> None:
+    t = _ARCS.get()
+    if t is not None and _FAMILY.get() is not None:
+        t["split"][n_arcs] = t["split"].get(n_arcs, 0) + 1
+
+
+def _count_outside(n_arcs: int) -> None:
+    """Count arcs of a split circle that lie outside the search's entry /
+    exit windows: not scored, so counted here and not under a reason of
+    ``no_solution`` (counted per trial evaluation, as ``circles_split``)."""
+    t = _ARCS.get()
+    family = _FAMILY.get()
+    if t is not None and family is not None and n_arcs > 0:
+        t["outside"][family] = t["outside"].get(family, 0) + n_arcs
+
+
+def _outside_so_far() -> Dict[str, int]:
+    """The arcs of split circles left out by the windows so far by the
+    search running in this context, by family."""
+    t = _ARCS.get()
+    return dict(t["outside"]) if t is not None else {}
+
+
+def outside_records(counts: Dict[str, int],
+                    rename: Optional[Dict[str, str]] = None
+                    ) -> Dict[str, int]:
+    """``SearchResult.arcs_outside_windows`` from the tally, the families
+    named as ``no_solution`` names them."""
+    out: Dict[str, int] = {}
+    for family, n in counts.items():
+        name = (rename or {}).get(family, family)
+        out[name] = out.get(name, 0) + n
+    return out
+
+
+def _split_so_far() -> Dict[int, int]:
+    """The circles split so far by the search running in this context,
+    by the number of arcs each gave."""
+    t = _ARCS.get()
+    return dict(t["split"]) if t is not None else {}
+
+
+def _remember_arc(slip, arc) -> None:
+    """Note the arc that scored lowest on a split circle (None: no arc of
+    it was scored)."""
+    ends = None if arc is None else (arc.x_start, arc.x_end)
+    slip._governing_arc = ends
+    t = _ARCS.get()
+    if t is not None:
+        key = (slip.xc, slip.yc, slip.radius)
+        if ends is None:
+            t["arc"].pop(key, None)
+        else:
+            t["arc"][key] = ends
+
+
+def _circle_arcs(geom, slip):
+    """(arcs to score, the circle's number of arcs) for a circle given
+    without its ends: every arc below the ground (GM-343), or those an
+    entry / exit window let through (`_check_entry_exit`). Raises
+    ValueError where the circle does not overlap the profile."""
+    allowed = getattr(slip, "_window_arcs", None)
+    if allowed is not None:
+        return allowed, slip._n_arcs
+    arcs = slip.arcs(geom)
+    return arcs, len(arcs)
+
+
+def _governing_circle(geom, xc: float, yc: float, r: float, method: str,
+                      n_slices: int, tol: float = 1e-4,
+                      fos_fn: Optional[Callable] = None):
+    """The circle a search reports, standing for the arc that scored
+    lowest on it (GM-343): the arc the search remembered, or, where it
+    remembered none and the circle bounds several arcs, the lowest of them
+    scored again (not counted as trials). A circle with one arc is the
+    circle alone, as before."""
+    slip = CircularSlipSurface(xc, yc, r)
+    t = _ARCS.get()
+    ends = t["arc"].get((xc, yc, r)) if t is not None else None
+    if ends is None:
+        try:
+            if len(slip.arcs(geom)) <= 1:
+                return slip
+        except ValueError:
+            return slip
+        with _scoring_family(None):
+            _compute_fos(geom, slip, method, n_slices, tol=tol,
+                         fos_fn=fos_fn)
+        ends = getattr(slip, "_governing_arc", None)
+    return slip.arc(*ends) if ends else slip
+
+
+def _name_arc(geom, result) -> None:
+    """Say on a search's governing surface which arc of its circle it is
+    (``SlopeStabilityResult.arc``; GM-343), where the circle was split."""
+    crit = getattr(result, "critical", None)
+    t = _ARCS.get()
+    if (crit is None or t is None or getattr(crit, "arc", None)
+            or not getattr(crit, "is_circular", False)):
+        return
+    ends = t["arc"].get((crit.xc, crit.yc, crit.radius))
+    if ends is None:
+        return
+    from slope_stability.slip_surface import describe_arc
+    slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius, *ends)
+    crit.arc = describe_arc(slip, slip.meetings(geom))
+    crit.arc["governs"] = ("the lowest factor of safety of the circle's "
+                           "arcs the search scored (each a trial surface "
+                           "of its own)")
+
+
 def _count_m_alpha_refusal() -> None:
     tally = _REFUSALS.get()
     if tally is not None:
@@ -246,10 +372,26 @@ def _counts_refusals(fn):
         outer = _REFUSALS.get()
         tally = [0, 0, {}, _new_flag_tally()]
         token = _REFUSALS.set(tally)
+        outer_arcs = _ARCS.get()
+        arcs = {"split": {}, "arc": {}, "outside": {}}
+        token_arcs = _ARCS.set(arcs)
         try:
             result = fn(*args, **kwargs)
+            geom_arg = args[0] if args else kwargs.get("geom")
+            if isinstance(geom_arg, SlopeGeometry):
+                _name_arc(geom_arg, result if isinstance(result, SearchResult)
+                          else getattr(result, "search", None))
         finally:
             _REFUSALS.reset(token)
+            _ARCS.reset(token_arcs)
+            if outer_arcs is not None:
+                for n_arcs, n in arcs["split"].items():
+                    outer_arcs["split"][n_arcs] = (
+                        outer_arcs["split"].get(n_arcs, 0) + n)
+                for family, n in arcs["outside"].items():
+                    outer_arcs["outside"][family] = (
+                        outer_arcs["outside"].get(family, 0) + n)
+                outer_arcs["arc"].update(arcs["arc"])
             if outer is not None:
                 outer[0] += tally[0]
                 outer[1] += tally[1]
@@ -260,6 +402,11 @@ def _counts_refusals(fn):
                   else getattr(result, "search", None))
         if isinstance(target, SearchResult):
             target.n_rejected_ground_crossings = tally[0]
+            target.circles_split = dict(sorted(arcs["split"].items()))
+            if not target.arcs_outside_windows:
+                # (search_critical_surface names the families itself)
+                target.arcs_outside_windows = outside_records(
+                    arcs["outside"])
             target.n_rejected_m_alpha = tally[1]
             if not target.no_solution:
                 # (search_critical_surface names the families itself)
@@ -1056,6 +1203,34 @@ def _compute_fos(geom: SlopeGeometry,
     """
     if fos_fn is None:
         check_method(method)
+    # Where a circle ends (GM-343): a circle that meets the ground at more
+    # than two points is split there; each arc below the ground is a trial
+    # surface of its own, solved and screened like any other, and the
+    # circle's score is the lowest of them. An arc with no driving moment
+    # or no solution is counted with its reason, as any such surface is.
+    if getattr(slip, "is_circular", False) and not slip.is_bound:
+        try:
+            arcs, n_arcs = _circle_arcs(geom, slip)
+        except ValueError:
+            return _FOS_MAX
+        if n_arcs > 1:
+            _count_split(n_arcs)
+            # the arcs the windows left out: not scored, counted
+            _count_outside(n_arcs - len(arcs))
+            best, best_arc, best_info = _FOS_MAX, None, None
+            for arc in arcs:
+                arc_info = {} if info is not None else None
+                fos = _compute_fos(
+                    geom, arc, method, n_slices, tol=tol,
+                    window_span=window_span, reject_stats=reject_stats,
+                    fos_fn=fos_fn, m_alpha_check=m_alpha_check,
+                    info=arc_info, inside_model=inside_model)
+                if fos < best:
+                    best, best_arc, best_info = fos, arc, arc_info
+            _remember_arc(slip, best_arc)
+            if info is not None and best_info is not None:
+                info.update(best_info)
+            return best
     try:
         if inside_model and _dips_below_base(geom, slip):
             return _FOS_MAX         # as build_slices' refusal (ValueError)
@@ -1178,7 +1353,8 @@ def _compute_fos(geom: SlopeGeometry,
         _count_crack_refusal(slip, exc.outcome)
         return _FOS_MAX
     except GroundCrossingError:
-        # not one sliding mass (GM-122): refused, and counted
+        # a polyline that leaves the ground and comes back into it
+        # (GM-122): refused, and counted
         _count_ground_refusal()
         return _FOS_MAX
     except (ValueError, ZeroDivisionError, RuntimeError):
@@ -1213,21 +1389,41 @@ def _check_entry_exit(geom, slip, x_entry_range, x_exit_range):
     """
     if x_entry_range is None and x_exit_range is None:
         return True
+
+    def inside(x_entry, x_exit):
+        if x_entry_range is not None:
+            if x_entry < x_entry_range[0] or x_entry > x_entry_range[1]:
+                return False
+        if x_exit_range is not None:
+            if x_exit < x_exit_range[0] or x_exit > x_exit_range[1]:
+                return False
+        return True
+
+    if getattr(slip, "is_circular", False) and not slip.is_bound:
+        # each arc of the circle is a trial surface (GM-343): the circle
+        # passes where an arc lies inside the windows, and `_compute_fos`
+        # scores those arcs only and counts the others
+        # (``arcs_outside_windows``)
+        try:
+            arcs = slip.arcs(geom)
+        except ValueError:
+            return False
+        if len(arcs) > 1:
+            slip._n_arcs = len(arcs)
+            slip._window_arcs = [a for a in arcs
+                                 if inside(a.x_start, a.x_end)]
+            if not slip._window_arcs:
+                _count_split(len(arcs))     # split, and no arc inside
+                _count_outside(len(arcs))
+            return bool(slip._window_arcs)
     try:
         x_entry, x_exit = slip.find_entry_exit(geom)
     except GroundCrossingError:
-        _count_ground_refusal()        # not one sliding mass (GM-122)
+        _count_ground_refusal()        # a polyline, not one mass (GM-122)
         return False
     except ValueError:
         return False
-
-    if x_entry_range is not None:
-        if x_entry < x_entry_range[0] or x_entry > x_entry_range[1]:
-            return False
-    if x_exit_range is not None:
-        if x_exit < x_exit_range[0] or x_exit > x_exit_range[1]:
-            return False
-    return True
+    return inside(x_entry, x_exit)
 
 
 def optimize_radius(geom: SlopeGeometry,
@@ -1719,8 +1915,11 @@ def grid_search(geom: SlopeGeometry,
             r_b, f_b = strict(xc, yc, "bishop")
             if f_b >= _FOS_MAX:
                 return r_b, _FOS_MAX
-            return r_b, _compute_fos(geom, CircularSlipSurface(xc, yc, r_b),
-                                     method, n_slices, tol=tol)
+            slip = CircularSlipSurface(xc, yc, r_b)
+            # (the windows again, so that a split circle is scored on the
+            # arcs inside them: GM-343)
+            _check_entry_exit(geom, slip, x_entry_range, x_exit_range)
+            return r_b, _compute_fos(geom, slip, method, n_slices, tol=tol)
 
         def walk_score(xc, yc):
             key = (round(xc, 6), round(yc, 6))
@@ -1760,7 +1959,8 @@ def grid_search(geom: SlopeGeometry,
     # Build result for the critical surface
     critical = None
     if best_fos < _FOS_MAX:
-        slip = CircularSlipSurface(best_xc, best_yc, best_r)
+        slip = _governing_circle(geom, best_xc, best_yc, best_r, method,
+                                 n_slices, tol, fos_fn)
         try:
             x_entry, x_exit = slip.find_entry_exit(geom)
             slices = build_slices(
@@ -2644,7 +2844,8 @@ def search_entry_exit(
 
     critical = None
     if best_fos < _FOS_MAX:
-        slip = CircularSlipSurface(best_xc, best_yc, best_r)
+        slip = _governing_circle(geom, best_xc, best_yc, best_r, method,
+                                 n_slices, tol, fos_fn)
         try:
             x_entry, x_exit = slip.find_entry_exit(geom)
             slices = build_slices(
