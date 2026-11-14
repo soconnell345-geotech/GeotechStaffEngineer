@@ -486,7 +486,7 @@ METHOD_INFO = {
                         "max_cell_probability_above (Gaussian pointwise from the kriging mean and std); mean_kriged_value; max_kriging_std; "
                         "nearest_observation_to_centroid (m)."),
             "regions_csv": "With regions: CSV path, per cell: region, level, x, y, kriged_mean, kriging_std, pointwise probability.",
-            "regions_csv_columns": "The columns of regions_csv.",
+            "regions_csv_columns": "With regions: the columns of regions_csv.",
             "figures": "With figures: the kriging map's PNG path with a .plotly.json twin and an html_img_tag.",
             "embed_note": "How to show the figure in the reply and in a report.",
             "warnings": "Poorly constrained or degenerate variogram fit.",
