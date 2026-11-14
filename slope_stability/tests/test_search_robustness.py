@@ -590,11 +590,16 @@ def test_a_flagged_lowest_surface_is_reported_flagged():
     assert res.refused_lowest is None
     assert "refused_lowest" not in res.to_dict()
     assert res.critical is not None
-    assert "low_m_alpha" in res.critical_flags
-    assert "base_tension" in res.critical_flags
+    # GM-344: the lowest solved surface is now 0.895 with tensile side
+    # forces and the line of thrust outside the mass (it carried m_alpha
+    # below 0.2 and a base in tension too, at a crossing with a negative
+    # lambda that the scan no longer looks for), and the search now
+    # scores a surface without a flag (2.085)
+    assert {"side_tension", "thrust_outside"} <= set(res.critical_flags)
     low = res.lowest_unflagged
-    assert low["FOS"] is None and "without a flag" in low["note"]
+    assert low["FOS"] is not None and low["FOS"] > res.critical.FOS
     (rec,) = [r for r in res.trial_flags if r["family"] == "noncircular"]
-    assert rec["n_flagged"] == rec["n_scored"] > 0
+    # (GM-344: no longer every scored trial; 245 of 285 when measured)
+    assert 0 < rec["n_flagged"] < rec["n_scored"]
     w = [w for w in res.warnings if "printed acceptability checks" in w]
     assert len(w) == 1 and "kept and reported, flagged" in w[0]

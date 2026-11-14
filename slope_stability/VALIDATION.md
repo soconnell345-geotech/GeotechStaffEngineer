@@ -957,7 +957,7 @@ unflagged surface beside it:
 | Duncan's Example 4 by Janbu, 30 slices | 1.203 (78 circles left out) | 0.843 flagged; 1.215 unflagged; 1.203 with `low_m_alpha='refuse'` | none in hand for Janbu |
 | A made-up pore-pressure grid on the ACADS 5 slope (V-029's demonstration), Bishop | 1.247 | 1.175, the frictional term as printed where u b exceeds W; 1.247 with `negative_friction_term='zero'` | none |
 | The agent suite's PPG-1 (a hydrostatic grid on a made-up slope, one circle), Bishop | 1.223 | 1.101, the same; the answer key keeps 1.223 as its alternative | none |
-| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.092 | 0.633 flagged; 1.096 unflagged | 1.00 |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.092 | 0.633 flagged; 1.096 unflagged | 1.00 for the circle (Spencer 0.9838 on it); 1.092 is a 200-trial sample's minimum |
 | Weak layer over rock, DE directed | no surface | 0.612 flagged; no scored trial unflagged | none |
 
 The last two follow from removing the noncircular screens on a jagged surface
@@ -1116,6 +1116,122 @@ is in `module_work/gm140/CIRCLE_ENDS_CHECK.md`.
 
 Every pinned benchmark whose circles meet the ground at two points reads as
 before (the check file lists them).
+
+## B24 — The GLE solver: a root, or no number (GM-140, GM-344, 2026-11-14)
+
+Record: `module_work/gm140/GLE_ROOT_CHECK.md`. Tests:
+`slope_stability/tests/test_gle_root.py`. A second computation of Spencer's
+two equations, written apart from `gle.py`:
+`module_work/gm140/gle_root_spencer_script.py`.
+
+**A made-up thin planar slide** (2H:1V face, c' = 0, phi' = 34 deg, r_u =
+(gamma_w / gamma) cos^2(beta), a plane 2 m below the face with a 2 m ramp at
+each end, 60 slices). FHWA NHI-06-088 Eq. 6-10 (p. 6-8) gives 0.6704 for the
+infinite slope; dry, tan(phi') / tan(beta) = 1.349.
+
+| | Before | Now | Second computation |
+|---|---|---|---|
+| Spencer, r_u | 1.0887 at 31.13 deg (0.8901 at 25.41 deg from gle_fos at its default tol), reported as converged; not a root | 0.9182 at 26.319 deg, flagged `low_m_alpha` on slice 1 (its own denominator 0.0176) | a root: 0.9182 at 26.319 deg |
+| Spencer, dry | 1.3779 at 25.41 deg | 1.3805 at 26.365 deg | a root: 1.3805 at 26.365 deg |
+| Morgenstern-Price (half-sine), r_u | 0.6779 | 0.6779 | |
+
+Spencer's equations have three roots on the wet case (0.6505 at 26.20 deg
+and 0.6674 at 56.96 deg, each with the toe slice in tension, and 0.9182).
+The branch that starts at lambda = 0 ends at 0.9182, where the toe wedge
+(its base inclined against the sliding) is all but locked by the inclined
+side force: 37 % above the closed form. That is Spencer's method on this
+surface, not the infinite slope; Morgenstern-Price, whose side shear
+vanishes at the ends, reads 0.678 (+1.1 %). Since the fix round 0.9182 is
+never reported without a finding: the toe slice's own denominator,
+cos(alpha - theta) + sin(alpha - theta) tan(phi') / F, is 0.0176, below
+Whitman and Bailey's 0.2 (1967, p. 487), and the finding cites EM
+1110-2-1902 C-10b (p. C-34, a steep exit) and names its remedies. Dry, the
+2.3 % above the closed form is the toe ramp's passive wedge.
+
+The record of master on the wet case said 0.6065 at 18.00 deg; master
+9c73795 and 3d553a8 both read 1.0887 at 31.13 deg with these inputs
+(analyze_slope, solve_method, gle_fos at tol 1e-5; 30 to 120 slices alike),
+and 0.8901 at 25.41 deg from gle_fos at its default tol 1e-4. No tree
+giving 0.6065 was found; the record is corrected (the review's defect 4).
+
+**An ordinary circle with its crest slice in tension** (made up: c' 10,
+phi' 25, r_u 0.25): 1.3742 at 17.891 deg as printed, 1.3756 at 17.836 deg
+with the slice taken frictionless (`base_in_tension='no_friction'`); the
+second computation's roots are the same.
+
+**The published set** (`step2_section11.py`, `step3_section11.py`, before
+and after, both settings; the table is in the record's section 5). Slide2
+#85 and #86, ACADS 1(a), V-043's circles and V-031's search do not move to
+four figures. V-031, V-044, V-039 and V-042 move by 0.01 to 1.1 % (the
+friction term as printed on bases in tension; with the option they are
+within 0.001 of before). ACADS 4's declared family moves away from print by
+0.005 (Spencer 0.7532 to 0.7480; referee 0.78) and 0.007 (Morgenstern-Price
+0.7225 to 0.7157; Slide2 0.720), inside the pinned tolerances. ACADS 1(a)'s
+random noncircular search reads 1.092 in place of 0.633 flagged: the minimum of a 200-trial
+random polyline sample, a pin on the search's repeatability, not a benchmark value.
+ACADS 1(a)'s benchmark is the circle: Spencer 0.9838 against the printed 1.00 (Bishop
+0.9849); GM-140 step 6 brings the noncircular search to the circle. V-043's differential evolution from seed 1 ends at 1.237 in
+place of 1.234 (printed 1.188): a strict xfail, not re-pinned.
+
+**Printed benchmarks that move under the default** (ruling 3: the
+equations as printed on a base in tension; the lead's call R14 keeps it).
+No pin was moved and no tolerance widened. "Before" is the circle-end
+branch (the half-applied device); the option is
+`base_in_tension='no_friction'`.
+
+| Benchmark | Before | As printed (default) | With the option | Printed |
+|---|---|---|---|---|
+| F&K B1 dry, Spencer (50 slices) | 2.0745 | 2.0712 (-0.16 %) | 2.0744 | 2.073 (Fredlund and Krahn 1977) |
+| F&K B1 dry, Morgenstern-Price | 2.0764 | 2.0708 (-0.27 %) | 2.0767 | 2.076 |
+| F&K B1 r_u 0.25, Spencer | 1.7633 | 1.7567 (-0.37 %) | 1.7629 | 1.761 |
+| F&K B1 r_u 0.25, Morgenstern-Price | 1.7651 | 1.7560 (-0.51 %) | 1.7653 | 1.764 |
+| ACADS 4 declared family, lowest, Spencer | 0.7532 | 0.7480 (-0.69 %) | 0.7495 | 0.760 (Slide2 #9, Table 9.4, p. 52) |
+| ACADS 4 declared family, lowest, Morgenstern-Price | 0.7225 | 0.7157 (-0.94 %) | 0.7222 | 0.720 by GLE (the same) |
+| V-042, FOSM by Spencer, F at the means | 1.3493 | 1.3346 (-1.09 %) | 1.3482 | Hassan and Wolff 1.334 (by Bishop) |
+| V-043 sand, DE seed 1, Spencer | 1.2337 | 1.2374 (+0.30 %) | 1.2374 | 1.188 (Slide2), 1.192 (Tandjiria) |
+
+Each moves because the friction term is now as printed on the bases in
+tension; with the option each is within 0.1 % of before, except V-043's
+seed 1, which is a different search path (trial surfaces whose only
+crossing lay at a negative lambda now have no solution). The F&K and
+ACADS 4 pins (1.5 % and 3 %) still hold; V-043's three-seed pin is a strict
+xfail in place.
+
+**The vertical cut by Spencer.** Taylor's circle ended at the toe (60
+slices): no solution before (no lambda gave an equilibrium state), 0.8515
+at 48.03 deg now (Taylor's chart, FHWA NHI-06-088 Fig. 6-14, p. 6-27:
+3.83 cu / (gamma H) = 0.8511; +0.04 %; flagged for a base and sides in
+tension, phi = 0). The default Spencer search: 0.8632 before, 0.8513 now
+(+0.02 %). Morgenstern-Price
+still has no solution on that arc.
+
+**Rapid drawdown** (the review's defect 5). `rapid_drawdown_fos` takes
+`base_in_tension`, so every stage's solve follows it. The force-equilibrium
+stage solve at a fixed side-force inclination (`fixed_inclination_solution`,
+the Modified Swedish Method of EM C-4) asks for the branch above every pole
+by name (it had been getting it as the new default unasked) and reports
+S = (c' l + N' tan(phi')) / F with the tan(phi') each slice's solve used, in
+place of max(N', 0). No drawdown factor of safety moves with it: #95 by
+force equilibrium at 19.4 deg on the 103 ft pool 1.3379 (the EM's 1.35,
+p. G-15); the EM example by Bishop on the manual's 12 slices
+2.1925 / 1.5137 / 1.4384 (printed 2.20 / 1.52 / 1.44, pp. G-15, G-18,
+G-20). By Spencer on 50 slices the solver moves the stages by under
+0.001 %: 2.19983 / 1.51281 / 1.43412 before, 2.19982 / 1.51281 / 1.43413
+now.
+
+**Cohesive circles.** Where the crest is in tension and F_f is above F_m at
+lambda = 0, the two do not cross for lambda from 0 to 1.5 and there is no
+Spencer solution, where the half-applied device read a number (a made-up
+fill slope at c' = 30 and 38 kPa: 1.645 and 1.917 before, none now under
+either setting). The review's own script finds no crossing on the branch
+from lambda = 0 either, for lambda from 0 to 1.5 (its only roots there lie
+at negative theta, with slice denominators below 0.01), so the no number
+stands as the method's own behaviour (the orchestrator's R7). The reason
+says the scan went upward from lambda = 0 on that branch, and names EM
+1110-2-1902 C-10c (p. C-36) and its remedy, a tension crack
+(`tension_crack_depth`). At 10, 20 and 28 kPa as printed the branch reads
+0.9620, 1.2877 and 1.5481 (before 0.9698, 1.3070, 1.5772), each the
+review's script's root to 0.000 %.
 
 ## Notes / known deviations
 

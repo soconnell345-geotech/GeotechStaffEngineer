@@ -42,8 +42,9 @@ def _no_circle(p):
 
 def test_a_flagged_headline_never_comes_alone():
     """GM-140 step 3, the review's ruling 5. ACADS 1(a) (printed 1.00), a
-    200-trial random Spencer search: the lowest solved surface (0.633 when
-    measured) is flagged and the lowest with no flag is higher (1.09).
+    200-trial random Spencer search: the lowest solved surface (1.092 when
+    measured; 0.633 until GM-344, a crossing at a negative lambda) is
+    flagged and the lowest with no flag is higher (1.096).
     Neither alone is safe, so the tool result gives the headline, its
     flags, the lowest surface with no flag and the option that refuses
     flagged surfaces, as fields and in its one-sentence summary."""
@@ -58,7 +59,7 @@ def test_a_flagged_headline_never_comes_alone():
     fos = r["critical"]["FOS"]
     flags = r["critical_flags"]
     low = r["lowest_unflagged"]["FOS"]
-    assert {"base_tension", "side_tension", "thrust_outside"} <= set(flags)
+    assert {"side_tension", "thrust_outside"} <= set(flags)
     assert low > fos
     assert "low_m_alpha='refuse'" in r["refuse_option"]
     s = r["summary"]
