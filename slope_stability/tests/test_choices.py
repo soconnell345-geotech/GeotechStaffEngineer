@@ -160,9 +160,14 @@ def test_families_cut_off_by_the_windows_given_say_so():
     r = search_critical_surface(_geom(), x_entry_range=(0, 4),
                                 x_exit_range=(14, 20))
     fam = _by_what(r)["surface families scored"]
-    assert fam["chosen"] == "circular, toe circle"
+    # GM-343: a toe circle ends at the toe (x = 5), outside the entry
+    # window given (0 to 4), so none is scored. (Before, a "toe circle"
+    # was carried on under the level ground in front of the toe and
+    # entered at x 3.99, inside the window.)
+    assert fam["chosen"] == "circular"
     assert ("circle passing above the toe: none scored, none within the "
             "windows and ranges given") in fam["basis"]
     assert r.families_not_scored == {
+        "toe_circle": "none within the windows and ranges given",
         "circle_above_toe": "none within the windows and ranges given",
         "infinite_slope": "no face of c' = 0 soil"}

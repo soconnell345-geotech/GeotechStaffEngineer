@@ -218,6 +218,30 @@ def _deployed() -> bool:
         return False
 
 
+def _foundry() -> bool:
+    """A Palantir Foundry deployment (``GEOTECH_DEPLOYMENT=foundry``, set by
+    :mod:`aec_document_review.foundry_entry` or by whatever else starts the
+    page there): one published app, one process, for everyone who opens it,
+    and no header names them."""
+    try:
+        from aec_agent_core import engine_config
+        return engine_config.is_foundry_deployment()
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
+def _bind_turns() -> None:
+    """Several people share this process: from now on each turn's tools use
+    the folder bound to that turn and never fall back to the process-wide
+    working-folder env var, which belongs to whoever reran last (live smoke
+    2c, D1). Process-wide and idempotent; best-effort."""
+    try:
+        from aec_agent_core._fileio import require_turn_binding
+        require_turn_binding(True)
+    except Exception:                                  # noqa: BLE001
+        pass
+
+
 def header_name() -> str:
     return os.environ.get(HEADER_ENV, "").strip() or DEFAULT_HEADER
 
@@ -284,17 +308,19 @@ def current_identity() -> Identity:
 
     On the deployed host the header is the ONLY source: without it the
     answer is :data:`UNIDENTIFIED` (``DEV_IDENTITY`` is for a local run, and
-    is not read there)."""
+    is not read there).
+
+    A process that serves several people binds each turn's tools to its own
+    conversation's folder (:func:`_bind_turns`): when the header names the
+    caller, and on Foundry, where nobody is named (BACKLOG INF-80). Foundry
+    still gets the one unnamed user, so its viewers share one list of
+    conversations (OWN-152) and nobody is refused."""
+    if _foundry():
+        _bind_turns()
     ident = from_header_values(_streamlit_header_values())
     if ident is not None:
         if ident.multi_user:
-            # Several people share this process: tools must never fall back
-            # to the process-wide working-folder env var (live smoke 2c, D1).
-            try:
-                from aec_agent_core._fileio import require_turn_binding
-                require_turn_binding(True)
-            except Exception:                          # noqa: BLE001
-                pass
+            _bind_turns()
         return ident
     if _deployed():
         log.warning("No usable %s header on the deployed host: the request "

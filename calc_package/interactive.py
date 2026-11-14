@@ -128,11 +128,18 @@ def slope_interactive_figure(result, geom, search=None):
             if fos >= 900 or not R or R <= 0:
                 continue
             try:
-                slip = CircularSlipSurface(g['xc'], g['yc'], R)
-                x_en, x_ex = slip.find_entry_exit(geom)
+                # every arc of the circle below the ground (GM-343)
+                arcs = CircularSlipSurface(g['xc'], g['yc'], R).arcs(geom)
             except ValueError:
                 continue
-            txs = np.linspace(x_en, x_ex, 60)
+            if not arcs:
+                continue
+            parts = []
+            for k, arc in enumerate(arcs):
+                if k:
+                    parts.append(np.array([np.nan]))
+                parts.append(np.linspace(arc.x_start, arc.x_end, 60))
+            txs = np.concatenate(parts)
             dx = np.clip(txs - g['xc'], -R, R)
             tzs = g['yc'] - np.sqrt(np.maximum(R**2 - dx**2, 0.0))
             trials.append((fos, txs, tzs))

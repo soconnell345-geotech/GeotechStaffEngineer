@@ -71,7 +71,8 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
-from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
+from slope_stability.slip_surface import (
+    CircularSlipSurface, PolylineSlipSurface, circle_of)
 from slope_stability.results import SearchResult, SlopeStabilityResult
 from geotech_common.water import GAMMA_W as _GAMMA_W
 
@@ -297,7 +298,7 @@ def search_toe_circles(geom: SlopeGeometry,
     from slope_stability.search import (
         _compute_fos, _check_entry_exit, _FOS_MAX, _time_up, _record_not_run,
         _scoring_family, _dips_below_base,
-    )
+     _remember_arc)
 
     scan_method = ("bishop" if method in _SCREENED_METHODS and fos_fn is None
                    else method)
@@ -323,16 +324,42 @@ def search_toe_circles(geom: SlopeGeometry,
     us = [u_lo + (u_hi - u_lo) * i / (n_t - 1) for i in range(n_t)]
     u_step = (u_hi - u_lo) / (n_t - 1)
 
-    def circle_fos(xc, yc, r, fos_method, family=TOE_CIRCLE):
+    def toe_arc(ch, xc, yc, r):
+        """The family's trial surface on the circle through the chord's two
+        ends (GM-343, "Where a circle ends"): the arc of that circle whose
+        downslope end is the chord's start (the toe, or the point on the
+        face), carrying its two ends, or None where the circle has no such
+        arc (it is in the air above the start, or runs on below it). The
+        arc ends at the toe: none is carried under the ground in front of
+        it. Before, the radius was shrunk by a millionth so that the arc
+        passed just above the toe, and the 200-point sampling stepped over
+        the gap, so a circle that came back under the ground in front of
+        the toe was read as one surface from there (Taylor's circle for a
+        vertical cut: 2.676 for 0.851)."""
+        slip = CircularSlipSurface(xc, yc, r)
+        try:
+            arcs = slip.arcs(geom)
+        except ValueError:
+            return None
+        tol = ch.get("tol", 1e-6 * max(1.0, r))
+        for a in arcs:
+            low = a.x_start if ch["s"] > 0 else a.x_end
+            if abs(low - ch["toe"][0]) <= tol:
+                if len(arcs) > 1:
+                    _remember_arc(slip, a)
+                return a
+        return None
+
+    def circle_fos(ch, xc, yc, r, fos_method, family=TOE_CIRCLE):
         if _time_up():          # the search's time budget is spent (GM-123)
             _record_not_run("part of the toe-circle and circle-above-the-"
                             "toe families")
             return _FOS_MAX
         if not _centre_admissible(geom, xc, yc, x_range, y_range):
             return _FOS_MAX
-        # A hair inside the toe so the arc crosses the ground just above
-        # it (a circle exactly through a model-edge toe finds one crossing).
-        slip = CircularSlipSurface(xc, yc, r * (1.0 - 1e-6))
+        slip = toe_arc(ch, xc, yc, r)
+        if slip is None:
+            return _FOS_MAX
         if windows_given and not _check_entry_exit(
                 geom, slip, x_entry_range, x_exit_range):
             return _FOS_MAX
@@ -357,7 +384,7 @@ def search_toe_circles(geom: SlopeGeometry,
             return None
         return {"toe": toe, "c": c, "mx": 0.5 * (xl + xr),
                 "mz": 0.5 * (zl + zr), "px": -dz / c, "pz": dx / c,
-                "xl": xl, "xr": xr}
+                "xl": xl, "xr": xr, "s": s}
 
     def below_base(ch, xc, yc, r):
         """True when the circle reaches below the bottom of the deepest
@@ -369,8 +396,8 @@ def search_toe_circles(geom: SlopeGeometry,
         admitted slightly different circles. Where the toe sits on the
         base, a circle through it that dips under the base pivots about the
         toe into ground the model does not have (Slide2 #85)."""
-        return _dips_below_base(
-            geom, CircularSlipSurface(xc, yc, r * (1.0 - 1e-6)))
+        slip = toe_arc(ch, xc, yc, r)
+        return slip is not None and _dips_below_base(geom, slip)
 
     def circ(ch, u):
         """Circle through both chord ends, its centre a distance
@@ -391,7 +418,7 @@ def search_toe_circles(geom: SlopeGeometry,
                 return _FOS_MAX
             if ch.get("above") and not passes_above_toe(ch, xc, yc, r):
                 return _FOS_MAX
-            return circle_fos(xc, yc, r, fos_method,
+            return circle_fos(ch, xc, yc, r, fos_method,
                               ABOVE_TOE if ch.get("above") else TOE_CIRCLE)
 
         if bracket is None:
@@ -428,14 +455,11 @@ def search_toe_circles(geom: SlopeGeometry,
         not a reverse-curvature circle closed by a crack: the family's
         circles keep their centre above the ground at both ends (the
         circles through the toe follow ``reverse_curvature``; GM-127)."""
-        slip = CircularSlipSurface(xc, yc, r * (1.0 - 1e-6))
-        try:
-            ends = slip.find_entry_exit(geom)
-        except ValueError:
-            return True     # scored as refused (and counted) by circle_fos
-        low = ends[0] if ch["s"] > 0 else ends[1]
-        return (abs(low - ch["toe"][0]) <= ch["tol"]
-                and slip.reverse_curvature_crack(geom, *ends) is None)
+        slip = toe_arc(ch, xc, yc, r)
+        if slip is None:
+            return True     # no such arc: not scored (circle_fos)
+        ends = slip.find_entry_exit(geom)
+        return slip.reverse_curvature_crack(geom, *ends) is None
 
     heights = ((_ABOVE_TOE_HEIGHTS if fos_fn is None
                 else _ABOVE_TOE_HEIGHTS_FOS_FN) if above_toe else ())
@@ -550,16 +574,20 @@ def search_toe_circles(geom: SlopeGeometry,
     if shortlist and shortlist[0][0] < _FOS_MAX:
         fos, ch, u, _h = shortlist[0]
         xc, yc, r = circ(ch, u)
-        best.update(FOS=fos, xc=xc, yc=yc, radius=r * (1.0 - 1e-6),
-                    toe=ch["toe"])
+        arc = toe_arc(ch, xc, yc, r)
+        best.update(FOS=fos, xc=xc, yc=yc, radius=r, toe=ch["toe"],
+                    arc=None if arc is None else (arc.x_start, arc.x_end))
     if heights:
         best["faces"] = [dict(f, heights=list(heights)) for f in covered]
         best["above_toe"] = {"FOS": _FOS_MAX}
         if above and above[0][0] < _FOS_MAX:
             fos, ch, u, h = above[0]
             xc, yc, r = circ(ch, u)
+            arc = toe_arc(ch, xc, yc, r)
             best["above_toe"] = {"FOS": fos, "xc": xc, "yc": yc,
-                                 "radius": r * (1.0 - 1e-6),
+                                 "radius": r,
+                                 "arc": (None if arc is None
+                                         else (arc.x_start, arc.x_end)),
                                  "start": ch["toe"], "height": h,
                                  "face_toe": ch["face_toe"]}
     best["n_evaluated"] = counter[0]
@@ -659,6 +687,50 @@ def _planar_surface(geom: SlopeGeometry, xa: float, xb: float,
         return None
 
 
+# The infinite slope with c' = 0 and the water at the face's surface, by
+# the reading the run used (GM-140 step 5a review): (formula, condition).
+_SEEPAGE_FORMS = {
+    "water_table": (
+        "(gamma'/gamma_sat) tan(phi')/tan(beta)",
+        "a face with a water table at its surface and seepage parallel to "
+        "it (water_line_kind 'water_table'; FHWA NHI-06-088 Eq. 6-10, "
+        "p. 6-8)"),
+    "piezometric": (
+        "(gamma_sat cos^2(beta) - gamma_w) tan(phi') / (gamma_sat "
+        "sin(beta) cos(beta))",
+        "a face with a piezometric line at its surface (water_line_kind "
+        "'piezometric', the default: the full head, u = gamma_w z)"),
+    "rapid_drawdown": (
+        "(gamma'/gamma) tan(phi')/tan(beta)",
+        "a face saturated to the surface with seepage parallel to it (as "
+        "after a rapid drawdown)"),
+}
+
+
+def _seepage_closed_form(closed: float, beta_deg: float, gsat: float,
+                         reading: str) -> float:
+    """The infinite slope's FOS for c' = 0 with the water at the face's
+    surface, by the reading of the water line (``_SEEPAGE_FORMS``).
+    ``closed`` is the dry form tan(phi')/tan(beta).
+
+    - 'water_table' (u = gamma_w z cos^2(beta)): (gamma'/gamma_sat)
+      tan(phi')/tan(beta), FHWA NHI-06-088 Eq. 6-10, p. 6-8.
+    - 'piezometric' (the full head, u = gamma_w z), the same statics:
+      (gamma_sat cos^2(beta) - gamma_w) tan(phi') / (gamma_sat sin(beta)
+      cos(beta)), that is the dry form x (1 - gamma_w / (gamma_sat
+      cos^2(beta))).
+    - 'rapid_drawdown' (a drawdown search, whose pools are level):
+      (gamma'/gamma) tan(phi')/tan(beta), the saturated face a rapid
+      drawdown leaves, as before.
+    """
+    if gsat <= 0:
+        return 0.0
+    if reading == "piezometric":
+        c2 = math.cos(math.radians(beta_deg)) ** 2
+        return closed * max(gsat * c2 - _GAMMA_W, 0.0) / (gsat * c2)
+    return closed * max(gsat - _GAMMA_W, 0.0) / gsat
+
+
 def check_infinite_slope(geom: SlopeGeometry,
                          method: str = PLANAR_METHOD,
                          n_slices: int = 30,
@@ -703,18 +775,20 @@ def check_infinite_slope(geom: SlopeGeometry,
     best_fos, best_slip = _FOS_MAX, None
     checks: List[Dict[str, Any]] = []
     n_eval = 0
+    reading = ("rapid_drawdown" if fos_fn is not None
+               else getattr(geom, "water_line_kind", "piezometric"))
     for run in cohesionless_face_runs(geom):
         beta = run["slope_angle_deg"]
         closed = (math.tan(math.radians(run["phi_deg"]))
                   / math.tan(math.radians(beta)))
-        gsat = run["gamma_sat"]
-        seep = closed * max(gsat - _GAMMA_W, 0.0) / gsat if gsat > 0 else 0.0
+        seep = _seepage_closed_form(closed, beta, run["gamma_sat"], reading)
         check = {
             "x_from": round(run["x_from"], 3), "x_to": round(run["x_to"], 3),
             "slope_angle_deg": round(beta, 3), "layer": run["layer"],
             "phi_deg": run["phi_deg"],
             "FOS_dry_closed_form": round(closed, 4),
             "FOS_seepage_closed_form": round(seep, 4),
+            "seepage_reading": reading,
             "FOS": None, "note": "",
         }
         checks.append(check)
@@ -788,6 +862,13 @@ def _make_result(geom, slip, fos, method_label, n_slices) -> Optional[
     kw = {}
     if getattr(slip, "is_circular", True):
         kw = dict(xc=slip.xc, yc=slip.yc, radius=slip.radius)
+        if slip.is_bound:
+            # which arc of its circle it is, where the circle was split
+            # (GM-343)
+            from slope_stability.slip_surface import describe_arc
+            found = slip.meetings(geom)
+            if len(found.arcs) > 1:
+                kw["arc"] = describe_arc(slip, found)
     else:
         kw = dict(slip_points=list(slip.points))
     return SlopeStabilityResult(
@@ -802,7 +883,7 @@ def _attach_reinforcement(geom, crit) -> None:
     from slope_stability.search import trial_reinforcement
     if crit is None:
         return
-    slip = (CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+    slip = (circle_of(crit)
             if crit.is_circular else PolylineSlipSurface(crit.slip_points))
     try:
         forces = trial_reinforcement(geom, slip)
@@ -826,7 +907,7 @@ def _crack_statement(geom, crit, method: str, n_slices: int, tol: float,
         return None
     from slope_stability import cracks
     from slope_stability.search import _compute_fos
-    slip = (CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+    slip = (circle_of(crit)
             if crit.is_circular else PolylineSlipSurface(crit.slip_points))
     try:
         if cracks.may_need_solution(geom, slip):
@@ -879,7 +960,7 @@ def _support_arm_warning(geom, crit, method: str, n_slices: int,
         _FOS_MAX
     from slope_stability.slices import build_slices
     from slope_stability.reinforcement import support_moment
-    slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+    slip = circle_of(crit)
     try:
         from slope_stability.cracks import geometry_at_fos
         forces = trial_reinforcement(geom, slip)
@@ -1070,8 +1151,9 @@ def _depth_ratio(geom: SlopeGeometry, crit) -> float:
 def _infinite_slope_match(checks, crit, fos: float):
     """(run, text) when ``crit`` lies on a cohesionless face run and its FOS
     is within ``_PLANAR_TIE`` of what the infinite slope gives there: the
-    closed form for a dry face, tan(phi') / tan(beta), or for seepage
-    parallel to the face with the water at the surface, (gamma'/gamma)
+    closed form for a dry face, tan(phi') / tan(beta), or with the water at
+    the surface the form for the reading the run used (``seepage_reading``,
+    ``_SEEPAGE_FORMS``), in a drawdown search (gamma'/gamma)
     tan(phi') / tan(beta) (Duncan, Wright & Brandon 2014, Ch. 14;
     `infinite_slope_fos`) -- the saturated face a rapid drawdown leaves
     (Pilarcitos: a circle 9 ft long and an inch deep at 1.075 against
@@ -1087,10 +1169,9 @@ def _infinite_slope_match(checks, crit, fos: float):
                      f"for a dry face"))
         seep = c.get("FOS_seepage_closed_form")
         if seep:
-            refs.append((seep, f"(gamma'/gamma) tan(phi')/tan(beta) = "
-                               f"{seep:.3f} for a face saturated to the "
-                               f"surface with seepage parallel to it (as "
-                               f"after a rapid drawdown)"))
+            formula, condition = _SEEPAGE_FORMS[
+                c.get("seepage_reading", "rapid_drawdown")]
+            refs.append((seep, f"{formula} = {seep:.3f} for {condition}"))
         if c["FOS"] is not None:
             refs.append((c["FOS"], f"the planar surfaces parallel to the "
                                    f"face score {c['FOS']:.3f}"))
@@ -1182,7 +1263,8 @@ def _profile_end_warning(geom, crit, method: str, n_slices: int, tol: float,
     if best is None:
         return None
     f, xc, yc, r = best
-    slip = CircularSlipSurface(xc, yc, r)
+    from slope_stability.search import _governing_circle
+    slip = _governing_circle(ext, xc, yc, r, scan, n_slices, tol, fos_fn)
     try:
         x_in, x_out = slip.find_entry_exit(ext)
     except ValueError:
@@ -1301,7 +1383,8 @@ def apply_supplements(geom: SlopeGeometry,
             if toe["FOS"] < best_fos:
                 r = _make_result(
                     geom, CircularSlipSurface(toe["xc"], toe["yc"],
-                                              toe["radius"]),
+                                              toe["radius"],
+                                              *(toe.get("arc") or ())),
                     toe["FOS"], method.capitalize(), n_slices)
                 if r is not None:
                     best_kind, best, best_fos = TOE_CIRCLE, r, toe["FOS"]
@@ -1311,7 +1394,8 @@ def apply_supplements(geom: SlopeGeometry,
             if above["FOS"] < best_fos:
                 r = _make_result(
                     geom, CircularSlipSurface(above["xc"], above["yc"],
-                                              above["radius"]),
+                                              above["radius"],
+                                              *(above.get("arc") or ())),
                     above["FOS"], method.capitalize(), n_slices)
                 if r is not None:
                     best_kind, best, best_fos = ABOVE_TOE, r, above["FOS"]
@@ -1604,7 +1688,7 @@ def m_alpha_confirmation(geom: SlopeGeometry, crit, method: str,
     if crit is None or method == "fellenius":
         return None
     if getattr(crit, "is_circular", False):
-        slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+        slip = circle_of(crit)
     elif crit.slip_points and len(crit.slip_points) >= 2:
         slip = PolylineSlipSurface(points=[tuple(p) for p in crit.slip_points])
     else:
@@ -2224,6 +2308,30 @@ def search_choices(result: SearchResult, *, surface_type: str,
                               scored_with or method, m_alpha,
                               m_alpha_rule, action=low_m_alpha,
                               n_flagged=n_low))
+    from slope_stability.search import _split_so_far, _outside_so_far
+    split = _split_so_far()
+    if split:
+        from geotech_common.choices import MODULE as _MODULE, choice as _ch
+        n_out = sum(_outside_so_far().values())
+        out.append(_ch(
+            "circles that meet the ground at more than two points",
+            f"split at those points, each arc inside the windows scored as "
+            f"a trial surface of its own: {sum(split.values())} circle(s)"
+            + (f"; {n_out} arc(s) outside the windows, not scored "
+               f"(arcs_outside_windows)" if n_out else ""),
+            _MODULE,
+            "the module's rule (GM-343, 2026-11-13): no reference in hand "
+            "prints one for a circle that crosses the ground more than "
+            "twice (Slide2 refuses it). An arc is a slip surface between "
+            "two points where the circle meets the ground; an arc with no "
+            "net driving moment has no factor of safety and is counted "
+            "(no_solution, no_driving); no arc is carried under the "
+            "ground in front of a toe. The toe-circle and circle-above-"
+            "the-toe families score only the arc that ends at the toe or "
+            "face point. Circles ending on a face: FHWA "
+            "NHI-06-088 p. 6-38; exits at every height of the face: GEC "
+            "11 p. 9-6. circles_split counts them and critical.arc names "
+            "the governing arc"))
     out.extend(acceptability_choices(result, scored_with or method,
                                      low_m_alpha, negative_friction_term))
     if budget is not None:
@@ -2255,7 +2363,7 @@ def budget_choice(budget) -> Dict[str, Any]:
 def _surface_of(crit):
     """The slip surface of a result, or None."""
     if getattr(crit, "is_circular", False) and crit.radius > 0:
-        return CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+        return circle_of(crit)
     if crit.slip_points and len(crit.slip_points) >= 2:
         return PolylineSlipSurface(points=list(crit.slip_points))
     return None

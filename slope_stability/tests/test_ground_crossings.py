@@ -23,6 +23,13 @@ sliding mass whose equilibrium the method of slices takes (Duncan, Wright &
 Brandon 2014, Ch. 6). Such a surface is refused (``GroundCrossingError``)
 and the searches count the refusals (``n_rejected_ground_crossings``).
 
+Since GM-343 ("Where a circle ends", 2026-11-13; ``test_circle_ends.py``)
+that refusal holds for polylines only. A circle that meets the ground at
+more than two points is split there and each arc below the ground is a
+trial surface of its own; the searches count the circles split
+(``circles_split``). The tests below that refused such a circle now check
+the split.
+
 Refusing them showed what they had hidden: the default search scored no
 circle that comes out on the face. Its automatic windows meet at the middle
 of the face, so on w10 every circle it scored entered below z = 5, and the
@@ -48,7 +55,7 @@ from slope_stability.search_supplements import search_toe_circles
 from slope_stability.slices import build_slices
 from slope_stability.slip_surface import (
     _TOUCH_FRACTION, CircularSlipSurface, GroundCrossingError,
-    PolylineSlipSurface,
+    PolylineSlipSurface, SeveralArcsError, circle_of,
 )
 
 
@@ -76,32 +83,43 @@ def _clay85():
 # GM-122: the rule on one surface
 # ---------------------------------------------------------------------------
 
-def test_a_circle_crossing_the_ground_four_times_is_refused():
+def test_a_circle_crossing_the_ground_four_times_is_two_arcs():
+    """GM-343: the circle is split where it meets the ground. Asked for its
+    one entry and exit it has none (two arcs, none named); analysed, each
+    arc is a surface of its own and the result is the slope's mass (the
+    sliver under the level ground has no driving moment)."""
     slip = CircularSlipSurface(10.0, 39.5, 40.0)
-    with pytest.raises(GroundCrossingError) as err:
+    with pytest.raises(SeveralArcsError) as err:
         slip.find_entry_exit(_w10())
-    (a0, b0), (a1, b1) = err.value.stretches
+    (a0, b0), (a1, b1) = err.value.arcs
     assert (a0, b0) == pytest.approx((3.695, 16.305), abs=0.01)
     assert (a1, b1) == pytest.approx((21.059, 37.014), abs=0.01)
-    assert "2 separate stretches" in str(err.value)
-    assert "sliding mass" in str(err.value)
-    # a ValueError, so every caller that refuses a bad surface refuses it
+    assert "bounds 2 arcs" in str(err.value)
+    # a ValueError: a caller that needs one surface and was given none
     assert isinstance(err.value, ValueError)
+    assert not isinstance(err.value, GroundCrossingError)
     with pytest.raises(ValueError):
         build_slices(_w10(), slip, 40)
-    with pytest.raises(ValueError):
-        analyze_slope(_w10(), slip_surface=slip, method="bishop")
+    r = analyze_slope(_w10(), slip_surface=slip, method="bishop",
+                      n_slices=40)
+    assert (r.x_entry, r.x_exit) == pytest.approx((21.059, 37.014),
+                                                  abs=0.01)
+    assert r.arc["index"] == 2 and r.arc["not_scored"] == {"no_driving": 1}
+    assert len(build_slices(_w10(), slip.arcs(_w10())[1], 40)) == 40
 
 
-def test_a_circle_below_the_ground_at_the_profile_end_and_on_the_face_is_refused():
-    """F61 [9]: the default search's critical circle before GM-122."""
+def test_a_circle_below_the_ground_at_the_profile_end_and_on_the_face():
+    """F61 [9]: the default search's critical circle before GM-122. Below
+    the ground at the profile's left end it runs out of the model there:
+    that stretch is not between two points where the circle meets the
+    ground, and is no arc. Its arc is the one on the face (GM-343; the
+    circle was refused before)."""
     slip = CircularSlipSurface(0.0, 50.0, 50.92)
-    with pytest.raises(GroundCrossingError) as err:
-        slip.find_entry_exit(_w10())
-    (a0, b0), (a1, b1) = err.value.stretches
+    found = slip.meetings(_w10())
+    ((a0, b0),) = found.runs_out
     assert a0 == 0.0 and b0 == pytest.approx(9.636, abs=0.01)
-    assert (a1, b1) == pytest.approx((26.549, 31.509), abs=0.01)
-    assert "the end of the profile" in str(err.value)
+    assert found.arcs == [slip.find_entry_exit(_w10())]
+    assert found.arcs[0] == pytest.approx((26.549, 31.509), abs=0.01)
 
 
 def test_a_circle_bounding_one_mass_is_scored_as_before():
@@ -182,16 +200,18 @@ def test_a_polyline_with_its_ends_on_the_ground_is_one_mass():
 # GM-122: the searches refuse and count
 # ---------------------------------------------------------------------------
 
-def test_the_default_search_reports_one_mass_and_counts_refusals():
+def test_the_default_search_reports_one_mass_and_counts_the_circles_split():
     g = _w10()
     r = search_critical_surface(g, method="bishop", n_slices=40)
-    assert r.n_rejected_ground_crossings > 0
-    assert r.to_dict()["n_rejected"]["ground_crossings"] == \
-        r.n_rejected_ground_crossings
-    assert "not one sliding mass" in r.summary()
+    # GM-343: circles are split, not refused, and counted by arcs given
+    assert r.n_rejected_ground_crossings == 0
+    assert sum(r.circles_split.values()) > 0
+    assert r.to_dict()["circles_split"] == {
+        str(k): v for k, v in r.circles_split.items()}
+    assert "split there" in r.summary()
     c = r.critical
-    slip = CircularSlipSurface(c.xc, c.yc, c.radius)
-    slip.find_entry_exit(g)                    # one stretch: no error
+    slip = circle_of(c)
+    slip.find_entry_exit(g)                    # one arc: no error
     assert len(build_slices(g, slip, 40)) == 40
     # the reported ends are the mass's own: no end out in the level ground
     # in front of the toe (F61 reported x 9.64 there)
@@ -375,8 +395,10 @@ def test_a_search_inside_another_adds_to_its_count():
                                     nx=6, ny=6, n_slices=30, refine=False,
                                     x_entry_range=(0, 25),
                                     x_exit_range=(25, 60))
-    assert inner.n_rejected_ground_crossings > 0
-    assert outer.n_rejected_ground_crossings >= inner.n_rejected_ground_crossings
+    # GM-343: the circles split (they were refused, and counted so)
+    n_in = sum(inner.circles_split.values())
+    assert n_in > 0
+    assert sum(outer.circles_split.values()) >= n_in
 
 
 # ---------------------------------------------------------------------------

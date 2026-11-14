@@ -97,7 +97,16 @@ def _search(slope_hv, method, infinite_slope=True):
         infinite_slope=infinite_slope, **_deep_windows(geom)).FOS
 
 
-def test_v052_pilarcitos_method_ordering_is_slope_invariant():
+# History (GM-140 step 5a): before step 9, on the assumed 3:1 section the
+# DWW and LK searches ended on different circles, DWW 1.5441 above LK
+# 1.5426, and the 3:1 case was a strict xfail. The cause was the K_c rule
+# then in use: a switch on the base inclination (|sin 2 alpha| = 0.05) that
+# made the 20-slice drawdown FOS jump 1.6 % within 1 mm of radius. Step 9
+# took K_c from Eq. G-11 (EM 1110-2-1902 p. G-7), which has no such switch;
+# merged with it the case passes (Corps 0.914 < DWW 1.1415 < LK 1.1454) and
+# the mark is off (module_work/gm140/STEP5A_CHECK.md, section 11).
+@pytest.mark.parametrize("slope", [2.0, 2.5, 3.0])
+def test_v052_pilarcitos_method_ordering_is_slope_invariant(slope):
     """The published three-method ordering Corps < DWW < LK (with DWW ~ LK, the
     stage-3 check barely firing) holds at every plausible upstream slope
     (2:1, 2.5:1, 3:1) — i.e. it is a strength-rule signature, not geometry-tuned.
@@ -108,12 +117,11 @@ def test_v052_pilarcitos_method_ordering_is_slope_invariant():
     1.105 -- the rapid-drawdown infinite slope, about (gamma'/gamma)
     tan(phi')/tan(beta), where the stage-3 drained check fires near the
     surface, a different mechanism from the one published."""
-    for slope in (2.0, 2.5, 3.0):
-        corps = _search(slope, "corps_2stage", infinite_slope=False)
-        lk = _search(slope, "lowe_karafiath", infinite_slope=False)
-        dww = _search(slope, "duncan_3stage", infinite_slope=False)
-        assert corps < dww < lk                     # published Corps < DWW < LK
-        assert dww == pytest.approx(lk, rel=0.05)   # DWW ~ LK (stage 3 barely fires)
+    corps = _search(slope, "corps_2stage", infinite_slope=False)
+    lk = _search(slope, "lowe_karafiath", infinite_slope=False)
+    dww = _search(slope, "duncan_3stage", infinite_slope=False)
+    assert corps < dww < lk                     # published Corps < DWW < LK
+    assert dww == pytest.approx(lk, rel=0.05)   # DWW ~ LK (stage 3 barely fires)
 
 
 def test_v052_pilarcitos_corps_reproduces_failure():

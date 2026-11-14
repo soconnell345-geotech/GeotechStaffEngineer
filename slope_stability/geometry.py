@@ -442,6 +442,16 @@ class SlopeGeometry:
     # result (``crack_refused``); one given to ``analyze_slope`` raises
     # ``cracks.ReverseCurvatureDiscarded``.
     reverse_curvature: str = "tension_crack"
+    # What ``gwt_points`` is (GM-140 step 5a, owner call OWN-104;
+    # ``slope_stability.pore_pressure``). 'piezometric' (default): a
+    # piezometric line, measured heads; the pore pressure at a base is
+    # gamma_w x the full vertical depth below it, never corrected.
+    # 'water_table': a water table with seepage parallel to it;
+    # u = h_w gamma_w cos^2(alpha_w), alpha_w the slope of the line above
+    # the base (FHWA NHI-06-088 Eq. 6-16, p. 6-14; UFC 3-220-10 Sec.
+    # 7-5.1, p. 355), not applied where the line is above the ground.
+    # The uncorrected head is the lower factor of safety.
+    water_line_kind: str = "piezometric"
     # This surface's crack, fixed by ``cracks.solve_with_crack`` on a copy.
     _crack_fixed: Optional[dict] = field(default=None, init=False,
                                          repr=False, compare=False)
@@ -454,6 +464,9 @@ class SlopeGeometry:
         if self.reverse_curvature not in ("tension_crack", "discard"):
             raise ValueError("reverse_curvature must be 'tension_crack' or "
                              f"'discard', got '{self.reverse_curvature}'")
+        if self.water_line_kind not in ("piezometric", "water_table"):
+            raise ValueError("water_line_kind must be 'piezometric' or "
+                             f"'water_table', got '{self.water_line_kind}'")
         if len(self.surface_points) < 2:
             raise ValueError("Surface must have at least 2 points")
         xs = [p[0] for p in self.surface_points]
