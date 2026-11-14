@@ -153,7 +153,9 @@ millionth; the 200-point sampling of `find_entry_exit` stepped over the gap.
    toe. A circle given without ends that passes under such a corner is one
    surface, as before this step, and its result names the corner and says
    how to end the arc there. The other form is one constant:
-   `slip_surface._SPLIT_AT_TOUCHED_CORNERS = True`.
+   `slip_surface._SPLIT_AT_TOUCHED_CORNERS = True`. Confirmed by the
+   orchestrator after the review: an allowance must not change the answer
+   ("Fix round after review", ruling 3).
 3. **One circle, several arcs, no arc named: the lowest governs**, in
    `analyze_slope`, rapid drawdown (lowest drawdown factor of safety) and
    the yield coefficient (lowest ky). The other form: refuse and ask for
@@ -168,7 +170,9 @@ millionth; the 200-point sampling of `find_entry_exit` stepped over the gap.
    ("every family scores each arc"; "set the arc's ends at the toe");
    this is the reading where the family is "circles ending at the toe".
 6. **With windows, only arcs inside the windows are scored**, and a split
-   circle with no arc inside is counted in `circles_split`.
+   circle with no arc inside is counted in `circles_split`. Since the fix
+   round the arcs left out are counted too (`arcs_outside_windows`, by
+   family) and the statements say "each arc inside the windows".
 7. **Ends given by a caller** must be within a thousandth of the radius of
    meeting points (a result's ends are often rounded) and are set on them.
 8. **Where no arc has a value**, the result returned is the first arc's
@@ -332,8 +336,9 @@ the factor of safety falls: a 5 m vertical cut in clay reads 0.851 instead
 of 0.935 (Taylor 0.851). A search given entry and exit windows that leave
 the toe out no longer reports a "toe circle" that entered in front of the
 toe. Results on ordinary slopes are unchanged. A search's result counts the
-circles it split (`circles_split`); `n_rejected.ground_crossings` now
-counts noncircular surfaces only. New inputs `arc_x_start` and `arc_x_end`
+circles it split (`circles_split`) and the arcs of those circles its
+entry / exit windows left out, not scored (`arcs_outside_windows`);
+`n_rejected.ground_crossings` now counts noncircular surfaces only. New inputs `arc_x_start` and `arc_x_end`
 name one arc of a circle.
 
 ## Stopped short of, and noted, not fixed
@@ -367,3 +372,172 @@ name one arc of a circle.
   the windows to a split circle's arcs; without windows nothing changes.
 - **`test_defaults_used[profile_figure|plot_data]`** fails on master in
   this environment; not this step's.
+
+## Fix round after review (2026-11-14)
+
+The review (`CIRCLE_ENDS_REVIEW.md`: pass with defects) and the
+orchestrator's three rulings. Branch `fix/gm140-circle-ends-review`.
+
+### The merge
+
+`origin/fix/gm140-step5a-review` (6dbd5d5: step 5a, already merged with
+master 3d553a8 = steps 3 and 9) merged first (a4ecf4c); `origin/master` was
+already inside it. Four files conflicted; each keeps both steps' rules:
+
+- `rapid_drawdown.py`: the result keeps step 9's stages, `choices` and
+  `notes` and this step's `arc`. The split comes after step 9's check of
+  the layers for the 1970 procedure (so that refusal is not turned into
+  "no arc can be analysed"), and each arc goes through the stages with
+  step 9's inputs (`drawdown_phreatic_points`, `stage_solver`,
+  `extra_boundaries`). Every stage is cut between the arc's two ends
+  (`find_entry_exit` of the bound arc), and 5a's pond edge
+  (`slice_breaks`) stays a slice boundary inside them.
+  `search_rapid_drawdown` re-analyses `circle_of(crit)` (merged clean).
+- The adapter's rapid-drawdown `returns`: step 9's keys plus `arc`.
+- `VALIDATION.md`: B-5a, then B23.
+- `manual.html`: rebuilt by `check_manual.py --rebuild --write` (the
+  cloud builder's hand edit is gone); `check_manual.py` and
+  `test_user_manual_current.py` pass. `geotech-references` at e1bbc5b.
+
+The merge moved no value of this step: on every row of the table below
+the branch reads what it read before the merge, and the drawdown rows
+(two crossings) read what step 5a reads.
+
+### Ruling 1: V-043's force
+
+No code change. The pin stays 45.2 kN/m (printed 44 to 45). Its note, in
+the test and in B23, now says it is one of the two outcomes of a tie: the
+geosynthetic meets the slip surface on a slice boundary (x 8.388) and
+changes slice within 1e-8 m of the arc's ends; the base read 40.88 kN/m at
+R and 45.22 at R + 1e-8 m. The tie is step 8's (a stated rule for a
+crossing on a slice boundary, or a cut at the crossing), then a re-pin;
+the lead files the backlog item.
+
+### Ruling 2: what the engineer is told about scoring
+
+- `SearchResult.arcs_outside_windows` (`{family: arcs}`, beside
+  `circles_split`, the families named as `no_solution` names them;
+  in `to_dict` and the summary when not empty): the arcs of split circles
+  that lie outside the entry / exit windows, given or the main family's
+  automatic ones, and so are not scored. Counted per trial evaluation, as
+  `circles_split` (`search._count_outside`, from `_check_entry_exit` and
+  `_compute_fos`; the drawdown search names its families too).
+- The statements now say "each arc inside the windows scored as a trial
+  surface of its own": the summary (`results.py`), the search's choice
+  (`search_supplements.search_choices`, with the count), the adapter's
+  `circles_split` description, the docstrings.
+- DESIGN.md "Where a circle ends": the toe-circle and circle-above-the-toe
+  families score only the arc that ends at the toe or face point
+  (`search_toe_circles.toe_arc`); the circle's other arcs are not scored
+  by them and not counted. The choice's basis says the same. No new
+  scoring.
+- On the vertical cut the default Bishop search splits 553 circles and
+  leaves 586 arcs outside the main family's automatic windows (some
+  circles have both arcs outside); before this round those were counted
+  nowhere.
+- Test: `test_circle_ends.py::test_arcs_outside_the_windows_are_counted_not_scored`
+  (the default search of the vertical cut; and one centre with windows
+  given, where each split circle's lens is outside the entry window, is
+  counted and is not scored: no `no_driving`). The one-centre test
+  without windows now also asserts that nothing is counted.
+
+### Ruling 3: a corner passed under within the touch allowance
+
+`_SPLIT_AT_TOUCHED_CORNERS = False` stands, because an allowance must not
+change the answer: split there, the vertical cut's default search reads
+0.8440, the allowance acting as about 1 % more height (0.8511 x 5 / 5.05 =
+0.843); not split, it reads 0.85135 whatever the allowance (0.005, 0.01,
+0.02; the review's measurement). DESIGN.md says so; the warning of a
+result that names the touched corner now says the circle is not split
+there and why; "Calls made" (b) below lists both forms.
+
+### The check on the merged tree
+
+- Default Bishop search of Taylor's vertical cut: **0.85135**, against
+  0.8511 (Taylor, Ns 3.83): +0.03 % (limit 2 %).
+- The arc ended at the toe (centre (13.02, 10.96), R through the toe, to
+  x 24.5664, 30 slices): **0.85135**, against 0.8514 by hand: -0.01 %
+  (limit 0.5 %).
+
+### Table (`review/circleix_table.py`; baseline = origin/fix/gm140-step5a-review's slope_stability)
+
+| Case (the tests' own inputs) | Baseline (master with step 5a) | Branch | Change | Printed (page) | Cause |
+|---|---|---|---|---|---|
+| Vertical 5 m cut, cu 20, default Bishop search | 0.93529 (x 20.0 to 24.63) | 0.85135 (a toe circle, x 20.0 to 24.575) | -8.97 % | Taylor Ns 3.83: 0.8511 (FHWA NHI-06-088 Fig. 6-14, p. 6-27; the number from the spec) | the rule: split, and the toe circle ends at the toe |
+| The same, Taylor's circle ended at the toe (ends given), 30 slices | no such input (a circle took no ends) | 0.85135 | - | 0.8514 by hand | the rule |
+| Taylor 45 deg, D 2.25 (`test_taylor_undrained_nc`), default search | 1.9419 | 1.9419 | 0.00 % | 1.945 from the chart (FHWA NHI-06-088 Fig. 6-15, p. 6-28) | none (two crossings) |
+| ACADS 1(a), default Bishop search | 0.98514 | 0.98493 | -0.02 % | 1.00 (Giam and Donald 1989); Slide2 #1 0.987 | a toe circle ends at the toe (its own radius, no millionth shrink) |
+| ACADS 1(a), B3 entry / exit search 12 x 12, Bishop | 0.98514 | 0.98493 | -0.02 % | the same | the same |
+| ACADS 1(b), 3.81 m crack full of water, Slide2's grid, Bishop | 1.58962 | 1.58961 | -0.00 % | 1.596 (Slide2 Verification #2, Table 2.2, p. 25) | ends found exactly (7th figure) |
+| the same, Spencer | 1.58490 | 1.58490 | 0.00 % | 1.592 (the same) | none |
+| ACADS 4, weak-layer search (V-028 E8's inputs), Spencer | 0.83007 | 0.83007 | 0.00 % | 0.760 (Slide2 #9, Table 9.4, p. 52) | none (polylines) |
+| Slide2 #85 with its support, active, Bishop search | 1.50803 | 1.50803 | 0.00 % | D&W 1.51 (Duncan and Wright 2005, Fig. 6.34); Slide2 1.531 (Table 85.2) | none |
+| the same, GLE search | 1.57321 | 1.57257 (toe circle) | -0.04 % | Slide2 GLE 1.575 (Table 85.2) | a toe circle ends at the toe |
+| V-043 force to raise the sand circle to 1.35 (kN/m) | 40.881 | 45.223 | +10.6 % | 44 to 45 (Tandjiria et al. 2002; Slide2 verification) | the tie of ruling 1 (support crossing on a slice boundary) |
+| Step 9, EM example by Bishop, the manual's 12 slices, stages 1 / 2 / 3 | 2.19249 / 1.51375 / 1.43844 | 2.19249 / 1.51375 / 1.43844 | 0.00 % | 2.20 / 1.52 / 1.44 (EM 1110-2-1902 pp. G-15, G-18, G-20) | none |
+| #95 Corps 1970, force at 19.4 deg, 103 ft pool | 1.33793 | 1.33793 | 0.00 % | 1.35 (EM 1110-2-1902 p. G-15) | none |
+
+Other pins moved, from `git diff origin/fix/gm140-step5a-review...HEAD` on
+the test files and VALIDATION.md (not by running suites):
+
+| Pin | Before | After | Printed | Cause |
+|---|---|---|---|---|
+| `test_m_alpha.py`, the vertical cut, 4 pins (the strict xfail removed; default, `every_slice` flag, `refuse`) | 0.935 | 0.851 | 0.851 (Taylor, Ns 3.83) | the rule |
+| `test_published_v043_slope_reinforced.py`, the force | 40.9 | 45.2 | 44 to 45 | the tie (ruling 1) |
+| `test_choices.py`, windows that leave the toe out (entry 0 to 4, toe at 5): the governing family | "circular, toe circle" (1.3164) | "circular" (1.3198, not pinned) | none | no toe circle lies in the window: a toe circle ends at the toe |
+| `test_ground_crossings.py`, four tests that asserted a circle's refusal | refused | split; arc ends pinned (3.695, 16.305), (21.059, 37.014), (26.549, 31.509) | none | the rule |
+| B23 (VALIDATION.md): the vertical cut by Janbu / Spencer and M-P | 1.1250 / 0.9626 | 0.9137 / 0.8632 | 0.8511 (a moment solution) | the rule; Janbu's gap is step 6's |
+| B23: circles leaving the face 2 % / 5 % of H above the toe; the w10 circle by Bishop / Spencer | refused | 0.869 / 0.897; 7.355 / 7.387 | none | the rule |
+| `test_circle_ends.py` (new file), `method_probes.json` (a new probe, `analyze_slope#arc`) | - | new pins only | as in the file | - |
+
+### Calls made (confirmed after the review; for the owner, OWN-143)
+
+- **(a) GM-122's ruling replaced** (the orchestrator's, 2026-11-13): each
+  arc with ground above it is a trial surface of its own (built). The
+  other form: keep only the arc that holds the crest.
+- **(b) A circle passing under a corner within the touch allowance is not
+  split there** (built; `_SPLIT_AT_TOUCHED_CORNERS = False`), so the
+  answer does not depend on the allowance: 0.85135 on the vertical cut
+  whatever the allowance. The other form: split there (0.8440 on the
+  vertical cut; one constant, `True`).
+
+### Tests run in this round (each file alone, by exit code)
+
+Python `C:\dev\GeotechStaffEngineer\.venv` (3.14), PYTHONPATH the
+worktree's references, the worktree and `packages/aec-agent-core`
+(`slope_stability.__file__` printed from the worktree); one file at a time,
+each started with at least 3 GB free.
+
+| File | Exit | Result |
+|---|---|---|
+| slope_stability/tests/test_circle_ends.py | 0 | 15 passed |
+| slope_stability/tests/test_m_alpha.py | 0 | 18 passed |
+| slope_stability/tests/test_ground_crossings.py | 0 | 21 passed |
+| slope_stability/tests/test_choices.py | 0 | 7 passed |
+| slope_stability/tests/test_pore_pressure_as_printed.py | 0 | 50 passed |
+| slope_stability/tests/test_rapid_drawdown.py | 0 | 15 passed |
+| slope_stability/tests/test_rapid_drawdown_em_appendix_g.py | 0 | 23 passed |
+| slope_stability/tests/test_search_reinforcement.py | 0 | 33 passed |
+| funhouse_agent/tests/test_slope_stability_adapter.py | 0 | 94 passed |
+| validation_examples/test_published_v043_slope_reinforced.py | 0 | 8 passed, 1 xfailed |
+| validation_examples/test_published_v052_drawdown_pilarcitos.py | 0 | 6 passed |
+| validation_examples/test_published_v037_slope.py | 0 | 5 passed, 1 xfailed |
+| validation_examples/test_published_v041.py | 0 | 6 passed |
+| validation_examples/test_published_v048_drawdown_methods.py | 0 | 4 passed |
+| funhouse_agent/tests/test_adapter_ergonomics.py | 0 | 170 passed |
+| funhouse_agent/tests/test_calc_package_adapter.py | 0 | 87 passed |
+| geotech_common/tests/test_adapters.py | 0 | 101 passed |
+| funhouse_agent/tests/test_eval_suite_v54.py | 0 | 10 passed |
+| report_ingest/tests/test_recompute.py | 0 | 57 passed |
+| funhouse_agent/deep/tests/test_wave1_geotech.py | 1 | 19 passed, 1 failed |
+| webapp/tests/test_public_text.py | 0 | 5 passed |
+| module_work/doc10/check_manual.py --rebuild --write, then check_manual.py | 0, 0 | OK |
+| webapp/tests/test_user_manual_current.py | 0 | 1 passed |
+
+The one failure, `test_the_rapid_drawdown_tail_parameter_is_visible`,
+asserts that the deep agent's `describe_method` returns
+`rapid_drawdown_fos`'s doc whole. It fails on the baseline too: with step
+5a's `funhouse_agent` and `slope_stability` the doc is 16,569 characters
+before fitting, over the 16,000 cap, and comes back shortened (measured
+with the test's own call). The merge adds 1,368 characters (17,937), the
+`arc` key among them. Not this round's change; for the lead.

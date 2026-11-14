@@ -27,6 +27,7 @@ ground more than twice.
 Every geometry here is made up.
 """
 
+import functools
 import math
 
 import pytest
@@ -62,6 +63,13 @@ def _vertical_cut():
         surface_points=[(0, 0), (20, 0), (20.001, 5.0), (45, 5.0)],
         soil_layers=[SlopeSoilLayer("clay", 5.0, -10.0, 18.0, cu=20.0,
                                     analysis_mode="undrained")])
+
+
+@functools.lru_cache(maxsize=None)
+def _default_cut_search():
+    """The default Bishop search of the vertical cut (run once for the
+    tests that read it)."""
+    return search_critical_surface(_vertical_cut(), method="bishop")
 
 
 def _cut_over_rock():
@@ -175,7 +183,7 @@ def test_vertical_cut_default_search_reads_taylor():
     before, on a circle dipping 0.048 m under the floor, inside the touch
     allowance; circles leaving the face just above the toe were refused as
     two masses)."""
-    res = search_critical_surface(_vertical_cut(), method="bishop")
+    res = _default_cut_search()
     assert res.critical.FOS == pytest.approx(_TAYLOR, rel=0.02)
     # the governing surface ends at the toe, or on the face above it
     assert res.critical.x_entry >= 20.0 - 1e-6
@@ -252,6 +260,41 @@ def test_a_search_counts_the_circles_split_and_names_the_governing_arc():
     assert again.x_entry == arc["x_start"]
     assert "circles_split" in res.to_dict()
     assert "split there" in res.summary()
+    # no windows: every arc is scored, none is left out
+    assert res.arcs_outside_windows == {}
+    assert "arcs_outside_windows" not in res.to_dict()
+
+
+def test_arcs_outside_the_windows_are_counted_not_scored():
+    """The review of GM-343 (ruling 2). An arc of a split circle that lies
+    outside the search's entry / exit windows is not scored; it is counted
+    by family beside circles_split, and the statements say "each arc
+    inside the windows". On the vertical cut the default search's
+    automatic windows leave the lenses under the floor out: counted there,
+    not as no_driving. With windows given at one centre, the lens of each
+    split circle is left out and counted, and none is scored."""
+    res = _default_cut_search()
+    out = res.arcs_outside_windows
+    assert out.get("circular", 0) > 0       # the main family, as no_solution
+    assert all(n > 0 for n in out.values())
+    assert res.to_dict()["arcs_outside_windows"] == out
+    text = res.summary()
+    assert "each arc inside the windows scored" in text
+    assert "outside the windows, not scored" in text
+    (said,) = [c for c in res.choices
+               if c["what"].startswith("circles that meet the ground")]
+    assert "each arc inside the windows scored" in said["chosen"]
+    # one centre, windows given: entry at the toe, exit on the crest
+    geom = _vertical_cut()
+    win = grid_search(geom, x_range=(13.02, 13.02), y_range=(10.96, 10.96),
+                      nx=1, ny=1, method="bishop",
+                      x_entry_range=(19.0, 21.0), x_exit_range=(21.0, 45.0))
+    n_split = win.circles_split[2]
+    assert n_split > 0
+    # each split circle's lens (from x < 19) is outside the entry window
+    assert win.arcs_outside_windows["main"] >= n_split
+    assert all(r["no_driving"] == 0 for r in win.no_solution)
+    assert win.critical.x_entry == pytest.approx(20.0, abs=1e-6)
 
 
 # ---------------------------------------------------------------------------

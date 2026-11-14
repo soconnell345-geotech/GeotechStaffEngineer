@@ -1510,6 +1510,11 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
     search.trial_flags = flag_records(
         _flag_tally_so_far(),
         rename={"main": CIRCULAR if circular else NONCIRCULAR})
+    # Arcs of split circles the windows left out (GM-343 review).
+    from slope_stability.search import _outside_so_far, outside_records
+    search.arcs_outside_windows = outside_records(
+        _outside_so_far(),
+        rename={"main": CIRCULAR if circular else NONCIRCULAR})
     search.choices = search_choices(
         search, surface_type=surface_type, toe_circles=toe_circles,
         infinite_slope=infinite_slope,

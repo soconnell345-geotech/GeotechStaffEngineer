@@ -677,11 +677,20 @@ class SearchResult:
         Trial circles that meet the ground at more than two points
         (GM-343, "Where a circle ends"): ``{arcs: circles}``, the number of
         such circles by the number of arcs below the ground each gave.
-        Each arc was scored as a trial surface of its own, and the circle's
-        score is its lowest arc's; an arc with no driving moment, or one
-        the method has no solution on, is counted in ``no_solution`` under
-        its reason. Counted as ``n_rejected_ground_crossings`` is.
-        ``critical.arc`` says which arc the governing surface is.
+        Each arc inside the search's entry / exit windows was scored as a
+        trial surface of its own, and the circle's score is its lowest
+        arc's; an arc with no driving moment, or one the method has no
+        solution on, is counted in ``no_solution`` under its reason. Counted
+        as ``n_rejected_ground_crossings`` is. ``critical.arc`` says which
+        arc the governing surface is.
+    arcs_outside_windows : dict
+        The arcs of those split circles that lie outside the entry / exit
+        windows (given, or the main family's automatic ones) and so were
+        not scored (GM-343 review): ``{family: arcs}``, the families named
+        as in ``no_solution``; counted per trial evaluation, as
+        ``circles_split``. Empty where no window left an arc out. The
+        toe-circle and circle-above-the-toe families score only the arc
+        that ends at the toe or face point and count nothing here.
     n_rejected_m_alpha : int
         Trial surfaces, circular or not, the search left out because m_alpha
         = cos(a) (1 + tan(a) tan(phi) / F) fell below 0.2 on a slice at the
@@ -822,6 +831,7 @@ class SearchResult:
     n_rejected_jagged: int = 0
     n_rejected_ground_crossings: int = 0
     circles_split: Dict[int, int] = field(default_factory=dict)
+    arcs_outside_windows: Dict[str, int] = field(default_factory=dict)
     n_rejected_m_alpha: int = 0
     # Surfaces the crack rule refused (GM-140 step 4 and its review's D5),
     # by reason (``cracks.REFUSAL_TEXT``): {reason: {'n', 'what',
@@ -870,8 +880,15 @@ class SearchResult:
             by = ", ".join(f"{k} with {a} arcs"
                            for a, k in sorted(self.circles_split.items()))
             lines.append(f"  Circles meeting the ground at more than two "
-                         f"points, split there and each arc scored: {n} "
-                         f"({by})")
+                         f"points, split there and each arc inside the "
+                         f"windows scored as a trial surface of its own: "
+                         f"{n} ({by})")
+        if self.arcs_outside_windows:
+            n_out = sum(self.arcs_outside_windows.values())
+            by_f = ", ".join(f"{f}: {k}" for f, k
+                             in self.arcs_outside_windows.items())
+            lines.append(f"  Arcs of those circles outside the windows, not "
+                         f"scored: {n_out} ({by_f})")
         if self.n_rejected_m_alpha:
             lines.append(f"  Left out, m_alpha < 0.2 on a slice "
                          f"(low_m_alpha='refuse'): "
@@ -998,6 +1015,9 @@ class SearchResult:
             # circles split where they meet the ground (GM-343)
             d["circles_split"] = {str(a): n for a, n
                                   in sorted(self.circles_split.items())}
+        if self.arcs_outside_windows:
+            # their arcs outside the windows, not scored, by family
+            d["arcs_outside_windows"] = dict(self.arcs_outside_windows)
         if self.no_solution:
             # trials the method has no solution on, by family and method
             d["no_solution"] = [dict(r) for r in self.no_solution]

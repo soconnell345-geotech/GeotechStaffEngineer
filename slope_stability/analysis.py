@@ -482,9 +482,12 @@ def analyze_slope(geom: SlopeGeometry,
                     f"corner at x = {x_c:.2f}, less than the touch "
                     f"allowance, and runs on below the ground to x = "
                     f"{x_entry if abs(x_entry - x_c) > abs(x_exit - x_c) else x_exit:.2f}"
-                    f": it is analysed as that one surface. If the "
-                    f"surface meant ends at the corner (a toe circle), "
-                    f"give the arc's two ends, one of them x = {x_c:.2f}.")
+                    f": it is analysed as that one surface. It is not "
+                    f"split at the corner (the module's call, GM-343: "
+                    f"splitting there would let the touch allowance "
+                    f"change the answer). If the surface meant ends at "
+                    f"the corner (a toe circle), give the arc's two ends, "
+                    f"one of them x = {x_c:.2f}.")
     result._no_solution_kind = primary.kind if not primary.solved else ""
     if is_circular:
         from slope_stability.search_supplements import _support_arm_warning
@@ -875,10 +878,14 @@ def search_critical_surface(
     it) is split at those points, and each arc below the ground is
     a trial surface of its own, solved and screened like any other; an arc
     with no driving moment has no factor of safety and is counted
-    (``no_solution``, ``no_driving``). ``circles_split`` counts the circles
-    split, by the arcs each gave, and ``critical.arc`` says which arc the
-    governing surface is. The toe circles end at the toe: no arc is carried
-    under the ground in front of it. The rule is the module's (no reference
+    (``no_solution``, ``no_driving``). With entry / exit windows (given,
+    or the main family's automatic ones) only the arcs inside them are
+    scored; ``arcs_outside_windows`` counts the others by family.
+    ``circles_split`` counts the circles split, by the arcs each gave, and
+    ``critical.arc`` says which arc the governing surface is. The toe
+    circles end at the toe: no arc is carried under the ground in front of
+    it, and those families score only the arc that ends at the toe or face
+    point. The rule is the module's (no reference
     in hand prints one; DESIGN.md "Where a circle ends"). A noncircular
     trial surface below the ground over more than one stretch is refused
     (GM-122, ``slip_surface.GroundCrossingError``);
@@ -1074,6 +1081,10 @@ def search_critical_surface(
         # warning when the governing family lost trials (GM-140 step 2).
         result.no_solution = no_solution_records(
             _no_solution_so_far(), rename={"main": search_kind})
+        # Arcs of split circles the windows left out (GM-343 review).
+        from slope_stability.search import _outside_so_far, outside_records
+        result.arcs_outside_windows = outside_records(
+            _outside_so_far(), rename={"main": search_kind})
         w = no_solution_warning(result)
         if w:
             result.warnings.append(w)

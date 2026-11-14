@@ -1125,7 +1125,8 @@ ground at more than two points (crossing it, or touching it; "The touch
 allowance" below says what counts as a touch) is split at those points.
 Each arc with ground above it is a trial surface of its own, solved and
 screened like any other (steps 2 to 4 apply to it unchanged), and a search
-scores each one. A mass with no
+scores each one that lies inside its entry / exit windows (it counts the
+others). A mass with no
 driving moment is refused, as any such surface is (step 2). Nothing is
 refused merely for being one of two masses, and no arc is carried under the
 ground in front of the toe. The result says which arc it is.
@@ -1179,9 +1180,10 @@ over the gap of about 2e-5 m that this left.
   13.00, 20.0, 24.57)` ends it there (0.850). A circle given *without* its
   ends is not split at such a corner: it crosses the ground twice and is
   that one surface, as before this step (2.677 for that circle), and the
-  result says which corner it passed under and how to end it there. A
-  corner the arc passes *through* (zero depth to a billionth of the
-  radius: a circle built through a toe) does split it.
+  result says which corner it passed under, that it is not split there
+  and why, and how to end it there. A corner the arc passes *through*
+  (zero depth to a billionth of the radius: a circle built through a toe)
+  does split it.
 - *Why a touched corner does not split an ungiven circle* (a call, for the
   owner; `_SPLIT_AT_TOUCHED_CORNERS`). The rule's words, "touching it
   within the touch allowance", can be read to split there too. Built that
@@ -1191,7 +1193,13 @@ over the gap of about 2e-5 m that this left.
   The vertical cut read 0.844 where its toe circles read 0.8514 (Taylor
   0.8511), and V-042's entry / exit search read 1.3269 for 1.3335 (printed
   1.334), a benchmark whose circles cross the ground twice. As built, both
-  read as print.
+  read as print. The orchestrator's ruling after the review (2026-11-13):
+  the builder's form stands, because an allowance must not change the
+  answer. Split there, the vertical cut's default search reads 0.8440,
+  the allowance acting as about 1 % more height (0.8511 x 5 / 5.05 =
+  0.843); not split, it reads 0.85135 whatever the allowance (0.005, 0.01
+  and 0.02 measured). The other form, for the owner (OWN-143): split there
+  (`_SPLIT_AT_TOUCHED_CORNERS = True`).
 - *A circle carries its arc's two ends*: `CircularSlipSurface(xc, yc,
   radius, x_start, x_end)`. `find_entry_exit` returns them, so the slices,
   the supports, the crack and every check are cut between them. `arcs(geom)`
@@ -1222,7 +1230,12 @@ over the gap of about 2e-5 m that this left.
   the same solve, the same counts (`no_solution` by family, method and
   reason, where an arc with no driving moment is counted under
   `no_driving`) and the same flags. With entry / exit windows, the arcs
-  inside the windows are scored. `SearchResult.circles_split` counts the
+  inside the windows are scored and the others are not: they are counted
+  by family in `SearchResult.arcs_outside_windows` (per trial evaluation,
+  as `circles_split`), the main family's automatic windows included, so
+  the statements say "each arc inside the windows". On the vertical cut
+  the default search's floor lenses are left out this way, not counted as
+  `no_driving`. `SearchResult.circles_split` counts the
   circles split by the number of arcs each gave (it replaces the count of
   circles refused; `n_rejected_ground_crossings` now counts polylines
   only). The search remembers the arc that scored lowest on each split
@@ -1234,7 +1247,10 @@ over the gap of about 2e-5 m that this left.
   (`search_supplements.search_toe_circles`) take, on the circle through
   each chord's two ends, the arc whose downslope end is the chord's start
   (the toe, or the point on the face). The radius is the circle's own. A
-  circle with no such arc is not one of the family's surfaces.
+  circle with no such arc is not one of the family's surfaces. These two
+  families score only that arc (`search_toe_circles.toe_arc`); the
+  circle's other arcs are not scored by them and are not counted in
+  `arcs_outside_windows` (the main search meets such circles itself).
 
 **A polyline** that leaves the ground and comes back into it is still
 refused (`GroundCrossingError`, GM-122 below): the rule above is for

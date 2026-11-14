@@ -195,15 +195,16 @@ def test_v043_sand_reinforcement_force_brackets_published():
     matching the published noncircular 56; see module note). ~55 kN/m
     before GM-134, 41 kN/m until GM-343.
 
-    The layer (z = 3) crosses this circle at x 8.388, which is also a slice
-    boundary (the same level is a layer top), and the circle leaves the
-    ground at x = 22 on that level. Which of the two slices at the
-    boundary takes the force is decided in the ninth figure: on the code
-    before GM-343 the same circle with its radius 1e-8 m larger also read
-    45 kN/m (Spencer 1.335 for 1.350 at T = 40.9). GM-343 finds the
-    circle's ends from the ground's segments (x = 22 exactly, where
-    bisection gave 22.0000003), which lands on the other side. Not a rule
-    of that step; the tie itself is for step 8 (supports)."""
+    The pin is one of the two outcomes of a tie. The geosynthetic (z = 3)
+    meets the slip surface on a slice boundary, x 8.388 (the same level is
+    a layer top), and changes slice within 1e-8 m of the arc's ends: on the
+    code before GM-343 the base read 40.88 kN/m at R and 45.22 kN/m at
+    R + 1e-8 m (Spencer 1.3501 against 1.3353 at T = 40.9). GM-343 finds
+    the circle's ends from the ground's segments (x = 22 exactly, where
+    bisection gave 22.0000003), which lands on the 45.22 side. Not a rule
+    of that step: the tie is for step 8 (supports), a stated rule for a
+    crossing on a slice boundary or a cut at the crossing, then a re-pin
+    (the review of GM-343, defect 1)."""
     xc, yc, r = _SAND_CIRC
     slip = CircularSlipSurface(xc=xc, yc=yc, radius=r)
     lo, hi = 0.0, 300.0

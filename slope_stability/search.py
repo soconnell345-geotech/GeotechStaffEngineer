@@ -223,10 +223,12 @@ def _count_ground_refusal() -> None:
 # two points are split there and each arc is scored as a trial surface of
 # its own (`_compute_fos`). The search running in this context counts the
 # circles split, by the number of arcs each gave ("split": {n_arcs: n}),
-# and remembers the arc that scored lowest on each split circle ("arc":
-# {(xc, yc, R): (x_start, x_end)}), so that the surface it reports, and
-# every later analysis of it, keeps that arc's two ends
-# (`_governing_circle`).
+# and the arcs of those circles that lie outside its entry / exit windows
+# and so are not scored, by family ("outside": {family: n};
+# `_check_entry_exit`, review of GM-343, ruling 2), and remembers the arc
+# that scored lowest on each split circle ("arc": {(xc, yc, R): (x_start,
+# x_end)}), so that the surface it reports, and every later analysis of
+# it, keeps that arc's two ends (`_governing_circle`).
 _ARCS: contextvars.ContextVar = contextvars.ContextVar(
     "slope_split_circles", default=None)
 
@@ -235,6 +237,35 @@ def _count_split(n_arcs: int) -> None:
     t = _ARCS.get()
     if t is not None and _FAMILY.get() is not None:
         t["split"][n_arcs] = t["split"].get(n_arcs, 0) + 1
+
+
+def _count_outside(n_arcs: int) -> None:
+    """Count arcs of a split circle that lie outside the search's entry /
+    exit windows: not scored, so counted here and not under a reason of
+    ``no_solution`` (counted per trial evaluation, as ``circles_split``)."""
+    t = _ARCS.get()
+    family = _FAMILY.get()
+    if t is not None and family is not None and n_arcs > 0:
+        t["outside"][family] = t["outside"].get(family, 0) + n_arcs
+
+
+def _outside_so_far() -> Dict[str, int]:
+    """The arcs of split circles left out by the windows so far by the
+    search running in this context, by family."""
+    t = _ARCS.get()
+    return dict(t["outside"]) if t is not None else {}
+
+
+def outside_records(counts: Dict[str, int],
+                    rename: Optional[Dict[str, str]] = None
+                    ) -> Dict[str, int]:
+    """``SearchResult.arcs_outside_windows`` from the tally, the families
+    named as ``no_solution`` names them."""
+    out: Dict[str, int] = {}
+    for family, n in counts.items():
+        name = (rename or {}).get(family, family)
+        out[name] = out.get(name, 0) + n
+    return out
 
 
 def _split_so_far() -> Dict[int, int]:
@@ -342,7 +373,7 @@ def _counts_refusals(fn):
         tally = [0, 0, {}, _new_flag_tally()]
         token = _REFUSALS.set(tally)
         outer_arcs = _ARCS.get()
-        arcs = {"split": {}, "arc": {}}
+        arcs = {"split": {}, "arc": {}, "outside": {}}
         token_arcs = _ARCS.set(arcs)
         try:
             result = fn(*args, **kwargs)
@@ -357,6 +388,9 @@ def _counts_refusals(fn):
                 for n_arcs, n in arcs["split"].items():
                     outer_arcs["split"][n_arcs] = (
                         outer_arcs["split"].get(n_arcs, 0) + n)
+                for family, n in arcs["outside"].items():
+                    outer_arcs["outside"][family] = (
+                        outer_arcs["outside"].get(family, 0) + n)
                 outer_arcs["arc"].update(arcs["arc"])
             if outer is not None:
                 outer[0] += tally[0]
@@ -369,6 +403,10 @@ def _counts_refusals(fn):
         if isinstance(target, SearchResult):
             target.n_rejected_ground_crossings = tally[0]
             target.circles_split = dict(sorted(arcs["split"].items()))
+            if not target.arcs_outside_windows:
+                # (search_critical_surface names the families itself)
+                target.arcs_outside_windows = outside_records(
+                    arcs["outside"])
             target.n_rejected_m_alpha = tally[1]
             if not target.no_solution:
                 # (search_critical_surface names the families itself)
@@ -1177,6 +1215,8 @@ def _compute_fos(geom: SlopeGeometry,
             return _FOS_MAX
         if n_arcs > 1:
             _count_split(n_arcs)
+            # the arcs the windows left out: not scored, counted
+            _count_outside(n_arcs - len(arcs))
             best, best_arc, best_info = _FOS_MAX, None, None
             for arc in arcs:
                 arc_info = {} if info is not None else None
@@ -1362,7 +1402,8 @@ def _check_entry_exit(geom, slip, x_entry_range, x_exit_range):
     if getattr(slip, "is_circular", False) and not slip.is_bound:
         # each arc of the circle is a trial surface (GM-343): the circle
         # passes where an arc lies inside the windows, and `_compute_fos`
-        # scores those arcs only
+        # scores those arcs only and counts the others
+        # (``arcs_outside_windows``)
         try:
             arcs = slip.arcs(geom)
         except ValueError:
@@ -1373,6 +1414,7 @@ def _check_entry_exit(geom, slip, x_entry_range, x_exit_range):
                                  if inside(a.x_start, a.x_end)]
             if not slip._window_arcs:
                 _count_split(len(arcs))     # split, and no arc inside
+                _count_outside(len(arcs))
             return bool(slip._window_arcs)
     try:
         x_entry, x_exit = slip.find_entry_exit(geom)

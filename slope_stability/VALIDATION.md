@@ -1090,8 +1090,13 @@ is in `module_work/gm140/STEP5A_CHECK.md`, section 11 (ruling 5's table).
 ## B23 — Where a circle ends (GM-343; GM-140 after step 3, 2026-11-13)
 
 A circle that meets the ground at more than two points is split there and
-each arc below the ground is a trial surface of its own; the toe circles
-end at the toe (DESIGN.md "Where a circle ends"). Measured before and after
+each arc below the ground is a trial surface of its own, scored by a
+search where it lies inside the entry / exit windows (the others are
+counted, `arcs_outside_windows`); the toe circles end at the toe
+(DESIGN.md "Where a circle ends"). Fix round after the review (merged
+with step 5a): the before / after table against master with step 5a is
+in the check file, "Fix round after review"; the merge moved no value of
+this step. Measured before and after
 with `module_work/gm140/circle_ends_section11.py`; the whole of section 11
 is in `module_work/gm140/CIRCLE_ENDS_CHECK.md`.
 
@@ -1106,7 +1111,7 @@ is in `module_work/gm140/CIRCLE_ENDS_CHECK.md`.
 | Circles leaving the face 2 % / 5 % of H above the toe | refused as two masses | 0.869 / 0.897 | - |
 | Cut over rock (w10), circle (10, 39.5) R 40, Bishop / Spencer | refused as two masses | 7.355 / 7.387, the slope's arc; the lens under the floor has no factor of safety | - |
 | w10 default search, Bishop | 0.9379 (86 circles refused) | 0.9379 (407 circles split) | - |
-| V-043 geosynthetic force to raise the pinned sand circle to 1.35 (Spencer) | 40.9 kN/m | 45.2 kN/m | 44-45 (circular). Not this step's rule: the layer crosses the circle on a slice boundary, and which neighbour takes the force flips on a change of 1e-8 m in the exit point (master reads 45.2 too with R 1e-8 m larger); the exit is now x = 22 exactly |
+| V-043 geosynthetic force to raise the pinned sand circle to 1.35 (Spencer) | 40.9 kN/m | 45.2 kN/m | 44-45 (circular). The pin is one of the two outcomes of a tie, not this step's rule: the geosynthetic meets the slip surface on a slice boundary (x 8.388) and changes slice within 1e-8 m of the arc's ends; the base read 40.88 kN/m at R and 45.22 at R + 1e-8 m. The exit is now x = 22 exactly, on the 45.22 side. The tie is for step 8 (a stated rule for a crossing on a slice boundary, or a cut at the crossing), then a re-pin |
 | Windows given that leave the toe out (entry 0 to 4, toe at 5) | 1.3164, a "toe circle" carried 1 m under the floor in front of the toe | 1.3198, the main search's circle; no toe circle lies in the window | - |
 
 Every pinned benchmark whose circles meet the ground at two points reads as

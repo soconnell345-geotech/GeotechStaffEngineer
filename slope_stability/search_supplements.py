@@ -2308,14 +2308,17 @@ def search_choices(result: SearchResult, *, surface_type: str,
                               scored_with or method, m_alpha,
                               m_alpha_rule, action=low_m_alpha,
                               n_flagged=n_low))
-    from slope_stability.search import _split_so_far
+    from slope_stability.search import _split_so_far, _outside_so_far
     split = _split_so_far()
     if split:
         from geotech_common.choices import MODULE as _MODULE, choice as _ch
+        n_out = sum(_outside_so_far().values())
         out.append(_ch(
             "circles that meet the ground at more than two points",
-            f"split at those points, each arc below the ground scored as "
-            f"a trial surface of its own: {sum(split.values())} circle(s)",
+            f"split at those points, each arc inside the windows scored as "
+            f"a trial surface of its own: {sum(split.values())} circle(s)"
+            + (f"; {n_out} arc(s) outside the windows, not scored "
+               f"(arcs_outside_windows)" if n_out else ""),
             _MODULE,
             "the module's rule (GM-343, 2026-11-13): no reference in hand "
             "prints one for a circle that crosses the ground more than "
@@ -2323,7 +2326,9 @@ def search_choices(result: SearchResult, *, surface_type: str,
             "two points where the circle meets the ground; an arc with no "
             "net driving moment has no factor of safety and is counted "
             "(no_solution, no_driving); no arc is carried under the "
-            "ground in front of a toe. Circles ending on a face: FHWA "
+            "ground in front of a toe. The toe-circle and circle-above-"
+            "the-toe families score only the arc that ends at the toe or "
+            "face point. Circles ending on a face: FHWA "
             "NHI-06-088 p. 6-38; exits at every height of the face: GEC "
             "11 p. 9-6. circles_split counts them and critical.arc names "
             "the governing arc"))
