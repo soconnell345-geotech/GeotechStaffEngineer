@@ -4574,6 +4574,44 @@
           }
         ],
         "multi": true
+      },
+      {
+        "label": "40. One method across the search (GM-140 step 6, built 2026-11-14), seven calls: (1) on a family of circles that the method named solves none of, the stand-ins are Spencer's method, then Bishop's simplified method, then Janbu's simplified method (Bishop's, then Janbu's, when a complete method is named), Bishop's being the method for circles (FHWA NHI-06-088 p. 6-20 and Table 6-1 Note 1, p. 6-21); planes and polylines keep Spencer, then Janbu; a stand-in never governs above the screen's own value on the same family without the result saying so; (2) where Janbu's simplified method stands in, its value keeps the correction factor f0, and the warning says f0 is applied, that it was not found in print (the account's D28), its value and the uncorrected factor of safety; (3) the circle check's circular search takes the caller's grid (nx, ny), and the tool says what it costs; (4) V-043's differential-evolution seeds are tested as a band (each seed's own minimum within 1.22 to 1.25) and as repeatable (the same seed twice gives the same value), not by exact pins, under the owner's rule on stochastic searches in the GitHub run; (5) the circle check (a noncircular search's critical circle scored as one of its trials, the result saying so) is on by default as the module's own call: EM 1110-2-1902 para. 4-2e(2), p. 4-7, says only that a noncircular search's initial surface \"should correspond to the estimated position of the critical slip surface\", and no page found says to check against the critical circle; (6) the reported factor of safety is the lowest over all families, also where a stand-in scored the governing family; `method_used` and a warning say so, and the named method's own lowest value is given beside it; (7) an Ordinary Method of Slices search that a support crosses on any trial surface is refused whichever method scores its families (since this step Spencer's method scores an OMS search's planes), and nothing stands in (the fix round's call in the merge with step 8, accepted by the orchestrator).",
+        "options": [
+          {
+            "label": "Let all seven stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) Spencer, then Janbu, on every family (the spec's order)",
+            "effect": "#85 without its support, Spencer named, reads 1.033 by Janbu's simplified method (with f0) instead of 0.911 by Bishop's simplified method standing in on the circles above the toe; Bishop's value on Janbu's circle is 0.937."
+          },
+          {
+            "label": "(2) Janbu standing in without f0",
+            "effect": "The uncorrected value is reported where Janbu stands in (on #85's case, 0.98 instead of 1.033 before the step's fix); f0 stays in Janbu's method when it is named."
+          },
+          {
+            "label": "(3) The circle check on its own 10 x 10 grid",
+            "effect": "Finer than a caller's small grid, and slower: the review measured noncircular searches 2 to 21 times their time without the check."
+          },
+          {
+            "label": "(4) Exact pins of each seed's own minimum",
+            "effect": "1.237, 1.234, 1.233 pinned exactly; against the owner's rule for tests the GitHub run executes (one such pin read 6.847 here and 8.34 there)."
+          },
+          {
+            "label": "(5) The circle check off by default",
+            "effect": "`circle_check=True` to ask for it; ACADS 1(a)'s 200-trial random polyline search by Spencer would report 1.0916 against the critical circle's 0.9838 (printed 1.00), with a line saying the noncircular minimum was not checked against a circle."
+          },
+          {
+            "label": "(6) The named method's own lowest value as the headline",
+            "effect": "Families scored by a stand-in are reported apart only; #86 with circles kept off the face and Bishop named would read 0.952 (Bishop, toe circle) instead of 0.944 (Spencer, infinite slope)."
+          },
+          {
+            "label": "(7) Refuse only the families the OMS scores",
+            "effect": "An OMS search crossed by a support refuses its circles, and its planes, scored by Spencer's method with the support, are reported apart under Spencer's name."
+          }
+        ],
+        "multi": true
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
