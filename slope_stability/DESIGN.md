@@ -1112,7 +1112,12 @@ gives the slice, the value, the side-force inclination and the forces on
 the slice, cites Whitman and Bailey and EM 1110-2-1902 C-10b (p. C-34:
 where the resultant on the base is nearly parallel to the side force, the
 factor of safety is not meaningful), and names C-10b's remedies where the
-slice's base is inclined against the sliding. `low_m_alpha='refuse'` leaves
+slice's base is inclined against the sliding. A slice the solve took
+frictionless (`base_in_tension='no_friction'`) is not looked at under the
+default rule, as a slice with phi' = 0 is not: its denominator,
+cos(alpha - theta_i), does not depend on F and its strength is c l whatever
+N' (the module's own reasoning, as for phi' = 0; `m_alpha_rule=
+'every_slice'` looks at it). `low_m_alpha='refuse'` leaves
 such a surface out of a search as it does any other. A search's
 `m_alpha_min` record (the search files, not this step's) still reads
 m_alpha.

@@ -1,5 +1,26 @@
 # GM-140, the GLE solver: a root, or no number (BACKLOG GM-344)
 
+**Fix round after review (2026-11-14): section 12.** It changes section 0
+items 3 and 5 (0.918 is now reported WITH a `low_m_alpha` finding on slice
+1), corrects the record of master on the r_u case (1.0887 at 31.13 deg, not
+0.6065; section 0, 3 and 4), and rewrites check (a) (section 4).
+
+**Printed benchmarks that move under the default** (ruling 3, the equations
+as printed; the lead's call R14 keeps it). No pin moved, no tolerance
+widened. "Before" is the circle-end branch; the option is
+`base_in_tension='no_friction'`.
+
+| Benchmark | Before | As printed (default) | With the option | Printed |
+|---|---|---|---|---|
+| F&K B1 dry, Spencer (50 slices) | 2.0745 | 2.0712 (-0.16 %) | 2.0744 | 2.073 (Fredlund and Krahn 1977; Slide2 Verification #21) |
+| F&K B1 dry, Morgenstern-Price | 2.0764 | 2.0708 (-0.27 %) | 2.0767 | 2.076 |
+| F&K B1 r_u 0.25, Spencer | 1.7633 | 1.7567 (-0.37 %) | 1.7629 | 1.761 |
+| F&K B1 r_u 0.25, Morgenstern-Price | 1.7651 | 1.7560 (-0.51 %) | 1.7653 | 1.764 |
+| ACADS 4 declared family, lowest, Spencer | 0.7532 | 0.7480 (-0.69 %) | 0.7495 | 0.760 (Slide2 #9, Table 9.4, p. 52) |
+| ACADS 4 declared family, lowest, Morgenstern-Price | 0.7225 | 0.7157 (-0.94 %) | 0.7222 | GLE 0.720 (the same) |
+| V-042, FOSM by Spencer, F at the means | 1.3493 | 1.3346 (-1.09 %) | 1.3482 | Hassan and Wolff 1.334 by Bishop (Slide2 manual pp. 137-139) |
+| V-043 sand, DE seed 1, Spencer | 1.2337 | 1.2374 (+0.30 %) | 1.2374 | 1.188 (Slide2 manual pp. 147-150), 1.192 (Tandjiria) |
+
 **Other files changed, and why.** Beside `gle.py`, its tests, the option's
 passage through `analysis.py` and the adapter, `DESIGN.md` and this file:
 `slope_stability/acceptability.py` (the `base_tension` finding said "the
@@ -47,6 +68,9 @@ lambda = 0:
    The two tests that hold check (a) as the brief wrote it are strict xfails
    (`test_check_a_as_printed_as_the_brief_wrote_it`,
    `test_check_a_with_the_option_as_the_brief_wrote_it`).
+   **Fix round (R6):** 0.918 is now reported with a `low_m_alpha` finding on
+   slice 1 (its own denominator 0.0176), and the two strict xfails are gone;
+   check (a) as rewritten is in section 4.
 4. **Ruling 2's other form is not a way out.** "The lowest of every root in
    the range" would pick 0.6505 and 0.6704 here, but on an ordinary made-up
    circle (c' 10, phi' 25, r_u 0.25) Spencer's equations as printed have
@@ -64,9 +88,14 @@ lambda = 0:
    the 0.918 root; step 3's `low_m_alpha` reads the m_alpha of horizontal
    side forces, 0.57 there, and does not flag) would at least mark it. Not
    built: it is an acceptability check, step 3's, and no number for an
-   inclined side force is printed.
+   inclined side force is printed. **Built in the fix round (R6, section
+   12).**
 
-**The 1.089 is not reproduced on master.** With r_u, master (9c73795) reads
+**The 1.089 is not reproduced on master.** [Corrected in the fix round
+(R10): master 9c73795 and 3d553a8 both read Spencer 1.0887 at 31.13 deg on
+the r_u case through `analyze_slope` and `solve_method` (0.8901 at 25.41
+deg from `gle_fos` at its default tol), "converged", not a root; no tree
+giving 0.6065 was found. The water-line value below was not re-run.] With r_u, master (9c73795) reads
 Spencer 0.6065 at 18.00 deg, "converged"; with the water line on the ground
 (the full head, the module's reading of a water line) 0.5513 at 16.69 deg.
 Neither is a root. The water-table reading of the probe (u = gamma_w z
@@ -213,7 +242,7 @@ Closed form 0.6704 (wet), 1.349 (dry).
 | r_u, Ordinary Method of Slices | 0.6699 | 0.6699 | 0.6699 | |
 | r_u, Janbu (corrected) | 0.6782 | 0.6782 | 0.6782 | |
 | r_u, Morgenstern-Price | 0.6779 | 0.6779 | 0.6779 | |
-| r_u, Spencer | **0.6065 at 18.00 deg (not a root)** | 0.9182 at 26.319 deg | 0.9182 at 26.319 deg | root 0.9182 at 26.319 deg |
+| r_u, Spencer | **1.0887 at 31.13 deg (not a root)** (corrected in the fix round; was recorded as 0.6065 at 18.00 deg) | 0.9182 at 26.319 deg | 0.9182 at 26.319 deg | root 0.9182 at 26.319 deg |
 | dry, Spencer | 1.3779 at 25.41 deg | 1.3805 at 26.365 deg | 1.3805 at 26.365 deg | root 1.3805 at 26.365 deg |
 | dry, Morgenstern-Price | 1.3564 | 1.3564 | 1.3564 | |
 
@@ -275,9 +304,11 @@ script's one horizontal force through the base midpoint does not place (see
 
 | Check | Result |
 |---|---|
-| (a) master first | 0.6065 at 18.00 deg, converged, not a root (the 1.089 needs step 5a's water-table reading) |
-| (a) with the option: within 0.5 % of 0.6704, theta within 0.1 deg of beta, no flag | **Not met**: 0.9182 at 26.319 deg, no flag. The root exists on the lower branch (section 3). Strict xfail |
-| (a) as printed: 26.20 deg, 0.6505, flagged for base and side tension | **Not met**: 0.9182 at 26.319 deg, no flag. The root exists on the lower branch. Strict xfail |
+| (a) master first | 1.0887 at 31.13 deg, converged, not a root (corrected in the fix round, R10; the record had 0.6065 at 18.00 deg) |
+| (a) as R6 rewrites it: Spencer 0.918 at 26.32 deg under both settings WITH the `low_m_alpha` finding on slice 1 | **Met**: 0.91818 at 26.319 deg, finding on slice 1 only, denominator 0.0176 (the review's script: 0.0176), side force 26.3 deg, E 1,533 kN/m, N' 1,381 kN/m; EM C-10b and its remedies named (`test_check_a_spencer_is_reported_with_the_finding_on_slice_1`) |
+| (a) as R6 rewrites it: Morgenstern-Price half-sine within 2 % of 0.6704 | **Met**: 0.6779, +1.12 % (`test_check_a_morgenstern_price_half_sine_within_2_percent`) |
+| (a) as R6 rewrites it: the roots below the toe slice's pole stay as the script's arithmetic | 0.6505 (as printed) and 0.6704 (frictionless) in `test_the_other_roots_are_roots_of_the_solver_s_equations_too`, stated as not what the solver reports |
+| (a) as the first brief wrote it (0.6505 flagged; 0.6704 with the option) | Not met, by ruling 2; the two strict xfails are removed (R6) |
 | (a) never 1.089 | Met |
 | (a) 0.918 only if a true root, carrying its thrust flag, and not the one ruling 2 picks | A true root (the script). No thrust flag with r_u (it carries one with the full-head reading). It IS the one ruling 2 picks |
 | (b) own script, 0.1 % at every root reported | Met |
@@ -349,7 +380,10 @@ adapter methods); the other entry points run under the default, or under
 
 At 30 kPa F_f is above F_m at lambda = 0 and rises faster: they do not cross
 for lambda from 0 to 1.5 (the script: no root from -5 to 60 deg under either
-setting). Master's values are roots of neither set of equations. EM C-10c's
+setting; the review's script over -40 to 60 deg finds roots only at negative
+theta, -33.7 and -19.8 deg at 30 kPa, with slice denominators below 0.01,
+and no crossing on the branch from lambda = 0). Master's values are roots of
+neither set of equations. EM C-10c's
 remedy is a tension crack (`tension_crack_depth_basis`), which step 4 built.
 
 **Lambda below 0.** Scanning down as well (as master did) finds roots there:
@@ -378,7 +412,8 @@ the ACADS 4 weak-layer search 10.6 s to 11.6 s.
 ## 8. Tests
 
 New: `slope_stability/tests/test_gle_root.py` (19 pass, 2 strict xfails
-holding check (a) as the brief wrote it).
+holding check (a) as the brief wrote it; after the fix round 26 pass, no
+xfail: section 12).
 
 Earlier tests changed, each with its reason beside the change:
 
@@ -444,6 +479,29 @@ Runs on the branch with master 3d553a8 merged (pytest's exit code, `-n 4`):
    (section 5: V-039 ky 0.46921 to 0.46854; ACADS 4 0.7284 to 0.7251).
 6. **A crossing with no net driving moment or force is not taken** (step 2's
    'no_driving' rule applied to the state).
+7. **R6, the finding on an inclined side force** (the orchestrator's R6;
+   the lead's call; joins this step's OWN-143 part). `low_m_alpha` reads,
+   for Spencer, Morgenstern-Price and GLE, the denominator of the slice's
+   own equations at the reported state, cos(alpha - theta_i) +
+   sin(alpha - theta_i) tan(phi') / F, against Whitman and Bailey's 0.2
+   (p. 487). Other form: the finding on horizontal side forces only (m_alpha
+   at the method's F), as step 3 built it; there 0.918 carries no finding
+   (m_alpha 0.57 on the toe slice).
+8. **R15, the lambda range** (the lead's call; OWN-143). The scan goes
+   upward from lambda = 0 to 1.5 on the branch that starts there and stops
+   where that branch ends (R12). Other form: where no crossing is met
+   upward, a scan downward from 0 (D29's former range, -1.5 to 1.5). Not
+   built.
+9. **R7** (the orchestrator's; joins OWN-143). A cohesive circle with its
+   crest in tension that has no Spencer solution is the method's own
+   behaviour where the review's script finds no root on the branch from
+   lambda = 0 (30 and 38 kPa as printed; 20 and 28 kPa with the option).
+   Other form: a defect to be fixed (none found).
+10. **A slice taken frictionless is exempt from `low_m_alpha`** under the
+   default rule, as a slice with phi' = 0 is (mine, the fix round; the
+   module's own reasoning, no print). Other form: look at it; with the
+   option the crest slice of the fill circle at 10 kPa (79 deg) would be
+   flagged at 0.189.
 
 ## 10. Release note
 
@@ -460,13 +518,25 @@ simplified method follows the same setting. Most answers move by less than
 move is up to about 1 %, and some such circles that returned a number now
 return none (add a tension crack, as EM 1110-2-1902 C-10c prints). The
 solver no longer looks for solutions with a negative lambda. Default
-searches with these methods run two to three times faster.
+searches with these methods run two to three times faster. On a surface
+whose toe is steep against the sliding, Spencer's method can lock the toe
+wedge and read high (0.918 where the infinite slope gives 0.670); such a
+result now carries the `low_m_alpha` finding, read on the slice's own
+equations, with EM 1110-2-1902 C-10b's remedies. Rapid drawdown takes
+`base_in_tension` as well.
 
 ## 11. Noted, not fixed
 
-- **The case reads Spencer 0.918 with no flag** (section 0). The half-sine
-  Morgenstern-Price reads 0.6779. No check marks a slice whose own equations
-  are nearly singular under an inclined side force (D29 / step 3).
+- ~~**The case reads Spencer 0.918 with no flag**~~ Fixed in the fix round
+  (R6): flagged `low_m_alpha` on slice 1. The half-sine Morgenstern-Price
+  reads 0.6779.
+- `search_rapid_drawdown` does not take `base_in_tension` (the fix round
+  gave it to `rapid_drawdown_fos` only); it runs under the default.
+- A search's `m_alpha_min` record (the search files, out of this step's
+  scope) still reads m_alpha. Its flags, and its refusal under
+  `low_m_alpha='refuse'`, come from the finding (`surface_findings`), so
+  with Spencer, Morgenstern-Price and GLE they follow the slice's own
+  denominator; no pinned search value moved in the files run.
 - The 0.05 m_alpha clamp (D29) is unchanged. With the option, a frictionless
   slice whose base is vertical (m_alpha = cos alpha = 0) rests on it: on the
   4 m step of `test_a_corner_close_to_another_boundary_is_kept` the option
@@ -490,3 +560,151 @@ searches with these methods run two to three times faster.
   the 0.6704 root slice 1's N' is +40.6 kN/m. As the device was.
 - `funhouse_agent/tests/test_defaults_used.py::...[profile_figure|plot_data]`
   fails on master too in this environment (logx / logy); not this step's.
+
+## 12. Fix round after review (2026-11-14)
+
+Branch `fix/gm140-gle-root-review`, on the lead's brief (the orchestrator's
+R6 and R7; the review's defects as R8 to R13; the lead's calls R14 and
+R15). BACKLOG is left to the lead at the merge.
+
+**The merge.** `fix/gm140-circle-ends-review` merged first (290fe39).
+Conflicts: `VALIDATION.md` keeps both sections (the circle-end step keeps
+B23; this step's section is now **B24**: the brief's "B23" for this step
+means B24); `funhouse_agent/tests/method_probes.json` keeps both new probe
+lines (valid JSON); `docs/user_manual/manual.html` was rebuilt by its
+generator. `origin/master` (fd4fe6f) was already in. What the merge moved:
+Spencer on Taylor's arc of the vertical cut (the circle-end step's check
+(c)), no solution before, now **0.8515 at 48.03 deg** (Taylor's chart, FHWA
+NHI-06-088 Fig. 6-14, p. 6-27: 3.83 cu / (gamma H) = 0.8511; +0.04 %;
+flagged for a base and sides in tension); the default Spencer search of the
+cut 0.8632 to 0.8513 (+0.02 % against 0.8511). Morgenstern-Price still has
+no solution on that arc. `test_circle_ends`' test that held "no solution"
+now holds the root (`test_spencer_on_taylors_arc_is_a_root_near_taylor`).
+
+**Per ruling.**
+
+- **R6 / R8 (defect 1).** `gle.GLEResult` carries, at the reported state,
+  `slice_denominator` (cos(alpha - theta_i) + sin(alpha - theta_i)
+  tan(phi') / F with the tan(phi') the solve used), `side_force_theta_deg`
+  (theta_i = atan(lambda f) on the side the march solves for; 0 on the last
+  slice's open side, as in the march) and `side_force_E`.
+  `acceptability.low_m_alpha_finding` reads that denominator for Spencer,
+  Morgenstern-Price and GLE (m_alpha for Bishop and Janbu, unchanged); the
+  finding gives the slice, the value, theta, the interslice force on that
+  side and N' on the base, cites Whitman and Bailey (1967, p. 487) and EM
+  1110-2-1902 C-10b (p. C-34), and names C-10b's four remedies as the EM
+  prints them (pp. C-34 to C-36; for (2) the EM names the Modified Swedish
+  Method and the Morgenstern and Price method, and Morgenstern-Price with the
+  half-sine is the module's form). A slice the option takes frictionless is
+  exempt under the default rule, as a phi' = 0 slice is (call 10). Tests:
+  `test_check_a_spencer_is_reported_with_the_finding_on_slice_1`,
+  `test_check_a_morgenstern_price_half_sine_within_2_percent`,
+  `test_the_finding_does_not_fire_on_an_ordinary_circle` (least 0.654 as
+  printed, the review's 0.654; 0.516 with the option, the frictionless crest
+  slice), `test_the_denominator_is_m_alpha_for_horizontal_side_forces`,
+  `test_a_slice_taken_frictionless_is_exempt_as_phi_0_slices_are`; the two
+  strict xfails are gone. In `test_m_alpha`, Spencer's finding on Duncan's
+  steep exit now reads 0.0211 on slice 40 (side force 8.7 deg), where
+  m_alpha is 0.176 (the search's `m_alpha_min`, unchanged).
+- **R7 / R13.** The no-solution reason names EM 1110-2-1902 C-10c (p. C-36)
+  and `tension_crack_depth` (or `tension_crack_depth_basis='rankine'`, Eq.
+  C-36) where the state at lambda = 0 has a base or side in tension on a
+  slice with cohesion. The fill circle at 30 and 38 kPa gives no number
+  under both settings; the review's script finds no crossing on the branch
+  from lambda = 0 there, nor at 20 and 28 kPa with the option, so no root is
+  lost. Test: `test_a_cohesive_crest_in_tension_with_no_root_names_c10c`.
+- **R9 (defect 3).** `test_v043_sand_no_reinforcement_noncircular` is the
+  strict xfail in place (seed 1 ends 0.25 % higher, 1.237);
+  `test_v043_sand_lowest_de_seed_and_the_random_search_above_it` holds the
+  `min(de)` and random-search lines. No pin moved.
+- **R10 (defect 4).** Master 9c73795 and 3d553a8 (each extracted alone,
+  first on the path) read the r_u case at **1.0887 at 31.13 deg** through
+  `analyze_slope` and `solve_method` (30, 59, 61, 120 slices: 1.08874 to
+  within 2e-7), and 0.8901 at 25.41 deg from `gle_fos` at its default tol
+  1e-4; dry, 1.3779 at 25.41 deg (as section 3 had). No tree giving 0.6065
+  was found. Corrected: `test_gle_root.py` (docstring and
+  `test_what_master_reported_is_not_a_root`, which now holds both master
+  values as non-roots), `VALIDATION.md` B24, sections 0, 3 and 4 here.
+- **R11 (defect 5).** `rapid_drawdown.fixed_inclination_solution` asks
+  `_solve_marched(lam, 1.3, above_poles=True)` by name and reports
+  S = (c' l + N' tan(phi')) / F with the tan(phi') each slice's solve used
+  (was max(N', 0)); `rapid_drawdown_fos` takes `base_in_tension` (validated
+  in the adapter; named in `choices`) and runs every stage under it. No
+  drawdown factor of safety moved (the table); S moves on bases in tension
+  only. Tests: `test_base_in_tension_reaches_every_stage_and_is_named`,
+  `test_force_equilibrium_stage_reports_the_shear_it_solved` (made-up
+  circle; crest N' -2.76 kN/m as printed). `search_rapid_drawdown` does not
+  take the input (section 11).
+- **R12 (question 4).** `first_crossing` stops at the first lambda with no
+  state on its branch; the reason says "stopped where that branch ends,
+  between lambda = a and b (no state at b)". No value moved. Test:
+  `test_the_scan_stops_where_its_branch_ends`.
+- **R14.** The printed benchmarks that move are tabled in this file's first
+  lines and in `VALIDATION.md` B24, with the option's values.
+- **R15.** `DESIGN.md` records the change from D29's -1.5 to 1.5 (both
+  forms); the reason says "the scan went upward from lambda = 0 on the
+  branch of solutions that starts there", to 1.5 or to where it ends.
+
+**Check (a) as R6 rewrites it, on the merged tree**: section 4. Spencer
+0.91818 at 26.319 deg under both settings, `low_m_alpha` on slice 1 only
+(0.0176); Morgenstern-Price 0.6779 (+1.12 % on 0.6704); 0.6505 and 0.6704
+kept as the script's roots, not what the solver reports.
+
+**The table** (`review\gle\fix_table.py`; baseline = the circle-end branch's
+`slope_stability`, extracted alone; both settings on the branch):
+
+| Case | Baseline | Branch, as printed | Branch, option | Change | Printed, page | Cause |
+|---|---|---|---|---|---|---|
+| Probe r_u, Spencer | 1.0887 (thrust) | 0.9182, `low_m_alpha` slice 1 (0.0176) | 0.9182, same | -15.7 % | closed form 0.6704 | baseline not a root (ruling 1); R6 finding |
+| Probe r_u, M-P half-sine | 0.6779 (lambda 0.750) | 0.6779 (0.747) | 0.6779 | 0.00 % | 0.6704: +1.12 % | |
+| Fill circle 10 kPa | 0.9698 | 0.9620 | 0.9688 | -0.81 % | made up | ruling 3 |
+| Fill circle 20 kPa | 1.3070 | 1.2877 | none | -1.48 % | made up | ruling 3; option: no root (review) |
+| Fill circle 28 kPa | 1.5772 | 1.5481 | none | -1.85 % | made up | as above |
+| Fill circle 30 / 38 kPa | 1.6449 / 1.9172 | none | none | | made up | no root on the branch (R7) |
+| F&K B1 dry, Spencer / M-P | 2.0745 / 2.0764 | 2.0712 / 2.0708 | 2.0744 / 2.0767 | -0.16 / -0.27 % | 2.073 / 2.076 | ruling 3 |
+| F&K B1 r_u 0.25, Spencer / M-P | 1.7633 / 1.7651 | 1.7567 / 1.7560 | 1.7629 / 1.7653 | -0.37 / -0.51 % | 1.761 / 1.764 | ruling 3 |
+| ACADS 4 family, Spencer / M-P | 0.7532 / 0.7225 | 0.7480 / 0.7157 | 0.7495 / 0.7222 | -0.69 / -0.94 % | 0.760 / GLE 0.720, Table 9.4 p. 52 | ruling 3 |
+| V-042 FOSM, Spencer | 1.3493 | 1.3346 | 1.3482 | -1.09 % | 1.334 by Bishop, pp. 137-139 | ruling 3 |
+| V-043 DE seed 1 | 1.2337 | 1.2374 | 1.2374 | +0.30 % | 1.188, pp. 147-150 | search path (strict xfail) |
+| ACADS 1(a) 200-trial Spencer search | 0.6332 | 1.0916 | 1.0916 | +72 % | 1.00 | no crossing below lambda 0 (R15) |
+| Taylor's arc, Spencer / M-P | none / none | 0.8515 / none | 0.8515 / none | | 0.8511, Fig. 6-14 p. 6-27 | merge (ruling 2's scan on the arc) |
+| Vertical cut, default Spencer search | 0.8632 | 0.8513 | (not run) | -1.38 % | 0.8511: +0.02 % | merge |
+| EM example, Bishop 12 slices, stages | 2.1925 / 1.5137 / 1.4384 | same | same | 0 | 2.20 / 1.52 / 1.44, pp. G-15, G-18, G-20 | |
+| #95, force 19.4 deg, 103 ft pool | 1.3379 | 1.3379 | 1.3379 | 0 | 1.35, p. G-15 | |
+| EM example, Spencer 50 slices, stages | 2.19983 / 1.51281 / 1.43412 | 2.19982 / 1.51281 / 1.43413 | same | <0.001 % | as above | |
+
+**Other pinned values that moved on this branch** (`git diff
+fix/gm140-circle-ends-review...HEAD` on test files and `VALIDATION.md`; no
+pin was widened): ACADS 1(a)'s direct 200-trial search 0.633 to 1.092, two
+flags, 1.096 beside it unflagged (`test_acceptability`,
+`test_slope_stability_adapter`; printed 1.00; R15); the made-up short
+search of `test_choices` 0.462 (four flags) to 9.49 (none; 84 of 100 trials
+without a solution; R15); `test_slice_boundaries`' made-up corner 2.521 to
+2.525 (ruling 3); `test_search_robustness`' flagged lowest surface, four
+flags to two, an unflagged surface now found (2.085), 245 of 285 trials
+flagged (R15); `test_own_solution_or_no_number`'s FOSM input 38 to 22 kPa
+(an input, so the surface solves); `test_m_alpha`'s two DE tests run Janbu
+in place of Spencer, and its steep-exit warning reads 0.0211 in place of
+0.18 (R6); V-043 seed 1 1.234 to 1.237 (strict xfail); Taylor's arc by
+Spencer, none to 0.8515 (merge). All others are new tests.
+
+**Tests run in the fix round** (single files, pytest's exit code, all 0):
+`test_gle_root` (26 passed), `test_circle_ends` (15), `test_rapid_drawdown`
+(17), `test_rapid_drawdown_em_appendix_g` (23), `test_acceptability` (23),
+`test_own_solution_or_no_number` (27, 1 xfail), `test_choices` (7),
+`test_m_alpha` (18), `test_search_robustness` (28), `test_gle` (25),
+`test_slope_stability` (93), `test_ground_crossings` (21),
+`test_pore_pressure_as_printed` (50),
+`funhouse_agent/tests/test_slope_stability_adapter` (94),
+`funhouse_agent/deep/tests/test_wave1_geotech` (20; `describe_method
+rapid_drawdown_fos` 15,849 characters, under 16,000),
+`funhouse_agent/tests/test_defaults_used -k slope_stability` (40 passed, 20
+skipped: slope_stability frozen), `validation_examples/
+test_published_v043_slope_reinforced` (8, 2 xfail), `..._v052_drawdown_
+pilarcitos` (6), `..._v029_slope` (6), `webapp/tests/
+test_user_manual_current` (1). After the merge, before the fixes:
+`slope_stability/tests/test_validation.py` 20 passed (30 min; not re-run
+after the fixes, which moved no value it pins). The manual rebuilt by its
+generator (`check_manual.py --rebuild --write`, then `check_manual.py`,
+exit 0), geotech-references at e1bbc5b. The full suites are left to the
+lead's GitHub run.

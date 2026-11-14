@@ -261,7 +261,12 @@ def test_steep_exit_surface_given_to_analyze_slope_is_analysed_with_a_warning():
     assert r.method_solved
     assert r.FOS == pytest.approx(3.358, abs=0.005)
     (w,) = [w for w in r.warnings if "m_alpha" in w]
-    assert "least 0.18 on slice" in w
+    # GM-344 fix round (R6): Spencer's finding reads the denominator of its
+    # own slice equations, with the side force inclined at theta (8.7 deg):
+    # 0.0211 on the exit slice, where m_alpha (horizontal side forces, what
+    # the search's m_alpha_min reads, above) is 0.176. Was "least 0.18".
+    assert "least 0.0211 on slice 40" in w
+    assert "side force inclined 8.7 deg" in w
     assert "67 deg against the sliding" in w
     assert "Whitman and Bailey 1967, p. 487" in w
     assert "must be examined in detail" in w

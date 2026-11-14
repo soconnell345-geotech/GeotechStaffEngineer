@@ -113,11 +113,13 @@ def test_spencer_reports_a_root_of_spencers_equations(own, water, rule):
     the second computation's two equations, and within 0.1 % of that
     computation's own root.
 
-    Before (master, 2026-11-14) the r_u case read 0.6065 at 18.00 deg,
-    reported as converged: not a root (the bisection had closed on a jump
-    between two branches, the two factors of safety differing by less than
-    1e-3 because the fitted moment axis lies 15 km away, and their mean
-    was reported)."""
+    Before (master 9c73795 and 3d553a8, 2026-11-14) the r_u case read
+    1.0887 at 31.13 deg, reported as converged (0.8901 at 25.41 deg with
+    gle_fos's default tol of 1e-4): not a root (the old test accepted the
+    two factors of safety within 1e-3 of each other, which the fitted
+    moment axis 15 km away gives at every lambda, and reported their
+    mean). The record said 0.6065 at 18.00 deg; neither master tree
+    reproduces that (the review's defect 4)."""
     _, _, slices, sol = _spencer(own, water, rule)
     assert sol.solved
     d = own.from_module(slices)
@@ -130,16 +132,19 @@ def test_spencer_reports_a_root_of_spencers_equations(own, water, rule):
 
 
 def test_what_master_reported_is_not_a_root(own):
-    """The number master reported for the r_u case (Spencer 0.6065 at
-    18.00 deg, converged) does not meet Spencer's equations: the moment
-    residual there is far from zero, and Newton's method from it leaves
-    for a root elsewhere."""
+    """The numbers master (9c73795 and 3d553a8) reported for the r_u case
+    (Spencer 1.0887 at 31.13 deg through analyze_slope and solve_method;
+    0.8901 at 25.41 deg from gle_fos at its default tol), each
+    "converged", do not meet Spencer's equations: the force closure and
+    the moment residual there are far from zero (about 3e-3 and 7e-3 of
+    their scales at 1.0887)."""
     _, _, slices = own.case("ru")
     d = own.from_module(slices)
-    assert not own.is_root(d, 0.6065, math.radians(17.997), False,
-                           rel=1e-4)
+    for f_master, theta in ((1.0887, 31.128), (0.8901, 25.408)):
+        assert not own.is_root(d, f_master, math.radians(theta), False,
+                               rel=1e-4)
     _, _, _, sol = _spencer(own, "ru", "as_printed")
-    assert abs(sol.fos - 0.6065) > 0.01
+    assert abs(sol.fos - 1.0887) > 0.01 and abs(sol.fos - 0.8901) > 0.01
 
 
 def test_the_reported_factor_is_the_state_s_own(own):
@@ -192,19 +197,43 @@ def test_no_crossing_in_the_range_is_no_number_with_its_reason(own):
     res = gle_fos(slices, slip, f_interslice="constant", tol=1e-5,
                   lambda_bounds=(-0.2, 0.2))
     assert not res.converged
-    assert any(w.startswith("no F_m = F_f crossing") for w in res.warnings)
+    (w,) = [w for w in res.warnings if w.startswith("no F_m = F_f crossing")]
+    # R15: the scan went upward from lambda = 0 on its branch, to the bound
+    assert ("the scan went upward from lambda = 0 on the branch of "
+            "solutions that starts there to lambda = 0.2") in w
     from slope_stability.solution import gle_failure_reason
     assert "factors of safety that agree" in gle_failure_reason(res, None)
+    assert "the scan went upward from lambda = 0" in gle_failure_reason(
+        res, None)
 
 
-def test_a_branch_that_ends_is_named_in_the_reason():
-    """The reason carries where the branch followed has no state."""
+def test_the_scan_stops_where_its_branch_ends(own, monkeypatch):
+    """The review's question 4 (ruling 2 as written): where the branch
+    followed from lambda = 0 has no state at a lambda, the branch ends
+    there and there is no number, the reason saying where. The scan does
+    not step over that lambda to whatever state with the same pole
+    signature lies beyond (before, it did: GM-60). Made here by taking
+    away every state from lambda 0.45 to 0.55 on the r_u case, whose
+    crossing on that branch is at lambda 0.495."""
+    real = gle._GLESystem._state
+    asked = []
+
+    def cut(self, lam, F_near, side=None):
+        asked.append(lam)
+        if 0.45 <= lam <= 0.55:
+            return None
+        return real(self, lam, F_near, side)
+
+    monkeypatch.setattr(gle._GLESystem, "_state", cut)
+    _, slip, slices = own.case("ru")
+    res = gle_fos(slices, slip, f_interslice="constant", tol=1e-5)
+    assert not res.converged
+    assert max(asked) <= 0.5 + 1e-9         # nothing beyond the end
+    (w,) = [w for w in res.warnings if w.startswith("no F_m = F_f crossing")]
+    assert ("stopped where that branch ends, between lambda = 0.4 and 0.5 "
+            "(no state at 0.5)") in w
     from slope_stability.solution import gle_failure_reason
-    res = gle.GLEResult()
-    res.warnings.append(
-        "no F_m = F_f crossing found in lambda range; the branch of "
-        "solutions followed from lambda = 0 has no state at lambda = 0.7")
-    assert "no state at lambda = 0.7" in gle_failure_reason(res, None)
+    assert "between lambda = 0.4 and 0.5" in gle_failure_reason(res, None)
 
 
 # ---------------------------------------------------------------------------
@@ -217,20 +246,77 @@ def test_the_branch_from_lambda_0_ends_at_the_locked_toe_wedge(own):
     the toe slice's pole all the way, and its crossing is 26.32 deg,
     F 0.918, the toe wedge carrying about 1,530 kN/m: a root of Spencer's
     equations as printed (the second computation finds it under both
-    settings). It is NOT the root the brief's check (a) expected; see
-    ``module_work/gm140/GLE_ROOT_CHECK.md``, first lines."""
+    settings; no base is in tension on it). The toe slice's own
+    denominator there is 0.0176 (the review's script: 0.0176)."""
     for rule in BASE_TENSION_RULES:
         _, _, slices, sol = _spencer(own, "ru", rule)
         assert sol.fos == pytest.approx(0.9182, abs=5e-4)
         assert sol.param == pytest.approx(26.319, abs=0.01)
         assert max(sol.gle.interslice_E) == pytest.approx(1533.0, rel=0.01)
         assert not sol.gle.jumps
+        den = sol.gle.slice_denominator
+        assert den[0] == pytest.approx(0.0176, abs=5e-4)
+        assert min(den[1:]) > 0.2
+        assert sol.gle.side_force_theta_deg[0] == pytest.approx(26.319,
+                                                                abs=0.01)
+        assert sol.gle.side_force_E[0] == pytest.approx(1533.0, rel=0.01)
+
+
+def test_check_a_spencer_is_reported_with_the_finding_on_slice_1(own):
+    """Check (a) as the orchestrator's R6 rewrites it. Spencer 0.918 at
+    26.32 deg is reported under both settings, 37 % above the closed form
+    0.6704 (FHWA NHI-06-088 Eq. 6-10, p. 6-8), and never without a
+    finding: the denominator of the toe slice's own equations,
+    cos(alpha - theta) + sin(alpha - theta) tan(phi') / F, is 0.0176,
+    below Whitman and Bailey's 0.2 (1967, p. 487). The finding gives the
+    slice, the value and the forces on it, cites EM 1110-2-1902 C-10b (a
+    steep exit) and names its remedies as printed, Morgenstern-Price with
+    the half-sine being the module's form of a change of side-force
+    inclination."""
+    geom, slip, _ = own.case("ru")
+    for rule in BASE_TENSION_RULES:
+        res = analyze_slope(geom, slip_surface=slip, method="spencer",
+                            n_slices=60, base_in_tension=rule)
+        assert res.FOS == pytest.approx(0.9182, abs=5e-4)
+        assert res.theta_spencer == pytest.approx(26.319, abs=0.01)
+        assert res.FOS / CLOSED_WET == pytest.approx(1.37, abs=0.005)
+        assert "low_m_alpha" in res.flags
+        (f,) = [f for f in res.acceptability if f["check"] == "low_m_alpha"]
+        assert f["denominator"] == "side_force_inclination"
+        assert [s["slice"] for s in f["slices"]] == [1]
+        s1 = f["slices"][0]
+        assert s1["m_alpha"] == pytest.approx(0.0176, abs=5e-4)
+        assert s1["against_sliding"] is True
+        assert s1["theta_deg"] == pytest.approx(26.32, abs=0.01)
+        assert s1["E_side_kN_per_m"] == pytest.approx(1533.0, rel=0.01)
+        assert s1["N_eff_kN_per_m"] == pytest.approx(1381.0, rel=0.01)
+        assert "Whitman and Bailey 1967, p. 487" in f["text"]
+        assert "EM 1110-2-1902 C-10b, p. C-34" in f["text"]
+        assert f["remedies"].startswith("EM 1110-2-1902 C-10b")
+        assert ("Morgenstern-Price with the half-sine side-force function "
+                "is the module's form of it") in f["remedies"]
+        assert any("0.0176 on slice 1" in w for w in res.warnings)
+
+
+def test_check_a_morgenstern_price_half_sine_within_2_percent(own):
+    """Check (a): Morgenstern-Price with the half-sine (no side shear at
+    the ends, so the toe wedge does not lock) within 2 % of the closed
+    form 0.6704: 0.6779, +1.1 % (the review's script: 0.67790)."""
+    geom, slip, _ = own.case("ru")
+    res = analyze_slope(geom, slip_surface=slip, method="morgenstern_price",
+                        n_slices=60)
+    assert res.FOS == pytest.approx(CLOSED_WET, rel=0.02)
+    assert res.FOS == pytest.approx(0.6779, abs=5e-4)
 
 
 def test_the_other_roots_are_roots_of_the_solver_s_equations_too(own):
-    """The solver's equations and the second computation's are the same
-    under both settings: started on the branch below the toe slice's pole,
-    the solver's own scan finds the second computation's other roots.
+    """Check (a), the second computation's arithmetic: the two roots below
+    the toe slice's pole. NOT what the solver reports (it reports 0.918,
+    the root on the branch from lambda = 0, above): they lie on the branch
+    below that pole, which does not start at lambda = 0. The solver's
+    equations and the second computation's are the same under both
+    settings: started on that branch by hand, the solver's own scan finds
+    them.
 
     As printed: 26.20 deg, F 0.6505, slice 1's N' about -111 kN/m and the
     first side in tension. With the slice taken frictionless: 26.563 deg
@@ -259,26 +345,106 @@ def test_the_other_roots_are_roots_of_the_solver_s_equations_too(own):
             assert state[5][0] == 0.0               # slice 1 frictionless
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "The brief's check (a), as written: it took 26.20 deg, F 0.6505 to be "
-    "the root on the branch from lambda = 0. That branch's root is "
-    "26.32 deg, F 0.918 (the toe wedge locked); 0.6505 lies on the branch "
-    "below the toe slice's pole. GLE_ROOT_CHECK.md, first lines."))
-def test_check_a_as_printed_as_the_brief_wrote_it(own):
-    geom, slip, slices, sol = _spencer(own, "ru", "as_printed")
-    assert sol.fos == pytest.approx(0.6505, abs=5e-4)
-    assert sol.param == pytest.approx(26.20, abs=0.01)
+def test_the_finding_does_not_fire_on_an_ordinary_circle():
+    """R8: on the review's ordinary made-up circle (ground (-20, 0) (0, 0)
+    (20, 10) (50, 10); c' 10, phi' 25, gamma 19, r_u 0.25; centre (5, 20)
+    through the toe; 30 slices) no slice's own denominator is near 0.2:
+    as printed the least is 0.654 on slice 1 (the review's script: 0.654);
+    with the crest slice taken frictionless it is that slice's cos(alpha),
+    0.516. Spencer reports it with no low_m_alpha finding, under both
+    settings."""
+    geom = SlopeGeometry(
+        surface_points=[(-20, 0), (0, 0), (20, 10), (50, 10)],
+        soil_layers=[SlopeSoilLayer(name="soil", top_elevation=10,
+                                    bottom_elevation=-20, gamma=19.0,
+                                    phi=25.0, c_prime=10.0, ru=0.25)])
+    radius = math.hypot(5.0, 20.0)
+    slip = CircularSlipSurface(5.0, 20.0, radius)
+    slices = build_slices(geom, slip, 30)
+    for rule in BASE_TENSION_RULES:
+        res = analyze_slope(geom, xc=5.0, yc=20.0, radius=radius,
+                            method="spencer", n_slices=30,
+                            base_in_tension=rule)
+        assert res.FOS is not None
+        assert "low_m_alpha" not in res.flags
+        with base_tension(rule):
+            sol = solve_method(slices, slip, "spencer")
+        least = min(sol.gle.slice_denominator)
+        assert least == pytest.approx(
+            0.654 if rule == "as_printed" else 0.516, abs=0.005)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "The brief's check (a), as written: with the option it expected the "
-    "closed form 0.6704 at theta = beta. The branch from lambda = 0 has "
-    "no base in tension, so the option changes nothing on it: 26.32 deg, "
-    "F 0.918. GLE_ROOT_CHECK.md, first lines."))
-def test_check_a_with_the_option_as_the_brief_wrote_it(own):
-    geom, slip, slices, sol = _spencer(own, "ru", "no_friction")
-    assert sol.fos == pytest.approx(CLOSED_WET, rel=5e-3)
-    assert sol.param == pytest.approx(BETA, abs=0.1)
+def test_the_denominator_is_m_alpha_for_horizontal_side_forces(own):
+    """For horizontal side forces (lambda = 0, theta = 0) the slice's own
+    denominator is m_alpha, so Bishop's and Janbu's checks do not move:
+    each slice's value is cos(alpha - theta) + sin(alpha - theta)
+    tan(phi') / F at its own theta."""
+    geom, slip, slices = _circle_case()
+    sol = solve_method(slices, slip, "spencer")
+    th = [math.radians(t) for t in sol.gle.side_force_theta_deg]
+    assert th[-1] == 0.0                    # the end of the mass
+    for s, t, d in zip(slices, th, sol.gle.slice_denominator):
+        tp = math.tan(math.radians(s.phi))
+        assert d == pytest.approx(math.cos(s.alpha - t)
+                                  + math.sin(s.alpha - t) * tp / sol.fos,
+                                  rel=1e-9)
+    from slope_stability.methods import m_alpha_values
+    m = m_alpha_values(slices, sol.fos, slip, "gle")
+    assert sol.gle.slice_denominator[-1] == pytest.approx(m[-1], rel=1e-12)
+
+
+def _fill_slope(c):
+    """Step 2's made-up 10 m fill slope (phi' 22 deg, gamma 19)."""
+    return SlopeGeometry(
+        surface_points=[(0, 0), (10, 0), (16, 10), (34, 10)],
+        soil_layers=[SlopeSoilLayer(name="fill", top_elevation=10.0,
+                                    bottom_elevation=-6.0, gamma=19.0,
+                                    phi=22.0, c_prime=c)])
+
+
+@pytest.mark.parametrize("c", [30.0, 38.0])
+def test_a_cohesive_crest_in_tension_with_no_root_names_c10c(c):
+    """R7 and R13: on step 2's fill circle (9.5, 11.0, 11.2) at 30 and
+    38 kPa the review's own script finds no crossing on the branch from
+    lambda = 0 for lambda from 0 to 1.5 (its only roots there are at
+    negative theta, with slice denominators below 0.01), so the solver's
+    no number stands, under both settings: the method's own behaviour
+    (step 2's rule). The reason says the scan went upward from lambda = 0
+    on that branch, and names EM 1110-2-1902 C-10c and step 4's
+    tension_crack_depth."""
+    for rule in BASE_TENSION_RULES:
+        res = analyze_slope(_fill_slope(c), xc=9.5, yc=11.0, radius=11.2,
+                            method="spencer", n_slices=30,
+                            base_in_tension=rule)
+        assert res.FOS is None and not res.method_solved
+        (w,) = [w for w in res.warnings if "no equilibrium solution" in w]
+        assert "the scan went upward from lambda = 0" in w
+        assert "EM 1110-2-1902 C-10c (p. C-36)" in w
+        assert "tension_crack_depth" in w
+
+
+def test_a_slice_taken_frictionless_is_exempt_as_phi_0_slices_are():
+    """GM-344 fix round: with base_in_tension='no_friction' the crest
+    slice of step 2's fill circle at 10 kPa (base inclined 79 deg, in
+    tension) is taken frictionless, and its denominator in the solve is
+    cos(alpha - theta), 0.189: like a slice with phi' = 0 it does not
+    depend on F and the strength is c l whatever N', so the default rule
+    does not look at it (the module's own reasoning for phi' = 0 slices);
+    m_alpha_rule='every_slice' does. As printed the slice's denominator is
+    0.60 and nothing is flagged."""
+    kw = dict(xc=9.5, yc=11.0, radius=11.2, method="spencer", n_slices=30)
+    res = analyze_slope(_fill_slope(10.0), base_in_tension="no_friction",
+                        **kw)
+    assert res.FOS == pytest.approx(0.9688, abs=0.0005)
+    assert "low_m_alpha" not in res.flags
+    every = analyze_slope(_fill_slope(10.0), base_in_tension="no_friction",
+                          m_alpha_rule="every_slice", **kw)
+    (f,) = [x for x in every.acceptability if x["check"] == "low_m_alpha"]
+    assert [s["slice"] for s in f["slices"]] == [30]
+    assert f["slices"][0]["m_alpha"] == pytest.approx(0.189, abs=0.001)
+    printed = analyze_slope(_fill_slope(10.0), **kw)
+    assert printed.FOS == pytest.approx(0.9620, abs=0.0005)
+    assert "low_m_alpha" not in printed.flags
 
 
 def test_the_case_dry(own):

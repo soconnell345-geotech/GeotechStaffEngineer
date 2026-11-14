@@ -194,10 +194,21 @@ def low_m_alpha_finding(slices, slip, method: str, fos: Optional[float],
             == len(slices))
     vals = (list(gle.slice_denominator) if side
             else m_alpha_values(slices, f, slip, which))
+    # A slice the solve took frictionless (base_in_tension='no_friction')
+    # has, as a slice with phi' = 0, a denominator cos(alpha - theta) that
+    # does not depend on F and a strength c l whatever N': it is exempt as
+    # those are (the module's own reasoning, GM-344 fix round).
+    fr = list(getattr(gle, "frictionless", None) or []) if side else []
+    if len(fr) != len(slices):
+        fr = [False] * len(slices)
+
+    def looked_at(i, s):
+        return m_alpha_checked(s, rule) and (rule == "every_slice"
+                                             or not fr[i])
     sign = sliding_sign(slices, slip, which)
     low = []
     for i, (s, m) in enumerate(zip(slices, vals)):
-        if m < M_ALPHA_MIN and m_alpha_checked(s, rule):
+        if m < M_ALPHA_MIN and looked_at(i, s):
             it = {"slice": i + 1, "x": _r(s.x_mid),
                   "m_alpha": _r(m, 4),
                   "alpha_deg": _r(math.degrees(s.alpha), 1),
@@ -212,6 +223,8 @@ def low_m_alpha_finding(slices, slip, method: str, fos: Optional[float],
         return None
     worst = min(low, key=lambda it: it["m_alpha"])
     n_exempt = sum(1 for s in slices if not m_alpha_checked(s, rule))
+    n_frictionless = sum(1 for i, s in enumerate(slices)
+                         if m_alpha_checked(s, rule) and not looked_at(i, s))
     sense = ("against" if worst["against_sliding"] else "with")
     if side:
         text = (f"The denominator of the slice equations of "
@@ -251,6 +264,11 @@ def low_m_alpha_finding(slices, slip, method: str, fos: Optional[float],
                  f"c l whatever the normal force (the module's own "
                  f"reasoning, no printed source; m_alpha_rule="
                  f"'every_slice' looks at every slice).")
+    if n_frictionless:
+        text += (f" {n_frictionless} slice(s) taken frictionless "
+                 f"(base_in_tension='no_friction') are not looked at, for "
+                 f"the same reason (m_alpha_rule='every_slice' looks at "
+                 f"them).")
     # EM C-10b's remedies are for a steep exit: named where a low slice's
     # base is inclined against the sliding (the passive zone). A base
     # nearly vertical where the surface enters is located, no more.

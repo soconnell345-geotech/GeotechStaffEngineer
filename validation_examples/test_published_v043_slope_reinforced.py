@@ -152,6 +152,14 @@ def _sand_de():
         for seed in (1, 2, 3))
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "GM-344 (the GLE solver: a root, or no number): seed 1 now ends at "
+    "1.237, seeds 2 and 3 at 1.234 as before; printed 1.188 (Slide2), "
+    "1.192 (Tandjiria). Seed 1 ends 0.25 % higher, 0.003 further from the "
+    "print, so the pin is not moved. The surfaces are scored as before "
+    "where they solve; differential evolution's path changes because "
+    "trial surfaces whose only crossing lay at a negative lambda now have "
+    "no solution. module_work/gm140/GLE_ROOT_CHECK.md"))
 def test_v043_sand_no_reinforcement_noncircular():
     """Sand-fill embankment, no reinforcement, noncircular Spencer (Slide2
     1.188 / Tandjiria 1.192): what the searches reach. The comparison with
@@ -168,8 +176,7 @@ def test_v043_sand_no_reinforcement_noncircular():
     state held about one moment axis at 30 slices only; see
     test_search_robustness.)"""
     de = list(_sand_de())
-    # (the pin of the three seeds is the test below, GM-344)
-    assert min(de) == pytest.approx(1.234, abs=0.002)
+    assert de == pytest.approx([1.234] * 3, abs=0.002)
     for seed in (1, 2):
         r = search_critical_surface(_geom("sand"), method="spencer",
                                     surface_type="noncircular", n_trials=2000,
@@ -177,18 +184,19 @@ def test_v043_sand_no_reinforcement_noncircular():
         assert r.candidates["noncircular"] >= min(de) - 1e-9
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "GM-344 (the GLE solver: a root, or no number): seed 1 now ends at "
-    "1.237, seeds 2 and 3 at 1.234 as before; printed 1.188 (Slide2), "
-    "1.192 (Tandjiria). Seed 1 moves 0.003 further from the print "
-    "(+3.9 % to +4.2 %), so the pin is not moved. The surfaces are scored "
-    "as before where they solve; differential evolution's path changes "
-    "because trial surfaces whose only crossing lay at a negative lambda "
-    "now have no solution. module_work/gm140/GLE_ROOT_CHECK.md"))
-def test_v043_sand_de_reaches_the_same_minimum_from_three_seeds():
-    """Differential evolution on 30 slices reached 1.234 from seeds 1, 2
-    and 3 (the pin before GM-344)."""
-    assert list(_sand_de()) == pytest.approx([1.234] * 3, abs=0.002)
+def test_v043_sand_lowest_de_seed_and_the_random_search_above_it():
+    """Not the pin of the three seeds (that is the strict xfail above):
+    the LOWEST of differential evolution's three minima (seeds 1 to 3, 30
+    slices) reads 1.234, and the random search (2000 trials, seeds 1 and
+    2) stays at or above it, so DE is the search compared with the
+    published (Slide2 1.188 / Tandjiria 1.192)."""
+    de = list(_sand_de())
+    assert min(de) == pytest.approx(1.234, abs=0.002)
+    for seed in (1, 2):
+        r = search_critical_surface(_geom("sand"), method="spencer",
+                                    surface_type="noncircular", n_trials=2000,
+                                    n_slices=30, seed=seed)
+        assert r.candidates["noncircular"] >= min(de) - 1e-9
 
 
 @pytest.mark.xfail(strict=True, reason=(
