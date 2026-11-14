@@ -1007,6 +1007,57 @@ probe `step3fix/probe6.py` of the fix round, run once on each):
 | ACADS 1(a), random noncircular, 200 trials, Spencer | 1.0915 | 0.6332 | base_tension, side_tension, thrust_outside | 1.0959 | 0; 0 | 108 of 144 (side_tension 73, thrust_outside 106, base_tension 1) | 1.00 (Giam and Donald 1989; Slide2 Verification #1) |
 | ACADS 4, weak-layer search, 700 trials, Spencer | 0.8301 | 0.8301 | side_tension, thrust_outside | 1.6666 | 0; 0 | 288 of 344 (base_tension 124, side_tension 257, thrust_outside 268) | 0.760 (Slide2 manual p. 52) |
 
+## B23 — The GLE solver: a root, or no number (GM-140, GM-344, 2026-11-14)
+
+Record: `module_work/gm140/GLE_ROOT_CHECK.md`. Tests:
+`slope_stability/tests/test_gle_root.py`. A second computation of Spencer's
+two equations, written apart from `gle.py`:
+`module_work/gm140/gle_root_spencer_script.py`.
+
+**A made-up thin planar slide** (2H:1V face, c' = 0, phi' = 34 deg, r_u =
+(gamma_w / gamma) cos^2(beta), a plane 2 m below the face with a 2 m ramp at
+each end, 60 slices). FHWA NHI-06-088 Eq. 6-10 (p. 6-8) gives 0.6704 for the
+infinite slope; dry, tan(phi') / tan(beta) = 1.349.
+
+| | Before | Now | Second computation |
+|---|---|---|---|
+| Spencer, r_u | 0.6065 at 18.00 deg, reported as converged; not a root | 0.9182 at 26.319 deg | a root: 0.9182 at 26.319 deg |
+| Spencer, dry | 1.3779 at 25.41 deg | 1.3805 at 26.365 deg | a root: 1.3805 at 26.365 deg |
+| Morgenstern-Price (half-sine), r_u | 0.6779 | 0.6779 | |
+
+Spencer's equations have three roots on the wet case (0.6505 at 26.20 deg
+and 0.6674 at 56.96 deg, each with the toe slice in tension, and 0.9182).
+The branch that starts at lambda = 0 ends at 0.9182, where the toe wedge
+(its base inclined against the sliding) is all but locked by the inclined
+side force: 37 % above the closed form, and with no flag. That is Spencer's
+method on this surface, not the infinite slope; Morgenstern-Price, whose
+side shear vanishes at the ends, reads 0.678. Dry, the 2.3 % above the
+closed form is the toe ramp's passive wedge.
+
+**An ordinary circle with its crest slice in tension** (made up: c' 10,
+phi' 25, r_u 0.25): 1.3742 at 17.891 deg as printed, 1.3756 at 17.836 deg
+with the slice taken frictionless (`base_in_tension='no_friction'`); the
+second computation's roots are the same.
+
+**The published set** (`step2_section11.py`, `step3_section11.py`, before
+and after, both settings; the table is in the record's section 5). Slide2
+#85 and #86, ACADS 1(a), V-043's circles and V-031's search do not move to
+four figures. V-031, V-044, V-039 and V-042 move by 0.01 to 1.1 % (the
+friction term as printed on bases in tension; with the option they are
+within 0.001 of before). ACADS 4's declared family moves away from print by
+0.005 (Spencer 0.7532 to 0.7480; referee 0.78) and 0.007 (Morgenstern-Price
+0.7225 to 0.7157; Slide2 0.720), inside the pinned tolerances. ACADS 1(a)'s
+random noncircular search moves toward print (0.633 flagged to 1.092;
+printed 1.00). V-043's differential evolution from seed 1 ends at 1.237 in
+place of 1.234 (printed 1.188): a strict xfail, not re-pinned.
+
+**Cohesive circles.** Where the crest is in tension and F_f is above F_m at
+lambda = 0, the two do not cross for lambda from 0 to 1.5 and there is no
+Spencer solution, where the half-applied device read a number (a made-up
+fill slope at c' = 30 kPa: 1.645 before, none now; the second computation
+finds no root from -5 to 60 deg). EM 1110-2-1902 C-10c's remedy is a
+tension crack.
+
 ## Notes / known deviations
 
 - Ordinary method with ru: formulation-sensitive (F&K 1.607 vs Slide2

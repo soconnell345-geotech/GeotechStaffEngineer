@@ -377,8 +377,8 @@ the ACADS 4 weak-layer search 10.6 s to 11.6 s.
 
 ## 8. Tests
 
-New: `slope_stability/tests/test_gle_root.py` (21 tests: 19 pass, 2 strict
-xfails holding check (a) as the brief wrote it).
+New: `slope_stability/tests/test_gle_root.py` (19 pass, 2 strict xfails
+holding check (a) as the brief wrote it).
 
 Earlier tests changed, each with its reason beside the change:
 
@@ -395,8 +395,27 @@ Earlier tests changed, each with its reason beside the change:
 | `test_m_alpha::test_de_search_leaves_out_and_counts_negative_m_alpha_surfaces`, `test_w11_de_search_runs_its_whole_budget` | Spencer | Janbu (with Spencer the surfaces those tests are about have no solution now, so none is left out for m_alpha) |
 | `validation_examples/test_published_v043...::test_v043_sand_no_reinforcement_noncircular` | pinned the three seeds | pins the minimum (1.234); the three-seed pin is a new strict xfail |
 
-Runs (pytest's exit code; `-n auto`): the counts are in the final message
-and in section 10.
+Runs on the branch with master 3d553a8 merged (pytest's exit code, `-n 4`):
+
+- `slope_stability/tests` (all of it) and every
+  `validation_examples/test_published_*` file that imports
+  `slope_stability`: **926 passed, 17 skipped, 9 xfailed, 0 failed** (exit
+  0). The xfails are the two of check (a), V-043's three-seed pin, and six
+  that were strict xfails on master.
+- The `calc_package`, `funhouse_agent`, `reliability`, `fem2d`,
+  `geotech_common`, `report_ingest`, `dxf_import` and `geo_project` test
+  files that name `slope_stability`, `funhouse_agent/tests/test_defaults_used.py`
+  (all of it), `webapp/tests/test_page_fingerprints.py` and
+  `webapp/tests/test_public_text.py`: **2,924 passed, 27 skipped, 1
+  failed**. The one failure is
+  `test_defaults_used.py::...[profile_figure|plot_data]` (logx / logy),
+  which fails the same way on master in this environment and has nothing
+  to do with this step.
+- The page fingerprints pass unchanged: nothing was re-recorded.
+- The user manual: rebuilt by its generator after the merge
+  (`check_manual.py --rebuild --write`, then `check_manual.py` and
+  `webapp/tests/test_user_manual_current.py`, each exit 0), with
+  geotech-references at e1bbc5b, the commit master pins.
 
 ## 9. Calls made
 
