@@ -4506,6 +4506,36 @@
           }
         ],
         "multi": true
+      },
+      {
+        "label": "38. The GLE solver (GM-344, a step of GM-140, built 2026-11-14), five calls: (1) where Spencer's equations have several roots, the factor reported is the first true crossing met from lambda = 0 upward on the branch of solutions that starts at lambda = 0 (every root is not sought); (2) the default is the equations as printed, with no rule for friction on a base in tension (D29's device, the slice taken frictionless, is an option, base_in_tension, applied in every equation); (3) the low m_alpha finding (Whitman and Bailey 1967, p. 487; EM 1110-2-1902 C-10b, p. C-34) reads, for Spencer, Morgenstern-Price and GLE, the denominator of the method's own slice equation, cos(alpha - theta) + sin(alpha - theta) tan(phi')/F, at the slice's side-force inclination, so a steep exit such as the made-up planar case's Spencer 0.918 (closed form 0.670) is reported with the finding and EM C-10b's remedies; (4) the scan runs from lambda = 0 upward to 1.5 and stops where that branch ends: no crossing there (as on a cohesive crest in tension) gives no number, its reason naming EM C-10c and a tension crack, accepted as the method's own behaviour only where the reviewer's own script finds no root on that branch either (a root it finds that the solver loses is a defect: the branch's end is located to 1e-4 in lambda since a probe found crossings lost in the last 0.1 step); where one surface is analysed, a crossing below lambda = 0 is named in the reason with its flags and not reported, never per trial in a search; (5) under the option, a slice taken frictionless is exempt from the finding, as a phi' = 0 slice is (its denominator cos(alpha - theta) does not depend on F).",
+        "options": [
+          {
+            "label": "Let all five stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) The lowest of all roots",
+            "effect": "Every root in the range is sought and the lowest is reported."
+          },
+          {
+            "label": "(2) The device as the default",
+            "effect": "A base in tension is taken frictionless unless the analysis asks for the equations as printed. Each printed benchmark that moves under the default is nearer print with the option (default / option / before this step / printed): F&K B1 at r_u 0.25 Spencer 1.7567 / 1.7629 / 1.7633 / 1.761, Morgenstern-Price 1.7560 / 1.7653 / 1.7651 / 1.764; F&K B1 dry Spencer 2.0712 / 2.0744 / 2.0745 / 2.073; ACADS 4's declared family Spencer 0.7480 / 0.7495 / 0.7532 / 0.760, Morgenstern-Price 0.7157 / 0.7222 / 0.7225 / 0.720. F&K B1 is within 0.02 % of before with the option; ACADS 4's Spencer is not (-0.5 %). ACADS 1(a) reads the same under both."
+          },
+          {
+            "label": "(3) The finding on horizontal side forces only",
+            "effect": "Spencer, Morgenstern-Price and GLE are screened on Bishop's m_alpha: the planar case's 0.918 is reported with no finding."
+          },
+          {
+            "label": "(4) A scan below lambda = 0 when none is met upward",
+            "effect": "Where the branch from lambda = 0 has no crossing, the scan goes down to -1.5 (D29's former range); the roots met there so far all had a slice denominator near zero."
+          },
+          {
+            "label": "(5) Look at a frictionless slice too",
+            "effect": "A slice taken frictionless under the option can raise the finding (its cos(alpha - theta))."
+          }
+        ],
+        "multi": true
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
