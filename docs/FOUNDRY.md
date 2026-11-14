@@ -692,9 +692,9 @@ today. Nothing keeps one viewer's conversations and files apart from
 another's: everyone who can open the published app sees the same list of
 conversations, can open, rename or delete any of them and download their
 files, and **Find a past conversation** lists and restores every
-conversation in the dataset. The **Working folder** box is shown, as for the
-geotech app, so a viewer can point the agent's saves at another folder in
-the app's container. Dataset writes run as the publisher's account, and
+conversation in the dataset. The **Working folder** box is not shown (see
+"Two people at the same time" below): the agent's saves land in the open
+conversation's own folder. Dataset writes run as the publisher's account, and
 whoever can open the dataset can read every conversation in it. The first
 trial (2026-11-13) confirmed it: no request header reaching the app names
 the viewer, the platform's own check of the request found no sign-in token
@@ -718,12 +718,16 @@ figure helper and its fixed plotting tool stay. To turn the code on, set
 `main()`. (The geotech app's Foundry entry leaves it on, as before.)
 
 **Two people at the same time.** The page's protections for a shared host
-switch on when a sign-in header names the viewer, so on Foundry they are
-off, as for the geotech app. With two people using the published app at the
-same moment, a file one of them asks for can be saved into the other's
-conversation, and the agent may read files outside the conversation's own
-folder; BACKLOG INF-80 turns the per-turn protections on for Foundry. Until
-then, one person runs a turn at a time. Saves do not collide: in one
+are on for Document Review on Foundry (BACKLOG INF-80), without naming
+anyone: the page turns them on when `GEOTECH_DEPLOYMENT=foundry`, which the
+entry sets. Each turn's tools are bound to its own conversation's folder, so
+with two people using the published app at the same moment a file one of
+them asks for is saved into their own conversation, not the other's; the
+agent reads only that conversation's folder (and the reference library);
+and the **Working folder** box is hidden, so nobody can point a
+conversation at another folder in the app's container. Everyone still sees
+the same list of conversations (above). The geotech app's Foundry page does
+not have these protections. Saves do not collide: in one
 published app they are made one at a time (a few seconds each), and a save
 that finds the dataset held by another process (the workspace's own preview
 on the same dataset, for example) waits about 30 seconds and is then made

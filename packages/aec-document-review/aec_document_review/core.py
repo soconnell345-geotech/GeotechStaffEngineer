@@ -1816,8 +1816,9 @@ def working_dir_for(thread_id: str, meta: Optional[dict] = None,
 
 
 def _shared_host() -> bool:
-    """One process serves several people: the proxy named a caller, and the
-    tools are bound per turn (``aec_agent_core._fileio.require_turn_binding``)."""
+    """One process serves several people (the proxy named a caller, or the
+    app is on Foundry: ``identity.current_identity``, BACKLOG INF-80), and
+    the tools are bound per turn (``aec_agent_core._fileio.require_turn_binding``)."""
     try:
         from aec_agent_core._fileio import turn_binding_required
         return bool(turn_binding_required())
