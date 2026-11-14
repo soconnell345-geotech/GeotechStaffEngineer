@@ -1733,27 +1733,19 @@ def _build_slope_geom(params: dict, method: str):
     did-you-mean instead of being dropped (a layer given 'c' ran with
     c' = 0), and ru, strength_model and every SHANSEP / Hoek-Brown /
     anisotropic / R-envelope field pass through."""
-    from slope_stability.geometry import SlopeGeometry
-    from funhouse_agent.adapters.slope_stability import build_soil_layer
+    from funhouse_agent.adapters.slope_stability import (
+        build_soil_layer, _build_geometry)
 
-    soil_layers = [
+    # the package's required layer keys checked first (its own message)
+    for i, ld in enumerate(params["soil_layers"]):
         build_soil_layer(ld, i, method=method,
-                         required=("name", "top_elevation", "bottom_elevation",
-                                   "gamma"))
-        for i, ld in enumerate(params["soil_layers"])]
-
-    surface_points = [tuple(p) for p in params["surface_points"]]
-    gwt_points = None
-    if params.get("gwt_points"):
-        gwt_points = [tuple(p) for p in params["gwt_points"]]
-
-    return SlopeGeometry(
-        surface_points=surface_points,
-        soil_layers=soil_layers,
-        gwt_points=gwt_points,
-        surcharge=params.get("surcharge", 0.0),
-        kh=params.get("kh", 0.0),
-    )
+                         required=("name", "top_elevation",
+                                   "bottom_elevation", "gamma"))
+    # The rest as analyze_slope and the search build it (GM-140 step 10,
+    # GM-346): the tension crack (step 4), water_line_kind (step 5a) and the
+    # supports with their Method A or B and pullout (step 8) reach the
+    # packages; left out, each is its default, as before.
+    return _build_geometry(params, method=method)
 
 
 def _slope_fos_extra(result, analysis_dict) -> dict:
@@ -1797,13 +1789,21 @@ def _generate_slope_stability_package(params: dict) -> dict:
 
     geom = _build_slope_geom(params, "slope_stability_package")
 
+    from funhouse_agent.adapters.slope_stability import (
+        _slip_surface_from, _check_choice)
+    from slope_stability.gle import BASE_TENSION_RULES
     result = analyze_slope(
         geom,
         xc=params["xc"], yc=params["yc"], radius=params["radius"],
+        # the arc's two ends where given ("where a circle ends", GM-343)
+        slip_surface=_slip_surface_from(params),
         method=params.get("method", "bishop"),
         n_slices=params.get("n_slices", 30),
         include_slice_data=True,
         compare_methods=params.get("compare_methods", False),
+        base_in_tension=_check_choice(
+            params.get("base_in_tension", "as_printed"), BASE_TENSION_RULES,
+            name="base_in_tension", method="slope_stability_package"),
     )
 
     # slope_stability calc_steps expects a dict with "geom" + optional metadata
@@ -1816,6 +1816,39 @@ def _generate_slope_stability_package(params: dict) -> dict:
         analysis_type="Slope Stability", package="slope_stability_package",
         extra=_slope_fos_extra(result, analysis_dict),
     )
+
+
+#: What ``tol`` does in the slope solvers (``slope_stability.solution.
+#: solve_method``): Bishop's simplified method takes it as given; Janbu's
+#: simplified method and the GLE behind Spencer, Morgenstern-Price and GLE
+#: run at min(tol, 1e-4) / 10, so a value above 1e-4 changes nothing for
+#: them; the Ordinary Method of Slices does not iterate (GM-140 step 10,
+#: D45).
+SLOPE_TOL_RULE = (
+    "tol is the convergence tolerance of Bishop's simplified method as "
+    "given; Janbu's simplified method and Spencer's, Morgenstern-Price and "
+    "GLE run at min(tol, 1e-4) / 10, and the Ordinary Method of Slices does "
+    "not iterate")
+
+
+def _check_slope_tol(tol, method: str) -> None:
+    """Refuse a ``tol`` that would change nothing (GM-140 step 10, D45): a
+    value above 1e-4 with any method but Bishop's simplified method."""
+    if tol is not None and tol > 1e-4 and method != "bishop":
+        raise ValueError(
+            f"tol={tol:g} changes nothing with method '{method}': "
+            f"{SLOPE_TOL_RULE}. Give tol at most 1e-4, or leave it out.")
+
+
+#: The slope tools' later inputs the two slope packages take as the tools
+#: do (GM-140 step 10, GM-346): the tension crack (step 4), the reading of
+#: the water line (step 5a), the supports and how their force is taken
+#: (step 8).
+_SLOPE_PACKAGE_INPUTS = (
+    "tension_crack_depth", "tension_crack_water_depth", "tension_crack_side",
+    "tension_crack_model", "tension_crack_depth_basis", "reverse_curvature",
+    "water_line_kind", "nails", "anchors", "geosynthetics",
+    "stabilizing_piles", "assisting_support")
 
 
 def _generate_slope_report_package(params: dict) -> dict:
@@ -1844,6 +1877,10 @@ def _generate_slope_report_package(params: dict) -> dict:
             "method", "surface_type", "n_slices", "tol", "x_range", "y_range",
             "nx", "ny", "x_entry_range", "x_exit_range", "n_trials", "n_points",
             "seed", "f_interslice", "FOS_required", "time_budget_s",
+            "base_in_tension",
+            # the later inputs (GM-140 step 10): tension crack, water line,
+            # supports
+            *_SLOPE_PACKAGE_INPUTS,
             # probabilistic annex
             "variables", "fosm", "monte_carlo", "n", "research_surface",
             # output + header metadata; the caller's assumptions and the
@@ -1873,6 +1910,12 @@ def _generate_slope_report_package(params: dict) -> dict:
     from slope_stability.solution import check_method, check_interslice
     check_method(method)
     check_interslice(params.get("f_interslice", "half_sine"))
+    _check_slope_tol(tol, method)
+    from funhouse_agent.adapters.slope_stability import _check_choice
+    from slope_stability.gle import BASE_TENSION_RULES
+    base_in_tension = _check_choice(
+        params.get("base_in_tension", "as_printed"), BASE_TENSION_RULES,
+        name="base_in_tension", method="slope_report_package")
 
     def _range(key):
         return tuple(params[key]) if params.get(key) else None
@@ -1890,6 +1933,7 @@ def _generate_slope_report_package(params: dict) -> dict:
         seed=params.get("seed"),
         time_budget_s=time_budget_s,
         f_interslice=params.get("f_interslice", "half_sine"),
+        base_in_tension=base_in_tension,
     )
     budget_is_default(search.choices, params)
 
@@ -1926,7 +1970,8 @@ def _generate_slope_report_package(params: dict) -> dict:
     result = analyze_slope(
         geom, method=method, n_slices=n_slices, tol=tol,
         f_interslice=params.get("f_interslice", "half_sine"),
-        include_slice_data=True, compare_methods=True, **surf_kwargs,
+        include_slice_data=True, compare_methods=True,
+        base_in_tension=base_in_tension, **surf_kwargs,
     )
 
     analysis_dict = {
@@ -3933,11 +3978,11 @@ METHOD_INFO = {
             "fosm": {"type": "bool", "required": False, "default": True, "description": "With 'variables': run the FOSM annex."},
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
-            "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance for the iterative methods."},
+            "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance: Bishop's simplified method takes it as given; Janbu's simplified method and Spencer's, Morgenstern-Price and GLE run at min(tol, 1e-4) / 10, and the Ordinary Method of Slices does not iterate. A value above 1e-4 is refused with any method but 'bishop' (it would change nothing)."},
             "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": ["constant", "half_sine", "clipped_sine", "trapezoidal"], "description": "Interslice force function of morgenstern_price and gle, in every family of the search and in the re-analysis of the critical surface (before GM-140 step 6 the search always took the half-sine function). Another name is refused."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety: the converged solution on the governing surface by the method that scored it in the search. That is the method named, except where the governing family was scored by another (Bishop's simplified method and the Ordinary Method of Slices do not apply to a plane or a polyline, which Spencer's method then scores; a family the method solves none of is scored by the next in order: planes and polylines Spencer's method, then Janbu's simplified method; circles Spencer's, then Bishop's simplified method, then Janbu's): method_used then names it, method_named the method asked for and named_method_lowest that method's own lowest value. Tell the user both. Null where that method has no solution on the surface: no_solution says why and the package prints no number.", "candidate_methods": "What scored each family in candidates: [{family, method, f_interslice, FOS, named, reason}].", "method_used": "Present when the governing surface was scored by another method than the one named (with method_named and named_method_lowest), or, with Bishop's method, when the Ordinary Method of Slices value was taken (Duncan 1996, p. 580).", "named_method_lowest": "Present with method_named: the lowest factor of safety by the method named ({method, f_interslice, FOS, family}), or FOS null with a note when it scored no family.", "screen_unsolved": "Present when a screen by another method scored surfaces below the reported minimum that the method named has no solution on: {n, lowest_screen_FOS, by_family} (UFC 3-220-10 p. 362). Tell the user.", "circle_check": "Noncircular searches: the minimum against the critical circle by the same method ({checked, circle, FOS_as_polyline, noncircular_minimum, governs, note}).", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on the governing surface.", "search_no_solution": "The search's trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any; they were not scored; below_0_05: solved with a value below 0.05, which a search does not take as a factor of safety).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
+        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety: the converged solution on the governing surface by the method that scored it in the search. That is the method named, except where the governing family was scored by another (Bishop's simplified method and the Ordinary Method of Slices do not apply to a plane or a polyline, which Spencer's method then scores; a family the method solves none of is scored by the next in order: planes and polylines Spencer's method, then Janbu's simplified method; circles Spencer's, then Bishop's simplified method, then Janbu's): method_used then names it, method_named the method asked for and named_method_lowest that method's own lowest value. Tell the user both. Null where that method has no solution on the surface: no_solution says why and the package prints no number.", "candidate_methods": "What scored each family in candidates: [{family, method, f_interslice, FOS, named, reason}].", "method_used": "Present when the governing surface was scored by another method than the one named (with method_named and named_method_lowest), or, with Bishop's method, when the Ordinary Method of Slices value was taken (Duncan 1996, p. 580).", "named_method_lowest": "Present with method_named: the lowest factor of safety by the method named ({method, f_interslice, FOS, family}), or FOS null with a note when it scored no family.", "screen_unsolved": "Present when a screen by another method scored surfaces below the reported minimum that the method named has no solution on: {n, lowest_screen_FOS, by_family} (UFC 3-220-10 p. 362). Tell the user.", "circle_check": "Present only with a noncircular search: the minimum against the critical circle by the same method ({checked, circle, FOS_as_polyline, noncircular_minimum, governs, note}).", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on the governing surface.", "search_no_solution": "The search's trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any; they were not scored; below_0_05: solved with a value below 0.05, which a search does not take as a factor of safety).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "settlement_package": {
         "category": "Calculation Package",
@@ -4085,8 +4130,8 @@ declare_applies_when(METHOD_INFO, {
         "n_points": {"surface_type": _RANDOM_POLYLINES + ["noncircular_de"]},
         "fosm": {"variables": "set"},
         "monte_carlo": {"variables": "set"},
-        "n": {"variables": "set", "monte_carlo": [True]},
-        "research_surface": {"variables": "set", "monte_carlo": [True]},
+        "n": {"variables": "set", "monte_carlo": "set"},
+        "research_surface": {"variables": "set", "monte_carlo": "set"},
     },
 })
 
@@ -4117,4 +4162,51 @@ for _name in ("x_range", "y_range"):
     _report[_name]["applies_when"] = {"surface_type": _CIRCLES_GRID}
 _report["seed"]["applies_when"] = [
     {"surface_type": _RANDOM_POLYLINES + ["noncircular_de"]},
-    {"variables": "set", "monte_carlo": [True]}]
+    {"variables": "set", "monte_carlo": "set"}]
+
+
+# The later inputs reach the slope packages (GM-140 step 10, GM-346): the
+# tools' own specs, so one text says what each does; when each applies as
+# in the tools.
+def _slope_package_inputs():
+    from funhouse_agent.adapters.slope_stability import (
+        _GEOMETRY_PARAMS, _SURFACE_SPEC_PARAMS, METHOD_INFO as _SLOPE_INFO)
+
+    def bare(spec):
+        return {k: v for k, v in spec.items() if k != "applies_when"}
+    base = bare(_SLOPE_INFO["analyze_slope"]["parameters"]["base_in_tension"])
+    for package in ("slope_stability_package", "slope_report_package"):
+        params = METHOD_INFO[package]["parameters"]
+        for name in _SLOPE_PACKAGE_INPUTS:
+            params[name] = bare(_GEOMETRY_PARAMS[name])
+        params["base_in_tension"] = dict(base)
+    for name in ("arc_x_start", "arc_x_end"):
+        METHOD_INFO["slope_stability_package"]["parameters"][name] = bare(
+            _SURFACE_SPEC_PARAMS[name])
+    crack = [{"tension_crack_depth": "set"},
+             {"tension_crack_depth_basis": ["rankine", "min_fos"]}]
+    supports = [{"nails": "set"}, {"anchors": "set"},
+                {"geosynthetics": "set"}, {"stabilizing_piles": "set"}]
+    common = {
+        "tension_crack_water_depth": crack, "tension_crack_side": crack,
+        "tension_crack_model": crack,
+        "tension_crack_depth_basis": {"tension_crack_depth": "set"},
+        "water_line_kind": {"gwt_points": "set"},
+        "assisting_support": supports,
+    }
+    rigorous = ["janbu", "spencer", "morgenstern_price", "gle"]
+    declare_applies_when(METHOD_INFO, {
+        "slope_stability_package": {
+            **common,
+            "base_in_tension": [{"method": rigorous},
+                                {"compare_methods": "set"}]},
+        "slope_report_package": {
+            **common,
+            "reverse_curvature": {"surface_type": ["circular",
+                                                   "entry_exit"]},
+            # the report compares every method on the critical surface
+            "base_in_tension": {}},
+    })
+
+
+_slope_package_inputs()

@@ -182,3 +182,78 @@ def test_the_report_carries_the_contours_and_the_ordered_list():
     figs = [f.title for f in get_figures(res, analysis)]
     assert ("Minimum FOS over the Circle Centres and the Ten Lowest "
             "Surfaces") in figs
+
+
+# ---------------------------------------------------------------------------
+# Items 7, 8 and 11: the statements the report prints
+# ---------------------------------------------------------------------------
+
+def _sand_geom():
+    return SlopeGeometry(
+        surface_points=[(0, 10), (10, 10), (25, 0), (40, 0)],
+        soil_layers=[SlopeSoilLayer(name="sand", top_elevation=10,
+                                    bottom_elevation=-10, gamma=19,
+                                    c_prime=0.0, phi=32)])
+
+
+def test_a_circle_through_cohesionless_soil_at_the_face_says_so():
+    """The module audit's row 9: a single circle through c' = 0 soil at the
+    face overestimates against the infinite-slope mechanism, which the
+    search scores with planes. A statement only."""
+    from slope_stability.analysis import analyze_slope
+    res = analyze_slope(_sand_geom(), xc=20, yc=20, radius=20)
+    said = [w for w in res.warnings if "infinite-slope mechanism" in w]
+    assert len(said) == 1
+    assert "c' = 0" in said[0] and "not changed" in said[0]
+    clay = analyze_slope(_geom(), xc=15, yc=18, radius=13)
+    assert not [w for w in clay.warnings if "infinite-slope" in w]
+
+
+def test_the_report_names_the_method_of_each_family_and_a_stand_in():
+    """Step 6's statements in the report: beside each family's minimum the
+    method that scored it; a plane family under Bishop's simplified method
+    is scored by Spencer's method, with the reason."""
+    from slope_stability.calc_steps import _family_methods_table
+    r = search_critical_surface(_sand_geom(), method="bishop", nx=4, ny=4)
+    t = _family_methods_table(r)
+    assert t is not None and t.title == "The Method Each Family Was Scored With"
+    fams = {row[0]: row for row in t.rows}
+    assert len(fams) == len(r.candidate_methods)
+    planes = [row for row in t.rows if row[2] == "Spencer's method"]
+    assert planes and all("stand-in for Bishop's simplified method"
+                          in row[4] for row in planes)
+    assert all("circular slip surfaces" in row[4]
+               or "centre of a circle" in row[4] for row in planes)
+
+
+def test_the_report_words_the_unsolved_line_the_janbu_f0_and_the_checks():
+    """Janbu's f0 where Janbu's method stands in (applied, not found in
+    print, its value, the uncorrected FOS); the unsolved line as the result
+    words it (UFC 3-220-10 p. 362); the circle check; an Ordinary Method of
+    Slices search crossed by supports refused with nothing standing in."""
+    from slope_stability.calc_steps import _family_methods_table
+    r = SearchResult(
+        named_method="spencer", method_used="janbu",
+        named_method_lowest={"FOS": None, "note": "Spencer's method "
+                             "scored no family of this search"},
+        candidate_methods=[
+            {"family": "noncircular", "method": "janbu", "f_interslice":
+             None, "FOS": 1.234, "named": False, "reason": "spencer's "
+             "method solved none of the family's surfaces",
+             "janbu_f0": 1.051, "FOS_uncorrected": 1.174}],
+        screen_unsolved={"n": 2, "k": 5, "N": 7, "lowest_screen_FOS": 1.1,
+                         "by_family": {}},
+        circle_check={"checked": False, "note": "no circle"},
+        no_solution=[{"family": "circular", "method": "fellenius", "n": 3,
+                      "with_supports": 3}])
+    t = _family_methods_table(r)
+    row = t.rows[0]
+    assert "f0 = 1.051 applied, not found in print" in row[4]
+    assert "uncorrected FOS 1.174" in row[4]
+    assert ("Of the 5 circle(s) re-scored from the screen's lowest, 2 have "
+            "no solution by Spencer's method; the screen scored 7 circle(s) "
+            "below the reported minimum") in t.notes
+    assert "lowest screen value 1.100 (UFC 3-220-10 p. 362)" in t.notes
+    assert "method_used (the governing surface): Janbu's" in t.notes
+    assert "Not checked against a circle" in t.notes
+    assert "nothing standing in" in t.notes

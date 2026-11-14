@@ -97,7 +97,9 @@ class TestCrossSection:
 
     def test_fos_required_annotation(self, spencer_result, geom):
         fig = plot_cross_section(spencer_result, geom, fos_required=2.0)
+        # the factor of safety heads the key (GM-140 step 10, GM-186)
         texts = [t.get_text() for t in fig.axes[0].texts]
+        texts.append(fig.axes[0].get_legend().get_title().get_text())
         assert any("UNSTABLE" in t for t in texts)
         plt.close(fig)
 

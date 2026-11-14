@@ -2625,6 +2625,49 @@ rule holds for all of them (the list is in
   too). The ru, grid and total-stress statements concern the same soils
   in every stage and are said once, by stage 1.
 
+### Reporting as printed (GM-140 step 10, 2026-11-14)
+
+A result and its report show what the print asks an engineer to be shown;
+no factor of safety changes.
+
+* **Contours of the minimum FOS over the centres (D46).** A grid search's
+  centres carry `node` = (ix, iy) in `grid_fos` and the result its grid
+  (`SearchResult.centre_grid`). `report_views.centre_contours` lays the
+  per-centre minima scored by the method on the grid (a centre a screen
+  alone scored is left out) and says whether the lowest contour closes
+  inside the grid: it does exactly when the lowest value inside the grid is
+  below the lowest value on its edge (then a contour between the two
+  encloses the minimum without reaching the edge; the module's reading of
+  the plot, not a printed formula). FHWA NHI-06-088 Fig. 6-13, p. 6-23;
+  GEC 11 Vol. II p. 9-24; Duncan, Buchignani and De Wet (1987), Fig. 28.
+  `to_dict()["centre_contours"]`, the summary, the report's table "Minimum
+  FOS over the Circle Centres" and the figure `plot_centre_contours`
+  (the grid outlined, the critical centre marked).
+* **The ten lowest surfaces (D47).** `report_views.lowest_surfaces`: the
+  main search's trials scored by the method and each other family's
+  reported surface (`SearchResult.family_surfaces`, kept by
+  `apply_supplements`; the toe-circle, above-toe and plane families keep
+  only their lowest), in order, each with its FOS, family, method and
+  geometry. FHWA NHI-06-088 p. 6-49; EM 1110-2-1902 4-3b(9)(b), p. 4-8.
+* **The slice table first** in the report (EM 1110-2-1902 4-2d(2), p. 4-2).
+* **The method each family was scored with** (step 6's statements), with a
+  stand-in's reason, Janbu's f0 where Janbu's method stands in, method
+  named against method used, the unsolved line as the result words it, the
+  circle check and an Ordinary Method of Slices search refused where
+  supports cross: the report's table "The Method Each Family Was Scored
+  With".
+* **A circle through c' = 0 soil at the face** (`analyze_slope`): a
+  statement that a single circle there overestimates against the
+  infinite-slope mechanism, which the search scores with planes
+  (`cohesionless_circle_statements`). A statement only.
+* **Figures at print size (GM-186).** The interslice figure's title on two
+  lines and the line-of-thrust key on three, so both print at 7 pt or more
+  at 5 in; the keys of the cross-section, slice-force, interslice and
+  contour figures below the plot (`plotting._key_below`), the factor of
+  safety heading the cross-section's key; the circle centre's label hangs
+  from the centre on the side away from the radius line; the entry and
+  exit labels sit below the ground, outside the arc.
+
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
   directly, because `sin(alpha)` can be negative for L-to-R slopes

@@ -50,8 +50,9 @@ def _thrust_label(result) -> str:
     for f in getattr(result, "acceptability", None) or []:
         if f.get("check") == "thrust_outside":
             n = len(f.get("sides") or [])
-            return (f"Line of thrust (drawn clipped: the solved line is "
-                    f"outside the sliding mass at {n} slice side"
+            # (on three lines, so the key prints at its size: GM-186)
+            return (f"Line of thrust (drawn clipped: the\nsolved line is "
+                    f"outside the sliding mass\nat {n} slice side"
                     f"{'s' if n != 1 else ''})")
     return "Line of thrust"
 
@@ -209,6 +210,18 @@ def _draw_reinforcement(ax, geom, result=None):
                     label=_label('Slip crossing (T mobilized)'))
 
 
+def _key_below(ax, **kw):
+    """The axes' key below the plot, a fixed distance under its bottom edge
+    (clear of the axis label whatever size the figure is printed at;
+    GM-186)."""
+    from matplotlib import transforms as mtransforms
+    fig = ax.figure
+    below = ax.transAxes + mtransforms.ScaledTranslation(
+        0, -0.55, fig.dpi_scale_trans)
+    return ax.legend(loc='upper center', bbox_to_anchor=(0.5, 0.0),
+                     bbox_transform=below, framealpha=0.9, **kw)
+
+
 def _style_section_axes(ax, title):
     ax.set_xlabel('Distance (m)', fontsize=10)
     ax.set_ylabel('Elevation (m)', fontsize=10)
@@ -226,7 +239,7 @@ def plot_cross_section(result, geom, show_slices=True,
                        show_thrust_line=True, show_reinforcement=True,
                        fos_required: Optional[float] = None,
                        title: str = "Slope Stability Analysis - Cross-Section",
-                       figsize=(10, 6)):
+                       figsize=(10, 8)):
     """SLOPE/W-style annotated cross-section for one analyzed surface.
 
     Parameters
@@ -286,8 +299,13 @@ def plot_cross_section(result, geom, show_slices=True,
         z_pt = geom.ground_elevation_at(x_pt)
         ax.plot([x_pt], [z_pt], mk, color=_CRIT_COLOR, markersize=7,
                 zorder=8)
+        # below the ground, on the outer side of the slip surface's end,
+        # clear of the line and of the note above (GM-186)
+        outer_left = x_pt <= 0.5 * (result.x_entry + result.x_exit)
         ax.annotate(lbl, xy=(x_pt, z_pt), fontsize=7,
-                    xytext=(4, -12), textcoords='offset points')
+                    xytext=(-5 if outer_left else 5, -5),
+                    textcoords='offset points',
+                    ha='right' if outer_left else 'left', va='top')
 
     # circle center + radius callout
     if result.radius > 0:
@@ -298,10 +316,14 @@ def plot_cross_section(result, geom, show_slices=True,
             result.radius**2 - (x_mid_arc - result.xc)**2, 0.0))
         ax.plot([result.xc, x_mid_arc], [result.yc, z_mid_arc], ':',
                 color=_CRIT_COLOR, linewidth=0.9, zorder=6)
+        # beside the centre, on the side away from the radius line and
+        # hanging down from it, clear of the title and frame (GM-186)
+        left = x_mid_arc >= result.xc
         ax.annotate(
             f'({result.xc:.1f}, {result.yc:.1f})\nR = {result.radius:.1f} m',
             xy=(result.xc, result.yc), fontsize=7,
-            xytext=(6, 4), textcoords='offset points',
+            xytext=(-9 if left else 9, -4), textcoords='offset points',
+            ha='right' if left else 'left', va='top',
             bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
                       alpha=0.85, edgecolor='#999999'))
 
@@ -353,13 +375,13 @@ def plot_cross_section(result, geom, show_slices=True,
     else:
         lines.append(
             f"[{'STABLE' if ok else 'UNSTABLE'} vs FOS_req = {req:g}]")
-    ax.text(0.02, 0.98, "\n".join(lines), transform=ax.transAxes,
-            fontsize=9.5, fontweight='bold', va='top', color=color,
-            bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
-                      edgecolor=color, alpha=0.92), zorder=10)
-
     _style_section_axes(ax, title)
-    ax.legend(loc='lower right', fontsize=7, ncol=2, framealpha=0.9)
+    # The factor of safety heads the key, and the key sits below the
+    # drawing, off the section and its labels (GM-186: the note lay on the
+    # title, the key on the drawing)
+    leg = _key_below(ax, fontsize=7, ncol=2)
+    leg.set_title("\n".join(lines), prop={"size": 9, "weight": "bold"})
+    leg.get_title().set_color(color)
     fig.tight_layout()
     return fig
 
@@ -549,8 +571,7 @@ def plot_centre_contours(search, geom,
                       f"({lowest[1]['FOS']:.3f} to "
                       f"{lowest[-1]['FOS']:.3f})")[0])
     _style_section_axes(ax, title)
-    ax.legend(handles=handles, loc='upper center', fontsize=8,
-              bbox_to_anchor=(0.5, -0.12), ncol=2, framealpha=0.9)
+    _key_below(ax, handles=handles, fontsize=8, ncol=2)
     fig.tight_layout()
     return fig
 
@@ -596,7 +617,8 @@ def plot_slice_forces(result, figsize=(9.5, 5)):
         fontsize=12, fontweight='bold')
     ax.grid(True, alpha=0.25)
     ax.tick_params(labelsize=9)
-    ax.legend(loc='best', fontsize=8)
+    # the key below the plot, off the bars and lines (GM-186)
+    _key_below(ax, ncol=2, fontsize=8)
     fig.tight_layout()
     return fig
 
@@ -647,8 +669,9 @@ def plot_interslice_forces(result, geom=None, figsize=(9.5, 7)):
         note.append(f'theta = {result.theta_spencer:.1f} deg')
     if result.lambda_mp is not None:
         note.append(f'lambda = {result.lambda_mp:.3f}')
+    # (on two lines, so the title fits the printed width: GM-186)
     ax1.set_title(
-        f'Interslice Forces - {result.method}, FOS = {fos_text(result.FOS)}'
+        f'Interslice Forces\n{result.method}, FOS = {fos_text(result.FOS)}'
         + (f'  ({", ".join(note)})' if note else ''),
         fontsize=12, fontweight='bold')
     ax1.set_ylabel('Force (kN/m)', fontsize=10)
@@ -673,7 +696,8 @@ def plot_interslice_forces(result, geom=None, figsize=(9.5, 7)):
     ax2.set_xlabel('x (m)', fontsize=10)
     ax2.set_ylabel('Elevation (m)', fontsize=10)
     ax2.grid(True, alpha=0.25)
-    ax2.legend(fontsize=7.5, loc='lower right')
+    # the key below the section, off its lines (GM-186)
+    _key_below(ax2, fontsize=7.5, ncol=3)
     ax2.tick_params(labelsize=9)
 
     fig.tight_layout()

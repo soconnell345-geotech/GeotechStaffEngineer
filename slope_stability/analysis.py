@@ -10,7 +10,7 @@ References:
 """
 
 import math
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from slope_stability.cracks import (
     counts_reverse_discards as _counts_reverse_discards,
@@ -624,7 +624,46 @@ def analyze_slope(geom: SlopeGeometry,
     w = not_counted_warning(supports.not_counted)
     if w:
         result.warnings.append(w)
+    if is_circular:
+        # a single circle through c' = 0 soil at the face (GM-140 step 10,
+        # the module audit's row 9): a statement only
+        result.warnings.extend(cohesionless_circle_statements(
+            geom, result.x_entry, result.x_exit))
     return result
+
+
+def cohesionless_circle_statements(geom, x_entry: float,
+                                   x_exit: float) -> List[str]:
+    """What a single circle scored on its own says where soil with c' = 0
+    forms the slope face within its span (GM-140 step 10, the module
+    audit's row 9): the circle overestimates the factor of safety against
+    the infinite-slope mechanism, a shallow slide parallel to the face,
+    which ``search_critical_surface`` scores with planes (Duncan, Wright
+    and Brandon 2014: where c' = 0 soil forms the face the critical
+    failure tends to a shallow slide parallel to it). A statement only:
+    the circle's value is not changed."""
+    from slope_stability.search_supplements import cohesionless_face_runs
+    lo, hi = sorted((x_entry, x_exit))
+    out = []
+    for run in cohesionless_face_runs(geom):
+        a, b = max(lo, run["x_from"]), min(hi, run["x_to"])
+        if b <= a:
+            continue
+        beta = run["slope_angle_deg"]
+        ratio = (math.tan(math.radians(run["phi_deg"]))
+                 / math.tan(math.radians(beta)))
+        out.append(
+            f"This circle passes through soil with c' = 0 (layer "
+            f"'{run['layer']}', phi' = {run['phi_deg']:g} deg) where it "
+            f"forms the slope face, between x = {run['x_from']:.2f} and "
+            f"{run['x_to']:.2f} (beta = {beta:.1f} deg). A single circle "
+            f"there overestimates the factor of safety against the "
+            f"infinite-slope mechanism, a shallow slide parallel to the "
+            f"face (tan(phi')/tan(beta) = {ratio:.3f} for a dry face; "
+            f"Duncan, Wright and Brandon 2014), which search_critical_"
+            f"surface scores with planes. A statement only: this circle's "
+            f"factor of safety is not changed.")
+    return out
 
 
 #: Why an arc of a split circle has no factor of safety, in plain words

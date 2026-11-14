@@ -240,6 +240,54 @@ _SALIB_STEP = ("SALib's Morris and Sobol analyses read which input a step "
 _TOTAL_STRESS = ("the probe's one clay layer is read by the alpha method "
                  "and a 9 cu base, which take cu, not the overburden")
 NOT_REACHED = {
+    # GM-140 step 10 (D45): the slope packages' probes, unfrozen
+    ("calc_package|slope_stability_package", "FOS_required"):
+        "the probe's FOS (2.592) is above 1.5 and 2.25 alike, so is_stable "
+        "and the stability check move only across it (test_gm140_step10_"
+        "package_inputs)",
+    ("calc_package|slope_stability_package", "soil_layers[0].top_elevation"):
+        "the top layer's top_elevation above the ground surface is cut off "
+        "at the surface",
+    ("calc_package|slope_stability_package",
+     "soil_layers[0].bottom_elevation"):
+        "the probe's circle bottoms out at z = 5, above the layer's bottom "
+        "at 0 or 1",
+    ("calc_package|slope_report_package", "soil_layers[0].top_elevation"):
+        "the top layer's top_elevation above the ground surface is cut off "
+        "at the surface",
+    **{(k, "reverse_curvature"):
+       "the probe's circles have no reverse curvature, so neither rule acts "
+       "(analyze_slope#reverse_curvature is the probe of it)" for k in (
+           "calc_package|slope_stability_package",
+           "calc_package|slope_stability_package#crack",
+           "calc_package|slope_stability_package#supports",
+           "calc_package|slope_report_package",
+           "calc_package|slope_report_package#water")},
+    ("calc_package|slope_stability_package#crack", "tension_crack_side"):
+        "the probe's crest is at the circle's entry end, so 'crest' and "
+        "'entry' name the same end",
+    ("calc_package|slope_stability_package#supports", "assisting_support"):
+        "the probe's geosynthetic layer pulls against the sliding where the "
+        "circle crosses it, so no support assists the sliding",
+    **{(k, "soil_layers[0].top_elevation"):
+       "the top layer's top_elevation above the ground surface is cut off "
+       "at the surface" for k in (
+           "calc_package|slope_stability_package#crack",
+           "calc_package|slope_stability_package#supports",
+           "calc_package|slope_report_package#water")},
+    **{(k, "soil_layers[0].bottom_elevation"):
+       "the probe's circle bottoms out above the layer's bottom, given or "
+       "moved" for k in (
+           "calc_package|slope_stability_package#crack",
+           "calc_package|slope_stability_package#supports")},
+    ("calc_package|slope_report_package#water", "time_budget_s"):
+        "the probe's search finishes in a few seconds, inside 180 and 270 "
+        "alike; a budget it cannot finish in stops it (test_gm140_step10_"
+        "package_inputs)",
+    ("calc_package|slope_report_package", "time_budget_s"):
+        "the probe's search finishes in a few seconds, inside 180 and 270 "
+        "alike; a budget it cannot finish in stops it (test_gm140_step10_"
+        "package_inputs)",
     **{(f"slope_stability|{m}", "negative_friction_term"): _NO_ARTESIAN
        for m in ("analyze_slope", "search_critical_surface")},
     **{(f"slope_stability|{m}", "low_m_alpha"): _NO_LOW_M_ALPHA
@@ -660,8 +708,6 @@ _GM140 = ("GM-140: slope_stability is frozen by the owner until its "
           "integral review, and its probes run over 45 minutes")
 FROZEN = {
     "slope_stability": _GM140,
-    "calc_package|slope_report_package": _GM140,
-    "calc_package|slope_stability_package": _GM140,
 }
 
 #: Inputs a run lists as taken from another input (GM-165) that, given
