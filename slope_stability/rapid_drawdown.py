@@ -1078,6 +1078,10 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         water, notes = _stage_water_statements(g_full, g_draw, after_given)
         res.choices += water
         warnings.extend(notes)
+        # what the supports were taken as, the same in every stage
+        # (GM-140 step 8)
+        from slope_stability.supports import support_statements
+        res.choices += support_statements(geom)[0]
         if (method == "corps_2stage"
                 and stage_solver in (None, "gle", "spencer")):
             res.notes.append(CORPS_EXAMPLE_NOTE)
@@ -1524,6 +1528,8 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
     search.choices += _crack_choices(
         geom, _discards_so_far(),
         circles=surface_type in ("circular", "entry_exit") or toe_circles)
+    from slope_stability.supports import support_statements
+    search.choices += support_statements(geom)[0]
     if window_note:
         search.warnings.insert(0, window_note)
     note_budget(search, budget)     # a search cut short says so first

@@ -452,6 +452,11 @@ class SlopeGeometry:
     # 7-5.1, p. 355), not applied where the line is above the ground.
     # The uncorrected head is the lower factor of safety.
     water_line_kind: str = "piezometric"
+    # A support whose pull assists the sliding (GM-140 step 8, OWN-59;
+    # ``slope_stability.supports``): 'slack' (default: it counts nothing
+    # and the result names it) or 'as_given' (its force is applied as it
+    # stands).
+    assisting_support: str = "slack"
     # This surface's crack, fixed by ``cracks.solve_with_crack`` on a copy.
     _crack_fixed: Optional[dict] = field(default=None, init=False,
                                          repr=False, compare=False)
@@ -467,6 +472,11 @@ class SlopeGeometry:
         if self.water_line_kind not in ("piezometric", "water_table"):
             raise ValueError("water_line_kind must be 'piezometric' or "
                              f"'water_table', got '{self.water_line_kind}'")
+        if self.assisting_support not in ("slack", "as_given"):
+            raise ValueError("assisting_support must be 'slack' or "
+                             f"'as_given', got '{self.assisting_support}'")
+        from slope_stability.supports import check_legacy_force
+        check_legacy_force(self)
         if len(self.surface_points) < 2:
             raise ValueError("Surface must have at least 2 points")
         xs = [p[0] for p in self.surface_points]

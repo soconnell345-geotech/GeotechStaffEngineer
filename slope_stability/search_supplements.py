@@ -885,16 +885,30 @@ def _attach_reinforcement(geom, crit) -> None:
         return
     slip = (circle_of(crit)
             if crit.is_circular else PolylineSlipSurface(crit.slip_points))
+    from slope_stability.search import _has_reinforcement
+    from slope_stability.supports import (resolve_supports,
+                                          not_counted_warning)
+    if not _has_reinforcement(geom):
+        crit.reinforcements = None
+        return
     try:
-        forces = trial_reinforcement(geom, slip)
+        x_entry, x_exit = slip.find_entry_exit(geom)
+        supports = resolve_supports(geom, slip, x_entry, x_exit)
     except ValueError:
         return
     crit.reinforcements = [
         {"kind": f.kind, "index": f.index,
          "x_m": round(f.x, 3), "z_m": round(f.z, 3),
          "T_kN_per_m": round(f.T, 2), "controlled_by": f.controlled_by,
-         "support_convention": "passive" if f.passive else "active"}
-        for f in (forces or [])] or None
+         "support_convention": "passive" if f.passive else "active",
+         **({"note": f.note} if f.note else {})}
+        for f in supports.forces] or None
+    # what counts nothing on this surface, and what was not checked
+    # (GM-140 step 8)
+    crit.supports_not_counted = supports.not_counted or None
+    for w in supports.notes + [not_counted_warning(supports.not_counted)]:
+        if w and w not in crit.warnings:
+            crit.warnings.append(w)
 
 
 def _crack_statement(geom, crit, method: str, n_slices: int, tol: float,
@@ -1001,8 +1015,13 @@ def _support_arm_warning(geom, crit, method: str, n_slices: int,
     which = "the critical circle" if in_search else "this circle"
     return (f"{name} counts a support through its moment about the circle "
             f"centre (and its vertical component), not through horizontal "
-            f"force equilibrium, which it does not satisfy (Wright & Duncan "
-            f"1991). The {len(forces)} support(s) crossing {which} "
+            f"force equilibrium, which it does not satisfy (Duncan, Wright "
+            f"and Brandon 2014, Eq. 6.78 and p. 93: the method neglects "
+            f"what a horizontal force adds to the normal stress on the "
+            f"slip surface, and care is needed where large horizontal "
+            f"forces contribute; Wright & Duncan 1991). That is the method "
+            f"as printed: nothing is adjusted. The {len(forces)} "
+            f"support(s) crossing {which} "
             f"({t_sum:.1f} kN/m) act with an average arm of "
             f"{arm:.2f} m about its centre on a {slip.radius:.2f} m radius: "
             f"{100 * share:.0f} % of their force counts. {rigorous}. Check "
@@ -1030,6 +1049,8 @@ def no_solution_warning(result: SearchResult) -> Optional[str]:
             parts = [f"{r[k]} {text}" for k, text in (
                 ("not_converged", "did not converge"),
                 ("no_driving", "with no net driving moment or force"),
+                ("with_supports", "crossed by supports, which the "
+                 "Ordinary Method of Slices has no printed form for"),
                 ("below_0_05", "solved below 0.05")) if r.get(k)]
             return (f"{r['family']}, "
                     f"{METHOD_TEXT.get(r['method'], r['method'])}: "

@@ -707,7 +707,7 @@ pile force acts at the base of the slice it crosses:
 | Method | Moment about the centre | Vertical equilibrium of that slice | Horizontal equilibrium |
 |--------|------------------------|------------------------------------|------------------------|
 | Bishop's simplified | yes (signed) | yes: W -> W - Fz in the numerator, so the base normal and, where phi > 0, the strength change | not satisfied by the method |
-| Ordinary Method of Slices | yes (signed) | the component normal to the base adds to N | not satisfied |
+| Ordinary Method of Slices | no number where a support crosses the surface (GM-140 step 8, below; until then: the signed moment, and the component normal to the base added to N, forms of the module's own) | | |
 | Spencer / M-P / GLE / Janbu (`gle.py`) | exact | yes (base-normal equation) | yes (E march) |
 
 Wright & Duncan's conclusion 6: "In Bishop's simplified procedure, which
@@ -834,6 +834,104 @@ lagged state on the circle (15, 39.667, R 29.661), reported as converged,
 missed a slice's horizontal equilibrium by up to 199 lb/ft. Runtime of the
 #85 default searches (once each, shared laptop): Spencer 40 -> 37 s, GLE
 62 -> 32 s; #86 unchanged (Bishop 1.612, Spencer 1.606, GLE 1.606).
+
+### Supports as printed (GM-140 step 8, 2026-11-14)
+
+**The rule.** A support enters a solution as a known force, the way the
+print gives it: by Method A or Method B, along the reinforcement's own
+direction, and no larger than the reinforcement can carry where the slip
+surface crosses it. `supports.resolve_supports` is the one place that turns
+a geometry's supports into the forces every method takes
+(`reinforcement.compute_reinforcement_forces` returns its `forces`), so the
+rule holds for every method, every family of surfaces and every caller.
+
+**Print.** Duncan, Wright and Brandon (2014), 2nd ed. (the owner's copy,
+cited by page and equation), FHWA GEC 11 and FHWA GEC 7 (reference
+library).
+
+| What | Print | In the module |
+|------|-------|---------------|
+| Method A, Method B | Sec. 8.2, pp. 159 to 160, Eqs. 8.1 to 8.4. A: allowable forces, not divided by F. B: ultimate forces, divided by F. A is preferable (p. 160) | `support_convention` 'active' (default) / 'passive' per support. Every result with supports names the method and the measure of force (`choices`: "how the support forces enter the factor of safety") |
+| Bishop's simplified method with known forces | Sec. 6.5.3, pp. 91 to 93, Eq. 6.78 with Eqs. 6.70 and 6.75: `F = SUM[(c' dl cos a + (W - F_v - u dl cos a) tan phi') / m_alpha] / (SUM W sin a - M_n / r)`; a horizontal force enters the moment only, an inclined one both, the vertical part always | `methods.bishop_fos` was checked term by term: the signed moment about the centre divided by R off the driving sum, `W - Fz` (Fz upward) in the numerator of the slice crossed; Method B: both divided by F. It matched; nothing changed. `test_supports_step8._bishop_by_hand` writes Eq. 6.78 out and agrees to 1e-9 |
+| A support near the centre's level | p. 93: the method neglects what a horizontal force adds to the normal stress on the slip surface; care where large horizontal forces contribute | The short-arm warning stays, now citing p. 93. How much of the support counts is not adjusted. The share below which it warns (0.5) is the module's own |
+| The Ordinary Method of Slices with known forces | none printed (p. 93); none found in the reference library (FHWA NHI-06-088 ch. 6, UFC 3-220-10, GEC 11 ch. 9, DM 7.1 ch. 7 searched) | Refused where a support crosses the surface: `NoSolution`, kind `with_supports`; counted by searches; the comparison table leaves the method out and says why. The lead's call |
+| Direction | Sec. 8.6, pp. 163 to 164: the reinforcement's original orientation (recommended, the more conservative); parallel to the slip surface is the other extreme | `force_direction` 'along_reinforcement' (default) / 'along_slip_surface' on nails, anchors and geosynthetics; a pile's 'horizontal' (its shear) / 'along_slip_surface'. A pile's 'normal' is refused |
+| What a layer carries at a crossing | Sec. 8.4, pp. 161 to 163: the lesser of T_lim and the pullout from each end (Fig. 8.2); Eqs. 8.8 and 8.9; Table 8.3; Eq. 8.10 and Table 8.4. GEC 11 Sec. 9.1 (p. 9-1), Eq. 3-2 (p. 3-16), Eq. 9-9 and "only count reinforcement that extends 3 ft (1 m) beyond the surface" (p. 9-14), FS 1.5 granular and 2 cohesive (p. 9-5) | `supports.layer_capacity`, below |
+| A nail | GEC 7 Eq. 5.2, p. 105: Tmax = min(R_T, R_F, R_PO); Fig. 5.7 | `SoilNail.facing_capacity`: given, the load is also limited by (R_F + pullout of the length in front of the surface). Left out, the term is not checked and the result says so |
+
+**Crossings, exactly.** A nail's or an anchor's line is crossed with the
+circle itself (the lower arc between the surface's two ends) or with each
+segment of a polyline (`supports.line_crossings`); a layer's level with the
+circle or with each segment (`supports.level_crossings`). Until this step
+the line was sampled at 200 points, which missed a crossing within one step
+of a circle's vertical end, and a layer took the first sign change found
+from the surface's low-x end.
+
+**A layer is crossed wherever the surface passes through it.** At each
+crossing the force on the sliding mass points along the layer toward the
+side where the layer lies in the ground under the surface (its anchorage).
+Until this step a layer's `dir_x` could point away from its anchorage,
+which every method hid by taking the horizontal component's magnitude as
+resisting (GM-82); the methods now take the force's own direction
+(`reinforcement.support_components`, `gle._assign_reinforcement`).
+
+**A pull that assists the sliding (OWN-59).** Both readings are offered:
+`SlopeGeometry.assisting_support` 'slack' (default: the support counts
+nothing on that surface and the result names it, `supports_not_counted`)
+or 'as_given' (the force is applied as it stands). The test is the
+module's own: the force's component along the slip surface at the crossing
+points down the slope. On a circle that is the sign of its moment about
+the centre. Two cases meet it: a steep nail crossing the steep upper part
+of a surface, and the toe-side crossing of a layer the surface crosses
+twice. Applying such a force as it stands can still raise F a little in a
+complete-equilibrium method (the pull also presses the mass on its base):
+the made-up case of `test_support_pulling_with_the_slide...` reads 2.2129
+slack and 2.2138 as given.
+
+**Pullout of a geosynthetic layer** (`pullout_basis`):
+
+- `'dwb2014'` (the default once `F_star` and `alpha` are given): pullout
+  from each end of the layer, `2 alpha F* x` the integral of `gamma z`
+  along the embedded length. Eq. 8.8 (constant depth) and Eq. 8.9 (beneath
+  the slope face) are that integral on level and on uniformly sloping
+  ground; it is evaluated on the ground as given (`supports.
+  stress_integral`, exact on both). Under Method A it is divided by
+  `pullout_factor` (Eq. 8.10; Table 8.4 prints 1.3, 1.5 and 2.0 and no
+  default, so it is asked for); under Method B it is not (ultimate forces).
+  The default because the forces are entered by this book's Methods A
+  and B.
+- `'gec11'`: behind the surface only, on the effective vertical stress,
+  times `coverage_ratio`, divided by `pullout_factor`; a layer with less
+  than 1 m behind the surface counts nothing (p. 9-14).
+- `'given'`: `development_length`, the length from an end over which the
+  force rises linearly from zero to `T_allow` (Fig. 8.2; the form Fig. 8.4a
+  gives its layers in).
+- `'not_checked'`: the full `T_allow` at every crossing. This is also what
+  a layer with no pullout input gets (the behaviour before this step), and
+  the result then says the pullout was not checked and what to give.
+- `anchored_end` 'start' / 'end': an end fixed to a facing; no pullout is
+  measured from it.
+- The layer's ends are `x_start` / `x_end`, else where its level meets the
+  ground, else the model's edge.
+
+**A support on a slice boundary (GM-353).** A layer on a material boundary
+meets the slip surface exactly on a slice edge, and a rounding used to
+decide which slice it acted on (V-043: 40.88 or 45.22 kN/m). The rule
+(`supports.slice_index_for`), the module's own: the slice that holds the
+part of the support inside the sliding mass, since that is the body the
+support pulls on; a vertical pile, which has no such side, the slice toward
+-x. A crossing within 1e-6 m of a slice edge is on it.
+
+**The legacy single force** (`reinforcement_force`) without
+`reinforcement_elevation` is refused when the geometry is built (D37: it
+was left out without notice).
+
+**Not changed, noted.** An anchor still carries its full `T_allow` once
+more than 5 % of its length lies beyond the surface (that 5 % is the
+module's own); a nail's bond stress, bar and facing are taken in the
+measure of `support_convention` with no factor of their own; the pullout
+stress under `'dwb2014'` is the total `gamma z` as Eqs. 8.8 and 8.9 print
+it, whatever the water.
 
 ### A method's own solution, or no number (GM-140 step 2, 2026-11-13)
 **The rule.** A factor of safety reported under a method's name is that

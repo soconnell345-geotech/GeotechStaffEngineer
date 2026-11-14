@@ -55,7 +55,16 @@ METHOD_TEXT = {
 }
 
 #: Why a method has no solution on a surface (`NoSolution.kind`).
-NO_SOLUTION_KINDS = ("not_converged", "no_driving")
+NO_SOLUTION_KINDS = ("not_converged", "no_driving", "with_supports")
+
+#: Why the Ordinary Method of Slices gives no number where supports cross
+#: the surface (GM-140 step 8; the lead's call, STEP8_CHECK.md).
+OMS_WITH_SUPPORTS = (
+    "supports cross this surface, and no reference held prints the "
+    "Ordinary Method of Slices with known forces (Duncan, Wright and "
+    "Brandon 2014, p. 93: no such equation is given; Bishop's simplified "
+    "method with known forces is their Eq. 6.78). Use Bishop's simplified "
+    "method on a circle, or Spencer's, Morgenstern-Price's or Janbu's")
 
 #: The internal marker of the solvers and the searches' "not scored" score.
 #: Not a factor of safety (`solve_method` never returns it).

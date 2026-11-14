@@ -244,8 +244,10 @@ def analyze_slope(geom: SlopeGeometry,
     slices = build_slices(geom, slip, n_slices)
 
     # Reinforcement crossings (nails / anchors / geosynthetics)
-    from slope_stability.reinforcement import compute_reinforcement_forces
-    reinf_forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
+    # (GM-140 step 8: ``supports.resolve_supports``)
+    from slope_stability.supports import resolve_supports
+    supports = resolve_supports(geom, slip, x_entry, x_exit)
+    reinf_forces = supports.forces
     if not reinf_forces:
         reinf_forces = None
 
@@ -447,8 +449,10 @@ def analyze_slope(geom: SlopeGeometry,
                 "T_kN_per_m": round(f.T, 2),
                 "controlled_by": f.controlled_by,
                 "support_convention": "passive" if f.passive else "active",
+                **({"note": f.note} if f.note else {}),
             } for f in (reinf_forces or [])
         ] or None,
+        supports_not_counted=supports.not_counted or None,
         n_slices=len(slices),
         has_seismic=geom.kh > 0,
         kh=geom.kh,
@@ -491,7 +495,9 @@ def analyze_slope(geom: SlopeGeometry,
     result._no_solution_kind = primary.kind if not primary.solved else ""
     if is_circular:
         from slope_stability.search_supplements import _support_arm_warning
-        if reinf_forces and method in ("bishop", "fellenius"):
+        # (Bishop only: the Ordinary Method of Slices has no number
+        # where supports cross the surface, GM-140 step 8)
+        if reinf_forces and method == "bishop":
             def _spencer_here():
                 return _sol("spencer").fos
             w = _support_arm_warning(geom, result, method, n_slices, tol,
@@ -505,6 +511,16 @@ def analyze_slope(geom: SlopeGeometry,
     from slope_stability.pore_pressure import water_statements
     result.choices, notes = water_statements(geom)
     result.warnings.extend(notes)
+    # What the supports were taken as (GM-140 step 8): Method A or B and
+    # the measure of force, the direction, a pull that assists the
+    # sliding, the pullout; and what was not checked or not counted.
+    from slope_stability.supports import (add_support_statements,
+                                          not_counted_warning)
+    add_support_statements(result, geom)
+    result.warnings.extend(supports.notes)
+    w = not_counted_warning(supports.not_counted)
+    if w:
+        result.warnings.append(w)
     return result
 
 
@@ -1110,6 +1126,9 @@ def search_critical_surface(
         # 5a), said once, by the search.
         from slope_stability.pore_pressure import add_water_statements
         add_water_statements(result, geom)
+        # and what the supports were taken as (GM-140 step 8)
+        from slope_stability.supports import add_support_statements
+        add_support_statements(result, geom)
         # the crack rule (GM-140 step 4): the crack asked for, and what
         # was done with reverse-curvature circles
         result.choices += _crack_choices(

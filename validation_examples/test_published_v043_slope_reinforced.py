@@ -195,16 +195,13 @@ def test_v043_sand_reinforcement_force_brackets_published():
     matching the published noncircular 56; see module note). ~55 kN/m
     before GM-134, 41 kN/m until GM-343.
 
-    The pin is one of the two outcomes of a tie. The geosynthetic (z = 3)
-    meets the slip surface on a slice boundary, x 8.388 (the same level is
-    a layer top), and changes slice within 1e-8 m of the arc's ends: on the
-    code before GM-343 the base read 40.88 kN/m at R and 45.22 kN/m at
-    R + 1e-8 m (Spencer 1.3501 against 1.3353 at T = 40.9). GM-343 finds
-    the circle's ends from the ground's segments (x = 22 exactly, where
-    bisection gave 22.0000003), which lands on the 45.22 side. Not a rule
-    of that step: the tie is for step 8 (supports), a stated rule for a
-    crossing on a slice boundary or a cut at the crossing, then a re-pin
-    (the review of GM-343, defect 1)."""
+    The geosynthetic (z = 3) meets the slip surface on a slice boundary,
+    x 8.388 (the same level is a layer top). Until GM-140 step 8 a
+    rounding decided which slice it acted on: 40.88 kN/m at R and
+    45.22 kN/m at R + 1e-8 m (GM-353). The rule now
+    (``supports.slice_index_for``): the slice that holds the part of the
+    support inside the sliding mass. It gives 45.22 at R and at R +- 1e-8 m
+    (checked below); the slice on the anchorage side would give 40.88."""
     xc, yc, r = _SAND_CIRC
     slip = CircularSlipSurface(xc=xc, yc=yc, radius=r)
     lo, hi = 0.0, 300.0
@@ -217,9 +214,15 @@ def test_v043_sand_reinforcement_force_brackets_published():
         else:
             hi = mid
     T = 0.5 * (lo + hi)
-    # GM-343: 40.9 -> 45.2; printed 44-45 (Tandjiria et al. 2002 and
-    # Slide2's verification, the module note above): +0.5 % to +2.8 %
-    assert T == pytest.approx(45.2, abs=1.0)            # ours (pinned)
+    # GM-140 step 8 (GM-353): 45.22 at every radius (40.88 or 45.22
+    # before); printed 44-45 (Tandjiria et al. 2002 and Slide2
+    # Verification #43, the module note above): +0.5 % to +2.8 %
+    assert T == pytest.approx(45.22, abs=0.05)          # ours (pinned)
+    for dr in (-1e-8, 1e-8):
+        near = CircularSlipSurface(xc=xc, yc=yc, radius=r + dr)
+        assert analyze_slope(_geom("sand", T=T), slip_surface=near,
+                             method="spencer").FOS == pytest.approx(
+                                 1.35, abs=1e-4)
     assert T == pytest.approx(44.0, rel=0.1)    # within 10% of published 44
     # the solved force does raise this surface to the target
     fs_at_T = analyze_slope(_geom("sand", T=T), slip_surface=slip,

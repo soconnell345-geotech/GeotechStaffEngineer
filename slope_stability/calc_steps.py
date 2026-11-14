@@ -648,6 +648,30 @@ def _reinforcement_section(result, geom):
                      "surface — the layout contributes no stabilizing "
                      "force to the reported FOS.")
 
+    # Supports that cross the surface and count nothing, and what the
+    # supports were taken as: Method A or B and the measure of force, the
+    # direction, the pullout (GM-140 step 8), each with its print.
+    not_counted = getattr(result, "supports_not_counted", None) or []
+    if not_counted:
+        items.append(TableData(
+            title="Supports Crossing the Surface That Count Nothing",
+            headers=["Type", "#", "Crossing (x, z) (m)", "T (kN/m)", "Why"],
+            rows=[[r["kind"].capitalize(), str(r["index"] + 1),
+                   f"({r['x_m']:.1f}, {r['z_m']:.1f})",
+                   f"{r['T_kN_per_m']:.1f}", r["reason"]]
+                  for r in not_counted],
+        ))
+    from slope_stability.supports import support_statements
+    from geotech_common.choices import plain
+    said, _ = support_statements(geom)
+    if said:
+        items.append(TableData(
+            title="How the Supports Enter the Analysis",
+            headers=["What", "Used", "Basis"],
+            rows=[[plain(c["what"]), plain(str(c["chosen"])),
+                   plain(c.get("basis", ""))] for c in said],
+        ))
+
     return CalcSection(title="Reinforcement", items=items)
 
 
@@ -880,7 +904,10 @@ def _search_section(search) -> CalcSection:
                              f"moment or force)" if rec.get("no_driving")
                              else "")
             + (f" ({rec['below_0_05']} solved below 0.05)"
-               if rec.get("below_0_05") else "")])
+               if rec.get("below_0_05") else "")
+            + (f" ({rec['with_supports']} crossed by supports: the "
+               f"Ordinary Method of Slices has no printed form with known "
+               f"forces)" if rec.get("with_supports") else "")])
     # Scored surfaces left out for m_alpha < 0.2 on a slice (GM-127)
     n_rej_ma = getattr(search, "n_rejected_m_alpha", 0)
     if n_rej_ma:

@@ -31,6 +31,10 @@ _CRACK_MODELS = ["truncation", "strength"]
 _CRACK_DEPTH_BASES = ["given", "rankine", "min_fos"]
 _REVERSE_CURVATURE = ["tension_crack", "discard"]
 _WATER_LINE_KINDS = ["piezometric", "water_table"]
+_ASSISTING_SUPPORT = ["slack", "as_given"]
+_FORCE_DIRECTIONS = ["along_reinforcement", "along_slip_surface"]
+_PILE_FORCE_DIRECTIONS = ["horizontal", "along_slip_surface"]
+_PULLOUT_BASES = ["dwb2014", "gec11", "given", "not_checked"]
 
 
 # Top-level geometry params consumed by _build_geometry, and the trial-surface
@@ -42,7 +46,7 @@ _GEOM_PARAMS = (
     "tension_crack_depth", "tension_crack_water_depth",
     "tension_crack_side", "tension_crack_model", "pore_pressure_points",
     "surcharges", "reverse_curvature", "tension_crack_depth_basis",
-    "water_line_kind",
+    "water_line_kind", "assisting_support",
 )
 _SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points", "arc_x_start",
                    "arc_x_end")
@@ -89,6 +93,13 @@ def _check_choice(value, allowed, *, name: str, method: str):
         raise ValueError(
             f"{method}: invalid {name} '{value}'. Allowed: {allowed}.")
     return value
+
+
+def _force_direction(d: dict, kind: str, method: str) -> str:
+    """A support's ``force_direction``, checked (GM-140 step 8)."""
+    return _check_choice(d.get("force_direction", "along_reinforcement"),
+                         _FORCE_DIRECTIONS,
+                         name=f"{kind}[].force_direction", method=method)
 
 
 def _support_convention(d: dict, kind: str, method: str) -> str:
@@ -257,6 +268,8 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 bond_stress=d.get("bond_stress", 100.0),
                 spacing_h=d.get("spacing_h", 1.5),
                 support_convention=_support_convention(d, "nails", method),
+                facing_capacity=d.get("facing_capacity"),
+                force_direction=_force_direction(d, "nails", method),
             ))
     anchors = None
     if params.get("anchors"):
@@ -272,6 +285,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 T_allow=d["T_allow"],
                 inclination=d.get("inclination", 15.0),
                 support_convention=_support_convention(d, "anchors", method),
+                force_direction=_force_direction(d, "anchors", method),
             ))
     geosynthetics = None
     if params.get("geosynthetics"):
@@ -287,6 +301,21 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 x_start=d.get("x_start"), x_end=d.get("x_end"),
                 support_convention=_support_convention(d, "geosynthetics",
                                                        method),
+                F_star=d.get("F_star"), alpha=d.get("alpha"),
+                pullout_factor=d.get("pullout_factor"),
+                pullout_basis=(None if d.get("pullout_basis") is None else
+                               _check_choice(
+                                   d["pullout_basis"], _PULLOUT_BASES,
+                                   name="geosynthetics[].pullout_basis",
+                                   method=method)),
+                development_length=d.get("development_length"),
+                anchored_end=(None if d.get("anchored_end") is None else
+                              _check_choice(
+                                  d["anchored_end"], ["start", "end"],
+                                  name="geosynthetics[].anchored_end",
+                                  method=method)),
+                coverage_ratio=d.get("coverage_ratio", 1.0),
+                force_direction=_force_direction(d, "geosynthetics", method),
             ))
 
     stabilizing_piles = None
@@ -304,7 +333,11 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 z_toe=d.get("z_toe"), ito_matsui=d.get("ito_matsui", False),
                 diameter=d.get("diameter"), c=d.get("c"), phi=d.get("phi"),
                 gamma=d.get("gamma"),
-                force_direction=d.get("force_direction", "horizontal"),
+                force_direction=_check_choice(
+                    d.get("force_direction", "horizontal"),
+                    _PILE_FORCE_DIRECTIONS,
+                    name="stabilizing_piles[].force_direction",
+                    method=method),
                 support_convention=d.get("support_convention", "active"),
             ))
 
@@ -324,6 +357,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         reverse_curvature=reverse_curvature,
         pore_pressure_points=pore_pressure_points, surcharges=surcharges,
         water_line_kind=water_line_kind,
+        assisting_support=_check_choice(
+            params.get("assisting_support", "slack"), _ASSISTING_SUPPORT,
+            name="assisting_support", method=method),
     )
 
 
@@ -700,12 +736,13 @@ _GEOMETRY_PARAMS = {
     "tension_crack_model": {"type": "str", "required": False, "default": "truncation", "allowed_values": _CRACK_MODELS, "description": "What the crack does: 'truncation' (default, as printed) ends the slip surface at the bottom of the crack, leaves out the soil upslope of it and ends the slices at a vertical boundary there (EM 1110-2-1902 2-2f(3), p. 2-6; C-10c, p. C-36; Slide v6 Tutorial 16); 'strength' keeps the cracked soil as driving weight without strength (the default before GM-140; no printed source; a lower factor of safety)."},
     "reverse_curvature": {"type": "str", "required": False, "default": "tension_crack", "allowed_values": _REVERSE_CURVATURE, "description": "A circle whose centre is below the ground at its upper end would turn back over itself (reverse curvature). The tension crack is a condition of the analysis, set by the engineer (tension_crack_depth, or tension_crack_depth_basis 'rankine' / 'min_fos'), and the same on every trial surface: a circle's shape never switches it on. 'tension_crack' (default): with a crack asked for, such a circle is closed by that crack where its overhang lies within the crack's depth and discarded where it runs deeper; with no crack asked for, every such circle is discarded (not an admissible surface; naming a crack admits those within its depth). 'discard': every such circle is discarded. A search counts the surfaces the crack rule refuses by reason and locates them (crack_refused); a discarded circle given to a single-surface method gets no factor of safety (an error saying why). A circle overhanging at its lower end is always discarded."},
     "pore_pressure_points": {"type": "array", "required": False, "description": "Discrete pore-pressure field as [[x, z, u], ...] triples (u in kPa) -- a flow-net / TIN sampling. When given, the base pore pressure at each slice is interpolated from this field (linear on the Delaunay triangulation, nearest-node fallback outside the hull, suction clamped to 0), OVERRIDING the gwt_points piezometric line and per-layer ru. The ponded-water buttress still comes from gwt_points, so set BOTH for a reservoir over a flow-net field."},
-    "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5, support_convention}]. Capacity = min(pullout behind slip surface, bar tensile)/spacing_h (FHWA GEC-7)."},
-    "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15, support_convention}]. Full T_allow applied when the bond zone crosses the slip surface."},
-    "geosynthetics": {"type": "array", "required": False, "description": "Horizontal geosynthetic layers: [{elevation, T_allow kN/m required; x_start, x_end, support_convention optional}]. Every support (nails, anchors, geosynthetics, piles) acts at the base of the slice it crosses (Wright & Duncan 1991). support_convention: 'active' (default; Duncan & Wright Method A / Slide2 Active: the force is not divided by F and reduces the driving side -- give the ALLOWABLE force) or 'passive' (Method B / Slide2 Passive: divided by F with the soil strength -- give the ULTIMATE force; lower FOS for the same force). All methods."},
-    "stabilizing_piles": {"type": "array", "required": False, "description": "Single-row stabilizing/micro piles crossing the slope (Ito & Matsui 1975 or a specified shear): [{x required; spacing m=1.0 (D1); z_head, z_toe optional}]. Set the resistance EITHER by shear_capacity (kN per pile; per-metre force = shear_capacity/spacing) OR ito_matsui=true with diameter (m; D2=spacing-diameter) and optional c/phi/gamma (default: soil layer) giving the Ito-Matsui plastic lateral force integrated from head to slip surface. force_direction 'horizontal' (default) or 'normal'. support_convention 'active' (default) or 'passive' as for geosynthetics. Stabilizing force at the slip crossing."},
-    "reinforcement_force": {"type": "float", "required": False, "default": 0.0, "description": "Single equivalent horizontal reinforcement force (kN/m). Simpler alternative to nails/anchors."},
-    "reinforcement_elevation": {"type": "float", "required": False, "description": "Elevation of the equivalent reinforcement force (m)."},
+    "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5, support_convention, facing_capacity kN per nail, force_direction}]. Load at the slip surface = the least of the pullout of the length behind the surface, the bar and, when facing_capacity is given, the facing with the pullout of the length in front of the surface, / spacing_h (FHWA GEC 7 Eq. 5.2, p. 105). With no facing_capacity that front term is not checked and the result says so. The bar, the bond and the facing are taken in the measure of support_convention (allowable when 'active', ultimate when 'passive')."},
+    "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15, support_convention, force_direction}]. Full T_allow applied when the bond zone crosses the slip surface."},
+    "geosynthetics": {"type": "array", "required": False, "description": "Horizontal geosynthetic layers: [{elevation, T_allow kN/m required; x_start, x_end, support_convention, F_star, alpha, pullout_factor, pullout_basis, development_length, anchored_end, coverage_ratio, force_direction optional}]. Every support (nails, anchors, geosynthetics, piles) is a known force where it crosses the slip surface, acting on the slice whose base it crosses (on a slice boundary: the slice holding the part of the support inside the sliding mass). support_convention: 'active' (default; Duncan, Wright and Brandon 2014 Method A, Eqs. 8.1 and 8.2: the force is not divided by F and reduces the driving side -- give the ALLOWABLE force) or 'passive' (Method B, Eqs. 8.3 and 8.4: divided by F with the soil strength -- give the ULTIMATE force; lower FOS for the same force). Bishop's simplified method takes the forces by Eq. 6.78 (the moment, and the vertical component in the slice's vertical equilibrium); the Ordinary Method of Slices gives no number where a support crosses the surface (no reference prints it with known forces). force_direction: 'along_reinforcement' (default: the support's own orientation) or 'along_slip_surface' (Sec. 8.6). Pullout: the force a layer carries at a crossing is the lesser of T_allow and its pullout resistance. Give F_star and alpha (the pullout resistance factor and the scale effect factor of the fill and the product; no default) and, for an active layer, pullout_factor (what the pullout is divided by: Table 8.4 prints 1.3, 1.5 and 2.0, GEC 11 1.5 granular and 2 cohesive; no default): pullout_basis 'dwb2014' (default with F_star and alpha) takes 2 alpha F* gamma z integrated from each end of the layer (Eqs. 8.8 and 8.9; ends x_start / x_end, else where the layer meets the ground or the model's edge); 'gec11' takes it behind the surface only, on the effective stress, times coverage_ratio, and counts nothing with less than 1 m behind the surface (GEC 11 Eq. 9-9 and p. 9-14). Or give development_length (m): the force rises linearly from zero at an end to T_allow over that length. anchored_end 'start' (the -x end) or 'end': an end fixed to a facing, no pullout measured from it. With none of these the pullout is NOT checked (the full T_allow at every crossing) and the result says so. All methods."},
+    "stabilizing_piles": {"type": "array", "required": False, "description": "Single-row stabilizing/micro piles crossing the slope (Ito & Matsui 1975 or a specified shear): [{x required; spacing m=1.0 (D1); z_head, z_toe optional}]. Set the resistance EITHER by shear_capacity (kN per pile; per-metre force = shear_capacity/spacing) OR ito_matsui=true with diameter (m; D2=spacing-diameter) and optional c/phi/gamma (default: soil layer) giving the Ito-Matsui plastic lateral force integrated from head to slip surface. force_direction 'horizontal' (default: the pile's shear, against the sliding) or 'along_slip_surface' (parallel to the slip surface at the crossing); 'normal' is no longer offered (no reference prints it). support_convention 'active' (default) or 'passive' as for geosynthetics. Stabilizing force at the slip crossing."},
+    "assisting_support": {"type": "str", "required": False, "default": "slack", "allowed_values": _ASSISTING_SUPPORT, "description": "A support whose pull would assist the sliding (its force's component along the slip surface where it crosses points down the slope: a steep nail crossing the steep upper part of a surface, or the toe-side crossing of a layer the surface crosses twice). 'slack' (default): it counts nothing on that surface and the result names it (supports_not_counted). 'as_given': its force is applied as it stands. The owner's call (OWN-59); no reference prints one."},
+    "reinforcement_force": {"type": "float", "required": False, "default": 0.0, "description": "Single equivalent horizontal reinforcement force (kN/m), an allowable force (Method A) acting at reinforcement_elevation, which must be given with it (a force with no elevation is refused). Simpler alternative to nails/anchors; its pullout is not checked."},
+    "reinforcement_elevation": {"type": "float", "required": False, "description": "Elevation of the equivalent reinforcement force (m). Required with reinforcement_force."},
 }
 
 _SURFACE_SPEC_PARAMS = {
@@ -743,7 +780,8 @@ _SEE_ANALYZE_SLOPE = {
          "1110-2-1902 2-2f(3), p. 2-6; C-10c, p. C-36) or 'strength'."),
         ("geosynthetics", "horizontal layers [{elevation, T_allow kN/m; "
          "x_start, x_end, support_convention optional}], each acting at the "
-         "base of the slice it crosses."),
+         "base of the slice it crosses; its pullout is not checked here "
+         "(see analyze_slope's geosynthetics for the pullout inputs)."),
         ("stabilizing_piles", "a single row [{x; spacing; z_head, z_toe "
          "optional}], resisting by shear_capacity or by ito_matsui=true with "
          "diameter."),
@@ -1045,9 +1083,6 @@ _FROM_WATER = ("from the water table",
 _WHOLE_SURFACE = ("the whole ground surface",
                   "the single surcharge acts over the entire surface")
 _NO_ZONES = ("no surcharge zones", "only the single surcharge, if any")
-_NOT_APPLIED = ("the reinforcement force not applied",
-                "reinforcement_force acts only at a given elevation; "
-                "without one it is left out of the analysis")
 _WINDOW = ("set from the slope's geometry",
            "entry and exit windows from the slope's toe, crest, height and "
            "depth to the base; the result lists what the search covered")
@@ -1065,8 +1100,7 @@ _POOL = ("a level pool at drawdown_from_elevation",
 _LOW_POOL = ("a level pool at drawdown_to_elevation",
              "hydrostatic below the lowered pool after drawdown, as in the "
              "manual's example (EM 1110-2-1902 G-4b, p. G-9)")
-_LOADS = {"surcharge_x_range": _WHOLE_SURFACE, "surcharges": _NO_ZONES,
-          "reinforcement_elevation": _NOT_APPLIED}
+_LOADS = {"surcharge_x_range": _WHOLE_SURFACE, "surcharges": _NO_ZONES}
 _GROUND = {"gwt_points": _NO_WATER, "pore_pressure_points": _FROM_WATER,
            **_LOADS}
 declare_when_absent(METHOD_INFO, {
@@ -1095,7 +1129,6 @@ for _m, _info in METHOD_INFO.items():
     _p = _info["parameters"]
     for _name, _when in (
             ("surcharge_x_range", {"surcharge": "set"}),
-            ("reinforcement_elevation", {"reinforcement_force": "set"}),
             ("gwt_points", {"pore_pressure_points": "unset"}),
             ("pore_pressure_points", {"gwt_points": "set"})):
         if _name in _p and _p[_name].get("when_absent"):
@@ -1112,6 +1145,16 @@ for _m, _info in METHOD_INFO.items():
                 {"stage1_phreatic_points": "set"}
                 if "stage1_phreatic_points" in _p else
                 {"gwt_points": "set", "pore_pressure_points": "unset"})}
+# What a support whose pull assists the sliding counts (GM-140 step 8)
+# applies where there is a support.
+for _m, _info in METHOD_INFO.items():
+    _p = _info["parameters"]
+    if "assisting_support" in _p:
+        _p["assisting_support"] = {
+            **_p["assisting_support"],
+            "applies_when": [{_k: "set"} for _k in (
+                "nails", "anchors", "geosynthetics", "stabilizing_piles",
+                "reinforcement_force") if _k in _p]}
 for _m, _seeded in (
         ("search_critical_surface",
          ["noncircular", "noncircular_de", "pso", "weak_layer"]),

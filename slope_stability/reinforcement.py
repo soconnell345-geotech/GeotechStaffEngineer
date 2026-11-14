@@ -21,17 +21,27 @@ satisfies:
   procedure, which satisfies vertical force equilibrium, the vertical
   components of the reinforcement forces should be included in the
   equations of vertical equilibrium."
-* Ordinary Method of Slices (Fellenius): the moment about the centre, and
-  the component normal to the slice base in that slice's normal force.
+* Ordinary Method of Slices (Fellenius): no number where a support
+  crosses the surface (GM-140 step 8). Duncan, Wright and Brandon (2014,
+  p. 93) print Bishop's simplified method with known forces (Eq. 6.78) and
+  no such equation for this method; no other reference held prints one.
 * Spencer / Morgenstern-Price / GLE / Janbu (``gle.py``): the horizontal
   component in that slice's horizontal equilibrium, the vertical component
   in its vertical equilibrium, and the moment exactly.
 
+GM-140 step 8 (``slope_stability.supports``): each crossing is found
+exactly, the force acts along the support's own orientation toward its
+anchorage (or, as a stated option, parallel to the slip surface; Duncan,
+Wright and Brandon 2014, Sec. 8.6), it is no larger than the support can
+carry at the crossing (a layer's pullout from each end, Sec. 8.4; a nail's
+facing term, GEC 7 Eq. 5.2), a support whose pull assists the sliding is
+slack by default (OWN-59), and a crossing on a slice boundary acts on the
+slice holding the part of the support inside the sliding mass (GM-353).
+
 In the circular methods the moment is the signed moment of the force about
-the centre, with the horizontal component taken as resisting (into the
-slope) as the GLE takes it: an inclined support whose line of action passes
-on the far side of the centre adds to the driving moment, as it does in the
-GLE. On a circle that moment is the support's component along the slip
+the centre (Eq. 6.70; M_n of Eq. 6.78): an inclined support whose line of
+action passes on the far side of the centre adds to the driving moment, as
+it does in the GLE. On a circle that moment is the support's component along the slip
 surface times R, so a support crossing a steep part of the circle close to
 the level of the centre counts for little in Bishop's method (the warning
 in ``search_supplements._support_arm_warning``). Until 2026-10-14 the
@@ -82,6 +92,15 @@ from slope_stability.nails import SoilNail
 SUPPORT_CONVENTIONS = ("active", "passive")
 
 
+def _check_direction(value: str) -> None:
+    from slope_stability.supports import FORCE_DIRECTIONS
+    if value not in FORCE_DIRECTIONS:
+        raise ValueError(
+            "force_direction must be 'along_reinforcement' (the support's "
+            "own orientation) or 'along_slip_surface' (Duncan, Wright and "
+            f"Brandon 2014, Sec. 8.6), got {value!r}")
+
+
 def _check_convention(value: str) -> None:
     if value not in SUPPORT_CONVENTIONS:
         raise ValueError("support_convention must be 'active' or 'passive', "
@@ -107,17 +126,87 @@ class Geosynthetic:
         'active' (default, Method A: the force reduces the driving side,
         give the allowable force) or 'passive' (Method B: the force is
         divided by the factor of safety, give the ultimate force).
+    F_star, alpha : float, optional
+        The pullout resistance factor and the scale effect correction
+        factor (GEC 11 Eq. 3-2 and Table 3-6, pp. 3-16 to 3-17; Duncan,
+        Wright and Brandon 2014, Table 8.3). Findings about the fill and
+        the product: no default. Given, the force at a crossing is the
+        lesser of ``T_allow`` and the pullout resistance
+        (``slope_stability.supports``).
+    pullout_factor : float, optional
+        What the pullout resistance is divided by under Method A (Duncan,
+        Wright and Brandon 2014, Table 8.4: F_R = 1.3, 1.5 or 2.0; GEC 11
+        p. 9-5: 1.5 granular, 2 cohesive). Asked for when F_star and alpha
+        are given and the layer is active; not used when passive.
+    pullout_basis : str, optional
+        'dwb2014' (pullout from each end of the layer; the default with
+        F_star and alpha), 'gec11' (behind the surface only, on the
+        effective stress, with ``coverage_ratio``, at least 1 m),
+        'given' (``development_length``) or 'not_checked' (the full
+        ``T_allow`` at every crossing; the case when no pullout input is
+        given, said in the result).
+    development_length : float, optional
+        Length from an end of the layer over which its force rises
+        linearly from zero to ``T_allow`` (m): the pullout given directly
+        (Duncan, Wright and Brandon 2014, Fig. 8.2).
+    anchored_end : str, optional
+        'start' (the -x end) or 'end' (the +x end): an end fixed to a
+        facing, from which no pullout is measured.
+    coverage_ratio : float
+        Rc = b / Sh (GEC 11 Eq. 9-9); 1 for a continuous sheet. Used by
+        'gec11' only.
+    force_direction : str
+        'along_reinforcement' (default: horizontal, the layer's own
+        orientation) or 'along_slip_surface' (Duncan, Wright and Brandon
+        2014, Sec. 8.6, pp. 163 to 164).
     """
     elevation: float
     T_allow: float
     x_start: Optional[float] = None
     x_end: Optional[float] = None
     support_convention: str = "active"
+    F_star: Optional[float] = None
+    alpha: Optional[float] = None
+    pullout_factor: Optional[float] = None
+    pullout_basis: Optional[str] = None
+    development_length: Optional[float] = None
+    anchored_end: Optional[str] = None
+    coverage_ratio: float = 1.0
+    force_direction: str = "along_reinforcement"
 
     def __post_init__(self):
         if self.T_allow <= 0:
             raise ValueError(f"T_allow must be positive, got {self.T_allow}")
         _check_convention(self.support_convention)
+        _check_direction(self.force_direction)
+        from slope_stability.supports import PULLOUT_BASES
+        if (self.pullout_basis is not None
+                and self.pullout_basis not in PULLOUT_BASES):
+            raise ValueError(
+                "pullout_basis must be one of "
+                + ", ".join(repr(b) for b in PULLOUT_BASES)
+                + f", got {self.pullout_basis!r}")
+        for name in ("F_star", "alpha", "pullout_factor",
+                     "development_length"):
+            v = getattr(self, name)
+            if v is not None and v <= 0:
+                raise ValueError(f"{name} must be positive, got {v}")
+        if (self.F_star is None) != (self.alpha is None):
+            raise ValueError("Give both F_star and alpha, or neither")
+        if self.pullout_basis == "given" and not self.development_length:
+            raise ValueError(
+                "pullout_basis='given' needs development_length")
+        if (self.pullout_basis in ("dwb2014", "gec11")
+                and self.F_star is None):
+            raise ValueError(
+                f"pullout_basis={self.pullout_basis!r} needs F_star and "
+                f"alpha")
+        if self.anchored_end not in (None, "start", "end"):
+            raise ValueError("anchored_end must be 'start' or 'end', got "
+                             f"{self.anchored_end!r}")
+        if not 0 < self.coverage_ratio <= 1:
+            raise ValueError("coverage_ratio must be above 0 and at most "
+                             f"1, got {self.coverage_ratio}")
 
 
 @dataclass
@@ -142,6 +231,10 @@ class Anchor:
         give the allowable force; a tensioned tieback acts on the mass
         before it moves) or 'passive' (Method B: the force is divided by
         the factor of safety, give the ultimate force).
+    force_direction : str
+        'along_reinforcement' (default: along the anchor) or
+        'along_slip_surface' (Duncan, Wright and Brandon 2014, Sec. 8.6,
+        pp. 163 to 164).
     """
     x_head: float
     z_head: float
@@ -149,6 +242,7 @@ class Anchor:
     T_allow: float
     inclination: float = 15.0
     support_convention: str = "active"
+    force_direction: str = "along_reinforcement"
 
     def __post_init__(self):
         if self.length <= 0:
@@ -156,6 +250,7 @@ class Anchor:
         if self.T_allow <= 0:
             raise ValueError(f"T_allow must be positive, got {self.T_allow}")
         _check_convention(self.support_convention)
+        _check_direction(self.force_direction)
 
 
 @dataclass
@@ -197,8 +292,14 @@ class StabilizingPile:
         Soil strength/unit weight for the Ito-Matsui force. Default: taken from
         the soil layer at the pile mid-depth.
     force_direction : str
-        'horizontal' (default) or 'normal' (perpendicular to the slip surface
-        at the crossing).
+        'horizontal' (default: the pile's shear, perpendicular to the
+        vertical pile, against the sliding) or 'along_slip_surface'
+        (parallel to the slip surface at the crossing, against the
+        sliding): the two directions Duncan, Wright and Brandon (2014,
+        Sec. 8.6, pp. 163 to 164) print for a support's force. 'normal'
+        (perpendicular to the slip surface), offered until GM-140 step 8,
+        is refused: no reference held prints it, and on a circle such a
+        force has no moment about the centre.
     support_convention : str
         'active' (**default**, Duncan & Wright Method A, Slide2 "Active")
         applies the unfactored force, reducing the driving side; 'passive'
@@ -234,8 +335,18 @@ class StabilizingPile:
         elif self.shear_capacity is None or self.shear_capacity <= 0:
             raise ValueError("give a positive shear_capacity or set "
                              "ito_matsui=True with a diameter")
-        if self.force_direction not in ("horizontal", "normal"):
-            raise ValueError("force_direction must be 'horizontal' or 'normal'")
+        if self.force_direction == "normal":
+            raise ValueError(
+                "force_direction='normal' (perpendicular to the slip "
+                "surface) is no longer offered: no reference held prints "
+                "it, and on a circle such a force has no moment about the "
+                "centre. Use 'horizontal' (the pile's shear, the default) "
+                "or 'along_slip_surface' (Duncan, Wright and Brandon 2014, "
+                "Sec. 8.6, pp. 163 to 164).")
+        if self.force_direction not in ("horizontal", "along_slip_surface"):
+            raise ValueError("force_direction must be 'horizontal' or "
+                             "'along_slip_surface', got "
+                             f"{self.force_direction!r}")
         if self.support_convention not in ("active", "passive"):
             raise ValueError("support_convention must be 'active' or 'passive', "
                              f"got '{self.support_convention}'")
@@ -259,7 +370,15 @@ class ReinforcementForce:
     index : int
         Index within its input list.
     controlled_by : str
-        'pullout', 'tensile', 'allowable', 'shear_capacity' or 'ito_matsui'.
+        'pullout', 'pullout_front', 'embedment', 'tensile', 'facing',
+        'allowable', 'shear_capacity' or 'ito_matsui'.
+    side : float
+        -1 or +1: the x sense, from the crossing, of the part of the
+        support inside the sliding mass (0 for a vertical pile). Decides
+        the slice a crossing on a slice boundary acts on
+        (``supports.slice_index_for``, GM-353).
+    note : str
+        What limited the force, in plain words.
     passive : bool
         If True, the force is applied with the PASSIVE convention (Method B:
         divided by the factor of safety, on the resisting side) rather than
@@ -275,6 +394,8 @@ class ReinforcementForce:
     index: int
     controlled_by: str = "allowable"
     passive: bool = False
+    side: float = 0.0
+    note: str = ""
 
 
 def _into_slope_sign(geom, x_head: float) -> float:
@@ -438,162 +559,25 @@ def compute_reinforcement_forces(geom, slip,
     Parameters
     ----------
     geom : SlopeGeometry
-        May carry ``nails``, ``anchors``, ``geosynthetics`` lists and the
-        legacy ``reinforcement_force``/``reinforcement_elevation`` pair
-        (treated as a horizontal allowable force).
+        May carry ``nails``, ``anchors``, ``geosynthetics``,
+        ``stabilizing_piles`` and the legacy
+        ``reinforcement_force``/``reinforcement_elevation`` pair (a
+        horizontal allowable force; refused without its elevation).
     slip : slip surface (circular or polyline)
     x_entry, x_exit : float
-        Slip surface entry/exit (limits the search window).
+        The two ends of the slip surface.
 
     Returns
     -------
     list of ReinforcementForce
+        The forces the methods take: ``supports.resolve_supports(...)
+        .forces`` (GM-140 step 8: each crossing found exactly, the force
+        along the stated direction and no larger than the support can
+        carry there; a support whose pull assists the sliding is slack
+        by default and is not in the list).
     """
-    forces: List[ReinforcementForce] = []
-
-    nails = getattr(geom, "nails", None) or []
-    for i, nail in enumerate(nails):
-        beta = math.radians(nail.inclination)
-        hit = _line_slip_intersection(slip, geom, nail.x_head, nail.z_head,
-                                      beta, nail.length)
-        if hit is None:
-            continue
-        x_int, z_int, t_int, dx, dz = hit
-        L_behind = max(nail.length - t_int, 0.0)
-        ddh_m = nail.drill_hole_diameter / 1000.0
-        T_pull = nail.bond_stress * math.pi * ddh_m * L_behind / nail.spacing_h
-        T_tens = nail.tensile_capacity_kN / nail.spacing_h
-        if T_pull <= 0:
-            continue
-        if T_pull <= T_tens:
-            T, ctrl = T_pull, "pullout"
-        else:
-            T, ctrl = T_tens, "tensile"
-        forces.append(ReinforcementForce(
-            x=x_int, z=z_int, T=T, dir_x=dx, dir_z=dz,
-            kind="nail", index=i, controlled_by=ctrl,
-            passive=(nail.support_convention == "passive")))
-
-    anchors = getattr(geom, "anchors", None) or []
-    for i, a in enumerate(anchors):
-        beta = math.radians(a.inclination)
-        hit = _line_slip_intersection(slip, geom, a.x_head, a.z_head,
-                                      beta, a.length)
-        if hit is None:
-            continue
-        x_int, z_int, t_int, dx, dz = hit
-        if a.length - t_int <= 0.05 * a.length:
-            continue  # bond zone not beyond the surface
-        forces.append(ReinforcementForce(
-            x=x_int, z=z_int, T=a.T_allow, dir_x=dx, dir_z=dz,
-            kind="anchor", index=i, controlled_by="allowable",
-            passive=(a.support_convention == "passive")))
-
-    geos = list(getattr(geom, "geosynthetics", None) or [])
-    # Legacy single horizontal reinforcement force on SlopeGeometry
-    legacy_F = getattr(geom, "reinforcement_force", 0.0) or 0.0
-    legacy_z = getattr(geom, "reinforcement_elevation", None)
-    if legacy_F > 0 and legacy_z is not None:
-        geos.append(Geosynthetic(elevation=legacy_z, T_allow=legacy_F))
-
-    for i, g in enumerate(geos):
-        x_lo = max(x_entry, g.x_start if g.x_start is not None else x_entry)
-        x_hi = min(x_exit, g.x_end if g.x_end is not None else x_exit)
-        if x_hi <= x_lo:
-            continue
-        # find crossing of slip surface with the layer elevation
-        n = 200
-        x_prev = x_lo
-        zs_prev = slip.slip_elevation_at(x_prev)
-        f_prev = None if zs_prev is None else g.elevation - zs_prev
-        crossing = None
-        for k in range(1, n + 1):
-            x = x_lo + (x_hi - x_lo) * k / n
-            zs = slip.slip_elevation_at(x)
-            f = None if zs is None else g.elevation - zs
-            if f_prev is not None and f is not None and f_prev * f < 0:
-                a_, b_ = x_prev, x
-                for _ in range(60):
-                    m = 0.5 * (a_ + b_)
-                    zm = slip.slip_elevation_at(m)
-                    fm = None if zm is None else g.elevation - zm
-                    if fm is None:
-                        break
-                    if fm * f_prev > 0:
-                        a_ = m
-                    else:
-                        b_ = m
-                    if b_ - a_ < 1e-8:
-                        break
-                crossing = 0.5 * (a_ + b_)
-                break
-            x_prev, f_prev = x, f
-        if crossing is None:
-            continue
-        # direction: horizontal, toward the anchored (stable) side.
-        # The anchored side is where the layer is BELOW the slip surface
-        # (inside stable ground): determine from the local slope of the
-        # slip surface — anchorage lies on the deeper side.
-        zs_left = slip.slip_elevation_at(max(crossing - 0.5, x_lo))
-        zs_right = slip.slip_elevation_at(min(crossing + 0.5, x_hi))
-        if zs_left is not None and zs_right is not None:
-            dir_x = 1.0 if zs_right < zs_left else -1.0
-        else:
-            dir_x = 1.0
-        forces.append(ReinforcementForce(
-            x=crossing, z=g.elevation, T=g.T_allow, dir_x=dir_x, dir_z=0.0,
-            kind="geosynthetic", index=i, controlled_by="allowable",
-            passive=(getattr(g, "support_convention", "active")
-                     == "passive")))
-
-    piles = getattr(geom, "stabilizing_piles", None) or []
-    for i, p in enumerate(piles):
-        if p.x < x_entry or p.x > x_exit:
-            continue
-        z_slip = slip.slip_elevation_at(p.x)
-        if z_slip is None:
-            continue
-        z_head = p.z_head if p.z_head is not None else geom.ground_elevation_at(p.x)
-        if z_slip >= z_head:
-            continue                       # slip surface above the pile head
-        if p.z_toe is not None and z_slip <= p.z_toe:
-            continue                       # slip surface below the pile toe
-        if p.ito_matsui:
-            lay = geom.layer_at_point(p.x, 0.5 * (z_head + z_slip))
-            c = p.c if p.c is not None else (lay.c_prime if lay else 0.0)
-            phi = p.phi if p.phi is not None else (lay.phi if lay else 0.0)
-            gamma = p.gamma if p.gamma is not None else (lay.gamma if lay else 0.0)
-            F_pile = ito_matsui_lateral_force(
-                c=c, phi=phi, gamma=gamma, D1=p.spacing, D2=p.spacing - p.diameter,
-                z_top=z_head, z_bot=z_slip)
-            ctrl = "ito_matsui"
-        else:
-            F_pile = p.shear_capacity
-            ctrl = "shear_capacity"
-        T = F_pile / p.spacing             # per metre of slope run
-        if T <= 0:
-            continue
-        if p.force_direction == "normal":
-            # perpendicular to the slip surface (resisting), pointing into the
-            # stable mass; approximate the local slip tangent by finite diff
-            zl = slip.slip_elevation_at(p.x - 0.25)
-            zr = slip.slip_elevation_at(p.x + 0.25)
-            if zl is not None and zr is not None:
-                tx, tz = 0.5, (zr - zl)
-                norm = math.hypot(tx, tz)
-                dir_x, dir_z = -tz / norm, tx / norm    # rotate tangent +90
-                if dir_z < 0:                            # point upward (resisting)
-                    dir_x, dir_z = -dir_x, -dir_z
-            else:
-                dir_x, dir_z = _into_slope_sign(geom, p.x), 0.0
-        else:
-            dir_x, dir_z = _into_slope_sign(geom, p.x), 0.0
-        forces.append(ReinforcementForce(
-            x=p.x, z=z_slip, T=T, dir_x=dir_x, dir_z=dir_z,
-            kind="pile", index=i, controlled_by=ctrl,
-            passive=(p.support_convention == "passive")))
-
-    return forces
+    from slope_stability.supports import resolve_supports
+    return resolve_supports(geom, slip, x_entry, x_exit).forces
 
 
 # ---------------------------------------------------------------------------
@@ -604,13 +588,14 @@ def support_components(f: ReinforcementForce,
                        d_sign: float) -> Tuple[float, float]:
     """(Fx, Fz) of a support force on the sliding mass, Fz up-positive.
 
-    The horizontal component is taken as resisting — pointing into the
-    slope, against the sliding — as the rigorous GLE takes it
-    (``gle._assign_reinforcement``); ``d_sign`` is +1 when the mass slides
-    toward -x (crest on the right), -1 when it slides toward +x. The
-    vertical component keeps its sign (a nail inclined downward pulls the
-    mass down onto its base)."""
-    return (d_sign * f.T * abs(f.dir_x), f.T * f.dir_z)
+    The force acts along the direction the support was resolved with
+    (``supports.resolve_supports``: toward its anchorage, or parallel to
+    the slip surface against the sliding), as the rigorous GLE takes it
+    (``gle._assign_reinforcement``). ``d_sign`` is kept for the callers
+    and no longer sets a sign: until GM-140 step 8 the horizontal
+    component was forced to point against the sliding whatever the
+    direction (which hid a geosynthetic's wrong direction, GM-82)."""
+    return (f.T * f.dir_x, f.T * f.dir_z)
 
 
 def support_moment(f: ReinforcementForce, xc: float, yc: float,
@@ -681,13 +666,12 @@ def moment_resistance(forces: List[ReinforcementForce],
                            d_sign=d_sign)
 
 
-def slice_index_at(slices, x: float) -> Optional[int]:
-    """Index of the slice whose base the crossing at ``x`` lies on (the
-    first one when it lies on a boundary, as ``gle`` assigns it), or None."""
-    for i, s in enumerate(slices):
-        if s.x_left <= x <= s.x_right:
-            return i
-    return None
+def slice_index_at(slices, x: float, side: float = 0.0) -> Optional[int]:
+    """Index of the slice whose base the crossing at ``x`` lies on, or
+    None; on a slice boundary, by the rule of
+    ``supports.slice_index_for`` (GM-353), as ``gle`` assigns it."""
+    from slope_stability.supports import slice_index_for
+    return slice_index_for([(s.x_left, s.x_right) for s in slices], x, side)
 
 
 def slice_support_forces(forces: List[ReinforcementForce], slices, *,
@@ -700,7 +684,7 @@ def slice_support_forces(forces: List[ReinforcementForce], slices, *,
     for f in forces:
         if bool(f.passive) is not passive:
             continue
-        i = slice_index_at(slices, f.x)
+        i = slice_index_at(slices, f.x, getattr(f, "side", 0.0))
         if i is None:
             continue
         cx, cz = support_components(f, d_sign)
