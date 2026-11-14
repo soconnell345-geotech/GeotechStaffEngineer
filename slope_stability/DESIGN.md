@@ -929,7 +929,102 @@ the approximate solver's value.
   fall-back to Ordinary Method of Slices estimates (step 9;
   `rapid_drawdown.py` is untouched, and its search does not yet count its
   per-surface solves without a solution); the GLE's lambda range, tolerance
-  and m_alpha clamp (D29).
+  and m_alpha clamp (D29; the lambda scan and the test of a crossing were
+  rebuilt in GM-344, the section after next).
+
+### The GLE solver: a root, or no number (GM-140, GM-344, 2026-11-14)
+
+The solver behind Spencer's method, Morgenstern-Price and GLE (`gle.py`;
+Janbu's simplified method is its force equation at lambda = 0). Record:
+`module_work/gm140/GLE_ROOT_CHECK.md`; a second computation of Spencer's two
+equations, written apart from `gle.py`, is
+`module_work/gm140/gle_root_spencer_script.py`.
+
+**What was wrong.** The scan of lambda took its state at each lambda from a
+lagged iteration, or from a direct march where that did not settle, each
+started from the mean of the last two factors of safety. Where the force
+equation has more than one solution at a lambda, the scan could pass from
+one branch of solutions to another; the change of order of F_m and F_f
+across that jump was bisected as if it were a crossing, and the point was
+accepted when |F_m - F_f| fell below max(50 tol, 1e-3), the mean of the two
+being reported. On a long thin planar surface the fitted moment axis lies
+kilometres away, so F_m and F_f are within 1e-3 of each other at every
+lambda and the test accepted a jump. And the device for a base in tension
+(D29) was in the horizontal and moment terms but not in the normal force's
+m_alpha or the march's vertical equation, so the equations solved were
+neither the printed ones nor the device's.
+
+**A reported factor of safety is a root.** One state at one lambda meets
+both equations:
+
+- Every state of the scan is `_GLESystem._state`: the direct
+  Morgenstern-Price march (Morgenstern and Price 1965; no lag between E
+  and X) with the F that closes it, found from the neighbouring lambda's F.
+- The crossing is judged on the state's own net moment R (resisting moment
+  / F - driving moment, with that state's N, E and X). With the forces in
+  equilibrium R is a couple and does not depend on the axis; it is zero to
+  rounding (`_CLOSES` of the forces times the size of the mass) at a root.
+  F_m = F_f then holds far inside `tol`.
+- A sign change of R between two states is refined (`refine`) until a
+  state has R = 0 (a crossing: its own F is reported, not a mean) or until
+  the bracket is closed in lambda (`_LAMBDA_CLOSED`) without one: a jump.
+  A jump is not a bracket; the scan goes on, and `GLEResult.jumps` keeps
+  its lambda.
+- No crossing: `converged` is False and the callers give no number (step
+  2's rule). The reason says where the branch followed had no state, and
+  each jump.
+
+**Which root (the orchestrator's ruling 2; a call, OWN-143).** The slice
+equations are singular at F = tan(phi') tan(theta_i - alpha) for slice i
+(`_poles`; theta_i = atan(lambda f) on its upslope side). The closing force
+is infinite there, so a branch of solutions cannot pass a pole, and a root
+can lie close beside one: the search for a state looks on each side of every
+pole and keeps to the neighbour's side. The scan starts at lambda = 0 on the
+branch on which every slice lies above its pole (the side it is on for a
+large F; below it the slice's response is reversed, the generalised m_alpha
+negative) and goes UP in steps of 0.1 to 1.5; the first crossing met is
+reported (`gle.ROOT_CHOICE`, in a search's `choices`). Lambda below 0 is not
+scanned: there the interslice shear acts against the sense the sliding
+gives it, and the crossings found there were states with bases and sides in
+tension (the old scan went both ways). The other form, the lowest of every
+root in the range, is not built; on an ordinary circle Spencer's equations
+have many roots with slices below their poles at very low F.
+
+**A base in tension (D29; ruling 3; a call, OWN-143).**
+`gle.BASE_TENSION_RULES`, parameter `base_in_tension` of `analyze_slope` and
+`search_critical_surface` (held in a context variable, so every solve inside
+the call follows it, Janbu's simplified method included):
+
+- `as_printed` (default): the equations as printed on every slice, the
+  friction term N' tan(phi') negative where N' is. Spencer (1967, pp. 14 to
+  15) and Morgenstern and Price (1965, p. 85) print no rule for a negative
+  N'; EM 1110-2-1902 C-10a (pp. C-33 to C-34) asks that such a base be
+  examined, and the `base_tension` finding names the slices and the option.
+- `no_friction`: a slice whose N' comes out negative is solved again with
+  tan(phi') = 0 in every equation (its normal force, the march, the
+  horizontal and the moment sums). The module's own device, not found in
+  print. `GLEResult.frictionless` marks the slices.
+
+**What this does to results.**
+
+- A value is always a solution of the method's equations. Numbers that were
+  not (the jump accepted on thin planar surfaces; values resting on the
+  half-applied device) are gone.
+- A circle with cohesion whose crest slices are in tension can have no
+  Spencer solution for lambda from 0 to 1.5 where the old equations read a
+  number: on a made-up 10 m fill slope the circle that read 1.645 at
+  c' = 30 kPa now has none, under either rule (the second computation finds
+  no root from -5 to 60 degrees). EM 1110-2-1902 C-10c (p. C-36) prints the
+  remedy, a tension crack (`tension_crack_depth_basis`).
+- On a surface whose toe is inclined steeply against the sliding, the
+  branch from lambda = 0 can end at a root where the toe wedge is all but
+  locked (F just above the toe slice's pole) and carries a very large
+  force: Spencer's own solution, with a constant side-force inclination.
+  It carries no flag unless the line of thrust leaves the mass. The
+  half-sine function of Morgenstern-Price (no side shear at the ends) does
+  not lock. EM C-10b (pp. C-34 to C-36) names a change of side-force
+  inclination among its remedies for a steep exit.
+- The 0.05 m_alpha clamp and the fitted moment axis (D29) are unchanged.
 
 ### The printed acceptability checks (GM-140 step 3, 2026-11-13)
 
@@ -974,8 +1069,9 @@ term to zero where negative (the rule before this step, no printed source).
 Parameter `negative_friction_term` of `analyze_slope` and
 `search_critical_surface`; the rule is held in a context variable so every
 solve inside the call follows it. The GLE solver's own settings (no
-friction on a base in tension, the 0.05 m_alpha clamp; D29) are not
-changed: `base_tension` names the slices the first applies to.
+friction on a base in tension, the 0.05 m_alpha clamp; D29) were not
+changed by step 3; the first is an option since GM-344 (the next section),
+and `base_tension` names the slices and says which rule was in force.
 
 **In a search.** `trial_flags` gives, by family and method, the trials
 scored, those flagged and each flag; `critical_flags` and
@@ -1073,7 +1169,7 @@ has no solution:
   `m_alpha_rule='every_slice'` (GM-127, `analysis.m_alpha_statement`).
 - **`method_solved`** False when Spencer / Morgenstern-Price / GLE finds no
   equilibrium solution on the surface (the GLE does not converge; the
-  reason, e.g. "no lambda from -1.5 to 1.5 gives moment and force factors
+  reason, e.g. "no lambda from 0 to 1.5 gives moment and force factors
   of safety that agree", is in the warning). **`method_used`** is ''
   when `FOS` is the method's own solution and None when the method has
   none (it could name the "legacy approximate ... solver" until GM-140

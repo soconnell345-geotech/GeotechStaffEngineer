@@ -322,8 +322,11 @@ def test_de_search_leaves_out_and_counts_negative_m_alpha_surfaces():
     m_alpha."""
     from slope_stability.search import low_m_alpha
     geom = _weak_over_rock()
+    # (GM-344: Janbu's simplified method; with Spencer's, asked for here
+    # before, the surfaces diving into the rock now have no solution, so
+    # there is no factor of safety at which their m_alpha could be read)
     kw = dict(x_entry_range=(25.5, 28.0), x_exit_range=(29.0, 40.0),
-              n_points=7, method="spencer", seed=1, maxiter=4, popsize=6,
+              n_points=7, method="janbu", seed=1, maxiter=4, popsize=6,
               n_seed_trials=40)
     assert search_de(geom, **kw).n_rejected_m_alpha == 0
     with low_m_alpha("refuse"):
@@ -386,8 +389,11 @@ def test_w11_de_search_runs_its_whole_budget():
     geom = _w11()
     # (with flagged surfaces left out, the rule before GM-140 step 3: the
     # graded score is for surfaces left out for m_alpha)
+    # (GM-344: Janbu's simplified method; with Spencer's, asked for here
+    # before, the surfaces the graded score is for now have no solution,
+    # none is left out for m_alpha and the evolution stops at 465)
     res = search_critical_surface(
-        geom, surface_type="noncircular_de", method="spencer",
+        geom, surface_type="noncircular_de", method="janbu",
         x_entry_range=(20, 30), x_exit_range=(28, 60), n_slices=40,
         n_points=5, seed=3, low_m_alpha="refuse")
     assert res.n_surfaces_evaluated == 2325

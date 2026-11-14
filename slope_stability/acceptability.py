@@ -41,9 +41,11 @@ The checks, each with its printed source:
     interslice forces should be examined; tensile forces should not exist
     on the sides or bottom of slices; the line of thrust should be within
     the sliding mass. UFC 3-220-10 pp. 361 to 362. For Spencer,
-    Morgenstern-Price and GLE, from the converged state. On a base in
-    tension the GLE solver takes no friction (its own setting, D29, not
-    changed here): the slices named under ``base_tension`` are those.
+    Morgenstern-Price and GLE, from the converged state. By default the
+    solver's equations are as printed on a base in tension, the friction
+    term negative there; ``base_in_tension='no_friction'``
+    (`gle.BASE_TENSION_RULES`, D29, GM-344) takes such a slice
+    frictionless in every equation. The finding says which was done.
 
 A finding is a dict: ``check`` (a name above), ``flag`` (True: the printed
 check is not met), ``source``, ``text`` (plain words) and the located
@@ -291,16 +293,26 @@ def rigorous_findings(geom, slip, slices, gle) -> List[Dict[str, Any]]:
              "phi_deg": _r(s.phi, 2)}
             for i, s in enumerate(slices)
             if gle.base_normal_eff[i] < -ROUNDING * max(n_ref, 1.0)]
+    rule = getattr(gle, "base_tension_rule", "as_printed")
     if tens:
+        done = (
+            "The method's equations are used as printed on those bases, "
+            "the friction term negative there (base_in_tension="
+            "'as_printed', the default; base_in_tension='no_friction' "
+            "takes such a slice frictionless in every equation, the "
+            "module's own device, not found in print)."
+            if rule == "as_printed" else
+            "Those slices are taken frictionless in every equation "
+            "(base_in_tension='no_friction', the module's own device, not "
+            "found in print; 'as_printed' is the default).")
         out.append(_finding(
             "base_tension", True,
             f"The effective normal force on the base is negative (tension) "
             f"on slice {_numbers(tens)} of {n}. Tensile forces should not "
             f"exist on the bottom of slices (EM 1110-2-1902 C-10a, "
-            f"pp. C-33 to C-34). The solver takes no friction on those "
-            f"bases (the module's own setting). EM C-10c (p. C-36) prints "
+            f"pp. C-33 to C-34). {done} EM C-10c (p. C-36) prints "
             f"the remedy for tension at the crest, a tension crack; none "
-            f"is added here.", slices=tens))
+            f"is added here.", slices=tens, rule=rule))
 
     # Interslice normal force on each interior side
     E = gle.interslice_E

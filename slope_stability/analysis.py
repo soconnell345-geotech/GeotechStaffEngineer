@@ -40,6 +40,66 @@ from slope_stability.results import (
 )
 
 
+from slope_stability.gle import (  # noqa: E402
+    BASE_TENSION_RULES, base_tension, base_tension_in_force,
+    check_base_tension, ROOT_CHOICE,
+)
+
+#: The methods solved by the GLE system (``gle._GLESystem``), which the
+#: ``base_in_tension`` rule applies to.
+_GLE_SYSTEM_METHODS = ("janbu", "spencer", "morgenstern_price", "gle")
+
+
+def _applies_base_tension(fn):
+    """Run ``fn`` with its ``base_in_tension`` argument
+    (``gle.BASE_TENSION_RULES``) in force for every Spencer,
+    Morgenstern-Price, GLE and Janbu solve made inside it (GM-344)."""
+    import functools
+    import inspect
+    sig = inspect.signature(fn)
+    default = sig.parameters["base_in_tension"].default
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        rule = sig.bind_partial(*args, **kwargs).arguments.get(
+            "base_in_tension", default)
+        with base_tension(check_base_tension(rule)):
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+def _base_tension_choices(scored: str, rule: str) -> list:
+    """The ``choices`` entries of a search scored by a method of the GLE
+    system: the rule for a base in tension, and (Spencer, Morgenstern-Price
+    and GLE) which root is reported."""
+    from geotech_common.choices import choice, how_given, MODULE
+    if scored not in _GLE_SYSTEM_METHODS:
+        return []
+    out = [choice(
+        "friction on a slice base in tension (a negative effective normal "
+        "force)",
+        "as printed: the slice's equations unchanged"
+        if rule == "as_printed" else
+        "the slice taken frictionless, in every equation",
+        how_given(rule, "as_printed", name="base_in_tension"),
+        "Spencer (1967, pp. 14 to 15) and Morgenstern and Price (1965, "
+        "p. 85) print no rule for a negative effective normal force; EM "
+        "1110-2-1902 C-10a (pp. C-33 to C-34) asks that such a base be "
+        "examined, and the result names the slices",
+        ["the slice taken frictionless in every equation, the module's "
+         "own device, not found in print (base_in_tension='no_friction')"
+         if rule == "as_printed" else
+         "as printed (base_in_tension='as_printed', the default)"])]
+    if scored != "janbu":
+        out.append(choice(
+            "which solution is reported where the method's two equations "
+            "have more than one",
+            "the first crossing met from lambda = 0 on the branch of "
+            "solutions that starts there",
+            MODULE, ROOT_CHOICE))
+    return out
+
+
 def analyze_slope(geom: SlopeGeometry,
                   xc: float = None,
                   yc: float = None,
@@ -53,6 +113,7 @@ def analyze_slope(geom: SlopeGeometry,
                   compare_methods: bool = False,
                   m_alpha_rule: str = "frictional",
                   negative_friction_term: Optional[str] = None,
+                  base_in_tension: Optional[str] = None,
                   ) -> SlopeStabilityResult:
     """Run slope stability analysis for a specified slip surface.
 
@@ -101,6 +162,17 @@ def analyze_slope(geom: SlopeGeometry,
         there (the module's rule before GM-140 step 3; no printed source).
         Either way the result names the slices
         (``methods.NEGATIVE_TERM_RULES``). None (default) takes the rule in
+        force, which is 'as_printed' unless a search was given another.
+    base_in_tension : str, optional
+        Spencer, Morgenstern-Price, GLE and Janbu's simplified method, on
+        a slice whose effective normal force comes out negative:
+        'as_printed' (default), the slice's equations unchanged (Spencer
+        1967, pp. 14 to 15, and Morgenstern and Price 1965, p. 85, print
+        no rule for it); 'no_friction', the slice taken frictionless in
+        every equation (the module's own device, not found in print;
+        before GM-344 it was applied in some of the equations only, with
+        no option). Either way the result names the slices
+        (``gle.BASE_TENSION_RULES``). None (default) takes the rule in
         force, which is 'as_printed' unless a search was given another.
 
     Returns
@@ -151,6 +223,18 @@ def analyze_slope(geom: SlopeGeometry,
     """
     check_method(method)
     check_interslice(f_interslice)      # whatever the method (item 7)
+    if base_in_tension is not None:
+        check_base_tension(base_in_tension)
+        if base_in_tension != base_tension_in_force():
+            with base_tension(base_in_tension):
+                return analyze_slope(
+                    geom, xc=xc, yc=yc, radius=radius,
+                    slip_surface=slip_surface, method=method,
+                    n_slices=n_slices, tol=tol, f_interslice=f_interslice,
+                    include_slice_data=include_slice_data,
+                    compare_methods=compare_methods,
+                    m_alpha_rule=m_alpha_rule,
+                    negative_friction_term=negative_friction_term)
     if negative_friction_term is not None:
         check_negative_term(negative_friction_term)
         if negative_friction_term != negative_term_in_force():
@@ -640,6 +724,7 @@ def compare_methods_table(geom: SlopeGeometry,
 @_counts_refusals
 @_counts_reverse_discards
 @_applies_m_alpha_rule
+@_applies_base_tension
 def search_critical_surface(
     geom: SlopeGeometry,
     x_range: Tuple[float, float] = None,
@@ -663,6 +748,7 @@ def search_critical_surface(
     m_alpha_rule: str = "frictional",
     low_m_alpha: str = "flag",
     negative_friction_term: str = "as_printed",
+    base_in_tension: str = "as_printed",
 ) -> SearchResult:
     """Search for the critical slip surface (minimum FOS).
 
@@ -783,6 +869,12 @@ def search_critical_surface(
         (default; Bishop 1955 Eqs. 9 and 13, p. 10, no lower limit) or
         'zero' (the module's earlier rule, no printed source). See
         ``analyze_slope``.
+    base_in_tension : str
+        Spencer, Morgenstern-Price, GLE and Janbu's simplified method on a
+        slice whose effective normal force comes out negative, in every
+        family: 'as_printed' (default; the slice's equations unchanged) or
+        'no_friction' (the slice taken frictionless in every equation, the
+        module's own device, not found in print). See ``analyze_slope``.
 
     Returns
     -------
@@ -911,6 +1003,9 @@ def search_critical_surface(
             negative_friction_term=negative_friction_term)
         # the crack rule (GM-140 step 4): the crack asked for, and what
         # was done with reverse-curvature circles
+        # the GLE system's rule for a base in tension, and which root of
+        # the method's equations is reported (GM-344)
+        result.choices += _base_tension_choices(scored, base_in_tension)
         result.choices += _crack_choices(
             geom, _discards_so_far(),
             circles=surface_type in ("circular", "entry_exit")

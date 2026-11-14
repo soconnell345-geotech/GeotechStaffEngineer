@@ -58,9 +58,15 @@ def _fill_slope(c=12.0, phi=22.0):
 
 
 # The circle of the fill slope on which Spencer's method solves with a
-# cohesion up to about 40 kPa and has no solution at 50 kPa (the top of
-# the circle goes into tension and no lambda in range makes the moment and
-# force factors of safety agree).
+# cohesion up to about 28 kPa and has no solution at 30 kPa or above (the
+# top of the circle goes into tension and no lambda in range makes the
+# moment and force factors of safety agree). Until GM-344 the solver read
+# a value up to about 40 kPa (1.645 at 30 kPa, 1.917 at 38): the friction
+# on the base in tension was left out of some of its equations and kept in
+# others, and those values are roots of neither Spencer's equations as
+# printed nor of the slice taken frictionless throughout (a second
+# computation finds no root from -5 to 60 degrees at 30 kPa under either;
+# module_work/gm140/GLE_ROOT_CHECK.md).
 _FILL_CIRCLE = dict(xc=9.5, yc=11.0, radius=11.2)
 
 # A circle of the fill slope with a cohesion of 40 kPa on which Spencer's
@@ -568,17 +574,19 @@ def test_fosm_meeting_a_surface_with_no_solution_gives_no_result():
     solution at mean plus or minus one standard deviation, FOSM gives no
     result and names the variable and the perturbed value. (No printed
     rule was found for this; it is the module's own.)"""
-    g = _fill_slope(c=38.0)
+    # (GM-344: the mean was 38 kPa, where Spencer's method no longer has a
+    # solution on this circle; see _FILL_CIRCLE)
+    g = _fill_slope(c=22.0)
     with pytest.raises(ValueError) as exc:
-        fosm_fos(g, {"c_prime": {"mean": 38.0, "std": 12.0}},
+        fosm_fos(g, {"c_prime": {"mean": 22.0, "std": 8.0}},
                  method="spencer", **_FILL_CIRCLE)
     text = str(exc.value)
     assert "FOSM gives no result" in text
-    assert "c_prime = 50" in text
-    assert "mean 38 plus one standard deviation 12" in text
+    assert "c_prime = 30" in text
+    assert "mean 22 plus one standard deviation 8" in text
     assert "Spencer's method has no solution" in text
     # with a smaller spread every evaluation solves, and FOSM runs
-    ok = fosm_fos(g, {"c_prime": {"mean": 38.0, "std": 2.0}},
+    ok = fosm_fos(g, {"c_prime": {"mean": 22.0, "std": 2.0}},
                   method="spencer", **_FILL_CIRCLE)
     assert ok.fos_mlv == pytest.approx(
         analyze_slope(g, method="spencer", **_FILL_CIRCLE).FOS, rel=1e-9)
@@ -650,8 +658,9 @@ def test_the_robust_lambda_search_runs_without_supports():
     res = gle_fos(slices, slip, f_interslice="constant")
     assert res.converged
     assert abs(res.fos_moment - res.fos_force) < 1e-3
-    assert any(w.startswith("no equilibrium state at lambda = 0; bracket "
-                            "started from") for w in res.warnings)
+    # (GM-344: every state of the scan is now the direct march's, which
+    # has a state at lambda = 0 here, so the scan starts there and the
+    # "bracket started from" note is no longer raised on this circle)
     r = analyze_slope(g, xc=6.0, yc=15.0, radius=12.0, method="spencer")
     assert r.method_solved and r.FOS == pytest.approx(res.fos, rel=1e-9)
 
