@@ -4466,6 +4466,28 @@
           }
         ],
         "multi": true
+      },
+      {
+        "label": "36. Pore pressure as printed (GM-140 step 5a, built 2026-11-13), three calls: (a) ru on a column of soils of different unit weight taken on the column's own weight, each soil at its own unit weight (D3; EM 1110-2-1902 p. C-29 defines ru = u / (gamma z) for a uniform slope, the layered sum is the module's reading), where before step 5a it was ru x the unit weight of the base's layer x the column's height: +2.6 % on a made-up two-soil case (Bishop 1.3268 to 1.3617), +1.0 % on a test case (1.4447 to 1.4592), both to the higher side; the old reading is not kept as an option; (b) the pond's thrust on a slice taken from the water depth at each side of the slice, where before it took the line's elevation at the slice's middle and so put a phantom pool on the lower side of every slice under a line at or just under sloping ground: on a 2:1 face with the line at the ground the Ordinary Method of Slices now reads 0.8253 against the closed form 0.8212 (FHWA NHI-06-088 Sec. 6.3), where it read 0.9140 (-9.7 %; Janbu and Morgenstern-Price -13.0 %; V-031 -0.005 %), an arithmetic fix on the unsafe side, not kept as an option; (c) a saved analysis that names no `water_line_kind` reads its line as a piezometric line, the full head, as before (OWN-104); the water-table reading (FHWA NHI-06-088 Eq. 6-16, p. 6-14) is the option and raises the factor of safety under a sloping line; the pond's edge moves a given surface at most 0.2 % (a search up to 0.6 %).",
+        "options": [
+          {
+            "label": "Let all three stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(a) The old ru reading on layered soils",
+            "effect": "ru x the unit weight of the base's layer x the column's height, as before step 5a (the made-up case back to 1.3268, the test case to 1.4447); to be built as an option."
+          },
+          {
+            "label": "(b) The old pond thrust",
+            "effect": "The thrust from the line's elevation at each slice's middle, as before step 5a (the 2:1 face back to 0.9140 against the closed form 0.8212, the unsafe side)."
+          },
+          {
+            "label": "(c) The water-table reading as the default",
+            "effect": "A saved analysis that names no `water_line_kind` reads its line as a water table (u = hw gamma_w cos^2 alpha_w): higher under a sloping line (a made-up circle 1.3229 to 1.3397; the thin plane 0.501 to 0.670)."
+          }
+        ],
+        "multi": true
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
