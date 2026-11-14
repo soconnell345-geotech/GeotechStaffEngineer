@@ -711,6 +711,31 @@ _CORRELATIONS_PARAM = {
     "correlations": {"type": "array", "required": False, "description": "Optional correlated scalar pairs: [['c_prime','phi',-0.5], ...] (or [{'var1','var2','rho'}]). Each references two SCALAR variable keys from 'variables' (optionally scoped ':LayerName') and a correlation rho in [-1,1]. FOSM adds the Taylor cross-term 2*rho*(dF1/2)*(dF2/2); Monte Carlo draws the pair from a bivariate normal. Omit for independent variables (default). A c'-phi' negative correlation typically lowers the FOS variance."},
 }
 
+
+# rapid_drawdown_fos's doc must fit the deep agent's reference budget (16,000
+# characters; test_wave1_geotech): these shared inputs point to analyze_slope's
+# full text instead of repeating it there.
+_SEE_ANALYZE_SLOPE = {
+    _k: {**_GEOMETRY_PARAMS[_k], "description": (
+        "As in analyze_slope (describe_method analyze_slope gives the full "
+        "text): " + _s)}
+    for _k, _s in (
+        ("reverse_curvature", "how a circle that turns back over itself is "
+         "treated; a tension crack is a condition of the analysis, the same "
+         "on every trial surface."),
+        ("tension_crack_depth_basis", "'given' (tension_crack_depth), "
+         "'rankine' (EM 1110-2-1902 Eq. C-36, p. C-36) or 'min_fos'."),
+        ("tension_crack_model", "'truncation' (default, as printed: EM "
+         "1110-2-1902 2-2f(3), p. 2-6; C-10c, p. C-36) or 'strength'."),
+        ("geosynthetics", "horizontal layers [{elevation, T_allow kN/m; "
+         "x_start, x_end, support_convention optional}], each acting at the "
+         "base of the slice it crosses."),
+        ("stabilizing_piles", "a single row [{x; spacing; z_head, z_toe "
+         "optional}], resisting by shear_capacity or by ito_matsui=true with "
+         "diameter."),
+    )
+}
+
 METHOD_INFO = {
     "analyze_slope": {
         "category": "Slope Stability",
@@ -761,6 +786,7 @@ METHOD_INFO = {
         "parameters": {
             **_GEOMETRY_PARAMS,
             **_SURFACE_SPEC_PARAMS,
+            **_SEE_ANALYZE_SLOPE,
             "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
             "drawdown_to_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation AFTER drawdown (m); must be below drawdown_from_elevation."},
             "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (the improved procedure, EM G-3: the answer is the third stage's factor of safety, or the second's where no slice's drained strength is lower), 'lowe_karafiath' (the same first and second stages without the drained check: the answer is the second stage's, so never below duncan_3stage), or 'corps_2stage' (the Corps 1970 procedure, EM G-2: the lower of the R envelope with R_c and R_phi as entered and the effective-stress envelope; no third stage). The manual's own example of the 1970 procedure was computed by the Modified Swedish Method at a fixed side-force inclination (3.49, then 1.35); Spencer's method, used here, gives 1.24 on it, and the result says so."},

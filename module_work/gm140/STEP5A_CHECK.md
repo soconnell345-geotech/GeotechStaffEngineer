@@ -683,3 +683,5 @@ V-029, `test_allowed_values`, `test_top_level_params`,
 `check_manual.py` and `test_user_manual_current` 0. After the fixes:
 `test_pore_pressure_as_printed` 0 (50 passed), V-052 0 (6 passed, the
 3:1 case among them), `test_public_text` 0.
+
+**After the gate `ci/gm140-step5a` (2026-11-14).** Both test jobs failed. On this branch the deep agent's `describe_method` for `rapid_drawdown_fos` came back shortened: 16,569 characters against the reference budget of 16,000 (`funhouse_agent/deep/tests/test_wave1_geotech.py::test_the_rapid_drawdown_tail_parameter_is_visible`), after this step added `water_line_kind` and its text. Five shared inputs of that method (`reverse_curvature`, `tension_crack_depth_basis`, `tension_crack_model`, `geosynthetics`, `stabilizing_piles`) now give one line and point to analyze_slope's full text (`_SEE_ANALYZE_SLOPE` in the adapter): 14,146 characters, whole. No value changes. Manual rebuilt by its generator.
