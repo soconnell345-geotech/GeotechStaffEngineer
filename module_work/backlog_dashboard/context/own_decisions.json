@@ -4612,6 +4612,94 @@
           }
         ],
         "multi": true
+      },
+      {
+        "label": "41. Reporting as printed (GM-140 step 10, built 2026-11-14), nine calls: (1) the lowest contour \"closes inside the grid\" only where the lowest value inside is below the lowest on the edge and every centre next to the centres below the midway level has a value, else \"cannot be judged\"; (2) the lowest surfaces listed are pooled from every family's ten lowest by the method that scored each, more than one circle per centre, distinct to 0.01 m, never a screen's value (FHWA NHI-06-088 p. 6-49 asks for the ten minimum); (3) a `tol` above 1e-4 is refused unless the method is Bishop's (it changes nothing there); (4) the rapid-drawdown tools' `m_alpha_rule` is set as a module default, not a new input; (5) the factor of safety goes in the cross-section's key title, not in a box on the drawing; (6) the slice table comes first among the calculation sections (EM 1110-2-1902 4-2d(2), p. 4-2), after the package's input echo; (7) `base_in_tension` always applies in the report package, which compares every method on the critical surface; (8) the contours show the method's own per-centre minima, and Bishop's screen values, named as the screen, where the method's cannot be judged; (9) an input that does nothing in the case (a tol with the Ordinary Method of Slices, `base_in_tension` with no base in tension) is accepted and the report says so.",
+        "options": [
+          {
+            "label": "Let all nine stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) Missing centres not considered",
+            "effect": "A grid with few valued centres can read \"closes: yes\" (#85 by Spencer, 6 of 36 centres valued, read so before the fix)."
+          },
+          {
+            "label": "(2) The main search's trials plus each family's lowest",
+            "effect": "Shorter lists that are not the lowest surfaces (#85 listed 9, ranks 3 to 9 at 1.27 to 2.68 while its governing family had many between 0.911 and 1.27)."
+          },
+          {
+            "label": "(3) Wire tol into the GLE solvers as given",
+            "effect": "Values move at the default tolerance."
+          },
+          {
+            "label": "(4) `m_alpha_rule` as an input of rapid_drawdown_fos",
+            "effect": "That tool's description passes its 16,000-character budget."
+          },
+          {
+            "label": "(5) A box on the drawing",
+            "effect": "It met a label in every corner on one case or another."
+          },
+          {
+            "label": "(6) The slice table ahead of the input echo",
+            "effect": "Every package's generic echo of the inputs moves below it."
+          },
+          {
+            "label": "(7) `base_in_tension` only with a GLE-system method named",
+            "effect": "As `slope_stability_package` takes it."
+          },
+          {
+            "label": "(8) Contour only the centres the named method valued",
+            "effect": "A screened search (Spencer, Morgenstern-Price, GLE named) draws few or no contours and says \"cannot be judged\"."
+          },
+          {
+            "label": "(9) Refuse an input that does nothing in the case",
+            "effect": "The run stops instead."
+          }
+        ],
+        "multi": true
+      },
+      {
+        "label": "42. The noncircular search as printed (GM-140 step 7a; calls made before the build, 2026-11-14; not built, its run is the owner's budget call), eight calls: (1) step 7 is split: 7a (the noncircular search's starts and refinement) first, then 7b (impenetrable layers and composite surfaces) with its own section; (2) the refinement's final increment is 10 % of the thinnest stratum the surface may pass through (EM 1110-2-1902 4-2e(2)(b), p. 4-7, prints \"no more than 10 to 25 percent\"), the fraction an option; (3) every layer within the search's depth gets a wedge start (EM C-1g(2), pp. C-8 to C-10), and the weak-layer search's unprinted weight 1/(c + 50 tan phi) goes; (4) no shift may make the exit steeper than Eq. C-32's passive inclination (p. C-34, the phi' of the exit material) or than its start's exit: the EM asks for a toe restriction (4-2e(2)(a)) but prints no limit for a search; (5) TOUCHES THE OWNER'S RULING OF 2026-10-16; TO CONFIRM: automatic windows bound only the random generation, and the refinement's shifts are free along the face on the start's side (windows the caller gives bound everything); only a noncircular search the caller asks for is affected, the default circular search does not change and no circular value moves; (6) no concave-up shape rule (the account's D12 cites EM p. 4-7 for one; the page does not print it); step 3's printed checks judge the surface; (7) ACADS 4's test compares the refined search with Slide2 Table 9.5 (0.707) and the unrefined wedge stage with Table 9.4 (0.760), both at 3 %, plus a check that the search reaches the declared family of surfaces; (8) the refinement is on by default (`refine=False` turns it off), stops at the time budget and then names the starts it left unrefined.",
+        "options": [
+          {
+            "label": "Let all eight stand",
+            "effect": "Step 7a is built as its section says."
+          },
+          {
+            "label": "(1) One step 7, or 7b first",
+            "effect": "About two sessions in one; the evidence (ACADS 4, V-043) waits for the impenetrable layers."
+          },
+          {
+            "label": "(2) 25 % of the thinnest stratum",
+            "effect": "Faster; the far end of the printed range, so the refined value can sit a little higher."
+          },
+          {
+            "label": "(3) Only layers weaker than the one above, or keep the weight",
+            "effect": "Fewer starts; weaker needs a normal stress the print does not give, and the weight has no print."
+          },
+          {
+            "label": "(4) No toe restriction",
+            "effect": "A refined exit may steepen past the passive angle; step 3's checks flag it."
+          },
+          {
+            "label": "(5) Automatic windows also bound the shifts, as today",
+            "effect": "A start outside them (an above-toe circle, searched by default since GM-122) cannot be refined where it lies."
+          },
+          {
+            "label": "(6) Concave-up as the module's own rule",
+            "effect": "Some surfaces the print would accept are refused; the rule has no printed source."
+          },
+          {
+            "label": "(7) The single test against 0.760",
+            "effect": "The refined search is held to the table printed for a search without optimisation."
+          },
+          {
+            "label": "(8) The refinement off by default",
+            "effect": "Noncircular results stay as today unless the caller asks; faster."
+          }
+        ],
+        "multi": true
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
