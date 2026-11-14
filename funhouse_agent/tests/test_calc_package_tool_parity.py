@@ -49,6 +49,17 @@ _SOE_LAYERS = [{"thickness": 12.0, "unit_weight": 18.0,
 _SOE_SUPPORTS = [{"depth": 2.0}, {"depth": 5.0, "support_type": "anchor"}]
 _RV = {"R": {"mean": 200.0, "cov": 0.15, "dist": "lognormal"},
        "S": {"mean": 100.0, "cov": 0.25}}
+_FEM_SLOPE = {"surface_points": [[0, 10], [10, 10], [20, 0], [30, 0]],
+              "soil_layers": [{"name": "clay", "bottom_elevation": -5,
+                               "E": 20000, "nu": 0.3, "c": 20, "phi": 20,
+                               "psi": 0, "gamma": 18}],
+              "nx": 12, "ny": 6}
+_FEM_CONSOLIDATION = {"width": 2.0, "depth": 10.0,
+                      "soil_layers": [{"bottom_elevation": -10.0,
+                                       "E": 20000.0, "nu": 0.3,
+                                       "gamma": 0.0}],
+                      "k": 1e-9, "load_q": 50.0,
+                      "time_points": [1e5, 1e7], "nx": 2, "ny": 10}
 _PV_LAYERS = [{"layer_type": "asphalt", "modulus_psi": 400000},
               {"layer_type": "granular_base", "modulus_psi": 30000},
               {"layer_type": "granular_subbase", "modulus_psi": 11000}]
@@ -131,10 +142,12 @@ CASES = [
                                     "ch": 2.0, "cv": 0.8, "Hdr": 6.0,
                                     "time": 0.5, "pattern": "square"}),
     ("ground_improvement_package", {"method": "aggregate_piers",
-                                    "column_diameter": 0.76, "spacing": 2.0}),
+                                    "column_diameter": 0.76, "spacing": 2.0,
+                                    "column_type": "stone_column"}),
     ("ground_improvement_package", {"method": "aggregate_piers",
                                     "column_diameter": 0.76, "spacing": 2.0,
-                                    "pattern": "square", "E_soil": 4000}),
+                                    "pattern": "square", "E_soil": 4000,
+                                    "column_type": "rammed_aggregate_pier"}),
     ("ground_improvement_package", {"method": "surcharge",
                                     "S_ultimate": 0.3, "surcharge_kPa": 50,
                                     "cv": 3.0, "Hdr": 4.0}),
@@ -212,6 +225,11 @@ CASES = [
                              "g_expression": "R - S",
                              "convention": "margin",
                              "max_iterations": 50}),
+    ("fem2d_package", dict(_FEM_SLOPE)),
+    ("fem2d_package", {"analysis_type": "slope_srm", **_FEM_SLOPE,
+                       "gwt": 2.0, "srf_tol": 0.05}),
+    ("fem2d_package", {"analysis_type": "consolidation",
+                       **_FEM_CONSOLIDATION}),
     ("pavement_design_package", {"w18": 5e6, "reliability_pct": 90,
                                  "mr_psi": 7500, "layers": _PV_LAYERS}),
     ("pavement_design_package", {"design_type": "flexible", "w18": 5e6,
@@ -494,8 +512,8 @@ def _mononobe_okabe():
     KA = math.tan(math.radians(45.0 - phi / 2.0)) ** 2
     # PAE carries (1 - kv), UFC 3-220-20 Eq. 4-16 (GM-149)
     f = seismic_earth_pressure(19.0, 5.0, KAE, KA, kv=kv)
-    # KPE takes its own wall friction, 0.4 phi when not given (GM-293)
-    delta_p = 0.4 * phi
+    # KPE takes its own wall friction, phi / 3 when not given (GM-310)
+    delta_p = phi / 3.0
     return SeismicEarthPressureResult(
         KAE=KAE, KPE=mononobe_okabe_KPE(phi, delta_p, kh, kv),
         PAE_total=f["PAE_total_kN_per_m"],
@@ -604,6 +622,29 @@ def _reliability(engine, **options):
     return run
 
 
+def _fem_slope():
+    """fem2d called directly, the tool's defaults written out."""
+    import fem2d
+    return fem2d.analyze_slope_srm(
+        surface_points=[tuple(p) for p in _FEM_SLOPE["surface_points"]],
+        soil_layers=[dict(sl) for sl in _FEM_SLOPE["soil_layers"]],
+        nx=12, ny=6, srf_tol=0.02, n_load_steps=2, t=1.0, gamma_w=9.81,
+        max_iter=1000, tol=1e-5, element_type="t6", srm_field="c_phi",
+        blowup_factor=15.0, srf_range=(0.5, 3.0), n_gp=None,
+        mesh_check=False)
+
+
+def _fem_consolidation():
+    import fem2d
+    c = _FEM_CONSOLIDATION
+    return fem2d.analyze_consolidation(
+        width=c["width"], depth=c["depth"],
+        soil_layers=[dict(sl) for sl in c["soil_layers"]], k=c["k"],
+        load_q=c["load_q"], time_points=list(c["time_points"]), gwt=0.0,
+        gamma_w=9.81, nx=2, ny=10, t=1.0, n_w=2.2e6,
+        consolidation_scheme="staggered", theta=1.0, startup_steps=2)
+
+
 def _pavement(design, **inputs):
     import pavement_design
     return lambda: getattr(pavement_design, design)(**inputs)
@@ -645,8 +686,10 @@ MODULE_CASES = [
      _ground("analyze_wick_drains", spacing=1.5, ch=3.0, cv=1.0, Hdr=5.0,
              time=1.0)),
     ("ground_improvement_package", {"method": "aggregate_piers",
-                                    "column_diameter": 0.76, "spacing": 2.0},
-     _ground("analyze_aggregate_piers", column_diameter=0.76, spacing=2.0)),
+                                    "column_diameter": 0.76, "spacing": 2.0,
+                                    "column_type": "stone_column"},
+     _ground("analyze_aggregate_piers", column_diameter=0.76, spacing=2.0,
+             column_type="stone_column")),
     ("ground_improvement_package", {"method": "surcharge",
                                     "S_ultimate": 0.3, "surcharge_kPa": 50,
                                     "cv": 3.0, "Hdr": 4.0},
@@ -693,6 +736,9 @@ MODULE_CASES = [
                                  "passes_18kip": 1e5, "cbr_subgrade": 6},
      _pavement("design_flexible_pavement_ufc", passes_18kip=1e5,
                cbr_subgrade=6)),
+    ("fem2d_package", dict(_FEM_SLOPE), _fem_slope),
+    ("fem2d_package", {"analysis_type": "consolidation",
+                       **_FEM_CONSOLIDATION}, _fem_consolidation),
 ]
 
 

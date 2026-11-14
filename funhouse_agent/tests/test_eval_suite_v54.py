@@ -101,8 +101,8 @@ def test_rapid_drawdown_keys_reproduce():
     C = dict(xc=35.0, yc=42.0, radius=40.0, n_slices=40)
     _check("RDD-1", "FOS", rapid_drawdown_fos(_dam(), 18, 3, method="corps_2stage", **C).FOS)
     _check("RDD-2", "FOS", rapid_drawdown_fos(_dam(), 18, 3, method="duncan_3stage", **C).FOS)
-    _check("RDD-3", "FOS", rapid_drawdown_fos(_dam(), 18, 3, method="duncan_3stage",
-                                              stage3_effective_normal="gle", **C).FOS)
+    _check("RDD-3", "FOS", rapid_drawdown_fos(_dam(), 18, 3,
+                                              method="lowe_karafiath", **C).FOS)
     _check("RDD-4", "FOS", rapid_drawdown_fos(_dam(), 18, 3, method="corps_2stage",
            stage1_phreatic_points=[(0, 18.0), (90, 12.0)], **C).FOS)
 

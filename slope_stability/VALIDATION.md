@@ -108,30 +108,61 @@ meshes bias SRM high). The cross-check test is `-m slow` (~6 min).
 
 ## B7 — Rapid drawdown (Corps 2-stage / Duncan-Wright-Wong 3-stage) + search
 [`rapid_drawdown_fos` (single specified surface) and `search_rapid_drawdown`
-(critical-surface search under drawdown strengths, v5.4 E1). Low-permeability
-layers carry the R-envelope (`R_c`/`R_phi`); the FOS is a GLE/Spencer solve at the
-drawn-down pool with each undrained slice's base overridden to `c = tau_ff, phi =
-0`. Feet inputs converted to SI. Full theory in DESIGN.md.]
+(critical-surface search under drawdown strengths). Since GM-140 step 9
+(2026-11-13) every stage follows EM 1110-2-1902 Appendix G as printed, each
+stage's factor of safety is reported and the answer is that of the last stage
+computed. Feet inputs converted to SI. Theory, with each equation's page, in
+DESIGN.md; record in `module_work/gm140/STEP9_CHECK.md`.]
+
+### The manual's worked example (EM G-4, pp. G-9 to G-22; `tests/test_rapid_drawdown_em_appendix_g.py`)
+
+Pool El. 103 to El. 24, level piezometric lines; circle of radius 210 ft.
+
+| Run | Stage 1 | Stage 2 | Stage 3 | Printed |
+|-----|--------:|--------:|--------:|---------|
+| Improved procedure, Simplified Bishop, the manual's 12 slices | 2.192 | 1.514 | 1.438 | 2.20 / 1.52 / 1.44 (pp. G-15, G-18, G-20) |
+| Improved procedure, Spencer, 50 slices (the module's answer) | 2.200 | 1.513 | 1.434 | 2.20 / 1.52 / 1.44 (2.23 by the Modified Swedish Method on whole-degree base angles) |
+| Before step 9, Spencer, 50 slices | 2.200 | not reported (Lowe-Karafiath 1.375) | 1.241 | the same |
+| Corps 1970, force equilibrium at 19.4 deg, 50 slices | 3.486 | 1.341 | none | 3.49 / 1.35 (pp. G-9 to G-15) |
+| Corps 1970, the same on the manual's 12 slices | 3.455 | 1.348 | none | 3.49 / 1.35 |
+| Corps 1970, Spencer, 50 slices (the module's answer; unchanged) | 2.200 | 1.239 | none | printed by another method of slices |
+
+On the manual's twelve slices K_c is 1.72 on every slice (printed 1.71), the
+second-stage strength is within 0.03 ksf of Fig. G-10b on every slice, and the
+same three slices (1, 2 and 12) take the drained strength in the third stage.
+The printed weights are those of slices with straight bases; the module weighs
+down to the arc at each slice's middle, 5.9 and 6.7 % more on the two thin
+end slices (1.3 % more in all), which is the 0.03 ksf: the slicing differs,
+not the strength rule. From the printed inputs the strength rule itself is
+within 0.011 ksf of Fig. G-10b on every slice
+(`test_strengths_are_eqs_g9_g10_g12_on_every_slice_of_the_table`).
 
 ### Single specified surface (validation_examples V-037 / V-038)
 
-| Problem | Method | Ours | Published | vs pub |
-|---------|--------|-----:|----------:|-------:|
-| #95 EM 1110-2-1902 dam (seepage stage-1) | Corps 2-stage | 1.34  | 1.347 | -0.5% |
-| #95 (flat full-pool stage-1, conservative bound) | Corps 2-stage | 1.21 | — | — |
-| #96 same dam (seepage stage-1), default stage-3 | DWW 3-stage | 1.273 | 1.443 | -12% |
-| #96 same dam (seepage stage-1), `stage3_effective_normal='gle'` | DWW 3-stage | 1.370 | 1.443 | -5% |
+The tests' section (Fig 95.1, recovered); pool El. 110 as Slide2's text gives
+it, El. 103 as the manual has it. Slide2's text and its figure disagree on
+the pool: the text of #95 and #96 gives 110 ft, Fig 95.1 draws it at about
+103 ft. Each pin is a printed value on its own source's printed inputs: the
+EM's 1.35 (p. G-15) at the EM's 103 ft pool is pinned to 1 %; Slide2's 1.347
+at the 110 ft its text gives reads 1.304 by the same method of slices
+(-3.2 %), a strict xfail at 1 %, reported and not tuned.
 
-**#96 3-stage refinement (v5.4 E2).** The default (Fellenius stage-3 effective
-normal) is preserved byte-for-byte (flat 1.235 / seepage 1.273). The residual to
-the published 1.443 was traced NOT to the Kc interpolation (which alone yields
-~1.45) but to the stage-3 drained substitution: the Fellenius `W*cos(a)/l - u`
-normal under-predicts N' and fires the substitution on 17/50 slices. The optional
-`stage3_effective_normal='gle'` uses the rigorous GLE normal (consistent with
-stage 1; 9 genuine substitutions) → 1.306 flat / 1.370 seepage, closing most of
-the gap. Gated behind the new parameter; the lead decides whether to flip the
-default. ~5% residual left, within the representative-flow-net + LE-N'-at-FOS
-sensitivity band (cf. the +0.6% Corps residual on #95).
+| Problem | Procedure, method of slices | Before step 9 | Now | Printed | vs print |
+|---------|-----------------------------|--------------:|----:|--------:|---------:|
+| #96, pool 110 | three-stage, Spencer | 1.235 | 1.427 | 1.443 | -1.1 % |
+| #96, pool 103 | three-stage, Spencer | 1.237 | 1.431 | 1.443 (EM 1.44) | -0.8 % |
+| #95, pool 103 | Corps 1970, force equilibrium at 19.4 deg | not offered | 1.338 | EM 1.35 (p. G-15; its own pool) | -0.9 % (pinned) |
+| #95, pool 110 | Corps 1970, force equilibrium at 19.4 deg | not offered | 1.304 | Slide2 1.347 (its text's pool) | -3.2 % (strict xfail) |
+| #95, pool 110 | Corps 1970, Spencer (the module's answer) | 1.207 | 1.207 | 1.347 | -10.4 % |
+
+The final value cannot tell a 103 ft pool from a 110 ft pool. Which method of
+slices Slide2 used for #95 and #96 is not settled; the manual computed its
+example of the 1970 procedure by the Modified Swedish Method at 19.4 degrees
+and says Spencer's Method is the one recommended (G-5, p. G-9), and a Corps
+result of the module says so. Removed in step 9: the values pinned on a
+"representative" seepage line that no page prints (1.34 for #95; 1.273, 1.370
+and 1.450 for #96) and the conclusions drawn from them, and the
+`stage3_effective_normal` option with its 'fellenius' and 'gle' rows.
 
 ### Critical-surface search (validation_examples V-041, v5.4 E1)
 
@@ -143,9 +174,9 @@ slivers a circular search would otherwise pick with a spurious low FOS).
 
 | Problem | Method | Ours (search min) | Published (search min) | vs pub |
 |---------|--------|------------------:|-----------------------:|-------:|
-| #98 Walter Bouldin (approx geom) | Corps 2-stage | 0.837 | 0.931 | -10% |
-| #98 (approx geom) | DWW 3-stage (default) | 0.938 | 1.039 | -10% |
-| #98 (approx geom) | DWW 3-stage (`gle` stage-3) | 0.959 | 1.039 | -8% |
+| #98 Walter Bouldin (approx geom) | Corps 2-stage | 0.836 | 0.931 | -10% |
+| #98 (approx geom) | DWW 3-stage | 0.951 (0.935 before GM-140 step 9) | 1.039 | -8.5% |
+| #98 (approx geom) | Lowe-Karafiath | 0.988 (0.974 before) | 1.075 | -8.1% |
 
 (Since GM-87, 2026-10-15, the drawdown search also refines its lowest grid centre;
 #98 moved by up to 0.3 % further down, e.g. Corps 0.8370 -> 0.8341, B13. The pinned
@@ -417,6 +448,9 @@ What moved in the suites (every published-benchmark test still passes):
 | Pilarcitos true section, drawdown, automatic windows: Corps / LK / DWW | 0.726 / 1.279 / 1.266 | 0.718 / 1.075 / 1.075 | LK / DWW: the rapid-drawdown infinite slope, a sliver of a circle about an inch deep on the lower face at (gamma'/gamma) tan(phi')/tan(beta) = 1.075, reported as that mechanism (the planar family's own drawdown solve fails on that face); not the observed deep slide, so the other V-052 tests give the deep slide's windows (the old automatic ones) and are unchanged |
 
 ### Rapid drawdown: the Fellenius normal under the remaining pool
+(History. Since GM-140 step 9 the drained check takes the second stage's N, EM
+Eq. G-13, and there is no Fellenius normal; the values of this note are those of
+its day.)
 The fully automatic DWW search of the true Pilarcitos section reported 0.052 on a
 toe circle wholly under the remaining pool: the stage-3 Fellenius normal counted
 the pond's pressure on a slice base in full and its weight only at cos^2(alpha),

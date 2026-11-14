@@ -530,8 +530,10 @@ obtained from pullout tests on reinforcements with different lengths as
 presented in Appendix B"; note (ii), "Pullout testing to determine alpha is
 recommended if alpha shown in table is less than 1.0". Each is a choice
 with FOS_pullout at the empirical value beside it. A Cu below 4 with no
-tested F* is still computed and flagged (GM-246); refusing it is the
-owner's call.
+tested F* is refused, whatever the reinforcement, and the message asks for
+`F_star_tested` (GM-310, the call for OWN-85 of 2026-11-12: note (i),
+"For fill outside these limits, tests must be run"). Before GM-310 it was
+computed and flagged (GM-246).
 
 **Numbers.** The 9 m strip wall (H 9 m, L 7 m, Sv 0.75 m, gamma 20, phi
 34, 75 mm strips): FOS_pullout 28.76 to 42.10 and FOS_rupture 0.982 to
@@ -617,7 +619,7 @@ takes no Cu.
   about 0.4 where E4's mat passes. Conservative; re-derive it or drop the
   built-in strength. Done: GM-262 below;
 - whether Cu < 4 with no tested F* is refused rather than computed and
-  flagged;
+  flagged. Done: refused (GM-310, OWN-85);
 - Rc is one value for the wall: E3 changes Sh with depth (2.50 ft to
   1.67 ft), so a wall like it is run once per spacing. Done: GM-261 below.
 

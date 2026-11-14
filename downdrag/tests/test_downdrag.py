@@ -300,6 +300,40 @@ class TestNeutralPlane:
             allowable_settlement=0.025,
         )
 
+    def test_summary_gives_the_settlement_compatible_plane_beside(self):
+        """GM-310 (the call for OWN-105): where the curves meet below the
+        depth at which the soil stops settling more than the pile, the
+        summary gives the settlement-compatibility plane and drag beside
+        the headline, which stays the intersection. Made-up pile."""
+        analysis = self._make_standard_case()
+        analysis.Q_dead = 200.0
+        r = analysis.compute()
+        assert r.neutral_plane_method == "force_equilibrium"
+        (sc,) = [x for x in r.neutral_plane_comparison
+                 if x["method"] == "settlement_compatibility"]
+        assert sc["applies"]
+        assert sc["neutral_plane_depth_m"] < r.neutral_plane_depth - 0.5
+        text = r.summary()
+        head, beside = text.split(
+            "--- Beside the Headline: Pile and Soil Settling Equally ---")
+        assert f"Neutral plane depth:    {r.neutral_plane_depth:.2f} m" \
+            in head
+        assert f"Neutral plane depth:    " \
+            f"{sc['neutral_plane_depth_m']:.2f} m" in beside
+        assert f"Drag force (Q_np - Q_dead): {sc['drag_force_kN']:.1f} kN" \
+            in beside
+        assert "Sec. 6-5.8.4.3, p. 449" in beside
+        assert "Sec. 6-7.4 step 3, p. 477" in beside
+        assert sc["drag_force_kN"] < r.drag_force
+        d = r.to_dict()
+        assert "Sec. 6-5.8.4.3, p. 449" in d["settlement_compatible_beside"]
+        assert d["drag_force_kN"] == r.drag_force     # the headline's
+        # where the two planes are one, nothing is added
+        same = self._make_standard_case().compute()
+        assert same.settlement_compatible_beside() == []
+        assert "Beside the Headline" not in same.summary()
+        assert "settlement_compatible_beside" not in same.to_dict()
+
     def test_neutral_plane_found(self):
         """Neutral plane should be found between 0 and pile length."""
         analysis = self._make_standard_case()

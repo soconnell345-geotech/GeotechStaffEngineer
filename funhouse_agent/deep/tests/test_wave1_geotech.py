@@ -69,7 +69,9 @@ def test_the_rapid_drawdown_tail_parameter_is_visible():
     out = _tools()["describe_method"].invoke(
         {"agent_name": "slope_stability", "method": "rapid_drawdown_fos"})
     doc = json.loads(out)
-    assert "stage3_effective_normal" in doc["parameters"]
+    # (that parameter was removed in GM-140 step 9; the doc's last
+    # parameters now are the two water lines)
+    assert "drawdown_phreatic_points" in doc["parameters"]
     assert "_shortened" not in doc
     assert DEFAULT_MAX_RESULT_CHARS < len(out) <= DEFAULT_REFERENCE_RESULT_CHARS
 

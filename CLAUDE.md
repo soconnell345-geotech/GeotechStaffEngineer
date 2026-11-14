@@ -201,6 +201,14 @@ This repository builds three packages; the app also needs two more of the same p
   (`report_ingest/tables.py`, `docs/REPORT_TABLES.md`; sent to the dataset
   `GSE_REPORT_TABLES_DATASET` names; `GSE_REPORT_TABLES=0` turns it off;
   not yet run on Foundry, RI-212).
+  Defaults since 2026-11-13 (the owner's calls, OWN-143): a drilled shaft's
+  rock base with no RQD is refused, MSE backfill with Cu below 4 needs
+  `F_star_tested`, log-spiral wall friction only for a layer marked clean,
+  aggregate piers need `column_type` or n, and Meyerhof's own depth
+  factors run at every depth.
+  Calc packages since 2026-11-13: `fem2d_package` (its FOS check follows
+  the bound the SRM proves), drilled shaft packages keep their tables, and
+  `docs/examples/build_sample_packages.py` rebuilds one sample per package.
   Site data and drawing import since 2026-11-13: a GEF CPT keeps a missing
   reading missing, a DXF is read in its header's units (warned when the
   header alone decided), and the DXF and PDF build tools assume no soil

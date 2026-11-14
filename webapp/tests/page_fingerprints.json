@@ -306,7 +306,7 @@
          }
         ],
         "name": "calc",
-        "system_prompt": "56a2e8d18025760b",
+        "system_prompt": "cedf7a6377c513be",
         "tool_order": [
          "list_agents",
          "list_methods",

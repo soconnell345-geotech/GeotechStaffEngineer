@@ -4448,6 +4448,24 @@
           }
         ],
         "multi": true
+      },
+      {
+        "label": "35. Rapid drawdown (GM-140 step 9, built 2026-11-13), two calls: (1) the manual's 1.35 for its example of the Corps of Engineers' 1970 procedure (EM 1110-2-1902 p. G-15) is the Modified Swedish Method at 19.4 deg: the module pins 3.49 and 1.35 through a force-equilibrium solution at that fixed inclination, as a library function, not an agent tool, and Spencer's 1.24 stays the module's answer for that procedure; (2) in the drained check, where sigma'_d is negative, s_d = c' (the manual prints s_d = 0.00 for slice 1, where c' = 0; for c' above zero this is the module's reading, stated in the result).",
+        "options": [
+          {
+            "label": "Let both stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) The manual's method as the answer",
+            "effect": "The Corps 1970 procedure answers by the Modified Swedish Method at the manual's inclination (an agent tool), with Spencer's value beside it, instead of Spencer's."
+          },
+          {
+            "label": "(2) Eq. G-15 as printed, floored at zero",
+            "effect": "Where sigma'_d is negative, s_d = max(0, c' + sigma'_d tan(phi')), which is less than c', instead of s_d = c'."
+          }
+        ],
+        "multi": true
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",

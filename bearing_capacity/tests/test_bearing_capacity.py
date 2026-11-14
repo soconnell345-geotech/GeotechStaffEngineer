@@ -199,12 +199,12 @@ class TestCorrectionFactors:
         assert dg == pytest.approx(dq, rel=1e-6)
 
     def test_meyerhof_depth_factors_deep_arctan(self):
-        """Meyerhof depth factors for Df/B > 1: must use arctan(Df/B).
-
-        This is the critical fix: without arctan, Meyerhof depth factors
-        grow without bound for deep embedment, producing unrealistic results.
+        """Meyerhof depth factors for Df/B > 1 with Brinch Hansen's
+        arctan(Df/B), the "hansen" option (the default before GM-310;
+        since then Meyerhof's default is his own Table 5-6, k = Df/B).
         """
-        dc, dq, dg = depth_factors(30, Df=4.0, B=2.0, method="meyerhof")
+        dc, dq, dg = depth_factors(30, Df=4.0, B=2.0, method="meyerhof",
+                                   depth_method="hansen")
         # Df/B = 2.0, k = arctan(2.0) = 1.1071 rad
         # Kp = 3.0, sqrt(Kp) = 1.7321
         # dc = 1 + 0.2*1.7321*1.1071 = 1 + 0.3835 = 1.3835
@@ -214,15 +214,20 @@ class TestCorrectionFactors:
         assert dg == pytest.approx(dq, rel=1e-6)
 
     def test_meyerhof_depth_factors_bounded(self):
-        """Meyerhof depth factors must be bounded for very deep embedment.
+        """With the "hansen" option Meyerhof's depth factors are bounded
+        for very deep embedment.
 
         arctan(Df/B) -> pi/2 as Df/B -> inf, so:
           dc_max = 1 + 0.2*sqrt(Kp)*pi/2
           dq_max = 1 + 0.1*sqrt(Kp)*pi/2
         For phi=30: dc_max ~ 1.545, dq_max ~ 1.272
-        Without the arctan fix, Df/B=10 would give dc=4.46 (unbounded!).
+        His own Table 5-6 (the default since GM-310) gives dc = 4.46 at
+        Df/B = 10: linear, with no limit printed.
         """
-        dc, dq, dg = depth_factors(30, Df=20.0, B=2.0, method="meyerhof")
+        assert depth_factors(30, Df=20.0, B=2.0, method="meyerhof")[0] == \
+            pytest.approx(1 + 0.2 * math.sqrt(3.0) * 10.0)
+        dc, dq, dg = depth_factors(30, Df=20.0, B=2.0, method="meyerhof",
+                                   depth_method="hansen")
         # Df/B = 10, k = arctan(10) = 1.4711 rad
         k_max = math.pi / 2  # arctan limit as Df/B -> inf
         sqrt_Kp = math.sqrt(3.0)  # phi=30
