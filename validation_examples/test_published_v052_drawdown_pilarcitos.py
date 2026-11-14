@@ -97,27 +97,15 @@ def _search(slope_hv, method, infinite_slope=True):
         infinite_slope=infinite_slope, **_deep_windows(geom)).FOS
 
 
-# GM-140 step 5a: on the assumed 3:1 section the two searches now end on
-# different circles and DWW reads 1.5441 against LK's 1.5426 (it was 1.5416
-# against 1.5429; printed, for the real dam: LK 1.047, DWW 1.043). On each
-# of the two circles DWW is still below LK (1.5412 / 1.5426 on LK's circle,
-# 1.5441 / 1.5461 on DWW's). The pond's edge is now a slice boundary (account
-# D16), which moves the 20 slices of every trial circle; at the governing
-# centre the drawdown FOS is not smooth in the radius on 20 slices (LK 1.5429,
-# 1.5446, 1.5426 and 1.5674 at R = 33.985, 33.990, 33.995 and 34.000 m), so
-# the one-dimensional radius search of each method stops at a different lip.
-# That is the search's and the drawdown slicing's (steps 7 and 9), not the
-# pore-pressure rule; the tolerance is not widened and the value not re-pinned
-# (module_work/gm140/STEP5A_CHECK.md).
-_SEARCH_LANDS_APART = pytest.mark.xfail(
-    strict=True,
-    reason="GM-140 step 5a: the DWW and LK radius searches end on different "
-           "circles of a jagged 20-slice objective (DWW 1.5441 > LK 1.5426 "
-           "by 0.1 %); per circle DWW <= LK holds. See STEP5A_CHECK.md.")
-
-
-@pytest.mark.parametrize("slope", [
-    2.0, 2.5, pytest.param(3.0, marks=_SEARCH_LANDS_APART)])
+# History (GM-140 step 5a): before step 9, on the assumed 3:1 section the
+# DWW and LK searches ended on different circles, DWW 1.5441 above LK
+# 1.5426, and the 3:1 case was a strict xfail. The cause was the K_c rule
+# then in use: a switch on the base inclination (|sin 2 alpha| = 0.05) that
+# made the 20-slice drawdown FOS jump 1.6 % within 1 mm of radius. Step 9
+# took K_c from Eq. G-11 (EM 1110-2-1902 p. G-7), which has no such switch;
+# merged with it the case passes (Corps 0.914 < DWW 1.1415 < LK 1.1454) and
+# the mark is off (module_work/gm140/STEP5A_CHECK.md, section 11).
+@pytest.mark.parametrize("slope", [2.0, 2.5, 3.0])
 def test_v052_pilarcitos_method_ordering_is_slope_invariant(slope):
     """The published three-method ordering Corps < DWW < LK (with DWW ~ LK, the
     stage-3 check barely firing) holds at every plausible upstream slope

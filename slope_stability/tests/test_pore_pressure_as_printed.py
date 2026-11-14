@@ -563,6 +563,35 @@ class TestTheResultNamesTheReading:
         flat = rapid_drawdown_fos(g, 18.0, 11.0, n_slices=30, **CIRCLE)
         assert _reading(flat.choices) == []
 
+    def test_a_line_given_after_drawdown_takes_the_same_reading(self):
+        """A sloping line given after drawdown (drawdown_phreatic_points,
+        GM-140 step 9) gives the bases of the later stages their pore
+        pressure by the same function, read as the geometry says, and the
+        result names that reading too. Made-up values."""
+        core = SlopeSoilLayer(
+            name="core", top_elevation=20.0, bottom_elevation=-10.0,
+            gamma=19.0, gamma_sat=20.0, phi=30.0, c_prime=5.0,
+            R_c=30.0, R_phi=16.0)
+        after = [(0.0, 11.0), (22.0, 11.0), (42.0, 15.0), (70.0, 15.0)]
+        surface = [(0.0, 10.0), (20.0, 10.0), (40.0, 20.0), (70.0, 20.0)]
+        out = {}
+        for kind in ("piezometric", "water_table"):
+            g = SlopeGeometry(surface_points=surface, soil_layers=[core],
+                              water_line_kind=kind)
+            out[kind] = rapid_drawdown_fos(
+                g, 18.0, 11.0, drawdown_phreatic_points=after,
+                n_slices=30, **CIRCLE)
+            (c,) = _reading(out[kind].choices)
+            assert c["what"].startswith("After drawdown")
+            assert len(_reading(out[kind].to_dict()["choices"])) == 1
+        assert "piezometric" in _reading(
+            out["piezometric"].choices)[0]["chosen"]
+        assert "cos^2" in _reading(out["water_table"].choices)[0]["chosen"]
+        # the line after drawdown is read as the geometry says: a lower
+        # pore pressure after drawdown under 'water_table'
+        assert (sum(out["water_table"].u_after)
+                < sum(out["piezometric"].u_after))
+
 
 def test_water_statements_without_water_are_empty():
     g = SlopeGeometry(surface_points=SURFACE, soil_layers=[_sand()])
@@ -673,9 +702,14 @@ class TestPondThrust:
         its three straight stretches (each exact by the trapezoid rule, the
         ground and the base being straight there) is what OMS must give:
         slices are cut at the surface's corners. The plane's own stretch is
-        the infinite slope; the end stretches add about 0.5 %. Before step
-        5a each slice took a thrust from the line at its middle, a pool
-        half the slice's rise deep at its lower side, and OMS read 0.914.
+        the infinite slope. On the steep head stretch (alpha = atan 1.5,
+        gamma cos^2(alpha) = 6.0 < gamma_w) W cos(alpha) - u l is
+        negative: OMS takes it as printed (GM-140 step 3, DESIGN.md D21),
+        and the end stretches add 0.3 % (0.8238); with
+        negative_friction_term='zero' it is held at zero and they add
+        0.5 % (0.8253). Before step 5a each slice took a thrust from the
+        line at its middle, a pool half the slice's rise deep at its lower
+        side, and OMS read 0.914.
         """
         b = math.atan(0.5)
         c, tphi, gs, z = 5.0, math.tan(math.radians(34.0)), 19.5, 2.0
@@ -693,8 +727,11 @@ class TestPondThrust:
                              gwt_points=list(ground))
         res = analyze_slope(geom, slip_surface=PolylineSlipSurface(
             points=plane), method="fellenius", n_slices=60)
+        res0 = analyze_slope(geom, slip_surface=PolylineSlipSurface(
+            points=plane), method="fellenius", n_slices=60,
+            negative_friction_term="zero")
 
-        def stretch(xa, za, xb, zb):
+        def stretch(xa, za, xb, zb, zero=False):
             # the ground (and the line) is z = x / 2 over the whole plane;
             # h, the depth of the base below it, is straight on a stretch
             dx = xb - xa
@@ -703,15 +740,22 @@ class TestPondThrust:
             w = gs * h * dx
             length = dx / math.cos(alpha)
             u_force = GAMMA_W * h * length                  # u = gamma_w h
-            # OMS holds N' at zero where it is negative (the steep head
-            # stretch, gamma cos^2(alpha) < gamma_w)
-            n_eff = max(w * math.cos(alpha) - u_force, 0.0)
+            # W cos(alpha) - u l as printed, negative on the steep head
+            # stretch (gamma cos^2(alpha) < gamma_w); held at zero only
+            # with negative_friction_term='zero' (D21)
+            n_eff = w * math.cos(alpha) - u_force
+            if zero:
+                n_eff = max(n_eff, 0.0)
             return c * length + n_eff * tphi, w * math.sin(alpha)
 
-        parts = [stretch(*plane[i], *plane[i + 1]) for i in range(3)]
-        assert parts[1][0] / parts[1][1] == pytest.approx(closed, rel=1e-12)
-        by_hand = sum(p[0] for p in parts) / sum(p[1] for p in parts)
-        assert res.FOS == pytest.approx(by_hand, rel=1e-6)
+        for held, result in ((False, res), (True, res0)):
+            parts = [stretch(*plane[i], *plane[i + 1], zero=held)
+                     for i in range(3)]
+            assert parts[1][0] / parts[1][1] == pytest.approx(closed,
+                                                              rel=1e-12)
+            by_hand = sum(p[0] for p in parts) / sum(p[1] for p in parts)
+            assert result.FOS == pytest.approx(by_hand, rel=1e-6)
+        assert res.FOS < res0.FOS
 
 
 def test_the_planar_check_follows_the_reading():

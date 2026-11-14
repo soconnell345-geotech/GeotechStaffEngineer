@@ -1924,18 +1924,27 @@ rule holds for all of them (the list is in
     below the face. Per metre of plan W = γsat z, u = γw z, N' = W cos β −
     u / cos β, and F = c' / (γsat z sin β cos β) + (γsat cos² β − γw)
     tan φ' / (γsat sin β cos β) = 0.3205 + 0.5007 = 0.8212. OMS on the
-    finite plane (60 slices) gives 0.8253, which is the same statics
-    summed over the plane and its two 2 m end stretches; before this step
-    it gave 0.9140. Saved answers that move: such a face, −10 to −13 %
-    (OMS, Janbu, M-P); V-031, −0.005 % (`module_work/gm140/
-    STEP5A_CHECK.md`, "Fix round after review").
+    finite plane (60 slices) gives 0.8238, which is the same statics
+    summed over the plane and its two 2 m end stretches, the frictional
+    term taken as printed where it is negative on the steep head stretch
+    (D21, GM-140 step 3); 0.8253 with `negative_friction_term='zero'`.
+    Before this step it gave 0.9140 (0.9124 with step 3's frictional
+    term). Saved answers that move: such a face, −10 to −13 % (OMS,
+    Janbu, M-P); V-031, −0.005 % (`module_work/gm140/STEP5A_CHECK.md`,
+    "Fix round after review", with the branch against master after the
+    merge with steps 3 and 9).
 - **A pore-pressure grid with a line** (unchanged): the grid governs the
   base pressure wherever it is given; the line gives the pond's loads and
   the saturated unit weights below it. The result says so.
 - **Rapid drawdown**: the stages' slices come from `build_slices`, so they
-  take the same function. The two pools are level; a sloping stage-1
-  seepage line (`stage1_phreatic_points`) is read as `water_line_kind`
-  says and the result names it ("Stage 1 (before drawdown): ...").
+  take the same function. The pools are level unless a line is given: a
+  sloping seepage line before drawdown (`stage1_phreatic_points`) or a
+  line after it (`drawdown_phreatic_points`, GM-140 step 9) is read as
+  `water_line_kind` says, and the result names it ("Stage 1 (before
+  drawdown): ...", "After drawdown: ..."; `rapid_drawdown.
+  _stage_water_statements`, on every return, a run with no solution
+  too). The ru, grid and total-stress statements concern the same soils
+  in every stage and are said once, by stage 1.
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`

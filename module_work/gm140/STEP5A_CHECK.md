@@ -576,5 +576,110 @@ probes (its DLL blocked by the machine's application control). Its slope
 and reference cases pass with the submodule, as above. The lead runs the
 suite on GitHub.
 
-**Ruling 5's table** (branch against master after the final merge):
-waiting for steps 3 and 9 to reach master.
+**The final merge (master 3d553a8: GM-140 steps 3 and 9, and other
+sessions' work; merge commit 07326f2).** Conflicts, each settled by
+keeping both steps' rules:
+- the adapter: step 9's `soil_layers` text (the R envelope by Eqs. G-5
+  and G-6, or as measured, `R_d` and `R_psi`); 5a's `gwt_points` and
+  `water_line_kind`;
+- `analysis.py`, a search's `search_choices` call: step 3's arguments
+  (`low_m_alpha`, `negative_friction_term`), then 5a's water statements,
+  then step 4's crack choices;
+- `results.py`: 5a's `choices` beside step 3's `acceptability` and
+  `flags`, in the fields and in `to_dict`;
+- `rapid_drawdown.py`: step 9's result (its own `choices` and `notes`,
+  `slice_table`, `last_stage_converged`) and its `_finish`, which every
+  return goes through. 5a's stage-1 statements moved into `_finish`
+  (`_stage_water_statements`), so a run with no first-stage solution
+  names them too. Step 9's line after drawdown (`drawdown_phreatic_
+  points`) gives the later stages' bases their pore pressure by the same
+  function, so its reading is named where it slopes ("After drawdown:
+  ..."; new test `test_a_line_given_after_drawdown_takes_the_same_
+  reading`). The ru, grid and total-stress statements concern the same
+  soils in every stage and are said once, by stage 1;
+- VALIDATION.md: step 3's B22, then B-5a. `manual.html`: rebuilt by the
+  manual rule (submodule e1bbc5b; 1606 agent-callable methods).
+
+Merged without conflict: DESIGN.md, `method_probes.json`,
+`calc_steps.py`, `geometry.py`, `search_supplements.py`, the V-052 test.
+Two tests failed after the merge; both are settled in the commit after
+it:
+- `TestPondThrust::test_a_water_line_at_the_ground_closed_form`. Step 3
+  takes the frictional term W cos α − u l as printed where it is
+  negative (D21); the hand sum held it at zero. On the plane's steep head
+  stretch (α = atan 1.5, γ cos² α = 6.0 < γw) it is negative, so OMS
+  reads 0.8238, not 0.8253. The hand sum now follows the default as
+  printed, and `negative_friction_term='zero'` is pinned to the sum held
+  at zero (0.8253). The plane's own stretch is still the closed form
+  0.8212 exactly. Janbu and M-P do not move (0.8326 / 0.8316).
+- V-052's 3:1 case: XPASS(strict), below.
+
+**V-052's re-check on the tree with step 9** (`probe_v052_final.py`, the
+previous probe with step 9's `slice_table`). At LK's centre (40.416,
+44.623), R = 33.985 to 34.005 m in 1 mm steps, LK on 20 slices reads
+1.1581 to 1.1585. The largest step between neighbouring radii is 0.03 %
+(R 33.988 to 33.991 m), where the circle's toe end passes the drawn-down
+pool's edge (x = 33.8328) and the edge cuts a 4 mm slice. Between
+R = 33.998 and 33.999 m no slice changes by more than 2 %. The 1.6 % jump
+is gone: step 9 takes K_c from σ'c and τc by Eq. G-11 (EM 1110-2-1902
+p. G-7), held between 1 and K_f, with no switch on the base angle; every
+slice of that circle has K_c ≈ 1.96 (K_f 5.83). The searches end at Corps
+0.9141 < DWW 1.1415 < LK 1.1454 (master 0.9131 / 1.1406 / 1.1453), so the
+published ordering holds on 3:1 and the strict xfail passed. The mark is
+off: the 3:1 case runs as on master. (The final brief said the strict
+xfail stays; it assumed the jump would remain, and a strict xfail that
+passes fails the run.)
+
+**Ruling 5's table** (`probe_table.py`, one run on the merged branch and
+one on origin/master 3d553a8's `slope_stability`, extracted and first on
+the path; the same inputs, no `water_line_kind`). Master's values match
+the expected ones to 0.0005. #95 on the 103 ft pool stays inside its pin
+(1.3379 against 1.35 ± 1 %); the 110 ft pool's strict xfail still fails
+(1.3036 against 1.347).
+
+| Case | Master | Branch | Change % | Printed | Page |
+|---|---|---|---|---|---|
+| EM example, Bishop, 12 slices: stages 1/2/3 | 2.1925 / 1.5137 / 1.4384 | 2.1925 / 1.5137 / 1.4384 | +0.000 / +0.000 / +0.000 | 2.20 / 1.52 / 1.44 | EM 1110-2-1902 pp. G-15, G-18, G-20 |
+| #95 Corps, force 19.4, 103 ft pool | 1.3378 | 1.3379 | +0.007 | 1.35 | EM 1110-2-1902 p. G-15 |
+| #95 Corps, force 19.4, 110 ft pool (strict xfail) | 1.3036 | 1.3036 | -0.001 | 1.347 | Slide2 Verification #95 |
+| V-031 circle, no crack: Bishop/Spencer/GLE | 1.4205 / 1.4247 / 1.4091 | 1.4204 / 1.4246 / 1.4090 | -0.005 / -0.006 / -0.005 | (1.417 / 1.422 belong to the cracked case) | Slide2 #57, Table 57.3, p. 205 |
+| V-031 circle, dry crack (rankine): Bishop/Spencer | 1.4170 / 1.4211 | 1.4169 / 1.4211 | -0.006 / -0.005 | 1.417 / 1.422 | Slide2 #57, Table 57.3, p. 205 |
+| V-052 3:1 LK's circle (40.416, 44.623, 33.995): LK/DWW | 1.1585 / 1.1585 | 1.1582 / 1.1581 | -0.027 / -0.035 | (real dam 1.047 / 1.043) | Slide2 #97 (assumed face) |
+| V-052 3:1 DWW's circle (41.605, 44.623, 33.510): LK/DWW | 1.1607 / 1.1596 | 1.1610 / 1.1590 | +0.025 / -0.051 | (real dam 1.047 / 1.043) | Slide2 #97 (assumed face) |
+| V-052 3:1 searches: Corps/DWW/LK | 0.9131 / 1.1406 / 1.1453 | 0.9141 / 1.1415 / 1.1454 | +0.107 / +0.082 / +0.008 | (real dam 0.823 / 1.043 / 1.047) | Slide2 #97 (assumed face) |
+| pond closed form: OMS/Janbu/M-P | 0.9124 / 0.9571 / 0.9559 | 0.8238 / 0.8326 / 0.8316 | -9.708 / -13.010 / -13.003 | 0.8212 closed form | FHWA NHI-06-088 Sec. 6.3, pp. 6-7 to 6-8 (statics) |
+| pond closed form, negative_friction_term='zero': OMS/Janbu/M-P | 0.9140 / 0.9571 / 0.9559 | 0.8253 / 0.8326 / 0.8316 | -9.709 / -13.010 / -13.003 | 0.8212 closed form | the same |
+| ru, review's two soils: Bishop/Spencer | 1.3268 / 1.3315 | 1.3617 / 1.3656 | +2.627 / +2.565 | none (made-up) | EM 1110-2-1902 C-7, p. C-29 (ru) |
+| ru, test_multi_layer_different_ru (default method) | 1.4447 | 1.4592 | +1.005 | none (made-up) | the same |
+| ACADS 1(b), 3.81 m water-filled crack, search: bishop | 1.5896 | 1.5896 | +0.000 | 1.596 | Slide2 Verification #2, Table 2.2, p. 25 |
+| ACADS 1(b), 3.81 m water-filled crack, search: spencer | 1.5849 | 1.5849 | +0.000 | 1.592 | the same |
+
+What step 5a moves against master is the pond thrust (the 2:1 face, −10
+to −13 %; V-031, −0.005 %), ru on soils of different weight (+2.6 % and
++1.0 %) and the pond's edge as a slice boundary (V-052 and #95, at most
+0.11 %). Step 9's stages and ACADS 1(b)'s crack do not move.
+
+**Factors of safety the final merge moved on this branch** (before:
+d09f2d6; after: the merged head). Steps 3 and 9 moved what they moved on
+master (STEP3_CHECK.md, STEP9_CHECK.md, VALIDATION.md B22 and B7); the
+branch against master after the merge is the table above. Of step 5a's
+own pins: the pond OMS 0.8253 to 0.8238 (step 3's frictional term;
+closed form 0.8212); V-052 3:1 searches LK 1.5426 to 1.1454 and DWW
+1.5441 to 1.1415 (step 9; printed for the real dam 1.047 / 1.043).
+
+**Tests after the final merge** (single files, pytest exit code): on the
+merge commit, `test_pore_pressure_as_printed` 1 (the pond test above),
+V-052 1 (the XPASS above), and 0 for `test_rapid_drawdown`,
+`test_rapid_drawdown_em_appendix_g`, `test_slope_stability_adapter`,
+V-031, `test_acceptability`, `test_choices`, `test_search_supplements`,
+`test_cracks_as_printed`, `test_calc_steps_modern`, `test_m_alpha`,
+`test_ground_crossings`, `test_one_material_per_point`,
+`test_own_solution_or_no_number`, `test_usability_features`,
+`test_search_modern`, `test_search_reinforcement`,
+`test_search_robustness`, `test_slope_stability`, V-037, V-041, V-048,
+V-029, `test_allowed_values`, `test_top_level_params`,
+`test_probe_warnings`, `test_adapter_ergonomics`, `test_defaults_used -k
+"slope or em_1905 or table_db"`, `test_public_text`; the manual's
+`check_manual.py` and `test_user_manual_current` 0. After the fixes:
+`test_pore_pressure_as_printed` 0 (50 passed), V-052 0 (6 passed, the
+3:1 case among them), `test_public_text` 0.

@@ -1031,9 +1031,11 @@ The last row is the defect found on the way: a sloping water line at the
 ground read as a pool at each slice's lower side (`slices._pond_thrust`).
 The review accepted the fix as a declared departure (DESIGN.md, "The
 pond's thrust on a slice") and it is pinned as arithmetic on the review's
-case, c' = 5 kPa and a plane 2 m deep: closed form 0.8212, OMS 0.8253
-(the same statics over the plane and its two end stretches), before
-0.9140 (`TestPondThrust`).
+case, c' = 5 kPa and a plane 2 m deep: closed form 0.8212, OMS 0.8238
+(the same statics over the plane and its two end stretches, the frictional
+term as printed where it is negative on the steep head stretch, B22's
+D21; 0.8253 with `negative_friction_term='zero'`), before 0.9140 (0.9124
+on master since step 3) (`TestPondThrust`).
 
 The infinite-slope check of a search reports the closed form with the
 water at the surface for the reading used (`seepage_reading`): 0.5007
@@ -1059,26 +1061,31 @@ in the set has φ > 0 at its base, so D4 moves no factor of safety.
 | V-038 (#96) DWW: flat / seepage / 'gle' flat / 'gle' seepage | 1.2349 / 1.2733 / 1.3061 / 1.3699 | 1.2351 / 1.2733 / 1.3064 / 1.3698 | 1.443 | the pond's edge |
 | V-041 (#98) search: Corps / DWW / LK | 0.8362 / 0.9350 / 0.9739 | 0.8364 / 0.9351 / 0.9742 | 0.931 / 1.039 / 1.075 | the pond's edge |
 | V-052 Pilarcitos, assumed 2.5:1: Corps / LK | 0.7861 / 1.3473 | 0.7866 / 1.3488 | 0.823 / 1.047 | the pond's edge; the search ends on a neighbouring circle |
-| V-052 assumed 3:1: LK / DWW | 1.5429 / 1.5416 | 1.5426 / 1.5441 | (1.047 / 1.043 on the real dam) | the same; DWW now 0.1 % above LK, a strict xfail (below) |
+| V-052 assumed 3:1: LK / DWW | 1.5429 / 1.5416 | 1.5426 / 1.5441 | (1.047 / 1.043 on the real dam) | the same; DWW now 0.1 % above LK, a strict xfail until the merge with step 9 (below) |
 | V-052b true section: Corps / DWW | 0.7218 / 1.2633 | 0.7223 / 1.2652 | 0.823 / 1.043 | the pond's edge |
 | Duncan Ex. 6 (submerged toe), searches | 1.5419 / 1.7977 / 1.6098 | 1.5418 / 1.7976 / 1.6097 | book not in hand | the pond's edge |
 
-- **V-052, 3:1, DWW against LK (strict xfail).** The test asserts
-  Corps < DWW < LK on three assumed sections. On the 3:1 section the two
-  searches now end on different circles: DWW 1.5441 on (41.605, 44.623,
-  R 33.510) against LK 1.5426 on (40.416, 44.623, R 33.995). On each circle
-  DWW is still below LK (1.5412 / 1.5426 and 1.5441 / 1.5461). At that
-  centre the 20-slice drawdown FOS jumps with the radius (LK 1.5429, 1.5446,
-  1.5426, 1.5674 at R = 33.985, 33.990, 33.995, 34.000 m), and each method's
-  radius search stops at a different lip. The cause is the search on a
-  coarse slicing, not the pore-pressure rule; nothing is re-pinned and no
-  tolerance is widened. The jump itself (one probe at the review's fix
-  round): between R = 33.998 and 33.999 m no slice boundary and no edge
-  moves; the base angle of the slice just past the circle's lowest point
-  crosses |sin 2α| = 0.05, where `rapid_drawdown._consolidation_Kc`
-  switches from the at-rest ratio 1/(1 − sin φ') to the ratio from the
-  base stresses (Kc 3.41 to Kf; that slice's stage-2 strength 28.3 to
-  37.7 kPa; LK 1.5425 to 1.5674). It belongs to the drawdown (step 9).
+The drawdown rows above were measured before the merge with step 9,
+which re-derived every stage from EM 1110-2-1902 Appendix G; B7 gives
+their values since. What step 5a moves against master after that merge
+is in `module_work/gm140/STEP5A_CHECK.md`, section 11 (ruling 5's table).
+
+- **V-052, 3:1, DWW against LK (a strict xfail until the merge with
+  step 9).** The test asserts Corps < DWW < LK on three assumed sections.
+  Before step 9 the two searches on the 3:1 section ended on different
+  circles, DWW 1.5441 on (41.605, 44.623, R 33.510) above LK 1.5426 on
+  (40.416, 44.623, R 33.995): at LK's centre the 20-slice drawdown FOS
+  jumped 1.6 % between R = 33.998 and 33.999 m, where the base angle of
+  the slice just past the circle's lowest point crossed |sin 2α| = 0.05
+  and the K_c rule then in use switched from the at-rest ratio
+  1/(1 − sin φ') to K_f (no slice boundary and no edge moved). Step 9
+  takes K_c from σ'c and τc by Eq. G-11 (p. G-7), held between 1 and
+  K_f, with no switch on the base angle. Merged with it (the final fix
+  round's re-check), LK at that centre reads 1.1581 to 1.1585 over
+  R = 33.985 to 34.005 m, smooth to 0.03 % (the toe end of the circle
+  passing the drawn-down pool's edge, x = 33.8328), and the searches give
+  Corps 0.9141 < DWW 1.1415 < LK 1.1454 (master 0.9131 / 1.1406 /
+  1.1453). The ordering holds; the strict xfail passed and is off.
 
 ## Notes / known deviations
 
