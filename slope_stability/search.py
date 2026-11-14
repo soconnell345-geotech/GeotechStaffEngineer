@@ -271,6 +271,103 @@ def _screen_scored_so_far() -> Dict[tuple, float]:
     return dict(tally[5]) if tally is not None else {}
 
 
+# Each family's lowest scored surfaces (GM-140 step 10's fix round, the
+# orchestrator's ruling on its review's D2 / Q3): [6] of the tally, a dict
+# {(family, method): {key: surface}} holding, for every family and the
+# method that scored a trial, the _KEEP_LOWEST lowest trials, each once:
+# the key is the surface's geometry to 0.01 m (a circle's centre and
+# radius, a polyline's points). Only what the search already scored is
+# stored, for the report's ordered list (FHWA NHI-06-088 p. 6-49); no
+# value is changed. `_LOWEST_OFF` stops the note while a crack is solved
+# for on copies of the geometry (the surface's own value is noted once,
+# after).
+_KEEP_LOWEST = 10
+_LOWEST_OFF: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_lowest_off", default=False)
+
+
+def _lowest_key(slip) -> Tuple[Optional[tuple], Optional[Dict[str, Any]]]:
+    """(key, surface) of a trial for [6] of the tally: a circle by its
+    centre and radius (with its arc's two ends where it carries them), a
+    polyline by its points; (None, None) for anything else."""
+    if getattr(slip, "is_circular", False):
+        surface = {"xc": float(slip.xc), "yc": float(slip.yc),
+                   "radius": float(slip.radius)}
+        if getattr(slip, "is_bound", False):
+            surface["arc"] = (float(slip.x_start), float(slip.x_end))
+        return ("c", round(slip.xc, 2), round(slip.yc, 2),
+                round(slip.radius, 2)), surface
+    pts = getattr(slip, "points", None)
+    if not pts:
+        return None, None
+    surface = {"points": [(float(x), float(z)) for x, z in pts]}
+    return ("p",) + tuple((round(float(x), 2), round(float(z), 2))
+                          for x, z in pts), surface
+
+
+def _keep_lowest(kept: Dict[tuple, Dict[str, Any]], key: tuple,
+                 surface: Dict[str, Any]) -> None:
+    """``surface`` (with its ``FOS``) into ``kept`` under ``key``, the
+    lower value kept for a key; ``kept`` cut back to the _KEEP_LOWEST
+    lowest when it grows past twice that."""
+    have = kept.get(key)
+    if have is not None and have["FOS"] <= surface["FOS"]:
+        return
+    kept[key] = surface
+    if len(kept) > 2 * _KEEP_LOWEST:
+        for k in sorted(kept, key=lambda k: kept[k]["FOS"])[_KEEP_LOWEST:]:
+            del kept[k]
+
+
+def _note_lowest(method: str, fos: float, slip) -> None:
+    """A trial ``method`` scored, noted by family ([6] of the tally)."""
+    tally = _REFUSALS.get()
+    family = _FAMILY.get()
+    if tally is None or family is None or _LOWEST_OFF.get():
+        return
+    if fos is None or not fos < _FOS_MAX:
+        return
+    key, surface = _lowest_key(slip)
+    if key is None:
+        return
+    surface["FOS"] = float(fos)
+    _keep_lowest(tally[6].setdefault((family, method), {}), key, surface)
+
+
+def family_lowest_record(methods_of: Dict[str, Any],
+                         rename: Optional[Dict[str, str]] = None
+                         ) -> Dict[str, List[Dict[str, Any]]]:
+    """``SearchResult.family_lowest`` from the tally of the search running
+    in this context: for each family, its _KEEP_LOWEST lowest scored
+    surfaces, in order, by the method or methods that scored the family
+    (``methods_of``: {family: methods}, from ``candidate_methods``; a
+    value by another method on the family's surfaces, a screen's, is left
+    out), each ``{"FOS", "method", "xc", "yc", "radius"[, "arc"]}`` or
+    ``{"FOS", "method", "points"}``, one per surface to 0.01 m. ``rename``
+    maps the tally's family names to the result's ('main' to the main
+    search's kind)."""
+    tally = _REFUSALS.get()
+    if tally is None:
+        return {}
+    rename = rename or {}
+    pooled: Dict[str, Dict[tuple, Dict[str, Any]]] = {}
+    for (family, method), kept in tally[6].items():
+        name = rename.get(family, family)
+        if method not in methods_of.get(name, ()):
+            continue
+        into = pooled.setdefault(name, {})
+        for key, s in kept.items():
+            have = into.get(key)
+            if have is None or s["FOS"] < have["FOS"]:
+                into[key] = dict(s, method=method)
+    out = {}
+    for name, into in pooled.items():
+        ranked = sorted(into.values(), key=lambda s: s["FOS"])
+        out[name] = [dict(s, FOS=round(s["FOS"], 4))
+                     for s in ranked[:_KEEP_LOWEST]]
+    return out
+
+
 def _screen_unsolved_so_far() -> List[Tuple[str, str, float, str]]:
     tally = _REFUSALS.get()
     return list(tally[4]) if tally is not None else []
@@ -662,7 +759,7 @@ def _counts_refusals(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         outer = _REFUSALS.get()
-        tally = [0, 0, {}, _new_flag_tally(), [], {}]
+        tally = [0, 0, {}, _new_flag_tally(), [], {}, {}]
         token = _REFUSALS.set(tally)
         outer_arcs = _ARCS.get()
         arcs = {"split": {}, "arc": {}, "outside": {}}
@@ -694,6 +791,10 @@ def _counts_refusals(fn):
                 for key, f in tally[5].items():
                     if key not in outer[5] or f < outer[5][key]:
                         outer[5][key] = f
+                for fm, kept in tally[6].items():
+                    into = outer[6].setdefault(fm, {})
+                    for key, s in kept.items():
+                        _keep_lowest(into, key, s)
         target = (result if isinstance(result, SearchResult)
                   else getattr(result, "search", None))
         if isinstance(target, SearchResult):
@@ -1542,18 +1643,28 @@ def _compute_fos(geom: SlopeGeometry,
         if cracks.may_need_solution(geom, slip):
             plan = cracks.plan_crack(geom, slip)
             if plan is not None and (plan.needs_solution or plan.discard):
-                fos, crack = cracks.solve_with_crack(
-                    geom, slip,
-                    lambda g: _compute_fos(
-                        g, slip, method, n_slices, tol=tol,
-                        window_span=window_span, reject_stats=reject_stats,
-                        fos_fn=fos_fn,
-                        m_alpha_check=m_alpha_check, info=info,
-                        inside_model=inside_model),
-                    plan=plan)
+                # (the trial's own value is noted once, below, not each
+                # solve on a copy of the geometry: GM-140 step 10, D2)
+                off = _LOWEST_OFF.set(True)
+                try:
+                    fos, crack = cracks.solve_with_crack(
+                        geom, slip,
+                        lambda g: _compute_fos(
+                            g, slip, method, n_slices, tol=tol,
+                            window_span=window_span,
+                            reject_stats=reject_stats, fos_fn=fos_fn,
+                            m_alpha_check=m_alpha_check, info=info,
+                            inside_model=inside_model),
+                        plan=plan)
+                finally:
+                    _LOWEST_OFF.reset(off)
                 if crack.discarded:
                     cracks.count_discard(slip, crack)
                     return _FOS_MAX
+                if fos_fn is None and fos is not None:
+                    _note_lowest(method if getattr(slip, "is_circular", False)
+                                 else surface_method(method, False),
+                                 fos, slip)
                 return _FOS_MAX if fos is None else fos
         slices = build_slices(geom, slip, n_slices)
         if len(slices) < 3:
@@ -1620,6 +1731,8 @@ def _compute_fos(geom: SlopeGeometry,
                 return _FOS_MAX
             if names is not None:
                 _note_trial_flags(scored_by, fos, names, slip)
+            if fos_fn is None:
+                _note_lowest(scored_by, fos, slip)
             return fos
 
         fos_u = None                # Janbu's uncorrected F, for m_alpha
@@ -1649,6 +1762,7 @@ def _compute_fos(geom: SlopeGeometry,
                 return _FOS_MAX
             _note_trial_flags(scored_by, fos, names, slip)
             _note_scored(scored_by, fos, slip)
+            _note_lowest(scored_by, fos, slip)
         return fos
     except CrackRuleRefused as exc:
         # a given crack the crack rule refuses (GM-140 step 4's review,
@@ -2174,6 +2288,9 @@ def grid_search(geom: SlopeGeometry,
                 "yc": round(yc, 2),
                 "R": round(r_opt, 2),
                 "FOS": round(fos_opt, 4),
+                # the centre's place on the grid, for the contours of the
+                # minimum FOS over the centres (GM-140 step 10, D46)
+                "node": (ix, iy),
             }
             if rescored is not None:
                 if (ix, iy) not in rescored:
@@ -2181,7 +2298,11 @@ def grid_search(geom: SlopeGeometry,
                     grid_fos.append(entry)
                     continue
                 fos_opt, xc, yc, r_opt = rescored[(ix, iy)]
-                entry.update(R=round(r_opt, 2), FOS=round(fos_opt, 4))
+                entry.update(R=round(r_opt, 2), FOS=round(fos_opt, 4),
+                             # the screen's own value at the centre, for
+                             # the contours of a screened search (GM-140
+                             # step 10's fix round, Q1)
+                             screen_FOS=entry["FOS"], screen_method=scan)
             grid_fos.append(entry)
             if fos_opt < best_fos:
                 best_fos = fos_opt
@@ -2311,6 +2432,8 @@ def grid_search(geom: SlopeGeometry,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
         warnings=[window_note] if window_note else [],
+        centre_grid={"x_range": (x_lo, x_hi), "y_range": (y_lo, y_hi),
+                     "nx": nx, "ny": ny},
     )
 
 

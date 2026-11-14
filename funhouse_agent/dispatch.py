@@ -1138,10 +1138,27 @@ def call_agent(
                         inputs=_choices_call_inputs,
                         after=lambda params, result: _citations_checked(
                             agent_name, method, params, result))
+    result = _with_module_defaults(mod, method, result)
     if agent_name in REFERENCE_MODULES:
         result = _with_missing_described(mod, agent_name, method, parameters,
                                          result)
     return result
+
+
+def _with_module_defaults(mod, method: str, result):
+    """``result`` with the module defaults its run used under names the
+    method does not declare (an adapter's ``MODULE_DEFAULTS``, ``{method:
+    {name: value}}``) added to its ``defaults_used`` (GM-132's slope part,
+    GM-140 step 10: rapid drawdown runs the m_alpha check by
+    ``m_alpha_rule`` 'frictional', a name only analyze_slope and the
+    search take). Not an input of the method: giving it is refused."""
+    extra = (getattr(mod, "MODULE_DEFAULTS", None) or {}).get(method)
+    if not extra or not isinstance(result, dict) or "error" in result:
+        return result
+    used = dict(result.get("defaults_used") or {})
+    for name, value in extra.items():
+        used.setdefault(name, value)
+    return {**result, "defaults_used": used}
 
 
 def _reference_spec(mod, method: str):

@@ -914,8 +914,13 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
             assert _same(echo, value), (
                 f"{key}: defaults_used says {name}={value!r}, the result "
                 f"says {echo!r}")
+    # a module default under a name the method does not declare (an
+    # adapter's MODULE_DEFAULTS, GM-140 step 10) is not an input to give
+    fixed = (getattr(D._load_adapter(agent), "MODULE_DEFAULTS", None)
+             or {}).get(method, {})
     back = {k: v for k, v in used.items() if not is_case(k, v)
-            and (base, k) not in MP.SHOWN_ONLY_WHEN_GIVEN}
+            and (base, k) not in MP.SHOWN_ONLY_WHEN_GIVEN
+            and k not in fixed}
     if not back:
         return
     r1 = _run(agent, method, _given_back(params, back))
@@ -1689,3 +1694,17 @@ def test_a_left_out_input_that_moves_the_result_states_its_case(
             if what is not None:
                 moved.append(f"{key}: without {name}, {what}")
     assert moved == []
+
+
+def test_a_module_default_under_an_undeclared_name_is_listed():
+    """GM-132's slope part (GM-140 step 10): rapid drawdown runs the
+    m_alpha check by m_alpha_rule 'frictional', which its tools do not
+    declare; the run's defaults_used says so, and giving the name is
+    refused (it is not an input of the tool)."""
+    for key in ("slope_stability|rapid_drawdown_fos",):
+        agent, method = key.split("|")
+        r = _run(agent, method, MP.PROBES[key]["params"])
+        assert r["defaults_used"]["m_alpha_rule"] == "frictional"
+        bad = _run(agent, method, {**MP.PROBES[key]["params"],
+                                   "m_alpha_rule": "every_slice"})
+        assert "error" in bad
