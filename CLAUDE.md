@@ -201,6 +201,9 @@ This repository builds three packages; the app also needs two more of the same p
   (`report_ingest/tables.py`, `docs/REPORT_TABLES.md`; sent to the dataset
   `GSE_REPORT_TABLES_DATASET` names; `GSE_REPORT_TABLES=0` turns it off;
   not yet run on Foundry, RI-212).
+  Standing tests since 2026-11-14 (INF-77): every promised returns key and
+  every parameter a probe gives is checked on each run; `test_told_is_real.py`
+  checks packages, brief counts, DESIGN.md names and swallowed exceptions.
   Defaults since 2026-11-13 (the owner's calls, OWN-143): a drilled shaft's
   rock base with no RQD is refused, MSE backfill with Cu below 4 needs
   `F_star_tested`, log-spiral wall friction only for a layer marked clean,

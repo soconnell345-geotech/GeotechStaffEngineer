@@ -4631,5 +4631,34 @@
       "BACKLOG REF-98",
       "module_work/cloud_briefs/DRAWINGS_GM312_315.md"
     ]
+  },
+  "OWN-155": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Should the FEM consolidation tool use the scheme that actually shows consolidation by default?",
+    "why": "A default run of fem2d_consolidation shows the soil fully consolidated at every time, whatever the permeability, so a time-settlement curve from it is wrong. The tool's one-line description promises pore-pressure dissipation.",
+    "background": "The tool offers two schemes. The default, 'staggered', drains the soil at every step: U = 1 and zero excess pore pressure at every time, for any k (checked from 1e-10 to 1e-16 m/s). 'monolithic' couples the soil and the water: on a made-up layer with k = 1e-10 m/s it gives U = 0, 0.122, 0.417 and 0.976 at t = 0, 1e5, 1e6 and 1e7 s, close to the reviewer's Terzaghi hand check (0.13, 0.43, 0.976). The parameter text and the result's note already say that 'staggered' is drained; the one-line description does not. Found by the standing tests (INF-77) and confirmed by their reviewer.",
+    "options": [
+      {
+        "label": "Make 'monolithic' the default",
+        "effect": "A run that leaves the scheme out shows consolidation with time. Default runs get slower. Saved reports from default runs change."
+      },
+      {
+        "label": "Keep 'staggered', and say so in the description",
+        "effect": "Nothing changes in the numbers. The tool's one-line description says that a load's consolidation needs scheme 'monolithic', so the agent asks for it."
+      }
+    ],
+    "recommendation": "Make 'monolithic' the default. A consolidation tool whose default shows no consolidation misleads; the extra run time is small next to a wrong curve.",
+    "if_no_answer": "Nothing changes: the default stays 'staggered', and the parameter text and the result's note keep saying it is drained.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-350"
+    ],
+    "sources": [
+      "BACKLOG OWN-155",
+      "BACKLOG GM-350",
+      "module_work/inf77/CHECK.md"
+    ]
   }
 }
