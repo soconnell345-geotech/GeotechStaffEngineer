@@ -134,10 +134,12 @@ class Geosynthetic:
         lesser of ``T_allow`` and the pullout resistance
         (``slope_stability.supports``).
     pullout_factor : float, optional
-        What the pullout resistance is divided by under Method A (Duncan,
-        Wright and Brandon 2014, Table 8.4: F_R = 1.3, 1.5 or 2.0; GEC 11
-        p. 9-5: 1.5 granular, 2 cohesive). Asked for when F_star and alpha
-        are given and the layer is active; not used when passive.
+        What the pullout resistance is divided by (Duncan, Wright and
+        Brandon 2014, Table 8.4: F_R = 1.3, 1.5 or 2.0; GEC 11 p. 9-5:
+        1.5 granular, 2 cohesive). Asked for when F_star and alpha are
+        given and the layer is active (not used when passive under
+        'dwb2014'), and under 'gec11' whatever the method: GEC 11 Eq. 9-9
+        (p. 9-13) carries FS under Method A and Method B alike.
     pullout_basis : str, optional
         'dwb2014' (pullout from each end of the layer; the default with
         F_star and alpha), 'gec11' (behind the surface only, on the
@@ -158,7 +160,8 @@ class Geosynthetic:
     force_direction : str
         'along_reinforcement' (default: horizontal, the layer's own
         orientation) or 'along_slip_surface' (Duncan, Wright and Brandon
-        2014, Sec. 8.6, pp. 163 to 164).
+        2014, Sec. 8.6, pp. 163 to 164; GEC 11 p. 9-7: continuous sheets
+        "assumed to act tangentially to the circle").
     """
     elevation: float
     T_allow: float

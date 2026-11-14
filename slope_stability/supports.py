@@ -32,15 +32,32 @@ Print (Duncan, Wright and Brandon 2014, "Soil Strength and Slope Stability",
   (Table 8.4): no single value is printed, so it is asked for.
 * FHWA GEC 11 (FHWA-NHI-10-024/025): Pr = F* alpha sigma'v Le C (Eq. 3-2,
   p. 3-16; C = 2 for sheets, strips and grids); Le = Tmax FS / (F* alpha
-  sigma'v Rc C) (Eq. 9-9, p. 9-14), FS = 1.5 for granular and 2 for
+  sigma'v Rc C) (Eq. 9-9, p. 9-13), FS = 1.5 for granular and 2 for
   cohesive soils (p. 9-5); "Only count reinforcement that extends 3 ft
   (1 m) beyond the surface" (p. 9-14); the capacity of a layer is "the
   minimum of its allowable pullout resistance behind the potential failure
   surface or its long-term allowable design strength" (Sec. 9.1, p. 9-1).
+  The method of analysis of GEC 11's Sec. 9.2 (p. 9-24: the reinforcing
+  force "contributed to the resisting moment") is Method B's form, and its
+  Eq. 9-9 still divides the pullout by FS: under ``pullout_basis='gec11'``
+  the pullout is divided by ``pullout_factor`` under Method A and Method B
+  alike. In the form that reduces the driving moment (Method A's),
+  FS = MR / (MD - Ts D) (Eq. 9-17, p. 9-24): "the
+  stability factory of safety is not applied to the reinforcement. For
+  such computations ... the allowable strength of the reinforcement Tal
+  must be divided by a required minimum factor of safety FSR = 1.3 to
+  provide an equivalent material uncertainty" (said with Method A; the
+  allowable force is the engineer's input, not changed here). Continuous
+  sheets are taken as acting tangentially to the circle (D = R, the
+  definitions under Eq. 9-1, p. 9-7): the print of the
+  ``force_direction='along_slip_surface'`` option.
 * FHWA GEC 7 (FHWA-NHI-14-007) Eq. 5.2, p. 105: Tmax_i = min(R_T, R_F,
-  R_PO): pullout behind the surface, the bar, and the facing, which with
-  the pullout of the length in front of the surface limits the load there
-  (Fig. 5.7).
+  R_PO): pullout behind the surface, the bar, and the facing. Fig. 5.7
+  (p. 106; the library holds its caption, "Limitations to tensile forces
+  in nails") is read as the facing resistance plus the pullout of the
+  length in front of the surface limiting the load at the surface: a
+  reading of the figure, the literal min(R_T, R_F, R_PO) of Eq. 5.2 being
+  the other form.
 * OWN-59 (the owner, 2026-10-20). A support whose pull assists the sliding:
   both readings are offered; slack (the support counts nothing) is the
   default.
@@ -357,7 +374,18 @@ def layer_capacity(geom, g, x_c: float, anchorage: float, passive: bool
                 f"or pullout_basis='not_checked'.")
         gec = basis == "gec11"
         factor = 1.0
-        if not passive:
+        if gec:
+            # GEC 11 Eq. 9-9 (p. 9-13) carries FS whatever the method:
+            # its own rotational analysis is Method B's form (p. 9-24)
+            factor = getattr(g, "pullout_factor", None)
+            if not factor:
+                raise ValueError(
+                    "A geosynthetic's pullout by 'gec11' is divided by the "
+                    "factor of safety FS of GEC 11 Eq. 9-9 (p. 9-13) under "
+                    "Method A and Method B alike, and no page prints one "
+                    "value for every case: give pullout_factor (GEC 11 p. "
+                    "9-5: 1.5 for granular soils, 2 for cohesive soils).")
+        elif not passive:
             factor = getattr(g, "pullout_factor", None)
             if not factor:
                 raise ValueError(
@@ -387,11 +415,14 @@ def layer_capacity(geom, g, x_c: float, anchorage: float, passive: bool
         if not gec and not front_held:
             caps.append((pull(end_front), "pullout_front",
                          f"{L_f:.2f} m in front of the surface"))
-        how = ("GEC 11 Eq. 9-9 (p. 9-14), behind the surface only, on the "
+        how = ("GEC 11 Eq. 9-9 (p. 9-13), behind the surface only, on the "
                "effective vertical stress" if gec else
                "Duncan, Wright and Brandon (2014) Eqs. 8.8 and 8.9, from "
                "each end (Fig. 8.2)")
-        if not passive:
+        if gec:
+            how += (f", divided by FS = {factor:g} under Method A and "
+                    f"Method B alike, as Eq. 9-9 prints it")
+        elif not passive:
             how += f", divided by {factor:g}"
     ctrl, note = "allowable", how
     for cap, name, where in caps:
@@ -484,9 +515,11 @@ def resolve_supports(geom, slip, x_entry: float,
                 (nail.tensile_capacity_kN, "tensile")]
         facing = getattr(nail, "facing_capacity", None)
         if facing is not None:
-            # GEC 7 Eq. 5.2 (p. 105), Fig. 5.7: in front of the surface
-            # the load is limited by the facing and the pullout of the
-            # length between the facing and the surface
+            # GEC 7 Eq. 5.2 (p. 105) with Fig. 5.7 (p. 106), read: in
+            # front of the surface the load is limited by the facing and
+            # the pullout of the length between the facing and the
+            # surface (a reading of the figure; the literal Eq. 5.2 is
+            # min(R_T, R_F, R_PO))
             caps.append((facing + rate * t_int, "facing"))
         cap, ctrl = min(caps)
         f = ReinforcementForce(
@@ -701,7 +734,13 @@ def support_statements(geom) -> Tuple[List[Dict[str, Any]], List[str]]:
         "reinforcement moment), Eqs. 8.1 and 8.2; enter the allowable "
         "force. Method B: F = (soil resisting moment + reinforcement "
         "moment) / overturning moment, Eqs. 8.3 and 8.4; enter the "
-        "ultimate force. Method A is preferable (p. 160). In Bishop's "
+        "ultimate force. Method A is preferable (p. 160). GEC 11 p. "
+        "9-24, Eq. 9-17, FS = MR / (MD - Ts D), the form that reduces the "
+        "driving moment: there \"the stability factory of safety is not "
+        "applied to the reinforcement\" and \"the allowable strength of "
+        "the reinforcement Tal must be divided by a required minimum "
+        "factor of safety FSR = 1.3\"; the allowable force is the "
+        "input, and nothing here divides it. In Bishop's "
         "simplified method the forces enter by Eq. 6.78 (pp. 91 to 93): "
         "the moment about the centre, and the vertical component in the "
         "slice's vertical equilibrium; a horizontal force enters the "
@@ -726,7 +765,10 @@ def support_statements(geom) -> Tuple[List[Dict[str, Any]], List[str]]:
                   within="supports"),
         "Duncan, Wright and Brandon (2014) Sec. 8.6, pp. 163 to 164: the "
         "reinforcement's original orientation is recommended, the more "
-        "conservative; parallel to the slip surface is the other extreme",
+        "conservative; parallel to the slip surface is the other extreme, "
+        "the option's print GEC 11 p. 9-7 (continuous sheet reinforcement "
+        "\"assumed to act tangentially to the circle\", the moment arm D "
+        "= R under Eq. 9-1)",
         ["along the support's own orientation (force_direction "
          "'along_reinforcement'; a pile's 'horizontal')",
          "parallel to the slip surface (force_direction "
@@ -753,8 +795,9 @@ def support_statements(geom) -> Tuple[List[Dict[str, Any]], List[str]]:
             "dwb2014": "from each end of the layer by Duncan, Wright and "
                        "Brandon (2014) Eqs. 8.8 and 8.9 (pullout_basis "
                        "'dwb2014')",
-            "gec11": "behind the surface by GEC 11 Eq. 9-9, at least 1 m "
-                     "(pullout_basis 'gec11')",
+            "gec11": "behind the surface by GEC 11 Eq. 9-9, divided by "
+                     "FS (pullout_factor) under Method A and Method B, at "
+                     "least 1 m (pullout_basis 'gec11')",
             "given": "from the development length given "
                      "(development_length)",
             "not_checked": "not checked: the full T_allow at every "
@@ -772,8 +815,9 @@ def support_statements(geom) -> Tuple[List[Dict[str, Any]], List[str]]:
             "pullout_factor under Method A (Table 8.4 prints 1.3, 1.5 "
             "and 2.0; none is a default). GEC 11's form (behind the "
             "surface only, on the effective stress, with the coverage "
-            "ratio, 1 m at least; FS 1.5 granular, 2 cohesive, p. 9-5) "
-            "is the option",
+            "ratio, 1 m at least; divided by FS, 1.5 granular, 2 "
+            "cohesive, p. 9-5, under either method, as Eq. 9-9 on p. 9-13 "
+            "prints it) is the option",
             [text["dwb2014"], text["gec11"], text["given"],
              text["not_checked"]]))
     return choices, []

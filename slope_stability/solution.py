@@ -59,13 +59,38 @@ METHOD_TEXT = {
 NO_SOLUTION_KINDS = ("not_converged", "no_driving", "with_supports")
 
 #: Why the Ordinary Method of Slices gives no number where supports cross
-#: the surface (GM-140 step 8; the lead's call, STEP8_CHECK.md).
+#: the surface (GM-140 step 8; the lead's call, STEP8_CHECK.md; the
+#: orchestrator's Q1 of the fix round: GEC 7's wedge is not this method).
+OMS_NO_FORM = (
+    "no reference held prints the Ordinary Method of Slices with known "
+    "forces (Duncan, Wright and Brandon 2014, p. 93: no such equation is "
+    "given; Bishop's simplified method with known forces is their Eq. "
+    "6.78). FHWA GEC 7 Eqs. 5.6 to 5.9 (pp. 118 to 120), found, are not "
+    "taken: they are one planar wedge's force balance (the nail's T sin "
+    "beta in the normal force, T cos beta off the driving force), and the "
+    "Ordinary Method of Slices on a circle is a moment equation")
+#: The methods that take known forces (Eq. 6.78 and the complete-
+#: equilibrium methods).
+OMS_USE_INSTEAD = (
+    "Use Bishop's simplified method on a circle, or Spencer's, "
+    "Morgenstern-Price's or Janbu's, which take the support forces as "
+    "known forces")
 OMS_WITH_SUPPORTS = (
-    "supports cross this surface, and no reference held prints the "
-    "Ordinary Method of Slices with known forces (Duncan, Wright and "
-    "Brandon 2014, p. 93: no such equation is given; Bishop's simplified "
-    "method with known forces is their Eq. 6.78). Use Bishop's simplified "
-    "method on a circle, or Spencer's, Morgenstern-Price's or Janbu's")
+    "supports cross this surface, and " + OMS_NO_FORM + ". "
+    + OMS_USE_INSTEAD)
+
+
+def oms_search_refusal(n_crossed: int, by_family: str) -> str:
+    """Why a search by the Ordinary Method of Slices reports no surface
+    where supports cross any trial surface (the orchestrator's Q2, GM-140
+    step 8 fix round): the minimum over the surfaces no support crosses is
+    not the slope's minimum."""
+    return (
+        f"The search by the Ordinary Method of Slices is refused: supports "
+        f"cross {n_crossed} of its trial surfaces ({by_family}), and "
+        f"{OMS_NO_FORM}. The lowest factor of safety of the surfaces no "
+        f"support crosses is not the slope's minimum, so no critical "
+        f"surface and no factor of safety are reported. {OMS_USE_INSTEAD}.")
 
 #: The internal marker of the solvers and the searches' "not scored" score.
 #: Not a factor of safety (`solve_method` never returns it).

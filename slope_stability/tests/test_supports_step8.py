@@ -161,7 +161,13 @@ def _fig_8_4(convention):
     ("passive", 1.46, 1.448)])
 def test_fig_8_4_spencer(convention, printed, ours):
     """Printed: Spencer's procedure, circles, minimum F = 1.62 by Method A
-    and 1.46 by Method B."""
+    and 1.46 by Method B.
+
+    An input that differs from the figure: the toe window, x_entry_range
+    0 to 4 ft (circles leaving the ground within 4 ft of the toe; Slide2
+    #86's "global failure" window, test_search_reinforcement.py). Without
+    it the minimum is a shallow face slide that crosses no layer, at about
+    0.94 (the infinite slope's tan 37 deg / 0.8 = 0.942)."""
     res = search_critical_surface(_fig_8_4(convention), method="spencer",
                                   x_entry_range=(0.0, 4.0),
                                   x_exit_range=(30.0, 75.0))
@@ -567,3 +573,109 @@ def test_stabilizing_pile_force_is_against_the_sliding():
                                                   shear_capacity=100.0)])
     (f,) = _resolve(g).forces
     assert (f.dir_x, f.dir_z) == (1.0, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# The fix round after review (the orchestrator's rulings)
+# ---------------------------------------------------------------------------
+
+def test_gec11_pullout_is_divided_by_fs_under_both_methods():
+    """Defect 1: GEC 11 Eq. 9-9 (p. 9-13), Le = Tmax FS / (F* alpha
+    sigma'v Rc C), carries FS whatever the method, so under 'gec11' a
+    passive (Method B) layer's pullout is divided by pullout_factor too,
+    and it is asked for. Made-up layer: z 18, x_end 53, F* 0.5, alpha 0.8,
+    FS 1.5; 2 m of fill over it behind the crossing."""
+    kw = dict(elevation=18.0, T_allow=100.0, x_end=53.0, F_star=0.5,
+              alpha=0.8)
+    x_c = 30.0 + math.sqrt(26.0 ** 2 - 14.0 ** 2)
+    hand = 2 * 0.8 * 0.5 * (19.0 * 2.0) * (53.0 - x_c) / 1.5   # 22.11
+    for conv in ("active", "passive"):
+        (f,) = _resolve(_slope(geosynthetics=[Geosynthetic(
+            pullout_basis="gec11", pullout_factor=1.5,
+            support_convention=conv, **kw)])).forces
+        assert f.T == pytest.approx(hand, rel=1e-9)
+        assert "Method A and Method B alike" in f.note
+    # the book's form under Method B: ultimate, not divided
+    (f,) = _resolve(_slope(geosynthetics=[Geosynthetic(
+        support_convention="passive", **kw)])).forces
+    assert f.T == pytest.approx(hand * 1.5, rel=1e-9)
+    with pytest.raises(ValueError, match="pullout_factor"):
+        _resolve(_slope(geosynthetics=[Geosynthetic(
+            pullout_basis="gec11", support_convention="passive", **kw)]))
+
+
+def test_method_a_basis_and_the_options_print():
+    """Defect 4: Method A's basis quotes GEC 11 Eq. 9-17 (p. 9-24): in
+    that form Tal is divided by a required minimum FSR = 1.3; nothing
+    divides the input. Q4: the along_slip_surface option's print is GEC 11
+    p. 9-7 (continuous sheets act tangentially to the circle)."""
+    g = _slope(geosynthetics=[Geosynthetic(elevation=14.0, T_allow=60.0)])
+    r = analyze_slope(g, slip_surface=_CIRCLE, method="bishop")
+    by = {c["what"]: c for c in r.choices}
+    basis = by["how the support forces enter the factor of safety"]["basis"]
+    assert "p. 9-24, Eq. 9-17" in basis and "FSR = 1.3" in basis
+    assert "nothing here divides it" in basis
+    d = by["direction of the support forces"]["basis"]
+    assert "GEC 11 p. 9-7" in d and "tangentially to the circle" in d
+    assert r.reinforcements[0]["T_kN_per_m"] == 60.0
+
+
+def test_oms_refusal_cites_gec7_eqs_5_6_to_5_9():
+    """Q1: GEC 7 Eqs. 5.6 to 5.9 (pp. 118 to 120), one planar wedge's force
+    balance, are found and not taken; the reason says so."""
+    g = _slope(geosynthetics=[Geosynthetic(elevation=14.0, T_allow=120.0)])
+    r = analyze_slope(g, slip_surface=_CIRCLE, method="fellenius")
+    assert r.FOS is None
+    text = " ".join(r.warnings)
+    assert "no such equation is given" in text
+    assert "GEC 7 Eqs. 5.6 to 5.9 (pp. 118 to 120)" in text
+    assert "planar wedge" in text
+
+
+def test_oms_search_is_refused_where_a_support_crosses_a_trial_surface():
+    """Q2: a search by the Ordinary Method of Slices reports no surface
+    when a support crosses any trial surface (the minimum over the rest is
+    not the slope's), with p. 93's reason and the methods that take known
+    forces. A search whose surfaces no support crosses runs as before."""
+    g = _slope(geosynthetics=[Geosynthetic(elevation=14.0, T_allow=120.0)])
+    s = search_critical_surface(g, method="fellenius", nx=3, ny=3)
+    assert s.critical is None and not s.candidates
+    assert any(r.get("with_supports") for r in s.no_solution)
+    (w,) = s.warnings
+    assert w.startswith("The search by the Ordinary Method of Slices is "
+                        "refused")
+    assert "no such equation is given" in w and "Spencer's" in w
+    far = _slope(geosynthetics=[Geosynthetic(elevation=19.0, T_allow=120.0,
+                                             x_start=400.0, x_end=420.0)])
+    plain = search_critical_surface(_slope(), method="fellenius", nx=3,
+                                    ny=3)
+    s2 = search_critical_surface(far, method="fellenius", nx=3, ny=3)
+    assert s2.critical.FOS == pytest.approx(plain.critical.FOS, abs=1e-12)
+
+
+def test_pullout_not_checked_is_among_the_warnings_everywhere():
+    """Q3: a layer with no pullout input keeps its full T_allow, and every
+    result says among its WARNINGS that the pullout was not checked: a
+    search (its own warnings), rapid drawdown on one surface and the
+    drawdown search."""
+    from slope_stability.analysis import rapid_drawdown_fos
+    from slope_stability.rapid_drawdown import search_rapid_drawdown
+    key = "pullout resistance was not checked"
+    g = _slope(geosynthetics=[Geosynthetic(elevation=14.0, T_allow=60.0)])
+    s = search_critical_surface(g, method="bishop", nx=3, ny=3)
+    assert any(key in w for w in s.warnings)
+
+    def dam():
+        return SlopeGeometry(
+            surface_points=[(-10, 0), (0, 0), (30, 15), (40, 15)],
+            soil_layers=[SlopeSoilLayer(
+                name="fill", top_elevation=15, bottom_elevation=-5,
+                gamma=19, gamma_sat=20, phi=28, c_prime=8, R_c=10,
+                R_phi=16)],
+            geosynthetics=[Geosynthetic(elevation=6.0, T_allow=80.0)])
+    d = rapid_drawdown_fos(dam(), 13.0, 3.0, xc=10.0, yc=25.0, radius=27.0)
+    assert any(key in w for w in d.warnings)
+    sd = search_rapid_drawdown(dam(), 13.0, 3.0, method="corps_2stage",
+                               surface_type="circular", nx=3, ny=3,
+                               n_slices=20)
+    assert any(key in w for w in sd.search.warnings)

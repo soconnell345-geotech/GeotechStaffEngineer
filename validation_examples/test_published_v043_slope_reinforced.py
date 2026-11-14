@@ -238,8 +238,8 @@ def test_v043_sand_reinforcement_force_brackets_published():
             hi = mid
     T = 0.5 * (lo + hi)
     # GM-140 step 8 (GM-353): 45.22 at every radius (40.88 or 45.22
-    # before); printed 44-45 (Tandjiria et al. 2002 and Slide2
-    # Verification #43, the module note above): +0.5 % to +2.8 %
+    # before); printed 44-45 (Tandjiria et al. 2002; Slide2 Verification
+    # #39, manual pp. 147 to 150): +0.5 % to +2.8 %
     assert T == pytest.approx(45.22, abs=0.05)          # ours (pinned)
     for dr in (-1e-8, 1e-8):
         near = CircularSlipSurface(xc=xc, yc=yc, radius=r + dr)

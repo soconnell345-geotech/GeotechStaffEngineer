@@ -132,7 +132,8 @@ read in the reference library (geotech-references e1bbc5b, v1.7.0).
    legacy force's refusal (its "not applied" declared case is gone), the
    descriptions; a probe `analyze_slope#steep_nail`.
 10. **Docs.** `slope_stability/DESIGN.md` ("Supports as printed"),
-    `VALIDATION.md` (B24), the user manual rebuilt by its generator.
+    `VALIDATION.md` (B25 after the merge with master's GM-344, which
+    took B24), the user manual rebuilt by its generator.
 
 ## Places the rule now holds
 
@@ -162,8 +163,10 @@ Method of Slices refused.
 
 1. **The Ordinary Method of Slices with supports is refused** where a
    support crosses the surface, on circles and polylines. The lead's call
-   (the brief). A search by that method scores only surfaces no support
-   crosses and counts the rest (`no_solution`, `with_supports`).
+   (the brief). A search by that method scored only surfaces no support
+   crosses and counted the rest (`no_solution`, `with_supports`); since
+   the fix round (Q2) such a search is refused when a support crosses any
+   trial surface.
 2. **A support on a slice boundary acts on the slice that holds the part
    of the support inside the sliding mass** (a vertical pile: the slice
    toward -x). Reasoned before the number was known: that slice is the
@@ -188,10 +191,10 @@ Method of Slices refused.
 6. **The integral of 2 alpha F* gamma z along the embedded length** stands
    for Eqs. 8.8 and 8.9 on ground that is neither level nor one uniform
    face. It equals each on its own ground (tested to 1e-9 and 1e-12).
-7. **Under Method B the pullout is not divided** (ultimate forces, divided
-   by F). GEC 11 divides its pullout by 1.5 or 2 in its own rotational
-   method whatever the program; under `'gec11'` with a passive layer the
-   module does not.
+7. **Under Method B the pullout is not divided** under `'dwb2014'`
+   (ultimate forces, divided by F). Under `'gec11'` it is, by
+   `pullout_factor`, under both methods since the fix round (defect 1):
+   GEC 11's Eq. 9-9 carries FS whatever the method.
 8. **The nail's facing term is R_F plus the pullout of the length in
    front of the surface**, applied only when `facing_capacity` is given;
    left out, the term is not checked and the result says so. See "What
@@ -216,7 +219,7 @@ supports is untouched.
 
 | Benchmark | Module before | Module after | Printed | What moved it |
 |---|---|---|---|---|
-| V-043 force to raise the pinned sand circle to 1.35 (Spencer), at R - 1e-8 m / R / R + 1e-8 m | 40.88 / 45.22 / 45.22 kN/m | 45.22 / 45.22 / 45.22 | 44 to 45 (Slide2 Verification #43) | the slice-boundary rule (GM-353) |
+| V-043 force to raise the pinned sand circle to 1.35 (Spencer), at R - 1e-8 m / R / R + 1e-8 m | 40.88 / 45.22 / 45.22 kN/m | 45.22 / 45.22 / 45.22 | 44 to 45 (Slide2 Verification #39, manual pp. 147 to 150) | the slice-boundary rule (GM-353) |
 | V-040 micro-pile row, Ordinary Method of Slices, active / passive | 1.1946 / 1.1758 | no number | none for this method (Slide2 1.193 is Bishop's) | the method refused with supports |
 | V-040, Bishop active / passive | 1.2232 / 1.2034 | 1.2232 / 1.2034 | 1.193 | - |
 | V-040, Spencer active / passive | 1.2240 / 1.2039 | 1.2240 / 1.2039 | - | - |
@@ -322,7 +325,8 @@ material boundary does (one force now, where a rounding chose between two:
 45.2 against 40.9 kN/m in one validation case); (2) the Ordinary Method of
 Slices is asked for with supports crossing the surface: it now gives no
 number, with the reason, because no reference prints it with known forces
-(use Bishop's, Spencer's, Morgenstern-Price's or Janbu's method); (3) a
+(use Bishop's, Spencer's, Morgenstern-Price's or Janbu's method), and a
+search by it is refused when a support crosses any trial surface; (3) a
 circle is split into several arcs and a tieback crosses only one of them;
 (4) a support's pull along the slip surface points down the slope (a steep
 nail high on the surface, or the toe-side crossing of a layer crossed
@@ -359,3 +363,119 @@ says when a layer's pullout or a nail's facing term was not checked.
   of scope.
 - **GM-82's lambda bound of +-1.5** on #85's GLE search: not a support
   rule; left for "The GLE solver" step.
+
+## Fix round after review (2026-11-14)
+
+The review passed the step with six defects and five questions of method;
+the orchestrator ruled on all eleven. Branch `fix/gm140-step8-review`.
+
+### The merge with master (GM-344, the GLE solver)
+
+Merged first (`git merge --no-ff origin/master`). Conflicts:
+`slope_stability/VALIDATION.md` (both added a section B24: master's GLE
+solver keeps B24, this step's supports are now B25) and
+`docs/user_manual/manual.html` (master's side taken, then rebuilt by its
+generator). `gle.py` merged without a conflict: master did not touch
+`_assign_reinforcement`, so this step's version (no abs() masking, the
+slice by `supports.slice_index_for`) stands in master's solver.
+
+The check after the merge, one script on this step's tree before the merge
+(3c918f7's `slope_stability` extracted) and on the merged tree:
+
+| Value | Before the merge | Merged | Change |
+|---|---|---|---|
+| Fig. 8.4, Spencer, Method A (the test's search) | 1.606514 | 1.606512 | -0.0001 % |
+| Fig. 8.4, Spencer, Method B | 1.447850 | 1.447853 | +0.0002 % |
+| V-043 force for Spencer F = 1.35, at R / R - 1e-8 m / R + 1e-8 m | 45.22297 / 45.22297 / 45.22297 | 45.22285 / 45.22285 / 45.22285 | -0.0003 % |
+| #85 on Slide2's circle, Method A, Spencer / Morgenstern-Price | 1.565262 / 1.565649 | 1.565264 / 1.565645 | +0.0002 % / -0.0003 % |
+| #85 on Slide2's circle, Method B, Spencer / Morgenstern-Price | no solution / no solution | the same | - |
+| #86 five tiebacks, the test's search, Spencer / Morgenstern-Price | 1.606514 / 1.606949 | 1.606512 / 1.606950 | -0.0001 % / +0.0001 % |
+| The review's made-up Bishop case (anchor head (32, 16), 150 kN/m, 400 slices): no support; 15 deg A / B; horizontal A / B | 2.21564; 2.40599 / 2.29522; 2.40098 / 2.29300 | the same to 16 digits | 0 |
+
+The largest move is 0.0003 %. Its cause: the same root, reached within the
+solver's tolerance (1e-5 in F) by master's new solver. With `tol=1e-9` both
+trees give #85's Spencer 1.5652650 and Morgenstern-Price 1.5656453, and
+`base_in_tension='no_friction'` changes none of these values.
+
+### The defects and the rulings
+
+1. **GEC 11's pullout under Method B (defect 1).** Under
+   `pullout_basis='gec11'` the pullout is divided by `pullout_factor` under
+   Method A and Method B alike, and asked for in both, as Eq. 9-9 (p. 9-13)
+   prints it; the note says so (`supports.layer_capacity`). The review's
+   made-up layer: 22.11 kN/m under both (was 33.17 under Method B).
+2. **V-043's verification (defect 2).** "Slide2 Verification #39, manual
+   pp. 147 to 150" in the test and in VALIDATION.md B25 (was #43). BACKLOG
+   GM-353 still says #43: left to the lead's notes.
+3. **The drawdown adapter text (defect 3).** `rapid_drawdown_fos`'s
+   geosynthetics now name the pullout inputs as in analyze_slope (F_star,
+   alpha, pullout_factor, pullout_basis, development_length,
+   anchored_end). That method's doc was already over the deep agent's
+   16,000 characters (measured with this tree's `describe_method`: 16,823
+   with 3c918f7's entry, 17,158 with the merge's), and
+   `test_wave1_geotech` failed on it: seven more shared inputs now point
+   to analyze_slope's full text, as five did; 15,823 now.
+4. **GEC 11 Eq. 9-17 (defect 4).** Method A's basis (`support_statements`)
+   quotes p. 9-24: in that form Tal "must be divided by a required minimum
+   factor of safety FSR = 1.3"; nothing divides the input.
+5. **The references searched for an OMS with known forces (defect 5,
+   Q1).** GEC 7 Eqs. 5.6 to 5.9 (pp. 118 to 120), one planar wedge's force
+   balance, are named in DESIGN.md and in the refusal's reason as found and
+   not taken; the refusal stays.
+6. **GM-353's other reading and Fig. 8.4's window (defect 6).** DESIGN.md
+   gives the anchorage-side slice's 40.88 kN/m; VALIDATION.md and the test
+   state the toe window (`x_entry_range` 0 to 4 ft) as an input that
+   differs from the figure (without it a shallow face slide that crosses
+   no layer governs, about 0.94).
+7. **Q2.** A search by the Ordinary Method of Slices is refused when a
+   support crosses any trial surface (no critical surface, no factor of
+   safety; the crossed surfaces counted by family; p. 93's reason and the
+   methods that take known forces). A search no support crosses runs as
+   before (tested: the same F as with no supports).
+8. **Q3.** "The pullout was not checked" is among the warnings of a search
+   (before: only on its critical surface), of `rapid_drawdown_fos` and of
+   `search_rapid_drawdown` (before: in neither).
+9. **Q4.** The `along_slip_surface` option cites GEC 11 p. 9-7 (continuous
+   sheets "assumed to act tangentially to the circle").
+10. **Q5.** The nail's front term cites GEC 7 Fig. 5.7 (p. 106) beside
+    Eq. 5.2 (p. 105) as a reading of the figure.
+
+DESIGN.md lists Q1 to Q5 and defects 1 and 4, each with both forms, under
+"Calls made in the fix round after review". Calls 1 and 7 above
+("Calls made") are changed by Q2 and defect 1.
+
+### The review's values now (its probe, run once on the final tree)
+
+| Value | Review (branch) | Now |
+|---|---|---|
+| Fig. 8.1, Method A: 40 slices on the module's circle / 400 on the review's | 2.2182 / 2.2228 | 2.2182 / 2.2228 |
+| Fig. 8.1, Method B: the same | 1.7219 / 1.7230 | 1.7219 / 1.7230 |
+| Fig. 8.4, Spencer, Method A / B | 1.6065 / 1.4478 | 1.6065 / 1.4479 |
+| Made-up Bishop case, 400 slices: no support | 2.21564 | 2.21564 |
+| the same, 15 deg, Method A / B | 2.40599 / 2.29522 | 2.40599 / 2.29522 |
+| the same, horizontal, Method A / B | 2.40098 / 2.29300 | 2.40098 / 2.29300 |
+| V-040, Bishop A / B | 1.22320 / 1.20336 | 1.22320 / 1.20336 |
+| V-040, Spencer A / B | 1.22398 / 1.20389 | 1.22258 / 1.20261 |
+| V-040, Ordinary Method of Slices A / B | no number | no number |
+| #85 on Slide2's circle, Method A: Bishop / Spencer / GLE | 1.56626 / 1.56526 / 1.56565 | 1.56626 / 1.56526 / 1.56565 |
+| #85 on Slide2's circle, Method B: Bishop / Spencer / GLE | 1.33044 / no solution / no solution | the same |
+| V-043 force for F 1.35 at R - 1e-8 m / R / R + 1e-8 m | 45.2230 / 45.2230 / 45.2230 | 45.2228 / 45.2228 / 45.2228 |
+| The review's OMS search (layer at z 14) | 1.7406, 481 crossed surfaces left out | refused (Q2) |
+| GEC 11 layer under Method B (the review's item 7) | 33.1694 | refused without `pullout_factor`; 22.1129 with 1.5 (test) |
+
+The Spencer values that move with supports, and why:
+
+- **V-040, Spencer, -0.11 % (A and B).** The merge with GM-344: its
+  as-printed default for a base in tension. With
+  `base_in_tension='no_friction'` the merged tree gives 1.22398 / 1.20389,
+  the values before the merge. V-040 without the pile moves alike (1.11363
+  to 1.11231), so it is not the supports. No pin holds V-040's Spencer
+  value (its test checks B below A, which holds; the printed 1.193 is
+  pinned by Bishop, unchanged).
+- **Fig. 8.4 B, #85 and V-043, at most 0.0003 %.** The same root reached
+  within the solver's tolerance (above).
+
+No pinned value moved in this round: the test changes are the five new
+tests at the end of `test_supports_step8.py`, comments, and a docstring.
+The merge brought master's own moved pins (GM-344's tests and
+`GLE_ROOT_CHECK.md` section 8); none is in a support test.

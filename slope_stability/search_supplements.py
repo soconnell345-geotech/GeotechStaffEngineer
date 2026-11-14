@@ -876,13 +876,15 @@ def _make_result(geom, slip, fos, method_label, n_slices) -> Optional[
         n_slices=n, has_seismic=geom.kh > 0, kh=geom.kh, **kw)
 
 
-def _attach_reinforcement(geom, crit) -> None:
+def _attach_reinforcement(geom, crit) -> List[str]:
     """List the reinforcement crossing the critical surface on the result,
     in `analyze_slope`'s format, so a reinforced search says which elements
-    its FOS counted (the FOS itself already includes them: GM-53)."""
+    its FOS counted (the FOS itself already includes them: GM-53). Returns
+    the statements of what counts nothing and what was not checked on it
+    (GM-140 step 8), for the search's warnings (the orchestrator's Q3)."""
     from slope_stability.search import trial_reinforcement
     if crit is None:
-        return
+        return []
     slip = (circle_of(crit)
             if crit.is_circular else PolylineSlipSurface(crit.slip_points))
     from slope_stability.search import _has_reinforcement
@@ -890,12 +892,12 @@ def _attach_reinforcement(geom, crit) -> None:
                                           not_counted_warning)
     if not _has_reinforcement(geom):
         crit.reinforcements = None
-        return
+        return []
     try:
         x_entry, x_exit = slip.find_entry_exit(geom)
         supports = resolve_supports(geom, slip, x_entry, x_exit)
     except ValueError:
-        return
+        return []
     crit.reinforcements = [
         {"kind": f.kind, "index": f.index,
          "x_m": round(f.x, 3), "z_m": round(f.z, 3),
@@ -906,9 +908,13 @@ def _attach_reinforcement(geom, crit) -> None:
     # what counts nothing on this surface, and what was not checked
     # (GM-140 step 8)
     crit.supports_not_counted = supports.not_counted or None
+    said = []
     for w in supports.notes + [not_counted_warning(supports.not_counted)]:
         if w and w not in crit.warnings:
             crit.warnings.append(w)
+        if w:
+            said.append(w)
+    return said
 
 
 def _crack_statement(geom, crit, method: str, n_slices: int, tol: float,
@@ -1588,7 +1594,9 @@ def apply_supplements(geom: SlopeGeometry,
             if w:
                 warnings_out.append(w)
 
-    _attach_reinforcement(geom, best)
+    for w in _attach_reinforcement(geom, best):
+        if w not in warnings_out:
+            warnings_out.append(w)
     result.critical = best
     result.governing_surface = best_kind if best is not None else ""
     result.candidates = candidates

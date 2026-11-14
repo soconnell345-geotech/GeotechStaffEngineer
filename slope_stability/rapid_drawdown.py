@@ -1093,9 +1093,18 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         res.choices += water
         warnings.extend(notes)
         # what the supports were taken as, the same in every stage
-        # (GM-140 step 8)
-        from slope_stability.supports import support_statements
+        # (GM-140 step 8), and what counts nothing or was not checked on
+        # this surface, among the warnings (the orchestrator's Q3)
+        from slope_stability.supports import (has_supports,
+                                              not_counted_warning,
+                                              resolve_supports,
+                                              support_statements)
         res.choices += support_statements(geom)[0]
+        if has_supports(geom):
+            sup = resolve_supports(geom, slip, *x_ends)
+            for w in sup.notes + [not_counted_warning(sup.not_counted)]:
+                if w and w not in warnings:
+                    warnings.append(w)
         if (method == "corps_2stage"
                 and stage_solver in (None, "gle", "spencer")):
             res.notes.append(CORPS_EXAMPLE_NOTE)

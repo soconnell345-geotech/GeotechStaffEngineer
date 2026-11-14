@@ -1200,9 +1200,25 @@ def search_critical_surface(
         from slope_stability.search import _outside_so_far, outside_records
         result.arcs_outside_windows = outside_records(
             _outside_so_far(), rename={"main": search_kind})
-        w = no_solution_warning(result)
-        if w:
-            result.warnings.append(w)
+        # An Ordinary Method of Slices search where a support crosses any
+        # trial surface is refused (the orchestrator's Q2, GM-140 step 8
+        # fix round): the minimum over the rest is not the slope's. The
+        # statements about the surface it would have reported go with it.
+        crossed = [r for r in result.no_solution if r.get("with_supports")]
+        if scored == "fellenius" and crossed:
+            from slope_stability.solution import oms_search_refusal
+            result.critical = None
+            result.governing_surface = ""
+            result.governing_location = {}
+            result.candidates = {}
+            result.warnings = [oms_search_refusal(
+                sum(r["with_supports"] for r in crossed),
+                "; ".join(f"{r['family']} {r['with_supports']}"
+                          for r in crossed))]
+        else:
+            w = no_solution_warning(result)
+            if w:
+                result.warnings.append(w)
         # The printed acceptability checks (GM-140 step 3): the flags of
         # the scored trials by family, what the governing surface carries,
         # and the lowest surface without a flag beside it.

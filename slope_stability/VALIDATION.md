@@ -1245,8 +1245,16 @@ chapter 8:
 |-----------|--------|---------|
 | Fig. 8.1 (pp. 160 to 161): 20 ft slope at 2V:1H, phi = 0, c = 500 psf, gamma = 100 pcf, one horizontal force of 10,000 lb/ft 10 ft above the toe; Bishop, circles tangent to the firm layer at the toe's level. Method A | 2.218 (+1.3 %), on the circle with its centre at the crest's level (xc 0.90 m, R 6.116 m), exiting 0.06 m above the toe | 2.19, "within 1 or 2 %" |
 | Same, Method B | 1.722 (+0.1 %), circle xc 0.50 m, R 7.316 m, exiting 0.02 m above the toe | 1.72 |
-| Fig. 8.4 (pp. 164 to 165; Slide2 #86): 24 ft fill on rock at 1.25H:1V, c' = 0, phi' = 37 deg, six layers 4 ft apart, 20 ft long, 800 lb/ft falling to zero over the last 4 ft; Spencer, circles. Method A | 1.607 (-0.8 %); Bishop 1.613 | 1.62 |
-| Same, Method B | 1.448 (-0.8 %); Bishop 1.452 | 1.46 |
+| Fig. 8.4 (pp. 164 to 165; Slide2 #86): 24 ft fill on rock at 1.25H:1V, c' = 0, phi' = 37 deg, six layers 4 ft apart, 20 ft long, 800 lb/ft falling to zero over the last 4 ft; Spencer, circles, searched with the toe window `x_entry_range` 0 to 4 ft (and `x_exit_range` 30 to 75 ft), an input that differs from the figure (below). Method A | 1.607 (-0.8 %); Bishop 1.613 | 1.62 |
+| Same, the same windows, Method B | 1.448 (-0.8 %); Bishop 1.452 | 1.46 |
+
+Fig. 8.4's toe window is an input of the module's test, not of the
+figure: the search keeps only circles that leave the ground within 4 ft
+of the toe (Slide2 #86's "global failure" window,
+`test_search_reinforcement.py`). Without it the minimum is a shallow face
+slide that crosses no layer, at about 0.94 (the infinite slope's closed
+form, tan 37 deg / 0.8 = 0.942), not the circles the figure's values are
+for.
 
 Fig. 8.1's Method A minimum lies at the limit before reverse curvature:
 circles tangent to the firm layer with their centre below the crest's level
@@ -1257,9 +1265,9 @@ What the rule moves in the pinned set:
 
 | Benchmark | Before | After | Printed |
 |-----------|--------|-------|---------|
-| V-043 geosynthetic force to raise the pinned sand circle to 1.35 (Spencer), at R - 1e-8 m, R, R + 1e-8 m | 40.88, 45.22, 45.22 kN/m | 45.22 at each | 44 to 45 (Slide2 Verification #43) |
+| V-043 geosynthetic force to raise the pinned sand circle to 1.35 (Spencer), at R - 1e-8 m, R, R + 1e-8 m | 40.88, 45.22, 45.22 kN/m | 45.22 at each | 44 to 45 (Slide2 Verification #39, manual pp. 147 to 150) |
 | V-040 micro-pile row, Ordinary Method of Slices, active / passive | 1.1946 / 1.1758 (the module's own form) | no number (no printed form with known forces) | none for this method |
-| V-040 Bishop active / passive; Spencer active / passive | 1.2232 / 1.2034; 1.2240 / 1.2039 | unchanged | 1.193 |
+| V-040 Bishop active / passive; Spencer active / passive | 1.2232 / 1.2034; 1.2240 / 1.2039 | unchanged by this step. After the merge with GM-344 Spencer reads 1.2226 / 1.2026 (-0.11 %): the as-printed default for a base in tension (`base_in_tension='no_friction'` gives 1.2240 / 1.2039); V-040 without the pile moves alike, 1.1136 to 1.1123 | 1.193 |
 | #86 five tiebacks: Bishop, Spencer, GLE | 1.6131, 1.6065, 1.6069 | unchanged | Slide2 1.629, 1.620, 1.622 |
 | #85 one support, active: Bishop, Spencer, GLE searches | 1.508, 1.5505, 1.5726 | unchanged | 1.531, 1.884, 1.575 |
 | #85 passive, Bishop | 1.3157 | unchanged | 1.324 |
