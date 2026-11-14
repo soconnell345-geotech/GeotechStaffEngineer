@@ -1023,8 +1023,13 @@ _CLEAR_NOUN = (r"(?:discrepanc\w*|issues?|problems?|conflicts?|errors?|"
                r"mismatch\w*|findings?|deviations?|inconsisten\w*|"
                r"omissions?|exceptions?|other|further|additional)")
 _NO_WORD = rf"no(?!\s+{_CLEAR_NOUN})"
-_NOT_WORD = (r"not(?!\s+(?:find|found|identif\w+|see|seen|observe\w*|"
-             r"detect\w*|aware|applicable|missing))")
+#: What follows "did not find" in an all-clear ("did not find any
+#: problems", "did not see anything", "did not find a conflict"); "door 509
+#: was not found on the fifth-floor plan" is a finding (Foundry brief 8).
+_NOT_SEEN = (r"(?:find|found|identif\w+|see|seen|observe\w*|detect\w*)\s+"
+             rf"(?:any\w*|(?:an?|the)\s+{_CLEAR_NOUN}|{_CLEAR_NOUN})\b")
+_NOT_WORD = (r"not(?!\s+(?:aware|applicable|missing)\b)"
+             rf"(?!\s+{_NOT_SEEN})")
 #: A word that says something is not there (a mark with no schedule row, a
 #: scheduled item with no tag, a report that was not sent). "Lists F1 to F3
 #: only" says it too. "Nothing is missing" does not.
@@ -1164,9 +1169,7 @@ def _truth(keys: Iterable[str]) -> str:
 #: it" counted (what was not found is said to be missing there; "did not
 #: find any problems" is still an all-clear), and the words for a broken
 #: callout.
-_FAULT_NOT = (r"not(?!\s+(?:aware|applicable|missing)\b)"
-              r"(?!\s+(?:find|found|identif\w+|see|seen|observe\w*|"
-              rf"detect\w*)\s+(?:any|{_CLEAR_NOUN})\b)")
+_FAULT_NOT = _NOT_WORD
 _FAULTY = {"re": rf"\b(?:{_NO_WORD}|{_FAULT_NOT}|never|neither|nor|"
                  r"(?<!nothing is )(?<!nothing )(?<!none is )(?<!none are )"
                  r"(?<!none )missing|absent|omitted|omits|without|lacks?|"
