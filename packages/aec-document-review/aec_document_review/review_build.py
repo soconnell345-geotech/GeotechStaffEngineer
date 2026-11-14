@@ -113,9 +113,11 @@ def _review_reader_subagent(primary_tools,
     from aec_document_review.review_agent import (
         READER_EXHAUSTED, READER_MAX_MODEL_CALLS, READER_NUDGE, READER_TOOLS)
     # the sheet tools read and write nothing: the helper has them where the
-    # page does (PL-37)
-    from aec_agent_core.document_tools import SHEET_TOOL_NAMES
-    wanted = set(READER_TOOLS) | set(SHEET_TOOL_NAMES)
+    # page does (PL-37, PL-42)
+    from aec_agent_core import document_tools
+    wanted = (set(READER_TOOLS) | set(document_tools.SHEET_TOOL_NAMES)
+              | set(getattr(document_tools, "OPTIONAL_SHEET_TOOL_NAMES",
+                            ())))
     return {
         "name": READER_NAME,
         "description": REVIEW_READER_DESCRIPTION,
